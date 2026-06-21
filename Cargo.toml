@@ -46,6 +46,7 @@ members = [
 
     "perro_source/devtools/perro_cli",
     "perro_source/devtools/perro_dev_runner",
+    "perro_website",
 ]
 
 resolver = "3"

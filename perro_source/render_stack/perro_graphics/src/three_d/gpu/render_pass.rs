@@ -159,19 +159,31 @@ impl Gpu3D {
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
-            prepass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-            let mut current_state: Option<(RenderPath3D, bool)> = None;
+            let mut current_state: Option<(RenderPath3D, bool, bool)> = None;
             for &i in &self.depth_prepass_batch_indices {
                 let batch = &self.draw_batches[i];
-                let state = (batch.path, batch.double_sided);
+                let state = (batch.path, batch.double_sided, batch.packed_lod);
                 if current_state != Some(state) {
                     let (camera_bg, vertex_buf, pipeline) = if batch.path == RenderPath3D::Rigid {
                         let p = if batch.double_sided {
-                            &self.pipeline_depth_prepass_rigid_double_sided
+                            if batch.packed_lod {
+                                &self.pipeline_depth_prepass_rigid_packed_lod_double_sided
+                            } else {
+                                &self.pipeline_depth_prepass_rigid_double_sided
+                            }
                         } else {
-                            &self.pipeline_depth_prepass_rigid_culled
+                            if batch.packed_lod {
+                                &self.pipeline_depth_prepass_rigid_packed_lod_culled
+                            } else {
+                                &self.pipeline_depth_prepass_rigid_culled
+                            }
                         };
-                        (&self.rigid_camera_bind_group, &self.rigid_vertex_buffer, p)
+                        let v = if batch.packed_lod {
+                            &self.packed_lod_vertex_buffer
+                        } else {
+                            &self.rigid_vertex_buffer
+                        };
+                        (&self.rigid_camera_bind_group, v, p)
                     } else {
                         let p = if batch.double_sided {
                             &self.pipeline_depth_prepass_double_sided
@@ -181,10 +193,23 @@ impl Gpu3D {
                         (&self.camera_bind_group, &self.vertex_buffer, p)
                     };
                     prepass.set_bind_group(0, camera_bg, &[]);
+                    if batch.packed_lod {
+                        prepass.set_index_buffer(
+                            self.packed_lod_index_buffer.slice(..),
+                            wgpu::IndexFormat::Uint32,
+                        );
+                    } else {
+                        prepass.set_index_buffer(
+                            self.index_buffer.slice(..),
+                            wgpu::IndexFormat::Uint32,
+                        );
+                    }
                     prepass.set_vertex_buffer(0, vertex_buf.slice(..));
                     prepass.set_vertex_buffer(1, self.instance_transform_buffer.slice(..));
                     if batch.path == RenderPath3D::Skinned {
                         prepass.set_vertex_buffer(2, self.skinned_instance_meta_buffer.slice(..));
+                    } else {
+                        prepass.set_vertex_buffer(2, self.rigid_instance_meta_buffer.slice(..));
                     }
                     prepass.set_pipeline(pipeline);
                     current_state = Some(state);
@@ -218,19 +243,31 @@ impl Gpu3D {
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
-            blend_prepass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-            let mut current_state: Option<(RenderPath3D, bool)> = None;
+            let mut current_state: Option<(RenderPath3D, bool, bool)> = None;
             for &i in &self.mesh_blend_depth_batch_indices {
                 let batch = &self.draw_batches[i];
-                let state = (batch.path, batch.double_sided);
+                let state = (batch.path, batch.double_sided, batch.packed_lod);
                 if current_state != Some(state) {
                     let (camera_bg, vertex_buf, pipeline) = if batch.path == RenderPath3D::Rigid {
                         let p = if batch.double_sided {
-                            &self.pipeline_depth_prepass_rigid_double_sided
+                            if batch.packed_lod {
+                                &self.pipeline_depth_prepass_rigid_packed_lod_double_sided
+                            } else {
+                                &self.pipeline_depth_prepass_rigid_double_sided
+                            }
                         } else {
-                            &self.pipeline_depth_prepass_rigid_culled
+                            if batch.packed_lod {
+                                &self.pipeline_depth_prepass_rigid_packed_lod_culled
+                            } else {
+                                &self.pipeline_depth_prepass_rigid_culled
+                            }
                         };
-                        (&self.rigid_camera_bind_group, &self.rigid_vertex_buffer, p)
+                        let v = if batch.packed_lod {
+                            &self.packed_lod_vertex_buffer
+                        } else {
+                            &self.rigid_vertex_buffer
+                        };
+                        (&self.rigid_camera_bind_group, v, p)
                     } else {
                         let p = if batch.double_sided {
                             &self.pipeline_depth_prepass_double_sided
@@ -240,11 +277,25 @@ impl Gpu3D {
                         (&self.camera_bind_group, &self.vertex_buffer, p)
                     };
                     blend_prepass.set_bind_group(0, camera_bg, &[]);
+                    if batch.packed_lod {
+                        blend_prepass.set_index_buffer(
+                            self.packed_lod_index_buffer.slice(..),
+                            wgpu::IndexFormat::Uint32,
+                        );
+                    } else {
+                        blend_prepass.set_index_buffer(
+                            self.index_buffer.slice(..),
+                            wgpu::IndexFormat::Uint32,
+                        );
+                    }
                     blend_prepass.set_vertex_buffer(0, vertex_buf.slice(..));
                     blend_prepass.set_vertex_buffer(1, self.instance_transform_buffer.slice(..));
                     if batch.path == RenderPath3D::Skinned {
                         blend_prepass
                             .set_vertex_buffer(2, self.skinned_instance_meta_buffer.slice(..));
+                    } else {
+                        blend_prepass
+                            .set_vertex_buffer(2, self.rigid_instance_meta_buffer.slice(..));
                     }
                     blend_prepass.set_pipeline(pipeline);
                     current_state = Some(state);
@@ -356,7 +407,6 @@ impl Gpu3D {
             pass.set_bind_group(1, self.fallback_material_texture_bind_group(), &[]);
             pass.set_bind_group(2, &self.shadow_bind_group, &[]);
             pass.set_bind_group(3, &self.mesh_blend_bind_group, &[]);
-            pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
             let mut current_state_key = None;
             let mut current_texture_slot = MATERIAL_TEXTURE_NONE;
             for batch_indices in [
@@ -373,19 +423,34 @@ impl Gpu3D {
                             self.perf_counters.pipeline_switches.saturating_add(1);
                         if batch.path == RenderPath3D::Rigid {
                             pass.set_bind_group(0, &self.rigid_camera_bind_group, &[]);
-                            pass.set_vertex_buffer(0, self.rigid_vertex_buffer.slice(..));
-                            pass.set_vertex_buffer(3, self.rigid_instance_meta_buffer.slice(..));
+                            if batch.packed_lod {
+                                pass.set_index_buffer(
+                                    self.packed_lod_index_buffer.slice(..),
+                                    wgpu::IndexFormat::Uint32,
+                                );
+                                pass.set_vertex_buffer(0, self.packed_lod_vertex_buffer.slice(..));
+                            } else {
+                                pass.set_index_buffer(
+                                    self.index_buffer.slice(..),
+                                    wgpu::IndexFormat::Uint32,
+                                );
+                                pass.set_vertex_buffer(0, self.rigid_vertex_buffer.slice(..));
+                            }
+                            pass.set_vertex_buffer(2, self.rigid_instance_meta_buffer.slice(..));
                         } else {
                             pass.set_bind_group(0, &self.camera_bind_group, &[]);
+                            pass.set_index_buffer(
+                                self.index_buffer.slice(..),
+                                wgpu::IndexFormat::Uint32,
+                            );
                             pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-                            pass.set_vertex_buffer(3, self.skinned_instance_meta_buffer.slice(..));
+                            pass.set_vertex_buffer(2, self.skinned_instance_meta_buffer.slice(..));
                         }
                         self.perf_counters.camera_bind_group_switches = self
                             .perf_counters
                             .camera_bind_group_switches
                             .saturating_add(1);
                         pass.set_vertex_buffer(1, self.instance_transform_buffer.slice(..));
-                        pass.set_vertex_buffer(2, self.instance_material_buffer.slice(..));
                         current_state_key = Some(batch.state_key);
                     }
                     if current_texture_slot != batch.base_color_texture_slot {
@@ -447,8 +512,7 @@ impl Gpu3D {
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
-            blend_prepass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-            let mut current_state: Option<(RenderPath3D, bool)> = None;
+            let mut current_state: Option<(RenderPath3D, bool, bool)> = None;
             for (target_i, target_batch) in self.draw_batches.iter().enumerate() {
                 if !mesh_blend_receiver_matches(
                     source_i,
@@ -459,16 +523,33 @@ impl Gpu3D {
                 ) {
                     continue;
                 }
-                let state = (target_batch.path, target_batch.double_sided);
+                let state = (
+                    target_batch.path,
+                    target_batch.double_sided,
+                    target_batch.packed_lod,
+                );
                 if current_state != Some(state) {
                     let (camera_bg, vertex_buf, pipeline) =
                         if target_batch.path == RenderPath3D::Rigid {
                             let p = if target_batch.double_sided {
-                                &self.pipeline_depth_prepass_rigid_double_sided
+                                if target_batch.packed_lod {
+                                    &self.pipeline_depth_prepass_rigid_packed_lod_double_sided
+                                } else {
+                                    &self.pipeline_depth_prepass_rigid_double_sided
+                                }
                             } else {
-                                &self.pipeline_depth_prepass_rigid_culled
+                                if target_batch.packed_lod {
+                                    &self.pipeline_depth_prepass_rigid_packed_lod_culled
+                                } else {
+                                    &self.pipeline_depth_prepass_rigid_culled
+                                }
                             };
-                            (&self.rigid_camera_bind_group, &self.rigid_vertex_buffer, p)
+                            let v = if target_batch.packed_lod {
+                                &self.packed_lod_vertex_buffer
+                            } else {
+                                &self.rigid_vertex_buffer
+                            };
+                            (&self.rigid_camera_bind_group, v, p)
                         } else {
                             let p = if target_batch.double_sided {
                                 &self.pipeline_depth_prepass_double_sided
@@ -478,11 +559,25 @@ impl Gpu3D {
                             (&self.camera_bind_group, &self.vertex_buffer, p)
                         };
                     blend_prepass.set_bind_group(0, camera_bg, &[]);
+                    if target_batch.packed_lod {
+                        blend_prepass.set_index_buffer(
+                            self.packed_lod_index_buffer.slice(..),
+                            wgpu::IndexFormat::Uint32,
+                        );
+                    } else {
+                        blend_prepass.set_index_buffer(
+                            self.index_buffer.slice(..),
+                            wgpu::IndexFormat::Uint32,
+                        );
+                    }
                     blend_prepass.set_vertex_buffer(0, vertex_buf.slice(..));
                     blend_prepass.set_vertex_buffer(1, self.instance_transform_buffer.slice(..));
                     if target_batch.path == RenderPath3D::Skinned {
                         blend_prepass
                             .set_vertex_buffer(2, self.skinned_instance_meta_buffer.slice(..));
+                    } else {
+                        blend_prepass
+                            .set_vertex_buffer(2, self.rigid_instance_meta_buffer.slice(..));
                     }
                     blend_prepass.set_pipeline(pipeline);
                     current_state = Some(state);
@@ -534,19 +629,28 @@ impl Gpu3D {
             );
             blend_pass.set_bind_group(2, &self.shadow_bind_group, &[]);
             blend_pass.set_bind_group(3, &self.mesh_blend_bind_group, &[]);
-            blend_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
             blend_pass.set_pipeline(self.pipeline_for_batch(source_batch));
             if source_batch.path == RenderPath3D::Rigid {
                 blend_pass.set_bind_group(0, &self.rigid_camera_bind_group, &[]);
-                blend_pass.set_vertex_buffer(0, self.rigid_vertex_buffer.slice(..));
-                blend_pass.set_vertex_buffer(3, self.rigid_instance_meta_buffer.slice(..));
+                if source_batch.packed_lod {
+                    blend_pass.set_index_buffer(
+                        self.packed_lod_index_buffer.slice(..),
+                        wgpu::IndexFormat::Uint32,
+                    );
+                    blend_pass.set_vertex_buffer(0, self.packed_lod_vertex_buffer.slice(..));
+                } else {
+                    blend_pass
+                        .set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                    blend_pass.set_vertex_buffer(0, self.rigid_vertex_buffer.slice(..));
+                }
+                blend_pass.set_vertex_buffer(2, self.rigid_instance_meta_buffer.slice(..));
             } else {
                 blend_pass.set_bind_group(0, &self.camera_bind_group, &[]);
+                blend_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
                 blend_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-                blend_pass.set_vertex_buffer(3, self.skinned_instance_meta_buffer.slice(..));
+                blend_pass.set_vertex_buffer(2, self.skinned_instance_meta_buffer.slice(..));
             }
             blend_pass.set_vertex_buffer(1, self.instance_transform_buffer.slice(..));
-            blend_pass.set_vertex_buffer(2, self.instance_material_buffer.slice(..));
             if frustum_cull_active {
                 let offset = (source_i * std::mem::size_of::<DrawIndexedIndirectGpu>()) as u64;
                 blend_pass.draw_indexed_indirect(&self.indirect_buffer, offset);
@@ -686,20 +790,31 @@ fn draw_shadow_batches<'a>(
     let Some(rigid_shadow_camera_bg) = gpu.rigid_shadow_camera_bind_groups.get(camera_index) else {
         return;
     };
-    shadow_pass.set_index_buffer(gpu.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-    let mut current_state: Option<(RenderPath3D, bool)> = None;
+    let mut current_state: Option<(RenderPath3D, bool, bool)> = None;
     for &batch_index in &gpu.shadow_batch_indices {
         let batch = &gpu.draw_batches[batch_index];
-        let state = (batch.path, batch.double_sided);
+        let state = (batch.path, batch.double_sided, batch.packed_lod);
         if current_state != Some(state) {
             let (camera_bg, vertex_buf, pipeline) = if batch.path == RenderPath3D::Rigid {
                 (
                     rigid_shadow_camera_bg,
-                    &gpu.rigid_vertex_buffer,
-                    if batch.double_sided {
-                        &gpu.pipeline_shadow_depth_rigid_double_sided
+                    if batch.packed_lod {
+                        &gpu.packed_lod_vertex_buffer
                     } else {
-                        &gpu.pipeline_shadow_depth_rigid_culled
+                        &gpu.rigid_vertex_buffer
+                    },
+                    if batch.double_sided {
+                        if batch.packed_lod {
+                            &gpu.pipeline_shadow_depth_rigid_packed_lod_double_sided
+                        } else {
+                            &gpu.pipeline_shadow_depth_rigid_double_sided
+                        }
+                    } else {
+                        if batch.packed_lod {
+                            &gpu.pipeline_shadow_depth_rigid_packed_lod_culled
+                        } else {
+                            &gpu.pipeline_shadow_depth_rigid_culled
+                        }
                     },
                 )
             } else {
@@ -714,10 +829,20 @@ fn draw_shadow_batches<'a>(
                 )
             };
             shadow_pass.set_bind_group(0, camera_bg, &[]);
+            if batch.packed_lod {
+                shadow_pass.set_index_buffer(
+                    gpu.packed_lod_index_buffer.slice(..),
+                    wgpu::IndexFormat::Uint32,
+                );
+            } else {
+                shadow_pass.set_index_buffer(gpu.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+            }
             shadow_pass.set_vertex_buffer(0, vertex_buf.slice(..));
             shadow_pass.set_vertex_buffer(1, gpu.instance_transform_buffer.slice(..));
             if batch.path == RenderPath3D::Skinned {
                 shadow_pass.set_vertex_buffer(2, gpu.skinned_instance_meta_buffer.slice(..));
+            } else {
+                shadow_pass.set_vertex_buffer(2, gpu.rigid_instance_meta_buffer.slice(..));
             }
             shadow_pass.set_pipeline(pipeline);
             current_state = Some(state);

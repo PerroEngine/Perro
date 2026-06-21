@@ -56,6 +56,20 @@ pub fn create_mesh_shader_module_rigid(device: &wgpu::Device) -> wgpu::ShaderMod
 }
 
 #[inline]
+pub fn create_mesh_shader_module_rigid_packed_lod(device: &wgpu::Device) -> wgpu::ShaderModule {
+    device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("perro_mesh_instanced_rigid_packed_lod"),
+        source: wgpu::ShaderSource::Wgsl(
+            build_material_shader_with_prelude(
+                &build_packed_lod_rigid_prelude(),
+                regular::MATERIAL_STANDARD_WGSL,
+            )
+            .into(),
+        ),
+    })
+}
+
+#[inline]
 pub fn create_unlit_shader_module_rigid(device: &wgpu::Device) -> wgpu::ShaderModule {
     device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("perro_mesh_unlit_rigid"),
@@ -165,6 +179,65 @@ fn sanitize_reserved_meta_identifier(wgsl: &str) -> String {
     )
 }
 
+fn build_packed_lod_rigid_prelude() -> String {
+    regular::PRELUDE_RIGID_WGSL
+        .replace(
+            "@group(0) @binding(5)\nvar<storage, read> blend_shape_instances: array<BlendShapeInstance>;",
+            "@group(0) @binding(5)\nvar<storage, read> blend_shape_instances: array<BlendShapeInstance>;\n@group(0) @binding(6)\nvar<storage, read> packed_lod_params: array<PackedLodParam>;",
+        )
+        .replace(
+            "struct VertexInput {\n    @location(0) pos: vec3<f32>,",
+            "struct VertexInput {\n    @location(0) pos: vec4<f32>,",
+        )
+        .replace(
+            "    @location(13) custom_params: vec2<u32>,\n};",
+            "    @location(13) custom_params: vec2<u32>,\n    @location(14) packed_lod_param_id: u32,\n};",
+        )
+        .replace(
+            "struct BlendShapeDelta {\n    position_delta: vec4<f32>,\n    normal_delta: vec4<f32>,\n};",
+            "struct PackedLodParam {\n    pos_min: vec4<f32>,\n    pos_extent: vec4<f32>,\n    uv_min_extent: vec4<f32>,\n};\n\nstruct BlendShapeDelta {\n    position_delta: vec4<f32>,\n    normal_delta: vec4<f32>,\n};",
+        )
+        .replace("    var out_pos = v.pos;", "    var out_pos = v.pos.xyz;")
+        .replace(
+            "    return VertexInput(out_pos, vec4<f32>(normalize(out_normal), 0.0), v.uv);",
+            "    return VertexInput(vec4<f32>(out_pos, 0.0), vec4<f32>(normalize(out_normal), 0.0), v.uv);",
+        )
+        .replace(
+            "    let blended = apply_blend_shapes(v, vertex_index, instance_index);",
+            "    let packed_lod = packed_lod_params[inst.packed_lod_param_id];\n    var decoded_v = v;\n    decoded_v.pos = vec4<f32>(packed_lod.pos_min.xyz + v.pos.xyz * packed_lod.pos_extent.xyz, 0.0);\n    decoded_v.uv = packed_lod.uv_min_extent.xy + v.uv * packed_lod.uv_min_extent.zw;\n    let blended = apply_blend_shapes(decoded_v, vertex_index, instance_index);",
+        )
+        .replace(
+            "    let p = vec4<f32>(blended.pos, 1.0);",
+            "    let p = vec4<f32>(blended.pos.xyz, 1.0);",
+        )
+}
+
+fn build_packed_lod_depth_rigid_wgsl() -> String {
+    regular::DEPTH_PREPASS_RIGID_WGSL
+        .replace(
+            "@group(0) @binding(5)\nvar<storage, read> blend_shape_instances: array<BlendShapeInstance>;",
+            "@group(0) @binding(5)\nvar<storage, read> blend_shape_instances: array<BlendShapeInstance>;\n@group(0) @binding(6)\nvar<storage, read> packed_lod_params: array<PackedLodParam>;",
+        )
+        .replace(
+            "struct VertexInput {\n    @location(0) pos: vec3<f32>,\n};",
+            "struct VertexInput {\n    @location(0) pos: vec4<f32>,\n};",
+        )
+        .replace(
+            "struct InstanceInput {\n    @location(4) model_row_0: vec4<f32>,\n    @location(5) model_row_1: vec4<f32>,\n    @location(6) model_row_2: vec4<f32>,\n};",
+            "struct InstanceInput {\n    @location(4) model_row_0: vec4<f32>,\n    @location(5) model_row_1: vec4<f32>,\n    @location(6) model_row_2: vec4<f32>,\n    @location(14) packed_lod_param_id: u32,\n};",
+        )
+        .replace(
+            "struct BlendShapeDelta {\n    position_delta: vec4<f32>,\n    normal_delta: vec4<f32>,\n}",
+            "struct PackedLodParam {\n    pos_min: vec4<f32>,\n    pos_extent: vec4<f32>,\n    uv_min_extent: vec4<f32>,\n}\n\nstruct BlendShapeDelta {\n    position_delta: vec4<f32>,\n    normal_delta: vec4<f32>,\n}",
+        )
+        .replace("        return v.pos;", "        return v.pos.xyz;")
+        .replace("    var pos = v.pos;", "    var pos = v.pos.xyz;")
+        .replace(
+            "    let pos = apply_blend_shapes(v, vertex_index, instance_index);",
+            "    let packed_lod = packed_lod_params[inst.packed_lod_param_id];\n    var decoded_v = v;\n    decoded_v.pos = vec4<f32>(packed_lod.pos_min.xyz + v.pos.xyz * packed_lod.pos_extent.xyz, 0.0);\n    let pos = apply_blend_shapes(decoded_v, vertex_index, instance_index);",
+        )
+}
+
 #[inline]
 pub fn build_material_shader_with_prelude(prelude_wgsl: &str, material_wgsl: &str) -> String {
     build_material_shader_with_prelude_inner(prelude_wgsl, material_wgsl, false)
@@ -232,6 +305,16 @@ pub fn create_depth_prepass_shader_module_rigid(device: &wgpu::Device) -> wgpu::
 }
 
 #[inline]
+pub fn create_depth_prepass_shader_module_rigid_packed_lod(
+    device: &wgpu::Device,
+) -> wgpu::ShaderModule {
+    device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("perro_depth_prepass_rigid_packed_lod"),
+        source: wgpu::ShaderSource::Wgsl(build_packed_lod_depth_rigid_wgsl().into()),
+    })
+}
+
+#[inline]
 pub fn create_depth_prepass_shader_module_skinned(device: &wgpu::Device) -> wgpu::ShaderModule {
     device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("perro_depth_prepass_skinned"),
@@ -243,7 +326,9 @@ pub fn create_depth_prepass_shader_module_skinned(device: &wgpu::Device) -> wgpu
 pub fn create_multimesh_shader_module(device: &wgpu::Device) -> wgpu::ShaderModule {
     device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("perro_multimesh"),
-        source: wgpu::ShaderSource::Wgsl(regular::MULTIMESH_WGSL.into()),
+        source: wgpu::ShaderSource::Wgsl(
+            sanitize_reserved_meta_identifier(regular::MULTIMESH_WGSL).into(),
+        ),
     })
 }
 
@@ -838,7 +923,8 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
     #[test]
     fn multimesh_wgsl_parses() {
-        naga::front::wgsl::parse_str(regular::MULTIMESH_WGSL).expect("multimesh wgsl parses");
+        let wgsl = sanitize_reserved_meta_identifier(regular::MULTIMESH_WGSL);
+        naga::front::wgsl::parse_str(&wgsl).expect("multimesh wgsl parses");
     }
 
     #[test]

@@ -30,19 +30,8 @@ This resource module belongs to `ctx.res` and documents visual accessibility cal
 | Signature | `enable_colorblind_filter!(ctx.res.res, mode, strength)` |
 | Params | `ctx.res, mode, strength` |
 | Returns | `same as backing method` |
-| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = enable_colorblind_filter!(ctx.res, 0.0, 0.1);
-        let _ = value;
-    }
-});
-```
+| Use when | Use when script code needs this exact engine read or write. |
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `disable_colorblind_filter`
 
@@ -52,16 +41,6 @@ lifecycle!({
 | Signature | `disable_colorblind_filter!(ctx.res.res)` |
 | Params | `ctx.res` |
 | Returns | `same as backing method` |
-| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+| Use when | Use when script code needs this exact engine read or write. |
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = disable_colorblind_filter!(ctx.res);
-        let _ = value;
-    }
-});
-```

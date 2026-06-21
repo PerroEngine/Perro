@@ -5,25 +5,60 @@
 | Header | Link |
 | --- | --- |
 | Purpose | [Purpose](#purpose) |
+| Scripting Group | [Scripting Group](#scripting-group) |
 | Use Cases | [Use Cases](#use-cases) |
 | Example | [Example](#example) |
 | Reference | [Reference](#reference) |
 
 ## Purpose
 
-Use `Scripting Overview` when this feature, type group, file format, or workflow appears in game code or assets.
+Use this area for all script-authored game logic.
+
+This includes state, lifecycle hooks, custom methods, runtime node access, cross-script calls, input, resources, and `Variant` conversion.
+
+The book explains why Perro uses these shapes.
+
+The docs give exact macro/API paths and edge behavior.
+
+## Scripting Group
+
+| Task | Page |
+| --- | --- |
+| Write first script | [Project Script Modules](project_modules.md) |
+| Store per-node data | [Script State](state.md) |
+| Run engine callbacks | [Script Lifecycle](lifecycle.md) |
+| Add callable methods | [Script Methods](methods.md) |
+| Read/mutate nodes at runtime | [Runtime Nodes Module](contexts/runtime_modules/nodes.md) |
+| Query nodes | [Query System](query_system.md) |
+| Call self/cross-script methods | [Scripts Module](contexts/runtime_modules/scripts.md) |
+| Convert dynamic values | [Variant](variant.md) |
+| Read input | [Input API](contexts/input_api.md) |
+| Load/use resources | [Resource API](contexts/resource_api.md) |
 
 ## Use Cases
 
-Use the types, APIs, file formats, and workflows in this doc when the feature matches the game system you are building. Prefer `ctx.run` for runtime state, `ctx.res` for resource/data access, and `ctx.ipt` for input state.
+Use scripting docs when game code runs from a Perro script file under `res/**/*.rs`.
+
+Prefer:
+
+- `ctx.run` for runtime state, nodes, scenes, scripts, signals, time, and window calls
+- `ctx.res` for resource/data access
+- `ctx.ipt` for input state
+- `with_state!` / `with_state_mut!` for this script's typed state
+- `get_var!` / `set_var!` / `call_method!` for dynamic cross-script access
 
 ## Example
 
 ```rust
 lifecycle!({
     fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let dt = delta_time!(ctx.run);
-        let _ = dt;
+        if action_pressed!(ctx.ipt, "interact") {
+            for door in query!(ctx.run, all(tag["door"])) {
+                let ret = call_method!(ctx.run, door, method!("toggle"), params![]);
+                let opened = ret.parse::<bool>().unwrap_or(false);
+                log_info!("door {:?} open {}", door, opened);
+            }
+        }
     }
 });
 ```

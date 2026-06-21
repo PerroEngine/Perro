@@ -6,6 +6,7 @@ pub(super) struct DrawBatchPush {
     pub(super) instance_start: u32,
     pub(super) instance_count: u32,
     pub(super) double_sided: bool,
+    pub(super) packed_lod: bool,
     pub(super) material_kind: MaterialPipelineKind,
     pub(super) alpha_mode: u8,
     pub(super) base_color_texture_slot: u32,
@@ -27,6 +28,7 @@ pub(super) fn push_draw_batch(draw_batches: &mut Vec<DrawBatch>, batch: DrawBatc
         instance_start,
         instance_count,
         double_sided,
+        packed_lod,
         material_kind,
         alpha_mode,
         base_color_texture_slot,
@@ -43,8 +45,14 @@ pub(super) fn push_draw_batch(draw_batches: &mut Vec<DrawBatch>, batch: DrawBatc
     if instance_count == 0 {
         return;
     }
-    let state_key =
-        draw_batch_state_key(render_path, false, double_sided, alpha_mode, &material_kind);
+    let state_key = draw_batch_state_key(
+        render_path,
+        false,
+        double_sided,
+        alpha_mode,
+        packed_lod,
+        &material_kind,
+    );
     let render_state = render_state_key(
         state_key,
         base_color_texture_slot,
@@ -65,6 +73,7 @@ pub(super) fn push_draw_batch(draw_batches: &mut Vec<DrawBatch>, batch: DrawBatc
             && prev.mesh.base_vertex == mesh.base_vertex;
         let same_batch_state = prev.state_key == state_key
             && prev.path == render_path
+            && prev.packed_lod == packed_lod
             && prev.double_sided == double_sided
             && prev.material_kind == material_kind
             && prev.alpha_mode == alpha_mode
@@ -99,6 +108,7 @@ pub(super) fn push_draw_batch(draw_batches: &mut Vec<DrawBatch>, batch: DrawBatc
         instance_start,
         instance_count,
         path: render_path,
+        packed_lod,
         double_sided,
         material_kind,
         alpha_mode,
@@ -129,7 +139,6 @@ fn next_draw_batch_order(draw_batches: &[DrawBatch]) -> u32 {
 #[derive(Clone, Copy)]
 pub(super) struct BuiltInstanceParts {
     pub(super) transform: TransformInstanceGpu,
-    pub(super) material: MaterialInstanceGpu,
     pub(super) rigid_meta: RigidInstanceMetaGpu,
     pub(super) skinned_meta: SkinnedInstanceMetaGpu,
 }
@@ -143,6 +152,7 @@ pub(super) struct BuildInstanceArgs {
     pub(super) skeleton_count: u32,
     pub(super) custom_params_offset: u32,
     pub(super) custom_params_len: u32,
+    pub(super) packed_lod_param_id: u32,
     pub(super) receive_shadows: bool,
 }
 
@@ -200,18 +210,87 @@ fn pack_mesh_blend_params(blend: MeshBlendOptions3D) -> u32 {
 }
 
 pub(super) fn resolve_mesh_blends(draws: &[Draw3DInstance], out: &mut Vec<ResolvedMeshBlend>) {
+    const LAYER_BITS: usize = 32;
+    const MESH_BLEND_BUCKET_MIN: usize = 256;
+
     out.clear();
     out.resize(draws.len(), ResolvedMeshBlend::default());
+
+    if draws.len() < MESH_BLEND_BUCKET_MIN {
+        resolve_mesh_blends_quadratic(draws, out);
+        return;
+    }
+
+    let mut source_accept_counts = [[0u32; LAYER_BITS]; LAYER_BITS];
+    let mut source_accept_single = [[usize::MAX; LAYER_BITS]; LAYER_BITS];
+    let mut target_accept_counts = [[0u32; LAYER_BITS]; LAYER_BITS];
+    let mut target_accept_single = [[usize::MAX; LAYER_BITS]; LAYER_BITS];
+
+    for (index, draw) in draws.iter().enumerate() {
+        if !matches!(draw.kind, Draw3DKind::Mesh(_)) {
+            continue;
+        }
+        add_layer_pair_counts(
+            draw.blend.blend_layers.bits(),
+            !draw.blend.blend_mask.bits(),
+            index,
+            &mut target_accept_counts,
+            &mut target_accept_single,
+        );
+        if draw.blend.active() {
+            add_layer_pair_counts(
+                !draw.blend.blend_mask.bits(),
+                draw.blend.blend_layers.bits(),
+                index,
+                &mut source_accept_counts,
+                &mut source_accept_single,
+            );
+        }
+    }
+
+    for (index, draw) in draws.iter().enumerate() {
+        if !matches!(draw.kind, Draw3DKind::Mesh(_)) {
+            continue;
+        }
+        if layer_pair_has_other_or_self_interact(
+            draw.blend.blend_layers.bits(),
+            !draw.blend.blend_mask.bits(),
+            index,
+            draws,
+            &source_accept_counts,
+            &source_accept_single,
+        ) {
+            out[index].depth_receiver = true;
+        }
+    }
 
     for (index, draw) in draws.iter().enumerate() {
         if !draw.blend.active() || !matches!(draw.kind, Draw3DKind::Mesh(_)) {
             continue;
         }
-        let self_interacts = draw
-            .dense_multimesh
-            .as_ref()
-            .map(|dense| dense.instances.len() > 1)
-            .unwrap_or_else(|| draw.instance_mats.len() > 1);
+        if layer_pair_has_other_or_self_interact(
+            !draw.blend.blend_mask.bits(),
+            draw.blend.blend_layers.bits(),
+            index,
+            draws,
+            &target_accept_counts,
+            &target_accept_single,
+        ) {
+            out[index] = ResolvedMeshBlend {
+                packed_params: pack_mesh_blend_params(draw.blend),
+                packed_flags: pack_resolved_mesh_blend_flags(draw.blend),
+                depth_receiver: out[index].depth_receiver,
+            }
+        }
+    }
+}
+
+fn resolve_mesh_blends_quadratic(draws: &[Draw3DInstance], out: &mut [ResolvedMeshBlend]) {
+    for (index, draw) in draws.iter().enumerate() {
+        if !draw.blend.active() || !matches!(draw.kind, Draw3DKind::Mesh(_)) {
+            continue;
+        }
+        let self_interacts = draw_self_interacts(draw);
         let own_layers = draw.blend.blend_layers.bits();
         let mut target_found = false;
         for (target_index, target) in draws.iter().enumerate() {
@@ -237,6 +316,68 @@ pub(super) fn resolve_mesh_blends(draws: &[Draw3DInstance], out: &mut Vec<Resolv
             };
         }
     }
+}
+
+#[inline]
+fn add_layer_pair_counts(
+    outer_bits: u32,
+    inner_bits: u32,
+    index: usize,
+    counts: &mut [[u32; 32]; 32],
+    single: &mut [[usize; 32]; 32],
+) {
+    let mut outer = outer_bits;
+    while outer != 0 {
+        let outer_bit = outer.trailing_zeros() as usize;
+        outer &= outer - 1;
+        let mut inner = inner_bits;
+        while inner != 0 {
+            let inner_bit = inner.trailing_zeros() as usize;
+            inner &= inner - 1;
+            counts[outer_bit][inner_bit] = counts[outer_bit][inner_bit].saturating_add(1);
+            single[outer_bit][inner_bit] = index;
+        }
+    }
+}
+
+#[inline]
+fn layer_pair_has_other_or_self_interact(
+    outer_bits: u32,
+    inner_bits: u32,
+    index: usize,
+    draws: &[Draw3DInstance],
+    counts: &[[u32; 32]; 32],
+    single: &[[usize; 32]; 32],
+) -> bool {
+    let mut outer = outer_bits;
+    while outer != 0 {
+        let outer_bit = outer.trailing_zeros() as usize;
+        outer &= outer - 1;
+        let mut inner = inner_bits;
+        while inner != 0 {
+            let inner_bit = inner.trailing_zeros() as usize;
+            inner &= inner - 1;
+            let count = counts[outer_bit][inner_bit];
+            if count > 1 {
+                return true;
+            }
+            if count == 1 {
+                let source_index = single[outer_bit][inner_bit];
+                if source_index != index || draw_self_interacts(&draws[index]) {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
+#[inline]
+fn draw_self_interacts(draw: &Draw3DInstance) -> bool {
+    draw.dense_multimesh
+        .as_ref()
+        .map(|dense| dense.instances.len() > 1)
+        .unwrap_or_else(|| draw.instance_mats.len() > 1)
 }
 
 #[inline]
@@ -311,6 +452,7 @@ pub(super) fn build_instance(
         skeleton_count,
         custom_params_offset,
         custom_params_len,
+        packed_lod_param_id,
         receive_shadows,
     } = args;
     let (color, packed_pbr_params_0, packed_pbr_params_1, emissive_factor, debug_flags) =
@@ -395,33 +537,37 @@ pub(super) fn build_instance(
         0
     };
 
+    let material = MaterialInstanceGpu {
+        packed_color: pack_unorm4x8(color),
+        packed_pbr_params_0,
+        packed_pbr_params_1: packed_pbr_params_1 | packed_blend_params,
+        packed_emissive: pack_unorm4x8([
+            emissive_factor[0],
+            emissive_factor[1],
+            emissive_factor[2],
+            1.0,
+        ]),
+        packed_material_params: pack_material_params(
+            params.alpha_mode,
+            params.alpha_cutoff,
+            params.double_sided || mirrored_winding,
+            material_flags,
+        ),
+    };
+
     BuiltInstanceParts {
         transform: TransformInstanceGpu {
             model_row_0: [model[0][0], model[1][0], model[2][0], model[3][0]],
             model_row_1: [model[0][1], model[1][1], model[2][1], model[3][1]],
             model_row_2: [model[0][2], model[1][2], model[2][2], model[3][2]],
         },
-        material: MaterialInstanceGpu {
-            packed_color: pack_unorm4x8(color),
-            packed_pbr_params_0,
-            packed_pbr_params_1: packed_pbr_params_1 | packed_blend_params,
-            packed_emissive: pack_unorm4x8([
-                emissive_factor[0],
-                emissive_factor[1],
-                emissive_factor[2],
-                1.0,
-            ]),
-            packed_material_params: pack_material_params(
-                params.alpha_mode,
-                params.alpha_cutoff,
-                params.double_sided || mirrored_winding,
-                material_flags,
-            ),
-        },
         rigid_meta: RigidInstanceMetaGpu {
+            material,
             custom_params: [custom_params_offset, custom_params_len],
+            packed_lod_param_id,
         },
         skinned_meta: SkinnedInstanceMetaGpu {
+            material,
             skeleton_params: [
                 skeleton_start,
                 skeleton_count,
@@ -646,6 +792,23 @@ pub(super) fn draw_batches_sorted(batches: &[DrawBatch]) -> bool {
 }
 
 #[inline]
+fn multimesh_batch_sort_key(batch: &MultiMeshBatch) -> (bool, bool, u32, u32) {
+    (
+        batch.mesh_blend,
+        batch.double_sided,
+        batch.mesh.index_start,
+        batch.draw_param_index,
+    )
+}
+
+#[inline]
+pub(super) fn multimesh_batches_sorted(batches: &[MultiMeshBatch]) -> bool {
+    batches
+        .windows(2)
+        .all(|pair| multimesh_batch_sort_key(&pair[0]) <= multimesh_batch_sort_key(&pair[1]))
+}
+
+#[inline]
 pub(super) fn material_pipeline_kind_rank(kind: &MaterialPipelineKind) -> u8 {
     match kind {
         MaterialPipelineKind::Standard => 0,
@@ -661,6 +824,7 @@ pub(super) fn draw_batch_state_key(
     draw_on_top: bool,
     double_sided: bool,
     alpha_mode: u8,
+    packed_lod: bool,
     material_kind: &MaterialPipelineKind,
 ) -> u64 {
     let path_bits = match path {
@@ -671,11 +835,12 @@ pub(super) fn draw_batch_state_key(
     let sided_bits = u64::from(double_sided) << 2;
     let alpha_bits = u64::from(alpha_mode == 2) << 3;
     let rank_bits = (material_pipeline_kind_rank(material_kind) as u64) << 4;
+    let packed_bits = u64::from(packed_lod) << 8;
     let custom_bits = match material_kind {
         MaterialPipelineKind::Custom(token) => (*token as u64) << 9,
         _ => 0u64,
     };
-    path_bits | top_bits | sided_bits | alpha_bits | rank_bits | custom_bits
+    path_bits | top_bits | sided_bits | alpha_bits | rank_bits | packed_bits | custom_bits
 }
 
 #[inline]
@@ -923,6 +1088,28 @@ mod tests {
     }
 
     #[test]
+    fn blend_resolve_bucket_path_handles_large_sparse_layers() {
+        let mut draws = Vec::new();
+        for i in 0..300 {
+            draws.push(draw(
+                i,
+                BitMask::with([((i % 8) + 1) as u8]),
+                BitMask::NONE,
+                1,
+            ));
+        }
+        let mut out = Vec::new();
+        resolve_mesh_blends(&draws, &mut out);
+
+        assert_eq!(out.len(), draws.len());
+        assert!(out.iter().any(|blend| resolved_mesh_blend_active(*blend)));
+        assert!(
+            out.iter()
+                .any(|blend| resolved_mesh_blend_depth_receiver(*blend))
+        );
+    }
+
+    #[test]
     fn blend_resolve_preserves_normal_blending_flag() {
         let mut draws = [
             draw(1, BitMask::with([1]), BitMask::NONE, 1),
@@ -998,6 +1185,7 @@ mod tests {
             skeleton_count: 0,
             custom_params_offset: 0,
             custom_params_len: 0,
+            packed_lod_param_id: 0,
             receive_shadows: true,
         };
         let built = build_instance(
@@ -1005,7 +1193,7 @@ mod tests {
             &material,
             base_args,
         );
-        let flags = (built.material.packed_material_params >> 3) & 0x1fff;
+        let flags = (built.rigid_meta.material.packed_material_params >> 3) & 0x1fff;
         assert_ne!(flags & MATERIAL_FLAG_MESH_BLEND, 0);
         assert_ne!(flags & MATERIAL_FLAG_NORMAL_BLEND, 0);
 
@@ -1018,7 +1206,7 @@ mod tests {
             ..base_args
         };
         let built = build_instance(glam::Mat4::IDENTITY.to_cols_array_2d(), &material, inactive);
-        let flags = (built.material.packed_material_params >> 3) & 0x1fff;
+        let flags = (built.rigid_meta.material.packed_material_params >> 3) & 0x1fff;
         assert_eq!(flags & MATERIAL_FLAG_NORMAL_BLEND, 0);
     }
 
@@ -1040,10 +1228,11 @@ mod tests {
                 skeleton_count: 0,
                 custom_params_offset: 0,
                 custom_params_len: 0,
+                packed_lod_param_id: 0,
                 receive_shadows: true,
             },
         );
-        let flags = (built.material.packed_material_params >> 3) & 0x1fff;
+        let flags = (built.rigid_meta.material.packed_material_params >> 3) & 0x1fff;
         assert_eq!(flags & MATERIAL_FLAG_MESH_BLEND, 0);
         assert_ne!(flags & MATERIAL_FLAG_NORMAL_BLEND, 0);
     }
@@ -1059,6 +1248,7 @@ mod tests {
             skeleton_count: 0,
             custom_params_offset: 0,
             custom_params_len: 0,
+            packed_lod_param_id: 0,
             receive_shadows: true,
         };
         let odd = build_instance(
@@ -1066,17 +1256,23 @@ mod tests {
             &material,
             args,
         );
-        let odd_flags = (odd.material.packed_material_params >> 3) & 0x1fff;
+        let odd_flags = (odd.rigid_meta.material.packed_material_params >> 3) & 0x1fff;
         assert_ne!(odd_flags & MATERIAL_FLAG_MIRRORED_WINDING, 0);
-        assert_ne!((odd.material.packed_material_params >> 2) & 0x1, 0);
+        assert_ne!(
+            (odd.rigid_meta.material.packed_material_params >> 2) & 0x1,
+            0
+        );
 
         let even = build_instance(
             glam::Mat4::from_scale(glam::Vec3::new(-1.0, -1.0, 1.0)).to_cols_array_2d(),
             &material,
             args,
         );
-        let even_flags = (even.material.packed_material_params >> 3) & 0x1fff;
+        let even_flags = (even.rigid_meta.material.packed_material_params >> 3) & 0x1fff;
         assert_eq!(even_flags & MATERIAL_FLAG_MIRRORED_WINDING, 0);
-        assert_eq!((even.material.packed_material_params >> 2) & 0x1, 0);
+        assert_eq!(
+            (even.rigid_meta.material.packed_material_params >> 2) & 0x1,
+            0
+        );
     }
 }

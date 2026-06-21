@@ -44,18 +44,7 @@ lifecycle!({
 | Params | `&self, key: KeyCode` |
 | Returns | `bool` |
 | Use when | Use when code branches on current state or a one-frame state edge. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.ipt.Keys().down(KeyCode::Space);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `pressed`
 
@@ -66,18 +55,7 @@ lifecycle!({
 | Params | `&self, key: KeyCode` |
 | Returns | `bool` |
 | Use when | Use when code branches on current state or a one-frame state edge. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.ipt.Keys().pressed(KeyCode::Space);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `released`
 
@@ -88,18 +66,7 @@ lifecycle!({
 | Params | `&self, key: KeyCode` |
 | Returns | `bool` |
 | Use when | Use when code must release, remove, stop, or disconnect existing engine state. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.ipt.Keys().released(KeyCode::Space);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `key_released`
 
@@ -112,13 +79,3 @@ lifecycle!({
 | Use when | Use when gameplay needs a one-frame input edge, such as jump, confirm, cancel, or release. |
 | Fails when / edge behavior | Missing device slots return `None`, `false`, or a zero vector depending on the macro return type. Command macros queue work when an input command buffer exists. |
 
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = key_released!(ctx.ipt, KeyCode::Space);
-        let _ = value;
-    }
-});
-```

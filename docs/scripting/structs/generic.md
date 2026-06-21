@@ -120,30 +120,6 @@ Other engine math structs already use vectorized paths through `glam` where poss
 
 `Vector2`, `Vector3`, `Vector4`, `Quaternion`, `Transform2D`, and `Transform3D` route hot float math through glam-backed values.
 
-Example:
-
-```rust
-let a = Matrix::<4, 4>::identity();
-let b = Matrix::<4, 4>::new([
-    [1.0, 0.0, 0.0, 4.0],
-    [0.0, 1.0, 0.0, 5.0],
-    [0.0, 0.0, 1.0, 6.0],
-    [0.0, 0.0, 0.0, 1.0],
-]);
-
-let c = (a * b) * 0.5;
-
-let index = Matrix::<4, 4>::flat_index(1, 2).unwrap();
-let row_col = Matrix::<4, 4>::row_col(index).unwrap();
-let value = c.get(row_col.0, row_col.1).copied().unwrap_or_default();
-
-let mut packed = [0.0; 16];
-c.write_packed(&mut packed).unwrap();
-
-let variant = Variant::from(c);
-let parsed = variant.parse::<Matrix<4, 4>>().unwrap();
-```
-
 Grid shape and checked access:
 
 ```rust

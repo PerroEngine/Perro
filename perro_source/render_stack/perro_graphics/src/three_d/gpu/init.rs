@@ -37,6 +37,7 @@ impl Gpu3D {
         let shader_unlit = create_unlit_shader_module_skinned(device);
         let shader_toon = create_toon_shader_module_skinned(device);
         let shader_rigid = create_mesh_shader_module_rigid(device);
+        let shader_rigid_packed_lod = create_mesh_shader_module_rigid_packed_lod(device);
         let shader_rigid_unlit = create_unlit_shader_module_rigid(device);
         let shader_rigid_toon = create_toon_shader_module_rigid(device);
         let shader_multimesh = create_multimesh_shader_module(device);
@@ -201,6 +202,16 @@ impl Gpu3D {
                     },
                     count: None,
                 },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 6,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
             ],
         });
         let multimesh_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -251,6 +262,16 @@ impl Gpu3D {
                 },
                 wgpu::BindGroupLayoutEntry {
                     binding: 4,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 5,
                     visibility: wgpu::ShaderStages::VERTEX,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Storage { read_only: true },
@@ -488,6 +509,13 @@ impl Gpu3D {
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
+        let packed_lod_param_capacity = 1usize;
+        let packed_lod_param_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("perro_packed_lod_params"),
+            size: std::mem::size_of::<PackedLodParamGpu>() as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
         let multimesh_draw_params_capacity = 256usize;
         let multimesh_draw_params_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("perro_multimesh_draw_params"),
@@ -566,6 +594,10 @@ impl Gpu3D {
                     binding: 5,
                     resource: blend_shape_instance_meta_buffer.as_entire_binding(),
                 },
+                wgpu::BindGroupEntry {
+                    binding: 6,
+                    resource: packed_lod_param_buffer.as_entire_binding(),
+                },
             ],
         });
         let shadow_camera_bind_groups: Vec<_> = shadow_camera_buffers
@@ -637,6 +669,10 @@ impl Gpu3D {
                         wgpu::BindGroupEntry {
                             binding: 5,
                             resource: blend_shape_instance_meta_buffer.as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 6,
+                            resource: packed_lod_param_buffer.as_entire_binding(),
                         },
                     ],
                 })
@@ -882,6 +918,38 @@ impl Gpu3D {
             sample_count,
             None,
         );
+        let pipeline_rigid_packed_lod_culled = create_pipeline_rigid_packed_lod(
+            device,
+            &rigid_pipeline_layout,
+            &shader_rigid_packed_lod,
+            color_format,
+            sample_count,
+            Some(wgpu::Face::Back),
+        );
+        let pipeline_rigid_packed_lod_double_sided = create_pipeline_rigid_packed_lod(
+            device,
+            &rigid_pipeline_layout,
+            &shader_rigid_packed_lod,
+            color_format,
+            sample_count,
+            None,
+        );
+        let pipeline_rigid_packed_lod_blend_culled = create_pipeline_rigid_packed_lod_blend(
+            device,
+            &rigid_pipeline_layout,
+            &shader_rigid_packed_lod,
+            color_format,
+            sample_count,
+            Some(wgpu::Face::Back),
+        );
+        let pipeline_rigid_packed_lod_blend_double_sided = create_pipeline_rigid_packed_lod_blend(
+            device,
+            &rigid_pipeline_layout,
+            &shader_rigid_packed_lod,
+            color_format,
+            sample_count,
+            None,
+        );
         let pipeline_rigid_unlit_culled = create_pipeline_rigid(
             device,
             &rigid_pipeline_layout,
@@ -995,6 +1063,8 @@ impl Gpu3D {
             None,
         );
         let depth_prepass_shader_rigid = create_depth_prepass_shader_module_rigid(device);
+        let depth_prepass_shader_rigid_packed_lod =
+            create_depth_prepass_shader_module_rigid_packed_lod(device);
         let depth_prepass_shader_skinned = create_depth_prepass_shader_module_skinned(device);
         let pipeline_depth_prepass_culled = create_depth_prepass_pipeline_skinned(
             device,
@@ -1020,6 +1090,20 @@ impl Gpu3D {
             &depth_prepass_shader_rigid,
             None,
         );
+        let pipeline_depth_prepass_rigid_packed_lod_culled =
+            create_depth_prepass_pipeline_rigid_packed_lod(
+                device,
+                &rigid_depth_pipeline_layout,
+                &depth_prepass_shader_rigid_packed_lod,
+                Some(wgpu::Face::Back),
+            );
+        let pipeline_depth_prepass_rigid_packed_lod_double_sided =
+            create_depth_prepass_pipeline_rigid_packed_lod(
+                device,
+                &rigid_depth_pipeline_layout,
+                &depth_prepass_shader_rigid_packed_lod,
+                None,
+            );
         let pipeline_shadow_depth_culled = create_shadow_depth_pipeline_skinned(
             device,
             &depth_pipeline_layout,
@@ -1044,25 +1128,35 @@ impl Gpu3D {
             &depth_prepass_shader_rigid,
             None,
         );
+        let pipeline_shadow_depth_rigid_packed_lod_culled =
+            create_shadow_depth_pipeline_rigid_packed_lod(
+                device,
+                &rigid_depth_pipeline_layout,
+                &depth_prepass_shader_rigid_packed_lod,
+                Some(wgpu::Face::Back),
+            );
+        let pipeline_shadow_depth_rigid_packed_lod_double_sided =
+            create_shadow_depth_pipeline_rigid_packed_lod(
+                device,
+                &rigid_depth_pipeline_layout,
+                &depth_prepass_shader_rigid_packed_lod,
+                None,
+            );
 
         let (vertices, indices, builtin_mesh_ranges, builtin_meshlets) =
             build_builtin_mesh_buffer();
         let builtin_mesh_bounds =
             compute_builtin_mesh_bounds(&vertices, &indices, &builtin_mesh_ranges);
-        let rigid_vertices: Vec<RigidMeshVertex> = vertices
-            .iter()
-            .map(|v| RigidMeshVertex {
-                pos: v.pos,
-                normal: v.normal,
-                uv: v.uv,
-            })
-            .collect();
+        let skinned_vertices: Vec<SkinnedMeshVertex> =
+            vertices.iter().map(pack_skinned_mesh_vertex).collect();
+        let rigid_vertices: Vec<RigidMeshVertex> =
+            vertices.iter().map(pack_rigid_mesh_vertex).collect();
         let vertex_capacity = vertices.len().max(1);
         let rigid_vertex_capacity = rigid_vertices.len().max(1);
         let index_capacity = indices.len().max(1);
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("perro_builtin_mesh_vertices"),
-            contents: bytemuck::cast_slice(&vertices),
+            contents: bytemuck::cast_slice(&skinned_vertices),
             usage: wgpu::BufferUsages::VERTEX
                 | wgpu::BufferUsages::COPY_DST
                 | wgpu::BufferUsages::COPY_SRC,
@@ -1081,19 +1175,30 @@ impl Gpu3D {
                 | wgpu::BufferUsages::COPY_DST
                 | wgpu::BufferUsages::COPY_SRC,
         });
+        let packed_lod_vertex_capacity = 1usize;
+        let packed_lod_vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("perro_packed_lod_vertices_rigid"),
+            size: std::mem::size_of::<PackedRigidLodVertex>() as u64,
+            usage: wgpu::BufferUsages::VERTEX
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
+            mapped_at_creation: false,
+        });
+        let packed_lod_index_capacity = 1usize;
+        let packed_lod_index_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("perro_packed_lod_indices"),
+            size: std::mem::size_of::<u32>() as u64,
+            usage: wgpu::BufferUsages::INDEX
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
+            mapped_at_creation: false,
+        });
 
         let instance_transform_capacity = 256usize;
         let instance_transform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("perro_mesh_instance_transforms"),
             size: (instance_transform_capacity * std::mem::size_of::<TransformInstanceGpu>())
                 as u64,
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        let instance_material_capacity = 256usize;
-        let instance_material_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("perro_mesh_instance_materials"),
-            size: (instance_material_capacity * std::mem::size_of::<MaterialInstanceGpu>()) as u64,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -1254,6 +1359,10 @@ impl Gpu3D {
                 wgpu::BindGroupEntry {
                     binding: 4,
                     resource: blend_shape_weight_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: blend_shape_instance_meta_buffer.as_entire_binding(),
                 },
             ],
         });
@@ -1457,6 +1566,10 @@ impl Gpu3D {
             pipeline_rigid_double_sided,
             pipeline_rigid_blend_culled,
             pipeline_rigid_blend_double_sided,
+            pipeline_rigid_packed_lod_culled,
+            pipeline_rigid_packed_lod_double_sided,
+            pipeline_rigid_packed_lod_blend_culled,
+            pipeline_rigid_packed_lod_blend_double_sided,
             pipeline_rigid_unlit_culled,
             pipeline_rigid_unlit_double_sided,
             pipeline_rigid_unlit_blend_culled,
@@ -1485,10 +1598,14 @@ impl Gpu3D {
             pipeline_depth_prepass_double_sided,
             pipeline_depth_prepass_rigid_culled,
             pipeline_depth_prepass_rigid_double_sided,
+            pipeline_depth_prepass_rigid_packed_lod_culled,
+            pipeline_depth_prepass_rigid_packed_lod_double_sided,
             pipeline_shadow_depth_culled,
             pipeline_shadow_depth_double_sided,
             pipeline_shadow_depth_rigid_culled,
             pipeline_shadow_depth_rigid_double_sided,
+            pipeline_shadow_depth_rigid_packed_lod_culled,
+            pipeline_shadow_depth_rigid_packed_lod_double_sided,
             pipeline_multimesh_culled,
             pipeline_multimesh_double_sided,
             pipeline_multimesh_blend_culled,
@@ -1540,9 +1657,6 @@ impl Gpu3D {
             instance_transform_buffer,
             instance_transform_capacity,
             staged_instance_transforms: Vec::new(),
-            instance_material_buffer,
-            instance_material_capacity,
-            staged_instance_materials: Vec::new(),
             rigid_instance_meta_buffer,
             rigid_instance_meta_capacity,
             staged_rigid_instance_meta: Vec::new(),
@@ -1558,6 +1672,9 @@ impl Gpu3D {
             blend_shape_instance_meta_buffer,
             blend_shape_instance_meta_capacity,
             staged_blend_shape_instance_meta: Vec::new(),
+            packed_lod_param_buffer,
+            packed_lod_param_capacity,
+            packed_lod_params: Vec::new(),
             multimesh_bind_group,
             multimesh_draw_params_buffer,
             multimesh_draw_params_capacity,
@@ -1609,15 +1726,21 @@ impl Gpu3D {
             last_sky: None,
             last_sky_time_seconds: -1.0,
             sky_enabled: false,
-            mesh_vertices: vertices,
+            mesh_vertices: skinned_vertices,
             rigid_mesh_vertices: rigid_vertices,
+            packed_lod_vertices: Vec::new(),
             mesh_indices: indices,
+            packed_lod_indices: Vec::new(),
             vertex_buffer,
             rigid_vertex_buffer,
+            packed_lod_vertex_buffer,
             index_buffer,
+            packed_lod_index_buffer,
             vertex_capacity,
             rigid_vertex_capacity,
+            packed_lod_vertex_capacity,
             index_capacity,
+            packed_lod_index_capacity,
             builtin_mesh_ranges,
             builtin_mesh_bounds,
             builtin_meshlets,

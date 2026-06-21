@@ -7,13 +7,15 @@ use super::{
     },
     shaders::{
         build_custom_material_shader_with_prelude, create_depth_prepass_shader_module_rigid,
+        create_depth_prepass_shader_module_rigid_packed_lod,
         create_depth_prepass_shader_module_skinned, create_frustum_cull_shader_module,
         create_hiz_depth_copy_shader_module, create_hiz_downsample_shader_module,
         create_hiz_occlusion_cull_shader_module, create_mesh_shader_module_rigid,
-        create_mesh_shader_module_skinned, create_multimesh_shader_module,
-        create_sky_shader_module, create_sky_shader_module_from_source,
-        create_toon_shader_module_rigid, create_toon_shader_module_skinned,
-        create_unlit_shader_module_rigid, create_unlit_shader_module_skinned,
+        create_mesh_shader_module_rigid_packed_lod, create_mesh_shader_module_skinned,
+        create_multimesh_shader_module, create_sky_shader_module,
+        create_sky_shader_module_from_source, create_toon_shader_module_rigid,
+        create_toon_shader_module_skinned, create_unlit_shader_module_rigid,
+        create_unlit_shader_module_skinned,
     },
 };
 use crate::backend::{
@@ -25,7 +27,7 @@ use bytemuck::{Pod, Zeroable};
 use glam::{Mat4, Quat, Vec3, Vec4};
 use mesh_presets::build_builtin_mesh_buffer;
 use perro_graphics_assets::{
-    DecodedLod, DecodedMesh, DecodedMeshlet, MeshRange, MeshVertex,
+    DecodedLod, DecodedMesh, DecodedMeshlet, MeshRange, MeshVertex as DecodedMeshVertex,
     gltf_texture_source_from_mesh_source, load_mesh_from_source,
     load_mesh_from_source_no_dynamic_lods, load_texture_rgba,
 };
@@ -47,6 +49,8 @@ use std::{
 };
 use wgpu::util::DeviceExt;
 
+type MeshVertex = DecodedMeshVertex;
+
 mod mesh_presets;
 #[path = "gpu/paths/multimesh.rs"]
 mod multimesh_path;
@@ -59,8 +63,10 @@ mod texture_cache;
 
 use multimesh_path::{create_multimesh_blend_pipeline, create_multimesh_pipeline, pack_unorm4x8};
 use rigid_path::{
-    create_depth_prepass_pipeline_rigid, create_pipeline_overlay_rigid, create_pipeline_rigid,
-    create_pipeline_rigid_blend, create_shadow_depth_pipeline_rigid,
+    create_depth_prepass_pipeline_rigid, create_depth_prepass_pipeline_rigid_packed_lod,
+    create_pipeline_overlay_rigid, create_pipeline_rigid, create_pipeline_rigid_blend,
+    create_pipeline_rigid_packed_lod, create_pipeline_rigid_packed_lod_blend,
+    create_shadow_depth_pipeline_rigid, create_shadow_depth_pipeline_rigid_packed_lod,
 };
 use skinned_path::{
     create_depth_prepass_pipeline_skinned, create_pipeline_overlay_skinned,
@@ -200,8 +206,34 @@ struct SpotLightGpu {
 #[derive(Clone, Copy, Pod, Zeroable)]
 struct RigidMeshVertex {
     pos: [f32; 3],
-    normal: [f32; 3],
+    normal: [i16; 4],
     uv: [f32; 2],
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct PackedRigidLodVertex {
+    pos: [u16; 4],
+    normal: [i8; 4],
+    uv: [u16; 2],
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct PackedLodParamGpu {
+    pos_min: [f32; 4],
+    pos_extent: [f32; 4],
+    uv_min_extent: [f32; 4],
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct SkinnedMeshVertex {
+    pos: [f32; 3],
+    normal: [i16; 4],
+    uv: [f32; 2],
+    joints: [u16; 4],
+    weights: perro_structs::UnitVector4,
 }
 
 #[repr(C)]
@@ -227,12 +259,15 @@ const MATERIAL_FLAG_MIRRORED_WINDING: u32 = 1u32 << 5;
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
 struct RigidInstanceMetaGpu {
+    material: MaterialInstanceGpu,
     custom_params: [u32; 2], // custom_params_offset, custom_params_len
+    packed_lod_param_id: u32,
 }
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
 struct SkinnedInstanceMetaGpu {
+    material: MaterialInstanceGpu,
     skeleton_params: [u32; 4], // start, count, custom_params_offset, custom_params_len
 }
 
@@ -240,10 +275,9 @@ struct SkinnedInstanceMetaGpu {
 #[derive(Clone, Copy, Pod, Zeroable)]
 struct MultiMeshInstanceGpu {
     position: [f32; 3],
-    rotation: [f32; 4],
+    rotation: [i16; 4],
     draw_id: u32,
-    weight_range: [u32; 4],
-    shape_range: [u32; 4],
+    blend_meta_id: u32,
 }
 
 #[repr(C)]
@@ -270,6 +304,74 @@ struct BlendShapeDeltaGpu {
 struct BlendShapeInstanceMetaGpu {
     weight_range: [u32; 4], // weight_start, weight_count, reserved, reserved
     shape_range: [u32; 4],  // delta_start, target_count, vertex_start, vertex_count
+}
+
+#[inline]
+fn pack_snorm16(v: f32) -> i16 {
+    (v.clamp(-1.0, 1.0) * 32767.0).round() as i16
+}
+
+#[inline]
+fn pack_normal_snorm16x4(normal: [f32; 3]) -> [i16; 4] {
+    [
+        pack_snorm16(normal[0]),
+        pack_snorm16(normal[1]),
+        pack_snorm16(normal[2]),
+        0,
+    ]
+}
+
+#[inline]
+fn pack_quat_snorm16x4(rotation: [f32; 4]) -> [i16; 4] {
+    [
+        pack_snorm16(rotation[0]),
+        pack_snorm16(rotation[1]),
+        pack_snorm16(rotation[2]),
+        pack_snorm16(rotation[3]),
+    ]
+}
+
+#[inline]
+fn pack_unorm16_local(value: f32, min: f32, extent: f32) -> u16 {
+    if extent.abs() <= f32::EPSILON {
+        return 0;
+    }
+    (((value - min) / extent).clamp(0.0, 1.0) * 65535.0).round() as u16
+}
+
+#[inline]
+fn pack_snorm8(v: f32) -> i8 {
+    (v.clamp(-1.0, 1.0) * 127.0).round() as i8
+}
+
+#[inline]
+fn pack_normal_snorm8x4(normal: [f32; 3]) -> [i8; 4] {
+    [
+        pack_snorm8(normal[0]),
+        pack_snorm8(normal[1]),
+        pack_snorm8(normal[2]),
+        0,
+    ]
+}
+
+#[inline]
+fn pack_rigid_mesh_vertex(v: &DecodedMeshVertex) -> RigidMeshVertex {
+    RigidMeshVertex {
+        pos: v.pos,
+        normal: pack_normal_snorm16x4(v.normal),
+        uv: v.uv,
+    }
+}
+
+#[inline]
+fn pack_skinned_mesh_vertex(v: &DecodedMeshVertex) -> SkinnedMeshVertex {
+    SkinnedMeshVertex {
+        pos: v.pos,
+        normal: pack_normal_snorm16x4(v.normal),
+        uv: v.uv,
+        joints: v.joints,
+        weights: v.weights,
+    }
 }
 
 #[repr(C)]
@@ -347,6 +449,10 @@ pub struct Gpu3D {
     pipeline_rigid_double_sided: wgpu::RenderPipeline,
     pipeline_rigid_blend_culled: wgpu::RenderPipeline,
     pipeline_rigid_blend_double_sided: wgpu::RenderPipeline,
+    pipeline_rigid_packed_lod_culled: wgpu::RenderPipeline,
+    pipeline_rigid_packed_lod_double_sided: wgpu::RenderPipeline,
+    pipeline_rigid_packed_lod_blend_culled: wgpu::RenderPipeline,
+    pipeline_rigid_packed_lod_blend_double_sided: wgpu::RenderPipeline,
     pipeline_rigid_unlit_culled: wgpu::RenderPipeline,
     pipeline_rigid_unlit_double_sided: wgpu::RenderPipeline,
     pipeline_rigid_unlit_blend_culled: wgpu::RenderPipeline,
@@ -375,10 +481,14 @@ pub struct Gpu3D {
     pipeline_depth_prepass_double_sided: wgpu::RenderPipeline,
     pipeline_depth_prepass_rigid_culled: wgpu::RenderPipeline,
     pipeline_depth_prepass_rigid_double_sided: wgpu::RenderPipeline,
+    pipeline_depth_prepass_rigid_packed_lod_culled: wgpu::RenderPipeline,
+    pipeline_depth_prepass_rigid_packed_lod_double_sided: wgpu::RenderPipeline,
     pipeline_shadow_depth_culled: wgpu::RenderPipeline,
     pipeline_shadow_depth_double_sided: wgpu::RenderPipeline,
     pipeline_shadow_depth_rigid_culled: wgpu::RenderPipeline,
     pipeline_shadow_depth_rigid_double_sided: wgpu::RenderPipeline,
+    pipeline_shadow_depth_rigid_packed_lod_culled: wgpu::RenderPipeline,
+    pipeline_shadow_depth_rigid_packed_lod_double_sided: wgpu::RenderPipeline,
     pipeline_multimesh_culled: wgpu::RenderPipeline,
     pipeline_multimesh_double_sided: wgpu::RenderPipeline,
     pipeline_multimesh_blend_culled: wgpu::RenderPipeline,
@@ -434,9 +544,6 @@ pub struct Gpu3D {
     instance_transform_buffer: wgpu::Buffer,
     instance_transform_capacity: usize,
     staged_instance_transforms: Vec<TransformInstanceGpu>,
-    instance_material_buffer: wgpu::Buffer,
-    instance_material_capacity: usize,
-    staged_instance_materials: Vec<MaterialInstanceGpu>,
     rigid_instance_meta_buffer: wgpu::Buffer,
     rigid_instance_meta_capacity: usize,
     staged_rigid_instance_meta: Vec<RigidInstanceMetaGpu>,
@@ -452,6 +559,9 @@ pub struct Gpu3D {
     blend_shape_instance_meta_buffer: wgpu::Buffer,
     blend_shape_instance_meta_capacity: usize,
     staged_blend_shape_instance_meta: Vec<BlendShapeInstanceMetaGpu>,
+    packed_lod_param_buffer: wgpu::Buffer,
+    packed_lod_param_capacity: usize,
+    packed_lod_params: Vec<PackedLodParamGpu>,
     multimesh_bind_group: wgpu::BindGroup,
     multimesh_draw_params_buffer: wgpu::Buffer,
     multimesh_draw_params_capacity: usize,
@@ -485,7 +595,7 @@ pub struct Gpu3D {
     depth_prepass_batch_indices: Vec<usize>,
     mesh_blend_depth_batch_indices: Vec<usize>,
     has_shadow_casters: bool,
-    surface_entries_scratch: Vec<(MeshRange, Material3D)>,
+    surface_entries_scratch: Vec<SurfaceEntry3D>,
     mesh_blend_scratch: Vec<ResolvedMeshBlend>,
     last_draws: Vec<Draw3DInstance>,
     last_draws_revision: u64,
@@ -503,15 +613,21 @@ pub struct Gpu3D {
     last_sky: Option<SkyUniform>,
     last_sky_time_seconds: f32,
     sky_enabled: bool,
-    mesh_vertices: Vec<MeshVertex>,
+    mesh_vertices: Vec<SkinnedMeshVertex>,
     rigid_mesh_vertices: Vec<RigidMeshVertex>,
+    packed_lod_vertices: Vec<PackedRigidLodVertex>,
     mesh_indices: Vec<u32>,
+    packed_lod_indices: Vec<u32>,
     vertex_buffer: wgpu::Buffer,
     rigid_vertex_buffer: wgpu::Buffer,
+    packed_lod_vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
+    packed_lod_index_buffer: wgpu::Buffer,
     vertex_capacity: usize,
     rigid_vertex_capacity: usize,
+    packed_lod_vertex_capacity: usize,
     index_capacity: usize,
+    packed_lod_index_capacity: usize,
     builtin_mesh_ranges: AHashMap<&'static str, MeshRange>,
     builtin_mesh_bounds: AHashMap<&'static str, ([f32; 3], f32)>,
     builtin_meshlets: AHashMap<&'static str, Arc<[MeshletRange]>>,
@@ -668,12 +784,21 @@ struct MeshLodRange {
     full: MeshRange,
     surface_ranges: Arc<[MeshRange]>,
     meshlets: Arc<[MeshletRange]>,
+    packed: Option<PackedMeshLodRange>,
+}
+
+#[derive(Clone)]
+struct PackedMeshLodRange {
+    full: MeshRange,
+    surface_ranges: Arc<[MeshRange]>,
+    param_index: u32,
 }
 
 struct MeshLodView<'a> {
     full: MeshRange,
     surface_ranges: &'a [MeshRange],
     meshlets: &'a [MeshletRange],
+    packed: Option<&'a PackedMeshLodRange>,
 }
 
 #[derive(Clone)]
@@ -684,6 +809,7 @@ struct DrawBatch {
     instance_start: u32,
     instance_count: u32,
     path: RenderPath3D,
+    packed_lod: bool,
     double_sided: bool,
     material_kind: MaterialPipelineKind,
     alpha_mode: u8,
@@ -700,6 +826,14 @@ struct DrawBatch {
     blend_layers: u32,
     blend_mask: u32,
     order_index: u32,
+}
+
+#[derive(Clone)]
+struct SurfaceEntry3D {
+    range: MeshRange,
+    packed_range: Option<MeshRange>,
+    packed_lod_param_id: u32,
+    material: Material3D,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
@@ -765,8 +899,10 @@ const OCCLUSION_PROBE_INTERVAL: u64 = 1;
 #[cfg(test)]
 mod tests {
     use super::{
-        DrawBatch, DrawBatchPush, MATERIAL_TEXTURE_NONE, MaterialPipelineKind, RenderBatchKind,
-        RenderPath3D, camera, compare_draw_batch_keys, draw_batch_state_key, push_draw_batch,
+        DrawBatch, DrawBatchPush, MATERIAL_TEXTURE_NONE, MaterialInstanceGpu, MaterialPipelineKind,
+        MultiMeshInstanceGpu, PackedLodParamGpu, PackedRigidLodVertex, RenderBatchKind,
+        RenderPath3D, RigidInstanceMetaGpu, RigidMeshVertex, SkinnedInstanceMetaGpu,
+        SkinnedMeshVertex, camera, compare_draw_batch_keys, draw_batch_state_key, push_draw_batch,
         render_state_key,
     };
     use glam::Vec4;
@@ -789,6 +925,48 @@ mod tests {
     fn projected_depth(proj: glam::Mat4, view_z: f32) -> f32 {
         let clip = proj * Vec4::new(0.0, 0.0, view_z, 1.0);
         clip.z / clip.w
+    }
+
+    #[test]
+    fn packed_gpu_layouts_keep_expected_sizes() {
+        assert_eq!(std::mem::size_of::<RigidMeshVertex>(), 28);
+        assert_eq!(std::mem::size_of::<PackedRigidLodVertex>(), 16);
+        assert_eq!(std::mem::size_of::<PackedLodParamGpu>(), 48);
+        assert_eq!(std::mem::size_of::<SkinnedMeshVertex>(), 40);
+        assert_eq!(std::mem::size_of::<MultiMeshInstanceGpu>(), 28);
+        assert_eq!(std::mem::size_of::<MaterialInstanceGpu>(), 20);
+        assert_eq!(std::mem::size_of::<RigidInstanceMetaGpu>(), 32);
+        assert_eq!(std::mem::size_of::<SkinnedInstanceMetaGpu>(), 36);
+        assert_eq!(
+            std::mem::offset_of!(RigidMeshVertex, normal),
+            12,
+            "rigid normal attr offset"
+        );
+        assert_eq!(
+            std::mem::offset_of!(RigidMeshVertex, uv),
+            20,
+            "rigid uv attr offset"
+        );
+        assert_eq!(
+            std::mem::offset_of!(SkinnedMeshVertex, joints),
+            28,
+            "skinned joints attr offset"
+        );
+        assert_eq!(
+            std::mem::offset_of!(SkinnedMeshVertex, weights),
+            36,
+            "skinned weights attr offset"
+        );
+        assert_eq!(
+            std::mem::offset_of!(MultiMeshInstanceGpu, draw_id),
+            20,
+            "multimesh draw id attr offset"
+        );
+        assert_eq!(
+            std::mem::offset_of!(MultiMeshInstanceGpu, blend_meta_id),
+            24,
+            "multimesh blend meta attr offset"
+        );
     }
 
     #[test]
@@ -967,6 +1145,7 @@ mod tests {
                 instance_start: 0,
                 instance_count: 1,
                 double_sided: false,
+                packed_lod: false,
                 material_kind: MaterialPipelineKind::Standard,
                 alpha_mode: 0,
                 base_color_texture_slot: MATERIAL_TEXTURE_NONE,
@@ -989,6 +1168,7 @@ mod tests {
                 instance_start: 1,
                 instance_count: 2,
                 double_sided: false,
+                packed_lod: false,
                 material_kind: MaterialPipelineKind::Standard,
                 alpha_mode: 0,
                 base_color_texture_slot: MATERIAL_TEXTURE_NONE,
@@ -1015,6 +1195,7 @@ mod tests {
                 false,
                 false,
                 0,
+                false,
                 &MaterialPipelineKind::Standard
             )
         );
@@ -1040,6 +1221,7 @@ mod tests {
                 instance_start: 0,
                 instance_count: 1,
                 double_sided: false,
+                packed_lod: false,
                 material_kind: MaterialPipelineKind::Standard,
                 alpha_mode: 0,
                 base_color_texture_slot: MATERIAL_TEXTURE_NONE,
@@ -1062,6 +1244,7 @@ mod tests {
                 instance_start: 2,
                 instance_count: 1,
                 double_sided: false,
+                packed_lod: false,
                 material_kind: MaterialPipelineKind::Standard,
                 alpha_mode: 0,
                 base_color_texture_slot: MATERIAL_TEXTURE_NONE,
@@ -1084,6 +1267,7 @@ mod tests {
                 instance_start: 3,
                 instance_count: 1,
                 double_sided: false,
+                packed_lod: false,
                 material_kind: MaterialPipelineKind::Standard,
                 alpha_mode: 0,
                 base_color_texture_slot: MATERIAL_TEXTURE_NONE,
@@ -1112,6 +1296,7 @@ mod tests {
             instance_start,
             instance_count: 1,
             double_sided: false,
+            packed_lod: false,
             material_kind: material_kind.clone(),
             alpha_mode: 0,
             base_color_texture_slot: MATERIAL_TEXTURE_NONE,
@@ -1202,6 +1387,7 @@ mod tests {
             draw_on_top,
             false,
             alpha_mode,
+            false,
             &material_kind,
         );
         DrawBatch {
@@ -1223,6 +1409,7 @@ mod tests {
             instance_start: order_index,
             instance_count: 1,
             path: RenderPath3D::Rigid,
+            packed_lod: false,
             double_sided: false,
             material_kind,
             alpha_mode,

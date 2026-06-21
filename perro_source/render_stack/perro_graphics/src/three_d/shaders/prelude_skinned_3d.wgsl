@@ -95,7 +95,7 @@ var mesh_blend_depth_tex: texture_depth_2d;
 
 struct VertexInput {
     @location(0) pos: vec3<f32>,
-    @location(1) normal: vec3<f32>,
+    @location(1) normal: vec4<f32>,
     @location(2) joints: vec4<u32>,
     @location(3) weights: vec4<f32>,
     @location(12) uv: vec2<f32>,
@@ -350,14 +350,14 @@ fn apply_blend_shapes(v: VertexInput, vertex_index: u32, instance_index: u32) ->
         return v;
     }
     var out_pos = v.pos;
-    var out_normal = v.normal;
+    var out_normal = v.normal.xyz;
     for (var i = 0u; i < weight_count; i = i + 1u) {
         let weight = clamp(blend_shape_weights[blend_meta.weight_range.x + i], 0.0, 1.0);
         let delta = blend_shape_deltas[blend_meta.shape_range.x + i * blend_meta.shape_range.w + local_vertex];
         out_pos = out_pos + delta.position_delta.xyz * weight;
         out_normal = out_normal + delta.normal_delta.xyz * weight;
     }
-    return VertexInput(out_pos, normalize(out_normal), v.joints, v.weights, v.uv);
+    return VertexInput(out_pos, vec4<f32>(normalize(out_normal), 0.0), v.joints, v.weights, v.uv);
 }
 
 fn perro_vs_main_base(v: VertexInput, inst: InstanceInput, vertex_index: u32, instance_index: u32) -> VertexOutput {
@@ -369,7 +369,7 @@ fn perro_vs_main_base(v: VertexInput, inst: InstanceInput, vertex_index: u32, in
     let m3 = skeletons[base + blended.joints.w] * blended.weights.w;
     let skin = m0 + m1 + m2 + m3;
     let pos = (skin * vec4<f32>(blended.pos, 1.0)).xyz;
-    let normal = (skin * vec4<f32>(blended.normal, 0.0)).xyz;
+    let normal = (skin * vec4<f32>(blended.normal.xyz, 0.0)).xyz;
     let p = vec4<f32>(pos, 1.0);
     let world = vec4<f32>(
         dot(inst.model_row_0, p),

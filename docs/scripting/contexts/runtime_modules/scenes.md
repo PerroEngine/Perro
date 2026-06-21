@@ -41,18 +41,7 @@ This runtime module belongs to `ctx.run` and documents scenes calls.
 | Params | `&mut self, source: S` |
 | Returns | `Result<NodeID, String>` |
 | Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.run.Scene().load("res://path/to/resource");
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `load_hashed`
 
@@ -63,18 +52,7 @@ lifecycle!({
 | Params | `&mut self, path_hash: u64, path: &str` |
 | Returns | `Result<NodeID, String>` |
 | Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.run.Scene().load_hashed(0, "name");
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `preload`
 
@@ -85,18 +63,7 @@ lifecycle!({
 | Params | `&mut self, path: P` |
 | Returns | `Result<PreloadedSceneID, String>` |
 | Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.run.Scene().preload("res://path/to/resource");
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `preload_hashed`
 
@@ -107,18 +74,7 @@ lifecycle!({
 | Params | `&mut self, path_hash: u64, path: &str,` |
 | Returns | `Result<PreloadedSceneID, String>` |
 | Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.run.Scene().preload_hashed(0, "name");
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `load_preloaded`
 
@@ -129,18 +85,7 @@ lifecycle!({
 | Params | `&mut self, id: I` |
 | Returns | `Result<NodeID, String>` |
 | Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.run.Scene().load_preloaded(0.1);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `free_preloaded`
 
@@ -151,18 +96,7 @@ lifecycle!({
 | Params | `&mut self, id: I` |
 | Returns | `bool` |
 | Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.run.Scene().free_preloaded(0.1);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `drop_preloaded`
 
@@ -173,18 +107,7 @@ lifecycle!({
 | Params | `&mut self, target: T` |
 | Returns | `bool` |
 | Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.run.Scene().drop_preloaded(ctx.id);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `drop_preloaded_hashed`
 
@@ -195,18 +118,7 @@ lifecycle!({
 | Params | `&mut self, path_hash: u64, path: &str` |
 | Returns | `bool` |
 | Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.run.Scene().drop_preloaded_hashed(0, "name");
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `scene_load`
 
@@ -217,18 +129,7 @@ lifecycle!({
 | Params | `ctx, path` |
 | Returns | `resource/runtime ID or `Result` as shown by backing method` |
 | Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = scene_load!(ctx.run, "res://scenes/level.scn");
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `scene_preload`
 
@@ -239,18 +140,7 @@ lifecycle!({
 | Params | `ctx, path` |
 | Returns | `resource/runtime ID or `Result` as shown by backing method` |
 | Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = scene_preload!(ctx.run, "res://scenes/level.scn");
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `scene_free_preloaded`
 
@@ -261,18 +151,7 @@ lifecycle!({
 | Params | `ctx, path` |
 | Returns | `resource/runtime ID or `Result` as shown by backing method` |
 | Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = scene_free_preloaded!(ctx.run, 0.1);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `scene_drop_preloaded`
 
@@ -283,15 +162,5 @@ lifecycle!({
 | Params | `ctx, path` |
 | Returns | `bool or () as shown by backing method` |
 | Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = scene_drop_preloaded!(ctx.run, 0.1);
-        let _ = value;
-    }
-});
-```

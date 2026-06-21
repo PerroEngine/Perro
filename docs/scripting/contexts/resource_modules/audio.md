@@ -95,18 +95,7 @@ This resource module belongs to `ctx.res` and documents audio calls.
 | Params | `&self, source: S` |
 | Returns | `bool` |
 | Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.res.Audio().load_source("res://path/to/resource");
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `reserve_source`
 
@@ -117,18 +106,7 @@ lifecycle!({
 | Params | `&self, source: S` |
 | Returns | `bool` |
 | Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.res.Audio().reserve_source("res://path/to/resource");
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `is_loaded`
 
@@ -139,18 +117,7 @@ lifecycle!({
 | Params | `&self, source: S` |
 | Returns | `bool` |
 | Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.res.Audio().is_loaded("res://path/to/resource");
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `drop_source`
 
@@ -161,18 +128,7 @@ lifecycle!({
 | Params | `&self, source: S` |
 | Returns | `bool` |
 | Use when | Use when code must release, remove, stop, or disconnect existing engine state. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.res.Audio().drop_source("res://path/to/resource");
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `play`
 
@@ -183,18 +139,7 @@ lifecycle!({
 | Params | `&self, bus_id: AudioBusID, audio: Audio<'_>` |
 | Returns | `bool` |
 | Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.res.Audio().play(ctx.id, 0.1);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `play_bus`
 
@@ -205,18 +150,7 @@ lifecycle!({
 | Params | `&self, bus_id: AudioBusID, audio: C` |
 | Returns | `bool where C: AudioPlayConfig<R>,` |
 | Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.res.Audio().play_bus(ctx.id, 0.1);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `play_master`
 
@@ -227,18 +161,7 @@ lifecycle!({
 | Params | `&self, audio: C` |
 | Returns | `bool where C: AudioPlayConfig<R>,` |
 | Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.res.Audio().play_master(0.1);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `play_master_audio`
 
@@ -249,18 +172,7 @@ lifecycle!({
 | Params | `&self, audio: Audio<'_>` |
 | Returns | `bool` |
 | Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.res.Audio().play_master_audio(0.1);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `play_panned`
 
@@ -271,18 +183,7 @@ lifecycle!({
 | Params | `&self, bus_id: AudioBusID, audio: Audio<'_>, pan: AudioPan` |
 | Returns | `bool` |
 | Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.res.Audio().play_panned(ctx.id, 0.0, 0.1);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `play_master_panned`
 
@@ -293,18 +194,7 @@ lifecycle!({
 | Params | `&self, audio: Audio<'_>, pan: AudioPan` |
 | Returns | `bool` |
 | Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.res.Audio().play_master_panned(0.0, 0.1);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `two_d`
 
@@ -314,19 +204,8 @@ lifecycle!({
 | Signature | `pub fn two_d(&self) -> Audio2DModule<'res, R>` |
 | Params | `&self` |
 | Returns | `Audio2DModule<'res, R>` |
-| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.res.Audio().two_d();
-        let _ = value;
-    }
-});
-```
+| Use when | Use when script code needs this exact engine read or write. |
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `three_d`
 
@@ -336,19 +215,8 @@ lifecycle!({
 | Signature | `pub fn three_d(&self) -> Audio3DModule<'res, R>` |
 | Params | `&self` |
 | Returns | `Audio3DModule<'res, R>` |
-| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.res.Audio().three_d();
-        let _ = value;
-    }
-});
-```
+| Use when | Use when script code needs this exact engine read or write. |
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `midi`
 
@@ -358,19 +226,8 @@ lifecycle!({
 | Signature | `pub fn midi(&self) -> MidiModule<'res, R>` |
 | Params | `&self` |
 | Returns | `MidiModule<'res, R>` |
-| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.res.Audio().midi();
-        let _ = value;
-    }
-});
-```
+| Use when | Use when script code needs this exact engine read or write. |
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `stop_audio`
 
@@ -381,18 +238,7 @@ lifecycle!({
 | Params | `&self, bus_id: AudioBusID, audio: Audio<'_>` |
 | Returns | `bool` |
 | Use when | Use when code must release, remove, stop, or disconnect existing engine state. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.res.Audio().stop_audio(ctx.id, 0.1);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `stop_master_audio`
 
@@ -403,18 +249,7 @@ lifecycle!({
 | Params | `&self, audio: Audio<'_>` |
 | Returns | `bool` |
 | Use when | Use when code must release, remove, stop, or disconnect existing engine state. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.res.Audio().stop_master_audio(0.1);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `stop_source`
 
@@ -425,18 +260,7 @@ lifecycle!({
 | Params | `&self, source: S` |
 | Returns | `bool` |
 | Use when | Use when code must release, remove, stop, or disconnect existing engine state. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.res.Audio().stop_source("res://path/to/resource");
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `source_length_seconds`
 
@@ -446,19 +270,8 @@ lifecycle!({
 | Signature | `pub fn source_length_seconds<S: ResPathSource>(&self, source: S) -> Option<f32>` |
 | Params | `&self, source: S` |
 | Returns | `Option<f32>` |
-| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.res.Audio().source_length_seconds("res://path/to/resource");
-        let _ = value;
-    }
-});
-```
+| Use when | Use when script code needs this exact engine read or write. |
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `source_length_millis`
 
@@ -468,19 +281,8 @@ lifecycle!({
 | Signature | `pub fn source_length_millis<S: ResPathSource>(&self, source: S) -> Option<u64>` |
 | Params | `&self, source: S` |
 | Returns | `Option<u64>` |
-| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.res.Audio().source_length_millis("res://path/to/resource");
-        let _ = value;
-    }
-});
-```
+| Use when | Use when script code needs this exact engine read or write. |
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `stop_all`
 
@@ -491,18 +293,7 @@ lifecycle!({
 | Params | `&self` |
 | Returns | `()` |
 | Use when | Use when code must release, remove, stop, or disconnect existing engine state. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.res.Audio().stop_all();
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `set_master_volume`
 
@@ -513,18 +304,7 @@ lifecycle!({
 | Params | `&self, volume: f32` |
 | Returns | `bool` |
 | Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.res.Audio().set_master_volume(1.0);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `set_bus_volume`
 
@@ -535,18 +315,7 @@ lifecycle!({
 | Params | `&self, bus_id: AudioBusID, volume: f32` |
 | Returns | `bool` |
 | Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.res.Audio().set_bus_volume(ctx.id, 1.0);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `set_bus_speed`
 
@@ -557,18 +326,7 @@ lifecycle!({
 | Params | `&self, bus_id: AudioBusID, speed: f32` |
 | Returns | `bool` |
 | Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.res.Audio().set_bus_speed(ctx.id, 1.0);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `pause_bus`
 
@@ -579,18 +337,7 @@ lifecycle!({
 | Params | `&self, bus_id: AudioBusID` |
 | Returns | `bool` |
 | Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.res.Audio().pause_bus(ctx.id);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `resume_bus`
 
@@ -601,18 +348,7 @@ lifecycle!({
 | Params | `&self, bus_id: AudioBusID` |
 | Returns | `bool` |
 | Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.res.Audio().resume_bus(ctx.id);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `stop_bus`
 
@@ -623,18 +359,7 @@ lifecycle!({
 | Params | `&self, bus_id: AudioBusID` |
 | Returns | `bool` |
 | Use when | Use when code must release, remove, stop, or disconnect existing engine state. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.res.Audio().stop_bus(ctx.id);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `play`
 
@@ -645,18 +370,7 @@ lifecycle!({
 | Params | `&self, bus_id: AudioBusID, audio: Audio2D<'_>` |
 | Returns | `bool` |
 | Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.res.Audio().two_d().play(ctx.id, 0.1);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `play_master`
 
@@ -667,18 +381,7 @@ lifecycle!({
 | Params | `&self, audio: Audio2D<'_>` |
 | Returns | `bool` |
 | Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.res.Audio().two_d().play_master(0.1);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `load_soundfont`
 
@@ -689,18 +392,7 @@ lifecycle!({
 | Params | `&self, source: S` |
 | Returns | `SoundFontID` |
 | Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.res.Audio().midi().load_soundfont("res://path/to/resource");
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `load_soundfont_hashed`
 
@@ -711,18 +403,7 @@ lifecycle!({
 | Params | `&self, source_hash: u64` |
 | Returns | `SoundFontID` |
 | Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.res.Audio().midi().load_soundfont_hashed(0);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `load_soundfont_hashed_with_source`
 
@@ -733,18 +414,7 @@ lifecycle!({
 | Params | `&self, source_hash: u64, source: S,` |
 | Returns | `SoundFontID` |
 | Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.res.Audio().midi().load_soundfont_hashed_with_source(0, "res://path/to/resource");
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `is_soundfont_loaded`
 
@@ -755,18 +425,7 @@ lifecycle!({
 | Params | `&self, id: SoundFontID` |
 | Returns | `bool` |
 | Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.res.Audio().midi().is_soundfont_loaded(0.1);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `play_note`
 
@@ -777,18 +436,7 @@ lifecycle!({
 | Params | `&self, note: Note, options: MidiNoteOptions` |
 | Returns | `bool` |
 | Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.res.Audio().midi().play_note(0.0, 0.1);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `play_note_bus`
 
@@ -799,18 +447,7 @@ lifecycle!({
 | Params | `&self, bus_id: AudioBusID, note: Note, mut options: MidiNoteOptions,` |
 | Returns | `bool` |
 | Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.res.Audio().midi().play_note_bus(ctx.id, 0.0, 0.1);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `start_note`
 
@@ -820,19 +457,8 @@ lifecycle!({
 | Signature | `pub fn start_note(&self, note: Note, options: MidiNoteOptions) -> Option<MidiNoteHandle>` |
 | Params | `&self, note: Note, options: MidiNoteOptions` |
 | Returns | `Option<MidiNoteHandle>` |
-| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.res.Audio().midi().start_note(0.0, 0.1);
-        let _ = value;
-    }
-});
-```
+| Use when | Use when script code needs this exact engine read or write. |
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `start_note_bus`
 
@@ -842,19 +468,8 @@ lifecycle!({
 | Signature | `pub fn start_note_bus( &self, bus_id: AudioBusID, note: Note, mut options: MidiNoteOptions, ) -> Option<MidiNoteHandle>` |
 | Params | `&self, bus_id: AudioBusID, note: Note, mut options: MidiNoteOptions,` |
 | Returns | `Option<MidiNoteHandle>` |
-| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.res.Audio().midi().start_note_bus(ctx.id, 0.0, 0.1);
-        let _ = value;
-    }
-});
-```
+| Use when | Use when script code needs this exact engine read or write. |
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `release_note`
 
@@ -865,18 +480,7 @@ lifecycle!({
 | Params | `&self, handle: MidiNoteHandle` |
 | Returns | `bool` |
 | Use when | Use when code must release, remove, stop, or disconnect existing engine state. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.res.Audio().midi().release_note(0.1);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `play_file`
 
@@ -887,18 +491,7 @@ lifecycle!({
 | Params | `&self, song: MidiSong` |
 | Returns | `bool` |
 | Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.res.Audio().midi().play_file(0.1);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `play_note_at`
 
@@ -909,18 +502,7 @@ lifecycle!({
 | Params | `&self, note: Note, position: P, range: f32, options: MidiNoteOptions,` |
 | Returns | `bool` |
 | Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.res.Audio().midi().play_note_at(0.0, 0.1, 1.0, 0.1);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `start_note_at`
 
@@ -930,19 +512,8 @@ lifecycle!({
 | Signature | `pub fn start_note_at<P: MidiSpatialPos>( &self, note: Note, position: P, range: f32, options: MidiNoteOptions, ) -> Option<MidiNoteHandle>` |
 | Params | `&self, note: Note, position: P, range: f32, options: MidiNoteOptions,` |
 | Returns | `Option<MidiNoteHandle>` |
-| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.res.Audio().midi().start_note_at(0.0, 0.1, 1.0, 0.1);
-        let _ = value;
-    }
-});
-```
+| Use when | Use when script code needs this exact engine read or write. |
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `play_file_at`
 
@@ -953,18 +524,7 @@ lifecycle!({
 | Params | `&self, song: MidiSong, position: P, range: f32` |
 | Returns | `bool` |
 | Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.res.Audio().midi().play_file_at(0.0, 0.1, 1.0);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `play`
 
@@ -975,18 +535,7 @@ lifecycle!({
 | Params | `&self, bus_id: AudioBusID, audio: Audio3D<'_>` |
 | Returns | `bool` |
 | Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.res.Audio().three_d().play(ctx.id, 0.1);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `play_master`
 
@@ -997,18 +546,7 @@ lifecycle!({
 | Params | `&self, audio: Audio3D<'_>` |
 | Returns | `bool` |
 | Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.res.Audio().three_d().play_master(0.1);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `audio_load`
 
@@ -1019,18 +557,7 @@ lifecycle!({
 | Params | `ctx.res, source` |
 | Returns | `resource/runtime ID or `Result` as shown by backing method` |
 | Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = audio_load!(ctx.res, 0.1);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `audio_is_loaded`
 
@@ -1041,18 +568,7 @@ lifecycle!({
 | Params | `ctx.res, source` |
 | Returns | `bool or () as shown by backing method` |
 | Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = audio_is_loaded!(ctx.res, 0.1);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `audio_reserve`
 
@@ -1063,18 +579,7 @@ lifecycle!({
 | Params | `ctx.res, source` |
 | Returns | `resource/runtime ID or `Result` as shown by backing method` |
 | Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = audio_reserve!(ctx.res, 0.1);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `audio_drop`
 
@@ -1085,18 +590,7 @@ lifecycle!({
 | Params | `ctx.res, source` |
 | Returns | `bool or () as shown by backing method` |
 | Use when | Use when code must release, remove, stop, or disconnect existing engine state. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = audio_drop!(ctx.res, 0.1);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `audio_play`
 
@@ -1107,18 +601,7 @@ lifecycle!({
 | Params | `ctx.res, bus_id, audio` |
 | Returns | `same as backing method` |
 | Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = audio_play!(ctx.res, 0.0, 0.1);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `audio_stop`
 
@@ -1129,18 +612,7 @@ lifecycle!({
 | Params | `ctx.res, bus_id, audio` |
 | Returns | `bool or () as shown by backing method` |
 | Use when | Use when code must release, remove, stop, or disconnect existing engine state. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = audio_stop!(ctx.res, 0.0, 0.1);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `audio_stop_source`
 
@@ -1151,18 +623,7 @@ lifecycle!({
 | Params | `ctx.res, source` |
 | Returns | `bool or () as shown by backing method` |
 | Use when | Use when code must release, remove, stop, or disconnect existing engine state. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = audio_stop_source!(ctx.res, 0.1);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `audio_length_seconds`
 
@@ -1172,19 +633,8 @@ lifecycle!({
 | Signature | `audio_length_seconds!(ctx.res.res, source)` |
 | Params | `ctx.res, source` |
 | Returns | `same as backing method` |
-| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = audio_length_seconds!(ctx.res, 0.1);
-        let _ = value;
-    }
-});
-```
+| Use when | Use when script code needs this exact engine read or write. |
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `audio_length_millis`
 
@@ -1194,19 +644,8 @@ lifecycle!({
 | Signature | `audio_length_millis!(ctx.res.res, source)` |
 | Params | `ctx.res, source` |
 | Returns | `same as backing method` |
-| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = audio_length_millis!(ctx.res, 0.1);
-        let _ = value;
-    }
-});
-```
+| Use when | Use when script code needs this exact engine read or write. |
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `audio_stop_all`
 
@@ -1217,18 +656,7 @@ lifecycle!({
 | Params | `ctx.res` |
 | Returns | `bool or () as shown by backing method` |
 | Use when | Use when code must release, remove, stop, or disconnect existing engine state. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = audio_stop_all!(ctx.res);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `audio_set_master_volume`
 
@@ -1239,18 +667,7 @@ lifecycle!({
 | Params | `ctx.res, volume` |
 | Returns | `bool or () as shown by backing method` |
 | Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = audio_set_master_volume!(ctx.res, 0.1);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `audio_bus_set_volume`
 
@@ -1261,18 +678,7 @@ lifecycle!({
 | Params | `ctx.res, bus_id, volume` |
 | Returns | `bool or () as shown by backing method` |
 | Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = audio_bus_set_volume!(ctx.res, 0.0, 0.1);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `audio_bus_set_speed`
 
@@ -1283,18 +689,7 @@ lifecycle!({
 | Params | `ctx.res, bus_id, speed` |
 | Returns | `bool or () as shown by backing method` |
 | Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = audio_bus_set_speed!(ctx.res, 0.0, 0.1);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `audio_bus_pause`
 
@@ -1305,18 +700,7 @@ lifecycle!({
 | Params | `ctx.res, bus_id` |
 | Returns | `bool or () as shown by backing method` |
 | Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = audio_bus_pause!(ctx.res, 0.1);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `audio_bus_resume`
 
@@ -1327,18 +711,7 @@ lifecycle!({
 | Params | `ctx.res, bus_id` |
 | Returns | `bool or () as shown by backing method` |
 | Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = audio_bus_resume!(ctx.res, 0.1);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `audio_bus_stop`
 
@@ -1349,18 +722,7 @@ lifecycle!({
 | Params | `ctx.res, bus_id` |
 | Returns | `bool or () as shown by backing method` |
 | Use when | Use when code must release, remove, stop, or disconnect existing engine state. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = audio_bus_stop!(ctx.res, 0.1);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `audio_bus`
 
@@ -1370,19 +732,8 @@ lifecycle!({
 | Signature | `audio_bus!(name)` |
 | Params | `name` |
 | Returns | `same as backing method` |
-| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = audio_bus!(ctx.res);
-        let _ = value;
-    }
-});
-```
+| Use when | Use when script code needs this exact engine read or write. |
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `midi_load_soundfont`
 
@@ -1393,18 +744,7 @@ lifecycle!({
 | Params | `ctx.res, source` |
 | Returns | `resource/runtime ID or `Result` as shown by backing method` |
 | Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = midi_load_soundfont!(ctx.res, 0.1);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `midi_soundfont_is_loaded`
 
@@ -1415,18 +755,7 @@ lifecycle!({
 | Params | `ctx.res, id` |
 | Returns | `bool or () as shown by backing method` |
 | Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = midi_soundfont_is_loaded!(ctx.res, 0.1);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `midi_play`
 
@@ -1437,18 +766,7 @@ lifecycle!({
 | Params | `ctx.res, bus_id, note, options` |
 | Returns | `same as backing method` |
 | Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = midi_play!(ctx.res, 0.0, 0.1, 0.1);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `midi_start`
 
@@ -1458,19 +776,8 @@ lifecycle!({
 | Signature | `midi_start!(ctx.res.res, bus_id, note, options)` |
 | Params | `ctx.res, bus_id, note, options` |
 | Returns | `same as backing method` |
-| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = midi_start!(ctx.res, 0.0, 0.1, 0.1);
-        let _ = value;
-    }
-});
-```
+| Use when | Use when script code needs this exact engine read or write. |
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `midi_release`
 
@@ -1481,18 +788,7 @@ lifecycle!({
 | Params | `ctx.res, handle` |
 | Returns | `same as backing method` |
 | Use when | Use when code must release, remove, stop, or disconnect existing engine state. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = midi_release!(ctx.res, 0.1);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `midi_play_at`
 
@@ -1503,18 +799,7 @@ lifecycle!({
 | Params | `ctx.res, note, pos, range, options` |
 | Returns | `same as backing method` |
 | Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = midi_play_at!(ctx.res, 0.0, 0.1, 0.0, 0.1);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `midi_start_at`
 
@@ -1524,16 +809,6 @@ lifecycle!({
 | Signature | `midi_start_at!(ctx.res.res, note, pos, range, options)` |
 | Params | `ctx.res, note, pos, range, options` |
 | Returns | `same as backing method` |
-| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+| Use when | Use when script code needs this exact engine read or write. |
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = midi_start_at!(ctx.res, 0.0, 0.1, 0.0, 0.1);
-        let _ = value;
-    }
-});
-```

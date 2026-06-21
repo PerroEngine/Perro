@@ -18,6 +18,16 @@ Script state stores per-node data for one script instance.
 
 Each node with that script gets its own state value. Use state for mutable gameplay data, scene overrides, and values other scripts need to read or write.
 
+Behavior is separate from state.
+
+The generated behavior object owns lifecycle/method dispatch, while each attached node owns a separate state value.
+
+Source path:
+
+- `perro_source/script_stack/perro_scripting/src/script_trait.rs`
+- `perro_source/script_stack/perro_scripting_macros/src/lib.rs`
+- `perro_source/build_pipeline/perro_compiler/src/script_codegen.rs`
+
 ## State Struct
 
 Use `#[State]` on one struct in the script.
@@ -74,6 +84,10 @@ Use `#[node_ref(...)]` on `NodeID` fields to tell editor and doctor which node t
 Runtime type stays `NodeID`.
 
 The hint only affects inspector pick lists and doctor/clippy warnings.
+
+Use hints when a state field points to a scene node with a required type.
+
+The runtime still resolves the id at use site, so removed or wrong-type nodes can still fail API calls.
 
 ```rust
 #[derive(Clone, Copy, Variant)]
@@ -153,8 +167,9 @@ Inside the same script, use typed state access.
 ```rust
 lifecycle!({
     fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        with_state_mut!(ctx.run, ctx.id, PlayerState, |state| {
-            state.jump_buffer_timer -= delta_time!(ctx.run);
+        let dt = delta_time!(ctx.run);
+        with_state_mut!(ctx.run, PlayerState, ctx.id, |state| {
+            state.jump_buffer_timer -= dt;
         });
     }
 });

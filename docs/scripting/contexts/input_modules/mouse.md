@@ -55,18 +55,7 @@ lifecycle!({
 | Params | `&self, button: MouseButton` |
 | Returns | `bool` |
 | Use when | Use when code branches on current state or a one-frame state edge. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.ipt.Mouse().down(MouseButton::Left);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `pressed`
 
@@ -77,18 +66,7 @@ lifecycle!({
 | Params | `&self, button: MouseButton` |
 | Returns | `bool` |
 | Use when | Use when code branches on current state or a one-frame state edge. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.ipt.Mouse().pressed(MouseButton::Left);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `released`
 
@@ -99,18 +77,7 @@ lifecycle!({
 | Params | `&self, button: MouseButton` |
 | Returns | `bool` |
 | Use when | Use when code must release, remove, stop, or disconnect existing engine state. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.ipt.Mouse().released(MouseButton::Left);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `delta`
 
@@ -121,18 +88,7 @@ lifecycle!({
 | Params | `&self` |
 | Returns | `Vector2` |
 | Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.ipt.Mouse().delta();
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `wheel`
 
@@ -142,19 +98,8 @@ lifecycle!({
 | Signature | `pub fn wheel(&self) -> Vector2` |
 | Params | `&self` |
 | Returns | `Vector2` |
-| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.ipt.Mouse().wheel();
-        let _ = value;
-    }
-});
-```
+| Use when | Use when script code needs this exact engine read or write. |
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `position`
 
@@ -165,18 +110,7 @@ lifecycle!({
 | Params | `&self` |
 | Returns | `Vector2` |
 | Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.ipt.Mouse().position();
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `viewport_size`
 
@@ -186,19 +120,8 @@ lifecycle!({
 | Signature | `pub fn viewport_size(&self) -> Vector2` |
 | Params | `&self` |
 | Returns | `Vector2` |
-| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.ipt.Mouse().viewport_size();
-        let _ = value;
-    }
-});
-```
+| Use when | Use when script code needs this exact engine read or write. |
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `mode`
 
@@ -208,19 +131,8 @@ lifecycle!({
 | Signature | `pub fn mode(&self) -> MouseMode` |
 | Params | `&self` |
 | Returns | `MouseMode` |
-| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.ipt.Mouse().mode();
-        let _ = value;
-    }
-});
-```
+| Use when | Use when script code needs this exact engine read or write. |
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `set_mode`
 
@@ -231,18 +143,7 @@ lifecycle!({
 | Params | `&self, mode: MouseMode` |
 | Returns | `()` |
 | Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.ipt.Mouse().set_mode(MouseMode::Visible);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `show`
 
@@ -252,19 +153,8 @@ lifecycle!({
 | Signature | `pub fn show(&self)` |
 | Params | `&self` |
 | Returns | `()` |
-| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.ipt.Mouse().show();
-        let _ = value;
-    }
-});
-```
+| Use when | Use when script code needs this exact engine read or write. |
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `hide`
 
@@ -274,19 +164,8 @@ lifecycle!({
 | Signature | `pub fn hide(&self)` |
 | Params | `&self` |
 | Returns | `()` |
-| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.ipt.Mouse().hide();
-        let _ = value;
-    }
-});
-```
+| Use when | Use when script code needs this exact engine read or write. |
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `capture`
 
@@ -296,19 +175,8 @@ lifecycle!({
 | Signature | `pub fn capture(&self)` |
 | Params | `&self` |
 | Returns | `()` |
-| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.ipt.Mouse().capture();
-        let _ = value;
-    }
-});
-```
+| Use when | Use when script code needs this exact engine read or write. |
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `confine`
 
@@ -318,19 +186,8 @@ lifecycle!({
 | Signature | `pub fn confine(&self)` |
 | Params | `&self` |
 | Returns | `()` |
-| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.ipt.Mouse().confine();
-        let _ = value;
-    }
-});
-```
+| Use when | Use when script code needs this exact engine read or write. |
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `confine_hidden`
 
@@ -340,19 +197,8 @@ lifecycle!({
 | Signature | `pub fn confine_hidden(&self)` |
 | Params | `&self` |
 | Returns | `()` |
-| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.ipt.Mouse().confine_hidden();
-        let _ = value;
-    }
-});
-```
+| Use when | Use when script code needs this exact engine read or write. |
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `mouse_capture`
 
@@ -365,17 +211,6 @@ lifecycle!({
 | Use when | Use when code must queue an input device, cursor, rumble, indicator, or calibration command. |
 | Fails when / edge behavior | Missing device slots return `None`, `false`, or a zero vector depending on the macro return type. Command macros queue work when an input command buffer exists. |
 
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = mouse_capture!(ctx.ipt);
-        let _ = value;
-    }
-});
-```
-
 ### `mouse_confine`
 
 | Field | Detail |
@@ -386,17 +221,6 @@ lifecycle!({
 | Returns | `()` |
 | Use when | Use when code must queue an input device, cursor, rumble, indicator, or calibration command. |
 | Fails when / edge behavior | Missing device slots return `None`, `false`, or a zero vector depending on the macro return type. Command macros queue work when an input command buffer exists. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = mouse_confine!(ctx.ipt);
-        let _ = value;
-    }
-});
-```
 
 ### `mouse_confine_hidden`
 
@@ -409,17 +233,6 @@ lifecycle!({
 | Use when | Use when code must queue an input device, cursor, rumble, indicator, or calibration command. |
 | Fails when / edge behavior | Missing device slots return `None`, `false`, or a zero vector depending on the macro return type. Command macros queue work when an input command buffer exists. |
 
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = mouse_confine_hidden!(ctx.ipt);
-        let _ = value;
-    }
-});
-```
-
 ### `mouse_delta`
 
 | Field | Detail |
@@ -430,17 +243,6 @@ lifecycle!({
 | Returns | `Vector2` |
 | Use when | Use when code needs current input device data without storing platform input state itself. |
 | Fails when / edge behavior | Missing device slots return `None`, `false`, or a zero vector depending on the macro return type. Command macros queue work when an input command buffer exists. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = mouse_delta!(ctx.ipt);
-        let _ = value;
-    }
-});
-```
 
 ### `mouse_down`
 
@@ -453,17 +255,6 @@ lifecycle!({
 | Use when | Use when gameplay needs held input state, such as movement, aim, charge, or drag. |
 | Fails when / edge behavior | Missing device slots return `None`, `false`, or a zero vector depending on the macro return type. Command macros queue work when an input command buffer exists. |
 
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = mouse_down!(ctx.ipt, MouseButton::Left);
-        let _ = value;
-    }
-});
-```
-
 ### `mouse_hide`
 
 | Field | Detail |
@@ -474,17 +265,6 @@ lifecycle!({
 | Returns | `()` |
 | Use when | Use when code must queue an input device, cursor, rumble, indicator, or calibration command. |
 | Fails when / edge behavior | Missing device slots return `None`, `false`, or a zero vector depending on the macro return type. Command macros queue work when an input command buffer exists. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = mouse_hide!(ctx.ipt);
-        let _ = value;
-    }
-});
-```
 
 ### `mouse_mode`
 
@@ -497,17 +277,6 @@ lifecycle!({
 | Use when | Use when code needs current input device data without storing platform input state itself. |
 | Fails when / edge behavior | Missing device slots return `None`, `false`, or a zero vector depending on the macro return type. Command macros queue work when an input command buffer exists. |
 
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = mouse_mode!(ctx.ipt);
-        let _ = value;
-    }
-});
-```
-
 ### `mouse_released`
 
 | Field | Detail |
@@ -518,17 +287,6 @@ lifecycle!({
 | Returns | `bool` |
 | Use when | Use when gameplay needs a one-frame input edge, such as jump, confirm, cancel, or release. |
 | Fails when / edge behavior | Missing device slots return `None`, `false`, or a zero vector depending on the macro return type. Command macros queue work when an input command buffer exists. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = mouse_released!(ctx.ipt, MouseButton::Left);
-        let _ = value;
-    }
-});
-```
 
 ### `mouse_set_mode`
 
@@ -541,17 +299,6 @@ lifecycle!({
 | Use when | Use when code must queue an input device, cursor, rumble, indicator, or calibration command. |
 | Fails when / edge behavior | Missing device slots return `None`, `false`, or a zero vector depending on the macro return type. Command macros queue work when an input command buffer exists. |
 
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = mouse_set_mode!(ctx.ipt, MouseMode::Captured);
-        let _ = value;
-    }
-});
-```
-
 ### `mouse_show`
 
 | Field | Detail |
@@ -562,17 +309,6 @@ lifecycle!({
 | Returns | `()` |
 | Use when | Use when code must queue an input device, cursor, rumble, indicator, or calibration command. |
 | Fails when / edge behavior | Missing device slots return `None`, `false`, or a zero vector depending on the macro return type. Command macros queue work when an input command buffer exists. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = mouse_show!(ctx.ipt);
-        let _ = value;
-    }
-});
-```
 
 ### `mouse_wheel`
 
@@ -585,13 +321,3 @@ lifecycle!({
 | Use when | Use when code needs current input device data without storing platform input state itself. |
 | Fails when / edge behavior | Missing device slots return `None`, `false`, or a zero vector depending on the macro return type. Command macros queue work when an input command buffer exists. |
 
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = mouse_wheel!(ctx.ipt);
-        let _ = value;
-    }
-});
-```

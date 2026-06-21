@@ -81,18 +81,7 @@ This runtime module belongs to `ctx.run` and documents physics calls.
 | Params | `&mut self, body_id: NodeID, force: Vector2` |
 | Returns | `bool` |
 | Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.run.Physics().apply_force_2d(ctx.id, Vector2::new(0.0, 0.0));
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `get_gravity`
 
@@ -103,18 +92,7 @@ lifecycle!({
 | Params | `&mut self` |
 | Returns | `f32` |
 | Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.run.Physics().get_gravity();
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `set_gravity`
 
@@ -125,18 +103,7 @@ lifecycle!({
 | Params | `&mut self, gravity: f32` |
 | Returns | `()` |
 | Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.run.Physics().set_gravity(1.0);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `get_coefficient`
 
@@ -147,18 +114,7 @@ lifecycle!({
 | Params | `&mut self` |
 | Returns | `f32` |
 | Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.run.Physics().get_coefficient();
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `set_coefficient`
 
@@ -169,18 +125,7 @@ lifecycle!({
 | Params | `&mut self, coefficient: f32` |
 | Returns | `()` |
 | Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.run.Physics().set_coefficient(1.0);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `apply_force_3d`
 
@@ -191,18 +136,7 @@ lifecycle!({
 | Params | `&mut self, body_id: NodeID, force: Vector3` |
 | Returns | `bool` |
 | Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.run.Physics().apply_force_3d(ctx.id, Vector3::new(0.0, 0.0, 0.0));
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `apply_impulse_2d`
 
@@ -213,18 +147,7 @@ lifecycle!({
 | Params | `&mut self, body_id: NodeID, impulse: Vector2` |
 | Returns | `bool` |
 | Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.run.Physics().apply_impulse_2d(ctx.id, Vector2::new(0.0, 0.0));
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `apply_impulse_3d`
 
@@ -235,18 +158,7 @@ lifecycle!({
 | Params | `&mut self, body_id: NodeID, impulse: Vector3` |
 | Returns | `bool` |
 | Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.run.Physics().apply_impulse_3d(ctx.id, Vector3::new(0.0, 0.0, 0.0));
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `emit_force_2d`
 
@@ -257,18 +169,7 @@ lifecycle!({
 | Params | `&mut self, emitter: PhysicsForceEmitter2D` |
 | Returns | `bool` |
 | Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.run.Physics().emit_force_2d(0.1);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `emit_force_3d`
 
@@ -279,18 +180,7 @@ lifecycle!({
 | Params | `&mut self, emitter: PhysicsForceEmitter3D` |
 | Returns | `bool` |
 | Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.run.Physics().emit_force_3d(0.1);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `apply_force`
 
@@ -301,18 +191,7 @@ lifecycle!({
 | Params | `&mut self, body_id: NodeID, force: D` |
 | Returns | `bool where D: IntoImpulseDirection,` |
 | Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.run.Physics().apply_force(ctx.id, 0.1);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `apply_impulse`
 
@@ -323,18 +202,7 @@ lifecycle!({
 | Params | `&mut self, body_id: NodeID, impulse: D` |
 | Returns | `bool where D: IntoImpulseDirection,` |
 | Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.run.Physics().apply_impulse(ctx.id, 0.1);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `raycast_3d`
 
@@ -345,18 +213,7 @@ lifecycle!({
 | Params | `&mut self, origin: Vector3, direction: Vector3, max_distance: f32,` |
 | Returns | `Option<PhysicsRayHit3D>` |
 | Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.run.Physics().raycast_3d(Vector3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 0.0), 1.0);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `raycast_3d_with_areas`
 
@@ -367,18 +224,7 @@ lifecycle!({
 | Params | `&mut self, origin: Vector3, direction: Vector3, max_distance: f32,` |
 | Returns | `Option<PhysicsRayHit3D>` |
 | Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.run.Physics().raycast_3d_with_areas(Vector3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 0.0), 1.0);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `raycast_3d_without_areas`
 
@@ -389,18 +235,7 @@ lifecycle!({
 | Params | `&mut self, origin: Vector3, direction: Vector3, max_distance: f32,` |
 | Returns | `Option<PhysicsRayHit3D>` |
 | Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.run.Physics().raycast_3d_without_areas(Vector3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 0.0), 1.0);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `raycast_3d_filtered`
 
@@ -411,18 +246,7 @@ lifecycle!({
 | Params | `&mut self, origin: Vector3, direction: Vector3, max_distance: f32, filter: PhysicsQueryFilter,` |
 | Returns | `Option<PhysicsRayHit3D>` |
 | Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.run.Physics().raycast_3d_filtered(Vector3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 0.0), 1.0, 0.1);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `raycast_2d`
 
@@ -433,18 +257,7 @@ lifecycle!({
 | Params | `&mut self, origin: Vector2, direction: Vector2, max_distance: f32,` |
 | Returns | `Option<PhysicsRayHit2D>` |
 | Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.run.Physics().raycast_2d(Vector2::new(0.0, 0.0), Vector2::new(0.0, 0.0), 1.0);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `raycast_2d_filtered`
 
@@ -455,18 +268,7 @@ lifecycle!({
 | Params | `&mut self, origin: Vector2, direction: Vector2, max_distance: f32, filter: PhysicsQueryFilter,` |
 | Returns | `Option<PhysicsRayHit2D>` |
 | Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.run.Physics().raycast_2d_filtered(Vector2::new(0.0, 0.0), Vector2::new(0.0, 0.0), 1.0, 0.1);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `shape_cast_2d`
 
@@ -476,19 +278,8 @@ lifecycle!({
 | Signature | `pub fn shape_cast_2d( &mut self, shape: Shape2D, origin: Vector2, direction: Vector2, max_distance: f32, filter: PhysicsQueryFilter, ) -> Option<PhysicsShapeHit2D>` |
 | Params | `&mut self, shape: Shape2D, origin: Vector2, direction: Vector2, max_distance: f32, filter: PhysicsQueryFilter,` |
 | Returns | `Option<PhysicsShapeHit2D>` |
-| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.run.Physics().shape_cast_2d(Default::default(), Vector2::new(0.0, 0.0), Vector2::new(0.0, 0.0), 1.0, 0.1);
-        let _ = value;
-    }
-});
-```
+| Use when | Use when script code needs this exact engine read or write. |
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `shape_cast_3d`
 
@@ -498,19 +289,8 @@ lifecycle!({
 | Signature | `pub fn shape_cast_3d( &mut self, shape: Shape3D, origin: Vector3, direction: Vector3, max_distance: f32, filter: PhysicsQueryFilter, ) -> Option<PhysicsShapeHit3D>` |
 | Params | `&mut self, shape: Shape3D, origin: Vector3, direction: Vector3, max_distance: f32, filter: PhysicsQueryFilter,` |
 | Returns | `Option<PhysicsShapeHit3D>` |
-| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.run.Physics().shape_cast_3d(Default::default(), Vector3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 0.0), 1.0, 0.1);
-        let _ = value;
-    }
-});
-```
+| Use when | Use when script code needs this exact engine read or write. |
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `contacts_2d`
 
@@ -521,18 +301,7 @@ lifecycle!({
 | Params | `&mut self, body_id: NodeID` |
 | Returns | `Vec<PhysicsContact2D>` |
 | Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.run.Physics().contacts_2d(ctx.id);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `contacts_3d`
 
@@ -543,18 +312,7 @@ lifecycle!({
 | Params | `&mut self, body_id: NodeID` |
 | Returns | `Vec<PhysicsContact3D>` |
 | Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.run.Physics().contacts_3d(ctx.id);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `solve_velocity_to_target_2d`
 
@@ -565,18 +323,7 @@ lifecycle!({
 | Params | `&mut self, origin: Vector2, target: Vector2, time: f32, drift: Vector2,` |
 | Returns | `Option<Vector2>` |
 | Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.run.Physics().solve_velocity_to_target_2d(Vector2::new(0.0, 0.0), ctx.id, 1.0, Vector2::new(0.0, 0.0));
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `solve_velocity_to_target_3d`
 
@@ -587,18 +334,7 @@ lifecycle!({
 | Params | `&mut self, origin: Vector3, target: Vector3, time: f32, drift: Vector3,` |
 | Returns | `Option<Vector3>` |
 | Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.run.Physics().solve_velocity_to_target_3d(Vector3::new(0.0, 0.0, 0.0), ctx.id, 1.0, Vector3::new(0.0, 0.0, 0.0));
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `solve_launch_velocity_2d`
 
@@ -608,19 +344,8 @@ lifecycle!({
 | Signature | `pub fn solve_launch_velocity_2d( &mut self, origin: Vector2, target: Vector2, speed: f32, max_time: f32, drift: Vector2, ) -> Option<PhysicsLaunchSolution2D>` |
 | Params | `&mut self, origin: Vector2, target: Vector2, speed: f32, max_time: f32, drift: Vector2,` |
 | Returns | `Option<PhysicsLaunchSolution2D>` |
-| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.run.Physics().solve_launch_velocity_2d(Vector2::new(0.0, 0.0), ctx.id, 1.0, 1.0, Vector2::new(0.0, 0.0));
-        let _ = value;
-    }
-});
-```
+| Use when | Use when script code needs this exact engine read or write. |
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `solve_launch_velocity_3d`
 
@@ -630,19 +355,8 @@ lifecycle!({
 | Signature | `pub fn solve_launch_velocity_3d( &mut self, origin: Vector3, target: Vector3, speed: f32, max_time: f32, drift: Vector3, ) -> Option<PhysicsLaunchSolution3D>` |
 | Params | `&mut self, origin: Vector3, target: Vector3, speed: f32, max_time: f32, drift: Vector3,` |
 | Returns | `Option<PhysicsLaunchSolution3D>` |
-| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.run.Physics().solve_launch_velocity_3d(Vector3::new(0.0, 0.0, 0.0), ctx.id, 1.0, 1.0, Vector3::new(0.0, 0.0, 0.0));
-        let _ = value;
-    }
-});
-```
+| Use when | Use when script code needs this exact engine read or write. |
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `predict_body_2d`
 
@@ -652,19 +366,8 @@ lifecycle!({
 | Signature | `pub fn predict_body_2d( &mut self, body_id: NodeID, time: f32, drift: Vector2, ) -> Option<PhysicsBodyPrediction2D>` |
 | Params | `&mut self, body_id: NodeID, time: f32, drift: Vector2,` |
 | Returns | `Option<PhysicsBodyPrediction2D>` |
-| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.run.Physics().predict_body_2d(ctx.id, 1.0, Vector2::new(0.0, 0.0));
-        let _ = value;
-    }
-});
-```
+| Use when | Use when script code needs this exact engine read or write. |
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `predict_body_3d`
 
@@ -674,19 +377,8 @@ lifecycle!({
 | Signature | `pub fn predict_body_3d( &mut self, body_id: NodeID, time: f32, drift: Vector3, ) -> Option<PhysicsBodyPrediction3D>` |
 | Params | `&mut self, body_id: NodeID, time: f32, drift: Vector3,` |
 | Returns | `Option<PhysicsBodyPrediction3D>` |
-| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.run.Physics().predict_body_3d(ctx.id, 1.0, Vector3::new(0.0, 0.0, 0.0));
-        let _ = value;
-    }
-});
-```
+| Use when | Use when script code needs this exact engine read or write. |
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `pause`
 
@@ -697,18 +389,7 @@ lifecycle!({
 | Params | `&mut self, paused: bool` |
 | Returns | `()` |
 | Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.run.Physics().pause(true);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `is_paused`
 
@@ -719,18 +400,7 @@ lifecycle!({
 | Params | `&mut self` |
 | Returns | `bool` |
 | Use when | Use when code branches on current state or a one-frame state edge. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.run.Physics().is_paused();
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `apply_force`
 
@@ -741,18 +411,7 @@ lifecycle!({
 | Params | `ctx, body_id, force` |
 | Returns | `same as backing method` |
 | Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = apply_force!(ctx.run, 0.0, 0.1);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `physics_get_gravity`
 
@@ -763,18 +422,7 @@ lifecycle!({
 | Params | `ctx` |
 | Returns | `same as backing method` |
 | Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = physics_get_gravity!(ctx.run);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `physics_set_gravity`
 
@@ -785,18 +433,7 @@ lifecycle!({
 | Params | `ctx, gravity` |
 | Returns | `bool or () as shown by backing method` |
 | Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = physics_set_gravity!(ctx.run, 0.1);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `physics_get_coefficient`
 
@@ -807,18 +444,7 @@ lifecycle!({
 | Params | `ctx` |
 | Returns | `same as backing method` |
 | Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = physics_get_coefficient!(ctx.run);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `physics_set_coefficient`
 
@@ -829,18 +455,7 @@ lifecycle!({
 | Params | `ctx, coefficient` |
 | Returns | `bool or () as shown by backing method` |
 | Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = physics_set_coefficient!(ctx.run, 0.1);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `physics_solve_velocity_to_target_2d`
 
@@ -851,18 +466,7 @@ lifecycle!({
 | Params | `ctx, origin, target, time` |
 | Returns | `same as backing method` |
 | Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = physics_solve_velocity_to_target_2d!(ctx.run, 0.0, 0.1, 0.1);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `physics_solve_velocity_to_target_3d`
 
@@ -873,18 +477,7 @@ lifecycle!({
 | Params | `ctx, origin, target, time` |
 | Returns | `same as backing method` |
 | Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = physics_solve_velocity_to_target_3d!(ctx.run, 0.0, 0.1, 0.1);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `physics_solve_launch_velocity_2d`
 
@@ -894,19 +487,8 @@ lifecycle!({
 | Signature | `physics_solve_launch_velocity_2d!(ctx.run, origin, target, speed, max_time)` |
 | Params | `ctx, origin, target, speed, max_time` |
 | Returns | `same as backing method` |
-| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = physics_solve_launch_velocity_2d!(ctx.run, 0.0, 0.1, 0.0, 0.1);
-        let _ = value;
-    }
-});
-```
+| Use when | Use when script code needs this exact engine read or write. |
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `physics_solve_launch_velocity_3d`
 
@@ -916,19 +498,8 @@ lifecycle!({
 | Signature | `physics_solve_launch_velocity_3d!(ctx.run, origin, target, speed, max_time)` |
 | Params | `ctx, origin, target, speed, max_time` |
 | Returns | `same as backing method` |
-| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = physics_solve_launch_velocity_3d!(ctx.run, 0.0, 0.1, 0.0, 0.1);
-        let _ = value;
-    }
-});
-```
+| Use when | Use when script code needs this exact engine read or write. |
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `physics_predict_body_2d`
 
@@ -938,19 +509,8 @@ lifecycle!({
 | Signature | `physics_predict_body_2d!(ctx.run, body_id, time)` |
 | Params | `ctx, body_id, time` |
 | Returns | `same as backing method` |
-| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = physics_predict_body_2d!(ctx.run, 0.0, 0.1);
-        let _ = value;
-    }
-});
-```
+| Use when | Use when script code needs this exact engine read or write. |
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `physics_predict_body_3d`
 
@@ -960,19 +520,8 @@ lifecycle!({
 | Signature | `physics_predict_body_3d!(ctx.run, body_id, time)` |
 | Params | `ctx, body_id, time` |
 | Returns | `same as backing method` |
-| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = physics_predict_body_3d!(ctx.run, 0.0, 0.1);
-        let _ = value;
-    }
-});
-```
+| Use when | Use when script code needs this exact engine read or write. |
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `apply_impulse`
 
@@ -983,18 +532,7 @@ lifecycle!({
 | Params | `ctx, body_id, impulse` |
 | Returns | `same as backing method` |
 | Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = apply_impulse!(ctx.run, 0.0, 0.1);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `physics_raycast_3d`
 
@@ -1005,18 +543,7 @@ lifecycle!({
 | Params | `ctx, origin, direction, max_distance` |
 | Returns | `same as backing method` |
 | Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = physics_raycast_3d!(ctx.run, 0.0, 0.1, 0.1);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `physics_raycast_3d_with_areas`
 
@@ -1027,18 +554,7 @@ lifecycle!({
 | Params | `ctx, origin, direction, max_distance` |
 | Returns | `same as backing method` |
 | Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = physics_raycast_3d_with_areas!(ctx.run, 0.0, 0.1, 0.1);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `physics_raycast_3d_without_areas`
 
@@ -1049,18 +565,7 @@ lifecycle!({
 | Params | `ctx, origin, direction, max_distance` |
 | Returns | `same as backing method` |
 | Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = physics_raycast_3d_without_areas!(ctx.run, 0.0, 0.1, 0.1);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `physics_raycast_2d`
 
@@ -1071,18 +576,7 @@ lifecycle!({
 | Params | `ctx, origin, direction, max_distance` |
 | Returns | `same as backing method` |
 | Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = physics_raycast_2d!(ctx.run, 0.0, 0.1, 0.1);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `physics_shape_cast_2d`
 
@@ -1092,19 +586,8 @@ lifecycle!({
 | Signature | `physics_shape_cast_2d!(ctx.run, shape, origin, direction, max_distance, filter)` |
 | Params | `ctx, shape, origin, direction, max_distance, filter` |
 | Returns | `same as backing method` |
-| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = physics_shape_cast_2d!(ctx.run, 0.0, 0.1, 0.0, 0.1, 0.1);
-        let _ = value;
-    }
-});
-```
+| Use when | Use when script code needs this exact engine read or write. |
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `physics_shape_cast_3d`
 
@@ -1114,19 +597,8 @@ lifecycle!({
 | Signature | `physics_shape_cast_3d!(ctx.run, shape, origin, direction, max_distance, filter)` |
 | Params | `ctx, shape, origin, direction, max_distance, filter` |
 | Returns | `same as backing method` |
-| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = physics_shape_cast_3d!(ctx.run, 0.0, 0.1, 0.0, 0.1, 0.1);
-        let _ = value;
-    }
-});
-```
+| Use when | Use when script code needs this exact engine read or write. |
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `physics_contacts_2d`
 
@@ -1137,18 +609,7 @@ lifecycle!({
 | Params | `ctx, body_id` |
 | Returns | `same as backing method` |
 | Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = physics_contacts_2d!(ctx.run, 0.1);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `physics_contacts_3d`
 
@@ -1159,18 +620,7 @@ lifecycle!({
 | Params | `ctx, body_id` |
 | Returns | `same as backing method` |
 | Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = physics_contacts_3d!(ctx.run, 0.1);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `physics_pause`
 
@@ -1181,18 +631,7 @@ lifecycle!({
 | Params | `ctx, paused` |
 | Returns | `bool or () as shown by backing method` |
 | Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = physics_pause!(ctx.run, 0.1);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `physics_is_paused`
 
@@ -1203,15 +642,5 @@ lifecycle!({
 | Params | `ctx` |
 | Returns | `bool or () as shown by backing method` |
 | Use when | Use when code branches on current state or a one-frame state edge. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = physics_is_paused!(ctx.run);
-        let _ = value;
-    }
-});
-```

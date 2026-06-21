@@ -33,17 +33,6 @@ No standalone public macro or method is defined for this helper page.
 | Use when | Use when code needs current input device data without storing platform input state itself. |
 | Fails when / edge behavior | Missing device slots return `None`, `false`, or a zero vector depending on the macro return type. Command macros queue work when an input command buffer exists. |
 
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = player_get!(ctx.ipt, 0);
-        let _ = value;
-    }
-});
-```
-
 ### `player_list`
 
 | Field | Detail |
@@ -55,13 +44,3 @@ lifecycle!({
 | Use when | Use when code needs current input device data without storing platform input state itself. |
 | Fails when / edge behavior | Missing device slots return `None`, `false`, or a zero vector depending on the macro return type. Command macros queue work when an input command buffer exists. |
 
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = player_list!(ctx.ipt);
-        let _ = value;
-    }
-});
-```

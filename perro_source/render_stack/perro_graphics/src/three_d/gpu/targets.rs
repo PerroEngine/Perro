@@ -89,8 +89,24 @@ pub(super) fn compute_builtin_mesh_bounds(
 }
 
 pub(super) fn mesh_bounds_from_vertices(vertices: &[MeshVertex]) -> Option<([f32; 3], f32)> {
-    let positions: Vec<[f32; 3]> = vertices.iter().map(|v| v.pos).collect();
-    mesh_bounds_from_positions(&positions)
+    let mut it = vertices.iter();
+    let first = Vec3::from(it.next()?.pos);
+    let mut min = first;
+    let mut max = first;
+    for vertex in it {
+        let v = Vec3::from(vertex.pos);
+        min = min.min(v);
+        max = max.max(v);
+    }
+    let center = (min + max) * 0.5;
+    let mut radius = 0.0f32;
+    for vertex in vertices {
+        let d = (Vec3::from(vertex.pos) - center).length();
+        if d > radius {
+            radius = d;
+        }
+    }
+    Some(([center.x, center.y, center.z], radius))
 }
 
 pub(super) fn mesh_bounds_from_positions(positions: &[[f32; 3]]) -> Option<([f32; 3], f32)> {

@@ -545,6 +545,16 @@ macro_rules! define_scene_nodes {
                 }
             }
 
+            pub const fn get_renderable(&self) -> Renderable {
+                match self {
+                    $(NodeType::$base_variant => Renderable::False,)*
+                    $(NodeType::$variant_2d => $renderable_2d,)*
+                    $(NodeType::$variant_3d => $renderable_3d,)*
+                    $(NodeType::$variant_ui => $renderable_ui,)*
+                    $(NodeType::$variant_resource => $renderable_resource,)*
+                }
+            }
+
             pub const fn get_internal_fixed_update(&self) -> InternalFixedUpdate {
                 match self {
                     $(NodeType::$base_variant => InternalFixedUpdate::False,)*

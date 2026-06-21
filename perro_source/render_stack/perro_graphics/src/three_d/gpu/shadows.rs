@@ -644,7 +644,8 @@ mod tests {
 
     fn caster_batch() -> DrawBatch {
         let material_kind = MaterialPipelineKind::Standard;
-        let state_key = draw_batch_state_key(RenderPath3D::Rigid, false, false, 0, &material_kind);
+        let state_key =
+            draw_batch_state_key(RenderPath3D::Rigid, false, false, 0, false, &material_kind);
         DrawBatch {
             state_key,
             render_state: render_state_key(state_key, 0, 0, 0, false, 0, false),
@@ -656,6 +657,7 @@ mod tests {
             instance_start: 0,
             instance_count: 1,
             path: RenderPath3D::Rigid,
+            packed_lod: false,
             double_sided: false,
             material_kind,
             alpha_mode: 0,

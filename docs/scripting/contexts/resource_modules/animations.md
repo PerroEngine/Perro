@@ -48,18 +48,7 @@ This resource module belongs to `ctx.res` and documents animations calls.
 | Params | `&self, source: S` |
 | Returns | `AnimationID` |
 | Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.res.Animations().load("res://path/to/resource");
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `load_hashed`
 
@@ -70,18 +59,7 @@ lifecycle!({
 | Params | `&self, source_hash: u64` |
 | Returns | `AnimationID` |
 | Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.res.Animations().load_hashed(0);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `load_hashed_with_source`
 
@@ -92,18 +70,7 @@ lifecycle!({
 | Params | `&self, source_hash: u64, source: S,` |
 | Returns | `AnimationID` |
 | Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.res.Animations().load_hashed_with_source(0, "res://path/to/resource");
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `reserve`
 
@@ -114,18 +81,7 @@ lifecycle!({
 | Params | `&self, source: S` |
 | Returns | `AnimationID` |
 | Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.res.Animations().reserve("res://path/to/resource");
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `reserve_hashed`
 
@@ -136,18 +92,7 @@ lifecycle!({
 | Params | `&self, source_hash: u64` |
 | Returns | `AnimationID` |
 | Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.res.Animations().reserve_hashed(0);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `reserve_hashed_with_source`
 
@@ -158,18 +103,7 @@ lifecycle!({
 | Params | `&self, source_hash: u64, source: S,` |
 | Returns | `AnimationID` |
 | Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.res.Animations().reserve_hashed_with_source(0, "res://path/to/resource");
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `drop`
 
@@ -180,18 +114,7 @@ lifecycle!({
 | Params | `&self, id: AnimationID` |
 | Returns | `bool` |
 | Use when | Use when code must release, remove, stop, or disconnect existing engine state. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.res.Animations().drop(0.1);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `get`
 
@@ -201,19 +124,8 @@ lifecycle!({
 | Signature | `pub fn get(&self, id: AnimationID) -> Option<Arc<AnimationClip>>` |
 | Params | `&self, id: AnimationID` |
 | Returns | `Option<Arc<AnimationClip>>` |
-| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.res.Animations().get(0.1);
-        let _ = value;
-    }
-});
-```
+| Use when | Use when script code needs this exact engine read or write. |
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `is_loaded`
 
@@ -224,18 +136,7 @@ lifecycle!({
 | Params | `&self, id: AnimationID` |
 | Returns | `bool` |
 | Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.res.Animations().is_loaded(0.1);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `animation_load`
 
@@ -246,18 +147,7 @@ lifecycle!({
 | Params | `ctx.res, source` |
 | Returns | `resource/runtime ID or `Result` as shown by backing method` |
 | Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = animation_load!(ctx.res, "res://anim/run.panim");
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `animation_reserve`
 
@@ -268,18 +158,7 @@ lifecycle!({
 | Params | `ctx.res, source` |
 | Returns | `resource/runtime ID or `Result` as shown by backing method` |
 | Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = animation_reserve!(ctx.res, "res://anim/run.panim");
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `animation_drop`
 
@@ -290,18 +169,7 @@ lifecycle!({
 | Params | `ctx.res, id` |
 | Returns | `bool or () as shown by backing method` |
 | Use when | Use when code must release, remove, stop, or disconnect existing engine state. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = animation_drop!(ctx.res, 0.1);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `animation_is_loaded`
 
@@ -312,18 +180,7 @@ lifecycle!({
 | Params | `ctx.res, id` |
 | Returns | `bool or () as shown by backing method` |
 | Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = animation_is_loaded!(ctx.res, 0.1);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `load`
 
@@ -334,18 +191,7 @@ lifecycle!({
 | Params | `&self, source: S` |
 | Returns | `AnimationTreeID` |
 | Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.res.AnimationTrees().load("res://path/to/resource");
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `load_hashed_with_source`
 
@@ -356,18 +202,7 @@ lifecycle!({
 | Params | `&self, source_hash: u64, source: S,` |
 | Returns | `AnimationTreeID` |
 | Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.res.AnimationTrees().load_hashed_with_source(0, "res://path/to/resource");
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `get`
 
@@ -377,19 +212,8 @@ lifecycle!({
 | Signature | `pub fn get(&self, id: AnimationTreeID) -> Option<Arc<AnimationTreeAsset>>` |
 | Params | `&self, id: AnimationTreeID` |
 | Returns | `Option<Arc<AnimationTreeAsset>>` |
-| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.res.AnimationTrees().get(0.1);
-        let _ = value;
-    }
-});
-```
+| Use when | Use when script code needs this exact engine read or write. |
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `is_loaded`
 
@@ -400,18 +224,7 @@ lifecycle!({
 | Params | `&self, id: AnimationTreeID` |
 | Returns | `bool` |
 | Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.res.AnimationTrees().is_loaded(0.1);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `animation_tree_load`
 
@@ -422,18 +235,7 @@ lifecycle!({
 | Params | `ctx.res, source` |
 | Returns | `resource/runtime ID or `Result` as shown by backing method` |
 | Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = animation_tree_load!(ctx.res, 0.1);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `animation_tree_is_loaded`
 
@@ -444,15 +246,5 @@ lifecycle!({
 | Params | `ctx.res, id` |
 | Returns | `bool or () as shown by backing method` |
 | Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = animation_tree_is_loaded!(ctx.res, 0.1);
-        let _ = value;
-    }
-});
-```

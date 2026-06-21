@@ -36,18 +36,7 @@ This resource module belongs to `ctx.res` and documents csv calls.
 | Params | `&self, source: S` |
 | Returns | `&'static Csv` |
 | Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.res.Csv().load("res://path/to/resource");
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `load_hashed`
 
@@ -58,18 +47,7 @@ lifecycle!({
 | Params | `&self, source_hash: u64` |
 | Returns | `&'static Csv` |
 | Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.res.Csv().load_hashed(0);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `load_hashed_with_source`
 
@@ -80,18 +58,7 @@ lifecycle!({
 | Params | `&self, source_hash: u64, source: S,` |
 | Returns | `&'static Csv` |
 | Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.res.Csv().load_hashed_with_source(0, "res://path/to/resource");
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `save`
 
@@ -101,19 +68,8 @@ lifecycle!({
 | Signature | `pub fn save<S: ResPathSource>(&self, source: S, csv: &CsvBuf) -> Result<(), String>` |
 | Params | `&self, source: S, csv: &CsvBuf) -> Result<(` |
 | Returns | `Result<(), String>` |
-| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.res.Csv().save("res://path/to/resource", 0.1);
-        let _ = value;
-    }
-});
-```
+| Use when | Use when script code needs this exact engine read or write. |
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `save_hashed`
 
@@ -123,19 +79,8 @@ lifecycle!({
 | Signature | `pub fn save_hashed<S: ResPathSource>( &self, source_hash: u64, source: S, csv: &CsvBuf, ) -> Result<(), String>` |
 | Params | `&self, source_hash: u64, source: S, csv: &CsvBuf, ) -> Result<(` |
 | Returns | `Result<(), String>` |
-| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.res.Csv().save_hashed(0, "res://path/to/resource", 0.1);
-        let _ = value;
-    }
-});
-```
+| Use when | Use when script code needs this exact engine read or write. |
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `csv_load`
 
@@ -146,18 +91,7 @@ lifecycle!({
 | Params | `ctx.res, source` |
 | Returns | `resource/runtime ID or `Result` as shown by backing method` |
 | Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = csv_load!(ctx.res, 0.1);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `csv_save`
 
@@ -167,16 +101,6 @@ lifecycle!({
 | Signature | `csv_save!(ctx.res.res, source, csv)` |
 | Params | `ctx.res, source, csv` |
 | Returns | `same as backing method` |
-| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+| Use when | Use when script code needs this exact engine read or write. |
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = csv_save!(ctx.res, 0.0, 0.1);
-        let _ = value;
-    }
-});
-```

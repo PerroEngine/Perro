@@ -148,7 +148,7 @@ pub struct PlayerState {
 
 lifecycle!({
     fn on_init(&self, ctx: &mut ScriptContext<'_, API>) {
-        with_state!(ctx, PlayerState, |state| {
+        with_state!(ctx.run, PlayerState, ctx.id, |state| {
             // scene script_vars already applied here
             let _speed = state.speed;
             let _target = state.target;

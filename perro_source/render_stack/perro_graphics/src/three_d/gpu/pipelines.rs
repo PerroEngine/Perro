@@ -208,7 +208,15 @@ impl Gpu3D {
         }
         match &batch.material_kind {
             MaterialPipelineKind::Standard => {
-                if batch.mesh_blend && batch.double_sided && is_rigid {
+                if batch.packed_lod && batch.mesh_blend && batch.double_sided && is_rigid {
+                    &self.pipeline_rigid_packed_lod_blend_double_sided
+                } else if batch.packed_lod && batch.mesh_blend && is_rigid {
+                    &self.pipeline_rigid_packed_lod_blend_culled
+                } else if batch.packed_lod && batch.double_sided && is_rigid {
+                    &self.pipeline_rigid_packed_lod_double_sided
+                } else if batch.packed_lod && is_rigid {
+                    &self.pipeline_rigid_packed_lod_culled
+                } else if batch.mesh_blend && batch.double_sided && is_rigid {
                     &self.pipeline_rigid_blend_double_sided
                 } else if batch.mesh_blend && is_rigid {
                     &self.pipeline_rigid_blend_culled
@@ -316,6 +324,8 @@ impl Gpu3D {
                 self.staged_custom_params_values_scratch.clear();
                 self.staged_custom_params_meta_scratch
                     .reserve(custom.params.len());
+                self.staged_custom_params_values_scratch
+                    .reserve(custom.params.len() * 4);
                 self.staged_custom_params_key_scratch
                     .reserve(custom.params.len() * 5);
                 for param in custom.params.as_ref() {

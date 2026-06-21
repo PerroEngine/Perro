@@ -879,28 +879,16 @@ fn export_project_web_bundle(
     }
     fs::create_dir_all(&output_dir)?;
 
-    let bindgen_status = Command::new("wasm-bindgen")
-        .arg("--target")
-        .arg("web")
-        .arg("--no-typescript")
-        .arg("--out-dir")
-        .arg(&output_dir)
-        .arg("--out-name")
-        .arg("app")
-        .arg(&built_wasm)
-        .status()
-        .map_err(|err| {
-            CompilerError::SceneParse(format!(
-                "failed to run wasm-bindgen for {}: {err}. install via `cargo install wasm-bindgen-cli`",
-                built_wasm.display()
-            ))
-        })?;
-    if !bindgen_status.success() {
-        return Err(CompilerError::SceneParse(format!(
-            "wasm-bindgen failed with exit code {:?}",
-            bindgen_status.code()
-        )));
-    }
+    wasm_bindgen_cli_support::Bindgen::new()
+        .web(true)
+        .and_then(|bindgen| {
+            bindgen
+                .input_path(&built_wasm)
+                .out_name("app")
+                .typescript(false)
+                .generate(&output_dir)
+        })
+        .map_err(|err| CompilerError::SceneParse(format!("wasm-bindgen failed: {err:#}")))?;
 
     fs::write(output_dir.join("boot.js"), web_boot_js())?;
     emit_web_route_html_files(project_root, &output_dir, &project_cfg, &routes)?;

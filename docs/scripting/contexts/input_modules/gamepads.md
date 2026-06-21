@@ -31,19 +31,8 @@ This input module belongs to `ctx.ipt` and documents gamepads calls.
 | Signature | `pub fn all(&self) -> &'ipt [GamepadState]` |
 | Params | `&self` |
 | Returns | `&'ipt [GamepadState]` |
-| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.ipt.Gamepads().all();
-        let _ = value;
-    }
-});
-```
+| Use when | Use when script code needs this exact engine read or write. |
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `get`
 
@@ -53,19 +42,8 @@ lifecycle!({
 | Signature | `pub fn get(&self, index: usize) -> Option<&'ipt GamepadState>` |
 | Params | `&self, index: usize` |
 | Returns | `Option<&'ipt GamepadState>` |
-| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.ipt.Gamepads().get(0);
-        let _ = value;
-    }
-});
-```
+| Use when | Use when script code needs this exact engine read or write. |
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `set_rumble`
 
@@ -76,18 +54,7 @@ lifecycle!({
 | Params | `&self, index: usize, low_frequency: f32, high_frequency: f32` |
 | Returns | `()` |
 | Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.ipt.Gamepads().set_rumble(0, 1.0, 1.0);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `gamepad_accel`
 
@@ -100,17 +67,6 @@ lifecycle!({
 | Use when | Use when code needs current input device data without storing platform input state itself. |
 | Fails when / edge behavior | Missing device slots return `None`, `false`, or a zero vector depending on the macro return type. Command macros queue work when an input command buffer exists. |
 
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = gamepad_accel!(ctx.ipt, 0);
-        let _ = value;
-    }
-});
-```
-
 ### `gamepad_down`
 
 | Field | Detail |
@@ -121,17 +77,6 @@ lifecycle!({
 | Returns | `bool` |
 | Use when | Use when gameplay needs held input state, such as movement, aim, charge, or drag. |
 | Fails when / edge behavior | Missing device slots return `None`, `false`, or a zero vector depending on the macro return type. Command macros queue work when an input command buffer exists. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = gamepad_down!(ctx.ipt, 0, GamepadButton::Bottom);
-        let _ = value;
-    }
-});
-```
 
 ### `gamepad_get`
 
@@ -144,17 +89,6 @@ lifecycle!({
 | Use when | Use when code needs current input device data without storing platform input state itself. |
 | Fails when / edge behavior | Missing device slots return `None`, `false`, or a zero vector depending on the macro return type. Command macros queue work when an input command buffer exists. |
 
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = gamepad_get!(ctx.ipt, 0);
-        let _ = value;
-    }
-});
-```
-
 ### `gamepad_gyro`
 
 | Field | Detail |
@@ -165,17 +99,6 @@ lifecycle!({
 | Returns | `Vector3` |
 | Use when | Use when code needs current input device data without storing platform input state itself. |
 | Fails when / edge behavior | Missing device slots return `None`, `false`, or a zero vector depending on the macro return type. Command macros queue work when an input command buffer exists. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = gamepad_gyro!(ctx.ipt, 0);
-        let _ = value;
-    }
-});
-```
 
 ### `gamepad_left_stick`
 
@@ -188,17 +111,6 @@ lifecycle!({
 | Use when | Use when code needs current input device data without storing platform input state itself. |
 | Fails when / edge behavior | Missing device slots return `None`, `false`, or a zero vector depending on the macro return type. Command macros queue work when an input command buffer exists. |
 
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = gamepad_left_stick!(ctx.ipt, 0);
-        let _ = value;
-    }
-});
-```
-
 ### `gamepad_list`
 
 | Field | Detail |
@@ -209,17 +121,6 @@ lifecycle!({
 | Returns | `slice` |
 | Use when | Use when code needs current input device data without storing platform input state itself. |
 | Fails when / edge behavior | Missing device slots return `None`, `false`, or a zero vector depending on the macro return type. Command macros queue work when an input command buffer exists. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = gamepad_list!(ctx.ipt);
-        let _ = value;
-    }
-});
-```
 
 ### `gamepad_pressed`
 
@@ -232,17 +133,6 @@ lifecycle!({
 | Use when | Use when gameplay needs a one-frame input edge, such as jump, confirm, cancel, or release. |
 | Fails when / edge behavior | Missing device slots return `None`, `false`, or a zero vector depending on the macro return type. Command macros queue work when an input command buffer exists. |
 
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = gamepad_pressed!(ctx.ipt, 0, GamepadButton::Bottom);
-        let _ = value;
-    }
-});
-```
-
 ### `gamepad_released`
 
 | Field | Detail |
@@ -253,17 +143,6 @@ lifecycle!({
 | Returns | `bool` |
 | Use when | Use when gameplay needs a one-frame input edge, such as jump, confirm, cancel, or release. |
 | Fails when / edge behavior | Missing device slots return `None`, `false`, or a zero vector depending on the macro return type. Command macros queue work when an input command buffer exists. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = gamepad_released!(ctx.ipt, 0, GamepadButton::Bottom);
-        let _ = value;
-    }
-});
-```
 
 ### `gamepad_right_stick`
 
@@ -276,17 +155,6 @@ lifecycle!({
 | Use when | Use when code needs current input device data without storing platform input state itself. |
 | Fails when / edge behavior | Missing device slots return `None`, `false`, or a zero vector depending on the macro return type. Command macros queue work when an input command buffer exists. |
 
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = gamepad_right_stick!(ctx.ipt, 0);
-        let _ = value;
-    }
-});
-```
-
 ### `gamepad_set_rumble`
 
 | Field | Detail |
@@ -298,13 +166,3 @@ lifecycle!({
 | Use when | Use when code must queue an input device, cursor, rumble, indicator, or calibration command. |
 | Fails when / edge behavior | Missing device slots return `None`, `false`, or a zero vector depending on the macro return type. Command macros queue work when an input command buffer exists. |
 
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = gamepad_set_rumble!(ctx.ipt, 0, 0.5, 0.5);
-        let _ = value;
-    }
-});
-```

@@ -35,18 +35,7 @@ This input module belongs to `ctx.ipt` and documents actions calls.
 | Params                     | `&self, name: &str`                                                                                                                                                                                                |
 | Returns                    | `bool`                                                                                                                                                                                                             |
 | Use when                   | Use when code branches on current state or a one-frame state edge.                                                                                                                                                 |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.ipt.Actions().down("name");
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `pressed`
 
@@ -57,18 +46,7 @@ lifecycle!({
 | Params                     | `&self, name: &str`                                                                                                                                                                                                |
 | Returns                    | `bool`                                                                                                                                                                                                             |
 | Use when                   | Use when code branches on current state or a one-frame state edge.                                                                                                                                                 |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.ipt.Actions().pressed("name");
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `released`
 
@@ -79,18 +57,7 @@ lifecycle!({
 | Params                     | `&self, name: &str`                                                                                                                                                                                                |
 | Returns                    | `bool`                                                                                                                                                                                                             |
 | Use when                   | Use when code must release, remove, stop, or disconnect existing engine state.                                                                                                                                     |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.ipt.Actions().released("name");
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `down_hash`
 
@@ -101,18 +68,7 @@ lifecycle!({
 | Params                     | `&self, name_hash: u64`                                                                                                                                                                                            |
 | Returns                    | `bool`                                                                                                                                                                                                             |
 | Use when                   | Use when code branches on current state or a one-frame state edge.                                                                                                                                                 |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.ipt.Actions().down_hash(0);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `pressed_hash`
 
@@ -123,18 +79,7 @@ lifecycle!({
 | Params                     | `&self, name_hash: u64`                                                                                                                                                                                            |
 | Returns                    | `bool`                                                                                                                                                                                                             |
 | Use when                   | Use when code branches on current state or a one-frame state edge.                                                                                                                                                 |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.ipt.Actions().pressed_hash(0);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `released_hash`
 
@@ -145,18 +90,7 @@ lifecycle!({
 | Params                     | `&self, name_hash: u64`                                                                                                                                                                                            |
 | Returns                    | `bool`                                                                                                                                                                                                             |
 | Use when                   | Use when code must release, remove, stop, or disconnect existing engine state.                                                                                                                                     |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.ipt.Actions().released_hash(0);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `action_down`
 
@@ -169,17 +103,6 @@ lifecycle!({
 | Use when                   | Use when gameplay needs held input state, such as movement, aim, charge, or drag.                                                                                |
 | Fails when / edge behavior | Missing device slots return `None`, `false`, or a zero vector depending on the macro return type. Command macros queue work when an input command buffer exists. |
 
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = action_down!(ctx.ipt, "jump");
-        let _ = value;
-    }
-});
-```
-
 ### `action_pressed`
 
 | Field                      | Detail                                                                                                                                                           |
@@ -190,17 +113,6 @@ lifecycle!({
 | Returns                    | `bool`                                                                                                                                                           |
 | Use when                   | Use when gameplay needs a one-frame input edge, such as jump, confirm, cancel, or release.                                                                       |
 | Fails when / edge behavior | Missing device slots return `None`, `false`, or a zero vector depending on the macro return type. Command macros queue work when an input command buffer exists. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = action_pressed!(ctx.ipt, "jump");
-        let _ = value;
-    }
-});
-```
 
 ### `action_released`
 
@@ -213,13 +125,3 @@ lifecycle!({
 | Use when                   | Use when gameplay needs a one-frame input edge, such as jump, confirm, cancel, or release.                                                                       |
 | Fails when / edge behavior | Missing device slots return `None`, `false`, or a zero vector depending on the macro return type. Command macros queue work when an input command buffer exists. |
 
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = action_released!(ctx.ipt, "jump");
-        let _ = value;
-    }
-});
-```

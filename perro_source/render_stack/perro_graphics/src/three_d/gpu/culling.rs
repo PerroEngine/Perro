@@ -135,13 +135,11 @@ impl Gpu3D {
         }
 
         let src_transforms = std::mem::take(&mut self.staged_instance_transforms);
-        let src_materials = std::mem::take(&mut self.staged_instance_materials);
         let src_rigid_meta = std::mem::take(&mut self.staged_rigid_instance_meta);
         let src_skinned_meta = std::mem::take(&mut self.staged_skinned_instance_meta);
         let src_batches = std::mem::take(&mut self.draw_batches);
 
         let mut dst_transforms = Vec::with_capacity(src_transforms.len());
-        let mut dst_materials = Vec::with_capacity(src_materials.len());
         let mut dst_rigid_meta = Vec::with_capacity(src_rigid_meta.len());
         let mut dst_skinned_meta = Vec::with_capacity(src_skinned_meta.len());
         let mut dst_batches = Vec::with_capacity(src_batches.len());
@@ -164,13 +162,11 @@ impl Gpu3D {
                 let src_end = (batch.instance_start + batch.instance_count) as usize;
                 if src_start < src_end
                     && src_end <= src_transforms.len()
-                    && src_end <= src_materials.len()
                     && src_end <= src_rigid_meta.len()
                     && src_end <= src_skinned_meta.len()
                 {
                     let dst_copy_start = dst_transforms.len() as u32;
                     dst_transforms.extend_from_slice(&src_transforms[src_start..src_end]);
-                    dst_materials.extend_from_slice(&src_materials[src_start..src_end]);
                     dst_rigid_meta.extend_from_slice(&src_rigid_meta[src_start..src_end]);
                     dst_skinned_meta.extend_from_slice(&src_skinned_meta[src_start..src_end]);
                     let copied_count = (src_end - src_start) as u32;
@@ -226,7 +222,6 @@ impl Gpu3D {
         }
 
         self.staged_instance_transforms = dst_transforms;
-        self.staged_instance_materials = dst_materials;
         self.staged_rigid_instance_meta = dst_rigid_meta;
         self.staged_skinned_instance_meta = dst_skinned_meta;
         self.draw_batches = dst_batches;
@@ -242,6 +237,66 @@ impl Gpu3D {
         }
     }
 
+    pub(super) fn compact_sorted_multimesh_batches(&mut self) {
+        if self.multimesh_batches.is_empty() || self.staged_multimesh_instances.is_empty() {
+            return;
+        }
+
+        let src_instances = std::mem::take(&mut self.staged_multimesh_instances);
+        let src_batches = std::mem::take(&mut self.multimesh_batches);
+        let mut dst_instances = Vec::with_capacity(src_instances.len());
+        let mut dst_batches = Vec::with_capacity(src_batches.len());
+
+        let mut batch_index = 0usize;
+        while batch_index < src_batches.len() {
+            let mut merged_batch = src_batches[batch_index].clone();
+            let batch_group_start = &src_batches[batch_index];
+            let dst_instance_start = dst_instances.len() as u32;
+            let mut merged_instance_count = 0u32;
+            let mut scan = batch_index;
+            while scan < src_batches.len()
+                && (scan == batch_index
+                    || Self::can_compact_merge_multimesh_batches(
+                        batch_group_start,
+                        &src_batches[scan],
+                    ))
+            {
+                let batch = &src_batches[scan];
+                let src_start = batch.instance_start as usize;
+                let src_end = (batch.instance_start + batch.instance_count) as usize;
+                if src_start < src_end && src_end <= src_instances.len() {
+                    dst_instances.extend_from_slice(&src_instances[src_start..src_end]);
+                    merged_instance_count =
+                        merged_instance_count.saturating_add((src_end - src_start) as u32);
+                }
+                scan += 1;
+            }
+
+            if merged_instance_count > 0 {
+                merged_batch.instance_start = dst_instance_start;
+                merged_batch.instance_count = merged_instance_count;
+                dst_batches.push(merged_batch);
+            }
+            batch_index = scan;
+        }
+
+        self.staged_multimesh_instances = dst_instances;
+        self.multimesh_batches = dst_batches;
+    }
+
+    #[inline]
+    pub(super) fn can_compact_merge_multimesh_batches(
+        base: &MultiMeshBatch,
+        next: &MultiMeshBatch,
+    ) -> bool {
+        base.mesh.index_start == next.mesh.index_start
+            && base.mesh.index_count == next.mesh.index_count
+            && base.mesh.base_vertex == next.mesh.base_vertex
+            && base.draw_param_index == next.draw_param_index
+            && base.double_sided == next.double_sided
+            && base.mesh_blend == next.mesh_blend
+    }
+
     #[inline]
     pub(super) fn can_compact_merge_batches(base: &DrawBatch, next: &DrawBatch) -> bool {
         base.state_key == next.state_key
@@ -249,6 +304,7 @@ impl Gpu3D {
             && base.mesh.index_count == next.mesh.index_count
             && base.mesh.base_vertex == next.mesh.base_vertex
             && base.path == next.path
+            && base.packed_lod == next.packed_lod
             && base.double_sided == next.double_sided
             && base.material_kind == next.material_kind
             && base.alpha_mode == next.alpha_mode

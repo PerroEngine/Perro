@@ -110,7 +110,7 @@ scene = {
 }
 ```
 
-Use script object form to inject vars before script init:
+Use script config form to inject vars before script init:
 
 ```rust
 {

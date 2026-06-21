@@ -212,6 +212,7 @@ mod tests {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub fn run_dev_project_from_path(
     project_root: &Path,
     default_name: &str,

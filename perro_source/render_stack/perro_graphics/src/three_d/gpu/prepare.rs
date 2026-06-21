@@ -7,6 +7,19 @@ use web_time::Instant;
 
 const PARALLEL_BATCH_SORT_MIN: usize = 10_000;
 
+fn estimate_draw_instance_capacity(draws: &[Draw3DInstance]) -> (usize, usize) {
+    let mut regular = 0usize;
+    let mut multimesh = 0usize;
+    for draw in draws {
+        if let Some(dense) = draw.dense_multimesh.as_ref() {
+            multimesh = multimesh.saturating_add(dense.instances.len());
+        } else {
+            regular = regular.saturating_add(draw.instance_mats.len());
+        }
+    }
+    (regular, multimesh)
+}
+
 fn builtin_flat_mesh_double_sided(source: &str) -> bool {
     matches!(
         source,
@@ -462,17 +475,21 @@ impl Gpu3D {
         self.last_draws.extend_from_slice(draws);
         self.last_draws_revision = draws_revision;
 
+        let (regular_instance_hint, multimesh_instance_hint) =
+            estimate_draw_instance_capacity(draws);
         self.staged_instance_transforms.clear();
-        self.staged_instance_transforms.reserve(draws.len());
-        self.staged_instance_materials.clear();
-        self.staged_instance_materials.reserve(draws.len());
+        self.staged_instance_transforms
+            .reserve(regular_instance_hint);
         self.staged_rigid_instance_meta.clear();
-        self.staged_rigid_instance_meta.reserve(draws.len());
+        self.staged_rigid_instance_meta
+            .reserve(regular_instance_hint);
         self.staged_skinned_instance_meta.clear();
-        self.staged_skinned_instance_meta.reserve(draws.len());
+        self.staged_skinned_instance_meta
+            .reserve(regular_instance_hint);
         self.staged_blend_shape_weights.clear();
         self.staged_blend_shape_instance_meta.clear();
-        self.staged_blend_shape_instance_meta.reserve(draws.len());
+        self.staged_blend_shape_instance_meta
+            .reserve(regular_instance_hint);
         self.staged_skeletons.clear();
         self.staged_custom_params_meta.clear();
         self.staged_custom_params_values.clear();
@@ -485,6 +502,8 @@ impl Gpu3D {
         self.draw_batches.clear();
         self.multimesh_batches.clear();
         self.staged_multimesh_instances.clear();
+        self.staged_multimesh_instances
+            .reserve(multimesh_instance_hint);
         self.staged_multimesh_draw_params.clear();
         self.draw_batches.reserve(draws.len());
         self.last_draw_instance_spans.clear();
@@ -559,9 +578,11 @@ impl Gpu3D {
             match draw.kind {
                 Draw3DKind::DebugPointCube => {
                     let color = draw.debug_color.unwrap_or([1.0, 0.92, 0.2, 1.0]);
-                    surface_entries.push((
-                        active_lod.full,
-                        Material3D::Standard(StandardMaterial3D {
+                    surface_entries.push(SurfaceEntry3D {
+                        range: active_lod.full,
+                        packed_range: None,
+                        packed_lod_param_id: 0,
+                        material: Material3D::Standard(StandardMaterial3D {
                             base_color_factor: color,
                             roughness_factor: 0.35,
                             metallic_factor: 0.0,
@@ -572,13 +593,15 @@ impl Gpu3D {
                             ],
                             ..StandardMaterial3D::default()
                         }),
-                    ));
+                    });
                 }
                 Draw3DKind::DebugEdgeCylinder => {
                     let color = draw.debug_color.unwrap_or([0.15, 0.95, 0.95, 1.0]);
-                    surface_entries.push((
-                        active_lod.full,
-                        Material3D::Standard(StandardMaterial3D {
+                    surface_entries.push(SurfaceEntry3D {
+                        range: active_lod.full,
+                        packed_range: None,
+                        packed_lod_param_id: 0,
+                        material: Material3D::Standard(StandardMaterial3D {
                             base_color_factor: color,
                             roughness_factor: 0.6,
                             metallic_factor: 0.0,
@@ -589,19 +612,21 @@ impl Gpu3D {
                             ],
                             ..StandardMaterial3D::default()
                         }),
-                    ));
+                    });
                 }
                 Draw3DKind::CameraStreamQuad { texture, tint } => {
-                    surface_entries.push((
-                        active_lod.full,
-                        Material3D::Unlit(perro_render_bridge::UnlitMaterial3D {
+                    surface_entries.push(SurfaceEntry3D {
+                        range: active_lod.full,
+                        packed_range: None,
+                        packed_lod_param_id: 0,
+                        material: Material3D::Unlit(perro_render_bridge::UnlitMaterial3D {
                             base_color_factor: tint,
                             alpha_mode: 2,
                             double_sided: true,
                             base_color_texture: texture.index(),
                             ..perro_render_bridge::UnlitMaterial3D::default()
                         }),
-                    ));
+                    });
                 }
                 Draw3DKind::Mesh(_) => {
                     for (surface_index, surface) in draw.surfaces.iter().enumerate() {
@@ -609,15 +634,34 @@ impl Gpu3D {
                         else {
                             continue;
                         };
+                        let packed = active_lod.packed.and_then(|packed| {
+                            packed
+                                .surface_ranges
+                                .get(surface_index)
+                                .copied()
+                                .map(|range| (range, packed.param_index))
+                        });
                         let base_material = surface
                             .material
                             .and_then(|id| resources.material(id))
                             .unwrap_or_default();
-                        surface_entries
-                            .push((range, apply_surface_binding(base_material, surface)));
+                        surface_entries.push(SurfaceEntry3D {
+                            range,
+                            packed_range: packed.map(|(range, _)| range),
+                            packed_lod_param_id: packed.map(|(_, param)| param).unwrap_or(0),
+                            material: apply_surface_binding(base_material, surface),
+                        });
                     }
                     if surface_entries.is_empty() {
-                        surface_entries.push((active_lod.full, Material3D::default()));
+                        surface_entries.push(SurfaceEntry3D {
+                            range: active_lod.full,
+                            packed_range: active_lod.packed.map(|packed| packed.full),
+                            packed_lod_param_id: active_lod
+                                .packed
+                                .map(|packed| packed.param_index)
+                                .unwrap_or(0),
+                            material: Material3D::default(),
+                        });
                     }
                 }
             }
@@ -631,7 +675,8 @@ impl Gpu3D {
             }
             if let Some(dense) = &draw.dense_multimesh {
                 let draw_model = Mat4::from_cols_array_2d(&dense.node_model);
-                for (range, material) in surface_entries.iter() {
+                for entry in surface_entries.iter() {
+                    let material = &entry.material;
                     let params = material.standard_params();
                     let packed_color = pack_unorm4x8(params.base_color_factor);
                     let packed_emissive = pack_unorm4x8([
@@ -674,21 +719,20 @@ impl Gpu3D {
                         } else {
                             draw.blend_shape_weights.as_ref()
                         };
-                        let blend_shape_meta =
-                            self.stage_blend_shape_weight_range(&mesh_asset, weights);
+                        let blend_meta_id = self.staged_blend_shape_instance_meta.len() as u32;
+                        self.stage_blend_shape_instance(&mesh_asset, weights);
                         self.staged_multimesh_instances.push(MultiMeshInstanceGpu {
                             position: pose.position,
-                            rotation: pose.rotation,
+                            rotation: pack_quat_snorm16x4(pose.rotation),
                             draw_id: draw_param_index,
-                            weight_range: blend_shape_meta.weight_range,
-                            shape_range: blend_shape_meta.shape_range,
+                            blend_meta_id,
                         });
                     }
                     let instance_count = (self.staged_multimesh_instances.len() as u32)
                         .saturating_sub(instance_start);
                     if instance_count > 0 {
                         self.multimesh_batches.push(MultiMeshBatch {
-                            mesh: *range,
+                            mesh: entry.range,
                             instance_start,
                             instance_count,
                             draw_param_index,
@@ -708,11 +752,20 @@ impl Gpu3D {
             }
             // CPU occlusion query mode works at object granularity.
             // Force whole-mesh batching in that mode so each object can be queried.
+            let prefer_packed_lod = active_lod.packed.is_some()
+                && draw.skeleton.is_none()
+                && mesh_asset.blend_shape_target_count == 0
+                && !resolved_mesh_blend_active(resolved_blend)
+                && surface_entries
+                    .first()
+                    .map(|entry| matches!(entry.material, Material3D::Standard(_)))
+                    .unwrap_or(false);
             let builtin_primitive_source = is_builtin_primitive_mesh_source(mesh_source);
             let allow_meshlets = draw.meshlet_override.unwrap_or(!builtin_primitive_source);
             let use_meshlets = !is_debug_point
                 && !is_debug_edge
                 && !is_camera_stream_quad
+                && !prefer_packed_lod
                 && self.meshlets_enabled
                 && allow_meshlets
                 && !active_lod.meshlets.is_empty()
@@ -762,7 +815,7 @@ impl Gpu3D {
                 };
                 let instance_mats = draw.instance_mats.as_ref();
                 if is_debug_point {
-                    let material = &surface_entries[0].1;
+                    let material = &surface_entries[0].material;
                     let (custom_params_offset, custom_params_len) =
                         self.stage_custom_params(material);
                     let standard_params = material.standard_params();
@@ -791,13 +844,14 @@ impl Gpu3D {
                                 skeleton_count,
                                 custom_params_offset,
                                 custom_params_len,
+                                packed_lod_param_id: 0,
                                 receive_shadows: false,
                             },
                         ));
                         debug_points_count = debug_points_count.saturating_add(1);
                     }
                 } else if is_debug_edge {
-                    let material = &surface_entries[0].1;
+                    let material = &surface_entries[0].material;
                     let (custom_params_offset, custom_params_len) =
                         self.stage_custom_params(material);
                     let standard_params = material.standard_params();
@@ -826,13 +880,15 @@ impl Gpu3D {
                                 skeleton_count,
                                 custom_params_offset,
                                 custom_params_len,
+                                packed_lod_param_id: 0,
                                 receive_shadows: false,
                             },
                         ));
                         debug_edges_count = debug_edges_count.saturating_add(1);
                     }
                 } else {
-                    for (range, material) in surface_entries.iter() {
+                    for entry in surface_entries.iter() {
+                        let material = &entry.material;
                         let standard_params = material.standard_params();
                         self.ensure_material_texture_slot(
                             device,
@@ -842,16 +898,32 @@ impl Gpu3D {
                             mesh_source,
                             static_texture_lookup,
                         );
+                        let render_path = if skeleton_count > 0 {
+                            RenderPath3D::Skinned
+                        } else {
+                            RenderPath3D::Rigid
+                        };
                         let material_kind = self.material_pipeline_kind(
                             device,
-                            if skeleton_count > 0 {
-                                RenderPath3D::Skinned
-                            } else {
-                                RenderPath3D::Rigid
-                            },
+                            render_path,
                             material,
                             static_shader_lookup,
                         );
+                        let packed_lod = render_path == RenderPath3D::Rigid
+                            && matches!(material_kind, MaterialPipelineKind::Standard)
+                            && !resolved_mesh_blend_active(resolved_blend)
+                            && mesh_asset.blend_shape_target_count == 0
+                            && entry.packed_range.is_some();
+                        let mesh_range = if packed_lod {
+                            entry.packed_range.unwrap_or(entry.range)
+                        } else {
+                            entry.range
+                        };
+                        let packed_lod_param_id = if packed_lod {
+                            entry.packed_lod_param_id
+                        } else {
+                            0
+                        };
                         let (custom_params_offset, custom_params_len) =
                             self.stage_custom_params(material);
                         let instance_start = self.staged_instance_transforms.len() as u32;
@@ -875,11 +947,11 @@ impl Gpu3D {
                                     skeleton_count,
                                     custom_params_offset,
                                     custom_params_len,
+                                    packed_lod_param_id,
                                     receive_shadows: draw.receive_shadows,
                                 },
                             );
                             self.staged_instance_transforms.push(instance.transform);
-                            self.staged_instance_materials.push(instance.material);
                             self.staged_rigid_instance_meta.push(instance.rigid_meta);
                             self.staged_skinned_instance_meta
                                 .push(instance.skinned_meta);
@@ -904,18 +976,15 @@ impl Gpu3D {
                             push_draw_batch(
                                 &mut self.draw_batches,
                                 DrawBatchPush {
-                                    render_path: if skeleton_count > 0 {
-                                        RenderPath3D::Skinned
-                                    } else {
-                                        RenderPath3D::Rigid
-                                    },
-                                    mesh: *range,
+                                    render_path,
+                                    mesh: mesh_range,
                                     instance_start,
                                     instance_count,
                                     double_sided: standard_params.double_sided
                                         || self.meshlet_debug_view
                                         || mirrored_winding
                                         || flat_builtin_double_sided,
+                                    packed_lod,
                                     material_kind,
                                     alpha_mode: standard_params.alpha_mode,
                                     base_color_texture_slot: standard_params.base_color_texture,
@@ -939,7 +1008,7 @@ impl Gpu3D {
                     }
                 }
             } else {
-                let (_, material) = &surface_entries[0];
+                let material = &surface_entries[0].material;
                 let standard_params = material.standard_params();
                 self.ensure_material_texture_slot(
                     device,
@@ -1003,11 +1072,11 @@ impl Gpu3D {
                                 skeleton_count,
                                 custom_params_offset,
                                 custom_params_len,
+                                packed_lod_param_id: 0,
                                 receive_shadows: draw.receive_shadows,
                             },
                         );
                         self.staged_instance_transforms.push(instance.transform);
-                        self.staged_instance_materials.push(instance.material);
                         self.staged_rigid_instance_meta.push(instance.rigid_meta);
                         self.staged_skinned_instance_meta
                             .push(instance.skinned_meta);
@@ -1047,6 +1116,7 @@ impl Gpu3D {
                             },
                             instance_start,
                             instance_count,
+                            packed_lod: false,
                             double_sided: standard_params.double_sided
                                 || self.meshlet_debug_view
                                 || mirrored_winding
@@ -1082,7 +1152,6 @@ impl Gpu3D {
             debug_points_start = Some(self.staged_instance_transforms.len() as u32);
             for instance in debug_point_instances.drain(..) {
                 self.staged_instance_transforms.push(instance.transform);
-                self.staged_instance_materials.push(instance.material);
                 self.staged_rigid_instance_meta.push(instance.rigid_meta);
                 self.staged_skinned_instance_meta
                     .push(instance.skinned_meta);
@@ -1093,7 +1162,6 @@ impl Gpu3D {
             debug_edges_start = Some(self.staged_instance_transforms.len() as u32);
             for instance in debug_edge_instances.drain(..) {
                 self.staged_instance_transforms.push(instance.transform);
-                self.staged_instance_materials.push(instance.material);
                 self.staged_rigid_instance_meta.push(instance.rigid_meta);
                 self.staged_skinned_instance_meta
                     .push(instance.skinned_meta);
@@ -1109,6 +1177,7 @@ impl Gpu3D {
                 true,
                 debug_points_double_sided,
                 0,
+                false,
                 &material_kind,
             );
             self.draw_batches.push(DrawBatch {
@@ -1126,6 +1195,7 @@ impl Gpu3D {
                 instance_start,
                 instance_count: debug_points_count,
                 path: RenderPath3D::Rigid,
+                packed_lod: false,
                 double_sided: debug_points_double_sided,
                 material_kind,
                 alpha_mode: 0,
@@ -1156,6 +1226,7 @@ impl Gpu3D {
                 true,
                 debug_edges_double_sided,
                 0,
+                false,
                 &material_kind,
             );
             self.draw_batches.push(DrawBatch {
@@ -1173,6 +1244,7 @@ impl Gpu3D {
                 instance_start,
                 instance_count: debug_edges_count,
                 path: RenderPath3D::Rigid,
+                packed_lod: false,
                 double_sided: debug_edges_double_sided,
                 material_kind,
                 alpha_mode: 0,
@@ -1201,25 +1273,28 @@ impl Gpu3D {
         }
         self.compact_sorted_draw_batches(draws.len());
         self.rebuild_batch_views();
-        if self.multimesh_batches.len() >= PARALLEL_BATCH_SORT_MIN {
-            self.multimesh_batches.par_sort_unstable_by_key(|b| {
-                (
-                    b.mesh_blend,
-                    b.double_sided,
-                    b.mesh.index_start,
-                    b.draw_param_index,
-                )
-            });
-        } else {
-            self.multimesh_batches.sort_unstable_by_key(|b| {
-                (
-                    b.mesh_blend,
-                    b.double_sided,
-                    b.mesh.index_start,
-                    b.draw_param_index,
-                )
-            });
+        if !multimesh_batches_sorted(&self.multimesh_batches) {
+            if self.multimesh_batches.len() >= PARALLEL_BATCH_SORT_MIN {
+                self.multimesh_batches.par_sort_unstable_by_key(|b| {
+                    (
+                        b.mesh_blend,
+                        b.double_sided,
+                        b.mesh.index_start,
+                        b.draw_param_index,
+                    )
+                });
+            } else {
+                self.multimesh_batches.sort_unstable_by_key(|b| {
+                    (
+                        b.mesh_blend,
+                        b.double_sided,
+                        b.mesh.index_start,
+                        b.draw_param_index,
+                    )
+                });
+            }
         }
+        self.compact_sorted_multimesh_batches();
         if HIZ_DEBUG_READBACK_ENABLED {
             self.debug_frustum_visible_est = 0;
             for batch in &self.draw_batches {
@@ -1243,7 +1318,6 @@ impl Gpu3D {
             );
         }
         self.ensure_instance_transform_capacity(device, self.staged_instance_transforms.len());
-        self.ensure_instance_material_capacity(device, self.staged_instance_materials.len());
         self.ensure_rigid_instance_meta_capacity(device, self.staged_rigid_instance_meta.len());
         self.ensure_skinned_instance_meta_capacity(device, self.staged_skinned_instance_meta.len());
         self.ensure_blend_shape_weight_capacity(
@@ -1259,13 +1333,6 @@ impl Gpu3D {
                 &self.instance_transform_buffer,
                 0,
                 bytemuck::cast_slice(&self.staged_instance_transforms),
-            );
-        }
-        if !self.staged_instance_materials.is_empty() {
-            queue.write_buffer(
-                &self.instance_material_buffer,
-                0,
-                bytemuck::cast_slice(&self.staged_instance_materials),
             );
         }
         if !self.staged_rigid_instance_meta.is_empty() {

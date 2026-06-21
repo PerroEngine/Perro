@@ -1,5 +1,15 @@
 use super::*;
 
+struct AppendPackedLodDataArgs<'a> {
+    device: &'a wgpu::Device,
+    queue: &'a wgpu::Queue,
+    vertices: &'a [MeshVertex],
+    mesh_indices: &'a [u32],
+    base_vertex: u32,
+    decoded_lods: &'a [DecodedLod],
+    decoded_surfaces: &'a [MeshRange],
+}
+
 impl Gpu3D {
     pub fn draw_call_count(&self) -> u32 {
         (self.draw_batches.len() + self.multimesh_batches.len()) as u32
@@ -148,27 +158,6 @@ impl Gpu3D {
         self.instance_transform_capacity = new_capacity;
     }
 
-    pub(super) fn ensure_instance_material_capacity(
-        &mut self,
-        device: &wgpu::Device,
-        needed: usize,
-    ) {
-        if needed <= self.instance_material_capacity {
-            return;
-        }
-        let mut new_capacity = self.instance_material_capacity.max(1);
-        while new_capacity < needed {
-            new_capacity *= 2;
-        }
-        self.instance_material_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("perro_mesh_instance_materials"),
-            size: (new_capacity * std::mem::size_of::<MaterialInstanceGpu>()) as u64,
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        self.instance_material_capacity = new_capacity;
-    }
-
     pub(super) fn ensure_rigid_instance_meta_capacity(
         &mut self,
         device: &wgpu::Device,
@@ -252,6 +241,36 @@ impl Gpu3D {
             mapped_at_creation: false,
         });
         self.blend_shape_instance_meta_capacity = new_capacity;
+        self.rebuild_camera_bind_groups(device);
+    }
+
+    pub(super) fn ensure_packed_lod_param_capacity(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        needed: usize,
+    ) {
+        if needed <= self.packed_lod_param_capacity {
+            return;
+        }
+        let mut new_capacity = self.packed_lod_param_capacity.max(1);
+        while new_capacity < needed {
+            new_capacity *= 2;
+        }
+        self.packed_lod_param_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("perro_packed_lod_params"),
+            size: (new_capacity * std::mem::size_of::<PackedLodParamGpu>()) as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        if !self.packed_lod_params.is_empty() {
+            queue.write_buffer(
+                &self.packed_lod_param_buffer,
+                0,
+                bytemuck::cast_slice(&self.packed_lod_params),
+            );
+        }
+        self.packed_lod_param_capacity = new_capacity;
         self.rebuild_camera_bind_groups(device);
     }
 
@@ -409,6 +428,10 @@ impl Gpu3D {
                     binding: 5,
                     resource: self.blend_shape_instance_meta_buffer.as_entire_binding(),
                 },
+                wgpu::BindGroupEntry {
+                    binding: 6,
+                    resource: self.packed_lod_param_buffer.as_entire_binding(),
+                },
             ],
         });
         self.rigid_shadow_camera_bind_groups = self
@@ -443,6 +466,10 @@ impl Gpu3D {
                             binding: 5,
                             resource: self.blend_shape_instance_meta_buffer.as_entire_binding(),
                         },
+                        wgpu::BindGroupEntry {
+                            binding: 6,
+                            resource: self.packed_lod_param_buffer.as_entire_binding(),
+                        },
                     ],
                 })
             })
@@ -470,6 +497,10 @@ impl Gpu3D {
                 wgpu::BindGroupEntry {
                     binding: 4,
                     resource: self.blend_shape_weight_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: self.blend_shape_instance_meta_buffer.as_entire_binding(),
                 },
             ],
         });
@@ -975,15 +1006,20 @@ impl Gpu3D {
         if decoded.vertices.is_empty() || decoded.indices.is_empty() {
             return None;
         }
+        let DecodedMesh {
+            vertices: decoded_vertices,
+            indices: decoded_indices,
+            surface_ranges: decoded_surface_ranges,
+            blend_shapes: decoded_blend_shapes,
+            meshlets: decoded_meshlets,
+            lods: decoded_lods,
+            has_skinning: _,
+        } = decoded;
         let base_vertex = self.mesh_vertices.len() as u32;
         let index_start = self.mesh_indices.len() as u32;
-        let index_count = decoded.indices.len() as u32;
+        let index_count = decoded_indices.len() as u32;
 
-        let (bounds_center, bounds_radius) = mesh_bounds_from_vertices(&decoded.vertices)?;
-        let decoded_surface_ranges = decoded.surface_ranges.clone();
-        let decoded_meshlets = decoded.meshlets.clone();
-        let decoded_lods = decoded.lods.clone();
-        let decoded_blend_shapes = decoded.blend_shapes.clone();
+        let (bounds_center, bounds_radius) = mesh_bounds_from_vertices(&decoded_vertices)?;
         let surface_ranges = if decoded_surface_ranges.is_empty() {
             vec![MeshRange {
                 index_start,
@@ -1001,17 +1037,16 @@ impl Gpu3D {
                 })
                 .collect()
         };
-        let added_vertices = decoded.vertices;
-        let added_rigid_vertices: Vec<RigidMeshVertex> = added_vertices
+        let added_vertices: Vec<SkinnedMeshVertex> = decoded_vertices
             .iter()
-            .map(|v| RigidMeshVertex {
-                pos: v.pos,
-                normal: v.normal,
-                uv: v.uv,
-            })
+            .map(pack_skinned_mesh_vertex)
             .collect();
-        let mut added_indices = Vec::with_capacity(decoded.indices.len());
-        for idx in decoded.indices {
+        let added_rigid_vertices: Vec<RigidMeshVertex> = decoded_vertices
+            .iter()
+            .map(pack_rigid_mesh_vertex)
+            .collect();
+        let mut added_indices = Vec::with_capacity(decoded_indices.len());
+        for idx in decoded_indices {
             added_indices.push(idx + base_vertex);
         }
 
@@ -1020,7 +1055,7 @@ impl Gpu3D {
         self.ensure_mesh_buffer_capacity(device, queue, new_vertex_len, new_index_len);
 
         let vertex_offset =
-            self.mesh_vertices.len() as u64 * std::mem::size_of::<MeshVertex>() as u64;
+            self.mesh_vertices.len() as u64 * std::mem::size_of::<SkinnedMeshVertex>() as u64;
         let rigid_vertex_offset =
             self.rigid_mesh_vertices.len() as u64 * std::mem::size_of::<RigidMeshVertex>() as u64;
         let index_offset = self.mesh_indices.len() as u64 * std::mem::size_of::<u32>() as u64;
@@ -1049,9 +1084,9 @@ impl Gpu3D {
         let blend_shape_delta_start = self.blend_shape_deltas.len() as u32;
         let blend_shape_target_count = decoded_blend_shapes.len() as u32;
         let blend_shape_vertex_start = base_vertex;
-        let blend_shape_vertex_count = added_vertices.len() as u32;
+        let blend_shape_vertex_count = decoded_vertices.len() as u32;
         if !decoded_blend_shapes.is_empty() {
-            let added_delta_count = decoded_blend_shapes.len() * added_vertices.len();
+            let added_delta_count = decoded_blend_shapes.len() * decoded_vertices.len();
             let old_delta_len = self.blend_shape_deltas.len();
             self.ensure_blend_shape_delta_capacity(
                 device,
@@ -1060,7 +1095,7 @@ impl Gpu3D {
             );
             self.blend_shape_deltas.reserve(added_delta_count);
             for shape in &decoded_blend_shapes {
-                for vertex_index in 0..added_vertices.len() {
+                for vertex_index in 0..decoded_vertices.len() {
                     let vertex = shape.vertices.get(vertex_index).copied();
                     self.blend_shape_deltas.push(BlendShapeDeltaGpu {
                         position_delta: vertex
@@ -1109,15 +1144,25 @@ impl Gpu3D {
             .collect();
         let meshlets_arc: Arc<[MeshletRange]> = Arc::from(meshlets);
         let surface_ranges_arc: Arc<[MeshRange]> = Arc::from(surface_ranges);
-        let lods = build_mesh_lod_ranges(
+        let packed_lods = self.append_packed_lod_data(AppendPackedLodDataArgs {
+            device,
+            queue,
+            vertices: &decoded_vertices,
+            mesh_indices: &added_indices,
+            base_vertex,
+            decoded_lods: &decoded_lods,
+            decoded_surfaces: &decoded_surface_ranges,
+        });
+        let lods = build_mesh_lod_ranges(BuildMeshLodRangesArgs {
             index_start,
             index_count,
-            &decoded_surface_ranges,
-            &surface_ranges_arc,
-            &decoded_meshlets,
-            &meshlets_arc,
-            &decoded_lods,
-        );
+            decoded_surfaces: &decoded_surface_ranges,
+            uploaded_surfaces: &surface_ranges_arc,
+            decoded_meshlets: &decoded_meshlets,
+            uploaded_meshlets: &meshlets_arc,
+            decoded_lods: &decoded_lods,
+            packed_lods: &packed_lods,
+        });
 
         Some(MeshAssetRange {
             full,
@@ -1131,6 +1176,140 @@ impl Gpu3D {
             blend_shape_vertex_start,
             blend_shape_vertex_count,
         })
+    }
+
+    fn append_packed_lod_data(
+        &mut self,
+        args: AppendPackedLodDataArgs<'_>,
+    ) -> Vec<Option<PackedMeshLodRange>> {
+        let AppendPackedLodDataArgs {
+            device,
+            queue,
+            vertices,
+            mesh_indices,
+            base_vertex,
+            decoded_lods,
+            decoded_surfaces,
+        } = args;
+        if decoded_lods.len() <= 1 {
+            return vec![None; decoded_lods.len()];
+        }
+        let param_upload_start = self.packed_lod_params.len();
+        self.ensure_packed_lod_param_capacity(
+            device,
+            queue,
+            param_upload_start + decoded_lods.len().saturating_sub(1),
+        );
+        let mut out = Vec::with_capacity(decoded_lods.len());
+        for (lod_index, lod) in decoded_lods.iter().enumerate() {
+            if lod_index == 0 || lod.index_count == 0 {
+                out.push(None);
+                continue;
+            }
+            let src_start = lod.index_start as usize;
+            let src_end = src_start
+                .saturating_add(lod.index_count as usize)
+                .min(mesh_indices.len());
+            if src_start >= src_end {
+                out.push(None);
+                continue;
+            }
+            let src_indices = &mesh_indices[src_start..src_end];
+            let Some(param) = packed_lod_param(vertices, src_indices, base_vertex) else {
+                out.push(None);
+                continue;
+            };
+            let param_index = self.packed_lod_params.len() as u32;
+            self.packed_lod_params.push(param);
+
+            let packed_index_start = self.packed_lod_indices.len() as u32;
+            let packed_vertex_start = self.packed_lod_vertices.len() as u32;
+            let mut remap: AHashMap<u32, u32> = AHashMap::with_capacity(src_indices.len());
+            let mut new_vertices = Vec::with_capacity(src_indices.len());
+            let mut new_indices = Vec::with_capacity(src_indices.len());
+            for &uploaded_index in src_indices {
+                let local_index = uploaded_index.saturating_sub(base_vertex);
+                let next_index = packed_vertex_start + new_vertices.len() as u32;
+                let packed_index = *remap.entry(local_index).or_insert_with(|| {
+                    if let Some(vertex) = vertices.get(local_index as usize) {
+                        new_vertices.push(pack_packed_lod_vertex(vertex, &param));
+                        next_index
+                    } else {
+                        0
+                    }
+                });
+                new_indices.push(packed_index);
+            }
+            if new_vertices.is_empty() || new_indices.is_empty() {
+                out.push(None);
+                continue;
+            }
+            self.ensure_packed_lod_buffer_capacity(
+                device,
+                queue,
+                self.packed_lod_vertices.len() + new_vertices.len(),
+                self.packed_lod_indices.len() + new_indices.len(),
+            );
+            let vertex_offset = self.packed_lod_vertices.len() as u64
+                * std::mem::size_of::<PackedRigidLodVertex>() as u64;
+            let index_offset =
+                self.packed_lod_indices.len() as u64 * std::mem::size_of::<u32>() as u64;
+            self.packed_lod_vertices.extend_from_slice(&new_vertices);
+            self.packed_lod_indices.extend_from_slice(&new_indices);
+            queue.write_buffer(
+                &self.packed_lod_vertex_buffer,
+                vertex_offset,
+                bytemuck::cast_slice(&new_vertices),
+            );
+            queue.write_buffer(
+                &self.packed_lod_index_buffer,
+                index_offset,
+                bytemuck::cast_slice(&new_indices),
+            );
+
+            let mut packed_surfaces = Vec::new();
+            let surface_start = lod.surface_start as usize;
+            let surface_end = surface_start
+                .saturating_add(lod.surface_count as usize)
+                .min(decoded_surfaces.len());
+            for surface in &decoded_surfaces[surface_start..surface_end] {
+                let rel_start = surface.index_start.saturating_sub(lod.index_start);
+                if rel_start >= lod.index_count {
+                    continue;
+                }
+                packed_surfaces.push(MeshRange {
+                    index_start: packed_index_start + rel_start,
+                    index_count: surface.index_count.min(lod.index_count - rel_start),
+                    base_vertex: 0,
+                });
+            }
+            if packed_surfaces.is_empty() {
+                packed_surfaces.push(MeshRange {
+                    index_start: packed_index_start,
+                    index_count: new_indices.len() as u32,
+                    base_vertex: 0,
+                });
+            }
+            out.push(Some(PackedMeshLodRange {
+                full: MeshRange {
+                    index_start: packed_index_start,
+                    index_count: new_indices.len() as u32,
+                    base_vertex: 0,
+                },
+                surface_ranges: Arc::from(packed_surfaces),
+                param_index,
+            }));
+        }
+        if self.packed_lod_params.len() > param_upload_start {
+            let offset =
+                param_upload_start as u64 * std::mem::size_of::<PackedLodParamGpu>() as u64;
+            queue.write_buffer(
+                &self.packed_lod_param_buffer,
+                offset,
+                bytemuck::cast_slice(&self.packed_lod_params[param_upload_start..]),
+            );
+        }
+        out
     }
 
     pub(super) fn ensure_blend_shape_delta_capacity(
@@ -1207,13 +1386,13 @@ impl Gpu3D {
             let old_rigid_vertex_buffer = self.rigid_vertex_buffer.clone();
             let old_index_buffer = self.index_buffer.clone();
             let old_vertex_size =
-                self.mesh_vertices.len() as u64 * std::mem::size_of::<MeshVertex>() as u64;
+                self.mesh_vertices.len() as u64 * std::mem::size_of::<SkinnedMeshVertex>() as u64;
             let old_rigid_vertex_size = self.rigid_mesh_vertices.len() as u64
                 * std::mem::size_of::<RigidMeshVertex>() as u64;
             let old_index_size = self.mesh_indices.len() as u64 * std::mem::size_of::<u32>() as u64;
             self.vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("perro_mesh_vertices"),
-                size: (self.vertex_capacity * std::mem::size_of::<MeshVertex>()) as u64,
+                size: (self.vertex_capacity * std::mem::size_of::<SkinnedMeshVertex>()) as u64,
                 usage: wgpu::BufferUsages::VERTEX
                     | wgpu::BufferUsages::COPY_DST
                     | wgpu::BufferUsages::COPY_SRC,
@@ -1269,5 +1448,142 @@ impl Gpu3D {
                 queue.submit([encoder.finish()]);
             }
         }
+    }
+
+    pub(super) fn ensure_packed_lod_buffer_capacity(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        needed_vertices: usize,
+        needed_indices: usize,
+    ) {
+        let mut vertex_grew = false;
+        let mut index_grew = false;
+        if needed_vertices > self.packed_lod_vertex_capacity {
+            while self.packed_lod_vertex_capacity < needed_vertices {
+                self.packed_lod_vertex_capacity = self.packed_lod_vertex_capacity.max(1) * 2;
+            }
+            vertex_grew = true;
+        }
+        if needed_indices > self.packed_lod_index_capacity {
+            while self.packed_lod_index_capacity < needed_indices {
+                self.packed_lod_index_capacity = self.packed_lod_index_capacity.max(1) * 2;
+            }
+            index_grew = true;
+        }
+        if !vertex_grew && !index_grew {
+            return;
+        }
+        let old_vertex_buffer = self.packed_lod_vertex_buffer.clone();
+        let old_index_buffer = self.packed_lod_index_buffer.clone();
+        let old_vertex_size = self.packed_lod_vertices.len() as u64
+            * std::mem::size_of::<PackedRigidLodVertex>() as u64;
+        let old_index_size =
+            self.packed_lod_indices.len() as u64 * std::mem::size_of::<u32>() as u64;
+        if vertex_grew {
+            self.packed_lod_vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("perro_packed_lod_vertices_rigid"),
+                size: (self.packed_lod_vertex_capacity
+                    * std::mem::size_of::<PackedRigidLodVertex>()) as u64,
+                usage: wgpu::BufferUsages::VERTEX
+                    | wgpu::BufferUsages::COPY_DST
+                    | wgpu::BufferUsages::COPY_SRC,
+                mapped_at_creation: false,
+            });
+        }
+        if index_grew {
+            self.packed_lod_index_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("perro_packed_lod_indices"),
+                size: (self.packed_lod_index_capacity * std::mem::size_of::<u32>()) as u64,
+                usage: wgpu::BufferUsages::INDEX
+                    | wgpu::BufferUsages::COPY_DST
+                    | wgpu::BufferUsages::COPY_SRC,
+                mapped_at_creation: false,
+            });
+        }
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("perro_packed_lod_growth_copy"),
+        });
+        if vertex_grew && old_vertex_size > 0 {
+            encoder.copy_buffer_to_buffer(
+                &old_vertex_buffer,
+                0,
+                &self.packed_lod_vertex_buffer,
+                0,
+                old_vertex_size,
+            );
+        }
+        if index_grew && old_index_size > 0 {
+            encoder.copy_buffer_to_buffer(
+                &old_index_buffer,
+                0,
+                &self.packed_lod_index_buffer,
+                0,
+                old_index_size,
+            );
+        }
+        queue.submit([encoder.finish()]);
+    }
+}
+
+fn packed_lod_param(
+    vertices: &[MeshVertex],
+    uploaded_indices: &[u32],
+    base_vertex: u32,
+) -> Option<PackedLodParamGpu> {
+    let mut pos_min = [f32::INFINITY; 3];
+    let mut pos_max = [f32::NEG_INFINITY; 3];
+    let mut uv_min = [f32::INFINITY; 2];
+    let mut uv_max = [f32::NEG_INFINITY; 2];
+    let mut any = false;
+    for &uploaded_index in uploaded_indices {
+        let local_index = uploaded_index.saturating_sub(base_vertex);
+        let Some(vertex) = vertices.get(local_index as usize) else {
+            continue;
+        };
+        any = true;
+        for axis in 0..3 {
+            pos_min[axis] = pos_min[axis].min(vertex.pos[axis]);
+            pos_max[axis] = pos_max[axis].max(vertex.pos[axis]);
+        }
+        for axis in 0..2 {
+            uv_min[axis] = uv_min[axis].min(vertex.uv[axis]);
+            uv_max[axis] = uv_max[axis].max(vertex.uv[axis]);
+        }
+    }
+    if !any {
+        return None;
+    }
+    let pos_extent = [
+        (pos_max[0] - pos_min[0]).max(1.0e-9),
+        (pos_max[1] - pos_min[1]).max(1.0e-9),
+        (pos_max[2] - pos_min[2]).max(1.0e-9),
+        0.0,
+    ];
+    Some(PackedLodParamGpu {
+        pos_min: [pos_min[0], pos_min[1], pos_min[2], 0.0],
+        pos_extent,
+        uv_min_extent: [
+            uv_min[0],
+            uv_min[1],
+            (uv_max[0] - uv_min[0]).max(1.0e-9),
+            (uv_max[1] - uv_min[1]).max(1.0e-9),
+        ],
+    })
+}
+
+fn pack_packed_lod_vertex(vertex: &MeshVertex, param: &PackedLodParamGpu) -> PackedRigidLodVertex {
+    PackedRigidLodVertex {
+        pos: [
+            pack_unorm16_local(vertex.pos[0], param.pos_min[0], param.pos_extent[0]),
+            pack_unorm16_local(vertex.pos[1], param.pos_min[1], param.pos_extent[1]),
+            pack_unorm16_local(vertex.pos[2], param.pos_min[2], param.pos_extent[2]),
+            0,
+        ],
+        normal: pack_normal_snorm8x4(vertex.normal),
+        uv: [
+            pack_unorm16_local(vertex.uv[0], param.uv_min_extent[0], param.uv_min_extent[2]),
+            pack_unorm16_local(vertex.uv[1], param.uv_min_extent[1], param.uv_min_extent[3]),
+        ],
     }
 }

@@ -43,8 +43,8 @@ Build and run:
 ```powershell
 perro check [--path <project_dir>]
 perro test [--path <project_dir>] [-- <cargo_test_args>]
-perro dev [--path <project_dir>] [--target native|web] [--timings] [--profile] [--ui-profile] [--release] [--csv-profile [csv_name]] [--host <addr>] [--port <num>]
-perro build [--path <project_dir>] [--target native|web] [--profile] [--console]
+perro dev [--path <project_dir>] [--target native|web|android] [--timings] [--profile] [--ui-profile] [--release] [--csv-profile [csv_name]] [--host <addr>] [--port <num>]
+perro build [--path <project_dir>] [--target native|web|android] [--profile] [--console]
 perro dlc --name <dlc_name> [--path <project_dir>]
 ```
 
@@ -161,7 +161,7 @@ perro test --path D:\GameProjects\MyGame -- player_state_tests
 Command:
 
 ```powershell
-perro dev --path <project_dir> [--target native|web] [--timings] [--profile] [--ui-profile] [--release] [--csv-profile [csv_name]] [--host <addr>] [--port <num>]
+perro dev --path <project_dir> [--target native|web|android] [--timings] [--profile] [--ui-profile] [--release] [--csv-profile [csv_name]] [--host <addr>] [--port <num>]
 ```
 
 What it does:
@@ -174,7 +174,7 @@ What it does:
 
 Flags:
 
-- `--target native|web`: selects native runner or browser wasm bundle. Default `native`.
+- `--target native|web|android`: selects native runner, browser wasm bundle, or Android app target. Default `native`.
 - `--timings`: prints lightweight native timing averages: sim, gfx, delta, fps.
 - `--profile`: enables profiling feature for the selected dev target.
 - `--ui-profile`: enables native dev runner `ui_profile` feature.
@@ -204,7 +204,7 @@ See [Performance + Flexibility Philosophy](../project/performance_philosophy.md)
 Command:
 
 ```powershell
-perro build --path <project_dir> [--target native|web] [--profile] [--console]
+perro build --path <project_dir> [--target native|web|android] [--profile] [--console]
 ```
 
 What it does:
@@ -220,7 +220,7 @@ What it does:
 
 Flags:
 
-- `--target native|web`: selects native executable or browser wasm bundle. Default `native`.
+- `--target native|web|android`: selects native executable, browser wasm bundle, or Android app target. Default `native`.
 - `--profile`: enables profile build options for the generated project bundle.
 - `--console`: enables console build options for generated native project bundle.
 

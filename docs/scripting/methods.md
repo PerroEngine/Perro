@@ -17,6 +17,12 @@
 
 Use `methods!` for logic you want to call directly from lifecycle hooks or dynamically through `call_method!`.
 
+Source path:
+
+- `perro_source/script_stack/perro_scripting/src/macros.rs`
+- `perro_source/build_pipeline/perro_compiler/src/script_methods.rs`
+- `perro_source/build_pipeline/perro_compiler/src/script_codegen.rs`
+
 ## Method Shape
 
 ```rust
@@ -61,7 +67,13 @@ Use `call_method!` for cross-script calls or dynamic calls by `ScriptMemberID`. 
 
 If the called method returns `bool`, `i32`, `String`, etc. or engine types like `NodeID`, `MeshID` or any custom `#[derive(Variant)]` type, the generated script bridge wraps that value with `Variant::from(value)`. If the called method returns `()`, the bridge returns `Variant::Null`.
 
+Primitive method returns still use typed Rust in the method body.
+
 Because dispatch is dynamic, caller code must know the expected return type and decode it.
+
+Use `call_method!(ctx.run, ctx.id, ...)` for dynamic self dispatch.
+
+Use `call_method!(ctx.run, other_id, ...)` for cross-script dispatch.
 
 ```rust
 lifecycle!({

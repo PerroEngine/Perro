@@ -47,7 +47,7 @@ Use it when this script needs startup work for its own node.
 lifecycle!({
     fn on_init(&self, ctx: &mut ScriptContext<'_, API>) {
         let texture = texture_load!(ctx.res, "res://textures/player.png");
-        with_state_mut!(ctx.run, ctx.id, PlayerState, |state| {
+        with_state_mut!(ctx.run, PlayerState, ctx.id, |state| {
             state.texture = texture;
         });
     }

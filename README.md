@@ -42,7 +42,7 @@ Local reference:
 
 ## Major Features
 
-- **Behavior Scripts + Per-Node State**: a script is function entry points (lifecycle hooks + methods), not a mutable script object. When a node binds that script, runtime uses that node’s `ctx.id` to run behavior and resolve that node’s own `#[State]` via `with_state!`/`with_state_mut!`.
+- **Behavior Scripts + Per-Node State**: a script is function entry points (lifecycle hooks + methods), not a mutable behavior object. When a node binds that script, runtime uses that node’s `ctx.id` to run behavior and resolve that node’s own `#[State]` via `with_state!`/`with_state_mut!`.
 - **Object-Centric Scene Model**: parent/child relationships, concrete node types, and traditional game-object structure stay front and center.
 - **Compiler-Backed Asset Flow**: dev stays flexible with plain files, while build/export bakes supported assets into fast static lookup paths and packs the rest.
 - **Powerful UI System**: UI is built as a real engine system with relative sizing, clamping, and layouts designed to scale from simple menus to larger game interfaces.

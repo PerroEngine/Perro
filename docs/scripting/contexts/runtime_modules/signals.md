@@ -48,18 +48,7 @@ lifecycle!({
 | Params                     | `&mut self, script_id: NodeID, signal: SignalID, function: ScriptMemberID, params: &[Variant],`                                                                                                                    |
 | Returns                    | `bool`                                                                                                                                                                                                             |
 | Use when                   | Use when gameplay must change engine state or queue an action this frame.                                                                                                                                          |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.run.Signals().signal_connect(ctx.id, 0.0, 0.1, variant!(0_i32));
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `signal_disconnect`
 
@@ -70,18 +59,7 @@ lifecycle!({
 | Params                     | `&mut self, script_id: NodeID, signal: SignalID, function: ScriptMemberID,`                                                                                                                                        |
 | Returns                    | `bool`                                                                                                                                                                                                             |
 | Use when                   | Use when code must release, remove, stop, or disconnect existing engine state.                                                                                                                                     |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.run.Signals().signal_disconnect(ctx.id, 0.0, 0.1);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `signal_connect_many`
 
@@ -152,18 +130,7 @@ let _ = signal_disconnect_many!(
 | Params                     | `&mut self, signal: SignalID, params: &[Variant]`                                                                                                                                                                  |
 | Returns                    | `usize`                                                                                                                                                                                                            |
 | Use when                   | Use when gameplay must change engine state or queue an action this frame.                                                                                                                                          |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.run.Signals().signal_emit(Default::default(), variant!(0_i32));
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `signal_connect`
 
@@ -174,18 +141,7 @@ lifecycle!({
 | Params                     | `ctx, script, signal, function, params`                                                                                                                                                                            |
 | Returns                    | `same as backing method`                                                                                                                                                                                           |
 | Use when                   | Use when gameplay must change engine state or queue an action this frame.                                                                                                                                          |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = signal_connect!(ctx.run, 0.0, 0.1, 0.0, 0.1);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `signal_disconnect`
 
@@ -196,18 +152,7 @@ lifecycle!({
 | Params                     | `ctx, script, signal, function`                                                                                                                                                                                    |
 | Returns                    | `same as backing method`                                                                                                                                                                                           |
 | Use when                   | Use when code must release, remove, stop, or disconnect existing engine state.                                                                                                                                     |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = signal_disconnect!(ctx.run, 0.0, 0.1, 0.1);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `signal_emit`
 
@@ -218,15 +163,5 @@ lifecycle!({
 | Params                     | `ctx, signal, params`                                                                                                                                                                                              |
 | Returns                    | `same as backing method`                                                                                                                                                                                           |
 | Use when                   | Use when gameplay must change engine state or queue an action this frame.                                                                                                                                          |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = signal_emit!(ctx.run, 0.0, 0.1);
-        let _ = value;
-    }
-});
-```

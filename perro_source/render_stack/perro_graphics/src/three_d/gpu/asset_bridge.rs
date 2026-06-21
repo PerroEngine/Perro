@@ -1,20 +1,33 @@
 use super::*;
 
-pub(super) fn build_mesh_lod_ranges(
-    index_start: u32,
-    index_count: u32,
-    decoded_surfaces: &[MeshRange],
-    uploaded_surfaces: &Arc<[MeshRange]>,
-    decoded_meshlets: &[DecodedMeshlet],
-    uploaded_meshlets: &Arc<[MeshletRange]>,
-    decoded_lods: &[DecodedLod],
-) -> Vec<MeshLodRange> {
+pub(super) struct BuildMeshLodRangesArgs<'a> {
+    pub(super) index_start: u32,
+    pub(super) index_count: u32,
+    pub(super) decoded_surfaces: &'a [MeshRange],
+    pub(super) uploaded_surfaces: &'a Arc<[MeshRange]>,
+    pub(super) decoded_meshlets: &'a [DecodedMeshlet],
+    pub(super) uploaded_meshlets: &'a Arc<[MeshletRange]>,
+    pub(super) decoded_lods: &'a [DecodedLod],
+    pub(super) packed_lods: &'a [Option<PackedMeshLodRange>],
+}
+
+pub(super) fn build_mesh_lod_ranges(args: BuildMeshLodRangesArgs<'_>) -> Vec<MeshLodRange> {
+    let BuildMeshLodRangesArgs {
+        index_start,
+        index_count,
+        decoded_surfaces,
+        uploaded_surfaces,
+        decoded_meshlets,
+        uploaded_meshlets,
+        decoded_lods,
+        packed_lods,
+    } = args;
     if decoded_lods.is_empty() {
         return Vec::new();
     }
 
     let mut out = Vec::new();
-    for lod in decoded_lods {
+    for (lod_index, lod) in decoded_lods.iter().enumerate() {
         if lod.index_count == 0 {
             continue;
         }
@@ -49,6 +62,7 @@ pub(super) fn build_mesh_lod_ranges(
             full: lod_full,
             surface_ranges: surfaces,
             meshlets,
+            packed: packed_lods.get(lod_index).cloned().unwrap_or(None),
         });
     }
     out
@@ -65,6 +79,7 @@ pub(super) fn select_mesh_lod<'a>(
             full: mesh.full,
             surface_ranges: &mesh.surface_ranges,
             meshlets: &mesh.meshlets,
+            packed: None,
         };
     }
     let Some(model) = model else {
@@ -72,6 +87,7 @@ pub(super) fn select_mesh_lod<'a>(
             full: mesh.full,
             surface_ranges: &mesh.surface_ranges,
             meshlets: &mesh.meshlets,
+            packed: None,
         };
     };
     let world_pos = [model[3][0], model[3][1], model[3][2]];
@@ -100,6 +116,7 @@ pub(super) fn select_mesh_lod<'a>(
         full: lod.full,
         surface_ranges: &lod.surface_ranges,
         meshlets: &lod.meshlets,
+        packed: lod.packed.as_ref(),
     }
 }
 
@@ -148,6 +165,7 @@ mod tests {
             full,
             surface_ranges: Arc::from([full]),
             meshlets: Arc::from([]),
+            packed: None,
         }
     }
 

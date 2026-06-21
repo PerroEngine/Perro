@@ -30,7 +30,19 @@
 
 ## Overview
 
-This runtime module belongs to `ctx.run` and documents scripts calls.
+This runtime module belongs to `ctx.run` and documents script state and method calls.
+
+Use it for:
+
+- typed self-state access through `with_state!` and `with_state_mut!`
+- dynamic field access through `get_var!` and `set_var!`
+- self or cross-script dynamic method calls through `call_method!`
+
+Source path:
+
+- `perro_source/api_modules/perro_runtime_api/src/sub_apis/script.rs`
+- `perro_source/runtime_project/perro_runtime/src/rt_ctx/scripts.rs`
+- `perro_source/build_pipeline/perro_compiler/src/script_codegen.rs`
 
 ## Context
 
@@ -51,6 +63,10 @@ lifecycle!({
 
 `get_var!` and `call_method!` return `Variant` because member lookup is dynamic.
 
+The called method can still return a primitive such as `bool`, `i32`, `f32`, or `String`.
+
+Generated script glue wraps that typed return into `Variant`.
+
 Decode with `as_*`, `parse::<T>()`, or `into_parse::<T>()`.
 
 See [Variant](../../variant.md).
@@ -65,19 +81,8 @@ See [Variant](../../variant.md).
 | Signature | `pub fn with_state<T: 'static, V: Default, F>(&mut self, script_id: NodeID, f: F) -> V where F: FnOnce(&T) -> V,` |
 | Params | `&mut self, script_id: NodeID, f: F) -> V where F: FnOnce(&T` |
 | Returns | `V where F: FnOnce(&T) -> V,` |
-| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.run.Scripts().with_state(ctx.id, 0.1);
-        let _ = value;
-    }
-});
-```
+| Use when | Read typed state on this script or another known script type without dynamic `Variant` conversion. |
+| Fails when / edge behavior | Returns `V::default()` when the script id is missing or the stored state type is not `T`. |
 
 ### `with_state_mut`
 
@@ -87,19 +92,8 @@ lifecycle!({
 | Signature | `pub fn with_state_mut<T: 'static, V, F>(&mut self, script_id: NodeID, f: F) -> Option<V> where F: FnOnce(&mut T) -> V,` |
 | Params | `&mut self, script_id: NodeID, f: F) -> Option<V> where F: FnOnce(&mut T` |
 | Returns | `Option<V> where F: FnOnce(&mut T) -> V,` |
-| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.run.Scripts().with_state_mut(ctx.id, 0.1);
-        let _ = value;
-    }
-});
-```
+| Use when | Mutate typed state in place while keeping the mutable borrow inside one closure. |
+| Fails when / edge behavior | Returns `None` when the script id is missing or the stored state type is not `T`. |
 
 ### `script_attach`
 
@@ -110,18 +104,7 @@ lifecycle!({
 | Params | `&mut self, node_id: NodeID, script_path: P` |
 | Returns | `bool` |
 | Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.run.Scripts().script_attach(ctx.id, "res://path/to/resource");
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `script_attach_hashed`
 
@@ -132,18 +115,7 @@ lifecycle!({
 | Params | `&mut self, node_id: NodeID, script_path_hash: u64` |
 | Returns | `bool` |
 | Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.run.Scripts().script_attach_hashed(ctx.id, 0);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `script_detach`
 
@@ -154,18 +126,7 @@ lifecycle!({
 | Params | `&mut self, node_id: NodeID` |
 | Returns | `bool` |
 | Use when | Use when code must release, remove, stop, or disconnect existing engine state. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.run.Scripts().script_detach(ctx.id);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `remove`
 
@@ -176,18 +137,7 @@ lifecycle!({
 | Params | `&mut self, script_id: NodeID` |
 | Returns | `bool` |
 | Use when | Use when code must release, remove, stop, or disconnect existing engine state. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.run.Scripts().remove(ctx.id);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `set_update_enabled`
 
@@ -198,18 +148,7 @@ lifecycle!({
 | Params | `&mut self, script_id: NodeID, enabled: bool` |
 | Returns | `bool` |
 | Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.run.Scripts().set_update_enabled(ctx.id, true);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `set_fixed_update_enabled`
 
@@ -220,18 +159,7 @@ lifecycle!({
 | Params | `&mut self, script_id: NodeID, enabled: bool` |
 | Returns | `bool` |
 | Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.run.Scripts().set_fixed_update_enabled(ctx.id, true);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `get_var`
 
@@ -241,19 +169,8 @@ lifecycle!({
 | Signature | `pub fn get_var<M: IntoScriptMemberID>(&mut self, script_id: NodeID, member: M) -> Variant` |
 | Params | `&mut self, script_id: NodeID, member: M` |
 | Returns | `Variant` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.run.Scripts().get_var(ctx.id, 0.1);
-        let _ = value;
-    }
-});
-```
+| Use when | Read another script's field dynamically by member name/hash, such as UI, animation event, or generic tool code. |
+| Fails when / edge behavior | Returns `Variant::Null` when the script id or member does not resolve. |
 
 ### `set_var`
 
@@ -263,19 +180,8 @@ lifecycle!({
 | Signature | `pub fn set_var<M: IntoScriptMemberID>(&mut self, script_id: NodeID, member: M, value: Variant)` |
 | Params | `&mut self, script_id: NodeID, member: M, value: Variant` |
 | Returns | `()` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.run.Scripts().set_var(ctx.id, Default::default(), variant!(0_i32));
-        let _ = value;
-    }
-});
-```
+| Use when | Write another script's field dynamically from scene events, animation events, UI, or cross-script code. |
+| Fails when / edge behavior | No-op when the script id or member does not resolve, or when `Variant` cannot parse into the field type. |
 
 ### `call_method`
 
@@ -285,19 +191,8 @@ lifecycle!({
 | Signature | `pub fn call_method<M: IntoScriptMemberID>( &mut self, script_id: NodeID, method: M, params: &[Variant], ) -> Variant` |
 | Params | `&mut self, script_id: NodeID, method: M, params: &[Variant],` |
 | Returns | `Variant` |
-| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.run.Scripts().call_method(ctx.id, Default::default(), variant!(0_i32));
-        let _ = value;
-    }
-});
-```
+| Use when | Call self or another script dynamically by method name/hash; prefer direct Rust helper calls for known same-script logic. |
+| Fails when / edge behavior | Returns `Variant::Null` when the script id, method, or params do not resolve. Primitive method returns are wrapped into `Variant`. |
 
 ### `with_state`
 
@@ -307,19 +202,8 @@ lifecycle!({
 | Signature | `with_state!(ctx.run, state_ty, id, f)` |
 | Params | `ctx, state_ty, id, f` |
 | Returns | `same as backing method` |
-| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = with_state!(ctx.run, 0.0, 0.1, 0.1);
-        let _ = value;
-    }
-});
-```
+| Use when | Use when script code needs this exact engine read or write. |
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `with_state_mut`
 
@@ -329,19 +213,8 @@ lifecycle!({
 | Signature | `with_state_mut!(ctx.run, state_ty, id, f)` |
 | Params | `ctx, state_ty, id, f` |
 | Returns | `same as backing method` |
-| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = with_state_mut!(ctx.run, 0.0, 0.1, 0.1);
-        let _ = value;
-    }
-});
-```
+| Use when | Use when script code needs this exact engine read or write. |
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `script_attach`
 
@@ -352,18 +225,7 @@ lifecycle!({
 | Params | `ctx, id, path` |
 | Returns | `bool or () as shown by backing method` |
 | Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = script_attach!(ctx.run, 0.0, 0.1);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `script_detach`
 
@@ -374,18 +236,7 @@ lifecycle!({
 | Params | `ctx, id` |
 | Returns | `bool or () as shown by backing method` |
 | Use when | Use when code must release, remove, stop, or disconnect existing engine state. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = script_detach!(ctx.run, 0.1);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `script_set_update_enabled`
 
@@ -396,18 +247,7 @@ lifecycle!({
 | Params | `ctx, id, enabled` |
 | Returns | `bool or () as shown by backing method` |
 | Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = script_set_update_enabled!(ctx.run, 0.0, 0.1);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `script_set_fixed_update_enabled`
 
@@ -418,18 +258,7 @@ lifecycle!({
 | Params | `ctx, id, enabled` |
 | Returns | `bool or () as shown by backing method` |
 | Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = script_set_fixed_update_enabled!(ctx.run, 0.0, 0.1);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `get_var`
 
@@ -440,18 +269,7 @@ lifecycle!({
 | Params | `ctx, id, member` |
 | Returns | `Variant` |
 | Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = get_var!(ctx.run, 0.0, 0.1);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `set_var`
 
@@ -462,18 +280,7 @@ lifecycle!({
 | Params | `ctx, id, member, value` |
 | Returns | `bool or () as shown by backing method` |
 | Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = set_var!(ctx.run, 0.0, 0.1, 0.1);
-        let _ = value;
-    }
-});
-```
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `call_method`
 
@@ -483,16 +290,6 @@ lifecycle!({
 | Signature | `call_method!(ctx.run, id, method, params)` |
 | Params | `ctx, id, method, params` |
 | Returns | `Variant` |
-| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+| Use when | Use when script code needs this exact engine read or write. |
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = call_method!(ctx.run, 0.0, 0.1, 0.1);
-        let _ = value;
-    }
-});
-```

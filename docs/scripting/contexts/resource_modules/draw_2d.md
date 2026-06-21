@@ -41,19 +41,8 @@ This resource module belongs to `ctx.res` and documents draw 2d calls.
 | Signature | `pub fn push(&self, shape: DrawShape2D, position: Vector2)` |
 | Params | `&self, shape: DrawShape2D, position: Vector2` |
 | Returns | `()` |
-| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.res.Draw2D().push(Default::default(), Vector2::new(0.0, 0.0));
-        let _ = value;
-    }
-});
-```
+| Use when | Use when script code needs this exact engine read or write. |
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `circle`
 
@@ -63,19 +52,8 @@ lifecycle!({
 | Signature | `pub fn circle(&self, center: Vector2, radius: f32, color: [f32; 4])` |
 | Params | `&self, center: Vector2, radius: f32, color: [f32; 4]` |
 | Returns | `()` |
-| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.res.Draw2D().circle(Vector2::new(0.0, 0.0), 1.0, [1.0, 1.0, 1.0, 1.0]);
-        let _ = value;
-    }
-});
-```
+| Use when | Use when script code needs this exact engine read or write. |
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `ring`
 
@@ -85,19 +63,8 @@ lifecycle!({
 | Signature | `pub fn ring(&self, center: Vector2, radius: f32, color: [f32; 4], thickness: f32)` |
 | Params | `&self, center: Vector2, radius: f32, color: [f32; 4], thickness: f32` |
 | Returns | `()` |
-| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.res.Draw2D().ring(Vector2::new(0.0, 0.0), 1.0, [1.0, 1.0, 1.0, 1.0], 1.0);
-        let _ = value;
-    }
-});
-```
+| Use when | Use when script code needs this exact engine read or write. |
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `rect`
 
@@ -107,19 +74,8 @@ lifecycle!({
 | Signature | `pub fn rect(&self, center: Vector2, size: Vector2, color: [f32; 4])` |
 | Params | `&self, center: Vector2, size: Vector2, color: [f32; 4]` |
 | Returns | `()` |
-| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.res.Draw2D().rect(Vector2::new(0.0, 0.0), Vector2::new(0.0, 0.0), [1.0, 1.0, 1.0, 1.0]);
-        let _ = value;
-    }
-});
-```
+| Use when | Use when script code needs this exact engine read or write. |
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `rect_stroke`
 
@@ -129,19 +85,8 @@ lifecycle!({
 | Signature | `pub fn rect_stroke(&self, center: Vector2, size: Vector2, color: [f32; 4], thickness: f32)` |
 | Params | `&self, center: Vector2, size: Vector2, color: [f32; 4], thickness: f32` |
 | Returns | `()` |
-| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.res.Draw2D().rect_stroke(Vector2::new(0.0, 0.0), Vector2::new(0.0, 0.0), [1.0, 1.0, 1.0, 1.0], 1.0);
-        let _ = value;
-    }
-});
-```
+| Use when | Use when script code needs this exact engine read or write. |
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `line`
 
@@ -151,19 +96,8 @@ lifecycle!({
 | Signature | `pub fn line(&self, start: Vector2, end: Vector2, color: [f32; 4], thickness: f32)` |
 | Params | `&self, start: Vector2, end: Vector2, color: [f32; 4], thickness: f32` |
 | Returns | `()` |
-| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.res.Draw2D().line(Vector2::new(0.0, 0.0), Vector2::new(0.0, 0.0), [1.0, 1.0, 1.0, 1.0], 1.0);
-        let _ = value;
-    }
-});
-```
+| Use when | Use when script code needs this exact engine read or write. |
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `polyline`
 
@@ -173,19 +107,8 @@ lifecycle!({
 | Signature | `pub fn polyline(&self, points: Vec<Vector2>, color: [f32; 4], thickness: f32)` |
 | Params | `&self, points: Vec<Vector2>, color: [f32; 4], thickness: f32` |
 | Returns | `()` |
-| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.res.Draw2D().polyline(vec![Vector2::new(0.0, 0.0)], [1.0, 1.0, 1.0, 1.0], 1.0);
-        let _ = value;
-    }
-});
-```
+| Use when | Use when script code needs this exact engine read or write. |
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `polygon`
 
@@ -195,19 +118,8 @@ lifecycle!({
 | Signature | `pub fn polygon(&self, points: Vec<Vector2>, color: [f32; 4], thickness: f32)` |
 | Params | `&self, points: Vec<Vector2>, color: [f32; 4], thickness: f32` |
 | Returns | `()` |
-| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.res.Draw2D().polygon(vec![Vector2::new(0.0, 0.0)], [1.0, 1.0, 1.0, 1.0], 1.0);
-        let _ = value;
-    }
-});
-```
+| Use when | Use when script code needs this exact engine read or write. |
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `path`
 
@@ -217,19 +129,8 @@ lifecycle!({
 | Signature | `pub fn path(&self, points: Vec<Vector2>, color: [f32; 4], thickness: f32)` |
 | Params | `&self, points: Vec<Vector2>, color: [f32; 4], thickness: f32` |
 | Returns | `()` |
-| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.res.Draw2D().path(vec![Vector2::new(0.0, 0.0)], [1.0, 1.0, 1.0, 1.0], 1.0);
-        let _ = value;
-    }
-});
-```
+| Use when | Use when script code needs this exact engine read or write. |
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `sprite`
 
@@ -239,19 +140,8 @@ lifecycle!({
 | Signature | `pub fn sprite(&self, center: Vector2, texture: TextureID, size: Vector2, tint: [f32; 4])` |
 | Params | `&self, center: Vector2, texture: TextureID, size: Vector2, tint: [f32; 4]` |
 | Returns | `()` |
-| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.res.Draw2D().sprite(Vector2::new(0.0, 0.0), Default::default(), Vector2::new(0.0, 0.0), [1.0, 1.0, 1.0, 1.0]);
-        let _ = value;
-    }
-});
-```
+| Use when | Use when script code needs this exact engine read or write. |
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `atlas_sprite`
 
@@ -261,19 +151,8 @@ lifecycle!({
 | Signature | `pub fn atlas_sprite( &self, center: Vector2, texture: TextureID, size: Vector2, tint: [f32; 4], texture_region: [f32; 4], )` |
 | Params | `&self, center: Vector2, texture: TextureID, size: Vector2, tint: [f32; 4], texture_region: [f32; 4],` |
 | Returns | `()` |
-| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.res.Draw2D().atlas_sprite(Vector2::new(0.0, 0.0), Default::default(), Vector2::new(0.0, 0.0), [1.0, 1.0, 1.0, 1.0], [1.0, 1.0, 1.0, 1.0]);
-        let _ = value;
-    }
-});
-```
+| Use when | Use when script code needs this exact engine read or write. |
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `sprite_path`
 
@@ -283,19 +162,8 @@ lifecycle!({
 | Signature | `pub fn sprite_path(&self, center: Vector2, source: &str, size: Vector2, tint: [f32; 4])` |
 | Params | `&self, center: Vector2, source: &str, size: Vector2, tint: [f32; 4]` |
 | Returns | `()` |
-| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
-
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.res.Draw2D().sprite_path(Vector2::new(0.0, 0.0), "name", Vector2::new(0.0, 0.0), [1.0, 1.0, 1.0, 1.0]);
-        let _ = value;
-    }
-});
-```
+| Use when | Use when script code needs this exact engine read or write. |
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
 ### `draw`
 
@@ -305,16 +173,6 @@ lifecycle!({
 | Signature | `draw!(ctx.res.res, shape, position)` |
 | Params | `ctx.res, shape, position` |
 | Returns | `same as backing method` |
-| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
-| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+| Use when | Use when script code needs this exact engine read or write. |
+| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
-Example:
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = draw!(ctx.res, 0.0, 0.1);
-        let _ = value;
-    }
-});
-```
