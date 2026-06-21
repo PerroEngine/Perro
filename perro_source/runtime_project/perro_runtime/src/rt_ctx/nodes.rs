@@ -11,7 +11,8 @@ use perro_nodes::{
 use perro_runtime_api::sub_apis::{
     IntoNodeCreateBatch, IntoNodeTag, IntoNodeTags, MeshDataSurfaceHit3D, MeshDataSurfaceRegion3D,
     MeshMaterialRegion3D, MeshSurfaceHit3D, MeshSurfaceRay3D, NodeAPI, NodeCollection,
-    NodeCollectionEntry, NodeCreateBatch, NodeQueryView, NodeSpec,
+    NodeCollectionEntry, NodeCreateBatch, NodeQueryView, NodeScriptSpec, NodeScriptVar, NodeSpec,
+    ScriptAPI,
 };
 use perro_structs::{Transform2D, Transform3D, Vector2, Vector3};
 use std::borrow::Cow;
@@ -78,6 +79,17 @@ impl Runtime {
             }
             self.mark_needs_rerender(id);
             self.mark_created_ui_node_dirty(id);
+            if let Some(script) = spec.script {
+                let Some(vars) = resolve_script_vars(&script, &ids) else {
+                    return Vec::new();
+                };
+                let _ = <Self as ScriptAPI>::script_attach_with_vars(
+                    self,
+                    id,
+                    script.path.as_ref(),
+                    vars,
+                );
+            }
             for tag in tag_ids {
                 self.node_index
                     .node_tag_index
@@ -182,6 +194,30 @@ impl Runtime {
                     if !scene.tags.is_empty() {
                         let _ = <Self as NodeAPI>::tag_set(self, id, Some(scene.tags.clone()));
                     }
+                    for patch in &scene.patches {
+                        let Some(node) = self.nodes.get_mut(id) else {
+                            return Vec::new();
+                        };
+                        if !patch.apply(&mut node.data) {
+                            return Vec::new();
+                        }
+                    }
+                    if !scene.patches.is_empty() {
+                        self.mark_needs_rerender(id);
+                        self.mark_transform_dirty_recursive(id);
+                        self.mark_created_ui_node_dirty(id);
+                    }
+                    if let Some(script) = &scene.script {
+                        let Some(vars) = resolve_script_vars(script, &ids) else {
+                            return Vec::new();
+                        };
+                        let _ = <Self as ScriptAPI>::script_attach_with_vars(
+                            self,
+                            id,
+                            script.path.as_ref(),
+                            vars,
+                        );
+                    }
                     if !parent.is_nil() {
                         let _ = <Self as NodeAPI>::reparent(self, parent, id);
                     }
@@ -198,6 +234,21 @@ impl Runtime {
         }
         ids
     }
+}
+
+fn resolve_script_vars(
+    script: &NodeScriptSpec,
+    ids: &[NodeID],
+) -> Option<Vec<(perro_ids::ScriptMemberID, perro_variant::Variant)>> {
+    let mut out = Vec::with_capacity(script.vars.len());
+    for (member, value) in &script.vars {
+        let value = match value {
+            NodeScriptVar::Value(value) => value.clone(),
+            NodeScriptVar::NodeRef(index) => perro_variant::Variant::from(*ids.get(*index)?),
+        };
+        out.push((*member, value));
+    }
+    Some(out)
 }
 
 impl NodeAPI for Runtime {

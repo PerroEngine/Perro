@@ -5,8 +5,10 @@ use crate::{
     },
 };
 use perro_ids::{AnimationID, AudioBusID, IntoTagID, MeshID, NodeID};
-use perro_nodes::prelude::Node2D;
+use perro_nodes::prelude::{Node2D, NodeTypeDispatch, SceneNodeData, UiLabel};
+use perro_resource_api::res_path;
 use perro_structs::{Quaternion, Transform2D, Transform3D, Vector2, Vector3};
+use perro_variant::Variant;
 use std::{any::Any, borrow::Cow, time::Duration};
 
 struct DummyRuntime {
@@ -725,6 +727,180 @@ impl SceneAPI for DummyRuntime {
     fn scene_free_preloaded_by_path(&mut self, path: &str) -> bool {
         path == "res://scenes/preloaded.scene"
     }
+}
+
+#[test]
+fn node_collection_typed_nodes_fill_defaults_and_keep_meta() {
+    let collection = node_collection![{
+        name = "title",
+        tags = tags!["ui"],
+        node = UiLabel {
+            text: {"Paused".into()},
+            font_size: 32.0,
+        },
+        script = res_path!("res://scripts/title.rs"),
+    }];
+
+    assert_eq!(collection.specs.len(), 1);
+    let spec = &collection.specs[0];
+    assert_eq!(spec.name.as_deref(), Some("title"));
+    assert_eq!(spec.tags.len(), 1);
+    assert_eq!(
+        spec.script.as_ref().map(|script| script.path.as_ref()),
+        Some("res://scripts/title.rs")
+    );
+    match &spec.data {
+        SceneNodeData::UiLabel(label) => {
+            assert_eq!(label.text.as_ref(), "Paused");
+            assert_eq!(label.font_size, 32.0);
+        }
+        other => panic!("expected UiLabel, got {other:?}"),
+    }
+}
+
+#[test]
+fn node_collection_scene_patch_and_script_are_stored() {
+    let collection = node_collection![{
+        scene = {
+            path = res_path!("res://scenes/player.scn"),
+            patch = Node2D {
+                transform: Transform2D {
+                    position: Vector2::new(10.0, 3.0),
+                },
+            },
+        },
+        script = res_path!("res://scripts/player.rs"),
+    }];
+
+    assert_eq!(collection.scenes.len(), 1);
+    let scene = &collection.scenes[0];
+    assert_eq!(scene.path.as_ref(), "res://scenes/player.scn");
+    assert_eq!(
+        scene.script.as_ref().map(|script| script.path.as_ref()),
+        Some("res://scripts/player.rs")
+    );
+    assert_eq!(
+        scene.patches.first().map(|patch| patch.node_type()),
+        Some(Node2D::NODE_TYPE)
+    );
+}
+
+#[test]
+fn node_collection_script_vars_are_stored() {
+    let collection = node_collection![{
+        node = Node2D,
+        script = {
+            path = res_path!("res://scripts/player.rs"),
+            vars = {
+                hp: 100_i32,
+                "title": {"Player".to_string()},
+            },
+        },
+    }];
+
+    let script = collection.specs[0].script.as_ref().expect("script");
+    assert_eq!(script.path.as_ref(), "res://scripts/player.rs");
+    assert_eq!(script.vars.len(), 2);
+    assert_eq!(
+        script.vars[0].0,
+        perro_ids::ScriptMemberID::from_string("hp")
+    );
+    assert_eq!(
+        script.vars[0].1,
+        NodeScriptVar::Value(Variant::from(100_i32))
+    );
+    assert_eq!(
+        script.vars[1].0,
+        perro_ids::ScriptMemberID::from_string("title")
+    );
+    assert_eq!(
+        script.vars[1].1,
+        NodeScriptVar::Value(Variant::from("Player".to_string()))
+    );
+}
+
+#[test]
+fn node_collection_key_vars_root_and_patch_list_are_stored() {
+    let collection = node_collection![
+        root: { node = Node2D },
+        follower: {
+            parent = @root,
+            node = Node2D,
+            script = {
+                path = res_path!("res://scripts/follower.rs"),
+                vars = {
+                    target: @root,
+                },
+            },
+        },
+        {
+            scene = {
+                path = res_path!("res://scenes/player.scn"),
+                patch = [
+                    Node2D {
+                        transform: Transform2D {
+                            position: Vector2::new(1.0, 2.0),
+                        },
+                    },
+                ],
+            },
+        },
+        root = @follower,
+    ];
+
+    assert_eq!(collection.root, Some(1));
+    let script = collection.specs[1].script.as_ref().expect("script");
+    assert_eq!(
+        script.vars[0],
+        (
+            perro_ids::ScriptMemberID::from_string("target"),
+            NodeScriptVar::NodeRef(0),
+        )
+    );
+    assert_eq!(collection.scenes[0].patches.len(), 1);
+}
+
+#[test]
+fn node_collection_key_defaults_name_and_parent_refs() {
+    let collection = node_collection![
+        root: { node = Node2D },
+        sprite: {
+            parent = @root,
+            node = Node2D,
+        },
+        {
+            parent = @root,
+            node = Node2D,
+        }
+    ];
+
+    assert_eq!(collection.specs.len(), 3);
+    assert_eq!(collection.specs[0].name.as_deref(), Some("root"));
+    assert_eq!(collection.specs[1].name.as_deref(), Some("sprite"));
+    assert_eq!(collection.specs[2].name, None);
+    assert_eq!(collection.specs[0].parent, None);
+    assert_eq!(collection.specs[1].parent, Some(0));
+    assert_eq!(collection.specs[2].parent, Some(0));
+}
+
+#[test]
+fn node_collection_key_name_can_override_default() {
+    let collection = node_collection![
+        player: {
+            name = "PlayerRoot",
+            node = Node2D,
+            children = [
+                sprite: { node = Node2D },
+                { node = Node2D }
+            ],
+        }
+    ];
+
+    assert_eq!(collection.specs.len(), 3);
+    assert_eq!(collection.specs[0].name.as_deref(), Some("PlayerRoot"));
+    assert_eq!(collection.specs[1].name.as_deref(), Some("sprite"));
+    assert_eq!(collection.specs[1].parent, Some(0));
+    assert_eq!(collection.specs[2].parent, Some(0));
 }
 
 #[test]

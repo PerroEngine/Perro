@@ -2,13 +2,13 @@ use crate::{
     Runtime,
     runtime_project::{ProviderMode, RuntimeProject},
 };
-use perro_ids::tags;
+use perro_ids::{NodeID, ScriptMemberID, tags};
 use perro_nodes::{
     Bone3D, BoneAttachment3D, Camera2D, Node2D, Node3D, NodeType, SceneNode, SceneNodeData,
     Skeleton3D, Sprite2D, UiButton, UiLabel, UiNode, UiPanel,
 };
 use perro_runtime_api::node_collection;
-use perro_runtime_api::sub_apis::{NodeAPI, NodeSpec};
+use perro_runtime_api::sub_apis::{NodeAPI, NodeScriptSpec, NodeScriptVar, NodeSpec};
 use perro_scene::{Scene, SceneKey, SceneNodeEntry};
 use perro_structs::{Quaternion, Transform2D, Transform3D, Vector2, Vector3};
 use std::borrow::Cow;
@@ -463,6 +463,100 @@ fn create_nodes_accepts_scene_refs_inside_collections() {
         runtime.get_node_children_ids(ids[6]),
         Some(vec![code_scene_child])
     );
+}
+
+#[test]
+fn create_nodes_collection_root_marker_controls_splice_parent_refs() {
+    let mut runtime = Runtime::new();
+    let parent_id = runtime.create::<Node2D>();
+    let child = node_collection![
+        shell: { node = Node2D::new() },
+        actual_root: {
+            node = Node2D::new(),
+            children = [
+                leaf: { node = Node2D::new() },
+            ],
+        },
+        root = @actual_root,
+    ];
+    let collection = node_collection![
+        subroot: { collection = child },
+        follower: {
+            parent = @subroot,
+            node = Node2D::new(),
+        },
+    ];
+
+    let ids = runtime.create_nodes(collection, parent_id);
+
+    assert_eq!(ids.len(), 4);
+    assert_eq!(
+        runtime.get_node_children_ids(parent_id),
+        Some(vec![ids[0], ids[1]])
+    );
+    assert_eq!(runtime.get_node_children_ids(ids[0]), Some(Vec::new()));
+    assert_eq!(
+        runtime.get_node_children_ids(ids[1]),
+        Some(vec![ids[2], ids[3]])
+    );
+    assert_eq!(
+        runtime.get_node_name(ids[1]).as_deref(),
+        Some("actual_root")
+    );
+    assert_eq!(runtime.get_node_parent_id(ids[3]), Some(ids[1]));
+}
+
+#[test]
+fn create_nodes_applies_scene_patch_list_to_loaded_root() {
+    let mut project = RuntimeProject::new("Scene Patch List Test", ".");
+    project.static_scene_lookup = Some(static_scene_lookup);
+    let mut runtime = Runtime::from_project(project, ProviderMode::Static);
+    let parent_id = runtime.create::<Node2D>();
+    let collection = node_collection![{
+        scene = {
+            path = "res://scenes/ship.scn",
+            patch = [
+                Node3D {
+                    transform: Transform3D {
+                        position: Vector3::new(3.0, 4.0, 5.0),
+                        scale: Vector3::new(2.0, 2.0, 2.0),
+                    },
+                    visible: false,
+                },
+            ],
+        },
+    }];
+
+    let ids = runtime.create_nodes(collection, parent_id);
+
+    assert_eq!(ids.len(), 1);
+    assert_eq!(
+        runtime.with_node::<Node3D, _>(ids[0], |node| (node.transform, node.visible)),
+        (
+            Transform3D {
+                position: Vector3::new(3.0, 4.0, 5.0),
+                rotation: Quaternion::IDENTITY,
+                scale: Vector3::new(2.0, 2.0, 2.0),
+            },
+            false,
+        )
+    );
+}
+
+#[test]
+fn create_nodes_rejects_unresolved_script_node_ref_var() {
+    let mut runtime = Runtime::new();
+    let bad = NodeSpec::new(Node2D::new()).script(NodeScriptSpec {
+        path: Cow::Borrowed("res://scripts/missing.rs"),
+        vars: vec![(
+            ScriptMemberID::from_string("target"),
+            NodeScriptVar::NodeRef(99),
+        )],
+    });
+
+    let ids = runtime.create_nodes(vec![bad], NodeID::nil());
+
+    assert!(ids.is_empty());
 }
 
 #[test]

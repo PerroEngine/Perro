@@ -4,14 +4,17 @@
 //! live scene nodes. Query helpers live beside node access because they operate
 //! on the same runtime scene graph.
 
-use perro_ids::{IntoTagID, MaterialID, MeshID, NodeID, NodeTag, TagID};
+use perro_ids::{IntoTagID, MaterialID, MeshID, NodeID, NodeTag, ScriptMemberID, TagID};
 use perro_nodes::{
     Node2D, Node3D, NodeBaseDispatch, NodeType, NodeTypeDispatch, SceneNodeData, Skeleton3D, UiNode,
 };
+use perro_resource_api::ResPathSource;
 use perro_structs::{
     BitMask, IntoBitMaskLayer, Quaternion, Transform2D, Transform3D, Vector2, Vector3,
 };
+use perro_variant::Variant;
 use std::borrow::Cow;
+use std::sync::Arc;
 
 use super::scene::IntoScenePath;
 
@@ -165,6 +168,7 @@ pub struct NodeSpec {
     pub data: SceneNodeData,
     pub name: Option<Cow<'static, str>>,
     pub tags: Vec<NodeTag>,
+    pub script: Option<NodeScriptSpec>,
     pub parent: Option<usize>,
 }
 
@@ -177,6 +181,7 @@ impl NodeSpec {
             data: data.into(),
             name: None,
             tags: Vec::new(),
+            script: None,
             parent: None,
         }
     }
@@ -197,9 +202,108 @@ impl NodeSpec {
         self
     }
 
+    pub fn script<S>(mut self, script: S) -> Self
+    where
+        S: IntoNodeScriptSpec,
+    {
+        self.script = Some(script.into_node_script_spec());
+        self
+    }
+
     pub const fn parent(mut self, parent: Option<usize>) -> Self {
         self.parent = parent;
         self
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct NodeScriptSpec {
+    pub path: Cow<'static, str>,
+    pub vars: Vec<(ScriptMemberID, NodeScriptVar)>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum NodeScriptVar {
+    Value(Variant),
+    NodeRef(usize),
+}
+
+impl NodeScriptSpec {
+    pub fn new<P>(path: P) -> Self
+    where
+        P: ResPathSource,
+    {
+        Self {
+            path: Cow::Owned(path.as_res_path_str().to_string()),
+            vars: Vec::new(),
+        }
+    }
+
+    pub fn vars(mut self, vars: Vec<(ScriptMemberID, Variant)>) -> Self {
+        self.vars = vars
+            .into_iter()
+            .map(|(member, value)| (member, NodeScriptVar::Value(value)))
+            .collect();
+        self
+    }
+
+    pub fn raw_vars(mut self, vars: Vec<(ScriptMemberID, NodeScriptVar)>) -> Self {
+        self.vars = vars;
+        self
+    }
+}
+
+pub trait IntoNodeScriptSpec {
+    fn into_node_script_spec(self) -> NodeScriptSpec;
+}
+
+impl IntoNodeScriptSpec for NodeScriptSpec {
+    fn into_node_script_spec(self) -> NodeScriptSpec {
+        self
+    }
+}
+
+impl<P> IntoNodeScriptSpec for P
+where
+    P: ResPathSource,
+{
+    fn into_node_script_spec(self) -> NodeScriptSpec {
+        NodeScriptSpec::new(self)
+    }
+}
+
+#[derive(Clone)]
+pub struct NodeRootPatch {
+    node_type: NodeType,
+    apply: Arc<dyn Fn(&mut SceneNodeData) -> bool>,
+}
+
+impl std::fmt::Debug for NodeRootPatch {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("NodeRootPatch")
+            .field("node_type", &self.node_type)
+            .finish_non_exhaustive()
+    }
+}
+
+impl NodeRootPatch {
+    pub fn new<T, F>(apply: F) -> Self
+    where
+        T: NodeTypeDispatch + 'static,
+        F: Fn(&mut T) + 'static,
+    {
+        Self {
+            node_type: T::NODE_TYPE,
+            apply: Arc::new(move |data| T::with_mut(data, |node| apply(node)).is_some()),
+        }
+    }
+
+    pub const fn node_type(&self) -> NodeType {
+        self.node_type
+    }
+
+    pub fn apply(&self, data: &mut SceneNodeData) -> bool {
+        (self.apply)(data)
     }
 }
 
@@ -209,6 +313,8 @@ pub struct NodeSceneSpec {
     pub path: Cow<'static, str>,
     pub name: Option<Cow<'static, str>>,
     pub tags: Vec<NodeTag>,
+    pub script: Option<NodeScriptSpec>,
+    pub patches: Vec<NodeRootPatch>,
     pub parent: Option<usize>,
 }
 
@@ -221,6 +327,8 @@ impl NodeSceneSpec {
             path: path.into_scene_path(),
             name: None,
             tags: Vec::new(),
+            script: None,
+            patches: Vec::new(),
             parent: None,
         }
     }
@@ -238,6 +346,24 @@ impl NodeSceneSpec {
         T: IntoNodeTags,
     {
         self.tags = tags.into_node_tags();
+        self
+    }
+
+    pub fn script<S>(mut self, script: S) -> Self
+    where
+        S: IntoNodeScriptSpec,
+    {
+        self.script = Some(script.into_node_script_spec());
+        self
+    }
+
+    pub fn patch(mut self, patch: NodeRootPatch) -> Self {
+        self.patches.push(patch);
+        self
+    }
+
+    pub fn patches(mut self, patches: Vec<NodeRootPatch>) -> Self {
+        self.patches = patches;
         self
     }
 
@@ -259,6 +385,7 @@ pub struct NodeCollection {
     pub specs: Vec<NodeSpec>,
     pub scenes: Vec<NodeSceneSpec>,
     pub entries: Vec<NodeCollectionEntry>,
+    pub root: Option<usize>,
 }
 
 impl NodeCollection {
@@ -267,6 +394,7 @@ impl NodeCollection {
             specs: Vec::new(),
             scenes: Vec::new(),
             entries: Vec::new(),
+            root: None,
         }
     }
 
@@ -286,6 +414,10 @@ impl NodeCollection {
         index
     }
 
+    pub const fn set_root(&mut self, root: usize) {
+        self.root = Some(root);
+    }
+
     pub fn as_specs(&self) -> &[NodeSpec] {
         &self.specs
     }
@@ -295,12 +427,11 @@ impl NodeCollection {
     }
 
     pub fn extend(&mut self, collection: impl IntoNodeCollection, parent: Option<usize>) -> usize {
+        let mut collection = collection.into_node_collection();
         let entry_offset = self.entries.len();
         let spec_offset = self.specs.len();
         let scene_offset = self.scenes.len();
-        let mut root = entry_offset;
-        let mut saw_root = false;
-        let mut collection = collection.into_node_collection();
+        let mut root = collection.root.map(|root| entry_offset + root);
         for spec in &mut collection.specs {
             spec.parent = spec.parent.map(|parent| entry_offset + parent).or(parent);
         }
@@ -312,9 +443,8 @@ impl NodeCollection {
                 NodeCollectionEntry::Node(index) => collection.specs[index].parent,
                 NodeCollectionEntry::Scene(index) => collection.scenes[index].parent,
             };
-            if entry_parent == parent && !saw_root {
-                root = self.entries.len();
-                saw_root = true;
+            if root.is_none() && entry_parent == parent {
+                root = Some(self.entries.len());
             }
             match entry {
                 NodeCollectionEntry::Node(index) => {
@@ -329,7 +459,7 @@ impl NodeCollection {
                 }
             }
         }
-        root
+        root.unwrap_or(entry_offset)
     }
 }
 
@@ -356,6 +486,7 @@ impl IntoNodeCollection for Vec<NodeSpec> {
             specs: self,
             scenes: Vec::new(),
             entries,
+            root: None,
         }
     }
 }
@@ -2008,6 +2139,346 @@ macro_rules! node_collection {
         $collection.extend($child_collection, $parent)
     }};
 
+    (@struct_expr $ty:ident { $($fields:tt)* }) => {
+        $crate::node_collection!(@struct_fields $ty [] $($fields)*, ;)
+    };
+    (@struct_fields $ty:ident [$($out:tt)*] ;) => {
+        $ty {
+            $($out)*
+            ..::std::default::Default::default()
+        }
+    };
+    (@struct_fields $ty:ident [$($out:tt)*] , $($rest:tt)*) => {
+        $crate::node_collection!(@struct_fields $ty [$($out)*] $($rest)*)
+    };
+    (@struct_fields $ty:ident [$($out:tt)*] $field:ident : { $value:expr }, $($rest:tt)*) => {
+        $crate::node_collection!(@struct_fields $ty [$($out)* $field: $value,] $($rest)*)
+    };
+    (@struct_fields $ty:ident [$($out:tt)*] $field:ident : $field_ty:ident { $($fields:tt)* }, $($rest:tt)*) => {
+        $crate::node_collection!(@struct_fields $ty [
+            $($out)* $field: $crate::node_collection!(@struct_expr $field_ty { $($fields)* }),
+        ] $($rest)*)
+    };
+    (@struct_fields $ty:ident [$($out:tt)*] $field:ident : $value:expr, $($rest:tt)*) => {
+        $crate::node_collection!(@struct_fields $ty [$($out)* $field: $value,] $($rest)*)
+    };
+
+    (@node_expr { $node:expr }) => {
+        $node
+    };
+    (@node_expr $ty:ident { $($fields:tt)* }) => {
+        $crate::node_collection!(@node_struct $ty [] $($fields)*)
+    };
+    (@node_expr $ty:ident) => {
+        <$ty as ::std::default::Default>::default()
+    };
+    (@node_expr $node:expr) => {
+        $node
+    };
+    (@node_struct $ty:ident [$($out:tt)*] .. $base:expr) => {
+        $ty { $($out)* .. $base }
+    };
+    (@node_struct $ty:ident [$($out:tt)*] .. $base:expr,) => {
+        $ty { $($out)* .. $base }
+    };
+    (@node_struct $ty:ident [$($out:tt)*] $next:tt $($rest:tt)*) => {
+        $crate::node_collection!(@node_struct $ty [$($out)* $next] $($rest)*)
+    };
+    (@node_struct $ty:ident [$($out:tt)*]) => {
+        $crate::node_collection!(@struct_expr $ty { $($out)* })
+    };
+
+    (@patch_lets $($fields:tt)*) => {
+        $crate::node_collection!(@patch_lets_inner [] $($fields)*, ;)
+    };
+    (@patch_lets_inner [$($out:tt)*] ;) => {
+        $($out)*
+    };
+    (@patch_lets_inner [$($out:tt)*] , $($rest:tt)*) => {
+        $crate::node_collection!(@patch_lets_inner [$($out)*] $($rest)*)
+    };
+    (@patch_lets_inner [$($out:tt)*] $field:ident : { $value:expr }, $($rest:tt)*) => {
+        $crate::node_collection!(@patch_lets_inner [$($out)* let $field = $value;] $($rest)*)
+    };
+    (@patch_lets_inner [$($out:tt)*] $field:ident : $ty:ident { $($fields:tt)* }, $($rest:tt)*) => {
+        $crate::node_collection!(@patch_lets_inner [
+            $($out)* let $field = $crate::node_collection!(@struct_expr $ty { $($fields)* });
+        ] $($rest)*)
+    };
+    (@patch_lets_inner [$($out:tt)*] $field:ident : $value:expr, $($rest:tt)*) => {
+        $crate::node_collection!(@patch_lets_inner [$($out)* let $field = $value;] $($rest)*)
+    };
+    (@patch_assigns $node:ident, $($fields:tt)*) => {
+        $crate::node_collection!(@patch_assigns_inner $node [] $($fields)*, ;)
+    };
+    (@patch_assigns_inner $node:ident [$($out:tt)*] ;) => {
+        $($out)*
+    };
+    (@patch_assigns_inner $node:ident [$($out:tt)*] , $($rest:tt)*) => {
+        $crate::node_collection!(@patch_assigns_inner $node [$($out)*] $($rest)*)
+    };
+    (@patch_assigns_inner $node:ident [$($out:tt)*] $field:ident : { $value:expr }, $($rest:tt)*) => {
+        $crate::node_collection!(@patch_assigns_inner $node [$($out)* $node.$field = $field.clone();] $($rest)*)
+    };
+    (@patch_assigns_inner $node:ident [$($out:tt)*] $field:ident : $ty:ident { $($fields:tt)* }, $($rest:tt)*) => {
+        $crate::node_collection!(@patch_assigns_inner $node [$($out)* $node.$field = $field.clone();] $($rest)*)
+    };
+    (@patch_assigns_inner $node:ident [$($out:tt)*] $field:ident : $value:expr, $($rest:tt)*) => {
+        $crate::node_collection!(@patch_assigns_inner $node [$($out)* $node.$field = $field.clone();] $($rest)*)
+    };
+    (@root_patch $ty:ident { $($fields:tt)* }) => {{
+        $crate::node_collection!(@patch_lets $($fields)*);
+        $crate::sub_apis::NodeRootPatch::new::<$ty, _>(move |__node| {
+            $crate::node_collection!(@patch_assigns __node, $($fields)*);
+        })
+    }};
+    (@patch_list [$($out:expr,)*]) => {
+        vec![$($out,)*]
+    };
+    (@patch_list [$($out:expr,)*] , $($rest:tt)*) => {
+        $crate::node_collection!(@patch_list [$($out,)*] $($rest)*)
+    };
+    (@patch_list [$($out:expr,)*] $ty:ident $fields:tt, $($rest:tt)*) => {
+        $crate::node_collection!(
+            @patch_list [
+                $($out,)*
+                $crate::node_collection!(@root_patch $ty $fields),
+            ] $($rest)*
+        )
+    };
+    (@patch_list [$($out:expr,)*] $ty:ident $fields:tt) => {
+        $crate::node_collection!(
+            @patch_list [
+                $($out,)*
+                $crate::node_collection!(@root_patch $ty $fields),
+            ]
+        )
+    };
+
+    (@script_spec { path = $path_macro:ident ! ( $path_lit:literal ), vars = { $($vars:tt)* } $(,)? }) => {
+        $crate::sub_apis::NodeScriptSpec::new($path_macro!($path_lit))
+            .raw_vars($crate::node_collection!(@script_vars [] $($vars)*, ;))
+    };
+    (@script_spec { path = { $path:expr }, vars = { $($vars:tt)* } $(,)? }) => {
+        $crate::sub_apis::NodeScriptSpec::new($path)
+            .raw_vars($crate::node_collection!(@script_vars [] $($vars)*, ;))
+    };
+    (@script_spec { path = $path:expr, vars = { $($vars:tt)* } $(,)? }) => {
+        $crate::sub_apis::NodeScriptSpec::new($path)
+            .raw_vars($crate::node_collection!(@script_vars [] $($vars)*, ;))
+    };
+    (@script_spec { path = $path:expr $(,)? }) => {
+        $crate::sub_apis::NodeScriptSpec::new($path)
+    };
+    (@script_spec $path:expr) => {
+        $crate::sub_apis::NodeScriptSpec::new($path)
+    };
+    (@script_vars [$($out:tt)*] ;) => {
+        vec![$($out)*]
+    };
+    (@script_vars [$($out:tt)*] , $($rest:tt)*) => {
+        $crate::node_collection!(@script_vars [$($out)*] $($rest)*)
+    };
+    (@script_vars [$($out:tt)*] $key:ident : @ $target:ident, $($rest:tt)*) => {
+        $crate::node_collection!(@script_vars [
+            $($out)*
+            (
+                $crate::perro_ids::ScriptMemberID::from_string(::std::stringify!($key)),
+                $crate::sub_apis::NodeScriptVar::NodeRef($target),
+            ),
+        ] $($rest)*)
+    };
+    (@script_vars [$($out:tt)*] $key:ident : { $value:expr }, $($rest:tt)*) => {
+        $crate::node_collection!(@script_vars [
+            $($out)*
+            (
+                $crate::perro_ids::ScriptMemberID::from_string(::std::stringify!($key)),
+                $crate::sub_apis::NodeScriptVar::Value($crate::perro_variant::Variant::from($value)),
+            ),
+        ] $($rest)*)
+    };
+    (@script_vars [$($out:tt)*] $key:ident : $value:expr, $($rest:tt)*) => {
+        $crate::node_collection!(@script_vars [
+            $($out)*
+            (
+                $crate::perro_ids::ScriptMemberID::from_string(::std::stringify!($key)),
+                $crate::sub_apis::NodeScriptVar::Value($crate::perro_variant::Variant::from($value)),
+            ),
+        ] $($rest)*)
+    };
+    (@script_vars [$($out:tt)*] $key:literal : @ $target:ident, $($rest:tt)*) => {
+        $crate::node_collection!(@script_vars [
+            $($out)*
+            (
+                $crate::perro_ids::ScriptMemberID::from_string($key),
+                $crate::sub_apis::NodeScriptVar::NodeRef($target),
+            ),
+        ] $($rest)*)
+    };
+    (@script_vars [$($out:tt)*] $key:literal : { $value:expr }, $($rest:tt)*) => {
+        $crate::node_collection!(@script_vars [
+            $($out)*
+            (
+                $crate::perro_ids::ScriptMemberID::from_string($key),
+                $crate::sub_apis::NodeScriptVar::Value($crate::perro_variant::Variant::from($value)),
+            ),
+        ] $($rest)*)
+    };
+    (@script_vars [$($out:tt)*] $key:literal : $value:expr, $($rest:tt)*) => {
+        $crate::node_collection!(@script_vars [
+            $($out)*
+            (
+                $crate::perro_ids::ScriptMemberID::from_string($key),
+                $crate::sub_apis::NodeScriptVar::Value($crate::perro_variant::Variant::from($value)),
+            ),
+        ] $($rest)*)
+    };
+
+    (@parse $collection:ident, $parent:expr, [$($node:tt)+], [], [$($mods:tt)*], [$($children:tt)*], ;) => {{
+        let __idx = $collection.push(
+            $crate::sub_apis::NodeSpec::new($crate::node_collection!(@node_expr $($node)+))
+                $($mods)*
+                .parent($parent)
+        );
+        $crate::node_collection!(@child_items_parent $collection, Some(__idx), $($children)* ;);
+        __idx
+    }};
+    (@parse $collection:ident, $parent:expr, [], [$($scene:tt)+], [$($mods:tt)*], [$($children:tt)*], ;) => {{
+        let __idx = $collection.push_scene(
+            $crate::sub_apis::NodeSceneSpec::new($($scene)+)
+                $($mods)*
+                .parent($parent)
+        );
+        $crate::node_collection!(@child_items_parent $collection, Some(__idx), $($children)* ;);
+        __idx
+    }};
+    (@parse $collection:ident, $parent:expr, [$($node:tt)*], [$($scene:tt)*], [$($mods:tt)*], [$($children:tt)*], , $($rest:tt)*) => {
+        $crate::node_collection!(@parse $collection, $parent, [$($node)*], [$($scene)*], [$($mods)*], [$($children)*], $($rest)*)
+    };
+    (@parse $collection:ident, $parent:expr, [$($node:tt)*], [$($scene:tt)*], [$($mods:tt)*], [$($children:tt)*], name = $name:expr, $($rest:tt)*) => {
+        $crate::node_collection!(@parse $collection, $parent, [$($node)*], [$($scene)*], [$($mods)* .name($name)], [$($children)*], $($rest)*)
+    };
+    (@parse $collection:ident, $parent:expr, [$($node:tt)*], [$($scene:tt)*], [$($mods:tt)*], [$($children:tt)*], tags = $tags:expr, $($rest:tt)*) => {
+        $crate::node_collection!(@parse $collection, $parent, [$($node)*], [$($scene)*], [$($mods)* .tags($tags)], [$($children)*], $($rest)*)
+    };
+    (@parse $collection:ident, $parent:expr, [$($node:tt)*], [$($scene:tt)*], [$($mods:tt)*], [$($children:tt)*], script = { $($script:tt)* }, $($rest:tt)*) => {
+        $crate::node_collection!(@parse $collection, $parent, [$($node)*], [$($scene)*], [$($mods)* .script($crate::node_collection!(@script_spec { $($script)* }))], [$($children)*], $($rest)*)
+    };
+    (@parse $collection:ident, $parent:expr, [$($node:tt)*], [$($scene:tt)*], [$($mods:tt)*], [$($children:tt)*], script = $script:expr, $($rest:tt)*) => {
+        $crate::node_collection!(@parse $collection, $parent, [$($node)*], [$($scene)*], [$($mods)* .script($script)], [$($children)*], $($rest)*)
+    };
+    (@parse $collection:ident, $parent:expr, [$($node:tt)*], [$($scene:tt)*], [$($mods:tt)*], [$($children:tt)*], children = [ $( $child:tt ),* $(,)? ], $($rest:tt)*) => {
+        $crate::node_collection!(@parse $collection, $parent, [$($node)*], [$($scene)*], [$($mods)*], [$($child),*], $($rest)*)
+    };
+    (@parse $collection:ident, $parent:expr, [$($node:tt)*], [$($scene:tt)*], [$($mods:tt)*], [$($children:tt)*], children = [ $($child:tt)* ], $($rest:tt)*) => {
+        $crate::node_collection!(@parse $collection, $parent, [$($node)*], [$($scene)*], [$($mods)*], [$($child)*], $($rest)*)
+    };
+    (@parse $collection:ident, $parent:expr, [$($node:tt)*], [$($scene:tt)*], [$($mods:tt)*], [$($children:tt)*], parent = @ $parent_key:ident, $($rest:tt)*) => {
+        $crate::node_collection!(@parse $collection, Some($parent_key), [$($node)*], [$($scene)*], [$($mods)*], [$($children)*], $($rest)*)
+    };
+    (@parse $collection:ident, $parent:expr, [$($node:tt)*], [$($scene:tt)*], [$($mods:tt)*], [$($children:tt)*], node = $ty:ident, $($rest:tt)*) => {
+        $crate::node_collection!(@parse $collection, $parent, [$ty], [$($scene)*], [$($mods)*], [$($children)*], $($rest)*)
+    };
+    (@parse $collection:ident, $parent:expr, [$($node:tt)*], [$($scene:tt)*], [$($mods:tt)*], [$($children:tt)*], node = $ty:ident $fields:tt, $($rest:tt)*) => {
+        $crate::node_collection!(@parse $collection, $parent, [$ty $fields], [$($scene)*], [$($mods)*], [$($children)*], $($rest)*)
+    };
+    (@parse $collection:ident, $parent:expr, [$($node:tt)*], [$($scene:tt)*], [$($mods:tt)*], [$($children:tt)*], node = $node_value:expr, $($rest:tt)*) => {
+        $crate::node_collection!(@parse $collection, $parent, [$node_value], [$($scene)*], [$($mods)*], [$($children)*], $($rest)*)
+    };
+    (@parse $collection:ident, $parent:expr, [$($node:tt)*], [$($scene:tt)*], [$($mods:tt)*], [$($children:tt)*], scene = { path = $path_macro:ident ! ( $($path_args:tt)* ), patch = $ty:ident $fields:tt $(,)? }, $($rest:tt)*) => {
+        $crate::node_collection!(@parse $collection, $parent, [$($node)*], [$path_macro!($($path_args)*)], [$($mods)* .patch($crate::node_collection!(@root_patch $ty $fields))], [$($children)*], $($rest)*)
+    };
+    (@parse $collection:ident, $parent:expr, [$($node:tt)*], [$($scene:tt)*], [$($mods:tt)*], [$($children:tt)*], scene = { path = $path_macro:ident ! ( $($path_args:tt)* ), patch = [ $($patches:tt)* ] $(,)? }, $($rest:tt)*) => {
+        $crate::node_collection!(@parse $collection, $parent, [$($node)*], [$path_macro!($($path_args)*)], [$($mods)* .patches($crate::node_collection!(@patch_list [] $($patches)*))], [$($children)*], $($rest)*)
+    };
+    (@parse $collection:ident, $parent:expr, [$($node:tt)*], [$($scene:tt)*], [$($mods:tt)*], [$($children:tt)*], scene = { path = { $path:expr }, patch = $ty:ident $fields:tt $(,)? }, $($rest:tt)*) => {
+        $crate::node_collection!(@parse $collection, $parent, [$($node)*], [$path], [$($mods)* .patch($crate::node_collection!(@root_patch $ty $fields))], [$($children)*], $($rest)*)
+    };
+    (@parse $collection:ident, $parent:expr, [$($node:tt)*], [$($scene:tt)*], [$($mods:tt)*], [$($children:tt)*], scene = { path = { $path:expr }, patch = [ $($patches:tt)* ] $(,)? }, $($rest:tt)*) => {
+        $crate::node_collection!(@parse $collection, $parent, [$($node)*], [$path], [$($mods)* .patches($crate::node_collection!(@patch_list [] $($patches)*))], [$($children)*], $($rest)*)
+    };
+    (@parse $collection:ident, $parent:expr, [$($node:tt)*], [$($scene:tt)*], [$($mods:tt)*], [$($children:tt)*], scene = { path = $path:expr, patch = $ty:ident $fields:tt $(,)? }, $($rest:tt)*) => {
+        $crate::node_collection!(@parse $collection, $parent, [$($node)*], [$path], [$($mods)* .patch($crate::node_collection!(@root_patch $ty $fields))], [$($children)*], $($rest)*)
+    };
+    (@parse $collection:ident, $parent:expr, [$($node:tt)*], [$($scene:tt)*], [$($mods:tt)*], [$($children:tt)*], scene = { path = $path:expr, patch = [ $($patches:tt)* ] $(,)? }, $($rest:tt)*) => {
+        $crate::node_collection!(@parse $collection, $parent, [$($node)*], [$path], [$($mods)* .patches($crate::node_collection!(@patch_list [] $($patches)*))], [$($children)*], $($rest)*)
+    };
+    (@parse $collection:ident, $parent:expr, [$($node:tt)*], [$($scene:tt)*], [$($mods:tt)*], [$($children:tt)*], scene = { path = $path:expr }, $($rest:tt)*) => {
+        $crate::node_collection!(@parse $collection, $parent, [$($node)*], [$path], [$($mods)*], [$($children)*], $($rest)*)
+    };
+    (@parse $collection:ident, $parent:expr, [$($node:tt)*], [$($scene:tt)*], [$($mods:tt)*], [$($children:tt)*], scene = $scene_macro:ident ! ( $($scene_args:tt)* ), $($rest:tt)*) => {
+        $crate::node_collection!(@parse $collection, $parent, [$($node)*], [$scene_macro!($($scene_args)*)], [$($mods)*], [$($children)*], $($rest)*)
+    };
+    (@parse $collection:ident, $parent:expr, [$($node:tt)*], [$($scene:tt)*], [$($mods:tt)*], [$($children:tt)*], scene = { $scene_value:expr }, $($rest:tt)*) => {
+        $crate::node_collection!(@parse $collection, $parent, [$($node)*], [$scene_value], [$($mods)*], [$($children)*], $($rest)*)
+    };
+    (@parse $collection:ident, $parent:expr, [$($node:tt)*], [$($scene:tt)*], [$($mods:tt)*], [$($children:tt)*], scene = $scene_value:literal, $($rest:tt)*) => {
+        $crate::node_collection!(@parse $collection, $parent, [$($node)*], [$scene_value], [$($mods)*], [$($children)*], $($rest)*)
+    };
+    (@parse $collection:ident, $parent:expr, [$($node:tt)*], [$($scene:tt)*], [$($mods:tt)*], [$($children:tt)*], scene = $scene_value:ident, $($rest:tt)*) => {
+        $crate::node_collection!(@parse $collection, $parent, [$($node)*], [$scene_value], [$($mods)*], [$($children)*], $($rest)*)
+    };
+    (@push $collection:ident, $parent:expr, { $($body:tt)* }) => {{
+        $crate::node_collection!(@parse $collection, $parent, [], [], [], [], $($body)*, ;)
+    }};
+    (@push_key $collection:ident, $parent:expr, $key:ident, {
+        collection = $child_collection:expr $(,)?
+    }) => {{
+        $collection.extend($child_collection, $parent)
+    }};
+    (@push_key $collection:ident, $parent:expr, $key:ident, { $($body:tt)* }) => {{
+        $crate::node_collection!(
+            @parse $collection, $parent, [], [], [.name(::std::stringify!($key))], [], $($body)*, ;
+        )
+    }};
+
+    (@items_parent $collection:ident, [$($parent:tt)*], ;) => {};
+    (@items_parent $collection:ident, [$($parent:tt)*], root = @ $root_key:ident, $($rest:tt)*) => {
+        $collection.set_root($root_key);
+        $crate::node_collection!(@items_parent $collection, [$($parent)*], $($rest)*)
+    };
+    (@items_parent $collection:ident, [$($parent:tt)*], root = @ $root_key:ident ;) => {
+        $collection.set_root($root_key);
+    };
+    (@items_parent $collection:ident, [$($parent:tt)*], $key:ident : $entry:tt, $($rest:tt)*) => {
+        #[allow(unused_variables)]
+        let $key = $crate::node_collection!(@push_key $collection, $($parent)*, $key, $entry);
+        $crate::node_collection!(@items_parent $collection, [$($parent)*], $($rest)*)
+    };
+    (@items_parent $collection:ident, [$($parent:tt)*], $key:ident : $entry:tt ;) => {
+        #[allow(unused_variables)]
+        let $key = $crate::node_collection!(@push_key $collection, $($parent)*, $key, $entry);
+    };
+    (@items_parent $collection:ident, [$($parent:tt)*], $entry:tt, $($rest:tt)*) => {
+        $crate::node_collection!(@push $collection, $($parent)*, $entry);
+        $crate::node_collection!(@items_parent $collection, [$($parent)*], $($rest)*)
+    };
+    (@items_parent $collection:ident, [$($parent:tt)*], $entry:tt ;) => {
+        $crate::node_collection!(@push $collection, $($parent)*, $entry);
+    };
+
+    (@child_items_parent $collection:ident, $parent:expr, ;) => {};
+    (@child_items_parent $collection:ident, $parent:expr, $key:ident : $entry:tt, $($rest:tt)*) => {
+        $crate::node_collection!(@push_key $collection, $parent, $key, $entry);
+        $crate::node_collection!(@child_items_parent $collection, $parent, $($rest)*)
+    };
+    (@child_items_parent $collection:ident, $parent:expr, $key:ident : $entry:tt ;) => {
+        $crate::node_collection!(@push_key $collection, $parent, $key, $entry);
+    };
+    (@child_items_parent $collection:ident, $parent:expr, { parent = @ $parent_key:ident, $($body:tt)* }, $($rest:tt)*) => {
+        ::std::compile_error!("node_collection children do not support parent = @key; child parent is implicit");
+    };
+    (@child_items_parent $collection:ident, $parent:expr, { parent = @ $parent_key:ident, $($body:tt)* } ;) => {
+        ::std::compile_error!("node_collection children do not support parent = @key; child parent is implicit");
+    };
+    (@child_items_parent $collection:ident, $parent:expr, $entry:tt, $($rest:tt)*) => {
+        $crate::node_collection!(@push $collection, $parent, $entry);
+        $crate::node_collection!(@child_items_parent $collection, $parent, $($rest)*)
+    };
+    (@child_items_parent $collection:ident, $parent:expr, $entry:tt ;) => {
+        $crate::node_collection!(@push $collection, $parent, $entry);
+    };
+
     (@push $collection:ident, $parent:expr, {
         name = $name:expr,
         tags = $tags:expr,
@@ -2206,11 +2677,26 @@ macro_rules! node_collection {
         $collection.extend($child_collection, $parent)
     }};
 
-    ( $( $child:tt ),+ $(,)? ) => {{
+    ($key:ident : $entry:tt $(, $($rest:tt)*)?) => {{
         let mut __collection = $crate::sub_apis::NodeCollection::new();
+        #[allow(unused_variables)]
+        let $key = $crate::node_collection!(@push_key __collection, None, $key, $entry);
         $(
-            $crate::node_collection!(@push __collection, None, $child);
-        )*
+            $crate::node_collection!(@items_parent __collection, [None], $($rest)* ;);
+        )?
+        __collection
+    }};
+
+    ($entry:tt, $($rest:tt)*) => {{
+        let mut __collection = $crate::sub_apis::NodeCollection::new();
+        $crate::node_collection!(@push __collection, None, $entry);
+        $crate::node_collection!(@items_parent __collection, [None], $($rest)* ;);
+        __collection
+    }};
+
+    ($entry:tt) => {{
+        let mut __collection = $crate::sub_apis::NodeCollection::new();
+        $crate::node_collection!(@push __collection, None, $entry);
         __collection
     }};
 

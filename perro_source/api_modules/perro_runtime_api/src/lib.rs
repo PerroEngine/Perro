@@ -35,12 +35,12 @@ pub mod prelude {
         MeshQueryModule, MeshSurfaceHit3D, MeshSurfaceRay3D, MidiChannel, MidiNoteHandle,
         MidiNoteOptions, MidiProgram, MidiSong, MidiSound, NodeAPI, NodeCollection,
         NodeCollectionEntry, NodeCreateBatch, NodeModule, NodeQuery, NodeQueryModule,
-        NodeQueryView, NodeSceneSpec, NodeSpec, Note, PhysicsAPI, PhysicsBodyPrediction2D,
-        PhysicsBodyPrediction3D, PhysicsLaunchSolution2D, PhysicsLaunchSolution3D, PhysicsModule,
-        PhysicsRayHit3D, PreloadedSceneTarget, ProfilingSnapshot, QueryExpr, QueryScope,
-        RuntimeMidiModule, SceneAPI, SceneLoadSource, SceneModule, ScriptAPI, ScriptModule,
-        SignalAPI, SignalModule, SpatialAudioOptions, TimeAPI, TimeModule, WindowAPI, WindowMode,
-        WindowModule, WindowRequest, program,
+        NodeQueryView, NodeSceneSpec, NodeScriptSpec, NodeScriptVar, NodeSpec, Note, PhysicsAPI,
+        PhysicsBodyPrediction2D, PhysicsBodyPrediction3D, PhysicsLaunchSolution2D,
+        PhysicsLaunchSolution3D, PhysicsModule, PhysicsRayHit3D, PreloadedSceneTarget,
+        ProfilingSnapshot, QueryExpr, QueryScope, RuntimeMidiModule, SceneAPI, SceneLoadSource,
+        SceneModule, ScriptAPI, ScriptModule, SignalAPI, SignalModule, SpatialAudioOptions,
+        TimeAPI, TimeModule, WindowAPI, WindowMode, WindowModule, WindowRequest, program,
     };
 
     // Convenience macros.

@@ -56,6 +56,20 @@ pub trait ScriptAPI {
     where
         F: FnOnce(&mut T) -> V;
     fn script_attach(&mut self, node_id: NodeID, script_path: &str) -> bool;
+    fn script_attach_with_vars(
+        &mut self,
+        node_id: NodeID,
+        script_path: &str,
+        vars: Vec<(ScriptMemberID, Variant)>,
+    ) -> bool {
+        let ok = self.script_attach(node_id, script_path);
+        if ok {
+            for (member, value) in vars {
+                self.set_var(node_id, member, value);
+            }
+        }
+        ok
+    }
     fn script_attach_hashed(&mut self, node_id: NodeID, script_path_hash: u64) -> bool;
     fn script_detach(&mut self, node_id: NodeID) -> bool;
     fn remove_script(&mut self, script_id: NodeID) -> bool;

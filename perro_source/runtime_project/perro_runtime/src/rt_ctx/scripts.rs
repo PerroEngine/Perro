@@ -383,6 +383,15 @@ impl ScriptAPI for Runtime {
     }
 
     fn script_attach(&mut self, node_id: NodeID, script_path: &str) -> bool {
+        self.script_attach_with_vars(node_id, script_path, Vec::new())
+    }
+
+    fn script_attach_with_vars(
+        &mut self,
+        node_id: NodeID,
+        script_path: &str,
+        vars: Vec<(ScriptMemberID, Variant)>,
+    ) -> bool {
         let Some(project) = self.project() else {
             return false;
         };
@@ -396,7 +405,7 @@ impl ScriptAPI for Runtime {
             return false;
         }
 
-        self.attach_script_instance(node_id, string_to_u64(script_path), None, Vec::new())
+        self.attach_script_instance(node_id, string_to_u64(script_path), None, vars)
             .is_ok()
     }
 

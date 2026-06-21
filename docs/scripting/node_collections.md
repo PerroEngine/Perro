@@ -31,14 +31,122 @@ Fields:
 - `scene = ...` loads a `.scn` scene.
 - `name = ...` optional.
 - `tags = ...` optional.
+- `script = ...` optional single script resource.
 - `children = [...]` optional.
 - `collection = ...` splices another collection.
 
 `node = ...` is real Rust node data.
 
+Use a type name for default node data:
+
+```rust
+{ name = "button", node = UiButton }
+```
+
+Use a type body to set only the fields you care about:
+
+```rust
+{
+    name = "title",
+    node = UiLabel {
+        text: {"Paused".into()},
+        font_size: 32.0,
+    },
+}
+```
+
+Missing fields use `Default::default()`.
+
+Nested type bodies work the same way:
+
+```rust
+{
+    name = "actor",
+    node = Node2D {
+        transform: Transform2D {
+            position: Vector2::new(5.0, 7.0),
+        },
+    },
+}
+```
+
+Use `{ expr }` for arbitrary Rust expressions.
+
+Use `node = { expr }` to keep the old escape hatch for full custom values.
+
 `scene = ...` uses any scene path value accepted by the scene API.
 
 `name` and `tags` are scene graph metadata.
+
+Use scene object form to patch the loaded scene root:
+
+```rust
+{
+    name = "player",
+    scene = {
+        path = res_path!("res://scenes/player.scn"),
+        patch = Node2D {
+            transform: Transform2D {
+                position: Vector2::new(10.0, 0.0),
+            },
+        },
+    },
+    script = res_path!("res://scripts/player.rs"),
+}
+```
+
+`patch` applies only if the loaded scene root type matches.
+
+Use patch lists when a root needs more than one typed patch:
+
+```rust
+scene = {
+    path = res_path!("res://scenes/player.scn"),
+    patch = [
+        Node2D {
+            transform: spawn_xform,
+        },
+    ],
+}
+```
+
+Use script object form to inject vars before script init:
+
+```rust
+{
+    node = Node2D,
+    script = {
+        path = res_path!("res://scripts/player.rs"),
+        vars = {
+            hp: 100_i32,
+            title: {"Player".to_string()},
+        },
+    },
+}
+```
+
+`script` still means one script per node.
+
+Use `@key` in script vars to pass a spawned node id:
+
+```rust
+node_collection![
+    player: { node = Node2D },
+    camera: {
+        node = Camera2D,
+        script = {
+            path = res_path!("res://scripts/follow.rs"),
+            vars = { target: @player },
+        },
+    },
+]
+```
+
+`@key` vars resolve during spawn.
+
+Keys are local macro labels.
+
+Names are runtime strings.
 
 ## Create
 
@@ -94,6 +202,38 @@ ctx.id
   enemy_a
   enemy_b
   enemy_c
+```
+
+Use keyed entries when a flat list needs parent refs.
+
+```rust
+let actor = node_collection![
+    root: { node = Node2D },
+    sprite: { parent = @root, node = Sprite2D },
+    camera: { parent = @root, node = Camera2D },
+];
+```
+
+Keys are compile-time macro refs.
+
+If `name` is omitted, keyed entries use the key text as node name.
+
+Use `name = ...` to override it.
+
+`parent = @key` is only for flat entries.
+
+Inside `children = [...]`, parent is implicit.
+
+Keys inside children are allowed as name shorthand, but cannot be referenced.
+
+Use `root = @key` when a collection splice should return a non-first root:
+
+```rust
+let actor = node_collection![
+    shell: { node = Node2D },
+    body: { node = Node2D },
+    root = @body,
+];
 ```
 
 ## Tree

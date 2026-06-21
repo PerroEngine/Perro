@@ -38,7 +38,8 @@ pub use node::{
     IntoNodeTag, IntoNodeTags, MeshDataSurfaceHit3D, MeshDataSurfaceRegion3D, MeshMaterialRegion3D,
     MeshQueryModule, MeshSurfaceHit3D, MeshSurfaceRay3D, NodeAPI, NodeCollection,
     NodeCollectionEntry, NodeCreateBatch, NodeModule, NodeQuery, NodeQueryModule, NodeQueryView,
-    NodeSceneSpec, NodeSpec, QueryExpr, QueryScope, QueryTypeMask,
+    NodeRootPatch, NodeSceneSpec, NodeScriptSpec, NodeScriptVar, NodeSpec, QueryExpr, QueryScope,
+    QueryTypeMask,
 };
 
 // ---- Simulation domains ----
