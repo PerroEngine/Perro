@@ -1,7 +1,9 @@
 use leptos::prelude::*;
 use leptos_router::hooks::{use_params_map, use_query_map};
 
-use crate::docs::{book_pages, docs_by_area, find_doc, grouped_docs_filtered_for_area};
+use crate::docs::{
+    area_label, book_pages, docs_by_area, docs_pages, find_doc, grouped_docs_filtered_for_area,
+};
 use crate::layout::{NotFound, PageFrame};
 use crate::shared::{Seo, SeoInfo};
 
@@ -19,7 +21,7 @@ pub fn DocsIndexPage() -> impl IntoView {
             "Perro docs, Perro API reference, Perro scripting docs, Perro nodes, Perro examples, Perro CLI docs, resource API, input API",
             "/docs",
         ) />
-        <PageFrame eyebrow="Docs" title="Perro docs">
+        <PageFrame eyebrow="Docs" title="Perro Documentation">
             <div class="doc-layout">
                 <aside class="doc-filter">
                     <h2>"Areas"</h2>
@@ -27,10 +29,18 @@ pub fn DocsIndexPage() -> impl IntoView {
                     {areas.into_iter().map(|(area, count)| {
                         let href = format!("/docs?area={area}");
                         view! {
-                        <a href=href><span>{area}</span><small>{count}</small></a>
+                        <a href=href><span>{area_label(area)}</span><small>{count}</small></a>
                     }}).collect_view()}
                 </aside>
                 <div class="doc-results">
+                    <div class="doc-intro">
+                        <div>
+                            <p class="eyebrow">"Start Here"</p>
+                            <h2>"Book first, docs when you need detail"</h2>
+                            <p>"Use the book for the linear path. Use docs for focused API, runtime, asset, and tool reference."</p>
+                        </div>
+                        <a class="btn primary" href="/book">"Open Book"</a>
+                    </div>
                     <input
                         class="search"
                         type="search"
@@ -38,13 +48,19 @@ pub fn DocsIndexPage() -> impl IntoView {
                         on:input=move |ev| query.set(event_target_value(&ev))
                     />
                     {move || grouped_docs_filtered_for_area(&query.get(), selected_area().as_deref()).into_iter().map(|(area, docs)| view! {
-                        <section id=format!("area-{area}")>
-                            <h2>{area}</h2>
-                            <div class="doc-grid dense">
+                        <section class="docs-section" id=format!("area-{area}")>
+                            <div class="docs-section-head">
+                                <h2>{area_label(area)}</h2>
+                                <span>{docs.len()}" pages"</span>
+                            </div>
+                            <div class="doc-list">
                                 {docs.into_iter().map(|doc| view! {
-                                    <a class="doc-card" href=doc.route_path.as_str()>
-                                        <strong>{doc.title.as_str()}</strong>
-                                        <span>{doc.summary.as_str()}</span>
+                                    <a class="doc-row" href=doc.route_path.as_str()>
+                                        <span class="doc-row-main">
+                                            <strong>{doc.title.as_str()}</strong>
+                                            <span>{doc.summary.as_str()}</span>
+                                        </span>
+                                        <span class="doc-row-meta">{area_label(doc.area.as_str())}</span>
                                     </a>
                                 }).collect_view()}
                             </div>
@@ -152,17 +168,32 @@ fn BookArticle(doc: &'static crate::docs::DocPage) -> impl IntoView {
 
 #[component]
 fn DocArticle(doc: &'static crate::docs::DocPage, canonical_path: String) -> impl IntoView {
+    let areas = docs_by_area();
     view! {
         <Seo info=doc_seo(doc, &canonical_path) />
-        <PageFrame eyebrow=doc.area.as_str() title=doc.title.as_str()>
-            <div class="doc-page">
-                <article class="article" inner_html=doc.html.as_str()></article>
-                <aside class="toc">
-                    <strong>"On page"</strong>
-                    {doc.headings.iter().filter(|h| h.level <= 3).map(|h| view! {
-                        <a href=format!("#{}", h.id)>{h.text.as_str()}</a>
+        <PageFrame eyebrow=area_label(doc.area.as_str()) title=doc.title.as_str()>
+            <div class="doc-layout">
+                <aside class="doc-filter">
+                    <h2>"Areas"</h2>
+                    <a href="/docs"><span>"All"</span><small>{docs_pages().len()}</small></a>
+                    {areas.into_iter().map(|(area, count)| {
+                        let href = format!("/docs?area={area}");
+                        view! {
+                            <a href=href><span>{area_label(area)}</span><small>{count}</small></a>
+                        }
                     }).collect_view()}
                 </aside>
+                <div class="doc-results">
+                    <div class="doc-page">
+                        <article class="article" inner_html=doc.html.as_str()></article>
+                        <aside class="toc">
+                            <strong>"On page"</strong>
+                            {doc.headings.iter().filter(|h| h.level <= 3).map(|h| view! {
+                                <a href=format!("#{}", h.id)>{h.text.as_str()}</a>
+                            }).collect_view()}
+                        </aside>
+                    </div>
+                </div>
             </div>
         </PageFrame>
     }

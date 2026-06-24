@@ -157,32 +157,41 @@ pub fn NodesPage() -> impl IntoView {
                     </select>
                     <span class="node-count">{total}" total"</span>
                 </div>
-                <div class="node-groups">
-                    <NodeGroup title="2D" class="two-d" />
-                    <NodeGroup title="3D" class="three-d" />
-                    <NodeGroup title="UI" class="ui" />
-                    <NodeGroup title="Resource" class="resource" />
-                    <NodeGroup title="Base" class="base" />
+                <div class="node-trees">
+                    <NodeTreeGroup title="2D" class="two-d" root="Node2D" />
+                    <NodeTreeGroup title="3D" class="three-d" root="Node3D" />
+                    <NodeTreeGroup title="UI" class="ui" root="UiNode" />
+                    <NodeTreeGroup title="Resource" class="resource" root="Resource" />
+                    <NodeTreeGroup title="Base" class="base" root="Node" />
                 </div>
                 <script>
                     {r#"
 const nodeSearch = document.getElementById("node-search");
 const nodeFamily = document.getElementById("node-family");
 const nodeRole = document.getElementById("node-role");
-const nodeGroups = Array.from(document.querySelectorAll(".node-group"));
-const nodeCards = Array.from(document.querySelectorAll(".node-card"));
+const nodeGroups = Array.from(document.querySelectorAll(".node-tree-group"));
+const nodeBranches = Array.from(document.querySelectorAll(".node-branch"));
+const nodeRows = Array.from(document.querySelectorAll(".node-row"));
 function filterNodes() {
   const q = (nodeSearch.value || "").trim().toLowerCase();
   const family = nodeFamily.value;
   const role = nodeRole.value;
-  for (const card of nodeCards) {
-    const okSearch = !q || card.dataset.search.includes(q);
-    const okFamily = family === "all" || card.dataset.family === family;
-    const okRole = role === "all" || card.dataset.role === role;
-    card.hidden = !(okSearch && okFamily && okRole);
+  for (const row of nodeRows) {
+    const okSearch = !q || row.dataset.search.includes(q);
+    const okFamily = family === "all" || row.dataset.family === family;
+    const okRole = role === "all" || row.dataset.role === role;
+    row.dataset.match = okSearch && okFamily && okRole ? "1" : "0";
+  }
+  for (const branch of [...nodeBranches].reverse()) {
+    const row = branch.querySelector(":scope > .node-row");
+    const childMatch = Array.from(branch.querySelectorAll(":scope > .node-children > .node-branch")).some(child => child.dataset.visible === "1");
+    const visible = row.dataset.match === "1" || childMatch;
+    branch.dataset.visible = visible ? "1" : "0";
+    branch.hidden = !visible;
+    row.classList.toggle("ancestor-match", row.dataset.match !== "1" && childMatch);
   }
   for (const group of nodeGroups) {
-    const visible = Array.from(group.querySelectorAll(".node-card")).filter(card => !card.hidden).length;
+    const visible = Array.from(group.querySelectorAll(".node-row")).filter(row => row.dataset.match === "1").length;
     group.hidden = visible === 0;
     const count = group.querySelector("[data-node-count]");
     if (count) count.textContent = `${visible} nodes`;
@@ -254,44 +263,81 @@ fn json_string(text: &str) -> String {
 }
 
 #[component]
-fn NodeGroup(title: &'static str, class: &'static str) -> impl IntoView {
-    let nodes = NODES
+fn NodeTreeGroup(title: &'static str, class: &'static str, root: &'static str) -> impl IntoView {
+    let count = NODES
         .iter()
         .filter(|node| node.family.label() == title)
-        .collect::<Vec<_>>();
-    let count = nodes.len();
+        .count();
+    let roots = if root == "Resource" {
+        NODES
+            .iter()
+            .filter(|node| node.family == NodeFamily::Resource && node.parent.is_none())
+            .map(|node| node.name)
+            .collect::<Vec<_>>()
+    } else {
+        vec![root]
+    };
 
     view! {
-        <section class=format!("node-group {class}")>
+        <section class=format!("node-tree-group {class}")>
             <div class="node-group-head">
                 <h2>{title}</h2>
                 <span data-node-count>{count}" nodes"</span>
             </div>
-            <div class="node-grid">
-                {nodes.into_iter().map(|node| view! {
-                    <article
-                        class=format!("node-card {}", node.family.class())
-                        data-search=node.search.as_str()
-                        data-family=node.family.label()
-                        data-role=node.role.label()
-                    >
-                        <div class="node-card-head">
-                            <h3>{node.name}</h3>
-                            <span>{node.role.label()}</span>
-                        </div>
-                        <div class="node-meta">
-                            <span>"parent: "{node.parent.unwrap_or("none")}</span>
-                            <span>{node.fields}" fields"</span>
-                        </div>
-                        <div class="node-flags">
-                            <span class:off=!node.renderable>"render"</span>
-                            <span class:off=!node.update>"upd"</span>
-                            <span class:off=!node.fixed_update>"fixed"</span>
-                        </div>
-                    </article>
+            <div class="node-tree">
+                {roots.into_iter().map(|name| view! {
+                    <NodeBranch name include_children=root != "Node" />
                 }).collect_view()}
             </div>
         </section>
+    }
+}
+
+#[component]
+fn NodeBranch(name: &'static str, include_children: bool) -> impl IntoView {
+    let node = NODES.iter().find(|node| node.name == name);
+    let children = if include_children {
+        NODES
+            .iter()
+            .filter(|node| node.parent == Some(name))
+            .map(|node| node.name)
+            .collect::<Vec<_>>()
+    } else {
+        Vec::new()
+    };
+
+    match node {
+        Some(node) => view! {
+            <div class=format!("node-branch {}", node.family.class())>
+                <div
+                    class=format!("node-row {}", node.family.class())
+                    data-search=node.search.as_str()
+                    data-family=node.family.label()
+                    data-role=node.role.label()
+                >
+                    <div class="node-row-main">
+                        <strong>{node.name}</strong>
+                        <span>{node.role.label()}</span>
+                    </div>
+                    <div class="node-meta">
+                        <span>"parent: "{node.parent.unwrap_or("none")}</span>
+                        <span>{node.fields}" fields"</span>
+                    </div>
+                    <div class="node-flags">
+                        <span class:off=!node.renderable>"render"</span>
+                        <span class:off=!node.update>"upd"</span>
+                        <span class:off=!node.fixed_update>"fixed"</span>
+                    </div>
+                </div>
+                <div class="node-children">
+                    {children.into_iter().map(|name| view! {
+                        <NodeBranch name include_children=true />
+                    }).collect_view()}
+                </div>
+            </div>
+        }
+        .into_any(),
+        None => ().into_any(),
     }
 }
 

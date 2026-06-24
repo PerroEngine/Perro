@@ -1,6 +1,8 @@
 use leptos::prelude::*;
 use leptos_meta::{Link, Meta, Script, Title};
 
+use crate::highlight;
+
 pub const SITE_NAME: &str = "Perro Engine";
 pub const BASE_KEYWORDS: &str = "Perro Engine, Rust game engine, open source game engine, WASM game engine, 2D game engine, 3D game engine";
 
@@ -108,8 +110,9 @@ fn site_base_url() -> String {
 
 #[component]
 pub fn CodeBlock(code: &'static str) -> impl IntoView {
+    let html = highlight::code_block_html("text", code);
     view! {
-        <pre class="code"><code>{code}</code></pre>
+        <div inner_html=html></div>
     }
 }
 

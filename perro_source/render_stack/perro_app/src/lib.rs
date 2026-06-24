@@ -343,6 +343,15 @@ impl<B: GraphicsBackend> App<B> {
     }
 
     #[inline]
+    pub fn set_joycon_stick_unit(
+        &mut self,
+        index: usize,
+        stick: perro_input_api::SignedUnitVector2,
+    ) {
+        self.runtime.set_joycon_stick_unit(index, stick);
+    }
+
+    #[inline]
     pub fn set_joycon_side(&mut self, index: usize, side: perro_input_api::JoyConSide) {
         self.runtime.set_joycon_side(index, side);
     }
@@ -376,6 +385,19 @@ impl<B: GraphicsBackend> App<B> {
     #[inline]
     pub fn set_joycon_accel(&mut self, index: usize, x: f32, y: f32, z: f32) {
         self.runtime.set_joycon_accel(index, x, y, z);
+    }
+
+    #[inline]
+    pub fn set_joycon_mouse_sensor(
+        &mut self,
+        index: usize,
+        x: f32,
+        y: f32,
+        extra: f32,
+        distance: f32,
+    ) {
+        self.runtime
+            .set_joycon_mouse_sensor(index, x, y, extra, distance);
     }
 
     #[inline]

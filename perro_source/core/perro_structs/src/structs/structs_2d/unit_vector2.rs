@@ -61,3 +61,17 @@ impl From<UnitVector2> for Vector2 {
         value.as_vector2()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unit_vector2_converts_into_vector2() {
+        let packed = UnitVector2::new(0.25, 0.75);
+        let v: Vector2 = packed.into();
+
+        assert!((v.x - 0.25).abs() <= 1.0 / 255.0);
+        assert!((v.y - 0.75).abs() <= 1.0 / 255.0);
+    }
+}

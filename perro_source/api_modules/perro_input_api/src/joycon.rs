@@ -4,7 +4,8 @@
 //! project in Summer 2025, then moved it into Rust and Perro. The public PC path
 //! comes from reading Bluetooth HID and BLE GATT raw bytes from Joy-Con devices,
 //! then mapping those bytes into Perro controls. Public open source projects,
-//! including JoyconPython, helped explain control reads and mappings.
+//! including JoyconPython and joycon2cpp, helped explain control reads,
+//! mappings, player LEDs, and Joy-Con 2 rumble.
 //!
 //! This code does not use Nintendo SDK code, private Nintendo internals, or NDA
 //! material; Tiernan does not have access to those materials at the time this PC
@@ -71,6 +72,14 @@ impl JoyConButton {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct JoyConMouseSensor {
+    pub x: f32,
+    pub y: f32,
+    pub extra: f32,
+    pub distance: f32,
+}
+
 #[derive(Clone, Debug)]
 pub struct JoyConState {
     side: JoyConSide,
@@ -81,9 +90,9 @@ pub struct JoyConState {
     calibrated: bool,
     calibration_in_progress: bool,
     calibration_requested: bool,
-    stick_x: f32,
-    stick_y: f32,
+    stick: perro_structs::SignedUnitVector2,
     calibration_bias: perro_structs::Vector3,
+    mouse_sensor: JoyConMouseSensor,
     gyro: perro_structs::Vector3,
     accel: perro_structs::Vector3,
 }
@@ -101,9 +110,9 @@ impl JoyConState {
             calibrated: false,
             calibration_in_progress: false,
             calibration_requested: false,
-            stick_x: 0.0,
-            stick_y: 0.0,
+            stick: perro_structs::SignedUnitVector2::ZERO,
             calibration_bias: perro_structs::Vector3::new(0.0, 0.0, 0.0),
+            mouse_sensor: JoyConMouseSensor::default(),
             gyro: perro_structs::Vector3::new(0.0, 0.0, 0.0),
             accel: perro_structs::Vector3::new(0.0, 0.0, 0.0),
         }
@@ -157,6 +166,16 @@ impl JoyConState {
     }
 
     #[inline(always)]
+    pub fn set_mouse_sensor(&mut self, x: f32, y: f32, extra: f32, distance: f32) {
+        self.mouse_sensor = JoyConMouseSensor {
+            x,
+            y,
+            extra,
+            distance,
+        };
+    }
+
+    #[inline(always)]
     pub fn set_button_state(&mut self, button: JoyConButton, is_down: bool) {
         let idx = button.as_index();
         let word = idx / 64;
@@ -176,8 +195,12 @@ impl JoyConState {
 
     #[inline(always)]
     pub fn set_stick(&mut self, x: f32, y: f32) {
-        self.stick_x = x;
-        self.stick_y = y;
+        self.set_stick_unit(perro_structs::SignedUnitVector2::new(x, y));
+    }
+
+    #[inline(always)]
+    pub fn set_stick_unit(&mut self, stick: perro_structs::SignedUnitVector2) {
+        self.stick = stick;
     }
 
     #[inline(always)]
@@ -192,17 +215,22 @@ impl JoyConState {
 
     #[inline(always)]
     pub fn stick_x(&self) -> f32 {
-        self.stick_x
+        self.stick.x.to_f32()
     }
 
     #[inline(always)]
     pub fn stick_y(&self) -> f32 {
-        self.stick_y
+        self.stick.y.to_f32()
+    }
+
+    #[inline(always)]
+    pub fn stick_unit(&self) -> perro_structs::SignedUnitVector2 {
+        self.stick
     }
 
     #[inline(always)]
     pub fn stick(&self) -> perro_structs::Vector2 {
-        perro_structs::Vector2::new(self.stick_x, self.stick_y)
+        self.stick.as_vector2()
     }
 
     #[inline(always)]
@@ -243,6 +271,11 @@ impl JoyConState {
     #[inline(always)]
     pub fn calibration_bias(&self) -> perro_structs::Vector3 {
         self.calibration_bias
+    }
+
+    #[inline(always)]
+    pub fn mouse_sensor(&self) -> JoyConMouseSensor {
+        self.mouse_sensor
     }
 
     #[inline(always)]
@@ -377,6 +410,21 @@ macro_rules! joycon_stick {
         jc.get($index)
             .map(|jc| jc.stick())
             .unwrap_or(perro_structs::Vector2::new(0.0, 0.0))
+    }};
+}
+
+#[macro_export]
+/// Signature:
+/// - `joycon_mouse_sensor!(&InputWindow<_>, JoyConIndex) -> JoyConMouseSensor`
+///
+/// Usage:
+/// - `joycon_mouse_sensor!(ipt, index) -> JoyConMouseSensor`
+macro_rules! joycon_mouse_sensor {
+    ($ipt:expr, $index:expr) => {{
+        let jc = $ipt.JoyCons();
+        jc.get($index)
+            .map(|jc| jc.mouse_sensor())
+            .unwrap_or_default()
     }};
 }
 

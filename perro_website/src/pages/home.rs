@@ -1,161 +1,167 @@
 use leptos::prelude::*;
 
-use crate::docs::docs_by_area;
 use crate::layout::PageFrame;
-use crate::shared::{CodeBlock, DemoCard, Seo, SeoInfo};
+use crate::shared::{CodeBlock, Seo, SeoInfo};
 
 #[component]
 pub fn HomePage() -> impl IntoView {
+    let features = [
+        (
+            "Simple to learn",
+            "Start with scenes, nodes, and Rust scripts without large registration steps or boilerplate.",
+            "scene -> node -> script",
+            "Nodes and scripts stay small. Project setup stays small.",
+            "Learn",
+            "learn",
+        ),
+        (
+            "Fast in release",
+            "Nodes, scripts, and resources use release paths built for quick access and short loads.",
+            "bake -> pack -> load",
+            "Supported assets bake ahead of runtime. Runtime keeps lean data.",
+            "Performance",
+            "perf",
+        ),
+        (
+            "2D + 3D",
+            "Sprites, meshes, lights, UI, water, physics, animation, audio, and particles share one engine shape.",
+            "2D + 3D + UI",
+            "One project can target native desktop and browser builds.",
+            "Render",
+            "render",
+        ),
+        (
+            "Rust scripts",
+            "Write lifecycle hooks and methods as Rust files with per-node state.",
+            "#[State]\nfn update()",
+            "Script behavior and stored state stay separate and clear.",
+            "Script",
+            "script",
+        ),
+        (
+            "Compiler-managed workflow",
+            "Let Perro sync scripts, generate glue, and prepare supported assets.",
+            "perro dev\nperro build",
+            "Author normal files. Export turns them into runtime-ready data.",
+            "Tooling",
+            "tool",
+        ),
+        (
+            "Free and open source",
+            "Apache 2.0 licensed game engine work built in the open.",
+            "Apache-2.0",
+            "No license fee. No contract. No sales cut.",
+            "Open",
+            "open",
+        ),
+    ];
+
     view! {
         <Seo info=SeoInfo::new(
             "Rust Game Engine",
-            "Perro is an open-source Rust game engine for simple authoring, fast runtime systems, scene nodes, docs, examples, and WebAssembly demos.",
+            "Perro is an experimental, open-source game engine written in Rust. With a focus on performance and simplicity without sacrificing either.",
             "Rust game engine docs, Rust game engine examples, scene nodes, WASM demos, Perro CLI, 2D game engine, 3D game engine",
             "/",
         ).with_schema(software_schema()) />
-        <main>
-            <section class="hero">
-                <div class="hero-badge">"WASM demos"</div>
+        <main class="home-page">
+            <section class="hero home-hero">
                 <div class="hero-copy">
                     <img class="hero-logo" src="/perro.svg" alt="Perro Engine" />
-                    <p class="tagline">"Experimental. Open source. Rust-first."</p>
-                    <p class="lead">"A game engine focused on simple authoring, fast runtime systems, and direct control over the code that ships."</p>
+                    <p class="tagline">"An experimental, open-source game engine written in Rust. With a focus on performance and simplicity without sacrificing either."</p>
+                    <p class="open-source-line">"Free and Open Source"</p>
                     <div class="hero-actions">
                         <a class="btn primary" href="/learn/getting-started">"Get Started"</a>
-                        <a class="btn ghost" href="/book">"Read Book"</a>
-                        <a class="btn ghost" href="/examples">"Run Demos"</a>
+                        <a class="btn ghost" href="https://github.com/PerroEngine/Perro" target="_blank" rel="noreferrer">"GitHub"</a>
                     </div>
                 </div>
-                <div class="hero-note">"2D + 3D"</div>
             </section>
 
-            <section class="band split quick-start">
-                <div>
-                    <p class="eyebrow">"Quick start"</p>
-                    <h2>"Create, run, build"</h2>
-                    <p>"Perro CLI owns script sync, dev runner builds, static asset baking, and web bundle output."</p>
+            <section class="home-features" aria-label="Perro features">
+                {features.into_iter().map(|(title, body, code, note, meta, kind)| view! {
+                    <HomeFeature title body code note meta kind />
+                }).collect_view()}
+            </section>
+
+            <section class="band home-start">
+                <p class="eyebrow">"Start"</p>
+                <h2>"Ready to build Perro apps?"</h2>
+                <p>"Install the CLI, create a project, run dev builds, and export native or web releases."</p>
+                <div class="quick-steps" aria-label="Quick start path">
+                    <a href="/learn/getting-started"><span>"01"</span><strong>"Install CLI"</strong></a>
+                    <a href="/book/first_project"><span>"02"</span><strong>"Make first scene"</strong></a>
+                    <a href="/examples"><span>"03"</span><strong>"Run demos"</strong></a>
                 </div>
-                <CodeBlock code=r#"cargo run -p perro_cli -- new --name MyGame
-cargo run -p perro_cli -- dev --path D:\MyGame
-cargo run -p perro_cli -- build --path D:\MyGame --target web"# />
             </section>
-
-            <CodeExamples />
-            <FeatureGrid />
-            <DemoBand />
-            <DocsPreview />
         </main>
     }
 }
 
 #[component]
-fn CodeExamples() -> impl IntoView {
-    let examples = [
-        (
-            "Node script",
-            "Attach Rust logic to scene nodes.",
-            r#"use perro_api::prelude::*;
-
-type SelfNodeType = Node2D;
-
-#[State]
-pub struct PlayerState {
-    #[default(240.0)]
-    #[expose]
-    speed: f32,
-}
-
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let dt = delta_time!(ctx.run);
-        let speed = with_state!(ctx.run, PlayerState, ctx.id, |state| state.speed);
-        let mut delta = Vector2::ZERO;
-
-        if key_down!(ctx.ipt, KeyCode::KeyD) {
-            delta.x += 1.0;
-        }
-        if key_down!(ctx.ipt, KeyCode::KeyA) {
-            delta.x -= 1.0;
-        }
-
-        if delta.length_squared() > 0.0 {
-            let step = delta.normalized() * speed * dt;
-            let _ = with_base_node_mut!(ctx.run, SelfNodeType, ctx.id, |node| {
-                node.transform.position += step;
-            });
-        }
-    }
-});"#,
-        ),
-        (
-            "Scene query",
-            "Find typed nodes without stringly glue.",
-            r#"query_each!(ctx.run, all(tags["enemy"], tags["alive"]), |id| {
-    call_method!(ctx.run, id, method!("wake"), params![]);
-});"#,
-        ),
-        (
-            "Web build",
-            "Ship demos through the WASM target.",
-            r#"cargo run -p perro_cli -- build \
-  --path D:\MyGame \
-  --target web"#,
-        ),
-    ];
-
+fn HomeFeature(
+    title: &'static str,
+    body: &'static str,
+    code: &'static str,
+    note: &'static str,
+    meta: &'static str,
+    kind: &'static str,
+) -> impl IntoView {
     view! {
-        <section class="band code-showcase">
-            <div class="section-head">
-                <p class="eyebrow">"Code first"</p>
-                <h2>"Small Rust pieces, wired through scenes"</h2>
+        <article class=format!("home-feature home-feature-{kind}")>
+            <div class="feature-visual" aria-hidden="true">
+                <div class="visual-scene">
+                    <i></i>
+                    <i></i>
+                    <i></i>
+                    <i></i>
+                </div>
+                <span>{meta}</span>
+                <strong>{code}</strong>
             </div>
-            <div class="code-grid">
-                {examples.into_iter().map(|(name, body, code)| view! {
-                    <article class="code-card">
-                        <div class="code-card-head">
-                            <h3>{name}</h3>
-                            <p>{body}</p>
-                        </div>
-                        <CodeBlock code=code />
-                    </article>
-                }).collect_view()}
+            <div class="feature-copy">
+                <h2>{title}</h2>
+                <p>{body}</p>
+                <small>{note}</small>
             </div>
-        </section>
+        </article>
     }
 }
 
 #[component]
 pub fn FeatureGrid() -> impl IntoView {
     let features = [
-        ("Perro Book", "Linear install-to-release guide.", "/book"),
         (
-            "Scenes + NodeID",
-            "Object-centered scene trees with typed node access.",
+            "Perro Book",
+            "Linear install-to-release guide for real project flow.",
+            "/book",
+        ),
+        (
+            "Scene Nodes",
+            "Typed scene trees, stable IDs, inheritance-aware access, and clear runtime ownership.",
             "/docs/scripting/nodes",
         ),
         (
-            "Rust scripts",
-            "Lifecycle hooks, methods, and per-node state.",
+            "Rust Scripts",
+            "Lifecycle hooks, methods, per-node state, and Variant-friendly data flow.",
             "/docs/scripting/README",
         ),
         (
             "2D + 3D",
-            "Sprite, mesh, physics, lights, UI, water, animation.",
+            "Sprite, mesh, physics, lights, UI, water, animation, audio, and particles.",
             "/docs/project/feature_matrix",
         ),
         (
-            "Static export",
-            "Bake supported assets for lower runtime load cost.",
+            "Static Export",
+            "Bake supported assets ahead of time and ship browser bundles through WASM.",
             "/docs/project/performance_philosophy",
         ),
         (
             "Perro CLI",
-            "new, check, dev, build, web, DLC, profile, format.",
+            "Project create, script sync, dev run, build, web export, DLC, profile, and format.",
             "/docs/tools/perro_cli",
         ),
         (
-            "Web target",
-            "Build browser bundles and route scenes through WASM.",
+            "Web Target",
+            "Build browser demos with the same scene and runtime model used by native projects.",
             "/docs/WASM",
         ),
     ];
@@ -164,7 +170,7 @@ pub fn FeatureGrid() -> impl IntoView {
         <section class="band">
             <div class="section-head">
                 <p class="eyebrow">"Features"</p>
-                <h2>"Built 4 simple authoring + fast release loads"</h2>
+                <h2>"Built for simple authoring and fast release loads"</h2>
             </div>
             <div class="feature-grid">
                 {features.into_iter().map(|(name, body, href)| view! {
@@ -173,48 +179,6 @@ pub fn FeatureGrid() -> impl IntoView {
                         <p>{body}</p>
                     </a>
                 }).collect_view()}
-            </div>
-        </section>
-    }
-}
-
-#[component]
-fn DemoBand() -> impl IntoView {
-    view! {
-        <section class="band demo-band">
-            <div class="section-head">
-                <p class="eyebrow">"Examples"</p>
-                <h2>"Run 2D + 3D demos in browser"</h2>
-            </div>
-            <div class="demo-grid">
-                <DemoCard name="Demo2D" body="Sprite stress, lights, water, physics, animation, skeletal tails." href="/examples/2d" />
-                <DemoCard name="Demo3D" body="Materials, lights, water, particles, sky, physics, audio, mesh demos." href="/examples/3d" />
-            </div>
-        </section>
-    }
-}
-
-#[component]
-fn DocsPreview() -> impl IntoView {
-    let docs = docs_by_area();
-    view! {
-        <section class="band">
-            <div class="section-head row">
-                <div>
-                    <p class="eyebrow">"Docs"</p>
-                    <h2>"API ref grid"</h2>
-                </div>
-                <a class="text-link" href="/docs">"Open docs"</a>
-            </div>
-            <div class="doc-grid">
-                {docs.into_iter().take(8).map(|(area, count)| {
-                    let href = format!("/docs?area={area}");
-                    view! {
-                    <a class="doc-card" href=href>
-                        <strong>{area}</strong>
-                        <span>{count}" pages"</span>
-                    </a>
-                }}).collect_view()}
             </div>
         </section>
     }

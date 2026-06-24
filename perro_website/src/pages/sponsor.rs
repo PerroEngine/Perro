@@ -7,6 +7,8 @@ struct SponsorTier {
     name: &'static str,
     price: &'static str,
     perks: &'static [&'static str],
+    image: &'static str,
+    tone: &'static str,
     href: &'static str,
 }
 
@@ -15,42 +17,99 @@ const MONTHLY_TIERS: &[SponsorTier] = &[
         name: "Bronze Supporter",
         price: "$5 / month",
         perks: &["Support engine work"],
+        image: "/tiers/bronze.png",
+        tone: "bronze",
         href: "https://ko-fi.com/perroengine",
     },
     SponsorTier {
         name: "Silver Dog",
         price: "$10 / month",
         perks: &["Support features + tooling"],
+        image: "/tiers/silver.png",
+        tone: "silver",
         href: "https://ko-fi.com/perroengine",
     },
     SponsorTier {
         name: "Gold Hound",
         price: "$25 / month",
         perks: &["Name in credits"],
+        image: "/tiers/gold.png",
+        tone: "gold",
         href: "https://ko-fi.com/perroengine",
     },
     SponsorTier {
         name: "Platinum Poodle",
         price: "$45 / month",
         perks: &["Name in credits"],
+        image: "/tiers/plat.png",
+        tone: "platinum",
         href: "https://ko-fi.com/perroengine",
     },
     SponsorTier {
         name: "Titanium Shepherd",
         price: "$75 / month",
         perks: &["Name in credits", "Link in credits"],
+        image: "/tiers/titan.png",
+        tone: "titanium",
         href: "https://ko-fi.com/perroengine",
     },
     SponsorTier {
         name: "Diamond Direwolf",
         price: "$125 / month",
         perks: &["Name in credits", "Link in credits"],
+        image: "/tiers/diamond.png",
+        tone: "diamond",
         href: "https://ko-fi.com/perroengine",
     },
     SponsorTier {
         name: "Emerald Alpha",
         price: "$250 / month",
         perks: &["Logo in credits", "Link in credits", "Special thanks"],
+        image: "/tiers/emerald.png",
+        tone: "emerald",
+        href: "https://ko-fi.com/perroengine",
+    },
+];
+
+const ONE_TIME_TIERS: &[SponsorTier] = &[
+    SponsorTier {
+        name: "Bronze Gift",
+        price: "$5 once",
+        perks: &["Support engine work"],
+        image: "/tiers/bronze.png",
+        tone: "bronze",
+        href: "https://ko-fi.com/perroengine",
+    },
+    SponsorTier {
+        name: "Silver Gift",
+        price: "$15 once",
+        perks: &["Support features + tooling"],
+        image: "/tiers/silver.png",
+        tone: "silver",
+        href: "https://ko-fi.com/perroengine",
+    },
+    SponsorTier {
+        name: "Gold Gift",
+        price: "$50 once",
+        perks: &["Name in credits"],
+        image: "/tiers/gold.png",
+        tone: "gold",
+        href: "https://ko-fi.com/perroengine",
+    },
+    SponsorTier {
+        name: "Platinum Gift",
+        price: "$100 once",
+        perks: &["Name in credits", "Link in credits"],
+        image: "/tiers/plat.png",
+        tone: "platinum",
+        href: "https://ko-fi.com/perroengine",
+    },
+    SponsorTier {
+        name: "Diamond Gift",
+        price: "$250 once",
+        perks: &["Logo in credits", "Link in credits", "Special thanks"],
+        image: "/tiers/diamond.png",
+        tone: "diamond",
         href: "https://ko-fi.com/perroengine",
     },
 ];
@@ -60,18 +119,24 @@ const CORPORATE_TIERS: &[SponsorTier] = &[
         name: "Corporate Bronze",
         price: "$500 / month",
         perks: &["Logo in credits", "Link in credits"],
+        image: "/tiers/bronze.png",
+        tone: "bronze",
         href: "mailto:support@perroengine.com?subject=Corporate%20Sponsorship",
     },
     SponsorTier {
         name: "Corporate Silver",
         price: "$1,000 / month",
         perks: &["Logo in credits", "Link in credits"],
+        image: "/tiers/silver.png",
+        tone: "silver",
         href: "mailto:support@perroengine.com?subject=Corporate%20Sponsorship",
     },
     SponsorTier {
         name: "Corporate Gold",
         price: "$2,000 / month",
         perks: &["Logo in credits", "Link in credits", "Sponsor highlight"],
+        image: "/tiers/gold.png",
+        tone: "gold",
         href: "mailto:support@perroengine.com?subject=Corporate%20Sponsorship",
     },
 ];
@@ -88,16 +153,27 @@ pub fn SponsorPage() -> impl IntoView {
         <PageFrame eyebrow="Sponsor" title="Support Perro">
             <section class="sponsor-hero">
                 <p class="lead">
-                    "Donate to support Perro's mission: an open-source, high-performance, simple game engine. Support funds engine features, optimization, platform work, docs, and community growth."
+                    "Donate and support Perro Engine's mission to create an open-source, high-performance, simple game engine. Your generosity funds new features, optimization, platform support, and community growth."
                 </p>
-                <div class="sponsor-actions">
-                    <a class="btn primary" href="https://ko-fi.com/perroengine" target="_blank" rel="noreferrer">"Donate on Ko-fi"</a>
-                    <a class="btn ghost" href="https://github.com/PerroEngine/Perro" target="_blank" rel="noreferrer">"Sponsor via GitHub"</a>
-                </div>
+                <a class="sponsor-manage" href="https://ko-fi.com/perroengine" target="_blank" rel="noreferrer">"Manage Donation"</a>
             </section>
 
-            <SponsorTierSection title="Monthly" tiers=MONTHLY_TIERS />
-            <SponsorTierSection title="Corporate" tiers=CORPORATE_TIERS />
+            <div class="sponsor-tabs">
+                <input class="sponsor-tab-input" id="sponsor-monthly" name="sponsor-mode" type="radio" checked />
+                <input class="sponsor-tab-input" id="sponsor-one-time" name="sponsor-mode" type="radio" />
+                <input class="sponsor-tab-input" id="sponsor-corporate" name="sponsor-mode" type="radio" />
+
+                <div class="sponsor-switch">
+                    <span class="sponsor-switch-thumb"></span>
+                    <label class="monthly-tab" for="sponsor-monthly">"Monthly"</label>
+                    <label class="one-time-tab" for="sponsor-one-time">"One Time"</label>
+                    <label class="corporate-tab" for="sponsor-corporate">"Corporate"</label>
+                </div>
+
+                <SponsorTierPanel class_name="monthly-panel" tiers=MONTHLY_TIERS />
+                <SponsorTierPanel class_name="one-time-panel" tiers=ONE_TIME_TIERS />
+                <SponsorTierPanel class_name="corporate-panel" tiers=CORPORATE_TIERS />
+            </div>
 
             <section class="band sponsor-note">
                 <h2>"Other ways to help"</h2>
@@ -112,15 +188,9 @@ pub fn SponsorPage() -> impl IntoView {
 }
 
 #[component]
-fn SponsorTierSection(title: &'static str, tiers: &'static [SponsorTier]) -> impl IntoView {
+fn SponsorTierPanel(class_name: &'static str, tiers: &'static [SponsorTier]) -> impl IntoView {
     view! {
-        <section class="band sponsor-section">
-            <div class="section-head row">
-                <div>
-                    <p class="eyebrow">"Donation tiers"</p>
-                    <h2>{title}</h2>
-                </div>
-            </div>
+        <section class=format!("sponsor-section sponsor-panel {class_name}")>
             <div class="sponsor-grid">
                 {tiers.iter().map(|tier| view! { <SponsorTierCard tier=tier /> }).collect_view()}
             </div>
@@ -131,8 +201,9 @@ fn SponsorTierSection(title: &'static str, tiers: &'static [SponsorTier]) -> imp
 #[component]
 fn SponsorTierCard(tier: &'static SponsorTier) -> impl IntoView {
     view! {
-        <article class="sponsor-card">
-            <div>
+        <article class=format!("sponsor-card {}", tier.tone)>
+            <div class="tier-top">
+                <img src=tier.image alt=format!("{} tier badge", tier.name) loading="lazy" />
                 <h3>{tier.name}</h3>
                 <strong>{tier.price}</strong>
             </div>

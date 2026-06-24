@@ -90,6 +90,20 @@ impl<'ipt, IP: InputAPI + ?Sized> InputWindow<'ipt, IP> {
         }
     }
 
+    /// Queue Joy-Con calibration if the indexed device has no calibration.
+    #[inline]
+    pub fn ensure_joycon_calibration(&self, index: usize) -> bool {
+        let needs_calibration = self
+            .ipt
+            .joycons()
+            .get(index)
+            .is_some_and(JoyConState::needs_calibration);
+        if needs_calibration {
+            self.request_joycon_calibration(index);
+        }
+        needs_calibration
+    }
+
     /// Queue a mouse mode change.
     #[inline]
     pub fn set_mouse_mode(&self, mode: MouseMode) {
@@ -532,5 +546,21 @@ impl<'ipt, IP: InputAPI + ?Sized> JoyConModule<'ipt, IP> {
                 indicator: slot,
             });
         }
+    }
+
+    /// Queue Joy-Con calibration if the indexed device has no calibration.
+    #[inline(always)]
+    pub fn ensure_calibration(&self, index: usize) -> bool {
+        let needs_calibration = self
+            .ipt
+            .joycons()
+            .get(index)
+            .is_some_and(JoyConState::needs_calibration);
+        if needs_calibration && let Some(buffer) = self.ipt.command_buffer() {
+            buffer
+                .borrow_mut()
+                .push(InputCommand::RequestJoyConCalibration { index });
+        }
+        needs_calibration
     }
 }

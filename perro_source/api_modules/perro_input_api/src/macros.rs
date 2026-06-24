@@ -264,6 +264,13 @@ macro_rules! joycon_request_calibration {
 }
 
 #[macro_export]
+/// Signature:
+/// - `joycon_ensure_calibration!(&InputWindow<_>, JoyConIndex) -> bool`
+macro_rules! joycon_ensure_calibration {
+    ($ipt:expr, $index:expr) => {{ $ipt.ensure_joycon_calibration($index) }};
+}
+
+#[macro_export]
 macro_rules! gamepad_set_rumble {
     ($ipt:expr, $index:expr, $low:expr, $high:expr) => {{ $ipt.Gamepads().set_rumble($index, $low, $high) }};
 }

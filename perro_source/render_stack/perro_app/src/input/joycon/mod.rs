@@ -7,13 +7,14 @@ use perro_input_api::InputEvent;
 #[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
 use perro_input_api::{
     JoyConButton, JoyConIndicatorRequest, JoyConRumbleRequest, JoyConSide, PlayerBinding,
-    PlayerState,
+    SignedUnitVector2,
 };
 
 #[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
 trait JoyConSink {
     fn set_joycon_button_state(&mut self, index: usize, button: JoyConButton, is_down: bool);
     fn set_joycon_stick(&mut self, index: usize, x: f32, y: f32);
+    fn set_joycon_stick_unit(&mut self, index: usize, stick: SignedUnitVector2);
     fn set_joycon_side(&mut self, index: usize, side: JoyConSide);
     fn set_joycon_connected(&mut self, index: usize, connected: bool);
     fn set_joycon_calibrated(&mut self, index: usize, calibrated: bool);
@@ -21,10 +22,11 @@ trait JoyConSink {
     fn set_joycon_calibration_bias(&mut self, index: usize, x: f32, y: f32, z: f32);
     fn set_joycon_gyro(&mut self, index: usize, x: f32, y: f32, z: f32);
     fn set_joycon_accel(&mut self, index: usize, x: f32, y: f32, z: f32);
+    fn set_joycon_mouse_sensor(&mut self, index: usize, x: f32, y: f32, extra: f32, distance: f32);
     fn take_joycon_calibration_requests(&mut self) -> Vec<usize>;
     fn take_joycon_rumble_requests(&mut self) -> Vec<JoyConRumbleRequest>;
     fn take_joycon_indicator_requests(&mut self) -> Vec<JoyConIndicatorRequest>;
-    fn player_bindings(&self) -> Vec<PlayerBinding>;
+    fn for_each_player_binding(&self, f: &mut dyn FnMut(usize, PlayerBinding));
     fn bind_player(&mut self, index: usize, binding: PlayerBinding);
 }
 
@@ -35,6 +37,9 @@ impl<B: GraphicsBackend> JoyConSink for App<B> {
     }
     fn set_joycon_stick(&mut self, index: usize, x: f32, y: f32) {
         App::set_joycon_stick(self, index, x, y);
+    }
+    fn set_joycon_stick_unit(&mut self, index: usize, stick: SignedUnitVector2) {
+        App::set_joycon_stick_unit(self, index, stick);
     }
     fn set_joycon_side(&mut self, index: usize, side: JoyConSide) {
         App::set_joycon_side(self, index, side);
@@ -57,6 +62,9 @@ impl<B: GraphicsBackend> JoyConSink for App<B> {
     fn set_joycon_accel(&mut self, index: usize, x: f32, y: f32, z: f32) {
         App::set_joycon_accel(self, index, x, y, z);
     }
+    fn set_joycon_mouse_sensor(&mut self, index: usize, x: f32, y: f32, extra: f32, distance: f32) {
+        App::set_joycon_mouse_sensor(self, index, x, y, extra, distance);
+    }
     fn take_joycon_calibration_requests(&mut self) -> Vec<usize> {
         App::take_joycon_calibration_requests(self)
     }
@@ -66,11 +74,10 @@ impl<B: GraphicsBackend> JoyConSink for App<B> {
     fn take_joycon_indicator_requests(&mut self) -> Vec<JoyConIndicatorRequest> {
         App::take_joycon_indicator_requests(self)
     }
-    fn player_bindings(&self) -> Vec<PlayerBinding> {
-        self.players()
-            .iter()
-            .map(PlayerState::get_binding)
-            .collect()
+    fn for_each_player_binding(&self, f: &mut dyn FnMut(usize, PlayerBinding)) {
+        for (index, player) in self.players().iter().enumerate() {
+            f(index, player.get_binding());
+        }
     }
     fn bind_player(&mut self, index: usize, binding: PlayerBinding) {
         App::bind_player(self, index, binding);
@@ -87,7 +94,10 @@ impl JoyConSink for RenderThreadBridge {
         });
     }
     fn set_joycon_stick(&mut self, index: usize, x: f32, y: f32) {
-        self.push_input_event(InputEvent::JoyConStick { index, x, y });
+        self.set_joycon_stick_unit(index, SignedUnitVector2::new(x, y));
+    }
+    fn set_joycon_stick_unit(&mut self, index: usize, stick: SignedUnitVector2) {
+        self.push_input_event(InputEvent::JoyConStick { index, stick });
     }
     fn set_joycon_side(&mut self, index: usize, side: JoyConSide) {
         self.push_input_event(InputEvent::JoyConSide { index, side });
@@ -110,6 +120,15 @@ impl JoyConSink for RenderThreadBridge {
     fn set_joycon_accel(&mut self, index: usize, x: f32, y: f32, z: f32) {
         self.push_input_event(InputEvent::JoyConAccel { index, x, y, z });
     }
+    fn set_joycon_mouse_sensor(&mut self, index: usize, x: f32, y: f32, extra: f32, distance: f32) {
+        self.push_input_event(InputEvent::JoyConMouseSensor {
+            index,
+            x,
+            y,
+            extra,
+            distance,
+        });
+    }
     fn take_joycon_calibration_requests(&mut self) -> Vec<usize> {
         Vec::new()
     }
@@ -119,15 +138,19 @@ impl JoyConSink for RenderThreadBridge {
     fn take_joycon_indicator_requests(&mut self) -> Vec<JoyConIndicatorRequest> {
         Vec::new()
     }
-    fn player_bindings(&self) -> Vec<PlayerBinding> {
-        Vec::new()
-    }
+    fn for_each_player_binding(&self, _f: &mut dyn FnMut(usize, PlayerBinding)) {}
     fn bind_player(&mut self, index: usize, binding: PlayerBinding) {
         self.push_input_event(InputEvent::BindPlayer { index, binding });
     }
 }
 
 #[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
+mod joycon1;
+#[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
+mod joycon2;
+#[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
+mod shared;
+
 mod backend {
     // Public PC Joy-Con backend provenance:
     //
@@ -136,22 +159,27 @@ mod backend {
     // in Summer 2025, then ported it to Rust and Perro. It maps raw Bluetooth
     // HID reports and BLE GATT notifications from Joy-Con devices into
     // perro_input_api controls. Public open source projects, including
-    // JoyconPython, helped explain control reads and mappings.
+    // JoyconPython and joycon2cpp, helped explain control reads, mappings,
+    // player LEDs, and Joy-Con 2 rumble.
     //
     // This code does not use Nintendo SDK code, private Nintendo internals, or
     // NDA material; Tiernan does not have access to those materials at the time
     // this PC backend was written. If that access exists later, Tiernan will not
     // use it to update this public backend. Switch / Switch 2 builds will use a
     // separate private implementation that calls the official SDK directly.
+    // Joy-Con 2 support here does not claim decryption work; it reads BLE
+    // reports after normal OS pairing and uses observed public packet layouts.
 
     use super::*;
+    use super::{joycon1, joycon2, shared};
     use btleplug::api::{Central, CharPropFlags, Manager as _, Peripheral as _, ScanFilter};
     use btleplug::platform::Manager;
     use futures_util::stream::StreamExt;
     use hidapi::HidApi;
     use perro_input_api::{JoyConButton, JoyConSide, PlayerBinding, PlayerIndicatorSlot};
-    use perro_io::{load_asset, save_asset};
+    use perro_io::data_local_dir;
     use serde::{Deserialize, Serialize};
+    use shared::{ButtonBits, JoyConInputData, StickCalibration};
     use std::collections::{HashMap, HashSet};
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::mpsc::{self, Receiver, Sender};
@@ -160,18 +188,7 @@ mod backend {
     use std::time::{Duration, Instant};
     use tokio::runtime::Builder;
     use tokio::time::{self, Duration as TokioDuration, Instant as TokioInstant};
-    use uuid::Uuid;
 
-    const JOYCON_VENDOR_ID: u16 = 0x057E;
-    const JOYCON_L_PID: u16 = 0x2006;
-    const JOYCON_R_PID: u16 = 0x2007;
-    const NINTENDO_BLE_CID: u16 = 0x0553;
-    const JOYCON2_R_SIDE: u8 = 0x66;
-    const JOYCON2_L_SIDE: u8 = 0x67;
-    const JOYCON2_INPUT_REPORT_05_UUID: Uuid = uuid::uuid!("ab7de9be-89fe-49ad-828f-118f09df7fd2");
-    const JOYCON2_INPUT_REPORT_07_UUID: Uuid = uuid::uuid!("cc1bbbb5-7354-4d32-a716-a81cb241a32a");
-    const JOYCON2_INPUT_REPORT_08_UUID: Uuid = uuid::uuid!("d5a9e01e-2ffc-4cca-b20c-8b67142bf442");
-    const JOYCON2_WRITE_COMMAND_UUID: Uuid = uuid::uuid!("649d4ac9-8eb7-4e6c-af44-1ea54fe5f005");
     const REPORT_LEN: usize = 64;
     const SCAN_INTERVAL: Duration = Duration::from_secs(2);
     const READ_TIMEOUT: Duration = Duration::from_millis(8);
@@ -181,20 +198,11 @@ mod backend {
     const IMU_ZERO_STUCK_THRESHOLD: Duration = Duration::from_millis(600);
     const IMU_ENABLE_RETRY_COOLDOWN: Duration = Duration::from_millis(250);
     const MAX_PERSISTENT_JOYCON_SLOTS: usize = 12;
-    const STICK_DEADZONE: f32 = 0.08;
-    const STICK_AXIS_GAIN_POS: f32 = 1.85;
-    const STICK_AXIS_GAIN_NEG: f32 = 1.45;
-    const ACCEL_GRAVITY_SCALE: f32 = 0.2386;
-    const ACCEL_ONE_G_TARGET: f32 = 1000.0;
-    const JOYCON1_GYRO_SCALE: f32 = 15.0;
     const CALIBRATION_STABLE_SECONDS: f32 = 3.0;
     const CALIBRATION_MAX_MAG_DPS: f32 = 12.0;
     const CALIBRATION_MAX_DELTA_DPS: f32 = 5.0;
-    const CALIBRATION_FOLDER: &str = "user://calibrations";
-    const JOYCON_SUBCMD_SET_PLAYER_LAMP: u8 = 0x30;
+    const CALIBRATION_FOLDER: &str = "Perro/calibrations";
     const MAX_JOYCON_EVENTS_PER_FRAME: usize = 256;
-
-    type ButtonBits = u16;
 
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
     enum CalibrationStatus {
@@ -226,6 +234,10 @@ mod backend {
     struct ConnectedJoyCon {
         index: usize,
         serial: String,
+        output_tx: Option<Sender<DeviceCommand>>,
+        stick_calibration: StickCalibration,
+        stick_calibration_dirty: bool,
+        last_stick_calibration_save: Instant,
         calibration_bias: (f32, f32, f32),
         status: CalibrationStatus,
         session: Option<CalibrationSession>,
@@ -237,13 +249,42 @@ mod backend {
         bias_x: f32,
         bias_y: f32,
         bias_z: f32,
+        #[serde(default = "default_stick_center")]
+        stick_center_x: u16,
+        #[serde(default = "default_stick_center")]
+        stick_center_y: u16,
+        #[serde(default = "default_stick_min")]
+        stick_min_x: u16,
+        #[serde(default = "default_stick_max")]
+        stick_max_x: u16,
+        #[serde(default = "default_stick_min")]
+        stick_min_y: u16,
+        #[serde(default = "default_stick_max")]
+        stick_max_y: u16,
+    }
+
+    const fn default_stick_center() -> u16 {
+        2048
+    }
+
+    const fn default_stick_min() -> u16 {
+        300
+    }
+
+    const fn default_stick_max() -> u16 {
+        3800
     }
 
     enum JoyConEvent {
+        OutputReady {
+            key: String,
+            tx: Sender<DeviceCommand>,
+        },
         Connected {
             index: usize,
             side: JoyConSide,
             serial: String,
+            device_key: String,
         },
         Report {
             index: usize,
@@ -298,21 +339,18 @@ mod backend {
 
     #[derive(Debug)]
     enum DeviceCommand {
-        SetPlayerLamp { pattern: u8 },
+        SetPlayerLamp {
+            pattern: u8,
+        },
+        SetRumble {
+            low_frequency: f32,
+            high_frequency: f32,
+        },
     }
 
     #[derive(Debug)]
     struct DeviceHandle {
         stop: Arc<AtomicBool>,
-        tx: Sender<DeviceCommand>,
-    }
-
-    #[derive(Debug, Clone)]
-    struct JoyConInputData {
-        buttons: ButtonBits,
-        stick: (f32, f32),
-        gyro: (f32, f32, f32),
-        accel: (f32, f32, f32),
     }
 
     #[derive(Default)]
@@ -330,7 +368,9 @@ mod backend {
         tx: Option<Sender<JoyConEvent>>,
         last_buttons: HashMap<(usize, JoyConSide), ButtonBits>,
         connected: HashMap<(usize, JoyConSide), ConnectedJoyCon>,
+        output_txs: HashMap<String, Sender<DeviceCommand>>,
         last_player_lamp: HashMap<usize, u8>,
+        scan_connected_keys: HashSet<String>,
         last_scan: Option<Instant>,
         ble_started: bool,
         ble_stop: Option<Arc<AtomicBool>>,
@@ -399,17 +439,17 @@ mod backend {
                 return;
             };
 
-            let mut connected_serials: HashSet<String> = HashSet::new();
+            self.scan_connected_keys.clear();
 
             for dev in api.device_list() {
-                if dev.vendor_id() != JOYCON_VENDOR_ID {
+                if dev.vendor_id() != joycon1::JOYCON_VENDOR_ID {
                     continue;
                 }
 
                 let pid = dev.product_id();
                 let side = match pid {
-                    JOYCON_L_PID => JoyConSide::LJoyCon,
-                    JOYCON_R_PID => JoyConSide::RJoyCon,
+                    joycon1::JOYCON_L_PID => JoyConSide::LJoyCon,
+                    joycon1::JOYCON_R_PID => JoyConSide::RJoyCon,
                     _ => continue,
                 };
 
@@ -418,7 +458,7 @@ mod backend {
                 };
                 let serial = serial.to_string();
                 let slot_key = format!("hid:{serial}");
-                connected_serials.insert(slot_key.clone());
+                self.scan_connected_keys.insert(slot_key.clone());
 
                 if self.devices.contains_key(&slot_key) {
                     continue;
@@ -431,6 +471,7 @@ mod backend {
                         index,
                         side,
                         serial: serial.clone(),
+                        device_key: slot_key.clone(),
                     })
                     .ok()
                 });
@@ -439,7 +480,7 @@ mod backend {
 
             // Remove disconnected devices
             self.devices.retain(|slot_key, handle| {
-                let connected = connected_serials.contains(slot_key);
+                let connected = self.scan_connected_keys.contains(slot_key);
                 if !connected {
                     handle.stop.store(true, Ordering::Relaxed);
                     if let Some(index) = release_slot(&self.slots, slot_key) {
@@ -450,6 +491,7 @@ mod backend {
                         clear_joycon_index(app, index);
                         self.last_buttons.retain(|(idx, _), _| *idx != index);
                         self.connected.retain(|(idx, _), _| *idx != index);
+                        self.output_txs.remove(slot_key);
                         self.last_player_lamp.remove(&index);
                     }
                 }
@@ -479,11 +521,12 @@ mod backend {
                     return;
                 };
 
-                let Ok(device) = api.open_serial(JOYCON_VENDOR_ID, pid, &serial_thread) else {
+                let Ok(device) = api.open_serial(joycon1::JOYCON_VENDOR_ID, pid, &serial_thread)
+                else {
                     return;
                 };
 
-                let _ = enable_sensors(&device);
+                let _ = joycon1::enable_sensors(&device);
                 let mut zero_started_at: Option<Instant> = None;
                 let mut last_enable_retry = Instant::now() - IMU_ENABLE_RETRY_COOLDOWN;
                 let mut buffer = [0u8; REPORT_LEN];
@@ -493,20 +536,21 @@ mod backend {
                     while let Ok(cmd) = cmd_rx.try_recv() {
                         match cmd {
                             DeviceCommand::SetPlayerLamp { pattern } => {
-                                let _ = send_hid_subcommand_with_rumble(
+                                let _ = joycon1::send_hid_subcommand_with_rumble(
                                     &device,
                                     &mut packet_number,
-                                    JOYCON_SUBCMD_SET_PLAYER_LAMP,
+                                    joycon1::JOYCON_SUBCMD_SET_PLAYER_LAMP,
                                     pattern,
                                 );
                             }
+                            DeviceCommand::SetRumble { .. } => {}
                         }
                     }
                     match device.read_timeout(&mut buffer, READ_TIMEOUT.as_millis() as i32) {
                         Ok(size) if size > 0 => {
                             let data = &buffer[..size];
-                            if let Some(payload) = decode_report_hid(data, side) {
-                                if imu_is_zero(payload.gyro, payload.accel) {
+                            if let Some(payload) = joycon1::decode_report_hid(data, side) {
+                                if shared::imu_is_zero(payload.gyro, payload.accel) {
                                     let zero_start =
                                         zero_started_at.get_or_insert_with(Instant::now);
                                     if zero_start.elapsed() >= IMU_ZERO_STUCK_THRESHOLD
@@ -516,7 +560,7 @@ mod backend {
                                             "[joycon] imu stuck at zero index={} side={:?}, retrying sensor enable",
                                             index, side
                                         );
-                                        let _ = enable_sensors(&device);
+                                        let _ = joycon1::enable_sensors(&device);
                                         last_enable_retry = Instant::now();
                                     }
                                 } else {
@@ -540,8 +584,8 @@ mod backend {
                 let _ = tx.send(JoyConEvent::Disconnected { index });
             });
 
-            self.devices
-                .insert(slot_key, DeviceHandle { stop, tx: cmd_tx });
+            self.devices.insert(slot_key.clone(), DeviceHandle { stop });
+            self.output_txs.insert(slot_key, cmd_tx);
         }
 
         fn drain_events<S: JoyConSink>(&mut self, app: &mut S) {
@@ -561,12 +605,16 @@ mod backend {
 
         fn handle_event<S: JoyConSink>(&mut self, app: &mut S, event: JoyConEvent) {
             match event {
+                JoyConEvent::OutputReady { key, tx } => {
+                    self.output_txs.insert(key, tx);
+                }
                 JoyConEvent::Connected {
                     index,
                     side,
                     serial,
+                    device_key,
                 } => {
-                    self.on_connected(app, index, side, &serial);
+                    self.on_connected(app, index, side, serial, device_key);
                 }
                 JoyConEvent::Report {
                     index,
@@ -622,9 +670,18 @@ mod backend {
             }
         }
 
-        fn apply_rumble(&mut self, _index: usize, _low_frequency: f32, _high_frequency: f32) {
-            // Backend-specific output channel hook.
-            // Joy-Con rumble packet path intentionally deferred.
+        fn apply_rumble(&mut self, index: usize, low_frequency: f32, high_frequency: f32) {
+            for controller in self.connected.values() {
+                if controller.index != index {
+                    continue;
+                }
+                if let Some(tx) = controller.output_tx.as_ref() {
+                    let _ = tx.send(DeviceCommand::SetRumble {
+                        low_frequency,
+                        high_frequency,
+                    });
+                }
+            }
         }
 
         fn apply_indicator(&mut self, index: usize, indicator: u8) {
@@ -633,34 +690,44 @@ mod backend {
                 if controller.index != index {
                     continue;
                 }
-                if let Some(device) = self.devices.get(&format!("hid:{}", controller.serial)) {
-                    let _ = device
-                        .tx
-                        .send(DeviceCommand::SetPlayerLamp { pattern: indicator });
+                if let Some(tx) = controller.output_tx.as_ref() {
+                    let _ = tx.send(DeviceCommand::SetPlayerLamp { pattern: indicator });
                 }
             }
         }
 
         fn sync_player_binding_lamps<S: JoyConSink>(&mut self, app: &mut S) {
-            let mut desired: HashMap<usize, u8> = HashMap::new();
-            for (player_idx, binding) in app.player_bindings().iter().copied().enumerate() {
+            let mut desired = [None; MAX_PERSISTENT_JOYCON_SLOTS];
+            app.for_each_player_binding(&mut |player_idx, binding| {
                 let Some(indicator) = PlayerIndicatorSlot::from_player_number(player_idx + 1)
                 else {
-                    continue;
+                    return;
                 };
                 let pattern = indicator.to_lamp_pattern();
                 match binding {
                     PlayerBinding::JoyConSingle { index } => {
-                        desired.insert(index, pattern);
+                        if let Some(slot) = desired.get_mut(index) {
+                            *slot = Some(pattern);
+                        } else if self.last_player_lamp.get(&index).copied() != Some(pattern) {
+                            self.apply_indicator(index, pattern);
+                        }
                     }
                     PlayerBinding::JoyConPair { left, right } => {
-                        desired.insert(left, pattern);
-                        desired.insert(right, pattern);
+                        for index in [left, right] {
+                            if let Some(slot) = desired.get_mut(index) {
+                                *slot = Some(pattern);
+                            } else if self.last_player_lamp.get(&index).copied() != Some(pattern) {
+                                self.apply_indicator(index, pattern);
+                            }
+                        }
                     }
                     _ => {}
                 }
-            }
-            for (index, pattern) in desired {
+            });
+            for (index, pattern) in desired.into_iter().enumerate() {
+                let Some(pattern) = pattern else {
+                    continue;
+                };
                 if self.last_player_lamp.get(&index).copied() == Some(pattern) {
                     continue;
                 }
@@ -687,15 +754,32 @@ mod backend {
             app: &mut S,
             index: usize,
             side: JoyConSide,
-            serial: &str,
+            serial: String,
+            device_key: String,
         ) {
-            let file = load_calibration_file(serial);
-            let (status, bias) = match file {
-                Some(f) => (
-                    CalibrationStatus::Calibrated,
-                    (f.bias_x, f.bias_y, f.bias_z),
+            let output_tx = self.output_txs.remove(&device_key);
+            let file = load_calibration_file(&serial);
+            let (status, bias, stick_calibration) = match file {
+                Some(f) => {
+                    let stick = StickCalibration {
+                        center_x: f.stick_center_x,
+                        center_y: f.stick_center_y,
+                        min_x: f.stick_min_x,
+                        max_x: f.stick_max_x,
+                        min_y: f.stick_min_y,
+                        max_y: f.stick_max_y,
+                    };
+                    (
+                        CalibrationStatus::Calibrated,
+                        (f.bias_x, f.bias_y, f.bias_z),
+                        stick,
+                    )
+                }
+                None => (
+                    CalibrationStatus::Missing,
+                    (0.0, 0.0, 0.0),
+                    StickCalibration::default(),
                 ),
-                None => (CalibrationStatus::Missing, (0.0, 0.0, 0.0)),
             };
             eprintln!(
                 "[joycon] calibration index={} side={:?} serial={} calibrated={} path={}",
@@ -703,13 +787,17 @@ mod backend {
                 side,
                 serial,
                 status == CalibrationStatus::Calibrated,
-                calibration_path(serial)
+                calibration_path_display(&serial)
             );
             self.connected.insert(
                 (index, side),
                 ConnectedJoyCon {
                     index,
-                    serial: serial.to_string(),
+                    serial,
+                    output_tx,
+                    stick_calibration,
+                    stick_calibration_dirty: false,
+                    last_stick_calibration_save: Instant::now(),
                     calibration_bias: bias,
                     status,
                     session: None,
@@ -720,9 +808,8 @@ mod backend {
             app.set_joycon_calibration_in_progress(index, false);
             app.set_joycon_calibrated(index, status == CalibrationStatus::Calibrated);
             app.set_joycon_calibration_bias(index, bias.0, bias.1, bias.2);
-            let bindings = app.player_bindings();
-            if !is_joycon_bound(&bindings, index)
-                && let Some(player_index) = first_unbound_player_slot(&bindings)
+            if !is_joycon_bound(app, index)
+                && let Some(player_index) = first_unbound_player_slot(app)
             {
                 app.bind_player(player_index, PlayerBinding::JoyConSingle { index });
             }
@@ -801,7 +888,7 @@ mod backend {
                     };
 
                     for peripheral in peripherals {
-                        let Some((side, serial, debug_tag)) = classify_joycon2_ble(&peripheral).await else {
+                        let Some((side, serial, debug_tag)) = joycon2::classify_joycon2_ble(&peripheral).await else {
                             continue;
                         };
                         let key = format!("ble:{serial}");
@@ -829,16 +916,16 @@ mod backend {
                                 time::sleep(BLE_CHAR_DISCOVERY_DELAY).await;
                             }
                         }
-                        let preferred_uuids: [Uuid; 3] = match side {
+                        let preferred_uuids: [uuid::Uuid; 3] = match side {
                             JoyConSide::LJoyCon => [
-                                JOYCON2_INPUT_REPORT_07_UUID,
-                                JOYCON2_INPUT_REPORT_05_UUID,
-                                JOYCON2_INPUT_REPORT_08_UUID,
+                                joycon2::JOYCON2_INPUT_REPORT_07_UUID,
+                                joycon2::JOYCON2_INPUT_REPORT_05_UUID,
+                                joycon2::JOYCON2_INPUT_REPORT_08_UUID,
                             ],
                             JoyConSide::RJoyCon => [
-                                JOYCON2_INPUT_REPORT_08_UUID,
-                                JOYCON2_INPUT_REPORT_05_UUID,
-                                JOYCON2_INPUT_REPORT_07_UUID,
+                                joycon2::JOYCON2_INPUT_REPORT_08_UUID,
+                                joycon2::JOYCON2_INPUT_REPORT_05_UUID,
+                                joycon2::JOYCON2_INPUT_REPORT_07_UUID,
                             ],
                         };
                         let input_char = preferred_uuids
@@ -856,9 +943,9 @@ mod backend {
                                 chars.iter()
                                     .find(|c| {
                                         c.properties.contains(CharPropFlags::NOTIFY)
-                                            && (c.uuid == JOYCON2_INPUT_REPORT_05_UUID
-                                                || c.uuid == JOYCON2_INPUT_REPORT_07_UUID
-                                                || c.uuid == JOYCON2_INPUT_REPORT_08_UUID)
+                                            && (c.uuid == joycon2::JOYCON2_INPUT_REPORT_05_UUID
+                                                || c.uuid == joycon2::JOYCON2_INPUT_REPORT_07_UUID
+                                                || c.uuid == joycon2::JOYCON2_INPUT_REPORT_08_UUID)
                                     })
                                     .cloned()
                             })
@@ -890,19 +977,60 @@ mod backend {
 
                         let cmd_char = chars
                             .iter()
-                            .find(|c| c.uuid == JOYCON2_WRITE_COMMAND_UUID)
+                            .find(|c| c.uuid == joycon2::JOYCON2_WRITE_COMMAND_UUID)
+                            .cloned();
+                        let vibration_char = chars
+                            .iter()
+                            .find(|c| {
+                                c.properties.contains(CharPropFlags::WRITE_WITHOUT_RESPONSE)
+                                    && c.uuid
+                                        == match side {
+                                            JoyConSide::LJoyCon => joycon2::JOYCON2_VIBRATION_L_UUID,
+                                            JoyConSide::RJoyCon => joycon2::JOYCON2_VIBRATION_R_UUID,
+                                        }
+                            })
+                            .cloned()
+                            .or_else(|| {
+                                chars
+                                    .iter()
+                                    .find(|c| {
+                                        c.properties.contains(CharPropFlags::WRITE_WITHOUT_RESPONSE)
+                                            && (c.uuid == joycon2::JOYCON2_VIBRATION_L_UUID
+                                                || c.uuid == joycon2::JOYCON2_VIBRATION_R_UUID)
+                                    })
+                                    .cloned()
+                            });
+                        let rumble_char = chars
+                            .iter()
+                            .find(|c| {
+                                c.properties.contains(CharPropFlags::WRITE_WITHOUT_RESPONSE)
+                                    && c.uuid
+                                        == match side {
+                                            JoyConSide::LJoyCon => joycon2::JOYCON2_RUMBLE_L_UUID,
+                                            JoyConSide::RJoyCon => joycon2::JOYCON2_RUMBLE_R_UUID,
+                                        }
+                            })
                             .cloned();
                         if let Some(cmd_char) = cmd_char.as_ref() {
-                            send_joycon2_enable_sequence(&peripheral, cmd_char).await;
+                            joycon2::send_joycon2_enable_sequence(&peripheral, cmd_char).await;
                             // Aggressive startup: fire a second pulse immediately.
-                            send_joycon2_enable_sequence(&peripheral, cmd_char).await;
+                            joycon2::send_joycon2_enable_sequence(&peripheral, cmd_char).await;
+                        }
+                        if let Some(init_char) = rumble_char.as_ref().or(cmd_char.as_ref()) {
+                            joycon2::send_joycon2_full_init_sequence(&peripheral, init_char).await;
                         }
 
                         let index = assign_slot(&slots, &key);
+                        let (cmd_tx, cmd_rx) = mpsc::channel();
+                        let _ = tx.send(JoyConEvent::OutputReady {
+                            key: key.clone(),
+                            tx: cmd_tx,
+                        });
                         let _ = tx.send(JoyConEvent::Connected {
                             index,
                             side,
                             serial: serial.clone(),
+                            device_key: key.clone(),
                         });
                         let tx_clone = tx.clone();
                         let slots_clone = Arc::clone(&slots);
@@ -918,17 +1046,41 @@ mod backend {
                                 return;
                             };
                             let mut imu_active = false;
+                            let mut rumble_counter = 0u8;
                             let mut zero_started_at: Option<TokioInstant> = None;
                             let mut last_enable_retry =
                                 TokioInstant::now() - TokioDuration::from_millis(250);
                             let mut first_report_logged = false;
                             while !stop_clone.load(Ordering::Relaxed) {
-                                match time::timeout(
-                                    TokioDuration::from_secs(4),
-                                    notifications.next(),
-                                )
-                                .await
-                                {
+                                while let Ok(cmd) = cmd_rx.try_recv() {
+                                    match cmd {
+                                        DeviceCommand::SetPlayerLamp { pattern } => {
+                                            if let Some(cmd_char) = cmd_char.as_ref() {
+                                                joycon2::send_joycon2_player_lamp(
+                                                    &peripheral,
+                                                    cmd_char,
+                                                    pattern,
+                                                )
+                                                .await;
+                                            }
+                                        }
+                                        DeviceCommand::SetRumble {
+                                            low_frequency,
+                                            high_frequency,
+                                        } => {
+                                            if let Some(vibration_char) = vibration_char.as_ref() {
+                                                joycon2::send_joycon2_rumble(
+                                                    &peripheral,
+                                                    vibration_char,
+                                                    &mut rumble_counter,
+                                                    low_frequency.max(high_frequency),
+                                                )
+                                                .await;
+                                            }
+                                        }
+                                    }
+                                }
+                                match time::timeout(TokioDuration::from_millis(8), notifications.next()).await {
                                     Ok(Some(packet)) => {
                                         if !first_report_logged {
                                             eprintln!(
@@ -940,8 +1092,8 @@ mod backend {
                                             first_report_logged = true;
                                         }
                                         let rid = packet.value.first().copied().unwrap_or(0xFF);
-                                        if let Some(data) = decode_report_ble(&packet.value, side) {
-                                            let imu_zero = imu_is_zero(data.gyro, data.accel);
+                                        if let Some(data) = joycon2::decode_report_ble(&packet.value, side) {
+                                            let imu_zero = shared::imu_is_zero(data.gyro, data.accel);
                                             if !imu_zero {
                                                 if !imu_active {
                                                     eprintln!(
@@ -964,7 +1116,7 @@ mod backend {
                                                         eprintln!(
                                                             "[joycon2] imu stuck at zero, retrying enable id={key_clone}"
                                                         );
-                                                        send_joycon2_enable_sequence(
+                                                        joycon2::send_joycon2_enable_sequence(
                                                             &peripheral,
                                                             cmd_char,
                                                         )
@@ -993,10 +1145,11 @@ mod backend {
                                             );
                                         }
                                     }
-                                    Ok(None) | Err(_) => {
+                                    Ok(None) => {
                                         eprintln!("[joycon2] notifications timeout/ended id={key_clone}");
                                         break;
                                     }
+                                    Err(_) => {}
                                 }
                             }
                             let _ = peripheral.disconnect().await;
@@ -1009,64 +1162,7 @@ mod backend {
         });
     }
 
-    async fn classify_joycon2_ble(
-        peripheral: &btleplug::platform::Peripheral,
-    ) -> Option<(JoyConSide, String, String)> {
-        let props = peripheral.properties().await.ok().flatten()?;
-
-        let mut side = None;
-        let mut tag = String::new();
-
-        if let Some(data) = props.manufacturer_data.get(&NINTENDO_BLE_CID) {
-            if data.contains(&JOYCON2_L_SIDE) {
-                side = Some(JoyConSide::LJoyCon);
-                tag = "cid+side(L)".to_string();
-            } else if data.contains(&JOYCON2_R_SIDE) {
-                side = Some(JoyConSide::RJoyCon);
-                tag = "cid+side(R)".to_string();
-            } else {
-                tag = "cid-no-side".to_string();
-            }
-        }
-
-        if side.is_none()
-            && let Some(name) = props.local_name.as_deref()
-        {
-            let lower = name.to_ascii_lowercase();
-            if lower.contains("joy-con") || lower.contains("joycon") || lower.contains("nintendo") {
-                if lower.contains("(l)") || lower.contains(" left") {
-                    side = Some(JoyConSide::LJoyCon);
-                    tag = format!("name(L):{name}");
-                } else if lower.contains("(r)") || lower.contains(" right") {
-                    side = Some(JoyConSide::RJoyCon);
-                    tag = format!("name(R):{name}");
-                }
-            }
-        }
-
-        let side = match side {
-            Some(s) => s,
-            None => return None,
-        };
-
-        let serial = format!("{:?}", peripheral.id())
-            .replace("PeripheralId(", "")
-            .replace([')', ':'], "")
-            .to_uppercase();
-
-        Some((side, serial, tag))
-    }
-
     #[inline(always)]
-    fn set_button_bit(bits: &mut ButtonBits, button: JoyConButton, is_down: bool) {
-        let bit = 1u16 << (button.as_index() as u16);
-        if is_down {
-            *bits |= bit;
-        } else {
-            *bits &= !bit;
-        }
-    }
-
     fn apply_report<S: JoyConSink>(
         app: &mut S,
         index: usize,
@@ -1081,9 +1177,50 @@ mod backend {
         apply_buttons(app, index, data.buttons, prev);
         last_buttons.insert(key, data.buttons);
 
+        let stick = connected
+            .get_mut(&key)
+            .and_then(|controller| {
+                data.raw_stick.map(|raw| {
+                    if matches!(controller.status, CalibrationStatus::Missing) {
+                        controller.stick_calibration.set_center(raw);
+                        controller.stick_calibration_dirty = true;
+                    }
+                    if controller.stick_calibration.learn_extents(raw) {
+                        controller.stick_calibration_dirty = true;
+                    }
+                    if controller.stick_calibration_dirty
+                        && controller.last_stick_calibration_save.elapsed()
+                            >= Duration::from_secs(5)
+                    {
+                        save_calibration_file(
+                            &controller.serial,
+                            GyroCalibrationFile {
+                                version: 1,
+                                bias_x: controller.calibration_bias.0,
+                                bias_y: controller.calibration_bias.1,
+                                bias_z: controller.calibration_bias.2,
+                                stick_center_x: controller.stick_calibration.center_x,
+                                stick_center_y: controller.stick_calibration.center_y,
+                                stick_min_x: controller.stick_calibration.min_x,
+                                stick_max_x: controller.stick_calibration.max_x,
+                                stick_min_y: controller.stick_calibration.min_y,
+                                stick_max_y: controller.stick_calibration.max_y,
+                            },
+                        );
+                        controller.stick_calibration_dirty = false;
+                        controller.last_stick_calibration_save = Instant::now();
+                    }
+                    controller.stick_calibration.normalize(raw)
+                })
+            })
+            .unwrap_or(data.stick);
+
         app.set_joycon_side(index, side);
         app.set_joycon_connected(index, true);
-        app.set_joycon_stick(index, data.stick.0, data.stick.1);
+        app.set_joycon_stick_unit(index, stick);
+        if let Some(mouse) = data.mouse {
+            app.set_joycon_mouse_sensor(index, mouse.x, mouse.y, mouse.extra, mouse.distance);
+        }
         let gyro = stabilize_gyro(app, key, data.gyro, connected);
         app.set_joycon_gyro(index, gyro.0, gyro.1, gyro.2);
         app.set_joycon_accel(index, data.accel.0, data.accel.1, data.accel.2);
@@ -1145,6 +1282,12 @@ mod backend {
                         bias_x: bias.0,
                         bias_y: bias.1,
                         bias_z: bias.2,
+                        stick_center_x: controller.stick_calibration.center_x,
+                        stick_center_y: controller.stick_calibration.center_y,
+                        stick_min_x: controller.stick_calibration.min_x,
+                        stick_max_x: controller.stick_calibration.max_x,
+                        stick_min_y: controller.stick_calibration.min_y,
+                        stick_max_y: controller.stick_calibration.max_y,
                     },
                 );
                 app.set_joycon_calibration_in_progress(controller.index, false);
@@ -1171,6 +1314,7 @@ mod backend {
         app.set_joycon_calibrated(index, false);
         app.set_joycon_calibration_bias(index, 0.0, 0.0, 0.0);
         app.set_joycon_stick(index, 0.0, 0.0);
+        app.set_joycon_mouse_sensor(index, 0.0, 0.0, 0.0, 0.0);
         app.set_joycon_gyro(index, 0.0, 0.0, 0.0);
         app.set_joycon_accel(index, 0.0, 0.0, 0.0);
     }
@@ -1195,326 +1339,79 @@ mod backend {
         }
     }
 
-    fn decode_report_hid(data: &[u8], side: JoyConSide) -> Option<JoyConInputData> {
-        decode_report_joycon1(data, side)
-    }
-
-    fn decode_report_ble(data: &[u8], side: JoyConSide) -> Option<JoyConInputData> {
-        decode_report_joycon2(data, side)
-    }
-
-    fn decode_report_joycon1(data: &[u8], side: JoyConSide) -> Option<JoyConInputData> {
-        if data.len() < 49 {
-            return None;
-        }
-        // HID Joy-Con 1 reads here are expected to be full 0x30 reports with report-id.
-        // When report-id is present, force canonical offset=0 to avoid false IMU parsing.
-        if data.first().copied() == Some(0x30) {
-            return decode_report_joycon1_with_offset(data, side, 0);
-        }
-        decode_report_joycon1_with_offset(data, side, 1)
-    }
-
-    fn decode_report_joycon1_with_offset(
-        data: &[u8],
-        side: JoyConSide,
-        offset: usize,
-    ) -> Option<JoyConInputData> {
-        // Joy-Con 1 layout:
-        // byte 3 = right buttons, byte 4 = shared, byte 5 = left buttons
-        let right_idx = 3usize.checked_sub(offset)?;
-        let shared_idx = 4usize.checked_sub(offset)?;
-        let left_idx = 5usize.checked_sub(offset)?;
-
-        let (btn_left, btn_shared, btn_right) = (data[left_idx], data[shared_idx], data[right_idx]);
-
-        let mut buttons: ButtonBits = 0;
-        match side {
-            JoyConSide::LJoyCon => {
-                set_button_bit(&mut buttons, JoyConButton::Top, (btn_left & 0x02) != 0);
-                set_button_bit(&mut buttons, JoyConButton::Bottom, (btn_left & 0x01) != 0);
-                set_button_bit(&mut buttons, JoyConButton::Left, (btn_left & 0x08) != 0);
-                set_button_bit(&mut buttons, JoyConButton::Right, (btn_left & 0x04) != 0);
-                set_button_bit(&mut buttons, JoyConButton::Bumper, (btn_left & 0x40) != 0);
-                set_button_bit(&mut buttons, JoyConButton::Trigger, (btn_left & 0x80) != 0);
-                set_button_bit(&mut buttons, JoyConButton::SL, (btn_left & 0x20) != 0);
-                set_button_bit(&mut buttons, JoyConButton::SR, (btn_left & 0x10) != 0);
-                set_button_bit(&mut buttons, JoyConButton::Start, (btn_shared & 0x01) != 0);
-                set_button_bit(&mut buttons, JoyConButton::Meta, (btn_shared & 0x20) != 0);
-                set_button_bit(&mut buttons, JoyConButton::Stick, (btn_shared & 0x08) != 0);
-            }
-            JoyConSide::RJoyCon => {
-                set_button_bit(&mut buttons, JoyConButton::Top, (btn_right & 0x02) != 0);
-                set_button_bit(&mut buttons, JoyConButton::Bottom, (btn_right & 0x04) != 0);
-                set_button_bit(&mut buttons, JoyConButton::Left, (btn_right & 0x01) != 0);
-                set_button_bit(&mut buttons, JoyConButton::Right, (btn_right & 0x08) != 0);
-                set_button_bit(&mut buttons, JoyConButton::Bumper, (btn_right & 0x40) != 0);
-                set_button_bit(&mut buttons, JoyConButton::Trigger, (btn_right & 0x80) != 0);
-                set_button_bit(&mut buttons, JoyConButton::SL, (btn_right & 0x20) != 0);
-                set_button_bit(&mut buttons, JoyConButton::SR, (btn_right & 0x10) != 0);
-                set_button_bit(&mut buttons, JoyConButton::Start, (btn_shared & 0x02) != 0);
-                set_button_bit(&mut buttons, JoyConButton::Meta, (btn_shared & 0x10) != 0);
-                set_button_bit(&mut buttons, JoyConButton::Stick, (btn_shared & 0x04) != 0);
-            }
-        }
-
-        let stick = decode_stick(data, side, offset)?;
-        let accel = decode_accel(data, offset);
-        let gyro = decode_gyro(data, offset);
-
-        Some(JoyConInputData {
-            buttons,
-            stick,
-            gyro,
-            accel,
-        })
-    }
-
-    fn decode_report_joycon2(data: &[u8], side: JoyConSide) -> Option<JoyConInputData> {
-        // BLE packets in this stream are usually raw report bodies (counter first),
-        // not report-id-prefixed frames. Use stable alignment preference:
-        // - if first byte looks like report-id, try shifted first
-        // - otherwise try base-0 first
-        let first = data.first().copied().unwrap_or(0xFF);
-        if matches!(first, 0x05 | 0x07 | 0x08) {
-            decode_report_joycon2_at_base(data, side, 1)
-                .or_else(|| decode_report_joycon2_at_base(data, side, 0))
-        } else {
-            decode_report_joycon2_at_base(data, side, 0)
-                .or_else(|| decode_report_joycon2_at_base(data, side, 1))
-        }
-    }
-
-    fn decode_report_joycon2_at_base(
-        data: &[u8],
-        side: JoyConSide,
-        base: usize,
-    ) -> Option<JoyConInputData> {
-        if data.len() < base + 0x3C {
-            return None;
-        }
-
-        let is_left = matches!(side, JoyConSide::LJoyCon);
-        let btn_offset = base + if is_left { 4 } else { 3 };
-        let state = ((data[btn_offset] as u32) << 16)
-            | ((data[btn_offset + 1] as u32) << 8)
-            | (data[btn_offset + 2] as u32);
-
-        let mut buttons: ButtonBits = 0;
-        if is_left {
-            set_button_bit(&mut buttons, JoyConButton::Top, (state & 0x000002) != 0);
-            set_button_bit(&mut buttons, JoyConButton::Bottom, (state & 0x000001) != 0);
-            set_button_bit(&mut buttons, JoyConButton::Left, (state & 0x000008) != 0);
-            set_button_bit(&mut buttons, JoyConButton::Right, (state & 0x000004) != 0);
-            set_button_bit(&mut buttons, JoyConButton::Bumper, (state & 0x000040) != 0);
-            set_button_bit(&mut buttons, JoyConButton::Trigger, (state & 0x000080) != 0);
-            set_button_bit(&mut buttons, JoyConButton::Stick, (state & 0x000800) != 0);
-            set_button_bit(&mut buttons, JoyConButton::SL, (data[base + 6] & 0x20) != 0);
-            set_button_bit(&mut buttons, JoyConButton::SR, (data[base + 6] & 0x10) != 0);
-            set_button_bit(&mut buttons, JoyConButton::Start, (state & 0x000100) != 0);
-            set_button_bit(
-                &mut buttons,
-                JoyConButton::Meta,
-                (data[base + 5] & 0x20) != 0,
-            );
-        } else {
-            // Joy-Con 2 right face buttons: observed stream indicates Top/Bottom are inverted
-            // vs legacy masks, so map accordingly.
-            set_button_bit(&mut buttons, JoyConButton::Top, (state & 0x000200) != 0);
-            set_button_bit(&mut buttons, JoyConButton::Bottom, (state & 0x000400) != 0);
-            set_button_bit(&mut buttons, JoyConButton::Left, (state & 0x000100) != 0);
-            set_button_bit(&mut buttons, JoyConButton::Right, (state & 0x000800) != 0);
-            set_button_bit(&mut buttons, JoyConButton::Bumper, (state & 0x004000) != 0);
-            set_button_bit(&mut buttons, JoyConButton::Trigger, (state & 0x008000) != 0);
-            set_button_bit(&mut buttons, JoyConButton::Stick, (state & 0x000004) != 0);
-            set_button_bit(&mut buttons, JoyConButton::SL, (data[base + 4] & 0x20) != 0);
-            set_button_bit(&mut buttons, JoyConButton::SR, (data[base + 4] & 0x10) != 0);
-            set_button_bit(&mut buttons, JoyConButton::Start, (state & 0x000002) != 0);
-            set_button_bit(
-                &mut buttons,
-                JoyConButton::Meta,
-                (data[base + 5] & 0x10) != 0,
-            );
-        }
-
-        let stick_offsets: &[usize] = if is_left {
-            &[base + 10, base + 8]
-        } else {
-            &[base + 5, base + 13, base + 10]
-        };
-        let (x_raw, y_raw) = decode_stick_best_candidate(data, stick_offsets).unwrap_or((0, 0));
-        let stick = if x_raw == 0 && y_raw == 0 {
-            (0.0, 0.0)
-        } else {
-            let x = normalize_stick_axis(((x_raw as f32 / 4095.0).clamp(0.0, 1.0) - 0.5) * 2.0);
-            let y = normalize_stick_axis(((y_raw as f32 / 4095.0).clamp(0.0, 1.0) - 0.5) * 2.0);
-            (x, y)
-        };
-
-        let accel = normalize_accel_to_one_g(decode_joycon2_accel_best_candidate(data, base));
-        let gyro = decode_joycon2_gyro_best_candidate(data, base);
-
-        Some(JoyConInputData {
-            buttons,
-            stick,
-            gyro,
-            accel,
-        })
-    }
-
-    fn decode_stick(data: &[u8], side: JoyConSide, offset: usize) -> Option<(f32, f32)> {
-        let (start, end) = match side {
-            JoyConSide::LJoyCon => (6_usize.checked_sub(offset)?, 9_usize.checked_sub(offset)?),
-            JoyConSide::RJoyCon => (9_usize.checked_sub(offset)?, 12_usize.checked_sub(offset)?),
-        };
-
-        let stick_bytes = data.get(start..end)?;
-        if stick_bytes.len() != 3 {
-            return None;
-        }
-
-        let raw_x = (stick_bytes[0] as u16) | (((stick_bytes[1] & 0x0F) as u16) << 8);
-        let raw_y = (((stick_bytes[1] & 0xF0) >> 4) as u16) | ((stick_bytes[2] as u16) << 4);
-
-        let x_norm = (raw_x as f32 / 4095.0).clamp(0.0, 1.0);
-        let y_norm = (raw_y as f32 / 4095.0).clamp(0.0, 1.0);
-
-        let x = normalize_stick_axis(x_norm * 2.0 - 1.0);
-        let y = normalize_stick_axis(y_norm * 2.0 - 1.0);
-        Some((x, y))
-    }
-
-    fn decode_accel(data: &[u8], offset: usize) -> (f32, f32, f32) {
-        let start = match 13_usize.checked_sub(offset) {
-            Some(v) => v,
-            None => return (0.0, 0.0, 0.0),
-        };
-
-        if start + 5 < data.len() {
-            let ax =
-                i16::from_le_bytes([data[start], data[start + 1]]) as f32 * ACCEL_GRAVITY_SCALE;
-            let ay =
-                i16::from_le_bytes([data[start + 2], data[start + 3]]) as f32 * ACCEL_GRAVITY_SCALE;
-            let az =
-                i16::from_le_bytes([data[start + 4], data[start + 5]]) as f32 * ACCEL_GRAVITY_SCALE;
-            (ax, ay, az)
-        } else {
-            (0.0, 0.0, 0.0)
-        }
-    }
-
     #[inline(always)]
-    fn apply_stick_deadzone(v: f32) -> f32 {
-        let a = v.abs();
-        if a < STICK_DEADZONE {
-            0.0
-        } else {
-            v.signum() * ((a - STICK_DEADZONE) / (1.0 - STICK_DEADZONE))
-        }
-    }
-
-    #[inline(always)]
-    fn normalize_stick_axis(v: f32) -> f32 {
-        let gain = if v >= 0.0 {
-            STICK_AXIS_GAIN_POS
-        } else {
-            STICK_AXIS_GAIN_NEG
-        };
-        apply_stick_deadzone((v * gain).clamp(-1.0, 1.0)).clamp(-1.0, 1.0)
-    }
-
-    fn decode_gyro(data: &[u8], offset: usize) -> (f32, f32, f32) {
-        let start = match 19_usize.checked_sub(offset) {
-            Some(v) => v,
-            None => return (0.0, 0.0, 0.0),
-        };
-
-        if start + 5 < data.len() {
-            let gx = i16::from_le_bytes([data[start], data[start + 1]]) as f32 / JOYCON1_GYRO_SCALE;
-            let gy =
-                i16::from_le_bytes([data[start + 2], data[start + 3]]) as f32 / JOYCON1_GYRO_SCALE;
-            let gz =
-                i16::from_le_bytes([data[start + 4], data[start + 5]]) as f32 / JOYCON1_GYRO_SCALE;
-            (gx, gy, gz)
-        } else {
-            (0.0, 0.0, 0.0)
-        }
-    }
-
-    fn enable_sensors(device: &hidapi::HidDevice) -> Result<(), hidapi::HidError> {
-        // HID output report: [0x01, packet_no, rumble(8), subcmd, arg]
-        const CMD_ENABLE_IMU: [u8; 12] = [
-            0x01, 0x00, 0x00, 0x01, 0x40, 0x40, 0x00, 0x01, 0x40, 0x40, 0x40, 0x01,
-        ];
-        const CMD_SET_REPORT_30: [u8; 12] = [
-            0x01, 0x01, 0x00, 0x01, 0x40, 0x40, 0x00, 0x01, 0x40, 0x40, 0x03, 0x30,
-        ];
-
-        device.write(&CMD_ENABLE_IMU)?;
-        device.write(&CMD_SET_REPORT_30)?;
-        Ok(())
-    }
-
-    fn send_hid_subcommand_with_rumble(
-        device: &hidapi::HidDevice,
-        packet_number: &mut u8,
-        subcommand: u8,
-        arg: u8,
-    ) -> Result<(), hidapi::HidError> {
-        let mut report = [0u8; 12];
-        report[0] = 0x01;
-        report[1] = *packet_number;
-        // Neutral rumble frame bytes.
-        report[2..10].copy_from_slice(&[0x00, 0x01, 0x40, 0x40, 0x00, 0x01, 0x40, 0x40]);
-        report[10] = subcommand;
-        report[11] = arg;
-        *packet_number = packet_number.wrapping_add(1) & 0x0F;
-        device.write(&report)?;
-        Ok(())
-    }
-
-    fn is_joycon_bound(bindings: &[PlayerBinding], joycon_index: usize) -> bool {
-        for binding in bindings {
-            match *binding {
-                PlayerBinding::JoyConSingle { index } if index == joycon_index => return true,
-                PlayerBinding::JoyConPair { left, right }
-                    if left == joycon_index || right == joycon_index =>
-                {
-                    return true;
-                }
-                _ => {}
+    fn is_joycon_bound<S: JoyConSink>(app: &S, joycon_index: usize) -> bool {
+        let mut found = false;
+        app.for_each_player_binding(&mut |_, binding| match binding {
+            PlayerBinding::JoyConSingle { index } if index == joycon_index => found = true,
+            PlayerBinding::JoyConPair { left, right }
+                if left == joycon_index || right == joycon_index =>
+            {
+                found = true;
             }
-        }
-        false
+            _ => {}
+        });
+        found
     }
 
-    fn first_unbound_player_slot(bindings: &[PlayerBinding]) -> Option<usize> {
-        for (idx, binding) in bindings.iter().enumerate() {
-            if matches!(binding, PlayerBinding::None) {
-                return Some(idx);
+    fn first_unbound_player_slot<S: JoyConSink>(app: &S) -> Option<usize> {
+        let mut first_empty = None;
+        let mut len = 0;
+        app.for_each_player_binding(&mut |idx, binding| {
+            len = idx + 1;
+            if first_empty.is_none() && matches!(binding, PlayerBinding::None) {
+                first_empty = Some(idx);
             }
-        }
-        if bindings.len() < 8 {
-            Some(bindings.len())
+        });
+        if first_empty.is_some() {
+            first_empty
+        } else if len < 8 {
+            Some(len)
         } else {
             None
         }
     }
 
-    fn calibration_path(serial: &str) -> String {
-        format!("{CALIBRATION_FOLDER}/{serial}.cal")
+    fn calibration_path(serial: &str) -> Option<std::path::PathBuf> {
+        let safe_serial: String = serial
+            .chars()
+            .map(|ch| {
+                if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
+                    ch
+                } else {
+                    '_'
+                }
+            })
+            .collect();
+        let mut path = data_local_dir()?;
+        for part in CALIBRATION_FOLDER.split('/') {
+            path.push(part);
+        }
+        path.push(format!("{safe_serial}.cal"));
+        Some(path)
+    }
+
+    fn calibration_path_display(serial: &str) -> String {
+        calibration_path(serial)
+            .map(|path| path.display().to_string())
+            .unwrap_or_else(|| format!("{CALIBRATION_FOLDER}/{serial}.cal"))
     }
 
     fn load_calibration_file(serial: &str) -> Option<GyroCalibrationFile> {
-        let path = calibration_path(serial);
-        let bytes = load_asset(&path).ok()?;
+        let path = calibration_path(serial)?;
+        let bytes = std::fs::read(path).ok()?;
         serde_json::from_slice::<GyroCalibrationFile>(&bytes).ok()
     }
 
     fn save_calibration_file(serial: &str, calibration: GyroCalibrationFile) {
-        let path = calibration_path(serial);
+        let Some(path) = calibration_path(serial) else {
+            return;
+        };
         if let Ok(data) = serde_json::to_vec_pretty(&calibration) {
-            let _ = save_asset(&path, &data);
+            if let Some(parent) = path.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            let _ = std::fs::write(path, data);
         }
     }
 
@@ -1545,6 +1442,7 @@ mod backend {
         source: &str,
     ) {
         let report_id = raw.first().copied().unwrap_or(0xFF);
+        let stick = parsed.stick.to_tuple();
         eprintln!(
             "[joycon][raw] src={} index={} side={:?} report=0x{:02X} len={} bytes={} buttons=0x{:04X} stick=({:.3},{:.3}) gyro=({:.1},{:.1},{:.1}) accel=({:.1},{:.1},{:.1})",
             source,
@@ -1552,10 +1450,10 @@ mod backend {
             side,
             report_id,
             raw.len(),
-            hex_bytes(raw),
+            HexBytes(raw),
             parsed.buttons,
-            parsed.stick.0,
-            parsed.stick.1,
+            stick.0,
+            stick.1,
             parsed.gyro.0,
             parsed.gyro.1,
             parsed.gyro.2,
@@ -1565,135 +1463,18 @@ mod backend {
         );
     }
 
-    fn hex_bytes(raw: &[u8]) -> String {
-        raw.iter()
-            .map(|b| format!("{b:02X}"))
-            .collect::<Vec<_>>()
-            .join(" ")
-    }
+    struct HexBytes<'a>(&'a [u8]);
 
-    fn decode_stick_raw_12(data: &[u8], offset: usize) -> Option<(u16, u16)> {
-        let raw = data.get(offset..offset + 3)?;
-        let x_raw = ((raw[1] & 0x0F) as u16) << 8 | raw[0] as u16;
-        let y_raw = (raw[2] as u16) << 4 | ((raw[1] & 0xF0) >> 4) as u16;
-        Some((x_raw, y_raw))
-    }
-
-    fn decode_stick_best_candidate(data: &[u8], offsets: &[usize]) -> Option<(u16, u16)> {
-        let mut best: Option<(u16, u16)> = None;
-        let mut best_score = f32::NEG_INFINITY;
-        for &off in offsets {
-            let Some((x, y)) = decode_stick_raw_12(data, off) else {
-                continue;
-            };
-            if x == 0 && y == 0 {
-                continue;
+    impl std::fmt::Display for HexBytes<'_> {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            for (index, byte) in self.0.iter().enumerate() {
+                if index != 0 {
+                    f.write_str(" ")?;
+                }
+                write!(f, "{byte:02X}")?;
             }
-            let dx = (x as f32 - 2048.0).abs() / 2048.0;
-            let dy = (y as f32 - 2048.0).abs() / 2048.0;
-            // Favor candidates closer to center by default to avoid pegged -1/-1 from bad offsets.
-            let score = -(dx + dy);
-            if score > best_score {
-                best_score = score;
-                best = Some((x, y));
-            }
+            Ok(())
         }
-        best
-    }
-
-    fn decode_joycon2_accel_best_candidate(data: &[u8], base: usize) -> (f32, f32, f32) {
-        let motion_offsets = [base + 0x30, base + 0x2A, base + 0x24];
-        let mut best = (0.0, 0.0, 0.0);
-        let mut best_score = f32::INFINITY;
-        for start in motion_offsets {
-            if start + 5 >= data.len() {
-                continue;
-            }
-            let ax =
-                i16::from_le_bytes([data[start], data[start + 1]]) as f32 * ACCEL_GRAVITY_SCALE;
-            let ay =
-                i16::from_le_bytes([data[start + 2], data[start + 3]]) as f32 * ACCEL_GRAVITY_SCALE;
-            let az =
-                i16::from_le_bytes([data[start + 4], data[start + 5]]) as f32 * ACCEL_GRAVITY_SCALE;
-            let amag = (ax * ax + ay * ay + az * az).sqrt();
-            // Prefer realistic gravity magnitude region before normalization.
-            let score = (amag - ACCEL_ONE_G_TARGET).abs();
-            if score < best_score {
-                best_score = score;
-                best = (ax, ay, az);
-            }
-        }
-        best
-    }
-
-    fn decode_joycon2_gyro_best_candidate(data: &[u8], base: usize) -> (f32, f32, f32) {
-        const JOYCON2_GYRO_SCALE: f32 = 13.875;
-        let motion_offsets = [base + 0x30, base + 0x2A, base + 0x24];
-        let mut best = (0.0, 0.0, 0.0);
-        let mut best_score = f32::INFINITY;
-
-        for start in motion_offsets {
-            if start + 11 >= data.len() {
-                continue;
-            }
-            let gx_raw =
-                i16::from_le_bytes([data[start + 6], data[start + 7]]) as f32 / JOYCON2_GYRO_SCALE;
-            let gy_raw =
-                i16::from_le_bytes([data[start + 8], data[start + 9]]) as f32 / JOYCON2_GYRO_SCALE;
-            let gz_raw = i16::from_le_bytes([data[start + 10], data[start + 11]]) as f32
-                / JOYCON2_GYRO_SCALE;
-            let gyro = (gy_raw, gx_raw, -gz_raw);
-            let gmag = (gyro.0 * gyro.0 + gyro.1 * gyro.1 + gyro.2 * gyro.2).sqrt();
-            // Parse gyro independently; choose the least explosive candidate.
-            let score = gmag;
-            if score < best_score {
-                best_score = score;
-                best = gyro;
-            }
-        }
-        best
-    }
-
-    fn normalize_accel_to_one_g(accel: (f32, f32, f32)) -> (f32, f32, f32) {
-        let amag = (accel.0 * accel.0 + accel.1 * accel.1 + accel.2 * accel.2).sqrt();
-        if amag <= 0.001 {
-            return accel;
-        }
-        let gain = (ACCEL_ONE_G_TARGET / amag).clamp(0.5, 2.0);
-        (accel.0 * gain, accel.1 * gain, accel.2 * gain)
-    }
-
-    fn imu_is_zero(gyro: (f32, f32, f32), accel: (f32, f32, f32)) -> bool {
-        gyro.0 == 0.0
-            && gyro.1 == 0.0
-            && gyro.2 == 0.0
-            && accel.0 == 0.0
-            && accel.1 == 0.0
-            && accel.2 == 0.0
-    }
-
-    async fn send_joycon2_enable_sequence(
-        peripheral: &btleplug::platform::Peripheral,
-        cmd_char: &btleplug::api::Characteristic,
-    ) {
-        let _ = peripheral
-            .write(
-                cmd_char,
-                &[
-                    0x0c, 0x91, 0x01, 0x02, 0x00, 0x04, 0x00, 0x00, 0xFF, 0x00, 0x00, 0x00,
-                ],
-                btleplug::api::WriteType::WithoutResponse,
-            )
-            .await;
-        let _ = peripheral
-            .write(
-                cmd_char,
-                &[
-                    0x0c, 0x91, 0x01, 0x04, 0x00, 0x04, 0x00, 0x00, 0xFF, 0x00, 0x00, 0x00,
-                ],
-                btleplug::api::WriteType::WithoutResponse,
-            )
-            .await;
     }
 }
 

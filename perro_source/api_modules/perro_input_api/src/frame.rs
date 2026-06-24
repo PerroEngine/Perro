@@ -2,6 +2,7 @@ use crate::{
     GamepadAxis, GamepadButton, InputSnapshot, JoyConButton, JoyConSide, KeyCode, MouseButton,
     MouseMode, PlayerBinding,
 };
+use perro_structs::SignedUnitVector2;
 use std::collections::VecDeque;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -61,8 +62,7 @@ pub enum InputEvent {
     },
     JoyConStick {
         index: usize,
-        x: f32,
-        y: f32,
+        stick: SignedUnitVector2,
     },
     JoyConSide {
         index: usize,
@@ -97,6 +97,13 @@ pub enum InputEvent {
         x: f32,
         y: f32,
         z: f32,
+    },
+    JoyConMouseSensor {
+        index: usize,
+        x: f32,
+        y: f32,
+        extra: f32,
+        distance: f32,
     },
     BindPlayer {
         index: usize,
@@ -214,7 +221,7 @@ fn apply_event(snapshot: &mut InputSnapshot, event: &InputEvent) {
             button,
             is_down,
         } => snapshot.set_joycon_button_state(*index, *button, *is_down),
-        InputEvent::JoyConStick { index, x, y } => snapshot.set_joycon_stick(*index, *x, *y),
+        InputEvent::JoyConStick { index, stick } => snapshot.set_joycon_stick_unit(*index, *stick),
         InputEvent::JoyConSide { index, side } => snapshot.set_joycon_side(*index, *side),
         InputEvent::JoyConConnected { index, connected } => {
             snapshot.set_joycon_connected(*index, *connected)
@@ -230,6 +237,13 @@ fn apply_event(snapshot: &mut InputSnapshot, event: &InputEvent) {
         }
         InputEvent::JoyConGyro { index, x, y, z } => snapshot.set_joycon_gyro(*index, *x, *y, *z),
         InputEvent::JoyConAccel { index, x, y, z } => snapshot.set_joycon_accel(*index, *x, *y, *z),
+        InputEvent::JoyConMouseSensor {
+            index,
+            x,
+            y,
+            extra,
+            distance,
+        } => snapshot.set_joycon_mouse_sensor(*index, *x, *y, *extra, *distance),
         InputEvent::BindPlayer { index, binding } => snapshot.bind_player(*index, *binding),
     }
 }

@@ -12,6 +12,7 @@
 | `set_rumble` | [`set_rumble`](#set_rumble) |
 | `set_indicator` | [`set_indicator`](#set_indicator) |
 | `set_indicator_slot` | [`set_indicator_slot`](#set_indicator_slot) |
+| `ensure_calibration` | [`ensure_calibration`](#ensure_calibration) |
 
 ## Overview
 
@@ -25,7 +26,11 @@ Tiernan DeFranco, lead developer of Perro, built the first version as a standalo
 
 This code comes from reading Bluetooth HID and BLE GATT raw bytes from Joy-Con devices on PC, then mapping those bytes into Perro controls.
 
-Public open source projects, including JoyconPython, helped explain control reads and mappings.
+Public open source projects, including JoyconPython and joycon2cpp, helped explain control reads, mappings, player LEDs, and Joy-Con 2 rumble writes.
+
+joycon2cpp documents Joy-Con 2 BLE notification offsets for buttons, sticks, mouse data, battery, temperature, accel, gyro, and analog triggers, plus observed pairing cooldown behavior.
+
+Perro does not claim Joy-Con 2 decryption work here. The current PC backend reads BLE reports after normal OS pairing and uses observed public report layouts and command packets.
 
 This code does not use Nintendo SDK code, private Nintendo internals, or NDA material. Tiernan does not have access to those materials at the time this PC backend was written.
 
@@ -95,6 +100,17 @@ Nintendo Switch or Switch 2 game builds will use a separate private implementati
 | Returns | `()` |
 | Use when | Use when gameplay must change engine state or queue an action this frame. |
 | Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+
+### `ensure_calibration`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.ipt.JoyCons()` |
+| Signature | `pub fn ensure_calibration(&self, index: usize) -> bool` |
+| Params | `&self, index: usize` |
+| Returns | `bool` |
+| Use when | Use when script code wants Perro to queue calibration only if the indexed Joy-Con needs it. |
+| Fails when / edge behavior | Missing slots return `false`. Backend maps index to the connected serial and stores calibration in the global Perro calibration folder. |
 
 ### `joycon_accel`
 
@@ -206,6 +222,17 @@ Nintendo Switch or Switch 2 game builds will use a separate private implementati
 | Use when | Use when code needs current input device data without storing platform input state itself. |
 | Fails when / edge behavior | Missing device slots return `None`, `false`, or a zero vector depending on the macro return type. Command macros queue work when an input command buffer exists. |
 
+### `joycon_ensure_calibration`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.ipt` |
+| Signature | `joycon_ensure_calibration!(ctx.ipt, 0)` |
+| Params | `ctx.ipt, 0` |
+| Returns | `bool` |
+| Use when | Use when code wants Perro to queue calibration only if the indexed Joy-Con needs it. |
+| Fails when / edge behavior | Missing device slots return `false`. Backend maps index to serial and stores calibration for all Perro projects. |
+
 ### `joycon_pressed`
 
 | Field | Detail |
@@ -282,4 +309,15 @@ Nintendo Switch or Switch 2 game builds will use a separate private implementati
 | Returns | `Vector2` |
 | Use when | Use when code needs current input device data without storing platform input state itself. |
 | Fails when / edge behavior | Missing device slots return `None`, `false`, or a zero vector depending on the macro return type. Command macros queue work when an input command buffer exists. |
+
+### `joycon_mouse_sensor`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.ipt` |
+| Signature | `joycon_mouse_sensor!(ctx.ipt, 0)` |
+| Params | `ctx.ipt, 0` |
+| Returns | `JoyConMouseSensor` |
+| Use when | Use when code needs Joy-Con 2 mouse sensor delta, extra axis, and distance data. |
+| Fails when / edge behavior | Missing device slots return zeroed sensor data. Joy-Con 1 slots also stay zero. |
 

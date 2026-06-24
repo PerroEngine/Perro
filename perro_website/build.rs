@@ -1,13 +1,16 @@
 use perro_compiler::{
     compile_project_bundle, ProjectBuildOptions, ProjectBuildTarget, WebOutputDir,
 };
-use pulldown_cmark::{html, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
+use pulldown_cmark::{Event, HeadingLevel, Parser, Tag, TagEnd};
 use serde::Serialize;
 use std::{
     env, fs, io,
     path::{Path, PathBuf},
     time::SystemTime,
 };
+
+#[path = "src/highlight.rs"]
+mod highlight;
 
 #[derive(Serialize)]
 struct DocOut {
@@ -395,15 +398,7 @@ fn headings(markdown: &str) -> Vec<HeadingOut> {
 }
 
 fn markdown_html(markdown: &str) -> String {
-    let mut options = Options::empty();
-    options.insert(Options::ENABLE_TABLES);
-    options.insert(Options::ENABLE_FOOTNOTES);
-    options.insert(Options::ENABLE_STRIKETHROUGH);
-
-    let parser = Parser::new_ext(markdown, options);
-    let mut out = String::with_capacity(markdown.len());
-    html::push_html(&mut out, parser);
-    out
+    highlight::markdown_html(markdown)
 }
 
 fn doc_keywords(
