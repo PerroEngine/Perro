@@ -1,8 +1,10 @@
 use leptos::prelude::*;
+#[cfg(feature = "ssr")]
 use leptos_meta::{provide_meta_context, MetaTags};
 use leptos_router::{components::*, path};
 
 pub mod docs;
+mod highlight;
 mod layout;
 mod pages;
 mod shared;

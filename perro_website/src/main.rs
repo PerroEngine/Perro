@@ -21,6 +21,7 @@ async fn main() {
     let app = Router::new()
         .nest_service("/style", ServeDir::new(style_root))
         .nest_service("/demos", ServeDir::new(public_root.join("demos")))
+        .nest_service("/tiers", ServeDir::new(public_root.join("tiers")))
         .route_service("/perro.svg", ServeFile::new(public_root.join("perro.svg")))
         .route("/robots.txt", get(robots_txt))
         .route("/sitemap.xml", get(sitemap_xml))

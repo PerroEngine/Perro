@@ -1027,15 +1027,21 @@ impl<B: GraphicsBackend> RunnerState<B> {
                 window.set_cursor_visible(false);
                 (MouseMode::Hidden, false)
             }
-            MouseMode::Captured => match window.set_cursor_grab(CursorGrabMode::Confined) {
+            MouseMode::Captured => match window.set_cursor_grab(CursorGrabMode::Locked) {
                 Ok(_) => {
                     window.set_cursor_visible(false);
-                    (MouseMode::ConfinedHidden, false)
+                    (MouseMode::Captured, true)
                 }
-                Err(_confined_err) => {
-                    window.set_cursor_visible(true);
-                    (MouseMode::Visible, false)
-                }
+                Err(_locked_err) => match window.set_cursor_grab(CursorGrabMode::Confined) {
+                    Ok(_) => {
+                        window.set_cursor_visible(false);
+                        (MouseMode::Captured, false)
+                    }
+                    Err(_confined_err) => {
+                        window.set_cursor_visible(true);
+                        (MouseMode::Visible, false)
+                    }
+                },
             },
             MouseMode::Confined => match window.set_cursor_grab(CursorGrabMode::Confined) {
                 Ok(_) => {
@@ -1071,7 +1077,11 @@ impl<B: GraphicsBackend> RunnerState<B> {
             self.app.set_mouse_mode_state(applied_mode);
             self.app.clear_mouse_delta();
             self.kbm_input.reset_cursor_position();
-            if applied_mode == MouseMode::ConfinedHidden && !uses_raw_motion {
+            if matches!(
+                applied_mode,
+                MouseMode::Captured | MouseMode::ConfinedHidden
+            ) && !uses_raw_motion
+            {
                 center_cursor(window.as_ref());
             }
         } else {
@@ -2760,7 +2770,9 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<
                 self.cursor_inside_window = true;
                 if self.mouse_mode == MouseMode::Captured && self.mouse_uses_raw_motion {
                     self.kbm_input.reset_cursor_position();
-                } else if self.mouse_mode == MouseMode::ConfinedHidden {
+                } else if (self.mouse_mode == MouseMode::Captured && !self.mouse_uses_raw_motion)
+                    || self.mouse_mode == MouseMode::ConfinedHidden
+                {
                     if let Some(window) = &self.window
                         && let WindowEvent::CursorMoved { position, .. } = cursor_moved
                     {

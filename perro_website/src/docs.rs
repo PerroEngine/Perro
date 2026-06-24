@@ -1,4 +1,4 @@
-use pulldown_cmark::{html, Options, Parser};
+use crate::highlight;
 use serde::Deserialize;
 use std::sync::LazyLock;
 
@@ -90,6 +90,48 @@ pub fn docs_by_area() -> Vec<(&'static str, usize)> {
     out
 }
 
+pub fn area_label(area: &str) -> String {
+    match area {
+        "api_modules" => "API Modules".to_string(),
+        "audio_stack" => "Audio Stack".to_string(),
+        "build_pipeline" => "Build Pipeline".to_string(),
+        "core" => "Core".to_string(),
+        "devtools" => "Devtools".to_string(),
+        "io_stack" => "IO Stack".to_string(),
+        "networking" => "Networking".to_string(),
+        "platform" => "Platform".to_string(),
+        "project" => "Project".to_string(),
+        "render_stack" => "Render Stack".to_string(),
+        "resources" => "Resources".to_string(),
+        "runtime_project" => "Runtime Project".to_string(),
+        "script_stack" => "Script Stack".to_string(),
+        "scripting" => "Scripting".to_string(),
+        "tools" => "Tools".to_string(),
+        "ui" => "UI".to_string(),
+        "WASM" => "WASM".to_string(),
+        "book" => "Book".to_string(),
+        other => other
+            .split(['_', '-', '/'])
+            .filter(|part| !part.is_empty())
+            .map(|part| {
+                let lower = part.to_ascii_lowercase();
+                match lower.as_str() {
+                    "api" | "cli" | "csv" | "dlc" | "http" | "id" | "io" | "ui" | "url"
+                    | "wasm" => lower.to_ascii_uppercase(),
+                    _ => {
+                        let mut chars = lower.chars();
+                        match chars.next() {
+                            Some(first) => first.to_ascii_uppercase().to_string() + chars.as_str(),
+                            None => String::new(),
+                        }
+                    }
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(" "),
+    }
+}
+
 pub fn grouped_docs() -> Vec<(&'static str, Vec<&'static DocPage>)> {
     let mut out = Vec::<(&'static str, Vec<&'static DocPage>)>::new();
     for doc in docs().iter().filter(|doc| doc.collection == "docs") {
@@ -135,15 +177,7 @@ pub fn grouped_docs_filtered_for_area(
 }
 
 pub fn markdown_html(markdown: &str) -> String {
-    let mut options = Options::empty();
-    options.insert(Options::ENABLE_TABLES);
-    options.insert(Options::ENABLE_FOOTNOTES);
-    options.insert(Options::ENABLE_STRIKETHROUGH);
-
-    let parser = Parser::new_ext(markdown, options);
-    let mut out = String::new();
-    html::push_html(&mut out, parser);
-    out
+    highlight::markdown_html(markdown)
 }
 
 fn doc_matches(doc: &DocPage, needle: &str) -> bool {
@@ -171,7 +205,9 @@ let _ = value;
 "#,
         );
 
-        assert!(html.contains("let value = 1;"));
+        assert!(strip_tags(&html).contains("let value = 1;"));
+        assert!(html.contains("code-script language-rust"));
+        assert!(html.contains("tok-kw"));
     }
 
     #[test]
@@ -426,5 +462,19 @@ let _ = value;
     fn table_detail<'a>(line: &'a str, prefix: &str) -> Option<&'a str> {
         let rest = line.trim().strip_prefix(prefix)?;
         Some(rest.trim().trim_end_matches('|').trim())
+    }
+
+    fn strip_tags(html: &str) -> String {
+        let mut out = String::with_capacity(html.len());
+        let mut in_tag = false;
+        for ch in html.chars() {
+            match ch {
+                '<' => in_tag = true,
+                '>' => in_tag = false,
+                _ if !in_tag => out.push(ch),
+                _ => {}
+            }
+        }
+        out
     }
 }

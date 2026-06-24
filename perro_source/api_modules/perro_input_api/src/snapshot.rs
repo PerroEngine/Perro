@@ -367,11 +367,32 @@ impl InputSnapshot {
         state.set_calibration_bias(x, y, z);
     }
 
+    /// Set Joy-Con mouse sensor data.
+    #[inline]
+    pub fn set_joycon_mouse_sensor(
+        &mut self,
+        index: usize,
+        x: f32,
+        y: f32,
+        extra: f32,
+        distance: f32,
+    ) {
+        let state = self.joycon_mut(index);
+        state.set_mouse_sensor(x, y, extra, distance);
+    }
+
     /// Set Joy-Con stick vector.
     #[inline]
     pub fn set_joycon_stick(&mut self, index: usize, x: f32, y: f32) {
         let state = self.joycon_mut(index);
         state.set_stick(x, y);
+    }
+
+    /// Set Joy-Con stick vector as packed signed unorm8 axes.
+    #[inline]
+    pub fn set_joycon_stick_unit(&mut self, index: usize, stick: perro_structs::SignedUnitVector2) {
+        let state = self.joycon_mut(index);
+        state.set_stick_unit(stick);
     }
 
     /// Set Joy-Con gyro data.
@@ -501,47 +522,53 @@ impl InputSnapshot {
     }
 
     fn refresh_key_actions(&mut self, key: KeyCode) {
-        let actions = self.input_map.actions_for_key(key).to_vec();
-        self.refresh_action_states(&actions);
+        for idx in 0..self.input_map.actions_for_key(key).len() {
+            let action = self.input_map.actions_for_key(key)[idx];
+            self.refresh_action_state(action);
+        }
     }
 
     fn refresh_mouse_actions(&mut self, button: MouseButton) {
-        let actions = self.input_map.actions_for_mouse(button).to_vec();
-        self.refresh_action_states(&actions);
+        for idx in 0..self.input_map.actions_for_mouse(button).len() {
+            let action = self.input_map.actions_for_mouse(button)[idx];
+            self.refresh_action_state(action);
+        }
     }
 
     fn refresh_gamepad_actions(&mut self, button: GamepadButton) {
-        let actions = self.input_map.actions_for_gamepad(button).to_vec();
-        self.refresh_action_states(&actions);
+        for idx in 0..self.input_map.actions_for_gamepad(button).len() {
+            let action = self.input_map.actions_for_gamepad(button)[idx];
+            self.refresh_action_state(action);
+        }
     }
 
     fn refresh_joycon_actions(&mut self, button: JoyConButton) {
-        let actions = self.input_map.actions_for_joycon(button).to_vec();
-        self.refresh_action_states(&actions);
+        for idx in 0..self.input_map.actions_for_joycon(button).len() {
+            let action = self.input_map.actions_for_joycon(button)[idx];
+            self.refresh_action_state(action);
+        }
     }
 
     fn refresh_all_action_down(&mut self) {
-        let actions: Vec<usize> = (0..self.input_map.action_count()).collect();
-        for action in actions {
+        for action in 0..self.input_map.action_count() {
             let down = self.compute_action_down(action);
             set_bit(&mut self.action_down, action, down);
         }
     }
 
     fn refresh_all_action_states(&mut self) {
-        let actions: Vec<usize> = (0..self.input_map.action_count()).collect();
-        self.refresh_action_states(&actions);
+        for action in 0..self.input_map.action_count() {
+            self.refresh_action_state(action);
+        }
     }
 
-    fn refresh_action_states(&mut self, actions: &[usize]) {
-        for &action in actions {
-            let down = self.compute_action_down(action);
-            let pressed = self.compute_action_pressed(action);
-            let released = self.compute_action_released(action);
-            set_bit(&mut self.action_down, action, down);
-            set_bit(&mut self.action_pressed, action, pressed);
-            set_bit(&mut self.action_released, action, released);
-        }
+    fn refresh_action_state(&mut self, action: usize) {
+        let down = self.compute_action_down(action);
+        let pressed = self.compute_action_pressed(action);
+        let released = self.compute_action_released(action);
+        set_bit(&mut self.action_down, action, down);
+        set_bit(&mut self.action_pressed, action, pressed);
+        set_bit(&mut self.action_released, action, released);
     }
 
     fn compute_action_down(&self, action: usize) -> bool {
