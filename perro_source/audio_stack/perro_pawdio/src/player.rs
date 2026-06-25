@@ -1,4 +1,5 @@
 use perro_ids::AudioBusID;
+use rodio::buffer::SamplesBuffer;
 use rodio::{Decoder, OutputStream, OutputStreamHandle, Source, SpatialSink};
 use std::collections::HashMap;
 use std::io::{BufReader, Cursor};
@@ -14,6 +15,7 @@ use crate::internal::{
     CachedSoundFont, MidiMixerKey, MidiPlayback, Playback, SoundFontMidiMixerKey,
     SoundFontMidiMixerPlayback, SourceLoadStats,
 };
+use crate::mic::MicClip;
 use crate::midi::{
     BuiltInMidiMixerSource, BuiltInMidiSource, MidiControl, MidiFileRequest, MidiMixerControl,
     MidiMixerNote, MidiNoteRequest, MidiSound, RustyFileSource, RustyNoteMixerSource,
@@ -323,6 +325,77 @@ impl BarkPlayer {
         {
             let _ = (cache_hit, load_stats);
         }
+        Ok(())
+    }
+
+    pub fn play_clip(
+        &self,
+        source: &str,
+        clip: MicClip,
+        bus_id: Option<AudioBusID>,
+        volume: f32,
+        pan: AudioPan,
+    ) -> Result<(), String> {
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| "audio mutex poisoned".to_string())?;
+        let now = Instant::now();
+        Self::prune_finished_playbacks_locked(&mut state, now);
+        drop(state);
+
+        let pan = pan.clamped();
+        let dsp = DspControl::new(DspParams::dry());
+        let sink = SpatialSink::try_new(
+            &self.handle,
+            Self::pan_emitter_position(pan),
+            [-1.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+        )
+        .map_err(|err| format!("failed to create sink: {err}"))?;
+        let samples = clip.samples_f32();
+        let source_buffer = SamplesBuffer::new(clip.channels, clip.sample_rate, samples);
+        sink.append(DspSource::new(source_buffer, dsp.clone()));
+
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| "audio mutex poisoned".to_string())?;
+        let requested_volume = volume.max(0.0);
+        let master_volume = state.master_volume.max(0.0);
+        let (bus_volume, bus_speed, bus_paused) = match bus_id.and_then(|id| state.buses.get(&id)) {
+            Some(bus_state) => (
+                bus_state.volume.max(0.0),
+                bus_state.speed.max(0.01),
+                bus_state.paused,
+            ),
+            None => (1.0, 1.0, false),
+        };
+        sink.set_speed(bus_speed);
+        sink.set_volume(requested_volume * master_volume * bus_volume);
+        if bus_paused {
+            sink.pause();
+        } else {
+            sink.play();
+        }
+
+        let source_hash = perro_ids::string_to_u64(source);
+        let source_key: Arc<str> = Arc::from(source);
+        state.playbacks.push(Playback {
+            id: 0,
+            source: source_key,
+            source_hash,
+            asset_epoch: 0,
+            bus_id,
+            looped: false,
+            base_volume: requested_volume,
+            speed: 1.0,
+            pan,
+            dsp,
+            from_start: 0.0,
+            from_end: 0.0,
+            sink,
+        });
         Ok(())
     }
 

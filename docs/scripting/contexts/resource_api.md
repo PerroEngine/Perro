@@ -26,6 +26,7 @@ For lifetime rules, auto load, auto drop, and ref-count behavior, see [Resource 
 | Localization | [localization](resource_modules/localization.md) | `ctx.res.Localization()` |
 | Materials | [materials](resource_modules/materials.md) | `ctx.res.Materials()` |
 | Meshes | [meshes](resource_modules/meshes.md) | `ctx.res.Meshes()` |
+| Mic | [mic](resource_modules/mic.md) | `ctx.res.Mic()` |
 | Post Processing | [post_processing](resource_modules/post_processing.md) | `ctx.res` |
 | Scene Docs | [scene_docs](resource_modules/scene_docs.md) | `ctx.res.SceneDocs()` |
 | Skeletons | [skeletons](resource_modules/skeletons.md) | `ctx.res.Skeletons()` |

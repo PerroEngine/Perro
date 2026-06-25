@@ -2,9 +2,9 @@ use crate::ResPathSource;
 use crate::sub_apis::{
     AnimationAPI, AnimationModule, AnimationTreeAPI, AnimationTreeModule, AudioAPI, AudioModule,
     CsvAPI, CsvModule, Draw2DAPI, Draw2DModule, GlbModule, GltfAPI, Locale, LocalizationAPI,
-    LocalizationModule, MaterialAPI, MaterialModule, MeshAPI, MeshModule, PostProcessingAPI,
-    SceneDocAPI, SceneDocModule, SkeletonAPI, SkeletonModule, TextureAPI, TextureModule,
-    VisualAccessibilityAPI,
+    LocalizationModule, MaterialAPI, MaterialModule, MeshAPI, MeshModule, MicAPI, MicModule,
+    PostProcessingAPI, SceneDocAPI, SceneDocModule, SkeletonAPI, SkeletonModule, TextureAPI,
+    TextureModule, VisualAccessibilityAPI,
 };
 use perro_scene::{SceneDoc, SceneWrite};
 use perro_structs::{ColorBlindFilter, PostProcessEffect, PostProcessSet, Vector2};
@@ -18,6 +18,7 @@ pub trait ResourceAPI:
     PostProcessingAPI
     + VisualAccessibilityAPI
     + AudioAPI
+    + MicAPI
     + CsvAPI
     + TextureAPI
     + MeshAPI
@@ -38,6 +39,7 @@ impl<T> ResourceAPI for T where
     T: PostProcessingAPI
         + VisualAccessibilityAPI
         + AudioAPI
+        + MicAPI
         + CsvAPI
         + TextureAPI
         + MeshAPI
@@ -91,6 +93,12 @@ impl<'res, R: ResourceAPI + ?Sized> ResourceWindow<'res, R> {
     #[inline]
     pub fn Audio(&self) -> AudioModule<'_, R> {
         AudioModule::new(self.api)
+    }
+
+    /// Access microphone capture, playback, save, and packed bytes.
+    #[inline]
+    pub fn Mic(&self) -> MicModule<'_, R> {
+        MicModule::new(self.api)
     }
 
     /// Access CSV load/save and query helpers.

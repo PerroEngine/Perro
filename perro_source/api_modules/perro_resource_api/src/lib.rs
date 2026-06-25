@@ -40,11 +40,11 @@ pub mod prelude {
         AudioAPI, AudioBusID, AudioDirection, AudioModule, AudioPan, AudioPlayConfig, CsvAPI,
         CsvModule, Draw2DAPI, Draw2DModule, GlbModule, GltfAPI, GltfInfo, Locale, LocalizationAPI,
         LocalizationModule, MaterialAPI, MaterialModule, MaterialReserveArg, MeshAPI, MeshModule,
-        MeshReserveArg, MidiChannel, MidiModule, MidiNoteHandle, MidiNoteOptions, MidiProgram,
-        MidiSong, MidiSound, MidiSpatialPos, MidiSpatialPosition, Note, PannedAudio,
-        PostProcessingAPI, SceneDocAPI, SceneDocModule, SkeletonAPI, SkeletonModule,
-        SpatialAudioOptions, TextureAPI, TextureModule, TextureReserveArg, VisualAccessibilityAPI,
-        program,
+        MeshReserveArg, MicAPI, MicClip, MicModule, MicSettings, MidiChannel, MidiModule,
+        MidiNoteHandle, MidiNoteOptions, MidiProgram, MidiSong, MidiSound, MidiSpatialPos,
+        MidiSpatialPosition, Note, PannedAudio, PostProcessingAPI, SceneDocAPI, SceneDocModule,
+        SkeletonAPI, SkeletonModule, SpatialAudioOptions, TextureAPI, TextureModule,
+        TextureReserveArg, VisualAccessibilityAPI, program,
     };
 
     // Convenience macros.
@@ -58,12 +58,16 @@ pub mod prelude {
         get_viewport_size, glb_inspect, locale, locale_get_current, locale_in, locale_set,
         material_count, material_create, material_drop, material_get_data, material_is_loaded,
         material_load, material_reserve, material_write, mesh_count, mesh_create, mesh_drop,
-        mesh_get_data, mesh_is_loaded, mesh_load, mesh_reserve, mesh_write, midi_load_soundfont,
-        midi_play, midi_play_at, midi_release, midi_soundfont_is_loaded, midi_start, midi_start_at,
-        node_count, post_processing_add, post_processing_clear, post_processing_remove,
-        post_processing_set, res_path, res_path_buf, scene_count, scene_load_doc, scene_save_doc,
-        skeleton_count, skeleton_load_bones, texture_count, texture_drop, texture_is_loaded,
-        texture_load, texture_reserve,
+        mesh_get_data, mesh_is_loaded, mesh_load, mesh_reserve, mesh_write, mic_clip, mic_frame,
+        mic_frame_bytes, mic_get_bytes, mic_get_clip, mic_is_listening, mic_pack, mic_play,
+        mic_play_bus, mic_play_bus_volume, mic_play_master, mic_play_master_volume, mic_record,
+        mic_save_wav, mic_start, mic_start_listening, mic_start_stream, mic_start_with, mic_stop,
+        mic_stop_listening, mic_stop_stream, mic_stream_bytes, mic_stream_clip, mic_unpack,
+        midi_load_soundfont, midi_play, midi_play_at, midi_release, midi_soundfont_is_loaded,
+        midi_start, midi_start_at, node_count, post_processing_add, post_processing_clear,
+        post_processing_remove, post_processing_set, res_path, res_path_buf, scene_count,
+        scene_load_doc, scene_save_doc, skeleton_count, skeleton_load_bones, texture_count,
+        texture_drop, texture_is_loaded, texture_load, texture_reserve,
     };
 
     // Shared data types.

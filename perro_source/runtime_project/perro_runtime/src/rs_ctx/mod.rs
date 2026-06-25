@@ -8,6 +8,7 @@ mod gltf;
 mod localization;
 mod material;
 mod mesh;
+mod mic;
 mod post_processing;
 mod scene_doc;
 mod skeleton;

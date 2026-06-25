@@ -6,6 +6,7 @@ use std::sync::{Arc, Mutex};
 
 use crate::internal::{AudioCommand, OwnedAudioPlaybackRequest};
 use crate::internal::{OwnedMidiFileRequest, OwnedMidiNoteRequest};
+use crate::mic::MicClip;
 use crate::midi::{MidiFileRequest, MidiNoteHandle, MidiNoteRequest};
 use crate::player::BarkPlayer;
 use crate::types::{AudioPlaybackRequest, SpatialAudioParams};
@@ -91,6 +92,15 @@ impl AudioController {
                                 from_start: request.from_start,
                                 from_end: request.from_end,
                             });
+                        }
+                        AudioCommand::PlayClip {
+                            source,
+                            clip,
+                            bus_id,
+                            volume,
+                            pan,
+                        } => {
+                            let _ = player.play_clip(&source, clip, bus_id, volume, pan);
                         }
                         AudioCommand::Stop { source } => {
                             let _ = player.stop_source(&source);
@@ -201,6 +211,26 @@ impl AudioController {
     pub fn play_source(&self, request: AudioPlaybackRequest<'_>) -> bool {
         let source = self.intern_source(request.source);
         self.play_source_arc(request, source)
+    }
+
+    pub fn play_clip(
+        &self,
+        source: &str,
+        clip: MicClip,
+        bus_id: Option<AudioBusID>,
+        volume: f32,
+        pan: crate::types::AudioPan,
+    ) -> bool {
+        let source = self.intern_source(source);
+        self.tx
+            .try_send(AudioCommand::PlayClip {
+                source,
+                clip,
+                bus_id,
+                volume,
+                pan,
+            })
+            .is_ok()
     }
 
     pub fn play_source_handle(

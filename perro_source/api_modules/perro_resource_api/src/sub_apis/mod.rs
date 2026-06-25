@@ -15,6 +15,7 @@ mod gltf;
 mod localization;
 mod material;
 mod mesh;
+mod mic;
 mod post_processing;
 mod scene_doc;
 mod skeleton;
@@ -43,6 +44,7 @@ pub use localization::{Locale, LocalizationAPI, LocalizationModule};
 
 pub use material::{MaterialAPI, MaterialModule, MaterialReserveArg};
 pub use mesh::{MeshAPI, MeshModule, MeshReserveArg};
+pub use mic::{MicAPI, MicClip, MicModule, MicSettings};
 pub use perro_ids::{AudioBusID, SoundFontID};
 pub use post_processing::PostProcessingAPI;
 

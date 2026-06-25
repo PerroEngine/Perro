@@ -6,7 +6,7 @@ use crate::runtime_project::{
 #[cfg(all(not(target_arch = "wasm32"), not(test)))]
 use perro_animation::{AnimationClip, AnimationTreeAsset};
 use perro_ids::{SoundFontID, string_to_u64};
-use perro_pawdio::{AudioController, MidiChannel, MidiProgram, MidiSound, Note};
+use perro_pawdio::{AudioController, MicRecorder, MidiChannel, MidiProgram, MidiSound, Note};
 use perro_project::LocalizationConfig;
 #[cfg(not(target_arch = "wasm32"))]
 use perro_render_bridge::Material3D;
@@ -245,6 +245,7 @@ pub struct RuntimeResourceApi {
     pub(super) state: Mutex<RuntimeResourceState>,
     pub(super) localization: std::sync::RwLock<RuntimeLocalizationState>,
     pub(crate) bark: Mutex<Option<AudioController>>,
+    pub(crate) mic: Mutex<MicRecorder>,
     pub(crate) spatial_audio_queue: Mutex<Vec<QueuedSpatialAudio>>,
     pub(crate) spatial_midi_queue: Mutex<Vec<QueuedSpatialMidi>>,
     pub(crate) next_spatial_midi_id: std::sync::atomic::AtomicU64,
@@ -310,6 +311,7 @@ impl RuntimeResourceApi {
                 localization_config.as_ref(),
             )),
             bark: Mutex::new(AudioController::new(static_audio_lookup).ok()),
+            mic: Mutex::new(MicRecorder::new()),
             spatial_audio_queue: Mutex::new(Vec::new()),
             spatial_midi_queue: Mutex::new(Vec::new()),
             next_spatial_midi_id: std::sync::atomic::AtomicU64::new(1),

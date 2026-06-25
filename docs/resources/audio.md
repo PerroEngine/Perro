@@ -35,12 +35,14 @@ lifecycle!({
 Perro audio has three layers:
 
 - script API: `ctx.res.Audio()` and `ctx.run.Audio()`
+- mic API: `ctx.res.Mic()` for recorded clips
 - runtime propagation: listener, occlusion, reflection, portals, effect zones
 - playback backend: `perro_pawdio`
 
 Use API docs for script calls:
 
 - [Resource Audio Module](../scripting/contexts/resource_modules/audio.md)
+- [Resource Mic Module](../scripting/contexts/resource_modules/mic.md)
 - [Runtime Audio Module](../scripting/contexts/runtime_modules/audio.md)
 
 ## `perro_pawdio`

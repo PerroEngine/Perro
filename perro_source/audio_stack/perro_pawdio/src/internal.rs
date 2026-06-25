@@ -6,6 +6,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use crate::mic::MicClip;
 use crate::midi::{
     BuiltInMidiFileData, MidiControl, MidiFileRequest, MidiMixerControl, MidiNoteOptions,
     MidiNoteRequest, MidiSong, Note, SoundFontMixerControl,
@@ -385,6 +386,13 @@ pub(crate) enum AudioCommand {
     },
     Play {
         request: OwnedAudioPlaybackRequest,
+    },
+    PlayClip {
+        source: Arc<str>,
+        clip: MicClip,
+        bus_id: Option<AudioBusID>,
+        volume: f32,
+        pan: AudioPan,
     },
     Stop {
         source: Arc<str>,
