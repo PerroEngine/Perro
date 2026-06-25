@@ -9,7 +9,7 @@ mod player;
 mod types;
 
 pub use controller::{AudioController, AudioSourceHandle};
-pub use mic::{MicClip, MicRecorder, MicSettings};
+pub use mic::{MicClip, MicDenoiseSettings, MicRecorder, MicSettings};
 pub use midi::{
     MidiChannel, MidiNoteHandle, MidiNoteOptions, MidiProgram, MidiSong, MidiSound, Note, program,
 };

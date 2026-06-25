@@ -20,7 +20,8 @@ Mic clips are `MicClip` values:
 - PCM16 samples
 - input sample rate
 - channel count
-- packable bytes for UDP, TCP, HTTP, or save data
+- optional denoise pass
+- compressed packable bytes for UDP, TCP, HTTP, or save data
 - WAV save support
 - playback through `perro_pawdio`
 
@@ -30,8 +31,10 @@ Those calls drain new audio since the last stream/get read.
 `clip` returns the full rolling recording buffer.
 `stop_listening` stops capture and returns that full buffer.
 
-Packed mic bytes use `PMIC` v1.
-They are engine bytes, not compressed voice-chat bytes.
+Packed mic bytes use `PMIC`.
+Unpack supports raw v1 and compressed v2.
+Pack chooses the smallest engine codec from raw PCM, zlib PCM, delta PCM, and zlib delta PCM.
+They are engine bytes, not Opus voice-chat bytes.
 Use them for simple send/store first.
 Add Opus later for real voice chat bandwidth.
 
@@ -84,8 +87,30 @@ lifecycle!({
 With settings:
 
 ```rust
-let settings = MicSettings { max_seconds: 8.0 };
+let settings = MicSettings {
+    max_seconds: 8.0,
+    ..Default::default()
+};
 let _ = mic_start!(ctx.res, settings);
+```
+
+With denoise:
+
+```rust
+let settings = MicSettings {
+    max_seconds: 8.0,
+    denoise: MicDenoiseSettings::voice(),
+};
+let _ = mic_start!(ctx.res, settings);
+```
+
+Clip cleanup:
+
+```rust
+if let Some(clip) = mic_clip!(ctx.res) {
+    let clean = clip.denoised(MicDenoiseSettings::voice());
+    let _ = mic_play!(ctx.res, &clean);
+}
 ```
 
 Bus playback:
@@ -183,7 +208,58 @@ UDP notes:
 | Access    | `ctx.res.Mic()`                                                         |
 | Signature | `pub fn start_with(&self, settings: MicSettings) -> Result<(), String>` |
 | Returns   | `Result<(), String>`                                                    |
-| Use when  | Start mic capture with max clip seconds.                                |
+| Use when  | Start mic capture with max clip seconds and optional denoise.           |
+
+### `MicSettings`
+
+| Field         | Type                 | Detail                         |
+| ------------- | -------------------- | ------------------------------ |
+| `max_seconds` | `f32`                | Rolling capture length.        |
+| `denoise`     | `MicDenoiseSettings` | Capture-time denoise settings. |
+
+### `MicDenoiseSettings`
+
+| Field         | Type   | Detail                                      |
+| ------------- | ------ | ------------------------------------------- |
+| `enabled`     | `bool` | Enable denoise pass.                        |
+| `noise_floor` | `f32`  | Samples below this level get reduced.       |
+| `reduction`   | `f32`  | Quiet-sample gain cut, from `0.0` to `1.0`. |
+| `high_pass`   | `bool` | Remove low rumble/DC drift.                 |
+
+Use `MicDenoiseSettings::voice()` for a default voice gate.
+Use `MicDenoiseSettings::off()` to disable it.
+
+### `MicClip::denoised`
+
+| Field     | Detail                                                            |
+| --------- | ----------------------------------------------------------------- |
+| Signature | `pub fn denoised(&self, settings: MicDenoiseSettings) -> MicClip` |
+| Returns   | `MicClip`                                                         |
+| Use when  | Clean a captured clip without changing the active capture stream. |
+
+### `MicClip::compressed_bytes`
+
+| Field     | Detail                                              |
+| --------- | --------------------------------------------------- |
+| Signature | `pub fn compressed_bytes(&self) -> Vec<u8>`         |
+| Returns   | `Vec<u8>`                                           |
+| Use when  | Pack with the smallest available `PMIC` byte codec. |
+
+### `MicClip::raw_bytes`
+
+| Field     | Detail                                      |
+| --------- | ------------------------------------------- |
+| Signature | `pub fn raw_bytes(&self) -> Vec<u8>`        |
+| Returns   | `Vec<u8>`                                   |
+| Use when  | Force legacy raw `PMIC` v1 bytes.           |
+
+### `MicClip::compression_ratio`
+
+| Field     | Detail                                      |
+| --------- | ------------------------------------------- |
+| Signature | `pub fn compression_ratio(&self) -> f32`    |
+| Returns   | `f32`                                       |
+| Use when  | Compare packed byte length to raw v1 length. |
 
 ### `stop_listening`
 
@@ -228,7 +304,7 @@ UDP notes:
 | Access    | `ctx.res.Mic()`                                                   |
 | Signature | `pub fn get_bytes(&self) -> Option<Vec<u8>>`                      |
 | Returns   | `Option<Vec<u8>>`                                                 |
-| Use when  | Drain new live mic samples as packed `PMIC` bytes for networking. |
+| Use when  | Drain new live mic samples as compressed `PMIC` bytes for networking. |
 
 ### `is_listening`
 
@@ -273,7 +349,7 @@ UDP notes:
 | Access    | `ctx.res.Mic()`                                      |
 | Signature | `pub fn pack(&self, clip: &MicClip) -> Vec<u8>`      |
 | Returns   | `Vec<u8>`                                            |
-| Use when  | Convert clip to `PMIC` bytes for network or storage. |
+| Use when  | Convert clip to smallest `PMIC` bytes for network or storage. |
 
 ### `unpack`
 
@@ -282,7 +358,7 @@ UDP notes:
 | Access    | `ctx.res.Mic()`                                                 |
 | Signature | `pub fn unpack(&self, bytes: &[u8]) -> Result<MicClip, String>` |
 | Returns   | `Result<MicClip, String>`                                       |
-| Use when  | Convert `PMIC` bytes back to a `MicClip`.                       |
+| Use when  | Convert raw v1 or compressed v2 `PMIC` bytes back to a `MicClip`. |
 
 ## Macros
 

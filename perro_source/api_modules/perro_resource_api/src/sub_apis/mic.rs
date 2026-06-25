@@ -1,6 +1,6 @@
 use crate::ResPathSource;
 use perro_ids::AudioBusID;
-pub use perro_pawdio::{MicClip, MicSettings};
+pub use perro_pawdio::{MicClip, MicDenoiseSettings, MicSettings};
 
 pub trait MicAPI {
     fn mic_start(&self, settings: MicSettings) -> Result<(), String>;

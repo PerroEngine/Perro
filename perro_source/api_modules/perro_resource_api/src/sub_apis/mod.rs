@@ -44,7 +44,7 @@ pub use localization::{Locale, LocalizationAPI, LocalizationModule};
 
 pub use material::{MaterialAPI, MaterialModule, MaterialReserveArg};
 pub use mesh::{MeshAPI, MeshModule, MeshReserveArg};
-pub use mic::{MicAPI, MicClip, MicModule, MicSettings};
+pub use mic::{MicAPI, MicClip, MicDenoiseSettings, MicModule, MicSettings};
 pub use perro_ids::{AudioBusID, SoundFontID};
 pub use post_processing::PostProcessingAPI;
 

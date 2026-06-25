@@ -4,6 +4,12 @@ use std::time::Duration;
 const PMIC_MAGIC: &[u8; 4] = b"PMIC";
 const PMIC_VERSION: u16 = 1;
 const PMIC_HEADER_LEN: usize = 16;
+const PMIC_VERSION_COMPRESSED: u16 = 2;
+const PMIC_COMPRESSED_HEADER_LEN: usize = 20;
+const PMIC_CODEC_PCM: u8 = 0;
+const PMIC_CODEC_ZLIB_PCM: u8 = 1;
+const PMIC_CODEC_DELTA: u8 = 2;
+const PMIC_CODEC_ZLIB_DELTA: u8 = 3;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct MicClip {
@@ -32,6 +38,55 @@ impl MicClip {
 
     pub fn pack(&self) -> Vec<u8> {
         let frames = (self.samples.len() / self.channels.max(1) as usize) as u32;
+        let v1 = self.pack_v1(frames);
+        let mut best = v1;
+        let pcm = pcm_payload(&self.samples);
+
+        try_best_pmic(
+            &mut best,
+            PMIC_CODEC_PCM,
+            self.channels,
+            self.sample_rate,
+            frames,
+            pcm.clone(),
+        );
+
+        if let Ok(compressed) = perro_io::compress_zlib_best(&pcm) {
+            try_best_pmic(
+                &mut best,
+                PMIC_CODEC_ZLIB_PCM,
+                self.channels,
+                self.sample_rate,
+                frames,
+                compressed,
+            );
+        }
+
+        let delta = delta_payload(&self.samples, self.channels);
+        try_best_pmic(
+            &mut best,
+            PMIC_CODEC_DELTA,
+            self.channels,
+            self.sample_rate,
+            frames,
+            delta.clone(),
+        );
+
+        if let Ok(compressed) = perro_io::compress_zlib_best(&delta) {
+            try_best_pmic(
+                &mut best,
+                PMIC_CODEC_ZLIB_DELTA,
+                self.channels,
+                self.sample_rate,
+                frames,
+                compressed,
+            );
+        }
+
+        best
+    }
+
+    fn pack_v1(&self, frames: u32) -> Vec<u8> {
         let mut out = Vec::with_capacity(PMIC_HEADER_LEN + self.samples.len() * 2);
         out.extend_from_slice(PMIC_MAGIC);
         out.extend_from_slice(&PMIC_VERSION.to_le_bytes());
@@ -51,36 +106,77 @@ impl MicClip {
         if &bytes[..4] != PMIC_MAGIC {
             return Err("mic clip magic mismatch".to_string());
         }
-        let version = u16::from_le_bytes([bytes[4], bytes[5]]);
-        if version != PMIC_VERSION {
-            return Err(format!("unsupported mic clip version {version}"));
+        match u16::from_le_bytes([bytes[4], bytes[5]]) {
+            PMIC_VERSION => Self::unpack_v1(bytes),
+            PMIC_VERSION_COMPRESSED => Self::unpack_v2(bytes),
+            version => Err(format!("unsupported mic clip version {version}")),
         }
+    }
+
+    fn unpack_v1(bytes: &[u8]) -> Result<Self, String> {
         let channels = u16::from_le_bytes([bytes[6], bytes[7]]).max(1);
         let sample_rate = u32::from_le_bytes([bytes[8], bytes[9], bytes[10], bytes[11]]).max(1);
         let frames = u32::from_le_bytes([bytes[12], bytes[13], bytes[14], bytes[15]]) as usize;
         let payload = &bytes[PMIC_HEADER_LEN..];
-        if !payload.len().is_multiple_of(2) {
-            return Err("mic clip odd payload len".to_string());
-        }
-        let expected_samples = frames
-            .checked_mul(channels as usize)
-            .ok_or_else(|| "mic clip sample len overflow".to_string())?;
-        if payload.len() / 2 != expected_samples {
-            return Err(format!(
-                "mic clip len mismatch: expect {}, got {}",
-                expected_samples,
-                payload.len() / 2
-            ));
-        }
-        let mut samples = Vec::with_capacity(expected_samples);
-        for chunk in payload.chunks_exact(2) {
-            samples.push(i16::from_le_bytes([chunk[0], chunk[1]]));
-        }
+        let samples = decode_pcm_payload(payload, frames, channels)?;
         Ok(Self {
             samples,
             sample_rate,
             channels,
         })
+    }
+
+    fn unpack_v2(bytes: &[u8]) -> Result<Self, String> {
+        if bytes.len() < PMIC_COMPRESSED_HEADER_LEN {
+            return Err("mic clip v2 too small".to_string());
+        }
+        let channels = u16::from_le_bytes([bytes[6], bytes[7]]).max(1);
+        let sample_rate = u32::from_le_bytes([bytes[8], bytes[9], bytes[10], bytes[11]]).max(1);
+        let frames = u32::from_le_bytes([bytes[12], bytes[13], bytes[14], bytes[15]]) as usize;
+        let codec = bytes[16];
+        let expected_samples = checked_sample_len(frames, channels)?;
+        let payload = &bytes[PMIC_COMPRESSED_HEADER_LEN..];
+        let samples = match codec {
+            PMIC_CODEC_PCM => decode_pcm_payload(payload, frames, channels)?,
+            PMIC_CODEC_ZLIB_PCM => {
+                let decoded = perro_io::decompress_zlib_limited(payload, expected_samples * 2)
+                    .map_err(|err| format!("mic clip zlib decode failed: {err}"))?;
+                decode_pcm_payload(&decoded, frames, channels)?
+            }
+            PMIC_CODEC_DELTA => decode_delta_payload(payload, expected_samples, channels)?,
+            PMIC_CODEC_ZLIB_DELTA => {
+                let decoded = perro_io::decompress_zlib_limited(payload, expected_samples * 3)
+                    .map_err(|err| format!("mic clip zlib delta decode failed: {err}"))?;
+                decode_delta_payload(&decoded, expected_samples, channels)?
+            }
+            other => return Err(format!("unsupported mic clip codec {other}")),
+        };
+        Ok(Self {
+            samples,
+            sample_rate,
+            channels,
+        })
+    }
+
+    pub fn raw_bytes(&self) -> Vec<u8> {
+        self.pack_v1((self.samples.len() / self.channels.max(1) as usize) as u32)
+    }
+
+    pub fn compressed_bytes(&self) -> Vec<u8> {
+        self.pack()
+    }
+
+    pub fn byte_len(&self) -> usize {
+        self.pack().len()
+    }
+
+    pub fn raw_byte_len(&self) -> usize {
+        PMIC_HEADER_LEN + self.samples.len() * 2
+    }
+
+    pub fn compression_ratio(&self) -> f32 {
+        let raw = self.raw_byte_len().max(1) as f32;
+        self.byte_len() as f32 / raw
     }
 
     pub fn wav_bytes(&self) -> Vec<u8> {
@@ -112,16 +208,247 @@ impl MicClip {
             .map(|sample| *sample as f32 / i16::MAX as f32)
             .collect()
     }
+
+    pub fn denoised(&self, settings: MicDenoiseSettings) -> Self {
+        if !settings.enabled {
+            return self.clone();
+        }
+        let mut state = MicDenoiseState::new(settings);
+        let samples = self
+            .samples
+            .iter()
+            .map(|sample| state.process_i16(*sample))
+            .collect();
+        Self::new(samples, self.sample_rate, self.channels)
+    }
+}
+
+fn decode_pcm_payload(payload: &[u8], frames: usize, channels: u16) -> Result<Vec<i16>, String> {
+    if !payload.len().is_multiple_of(2) {
+        return Err("mic clip odd payload len".to_string());
+    }
+    let expected_samples = checked_sample_len(frames, channels)?;
+    if payload.len() / 2 != expected_samples {
+        return Err(format!(
+            "mic clip len mismatch: expect {}, got {}",
+            expected_samples,
+            payload.len() / 2
+        ));
+    }
+    let mut samples = Vec::with_capacity(expected_samples);
+    for chunk in payload.chunks_exact(2) {
+        samples.push(i16::from_le_bytes([chunk[0], chunk[1]]));
+    }
+    Ok(samples)
+}
+
+fn checked_sample_len(frames: usize, channels: u16) -> Result<usize, String> {
+    frames
+        .checked_mul(channels as usize)
+        .ok_or_else(|| "mic clip sample len overflow".to_string())
+}
+
+fn pcm_payload(samples: &[i16]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(samples.len() * 2);
+    for sample in samples {
+        out.extend_from_slice(&sample.to_le_bytes());
+    }
+    out
+}
+
+fn try_best_pmic(
+    best: &mut Vec<u8>,
+    codec: u8,
+    channels: u16,
+    sample_rate: u32,
+    frames: u32,
+    payload: Vec<u8>,
+) {
+    let mut packed = Vec::with_capacity(PMIC_COMPRESSED_HEADER_LEN + payload.len());
+    packed.extend_from_slice(PMIC_MAGIC);
+    packed.extend_from_slice(&PMIC_VERSION_COMPRESSED.to_le_bytes());
+    packed.extend_from_slice(&channels.to_le_bytes());
+    packed.extend_from_slice(&sample_rate.to_le_bytes());
+    packed.extend_from_slice(&frames.to_le_bytes());
+    packed.push(codec);
+    packed.extend_from_slice(&[0, 0, 0]);
+    packed.extend_from_slice(&payload);
+    if packed.len() < best.len() {
+        *best = packed;
+    }
+}
+
+fn delta_payload(samples: &[i16], channels: u16) -> Vec<u8> {
+    let channels = channels.max(1) as usize;
+    let mut prev = vec![0i16; channels];
+    let mut out = Vec::with_capacity(samples.len());
+    for (index, sample) in samples.iter().enumerate() {
+        let channel = index % channels;
+        let delta = sample.wrapping_sub(prev[channel]);
+        prev[channel] = *sample;
+        write_varint(zigzag_i16(delta), &mut out);
+    }
+    out
+}
+
+fn decode_delta_payload(
+    payload: &[u8],
+    expected_samples: usize,
+    channels: u16,
+) -> Result<Vec<i16>, String> {
+    let channels = channels.max(1) as usize;
+    let mut prev = vec![0i16; channels];
+    let mut samples = Vec::with_capacity(expected_samples);
+    let mut cursor = 0usize;
+    while cursor < payload.len() && samples.len() < expected_samples {
+        let value = read_varint(payload, &mut cursor)?;
+        let channel = samples.len() % channels;
+        let delta = unzigzag_i16(value);
+        let sample = prev[channel].wrapping_add(delta);
+        prev[channel] = sample;
+        samples.push(sample);
+    }
+    if samples.len() != expected_samples {
+        return Err(format!(
+            "mic clip delta len mismatch: expect {}, got {}",
+            expected_samples,
+            samples.len()
+        ));
+    }
+    if cursor != payload.len() {
+        return Err("mic clip delta trailing bytes".to_string());
+    }
+    Ok(samples)
+}
+
+fn write_varint(mut value: u16, out: &mut Vec<u8>) {
+    while value >= 0x80 {
+        out.push((value as u8) | 0x80);
+        value >>= 7;
+    }
+    out.push(value as u8);
+}
+
+fn read_varint(payload: &[u8], cursor: &mut usize) -> Result<u16, String> {
+    let mut value = 0u32;
+    let mut shift = 0u32;
+    for _ in 0..3 {
+        let Some(byte) = payload.get(*cursor).copied() else {
+            return Err("mic clip delta truncated varint".to_string());
+        };
+        *cursor += 1;
+        value |= ((byte & 0x7f) as u32) << shift;
+        if byte & 0x80 == 0 {
+            return u16::try_from(value).map_err(|_| "mic clip delta varint overflow".to_string());
+        }
+        shift += 7;
+    }
+    Err("mic clip delta varint too long".to_string())
+}
+
+fn zigzag_i16(value: i16) -> u16 {
+    ((value << 1) ^ (value >> 15)) as u16
+}
+
+fn unzigzag_i16(value: u16) -> i16 {
+    ((value >> 1) as i16) ^ (-((value & 1) as i16))
 }
 
 #[derive(Clone, Copy, Debug)]
 pub struct MicSettings {
     pub max_seconds: f32,
+    pub denoise: MicDenoiseSettings,
 }
 
 impl Default for MicSettings {
     fn default() -> Self {
-        Self { max_seconds: 30.0 }
+        Self {
+            max_seconds: 30.0,
+            denoise: MicDenoiseSettings::off(),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct MicDenoiseSettings {
+    pub enabled: bool,
+    pub noise_floor: f32,
+    pub reduction: f32,
+    pub high_pass: bool,
+}
+
+impl MicDenoiseSettings {
+    pub fn off() -> Self {
+        Self {
+            enabled: false,
+            noise_floor: 0.02,
+            reduction: 0.75,
+            high_pass: true,
+        }
+    }
+
+    pub fn voice() -> Self {
+        Self {
+            enabled: true,
+            noise_floor: 0.02,
+            reduction: 0.75,
+            high_pass: true,
+        }
+    }
+}
+
+impl Default for MicDenoiseSettings {
+    fn default() -> Self {
+        Self::off()
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct MicDenoiseState {
+    settings: MicDenoiseSettings,
+    prev_input: f32,
+    prev_output: f32,
+    gain: f32,
+}
+
+impl MicDenoiseState {
+    fn new(settings: MicDenoiseSettings) -> Self {
+        Self {
+            settings,
+            prev_input: 0.0,
+            prev_output: 0.0,
+            gain: 1.0,
+        }
+    }
+
+    fn process_i16(&mut self, sample: i16) -> i16 {
+        let sample = sample as f32 / i16::MAX as f32;
+        (self.process_f32(sample) * i16::MAX as f32) as i16
+    }
+
+    fn process_f32(&mut self, sample: f32) -> f32 {
+        if !self.settings.enabled {
+            return sample.clamp(-1.0, 1.0);
+        }
+
+        let mut out = sample.clamp(-1.0, 1.0);
+        if self.settings.high_pass {
+            let high = out - self.prev_input + 0.995 * self.prev_output;
+            self.prev_input = out;
+            self.prev_output = high;
+            out = high;
+        }
+
+        let floor = self.settings.noise_floor.clamp(0.0, 1.0);
+        let reduction = self.settings.reduction.clamp(0.0, 1.0);
+        let target_gain = if out.abs() < floor {
+            1.0 - reduction
+        } else {
+            1.0
+        };
+        let smoothing = if target_gain < self.gain { 0.02 } else { 0.2 };
+        self.gain += (target_gain - self.gain) * smoothing;
+        (out * self.gain).clamp(-1.0, 1.0)
     }
 }
 
@@ -357,22 +684,32 @@ fn start_stream(
     let cursor = Arc::clone(stream_cursor);
     let err_fn = |err| eprintln!("mic input stream err: {err}");
     let stream_config = config.config();
+    let denoise = settings.denoise;
     let stream = match config.sample_format() {
         cpal::SampleFormat::F32 => device.build_input_stream(
             &stream_config,
-            move |data: &[f32], _| push_f32(data, &out, &cursor, max_samples),
+            {
+                let mut state = MicDenoiseState::new(denoise);
+                move |data: &[f32], _| push_f32(data, &out, &cursor, max_samples, &mut state)
+            },
             err_fn,
             None,
         ),
         cpal::SampleFormat::I16 => device.build_input_stream(
             &stream_config,
-            move |data: &[i16], _| push_i16(data, &out, &cursor, max_samples),
+            {
+                let mut state = MicDenoiseState::new(denoise);
+                move |data: &[i16], _| push_i16(data, &out, &cursor, max_samples, &mut state)
+            },
             err_fn,
             None,
         ),
         cpal::SampleFormat::U16 => device.build_input_stream(
             &stream_config,
-            move |data: &[u16], _| push_u16(data, &out, &cursor, max_samples),
+            {
+                let mut state = MicDenoiseState::new(denoise);
+                move |data: &[u16], _| push_u16(data, &out, &cursor, max_samples, &mut state)
+            },
             err_fn,
             None,
         ),
@@ -391,9 +728,14 @@ fn push_i16(
     out: &Arc<Mutex<Vec<i16>>>,
     stream_cursor: &Arc<Mutex<usize>>,
     max_samples: usize,
+    denoise: &mut MicDenoiseState,
 ) {
     if let Ok(mut samples) = out.lock() {
-        samples.extend_from_slice(data);
+        if denoise.settings.enabled {
+            samples.extend(data.iter().map(|sample| denoise.process_i16(*sample)));
+        } else {
+            samples.extend_from_slice(data);
+        }
         trim_samples(&mut samples, stream_cursor, max_samples);
     }
 }
@@ -404,12 +746,13 @@ fn push_f32(
     out: &Arc<Mutex<Vec<i16>>>,
     stream_cursor: &Arc<Mutex<usize>>,
     max_samples: usize,
+    denoise: &mut MicDenoiseState,
 ) {
     if let Ok(mut samples) = out.lock() {
-        samples.extend(
-            data.iter()
-                .map(|sample| (sample.clamp(-1.0, 1.0) * i16::MAX as f32) as i16),
-        );
+        samples.extend(data.iter().map(|sample| {
+            let sample = denoise.process_f32(*sample);
+            (sample * i16::MAX as f32) as i16
+        }));
         trim_samples(&mut samples, stream_cursor, max_samples);
     }
 }
@@ -420,11 +763,12 @@ fn push_u16(
     out: &Arc<Mutex<Vec<i16>>>,
     stream_cursor: &Arc<Mutex<usize>>,
     max_samples: usize,
+    denoise: &mut MicDenoiseState,
 ) {
     if let Ok(mut samples) = out.lock() {
         samples.extend(data.iter().map(|sample| {
             let centered = *sample as i32 - i16::MAX as i32 - 1;
-            centered.clamp(i16::MIN as i32, i16::MAX as i32) as i16
+            denoise.process_i16(centered.clamp(i16::MIN as i32, i16::MAX as i32) as i16)
         }));
         trim_samples(&mut samples, stream_cursor, max_samples);
     }
@@ -444,7 +788,7 @@ fn trim_samples(samples: &mut Vec<i16>, stream_cursor: &Arc<Mutex<usize>>, max_s
 
 #[cfg(test)]
 mod tests {
-    use super::MicClip;
+    use super::{MicClip, MicDenoiseSettings, PMIC_VERSION, PMIC_VERSION_COMPRESSED};
 
     #[test]
     fn mic_clip_pack_roundtrip() {
@@ -455,10 +799,45 @@ mod tests {
     }
 
     #[test]
+    fn mic_clip_raw_bytes_v1_roundtrip() {
+        let clip = MicClip::new(vec![100, -100, 200, -200], 48_000, 2);
+        let packed = clip.raw_bytes();
+        assert_eq!(u16::from_le_bytes([packed[4], packed[5]]), PMIC_VERSION);
+        let unpacked = MicClip::unpack(&packed).expect("unpack mic clip");
+        assert_eq!(unpacked, clip);
+    }
+
+    #[test]
+    fn mic_clip_pack_uses_smaller_v2_when_possible() {
+        let clip = MicClip::new(vec![0; 480], 48_000, 1);
+        let packed = clip.pack();
+        assert_eq!(
+            u16::from_le_bytes([packed[4], packed[5]]),
+            PMIC_VERSION_COMPRESSED
+        );
+        assert!(packed.len() < clip.raw_byte_len());
+        let unpacked = MicClip::unpack(&packed).expect("unpack mic clip");
+        assert_eq!(unpacked, clip);
+    }
+
+    #[test]
     fn mic_clip_wav_has_riff_header() {
         let clip = MicClip::new(vec![0, 1], 44_100, 1);
         let wav = clip.wav_bytes();
         assert_eq!(&wav[..4], b"RIFF");
         assert_eq!(&wav[8..12], b"WAVE");
+    }
+
+    #[test]
+    fn mic_clip_denoise_reduces_quiet_samples() {
+        let clip = MicClip::new(vec![200, 20_000], 48_000, 1);
+        let denoised = clip.denoised(MicDenoiseSettings {
+            enabled: true,
+            noise_floor: 0.02,
+            reduction: 0.9,
+            high_pass: false,
+        });
+        assert!(denoised.samples[0].abs() < clip.samples[0].abs());
+        assert!(denoised.samples[1].abs() > 10_000);
     }
 }

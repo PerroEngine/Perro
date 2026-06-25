@@ -40,11 +40,11 @@ pub mod prelude {
         AudioAPI, AudioBusID, AudioDirection, AudioModule, AudioPan, AudioPlayConfig, CsvAPI,
         CsvModule, Draw2DAPI, Draw2DModule, GlbModule, GltfAPI, GltfInfo, Locale, LocalizationAPI,
         LocalizationModule, MaterialAPI, MaterialModule, MaterialReserveArg, MeshAPI, MeshModule,
-        MeshReserveArg, MicAPI, MicClip, MicModule, MicSettings, MidiChannel, MidiModule,
-        MidiNoteHandle, MidiNoteOptions, MidiProgram, MidiSong, MidiSound, MidiSpatialPos,
-        MidiSpatialPosition, Note, PannedAudio, PostProcessingAPI, SceneDocAPI, SceneDocModule,
-        SkeletonAPI, SkeletonModule, SpatialAudioOptions, TextureAPI, TextureModule,
-        TextureReserveArg, VisualAccessibilityAPI, program,
+        MeshReserveArg, MicAPI, MicClip, MicDenoiseSettings, MicModule, MicSettings, MidiChannel,
+        MidiModule, MidiNoteHandle, MidiNoteOptions, MidiProgram, MidiSong, MidiSound,
+        MidiSpatialPos, MidiSpatialPosition, Note, PannedAudio, PostProcessingAPI, SceneDocAPI,
+        SceneDocModule, SkeletonAPI, SkeletonModule, SpatialAudioOptions, TextureAPI,
+        TextureModule, TextureReserveArg, VisualAccessibilityAPI, program,
     };
 
     // Convenience macros.
