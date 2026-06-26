@@ -17,6 +17,11 @@ impl Runtime {
     }
 
     #[inline]
+    pub fn clear_keyboard_mouse_state(&mut self) {
+        self.input.clear_keyboard_mouse_state();
+    }
+
+    #[inline]
     pub fn apply_input_commands(&mut self) {
         self.input.apply_queued_commands();
     }

@@ -70,6 +70,16 @@ impl InputSnapshot {
         self.refresh_all_action_down();
     }
 
+    /// Clear transient keyboard and mouse state when the app loses focus.
+    #[inline]
+    pub fn clear_keyboard_mouse_state(&mut self) {
+        self.keyboard.clear();
+        self.mouse.clear_buttons_and_motion();
+        self.action_pressed.fill(0);
+        self.action_released.fill(0);
+        self.refresh_all_action_down();
+    }
+
     // ---- Keyboard input ----
 
     /// Apply a key transition and refresh affected actions.

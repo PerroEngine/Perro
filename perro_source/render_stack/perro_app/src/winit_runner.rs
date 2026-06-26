@@ -1109,6 +1109,12 @@ impl<B: GraphicsBackend> RunnerState<B> {
         }
     }
 
+    fn clear_keyboard_mouse_focus_state(&mut self) {
+        self.cursor_inside_window = false;
+        self.app.clear_keyboard_mouse_state();
+        self.kbm_input.clear_focus_state();
+    }
+
     fn apply_mouse_mode_request(&mut self) {
         self.app.apply_input_commands();
         if let Some(mode) = self.app.take_mouse_mode_request() {
@@ -2762,6 +2768,13 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<
                 self.cursor_inside_window = false;
                 self.kbm_input
                     .handle_window_event(&mut self.app, &cursor_left);
+                if matches!(
+                    self.mouse_mode,
+                    MouseMode::Captured | MouseMode::Confined | MouseMode::ConfinedHidden
+                ) {
+                    self.clear_keyboard_mouse_focus_state();
+                    self.set_mouse_mode(MouseMode::Visible);
+                }
             }
             cursor_moved @ WindowEvent::CursorMoved { .. } => {
                 if self.startup_splash.blocks_input() {
@@ -2811,10 +2824,7 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<
                 self.apply_mouse_mode_request();
             }
             WindowEvent::Focused(false) => {
-                if self.startup_splash.blocks_input() {
-                    return;
-                }
-                self.cursor_inside_window = false;
+                self.clear_keyboard_mouse_focus_state();
                 self.set_mouse_mode(MouseMode::Visible);
             }
             WindowEvent::ScaleFactorChanged { .. } => {

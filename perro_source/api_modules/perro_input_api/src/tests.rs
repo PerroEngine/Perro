@@ -79,3 +79,34 @@ fn action_queries_match_any_binding() {
     let ctx = InputWindow::new(&input);
     assert!(ctx.Actions().pressed_hash(action_hash("jump")));
 }
+
+#[test]
+fn clear_keyboard_mouse_state_releases_stale_inputs() {
+    let mut input = InputSnapshot::new();
+    input.set_input_map(InputMap::from_actions(vec![InputAction::new(
+        "forward",
+        vec![
+            InputBinding::Key(KeyCode::KeyW),
+            InputBinding::Mouse(MouseButton::Left),
+        ],
+    )]));
+    input.set_mouse_mode_state(MouseMode::Captured);
+    input.set_key_state(KeyCode::KeyW, true);
+    input.set_mouse_button_state(MouseButton::Left, true);
+    input.add_mouse_delta(6.0, -4.0);
+    input.add_mouse_wheel(1.0, 2.0);
+
+    input.clear_keyboard_mouse_state();
+
+    let ctx = InputWindow::new(&input);
+    assert!(!ctx.Keyboard().down(KeyCode::KeyW));
+    assert!(!ctx.Mouse().down(MouseButton::Left));
+    assert!(!ctx.Actions().down("forward"));
+    assert!(!ctx.Actions().pressed("forward"));
+    assert!(!ctx.Actions().released("forward"));
+    assert_eq!(ctx.Mouse().delta().x, 0.0);
+    assert_eq!(ctx.Mouse().delta().y, 0.0);
+    assert_eq!(ctx.Mouse().wheel().x, 0.0);
+    assert_eq!(ctx.Mouse().wheel().y, 0.0);
+    assert_eq!(input.mouse_mode(), MouseMode::Captured);
+}

@@ -94,6 +94,11 @@ impl KbmInput {
         self.last_cursor_position = None;
     }
 
+    pub fn clear_focus_state(&mut self) {
+        self.last_cursor_position = None;
+        self.modifiers = Modifiers::default().state();
+    }
+
     pub fn translate_cursor_position(&mut self, dx: f64, dy: f64) {
         if let Some(position) = &mut self.last_cursor_position {
             position.x += dx;

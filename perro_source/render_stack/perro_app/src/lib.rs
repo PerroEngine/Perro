@@ -247,6 +247,11 @@ impl<B: GraphicsBackend> App<B> {
     }
 
     #[inline]
+    pub fn clear_keyboard_mouse_state(&mut self) {
+        self.runtime.clear_keyboard_mouse_state();
+    }
+
+    #[inline]
     pub fn set_key_state(&mut self, key: KeyCode, is_down: bool) {
         self.runtime.set_key_state(key, is_down);
     }

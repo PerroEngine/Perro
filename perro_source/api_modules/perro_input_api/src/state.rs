@@ -34,6 +34,15 @@ impl KeyboardState {
         self.text_inputs.clear();
     }
 
+    /// Release every held key and clear one-frame keyboard state.
+    #[inline]
+    pub fn clear(&mut self) {
+        self.down.fill(0);
+        self.pressed.fill(0);
+        self.released.fill(0);
+        self.text_inputs.clear();
+    }
+
     // ---- Event input ----
 
     /// Apply a key transition and update one-frame pressed/released edges.
@@ -151,6 +160,17 @@ impl MouseState {
     /// Clear one-frame button edges, motion delta, and wheel delta.
     #[inline]
     pub fn begin_frame(&mut self) {
+        self.pressed = 0;
+        self.released = 0;
+        self.clear_delta();
+        self.wheel_x = 0.0;
+        self.wheel_y = 0.0;
+    }
+
+    /// Release every held button and clear one-frame mouse state.
+    #[inline]
+    pub fn clear_buttons_and_motion(&mut self) {
+        self.down = 0;
         self.pressed = 0;
         self.released = 0;
         self.clear_delta();
