@@ -912,33 +912,39 @@ fn material_literal_to_code(material: &MaterialLiteral) -> String {
             let mut fields = Vec::<String>::new();
             if m.base_color_factor != d.base_color_factor {
                 fields.push(format!(
-                    "base_color_factor: [{:.6}, {:.6}, {:.6}, {:.6}]",
-                    m.base_color_factor[0],
-                    m.base_color_factor[1],
-                    m.base_color_factor[2],
-                    m.base_color_factor[3]
+                    "base_color_factor: {}",
+                    f32x4_to_code(m.base_color_factor)
                 ));
             }
             if m.roughness_factor != d.roughness_factor {
-                fields.push(format!("roughness_factor: {:.6}", m.roughness_factor));
+                fields.push(format!(
+                    "roughness_factor: {}",
+                    f32_to_code(m.roughness_factor)
+                ));
             }
             if m.metallic_factor != d.metallic_factor {
-                fields.push(format!("metallic_factor: {:.6}", m.metallic_factor));
+                fields.push(format!(
+                    "metallic_factor: {}",
+                    f32_to_code(m.metallic_factor)
+                ));
             }
             if m.occlusion_strength != d.occlusion_strength {
-                fields.push(format!("occlusion_strength: {:.6}", m.occlusion_strength));
+                fields.push(format!(
+                    "occlusion_strength: {}",
+                    f32_to_code(m.occlusion_strength)
+                ));
             }
             if m.emissive_factor != d.emissive_factor {
                 fields.push(format!(
-                    "emissive_factor: [{:.6}, {:.6}, {:.6}]",
-                    m.emissive_factor[0], m.emissive_factor[1], m.emissive_factor[2]
+                    "emissive_factor: {}",
+                    f32x3_to_code(m.emissive_factor)
                 ));
             }
             if m.alpha_mode != d.alpha_mode {
                 fields.push(format!("alpha_mode: {}", m.alpha_mode));
             }
             if m.alpha_cutoff != d.alpha_cutoff {
-                fields.push(format!("alpha_cutoff: {:.6}", m.alpha_cutoff));
+                fields.push(format!("alpha_cutoff: {}", f32_to_code(m.alpha_cutoff)));
             }
             if m.double_sided != d.double_sided {
                 fields.push(format!(
@@ -953,7 +959,7 @@ fn material_literal_to_code(material: &MaterialLiteral) -> String {
                 ));
             }
             if m.normal_scale != d.normal_scale {
-                fields.push(format!("normal_scale: {:.6}", m.normal_scale));
+                fields.push(format!("normal_scale: {}", f32_to_code(m.normal_scale)));
             }
             if m.base_color_texture != d.base_color_texture {
                 fields.push(format!("base_color_texture: {}", m.base_color_texture));
@@ -987,24 +993,21 @@ fn material_literal_to_code(material: &MaterialLiteral) -> String {
             let mut fields = Vec::<String>::new();
             if m.base_color_factor != d.base_color_factor {
                 fields.push(format!(
-                    "base_color_factor: [{:.6}, {:.6}, {:.6}, {:.6}]",
-                    m.base_color_factor[0],
-                    m.base_color_factor[1],
-                    m.base_color_factor[2],
-                    m.base_color_factor[3]
+                    "base_color_factor: {}",
+                    f32x4_to_code(m.base_color_factor)
                 ));
             }
             if m.emissive_factor != d.emissive_factor {
                 fields.push(format!(
-                    "emissive_factor: [{:.6}, {:.6}, {:.6}]",
-                    m.emissive_factor[0], m.emissive_factor[1], m.emissive_factor[2]
+                    "emissive_factor: {}",
+                    f32x3_to_code(m.emissive_factor)
                 ));
             }
             if m.alpha_mode != d.alpha_mode {
                 fields.push(format!("alpha_mode: {}", m.alpha_mode));
             }
             if m.alpha_cutoff != d.alpha_cutoff {
-                fields.push(format!("alpha_cutoff: {:.6}", m.alpha_cutoff));
+                fields.push(format!("alpha_cutoff: {}", f32_to_code(m.alpha_cutoff)));
             }
             if m.double_sided != d.double_sided {
                 fields.push(format!(
@@ -1035,24 +1038,21 @@ fn material_literal_to_code(material: &MaterialLiteral) -> String {
             let mut fields = Vec::<String>::new();
             if m.base_color_factor != d.base_color_factor {
                 fields.push(format!(
-                    "base_color_factor: [{:.6}, {:.6}, {:.6}, {:.6}]",
-                    m.base_color_factor[0],
-                    m.base_color_factor[1],
-                    m.base_color_factor[2],
-                    m.base_color_factor[3]
+                    "base_color_factor: {}",
+                    f32x4_to_code(m.base_color_factor)
                 ));
             }
             if m.emissive_factor != d.emissive_factor {
                 fields.push(format!(
-                    "emissive_factor: [{:.6}, {:.6}, {:.6}]",
-                    m.emissive_factor[0], m.emissive_factor[1], m.emissive_factor[2]
+                    "emissive_factor: {}",
+                    f32x3_to_code(m.emissive_factor)
                 ));
             }
             if m.alpha_mode != d.alpha_mode {
                 fields.push(format!("alpha_mode: {}", m.alpha_mode));
             }
             if m.alpha_cutoff != d.alpha_cutoff {
-                fields.push(format!("alpha_cutoff: {:.6}", m.alpha_cutoff));
+                fields.push(format!("alpha_cutoff: {}", f32_to_code(m.alpha_cutoff)));
             }
             if m.double_sided != d.double_sided {
                 fields.push(format!(
@@ -1070,10 +1070,10 @@ fn material_literal_to_code(material: &MaterialLiteral) -> String {
                 fields.push(format!("band_count: {}", m.band_count));
             }
             if m.rim_strength != d.rim_strength {
-                fields.push(format!("rim_strength: {:.6}", m.rim_strength));
+                fields.push(format!("rim_strength: {}", f32_to_code(m.rim_strength)));
             }
             if m.outline_width != d.outline_width {
-                fields.push(format!("outline_width: {:.6}", m.outline_width));
+                fields.push(format!("outline_width: {}", f32_to_code(m.outline_width)));
             }
             if m.base_color_texture != d.base_color_texture {
                 fields.push(format!("base_color_texture: {}", m.base_color_texture));
@@ -1129,33 +1129,39 @@ fn standard_material_struct_to_code(m: &StandardMaterial3D) -> String {
     let mut fields = Vec::<String>::new();
     if m.base_color_factor != d.base_color_factor {
         fields.push(format!(
-            "base_color_factor: [{:.6}, {:.6}, {:.6}, {:.6}]",
-            m.base_color_factor[0],
-            m.base_color_factor[1],
-            m.base_color_factor[2],
-            m.base_color_factor[3]
+            "base_color_factor: {}",
+            f32x4_to_code(m.base_color_factor)
         ));
     }
     if m.roughness_factor != d.roughness_factor {
-        fields.push(format!("roughness_factor: {:.6}", m.roughness_factor));
+        fields.push(format!(
+            "roughness_factor: {}",
+            f32_to_code(m.roughness_factor)
+        ));
     }
     if m.metallic_factor != d.metallic_factor {
-        fields.push(format!("metallic_factor: {:.6}", m.metallic_factor));
+        fields.push(format!(
+            "metallic_factor: {}",
+            f32_to_code(m.metallic_factor)
+        ));
     }
     if m.occlusion_strength != d.occlusion_strength {
-        fields.push(format!("occlusion_strength: {:.6}", m.occlusion_strength));
+        fields.push(format!(
+            "occlusion_strength: {}",
+            f32_to_code(m.occlusion_strength)
+        ));
     }
     if m.emissive_factor != d.emissive_factor {
         fields.push(format!(
-            "emissive_factor: [{:.6}, {:.6}, {:.6}]",
-            m.emissive_factor[0], m.emissive_factor[1], m.emissive_factor[2]
+            "emissive_factor: {}",
+            f32x3_to_code(m.emissive_factor)
         ));
     }
     if m.alpha_mode != d.alpha_mode {
         fields.push(format!("alpha_mode: {}", m.alpha_mode));
     }
     if m.alpha_cutoff != d.alpha_cutoff {
-        fields.push(format!("alpha_cutoff: {:.6}", m.alpha_cutoff));
+        fields.push(format!("alpha_cutoff: {}", f32_to_code(m.alpha_cutoff)));
     }
     if m.double_sided != d.double_sided {
         fields.push(format!(
@@ -1170,7 +1176,7 @@ fn standard_material_struct_to_code(m: &StandardMaterial3D) -> String {
         ));
     }
     if m.normal_scale != d.normal_scale {
-        fields.push(format!("normal_scale: {:.6}", m.normal_scale));
+        fields.push(format!("normal_scale: {}", f32_to_code(m.normal_scale)));
     }
     if m.base_color_texture != d.base_color_texture {
         fields.push(format!("base_color_texture: {}", m.base_color_texture));
@@ -1210,26 +1216,50 @@ fn custom_lighting_to_code(lighting: CustomMaterialLighting3D) -> &'static str {
 fn custom_param_value_to_code(value: &CustomMaterialParamValue3D) -> String {
     match value {
         CustomMaterialParamValue3D::F32(v) => {
-            format!("CustomMaterialParamValue3D::F32({:.6})", v)
+            format!("CustomMaterialParamValue3D::F32({})", f32_to_code(*v))
         }
         CustomMaterialParamValue3D::I32(v) => format!("CustomMaterialParamValue3D::I32({})", v),
         CustomMaterialParamValue3D::Bool(v) => format!(
             "CustomMaterialParamValue3D::Bool({})",
             if *v { "true" } else { "false" }
         ),
-        CustomMaterialParamValue3D::Vec2(v) => format!(
-            "CustomMaterialParamValue3D::Vec2([{:.6}, {:.6}])",
-            v[0], v[1]
-        ),
-        CustomMaterialParamValue3D::Vec3(v) => format!(
-            "CustomMaterialParamValue3D::Vec3([{:.6}, {:.6}, {:.6}])",
-            v[0], v[1], v[2]
-        ),
-        CustomMaterialParamValue3D::Vec4(v) => format!(
-            "CustomMaterialParamValue3D::Vec4([{:.6}, {:.6}, {:.6}, {:.6}])",
-            v[0], v[1], v[2], v[3]
-        ),
+        CustomMaterialParamValue3D::Vec2(v) => {
+            format!("CustomMaterialParamValue3D::Vec2({})", f32x2_to_code(*v))
+        }
+        CustomMaterialParamValue3D::Vec3(v) => {
+            format!("CustomMaterialParamValue3D::Vec3({})", f32x3_to_code(*v))
+        }
+        CustomMaterialParamValue3D::Vec4(v) => {
+            format!("CustomMaterialParamValue3D::Vec4({})", f32x4_to_code(*v))
+        }
     }
+}
+
+fn f32_to_code(value: f32) -> String {
+    format!("f32::from_bits({:#010x})", value.to_bits())
+}
+
+fn f32x2_to_code(value: [f32; 2]) -> String {
+    format!("[{}, {}]", f32_to_code(value[0]), f32_to_code(value[1]))
+}
+
+fn f32x3_to_code(value: [f32; 3]) -> String {
+    format!(
+        "[{}, {}, {}]",
+        f32_to_code(value[0]),
+        f32_to_code(value[1]),
+        f32_to_code(value[2])
+    )
+}
+
+fn f32x4_to_code(value: [f32; 4]) -> String {
+    format!(
+        "[{}, {}, {}, {}]",
+        f32_to_code(value[0]),
+        f32_to_code(value[1]),
+        f32_to_code(value[2]),
+        f32_to_code(value[3])
+    )
 }
 
 fn materials_from_gltf_file(
@@ -1373,6 +1403,33 @@ mod tests {
         assert!(code.contains("lighting: CustomMaterialLighting3D::Raw"));
         assert!(code.contains("surface: StandardMaterial3D { alpha_mode: 2"));
         assert!(code.contains("double_sided: true"));
+    }
+
+    #[test]
+    fn material_codegen_uses_exact_f32_bits() {
+        let color = [0.12345679, 0.2345679, 0.345679, 0.45679];
+        let code = material_literal_to_code(&MaterialLiteral::Custom(CustomMaterialLiteral {
+            shader_path: "res://shaders/custom.wgsl".to_string(),
+            params: vec![CustomParamLiteral {
+                name: Some("tint".to_string()),
+                value: CustomMaterialParamValue3D::Vec4(color),
+            }],
+            lighting: CustomMaterialLighting3D::Raw,
+            surface: StandardMaterial3D {
+                base_color_factor: color,
+                roughness_factor: 0.12345679,
+                ..Default::default()
+            },
+        }));
+
+        for value in color {
+            assert!(code.contains(&format!("f32::from_bits({:#010x})", value.to_bits())));
+        }
+        assert!(code.contains(&format!(
+            "roughness_factor: f32::from_bits({:#010x})",
+            0.12345679f32.to_bits()
+        )));
+        assert!(!code.contains("0.123457"));
     }
 
     #[test]

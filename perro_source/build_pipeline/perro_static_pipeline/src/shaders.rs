@@ -32,14 +32,13 @@ pub fn generate_static_shaders(project_root: &Path) -> Result<(), StaticPipeline
     for rel in shader_paths {
         let res_path = asset_uri(&rel);
         let full_path = res_dir.join(&rel);
-        let data = fs::read(&full_path)?;
-        let minified = minify_wgsl_for_embed(&String::from_utf8_lossy(&data));
+        let source = fs::read_to_string(&full_path)?;
 
         let output_path = embedded_shaders_dir.join(&rel);
         if let Some(parent) = output_path.parent() {
             fs::create_dir_all(parent)?;
         }
-        fs::write(&output_path, minified)?;
+        fs::write(&output_path, source)?;
         shaders.push((res_path, rel));
     }
 
@@ -106,50 +105,52 @@ fn escape_str(input: &str) -> String {
     out
 }
 
-fn minify_wgsl_for_embed(src: &str) -> String {
-    let mut out = String::with_capacity(src.len());
-    let mut first = true;
-    for raw_line in src.lines() {
-        let line = strip_line_comment_preserving_strings(raw_line).trim();
-        if line.is_empty() {
-            continue;
-        }
-        if !first {
-            out.push(' ');
-        }
-        out.push_str(line);
-        first = false;
-    }
-    out
-}
+#[cfg(test)]
+mod tests {
+    use super::generate_static_shaders;
+    use crate::{StaticPipelineOverrides, set_static_pipeline_overrides};
+    use std::{
+        fs,
+        path::PathBuf,
+        time::{SystemTime, UNIX_EPOCH},
+    };
 
-fn strip_line_comment_preserving_strings(line: &str) -> &str {
-    let bytes = line.as_bytes();
-    let mut i = 0usize;
-    let mut in_string = false;
-    let mut escaped = false;
-    while i < bytes.len() {
-        let b = bytes[i];
-        if in_string {
-            if escaped {
-                escaped = false;
-            } else if b == b'\\' {
-                escaped = true;
-            } else if b == b'"' {
-                in_string = false;
-            }
-            i += 1;
-            continue;
-        }
-        if b == b'"' {
-            in_string = true;
-            i += 1;
-            continue;
-        }
-        if b == b'/' && i + 1 < bytes.len() && bytes[i + 1] == b'/' {
-            return &line[..i];
-        }
-        i += 1;
+    fn unique_temp_root(name: &str) -> PathBuf {
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock")
+            .as_nanos();
+        std::env::temp_dir().join(format!("{name}_{stamp}"))
     }
-    line
+
+    #[test]
+    fn static_shader_embed_preserves_disk_wgsl_exactly() {
+        let root = unique_temp_root("perro_static_shader_exact");
+        let res_dir = root.join("res");
+        let embedded_dir = root.join("embedded");
+        let static_dir = root.join("static");
+        fs::create_dir_all(res_dir.join("shaders")).expect("create shader dir");
+        let source = r#"// keep comments + layout
+fn shade_material(in: FragmentInput) -> vec4<f32> {
+    let s = "// not a comment";
+    return vec4<f32>(in.uv, f32(s == s), 0.5);
+}
+"#;
+        fs::write(res_dir.join("shaders/custom.wgsl"), source).expect("write shader");
+
+        set_static_pipeline_overrides(Some(StaticPipelineOverrides {
+            res_dir: res_dir.clone(),
+            static_dir,
+            embedded_dir: embedded_dir.clone(),
+            asset_prefix: "res://".to_string(),
+        }));
+        let result = generate_static_shaders(&root);
+        set_static_pipeline_overrides(None);
+        result.expect("generate static shaders");
+
+        let embedded = fs::read_to_string(embedded_dir.join("shaders/shaders/custom.wgsl"))
+            .expect("read embedded");
+        assert_eq!(embedded, source);
+        let _ = fs::remove_dir_all(root);
+    }
 }
