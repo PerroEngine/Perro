@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, sync::Arc};
+use std::{cell::RefCell, collections::BTreeMap, rc::Rc, sync::Arc};
 
 use perro_ids::{
     AnimationID, AudioBusID, LightID, MaterialID, MeshID, NodeID, PreloadedSceneID, SignalID,
@@ -97,6 +97,21 @@ fn test_variant_parse_helper() {
 
     let list = Variant::Array(vec![Variant::from(1_i32), Variant::from(2_i32)]);
     assert_eq!(list.parse::<Vec<i32>>(), Ok(vec![1, 2]));
+}
+
+#[test]
+fn test_variant_shared_cell_parse_helper() {
+    let arc = Variant::from(7_i32).parse::<Arc<i32>>().unwrap();
+    assert_eq!(*arc, 7);
+    assert_eq!(Variant::from(Arc::clone(&arc)), Variant::from(7_i32));
+
+    let rc = Variant::from("name").parse::<Rc<String>>().unwrap();
+    assert_eq!(rc.as_str(), "name");
+    assert_eq!(Variant::from(Rc::clone(&rc)), Variant::from("name"));
+
+    let cell = Variant::from(true).parse::<RefCell<bool>>().unwrap();
+    assert_eq!(*cell.borrow(), true);
+    assert_eq!(Variant::from(cell), Variant::from(true));
 }
 
 // -------------------- Variant Accessors --------------------

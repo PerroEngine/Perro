@@ -1072,18 +1072,17 @@ impl<B: GraphicsBackend> RunnerState<B> {
         }
         if let Some(window) = &self.window {
             let (applied_mode, uses_raw_motion) = Self::apply_mouse_mode(window.as_ref(), mode);
+            if matches!(
+                applied_mode,
+                MouseMode::Captured | MouseMode::Confined | MouseMode::ConfinedHidden
+            ) {
+                center_cursor(window.as_ref());
+            }
             self.mouse_mode = applied_mode;
             self.mouse_uses_raw_motion = uses_raw_motion;
             self.app.set_mouse_mode_state(applied_mode);
             self.app.clear_mouse_delta();
             self.kbm_input.reset_cursor_position();
-            if matches!(
-                applied_mode,
-                MouseMode::Captured | MouseMode::ConfinedHidden
-            ) && !uses_raw_motion
-            {
-                center_cursor(window.as_ref());
-            }
         } else {
             self.mouse_mode = MouseMode::Visible;
             self.mouse_uses_raw_motion = false;
@@ -1093,11 +1092,10 @@ impl<B: GraphicsBackend> RunnerState<B> {
 
     fn reset_mouse_mode_for_exit(&mut self) {
         if let Some(window) = &self.window {
-            let (applied_mode, _uses_raw_motion) =
-                Self::apply_mouse_mode(window.as_ref(), MouseMode::Visible);
-            self.mouse_mode = applied_mode;
+            release_mouse(window.as_ref());
+            self.mouse_mode = MouseMode::Visible;
             self.mouse_uses_raw_motion = false;
-            self.app.set_mouse_mode_state(applied_mode);
+            self.app.set_mouse_mode_state(MouseMode::Visible);
             self.app.clear_mouse_delta();
             self.kbm_input.reset_cursor_position();
         } else {
@@ -2984,6 +2982,11 @@ fn window_center(window: &Window) -> PhysicalPosition<f64> {
 
 fn center_cursor(window: &Window) {
     let _ = window.set_cursor_position(window_center(window));
+}
+
+fn release_mouse(window: &Window) {
+    let _ = window.set_cursor_grab(CursorGrabMode::None);
+    window.set_cursor_visible(true);
 }
 
 #[cfg(not(target_arch = "wasm32"))]

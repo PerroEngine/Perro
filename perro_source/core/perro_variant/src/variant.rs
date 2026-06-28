@@ -2,8 +2,10 @@
 
 #![forbid(unsafe_code)]
 
+use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::fmt;
+use std::rc::Rc;
 use std::sync::Arc;
 
 use perro_ids::*;
@@ -1272,6 +1274,81 @@ where
     }
 }
 
+impl<T> DeriveVariant for Arc<T>
+where
+    T: DeriveVariant,
+{
+    #[inline]
+    fn from_variant(value: &Variant) -> Option<Self> {
+        T::from_variant(value).map(Arc::new)
+    }
+
+    #[inline]
+    fn from_owned_variant(value: Variant) -> Option<Self> {
+        T::from_owned_variant(value).map(Arc::new)
+    }
+
+    #[inline]
+    fn to_variant(&self) -> Variant {
+        self.as_ref().to_variant()
+    }
+
+    #[inline]
+    fn into_variant(self) -> Variant {
+        self.as_ref().to_variant()
+    }
+}
+
+impl<T> DeriveVariant for Rc<T>
+where
+    T: DeriveVariant,
+{
+    #[inline]
+    fn from_variant(value: &Variant) -> Option<Self> {
+        T::from_variant(value).map(Rc::new)
+    }
+
+    #[inline]
+    fn from_owned_variant(value: Variant) -> Option<Self> {
+        T::from_owned_variant(value).map(Rc::new)
+    }
+
+    #[inline]
+    fn to_variant(&self) -> Variant {
+        self.as_ref().to_variant()
+    }
+
+    #[inline]
+    fn into_variant(self) -> Variant {
+        self.as_ref().to_variant()
+    }
+}
+
+impl<T> DeriveVariant for RefCell<T>
+where
+    T: DeriveVariant,
+{
+    #[inline]
+    fn from_variant(value: &Variant) -> Option<Self> {
+        T::from_variant(value).map(RefCell::new)
+    }
+
+    #[inline]
+    fn from_owned_variant(value: Variant) -> Option<Self> {
+        T::from_owned_variant(value).map(RefCell::new)
+    }
+
+    #[inline]
+    fn to_variant(&self) -> Variant {
+        self.borrow().to_variant()
+    }
+
+    #[inline]
+    fn into_variant(self) -> Variant {
+        self.into_inner().into_variant()
+    }
+}
+
 impl<T> DeriveVariant for Vec<T>
 where
     T: DeriveVariant,
@@ -2033,6 +2110,36 @@ impl From<Arc<[u8]>> for Variant {
     #[inline]
     fn from(v: Arc<[u8]>) -> Self {
         Variant::Bytes(v)
+    }
+}
+
+impl<T> From<Arc<T>> for Variant
+where
+    T: DeriveVariant,
+{
+    #[inline]
+    fn from(v: Arc<T>) -> Self {
+        v.to_variant()
+    }
+}
+
+impl<T> From<Rc<T>> for Variant
+where
+    T: DeriveVariant,
+{
+    #[inline]
+    fn from(v: Rc<T>) -> Self {
+        v.to_variant()
+    }
+}
+
+impl<T> From<RefCell<T>> for Variant
+where
+    T: DeriveVariant,
+{
+    #[inline]
+    fn from(v: RefCell<T>) -> Self {
+        v.into_variant()
     }
 }
 
