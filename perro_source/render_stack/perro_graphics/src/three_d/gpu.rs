@@ -6,7 +6,8 @@ use super::{
         MAX_SPOT_LIGHTS,
     },
     shaders::{
-        build_custom_material_shader_with_prelude, create_depth_prepass_shader_module_rigid,
+        build_custom_material_shader_with_prelude, build_custom_multimesh_material_shader,
+        create_depth_prepass_shader_module_rigid,
         create_depth_prepass_shader_module_rigid_packed_lod,
         create_depth_prepass_shader_module_skinned, create_frustum_cull_shader_module,
         create_hiz_depth_copy_shader_module, create_hiz_downsample_shader_module,
@@ -276,6 +277,7 @@ struct SkinnedInstanceMetaGpu {
 struct MultiMeshInstanceGpu {
     position: [f32; 3],
     rotation: [i16; 4],
+    scale: [f32; 3],
     draw_id: u32,
     blend_meta_id: u32,
 }
@@ -290,6 +292,7 @@ struct MultiMeshDrawParamGpu {
     packed_emissive: u32,
     scale_bits: u32,
     packed_blend_params: u32,
+    custom_params: [u32; 2],
 }
 
 #[repr(C)]
@@ -441,6 +444,7 @@ pub struct Gpu3D {
     sky_bgl: wgpu::BindGroupLayout,
     material_pipeline_layout: wgpu::PipelineLayout,
     rigid_material_pipeline_layout: wgpu::PipelineLayout,
+    multimesh_pipeline_layout: wgpu::PipelineLayout,
     sky_pipeline_layout: wgpu::PipelineLayout,
     sky_pipeline: wgpu::RenderPipeline,
     custom_sky_pipelines: AHashMap<String, wgpu::RenderPipeline>,
@@ -495,6 +499,7 @@ pub struct Gpu3D {
     pipeline_multimesh_blend_double_sided: wgpu::RenderPipeline,
     custom_pipelines: AHashMap<u32, CustomPipeline>,
     custom_pipelines_rigid: AHashMap<u32, CustomPipeline>,
+    custom_pipelines_multimesh: AHashMap<u32, CustomPipeline>,
     custom_pipeline_tokens: AHashMap<String, u32>,
     next_custom_pipeline_token: u32,
     camera_buffer: wgpu::Buffer,
@@ -840,6 +845,7 @@ struct SurfaceEntry3D {
 enum RenderPath3D {
     Rigid,
     Skinned,
+    MultiMesh,
 }
 
 #[derive(Clone)]
@@ -850,6 +856,7 @@ struct MultiMeshBatch {
     draw_param_index: u32,
     double_sided: bool,
     mesh_blend: bool,
+    material_kind: MaterialPipelineKind,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -905,7 +912,7 @@ mod tests {
         SkinnedMeshVertex, camera, compare_draw_batch_keys, draw_batch_state_key, push_draw_batch,
         render_state_key,
     };
-    use glam::Vec4;
+    use glam::{Mat4, Quat, Vec3, Vec4};
     use perro_asset_formats::pmesh::{
         FLAG_HAS_JOINTS as PMESH_FLAG_HAS_JOINTS, FLAG_HAS_NORMAL as PMESH_FLAG_HAS_NORMAL,
         FLAG_HAS_UV0 as PMESH_FLAG_HAS_UV0, FLAG_HAS_WEIGHTS as PMESH_FLAG_HAS_WEIGHTS,
@@ -927,13 +934,32 @@ mod tests {
         clip.z / clip.w
     }
 
+    fn next_unit(seed: &mut u32) -> f32 {
+        *seed ^= *seed << 13;
+        *seed ^= *seed >> 17;
+        *seed ^= *seed << 5;
+        (*seed as f32) / (u32::MAX as f32)
+    }
+
+    fn next_range(seed: &mut u32, min: f32, max: f32) -> f32 {
+        min + (max - min) * next_unit(seed)
+    }
+
+    fn next_vec3(seed: &mut u32, min: f32, max: f32) -> Vec3 {
+        Vec3::new(
+            next_range(seed, min, max),
+            next_range(seed, min, max),
+            next_range(seed, min, max),
+        )
+    }
+
     #[test]
     fn packed_gpu_layouts_keep_expected_sizes() {
         assert_eq!(std::mem::size_of::<RigidMeshVertex>(), 28);
         assert_eq!(std::mem::size_of::<PackedRigidLodVertex>(), 16);
         assert_eq!(std::mem::size_of::<PackedLodParamGpu>(), 48);
         assert_eq!(std::mem::size_of::<SkinnedMeshVertex>(), 40);
-        assert_eq!(std::mem::size_of::<MultiMeshInstanceGpu>(), 28);
+        assert_eq!(std::mem::size_of::<MultiMeshInstanceGpu>(), 40);
         assert_eq!(std::mem::size_of::<MaterialInstanceGpu>(), 20);
         assert_eq!(std::mem::size_of::<RigidInstanceMetaGpu>(), 32);
         assert_eq!(std::mem::size_of::<SkinnedInstanceMetaGpu>(), 36);
@@ -958,15 +984,64 @@ mod tests {
             "skinned weights attr offset"
         );
         assert_eq!(
-            std::mem::offset_of!(MultiMeshInstanceGpu, draw_id),
+            std::mem::offset_of!(MultiMeshInstanceGpu, scale),
             20,
+            "multimesh scale attr offset"
+        );
+        assert_eq!(
+            std::mem::offset_of!(MultiMeshInstanceGpu, draw_id),
+            32,
             "multimesh draw id attr offset"
         );
         assert_eq!(
             std::mem::offset_of!(MultiMeshInstanceGpu, blend_meta_id),
-            24,
+            36,
             "multimesh blend meta attr offset"
         );
+    }
+
+    #[test]
+    fn multimesh_instance_transform_matches_single_mesh_model_for_random_instances() {
+        let node_model = Mat4::from_scale_rotation_translation(
+            Vec3::new(1.4, 0.75, 1.1),
+            Quat::from_euler(glam::EulerRot::XYZ, 0.23, -0.41, 0.17),
+            Vec3::new(4.0, -2.0, 8.0),
+        );
+        let mut seed = 0x51d3_7a91u32;
+        let instance_scale = 1.35;
+        let local_points = [
+            Vec3::new(-1.0, -0.5, 0.25),
+            Vec3::new(0.35, 0.9, -0.75),
+            Vec3::new(1.25, -0.2, 0.8),
+        ];
+
+        for _ in 0..128 {
+            let position = next_vec3(&mut seed, -12.0, 12.0);
+            let scale = next_vec3(&mut seed, 0.1, 3.0);
+            let axis = next_vec3(&mut seed, -1.0, 1.0).normalize_or_zero();
+            let axis = if axis.length_squared() > 0.0 {
+                axis
+            } else {
+                Vec3::Y
+            };
+            let rotation = Quat::from_axis_angle(
+                axis,
+                next_range(&mut seed, -std::f32::consts::PI, std::f32::consts::PI),
+            );
+            let single_model = node_model
+                * Mat4::from_scale_rotation_translation(scale * instance_scale, rotation, position);
+
+            for point in local_points {
+                let multimesh_local =
+                    rotation.mul_vec3(point * (scale * instance_scale)) + position;
+                let multimesh_world = node_model.transform_point3(multimesh_local);
+                let single_world = single_model.transform_point3(point);
+                assert!(
+                    multimesh_world.distance(single_world) <= 0.0001,
+                    "multimesh {multimesh_world:?} single {single_world:?}"
+                );
+            }
+        }
     }
 
     #[test]

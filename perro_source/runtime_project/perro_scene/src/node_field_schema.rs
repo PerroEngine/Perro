@@ -1072,7 +1072,16 @@ fn mesh_fields(fields: &mut Vec<SceneNodeField>, node_type: NodeType) {
             fields,
             "Instances",
             "instances",
-            NodeFieldType::array(NodeFieldType::Vec3),
+            NodeFieldType::array(NodeFieldType::object(vec![
+                NodeFieldDef::new("position", NodeFieldType::Vec3),
+                NodeFieldDef::new("rotation", NodeFieldType::Quat),
+                NodeFieldDef::new("rotation_deg", NodeFieldType::Vec3),
+                NodeFieldDef::new("scale", NodeFieldType::Vec3),
+                NodeFieldDef::new(
+                    "blend_shape_weights",
+                    NodeFieldType::array(NodeFieldType::F32),
+                ),
+            ])),
         );
         push(
             fields,

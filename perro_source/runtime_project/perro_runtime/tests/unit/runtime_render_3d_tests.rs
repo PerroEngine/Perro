@@ -265,7 +265,7 @@ fn multimesh_blend_options_reach_dense_draw_command() {
     set_primary_material_multi(&mut multi, MaterialID::from_parts(10, 0));
     multi
         .instances
-        .push(perro_nodes::MultiMeshInstancePose::new(
+        .push(perro_nodes::MultiMeshInstancePose::from_pos_rot(
             Vector3::ZERO,
             Quaternion::IDENTITY,
         ));
@@ -343,7 +343,7 @@ fn multimesh_flip_xy_mirrors_node_model_about_local_origin() {
     set_primary_material_multi(&mut multi, MaterialID::from_parts(14, 0));
     multi
         .instances
-        .push(perro_nodes::MultiMeshInstancePose::new(
+        .push(perro_nodes::MultiMeshInstancePose::from_pos_rot(
             Vector3::ZERO,
             Quaternion::IDENTITY,
         ));
@@ -1319,8 +1319,14 @@ fn multi_mesh_instance_emits_draw_multi_with_instance_mats() {
 
     multi.instance_scale = 1.0;
     multi.instances = vec![
-        perro_nodes::MultiMeshInstancePose::new(Vector3::new(1.0, 0.0, 0.0), Quaternion::IDENTITY),
-        perro_nodes::MultiMeshInstancePose::new(Vector3::new(3.0, 0.0, 0.0), Quaternion::IDENTITY),
+        perro_nodes::MultiMeshInstancePose::from_pos_rot(
+            Vector3::new(1.0, 0.0, 0.0),
+            Quaternion::IDENTITY,
+        ),
+        perro_nodes::MultiMeshInstancePose::from_pos_rot(
+            Vector3::new(3.0, 0.0, 0.0),
+            Quaternion::IDENTITY,
+        ),
     ];
 
     let node = runtime
@@ -1363,6 +1369,38 @@ fn multi_mesh_instance_emits_draw_multi_with_instance_mats() {
 fn multi_mesh_instance_default_scale_is_one() {
     let multi = MultiMeshInstance3D::default();
     assert_eq!(multi.instance_scale, 1.0);
+}
+
+#[test]
+fn multi_mesh_instance_passes_instance_scale_to_dense_draw() {
+    let mut runtime = Runtime::new();
+    let mut multi = MultiMeshInstance3D::new();
+    multi.mesh = MeshID::from_parts(332, 0);
+    set_primary_material_multi(&mut multi, MaterialID::from_parts(333, 0));
+    multi.instances = vec![perro_nodes::MultiMeshInstancePose::new(Transform3D::new(
+        Vector3::new(1.0, 2.0, 3.0),
+        Quaternion::IDENTITY,
+        Vector3::new(2.0, 3.0, 4.0),
+    ))];
+
+    let node = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::MultiMeshInstance3D(multi)));
+
+    runtime.extract_render_3d_commands();
+    let commands = collect_commands(&mut runtime);
+    assert!(commands.iter().any(|command| matches!(
+        command,
+        RenderCommand::ThreeD(command_3d)
+            if matches!(
+                command_3d.as_ref(),
+                Command3D::DrawMultiDense {
+                    node: draw_node,
+                    instances,
+                    ..
+                } if *draw_node == node && instances[0].scale == [2.0, 3.0, 4.0]
+            )
+    )));
 }
 
 #[test]
@@ -1792,7 +1830,7 @@ fn multi_mesh_instance_passes_meshlet_override_to_draw_command() {
     multi.mesh = MeshID::from_parts(430, 0);
     multi.meshlet_override = Some(true);
     set_primary_material_multi(&mut multi, MaterialID::from_parts(431, 0));
-    multi.instances = vec![perro_nodes::MultiMeshInstancePose::new(
+    multi.instances = vec![perro_nodes::MultiMeshInstancePose::from_pos_rot(
         Vector3::new(0.0, 0.0, 0.0),
         Quaternion::IDENTITY,
     )];

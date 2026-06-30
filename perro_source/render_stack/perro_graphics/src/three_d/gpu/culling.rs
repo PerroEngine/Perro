@@ -295,6 +295,7 @@ impl Gpu3D {
             && base.draw_param_index == next.draw_param_index
             && base.double_sided == next.double_sided
             && base.mesh_blend == next.mesh_blend
+            && base.material_kind == next.material_kind
     }
 
     #[inline]

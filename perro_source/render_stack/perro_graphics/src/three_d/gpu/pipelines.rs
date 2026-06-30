@@ -42,6 +42,9 @@ impl Gpu3D {
         if path == RenderPath3D::Skinned && self.custom_pipelines.contains_key(&token) {
             return Some(token);
         }
+        if path == RenderPath3D::MultiMesh && self.custom_pipelines_multimesh.contains_key(&token) {
+            return Some(token);
+        }
         let src = if let Some(lookup) = static_shader_lookup {
             let shader_hash = perro_ids::parse_hashed_source_uri(shader_path)
                 .unwrap_or_else(|| perro_ids::string_to_u64(shader_path));
@@ -55,7 +58,9 @@ impl Gpu3D {
             let src = std::str::from_utf8(&bytes).ok()?;
             Some(Cow::Owned(src.to_string()))
         })?;
-        let wgsl = if path == RenderPath3D::Rigid {
+        let wgsl = if path == RenderPath3D::MultiMesh {
+            build_custom_multimesh_material_shader(src.as_ref(), lighting)
+        } else if path == RenderPath3D::Rigid {
             build_custom_material_shader_with_prelude(
                 perro_macros::include_str_stripped!("shaders/prelude_rigid_3d.wgsl"),
                 src.as_ref(),
@@ -72,7 +77,16 @@ impl Gpu3D {
             label: Some("perro_mesh_custom"),
             source: wgpu::ShaderSource::Wgsl(wgsl.into()),
         });
-        let pipeline_culled = if path == RenderPath3D::Rigid {
+        let pipeline_culled = if path == RenderPath3D::MultiMesh {
+            create_multimesh_pipeline(
+                device,
+                &self.multimesh_pipeline_layout,
+                &shader,
+                self.color_format,
+                self.sample_count,
+                Some(wgpu::Face::Back),
+            )
+        } else if path == RenderPath3D::Rigid {
             create_pipeline_rigid(
                 device,
                 &self.rigid_material_pipeline_layout,
@@ -91,7 +105,16 @@ impl Gpu3D {
                 Some(wgpu::Face::Back),
             )
         };
-        let pipeline_double_sided = if path == RenderPath3D::Rigid {
+        let pipeline_double_sided = if path == RenderPath3D::MultiMesh {
+            create_multimesh_pipeline(
+                device,
+                &self.multimesh_pipeline_layout,
+                &shader,
+                self.color_format,
+                self.sample_count,
+                None,
+            )
+        } else if path == RenderPath3D::Rigid {
             create_pipeline_rigid(
                 device,
                 &self.rigid_material_pipeline_layout,
@@ -110,7 +133,16 @@ impl Gpu3D {
                 None,
             )
         };
-        let pipeline_blend_culled = if path == RenderPath3D::Rigid {
+        let pipeline_blend_culled = if path == RenderPath3D::MultiMesh {
+            create_multimesh_blend_pipeline(
+                device,
+                &self.multimesh_pipeline_layout,
+                &shader,
+                self.color_format,
+                self.sample_count,
+                Some(wgpu::Face::Back),
+            )
+        } else if path == RenderPath3D::Rigid {
             create_pipeline_rigid_blend(
                 device,
                 &self.rigid_material_pipeline_layout,
@@ -129,7 +161,16 @@ impl Gpu3D {
                 Some(wgpu::Face::Back),
             )
         };
-        let pipeline_blend_double_sided = if path == RenderPath3D::Rigid {
+        let pipeline_blend_double_sided = if path == RenderPath3D::MultiMesh {
+            create_multimesh_blend_pipeline(
+                device,
+                &self.multimesh_pipeline_layout,
+                &shader,
+                self.color_format,
+                self.sample_count,
+                None,
+            )
+        } else if path == RenderPath3D::Rigid {
             create_pipeline_rigid_blend(
                 device,
                 &self.rigid_material_pipeline_layout,
@@ -148,7 +189,9 @@ impl Gpu3D {
                 None,
             )
         };
-        let map = if path == RenderPath3D::Rigid {
+        let map = if path == RenderPath3D::MultiMesh {
+            &mut self.custom_pipelines_multimesh
+        } else if path == RenderPath3D::Rigid {
             &mut self.custom_pipelines_rigid
         } else {
             &mut self.custom_pipelines

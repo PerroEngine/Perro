@@ -274,7 +274,7 @@ See [TileMap2D](tilemap.md).
 
 - Renders many copies of one mesh.
 - Uses shared mesh/material surface bindings.
-- `instances` stores per-instance position and rotation.
+- `instances` stores per-instance transform: position, rotation, and scale.
 - Use it for repeated static props, foliage, debris, or crowd-like non-skinned copies.
 - Supports same LOD clamp fields as `MeshInstance3D`.
 - Supports `flip_x`, `flip_y`, and `flip_z` on the whole multimesh node.
@@ -488,7 +488,7 @@ MultiMesh defaults and per-instance overrides:
         blend_shape_weights = [0.25, 0.0, 0.5]
         instances = [
             { position = (0, 0, 0) },
-            { position = (2, 0, 0), blend_shape_weights = [1.0, 0.2] },
+            { position = (2, 0, 0), scale = (1.2, 1.0, 1.2), blend_shape_weights = [1.0, 0.2] },
         ]
     [/MultiMeshInstance3D]
 [/Crowd]

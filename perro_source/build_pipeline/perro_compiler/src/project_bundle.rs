@@ -76,7 +76,12 @@ pub fn compile_project_bundle(
         .map_err(|err| CompilerError::SceneParse(format!("static mod generation failed: {err}")))?;
     generate_embedded_entry_files(project_root)?;
     generate_perro_assets(project_root)?;
-    build_project_crate(project_root, options, cfg.steam.enabled)?;
+    build_project_crate(
+        project_root,
+        options,
+        cfg.steam.enabled,
+        cfg.metadata.version.as_deref(),
+    )?;
     Ok(())
 }
 
@@ -102,6 +107,7 @@ fn build_project_crate(
     project_root: &Path,
     options: ProjectBuildOptions,
     steam_enabled: bool,
+    version: Option<&str>,
 ) -> Result<(), CompilerError> {
     let project_crate = project_root.join(".perro").join("project");
     let target_dir = project_root.join("target");
@@ -163,7 +169,13 @@ fn build_project_crate(
         return Err(CompilerError::CargoFailed(status.code().unwrap_or(-1)));
     }
     match options.target {
-        ProjectBuildTarget::Native => export_project_binary(project_root, &target_dir)?,
+        ProjectBuildTarget::Native => export_project_binary(
+            project_root,
+            &target_dir,
+            options.release,
+            steam_enabled,
+            version,
+        )?,
         ProjectBuildTarget::Web => export_project_web_bundle(project_root, &target_dir, options)?,
         ProjectBuildTarget::Android => export_project_android_bundle(project_root, &target_dir)?,
     }
@@ -179,11 +191,18 @@ fn append_rustflag(existing: Option<std::ffi::OsString>, flag: &str) -> std::ffi
     out
 }
 
-fn export_project_binary(project_root: &Path, target_dir: &Path) -> Result<(), CompilerError> {
+fn export_project_binary(
+    project_root: &Path,
+    target_dir: &Path,
+    release: bool,
+    steam_enabled: bool,
+    version: Option<&str>,
+) -> Result<(), CompilerError> {
     let package_bin_name = read_project_package_name(project_root)?;
     let output_bin_name = read_project_output_binary_name(project_root, &package_bin_name)?;
+    let profile_dir = if release { "release" } else { "debug" };
     let built_bin = target_dir
-        .join("release")
+        .join(profile_dir)
         .join(platform_binary_name(&package_bin_name));
     if !built_bin.exists() {
         return Err(CompilerError::SceneParse(format!(
@@ -192,14 +211,102 @@ fn export_project_binary(project_root: &Path, target_dir: &Path) -> Result<(), C
         )));
     }
 
-    let output_dir = project_root.join(".output");
+    let output_dir = project_root
+        .join(".output")
+        .join(native_output_folder_name(&output_bin_name, version));
     fs::create_dir_all(&output_dir)?;
     let copied_bin = output_dir.join(platform_binary_name(&package_bin_name));
     let output_bin = output_dir.join(platform_binary_name(&output_bin_name));
     fs::copy(&built_bin, &copied_bin)?;
     rename_exported_binary(&copied_bin, &output_bin)?;
+    if steam_enabled {
+        let _ = copy_steam_runtime_library(target_dir, profile_dir, &output_dir)?;
+    }
     println!("exported project binary: {}", output_bin.display());
     Ok(())
+}
+
+fn native_output_folder_name(output_name: &str, version: Option<&str>) -> String {
+    format!(
+        "{}-{}-{}",
+        package_name_slug(output_name),
+        host_system_slug(),
+        package_name_slug(version.unwrap_or("dev"))
+    )
+}
+
+fn package_name_slug(name: &str) -> String {
+    let slug = name
+        .chars()
+        .map(|ch| match ch {
+            'a'..='z' | 'A'..='Z' | '0'..='9' | '-' | '_' | '.' => ch,
+            _ => '_',
+        })
+        .collect::<String>();
+    if slug.is_empty() {
+        "perro-project".to_string()
+    } else {
+        slug
+    }
+}
+
+fn host_os_slug() -> &'static str {
+    if cfg!(target_os = "windows") {
+        "windows"
+    } else if cfg!(target_os = "linux") {
+        "linux"
+    } else if cfg!(target_os = "macos") {
+        "macos"
+    } else {
+        std::env::consts::OS
+    }
+}
+
+fn host_system_slug() -> String {
+    format!("{}-{}", host_os_slug(), std::env::consts::ARCH)
+}
+
+fn copy_steam_runtime_library(
+    target_dir: &Path,
+    profile_dir: &str,
+    output_dir: &Path,
+) -> Result<Option<PathBuf>, CompilerError> {
+    let Some(library_name) = steam_runtime_library_name() else {
+        return Ok(None);
+    };
+    let build_dir = target_dir.join(profile_dir).join("build");
+    let source = find_steam_runtime_library(&build_dir, library_name).ok_or_else(|| {
+        CompilerError::SceneParse(format!(
+            "Steam enabled but {library_name} was not found under {}",
+            build_dir.display()
+        ))
+    })?;
+    let target = output_dir.join(library_name);
+    fs::copy(&source, &target)?;
+    Ok(Some(target))
+}
+
+fn steam_runtime_library_name() -> Option<&'static str> {
+    if cfg!(target_os = "windows") {
+        Some("steam_api64.dll")
+    } else if cfg!(target_os = "linux") {
+        Some("libsteam_api.so")
+    } else if cfg!(target_os = "macos") {
+        Some("libsteam_api.dylib")
+    } else {
+        None
+    }
+}
+
+fn find_steam_runtime_library(build_dir: &Path, library_name: &str) -> Option<PathBuf> {
+    let entries = fs::read_dir(build_dir).ok()?;
+    for entry in entries.flatten() {
+        let path = entry.path().join("out").join(library_name);
+        if path.exists() {
+            return Some(path);
+        }
+    }
+    None
 }
 
 fn export_project_android_bundle(

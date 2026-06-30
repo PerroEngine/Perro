@@ -678,6 +678,13 @@ impl Gpu3D {
                 for entry in surface_entries.iter() {
                     let material = &entry.material;
                     let params = material.standard_params();
+                    let material_kind = self.material_pipeline_kind(
+                        device,
+                        RenderPath3D::MultiMesh,
+                        material,
+                        static_shader_lookup,
+                    );
+                    let custom_params = self.stage_custom_params(material);
                     let packed_color = pack_unorm4x8(params.base_color_factor);
                     let packed_emissive = pack_unorm4x8([
                         params.emissive_factor[0],
@@ -710,6 +717,7 @@ impl Gpu3D {
                             packed_emissive,
                             scale_bits: dense.instance_scale.max(0.0001).to_bits(),
                             packed_blend_params: resolved_blend.packed_params,
+                            custom_params: [custom_params.0, custom_params.1],
                         });
                     let mirrored_winding = draw_model.determinant() < 0.0;
                     let instance_start = self.staged_multimesh_instances.len() as u32;
@@ -724,6 +732,7 @@ impl Gpu3D {
                         self.staged_multimesh_instances.push(MultiMeshInstanceGpu {
                             position: pose.position,
                             rotation: pack_quat_snorm16x4(pose.rotation),
+                            scale: pose.scale,
                             draw_id: draw_param_index,
                             blend_meta_id,
                         });
@@ -740,6 +749,7 @@ impl Gpu3D {
                                 || mirrored_winding
                                 || flat_builtin_double_sided,
                             mesh_blend: resolved_mesh_blend_active(resolved_blend),
+                            material_kind,
                         });
                     }
                 }
@@ -1275,23 +1285,11 @@ impl Gpu3D {
         self.rebuild_batch_views();
         if !multimesh_batches_sorted(&self.multimesh_batches) {
             if self.multimesh_batches.len() >= PARALLEL_BATCH_SORT_MIN {
-                self.multimesh_batches.par_sort_unstable_by_key(|b| {
-                    (
-                        b.mesh_blend,
-                        b.double_sided,
-                        b.mesh.index_start,
-                        b.draw_param_index,
-                    )
-                });
+                self.multimesh_batches
+                    .par_sort_unstable_by_key(multimesh_batch_sort_key);
             } else {
-                self.multimesh_batches.sort_unstable_by_key(|b| {
-                    (
-                        b.mesh_blend,
-                        b.double_sided,
-                        b.mesh.index_start,
-                        b.draw_param_index,
-                    )
-                });
+                self.multimesh_batches
+                    .sort_unstable_by_key(multimesh_batch_sort_key);
             }
         }
         self.compact_sorted_multimesh_batches();

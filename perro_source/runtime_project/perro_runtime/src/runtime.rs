@@ -16,6 +16,8 @@ use std::{cell::RefCell, sync::Arc};
 #[cfg(target_arch = "wasm32")]
 use web_time::Instant;
 
+const STARTUP_INPUT_CLEAR_FRAMES: u32 = 100;
+
 // Runtime subsystem leaves. Public API glue stays here; heavy behavior lives in folders.
 mod audio;
 mod input_bridge;
@@ -154,6 +156,7 @@ pub struct Runtime {
     pub(crate) node_api_scratch: NodeApiScratchState,
     pub(crate) resource_api: Arc<RuntimeResourceApi>,
     pub(crate) input: InputSnapshot,
+    startup_input_clear_frames_left: u32,
     cursor_icon_request: Option<perro_ui::CursorIcon>,
     pub(crate) window_requests: Vec<WindowRequest>,
     pub(crate) active_refresh_rate: Option<f32>,
@@ -355,6 +358,7 @@ impl Runtime {
             node_api_scratch: NodeApiScratchState::new(),
             resource_api: RuntimeResourceApi::new(None, None, None, None, None, None, None, None),
             input: InputSnapshot::new(),
+            startup_input_clear_frames_left: 0,
             cursor_icon_request: None,
             window_requests: Vec::new(),
             active_refresh_rate: None,
@@ -541,6 +545,7 @@ impl Runtime {
         let steam_config = project.config.steam.clone();
         runtime.project = Some(Arc::new(project));
         runtime.provider_mode = provider_mode;
+        runtime.startup_input_clear_frames_left = STARTUP_INPUT_CLEAR_FRAMES;
         runtime.resource_api = RuntimeResourceApi::new(
             static_material_lookup,
             static_audio_lookup,
@@ -565,7 +570,9 @@ impl Runtime {
         if let Err(err) =
             perro_steamworks::runtime::init_from_config(steam_config.enabled, steam_config.app_id)
         {
-            panic!("failed to initialize Steam: {err}");
+            eprintln!(
+                "[runtime][warn] Steam enabled but init failed: {err}. Steam features stay unavailable. Check that Steam is open, the app_id is valid, and the account has access."
+            );
         }
         if let Err(err) = runtime.load_boot_scene() {
             panic!("failed to load boot scene: {err}");
@@ -583,6 +590,7 @@ impl Runtime {
 
     #[inline]
     pub fn update(&mut self, delta_time: f32) {
+        self.clear_startup_keyboard_mouse();
         self.time.delta = delta_time;
         self.flush_queued_ui_signals();
         self.process_pending_web_route_change();
@@ -600,6 +608,7 @@ impl Runtime {
     #[inline]
     pub fn update_timed(&mut self, delta_time: f32) -> RuntimeUpdateTiming {
         let total_start = Instant::now();
+        self.clear_startup_keyboard_mouse();
         self.time.delta = delta_time;
         self.flush_queued_ui_signals();
         self.process_pending_web_route_change();
@@ -634,6 +643,7 @@ impl Runtime {
 
     #[inline]
     pub fn fixed_update(&mut self, fixed_delta_time: f32) {
+        self.clear_startup_keyboard_mouse();
         self.time.fixed_delta = fixed_delta_time;
         self.schedules.snapshot_fixed(&self.scripts);
         self.run_fixed_schedule();
@@ -645,6 +655,7 @@ impl Runtime {
     #[inline]
     pub fn fixed_update_timed(&mut self, fixed_delta_time: f32) -> RuntimeFixedUpdateTiming {
         let total_start = Instant::now();
+        self.clear_startup_keyboard_mouse();
         self.time.fixed_delta = fixed_delta_time;
 
         let snapshot_start = Instant::now();

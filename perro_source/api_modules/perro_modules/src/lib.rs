@@ -3,6 +3,7 @@ pub mod json;
 pub mod log;
 pub mod math;
 pub mod random;
+pub mod zip;
 
 pub mod prelude {
     pub use crate::file as FileMod;
@@ -23,6 +24,7 @@ pub mod prelude {
         rand_range_u32, rand_u32, rand_u32_stream, rand_unit_vec2, rand_unit_vec3, rand01,
         rand01_stream, rand11, rand11_stream, shuffle,
     };
+    pub use crate::zip as ZipMod;
     pub use crate::{log_error, log_info, log_print, log_warn};
 }
 

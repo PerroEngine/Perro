@@ -217,6 +217,7 @@ pub enum Command3D {
 #[derive(Debug, Clone, PartialEq)]
 pub struct DenseInstancePose3D {
     pub position: [f32; 3],
+    pub scale: [f32; 3],
     pub rotation: [f32; 4],
     pub has_blend_shape_weight_override: bool,
     pub blend_shape_weights: Arc<[f32]>,

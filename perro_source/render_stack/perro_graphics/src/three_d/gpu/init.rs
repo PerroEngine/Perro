@@ -280,6 +280,26 @@ impl Gpu3D {
                     },
                     count: None,
                 },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 6,
+                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 7,
+                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
             ],
         });
         let material_texture_bgl =
@@ -1364,6 +1384,14 @@ impl Gpu3D {
                     binding: 5,
                     resource: blend_shape_instance_meta_buffer.as_entire_binding(),
                 },
+                wgpu::BindGroupEntry {
+                    binding: 6,
+                    resource: custom_params_meta_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 7,
+                    resource: custom_params_values_buffer.as_entire_binding(),
+                },
             ],
         });
         let mesh_blend_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -1558,6 +1586,7 @@ impl Gpu3D {
             sky_bgl,
             material_pipeline_layout: pipeline_layout,
             rigid_material_pipeline_layout: rigid_pipeline_layout,
+            multimesh_pipeline_layout,
             sky_pipeline_layout,
             sky_pipeline,
             custom_sky_pipelines: AHashMap::new(),
@@ -1808,6 +1837,7 @@ impl Gpu3D {
             perf_counters: RenderPerfCounters::default(),
             custom_pipelines: AHashMap::new(),
             custom_pipelines_rigid: AHashMap::new(),
+            custom_pipelines_multimesh: AHashMap::new(),
             custom_pipeline_tokens: AHashMap::new(),
             next_custom_pipeline_token: 1,
         };

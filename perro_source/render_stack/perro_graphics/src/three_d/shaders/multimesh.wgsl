@@ -39,6 +39,7 @@ struct MultiMeshDrawParam {
     packed_emissive: u32,
     scale_bits: u32,
     packed_blend_params: u32,
+    custom_params: vec2<u32>,
 }
 
 @group(0) @binding(0)
@@ -53,6 +54,10 @@ var<storage, read> blend_shape_deltas: array<BlendShapeDelta>;
 var<storage, read> blend_shape_weights: array<f32>;
 @group(0) @binding(5)
 var<storage, read> blend_shape_instances: array<BlendShapeInstance>;
+@group(0) @binding(6)
+var<storage, read> custom_params_meta: array<u32>;
+@group(0) @binding(7)
+var<storage, read> custom_params_values: array<f32>;
 
 struct VertexInput {
     @location(0) pos: vec3<f32>,
@@ -62,8 +67,9 @@ struct VertexInput {
 struct InstanceInput {
     @location(4) position: vec3<f32>,
     @location(5) rotation: vec4<f32>,
-    @location(6) draw_id: u32,
-    @location(7) blend_meta_id: u32,
+    @location(6) scale: vec3<f32>,
+    @location(7) draw_id: u32,
+    @location(8) blend_meta_id: u32,
 };
 
 struct BlendShapeDelta {
@@ -81,12 +87,20 @@ struct VertexOutput {
     @location(0) lit_color: vec3<f32>,
     @location(1) @interpolate(flat) packed_blend_params: u32,
     @location(2) world_pos: vec3<f32>,
+    @location(3) normal_ws: vec3<f32>,
+    @location(4) @interpolate(flat) custom_range: vec2<u32>,
+    @location(5) uv: vec2<f32>,
+    @location(6) frag_pos: vec4<f32>,
 };
 
 struct FragmentInput {
     @location(0) lit_color: vec3<f32>,
     @location(1) @interpolate(flat) packed_blend_params: u32,
     @location(2) world_pos: vec3<f32>,
+    @location(3) normal_ws: vec3<f32>,
+    @location(4) @interpolate(flat) custom_range: vec2<u32>,
+    @location(5) uv: vec2<f32>,
+    @location(6) frag_pos: vec4<f32>,
 };
 
 fn unpack_rgba8(v: u32) -> vec4<f32> {
@@ -225,13 +239,113 @@ fn apply_blend_shapes(v: VertexInput, inst: InstanceInput, vertex_index: u32) ->
     return VertexInput(out_pos, vec4<f32>(normalize(out_normal), 0.0));
 }
 
-@vertex
-fn vs_main(v: VertexInput, inst: InstanceInput, @builtin(vertex_index) vertex_index: u32) -> VertexOutput {
+fn custom_f_param(in: FragmentInput, index: u32) -> vec4<f32> {
+    if index >= in.custom_range.y {
+        return vec4<f32>(0.0);
+    }
+    let packed_meta = custom_params_meta[in.custom_range.x + index];
+    let kind = packed_meta & 0x3u;
+    let value_offset = packed_meta >> 2u;
+    if kind == 0u {
+        return vec4<f32>(custom_params_values[value_offset], 0.0, 0.0, 0.0);
+    }
+    if kind == 1u {
+        return vec4<f32>(
+            custom_params_values[value_offset],
+            custom_params_values[value_offset + 1u],
+            0.0,
+            0.0,
+        );
+    }
+    if kind == 2u {
+        return vec4<f32>(
+            custom_params_values[value_offset],
+            custom_params_values[value_offset + 1u],
+            custom_params_values[value_offset + 2u],
+            0.0,
+        );
+    }
+    return vec4<f32>(
+        custom_params_values[value_offset],
+        custom_params_values[value_offset + 1u],
+        custom_params_values[value_offset + 2u],
+        custom_params_values[value_offset + 3u],
+    );
+}
+
+fn custom_v_param(out: VertexOutput, index: u32) -> vec4<f32> {
+    if index >= out.custom_range.y {
+        return vec4<f32>(0.0);
+    }
+    let packed_meta = custom_params_meta[out.custom_range.x + index];
+    let kind = packed_meta & 0x3u;
+    let value_offset = packed_meta >> 2u;
+    if kind == 0u {
+        return vec4<f32>(custom_params_values[value_offset], 0.0, 0.0, 0.0);
+    }
+    if kind == 1u {
+        return vec4<f32>(
+            custom_params_values[value_offset],
+            custom_params_values[value_offset + 1u],
+            0.0,
+            0.0,
+        );
+    }
+    if kind == 2u {
+        return vec4<f32>(
+            custom_params_values[value_offset],
+            custom_params_values[value_offset + 1u],
+            custom_params_values[value_offset + 2u],
+            0.0,
+        );
+    }
+    return vec4<f32>(
+        custom_params_values[value_offset],
+        custom_params_values[value_offset + 1u],
+        custom_params_values[value_offset + 2u],
+        custom_params_values[value_offset + 3u],
+    );
+}
+
+fn custom_param(in: FragmentInput, index: u32) -> vec4<f32> {
+    return custom_f_param(in, index);
+}
+
+fn custom_param_vertex(out: VertexOutput, index: u32) -> vec4<f32> {
+    return custom_v_param(out, index);
+}
+
+fn perro_lit_standard(
+    in: FragmentInput,
+    base: vec4<f32>,
+    roughness: f32,
+    metallic: f32,
+    occlusion: f32,
+    emissive: vec3<f32>,
+) -> vec4<f32> {
+    let _roughness = roughness;
+    let _metallic = metallic;
+    let n = normalize(in.normal_ws);
+    let ambient = scene.ambient_color.xyz * scene.ambient_color.w * occlusion;
+    var lit = ambient;
+    let ray_count = u32(scene.ambient_and_counts.x);
+    if ray_count > 0u {
+        let ray = scene.ray_lights[0];
+        let ray_dir = ray.direction.xyz;
+        let l = -ray_dir * inverseSqrt(max(dot(ray_dir, ray_dir), 1.0e-8));
+        let lambert = max(dot(n, l), 0.0);
+        lit += ray.color_intensity.xyz * ray.color_intensity.w * lambert;
+    }
+    let alpha = mesh_blend_alpha(in.frag_pos, in.world_pos, in.packed_blend_params) * base.a;
+    return vec4<f32>(base.rgb * lit + emissive, alpha);
+}
+
+fn perro_multimesh_vs_main_base(v: VertexInput, inst: InstanceInput, vertex_index: u32) -> VertexOutput {
     let draw = multimesh_draws[inst.draw_id];
     let scale = bitcast<f32>(draw.scale_bits);
     let rot = normalize(inst.rotation);
     let blended = apply_blend_shapes(v, inst, vertex_index);
-    let local_pos = rotate_vec_by_quat(blended.pos * scale, rot) + inst.position;
+    let local_pos = rotate_vec_by_quat(blended.pos * (inst.scale * scale), rot) + inst.position;
     let local_nrm = rotate_vec_by_quat(blended.normal.xyz, rot);
     let p = vec4<f32>(local_pos, 1.0);
     let world = vec4<f32>(
@@ -265,7 +379,16 @@ fn vs_main(v: VertexInput, inst: InstanceInput, @builtin(vertex_index) vertex_in
     out.lit_color = base.rgb * lit + emissive.rgb;
     out.packed_blend_params = draw.packed_blend_params;
     out.world_pos = world.xyz;
+    out.normal_ws = normal_ws;
+    out.custom_range = draw.custom_params;
+    out.uv = vec2<f32>(0.0);
+    out.frag_pos = out.clip_pos;
     return out;
+}
+
+@vertex
+fn vs_main(v: VertexInput, inst: InstanceInput, @builtin(vertex_index) vertex_index: u32) -> VertexOutput {
+    return perro_multimesh_vs_main_base(v, inst, vertex_index);
 }
 
 @fragment

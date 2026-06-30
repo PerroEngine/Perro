@@ -110,7 +110,7 @@ fn test_variant_shared_cell_parse_helper() {
     assert_eq!(Variant::from(Rc::clone(&rc)), Variant::from("name"));
 
     let cell = Variant::from(true).parse::<RefCell<bool>>().unwrap();
-    assert_eq!(*cell.borrow(), true);
+    assert!(*cell.borrow());
     assert_eq!(Variant::from(cell), Variant::from(true));
 }
 

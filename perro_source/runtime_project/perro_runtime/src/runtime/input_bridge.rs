@@ -9,11 +9,15 @@ impl Runtime {
     pub fn begin_input_frame(&mut self) {
         self.input.apply_queued_commands();
         self.input.begin_frame();
+        self.clear_startup_keyboard_mouse();
+        self.tick_startup_input_clear_frame();
     }
 
     #[inline]
     pub fn apply_input_frame(&mut self, frame: &InputFrame) {
         frame.apply_to_snapshot(&mut self.input);
+        self.clear_startup_keyboard_mouse();
+        self.tick_startup_input_clear_frame();
     }
 
     #[inline]
@@ -247,5 +251,52 @@ impl Runtime {
     #[inline]
     pub fn bind_player(&mut self, index: usize, binding: PlayerBinding) {
         self.input.bind_player(index, binding);
+    }
+
+    #[inline]
+    pub(crate) fn clear_startup_keyboard_mouse(&mut self) {
+        if self.startup_input_clear_frames_left == 0 {
+            return;
+        }
+        self.input.clear_keyboard_mouse_state();
+    }
+
+    #[inline]
+    fn tick_startup_input_clear_frame(&mut self) {
+        if self.startup_input_clear_frames_left == 0 {
+            return;
+        }
+        self.startup_input_clear_frames_left -= 1;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Runtime;
+    use perro_input_api::{KeyCode, MouseButton};
+
+    #[test]
+    fn startup_input_clear_blocks_keyboard_mouse_until_gate_ends() {
+        let mut runtime = Runtime::new();
+        runtime.startup_input_clear_frames_left = super::super::STARTUP_INPUT_CLEAR_FRAMES;
+
+        runtime.set_key_state(KeyCode::KeyW, true);
+        runtime.set_mouse_button_state(MouseButton::Left, true);
+        runtime.update(1.0 / 60.0);
+
+        assert!(!runtime.input.is_key_down(KeyCode::KeyW));
+        assert!(!runtime.input.is_mouse_down(MouseButton::Left));
+
+        for _ in 0..100 {
+            runtime.begin_input_frame();
+        }
+
+        runtime.set_key_state(KeyCode::KeyW, true);
+        runtime.set_mouse_button_state(MouseButton::Left, true);
+
+        assert!(runtime.input.is_key_down(KeyCode::KeyW));
+        assert!(runtime.input.is_key_pressed(KeyCode::KeyW));
+        assert!(runtime.input.is_mouse_down(MouseButton::Left));
+        assert!(runtime.input.is_mouse_pressed(MouseButton::Left));
     }
 }

@@ -1,7 +1,7 @@
 use crate::mesh_instance_3d::{LODOptions, MeshBlendOptions, MeshSurfaceBinding};
 use crate::node_3d::Node3D;
 use perro_ids::MeshID;
-use perro_structs::{Quaternion, Vector3};
+use perro_structs::{Quaternion, Transform3D, Vector3};
 use std::ops::{Deref, DerefMut};
 
 impl Deref for MultiMeshInstance3D {
@@ -18,19 +18,23 @@ impl DerefMut for MultiMeshInstance3D {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct MultiMeshInstancePose {
-    pub position: Vector3,
-    pub rotation: Quaternion,
+pub struct MultiMeshInstanceTransform {
+    pub transform: Transform3D,
     pub blend_shape_weights: Option<Vec<f32>>,
 }
 
-impl MultiMeshInstancePose {
-    pub const fn new(position: Vector3, rotation: Quaternion) -> Self {
+pub type MultiMeshInstancePose = MultiMeshInstanceTransform;
+
+impl MultiMeshInstanceTransform {
+    pub const fn new(transform: Transform3D) -> Self {
         Self {
-            position,
-            rotation,
+            transform,
             blend_shape_weights: None,
         }
+    }
+
+    pub const fn from_pos_rot(position: Vector3, rotation: Quaternion) -> Self {
+        Self::new(Transform3D::new(position, rotation, Vector3::ONE))
     }
 }
 
@@ -39,7 +43,7 @@ pub struct MultiMeshInstance3D {
     pub base: Node3D,
     pub mesh: MeshID,
     pub surfaces: Vec<MeshSurfaceBinding>,
-    pub instances: Vec<MultiMeshInstancePose>,
+    pub instances: Vec<MultiMeshInstanceTransform>,
     pub instance_scale: f32,
     pub blend_shape_weights: Vec<f32>,
     pub flip_x: bool,

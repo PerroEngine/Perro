@@ -1,3 +1,4 @@
+use crate::project::copy_steam_runtime_library;
 #[cfg(target_os = "windows")]
 use crate::project::prompt_yes_no;
 use crate::vscode::{
@@ -95,6 +96,9 @@ pub(crate) fn mem_profile_command(args: &[String], cwd: &Path) -> Result<(), Str
     } else {
         target_dir.join(profile_dir).join("perro_dev_runner")
     };
+    if project_cfg.steam.enabled {
+        copy_steam_runtime_library(&target_dir, profile_dir, &target_dir.join(profile_dir))?;
+    }
     log_note("Running Dev Runner");
 
     let mut run_cmd = Command::new(&runner_path);

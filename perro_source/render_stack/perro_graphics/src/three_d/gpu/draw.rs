@@ -792,10 +792,16 @@ pub(super) fn draw_batches_sorted(batches: &[DrawBatch]) -> bool {
 }
 
 #[inline]
-fn multimesh_batch_sort_key(batch: &MultiMeshBatch) -> (bool, bool, u32, u32) {
+pub(super) fn multimesh_batch_sort_key(batch: &MultiMeshBatch) -> (bool, bool, u8, u32, u32, u32) {
+    let custom_token = match batch.material_kind {
+        MaterialPipelineKind::Custom(token) => token,
+        _ => 0,
+    };
     (
         batch.mesh_blend,
         batch.double_sided,
+        material_pipeline_kind_rank(&batch.material_kind),
+        custom_token,
         batch.mesh.index_start,
         batch.draw_param_index,
     )
@@ -830,6 +836,7 @@ pub(super) fn draw_batch_state_key(
     let path_bits = match path {
         RenderPath3D::Rigid => 0u64,
         RenderPath3D::Skinned => 1u64,
+        RenderPath3D::MultiMesh => 2u64,
     };
     let top_bits = u64::from(draw_on_top) << 1;
     let sided_bits = u64::from(double_sided) << 2;

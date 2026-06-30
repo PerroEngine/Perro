@@ -872,6 +872,7 @@ fn draw_multi_dense_command(count: u32, mesh: MeshID, material: MaterialID) -> R
                 0.0,
                 (i / 256) as f32 * 0.08 - 10.0,
             ],
+            scale: [1.0, 1.0, 1.0],
             rotation: [0.0, 0.0, 0.0, 1.0],
             has_blend_shape_weight_override: false,
             blend_shape_weights: Arc::from([]),

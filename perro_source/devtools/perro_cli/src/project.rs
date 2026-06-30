@@ -296,6 +296,9 @@ pub(crate) fn dev_command(args: &[String], cwd: &Path) -> Result<(), String> {
     } else {
         target_dir.join(profile_dir).join("perro_dev_runner")
     };
+    if project_cfg.steam.enabled {
+        copy_steam_runtime_library(&target_dir, profile_dir, &target_dir.join(profile_dir))?;
+    }
     log_note("Running Dev Runner");
 
     let mut run_cmd = Command::new(&runner_path);
@@ -322,6 +325,57 @@ pub(crate) fn dev_command(args: &[String], cwd: &Path) -> Result<(), String> {
     }
     log_done("Dev Runner Finished");
     Ok(())
+}
+
+pub(crate) fn copy_steam_runtime_library(
+    target_dir: &Path,
+    profile_dir: &str,
+    output_dir: &Path,
+) -> Result<(), String> {
+    let Some(library_name) = steam_runtime_library_name() else {
+        return Ok(());
+    };
+    let build_dir = target_dir.join(profile_dir).join("build");
+    let source = find_steam_runtime_library(&build_dir, library_name).ok_or_else(|| {
+        format!(
+            "Steam enabled but {library_name} was not found under {}",
+            build_dir.display()
+        )
+    })?;
+    fs::create_dir_all(output_dir)
+        .map_err(|err| format!("failed to create {}: {err}", output_dir.display()))?;
+    let target = output_dir.join(library_name);
+    fs::copy(&source, &target).map_err(|err| {
+        format!(
+            "failed to copy Steam runtime library from {} to {}: {err}",
+            source.display(),
+            target.display()
+        )
+    })?;
+    Ok(())
+}
+
+fn steam_runtime_library_name() -> Option<&'static str> {
+    if cfg!(target_os = "windows") {
+        Some("steam_api64.dll")
+    } else if cfg!(target_os = "linux") {
+        Some("libsteam_api.so")
+    } else if cfg!(target_os = "macos") {
+        Some("libsteam_api.dylib")
+    } else {
+        None
+    }
+}
+
+fn find_steam_runtime_library(build_dir: &Path, library_name: &str) -> Option<PathBuf> {
+    let entries = fs::read_dir(build_dir).ok()?;
+    for entry in entries.flatten() {
+        let path = entry.path().join("out").join(library_name);
+        if path.exists() {
+            return Some(path);
+        }
+    }
+    None
 }
 
 pub(crate) fn format_command(args: &[String], cwd: &Path) -> Result<(), String> {

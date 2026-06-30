@@ -767,13 +767,14 @@ fn parse_instance_posrot(items: &[SceneValue]) -> Vec<perro_nodes::MultiMeshInst
     for item in items {
         match item {
             SceneValue::Vec3 { x, y, z } => {
-                out.push(perro_nodes::MultiMeshInstancePose::new(
+                out.push(perro_nodes::MultiMeshInstancePose::from_pos_rot(
                     perro_structs::Vector3::new(*x, *y, *z),
                     perro_structs::Quaternion::IDENTITY,
                 ));
             }
             SceneValue::Object(entries) => {
                 let mut pos = perro_structs::Vector3::ZERO;
+                let mut scale = perro_structs::Vector3::ONE;
                 let mut rot = perro_structs::Quaternion::IDENTITY;
                 let mut rot_deg: Option<perro_structs::Vector3> = None;
                 let mut blend_shape_weights = None;
@@ -782,6 +783,13 @@ fn parse_instance_posrot(items: &[SceneValue]) -> Vec<perro_nodes::MultiMeshInst
                         "position" => {
                             if let Some(v) = as_vec3(value) {
                                 pos = v;
+                            }
+                        }
+                        "scale" => {
+                            if let Some(v) = as_vec3(value) {
+                                scale = v;
+                            } else if let Some(v) = as_f32(value) {
+                                scale = perro_structs::Vector3::new(v, v, v);
                             }
                         }
                         "rotation" => {
@@ -804,8 +812,7 @@ fn parse_instance_posrot(items: &[SceneValue]) -> Vec<perro_nodes::MultiMeshInst
                     rot = quat_from_deg_xyz(deg);
                 }
                 out.push(perro_nodes::MultiMeshInstancePose {
-                    position: pos,
-                    rotation: rot,
+                    transform: perro_structs::Transform3D::new(pos, rot, scale),
                     blend_shape_weights,
                 });
             }
@@ -888,7 +895,7 @@ fn parse_instance_grid(
                     (x + z + y) as f32 * rotation_step_deg.y,
                     z as f32 * rotation_step_deg.z,
                 ));
-                out.push(perro_nodes::MultiMeshInstancePose::new(pos, rot));
+                out.push(perro_nodes::MultiMeshInstancePose::from_pos_rot(pos, rot));
             }
         }
     }

@@ -742,15 +742,20 @@ impl Runtime {
                                                 mesh.instances.iter().map(|instance| {
                                                     DenseInstancePose3D {
                                                         position: [
-                                                            instance.position.x,
-                                                            instance.position.y,
-                                                            instance.position.z,
+                                                            instance.transform.position.x,
+                                                            instance.transform.position.y,
+                                                            instance.transform.position.z,
+                                                        ],
+                                                        scale: [
+                                                            instance.transform.scale.x,
+                                                            instance.transform.scale.y,
+                                                            instance.transform.scale.z,
                                                         ],
                                                         rotation: [
-                                                            instance.rotation.x,
-                                                            instance.rotation.y,
-                                                            instance.rotation.z,
-                                                            instance.rotation.w,
+                                                            instance.transform.rotation.x,
+                                                            instance.transform.rotation.y,
+                                                            instance.transform.rotation.z,
+                                                            instance.transform.rotation.w,
                                                         ],
                                                         has_blend_shape_weight_override: instance
                                                             .blend_shape_weights

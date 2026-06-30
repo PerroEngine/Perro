@@ -1575,8 +1575,14 @@ mod tests {
         match &batch.node.data {
             SceneNodeData::MultiMeshInstance3D(mesh) => {
                 assert_eq!(mesh.instances.len(), 24);
-                assert_eq!(mesh.instances[0].position, Vector3::new(-3.0, 0.5, -4.0));
-                assert_eq!(mesh.instances[23].position, Vector3::new(3.0, 3.5, -1.0));
+                assert_eq!(
+                    mesh.instances[0].transform.position,
+                    Vector3::new(-3.0, 0.5, -4.0)
+                );
+                assert_eq!(
+                    mesh.instances[23].transform.position,
+                    Vector3::new(3.0, 3.5, -1.0)
+                );
             }
             other => panic!("expected MultiMeshInstance3D node, got {other:?}"),
         }

@@ -496,11 +496,15 @@ pub(crate) fn derived_particle_budget(spawn_rate: f32, lifetime_max: f32) -> u32
 pub(super) fn dense_instance_signature(instances: &[perro_nodes::MultiMeshInstancePose]) -> u64 {
     let mut hash = 0xcbf29ce484222325u64 ^ instances.len() as u64;
     for instance in instances {
-        let position = instance.position;
-        let rotation = instance.rotation;
+        let position = instance.transform.position;
+        let scale = instance.transform.scale;
+        let rotation = instance.transform.rotation;
         hash = fnv_mix_u32(hash, position.x.to_bits());
         hash = fnv_mix_u32(hash, position.y.to_bits());
         hash = fnv_mix_u32(hash, position.z.to_bits());
+        hash = fnv_mix_u32(hash, scale.x.to_bits());
+        hash = fnv_mix_u32(hash, scale.y.to_bits());
+        hash = fnv_mix_u32(hash, scale.z.to_bits());
         hash = fnv_mix_u32(hash, rotation.x.to_bits());
         hash = fnv_mix_u32(hash, rotation.y.to_bits());
         hash = fnv_mix_u32(hash, rotation.z.to_bits());

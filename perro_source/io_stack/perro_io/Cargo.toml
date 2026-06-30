@@ -7,6 +7,7 @@ edition = "2024"
 perro_assets.workspace = true
 perro_ids.workspace = true
 flate2 = { version = "1.0", default-features = false, features = ["rust_backend"] }
+zip = { version = "2.4.2", default-features = false, features = ["deflate"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 perro_web.workspace = true

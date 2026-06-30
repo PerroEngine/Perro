@@ -660,18 +660,23 @@ impl Runtime {
                     mesh.instances
                         .iter()
                         .map(|instance| {
+                            let scale = instance.transform.scale;
                             Mat4::from_scale_rotation_translation(
-                                Vec3::splat(mesh.instance_scale.max(0.0001)),
+                                Vec3::new(
+                                    scale.x * mesh.instance_scale.max(0.0001),
+                                    scale.y * mesh.instance_scale.max(0.0001),
+                                    scale.z * mesh.instance_scale.max(0.0001),
+                                ),
                                 glam::Quat::from_xyzw(
-                                    instance.rotation.x,
-                                    instance.rotation.y,
-                                    instance.rotation.z,
-                                    instance.rotation.w,
+                                    instance.transform.rotation.x,
+                                    instance.transform.rotation.y,
+                                    instance.transform.rotation.z,
+                                    instance.transform.rotation.w,
                                 ),
                                 Vec3::new(
-                                    instance.position.x,
-                                    instance.position.y,
-                                    instance.position.z,
+                                    instance.transform.position.x,
+                                    instance.transform.position.y,
+                                    instance.transform.position.z,
                                 ),
                             )
                         })

@@ -256,6 +256,47 @@ pub fn build_custom_material_shader_with_prelude(
 }
 
 #[inline]
+pub fn build_custom_multimesh_material_shader(
+    material_wgsl: &str,
+    lighting: perro_render_bridge::CustomMaterialLighting3D,
+) -> String {
+    let base = sanitize_reserved_meta_identifier(regular::MULTIMESH_WGSL);
+    let split_at = base
+        .find("@vertex\nfn vs_main")
+        .or_else(|| base.find("@vertex\r\nfn vs_main"))
+        .or_else(|| base.find("@vertex fn vs_main"))
+        .unwrap_or(base.len());
+    let prelude = &base[..split_at];
+    let uses_lit_helper = material_wgsl.contains("perro_lit_standard(");
+    let apply_standard_lighting =
+        lighting == perro_render_bridge::CustomMaterialLighting3D::Standard && !uses_lit_helper;
+    let has_custom_vertex = material_wgsl.contains("shade_vertex(");
+    let mut out = String::new();
+    out.push_str(prelude);
+    out.push('\n');
+    out.push_str(material_wgsl);
+    if has_custom_vertex {
+        out.push_str(
+            "\n@vertex\nfn vs_main(v: VertexInput, inst: InstanceInput, @builtin(vertex_index) vertex_index: u32) -> VertexOutput {\n    return shade_vertex(perro_multimesh_vs_main_base(v, inst, vertex_index));\n}\n",
+        );
+    } else {
+        out.push_str(
+            "\n@vertex\nfn vs_main(v: VertexInput, inst: InstanceInput, @builtin(vertex_index) vertex_index: u32) -> VertexOutput {\n    return perro_multimesh_vs_main_base(v, inst, vertex_index);\n}\n",
+        );
+    }
+    if apply_standard_lighting {
+        out.push_str(
+            "\n@fragment\nfn fs_main(in: FragmentInput, @builtin(position) frag_pos: vec4<f32>) -> @location(0) vec4<f32> {\n    var frag = in;\n    frag.frag_pos = frag_pos;\n    let base = shade_material(frag);\n    return perro_lit_standard(frag, base, 0.5, 0.0, 1.0, vec3<f32>(0.0));\n}\n",
+        );
+    } else {
+        out.push_str(
+            "\n@fragment\nfn fs_main(in: FragmentInput, @builtin(position) frag_pos: vec4<f32>) -> @location(0) vec4<f32> {\n    var frag = in;\n    frag.frag_pos = frag_pos;\n    return shade_material(frag);\n}\n",
+        );
+    }
+    out
+}
+
+#[inline]
 fn build_material_shader_with_prelude_inner(
     prelude_wgsl: &str,
     material_wgsl: &str,
@@ -591,6 +632,68 @@ fn shade_material(in: FragmentInput) -> vec4<f32> {
             assert!(wgsl.contains("return shade_vertex(perro_vs_main_base"));
             parse_and_validate(&wgsl, "custom shade_vertex material wgsl validates");
         }
+    }
+
+    #[test]
+    fn custom_multimesh_material_wgsl_validates() {
+        let material = r#"
+fn shade_vertex(out: VertexOutput) -> VertexOutput {
+    var next = out;
+    next.world_pos.y = next.world_pos.y + custom_v_param(out, 0u).x;
+    next.clip_pos.y = next.clip_pos.y + custom_v_param(out, 0u).x;
+    return next;
+}
+
+fn shade_material(in: FragmentInput) -> vec4<f32> {
+    let tint = custom_f_param(in, 0u);
+    return vec4<f32>(tint.rgb + in.normal_ws * 0.05 + in.uv.xyx * 0.0, tint.a);
+}
+"#;
+        let wgsl = build_custom_multimesh_material_shader(
+            material,
+            perro_render_bridge::CustomMaterialLighting3D::Raw,
+        );
+        assert!(wgsl.contains("return shade_vertex(perro_multimesh_vs_main_base"));
+        assert!(wgsl.contains("return shade_material(frag);"));
+        parse_and_validate(&wgsl, "custom multimesh material wgsl validates");
+    }
+
+    #[test]
+    fn custom_multimesh_and_single_mesh_shader_hooks_validate_same_material() {
+        let material = r#"
+fn shade_vertex(out: VertexOutput) -> VertexOutput {
+    var next = out;
+    let bend = custom_v_param(out, 0u).x;
+    next.world_pos = next.world_pos + out.normal_ws * bend;
+    next.clip_pos.x = next.clip_pos.x + bend * 0.001;
+    return next;
+}
+
+fn shade_material(in: FragmentInput) -> vec4<f32> {
+    let tint = custom_f_param(in, 1u);
+    return vec4<f32>(tint.rgb + in.normal_ws * 0.1, tint.a);
+}
+"#;
+        let single = build_custom_material_shader_with_prelude(
+            regular::PRELUDE_RIGID_WGSL,
+            material,
+            perro_render_bridge::CustomMaterialLighting3D::Raw,
+        );
+        let multi = build_custom_multimesh_material_shader(
+            material,
+            perro_render_bridge::CustomMaterialLighting3D::Raw,
+        );
+
+        assert!(single.contains("return shade_vertex(perro_vs_main_base"));
+        assert!(multi.contains("return shade_vertex(perro_multimesh_vs_main_base"));
+        assert!(single.contains("return shade_material(in);"));
+        assert!(multi.contains("return shade_material(frag);"));
+        assert!(single.contains("fn custom_f_param"));
+        assert!(multi.contains("fn custom_f_param"));
+        assert!(single.contains("fn custom_v_param"));
+        assert!(multi.contains("fn custom_v_param"));
+        parse_and_validate(&single, "single mesh custom hooks validate");
+        parse_and_validate(&multi, "multimesh custom hooks validate");
     }
 
     #[test]

@@ -502,6 +502,14 @@ impl Gpu3D {
                     binding: 5,
                     resource: self.blend_shape_instance_meta_buffer.as_entire_binding(),
                 },
+                wgpu::BindGroupEntry {
+                    binding: 6,
+                    resource: self.custom_params_meta_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 7,
+                    resource: self.custom_params_values_buffer.as_entire_binding(),
+                },
             ],
         });
         self.camera_bind_group_generation = self.camera_bind_group_generation.wrapping_add(1);

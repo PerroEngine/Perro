@@ -692,19 +692,38 @@ impl Gpu3D {
             mm_pass.set_vertex_buffer(0, self.rigid_vertex_buffer.slice(..));
             mm_pass.set_vertex_buffer(1, self.multimesh_instance_buffer.slice(..));
             mm_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-            let mut current_state: Option<(bool, bool)> = None;
+            let mut current_state: Option<(bool, bool, &MaterialPipelineKind)> = None;
             for batch in &self.multimesh_batches {
-                let state = (batch.double_sided, batch.mesh_blend);
+                let state = (batch.double_sided, batch.mesh_blend, &batch.material_kind);
                 if current_state != Some(state) {
-                    mm_pass.set_pipeline(if batch.mesh_blend && batch.double_sided {
-                        &self.pipeline_multimesh_blend_double_sided
-                    } else if batch.mesh_blend {
-                        &self.pipeline_multimesh_blend_culled
-                    } else if batch.double_sided {
-                        &self.pipeline_multimesh_double_sided
-                    } else {
-                        &self.pipeline_multimesh_culled
+                    let pipeline = match &batch.material_kind {
+                        MaterialPipelineKind::Custom(token) => {
+                            self.custom_pipelines_multimesh.get(token).map(|pipeline| {
+                                if batch.mesh_blend && batch.double_sided {
+                                    &pipeline.pipeline_blend_double_sided
+                                } else if batch.mesh_blend {
+                                    &pipeline.pipeline_blend_culled
+                                } else if batch.double_sided {
+                                    &pipeline.pipeline_double_sided
+                                } else {
+                                    &pipeline.pipeline_culled
+                                }
+                            })
+                        }
+                        _ => None,
+                    }
+                    .unwrap_or({
+                        if batch.mesh_blend && batch.double_sided {
+                            &self.pipeline_multimesh_blend_double_sided
+                        } else if batch.mesh_blend {
+                            &self.pipeline_multimesh_blend_culled
+                        } else if batch.double_sided {
+                            &self.pipeline_multimesh_double_sided
+                        } else {
+                            &self.pipeline_multimesh_culled
+                        }
                     });
+                    mm_pass.set_pipeline(pipeline);
                     current_state = Some(state);
                 }
                 let start = batch.mesh.index_start;
