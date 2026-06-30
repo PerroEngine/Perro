@@ -105,10 +105,193 @@ pub(super) fn ui_scroll_content_rect(
     let SceneNodeData::UiScrollContainer(node) = data else {
         return content;
     };
+    let content = content.inset(ui_scrollbar_content_inset(node, content));
     ComputedUiRect::new(
         content.center + Vector2::new(-node.scroll.x, node.scroll.y),
         content.size,
     )
+}
+
+pub(super) fn ui_scrollbar_thickness(rect: ComputedUiRect) -> f32 {
+    6.0_f32.min(rect.size.x.min(rect.size.y) * 0.20).max(2.0)
+}
+
+pub(super) fn ui_scrollbar_padding(scroller: &perro_ui::UiScrollContainer, thickness: f32) -> f32 {
+    if scroller.scroll_bar_padding >= 0.0 {
+        scroller.scroll_bar_padding
+    } else {
+        thickness
+    }
+}
+
+pub(super) fn ui_scrollbar_content_inset(
+    scroller: &perro_ui::UiScrollContainer,
+    rect: ComputedUiRect,
+) -> perro_ui::UiRect {
+    let amount =
+        ui_scrollbar_thickness(rect) + ui_scrollbar_padding(scroller, ui_scrollbar_thickness(rect));
+    match scroller.scroll_dir {
+        perro_ui::UiScrollDirection::Horizontal => match scroller.scroll_bar_side {
+            perro_ui::UiScrollBarSide::Top | perro_ui::UiScrollBarSide::Left => {
+                perro_ui::UiRect::new(0.0, amount, 0.0, 0.0)
+            }
+            perro_ui::UiScrollBarSide::Bottom | perro_ui::UiScrollBarSide::Right => {
+                perro_ui::UiRect::new(0.0, 0.0, 0.0, amount)
+            }
+        },
+        perro_ui::UiScrollDirection::Vertical => match scroller.scroll_bar_side {
+            perro_ui::UiScrollBarSide::Left | perro_ui::UiScrollBarSide::Top => {
+                perro_ui::UiRect::new(amount, 0.0, 0.0, 0.0)
+            }
+            perro_ui::UiScrollBarSide::Right | perro_ui::UiScrollBarSide::Bottom => {
+                perro_ui::UiRect::new(0.0, 0.0, amount, 0.0)
+            }
+        },
+    }
+}
+
+pub(super) fn ui_scroll_child_rect(
+    scroll_dir: perro_ui::UiScrollDirection,
+    child_layout: &UiLayoutData,
+    child_transform: &UiTransform,
+    content: ComputedUiRect,
+    size: Vector2,
+) -> ComputedUiRect {
+    let child_content = content.inset(child_layout.margin);
+    let h_align = match scroll_dir {
+        perro_ui::UiScrollDirection::Horizontal => UiHorizontalAlign::Left,
+        perro_ui::UiScrollDirection::Vertical => match child_layout.anchor.direction().x {
+            x if x < 0.0 => UiHorizontalAlign::Left,
+            x if x > 0.0 => UiHorizontalAlign::Right,
+            _ => UiHorizontalAlign::Center,
+        },
+    };
+    let x = align_h_center(
+        child_content.min().x,
+        child_content.size.x,
+        size.x,
+        perro_ui::UiRect::ZERO,
+        h_align,
+    );
+    let center = Vector2::new(x, child_content.max().y - size.y * 0.5)
+        + ui_translation_offset(child_transform, content.size, size);
+    ComputedUiRect::new(center, size)
+}
+
+pub(super) fn ui_scrollbar_command(
+    node: NodeID,
+    scroller: &perro_ui::UiScrollContainer,
+    rect: ComputedUiRect,
+    clip_rect: [f32; 4],
+    max_scroll: Vector2,
+    effective_z: i32,
+) -> Option<UiCommand> {
+    let bar_rect = ui_scrollbar_rect(scroller, rect, max_scroll)?;
+    Some(UiCommand::UpsertShape {
+        node,
+        rect: UiRectState {
+            center: [bar_rect.center.x, bar_rect.center.y],
+            size: [bar_rect.size.x, bar_rect.size.y],
+            pivot: [0.0, 0.0],
+            rotation_radians: 0.0,
+            z_index: effective_z.saturating_add(2048),
+        },
+        clip_rect,
+        kind: perro_ui::UiShapeKind::Rect,
+        fill: [1.0, 1.0, 1.0, 0.50],
+        stroke: [0.0, 0.0, 0.0, 0.0],
+        stroke_width: 0.0,
+    })
+}
+
+pub(super) fn ui_scrollbar_rect(
+    scroller: &perro_ui::UiScrollContainer,
+    rect: ComputedUiRect,
+    max_scroll: Vector2,
+) -> Option<ComputedUiRect> {
+    let thickness = ui_scrollbar_thickness(rect);
+    Some(match scroller.scroll_dir {
+        perro_ui::UiScrollDirection::Horizontal => {
+            if max_scroll.x <= 0.0 || rect.size.x <= 0.0 {
+                return None;
+            }
+            let content_w = rect.size.x + max_scroll.x;
+            let thumb_w =
+                (rect.size.x * rect.size.x / content_w).clamp(thickness * 2.0, rect.size.x);
+            let progress = (scroller.scroll.x / max_scroll.x).clamp(0.0, 1.0);
+            let x = rect.min().x + thumb_w * 0.5 + (rect.size.x - thumb_w) * progress;
+            let y = match scroller.scroll_bar_side {
+                perro_ui::UiScrollBarSide::Top | perro_ui::UiScrollBarSide::Left => {
+                    rect.max().y - thickness * 0.5
+                }
+                perro_ui::UiScrollBarSide::Bottom | perro_ui::UiScrollBarSide::Right => {
+                    rect.min().y + thickness * 0.5
+                }
+            };
+            ComputedUiRect::new(Vector2::new(x, y), Vector2::new(thumb_w, thickness))
+        }
+        perro_ui::UiScrollDirection::Vertical => {
+            if max_scroll.y <= 0.0 || rect.size.y <= 0.0 {
+                return None;
+            }
+            let content_h = rect.size.y + max_scroll.y;
+            let thumb_h =
+                (rect.size.y * rect.size.y / content_h).clamp(thickness * 2.0, rect.size.y);
+            let progress = (scroller.scroll.y / max_scroll.y).clamp(0.0, 1.0);
+            let x = match scroller.scroll_bar_side {
+                perro_ui::UiScrollBarSide::Left | perro_ui::UiScrollBarSide::Top => {
+                    rect.min().x + thickness * 0.5
+                }
+                perro_ui::UiScrollBarSide::Right | perro_ui::UiScrollBarSide::Bottom => {
+                    rect.max().x - thickness * 0.5
+                }
+            };
+            let y = rect.max().y - thumb_h * 0.5 - (rect.size.y - thumb_h) * progress;
+            ComputedUiRect::new(Vector2::new(x, y), Vector2::new(thickness, thumb_h))
+        }
+    })
+}
+
+pub(super) fn ui_scrollbar_track_rect(
+    scroller: &perro_ui::UiScrollContainer,
+    rect: ComputedUiRect,
+    max_scroll: Vector2,
+) -> Option<ComputedUiRect> {
+    if max_scroll.x <= 0.0 && max_scroll.y <= 0.0 {
+        return None;
+    }
+    let thickness = ui_scrollbar_thickness(rect);
+    match scroller.scroll_dir {
+        perro_ui::UiScrollDirection::Horizontal if max_scroll.x > 0.0 => {
+            let y = match scroller.scroll_bar_side {
+                perro_ui::UiScrollBarSide::Top | perro_ui::UiScrollBarSide::Left => {
+                    rect.max().y - thickness * 0.5
+                }
+                perro_ui::UiScrollBarSide::Bottom | perro_ui::UiScrollBarSide::Right => {
+                    rect.min().y + thickness * 0.5
+                }
+            };
+            Some(ComputedUiRect::new(
+                Vector2::new(rect.center.x, y),
+                Vector2::new(rect.size.x, thickness),
+            ))
+        }
+        perro_ui::UiScrollDirection::Vertical if max_scroll.y > 0.0 => {
+            let x = match scroller.scroll_bar_side {
+                perro_ui::UiScrollBarSide::Left | perro_ui::UiScrollBarSide::Top => {
+                    rect.min().x + thickness * 0.5
+                }
+                perro_ui::UiScrollBarSide::Right | perro_ui::UiScrollBarSide::Bottom => {
+                    rect.max().x - thickness * 0.5
+                }
+            };
+            Some(ComputedUiRect::new(
+                Vector2::new(x, rect.center.y),
+                Vector2::new(thickness, rect.size.y),
+            ))
+        }
+        _ => None,
+    }
 }
 
 pub(super) fn ui_auto_layout_from_data(data: &SceneNodeData) -> Option<UiAutoLayout> {

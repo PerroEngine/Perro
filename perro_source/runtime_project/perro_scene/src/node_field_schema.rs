@@ -33,6 +33,8 @@ const UI_ANCHOR_OPTIONS: &[&str] = &[
 ];
 const UI_TEXT_ALIGN_OPTIONS: &[&str] = &["start", "center", "end"];
 const UI_FILL_KIND_OPTIONS: &[&str] = &["solid", "linear"];
+const UI_SCROLL_DIRECTION_OPTIONS: &[&str] = &["vertical", "horizontal"];
+const UI_SCROLL_BAR_SIDE_OPTIONS: &[&str] = &["right", "left", "bottom", "top"];
 const PARTICLE_SIM_MODE_2D_OPTIONS: &[&str] = &["default", "cpu"];
 const PARTICLE_SIM_MODE_3D_OPTIONS: &[&str] = &["default", "cpu", "hybrid", "gpu"];
 const PARTICLE_RENDER_MODE_3D_OPTIONS: &[&str] = &["point", "billboard"];
@@ -807,6 +809,19 @@ fn push_node_fields(fields: &mut Vec<SceneNodeField>, node_type: NodeType) {
         }
         NodeType::UiScrollContainer => {
             push(fields, "Scroll", "scroll", NodeFieldType::Vec2);
+            push(
+                fields,
+                "Scroll",
+                "scroll_dir",
+                NodeFieldType::enumeration(UI_SCROLL_DIRECTION_OPTIONS),
+            );
+            push(
+                fields,
+                "Scroll",
+                "scrollbar_side",
+                NodeFieldType::enumeration(UI_SCROLL_BAR_SIDE_OPTIONS),
+            );
+            push(fields, "Scroll", "scrollbar_padding", NodeFieldType::F32);
         }
         NodeType::UiLayout
         | NodeType::UiHLayout

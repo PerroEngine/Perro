@@ -267,6 +267,10 @@ impl Runtime {
         if self.render_ui.pressed_text_edit == Some(node) {
             self.render_ui.pressed_text_edit = None;
         }
+        if self.render_ui.active_scrollbar == Some(node) {
+            self.render_ui.active_scrollbar = None;
+            self.render_ui.scrollbar_drag_offset = 0.0;
+        }
         if self.render_ui.retained_commands.remove(&node).is_some() {
             self.queue_render_command(RenderCommand::Ui(UiCommand::RemoveNode { node }));
         }

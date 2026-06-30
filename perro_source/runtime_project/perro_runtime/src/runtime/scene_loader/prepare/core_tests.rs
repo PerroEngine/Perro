@@ -1084,6 +1084,9 @@ mod tests {
             parent = menu
             [UiScrollContainer]
                 scroll = (12, 34)
+                scroll_dir = "horizontal"
+                scrollbar_side = "left"
+                scrollbar_padding = 9
             [/UiScrollContainer]
             [/scroller]
             "##,
@@ -1291,6 +1294,12 @@ mod tests {
             SceneNodeData::UiScrollContainer(scroller) => {
                 assert!(scroller.clip_children);
                 assert_eq!(scroller.scroll, Vector2::new(12.0, 34.0));
+                assert_eq!(
+                    scroller.scroll_dir,
+                    perro_ui::UiScrollDirection::Horizontal
+                );
+                assert_eq!(scroller.scroll_bar_side, perro_ui::UiScrollBarSide::Left);
+                assert_eq!(scroller.scroll_bar_padding, 9.0);
             }
             other => panic!("expected UiScrollContainer scroller node, got {other:?}"),
         }

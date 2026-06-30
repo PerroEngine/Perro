@@ -372,6 +372,10 @@ impl Runtime {
             if self.render_ui.pressed_text_edit == Some(node) {
                 self.render_ui.pressed_text_edit = None;
             }
+            if self.render_ui.active_scrollbar == Some(node) {
+                self.render_ui.active_scrollbar = None;
+                self.render_ui.scrollbar_drag_offset = 0.0;
+            }
             visible_now.remove(&node);
             self.render_ui.computed_rects.remove(&node);
             self.render_ui
@@ -539,6 +543,40 @@ impl Runtime {
                     .map(ui_command_clip_rect)
                     .unwrap_or_else(|| viewport_clip_rect(viewport))
             };
+            if let SceneNodeData::UiScrollContainer(scroller) = &scene_node.data {
+                let rect = computed_rect_from_state(&rect_state);
+                let command = ui_scrollbar_command(
+                    node,
+                    scroller,
+                    rect,
+                    clip_rect,
+                    self.scroll_container_max(node, &computed),
+                    effective_z,
+                );
+                match command {
+                    Some(command) => {
+                        if self.render_ui.retained_commands.get(&node) != Some(&command) {
+                            self.queue_render_command(RenderCommand::Ui(command.clone()));
+                            self.render_ui.retained_commands.insert(node, command);
+                            if let Some(timing) = timing.as_deref_mut() {
+                                timing.command_emitted = timing.command_emitted.saturating_add(1);
+                            }
+                        } else if let Some(timing) = timing.as_deref_mut() {
+                            timing.command_skipped = timing.command_skipped.saturating_add(1);
+                        }
+                    }
+                    None => {
+                        if self.render_ui.retained_commands.remove(&node).is_some() {
+                            self.queue_render_command(RenderCommand::Ui(UiCommand::RemoveNode {
+                                node,
+                            }));
+                        }
+                    }
+                }
+                self.render_ui.retained_rects.insert(node, rect_state);
+                visible_now.insert(node);
+                continue;
+            }
             let retained_matches =
                 self.render_ui
                     .retained_commands

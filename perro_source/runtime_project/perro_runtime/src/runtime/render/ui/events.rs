@@ -224,12 +224,24 @@ impl Runtime {
         let mut changed_seen = ahash::AHashSet::default();
         let wheel = self.input.mouse_wheel();
 
+        if let Some(scroller) = self.process_scrollbar_pointer_input(computed)
+            && changed_seen.insert(scroller)
+        {
+            changed.push(scroller);
+        }
+
         if wheel.y != 0.0 && !self.focused_multiline_text_edit_consumes_wheel() {
             let pointer = self.ui_pointer_screen_point();
             if let Some(scroller) = self.hovered_scroll_container(computed, pointer) {
                 let step = computed
                     .get(&scroller)
-                    .map(|rect| rect.size.y * 0.12)
+                    .map(|rect| {
+                        (if self.scroll_container_is_horizontal(scroller) {
+                            rect.size.x
+                        } else {
+                            rect.size.y
+                        }) * 0.12
+                    })
                     .unwrap_or(0.0);
                 if step > 0.0
                     && self.adjust_scroll_container(scroller, computed, -(wheel.y * step))
@@ -281,6 +293,148 @@ impl Runtime {
                 command_ids.push(node);
             }
         }
+    }
+
+    fn process_scrollbar_pointer_input(
+        &mut self,
+        computed: &AHashMap<NodeID, ComputedUiRect>,
+    ) -> Option<NodeID> {
+        if self.input.is_mouse_released(MouseButton::Left) {
+            self.render_ui.active_scrollbar = None;
+            self.render_ui.scrollbar_drag_offset = 0.0;
+        }
+        let pointer = self.ui_pointer_screen_point();
+        if self.input.is_mouse_pressed(MouseButton::Left)
+            && let Some((node, offset)) = self.hit_scrollbar(pointer, computed)
+        {
+            self.render_ui.active_scrollbar = Some(node);
+            self.render_ui.scrollbar_drag_offset = offset;
+            return self.set_scroll_from_scrollbar_pointer(node, pointer, computed, offset);
+        }
+        if self.input.is_mouse_down(MouseButton::Left)
+            && let Some(node) = self.render_ui.active_scrollbar
+        {
+            if !self.is_effectively_visible_for_ui(node) {
+                self.render_ui.active_scrollbar = None;
+                self.render_ui.scrollbar_drag_offset = 0.0;
+                return None;
+            }
+            return self.set_scroll_from_scrollbar_pointer(
+                node,
+                pointer,
+                computed,
+                self.render_ui.scrollbar_drag_offset,
+            );
+        }
+        None
+    }
+
+    fn hit_scrollbar(
+        &self,
+        point: Vector2,
+        computed: &AHashMap<NodeID, ComputedUiRect>,
+    ) -> Option<(NodeID, f32)> {
+        let mut best: Option<(NodeID, i32, f32)> = None;
+        for node in self.visible_scroll_containers(computed) {
+            let Some((track, thumb, scroller)) = self.scrollbar_hit_rects(node, computed) else {
+                continue;
+            };
+            if !track.contains(point) {
+                continue;
+            }
+            let offset = if thumb.contains(point) {
+                match scroller.scroll_dir {
+                    perro_ui::UiScrollDirection::Horizontal => point.x - thumb.center.x,
+                    perro_ui::UiScrollDirection::Vertical => point.y - thumb.center.y,
+                }
+            } else {
+                0.0
+            };
+            let z = self.ui_effective_z(node);
+            match best {
+                Some((best_node, best_z, _))
+                    if best_z > z || (best_z == z && best_node.as_u64() > node.as_u64()) => {}
+                _ => best = Some((node, z, offset)),
+            }
+        }
+        best.map(|(node, _, offset)| (node, offset))
+    }
+
+    fn scrollbar_hit_rects(
+        &self,
+        node: NodeID,
+        computed: &AHashMap<NodeID, ComputedUiRect>,
+    ) -> Option<(ComputedUiRect, ComputedUiRect, perro_ui::UiScrollContainer)> {
+        let scene_node = self.nodes.get(node)?;
+        let SceneNodeData::UiScrollContainer(scroller) = &scene_node.data else {
+            return None;
+        };
+        let rect = computed.get(&node).copied().or_else(|| {
+            self.render_ui
+                .retained_rects
+                .get(&node)
+                .map(computed_rect_from_state)
+        })?;
+        let max_scroll = self.scroll_container_max(node, computed);
+        let thumb = ui_scrollbar_rect(scroller, rect, max_scroll)?;
+        let track = ui_scrollbar_track_rect(scroller, rect, max_scroll)?;
+        Some((track, thumb, scroller.clone()))
+    }
+
+    fn set_scroll_from_scrollbar_pointer(
+        &mut self,
+        node: NodeID,
+        point: Vector2,
+        computed: &AHashMap<NodeID, ComputedUiRect>,
+        drag_offset: f32,
+    ) -> Option<NodeID> {
+        let (track, thumb, scroller_copy) = self.scrollbar_hit_rects(node, computed)?;
+        let max_scroll = self.scroll_container_max(node, computed);
+        let Some(scene_node) = self.nodes.get_mut(node) else {
+            self.render_ui.active_scrollbar = None;
+            return None;
+        };
+        let SceneNodeData::UiScrollContainer(scroller) = &mut scene_node.data else {
+            self.render_ui.active_scrollbar = None;
+            return None;
+        };
+        let old = scroller.scroll;
+        match scroller_copy.scroll_dir {
+            perro_ui::UiScrollDirection::Horizontal => {
+                let travel = (track.size.x - thumb.size.x).max(0.0);
+                let center = point.x - drag_offset;
+                let pos = center - track.min().x - thumb.size.x * 0.5;
+                let progress = if travel > 0.0 {
+                    (pos / travel).clamp(0.0, 1.0)
+                } else {
+                    0.0
+                };
+                scroller.scroll.x = max_scroll.x * progress;
+                scroller.scroll.y = 0.0;
+            }
+            perro_ui::UiScrollDirection::Vertical => {
+                let travel = (track.size.y - thumb.size.y).max(0.0);
+                let center = point.y - drag_offset;
+                let pos = track.max().y - thumb.size.y * 0.5 - center;
+                let progress = if travel > 0.0 {
+                    (pos / travel).clamp(0.0, 1.0)
+                } else {
+                    0.0
+                };
+                scroller.scroll.x = 0.0;
+                scroller.scroll.y = max_scroll.y * progress;
+            }
+        }
+        if scroller.scroll == old {
+            return None;
+        }
+        self.mark_ui_dirty(
+            node,
+            Runtime::UI_DIRTY_LAYOUT_SELF
+                | Runtime::UI_DIRTY_LAYOUT_PARENT
+                | Runtime::UI_DIRTY_COMMANDS,
+        );
+        Some(node)
     }
 
     pub(super) fn text_edit_repeat_key(&mut self, ctrl: bool) -> Option<KeyCode> {
@@ -960,6 +1114,16 @@ impl Runtime {
         out
     }
 
+    fn scroll_container_is_horizontal(&self, node: NodeID) -> bool {
+        self.nodes
+            .get(node)
+            .and_then(|scene_node| match &scene_node.data {
+                SceneNodeData::UiScrollContainer(scroller) => Some(scroller.scroll_dir),
+                _ => None,
+            })
+            == Some(perro_ui::UiScrollDirection::Horizontal)
+    }
+
     fn focused_multiline_text_edit_consumes_wheel(&self) -> bool {
         self.render_ui
             .focused_text_edit
@@ -1021,9 +1185,14 @@ impl Runtime {
         node: NodeID,
         computed: &AHashMap<NodeID, ComputedUiRect>,
     ) -> Option<f32> {
-        let view_h = computed.get(&node)?.size.y;
-        let line = view_h * 0.10;
-        let page = view_h * 0.90;
+        let view = computed.get(&node)?.size;
+        let axis = if self.scroll_container_is_horizontal(node) {
+            view.x
+        } else {
+            view.y
+        };
+        let line = axis * 0.10;
+        let page = axis * 0.90;
         if self.input.is_key_pressed(KeyCode::Home) {
             return Some(f32::NEG_INFINITY);
         }
@@ -1051,7 +1220,7 @@ impl Runtime {
         computed: &AHashMap<NodeID, ComputedUiRect>,
         delta: f32,
     ) -> bool {
-        let max_scroll = self.scroll_container_max_y(node, computed).unwrap_or(0.0);
+        let max_scroll = self.scroll_container_max(node, computed);
         let Some(scene_node) = self.nodes.get_mut(node) else {
             return false;
         };
@@ -1059,14 +1228,16 @@ impl Runtime {
             return false;
         };
         let old = scroller.scroll;
-        scroller.scroll.x = 0.0;
-        scroller.scroll.y = if delta.is_infinite() && delta.is_sign_negative() {
-            0.0
-        } else if delta.is_infinite() {
-            max_scroll
-        } else {
-            (scroller.scroll.y + delta).clamp(0.0, max_scroll)
-        };
+        match scroller.scroll_dir {
+            perro_ui::UiScrollDirection::Horizontal => {
+                scroller.scroll.y = 0.0;
+                scroller.scroll.x = apply_scroll_delta(scroller.scroll.x, delta, max_scroll.x);
+            }
+            perro_ui::UiScrollDirection::Vertical => {
+                scroller.scroll.x = 0.0;
+                scroller.scroll.y = apply_scroll_delta(scroller.scroll.y, delta, max_scroll.y);
+            }
+        }
         if scroller.scroll == old {
             return false;
         }
@@ -1084,7 +1255,7 @@ impl Runtime {
         node: NodeID,
         computed: &AHashMap<NodeID, ComputedUiRect>,
     ) -> bool {
-        let max_scroll = self.scroll_container_max_y(node, computed).unwrap_or(0.0);
+        let max_scroll = self.scroll_container_max(node, computed);
         let Some(scene_node) = self.nodes.get_mut(node) else {
             return false;
         };
@@ -1092,8 +1263,16 @@ impl Runtime {
             return false;
         };
         let old = scroller.scroll;
-        scroller.scroll.x = 0.0;
-        scroller.scroll.y = scroller.scroll.y.clamp(0.0, max_scroll);
+        match scroller.scroll_dir {
+            perro_ui::UiScrollDirection::Horizontal => {
+                scroller.scroll.x = scroller.scroll.x.clamp(0.0, max_scroll.x);
+                scroller.scroll.y = 0.0;
+            }
+            perro_ui::UiScrollDirection::Vertical => {
+                scroller.scroll.x = 0.0;
+                scroller.scroll.y = scroller.scroll.y.clamp(0.0, max_scroll.y);
+            }
+        }
         if scroller.scroll == old {
             return false;
         }
@@ -1104,6 +1283,41 @@ impl Runtime {
                 | Runtime::UI_DIRTY_COMMANDS,
         );
         true
+    }
+
+    pub(super) fn scroll_container_max(
+        &self,
+        node: NodeID,
+        computed: &AHashMap<NodeID, ComputedUiRect>,
+    ) -> Vector2 {
+        Vector2::new(
+            self.scroll_container_max_x(node, computed).unwrap_or(0.0),
+            self.scroll_container_max_y(node, computed).unwrap_or(0.0),
+        )
+    }
+
+    fn scroll_container_max_x(
+        &self,
+        node: NodeID,
+        computed: &AHashMap<NodeID, ComputedUiRect>,
+    ) -> Option<f32> {
+        let scene_node = self.nodes.get(node)?;
+        let SceneNodeData::UiScrollContainer(scroller) = &scene_node.data else {
+            return None;
+        };
+        let rect = computed.get(&node).copied().or_else(|| {
+            self.render_ui
+                .retained_rects
+                .get(&node)
+                .map(computed_rect_from_state)
+        })?;
+        let content = rect.inset(ui_padding_inset(rect, scroller.layout.padding));
+        let (content_min, content_max) = self.scroll_container_unscrolled_bounds(node, computed)?;
+        Some(
+            (content_max.x - content.max().x)
+                .max(0.0)
+                .max((content.min().x - content_min.x).max(0.0)),
+        )
     }
 
     fn scroll_container_max_y(
@@ -1122,22 +1336,22 @@ impl Runtime {
                 .map(computed_rect_from_state)
         })?;
         let content = rect.inset(ui_padding_inset(rect, scroller.layout.padding));
-        let (_, content_min_y) = self.scroll_container_unscrolled_bounds(node, computed)?;
-        Some((content.min().y - content_min_y).max(0.0))
+        let (content_min, _) = self.scroll_container_unscrolled_bounds(node, computed)?;
+        Some((content.min().y - content_min.y).max(0.0))
     }
 
-    fn scroll_container_unscrolled_bounds(
+    pub(super) fn scroll_container_unscrolled_bounds(
         &self,
         node: NodeID,
         computed: &AHashMap<NodeID, ComputedUiRect>,
-    ) -> Option<(f32, f32)> {
+    ) -> Option<(Vector2, Vector2)> {
         let scene_node = self.nodes.get(node)?;
         let SceneNodeData::UiScrollContainer(scroller) = &scene_node.data else {
             return None;
         };
         let offset = Vector2::new(scroller.scroll.x, -scroller.scroll.y);
-        let mut min_y = f32::INFINITY;
-        let mut max_y = f32::NEG_INFINITY;
+        let mut min = Vector2::new(f32::INFINITY, f32::INFINITY);
+        let mut max = Vector2::new(f32::NEG_INFINITY, f32::NEG_INFINITY);
         let mut found = false;
         let mut nodes = Vec::new();
         let mut seen = ahash::AHashSet::default();
@@ -1154,11 +1368,11 @@ impl Runtime {
                 continue;
             };
             let unscrolled = ComputedUiRect::new(rect.center + offset, rect.size);
-            min_y = min_y.min(unscrolled.min().y);
-            max_y = max_y.max(unscrolled.max().y);
+            min = min.min(unscrolled.min());
+            max = max.max(unscrolled.max());
             found = true;
         }
-        found.then_some((max_y, min_y))
+        found.then_some((min, max))
     }
 
     fn collect_ui_subtree_nodes(
@@ -1642,6 +1856,16 @@ impl Runtime {
             }
             _ => false,
         }
+    }
+}
+
+fn apply_scroll_delta(current: f32, delta: f32, max_scroll: f32) -> f32 {
+    if delta.is_infinite() && delta.is_sign_negative() {
+        0.0
+    } else if delta.is_infinite() {
+        max_scroll
+    } else {
+        (current + delta).clamp(0.0, max_scroll)
     }
 }
 

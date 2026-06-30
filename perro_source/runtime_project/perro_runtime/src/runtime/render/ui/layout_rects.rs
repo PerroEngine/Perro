@@ -80,6 +80,15 @@ impl Runtime {
                 },
             );
             let size = self.resolve_ui_size(child, child_content.size, Some(fill_size));
+            if let SceneNodeData::UiScrollContainer(scroller) = &parent_node.data {
+                return Some(ui_scroll_child_rect(
+                    scroller.scroll_dir,
+                    child_layout,
+                    child_transform,
+                    content_rect,
+                    size,
+                ));
+            }
             Some(child_layout.compute_rect_with_size(child_transform, child_content, size))
         })
     }

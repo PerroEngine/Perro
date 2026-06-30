@@ -1153,6 +1153,9 @@ impl Default for UiLayoutContainer {
 pub struct UiScrollContainer {
     pub base: UiNode,
     pub scroll: Vector2,
+    pub scroll_dir: UiScrollDirection,
+    pub scroll_bar_side: UiScrollBarSide,
+    pub scroll_bar_padding: f32,
 }
 
 impl UiScrollContainer {
@@ -1162,6 +1165,9 @@ impl UiScrollContainer {
         Self {
             base,
             scroll: Vector2::ZERO,
+            scroll_dir: UiScrollDirection::Vertical,
+            scroll_bar_side: UiScrollBarSide::Right,
+            scroll_bar_padding: -1.0,
         }
     }
 }
@@ -1194,6 +1200,22 @@ impl UiNodeBase for UiScrollContainer {
     fn ui_base_mut(&mut self) -> &mut UiNode {
         &mut self.base
     }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum UiScrollDirection {
+    Horizontal,
+    #[default]
+    Vertical,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum UiScrollBarSide {
+    Left,
+    #[default]
+    Right,
+    Top,
+    Bottom,
 }
 
 #[derive(Clone, Debug, PartialEq)]

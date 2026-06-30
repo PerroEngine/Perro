@@ -595,11 +595,11 @@ impl Runtime {
         self.flush_queued_ui_signals();
         self.process_pending_web_route_change();
         self.apply_loaded_skeleton_bones();
-        #[cfg(feature = "steamworks")]
-        let _ = perro_steamworks::runtime::run_callbacks();
         self.run_start_schedule();
         self.schedules.snapshot_update(&self.scripts);
         self.run_update_schedule();
+        #[cfg(feature = "steamworks")]
+        let _ = perro_steamworks::runtime::run_callbacks();
         self.run_internal_update_schedule();
         self.propagate_pending_transform_dirty();
         self.update_audio_propagation(delta_time);
@@ -613,8 +613,6 @@ impl Runtime {
         self.flush_queued_ui_signals();
         self.process_pending_web_route_change();
         self.apply_loaded_skeleton_bones();
-        #[cfg(feature = "steamworks")]
-        let _ = perro_steamworks::runtime::run_callbacks();
 
         let start_schedule_start = Instant::now();
         self.run_start_schedule();
@@ -625,6 +623,9 @@ impl Runtime {
         let snapshot_update = snapshot_start.elapsed();
 
         let update_schedule = self.run_update_schedule_timed();
+
+        #[cfg(feature = "steamworks")]
+        let _ = perro_steamworks::runtime::run_callbacks();
 
         let internal_start = Instant::now();
         self.run_internal_update_schedule();

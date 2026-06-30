@@ -2824,7 +2824,7 @@ fn scroll_container_offsets_children_and_clips_to_view() {
         .get(&child)
         .copied()
         .expect("child rect");
-    assert_eq!(child_rect.center, Vector2::ZERO);
+    assert_eq!(child_rect.center, Vector2::new(-6.0, 35.0));
 
     let scroll = runtime
         .nodes
@@ -2850,6 +2850,213 @@ fn scroll_container_offsets_children_and_clips_to_view() {
     for (actual, expected) in clip.iter().zip([300.0, 250.0, 500.0, 350.0]) {
         assert!((actual - expected).abs() < 1.0e-5);
     }
+}
+
+#[test]
+fn scroll_container_places_large_child_at_top() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+
+    let mut scroller = UiScrollContainer::new();
+    scroller.layout.size = UiVector2::pixels(200.0, 100.0);
+    let scroller_id = insert_ui_node(&mut runtime, SceneNodeData::UiScrollContainer(scroller));
+
+    let mut list = UiVLayout::new();
+    list.layout.size = UiVector2::pixels(200.0, 300.0);
+    let list_id = insert_ui_node(&mut runtime, SceneNodeData::UiVLayout(list));
+    attach_child(&mut runtime, scroller_id, list_id);
+
+    runtime.extract_render_ui_commands();
+
+    let scroller_rect = runtime
+        .render_ui
+        .computed_rects
+        .get(&scroller_id)
+        .copied()
+        .expect("scroller rect");
+    let list_rect = runtime
+        .render_ui
+        .computed_rects
+        .get(&list_id)
+        .copied()
+        .expect("list rect");
+    assert_eq!(list_rect.max().y, scroller_rect.max().y);
+
+    runtime.clear_dirty_flags();
+    tap_key_and_extract(&mut runtime, KeyCode::End);
+
+    let scroll = runtime
+        .nodes
+        .get(scroller_id)
+        .and_then(|node| match &node.data {
+            SceneNodeData::UiScrollContainer(scroller) => Some(scroller.scroll.y),
+            _ => None,
+        })
+        .expect("scroller node");
+    assert_eq!(scroll, 200.0);
+}
+
+#[test]
+fn scroll_container_emits_right_scrollbar_thumb() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+
+    let mut scroller = UiScrollContainer::new();
+    scroller.layout.size = UiVector2::pixels(200.0, 100.0);
+    let scroller_id = insert_ui_node(&mut runtime, SceneNodeData::UiScrollContainer(scroller));
+
+    let mut list = UiVLayout::new();
+    list.layout.size = UiVector2::pixels(200.0, 300.0);
+    let list_id = insert_ui_node(&mut runtime, SceneNodeData::UiVLayout(list));
+    attach_child(&mut runtime, scroller_id, list_id);
+
+    runtime.extract_render_ui_commands();
+
+    let mut commands = Vec::new();
+    runtime.drain_render_commands(&mut commands);
+    let rect = commands
+        .iter()
+        .find_map(|cmd| match cmd {
+            RenderCommand::Ui(UiCommand::UpsertShape { node, rect, .. })
+                if *node == scroller_id =>
+            {
+                Some(rect)
+            }
+            _ => None,
+        })
+        .expect("scrollbar command");
+    assert_eq!(rect.center[0], 97.0);
+    assert!((rect.center[1] - 33.333332).abs() < 1.0e-4);
+    assert_eq!(rect.size[0], 6.0);
+    assert!((rect.size[1] - 33.333332).abs() < 1.0e-4);
+}
+
+#[test]
+fn scroll_container_reserves_default_gap_for_scrollbar() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+
+    let mut scroller = UiScrollContainer::new();
+    scroller.layout.size = UiVector2::pixels(200.0, 100.0);
+    let scroller_id = insert_ui_node(&mut runtime, SceneNodeData::UiScrollContainer(scroller));
+
+    let mut list = UiVLayout::new();
+    list.layout.h_size = UiSizeMode::Fill;
+    list.layout.size = UiVector2::pixels(0.0, 300.0);
+    let list_id = insert_ui_node(&mut runtime, SceneNodeData::UiVLayout(list));
+    attach_child(&mut runtime, scroller_id, list_id);
+
+    runtime.extract_render_ui_commands();
+
+    let list_rect = runtime
+        .render_ui
+        .computed_rects
+        .get(&list_id)
+        .copied()
+        .expect("list rect");
+    assert_eq!(list_rect.size.x, 188.0);
+    assert_eq!(list_rect.max().x, 88.0);
+}
+
+#[test]
+fn scroll_container_uses_custom_scrollbar_gap() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+
+    let mut scroller = UiScrollContainer::new();
+    scroller.layout.size = UiVector2::pixels(200.0, 100.0);
+    scroller.scroll_bar_padding = 18.0;
+    let scroller_id = insert_ui_node(&mut runtime, SceneNodeData::UiScrollContainer(scroller));
+
+    let mut list = UiVLayout::new();
+    list.layout.h_size = UiSizeMode::Fill;
+    list.layout.size = UiVector2::pixels(0.0, 300.0);
+    let list_id = insert_ui_node(&mut runtime, SceneNodeData::UiVLayout(list));
+    attach_child(&mut runtime, scroller_id, list_id);
+
+    runtime.extract_render_ui_commands();
+
+    let list_rect = runtime
+        .render_ui
+        .computed_rects
+        .get(&list_id)
+        .copied()
+        .expect("list rect");
+    assert_eq!(list_rect.size.x, 176.0);
+    assert_eq!(list_rect.max().x, 76.0);
+}
+
+#[test]
+fn scroll_container_thumb_drag_updates_scroll() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+
+    let mut scroller = UiScrollContainer::new();
+    scroller.layout.size = UiVector2::pixels(200.0, 100.0);
+    let scroller_id = insert_ui_node(&mut runtime, SceneNodeData::UiScrollContainer(scroller));
+
+    let mut list = UiVLayout::new();
+    list.layout.size = UiVector2::pixels(200.0, 300.0);
+    let list_id = insert_ui_node(&mut runtime, SceneNodeData::UiVLayout(list));
+    attach_child(&mut runtime, scroller_id, list_id);
+
+    runtime.extract_render_ui_commands();
+    runtime.drain_render_commands(&mut Vec::new());
+    runtime.clear_dirty_flags();
+
+    runtime.begin_input_frame();
+    runtime.set_mouse_position(497.0, 266.66666);
+    runtime.set_mouse_button_state(MouseButton::Left, true);
+    runtime.extract_render_ui_commands();
+
+    runtime.begin_input_frame();
+    runtime.set_mouse_position(497.0, 300.0);
+    runtime.set_mouse_button_state(MouseButton::Left, true);
+    runtime.extract_render_ui_commands();
+
+    let scroll = runtime
+        .nodes
+        .get(scroller_id)
+        .and_then(|node| match &node.data {
+            SceneNodeData::UiScrollContainer(scroller) => Some(scroller.scroll.y),
+            _ => None,
+        })
+        .expect("scroller node");
+    assert!((scroll - 100.0).abs() < 1.0e-4);
+}
+
+#[test]
+fn scroll_container_track_click_updates_scroll() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+
+    let mut scroller = UiScrollContainer::new();
+    scroller.layout.size = UiVector2::pixels(200.0, 100.0);
+    let scroller_id = insert_ui_node(&mut runtime, SceneNodeData::UiScrollContainer(scroller));
+
+    let mut list = UiVLayout::new();
+    list.layout.size = UiVector2::pixels(200.0, 300.0);
+    let list_id = insert_ui_node(&mut runtime, SceneNodeData::UiVLayout(list));
+    attach_child(&mut runtime, scroller_id, list_id);
+
+    runtime.extract_render_ui_commands();
+    runtime.drain_render_commands(&mut Vec::new());
+    runtime.clear_dirty_flags();
+
+    runtime.begin_input_frame();
+    runtime.set_mouse_position(497.0, 345.0);
+    runtime.set_mouse_button_state(MouseButton::Left, true);
+    runtime.extract_render_ui_commands();
+
+    let scroll = runtime
+        .nodes
+        .get(scroller_id)
+        .and_then(|node| match &node.data {
+            SceneNodeData::UiScrollContainer(scroller) => Some(scroller.scroll.y),
+            _ => None,
+        })
+        .expect("scroller node");
+    assert_eq!(scroll, 200.0);
 }
 
 #[test]
@@ -2915,7 +3122,7 @@ fn keyboard_scroll_targets_focused_scroll_container_ancestor() {
             _ => None,
         })
         .expect("scroller node");
-    assert!((max_scroll - 100.0).abs() < 1.0e-5);
+    assert!((max_scroll - 200.0).abs() < 1.0e-5);
 
     runtime.clear_dirty_flags();
     tap_key_and_extract(&mut runtime, KeyCode::Home);

@@ -1547,8 +1547,41 @@ fn apply_ui_scroll_container_fields(node: &mut UiScrollContainer, fields: &[Scen
                 node.scroll.y = v;
             }
         }
+        "scroll_dir" | "scroll_direction" | "direction" => {
+            if let Some(v) = as_ui_scroll_direction(value) {
+                node.scroll_dir = v;
+            }
+        }
+        "scroll_bar_side" | "scrollbar_side" | "bar_side" | "side" => {
+            if let Some(v) = as_ui_scroll_bar_side(value) {
+                node.scroll_bar_side = v;
+            }
+        }
+        "scroll_bar_padding" | "scrollbar_padding" | "bar_padding" => {
+            if let Some(v) = as_f32(value) {
+                node.scroll_bar_padding = v;
+            }
+        }
         _ => {}
     });
+}
+
+fn as_ui_scroll_direction(value: &SceneValue) -> Option<perro_ui::UiScrollDirection> {
+    match as_str(value)? {
+        "h" | "horizontal" | "x" => Some(perro_ui::UiScrollDirection::Horizontal),
+        "v" | "vertical" | "y" => Some(perro_ui::UiScrollDirection::Vertical),
+        _ => None,
+    }
+}
+
+fn as_ui_scroll_bar_side(value: &SceneValue) -> Option<perro_ui::UiScrollBarSide> {
+    match as_str(value)? {
+        "left" => Some(perro_ui::UiScrollBarSide::Left),
+        "right" => Some(perro_ui::UiScrollBarSide::Right),
+        "top" => Some(perro_ui::UiScrollBarSide::Top),
+        "bottom" => Some(perro_ui::UiScrollBarSide::Bottom),
+        _ => None,
+    }
 }
 
 fn apply_ui_container_fields(
