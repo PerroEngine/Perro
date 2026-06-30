@@ -1,5 +1,62 @@
 use super::*;
 
+const MULTIMESH_MESH_VERTEX_ATTRIBUTES: [wgpu::VertexAttribute; 2] = [
+    wgpu::VertexAttribute {
+        offset: 0,
+        shader_location: 0,
+        format: wgpu::VertexFormat::Float32x3,
+    },
+    wgpu::VertexAttribute {
+        offset: 12,
+        shader_location: 1,
+        format: wgpu::VertexFormat::Snorm16x4,
+    },
+];
+
+const MULTIMESH_INSTANCE_ATTRIBUTES: [wgpu::VertexAttribute; 5] = [
+    wgpu::VertexAttribute {
+        offset: 0,
+        shader_location: 4,
+        format: wgpu::VertexFormat::Float32x3,
+    },
+    wgpu::VertexAttribute {
+        offset: 12,
+        shader_location: 5,
+        format: wgpu::VertexFormat::Snorm16x4,
+    },
+    wgpu::VertexAttribute {
+        offset: 20,
+        shader_location: 6,
+        format: wgpu::VertexFormat::Float32x3,
+    },
+    wgpu::VertexAttribute {
+        offset: 32,
+        shader_location: 7,
+        format: wgpu::VertexFormat::Uint32,
+    },
+    wgpu::VertexAttribute {
+        offset: 36,
+        shader_location: 8,
+        format: wgpu::VertexFormat::Uint32,
+    },
+];
+
+pub(super) fn multimesh_mesh_vertex_layout<'a>() -> wgpu::VertexBufferLayout<'a> {
+    wgpu::VertexBufferLayout {
+        array_stride: std::mem::size_of::<RigidMeshVertex>() as u64,
+        step_mode: wgpu::VertexStepMode::Vertex,
+        attributes: &MULTIMESH_MESH_VERTEX_ATTRIBUTES,
+    }
+}
+
+pub(super) fn multimesh_instance_layout<'a>() -> wgpu::VertexBufferLayout<'a> {
+    wgpu::VertexBufferLayout {
+        array_stride: std::mem::size_of::<MultiMeshInstanceGpu>() as u64,
+        step_mode: wgpu::VertexStepMode::Instance,
+        attributes: &MULTIMESH_INSTANCE_ATTRIBUTES,
+    }
+}
+
 pub(super) fn create_multimesh_pipeline(
     device: &wgpu::Device,
     pipeline_layout: &wgpu::PipelineLayout,
@@ -53,55 +110,7 @@ fn create_multimesh_pipeline_with_depth_write(
         vertex: wgpu::VertexState {
             module: shader,
             entry_point: Some("vs_main"),
-            buffers: &[
-                wgpu::VertexBufferLayout {
-                    array_stride: std::mem::size_of::<RigidMeshVertex>() as u64,
-                    step_mode: wgpu::VertexStepMode::Vertex,
-                    attributes: &[
-                        wgpu::VertexAttribute {
-                            offset: 0,
-                            shader_location: 0,
-                            format: wgpu::VertexFormat::Snorm16x4,
-                        },
-                        wgpu::VertexAttribute {
-                            offset: 12,
-                            shader_location: 1,
-                            format: wgpu::VertexFormat::Float32x3,
-                        },
-                    ],
-                },
-                wgpu::VertexBufferLayout {
-                    array_stride: std::mem::size_of::<MultiMeshInstanceGpu>() as u64,
-                    step_mode: wgpu::VertexStepMode::Instance,
-                    attributes: &[
-                        wgpu::VertexAttribute {
-                            offset: 0,
-                            shader_location: 4,
-                            format: wgpu::VertexFormat::Float32x3,
-                        },
-                        wgpu::VertexAttribute {
-                            offset: 12,
-                            shader_location: 5,
-                            format: wgpu::VertexFormat::Snorm16x4,
-                        },
-                        wgpu::VertexAttribute {
-                            offset: 20,
-                            shader_location: 6,
-                            format: wgpu::VertexFormat::Float32x3,
-                        },
-                        wgpu::VertexAttribute {
-                            offset: 32,
-                            shader_location: 7,
-                            format: wgpu::VertexFormat::Uint32,
-                        },
-                        wgpu::VertexAttribute {
-                            offset: 36,
-                            shader_location: 8,
-                            format: wgpu::VertexFormat::Uint32,
-                        },
-                    ],
-                },
-            ],
+            buffers: &[multimesh_mesh_vertex_layout(), multimesh_instance_layout()],
             compilation_options: Default::default(),
         },
         fragment: Some(wgpu::FragmentState {

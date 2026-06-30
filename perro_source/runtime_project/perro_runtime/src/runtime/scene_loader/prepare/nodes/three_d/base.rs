@@ -832,6 +832,8 @@ fn parse_instance_grid(
     let mut counts = (1_u32, 1_u32, 1_u32);
     let mut spacing = perro_structs::Vector3::new(1.0, 1.0, 1.0);
     let mut origin = perro_structs::Vector3::ZERO;
+    let mut scale = perro_structs::Vector3::ONE;
+    let mut scale_wave = 0.0_f32;
     let mut height_wave = 0.0_f32;
     let mut rotation_step_deg = perro_structs::Vector3::ZERO;
 
@@ -854,6 +856,18 @@ fn parse_instance_grid(
             "origin" => {
                 if let Some(v) = as_vec3(value) {
                     origin = v;
+                }
+            }
+            "scale" | "instance_scale" => {
+                if let Some(v) = as_vec3(value) {
+                    scale = v;
+                } else if let Some(v) = as_f32(value) {
+                    scale = perro_structs::Vector3::new(v, v, v);
+                }
+            }
+            "scale_wave" | "wave_scale" => {
+                if let Some(v) = as_f32(value) {
+                    scale_wave = v;
                 }
             }
             "height_wave" | "wave_height" => {
@@ -895,7 +909,17 @@ fn parse_instance_grid(
                     (x + z + y) as f32 * rotation_step_deg.y,
                     z as f32 * rotation_step_deg.z,
                 ));
-                out.push(perro_nodes::MultiMeshInstancePose::from_pos_rot(pos, rot));
+                let scale_amount = if scale_wave != 0.0 {
+                    (1.0 + ((x as f32) * 0.37 + (y as f32) * 0.19 + (z as f32) * 0.53).sin()
+                        * scale_wave)
+                        .max(0.0001)
+                } else {
+                    1.0
+                };
+                out.push(perro_nodes::MultiMeshInstancePose {
+                    transform: perro_structs::Transform3D::new(pos, rot, scale * scale_amount),
+                    blend_shape_weights: None,
+                });
             }
         }
     }

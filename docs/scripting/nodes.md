@@ -275,6 +275,7 @@ See [TileMap2D](tilemap.md).
 - Renders many copies of one mesh.
 - Uses shared mesh/material surface bindings.
 - `instances` stores per-instance transform: position, rotation, and scale.
+- `instance_grid` can emit per-instance scale via `scale` and `scale_wave`.
 - Use it for repeated static props, foliage, debris, or crowd-like non-skinned copies.
 - Supports same LOD clamp fields as `MeshInstance3D`.
 - Supports `flip_x`, `flip_y`, and `flip_z` on the whole multimesh node.

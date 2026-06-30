@@ -22,6 +22,23 @@ use crate::Runtime;
 mod helpers;
 use helpers::*;
 
+const SPATIAL_INVERSE_SCALE_EPSILON: f32 = 1.0e-5;
+
+#[inline]
+fn inverse_basis_mat4(transform: Transform3D) -> glam::Mat4 {
+    let mut safe = transform;
+    if safe.scale.x.abs() <= SPATIAL_INVERSE_SCALE_EPSILON {
+        safe.scale.x = 1.0;
+    }
+    if safe.scale.y.abs() <= SPATIAL_INVERSE_SCALE_EPSILON {
+        safe.scale.y = 1.0;
+    }
+    if safe.scale.z.abs() <= SPATIAL_INVERSE_SCALE_EPSILON {
+        safe.scale.z = 1.0;
+    }
+    safe.to_mat4().inverse()
+}
+
 impl Runtime {
     fn create_node_specs(&mut self, specs: &[NodeSpec], parent_id: NodeID) -> Vec<NodeID> {
         self.create_owned_node_specs(specs.to_vec(), parent_id)
@@ -713,7 +730,7 @@ impl NodeAPI for Runtime {
                 };
                 let local = match parent_global {
                     Some(parent_global) => {
-                        let local_mat = parent_global.to_mat4().inverse() * global.to_mat4();
+                        let local_mat = inverse_basis_mat4(parent_global) * global.to_mat4();
                         let local = Transform3D::from_mat4(local_mat);
                         // Detect affine shear (or other non-TRS artifacts) that cannot be
                         // represented exactly by Transform3D's TRS fields.
@@ -1018,7 +1035,7 @@ impl NodeAPI for Runtime {
         };
         let local = match parent_global {
             Some(parent_global) => {
-                let local_mat = parent_global.to_mat4().inverse() * global.to_mat4();
+                let local_mat = inverse_basis_mat4(parent_global) * global.to_mat4();
                 Transform3D::from_mat4(local_mat)
             }
             None => global,
@@ -1118,9 +1135,7 @@ impl NodeAPI for Runtime {
         node_id: perro_ids::NodeID,
         global: Transform3D,
     ) -> Option<Transform3D> {
-        let inv_basis = Runtime::get_global_transform_3d(self, node_id)?
-            .to_mat4()
-            .inverse();
+        let inv_basis = inverse_basis_mat4(Runtime::get_global_transform_3d(self, node_id)?);
         let local = inv_basis * global.to_mat4();
         Some(Transform3D::from_mat4(local))
     }

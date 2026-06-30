@@ -1556,7 +1556,7 @@ mod tests {
             $root = @Batch
             [Batch]
             [MultiMeshInstance3D]
-                instance_grid = { counts=(4, 3, 2) spacing=(2, 1.5, 3) origin=(-3, 0.5, -4) height_wave=0.0 rotation_step_deg=(0, 10, 0) }
+                instance_grid = { counts=(4, 3, 2) spacing=(2, 1.5, 3) origin=(-3, 0.5, -4) scale=(1.5, 0.75, 2.0) height_wave=0.0 rotation_step_deg=(0, 10, 0) }
             [/MultiMeshInstance3D]
             [/Batch]
             "#,
@@ -1582,6 +1582,10 @@ mod tests {
                 assert_eq!(
                     mesh.instances[23].transform.position,
                     Vector3::new(3.0, 3.5, -1.0)
+                );
+                assert_eq!(
+                    mesh.instances[0].transform.scale,
+                    Vector3::new(1.5, 0.75, 2.0)
                 );
             }
             other => panic!("expected MultiMeshInstance3D node, got {other:?}"),

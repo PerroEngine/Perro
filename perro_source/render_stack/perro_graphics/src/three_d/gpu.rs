@@ -1001,6 +1001,52 @@ mod tests {
     }
 
     #[test]
+    fn multimesh_vertex_layout_matches_gpu_structs() {
+        let mesh_layout = super::multimesh_path::multimesh_mesh_vertex_layout();
+        assert_eq!(mesh_layout.array_stride, 28);
+        assert_eq!(mesh_layout.attributes[0].offset, 0);
+        assert_eq!(mesh_layout.attributes[0].shader_location, 0);
+        assert_eq!(
+            mesh_layout.attributes[0].format,
+            wgpu::VertexFormat::Float32x3
+        );
+        assert_eq!(mesh_layout.attributes[1].offset, 12);
+        assert_eq!(mesh_layout.attributes[1].shader_location, 1);
+        assert_eq!(
+            mesh_layout.attributes[1].format,
+            wgpu::VertexFormat::Snorm16x4
+        );
+
+        let instance_layout = super::multimesh_path::multimesh_instance_layout();
+        assert_eq!(instance_layout.array_stride, 40);
+        assert_eq!(instance_layout.attributes[0].offset, 0);
+        assert_eq!(
+            instance_layout.attributes[0].format,
+            wgpu::VertexFormat::Float32x3
+        );
+        assert_eq!(instance_layout.attributes[1].offset, 12);
+        assert_eq!(
+            instance_layout.attributes[1].format,
+            wgpu::VertexFormat::Snorm16x4
+        );
+        assert_eq!(instance_layout.attributes[2].offset, 20);
+        assert_eq!(
+            instance_layout.attributes[2].format,
+            wgpu::VertexFormat::Float32x3
+        );
+        assert_eq!(instance_layout.attributes[3].offset, 32);
+        assert_eq!(
+            instance_layout.attributes[3].format,
+            wgpu::VertexFormat::Uint32
+        );
+        assert_eq!(instance_layout.attributes[4].offset, 36);
+        assert_eq!(
+            instance_layout.attributes[4].format,
+            wgpu::VertexFormat::Uint32
+        );
+    }
+
+    #[test]
     fn multimesh_instance_transform_matches_single_mesh_model_for_random_instances() {
         let node_model = Mat4::from_scale_rotation_translation(
             Vec3::new(1.4, 0.75, 1.1),

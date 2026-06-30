@@ -1066,6 +1066,75 @@ fn reparent_preserves_child_global_transform_3d() {
 }
 
 #[test]
+fn reparent_to_zero_scale_parent_uses_safe_inverse_3d() {
+    let mut runtime = Runtime::new();
+
+    let mut parent = Node3D::new();
+    parent.transform.position = Vector3::new(3.0, 0.0, 0.0);
+    parent.transform.scale = Vector3::ZERO;
+    let parent_id = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::Node3D(parent)));
+
+    let mut child = Node3D::new();
+    child.transform.position = Vector3::new(8.0, 2.0, -4.0);
+    let child_id = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::Node3D(child)));
+
+    assert!(runtime.reparent(parent_id, child_id));
+
+    let local = runtime
+        .with_base_node::<Node3D, _, _>(child_id, |node| node.transform)
+        .expect("child local must exist");
+    assert!(local.position.x.is_finite());
+    assert!(local.position.y.is_finite());
+    assert!(local.position.z.is_finite());
+    assert_eq!(local.scale, Vector3::ONE);
+}
+
+#[test]
+fn set_global_transform_under_zero_scale_parent_uses_safe_inverse_3d() {
+    let mut runtime = Runtime::new();
+
+    let mut parent = Node3D::new();
+    parent.transform.position = Vector3::new(3.0, 0.0, 0.0);
+    parent.transform.scale = Vector3::ZERO;
+    let parent_id = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::Node3D(parent)));
+
+    let child_id = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::Node3D(Node3D::new())));
+
+    if let Some(parent) = runtime.nodes.get_mut(parent_id) {
+        parent.add_child(child_id);
+    }
+    if let Some(child) = runtime.nodes.get_mut(child_id) {
+        child.parent = parent_id;
+    }
+    runtime.mark_transform_dirty_recursive(parent_id);
+
+    assert!(runtime.set_global_transform_3d(
+        child_id,
+        Transform3D::new(
+            Vector3::new(8.0, 2.0, -4.0),
+            Quaternion::IDENTITY,
+            Vector3::ONE,
+        ),
+    ));
+
+    let local = runtime
+        .with_base_node::<Node3D, _, _>(child_id, |node| node.transform)
+        .expect("child local must exist");
+    assert!(local.position.x.is_finite());
+    assert!(local.position.y.is_finite());
+    assert!(local.position.z.is_finite());
+    assert_eq!(local.scale, Vector3::ONE);
+}
+
+#[test]
 fn remove_node_removes_entire_subtree() {
     let mut runtime = Runtime::new();
 
