@@ -151,6 +151,7 @@ mod joycon2;
 #[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
 mod shared;
 
+#[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
 mod backend {
     // Public PC Joy-Con backend provenance:
     //

@@ -1,6 +1,8 @@
 use crate::error::SteamError;
 use std::sync::{Mutex, OnceLock};
 
+const STEAM_APP_ID_ENV: &str = "SteamAppId";
+
 #[derive(Default)]
 struct SteamState {
     enabled: bool,
@@ -53,11 +55,11 @@ pub fn init_from_config(enabled: bool, app_id: Option<u32>) -> Result<(), SteamE
 }
 
 pub fn run_callbacks() -> Result<(), SteamError> {
-    let client = state()
-        .lock()
-        .map_err(|_| SteamError::NotReady)?
-        .client
-        .clone();
+    let client = {
+        let mut state = state().lock().map_err(|_| SteamError::NotReady)?;
+        ensure_client_from_process_env(&mut state)?;
+        state.client.clone()
+    };
     if let Some(client) = client {
         client.process_callbacks(crate::events::enqueue_callback);
         flush_stats_store(&client)?;
@@ -121,11 +123,30 @@ pub(crate) fn with_client<T>(
     f: impl FnOnce(&steamworks::Client) -> Result<T, SteamError>,
 ) -> Result<T, SteamError> {
     let client = {
-        let state = state().lock().map_err(|_| SteamError::NotReady)?;
+        let mut state = state().lock().map_err(|_| SteamError::NotReady)?;
+        ensure_client_from_process_env(&mut state)?;
         if !state.enabled {
             return Err(SteamError::Disabled);
         }
         state.client.clone().ok_or(SteamError::NotReady)?
     };
     f(&client)
+}
+
+fn ensure_client_from_process_env(state: &mut SteamState) -> Result<(), SteamError> {
+    if state.client.is_some() || state.enabled {
+        return Ok(());
+    }
+    let Some(app_id) = std::env::var(STEAM_APP_ID_ENV)
+        .ok()
+        .and_then(|raw| raw.parse::<u32>().ok())
+    else {
+        return Ok(());
+    };
+    let client = steamworks::Client::init_app(app_id)
+        .map_err(|err| SteamError::InitFailed(err.to_string()))?;
+    state.enabled = true;
+    state.app_id = Some(app_id);
+    state.client = Some(client);
+    Ok(())
 }

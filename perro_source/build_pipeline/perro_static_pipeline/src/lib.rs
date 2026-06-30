@@ -151,6 +151,16 @@ pub(crate) fn write_static_lookup_fn(
 ) {
     const MATCH_LIMIT: usize = 8;
 
+    if entries.is_empty() {
+        let _ = writeln!(
+            out,
+            "pub const fn {fn_name}(_path_hash: u64) -> {value_type} {{"
+        );
+        let _ = writeln!(out, "    {empty_expr}");
+        out.push_str("}\n");
+        return;
+    }
+
     if entries.len() <= MATCH_LIMIT {
         let _ = writeln!(
             out,

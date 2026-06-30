@@ -17,6 +17,7 @@ pub(crate) fn push(event: SteamEvent) {
 }
 
 pub fn poll_one() -> Result<Option<SteamEvent>, SteamError> {
+    let _ = crate::app::run_callbacks();
     queue()
         .lock()
         .map(|mut queue| queue.pop_front())
@@ -24,6 +25,7 @@ pub fn poll_one() -> Result<Option<SteamEvent>, SteamError> {
 }
 
 pub fn drain() -> Result<Vec<SteamEvent>, SteamError> {
+    let _ = crate::app::run_callbacks();
     queue()
         .lock()
         .map(|mut queue| queue.drain(..).collect())

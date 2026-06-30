@@ -485,7 +485,7 @@ fn emit_ops_literal(ops: &[Op]) -> String {
 
 fn emit_op_literal(op: &Op) -> String {
     match op {
-        Op::Const(v) => format!("ParticleExprOp3D::Const({v:?})"),
+        Op::Const(v) => format!("ParticleExprOp3D::Const({})", emit_float_literal(*v)),
         Op::T => "ParticleExprOp3D::T".to_string(),
         Op::Life => "ParticleExprOp3D::Life".to_string(),
         Op::Lifetime => "ParticleExprOp3D::Lifetime".to_string(),
@@ -529,6 +529,24 @@ fn emit_op_literal(op: &Op) -> String {
         Op::Max => "ParticleExprOp3D::Max".to_string(),
         Op::Clamp => "ParticleExprOp3D::Clamp".to_string(),
         Op::Hash => "ParticleExprOp3D::Hash".to_string(),
+    }
+}
+
+fn emit_float_literal(value: f32) -> String {
+    if value == std::f32::consts::PI {
+        "std::f32::consts::PI".to_string()
+    } else if value == -std::f32::consts::PI {
+        "-std::f32::consts::PI".to_string()
+    } else if value == std::f32::consts::TAU {
+        "std::f32::consts::TAU".to_string()
+    } else if value == -std::f32::consts::TAU {
+        "-std::f32::consts::TAU".to_string()
+    } else if value == std::f32::consts::FRAC_PI_2 {
+        "std::f32::consts::FRAC_PI_2".to_string()
+    } else if value == -std::f32::consts::FRAC_PI_2 {
+        "-std::f32::consts::FRAC_PI_2".to_string()
+    } else {
+        format!("{value:?}")
     }
 }
 

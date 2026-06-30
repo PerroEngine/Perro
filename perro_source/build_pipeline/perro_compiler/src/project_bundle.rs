@@ -674,7 +674,7 @@ perro_app::entry::run_static_embedded_project(perro_app::entry::StaticEmbeddedPr
                 .unwrap_or("en"),
         ),
         steam_enabled = cfg.steam.enabled,
-        steam_app_id = emit_optional_u32(cfg.steam.app_id),
+        steam_app_id = emit_optional_steam_app_id_fn(cfg.steam.app_id),
     );
     let embedded_block = indent_block(&embedded_block, 2);
     let embedded_web_block = format!(
@@ -779,7 +779,7 @@ perro_app::entry::run_static_embedded_project_web(perro_app::entry::StaticEmbedd
                 .unwrap_or("en"),
         ),
         steam_enabled = cfg.steam.enabled,
-        steam_app_id = emit_optional_u32(cfg.steam.app_id),
+        steam_app_id = emit_optional_steam_app_id_fn(cfg.steam.app_id),
     );
     let embedded_android_block = format!(
         "let root = project_root();\n\
@@ -884,16 +884,18 @@ perro_app::entry::run_static_embedded_project_android(app, perro_app::entry::Sta
                 .unwrap_or("en"),
         ),
         steam_enabled = cfg.steam.enabled,
-        steam_app_id = emit_optional_u32(cfg.steam.app_id),
+        steam_app_id = emit_optional_steam_app_id_fn(cfg.steam.app_id),
     );
     let embedded_android_block = indent_block(&embedded_android_block, 2);
     let embedded_web_block = indent_block(&embedded_web_block, 4);
+    let steam_app_id_fn_block = emit_static_steam_app_id_fn(cfg.steam.app_id, &cfg.name);
 
     let shared_src = format!(
         "#![allow(dead_code)]\n\n\
 #[path = \"static/mod.rs\"]\n\
 mod static_assets;\n\n\
 static PERRO_ASSETS: &[u8] = include_bytes!(\"../embedded/assets.perro\");\n\n\
+{steam_app_id_fn_block}\
 #[used]\n\
 #[unsafe(no_mangle)]\n\
 pub static PERRO_ENGINE_DETECT: [u8; 89] =\n\
@@ -945,6 +947,7 @@ pub fn run_web() -> Result<(), wasm_bindgen::JsValue> {{\n\
         embedded_block = embedded_block,
         embedded_android_block = embedded_android_block,
         embedded_web_block = embedded_web_block,
+        steam_app_id_fn_block = steam_app_id_fn_block,
     );
     let lib_src = "#![cfg_attr(all(perro_no_console, target_os = \"windows\"), windows_subsystem = \"windows\")]\n\n#[path = \"entry_shared.rs\"]\nmod entry_shared;\n\npub use entry_shared::*;\n\n#[cfg(target_os = \"android\")]\n#[unsafe(no_mangle)]\npub fn android_main(app: perro_app::entry::AndroidApp) {\n    keep_perro_engine_marker();\n    run_android(app);\n}\n\n#[cfg(target_arch = \"wasm32\")]\n#[wasm_bindgen::prelude::wasm_bindgen(start)]\npub fn run_web_entry() -> Result<(), wasm_bindgen::JsValue> {\n    keep_perro_engine_marker();\n    run_web()\n}\n";
     let main_src = "#![cfg_attr(all(perro_no_console, target_os = \"windows\"), windows_subsystem = \"windows\")]\n\n#[path = \"entry_shared.rs\"]\nmod entry_shared;\n\n#[cfg(all(not(target_os = \"android\"), not(target_arch = \"wasm32\")))]\nfn main() {\n  entry_shared::keep_perro_engine_marker();\n  entry_shared::run_native();\n}\n";
@@ -1817,10 +1820,85 @@ fn emit_optional_f32(value: Option<f32>) -> String {
     }
 }
 
-fn emit_optional_u32(value: Option<u32>) -> String {
+fn emit_optional_steam_app_id_fn(value: Option<u32>) -> String {
     match value {
-        Some(v) => format!("Some({v}u32)"),
+        Some(_) => "Some(steam_app_id)".to_string(),
         None => "None".to_string(),
+    }
+}
+
+fn emit_static_steam_app_id_fn(value: Option<u32>, project_name: &str) -> String {
+    let Some(app_id) = value else {
+        return String::new();
+    };
+
+    let mut seed = 0x9e37_79b9_7f4a_7c15u64 ^ u64::from(app_id);
+    for byte in project_name.as_bytes() {
+        seed = splitmix64(seed ^ u64::from(*byte));
+    }
+
+    let data_key = next_nonzero_u32(&mut seed);
+    let data_mask = next_nonzero_u32(&mut seed);
+    let add = next_nonzero_u32(&mut seed);
+    let split = next_nonzero_u32(&mut seed);
+    let noise = next_nonzero_u32(&mut seed);
+    let check_key = next_nonzero_u32(&mut seed) | 1;
+    let rot_a = (next_nonzero_u32(&mut seed) % 31) + 1;
+    let rot_b = (next_nonzero_u32(&mut seed) % 31) + 1;
+    let encoded = app_id
+        .rotate_left(rot_a)
+        .wrapping_add(add)
+        .rotate_left(rot_b)
+        ^ data_key
+        ^ data_mask;
+    let data_a = encoded ^ split;
+    let data_b = split;
+    let check = app_id.wrapping_mul(check_key).rotate_left(rot_b) ^ noise;
+    let poison = next_nonzero_u32(&mut seed);
+
+    format!(
+        "fn steam_app_id() -> u32 {{\n\
+    const DATA_A: u32 = 0x{data_a:08x};\n\
+    const DATA_B: u32 = 0x{data_b:08x};\n\
+    const DATA_KEY: u32 = 0x{data_key:08x};\n\
+    const DATA_MASK: u32 = 0x{data_mask:08x};\n\
+    const ADD: u32 = 0x{add:08x};\n\
+    const CHECK_KEY: u32 = 0x{check_key:08x};\n\
+    const CHECK: u32 = 0x{check:08x};\n\
+    const NOISE: u32 = 0x{noise:08x};\n\
+    const POISON: u32 = 0x{poison:08x};\n\
+    let mut x = std::hint::black_box(DATA_A) ^ std::hint::black_box(DATA_B);\n\
+    x = std::hint::black_box(x ^ std::hint::black_box(DATA_KEY));\n\
+    x = std::hint::black_box(x ^ std::hint::black_box(DATA_MASK));\n\
+    x = std::hint::black_box(x.rotate_right({rot_b}));\n\
+    x = std::hint::black_box(x.wrapping_sub(std::hint::black_box(ADD)));\n\
+    let id = std::hint::black_box(x.rotate_right({rot_a}));\n\
+    let check_key = std::hint::black_box(CHECK_KEY);\n\
+    let noise = std::hint::black_box(NOISE);\n\
+    let check = std::hint::black_box(id.wrapping_mul(check_key).rotate_left({rot_b}) ^ noise);\n\
+    if check == CHECK {{\n\
+        id\n\
+    }} else {{\n\
+        id ^ POISON\n\
+    }}\n\
+}}\n\n"
+    )
+}
+
+fn splitmix64(mut value: u64) -> u64 {
+    value = value.wrapping_add(0x9e37_79b9_7f4a_7c15);
+    value = (value ^ (value >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+    value = (value ^ (value >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+    value ^ (value >> 31)
+}
+
+fn next_nonzero_u32(seed: &mut u64) -> u32 {
+    loop {
+        *seed = splitmix64(*seed);
+        let value = (*seed >> 16) as u32;
+        if value != 0 {
+            return value;
+        }
     }
 }
 

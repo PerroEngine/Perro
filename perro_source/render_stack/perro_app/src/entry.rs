@@ -396,7 +396,7 @@ pub struct StaticEmbeddedLocalizationConfig {
 
 pub struct StaticEmbeddedSteamConfig {
     pub enabled: bool,
-    pub app_id: Option<u32>,
+    pub app_id: Option<fn() -> u32>,
 }
 
 pub struct StaticEmbeddedAssetsConfig {
@@ -452,7 +452,7 @@ pub fn run_static_embedded_project(
         input.metadata.trademark,
     );
     static_config = static_config.with_localization(input.localization.default_locale);
-    static_config = static_config.with_steam(input.steam.enabled, input.steam.app_id);
+    static_config = static_config.with_steam(input.steam.enabled, input.steam.app_id.map(|f| f()));
     let mut project =
         RuntimeProject::from_static(static_config, input.project.project_root.to_path_buf())
             .with_routes(static_embedded_routes(&input.routes))
@@ -532,7 +532,7 @@ pub fn run_static_embedded_project_android(
         input.metadata.trademark,
     );
     static_config = static_config.with_localization(input.localization.default_locale);
-    static_config = static_config.with_steam(input.steam.enabled, input.steam.app_id);
+    static_config = static_config.with_steam(input.steam.enabled, input.steam.app_id.map(|f| f()));
     let mut project =
         RuntimeProject::from_static(static_config, input.project.project_root.to_path_buf())
             .with_routes(static_embedded_routes(&input.routes))
@@ -620,7 +620,8 @@ pub fn run_static_embedded_project_web(input: StaticEmbeddedProject<'_>) -> Resu
             input.metadata.trademark,
         );
         static_config = static_config.with_localization(input.localization.default_locale);
-        static_config = static_config.with_steam(input.steam.enabled, input.steam.app_id);
+        static_config =
+            static_config.with_steam(input.steam.enabled, input.steam.app_id.map(|f| f()));
         let mut project =
             RuntimeProject::from_static(static_config, input.project.project_root.to_path_buf())
                 .with_routes(static_embedded_routes(&input.routes))

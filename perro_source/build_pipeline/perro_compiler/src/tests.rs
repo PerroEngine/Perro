@@ -1,11 +1,11 @@
 #[cfg(test)]
 mod tests {
     use super::{
-        emit_web_route_html_files, generate_call_param_binding, generate_embedded_entry_files,
-        generate_perro_assets, generate_project_static_modules, module_name_from_rel,
-        module_short_name_from_rel, normalize_cargo_output_paths, reset_embedded_dir, sync_scripts,
-        transpile_frontend_script, transpiled_exports_script_ctor, ProjectBuildOptions,
-        ScriptMethodParam,
+        emit_static_steam_app_id_fn, emit_web_route_html_files, generate_call_param_binding,
+        generate_embedded_entry_files, generate_perro_assets, generate_project_static_modules,
+        module_name_from_rel, module_short_name_from_rel, normalize_cargo_output_paths,
+        reset_embedded_dir, sync_scripts, transpile_frontend_script,
+        transpiled_exports_script_ctor, ProjectBuildOptions, ScriptMethodParam,
     };
     use perro_project::{
         ensure_project_layout, ensure_project_scaffold, ensure_project_toml,
@@ -34,6 +34,17 @@ mod tests {
                 "missing call_method arm for {method_name}"
             );
         }
+    }
+
+    #[test]
+    fn emits_obfuscated_static_steam_app_id_fn() {
+        let src = emit_static_steam_app_id_fn(Some(480), "Game");
+
+        assert!(src.contains("fn steam_app_id() -> u32"));
+        assert!(src.contains("const DATA_A: u32 = 0x"));
+        assert!(src.contains("std::hint::black_box(DATA_A)"));
+        assert!(!src.contains("480u32"));
+        assert!(!src.contains("Some(480"));
     }
 
     #[test]
