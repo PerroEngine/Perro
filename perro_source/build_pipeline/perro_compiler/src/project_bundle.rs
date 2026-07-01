@@ -213,10 +213,13 @@ fn export_project_binary(
 
     let output_dir = project_root
         .join(".output")
-        .join(native_output_folder_name(&output_bin_name, version));
+        .join(native_output_folder_name(&output_bin_name));
     fs::create_dir_all(&output_dir)?;
     let copied_bin = output_dir.join(platform_binary_name(&package_bin_name));
-    let output_bin = output_dir.join(platform_binary_name(&output_bin_name));
+    let output_bin = output_dir.join(platform_binary_name(&native_output_artifact_name(
+        &output_bin_name,
+        version,
+    )));
     fs::copy(&built_bin, &copied_bin)?;
     rename_exported_binary(&copied_bin, &output_bin)?;
     if steam_enabled {
@@ -226,12 +229,16 @@ fn export_project_binary(
     Ok(())
 }
 
-fn native_output_folder_name(output_name: &str, version: Option<&str>) -> String {
+fn native_output_folder_name(output_name: &str) -> String {
+    format!("{}-{}", package_name_slug(output_name), host_system_slug())
+}
+
+fn native_output_artifact_name(output_name: &str, version: Option<&str>) -> String {
     format!(
-        "{}-{}-{}",
+        "{}-{}-v{}",
         package_name_slug(output_name),
         host_system_slug(),
-        package_name_slug(version.unwrap_or("dev"))
+        package_name_slug(version.unwrap_or("0.1.0"))
     )
 }
 
@@ -263,7 +270,40 @@ fn host_os_slug() -> &'static str {
 }
 
 fn host_system_slug() -> String {
-    format!("{}-{}", host_os_slug(), std::env::consts::ARCH)
+    rustc_default_host_triple()
+        .and_then(|triple| target_slug_from_triple(&triple))
+        .unwrap_or_else(|| format!("{}-{}", host_os_slug(), std::env::consts::ARCH))
+}
+
+fn rustc_default_host_triple() -> Option<String> {
+    let output = Command::new("rustc").arg("-vV").output().ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let stdout = String::from_utf8(output.stdout).ok()?;
+    stdout.lines().find_map(|line| {
+        line.strip_prefix("host:")
+            .map(str::trim)
+            .filter(|host| !host.is_empty())
+            .map(str::to_string)
+    })
+}
+
+fn target_slug_from_triple(triple: &str) -> Option<String> {
+    let arch = triple.split('-').next()?.trim();
+    if arch.is_empty() {
+        return None;
+    }
+    let os = if triple.contains("windows") {
+        "windows"
+    } else if triple.contains("apple-darwin") {
+        "macos"
+    } else if triple.contains("linux") {
+        "linux"
+    } else {
+        triple.split('-').nth(2).unwrap_or(std::env::consts::OS)
+    };
+    Some(format!("{}-{}", package_name_slug(os), package_name_slug(arch)))
 }
 
 fn copy_steam_runtime_library(

@@ -3,9 +3,11 @@ mod tests {
     use super::{
         emit_static_steam_app_id_fn, emit_web_route_html_files, generate_call_param_binding,
         generate_embedded_entry_files, generate_perro_assets, generate_project_static_modules,
-        module_name_from_rel, module_short_name_from_rel, normalize_cargo_output_paths,
+        module_name_from_rel, module_short_name_from_rel, native_output_artifact_name,
+        native_output_folder_name, normalize_cargo_output_paths,
         reset_embedded_dir, sync_scripts, transpile_frontend_script,
-        transpiled_exports_script_ctor, ProjectBuildOptions, ScriptMethodParam,
+        target_slug_from_triple, transpiled_exports_script_ctor, ProjectBuildOptions,
+        ScriptMethodParam,
     };
     use perro_project::{
         ensure_project_layout, ensure_project_scaffold, ensure_project_toml,
@@ -45,6 +47,45 @@ mod tests {
         assert!(src.contains("std::hint::black_box(DATA_A)"));
         assert!(!src.contains("480u32"));
         assert!(!src.contains("Some(480"));
+    }
+
+    #[test]
+    fn native_output_names_group_by_host_and_suffix_bin_with_version() {
+        let host = super::rustc_default_host_triple()
+            .and_then(|triple| target_slug_from_triple(&triple))
+            .unwrap_or_else(|| format!("{}-{}", std::env::consts::OS, std::env::consts::ARCH));
+        assert_eq!(
+            native_output_folder_name("My Game"),
+            format!("My_Game-{host}")
+        );
+        assert_eq!(
+            native_output_artifact_name("My Game", Some("1.0")),
+            format!("My_Game-{host}-v1.0")
+        );
+        assert_eq!(
+            native_output_artifact_name("Game", None),
+            format!("Game-{host}-v0.1.0")
+        );
+    }
+
+    #[test]
+    fn target_slug_from_triple_uses_rust_target_os_and_arch() {
+        assert_eq!(
+            target_slug_from_triple("x86_64-pc-windows-msvc").as_deref(),
+            Some("windows-x86_64")
+        );
+        assert_eq!(
+            target_slug_from_triple("aarch64-pc-windows-msvc").as_deref(),
+            Some("windows-aarch64")
+        );
+        assert_eq!(
+            target_slug_from_triple("aarch64-apple-darwin").as_deref(),
+            Some("macos-aarch64")
+        );
+        assert_eq!(
+            target_slug_from_triple("x86_64-unknown-linux-gnu").as_deref(),
+            Some("linux-x86_64")
+        );
     }
 
     #[test]

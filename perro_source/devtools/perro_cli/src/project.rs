@@ -25,7 +25,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::{LazyLock, Mutex};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum CliTarget {
@@ -296,8 +296,16 @@ pub(crate) fn dev_command(args: &[String], cwd: &Path) -> Result<(), String> {
     } else {
         target_dir.join(profile_dir).join("perro_dev_runner")
     };
+    let runner_path = prepare_dev_runner_launch_path(&project_dir, &runner_path, profile_dir)
+        .map_err(|err| format!("failed to prepare dev runner launch copy: {err}"))?;
     if project_cfg.steam.enabled {
-        copy_steam_runtime_library(&target_dir, profile_dir, &target_dir.join(profile_dir))?;
+        let launch_dir = runner_path.parent().ok_or_else(|| {
+            format!(
+                "failed to resolve dev runner launch directory for {}",
+                runner_path.display()
+            )
+        })?;
+        copy_steam_runtime_library(&target_dir, profile_dir, launch_dir)?;
     }
     log_note("Running Dev Runner");
 
@@ -325,6 +333,40 @@ pub(crate) fn dev_command(args: &[String], cwd: &Path) -> Result<(), String> {
     }
     log_done("Dev Runner Finished");
     Ok(())
+}
+
+fn prepare_dev_runner_launch_path(
+    project_dir: &Path,
+    runner_path: &Path,
+    profile_dir: &str,
+) -> io::Result<PathBuf> {
+    let runs_dir = project_dir.join(".perro").join("dev_runner").join("runs");
+    cleanup_old_dev_runner_launch_dirs(&runs_dir);
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    let launch_dir = runs_dir.join(format!("{profile_dir}-{}-{stamp}", std::process::id()));
+    fs::create_dir_all(&launch_dir)?;
+    let launch_path = launch_dir.join(
+        runner_path
+            .file_name()
+            .unwrap_or_else(|| std::ffi::OsStr::new("perro_dev_runner")),
+    );
+    fs::copy(runner_path, &launch_path)?;
+    Ok(launch_path)
+}
+
+fn cleanup_old_dev_runner_launch_dirs(runs_dir: &Path) {
+    let Ok(entries) = fs::read_dir(runs_dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            let _ = fs::remove_dir_all(path);
+        }
+    }
 }
 
 pub(crate) fn copy_steam_runtime_library(
