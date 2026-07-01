@@ -1023,6 +1023,51 @@ fn button_uses_hover_and_pressed_styles_from_mouse_state() {
 }
 
 #[test]
+fn button_held_before_hover_does_not_press_or_click() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+    let node = insert_button(&mut runtime, [120.0, 40.0]);
+    runtime.nodes.get_mut(node).expect("button").name = Cow::Borrowed("play");
+
+    runtime.extract_render_ui_commands();
+    runtime.drain_render_commands(&mut Vec::new());
+    runtime.clear_dirty_flags();
+
+    runtime.begin_input_frame();
+    runtime.set_mouse_position(20.0, 20.0);
+    runtime.set_mouse_button_state(MouseButton::Left, true);
+    runtime.extract_render_ui_commands();
+
+    runtime.begin_input_frame();
+    runtime.set_mouse_position(400.0, 300.0);
+    runtime.set_mouse_button_state(MouseButton::Left, true);
+    runtime.extract_render_ui_commands();
+    assert_eq!(
+        runtime.render_ui.button_states.get(&node).copied(),
+        Some(UiButtonVisualState::Hover)
+    );
+
+    runtime.begin_input_frame();
+    runtime.set_mouse_button_state(MouseButton::Left, false);
+    runtime.extract_render_ui_commands();
+    assert_eq!(
+        runtime.render_ui.button_states.get(&node).copied(),
+        Some(UiButtonVisualState::Hover)
+    );
+    assert!(
+        !runtime
+            .signal_runtime
+            .queued_ui_signals
+            .iter()
+            .any(
+                |(signal, _)| *signal == SignalID::from_string("play_pressed")
+                    || *signal == SignalID::from_string("play_released")
+                    || *signal == SignalID::from_string("play_clicked")
+            )
+    );
+}
+
+#[test]
 fn disabled_button_ignores_hover_and_pressed_mouse_state() {
     let mut runtime = Runtime::new();
     runtime.set_viewport_size(800, 600);
@@ -3239,6 +3284,34 @@ fn scroll_container_track_click_updates_scroll() {
         })
         .expect("scroller node");
     assert_eq!(scroll, 200.0);
+}
+
+#[test]
+fn scroll_container_scrollbar_requests_pointer_cursor() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+
+    let mut scroller = UiScrollContainer::new();
+    scroller.layout.size = UiVector2::pixels(200.0, 100.0);
+    let scroller_id = insert_ui_node(&mut runtime, SceneNodeData::UiScrollContainer(scroller));
+
+    let mut list = UiVLayout::new();
+    list.layout.size = UiVector2::pixels(200.0, 300.0);
+    let list_id = insert_ui_node(&mut runtime, SceneNodeData::UiVLayout(list));
+    attach_child(&mut runtime, scroller_id, list_id);
+
+    runtime.extract_render_ui_commands();
+    runtime.drain_render_commands(&mut Vec::new());
+    runtime.clear_dirty_flags();
+    let _ = runtime.take_cursor_icon_request();
+
+    runtime.set_mouse_position(497.0, 300.0);
+    runtime.extract_render_ui_commands();
+
+    assert_eq!(
+        runtime.take_cursor_icon_request(),
+        Some(perro_ui::CursorIcon::Pointer)
+    );
 }
 
 #[test]

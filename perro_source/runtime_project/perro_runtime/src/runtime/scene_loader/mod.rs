@@ -442,6 +442,7 @@ impl Runtime {
         self.render_ui.focused_text_edit = None;
         self.render_ui.hovered_text_edit = None;
         self.render_ui.pressed_text_edit = None;
+        self.render_ui.pressed_ui_button = None;
         self.render_ui.last_ui_pointer = None;
         self.render_ui.cursor_icon = perro_ui::CursorIcon::Default;
         self.render_ui.cursor_icon_2d = perro_ui::CursorIcon::Default;

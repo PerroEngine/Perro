@@ -620,6 +620,11 @@ impl Runtime {
         }
         let hovered = self.hovered_button(computed, UiInputSource::Kbm, pointer_point);
         let mouse_down = self.input.is_mouse_down(MouseButton::Left);
+        if self.input.is_mouse_pressed(MouseButton::Left) {
+            self.render_ui.pressed_ui_button = hovered;
+        } else if !mouse_down {
+            self.render_ui.pressed_ui_button = None;
+        }
         let mut next_states = std::mem::take(&mut self.render_ui.button_states);
         next_states.retain(|node, _| self.nodes.get(*node).is_some());
         let mut events = Vec::new();
@@ -653,7 +658,7 @@ impl Runtime {
                 UiButtonVisualState::Pressed
             } else if Some(node) != hovered && !focused_without_hover {
                 UiButtonVisualState::Neutral
-            } else if mouse_down {
+            } else if mouse_down && self.render_ui.pressed_ui_button == Some(node) {
                 UiButtonVisualState::Pressed
             } else {
                 UiButtonVisualState::Hover
@@ -669,8 +674,11 @@ impl Runtime {
 
         self.render_ui.button_states = next_states;
         let text_hovered = self.hovered_text_edit(computed, UiInputSource::Kbm, pointer_point);
+        let scrollbar_hovered = self.render_ui.active_scrollbar.is_some()
+            || self.hit_scrollbar(pointer_point, computed).is_some();
         let cursor_icon = text_hovered
             .map(|_| perro_ui::CursorIcon::Text)
+            .or_else(|| scrollbar_hovered.then_some(perro_ui::CursorIcon::Pointer))
             .or_else(|| {
                 hovered
                     .and_then(|node| self.nodes.get(node))
