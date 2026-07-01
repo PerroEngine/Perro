@@ -268,17 +268,16 @@ fn ensure_project_manifest_features(path: &Path) -> std::io::Result<()> {
         );
         changed = true;
     }
-    if !features_table.contains_key("steamworks") {
-        features_table.insert(
-            "steamworks".to_string(),
-            Value::Array(vec![
-                Value::String("perro_app/steamworks".to_string()),
-                Value::String("perro_api/steamworks".to_string()),
-                Value::String("perro_runtime/steamworks".to_string()),
-            ]),
-        );
-        changed = true;
-    }
+    changed |= ensure_feature_values(
+        features_table,
+        "steamworks",
+        &[
+            "perro_app/steamworks",
+            "perro_api/steamworks",
+            "perro_runtime/steamworks",
+            "scripts/steamworks",
+        ],
+    );
 
     if !changed {
         return Ok(());
@@ -381,6 +380,31 @@ fn ensure_project_manifest_icon_build_support(path: &Path) -> std::io::Result<()
     let rendered = toml::to_string(&value)
         .map_err(|err| std::io::Error::other(format!("failed to render Cargo.toml: {err}")))?;
     write_if_changed(path, &rendered)
+}
+
+fn ensure_feature_values(
+    features_table: &mut toml::map::Map<String, Value>,
+    name: &str,
+    values: &[&str],
+) -> bool {
+    let entry = features_table
+        .entry(name.to_string())
+        .or_insert_with(|| Value::Array(Vec::new()));
+    let Some(array) = entry.as_array_mut() else {
+        return false;
+    };
+
+    let mut changed = false;
+    for value in values {
+        if !array
+            .iter()
+            .any(|existing| existing.as_str() == Some(*value))
+        {
+            array.push(Value::String((*value).to_string()));
+            changed = true;
+        }
+    }
+    changed
 }
 
 fn ensure_project_manifest_web_support(path: &Path) -> std::io::Result<()> {

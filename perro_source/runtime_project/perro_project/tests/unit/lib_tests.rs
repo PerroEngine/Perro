@@ -782,8 +782,33 @@ app_id = 480
     let scripts_manifest =
         fs::read_to_string(root.join(".perro").join("scripts").join("Cargo.toml"))
             .expect("read scripts manifest");
+    let project_manifest =
+        fs::read_to_string(root.join(".perro").join("project").join("Cargo.toml"))
+            .expect("read project manifest");
     assert!(scripts_manifest.contains("perro_api = \"0.1.0\""));
     assert!(!scripts_manifest.contains("\nperro_steamworks = \"0.1.0\""));
+    assert!(project_manifest.contains("\"scripts/steamworks\""));
+
+    fs::remove_dir_all(&root).expect("cleanup");
+}
+
+#[test]
+fn ensure_source_overrides_repairs_project_steamworks_script_feature() {
+    let root = unique_temp_dir("perro_steam_project_feature_repair");
+    ensure_project_layout(&root).expect("layout");
+    ensure_project_scaffold(&root, "Steam Feature Repair").expect("scaffold");
+    let project_manifest_path = root.join(".perro").join("project").join("Cargo.toml");
+    let project_manifest = fs::read_to_string(&project_manifest_path).expect("read manifest");
+    fs::write(
+        &project_manifest_path,
+        project_manifest.replace(", \"scripts/steamworks\"", ""),
+    )
+    .expect("write manifest");
+
+    ensure_source_overrides(&root).expect("overrides");
+
+    let project_manifest = fs::read_to_string(project_manifest_path).expect("read manifest");
+    assert!(project_manifest.contains("\"scripts/steamworks\""));
 
     fs::remove_dir_all(&root).expect("cleanup");
 }

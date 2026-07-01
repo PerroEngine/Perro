@@ -394,7 +394,7 @@ scripts = {{ path = "../scripts" }}
 
 [features]
 profile = ["perro_app/profile"]
-steamworks = ["perro_app/steamworks", "perro_api/steamworks", "perro_runtime/steamworks"]
+steamworks = ["perro_app/steamworks", "perro_api/steamworks", "perro_runtime/steamworks", "scripts/steamworks"]
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = "0.2.105"
