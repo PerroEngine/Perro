@@ -259,13 +259,15 @@ impl Runtime {
         let scroll_input_changed = self.ui_scroll_input_changed();
         let text_input_changed =
             self.render_ui.focused_text_edit.is_some() && self.ui_text_input_changed();
+        let scroll_animation_active = self.has_active_scroll_container_animation();
         let has_extraction_work = self.dirty.has_any_dirty()
             || self.dirty.has_pending_transform_roots()
             || !self.render_ui.removed_nodes.is_empty()
             || bootstrap_scan
             || input_changed
             || scroll_input_changed
-            || text_input_changed;
+            || text_input_changed
+            || scroll_animation_active;
         if !has_extraction_work {
             if let Some(timing) = timing {
                 timing.total = total_start.expect("ui timing total start exists").elapsed();
@@ -664,6 +666,16 @@ impl Runtime {
         if let Some(timing) = timing {
             timing.total = total_start.expect("ui timing total start exists").elapsed();
         }
+    }
+
+    fn has_active_scroll_container_animation(&self) -> bool {
+        self.nodes.iter().any(|(_, node)| {
+            matches!(
+                &node.data,
+                SceneNodeData::UiScrollContainer(scroller)
+                    if scroller.scroll_animation.is_some()
+            )
+        })
     }
 }
 

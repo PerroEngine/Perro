@@ -224,6 +224,14 @@ impl Runtime {
         let mut changed_seen = ahash::AHashSet::default();
         let wheel = self.input.mouse_wheel();
 
+        for scroller in self.visible_scroll_containers(computed) {
+            if self.advance_scroll_container_animation(scroller, computed)
+                && changed_seen.insert(scroller)
+            {
+                changed.push(scroller);
+            }
+        }
+
         if let Some(scroller) = self.process_scrollbar_pointer_input(computed)
             && changed_seen.insert(scroller)
         {
@@ -293,6 +301,58 @@ impl Runtime {
                 command_ids.push(node);
             }
         }
+    }
+
+    fn advance_scroll_container_animation(
+        &mut self,
+        node: NodeID,
+        computed: &AHashMap<NodeID, ComputedUiRect>,
+    ) -> bool {
+        let max_scroll = self.scroll_container_max(node, computed);
+        let delta = self.time.delta.max(0.0);
+        let Some(scene_node) = self.nodes.get_mut(node) else {
+            return false;
+        };
+        let SceneNodeData::UiScrollContainer(scroller) = &mut scene_node.data else {
+            return false;
+        };
+        let Some(mut animation) = scroller.scroll_animation else {
+            return false;
+        };
+        animation.elapsed = (animation.elapsed + delta).max(0.0);
+        let t = if animation.duration <= 0.0 {
+            1.0
+        } else {
+            (animation.elapsed / animation.duration).clamp(0.0, 1.0)
+        };
+        let target = match scroller.scroll_dir {
+            perro_ui::UiScrollDirection::Horizontal => {
+                Vector2::new(max_scroll.x * animation.target_part, 0.0)
+            }
+            perro_ui::UiScrollDirection::Vertical => {
+                Vector2::new(0.0, max_scroll.y * animation.target_part)
+            }
+        };
+        let old = scroller.scroll;
+        scroller.scroll = Vector2::new(
+            animation.start.x + (target.x - animation.start.x) * t,
+            animation.start.y + (target.y - animation.start.y) * t,
+        );
+        if t >= 1.0 {
+            scroller.scroll_animation = None;
+        } else {
+            scroller.scroll_animation = Some(animation);
+        }
+        if scroller.scroll == old {
+            return false;
+        }
+        self.mark_ui_dirty(
+            node,
+            Runtime::UI_DIRTY_LAYOUT_SELF
+                | Runtime::UI_DIRTY_LAYOUT_PARENT
+                | Runtime::UI_DIRTY_COMMANDS,
+        );
+        true
     }
 
     fn process_scrollbar_pointer_input(
@@ -399,6 +459,7 @@ impl Runtime {
             return None;
         };
         let old = scroller.scroll;
+        scroller.scroll_animation = None;
         match scroller_copy.scroll_dir {
             perro_ui::UiScrollDirection::Horizontal => {
                 let travel = (track.size.x - thumb.size.x).max(0.0);
@@ -1051,6 +1112,12 @@ impl Runtime {
             if !hit_rect.contains_rounded(point, hit.corner_radius) {
                 continue;
             }
+            if !self.ui_point_in_effective_clip(node, computed, point) {
+                continue;
+            }
+            if self.ui_point_blocked_by_stop_node(node, z, computed, point) {
+                continue;
+            }
             match best {
                 Some((best_node, best_z))
                     if best_z > z || (best_z == z && best_node.as_u64() > node.as_u64()) => {}
@@ -1228,6 +1295,7 @@ impl Runtime {
             return false;
         };
         let old = scroller.scroll;
+        scroller.scroll_animation = None;
         match scroller.scroll_dir {
             perro_ui::UiScrollDirection::Horizontal => {
                 scroller.scroll.y = 0.0;
@@ -1558,6 +1626,64 @@ impl Runtime {
         let screen_x = viewport.x * 0.5 + point.x;
         let screen_y = viewport.y * 0.5 - point.y;
         screen_x >= clip[0] && screen_x <= clip[2] && screen_y >= clip[1] && screen_y <= clip[3]
+    }
+
+    fn ui_point_blocked_by_stop_node(
+        &self,
+        target: NodeID,
+        target_z: i32,
+        computed: &AHashMap<NodeID, ComputedUiRect>,
+        point: Vector2,
+    ) -> bool {
+        for (node, scene_node) in self.nodes.iter() {
+            if node == target || self.ui_nodes_related(node, target) {
+                continue;
+            }
+            let Some(ui) = ui_root_from_data(&scene_node.data) else {
+                continue;
+            };
+            if !ui.visible
+                || !ui.input_enabled
+                || ui.mouse_filter != perro_ui::UiMouseFilter::Stop
+                || !self.is_effectively_visible_for_ui(node)
+            {
+                continue;
+            }
+            let blocker_z = self.ui_effective_z(node);
+            if blocker_z < target_z || (blocker_z == target_z && node.as_u64() < target.as_u64()) {
+                continue;
+            }
+            let Some(rect) = computed.get(&node).copied().or_else(|| {
+                self.render_ui
+                    .retained_rects
+                    .get(&node)
+                    .map(computed_rect_from_state)
+            }) else {
+                continue;
+            };
+            if rect.contains(point) && self.ui_point_in_effective_clip(node, computed, point) {
+                return true;
+            }
+        }
+        false
+    }
+
+    fn ui_nodes_related(&self, a: NodeID, b: NodeID) -> bool {
+        self.ui_node_is_ancestor(a, b) || self.ui_node_is_ancestor(b, a)
+    }
+
+    fn ui_node_is_ancestor(&self, ancestor: NodeID, mut node: NodeID) -> bool {
+        while let Some(scene_node) = self.nodes.get(node) {
+            let parent = scene_node.parent;
+            if parent.is_nil() {
+                return false;
+            }
+            if parent == ancestor {
+                return true;
+            }
+            node = parent;
+        }
+        false
     }
 
     fn next_tab_focus(

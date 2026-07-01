@@ -1560,6 +1560,104 @@ fn clipped_text_edit_hit_area_does_not_block_visible_text_edit() {
 }
 
 #[test]
+fn clipped_button_hit_area_does_not_block_visible_button() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+    let low = insert_button(&mut runtime, [120.0, 40.0]);
+
+    let mut clip_parent = perro_ui::UiPanel::new();
+    clip_parent.layout.size = UiVector2::pixels(20.0, 20.0);
+    clip_parent.layout.z_index = 10;
+    clip_parent.clip_children = true;
+    let clip_parent = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(clip_parent));
+
+    let high = insert_button(&mut runtime, [120.0, 40.0]);
+    attach_child(&mut runtime, clip_parent, high);
+
+    runtime.extract_render_ui_commands();
+    runtime.drain_render_commands(&mut Vec::new());
+    runtime.clear_dirty_flags();
+
+    click_mouse_and_extract(&mut runtime, 450.0, 300.0);
+
+    assert_eq!(runtime.render_ui.focused_ui_node, Some(low));
+    assert_eq!(
+        runtime.render_ui.button_states.get(&low).copied(),
+        Some(UiButtonVisualState::Pressed)
+    );
+    assert_ne!(
+        runtime.render_ui.button_states.get(&high).copied(),
+        Some(UiButtonVisualState::Pressed)
+    );
+}
+
+#[test]
+fn clipped_image_button_hit_area_does_not_hover() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+
+    let mut clip_parent = perro_ui::UiPanel::new();
+    clip_parent.layout.size = UiVector2::pixels(20.0, 20.0);
+    clip_parent.clip_children = true;
+    let clip_parent = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(clip_parent));
+
+    let mut button = perro_ui::UiImageButton::new();
+    button.layout.size = UiVector2::pixels(120.0, 40.0);
+    button.texture = TextureID::from_parts(99, 0);
+    let button = insert_ui_node(&mut runtime, SceneNodeData::UiImageButton(button));
+    attach_child(&mut runtime, clip_parent, button);
+
+    runtime.extract_render_ui_commands();
+    runtime.drain_render_commands(&mut Vec::new());
+    runtime.clear_dirty_flags();
+
+    runtime.begin_input_frame();
+    runtime.set_mouse_position(450.0, 300.0);
+    runtime.extract_render_ui_commands();
+
+    assert_ne!(
+        runtime.render_ui.button_states.get(&button).copied(),
+        Some(UiButtonVisualState::Hover)
+    );
+}
+
+#[test]
+fn panel_over_scroll_vlayout_button_blocks_click() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+
+    let mut scroller = UiScrollContainer::new();
+    scroller.layout.size = UiVector2::pixels(220.0, 120.0);
+    let scroller = insert_ui_node(&mut runtime, SceneNodeData::UiScrollContainer(scroller));
+
+    let mut list = UiVLayout::new();
+    list.layout.size = UiVector2::pixels(220.0, 120.0);
+    let list = insert_ui_node(&mut runtime, SceneNodeData::UiVLayout(list));
+    attach_child(&mut runtime, scroller, list);
+
+    let button = insert_button(&mut runtime, [140.0, 44.0]);
+    attach_child(&mut runtime, list, button);
+
+    let mut panel = UiPanel::new();
+    panel.layout.size = UiVector2::pixels(180.0, 90.0);
+    panel.layout.z_index = 20;
+    let panel = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(panel));
+
+    runtime.extract_render_ui_commands();
+    runtime.drain_render_commands(&mut Vec::new());
+    runtime.clear_dirty_flags();
+
+    click_mouse_and_extract(&mut runtime, 400.0, 300.0);
+
+    assert_eq!(runtime.render_ui.focused_ui_node, None);
+    assert_ne!(
+        runtime.render_ui.button_states.get(&button).copied(),
+        Some(UiButtonVisualState::Pressed)
+    );
+    assert!(runtime.render_ui.computed_rects[&panel].contains(Vector2::ZERO));
+}
+
+#[test]
 fn gamepad_dpad_picks_nearest_directional_focus() {
     let mut runtime = Runtime::new();
     runtime.set_viewport_size(800, 600);
@@ -2894,6 +2992,90 @@ fn scroll_container_places_large_child_at_top() {
         })
         .expect("scroller node");
     assert_eq!(scroll, 200.0);
+}
+
+#[test]
+fn scroll_container_scroll_to_snaps_to_normalized_part() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+
+    let mut scroller = UiScrollContainer::new();
+    scroller.layout.size = UiVector2::pixels(200.0, 100.0);
+    let scroller_id = insert_ui_node(&mut runtime, SceneNodeData::UiScrollContainer(scroller));
+
+    let mut list = UiVLayout::new();
+    list.layout.size = UiVector2::pixels(200.0, 300.0);
+    let list_id = insert_ui_node(&mut runtime, SceneNodeData::UiVLayout(list));
+    attach_child(&mut runtime, scroller_id, list_id);
+
+    runtime.extract_render_ui_commands();
+    runtime.clear_dirty_flags();
+
+    let _ = runtime.with_node_mut::<UiScrollContainer, _, _>(scroller_id, |node| {
+        node.scroll_to(0.5, 0.0);
+    });
+    runtime.extract_render_ui_commands();
+
+    let scroll = runtime
+        .nodes
+        .get(scroller_id)
+        .and_then(|node| match &node.data {
+            SceneNodeData::UiScrollContainer(scroller) => Some(scroller.scroll.y),
+            _ => None,
+        })
+        .expect("scroller node");
+    assert_eq!(scroll, 100.0);
+}
+
+#[test]
+fn scroll_container_scroll_to_animates_to_normalized_part() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+
+    let mut scroller = UiScrollContainer::new();
+    scroller.layout.size = UiVector2::pixels(200.0, 100.0);
+    let scroller_id = insert_ui_node(&mut runtime, SceneNodeData::UiScrollContainer(scroller));
+
+    let mut list = UiVLayout::new();
+    list.layout.size = UiVector2::pixels(200.0, 300.0);
+    let list_id = insert_ui_node(&mut runtime, SceneNodeData::UiVLayout(list));
+    attach_child(&mut runtime, scroller_id, list_id);
+
+    runtime.extract_render_ui_commands();
+    runtime.clear_dirty_flags();
+
+    let _ = runtime.with_node_mut::<UiScrollContainer, _, _>(scroller_id, |node| {
+        node.scroll_to(1.0, 1.0);
+    });
+    runtime.update(0.5);
+    runtime.extract_render_ui_commands();
+
+    let mid = runtime
+        .nodes
+        .get(scroller_id)
+        .and_then(|node| match &node.data {
+            SceneNodeData::UiScrollContainer(scroller) => Some(scroller.scroll.y),
+            _ => None,
+        })
+        .expect("scroller node");
+    assert_eq!(mid, 100.0);
+
+    runtime.clear_dirty_flags();
+    runtime.update(0.5);
+    runtime.extract_render_ui_commands();
+
+    let (end, active) = runtime
+        .nodes
+        .get(scroller_id)
+        .and_then(|node| match &node.data {
+            SceneNodeData::UiScrollContainer(scroller) => {
+                Some((scroller.scroll.y, scroller.scroll_animation.is_some()))
+            }
+            _ => None,
+        })
+        .expect("scroller node");
+    assert_eq!(end, 200.0);
+    assert!(!active);
 }
 
 #[test]

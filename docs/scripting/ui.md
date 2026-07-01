@@ -120,6 +120,10 @@ UiNode
 - Wheel targets hovered scroller.
 - Keyboard targets focused-node ancestor scroller or sole visible root scroller.
 - Key map: `ArrowUp`, `ArrowDown`, `PageUp`, `PageDown`, `Home`, `End`.
+- `scroll_to(part, duration)` scrolls to normalized content part.
+- `part`: `0.0` = start, `0.5` = middle, `1.0` = end.
+- `duration`: seconds; `0.0` snaps.
+- Example: `with_node_mut!(ctx.run, UiScrollContainer, list, |node| node.scroll_to(0.0, 0.25));`
 - Current v1 target = desktop wheel + keyboard.
 - Touch / drag scroll path defer.
 

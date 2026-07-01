@@ -1153,6 +1153,7 @@ impl Default for UiLayoutContainer {
 pub struct UiScrollContainer {
     pub base: UiNode,
     pub scroll: Vector2,
+    pub scroll_animation: Option<UiScrollAnimation>,
     pub scroll_dir: UiScrollDirection,
     pub scroll_bar_side: UiScrollBarSide,
     pub scroll_bar_padding: f32,
@@ -1165,11 +1166,39 @@ impl UiScrollContainer {
         Self {
             base,
             scroll: Vector2::ZERO,
+            scroll_animation: None,
             scroll_dir: UiScrollDirection::Vertical,
             scroll_bar_side: UiScrollBarSide::Right,
             scroll_bar_padding: -1.0,
         }
     }
+
+    pub fn scroll_to(&mut self, part: f32, duration: f32) {
+        let part = if part.is_finite() {
+            part.clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        let duration = if duration.is_finite() {
+            duration.max(0.0)
+        } else {
+            0.0
+        };
+        self.scroll_animation = Some(UiScrollAnimation {
+            start: self.scroll,
+            target_part: part,
+            elapsed: 0.0,
+            duration,
+        });
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct UiScrollAnimation {
+    pub start: Vector2,
+    pub target_part: f32,
+    pub elapsed: f32,
+    pub duration: f32,
 }
 
 impl Default for UiScrollContainer {
