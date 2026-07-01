@@ -3346,6 +3346,55 @@ fn wheel_scroll_updates_hovered_scroll_container() {
 }
 
 #[test]
+fn wheel_scroll_skips_scroll_container_without_overflow() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+
+    let mut outer = UiScrollContainer::new();
+    outer.layout.size = UiVector2::pixels(240.0, 120.0);
+    let outer_id = insert_ui_node(&mut runtime, SceneNodeData::UiScrollContainer(outer));
+
+    let mut inner = UiScrollContainer::new();
+    inner.layout.size = UiVector2::pixels(220.0, 100.0);
+    let inner_id = insert_ui_node(&mut runtime, SceneNodeData::UiScrollContainer(inner));
+    attach_child(&mut runtime, outer_id, inner_id);
+
+    let inner_child = insert_panel(&mut runtime, [200.0, 80.0], Color::new(0.1, 0.2, 0.3, 1.0));
+    attach_child(&mut runtime, inner_id, inner_child);
+
+    let outer_child = insert_panel(&mut runtime, [220.0, 300.0], Color::new(0.2, 0.3, 0.4, 1.0));
+    attach_child(&mut runtime, outer_id, outer_child);
+
+    runtime.extract_render_ui_commands();
+    runtime.clear_dirty_flags();
+
+    runtime.begin_input_frame();
+    runtime.set_mouse_position(400.0, 300.0);
+    runtime.add_mouse_wheel(0.0, -1.0);
+    runtime.extract_render_ui_commands();
+
+    let inner_scroll = runtime
+        .nodes
+        .get(inner_id)
+        .and_then(|node| match &node.data {
+            SceneNodeData::UiScrollContainer(scroller) => Some(scroller.scroll.y),
+            _ => None,
+        })
+        .expect("inner scroller node");
+    let outer_scroll = runtime
+        .nodes
+        .get(outer_id)
+        .and_then(|node| match &node.data {
+            SceneNodeData::UiScrollContainer(scroller) => Some(scroller.scroll.y),
+            _ => None,
+        })
+        .expect("outer scroller node");
+
+    assert_eq!(inner_scroll, 0.0);
+    assert!((outer_scroll - 14.4).abs() < 1.0e-5);
+}
+
+#[test]
 fn keyboard_scroll_targets_focused_scroll_container_ancestor() {
     let mut runtime = Runtime::new();
     runtime.set_viewport_size(800, 600);

@@ -1142,6 +1142,9 @@ impl Runtime {
     ) -> Option<NodeID> {
         let mut best: Option<(NodeID, i32)> = None;
         for node in self.visible_scroll_containers(computed) {
+            if !self.scroll_container_can_scroll(node, computed) {
+                continue;
+            }
             let Some(rect) = computed.get(&node).copied().or_else(|| {
                 self.render_ui
                     .retained_rects
@@ -1213,14 +1216,20 @@ impl Runtime {
     ) -> Option<NodeID> {
         self.render_ui
             .focused_ui_node
-            .and_then(|node| self.closest_scroll_container_ancestor(node))
+            .and_then(|node| self.closest_scroll_container_ancestor(node, computed))
             .or_else(|| self.sole_root_scroll_container(computed))
     }
 
-    fn closest_scroll_container_ancestor(&self, mut node: NodeID) -> Option<NodeID> {
+    fn closest_scroll_container_ancestor(
+        &self,
+        mut node: NodeID,
+        computed: &AHashMap<NodeID, ComputedUiRect>,
+    ) -> Option<NodeID> {
         loop {
             let scene_node = self.nodes.get(node)?;
-            if matches!(scene_node.data, SceneNodeData::UiScrollContainer(_)) {
+            if matches!(scene_node.data, SceneNodeData::UiScrollContainer(_))
+                && self.scroll_container_can_scroll(node, computed)
+            {
                 return Some(node);
             }
             if scene_node.parent.is_nil() {
@@ -1236,6 +1245,9 @@ impl Runtime {
     ) -> Option<NodeID> {
         let mut found = None;
         for node in self.visible_scroll_containers(computed) {
+            if !self.scroll_container_can_scroll(node, computed) {
+                continue;
+            }
             let Some(scene_node) = self.nodes.get(node) else {
                 continue;
             };
@@ -1245,7 +1257,10 @@ impl Runtime {
                 }
                 continue;
             };
-            if self.closest_scroll_container_ancestor(parent).is_some() {
+            if self
+                .closest_scroll_container_ancestor(parent, computed)
+                .is_some()
+            {
                 continue;
             }
             if found.replace(node).is_some() {
@@ -1253,6 +1268,24 @@ impl Runtime {
             }
         }
         found
+    }
+
+    fn scroll_container_can_scroll(
+        &self,
+        node: NodeID,
+        computed: &AHashMap<NodeID, ComputedUiRect>,
+    ) -> bool {
+        let max_scroll = self.scroll_container_max(node, computed);
+        self.nodes
+            .get(node)
+            .and_then(|scene_node| match &scene_node.data {
+                SceneNodeData::UiScrollContainer(scroller) => Some(scroller.scroll_dir),
+                _ => None,
+            })
+            .is_some_and(|dir| match dir {
+                perro_ui::UiScrollDirection::Horizontal => max_scroll.x > 0.0,
+                perro_ui::UiScrollDirection::Vertical => max_scroll.y > 0.0,
+            })
     }
 
     fn scroll_container_keyboard_delta(
