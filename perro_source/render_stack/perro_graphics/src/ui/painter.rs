@@ -9,7 +9,7 @@ use epaint::{
     TessellationOptions, Tessellator, TextureId, Vertex,
     emath::{Align, Rot2},
     pos2,
-    text::{FontDefinitions, LayoutJob},
+    text::{FontData, FontDefinitions, LayoutJob},
     textures::TexturesDelta,
     vec2,
 };
@@ -18,9 +18,64 @@ use perro_render_bridge::{
     UiCornerRadiiState, UiDepthEffectState, UiFillKindState, UiImageScaleState,
     UiLinearGradientState, UiRectState, UiShapeKind, UiTextAlignState,
 };
+use std::sync::Arc;
 
 const UI_RASTER_SCALE: f32 = 2.0;
 const UI_FONT_ATLAS_SIZE: usize = 4096;
+const UI_SYSTEM_FONT_PREFIX: &str = "perro-system";
+const UI_CYRILLIC_FONT_FAMILY: &str = "perro-cyrillic";
+const UI_JAPANESE_FONT_FAMILY: &str = "perro-japanese";
+const UI_CHINESE_FONT_FAMILY: &str = "perro-chinese";
+const UI_KOREAN_FONT_FAMILY: &str = "perro-korean";
+
+const UI_CYRILLIC_FONT_FAMILIES: &[&str] = &[
+    "Segoe UI",
+    "Arial",
+    "Helvetica",
+    "Noto Sans",
+    "DejaVu Sans",
+    "Liberation Sans",
+];
+
+const UI_JAPANESE_FONT_FAMILIES: &[&str] = &[
+    "Hiragino Maru Gothic ProN",
+    "M PLUS Rounded 1c",
+    "Kosugi Maru",
+    "Meiryo",
+    "Yu Gothic",
+    "Yu Gothic UI",
+    "Hiragino Sans",
+    "Hiragino Kaku Gothic ProN",
+    "Noto Sans CJK JP",
+    "Noto Sans JP",
+    "Source Han Sans JP",
+    "TakaoGothic",
+    "IPAGothic",
+];
+
+const UI_CHINESE_FONT_FAMILIES: &[&str] = &[
+    "Microsoft YaHei",
+    "Microsoft JhengHei",
+    "SimSun",
+    "PingFang SC",
+    "PingFang TC",
+    "Noto Sans CJK SC",
+    "Noto Sans CJK TC",
+    "Noto Sans SC",
+    "Noto Sans TC",
+    "Source Han Sans SC",
+    "Source Han Sans TC",
+    "WenQuanYi Micro Hei",
+];
+
+const UI_KOREAN_FONT_FAMILIES: &[&str] = &[
+    "Malgun Gothic",
+    "Apple SD Gothic Neo",
+    "Noto Sans CJK KR",
+    "Noto Sans KR",
+    "Source Han Sans KR",
+    "NanumGothic",
+];
 
 pub struct UiPaintFrame<'a> {
     pub primitives: &'a [ClippedPrimitive],
@@ -60,7 +115,7 @@ impl EpaintUiPainter {
             fonts: Fonts::new(
                 UI_FONT_ATLAS_SIZE,
                 AlphaFromCoverage::default(),
-                FontDefinitions::default(),
+                default_ui_font_definitions(),
             ),
             shapes: Vec::new(),
             shape_rotations: Vec::new(),
@@ -170,6 +225,164 @@ impl UiPainter for EpaintUiPainter {
             revision: self.paint_revision,
         }
     }
+}
+
+fn default_ui_font_definitions() -> FontDefinitions {
+    let mut definitions = FontDefinitions::default();
+    append_system_font_fallbacks(&mut definitions);
+    definitions
+}
+
+fn append_system_font_fallbacks(definitions: &mut FontDefinitions) {
+    let mut db = fontdb::Database::new();
+    db.load_system_fonts();
+
+    for (font_family, source_families) in [
+        (
+            named_font_family(UI_CYRILLIC_FONT_FAMILY),
+            UI_CYRILLIC_FONT_FAMILIES,
+        ),
+        (
+            named_font_family(UI_JAPANESE_FONT_FAMILY),
+            UI_JAPANESE_FONT_FAMILIES,
+        ),
+        (
+            named_font_family(UI_CHINESE_FONT_FAMILY),
+            UI_CHINESE_FONT_FAMILIES,
+        ),
+        (
+            named_font_family(UI_KOREAN_FONT_FAMILY),
+            UI_KOREAN_FONT_FAMILIES,
+        ),
+    ] {
+        for name in source_families {
+            append_system_font_family(definitions, &db, name, font_family.clone());
+        }
+        append_default_family_fallbacks(definitions, font_family, FontFamily::Proportional);
+    }
+}
+
+fn named_font_family(name: &'static str) -> FontFamily {
+    FontFamily::Name(Arc::from(name))
+}
+
+fn append_system_font_family(
+    definitions: &mut FontDefinitions,
+    db: &fontdb::Database,
+    family_name: &str,
+    target_family: FontFamily,
+) {
+    let query = fontdb::Query {
+        families: &[fontdb::Family::Name(family_name)],
+        ..fontdb::Query::default()
+    };
+    let Some(id) = db.query(&query) else {
+        return;
+    };
+    let Some((source, index)) = db.face_source(id) else {
+        return;
+    };
+    let Some(font_data) = font_data_from_source(source, index) else {
+        return;
+    };
+    let font_key = format!("{UI_SYSTEM_FONT_PREFIX}-{family_name}-{index}");
+    if !definitions.font_data.contains_key(&font_key) {
+        definitions
+            .font_data
+            .insert(font_key.clone(), Arc::new(font_data));
+    }
+    append_font_fallback(definitions, target_family, &font_key);
+}
+
+fn font_data_from_source(source: fontdb::Source, index: u32) -> Option<FontData> {
+    let font = match source {
+        fontdb::Source::Binary(data) => data.as_ref().as_ref().to_vec(),
+        fontdb::Source::File(path) => std::fs::read(path).ok()?,
+        fontdb::Source::SharedFile(_, data) => data.as_ref().as_ref().to_vec(),
+    };
+    Some(FontData {
+        font: std::borrow::Cow::Owned(font),
+        index,
+        tweak: Default::default(),
+    })
+}
+
+fn append_default_family_fallbacks(
+    definitions: &mut FontDefinitions,
+    target_family: FontFamily,
+    default_family: FontFamily,
+) {
+    let defaults = definitions
+        .families
+        .get(&default_family)
+        .cloned()
+        .unwrap_or_default();
+    let list = definitions.families.entry(target_family).or_default();
+    for font_key in defaults {
+        if !list.iter().any(|name| name == &font_key) {
+            list.push(font_key);
+        }
+    }
+}
+
+fn append_font_fallback(definitions: &mut FontDefinitions, family: FontFamily, font_key: &str) {
+    let list = definitions.families.entry(family).or_default();
+    if !list.iter().any(|name| name == font_key) {
+        list.push(font_key.to_owned());
+    }
+}
+
+fn text_font_family(text: &str, default_family: FontFamily) -> FontFamily {
+    let mut has_han = false;
+    let mut has_kana = false;
+    let mut has_hangul = false;
+    let mut has_cyrillic = false;
+
+    for ch in text.chars() {
+        has_han |= is_han(ch);
+        has_kana |= is_kana(ch);
+        has_hangul |= is_hangul(ch);
+        has_cyrillic |= is_cyrillic(ch);
+    }
+
+    if has_hangul {
+        named_font_family(UI_KOREAN_FONT_FAMILY)
+    } else if has_kana {
+        named_font_family(UI_JAPANESE_FONT_FAMILY)
+    } else if has_han {
+        named_font_family(UI_CHINESE_FONT_FAMILY)
+    } else if has_cyrillic {
+        named_font_family(UI_CYRILLIC_FONT_FAMILY)
+    } else {
+        default_family
+    }
+}
+
+fn is_han(ch: char) -> bool {
+    matches!(
+        ch as u32,
+        0x3400..=0x4DBF
+            | 0x4E00..=0x9FFF
+            | 0xF900..=0xFAFF
+            | 0x20000..=0x2A6DF
+            | 0x2A700..=0x2B73F
+            | 0x2B740..=0x2B81F
+            | 0x2B820..=0x2CEAF
+            | 0x2CEB0..=0x2EBEF
+            | 0x30000..=0x3134F
+    )
+}
+
+fn is_kana(ch: char) -> bool {
+    matches!(ch as u32, 0x3040..=0x30FF | 0x31F0..=0x31FF)
+}
+
+fn is_hangul(ch: char) -> bool {
+    matches!(ch as u32, 0x1100..=0x11FF | 0x3130..=0x318F | 0xAC00..=0xD7AF)
+}
+
+fn is_cyrillic(ch: char) -> bool {
+    matches!(ch as u32, 0x0400..=0x052F | 0x2DE0..=0x2DFF | 0xA640..=0xA69F)
 }
 
 fn font_texture_size(fonts: &Fonts) -> [u32; 2] {
@@ -788,9 +1001,10 @@ fn push_text_edit_shapes(
         f32::INFINITY
     };
     let edit_galley = if edit.focused {
+        let family = text_font_family(edit.text.as_ref(), FontFamily::Monospace);
         Some(fonts.with_pixels_per_point(UI_RASTER_SCALE).layout(
             edit.text.to_string(),
-            FontId::new(edit.font_size, FontFamily::Monospace),
+            FontId::new(edit.font_size, family),
             color32(edit.color),
             wrap_width,
         ))
@@ -804,9 +1018,10 @@ fn push_text_edit_shapes(
         push_selection_shapes(edit, galley, clip_rect, draw_pos, out);
     }
     if !body.is_empty() && valid_color(color) {
+        let family = text_font_family(body, FontFamily::Monospace);
         let galley = fonts.with_pixels_per_point(UI_RASTER_SCALE).layout(
             body.to_string(),
-            FontId::new(edit.font_size, FontFamily::Monospace),
+            FontId::new(edit.font_size, family),
             color32(color),
             wrap_width,
         );
@@ -1185,7 +1400,7 @@ fn push_text_shape(input: TextShapeInput<'_>, fonts: &mut Fonts, out: &mut Vec<C
     let (min, max) = rect.screen_min_max(viewport);
     let mut job = LayoutJob::simple(
         text.to_string(),
-        FontId::new(font_size, FontFamily::Proportional),
+        FontId::new(font_size, text_font_family(text, FontFamily::Proportional)),
         color32(color),
         rect.size[0].max(1.0),
     );
@@ -1461,7 +1676,7 @@ mod tests {
         let mut fonts = Fonts::new(
             UI_FONT_ATLAS_SIZE,
             AlphaFromCoverage::default(),
-            FontDefinitions::default(),
+            default_ui_font_definitions(),
         );
         fonts.begin_pass(UI_FONT_ATLAS_SIZE, AlphaFromCoverage::default());
         let mut shapes = Vec::new();
@@ -1498,7 +1713,7 @@ mod tests {
         let mut fonts = Fonts::new(
             UI_FONT_ATLAS_SIZE,
             AlphaFromCoverage::default(),
-            FontDefinitions::default(),
+            default_ui_font_definitions(),
         );
         fonts.begin_pass(UI_FONT_ATLAS_SIZE, AlphaFromCoverage::default());
         let rect = UiRectState {
@@ -1537,5 +1752,61 @@ mod tests {
             assert_eq!(text_shape.galley.job.halign, expected_align);
             assert!((text_shape.pos.x - expected_x).abs() < 1.0e-3);
         }
+    }
+
+    #[test]
+    fn font_definitions_keep_default_fonts() {
+        let fonts = default_ui_font_definitions();
+
+        let proportional = fonts.families.get(&FontFamily::Proportional).unwrap();
+        let monospace = fonts.families.get(&FontFamily::Monospace).unwrap();
+
+        assert!(proportional.iter().any(|name| name == "Ubuntu-Light"));
+        assert!(monospace.iter().any(|name| name == "Hack"));
+    }
+
+    #[test]
+    fn append_font_fallback_dedupes_family_entries() {
+        let mut fonts = FontDefinitions::default();
+
+        append_font_fallback(&mut fonts, FontFamily::Proportional, "perro-test-font");
+        append_font_fallback(&mut fonts, FontFamily::Proportional, "perro-test-font");
+
+        let count = fonts
+            .families
+            .get(&FontFamily::Proportional)
+            .unwrap()
+            .iter()
+            .filter(|name| name.as_str() == "perro-test-font")
+            .count();
+        assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn text_font_family_picks_script_family() {
+        assert_eq!(
+            text_font_family("加入", FontFamily::Proportional),
+            named_font_family(UI_CHINESE_FONT_FAMILY)
+        );
+        assert_eq!(
+            text_font_family("スタート", FontFamily::Proportional),
+            named_font_family(UI_JAPANESE_FONT_FAMILY)
+        );
+        assert_eq!(
+            text_font_family("시작", FontFamily::Proportional),
+            named_font_family(UI_KOREAN_FONT_FAMILY)
+        );
+        assert_eq!(
+            text_font_family("Играть", FontFamily::Proportional),
+            named_font_family(UI_CYRILLIC_FONT_FAMILY)
+        );
+    }
+
+    #[test]
+    fn text_font_family_keeps_latin_default() {
+        assert_eq!(
+            text_font_family("Play", FontFamily::Proportional),
+            FontFamily::Proportional
+        );
     }
 }
