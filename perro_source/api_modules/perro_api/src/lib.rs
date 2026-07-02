@@ -58,6 +58,10 @@ pub mod prelude {
     pub use perro_resource_api::res_path::{
         ResPath, ResPathBuf, ResPathError, ResPathKind, ResPathSource,
     };
+    pub use perro_runtime_api::prelude::{
+        PhysicsMoveResult2D, PhysicsMoveResult3D, PhysicsQueryFilter, physics_move_body_2d,
+        physics_move_body_3d,
+    };
     pub use perro_scene;
     pub use perro_scripting::prelude::*;
     #[cfg(feature = "steamworks")]

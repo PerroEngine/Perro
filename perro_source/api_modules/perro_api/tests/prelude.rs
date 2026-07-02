@@ -16,3 +16,16 @@ fn prelude_exports_input_action_macro() {
 
     assert!(!action_pressed!(&ctx, "jump"));
 }
+
+#[test]
+fn prelude_exports_runtime_physics_move_api() {
+    fn _uses_types(
+        _filter: PhysicsQueryFilter,
+        _move_2d: Option<PhysicsMoveResult2D>,
+        _move_3d: Option<PhysicsMoveResult3D>,
+    ) {
+    }
+
+    let _macro_2d = stringify!(physics_move_body_2d!(ctx.run, body, target));
+    let _macro_3d = stringify!(physics_move_body_3d!(ctx.run, body, target));
+}
