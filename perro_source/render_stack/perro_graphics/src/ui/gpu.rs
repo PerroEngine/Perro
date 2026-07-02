@@ -20,6 +20,7 @@ use shaders::*;
 
 const UI_SUPERSAMPLE_SCALE: u32 = 2;
 const UI_SUPERSAMPLE_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
+const UI_HARFBUZZ_TEXTURE_ID: TextureId = TextureId::Managed(1);
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Zeroable, Pod)]
@@ -72,6 +73,7 @@ pub struct GpuUi {
     sampler: wgpu::Sampler,
     texture_filter: TextureFilterMode,
     font_texture: Option<UiTextureGpu>,
+    harfbuzz_font_texture: Option<UiTextureGpu>,
     image_textures: AHashMap<TextureID, UiTextureGpu>,
     supersample_target: Option<UiSupersampleTarget>,
     meshes: Vec<UiMeshGpu>,
@@ -315,6 +317,7 @@ impl GpuUi {
             sampler,
             texture_filter,
             font_texture: None,
+            harfbuzz_font_texture: None,
             image_textures: AHashMap::new(),
             supersample_target: None,
             meshes: Vec::new(),
@@ -366,6 +369,8 @@ impl GpuUi {
         for (texture_id, delta) in &textures_delta.set {
             if *texture_id == TextureId::default() {
                 self.apply_font_delta(device, queue, delta, texture_size);
+            } else if *texture_id == UI_HARFBUZZ_TEXTURE_ID {
+                self.apply_harfbuzz_font_delta(device, queue, delta);
             }
         }
         self.meshes.clear();
@@ -380,6 +385,7 @@ impl GpuUi {
                 continue;
             }
             if mesh.texture_id != TextureId::default()
+                && mesh.texture_id != UI_HARFBUZZ_TEXTURE_ID
                 && !self.ensure_image_texture(
                     device,
                     queue,
@@ -678,10 +684,105 @@ impl GpuUi {
         );
     }
 
+    fn apply_harfbuzz_font_delta(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        delta: &epaint::ImageDelta,
+    ) {
+        let ImageData::Color(image) = &delta.image;
+        let size = [image.size[0] as u32, image.size[1] as u32];
+        let origin = delta.pos.unwrap_or([0, 0]);
+        let required_size = font_delta_required_size(size, origin, size);
+        let mut rgba = Vec::with_capacity(image.pixels.len() * 4);
+        for pixel in &image.pixels {
+            rgba.extend_from_slice(&pixel.to_array());
+        }
+        let needs_texture = match &self.harfbuzz_font_texture {
+            Some(texture) => {
+                delta.pos.is_none()
+                    || texture.size[0] < required_size[0]
+                    || texture.size[1] < required_size[1]
+            }
+            None => true,
+        };
+        if needs_texture {
+            let texture = device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("perro_ui_harfbuzz_font_texture"),
+                size: wgpu::Extent3d {
+                    width: required_size[0].max(1),
+                    height: required_size[1].max(1),
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Rgba8Unorm,
+                usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+                view_formats: &[],
+            });
+            let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+            let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("perro_ui_harfbuzz_font_bg"),
+                layout: &self.texture_bind_group_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(&view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::Sampler(&self.sampler),
+                    },
+                ],
+            });
+            self.harfbuzz_font_texture = Some(UiTextureGpu {
+                texture: Some(texture),
+                bind_group,
+                size: required_size,
+            });
+        }
+        let Some(font_texture) = self.harfbuzz_font_texture.as_ref() else {
+            return;
+        };
+        let Some(font_texture_gpu) = font_texture.texture.as_ref() else {
+            return;
+        };
+        queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: font_texture_gpu,
+                mip_level: 0,
+                origin: wgpu::Origin3d {
+                    x: origin[0] as u32,
+                    y: origin[1] as u32,
+                    z: 0,
+                },
+                aspect: wgpu::TextureAspect::All,
+            },
+            &rgba,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(size[0].max(1) * 4),
+                rows_per_image: Some(size[1].max(1)),
+            },
+            wgpu::Extent3d {
+                width: size[0].max(1),
+                height: size[1].max(1),
+                depth_or_array_layers: 1,
+            },
+        );
+    }
+
     fn ui_texture_bind_group(&self, texture_id: TextureId) -> Option<&wgpu::BindGroup> {
         if texture_id == TextureId::default() {
             return self
                 .font_texture
+                .as_ref()
+                .map(|texture| &texture.bind_group);
+        }
+        if texture_id == UI_HARFBUZZ_TEXTURE_ID {
+            return self
+                .harfbuzz_font_texture
                 .as_ref()
                 .map(|texture| &texture.bind_group);
         }

@@ -150,6 +150,8 @@ pub(crate) struct InternalUpdateState {
     pub(crate) physics_joint_nodes_3d: Vec<NodeID>,
     pub(crate) physics_body_pos_2d: Vec<u32>,
     pub(crate) physics_body_pos_3d: Vec<u32>,
+    pub(crate) button_nodes_2d: Vec<NodeID>,
+    pub(crate) button_pos_2d: Vec<u32>,
 }
 
 impl InternalUpdateState {
@@ -166,6 +168,8 @@ impl InternalUpdateState {
             physics_joint_nodes_3d: Vec::new(),
             physics_body_pos_2d: Vec::new(),
             physics_body_pos_3d: Vec::new(),
+            button_nodes_2d: Vec::new(),
+            button_pos_2d: Vec::new(),
         }
     }
 }

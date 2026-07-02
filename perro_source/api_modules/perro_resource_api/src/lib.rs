@@ -38,13 +38,14 @@ pub mod prelude {
     pub use crate::sub_apis::{
         AnimationAPI, AnimationModule, Audio, Audio2D, Audio2DModule, Audio3D, Audio3DModule,
         AudioAPI, AudioBusID, AudioDirection, AudioModule, AudioPan, AudioPlayConfig, CsvAPI,
-        CsvModule, Draw2DAPI, Draw2DModule, GlbModule, GltfAPI, GltfInfo, Locale, LocalizationAPI,
-        LocalizationModule, MaterialAPI, MaterialModule, MaterialReserveArg, MeshAPI, MeshModule,
-        MeshReserveArg, MicAPI, MicClip, MicDenoiseSettings, MicModule, MicSettings, MidiChannel,
-        MidiModule, MidiNoteHandle, MidiNoteOptions, MidiProgram, MidiSong, MidiSound,
-        MidiSpatialPos, MidiSpatialPosition, Note, PannedAudio, PostProcessingAPI, SceneDocAPI,
-        SceneDocModule, SkeletonAPI, SkeletonModule, SpatialAudioOptions, TextureAPI,
-        TextureModule, TextureReserveArg, VisualAccessibilityAPI, program,
+        CsvModule, Draw2DAPI, Draw2DModule, GlbModule, GltfAPI, GltfInfo, IntoLocale, Locale,
+        LocalizationAPI, LocalizationModule, MaterialAPI, MaterialModule, MaterialReserveArg,
+        MeshAPI, MeshModule, MeshReserveArg, MicAPI, MicClip, MicDenoiseSettings, MicModule,
+        MicSettings, MidiChannel, MidiModule, MidiNoteHandle, MidiNoteOptions, MidiProgram,
+        MidiSong, MidiSound, MidiSpatialPos, MidiSpatialPosition, Note, PannedAudio,
+        PostProcessingAPI, SceneDocAPI, SceneDocModule, SkeletonAPI, SkeletonModule,
+        SpatialAudioOptions, TextureAPI, TextureModule, TextureReserveArg, VisualAccessibilityAPI,
+        program,
     };
 
     // Convenience macros.

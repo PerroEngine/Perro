@@ -20,7 +20,10 @@ impl PhysicsSystem {
         let dir = dir / dir_len;
 
         let world = self.world_2d.as_mut()?;
-        world.query_pipeline.update(&world.colliders);
+        if self.query_pipeline_dirty_2d {
+            world.query_pipeline.update(&world.colliders);
+            self.query_pipeline_dirty_2d = false;
+        }
 
         let ray = r2::Ray::new(na2::Point2::new(origin.x, origin.y), dir);
         let excluded = filter.exclude_nodes.as_slice();
@@ -93,7 +96,10 @@ impl PhysicsSystem {
         let dir = dir / dir_len;
 
         let world = self.world_3d.as_mut()?;
-        world.query_pipeline.update(&world.colliders);
+        if self.query_pipeline_dirty_3d {
+            world.query_pipeline.update(&world.colliders);
+            self.query_pipeline_dirty_3d = false;
+        }
 
         let ray = r3::Ray::new(na3::Point3::new(origin.x, origin.y, origin.z), dir);
         let excluded = filter.exclude_nodes.as_slice();
@@ -148,7 +154,10 @@ impl PhysicsSystem {
 
         let world = self.world_2d.as_mut()?;
         let shape = shared_shape_2d(shape)?;
-        world.query_pipeline.update(&world.colliders);
+        if self.query_pipeline_dirty_2d {
+            world.query_pipeline.update(&world.colliders);
+            self.query_pipeline_dirty_2d = false;
+        }
 
         let shape_pos = na2::Isometry2::new(na2::Vector2::new(origin.x, origin.y), 0.0);
         let shape_vel = dir / dir_len * max_distance;
@@ -205,7 +214,10 @@ impl PhysicsSystem {
 
         let world = self.world_3d.as_mut()?;
         let shape = shared_shape_3d(shape)?;
-        world.query_pipeline.update(&world.colliders);
+        if self.query_pipeline_dirty_3d {
+            world.query_pipeline.update(&world.colliders);
+            self.query_pipeline_dirty_3d = false;
+        }
 
         let shape_pos = na3::Isometry3::translation(origin.x, origin.y, origin.z);
         let shape_vel = dir / dir_len * max_distance;
@@ -254,7 +266,10 @@ impl PhysicsSystem {
             return None;
         }
         let world = self.world_2d.as_mut()?;
-        world.query_pipeline.update(&world.colliders);
+        if self.query_pipeline_dirty_2d {
+            world.query_pipeline.update(&world.colliders);
+            self.query_pipeline_dirty_2d = false;
+        }
         let state = world.body_map.get(&body_id)?;
         let rb = world.bodies.get(state.handle)?;
         let start = *rb.position();
@@ -350,7 +365,10 @@ impl PhysicsSystem {
             return None;
         }
         let world = self.world_3d.as_mut()?;
-        world.query_pipeline.update(&world.colliders);
+        if self.query_pipeline_dirty_3d {
+            world.query_pipeline.update(&world.colliders);
+            self.query_pipeline_dirty_3d = false;
+        }
         let state = world.body_map.get(&body_id)?;
         let rb = world.bodies.get(state.handle)?;
         let start = *rb.position();
@@ -520,14 +538,22 @@ impl PhysicsSystem {
     }
 
     pub fn update_query_pipeline_2d(&mut self) {
+        if !self.query_pipeline_dirty_2d {
+            return;
+        }
         if let Some(world) = self.world_2d.as_mut() {
             world.query_pipeline.update(&world.colliders);
+            self.query_pipeline_dirty_2d = false;
         }
     }
 
     pub fn update_query_pipeline_3d(&mut self) {
+        if !self.query_pipeline_dirty_3d {
+            return;
+        }
         if let Some(world) = self.world_3d.as_mut() {
             world.query_pipeline.update(&world.colliders);
+            self.query_pipeline_dirty_3d = false;
         }
     }
 }

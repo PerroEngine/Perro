@@ -33,3 +33,7 @@ harness = false
 [[bench]]
 name = "rapier_core"
 harness = false
+
+[[bench]]
+name = "query_loop"
+harness = false

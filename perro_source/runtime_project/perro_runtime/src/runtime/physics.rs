@@ -84,6 +84,8 @@ impl Runtime {
         let total_start = Instant::now();
 
         let pre_transforms_start = Instant::now();
+        // capture external chg b4 propagate clear dirty flags
+        let had_transform_dirty = self.dirty.has_transform_dirty_any();
         self.propagate_pending_transform_dirty();
         self.refresh_dirty_global_transforms();
         let pre_transforms = pre_transforms_start.elapsed();
@@ -102,21 +104,52 @@ impl Runtime {
             };
         }
 
+        // skip collect+sync when world already mirror nodes:
+        // arena ver unchanged since last sync + no transform dirty.
+        // physics-driven moves land in nodes via sync_world_to_nodes;
+        // ver re-record aft post_transforms so internal write-back not invalidate.
+        let node_version = self.nodes.mutation_version();
+        let sync_2d_needed =
+            self.physics_synced_node_version_2d != Some(node_version) || had_transform_dirty;
+        let sync_3d_needed =
+            self.physics_synced_node_version_3d != Some(node_version) || had_transform_dirty;
+
         let collect_start = Instant::now();
-        let bodies_2d = self.collect_body_descs_2d();
-        let bodies_3d = self.collect_body_descs_3d();
-        let joints_2d = self.collect_joint_descs_2d();
-        let joints_3d = self.collect_joint_descs_3d();
+        let bodies_2d = sync_2d_needed.then(|| self.collect_body_descs_2d());
+        let bodies_3d = sync_3d_needed.then(|| self.collect_body_descs_3d());
+        let joints_2d = sync_2d_needed.then(|| self.collect_joint_descs_2d());
+        let joints_3d = sync_3d_needed.then(|| self.collect_joint_descs_3d());
         let collect = collect_start.elapsed();
 
         let sync_world_start = Instant::now();
-        self.sync_world_2d(&bodies_2d);
-        self.sync_world_3d(&bodies_3d);
-        self.sync_joints_parallel(&joints_2d, &joints_3d);
-        self.physics_body_descs_2d = bodies_2d;
-        self.physics_body_descs_3d = bodies_3d;
-        self.physics_joint_descs_2d = joints_2d;
-        self.physics_joint_descs_3d = joints_3d;
+        if let Some(bodies) = bodies_2d {
+            self.sync_world_2d(&bodies);
+            self.physics_body_descs_2d = bodies;
+        }
+        if let Some(bodies) = bodies_3d {
+            self.sync_world_3d(&bodies);
+            self.physics_body_descs_3d = bodies;
+        }
+        match (joints_2d, joints_3d) {
+            (Some(joints_2d), Some(joints_3d)) => {
+                self.sync_joints_parallel(&joints_2d, &joints_3d);
+                self.physics_joint_descs_2d = joints_2d;
+                self.physics_joint_descs_3d = joints_3d;
+            }
+            (Some(joints_2d), None) => {
+                self.physics.sync_joints_2d(&joints_2d);
+                self.physics_joint_descs_2d = joints_2d;
+            }
+            (None, Some(joints_3d)) => {
+                self.physics.sync_joints_3d(&joints_3d);
+                self.physics_joint_descs_3d = joints_3d;
+            }
+            (None, None) => {}
+        }
+        // world fresh vs nodes til next node chg; query path skip re-sync
+        let synced_version = Some(self.nodes.mutation_version());
+        self.physics_synced_node_version_2d = synced_version;
+        self.physics_synced_node_version_3d = synced_version;
         let sync_world = sync_world_start.elapsed();
 
         if self.physics.paused {
@@ -166,6 +199,12 @@ impl Runtime {
             let post_transforms = post_transforms_start.elapsed();
             (step, sync_nodes, post_transforms)
         };
+
+        // internal write-back (world -> nodes, emitter age) bump arena ver;
+        // nodes still mirror world -> re-record so next step / query skip
+        let synced_version = Some(self.nodes.mutation_version());
+        self.physics_synced_node_version_2d = synced_version;
+        self.physics_synced_node_version_3d = synced_version;
 
         let signals_start = Instant::now();
         self.emit_collision_signals_2d();
@@ -220,6 +259,41 @@ impl Runtime {
             || !self.internal_updates.physics_joint_nodes_3d.is_empty()
     }
 
+    /// world may lag nodes: node data / structure chg outside fixed step.
+    /// query path cal this b4 query; skip full collect+sync when world fresh.
+    pub(crate) fn ensure_physics_world_synced_2d(&mut self) {
+        if self.physics_synced_node_version_2d == Some(self.nodes.mutation_version())
+            && !self.dirty.has_transform_dirty_any()
+        {
+            return;
+        }
+        self.propagate_pending_transform_dirty();
+        self.refresh_dirty_global_transforms();
+        let bodies_2d = self.collect_body_descs_2d();
+        self.sync_world_2d(&bodies_2d);
+        self.physics_body_descs_2d = bodies_2d;
+        self.physics_synced_node_version_2d = Some(self.nodes.mutation_version());
+    }
+
+    pub(crate) fn ensure_physics_world_synced_3d(&mut self) {
+        if self.physics_synced_node_version_3d == Some(self.nodes.mutation_version())
+            && !self.dirty.has_transform_dirty_any()
+        {
+            return;
+        }
+        self.propagate_pending_transform_dirty();
+        self.refresh_dirty_global_transforms();
+        let bodies_3d = self.collect_body_descs_3d();
+        self.sync_world_3d(&bodies_3d);
+        self.physics_body_descs_3d = bodies_3d;
+        self.physics_synced_node_version_3d = Some(self.nodes.mutation_version());
+    }
+
+    pub(crate) fn invalidate_physics_query_sync(&mut self) {
+        self.physics_synced_node_version_2d = None;
+        self.physics_synced_node_version_3d = None;
+    }
+
     pub(crate) fn queue_impulse_2d(&mut self, id: NodeID, impulse: Vector2) {
         self.physics.queue_impulse_2d(id, impulse);
     }
@@ -248,6 +322,7 @@ impl Runtime {
 
     pub(crate) fn clear_physics(&mut self) {
         self.physics.clear();
+        self.invalidate_physics_query_sync();
     }
 
     pub fn physics_raycast_3d(
@@ -275,11 +350,7 @@ impl Runtime {
         max_distance: f32,
         filter: &PhysicsQueryFilter,
     ) -> Option<PhysicsRayHit3D> {
-        self.propagate_pending_transform_dirty();
-        self.refresh_dirty_global_transforms();
-        let bodies_3d = self.collect_body_descs_3d();
-        self.sync_world_3d(&bodies_3d);
-        self.physics_body_descs_3d = bodies_3d;
+        self.ensure_physics_world_synced_3d();
         self.physics
             .raycast_3d_filtered(origin, direction, max_distance, filter)
     }
@@ -291,26 +362,18 @@ impl Runtime {
         max_distance: f32,
         filter: &PhysicsQueryFilter,
     ) -> Option<PhysicsRayHit2D> {
-        self.propagate_pending_transform_dirty();
-        self.refresh_dirty_global_transforms();
-        let bodies_2d = self.collect_body_descs_2d();
-        self.sync_world_2d(&bodies_2d);
-        self.physics_body_descs_2d = bodies_2d;
+        self.ensure_physics_world_synced_2d();
         self.physics
             .raycast_2d(origin, direction, max_distance, filter)
     }
 
     pub(crate) fn prepare_audio_raycast_2d(&mut self) {
-        let bodies_2d = self.collect_body_descs_2d();
-        self.sync_world_2d(&bodies_2d);
-        self.physics_body_descs_2d = bodies_2d;
+        self.ensure_physics_world_synced_2d();
         self.physics.update_query_pipeline_2d();
     }
 
     pub(crate) fn prepare_audio_raycast_3d(&mut self) {
-        let bodies_3d = self.collect_body_descs_3d();
-        self.sync_world_3d(&bodies_3d);
-        self.physics_body_descs_3d = bodies_3d;
+        self.ensure_physics_world_synced_3d();
         self.physics.update_query_pipeline_3d();
     }
 
@@ -356,11 +419,7 @@ impl Runtime {
         max_distance: f32,
         filter: &PhysicsQueryFilter,
     ) -> Option<PhysicsShapeHit2D> {
-        self.propagate_pending_transform_dirty();
-        self.refresh_dirty_global_transforms();
-        let bodies_2d = self.collect_body_descs_2d();
-        self.sync_world_2d(&bodies_2d);
-        self.physics_body_descs_2d = bodies_2d;
+        self.ensure_physics_world_synced_2d();
         self.physics
             .shape_cast_2d(shape, origin, direction, max_distance, filter)
     }
@@ -373,11 +432,7 @@ impl Runtime {
         max_distance: f32,
         filter: &PhysicsQueryFilter,
     ) -> Option<PhysicsShapeHit3D> {
-        self.propagate_pending_transform_dirty();
-        self.refresh_dirty_global_transforms();
-        let bodies_3d = self.collect_body_descs_3d();
-        self.sync_world_3d(&bodies_3d);
-        self.physics_body_descs_3d = bodies_3d;
+        self.ensure_physics_world_synced_3d();
         self.physics
             .shape_cast_3d(shape, origin, direction, max_distance, filter)
     }
@@ -389,11 +444,7 @@ impl Runtime {
         margin: f32,
         filter: &PhysicsQueryFilter,
     ) -> Option<PhysicsMoveResult2D> {
-        self.propagate_pending_transform_dirty();
-        self.refresh_dirty_global_transforms();
-        let bodies_2d = self.collect_body_descs_2d();
-        self.sync_world_2d(&bodies_2d);
-        self.physics_body_descs_2d = bodies_2d;
+        self.ensure_physics_world_synced_2d();
         let result = self.physics.move_body_2d(body_id, target, margin, filter)?;
         let mut transform = self.get_global_transform_2d(body_id)?;
         transform.position = result.position;
@@ -402,6 +453,8 @@ impl Runtime {
         }
         self.propagate_pending_transform_dirty();
         self.refresh_dirty_global_transforms();
+        // node mv aft sync -> world stale 4 next query
+        self.physics_synced_node_version_2d = None;
         Some(result)
     }
 
@@ -412,11 +465,7 @@ impl Runtime {
         margin: f32,
         filter: &PhysicsQueryFilter,
     ) -> Option<PhysicsMoveResult3D> {
-        self.propagate_pending_transform_dirty();
-        self.refresh_dirty_global_transforms();
-        let bodies_3d = self.collect_body_descs_3d();
-        self.sync_world_3d(&bodies_3d);
-        self.physics_body_descs_3d = bodies_3d;
+        self.ensure_physics_world_synced_3d();
         let result = self.physics.move_body_3d(body_id, target, margin, filter)?;
         let mut transform = self.get_global_transform_3d(body_id)?;
         transform.position = result.position;
@@ -425,24 +474,18 @@ impl Runtime {
         }
         self.propagate_pending_transform_dirty();
         self.refresh_dirty_global_transforms();
+        // node mv aft sync -> world stale 4 next query
+        self.physics_synced_node_version_3d = None;
         Some(result)
     }
 
     pub fn physics_contacts_2d(&mut self, body_id: NodeID) -> Vec<PhysicsContact2D> {
-        self.propagate_pending_transform_dirty();
-        self.refresh_dirty_global_transforms();
-        let bodies_2d = self.collect_body_descs_2d();
-        self.sync_world_2d(&bodies_2d);
-        self.physics_body_descs_2d = bodies_2d;
+        self.ensure_physics_world_synced_2d();
         self.physics.contacts_2d(body_id)
     }
 
     pub fn physics_contacts_3d(&mut self, body_id: NodeID) -> Vec<PhysicsContact3D> {
-        self.propagate_pending_transform_dirty();
-        self.refresh_dirty_global_transforms();
-        let bodies_3d = self.collect_body_descs_3d();
-        self.sync_world_3d(&bodies_3d);
-        self.physics_body_descs_3d = bodies_3d;
+        self.ensure_physics_world_synced_3d();
         self.physics.contacts_3d(body_id)
     }
 
@@ -513,36 +556,41 @@ impl Runtime {
             let Some(global) = self.get_global_transform_2d(id) else {
                 continue;
             };
-            let tilemap_for_body = self.nodes.get(id).and_then(|node| match &node.data {
-                SceneNodeData::TileMap2D(tilemap) => Some(tilemap.clone()),
+            // resolve tileset b4 node borrow; avoid full tilemap clone / step
+            let tileset_source = self.nodes.get(id).and_then(|node| match &node.data {
+                SceneNodeData::TileMap2D(tilemap) => Some(tilemap.tileset.clone()),
                 _ => None,
             });
+            let tileset = tileset_source
+                .as_deref()
+                .and_then(|source| crate::runtime::render_2d::resolve_tileset_2d(self, source));
+            let is_tilemap = tileset_source.is_some();
             let mut shape_signature = body_signature_seed(kind);
-            if let Some(tilemap) = tilemap_for_body.as_ref() {
-                shape_signature = hash_tilemap_2d(shape_signature, tilemap);
-                if let Some(tileset) =
-                    crate::runtime::render_2d::resolve_tileset_2d(self, &tilemap.tileset)
-                {
-                    for tile in tileset.tiles.iter() {
-                        if tile.collision {
-                            shape_signature = hash_u64(shape_signature, tile.id as u64);
-                            shape_signature = hash_tile_collision_shape_2d(
-                                shape_signature,
-                                tile.collision_shape.clone(),
-                            );
+            if let Some(node) = self.nodes.get(id) {
+                if let SceneNodeData::TileMap2D(tilemap) = &node.data {
+                    shape_signature = hash_tilemap_2d(shape_signature, tilemap);
+                    if let Some(tileset) = tileset.as_deref() {
+                        for tile in tileset.tiles.iter() {
+                            if tile.collision {
+                                shape_signature = hash_u64(shape_signature, tile.id as u64);
+                                shape_signature = hash_tile_collision_shape_2d(
+                                    shape_signature,
+                                    &tile.collision_shape,
+                                );
+                            }
                         }
                     }
-                }
-            } else if let Some(node) = self.nodes.get(id) {
-                if let SceneNodeData::WaterBody2D(water) = &node.data {
-                    shape_signature = hash_water_shape(shape_signature, water.water.shape);
-                }
-                for &child_id in node.children_slice() {
-                    let Some(child) = self.nodes.get(child_id) else {
-                        continue;
-                    };
-                    if let SceneNodeData::CollisionShape2D(shape) = &child.data {
-                        shape_signature = hash_collision_shape_2d(shape_signature, shape, kind);
+                } else {
+                    if let SceneNodeData::WaterBody2D(water) = &node.data {
+                        shape_signature = hash_water_shape(shape_signature, water.water.shape);
+                    }
+                    for &child_id in node.children_slice() {
+                        let Some(child) = self.nodes.get(child_id) else {
+                            continue;
+                        };
+                        if let SceneNodeData::CollisionShape2D(shape) = &child.data {
+                            shape_signature = hash_collision_shape_2d(shape_signature, shape, kind);
+                        }
                     }
                 }
             }
@@ -560,18 +608,20 @@ impl Runtime {
 
             let mut shapes = Vec::new();
             if needs_shape_rebuild {
-                if let Some(tilemap) = tilemap_for_body.as_ref() {
-                    let tileset =
-                        crate::runtime::render_2d::resolve_tileset_2d(self, &tilemap.tileset);
-                    shapes.extend(tilemap_shape_descs_2d(
-                        tilemap,
-                        groups.0,
-                        groups.1,
-                        material.0,
-                        material.1,
-                        material.2,
-                        tileset.as_ref(),
-                    ));
+                if is_tilemap {
+                    if let Some(node) = self.nodes.get(id)
+                        && let SceneNodeData::TileMap2D(tilemap) = &node.data
+                    {
+                        shapes.extend(tilemap_shape_descs_2d(
+                            tilemap,
+                            groups.0,
+                            groups.1,
+                            material.0,
+                            material.1,
+                            material.2,
+                            tileset.as_deref(),
+                        ));
+                    }
                 } else if let Some(node) = self.nodes.get(id) {
                     if let SceneNodeData::WaterBody2D(water) = &node.data {
                         let shape = water_shape_2d(water.water.shape);
@@ -1998,8 +2048,10 @@ impl Runtime {
             self.physics.active_collision_pairs_2d.clear();
             return;
         };
-        let mut current_pairs = AHashSet::default();
-        let mut entered_pairs = Vec::new();
+        let mut current_pairs = std::mem::take(&mut self.physics.collision_pairs_scratch_2d);
+        current_pairs.clear();
+        let mut entered_pairs = std::mem::take(&mut self.physics.entered_pairs_scratch);
+        entered_pairs.clear();
 
         for pair in world.narrow_phase.contact_pairs() {
             if !pair.has_any_active_contact {
@@ -2022,8 +2074,14 @@ impl Runtime {
             }
         }
 
-        self.physics.active_collision_pairs_2d = current_pairs;
+        std::mem::swap(
+            &mut self.physics.active_collision_pairs_2d,
+            &mut current_pairs,
+        );
+        self.physics.collision_pairs_scratch_2d = current_pairs;
         self.emit_collision_signals_for_pairs(&entered_pairs);
+        entered_pairs.clear();
+        self.physics.entered_pairs_scratch = entered_pairs;
     }
 
     fn emit_collision_signals_3d(&mut self) {
@@ -2031,8 +2089,10 @@ impl Runtime {
             self.physics.active_collision_pairs_3d.clear();
             return;
         };
-        let mut current_pairs = AHashSet::default();
-        let mut entered_pairs = Vec::new();
+        let mut current_pairs = std::mem::take(&mut self.physics.collision_pairs_scratch_3d);
+        current_pairs.clear();
+        let mut entered_pairs = std::mem::take(&mut self.physics.entered_pairs_scratch);
+        entered_pairs.clear();
 
         for pair in world.narrow_phase.contact_pairs() {
             if !pair.has_any_active_contact {
@@ -2055,8 +2115,14 @@ impl Runtime {
             }
         }
 
-        self.physics.active_collision_pairs_3d = current_pairs;
+        std::mem::swap(
+            &mut self.physics.active_collision_pairs_3d,
+            &mut current_pairs,
+        );
+        self.physics.collision_pairs_scratch_3d = current_pairs;
         self.emit_collision_signals_for_pairs(&entered_pairs);
+        entered_pairs.clear();
+        self.physics.entered_pairs_scratch = entered_pairs;
     }
 
     fn emit_collision_signals_for_pairs(&mut self, pairs: &[BodyPair]) {
@@ -2091,7 +2157,8 @@ impl Runtime {
             self.physics.active_area_overlaps_2d.clear();
             return;
         };
-        let mut current = AHashSet::default();
+        let mut current = std::mem::take(&mut self.physics.area_overlap_scratch_2d);
+        current.clear();
 
         for (collider_a, collider_b, intersecting) in world.narrow_phase.intersection_pairs() {
             if !intersecting {
@@ -2126,7 +2193,8 @@ impl Runtime {
             self.physics.active_area_overlaps_3d.clear();
             return;
         };
-        let mut current = AHashSet::default();
+        let mut current = std::mem::take(&mut self.physics.area_overlap_scratch_3d);
+        current.clear();
 
         for (collider_a, collider_b, intersecting) in world.narrow_phase.intersection_pairs() {
             if !intersecting {
@@ -2176,10 +2244,13 @@ impl Runtime {
             }
         }
 
+        // recycle prev set as next scratch
         if is_2d {
             self.physics.active_area_overlaps_2d = current;
+            self.physics.area_overlap_scratch_2d = previous;
         } else {
             self.physics.active_area_overlaps_3d = current;
+            self.physics.area_overlap_scratch_3d = previous;
         }
     }
 

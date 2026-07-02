@@ -2,11 +2,17 @@ use super::*;
 
 impl PhysicsSystem {
     pub fn step_world_2d(&mut self, gravity_y: f32, fixed_delta: f32) {
+        if self.world_2d.is_some() {
+            self.query_pipeline_dirty_2d = true;
+        }
         step_world_2d_slot(&mut self.world_2d, gravity_y, fixed_delta);
         self.refresh_world_2d_idle_cache();
     }
 
     pub fn step_world_3d(&mut self, gravity_y: f32, fixed_delta: f32) {
+        if self.world_3d.is_some() {
+            self.query_pipeline_dirty_3d = true;
+        }
         step_world_3d_slot(&mut self.world_3d, gravity_y, fixed_delta);
         self.refresh_world_3d_idle_cache();
     }
@@ -17,6 +23,8 @@ impl PhysicsSystem {
             self.step_world_3d(gravity_y, fixed_delta);
             return;
         }
+        self.query_pipeline_dirty_2d = true;
+        self.query_pipeline_dirty_3d = true;
         let world_2d = &mut self.world_2d;
         let world_3d = &mut self.world_3d;
         rayon::join(

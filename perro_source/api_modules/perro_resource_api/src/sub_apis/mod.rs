@@ -38,7 +38,7 @@ pub use audio::{
 pub use csv_table::{CsvAPI, CsvModule};
 pub use draw_2d::{Draw2DAPI, Draw2DModule};
 pub use gltf::{GlbModule, GltfAPI, GltfInfo};
-pub use localization::{Locale, LocalizationAPI, LocalizationModule};
+pub use localization::{IntoLocale, Locale, LocalizationAPI, LocalizationModule};
 
 // ---- Render assets ----
 

@@ -1,14 +1,11 @@
 use super::*;
 
+/// world-space aabb 4 staged sprite; camera-free -> compute 1x / revision.
+/// NaN out -> always cull.
 #[inline]
-pub(super) fn sprite_intersects_screen(
-    sprite: &Sprite2DCommand,
-    texture_width: f32,
-    texture_height: f32,
-    camera: &Camera2DUniform,
-) -> bool {
-    let hx = 0.5 * texture_width.max(1.0);
-    let hy = 0.5 * texture_height.max(1.0);
+pub(super) fn sprite_world_bounds(sprite: &Sprite2DCommand, size: [f32; 2]) -> [f32; 4] {
+    let hx = 0.5 * size[0].max(1.0);
+    let hy = 0.5 * size[1].max(1.0);
     let corners = [(-hx, -hy), (hx, -hy), (hx, hy), (-hx, hy)];
 
     let mut min_x = f32::INFINITY;
@@ -19,6 +16,37 @@ pub(super) fn sprite_intersects_screen(
     for (lx, ly) in corners {
         let wx = sprite.model[0][0] * lx + sprite.model[1][0] * ly + sprite.model[2][0];
         let wy = sprite.model[0][1] * lx + sprite.model[1][1] * ly + sprite.model[2][1];
+        if !(wx.is_finite() && wy.is_finite()) {
+            return [f32::NAN; 4];
+        }
+        min_x = min_x.min(wx);
+        max_x = max_x.max(wx);
+        min_y = min_y.min(wy);
+        max_y = max_y.max(wy);
+    }
+
+    [min_x, min_y, max_x, max_y]
+}
+
+/// conservative aabb-vs-screen test in ndc space
+#[inline]
+pub(super) fn sprite_bounds_intersect_screen(bounds: &[f32; 4], camera: &Camera2DUniform) -> bool {
+    if !bounds.iter().all(|v| v.is_finite()) {
+        return false;
+    }
+    let corners = [
+        (bounds[0], bounds[1]),
+        (bounds[2], bounds[1]),
+        (bounds[2], bounds[3]),
+        (bounds[0], bounds[3]),
+    ];
+
+    let mut min_x = f32::INFINITY;
+    let mut max_x = f32::NEG_INFINITY;
+    let mut min_y = f32::INFINITY;
+    let mut max_y = f32::NEG_INFINITY;
+
+    for (wx, wy) in corners {
         let vx = camera.view[0][0] * wx + camera.view[1][0] * wy + camera.view[3][0];
         let vy = camera.view[0][1] * wx + camera.view[1][1] * wy + camera.view[3][1];
         let ndc_x = vx * camera.ndc_scale[0];

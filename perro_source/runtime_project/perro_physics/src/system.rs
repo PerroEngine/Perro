@@ -51,6 +51,13 @@ pub struct PhysicsSystem {
     pub trimesh_cache: ahash::AHashMap<u64, TriMeshData>,
     pub next_opaque_handle: u64,
     pub signal_name_scratch: String,
+    pub query_pipeline_dirty_2d: bool,
+    pub query_pipeline_dirty_3d: bool,
+    pub collision_pairs_scratch_2d: AHashSet<BodyPair>,
+    pub collision_pairs_scratch_3d: AHashSet<BodyPair>,
+    pub entered_pairs_scratch: Vec<BodyPair>,
+    pub area_overlap_scratch_2d: AHashSet<AreaOverlap>,
+    pub area_overlap_scratch_3d: AHashSet<AreaOverlap>,
 }
 
 impl PhysicsSystem {
@@ -80,6 +87,13 @@ impl PhysicsSystem {
             trimesh_cache: ahash::AHashMap::default(),
             next_opaque_handle: 1,
             signal_name_scratch: String::new(),
+            query_pipeline_dirty_2d: true,
+            query_pipeline_dirty_3d: true,
+            collision_pairs_scratch_2d: AHashSet::default(),
+            collision_pairs_scratch_3d: AHashSet::default(),
+            entered_pairs_scratch: Vec::new(),
+            area_overlap_scratch_2d: AHashSet::default(),
+            area_overlap_scratch_3d: AHashSet::default(),
         }
     }
 
@@ -106,6 +120,13 @@ impl PhysicsSystem {
         self.joint_sync_epoch_3d = 0;
         self.trimesh_cache.clear();
         self.next_opaque_handle = 1;
+        self.query_pipeline_dirty_2d = true;
+        self.query_pipeline_dirty_3d = true;
+        self.collision_pairs_scratch_2d.clear();
+        self.collision_pairs_scratch_3d.clear();
+        self.entered_pairs_scratch.clear();
+        self.area_overlap_scratch_2d.clear();
+        self.area_overlap_scratch_3d.clear();
     }
 
     pub fn set_paused(&mut self, paused: bool) {

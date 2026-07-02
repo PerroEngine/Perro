@@ -4121,6 +4121,7 @@ dependencies = [
 name = "perro_graphics"
 version = "0.1.0"
 dependencies = [
+ "ab_glyph",
  "ahash",
  "bytemuck",
  "criterion",
@@ -4143,6 +4144,7 @@ dependencies = [
  "perro_structs",
  "pollster",
  "rayon",
+ "rustybuzz",
  "wasm-bindgen-futures",
  "web-time",
  "wgpu",

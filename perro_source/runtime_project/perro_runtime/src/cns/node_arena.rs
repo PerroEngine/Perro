@@ -12,6 +12,9 @@ pub struct NodeArena {
     generations: Vec<u32>,
     free_indices: Vec<usize>,
     active_len: usize,
+    /// bump on any mut access / structural chg; cache invalidation key 4 systems
+    /// that mirror node data (physics world sync)
+    mutation_version: u64,
 }
 
 impl Default for NodeArena {
@@ -38,6 +41,7 @@ impl NodeArena {
             generations,
             free_indices: Vec::new(),
             active_len: 0,
+            mutation_version: 0,
         }
     }
 
@@ -55,7 +59,19 @@ impl NodeArena {
             generations,
             free_indices: Vec::new(),
             active_len: 0,
+            mutation_version: 0,
         }
+    }
+
+    /// Current mutation version. Chg every time node data may have chg.
+    #[inline]
+    pub fn mutation_version(&self) -> u64 {
+        self.mutation_version
+    }
+
+    #[inline]
+    fn bump_mutation_version(&mut self) {
+        self.mutation_version = self.mutation_version.wrapping_add(1);
     }
 
     // ---- Allocation ----
@@ -70,6 +86,7 @@ impl NodeArena {
     ///
     /// Reuses a free slot when available. Otherwise appends a new slot.
     pub fn insert(&mut self, node: SceneNode) -> NodeID {
+        self.bump_mutation_version();
         // Reuse a previously freed slot in O(1).
         if let Some(index) = self.free_indices.pop() {
             self.nodes[index] = Some(node);
@@ -103,6 +120,7 @@ impl NodeArena {
     /// empty slots.
     pub fn get_mut(&mut self, id: NodeID) -> Option<&mut SceneNode> {
         let index = self.valid_slot(id)?;
+        self.bump_mutation_version();
         self.nodes[index].as_mut()
     }
 
@@ -114,6 +132,7 @@ impl NodeArena {
     /// the free list for later reuse.
     pub fn remove(&mut self, id: NodeID) -> Option<SceneNode> {
         let index = self.valid_slot(id)?;
+        self.bump_mutation_version();
         self.generations[index] = self.generations[index].wrapping_add(1);
         let removed = self.nodes[index].take();
         if removed.is_some() {
@@ -145,6 +164,7 @@ impl NodeArena {
 
     /// Iterate mutably over all live nodes with their current ids.
     pub fn iter_mut(&mut self) -> impl Iterator<Item = (NodeID, &mut SceneNode)> {
+        self.bump_mutation_version();
         self.nodes
             .iter_mut()
             .zip(self.generations.iter())
@@ -160,6 +180,7 @@ impl NodeArena {
 
     /// Clear all nodes and reset the arena to only the nil sentinel slot.
     pub fn clear(&mut self) {
+        self.bump_mutation_version();
         self.nodes.clear();
         self.generations.clear();
         self.free_indices.clear();
@@ -222,6 +243,7 @@ impl NodeArena {
         if self.generations[index] != generation {
             return None;
         }
+        self.bump_mutation_version();
         self.nodes[index].as_mut()
     }
 

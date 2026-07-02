@@ -71,11 +71,19 @@ struct SpriteBatch {
 }
 
 struct SpriteBatchCandidate {
-    texture: TextureID,
     texture_key: u64,
     z_index: i32,
     original_order: usize,
     instance_index: usize,
+}
+
+/// sprite staged once / revision; cam chg -> cull pass only, no re-stage/re-sort
+#[derive(Clone, Copy)]
+struct StagedSprite2D {
+    instance: SpriteInstanceGpu,
+    texture: TextureID,
+    /// world-space aabb [min_x, min_y, max_x, max_y]; NaN -> always cull
+    bounds: [f32; 4],
 }
 
 struct CachedSpriteTexture {
@@ -116,7 +124,8 @@ pub struct Gpu2D {
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
     sprite_instances: Vec<SpriteInstanceGpu>,
-    sprite_stage_instances: Vec<SpriteInstanceGpu>,
+    sprite_staged: Vec<StagedSprite2D>,
+    sprite_staged_sort_scratch: Vec<StagedSprite2D>,
     sprite_batch_candidates: Vec<SpriteBatchCandidate>,
     point_light_instances: Vec<Light2DGpu>,
     stream_particle_rects: Vec<RectInstanceGpu>,
@@ -125,6 +134,7 @@ pub struct Gpu2D {
     sprite_textures: AHashMap<TextureID, CachedSpriteTexture>,
     texture_filter: TextureFilterMode,
     last_camera: Option<Camera2DUniform>,
+    last_sprite_stage: Option<u64>,
     last_sprite_prepare: Option<SpritePrepareKey>,
     sprite_perf: SpritePerfCounters,
 }
@@ -314,7 +324,8 @@ impl Gpu2D {
             camera_buffer,
             camera_bind_group,
             sprite_instances: Vec::new(),
-            sprite_stage_instances: Vec::new(),
+            sprite_staged: Vec::new(),
+            sprite_staged_sort_scratch: Vec::new(),
             sprite_batch_candidates: Vec::new(),
             point_light_instances: Vec::new(),
             stream_particle_rects: Vec::new(),
@@ -323,6 +334,7 @@ impl Gpu2D {
             sprite_textures: AHashMap::new(),
             texture_filter,
             last_camera: None,
+            last_sprite_stage: None,
             last_sprite_prepare: None,
             sprite_perf: SpritePerfCounters::default(),
         }
@@ -376,6 +388,7 @@ impl Gpu2D {
         if force_sprite_prepare {
             self.sprite_textures
                 .retain(|texture_id, _| resources.has_texture(*texture_id));
+            self.last_sprite_stage = None;
             self.last_sprite_prepare = None;
         }
         self.ensure_rect_instance_capacity(device, upload.draw_count);
@@ -405,18 +418,12 @@ impl Gpu2D {
             }
         }
 
-        let sprite_key = SpritePrepareKey {
-            revision: sprites_revision,
-            camera,
-        };
-        if self.last_sprite_prepare != Some(sprite_key) {
+        // stage + sort keyed on revision only; cam chg alone skip this
+        if self.last_sprite_stage != Some(sprites_revision) {
             self.ensure_sprite_instance_capacity(device, sprites.len());
-            self.sprite_instances.clear();
-            self.sprite_stage_instances.clear();
-            self.sprite_batches.clear();
+            self.sprite_staged.clear();
             self.sprite_batch_candidates.clear();
-            self.sprite_stage_instances.reserve(sprites.len());
-            self.sprite_batches.reserve(sprites.len());
+            self.sprite_staged.reserve(sprites.len());
             self.sprite_batch_candidates.reserve(sprites.len());
             let mut last_sprite_texture = None;
             let mut candidates_sorted = true;
@@ -448,19 +455,6 @@ impl Gpu2D {
                 };
                 let (sprite_size, uv_min, uv_max) =
                     resolve_sprite_geometry(sprite, texture_width, texture_height);
-                if !sprite_intersects_screen(sprite, sprite_size[0], sprite_size[1], &camera) {
-                    continue;
-                }
-                self.sprite_stage_instances.push(SpriteInstanceGpu {
-                    transform_0: [sprite.model[0][0], sprite.model[0][1]],
-                    transform_1: [sprite.model[1][0], sprite.model[1][1]],
-                    translation: [sprite.model[2][0], sprite.model[2][1]],
-                    uv_min,
-                    uv_max,
-                    size: sprite_size,
-                    z_index: sprite.z_index,
-                    tint: color_to_unorm8(sprite.tint.into()),
-                });
                 let original_order = self.sprite_batch_candidates.len();
                 let texture_key = sprite.texture.as_u64();
                 let candidate_key =
@@ -470,29 +464,61 @@ impl Gpu2D {
                 }
                 last_candidate_key = Some(candidate_key);
                 self.sprite_batch_candidates.push(SpriteBatchCandidate {
-                    texture: sprite.texture,
                     texture_key,
                     z_index: sprite.z_index,
                     original_order,
-                    instance_index: self.sprite_stage_instances.len() - 1,
+                    instance_index: self.sprite_staged.len(),
+                });
+                self.sprite_staged.push(StagedSprite2D {
+                    instance: SpriteInstanceGpu {
+                        transform_0: [sprite.model[0][0], sprite.model[0][1]],
+                        transform_1: [sprite.model[1][0], sprite.model[1][1]],
+                        translation: [sprite.model[2][0], sprite.model[2][1]],
+                        uv_min,
+                        uv_max,
+                        size: sprite_size,
+                        z_index: sprite.z_index,
+                        tint: color_to_unorm8(sprite.tint.into()),
+                    },
+                    texture: sprite.texture,
+                    bounds: sprite_world_bounds(sprite, sprite_size),
                 });
             }
-            self.sprite_perf = SpritePerfCounters::default();
-            if candidates_sorted {
-                std::mem::swap(&mut self.sprite_instances, &mut self.sprite_stage_instances);
-            } else {
+            if !candidates_sorted {
                 sort_sprite_batch_candidates(self.sprite_batch_candidates.as_mut_slice());
-                self.sprite_instances
+                self.sprite_staged_sort_scratch.clear();
+                self.sprite_staged_sort_scratch
                     .reserve(self.sprite_batch_candidates.len());
                 for candidate in self.sprite_batch_candidates.iter() {
-                    self.sprite_instances
-                        .push(self.sprite_stage_instances[candidate.instance_index]);
+                    self.sprite_staged_sort_scratch
+                        .push(self.sprite_staged[candidate.instance_index]);
                 }
+                std::mem::swap(
+                    &mut self.sprite_staged,
+                    &mut self.sprite_staged_sort_scratch,
+                );
             }
-            for (idx, candidate) in self.sprite_batch_candidates.iter().enumerate() {
-                let idx = idx as u32;
+            self.last_sprite_stage = Some(sprites_revision);
+            self.last_sprite_prepare = None;
+        }
+
+        // cull + batch + upload; run on revision or cam chg
+        let sprite_key = SpritePrepareKey {
+            revision: sprites_revision,
+            camera,
+        };
+        if self.last_sprite_prepare != Some(sprite_key) {
+            self.sprite_instances.clear();
+            self.sprite_batches.clear();
+            self.sprite_perf = SpritePerfCounters::default();
+            for staged in self.sprite_staged.iter() {
+                if !sprite_bounds_intersect_screen(&staged.bounds, &camera) {
+                    continue;
+                }
+                let idx = self.sprite_instances.len() as u32;
+                self.sprite_instances.push(staged.instance);
                 if let Some(batch) = self.sprite_batches.last_mut()
-                    && batch.texture == candidate.texture
+                    && batch.texture == staged.texture
                     && batch.instance_start + batch.instance_count == idx
                 {
                     batch.instance_count += 1;
@@ -500,11 +526,11 @@ impl Gpu2D {
                 }
                 let bind_group = self
                     .sprite_textures
-                    .get(&candidate.texture)
+                    .get(&staged.texture)
                     .map(|texture| texture.bind_group.clone())
                     .expect("sprite texture cache must contain prepared texture");
                 self.sprite_batches.push(SpriteBatch {
-                    texture: candidate.texture,
+                    texture: staged.texture,
                     bind_group,
                     instance_start: idx,
                     instance_count: 1,
@@ -602,6 +628,7 @@ impl Gpu2D {
                 height: height.max(1),
             },
         );
+        self.last_sprite_stage = None;
         self.last_sprite_prepare = None;
     }
 
@@ -894,21 +921,18 @@ mod tests {
         let tex_b = TextureID::from_parts(2, 0);
         let sorted = vec![
             SpriteBatchCandidate {
-                texture: tex_a,
                 texture_key: tex_a.as_u64(),
                 z_index: 1,
                 original_order: 0,
                 instance_index: 0,
             },
             SpriteBatchCandidate {
-                texture: tex_b,
                 texture_key: tex_b.as_u64(),
                 z_index: 1,
                 original_order: 1,
                 instance_index: 1,
             },
             SpriteBatchCandidate {
-                texture: tex_b,
                 texture_key: tex_b.as_u64(),
                 z_index: 2,
                 original_order: 2,
@@ -917,14 +941,12 @@ mod tests {
         ];
         let unsorted = vec![
             SpriteBatchCandidate {
-                texture: tex_b,
                 texture_key: tex_b.as_u64(),
                 z_index: 2,
                 original_order: 0,
                 instance_index: 0,
             },
             SpriteBatchCandidate {
-                texture: tex_a,
                 texture_key: tex_a.as_u64(),
                 z_index: 1,
                 original_order: 1,

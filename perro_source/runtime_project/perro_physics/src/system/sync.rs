@@ -11,10 +11,12 @@ impl PhysicsSystem {
                 for id in world.body_map.keys().copied() {
                     set_body_handle(id, None);
                 }
+                self.query_pipeline_dirty_2d = true;
             }
             self.world_2d_idle_cached = true;
             return;
         }
+        let mut mutated = false;
 
         let next_epoch = self.body_sync_epoch_2d.wrapping_add(1);
         let reset_epochs = next_epoch == 0;
@@ -29,6 +31,7 @@ impl PhysicsSystem {
         }
         for body in bodies {
             if !world.body_map.contains_key(&body.id) {
+                mutated = true;
                 let rb_handle = world.bodies.insert(build_rigid_body_2d(body));
                 let opaque = self.alloc_opaque_handle();
                 world.body_map.insert(
@@ -60,6 +63,7 @@ impl PhysicsSystem {
                 body.sync_signature == 0 || state.sync_signature != body.sync_signature;
             state.kind = body.kind;
             if needs_body_sync && let Some(rb) = world.bodies.get_mut(state.handle) {
+                mutated = true;
                 rb.set_enabled(body.enabled);
                 let target_body_type = match body.kind {
                     crate::BodyKind::Static | crate::BodyKind::Area => r2::RigidBodyType::Fixed,
@@ -124,6 +128,7 @@ impl PhysicsSystem {
             }
 
             if state.shape_signature != body.shape_signature {
+                mutated = true;
                 for handle in state.colliders.drain(..) {
                     world.collider_owners.remove(&handle);
                     let _ =
@@ -156,6 +161,7 @@ impl PhysicsSystem {
                 .iter()
                 .filter_map(|(&id, state)| (state.sync_epoch != sync_epoch).then_some(id)),
         );
+        mutated |= !stale.is_empty();
 
         for id in stale.iter().copied() {
             if let Some(state) = world.body_map.remove(&id) {
@@ -177,6 +183,9 @@ impl PhysicsSystem {
         self.stale_ids_2d = stale;
         self.world_2d_idle_cached = world_2d_idle(&world);
         self.world_2d = Some(world);
+        if mutated {
+            self.query_pipeline_dirty_2d = true;
+        }
     }
 
     pub fn sync_world_3d(
@@ -190,10 +199,12 @@ impl PhysicsSystem {
                 for id in world.body_map.keys().copied() {
                     set_body_handle(id, None);
                 }
+                self.query_pipeline_dirty_3d = true;
             }
             self.world_3d_idle_cached = true;
             return;
         }
+        let mut mutated = false;
 
         let next_epoch = self.body_sync_epoch_3d.wrapping_add(1);
         let reset_epochs = next_epoch == 0;
@@ -208,6 +219,7 @@ impl PhysicsSystem {
         }
         for body in bodies {
             if !world.body_map.contains_key(&body.id) {
+                mutated = true;
                 let rb_handle = world.bodies.insert(build_rigid_body_3d(body));
                 let opaque = self.alloc_opaque_handle();
                 world.body_map.insert(
@@ -239,6 +251,7 @@ impl PhysicsSystem {
                 body.sync_signature == 0 || state.sync_signature != body.sync_signature;
             state.kind = body.kind;
             if needs_body_sync && let Some(rb) = world.bodies.get_mut(state.handle) {
+                mutated = true;
                 rb.set_enabled(body.enabled);
                 let target_body_type = match body.kind {
                     crate::BodyKind::Static | crate::BodyKind::Area => r3::RigidBodyType::Fixed,
@@ -323,6 +336,7 @@ impl PhysicsSystem {
             }
 
             if state.shape_signature != body.shape_signature {
+                mutated = true;
                 for handle in state.colliders.drain(..) {
                     world.collider_owners.remove(&handle);
                     let _ =
@@ -361,6 +375,7 @@ impl PhysicsSystem {
                 .iter()
                 .filter_map(|(&id, state)| (state.sync_epoch != sync_epoch).then_some(id)),
         );
+        mutated |= !stale.is_empty();
 
         for id in stale.iter().copied() {
             if let Some(state) = world.body_map.remove(&id) {
@@ -382,6 +397,9 @@ impl PhysicsSystem {
         self.stale_ids_3d = stale;
         self.world_3d_idle_cached = world_3d_idle(&world);
         self.world_3d = Some(world);
+        if mutated {
+            self.query_pipeline_dirty_3d = true;
+        }
     }
 
     pub fn sync_joints_2d(&mut self, joints: &[crate::JointDesc2D]) {

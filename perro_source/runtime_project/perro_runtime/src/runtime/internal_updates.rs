@@ -25,7 +25,10 @@ impl Runtime {
     }
 
     pub(crate) fn register_internal_node_schedules(&mut self, id: NodeID, ty: NodeType) {
+        // node add ? shape/body chg -> physics query world stale
+        self.invalidate_physics_query_sync();
         self.register_physics_body(id, ty);
+        self.register_button_2d(id, ty);
         self.register_physics_joint(id, ty);
         self.register_internal_fixed_dispatch(id, ty);
         if matches!(ty.get_internal_update(), InternalUpdate::True) {
@@ -57,7 +60,9 @@ impl Runtime {
     }
 
     pub(crate) fn unregister_internal_node_schedules(&mut self, id: NodeID) {
+        self.invalidate_physics_query_sync();
         self.unregister_physics_body(id);
+        self.unregister_button_2d(id);
         self.internal_updates
             .internal_fixed_dispatch_nodes
             .retain(|&node_id| node_id != id);
@@ -129,6 +134,7 @@ impl Runtime {
     }
 
     pub(crate) fn clear_internal_node_schedules(&mut self) {
+        self.invalidate_physics_query_sync();
         self.internal_updates.internal_update_nodes.clear();
         self.internal_updates.internal_fixed_update_nodes.clear();
         self.internal_updates.internal_fixed_dispatch_nodes.clear();
@@ -140,6 +146,8 @@ impl Runtime {
         self.internal_updates.physics_joint_nodes_3d.clear();
         self.internal_updates.physics_body_pos_2d.clear();
         self.internal_updates.physics_body_pos_3d.clear();
+        self.internal_updates.button_nodes_2d.clear();
+        self.internal_updates.button_pos_2d.clear();
     }
 
     fn register_internal_fixed_dispatch(&mut self, id: NodeID, ty: NodeType) {
@@ -209,6 +217,43 @@ impl Runtime {
                 }
             }
             _ => {}
+        }
+    }
+
+    fn register_button_2d(&mut self, id: NodeID, ty: NodeType) {
+        if !matches!(ty, NodeType::Button2D | NodeType::ImageButton2D) {
+            return;
+        }
+        let slot = id.index() as usize;
+        if self.internal_updates.button_pos_2d.len() <= slot {
+            self.internal_updates
+                .button_pos_2d
+                .resize(slot + 1, NONE_POS);
+        }
+        if self.internal_updates.button_pos_2d[slot] == NONE_POS {
+            let pos = self.internal_updates.button_nodes_2d.len();
+            self.internal_updates.button_nodes_2d.push(id);
+            self.internal_updates.button_pos_2d[slot] = pos as u32;
+        }
+    }
+
+    fn unregister_button_2d(&mut self, id: NodeID) {
+        let slot = id.index() as usize;
+        if let Some(&raw_pos) = self.internal_updates.button_pos_2d.get(slot)
+            && raw_pos != NONE_POS
+        {
+            let pos = raw_pos as usize;
+            self.internal_updates.button_nodes_2d.swap_remove(pos);
+            self.internal_updates.button_pos_2d[slot] = NONE_POS;
+            if let Some(moved) = self.internal_updates.button_nodes_2d.get(pos).copied() {
+                let moved_slot = moved.index() as usize;
+                if self.internal_updates.button_pos_2d.len() <= moved_slot {
+                    self.internal_updates
+                        .button_pos_2d
+                        .resize(moved_slot + 1, NONE_POS);
+                }
+                self.internal_updates.button_pos_2d[moved_slot] = pos as u32;
+            }
         }
     }
 

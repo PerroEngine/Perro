@@ -2,11 +2,12 @@ use super::renderer::{
     UiCheckboxDraw, UiColorWheelDraw, UiDraw, UiImageDraw, UiLabelDraw, UiNineSliceDraw,
     UiPanelDraw, UiShapeDraw, UiTextEditDraw,
 };
+use ab_glyph::Font as _;
 use ahash::AHashMap;
 use epaint::{
     AlphaFromCoverage, CircleShape, ClippedPrimitive, ClippedShape, Color32, CornerRadius,
     FontFamily, FontId, Fonts, Galley, Mesh, Primitive, Rect, RectShape, Shape, Stroke, StrokeKind,
-    TessellationOptions, Tessellator, TextureId, Vertex,
+    TessellationOptions, Tessellator, TextureAtlas, TextureId, Vertex,
     emath::{Align, Rot2},
     pos2,
     text::{FontData, FontDefinitions, LayoutJob},
@@ -22,8 +23,15 @@ use std::sync::Arc;
 
 const UI_RASTER_SCALE: f32 = 2.0;
 const UI_FONT_ATLAS_SIZE: usize = 4096;
+const UI_HARFBUZZ_ATLAS_SIZE: usize = 4096;
+const UI_HARFBUZZ_TEXTURE_ID: TextureId = TextureId::Managed(1);
 const UI_SYSTEM_FONT_PREFIX: &str = "perro-system";
 const UI_CYRILLIC_FONT_FAMILY: &str = "perro-cyrillic";
+const UI_ARABIC_FONT_FAMILY: &str = "perro-arabic";
+const UI_HEBREW_FONT_FAMILY: &str = "perro-hebrew";
+const UI_INDIC_FONT_FAMILY: &str = "perro-indic";
+const UI_THAI_FONT_FAMILY: &str = "perro-thai";
+const UI_SE_ASIAN_FONT_FAMILY: &str = "perro-se-asian";
 const UI_JAPANESE_FONT_FAMILY: &str = "perro-japanese";
 const UI_CHINESE_FONT_FAMILY: &str = "perro-chinese";
 const UI_KOREAN_FONT_FAMILY: &str = "perro-korean";
@@ -35,6 +43,57 @@ const UI_CYRILLIC_FONT_FAMILIES: &[&str] = &[
     "Noto Sans",
     "DejaVu Sans",
     "Liberation Sans",
+];
+
+const UI_ARABIC_FONT_FAMILIES: &[&str] = &[
+    "Segoe UI",
+    "Segoe UI Historic",
+    "Arial",
+    "Tahoma",
+    "Noto Sans Arabic",
+    "Noto Naskh Arabic",
+    "DejaVu Sans",
+    "Liberation Sans",
+];
+
+const UI_HEBREW_FONT_FAMILIES: &[&str] = &[
+    "Segoe UI",
+    "Arial",
+    "Tahoma",
+    "Noto Sans Hebrew",
+    "DejaVu Sans",
+    "Liberation Sans",
+];
+
+const UI_INDIC_FONT_FAMILIES: &[&str] = &[
+    "Nirmala UI",
+    "Mangal",
+    "Noto Sans Devanagari",
+    "Noto Sans Bengali",
+    "Noto Sans Tamil",
+    "Noto Sans Telugu",
+    "Noto Sans Kannada",
+    "Noto Sans Malayalam",
+];
+
+const UI_THAI_FONT_FAMILIES: &[&str] = &[
+    "Leelawadee UI",
+    "Tahoma",
+    "Arial",
+    "Noto Sans Thai",
+    "DejaVu Sans",
+];
+
+const UI_SE_ASIAN_FONT_FAMILIES: &[&str] = &[
+    "Leelawadee UI",
+    "Khmer UI",
+    "Myanmar Text",
+    "Lao UI",
+    "Noto Sans Khmer",
+    "Noto Sans Myanmar",
+    "Noto Sans Lao",
+    "Noto Sans Tibetan",
+    "Noto Sans",
 ];
 
 const UI_JAPANESE_FONT_FAMILIES: &[&str] = &[
@@ -95,6 +154,8 @@ pub(crate) trait UiPainter {
 
 pub(crate) struct EpaintUiPainter {
     fonts: Fonts,
+    font_definitions: FontDefinitions,
+    harfbuzz_atlas: HarfBuzzAtlas,
     shapes: Vec<ClippedShape>,
     shape_rotations: Vec<(f32, epaint::Pos2)>,
     primitives: Vec<ClippedPrimitive>,
@@ -111,12 +172,15 @@ impl Default for EpaintUiPainter {
 
 impl EpaintUiPainter {
     pub fn new() -> Self {
+        let font_definitions = default_ui_font_definitions();
         Self {
             fonts: Fonts::new(
                 UI_FONT_ATLAS_SIZE,
                 AlphaFromCoverage::default(),
-                default_ui_font_definitions(),
+                font_definitions.clone(),
             ),
+            font_definitions,
+            harfbuzz_atlas: HarfBuzzAtlas::new(),
             shapes: Vec::new(),
             shape_rotations: Vec::new(),
             primitives: Vec::new(),
@@ -168,9 +232,14 @@ impl EpaintUiPainter {
                 UiDraw::NineSlice(image) => {
                     push_nine_slice_shapes(image, viewport, &mut self.shapes)
                 }
-                UiDraw::Label(label) => {
-                    push_label_shape(label, viewport, &mut self.fonts, &mut self.shapes)
-                }
+                UiDraw::Label(label) => push_label_shape(
+                    label,
+                    viewport,
+                    &self.font_definitions,
+                    &mut self.harfbuzz_atlas,
+                    &mut self.fonts,
+                    &mut self.shapes,
+                ),
                 UiDraw::TextEdit(edit) => {
                     push_panel_shape(&edit.panel, viewport, &mut self.shapes);
                     push_text_edit_shapes(edit, viewport, &mut self.fonts, &mut self.shapes);
@@ -202,6 +271,11 @@ impl EpaintUiPainter {
                 .set
                 .push((epaint::TextureId::default(), delta));
         }
+        if let Some(delta) = self.harfbuzz_atlas.take_delta() {
+            self.textures_delta
+                .set
+                .push((UI_HARFBUZZ_TEXTURE_ID, delta));
+        }
         self.paint_revision = revision;
         self.last_viewport = viewport;
     }
@@ -227,6 +301,82 @@ impl UiPainter for EpaintUiPainter {
     }
 }
 
+#[derive(Clone, Debug)]
+struct UiFontSource {
+    key: String,
+    data: Arc<FontData>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct HarfBuzzGlyph {
+    glyph_id: u32,
+    cluster: u32,
+    x_advance: f32,
+    y_advance: f32,
+    x_offset: f32,
+    y_offset: f32,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct HarfBuzzGlyphRun {
+    glyphs: Vec<HarfBuzzGlyph>,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct HarfBuzzGlyphAlloc {
+    offset: epaint::Vec2,
+    size: epaint::Vec2,
+    uv_min: epaint::Pos2,
+    uv_max: epaint::Pos2,
+}
+
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+struct HarfBuzzGlyphKey {
+    font_key: String,
+    glyph_id: u32,
+    font_size_bits: u32,
+}
+
+struct HarfBuzzAtlas {
+    atlas: TextureAtlas,
+    glyphs: AHashMap<HarfBuzzGlyphKey, HarfBuzzGlyphAlloc>,
+}
+
+impl HarfBuzzAtlas {
+    fn new() -> Self {
+        Self {
+            atlas: TextureAtlas::new(
+                [UI_HARFBUZZ_ATLAS_SIZE, UI_HARFBUZZ_ATLAS_SIZE],
+                AlphaFromCoverage::default(),
+            ),
+            glyphs: AHashMap::new(),
+        }
+    }
+
+    fn take_delta(&mut self) -> Option<epaint::ImageDelta> {
+        self.atlas.take_delta()
+    }
+
+    fn glyph(
+        &mut self,
+        font: &UiFontSource,
+        glyph_id: u32,
+        font_size: f32,
+    ) -> Option<HarfBuzzGlyphAlloc> {
+        let key = HarfBuzzGlyphKey {
+            font_key: font.key.clone(),
+            glyph_id,
+            font_size_bits: font_size.to_bits(),
+        };
+        if let Some(alloc) = self.glyphs.get(&key).copied() {
+            return Some(alloc);
+        }
+        let alloc = raster_harfbuzz_glyph(font, glyph_id, font_size, &mut self.atlas)?;
+        self.glyphs.insert(key, alloc);
+        Some(alloc)
+    }
+}
+
 fn default_ui_font_definitions() -> FontDefinitions {
     let mut definitions = FontDefinitions::default();
     append_system_font_fallbacks(&mut definitions);
@@ -237,10 +387,30 @@ fn append_system_font_fallbacks(definitions: &mut FontDefinitions) {
     let mut db = fontdb::Database::new();
     db.load_system_fonts();
 
-    for (font_family, source_families) in [
+    let script_families = [
         (
             named_font_family(UI_CYRILLIC_FONT_FAMILY),
             UI_CYRILLIC_FONT_FAMILIES,
+        ),
+        (
+            named_font_family(UI_ARABIC_FONT_FAMILY),
+            UI_ARABIC_FONT_FAMILIES,
+        ),
+        (
+            named_font_family(UI_HEBREW_FONT_FAMILY),
+            UI_HEBREW_FONT_FAMILIES,
+        ),
+        (
+            named_font_family(UI_INDIC_FONT_FAMILY),
+            UI_INDIC_FONT_FAMILIES,
+        ),
+        (
+            named_font_family(UI_THAI_FONT_FAMILY),
+            UI_THAI_FONT_FAMILIES,
+        ),
+        (
+            named_font_family(UI_SE_ASIAN_FONT_FAMILY),
+            UI_SE_ASIAN_FONT_FAMILIES,
         ),
         (
             named_font_family(UI_JAPANESE_FONT_FAMILY),
@@ -254,11 +424,23 @@ fn append_system_font_fallbacks(definitions: &mut FontDefinitions) {
             named_font_family(UI_KOREAN_FONT_FAMILY),
             UI_KOREAN_FONT_FAMILIES,
         ),
-    ] {
-        for name in source_families {
+    ];
+
+    for (font_family, source_families) in &script_families {
+        for &name in *source_families {
             append_system_font_family(definitions, &db, name, font_family.clone());
         }
-        append_default_family_fallbacks(definitions, font_family, FontFamily::Proportional);
+    }
+
+    for (target_family, _) in &script_families {
+        for (source_family, _) in &script_families {
+            append_family_fallbacks(definitions, target_family.clone(), source_family.clone());
+        }
+        append_default_family_fallbacks(
+            definitions,
+            target_family.clone(),
+            FontFamily::Proportional,
+        );
     }
 }
 
@@ -325,6 +507,24 @@ fn append_default_family_fallbacks(
     }
 }
 
+fn append_family_fallbacks(
+    definitions: &mut FontDefinitions,
+    target_family: FontFamily,
+    source_family: FontFamily,
+) {
+    let source = definitions
+        .families
+        .get(&source_family)
+        .cloned()
+        .unwrap_or_default();
+    let target = definitions.families.entry(target_family).or_default();
+    for font_key in source {
+        if !target.iter().any(|name| name == &font_key) {
+            target.push(font_key);
+        }
+    }
+}
+
 fn append_font_fallback(definitions: &mut FontDefinitions, family: FontFamily, font_key: &str) {
     let list = definitions.families.entry(family).or_default();
     if !list.iter().any(|name| name == font_key) {
@@ -337,12 +537,22 @@ fn text_font_family(text: &str, default_family: FontFamily) -> FontFamily {
     let mut has_kana = false;
     let mut has_hangul = false;
     let mut has_cyrillic = false;
+    let mut has_arabic = false;
+    let mut has_hebrew = false;
+    let mut has_indic = false;
+    let mut has_thai = false;
+    let mut has_se_asian = false;
 
     for ch in text.chars() {
         has_han |= is_han(ch);
         has_kana |= is_kana(ch);
         has_hangul |= is_hangul(ch);
         has_cyrillic |= is_cyrillic(ch);
+        has_arabic |= is_arabic(ch);
+        has_hebrew |= is_hebrew(ch);
+        has_indic |= is_indic(ch);
+        has_thai |= is_thai(ch);
+        has_se_asian |= is_se_asian(ch);
     }
 
     if has_hangul {
@@ -353,6 +563,16 @@ fn text_font_family(text: &str, default_family: FontFamily) -> FontFamily {
         named_font_family(UI_CHINESE_FONT_FAMILY)
     } else if has_cyrillic {
         named_font_family(UI_CYRILLIC_FONT_FAMILY)
+    } else if has_arabic {
+        named_font_family(UI_ARABIC_FONT_FAMILY)
+    } else if has_hebrew {
+        named_font_family(UI_HEBREW_FONT_FAMILY)
+    } else if has_indic {
+        named_font_family(UI_INDIC_FONT_FAMILY)
+    } else if has_thai {
+        named_font_family(UI_THAI_FONT_FAMILY)
+    } else if has_se_asian {
+        named_font_family(UI_SE_ASIAN_FONT_FAMILY)
     } else {
         default_family
     }
@@ -383,6 +603,139 @@ fn is_hangul(ch: char) -> bool {
 
 fn is_cyrillic(ch: char) -> bool {
     matches!(ch as u32, 0x0400..=0x052F | 0x2DE0..=0x2DFF | 0xA640..=0xA69F)
+}
+
+fn is_arabic(ch: char) -> bool {
+    matches!(
+        ch as u32,
+        0x0600..=0x06FF
+            | 0x0750..=0x077F
+            | 0x0870..=0x089F
+            | 0x08A0..=0x08FF
+            | 0xFB50..=0xFDFF
+            | 0xFE70..=0xFEFF
+    )
+}
+
+fn is_hebrew(ch: char) -> bool {
+    matches!(ch as u32, 0x0590..=0x05FF | 0xFB1D..=0xFB4F)
+}
+
+fn is_indic(ch: char) -> bool {
+    matches!(
+        ch as u32,
+        0x0900..=0x0DFF
+    )
+}
+
+fn is_thai(ch: char) -> bool {
+    matches!(ch as u32, 0x0E00..=0x0E7F)
+}
+
+fn is_se_asian(ch: char) -> bool {
+    matches!(
+        ch as u32,
+        0x0E80..=0x0EFF | 0x0F00..=0x0FFF | 0x1000..=0x109F | 0x1780..=0x17FF
+    )
+}
+
+fn needs_harfbuzz(text: &str) -> bool {
+    text.chars()
+        .any(|ch| is_arabic(ch) || is_hebrew(ch) || is_indic(ch) || is_thai(ch) || is_se_asian(ch))
+}
+
+fn font_sources_for_family(definitions: &FontDefinitions, family: FontFamily) -> Vec<UiFontSource> {
+    definitions
+        .families
+        .get(&family)
+        .into_iter()
+        .flatten()
+        .filter_map(|key| {
+            definitions.font_data.get(key).map(|data| UiFontSource {
+                key: key.clone(),
+                data: data.clone(),
+            })
+        })
+        .collect()
+}
+
+fn shape_text_with_harfbuzz(font: &UiFontSource, text: &str) -> Option<HarfBuzzGlyphRun> {
+    let face = rustybuzz::Face::from_slice(font.data.font.as_ref(), font.data.index)?;
+    let units_per_em = face.units_per_em().max(1) as f32;
+    let mut buffer = rustybuzz::UnicodeBuffer::new();
+    buffer.push_str(text);
+    let glyph_buffer = rustybuzz::shape(&face, &[], buffer);
+    let glyphs = glyph_buffer
+        .glyph_infos()
+        .iter()
+        .zip(glyph_buffer.glyph_positions())
+        .map(|(info, pos)| HarfBuzzGlyph {
+            glyph_id: info.glyph_id,
+            cluster: info.cluster,
+            x_advance: pos.x_advance as f32 / units_per_em,
+            y_advance: pos.y_advance as f32 / units_per_em,
+            x_offset: pos.x_offset as f32 / units_per_em,
+            y_offset: pos.y_offset as f32 / units_per_em,
+        })
+        .collect::<Vec<_>>();
+    if glyphs.is_empty() || glyphs.iter().any(|glyph| glyph.glyph_id == 0) {
+        return None;
+    }
+    Some(HarfBuzzGlyphRun { glyphs })
+}
+
+fn shape_text_with_font_fallbacks(
+    definitions: &FontDefinitions,
+    family: FontFamily,
+    text: &str,
+) -> Option<(UiFontSource, HarfBuzzGlyphRun)> {
+    font_sources_for_family(definitions, family)
+        .into_iter()
+        .find_map(|font| shape_text_with_harfbuzz(&font, text).map(|run| (font, run)))
+}
+
+fn raster_harfbuzz_glyph(
+    font: &UiFontSource,
+    glyph_id: u32,
+    font_size: f32,
+    atlas: &mut TextureAtlas,
+) -> Option<HarfBuzzGlyphAlloc> {
+    let font_ref = ab_glyph::FontRef::try_from_slice(font.data.font.as_ref()).ok()?;
+    let glyph_id = ab_glyph::GlyphId(glyph_id.min(u16::MAX as u32) as u16);
+    let glyph =
+        glyph_id.with_scale_and_position(font_size * UI_RASTER_SCALE, ab_glyph::point(0.0, 0.0));
+    let outlined = font_ref.outline_glyph(glyph)?;
+    let bounds = outlined.px_bounds();
+    let width = bounds.width().ceil().max(0.0) as usize;
+    let height = bounds.height().ceil().max(0.0) as usize;
+    if width == 0 || height == 0 {
+        return Some(HarfBuzzGlyphAlloc {
+            offset: vec2(0.0, 0.0),
+            size: vec2(0.0, 0.0),
+            uv_min: pos2(0.0, 0.0),
+            uv_max: pos2(0.0, 0.0),
+        });
+    }
+    let (glyph_pos, image) = atlas.allocate((width, height));
+    outlined.draw(|x, y, coverage| {
+        if coverage > 0.0 {
+            image[(glyph_pos.0 + x as usize, glyph_pos.1 + y as usize)] =
+                Color32::from_white_alpha((coverage * 255.0).round().clamp(0.0, 255.0) as u8);
+        }
+    });
+    let atlas_size = atlas.size();
+    Some(HarfBuzzGlyphAlloc {
+        offset: vec2(bounds.min.x, bounds.min.y) / UI_RASTER_SCALE,
+        size: vec2(width as f32, height as f32) / UI_RASTER_SCALE,
+        uv_min: pos2(
+            glyph_pos.0 as f32 / atlas_size[0] as f32,
+            glyph_pos.1 as f32 / atlas_size[1] as f32,
+        ),
+        uv_max: pos2(
+            (glyph_pos.0 + width) as f32 / atlas_size[0] as f32,
+            (glyph_pos.1 + height) as f32 / atlas_size[1] as f32,
+        ),
+    })
 }
 
 fn font_texture_size(fonts: &Fonts) -> [u32; 2] {
@@ -710,9 +1063,30 @@ fn resolve_image_rect(outer: Rect, image: &UiImageDraw) -> Rect {
 fn push_label_shape(
     label: &UiLabelDraw,
     viewport: [f32; 2],
+    definitions: &FontDefinitions,
+    harfbuzz_atlas: &mut HarfBuzzAtlas,
     fonts: &mut Fonts,
     out: &mut Vec<ClippedShape>,
 ) {
+    if needs_harfbuzz(label.text.as_ref())
+        && push_harfbuzz_text_shape(
+            TextShapeInput {
+                rect: label.rect,
+                viewport,
+                clip_rect: clip_rect_from_state(label.clip_rect, viewport),
+                text: label.text.as_ref(),
+                font_size: label.font_size,
+                color: label.color,
+                h_align: label.h_align,
+                v_align: label.v_align,
+            },
+            definitions,
+            harfbuzz_atlas,
+            out,
+        )
+    {
+        return;
+    }
     push_text_shape(
         TextShapeInput {
             rect: label.rect,
@@ -727,6 +1101,103 @@ fn push_label_shape(
         fonts,
         out,
     );
+}
+
+fn push_harfbuzz_text_shape(
+    input: TextShapeInput<'_>,
+    definitions: &FontDefinitions,
+    harfbuzz_atlas: &mut HarfBuzzAtlas,
+    out: &mut Vec<ClippedShape>,
+) -> bool {
+    let TextShapeInput {
+        rect,
+        viewport,
+        clip_rect,
+        text,
+        font_size,
+        color,
+        h_align,
+        v_align,
+    } = input;
+    if text.is_empty()
+        || !valid_rect(rect)
+        || !valid_color(color)
+        || !font_size.is_finite()
+        || font_size <= 0.0
+    {
+        return false;
+    }
+    let family = text_font_family(text, FontFamily::Proportional);
+    let Some((font, run)) = shape_text_with_font_fallbacks(definitions, family, text) else {
+        return false;
+    };
+    let (min, max) = rect.screen_min_max(viewport);
+    let line_width = run
+        .glyphs
+        .iter()
+        .map(|glyph| glyph.x_advance * font_size)
+        .sum::<f32>()
+        .max(0.0);
+    let line_height = font_size;
+    let mut cursor = match h_align {
+        UiTextAlignState::Start => min[0],
+        UiTextAlignState::Center => min[0] + (rect.size[0] - line_width).max(0.0) * 0.5,
+        UiTextAlignState::End => max[0] - line_width,
+    };
+    let baseline = match v_align {
+        UiTextAlignState::Start => min[1] + line_height,
+        UiTextAlignState::Center => {
+            min[1] + (rect.size[1] - line_height).max(0.0) * 0.5 + line_height
+        }
+        UiTextAlignState::End => max[1],
+    };
+    let mut mesh = Mesh::with_texture(UI_HARFBUZZ_TEXTURE_ID);
+    let color = color32(color);
+    for glyph in run.glyphs {
+        let Some(alloc) = harfbuzz_atlas.glyph(&font, glyph.glyph_id, font_size) else {
+            cursor += glyph.x_advance * font_size;
+            continue;
+        };
+        if alloc.size.x > 0.0 && alloc.size.y > 0.0 {
+            let x = cursor + glyph.x_offset * font_size + alloc.offset.x;
+            let y = baseline - glyph.y_offset * font_size + alloc.offset.y;
+            let rect = Rect::from_min_size(pos2(x, y), alloc.size);
+            let base = mesh.vertices.len() as u32;
+            mesh.vertices.extend_from_slice(&[
+                Vertex {
+                    pos: rect.left_top(),
+                    uv: alloc.uv_min,
+                    color,
+                },
+                Vertex {
+                    pos: rect.right_top(),
+                    uv: pos2(alloc.uv_max.x, alloc.uv_min.y),
+                    color,
+                },
+                Vertex {
+                    pos: rect.right_bottom(),
+                    uv: alloc.uv_max,
+                    color,
+                },
+                Vertex {
+                    pos: rect.left_bottom(),
+                    uv: pos2(alloc.uv_min.x, alloc.uv_max.y),
+                    color,
+                },
+            ]);
+            mesh.indices
+                .extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+        }
+        cursor += glyph.x_advance * font_size;
+    }
+    if mesh.vertices.is_empty() || mesh.indices.is_empty() {
+        return false;
+    }
+    out.push(ClippedShape {
+        clip_rect,
+        shape: Shape::Mesh(Arc::new(mesh)),
+    });
+    true
 }
 
 fn push_panel_shape(panel: &UiPanelDraw, viewport: [f32; 2], out: &mut Vec<ClippedShape>) {
@@ -1752,6 +2223,57 @@ mod tests {
             assert_eq!(text_shape.galley.job.halign, expected_align);
             assert!((text_shape.pos.x - expected_x).abs() < 1.0e-3);
         }
+    }
+
+    #[test]
+    fn harfbuzz_text_shape_uses_managed_font_texture() {
+        let definitions = default_ui_font_definitions();
+        let mut atlas = HarfBuzzAtlas::new();
+        let mut shapes = Vec::new();
+
+        let built = push_harfbuzz_text_shape(
+            TextShapeInput {
+                rect: UiRectState {
+                    center: [0.0, 0.0],
+                    size: [200.0, 60.0],
+                    pivot: [0.5, 0.5],
+                    rotation_radians: 0.0,
+                    z_index: 0,
+                },
+                viewport: [800.0, 600.0],
+                clip_rect: Rect::from_min_max(pos2(0.0, 0.0), pos2(800.0, 600.0)),
+                text: "Perro",
+                font_size: 24.0,
+                color: perro_structs::Color::WHITE,
+                h_align: UiTextAlignState::Center,
+                v_align: UiTextAlignState::Center,
+            },
+            &definitions,
+            &mut atlas,
+            &mut shapes,
+        );
+
+        assert!(built);
+        let Shape::Mesh(mesh) = &shapes[0].shape else {
+            panic!("expected harfbuzz mesh");
+        };
+        assert_eq!(mesh.texture_id, UI_HARFBUZZ_TEXTURE_ID);
+        assert!(!mesh.vertices.is_empty());
+        assert!(atlas.take_delta().is_some());
+    }
+
+    #[test]
+    fn harfbuzz_shapes_default_font_to_glyph_run() {
+        let definitions = FontDefinitions::default();
+        let font = font_sources_for_family(&definitions, FontFamily::Proportional)
+            .into_iter()
+            .next()
+            .unwrap();
+
+        let run = shape_text_with_harfbuzz(&font, "Perro").unwrap();
+
+        assert!(!run.glyphs.is_empty());
+        assert!(run.glyphs.iter().all(|glyph| glyph.glyph_id > 0));
     }
 
     #[test]

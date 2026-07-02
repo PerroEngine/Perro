@@ -1,10 +1,10 @@
 use crate::ResPathSource;
 use crate::sub_apis::{
     AnimationAPI, AnimationModule, AnimationTreeAPI, AnimationTreeModule, AudioAPI, AudioModule,
-    CsvAPI, CsvModule, Draw2DAPI, Draw2DModule, GlbModule, GltfAPI, Locale, LocalizationAPI,
-    LocalizationModule, MaterialAPI, MaterialModule, MeshAPI, MeshModule, MicAPI, MicModule,
-    PostProcessingAPI, SceneDocAPI, SceneDocModule, SkeletonAPI, SkeletonModule, TextureAPI,
-    TextureModule, VisualAccessibilityAPI,
+    CsvAPI, CsvModule, Draw2DAPI, Draw2DModule, GlbModule, GltfAPI, IntoLocale, Locale,
+    LocalizationAPI, LocalizationModule, MaterialAPI, MaterialModule, MeshAPI, MeshModule, MicAPI,
+    MicModule, PostProcessingAPI, SceneDocAPI, SceneDocModule, SkeletonAPI, SkeletonModule,
+    TextureAPI, TextureModule, VisualAccessibilityAPI,
 };
 use perro_scene::{SceneDoc, SceneWrite};
 use perro_structs::{ColorBlindFilter, PostProcessEffect, PostProcessSet, Vector2};
@@ -246,8 +246,8 @@ impl<'res, R: ResourceAPI + ?Sized> ResourceWindow<'res, R> {
 
     /// Set the active locale. Returns `true` when the locale exists.
     #[inline]
-    pub fn set_locale(&self, locale: Locale) -> bool {
-        self.api.localization_set_locale(locale)
+    pub fn set_locale<L: IntoLocale>(&self, locale: L) -> bool {
+        self.api.localization_set_locale(locale.into_locale())
     }
 
     /// Return the active locale.

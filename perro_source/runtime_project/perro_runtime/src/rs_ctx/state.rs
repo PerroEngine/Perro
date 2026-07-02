@@ -131,30 +131,7 @@ impl Default for RuntimeLocalizationState {
 }
 
 fn locale_from_code(code: &'static str) -> Locale {
-    match code {
-        "zh" => Locale::ZH,
-        "en" => Locale::EN,
-        "ru" => Locale::RU,
-        "es" => Locale::ES,
-        "pt" => Locale::PT,
-        "de" => Locale::DE,
-        "ja" => Locale::JA,
-        "fr" => Locale::FR,
-        "ko" => Locale::KO,
-        "pl" => Locale::PL,
-        "tr" => Locale::TR,
-        "it" => Locale::IT,
-        "nl" => Locale::NL,
-        "vi" => Locale::VI,
-        "id" => Locale::ID,
-        "ar" => Locale::AR,
-        "hi" => Locale::HI,
-        "bn" => Locale::BN,
-        "ur" => Locale::UR,
-        "fa" => Locale::FA,
-        "sw" => Locale::SW,
-        _ => Locale::Custom(code),
-    }
+    Locale::from_code(code)
 }
 
 #[derive(Default)]

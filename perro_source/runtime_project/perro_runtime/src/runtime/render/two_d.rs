@@ -935,7 +935,12 @@ impl Runtime {
         let mut next_states = std::mem::take(&mut self.render_ui.button_states);
         next_states.retain(|node, _| self.nodes.get(*node).is_some());
         let mut events = Vec::new();
-        for (node, scene_node) in self.nodes.iter() {
+        let button_count = self.internal_updates.button_nodes_2d.len();
+        for i in 0..button_count {
+            let node = self.internal_updates.button_nodes_2d[i];
+            let Some(scene_node) = self.nodes.get(node) else {
+                continue;
+            };
             let Some(inactive) = button_2d_inactive_from_data(&scene_node.data) else {
                 continue;
             };
@@ -971,8 +976,9 @@ impl Runtime {
     ) -> Option<NodeID> {
         let world = self.pointer_world_2d(camera);
         let mut best: Option<(NodeID, i32)> = None;
-        let nodes = self.nodes.iter().map(|(node, _)| node).collect::<Vec<_>>();
-        for node in nodes {
+        let button_count = self.internal_updates.button_nodes_2d.len();
+        for i in 0..button_count {
+            let node = self.internal_updates.button_nodes_2d[i];
             let Some(scene_node) = self.nodes.get(node) else {
                 continue;
             };
@@ -1752,12 +1758,18 @@ fn water_link_overlap_weight(local: perro_structs::Vector2, link: &WaterLinkStat
     t * t * (3.0 - 2.0 * t)
 }
 
-pub(crate) fn resolve_tileset_2d(runtime: &mut Runtime, source: &str) -> Option<ParsedTileset2D> {
+pub(crate) fn resolve_tileset_2d(
+    runtime: &mut Runtime,
+    source: &str,
+) -> Option<Arc<ParsedTileset2D>> {
     let source_hash = parse_hashed_source_uri(source).unwrap_or_else(|| string_to_u64(source));
     while let Ok((hash, tileset)) = runtime.render_2d.tileset_load_rx.try_recv() {
         runtime.render_2d.pending_tileset_loads.remove(&hash);
         if let Some(tileset) = tileset {
-            runtime.render_2d.tileset_cache.insert(hash, tileset);
+            runtime
+                .render_2d
+                .tileset_cache
+                .insert(hash, Arc::new(tileset));
         }
     }
     if let Some(tileset) = runtime.render_2d.tileset_cache.get(&source_hash) {
@@ -1774,7 +1786,7 @@ pub(crate) fn resolve_tileset_2d(runtime: &mut Runtime, source: &str) -> Option<
         None
     };
     if let Some(bytes) = static_tileset {
-        let tileset = perro_render_bridge::decode_tileset_2d_binary(bytes)?;
+        let tileset = Arc::new(perro_render_bridge::decode_tileset_2d_binary(bytes)?);
         runtime
             .render_2d
             .tileset_cache

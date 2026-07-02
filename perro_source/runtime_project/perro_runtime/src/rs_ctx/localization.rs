@@ -11,12 +11,17 @@ use std::{
 impl LocalizationAPI for RuntimeResourceApi {
     fn localization_set_locale(&self, locale: Locale) -> bool {
         if self.static_localization_lookup.is_some() {
+            let locale_code = locale.code().trim().to_ascii_lowercase();
+            if locale_code.is_empty() {
+                return false;
+            }
+            let locale_code = intern_localization_str(&locale_code);
             let mut localization = self
                 .localization
                 .write()
                 .expect("resource api localization rwlock poisoned");
-            localization.current_locale = locale;
-            localization.current_locale_code = intern_localization_str(locale.code());
+            localization.current_locale = locale_from_code(locale_code);
+            localization.current_locale_code = locale_code;
             localization.epoch = localization.epoch.wrapping_add(1);
             return true;
         }
@@ -242,30 +247,7 @@ fn find_header_index(headers: &[String], expected: &str) -> Option<usize> {
 }
 
 fn locale_from_code(code: &'static str) -> Locale {
-    match code {
-        "zh" => Locale::ZH,
-        "en" => Locale::EN,
-        "ru" => Locale::RU,
-        "es" => Locale::ES,
-        "pt" => Locale::PT,
-        "de" => Locale::DE,
-        "ja" => Locale::JA,
-        "fr" => Locale::FR,
-        "ko" => Locale::KO,
-        "pl" => Locale::PL,
-        "tr" => Locale::TR,
-        "it" => Locale::IT,
-        "nl" => Locale::NL,
-        "vi" => Locale::VI,
-        "id" => Locale::ID,
-        "ar" => Locale::AR,
-        "hi" => Locale::HI,
-        "bn" => Locale::BN,
-        "ur" => Locale::UR,
-        "fa" => Locale::FA,
-        "sw" => Locale::SW,
-        _ => Locale::Custom(code),
-    }
+    Locale::from_code(code)
 }
 
 #[cfg(test)]
@@ -366,6 +348,7 @@ mod tests {
             match locale {
                 Locale::EN => "Camera initialized",
                 Locale::ES => "Camara inicializada",
+                Locale::GA => "Ceamara tosaithe",
                 _ => "",
             }
         }
@@ -393,6 +376,12 @@ mod tests {
         assert_eq!(
             api.localization_get("camera.init"),
             Some("Camara inicializada")
+        );
+        assert!(api.localization_set_locale(Locale::Custom("GA")));
+        assert_eq!(api.localization_get_locale(), Locale::GA);
+        assert_eq!(
+            api.localization_get("camera.init"),
+            Some("Ceamara tosaithe")
         );
     }
 }

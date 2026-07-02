@@ -267,15 +267,15 @@ default_locale = "en"
 
 Enable localization table.
 
+`default_locale` sets the startup language.
+
+Use a locale code defined in [Localization](../scripting/contexts/resource_modules/localization.md).
+
 Need one sibling csv next to `project.toml`:
 
 - `localization.csv`
 - `locale.csv`
 - `translations.csv`
-
-First column must be key.
-
-Other columns use locale codes.
 
 If sibling csv exists w/o `[localization]`, default locale = `en`.
 

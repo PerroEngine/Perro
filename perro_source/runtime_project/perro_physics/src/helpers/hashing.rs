@@ -160,12 +160,12 @@ pub fn hash_tilemap_2d(mut state: u64, tilemap: &TileMap2D) -> u64 {
     state
 }
 
-pub fn hash_tile_collision_shape_2d(mut state: u64, shape: ParsedTileCollisionShape2D) -> u64 {
+pub fn hash_tile_collision_shape_2d(mut state: u64, shape: &ParsedTileCollisionShape2D) -> u64 {
     match shape {
         ParsedTileCollisionShape2D::Auto => hash_u32(state, 1),
         ParsedTileCollisionShape2D::Shape { shape, offset } => {
             state = hash_u32(state, 2);
-            state = hash_shape_2d(state, tile_set_shape_to_shape_2d(shape));
+            state = hash_shape_2d(state, tile_set_shape_to_shape_2d(*shape));
             state = hash_f32(state, offset[0].to_bits());
             hash_f32(state, offset[1].to_bits())
         }
