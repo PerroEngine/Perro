@@ -698,6 +698,19 @@ impl Default for Runtime {
     }
 }
 
+impl Drop for Runtime {
+    fn drop(&mut self) {
+        let mut script_ids = Vec::new();
+        self.scripts.append_instance_ids(&mut script_ids);
+        for id in script_ids {
+            let _ = self.remove_script_instance(id);
+        }
+
+        #[cfg(feature = "steamworks")]
+        let _ = perro_steamworks::runtime::run_callbacks();
+    }
+}
+
 #[cfg(test)]
 #[path = "../tests/unit/runtime_hotpath_tests.rs"]
 mod runtime_hotpath_tests;
