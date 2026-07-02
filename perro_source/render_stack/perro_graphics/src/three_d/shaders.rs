@@ -223,8 +223,8 @@ fn build_packed_lod_depth_rigid_wgsl() -> String {
             "struct VertexInput {\n    @location(0) pos: vec4<f32>,\n};",
         )
         .replace(
-            "struct InstanceInput {\n    @location(4) model_row_0: vec4<f32>,\n    @location(5) model_row_1: vec4<f32>,\n    @location(6) model_row_2: vec4<f32>,\n};",
-            "struct InstanceInput {\n    @location(4) model_row_0: vec4<f32>,\n    @location(5) model_row_1: vec4<f32>,\n    @location(6) model_row_2: vec4<f32>,\n    @location(14) packed_lod_param_id: u32,\n};",
+            "struct InstanceInput {\n    @location(4) model_row_0: vec4<f32>,\n    @location(5) model_row_1: vec4<f32>,\n    @location(6) model_row_2: vec4<f32>,\n    @location(7) packed_color: u32,\n    @location(11) packed_material_params: u32,\n};",
+            "struct InstanceInput {\n    @location(4) model_row_0: vec4<f32>,\n    @location(5) model_row_1: vec4<f32>,\n    @location(6) model_row_2: vec4<f32>,\n    @location(7) packed_color: u32,\n    @location(11) packed_material_params: u32,\n    @location(14) packed_lod_param_id: u32,\n};",
         )
         .replace(
             "struct BlendShapeDelta {\n    position_delta: vec4<f32>,\n    normal_delta: vec4<f32>,\n}",

@@ -86,13 +86,19 @@ fn build_rgba_mip_chain_from_base(rgba: Vec<u8>, width: u32, height: u32) -> Vec
                 let samples = [(sx, sy), (x1, sy), (sx, y1), (x1, y1)];
                 let dst = ((y * next_width + x) * 4) as usize;
 
-                for c in 0..4 {
-                    let sum = samples.iter().fold(0u32, |acc, &(px, py)| {
+                let alpha_sum = samples.iter().fold(0u32, |acc, &(px, py)| {
+                    let src = ((py * prev.width + px) * 4) as usize + 3;
+                    acc + prev.rgba[src] as u32
+                });
+                let alpha = ((alpha_sum + 2) / 4) as u8;
+                for c in 0..3 {
+                    let sum = samples.iter().fold(0.0f32, |acc, &(px, py)| {
                         let src = ((py * prev.width + px) * 4) as usize + c;
-                        acc + prev.rgba[src] as u32
+                        acc + srgb_u8_to_linear(prev.rgba[src])
                     });
-                    next[dst + c] = ((sum + 2) / 4) as u8;
+                    next[dst + c] = linear_to_srgb_u8(sum * 0.25);
                 }
+                next[dst + 3] = alpha;
             }
         }
 
@@ -104,6 +110,26 @@ fn build_rgba_mip_chain_from_base(rgba: Vec<u8>, width: u32, height: u32) -> Vec
     }
 
     levels
+}
+
+#[inline]
+fn srgb_u8_to_linear(v: u8) -> f32 {
+    let c = v as f32 / 255.0;
+    if c <= 0.04045 {
+        c / 12.92
+    } else {
+        ((c + 0.055) / 1.055).powf(2.4)
+    }
+}
+
+#[inline]
+fn linear_to_srgb_u8(v: f32) -> u8 {
+    let c = if v <= 0.0031308 {
+        v * 12.92
+    } else {
+        1.055 * v.powf(1.0 / 2.4) - 0.055
+    };
+    (c.clamp(0.0, 1.0) * 255.0).round() as u8
 }
 
 fn fallback_mip_chain() -> Vec<RgbaMipLevel> {
@@ -220,7 +246,7 @@ mod tests {
         let rgba = vec![0, 0, 0, 0, 100, 0, 0, 100, 200, 0, 0, 200, 255, 0, 0, 255];
         let levels = build_rgba_levels_for_filter(&rgba, 2, 2, TextureFilterMode::LinearMipmap);
         assert_eq!(levels.len(), 2);
-        assert_eq!(levels[1].rgba, vec![139, 0, 0, 139]);
+        assert_eq!(levels[1].rgba, vec![175, 0, 0, 139]);
     }
 
     #[test]

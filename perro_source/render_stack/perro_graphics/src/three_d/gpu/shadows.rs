@@ -93,7 +93,7 @@ pub(super) fn build_shadow_setup(args: ShadowSetupArgs<'_>) -> ShadowSetup {
 
     let has_casters = draw_batches
         .iter()
-        .any(|batch| !batch.draw_on_top && batch.casts_shadows && batch.alpha_mode == 0);
+        .any(|batch| !batch.draw_on_top && batch.casts_shadows && batch.alpha_mode != 2);
     if !has_casters {
         return ShadowSetup {
             scenes,
@@ -574,7 +574,7 @@ pub(super) fn compute_shadow_focus_bounds(
     let mut min = Vec3::splat(f32::INFINITY);
     let mut max = Vec3::splat(f32::NEG_INFINITY);
     for batch in draw_batches {
-        if batch.draw_on_top || !batch.casts_shadows || batch.alpha_mode != 0 {
+        if batch.draw_on_top || !batch.casts_shadows || batch.alpha_mode == 2 {
             continue;
         }
         let start = batch.instance_start as usize;

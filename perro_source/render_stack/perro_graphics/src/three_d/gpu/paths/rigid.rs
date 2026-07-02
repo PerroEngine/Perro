@@ -540,10 +540,16 @@ pub(super) fn create_depth_prepass_pipeline_rigid(
                         },
                     ],
                 },
+                rigid_meta_layout(),
             ],
             compilation_options: Default::default(),
         },
-        fragment: None,
+        fragment: Some(wgpu::FragmentState {
+            module: shader,
+            entry_point: Some("fs_main"),
+            targets: &[],
+            compilation_options: Default::default(),
+        }),
         primitive: wgpu::PrimitiveState {
             topology: wgpu::PrimitiveTopology::TriangleList,
             strip_index_format: None,
@@ -585,7 +591,12 @@ pub(super) fn create_depth_prepass_pipeline_rigid_packed_lod(
             ],
             compilation_options: Default::default(),
         },
-        fragment: None,
+        fragment: Some(wgpu::FragmentState {
+            module: shader,
+            entry_point: Some("fs_main"),
+            targets: &[],
+            compilation_options: Default::default(),
+        }),
         primitive: wgpu::PrimitiveState {
             topology: wgpu::PrimitiveTopology::TriangleList,
             strip_index_format: None,
@@ -651,10 +662,16 @@ pub(super) fn create_shadow_depth_pipeline_rigid(
                         },
                     ],
                 },
+                rigid_meta_layout(),
             ],
             compilation_options: Default::default(),
         },
-        fragment: None,
+        fragment: Some(wgpu::FragmentState {
+            module: shader,
+            entry_point: Some("fs_main"),
+            targets: &[],
+            compilation_options: Default::default(),
+        }),
         primitive: wgpu::PrimitiveState {
             topology: wgpu::PrimitiveTopology::TriangleList,
             strip_index_format: None,
@@ -700,7 +717,12 @@ pub(super) fn create_shadow_depth_pipeline_rigid_packed_lod(
             ],
             compilation_options: Default::default(),
         },
-        fragment: None,
+        fragment: Some(wgpu::FragmentState {
+            module: shader,
+            entry_point: Some("fs_main"),
+            targets: &[],
+            compilation_options: Default::default(),
+        }),
         primitive: wgpu::PrimitiveState {
             topology: wgpu::PrimitiveTopology::TriangleList,
             strip_index_format: None,

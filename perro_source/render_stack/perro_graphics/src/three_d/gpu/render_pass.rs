@@ -401,26 +401,35 @@ impl Gpu3D {
             occlusion_query_set: query_set,
             multiview_mask: None,
         });
-        if self.draw_batches.is_empty() {
+        if self.draw_batches.is_empty() && self.multimesh_batches.is_empty() {
             drop(pass);
         } else {
-            pass.set_bind_group(1, self.fallback_material_texture_bind_group(), &[]);
-            pass.set_bind_group(2, &self.shadow_bind_group, &[]);
-            pass.set_bind_group(3, &self.mesh_blend_bind_group, &[]);
+            if !self.draw_batches.is_empty() {
+                pass.set_bind_group(1, self.fallback_material_texture_bind_group(), &[]);
+                pass.set_bind_group(2, &self.shadow_bind_group, &[]);
+                pass.set_bind_group(3, &self.mesh_blend_bind_group, &[]);
+            }
             let mut current_state_key = None;
             let mut current_texture_slot = MATERIAL_TEXTURE_NONE;
-            for batch_indices in [
+            // Local counters: `pass` holds a shared borrow of self for the
+            // multimesh draw, so self.perf_counters can't be written here.
+            let mut pipeline_switches: u32 = 0;
+            let mut camera_bind_group_switches: u32 = 0;
+            let mut texture_bind_group_switches: u32 = 0;
+            for (group_index, batch_indices) in [
                 &self.opaque_batch_indices,
                 &self.alpha_batch_indices,
                 &self.overlay_batch_indices,
-            ] {
+            ]
+            .into_iter()
+            .enumerate()
+            {
                 for &i in batch_indices.iter() {
                     let batch = &self.draw_batches[i];
                     if current_state_key != Some(batch.state_key) {
                         let pipeline = self.pipeline_for_batch(batch);
                         pass.set_pipeline(pipeline);
-                        self.perf_counters.pipeline_switches =
-                            self.perf_counters.pipeline_switches.saturating_add(1);
+                        pipeline_switches = pipeline_switches.saturating_add(1);
                         if batch.path == RenderPath3D::Rigid {
                             pass.set_bind_group(0, &self.rigid_camera_bind_group, &[]);
                             if batch.packed_lod {
@@ -446,10 +455,7 @@ impl Gpu3D {
                             pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
                             pass.set_vertex_buffer(2, self.skinned_instance_meta_buffer.slice(..));
                         }
-                        self.perf_counters.camera_bind_group_switches = self
-                            .perf_counters
-                            .camera_bind_group_switches
-                            .saturating_add(1);
+                        camera_bind_group_switches = camera_bind_group_switches.saturating_add(1);
                         pass.set_vertex_buffer(1, self.instance_transform_buffer.slice(..));
                         current_state_key = Some(batch.state_key);
                     }
@@ -460,10 +466,7 @@ impl Gpu3D {
                             &[],
                         );
                         current_texture_slot = batch.base_color_texture_slot;
-                        self.perf_counters.texture_bind_group_switches = self
-                            .perf_counters
-                            .texture_bind_group_switches
-                            .saturating_add(1);
+                        texture_bind_group_switches = texture_bind_group_switches.saturating_add(1);
                     }
                     if let Some(query_index) = batch.occlusion_query {
                         pass.begin_occlusion_query(query_index);
@@ -491,8 +494,23 @@ impl Gpu3D {
                 }
                 current_state_key = None;
                 current_texture_slot = MATERIAL_TEXTURE_NONE;
+                if group_index == 0 {
+                    draw_multimesh_batches(self, &mut pass);
+                }
             }
             drop(pass);
+            self.perf_counters.pipeline_switches = self
+                .perf_counters
+                .pipeline_switches
+                .saturating_add(pipeline_switches);
+            self.perf_counters.camera_bind_group_switches = self
+                .perf_counters
+                .camera_bind_group_switches
+                .saturating_add(camera_bind_group_switches);
+            self.perf_counters.texture_bind_group_switches = self
+                .perf_counters
+                .texture_bind_group_switches
+                .saturating_add(texture_bind_group_switches);
         }
 
         for &source_i in &self.mesh_blend_batch_indices {
@@ -664,75 +682,6 @@ impl Gpu3D {
             drop(blend_pass);
         }
 
-        if !self.multimesh_batches.is_empty() {
-            let mut mm_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("perro_multimesh_pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: color_view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Load,
-                        store: wgpu::StoreOp::Store,
-                    },
-                    depth_slice: None,
-                })],
-                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &self.depth_view,
-                    depth_ops: Some(wgpu::Operations {
-                        load: wgpu::LoadOp::Load,
-                        store: wgpu::StoreOp::Store,
-                    }),
-                    stencil_ops: None,
-                }),
-                timestamp_writes: None,
-                occlusion_query_set: None,
-                multiview_mask: None,
-            });
-            mm_pass.set_bind_group(0, &self.multimesh_bind_group, &[]);
-            mm_pass.set_vertex_buffer(0, self.rigid_vertex_buffer.slice(..));
-            mm_pass.set_vertex_buffer(1, self.multimesh_instance_buffer.slice(..));
-            mm_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-            let mut current_state: Option<(bool, bool, &MaterialPipelineKind)> = None;
-            for batch in &self.multimesh_batches {
-                let state = (batch.double_sided, batch.mesh_blend, &batch.material_kind);
-                if current_state != Some(state) {
-                    let pipeline = match &batch.material_kind {
-                        MaterialPipelineKind::Custom(token) => {
-                            self.custom_pipelines_multimesh.get(token).map(|pipeline| {
-                                if batch.mesh_blend && batch.double_sided {
-                                    &pipeline.pipeline_blend_double_sided
-                                } else if batch.mesh_blend {
-                                    &pipeline.pipeline_blend_culled
-                                } else if batch.double_sided {
-                                    &pipeline.pipeline_double_sided
-                                } else {
-                                    &pipeline.pipeline_culled
-                                }
-                            })
-                        }
-                        _ => None,
-                    }
-                    .unwrap_or({
-                        if batch.mesh_blend && batch.double_sided {
-                            &self.pipeline_multimesh_blend_double_sided
-                        } else if batch.mesh_blend {
-                            &self.pipeline_multimesh_blend_culled
-                        } else if batch.double_sided {
-                            &self.pipeline_multimesh_double_sided
-                        } else {
-                            &self.pipeline_multimesh_culled
-                        }
-                    });
-                    mm_pass.set_pipeline(pipeline);
-                    current_state = Some(state);
-                }
-                let start = batch.mesh.index_start;
-                let end = start + batch.mesh.index_count;
-                let instances = batch.instance_start..batch.instance_start + batch.instance_count;
-                mm_pass.draw_indexed(start..end, batch.mesh.base_vertex, instances);
-            }
-        }
-
         if query_count > 0
             && let (Some(query_set), Some(resolve), Some(readback)) = (
                 self.occlusion_query_set.as_ref(),
@@ -870,6 +819,55 @@ fn draw_shadow_batches<'a>(
         let end = start + batch.mesh.index_count;
         let instances = batch.instance_start..batch.instance_start + batch.instance_count;
         shadow_pass.draw_indexed(start..end, batch.mesh.base_vertex, instances);
+    }
+}
+
+fn draw_multimesh_batches<'a>(gpu: &'a Gpu3D, pass: &mut wgpu::RenderPass<'a>) {
+    if gpu.multimesh_batches.is_empty() {
+        return;
+    }
+    pass.set_bind_group(0, &gpu.multimesh_bind_group, &[]);
+    pass.set_vertex_buffer(0, gpu.rigid_vertex_buffer.slice(..));
+    pass.set_vertex_buffer(1, gpu.multimesh_instance_buffer.slice(..));
+    pass.set_index_buffer(gpu.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+    let mut current_state: Option<(bool, bool, &MaterialPipelineKind)> = None;
+    for batch in &gpu.multimesh_batches {
+        let state = (batch.double_sided, batch.mesh_blend, &batch.material_kind);
+        if current_state != Some(state) {
+            let pipeline = match &batch.material_kind {
+                MaterialPipelineKind::Custom(token) => {
+                    gpu.custom_pipelines_multimesh.get(token).map(|pipeline| {
+                        if batch.mesh_blend && batch.double_sided {
+                            &pipeline.pipeline_blend_double_sided
+                        } else if batch.mesh_blend {
+                            &pipeline.pipeline_blend_culled
+                        } else if batch.double_sided {
+                            &pipeline.pipeline_double_sided
+                        } else {
+                            &pipeline.pipeline_culled
+                        }
+                    })
+                }
+                _ => None,
+            }
+            .unwrap_or({
+                if batch.mesh_blend && batch.double_sided {
+                    &gpu.pipeline_multimesh_blend_double_sided
+                } else if batch.mesh_blend {
+                    &gpu.pipeline_multimesh_blend_culled
+                } else if batch.double_sided {
+                    &gpu.pipeline_multimesh_double_sided
+                } else {
+                    &gpu.pipeline_multimesh_culled
+                }
+            });
+            pass.set_pipeline(pipeline);
+            current_state = Some(state);
+        }
+        let start = batch.mesh.index_start;
+        let end = start + batch.mesh.index_count;
+        let instances = batch.instance_start..batch.instance_start + batch.instance_count;
+        pass.draw_indexed(start..end, batch.mesh.base_vertex, instances);
     }
 }
 

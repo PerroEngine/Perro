@@ -385,16 +385,33 @@ pub(super) fn create_depth_prepass_pipeline_skinned(
                 wgpu::VertexBufferLayout {
                     array_stride: std::mem::size_of::<SkinnedInstanceMetaGpu>() as u64,
                     step_mode: wgpu::VertexStepMode::Instance,
-                    attributes: &[wgpu::VertexAttribute {
-                        offset: 20,
-                        shader_location: 11,
-                        format: wgpu::VertexFormat::Uint32x4,
-                    }],
+                    attributes: &[
+                        wgpu::VertexAttribute {
+                            offset: 0,
+                            shader_location: 7,
+                            format: wgpu::VertexFormat::Uint32,
+                        },
+                        wgpu::VertexAttribute {
+                            offset: 16,
+                            shader_location: 8,
+                            format: wgpu::VertexFormat::Uint32,
+                        },
+                        wgpu::VertexAttribute {
+                            offset: 20,
+                            shader_location: 11,
+                            format: wgpu::VertexFormat::Uint32x4,
+                        },
+                    ],
                 },
             ],
             compilation_options: Default::default(),
         },
-        fragment: None,
+        fragment: Some(wgpu::FragmentState {
+            module: shader,
+            entry_point: Some("fs_main"),
+            targets: &[],
+            compilation_options: Default::default(),
+        }),
         primitive: wgpu::PrimitiveState {
             topology: wgpu::PrimitiveTopology::TriangleList,
             strip_index_format: None,
@@ -475,16 +492,33 @@ pub(super) fn create_shadow_depth_pipeline_skinned(
                 wgpu::VertexBufferLayout {
                     array_stride: std::mem::size_of::<SkinnedInstanceMetaGpu>() as u64,
                     step_mode: wgpu::VertexStepMode::Instance,
-                    attributes: &[wgpu::VertexAttribute {
-                        offset: 20,
-                        shader_location: 11,
-                        format: wgpu::VertexFormat::Uint32x4,
-                    }],
+                    attributes: &[
+                        wgpu::VertexAttribute {
+                            offset: 0,
+                            shader_location: 7,
+                            format: wgpu::VertexFormat::Uint32,
+                        },
+                        wgpu::VertexAttribute {
+                            offset: 16,
+                            shader_location: 8,
+                            format: wgpu::VertexFormat::Uint32,
+                        },
+                        wgpu::VertexAttribute {
+                            offset: 20,
+                            shader_location: 11,
+                            format: wgpu::VertexFormat::Uint32x4,
+                        },
+                    ],
                 },
             ],
             compilation_options: Default::default(),
         },
-        fragment: None,
+        fragment: Some(wgpu::FragmentState {
+            module: shader,
+            entry_point: Some("fs_main"),
+            targets: &[],
+            compilation_options: Default::default(),
+        }),
         primitive: wgpu::PrimitiveState {
             topology: wgpu::PrimitiveTopology::TriangleList,
             strip_index_format: None,

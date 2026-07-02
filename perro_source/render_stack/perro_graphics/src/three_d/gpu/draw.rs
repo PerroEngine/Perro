@@ -925,24 +925,26 @@ impl Gpu3D {
                 RenderBatchKind::MeshBlend => self.mesh_blend_batch_indices.push(index),
                 RenderBatchKind::Overlay => self.overlay_batch_indices.push(index),
             }
+            // Opaque (0) and cutout (1) feed depth; the depth shaders discard
+            // below the cutoff for mode 1. Blend (2) stays out.
             let derived_depth_safe = !batch.material_kind.uses_custom_shader();
             if derived_depth_safe
                 && !batch.draw_on_top
                 && batch.casts_shadows
-                && batch.alpha_mode == 0
+                && batch.alpha_mode != 2
             {
                 self.shadow_batch_indices.push(index);
             }
             if derived_depth_safe
                 && !batch.draw_on_top
-                && batch.alpha_mode == 0
+                && batch.alpha_mode != 2
                 && !batch.mesh_blend
             {
                 self.depth_prepass_batch_indices.push(index);
             }
             if derived_depth_safe
                 && !batch.draw_on_top
-                && batch.alpha_mode == 0
+                && batch.alpha_mode != 2
                 && !batch.mesh_blend
                 && batch.mesh_blend_depth
             {

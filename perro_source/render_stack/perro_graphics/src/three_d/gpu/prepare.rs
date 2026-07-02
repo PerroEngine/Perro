@@ -1334,7 +1334,7 @@ impl Gpu3D {
         self.has_shadow_casters = self
             .draw_batches
             .iter()
-            .any(|batch| !batch.draw_on_top && batch.casts_shadows && batch.alpha_mode == 0);
+            .any(|batch| !batch.draw_on_top && batch.casts_shadows && batch.alpha_mode != 2);
         if occlusion_capture_this_frame {
             self.ensure_occlusion_query_capacity(
                 device,

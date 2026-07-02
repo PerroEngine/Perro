@@ -611,13 +611,6 @@ fn point_shadow_factor(world_pos: vec3<f32>, normal_ws: vec3<f32>, light_index: 
     return 1.0;
 }
 
-// ACES filmic fit (Narkowicz): maps HDR light sums to displayable range with
-// highlight rolloff instead of per-channel clipping.
-fn tonemap_aces(x: vec3<f32>) -> vec3<f32> {
-    let mapped = (x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14);
-    return clamp(mapped, vec3<f32>(0.0), vec3<f32>(1.0));
-}
-
 // Windowed inverse-square falloff: smooth fade to zero at range instead of a
 // hard circle at the range cutoff.
 fn range_attenuation(dist_sq: f32, range_sq: f32) -> f32 {
@@ -663,6 +656,13 @@ fn fresnel_schlick_roughness(cos_theta: f32, f0: vec3<f32>, roughness: f32) -> v
     let one_minus_roughness = vec3<f32>(1.0 - roughness);
     let m = 1.0 - cos_theta;
     return f0 + (max(one_minus_roughness, f0) - f0) * pow5(m);
+}
+
+// ACES filmic fit (Narkowicz). Applied at the end of lit materials so HDR
+// light sums roll off instead of clipping; UI/2D/unlit stay untouched.
+fn tonemap_aces(x: vec3<f32>) -> vec3<f32> {
+    let mapped = (x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14);
+    return clamp(mapped, vec3<f32>(0.0), vec3<f32>(1.0));
 }
 
 fn brdf_pbr(
