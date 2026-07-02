@@ -281,7 +281,8 @@ pub(super) fn build_scene_uniform(
         ];
     }
 
-    if let Some(ambient) = lighting.ambient_light {
+    // Zero-intensity ambient nodes must not wipe out sky-derived ambient.
+    if let Some(ambient) = lighting.ambient_light.filter(|a| a.intensity > 0.0) {
         scene.ambient_color = [
             ambient.color[0].max(0.0),
             ambient.color[1].max(0.0),
@@ -375,8 +376,12 @@ pub(super) fn build_scene_uniform(
         .zip(lighting.spot_lights.iter().flatten())
     {
         let dir = Vec3::from(src.direction).normalize_or_zero();
-        let inner = src.inner_angle_radians.max(0.0);
-        let outer = src.outer_angle_radians.max(inner + 1.0e-4);
+        // Clamp to the same range as the spot shadow frustum
+        // (spot_light_view_proj) so the lit cone never outgrows the map.
+        let outer = src
+            .outer_angle_radians
+            .clamp(0.01, std::f32::consts::FRAC_PI_2);
+        let inner = src.inner_angle_radians.clamp(0.0, outer - 1.0e-4);
         dst.position_range = [
             src.position[0],
             src.position[1],

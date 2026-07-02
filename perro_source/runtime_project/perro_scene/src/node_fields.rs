@@ -1383,7 +1383,10 @@ fn resolve_scene_node_field_for_type(
             SceneFieldName::Paused => Some(NodeField::AnimationTree(AnimationTreeField::Paused)),
             _ => None,
         },
-        NodeType::AmbientLight3D => resolve_scene_light3d_common(field).map(NodeField::Light3D),
+        NodeType::AmbientLight3D => match field {
+            SceneFieldName::Visible => Some(NodeField::RayLight3D(RayLight3DField::Visible)),
+            _ => resolve_scene_light3d_common(field).map(NodeField::Light3D),
+        },
         NodeType::Sky3D => resolve_scene_sky3d_field(field).map(NodeField::Sky3D),
         NodeType::RayLight3D => match field {
             SceneFieldName::Visible => Some(NodeField::RayLight3D(RayLight3DField::Visible)),
@@ -1949,7 +1952,10 @@ fn resolve_node_field_for_type(node_type: NodeType, field: &str) -> Option<NodeF
             "paused" => Some(NodeField::AnimationTree(AnimationTreeField::Paused)),
             _ => None,
         },
-        NodeType::AmbientLight3D => resolve_light3d_common(field).map(NodeField::Light3D),
+        NodeType::AmbientLight3D => match field {
+            "visible" => Some(NodeField::RayLight3D(RayLight3DField::Visible)),
+            _ => resolve_light3d_common(field).map(NodeField::Light3D),
+        },
         NodeType::Sky3D => resolve_sky3d_field(field).map(NodeField::Sky3D),
         NodeType::RayLight3D => match field {
             "visible" => Some(NodeField::RayLight3D(RayLight3DField::Visible)),

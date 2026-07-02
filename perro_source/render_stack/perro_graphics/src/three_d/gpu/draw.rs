@@ -778,9 +778,10 @@ pub(super) fn compare_draw_batch_keys(a: &DrawBatch, b: &DrawBatch) -> Ordering 
                         .cmp(&b.render_state.mesh_base_vertex)
                 })
                 .then_with(|| a.instance_start.cmp(&b.instance_start)),
-            RenderBatchKind::Alpha | RenderBatchKind::MeshBlend | RenderBatchKind::Overlay => {
-                a.order_index.cmp(&b.order_index)
-            }
+            RenderBatchKind::Alpha | RenderBatchKind::MeshBlend | RenderBatchKind::Overlay => a
+                .order_index
+                .cmp(&b.order_index)
+                .then_with(|| a.instance_start.cmp(&b.instance_start)),
         })
 }
 

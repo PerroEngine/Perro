@@ -44,6 +44,7 @@ struct Shadow3D {
     params0: vec4<f32>, // enabled, strength, depth_bias, normal_bias
     ray_params: vec4<f32>,
     ray_splits: vec4<f32>,
+    ray_texel: vec4<f32>, // world units per shadow texel, per cascade
     spot_params: array<vec4<f32>, 4>,
     point_params: array<vec4<f32>, 4>,
 }
@@ -478,14 +479,18 @@ fn shadow_factor(world_pos: vec3<f32>, normal_ws: vec3<f32>, light_dir_to_light:
     return ray_shadow_factor(world_pos, normal_ws, light_dir_to_light);
 }
 
+// Returns -1.0 when the position falls outside this cascade's map so the
+// caller can fall through to the next cascade.
 fn sample_ray_shadow_array(light_view_proj: mat4x4<f32>, world_pos: vec3<f32>, normal_ws: vec3<f32>, bias_dir: vec3<f32>, layer: u32) -> f32 {
-    let sample_pos = world_pos + normalize(normal_ws) * shadow.params0.w + normalize(bias_dir) * shadow.params0.w * 0.25;
+    let texel_world = max(shadow.ray_texel[layer], 1.0e-4);
+    let normal_offset = max(texel_world * 1.75, shadow.params0.w * 0.25);
+    let sample_pos = world_pos + normalize(normal_ws) * normal_offset + normalize(bias_dir) * normal_offset * 0.25;
     let light_clip = light_view_proj * vec4<f32>(sample_pos, 1.0);
     if abs(light_clip.w) <= 1.0e-6 {
-        return 1.0;
+        return -1.0;
     }
     let ndc = light_clip.xyz / light_clip.w;
-    let uv = ndc.xy * 0.5 + vec2<f32>(0.5);
+    let uv = vec2<f32>(ndc.x, -ndc.y) * 0.5 + vec2<f32>(0.5);
     let depth = ndc.z;
     let bias = shadow.params0.z;
     let dims = max(vec2<f32>(textureDimensions(shadow_map_tex)), vec2<f32>(1.0));
@@ -493,7 +498,7 @@ fn sample_ray_shadow_array(light_view_proj: mat4x4<f32>, world_pos: vec3<f32>, n
     if depth <= 0.0 || depth >= 1.0
         || any(uv < texel)
         || any(uv > (vec2<f32>(1.0) - texel)) {
-        return 1.0;
+        return -1.0;
     }
     var sum = 0.0;
     let layer_i = i32(layer);
@@ -512,7 +517,7 @@ fn sample_shadow_array(light_view_proj: mat4x4<f32>, world_pos: vec3<f32>, norma
         return 1.0;
     }
     let ndc = light_clip.xyz / light_clip.w;
-    let uv = ndc.xy * 0.5 + vec2<f32>(0.5);
+    let uv = vec2<f32>(ndc.x, -ndc.y) * 0.5 + vec2<f32>(0.5);
     let depth = ndc.z;
     let bias = shadow.params0.z;
     var dims = vec2<f32>(1.0);
@@ -550,20 +555,20 @@ fn ray_shadow_factor(world_pos: vec3<f32>, normal_ws: vec3<f32>, light_dir_to_li
         return 1.0;
     }
     let view_dist = distance(scene.camera_pos.xyz, world_pos);
-    var cascade = 0u;
-    if view_dist > shadow.ray_splits.x {
-        cascade = 1u;
-    }
-    if view_dist > shadow.ray_splits.y {
-        cascade = 2u;
-    }
-    if view_dist > shadow.ray_splits.z {
-        cascade = 3u;
-    }
     if view_dist > shadow.ray_splits.w {
         return 1.0;
     }
-    let visibility = sample_ray_shadow_array(shadow.ray_light_view_proj[cascade], world_pos, normal_ws, light_dir_to_light, cascade);
+    // Pick the tightest cascade that actually contains the position; split
+    // distances alone mismatch the fitted ortho bounds at screen edges.
+    let cascade_count = min(u32(shadow.ray_params.y + 0.5), MAX_SHADOW_RAY_CASCADES);
+    var visibility = 1.0;
+    for (var cascade = 0u; cascade < cascade_count; cascade = cascade + 1u) {
+        let sampled = sample_ray_shadow_array(shadow.ray_light_view_proj[cascade], world_pos, normal_ws, light_dir_to_light, cascade);
+        if sampled >= 0.0 {
+            visibility = sampled;
+            break;
+        }
+    }
     let strength = clamp(shadow.params0.y, 0.0, 1.0);
     return mix(1.0, visibility, strength);
 }
@@ -610,6 +615,14 @@ fn point_shadow_factor(world_pos: vec3<f32>, normal_ws: vec3<f32>, light_index: 
         }
     }
     return 1.0;
+}
+
+// Windowed inverse-square falloff: smooth fade to zero at range instead of a
+// hard circle at the range cutoff.
+fn range_attenuation(dist_sq: f32, range_sq: f32) -> f32 {
+    let ratio = clamp(dist_sq / max(range_sq, 1.0e-8), 0.0, 1.0);
+    let window = 1.0 - ratio * ratio;
+    return (window * window) / (dist_sq + 1.0e-2);
 }
 
 fn distribution_ggx(n: vec3<f32>, h: vec3<f32>, roughness: f32) -> f32 {
@@ -660,7 +673,9 @@ fn brdf_pbr(
     metallic: f32,
     radiance: vec3<f32>,
 ) -> vec3<f32> {
-    let h = normalize(v + l);
+    let hv = v + l;
+    // v == -l at grazing opposition makes normalize(0) NaN.
+    let h = hv * inverseSqrt(max(dot(hv, hv), 1.0e-8));
     let ndf = distribution_ggx(n, h, roughness);
     let g = geometry_smith(n, v, l, roughness);
     let f0 = mix(vec3<f32>(0.04), albedo, vec3<f32>(metallic));
@@ -732,7 +747,7 @@ fn perro_lit_standard(
             let inv_dist = inverseSqrt(max(dist_sq, 1.0e-8));
             let l = to_light * inv_dist;
             let radiance = light.color_intensity.xyz * light.color_intensity.w;
-            let attenuation = 1.0 / max(dist_sq, 1.0);
+            let attenuation = range_attenuation(dist_sq, range_sq);
             let shadow_vis = select(1.0, point_shadow_factor(in.world_pos, n, i, to_light), material.receive_shadows);
             light_rgb += brdf_pbr(albedo, n, v, l, roughness, metallic, radiance * attenuation * shadow_vis);
         }
@@ -753,7 +768,7 @@ fn perro_lit_standard(
             let inner_cos = light.inner_cos_pad.x;
             let t = clamp((cos_theta - outer_cos) / max(inner_cos - outer_cos, 0.0001), 0.0, 1.0);
             let radiance = light.color_intensity.xyz * light.color_intensity.w * t;
-            let attenuation = 1.0 / max(dist_sq, 1.0);
+            let attenuation = range_attenuation(dist_sq, range_sq);
             let shadow_vis = select(1.0, spot_shadow_factor(in.world_pos, n, i), material.receive_shadows);
             light_rgb += brdf_pbr(albedo, n, v, l, roughness, metallic, radiance * attenuation * shadow_vis);
         }

@@ -429,6 +429,7 @@ struct ShadowUniform {
     params0: [f32; 4],    // enabled, strength, depth_bias, normal_bias
     ray_params: [f32; 4], // enabled, cascade_count, shadow_distance, reserved
     ray_splits: [f32; 4],
+    ray_texel: [f32; 4], // world units per shadow texel, per cascade
     spot_params: [[f32; 4]; MAX_SHADOW_SPOT_LIGHTS], // enabled, light_index, layer, reserved
     point_params: [[f32; 4]; MAX_SHADOW_POINT_LIGHTS], // enabled, light_index, base_layer, range
 }

@@ -105,7 +105,10 @@ fn sky_base_color(ray: vec3<f32>) -> vec4<f32> {
     let day_weight = sky.params0.y;
     let evening_weight = sky.params0.z;
     let night_weight = sky.params0.w;
-    let sky_col = day_col * day_weight + evening_col * evening_weight + night_col * night_weight;
+    // day + night weights already sum to 1; blend evening on top instead of
+    // adding it, so dusk cannot exceed weight 1 (matches CPU sky_clear_color).
+    let base_col = day_col * day_weight + night_col * night_weight;
+    let sky_col = mix(base_col, evening_col, clamp(evening_weight, 0.0, 1.0));
     let color = mix(sky_col, horizon_col, horizon_weight);
     return vec4<f32>(color, 1.0);
 }
@@ -116,7 +119,9 @@ fn sky_base_color(ray: vec3<f32>) -> vec4<f32> {
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let ndc = vec4<f32>(in.uv * 2.0 - 1.0, 1.0, 1.0);
     let world_h = sky.inv_view_proj * ndc;
-    let world = world_h.xyz / max(world_h.w, 1.0e-5);
+    // Keep the sign of w: clamping negative w to +1e-5 flips the ray.
+    let w_mag = max(abs(world_h.w), 1.0e-5);
+    let world = world_h.xyz / select(w_mag, -w_mag, world_h.w < 0.0);
     let ray = normalize(world - sky.camera_pos.xyz);
     let horizon_weight = smoothstep(0.0, 0.18, -ray.y);
     let base = SkyFragment(

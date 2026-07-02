@@ -1273,6 +1273,27 @@ impl Gpu3D {
                 order_index: self.draw_batches.len() as u32,
             });
         }
+        // Alpha batches must draw back-to-front by camera distance; their sort
+        // key is order_index, so rewrite it from submission order to inverted
+        // distance bits (monotonic for non-negative floats) before sorting.
+        let cam_pos = Vec3::from(camera.position);
+        for batch in self.draw_batches.iter_mut() {
+            if batch.render_state.batch_kind != RenderBatchKind::Alpha {
+                continue;
+            }
+            let Some(inst) = self
+                .staged_instance_transforms
+                .get(batch.instance_start as usize)
+            else {
+                continue;
+            };
+            let model = Mat4::from_cols_array_2d(&model_cols_from_affine_rows(inst));
+            let center = (model * Vec3::from(batch.local_center).extend(1.0)).truncate();
+            if !center.is_finite() {
+                continue;
+            }
+            batch.order_index = u32::MAX - cam_pos.distance(center).to_bits();
+        }
         if !draw_batches_sorted(&self.draw_batches) {
             if self.draw_batches.len() >= PARALLEL_BATCH_SORT_MIN {
                 self.draw_batches

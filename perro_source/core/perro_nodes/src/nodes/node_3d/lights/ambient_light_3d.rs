@@ -17,7 +17,7 @@ impl AmbientLight3D {
             transform: Transform3D::IDENTITY,
             visible: true,
             color: [1.0, 1.0, 1.0],
-            intensity: 0.0,
+            intensity: 1.0,
             cast_shadows: true,
             active: true,
             render_layers: BitMask::ALL,

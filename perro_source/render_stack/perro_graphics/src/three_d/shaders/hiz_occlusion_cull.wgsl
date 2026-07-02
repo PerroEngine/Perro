@@ -81,8 +81,10 @@ fn cs_main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let radius_ndc_y = (radius_world * params.proj_y_scale) / max(abs(clip.w), 1.0e-4);
     let radius_px = max(radius_ndc_y * 0.5 * f32(params.hiz_height), 1.0);
     let diameter_px = radius_px * 2.0;
+    // ceil keeps the footprint within 2x2 texels at the chosen mip so the
+    // corner samples below cover the whole bound.
     let mip = min(
-        u32(max(floor(log2(diameter_px)), 0.0)),
+        u32(max(ceil(log2(diameter_px)), 0.0)),
         max(params.hiz_mip_count, 1u) - 1u,
     );
 
@@ -103,14 +105,15 @@ fn cs_main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let y0 = clamp(cy - ry, 0, i32(dims.y) - 1);
     let y1 = clamp(cy + ry, 0, i32(dims.y) - 1);
 
-    // Conservative with max-depth Hi-Z: sample several points and keep the maximum
-    // (farthest depth) across the bound footprint to avoid false culls.
+    // Conservative with max-depth Hi-Z: keep the maximum (farthest) depth
+    // across the whole footprint. Corners must be sampled — edge midpoints
+    // alone miss far-depth texels on the diagonals and cause false culls.
     let d_center = textureLoad(hiz_tex, vec2<i32>(cx, cy), i32(mip)).x;
-    let d_l = textureLoad(hiz_tex, vec2<i32>(x0, cy), i32(mip)).x;
-    let d_r = textureLoad(hiz_tex, vec2<i32>(x1, cy), i32(mip)).x;
-    let d_b = textureLoad(hiz_tex, vec2<i32>(cx, y0), i32(mip)).x;
-    let d_t = textureLoad(hiz_tex, vec2<i32>(cx, y1), i32(mip)).x;
-    let hiz_depth = max(max(max(d_center, d_l), max(d_r, d_b)), d_t);
+    let d_00 = textureLoad(hiz_tex, vec2<i32>(x0, y0), i32(mip)).x;
+    let d_10 = textureLoad(hiz_tex, vec2<i32>(x1, y0), i32(mip)).x;
+    let d_01 = textureLoad(hiz_tex, vec2<i32>(x0, y1), i32(mip)).x;
+    let d_11 = textureLoad(hiz_tex, vec2<i32>(x1, y1), i32(mip)).x;
+    let hiz_depth = max(max(max(d_center, d_00), max(d_10, d_01)), d_11);
 
     let center_depth = clamp(ndc.z, 0.0, 1.0);
     // Conservative front depth estimate for object bounds.

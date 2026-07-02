@@ -59,7 +59,7 @@ fn shade_material(in: FragmentInput) -> vec4<f32> {
             let inv_dist = inverseSqrt(max(dist_sq, 1.0e-8));
             let l = to_light * inv_dist;
             let radiance = light.color_intensity.xyz * light.color_intensity.w;
-            let attenuation = 1.0 / max(dist_sq, 1.0);
+            let attenuation = range_attenuation(dist_sq, range_sq);
             let shadow_vis = select(1.0, point_shadow_factor(in.world_pos, n, i, to_light), material.receive_shadows);
             light_rgb += radiance * attenuation * shadow_vis * lambert(n, l);
         }
@@ -80,18 +80,20 @@ fn shade_material(in: FragmentInput) -> vec4<f32> {
             let inner_cos = light.inner_cos_pad.x;
             let t = clamp((cos_theta - outer_cos) / max(inner_cos - outer_cos, 0.0001), 0.0, 1.0);
             let radiance = light.color_intensity.xyz * light.color_intensity.w * t;
-            let attenuation = 1.0 / max(dist_sq, 1.0);
+            let attenuation = range_attenuation(dist_sq, range_sq);
             let shadow_vis = select(1.0, spot_shadow_factor(in.world_pos, n, i), material.receive_shadows);
             light_rgb += radiance * attenuation * shadow_vis * lambert(n, l);
         }
     }
 
     let band_count = max(1.0, toon.x);
-    let intensity = clamp(length(light_rgb), 0.0, 1.0);
+    // Quantize on luma, not vector length: length skews colored light into
+    // wrong bands and the old clamp collapsed bright light into the top band.
+    let luma = dot(light_rgb, vec3<f32>(0.2126, 0.7152, 0.0722));
     let step = 1.0 / band_count;
-    let quant = floor(intensity / step) * step;
-    if intensity > 0.0001 {
-        light_rgb *= quant / intensity;
+    let quant = floor(luma / step) * step;
+    if luma > 0.0001 {
+        light_rgb *= quant / luma;
     }
 
     let rim_strength = max(toon.y, 0.0);

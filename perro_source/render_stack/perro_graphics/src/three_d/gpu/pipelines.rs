@@ -238,6 +238,10 @@ impl Gpu3D {
 
     pub(super) fn pipeline_for_batch(&self, batch: &DrawBatch) -> &wgpu::RenderPipeline {
         let is_rigid = batch.path == RenderPath3D::Rigid;
+        // Alpha-blended batches must not write depth, or transparents drawn
+        // first occlude transparents behind them; the *_blend pipelines are
+        // the same state with depth write off.
+        let soft_depth = batch.mesh_blend || batch.alpha_mode == 2;
         if batch.draw_on_top {
             return if batch.double_sided && is_rigid {
                 &self.pipeline_rigid_overlay_double_sided
@@ -251,21 +255,21 @@ impl Gpu3D {
         }
         match &batch.material_kind {
             MaterialPipelineKind::Standard => {
-                if batch.packed_lod && batch.mesh_blend && batch.double_sided && is_rigid {
+                if batch.packed_lod && soft_depth && batch.double_sided && is_rigid {
                     &self.pipeline_rigid_packed_lod_blend_double_sided
-                } else if batch.packed_lod && batch.mesh_blend && is_rigid {
+                } else if batch.packed_lod && soft_depth && is_rigid {
                     &self.pipeline_rigid_packed_lod_blend_culled
                 } else if batch.packed_lod && batch.double_sided && is_rigid {
                     &self.pipeline_rigid_packed_lod_double_sided
                 } else if batch.packed_lod && is_rigid {
                     &self.pipeline_rigid_packed_lod_culled
-                } else if batch.mesh_blend && batch.double_sided && is_rigid {
+                } else if soft_depth && batch.double_sided && is_rigid {
                     &self.pipeline_rigid_blend_double_sided
-                } else if batch.mesh_blend && is_rigid {
+                } else if soft_depth && is_rigid {
                     &self.pipeline_rigid_blend_culled
-                } else if batch.mesh_blend && batch.double_sided {
+                } else if soft_depth && batch.double_sided {
                     &self.pipeline_blend_double_sided
-                } else if batch.mesh_blend {
+                } else if soft_depth {
                     &self.pipeline_blend_culled
                 } else if batch.double_sided && is_rigid {
                     &self.pipeline_rigid_double_sided
@@ -278,13 +282,13 @@ impl Gpu3D {
                 }
             }
             MaterialPipelineKind::Unlit => {
-                if batch.mesh_blend && batch.double_sided && is_rigid {
+                if soft_depth && batch.double_sided && is_rigid {
                     &self.pipeline_rigid_unlit_blend_double_sided
-                } else if batch.mesh_blend && is_rigid {
+                } else if soft_depth && is_rigid {
                     &self.pipeline_rigid_unlit_blend_culled
-                } else if batch.mesh_blend && batch.double_sided {
+                } else if soft_depth && batch.double_sided {
                     &self.pipeline_unlit_blend_double_sided
-                } else if batch.mesh_blend {
+                } else if soft_depth {
                     &self.pipeline_unlit_blend_culled
                 } else if batch.double_sided && is_rigid {
                     &self.pipeline_rigid_unlit_double_sided
@@ -297,13 +301,13 @@ impl Gpu3D {
                 }
             }
             MaterialPipelineKind::Toon => {
-                if batch.mesh_blend && batch.double_sided && is_rigid {
+                if soft_depth && batch.double_sided && is_rigid {
                     &self.pipeline_rigid_toon_blend_double_sided
-                } else if batch.mesh_blend && is_rigid {
+                } else if soft_depth && is_rigid {
                     &self.pipeline_rigid_toon_blend_culled
-                } else if batch.mesh_blend && batch.double_sided {
+                } else if soft_depth && batch.double_sided {
                     &self.pipeline_toon_blend_double_sided
-                } else if batch.mesh_blend {
+                } else if soft_depth {
                     &self.pipeline_toon_blend_culled
                 } else if batch.double_sided && is_rigid {
                     &self.pipeline_rigid_toon_double_sided
@@ -323,9 +327,9 @@ impl Gpu3D {
                 };
                 map.get(token)
                     .map(|pipeline| {
-                        if batch.mesh_blend && batch.double_sided {
+                        if soft_depth && batch.double_sided {
                             &pipeline.pipeline_blend_double_sided
-                        } else if batch.mesh_blend {
+                        } else if soft_depth {
                             &pipeline.pipeline_blend_culled
                         } else if batch.double_sided {
                             &pipeline.pipeline_double_sided
@@ -334,13 +338,13 @@ impl Gpu3D {
                         }
                     })
                     .unwrap_or_else(|| {
-                        if batch.mesh_blend && batch.double_sided && is_rigid {
+                        if soft_depth && batch.double_sided && is_rigid {
                             &self.pipeline_rigid_blend_double_sided
-                        } else if batch.mesh_blend && is_rigid {
+                        } else if soft_depth && is_rigid {
                             &self.pipeline_rigid_blend_culled
-                        } else if batch.mesh_blend && batch.double_sided {
+                        } else if soft_depth && batch.double_sided {
                             &self.pipeline_blend_double_sided
-                        } else if batch.mesh_blend {
+                        } else if soft_depth {
                             &self.pipeline_blend_culled
                         } else if batch.double_sided && is_rigid {
                             &self.pipeline_rigid_double_sided

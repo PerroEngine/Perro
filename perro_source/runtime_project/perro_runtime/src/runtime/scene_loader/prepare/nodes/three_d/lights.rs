@@ -106,6 +106,11 @@ fn apply_ambient_light_3d_fields(node: &mut AmbientLight3D, fields: &[SceneObjec
                     node.render_layers = v;
                 }
             }
+            Some(NodeField::RayLight3D(RayLight3DField::Visible)) => {
+                if let Some(v) = as_bool(value) {
+                    node.visible = v;
+                }
+            }
             _ => {}
         }
     });

@@ -441,10 +441,12 @@ impl Renderer3D {
         }
 
         let mut lighting = Lighting3DState::default();
-        if let Some((_, ambient)) = self.ambient_lights.iter().next() {
+        // Deterministic pick: lowest node id wins, matching the stream path.
+        // Raw AHashMap iteration order can flip between frames on rehash.
+        if let Some((_, ambient)) = self.ambient_lights.iter().min_by_key(|(node, _)| **node) {
             lighting.ambient_light = Some(*ambient);
         }
-        if let Some((&sky_node, _)) = self.skies.iter().next()
+        if let Some(sky_node) = self.skies.keys().min().copied()
             && let Some(sky) = self.skies.get_mut(&sky_node)
         {
             if !sky.time.paused {

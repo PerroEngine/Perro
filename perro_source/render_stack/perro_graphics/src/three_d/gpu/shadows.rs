@@ -129,6 +129,7 @@ pub(super) fn build_shadow_setup(args: ShadowSetupArgs<'_>) -> ShadowSetup {
             uniform.ray_light_view_proj[index] = ray_setup.matrices[index].to_cols_array_2d();
         }
         uniform.ray_splits = ray_setup.splits;
+        uniform.ray_texel = ray_setup.texels;
         uniform.ray_params = [
             1.0,
             MAX_SHADOW_RAY_CASCADES as f32,
@@ -141,14 +142,20 @@ pub(super) fn build_shadow_setup(args: ShadowSetupArgs<'_>) -> ShadowSetup {
         ray_enabled = true;
     }
 
+    // The shader indexes scene.spot_lights, which build_scene_uniform fills by
+    // compacting Some slots densely, so shadow params must carry the dense
+    // index, not the sparse slot index.
     let mut spot_count = 0usize;
-    for (light_index, spot) in lighting.spot_lights.iter().enumerate() {
-        if spot_count >= MAX_SHADOW_SPOT_LIGHTS {
-            break;
-        }
+    let mut spot_dense_index = 0usize;
+    for spot in lighting.spot_lights.iter() {
         let Some(spot) = spot else {
             continue;
         };
+        let gpu_index = spot_dense_index;
+        spot_dense_index += 1;
+        if spot_count >= MAX_SHADOW_SPOT_LIGHTS || gpu_index >= MAX_SPOT_LIGHTS {
+            break;
+        }
         if !spot.cast_shadows || spot.intensity <= 1.0e-4 {
             continue;
         }
@@ -158,19 +165,22 @@ pub(super) fn build_shadow_setup(args: ShadowSetupArgs<'_>) -> ShadowSetup {
         let camera_index = MAX_SHADOW_RAY_LIGHTS * MAX_SHADOW_RAY_CASCADES + spot_count;
         scenes[camera_index].view_proj = light_view_proj.to_cols_array_2d();
         uniform.spot_light_view_proj[spot_count] = scenes[camera_index].view_proj;
-        uniform.spot_params[spot_count] = [1.0, light_index as f32, spot_count as f32, 0.0];
+        uniform.spot_params[spot_count] = [1.0, gpu_index as f32, spot_count as f32, 0.0];
         spot_count += 1;
         any_enabled = true;
     }
 
     let mut point_count = 0usize;
-    for (light_index, point) in lighting.point_lights.iter().enumerate() {
-        if point_count >= MAX_SHADOW_POINT_LIGHTS {
-            break;
-        }
+    let mut point_dense_index = 0usize;
+    for point in lighting.point_lights.iter() {
         let Some(point) = point else {
             continue;
         };
+        let gpu_index = point_dense_index;
+        point_dense_index += 1;
+        if point_count >= MAX_SHADOW_POINT_LIGHTS || gpu_index >= MAX_POINT_LIGHTS {
+            break;
+        }
         if !point.cast_shadows || point.intensity <= 1.0e-4 || point.range <= 0.01 {
             continue;
         }
@@ -186,7 +196,7 @@ pub(super) fn build_shadow_setup(args: ShadowSetupArgs<'_>) -> ShadowSetup {
         }
         uniform.point_params[point_count] = [
             1.0,
-            light_index as f32,
+            gpu_index as f32,
             base_layer as f32,
             point.range.max(0.01),
         ];
@@ -227,6 +237,7 @@ struct RayShadowScenes {
     scenes: Vec<Scene3DUniform>,
     matrices: [Mat4; MAX_SHADOW_RAY_CASCADES],
     splits: [f32; 4],
+    texels: [f32; MAX_SHADOW_RAY_CASCADES],
     focus_center: Vec3,
     focus_radius: f32,
 }
@@ -305,6 +316,7 @@ fn build_ray_shadow_scenes(args: RayShadowSceneArgs<'_>) -> Option<RayShadowScen
     let (right_axis, up_axis) = light_stable_axes(dir, up);
     let mut scenes = Vec::with_capacity(MAX_SHADOW_RAY_CASCADES);
     let mut matrices = [Mat4::IDENTITY; MAX_SHADOW_RAY_CASCADES];
+    let mut texels = [0.0f32; MAX_SHADOW_RAY_CASCADES];
     for cascade in 0..MAX_SHADOW_RAY_CASCADES {
         let mut corners = camera_frustum_slice_corners_world(
             camera,
@@ -350,6 +362,8 @@ fn build_ray_shadow_scenes(args: RayShadowSceneArgs<'_>) -> Option<RayShadowScen
         ls_max.x += xy_pad;
         ls_min.y -= xy_pad;
         ls_max.y += xy_pad;
+        texels[cascade] =
+            ((ls_max.x - ls_min.x).max(ls_max.y - ls_min.y) / SHADOW_MAP_SIZE as f32).max(1.0e-4);
         let z_pad = (radius * 0.65).max(12.0);
         let near = (-ls_max.z - z_pad).max(0.1);
         let far = (-ls_min.z + z_pad).max(near + 1.0);
@@ -367,6 +381,7 @@ fn build_ray_shadow_scenes(args: RayShadowSceneArgs<'_>) -> Option<RayShadowScen
         scenes,
         matrices,
         splits: cascade_splits,
+        texels,
         focus_center,
         focus_radius,
     })
