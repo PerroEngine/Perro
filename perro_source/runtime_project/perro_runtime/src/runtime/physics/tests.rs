@@ -1306,6 +1306,86 @@ fn physics_shape_cast_2d_and_3d_hit_static_bodies() {
 }
 
 #[test]
+fn physics_move_body_2d_clips_before_static_body() {
+    let mut runtime = Runtime::new();
+
+    let mover = NodeAPI::create::<RigidBody2D>(&mut runtime);
+    let mover_shape = NodeAPI::create::<CollisionShape2D>(&mut runtime);
+    assert!(NodeAPI::reparent(&mut runtime, mover, mover_shape));
+    let wall = NodeAPI::create::<StaticBody2D>(&mut runtime);
+    let wall_shape = NodeAPI::create::<CollisionShape2D>(&mut runtime);
+    assert!(NodeAPI::reparent(&mut runtime, wall, wall_shape));
+    assert!(<Runtime as NodeAPI>::set_global_transform_2d(
+        &mut runtime,
+        mover,
+        Transform2D::new(Vector2::new(-5.0, 0.0), 0.0, Vector2::ONE),
+    ));
+
+    let result = PhysicsAPI::move_body_2d(
+        &mut runtime,
+        mover,
+        Vector2::new(0.0, 0.0),
+        0.01,
+        PhysicsQueryFilter::default(),
+    )
+    .expect("move should return result");
+
+    assert!(result.clipped);
+    assert_eq!(result.hit.expect("hit").node, wall);
+    assert!(approx(result.position.x, -1.01));
+    assert!(approx(
+        runtime
+            .get_global_transform_2d(mover)
+            .expect("mover transform")
+            .position
+            .x,
+        -1.01
+    ));
+}
+
+#[test]
+fn physics_move_body_3d_clips_before_static_body() {
+    let mut runtime = Runtime::new();
+
+    let mover = NodeAPI::create::<RigidBody3D>(&mut runtime);
+    let mover_shape = NodeAPI::create::<CollisionShape3D>(&mut runtime);
+    assert!(NodeAPI::reparent(&mut runtime, mover, mover_shape));
+    let wall = NodeAPI::create::<StaticBody3D>(&mut runtime);
+    let wall_shape = NodeAPI::create::<CollisionShape3D>(&mut runtime);
+    assert!(NodeAPI::reparent(&mut runtime, wall, wall_shape));
+    assert!(<Runtime as NodeAPI>::set_global_transform_3d(
+        &mut runtime,
+        mover,
+        Transform3D::new(
+            Vector3::new(0.0, 0.0, -5.0),
+            Quaternion::IDENTITY,
+            Vector3::ONE,
+        ),
+    ));
+
+    let result = PhysicsAPI::move_body_3d(
+        &mut runtime,
+        mover,
+        Vector3::new(0.0, 0.0, 0.0),
+        0.01,
+        PhysicsQueryFilter::default(),
+    )
+    .expect("move should return result");
+
+    assert!(result.clipped);
+    assert_eq!(result.hit.expect("hit").node, wall);
+    assert!(approx(result.position.z, -1.01));
+    assert!(approx(
+        runtime
+            .get_global_transform_3d(mover)
+            .expect("mover transform")
+            .position
+            .z,
+        -1.01
+    ));
+}
+
+#[test]
 fn physics_contacts_return_other_node_and_points() {
     let mut runtime = Runtime::new();
 

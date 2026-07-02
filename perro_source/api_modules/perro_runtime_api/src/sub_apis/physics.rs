@@ -61,6 +61,20 @@ pub struct PhysicsShapeHit3D {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PhysicsMoveResult2D {
+    pub position: Vector2,
+    pub hit: Option<PhysicsShapeHit2D>,
+    pub clipped: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PhysicsMoveResult3D {
+    pub position: Vector3,
+    pub hit: Option<PhysicsShapeHit3D>,
+    pub clipped: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct PhysicsContact2D {
     pub node: NodeID,
     pub point: Vector2,
@@ -168,6 +182,26 @@ pub trait PhysicsAPI {
         max_distance: f32,
         filter: PhysicsQueryFilter,
     ) -> Option<PhysicsShapeHit3D>;
+    fn move_body_2d(
+        &mut self,
+        body_id: NodeID,
+        target: Vector2,
+        margin: f32,
+        filter: PhysicsQueryFilter,
+    ) -> Option<PhysicsMoveResult2D> {
+        let _ = (body_id, target, margin, filter);
+        None
+    }
+    fn move_body_3d(
+        &mut self,
+        body_id: NodeID,
+        target: Vector3,
+        margin: f32,
+        filter: PhysicsQueryFilter,
+    ) -> Option<PhysicsMoveResult3D> {
+        let _ = (body_id, target, margin, filter);
+        None
+    }
     fn contacts_2d(&mut self, body_id: NodeID) -> Vec<PhysicsContact2D>;
     fn contacts_3d(&mut self, body_id: NodeID) -> Vec<PhysicsContact3D>;
     fn physics_pause(&mut self, paused: bool);
@@ -477,6 +511,26 @@ impl<'rt, R: PhysicsAPI + ?Sized> PhysicsModule<'rt, R> {
     ) -> Option<PhysicsShapeHit3D> {
         self.rt
             .shape_cast_3d(shape, origin, direction, max_distance, filter)
+    }
+
+    pub fn move_body_2d(
+        &mut self,
+        body_id: NodeID,
+        target: Vector2,
+        margin: f32,
+        filter: PhysicsQueryFilter,
+    ) -> Option<PhysicsMoveResult2D> {
+        self.rt.move_body_2d(body_id, target, margin, filter)
+    }
+
+    pub fn move_body_3d(
+        &mut self,
+        body_id: NodeID,
+        target: Vector3,
+        margin: f32,
+        filter: PhysicsQueryFilter,
+    ) -> Option<PhysicsMoveResult3D> {
+        self.rt.move_body_3d(body_id, target, margin, filter)
     }
 
     pub fn contacts_2d(&mut self, body_id: NodeID) -> Vec<PhysicsContact2D> {
@@ -1052,6 +1106,38 @@ macro_rules! physics_shape_cast_3d {
     ($ctx:expr, $shape:expr, $origin:expr, $direction:expr, $max_distance:expr, $filter:expr) => {
         $ctx.Physics()
             .shape_cast_3d($shape, $origin, $direction, $max_distance, $filter)
+    };
+}
+
+#[macro_export]
+macro_rules! physics_move_body_2d {
+    ($ctx:expr, $body_id:expr, $target:expr) => {
+        $ctx.Physics().move_body_2d(
+            $body_id,
+            $target,
+            0.001,
+            $crate::sub_apis::PhysicsQueryFilter::default(),
+        )
+    };
+    ($ctx:expr, $body_id:expr, $target:expr, $margin:expr, $filter:expr) => {
+        $ctx.Physics()
+            .move_body_2d($body_id, $target, $margin, $filter)
+    };
+}
+
+#[macro_export]
+macro_rules! physics_move_body_3d {
+    ($ctx:expr, $body_id:expr, $target:expr) => {
+        $ctx.Physics().move_body_3d(
+            $body_id,
+            $target,
+            0.001,
+            $crate::sub_apis::PhysicsQueryFilter::default(),
+        )
+    };
+    ($ctx:expr, $body_id:expr, $target:expr, $margin:expr, $filter:expr) => {
+        $ctx.Physics()
+            .move_body_3d($body_id, $target, $margin, $filter)
     };
 }
 

@@ -47,8 +47,8 @@ pub use node::{
 pub use physics::{
     IntoImpulseDirection, PhysicsAPI, PhysicsBodyPrediction2D, PhysicsBodyPrediction3D,
     PhysicsContact2D, PhysicsContact3D, PhysicsLaunchSolution2D, PhysicsLaunchSolution3D,
-    PhysicsModule, PhysicsQueryFilter, PhysicsRayHit2D, PhysicsRayHit3D, PhysicsShapeHit2D,
-    PhysicsShapeHit3D,
+    PhysicsModule, PhysicsMoveResult2D, PhysicsMoveResult3D, PhysicsQueryFilter, PhysicsRayHit2D,
+    PhysicsRayHit3D, PhysicsShapeHit2D, PhysicsShapeHit3D,
 };
 
 // ---- Scene/script bus ----

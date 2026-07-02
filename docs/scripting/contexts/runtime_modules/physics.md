@@ -27,6 +27,8 @@
 | `raycast_2d_filtered` | [`raycast_2d_filtered`](#raycast_2d_filtered) |
 | `shape_cast_2d` | [`shape_cast_2d`](#shape_cast_2d) |
 | `shape_cast_3d` | [`shape_cast_3d`](#shape_cast_3d) |
+| `move_body_2d` | [`move_body_2d`](#move_body_2d) |
+| `move_body_3d` | [`move_body_3d`](#move_body_3d) |
 | `contacts_2d` | [`contacts_2d`](#contacts_2d) |
 | `contacts_3d` | [`contacts_3d`](#contacts_3d) |
 | `solve_velocity_to_target_2d` | [`solve_velocity_to_target_2d`](#solve_velocity_to_target_2d) |
@@ -55,6 +57,8 @@
 | `physics_raycast_2d` | [`physics_raycast_2d`](#physics_raycast_2d) |
 | `physics_shape_cast_2d` | [`physics_shape_cast_2d`](#physics_shape_cast_2d) |
 | `physics_shape_cast_3d` | [`physics_shape_cast_3d`](#physics_shape_cast_3d) |
+| `physics_move_body_2d` | [`physics_move_body_2d`](#physics_move_body_2d) |
+| `physics_move_body_3d` | [`physics_move_body_3d`](#physics_move_body_3d) |
 | `physics_contacts_2d` | [`physics_contacts_2d`](#physics_contacts_2d) |
 | `physics_contacts_3d` | [`physics_contacts_3d`](#physics_contacts_3d) |
 | `physics_pause` | [`physics_pause`](#physics_pause) |
@@ -291,6 +295,28 @@ This runtime module belongs to `ctx.run` and documents physics calls.
 | Returns | `Option<PhysicsShapeHit3D>` |
 | Use when | Use when script code needs this exact engine read or write. |
 | Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+
+### `move_body_2d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Physics()` |
+| Signature | `pub fn move_body_2d(&mut self, body_id: NodeID, target: Vector2, margin: f32, filter: PhysicsQueryFilter) -> Option<PhysicsMoveResult2D>` |
+| Params | `&mut self, body_id: NodeID, target: Vector2, margin: f32, filter: PhysicsQueryFilter` |
+| Returns | `Option<PhysicsMoveResult2D>` |
+| Use when | Move a physics body toward a target position without clipping through blocking colliders. |
+| Fails when / edge behavior | Syncs current physics bodies, sweeps attached body colliders, excludes the moving body, writes the safe global position, and returns hit/clipped state. Does not clear velocity. |
+
+### `move_body_3d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Physics()` |
+| Signature | `pub fn move_body_3d(&mut self, body_id: NodeID, target: Vector3, margin: f32, filter: PhysicsQueryFilter) -> Option<PhysicsMoveResult3D>` |
+| Params | `&mut self, body_id: NodeID, target: Vector3, margin: f32, filter: PhysicsQueryFilter` |
+| Returns | `Option<PhysicsMoveResult3D>` |
+| Use when | Move a physics body toward a target position without clipping through blocking colliders. |
+| Fails when / edge behavior | Syncs current physics bodies, sweeps attached body colliders, excludes the moving body, writes the safe global position, and returns hit/clipped state. Does not clear velocity. |
 
 ### `contacts_2d`
 
@@ -599,6 +625,28 @@ This runtime module belongs to `ctx.run` and documents physics calls.
 | Returns | `same as backing method` |
 | Use when | Use when script code needs this exact engine read or write. |
 | Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+
+### `physics_move_body_2d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Physics()` |
+| Signature | `physics_move_body_2d!(ctx.run, body_id, target)` |
+| Params | `ctx, body_id, target` |
+| Returns | `same as backing method` |
+| Use when | Use when script wants clipped manual physics-body movement. |
+| Fails when / edge behavior | Default margin is `0.001`; full macro form accepts `margin` and `filter`. |
+
+### `physics_move_body_3d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Physics()` |
+| Signature | `physics_move_body_3d!(ctx.run, body_id, target)` |
+| Params | `ctx, body_id, target` |
+| Returns | `same as backing method` |
+| Use when | Use when script wants clipped manual physics-body movement. |
+| Fails when / edge behavior | Default margin is `0.001`; full macro form accepts `margin` and `filter`. |
 
 ### `physics_contacts_2d`
 

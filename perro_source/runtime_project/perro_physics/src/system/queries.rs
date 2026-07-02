@@ -243,6 +243,200 @@ impl PhysicsSystem {
         })
     }
 
+    pub fn move_body_2d(
+        &mut self,
+        body_id: NodeID,
+        target: Vector2,
+        margin: f32,
+        filter: &PhysicsQueryFilter,
+    ) -> Option<PhysicsMoveResult2D> {
+        if !target.x.is_finite() || !target.y.is_finite() {
+            return None;
+        }
+        let world = self.world_2d.as_mut()?;
+        world.query_pipeline.update(&world.colliders);
+        let state = world.body_map.get(&body_id)?;
+        let rb = world.bodies.get(state.handle)?;
+        let start = *rb.position();
+        let delta = na2::Vector2::new(
+            target.x - start.translation.vector.x,
+            target.y - start.translation.vector.y,
+        );
+        let distance = delta.norm();
+        if distance <= 0.000_001 {
+            return Some(PhysicsMoveResult2D {
+                position: target,
+                hit: None,
+                clipped: false,
+            });
+        }
+
+        let excluded = filter.exclude_nodes.as_slice();
+        let layers = filter.layers.bits();
+        let mask = filter.mask.bits();
+        let predicate = |handle, collider: &r2::Collider| {
+            let Some(owner) = world.collider_owners.get(&handle).copied() else {
+                return true;
+            };
+            if owner == body_id || excluded.contains(&owner) {
+                return false;
+            }
+            let collider_layers = collider.collision_groups().memberships.bits();
+            (collider_layers & layers) != 0 && (collider_layers & mask) == 0
+        };
+        let query_filter = query_filter_2d(filter).predicate(&predicate);
+        let mut best: Option<PhysicsShapeHit2D> = None;
+        for collider_handle in &state.colliders {
+            let Some(collider) = world.colliders.get(*collider_handle) else {
+                continue;
+            };
+            if collider.is_sensor() {
+                continue;
+            }
+            let local_pos = collider
+                .position_wrt_parent()
+                .copied()
+                .unwrap_or_else(|| *collider.position());
+            let shape_pos = start * local_pos;
+            let Some((hit_collider, hit)) = world.query_pipeline.cast_shape(
+                &world.bodies,
+                &world.colliders,
+                &shape_pos,
+                &delta,
+                collider.shape(),
+                rapier2d::parry::query::ShapeCastOptions::with_max_time_of_impact(1.0),
+                query_filter,
+            ) else {
+                continue;
+            };
+            let node = *world.collider_owners.get(&hit_collider)?;
+            let point = hit.transform1_by(&shape_pos).witness1;
+            let hit_out = PhysicsShapeHit2D {
+                node,
+                point: Vector2::new(point.x, point.y),
+                normal: Vector2::new(hit.normal1.x, hit.normal1.y),
+                distance: hit.time_of_impact * distance,
+            };
+            if best.is_none_or(|best| hit_out.distance < best.distance) {
+                best = Some(hit_out);
+            }
+        }
+
+        let hit = best;
+        let clipped = hit.is_some();
+        let travel = hit
+            .map(|hit| (hit.distance - margin.max(0.0)).max(0.0))
+            .unwrap_or(distance);
+        let dir = delta / distance;
+        let position = Vector2::new(
+            start.translation.vector.x + dir.x * travel,
+            start.translation.vector.y + dir.y * travel,
+        );
+        Some(PhysicsMoveResult2D {
+            position,
+            hit,
+            clipped,
+        })
+    }
+
+    pub fn move_body_3d(
+        &mut self,
+        body_id: NodeID,
+        target: Vector3,
+        margin: f32,
+        filter: &PhysicsQueryFilter,
+    ) -> Option<PhysicsMoveResult3D> {
+        if !target.x.is_finite() || !target.y.is_finite() || !target.z.is_finite() {
+            return None;
+        }
+        let world = self.world_3d.as_mut()?;
+        world.query_pipeline.update(&world.colliders);
+        let state = world.body_map.get(&body_id)?;
+        let rb = world.bodies.get(state.handle)?;
+        let start = *rb.position();
+        let delta = na3::Vector3::new(
+            target.x - start.translation.vector.x,
+            target.y - start.translation.vector.y,
+            target.z - start.translation.vector.z,
+        );
+        let distance = delta.norm();
+        if distance <= 0.000_001 {
+            return Some(PhysicsMoveResult3D {
+                position: target,
+                hit: None,
+                clipped: false,
+            });
+        }
+
+        let excluded = filter.exclude_nodes.as_slice();
+        let layers = filter.layers.bits();
+        let mask = filter.mask.bits();
+        let predicate = |handle, collider: &r3::Collider| {
+            let Some(owner) = world.collider_owners.get(&handle).copied() else {
+                return true;
+            };
+            if owner == body_id || excluded.contains(&owner) {
+                return false;
+            }
+            let collider_layers = collider.collision_groups().memberships.bits();
+            (collider_layers & layers) != 0 && (collider_layers & mask) == 0
+        };
+        let query_filter = query_filter_3d(filter).predicate(&predicate);
+        let mut best: Option<PhysicsShapeHit3D> = None;
+        for collider_handle in &state.colliders {
+            let Some(collider) = world.colliders.get(*collider_handle) else {
+                continue;
+            };
+            if collider.is_sensor() {
+                continue;
+            }
+            let local_pos = collider
+                .position_wrt_parent()
+                .copied()
+                .unwrap_or_else(|| *collider.position());
+            let shape_pos = start * local_pos;
+            let Some((hit_collider, hit)) = world.query_pipeline.cast_shape(
+                &world.bodies,
+                &world.colliders,
+                &shape_pos,
+                &delta,
+                collider.shape(),
+                rapier3d::parry::query::ShapeCastOptions::with_max_time_of_impact(1.0),
+                query_filter,
+            ) else {
+                continue;
+            };
+            let node = *world.collider_owners.get(&hit_collider)?;
+            let point = hit.transform1_by(&shape_pos).witness1;
+            let hit_out = PhysicsShapeHit3D {
+                node,
+                point: Vector3::new(point.x, point.y, point.z),
+                normal: Vector3::new(hit.normal1.x, hit.normal1.y, hit.normal1.z),
+                distance: hit.time_of_impact * distance,
+            };
+            if best.is_none_or(|best| hit_out.distance < best.distance) {
+                best = Some(hit_out);
+            }
+        }
+
+        let hit = best;
+        let clipped = hit.is_some();
+        let travel = hit
+            .map(|hit| (hit.distance - margin.max(0.0)).max(0.0))
+            .unwrap_or(distance);
+        let dir = delta / distance;
+        let position = Vector3::new(
+            start.translation.vector.x + dir.x * travel,
+            start.translation.vector.y + dir.y * travel,
+            start.translation.vector.z + dir.z * travel,
+        );
+        Some(PhysicsMoveResult3D {
+            position,
+            hit,
+            clipped,
+        })
+    }
+
     pub fn contacts_2d(&self, body_id: NodeID) -> Vec<PhysicsContact2D> {
         let Some(world) = self.world_2d.as_ref() else {
             return Vec::new();

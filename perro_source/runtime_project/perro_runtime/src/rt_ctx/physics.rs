@@ -2,8 +2,8 @@ use perro_ids::NodeID;
 use perro_nodes::{PhysicsForceEmitter2D, PhysicsForceEmitter3D, SceneNodeData};
 use perro_runtime_api::sub_apis::{
     PhysicsAPI, PhysicsBodyPrediction2D, PhysicsBodyPrediction3D, PhysicsContact2D,
-    PhysicsContact3D, PhysicsQueryFilter, PhysicsRayHit2D, PhysicsRayHit3D, PhysicsShapeHit2D,
-    PhysicsShapeHit3D,
+    PhysicsContact3D, PhysicsMoveResult2D, PhysicsMoveResult3D, PhysicsQueryFilter,
+    PhysicsRayHit2D, PhysicsRayHit3D, PhysicsShapeHit2D, PhysicsShapeHit3D,
 };
 use perro_structs::{Quaternion, Vector2, Vector3};
 
@@ -128,6 +128,26 @@ impl PhysicsAPI for Runtime {
         filter: PhysicsQueryFilter,
     ) -> Option<PhysicsShapeHit3D> {
         self.physics_shape_cast_3d(shape, origin, direction, max_distance, &filter)
+    }
+
+    fn move_body_2d(
+        &mut self,
+        body_id: NodeID,
+        target: Vector2,
+        margin: f32,
+        filter: PhysicsQueryFilter,
+    ) -> Option<PhysicsMoveResult2D> {
+        self.physics_move_body_2d(body_id, target, margin, &filter)
+    }
+
+    fn move_body_3d(
+        &mut self,
+        body_id: NodeID,
+        target: Vector3,
+        margin: f32,
+        filter: PhysicsQueryFilter,
+    ) -> Option<PhysicsMoveResult3D> {
+        self.physics_move_body_3d(body_id, target, margin, &filter)
     }
 
     fn contacts_2d(&mut self, body_id: NodeID) -> Vec<PhysicsContact2D> {

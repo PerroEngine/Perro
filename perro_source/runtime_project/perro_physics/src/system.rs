@@ -2,8 +2,8 @@ use ahash::AHashSet;
 use perro_ids::NodeID;
 use perro_nodes::{Shape2D, Shape3D};
 use perro_runtime_api::sub_apis::{
-    PhysicsContact2D, PhysicsContact3D, PhysicsQueryFilter, PhysicsRayHit2D, PhysicsRayHit3D,
-    PhysicsShapeHit2D, PhysicsShapeHit3D,
+    PhysicsContact2D, PhysicsContact3D, PhysicsMoveResult2D, PhysicsMoveResult3D,
+    PhysicsQueryFilter, PhysicsRayHit2D, PhysicsRayHit3D, PhysicsShapeHit2D, PhysicsShapeHit3D,
 };
 use perro_structs::{Vector2, Vector3};
 use rayon::prelude::*;

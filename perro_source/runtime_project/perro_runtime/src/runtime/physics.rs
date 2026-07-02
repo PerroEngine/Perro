@@ -9,8 +9,9 @@ use perro_nodes::TileMap2D;
 use perro_nodes::{Node2D, Node3D, SceneNodeData, Shape2D, Shape3D, WaterShape};
 use perro_physics::*;
 use perro_runtime_api::sub_apis::{
-    NodeAPI, PhysicsContact2D, PhysicsContact3D, PhysicsQueryFilter, PhysicsRayHit2D,
-    PhysicsRayHit3D, PhysicsShapeHit2D, PhysicsShapeHit3D, SignalAPI,
+    NodeAPI, PhysicsContact2D, PhysicsContact3D, PhysicsMoveResult2D, PhysicsMoveResult3D,
+    PhysicsQueryFilter, PhysicsRayHit2D, PhysicsRayHit3D, PhysicsShapeHit2D, PhysicsShapeHit3D,
+    SignalAPI,
 };
 #[cfg(test)]
 use perro_structs::BitMask;
@@ -379,6 +380,52 @@ impl Runtime {
         self.physics_body_descs_3d = bodies_3d;
         self.physics
             .shape_cast_3d(shape, origin, direction, max_distance, filter)
+    }
+
+    pub fn physics_move_body_2d(
+        &mut self,
+        body_id: NodeID,
+        target: Vector2,
+        margin: f32,
+        filter: &PhysicsQueryFilter,
+    ) -> Option<PhysicsMoveResult2D> {
+        self.propagate_pending_transform_dirty();
+        self.refresh_dirty_global_transforms();
+        let bodies_2d = self.collect_body_descs_2d();
+        self.sync_world_2d(&bodies_2d);
+        self.physics_body_descs_2d = bodies_2d;
+        let result = self.physics.move_body_2d(body_id, target, margin, filter)?;
+        let mut transform = self.get_global_transform_2d(body_id)?;
+        transform.position = result.position;
+        if !<Runtime as NodeAPI>::set_global_transform_2d(self, body_id, transform) {
+            return None;
+        }
+        self.propagate_pending_transform_dirty();
+        self.refresh_dirty_global_transforms();
+        Some(result)
+    }
+
+    pub fn physics_move_body_3d(
+        &mut self,
+        body_id: NodeID,
+        target: Vector3,
+        margin: f32,
+        filter: &PhysicsQueryFilter,
+    ) -> Option<PhysicsMoveResult3D> {
+        self.propagate_pending_transform_dirty();
+        self.refresh_dirty_global_transforms();
+        let bodies_3d = self.collect_body_descs_3d();
+        self.sync_world_3d(&bodies_3d);
+        self.physics_body_descs_3d = bodies_3d;
+        let result = self.physics.move_body_3d(body_id, target, margin, filter)?;
+        let mut transform = self.get_global_transform_3d(body_id)?;
+        transform.position = result.position;
+        if !<Runtime as NodeAPI>::set_global_transform_3d(self, body_id, transform) {
+            return None;
+        }
+        self.propagate_pending_transform_dirty();
+        self.refresh_dirty_global_transforms();
+        Some(result)
     }
 
     pub fn physics_contacts_2d(&mut self, body_id: NodeID) -> Vec<PhysicsContact2D> {
