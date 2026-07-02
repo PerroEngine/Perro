@@ -337,7 +337,13 @@ fn perro_lit_standard(
         lit += ray.color_intensity.xyz * ray.color_intensity.w * lambert;
     }
     let alpha = mesh_blend_alpha(in.frag_pos, in.world_pos, in.packed_blend_params) * base.a;
-    return vec4<f32>(base.rgb * lit + emissive, alpha);
+    return vec4<f32>(tonemap_aces(base.rgb * lit + emissive), alpha);
+}
+
+// ACES filmic fit; matches the mesh material preludes.
+fn tonemap_aces(x: vec3<f32>) -> vec3<f32> {
+    let mapped = (x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14);
+    return clamp(mapped, vec3<f32>(0.0), vec3<f32>(1.0));
 }
 
 fn perro_multimesh_vs_main_base(v: VertexInput, inst: InstanceInput, vertex_index: u32) -> VertexOutput {
@@ -346,7 +352,12 @@ fn perro_multimesh_vs_main_base(v: VertexInput, inst: InstanceInput, vertex_inde
     let rot = normalize(inst.rotation);
     let blended = apply_blend_shapes(v, inst, vertex_index);
     let local_pos = rotate_vec_by_quat(blended.pos * (inst.scale * scale), rot) + inst.position;
-    let local_nrm = rotate_vec_by_quat(blended.normal.xyz, rot);
+    // Inverse-transpose of a diagonal scale: divide, so non-uniform instance
+    // scale does not skew the normal.
+    let local_nrm = rotate_vec_by_quat(
+        normalize(blended.normal.xyz / max(inst.scale, vec3<f32>(1.0e-6))),
+        rot,
+    );
     let p = vec4<f32>(local_pos, 1.0);
     let world = vec4<f32>(
         dot(draw.model_row_0, p),
@@ -362,7 +373,8 @@ fn perro_multimesh_vs_main_base(v: VertexInput, inst: InstanceInput, vertex_inde
     );
 
     let base = unpack_rgba8(draw.packed_color);
-    let emissive = unpack_rgba8(draw.packed_emissive);
+    let emissive_packed = unpack_rgba8(draw.packed_emissive);
+    let emissive = emissive_packed.xyz * (emissive_packed.w * 16.0);
     let n = normal_ws;
     let ambient = scene.ambient_color.xyz * scene.ambient_color.w;
     var lit = ambient;
@@ -376,7 +388,7 @@ fn perro_multimesh_vs_main_base(v: VertexInput, inst: InstanceInput, vertex_inde
     }
     var out: VertexOutput;
     out.clip_pos = scene.view_proj * world;
-    out.lit_color = base.rgb * lit + emissive.rgb;
+    out.lit_color = base.rgb * lit + emissive;
     out.packed_blend_params = draw.packed_blend_params;
     out.world_pos = world.xyz;
     out.normal_ws = normal_ws;
@@ -393,5 +405,5 @@ fn vs_main(v: VertexInput, inst: InstanceInput, @builtin(vertex_index) vertex_in
 
 @fragment
 fn fs_main(in: FragmentInput, @builtin(position) frag_pos: vec4<f32>) -> @location(0) vec4<f32> {
-    return vec4<f32>(in.lit_color, mesh_blend_alpha(frag_pos, in.world_pos, in.packed_blend_params));
+    return vec4<f32>(tonemap_aces(in.lit_color), mesh_blend_alpha(frag_pos, in.world_pos, in.packed_blend_params));
 }

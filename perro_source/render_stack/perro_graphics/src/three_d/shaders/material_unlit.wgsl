@@ -1,6 +1,6 @@
 fn shade_material(in: FragmentInput) -> vec4<f32> {
     let color = unpack_rgba8(in.packed_color);
-    let emissive = unpack_rgba8(in.packed_emissive).xyz;
+    let emissive = unpack_emissive_hdr(in.packed_emissive);
     let material = decode_material_params(in.packed_material_params);
     var n = normalize(in.normal_ws);
     if material.flat_shading {

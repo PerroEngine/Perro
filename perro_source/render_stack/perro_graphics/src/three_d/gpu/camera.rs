@@ -273,20 +273,22 @@ pub(super) fn build_scene_uniform(
             t_evening,
         );
         let ambient_strength = (0.08 + 0.32 * t_day).max(0.0);
+        let ambient_lin = crate::srgb_to_linear_rgb(ambient_rgb);
         scene.ambient_color = [
-            ambient_rgb[0].max(0.0),
-            ambient_rgb[1].max(0.0),
-            ambient_rgb[2].max(0.0),
+            ambient_lin[0].max(0.0),
+            ambient_lin[1].max(0.0),
+            ambient_lin[2].max(0.0),
             ambient_strength,
         ];
     }
 
     // Zero-intensity ambient nodes must not wipe out sky-derived ambient.
     if let Some(ambient) = lighting.ambient_light.filter(|a| a.intensity > 0.0) {
+        let ambient_lin = crate::srgb_to_linear_rgb(ambient.color);
         scene.ambient_color = [
-            ambient.color[0].max(0.0),
-            ambient.color[1].max(0.0),
-            ambient.color[2].max(0.0),
+            ambient_lin[0],
+            ambient_lin[1],
+            ambient_lin[2],
             ambient.intensity.max(0.0),
         ];
     }
@@ -303,12 +305,13 @@ pub(super) fn build_scene_uniform(
         if d.length_squared() <= 1.0e-6 || !d.is_finite() {
             return;
         }
+        let color_lin = crate::srgb_to_linear_rgb(color);
         scene.ray_lights[ray_count] = RayLightGpu {
             direction: [d.x, d.y, d.z, 0.0],
             color_intensity: [
-                color[0].max(0.0),
-                color[1].max(0.0),
-                color[2].max(0.0),
+                color_lin[0],
+                color_lin[1],
+                color_lin[2],
                 intensity.max(0.0),
             ],
         };
@@ -359,10 +362,11 @@ pub(super) fn build_scene_uniform(
             src.position[2],
             src.range.max(0.001),
         ];
+        let color_lin = crate::srgb_to_linear_rgb(src.color);
         dst.color_intensity = [
-            src.color[0].max(0.0),
-            src.color[1].max(0.0),
-            src.color[2].max(0.0),
+            color_lin[0],
+            color_lin[1],
+            color_lin[2],
             src.intensity.max(0.0),
         ];
         point_count += 1.0;
@@ -389,10 +393,11 @@ pub(super) fn build_scene_uniform(
             src.range.max(0.001),
         ];
         dst.direction_outer_cos = [dir.x, dir.y, dir.z, outer.cos()];
+        let color_lin = crate::srgb_to_linear_rgb(src.color);
         dst.color_intensity = [
-            src.color[0].max(0.0),
-            src.color[1].max(0.0),
-            src.color[2].max(0.0),
+            color_lin[0],
+            color_lin[1],
+            color_lin[2],
             src.intensity.max(0.0),
         ];
         dst.inner_cos_pad = [inner.cos(), 0.0, 0.0, 0.0];

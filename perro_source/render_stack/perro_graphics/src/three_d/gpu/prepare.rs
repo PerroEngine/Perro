@@ -685,13 +685,18 @@ impl Gpu3D {
                         static_shader_lookup,
                     );
                     let custom_params = self.stage_custom_params(material);
-                    let packed_color = pack_unorm4x8(params.base_color_factor);
-                    let packed_emissive = pack_unorm4x8([
-                        params.emissive_factor[0],
-                        params.emissive_factor[1],
-                        params.emissive_factor[2],
-                        1.0,
+                    let base_linear = crate::srgb_to_linear_rgb([
+                        params.base_color_factor[0],
+                        params.base_color_factor[1],
+                        params.base_color_factor[2],
                     ]);
+                    let packed_color = pack_unorm4x8([
+                        base_linear[0],
+                        base_linear[1],
+                        base_linear[2],
+                        params.base_color_factor[3],
+                    ]);
+                    let packed_emissive = pack_emissive_hdr(params.emissive_factor);
                     let draw_param_index = self.staged_multimesh_draw_params.len() as u32;
                     self.staged_multimesh_draw_params
                         .push(MultiMeshDrawParamGpu {

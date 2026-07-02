@@ -128,6 +128,19 @@ pub(super) fn push_draw_batch(draw_batches: &mut Vec<DrawBatch>, batch: DrawBatc
     });
 }
 
+// Normalized rgb in the color lanes, max-component / EMISSIVE_PACK_MAX in the
+// alpha lane, so emissive keeps HDR magnitude through the unorm8 pack.
+#[inline]
+pub(super) fn pack_emissive_hdr(rgb: [f32; 3]) -> u32 {
+    let lin = crate::srgb_to_linear_rgb(rgb);
+    let m = lin[0].max(lin[1]).max(lin[2]);
+    if !m.is_finite() || m <= 1.0e-6 {
+        return 0;
+    }
+    let scale = (m / crate::EMISSIVE_PACK_MAX).clamp(0.0, 1.0);
+    pack_unorm4x8([lin[0] / m, lin[1] / m, lin[2] / m, scale])
+}
+
 #[inline]
 fn next_draw_batch_order(draw_batches: &[DrawBatch]) -> u32 {
     draw_batches
@@ -537,16 +550,17 @@ pub(super) fn build_instance(
         0
     };
 
+    let color_linear = crate::srgb_to_linear_rgb([color[0], color[1], color[2]]);
     let material = MaterialInstanceGpu {
-        packed_color: pack_unorm4x8(color),
+        packed_color: pack_unorm4x8([
+            color_linear[0],
+            color_linear[1],
+            color_linear[2],
+            color[3],
+        ]),
         packed_pbr_params_0,
         packed_pbr_params_1: packed_pbr_params_1 | packed_blend_params,
-        packed_emissive: pack_unorm4x8([
-            emissive_factor[0],
-            emissive_factor[1],
-            emissive_factor[2],
-            1.0,
-        ]),
+        packed_emissive: pack_emissive_hdr(emissive_factor),
         packed_material_params: pack_material_params(
             params.alpha_mode,
             params.alpha_cutoff,

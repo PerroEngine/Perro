@@ -310,8 +310,11 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
 
 pub(super) fn linear_render_format(surface_format: wgpu::TextureFormat) -> wgpu::TextureFormat {
     match surface_format {
-        wgpu::TextureFormat::Rgba8UnormSrgb => wgpu::TextureFormat::Rgba8Unorm,
-        wgpu::TextureFormat::Bgra8UnormSrgb => wgpu::TextureFormat::Bgra8Unorm,
+        // Float target: HDR light accumulation headroom and no linear-in-8bit
+        // banding in dark gradients; present encodes to the sRGB swapchain.
+        wgpu::TextureFormat::Rgba8UnormSrgb | wgpu::TextureFormat::Bgra8UnormSrgb => {
+            wgpu::TextureFormat::Rgba16Float
+        }
         _ => surface_format,
     }
 }
