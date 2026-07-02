@@ -40,7 +40,7 @@ script_vars = {
 parent = @MeshMaterialsDemo
     [AmbientLight3D]
         color = (0.72, 0.78, 0.92)
-        intensity = 0.10
+        intensity = 0.32
     [/AmbientLight3D]
 [/Ambient]
 

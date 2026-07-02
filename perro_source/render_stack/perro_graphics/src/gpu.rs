@@ -44,10 +44,11 @@ pub(crate) use present::capped_render_size;
 use present::*;
 use water_gpu::{GpuWater, WaterPrepareContext};
 
-// Linear-space clear color for sRGB hex #1C1817.
-const CLEAR_R: f64 = 0.011612245179743885;
-const CLEAR_G: f64 = 0.009134058702220787;
-const CLEAR_B: f64 = 0.008568125618069307;
+// Linear-space clear color for sRGB hex #40474F — neutral dark slate so
+// scenes without a Sky3D read as a lit viewport instead of black.
+const CLEAR_R: f64 = 0.050876;
+const CLEAR_G: f64 = 0.063763;
+const CLEAR_B: f64 = 0.079339;
 const SMOOTH_SAMPLE_COUNT: u32 = 4;
 
 fn water_camera_view_proj(camera: &Camera3DState, width: u32, height: u32) -> Mat4 {

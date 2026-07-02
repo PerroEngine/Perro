@@ -163,6 +163,8 @@ struct Scene3DUniform {
     point_lights: [PointLightGpu; MAX_POINT_LIGHTS],
     spot_lights: [SpotLightGpu; MAX_SPOT_LIGHTS],
     inv_view_proj: [[f32; 4]; 4],
+    // Hemisphere ambient: radiance from below (premultiplied), w unused.
+    ground_color: [f32; 4],
 }
 
 #[repr(C)]

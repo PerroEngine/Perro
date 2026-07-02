@@ -34,7 +34,10 @@ fn shade_material(in: FragmentInput) -> vec4<f32> {
     }
 
     var light_rgb = vec3<f32>(0.0);
-    let ambient = scene.ambient_color.xyz * scene.ambient_color.w;
+    // Hemisphere ambient: sky radiance from above, ground bounce from below.
+    let hemi = clamp(n.y * 0.5 + 0.5, 0.0, 1.0);
+    let ambient =
+        mix(scene.ground_color.xyz, scene.ambient_color.xyz * scene.ambient_color.w, hemi);
     light_rgb += ambient;
 
     let ray_count = u32(scene.ambient_and_counts.x);

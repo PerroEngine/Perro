@@ -218,6 +218,11 @@ pub(super) fn bounds_in_frustum(
     true
 }
 
+// Base light level when a scene authors neither sky nor AmbientLight3D.
+const DEFAULT_AMBIENT_INTENSITY: f32 = 0.35;
+// Ground hemisphere gets this fraction of the upper ambient radiance.
+const GROUND_BOUNCE_FACTOR: f32 = 0.4;
+
 pub(super) fn build_scene_uniform(
     camera: &Camera3DState,
     lighting: &Lighting3DState,
@@ -235,7 +240,9 @@ pub(super) fn build_scene_uniform(
             camera.position[2],
             0.0,
         ],
-        ambient_color: [1.0, 1.0, 1.0, 0.0],
+        // Base ambient so bare scenes read lit; sky or an authored
+        // AmbientLight3D (including intensity 0 for full dark) overrides.
+        ambient_color: [1.0, 1.0, 1.0, DEFAULT_AMBIENT_INTENSITY],
         ray_light: RayLightGpu {
             direction: [0.0, 0.0, -1.0, 0.0],
             color_intensity: [1.0, 1.0, 1.0, 0.0],
@@ -259,6 +266,7 @@ pub(super) fn build_scene_uniform(
         } else {
             Mat4::IDENTITY.to_cols_array_2d()
         },
+        ground_color: [0.0; 4],
     };
 
     if let Some(sky) = lighting.sky.as_ref() {
@@ -272,7 +280,7 @@ pub(super) fn build_scene_uniform(
             evening_color,
             t_evening,
         );
-        let ambient_strength = (0.08 + 0.32 * t_day).max(0.0);
+        let ambient_strength = (0.15 + 0.45 * t_day).max(0.0);
         let ambient_lin = crate::srgb_to_linear_rgb(ambient_rgb);
         scene.ambient_color = [
             ambient_lin[0].max(0.0),
@@ -282,8 +290,8 @@ pub(super) fn build_scene_uniform(
         ];
     }
 
-    // Zero-intensity ambient nodes must not wipe out sky-derived ambient.
-    if let Some(ambient) = lighting.ambient_light.filter(|a| a.intensity > 0.0) {
+    // Authored ambient always wins, including intensity 0 for full dark.
+    if let Some(ambient) = lighting.ambient_light {
         let ambient_lin = crate::srgb_to_linear_rgb(ambient.color);
         scene.ambient_color = [
             ambient_lin[0],
@@ -292,6 +300,15 @@ pub(super) fn build_scene_uniform(
             ambient.intensity.max(0.0),
         ];
     }
+
+    // Hemisphere ambient ground term: dimmed bounce of the sky/ambient color,
+    // premultiplied so the shader can mix() directly.
+    scene.ground_color = [
+        scene.ambient_color[0] * scene.ambient_color[3] * GROUND_BOUNCE_FACTOR,
+        scene.ambient_color[1] * scene.ambient_color[3] * GROUND_BOUNCE_FACTOR,
+        scene.ambient_color[2] * scene.ambient_color[3] * GROUND_BOUNCE_FACTOR,
+        0.0,
+    ];
 
     let mut ray_count = 0usize;
     let mut push_ray = |dir: Vec3, color: [f32; 3], intensity: f32| {
@@ -413,7 +430,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn scene_uniform_no_sky_or_lights_has_no_ambient_or_light_counts() {
+    fn scene_uniform_no_sky_or_lights_gets_default_ambient_and_no_light_counts() {
         let scene = build_scene_uniform(
             &Camera3DState::default(),
             &Lighting3DState::default(),
@@ -421,8 +438,26 @@ mod tests {
             720,
         );
 
-        assert_eq!(scene.ambient_color, [1.0, 1.0, 1.0, 0.0]);
+        assert_eq!(
+            scene.ambient_color,
+            [1.0, 1.0, 1.0, DEFAULT_AMBIENT_INTENSITY]
+        );
+        let bounce = DEFAULT_AMBIENT_INTENSITY * GROUND_BOUNCE_FACTOR;
+        assert_eq!(scene.ground_color, [bounce, bounce, bounce, 0.0]);
         assert_eq!(scene.ambient_and_counts, [0.0, 0.0, 0.0, 0.0]);
         assert_eq!(scene.ray_light.color_intensity[3], 0.0);
+    }
+
+    #[test]
+    fn authored_zero_intensity_ambient_forces_dark() {
+        let mut lighting = Lighting3DState::default();
+        lighting.ambient_light = Some(perro_render_bridge::AmbientLight3DState {
+            color: [1.0, 1.0, 1.0],
+            intensity: 0.0,
+            cast_shadows: false,
+        });
+        let scene = build_scene_uniform(&Camera3DState::default(), &lighting, 1280, 720);
+        assert_eq!(scene.ambient_color[3], 0.0);
+        assert_eq!(scene.ground_color, [0.0, 0.0, 0.0, 0.0]);
     }
 }

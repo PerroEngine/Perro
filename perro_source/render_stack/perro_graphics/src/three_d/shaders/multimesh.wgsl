@@ -29,6 +29,8 @@ struct Scene3D {
     point_lights: array<PointLightGpu, MAX_POINT_LIGHTS>,
     spot_lights: array<SpotLightGpu, MAX_SPOT_LIGHTS>,
     inv_view_proj: mat4x4<f32>,
+    // Hemisphere ambient: radiance from below (premultiplied), w unused.
+    ground_color: vec4<f32>,
 }
 
 struct MultiMeshDrawParam {
@@ -326,7 +328,10 @@ fn perro_lit_standard(
     let _roughness = roughness;
     let _metallic = metallic;
     let n = normalize(in.normal_ws);
-    let ambient = scene.ambient_color.xyz * scene.ambient_color.w * occlusion;
+    let hemi = clamp(n.y * 0.5 + 0.5, 0.0, 1.0);
+    let ambient =
+        mix(scene.ground_color.xyz, scene.ambient_color.xyz * scene.ambient_color.w, hemi)
+        * occlusion;
     var lit = ambient;
     let ray_count = u32(scene.ambient_and_counts.x);
     if ray_count > 0u {
@@ -342,7 +347,9 @@ fn perro_lit_standard(
 
 // ACES filmic fit; matches the mesh material preludes.
 fn tonemap_aces(x: vec3<f32>) -> vec3<f32> {
-    let mapped = (x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14);
+    // Exposure lift keeps LDR scenes from reading darker than authored.
+    let v = x * 1.5;
+    let mapped = (v * (2.51 * v + 0.03)) / (v * (2.43 * v + 0.59) + 0.14);
     return clamp(mapped, vec3<f32>(0.0), vec3<f32>(1.0));
 }
 
@@ -376,7 +383,9 @@ fn perro_multimesh_vs_main_base(v: VertexInput, inst: InstanceInput, vertex_inde
     let emissive_packed = unpack_rgba8(draw.packed_emissive);
     let emissive = emissive_packed.xyz * (emissive_packed.w * 16.0);
     let n = normal_ws;
-    let ambient = scene.ambient_color.xyz * scene.ambient_color.w;
+    let hemi = clamp(n.y * 0.5 + 0.5, 0.0, 1.0);
+    let ambient =
+        mix(scene.ground_color.xyz, scene.ambient_color.xyz * scene.ambient_color.w, hemi);
     var lit = ambient;
     let ray_count = u32(scene.ambient_and_counts.x);
     if ray_count > 0u {

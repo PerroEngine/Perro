@@ -35,6 +35,8 @@ struct Scene3D {
     point_lights: array<PointLightGpu, MAX_POINT_LIGHTS>,
     spot_lights: array<SpotLightGpu, MAX_SPOT_LIGHTS>,
     inv_view_proj: mat4x4<f32>,
+    // Hemisphere ambient: radiance from below (premultiplied), w unused.
+    ground_color: vec4<f32>,
 }
 
 struct Shadow3D {
@@ -677,7 +679,10 @@ fn fresnel_schlick_roughness(cos_theta: f32, f0: vec3<f32>, roughness: f32) -> v
 // ACES filmic fit (Narkowicz). Applied at the end of lit materials so HDR
 // light sums roll off instead of clipping; UI/2D/unlit stay untouched.
 fn tonemap_aces(x: vec3<f32>) -> vec3<f32> {
-    let mapped = (x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14);
+    // Exposure lift keeps LDR scenes from reading darker than authored;
+    // ACES at 1.0 exposure maps white to ~0.80.
+    let v = x * 1.5;
+    let mapped = (v * (2.51 * v + 0.03)) / (v * (2.43 * v + 0.59) + 0.14);
     return clamp(mapped, vec3<f32>(0.0), vec3<f32>(1.0));
 }
 
@@ -794,7 +799,10 @@ fn perro_lit_standard(
     let f_ambient = fresnel_schlick_roughness(max(dot(n, v), 0.0), vec3<f32>(0.04), roughness);
     let k_s_ambient = f_ambient;
     let k_d_ambient = (vec3<f32>(1.0) - k_s_ambient) * (1.0 - metallic);
-    let ambient_radiance = scene.ambient_color.xyz * scene.ambient_color.w * ao;
+    // Hemisphere ambient: sky radiance from above, ground bounce from below.
+    let hemi = clamp(n.y * 0.5 + 0.5, 0.0, 1.0);
+    let ambient_radiance =
+        mix(scene.ground_color.xyz, scene.ambient_color.xyz * scene.ambient_color.w, hemi) * ao;
     let ambient_diffuse = k_d_ambient * albedo * ambient_radiance;
     let ambient_specular = k_s_ambient * ambient_radiance * (0.25 + 0.75 * (1.0 - roughness));
 
