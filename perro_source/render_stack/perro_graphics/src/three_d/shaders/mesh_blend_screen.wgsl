@@ -118,7 +118,15 @@ fn fs_main(in: SeamVsOut) -> @location(0) vec4<f32> {
     // World units per pixel at this depth, for a distance-stable seam size.
     let world_step = world_from_depth(coord_f + vec2<f32>(1.0, 0.0), dims, depth_c);
     let world_per_px = max(distance(world_c, world_step), 1.0e-5);
-    let r_px = clamp(width / world_per_px, 2.0, 20.0);
+    // Natural on-screen size of the seam; the effect only ramps up as the
+    // camera gets closer and fades out entirely once it would be subpixel
+    // noise in the distance.
+    let seam_px = width / world_per_px;
+    let r_px = clamp(seam_px, 2.0, 20.0);
+    let distance_fade = smoothstep(2.5, 8.0, seam_px);
+    if distance_fade <= 0.0 {
+        return center;
+    }
     let depth_tolerance = max(width * 2.0, world_per_px * 10.0);
     let center_is_receiver = id_c >= MESH_BLEND_RECEIVER_ID_BASE;
 
@@ -187,15 +195,27 @@ fn fs_main(in: SeamVsOut) -> @location(0) vec4<f32> {
         return center;
     }
     // Fraction of the neighborhood on the other side of the seam: ~0.5 on
-    // the contact line, easing toward 0 with distance from it.
-    var k = sum_opp / sum_all;
-    k = k * k * (3.0 - 2.0 * k);
-    if params_c.z > 0.0 {
-        let tile = max(params_c.w, 0.05);
+    // the contact line, falling toward 0 away from it.
+    let f = sum_opp / sum_all;
+    // Dissolve: world-anchored noise sets a per-pixel threshold so the
+    // contact line breaks into interlocking fingers. noise factor (z) is
+    // the raggedness (0 = clean gradient, 1 = crisp fingers), noise tile
+    // (w) is the world-space feature size, and the fingers can swap most
+    // of the color instead of stopping at a 50/50 wash.
+    // Fade the raggedness out as the seam band shrinks on screen, and keep
+    // noise features at least ~8 px, so distance never turns the dissolve
+    // into chunky blotches; far seams settle into a clean thin gradient.
+    let raggedness = clamp(params_c.z, 0.0, 1.0) * smoothstep(4.0, 12.0, seam_px);
+    var threshold = 0.5;
+    if raggedness > 0.0 {
+        let tile = max(max(params_c.w, 0.05), world_per_px * 8.0);
         let p = (world_c.xz + vec2<f32>(world_c.y * 0.53, world_c.y * 0.29)) / tile;
-        let n = smoothstep(0.15, 0.85, seam_noise(p));
-        k = clamp(k * (1.0 - params_c.z * 0.5 + n * params_c.z), 0.0, 1.0);
+        let n = seam_noise(p) * 0.65 + seam_noise(p * 2.7 + vec2<f32>(13.7, 41.3)) * 0.35;
+        threshold = mix(0.5, 0.15 + n * 0.7, raggedness);
     }
-    k = clamp(k, 0.0, 0.75);
-    return vec4<f32>(mix(center.rgb, col_opp / sum_opp, k), center.a);
+    let band = mix(0.42, 0.15, raggedness);
+    let blend_max = (0.5 + 0.35 * raggedness) * distance_fade;
+    let blend = blend_max
+        * smoothstep(clamp(threshold - band, 0.02, 1.0), threshold, f);
+    return vec4<f32>(mix(center.rgb, col_opp / sum_opp, blend), center.a);
 }

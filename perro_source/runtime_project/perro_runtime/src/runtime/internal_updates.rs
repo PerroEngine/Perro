@@ -186,6 +186,7 @@ impl Runtime {
             NodeType::StaticBody2D
             | NodeType::Area2D
             | NodeType::RigidBody2D
+            | NodeType::CharacterBody2D
             | NodeType::WaterBody2D
             | NodeType::TileMap2D => {
                 let slot = id.index() as usize;
@@ -203,6 +204,7 @@ impl Runtime {
             NodeType::StaticBody3D
             | NodeType::Area3D
             | NodeType::RigidBody3D
+            | NodeType::CharacterBody3D
             | NodeType::WaterBody3D => {
                 let slot = id.index() as usize;
                 if self.internal_updates.physics_body_pos_3d.len() <= slot {

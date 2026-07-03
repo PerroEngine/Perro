@@ -1,7 +1,7 @@
 use perro_nodes::{
-    Area2D, Area3D, Camera2D, Camera3D, MeshBlendOptions, MeshInstance3D, Node2D, Node3D, NodeType,
-    PhysicsForceEmitter2D, PhysicsForceEmitter3D, RigidBody2D, RigidBody3D, StaticBody2D,
-    StaticBody3D,
+    Area2D, Area3D, Camera2D, Camera3D, CharacterBody3D, MeshBlendOptions, MeshInstance3D, Node2D,
+    Node3D, NodeType, PhysicsForceEmitter2D, PhysicsForceEmitter3D, RigidBody2D, RigidBody3D,
+    StaticBody2D, StaticBody3D,
 };
 use perro_structs::{BitMask, Color, Quaternion, Vector2, Vector3};
 use perro_ui::{UiNode, UiUnit, UiVector2};
@@ -35,6 +35,7 @@ pub enum NodeField {
     CollisionShape2D(CollisionShape2DField),
     StaticBody2D(StaticBody2DField),
     RigidBody2D(RigidBody2DField),
+    CharacterBody2D(CharacterBodyField),
     PhysicsForceEmitter2D(PhysicsForceEmitterField),
     Area2D(Area2DField),
     PinJoint2D(Joint2DField),
@@ -59,6 +60,7 @@ pub enum NodeField {
     CollisionShape3D(CollisionShape3DField),
     StaticBody3D(StaticBody3DField),
     RigidBody3D(RigidBody3DField),
+    CharacterBody3D(CharacterBodyField),
     PhysicsForceEmitter3D(PhysicsForceEmitterField),
     Area3D(Area3DField),
     BallJoint3D(Joint3DField),
@@ -586,6 +588,19 @@ pub enum RigidBody3DField {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CharacterBodyField {
+    Enabled,
+    CollisionLayers,
+    CollisionMask,
+    ApplyGravity,
+    GravityScale,
+    MaxFallSpeed,
+    Friction,
+    Restitution,
+    Density,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Area3DField {
     Enabled,
     CollisionLayers,
@@ -663,6 +678,9 @@ pub fn default_node_field_value(field: NodeField) -> Option<SceneValue> {
         NodeField::StaticBody3D(field) => default_static_body_3d_field_value(field),
         NodeField::RigidBody2D(field) => default_rigid_body_2d_field_value(field),
         NodeField::RigidBody3D(field) => default_rigid_body_3d_field_value(field),
+        NodeField::CharacterBody2D(field) | NodeField::CharacterBody3D(field) => {
+            default_character_body_field_value(field)
+        }
         NodeField::Area2D(field) => default_area_2d_field_value(field),
         NodeField::Area3D(field) => default_area_3d_field_value(field),
         NodeField::PhysicsForceEmitter2D(field) => {
@@ -784,6 +802,22 @@ fn default_mesh_instance_3d_field_value(field: MeshInstance3DField) -> Option<Sc
         MeshInstance3DField::BlendMask => bit_mask_value(node.blend.blend_mask),
         MeshInstance3DField::BlendDistance => SceneValue::F32(node.blend.distance),
         MeshInstance3DField::BlendMinDistance => SceneValue::F32(node.blend.min_distance),
+    })
+}
+
+fn default_character_body_field_value(field: CharacterBodyField) -> Option<SceneValue> {
+    // 2d + 3d char defaults match; use 3d node as source
+    let node = CharacterBody3D::new();
+    Some(match field {
+        CharacterBodyField::Enabled => SceneValue::Bool(node.enabled),
+        CharacterBodyField::CollisionLayers => bit_mask_value(node.collision_layers),
+        CharacterBodyField::CollisionMask => bit_mask_value(node.collision_mask),
+        CharacterBodyField::ApplyGravity => SceneValue::Bool(node.apply_gravity),
+        CharacterBodyField::GravityScale => SceneValue::F32(node.gravity_scale),
+        CharacterBodyField::MaxFallSpeed => SceneValue::F32(node.max_fall_speed),
+        CharacterBodyField::Friction => SceneValue::F32(node.friction),
+        CharacterBodyField::Restitution => SceneValue::F32(node.restitution),
+        CharacterBodyField::Density => SceneValue::F32(node.density),
     })
 }
 
@@ -1223,6 +1257,9 @@ fn resolve_scene_node_field_for_type(
         },
         NodeType::StaticBody2D => resolve_scene_static_body_2d(field).map(NodeField::StaticBody2D),
         NodeType::RigidBody2D => resolve_scene_rigid_body_2d(field).map(NodeField::RigidBody2D),
+        NodeType::CharacterBody2D => {
+            resolve_scene_character_body(field).map(NodeField::CharacterBody2D)
+        }
         NodeType::PhysicsForceEmitter2D => {
             resolve_scene_physics_force_emitter(field).map(NodeField::PhysicsForceEmitter2D)
         }
@@ -1429,6 +1466,9 @@ fn resolve_scene_node_field_for_type(
         },
         NodeType::StaticBody3D => resolve_scene_static_body_3d(field).map(NodeField::StaticBody3D),
         NodeType::RigidBody3D => resolve_scene_rigid_body_3d(field).map(NodeField::RigidBody3D),
+        NodeType::CharacterBody3D => {
+            resolve_scene_character_body(field).map(NodeField::CharacterBody3D)
+        }
         NodeType::PhysicsForceEmitter3D => {
             resolve_scene_physics_force_emitter(field).map(NodeField::PhysicsForceEmitter3D)
         }
@@ -1667,6 +1707,7 @@ fn resolve_node_field_for_type(node_type: NodeType, field: &str) -> Option<NodeF
             "density" => Some(NodeField::RigidBody2D(RigidBody2DField::Density)),
             _ => None,
         },
+        NodeType::CharacterBody2D => resolve_character_body(field).map(NodeField::CharacterBody2D),
         NodeType::PhysicsForceEmitter2D => {
             resolve_physics_force_emitter(field).map(NodeField::PhysicsForceEmitter2D)
         }
@@ -2022,6 +2063,7 @@ fn resolve_node_field_for_type(node_type: NodeType, field: &str) -> Option<NodeF
             "density" => Some(NodeField::RigidBody3D(RigidBody3DField::Density)),
             _ => None,
         },
+        NodeType::CharacterBody3D => resolve_character_body(field).map(NodeField::CharacterBody3D),
         NodeType::PhysicsForceEmitter3D => {
             resolve_physics_force_emitter(field).map(NodeField::PhysicsForceEmitter3D)
         }
@@ -2278,6 +2320,34 @@ fn resolve_scene_area_2d(field: &SceneFieldName) -> Option<Area2DField> {
         SceneFieldName::Enabled => Some(Area2DField::Enabled),
         SceneFieldName::CollisionLayers => Some(Area2DField::CollisionLayers),
         SceneFieldName::CollisionMask => Some(Area2DField::CollisionMask),
+        _ => None,
+    }
+}
+
+fn resolve_scene_character_body(field: &SceneFieldName) -> Option<CharacterBodyField> {
+    match field {
+        SceneFieldName::Enabled => Some(CharacterBodyField::Enabled),
+        SceneFieldName::CollisionLayers => Some(CharacterBodyField::CollisionLayers),
+        SceneFieldName::CollisionMask => Some(CharacterBodyField::CollisionMask),
+        SceneFieldName::GravityScale => Some(CharacterBodyField::GravityScale),
+        SceneFieldName::Friction => Some(CharacterBodyField::Friction),
+        SceneFieldName::Restitution => Some(CharacterBodyField::Restitution),
+        SceneFieldName::Density => Some(CharacterBodyField::Density),
+        _ => resolve_character_body(field.as_ref()),
+    }
+}
+
+fn resolve_character_body(field: &str) -> Option<CharacterBodyField> {
+    match field {
+        "enabled" => Some(CharacterBodyField::Enabled),
+        "collision_layers" => Some(CharacterBodyField::CollisionLayers),
+        "collision_mask" => Some(CharacterBodyField::CollisionMask),
+        "apply_gravity" | "gravity" => Some(CharacterBodyField::ApplyGravity),
+        "gravity_scale" => Some(CharacterBodyField::GravityScale),
+        "max_fall_speed" | "terminal_velocity" => Some(CharacterBodyField::MaxFallSpeed),
+        "friction" => Some(CharacterBodyField::Friction),
+        "restitution" => Some(CharacterBodyField::Restitution),
+        "density" => Some(CharacterBodyField::Density),
         _ => None,
     }
 }

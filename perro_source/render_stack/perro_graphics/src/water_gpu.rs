@@ -1468,11 +1468,17 @@ fn raster_coastline_2d(out: &mut [[f32; 4]], resolution: [u32; 2], water: &Water
                 let push = 1.0 - t;
                 let ring = (1.0 - ((t - 0.72).abs() / 0.28).clamp(0.0, 1.0)).powi(2);
                 let strength = impact.strength * (1.0 / 180.0);
-                wake += push * (strength * 0.70 + impact.cavitation * 0.28)
-                    + ring * (strength * 0.30 + impact.cavitation * 0.92);
+                // displaced water: crater under the body, crown on the ring
+                wake += ring * (strength * 0.30 + impact.cavitation * 0.92)
+                    - push * (strength * 0.70 + impact.cavitation * 0.28);
             }
-            let wake = wake.clamp(0.0, 1.0);
-            out[y * width + x] = [solid, edge.max(foam_edge), wake, spill_energy.max(wake)];
+            let wake = wake.clamp(-1.0, 1.0);
+            out[y * width + x] = [
+                solid,
+                edge.max(foam_edge),
+                wake,
+                spill_energy.max(wake.abs()),
+            ];
         }
     }
 }
@@ -1518,10 +1524,11 @@ fn raster_impacts_2d(out: &mut [[f32; 4]], width: usize, height: usize, water: &
                 let ring =
                     (1.0 - ((t - ring_center).abs() / outline_width).clamp(0.0, 1.0)).powi(2);
                 let strength = impact.strength * (1.0 / 180.0);
-                let wake = amount * (strength * 0.70 + impact.cavitation * 0.28)
-                    + ring * (strength * 0.44 + impact.cavitation * 1.08);
+                // displaced water: crater under the body, crown on the ring
+                let crown = ring * (strength * 0.44 + impact.cavitation * 1.08);
+                let push = amount * (strength * 0.70 + impact.cavitation * 0.28);
                 let cell = &mut out[y * width + x];
-                cell[2] = (cell[2] + wake).clamp(0.0, 1.0);
+                cell[2] = (cell[2] + crown - push).clamp(-1.0, 1.0);
                 cell[3] = cell[3].max((ring * 1.20 + amount * 0.22).clamp(0.0, 1.0));
             }
         }
@@ -1614,11 +1621,17 @@ fn raster_coastline_3d(out: &mut [[f32; 4]], resolution: [u32; 2], water: &Water
                 let push = 1.0 - t;
                 let ring = (1.0 - ((t - 0.72).abs() / 0.28).clamp(0.0, 1.0)).powi(2);
                 let strength = impact.strength * (1.0 / 180.0);
-                wake += push * (strength * 0.70 + impact.cavitation * 0.28)
-                    + ring * (strength * 0.30 + impact.cavitation * 0.92);
+                // displaced water: crater under the body, crown on the ring
+                wake += ring * (strength * 0.30 + impact.cavitation * 0.92)
+                    - push * (strength * 0.70 + impact.cavitation * 0.28);
             }
-            let wake = wake.clamp(0.0, 1.0);
-            out[y * width + x] = [solid, edge.max(foam_edge), wake, spill_energy.max(wake)];
+            let wake = wake.clamp(-1.0, 1.0);
+            out[y * width + x] = [
+                solid,
+                edge.max(foam_edge),
+                wake,
+                spill_energy.max(wake.abs()),
+            ];
         }
     }
 }
@@ -1674,10 +1687,11 @@ fn raster_impacts_3d(out: &mut [[f32; 4]], width: usize, height: usize, water: &
                 let ring =
                     (1.0 - ((t - ring_center).abs() / outline_width).clamp(0.0, 1.0)).powi(2);
                 let strength = impact.strength * (1.0 / 180.0);
-                let wake = amount * (strength * 0.70 + impact.cavitation * 0.28)
-                    + ring * (strength * 0.44 + impact.cavitation * 1.08);
+                // displaced water: crater under the body, crown on the ring
+                let crown = ring * (strength * 0.44 + impact.cavitation * 1.08);
+                let push = amount * (strength * 0.70 + impact.cavitation * 0.28);
                 let cell = &mut out[y * width + x];
-                cell[2] = (cell[2] + wake).clamp(0.0, 1.0);
+                cell[2] = (cell[2] + crown - push).clamp(-1.0, 1.0);
                 cell[3] = cell[3].max((ring * 1.20 + amount * 0.22).clamp(0.0, 1.0));
             }
         }
@@ -2650,15 +2664,18 @@ mod tests {
     }
 
     #[test]
-    fn water_gpu_raster_impacts_2d_and_3d_write_wake_cells() {
+    fn water_gpu_raster_impacts_2d_and_3d_write_signed_wake_cells() {
+        // wake is signed: crater (negative) under the impact, spill energy positive
         let water_2d = test_water_2d();
         let mut cells_2d = vec![[0.0; 4]; 64];
         raster_impacts_2d(&mut cells_2d, 8, 8, &water_2d);
-        assert!(cells_2d.iter().any(|cell| cell[2] > 0.0 && cell[3] > 0.0));
+        assert!(cells_2d.iter().any(|cell| cell[2] != 0.0 && cell[3] > 0.0));
+        assert!(cells_2d.iter().any(|cell| cell[2] < 0.0));
 
         let water_3d = test_water_3d();
         let mut cells_3d = vec![[0.0; 4]; 64];
         raster_impacts_3d(&mut cells_3d, 8, 8, &water_3d);
-        assert!(cells_3d.iter().any(|cell| cell[2] > 0.0 && cell[3] > 0.0));
+        assert!(cells_3d.iter().any(|cell| cell[2] != 0.0 && cell[3] > 0.0));
+        assert!(cells_3d.iter().any(|cell| cell[2] < 0.0));
     }
 }

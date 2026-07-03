@@ -1674,8 +1674,13 @@ fn gather_local_bleed(
             continue;
         }
         let mut w = (emitter.radius_sq / (d_sq + emitter.radius_sq)) * range_fade;
-        if bleed_segment_occluded(center, emitter.center, occluders, self_index, emitter.batch_index)
-        {
+        if bleed_segment_occluded(
+            center,
+            emitter.center,
+            occluders,
+            self_index,
+            emitter.batch_index,
+        ) {
             w *= BLEED_OCCLUDED_FACTOR;
         }
         sum += emitter.color * w;
@@ -1972,8 +1977,7 @@ impl Gpu3D {
                 continue;
             }
             let self_index = BLEED_MULTIMESH_INDEX_BASE + mm_index;
-            let Some(packed) = gather_local_bleed(center, self_index, &emitters, &occluders)
-            else {
+            let Some(packed) = gather_local_bleed(center, self_index, &emitters, &occluders) else {
                 continue;
             };
             if let Some(param) = self.staged_multimesh_draw_params.get_mut(draw_param_index) {

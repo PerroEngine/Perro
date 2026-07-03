@@ -187,7 +187,7 @@ parent = @MeshBlendingDemo
         blend_enabled = true
         blend_layers = [2.0]
         blend_mask = none
-        blend_distance = 0.25
+        blend_distance = 0.6
         blend_min_distance = 0.03
         material = $var4
         [Node3D]
@@ -218,7 +218,7 @@ parent = @MeshBlendingDemo
         blend_enabled = true
         blend_layers = [2.0]
         blend_mask = none
-        blend_distance = 0.5
+        blend_distance = 0.6
         blend_min_distance = 0.03
         material = $var4
         [Node3D]
@@ -249,7 +249,7 @@ parent = @MeshBlendingDemo
         blend_enabled = true
         blend_layers = [2.0]
         blend_mask = none
-        blend_distance = 0.65
+        blend_distance = 0.6
         blend_min_distance = 0.03
         material = $var4
         [Node3D]
@@ -311,7 +311,7 @@ parent = @MeshBlendingDemo
         blend_enabled = true
         blend_layers = [2.0]
         blend_mask = none
-        blend_distance = 0.8
+        blend_distance = 0.6
         blend_min_distance = 0.03
         material = $var4
         [Node3D]
@@ -343,7 +343,7 @@ parent = @MeshBlendingDemo
         blend_normals = true
         blend_layers = [2.0]
         blend_mask = none
-        blend_distance = 0.25
+        blend_distance = 0.6
         blend_min_distance = 0.03
         material = $var3
         [Node3D]
@@ -375,7 +375,7 @@ parent = @MeshBlendingDemo
         blend_normals = true
         blend_layers = [2.0]
         blend_mask = none
-        blend_distance = 0.5
+        blend_distance = 0.6
         blend_min_distance = 0.03
         material = $var3
         [Node3D]
@@ -407,7 +407,7 @@ parent = @MeshBlendingDemo
         blend_normals = true
         blend_layers = [2.0]
         blend_mask = none
-        blend_distance = 0.65
+        blend_distance = 0.6
         blend_min_distance = 0.03
         material = $var3
         [Node3D]
@@ -471,7 +471,7 @@ parent = @MeshBlendingDemo
         blend_normals = true
         blend_layers = [2.0]
         blend_mask = none
-        blend_distance = 0.8
+        blend_distance = 0.6
         blend_min_distance = 0.03
         material = $var3
         [Node3D]
@@ -503,12 +503,8 @@ parent = @MeshBlendingDemo
         blend_normals = true
         blend_layers = [2.0]
         blend_mask = none
-        blend_distance = 0.8
+        blend_distance = 0.6
         blend_min_distance = 0.03
-        blend = {
-            noise = 0.0,
-            noise_scale = 18.0
-        }
         material = $var3
         [Node3D]
             position = (-7.75, 0.9, -4.5)
@@ -539,12 +535,8 @@ parent = @MeshBlendingDemo
         blend_normals = true
         blend_layers = [2.0]
         blend_mask = none
-        blend_distance = 0.8
+        blend_distance = 0.6
         blend_min_distance = 0.03
-        blend = {
-            noise = 0.12,
-            noise_scale = 18.0
-        }
         material = $var3
         [Node3D]
             position = (-3.75, 0.9, -4.5)
@@ -575,12 +567,8 @@ parent = @MeshBlendingDemo
         blend_normals = true
         blend_layers = [2.0]
         blend_mask = none
-        blend_distance = 0.8
+        blend_distance = 0.6
         blend_min_distance = 0.03
-        blend = {
-            noise = 0.24,
-            noise_scale = 18.0
-        }
         material = $var3
         [Node3D]
             position = (0.25, 0.9, -4.5)
@@ -611,12 +599,8 @@ parent = @MeshBlendingDemo
         blend_normals = true
         blend_layers = [2.0]
         blend_mask = none
-        blend_distance = 0.8
+        blend_distance = 0.6
         blend_min_distance = 0.03
-        blend = {
-            noise = 0.38,
-            noise_scale = 18.0
-        }
         material = $var3
         [Node3D]
             position = (4.25, 0.9, -4.5)
@@ -647,12 +631,8 @@ parent = @MeshBlendingDemo
         blend_normals = true
         blend_layers = [2.0]
         blend_mask = none
-        blend_distance = 0.8
+        blend_distance = 0.6
         blend_min_distance = 0.03
-        blend = {
-            noise = 0.55,
-            noise_scale = 18.0
-        }
         material = $var3
         [Node3D]
             position = (8.25, 0.9, -4.5)
@@ -746,7 +726,7 @@ parent = @MeshBlendingDemo
             metallic_factor = 0.0
         }
         [Node3D]
-            position = (-2.6, 0.28, 9.5)
+            position = (-2.45, 0.02, 9.5)
             scale = (0.9, 0.9, 0.9)
         [/Node3D]
     [/MeshInstance3D]
@@ -765,7 +745,7 @@ parent = @MeshBlendingDemo
             metallic_factor = 0.0
         }
         [Node3D]
-            position = (-0.9, 0.2, 9.0)
+            position = (-1.15, -0.08, 9.15)
             rotation_deg = (0.0, 65.0, 8.0)
             scale = (0.7, 0.7, 0.7)
         [/Node3D]
@@ -785,7 +765,7 @@ parent = @MeshBlendingDemo
             metallic_factor = 0.0
         }
         [Node3D]
-            position = (-1.7, 0.16, 10.4)
+            position = (-1.75, -0.05, 10.2)
             rotation_deg = (0.0, 140.0, -6.0)
             scale = (0.8, 0.8, 0.8)
         [/Node3D]
@@ -802,10 +782,6 @@ parent = @MeshBlendingDemo
         blend_mask = none
         blend_distance = 0.6
         blend_min_distance = 0.03
-        blend = {
-            noise = 0.45,
-            noise_scale = 8.0
-        }
         material = {
             type = "standard",
             base_color_factor = (0.52, 0.44, 0.36, 1.0),
@@ -813,7 +789,7 @@ parent = @MeshBlendingDemo
             metallic_factor = 0.0
         }
         [Node3D]
-            position = (4.4, 0.28, 9.5)
+            position = (4.55, 0.02, 9.5)
             scale = (0.9, 0.9, 0.9)
         [/Node3D]
     [/MeshInstance3D]
@@ -827,12 +803,8 @@ parent = @MeshBlendingDemo
         blend_normals = true
         blend_layers = [2.0]
         blend_mask = none
-        blend_distance = 0.5
+        blend_distance = 0.6
         blend_min_distance = 0.03
-        blend = {
-            noise = 0.4,
-            noise_scale = 7.0
-        }
         material = {
             type = "standard",
             base_color_factor = (0.38, 0.34, 0.3, 1.0),
@@ -840,7 +812,7 @@ parent = @MeshBlendingDemo
             metallic_factor = 0.0
         }
         [Node3D]
-            position = (6.1, 0.2, 9.0)
+            position = (5.85, -0.08, 9.15)
             rotation_deg = (0.0, 65.0, 8.0)
             scale = (0.7, 0.7, 0.7)
         [/Node3D]
@@ -855,12 +827,8 @@ parent = @MeshBlendingDemo
         blend_normals = true
         blend_layers = [2.0]
         blend_mask = none
-        blend_distance = 0.65
+        blend_distance = 0.6
         blend_min_distance = 0.03
-        blend = {
-            noise = 0.5,
-            noise_scale = 9.0
-        }
         material = {
             type = "standard",
             base_color_factor = (0.44, 0.48, 0.55, 1.0),
@@ -868,7 +836,7 @@ parent = @MeshBlendingDemo
             metallic_factor = 0.0
         }
         [Node3D]
-            position = (5.3, 0.16, 10.4)
+            position = (5.25, -0.05, 10.2)
             rotation_deg = (0.0, 140.0, -6.0)
             scale = (0.8, 0.8, 0.8)
         [/Node3D]

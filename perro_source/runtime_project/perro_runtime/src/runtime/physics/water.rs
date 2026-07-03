@@ -310,11 +310,10 @@ pub(super) fn water_forces_for_body_2d(
                 * blend.surface.physics.drag.max(0.05)
                 * 5.0);
         // surf push: a rising wave face shoves the body along wave travel
-        let phase_speed = (blend.surface.wave.length.max(0.25)
-            * blend.surface.wave.speed.max(0.0)
-            * 0.2
-            / std::f32::consts::TAU)
-            .max(0.35);
+        let phase_speed =
+            (blend.surface.wave.length.max(0.25) * blend.surface.wave.speed.max(0.0) * 0.2
+                / std::f32::consts::TAU)
+                .max(0.35);
         let slope = (blend.sample.velocity.y / phase_speed).clamp(-1.3, 1.3);
         let surf_push = blend.wave_dir
             * (9.81
@@ -420,11 +419,10 @@ pub(super) fn water_forces_for_body_3d(
                     * blend.surface.physics.drag.max(0.08)
                     * 7.5);
             // surf push: a rising wave face shoves the body along wave travel
-            let phase_speed = (blend.surface.wave.length.max(0.25)
-                * blend.surface.wave.speed.max(0.0)
-                * 0.2
-                / std::f32::consts::TAU)
-                .max(0.35);
+            let phase_speed =
+                (blend.surface.wave.length.max(0.25) * blend.surface.wave.speed.max(0.0) * 0.2
+                    / std::f32::consts::TAU)
+                    .max(0.35);
             let slope = (blend.sample.velocity.y / phase_speed).clamp(-1.3, 1.3);
             let surf_push = blend.wave_dir
                 * (9.81

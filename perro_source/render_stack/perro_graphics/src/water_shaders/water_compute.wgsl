@@ -214,7 +214,7 @@ fn cs_main(@builtin(global_invocation_id) gid: vec3<u32>) {
     // idle-cell skip must still let travelling ripples integrate: only sleep
     // when this cell AND its neighborhood carry no wave energy
     let energy = abs(prev_cell.x) + abs(prev_cell.y) + abs(laplacian);
-    if shore <= 0.0 && wake <= 0.0 && coast.w <= 0.0 && energy <= 0.0004 {
+    if shore <= 0.0 && abs(wake) <= 0.0 && coast.w <= 0.0 && energy <= 0.0004 {
         next_cells[cell_idx] = vec4<f32>(prev_cell.x * 0.985, prev_cell.y * 0.94, prev_cell.z * 0.965, 0.0);
         return;
     }
@@ -241,22 +241,22 @@ fn cs_main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let crest_norm = idle / max(w.wave.y, 0.001);
     let crest_line = smoothstep(0.44, 0.82, crest_norm) * (1.0 - smoothstep(1.04, 1.72, crest_norm));
     let foam_strength = bitcast<f32>(w.flags.w);
-    let wave_foam = crest_line * foam_strength * 0.28;
-    let impact_foam = smoothstep(0.06, 0.84, wake + abs(crash)) * foam_strength * 0.62;
+    // 3D water only foams at bodies/shore, never on open-water crests
+    let wave_foam = select(crest_line * foam_strength * 0.28, 0.0, w.kind == 3u);
+    let impact_foam = smoothstep(0.06, 0.84, abs(wake) + abs(crash)) * foam_strength * 0.62;
     let shore_foam = smoothstep(0.18, 1.20, crash + shore * 0.62) * (1.0 - smoothstep(1.42, 2.45, crash)) * w.coastline.x * foam_strength * 1.12;
-    let foam_decay = 1.0 - 0.10 * step_t;
-    let foam = select(
-        clamp(max(prev_cell.z * foam_decay, wave_foam + impact_foam + shore_foam) + spill * max(wake, shore) * 0.28, 0.0, 1.0),
-        0.0,
-        w.kind == 3u,
-    );
+    let foam_target = clamp(wave_foam + impact_foam + shore_foam + spill * max(abs(wake), shore) * 0.28, 0.0, 1.0);
+    // soft rise (~0.3s) + slow decay (~2s) so foam fades instead of popping
+    let foam_rise = clamp(step_t * 3.5, 0.0, 1.0);
+    let foam_decay = 1.0 - 0.055 * step_t;
+    let foam = clamp(max(prev_cell.z * foam_decay, mix(prev_cell.z, foam_target, foam_rise)), 0.0, 1.0);
     let goal_height = wake * 0.55 + crash;
     let stiffness = mix(7.0, 16.0, clamp(w.wave.y / 2.0, 0.0, 1.0)) * (1.0 + shore * 0.35 + spill * 0.20);
     let wave_speed = mix(16.0, 34.0, clamp(w.wave.y / 2.0, 0.0, 1.0));
     let force = (goal_height - prev_cell.x) * stiffness + laplacian * wave_speed + crash * (0.42 + shore * 0.30);
     let velocity = clamp((prev_cell.y + force * dt) * damping_step, -max(w.wave.y * 8.0, 2.0), max(w.wave.y * 8.0, 2.0));
     let height = prev_cell.x + velocity * dt + idle * shore * w.model_y.w * 0.06;
-    let blended_height = mix(height, goal_height, clamp(0.04 + spill * 0.08 + wake * 0.018, 0.0, 0.20));
+    let blended_height = mix(height, goal_height, clamp(0.04 + spill * 0.08 + abs(wake) * 0.018, 0.0, 0.20));
     let height_limit = max(w.wave.y * 2.0, 1.25);
     next_cells[cell_idx] = vec4<f32>(clamp(blended_height, -height_limit, height_limit), velocity, foam, shore);
 }

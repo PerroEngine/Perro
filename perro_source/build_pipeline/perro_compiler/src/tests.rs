@@ -1246,6 +1246,12 @@ parent = $root
 [/RigidBody2D]
 [/rigid_body_2d]
 
+[character_body_2d]
+parent = $root
+[CharacterBody2D]
+[/CharacterBody2D]
+[/character_body_2d]
+
 [force_2d]
 parent = $root
 [PhysicsForceEmitter2D]
@@ -1396,6 +1402,12 @@ parent = $root
 [RigidBody3D]
 [/RigidBody3D]
 [/rigid_body_3d]
+
+[character_body_3d]
+parent = $root
+[CharacterBody3D]
+[/CharacterBody3D]
+[/character_body_3d]
 
 [force_3d]
 parent = $root

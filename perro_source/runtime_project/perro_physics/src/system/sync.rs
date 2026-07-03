@@ -68,6 +68,7 @@ impl PhysicsSystem {
                 let target_body_type = match body.kind {
                     crate::BodyKind::Static | crate::BodyKind::Area => r2::RigidBodyType::Fixed,
                     crate::BodyKind::Rigid => r2::RigidBodyType::Dynamic,
+                    crate::BodyKind::Character => r2::RigidBodyType::KinematicPositionBased,
                 };
                 if rb.body_type() != target_body_type {
                     rb.set_body_type(target_body_type, true);
@@ -256,6 +257,7 @@ impl PhysicsSystem {
                 let target_body_type = match body.kind {
                     crate::BodyKind::Static | crate::BodyKind::Area => r3::RigidBodyType::Fixed,
                     crate::BodyKind::Rigid => r3::RigidBodyType::Dynamic,
+                    crate::BodyKind::Character => r3::RigidBodyType::KinematicPositionBased,
                 };
                 if rb.body_type() != target_body_type {
                     rb.set_body_type(target_body_type, true);

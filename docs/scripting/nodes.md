@@ -145,8 +145,10 @@ Physics 2D:
 - `CollisionShape2D`
 - `StaticBody2D`
 - `RigidBody2D`
+- `CharacterBody2D`
 - `Area2D`
-- `CollisionShape2D` should be authored as a child of `StaticBody2D`, `RigidBody2D`, or `Area2D`.
+- `CollisionShape2D` should be authored as a child of `StaticBody2D`, `RigidBody2D`, `CharacterBody2D`, or `Area2D`.
+- `CharacterBody2D` is a script-driven kinematic body: engine applies gravity with a collision sweep, no velocity/force state. See [Physics Nodes](physics_nodes.md).
 - Static/rigid bodies and areas participate in audio propagation by default through `audio_interaction`.
 - Collision shapes only provide geometry.
 - See [Physics Nodes](physics_nodes.md) for scene authoring examples.
@@ -332,8 +334,10 @@ Physics 3D:
 - `CollisionShape3D`
 - `StaticBody3D`
 - `RigidBody3D`
+- `CharacterBody3D`
 - `Area3D`
-- `CollisionShape3D` should be authored as a child of `StaticBody3D`, `RigidBody3D`, or `Area3D`.
+- `CollisionShape3D` should be authored as a child of `StaticBody3D`, `RigidBody3D`, `CharacterBody3D`, or `Area3D`.
+- `CharacterBody3D` is a script-driven kinematic body: engine applies gravity with a collision sweep, no velocity/force state. See [Physics Nodes](physics_nodes.md).
 - `CollisionShape3D` supports primitive `shape` and mesh-backed `trimesh` source.
 - `flip_x`, `flip_y`, and `flip_z` mirror collision geometry around local origin.
 - Trimesh source format: `res://path/to/model.glb:mesh[0]` (mesh index optional, default `0`).

@@ -432,13 +432,12 @@ impl Gpu3D {
 
     // Assigns blend ids per participating batch and uploads the id lookup
     // table + per-batch mask uniforms. Runs after rebuild_batch_views.
-    pub(super) fn prepare_mesh_blend_screen(
-        &mut self,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-    ) {
+    pub(super) fn prepare_mesh_blend_screen(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
         self.mesh_blend_mask_batch_entries.clear();
-        let any_screen = self.draw_batches.iter().any(|batch| batch.mesh_blend_screen);
+        let any_screen = self
+            .draw_batches
+            .iter()
+            .any(|batch| batch.mesh_blend_screen);
         self.mesh_blend_screen_active = any_screen;
         if !any_screen {
             return;

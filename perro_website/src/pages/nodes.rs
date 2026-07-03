@@ -386,6 +386,7 @@ const fn node_role(node_type: NodeType) -> NodeRole {
         | NodeType::StaticBody2D
         | NodeType::Area2D
         | NodeType::RigidBody2D
+        | NodeType::CharacterBody2D
         | NodeType::PhysicsForceEmitter2D
         | NodeType::PinJoint2D
         | NodeType::DistanceJoint2D
@@ -394,6 +395,7 @@ const fn node_role(node_type: NodeType) -> NodeRole {
         | NodeType::StaticBody3D
         | NodeType::Area3D
         | NodeType::RigidBody3D
+        | NodeType::CharacterBody3D
         | NodeType::PhysicsForceEmitter3D
         | NodeType::BallJoint3D
         | NodeType::HingeJoint3D

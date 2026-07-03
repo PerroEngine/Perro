@@ -768,7 +768,7 @@ impl MeshBlendOptions3D {
             normal_blending: false,
             blend_layers: BitMask::ALL,
             blend_mask: BitMask::NONE,
-            distance: 1.35,
+            distance: 0.6,
             min_distance: 0.03,
             noise_factor: 0.35,
             noise_scale: 14.0,

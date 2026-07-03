@@ -12,7 +12,8 @@ use perro_io::load_asset;
 use perro_nodes::{
     AmbientLight2D, Area2D, Area3D, AudioEffectZone2D, AudioEffectZone3D, AudioMask2D, AudioMask3D,
     AudioPortal2D, AudioPortal3D, BallJoint3D, Button2D, CameraStream, CameraStream2D,
-    CameraStream3D, CollisionShape2D, CollisionShape3D, DistanceJoint2D, FixedJoint2D,
+    CameraStream3D, CharacterBody2D, CharacterBody3D, CollisionShape2D, CollisionShape3D,
+    DistanceJoint2D, FixedJoint2D,
     FixedJoint3D, HingeJoint3D, ImageButton2D, NineSlice2D, NodeType, PhysicsForceEmitter2D,
     PhysicsForceEmitter3D, PhysicsForceProfile, PinJoint2D, PointLight2D, RayLight2D,
     RigidBody2D, RigidBody3D, SceneNode, SceneNodeData, Shape2D, Shape3D, SpotLight2D,
@@ -51,7 +52,8 @@ use perro_render_bridge::Material3D;
 use perro_scene::{
     AnimatedSprite2DField, AnimationPlayerField, AnimationTreeField, Area2DField, Area3DField,
     BoneAttachment2DField, BoneAttachment3DField, BoneCollider2DField, BoneCollider3DField,
-    Button2DField, Camera2DField, Camera3DField, CollisionShape2DField, CollisionShape3DField,
+    Button2DField, Camera2DField, Camera3DField, CharacterBodyField, CollisionShape2DField,
+    CollisionShape3DField,
     DistanceJoint2DField, HingeJoint3DField, IKTarget2DField, IKTarget3DField, Joint2DField,
     Joint3DField, Light2DField, Light3DField, MeshInstance3DField, NodeField, Parser,
     ParticleEmitter2DField, ParticleEmitter3DField, PhysicsBoneChain2DField,
@@ -1813,6 +1815,9 @@ fn scene_node_data_from(
         NodeType::StaticBody2D => Ok(SceneNodeData::StaticBody2D(build_static_body_2d(data))),
         NodeType::Area2D => Ok(SceneNodeData::Area2D(build_area_2d(data))),
         NodeType::RigidBody2D => Ok(SceneNodeData::RigidBody2D(build_rigid_body_2d(data))),
+        NodeType::CharacterBody2D => Ok(SceneNodeData::CharacterBody2D(build_character_body_2d(
+            data,
+        ))),
         NodeType::PhysicsForceEmitter2D => Ok(SceneNodeData::PhysicsForceEmitter2D(
             build_physics_force_emitter_2d(data),
         )),
@@ -1840,6 +1845,9 @@ fn scene_node_data_from(
         NodeType::StaticBody3D => Ok(SceneNodeData::StaticBody3D(build_static_body_3d(data))),
         NodeType::Area3D => Ok(SceneNodeData::Area3D(build_area_3d(data))),
         NodeType::RigidBody3D => Ok(SceneNodeData::RigidBody3D(build_rigid_body_3d(data))),
+        NodeType::CharacterBody3D => Ok(SceneNodeData::CharacterBody3D(build_character_body_3d(
+            data,
+        ))),
         NodeType::PhysicsForceEmitter3D => Ok(SceneNodeData::PhysicsForceEmitter3D(
             build_physics_force_emitter_3d(data),
         )),

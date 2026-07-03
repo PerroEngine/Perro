@@ -42,11 +42,9 @@ Why scene works this way:
   (`rock_a/b/c.glb` on `ground_slab.glb`).
 - Top row disables blending, so baseline overlap stays hard.
 - Columns use cube/sphere, pyramid/cube, prism/cone, cylinder/capsule, and cube/pyramid pairs.
-- Same-material row sweeps blend distance from tight to wide.
-- Different-material row uses normal assist with same distance sweep.
-- Noise row keeps distance fixed and sweeps noise strength.
-- Distance sweep values are `0.75`, `1.10`, `1.55`, `2.10`, `2.80`.
-- Noise row uses distance `2.80` and noise scale `18.0`.
+- Every blend-enabled node uses the same tuning: `blend_distance = 0.6`,
+  `blend_min_distance = 0.03`, default noise (0.35 @ scale 14), so all pairs
+  and the rocks show one consistent look.
 - Target shapes tag receiver layer `1` but do not fade.
 - Inserted shapes use `blend_mask = none`, so they can fade against any explicit receiver layer.
 - Runtime uses source blend tuning for the contact.

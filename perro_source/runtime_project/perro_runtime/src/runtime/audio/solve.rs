@@ -899,6 +899,8 @@ impl Runtime {
             SceneNodeData::StaticBody3D(v) => v.audio_interaction.map(|audio| audio.material),
             SceneNodeData::RigidBody2D(v) => v.audio_interaction.map(|audio| audio.material),
             SceneNodeData::RigidBody3D(v) => v.audio_interaction.map(|audio| audio.material),
+            SceneNodeData::CharacterBody2D(v) => v.audio_interaction.map(|audio| audio.material),
+            SceneNodeData::CharacterBody3D(v) => v.audio_interaction.map(|audio| audio.material),
             SceneNodeData::Area2D(v) => v.audio_interaction.map(|audio| audio.material),
             SceneNodeData::Area3D(v) => v.audio_interaction.map(|audio| audio.material),
             SceneNodeData::AudioMask2D(v) if v.enabled => Some(v.material),
@@ -925,6 +927,14 @@ impl Runtime {
                 .map(|audio| audio.diffusion)
                 .unwrap_or_default(),
             SceneNodeData::RigidBody3D(v) => v
+                .audio_interaction
+                .map(|audio| audio.diffusion)
+                .unwrap_or_default(),
+            SceneNodeData::CharacterBody2D(v) => v
+                .audio_interaction
+                .map(|audio| audio.diffusion)
+                .unwrap_or_default(),
+            SceneNodeData::CharacterBody3D(v) => v
                 .audio_interaction
                 .map(|audio| audio.diffusion)
                 .unwrap_or_default(),

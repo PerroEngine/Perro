@@ -213,8 +213,23 @@ fn water_surface_height(w: Water, uv: vec2<f32>) -> f32 {
     return ripple.x + ripple.y * 0.045;
 }
 
+fn water_cell_smooth(w: Water, uv: vec2<f32>) -> vec4<f32> {
+    let du = vec2<f32>(1.0 / max(f32(w.sim.z), 2.0), 0.0);
+    let dv = vec2<f32>(0.0, 1.0 / max(f32(w.sim.w), 2.0));
+    let center = water_cell(w, uv);
+    let cross = (
+        water_cell(w, uv - du)
+        + water_cell(w, uv + du)
+        + water_cell(w, uv - dv)
+        + water_cell(w, uv + dv)
+    ) * 0.25;
+    return center * 0.58 + cross * 0.42;
+}
+
 fn water_height_geometry(w: Water, uv: vec2<f32>, t: f32) -> f32 {
-    let ripple = water_cell(w, uv);
+    // 5-tap smoothed deviation: raw bilinear cells crease at sim-cell borders
+    // and the crease reads as a visible grid on crowns/craters
+    let ripple = water_cell_smooth(w, uv);
     let deviation = ripple.x + ripple.y * 0.045;
     return water_idle_height(w, water_local_from_uv(w, uv), t) + deviation;
 }
@@ -667,15 +682,18 @@ fn vs_water_3d(
     var normal_local = vec3<f32>(0.0, 1.0, 0.0);
     if local_vertex.valid && local_vertex.side_t < 0.5 {
         let t = w.wave_profile.y;
+        // central differences: forward diffs bias the gradient per-quad and
+        // neighbouring triangles disagree -> faceted grid seams under spec
         let ndu = vec2<f32>(1.0 / max(f32(w.flags.x), 2.0), 0.0);
         let ndv = vec2<f32>(0.0, 1.0 / max(f32(w.flags.y), 2.0));
-        let h0 = local_vertex.position.y;
-        let hx = water_height_geometry(w, local_vertex.uv + ndu, t);
-        let hy = water_height_geometry(w, local_vertex.uv + ndv, t);
-        let sx = max(w.size_depth_time.x * ndu.x, 0.001);
-        let sz = max(w.size_depth_time.y * ndv.y, 0.001);
+        let h_l = water_height_geometry(w, local_vertex.uv - ndu, t);
+        let h_r = water_height_geometry(w, local_vertex.uv + ndu, t);
+        let h_d = water_height_geometry(w, local_vertex.uv - ndv, t);
+        let h_u = water_height_geometry(w, local_vertex.uv + ndv, t);
+        let sx = max(w.size_depth_time.x * ndu.x * 2.0, 0.001);
+        let sz = max(w.size_depth_time.y * ndv.y * 2.0, 0.001);
         let strength = clamp(w.visual1.x, 0.0, 1.6);
-        normal_local = normalize(vec3<f32>((h0 - hx) / sx * strength, 1.0, (h0 - hy) / sz * strength));
+        normal_local = normalize(vec3<f32>((h_l - h_r) / sx * strength, 1.0, (h_d - h_u) / sz * strength));
     }
     let model3 = mat3x3<f32>(w.model_x.xyz, w.model_y.xyz, w.model_z.xyz);
     let normal_world = normalize(model3 * normal_local);
@@ -769,32 +787,45 @@ fn fs_water_3d(in: Water3DVertexOut, @builtin(front_facing) front_facing: bool) 
         caustic = pattern * clarity * clamp(w.visual2.x, 0.0, 2.0) * sun_up * 1.6;
     }
 
+    // two distinct foam layers:
+    // 1) coastline outline - thin crisp band hugging the collider/water
+    //    intersection silhouette ("water holds around this mass")
+    // 2) breaking foam - patchy sim-driven wash frm wakes/splashes/crashes,
+    //    randomized in position, size and opacity so strands don't pop
     let foam_strength = bitcast<f32>(w.flags.w);
-    let crest_thresh = max(w.visual1.w, 0.05);
-    let crest_foam = smoothstep(crest_thresh, crest_thresh + 0.30, crest_t)
-        * clamp(w.visual1.z, 0.0, 1.2)
-        * 0.8;
-    let sim_foam = cell.z * max(foam_strength, 0.0);
-    let shore_foam = max(coast.y, coast.w * 0.70) * clamp(w.coastline.x, 0.0, 2.5) * 1.35;
+    let edge_noise = clamp(w.model_z.w, 0.0, 1.0);
     let foam_scale = 2.6 / max(w.visual1.y, 0.001);
-    let foam_cross = vec2<f32>(-wind.y, wind.x);
-    // wind-stretched streaks + fine octave; noise moves the coverage threshold
-    // so sim blobs erode into lacy patches instead of scaling up
-    let streak_uv = vec2<f32>(dot(local, wind) * 0.35, dot(local, foam_cross) * 1.6);
-    let n_streak = water_fbm3(streak_uv * foam_scale * 0.55 + vec2<f32>(t * 0.55, -t * 0.12));
-    let n_fine = water_fbm2(local * foam_scale * 1.8 - wind * t * 0.5 + vec2<f32>(9.0, 4.0));
-    let foam_total = clamp(sim_foam * 1.45 + crest_foam + shore_foam, 0.0, 2.0);
-    // hard coverage gate: below ~0.3 foam energy nothing renders, so calm
-    // water stays clean instead of picking up noise speckles
-    let coverage = smoothstep(0.30, 0.72, foam_total);
-    let threshold = 0.86 - coverage * 0.42;
-    let density = n_streak * 0.55 + n_fine * 0.45;
-    let foam_mask = smoothstep(threshold, threshold + 0.16, density)
-        * coverage
+    let grain = water_fbm2(local * foam_scale * 2.7 - wind * t * 0.55 + vec2<f32>(9.0, 4.0));
+    // coast.y ~1 right at the mass, falls off across foam_width: slice the
+    // top of the band for a thin outline that follows the intersection shape
+    let outline = smoothstep(0.60, 0.86, coast.y + (grain - 0.5) * 0.22 * edge_noise)
+        * clamp(w.coastline.x, 0.0, 2.5)
         * top_surface_mask;
-    let foam_sparkle = smoothstep(threshold + 0.14, threshold + 0.26, density) * coverage;
-    let shore_frac = clamp(shore_foam / max(foam_total, 0.001), 0.0, 1.0);
-    let foam_rgb = mix(w.foam_color.rgb, w.coastline_foam_color.rgb, shore_frac);
+    let wash_foam = coast.y * clamp(w.coastline.x, 0.0, 2.5) * 0.5;
+    let body_foam = cell.z * max(foam_strength, 0.0) * 0.85;
+    let foam_total = clamp(wash_foam + body_foam, 0.0, 1.6);
+    var foam_mask = 0.0;
+    var foam_sparkle = 0.0;
+    if foam_total > 0.02 && top_surface_mask > 0.02 {
+        // low-freq patch fields randomize where foam sits, how large the
+        // patches are and how strongly each patch shows over time
+        let patch_field = water_fbm2(local * 0.16 + vec2<f32>(t * 0.03, -t * 0.02));
+        let patch_fade = water_fbm2(local * 0.11 + vec2<f32>(t * 0.10, t * 0.07));
+        let web = water_hex_ridged_fbm(local * foam_scale * 0.8 + wind * t * 0.30);
+        let density = clamp(web * 0.74 + grain * 0.36, 0.0, 1.2);
+        let energy = foam_total * (0.55 + patch_field * 0.75);
+        let coverage = smoothstep(0.05, 0.85, energy);
+        let cut = 1.02 - coverage * 0.88;
+        let opacity = 0.45 + 0.55 * smoothstep(0.30, 0.72, patch_fade);
+        foam_mask = smoothstep(cut, cut + 0.30, density)
+            * min(energy * 1.6, 1.0)
+            * opacity
+            * top_surface_mask;
+        foam_sparkle = smoothstep(cut + 0.26, cut + 0.42, density) * coverage * opacity;
+    }
+    let shore_frac = clamp(wash_foam / max(foam_total, 0.001), 0.0, 1.0);
+    // rigid-body foam reads lighter than shoreline wash
+    let foam_rgb = mix(w.foam_color.rgb * 0.88, w.coastline_foam_color.rgb, shore_frac);
     let foam_lit = foam_rgb * clamp(
         scene.ambient_color.xyz * scene.ambient_color.w * 0.72
             + sun_radiance * (max(dot(normal, sun_dir), 0.0) * 0.55 + 0.20)
@@ -811,11 +842,21 @@ fn fs_water_3d(in: Water3DVertexOut, @builtin(front_facing) front_facing: bool) 
         + spec * sun_radiance * (1.0 - foam_mask);
     let fog_t = clamp(view_dist / 900.0, 0.0, 1.0) * w.visual2.w * 0.34;
     let base_color = mix(lit_water, deep_rgb, fog_t);
-    let color = mix(base_color, foam_lit, foam_mask * clamp(w.foam_color.a, 0.0, 1.0));
+    var color = mix(base_color, foam_lit, foam_mask * clamp(w.foam_color.a, 0.0, 1.0));
+    // crisp coastline outline layered on top of the patchy wash
+    let outline_lit = w.coastline_foam_color.rgb * clamp(
+        scene.ambient_color.xyz * scene.ambient_color.w * 0.72
+            + sun_radiance * (max(dot(normal, sun_dir), 0.0) * 0.55 + 0.24)
+            + vec3<f32>(0.30),
+        vec3<f32>(0.0),
+        vec3<f32>(1.55),
+    );
+    let outline_mask = min(outline, 1.0) * clamp(w.coastline_foam_color.a, 0.0, 1.0) * 0.92;
+    color = mix(color, outline_lit, outline_mask);
     let water_veil = mix(0.42, 0.88, depth_t) * top_surface_mask;
     var alpha = max(mix(w.shallow_color.a, w.deep_color.a, depth_t), water_veil) * (1.0 - clamp(w.visual0.x, 0.0, 1.0) * 0.64)
         + fresnel * 0.10 * top_surface_mask;
-    alpha = max(alpha, foam_mask * 0.92);
+    alpha = max(alpha, max(foam_mask * 0.92, outline_mask));
     let side_color = mix(w.deep_color.rgb, color, 0.28);
     let snell_window = water_snells_window(normal, view_dir, 1.333);
     let underside_mask = select(1.0, 0.0, front_facing) * top_surface_mask;
@@ -823,5 +864,7 @@ fn fs_water_3d(in: Water3DVertexOut, @builtin(front_facing) front_facing: bool) 
     let final_color = mix(mix(color, underside_color, underside_mask), side_color, in.side_t);
     let underside_alpha = mix(max(alpha, 0.72), alpha, snell_window);
     let final_alpha = mix(mix(alpha, underside_alpha, underside_mask), w.deep_color.a * 0.82, in.side_t);
-    return vec4<f32>(final_color, clamp(final_alpha, 0.0, 1.0));
+    // screen-space dither breaks 8-bit banding on the long depth gradients
+    let dither = (water_hash(floor(in.clip_pos.xy) * 0.7311) - 0.5) * (2.0 / 255.0);
+    return vec4<f32>(max(final_color + vec3<f32>(dither), vec3<f32>(0.0)), clamp(final_alpha + dither * 0.5, 0.0, 1.0));
 }

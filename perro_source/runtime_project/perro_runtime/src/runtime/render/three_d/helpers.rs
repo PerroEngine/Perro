@@ -53,6 +53,7 @@ pub(super) fn is_physics_body_3d(runtime: &Runtime, node: NodeID) -> bool {
             scene_node.data,
             SceneNodeData::StaticBody3D(_)
                 | SceneNodeData::RigidBody3D(_)
+                | SceneNodeData::CharacterBody3D(_)
                 | SceneNodeData::Area3D(_)
         )
     })

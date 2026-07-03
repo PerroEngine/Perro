@@ -3,9 +3,9 @@ use crate::runtime::render_2d::{
     ParsedTile2D, ParsedTileCollisionShape2D, ParsedTileset2D, TileSetShape2D,
 };
 use perro_nodes::{
-    Area2D, Area3D, CollisionShape2D, CollisionShape3D, FixedJoint2D, FixedJoint3D, RigidBody2D,
-    RigidBody3D, Sprite2D, StaticBody2D, StaticBody3D, WaterBody2D, WaterBody3D, WaterIdleMode,
-    WaterShape, WaterSurfaceParams,
+    Area2D, Area3D, CharacterBody2D, CharacterBody3D, CollisionShape2D, CollisionShape3D,
+    FixedJoint2D, FixedJoint3D, RigidBody2D, RigidBody3D, Sprite2D, StaticBody2D, StaticBody3D,
+    WaterBody2D, WaterBody3D, WaterIdleMode, WaterShape, WaterSurfaceParams,
 };
 use perro_runtime_api::sub_apis::PhysicsAPI;
 use perro_structs::CollisionPolicy;
@@ -1686,4 +1686,126 @@ fn physics_3d_fixed_joint_syncs_and_disables() {
             .as_ref()
             .is_none_or(|world| !world.joint_map.contains_key(&joint))
     );
+}
+
+#[test]
+fn character_body_3d_falls_and_lands_on_static_floor() {
+    let mut runtime = Runtime::new();
+    runtime.time.fixed_delta = 1.0 / 60.0;
+
+    let floor_id = NodeAPI::create::<StaticBody3D>(&mut runtime);
+    let floor_shape = NodeAPI::create::<CollisionShape3D>(&mut runtime);
+    assert!(NodeAPI::reparent(&mut runtime, floor_id, floor_shape));
+    if let Some(node) = runtime.nodes.get_mut(floor_shape)
+        && let SceneNodeData::CollisionShape3D(shape) = &mut node.data
+    {
+        shape.shape = Shape3D::Cube {
+            size: Vector3::new(20.0, 1.0, 20.0),
+        };
+    }
+
+    let char_id = NodeAPI::create::<CharacterBody3D>(&mut runtime);
+    let char_shape = NodeAPI::create::<CollisionShape3D>(&mut runtime);
+    assert!(NodeAPI::reparent(&mut runtime, char_id, char_shape));
+    assert!(NodeAPI::set_global_transform_3d(
+        &mut runtime,
+        char_id,
+        Transform3D::new(
+            Vector3::new(0.0, 3.0, 0.0),
+            Quaternion::IDENTITY,
+            Vector3::ONE
+        ),
+    ));
+
+    for _ in 0..600 {
+        runtime.physics_fixed_step();
+    }
+
+    let pos = runtime
+        .get_global_transform_3d(char_id)
+        .expect("char transform")
+        .position;
+    // fall frm y=3 -> rest ~1.0 (floor half 0.5 + char half 0.5)
+    assert!(pos.y < 2.5, "char should fall, y={}", pos.y);
+    assert!(pos.y > 0.4, "char should not tunnel floor, y={}", pos.y);
+    // char body kp no dynamics state in world
+    let kind = runtime
+        .physics
+        .world_3d
+        .as_ref()
+        .and_then(|world| world.body_map.get(&char_id))
+        .map(|state| state.kind);
+    assert_eq!(kind, Some(BodyKind::Character));
+}
+
+#[test]
+fn character_body_3d_without_gravity_stays_put() {
+    let mut runtime = Runtime::new();
+    runtime.time.fixed_delta = 1.0 / 60.0;
+
+    let char_id = NodeAPI::create::<CharacterBody3D>(&mut runtime);
+    let char_shape = NodeAPI::create::<CollisionShape3D>(&mut runtime);
+    assert!(NodeAPI::reparent(&mut runtime, char_id, char_shape));
+    if let Some(node) = runtime.nodes.get_mut(char_id)
+        && let SceneNodeData::CharacterBody3D(body) = &mut node.data
+    {
+        body.apply_gravity = false;
+    }
+    assert!(NodeAPI::set_global_transform_3d(
+        &mut runtime,
+        char_id,
+        Transform3D::new(
+            Vector3::new(0.0, 5.0, 0.0),
+            Quaternion::IDENTITY,
+            Vector3::ONE
+        ),
+    ));
+
+    for _ in 0..120 {
+        runtime.physics_fixed_step();
+    }
+
+    let pos = runtime
+        .get_global_transform_3d(char_id)
+        .expect("char transform")
+        .position;
+    assert!(approx(pos.y, 5.0), "no-gravity char must stay, y={}", pos.y);
+}
+
+#[test]
+fn character_body_2d_falls_and_lands_on_static_floor() {
+    let mut runtime = Runtime::new();
+    runtime.time.fixed_delta = 1.0 / 60.0;
+
+    let floor_id = NodeAPI::create::<StaticBody2D>(&mut runtime);
+    let floor_shape = NodeAPI::create::<CollisionShape2D>(&mut runtime);
+    assert!(NodeAPI::reparent(&mut runtime, floor_id, floor_shape));
+    if let Some(node) = runtime.nodes.get_mut(floor_shape)
+        && let SceneNodeData::CollisionShape2D(shape) = &mut node.data
+    {
+        shape.shape = Shape2D::Quad {
+            width: 20.0,
+            height: 1.0,
+        };
+    }
+
+    let char_id = NodeAPI::create::<CharacterBody2D>(&mut runtime);
+    let char_shape = NodeAPI::create::<CollisionShape2D>(&mut runtime);
+    assert!(NodeAPI::reparent(&mut runtime, char_id, char_shape));
+    assert!(NodeAPI::set_global_transform_2d(
+        &mut runtime,
+        char_id,
+        Transform2D::new(Vector2::new(0.0, 3.0), 0.0, Vector2::ONE),
+    ));
+
+    for _ in 0..600 {
+        runtime.physics_fixed_step();
+    }
+
+    let pos = runtime
+        .get_global_transform_2d(char_id)
+        .expect("char transform")
+        .position;
+    assert!(pos.y < 2.5, "char should fall, y={}", pos.y);
+    assert!(pos.y > 0.4, "char should not tunnel floor, y={}", pos.y);
 }

@@ -36,6 +36,8 @@ pub enum BodyKind {
     Static,
     Area,
     Rigid,
+    /// Script-driven kinematic body: no dynamics, node transform drive pose.
+    Character,
 }
 
 #[derive(Clone, Debug)]

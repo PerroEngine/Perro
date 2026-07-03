@@ -16,10 +16,9 @@ use super::{
         create_mesh_blend_mask_shader_module_skinned, create_mesh_blend_screen_shader_module,
         create_mesh_shader_module_rigid, create_mesh_shader_module_rigid_packed_lod,
         create_mesh_shader_module_skinned, create_multimesh_shader_module,
-        create_sky_shader_module,
-        create_sky_shader_module_from_source, create_toon_shader_module_rigid,
-        create_toon_shader_module_skinned, create_unlit_shader_module_rigid,
-        create_unlit_shader_module_skinned,
+        create_sky_shader_module, create_sky_shader_module_from_source,
+        create_toon_shader_module_rigid, create_toon_shader_module_skinned,
+        create_unlit_shader_module_rigid, create_unlit_shader_module_skinned,
     },
 };
 use crate::backend::{
@@ -83,8 +82,6 @@ use texture_cache::{
 
 #[path = "gpu/asset_bridge.rs"]
 mod asset_bridge;
-#[path = "gpu/mesh_blend_screen.rs"]
-mod mesh_blend_screen;
 #[path = "gpu/buffers.rs"]
 mod buffers;
 #[path = "gpu/camera.rs"]
@@ -95,6 +92,8 @@ mod culling;
 mod draw;
 #[path = "gpu/init.rs"]
 mod init;
+#[path = "gpu/mesh_blend_screen.rs"]
+mod mesh_blend_screen;
 #[path = "gpu/pipelines.rs"]
 mod pipelines;
 #[path = "gpu/prepare.rs"]

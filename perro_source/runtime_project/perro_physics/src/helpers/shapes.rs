@@ -227,6 +227,7 @@ pub fn build_rigid_body_2d(desc: &BodyDesc2D) -> r2::RigidBody {
         BodyKind::Static => r2::RigidBodyBuilder::fixed(),
         BodyKind::Area => r2::RigidBodyBuilder::fixed(),
         BodyKind::Rigid => r2::RigidBodyBuilder::dynamic(),
+        BodyKind::Character => r2::RigidBodyBuilder::kinematic_position_based(),
     }
     .position(transform_to_iso2(desc.global))
     .enabled(desc.enabled);
@@ -258,6 +259,7 @@ pub fn build_rigid_body_3d(desc: &BodyDesc3D) -> r3::RigidBody {
         BodyKind::Static => r3::RigidBodyBuilder::fixed(),
         BodyKind::Area => r3::RigidBodyBuilder::fixed(),
         BodyKind::Rigid => r3::RigidBodyBuilder::dynamic(),
+        BodyKind::Character => r3::RigidBodyBuilder::kinematic_position_based(),
     }
     .position(transform_to_iso3(desc.global))
     .enabled(desc.enabled);

@@ -32,6 +32,9 @@ pub(crate) use water::{
 };
 
 pub(crate) type PhysicsState = PhysicsSystem;
+
+/// gap kp btw char + hit surface on gravity sweep
+const CHARACTER_MOVE_MARGIN: f32 = 0.005;
 pub(crate) use perro_physics::{AudioRaycastInput, AudioRaycastResult};
 
 impl Runtime {
@@ -206,6 +209,9 @@ impl Runtime {
         self.physics_synced_node_version_2d = synced_version;
         self.physics_synced_node_version_3d = synced_version;
 
+        // aft re-record: char sweep mv nodes -> mark world stale 4 next step
+        self.apply_character_gravity();
+
         let signals_start = Instant::now();
         self.emit_collision_signals_2d();
         self.emit_collision_signals_3d();
@@ -251,7 +257,19 @@ impl Runtime {
             && self.water_contacts_3d.is_empty()
             && self.physics.active_area_overlaps_2d.is_empty()
             && self.physics.active_area_overlaps_3d.is_empty()
+            && !self.has_character_body_descs()
             && self.physics.can_skip_step()
+    }
+
+    /// char bodies need per-step gravity sweep even when worlds idle
+    fn has_character_body_descs(&self) -> bool {
+        self.physics_body_descs_2d
+            .iter()
+            .any(|body| body.kind == BodyKind::Character)
+            || self
+                .physics_body_descs_3d
+                .iter()
+                .any(|body| body.kind == BodyKind::Character)
     }
 
     fn has_physics_joint_nodes(&self) -> bool {
@@ -322,6 +340,8 @@ impl Runtime {
 
     pub(crate) fn clear_physics(&mut self) {
         self.physics.clear();
+        self.character_fall_speed_2d.clear();
+        self.character_fall_speed_3d.clear();
         self.invalidate_physics_query_sync();
     }
 
@@ -479,6 +499,138 @@ impl Runtime {
         Some(result)
     }
 
+    /// char bodies: engine gravity via kinematic sweep; no velocity on node.
+    /// fall speed kp internal per id; reset on ground hit / disable.
+    fn apply_character_gravity(&mut self) {
+        let dt = self.time.fixed_delta;
+        if dt <= 0.0 {
+            return;
+        }
+        let gravity = self.physics_gravity();
+        self.apply_character_gravity_2d(gravity, dt);
+        self.apply_character_gravity_3d(gravity, dt);
+    }
+
+    fn apply_character_gravity_2d(&mut self, gravity: f32, dt: f32) {
+        let mut ids = std::mem::take(&mut self.character_move_scratch);
+        ids.clear();
+        ids.extend(
+            self.physics_body_descs_2d
+                .iter()
+                .filter(|body| body.kind == BodyKind::Character)
+                .map(|body| body.id),
+        );
+        for id in ids.iter().copied() {
+            let Some((enabled, apply_gravity, gravity_scale, max_fall, layers, mask)) =
+                self.nodes.get(id).and_then(|node| {
+                    let SceneNodeData::CharacterBody2D(body) = &node.data else {
+                        return None;
+                    };
+                    Some((
+                        body.enabled,
+                        body.apply_gravity,
+                        body.gravity_scale,
+                        body.max_fall_speed,
+                        body.collision_layers,
+                        body.collision_mask,
+                    ))
+                })
+            else {
+                self.character_fall_speed_2d.remove(&id);
+                continue;
+            };
+            if !enabled || !apply_gravity || gravity_scale == 0.0 {
+                self.character_fall_speed_2d.remove(&id);
+                continue;
+            }
+            let fall = self.character_fall_speed_2d.entry(id).or_insert(0.0);
+            let limit = max_fall.abs().max(0.001);
+            *fall = (*fall + gravity * gravity_scale * dt).clamp(-limit, limit);
+            let drop = *fall * dt;
+            if drop.abs() <= 0.000_001 {
+                continue;
+            }
+            let Some(global) = self.get_global_transform_2d(id) else {
+                continue;
+            };
+            let target = Vector2::new(global.position.x, global.position.y + drop);
+            let filter = PhysicsQueryFilter {
+                layers,
+                mask,
+                include_areas: false,
+                exclude_nodes: Vec::new(),
+            };
+            let result = self.physics_move_body_2d(id, target, CHARACTER_MOVE_MARGIN, &filter);
+            if result.is_none_or(|result| result.clipped) {
+                self.character_fall_speed_2d.insert(id, 0.0);
+            }
+        }
+        ids.clear();
+        self.character_move_scratch = ids;
+    }
+
+    fn apply_character_gravity_3d(&mut self, gravity: f32, dt: f32) {
+        let mut ids = std::mem::take(&mut self.character_move_scratch);
+        ids.clear();
+        ids.extend(
+            self.physics_body_descs_3d
+                .iter()
+                .filter(|body| body.kind == BodyKind::Character)
+                .map(|body| body.id),
+        );
+        for id in ids.iter().copied() {
+            let Some((enabled, apply_gravity, gravity_scale, max_fall, layers, mask)) =
+                self.nodes.get(id).and_then(|node| {
+                    let SceneNodeData::CharacterBody3D(body) = &node.data else {
+                        return None;
+                    };
+                    Some((
+                        body.enabled,
+                        body.apply_gravity,
+                        body.gravity_scale,
+                        body.max_fall_speed,
+                        body.collision_layers,
+                        body.collision_mask,
+                    ))
+                })
+            else {
+                self.character_fall_speed_3d.remove(&id);
+                continue;
+            };
+            if !enabled || !apply_gravity || gravity_scale == 0.0 {
+                self.character_fall_speed_3d.remove(&id);
+                continue;
+            }
+            let fall = self.character_fall_speed_3d.entry(id).or_insert(0.0);
+            let limit = max_fall.abs().max(0.001);
+            *fall = (*fall + gravity * gravity_scale * dt).clamp(-limit, limit);
+            let drop = *fall * dt;
+            if drop.abs() <= 0.000_001 {
+                continue;
+            }
+            let Some(global) = self.get_global_transform_3d(id) else {
+                continue;
+            };
+            let target = Vector3::new(
+                global.position.x,
+                global.position.y + drop,
+                global.position.z,
+            );
+            let filter = PhysicsQueryFilter {
+                layers,
+                mask,
+                include_areas: false,
+                exclude_nodes: Vec::new(),
+            };
+            let result = self.physics_move_body_3d(id, target, CHARACTER_MOVE_MARGIN, &filter);
+            if result.is_none_or(|result| result.clipped) {
+                self.character_fall_speed_3d.insert(id, 0.0);
+            }
+        }
+        ids.clear();
+        self.character_move_scratch = ids;
+    }
+
     pub fn physics_contacts_2d(&mut self, body_id: NodeID) -> Vec<PhysicsContact2D> {
         self.ensure_physics_world_synced_2d();
         self.physics.contacts_2d(body_id)
@@ -540,6 +692,13 @@ impl Runtime {
                             linear_damping: body.linear_damping,
                             angular_damping: body.angular_damping,
                         }),
+                        (body.friction, body.restitution, body.density),
+                        (body.collision_layers, body.collision_mask),
+                    ),
+                    SceneNodeData::CharacterBody2D(body) => (
+                        BodyKind::Character,
+                        body.enabled,
+                        None,
                         (body.friction, body.restitution, body.density),
                         (body.collision_layers, body.collision_mask),
                     ),
@@ -720,6 +879,13 @@ impl Runtime {
                             linear_damping: body.linear_damping,
                             angular_damping: body.angular_damping,
                         }),
+                        (body.friction, body.restitution, body.density),
+                        (body.collision_layers, body.collision_mask),
+                    ),
+                    SceneNodeData::CharacterBody3D(body) => (
+                        BodyKind::Character,
+                        body.enabled,
+                        None,
                         (body.friction, body.restitution, body.density),
                         (body.collision_layers, body.collision_mask),
                     ),
@@ -1822,7 +1988,8 @@ impl Runtime {
                         crate::runtime::WaterBodyContact3D {
                             position: sample.pos,
                             velocity: body.velocity,
-                            radius: body.float_radius.max(0.75) * 0.9,
+                            // keep rings >= ~2 sim cells wide or they alias on the grid
+                            radius: (body.float_radius * 0.9).max(1.3),
                             foam_amount: (sample.sample.foam
                                 + Vector2::new(body.velocity.x, body.velocity.z).length() * 0.05
                                 + body.velocity.y.abs() * 0.08)
@@ -2014,6 +2181,7 @@ impl Runtime {
                 SceneNodeData::StaticBody2D(body) => body.physics_handle = handle,
                 SceneNodeData::Area2D(body) => body.physics_handle = handle,
                 SceneNodeData::RigidBody2D(body) => body.physics_handle = handle,
+                SceneNodeData::CharacterBody2D(body) => body.physics_handle = handle,
                 _ => {}
             }
         }
@@ -2025,6 +2193,7 @@ impl Runtime {
                 SceneNodeData::StaticBody3D(body) => body.physics_handle = handle,
                 SceneNodeData::Area3D(body) => body.physics_handle = handle,
                 SceneNodeData::RigidBody3D(body) => body.physics_handle = handle,
+                SceneNodeData::CharacterBody3D(body) => body.physics_handle = handle,
                 _ => {}
             }
         }

@@ -329,6 +329,72 @@ impl DerefMut for RigidBody2D {
     }
 }
 
+/// Script-driven body: kp gravity + collide vs static/rigid, no dynamics.
+/// No velocity/force state; mv via transform or move api.
+#[derive(Clone, Debug)]
+pub struct CharacterBody2D {
+    pub base: Node2D,
+    pub enabled: bool,
+    pub physics_handle: Option<u64>,
+    pub collision_layers: BitMask,
+    pub collision_mask: BitMask,
+    pub apply_gravity: bool,
+    pub gravity_scale: f32,
+    pub max_fall_speed: f32,
+    pub friction: f32,
+    pub restitution: f32,
+    pub density: f32,
+    pub audio_interaction: Option<AudioInteraction>,
+}
+
+impl Default for CharacterBody2D {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl CharacterBody2D {
+    pub const fn new() -> Self {
+        Self {
+            base: Node2D::new(),
+            enabled: true,
+            physics_handle: None,
+            collision_layers: BitMask::ALL,
+            collision_mask: BitMask::NONE,
+            apply_gravity: true,
+            gravity_scale: 1.0,
+            max_fall_speed: 64.0,
+            friction: 0.7,
+            restitution: 0.0,
+            density: 1.0,
+            audio_interaction: Some(AudioInteraction::new()),
+        }
+    }
+
+    pub const fn collision_policy(&self) -> CollisionPolicy {
+        CollisionPolicy::new(self.collision_layers, self.collision_mask)
+    }
+
+    pub fn set_collision_policy(&mut self, policy: CollisionPolicy) {
+        self.collision_layers = policy.layers;
+        self.collision_mask = policy.mask;
+    }
+}
+
+impl Deref for CharacterBody2D {
+    type Target = Node2D;
+
+    fn deref(&self) -> &Self::Target {
+        &self.base
+    }
+}
+
+impl DerefMut for CharacterBody2D {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.base
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct PinJoint2D {
     pub base: Node2D,

@@ -28,6 +28,69 @@ fn build_rigid_body_2d(data: &SceneDefNodeData) -> RigidBody2D {
     node
 }
 
+fn build_character_body_2d(data: &SceneDefNodeData) -> CharacterBody2D {
+    let mut node = CharacterBody2D::new();
+    if let Some(base) = data.base_ref() {
+        apply_node_2d_data(&mut node, base);
+    }
+    apply_node_2d_fields(&mut node, &data.fields);
+    apply_character_body_2d_fields(&mut node, &data.fields);
+    node
+}
+
+fn apply_character_body_2d_fields(node: &mut CharacterBody2D, fields: &[SceneObjectField]) {
+    SceneFieldIterRef::new(fields).for_each(|name, value| {
+        match resolve_node_field("CharacterBody2D", name) {
+            Some(NodeField::CharacterBody2D(CharacterBodyField::Enabled)) => {
+                if let Some(v) = as_bool(value) {
+                    node.enabled = v;
+                }
+            }
+            Some(NodeField::CharacterBody2D(CharacterBodyField::CollisionLayers)) => {
+                if let Some(v) = as_bitmask(value) {
+                    node.collision_layers = v;
+                }
+            }
+            Some(NodeField::CharacterBody2D(CharacterBodyField::CollisionMask)) => {
+                if let Some(v) = as_bitmask(value) {
+                    node.collision_mask = v;
+                }
+            }
+            Some(NodeField::CharacterBody2D(CharacterBodyField::ApplyGravity)) => {
+                if let Some(v) = as_bool(value) {
+                    node.apply_gravity = v;
+                }
+            }
+            Some(NodeField::CharacterBody2D(CharacterBodyField::GravityScale)) => {
+                if let Some(v) = as_f32(value) {
+                    node.gravity_scale = v;
+                }
+            }
+            Some(NodeField::CharacterBody2D(CharacterBodyField::MaxFallSpeed)) => {
+                if let Some(v) = as_f32(value) {
+                    node.max_fall_speed = v.max(0.0);
+                }
+            }
+            Some(NodeField::CharacterBody2D(CharacterBodyField::Friction)) => {
+                if let Some(v) = as_f32(value) {
+                    node.friction = v;
+                }
+            }
+            Some(NodeField::CharacterBody2D(CharacterBodyField::Restitution)) => {
+                if let Some(v) = as_f32(value) {
+                    node.restitution = v;
+                }
+            }
+            Some(NodeField::CharacterBody2D(CharacterBodyField::Density)) => {
+                if let Some(v) = as_f32(value) {
+                    node.density = v;
+                }
+            }
+            _ => {}
+        }
+    });
+}
+
 fn build_physics_force_emitter_2d(data: &SceneDefNodeData) -> PhysicsForceEmitter2D {
     let mut node = PhysicsForceEmitter2D::new();
     if let Some(base) = data.base_ref() {

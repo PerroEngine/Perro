@@ -1183,7 +1183,9 @@ impl Runtime {
             .filter_map(|(id, node)| {
                 matches!(
                     node.data,
-                    SceneNodeData::StaticBody2D(_) | SceneNodeData::RigidBody2D(_)
+                    SceneNodeData::StaticBody2D(_)
+                        | SceneNodeData::RigidBody2D(_)
+                        | SceneNodeData::CharacterBody2D(_)
                 )
                 .then_some(id)
             })
@@ -1199,6 +1201,13 @@ impl Runtime {
                         0.85f32,
                     )),
                     SceneNodeData::RigidBody2D(body) => Some((
+                        body.enabled,
+                        body.collision_layers,
+                        body.collision_mask,
+                        node.children_slice().to_vec(),
+                        0.50f32,
+                    )),
+                    SceneNodeData::CharacterBody2D(body) => Some((
                         body.enabled,
                         body.collision_layers,
                         body.collision_mask,

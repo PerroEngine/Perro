@@ -1,7 +1,7 @@
 # Physics Nodes
 
 Physics bodies and shapes are separate scene nodes.
-`StaticBody2D`, `RigidBody2D`, `Area2D`, `StaticBody3D`, `RigidBody3D`, and `Area3D` hold body/area behavior.
+`StaticBody2D`, `RigidBody2D`, `CharacterBody2D`, `Area2D`, `StaticBody3D`, `RigidBody3D`, `CharacterBody3D`, and `Area3D` hold body/area behavior.
 `CollisionShape2D` and `CollisionShape3D` hold geometry.
 
 In scene files, put collision shapes in separate top-level node blocks.
@@ -49,6 +49,36 @@ parent = @Body
         shape = { type = cube, size = (1, 1, 1) }
     [/CollisionShape3D]
 [/BodyShape]
+```
+
+## Character Body
+
+`CharacterBody2D` / `CharacterBody3D` are script-driven bodies.
+They are not dynamic: no velocity, no forces, no impulses, no physics write-back.
+The engine only:
+
+- applies gravity each fixed step with a collision sweep (`apply_gravity`, `gravity_scale`, `max_fall_speed`)
+- blocks the gravity sweep on static and rigid bodies (no tunneling into floors)
+
+Move them from scripts by setting the transform, or use the physics move API for a collide-and-stop move.
+Fields: `enabled`, `collision_layers`, `collision_mask`, `apply_gravity`, `gravity_scale`, `max_fall_speed`, `friction`, `restitution`, `density`.
+
+```text
+[Player]
+parent = $root
+    [CharacterBody3D]
+        collision_layers = [1]
+        apply_gravity = true
+        [Node3D/]
+    [/CharacterBody3D]
+[/Player]
+
+[PlayerShape]
+parent = @Player
+    [CollisionShape3D]
+        shape = { type = capsule, radius = 0.4, half_height = 0.6 }
+    [/CollisionShape3D]
+[/PlayerShape]
 ```
 
 ## Notes

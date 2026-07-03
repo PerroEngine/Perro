@@ -10,11 +10,13 @@ const SKELETON_3D_REF_TYPES: &[NodeType] = &[NodeType::Skeleton3D];
 const BODY_2D_REF_TYPES: &[NodeType] = &[
     NodeType::StaticBody2D,
     NodeType::RigidBody2D,
+    NodeType::CharacterBody2D,
     NodeType::Area2D,
 ];
 const BODY_3D_REF_TYPES: &[NodeType] = &[
     NodeType::StaticBody3D,
     NodeType::RigidBody3D,
+    NodeType::CharacterBody3D,
     NodeType::Area3D,
 ];
 const CAMERA_STREAM_ASPECT_MODE_OPTIONS: &[&str] = &["fit", "stretch", "cover"];
@@ -673,7 +675,9 @@ fn push_node_fields(fields: &mut Vec<SceneNodeField>, node_type: NodeType) {
         | NodeType::Area2D
         | NodeType::Area3D
         | NodeType::RigidBody2D
-        | NodeType::RigidBody3D => physics_body_fields(fields, node_type),
+        | NodeType::RigidBody3D
+        | NodeType::CharacterBody2D
+        | NodeType::CharacterBody3D => physics_body_fields(fields, node_type),
         NodeType::PhysicsForceEmitter2D | NodeType::PhysicsForceEmitter3D => {
             push(fields, "Force", "enabled", NodeFieldType::Bool);
             push(
@@ -1164,10 +1168,35 @@ fn physics_body_fields(fields: &mut Vec<SceneNodeField>, node_type: NodeType) {
             | NodeType::StaticBody3D
             | NodeType::RigidBody2D
             | NodeType::RigidBody3D
+            | NodeType::CharacterBody2D
+            | NodeType::CharacterBody3D
     ) {
         push(fields, "Physics", "friction", NodeFieldType::F32);
         push(fields, "Physics", "restitution", NodeFieldType::F32);
         push(fields, "Physics", "density", NodeFieldType::F32);
+    }
+    if matches!(
+        node_type,
+        NodeType::CharacterBody2D | NodeType::CharacterBody3D
+    ) {
+        push(
+            fields,
+            "Character Body",
+            "apply_gravity",
+            NodeFieldType::Bool,
+        );
+        push(
+            fields,
+            "Character Body",
+            "gravity_scale",
+            NodeFieldType::F32,
+        );
+        push(
+            fields,
+            "Character Body",
+            "max_fall_speed",
+            NodeFieldType::F32,
+        );
     }
     if matches!(node_type, NodeType::RigidBody2D | NodeType::RigidBody3D) {
         push(

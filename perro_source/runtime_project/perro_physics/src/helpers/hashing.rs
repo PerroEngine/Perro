@@ -5,6 +5,7 @@ pub fn body_signature_seed(kind: BodyKind) -> u64 {
         BodyKind::Static => 0xA91B_D58C_24F1_7E31,
         BodyKind::Area => 0xCC42_83B7_9E20_11DD,
         BodyKind::Rigid => 0x6D1E_93A4_F02C_B871,
+        BodyKind::Character => 0x51F8_0A6E_D3B4_29C5,
     }
 }
 
