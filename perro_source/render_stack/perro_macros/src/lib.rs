@@ -19,10 +19,50 @@ pub fn minified_wgsl(input: TokenStream) -> TokenStream {
 
 fn emit_minified(input: TokenStream) -> TokenStream {
     match parse_input(input)
-        .and_then(|path| load_source(&path))
-        .map(|source| {
+        .and_then(|path| resolve_path(&path))
+        .and_then(|resolved| {
+            let source = fs::read_to_string(&resolved).map_err(|e| {
+                format!(
+                    "include_str_stripped! failed read `{}`: {e}",
+                    resolved.display()
+                )
+            })?;
+            Ok((resolved, source))
+        })
+        .map(|(resolved, source)| {
+            // Expand to `{ const _: &[u8] = include_bytes!("abs path"); "min" }`
+            // so cargo tracks the source file and rebuilds on change; a bare
+            // literal would go stale silently.
             let lit = Literal::string(&minify_text(&source));
-            TokenStream::from(TokenTree::Literal(lit))
+            let abs = resolved.to_string_lossy().replace('\\', "/");
+            let mut inner = TokenStream::new();
+            inner.extend([
+                TokenTree::Ident(Ident::new("const", Span::call_site())),
+                TokenTree::Ident(Ident::new("_", Span::call_site())),
+                TokenTree::Punct(Punct::new(':', Spacing::Alone)),
+                TokenTree::Punct(Punct::new('&', Spacing::Alone)),
+                TokenTree::Group(Group::new(Delimiter::Bracket, {
+                    let mut b = TokenStream::new();
+                    b.extend([TokenTree::Ident(Ident::new("u8", Span::call_site()))]);
+                    b
+                })),
+                TokenTree::Punct(Punct::new('=', Spacing::Alone)),
+                TokenTree::Punct(Punct::new(':', Spacing::Joint)),
+                TokenTree::Punct(Punct::new(':', Spacing::Alone)),
+                TokenTree::Ident(Ident::new("core", Span::call_site())),
+                TokenTree::Punct(Punct::new(':', Spacing::Joint)),
+                TokenTree::Punct(Punct::new(':', Spacing::Alone)),
+                TokenTree::Ident(Ident::new("include_bytes", Span::call_site())),
+                TokenTree::Punct(Punct::new('!', Spacing::Alone)),
+                TokenTree::Group(Group::new(Delimiter::Parenthesis, {
+                    let mut p = TokenStream::new();
+                    p.extend([TokenTree::Literal(Literal::string(&abs))]);
+                    p
+                })),
+                TokenTree::Punct(Punct::new(';', Spacing::Alone)),
+                TokenTree::Literal(lit),
+            ]);
+            TokenStream::from(TokenTree::Group(Group::new(Delimiter::Brace, inner)))
         }) {
         Ok(stream) => stream,
         Err(err) => compile_error_tokens(&err),
@@ -62,16 +102,6 @@ fn parse_string_literal(raw: &str) -> Result<String, String> {
     }
     let s = &raw[1..raw.len() - 1];
     Ok(s.replace("\\\\", "\\").replace("\\\"", "\""))
-}
-
-fn load_source(path: &str) -> Result<String, String> {
-    let resolved = resolve_path(path)?;
-    fs::read_to_string(&resolved).map_err(|e| {
-        format!(
-            "include_str_stripped! failed read `{}`: {e}",
-            resolved.display()
-        )
-    })
 }
 
 fn resolve_path(path: &str) -> Result<PathBuf, String> {

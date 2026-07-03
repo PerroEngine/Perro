@@ -17,6 +17,8 @@ mod regular {
     pub const DEPTH_PREPASS_SKINNED_WGSL: &str =
         perro_macros::include_str_stripped!("shaders/depth_prepass_skinned.wgsl");
     pub const MULTIMESH_WGSL: &str = perro_macros::include_str_stripped!("shaders/multimesh.wgsl");
+    pub const MESH_BLEND_SCREEN_WGSL: &str =
+        perro_macros::include_str_stripped!("shaders/mesh_blend_screen.wgsl");
     pub const SKY3D_WGSL: &str = perro_macros::include_str_stripped!("shaders/sky3d.wgsl");
 }
 
@@ -327,6 +329,75 @@ fn build_material_shader_with_prelude_inner(
         );
     }
     out
+}
+
+// Mask entry point appended to the depth-prepass shaders: writes the batch's
+// blend id so the screen-space seam pass can find mesh boundaries. The cutout
+// discard mirrors the depth-prepass fs_main.
+const MESH_BLEND_MASK_FS_WGSL: &str = "
+@group(1) @binding(0)
+var<uniform> mesh_blend_mask_id: vec4<u32>;
+
+@fragment
+fn fs_mask(in: VertexOutput) -> @location(0) u32 {
+    let alpha_mode = in.packed_material_params & 0x3u;
+    if alpha_mode == 1u {
+        let alpha = unpack_unorm8(in.packed_color, 24u);
+        let cutoff = unpack_unorm8(in.packed_material_params, 16u);
+        if alpha < cutoff {
+            discard;
+        }
+    }
+    return mesh_blend_mask_id.x;
+}
+";
+
+fn build_mesh_blend_mask_wgsl(base: &str) -> String {
+    let mut out = String::with_capacity(base.len() + MESH_BLEND_MASK_FS_WGSL.len() + 1);
+    out.push_str(base);
+    out.push('\n');
+    out.push_str(MESH_BLEND_MASK_FS_WGSL);
+    out
+}
+
+#[inline]
+pub fn create_mesh_blend_mask_shader_module_rigid(device: &wgpu::Device) -> wgpu::ShaderModule {
+    device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("perro_mesh_blend_mask_rigid"),
+        source: wgpu::ShaderSource::Wgsl(
+            build_mesh_blend_mask_wgsl(regular::DEPTH_PREPASS_RIGID_WGSL).into(),
+        ),
+    })
+}
+
+#[inline]
+pub fn create_mesh_blend_mask_shader_module_rigid_packed_lod(
+    device: &wgpu::Device,
+) -> wgpu::ShaderModule {
+    device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("perro_mesh_blend_mask_rigid_packed_lod"),
+        source: wgpu::ShaderSource::Wgsl(
+            build_mesh_blend_mask_wgsl(&build_packed_lod_depth_rigid_wgsl()).into(),
+        ),
+    })
+}
+
+#[inline]
+pub fn create_mesh_blend_mask_shader_module_skinned(device: &wgpu::Device) -> wgpu::ShaderModule {
+    device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("perro_mesh_blend_mask_skinned"),
+        source: wgpu::ShaderSource::Wgsl(
+            build_mesh_blend_mask_wgsl(regular::DEPTH_PREPASS_SKINNED_WGSL).into(),
+        ),
+    })
+}
+
+#[inline]
+pub fn create_mesh_blend_screen_shader_module(device: &wgpu::Device) -> wgpu::ShaderModule {
+    device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("perro_mesh_blend_screen"),
+        source: wgpu::ShaderSource::Wgsl(regular::MESH_BLEND_SCREEN_WGSL.into()),
+    })
 }
 
 #[inline]
@@ -1022,6 +1093,31 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         drop(mapped);
         readback.unmap();
         pixels
+    }
+
+    #[test]
+    fn mesh_blend_mask_wgsl_validates() {
+        for (src, label) in [
+            (
+                build_mesh_blend_mask_wgsl(regular::DEPTH_PREPASS_RIGID_WGSL),
+                "mask rigid",
+            ),
+            (
+                build_mesh_blend_mask_wgsl(&build_packed_lod_depth_rigid_wgsl()),
+                "mask rigid packed lod",
+            ),
+            (
+                build_mesh_blend_mask_wgsl(regular::DEPTH_PREPASS_SKINNED_WGSL),
+                "mask skinned",
+            ),
+        ] {
+            parse_and_validate(&src, label);
+        }
+    }
+
+    #[test]
+    fn mesh_blend_screen_wgsl_validates() {
+        parse_and_validate(regular::MESH_BLEND_SCREEN_WGSL, "mesh blend screen");
     }
 
     #[test]

@@ -222,6 +222,8 @@ pub(super) fn bounds_in_frustum(
 const DEFAULT_AMBIENT_INTENSITY: f32 = 0.35;
 // Ground hemisphere gets this fraction of the upper ambient radiance.
 const GROUND_BOUNCE_FACTOR: f32 = 0.4;
+// Neutral horizon radiance fraction when no sky gradient is available.
+const HORIZON_ENV_FACTOR: f32 = 0.75;
 
 pub(super) fn build_scene_uniform(
     camera: &Camera3DState,
@@ -267,6 +269,7 @@ pub(super) fn build_scene_uniform(
             Mat4::IDENTITY.to_cols_array_2d()
         },
         ground_color: [0.0; 4],
+        sky_horizon_color: [0.0; 4],
     };
 
     if let Some(sky) = lighting.sky.as_ref() {
@@ -310,6 +313,29 @@ pub(super) fn build_scene_uniform(
         0.0,
     ];
 
+    // Horizon radiance for env reflections: real sky gradient when the scene
+    // has one and no authored ambient override, neutral fraction otherwise.
+    let ambient_strength = scene.ambient_color[3];
+    let mut horizon = [
+        scene.ambient_color[0] * ambient_strength * HORIZON_ENV_FACTOR,
+        scene.ambient_color[1] * ambient_strength * HORIZON_ENV_FACTOR,
+        scene.ambient_color[2] * ambient_strength * HORIZON_ENV_FACTOR,
+        0.0,
+    ];
+    if lighting.ambient_light.is_none()
+        && let Some(sky) = lighting.sky.as_ref()
+    {
+        let horizon_rgb = sample_gradient(sky.horizon_colors.as_ref(), 0.5);
+        let horizon_lin = crate::srgb_to_linear_rgb(horizon_rgb);
+        horizon = [
+            horizon_lin[0].max(0.0) * ambient_strength,
+            horizon_lin[1].max(0.0) * ambient_strength,
+            horizon_lin[2].max(0.0) * ambient_strength,
+            0.0,
+        ];
+    }
+    scene.sky_horizon_color = horizon;
+
     let mut ray_count = 0usize;
     let mut push_ray = |dir: Vec3, color: [f32; 3], intensity: f32| {
         if ray_count >= MAX_RAY_LIGHTS {
@@ -325,12 +351,7 @@ pub(super) fn build_scene_uniform(
         let color_lin = crate::srgb_to_linear_rgb(color);
         scene.ray_lights[ray_count] = RayLightGpu {
             direction: [d.x, d.y, d.z, 0.0],
-            color_intensity: [
-                color_lin[0],
-                color_lin[1],
-                color_lin[2],
-                intensity.max(0.0),
-            ],
+            color_intensity: [color_lin[0], color_lin[1], color_lin[2], intensity.max(0.0)],
         };
         ray_count += 1;
     };

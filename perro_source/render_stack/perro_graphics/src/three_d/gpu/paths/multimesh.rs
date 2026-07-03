@@ -73,6 +73,8 @@ pub(super) fn create_multimesh_pipeline(
         sample_count,
         cull_mode,
         true,
+        wgpu::CompareFunction::LessEqual,
+        "fs_main",
     )
 }
 
@@ -92,6 +94,8 @@ pub(super) fn create_multimesh_blend_pipeline(
         sample_count,
         cull_mode,
         false,
+        wgpu::CompareFunction::LessEqual,
+        "fs_main",
     )
 }
 
@@ -103,6 +107,8 @@ fn create_multimesh_pipeline_with_depth_write(
     sample_count: u32,
     cull_mode: Option<wgpu::Face>,
     depth_write_enabled: bool,
+    depth_compare: wgpu::CompareFunction,
+    fragment_entry: &'static str,
 ) -> wgpu::RenderPipeline {
     device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         label: Some("perro_multimesh_pipeline"),
@@ -115,7 +121,7 @@ fn create_multimesh_pipeline_with_depth_write(
         },
         fragment: Some(wgpu::FragmentState {
             module: shader,
-            entry_point: Some("fs_main"),
+            entry_point: Some(fragment_entry),
             targets: &[Some(wgpu::ColorTargetState {
                 format: color_format,
                 blend: Some(wgpu::BlendState::ALPHA_BLENDING),
@@ -137,7 +143,7 @@ fn create_multimesh_pipeline_with_depth_write(
         depth_stencil: Some(wgpu::DepthStencilState {
             format: DEPTH_FORMAT,
             depth_write_enabled: Some(depth_write_enabled),
-            depth_compare: Some(wgpu::CompareFunction::LessEqual),
+            depth_compare: Some(depth_compare),
             stencil: wgpu::StencilState::default(),
             bias: wgpu::DepthBiasState::default(),
         }),

@@ -31,6 +31,8 @@ struct Scene3D {
     inv_view_proj: mat4x4<f32>,
     // Hemisphere ambient: radiance from below (premultiplied), w unused.
     ground_color: vec4<f32>,
+    // Sky radiance at the horizon (premultiplied) for env reflections.
+    sky_horizon_color: vec4<f32>,
 }
 
 struct MultiMeshDrawParam {
@@ -42,6 +44,8 @@ struct MultiMeshDrawParam {
     scale_bits: u32,
     packed_blend_params: u32,
     custom_params: vec2<u32>,
+    // Local color bleed tint (pack_local_bleed layout); 0 = none.
+    packed_bleed: u32,
 }
 
 @group(0) @binding(0)
@@ -60,6 +64,9 @@ var<storage, read> blend_shape_instances: array<BlendShapeInstance>;
 var<storage, read> custom_params_meta: array<u32>;
 @group(0) @binding(7)
 var<storage, read> custom_params_values: array<f32>;
+
+// Seam width floor in pixels so distant blends never collapse to a hard line.
+const MESH_BLEND_MIN_PIXELS: f32 = 2.5;
 
 struct VertexInput {
     @location(0) pos: vec3<f32>,
@@ -93,6 +100,7 @@ struct VertexOutput {
     @location(4) @interpolate(flat) custom_range: vec2<u32>,
     @location(5) uv: vec2<f32>,
     @location(6) frag_pos: vec4<f32>,
+    @location(7) @interpolate(flat) packed_bleed: u32,
 };
 
 struct FragmentInput {
@@ -103,6 +111,7 @@ struct FragmentInput {
     @location(4) @interpolate(flat) custom_range: vec2<u32>,
     @location(5) uv: vec2<f32>,
     @location(6) frag_pos: vec4<f32>,
+    @location(7) @interpolate(flat) packed_bleed: u32,
 };
 
 fn unpack_rgba8(v: u32) -> vec4<f32> {
@@ -163,23 +172,31 @@ fn mesh_blend_alpha(frag_pos: vec4<f32>, world_pos: vec3<f32>, packed: u32) -> f
     if any(coord < vec2<i32>(0)) || any(coord >= dims) {
         return 1.0;
     }
-    let scene_depth = textureLoad(mesh_blend_depth_tex, coord, 0);
-    if scene_depth >= 0.999999 {
+    let receiver_depth = textureLoad(mesh_blend_depth_tex, coord, 0);
+    if receiver_depth >= 0.999999 {
         return 1.0;
     }
     let params = decode_mesh_blend_params(packed);
     let view_dist = distance(world_pos, scene.camera_pos.xyz);
-    let scene_world = mesh_blend_world_from_depth(coord, dims_u, scene_depth);
-    let raw_depth_delta = distance(scene_world, scene.camera_pos.xyz) - view_dist;
+    let receiver_world = mesh_blend_world_from_depth(coord, dims_u, receiver_depth);
+    let receiver_dist = distance(receiver_world, scene.camera_pos.xyz);
+    let raw_depth_delta = receiver_dist - view_dist;
     if raw_depth_delta <= 0.0 {
         return 1.0;
     }
-    let max_width = max(params.x, 0.0001);
-    let min_width = min(params.y, max_width);
+    // Distance-compensated width: world units covered by one pixel here.
+    let texel_world = (length(dpdx(world_pos)) + length(dpdy(world_pos))) * 0.5;
+    let base_width = max(params.x, 0.0001);
+    let max_width = max(base_width, texel_world * MESH_BLEND_MIN_PIXELS);
+    let min_width = min(params.y, base_width) * (max_width / base_width);
     var noise = 0.0;
     if params.z > 0.0 {
-        let tile = max(params.w, 1.0);
-        let soft_noise = smoothstep(0.15, 0.85, mesh_blend_noise(frag_pos.xy / tile));
+        // Anchor the noise to the receiver surface so it does not swim with
+        // the camera.
+        let tile = max(params.w * 0.05, 0.05);
+        let p = (receiver_world.xz
+            + vec2<f32>(receiver_world.y * 0.53, receiver_world.y * 0.29)) / tile;
+        let soft_noise = smoothstep(0.1, 0.9, mesh_blend_noise(p));
         noise = (soft_noise - 0.5) * params.z * max_width;
     }
     let depth_delta = max(raw_depth_delta + noise, 0.0);
@@ -317,6 +334,35 @@ fn custom_param_vertex(out: VertexOutput, index: u32) -> vec4<f32> {
     return custom_v_param(out, index);
 }
 
+struct LocalBleed {
+    color: vec3<f32>,
+    strength: f32,
+    dir: vec3<f32>,
+}
+
+fn oct_decode_dir(x: f32, y: f32) -> vec3<f32> {
+    var v = vec3<f32>(x, y, 1.0 - abs(x) - abs(y));
+    if v.z < 0.0 {
+        let old_x = v.x;
+        v.x = (1.0 - abs(v.y)) * select(-1.0, 1.0, old_x >= 0.0);
+        v.y = (1.0 - abs(old_x)) * select(-1.0, 1.0, v.y >= 0.0);
+    }
+    return normalize(v);
+}
+
+// Layout matches pack_local_bleed on the CPU: r5 g5 b5 strength5 oct_x6 oct_y6.
+fn decode_local_bleed(packed: u32) -> LocalBleed {
+    let color = vec3<f32>(
+        f32(packed & 0x1fu) / 31.0,
+        f32((packed >> 5u) & 0x1fu) / 31.0,
+        f32((packed >> 10u) & 0x1fu) / 31.0,
+    );
+    let strength = f32((packed >> 15u) & 0x1fu) / 31.0;
+    let ox = f32((packed >> 20u) & 0x3fu) / 63.0 * 2.0 - 1.0;
+    let oy = f32((packed >> 26u) & 0x3fu) / 63.0 * 2.0 - 1.0;
+    return LocalBleed(color, strength, oct_decode_dir(ox, oy));
+}
+
 fn perro_lit_standard(
     in: FragmentInput,
     base: vec4<f32>,
@@ -333,6 +379,10 @@ fn perro_lit_standard(
         mix(scene.ground_color.xyz, scene.ambient_color.xyz * scene.ambient_color.w, hemi)
         * occlusion;
     var lit = ambient;
+    // Local color bleed: per-draw tint via flat varying (custom fs path).
+    let bleed = decode_local_bleed(in.packed_bleed);
+    let bleed_wrap = clamp(dot(n, bleed.dir) * 0.5 + 0.5, 0.0, 1.0);
+    lit += bleed.color * bleed.strength * 0.45 * (0.35 + 0.65 * bleed_wrap);
     let ray_count = u32(scene.ambient_and_counts.x);
     if ray_count > 0u {
         let ray = scene.ray_lights[0];
@@ -387,6 +437,10 @@ fn perro_multimesh_vs_main_base(v: VertexInput, inst: InstanceInput, vertex_inde
     let ambient =
         mix(scene.ground_color.xyz, scene.ambient_color.xyz * scene.ambient_color.w, hemi);
     var lit = ambient;
+    // Local color bleed: one tint per multimesh draw, vertex-lit.
+    let bleed = decode_local_bleed(draw.packed_bleed);
+    let bleed_wrap = clamp(dot(n, bleed.dir) * 0.5 + 0.5, 0.0, 1.0);
+    lit += bleed.color * bleed.strength * 0.45 * (0.35 + 0.65 * bleed_wrap);
     let ray_count = u32(scene.ambient_and_counts.x);
     if ray_count > 0u {
         let ray = scene.ray_lights[0];
@@ -404,6 +458,7 @@ fn perro_multimesh_vs_main_base(v: VertexInput, inst: InstanceInput, vertex_inde
     out.custom_range = draw.custom_params;
     out.uv = vec2<f32>(0.0);
     out.frag_pos = out.clip_pos;
+    out.packed_bleed = draw.packed_bleed;
     return out;
 }
 

@@ -40,10 +40,26 @@ parent = @WaterDemo
 [Ambient]
 parent = @WaterDemo
     [AmbientLight3D]
-        color = (0.58, 0.7, 0.9)
-        intensity = 0.38
+        color = (0.62, 0.74, 0.92)
+        intensity = 0.42
     [/AmbientLight3D]
 [/Ambient]
+
+[DaySky]
+parent = @WaterDemo
+    [Sky3D]
+        day_colors = [
+            (0.62, 0.84, 1.0),
+            (0.34, 0.66, 0.94),
+            (0.12, 0.34, 0.7)
+        ]
+        time = {
+            time_of_day = 0.35,
+            paused = true,
+            scale = 0.0
+        }
+    [/Sky3D]
+[/DaySky]
 
 [Sun]
 parent = @WaterDemo
@@ -946,22 +962,22 @@ parent = @WaterDemo
         idle = "storm"
         foam_strength = 1.01
         sample_readback_rate = 30.0
-        shallow_depth = 1.0
-        deep_color = (0.0, 0.045, 0.14, 1.0)
-        shallow_color = (0.035, 0.32, 0.48, 0.96)
+        shallow_depth = 3.5
+        deep_color = (0.02, 0.12, 0.26, 1.0)
+        shallow_color = (0.10, 0.52, 0.62, 0.90)
         material = {
             transparency = 0.0,
-            reflectivity = 0.55,
-            roughness = 0.2,
+            reflectivity = 0.6,
+            roughness = 0.16,
             fresnel_power = 4.2,
             normal_strength = 1.05,
             ripple_scale = 1.05,
-            foam_color = (0.92, 0.98, 1.0, 1.0),
-            foam_amount = 0.0,
-            crest_foam_threshold = 1.0,
-            caustic_strength = 0.0,
-            refraction_strength = 0.08,
-            scattering_strength = 0.16,
+            foam_color = (0.94, 0.98, 1.0, 0.95),
+            foam_amount = 0.8,
+            crest_foam_threshold = 0.72,
+            caustic_strength = 0.6,
+            refraction_strength = 0.32,
+            scattering_strength = 0.4,
             distance_fog_strength = 0.3
         }
         lod_near = 25.0

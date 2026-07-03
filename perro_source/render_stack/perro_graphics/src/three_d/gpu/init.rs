@@ -1082,6 +1082,80 @@ impl Gpu3D {
             sample_count,
             None,
         );
+        let mesh_blend_mask_id_bgl = mesh_blend_screen::create_mesh_blend_mask_id_bgl(device);
+        let mask_pipeline_layout_rigid =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("perro_mesh_blend_mask_layout_rigid"),
+                bind_group_layouts: &[Some(&rigid_camera_bgl), Some(&mesh_blend_mask_id_bgl)],
+                immediate_size: 0,
+            });
+        let mask_pipeline_layout_skinned =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("perro_mesh_blend_mask_layout_skinned"),
+                bind_group_layouts: &[Some(&camera_bgl), Some(&mesh_blend_mask_id_bgl)],
+                immediate_size: 0,
+            });
+        let mask_shader_rigid = create_mesh_blend_mask_shader_module_rigid(device);
+        let mask_shader_rigid_packed_lod =
+            create_mesh_blend_mask_shader_module_rigid_packed_lod(device);
+        let mask_shader_skinned = create_mesh_blend_mask_shader_module_skinned(device);
+        let pipeline_mask_rigid_culled = mesh_blend_screen::create_mesh_blend_mask_pipeline_rigid(
+            device,
+            &mask_pipeline_layout_rigid,
+            &mask_shader_rigid,
+            Some(wgpu::Face::Back),
+        );
+        let pipeline_mask_rigid_double_sided =
+            mesh_blend_screen::create_mesh_blend_mask_pipeline_rigid(
+                device,
+                &mask_pipeline_layout_rigid,
+                &mask_shader_rigid,
+                None,
+            );
+        let pipeline_mask_rigid_packed_lod_culled =
+            mesh_blend_screen::create_mesh_blend_mask_pipeline_rigid_packed_lod(
+                device,
+                &mask_pipeline_layout_rigid,
+                &mask_shader_rigid_packed_lod,
+                Some(wgpu::Face::Back),
+            );
+        let pipeline_mask_rigid_packed_lod_double_sided =
+            mesh_blend_screen::create_mesh_blend_mask_pipeline_rigid_packed_lod(
+                device,
+                &mask_pipeline_layout_rigid,
+                &mask_shader_rigid_packed_lod,
+                None,
+            );
+        let pipeline_mask_skinned_culled =
+            mesh_blend_screen::create_mesh_blend_mask_pipeline_skinned(
+                device,
+                &mask_pipeline_layout_skinned,
+                &mask_shader_skinned,
+                Some(wgpu::Face::Back),
+            );
+        let pipeline_mask_skinned_double_sided =
+            mesh_blend_screen::create_mesh_blend_mask_pipeline_skinned(
+                device,
+                &mask_pipeline_layout_skinned,
+                &mask_shader_skinned,
+                None,
+            );
+        let mesh_blend_seam_bgl = mesh_blend_screen::create_mesh_blend_seam_bgl(device);
+        let mesh_blend_seam_pipeline = mesh_blend_screen::create_mesh_blend_seam_pipeline(
+            device,
+            &mesh_blend_seam_bgl,
+            color_format,
+        );
+        let mesh_blend_params_buffer = mesh_blend_screen::create_mesh_blend_params_buffer(device);
+        let mesh_blend_mask_id_buffer =
+            mesh_blend_screen::create_mesh_blend_mask_id_buffer(device, 16);
+        let mesh_blend_mask_id_bind_group = mesh_blend_screen::create_mesh_blend_mask_id_bind_group(
+            device,
+            &mesh_blend_mask_id_bgl,
+            &mesh_blend_mask_id_buffer,
+        );
+        let (mesh_blend_mask_texture, mesh_blend_mask_view) =
+            mesh_blend_screen::create_mesh_blend_mask_texture(device, width, height);
         let depth_prepass_shader_rigid = create_depth_prepass_shader_module_rigid(device);
         let depth_prepass_shader_rigid_packed_lod =
             create_depth_prepass_shader_module_rigid_packed_lod(device);
@@ -1639,6 +1713,26 @@ impl Gpu3D {
             pipeline_multimesh_double_sided,
             pipeline_multimesh_blend_culled,
             pipeline_multimesh_blend_double_sided,
+            pipeline_mask_rigid_culled,
+            pipeline_mask_rigid_double_sided,
+            pipeline_mask_rigid_packed_lod_culled,
+            pipeline_mask_rigid_packed_lod_double_sided,
+            pipeline_mask_skinned_culled,
+            pipeline_mask_skinned_double_sided,
+            screen_blend_supported: true,
+            mesh_blend_screen_active: false,
+            mesh_blend_mask_batch_entries: Vec::new(),
+            _mesh_blend_mask_texture: mesh_blend_mask_texture,
+            mesh_blend_mask_view,
+            mesh_blend_mask_id_bgl,
+            mesh_blend_mask_id_buffer,
+            mesh_blend_mask_id_bind_group,
+            mesh_blend_mask_id_capacity: 16,
+            mesh_blend_params_buffer,
+            mesh_blend_seam_bgl,
+            mesh_blend_seam_pipeline,
+            mesh_blend_seam_bind_group: None,
+            mesh_blend_scene_copy: None,
             camera_buffer,
             camera_bind_group,
             water_camera_bind_group,

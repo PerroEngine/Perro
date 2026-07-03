@@ -18,7 +18,8 @@ startup_splash = "res://icon.png"
 aspect_ratio = "16:9"
 vsync = false
 
-msaa = true
+# Mesh blend screen-space seam pass needs a single-sample scene target.
+msaa = false
 
 meshlets = false
 dev_meshlets = false

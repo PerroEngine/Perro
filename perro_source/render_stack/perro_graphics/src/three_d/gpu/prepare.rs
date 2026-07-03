@@ -533,6 +533,15 @@ impl Gpu3D {
         surface_entries.clear();
         let mut mesh_blends = std::mem::take(&mut self.mesh_blend_scratch);
         resolve_mesh_blends(draws, &mut mesh_blends);
+        // Screen-space seam pass handles single-sample non-multimesh sources;
+        // everything else keeps the in-material depth fade.
+        if self.screen_blend_supported && self.sample_count == 1 {
+            for (draw, blend) in draws.iter().zip(mesh_blends.iter_mut()) {
+                if draw.dense_multimesh.is_none() {
+                    promote_mesh_blend_screen_pass(blend);
+                }
+            }
+        }
 
         for (draw_index, draw) in draws.iter().enumerate() {
             let resolved_blend = mesh_blends[draw_index];
@@ -723,6 +732,8 @@ impl Gpu3D {
                             scale_bits: dense.instance_scale.max(0.0001).to_bits(),
                             packed_blend_params: resolved_blend.packed_params,
                             custom_params: [custom_params.0, custom_params.1],
+                            packed_bleed: 0,
+                            _pad: 0,
                         });
                     let mirrored_winding = draw_model.determinant() < 0.0;
                     let instance_start = self.staged_multimesh_instances.len() as u32;
@@ -1011,7 +1022,12 @@ impl Gpu3D {
                                         || resolved_mesh_blend_active(resolved_blend),
                                     casts_shadows: draw.cast_shadows && !is_camera_stream_quad,
                                     receives_shadows: draw.receive_shadows,
-                                    mesh_blend: resolved_mesh_blend_active(resolved_blend),
+                                    mesh_blend: resolved_mesh_blend_active(resolved_blend)
+                                        && !resolved_mesh_blend_screen_pass(resolved_blend),
+                                    mesh_blend_screen: resolved_mesh_blend_screen_pass(
+                                        resolved_blend,
+                                    ),
+                                    mesh_blend_params: resolved_blend.packed_params,
                                     mesh_blend_depth: resolved_mesh_blend_depth_receiver(
                                         resolved_blend,
                                     ),
@@ -1147,7 +1163,10 @@ impl Gpu3D {
                                 || resolved_mesh_blend_active(resolved_blend),
                             casts_shadows: meshlet_casts_shadows,
                             receives_shadows: draw.receive_shadows,
-                            mesh_blend: resolved_mesh_blend_active(resolved_blend),
+                            mesh_blend: resolved_mesh_blend_active(resolved_blend)
+                                && !resolved_mesh_blend_screen_pass(resolved_blend),
+                            mesh_blend_screen: resolved_mesh_blend_screen_pass(resolved_blend),
+                            mesh_blend_params: resolved_blend.packed_params,
                             mesh_blend_depth: resolved_mesh_blend_depth_receiver(resolved_blend),
                             blend_layers: draw.blend.blend_layers.bits(),
                             blend_mask: draw.blend.blend_mask.bits(),
@@ -1223,6 +1242,8 @@ impl Gpu3D {
                 casts_shadows: false,
                 receives_shadows: false,
                 mesh_blend: false,
+                mesh_blend_screen: false,
+                mesh_blend_params: 0,
                 mesh_blend_depth: false,
                 blend_layers: BitMask::ALL.bits(),
                 blend_mask: BitMask::NONE.bits(),
@@ -1272,6 +1293,8 @@ impl Gpu3D {
                 casts_shadows: false,
                 receives_shadows: false,
                 mesh_blend: false,
+                mesh_blend_screen: false,
+                mesh_blend_params: 0,
                 mesh_blend_depth: false,
                 blend_layers: BitMask::ALL.bits(),
                 blend_mask: BitMask::NONE.bits(),
@@ -1309,6 +1332,8 @@ impl Gpu3D {
         }
         self.compact_sorted_draw_batches(draws.len());
         self.rebuild_batch_views();
+        self.prepare_mesh_blend_screen(device, queue);
+        self.apply_local_color_bleed();
         if !multimesh_batches_sorted(&self.multimesh_batches) {
             if self.multimesh_batches.len() >= PARALLEL_BATCH_SORT_MIN {
                 self.multimesh_batches
@@ -1569,9 +1594,432 @@ impl Gpu3D {
     }
 }
 
+// Local color bleed (one-bounce GI approximation) limits.
+const BLEED_MAX_BATCHES: usize = 512;
+const BLEED_MAX_EMITTERS: usize = 256;
+const BLEED_MAX_OCCLUDERS: usize = 64;
+const BLEED_RANGE: f32 = 14.0;
+// Occluder spheres shrink a bit so shared floors don't block everything.
+const BLEED_OCCLUDER_SHRINK: f32 = 0.8;
+const BLEED_OCCLUDED_FACTOR: f32 = 0.2;
+
+struct BleedEmitter {
+    batch_index: usize,
+    center: Vec3,
+    radius_sq: f32,
+    color: Vec3,
+}
+
+struct BleedOccluder {
+    batch_index: usize,
+    center: Vec3,
+    radius: f32,
+}
+
+#[inline]
+fn unpack_unorm8_lane(packed: u32, shift: u32) -> f32 {
+    ((packed >> shift) & 0xff) as f32 / 255.0
+}
+
+// Bit layout matches decode_local_bleed in the prelude WGSL:
+// r5 g5 b5 strength5 oct_x6 oct_y6.
+#[inline]
+fn pack_local_bleed(color: Vec3, strength: f32, dir: Vec3) -> u32 {
+    #[inline]
+    fn quant5(v: f32) -> u32 {
+        (v.clamp(0.0, 1.0) * 31.0 + 0.5) as u32
+    }
+    #[inline]
+    fn quant6(v: f32) -> u32 {
+        (v.clamp(0.0, 1.0) * 63.0 + 0.5) as u32
+    }
+    let d = dir.normalize_or_zero();
+    let sum = (d.x.abs() + d.y.abs() + d.z.abs()).max(1.0e-6);
+    let mut ox = d.x / sum;
+    let mut oy = d.y / sum;
+    if d.z < 0.0 {
+        let old_x = ox;
+        ox = (1.0 - oy.abs()) * old_x.signum();
+        oy = (1.0 - old_x.abs()) * oy.signum();
+    }
+    quant5(color.x)
+        | (quant5(color.y) << 5)
+        | (quant5(color.z) << 10)
+        | (quant5(strength) << 15)
+        | (quant6(ox * 0.5 + 0.5) << 20)
+        | (quant6(oy * 0.5 + 0.5) << 26)
+}
+
+// Multimesh emitters index past regular draw batches to stay unique.
+const BLEED_MULTIMESH_INDEX_BASE: usize = 1 << 20;
+
+// Shared gather: weighted sum of visible emitters around a receiver center.
+// Returns the packed tint or None when nothing contributes.
+fn gather_local_bleed(
+    center: Vec3,
+    self_index: usize,
+    emitters: &[BleedEmitter],
+    occluders: &[BleedOccluder],
+) -> Option<u32> {
+    let mut sum = Vec3::ZERO;
+    let mut sum_dir = Vec3::ZERO;
+    let mut total_w = 0.0f32;
+    for emitter in emitters {
+        if emitter.batch_index == self_index {
+            continue;
+        }
+        let d_sq = emitter.center.distance_squared(center);
+        let range_fade = (1.0 - d_sq / (BLEED_RANGE * BLEED_RANGE)).clamp(0.0, 1.0);
+        if range_fade <= 0.0 {
+            continue;
+        }
+        let mut w = (emitter.radius_sq / (d_sq + emitter.radius_sq)) * range_fade;
+        if bleed_segment_occluded(center, emitter.center, occluders, self_index, emitter.batch_index)
+        {
+            w *= BLEED_OCCLUDED_FACTOR;
+        }
+        sum += emitter.color * w;
+        sum_dir += (emitter.center - center).normalize_or_zero() * w;
+        total_w += w;
+    }
+    if total_w <= 1.0e-3 {
+        return None;
+    }
+    let tint = (sum / total_w).clamp(Vec3::ZERO, Vec3::ONE);
+    Some(pack_local_bleed(
+        tint,
+        total_w.clamp(0.0, 1.0),
+        sum_dir.normalize_or_zero(),
+    ))
+}
+
+// Approximate world bounds of a multimesh draw from sampled instances.
+fn multimesh_world_bounds(
+    batch: &MultiMeshBatch,
+    draw_params: &[MultiMeshDrawParamGpu],
+    instances: &[MultiMeshInstanceGpu],
+) -> Option<(Vec3, f32)> {
+    let param = draw_params.get(batch.draw_param_index as usize)?;
+    let cols = [
+        [
+            param.model_row_0[0],
+            param.model_row_1[0],
+            param.model_row_2[0],
+            0.0,
+        ],
+        [
+            param.model_row_0[1],
+            param.model_row_1[1],
+            param.model_row_2[1],
+            0.0,
+        ],
+        [
+            param.model_row_0[2],
+            param.model_row_1[2],
+            param.model_row_2[2],
+            0.0,
+        ],
+        [
+            param.model_row_0[3],
+            param.model_row_1[3],
+            param.model_row_2[3],
+            1.0,
+        ],
+    ];
+    let model = Mat4::from_cols_array_2d(&cols);
+    if !model.is_finite() {
+        return None;
+    }
+    let start = batch.instance_start as usize;
+    let end = (start + batch.instance_count as usize).min(instances.len());
+    if end <= start {
+        return None;
+    }
+    let count = end - start;
+    let step = (count / 64).max(1);
+    let mut sum = Vec3::ZERO;
+    let mut samples: Vec<Vec3> = Vec::with_capacity(count.min(64) + 1);
+    let mut i = start;
+    while i < end {
+        let world = (model * Vec3::from(instances[i].position).extend(1.0)).truncate();
+        if world.is_finite() {
+            sum += world;
+            samples.push(world);
+        }
+        i += step;
+    }
+    if samples.is_empty() {
+        return None;
+    }
+    let center = sum / samples.len() as f32;
+    let radius = samples
+        .iter()
+        .map(|p| p.distance(center))
+        .fold(0.0f32, f32::max)
+        + 1.0;
+    Some((center, radius.clamp(0.5, 100.0)))
+}
+
+// True when a third batch sphere blocks the segment between two centers.
+#[inline]
+fn bleed_segment_occluded(
+    from: Vec3,
+    to: Vec3,
+    occluders: &[BleedOccluder],
+    skip_a: usize,
+    skip_b: usize,
+) -> bool {
+    let seg = to - from;
+    let len_sq = seg.length_squared();
+    if len_sq <= 1.0e-6 {
+        return false;
+    }
+    for occ in occluders {
+        if occ.batch_index == skip_a || occ.batch_index == skip_b {
+            continue;
+        }
+        let t = ((occ.center - from).dot(seg) / len_sq).clamp(0.0, 1.0);
+        // Endpoints touching the occluder are contact, not blockage.
+        if t <= 0.05 || t >= 0.95 {
+            continue;
+        }
+        let closest = from + seg * t;
+        let r = occ.radius * BLEED_OCCLUDER_SHRINK;
+        if occ.center.distance_squared(closest) < r * r {
+            return true;
+        }
+    }
+    false
+}
+
+impl Gpu3D {
+    // Approximate one-bounce GI: tint each standard-material batch with the
+    // distance-weighted albedo/emissive of nearby batches. The tint rides in
+    // packed_pbr_params_1 (free unless mesh blend owns it) and the
+    // MATERIAL_FLAG_LOCAL_BLEED bit tells the shader the lane is valid.
+    pub(super) fn apply_local_color_bleed(&mut self) {
+        if self.draw_batches.len() > BLEED_MAX_BATCHES {
+            return;
+        }
+        let mut emitters: Vec<BleedEmitter> = Vec::new();
+        let mut occluders: Vec<BleedOccluder> = Vec::new();
+        for (batch_index, batch) in self.draw_batches.iter().enumerate() {
+            if emitters.len() >= BLEED_MAX_EMITTERS {
+                break;
+            }
+            if batch.draw_on_top || batch.instance_count == 0 || batch.local_radius >= 1.0e8 {
+                continue;
+            }
+            let Some(inst) = self
+                .staged_instance_transforms
+                .get(batch.instance_start as usize)
+            else {
+                continue;
+            };
+            let model = Mat4::from_cols_array_2d(&model_cols_from_affine_rows(inst));
+            if !model.is_finite() {
+                continue;
+            }
+            let center = (model * Vec3::from(batch.local_center).extend(1.0)).truncate();
+            if !center.is_finite() {
+                continue;
+            }
+            let sx = model.x_axis.truncate().length();
+            let sy = model.y_axis.truncate().length();
+            let sz = model.z_axis.truncate().length();
+            let radius = (batch.local_radius.max(0.0) * sx.max(sy).max(sz)).clamp(0.05, 50.0);
+            if occluders.len() < BLEED_MAX_OCCLUDERS && radius >= 0.75 && batch.alpha_mode != 2 {
+                occluders.push(BleedOccluder {
+                    batch_index,
+                    center,
+                    radius,
+                });
+            }
+            let Some(meta) = self
+                .staged_rigid_instance_meta
+                .get(batch.instance_start as usize)
+            else {
+                continue;
+            };
+            let packed = meta.material.packed_color;
+            let albedo = Vec3::new(
+                unpack_unorm8_lane(packed, 0),
+                unpack_unorm8_lane(packed, 8),
+                unpack_unorm8_lane(packed, 16),
+            );
+            let em = meta.material.packed_emissive;
+            let em_scale = unpack_unorm8_lane(em, 24) * 16.0;
+            let emissive = Vec3::new(
+                unpack_unorm8_lane(em, 0),
+                unpack_unorm8_lane(em, 8),
+                unpack_unorm8_lane(em, 16),
+            ) * em_scale;
+            let color = albedo * 0.8 + emissive;
+            if color.max_element() <= 1.0e-3 {
+                continue;
+            }
+            emitters.push(BleedEmitter {
+                batch_index,
+                center,
+                radius_sq: radius * radius,
+                color,
+            });
+        }
+        // Multimesh draws join as emitters too (grass fields tint neighbors).
+        let mut multimesh_bounds: Vec<Option<(Vec3, f32)>> =
+            Vec::with_capacity(self.multimesh_batches.len());
+        for (mm_index, batch) in self.multimesh_batches.iter().enumerate() {
+            let bounds = multimesh_world_bounds(
+                batch,
+                &self.staged_multimesh_draw_params,
+                &self.staged_multimesh_instances,
+            );
+            if let Some((center, radius)) = bounds
+                && emitters.len() < BLEED_MAX_EMITTERS
+                && let Some(param) = self
+                    .staged_multimesh_draw_params
+                    .get(batch.draw_param_index as usize)
+            {
+                let albedo = Vec3::new(
+                    unpack_unorm8_lane(param.packed_color, 0),
+                    unpack_unorm8_lane(param.packed_color, 8),
+                    unpack_unorm8_lane(param.packed_color, 16),
+                );
+                let em_scale = unpack_unorm8_lane(param.packed_emissive, 24) * 16.0;
+                let emissive = Vec3::new(
+                    unpack_unorm8_lane(param.packed_emissive, 0),
+                    unpack_unorm8_lane(param.packed_emissive, 8),
+                    unpack_unorm8_lane(param.packed_emissive, 16),
+                ) * em_scale;
+                let color = albedo * 0.8 + emissive;
+                if color.max_element() > 1.0e-3 {
+                    emitters.push(BleedEmitter {
+                        batch_index: BLEED_MULTIMESH_INDEX_BASE + mm_index,
+                        center,
+                        radius_sq: radius * radius,
+                        color,
+                    });
+                }
+            }
+            multimesh_bounds.push(bounds);
+        }
+        if emitters.is_empty() {
+            return;
+        }
+        for batch_index in 0..self.draw_batches.len() {
+            let (instance_start, instance_count, local_center) = {
+                let batch = &self.draw_batches[batch_index];
+                if batch.draw_on_top
+                    || batch.mesh_blend
+                    || batch.instance_count == 0
+                    || matches!(batch.material_kind, MaterialPipelineKind::Unlit)
+                {
+                    continue;
+                }
+                (
+                    batch.instance_start as usize,
+                    batch.instance_count as usize,
+                    batch.local_center,
+                )
+            };
+            let Some(inst) = self.staged_instance_transforms.get(instance_start) else {
+                continue;
+            };
+            let model = Mat4::from_cols_array_2d(&model_cols_from_affine_rows(inst));
+            if !model.is_finite() {
+                continue;
+            }
+            let center = (model * Vec3::from(local_center).extend(1.0)).truncate();
+            if !center.is_finite() {
+                continue;
+            }
+            let Some(packed) = gather_local_bleed(center, batch_index, &emitters, &occluders)
+            else {
+                continue;
+            };
+            let end = instance_start + instance_count;
+            for meta in self
+                .staged_rigid_instance_meta
+                .get_mut(instance_start..end)
+                .unwrap_or(&mut [])
+            {
+                meta.material.packed_pbr_params_1 = packed;
+                meta.material.packed_material_params |= MATERIAL_FLAG_LOCAL_BLEED << 3;
+            }
+            for meta in self
+                .staged_skinned_instance_meta
+                .get_mut(instance_start..end)
+                .unwrap_or(&mut [])
+            {
+                meta.material.packed_pbr_params_1 = packed;
+                meta.material.packed_material_params |= MATERIAL_FLAG_LOCAL_BLEED << 3;
+            }
+        }
+        // Multimesh receivers: one tint per draw param, read in the vertex
+        // stage since instances share the draw's material.
+        for (mm_index, bounds) in multimesh_bounds.iter().enumerate() {
+            let Some((center, _)) = *bounds else {
+                continue;
+            };
+            let (draw_param_index, unlit) = {
+                let batch = &self.multimesh_batches[mm_index];
+                (
+                    batch.draw_param_index as usize,
+                    matches!(batch.material_kind, MaterialPipelineKind::Unlit),
+                )
+            };
+            if unlit {
+                continue;
+            }
+            let self_index = BLEED_MULTIMESH_INDEX_BASE + mm_index;
+            let Some(packed) = gather_local_bleed(center, self_index, &emitters, &occluders)
+            else {
+                continue;
+            };
+            if let Some(param) = self.staged_multimesh_draw_params.get_mut(draw_param_index) {
+                param.packed_bleed = packed;
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::builtin_flat_mesh_double_sided;
+    use super::{BleedOccluder, Vec3, bleed_segment_occluded, pack_local_bleed};
+
+    #[test]
+    fn local_bleed_pack_lanes_match_shader_layout() {
+        let packed = pack_local_bleed(Vec3::new(1.0, 0.5, 0.0), 0.5, Vec3::Y);
+        assert_eq!(packed & 0x1f, 31, "r lane");
+        assert_eq!((packed >> 5) & 0x1f, 16, "g lane");
+        assert_eq!((packed >> 10) & 0x1f, 0, "b lane");
+        assert_eq!((packed >> 15) & 0x1f, 16, "strength lane");
+        // +Y maps to octahedral (0, 1) -> quantized (32, 63).
+        assert_eq!((packed >> 20) & 0x3f, 32, "oct x");
+        assert_eq!((packed >> 26) & 0x3f, 63, "oct y");
+    }
+
+    #[test]
+    fn bleed_occlusion_blocks_midpoint_sphere_only() {
+        let occ = [BleedOccluder {
+            batch_index: 7,
+            center: Vec3::new(0.0, 0.0, 5.0),
+            radius: 1.5,
+        }];
+        let a = Vec3::ZERO;
+        let b = Vec3::new(0.0, 0.0, 10.0);
+        assert!(bleed_segment_occluded(a, b, &occ, 0, 1));
+        // Skipped when the occluder is one of the endpoints' batches.
+        assert!(!bleed_segment_occluded(a, b, &occ, 7, 1));
+        // Off-axis sphere does not block.
+        let off = [BleedOccluder {
+            batch_index: 7,
+            center: Vec3::new(4.0, 0.0, 5.0),
+            radius: 1.5,
+        }];
+        assert!(!bleed_segment_occluded(a, b, &off, 0, 1));
+    }
 
     #[test]
     fn flat_builtin_meshes_default_double_sided() {

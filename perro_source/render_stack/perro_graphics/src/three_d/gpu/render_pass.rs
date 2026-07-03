@@ -13,9 +13,14 @@ impl Gpu3D {
         self.perf_counters.camera_bind_group_switches = 0;
         let frustum_cull_active = self.should_run_frustum_cull();
         let hiz_active = self.should_run_hiz_occlusion(frustum_cull_active);
-        let depth_prepass_active = self.should_run_depth_prepass(depth_prepass_needed, hiz_active);
         let mesh_blend_depth_active = self.draw_batches.iter().any(|batch| batch.mesh_blend)
             || self.multimesh_batches.iter().any(|batch| batch.mesh_blend);
+        // Mesh blending forces the depth prepass: the mask pass depth-tests
+        // against it and the seam pass reads it for world reconstruction.
+        let depth_prepass_active = self.should_run_depth_prepass(
+            depth_prepass_needed || mesh_blend_depth_active || self.mesh_blend_screen_active,
+            hiz_active,
+        );
         let query_count = if self.cpu_occlusion_enabled
             && self.pending_occlusion_query_count == 0
             && self.pending_occlusion_map_rx.is_none()
@@ -34,6 +39,7 @@ impl Gpu3D {
             || self.sky_enabled
             || depth_prepass_active
             || mesh_blend_depth_active
+            || self.mesh_blend_screen_active
             || hiz_active
             || (self.shadow_pass_enabled && self.has_shadow_casters);
         if !has_any_work {
@@ -226,6 +232,9 @@ impl Gpu3D {
                 }
             }
             drop(prepass);
+        }
+        if depth_prepass_active {
+            self.encode_mesh_blend_mask_pass(encoder, frustum_cull_active);
         }
         if mesh_blend_depth_active {
             let mut blend_prepass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {

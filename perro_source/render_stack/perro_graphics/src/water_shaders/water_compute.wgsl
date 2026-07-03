@@ -93,9 +93,7 @@ fn water_idle_height(w: Water, local: vec2<f32>, t: f32) -> f32 {
         let b = cos(dot(wave_coord, cross) * tau * 1.21 - phase * 1.17);
         let c = sin((wave_coord.x * 0.74 + wave_coord.y * 1.36) * tau * 1.83 + phase * 1.46);
         let d = cos((wave_coord.x * -1.19 + wave_coord.y * 0.48) * tau * 2.79 - phase * 2.08);
-        let crest_a = pow(max(a, 0.0), 3.0) - pow(max(-a, 0.0), 1.4) * 0.42;
-        let crest_b = pow(max(c, 0.0), 4.0) - pow(max(-c, 0.0), 1.3) * 0.28;
-        return (crest_a * 0.42 + b * 0.20 + crest_b * 0.25 + d * 0.13) * w.wave.y * 1.45;
+        return (water_crest_wave(a) * 0.42 + b * 0.20 + water_crest_wave(c) * 0.25 + d * 0.13) * w.wave.y * 1.45;
     }
     if w.idle_mode == 3u {
         let wind = normalize(select(vec2<f32>(1.0, 0.0), w.flow_wind.zw, length(w.flow_wind.zw) > 0.0001));
@@ -106,9 +104,8 @@ fn water_idle_height(w: Water, local: vec2<f32>, t: f32) -> f32 {
         let d = cos((wave_coord.x * -0.51 + wave_coord.y * 1.18) * tau * 2.52 - phase * 1.91);
         let swell_a = pow(max(0.0, sin(dot(wave_coord, wind) * tau * 0.39 + phase * 0.63)), 5.0);
         let swell_b = pow(max(0.0, sin(dot(wave_coord, cross) * tau * 0.64 - phase * 1.09 + 1.7)), 4.0);
-        let chop = (pow(max(a, 0.0), 3.0) * 0.30 - pow(max(-a, 0.0), 1.35) * 0.16)
-            + (b * 0.12 + c * 0.14 + d * 0.10);
-        return (chop + swell_a * 0.82 + swell_b * 0.56) * w.wave.y * 1.65;
+        return (water_crest_wave(a) * 0.30 + b * 0.12 + water_crest_wave(c) * 0.14 + d * 0.10
+            + swell_a * 0.82 + swell_b * 0.56) * w.wave.y * 1.65;
     }
     let fallback_dir = normalize(select(vec2<f32>(1.0, 0.0), w.flow_wind.zw, length(w.flow_wind.zw) > 0.0001));
     let flow = normalize(select(fallback_dir, w.flow_wind.xy, length(w.flow_wind.xy) > 0.0001));
@@ -188,7 +185,7 @@ fn cs_main(@builtin(global_invocation_id) gid: vec3<u32>) {
         next_cells[cell_idx] = vec4<f32>(0.0);
         return;
     }
-    let t = params.time_seconds;
+    let t = w.wave_profile.y;
     let phase = t * w.wave.x * 0.2;
     let local = (vec2<f32>(fx, fy) - vec2<f32>(0.5, 0.5)) * w.size_depth_time.xy;
     let idle = water_idle_height(w, local, t);
@@ -202,9 +199,23 @@ fn cs_main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let coast_normal = water_coast_normal(w, local_idx, width);
     let shore = max(edge, max(coast.y, neighbor_shore * 0.92)) * (1.0 - coast.x * 0.40);
     let wake = coast.z * w.wave.w * 1.45;
-    if shore <= 0.0 && wake <= 0.0 && coast.w <= 0.0 && abs(idle) <= 0.00001 {
-        let prev = cells[cell_idx];
-        next_cells[cell_idx] = vec4<f32>(prev.x * 0.985, prev.y * 0.94, prev.z * 0.90, 0.0);
+    let prev_cell = cells[cell_idx];
+    let xl = x_cell - select(0u, 1u, x_cell > 0u);
+    let xr = min(x_cell + 1u, width - 1u);
+    let yd = y_cell - select(0u, 1u, y_cell > 0u);
+    let yu = min(y_cell + 1u, height_cells - 1u);
+    let neighbor_height = (
+        water_prev_cell(w, xl, y_cell, width, height_cells).x
+        + water_prev_cell(w, xr, y_cell, width, height_cells).x
+        + water_prev_cell(w, x_cell, yd, width, height_cells).x
+        + water_prev_cell(w, x_cell, yu, width, height_cells).x
+    ) * 0.25;
+    let laplacian = neighbor_height - prev_cell.x;
+    // idle-cell skip must still let travelling ripples integrate: only sleep
+    // when this cell AND its neighborhood carry no wave energy
+    let energy = abs(prev_cell.x) + abs(prev_cell.y) + abs(laplacian);
+    if shore <= 0.0 && wake <= 0.0 && coast.w <= 0.0 && energy <= 0.0004 {
+        next_cells[cell_idx] = vec4<f32>(prev_cell.x * 0.985, prev_cell.y * 0.94, prev_cell.z * 0.965, 0.0);
         return;
     }
     let edge_noise = (sin((local.x * 0.31 + local.y * 0.47) + phase * 7.0) + sin((local.x * -0.53 + local.y * 0.29) - phase * 4.3)) * 0.34 * w.model_z.w;
@@ -222,19 +233,7 @@ fn cs_main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let crash_energy = crash_wave * crash_wave * (0.72 + crash_wave * 0.28);
     let crash_up = shore * (1.18 + coast_push * 1.12 + coast_slide * 0.24) * crash_energy * w.model_y.w * w.wave.y * 2.30;
     let crash = (crash_up + max(reflected, 0.0) * 0.88) * (0.70 + spill * 0.68) + diffusion * w.wave.y * 1.08;
-    let prev_cell = cells[cell_idx];
-    let xl = x_cell - select(0u, 1u, x_cell > 0u);
-    let xr = min(x_cell + 1u, width - 1u);
-    let yd = y_cell - select(0u, 1u, y_cell > 0u);
-    let yu = min(y_cell + 1u, height_cells - 1u);
-    let neighbor_height = (
-        water_prev_cell(w, xl, y_cell, width, height_cells).x
-        + water_prev_cell(w, xr, y_cell, width, height_cells).x
-        + water_prev_cell(w, x_cell, yd, width, height_cells).x
-        + water_prev_cell(w, x_cell, yu, width, height_cells).x
-    ) * 0.25;
-    let laplacian = neighbor_height - prev_cell.x;
-    let dt = clamp(params.delta_seconds, 0.0, 0.050);
+    let dt = clamp(w.wave_profile.z, 0.0, 0.050);
     let shore_damp = 1.0 - shore * (0.72 + coast_push * 0.44 + coast_slide * 0.16) * w.coastline.w;
     let damping = clamp(w.wave.z * shore_damp, 0.0, 0.999);
     let step_t = clamp(dt * 60.0, 0.0, 1.0);
@@ -242,7 +241,7 @@ fn cs_main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let crest_norm = idle / max(w.wave.y, 0.001);
     let crest_line = smoothstep(0.44, 0.82, crest_norm) * (1.0 - smoothstep(1.04, 1.72, crest_norm));
     let foam_strength = bitcast<f32>(w.flags.w);
-    let wave_foam = crest_line * foam_strength * 0.46;
+    let wave_foam = crest_line * foam_strength * 0.28;
     let impact_foam = smoothstep(0.06, 0.84, wake + abs(crash)) * foam_strength * 0.62;
     let shore_foam = smoothstep(0.18, 1.20, crash + shore * 0.62) * (1.0 - smoothstep(1.42, 2.45, crash)) * w.coastline.x * foam_strength * 1.12;
     let foam_decay = 1.0 - 0.10 * step_t;
@@ -251,14 +250,15 @@ fn cs_main(@builtin(global_invocation_id) gid: vec3<u32>) {
         0.0,
         w.kind == 3u,
     );
-    let goal_height = idle + wake * 0.28 + crash;
+    let goal_height = wake * 0.55 + crash;
     let stiffness = mix(7.0, 16.0, clamp(w.wave.y / 2.0, 0.0, 1.0)) * (1.0 + shore * 0.35 + spill * 0.20);
     let wave_speed = mix(16.0, 34.0, clamp(w.wave.y / 2.0, 0.0, 1.0));
     let force = (goal_height - prev_cell.x) * stiffness + laplacian * wave_speed + crash * (0.42 + shore * 0.30);
     let velocity = clamp((prev_cell.y + force * dt) * damping_step, -max(w.wave.y * 8.0, 2.0), max(w.wave.y * 8.0, 2.0));
-    let height = prev_cell.x + velocity * dt + idle * (0.020 + shore * w.model_y.w * 0.10);
+    let height = prev_cell.x + velocity * dt + idle * shore * w.model_y.w * 0.06;
     let blended_height = mix(height, goal_height, clamp(0.04 + spill * 0.08 + wake * 0.018, 0.0, 0.20));
-    next_cells[cell_idx] = vec4<f32>(blended_height, velocity, foam, shore);
+    let height_limit = max(w.wave.y * 2.0, 1.25);
+    next_cells[cell_idx] = vec4<f32>(clamp(blended_height, -height_limit, height_limit), velocity, foam, shore);
 }
 
 struct Water2DVertexOut {
@@ -305,7 +305,7 @@ fn fs_water_2d(in: Water2DVertexOut) -> @location(0) vec4<f32> {
     if water_shape_alpha(w, in.uv) <= 0.0 {
         return vec4<f32>(0.0);
     }
-    let t = params.time_seconds;
+    let t = w.wave_profile.y;
     let idle = sin((in.uv.x + in.uv.y + t * w.wave.x * 0.2) * 6.2831853) * 0.5 + 0.5;
     var ripple = vec4<f32>(0.0);
     if w.sim.y > 0u {

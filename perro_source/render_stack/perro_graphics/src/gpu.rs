@@ -1321,6 +1321,12 @@ impl Gpu {
         let accessibility_enabled = self.accessibility.has_settings(accessibility);
         let surface_sized_render =
             self.render_width == self.config.width && self.render_height == self.config.height;
+        // The seam pass needs a sampleable offscreen scene texture, so it
+        // forces the non-direct path while active.
+        let blend_screen_active = self
+            .three_d
+            .as_ref()
+            .is_some_and(|three_d| three_d.screen_blend_active());
         let msaa_direct_present = surface_sized_render
             && self.sample_count > 1
             && !post_requested
@@ -1330,6 +1336,7 @@ impl Gpu {
             && self.sample_count == 1
             && !post_requested
             && !accessibility_enabled
+            && !blend_screen_active
             && self.render_format == self.config.format;
         let depth_prepass_needed = !waters_3d.is_empty()
             || (camera_post_enabled && PostProcessor::uses_depth(camera_post_chain))
@@ -1524,7 +1531,7 @@ impl Gpu {
                     );
                     if !stream.waters_2d.is_empty() {
                         if self.camera_stream_3d.is_none() {
-                            self.camera_stream_3d = Some(Gpu3D::new(
+                            let mut stream_3d = Gpu3D::new(
                                 &self.device,
                                 &self.queue,
                                 self.render_format,
@@ -1540,7 +1547,11 @@ impl Gpu {
                                         .indirect_first_instance_enabled,
                                     texture_filter: self.texture_filter,
                                 },
-                            ));
+                            );
+                            // Camera streams render into their own targets;
+                            // the seam pass only wires up the main scene.
+                            stream_3d.set_screen_blend_supported(false);
+                            self.camera_stream_3d = Some(stream_3d);
                         }
                         if self.camera_stream_water.is_none()
                             && let Some(stream_3d_ref) = self.camera_stream_3d.as_ref()
@@ -1591,7 +1602,7 @@ impl Gpu {
             } else if let CameraStreamSourceState::ThreeD(camera) = &stream.source {
                 stream_post_camera = Some(camera.clone());
                 if self.camera_stream_3d.is_none() {
-                    self.camera_stream_3d = Some(Gpu3D::new(
+                    let mut stream_3d = Gpu3D::new(
                         &self.device,
                         &self.queue,
                         self.render_format,
@@ -1606,7 +1617,11 @@ impl Gpu {
                             indirect_first_instance_enabled: self.indirect_first_instance_enabled,
                             texture_filter: self.texture_filter,
                         },
-                    ));
+                    );
+                    // Camera streams render into their own targets; the seam
+                    // pass only wires up the main scene.
+                    stream_3d.set_screen_blend_supported(false);
+                    self.camera_stream_3d = Some(stream_3d);
                 }
                 if let Some(stream_3d) = self.camera_stream_3d.as_mut() {
                     let width = stream.resolution[0].max(1);
@@ -1774,6 +1789,16 @@ impl Gpu {
             self.three_d.is_none() && self.two_d.is_some() && !waters_2d.is_empty();
         if let Some(three_d) = self.three_d.as_mut() {
             three_d.render_pass(&mut encoder, color_view, clear_color, depth_prepass_needed);
+            // Seam pass runs on the resolved offscreen scene texture, before
+            // particles/water/2D draw on top.
+            if blend_screen_active && !direct_present && self.sample_count == 1 {
+                three_d.mesh_blend_screen_pass(
+                    &self.device,
+                    &mut encoder,
+                    self.post.scene_texture(),
+                    &scene_view,
+                );
+            }
             if let Some(point_particles_3d_gpu) = self.point_particles_3d.as_mut() {
                 point_particles_3d_gpu.render_pass(&mut encoder, color_view, three_d.depth_view());
             }

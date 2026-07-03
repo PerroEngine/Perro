@@ -16,6 +16,8 @@ pub(super) struct DrawBatchPush {
     pub(super) casts_shadows: bool,
     pub(super) receives_shadows: bool,
     pub(super) mesh_blend: bool,
+    pub(super) mesh_blend_screen: bool,
+    pub(super) mesh_blend_params: u32,
     pub(super) mesh_blend_depth: bool,
     pub(super) blend_layers: u32,
     pub(super) blend_mask: u32,
@@ -38,6 +40,8 @@ pub(super) fn push_draw_batch(draw_batches: &mut Vec<DrawBatch>, batch: DrawBatc
         casts_shadows,
         receives_shadows,
         mesh_blend,
+        mesh_blend_screen,
+        mesh_blend_params,
         mesh_blend_depth,
         blend_layers,
         blend_mask,
@@ -83,6 +87,8 @@ pub(super) fn push_draw_batch(draw_batches: &mut Vec<DrawBatch>, batch: DrawBatc
             && prev.casts_shadows == casts_shadows
             && prev.receives_shadows == receives_shadows
             && prev.mesh_blend == mesh_blend
+            && prev.mesh_blend_screen == mesh_blend_screen
+            && prev.mesh_blend_params == mesh_blend_params
             && prev.mesh_blend_depth == mesh_blend_depth
             && prev.blend_layers == blend_layers
             && prev.blend_mask == blend_mask;
@@ -121,6 +127,8 @@ pub(super) fn push_draw_batch(draw_batches: &mut Vec<DrawBatch>, batch: DrawBatc
         casts_shadows,
         receives_shadows,
         mesh_blend,
+        mesh_blend_screen,
+        mesh_blend_params,
         mesh_blend_depth,
         blend_layers,
         blend_mask,
@@ -179,6 +187,9 @@ pub(super) struct ResolvedMeshBlend {
 const RESOLVED_MESH_BLEND_ACTIVE: u32 = 1u32 << 0;
 const RESOLVED_MESH_BLEND_NORMAL_BLEND: u32 = 1u32 << 1;
 const RESOLVED_MESH_BLEND_SCREEN_BLEND: u32 = 1u32 << 3;
+// Set during prepare when the screen-space seam pass will handle this draw;
+// the source then renders opaque and the in-material depth fade stays off.
+const RESOLVED_MESH_BLEND_SCREEN_PASS: u32 = 1u32 << 4;
 
 #[inline]
 fn pack_resolved_mesh_blend_flags(blend: MeshBlendOptions3D) -> u32 {
@@ -210,6 +221,20 @@ fn resolved_mesh_blend_normal_blending(blend: ResolvedMeshBlend) -> bool {
 #[inline]
 fn resolved_mesh_blend_screen_blending(blend: ResolvedMeshBlend) -> bool {
     (blend.packed_flags & RESOLVED_MESH_BLEND_SCREEN_BLEND) != 0
+}
+
+#[inline]
+pub(super) fn resolved_mesh_blend_screen_pass(blend: ResolvedMeshBlend) -> bool {
+    (blend.packed_flags & RESOLVED_MESH_BLEND_SCREEN_PASS) != 0
+}
+
+#[inline]
+pub(super) fn promote_mesh_blend_screen_pass(blend: &mut ResolvedMeshBlend) {
+    if (blend.packed_flags & RESOLVED_MESH_BLEND_ACTIVE) != 0
+        && (blend.packed_flags & RESOLVED_MESH_BLEND_SCREEN_BLEND) != 0
+    {
+        blend.packed_flags |= RESOLVED_MESH_BLEND_SCREEN_PASS;
+    }
 }
 
 #[inline]
@@ -539,7 +564,11 @@ pub(super) fn build_instance(
     }
     let blend_active = resolved_mesh_blend_active(mesh_blend);
     let packed_blend_params = if blend_active && !debug_view {
-        if resolved_mesh_blend_screen_blending(mesh_blend) {
+        // Screen-pass sources render opaque; the seam pass softens the
+        // intersection instead of the in-material depth fade.
+        if resolved_mesh_blend_screen_blending(mesh_blend)
+            && !resolved_mesh_blend_screen_pass(mesh_blend)
+        {
             material_flags |= MATERIAL_FLAG_MESH_BLEND;
         }
         if resolved_mesh_blend_normal_blending(mesh_blend) {
@@ -552,12 +581,7 @@ pub(super) fn build_instance(
 
     let color_linear = crate::srgb_to_linear_rgb([color[0], color[1], color[2]]);
     let material = MaterialInstanceGpu {
-        packed_color: pack_unorm4x8([
-            color_linear[0],
-            color_linear[1],
-            color_linear[2],
-            color[3],
-        ]),
+        packed_color: pack_unorm4x8([color_linear[0], color_linear[1], color_linear[2], color[3]]),
         packed_pbr_params_0,
         packed_pbr_params_1: packed_pbr_params_1 | packed_blend_params,
         packed_emissive: pack_emissive_hdr(emissive_factor),

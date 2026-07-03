@@ -1998,6 +1998,8 @@ fn water_gpu_2d(
         water.wave_speed,
         water.wave_scale,
         water.wave_length,
+        water.simulation_time,
+        water.simulation_delta,
         water.damping,
         water.wake_strength,
         water.foam_strength,
@@ -2068,6 +2070,8 @@ fn water_gpu_3d(
         water.wave_speed,
         water.wave_scale,
         water.wave_length,
+        water.simulation_time,
+        water.simulation_delta,
         water.damping,
         water.wake_strength,
         water.foam_strength,
@@ -2139,6 +2143,8 @@ fn water_gpu_common(
     wave_speed: f32,
     wave_scale: f32,
     wave_length: f32,
+    simulation_time: f32,
+    simulation_delta: f32,
     damping: f32,
     wake_strength: f32,
     foam_strength: f32,
@@ -2186,7 +2192,12 @@ fn water_gpu_common(
         visual0,
         visual1,
         visual2,
-        wave_profile: [wave_length.max(0.001), 0.0, 0.0, 0.0],
+        wave_profile: [
+            wave_length.max(0.001),
+            simulation_time.max(0.0),
+            simulation_delta.clamp(0.0, 0.050),
+            0.0,
+        ],
         coastline_foam_color,
         coastline,
         shape: water_shape_gpu(shape, size, depth),
@@ -2410,8 +2421,20 @@ mod tests {
             .expect("water 3d render wgsl should parse");
         assert!(!WATER_3D_RENDER_WGSL.contains("water_screen_contact_outline"));
         assert!(!WATER_3D_RENDER_WGSL.contains("outline_white"));
-        assert!(WATER_3D_RENDER_WGSL.contains("water_analytic_wave"));
+        assert!(WATER_3D_RENDER_WGSL.contains("water_idle_height"));
         assert!(WATER_3D_RENDER_WGSL.contains("water_depth_thickness"));
+        assert!(WATER_3D_RENDER_WGSL.contains("foam_mask"));
+        assert!(WATER_3D_RENDER_WGSL.contains("caustic"));
+        // render + compute + CPU idle wave models must stay in lockstep
+        assert!(WATER_WGSL.contains("water_crest_wave(a) * 0.42"));
+        assert!(WATER_3D_RENDER_WGSL.contains("water_crest_wave(a) * 0.42"));
+        assert!(WATER_WGSL.contains("swell_a * 0.82 + swell_b * 0.56"));
+        assert!(WATER_3D_RENDER_WGSL.contains("swell_a * 0.82 + swell_b * 0.56"));
+        // waves must run on the runtime sim clock (wave_profile.y), not the
+        // render backend frame clock, or physics phase drifts from visuals
+        assert!(WATER_WGSL.contains("let t = w.wave_profile.y;"));
+        assert!(WATER_3D_RENDER_WGSL.contains("let t = w.wave_profile.y;"));
+        assert!(!WATER_3D_RENDER_WGSL.contains("params.time_seconds"));
         assert!(!WATER_3D_RENDER_WGSL.contains("water_surface_contact_foam"));
         assert!(WATER_3D_RENDER_WGSL.contains("vec4<f32>(w.model_x.xyz, 0.0)"));
         assert!(WATER_3D_RENDER_WGSL.contains("vec4<f32>(w.model_y.xyz, 0.0)"));

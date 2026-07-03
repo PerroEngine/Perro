@@ -1855,7 +1855,10 @@ impl Runtime {
             let target = crate::runtime::physics::water_target_submerged(density);
             let submerged = sample.height - local.y;
             let rel_down = sample.velocity.y - velocity.y;
-            if submerged <= 0.0 || submerged > target * 2.25 || rel_down <= 0.35 {
+            // fast bodies cross the surface band in one tick; widen the window
+            // by entry speed so high-velocity drops still register a splash
+            let entry_window = (target * 2.25).max(rel_down.max(0.0) * (1.0 / 30.0) + target);
+            if submerged <= 0.0 || submerged > entry_window || rel_down <= 1.1 {
                 continue;
             }
             let velocity_2d = perro_structs::Vector2::new(velocity.x, velocity.z);
@@ -1910,9 +1913,9 @@ impl Runtime {
                 impacts.push(WaterImpact3D {
                     position: [local.x, local.y, local.z],
                     velocity: [contact.velocity.x, contact.velocity.y, contact.velocity.z],
-                    strength: (contact.foam_amount * 5.8).max(0.35),
+                    strength: (contact.foam_amount * 5.8).max(0.22),
                     radius: contact.radius,
-                    cavitation: contact.foam_amount * 0.2,
+                    cavitation: (contact.foam_amount * 0.30).min(1.0),
                 });
             }
         }

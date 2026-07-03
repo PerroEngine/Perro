@@ -461,6 +461,8 @@ fn fast_pow_1_35(v: f32) -> f32 {
     }
 }
 
+/// GPU sim cells store the deviation from the analytic idle surface, so a
+/// readback sample combines with the live idle height instead of replacing it.
 #[inline]
 pub fn water_physics_sample_or_idle(
     surface: &WaterSurfaceParams,
@@ -468,11 +470,19 @@ pub fn water_physics_sample_or_idle(
     time_seconds: f32,
     gpu_sample: Option<WaterPhysicsSample>,
 ) -> WaterPhysicsSample {
-    gpu_sample.unwrap_or(WaterPhysicsSample {
-        height: analytic_idle_water_height(surface, local, time_seconds),
-        velocity: surface.flow,
-        foam: 0.0,
-    })
+    let idle = analytic_idle_water_height(surface, local, time_seconds);
+    match gpu_sample {
+        Some(sample) => WaterPhysicsSample {
+            height: idle + sample.height,
+            velocity: sample.velocity,
+            foam: sample.foam,
+        },
+        None => WaterPhysicsSample {
+            height: idle,
+            velocity: surface.flow,
+            foam: 0.0,
+        },
+    }
 }
 
 #[cfg(test)]
@@ -517,13 +527,15 @@ mod tests {
             velocity: Vector2::new(0.5, 0.25),
             foam: 0.75,
         };
-        assert_eq!(
-            water_physics_sample_or_idle(&surface, Vector2::new(2.0, 0.0), 1.0, Some(cached)),
-            cached
-        );
+        let idle = analytic_idle_water_height(&surface, Vector2::new(2.0, 0.0), 1.0);
+        let combined =
+            water_physics_sample_or_idle(&surface, Vector2::new(2.0, 0.0), 1.0, Some(cached));
+        assert!((combined.height - (idle + 4.0)).abs() < 1.0e-6);
+        assert_eq!(combined.velocity, cached.velocity);
+        assert_eq!(combined.foam, cached.foam);
 
         let fallback = water_physics_sample_or_idle(&surface, Vector2::new(2.0, 0.0), 1.0, None);
-        assert_ne!(fallback.height, 4.0);
+        assert!((fallback.height - idle).abs() < 1.0e-6);
         assert_eq!(fallback.velocity, surface.flow);
         assert_eq!(fallback.foam, 0.0);
     }

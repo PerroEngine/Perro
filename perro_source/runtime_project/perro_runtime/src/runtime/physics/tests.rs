@@ -559,9 +559,8 @@ fn water_physics_uses_cached_visual_height_offset() {
     let local = Vector2::new(2.0, -1.0);
     let elapsed = 0.25;
     let analytic = water_physics_sample_for_body(&surface, local, elapsed);
-    let center = water_physics_sample_for_body(&surface, Vector2::ZERO, elapsed);
     let cached = perro_nodes::WaterPhysicsSample {
-        height: center.height + 0.75,
+        height: 0.75,
         velocity: Vector2::ZERO,
         foam: 0.6,
     };

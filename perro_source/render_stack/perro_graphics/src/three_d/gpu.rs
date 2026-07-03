@@ -11,9 +11,12 @@ use super::{
         create_depth_prepass_shader_module_rigid_packed_lod,
         create_depth_prepass_shader_module_skinned, create_frustum_cull_shader_module,
         create_hiz_depth_copy_shader_module, create_hiz_downsample_shader_module,
-        create_hiz_occlusion_cull_shader_module, create_mesh_shader_module_rigid,
-        create_mesh_shader_module_rigid_packed_lod, create_mesh_shader_module_skinned,
-        create_multimesh_shader_module, create_sky_shader_module,
+        create_hiz_occlusion_cull_shader_module, create_mesh_blend_mask_shader_module_rigid,
+        create_mesh_blend_mask_shader_module_rigid_packed_lod,
+        create_mesh_blend_mask_shader_module_skinned, create_mesh_blend_screen_shader_module,
+        create_mesh_shader_module_rigid, create_mesh_shader_module_rigid_packed_lod,
+        create_mesh_shader_module_skinned, create_multimesh_shader_module,
+        create_sky_shader_module,
         create_sky_shader_module_from_source, create_toon_shader_module_rigid,
         create_toon_shader_module_skinned, create_unlit_shader_module_rigid,
         create_unlit_shader_module_skinned,
@@ -80,6 +83,8 @@ use texture_cache::{
 
 #[path = "gpu/asset_bridge.rs"]
 mod asset_bridge;
+#[path = "gpu/mesh_blend_screen.rs"]
+mod mesh_blend_screen;
 #[path = "gpu/buffers.rs"]
 mod buffers;
 #[path = "gpu/camera.rs"]
@@ -165,6 +170,8 @@ struct Scene3DUniform {
     inv_view_proj: [[f32; 4]; 4],
     // Hemisphere ambient: radiance from below (premultiplied), w unused.
     ground_color: [f32; 4],
+    // Sky radiance at the horizon (premultiplied) for env reflections.
+    sky_horizon_color: [f32; 4],
 }
 
 #[repr(C)]
@@ -258,6 +265,8 @@ struct MaterialInstanceGpu {
 }
 
 const MATERIAL_FLAG_MIRRORED_WINDING: u32 = 1u32 << 5;
+// packed_pbr_params_1 carries a local color-bleed tint for this instance.
+const MATERIAL_FLAG_LOCAL_BLEED: u32 = 1u32 << 7;
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
@@ -295,6 +304,9 @@ struct MultiMeshDrawParamGpu {
     scale_bits: u32,
     packed_blend_params: u32,
     custom_params: [u32; 2],
+    // Local color bleed tint (pack_local_bleed layout); 0 = none.
+    packed_bleed: u32,
+    _pad: u32,
 }
 
 #[repr(C)]
@@ -500,6 +512,12 @@ pub struct Gpu3D {
     pipeline_multimesh_double_sided: wgpu::RenderPipeline,
     pipeline_multimesh_blend_culled: wgpu::RenderPipeline,
     pipeline_multimesh_blend_double_sided: wgpu::RenderPipeline,
+    pipeline_mask_rigid_culled: wgpu::RenderPipeline,
+    pipeline_mask_rigid_double_sided: wgpu::RenderPipeline,
+    pipeline_mask_rigid_packed_lod_culled: wgpu::RenderPipeline,
+    pipeline_mask_rigid_packed_lod_double_sided: wgpu::RenderPipeline,
+    pipeline_mask_skinned_culled: wgpu::RenderPipeline,
+    pipeline_mask_skinned_double_sided: wgpu::RenderPipeline,
     custom_pipelines: AHashMap<u32, CustomPipeline>,
     custom_pipelines_rigid: AHashMap<u32, CustomPipeline>,
     custom_pipelines_multimesh: AHashMap<u32, CustomPipeline>,
@@ -526,6 +544,21 @@ pub struct Gpu3D {
     _shadow_map_sampler: wgpu::Sampler,
     mesh_blend_bgl: wgpu::BindGroupLayout,
     mesh_blend_bind_group: wgpu::BindGroup,
+    // Screen-space mesh blend (seam pass) state.
+    screen_blend_supported: bool,
+    mesh_blend_screen_active: bool,
+    mesh_blend_mask_batch_entries: Vec<(usize, u32)>,
+    _mesh_blend_mask_texture: wgpu::Texture,
+    mesh_blend_mask_view: wgpu::TextureView,
+    mesh_blend_mask_id_bgl: wgpu::BindGroupLayout,
+    mesh_blend_mask_id_buffer: wgpu::Buffer,
+    mesh_blend_mask_id_bind_group: wgpu::BindGroup,
+    mesh_blend_mask_id_capacity: u64,
+    mesh_blend_params_buffer: wgpu::Buffer,
+    mesh_blend_seam_bgl: wgpu::BindGroupLayout,
+    mesh_blend_seam_pipeline: wgpu::RenderPipeline,
+    mesh_blend_seam_bind_group: Option<wgpu::BindGroup>,
+    mesh_blend_scene_copy: Option<(wgpu::Texture, wgpu::TextureView)>,
     sky_buffer: wgpu::Buffer,
     sky_bind_group: wgpu::BindGroup,
     _sky_noise_texture: wgpu::Texture,
@@ -830,6 +863,8 @@ struct DrawBatch {
     casts_shadows: bool,
     receives_shadows: bool,
     mesh_blend: bool,
+    mesh_blend_screen: bool,
+    mesh_blend_params: u32,
     mesh_blend_depth: bool,
     blend_layers: u32,
     blend_mask: u32,
@@ -910,10 +945,10 @@ const OCCLUSION_PROBE_INTERVAL: u64 = 1;
 mod tests {
     use super::{
         DrawBatch, DrawBatchPush, MATERIAL_TEXTURE_NONE, MaterialInstanceGpu, MaterialPipelineKind,
-        MultiMeshInstanceGpu, PackedLodParamGpu, PackedRigidLodVertex, RenderBatchKind,
-        RenderPath3D, RigidInstanceMetaGpu, RigidMeshVertex, SkinnedInstanceMetaGpu,
-        SkinnedMeshVertex, camera, compare_draw_batch_keys, draw_batch_state_key, push_draw_batch,
-        render_state_key,
+        MultiMeshDrawParamGpu, MultiMeshInstanceGpu, PackedLodParamGpu, PackedRigidLodVertex,
+        RenderBatchKind, RenderPath3D, RigidInstanceMetaGpu, RigidMeshVertex,
+        SkinnedInstanceMetaGpu, SkinnedMeshVertex, camera, compare_draw_batch_keys,
+        draw_batch_state_key, push_draw_batch, render_state_key,
     };
     use glam::{Mat4, Quat, Vec3, Vec4};
     use perro_asset_formats::pmesh::{
@@ -963,6 +998,7 @@ mod tests {
         assert_eq!(std::mem::size_of::<PackedLodParamGpu>(), 48);
         assert_eq!(std::mem::size_of::<SkinnedMeshVertex>(), 40);
         assert_eq!(std::mem::size_of::<MultiMeshInstanceGpu>(), 40);
+        assert_eq!(std::mem::size_of::<MultiMeshDrawParamGpu>(), 80);
         assert_eq!(std::mem::size_of::<MaterialInstanceGpu>(), 20);
         assert_eq!(std::mem::size_of::<RigidInstanceMetaGpu>(), 32);
         assert_eq!(std::mem::size_of::<SkinnedInstanceMetaGpu>(), 36);
@@ -1279,6 +1315,8 @@ mod tests {
                 casts_shadows: true,
                 receives_shadows: true,
                 mesh_blend: false,
+                mesh_blend_screen: false,
+                mesh_blend_params: 0,
                 mesh_blend_depth: false,
                 blend_layers: BitMask::ALL.bits(),
                 blend_mask: BitMask::NONE.bits(),
@@ -1302,6 +1340,8 @@ mod tests {
                 casts_shadows: true,
                 receives_shadows: true,
                 mesh_blend: false,
+                mesh_blend_screen: false,
+                mesh_blend_params: 0,
                 mesh_blend_depth: false,
                 blend_layers: BitMask::ALL.bits(),
                 blend_mask: BitMask::NONE.bits(),
@@ -1355,6 +1395,8 @@ mod tests {
                 casts_shadows: true,
                 receives_shadows: true,
                 mesh_blend: false,
+                mesh_blend_screen: false,
+                mesh_blend_params: 0,
                 mesh_blend_depth: false,
                 blend_layers: BitMask::ALL.bits(),
                 blend_mask: BitMask::NONE.bits(),
@@ -1378,6 +1420,8 @@ mod tests {
                 casts_shadows: true,
                 receives_shadows: true,
                 mesh_blend: false,
+                mesh_blend_screen: false,
+                mesh_blend_params: 0,
                 mesh_blend_depth: false,
                 blend_layers: BitMask::ALL.bits(),
                 blend_mask: BitMask::NONE.bits(),
@@ -1401,6 +1445,8 @@ mod tests {
                 casts_shadows: true,
                 receives_shadows: true,
                 mesh_blend: false,
+                mesh_blend_screen: false,
+                mesh_blend_params: 0,
                 mesh_blend_depth: false,
                 blend_layers: BitMask::ALL.bits(),
                 blend_mask: BitMask::NONE.bits(),
@@ -1430,6 +1476,8 @@ mod tests {
             casts_shadows: true,
             receives_shadows: true,
             mesh_blend: false,
+            mesh_blend_screen: false,
+            mesh_blend_params: 0,
             mesh_blend_depth: false,
             blend_layers: BitMask::ALL.bits(),
             blend_mask: BitMask::NONE.bits(),
@@ -1546,6 +1594,8 @@ mod tests {
             casts_shadows: true,
             receives_shadows: true,
             mesh_blend,
+            mesh_blend_screen: false,
+            mesh_blend_params: 0,
             mesh_blend_depth: false,
             blend_layers: BitMask::ALL.bits(),
             blend_mask: BitMask::NONE.bits(),

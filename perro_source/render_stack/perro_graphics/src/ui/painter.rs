@@ -622,10 +622,7 @@ fn is_hebrew(ch: char) -> bool {
 }
 
 fn is_indic(ch: char) -> bool {
-    matches!(
-        ch as u32,
-        0x0900..=0x0DFF
-    )
+    matches!(ch as u32, 0x0900..=0x0DFF)
 }
 
 fn is_thai(ch: char) -> bool {

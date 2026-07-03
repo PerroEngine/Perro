@@ -379,6 +379,10 @@ impl PostProcessor {
         &self.scene_view
     }
 
+    pub fn scene_texture(&self) -> &wgpu::Texture {
+        &self.scene_texture
+    }
+
     pub fn uses_depth(effects: &[PostProcessEffect]) -> bool {
         effects
             .iter()
@@ -845,7 +849,11 @@ fn create_color_target(
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
         format,
-        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+        // COPY_SRC: the mesh-blend seam pass copies the scene aside before
+        // rewriting it in place.
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+            | wgpu::TextureUsages::TEXTURE_BINDING
+            | wgpu::TextureUsages::COPY_SRC,
         view_formats: &[],
     });
     let view = texture.create_view(&wgpu::TextureViewDescriptor::default());

@@ -685,6 +685,8 @@ mod tests {
             casts_shadows: true,
             receives_shadows: true,
             mesh_blend: false,
+            mesh_blend_screen: false,
+            mesh_blend_params: 0,
             mesh_blend_depth: false,
             blend_layers: BitMask::ALL.bits(),
             blend_mask: BitMask::NONE.bits(),

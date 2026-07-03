@@ -14,15 +14,15 @@ parent = @MeshBlendingDemo
 script = "res://scripts/demo_freecam_3d.rs"
 script_vars = {
     yaw = 0.0,
-    pitch = -0.34,
+    pitch = -0.31,
     speed = 12.0
 }
     [Camera3D]
         active = true
         perspective_fov_y_degrees = 66.0
         [Node3D]
-            position = (0.0, 8.6, 17.0)
-            rotation_deg = (-26.0, 0.0, 0.0)
+            position = (0.0, 5.2, 19.0)
+            rotation_deg = (-18.0, 0.0, 0.0)
         [/Node3D]
     [/Camera3D]
 [/DemoCamera]
@@ -187,7 +187,7 @@ parent = @MeshBlendingDemo
         blend_enabled = true
         blend_layers = [2.0]
         blend_mask = none
-        blend_distance = 0.75
+        blend_distance = 0.25
         blend_min_distance = 0.03
         material = $var4
         [Node3D]
@@ -218,7 +218,7 @@ parent = @MeshBlendingDemo
         blend_enabled = true
         blend_layers = [2.0]
         blend_mask = none
-        blend_distance = 1.1
+        blend_distance = 0.5
         blend_min_distance = 0.03
         material = $var4
         [Node3D]
@@ -249,7 +249,7 @@ parent = @MeshBlendingDemo
         blend_enabled = true
         blend_layers = [2.0]
         blend_mask = none
-        blend_distance = 1.55
+        blend_distance = 0.65
         blend_min_distance = 0.03
         material = $var4
         [Node3D]
@@ -280,7 +280,7 @@ parent = @MeshBlendingDemo
         blend_enabled = true
         blend_layers = [2.0]
         blend_mask = none
-        blend_distance = 2.1
+        blend_distance = 0.6
         blend_min_distance = 0.03
         material = $var4
         [Node3D]
@@ -311,7 +311,7 @@ parent = @MeshBlendingDemo
         blend_enabled = true
         blend_layers = [2.0]
         blend_mask = none
-        blend_distance = 2.8
+        blend_distance = 0.8
         blend_min_distance = 0.03
         material = $var4
         [Node3D]
@@ -343,7 +343,7 @@ parent = @MeshBlendingDemo
         blend_normals = true
         blend_layers = [2.0]
         blend_mask = none
-        blend_distance = 0.75
+        blend_distance = 0.25
         blend_min_distance = 0.03
         material = $var3
         [Node3D]
@@ -375,7 +375,7 @@ parent = @MeshBlendingDemo
         blend_normals = true
         blend_layers = [2.0]
         blend_mask = none
-        blend_distance = 1.1
+        blend_distance = 0.5
         blend_min_distance = 0.03
         material = $var3
         [Node3D]
@@ -407,7 +407,7 @@ parent = @MeshBlendingDemo
         blend_normals = true
         blend_layers = [2.0]
         blend_mask = none
-        blend_distance = 1.55
+        blend_distance = 0.65
         blend_min_distance = 0.03
         material = $var3
         [Node3D]
@@ -439,7 +439,7 @@ parent = @MeshBlendingDemo
         blend_normals = true
         blend_layers = [2.0]
         blend_mask = none
-        blend_distance = 2.1
+        blend_distance = 0.6
         blend_min_distance = 0.03
         material = $var3
         [Node3D]
@@ -471,7 +471,7 @@ parent = @MeshBlendingDemo
         blend_normals = true
         blend_layers = [2.0]
         blend_mask = none
-        blend_distance = 2.8
+        blend_distance = 0.8
         blend_min_distance = 0.03
         material = $var3
         [Node3D]
@@ -503,7 +503,7 @@ parent = @MeshBlendingDemo
         blend_normals = true
         blend_layers = [2.0]
         blend_mask = none
-        blend_distance = 2.8
+        blend_distance = 0.8
         blend_min_distance = 0.03
         blend = {
             noise = 0.0,
@@ -539,7 +539,7 @@ parent = @MeshBlendingDemo
         blend_normals = true
         blend_layers = [2.0]
         blend_mask = none
-        blend_distance = 2.8
+        blend_distance = 0.8
         blend_min_distance = 0.03
         blend = {
             noise = 0.12,
@@ -575,7 +575,7 @@ parent = @MeshBlendingDemo
         blend_normals = true
         blend_layers = [2.0]
         blend_mask = none
-        blend_distance = 2.8
+        blend_distance = 0.8
         blend_min_distance = 0.03
         blend = {
             noise = 0.24,
@@ -611,7 +611,7 @@ parent = @MeshBlendingDemo
         blend_normals = true
         blend_layers = [2.0]
         blend_mask = none
-        blend_distance = 2.8
+        blend_distance = 0.8
         blend_min_distance = 0.03
         blend = {
             noise = 0.38,
@@ -647,7 +647,7 @@ parent = @MeshBlendingDemo
         blend_normals = true
         blend_layers = [2.0]
         blend_mask = none
-        blend_distance = 2.8
+        blend_distance = 0.8
         blend_min_distance = 0.03
         blend = {
             noise = 0.55,
@@ -660,4 +660,219 @@ parent = @MeshBlendingDemo
         [/Node3D]
     [/MeshInstance3D]
 [/NoiseInsert4]
+
+[RockGround]
+parent = @MeshBlendingDemo
+    [MeshInstance3D]
+        mesh = "res://models/ground_slab.glb:mesh[0]"
+        blend_layers = [1.0]
+        blend_enabled = false
+        material = {
+            type = "standard",
+            base_color_factor = (0.5, 0.58, 0.42, 1.0),
+            roughness_factor = 0.95,
+            metallic_factor = 0.0,
+            base_color_texture = 0
+        }
+        [Node3D]
+            position = (0.0, -0.5, 9.5)
+        [/Node3D]
+    [/MeshInstance3D]
+[/RockGround]
+
+[RockSeparate0]
+parent = @MeshBlendingDemo
+    [MeshInstance3D]
+        mesh = "res://models/rock_a.glb:mesh[0]"
+        material = {
+            type = "standard",
+            base_color_factor = (0.52, 0.44, 0.36, 1.0),
+            roughness_factor = 0.95,
+            metallic_factor = 0.0
+        }
+        [Node3D]
+            position = (-8.5, 1.7, 9.5)
+            scale = (0.9, 0.9, 0.9)
+        [/Node3D]
+    [/MeshInstance3D]
+[/RockSeparate0]
+
+[RockSeparate1]
+parent = @MeshBlendingDemo
+    [MeshInstance3D]
+        mesh = "res://models/rock_b.glb:mesh[0]"
+        material = {
+            type = "standard",
+            base_color_factor = (0.38, 0.34, 0.3, 1.0),
+            roughness_factor = 0.95,
+            metallic_factor = 0.0
+        }
+        [Node3D]
+            position = (-6.6, 1.9, 9.0)
+            rotation_deg = (0.0, 65.0, 0.0)
+            scale = (0.7, 0.7, 0.7)
+        [/Node3D]
+    [/MeshInstance3D]
+[/RockSeparate1]
+
+[RockSeparate2]
+parent = @MeshBlendingDemo
+    [MeshInstance3D]
+        mesh = "res://models/rock_c.glb:mesh[0]"
+        material = {
+            type = "standard",
+            base_color_factor = (0.44, 0.48, 0.55, 1.0),
+            roughness_factor = 0.95,
+            metallic_factor = 0.0
+        }
+        [Node3D]
+            position = (-7.5, 1.6, 10.4)
+            rotation_deg = (0.0, 140.0, 0.0)
+            scale = (0.8, 0.8, 0.8)
+        [/Node3D]
+    [/MeshInstance3D]
+[/RockSeparate2]
+
+[RockHard0]
+parent = @MeshBlendingDemo
+    [MeshInstance3D]
+        mesh = "res://models/rock_a.glb:mesh[0]"
+        blend_enabled = false
+        blend_layers = [2.0]
+        material = {
+            type = "standard",
+            base_color_factor = (0.52, 0.44, 0.36, 1.0),
+            roughness_factor = 0.95,
+            metallic_factor = 0.0
+        }
+        [Node3D]
+            position = (-2.6, 0.28, 9.5)
+            scale = (0.9, 0.9, 0.9)
+        [/Node3D]
+    [/MeshInstance3D]
+[/RockHard0]
+
+[RockHard1]
+parent = @MeshBlendingDemo
+    [MeshInstance3D]
+        mesh = "res://models/rock_b.glb:mesh[0]"
+        blend_enabled = false
+        blend_layers = [2.0]
+        material = {
+            type = "standard",
+            base_color_factor = (0.38, 0.34, 0.3, 1.0),
+            roughness_factor = 0.95,
+            metallic_factor = 0.0
+        }
+        [Node3D]
+            position = (-0.9, 0.2, 9.0)
+            rotation_deg = (0.0, 65.0, 8.0)
+            scale = (0.7, 0.7, 0.7)
+        [/Node3D]
+    [/MeshInstance3D]
+[/RockHard1]
+
+[RockHard2]
+parent = @MeshBlendingDemo
+    [MeshInstance3D]
+        mesh = "res://models/rock_c.glb:mesh[0]"
+        blend_enabled = false
+        blend_layers = [2.0]
+        material = {
+            type = "standard",
+            base_color_factor = (0.44, 0.48, 0.55, 1.0),
+            roughness_factor = 0.95,
+            metallic_factor = 0.0
+        }
+        [Node3D]
+            position = (-1.7, 0.16, 10.4)
+            rotation_deg = (0.0, 140.0, -6.0)
+            scale = (0.8, 0.8, 0.8)
+        [/Node3D]
+    [/MeshInstance3D]
+[/RockHard2]
+
+[RockBlend0]
+parent = @MeshBlendingDemo
+    [MeshInstance3D]
+        mesh = "res://models/rock_a.glb:mesh[0]"
+        blend_enabled = true
+        blend_normals = true
+        blend_layers = [2.0]
+        blend_mask = none
+        blend_distance = 0.6
+        blend_min_distance = 0.03
+        blend = {
+            noise = 0.45,
+            noise_scale = 8.0
+        }
+        material = {
+            type = "standard",
+            base_color_factor = (0.52, 0.44, 0.36, 1.0),
+            roughness_factor = 0.95,
+            metallic_factor = 0.0
+        }
+        [Node3D]
+            position = (4.4, 0.28, 9.5)
+            scale = (0.9, 0.9, 0.9)
+        [/Node3D]
+    [/MeshInstance3D]
+[/RockBlend0]
+
+[RockBlend1]
+parent = @MeshBlendingDemo
+    [MeshInstance3D]
+        mesh = "res://models/rock_b.glb:mesh[0]"
+        blend_enabled = true
+        blend_normals = true
+        blend_layers = [2.0]
+        blend_mask = none
+        blend_distance = 0.5
+        blend_min_distance = 0.03
+        blend = {
+            noise = 0.4,
+            noise_scale = 7.0
+        }
+        material = {
+            type = "standard",
+            base_color_factor = (0.38, 0.34, 0.3, 1.0),
+            roughness_factor = 0.95,
+            metallic_factor = 0.0
+        }
+        [Node3D]
+            position = (6.1, 0.2, 9.0)
+            rotation_deg = (0.0, 65.0, 8.0)
+            scale = (0.7, 0.7, 0.7)
+        [/Node3D]
+    [/MeshInstance3D]
+[/RockBlend1]
+
+[RockBlend2]
+parent = @MeshBlendingDemo
+    [MeshInstance3D]
+        mesh = "res://models/rock_c.glb:mesh[0]"
+        blend_enabled = true
+        blend_normals = true
+        blend_layers = [2.0]
+        blend_mask = none
+        blend_distance = 0.65
+        blend_min_distance = 0.03
+        blend = {
+            noise = 0.5,
+            noise_scale = 9.0
+        }
+        material = {
+            type = "standard",
+            base_color_factor = (0.44, 0.48, 0.55, 1.0),
+            roughness_factor = 0.95,
+            metallic_factor = 0.0
+        }
+        [Node3D]
+            position = (5.3, 0.16, 10.4)
+            rotation_deg = (0.0, 140.0, -6.0)
+            scale = (0.8, 0.8, 0.8)
+        [/Node3D]
+    [/MeshInstance3D]
+[/RockBlend2]
+
 

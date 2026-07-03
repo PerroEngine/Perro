@@ -1,7 +1,7 @@
 use ahash::AHashMap;
 use glam::{Mat3, Mat4, Vec3};
 use perro_ids::NodeID;
-use perro_nodes::{Shape2D, Shape3D, WaterShape, water_physics_sample_or_idle};
+use perro_nodes::{Shape2D, Shape3D, WaterShape};
 use perro_structs::{BitMask, Vector2, Vector3};
 pub(super) const WATER_FORCE_PAR_BODY_THRESHOLD: usize = 512;
 pub(super) const WATER_WAVE_FOLLOW_DT: f32 = 1.0 / 60.0;
@@ -285,18 +285,18 @@ pub(super) fn water_forces_for_body_2d(
             continue;
         }
         let mass = body.mass.max(0.001);
-        let target_submerged = (float_radius * body.density.clamp(0.05, 1.2))
+        let target_submerged = (float_radius * 2.0 * body.density.clamp(0.05, 0.95))
             .max(water_target_submerged(body.density));
         let contact = (submerged / target_submerged.max(0.001)).clamp(0.0, 1.5);
-        let support = mass * 9.81 * (submerged / target_submerged.max(0.001)).clamp(0.0, 1.25);
-        let spring = (submerged - target_submerged) * blend.surface.physics.buoyancy * mass * 8.0;
-        let rel_y = body.velocity.dot(blend.normal) - blend.sample.velocity.y;
-        let drag = -rel_y * blend.surface.physics.drag * mass * 4.0;
-        let wave_follow = (blend.sample.velocity.y - body.velocity.dot(blend.normal))
-            * mass
-            * blend.surface.physics.buoyancy.max(0.0)
-            * (1.2 + blend.surface.physics.wake_strength.max(0.0) * 0.25)
-            * contact;
+        // critically damped spring toward the wave surface: damping matched to
+        // stiffness so the body sticks to the surface instead of bouncing
+        let stiffness = blend.surface.physics.buoyancy.max(0.05) * 9.5;
+        let damping_ratio = 0.9 + blend.surface.physics.drag.max(0.0) * 0.35;
+        let damping = 2.0 * stiffness.sqrt() * damping_ratio;
+        let rel_vel = body.velocity.dot(blend.normal) - blend.sample.velocity.y;
+        let err = (submerged - target_submerged).clamp(-3.0, 3.0);
+        let support = 9.81 * contact.min(1.0);
+        let accel_y = support + stiffness * err - damping * rel_vel;
         let current_speed = blend.sample.velocity.x;
         let wave_speed = (current_speed + blend.sample.velocity.y.abs() * 0.012)
             * blend.surface.physics.wake_strength.max(0.0)
@@ -309,6 +309,20 @@ pub(super) fn water_forces_for_body_2d(
                 * contact
                 * blend.surface.physics.drag.max(0.05)
                 * 5.0);
+        // surf push: a rising wave face shoves the body along wave travel
+        let phase_speed = (blend.surface.wave.length.max(0.25)
+            * blend.surface.wave.speed.max(0.0)
+            * 0.2
+            / std::f32::consts::TAU)
+            .max(0.35);
+        let slope = (blend.sample.velocity.y / phase_speed).clamp(-1.3, 1.3);
+        let surf_push = blend.wave_dir
+            * (9.81
+                * slope
+                * mass
+                * contact.min(1.0)
+                * blend.surface.physics.wake_strength.clamp(0.0, 2.5)
+                * 0.45);
         let (scale, deadzone) = water_force_lod(
             blend.surface.lod.near_distance,
             blend.surface.lod.mid_distance,
@@ -322,19 +336,15 @@ pub(super) fn water_forces_for_body_2d(
             blend.surface.shape.depth(blend.surface.depth),
             blend.surface.physics.buoyancy,
         );
-        let force_y =
-            (support + spring + drag + wave_follow).clamp(-cap, cap) * scale * blend.lod_weight;
+        let force_y = (mass * accel_y).clamp(-cap, cap) * scale * blend.lod_weight;
         let mass_scale = (1.0 / mass.max(1.0).sqrt()).clamp(0.35, 1.0);
-        let force = blend.normal * force_y + wave_drive * scale * blend.lod_weight * mass_scale;
+        let force = blend.normal * force_y
+            + (wave_drive + surf_push) * scale * blend.lod_weight * mass_scale;
         if force.length() >= deadzone {
-            let target_normal_speed = blend.sample.velocity.y;
-            let follow_delta =
-                (target_normal_speed - body.velocity.dot(blend.normal)).clamp(-4.5, 4.5);
-            let impulse = blend.normal * (follow_delta * mass * contact * 0.38 * blend.lod_weight);
             forces.push(WaterBodyForce2D {
                 id: body.id,
                 force,
-                impulse,
+                impulse: Vector2::ZERO,
             });
         }
     }
@@ -366,7 +376,6 @@ pub(super) fn water_forces_for_body_3d(
         sample_points.len()
     };
     let mut total_force = Vector3::ZERO;
-    let mut total_impulse = Vector3::ZERO;
     for (point_id, point_pos) in sample_points.into_iter().take(sample_count) {
         let samples = blended_water_samples_3d(WaterBlendQuery3D {
             point: point_pos,
@@ -386,19 +395,18 @@ pub(super) fn water_forces_for_body_3d(
                 continue;
             }
             let mass = body.mass.max(0.001) / sample_count as f32;
-            let target_submerged = (float_radius * body.density.clamp(0.05, 1.2))
+            let target_submerged = (float_radius * 2.0 * body.density.clamp(0.05, 0.95))
                 .max(water_target_submerged(body.density));
             let contact = (submerged / target_submerged.max(0.001)).clamp(0.0, 1.5);
-            let support = mass * 9.81 * (submerged / target_submerged.max(0.001)).clamp(0.0, 1.25);
-            let spring =
-                (submerged - target_submerged) * blend.surface.physics.buoyancy * mass * 9.5;
-            let rel_y = body.velocity.dot(blend.normal) - blend.sample.velocity.y;
-            let drag = -rel_y * blend.surface.physics.drag * mass * 4.0;
-            let wave_follow = (blend.sample.velocity.y - body.velocity.dot(blend.normal))
-                * mass
-                * blend.surface.physics.buoyancy.max(0.0)
-                * (2.0 + blend.surface.physics.wake_strength.max(0.0) * 0.42)
-                * contact;
+            // critically damped spring toward the wave surface: damping matched
+            // to stiffness so the body rides the surface instead of bouncing
+            let stiffness = blend.surface.physics.buoyancy.max(0.05) * 9.5;
+            let damping_ratio = 0.9 + blend.surface.physics.drag.max(0.0) * 0.35;
+            let damping = 2.0 * stiffness.sqrt() * damping_ratio;
+            let rel_vel = body.velocity.dot(blend.normal) - blend.sample.velocity.y;
+            let err = (submerged - target_submerged).clamp(-3.0, 3.0);
+            let support = 9.81 * contact.min(1.0);
+            let accel_y = support + stiffness * err - damping * rel_vel;
             let current_speed = blend.sample.velocity.x;
             let wave_speed = (current_speed + blend.sample.velocity.y.abs() * 0.018)
                 * blend.surface.physics.wake_strength.max(0.0)
@@ -411,6 +419,20 @@ pub(super) fn water_forces_for_body_3d(
                     * contact
                     * blend.surface.physics.drag.max(0.08)
                     * 7.5);
+            // surf push: a rising wave face shoves the body along wave travel
+            let phase_speed = (blend.surface.wave.length.max(0.25)
+                * blend.surface.wave.speed.max(0.0)
+                * 0.2
+                / std::f32::consts::TAU)
+                .max(0.35);
+            let slope = (blend.sample.velocity.y / phase_speed).clamp(-1.3, 1.3);
+            let surf_push = blend.wave_dir
+                * (9.81
+                    * slope
+                    * mass
+                    * contact.min(1.0)
+                    * blend.surface.physics.wake_strength.clamp(0.0, 2.5)
+                    * 0.45);
             let water_pos_2d = Vector2::new(blend.pos.x, blend.pos.z);
             let (scale, deadzone) = water_force_lod(
                 blend.surface.lod.near_distance,
@@ -425,27 +447,21 @@ pub(super) fn water_forces_for_body_3d(
                 blend.surface.shape.depth(blend.surface.depth),
                 blend.surface.physics.buoyancy,
             );
-            let force_y =
-                (support + spring + drag + wave_follow).clamp(-cap, cap) * scale * blend.lod_weight;
+            let force_y = (mass * accel_y).clamp(-cap, cap) * scale * blend.lod_weight;
             let mass_scale = (1.0 / body.mass.max(1.0).sqrt()).clamp(0.35, 1.0);
-            let force = blend.normal * force_y + wave_drive * scale * blend.lod_weight * mass_scale;
+            let force = blend.normal * force_y
+                + (wave_drive + surf_push) * scale * blend.lod_weight * mass_scale;
             if force.length() >= deadzone {
-                let target_normal_speed = blend.sample.velocity.y;
-                let follow_delta =
-                    (target_normal_speed - body.velocity.dot(blend.normal)).clamp(-3.6, 3.6);
-                let impulse =
-                    blend.normal * (follow_delta * mass * contact * 0.34 * blend.lod_weight);
                 total_force += force;
-                total_impulse += impulse;
             }
         }
     }
     let mut forces = Vec::new();
-    if total_force.length_squared() > 0.0 || total_impulse.length_squared() > 0.0 {
+    if total_force.length_squared() > 0.0 {
         forces.push(WaterBodyForce3D {
             id: body.id,
             force: total_force,
-            impulse: total_impulse,
+            impulse: Vector3::ZERO,
         });
     }
     forces
@@ -481,8 +497,9 @@ pub(super) fn water_body_splashes_2d(
             if sample.submerged <= 0.0 || sample.submerged > target * 2.25 {
                 continue;
             }
+            // real drop-ins only: gentle bobbing must not spawn impact spikes
             let rel_down = sample.sample.velocity.y - body.velocity.dot(sample.normal);
-            if rel_down <= 0.35 {
+            if rel_down <= 1.1 {
                 continue;
             }
             let strength = perro_nodes::water_impact_strength(
@@ -535,8 +552,9 @@ pub(super) fn water_body_splashes_3d(
             if sample.submerged <= 0.0 || sample.submerged > target * 2.25 {
                 continue;
             }
+            // real drop-ins only: gentle bobbing must not spawn impact spikes
             let rel_down = sample.sample.velocity.y - body.velocity.dot(sample.normal);
-            if rel_down <= 0.35 {
+            if rel_down <= 1.1 {
                 continue;
             }
             let strength = perro_nodes::water_impact_strength(
@@ -843,6 +861,9 @@ pub(crate) fn water_physics_sample_for_body(
     water_physics_sample_for_body_cached(surface, local, elapsed, None, None)
 }
 
+/// GPU readback caches hold the sim deviation from the analytic idle surface.
+/// Height/velocity combine that deviation with the live idle waves so physics
+/// tracks exactly what the render shader displaces.
 pub(crate) fn water_physics_sample_for_body_cached(
     surface: &perro_nodes::WaterSurfaceParams,
     local: Vector2,
@@ -850,28 +871,23 @@ pub(crate) fn water_physics_sample_for_body_cached(
     body_cached: Option<crate::runtime::WaterBodySampleCache>,
     cached: Option<perro_nodes::WaterPhysicsSample>,
 ) -> perro_nodes::WaterPhysicsSample {
-    if let Some(body_cached) = body_cached {
-        return perro_nodes::WaterPhysicsSample {
-            height: body_cached.height,
-            velocity: body_cached.velocity,
-            foam: body_cached.foam,
-        };
+    let idle_now = perro_nodes::analytic_idle_water_height(surface, local, elapsed);
+    let idle_prev =
+        perro_nodes::analytic_idle_water_height(surface, local, elapsed - WATER_WAVE_FOLLOW_DT);
+    let idle_velocity_y = (idle_now - idle_prev) / WATER_WAVE_FOLLOW_DT;
+    let flow_speed = surface.flow.dot(water_wave_local_dir(*surface));
+    let (deviation, deviation_velocity_y, foam) = if let Some(body_cached) = body_cached {
+        (body_cached.height, body_cached.velocity.y, body_cached.foam)
+    } else if let Some(cached) = cached {
+        (cached.height, cached.velocity.y, cached.foam)
+    } else {
+        (0.0, 0.0, 0.0)
+    };
+    perro_nodes::WaterPhysicsSample {
+        height: idle_now + deviation,
+        velocity: Vector2::new(flow_speed, idle_velocity_y + deviation_velocity_y),
+        foam,
     }
-    let mut sample = water_physics_sample_or_idle(surface, local, elapsed, None);
-    let (height_offset, cached_velocity_y) = cached.map_or((0.0, 0.0), |cached| {
-        let center_now = water_physics_sample_or_idle(surface, Vector2::ZERO, elapsed, None).height;
-        (cached.height - center_now, cached.velocity.y)
-    });
-    sample.height += height_offset;
-    if let Some(cached) = cached {
-        sample.foam = cached.foam;
-    }
-    let prev_height =
-        water_physics_sample_or_idle(surface, local, elapsed - WATER_WAVE_FOLLOW_DT, None).height
-            + height_offset;
-    sample.velocity.y = (sample.height - prev_height) / WATER_WAVE_FOLLOW_DT + cached_velocity_y;
-    sample.velocity.x = surface.flow.dot(water_wave_local_dir(*surface));
-    sample
 }
 
 pub(crate) fn lookup_water_body_sample(

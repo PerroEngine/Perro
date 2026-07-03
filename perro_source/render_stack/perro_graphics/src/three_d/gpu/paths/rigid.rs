@@ -16,6 +16,8 @@ pub(super) fn create_pipeline_rigid(
         sample_count,
         cull_mode,
         true,
+        wgpu::CompareFunction::LessEqual,
+        "fs_main",
     )
 }
 
@@ -35,6 +37,8 @@ pub(super) fn create_pipeline_rigid_blend(
         sample_count,
         cull_mode,
         false,
+        wgpu::CompareFunction::LessEqual,
+        "fs_main",
     )
 }
 
@@ -54,6 +58,8 @@ pub(super) fn create_pipeline_rigid_packed_lod(
         sample_count,
         cull_mode,
         true,
+        wgpu::CompareFunction::LessEqual,
+        "fs_main",
     )
 }
 
@@ -73,10 +79,12 @@ pub(super) fn create_pipeline_rigid_packed_lod_blend(
         sample_count,
         cull_mode,
         false,
+        wgpu::CompareFunction::LessEqual,
+        "fs_main",
     )
 }
 
-fn rigid_packed_lod_vertex_layout<'a>() -> wgpu::VertexBufferLayout<'a> {
+pub(super) fn rigid_packed_lod_vertex_layout<'a>() -> wgpu::VertexBufferLayout<'a> {
     wgpu::VertexBufferLayout {
         array_stride: std::mem::size_of::<PackedRigidLodVertex>() as u64,
         step_mode: wgpu::VertexStepMode::Vertex,
@@ -100,7 +108,7 @@ fn rigid_packed_lod_vertex_layout<'a>() -> wgpu::VertexBufferLayout<'a> {
     }
 }
 
-fn rigid_instance_transform_layout<'a>() -> wgpu::VertexBufferLayout<'a> {
+pub(super) fn rigid_instance_transform_layout<'a>() -> wgpu::VertexBufferLayout<'a> {
     wgpu::VertexBufferLayout {
         array_stride: std::mem::size_of::<TransformInstanceGpu>() as u64,
         step_mode: wgpu::VertexStepMode::Instance,
@@ -124,7 +132,7 @@ fn rigid_instance_transform_layout<'a>() -> wgpu::VertexBufferLayout<'a> {
     }
 }
 
-fn rigid_meta_layout<'a>() -> wgpu::VertexBufferLayout<'a> {
+pub(super) fn rigid_meta_layout<'a>() -> wgpu::VertexBufferLayout<'a> {
     wgpu::VertexBufferLayout {
         array_stride: std::mem::size_of::<RigidInstanceMetaGpu>() as u64,
         step_mode: wgpu::VertexStepMode::Instance,
@@ -176,6 +184,8 @@ fn create_pipeline_rigid_packed_lod_with_depth_write(
     sample_count: u32,
     cull_mode: Option<wgpu::Face>,
     depth_write_enabled: bool,
+    depth_compare: wgpu::CompareFunction,
+    fragment_entry: &'static str,
 ) -> wgpu::RenderPipeline {
     device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         label: Some("perro_mesh_pipeline_rigid_packed_lod"),
@@ -192,7 +202,7 @@ fn create_pipeline_rigid_packed_lod_with_depth_write(
         },
         fragment: Some(wgpu::FragmentState {
             module: shader,
-            entry_point: Some("fs_main"),
+            entry_point: Some(fragment_entry),
             targets: &[Some(wgpu::ColorTargetState {
                 format: color_format,
                 blend: Some(wgpu::BlendState::ALPHA_BLENDING),
@@ -214,7 +224,7 @@ fn create_pipeline_rigid_packed_lod_with_depth_write(
         depth_stencil: Some(wgpu::DepthStencilState {
             format: DEPTH_FORMAT,
             depth_write_enabled: Some(depth_write_enabled),
-            depth_compare: Some(wgpu::CompareFunction::LessEqual),
+            depth_compare: Some(depth_compare),
             stencil: wgpu::StencilState::default(),
             bias: wgpu::DepthBiasState::default(),
         }),
@@ -236,6 +246,8 @@ fn create_pipeline_rigid_with_depth_write(
     sample_count: u32,
     cull_mode: Option<wgpu::Face>,
     depth_write_enabled: bool,
+    depth_compare: wgpu::CompareFunction,
+    fragment_entry: &'static str,
 ) -> wgpu::RenderPipeline {
     device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         label: Some("perro_mesh_pipeline_rigid"),
@@ -327,7 +339,7 @@ fn create_pipeline_rigid_with_depth_write(
         },
         fragment: Some(wgpu::FragmentState {
             module: shader,
-            entry_point: Some("fs_main"),
+            entry_point: Some(fragment_entry),
             targets: &[Some(wgpu::ColorTargetState {
                 format: color_format,
                 blend: Some(wgpu::BlendState::ALPHA_BLENDING),
@@ -349,7 +361,7 @@ fn create_pipeline_rigid_with_depth_write(
         depth_stencil: Some(wgpu::DepthStencilState {
             format: DEPTH_FORMAT,
             depth_write_enabled: Some(depth_write_enabled),
-            depth_compare: Some(wgpu::CompareFunction::LessEqual),
+            depth_compare: Some(depth_compare),
             stencil: wgpu::StencilState::default(),
             bias: wgpu::DepthBiasState::default(),
         }),

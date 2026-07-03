@@ -27,6 +27,12 @@ impl Gpu3D {
                 resource: wgpu::BindingResource::TextureView(&self.mesh_blend_depth_view),
             }],
         });
+        let (mesh_blend_mask_texture, mesh_blend_mask_view) =
+            mesh_blend_screen::create_mesh_blend_mask_texture(device, width, height);
+        self._mesh_blend_mask_texture = mesh_blend_mask_texture;
+        self.mesh_blend_mask_view = mesh_blend_mask_view;
+        self.mesh_blend_seam_bind_group = None;
+        self.mesh_blend_scene_copy = None;
         self.depth_size = (width, height);
         let (hiz_texture, hiz_mip_views, hiz_sample_view, hiz_mip_count, hiz_size) =
             create_hiz_texture(device, width, height);
@@ -463,6 +469,17 @@ impl Gpu3D {
                 resource: wgpu::BindingResource::TextureView(&self.mesh_blend_depth_view),
             }],
         });
+        let (mesh_blend_mask_texture, mesh_blend_mask_view) =
+            mesh_blend_screen::create_mesh_blend_mask_texture(device, width, height);
+        self._mesh_blend_mask_texture = mesh_blend_mask_texture;
+        self.mesh_blend_mask_view = mesh_blend_mask_view;
+        self.mesh_blend_seam_pipeline = mesh_blend_screen::create_mesh_blend_seam_pipeline(
+            device,
+            &self.mesh_blend_seam_bgl,
+            color_format,
+        );
+        self.mesh_blend_seam_bind_group = None;
+        self.mesh_blend_scene_copy = None;
         self.rebuild_camera_bind_groups(device);
         self.depth_size = (width.max(1), height.max(1));
         let (hiz_texture, hiz_mip_views, hiz_sample_view, hiz_mip_count, hiz_size) =

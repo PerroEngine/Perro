@@ -37,6 +37,8 @@ struct Scene3D {
     inv_view_proj: mat4x4<f32>,
     // Hemisphere ambient: radiance from below (premultiplied), w unused.
     ground_color: vec4<f32>,
+    // Sky radiance at the horizon (premultiplied) for env reflections.
+    sky_horizon_color: vec4<f32>,
 }
 
 struct Shadow3D {
@@ -95,6 +97,9 @@ var spot_shadow_map_tex: texture_depth_2d_array;
 var point_shadow_map_tex: texture_depth_2d_array;
 @group(3) @binding(0)
 var mesh_blend_depth_tex: texture_depth_2d;
+
+// Seam width floor in pixels so distant blends never collapse to a hard line.
+const MESH_BLEND_MIN_PIXELS: f32 = 2.5;
 
 struct VertexInput {
     @location(0) pos: vec3<f32>,
@@ -236,23 +241,31 @@ fn mesh_blend_fade(in: FragmentInput, material: DecodedMaterialParams) -> f32 {
     if any(coord < vec2<i32>(0)) || any(coord >= dims) {
         return 1.0;
     }
-    let scene_depth = textureLoad(mesh_blend_depth_tex, coord, 0);
-    if scene_depth >= 0.999999 {
+    let receiver_depth = textureLoad(mesh_blend_depth_tex, coord, 0);
+    if receiver_depth >= 0.999999 {
         return 1.0;
     }
     let params = decode_mesh_blend_params(in.packed_pbr_params_1);
     let view_dist = distance(in.world_pos, scene.camera_pos.xyz);
-    let scene_world = mesh_blend_world_from_depth(coord, dims_u, scene_depth);
-    let raw_depth_delta = distance(scene_world, scene.camera_pos.xyz) - view_dist;
+    let receiver_world = mesh_blend_world_from_depth(coord, dims_u, receiver_depth);
+    let receiver_dist = distance(receiver_world, scene.camera_pos.xyz);
+    let raw_depth_delta = receiver_dist - view_dist;
     if raw_depth_delta <= 0.0 {
         return 1.0;
     }
-    let max_width = max(params.x, 0.0001);
-    let min_width = min(params.y, max_width);
+    // Distance-compensated width: world units covered by one pixel here.
+    let texel_world = (length(dpdx(in.world_pos)) + length(dpdy(in.world_pos))) * 0.5;
+    let base_width = max(params.x, 0.0001);
+    let max_width = max(base_width, texel_world * MESH_BLEND_MIN_PIXELS);
+    let min_width = min(params.y, base_width) * (max_width / base_width);
     var noise = 0.0;
     if params.z > 0.0 {
-        let tile = max(params.w, 1.0);
-        let soft_noise = smoothstep(0.15, 0.85, mesh_blend_noise(in.frag_pos.xy / tile));
+        // Anchor the noise to the receiver surface so it does not swim with
+        // the camera.
+        let tile = max(params.w * 0.05, 0.05);
+        let p = (receiver_world.xz
+            + vec2<f32>(receiver_world.y * 0.53, receiver_world.y * 0.29)) / tile;
+        let soft_noise = smoothstep(0.1, 0.9, mesh_blend_noise(p));
         noise = (soft_noise - 0.5) * params.z * max_width;
     }
     let depth_delta = max(raw_depth_delta + noise, 0.0);
@@ -676,6 +689,43 @@ fn fresnel_schlick_roughness(cos_theta: f32, f0: vec3<f32>, roughness: f32) -> v
     return f0 + (max(one_minus_roughness, f0) - f0) * pow5(m);
 }
 
+struct LocalBleed {
+    color: vec3<f32>,
+    strength: f32,
+    dir: vec3<f32>,
+}
+
+fn oct_decode_dir(x: f32, y: f32) -> vec3<f32> {
+    var v = vec3<f32>(x, y, 1.0 - abs(x) - abs(y));
+    if v.z < 0.0 {
+        let old_x = v.x;
+        v.x = (1.0 - abs(v.y)) * select(-1.0, 1.0, old_x >= 0.0);
+        v.y = (1.0 - abs(old_x)) * select(-1.0, 1.0, v.y >= 0.0);
+    }
+    return normalize(v);
+}
+
+// Layout matches pack_local_bleed on the CPU: r5 g5 b5 strength5 oct_x6 oct_y6.
+fn decode_local_bleed(packed: u32) -> LocalBleed {
+    let color = vec3<f32>(
+        f32(packed & 0x1fu) / 31.0,
+        f32((packed >> 5u) & 0x1fu) / 31.0,
+        f32((packed >> 10u) & 0x1fu) / 31.0,
+    );
+    let strength = f32((packed >> 15u) & 0x1fu) / 31.0;
+    let ox = f32((packed >> 20u) & 0x3fu) / 63.0 * 2.0 - 1.0;
+    let oy = f32((packed >> 26u) & 0x3fu) / 63.0 * 2.0 - 1.0;
+    return LocalBleed(color, strength, oct_decode_dir(ox, oy));
+}
+
+// Procedural sky environment lookup: ground below, horizon band, zenith above.
+fn sky_env_color(dir: vec3<f32>) -> vec3<f32> {
+    let up = clamp(dir.y, -1.0, 1.0);
+    let zenith = scene.ambient_color.xyz * scene.ambient_color.w;
+    let above = mix(scene.sky_horizon_color.xyz, zenith, clamp(up, 0.0, 1.0));
+    return mix(scene.ground_color.xyz, above, smoothstep(-0.15, 0.05, up));
+}
+
 // ACES filmic fit (Narkowicz). Applied at the end of lit materials so HDR
 // light sums roll off instead of clipping; UI/2D/unlit stay untouched.
 fn tonemap_aces(x: vec3<f32>) -> vec3<f32> {
@@ -803,8 +853,29 @@ fn perro_lit_standard(
     let hemi = clamp(n.y * 0.5 + 0.5, 0.0, 1.0);
     let ambient_radiance =
         mix(scene.ground_color.xyz, scene.ambient_color.xyz * scene.ambient_color.w, hemi) * ao;
-    let ambient_diffuse = k_d_ambient * albedo * ambient_radiance;
-    let ambient_specular = k_s_ambient * ambient_radiance * (0.25 + 0.75 * (1.0 - roughness));
+    // Local color bleed: nearby-batch albedo/emissive staged per instance,
+    // with the dominant source direction for wrap + reflection weighting.
+    var bleed = LocalBleed(vec3<f32>(0.0), 0.0, vec3<f32>(0.0, 1.0, 0.0));
+    if (material.material_flags & 0x80u) != 0u {
+        bleed = decode_local_bleed(in.packed_pbr_params_1);
+    }
+    let bleed_wrap = clamp(dot(n, bleed.dir) * 0.5 + 0.5, 0.0, 1.0);
+    let bleed_diffuse = bleed.color * bleed.strength * (0.35 + 0.65 * bleed_wrap);
+    let ambient_diffuse =
+        k_d_ambient * albedo * (ambient_radiance + bleed_diffuse * 0.45 * ao);
+    // Env reflection: procedural sky sampled along the reflection direction;
+    // smooth surfaces pick up bleed strongest when reflecting toward it.
+    let refl = reflect(-v, n);
+    var env_spec = sky_env_color(refl);
+    let bleed_align = 0.3 + 0.7 * pow(max(dot(refl, bleed.dir), 0.0), 2.0);
+    env_spec = mix(
+        env_spec,
+        bleed.color * 0.5,
+        bleed.strength * (1.0 - roughness) * 0.6 * bleed_align,
+    );
+    let spec_tint = mix(vec3<f32>(1.0), albedo, metallic);
+    let ambient_specular =
+        k_s_ambient * env_spec * spec_tint * (0.25 + 0.75 * (1.0 - roughness)) * ao;
 
     let shaded = ambient_diffuse + ambient_specular + light_rgb + emissive;
     return vec4<f32>(tonemap_aces(shaded), alpha);

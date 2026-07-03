@@ -39,6 +39,12 @@ fn shade_material(in: FragmentInput) -> vec4<f32> {
     let ambient =
         mix(scene.ground_color.xyz, scene.ambient_color.xyz * scene.ambient_color.w, hemi);
     light_rgb += ambient;
+    // Local color bleed folded into the banded light term.
+    if (material.material_flags & 0x80u) != 0u {
+        let bleed = decode_local_bleed(in.packed_pbr_params_1);
+        let wrap = clamp(dot(n, bleed.dir) * 0.5 + 0.5, 0.0, 1.0);
+        light_rgb += bleed.color * bleed.strength * 0.4 * (0.35 + 0.65 * wrap);
+    }
 
     let ray_count = u32(scene.ambient_and_counts.x);
     for (var i = 0u; i < ray_count; i = i + 1u) {

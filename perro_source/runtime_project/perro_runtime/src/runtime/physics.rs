@@ -1422,9 +1422,11 @@ impl Runtime {
         }
         if !splash_impacts.is_empty() {
             self.force_water_impacts_2d.extend(splash_impacts);
-            for id in water_ids {
-                self.mark_needs_rerender(id);
-            }
+        }
+        // waves animate on the water's sim clock carried in render state, so
+        // re-extract every tick or the surface freezes while the camera rests
+        for id in water_ids {
+            self.mark_needs_rerender(id);
         }
     }
 
@@ -1566,9 +1568,11 @@ impl Runtime {
         }
         if !splash_impacts.is_empty() {
             self.force_water_impacts_3d.extend(splash_impacts);
-            for id in water_ids {
-                self.mark_needs_rerender(id);
-            }
+        }
+        // waves animate on the water's sim clock carried in render state, so
+        // re-extract every tick or the surface freezes while the camera rests
+        for id in water_ids {
+            self.mark_needs_rerender(id);
         }
     }
 
@@ -1818,10 +1822,11 @@ impl Runtime {
                         crate::runtime::WaterBodyContact3D {
                             position: sample.pos,
                             velocity: body.velocity,
-                            radius: body.float_radius.max(0.75) * 0.5,
+                            radius: body.float_radius.max(0.75) * 0.9,
                             foam_amount: (sample.sample.foam
-                                + Vector2::new(body.velocity.x, body.velocity.z).length() * 0.05)
-                                .clamp(0.1, 1.0),
+                                + Vector2::new(body.velocity.x, body.velocity.z).length() * 0.05
+                                + body.velocity.y.abs() * 0.08)
+                                .clamp(0.16, 1.0),
                         },
                     );
                 }
