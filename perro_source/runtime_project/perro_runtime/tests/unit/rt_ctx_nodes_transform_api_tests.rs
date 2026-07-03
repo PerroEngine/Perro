@@ -1165,3 +1165,127 @@ fn remove_node_removes_entire_subtree() {
     assert!(runtime.nodes.get(grandchild_id).is_none());
     assert!(!runtime.remove_node(root_id));
 }
+
+#[test]
+fn remove_node_unlinks_root_from_live_parent() {
+    // Removing a subtree must unlink its root from a live parent outside the
+    // subtree, while descendants disappear entirely.
+    let mut runtime = Runtime::new();
+
+    let live_parent = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::Node3D(Node3D::new())));
+    let sibling = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::Node3D(Node3D::new())));
+    let root_id = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::Node3D(Node3D::new())));
+    let child_id = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::Node3D(Node3D::new())));
+
+    if let Some(parent) = runtime.nodes.get_mut(live_parent) {
+        parent.add_child(sibling);
+        parent.add_child(root_id);
+    }
+    if let Some(node) = runtime.nodes.get_mut(sibling) {
+        node.parent = live_parent;
+    }
+    if let Some(node) = runtime.nodes.get_mut(root_id) {
+        node.parent = live_parent;
+        node.add_child(child_id);
+    }
+    if let Some(node) = runtime.nodes.get_mut(child_id) {
+        node.parent = root_id;
+    }
+
+    assert!(runtime.remove_node(root_id));
+    assert!(runtime.nodes.get(root_id).is_none());
+    assert!(runtime.nodes.get(child_id).is_none());
+    // The live parent stays, and its child list no longer references the removed
+    // root but still holds the untouched sibling.
+    let children = runtime
+        .get_node_children_ids(live_parent)
+        .expect("live parent still exists");
+    assert_eq!(children, vec![sibling]);
+}
+
+#[test]
+fn remove_node_unlinks_from_parent_outside_subtree() {
+    // Edge case: a node inside the traversed subtree whose `parent` field points
+    // to a node OUTSIDE the subtree must still be unlinked from that live parent.
+    // Traversal follows children lists, so `inner` is reached via `root_id`, but
+    // its parent pointer targets `outside_parent` (a stale/reparent artifact).
+    let mut runtime = Runtime::new();
+
+    let outside_parent = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::Node3D(Node3D::new())));
+    let root_id = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::Node3D(Node3D::new())));
+    let inner = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::Node3D(Node3D::new())));
+
+    // `root_id` lists `inner` as a child (drives traversal into the subtree)...
+    if let Some(node) = runtime.nodes.get_mut(root_id) {
+        node.add_child(inner);
+    }
+    // ...but `inner.parent` points at the live outside node, which also lists it.
+    if let Some(node) = runtime.nodes.get_mut(inner) {
+        node.parent = outside_parent;
+    }
+    if let Some(node) = runtime.nodes.get_mut(outside_parent) {
+        node.add_child(inner);
+    }
+
+    assert!(runtime.remove_node(root_id));
+    assert!(runtime.nodes.get(root_id).is_none());
+    assert!(runtime.nodes.get(inner).is_none());
+    // The outside parent survives and its stale child link is scrubbed.
+    let children = runtime
+        .get_node_children_ids(outside_parent)
+        .expect("outside parent still exists");
+    assert!(
+        children.is_empty(),
+        "outside parent must be unlinked from removed node, got {children:?}"
+    );
+}
+
+#[test]
+fn create_nodes_borrowed_invalid_batch_creates_nothing() {
+    // Borrowed-slice path: an invalid forward parent reference must create zero
+    // nodes (validation runs before any clone or insert).
+    let mut runtime = Runtime::new();
+    let parent_id = runtime.create::<Node2D>();
+    let bad_forward_parent = [
+        NodeSpec::new(Node2D::new()).parent(Some(1)),
+        NodeSpec::new(Node2D::new()),
+    ];
+
+    let ids = runtime.create_nodes(&bad_forward_parent, parent_id);
+    assert!(ids.is_empty());
+    assert_eq!(runtime.get_node_children_ids(parent_id), Some(Vec::new()));
+    assert_eq!(runtime.nodes.len(), 1);
+}
+
+#[test]
+fn create_nodes_borrowed_valid_batch_builds_tree() {
+    // Borrowed-slice path: a valid batch builds the expected parent/child tree.
+    let mut runtime = Runtime::new();
+    let parent_id = runtime.create::<Node2D>();
+    let specs = [
+        NodeSpec::new(Node2D::new()).name("root"),
+        NodeSpec::new(Node2D::new()).name("leaf").parent(Some(0)),
+    ];
+
+    let ids = runtime.create_nodes(&specs, parent_id);
+    assert_eq!(ids.len(), 2);
+    // First spec attaches under `parent_id`, second nests under the first.
+    assert_eq!(runtime.get_node_parent_id(ids[0]), Some(parent_id));
+    assert_eq!(runtime.get_node_parent_id(ids[1]), Some(ids[0]));
+    assert_eq!(runtime.get_node_children_ids(parent_id), Some(vec![ids[0]]));
+    assert_eq!(runtime.get_node_children_ids(ids[0]), Some(vec![ids[1]]));
+}

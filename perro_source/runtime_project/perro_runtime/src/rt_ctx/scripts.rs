@@ -1,7 +1,7 @@
 use perro_ids::string_to_u64;
 use perro_ids::{NodeID, ScriptMemberID};
 use perro_input_api::InputWindow;
-use perro_io::push_dlc_self_context;
+use perro_io::{DlcSelfContextGuard, push_dlc_self_context};
 use perro_resource_api::ResourceWindow;
 use perro_runtime_api::{RuntimeWindow, sub_apis::ScriptAPI};
 use perro_scripting::ScriptContext;
@@ -142,6 +142,35 @@ impl Runtime {
         }
     }
 
+    /// Push the DLC `self` context frame for a script dispatch, skipping all work
+    /// in the common no-DLC case.
+    ///
+    /// When no script anywhere has a mount (`script_instance_dlc_mounts` empty),
+    /// the DLC-self thread-local can only already be `None`: it is set solely by
+    /// this push path, so with an empty map no outer `push(Some(..))` frame can be
+    /// live above us on the stack. `push_dlc_self_context(None)` would therefore
+    /// just replace `None` with `None`, a no-op. We skip the map lookup, the
+    /// `Option<String>` clone, and the thread-local push entirely and return
+    /// `None` (no guard needed).
+    ///
+    /// When the map is non-empty we preserve exact prior behavior: look up this
+    /// script's mount (possibly `None`) and push it. Pushing `None` here still
+    /// matters — it shadows an outer script's `Some(..)` frame during nested
+    /// dispatch. The returned guard must be held in a local for the whole callback
+    /// so the frame is popped on drop.
+    #[inline(always)]
+    pub(crate) fn push_script_dlc_self_context(&self, id: NodeID) -> Option<DlcSelfContextGuard> {
+        if self.script_runtime.script_instance_dlc_mounts.is_empty() {
+            return None;
+        }
+        let mount = self
+            .script_runtime
+            .script_instance_dlc_mounts
+            .get(&id)
+            .cloned();
+        Some(push_dlc_self_context(mount.as_deref()))
+    }
+
     #[inline(always)]
     pub(crate) fn queue_start_script(&mut self, id: NodeID) {
         let slot = id.index() as usize;
@@ -194,12 +223,7 @@ impl Runtime {
         // Engine invariant: only window/event ingestion mutates input, outside script callback execution.
         let ipt: InputWindow<'_, perro_input_api::InputSnapshot> =
             unsafe { InputWindow::new(&*input_ptr) };
-        let mount = self
-            .script_runtime
-            .script_instance_dlc_mounts
-            .get(&id)
-            .cloned();
-        let _dlc_self_context = push_dlc_self_context(mount.as_deref());
+        let _dlc_self_context = self.push_script_dlc_self_context(id);
         self.push_active_script_with_context(instance_index, id, self.script_callback_context());
         let mut run = RuntimeWindow::new(self);
         let mut sctx = ScriptContext {
@@ -239,12 +263,7 @@ impl Runtime {
         // Engine invariant: only window/event ingestion mutates input, outside script callback execution.
         let ipt: InputWindow<'_, perro_input_api::InputSnapshot> =
             unsafe { InputWindow::new(&*input_ptr) };
-        let mount = self
-            .script_runtime
-            .script_instance_dlc_mounts
-            .get(&id)
-            .cloned();
-        let _dlc_self_context = push_dlc_self_context(mount.as_deref());
+        let _dlc_self_context = self.push_script_dlc_self_context(id);
         self.push_active_script_with_context(instance_index, id, self.script_callback_context());
         let mut run = RuntimeWindow::new(self);
         let mut sctx = ScriptContext {
@@ -279,23 +298,16 @@ impl Runtime {
         res: &ResourceWindow<'_, crate::RuntimeResourceApi>,
         ipt: &InputWindow<'_, perro_input_api::InputSnapshot>,
     ) {
-        if !self.scripts.is_update_scheduled_indexed(instance_index, id) {
-            return;
-        }
-        let behavior = match self
-            .scripts
-            .get_instance_scheduled_indexed(instance_index, id)
-        {
+        let behavior = match self.scripts.scheduled_instance(
+            instance_index,
+            id,
+            crate::cns::script_collection::ScheduleKind::Update,
+        ) {
             Some(instance) => Arc::clone(&instance.behavior),
             None => return,
         };
-        let mount = self
-            .script_runtime
-            .script_instance_dlc_mounts
-            .get(&id)
-            .cloned();
         self.push_active_script_with_context(instance_index, id, self.script_callback_context());
-        let _dlc_self_context = push_dlc_self_context(mount.as_deref());
+        let _dlc_self_context = self.push_script_dlc_self_context(id);
         let mut run = RuntimeWindow::new(self);
         let mut sctx = ScriptContext {
             run: &mut run,
@@ -320,26 +332,16 @@ impl Runtime {
         res: &ResourceWindow<'_, crate::RuntimeResourceApi>,
         ipt: &InputWindow<'_, perro_input_api::InputSnapshot>,
     ) {
-        if !self
-            .scripts
-            .is_fixed_update_scheduled_indexed(instance_index, id)
-        {
-            return;
-        }
-        let behavior = match self
-            .scripts
-            .get_instance_scheduled_indexed(instance_index, id)
-        {
+        let behavior = match self.scripts.scheduled_instance(
+            instance_index,
+            id,
+            crate::cns::script_collection::ScheduleKind::Fixed,
+        ) {
             Some(instance) => Arc::clone(&instance.behavior),
             None => return,
         };
-        let mount = self
-            .script_runtime
-            .script_instance_dlc_mounts
-            .get(&id)
-            .cloned();
         self.push_active_script_with_context(instance_index, id, self.script_callback_context());
-        let _dlc_self_context = push_dlc_self_context(mount.as_deref());
+        let _dlc_self_context = self.push_script_dlc_self_context(id);
         let mut run = RuntimeWindow::new(self);
         let mut sctx = ScriptContext {
             run: &mut run,
@@ -493,12 +495,7 @@ impl ScriptAPI for Runtime {
         let ipt: InputWindow<'_, perro_input_api::InputSnapshot> =
             unsafe { InputWindow::new(&*context.input) };
         self.push_active_script_with_context(instance_index, script_id, context);
-        let mount = self
-            .script_runtime
-            .script_instance_dlc_mounts
-            .get(&script_id)
-            .cloned();
-        let _dlc_self_context = push_dlc_self_context(mount.as_deref());
+        let _dlc_self_context = self.push_script_dlc_self_context(script_id);
         let mut run = RuntimeWindow::new(self);
         let mut sctx = ScriptContext {
             run: &mut run,

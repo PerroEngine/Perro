@@ -174,6 +174,13 @@ impl Runtime {
         if id.is_nil() || self.nodes.get(id).is_none() {
             return None;
         }
+        // pending subtree roots aren't in per-node dirty flags yet; the clean
+        // check + chain walk below only read per-node flags, so skipping this
+        // returns a stale global (set_local_rot on a node w/ children, then
+        // set_global_pos writes the stale rot back over it).
+        if self.dirty.has_pending_transform_roots() {
+            self.propagate_pending_transform_dirty();
+        }
         let start_index = id.index() as usize;
         self.ensure_global_2d_capacity(start_index);
         if self.is_global_2d_cached_clean(id) {
@@ -259,6 +266,13 @@ impl Runtime {
     pub(crate) fn get_global_transform_3d(&mut self, id: NodeID) -> Option<Transform3D> {
         if id.is_nil() || self.nodes.get(id).is_none() {
             return None;
+        }
+        // pending subtree roots aren't in per-node dirty flags yet; the clean
+        // check + chain walk below only read per-node flags, so skipping this
+        // returns a stale global (set_local_rot on a node w/ children, then
+        // set_global_pos writes the stale rot back over it).
+        if self.dirty.has_pending_transform_roots() {
+            self.propagate_pending_transform_dirty();
         }
         let start_index = id.index() as usize;
         self.ensure_global_3d_capacity(start_index);

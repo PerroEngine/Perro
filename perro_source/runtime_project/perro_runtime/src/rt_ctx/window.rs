@@ -30,6 +30,10 @@ impl WindowAPI for Runtime {
             .push(WindowRequest::SetCursorIcon(icon));
     }
 
+    fn close_app(&mut self) {
+        self.window_requests.push(WindowRequest::CloseApp);
+    }
+
     fn get_active_refresh_rate(&mut self) -> Option<f32> {
         self.active_refresh_rate()
     }
@@ -64,6 +68,7 @@ mod tests {
         runtime.set_window_mode(WindowMode::BorderlessFullscreen);
         runtime.set_frame_rate_cap(FrameRateCap::Fps(120.0));
         runtime.set_cursor_icon(CursorIcon::Move);
+        runtime.close_app();
         runtime.set_active_refresh_rate(Some(144.0));
 
         let mut requests = Vec::new();
@@ -80,6 +85,7 @@ mod tests {
                 WindowRequest::SetMode(WindowMode::BorderlessFullscreen),
                 WindowRequest::SetFrameRateCap(FrameRateCap::Fps(120.0)),
                 WindowRequest::SetCursorIcon(CursorIcon::Move),
+                WindowRequest::CloseApp,
             ]
         );
         assert_eq!(runtime.get_active_refresh_rate(), Some(144.0));

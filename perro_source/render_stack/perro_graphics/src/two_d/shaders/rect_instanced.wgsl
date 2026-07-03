@@ -16,9 +16,8 @@ struct InstanceInput {
     @location(2) size: vec2<f32>,
     @location(3) color: vec4<f32>,
     @location(4) z_index: i32,
-    @location(5) shape_kind: u32,
+    @location(5) packed_kind: u32,
     @location(6) thickness: f32,
-    @location(7) filled: u32,
 };
 
 struct VertexOutput {
@@ -33,8 +32,11 @@ struct VertexOutput {
 
 @vertex
 fn vs_main(v: VertexInput, inst: InstanceInput) -> VertexOutput {
+    // packed_kind = shape_kind * 2 + filled
+    let shape_kind = inst.packed_kind >> 1u;
+    let filled = inst.packed_kind & 1u;
     var draw_size = inst.size;
-    if inst.shape_kind == 3u {
+    if shape_kind == 3u {
         draw_size = abs(inst.size) + vec2<f32>(inst.thickness, inst.thickness);
     }
     let world_xy = inst.center + (v.local_pos * draw_size);
@@ -48,9 +50,9 @@ fn vs_main(v: VertexInput, inst: InstanceInput) -> VertexOutput {
     out.color = inst.color;
     out.local_pos = v.local_pos;
     out.size = inst.size;
-    out.shape_kind = inst.shape_kind;
+    out.shape_kind = shape_kind;
     out.thickness = inst.thickness;
-    out.filled = inst.filled;
+    out.filled = filled;
     return out;
 }
 

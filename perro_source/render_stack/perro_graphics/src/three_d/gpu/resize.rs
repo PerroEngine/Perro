@@ -53,14 +53,18 @@ impl Gpu3D {
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: self.frustum_cull_items_buffer.as_entire_binding(),
+                    resource: self.frustum_cull_static_buffer.as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: self.indirect_buffer.as_entire_binding(),
+                    resource: self.frustum_cull_dynamic_buffer.as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
                     binding: 3,
+                    resource: self.indirect_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
                     resource: wgpu::BindingResource::TextureView(&self.hiz_sample_view),
                 },
             ],
@@ -508,14 +512,18 @@ impl Gpu3D {
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: self.frustum_cull_items_buffer.as_entire_binding(),
+                    resource: self.frustum_cull_static_buffer.as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: self.indirect_buffer.as_entire_binding(),
+                    resource: self.frustum_cull_dynamic_buffer.as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
                     binding: 3,
+                    resource: self.indirect_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
                     resource: wgpu::BindingResource::TextureView(&self.hiz_sample_view),
                 },
             ],

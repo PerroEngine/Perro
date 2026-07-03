@@ -47,9 +47,15 @@ pub struct RectInstanceGpu {
     pub size: [f32; 2],
     pub color: [u8; 4],
     pub z_index: i32,
+    // Packed shape_kind (high bits) + filled flag (low bit): kind * 2 + filled.
+    // Fold saves 4 bytes of instance stride vs a separate `filled: u32`.
     pub shape_kind: u32,
     pub thickness: f32,
-    pub filled: u32,
+}
+
+#[inline]
+fn pack_shape_kind(kind: u32, filled: bool) -> u32 {
+    kind * 2 + u32::from(filled)
 }
 
 #[derive(Debug, Clone, Default)]
@@ -278,9 +284,8 @@ impl Renderer2D {
                         size: [radius * 2.0, radius * 2.0],
                         color: color_to_unorm8(color.into()),
                         z_index: 900,
-                        shape_kind: 1,
+                        shape_kind: pack_shape_kind(1, filled),
                         thickness: thickness.max(0.0),
-                        filled: u32::from(filled),
                     });
                 }
                 DrawShape2D::Rect {
@@ -303,9 +308,8 @@ impl Renderer2D {
                         size: [size.x, size.y],
                         color: color_to_unorm8(color.into()),
                         z_index: 900,
-                        shape_kind: if filled { 0 } else { 2 },
+                        shape_kind: pack_shape_kind(if filled { 0 } else { 2 }, filled),
                         thickness: thickness.max(0.0),
-                        filled: u32::from(filled),
                     });
                 }
                 DrawShape2D::Line {
@@ -391,18 +395,15 @@ impl Renderer2D {
     }
 
     fn flush_point_particles(&mut self) {
-        let particles = self
-            .retained_point_particles
-            .values()
-            .cloned()
-            .collect::<Vec<_>>();
-        for emitter in particles {
-            append_point_particles(
-                &mut self.frame_shapes,
-                &mut self.particle_eval_stack,
-                &emitter,
-            );
+        // Split borrow: take the mutable scratch fields out so the shared
+        // borrow of retained_point_particles has no overlap. Zero clones.
+        let mut frame_shapes = std::mem::take(&mut self.frame_shapes);
+        let mut eval_stack = std::mem::take(&mut self.particle_eval_stack);
+        for emitter in self.retained_point_particles.values() {
+            append_point_particles(&mut frame_shapes, &mut eval_stack, emitter);
         }
+        self.frame_shapes = frame_shapes;
+        self.particle_eval_stack = eval_stack;
     }
 
     fn flush_sprite_packets(&mut self, resources: &ResourceStore) -> Renderer2DStats {
@@ -805,9 +806,8 @@ fn append_line_rect(
         size: [dx, dy],
         color: color_to_unorm8(color),
         z_index,
-        shape_kind: 3,
+        shape_kind: pack_shape_kind(3, true),
         thickness,
-        filled: 1,
     });
 }
 
@@ -904,9 +904,8 @@ pub(crate) fn append_point_particles(
             size: [size, size],
             color: color_to_unorm8(color),
             z_index: emitter.z_index,
-            shape_kind: 1,
+            shape_kind: pack_shape_kind(1, true),
             thickness: 1.0,
-            filled: 1,
         });
     }
 }
@@ -1026,9 +1025,8 @@ fn retained_rect_instance(rect: Rect2DCommand) -> Option<RectInstanceGpu> {
         size: rect.size,
         color: color_to_unorm8(rect.color.into()),
         z_index: rect.z_index,
-        shape_kind: 0,
+        shape_kind: pack_shape_kind(0, true),
         thickness: 1.0,
-        filled: 1,
     })
 }
 

@@ -41,6 +41,9 @@ steamworks = ["perro_runtime/steamworks"]
 
 [target.'cfg(target_os = "windows")'.dependencies]
 winit = { version = "0.30.12", default-features = false, features = ["rwh_06"] }
+# matches windows-sys version winit already pulls in transitively; used only for
+# timeBeginPeriod/timeEndPeriod (raise OS timer resolution for frame pacing).
+windows-sys = { version = "0.52", features = ["Win32_Media"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 winit = { version = "0.30.12", default-features = false, features = ["rwh_06", "x11", "wayland", "wayland-dlopen"] }

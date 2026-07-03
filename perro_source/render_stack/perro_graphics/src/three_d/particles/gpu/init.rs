@@ -60,18 +60,18 @@ impl GpuPointParticles3D {
                         },
                         wgpu::VertexAttribute {
                             offset: 12,
+                            shader_location: 2,
+                            format: wgpu::VertexFormat::Unorm8x4,
+                        },
+                        wgpu::VertexAttribute {
+                            offset: 16,
                             shader_location: 1,
-                            format: wgpu::VertexFormat::Float32x2,
+                            format: wgpu::VertexFormat::Float16x2,
                         },
                         wgpu::VertexAttribute {
                             offset: 20,
-                            shader_location: 2,
-                            format: wgpu::VertexFormat::Float32x4,
-                        },
-                        wgpu::VertexAttribute {
-                            offset: 36,
                             shader_location: 3,
-                            format: wgpu::VertexFormat::Float32x3,
+                            format: wgpu::VertexFormat::Float16x4,
                         },
                     ],
                 }],
@@ -99,7 +99,7 @@ impl GpuPointParticles3D {
                 conservative: false,
             },
             depth_stencil: Some(wgpu::DepthStencilState {
-                format: PARTICLE_DEPTH_FORMAT,
+                format: crate::scene_depth_format(sample_count),
                 depth_write_enabled: Some(false),
                 depth_compare: Some(wgpu::CompareFunction::LessEqual),
                 stencil: wgpu::StencilState::default(),
@@ -131,18 +131,18 @@ impl GpuPointParticles3D {
                             },
                             wgpu::VertexAttribute {
                                 offset: 12,
+                                shader_location: 2,
+                                format: wgpu::VertexFormat::Unorm8x4,
+                            },
+                            wgpu::VertexAttribute {
+                                offset: 16,
                                 shader_location: 1,
-                                format: wgpu::VertexFormat::Float32x2,
+                                format: wgpu::VertexFormat::Float16x2,
                             },
                             wgpu::VertexAttribute {
                                 offset: 20,
-                                shader_location: 2,
-                                format: wgpu::VertexFormat::Float32x4,
-                            },
-                            wgpu::VertexAttribute {
-                                offset: 36,
                                 shader_location: 3,
-                                format: wgpu::VertexFormat::Float32x3,
+                                format: wgpu::VertexFormat::Float16x4,
                             },
                         ],
                     }],
@@ -170,7 +170,7 @@ impl GpuPointParticles3D {
                     conservative: false,
                 },
                 depth_stencil: Some(wgpu::DepthStencilState {
-                    format: PARTICLE_DEPTH_FORMAT,
+                    format: crate::scene_depth_format(sample_count),
                     depth_write_enabled: Some(false),
                     depth_compare: Some(wgpu::CompareFunction::LessEqual),
                     stencil: wgpu::StencilState::default(),
@@ -282,7 +282,7 @@ impl GpuPointParticles3D {
                 conservative: false,
             },
             depth_stencil: Some(wgpu::DepthStencilState {
-                format: PARTICLE_DEPTH_FORMAT,
+                format: crate::scene_depth_format(sample_count),
                 depth_write_enabled: Some(false),
                 depth_compare: Some(wgpu::CompareFunction::LessEqual),
                 stencil: wgpu::StencilState::default(),
@@ -328,7 +328,7 @@ impl GpuPointParticles3D {
                     conservative: false,
                 },
                 depth_stencil: Some(wgpu::DepthStencilState {
-                    format: PARTICLE_DEPTH_FORMAT,
+                    format: crate::scene_depth_format(sample_count),
                     depth_write_enabled: Some(false),
                     depth_compare: Some(wgpu::CompareFunction::LessEqual),
                     stencil: wgpu::StencilState::default(),
@@ -500,7 +500,7 @@ impl GpuPointParticles3D {
                     conservative: false,
                 },
                 depth_stencil: Some(wgpu::DepthStencilState {
-                    format: PARTICLE_DEPTH_FORMAT,
+                    format: crate::scene_depth_format(sample_count),
                     depth_write_enabled: Some(false),
                     depth_compare: Some(wgpu::CompareFunction::LessEqual),
                     stencil: wgpu::StencilState::default(),
@@ -546,7 +546,7 @@ impl GpuPointParticles3D {
                     conservative: false,
                 },
                 depth_stencil: Some(wgpu::DepthStencilState {
-                    format: PARTICLE_DEPTH_FORMAT,
+                    format: crate::scene_depth_format(sample_count),
                     depth_write_enabled: Some(false),
                     depth_compare: Some(wgpu::CompareFunction::LessEqual),
                     stencil: wgpu::StencilState::default(),

@@ -1175,29 +1175,6 @@ fn physics_body_fields(fields: &mut Vec<SceneNodeField>, node_type: NodeType) {
         push(fields, "Physics", "restitution", NodeFieldType::F32);
         push(fields, "Physics", "density", NodeFieldType::F32);
     }
-    if matches!(
-        node_type,
-        NodeType::CharacterBody2D | NodeType::CharacterBody3D
-    ) {
-        push(
-            fields,
-            "Character Body",
-            "apply_gravity",
-            NodeFieldType::Bool,
-        );
-        push(
-            fields,
-            "Character Body",
-            "gravity_scale",
-            NodeFieldType::F32,
-        );
-        push(
-            fields,
-            "Character Body",
-            "max_fall_speed",
-            NodeFieldType::F32,
-        );
-    }
     if matches!(node_type, NodeType::RigidBody2D | NodeType::RigidBody3D) {
         push(
             fields,

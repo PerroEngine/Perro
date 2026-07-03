@@ -62,6 +62,13 @@ pub(crate) struct ScriptCollection {
 
 const NONE_SLOT: u32 = u32::MAX;
 
+/// Which per-frame schedule a scheduled lookup targets.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ScheduleKind {
+    Update,
+    Fixed,
+}
+
 impl ScriptCollection {
     // ---- Construction ----
 
@@ -104,6 +111,40 @@ impl ScriptCollection {
         id: NodeID,
     ) -> Option<&ScriptInstance> {
         if self.ids.get(instance_index).copied() != Some(id) {
+            return None;
+        }
+        self.instances.get(instance_index)
+    }
+
+    /// Return a scheduled instance in one pass when it is still valid for the
+    /// requested schedule.
+    ///
+    /// Fuses the dense-index/id revalidation of [`Self::get_instance_scheduled_indexed`]
+    /// with the schedule-membership check the dispatch fns used to do separately
+    /// (via `is_update_scheduled_indexed` / `is_fixed_update_scheduled_indexed`).
+    /// Returns `None` when the id is stale/moved (swap-remove) OR when the script
+    /// was removed from the requested schedule mid-frame (enable/disable). This is
+    /// exactly the combined semantics of the two prior checks: a single reverse-pos
+    /// != NONE_SLOT read plus the id match, then the instance.
+    #[inline]
+    pub(crate) fn scheduled_instance(
+        &self,
+        instance_index: usize,
+        id: NodeID,
+        schedule: ScheduleKind,
+    ) -> Option<&ScriptInstance> {
+        if self.ids.get(instance_index).copied() != Some(id) {
+            return None;
+        }
+        let reverse = match schedule {
+            ScheduleKind::Update => &self.update_pos,
+            ScheduleKind::Fixed => &self.fixed_pos,
+        };
+        let scheduled = reverse
+            .get(instance_index)
+            .copied()
+            .is_some_and(|pos| pos != NONE_SLOT);
+        if !scheduled {
             return None;
         }
         self.instances.get(instance_index)
@@ -277,32 +318,6 @@ impl ScriptCollection {
             self.bump_schedule_epoch();
         }
         changed
-    }
-
-    /// Check update schedule membership using scheduler snapshot keys.
-    #[inline]
-    pub(crate) fn is_update_scheduled_indexed(&self, instance_index: usize, id: NodeID) -> bool {
-        self.ids.get(instance_index).copied() == Some(id)
-            && self
-                .update_pos
-                .get(instance_index)
-                .copied()
-                .is_some_and(|pos| pos != NONE_SLOT)
-    }
-
-    /// Check fixed-update schedule membership using scheduler snapshot keys.
-    #[inline]
-    pub(crate) fn is_fixed_update_scheduled_indexed(
-        &self,
-        instance_index: usize,
-        id: NodeID,
-    ) -> bool {
-        self.ids.get(instance_index).copied() == Some(id)
-            && self
-                .fixed_pos
-                .get(instance_index)
-                .copied()
-                .is_some_and(|pos| pos != NONE_SLOT)
     }
 
     /// Append ids for all active script instances.
@@ -630,5 +645,168 @@ mod unsafe_state_cast_tests {
         let fast = checked_state_mut::<TestState>(state_type, fast_state.as_mut()).is_none();
 
         assert_eq!(fast, safe);
+    }
+}
+
+#[cfg(test)]
+mod scheduled_instance_tests {
+    use super::*;
+    use perro_ids::ScriptMemberID;
+    use perro_scripting::{ScriptBehavior, ScriptContext, ScriptFlags, ScriptLifecycle};
+    use perro_variant::Variant;
+    use std::any::Any;
+
+    /// Minimal behavior carrying an identity marker readable via `get_var`, so a
+    /// scheduled lookup can be checked to return the correct instance after
+    /// swap-remove compaction.
+    struct MarkerScript {
+        marker: i64,
+        flags: ScriptFlags,
+    }
+
+    impl ScriptLifecycle<crate::runtime::RuntimeScriptApi> for MarkerScript {}
+
+    impl ScriptBehavior<crate::runtime::RuntimeScriptApi> for MarkerScript {
+        fn script_flags(&self) -> ScriptFlags {
+            self.flags
+        }
+
+        fn create_state(&self) -> Box<dyn Any> {
+            Box::new(())
+        }
+
+        fn get_var(&self, _state: &dyn Any, _var: ScriptMemberID) -> Variant {
+            Variant::from(self.marker)
+        }
+
+        fn set_var(&self, _state: &mut dyn Any, _var: ScriptMemberID, _value: Variant) {}
+
+        fn call_method(
+            &self,
+            _method: ScriptMemberID,
+            _ctx: &mut ScriptContext<'_, crate::runtime::RuntimeScriptApi>,
+            _params: &[Variant],
+        ) -> Variant {
+            Variant::Null
+        }
+    }
+
+    fn insert_marker(coll: &mut ScriptCollection, id: NodeID, marker: i64, flags: u8) {
+        coll.insert(
+            id,
+            Arc::new(MarkerScript {
+                marker,
+                flags: ScriptFlags::new(flags),
+            }),
+            Box::new(()),
+        );
+    }
+
+    fn marker_of(instance: &ScriptInstance) -> i64 {
+        instance
+            .behavior
+            .get_var(instance.state.as_ref(), ScriptMemberID(0))
+            .as_i64()
+            .unwrap()
+    }
+
+    // (a) A script removed mid-frame is skipped by a stale scheduler snapshot key.
+    #[test]
+    fn scheduled_instance_none_after_mid_frame_removal() {
+        let mut coll = ScriptCollection::new();
+        let id = NodeID::new(1);
+        insert_marker(&mut coll, id, 11, ScriptFlags::HAS_UPDATE);
+
+        // Snapshot key captured while scheduled.
+        let index = coll.instance_index_for_id(id).unwrap();
+        assert!(
+            coll.scheduled_instance(index, id, ScheduleKind::Update)
+                .is_some()
+        );
+
+        // Removed mid-frame: the same (index, id) key must no longer resolve.
+        coll.remove(id);
+        assert!(
+            coll.scheduled_instance(index, id, ScheduleKind::Update)
+                .is_none()
+        );
+    }
+
+    // (b) set_update_enabled(false) mid-frame drops the script from the update
+    // schedule; the snapshot key resolves for fixed but not update.
+    #[test]
+    fn scheduled_instance_respects_mid_frame_disable() {
+        let mut coll = ScriptCollection::new();
+        let id = NodeID::new(1);
+        insert_marker(
+            &mut coll,
+            id,
+            22,
+            ScriptFlags::HAS_UPDATE | ScriptFlags::HAS_FIXED_UPDATE,
+        );
+        let index = coll.instance_index_for_id(id).unwrap();
+
+        assert!(
+            coll.scheduled_instance(index, id, ScheduleKind::Update)
+                .is_some()
+        );
+        assert!(
+            coll.scheduled_instance(index, id, ScheduleKind::Fixed)
+                .is_some()
+        );
+
+        // Disable only the update schedule mid-frame.
+        assert!(coll.set_update_enabled(id, false));
+        assert!(
+            coll.scheduled_instance(index, id, ScheduleKind::Update)
+                .is_none()
+        );
+        // Fixed schedule membership is unaffected.
+        assert!(
+            coll.scheduled_instance(index, id, ScheduleKind::Fixed)
+                .is_some()
+        );
+    }
+
+    // (c) Removing an instance swap-moves the last instance into the freed slot;
+    // a scheduled lookup with the moved instance's key must resolve to the moved
+    // instance (correct id + schedule position), not the stale occupant.
+    #[test]
+    fn scheduled_instance_revalidates_after_swap_remove() {
+        let mut coll = ScriptCollection::new();
+        let a = NodeID::new(1);
+        let b = NodeID::new(2);
+        insert_marker(&mut coll, a, 100, ScriptFlags::HAS_UPDATE);
+        insert_marker(&mut coll, b, 200, ScriptFlags::HAS_UPDATE);
+
+        let index_a = coll.instance_index_for_id(a).unwrap();
+        let index_b = coll.instance_index_for_id(b).unwrap();
+        assert_eq!(index_a, 0);
+        assert_eq!(index_b, 1);
+
+        // Remove `a`: swap-remove moves `b` from dense index 1 into index 0.
+        coll.remove(a);
+
+        // The old key for `b` (index 1) is now stale and must not resolve.
+        assert!(
+            coll.scheduled_instance(index_b, b, ScheduleKind::Update)
+                .is_none()
+        );
+
+        // `b` is now at index 0; the revalidated lookup returns the moved
+        // instance with its own marker, and its update schedule membership moved
+        // with it.
+        let moved_index = coll.instance_index_for_id(b).unwrap();
+        assert_eq!(moved_index, 0);
+        let moved = coll
+            .scheduled_instance(moved_index, b, ScheduleKind::Update)
+            .expect("moved instance still scheduled");
+        assert_eq!(marker_of(moved), 200);
+
+        // A lookup with the moved index but the removed id must reject.
+        assert!(
+            coll.scheduled_instance(moved_index, a, ScheduleKind::Update)
+                .is_none()
+        );
     }
 }

@@ -206,6 +206,14 @@ impl Render2DState {
         self.force_full_scan_once = true;
     }
 
+    pub fn full_scan_pending(&self) -> bool {
+        self.force_full_scan_once
+    }
+
+    pub fn clear_full_scan_pending(&mut self) {
+        self.force_full_scan_once = false;
+    }
+
     pub fn collect_traversal<I, A, F>(
         &mut self,
         dirty_ids: I,
@@ -690,6 +698,14 @@ impl Render3DState {
 
     pub fn request_full_scan_once(&mut self) {
         self.force_full_scan_once = true;
+    }
+
+    pub fn full_scan_pending(&self) -> bool {
+        self.force_full_scan_once
+    }
+
+    pub fn clear_full_scan_pending(&mut self) {
+        self.force_full_scan_once = false;
     }
 
     pub fn collect_traversal<I, A, F>(

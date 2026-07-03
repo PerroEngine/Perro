@@ -11,7 +11,7 @@ struct ParticleIn {
     @location(0) world_pos: vec3<f32>,
     @location(1) size_alpha: vec2<f32>,
     @location(2) color: vec4<f32>,
-    @location(3) emissive: vec3<f32>,
+    @location(3) emissive: vec4<f32>,
 }
 
 struct ParticleOut {
@@ -26,7 +26,7 @@ fn vs_main(in: ParticleIn) -> ParticleOut {
     out.clip_pos = camera.view_proj * vec4<f32>(in.world_pos, 1.0);
     out.color = in.color;
     out.color.a = clamp(in.size_alpha.y, 0.0, 1.0);
-    out.emissive = in.emissive;
+    out.emissive = in.emissive.xyz;
     return out;
 }
 
@@ -46,7 +46,7 @@ fn vs_billboard(in: ParticleIn, @builtin(vertex_index) vertex_index: u32) -> Par
     out.clip_pos = base_clip + vec4<f32>(ndc_offset * base_clip.w, 0.0, 0.0);
     out.color = in.color;
     out.color.a = clamp(in.size_alpha.y, 0.0, 1.0);
-    out.emissive = in.emissive;
+    out.emissive = in.emissive.xyz;
     return out;
 }
 

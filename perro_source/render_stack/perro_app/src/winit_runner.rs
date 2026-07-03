@@ -50,7 +50,10 @@ const MAX_FIXED_STEPS_PER_FRAME: u32 = 2;
 const MAX_FRAME_DELTA_SECONDS: f32 = 0.250;
 const MIN_FRAME_RATE_CAP_FPS: f32 = 1.0;
 const MAX_FRAME_RATE_CAP_FPS: f32 = 1000.0;
-const HIGH_RATE_FRAME_INTERVAL: Duration = Duration::from_millis(8);
+// OS timer wake-ups overshoot; wake this early, then poll to the deadline.
+// Assumes 1ms system timer resolution on Windows (see timer_resolution.rs,
+// active for the app lifetime); 2ms headroom is generous at that resolution.
+const FRAME_WAKE_HEADROOM: Duration = Duration::from_millis(2);
 const LOG_INTERVAL_SECONDS: f32 = 3.0;
 #[cfg(not(any(feature = "profile_heavy", feature = "ui_profile", feature = "fps")))]
 const LOG_TIMING_SAMPLE_STRIDE: u32 = 20;
@@ -141,11 +144,16 @@ fn frame_interval_from_fps(fps: f32) -> Duration {
 
 #[cfg(not(target_arch = "wasm32"))]
 fn active_refresh_rate_hz(window: Option<&Window>) -> Option<f32> {
-    let monitor = window.and_then(Window::current_monitor)?;
-    let refresh_millihertz = monitor
-        .video_modes()
-        .map(|mode| mode.refresh_rate_millihertz())
-        .max()?;
+    let window = window?;
+    let monitor = window
+        .current_monitor()
+        .or_else(|| window.primary_monitor())?;
+    let refresh_millihertz = monitor.refresh_rate_millihertz().or_else(|| {
+        monitor
+            .video_modes()
+            .map(|mode| mode.refresh_rate_millihertz())
+            .max()
+    })?;
     if refresh_millihertz == 0 {
         return None;
     }
@@ -545,6 +553,7 @@ impl WinitRunner {
         }
         #[cfg(not(target_arch = "wasm32"))]
         {
+            let _timer_resolution = crate::timer_resolution::TimerResolutionGuard::acquire_1ms();
             let mut state = RunnerState::new(app, title, fixed_timestep, preloaded_images);
             event_loop.run_app(&mut state).map_err(|err| AppExitError {
                 message: format!("winit event loop failed: {err}"),
@@ -1142,6 +1151,21 @@ impl<B: GraphicsBackend> RunnerState<B> {
             return;
         }
 
+        if self
+            .window_requests
+            .iter()
+            .any(|request| matches!(request, WindowRequest::CloseApp))
+        {
+            self.window_requests.clear();
+            self.exit_result = Some(AppExitResult::event_loop_exit());
+            self.reset_mouse_mode_for_exit();
+            if let Some(window) = self.window.take() {
+                window.set_visible(false);
+            }
+            event_loop.exit();
+            return;
+        }
+
         let Some(window) = self.window.as_ref().cloned() else {
             self.window_requests.clear();
             return;
@@ -1174,6 +1198,7 @@ impl<B: GraphicsBackend> RunnerState<B> {
                 WindowRequest::SetCursorIcon(icon) => {
                     self.set_cursor_icon(icon);
                 }
+                WindowRequest::CloseApp => {}
             }
         }
     }
@@ -1236,13 +1261,16 @@ impl<B: GraphicsBackend> RunnerState<B> {
         if let Some(deadline) = self.next_frame_deadline
             && deadline > now
         {
-            if self
-                .frame_cap_interval()
-                .is_some_and(|interval| interval <= HIGH_RATE_FRAME_INTERVAL)
-            {
+            // OS timers overshoot by a few ms; wake early and poll the rest.
+            // With 1ms-resolution system timers (see timer_resolution.rs),
+            // WaitUntil is accurate enough to use for high-rate caps too, so
+            // only intervals too small to leave any wake headroom fall back
+            // to Poll (busy event loop).
+            let wake_at = deadline.checked_sub(FRAME_WAKE_HEADROOM);
+            if wake_at.is_none_or(|wake_at| wake_at <= now) {
                 event_loop.set_control_flow(ControlFlow::Poll);
-            } else {
-                event_loop.set_control_flow(ControlFlow::WaitUntil(deadline));
+            } else if let Some(wake_at) = wake_at {
+                event_loop.set_control_flow(ControlFlow::WaitUntil(wake_at));
             }
         } else {
             event_loop.set_control_flow(ControlFlow::Poll);

@@ -40,22 +40,35 @@ fn inverse_basis_mat4(transform: Transform3D) -> glam::Mat4 {
 }
 
 impl Runtime {
+    /// Cheap up-front validation shared by the borrowed and owned spec paths.
+    ///
+    /// Runs on a borrowed slice so the borrowed path can reject invalid batches
+    /// (empty, missing parent, forward parent reference) before paying for any
+    /// clone of the specs.
+    fn node_specs_valid(&self, specs: &[NodeSpec], parent_id: NodeID) -> bool {
+        if specs.is_empty() {
+            return false;
+        }
+        if !parent_id.is_nil() && self.nodes.get(parent_id).is_none() {
+            return false;
+        }
+        specs
+            .iter()
+            .enumerate()
+            .all(|(index, spec)| spec.parent.is_none_or(|parent| parent < index))
+    }
+
     fn create_node_specs(&mut self, specs: &[NodeSpec], parent_id: NodeID) -> Vec<NodeID> {
+        // Validate on the borrowed slice first; only clone once the batch is
+        // known-good, so invalid batches never pay the deep clone.
+        if !self.node_specs_valid(specs, parent_id) {
+            return Vec::new();
+        }
         self.create_owned_node_specs(specs.to_vec(), parent_id)
     }
 
     fn create_owned_node_specs(&mut self, specs: Vec<NodeSpec>, parent_id: NodeID) -> Vec<NodeID> {
-        if specs.is_empty() {
-            return Vec::new();
-        }
-        if !parent_id.is_nil() && self.nodes.get(parent_id).is_none() {
-            return Vec::new();
-        }
-        if !specs
-            .iter()
-            .enumerate()
-            .all(|(index, spec)| spec.parent.is_none_or(|parent| parent < index))
-        {
+        if !self.node_specs_valid(&specs, parent_id) {
             return Vec::new();
         }
 
@@ -157,11 +170,19 @@ impl Runtime {
 
     fn create_node_collection(
         &mut self,
-        collection: NodeCollection,
+        collection: &NodeCollection,
         parent_id: NodeID,
     ) -> Vec<NodeID> {
+        // Borrowed input: the body already reads specs/scenes by reference and
+        // clones only the individual spec that is materialized into a node (that
+        // clone is unavoidable). Taking `&NodeCollection` drops the wholesale
+        // clone of `entries`/`scenes` that the caller previously paid up front.
         if collection.is_specs_only() {
-            return self.create_owned_node_specs(collection.specs, parent_id);
+            // Validate before cloning the spec vec so invalid batches pay nothing.
+            if !self.node_specs_valid(&collection.specs, parent_id) {
+                return Vec::new();
+            }
+            return self.create_owned_node_specs(collection.specs.clone(), parent_id);
         }
         if !parent_id.is_nil() && self.nodes.get(parent_id).is_none() {
             return Vec::new();
@@ -182,10 +203,10 @@ impl Runtime {
         }
 
         let mut ids = Vec::with_capacity(collection.entries.len());
-        for entry in collection.entries {
+        for entry in &collection.entries {
             match entry {
                 NodeCollectionEntry::Node(spec_index) => {
-                    let mut spec = collection.specs[spec_index].clone();
+                    let mut spec = collection.specs[*spec_index].clone();
                     let parent = spec.parent.map(|parent| ids[parent]).unwrap_or(parent_id);
                     spec.parent = None;
                     let mut made = self.create_owned_node_specs(vec![spec], parent);
@@ -195,7 +216,7 @@ impl Runtime {
                     ids.append(&mut made);
                 }
                 NodeCollectionEntry::Scene(scene_index) => {
-                    let scene = &collection.scenes[scene_index];
+                    let scene = &collection.scenes[*scene_index];
                     let parent = scene.parent.map(|parent| ids[parent]).unwrap_or(parent_id);
                     let Ok(id) = self.load_scene_at_runtime(scene.path.as_ref()) else {
                         return Vec::new();
@@ -273,14 +294,15 @@ impl NodeAPI for Runtime {
     where
         T: Default + Into<SceneNodeData>,
     {
-        let id = self.nodes.insert(SceneNode::new(T::default().into()));
-        if let Some(node) = self.nodes.get(id) {
-            let ty = node.node_type();
-            self.register_internal_node_schedules(id, ty);
-        }
-        if self.nodes.get(id).is_some_and(
-            |node| matches!(&node.data, SceneNodeData::Camera3D(camera) if camera.active),
-        ) {
+        // Read type + camera-active flag from the owned node before it moves
+        // into the arena, eliminating both post-insert arena lookups.
+        let node = SceneNode::new(T::default().into());
+        let node_type = node.node_type();
+        let camera_3d_active =
+            matches!(&node.data, SceneNodeData::Camera3D(camera) if camera.active);
+        let id = self.nodes.insert(node);
+        self.register_internal_node_schedules(id, node_type);
+        if camera_3d_active {
             self.note_camera_3d_activated(id);
         }
         // Ensure freshly created nodes participate in render/transform extraction
@@ -302,11 +324,11 @@ impl NodeAPI for Runtime {
         match requests.into_node_create_batch() {
             NodeCreateBatch::Specs(specs) => self.create_node_specs(specs, parent_id),
             NodeCreateBatch::Collection(collection) => {
-                self.create_node_collection(collection.clone(), parent_id)
+                self.create_node_collection(collection, parent_id)
             }
             NodeCreateBatch::OwnedSpecs(specs) => self.create_owned_node_specs(specs, parent_id),
             NodeCreateBatch::OwnedCollection(collection) => {
-                self.create_node_collection(collection, parent_id)
+                self.create_node_collection(&collection, parent_id)
             }
         }
     }
@@ -320,7 +342,6 @@ impl NodeAPI for Runtime {
             return None;
         }
 
-        let slot = cached_slot_for(self, id);
         let (
             transform_changed,
             ui_before,
@@ -332,16 +353,19 @@ impl NodeAPI for Runtime {
             modulate_changed,
             value,
         ) = {
-            let node = if let Some((index, generation)) = slot {
-                self.nodes.slot_get_mut_checked(index, generation)?
-            } else {
-                self.nodes.get_mut(id)?
-            };
+            let node = self.nodes.get_mut(id)?;
 
+            // Const-gated so the optimizer strips camera/UI capture for node
+            // types that can never be those variants.
             let track_ui = T::NODE_TYPE.is_a(NodeType::UiNode);
             let track_camera_2d = T::NODE_TYPE == NodeType::Camera2D;
             let track_camera_3d = T::NODE_TYPE == NodeType::Camera3D;
-            let ui_before = track_ui.then(|| node.data.clone());
+            // Single-pass snapshots replace the old before/after deep clone of
+            // `SceneNodeData`. `local_snapshot` folds visibility + base modulate
+            // into one match; `ui_snapshot` captures the UI base + payload
+            // fingerprints only when this type is a UI node.
+            let ui_before = track_ui.then(|| ui_snapshot(&node.data)).flatten();
+            let (visible_before, modulate_before) = local_snapshot(&node.data);
             let cam_2d_before = if track_camera_2d {
                 match &node.data {
                     SceneNodeData::Camera2D(cam) => Some((cam.active, cam.transform, cam.zoom)),
@@ -360,10 +384,6 @@ impl NodeAPI for Runtime {
             };
             let mut changed = false;
             let mut value = None;
-            let visible_before = Self::node_local_visible(&node.data);
-            let before_modulate_2d = node.with_base_ref::<Node2D, _>(|base| base.modulate);
-            let before_modulate_3d = node.with_base_ref::<Node3D, _>(|base| base.modulate);
-            let before_modulate_ui = node.with_base_ref::<UiNode, _>(|base| base.modulate);
             let result = node.with_typed_mut::<T, _>(|typed| {
                 let before = T::snapshot_transform(typed);
                 value = Some(f(typed));
@@ -371,11 +391,8 @@ impl NodeAPI for Runtime {
                 changed = before != after;
             });
             result?;
-            let visible_after = Self::node_local_visible(&node.data);
-            let after_modulate_2d = node.with_base_ref::<Node2D, _>(|base| base.modulate);
-            let after_modulate_3d = node.with_base_ref::<Node3D, _>(|base| base.modulate);
-            let after_modulate_ui = node.with_base_ref::<UiNode, _>(|base| base.modulate);
-            let ui_after = track_ui.then(|| node.data.clone());
+            let ui_after = track_ui.then(|| ui_snapshot(&node.data)).flatten();
+            let (visible_after, modulate_after) = local_snapshot(&node.data);
             let cam_2d_after = if track_camera_2d {
                 match &node.data {
                     SceneNodeData::Camera2D(cam) => Some((cam.active, cam.transform, cam.zoom)),
@@ -400,9 +417,7 @@ impl NodeAPI for Runtime {
                 cam_3d_before != cam_3d_after,
                 cam_3d_before != Some(true) && cam_3d_after == Some(true),
                 visible_before != visible_after,
-                before_modulate_2d != after_modulate_2d
-                    || before_modulate_3d != after_modulate_3d
-                    || before_modulate_ui != after_modulate_ui,
+                modulate_before != modulate_after,
                 value,
             )
         };
@@ -424,7 +439,7 @@ impl NodeAPI for Runtime {
         }
         let is_ui_node = ui_before.is_some();
         if let (Some(before), Some(after)) = (ui_before.as_ref(), ui_after.as_ref()) {
-            self.mark_ui_data_change(id, before, after);
+            self.mark_ui_snapshot_change(id, before, after);
         }
         if visibility_changed && !is_ui_node {
             self.mark_ui_visibility_dirty_subtree(id);
@@ -447,12 +462,7 @@ impl NodeAPI for Runtime {
             return V::default();
         }
 
-        let node_ref = if let Some((index, generation)) = cached_slot_for(self, node_id) {
-            self.nodes.slot_get_checked(index, generation)
-        } else {
-            self.nodes.get(node_id)
-        };
-        let Some(node_ref) = node_ref else {
+        let Some(node_ref) = self.nodes.get(node_id) else {
             return V::default();
         };
 
@@ -467,11 +477,7 @@ impl NodeAPI for Runtime {
         if id.is_nil() {
             return None;
         }
-        let node = if let Some((index, generation)) = cached_slot_for(self, id) {
-            self.nodes.slot_get_checked(index, generation)?
-        } else {
-            self.nodes.get(id)?
-        };
+        let node = self.nodes.get(id)?;
         if !node.node_type().is_a(T::BASE_NODE_TYPE) {
             return None;
         }
@@ -487,7 +493,6 @@ impl NodeAPI for Runtime {
             return None;
         }
 
-        let slot = cached_slot_for(self, id);
         let (
             value,
             transform_changed,
@@ -500,21 +505,15 @@ impl NodeAPI for Runtime {
             active_camera_3d_activated,
             modulate_changed,
         ) = {
-            let node = if let Some((index, generation)) = slot {
-                self.nodes.slot_get_mut_checked(index, generation)?
-            } else {
-                self.nodes.get_mut(id)?
-            };
+            let node = self.nodes.get_mut(id)?;
             if !node.node_type().is_a(T::BASE_NODE_TYPE) {
                 return None;
             }
-            let before_2d = node.with_base_ref::<Node2D, _>(|base| base.transform);
-            let before_3d = node.with_base_ref::<Node3D, _>(|base| base.transform);
-            let before_vis_2d = node.with_base_ref::<Node2D, _>(|base| base.visible);
-            let before_vis_3d = node.with_base_ref::<Node3D, _>(|base| base.visible);
-            let before_modulate_2d = node.with_base_ref::<Node2D, _>(|base| base.modulate);
-            let before_modulate_3d = node.with_base_ref::<Node3D, _>(|base| base.modulate);
-            let before_modulate_ui = node.with_base_ref::<UiNode, _>(|base| base.modulate);
+            // A base mutation touches exactly one base kind (2D / 3D / UI).
+            // `base_spatial_snapshot` folds the transform + visible + modulate
+            // probes for the 2D/3D bases into one match, and the UI base is
+            // captured once (Copy-content clone) for `mark_ui_base_change`.
+            let before = base_spatial_snapshot(&node.data);
             let before_camera_2d = match &node.data {
                 SceneNodeData::Camera2D(camera) if camera.active => Some(camera.transform),
                 _ => None,
@@ -525,13 +524,7 @@ impl NodeAPI for Runtime {
             };
             let ui_before = node.with_base_ref::<UiNode, _>(Clone::clone);
             let value = node.with_base_mut::<T, _>(f)?;
-            let after_2d = node.with_base_ref::<Node2D, _>(|base| base.transform);
-            let after_3d = node.with_base_ref::<Node3D, _>(|base| base.transform);
-            let after_vis_2d = node.with_base_ref::<Node2D, _>(|base| base.visible);
-            let after_vis_3d = node.with_base_ref::<Node3D, _>(|base| base.visible);
-            let after_modulate_2d = node.with_base_ref::<Node2D, _>(|base| base.modulate);
-            let after_modulate_3d = node.with_base_ref::<Node3D, _>(|base| base.modulate);
-            let after_modulate_ui = node.with_base_ref::<UiNode, _>(|base| base.modulate);
+            let after = base_spatial_snapshot(&node.data);
             let after_camera_2d = match &node.data {
                 SceneNodeData::Camera2D(camera) if camera.active => Some(camera.transform),
                 _ => None,
@@ -541,20 +534,19 @@ impl NodeAPI for Runtime {
                 _ => None,
             };
             let ui_after = node.with_base_ref::<UiNode, _>(Clone::clone);
-            let changed = before_2d != after_2d || before_3d != after_3d;
+            let changed = before.transform_2d != after.transform_2d
+                || before.transform_3d != after.transform_3d;
             (
                 value,
                 changed,
                 ui_before,
                 ui_after,
-                before_vis_2d != after_vis_2d,
-                before_vis_3d != after_vis_3d,
+                before.visible_2d != after.visible_2d,
+                before.visible_3d != after.visible_3d,
                 before_camera_2d != after_camera_2d,
                 before_camera_3d != after_camera_3d,
                 before_camera_3d.is_none() && after_camera_3d.is_some(),
-                before_modulate_2d != after_modulate_2d
-                    || before_modulate_3d != after_modulate_3d
-                    || before_modulate_ui != after_modulate_ui,
+                before.modulate != after.modulate,
             )
         };
 
@@ -856,7 +848,15 @@ impl NodeAPI for Runtime {
                 None => continue,
             };
 
+            // Only unlink from parents that are NOT part of the removed subtree.
+            // Every in-subtree parent is itself about to be removed, so its
+            // `remove_child` retain scan is wasted work (O(n*k)). `visited`
+            // already tracks subtree membership, so a cheap hash check replaces
+            // the retain scan for the common case. A node whose parent field
+            // points outside the subtree (stale/reparent edge) is still
+            // correctly unlinked from that live parent.
             if !parent_id.is_nil()
+                && !visited.contains(&parent_id)
                 && let Some(parent) = self.nodes.get_mut(parent_id)
             {
                 parent.remove_child(current);

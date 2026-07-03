@@ -6,13 +6,16 @@ struct FrustumCullParams {
     _pad2: u32,
 }
 
-struct CullItem {
+struct CullStatic {
+    local_center_radius: vec4<f32>,
+    cull_flags: vec4<u32>,
+}
+
+struct CullDynamic {
     model_0: vec4<f32>,
     model_1: vec4<f32>,
     model_2: vec4<f32>,
     model_3: vec4<f32>,
-    local_center_radius: vec4<f32>,
-    cull_flags: vec4<u32>,
 }
 
 struct DrawIndexedIndirect {
@@ -26,8 +29,10 @@ struct DrawIndexedIndirect {
 @group(0) @binding(0)
 var<uniform> params: FrustumCullParams;
 @group(0) @binding(1)
-var<storage, read> cull_items: array<CullItem>;
+var<storage, read> cull_static: array<CullStatic>;
 @group(0) @binding(2)
+var<storage, read> cull_dynamic: array<CullDynamic>;
+@group(0) @binding(3)
 var<storage, read_write> commands: array<DrawIndexedIndirect>;
 
 fn finite4(v: vec4<f32>) -> bool {
@@ -41,9 +46,10 @@ fn cs_main(@builtin(global_invocation_id) gid: vec3<u32>) {
         return;
     }
 
-    let item = cull_items[i];
-    let model = mat4x4<f32>(item.model_0, item.model_1, item.model_2, item.model_3);
-    let center_local = vec4<f32>(item.local_center_radius.xyz, 1.0);
+    let dyn = cull_dynamic[i];
+    let stat = cull_static[i];
+    let model = mat4x4<f32>(dyn.model_0, dyn.model_1, dyn.model_2, dyn.model_3);
+    let center_local = vec4<f32>(stat.local_center_radius.xyz, 1.0);
     let center_world = model * center_local;
 
     if !finite4(center_world) {
@@ -51,11 +57,11 @@ fn cs_main(@builtin(global_invocation_id) gid: vec3<u32>) {
         return;
     }
 
-    let sx2 = dot(item.model_0.xyz, item.model_0.xyz);
-    let sy2 = dot(item.model_1.xyz, item.model_1.xyz);
-    let sz2 = dot(item.model_2.xyz, item.model_2.xyz);
+    let sx2 = dot(dyn.model_0.xyz, dyn.model_0.xyz);
+    let sy2 = dot(dyn.model_1.xyz, dyn.model_1.xyz);
+    let sz2 = dot(dyn.model_2.xyz, dyn.model_2.xyz);
     let scale = sqrt(max(max(sx2, sy2), max(sz2, 1.0e-12)));
-    let radius_world = max(item.local_center_radius.w, 0.0) * scale;
+    let radius_world = max(stat.local_center_radius.w, 0.0) * scale;
     let center = center_world.xyz;
 
     var visible = true;

@@ -29,6 +29,10 @@
 | `shape_cast_3d` | [`shape_cast_3d`](#shape_cast_3d) |
 | `move_body_2d` | [`move_body_2d`](#move_body_2d) |
 | `move_body_3d` | [`move_body_3d`](#move_body_3d) |
+| `move_and_slide_2d` | [`move_and_slide_2d`](#move_and_slide_2d) |
+| `move_and_slide_3d` | [`move_and_slide_3d`](#move_and_slide_3d) |
+| `apply_gravity_2d` | [`apply_gravity_2d`](#apply_gravity_2d) |
+| `apply_gravity_3d` | [`apply_gravity_3d`](#apply_gravity_3d) |
 | `contacts_2d` | [`contacts_2d`](#contacts_2d) |
 | `contacts_3d` | [`contacts_3d`](#contacts_3d) |
 | `solve_velocity_to_target_2d` | [`solve_velocity_to_target_2d`](#solve_velocity_to_target_2d) |
@@ -59,6 +63,10 @@
 | `physics_shape_cast_3d` | [`physics_shape_cast_3d`](#physics_shape_cast_3d) |
 | `physics_move_body_2d` | [`physics_move_body_2d`](#physics_move_body_2d) |
 | `physics_move_body_3d` | [`physics_move_body_3d`](#physics_move_body_3d) |
+| `physics_move_and_slide_2d` | [`physics_move_and_slide_2d`](#physics_move_and_slide_2d) |
+| `physics_move_and_slide_3d` | [`physics_move_and_slide_3d`](#physics_move_and_slide_3d) |
+| `physics_apply_gravity_2d` | [`physics_apply_gravity_2d`](#physics_apply_gravity_2d) |
+| `physics_apply_gravity_3d` | [`physics_apply_gravity_3d`](#physics_apply_gravity_3d) |
 | `physics_contacts_2d` | [`physics_contacts_2d`](#physics_contacts_2d) |
 | `physics_contacts_3d` | [`physics_contacts_3d`](#physics_contacts_3d) |
 | `physics_pause` | [`physics_pause`](#physics_pause) |
@@ -317,6 +325,50 @@ This runtime module belongs to `ctx.run` and documents physics calls.
 | Returns | `Option<PhysicsMoveResult3D>` |
 | Use when | Move a physics body toward a target position without clipping through blocking colliders. |
 | Fails when / edge behavior | Syncs current physics bodies, sweeps attached body colliders, excludes the moving body, writes the safe global position, and returns hit/clipped state. Does not clear velocity. |
+
+### `move_and_slide_2d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Physics()` |
+| Signature | `pub fn move_and_slide_2d(&mut self, body_id: NodeID, motion: Vector2, filter: PhysicsQueryFilter) -> Option<PhysicsSlideResult2D>` |
+| Params | `&mut self, body_id: NodeID, motion: Vector2, filter: PhysicsQueryFilter` |
+| Returns | `Option<PhysicsSlideResult2D>` |
+| Use when | Move a character-style body by a motion vector, sliding along hit surfaces instead of stopping. |
+| Fails when / edge behavior | Sweeps up to 4 slide iterations, projecting unconsumed motion onto each hit plane. Writes the safe global position. `remainder` holds motion still blocked (e.g. cornered). `hits` lists each clipped iteration in order. |
+
+### `move_and_slide_3d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Physics()` |
+| Signature | `pub fn move_and_slide_3d(&mut self, body_id: NodeID, motion: Vector3, filter: PhysicsQueryFilter) -> Option<PhysicsSlideResult3D>` |
+| Params | `&mut self, body_id: NodeID, motion: Vector3, filter: PhysicsQueryFilter` |
+| Returns | `Option<PhysicsSlideResult3D>` |
+| Use when | Move a character-style body by a motion vector, sliding along hit surfaces instead of stopping. |
+| Fails when / edge behavior | Sweeps up to 4 slide iterations, projecting unconsumed motion onto each hit plane. Writes the safe global position. `remainder` holds motion still blocked (e.g. cornered). `hits` lists each clipped iteration in order. |
+
+### `apply_gravity_2d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Physics()` |
+| Signature | `pub fn apply_gravity_2d(&mut self, body_id: NodeID, dt: f32, max_fall_speed: f32, filter: PhysicsQueryFilter) -> Option<PhysicsMoveResult2D>` |
+| Params | `&mut self, body_id: NodeID, dt: f32, max_fall_speed: f32, filter: PhysicsQueryFilter` |
+| Returns | `Option<PhysicsMoveResult2D>` |
+| Use when | Script wants engine gravity on a character body without owning the fall-speed integration. Call once per update; separate from `move_and_slide`. |
+| Fails when / edge behavior | Character bodies only — returns `None` for other body types or non-positive `dt`. Integrates an internal fall speed from world gravity (`physics_set_gravity` respected), clamps to `max_fall_speed`, sweeps down, resets fall speed on landing. `clipped == true` in the result means grounded. |
+
+### `apply_gravity_3d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Physics()` |
+| Signature | `pub fn apply_gravity_3d(&mut self, body_id: NodeID, dt: f32, max_fall_speed: f32, filter: PhysicsQueryFilter) -> Option<PhysicsMoveResult3D>` |
+| Params | `&mut self, body_id: NodeID, dt: f32, max_fall_speed: f32, filter: PhysicsQueryFilter` |
+| Returns | `Option<PhysicsMoveResult3D>` |
+| Use when | Script wants engine gravity on a character body without owning the fall-speed integration. Call once per update; separate from `move_and_slide`. |
+| Fails when / edge behavior | Character bodies only — returns `None` for other body types or non-positive `dt`. Integrates an internal fall speed from world gravity (`physics_set_gravity` respected), clamps to `max_fall_speed`, sweeps down, resets fall speed on landing. `clipped == true` in the result means grounded. |
 
 ### `contacts_2d`
 
@@ -647,6 +699,50 @@ This runtime module belongs to `ctx.run` and documents physics calls.
 | Returns | `same as backing method` |
 | Use when | Use when script wants clipped manual physics-body movement. |
 | Fails when / edge behavior | Default margin is `0.001`; full macro form accepts `margin` and `filter`. |
+
+### `physics_move_and_slide_2d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Physics()` |
+| Signature | `physics_move_and_slide_2d!(ctx.run, body_id, motion)` |
+| Params | `ctx, body_id, motion` |
+| Returns | `same as backing method` |
+| Use when | Use when script wants character-style movement that slides along hit surfaces. |
+| Fails when / edge behavior | Short form uses `PhysicsQueryFilter::default()` (all layers); full macro form accepts `filter`. Sensor/area colliders never block the sweep. |
+
+### `physics_move_and_slide_3d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Physics()` |
+| Signature | `physics_move_and_slide_3d!(ctx.run, body_id, motion)` |
+| Params | `ctx, body_id, motion` |
+| Returns | `same as backing method` |
+| Use when | Use when script wants character-style movement that slides along hit surfaces. |
+| Fails when / edge behavior | Short form uses `PhysicsQueryFilter::default()` (all layers); full macro form accepts `filter`. Sensor/area colliders never block the sweep. |
+
+### `physics_apply_gravity_2d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Physics()` |
+| Signature | `physics_apply_gravity_2d!(ctx.run, body_id, dt)` |
+| Params | `ctx, body_id, dt` |
+| Returns | `same as backing method` |
+| Use when | Use when script wants engine gravity on a character body each update, separate from move/slide calls. |
+| Fails when / edge behavior | Short form uses terminal fall speed `64.0` and `PhysicsQueryFilter::default()`; full form is `(ctx, body_id, dt, max_fall_speed, filter)`. |
+
+### `physics_apply_gravity_3d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Physics()` |
+| Signature | `physics_apply_gravity_3d!(ctx.run, body_id, dt)` |
+| Params | `ctx, body_id, dt` |
+| Returns | `same as backing method` |
+| Use when | Use when script wants engine gravity on a character body each update, separate from move/slide calls. |
+| Fails when / edge behavior | Short form uses terminal fall speed `64.0` and `PhysicsQueryFilter::default()`; full form is `(ctx, body_id, dt, max_fall_speed, filter)`. |
 
 ### `physics_contacts_2d`
 

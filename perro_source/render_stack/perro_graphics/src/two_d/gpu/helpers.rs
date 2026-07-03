@@ -205,11 +205,6 @@ pub(super) fn create_rect_pipeline(
                             shader_location: 6,
                             format: wgpu::VertexFormat::Float32,
                         },
-                        wgpu::VertexAttribute {
-                            offset: 32,
-                            shader_location: 7,
-                            format: wgpu::VertexFormat::Uint32,
-                        },
                     ],
                 },
             ],

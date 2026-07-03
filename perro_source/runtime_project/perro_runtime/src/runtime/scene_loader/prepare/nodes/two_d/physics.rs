@@ -56,21 +56,6 @@ fn apply_character_body_2d_fields(node: &mut CharacterBody2D, fields: &[SceneObj
                     node.collision_mask = v;
                 }
             }
-            Some(NodeField::CharacterBody2D(CharacterBodyField::ApplyGravity)) => {
-                if let Some(v) = as_bool(value) {
-                    node.apply_gravity = v;
-                }
-            }
-            Some(NodeField::CharacterBody2D(CharacterBodyField::GravityScale)) => {
-                if let Some(v) = as_f32(value) {
-                    node.gravity_scale = v;
-                }
-            }
-            Some(NodeField::CharacterBody2D(CharacterBodyField::MaxFallSpeed)) => {
-                if let Some(v) = as_f32(value) {
-                    node.max_fall_speed = v.max(0.0);
-                }
-            }
             Some(NodeField::CharacterBody2D(CharacterBodyField::Friction)) => {
                 if let Some(v) = as_f32(value) {
                     node.friction = v;

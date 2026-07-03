@@ -1,5 +1,52 @@
 use super::*;
 
+// Coalesces consecutive indirect-buffer indices into multi_draw_indexed_indirect
+// runs. Push contiguous indices in draw order; call flush() on any pipeline/state
+// break and at the end of the group. No-op (falls back per-call) when multi-draw
+// is unavailable/disabled for the caller.
+struct IndirectRunBuilder {
+    enabled: bool,
+    stride: u64,
+    run: Option<(usize, u32)>,
+}
+
+impl IndirectRunBuilder {
+    #[inline]
+    fn new(enabled: bool) -> Self {
+        Self {
+            enabled,
+            stride: std::mem::size_of::<DrawIndexedIndirectGpu>() as u64,
+            run: None,
+        }
+    }
+
+    // Returns true if `i` was absorbed into (or started) a run. Returns false
+    // when coalescing is disabled; caller should issue a direct indirect draw.
+    #[inline]
+    fn push(&mut self, buffer: &wgpu::Buffer, pass: &mut wgpu::RenderPass<'_>, i: usize) -> bool {
+        if !self.enabled {
+            return false;
+        }
+        match &mut self.run {
+            Some((run_start, run_len)) if *run_start + *run_len as usize == i => {
+                *run_len += 1;
+            }
+            _ => {
+                self.flush(buffer, pass);
+                self.run = Some((i, 1));
+            }
+        }
+        true
+    }
+
+    #[inline]
+    fn flush(&mut self, buffer: &wgpu::Buffer, pass: &mut wgpu::RenderPass<'_>) {
+        if let Some((run_start, run_len)) = self.run.take() {
+            pass.multi_draw_indexed_indirect(buffer, run_start as u64 * self.stride, run_len);
+        }
+    }
+}
+
 impl Gpu3D {
     pub fn render_pass(
         &mut self,
@@ -13,14 +60,20 @@ impl Gpu3D {
         self.perf_counters.camera_bind_group_switches = 0;
         let frustum_cull_active = self.should_run_frustum_cull();
         let hiz_active = self.should_run_hiz_occlusion(frustum_cull_active);
-        let mesh_blend_depth_active = self.draw_batches.iter().any(|batch| batch.mesh_blend)
-            || self.multimesh_batches.iter().any(|batch| batch.mesh_blend);
+        let multimesh_cull_active = self.should_run_multimesh_cull();
+        self.multimesh_cull_active = multimesh_cull_active;
+        let mesh_blend_depth_active = self.mesh_blend_depth_active;
         // Mesh blending forces the depth prepass: the mask pass depth-tests
         // against it and the seam pass reads it for world reconstruction.
         let depth_prepass_active = self.should_run_depth_prepass(
             depth_prepass_needed || mesh_blend_depth_active || self.mesh_blend_screen_active,
             hiz_active,
         );
+        // Unified depth: at 1 sample the prepass and main depth share the
+        // Depth32Float format, so the prepass result is copied into depth_view
+        // and the main pass loads it instead of re-rasterizing occluders.
+        // pipeline_for_batch reads this to drop depth writes on covered batches.
+        self.unified_depth_active = self.sample_count == 1 && depth_prepass_active;
         let query_count = if self.cpu_occlusion_enabled
             && self.pending_occlusion_query_count == 0
             && self.pending_occlusion_map_rx.is_none()
@@ -149,6 +202,26 @@ impl Gpu3D {
             let groups = (self.draw_batches.len() as u32).div_ceil(FRUSTUM_CULL_WORKGROUP_SIZE);
             cull_pass.dispatch_workgroups(groups, 1, 1);
         }
+        // Multimesh per-instance cull. Must run before the prepass so the prepass
+        // and main pass draw the same visible set. Counters cleared each frame;
+        // cs_finalize writes the per-batch instance_count from the counter.
+        if multimesh_cull_active {
+            let counter_bytes = (self.multimesh_batches.len() * std::mem::size_of::<u32>()) as u64;
+            encoder.clear_buffer(&self.multimesh_cull_counter_buffer, 0, Some(counter_bytes));
+            let mut cull_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("perro_multimesh_cull_pass"),
+                timestamp_writes: None,
+            });
+            cull_pass.set_bind_group(0, &self.multimesh_cull_bind_group, &[]);
+            cull_pass.set_pipeline(&self.multimesh_cull_pipeline);
+            let instance_groups = (self.staged_multimesh_instances.len() as u32)
+                .div_ceil(FRUSTUM_CULL_WORKGROUP_SIZE);
+            cull_pass.dispatch_workgroups(instance_groups, 1, 1);
+            cull_pass.set_pipeline(&self.multimesh_cull_finalize_pipeline);
+            let batch_groups =
+                (self.multimesh_batches.len() as u32).div_ceil(FRUSTUM_CULL_WORKGROUP_SIZE);
+            cull_pass.dispatch_workgroups(batch_groups, 1, 1);
+        }
         if depth_prepass_active {
             let mut prepass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("perro_depth_prepass"),
@@ -166,10 +239,14 @@ impl Gpu3D {
                 multiview_mask: None,
             });
             let mut current_state: Option<(RenderPath3D, bool, bool)> = None;
+            prepass.set_vertex_buffer(1, self.instance_transform_buffer.slice(..));
+            let mut prepass_run =
+                IndirectRunBuilder::new(frustum_cull_active && self.multi_draw_indirect_enabled);
             for &i in &self.depth_prepass_batch_indices {
                 let batch = &self.draw_batches[i];
                 let state = (batch.path, batch.double_sided, batch.packed_lod);
                 if current_state != Some(state) {
+                    prepass_run.flush(&self.indirect_buffer, &mut prepass);
                     let (camera_bg, vertex_buf, pipeline) = if batch.path == RenderPath3D::Rigid {
                         let p = if batch.double_sided {
                             if batch.packed_lod {
@@ -211,7 +288,6 @@ impl Gpu3D {
                         );
                     }
                     prepass.set_vertex_buffer(0, vertex_buf.slice(..));
-                    prepass.set_vertex_buffer(1, self.instance_transform_buffer.slice(..));
                     if batch.path == RenderPath3D::Skinned {
                         prepass.set_vertex_buffer(2, self.skinned_instance_meta_buffer.slice(..));
                     } else {
@@ -220,7 +296,9 @@ impl Gpu3D {
                     prepass.set_pipeline(pipeline);
                     current_state = Some(state);
                 }
-                if frustum_cull_active {
+                if prepass_run.push(&self.indirect_buffer, &mut prepass, i) {
+                    // absorbed into (or started) a run
+                } else if frustum_cull_active {
                     let offset = (i * std::mem::size_of::<DrawIndexedIndirectGpu>()) as u64;
                     prepass.draw_indexed_indirect(&self.indirect_buffer, offset);
                 } else {
@@ -231,7 +309,22 @@ impl Gpu3D {
                     prepass.draw_indexed(start..end, batch.mesh.base_vertex, instances);
                 }
             }
+            prepass_run.flush(&self.indirect_buffer, &mut prepass);
+            draw_multimesh_depth_prepass(self, &mut prepass, multimesh_cull_active);
             drop(prepass);
+            if self.unified_depth_active {
+                // Depth32Float allows texture-to-texture copies (Depth24Plus
+                // does not); this primes depth_view so the main pass loads it.
+                encoder.copy_texture_to_texture(
+                    self.depth_prepass_texture.as_image_copy(),
+                    self.depth_texture.as_image_copy(),
+                    wgpu::Extent3d {
+                        width: self.depth_size.0,
+                        height: self.depth_size.1,
+                        depth_or_array_layers: 1,
+                    },
+                );
+            }
         }
         if depth_prepass_active {
             self.encode_mesh_blend_mask_pass(encoder, frustum_cull_active);
@@ -253,10 +346,14 @@ impl Gpu3D {
                 multiview_mask: None,
             });
             let mut current_state: Option<(RenderPath3D, bool, bool)> = None;
+            blend_prepass.set_vertex_buffer(1, self.instance_transform_buffer.slice(..));
+            let mut blend_prepass_run =
+                IndirectRunBuilder::new(frustum_cull_active && self.multi_draw_indirect_enabled);
             for &i in &self.mesh_blend_depth_batch_indices {
                 let batch = &self.draw_batches[i];
                 let state = (batch.path, batch.double_sided, batch.packed_lod);
                 if current_state != Some(state) {
+                    blend_prepass_run.flush(&self.indirect_buffer, &mut blend_prepass);
                     let (camera_bg, vertex_buf, pipeline) = if batch.path == RenderPath3D::Rigid {
                         let p = if batch.double_sided {
                             if batch.packed_lod {
@@ -298,7 +395,6 @@ impl Gpu3D {
                         );
                     }
                     blend_prepass.set_vertex_buffer(0, vertex_buf.slice(..));
-                    blend_prepass.set_vertex_buffer(1, self.instance_transform_buffer.slice(..));
                     if batch.path == RenderPath3D::Skinned {
                         blend_prepass
                             .set_vertex_buffer(2, self.skinned_instance_meta_buffer.slice(..));
@@ -309,7 +405,9 @@ impl Gpu3D {
                     blend_prepass.set_pipeline(pipeline);
                     current_state = Some(state);
                 }
-                if frustum_cull_active {
+                if blend_prepass_run.push(&self.indirect_buffer, &mut blend_prepass, i) {
+                    // absorbed into (or started) a run
+                } else if frustum_cull_active {
                     let offset = (i * std::mem::size_of::<DrawIndexedIndirectGpu>()) as u64;
                     blend_prepass.draw_indexed_indirect(&self.indirect_buffer, offset);
                 } else {
@@ -320,6 +418,7 @@ impl Gpu3D {
                     blend_prepass.draw_indexed(start..end, batch.mesh.base_vertex, instances);
                 }
             }
+            blend_prepass_run.flush(&self.indirect_buffer, &mut blend_prepass);
             drop(blend_prepass);
         }
         if hiz_active {
@@ -401,7 +500,11 @@ impl Gpu3D {
             depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                 view: &self.depth_view,
                 depth_ops: Some(wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(1.0),
+                    load: if self.unified_depth_active {
+                        wgpu::LoadOp::Load
+                    } else {
+                        wgpu::LoadOp::Clear(1.0)
+                    },
                     store: wgpu::StoreOp::Store,
                 }),
                 stencil_ops: None,
@@ -425,6 +528,10 @@ impl Gpu3D {
             let mut pipeline_switches: u32 = 0;
             let mut camera_bind_group_switches: u32 = 0;
             let mut texture_bind_group_switches: u32 = 0;
+            // Vertex buffer 1 is the same instance-transform buffer for every
+            // batch; set once here and re-set only after the multimesh draw
+            // (which binds its own instance buffer to slot 1).
+            pass.set_vertex_buffer(1, self.instance_transform_buffer.slice(..));
             for (group_index, batch_indices) in [
                 &self.opaque_batch_indices,
                 &self.alpha_batch_indices,
@@ -433,9 +540,22 @@ impl Gpu3D {
             .into_iter()
             .enumerate()
             {
+                // Pending multi_draw run. Only used when frustum cull writes the
+                // indirect buffer and the MULTI_DRAW_INDIRECT feature is
+                // available. Consecutive batches sharing pipeline/index/vertex/
+                // texture state (guaranteed contiguous in draw_batches by the
+                // sort) coalesce into one call.
+                let multi_draw = frustum_cull_active && self.multi_draw_indirect_enabled;
+                let mut run = IndirectRunBuilder::new(multi_draw);
                 for &i in batch_indices.iter() {
                     let batch = &self.draw_batches[i];
-                    if current_state_key != Some(batch.state_key) {
+                    let state_change = current_state_key != Some(batch.state_key);
+                    let texture_change = current_texture_slot != batch.base_color_texture_slot;
+                    // Any state/texture switch or query batch ends the current run.
+                    if state_change || texture_change || batch.occlusion_query.is_some() {
+                        run.flush(&self.indirect_buffer, &mut pass);
+                    }
+                    if state_change {
                         let pipeline = self.pipeline_for_batch(batch);
                         pass.set_pipeline(pipeline);
                         pipeline_switches = pipeline_switches.saturating_add(1);
@@ -465,10 +585,9 @@ impl Gpu3D {
                             pass.set_vertex_buffer(2, self.skinned_instance_meta_buffer.slice(..));
                         }
                         camera_bind_group_switches = camera_bind_group_switches.saturating_add(1);
-                        pass.set_vertex_buffer(1, self.instance_transform_buffer.slice(..));
                         current_state_key = Some(batch.state_key);
                     }
-                    if current_texture_slot != batch.base_color_texture_slot {
+                    if texture_change {
                         pass.set_bind_group(
                             1,
                             self.material_texture_bind_group(batch.base_color_texture_slot),
@@ -490,6 +609,8 @@ impl Gpu3D {
                             pass.draw_indexed(start..end, batch.mesh.base_vertex, instances);
                         }
                         pass.end_occlusion_query();
+                    } else if run.push(&self.indirect_buffer, &mut pass, i) {
+                        // absorbed into (or started) a run
                     } else if frustum_cull_active {
                         let offset = (i * std::mem::size_of::<DrawIndexedIndirectGpu>()) as u64;
                         pass.draw_indexed_indirect(&self.indirect_buffer, offset);
@@ -501,10 +622,13 @@ impl Gpu3D {
                         pass.draw_indexed(start..end, batch.mesh.base_vertex, instances);
                     }
                 }
+                run.flush(&self.indirect_buffer, &mut pass);
                 current_state_key = None;
                 current_texture_slot = MATERIAL_TEXTURE_NONE;
                 if group_index == 0 {
                     draw_multimesh_batches(self, &mut pass);
+                    // Restore slot 1 after the multimesh draw rebinds it.
+                    pass.set_vertex_buffer(1, self.instance_transform_buffer.slice(..));
                 }
             }
             drop(pass);
@@ -522,7 +646,7 @@ impl Gpu3D {
                 .saturating_add(texture_bind_group_switches);
         }
 
-        for &source_i in &self.mesh_blend_batch_indices {
+        for &(source_i, ref receiver_range) in &self.mesh_blend_source_receivers {
             let source_batch = &self.draw_batches[source_i];
             let mut blend_prepass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("perro_mesh_blend_source_depth_pass"),
@@ -540,16 +664,9 @@ impl Gpu3D {
                 multiview_mask: None,
             });
             let mut current_state: Option<(RenderPath3D, bool, bool)> = None;
-            for (target_i, target_batch) in self.draw_batches.iter().enumerate() {
-                if !mesh_blend_receiver_matches(
-                    source_i,
-                    source_batch,
-                    target_i,
-                    target_batch,
-                    &self.staged_instance_transforms,
-                ) {
-                    continue;
-                }
+            blend_prepass.set_vertex_buffer(1, self.instance_transform_buffer.slice(..));
+            for &target_i in &self.mesh_blend_receiver_indices[receiver_range.clone()] {
+                let target_batch = &self.draw_batches[target_i];
                 let state = (
                     target_batch.path,
                     target_batch.double_sided,
@@ -598,7 +715,6 @@ impl Gpu3D {
                         );
                     }
                     blend_prepass.set_vertex_buffer(0, vertex_buf.slice(..));
-                    blend_prepass.set_vertex_buffer(1, self.instance_transform_buffer.slice(..));
                     if target_batch.path == RenderPath3D::Skinned {
                         blend_prepass
                             .set_vertex_buffer(2, self.skinned_instance_meta_buffer.slice(..));
@@ -732,6 +848,33 @@ impl Gpu3D {
     pub fn water_camera_bind_group_layout(&self) -> &wgpu::BindGroupLayout {
         &self.water_camera_bgl
     }
+
+    // Precompute source->receiver batch lists so the per-source depth passes
+    // skip the O(N) scan over all batches in render_pass.
+    pub(super) fn rebuild_mesh_blend_receivers(&mut self) {
+        let mut spans = std::mem::take(&mut self.mesh_blend_source_receivers);
+        let mut receivers = std::mem::take(&mut self.mesh_blend_receiver_indices);
+        spans.clear();
+        receivers.clear();
+        for &source_i in &self.mesh_blend_batch_indices {
+            let source_batch = &self.draw_batches[source_i];
+            let start = receivers.len();
+            for (target_i, target_batch) in self.draw_batches.iter().enumerate() {
+                if mesh_blend_receiver_matches(
+                    source_i,
+                    source_batch,
+                    target_i,
+                    target_batch,
+                    &self.staged_instance_transforms,
+                ) {
+                    receivers.push(target_i);
+                }
+            }
+            spans.push((source_i, start..receivers.len()));
+        }
+        self.mesh_blend_source_receivers = spans;
+        self.mesh_blend_receiver_indices = receivers;
+    }
 }
 
 fn mesh_blend_receiver_matches(
@@ -767,9 +910,23 @@ fn draw_shadow_batches<'a>(
     let Some(rigid_shadow_camera_bg) = gpu.rigid_shadow_camera_bind_groups.get(camera_index) else {
         return;
     };
+    let shadow_frustum = gpu.shadow_camera_frustums.get(camera_index);
     let mut current_state: Option<(RenderPath3D, bool, bool)> = None;
+    shadow_pass.set_vertex_buffer(1, gpu.instance_transform_buffer.slice(..));
     for &batch_index in &gpu.shadow_batch_indices {
         let batch = &gpu.draw_batches[batch_index];
+        // Skip casters wholly outside this shadow view. Multi-instance batches
+        // carry a huge local_radius, so they always pass (conservative).
+        if let Some(frustum) = shadow_frustum
+            && let Some(inst) = gpu
+                .staged_instance_transforms
+                .get(batch.instance_start as usize)
+        {
+            let model = model_cols_from_affine_rows(inst);
+            if !bounds_in_frustum(model, batch.local_center, batch.local_radius, frustum) {
+                continue;
+            }
+        }
         let state = (batch.path, batch.double_sided, batch.packed_lod);
         if current_state != Some(state) {
             let (camera_bg, vertex_buf, pipeline) = if batch.path == RenderPath3D::Rigid {
@@ -815,7 +972,6 @@ fn draw_shadow_batches<'a>(
                 shadow_pass.set_index_buffer(gpu.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
             }
             shadow_pass.set_vertex_buffer(0, vertex_buf.slice(..));
-            shadow_pass.set_vertex_buffer(1, gpu.instance_transform_buffer.slice(..));
             if batch.path == RenderPath3D::Skinned {
                 shadow_pass.set_vertex_buffer(2, gpu.skinned_instance_meta_buffer.slice(..));
             } else {
@@ -835,14 +991,23 @@ fn draw_multimesh_batches<'a>(gpu: &'a Gpu3D, pass: &mut wgpu::RenderPass<'a>) {
     if gpu.multimesh_batches.is_empty() {
         return;
     }
+    // Prepass-covered variants apply only to non-blend batches when unified
+    // depth is active (the prepass primed their depth). Blend batches keep
+    // depth-write-off blend pipelines regardless.
+    let covered = gpu.unified_depth_active;
+    let cull = gpu.multimesh_cull_active;
     pass.set_bind_group(0, &gpu.multimesh_bind_group, &[]);
     pass.set_vertex_buffer(0, gpu.rigid_vertex_buffer.slice(..));
-    pass.set_vertex_buffer(1, gpu.multimesh_instance_buffer.slice(..));
     pass.set_index_buffer(gpu.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
     let mut current_state: Option<(bool, bool, &MaterialPipelineKind)> = None;
-    for batch in &gpu.multimesh_batches {
+    // Multimesh indirect records are laid out contiguously in batch order
+    // (rebuild_multimesh_cull_inputs / compact_sorted_multimesh_batches), so
+    // consecutive same-pipeline batches coalesce into one multi-draw call.
+    let mut run = IndirectRunBuilder::new(cull && gpu.multi_draw_indirect_enabled);
+    for (batch_index, batch) in gpu.multimesh_batches.iter().enumerate() {
         let state = (batch.double_sided, batch.mesh_blend, &batch.material_kind);
         if current_state != Some(state) {
+            run.flush(&gpu.multimesh_indirect_buffer, pass);
             let pipeline = match &batch.material_kind {
                 MaterialPipelineKind::Custom(token) => {
                     gpu.custom_pipelines_multimesh.get(token).map(|pipeline| {
@@ -864,6 +1029,10 @@ fn draw_multimesh_batches<'a>(gpu: &'a Gpu3D, pass: &mut wgpu::RenderPass<'a>) {
                     &gpu.pipeline_multimesh_blend_double_sided
                 } else if batch.mesh_blend {
                     &gpu.pipeline_multimesh_blend_culled
+                } else if covered && batch.double_sided {
+                    &gpu.pipeline_multimesh_covered_double_sided
+                } else if covered {
+                    &gpu.pipeline_multimesh_covered
                 } else if batch.double_sided {
                     &gpu.pipeline_multimesh_double_sided
                 } else {
@@ -873,10 +1042,54 @@ fn draw_multimesh_batches<'a>(gpu: &'a Gpu3D, pass: &mut wgpu::RenderPass<'a>) {
             pass.set_pipeline(pipeline);
             current_state = Some(state);
         }
-        let start = batch.mesh.index_start;
-        let end = start + batch.mesh.index_count;
-        let instances = batch.instance_start..batch.instance_start + batch.instance_count;
-        pass.draw_indexed(start..end, batch.mesh.base_vertex, instances);
+        if run.push(&gpu.multimesh_indirect_buffer, pass, batch_index) {
+            // absorbed into (or started) a run
+        } else if cull {
+            let offset = (batch_index * std::mem::size_of::<DrawIndexedIndirectGpu>()) as u64;
+            pass.draw_indexed_indirect(&gpu.multimesh_indirect_buffer, offset);
+        } else {
+            let start = batch.mesh.index_start;
+            let end = start + batch.mesh.index_count;
+            let instances = batch.instance_start..batch.instance_start + batch.instance_count;
+            pass.draw_indexed(start..end, batch.mesh.base_vertex, instances);
+        }
+    }
+    run.flush(&gpu.multimesh_indirect_buffer, pass);
+}
+
+// Draw non-blend multimesh batches into the depth prepass (post-cull, same
+// indirect args). Mesh-blend batches are excluded, mirroring how mesh_blend
+// rigid batches are excluded from the prepass.
+fn draw_multimesh_depth_prepass<'a>(gpu: &'a Gpu3D, pass: &mut wgpu::RenderPass<'a>, cull: bool) {
+    if gpu.multimesh_batches.is_empty() {
+        return;
+    }
+    pass.set_bind_group(0, &gpu.multimesh_bind_group, &[]);
+    pass.set_vertex_buffer(0, gpu.rigid_vertex_buffer.slice(..));
+    pass.set_index_buffer(gpu.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+    let mut current_double_sided: Option<bool> = None;
+    for (batch_index, batch) in gpu.multimesh_batches.iter().enumerate() {
+        if batch.mesh_blend {
+            continue;
+        }
+        if current_double_sided != Some(batch.double_sided) {
+            let pipeline = if batch.double_sided {
+                &gpu.pipeline_multimesh_depth_prepass_double_sided
+            } else {
+                &gpu.pipeline_multimesh_depth_prepass_culled
+            };
+            pass.set_pipeline(pipeline);
+            current_double_sided = Some(batch.double_sided);
+        }
+        if cull {
+            let offset = (batch_index * std::mem::size_of::<DrawIndexedIndirectGpu>()) as u64;
+            pass.draw_indexed_indirect(&gpu.multimesh_indirect_buffer, offset);
+        } else {
+            let start = batch.mesh.index_start;
+            let end = start + batch.mesh.index_count;
+            let instances = batch.instance_start..batch.instance_start + batch.instance_count;
+            pass.draw_indexed(start..end, batch.mesh.base_vertex, instances);
+        }
     }
 }
 

@@ -13,47 +13,11 @@ const MULTIMESH_MESH_VERTEX_ATTRIBUTES: [wgpu::VertexAttribute; 2] = [
     },
 ];
 
-const MULTIMESH_INSTANCE_ATTRIBUTES: [wgpu::VertexAttribute; 5] = [
-    wgpu::VertexAttribute {
-        offset: 0,
-        shader_location: 4,
-        format: wgpu::VertexFormat::Float32x3,
-    },
-    wgpu::VertexAttribute {
-        offset: 12,
-        shader_location: 5,
-        format: wgpu::VertexFormat::Snorm16x4,
-    },
-    wgpu::VertexAttribute {
-        offset: 20,
-        shader_location: 6,
-        format: wgpu::VertexFormat::Float32x3,
-    },
-    wgpu::VertexAttribute {
-        offset: 32,
-        shader_location: 7,
-        format: wgpu::VertexFormat::Uint32,
-    },
-    wgpu::VertexAttribute {
-        offset: 36,
-        shader_location: 8,
-        format: wgpu::VertexFormat::Uint32,
-    },
-];
-
 pub(super) fn multimesh_mesh_vertex_layout<'a>() -> wgpu::VertexBufferLayout<'a> {
     wgpu::VertexBufferLayout {
         array_stride: std::mem::size_of::<RigidMeshVertex>() as u64,
         step_mode: wgpu::VertexStepMode::Vertex,
         attributes: &MULTIMESH_MESH_VERTEX_ATTRIBUTES,
-    }
-}
-
-pub(super) fn multimesh_instance_layout<'a>() -> wgpu::VertexBufferLayout<'a> {
-    wgpu::VertexBufferLayout {
-        array_stride: std::mem::size_of::<MultiMeshInstanceGpu>() as u64,
-        step_mode: wgpu::VertexStepMode::Instance,
-        attributes: &MULTIMESH_INSTANCE_ATTRIBUTES,
     }
 }
 
@@ -78,6 +42,77 @@ pub(super) fn create_multimesh_pipeline(
     )
 }
 
+// Prepass-covered variant: depth already primed, so drop depth writes and keep
+// LessEqual so surviving fragments still pass. Mirrors pipeline_for_batch.
+pub(super) fn create_multimesh_covered_pipeline(
+    device: &wgpu::Device,
+    pipeline_layout: &wgpu::PipelineLayout,
+    shader: &wgpu::ShaderModule,
+    color_format: wgpu::TextureFormat,
+    sample_count: u32,
+    cull_mode: Option<wgpu::Face>,
+) -> wgpu::RenderPipeline {
+    create_multimesh_pipeline_with_depth_write(
+        device,
+        pipeline_layout,
+        shader,
+        color_format,
+        sample_count,
+        cull_mode,
+        false,
+        wgpu::CompareFunction::LessEqual,
+        "fs_main",
+    )
+}
+
+// Depth-only prepass pipeline: vertex-only (vs_depth), no color target.
+pub(super) fn create_multimesh_depth_prepass_pipeline(
+    device: &wgpu::Device,
+    pipeline_layout: &wgpu::PipelineLayout,
+    shader: &wgpu::ShaderModule,
+    cull_mode: Option<wgpu::Face>,
+) -> wgpu::RenderPipeline {
+    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("perro_multimesh_depth_prepass_pipeline"),
+        layout: Some(pipeline_layout),
+        vertex: wgpu::VertexState {
+            module: shader,
+            entry_point: Some("vs_depth"),
+            buffers: &[multimesh_mesh_vertex_layout()],
+            compilation_options: Default::default(),
+        },
+        fragment: Some(wgpu::FragmentState {
+            module: shader,
+            entry_point: Some("fs_depth"),
+            targets: &[],
+            compilation_options: Default::default(),
+        }),
+        primitive: wgpu::PrimitiveState {
+            topology: wgpu::PrimitiveTopology::TriangleList,
+            strip_index_format: None,
+            front_face: wgpu::FrontFace::Ccw,
+            cull_mode,
+            unclipped_depth: false,
+            polygon_mode: wgpu::PolygonMode::Fill,
+            conservative: false,
+        },
+        depth_stencil: Some(wgpu::DepthStencilState {
+            format: DEPTH_PREPASS_FORMAT,
+            depth_write_enabled: Some(true),
+            depth_compare: Some(wgpu::CompareFunction::LessEqual),
+            stencil: wgpu::StencilState::default(),
+            bias: wgpu::DepthBiasState::default(),
+        }),
+        multisample: wgpu::MultisampleState {
+            count: 1,
+            mask: !0,
+            alpha_to_coverage_enabled: false,
+        },
+        multiview_mask: None,
+        cache: None,
+    })
+}
+
 pub(super) fn create_multimesh_blend_pipeline(
     device: &wgpu::Device,
     pipeline_layout: &wgpu::PipelineLayout,
@@ -99,6 +134,7 @@ pub(super) fn create_multimesh_blend_pipeline(
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 fn create_multimesh_pipeline_with_depth_write(
     device: &wgpu::Device,
     pipeline_layout: &wgpu::PipelineLayout,
@@ -116,7 +152,7 @@ fn create_multimesh_pipeline_with_depth_write(
         vertex: wgpu::VertexState {
             module: shader,
             entry_point: Some("vs_main"),
-            buffers: &[multimesh_mesh_vertex_layout(), multimesh_instance_layout()],
+            buffers: &[multimesh_mesh_vertex_layout()],
             compilation_options: Default::default(),
         },
         fragment: Some(wgpu::FragmentState {
@@ -141,7 +177,7 @@ fn create_multimesh_pipeline_with_depth_write(
             conservative: false,
         },
         depth_stencil: Some(wgpu::DepthStencilState {
-            format: DEPTH_FORMAT,
+            format: crate::scene_depth_format(sample_count),
             depth_write_enabled: Some(depth_write_enabled),
             depth_compare: Some(depth_compare),
             stencil: wgpu::StencilState::default(),

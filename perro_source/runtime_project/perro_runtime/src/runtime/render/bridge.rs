@@ -34,12 +34,6 @@ use crate::runtime::render_3d::{
     water_shape_state as water_shape_state_3d,
 };
 
-type SceneResourceRefs = (
-    AHashMap<TextureID, Vec<NodeID>>,
-    AHashMap<MeshID, Vec<NodeID>>,
-    AHashMap<MaterialID, Vec<NodeID>>,
-);
-
 fn is_ui_node_data(data: &SceneNodeData) -> bool {
     matches!(
         data,
@@ -78,18 +72,36 @@ impl Runtime {
         self.render.queue_command(command);
     }
 
-    fn count_scene_resource_refs(&self) -> SceneResourceRefs {
-        let mut textures = AHashMap::<TextureID, Vec<NodeID>>::default();
-        let mut meshes = AHashMap::<MeshID, Vec<NodeID>>::default();
-        let mut materials = AHashMap::<MaterialID, Vec<NodeID>>::default();
+    fn count_scene_resource_refs_into(
+        &self,
+        textures: &mut AHashMap<TextureID, Vec<NodeID>>,
+        meshes: &mut AHashMap<MeshID, Vec<NodeID>>,
+        materials: &mut AHashMap<MaterialID, Vec<NodeID>>,
+    ) {
+        // reuse scratch: drop stale entries but keep vec capacity 4 refill.
+        for nodes in textures.values_mut() {
+            nodes.clear();
+        }
+        for nodes in meshes.values_mut() {
+            nodes.clear();
+        }
+        for nodes in materials.values_mut() {
+            nodes.clear();
+        }
+        // reborrow so match arms below can pass `&mut textures` unchanged.
+        let textures = &mut *textures;
+        let meshes = &mut *meshes;
+        let materials = &mut *materials;
 
+        // dedup only guards same node adding same id twice (material surfaces).
+        // arena iter visits each node once, so any dup is adjacent -> check last.
         fn add_ref<T: Eq + std::hash::Hash + Copy>(
             refs: &mut AHashMap<T, Vec<NodeID>>,
             id: T,
             node: NodeID,
         ) {
             let nodes = refs.entry(id).or_default();
-            if !nodes.contains(&node) {
+            if nodes.last() != Some(&node) {
                 nodes.push(node);
             }
         }
@@ -102,7 +114,7 @@ impl Runtime {
                     if !sprite.texture.is_nil()
                         && !self.resource_api.is_texture_id_pending(sprite.texture)
                     {
-                        add_ref(&mut textures, sprite.texture, node_id);
+                        add_ref(textures, sprite.texture, node_id);
                     }
                 }
                 SceneNodeData::AnimatedSprite2D(sprite)
@@ -111,7 +123,7 @@ impl Runtime {
                     if !sprite.texture.is_nil()
                         && !self.resource_api.is_texture_id_pending(sprite.texture)
                     {
-                        add_ref(&mut textures, sprite.texture, node_id);
+                        add_ref(textures, sprite.texture, node_id);
                     }
                 }
                 SceneNodeData::ImageButton2D(button)
@@ -120,7 +132,7 @@ impl Runtime {
                     if !button.texture.is_nil()
                         && !self.resource_api.is_texture_id_pending(button.texture)
                     {
-                        add_ref(&mut textures, button.texture, node_id);
+                        add_ref(textures, button.texture, node_id);
                     }
                 }
                 SceneNodeData::NineSlice2D(nine)
@@ -129,7 +141,7 @@ impl Runtime {
                     if !nine.texture.is_nil()
                         && !self.resource_api.is_texture_id_pending(nine.texture)
                     {
-                        add_ref(&mut textures, nine.texture, node_id);
+                        add_ref(textures, nine.texture, node_id);
                     }
                 }
                 SceneNodeData::UiImage(image)
@@ -138,7 +150,7 @@ impl Runtime {
                     if !image.texture.is_nil()
                         && !self.resource_api.is_texture_id_pending(image.texture)
                     {
-                        add_ref(&mut textures, image.texture, node_id);
+                        add_ref(textures, image.texture, node_id);
                     }
                 }
                 SceneNodeData::UiAnimatedImage(image)
@@ -147,7 +159,7 @@ impl Runtime {
                     if !image.texture.is_nil()
                         && !self.resource_api.is_texture_id_pending(image.texture)
                     {
-                        add_ref(&mut textures, image.texture, node_id);
+                        add_ref(textures, image.texture, node_id);
                     }
                 }
                 SceneNodeData::UiImageButton(button)
@@ -156,7 +168,7 @@ impl Runtime {
                     if !button.texture.is_nil()
                         && !self.resource_api.is_texture_id_pending(button.texture)
                     {
-                        add_ref(&mut textures, button.texture, node_id);
+                        add_ref(textures, button.texture, node_id);
                     }
                 }
                 SceneNodeData::UiNineSlice(nine)
@@ -165,20 +177,20 @@ impl Runtime {
                     if !nine.texture.is_nil()
                         && !self.resource_api.is_texture_id_pending(nine.texture)
                     {
-                        add_ref(&mut textures, nine.texture, node_id);
+                        add_ref(textures, nine.texture, node_id);
                     }
                 }
                 SceneNodeData::MeshInstance3D(mesh) => {
                     if !self.render_3d.retained_mesh_draws.contains_key(&node_id) {
                         if !mesh.mesh.is_nil() && !self.resource_api.is_mesh_id_pending(mesh.mesh) {
-                            add_ref(&mut meshes, mesh.mesh, node_id);
+                            add_ref(meshes, mesh.mesh, node_id);
                         }
                         for material in mesh.surfaces.iter().filter_map(|surface| surface.material)
                         {
                             if !material.is_nil()
                                 && !self.resource_api.is_material_id_pending(material)
                             {
-                                add_ref(&mut materials, material, node_id);
+                                add_ref(materials, material, node_id);
                             }
                         }
                     }
@@ -187,12 +199,12 @@ impl Runtime {
                     if !self.render_3d.retained_mesh_draws.contains_key(&node_id) =>
                 {
                     if !mesh.mesh.is_nil() && !self.resource_api.is_mesh_id_pending(mesh.mesh) {
-                        add_ref(&mut meshes, mesh.mesh, node_id);
+                        add_ref(meshes, mesh.mesh, node_id);
                     }
                     for material in mesh.surfaces.iter().filter_map(|surface| surface.material) {
                         if !material.is_nil() && !self.resource_api.is_material_id_pending(material)
                         {
-                            add_ref(&mut materials, material, node_id);
+                            add_ref(materials, material, node_id);
                         }
                     }
                 }
@@ -200,28 +212,49 @@ impl Runtime {
             }
         }
 
-        (textures, meshes, materials)
+        // drop keys that ended empty so cache-eq matches old fresh-map behavior.
+        textures.retain(|_, nodes| !nodes.is_empty());
+        meshes.retain(|_, nodes| !nodes.is_empty());
+        materials.retain(|_, nodes| !nodes.is_empty());
     }
 
     pub fn drain_render_commands(&mut self, out: &mut Vec<RenderCommand>) {
         let mut queued_resource_commands = self.render.take_resource_queue_scratch();
         self.resource_api
             .drain_commands(&mut queued_resource_commands);
-        let (textures, meshes, materials) = self.count_scene_resource_refs();
-        if textures != self.scene_texture_refs_cache
-            || meshes != self.scene_mesh_refs_cache
-            || materials != self.scene_material_refs_cache
+
+        // gate scan: node data / structure changes bump arena mutation_version;
+        // resource events (pending resolve / retained invalidation) set dirty.
+        let arena_version = self.nodes.mutation_version();
+        if self.scene_resource_refs_dirty
+            || arena_version != self.scene_resource_refs_scanned_version
         {
-            self.scene_texture_refs_cache = textures.clone();
-            self.scene_mesh_refs_cache = meshes.clone();
-            self.scene_material_refs_cache = materials.clone();
-            queued_resource_commands.push(RenderCommand::Resource(
-                ResourceCommand::SetSceneResourceRefs {
-                    textures: textures.into_iter().collect(),
-                    meshes: meshes.into_iter().collect(),
-                    materials: materials.into_iter().collect(),
-                },
-            ));
+            let mut scratch = std::mem::take(&mut self.scene_resource_refs_scratch);
+            self.count_scene_resource_refs_into(
+                &mut scratch.textures,
+                &mut scratch.meshes,
+                &mut scratch.materials,
+            );
+            self.scene_resource_refs_scanned_version = arena_version;
+            self.scene_resource_refs_dirty = false;
+            if scratch.textures != self.scene_texture_refs_cache
+                || scratch.meshes != self.scene_mesh_refs_cache
+                || scratch.materials != self.scene_material_refs_cache
+            {
+                // swap scratch <-> cache: new refs become cache, old refs recycle
+                // into scratch. no deep clone of the three maps.
+                std::mem::swap(&mut scratch.textures, &mut self.scene_texture_refs_cache);
+                std::mem::swap(&mut scratch.meshes, &mut self.scene_mesh_refs_cache);
+                std::mem::swap(&mut scratch.materials, &mut self.scene_material_refs_cache);
+                queued_resource_commands.push(RenderCommand::Resource(
+                    ResourceCommand::SetSceneResourceRefs {
+                        textures: self.scene_texture_refs_cache.clone().into_iter().collect(),
+                        meshes: self.scene_mesh_refs_cache.clone().into_iter().collect(),
+                        materials: self.scene_material_refs_cache.clone().into_iter().collect(),
+                    },
+                ));
+            }
+            self.scene_resource_refs_scratch = scratch;
         }
         if !queued_resource_commands.is_empty() {
             self.render.queue_commands(&mut queued_resource_commands);
@@ -333,6 +366,9 @@ impl Runtime {
         ) {
             self.request_full_3d_scan_once();
         }
+        // render events resolve pending resources / invalidate retained draws,
+        // which arena mutation_version can't see. force resource-ref re-scan.
+        self.scene_resource_refs_dirty = true;
         self.resource_api.apply_render_event(&event);
         self.render.apply_event(event);
     }
@@ -463,6 +499,11 @@ impl Runtime {
             return None;
         }
         let source = self.camera_stream_source_state(stream.camera)?;
+        // build node-id list once; collectors below share it via index access
+        // instead of each re-collecting the whole arena.
+        self.camera_stream_node_scratch.clear();
+        self.camera_stream_node_scratch
+            .extend(self.nodes.iter().map(|(id, _)| id));
         let mut post_processing = match &source {
             CameraStreamSourceState::TwoD(camera) => camera.post_processing.to_vec(),
             CameraStreamSourceState::ThreeD(camera) => camera.post_processing.to_vec(),
@@ -525,8 +566,8 @@ impl Runtime {
         stream_node: NodeID,
     ) -> Arc<[Sprite2DCommand]> {
         let mut out = Vec::new();
-        let ids = self.nodes.iter().map(|(id, _)| id).collect::<Vec<_>>();
-        for node in ids {
+        for idx in 0..self.camera_stream_node_scratch.len() {
+            let node = self.camera_stream_node_scratch[idx];
             if node == stream_node || !self.is_effectively_visible(node) {
                 continue;
             }
@@ -676,8 +717,8 @@ impl Runtime {
             },
         }
         let mut out = Vec::new();
-        let ids = self.nodes.iter().map(|(id, _)| id).collect::<Vec<_>>();
-        for node in ids {
+        for idx in 0..self.camera_stream_node_scratch.len() {
+            let node = self.camera_stream_node_scratch[idx];
             if node == stream_node || !self.is_effectively_visible(node) {
                 continue;
             }
@@ -819,8 +860,8 @@ impl Runtime {
         stream_node: NodeID,
     ) -> Arc<[(NodeID, PointParticles2DState)]> {
         let mut out = Vec::new();
-        let ids = self.nodes.iter().map(|(id, _)| id).collect::<Vec<_>>();
-        for node in ids {
+        for idx in 0..self.camera_stream_node_scratch.len() {
+            let node = self.camera_stream_node_scratch[idx];
             if node == stream_node || !self.is_effectively_visible(node) {
                 continue;
             }
@@ -911,8 +952,8 @@ impl Runtime {
         stream_node: NodeID,
     ) -> Arc<[(NodeID, Water2DState)]> {
         let mut out = Vec::new();
-        let ids = self.nodes.iter().map(|(id, _)| id).collect::<Vec<_>>();
-        for node in ids {
+        for idx in 0..self.camera_stream_node_scratch.len() {
+            let node = self.camera_stream_node_scratch[idx];
             if node == stream_node || !self.is_effectively_visible(node) {
                 continue;
             }
@@ -1010,8 +1051,8 @@ impl Runtime {
         stream_node: NodeID,
     ) -> Arc<[CameraStreamDraw3DState]> {
         let mut out = Vec::new();
-        let ids = self.nodes.iter().map(|(id, _)| id).collect::<Vec<_>>();
-        for node in ids {
+        for idx in 0..self.camera_stream_node_scratch.len() {
+            let node = self.camera_stream_node_scratch[idx];
             if node == stream_node || !self.is_effectively_visible(node) {
                 continue;
             }
@@ -1188,7 +1229,7 @@ impl Runtime {
         let mut ray_lights = Vec::new();
         let mut point_lights = Vec::new();
         let mut spot_lights = Vec::new();
-        let mut ids = self.nodes.iter().map(|(id, _)| id).collect::<Vec<_>>();
+        let mut ids = self.camera_stream_node_scratch.clone();
         ids.sort_unstable_by_key(|id| id.as_u64());
         for node in ids {
             if node == stream_node || !self.is_effectively_visible(node) {
@@ -1362,8 +1403,8 @@ impl Runtime {
         stream_node: NodeID,
     ) -> Arc<[(NodeID, PointParticles3DState)]> {
         let mut out = Vec::new();
-        let ids = self.nodes.iter().map(|(id, _)| id).collect::<Vec<_>>();
-        for node in ids {
+        for idx in 0..self.camera_stream_node_scratch.len() {
+            let node = self.camera_stream_node_scratch[idx];
             if node == stream_node || !self.is_effectively_visible(node) {
                 continue;
             }
@@ -1459,8 +1500,8 @@ impl Runtime {
         stream_node: NodeID,
     ) -> Arc<[(NodeID, Water3DState)]> {
         let mut out = Vec::new();
-        let ids = self.nodes.iter().map(|(id, _)| id).collect::<Vec<_>>();
-        for node in ids {
+        for idx in 0..self.camera_stream_node_scratch.len() {
+            let node = self.camera_stream_node_scratch[idx];
             if node == stream_node || !self.is_effectively_visible(node) {
                 continue;
             }

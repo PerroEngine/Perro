@@ -3,7 +3,8 @@ use perro_nodes::{PhysicsForceEmitter2D, PhysicsForceEmitter3D, SceneNodeData};
 use perro_runtime_api::sub_apis::{
     PhysicsAPI, PhysicsBodyPrediction2D, PhysicsBodyPrediction3D, PhysicsContact2D,
     PhysicsContact3D, PhysicsMoveResult2D, PhysicsMoveResult3D, PhysicsQueryFilter,
-    PhysicsRayHit2D, PhysicsRayHit3D, PhysicsShapeHit2D, PhysicsShapeHit3D,
+    PhysicsRayHit2D, PhysicsRayHit3D, PhysicsShapeHit2D, PhysicsShapeHit3D, PhysicsSlideResult2D,
+    PhysicsSlideResult3D,
 };
 use perro_structs::{Quaternion, Vector2, Vector3};
 
@@ -148,6 +149,44 @@ impl PhysicsAPI for Runtime {
         filter: PhysicsQueryFilter,
     ) -> Option<PhysicsMoveResult3D> {
         self.physics_move_body_3d(body_id, target, margin, &filter)
+    }
+
+    fn move_and_slide_2d(
+        &mut self,
+        body_id: NodeID,
+        motion: Vector2,
+        filter: PhysicsQueryFilter,
+    ) -> Option<PhysicsSlideResult2D> {
+        self.physics_move_and_slide_2d(body_id, motion, &filter)
+    }
+
+    fn move_and_slide_3d(
+        &mut self,
+        body_id: NodeID,
+        motion: Vector3,
+        filter: PhysicsQueryFilter,
+    ) -> Option<PhysicsSlideResult3D> {
+        self.physics_move_and_slide_3d(body_id, motion, &filter)
+    }
+
+    fn apply_gravity_2d(
+        &mut self,
+        body_id: NodeID,
+        dt: f32,
+        max_fall_speed: f32,
+        filter: PhysicsQueryFilter,
+    ) -> Option<PhysicsMoveResult2D> {
+        self.physics_apply_gravity_2d(body_id, dt, max_fall_speed, &filter)
+    }
+
+    fn apply_gravity_3d(
+        &mut self,
+        body_id: NodeID,
+        dt: f32,
+        max_fall_speed: f32,
+        filter: PhysicsQueryFilter,
+    ) -> Option<PhysicsMoveResult3D> {
+        self.physics_apply_gravity_3d(body_id, dt, max_fall_speed, &filter)
     }
 
     fn contacts_2d(&mut self, body_id: NodeID) -> Vec<PhysicsContact2D> {

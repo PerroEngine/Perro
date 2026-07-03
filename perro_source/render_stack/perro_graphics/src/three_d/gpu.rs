@@ -2,8 +2,8 @@
 
 use super::{
     renderer::{
-        Draw3DInstance, Draw3DKind, Lighting3DState, MAX_POINT_LIGHTS, MAX_RAY_LIGHTS,
-        MAX_SPOT_LIGHTS,
+        DenseMultiMeshDraw3D, Draw3DInstance, Draw3DKind, Lighting3DState, MAX_POINT_LIGHTS,
+        MAX_RAY_LIGHTS, MAX_SPOT_LIGHTS,
     },
     shaders::{
         build_custom_material_shader_with_prelude, build_custom_multimesh_material_shader,
@@ -15,10 +15,11 @@ use super::{
         create_mesh_blend_mask_shader_module_rigid_packed_lod,
         create_mesh_blend_mask_shader_module_skinned, create_mesh_blend_screen_shader_module,
         create_mesh_shader_module_rigid, create_mesh_shader_module_rigid_packed_lod,
-        create_mesh_shader_module_skinned, create_multimesh_shader_module,
-        create_sky_shader_module, create_sky_shader_module_from_source,
-        create_toon_shader_module_rigid, create_toon_shader_module_skinned,
-        create_unlit_shader_module_rigid, create_unlit_shader_module_skinned,
+        create_mesh_shader_module_skinned, create_multimesh_cull_shader_module,
+        create_multimesh_shader_module, create_sky_shader_module,
+        create_sky_shader_module_from_source, create_toon_shader_module_rigid,
+        create_toon_shader_module_skinned, create_unlit_shader_module_rigid,
+        create_unlit_shader_module_skinned,
     },
 };
 use crate::backend::{
@@ -37,9 +38,10 @@ use perro_graphics_assets::{
 use perro_ids::MeshID;
 use perro_io::load_asset;
 use perro_render_bridge::{
-    Camera3DState, CameraProjectionState, CustomMaterialLighting3D, LODOptions3D, Material3D,
-    MaterialParamOverride3D, MaterialParamOverrideValue3D, MeshBlendOptions3D,
-    MeshSurfaceBinding3D, PointLight3DState, SpotLight3DState, StandardMaterial3D,
+    Camera3DState, CameraProjectionState, CustomMaterialLighting3D, DenseInstancePose3D,
+    LODOptions3D, Material3D, MaterialParamOverride3D, MaterialParamOverrideValue3D,
+    MeshBlendOptions3D, MeshSurfaceBinding3D, PointLight3DState, SpotLight3DState,
+    StandardMaterial3D,
 };
 use perro_structs::BitMask;
 use perro_structs::TextureFilterMode;
@@ -54,6 +56,9 @@ use wgpu::util::DeviceExt;
 
 type MeshVertex = DecodedMeshVertex;
 
+// Pose-pack cache entry: pinned source Arc + its packed geometry lanes.
+type PosePackCacheEntry = (Arc<[DenseInstancePose3D]>, Arc<[MultiMeshPosePacked]>);
+
 mod mesh_presets;
 #[path = "gpu/paths/multimesh.rs"]
 mod multimesh_path;
@@ -64,7 +69,10 @@ mod skinned_path;
 #[path = "gpu/texture_cache.rs"]
 mod texture_cache;
 
-use multimesh_path::{create_multimesh_blend_pipeline, create_multimesh_pipeline, pack_unorm4x8};
+use multimesh_path::{
+    create_multimesh_blend_pipeline, create_multimesh_covered_pipeline,
+    create_multimesh_depth_prepass_pipeline, create_multimesh_pipeline, pack_unorm4x8,
+};
 use rigid_path::{
     create_depth_prepass_pipeline_rigid, create_depth_prepass_pipeline_rigid_packed_lod,
     create_pipeline_overlay_rigid, create_pipeline_rigid, create_pipeline_rigid_blend,
@@ -116,7 +124,6 @@ use draw::*;
 use sky::*;
 use targets::*;
 
-const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth24Plus;
 const DEPTH_PREPASS_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 const FRUSTUM_CULL_WORKGROUP_SIZE: u32 = 64;
 const HIZ_WORKGROUP_SIZE_X: u32 = 8;
@@ -292,6 +299,15 @@ struct MultiMeshInstanceGpu {
     blend_meta_id: u32,
 }
 
+// Build-independent packed pose lanes cached per pose-Arc (item 3). Skips the
+// per-instance quaternion pack when a pose list survives a full rebuild.
+#[derive(Clone, Copy)]
+struct MultiMeshPosePacked {
+    position: [f32; 3],
+    rotation: [i16; 4],
+    scale: [f32; 3],
+}
+
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
 struct MultiMeshDrawParamGpu {
@@ -398,15 +414,45 @@ struct FrustumCullParamsGpu {
     _pad: [u32; 3],
 }
 
+// Cull item split into a static half (bounds + flags, changes only when batch
+// topology changes) and a dynamic half (model rows, changes on every transform
+// update). Keeping them in separate storage buffers lets the transform fast
+// path re-upload only the model rows.
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
-struct FrustumCullItemGpu {
+struct FrustumCullStaticGpu {
+    local_center_radius: [f32; 4],
+    cull_flags: [u32; 4],
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct FrustumCullDynamicGpu {
     model_0: [f32; 4],
     model_1: [f32; 4],
     model_2: [f32; 4],
     model_3: [f32; 4],
-    local_center_radius: [f32; 4],
-    cull_flags: [u32; 4],
+}
+
+// Per-batch static record consumed by the multimesh cull compute shader.
+// Region [instance_start, instance_start+instance_cap) in visible_indices is
+// reserved identical to the batch source range so firstInstance stays stable.
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct MultiMeshCullBatchGpu {
+    instance_start: u32,
+    instance_cap: u32,
+    indirect_index: u32,
+    mesh_radius_bits: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable, PartialEq)]
+struct MultiMeshCullParamsGpu {
+    instance_count: u32,
+    batch_count: u32,
+    _pad1: u32,
+    _pad2: u32,
 }
 
 #[repr(C)]
@@ -445,6 +491,11 @@ struct ShadowUniform {
     ray_texel: [f32; 4], // world units per shadow texel, per cascade
     spot_params: [[f32; 4]; MAX_SHADOW_SPOT_LIGHTS], // enabled, light_index, layer, reserved
     point_params: [[f32; 4]; MAX_SHADOW_POINT_LIGHTS], // enabled, light_index, base_layer, range
+    // Direct light-index -> shadow-slot lookup so the fragment shaders skip the
+    // per-slot search. Each vec4 lane holds one light's slot (or -1.0 for none),
+    // indexed by dense light index. MAX_{SPOT,POINT}_LIGHTS lanes total.
+    spot_light_slots: [[f32; 4]; MAX_SPOT_LIGHTS.div_ceil(4)],
+    point_light_slots: [[f32; 4]; MAX_POINT_LIGHTS.div_ceil(4)],
 }
 
 pub struct Gpu3D {
@@ -511,6 +562,13 @@ pub struct Gpu3D {
     pipeline_multimesh_double_sided: wgpu::RenderPipeline,
     pipeline_multimesh_blend_culled: wgpu::RenderPipeline,
     pipeline_multimesh_blend_double_sided: wgpu::RenderPipeline,
+    // Prepass-covered variants (depth write off, LessEqual) used when unified
+    // depth is active and the batch was primed in the depth prepass.
+    pipeline_multimesh_covered: wgpu::RenderPipeline,
+    pipeline_multimesh_covered_double_sided: wgpu::RenderPipeline,
+    // Depth-only prepass pipelines for multimesh (Depth32Float, vertex only).
+    pipeline_multimesh_depth_prepass_culled: wgpu::RenderPipeline,
+    pipeline_multimesh_depth_prepass_double_sided: wgpu::RenderPipeline,
     pipeline_mask_rigid_culled: wgpu::RenderPipeline,
     pipeline_mask_rigid_double_sided: wgpu::RenderPipeline,
     pipeline_mask_rigid_packed_lod_culled: wgpu::RenderPipeline,
@@ -610,15 +668,49 @@ pub struct Gpu3D {
     multimesh_instance_capacity: usize,
     staged_multimesh_instances: Vec<MultiMeshInstanceGpu>,
     multimesh_batches: Vec<MultiMeshBatch>,
+    // GPU per-instance frustum cull for multimesh (item 1). Reuses the rigid
+    // frustum params buffer for the planes. When inactive, visible_indices is
+    // primed as identity so the same storage-fetch draw path is correct.
+    multimesh_cull_pipeline: wgpu::ComputePipeline,
+    multimesh_cull_finalize_pipeline: wgpu::ComputePipeline,
+    multimesh_cull_bgl: wgpu::BindGroupLayout,
+    multimesh_cull_bind_group: wgpu::BindGroup,
+    multimesh_cull_params_buffer: wgpu::Buffer,
+    // Per-instance batch id (index into multimesh_cull_batches).
+    multimesh_instance_batch_buffer: wgpu::Buffer,
+    staged_multimesh_instance_batch: Vec<u32>,
+    // Per-batch cull records.
+    multimesh_cull_batch_buffer: wgpu::Buffer,
+    staged_multimesh_cull_batches: Vec<MultiMeshCullBatchGpu>,
+    // Compacted / identity visible-instance indices consumed by the vertex shader.
+    multimesh_visible_index_buffer: wgpu::Buffer,
+    staged_multimesh_visible_identity: Vec<u32>,
+    // Per-batch atomic append counters (u32 each), cleared each cull frame.
+    multimesh_cull_counter_buffer: wgpu::Buffer,
+    // Per-batch DrawIndexedIndirect records (instance_count written by cull).
+    multimesh_indirect_buffer: wgpu::Buffer,
+    multimesh_indirect_staging: Vec<DrawIndexedIndirectGpu>,
+    // Shared capacity (instances) for visible_indices + instance_batch buffers.
+    multimesh_cull_instance_capacity: usize,
+    // Shared capacity (batches) for cull_batches + counters + indirect buffers.
+    multimesh_cull_batch_capacity: usize,
+    // True while the cull compute ran this frame (drives indirect draw path).
+    multimesh_cull_active: bool,
+    last_multimesh_cull_params: Option<MultiMeshCullParamsGpu>,
     frustum_cull_enabled: bool,
     frustum_cull_supported: bool,
+    // When set, surviving culled draws are issued via multi_draw_indexed_indirect
+    // per state group instead of one draw_indexed_indirect per batch.
+    multi_draw_indirect_enabled: bool,
     frustum_cull_pipeline: wgpu::ComputePipeline,
     frustum_cull_bgl: wgpu::BindGroupLayout,
     frustum_cull_bind_group: wgpu::BindGroup,
     frustum_cull_params_buffer: wgpu::Buffer,
-    frustum_cull_items_buffer: wgpu::Buffer,
+    frustum_cull_static_buffer: wgpu::Buffer,
+    frustum_cull_dynamic_buffer: wgpu::Buffer,
     frustum_cull_items_capacity: usize,
-    frustum_cull_staging: Vec<FrustumCullItemGpu>,
+    frustum_cull_static_staging: Vec<FrustumCullStaticGpu>,
+    frustum_cull_dynamic_staging: Vec<FrustumCullDynamicGpu>,
     indirect_buffer: wgpu::Buffer,
     indirect_capacity: usize,
     indirect_staging: Vec<DrawIndexedIndirectGpu>,
@@ -635,14 +727,53 @@ pub struct Gpu3D {
     depth_prepass_batch_indices: Vec<usize>,
     mesh_blend_depth_batch_indices: Vec<usize>,
     has_shadow_casters: bool,
+    mesh_blend_depth_active: bool,
     surface_entries_scratch: Vec<SurfaceEntry3D>,
     mesh_blend_scratch: Vec<ResolvedMeshBlend>,
+    bleed_emitters_scratch: Vec<prepare::BleedEmitter>,
+    bleed_occluders_scratch: Vec<prepare::BleedOccluder>,
+    bleed_multimesh_bounds_scratch: Vec<Option<(Vec3, f32)>>,
+    // Per mesh-blend source: (source batch index, range into
+    // mesh_blend_receiver_indices). Precomputed in prepare so the source
+    // depth passes skip the O(N) receiver scan.
+    mesh_blend_source_receivers: Vec<(usize, Range<usize>)>,
+    mesh_blend_receiver_indices: Vec<usize>,
     last_draws: Vec<Draw3DInstance>,
     last_draws_revision: u64,
     last_draw_instance_spans: Vec<Range<u32>>,
     last_draw_instance_span_ranges: Vec<Range<usize>>,
+    // Per draw (build order): range of staged_multimesh_draw_params slots that
+    // draw produced. Lets the transform-only fast path patch only the moved
+    // multimesh draw's model rows w/o re-staging any instances.
+    last_draw_multimesh_param_ranges: Vec<Range<u32>>,
+    // Persistent scratch for compact_sorted_draw_batches: avoids a fresh alloc
+    // per full rebuild. dst_* buffers are double-buffered via mem::swap with
+    // the live staged_* vectors (old contents overwritten by extend_from_slice
+    // after `clear`, capacity reused). spans_per_draw's inner Vecs are cleared
+    // and reused in place rather than reallocated each rebuild.
+    compact_instance_owner_scratch: Vec<u32>,
+    compact_dst_transforms_scratch: Vec<TransformInstanceGpu>,
+    compact_dst_rigid_meta_scratch: Vec<RigidInstanceMetaGpu>,
+    compact_dst_skinned_meta_scratch: Vec<SkinnedInstanceMetaGpu>,
+    compact_dst_batches_scratch: Vec<DrawBatch>,
+    compact_spans_per_draw_scratch: Vec<Vec<Range<u32>>>,
+    // Persistent scratch for compact_sorted_multimesh_batches (same
+    // double-buffer swap pattern).
+    compact_multimesh_dst_instances_scratch: Vec<MultiMeshInstanceGpu>,
+    compact_multimesh_dst_batches_scratch: Vec<MultiMeshBatch>,
+    // Item 3: skip pack_quat_snorm16x4 on full rebuilds for pose lists whose Arc
+    // is unchanged. Keyed by pose-Arc pointer; holds the build-independent
+    // geometry lanes (position/rotation/scale). draw_id + blend_meta_id are
+    // build-order specific and stay recomputed per rebuild. The source Arc is
+    // pinned in the value so the key pointer can never be reused by a different
+    // allocation (ABA-safe) while the entry lives.
+    multimesh_pose_pack_cache: AHashMap<usize, PosePackCacheEntry>,
+    multimesh_pose_pack_cache_seen: ahash::AHashSet<usize>,
     last_scene: Option<Scene3DUniform>,
     last_shadow_scenes: Vec<Option<Scene3DUniform>>,
+    // Frustum planes per shadow camera (cascade/spot/point-face), derived from
+    // the shadow scenes each frame so shadow draws can CPU-cull off-view batches.
+    shadow_camera_frustums: Vec<[Vec4; 6]>,
     last_shadow: Option<ShadowUniform>,
     shadow_pass_enabled: bool,
     ray_shadow_enabled: bool,
@@ -679,6 +810,9 @@ pub struct Gpu3D {
     mesh_blend_depth_texture: wgpu::Texture,
     mesh_blend_depth_view: wgpu::TextureView,
     depth_size: (u32, u32),
+    // True while encoding a frame whose main pass loads the prepass depth
+    // (sample_count == 1 and the prepass ran) instead of re-rasterizing it.
+    unified_depth_active: bool,
     gpu_occlusion_enabled: bool,
     hiz_texture: wgpu::Texture,
     hiz_mip_views: Vec<wgpu::TextureView>,
@@ -728,6 +862,7 @@ pub struct Gpu3D {
     dirty_instance_spans_scratch: Vec<Range<u32>>,
     merged_instance_spans_scratch: Vec<Range<u32>>,
     dirty_cull_batch_spans_scratch: Vec<Range<usize>>,
+    transform_only_kinds_scratch: Vec<draw::TransformOnlyDrawKind>,
     debug_point_instances_scratch: Vec<BuiltInstanceParts>,
     debug_edge_instances_scratch: Vec<BuiltInstanceParts>,
     camera_bind_group_generation: u32,
@@ -769,6 +904,7 @@ pub struct Gpu3DConfig {
     pub meshlet_debug_view: bool,
     pub occlusion_culling: OcclusionCullingMode,
     pub indirect_first_instance_enabled: bool,
+    pub multi_draw_indirect_enabled: bool,
     pub texture_filter: TextureFilterMode,
 }
 
@@ -891,6 +1027,8 @@ struct MultiMeshBatch {
     instance_start: u32,
     instance_count: u32,
     draw_param_index: u32,
+    // Mesh local-bounds radius, used by the GPU cull to build instance spheres.
+    mesh_local_radius: f32,
     double_sided: bool,
     mesh_blend: bool,
     material_kind: MaterialPipelineKind,
@@ -934,6 +1072,9 @@ const FRUSTUM_CULL_HIGH_VISIBLE_MIN_BATCHES: usize = 160;
 const FRUSTUM_CULL_HIGH_VISIBLE_MIN_INSTANCES: usize = 2048;
 const HIZ_OCCLUSION_MIN_BATCHES: usize = 80;
 const HIZ_OCCLUSION_MIN_INSTANCES: usize = 1024;
+// Below this total instance count, direct multimesh draw is cheaper than a
+// compute cull pass (dispatch + readback overhead outweighs the vertex savings).
+const MULTIMESH_CULL_MIN_INSTANCES: usize = 1024;
 const DEPTH_PREPASS_MIN_BATCHES: usize = 32;
 const DEPTH_PREPASS_MIN_INSTANCES: usize = 512;
 const HIZ_DEBUG_READBACK_ENABLED: bool = false;
@@ -1054,34 +1195,9 @@ mod tests {
             mesh_layout.attributes[1].format,
             wgpu::VertexFormat::Snorm16x4
         );
-
-        let instance_layout = super::multimesh_path::multimesh_instance_layout();
-        assert_eq!(instance_layout.array_stride, 40);
-        assert_eq!(instance_layout.attributes[0].offset, 0);
-        assert_eq!(
-            instance_layout.attributes[0].format,
-            wgpu::VertexFormat::Float32x3
-        );
-        assert_eq!(instance_layout.attributes[1].offset, 12);
-        assert_eq!(
-            instance_layout.attributes[1].format,
-            wgpu::VertexFormat::Snorm16x4
-        );
-        assert_eq!(instance_layout.attributes[2].offset, 20);
-        assert_eq!(
-            instance_layout.attributes[2].format,
-            wgpu::VertexFormat::Float32x3
-        );
-        assert_eq!(instance_layout.attributes[3].offset, 32);
-        assert_eq!(
-            instance_layout.attributes[3].format,
-            wgpu::VertexFormat::Uint32
-        );
-        assert_eq!(instance_layout.attributes[4].offset, 36);
-        assert_eq!(
-            instance_layout.attributes[4].format,
-            wgpu::VertexFormat::Uint32
-        );
+        // Instance data is now fetched from storage (GPU cull compaction), so it
+        // is no longer a vertex buffer layout. The storage struct layout is
+        // asserted by packed_gpu_layouts_keep_expected_sizes.
     }
 
     #[test]

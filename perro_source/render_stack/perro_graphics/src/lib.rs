@@ -18,6 +18,19 @@ pub use resources::{ResourceGcDrops, ResourceStore};
 /// lanes; shaders decode `rgb * w * EMISSIVE_PACK_MAX`.
 pub(crate) const EMISSIVE_PACK_MAX: f32 = 16.0;
 
+/// Scene depth format shared by every pipeline that attaches the 3D scene
+/// depth target (meshes, multimesh, water, 3D particles). Depth32Float at
+/// sample_count == 1 so the depth prepass result can be copied into the main
+/// depth target and reused by the opaque pass; Depth24Plus under MSAA where
+/// the 1-sample prepass cannot be shared and depth copies are not allowed.
+pub(crate) const fn scene_depth_format(sample_count: u32) -> wgpu::TextureFormat {
+    if sample_count <= 1 {
+        wgpu::TextureFormat::Depth32Float
+    } else {
+        wgpu::TextureFormat::Depth24Plus
+    }
+}
+
 /// Decode an sRGB-encoded channel to linear. Authored colors (pickers, hex)
 /// are sRGB; lighting runs in linear. Values above 1 pass through untouched.
 pub(crate) fn srgb_channel_to_linear(c: f32) -> f32 {

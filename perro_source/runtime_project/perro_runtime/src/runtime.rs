@@ -119,6 +119,17 @@ pub(crate) struct WaterBodyContact3D {
     pub(crate) foam_amount: f32,
 }
 
+/// Reusable scratch maps 4 scene resource-ref scan.
+///
+/// Kept on runtime so the per-frame scan reuse allocs instead of building +
+/// cloning fresh maps each drain.
+#[derive(Default)]
+pub(crate) struct SceneResourceRefsScratch {
+    pub(crate) textures: AHashMap<TextureID, Vec<NodeID>>,
+    pub(crate) meshes: AHashMap<MeshID, Vec<NodeID>>,
+    pub(crate) materials: AHashMap<MaterialID, Vec<NodeID>>,
+}
+
 /// Live game runtime state.
 ///
 /// Keeps scene nodes, script schedules, resource APIs, input snapshots,
@@ -143,6 +154,15 @@ pub struct Runtime {
     scene_texture_refs_cache: AHashMap<TextureID, Vec<NodeID>>,
     scene_mesh_refs_cache: AHashMap<MeshID, Vec<NodeID>>,
     scene_material_refs_cache: AHashMap<MaterialID, Vec<NodeID>>,
+    /// last arena mutation_version seen by resource-ref scan. gate re-scan.
+    scene_resource_refs_scanned_version: u64,
+    /// force resource-ref re-scan next drain. set on resource render events
+    /// (pending resolve / retained invalidation) that arena version misses.
+    scene_resource_refs_dirty: bool,
+    /// reusable scratch maps 4 resource-ref scan; avoid per-frame alloc + clone.
+    scene_resource_refs_scratch: SceneResourceRefsScratch,
+    /// reusable node-id list 4 camera-stream collectors; refill once per drain.
+    camera_stream_node_scratch: Vec<NodeID>,
     dirty: DirtyState,
     transforms: TransformRuntimeState,
     internal_updates: InternalUpdateState,
@@ -170,10 +190,16 @@ pub struct Runtime {
     physics_body_descs_3d: Vec<perro_physics::BodyDesc3D>,
     physics_joint_descs_2d: Vec<perro_physics::JointDesc2D>,
     physics_joint_descs_3d: Vec<perro_physics::JointDesc3D>,
-    /// internal char fall speed; ! exposed on node (char body has no velocity)
+    /// internal fall speed per char body 4 script-invoked apply_gravity;
+    /// ! exposed on node (char body has no velocity state)
     character_fall_speed_2d: AHashMap<NodeID, f32>,
     character_fall_speed_3d: AHashMap<NodeID, f32>,
-    character_move_scratch: Vec<NodeID>,
+    /// last sweep hit per char body (node, point, normal); merged -> contacts_*
+    /// cuz kinematic-vs-fixed pairs never activate in solver narrow phase
+    character_sweep_hit_2d:
+        AHashMap<NodeID, (NodeID, perro_structs::Vector2, perro_structs::Vector2)>,
+    character_sweep_hit_3d:
+        AHashMap<NodeID, (NodeID, perro_structs::Vector3, perro_structs::Vector3)>,
     water_samples: AHashMap<NodeID, perro_nodes::WaterPhysicsSample>,
     water_sample_times: AHashMap<NodeID, f32>,
     water_body_samples: AHashMap<WaterBodySampleKey, WaterBodySampleCache>,
@@ -353,6 +379,10 @@ impl Runtime {
             scene_texture_refs_cache: AHashMap::new(),
             scene_mesh_refs_cache: AHashMap::new(),
             scene_material_refs_cache: AHashMap::new(),
+            scene_resource_refs_scanned_version: u64::MAX,
+            scene_resource_refs_dirty: true,
+            scene_resource_refs_scratch: SceneResourceRefsScratch::default(),
+            camera_stream_node_scratch: Vec::new(),
             dirty: DirtyState::new(),
             transforms: TransformRuntimeState::new(),
             internal_updates: InternalUpdateState::new(),
@@ -380,7 +410,8 @@ impl Runtime {
             physics_joint_descs_3d: Vec::new(),
             character_fall_speed_2d: AHashMap::new(),
             character_fall_speed_3d: AHashMap::new(),
-            character_move_scratch: Vec::new(),
+            character_sweep_hit_2d: AHashMap::new(),
+            character_sweep_hit_3d: AHashMap::new(),
             water_samples: AHashMap::new(),
             water_sample_times: AHashMap::new(),
             water_body_samples: AHashMap::new(),
@@ -726,3 +757,7 @@ impl Drop for Runtime {
 #[cfg(test)]
 #[path = "../tests/unit/runtime_hotpath_tests.rs"]
 mod runtime_hotpath_tests;
+
+#[cfg(test)]
+#[path = "../tests/unit/rt_ctx_node_mut_dirty_tests.rs"]
+mod rt_ctx_node_mut_dirty_tests;

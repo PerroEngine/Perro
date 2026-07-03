@@ -11,7 +11,7 @@ use perro_physics::*;
 use perro_runtime_api::sub_apis::{
     NodeAPI, PhysicsContact2D, PhysicsContact3D, PhysicsMoveResult2D, PhysicsMoveResult3D,
     PhysicsQueryFilter, PhysicsRayHit2D, PhysicsRayHit3D, PhysicsShapeHit2D, PhysicsShapeHit3D,
-    SignalAPI,
+    PhysicsSlideResult2D, PhysicsSlideResult3D, SignalAPI,
 };
 #[cfg(test)]
 use perro_structs::BitMask;
@@ -33,8 +33,10 @@ pub(crate) use water::{
 
 pub(crate) type PhysicsState = PhysicsSystem;
 
-/// gap kp btw char + hit surface on gravity sweep
+/// gap kp btw body + hit surface on move_and_slide sweep
 const CHARACTER_MOVE_MARGIN: f32 = 0.005;
+/// max slide iterations per move_and_slide call
+const MAX_SLIDE_ITERATIONS: usize = 4;
 pub(crate) use perro_physics::{AudioRaycastInput, AudioRaycastResult};
 
 impl Runtime {
@@ -209,8 +211,7 @@ impl Runtime {
         self.physics_synced_node_version_2d = synced_version;
         self.physics_synced_node_version_3d = synced_version;
 
-        // aft re-record: char sweep mv nodes -> mark world stale 4 next step
-        self.apply_character_gravity();
+        self.prune_character_sweep_hits();
 
         let signals_start = Instant::now();
         self.emit_collision_signals_2d();
@@ -257,19 +258,7 @@ impl Runtime {
             && self.water_contacts_3d.is_empty()
             && self.physics.active_area_overlaps_2d.is_empty()
             && self.physics.active_area_overlaps_3d.is_empty()
-            && !self.has_character_body_descs()
             && self.physics.can_skip_step()
-    }
-
-    /// char bodies need per-step gravity sweep even when worlds idle
-    fn has_character_body_descs(&self) -> bool {
-        self.physics_body_descs_2d
-            .iter()
-            .any(|body| body.kind == BodyKind::Character)
-            || self
-                .physics_body_descs_3d
-                .iter()
-                .any(|body| body.kind == BodyKind::Character)
     }
 
     fn has_physics_joint_nodes(&self) -> bool {
@@ -342,6 +331,8 @@ impl Runtime {
         self.physics.clear();
         self.character_fall_speed_2d.clear();
         self.character_fall_speed_3d.clear();
+        self.character_sweep_hit_2d.clear();
+        self.character_sweep_hit_3d.clear();
         self.invalidate_physics_query_sync();
     }
 
@@ -475,6 +466,7 @@ impl Runtime {
         self.refresh_dirty_global_transforms();
         // node mv aft sync -> world stale 4 next query
         self.physics_synced_node_version_2d = None;
+        self.record_character_sweep_hit_2d(body_id, &result);
         Some(result)
     }
 
@@ -496,149 +488,255 @@ impl Runtime {
         self.refresh_dirty_global_transforms();
         // node mv aft sync -> world stale 4 next query
         self.physics_synced_node_version_3d = None;
+        self.record_character_sweep_hit_3d(body_id, &result);
         Some(result)
     }
 
-    /// char bodies: engine gravity via kinematic sweep; no velocity on node.
-    /// fall speed kp internal per id; reset on ground hit / disable.
-    fn apply_character_gravity(&mut self) {
-        let dt = self.time.fixed_delta;
-        if dt <= 0.0 {
-            return;
+    /// sweep along `motion`; on hit, project remainder onto hit plane +
+    /// re-sweep, up to MAX_SLIDE_ITERATIONS. body only mv here, never by solver.
+    pub fn physics_move_and_slide_2d(
+        &mut self,
+        body_id: NodeID,
+        motion: Vector2,
+        filter: &PhysicsQueryFilter,
+    ) -> Option<PhysicsSlideResult2D> {
+        let mut position = self.get_global_transform_2d(body_id)?.position;
+        let mut remaining = motion;
+        let mut hits = Vec::new();
+        for _ in 0..MAX_SLIDE_ITERATIONS {
+            if remaining.length_squared() <= 1.0e-12 {
+                remaining = Vector2::ZERO;
+                break;
+            }
+            let target = position + remaining;
+            let result =
+                self.physics_move_body_2d(body_id, target, CHARACTER_MOVE_MARGIN, filter)?;
+            position = result.position;
+            let Some(hit) = result.hit else {
+                remaining = Vector2::ZERO;
+                break;
+            };
+            hits.push(hit);
+            let unconsumed = target - position;
+            remaining = unconsumed - hit.normal * unconsumed.dot(hit.normal);
+        }
+        Some(PhysicsSlideResult2D {
+            position,
+            remainder: remaining,
+            hits,
+        })
+    }
+
+    /// sweep along `motion`; on hit, project remainder onto hit plane +
+    /// re-sweep, up to MAX_SLIDE_ITERATIONS. body only mv here, never by solver.
+    pub fn physics_move_and_slide_3d(
+        &mut self,
+        body_id: NodeID,
+        motion: Vector3,
+        filter: &PhysicsQueryFilter,
+    ) -> Option<PhysicsSlideResult3D> {
+        let mut position = self.get_global_transform_3d(body_id)?.position;
+        let mut remaining = motion;
+        let mut hits = Vec::new();
+        for _ in 0..MAX_SLIDE_ITERATIONS {
+            if remaining.length_squared() <= 1.0e-12 {
+                remaining = Vector3::ZERO;
+                break;
+            }
+            let target = position + remaining;
+            let result =
+                self.physics_move_body_3d(body_id, target, CHARACTER_MOVE_MARGIN, filter)?;
+            position = result.position;
+            let Some(hit) = result.hit else {
+                remaining = Vector3::ZERO;
+                break;
+            };
+            hits.push(hit);
+            let unconsumed = target - position;
+            remaining = unconsumed - hit.normal * unconsumed.dot(hit.normal);
+        }
+        Some(PhysicsSlideResult3D {
+            position,
+            remainder: remaining,
+            hits,
+        })
+    }
+
+    /// script-invoked engine gravity 4 char bodies. integrate internal fall
+    /// speed frm world gravity, sweep down, reset on ground hit. separate frm
+    /// move_and_slide: cal each step when engine gravity wanted, skip 4 custom.
+    pub fn physics_apply_gravity_2d(
+        &mut self,
+        body_id: NodeID,
+        dt: f32,
+        max_fall_speed: f32,
+        filter: &PhysicsQueryFilter,
+    ) -> Option<PhysicsMoveResult2D> {
+        let is_char = matches!(
+            self.nodes.get(body_id).map(|node| &node.data),
+            Some(SceneNodeData::CharacterBody2D(_))
+        );
+        if !is_char || !dt.is_finite() || dt <= 0.0 {
+            return None;
         }
         let gravity = self.physics_gravity();
-        self.apply_character_gravity_2d(gravity, dt);
-        self.apply_character_gravity_3d(gravity, dt);
+        let fall = self.character_fall_speed_2d.entry(body_id).or_insert(0.0);
+        let limit = max_fall_speed.abs().max(0.001);
+        *fall = (*fall + gravity * dt).clamp(-limit, limit);
+        let drop = *fall * dt;
+        let global = self.get_global_transform_2d(body_id)?;
+        let target = Vector2::new(global.position.x, global.position.y + drop);
+        let result = self.physics_move_body_2d(body_id, target, CHARACTER_MOVE_MARGIN, filter);
+        if result.is_none_or(|result| result.clipped) {
+            self.character_fall_speed_2d.insert(body_id, 0.0);
+        }
+        result
     }
 
-    fn apply_character_gravity_2d(&mut self, gravity: f32, dt: f32) {
-        let mut ids = std::mem::take(&mut self.character_move_scratch);
-        ids.clear();
-        ids.extend(
-            self.physics_body_descs_2d
-                .iter()
-                .filter(|body| body.kind == BodyKind::Character)
-                .map(|body| body.id),
+    /// script-invoked engine gravity 4 char bodies. integrate internal fall
+    /// speed frm world gravity, sweep down, reset on ground hit. separate frm
+    /// move_and_slide: cal each step when engine gravity wanted, skip 4 custom.
+    pub fn physics_apply_gravity_3d(
+        &mut self,
+        body_id: NodeID,
+        dt: f32,
+        max_fall_speed: f32,
+        filter: &PhysicsQueryFilter,
+    ) -> Option<PhysicsMoveResult3D> {
+        let is_char = matches!(
+            self.nodes.get(body_id).map(|node| &node.data),
+            Some(SceneNodeData::CharacterBody3D(_))
         );
-        for id in ids.iter().copied() {
-            let Some((enabled, apply_gravity, gravity_scale, max_fall, layers, mask)) =
-                self.nodes.get(id).and_then(|node| {
-                    let SceneNodeData::CharacterBody2D(body) = &node.data else {
-                        return None;
-                    };
-                    Some((
-                        body.enabled,
-                        body.apply_gravity,
-                        body.gravity_scale,
-                        body.max_fall_speed,
-                        body.collision_layers,
-                        body.collision_mask,
-                    ))
-                })
-            else {
-                self.character_fall_speed_2d.remove(&id);
-                continue;
-            };
-            if !enabled || !apply_gravity || gravity_scale == 0.0 {
-                self.character_fall_speed_2d.remove(&id);
-                continue;
-            }
-            let fall = self.character_fall_speed_2d.entry(id).or_insert(0.0);
-            let limit = max_fall.abs().max(0.001);
-            *fall = (*fall + gravity * gravity_scale * dt).clamp(-limit, limit);
-            let drop = *fall * dt;
-            if drop.abs() <= 0.000_001 {
-                continue;
-            }
-            let Some(global) = self.get_global_transform_2d(id) else {
-                continue;
-            };
-            let target = Vector2::new(global.position.x, global.position.y + drop);
-            let filter = PhysicsQueryFilter {
-                layers,
-                mask,
-                include_areas: false,
-                exclude_nodes: Vec::new(),
-            };
-            let result = self.physics_move_body_2d(id, target, CHARACTER_MOVE_MARGIN, &filter);
-            if result.is_none_or(|result| result.clipped) {
-                self.character_fall_speed_2d.insert(id, 0.0);
-            }
+        if !is_char || !dt.is_finite() || dt <= 0.0 {
+            return None;
         }
-        ids.clear();
-        self.character_move_scratch = ids;
+        let gravity = self.physics_gravity();
+        let fall = self.character_fall_speed_3d.entry(body_id).or_insert(0.0);
+        let limit = max_fall_speed.abs().max(0.001);
+        *fall = (*fall + gravity * dt).clamp(-limit, limit);
+        let drop = *fall * dt;
+        let global = self.get_global_transform_3d(body_id)?;
+        let target = Vector3::new(
+            global.position.x,
+            global.position.y + drop,
+            global.position.z,
+        );
+        let result = self.physics_move_body_3d(body_id, target, CHARACTER_MOVE_MARGIN, filter);
+        if result.is_none_or(|result| result.clipped) {
+            self.character_fall_speed_3d.insert(body_id, 0.0);
+        }
+        result
     }
 
-    fn apply_character_gravity_3d(&mut self, gravity: f32, dt: f32) {
-        let mut ids = std::mem::take(&mut self.character_move_scratch);
-        ids.clear();
-        ids.extend(
-            self.physics_body_descs_3d
-                .iter()
-                .filter(|body| body.kind == BodyKind::Character)
-                .map(|body| body.id),
+    /// kp last sweep hit per char body; solver narrow phase skip
+    /// kinematic-vs-fixed pairs so contacts_* merge these in.
+    /// new hit node -> emit collision signal at move time (char never
+    /// enters solver narrow phase vs static, so signal pass miss it).
+    fn record_character_sweep_hit_2d(&mut self, body_id: NodeID, result: &PhysicsMoveResult2D) {
+        let is_char = matches!(
+            self.nodes.get(body_id).map(|node| &node.data),
+            Some(SceneNodeData::CharacterBody2D(_))
         );
-        for id in ids.iter().copied() {
-            let Some((enabled, apply_gravity, gravity_scale, max_fall, layers, mask)) =
-                self.nodes.get(id).and_then(|node| {
-                    let SceneNodeData::CharacterBody3D(body) = &node.data else {
-                        return None;
-                    };
-                    Some((
-                        body.enabled,
-                        body.apply_gravity,
-                        body.gravity_scale,
-                        body.max_fall_speed,
-                        body.collision_layers,
-                        body.collision_mask,
-                    ))
-                })
-            else {
-                self.character_fall_speed_3d.remove(&id);
-                continue;
-            };
-            if !enabled || !apply_gravity || gravity_scale == 0.0 {
-                self.character_fall_speed_3d.remove(&id);
-                continue;
+        if !is_char {
+            return;
+        }
+        match result.hit {
+            Some(hit) => {
+                let prev = self
+                    .character_sweep_hit_2d
+                    .insert(body_id, (hit.node, hit.point, hit.normal));
+                if prev.is_none_or(|(node, _, _)| node != hit.node) {
+                    self.emit_collision_signals_for_pairs(&[BodyPair::sorted(body_id, hit.node)]);
+                }
             }
-            let fall = self.character_fall_speed_3d.entry(id).or_insert(0.0);
-            let limit = max_fall.abs().max(0.001);
-            *fall = (*fall + gravity * gravity_scale * dt).clamp(-limit, limit);
-            let drop = *fall * dt;
-            if drop.abs() <= 0.000_001 {
-                continue;
-            }
-            let Some(global) = self.get_global_transform_3d(id) else {
-                continue;
-            };
-            let target = Vector3::new(
-                global.position.x,
-                global.position.y + drop,
-                global.position.z,
-            );
-            let filter = PhysicsQueryFilter {
-                layers,
-                mask,
-                include_areas: false,
-                exclude_nodes: Vec::new(),
-            };
-            let result = self.physics_move_body_3d(id, target, CHARACTER_MOVE_MARGIN, &filter);
-            if result.is_none_or(|result| result.clipped) {
-                self.character_fall_speed_3d.insert(id, 0.0);
+            None => {
+                self.character_sweep_hit_2d.remove(&body_id);
             }
         }
-        ids.clear();
-        self.character_move_scratch = ids;
+    }
+
+    fn record_character_sweep_hit_3d(&mut self, body_id: NodeID, result: &PhysicsMoveResult3D) {
+        let is_char = matches!(
+            self.nodes.get(body_id).map(|node| &node.data),
+            Some(SceneNodeData::CharacterBody3D(_))
+        );
+        if !is_char {
+            return;
+        }
+        match result.hit {
+            Some(hit) => {
+                let prev = self
+                    .character_sweep_hit_3d
+                    .insert(body_id, (hit.node, hit.point, hit.normal));
+                if prev.is_none_or(|(node, _, _)| node != hit.node) {
+                    self.emit_collision_signals_for_pairs(&[BodyPair::sorted(body_id, hit.node)]);
+                }
+            }
+            None => {
+                self.character_sweep_hit_3d.remove(&body_id);
+            }
+        }
+    }
+
+    /// drop sweep hits 4 dead / re-typed bodies
+    fn prune_character_sweep_hits(&mut self) {
+        let nodes = &self.nodes;
+        self.character_sweep_hit_2d.retain(|id, _| {
+            matches!(
+                nodes.get(*id).map(|node| &node.data),
+                Some(SceneNodeData::CharacterBody2D(_))
+            )
+        });
+        self.character_sweep_hit_3d.retain(|id, _| {
+            matches!(
+                nodes.get(*id).map(|node| &node.data),
+                Some(SceneNodeData::CharacterBody3D(_))
+            )
+        });
+        self.character_fall_speed_2d.retain(|id, _| {
+            matches!(
+                nodes.get(*id).map(|node| &node.data),
+                Some(SceneNodeData::CharacterBody2D(_))
+            )
+        });
+        self.character_fall_speed_3d.retain(|id, _| {
+            matches!(
+                nodes.get(*id).map(|node| &node.data),
+                Some(SceneNodeData::CharacterBody3D(_))
+            )
+        });
     }
 
     pub fn physics_contacts_2d(&mut self, body_id: NodeID) -> Vec<PhysicsContact2D> {
         self.ensure_physics_world_synced_2d();
-        self.physics.contacts_2d(body_id)
+        let mut out = self.physics.contacts_2d(body_id);
+        if let Some(&(node, point, normal)) = self.character_sweep_hit_2d.get(&body_id)
+            && !out.iter().any(|contact| contact.node == node)
+        {
+            out.push(PhysicsContact2D {
+                node,
+                point,
+                normal,
+                impulse: 0.0,
+            });
+        }
+        out
     }
 
     pub fn physics_contacts_3d(&mut self, body_id: NodeID) -> Vec<PhysicsContact3D> {
         self.ensure_physics_world_synced_3d();
-        self.physics.contacts_3d(body_id)
+        let mut out = self.physics.contacts_3d(body_id);
+        if let Some(&(node, point, normal)) = self.character_sweep_hit_3d.get(&body_id)
+            && !out.iter().any(|contact| contact.node == node)
+        {
+            out.push(PhysicsContact3D {
+                node,
+                point,
+                normal,
+                impulse: 0.0,
+            });
+        }
+        out
     }
 
     fn collect_body_descs_2d(&mut self) -> Vec<BodyDesc2D> {

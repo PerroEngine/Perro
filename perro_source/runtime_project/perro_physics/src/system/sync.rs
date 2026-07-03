@@ -139,9 +139,17 @@ impl PhysicsSystem {
                 }
 
                 for shape in &body.shapes {
-                    let Some(builder) = collider_builder_2d(shape) else {
+                    let Some(mut builder) = collider_builder_2d(shape) else {
                         continue;
                     };
+                    // char = kinematic; default rapier pairs skip kinematic-vs-fixed -> no contacts_2d 4 char on static. opt in.
+                    if body.kind == crate::BodyKind::Character {
+                        builder.set_active_collision_types(
+                            r2::ActiveCollisionTypes::default()
+                                | r2::ActiveCollisionTypes::KINEMATIC_FIXED
+                                | r2::ActiveCollisionTypes::KINEMATIC_KINEMATIC,
+                        );
+                    }
                     let handle = world.colliders.insert_with_parent(
                         builder,
                         state.handle,
@@ -348,7 +356,7 @@ impl PhysicsSystem {
                 }
 
                 for shape in &body.shapes {
-                    let Some(builder) = collider_builder_3d(
+                    let Some(mut builder) = collider_builder_3d(
                         shape,
                         assets.provider_mode,
                         assets.static_mesh_lookup,
@@ -357,6 +365,14 @@ impl PhysicsSystem {
                     ) else {
                         continue;
                     };
+                    // char = kinematic; default rapier pairs skip kinematic-vs-fixed -> no contacts_3d 4 char on static. opt in.
+                    if body.kind == crate::BodyKind::Character {
+                        builder.set_active_collision_types(
+                            r3::ActiveCollisionTypes::default()
+                                | r3::ActiveCollisionTypes::KINEMATIC_FIXED
+                                | r3::ActiveCollisionTypes::KINEMATIC_KINEMATIC,
+                        );
+                    }
                     let handle = world.colliders.insert_with_parent(
                         builder,
                         state.handle,

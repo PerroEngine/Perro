@@ -1,7 +1,6 @@
 use crate::{Runtime, runtime_project::ProviderMode};
 use perro_ids::ScriptMemberID;
 use perro_input_api::InputWindow;
-use perro_io::push_dlc_self_context;
 use perro_resource_api::ResourceWindow;
 use perro_runtime_api::RuntimeWindow;
 #[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
@@ -132,12 +131,7 @@ impl Runtime {
             // Engine invariant: only window/event ingestion mutates input, outside script callback execution.
             let ipt: InputWindow<'_, perro_input_api::InputSnapshot> =
                 unsafe { InputWindow::new(&*input_ptr) };
-            let mount = self
-                .script_runtime
-                .script_instance_dlc_mounts
-                .get(&node)
-                .cloned();
-            let _dlc_self_context = push_dlc_self_context(mount.as_deref());
+            let _dlc_self_context = self.push_script_dlc_self_context(node);
             self.push_active_script_with_context(
                 instance_index,
                 node,

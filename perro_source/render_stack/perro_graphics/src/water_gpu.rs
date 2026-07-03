@@ -142,6 +142,122 @@ pub struct WaterPrepareContext {
     pub delta_seconds: f32,
 }
 
+// Render pipelines depend on color format, sample count, and the scene depth
+// format (derived from the sample count), so set_sample_count rebuilds them
+// through this shared helper without touching simulation state.
+#[allow(clippy::too_many_arguments)]
+fn create_water_render_pipelines(
+    device: &wgpu::Device,
+    color_format: wgpu::TextureFormat,
+    sample_count: u32,
+    render_bgl: &wgpu::BindGroupLayout,
+    depth_bgl: &wgpu::BindGroupLayout,
+    camera_bgl: &wgpu::BindGroupLayout,
+    camera_3d_bgl: &wgpu::BindGroupLayout,
+) -> (wgpu::RenderPipeline, wgpu::RenderPipeline) {
+    let render_wgsl = water_render_wgsl();
+    let render_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("perro_water_render_shader"),
+        source: wgpu::ShaderSource::Wgsl(render_wgsl.into()),
+    });
+    let render_shader_3d = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("perro_water_3d_render_shader"),
+        source: wgpu::ShaderSource::Wgsl(WATER_3D_RENDER_WGSL.into()),
+    });
+    let render_layout_2d = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some("perro_water_2d_render_layout"),
+        bind_group_layouts: &[Some(render_bgl), Some(camera_bgl)],
+        immediate_size: 0,
+    });
+    let render_layout_3d = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some("perro_water_3d_render_layout"),
+        bind_group_layouts: &[Some(render_bgl), Some(camera_3d_bgl), Some(depth_bgl)],
+        immediate_size: 0,
+    });
+    let render_pipeline_2d = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("perro_water_2d_pipeline"),
+        layout: Some(&render_layout_2d),
+        vertex: wgpu::VertexState {
+            module: &render_shader,
+            entry_point: Some("vs_water_2d"),
+            buffers: &[],
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+        },
+        fragment: Some(wgpu::FragmentState {
+            module: &render_shader,
+            entry_point: Some("fs_water_2d"),
+            targets: &[Some(wgpu::ColorTargetState {
+                format: color_format,
+                blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                write_mask: wgpu::ColorWrites::ALL,
+            })],
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+        }),
+        primitive: wgpu::PrimitiveState {
+            topology: wgpu::PrimitiveTopology::TriangleList,
+            strip_index_format: None,
+            front_face: wgpu::FrontFace::Ccw,
+            cull_mode: None,
+            polygon_mode: wgpu::PolygonMode::Fill,
+            unclipped_depth: false,
+            conservative: false,
+        },
+        depth_stencil: None,
+        multisample: wgpu::MultisampleState {
+            count: sample_count.max(1),
+            mask: !0,
+            alpha_to_coverage_enabled: false,
+        },
+        multiview_mask: None,
+        cache: None,
+    });
+    let render_pipeline_3d = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("perro_water_3d_pipeline"),
+        layout: Some(&render_layout_3d),
+        vertex: wgpu::VertexState {
+            module: &render_shader_3d,
+            entry_point: Some("vs_water_3d"),
+            buffers: &[],
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+        },
+        fragment: Some(wgpu::FragmentState {
+            module: &render_shader_3d,
+            entry_point: Some("fs_water_3d"),
+            targets: &[Some(wgpu::ColorTargetState {
+                format: color_format,
+                blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                write_mask: wgpu::ColorWrites::ALL,
+            })],
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+        }),
+        primitive: wgpu::PrimitiveState {
+            topology: wgpu::PrimitiveTopology::TriangleList,
+            strip_index_format: None,
+            front_face: wgpu::FrontFace::Ccw,
+            cull_mode: Some(wgpu::Face::Back),
+            polygon_mode: wgpu::PolygonMode::Fill,
+            unclipped_depth: false,
+            conservative: false,
+        },
+        depth_stencil: Some(wgpu::DepthStencilState {
+            // Matches the 3D scene depth target this pipeline attaches.
+            format: crate::scene_depth_format(sample_count.max(1)),
+            depth_write_enabled: Some(true),
+            depth_compare: Some(wgpu::CompareFunction::LessEqual),
+            stencil: wgpu::StencilState::default(),
+            bias: wgpu::DepthBiasState::default(),
+        }),
+        multisample: wgpu::MultisampleState {
+            count: sample_count.max(1),
+            mask: !0,
+            alpha_to_coverage_enabled: false,
+        },
+        multiview_mask: None,
+        cache: None,
+    });
+    (render_pipeline_2d, render_pipeline_3d)
+}
+
 impl GpuWater {
     pub fn new(
         device: &wgpu::Device,
@@ -278,15 +394,6 @@ impl GpuWater {
             label: Some("perro_water_gpu_shader"),
             source: wgpu::ShaderSource::Wgsl(WATER_WGSL.into()),
         });
-        let render_wgsl = water_render_wgsl();
-        let render_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("perro_water_render_shader"),
-            source: wgpu::ShaderSource::Wgsl(render_wgsl.into()),
-        });
-        let render_shader_3d = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("perro_water_3d_render_shader"),
-            source: wgpu::ShaderSource::Wgsl(WATER_3D_RENDER_WGSL.into()),
-        });
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("perro_water_gpu_pipeline_layout"),
             bind_group_layouts: &[Some(&compute_bgl)],
@@ -300,96 +407,15 @@ impl GpuWater {
             compilation_options: wgpu::PipelineCompilationOptions::default(),
             cache: None,
         });
-        let render_layout_2d = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("perro_water_2d_render_layout"),
-            bind_group_layouts: &[Some(&render_bgl), Some(camera_bgl)],
-            immediate_size: 0,
-        });
-        let render_layout_3d = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("perro_water_3d_render_layout"),
-            bind_group_layouts: &[Some(&render_bgl), Some(camera_3d_bgl), Some(&depth_bgl)],
-            immediate_size: 0,
-        });
-        let render_pipeline_2d = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("perro_water_2d_pipeline"),
-            layout: Some(&render_layout_2d),
-            vertex: wgpu::VertexState {
-                module: &render_shader,
-                entry_point: Some("vs_water_2d"),
-                buffers: &[],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &render_shader,
-                entry_point: Some("fs_water_2d"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: color_format,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                strip_index_format: None,
-                front_face: wgpu::FrontFace::Ccw,
-                cull_mode: None,
-                polygon_mode: wgpu::PolygonMode::Fill,
-                unclipped_depth: false,
-                conservative: false,
-            },
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState {
-                count: sample_count.max(1),
-                mask: !0,
-                alpha_to_coverage_enabled: false,
-            },
-            multiview_mask: None,
-            cache: None,
-        });
-        let render_pipeline_3d = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("perro_water_3d_pipeline"),
-            layout: Some(&render_layout_3d),
-            vertex: wgpu::VertexState {
-                module: &render_shader_3d,
-                entry_point: Some("vs_water_3d"),
-                buffers: &[],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &render_shader_3d,
-                entry_point: Some("fs_water_3d"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: color_format,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                strip_index_format: None,
-                front_face: wgpu::FrontFace::Ccw,
-                cull_mode: Some(wgpu::Face::Back),
-                polygon_mode: wgpu::PolygonMode::Fill,
-                unclipped_depth: false,
-                conservative: false,
-            },
-            depth_stencil: Some(wgpu::DepthStencilState {
-                format: wgpu::TextureFormat::Depth24Plus,
-                depth_write_enabled: Some(true),
-                depth_compare: Some(wgpu::CompareFunction::LessEqual),
-                stencil: wgpu::StencilState::default(),
-                bias: wgpu::DepthBiasState::default(),
-            }),
-            multisample: wgpu::MultisampleState {
-                count: sample_count.max(1),
-                mask: !0,
-                alpha_to_coverage_enabled: false,
-            },
-            multiview_mask: None,
-            cache: None,
-        });
+        let (render_pipeline_2d, render_pipeline_3d) = create_water_render_pipelines(
+            device,
+            color_format,
+            sample_count,
+            &render_bgl,
+            &depth_bgl,
+            camera_bgl,
+            camera_3d_bgl,
+        );
         let water_buffer = empty_buffer(device, "perro_water_gpu_waters", 1, true);
         let cell_buffer_a = empty_buffer(device, "perro_water_gpu_cells_a", 64, false);
         let cell_buffer_b = empty_buffer(device, "perro_water_gpu_cells_b", 64, false);
@@ -513,6 +539,29 @@ impl GpuWater {
             scene_depth_view,
             "perro_water_depth_bg",
         );
+    }
+
+    // Rebuild the render pipelines for a new MSAA sample count (and the scene
+    // depth format tied to it) while keeping all simulation state.
+    pub fn set_sample_count(
+        &mut self,
+        device: &wgpu::Device,
+        color_format: wgpu::TextureFormat,
+        sample_count: u32,
+        camera_bgl: &wgpu::BindGroupLayout,
+        camera_3d_bgl: &wgpu::BindGroupLayout,
+    ) {
+        let (render_pipeline_2d, render_pipeline_3d) = create_water_render_pipelines(
+            device,
+            color_format,
+            sample_count,
+            &self.render_bgl,
+            &self.depth_bgl,
+            camera_bgl,
+            camera_3d_bgl,
+        );
+        self.render_pipeline_2d = render_pipeline_2d;
+        self.render_pipeline_3d = render_pipeline_3d;
     }
 
     pub fn prepare(

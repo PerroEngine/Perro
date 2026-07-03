@@ -25,6 +25,82 @@ const EFFECT_BLACK_WHITE: u32 = 10;
 const EFFECT_COLOR_GRADE: u32 = 11;
 const EFFECT_LUT_2D: u32 = 12;
 const EFFECT_LUT_3D: u32 = 13;
+// Internal sub-pass effect type: bloom bright-pass + downsample (not exposed via
+// PostProcessEffect). Bloom composite reuses EFFECT_BLOOM.
+const EFFECT_BLOOM_BRIGHT: u32 = 14;
+
+// Extra uniform slots reserved after the per-effect region for multi-pass effect
+// sub-passes. Bloom uses the most (4).
+const SUBPASS_UNIFORM_SLOTS: usize = 4;
+
+// Internal effect type for a merged run of cheap per-pixel color ops.
+const EFFECT_MERGED: u32 = 15;
+
+/// Per-frame uniform fields shared across an effect's sub-passes.
+struct UniformFrameCtx {
+    projection_mode: u32,
+    near: f32,
+    far: f32,
+    time: f32,
+}
+
+/// One executable step in the resolved chain. Consecutive cheap color ops fold
+/// into a single Merged step so they cost one pass instead of one pass each.
+enum ChainStep<'a> {
+    Single(&'a PostProcessEffect),
+    /// Descriptors for the merged ops: 3 vec4 each ([type,_,_,_], p0, p1).
+    Merged(Vec<[f32; 4]>),
+}
+
+/// True for cheap per-pixel color ops that fit in <=2 param vec4s and can be
+/// merged into a single pass. color_grade is excluded (needs 5 param vec4s and
+/// reads them directly from the per-effect uniform).
+fn is_mergeable_color_op(effect: &PostProcessEffect) -> bool {
+    matches!(
+        effect,
+        PostProcessEffect::ColorFilter { .. }
+            | PostProcessEffect::ReverseFilter { .. }
+            | PostProcessEffect::Saturate { .. }
+            | PostProcessEffect::BlackWhite { .. }
+            | PostProcessEffect::Vignette { .. }
+    )
+}
+
+/// Pack a mergeable op as 3 vec4s: [effect_type,0,0,0], params0, params1.
+fn encode_merged_op(effect: &PostProcessEffect) -> [[f32; 4]; 3] {
+    let e = encode_effect_params(effect);
+    [[e.effect_type as f32, 0.0, 0.0, 0.0], e.params0, e.params1]
+}
+
+/// Collapse consecutive mergeable ops into Merged steps; everything else stays a
+/// Single step. Runs of length 1 stay Single so the fast per-effect path runs.
+fn build_chain_steps(effects: &[PostProcessEffect]) -> Vec<ChainStep<'_>> {
+    let mut steps: Vec<ChainStep> = Vec::with_capacity(effects.len());
+    let mut i = 0;
+    while i < effects.len() {
+        if is_mergeable_color_op(&effects[i]) {
+            let start = i;
+            while i < effects.len() && is_mergeable_color_op(&effects[i]) {
+                i += 1;
+            }
+            if i - start >= 2 {
+                let mut descriptors = Vec::with_capacity((i - start) * 3);
+                for effect in &effects[start..i] {
+                    descriptors.extend_from_slice(&encode_merged_op(effect));
+                }
+                steps.push(ChainStep::Merged(descriptors));
+                continue;
+            }
+            // Single mergeable op: keep the normal path.
+            steps.push(ChainStep::Single(&effects[start]));
+            i = start + 1;
+            continue;
+        }
+        steps.push(ChainStep::Single(&effects[i]));
+        i += 1;
+    }
+    steps
+}
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
@@ -106,6 +182,12 @@ pub struct PostProcessor {
     ping_a_view: wgpu::TextureView,
     ping_b: wgpu::Texture,
     ping_b_view: wgpu::TextureView,
+    // Lazily-allocated scratch targets for multi-pass effects. Sized from the
+    // main targets and dropped on resize. blur_scratch is full-res (separable
+    // blur intermediate); bloom half targets are half-res (downsampled bloom).
+    blur_scratch: Option<CachedPostTexture>,
+    bloom_half_a: Option<CachedPostTexture>,
+    bloom_half_b: Option<CachedPostTexture>,
     sampler: wgpu::Sampler,
     _default_lut_2d_texture: wgpu::Texture,
     default_lut_2d_view: wgpu::TextureView,
@@ -329,6 +411,9 @@ impl PostProcessor {
             ping_a_view,
             ping_b,
             ping_b_view,
+            blur_scratch: None,
+            bloom_half_a: None,
+            bloom_half_b: None,
             sampler,
             _default_lut_2d_texture: default_lut_2d_texture,
             default_lut_2d_view,
@@ -372,6 +457,10 @@ impl PostProcessor {
         self.ping_a_view = ping_a_view;
         self.ping_b = ping_b;
         self.ping_b_view = ping_b_view;
+        // Drop scratch targets; they reallocate lazily at the new size.
+        self.blur_scratch = None;
+        self.bloom_half_a = None;
+        self.bloom_half_b = None;
         self.post_bind_groups.clear();
     }
 
@@ -429,6 +518,10 @@ impl PostProcessor {
         let time = self.frame_counter as f32;
         self.perf_counters = PostPerfCounters::default();
 
+        // Resolve the chain into executable steps, folding consecutive cheap
+        // color ops into single merged passes.
+        let steps = build_chain_steps(effects);
+
         let mut max_params = 0usize;
         for effect in *effects {
             if let PostProcessEffect::Custom {
@@ -440,19 +533,187 @@ impl PostProcessor {
                 max_params = max_params.max(params.len());
             }
         }
-        self.ensure_params_capacity(device, max_params);
-        self.ensure_uniform_capacity(device, effects.len().max(1));
+        // Merged passes pack all their descriptors (3 vec4/op) into the params
+        // buffer at distinct offsets, so capacity must cover the total.
+        let merged_params: usize = steps
+            .iter()
+            .map(|step| match step {
+                ChainStep::Merged(descriptors) => descriptors.len(),
+                ChainStep::Single(_) => 0,
+            })
+            .sum();
+        // Custom effects read custom_params from offset 0 for param_count vec4s;
+        // reserve that region and place merged descriptors after it so a Custom
+        // effect and a merged step in the same chain never alias.
+        let merged_region_start = max_params.div_ceil(3);
+        self.ensure_params_capacity(device, (merged_region_start * 3) + merged_params);
+        // Extra uniform slots after the per-step region for multi-pass effect
+        // sub-passes (bloom uses up to 4). Only one effect runs at a time, so a
+        // single shared scratch region suffices.
+        let subpass_base = steps.len();
+        self.ensure_uniform_capacity(device, steps.len() + SUBPASS_UNIFORM_SLOTS);
+
+        let uniform_ctx = UniformFrameCtx {
+            projection_mode,
+            near,
+            far,
+            time,
+        };
 
         let mut input_kind = 0u8; // 0=external input_view, 1=ping_a, 2=ping_b
         let mut use_ping_a = true;
-        for (index, effect) in effects.iter().enumerate() {
-            let last = index + 1 == effects.len();
-            self.ensure_lut_texture(device, queue, effect, *static_texture_lookup);
+        // Op index into the params buffer where the next merged step packs its
+        // descriptors; distinct per step (and past the Custom region) to avoid
+        // same-submit buffer aliasing.
+        let mut merged_op_base = merged_region_start as u32;
+        for (index, step) in steps.iter().enumerate() {
+            let last = index + 1 == steps.len();
             let current_input = match input_kind {
                 0 => (*input_view).clone(),
                 1 => self.ping_a_view.clone(),
                 _ => self.ping_b_view.clone(),
             };
+
+            let target_view = if last {
+                (*output_view).clone()
+            } else if use_ping_a {
+                self.ping_a_view.clone()
+            } else {
+                self.ping_b_view.clone()
+            };
+
+            // Merged run of cheap color ops: one pass applies the whole run.
+            if let ChainStep::Merged(descriptors) = step {
+                let op_count = (descriptors.len() / 3) as u32;
+                let op_base = merged_op_base;
+                merged_op_base += op_count;
+                queue.write_buffer(
+                    &self.params_buffer,
+                    op_base as u64 * 3 * std::mem::size_of::<[f32; 4]>() as u64,
+                    bytemuck::cast_slice(descriptors),
+                );
+                let uniform = PostUniform {
+                    effect_type: EFFECT_MERGED,
+                    param_count: op_count,
+                    projection_mode,
+                    _pad0: 0,
+                    params0: [op_base as f32, 0.0, 0.0, 0.0],
+                    params1: [0.0; 4],
+                    params2: [0.0; 4],
+                    params3: [0.0; 4],
+                    params4: [0.0; 4],
+                    params5: [0.0; 4],
+                    resolution: [width, height],
+                    inv_resolution: [inv_width, inv_height],
+                    near,
+                    far,
+                    time: [time, time],
+                };
+                let uniform_offset = index as u64 * self.uniform_stride;
+                let dynamic_offset =
+                    u32::try_from(uniform_offset).expect("post uniform dynamic offset overflow");
+                queue.write_buffer(
+                    &self.uniform_buffer,
+                    uniform_offset,
+                    bytemuck::bytes_of(&uniform),
+                );
+                let input_pk = match input_kind {
+                    0 => PostInputKind::External,
+                    1 => PostInputKind::PingA,
+                    _ => PostInputKind::PingB,
+                };
+                let bind_group =
+                    self.merged_bind_group(device, input_pk, &current_input, depth_view);
+                {
+                    let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                        label: Some("perro_post_merged_pass"),
+                        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                            view: &target_view,
+                            resolve_target: None,
+                            ops: wgpu::Operations {
+                                load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                                store: wgpu::StoreOp::Store,
+                            },
+                            depth_slice: None,
+                        })],
+                        depth_stencil_attachment: None,
+                        timestamp_writes: None,
+                        occlusion_query_set: None,
+                        multiview_mask: None,
+                    });
+                    pass.set_pipeline(&self.builtin_pipeline);
+                    pass.set_bind_group(0, &bind_group, &[dynamic_offset]);
+                    pass.draw(0..3, 0..1);
+                }
+                input_kind = if last {
+                    input_kind
+                } else if use_ping_a {
+                    1
+                } else {
+                    2
+                };
+                use_ping_a = !use_ping_a;
+                continue;
+            }
+
+            let ChainStep::Single(effect) = step else {
+                unreachable!("merged handled above");
+            };
+            let effect = *effect;
+            self.ensure_lut_texture(device, queue, effect, *static_texture_lookup);
+
+            // Multi-pass effects (separable blur, downsampled bloom) run their
+            // own sub-pass chain and write the final result into target_view.
+            if let PostProcessEffect::Blur { strength } = effect {
+                self.run_blur_effect(
+                    device,
+                    queue,
+                    encoder,
+                    &uniform_ctx,
+                    subpass_base,
+                    *strength,
+                    &current_input,
+                    depth_view,
+                    &target_view,
+                );
+                input_kind = if last {
+                    input_kind
+                } else if use_ping_a {
+                    1
+                } else {
+                    2
+                };
+                use_ping_a = !use_ping_a;
+                continue;
+            }
+            if let PostProcessEffect::Bloom {
+                strength,
+                threshold,
+                ..
+            } = effect
+            {
+                self.run_bloom_effect(
+                    device,
+                    queue,
+                    encoder,
+                    &uniform_ctx,
+                    subpass_base,
+                    *strength,
+                    *threshold,
+                    &current_input,
+                    depth_view,
+                    &target_view,
+                );
+                input_kind = if last {
+                    input_kind
+                } else if use_ping_a {
+                    1
+                } else {
+                    2
+                };
+                use_ping_a = !use_ping_a;
+                continue;
+            }
 
             // Use the new struct for encoded params
             let encoded_params = encode_effect_params(effect);
@@ -490,13 +751,6 @@ impl PostProcessor {
                 bytemuck::bytes_of(&uniform),
             );
 
-            let target_view = if last {
-                (*output_view).clone()
-            } else if use_ping_a {
-                self.ping_a_view.clone()
-            } else {
-                self.ping_b_view.clone()
-            };
             let bind_group = self.bind_group_for_effect(
                 device,
                 effect,
@@ -547,6 +801,268 @@ impl PostProcessor {
             };
             use_ping_a = !use_ping_a;
         }
+    }
+
+    /// Ensure the full-res blur scratch target exists.
+    fn ensure_blur_scratch(&mut self, device: &wgpu::Device) {
+        if self.blur_scratch.is_none() {
+            let (texture, view) = create_color_target(
+                device,
+                self.format,
+                self.width,
+                self.height,
+                "perro_post_blur_scratch",
+            );
+            self.blur_scratch = Some(CachedPostTexture { texture, view });
+        }
+    }
+
+    /// Ensure the two half-res bloom targets exist.
+    fn ensure_bloom_targets(&mut self, device: &wgpu::Device) {
+        let hw = (self.width / 2).max(1);
+        let hh = (self.height / 2).max(1);
+        if self.bloom_half_a.is_none() {
+            let (texture, view) =
+                create_color_target(device, self.format, hw, hh, "perro_post_bloom_a");
+            self.bloom_half_a = Some(CachedPostTexture { texture, view });
+        }
+        if self.bloom_half_b.is_none() {
+            let (texture, view) =
+                create_color_target(device, self.format, hw, hh, "perro_post_bloom_b");
+            self.bloom_half_b = Some(CachedPostTexture { texture, view });
+        }
+    }
+
+    /// Record one full-screen builtin pass into `target`, using a transient
+    /// (uncached) bind group. Used by the multi-pass effect drivers.
+    #[allow(clippy::too_many_arguments)]
+    fn record_sub_pass(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        encoder: &mut wgpu::CommandEncoder,
+        ctx: &UniformFrameCtx,
+        uniform_slot: usize,
+        effect_type: u32,
+        params0: [f32; 4],
+        target_dims: [u32; 2],
+        input_view: &wgpu::TextureView,
+        second_view: &wgpu::TextureView,
+        depth_view: &wgpu::TextureView,
+        target_view: &wgpu::TextureView,
+    ) {
+        let width = target_dims[0].max(1) as f32;
+        let height = target_dims[1].max(1) as f32;
+        let uniform = PostUniform {
+            effect_type,
+            param_count: 0,
+            projection_mode: ctx.projection_mode,
+            _pad0: 0,
+            params0,
+            params1: [0.0; 4],
+            params2: [0.0; 4],
+            params3: [0.0; 4],
+            params4: [0.0; 4],
+            params5: [0.0; 4],
+            resolution: [width, height],
+            inv_resolution: [1.0 / width, 1.0 / height],
+            near: ctx.near,
+            far: ctx.far,
+            time: [ctx.time, ctx.time],
+        };
+        let uniform_offset = uniform_slot as u64 * self.uniform_stride;
+        let dynamic_offset =
+            u32::try_from(uniform_offset).expect("post subpass uniform offset overflow");
+        queue.write_buffer(
+            &self.uniform_buffer,
+            uniform_offset,
+            bytemuck::bytes_of(&uniform),
+        );
+
+        let bind_group = create_post_bind_group(
+            device,
+            PostBindGroupDesc {
+                bgl: &self.bgl,
+                input_view,
+                sampler: &self.sampler,
+                depth_view,
+                uniform_buffer: &self.uniform_buffer,
+                uniform_size_bytes: std::mem::size_of::<PostUniform>() as u64,
+                params_buffer: &self.params_buffer,
+                // second_view rides in the lut_2d slot (bloom composite reads it).
+                lut_2d_view: second_view,
+                lut_3d_view: &self.default_lut_3d_view,
+            },
+        );
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("perro_post_subpass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: target_view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                    store: wgpu::StoreOp::Store,
+                },
+                depth_slice: None,
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&self.builtin_pipeline);
+        pass.set_bind_group(0, &bind_group, &[dynamic_offset]);
+        pass.draw(0..3, 0..1);
+    }
+
+    /// Separable gaussian blur: horizontal pass into blur_scratch, vertical pass
+    /// into the effect's output target.
+    #[allow(clippy::too_many_arguments)]
+    fn run_blur_effect(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        encoder: &mut wgpu::CommandEncoder,
+        ctx: &UniformFrameCtx,
+        subpass_base: usize,
+        strength: f32,
+        input_view: &wgpu::TextureView,
+        depth_view: &wgpu::TextureView,
+        target_view: &wgpu::TextureView,
+    ) {
+        self.ensure_blur_scratch(device);
+        let dims = [self.width, self.height];
+        let scratch = self
+            .blur_scratch
+            .as_ref()
+            .expect("blur scratch exists")
+            .view
+            .clone();
+        let default_lut = self.default_lut_2d_view.clone();
+        // Horizontal (axis 0): input -> scratch.
+        self.record_sub_pass(
+            device,
+            queue,
+            encoder,
+            ctx,
+            subpass_base,
+            EFFECT_BLUR,
+            [strength, 0.0, 0.0, 0.0],
+            dims,
+            input_view,
+            &default_lut,
+            depth_view,
+            &scratch,
+        );
+        // Vertical (axis 1): scratch -> target.
+        self.record_sub_pass(
+            device,
+            queue,
+            encoder,
+            ctx,
+            subpass_base + 1,
+            EFFECT_BLUR,
+            [strength, 1.0, 0.0, 0.0],
+            dims,
+            &scratch,
+            &default_lut,
+            depth_view,
+            target_view,
+        );
+    }
+
+    /// Downsampled bloom: bright-pass into half-res A, separable blur A<->B at
+    /// half res, then composite the upsampled bloom over the full-res scene.
+    #[allow(clippy::too_many_arguments)]
+    fn run_bloom_effect(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        encoder: &mut wgpu::CommandEncoder,
+        ctx: &UniformFrameCtx,
+        subpass_base: usize,
+        strength: f32,
+        threshold: f32,
+        input_view: &wgpu::TextureView,
+        depth_view: &wgpu::TextureView,
+        target_view: &wgpu::TextureView,
+    ) {
+        self.ensure_bloom_targets(device);
+        let full = [self.width, self.height];
+        let half = [(self.width / 2).max(1), (self.height / 2).max(1)];
+        let view_a = self
+            .bloom_half_a
+            .as_ref()
+            .expect("bloom a exists")
+            .view
+            .clone();
+        let view_b = self
+            .bloom_half_b
+            .as_ref()
+            .expect("bloom b exists")
+            .view
+            .clone();
+        let default_lut = self.default_lut_2d_view.clone();
+        // Bright-pass + downsample: full-res input -> half-res A.
+        self.record_sub_pass(
+            device,
+            queue,
+            encoder,
+            ctx,
+            subpass_base,
+            EFFECT_BLOOM_BRIGHT,
+            [0.0, threshold, 0.0, 0.0],
+            half,
+            input_view,
+            &default_lut,
+            depth_view,
+            &view_a,
+        );
+        // Blur horizontal: A -> B (half res).
+        self.record_sub_pass(
+            device,
+            queue,
+            encoder,
+            ctx,
+            subpass_base + 1,
+            EFFECT_BLUR,
+            [1.0, 0.0, 0.0, 0.0],
+            half,
+            &view_a,
+            &default_lut,
+            depth_view,
+            &view_b,
+        );
+        // Blur vertical: B -> A (half res).
+        self.record_sub_pass(
+            device,
+            queue,
+            encoder,
+            ctx,
+            subpass_base + 2,
+            EFFECT_BLUR,
+            [1.0, 1.0, 0.0, 0.0],
+            half,
+            &view_b,
+            &default_lut,
+            depth_view,
+            &view_a,
+        );
+        // Composite: full-res scene (input_tex) + upsampled bloom A (lut slot).
+        self.record_sub_pass(
+            device,
+            queue,
+            encoder,
+            ctx,
+            subpass_base + 3,
+            EFFECT_BLOOM,
+            [strength, 0.0, 0.0, 0.0],
+            full,
+            input_view,
+            &view_a,
+            depth_view,
+            target_view,
+        );
     }
 
     fn ensure_custom_pipeline(
@@ -744,6 +1260,53 @@ impl PostProcessor {
         self.post_bind_groups
             .get(&key)
             .expect("post bind group cache must contain built key")
+            .clone()
+    }
+
+    /// Bind group for a merged color-op pass. Uses default LUT views (merged
+    /// ops never sample LUTs) and the shared uniform + params buffers.
+    fn merged_bind_group(
+        &mut self,
+        device: &wgpu::Device,
+        input_kind: PostInputKind,
+        input_view: &wgpu::TextureView,
+        depth_view: &wgpu::TextureView,
+    ) -> wgpu::BindGroup {
+        let key = PostBindGroupKey {
+            input_kind,
+            external_input_view_id: if input_kind == PostInputKind::External {
+                texture_view_id(input_view)
+            } else {
+                0
+            },
+            depth_view_id: texture_view_id(depth_view),
+            uniform_buffer_generation: self.uniform_buffer_generation,
+            params_buffer_generation: self.params_buffer_generation,
+            // Distinct LUT keys so merged bind groups never collide with an
+            // effect's cached bind group that happens to share inputs.
+            lut_2d_key: u64::MAX,
+            lut_3d_key: u64::MAX,
+        };
+        if !self.post_bind_groups.contains_key(&key) {
+            let bind_group = create_post_bind_group(
+                device,
+                PostBindGroupDesc {
+                    bgl: &self.bgl,
+                    input_view,
+                    sampler: &self.sampler,
+                    depth_view,
+                    uniform_buffer: &self.uniform_buffer,
+                    uniform_size_bytes: std::mem::size_of::<PostUniform>() as u64,
+                    params_buffer: &self.params_buffer,
+                    lut_2d_view: &self.default_lut_2d_view,
+                    lut_3d_view: &self.default_lut_3d_view,
+                },
+            );
+            self.post_bind_groups.insert(key, bind_group);
+        }
+        self.post_bind_groups
+            .get(&key)
+            .expect("merged bind group cache must contain built key")
             .clone()
     }
 

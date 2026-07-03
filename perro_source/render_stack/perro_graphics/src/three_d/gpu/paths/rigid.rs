@@ -176,6 +176,7 @@ pub(super) fn rigid_meta_layout<'a>() -> wgpu::VertexBufferLayout<'a> {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn create_pipeline_rigid_packed_lod_with_depth_write(
     device: &wgpu::Device,
     pipeline_layout: &wgpu::PipelineLayout,
@@ -222,7 +223,7 @@ fn create_pipeline_rigid_packed_lod_with_depth_write(
             conservative: false,
         },
         depth_stencil: Some(wgpu::DepthStencilState {
-            format: DEPTH_FORMAT,
+            format: crate::scene_depth_format(sample_count),
             depth_write_enabled: Some(depth_write_enabled),
             depth_compare: Some(depth_compare),
             stencil: wgpu::StencilState::default(),
@@ -238,6 +239,7 @@ fn create_pipeline_rigid_packed_lod_with_depth_write(
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 fn create_pipeline_rigid_with_depth_write(
     device: &wgpu::Device,
     pipeline_layout: &wgpu::PipelineLayout,
@@ -359,7 +361,7 @@ fn create_pipeline_rigid_with_depth_write(
             conservative: false,
         },
         depth_stencil: Some(wgpu::DepthStencilState {
-            format: DEPTH_FORMAT,
+            format: crate::scene_depth_format(sample_count),
             depth_write_enabled: Some(depth_write_enabled),
             depth_compare: Some(depth_compare),
             stencil: wgpu::StencilState::default(),
@@ -493,7 +495,7 @@ pub(super) fn create_pipeline_overlay_rigid(
             conservative: false,
         },
         depth_stencil: Some(wgpu::DepthStencilState {
-            format: DEPTH_FORMAT,
+            format: crate::scene_depth_format(sample_count),
             depth_write_enabled: Some(false),
             depth_compare: Some(wgpu::CompareFunction::Always),
             stencil: wgpu::StencilState::default(),

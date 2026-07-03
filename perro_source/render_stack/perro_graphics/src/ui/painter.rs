@@ -152,6 +152,27 @@ pub(crate) trait UiPainter {
     ) -> UiPaintFrame<'a>;
 }
 
+/// Per-node cached tessellation output. Reused across rebuilds when the node's
+/// own draw data + viewport are unchanged, so only mutated nodes re-tessellate.
+/// Text nodes (Label/TextEdit) are never cached because they depend on the
+/// shared font atlas pass, which resets each rebuild.
+struct CachedNode {
+    draw: UiDraw,
+    viewport: [f32; 2],
+    primitives: Vec<ClippedPrimitive>,
+}
+
+/// Per-node staging entry for the two-phase rebuild: shapes are staged for
+/// every node first, then tessellated together once the font atlas is final.
+enum NodeTess {
+    Cached,
+    Staged {
+        shapes: Vec<ClippedShape>,
+        rotations: Vec<(f32, epaint::Pos2)>,
+        is_text: bool,
+    },
+}
+
 pub(crate) struct EpaintUiPainter {
     fonts: Fonts,
     font_definitions: FontDefinitions,
@@ -159,6 +180,12 @@ pub(crate) struct EpaintUiPainter {
     shapes: Vec<ClippedShape>,
     shape_rotations: Vec<(f32, epaint::Pos2)>,
     primitives: Vec<ClippedPrimitive>,
+    node_cache: AHashMap<NodeID, CachedNode>,
+    // Cached z-sorted draw order + the (node, z_index) signature it was built
+    // from. Reused when the structure (id set / z-order) is unchanged, so a
+    // content-only edit skips the re-sort.
+    ordered_nodes: Vec<NodeID>,
+    order_signature: Vec<(NodeID, i32)>,
     textures_delta: TexturesDelta,
     last_viewport: [f32; 2],
     paint_revision: u64,
@@ -184,10 +211,63 @@ impl EpaintUiPainter {
             shapes: Vec::new(),
             shape_rotations: Vec::new(),
             primitives: Vec::new(),
+            node_cache: AHashMap::new(),
+            ordered_nodes: Vec::new(),
+            order_signature: Vec::new(),
             textures_delta: TexturesDelta::default(),
             last_viewport: [0.0, 0.0],
             paint_revision: u64::MAX,
         }
+    }
+
+    /// Push a single node's shapes plus their per-shape rotation entries.
+    /// Returns true if the node's tessellation touches the shared font atlas
+    /// (text), which forbids caching it across rebuilds.
+    fn push_node_shapes(&mut self, draw: &UiDraw, viewport: [f32; 2]) -> bool {
+        let shape_start = self.shapes.len();
+        let is_text = matches!(draw, UiDraw::Label(_) | UiDraw::TextEdit(_));
+        match draw {
+            UiDraw::Panel(panel) => push_panel_shape(panel, viewport, &mut self.shapes),
+            UiDraw::Shape(shape) => push_ui_shape(shape, viewport, &mut self.shapes),
+            UiDraw::ColorWheel(wheel) => push_color_wheel_shape(wheel, viewport, &mut self.shapes),
+            UiDraw::Button(button) => push_panel_shape(&button.panel, viewport, &mut self.shapes),
+            UiDraw::Checkbox(checkbox) => {
+                push_checkbox_shapes(checkbox, viewport, &mut self.shapes)
+            }
+            UiDraw::Image(image) => push_image_shape(image, viewport, &mut self.shapes),
+            UiDraw::NineSlice(image) => push_nine_slice_shapes(image, viewport, &mut self.shapes),
+            UiDraw::Label(label) => push_label_shape(
+                label,
+                viewport,
+                &self.font_definitions,
+                &mut self.harfbuzz_atlas,
+                &mut self.fonts,
+                &mut self.shapes,
+            ),
+            UiDraw::TextEdit(edit) => {
+                push_panel_shape(&edit.panel, viewport, &mut self.shapes);
+                push_text_edit_shapes(edit, viewport, &mut self.fonts, &mut self.shapes);
+            }
+        }
+        let rect = ui_rect(draw);
+        let rotation = rect.rotation_radians;
+        let origin = screen_pivot(rect, viewport);
+        self.shape_rotations
+            .extend((shape_start..self.shapes.len()).map(|_| (rotation, origin)));
+        is_text
+    }
+
+    /// True when the cached sorted order is still valid: same node set and same
+    /// per-node z_index (insertion order tiebreak is stable under id equality).
+    fn order_matches(&self, nodes: &AHashMap<NodeID, UiDraw>) -> bool {
+        if self.order_signature.len() != nodes.len() {
+            return false;
+        }
+        self.order_signature.iter().all(|(node, z)| {
+            nodes
+                .get(node)
+                .is_some_and(|draw| ui_rect(draw).z_index == *z)
+        })
     }
 
     fn rebuild_primitives(
@@ -201,55 +281,79 @@ impl EpaintUiPainter {
         self.shapes.clear();
         self.shape_rotations.clear();
         self.primitives.clear();
-        if self.shapes.capacity() < nodes.len() {
-            self.shapes.reserve(nodes.len() - self.shapes.capacity());
+
+        // Only re-sort when the structure (id set / z-order) changed. A pure
+        // content edit (e.g. color, text) leaves the order signature intact.
+        if !self.order_matches(nodes) {
+            self.ordered_nodes.clear();
+            self.ordered_nodes.extend(nodes.keys().copied());
+            self.ordered_nodes.sort_unstable_by(|a, b| {
+                let za = nodes.get(a).map(|d| ui_rect(d).z_index).unwrap_or(0);
+                let zb = nodes.get(b).map(|d| ui_rect(d).z_index).unwrap_or(0);
+                za.cmp(&zb).then_with(|| a.as_u64().cmp(&b.as_u64()))
+            });
+            self.order_signature.clear();
+            self.order_signature
+                .extend(self.ordered_nodes.iter().map(|node| {
+                    (
+                        *node,
+                        nodes.get(node).map(|d| ui_rect(d).z_index).unwrap_or(0),
+                    )
+                }));
         }
 
-        let mut ordered: Vec<(NodeID, &UiDraw)> =
-            nodes.iter().map(|(node, draw)| (*node, draw)).collect();
-        ordered.sort_unstable_by(|(a_node, a_draw), (b_node, b_draw)| {
-            ui_rect(a_draw)
-                .z_index
-                .cmp(&ui_rect(b_draw).z_index)
-                .then_with(|| a_node.as_u64().cmp(&b_node.as_u64()))
-        });
-
-        for (_, draw) in ordered {
-            let shape_start = self.shapes.len();
-            match draw {
-                UiDraw::Panel(panel) => push_panel_shape(panel, viewport, &mut self.shapes),
-                UiDraw::Shape(shape) => push_ui_shape(shape, viewport, &mut self.shapes),
-                UiDraw::ColorWheel(wheel) => {
-                    push_color_wheel_shape(wheel, viewport, &mut self.shapes)
-                }
-                UiDraw::Button(button) => {
-                    push_panel_shape(&button.panel, viewport, &mut self.shapes)
-                }
-                UiDraw::Checkbox(checkbox) => {
-                    push_checkbox_shapes(checkbox, viewport, &mut self.shapes)
-                }
-                UiDraw::Image(image) => push_image_shape(image, viewport, &mut self.shapes),
-                UiDraw::NineSlice(image) => {
-                    push_nine_slice_shapes(image, viewport, &mut self.shapes)
-                }
-                UiDraw::Label(label) => push_label_shape(
-                    label,
-                    viewport,
-                    &self.font_definitions,
-                    &mut self.harfbuzz_atlas,
-                    &mut self.fonts,
-                    &mut self.shapes,
-                ),
-                UiDraw::TextEdit(edit) => {
-                    push_panel_shape(&edit.panel, viewport, &mut self.shapes);
-                    push_text_edit_shapes(edit, viewport, &mut self.fonts, &mut self.shapes);
-                }
+        // Reuse per-node cached primitives whose draw data + viewport are
+        // unchanged; only re-tessellate mutated (or text) nodes.
+        //
+        // Two phases: stage every node's shapes first (text layout allocates
+        // glyphs into the shared font atlas as it goes), then tessellate once
+        // the atlas has settled. Tessellating per node mid-loop bakes glyph
+        // UVs against the atlas size at that moment; a later node adding new
+        // glyphs (e.g. CJK) grows the atlas and leaves earlier nodes sampling
+        // wrong texels for a frame.
+        let ordered_nodes = std::mem::take(&mut self.ordered_nodes);
+        let atlas_size_before = self.fonts.font_image_size();
+        let mut staged: Vec<(NodeID, NodeTess)> = Vec::with_capacity(ordered_nodes.len());
+        for node in &ordered_nodes {
+            let Some(draw) = nodes.get(node) else {
+                continue;
+            };
+            let cache_hit = self
+                .node_cache
+                .get(node)
+                .is_some_and(|cached| cached.viewport == viewport && &cached.draw == draw);
+            if cache_hit {
+                staged.push((*node, NodeTess::Cached));
+                continue;
             }
-            let rect = ui_rect(draw);
-            let rotation = rect.rotation_radians;
-            let origin = screen_pivot(rect, viewport);
-            self.shape_rotations
-                .extend((shape_start..self.shapes.len()).map(|_| (rotation, origin)));
+            let is_text = self.push_node_shapes(draw, viewport);
+            staged.push((
+                *node,
+                NodeTess::Staged {
+                    shapes: std::mem::take(&mut self.shapes),
+                    rotations: std::mem::take(&mut self.shape_rotations),
+                    is_text,
+                },
+            ));
+        }
+        // Atlas resized during layout: cached primitives were tessellated
+        // against the old size, so their UVs are stale. Re-stage everything.
+        if self.fonts.font_image_size() != atlas_size_before {
+            self.node_cache.clear();
+            for (node, entry) in &mut staged {
+                if !matches!(entry, NodeTess::Cached) {
+                    continue;
+                }
+                let Some(draw) = nodes.get(node) else {
+                    continue;
+                };
+                let is_text = self.push_node_shapes(draw, viewport);
+                *entry = NodeTess::Staged {
+                    shapes: std::mem::take(&mut self.shapes),
+                    rotations: std::mem::take(&mut self.shape_rotations),
+                    is_text,
+                };
+            }
         }
         let mut tessellator = Tessellator::new(
             UI_RASTER_SCALE,
@@ -257,13 +361,48 @@ impl EpaintUiPainter {
             self.fonts.font_image_size(),
             self.fonts.texture_atlas().prepared_discs(),
         );
-        self.primitives = tessellator.tessellate_shapes(std::mem::take(&mut self.shapes));
-        rotate_primitives(&mut self.primitives, &self.shape_rotations);
-        self.primitives
-            .retain(|primitive| match &primitive.primitive {
-                Primitive::Mesh(mesh) => !mesh.vertices.is_empty() && !mesh.indices.is_empty(),
-                Primitive::Callback(_) => false,
-            });
+        for (node, entry) in staged {
+            match entry {
+                NodeTess::Cached => {
+                    if let Some(cached) = self.node_cache.get(&node) {
+                        self.primitives.extend(cached.primitives.iter().cloned());
+                    }
+                }
+                NodeTess::Staged {
+                    shapes,
+                    rotations,
+                    is_text,
+                } => {
+                    let mut node_primitives = tessellator.tessellate_shapes(shapes);
+                    rotate_primitives(&mut node_primitives, &rotations);
+                    node_primitives.retain(|primitive| match &primitive.primitive {
+                        Primitive::Mesh(mesh) => {
+                            !mesh.vertices.is_empty() && !mesh.indices.is_empty()
+                        }
+                        Primitive::Callback(_) => false,
+                    });
+                    self.primitives.extend(node_primitives.iter().cloned());
+                    if is_text {
+                        // Text depends on the shared atlas pass; do not cache it.
+                        self.node_cache.remove(&node);
+                    } else if let Some(draw) = nodes.get(&node) {
+                        self.node_cache.insert(
+                            node,
+                            CachedNode {
+                                draw: draw.clone(),
+                                viewport,
+                                primitives: node_primitives,
+                            },
+                        );
+                    }
+                }
+            }
+        }
+        self.ordered_nodes = ordered_nodes;
+        // Evict cache entries for nodes no longer present.
+        if self.node_cache.len() > nodes.len() {
+            self.node_cache.retain(|node, _| nodes.contains_key(node));
+        }
 
         self.textures_delta.clear();
         if let Some(delta) = self.fonts.font_image_delta() {
@@ -426,6 +565,18 @@ fn append_system_font_fallbacks(definitions: &mut FontDefinitions) {
         ),
     ];
 
+    // Default (Latin) fonts go first in every script family so shared Latin
+    // glyphs in mixed text render from the same font as pure-Latin labels,
+    // with consistent metrics. Script fonts only pick up the glyphs the
+    // defaults lack (CJK, Arabic, ...).
+    for (target_family, _) in &script_families {
+        append_default_family_fallbacks(
+            definitions,
+            target_family.clone(),
+            FontFamily::Proportional,
+        );
+    }
+
     for (font_family, source_families) in &script_families {
         for &name in *source_families {
             append_system_font_family(definitions, &db, name, font_family.clone());
@@ -436,11 +587,6 @@ fn append_system_font_fallbacks(definitions: &mut FontDefinitions) {
         for (source_family, _) in &script_families {
             append_family_fallbacks(definitions, target_family.clone(), source_family.clone());
         }
-        append_default_family_fallbacks(
-            definitions,
-            target_family.clone(),
-            FontFamily::Proportional,
-        );
     }
 }
 

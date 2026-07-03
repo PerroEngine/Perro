@@ -62,6 +62,10 @@ impl WindowAPI for DummyRuntime {
         self.state = Box::new(icon);
     }
 
+    fn close_app(&mut self) {
+        self.state = Box::new(WindowRequest::CloseApp);
+    }
+
     fn get_active_refresh_rate(&mut self) -> Option<f32> {
         Some(60.0)
     }
@@ -1421,6 +1425,19 @@ fn simulate_3d(
     time: f32,
 ) -> Vector3 {
     origin + (velocity + drift) * time + Vector3::new(0.0, gravity, 0.0) * (0.5 * time * time)
+}
+
+#[test]
+fn close_app_macro_queues_window_close_request() {
+    let mut rt = dummy_runtime();
+    let mut ctx = RuntimeWindow::new(&mut rt);
+
+    close_app!(&mut ctx);
+
+    assert_eq!(
+        rt.state.downcast_ref::<WindowRequest>(),
+        Some(&WindowRequest::CloseApp)
+    );
 }
 
 #[test]

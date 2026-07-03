@@ -10,6 +10,98 @@ fn frustum_cull_default(_: bool) -> bool {
     false
 }
 
+fn multimesh_cull_bgl_entries() -> [wgpu::BindGroupLayoutEntry; 9] {
+    let uniform = |binding: u32| wgpu::BindGroupLayoutEntry {
+        binding,
+        visibility: wgpu::ShaderStages::COMPUTE,
+        ty: wgpu::BindingType::Buffer {
+            ty: wgpu::BufferBindingType::Uniform,
+            has_dynamic_offset: false,
+            min_binding_size: None,
+        },
+        count: None,
+    };
+    let storage = |binding: u32, read_only: bool| wgpu::BindGroupLayoutEntry {
+        binding,
+        visibility: wgpu::ShaderStages::COMPUTE,
+        ty: wgpu::BindingType::Buffer {
+            ty: wgpu::BufferBindingType::Storage { read_only },
+            has_dynamic_offset: false,
+            min_binding_size: None,
+        },
+        count: None,
+    };
+    [
+        uniform(0),        // frustum params (shared with rigid path)
+        uniform(1),        // multimesh cull params
+        storage(2, true),  // draw params
+        storage(3, true),  // instances
+        storage(4, true),  // per-instance batch id
+        storage(5, true),  // per-batch cull records
+        storage(6, false), // visible indices (write)
+        storage(7, false), // indirect commands (write)
+        storage(8, false), // per-batch atomic counters (write)
+    ]
+}
+
+#[allow(clippy::too_many_arguments)]
+fn create_multimesh_cull_bind_group(
+    device: &wgpu::Device,
+    layout: &wgpu::BindGroupLayout,
+    frustum_params: &wgpu::Buffer,
+    cull_params: &wgpu::Buffer,
+    draws: &wgpu::Buffer,
+    instances: &wgpu::Buffer,
+    instance_batch: &wgpu::Buffer,
+    cull_batches: &wgpu::Buffer,
+    visible_indices: &wgpu::Buffer,
+    indirect: &wgpu::Buffer,
+    counters: &wgpu::Buffer,
+) -> wgpu::BindGroup {
+    device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("perro_multimesh_cull_bg"),
+        layout,
+        entries: &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: frustum_params.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: cull_params.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 2,
+                resource: draws.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 3,
+                resource: instances.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 4,
+                resource: instance_batch.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 5,
+                resource: cull_batches.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 6,
+                resource: visible_indices.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 7,
+                resource: indirect.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 8,
+                resource: counters.as_entire_binding(),
+            },
+        ],
+    })
+}
+
 impl Gpu3D {
     pub fn new(
         device: &wgpu::Device,
@@ -26,6 +118,7 @@ impl Gpu3D {
             meshlet_debug_view,
             occlusion_culling,
             indirect_first_instance_enabled,
+            multi_draw_indirect_enabled,
             texture_filter,
         } = config;
         let (gpu_occlusion_enabled, cpu_occlusion_enabled) = occlusion_flags(occlusion_culling);
@@ -293,6 +386,28 @@ impl Gpu3D {
                 wgpu::BindGroupLayoutEntry {
                     binding: 7,
                     visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                // 8: visible-instance indices (identity or cull-compacted).
+                wgpu::BindGroupLayoutEntry {
+                    binding: 8,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                // 9: multimesh instance payloads (fetched by the vertex shader).
+                wgpu::BindGroupLayoutEntry {
+                    binding: 9,
+                    visibility: wgpu::ShaderStages::VERTEX,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Storage { read_only: true },
                         has_dynamic_offset: false,
@@ -1082,6 +1197,34 @@ impl Gpu3D {
             sample_count,
             None,
         );
+        let pipeline_multimesh_covered = create_multimesh_covered_pipeline(
+            device,
+            &multimesh_pipeline_layout,
+            &shader_multimesh,
+            color_format,
+            sample_count,
+            Some(wgpu::Face::Back),
+        );
+        let pipeline_multimesh_covered_double_sided = create_multimesh_covered_pipeline(
+            device,
+            &multimesh_pipeline_layout,
+            &shader_multimesh,
+            color_format,
+            sample_count,
+            None,
+        );
+        let pipeline_multimesh_depth_prepass_culled = create_multimesh_depth_prepass_pipeline(
+            device,
+            &multimesh_pipeline_layout,
+            &shader_multimesh,
+            Some(wgpu::Face::Back),
+        );
+        let pipeline_multimesh_depth_prepass_double_sided = create_multimesh_depth_prepass_pipeline(
+            device,
+            &multimesh_pipeline_layout,
+            &shader_multimesh,
+            None,
+        );
         let mesh_blend_mask_id_bgl = mesh_blend_screen::create_mesh_blend_mask_id_bgl(device);
         let mask_pipeline_layout_rigid =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -1317,7 +1460,7 @@ impl Gpu3D {
             label: Some("perro_multimesh_instances"),
             size: (multimesh_instance_capacity * std::mem::size_of::<MultiMeshInstanceGpu>())
                 as u64,
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
 
@@ -1355,6 +1498,16 @@ impl Gpu3D {
                     binding: 2,
                     visibility: wgpu::ShaderStages::COMPUTE,
                     ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Storage { read_only: false },
                         has_dynamic_offset: false,
                         min_binding_size: None,
@@ -1384,9 +1537,17 @@ impl Gpu3D {
             mapped_at_creation: false,
         });
         let frustum_cull_items_capacity = 256usize;
-        let frustum_cull_items_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("perro_frustum_cull_items"),
-            size: (frustum_cull_items_capacity * std::mem::size_of::<FrustumCullItemGpu>()) as u64,
+        let frustum_cull_static_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("perro_frustum_cull_static"),
+            size: (frustum_cull_items_capacity * std::mem::size_of::<FrustumCullStaticGpu>())
+                as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let frustum_cull_dynamic_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("perro_frustum_cull_dynamic"),
+            size: (frustum_cull_items_capacity * std::mem::size_of::<FrustumCullDynamicGpu>())
+                as u64,
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -1416,14 +1577,105 @@ impl Gpu3D {
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: frustum_cull_items_buffer.as_entire_binding(),
+                    resource: frustum_cull_static_buffer.as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
+                    resource: frustum_cull_dynamic_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
                     resource: indirect_buffer.as_entire_binding(),
                 },
             ],
         });
+
+        // Multimesh GPU cull resources (item 1).
+        let multimesh_cull_shader = create_multimesh_cull_shader_module(device);
+        let multimesh_cull_bgl =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("perro_multimesh_cull_bgl"),
+                entries: &multimesh_cull_bgl_entries(),
+            });
+        let multimesh_cull_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("perro_multimesh_cull_layout"),
+                bind_group_layouts: &[Some(&multimesh_cull_bgl)],
+                immediate_size: 0,
+            });
+        let multimesh_cull_pipeline =
+            device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some("perro_multimesh_cull_pipeline"),
+                layout: Some(&multimesh_cull_layout),
+                module: &multimesh_cull_shader,
+                entry_point: Some("cs_main"),
+                compilation_options: Default::default(),
+                cache: None,
+            });
+        let multimesh_cull_finalize_pipeline =
+            device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some("perro_multimesh_cull_finalize_pipeline"),
+                layout: Some(&multimesh_cull_layout),
+                module: &multimesh_cull_shader,
+                entry_point: Some("cs_finalize"),
+                compilation_options: Default::default(),
+                cache: None,
+            });
+        let multimesh_cull_params_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("perro_multimesh_cull_params"),
+            size: std::mem::size_of::<MultiMeshCullParamsGpu>() as u64,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let multimesh_cull_instance_capacity = 256usize;
+        let multimesh_cull_batch_capacity = 64usize;
+        let multimesh_instance_batch_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("perro_multimesh_instance_batch"),
+            size: (multimesh_cull_instance_capacity * std::mem::size_of::<u32>()) as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let multimesh_cull_batch_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("perro_multimesh_cull_batches"),
+            size: (multimesh_cull_batch_capacity * std::mem::size_of::<MultiMeshCullBatchGpu>())
+                as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let multimesh_visible_index_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("perro_multimesh_visible_indices"),
+            size: (multimesh_cull_instance_capacity * std::mem::size_of::<u32>()) as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let multimesh_cull_counter_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("perro_multimesh_cull_counters"),
+            size: (multimesh_cull_batch_capacity * std::mem::size_of::<u32>()) as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let multimesh_indirect_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("perro_multimesh_indirect"),
+            size: (multimesh_cull_batch_capacity * std::mem::size_of::<DrawIndexedIndirectGpu>())
+                as u64,
+            usage: wgpu::BufferUsages::INDIRECT
+                | wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let multimesh_cull_bind_group = create_multimesh_cull_bind_group(
+            device,
+            &multimesh_cull_bgl,
+            &frustum_cull_params_buffer,
+            &multimesh_cull_params_buffer,
+            &multimesh_draw_params_buffer,
+            &multimesh_instance_buffer,
+            &multimesh_instance_batch_buffer,
+            &multimesh_cull_batch_buffer,
+            &multimesh_visible_index_buffer,
+            &multimesh_indirect_buffer,
+            &multimesh_cull_counter_buffer,
+        );
 
         let (depth_texture, depth_view) = create_depth_texture(device, width, height, sample_count);
         let (depth_prepass_texture, depth_prepass_view) =
@@ -1465,6 +1717,14 @@ impl Gpu3D {
                 wgpu::BindGroupEntry {
                     binding: 7,
                     resource: custom_params_values_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 8,
+                    resource: multimesh_visible_index_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 9,
+                    resource: multimesh_instance_buffer.as_entire_binding(),
                 },
             ],
         });
@@ -1557,7 +1817,7 @@ impl Gpu3D {
                     binding: 2,
                     visibility: wgpu::ShaderStages::COMPUTE,
                     ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: false },
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
                         has_dynamic_offset: false,
                         min_binding_size: None,
                     },
@@ -1565,6 +1825,16 @@ impl Gpu3D {
                 },
                 wgpu::BindGroupLayoutEntry {
                     binding: 3,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: false },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 4,
                     visibility: wgpu::ShaderStages::COMPUTE,
                     ty: wgpu::BindingType::Texture {
                         sample_type: wgpu::TextureSampleType::Float { filterable: false },
@@ -1636,14 +1906,18 @@ impl Gpu3D {
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: frustum_cull_items_buffer.as_entire_binding(),
+                    resource: frustum_cull_static_buffer.as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: indirect_buffer.as_entire_binding(),
+                    resource: frustum_cull_dynamic_buffer.as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
                     binding: 3,
+                    resource: indirect_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
                     resource: wgpu::BindingResource::TextureView(&hiz_sample_view),
                 },
             ],
@@ -1713,6 +1987,10 @@ impl Gpu3D {
             pipeline_multimesh_double_sided,
             pipeline_multimesh_blend_culled,
             pipeline_multimesh_blend_double_sided,
+            pipeline_multimesh_covered,
+            pipeline_multimesh_covered_double_sided,
+            pipeline_multimesh_depth_prepass_culled,
+            pipeline_multimesh_depth_prepass_double_sided,
             pipeline_mask_rigid_culled,
             pipeline_mask_rigid_double_sided,
             pipeline_mask_rigid_packed_lod_culled,
@@ -1806,15 +2084,36 @@ impl Gpu3D {
             multimesh_instance_capacity,
             staged_multimesh_instances: Vec::new(),
             multimesh_batches: Vec::new(),
+            multimesh_cull_pipeline,
+            multimesh_cull_finalize_pipeline,
+            multimesh_cull_bgl,
+            multimesh_cull_bind_group,
+            multimesh_cull_params_buffer,
+            multimesh_instance_batch_buffer,
+            staged_multimesh_instance_batch: Vec::new(),
+            multimesh_cull_batch_buffer,
+            staged_multimesh_cull_batches: Vec::new(),
+            multimesh_visible_index_buffer,
+            staged_multimesh_visible_identity: Vec::new(),
+            multimesh_cull_counter_buffer,
+            multimesh_indirect_buffer,
+            multimesh_indirect_staging: Vec::new(),
+            multimesh_cull_instance_capacity,
+            multimesh_cull_batch_capacity,
+            multimesh_cull_active: false,
+            last_multimesh_cull_params: None,
             frustum_cull_enabled,
             frustum_cull_supported: frustum_cull_enabled,
+            multi_draw_indirect_enabled,
             frustum_cull_pipeline,
             frustum_cull_bgl,
             frustum_cull_bind_group,
             frustum_cull_params_buffer,
-            frustum_cull_items_buffer,
+            frustum_cull_static_buffer,
+            frustum_cull_dynamic_buffer,
             frustum_cull_items_capacity,
-            frustum_cull_staging: Vec::new(),
+            frustum_cull_static_staging: Vec::new(),
+            frustum_cull_dynamic_staging: Vec::new(),
             indirect_buffer,
             indirect_capacity,
             indirect_staging: Vec::new(),
@@ -1831,14 +2130,32 @@ impl Gpu3D {
             depth_prepass_batch_indices: Vec::new(),
             mesh_blend_depth_batch_indices: Vec::new(),
             has_shadow_casters: false,
+            mesh_blend_depth_active: false,
             surface_entries_scratch: Vec::new(),
             mesh_blend_scratch: Vec::new(),
+            bleed_emitters_scratch: Vec::new(),
+            bleed_occluders_scratch: Vec::new(),
+            bleed_multimesh_bounds_scratch: Vec::new(),
+            mesh_blend_source_receivers: Vec::new(),
+            mesh_blend_receiver_indices: Vec::new(),
             last_draws: Vec::new(),
             last_draws_revision: u64::MAX,
             last_draw_instance_spans: Vec::new(),
             last_draw_instance_span_ranges: Vec::new(),
+            last_draw_multimesh_param_ranges: Vec::new(),
+            compact_instance_owner_scratch: Vec::new(),
+            compact_dst_transforms_scratch: Vec::new(),
+            compact_dst_rigid_meta_scratch: Vec::new(),
+            compact_dst_skinned_meta_scratch: Vec::new(),
+            compact_dst_batches_scratch: Vec::new(),
+            compact_spans_per_draw_scratch: Vec::new(),
+            compact_multimesh_dst_instances_scratch: Vec::new(),
+            compact_multimesh_dst_batches_scratch: Vec::new(),
+            multimesh_pose_pack_cache: AHashMap::default(),
+            multimesh_pose_pack_cache_seen: ahash::AHashSet::default(),
             last_scene: None,
             last_shadow_scenes: vec![None; SHADOW_CAMERA_COUNT],
+            shadow_camera_frustums: vec![[Vec4::ZERO; 6]; SHADOW_CAMERA_COUNT],
             last_shadow: None,
             shadow_pass_enabled: false,
             ray_shadow_enabled: false,
@@ -1875,6 +2192,7 @@ impl Gpu3D {
             mesh_blend_depth_texture,
             mesh_blend_depth_view,
             depth_size: (width.max(1), height.max(1)),
+            unified_depth_active: false,
             gpu_occlusion_enabled,
             hiz_texture,
             hiz_mip_views,
@@ -1924,6 +2242,7 @@ impl Gpu3D {
             dirty_instance_spans_scratch: Vec::new(),
             merged_instance_spans_scratch: Vec::new(),
             dirty_cull_batch_spans_scratch: Vec::new(),
+            transform_only_kinds_scratch: Vec::new(),
             debug_point_instances_scratch: Vec::new(),
             debug_edge_instances_scratch: Vec::new(),
             camera_bind_group_generation: 1,

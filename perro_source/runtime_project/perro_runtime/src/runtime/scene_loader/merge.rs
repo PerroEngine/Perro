@@ -1,5 +1,6 @@
 use super::{PendingScriptAttach, prepare::PreparedScene};
 use crate::Runtime;
+use ahash::AHashMap;
 use perro_ids::{NodeID, ScriptMemberID};
 use perro_nodes::animation_player::AnimationObjectBinding;
 use perro_nodes::animation_tree::AnimationTreeAnimation;
@@ -9,7 +10,7 @@ use perro_scene::SceneValue;
 use perro_structs::{IVector2, IVector3, IVector4, UVector2, UVector3, UVector4, Vector2, Vector3};
 use perro_variant::Variant;
 use std::sync::Arc;
-use std::{borrow::Cow, collections::BTreeMap, collections::HashMap};
+use std::{borrow::Cow, collections::BTreeMap};
 
 pub(super) struct MergePreparedSceneResult {
     pub(super) scene_root: NodeID,
@@ -85,28 +86,29 @@ pub(super) fn merge_prepared_scene(
     let mut engine_root = SceneNode::new(SceneNodeData::Node);
     engine_root.name = Cow::Borrowed("Game Root");
     runtime.nodes.reserve(nodes.len().saturating_add(1));
+    // Read type + tags from the owned node before it moves into the arena,
+    // avoiding a post-insert arena lookup.
+    let engine_root_type = engine_root.node_type();
+    let engine_root_tags = engine_root.get_tag_ids();
     let engine_root = runtime.nodes.insert(engine_root);
-    if let Some((ty, tags)) = runtime
-        .nodes
-        .get(engine_root)
-        .map(|node| (node.node_type(), node.get_tag_ids()))
-    {
-        runtime.register_internal_node_schedules(engine_root, ty);
-        for tag in tags {
-            runtime
-                .node_index
-                .node_tag_index
-                .entry(tag)
-                .or_default()
-                .insert(engine_root);
-        }
+    runtime.register_internal_node_schedules(engine_root, engine_root_type);
+    for tag in engine_root_tags {
+        runtime
+            .node_index
+            .node_tag_index
+            .entry(tag)
+            .or_default()
+            .insert(engine_root);
     }
 
-    let mut key_to: HashMap<u32, NodeID> = HashMap::with_capacity(nodes.len());
+    // Scene keys are sparse `u32` (author-assigned keys plus generated ones from
+    // root_of expansion / default light injection), so a `Vec` index is not safe.
+    // ahash keeps the u32 lookups fast without siphash overhead.
+    let mut key_to: AHashMap<u32, NodeID> = AHashMap::with_capacity(nodes.len());
     let mut key_name_to = if scripts.is_empty() {
         None
     } else {
-        Some(HashMap::with_capacity(nodes.len()))
+        Some(AHashMap::with_capacity(nodes.len()))
     };
     let mut key_order: Vec<u32> = Vec::with_capacity(nodes.len());
     let mut parent_pairs = Vec::with_capacity(nodes.len());
@@ -120,6 +122,10 @@ pub(super) fn merge_prepared_scene(
     let mut joint_body_links: Vec<(NodeID, super::prepare::PendingJointBodyField, u32)> =
         Vec::new();
     let resource_api = runtime.resource_api.clone();
+    // One resource window reused across the whole merge loop. It only holds a
+    // shared borrow of `resource_api`, compatible with the direct
+    // `resource_api.*` shared calls below.
+    let res = ResourceWindow::new(resource_api.as_ref());
 
     for pending in nodes {
         let super::prepare::PendingNode {
@@ -147,25 +153,23 @@ pub(super) fn merge_prepared_scene(
             return Err(format!("duplicate scene key `{}`", key));
         }
 
+        // Compute type, tags, and the camera-active flag from the owned node
+        // before it moves into the arena, eliminating post-insert lookups.
+        let node_type = node.node_type();
+        let node_tags = node.get_tag_ids();
+        let camera_3d_active =
+            matches!(&node.data, SceneNodeData::Camera3D(camera) if camera.active);
         let node = runtime.nodes.insert(node);
-        if let Some((ty, tags)) = runtime
-            .nodes
-            .get(node)
-            .map(|inserted| (inserted.node_type(), inserted.get_tag_ids()))
-        {
-            runtime.register_internal_node_schedules(node, ty);
-            for tag in tags {
-                runtime
-                    .node_index
-                    .node_tag_index
-                    .entry(tag)
-                    .or_default()
-                    .insert(node);
-            }
+        runtime.register_internal_node_schedules(node, node_type);
+        for tag in node_tags {
+            runtime
+                .node_index
+                .node_tag_index
+                .entry(tag)
+                .or_default()
+                .insert(node);
         }
-        if runtime.nodes.get(node).is_some_and(
-            |inserted| matches!(&inserted.data, SceneNodeData::Camera3D(camera) if camera.active),
-        ) {
+        if camera_3d_active {
             runtime.note_camera_3d_activated(node);
         }
         for binding in locale_text_bindings {
@@ -175,7 +179,6 @@ pub(super) fn merge_prepared_scene(
             animation_player_bindings.push((node, animation_bindings));
         }
         if let Some(source) = animation_source {
-            let res = ResourceWindow::new(resource_api.as_ref());
             let animation = res.Animations().load(&source);
             if let Some(node_data) = runtime.nodes.get_mut(node)
                 && let SceneNodeData::AnimationPlayer(player) = &mut node_data.data
@@ -184,7 +187,6 @@ pub(super) fn merge_prepared_scene(
             }
         }
         if let Some(source) = animation_tree_source {
-            let res = ResourceWindow::new(resource_api.as_ref());
             let tree = res.AnimationTrees().load(&source);
             if let Some(node_data) = runtime.nodes.get_mut(node)
                 && let SceneNodeData::AnimationTree(anim_tree) = &mut node_data.data
@@ -193,7 +195,6 @@ pub(super) fn merge_prepared_scene(
             }
         }
         if !animation_tree_animations.is_empty() {
-            let res = ResourceWindow::new(resource_api.as_ref());
             let animations = animation_tree_animations
                 .iter()
                 .map(|entry| AnimationTreeAnimation {
@@ -227,7 +228,6 @@ pub(super) fn merge_prepared_scene(
             runtime.render_2d.texture_sources.insert(node, source);
         }
         if let Some(source) = mesh_source {
-            let res = ResourceWindow::new(resource_api.as_ref());
             let mesh = res.Meshes().load(&source);
             if let Some(node_data) = runtime.nodes.get_mut(node) {
                 match &mut node_data.data {
@@ -245,7 +245,6 @@ pub(super) fn merge_prepared_scene(
         if !material_surfaces.is_empty() {
             let mut sources = Vec::with_capacity(material_surfaces.len());
             let mut overrides = Vec::with_capacity(material_surfaces.len());
-            let res = ResourceWindow::new(resource_api.as_ref());
             for (surface_index, surface) in material_surfaces.into_iter().enumerate() {
                 let material = surface
                     .source
@@ -283,28 +282,27 @@ pub(super) fn merge_prepared_scene(
                 .material_surface_overrides
                 .insert(node, overrides);
         }
-        if let Some(source) = skeleton_source {
-            let res = ResourceWindow::new(resource_api.as_ref());
-            if let Some(node_data) = runtime.nodes.get_mut(node) {
-                match &mut node_data.data {
-                    SceneNodeData::Skeleton2D(skeleton) => {
-                        skeleton.bones = res.Skeletons().load_bones_2d(&source);
-                        if resource_api.is_skeleton_2d_pending(&source) {
-                            runtime
-                                .pending_skeleton_sources_2d
-                                .insert(node, source.clone());
-                        }
+        if let Some(source) = skeleton_source
+            && let Some(node_data) = runtime.nodes.get_mut(node)
+        {
+            match &mut node_data.data {
+                SceneNodeData::Skeleton2D(skeleton) => {
+                    skeleton.bones = res.Skeletons().load_bones_2d(&source);
+                    if resource_api.is_skeleton_2d_pending(&source) {
+                        runtime
+                            .pending_skeleton_sources_2d
+                            .insert(node, source.clone());
                     }
-                    SceneNodeData::Skeleton3D(skeleton) => {
-                        skeleton.bones = res.Skeletons().load_bones_3d(&source);
-                        if resource_api.is_skeleton_3d_pending(&source) {
-                            runtime
-                                .pending_skeleton_sources_3d
-                                .insert(node, source.clone());
-                        }
-                    }
-                    _ => {}
                 }
+                SceneNodeData::Skeleton3D(skeleton) => {
+                    skeleton.bones = res.Skeletons().load_bones_3d(&source);
+                    if resource_api.is_skeleton_3d_pending(&source) {
+                        runtime
+                            .pending_skeleton_sources_3d
+                            .insert(node, source.clone());
+                    }
+                }
+                _ => {}
             }
         }
         if let Some(target) = mesh_skeleton_target {
@@ -542,8 +540,8 @@ pub(super) fn merge_prepared_scene(
 
 fn scene_value_to_variant(
     value: &SceneValue,
-    key_to: &HashMap<u32, NodeID>,
-    key_name_to: Option<&HashMap<String, NodeID>>,
+    key_to: &AHashMap<u32, NodeID>,
+    key_name_to: Option<&AHashMap<String, NodeID>>,
 ) -> Variant {
     match value {
         SceneValue::Bool(v) => Variant::from(*v),

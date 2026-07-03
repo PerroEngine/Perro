@@ -932,6 +932,98 @@ pub(super) fn same_draw_except_model(a: &Draw3DInstance, b: &Draw3DInstance) -> 
         && a.receive_shadows == b.receive_shadows
 }
 
+/// Cheap identity check for a dense multimesh's instance pose list. The retained
+/// producer reuses the same `Arc` when poses do not change, so `Arc::ptr_eq`
+/// hits the fast path; the deep compare stays as a correctness fallback.
+#[inline]
+pub(super) fn same_dense_instances(a: &DenseMultiMeshDraw3D, b: &DenseMultiMeshDraw3D) -> bool {
+    a.instance_scale == b.instance_scale
+        && (Arc::ptr_eq(&a.instances, &b.instances) || a.instances == b.instances)
+}
+
+/// True when `a`/`b` are the same multimesh draw except possibly `node_model`.
+/// Instances (poses + scale) and material/blend must be unchanged; only the
+/// draw's world transform may differ. Such a draw is patchable in the
+/// transform-only path (instances are relative to the draw model in the shader,
+/// so only the `MultiMeshDrawParamGpu` model rows need a rewrite).
+#[inline]
+pub(super) fn same_multimesh_except_node_model(a: &Draw3DInstance, b: &Draw3DInstance) -> bool {
+    let (Some(dense_a), Some(dense_b)) = (a.dense_multimesh.as_ref(), b.dense_multimesh.as_ref())
+    else {
+        return false;
+    };
+    a.node == b.node
+        && a.kind == b.kind
+        && a.surfaces == b.surfaces
+        && a.skeleton == b.skeleton
+        && a.blend_shape_weights == b.blend_shape_weights
+        && a.meshlet_override == b.meshlet_override
+        && a.lod == b.lod
+        && a.blend == b.blend
+        && a.cast_shadows == b.cast_shadows
+        && a.receive_shadows == b.receive_shadows
+        && same_dense_instances(dense_a, dense_b)
+}
+
+/// Per-draw classification for the transform-only fast path.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(super) enum TransformOnlyDrawKind {
+    /// Single-instance regular draw; only its model row may differ.
+    RegularSingle,
+    /// Dense multimesh w/ unchanged poses; only its node_model may differ.
+    Multimesh,
+}
+
+/// Classify one draw pair for the transform-only path, or `None` if the pair
+/// forces a full rebuild (topology/material/instance-count change).
+#[inline]
+pub(super) fn classify_transform_only_draw(
+    prev: &Draw3DInstance,
+    next: &Draw3DInstance,
+) -> Option<TransformOnlyDrawKind> {
+    if next.dense_multimesh.is_some() {
+        if same_multimesh_except_node_model(prev, next) {
+            return Some(TransformOnlyDrawKind::Multimesh);
+        }
+        return None;
+    }
+    // Multimesh cannot flip to a regular draw and stay transform-only.
+    if prev.dense_multimesh.is_some() {
+        return None;
+    }
+    if prev.instance_mats.len() == 1
+        && next.instance_mats.len() == 1
+        && same_draw_except_model(prev, next)
+    {
+        return Some(TransformOnlyDrawKind::RegularSingle);
+    }
+    None
+}
+
+/// Whole-scene decision: every draw pair must classify, and at least one draw
+/// must actually be present. Returns per-draw kinds when the transform-only
+/// path is valid.
+pub(super) fn classify_transform_only_scene(
+    prev: &[Draw3DInstance],
+    next: &[Draw3DInstance],
+    out: &mut Vec<TransformOnlyDrawKind>,
+) -> bool {
+    out.clear();
+    if prev.len() != next.len() || next.is_empty() {
+        return false;
+    }
+    for (p, n) in prev.iter().zip(next.iter()) {
+        match classify_transform_only_draw(p, n) {
+            Some(kind) => out.push(kind),
+            None => {
+                out.clear();
+                return false;
+            }
+        }
+    }
+    true
+}
+
 impl Gpu3D {
     pub(super) fn rebuild_batch_views(&mut self) {
         self.opaque_batch_indices.clear();
@@ -942,12 +1034,20 @@ impl Gpu3D {
         self.depth_prepass_batch_indices.clear();
         self.mesh_blend_depth_batch_indices.clear();
         self.perf_counters.draw_batches = self.draw_batches.len() as u32;
+        let mut has_shadow_casters = false;
+        let mut mesh_blend_depth_active = false;
         for (index, batch) in self.draw_batches.iter().enumerate() {
             match batch.render_state.batch_kind {
                 RenderBatchKind::Opaque => self.opaque_batch_indices.push(index),
                 RenderBatchKind::Alpha => self.alpha_batch_indices.push(index),
                 RenderBatchKind::MeshBlend => self.mesh_blend_batch_indices.push(index),
                 RenderBatchKind::Overlay => self.overlay_batch_indices.push(index),
+            }
+            if !batch.draw_on_top && batch.casts_shadows && batch.alpha_mode != 2 {
+                has_shadow_casters = true;
+            }
+            if batch.mesh_blend {
+                mesh_blend_depth_active = true;
             }
             // Opaque (0) and cutout (1) feed depth; the depth shaders discard
             // below the cutoff for mode 1. Blend (2) stays out.
@@ -975,6 +1075,11 @@ impl Gpu3D {
                 self.mesh_blend_depth_batch_indices.push(index);
             }
         }
+        if !mesh_blend_depth_active {
+            mesh_blend_depth_active = self.multimesh_batches.iter().any(|batch| batch.mesh_blend);
+        }
+        self.has_shadow_casters = has_shadow_casters;
+        self.mesh_blend_depth_active = mesh_blend_depth_active;
     }
 }
 
@@ -1283,6 +1388,100 @@ mod tests {
         let flags = (built.rigid_meta.material.packed_material_params >> 3) & 0x1fff;
         assert_eq!(flags & MATERIAL_FLAG_MESH_BLEND, 0);
         assert_ne!(flags & MATERIAL_FLAG_NORMAL_BLEND, 0);
+    }
+
+    fn dense_pose(pos: [f32; 3]) -> perro_render_bridge::DenseInstancePose3D {
+        perro_render_bridge::DenseInstancePose3D {
+            position: pos,
+            scale: [1.0, 1.0, 1.0],
+            rotation: [0.0, 0.0, 0.0, 1.0],
+            has_blend_shape_weight_override: false,
+            blend_shape_weights: Arc::from([]),
+        }
+    }
+
+    fn multimesh_draw(
+        node: u64,
+        node_model: [[f32; 4]; 4],
+        instances: Arc<[perro_render_bridge::DenseInstancePose3D]>,
+    ) -> Draw3DInstance {
+        let mut d = draw(node, BitMask::NONE, BitMask::NONE, 0);
+        d.blend.enabled = false;
+        d.instance_mats = Arc::from([]);
+        d.dense_multimesh = Some(DenseMultiMeshDraw3D {
+            node_model,
+            instance_scale: 1.0,
+            instances,
+        });
+        d
+    }
+
+    #[test]
+    fn transform_only_scene_takes_fast_path_w_multimesh_and_moved_regular() {
+        // Scene: one dense multimesh (unchanged poses, same Arc) + one regular
+        // single-instance draw whose model moved. Expect the transform-only
+        // fast path to be taken, classifying each draw correctly.
+        let poses: Arc<[_]> = Arc::from([dense_pose([0.0, 0.0, 0.0]), dense_pose([1.0, 0.0, 0.0])]);
+        let identity = glam::Mat4::IDENTITY.to_cols_array_2d();
+        let moved = glam::Mat4::from_translation(glam::Vec3::new(5.0, 0.0, 0.0)).to_cols_array_2d();
+
+        let prev = vec![
+            multimesh_draw(1, identity, poses.clone()),
+            draw(2, BitMask::NONE, BitMask::NONE, 1),
+        ];
+        let mut next = vec![
+            // Node moved: node_model differs but same pose Arc.
+            multimesh_draw(1, moved, poses.clone()),
+            draw(2, BitMask::NONE, BitMask::NONE, 1),
+        ];
+        next[1].instance_mats = Arc::from([moved]);
+        next[0].blend.enabled = false;
+        next[1].blend.enabled = false;
+        // prev[1] blend was left enabled by `draw`; disable to match next.
+        // (blend must be equal for same_draw_except_model.)
+        let mut prev = prev;
+        prev[1].blend.enabled = false;
+        prev[0].blend.enabled = false;
+
+        let mut kinds = Vec::new();
+        assert!(classify_transform_only_scene(&prev, &next, &mut kinds));
+        assert_eq!(
+            kinds,
+            vec![
+                TransformOnlyDrawKind::Multimesh,
+                TransformOnlyDrawKind::RegularSingle,
+            ]
+        );
+    }
+
+    #[test]
+    fn transform_only_scene_falls_back_when_multimesh_poses_change() {
+        let poses_a: Arc<[_]> = Arc::from([dense_pose([0.0, 0.0, 0.0])]);
+        let poses_b: Arc<[_]> = Arc::from([dense_pose([9.0, 0.0, 0.0])]);
+        let identity = glam::Mat4::IDENTITY.to_cols_array_2d();
+        let prev = vec![multimesh_draw(1, identity, poses_a)];
+        let next = vec![multimesh_draw(1, identity, poses_b)];
+        let mut kinds = Vec::new();
+        // Different pose contents (and different Arc) force a full rebuild.
+        assert!(!classify_transform_only_scene(&prev, &next, &mut kinds));
+        assert!(kinds.is_empty());
+    }
+
+    #[test]
+    fn same_dense_instances_hits_arc_ptr_fast_path() {
+        let poses: Arc<[_]> = Arc::from([dense_pose([0.0, 0.0, 0.0])]);
+        let a = DenseMultiMeshDraw3D {
+            node_model: glam::Mat4::IDENTITY.to_cols_array_2d(),
+            instance_scale: 1.0,
+            instances: poses.clone(),
+        };
+        let b = DenseMultiMeshDraw3D {
+            node_model: glam::Mat4::from_translation(glam::Vec3::X).to_cols_array_2d(),
+            instance_scale: 1.0,
+            instances: poses.clone(),
+        };
+        // node_model differs but instances share the Arc: patchable.
+        assert!(same_dense_instances(&a, &b));
     }
 
     #[test]

@@ -36,8 +36,18 @@ use crate::winit_runner::{
 
 const MIN_FRAME_RATE_CAP_FPS: f32 = 1.0;
 const MAX_FRAME_RATE_CAP_FPS: f32 = 1000.0;
+#[cfg(test)]
 const HIGH_RATE_FRAME_INTERVAL: Duration = Duration::from_millis(8);
+// OS timer wake-ups overshoot; wake this early, then poll to the deadline.
+// Assumes 1ms system timer resolution (see timer_resolution.rs, active on
+// Windows for the app lifetime). With 1ms timers a 2ms headroom is generous;
+// non-Windows platforms typically already have fine-grained sleep.
+const FRAME_WAKE_HEADROOM: Duration = Duration::from_millis(2);
 const INITIAL_WINDOW_MONITOR_FRACTION: f32 = 0.75;
+// With 1ms-resolution timers, thread::sleep can be trusted down to within
+// ~1.5ms of the deadline; spin only the remainder for precision.
+const SLEEP_SPIN_TAIL: Duration = Duration::from_micros(1500);
+const SLEEP_MIN_REMAINING: Duration = Duration::from_millis(2);
 
 fn normalize_frame_rate_cap(cap: RuntimeFrameRateCap) -> RuntimeFrameRateCap {
     match cap {
@@ -62,11 +72,16 @@ fn frame_interval_from_fps(fps: f32) -> Duration {
 }
 
 fn active_refresh_rate_hz(window: Option<&winit::window::Window>) -> Option<f32> {
-    let monitor = window.and_then(winit::window::Window::current_monitor)?;
-    let refresh_millihertz = monitor
-        .video_modes()
-        .map(|mode| mode.refresh_rate_millihertz())
-        .max()?;
+    let window = window?;
+    let monitor = window
+        .current_monitor()
+        .or_else(|| window.primary_monitor())?;
+    let refresh_millihertz = monitor.refresh_rate_millihertz().or_else(|| {
+        monitor
+            .video_modes()
+            .map(|mode| mode.refresh_rate_millihertz())
+            .max()
+    })?;
     if refresh_millihertz == 0 {
         return None;
     }
@@ -87,14 +102,19 @@ fn sim_frame_cap_interval(cap: RuntimeFrameRateCap) -> Option<Duration> {
 }
 
 fn wait_until_sim_deadline(deadline: Instant, interval: Duration) {
+    let _ = interval; // kept for API stability; sleep threshold no longer depends on cap rate
     loop {
         let now = Instant::now();
         if now >= deadline {
             return;
         }
         let remaining = deadline.duration_since(now);
-        if interval > HIGH_RATE_FRAME_INTERVAL && remaining > Duration::from_millis(2) {
-            thread::sleep(remaining - Duration::from_millis(1));
+        // With 1ms-resolution OS timers (see timer_resolution.rs), sleeping is
+        // safe for high-rate caps too: sleep down to a short spin tail, then
+        // spin-loop for the final sub-2ms for precision. This avoids pegging
+        // a full core for the whole interval on high-rate caps.
+        if remaining > SLEEP_MIN_REMAINING {
+            thread::sleep(remaining - SLEEP_SPIN_TAIL);
         } else {
             std::hint::spin_loop();
         }
@@ -742,6 +762,7 @@ impl ThreadedWinitRunner {
         B: GraphicsBackend + 'static,
         F: FnOnce() -> Runtime + Send + 'static,
     {
+        let _timer_resolution = crate::timer_resolution::TimerResolutionGuard::acquire_1ms();
         let event_loop = EventLoop::new().map_err(|err| crate::winit_runner::AppExitError {
             message: format!("failed to create winit event loop: {err}"),
         })?;
@@ -787,6 +808,7 @@ impl ThreadedWinitRunner {
         B: GraphicsBackend + 'static,
         F: FnOnce() -> Runtime + Send + 'static,
     {
+        let _timer_resolution = crate::timer_resolution::TimerResolutionGuard::acquire_1ms();
         let event_loop = EventLoop::new().map_err(|err| crate::winit_runner::AppExitError {
             message: format!("failed to create winit event loop: {err}"),
         })?;
@@ -945,8 +967,20 @@ impl<B: GraphicsBackend> ThreadedRunnerState<B> {
         }
     }
 
-    fn apply_window_requests(&mut self) {
+    fn apply_window_requests(&mut self, event_loop: &ActiveEventLoop) {
         self.bridge.drain_window_requests(&mut self.window_requests);
+        if self
+            .window_requests
+            .iter()
+            .any(|request| matches!(request, WindowRequest::CloseApp))
+        {
+            self.window_requests.clear();
+            self.exit_result = Some(crate::winit_runner::AppExitResult::event_loop_exit());
+            self.bridge.request_stop();
+            event_loop.exit();
+            return;
+        }
+
         let Some(window) = &self.window else {
             self.window_requests.clear();
             return;
@@ -974,6 +1008,7 @@ impl<B: GraphicsBackend> ThreadedRunnerState<B> {
                 WindowRequest::SetCursorIcon(icon) => {
                     window.set_cursor(map_cursor_icon(icon));
                 }
+                WindowRequest::CloseApp => {}
             }
         }
     }
@@ -1015,13 +1050,16 @@ impl<B: GraphicsBackend> ThreadedRunnerState<B> {
         if let Some(deadline) = self.next_frame_deadline
             && deadline > now
         {
-            if self
-                .frame_cap_interval()
-                .is_some_and(|interval| interval <= HIGH_RATE_FRAME_INTERVAL)
-            {
+            // OS timers overshoot by a few ms; wake early and poll the rest.
+            // With 1ms-resolution system timers (see timer_resolution.rs),
+            // WaitUntil is accurate enough to use for high-rate caps too, so
+            // only intervals too small to leave any wake headroom fall back
+            // to Poll (busy event loop).
+            let wake_at = deadline.checked_sub(FRAME_WAKE_HEADROOM);
+            if wake_at.is_none_or(|wake_at| wake_at <= now) {
                 event_loop.set_control_flow(ControlFlow::Poll);
-            } else {
-                event_loop.set_control_flow(ControlFlow::WaitUntil(deadline));
+            } else if let Some(wake_at) = wake_at {
+                event_loop.set_control_flow(ControlFlow::WaitUntil(wake_at));
             }
         } else {
             event_loop.set_control_flow(ControlFlow::Poll);
@@ -1517,7 +1555,7 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for ThreadedRunn
                     self.presenter
                         .present_from_bridge_with_overlay_timed(&self.bridge, overlay),
                 );
-                self.apply_window_requests();
+                self.apply_window_requests(event_loop);
                 if splash_finished {
                     self.reset_timing_batch(now);
                 }

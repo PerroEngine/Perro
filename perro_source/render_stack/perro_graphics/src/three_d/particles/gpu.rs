@@ -28,8 +28,6 @@ mod render_pass;
 
 use helpers::*;
 
-const PARTICLE_DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth24Plus;
-
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
 struct CameraUniform {
@@ -38,13 +36,74 @@ struct CameraUniform {
     _pad: [f32; 2],
 }
 
+// packed per-particle vertex (cpu path)
+// world_pos f32x3 (12) + color unorm8x4 (4) + size_alpha f16x2 (4) + emissive f16x4 (8) = 28 b
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
 struct PointParticleGpu {
-    world_pos: [f32; 3],
-    size_alpha: [f32; 2],
-    color: [f32; 4],
-    emissive: [f32; 3],
+    world_pos: [f32; 3],  // @loc 0 float32x3
+    color: [u8; 4],       // @loc 2 unorm8x4
+    size_alpha: [u16; 2], // @loc 1 float16x2
+    emissive: [u16; 4],   // @loc 3 float16x4, w unused
+}
+
+// encode f32 -> f16 bits (round to nearest, handle inf/nan/subnormal/overflow)
+#[inline]
+fn f16_from_f32(v: f32) -> u16 {
+    let bits = v.to_bits();
+    let sign = ((bits >> 16) & 0x8000) as u16;
+    let exp = ((bits >> 23) & 0xff) as i32;
+    let mant = bits & 0x007f_ffff;
+    if exp == 0xff {
+        // inf or nan
+        let m = if mant != 0 { 0x0200u16 } else { 0 };
+        return sign | 0x7c00 | m;
+    }
+    // add implicit leading bit, target exponent in f16 bias
+    let e = exp - 127 + 15;
+    if e >= 0x1f {
+        return sign | 0x7c00; // overflow -> inf
+    }
+    if e <= 0 {
+        if e < -10 {
+            return sign; // too small -> signed zero
+        }
+        // subnormal: shift full mantissa (w/ implicit 1) into place, round to nearest
+        let full = mant | 0x0080_0000;
+        let shift = 14 - e; // in 14..=24
+        let half = full >> shift;
+        let round_bit = (full >> (shift - 1)) & 1;
+        return sign | ((half as u16) + (round_bit as u16));
+    }
+    // normal: keep 10 mantissa bits, round to nearest (carry may bump exp -> ok)
+    let half = ((e as u32) << 10) | (mant >> 13);
+    let round_bit = (mant >> 12) & 1;
+    sign | ((half as u16) + (round_bit as u16))
+}
+
+#[inline]
+fn pack_f16x2(v: [f32; 2]) -> [u16; 2] {
+    [f16_from_f32(v[0]), f16_from_f32(v[1])]
+}
+
+#[inline]
+fn pack_f16x4(v: [f32; 4]) -> [u16; 4] {
+    [
+        f16_from_f32(v[0]),
+        f16_from_f32(v[1]),
+        f16_from_f32(v[2]),
+        f16_from_f32(v[3]),
+    ]
+}
+
+#[inline]
+fn pack_unorm8x4(v: [f32; 4]) -> [u8; 4] {
+    [
+        (v[0].clamp(0.0, 1.0) * 255.0 + 0.5) as u8,
+        (v[1].clamp(0.0, 1.0) * 255.0 + 0.5) as u8,
+        (v[2].clamp(0.0, 1.0) * 255.0 + 0.5) as u8,
+        (v[3].clamp(0.0, 1.0) * 255.0 + 0.5) as u8,
+    ]
 }
 
 #[repr(C)]

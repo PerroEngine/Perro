@@ -136,6 +136,14 @@ pub(super) fn create_depth_texture(
     height: u32,
     sample_count: u32,
 ) -> (wgpu::Texture, wgpu::TextureView) {
+    // At sample_count == 1 the depth prepass result (Depth32Float) is copied
+    // into this texture so the main pass can load it; COPY_DST is invalid on
+    // multisampled textures, so only request it on the unified path.
+    let copy_usage = if sample_count <= 1 {
+        wgpu::TextureUsages::COPY_DST
+    } else {
+        wgpu::TextureUsages::empty()
+    };
     let depth_texture = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("perro_depth3d"),
         size: wgpu::Extent3d {
@@ -146,8 +154,10 @@ pub(super) fn create_depth_texture(
         mip_level_count: 1,
         sample_count,
         dimension: wgpu::TextureDimension::D2,
-        format: DEPTH_FORMAT,
-        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+        format: crate::scene_depth_format(sample_count),
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+            | wgpu::TextureUsages::TEXTURE_BINDING
+            | copy_usage,
         view_formats: &[],
     });
     let depth_view = depth_texture.create_view(&wgpu::TextureViewDescriptor::default());
@@ -170,7 +180,10 @@ pub(super) fn create_depth_prepass_texture(
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
         format: DEPTH_PREPASS_FORMAT,
-        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+        // COPY_SRC feeds the unified-depth copy into the main depth target.
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+            | wgpu::TextureUsages::TEXTURE_BINDING
+            | wgpu::TextureUsages::COPY_SRC,
         view_formats: &[],
     });
     let view = texture.create_view(&wgpu::TextureViewDescriptor::default());

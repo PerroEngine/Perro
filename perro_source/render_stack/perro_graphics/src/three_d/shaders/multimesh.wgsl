@@ -64,6 +64,38 @@ var<storage, read> blend_shape_instances: array<BlendShapeInstance>;
 var<storage, read> custom_params_meta: array<u32>;
 @group(0) @binding(7)
 var<storage, read> custom_params_values: array<f32>;
+// Instance data moved to storage so a GPU cull pass can compact visible
+// instances. visible_indices maps draw instance_index -> source instance; the
+// direct-draw fallback fills it as identity so the same fetch path works.
+@group(0) @binding(8)
+var<storage, read> visible_indices: array<u32>;
+@group(0) @binding(9)
+var<storage, read> multimesh_instances: array<MultiMeshInstanceStorage>;
+
+// Matches the packed CPU layout (40 bytes): position f32x3, rotation snorm16x4
+// (2 words), scale f32x3, draw_id, blend_meta_id. WGSL has no i16, so the
+// rotation lanes are stored as raw u32 words and unpacked in fetch_instance.
+struct MultiMeshInstanceStorage {
+    px: f32,
+    py: f32,
+    pz: f32,
+    rot_xy: u32,
+    rot_zw: u32,
+    sx: f32,
+    sy: f32,
+    sz: f32,
+    draw_id: u32,
+    blend_meta_id: u32,
+};
+
+fn unpack_snorm16_pair(word: u32) -> vec2<f32> {
+    let lo = i32(word << 16u) >> 16u;
+    let hi = i32(word) >> 16u;
+    return vec2<f32>(
+        max(f32(lo) / 32767.0, -1.0),
+        max(f32(hi) / 32767.0, -1.0),
+    );
+}
 
 // Seam width floor in pixels so distant blends never collapse to a hard line.
 const MESH_BLEND_MIN_PIXELS: f32 = 2.5;
@@ -73,12 +105,13 @@ struct VertexInput {
     @location(1) normal: vec4<f32>,
 };
 
+// Instance payload, fetched from storage (no longer a vertex buffer).
 struct InstanceInput {
-    @location(4) position: vec3<f32>,
-    @location(5) rotation: vec4<f32>,
-    @location(6) scale: vec3<f32>,
-    @location(7) draw_id: u32,
-    @location(8) blend_meta_id: u32,
+    position: vec3<f32>,
+    rotation: vec4<f32>,
+    scale: vec3<f32>,
+    draw_id: u32,
+    blend_meta_id: u32,
 };
 
 struct BlendShapeDelta {
@@ -462,12 +495,64 @@ fn perro_multimesh_vs_main_base(v: VertexInput, inst: InstanceInput, vertex_inde
     return out;
 }
 
+fn fetch_instance(instance_index: u32) -> InstanceInput {
+    let src = visible_indices[instance_index];
+    let raw = multimesh_instances[src];
+    let rot_xy = unpack_snorm16_pair(raw.rot_xy);
+    let rot_zw = unpack_snorm16_pair(raw.rot_zw);
+    return InstanceInput(
+        vec3<f32>(raw.px, raw.py, raw.pz),
+        vec4<f32>(rot_xy.x, rot_xy.y, rot_zw.x, rot_zw.y),
+        vec3<f32>(raw.sx, raw.sy, raw.sz),
+        raw.draw_id,
+        raw.blend_meta_id,
+    );
+}
+
 @vertex
-fn vs_main(v: VertexInput, inst: InstanceInput, @builtin(vertex_index) vertex_index: u32) -> VertexOutput {
+fn vs_main(
+    v: VertexInput,
+    @builtin(vertex_index) vertex_index: u32,
+    @builtin(instance_index) instance_index: u32,
+) -> VertexOutput {
+    let inst = fetch_instance(instance_index);
     return perro_multimesh_vs_main_base(v, inst, vertex_index);
 }
 
 @fragment
 fn fs_main(in: FragmentInput, @builtin(position) frag_pos: vec4<f32>) -> @location(0) vec4<f32> {
     return vec4<f32>(tonemap_aces(in.lit_color), mesh_blend_alpha(frag_pos, in.world_pos, in.packed_blend_params));
+}
+
+// Depth-prepass entry: position only (opaque multimesh has no alpha cutout).
+struct DepthOnlyOutput {
+    @builtin(position) clip_pos: vec4<f32>,
+};
+
+@vertex
+fn vs_depth(
+    v: VertexInput,
+    @builtin(vertex_index) vertex_index: u32,
+    @builtin(instance_index) instance_index: u32,
+) -> DepthOnlyOutput {
+    let inst = fetch_instance(instance_index);
+    let draw = multimesh_draws[inst.draw_id];
+    let scale = bitcast<f32>(draw.scale_bits);
+    let rot = normalize(inst.rotation);
+    let blended = apply_blend_shapes(v, inst, vertex_index);
+    let local_pos = rotate_vec_by_quat(blended.pos * (inst.scale * scale), rot) + inst.position;
+    let p = vec4<f32>(local_pos, 1.0);
+    let world = vec4<f32>(
+        dot(draw.model_row_0, p),
+        dot(draw.model_row_1, p),
+        dot(draw.model_row_2, p),
+        1.0,
+    );
+    var out: DepthOnlyOutput;
+    out.clip_pos = scene.view_proj * world;
+    return out;
+}
+
+@fragment
+fn fs_depth() {
 }

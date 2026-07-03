@@ -1689,7 +1689,7 @@ fn physics_3d_fixed_joint_syncs_and_disables() {
 }
 
 #[test]
-fn character_body_3d_falls_and_lands_on_static_floor() {
+fn character_body_3d_move_and_slide_stops_on_static_floor() {
     let mut runtime = Runtime::new();
     runtime.time.fixed_delta = 1.0 / 60.0;
 
@@ -1717,17 +1717,35 @@ fn character_body_3d_falls_and_lands_on_static_floor() {
         ),
     ));
 
-    for _ in 0..600 {
-        runtime.physics_fixed_step();
-    }
+    let result = runtime
+        .physics_move_and_slide_3d(
+            char_id,
+            Vector3::new(0.0, -5.0, 0.0),
+            &PhysicsQueryFilter {
+                include_areas: false,
+                ..PhysicsQueryFilter::default()
+            },
+        )
+        .expect("move_and_slide result");
 
+    // stop ~1.0 (floor half 0.5 + char half 0.5), no tunnel
+    assert!(
+        result.position.y < 1.2 && result.position.y > 0.9,
+        "char must stop on floor, y={}",
+        result.position.y
+    );
+    assert!(
+        result.hits.iter().any(|hit| hit.node == floor_id),
+        "slide must report floor hit"
+    );
     let pos = runtime
         .get_global_transform_3d(char_id)
         .expect("char transform")
         .position;
-    // fall frm y=3 -> rest ~1.0 (floor half 0.5 + char half 0.5)
-    assert!(pos.y < 2.5, "char should fall, y={}", pos.y);
-    assert!(pos.y > 0.4, "char should not tunnel floor, y={}", pos.y);
+    assert!(
+        approx(pos.y, result.position.y),
+        "node transform must match"
+    );
     // char body kp no dynamics state in world
     let kind = runtime
         .physics
@@ -1739,18 +1757,177 @@ fn character_body_3d_falls_and_lands_on_static_floor() {
 }
 
 #[test]
-fn character_body_3d_without_gravity_stays_put() {
+fn character_body_3d_move_and_slide_slides_along_floor() {
+    let mut runtime = Runtime::new();
+    runtime.time.fixed_delta = 1.0 / 60.0;
+
+    let floor_id = NodeAPI::create::<StaticBody3D>(&mut runtime);
+    let floor_shape = NodeAPI::create::<CollisionShape3D>(&mut runtime);
+    assert!(NodeAPI::reparent(&mut runtime, floor_id, floor_shape));
+    if let Some(node) = runtime.nodes.get_mut(floor_shape)
+        && let SceneNodeData::CollisionShape3D(shape) = &mut node.data
+    {
+        shape.shape = Shape3D::Cube {
+            size: Vector3::new(20.0, 1.0, 20.0),
+        };
+    }
+
+    let char_id = NodeAPI::create::<CharacterBody3D>(&mut runtime);
+    let char_shape = NodeAPI::create::<CollisionShape3D>(&mut runtime);
+    assert!(NodeAPI::reparent(&mut runtime, char_id, char_shape));
+    assert!(NodeAPI::set_global_transform_3d(
+        &mut runtime,
+        char_id,
+        Transform3D::new(
+            Vector3::new(0.0, 3.0, 0.0),
+            Quaternion::IDENTITY,
+            Vector3::ONE
+        ),
+    ));
+
+    // diagonal down: unconsumed motion must slide along floor plane
+    let result = runtime
+        .physics_move_and_slide_3d(
+            char_id,
+            Vector3::new(2.0, -5.0, 0.0),
+            &PhysicsQueryFilter {
+                include_areas: false,
+                ..PhysicsQueryFilter::default()
+            },
+        )
+        .expect("move_and_slide result");
+
+    assert!(
+        result.position.y < 1.2 && result.position.y > 0.9,
+        "char must stop on floor, y={}",
+        result.position.y
+    );
+    assert!(
+        result.position.x > 1.5,
+        "char must slide along floor, x={}",
+        result.position.x
+    );
+}
+
+#[test]
+fn character_body_3d_reports_contacts_on_static_floor() {
+    let mut runtime = Runtime::new();
+    runtime.time.fixed_delta = 1.0 / 60.0;
+
+    let floor_id = NodeAPI::create::<StaticBody3D>(&mut runtime);
+    let floor_shape = NodeAPI::create::<CollisionShape3D>(&mut runtime);
+    assert!(NodeAPI::reparent(&mut runtime, floor_id, floor_shape));
+    if let Some(node) = runtime.nodes.get_mut(floor_shape)
+        && let SceneNodeData::CollisionShape3D(shape) = &mut node.data
+    {
+        shape.shape = Shape3D::Cube {
+            size: Vector3::new(20.0, 1.0, 20.0),
+        };
+    }
+
+    let char_id = NodeAPI::create::<CharacterBody3D>(&mut runtime);
+    let char_shape = NodeAPI::create::<CollisionShape3D>(&mut runtime);
+    assert!(NodeAPI::reparent(&mut runtime, char_id, char_shape));
+    assert!(NodeAPI::set_global_transform_3d(
+        &mut runtime,
+        char_id,
+        Transform3D::new(
+            Vector3::new(0.0, 3.0, 0.0),
+            Quaternion::IDENTITY,
+            Vector3::ONE
+        ),
+    ));
+
+    // manual descent onto floor; sweep hit feed contacts
+    runtime
+        .physics_move_and_slide_3d(
+            char_id,
+            Vector3::new(0.0, -5.0, 0.0),
+            &PhysicsQueryFilter {
+                include_areas: false,
+                ..PhysicsQueryFilter::default()
+            },
+        )
+        .expect("move_and_slide result");
+
+    // kinematic char on static floor: contact pair need KINEMATIC_FIXED opt-in
+    let contacts = runtime.physics_contacts_3d(char_id);
+    assert!(
+        contacts.iter().any(|contact| contact.node == floor_id),
+        "char on floor must report contact, got {} contacts",
+        contacts.len()
+    );
+}
+
+#[test]
+fn character_body_3d_apply_gravity_falls_and_lands() {
+    let mut runtime = Runtime::new();
+    runtime.time.fixed_delta = 1.0 / 60.0;
+
+    let floor_id = NodeAPI::create::<StaticBody3D>(&mut runtime);
+    let floor_shape = NodeAPI::create::<CollisionShape3D>(&mut runtime);
+    assert!(NodeAPI::reparent(&mut runtime, floor_id, floor_shape));
+    if let Some(node) = runtime.nodes.get_mut(floor_shape)
+        && let SceneNodeData::CollisionShape3D(shape) = &mut node.data
+    {
+        shape.shape = Shape3D::Cube {
+            size: Vector3::new(20.0, 1.0, 20.0),
+        };
+    }
+
+    let char_id = NodeAPI::create::<CharacterBody3D>(&mut runtime);
+    let char_shape = NodeAPI::create::<CollisionShape3D>(&mut runtime);
+    assert!(NodeAPI::reparent(&mut runtime, char_id, char_shape));
+    assert!(NodeAPI::set_global_transform_3d(
+        &mut runtime,
+        char_id,
+        Transform3D::new(
+            Vector3::new(0.0, 3.0, 0.0),
+            Quaternion::IDENTITY,
+            Vector3::ONE
+        ),
+    ));
+
+    // script-invoked gravity: cal per step, engine integrates fall speed
+    let filter = PhysicsQueryFilter {
+        include_areas: false,
+        ..PhysicsQueryFilter::default()
+    };
+    let dt = 1.0 / 60.0;
+    let mut landed = false;
+    for _ in 0..600 {
+        let result = runtime.physics_apply_gravity_3d(char_id, dt, 64.0, &filter);
+        if result.is_some_and(|result| result.clipped) {
+            landed = true;
+        }
+    }
+    assert!(landed, "apply_gravity must land on floor");
+
+    let pos = runtime
+        .get_global_transform_3d(char_id)
+        .expect("char transform")
+        .position;
+    assert!(pos.y < 1.2, "char should fall, y={}", pos.y);
+    assert!(pos.y > 0.9, "char should not tunnel floor, y={}", pos.y);
+
+    // gravity on non-char body reject
+    let rigid_id = NodeAPI::create::<RigidBody3D>(&mut runtime);
+    assert!(
+        runtime
+            .physics_apply_gravity_3d(rigid_id, dt, 64.0, &filter)
+            .is_none(),
+        "apply_gravity must reject non-character bodies"
+    );
+}
+
+#[test]
+fn character_body_3d_never_moves_without_script() {
     let mut runtime = Runtime::new();
     runtime.time.fixed_delta = 1.0 / 60.0;
 
     let char_id = NodeAPI::create::<CharacterBody3D>(&mut runtime);
     let char_shape = NodeAPI::create::<CollisionShape3D>(&mut runtime);
     assert!(NodeAPI::reparent(&mut runtime, char_id, char_shape));
-    if let Some(node) = runtime.nodes.get_mut(char_id)
-        && let SceneNodeData::CharacterBody3D(body) = &mut node.data
-    {
-        body.apply_gravity = false;
-    }
     assert!(NodeAPI::set_global_transform_3d(
         &mut runtime,
         char_id,
@@ -1769,11 +1946,11 @@ fn character_body_3d_without_gravity_stays_put() {
         .get_global_transform_3d(char_id)
         .expect("char transform")
         .position;
-    assert!(approx(pos.y, 5.0), "no-gravity char must stay, y={}", pos.y);
+    assert!(approx(pos.y, 5.0), "char must never self-move, y={}", pos.y);
 }
 
 #[test]
-fn character_body_2d_falls_and_lands_on_static_floor() {
+fn character_body_2d_move_and_slide_stops_on_static_floor() {
     let mut runtime = Runtime::new();
     runtime.time.fixed_delta = 1.0 / 60.0;
 
@@ -1798,14 +1975,24 @@ fn character_body_2d_falls_and_lands_on_static_floor() {
         Transform2D::new(Vector2::new(0.0, 3.0), 0.0, Vector2::ONE),
     ));
 
-    for _ in 0..600 {
-        runtime.physics_fixed_step();
-    }
+    let result = runtime
+        .physics_move_and_slide_2d(
+            char_id,
+            Vector2::new(0.0, -5.0),
+            &PhysicsQueryFilter {
+                include_areas: false,
+                ..PhysicsQueryFilter::default()
+            },
+        )
+        .expect("move_and_slide result");
 
-    let pos = runtime
-        .get_global_transform_2d(char_id)
-        .expect("char transform")
-        .position;
-    assert!(pos.y < 2.5, "char should fall, y={}", pos.y);
-    assert!(pos.y > 0.4, "char should not tunnel floor, y={}", pos.y);
+    assert!(
+        result.position.y < 1.2 && result.position.y > 0.9,
+        "char must stop on floor, y={}",
+        result.position.y
+    );
+    assert!(
+        result.hits.iter().any(|hit| hit.node == floor_id),
+        "slide must report floor hit"
+    );
 }

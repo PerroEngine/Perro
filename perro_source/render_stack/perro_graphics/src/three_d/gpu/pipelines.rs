@@ -238,10 +238,20 @@ impl Gpu3D {
 
     pub(super) fn pipeline_for_batch(&self, batch: &DrawBatch) -> &wgpu::RenderPipeline {
         let is_rigid = batch.path == RenderPath3D::Rigid;
+        // Unified depth: batches the prepass rasterized already have exact
+        // depth in depth_view (copied there after the prepass), so they only
+        // need a read-only LessEqual test. LessEqual + write-off is robust
+        // against cross-pipeline position invariance, unlike Equal. The
+        // predicate mirrors depth_prepass_batch_indices in rebuild_batch_views.
+        let prepass_covered = self.unified_depth_active
+            && !batch.draw_on_top
+            && batch.alpha_mode != 2
+            && !batch.mesh_blend
+            && !batch.material_kind.uses_custom_shader();
         // Alpha-blended batches must not write depth, or transparents drawn
         // first occlude transparents behind them; the *_blend pipelines are
         // the same state with depth write off.
-        let soft_depth = batch.mesh_blend || batch.alpha_mode == 2;
+        let soft_depth = batch.mesh_blend || batch.alpha_mode == 2 || prepass_covered;
         if batch.draw_on_top {
             return if batch.double_sided && is_rigid {
                 &self.pipeline_rigid_overlay_double_sided

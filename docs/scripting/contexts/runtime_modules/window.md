@@ -17,12 +17,14 @@
 | `set_refresh_rate_cap` | [`set_refresh_rate_cap`](#set_refresh_rate_cap) |
 | `set_unlimited_frame_rate` | [`set_unlimited_frame_rate`](#set_unlimited_frame_rate) |
 | `get_active_refresh_rate` | [`get_active_refresh_rate`](#get_active_refresh_rate) |
+| `close_app` | [`close_app`](#close_app) |
 | `window_set_title` | [`window_set_title`](#window_set_title) |
 | `window_set_size` | [`window_set_size`](#window_set_size) |
 | `window_set_mode` | [`window_set_mode`](#window_set_mode) |
 | `window_set_frame_rate_cap` | [`window_set_frame_rate_cap`](#window_set_frame_rate_cap) |
 | `window_set_frame_rate_limit` | [`window_set_frame_rate_limit`](#window_set_frame_rate_limit) |
 | `window_get_active_refresh_rate` | [`window_get_active_refresh_rate`](#window_get_active_refresh_rate) |
+| `close_app` | [`close_app`](#close_app-1) |
 
 ## Overview
 
@@ -41,6 +43,7 @@ lifecycle!({
     fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
         window_set_title!(ctx.run, "Perro");
         window_set_frame_rate_limit!(ctx.run, 144.0);
+        // close_app!(ctx.run);
     }
 });
 ```
@@ -157,6 +160,17 @@ lifecycle!({
 | Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
 | Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
+### `close_app`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Window()` |
+| Signature | `pub fn close_app(&mut self)` |
+| Params | `&mut self` |
+| Returns | `()` |
+| Use when | Use when gameplay must request app shutdown. |
+| Fails when / edge behavior | Queues an app close request for the app layer to apply. |
+
 ### `window_set_title`
 
 | Field | Detail |
@@ -223,3 +237,13 @@ lifecycle!({
 | Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
 | Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
+### `close_app`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Window()` |
+| Signature | `close_app!(ctx.run)` |
+| Params | `ctx` |
+| Returns | `()` |
+| Use when | Use when gameplay must request app shutdown. |
+| Fails when / edge behavior | Queues an app close request for the app layer to apply. |

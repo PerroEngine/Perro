@@ -471,12 +471,14 @@ mod tests {
 
     #[test]
     fn authored_zero_intensity_ambient_forces_dark() {
-        let mut lighting = Lighting3DState::default();
-        lighting.ambient_light = Some(perro_render_bridge::AmbientLight3DState {
-            color: [1.0, 1.0, 1.0],
-            intensity: 0.0,
-            cast_shadows: false,
-        });
+        let lighting = Lighting3DState {
+            ambient_light: Some(perro_render_bridge::AmbientLight3DState {
+                color: [1.0, 1.0, 1.0],
+                intensity: 0.0,
+                cast_shadows: false,
+            }),
+            ..Default::default()
+        };
         let scene = build_scene_uniform(&Camera3DState::default(), &lighting, 1280, 720);
         assert_eq!(scene.ambient_color[3], 0.0);
         assert_eq!(scene.ground_color, [0.0, 0.0, 0.0, 0.0]);

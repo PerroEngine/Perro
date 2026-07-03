@@ -107,20 +107,21 @@ impl Gpu3D {
             }
         }
         let draws_unchanged = self.last_draws_revision == draws_revision;
-        let has_dense_multimesh =
-            !draws_unchanged && draws.iter().any(|d| d.dense_multimesh.is_some());
+        // Classify each draw pair: single-instance regular draws (model-only)
+        // and dense multimeshes whose poses are unchanged (node_model-only) both
+        // stay on the transform-only fast path. A multimesh present but unchanged
+        // no longer forces a full rebuild.
+        let mut transform_only_kinds = std::mem::take(&mut self.transform_only_kinds_scratch);
         let transform_only_semantic = !draws_unchanged
-            && !has_dense_multimesh
-            && draws.len() == self.last_draws.len()
-            && self
-                .last_draws
-                .iter()
-                .zip(draws.iter())
-                .all(|(prev, next)| {
-                    prev.instance_mats.len() == 1
-                        && next.instance_mats.len() == 1
-                        && same_draw_except_model(prev, next)
-                });
+            && classify_transform_only_scene(&self.last_draws, draws, &mut transform_only_kinds);
+        // Multimesh patch needs the param-range bookkeeping to line up with the
+        // current draw list; otherwise fall back to a full rebuild.
+        let stable_multimesh_ranges = !transform_only_semantic
+            || (self.last_draw_multimesh_param_ranges.len() == draws.len()
+                && self.last_draw_multimesh_param_ranges.iter().all(|range| {
+                    range.start <= range.end
+                        && (range.end as usize) <= self.staged_multimesh_draw_params.len()
+                }));
         let stable_instance_ranges = self.last_draw_instance_span_ranges.len() == draws.len()
             && self
                 .last_draw_instance_span_ranges
@@ -133,8 +134,11 @@ impl Gpu3D {
                 range.start <= range.end
                     && (range.end as usize) <= self.staged_instance_transforms.len()
             });
-        let transform_only_changed =
-            !draws_unchanged && transform_only_semantic && stable_instance_ranges;
+        let transform_only_changed = !draws_unchanged
+            && transform_only_semantic
+            && stable_instance_ranges
+            && stable_multimesh_ranges;
+        self.transform_only_kinds_scratch = transform_only_kinds;
         let scene_changed = self.last_scene != Some(uniform) || !draws_unchanged;
         if self.last_scene != Some(uniform) {
             queue.write_buffer(&self.camera_buffer, 0, bytemuck::bytes_of(&uniform));
@@ -155,7 +159,7 @@ impl Gpu3D {
             if frustum_cull_active {
                 let frustum_inputs_invalid = !self.frustum_gpu_inputs_valid
                     || self.indirect_staging.len() != self.draw_batches.len()
-                    || self.frustum_cull_staging.len() != self.draw_batches.len();
+                    || self.frustum_cull_dynamic_staging.len() != self.draw_batches.len();
                 if frustum_inputs_invalid {
                     let indirect_start = Instant::now();
                     self.ensure_frustum_cull_capacity(device, self.draw_batches.len());
@@ -178,40 +182,7 @@ impl Gpu3D {
                     step_timing.indirect_prep += indirect_start.elapsed();
 
                     let cull_start = Instant::now();
-                    self.frustum_cull_staging.clear();
-                    self.frustum_cull_staging.reserve(self.draw_batches.len());
-                    for batch in &self.draw_batches {
-                        let instance =
-                            &self.staged_instance_transforms[batch.instance_start as usize];
-                        let model_cols = model_cols_from_affine_rows(instance);
-                        self.frustum_cull_staging.push(FrustumCullItemGpu {
-                            model_0: model_cols[0],
-                            model_1: model_cols[1],
-                            model_2: model_cols[2],
-                            model_3: model_cols[3],
-                            local_center_radius: [
-                                batch.local_center[0],
-                                batch.local_center[1],
-                                batch.local_center[2],
-                                batch.local_radius.max(0.0),
-                            ],
-                            cull_flags: [
-                                if batch.disable_hiz_occlusion {
-                                    CULL_FLAG_DISABLE_HIZ_OCCLUSION
-                                } else {
-                                    0
-                                },
-                                0,
-                                0,
-                                0,
-                            ],
-                        });
-                    }
-                    queue.write_buffer(
-                        &self.frustum_cull_items_buffer,
-                        0,
-                        bytemuck::cast_slice(&self.frustum_cull_staging),
-                    );
+                    self.rebuild_frustum_cull_items(queue);
                     step_timing.cull_input_prep += cull_start.elapsed();
                     self.frustum_gpu_inputs_valid = true;
                 } else {
@@ -245,7 +216,7 @@ impl Gpu3D {
                 step_timing.indirect_skipped = step_timing.indirect_skipped.saturating_add(1);
                 step_timing.cull_input_skipped = step_timing.cull_input_skipped.saturating_add(1);
             }
-            self.update_shadow_state(queue, &camera, lighting);
+            self.update_shadow_state(queue, &camera, lighting, self.has_shadow_casters);
             self.last_total_drawn =
                 self.staged_instance_transforms.len() + self.staged_multimesh_instances.len();
             self.last_prepare_step_timing = step_timing;
@@ -294,12 +265,83 @@ impl Gpu3D {
                     ),
                 );
             }
+            // Dense multimeshes whose poses are unchanged: only the draw model
+            // moved. Instances are relative to the draw model in the shader, so
+            // patch just the MultiMeshDrawParamGpu rows and upload those slots.
+            // No per-instance re-pack, no instance buffer re-upload.
+            self.dirty_instance_spans_scratch.clear();
+            for (draw, param_range) in draws
+                .iter()
+                .zip(self.last_draw_multimesh_param_ranges.iter())
+            {
+                let Some(dense) = draw.dense_multimesh.as_ref() else {
+                    continue;
+                };
+                if param_range.start >= param_range.end {
+                    continue;
+                }
+                let draw_model = Mat4::from_cols_array_2d(&dense.node_model);
+                let row_0 = [
+                    draw_model.x_axis.x,
+                    draw_model.y_axis.x,
+                    draw_model.z_axis.x,
+                    draw_model.w_axis.x,
+                ];
+                let row_1 = [
+                    draw_model.x_axis.y,
+                    draw_model.y_axis.y,
+                    draw_model.z_axis.y,
+                    draw_model.w_axis.y,
+                ];
+                let row_2 = [
+                    draw_model.x_axis.z,
+                    draw_model.y_axis.z,
+                    draw_model.z_axis.z,
+                    draw_model.w_axis.z,
+                ];
+                for param in &mut self.staged_multimesh_draw_params
+                    [param_range.start as usize..param_range.end as usize]
+                {
+                    param.model_row_0 = row_0;
+                    param.model_row_1 = row_1;
+                    param.model_row_2 = row_2;
+                }
+                self.dirty_instance_spans_scratch.push(param_range.clone());
+            }
+            if !self.dirty_instance_spans_scratch.is_empty() {
+                self.dirty_instance_spans_scratch
+                    .sort_unstable_by_key(|span| span.start);
+                self.merged_instance_spans_scratch.clear();
+                for span in self.dirty_instance_spans_scratch.iter().cloned() {
+                    if let Some(last) = self.merged_instance_spans_scratch.last_mut()
+                        && span.start <= last.end
+                    {
+                        last.end = last.end.max(span.end);
+                    } else {
+                        self.merged_instance_spans_scratch.push(span);
+                    }
+                }
+                for span in self.merged_instance_spans_scratch.iter() {
+                    let byte_start =
+                        span.start as u64 * std::mem::size_of::<MultiMeshDrawParamGpu>() as u64;
+                    queue.write_buffer(
+                        &self.multimesh_draw_params_buffer,
+                        byte_start,
+                        bytemuck::cast_slice(
+                            &self.staged_multimesh_draw_params
+                                [span.start as usize..span.end as usize],
+                        ),
+                    );
+                }
+            }
+            // Transforms shifted: overlap tests change, so refresh receiver lists.
+            self.rebuild_mesh_blend_receivers();
             let frustum_cull_active = self.should_run_frustum_cull();
             let hiz_active = self.should_run_hiz_occlusion(frustum_cull_active);
             if frustum_cull_active {
                 let frustum_inputs_invalid = !self.frustum_gpu_inputs_valid
                     || self.indirect_staging.len() != self.draw_batches.len()
-                    || self.frustum_cull_staging.len() != self.draw_batches.len();
+                    || self.frustum_cull_dynamic_staging.len() != self.draw_batches.len();
                 if frustum_inputs_invalid {
                     let indirect_start = Instant::now();
                     self.ensure_frustum_cull_capacity(device, self.draw_batches.len());
@@ -322,40 +364,7 @@ impl Gpu3D {
                     step_timing.indirect_prep += indirect_start.elapsed();
 
                     let cull_start = Instant::now();
-                    self.frustum_cull_staging.clear();
-                    self.frustum_cull_staging.reserve(self.draw_batches.len());
-                    for batch in &self.draw_batches {
-                        let instance =
-                            &self.staged_instance_transforms[batch.instance_start as usize];
-                        let model_cols = model_cols_from_affine_rows(instance);
-                        self.frustum_cull_staging.push(FrustumCullItemGpu {
-                            model_0: model_cols[0],
-                            model_1: model_cols[1],
-                            model_2: model_cols[2],
-                            model_3: model_cols[3],
-                            local_center_radius: [
-                                batch.local_center[0],
-                                batch.local_center[1],
-                                batch.local_center[2],
-                                batch.local_radius.max(0.0),
-                            ],
-                            cull_flags: [
-                                if batch.disable_hiz_occlusion {
-                                    CULL_FLAG_DISABLE_HIZ_OCCLUSION
-                                } else {
-                                    0
-                                },
-                                0,
-                                0,
-                                0,
-                            ],
-                        });
-                    }
-                    queue.write_buffer(
-                        &self.frustum_cull_items_buffer,
-                        0,
-                        bytemuck::cast_slice(&self.frustum_cull_staging),
-                    );
+                    self.rebuild_frustum_cull_items(queue);
                     step_timing.cull_input_prep += cull_start.elapsed();
                     self.frustum_gpu_inputs_valid = true;
                 } else {
@@ -390,43 +399,32 @@ impl Gpu3D {
                         step_timing.cull_input_skipped =
                             step_timing.cull_input_skipped.saturating_add(1);
                     } else {
+                        // Transform-only path: topology (and thus the static
+                        // half) is unchanged, so rewrite only the dynamic model
+                        // rows for the dirty batch spans.
                         for batch_span in self.dirty_cull_batch_spans_scratch.iter() {
                             for batch_idx in batch_span.clone() {
                                 let batch = &self.draw_batches[batch_idx];
                                 let instance =
                                     &self.staged_instance_transforms[batch.instance_start as usize];
                                 let model_cols = model_cols_from_affine_rows(instance);
-                                self.frustum_cull_staging[batch_idx] = FrustumCullItemGpu {
-                                    model_0: model_cols[0],
-                                    model_1: model_cols[1],
-                                    model_2: model_cols[2],
-                                    model_3: model_cols[3],
-                                    local_center_radius: [
-                                        batch.local_center[0],
-                                        batch.local_center[1],
-                                        batch.local_center[2],
-                                        batch.local_radius.max(0.0),
-                                    ],
-                                    cull_flags: [
-                                        if batch.disable_hiz_occlusion {
-                                            CULL_FLAG_DISABLE_HIZ_OCCLUSION
-                                        } else {
-                                            0
-                                        },
-                                        0,
-                                        0,
-                                        0,
-                                    ],
-                                };
+                                self.frustum_cull_dynamic_staging[batch_idx] =
+                                    FrustumCullDynamicGpu {
+                                        model_0: model_cols[0],
+                                        model_1: model_cols[1],
+                                        model_2: model_cols[2],
+                                        model_3: model_cols[3],
+                                    };
                             }
                             let byte_start = (batch_span.start
-                                * std::mem::size_of::<FrustumCullItemGpu>())
+                                * std::mem::size_of::<FrustumCullDynamicGpu>())
                                 as u64;
                             queue.write_buffer(
-                                &self.frustum_cull_items_buffer,
+                                &self.frustum_cull_dynamic_buffer,
                                 byte_start,
                                 bytemuck::cast_slice(
-                                    &self.frustum_cull_staging[batch_span.start..batch_span.end],
+                                    &self.frustum_cull_dynamic_staging
+                                        [batch_span.start..batch_span.end],
                                 ),
                             );
                         }
@@ -460,7 +458,14 @@ impl Gpu3D {
                 step_timing.cull_input_skipped = step_timing.cull_input_skipped.saturating_add(1);
                 self.frustum_gpu_inputs_valid = false;
             }
-            self.update_shadow_state(queue, &camera, lighting);
+            // Multimesh cull inputs are topology-only (unchanged here); just keep
+            // the shared frustum planes current so the cull uses this camera.
+            if self.should_run_multimesh_cull() {
+                let frustum = extract_frustum_planes(view_proj);
+                self.write_frustum_params_if_needed(queue, &frustum);
+                self.write_multimesh_cull_params_if_needed(queue);
+            }
+            self.update_shadow_state(queue, &camera, lighting, self.has_shadow_casters);
             self.last_draws.clear();
             self.last_draws.extend_from_slice(draws);
             self.last_draws_revision = draws_revision;
@@ -505,12 +510,16 @@ impl Gpu3D {
         self.staged_multimesh_instances
             .reserve(multimesh_instance_hint);
         self.staged_multimesh_draw_params.clear();
+        self.multimesh_pose_pack_cache_seen.clear();
         self.draw_batches.reserve(draws.len());
         self.last_draw_instance_spans.clear();
         self.last_draw_instance_spans.reserve(draws.len());
         self.last_draw_instance_span_ranges.clear();
         self.last_draw_instance_span_ranges.reserve(draws.len());
-        self.frustum_cull_staging.clear();
+        self.last_draw_multimesh_param_ranges.clear();
+        self.last_draw_multimesh_param_ranges.reserve(draws.len());
+        self.frustum_cull_static_staging.clear();
+        self.frustum_cull_dynamic_staging.clear();
         self.indirect_staging.clear();
         let mut total_meshlets = 0usize;
         let frustum = extract_frustum_planes(view_proj);
@@ -547,6 +556,7 @@ impl Gpu3D {
             let resolved_blend = mesh_blends[draw_index];
             let draw_instance_start = self.staged_instance_transforms.len() as u32;
             let draw_span_start = self.last_draw_instance_spans.len();
+            let draw_multimesh_param_start = self.staged_multimesh_draw_params.len() as u32;
             let is_debug_point = matches!(draw.kind, Draw3DKind::DebugPointCube);
             let is_debug_edge = matches!(draw.kind, Draw3DKind::DebugEdgeCylinder);
             let is_camera_stream_quad = matches!(draw.kind, Draw3DKind::CameraStreamQuad { .. });
@@ -680,6 +690,9 @@ impl Gpu3D {
                 let draw_span_end = self.last_draw_instance_spans.len();
                 self.last_draw_instance_span_ranges
                     .push(draw_span_start..draw_span_end);
+                self.last_draw_multimesh_param_ranges.push(
+                    draw_multimesh_param_start..(self.staged_multimesh_draw_params.len() as u32),
+                );
                 continue;
             }
             if let Some(dense) = &draw.dense_multimesh {
@@ -737,7 +750,24 @@ impl Gpu3D {
                         });
                     let mirrored_winding = draw_model.determinant() < 0.0;
                     let instance_start = self.staged_multimesh_instances.len() as u32;
-                    for pose in dense.instances.iter() {
+                    // Item 3: reuse packed geometry lanes when this exact pose Arc
+                    // was packed on a prior build. Only quaternion pack + lane copy
+                    // are cached; draw_id/blend_meta_id are build-order specific
+                    // and stay fresh, and blend metadata is still staged per
+                    // instance below.
+                    let pose_key = Arc::as_ptr(&dense.instances) as *const () as usize;
+                    self.multimesh_pose_pack_cache_seen.insert(pose_key);
+                    let cached_geom = self
+                        .multimesh_pose_pack_cache
+                        .get(&pose_key)
+                        // Pinned source Arc guarantees pointer identity; still verify
+                        // it is the same Arc (defensive) and the same length.
+                        .filter(|(src, packed)| {
+                            Arc::ptr_eq(src, &dense.instances)
+                                && packed.len() == dense.instances.len()
+                        })
+                        .map(|(_, packed)| packed.clone());
+                    for (index, pose) in dense.instances.iter().enumerate() {
                         let weights = if pose.has_blend_shape_weight_override {
                             pose.blend_shape_weights.as_ref()
                         } else {
@@ -745,13 +775,37 @@ impl Gpu3D {
                         };
                         let blend_meta_id = self.staged_blend_shape_instance_meta.len() as u32;
                         self.stage_blend_shape_instance(&mesh_asset, weights);
+                        let (position, rotation, scale) = match &cached_geom {
+                            Some(geom) => {
+                                let g = geom[index];
+                                (g.position, g.rotation, g.scale)
+                            }
+                            None => (
+                                pose.position,
+                                pack_quat_snorm16x4(pose.rotation),
+                                pose.scale,
+                            ),
+                        };
                         self.staged_multimesh_instances.push(MultiMeshInstanceGpu {
-                            position: pose.position,
-                            rotation: pack_quat_snorm16x4(pose.rotation),
-                            scale: pose.scale,
+                            position,
+                            rotation,
+                            scale,
                             draw_id: draw_param_index,
                             blend_meta_id,
                         });
+                    }
+                    if cached_geom.is_none() && !dense.instances.is_empty() {
+                        let packed: Arc<[MultiMeshPosePacked]> = self.staged_multimesh_instances
+                            [instance_start as usize..]
+                            .iter()
+                            .map(|inst| MultiMeshPosePacked {
+                                position: inst.position,
+                                rotation: inst.rotation,
+                                scale: inst.scale,
+                            })
+                            .collect();
+                        self.multimesh_pose_pack_cache
+                            .insert(pose_key, (dense.instances.clone(), packed));
                     }
                     let instance_count = (self.staged_multimesh_instances.len() as u32)
                         .saturating_sub(instance_start);
@@ -761,6 +815,7 @@ impl Gpu3D {
                             instance_start,
                             instance_count,
                             draw_param_index,
+                            mesh_local_radius: mesh_asset.bounds_radius.max(0.0),
                             double_sided: params.double_sided
                                 || mirrored_winding
                                 || flat_builtin_double_sided,
@@ -774,6 +829,9 @@ impl Gpu3D {
                 let draw_span_end = self.last_draw_instance_spans.len();
                 self.last_draw_instance_span_ranges
                     .push(draw_span_start..draw_span_end);
+                self.last_draw_multimesh_param_ranges.push(
+                    draw_multimesh_param_start..(self.staged_multimesh_draw_params.len() as u32),
+                );
                 continue;
             }
             // CPU occlusion query mode works at object granularity.
@@ -818,6 +876,10 @@ impl Gpu3D {
                     let draw_span_end = self.last_draw_instance_spans.len();
                     self.last_draw_instance_span_ranges
                         .push(draw_span_start..draw_span_end);
+                    self.last_draw_multimesh_param_ranges.push(
+                        draw_multimesh_param_start
+                            ..(self.staged_multimesh_draw_params.len() as u32),
+                    );
                     continue;
                 }
                 let occlusion_query =
@@ -1179,9 +1241,18 @@ impl Gpu3D {
             let draw_span_end = self.last_draw_instance_spans.len();
             self.last_draw_instance_span_ranges
                 .push(draw_span_start..draw_span_end);
+            self.last_draw_multimesh_param_ranges
+                .push(draw_multimesh_param_start..(self.staged_multimesh_draw_params.len() as u32));
         }
         self.mesh_blend_scratch = mesh_blends;
         self.surface_entries_scratch = surface_entries;
+        // Drop pose-pack cache entries for pose Arcs not present this build so the
+        // cache (and the source Arcs it pins) does not grow unbounded.
+        if self.multimesh_pose_pack_cache.len() > self.multimesh_pose_pack_cache_seen.len() {
+            let seen = &self.multimesh_pose_pack_cache_seen;
+            self.multimesh_pose_pack_cache
+                .retain(|key, _| seen.contains(key));
+        }
         if !debug_point_instances.is_empty() {
             debug_points_start = Some(self.staged_instance_transforms.len() as u32);
             for instance in debug_point_instances.drain(..) {
@@ -1332,6 +1403,7 @@ impl Gpu3D {
         }
         self.compact_sorted_draw_batches(draws.len());
         self.rebuild_batch_views();
+        self.rebuild_mesh_blend_receivers();
         self.prepare_mesh_blend_screen(device, queue);
         self.apply_local_color_bleed();
         if !multimesh_batches_sorted(&self.multimesh_batches) {
@@ -1356,10 +1428,7 @@ impl Gpu3D {
                 }
             }
         }
-        self.has_shadow_casters = self
-            .draw_batches
-            .iter()
-            .any(|batch| !batch.draw_on_top && batch.casts_shadows && batch.alpha_mode != 2);
+        // has_shadow_casters set in rebuild_batch_views above.
         if occlusion_capture_this_frame {
             self.ensure_occlusion_query_capacity(
                 device,
@@ -1467,6 +1536,16 @@ impl Gpu3D {
                 bytemuck::cast_slice(&self.staged_multimesh_instances),
             );
         }
+        // Multimesh GPU cull inputs are topology-only, so they only need a
+        // rebuild here on the full path; transform-only fast paths keep them
+        // valid (they patch draw-param model rows, not batch topology).
+        if self.should_run_multimesh_cull() {
+            self.rebuild_multimesh_cull_inputs(device, queue);
+            self.write_multimesh_cull_params_if_needed(queue);
+            // The cull shader reads frustum planes from the shared rigid params
+            // buffer; ensure they are current even if rigid cull is inactive.
+            self.write_frustum_params_if_needed(queue, &frustum);
+        }
         let frustum_cull_active = self.should_run_frustum_cull();
         let hiz_active = self.should_run_hiz_occlusion(frustum_cull_active);
         if frustum_cull_active {
@@ -1474,40 +1553,13 @@ impl Gpu3D {
             self.ensure_frustum_cull_capacity(device, self.draw_batches.len());
             self.indirect_staging.clear();
             self.indirect_staging.reserve(self.draw_batches.len());
-            self.frustum_cull_staging.clear();
-            self.frustum_cull_staging.reserve(self.draw_batches.len());
             for batch in &self.draw_batches {
-                let model_cols = model_cols_from_affine_rows(
-                    &self.staged_instance_transforms[batch.instance_start as usize],
-                );
                 self.indirect_staging.push(DrawIndexedIndirectGpu {
                     index_count: batch.mesh.index_count,
                     instance_count: batch.instance_count,
                     first_index: batch.mesh.index_start,
                     base_vertex: batch.mesh.base_vertex,
                     first_instance: batch.instance_start,
-                });
-                self.frustum_cull_staging.push(FrustumCullItemGpu {
-                    model_0: model_cols[0],
-                    model_1: model_cols[1],
-                    model_2: model_cols[2],
-                    model_3: model_cols[3],
-                    local_center_radius: [
-                        batch.local_center[0],
-                        batch.local_center[1],
-                        batch.local_center[2],
-                        batch.local_radius.max(0.0),
-                    ],
-                    cull_flags: [
-                        if batch.disable_hiz_occlusion {
-                            CULL_FLAG_DISABLE_HIZ_OCCLUSION
-                        } else {
-                            0
-                        },
-                        0,
-                        0,
-                        0,
-                    ],
                 });
             }
             queue.write_buffer(
@@ -1518,11 +1570,7 @@ impl Gpu3D {
             step_timing.indirect_prep += indirect_start.elapsed();
 
             let cull_start = Instant::now();
-            queue.write_buffer(
-                &self.frustum_cull_items_buffer,
-                0,
-                bytemuck::cast_slice(&self.frustum_cull_staging),
-            );
+            self.rebuild_frustum_cull_items(queue);
             step_timing.cull_input_prep += cull_start.elapsed();
 
             let frustum_start = Instant::now();
@@ -1549,7 +1597,7 @@ impl Gpu3D {
             step_timing.indirect_skipped = step_timing.indirect_skipped.saturating_add(1);
             step_timing.cull_input_skipped = step_timing.cull_input_skipped.saturating_add(1);
         }
-        self.update_shadow_state(queue, &camera, lighting);
+        self.update_shadow_state(queue, &camera, lighting, self.has_shadow_casters);
         self.last_total_meshlets = total_meshlets;
         self.last_total_drawn =
             self.staged_instance_transforms.len() + self.staged_multimesh_instances.len();
@@ -1603,14 +1651,14 @@ const BLEED_RANGE: f32 = 14.0;
 const BLEED_OCCLUDER_SHRINK: f32 = 0.8;
 const BLEED_OCCLUDED_FACTOR: f32 = 0.2;
 
-struct BleedEmitter {
+pub(super) struct BleedEmitter {
     batch_index: usize,
     center: Vec3,
     radius_sq: f32,
     color: Vec3,
 }
 
-struct BleedOccluder {
+pub(super) struct BleedOccluder {
     batch_index: usize,
     center: Vec3,
     radius: f32,
@@ -1806,8 +1854,10 @@ impl Gpu3D {
         if self.draw_batches.len() > BLEED_MAX_BATCHES {
             return;
         }
-        let mut emitters: Vec<BleedEmitter> = Vec::new();
-        let mut occluders: Vec<BleedOccluder> = Vec::new();
+        let mut emitters = std::mem::take(&mut self.bleed_emitters_scratch);
+        emitters.clear();
+        let mut occluders = std::mem::take(&mut self.bleed_occluders_scratch);
+        occluders.clear();
         for (batch_index, batch) in self.draw_batches.iter().enumerate() {
             if emitters.len() >= BLEED_MAX_EMITTERS {
                 break;
@@ -1871,8 +1921,9 @@ impl Gpu3D {
             });
         }
         // Multimesh draws join as emitters too (grass fields tint neighbors).
-        let mut multimesh_bounds: Vec<Option<(Vec3, f32)>> =
-            Vec::with_capacity(self.multimesh_batches.len());
+        let mut multimesh_bounds = std::mem::take(&mut self.bleed_multimesh_bounds_scratch);
+        multimesh_bounds.clear();
+        multimesh_bounds.reserve(self.multimesh_batches.len());
         for (mm_index, batch) in self.multimesh_batches.iter().enumerate() {
             let bounds = multimesh_world_bounds(
                 batch,
@@ -1909,6 +1960,9 @@ impl Gpu3D {
             multimesh_bounds.push(bounds);
         }
         if emitters.is_empty() {
+            self.bleed_emitters_scratch = emitters;
+            self.bleed_occluders_scratch = occluders;
+            self.bleed_multimesh_bounds_scratch = multimesh_bounds;
             return;
         }
         for batch_index in 0..self.draw_batches.len() {
@@ -1984,6 +2038,9 @@ impl Gpu3D {
                 param.packed_bleed = packed;
             }
         }
+        self.bleed_emitters_scratch = emitters;
+        self.bleed_occluders_scratch = occluders;
+        self.bleed_multimesh_bounds_scratch = multimesh_bounds;
     }
 }
 

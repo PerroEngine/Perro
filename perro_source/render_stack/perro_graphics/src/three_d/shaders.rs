@@ -31,6 +31,8 @@ mod culling {
         perro_macros::include_str_stripped!("shaders/hiz_downsample.wgsl");
     pub const HIZ_OCCLUSION_CULL_WGSL: &str =
         perro_macros::include_str_stripped!("shaders/hiz_occlusion_cull.wgsl");
+    pub const MULTIMESH_CULL_WGSL: &str =
+        perro_macros::include_str_stripped!("shaders/multimesh_cull.wgsl");
 }
 
 #[inline]
@@ -279,11 +281,11 @@ pub fn build_custom_multimesh_material_shader(
     out.push_str(material_wgsl);
     if has_custom_vertex {
         out.push_str(
-            "\n@vertex\nfn vs_main(v: VertexInput, inst: InstanceInput, @builtin(vertex_index) vertex_index: u32) -> VertexOutput {\n    return shade_vertex(perro_multimesh_vs_main_base(v, inst, vertex_index));\n}\n",
+            "\n@vertex\nfn vs_main(v: VertexInput, @builtin(vertex_index) vertex_index: u32, @builtin(instance_index) instance_index: u32) -> VertexOutput {\n    let inst = fetch_instance(instance_index);\n    return shade_vertex(perro_multimesh_vs_main_base(v, inst, vertex_index));\n}\n",
         );
     } else {
         out.push_str(
-            "\n@vertex\nfn vs_main(v: VertexInput, inst: InstanceInput, @builtin(vertex_index) vertex_index: u32) -> VertexOutput {\n    return perro_multimesh_vs_main_base(v, inst, vertex_index);\n}\n",
+            "\n@vertex\nfn vs_main(v: VertexInput, @builtin(vertex_index) vertex_index: u32, @builtin(instance_index) instance_index: u32) -> VertexOutput {\n    let inst = fetch_instance(instance_index);\n    return perro_multimesh_vs_main_base(v, inst, vertex_index);\n}\n",
         );
     }
     if apply_standard_lighting {
@@ -557,6 +559,14 @@ pub fn create_frustum_cull_shader_module(device: &wgpu::Device) -> wgpu::ShaderM
     device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("perro_frustum_cull"),
         source: wgpu::ShaderSource::Wgsl(culling::FRUSTUM_CULL_WGSL.into()),
+    })
+}
+
+#[inline]
+pub fn create_multimesh_cull_shader_module(device: &wgpu::Device) -> wgpu::ShaderModule {
+    device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("perro_multimesh_cull"),
+        source: wgpu::ShaderSource::Wgsl(culling::MULTIMESH_CULL_WGSL.into()),
     })
 }
 
@@ -1124,6 +1134,11 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     fn multimesh_wgsl_parses() {
         let wgsl = sanitize_reserved_meta_identifier(regular::MULTIMESH_WGSL);
         naga::front::wgsl::parse_str(&wgsl).expect("multimesh wgsl parses");
+    }
+
+    #[test]
+    fn multimesh_cull_wgsl_validates() {
+        parse_and_validate(culling::MULTIMESH_CULL_WGSL, "multimesh cull");
     }
 
     #[test]

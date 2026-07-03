@@ -51,6 +51,9 @@ struct Shadow3D {
     ray_texel: vec4<f32>, // world units per shadow texel, per cascade
     spot_params: array<vec4<f32>, 4>,
     point_params: array<vec4<f32>, 4>,
+    // Direct dense-light-index -> shadow-slot lookup (-1.0 = no shadow).
+    spot_light_slots: array<vec4<f32>, 2>,
+    point_light_slots: array<vec4<f32>, 2>,
 }
 
 struct DecodedMaterialParams {
@@ -280,8 +283,9 @@ fn apply_mesh_blend_alpha(in: FragmentInput, material: DecodedMaterialParams, al
     return alpha * mesh_blend_fade(in, material);
 }
 
-fn perro_material_alpha(in: FragmentInput, alpha: f32) -> f32 {
-    let material = decode_material_params(in.packed_material_params);
+// Alpha cutoff/opaque handling without the mesh-blend fade; callers that
+// already hold the fade multiply it in via perro_material_alpha_with_fade.
+fn perro_material_alpha_base(material: DecodedMaterialParams, alpha: f32) -> f32 {
     var out_alpha = clamp(alpha, 0.0, 1.0);
     if material.alpha_mode == 1u && out_alpha < material.alpha_cutoff {
         discard;
@@ -289,7 +293,20 @@ fn perro_material_alpha(in: FragmentInput, alpha: f32) -> f32 {
     if material.alpha_mode == 0u {
         out_alpha = 1.0;
     }
+    return out_alpha;
+}
+
+fn perro_material_alpha(in: FragmentInput, alpha: f32) -> f32 {
+    let material = decode_material_params(in.packed_material_params);
+    let out_alpha = perro_material_alpha_base(material, alpha);
     return apply_mesh_blend_alpha(in, material, out_alpha);
+}
+
+// Variant for callers that already computed the mesh-blend fade, avoiding a
+// second mesh_blend_fade (textureLoad + reconstruct + derivatives).
+fn perro_material_alpha_with_fade(in: FragmentInput, alpha: f32, mesh_fade: f32) -> f32 {
+    let material = decode_material_params(in.packed_material_params);
+    return perro_material_alpha_base(material, alpha) * mesh_fade;
 }
 
 fn apply_mesh_normal_blend(
@@ -503,10 +520,12 @@ fn shadow_factor(world_pos: vec3<f32>, normal_ws: vec3<f32>, light_dir_to_light:
 
 // Returns -1.0 when the position falls outside this cascade's map so the
 // caller can fall through to the next cascade.
-fn sample_ray_shadow_array(light_view_proj: mat4x4<f32>, world_pos: vec3<f32>, normal_ws: vec3<f32>, bias_dir: vec3<f32>, layer: u32) -> f32 {
+// normal_dir / bias_dir must already be normalized (caller hoists the two
+// normalize() calls out of the per-cascade loop).
+fn sample_ray_shadow_array(light_view_proj: mat4x4<f32>, world_pos: vec3<f32>, normal_dir: vec3<f32>, bias_dir: vec3<f32>, layer: u32) -> f32 {
     let texel_world = max(shadow.ray_texel[layer], 1.0e-4);
     let normal_offset = max(texel_world * 1.75, shadow.params0.w * 0.25);
-    let sample_pos = world_pos + normalize(normal_ws) * normal_offset + normalize(bias_dir) * normal_offset * 0.25;
+    let sample_pos = world_pos + normal_dir * normal_offset + bias_dir * normal_offset * 0.25;
     let light_clip = light_view_proj * vec4<f32>(sample_pos, 1.0);
     if abs(light_clip.w) <= 1.0e-6 {
         return -1.0;
@@ -583,9 +602,12 @@ fn ray_shadow_factor(world_pos: vec3<f32>, normal_ws: vec3<f32>, light_dir_to_li
     // Pick the tightest cascade that actually contains the position; split
     // distances alone mismatch the fitted ortho bounds at screen edges.
     let cascade_count = min(u32(shadow.ray_params.y + 0.5), MAX_SHADOW_RAY_CASCADES);
+    // Hoist the two per-cascade normalize() out of the fall-through loop.
+    let normal_dir = normalize(normal_ws);
+    let bias_dir = normalize(light_dir_to_light);
     var visibility = 1.0;
     for (var cascade = 0u; cascade < cascade_count; cascade = cascade + 1u) {
-        let sampled = sample_ray_shadow_array(shadow.ray_light_view_proj[cascade], world_pos, normal_ws, light_dir_to_light, cascade);
+        let sampled = sample_ray_shadow_array(shadow.ray_light_view_proj[cascade], world_pos, normal_dir, bias_dir, cascade);
         if sampled >= 0.0 {
             visibility = sampled;
             break;
@@ -596,18 +618,18 @@ fn ray_shadow_factor(world_pos: vec3<f32>, normal_ws: vec3<f32>, light_dir_to_li
 }
 
 fn spot_shadow_factor(world_pos: vec3<f32>, normal_ws: vec3<f32>, light_index: u32) -> f32 {
-    if shadow.params0.x < 0.5 {
+    if shadow.params0.x < 0.5 || light_index >= MAX_SPOT_LIGHTS {
         return 1.0;
     }
-    for (var i = 0u; i < MAX_SHADOW_SPOT_LIGHTS; i = i + 1u) {
-        let params = shadow.spot_params[i];
-        if params.x > 0.5 && u32(params.y + 0.5) == light_index {
-            let light = scene.spot_lights[light_index];
-            let visibility = sample_shadow_array(shadow.spot_light_view_proj[i], world_pos, normal_ws, light.position_range.xyz - world_pos, u32(params.z + 0.5), false);
-            return mix(1.0, visibility, clamp(shadow.params0.y, 0.0, 1.0));
-        }
+    let slot_f = shadow.spot_light_slots[light_index / 4u][light_index % 4u];
+    if slot_f < 0.0 {
+        return 1.0;
     }
-    return 1.0;
+    let i = u32(slot_f + 0.5);
+    let params = shadow.spot_params[i];
+    let light = scene.spot_lights[light_index];
+    let visibility = sample_shadow_array(shadow.spot_light_view_proj[i], world_pos, normal_ws, light.position_range.xyz - world_pos, u32(params.z + 0.5), false);
+    return mix(1.0, visibility, clamp(shadow.params0.y, 0.0, 1.0));
 }
 
 fn point_shadow_face(to_light: vec3<f32>) -> u32 {
@@ -623,20 +645,20 @@ fn point_shadow_face(to_light: vec3<f32>) -> u32 {
 }
 
 fn point_shadow_factor(world_pos: vec3<f32>, normal_ws: vec3<f32>, light_index: u32, to_light: vec3<f32>) -> f32 {
-    if shadow.params0.x < 0.5 {
+    if shadow.params0.x < 0.5 || light_index >= MAX_POINT_LIGHTS {
         return 1.0;
     }
-    for (var i = 0u; i < MAX_SHADOW_POINT_LIGHTS; i = i + 1u) {
-        let params = shadow.point_params[i];
-        if params.x > 0.5 && u32(params.y + 0.5) == light_index {
-            let face = point_shadow_face(to_light);
-            let layer = u32(params.z + 0.5) + face;
-            let matrix_index = u32(params.z + 0.5) + face;
-            let visibility = sample_shadow_array(shadow.point_light_view_proj[matrix_index], world_pos, normal_ws, to_light, layer, true);
-            return mix(1.0, visibility, clamp(shadow.params0.y, 0.0, 1.0));
-        }
+    let slot_f = shadow.point_light_slots[light_index / 4u][light_index % 4u];
+    if slot_f < 0.0 {
+        return 1.0;
     }
-    return 1.0;
+    let i = u32(slot_f + 0.5);
+    let params = shadow.point_params[i];
+    let face = point_shadow_face(to_light);
+    let layer = u32(params.z + 0.5) + face;
+    let matrix_index = u32(params.z + 0.5) + face;
+    let visibility = sample_shadow_array(shadow.point_light_view_proj[matrix_index], world_pos, normal_ws, to_light, layer, true);
+    return mix(1.0, visibility, clamp(shadow.params0.y, 0.0, 1.0));
 }
 
 // Windowed inverse-square falloff: smooth fade to zero at range instead of a
@@ -787,7 +809,7 @@ fn perro_lit_standard(
     let roughness = clamp(roughness_in, 0.04, 1.0);
     let metallic = clamp(metallic_in, 0.0, 1.0);
     let ao = clamp(ao_in, 0.0, 1.0);
-    let alpha = perro_material_alpha(in, base_color.a);
+    let alpha = perro_material_alpha_with_fade(in, base_color.a, mesh_fade);
     if material.meshlet_debug_view {
         return vec4<f32>(albedo, 1.0);
     }
@@ -817,7 +839,11 @@ fn perro_lit_standard(
             let l = to_light * inv_dist;
             let radiance = light.color_intensity.xyz * light.color_intensity.w;
             let attenuation = range_attenuation(dist_sq, range_sq);
-            let shadow_vis = select(1.0, point_shadow_factor(in.world_pos, n, i, to_light), material.receive_shadows);
+            // if-branch, not select: select evaluates the PCF arm unconditionally.
+            var shadow_vis = 1.0;
+            if material.receive_shadows {
+                shadow_vis = point_shadow_factor(in.world_pos, n, i, to_light);
+            }
             light_rgb += brdf_pbr(albedo, n, v, l, roughness, metallic, radiance * attenuation * shadow_vis);
         }
     }
@@ -838,7 +864,11 @@ fn perro_lit_standard(
             let t = clamp((cos_theta - outer_cos) / max(inner_cos - outer_cos, 0.0001), 0.0, 1.0);
             let radiance = light.color_intensity.xyz * light.color_intensity.w * t;
             let attenuation = range_attenuation(dist_sq, range_sq);
-            let shadow_vis = select(1.0, spot_shadow_factor(in.world_pos, n, i), material.receive_shadows);
+            // if-branch, not select: select evaluates the PCF arm unconditionally.
+            var shadow_vis = 1.0;
+            if material.receive_shadows {
+                shadow_vis = spot_shadow_factor(in.world_pos, n, i);
+            }
             light_rgb += brdf_pbr(albedo, n, v, l, roughness, metallic, radiance * attenuation * shadow_vis);
         }
     }
@@ -862,17 +892,25 @@ fn perro_lit_standard(
         k_d_ambient * albedo * (ambient_radiance + bleed_diffuse * 0.45 * ao);
     // Env reflection: procedural sky sampled along the reflection direction;
     // smooth surfaces pick up bleed strongest when reflecting toward it.
-    let refl = reflect(-v, n);
-    var env_spec = sky_env_color(refl);
-    let bleed_align = 0.3 + 0.7 * pow(max(dot(refl, bleed.dir), 0.0), 2.0);
-    env_spec = mix(
-        env_spec,
-        bleed.color * 0.5,
-        bleed.strength * (1.0 - roughness) * 0.6 * bleed_align,
-    );
-    let spec_tint = mix(vec3<f32>(1.0), albedo, metallic);
-    let ambient_specular =
-        k_s_ambient * env_spec * spec_tint * (0.25 + 0.75 * (1.0 - roughness)) * ao;
+    // At roughness >= 0.95 the specular env contribution is negligible, so skip
+    // reflect() + sky lookup + tint entirely there.
+    var ambient_specular = vec3<f32>(0.0);
+    if roughness < 0.95 {
+        let refl = reflect(-v, n);
+        var env_spec = sky_env_color(refl);
+        // Bleed tinting only matters when there is bleed present.
+        if bleed.strength > 0.0 {
+            let bleed_align = 0.3 + 0.7 * pow(max(dot(refl, bleed.dir), 0.0), 2.0);
+            env_spec = mix(
+                env_spec,
+                bleed.color * 0.5,
+                bleed.strength * (1.0 - roughness) * 0.6 * bleed_align,
+            );
+        }
+        let spec_tint = mix(vec3<f32>(1.0), albedo, metallic);
+        ambient_specular =
+            k_s_ambient * env_spec * spec_tint * (0.25 + 0.75 * (1.0 - roughness)) * ao;
+    }
 
     let shaded = ambient_diffuse + ambient_specular + light_rgb + emissive;
     return vec4<f32>(tonemap_aces(shaded), alpha);

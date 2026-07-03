@@ -88,9 +88,9 @@ fn rect_upload_plan_tracks_incremental_updates() {
             size: [32.0, 32.0],
             color: [0, 255, 0, 255],
             z_index: 1,
-            shape_kind: 0,
+            // packed shape_kind = kind(0) * 2 + filled(1) = 1
+            shape_kind: 1,
             thickness: 1.0,
-            filled: 1,
         }
     );
 }
@@ -168,7 +168,8 @@ fn draw_line_emits_line_shape_instance() {
     let _ = renderer.prepare_frame(&resources);
     let frame_shapes = renderer.frame_shapes();
     assert_eq!(frame_shapes.len(), 1);
-    assert_eq!(frame_shapes[0].shape_kind, 3);
+    // packed shape_kind = kind(3) * 2 + filled(1) = 7
+    assert_eq!(frame_shapes[0].shape_kind, 7);
     assert_eq!(frame_shapes[0].thickness, 3.0);
 }
 

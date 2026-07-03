@@ -17,6 +17,7 @@ impl Gpu3D {
         queue: &wgpu::Queue,
         camera: &Camera3DState,
         lighting: &Lighting3DState,
+        has_casters: bool,
     ) {
         if std::env::var_os("PERRO_DISABLE_SHADOWS").is_some() {
             let zero = ShadowUniform::zeroed();
@@ -39,13 +40,21 @@ impl Gpu3D {
             fallback_focus_radius: self.shadow_focus_radius,
             viewport_width: self.depth_size.0,
             viewport_height: self.depth_size.1,
+            has_casters,
         });
         self.shadow_focus_center = setup.focus_center;
         self.shadow_focus_radius = setup.focus_radius;
         if self.last_shadow_scenes.len() != SHADOW_CAMERA_COUNT {
             self.last_shadow_scenes.resize(SHADOW_CAMERA_COUNT, None);
         }
+        if self.shadow_camera_frustums.len() != SHADOW_CAMERA_COUNT {
+            self.shadow_camera_frustums
+                .resize(SHADOW_CAMERA_COUNT, [Vec4::ZERO; 6]);
+        }
         for (index, scene) in setup.scenes.iter().copied().enumerate() {
+            // Cache the frustum planes so shadow draws can sphere-cull per view.
+            let view_proj = Mat4::from_cols_array_2d(&scene.view_proj);
+            self.shadow_camera_frustums[index] = extract_frustum_planes(view_proj);
             if self.last_shadow_scenes.get(index).copied().flatten() != Some(scene)
                 && let Some(buffer) = self.shadow_camera_buffers.get(index)
             {
@@ -73,6 +82,7 @@ pub(super) struct ShadowSetupArgs<'a> {
     fallback_focus_radius: f32,
     viewport_width: u32,
     viewport_height: u32,
+    has_casters: bool,
 }
 
 pub(super) fn build_shadow_setup(args: ShadowSetupArgs<'_>) -> ShadowSetup {
@@ -85,15 +95,16 @@ pub(super) fn build_shadow_setup(args: ShadowSetupArgs<'_>) -> ShadowSetup {
         fallback_focus_radius,
         viewport_width,
         viewport_height,
+        has_casters,
     } = args;
     let mut scenes = vec![Scene3DUniform::zeroed(); SHADOW_CAMERA_COUNT];
     let mut uniform = ShadowUniform::zeroed();
+    // -1.0 marks "no shadow slot" for the direct light-index -> slot lookup.
+    uniform.spot_light_slots = [[-1.0; 4]; MAX_SPOT_LIGHTS.div_ceil(4)];
+    uniform.point_light_slots = [[-1.0; 4]; MAX_POINT_LIGHTS.div_ceil(4)];
     let mut focus_center = fallback_focus_center;
     let mut focus_radius = fallback_focus_radius;
 
-    let has_casters = draw_batches
-        .iter()
-        .any(|batch| !batch.draw_on_top && batch.casts_shadows && batch.alpha_mode != 2);
     if !has_casters {
         return ShadowSetup {
             scenes,
@@ -166,6 +177,9 @@ pub(super) fn build_shadow_setup(args: ShadowSetupArgs<'_>) -> ShadowSetup {
         scenes[camera_index].view_proj = light_view_proj.to_cols_array_2d();
         uniform.spot_light_view_proj[spot_count] = scenes[camera_index].view_proj;
         uniform.spot_params[spot_count] = [1.0, gpu_index as f32, spot_count as f32, 0.0];
+        if gpu_index < MAX_SPOT_LIGHTS {
+            uniform.spot_light_slots[gpu_index / 4][gpu_index % 4] = spot_count as f32;
+        }
         spot_count += 1;
         any_enabled = true;
     }
@@ -200,6 +214,9 @@ pub(super) fn build_shadow_setup(args: ShadowSetupArgs<'_>) -> ShadowSetup {
             base_layer as f32,
             point.range.max(0.01),
         ];
+        if gpu_index < MAX_POINT_LIGHTS {
+            uniform.point_light_slots[gpu_index / 4][gpu_index % 4] = point_count as f32;
+        }
         point_count += 1;
         any_enabled = true;
     }
@@ -726,6 +743,7 @@ mod tests {
             fallback_focus_radius: 64.0,
             viewport_width: 1280,
             viewport_height: 720,
+            has_casters: true,
         });
         let setup_yaw = build_shadow_setup(ShadowSetupArgs {
             camera: &camera(Quat::from_rotation_y(1.0)),
@@ -736,6 +754,7 @@ mod tests {
             fallback_focus_radius: 64.0,
             viewport_width: 1280,
             viewport_height: 720,
+            has_casters: true,
         });
         let setup_b = build_shadow_setup(ShadowSetupArgs {
             camera: &camera(Quat::IDENTITY),
@@ -746,6 +765,7 @@ mod tests {
             fallback_focus_radius: 64.0,
             viewport_width: 1280,
             viewport_height: 720,
+            has_casters: true,
         });
         assert_eq!(setup_a.uniform.ray_splits, setup_yaw.uniform.ray_splits);
         assert_ne!(
@@ -767,6 +787,7 @@ mod tests {
             fallback_focus_radius: 64.0,
             viewport_width: 1280,
             viewport_height: 720,
+            has_casters: true,
         });
         assert!(setup.ray_enabled);
         assert_eq!(setup.uniform.ray_params[1], MAX_SHADOW_RAY_CASCADES as f32);
@@ -814,6 +835,7 @@ mod tests {
             fallback_focus_radius: 64.0,
             viewport_width: 1280,
             viewport_height: 720,
+            has_casters: true,
         });
         assert_eq!(setup.spot_count, 1);
         assert_eq!(setup.point_count, 1);

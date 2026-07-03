@@ -289,10 +289,11 @@ impl Gpu3D {
         self.multimesh_instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("perro_multimesh_instances"),
             size: (new_capacity * std::mem::size_of::<MultiMeshInstanceGpu>()) as u64,
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
         self.multimesh_instance_capacity = new_capacity;
+        self.rebuild_camera_bind_groups(device);
     }
 
     pub(super) fn ensure_multimesh_draw_params_capacity(
@@ -510,8 +511,17 @@ impl Gpu3D {
                     binding: 7,
                     resource: self.custom_params_values_buffer.as_entire_binding(),
                 },
+                wgpu::BindGroupEntry {
+                    binding: 8,
+                    resource: self.multimesh_visible_index_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 9,
+                    resource: self.multimesh_instance_buffer.as_entire_binding(),
+                },
             ],
         });
+        self.rebuild_multimesh_cull_bind_group(device);
         self.camera_bind_group_generation = self.camera_bind_group_generation.wrapping_add(1);
         if self.camera_bind_group_generation == 0 {
             self.camera_bind_group_generation = 1;
@@ -520,6 +530,119 @@ impl Gpu3D {
         if self.multimesh_bind_group_generation == 0 {
             self.multimesh_bind_group_generation = 1;
         }
+    }
+
+    pub(super) fn rebuild_multimesh_cull_bind_group(&mut self, device: &wgpu::Device) {
+        self.multimesh_cull_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("perro_multimesh_cull_bg"),
+            layout: &self.multimesh_cull_bgl,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: self.frustum_cull_params_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: self.multimesh_cull_params_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: self.multimesh_draw_params_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: self.multimesh_instance_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: self.multimesh_instance_batch_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: self.multimesh_cull_batch_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 6,
+                    resource: self.multimesh_visible_index_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 7,
+                    resource: self.multimesh_indirect_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 8,
+                    resource: self.multimesh_cull_counter_buffer.as_entire_binding(),
+                },
+            ],
+        });
+    }
+
+    // Grow the per-instance cull buffers (instance_batch + visible_indices).
+    // Callers must rebuild bind groups after (done via rebuild_camera_bind_groups
+    // for visible_indices in the multimesh bg, and here for the cull bg).
+    pub(super) fn ensure_multimesh_cull_instance_capacity(
+        &mut self,
+        device: &wgpu::Device,
+        needed: usize,
+    ) {
+        if needed <= self.multimesh_cull_instance_capacity {
+            return;
+        }
+        let mut new_capacity = self.multimesh_cull_instance_capacity.max(1);
+        while new_capacity < needed {
+            new_capacity *= 2;
+        }
+        self.multimesh_instance_batch_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("perro_multimesh_instance_batch"),
+            size: (new_capacity * std::mem::size_of::<u32>()) as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        self.multimesh_visible_index_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("perro_multimesh_visible_indices"),
+            size: (new_capacity * std::mem::size_of::<u32>()) as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        self.multimesh_cull_instance_capacity = new_capacity;
+        // visible_indices feeds the multimesh draw bind group too; rebuild both.
+        self.rebuild_camera_bind_groups(device);
+    }
+
+    pub(super) fn ensure_multimesh_cull_batch_capacity(
+        &mut self,
+        device: &wgpu::Device,
+        needed: usize,
+    ) {
+        if needed <= self.multimesh_cull_batch_capacity {
+            return;
+        }
+        let mut new_capacity = self.multimesh_cull_batch_capacity.max(1);
+        while new_capacity < needed {
+            new_capacity *= 2;
+        }
+        self.multimesh_cull_batch_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("perro_multimesh_cull_batches"),
+            size: (new_capacity * std::mem::size_of::<MultiMeshCullBatchGpu>()) as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        self.multimesh_cull_counter_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("perro_multimesh_cull_counters"),
+            size: (new_capacity * std::mem::size_of::<u32>()) as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        self.multimesh_indirect_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("perro_multimesh_indirect"),
+            size: (new_capacity * std::mem::size_of::<DrawIndexedIndirectGpu>()) as u64,
+            usage: wgpu::BufferUsages::INDIRECT
+                | wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        self.multimesh_cull_batch_capacity = new_capacity;
+        self.rebuild_multimesh_cull_bind_group(device);
     }
 
     pub(super) fn ensure_skeleton_capacity(&mut self, device: &wgpu::Device, needed: usize) {
@@ -590,9 +713,15 @@ impl Gpu3D {
         while new_capacity < needed {
             new_capacity *= 2;
         }
-        self.frustum_cull_items_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("perro_frustum_cull_items"),
-            size: (new_capacity * std::mem::size_of::<FrustumCullItemGpu>()) as u64,
+        self.frustum_cull_static_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("perro_frustum_cull_static"),
+            size: (new_capacity * std::mem::size_of::<FrustumCullStaticGpu>()) as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        self.frustum_cull_dynamic_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("perro_frustum_cull_dynamic"),
+            size: (new_capacity * std::mem::size_of::<FrustumCullDynamicGpu>()) as u64,
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -623,10 +752,14 @@ impl Gpu3D {
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: self.frustum_cull_items_buffer.as_entire_binding(),
+                    resource: self.frustum_cull_static_buffer.as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
+                    resource: self.frustum_cull_dynamic_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
                     resource: self.indirect_buffer.as_entire_binding(),
                 },
             ],
@@ -641,14 +774,18 @@ impl Gpu3D {
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: self.frustum_cull_items_buffer.as_entire_binding(),
+                    resource: self.frustum_cull_static_buffer.as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: self.indirect_buffer.as_entire_binding(),
+                    resource: self.frustum_cull_dynamic_buffer.as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
                     binding: 3,
+                    resource: self.indirect_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
                     resource: wgpu::BindingResource::TextureView(&self.hiz_sample_view),
                 },
             ],

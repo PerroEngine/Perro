@@ -69,7 +69,11 @@ fn shade_material(in: FragmentInput) -> vec4<f32> {
             let l = to_light * inv_dist;
             let radiance = light.color_intensity.xyz * light.color_intensity.w;
             let attenuation = range_attenuation(dist_sq, range_sq);
-            let shadow_vis = select(1.0, point_shadow_factor(in.world_pos, n, i, to_light), material.receive_shadows);
+            // if-branch, not select: select evaluates the PCF arm unconditionally.
+            var shadow_vis = 1.0;
+            if material.receive_shadows {
+                shadow_vis = point_shadow_factor(in.world_pos, n, i, to_light);
+            }
             light_rgb += radiance * attenuation * shadow_vis * lambert(n, l);
         }
     }
@@ -90,7 +94,11 @@ fn shade_material(in: FragmentInput) -> vec4<f32> {
             let t = clamp((cos_theta - outer_cos) / max(inner_cos - outer_cos, 0.0001), 0.0, 1.0);
             let radiance = light.color_intensity.xyz * light.color_intensity.w * t;
             let attenuation = range_attenuation(dist_sq, range_sq);
-            let shadow_vis = select(1.0, spot_shadow_factor(in.world_pos, n, i), material.receive_shadows);
+            // if-branch, not select: select evaluates the PCF arm unconditionally.
+            var shadow_vis = 1.0;
+            if material.receive_shadows {
+                shadow_vis = spot_shadow_factor(in.world_pos, n, i);
+            }
             light_rgb += radiance * attenuation * shadow_vis * lambert(n, l);
         }
     }

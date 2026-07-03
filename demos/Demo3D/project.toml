@@ -34,7 +34,7 @@ particle_sim_default = "gpu"
 pixel_snapping = true
 
 [runtime]
-frame_rate_cap = "refresh_rate"
+frame_rate_cap = "uncapped"
 target_fixed_update = 60
 
 [physics]

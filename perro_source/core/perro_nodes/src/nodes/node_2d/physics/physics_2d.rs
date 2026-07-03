@@ -329,8 +329,8 @@ impl DerefMut for RigidBody2D {
     }
 }
 
-/// Script-driven body: kp gravity + collide vs static/rigid, no dynamics.
-/// No velocity/force state; mv via transform or move api.
+/// Script-driven body: collide vs static/rigid, no dynamics, no engine motion.
+/// No velocity/force/gravity state; mv via transform or move api only.
 #[derive(Clone, Debug)]
 pub struct CharacterBody2D {
     pub base: Node2D,
@@ -338,9 +338,6 @@ pub struct CharacterBody2D {
     pub physics_handle: Option<u64>,
     pub collision_layers: BitMask,
     pub collision_mask: BitMask,
-    pub apply_gravity: bool,
-    pub gravity_scale: f32,
-    pub max_fall_speed: f32,
     pub friction: f32,
     pub restitution: f32,
     pub density: f32,
@@ -361,9 +358,6 @@ impl CharacterBody2D {
             physics_handle: None,
             collision_layers: BitMask::ALL,
             collision_mask: BitMask::NONE,
-            apply_gravity: true,
-            gravity_scale: 1.0,
-            max_fall_speed: 64.0,
             friction: 0.7,
             restitution: 0.0,
             density: 1.0,

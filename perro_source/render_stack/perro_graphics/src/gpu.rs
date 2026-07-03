@@ -442,6 +442,7 @@ pub struct Gpu {
     occlusion_culling: OcclusionCullingMode,
     texture_filter: TextureFilterMode,
     indirect_first_instance_enabled: bool,
+    multi_draw_indirect_enabled: bool,
     gpu_timer: Option<GpuTimestampTimer>,
 }
 
@@ -711,6 +712,10 @@ impl Gpu {
             .ok()?;
         let indirect_first_instance_enabled =
             required_features.contains(wgpu::Features::INDIRECT_FIRST_INSTANCE);
+        // multi_draw_indexed_indirect (non-count) needs only INDIRECT_EXECUTION,
+        // the same downlevel capability draw_indexed_indirect already relies on,
+        // so it rides the existing indirect path with no extra feature request.
+        let multi_draw_indirect_enabled = indirect_first_instance_enabled;
         let timestamp_query_enabled = required_features.contains(timestamp_features);
         if !indirect_first_instance_enabled {
             eprintln!(
@@ -775,6 +780,7 @@ impl Gpu {
                 meshlet_debug_view: cfg.meshlet_debug_view,
                 occlusion_culling: cfg.occlusion_culling,
                 indirect_first_instance_enabled,
+                multi_draw_indirect_enabled,
                 texture_filter: cfg.texture_filter,
             },
         );
@@ -849,6 +855,7 @@ impl Gpu {
             occlusion_culling: cfg.occlusion_culling,
             texture_filter: cfg.texture_filter,
             indirect_first_instance_enabled,
+            multi_draw_indirect_enabled,
             gpu_timer,
         })
     }
@@ -924,6 +931,29 @@ impl Gpu {
         }
         if let Some(point_particles_3d) = self.point_particles_3d.as_mut() {
             point_particles_3d.set_sample_count(&self.device, self.render_format, sample_count);
+        }
+        if self.water.is_some() {
+            let rebuilt = if let (Some(water), Some(two_d), Some(three_d)) = (
+                self.water.as_mut(),
+                self.two_d.as_ref(),
+                self.three_d.as_ref(),
+            ) {
+                water.set_sample_count(
+                    &self.device,
+                    self.render_format,
+                    sample_count,
+                    two_d.camera_bind_group_layout(),
+                    three_d.water_camera_bind_group_layout(),
+                );
+                true
+            } else {
+                false
+            };
+            if !rebuilt {
+                // Camera layouts unavailable: drop the water GPU state so it
+                // is lazily recreated at the new sample count.
+                self.water = None;
+            }
         }
         self.msaa_color = create_msaa_color_target(
             &self.device,
@@ -1139,6 +1169,7 @@ impl Gpu {
                         meshlet_debug_view: self.meshlet_debug_view,
                         occlusion_culling: self.occlusion_culling,
                         indirect_first_instance_enabled: self.indirect_first_instance_enabled,
+                        multi_draw_indirect_enabled: self.multi_draw_indirect_enabled,
                         texture_filter: self.texture_filter,
                     },
                 ));
@@ -1209,6 +1240,7 @@ impl Gpu {
                         meshlet_debug_view: self.meshlet_debug_view,
                         occlusion_culling: self.occlusion_culling,
                         indirect_first_instance_enabled: self.indirect_first_instance_enabled,
+                        multi_draw_indirect_enabled: self.multi_draw_indirect_enabled,
                         texture_filter: self.texture_filter,
                     },
                 ));
@@ -1545,6 +1577,7 @@ impl Gpu {
                                     occlusion_culling: self.occlusion_culling,
                                     indirect_first_instance_enabled: self
                                         .indirect_first_instance_enabled,
+                                    multi_draw_indirect_enabled: self.multi_draw_indirect_enabled,
                                     texture_filter: self.texture_filter,
                                 },
                             );
@@ -1615,6 +1648,7 @@ impl Gpu {
                             meshlet_debug_view: self.meshlet_debug_view,
                             occlusion_culling: self.occlusion_culling,
                             indirect_first_instance_enabled: self.indirect_first_instance_enabled,
+                            multi_draw_indirect_enabled: self.multi_draw_indirect_enabled,
                             texture_filter: self.texture_filter,
                         },
                     );

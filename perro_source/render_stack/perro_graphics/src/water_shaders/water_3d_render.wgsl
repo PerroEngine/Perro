@@ -777,8 +777,10 @@ fn fs_water_3d(in: Water3DVertexOut, @builtin(front_facing) front_facing: bool) 
     );
 
     var caustic = 0.0;
+    // sun_up scales caustic to zero when sun at/below horizon; gate on it so
+    // the hex-ridged fbm is skipped when its weight is ~0 (output-identical)
     if w.visual2.x > 0.001 && depth_info.hit > 0.5 && top_surface_mask > 0.02
-        && scene_thickness < shallow_depth * 4.0 {
+        && sun_up > 0.0 && scene_thickness < shallow_depth * 4.0 {
         let bed_xz = depth_info.bed_world.xz;
         let drift = wind * t * 0.42;
         let c1 = water_hex_ridged_fbm(bed_xz * 0.55 + drift);

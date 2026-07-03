@@ -276,9 +276,14 @@ impl GpuPointParticles3D {
             let color = lerp4(emitter.color_start.into(), emitter.color_end.into(), age);
             let particle = PointParticleGpu {
                 world_pos: pos.to_array(),
-                size_alpha: [size, color[3]],
-                color,
-                emissive: emitter.emissive,
+                color: pack_unorm8x4(color),
+                size_alpha: pack_f16x2([size, color[3]]),
+                emissive: pack_f16x4([
+                    emitter.emissive[0],
+                    emitter.emissive[1],
+                    emitter.emissive[2],
+                    0.0,
+                ]),
             };
             if billboard_mode {
                 self.staged_billboards.push(particle);

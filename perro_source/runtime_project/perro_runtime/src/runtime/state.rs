@@ -17,7 +17,6 @@ type DynamicScriptLibrary = ();
 pub(crate) struct ScriptRuntimeState {
     pub(crate) active_script_stack: Vec<(usize, NodeID)>,
     pub(crate) active_callback_context: Option<ScriptCallbackContext>,
-    pub(crate) last_node_lookup: Option<(NodeID, usize, u32)>,
     pub(crate) pending_start_scripts: Vec<NodeID>,
     pub(crate) pending_start_flags: Vec<Option<NodeID>>,
     pub(crate) script_libraries: Vec<DynamicScriptLibrary>,
@@ -34,7 +33,6 @@ impl ScriptRuntimeState {
         Self {
             active_script_stack: Vec::new(),
             active_callback_context: None,
-            last_node_lookup: None,
             pending_start_scripts: Vec::new(),
             pending_start_flags: Vec::new(),
             script_libraries: Vec::new(),
@@ -399,6 +397,12 @@ impl DirtyState {
     #[inline]
     pub(crate) fn ui_flags_at(&self, index: usize) -> u16 {
         self.node_flags.get(index).copied().unwrap_or(0) & Self::UI_DIRTY_MASK
+    }
+
+    #[cfg(test)]
+    #[inline]
+    pub(crate) fn flags_at(&self, index: usize) -> u16 {
+        self.node_flags.get(index).copied().unwrap_or(0)
     }
 
     pub(crate) fn mark_transform_root(&mut self, id: NodeID) {

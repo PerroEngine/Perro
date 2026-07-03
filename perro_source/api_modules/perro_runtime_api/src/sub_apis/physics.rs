@@ -74,6 +74,30 @@ pub struct PhysicsMoveResult3D {
     pub clipped: bool,
 }
 
+/// Result of an iterative move-and-slide sweep.
+///
+/// `position` is the final body position after sliding along up to 4 hit
+/// planes. `remainder` is unconsumed motion (blocked, e.g. cornered).
+/// `hits` holds one entry per slide iteration that clipped, in order.
+#[derive(Clone, Debug, PartialEq)]
+pub struct PhysicsSlideResult2D {
+    pub position: Vector2,
+    pub remainder: Vector2,
+    pub hits: Vec<PhysicsShapeHit2D>,
+}
+
+/// Result of an iterative move-and-slide sweep.
+///
+/// `position` is the final body position after sliding along up to 4 hit
+/// planes. `remainder` is unconsumed motion (blocked, e.g. cornered).
+/// `hits` holds one entry per slide iteration that clipped, in order.
+#[derive(Clone, Debug, PartialEq)]
+pub struct PhysicsSlideResult3D {
+    pub position: Vector3,
+    pub remainder: Vector3,
+    pub hits: Vec<PhysicsShapeHit3D>,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct PhysicsContact2D {
     pub node: NodeID,
@@ -200,6 +224,44 @@ pub trait PhysicsAPI {
         filter: PhysicsQueryFilter,
     ) -> Option<PhysicsMoveResult3D> {
         let _ = (body_id, target, margin, filter);
+        None
+    }
+    fn move_and_slide_2d(
+        &mut self,
+        body_id: NodeID,
+        motion: Vector2,
+        filter: PhysicsQueryFilter,
+    ) -> Option<PhysicsSlideResult2D> {
+        let _ = (body_id, motion, filter);
+        None
+    }
+    fn move_and_slide_3d(
+        &mut self,
+        body_id: NodeID,
+        motion: Vector3,
+        filter: PhysicsQueryFilter,
+    ) -> Option<PhysicsSlideResult3D> {
+        let _ = (body_id, motion, filter);
+        None
+    }
+    fn apply_gravity_2d(
+        &mut self,
+        body_id: NodeID,
+        dt: f32,
+        max_fall_speed: f32,
+        filter: PhysicsQueryFilter,
+    ) -> Option<PhysicsMoveResult2D> {
+        let _ = (body_id, dt, max_fall_speed, filter);
+        None
+    }
+    fn apply_gravity_3d(
+        &mut self,
+        body_id: NodeID,
+        dt: f32,
+        max_fall_speed: f32,
+        filter: PhysicsQueryFilter,
+    ) -> Option<PhysicsMoveResult3D> {
+        let _ = (body_id, dt, max_fall_speed, filter);
         None
     }
     fn contacts_2d(&mut self, body_id: NodeID) -> Vec<PhysicsContact2D>;
@@ -531,6 +593,52 @@ impl<'rt, R: PhysicsAPI + ?Sized> PhysicsModule<'rt, R> {
         filter: PhysicsQueryFilter,
     ) -> Option<PhysicsMoveResult3D> {
         self.rt.move_body_3d(body_id, target, margin, filter)
+    }
+
+    /// Sweep `body_id` along `motion`, sliding along hit planes (up to 4 slides).
+    pub fn move_and_slide_2d(
+        &mut self,
+        body_id: NodeID,
+        motion: Vector2,
+        filter: PhysicsQueryFilter,
+    ) -> Option<PhysicsSlideResult2D> {
+        self.rt.move_and_slide_2d(body_id, motion, filter)
+    }
+
+    /// Sweep `body_id` along `motion`, sliding along hit planes (up to 4 slides).
+    pub fn move_and_slide_3d(
+        &mut self,
+        body_id: NodeID,
+        motion: Vector3,
+        filter: PhysicsQueryFilter,
+    ) -> Option<PhysicsSlideResult3D> {
+        self.rt.move_and_slide_3d(body_id, motion, filter)
+    }
+
+    /// Script-invoked engine gravity for a character body: integrates an
+    /// internal fall speed from world gravity, sweeps down, resets on landing.
+    pub fn apply_gravity_2d(
+        &mut self,
+        body_id: NodeID,
+        dt: f32,
+        max_fall_speed: f32,
+        filter: PhysicsQueryFilter,
+    ) -> Option<PhysicsMoveResult2D> {
+        self.rt
+            .apply_gravity_2d(body_id, dt, max_fall_speed, filter)
+    }
+
+    /// Script-invoked engine gravity for a character body: integrates an
+    /// internal fall speed from world gravity, sweeps down, resets on landing.
+    pub fn apply_gravity_3d(
+        &mut self,
+        body_id: NodeID,
+        dt: f32,
+        max_fall_speed: f32,
+        filter: PhysicsQueryFilter,
+    ) -> Option<PhysicsMoveResult3D> {
+        self.rt
+            .apply_gravity_3d(body_id, dt, max_fall_speed, filter)
     }
 
     pub fn contacts_2d(&mut self, body_id: NodeID) -> Vec<PhysicsContact2D> {
@@ -1138,6 +1246,66 @@ macro_rules! physics_move_body_3d {
     ($ctx:expr, $body_id:expr, $target:expr, $margin:expr, $filter:expr) => {
         $ctx.Physics()
             .move_body_3d($body_id, $target, $margin, $filter)
+    };
+}
+
+#[macro_export]
+macro_rules! physics_move_and_slide_2d {
+    ($ctx:expr, $body_id:expr, $motion:expr) => {
+        $ctx.Physics().move_and_slide_2d(
+            $body_id,
+            $motion,
+            $crate::sub_apis::PhysicsQueryFilter::default(),
+        )
+    };
+    ($ctx:expr, $body_id:expr, $motion:expr, $filter:expr) => {
+        $ctx.Physics().move_and_slide_2d($body_id, $motion, $filter)
+    };
+}
+
+#[macro_export]
+macro_rules! physics_move_and_slide_3d {
+    ($ctx:expr, $body_id:expr, $motion:expr) => {
+        $ctx.Physics().move_and_slide_3d(
+            $body_id,
+            $motion,
+            $crate::sub_apis::PhysicsQueryFilter::default(),
+        )
+    };
+    ($ctx:expr, $body_id:expr, $motion:expr, $filter:expr) => {
+        $ctx.Physics().move_and_slide_3d($body_id, $motion, $filter)
+    };
+}
+
+#[macro_export]
+macro_rules! physics_apply_gravity_2d {
+    ($ctx:expr, $body_id:expr, $dt:expr) => {
+        $ctx.Physics().apply_gravity_2d(
+            $body_id,
+            $dt,
+            64.0,
+            $crate::sub_apis::PhysicsQueryFilter::default(),
+        )
+    };
+    ($ctx:expr, $body_id:expr, $dt:expr, $max_fall_speed:expr, $filter:expr) => {
+        $ctx.Physics()
+            .apply_gravity_2d($body_id, $dt, $max_fall_speed, $filter)
+    };
+}
+
+#[macro_export]
+macro_rules! physics_apply_gravity_3d {
+    ($ctx:expr, $body_id:expr, $dt:expr) => {
+        $ctx.Physics().apply_gravity_3d(
+            $body_id,
+            $dt,
+            64.0,
+            $crate::sub_apis::PhysicsQueryFilter::default(),
+        )
+    };
+    ($ctx:expr, $body_id:expr, $dt:expr, $max_fall_speed:expr, $filter:expr) => {
+        $ctx.Physics()
+            .apply_gravity_3d($body_id, $dt, $max_fall_speed, $filter)
     };
 }
 
