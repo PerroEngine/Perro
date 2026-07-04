@@ -953,3 +953,38 @@ define_scene_nodes! {
         AnimationTree => (None, AnimationTree, Renderable::False, InternalUpdate::True, InternalFixedUpdate::False)
     }
 }
+
+impl NodeType {
+    /// True for node types whose data the physics world mirrors: bodies,
+    /// colliders, joints, force emitters, water, and physics bone rigs.
+    /// Mutating one of these must invalidate the physics sync gate.
+    pub const fn is_physics(self) -> bool {
+        matches!(
+            self,
+            NodeType::CollisionShape2D
+                | NodeType::StaticBody2D
+                | NodeType::Area2D
+                | NodeType::RigidBody2D
+                | NodeType::CharacterBody2D
+                | NodeType::PhysicsForceEmitter2D
+                | NodeType::PinJoint2D
+                | NodeType::DistanceJoint2D
+                | NodeType::FixedJoint2D
+                | NodeType::WaterBody2D
+                | NodeType::PhysicsBoneChain2D
+                | NodeType::BoneCollider2D
+                | NodeType::CollisionShape3D
+                | NodeType::StaticBody3D
+                | NodeType::Area3D
+                | NodeType::RigidBody3D
+                | NodeType::CharacterBody3D
+                | NodeType::PhysicsForceEmitter3D
+                | NodeType::BallJoint3D
+                | NodeType::HingeJoint3D
+                | NodeType::FixedJoint3D
+                | NodeType::WaterBody3D
+                | NodeType::PhysicsBoneChain3D
+                | NodeType::BoneCollider3D
+        )
+    }
+}

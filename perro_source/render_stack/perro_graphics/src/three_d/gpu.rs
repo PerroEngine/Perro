@@ -704,6 +704,10 @@ pub struct Gpu3D {
     // primed as identity so the same storage-fetch draw path is correct.
     multimesh_cull_pipeline: wgpu::ComputePipeline,
     multimesh_cull_finalize_pipeline: wgpu::ComputePipeline,
+    // Second cull phase (frustum + hi-z) run after the depth prepass builds
+    // this frame's pyramid; recompacts the same visible-index/indirect buffers
+    // before the main pass reads them.
+    multimesh_cull_hiz_pipeline: wgpu::ComputePipeline,
     multimesh_cull_bgl: wgpu::BindGroupLayout,
     multimesh_cull_bind_group: wgpu::BindGroup,
     multimesh_cull_params_buffer: wgpu::Buffer,

@@ -64,6 +64,19 @@ struct MultiMeshCullParams {
     _pad2: u32,
 }
 
+// Same layout as the rigid hi-z cull params (shared uniform buffer).
+struct HizCullParams {
+    view_proj: mat4x4<f32>,
+    draw_count: u32,
+    hiz_mip_count: u32,
+    hiz_width: u32,
+    hiz_height: u32,
+    aspect: f32,
+    proj_y_scale: f32,
+    depth_bias: f32,
+    _pad0: u32,
+}
+
 @group(0) @binding(0)
 var<uniform> frustum: FrustumCullParams;
 @group(0) @binding(1)
@@ -84,19 +97,23 @@ var<storage, read_write> commands: array<DrawIndexedIndirect>;
 // Per-batch atomic append counter, one per batch, cleared before dispatch.
 @group(0) @binding(8)
 var<storage, read_write> counters: array<atomic<u32>>;
+// Hi-z occlusion inputs (used only by cs_main_hiz).
+@group(0) @binding(9)
+var<uniform> hiz_params: HizCullParams;
+@group(0) @binding(10)
+var hiz_tex: texture_2d<f32>;
 
 fn finite3(v: vec3<f32>) -> bool {
     return all(v == v) && all(abs(v) < vec3<f32>(1.0e30));
 }
 
-@compute @workgroup_size(64u)
-fn cs_main(@builtin(global_invocation_id) gid: vec3<u32>) {
-    let i = gid.x;
-    if i >= params.instance_count {
-        return;
-    }
-    let batch_id = instance_batch[i];
-    let batch = batches[batch_id];
+fn finite4(v: vec4<f32>) -> bool {
+    return all(v == v) && all(abs(v) < vec4<f32>(1.0e30));
+}
+
+// World bounding sphere of one instance: center in xyz, radius in w.
+fn instance_world_sphere(i: u32) -> vec4<f32> {
+    let batch = batches[instance_batch[i]];
     let inst = instances[i];
     let draw = draws[inst.draw_id];
 
@@ -119,25 +136,113 @@ fn cs_main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let sz2 = dot(draw.model_row_2.xyz, draw.model_row_2.xyz);
     let model_scale = sqrt(max(max(sx2, sy2), max(sz2, 1.0e-12)));
     let radius = mesh_radius * max(inst_scale, 0.0) * model_scale;
+    return vec4<f32>(center, radius);
+}
 
-    var visible = finite3(center);
-    if visible {
-        for (var pl = 0u; pl < 6u; pl = pl + 1u) {
-            let plane = frustum.planes[pl];
-            let d = dot(plane.xyz, center) + plane.w;
-            if d < -radius {
-                visible = false;
-                break;
-            }
+fn sphere_in_frustum(center: vec3<f32>, radius: f32) -> bool {
+    if !finite3(center) {
+        return false;
+    }
+    for (var pl = 0u; pl < 6u; pl = pl + 1u) {
+        let plane = frustum.planes[pl];
+        let d = dot(plane.xyz, center) + plane.w;
+        if d < -radius {
+            return false;
         }
     }
+    return true;
+}
 
-    if visible {
-        let slot = atomicAdd(&counters[batch_id], 1u);
-        if slot < batch.instance_cap {
-            visible_indices[batch.instance_start + slot] = i;
-        }
+fn append_visible(i: u32) {
+    let batch_id = instance_batch[i];
+    let batch = batches[batch_id];
+    let slot = atomicAdd(&counters[batch_id], 1u);
+    if slot < batch.instance_cap {
+        visible_indices[batch.instance_start + slot] = i;
     }
+}
+
+@compute @workgroup_size(64u)
+fn cs_main(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let i = gid.x;
+    if i >= params.instance_count {
+        return;
+    }
+    let sphere = instance_world_sphere(i);
+    if sphere_in_frustum(sphere.xyz, sphere.w) {
+        append_visible(i);
+    }
+}
+
+// Conservative hi-z occlusion test against the max-depth pyramid built from
+// this frame's depth prepass. Mirrors hiz_occlusion_cull.wgsl.
+fn sphere_hiz_occluded(center: vec3<f32>, radius_world: f32) -> bool {
+    let clip = hiz_params.view_proj * vec4<f32>(center, 1.0);
+    if !finite4(clip) || clip.w <= 1.0e-5 {
+        return false;
+    }
+    let ndc = clip.xyz / clip.w;
+    if ndc.x < -1.1 || ndc.x > 1.1 || ndc.y < -1.1 || ndc.y > 1.1 || ndc.z < -1.1 || ndc.z > 1.1 {
+        return false;
+    }
+
+    // Approximate projected radius in pixels to select Hi-Z mip level.
+    let radius_ndc_y = (radius_world * hiz_params.proj_y_scale) / max(abs(clip.w), 1.0e-4);
+    let radius_px = max(radius_ndc_y * 0.5 * f32(hiz_params.hiz_height), 1.0);
+    let diameter_px = radius_px * 2.0;
+    let mip = min(
+        u32(max(ceil(log2(diameter_px)), 0.0)),
+        max(hiz_params.hiz_mip_count, 1u) - 1u,
+    );
+
+    let dims = textureDimensions(hiz_tex, i32(mip));
+    // NDC y is up; texture coordinates are top-left origin.
+    let uv = vec2<f32>(ndc.x * 0.5 + 0.5, -ndc.y * 0.5 + 0.5);
+    let px_f = uv.x * f32(dims.x);
+    let py_f = uv.y * f32(dims.y);
+    let mip_scale = exp2(f32(mip));
+    let radius_px_mip = max(radius_px / mip_scale, 1.0);
+    let rx = i32(ceil(radius_px_mip));
+    let ry = i32(ceil(radius_px_mip));
+
+    let cx = clamp(i32(px_f), 0, i32(dims.x) - 1);
+    let cy = clamp(i32(py_f), 0, i32(dims.y) - 1);
+    let x0 = clamp(cx - rx, 0, i32(dims.x) - 1);
+    let x1 = clamp(cx + rx, 0, i32(dims.x) - 1);
+    let y0 = clamp(cy - ry, 0, i32(dims.y) - 1);
+    let y1 = clamp(cy + ry, 0, i32(dims.y) - 1);
+
+    // Conservative with max-depth Hi-Z: keep the maximum (farthest) depth
+    // across the whole footprint, corners included.
+    let d_center = textureLoad(hiz_tex, vec2<i32>(cx, cy), i32(mip)).x;
+    let d_00 = textureLoad(hiz_tex, vec2<i32>(x0, y0), i32(mip)).x;
+    let d_10 = textureLoad(hiz_tex, vec2<i32>(x1, y0), i32(mip)).x;
+    let d_01 = textureLoad(hiz_tex, vec2<i32>(x0, y1), i32(mip)).x;
+    let d_11 = textureLoad(hiz_tex, vec2<i32>(x1, y1), i32(mip)).x;
+    let hiz_depth = max(max(max(d_center, d_00), max(d_10, d_01)), d_11);
+
+    let center_depth = clamp(ndc.z, 0.0, 1.0);
+    let nearest_depth = max(center_depth - radius_ndc_y * 0.5, 0.0);
+    return nearest_depth > hiz_depth + hiz_params.depth_bias;
+}
+
+// Second cull phase: re-compacts with frustum + hi-z after the depth prepass
+// (which drew the frustum-only survivors) built this frame's pyramid. The
+// main pass then draws only unoccluded instances.
+@compute @workgroup_size(64u)
+fn cs_main_hiz(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let i = gid.x;
+    if i >= params.instance_count {
+        return;
+    }
+    let sphere = instance_world_sphere(i);
+    if !sphere_in_frustum(sphere.xyz, sphere.w) {
+        return;
+    }
+    if sphere_hiz_occluded(sphere.xyz, sphere.w) {
+        return;
+    }
+    append_visible(i);
 }
 
 // One thread per batch: copy the append counter into the indirect record.

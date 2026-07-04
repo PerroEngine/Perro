@@ -729,3 +729,63 @@ fn with_base_node_mut_active_camera3d_transform_requests_3d_scan() {
     assert!(runtime.render_3d.full_scan_pending());
     assert!(runtime.dirty.has_transform_dirty(cam, Spatial::ThreeD));
 }
+
+// -- physics-version split ---------------------------------------------------
+// Non-physics data mutations must NOT move the physics sync version; physics
+// node mutations and structural changes must.
+
+#[test]
+fn with_node_mut_non_physics_keeps_physics_version() {
+    let mut runtime = Runtime::new();
+    let sprite = NodeAPI::create::<Sprite2D>(&mut runtime);
+    let physics_before = runtime.nodes.physics_version();
+    let data_before = runtime.nodes.mutation_version();
+
+    <Runtime as NodeAPI>::with_node_mut::<Sprite2D, _, _>(&mut runtime, sprite, |s| {
+        s.base.transform.position.x += 1.0;
+    });
+
+    assert_eq!(
+        runtime.nodes.physics_version(),
+        physics_before,
+        "sprite data mutation must not invalidate the physics sync gate"
+    );
+    assert_ne!(
+        runtime.nodes.mutation_version(),
+        data_before,
+        "data mutation version still moves for resource-ref scans"
+    );
+}
+
+#[test]
+fn with_node_mut_physics_node_bumps_physics_version() {
+    let mut runtime = Runtime::new();
+    let body = NodeAPI::create::<perro_nodes::RigidBody3D>(&mut runtime);
+    let physics_before = runtime.nodes.physics_version();
+
+    <Runtime as NodeAPI>::with_node_mut::<perro_nodes::RigidBody3D, _, _>(
+        &mut runtime,
+        body,
+        |b| {
+            b.gravity_scale *= 2.0;
+        },
+    );
+
+    assert_ne!(
+        runtime.nodes.physics_version(),
+        physics_before,
+        "rigid body mutation must invalidate the physics sync gate"
+    );
+}
+
+#[test]
+fn structural_changes_bump_physics_version() {
+    let mut runtime = Runtime::new();
+    let before_insert = runtime.nodes.physics_version();
+    let node = NodeAPI::create::<Sprite2D>(&mut runtime);
+    assert_ne!(runtime.nodes.physics_version(), before_insert);
+
+    let before_remove = runtime.nodes.physics_version();
+    NodeAPI::remove_node(&mut runtime, node);
+    assert_ne!(runtime.nodes.physics_version(), before_remove);
+}

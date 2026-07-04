@@ -48,13 +48,17 @@ struct UniformFrameCtx {
 /// into a single Merged step so they cost one pass instead of one pass each.
 enum ChainStep<'a> {
     Single(&'a PostProcessEffect),
-    /// Descriptors for the merged ops: 3 vec4 each ([type,_,_,_], p0, p1).
-    Merged(Vec<[f32; 4]>),
+    /// A merged run of color ops. `ops` is the op count; `descriptors` packs
+    /// each op as a header vec4 ([type, param_vec4_count, _, _]) followed by
+    /// that many param vec4s.
+    Merged {
+        ops: u32,
+        descriptors: Vec<[f32; 4]>,
+    },
 }
 
-/// True for cheap per-pixel color ops that fit in <=2 param vec4s and can be
-/// merged into a single pass. color_grade is excluded (needs 5 param vec4s and
-/// reads them directly from the per-effect uniform).
+/// True for per-pixel color ops that can fold into one merged pass. Includes
+/// color_grade (5 param vec4s) via the variable-length descriptor format.
 fn is_mergeable_color_op(effect: &PostProcessEffect) -> bool {
     matches!(
         effect,
@@ -63,13 +67,21 @@ fn is_mergeable_color_op(effect: &PostProcessEffect) -> bool {
             | PostProcessEffect::Saturate { .. }
             | PostProcessEffect::BlackWhite { .. }
             | PostProcessEffect::Vignette { .. }
+            | PostProcessEffect::ColorGrade { .. }
     )
 }
 
-/// Pack a mergeable op as 3 vec4s: [effect_type,0,0,0], params0, params1.
-fn encode_merged_op(effect: &PostProcessEffect) -> [[f32; 4]; 3] {
+/// Append one op as header + param vec4s. Cheap ops carry 2 param vec4s;
+/// color_grade carries 5.
+fn encode_merged_op(effect: &PostProcessEffect, descriptors: &mut Vec<[f32; 4]>) {
     let e = encode_effect_params(effect);
-    [[e.effect_type as f32, 0.0, 0.0, 0.0], e.params0, e.params1]
+    if matches!(effect, PostProcessEffect::ColorGrade { .. }) {
+        descriptors.push([e.effect_type as f32, 5.0, 0.0, 0.0]);
+        descriptors.extend_from_slice(&[e.params0, e.params1, e.params2, e.params3, e.params4]);
+    } else {
+        descriptors.push([e.effect_type as f32, 2.0, 0.0, 0.0]);
+        descriptors.extend_from_slice(&[e.params0, e.params1]);
+    }
 }
 
 /// Collapse consecutive mergeable ops into Merged steps; everything else stays a
@@ -86,9 +98,12 @@ fn build_chain_steps(effects: &[PostProcessEffect]) -> Vec<ChainStep<'_>> {
             if i - start >= 2 {
                 let mut descriptors = Vec::with_capacity((i - start) * 3);
                 for effect in &effects[start..i] {
-                    descriptors.extend_from_slice(&encode_merged_op(effect));
+                    encode_merged_op(effect, &mut descriptors);
                 }
-                steps.push(ChainStep::Merged(descriptors));
+                steps.push(ChainStep::Merged {
+                    ops: (i - start) as u32,
+                    descriptors,
+                });
                 continue;
             }
             // Single mergeable op: keep the normal path.
@@ -533,20 +548,20 @@ impl PostProcessor {
                 max_params = max_params.max(params.len());
             }
         }
-        // Merged passes pack all their descriptors (3 vec4/op) into the params
-        // buffer at distinct offsets, so capacity must cover the total.
+        // Merged passes pack all their descriptor vec4s into the params buffer
+        // at distinct offsets, so capacity must cover the total.
         let merged_params: usize = steps
             .iter()
             .map(|step| match step {
-                ChainStep::Merged(descriptors) => descriptors.len(),
+                ChainStep::Merged { descriptors, .. } => descriptors.len(),
                 ChainStep::Single(_) => 0,
             })
             .sum();
         // Custom effects read custom_params from offset 0 for param_count vec4s;
         // reserve that region and place merged descriptors after it so a Custom
         // effect and a merged step in the same chain never alias.
-        let merged_region_start = max_params.div_ceil(3);
-        self.ensure_params_capacity(device, (merged_region_start * 3) + merged_params);
+        let merged_region_start = max_params;
+        self.ensure_params_capacity(device, merged_region_start + merged_params);
         // Extra uniform slots after the per-step region for multi-pass effect
         // sub-passes (bloom uses up to 4). Only one effect runs at a time, so a
         // single shared scratch region suffices.
@@ -562,10 +577,10 @@ impl PostProcessor {
 
         let mut input_kind = 0u8; // 0=external input_view, 1=ping_a, 2=ping_b
         let mut use_ping_a = true;
-        // Op index into the params buffer where the next merged step packs its
-        // descriptors; distinct per step (and past the Custom region) to avoid
-        // same-submit buffer aliasing.
-        let mut merged_op_base = merged_region_start as u32;
+        // Vec4 index into the params buffer where the next merged step packs
+        // its descriptors; distinct per step (and past the Custom region) to
+        // avoid same-submit buffer aliasing.
+        let mut merged_vec4_base = merged_region_start as u32;
         for (index, step) in steps.iter().enumerate() {
             let last = index + 1 == steps.len();
             let current_input = match input_kind {
@@ -583,21 +598,20 @@ impl PostProcessor {
             };
 
             // Merged run of cheap color ops: one pass applies the whole run.
-            if let ChainStep::Merged(descriptors) = step {
-                let op_count = (descriptors.len() / 3) as u32;
-                let op_base = merged_op_base;
-                merged_op_base += op_count;
+            if let ChainStep::Merged { ops, descriptors } = step {
+                let vec4_base = merged_vec4_base;
+                merged_vec4_base += descriptors.len() as u32;
                 queue.write_buffer(
                     &self.params_buffer,
-                    op_base as u64 * 3 * std::mem::size_of::<[f32; 4]>() as u64,
+                    vec4_base as u64 * std::mem::size_of::<[f32; 4]>() as u64,
                     bytemuck::cast_slice(descriptors),
                 );
                 let uniform = PostUniform {
                     effect_type: EFFECT_MERGED,
-                    param_count: op_count,
+                    param_count: *ops,
                     projection_mode,
                     _pad0: 0,
-                    params0: [op_base as f32, 0.0, 0.0, 0.0],
+                    params0: [vec4_base as f32, 0.0, 0.0, 0.0],
                     params1: [0.0; 4],
                     params2: [0.0; 4],
                     params3: [0.0; 4],
@@ -1998,5 +2012,43 @@ mod tests {
             rgba[index + 2],
             rgba[index + 3],
         ]
+    }
+
+    #[test]
+    fn color_grade_merges_with_cheap_ops_using_variable_descriptors() {
+        let effects = [
+            PostProcessEffect::Saturate { amount: 1.2 },
+            PostProcessEffect::ColorGrade {
+                exposure: 0.5,
+                contrast: 1.1,
+                brightness: 0.05,
+                saturation: 1.0,
+                gamma: 2.2,
+                temperature: 0.1,
+                tint: -0.05,
+                hue_shift: 0.25,
+                vibrance: 0.3,
+                lift: [0.01, 0.02, 0.03],
+                gain: [1.1, 1.2, 1.3],
+                offset: [-0.01, -0.02, -0.03],
+            },
+            PostProcessEffect::BlackWhite { amount: 0.5 },
+        ];
+        let steps = build_chain_steps(&effects);
+        assert_eq!(steps.len(), 1, "whole run folds into one merged pass");
+        let ChainStep::Merged { ops, descriptors } = &steps[0] else {
+            panic!("expected merged step");
+        };
+        assert_eq!(*ops, 3);
+        // saturate: header + 2, color_grade: header + 5, black_white: header + 2.
+        assert_eq!(descriptors.len(), 3 + 6 + 3);
+        // Headers carry [type, param_vec4_count, ...] at the right cursors.
+        assert_eq!(descriptors[0][0] as u32, EFFECT_SATURATE);
+        assert_eq!(descriptors[0][1], 2.0);
+        assert_eq!(descriptors[3][0] as u32, EFFECT_COLOR_GRADE);
+        assert_eq!(descriptors[3][1], 5.0);
+        assert_eq!(descriptors[4], [0.5, 1.1, 0.05, 1.0]);
+        assert_eq!(descriptors[9][0] as u32, EFFECT_BLACK_WHITE);
+        assert_eq!(descriptors[9][1], 2.0);
     }
 }

@@ -114,7 +114,7 @@ impl Runtime {
         // arena ver unchanged since last sync + no transform dirty.
         // physics-driven moves land in nodes via sync_world_to_nodes;
         // ver re-record aft post_transforms so internal write-back not invalidate.
-        let node_version = self.nodes.mutation_version();
+        let node_version = self.nodes.physics_version();
         let sync_2d_needed =
             self.physics_synced_node_version_2d != Some(node_version) || had_transform_dirty;
         let sync_3d_needed =
@@ -153,7 +153,7 @@ impl Runtime {
             (None, None) => {}
         }
         // world fresh vs nodes til next node chg; query path skip re-sync
-        let synced_version = Some(self.nodes.mutation_version());
+        let synced_version = Some(self.nodes.physics_version());
         self.physics_synced_node_version_2d = synced_version;
         self.physics_synced_node_version_3d = synced_version;
         let sync_world = sync_world_start.elapsed();
@@ -208,7 +208,7 @@ impl Runtime {
 
         // internal write-back (world -> nodes, emitter age) bump arena ver;
         // nodes still mirror world -> re-record so next step / query skip
-        let synced_version = Some(self.nodes.mutation_version());
+        let synced_version = Some(self.nodes.physics_version());
         self.physics_synced_node_version_2d = synced_version;
         self.physics_synced_node_version_3d = synced_version;
 
@@ -270,7 +270,7 @@ impl Runtime {
     /// world may lag nodes: node data / structure chg outside fixed step.
     /// query path cal this b4 query; skip full collect+sync when world fresh.
     pub(crate) fn ensure_physics_world_synced_2d(&mut self) {
-        if self.physics_synced_node_version_2d == Some(self.nodes.mutation_version())
+        if self.physics_synced_node_version_2d == Some(self.nodes.physics_version())
             && !self.dirty.has_transform_dirty_any()
         {
             return;
@@ -280,11 +280,11 @@ impl Runtime {
         let bodies_2d = self.collect_body_descs_2d();
         self.sync_world_2d(&bodies_2d);
         self.physics_body_descs_2d = bodies_2d;
-        self.physics_synced_node_version_2d = Some(self.nodes.mutation_version());
+        self.physics_synced_node_version_2d = Some(self.nodes.physics_version());
     }
 
     pub(crate) fn ensure_physics_world_synced_3d(&mut self) {
-        if self.physics_synced_node_version_3d == Some(self.nodes.mutation_version())
+        if self.physics_synced_node_version_3d == Some(self.nodes.physics_version())
             && !self.dirty.has_transform_dirty_any()
         {
             return;
@@ -294,7 +294,7 @@ impl Runtime {
         let bodies_3d = self.collect_body_descs_3d();
         self.sync_world_3d(&bodies_3d);
         self.physics_body_descs_3d = bodies_3d;
-        self.physics_synced_node_version_3d = Some(self.nodes.mutation_version());
+        self.physics_synced_node_version_3d = Some(self.nodes.physics_version());
     }
 
     pub(crate) fn invalidate_physics_query_sync(&mut self) {

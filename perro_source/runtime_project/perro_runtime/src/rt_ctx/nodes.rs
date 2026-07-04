@@ -608,7 +608,9 @@ impl NodeAPI for Runtime {
             modulate_changed,
             value,
         ) = {
-            let node = self.nodes.get_mut(id)?;
+            // Non-physics types skip the physics-version bump (const-gated);
+            // physics types mark the change after the mutation below.
+            let node = self.nodes.get_mut_non_physics(id)?;
 
             // Const-gated so the optimizer strips camera/UI capture for node
             // types that can never be those variants.
@@ -677,6 +679,9 @@ impl NodeAPI for Runtime {
             )
         };
 
+        if T::NODE_TYPE.is_physics() {
+            self.nodes.mark_physics_change();
+        }
         if matches!(T::RENDERABLE, Renderable::True) {
             self.mark_needs_rerender(id);
         }
@@ -760,7 +765,14 @@ impl NodeAPI for Runtime {
             active_camera_3d_activated,
             modulate_changed,
         ) = {
-            let node = self.nodes.get_mut(id)?;
+            // Base kinds (2D/3D) cannot tell physics nodes apart at compile
+            // time; keep the conservative full bump for physics nodes and skip
+            // only for the rest.
+            let node = if self.nodes.get(id)?.node_type().is_physics() {
+                self.nodes.get_mut(id)?
+            } else {
+                self.nodes.get_mut_non_physics(id)?
+            };
             if !node.node_type().is_a(T::BASE_NODE_TYPE) {
                 return None;
             }

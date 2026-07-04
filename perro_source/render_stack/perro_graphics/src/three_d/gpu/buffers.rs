@@ -717,6 +717,14 @@ impl Gpu3D {
                     binding: 8,
                     resource: self.multimesh_cull_counter_buffer.as_entire_binding(),
                 },
+                wgpu::BindGroupEntry {
+                    binding: 9,
+                    resource: self.hiz_cull_params.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 10,
+                    resource: wgpu::BindingResource::TextureView(&self.hiz_sample_view),
+                },
             ],
         });
     }

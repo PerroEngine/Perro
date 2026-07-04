@@ -453,6 +453,26 @@ pub(crate) enum AudioCommand {
     },
 }
 
+// Fully decoded interleaved f32 samples for a short clip. Cached so repeated
+// plays (footsteps, gunshots) skip the compressed-bytes decode entirely.
+#[derive(Clone)]
+pub(crate) struct CachedPcm {
+    pub(crate) channels: u16,
+    pub(crate) sample_rate: u32,
+    pub(crate) samples: Arc<[f32]>,
+}
+
+impl CachedPcm {
+    pub(crate) fn byte_len(&self) -> usize {
+        self.samples.len() * std::mem::size_of::<f32>()
+    }
+
+    pub(crate) fn duration(&self) -> Duration {
+        let frames = self.samples.len() as u64 / self.channels.max(1) as u64;
+        Duration::from_secs_f64(frames as f64 / self.sample_rate.max(1) as f64)
+    }
+}
+
 #[derive(Clone)]
 pub(crate) struct CachedAudioAsset {
     pub(crate) source: Arc<str>,
@@ -464,4 +484,15 @@ pub(crate) struct CachedAudioAsset {
     pub(crate) reserved: bool,
     pub(crate) active_uses: usize,
     pub(crate) last_touched: Instant,
+    // Decoded PCM for short clips; None until the first play decodes it.
+    pub(crate) pcm: Option<Arc<CachedPcm>>,
+    // Clip exceeds the PCM cache cap: never retry the full decode.
+    pub(crate) pcm_oversized: bool,
+}
+
+impl CachedAudioAsset {
+    // Bytes this entry pins in the cache budget (compressed + decoded PCM).
+    pub(crate) fn cache_len(&self) -> usize {
+        self.bytes.len() + self.pcm.as_ref().map_or(0, |pcm| pcm.byte_len())
+    }
 }

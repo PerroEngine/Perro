@@ -10,7 +10,7 @@ fn frustum_cull_default(_: bool) -> bool {
     false
 }
 
-fn multimesh_cull_bgl_entries() -> [wgpu::BindGroupLayoutEntry; 9] {
+fn multimesh_cull_bgl_entries() -> [wgpu::BindGroupLayoutEntry; 11] {
     let uniform = |binding: u32| wgpu::BindGroupLayoutEntry {
         binding,
         visibility: wgpu::ShaderStages::COMPUTE,
@@ -41,6 +41,17 @@ fn multimesh_cull_bgl_entries() -> [wgpu::BindGroupLayoutEntry; 9] {
         storage(6, false), // visible indices (write)
         storage(7, false), // indirect commands (write)
         storage(8, false), // per-batch atomic counters (write)
+        uniform(9),        // hi-z cull params (cs_main_hiz only)
+        wgpu::BindGroupLayoutEntry {
+            binding: 10, // hi-z pyramid (cs_main_hiz only)
+            visibility: wgpu::ShaderStages::COMPUTE,
+            ty: wgpu::BindingType::Texture {
+                sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                view_dimension: wgpu::TextureViewDimension::D2,
+                multisampled: false,
+            },
+            count: None,
+        },
     ]
 }
 
@@ -57,6 +68,8 @@ fn create_multimesh_cull_bind_group(
     visible_indices: &wgpu::Buffer,
     indirect: &wgpu::Buffer,
     counters: &wgpu::Buffer,
+    hiz_params: &wgpu::Buffer,
+    hiz_sample_view: &wgpu::TextureView,
 ) -> wgpu::BindGroup {
     device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: Some("perro_multimesh_cull_bg"),
@@ -97,6 +110,14 @@ fn create_multimesh_cull_bind_group(
             wgpu::BindGroupEntry {
                 binding: 8,
                 resource: counters.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 9,
+                resource: hiz_params.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 10,
+                resource: wgpu::BindingResource::TextureView(hiz_sample_view),
             },
         ],
     })
@@ -1633,6 +1654,15 @@ impl Gpu3D {
                 compilation_options: Default::default(),
                 cache: None,
             });
+        let multimesh_cull_hiz_pipeline =
+            device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some("perro_multimesh_cull_hiz_pipeline"),
+                layout: Some(&multimesh_cull_layout),
+                module: &multimesh_cull_shader,
+                entry_point: Some("cs_main_hiz"),
+                compilation_options: Default::default(),
+                cache: None,
+            });
         let multimesh_cull_params_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("perro_multimesh_cull_params"),
             size: std::mem::size_of::<MultiMeshCullParamsGpu>() as u64,
@@ -1682,20 +1712,6 @@ impl Gpu3D {
                 | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        let multimesh_cull_bind_group = create_multimesh_cull_bind_group(
-            device,
-            &multimesh_cull_bgl,
-            &frustum_cull_params_buffer,
-            &multimesh_cull_params_buffer,
-            &multimesh_draw_params_buffer,
-            &multimesh_instance_buffer,
-            &multimesh_instance_batch_buffer,
-            &multimesh_cull_batch_buffer,
-            &multimesh_visible_index_buffer,
-            &multimesh_indirect_buffer,
-            &multimesh_cull_counter_buffer,
-        );
-
         let (depth_texture, depth_view) = create_depth_texture(device, width, height, sample_count);
         let (depth_prepass_texture, depth_prepass_view) =
             create_depth_prepass_texture(device, width, height);
@@ -2013,6 +2029,21 @@ impl Gpu3D {
                 },
             ],
         });
+        let multimesh_cull_bind_group = create_multimesh_cull_bind_group(
+            device,
+            &multimesh_cull_bgl,
+            &frustum_cull_params_buffer,
+            &multimesh_cull_params_buffer,
+            &multimesh_draw_params_buffer,
+            &multimesh_instance_buffer,
+            &multimesh_instance_batch_buffer,
+            &multimesh_cull_batch_buffer,
+            &multimesh_visible_index_buffer,
+            &multimesh_indirect_buffer,
+            &multimesh_cull_counter_buffer,
+            &hiz_cull_params,
+            &hiz_sample_view,
+        );
 
         let mut gpu = Self {
             color_format,
@@ -2182,6 +2213,7 @@ impl Gpu3D {
             multimesh_batches: Vec::new(),
             multimesh_cull_pipeline,
             multimesh_cull_finalize_pipeline,
+            multimesh_cull_hiz_pipeline,
             multimesh_cull_bgl,
             multimesh_cull_bind_group,
             multimesh_cull_params_buffer,

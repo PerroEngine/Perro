@@ -11,7 +11,7 @@ use crate::dsp::{DspControl, DspParams, DspSource};
 #[cfg(feature = "profile")]
 use crate::internal::SourceLoadKind;
 use crate::internal::{
-    AudioState, BuiltInMidiMixerPlayback, BusState, CachedAudioAsset, CachedMidiFile,
+    AudioState, BuiltInMidiMixerPlayback, BusState, CachedAudioAsset, CachedMidiFile, CachedPcm,
     CachedSoundFont, MidiMixerKey, MidiPlayback, Playback, SoundFontMidiMixerKey,
     SoundFontMidiMixerPlayback, SourceLoadStats,
 };
@@ -45,6 +45,9 @@ pub struct BarkPlayer {
 
 impl BarkPlayer {
     const CACHE_SOFT_LIMIT_BYTES: usize = 128 * 1024 * 1024;
+    // Clips at or under this length keep their decoded PCM cached so repeated
+    // plays skip the decoder; longer clips stream-decode per play.
+    const PCM_CACHE_MAX_SECONDS: usize = 12;
     const CACHE_EVICT_SWEEP_INTERVAL: Duration = Duration::from_millis(100);
     const UNRESERVED_TTL_FACTOR: f32 = 2.0;
     const UNRESERVED_TTL_FALLBACK: Duration = Duration::from_secs(1);
@@ -119,7 +122,7 @@ impl BarkPlayer {
         } = request;
         #[cfg(feature = "profile")]
         let play_begin = Instant::now();
-        let (bytes, source_key, source_hash, asset_epoch, cache_hit, load_stats) = {
+        let (bytes, source_key, source_hash, asset_epoch, cache_hit, load_stats, pcm, oversized) = {
             let mut state = self
                 .state
                 .lock()
@@ -129,6 +132,11 @@ impl BarkPlayer {
             let (bytes, source_key, source_hash, asset_epoch, cache_hit, load_stats) =
                 Self::get_or_load_asset_locked(&mut state, source, false, self.static_audio_lookup)
                     .map_err(|err| format!("failed to load audio asset `{source}`: {err}"))?;
+            let (pcm, oversized) = state
+                .cache
+                .get(&source_hash)
+                .map(|entry| (entry.pcm.clone(), entry.pcm_oversized))
+                .unwrap_or((None, false));
             (
                 bytes,
                 source_key,
@@ -136,35 +144,58 @@ impl BarkPlayer {
                 asset_epoch,
                 cache_hit,
                 load_stats,
+                pcm,
+                oversized,
             )
         };
 
         #[cfg(feature = "profile")]
         let decode_begin = Instant::now();
-        let cursor = Cursor::new(bytes.clone());
-        let reader = BufReader::new(cursor);
-        let decoder = Decoder::new(reader)
-            .map_err(|err| format!("failed to decode audio `{source}`: {err}"))?;
+        // Short clips play from cached decoded PCM; oversized/first-play misses
+        // stream through a fresh decoder as before.
+        let pcm = match pcm {
+            Some(pcm) => Some(pcm),
+            None if !oversized => self.decode_and_cache_pcm(&bytes, source_hash, source)?,
+            None => None,
+        };
+        let decoder = if pcm.is_none() {
+            let cursor = Cursor::new(bytes.clone());
+            let reader = BufReader::new(cursor);
+            Some(
+                Decoder::new(reader)
+                    .map_err(|err| format!("failed to decode audio `{source}`: {err}"))?,
+            )
+        } else {
+            None
+        };
         #[cfg(feature = "profile")]
         let decode_elapsed = decode_begin.elapsed();
 
         #[cfg(feature = "profile")]
         let duration_probe_begin = Instant::now();
         let total_duration = if from_end > 0.0 {
-            let mut state = self
-                .state
-                .lock()
-                .map_err(|_| "audio mutex poisoned".to_string())?;
-            let known = state
-                .cache
-                .get(&source_hash)
-                .and_then(|entry| entry.duration)
-                .or_else(|| decoder.total_duration());
-            if let Some(entry) = state.cache.get_mut(&source_hash) {
-                entry.duration = known;
-                entry.duration_known = true;
+            if let Some(pcm) = &pcm {
+                Some(pcm.duration())
+            } else {
+                let mut state = self
+                    .state
+                    .lock()
+                    .map_err(|_| "audio mutex poisoned".to_string())?;
+                let known = state
+                    .cache
+                    .get(&source_hash)
+                    .and_then(|entry| entry.duration)
+                    .or_else(|| {
+                        decoder
+                            .as_ref()
+                            .and_then(|decoder| decoder.total_duration())
+                    });
+                if let Some(entry) = state.cache.get_mut(&source_hash) {
+                    entry.duration = known;
+                    entry.duration_known = true;
+                }
+                known
             }
-            known
         } else {
             None
         };
@@ -197,7 +228,7 @@ impl BarkPlayer {
         let append_begin = Instant::now();
         let trim_start = Duration::from_secs_f32(from_start.max(0.0));
         let trim_end = Duration::from_secs_f32(from_end.max(0.0));
-        if let Some(total_duration) = total_duration {
+        let play_duration = if let Some(total_duration) = total_duration {
             let after_start = total_duration.saturating_sub(trim_start);
             let play_duration = after_start.saturating_sub(trim_end);
             if play_duration.is_zero() {
@@ -205,37 +236,28 @@ impl BarkPlayer {
                     "invalid trim for `{source}`: from_start + from_end removes full clip"
                 ));
             }
-            if looped {
-                sink.append(DspSource::new(
-                    decoder
-                        .skip_duration(trim_start)
-                        .take_duration(play_duration)
-                        .repeat_infinite()
-                        .convert_samples::<f32>(),
-                    dsp.clone(),
-                ));
-            } else {
-                sink.append(DspSource::new(
-                    decoder
-                        .skip_duration(trim_start)
-                        .take_duration(play_duration)
-                        .convert_samples::<f32>(),
-                    dsp.clone(),
-                ));
-            }
-        } else if looped {
-            sink.append(DspSource::new(
-                decoder
-                    .skip_duration(trim_start)
-                    .repeat_infinite()
-                    .convert_samples::<f32>(),
-                dsp.clone(),
-            ));
+            Some(play_duration)
         } else {
-            sink.append(DspSource::new(
-                decoder.skip_duration(trim_start).convert_samples::<f32>(),
+            None
+        };
+        match (pcm, decoder) {
+            (Some(pcm), _) => append_with_trims(
+                &sink,
+                CachedPcmSource::new(pcm),
                 dsp.clone(),
-            ));
+                trim_start,
+                play_duration,
+                looped,
+            ),
+            (None, Some(decoder)) => append_with_trims(
+                &sink,
+                decoder.convert_samples::<f32>(),
+                dsp.clone(),
+                trim_start,
+                play_duration,
+                looped,
+            ),
+            (None, None) => unreachable!("play source has neither pcm nor decoder"),
         }
         #[cfg(feature = "profile")]
         let append_elapsed = append_begin.elapsed();
@@ -464,7 +486,7 @@ impl BarkPlayer {
             return false;
         }
         let had_asset = if let Some(entry) = state.cache.remove(&source_hash) {
-            state.cache_bytes = state.cache_bytes.saturating_sub(entry.bytes.len());
+            state.cache_bytes = state.cache_bytes.saturating_sub(entry.cache_len());
             true
         } else {
             false
@@ -1292,6 +1314,8 @@ impl BarkPlayer {
                 reserved,
                 active_uses: 0,
                 last_touched: Instant::now(),
+                pcm: None,
+                pcm_oversized: false,
             },
         );
         Ok((
@@ -1302,6 +1326,63 @@ impl BarkPlayer {
             false,
             load_stats,
         ))
+    }
+
+    // Decode the full clip to f32 PCM and cache it when it fits the cap.
+    // Returns None (and marks the entry oversized) when the clip is too long,
+    // so the caller falls back to streaming decode.
+    fn decode_and_cache_pcm(
+        &self,
+        bytes: &Arc<[u8]>,
+        source_hash: u64,
+        source: &str,
+    ) -> Result<Option<Arc<CachedPcm>>, String> {
+        let cursor = Cursor::new(bytes.clone());
+        let reader = BufReader::new(cursor);
+        let decoder = Decoder::new(reader)
+            .map_err(|err| format!("failed to decode audio `{source}`: {err}"))?;
+        let channels = decoder.channels().max(1);
+        let sample_rate = decoder.sample_rate().max(1);
+        let cap = (sample_rate as usize)
+            .saturating_mul(channels as usize)
+            .saturating_mul(Self::PCM_CACHE_MAX_SECONDS);
+        let mut samples: Vec<f32> = Vec::new();
+        let mut oversized = false;
+        for sample in decoder.convert_samples::<f32>() {
+            if samples.len() >= cap {
+                oversized = true;
+                break;
+            }
+            samples.push(sample);
+        }
+
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| "audio mutex poisoned".to_string())?;
+        if oversized {
+            if let Some(entry) = state.cache.get_mut(&source_hash) {
+                entry.pcm_oversized = true;
+            }
+            return Ok(None);
+        }
+        let pcm = Arc::new(CachedPcm {
+            channels,
+            sample_rate,
+            samples: Arc::from(samples.into_boxed_slice()),
+        });
+        let stored = if let Some(entry) = state.cache.get_mut(&source_hash) {
+            entry.pcm = Some(pcm.clone());
+            entry.duration = Some(pcm.duration());
+            entry.duration_known = true;
+            true
+        } else {
+            false
+        };
+        if stored {
+            state.cache_bytes = state.cache_bytes.saturating_add(pcm.byte_len());
+        }
+        Ok(Some(pcm))
     }
 
     fn duration_for_source_locked(
@@ -1501,7 +1582,7 @@ impl BarkPlayer {
                 return true;
             }
             if now.duration_since(entry.last_touched) >= Self::unreserved_ttl(entry) {
-                removed_bytes = removed_bytes.saturating_add(entry.bytes.len());
+                removed_bytes = removed_bytes.saturating_add(entry.cache_len());
                 return false;
             }
             true
@@ -1521,7 +1602,7 @@ impl BarkPlayer {
             {
                 return true;
             }
-            cache_bytes = cache_bytes.saturating_sub(entry.bytes.len());
+            cache_bytes = cache_bytes.saturating_sub(entry.cache_len());
             false
         });
         state.cache_bytes = cache_bytes;
@@ -1609,5 +1690,83 @@ impl BarkPlayer {
 
     fn pan_emitter_position(pan: AudioPan) -> [f32; 3] {
         [pan.x, pan.y, pan.z]
+    }
+}
+
+// Zero-copy playback over cached decoded PCM.
+struct CachedPcmSource {
+    pcm: Arc<CachedPcm>,
+    position: usize,
+}
+
+impl CachedPcmSource {
+    fn new(pcm: Arc<CachedPcm>) -> Self {
+        Self { pcm, position: 0 }
+    }
+}
+
+impl Iterator for CachedPcmSource {
+    type Item = f32;
+
+    #[inline]
+    fn next(&mut self) -> Option<f32> {
+        let sample = self.pcm.samples.get(self.position).copied()?;
+        self.position += 1;
+        Some(sample)
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let remaining = self.pcm.samples.len().saturating_sub(self.position);
+        (remaining, Some(remaining))
+    }
+}
+
+impl Source for CachedPcmSource {
+    fn current_frame_len(&self) -> Option<usize> {
+        Some(self.pcm.samples.len().saturating_sub(self.position))
+    }
+
+    fn channels(&self) -> u16 {
+        self.pcm.channels
+    }
+
+    fn sample_rate(&self) -> u32 {
+        self.pcm.sample_rate
+    }
+
+    fn total_duration(&self) -> Option<Duration> {
+        Some(self.pcm.duration())
+    }
+}
+
+// Shared append tail for both the PCM and streaming decode paths: apply trim
+// (and optional take/loop) then route through the DSP chain into the sink.
+fn append_with_trims<S>(
+    sink: &SpatialSink,
+    source: S,
+    dsp: Arc<DspControl>,
+    trim_start: Duration,
+    play_duration: Option<Duration>,
+    looped: bool,
+) where
+    S: Source<Item = f32> + Send + 'static,
+{
+    match (play_duration, looped) {
+        (Some(duration), true) => sink.append(DspSource::new(
+            source
+                .skip_duration(trim_start)
+                .take_duration(duration)
+                .repeat_infinite(),
+            dsp,
+        )),
+        (Some(duration), false) => sink.append(DspSource::new(
+            source.skip_duration(trim_start).take_duration(duration),
+            dsp,
+        )),
+        (None, true) => sink.append(DspSource::new(
+            source.skip_duration(trim_start).repeat_infinite(),
+            dsp,
+        )),
+        (None, false) => sink.append(DspSource::new(source.skip_duration(trim_start), dsp)),
     }
 }

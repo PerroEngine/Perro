@@ -20,18 +20,36 @@ fn color_grade_hue_shift(rgb: vec3<f32>, hue_shift: f32) -> vec3<f32> {
 }
 
 fn color_grade_apply(color: vec4<f32>) -> vec4<f32> {
-    let exposure = post.params0.x;
-    let contrast = max(post.params0.y, 0.0);
-    let brightness = post.params0.z;
-    let saturation = max(post.params0.w, 0.0);
-    let gamma_value = max(post.params1.x, 0.001);
-    let temperature = post.params1.y;
-    let tint = post.params1.z;
-    let hue_shift = post.params1.w;
-    let lift = post.params2.xyz;
-    let vibrance = post.params2.w;
-    let gain = post.params3.xyz;
-    let offset = post.params4.xyz;
+    return color_grade_apply_params(
+        color,
+        post.params0,
+        post.params1,
+        post.params2,
+        post.params3,
+        post.params4,
+    );
+}
+
+fn color_grade_apply_params(
+    color: vec4<f32>,
+    p0: vec4<f32>,
+    p1: vec4<f32>,
+    p2: vec4<f32>,
+    p3: vec4<f32>,
+    p4: vec4<f32>,
+) -> vec4<f32> {
+    let exposure = p0.x;
+    let contrast = max(p0.y, 0.0);
+    let brightness = p0.z;
+    let saturation = max(p0.w, 0.0);
+    let gamma_value = max(p1.x, 0.001);
+    let temperature = p1.y;
+    let tint = p1.z;
+    let hue_shift = p1.w;
+    let lift = p2.xyz;
+    let vibrance = p2.w;
+    let gain = p3.xyz;
+    let offset = p4.xyz;
 
     var rgb = max(color.rgb, vec3<f32>(0.0));
     rgb *= exp2(exposure);

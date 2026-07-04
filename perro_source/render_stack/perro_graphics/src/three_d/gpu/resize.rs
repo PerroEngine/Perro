@@ -72,6 +72,8 @@ impl Gpu3D {
                 },
             ],
         });
+        // Multimesh cull bind group also references the hi-z pyramid view.
+        self.rebuild_multimesh_cull_bind_group(device);
     }
 
     pub fn set_sample_count(
@@ -534,5 +536,7 @@ impl Gpu3D {
                 },
             ],
         });
+        // Multimesh cull bind group also references the hi-z pyramid view.
+        self.rebuild_multimesh_cull_bind_group(device);
     }
 }

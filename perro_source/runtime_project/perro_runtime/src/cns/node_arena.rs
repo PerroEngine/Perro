@@ -13,8 +13,14 @@ pub struct NodeArena {
     free_indices: Vec<usize>,
     active_len: usize,
     /// bump on any mut access / structural chg; cache invalidation key 4 systems
-    /// that mirror node data (physics world sync)
+    /// that mirror node data (resource-ref scan)
     mutation_version: u64,
+    /// bump on structural chg + physics-relevant mut access. Split frm
+    /// mutation_version so per-frame non-physics data mut (UI text, sprite
+    /// frames) not invalidate physics world sync gate. Raw `get_mut` bump both
+    /// (conservative); only `get_mut_non_physics` callers skip the physics bump
+    /// and must cal `mark_physics_change` when the node is physics-relevant.
+    physics_version: u64,
 }
 
 impl Default for NodeArena {
@@ -42,6 +48,7 @@ impl NodeArena {
             free_indices: Vec::new(),
             active_len: 0,
             mutation_version: 0,
+            physics_version: 0,
         }
     }
 
@@ -60,6 +67,7 @@ impl NodeArena {
             free_indices: Vec::new(),
             active_len: 0,
             mutation_version: 0,
+            physics_version: 0,
         }
     }
 
@@ -69,8 +77,29 @@ impl NodeArena {
         self.mutation_version
     }
 
+    /// Physics-facing version: chg on structural changes + mutations that may
+    /// touch physics-relevant node data. Non-physics data mutations routed
+    /// through [`Self::get_mut_non_physics`] do NOT move this version.
+    #[inline]
+    pub fn physics_version(&self) -> u64 {
+        self.physics_version
+    }
+
+    /// Record a possible physics-relevant data change. Pairs with
+    /// [`Self::get_mut_non_physics`].
+    #[inline]
+    pub fn mark_physics_change(&mut self) {
+        self.physics_version = self.physics_version.wrapping_add(1);
+    }
+
     #[inline]
     fn bump_mutation_version(&mut self) {
+        self.mutation_version = self.mutation_version.wrapping_add(1);
+        self.physics_version = self.physics_version.wrapping_add(1);
+    }
+
+    #[inline]
+    fn bump_data_version_only(&mut self) {
         self.mutation_version = self.mutation_version.wrapping_add(1);
     }
 
@@ -121,6 +150,16 @@ impl NodeArena {
     pub fn get_mut(&mut self, id: NodeID) -> Option<&mut SceneNode> {
         let index = self.valid_slot(id)?;
         self.bump_mutation_version();
+        self.nodes[index].as_mut()
+    }
+
+    /// Mutable lookup that bumps only the data version. The caller MUST call
+    /// [`Self::mark_physics_change`] afterwards when the mutated node is a
+    /// physics-relevant type ([`perro_nodes::NodeType::is_physics`]); use plain
+    /// [`Self::get_mut`] when unsure.
+    pub fn get_mut_non_physics(&mut self, id: NodeID) -> Option<&mut SceneNode> {
+        let index = self.valid_slot(id)?;
+        self.bump_data_version_only();
         self.nodes[index].as_mut()
     }
 

@@ -450,6 +450,29 @@ impl Gpu3D {
             cull_pass.dispatch_workgroups(groups, 1, 1);
             drop(cull_pass);
 
+            // Multimesh hi-z phase: the prepass drew the frustum-only survivors
+            // (feeding the pyramid); recompact the SAME visible-index/indirect
+            // buffers with frustum + hi-z so the main pass skips occluded
+            // instances. Safe to overwrite: the prepass already executed.
+            if multimesh_cull_active {
+                let counter_bytes =
+                    (self.multimesh_batches.len() * std::mem::size_of::<u32>()) as u64;
+                encoder.clear_buffer(&self.multimesh_cull_counter_buffer, 0, Some(counter_bytes));
+                let mut cull_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                    label: Some("perro_multimesh_cull_hiz_pass"),
+                    timestamp_writes: None,
+                });
+                cull_pass.set_bind_group(0, &self.multimesh_cull_bind_group, &[]);
+                cull_pass.set_pipeline(&self.multimesh_cull_hiz_pipeline);
+                let instance_groups = (self.staged_multimesh_instances.len() as u32)
+                    .div_ceil(FRUSTUM_CULL_WORKGROUP_SIZE);
+                cull_pass.dispatch_workgroups(instance_groups, 1, 1);
+                cull_pass.set_pipeline(&self.multimesh_cull_finalize_pipeline);
+                let batch_groups =
+                    (self.multimesh_batches.len() as u32).div_ceil(FRUSTUM_CULL_WORKGROUP_SIZE);
+                cull_pass.dispatch_workgroups(batch_groups, 1, 1);
+            }
+
             if HIZ_DEBUG_READBACK_ENABLED
                 && self.pending_hiz_debug_count == 0
                 && self.pending_hiz_debug_map_rx.is_none()
