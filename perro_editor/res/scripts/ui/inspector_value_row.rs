@@ -1,6 +1,7 @@
 use crate::scripts_app_editor_app_rs as editor_app;
 use crate::scripts_ui_editor_inspector_values_rs::InspectorValueRow;
 use crate::scripts_ui_editor_ui_rs::{find_named, set_ui_display};
+use crate::scripts_ui_theme_rs as theme;
 use perro_api::prelude::*;
 use std::borrow::Cow;
 use std::sync::{Mutex, OnceLock};
@@ -106,7 +107,12 @@ fn ensure_inspector_default_button<API: ScriptAPI + ?Sized>(
     if find_named(ctx, &button_name).is_some() {
         return;
     }
-    let Some(parent) = find_named(ctx, &inspector_row_names(idx).row) else {
+    // Parent into the row's inner strip, not the row root: the root grows
+    // to cover the whole expanded subtree, so anchoring there blows the
+    // button up to subtree height.
+    let names = inspector_row_names(idx);
+    let Some(parent) = find_named(ctx, &names.inner).or_else(|| find_named(ctx, &names.row))
+    else {
         return;
     };
     let button = ctx.run.Nodes().create::<UiButton>();
@@ -119,26 +125,26 @@ fn ensure_inspector_default_button<API: ScriptAPI + ?Sized>(
     let _ = ctx.run.Nodes().reparent(parent, button);
     let _ = ctx.run.Nodes().reparent(button, label);
     let _ = with_node_mut!(ctx.run, UiButton, button, |node| {
-        node.layout.anchor = UiAnchor::Right;
-        node.layout.size = UiVector2::ratio(0.028, 0.48);
-        node.transform.translation = Vector2::new(-0.018, 0.0);
-        node.layout.z_index = 4;
+        node.layout.size = UiVector2::ratio(0.045, 0.56);
         node.visible = false;
         node.clicked_signals = vec![SignalID::from_string("editor_inspector_var_7")];
-        node.style.fill = Color::from_hex("#00000000").unwrap_or(node.style.fill);
-        node.style.stroke = Color::from_hex("#D9A24A").unwrap_or(node.style.stroke);
+        node.style.fill = Color::TRANSPARENT;
+        node.style.stroke = Color::from_hex(theme::REVERT).unwrap_or(node.style.stroke);
         node.style.stroke_width = 1.0;
         node.style.set_corner_radius(0.5);
-        node.hover_style.fill = Color::from_hex("#3A3020").unwrap_or(node.hover_style.fill);
-        node.hover_style.stroke = Color::from_hex("#D9A24A").unwrap_or(node.hover_style.stroke);
-        node.pressed_style.fill = Color::from_hex("#4A3A24").unwrap_or(node.pressed_style.fill);
-        node.pressed_style.stroke = Color::from_hex("#E2B45E").unwrap_or(node.pressed_style.stroke);
+        node.hover_style.fill =
+            Color::from_hex(theme::REVERT_HOVER_FILL).unwrap_or(node.hover_style.fill);
+        node.hover_style.stroke = Color::from_hex(theme::REVERT).unwrap_or(node.hover_style.stroke);
+        node.pressed_style.fill =
+            Color::from_hex(theme::REVERT_PRESSED_FILL).unwrap_or(node.pressed_style.fill);
+        node.pressed_style.stroke =
+            Color::from_hex(theme::REVERT_PRESSED_STROKE).unwrap_or(node.pressed_style.stroke);
     });
     let _ = with_node_mut!(ctx.run, UiLabel, label, |node| {
         node.layout.size = UiVector2::ratio(1.0, 1.0);
         node.text = Cow::Borrowed("R");
         node.text_size_ratio = 0.42;
-        node.color = Color::from_hex("#F0C96D").unwrap_or(node.color);
+        node.color = Color::from_hex(theme::REVERT_TEXT).unwrap_or(node.color);
         node.input_enabled = false;
         node.mouse_filter = UiMouseFilter::Pass;
     });
@@ -180,16 +186,21 @@ pub fn apply_inspector_value_row_panel<API: ScriptAPI + ?Sized>(
         return;
     };
     let nested = depth > 1 || has_children;
+    // Godot-style flat rows: no per-row outlines. Sections read as solid
+    // bars, changed rows get an accent tint, everything else alternates a
+    // subtle zebra stripe.
     let (fill, stroke, stroke_width, radius) = if source == "section" && depth == 0 {
-        ("#1F242BCC", "#4D84D1", 1.0, 0.08)
+        (theme::BG_CATEGORY, "#00000000", 0.0, 0.06)
     } else if source == "section" {
-        ("#20262EB0", "#343A43", 1.0, 0.07)
+        (theme::BG_SECTION, "#00000000", 0.0, 0.06)
     } else if changed {
-        ("#26303B", "#6BA0EA", 1.0, 0.06)
+        (theme::CHANGED_FILL, "#00000000", 0.0, 0.05)
     } else if nested {
-        ("#262B32", "#343A43", 1.0, 0.06)
+        (theme::BG_ROW_NESTED, "#00000000", 0.0, 0.05)
+    } else if idx % 2 == 1 {
+        (theme::BG_ROW_ALT, "#00000000", 0.0, 0.05)
     } else {
-        ("#252A31", "#2F3540", 1.0, 0.05)
+        ("#00000000", "#00000000", 0.0, 0.0)
     };
     let _ = with_node_mut!(ctx.run, UiPanel, row_id, |node| {
         node.style.fill = Color::from_hex(fill).unwrap_or(node.style.fill);
@@ -204,19 +215,16 @@ pub fn apply_inspector_value_row_panel<API: ScriptAPI + ?Sized>(
         node.style.set_corner_radius(0.0);
     });
     if source == "section" {
+        // The row itself is the bar now; the inner panel just spans it
+        // invisibly so the label keeps its mount point.
         let panel_name = format!("inspector_var_{idx}_section_panel");
         if let Some(panel_id) = find_named(ctx, &panel_name) {
-            let (panel_w, panel_h, panel_fill, panel_stroke, panel_radius) = if depth == 0 {
-                (1.0, 0.86, "#26303B", "#4D84D1", 0.10)
-            } else {
-                (1.0, 0.78, "#262B32", "#46515F", 0.08)
-            };
             let _ = with_node_mut!(ctx.run, UiPanel, panel_id, |node| {
-                node.layout.size = UiVector2::ratio(panel_w, panel_h);
-                node.style.fill = Color::from_hex(panel_fill).unwrap_or(node.style.fill);
-                node.style.stroke = Color::from_hex(panel_stroke).unwrap_or(node.style.stroke);
-                node.style.stroke_width = 1.0;
-                node.style.set_corner_radius(panel_radius);
+                node.layout.size = UiVector2::ratio(1.0, 1.0);
+                node.style.fill = Color::TRANSPARENT;
+                node.style.stroke = Color::TRANSPARENT;
+                node.style.stroke_width = 0.0;
+                node.style.set_corner_radius(0.0);
             });
         }
     }
@@ -226,23 +234,22 @@ pub fn hide_inspector_value_rows_from<API: ScriptAPI + ?Sized>(
     ctx: &mut ScriptContext<'_, API>,
     start: usize,
 ) {
+    // Rows are contiguous and every created row registers a template, so
+    // the first idx without one means nothing exists past it. Probing all
+    // 512 slots by name costs a full-tree scan per missing name.
     for idx in start..INSPECTOR_ROW_CLEANUP_LIMIT {
-        let row_name = inspector_row_names(idx).row;
-        if let Some(id) = find_named(ctx, &row_name) {
-            let _ = ctx.run.Nodes().remove_node(id);
+        if inspector_cached_row_template(idx).is_none() {
+            break;
         }
         set_cached_row_template(idx, None);
+        if let Some(id) = find_named(ctx, &inspector_row_names(idx).row) {
+            let _ = ctx.run.Nodes().remove_node(id);
+        }
     }
 }
 
 pub fn clear_inspector_value_rows<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
-    for idx in 0..INSPECTOR_ROW_CLEANUP_LIMIT {
-        let row_name = inspector_row_names(idx).row;
-        if let Some(id) = find_named(ctx, &row_name) {
-            let _ = ctx.run.Nodes().remove_node(id);
-        }
-        set_cached_row_template(idx, None);
-    }
+    hide_inspector_value_rows_from(ctx, 0);
 }
 
 fn inspector_row_names(idx: usize) -> InspectorRowNames {

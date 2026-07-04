@@ -130,6 +130,7 @@ pub fn load_editor_shell<API: ScriptAPI + ?Sized>(
         (old, old_picker)
     })
     .unwrap_or((0, 0));
+    clear_name_cache();
     if old != 0 {
         let _ = ctx.run.Nodes().remove_node(NodeID::from_u64(old));
     }
@@ -155,6 +156,7 @@ pub fn load_editor_shell<API: ScriptAPI + ?Sized>(
         state.editor_name_cache_names.clear();
         state.editor_name_cache_ids.clear();
     });
+    clear_name_cache();
     Ok(())
 }
 

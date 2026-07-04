@@ -8,9 +8,9 @@ script = "res://scripts/ui/inspector_scenes/custom_struct_row.rs"
         h_align = "center"
         visible = false
         style = {
-            fill = "#1F242BCC",
-            stroke = "#4D84D1",
-            stroke_width = 1.0,
+            fill = "#1B1F26",
+            stroke = "#00000000",
+            stroke_width = 0.0,
             radius = 0.06
         }
     [/UiPanel]
@@ -24,10 +24,10 @@ parent = @inspector_value_row
         input_enabled = false
         mouse_filter = "pass"
         style = {
-            fill = "#1F242B",
-            stroke = "#4D84D1",
-            stroke_width = 1.0,
-            radius = 0.08
+            fill = "#00000000",
+            stroke = "#00000000",
+            stroke_width = 0.0,
+            radius = 0.0
         }
     [/UiPanel]
 [/inspector_value_row_header]
@@ -57,13 +57,13 @@ parent = @inspector_value_row_stack
 [inspector_value_section_panel]
 parent = @inspector_value_row_inner
     [UiPanel]
-        size_ratio = (1.0, 0.86)
+        size_ratio = (1.0, 1.0)
         z_index = 1.0
         style = {
-            fill = "#26303B",
-            stroke = "#4D84D1",
-            stroke_width = 1.0,
-            radius = 0.1
+            fill = "#00000000",
+            stroke = "#00000000",
+            stroke_width = 0.0,
+            radius = 0.0
         }
     [/UiPanel]
 [/inspector_value_section_panel]

@@ -19,6 +19,7 @@ use crate::scripts_scene_editor_viewport_rs::*;
 use crate::scripts_ui_bitmask_rs::{ensure_inspector_bitmask_grid, update_inspector_bitmask_grid};
 use crate::scripts_ui_editor_inspector_values_rs::*;
 use crate::scripts_ui_editor_view_rs as editor_view;
+use crate::scripts_ui_theme_rs as theme;
 use crate::scripts_ui_inspector_value_row_rs::{
     apply_inspector_value_row_panel, clear_inspector_value_rows, ensure_inspector_matrix_grid,
     ensure_inspector_value_row, hide_inspector_value_rows_from, inspector_value_row_inner,
@@ -59,48 +60,48 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
     set_button_fill(
         ctx,
         "activity_scene_button",
-        if glb_mode { "#2A2F36" } else { "#4D84D1" },
+        if glb_mode { theme::BG_WIDGET } else { theme::ACCENT },
     );
     set_button_fill(
         ctx,
         "activity_glb_button",
-        if glb_mode { "#4D84D1" } else { "#2A2F36" },
+        if glb_mode { theme::ACCENT } else { theme::BG_WIDGET },
     );
     set_image_tint(
         ctx,
         "activity_scene_icon",
-        if glb_mode { "#A7AFB9" } else { "#D7DBE0" },
+        if glb_mode { theme::TEXT_DIM } else { theme::TEXT },
     );
     set_image_tint(
         ctx,
         "activity_glb_icon",
-        if glb_mode { "#D7DBE0" } else { "#A7AFB9" },
+        if glb_mode { theme::TEXT } else { theme::TEXT_DIM },
     );
     set_button_fill(
         ctx,
         "mode_ui_button",
         if view.viewport_mode == "UI" {
-            "#4D84D1"
+            theme::ACCENT
         } else {
-            "#2A2F36"
+            theme::BG_WIDGET
         },
     );
     set_button_fill(
         ctx,
         "mode_2d_button",
         if view.viewport_mode == "2D" {
-            "#4D84D1"
+            theme::ACCENT
         } else {
-            "#2A2F36"
+            theme::BG_WIDGET
         },
     );
     set_button_fill(
         ctx,
         "mode_3d_button",
         if view.viewport_mode == "3D" {
-            "#4D84D1"
+            theme::ACCENT
         } else {
-            "#2A2F36"
+            theme::BG_WIDGET
         },
     );
     set_ui_display(ctx, "bottom_tab_bar", true);
@@ -108,18 +109,18 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
         ctx,
         "bottom_log_button",
         if view.anim_drawer_open {
-            "#2A2F36"
+            theme::BG_WIDGET
         } else {
-            "#4D84D1"
+            theme::ACCENT
         },
     );
     set_button_fill(
         ctx,
         "bottom_anim_button",
         if view.anim_drawer_open {
-            "#4D84D1"
+            theme::ACCENT
         } else {
-            "#2A2F36"
+            theme::BG_WIDGET
         },
     );
     set_ui_display(ctx, "log_title", false);
@@ -227,9 +228,9 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
             ctx,
             &format!("scene_tab_{idx}"),
             if idx == view.active_open {
-                "#4D84D1"
+                theme::ACCENT
             } else {
-                "#2A2F36"
+                theme::BG_WIDGET
             },
         );
     }
@@ -313,18 +314,18 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
         ctx,
         "inspector_rotation_quat_button",
         if view.inspector.rotation_mode == "quat" {
-            "#4D84D1"
+            theme::ACCENT
         } else {
-            "#2A2F36"
+            theme::BG_WIDGET
         },
     );
     set_button_fill(
         ctx,
         "inspector_rotation_euler_button",
         if view.inspector.rotation_mode == "euler" {
-            "#4D84D1"
+            theme::ACCENT
         } else {
-            "#2A2F36"
+            theme::BG_WIDGET
         },
     );
     set_text_box(
@@ -628,7 +629,7 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
                 has_children,
                 changed_row,
             );
-            apply_inspector_value_row_text_layout(ctx, idx, row);
+            apply_inspector_value_row_text_layout(ctx, idx, row, changed_row);
         }
         let add_name = format!("inspector_var_{idx}_add_button");
         let remove_name = format!("inspector_var_{idx}_remove_button");
@@ -894,7 +895,7 @@ fn inspector_chain_chip_colors(
     } else if family == "Node2D" {
         ("#1C2C38", "#3E8DD6", "#72B5EA")
     } else {
-        ("#23272D", "#A7AFB9", "#D7DBE0")
+        ("#23272D", theme::TEXT_DIM, theme::TEXT)
     }
 }
 
@@ -1724,8 +1725,9 @@ fn inspector_row_display_name(row: &InspectorValueRow) -> String {
     let indent = row.name.chars().take_while(|ch| ch.is_whitespace()).count();
     let label = row.name.trim();
     if row.source == "section" {
+        // Disclosure marker leads the label, Godot-style.
         if !row.value.trim().is_empty() {
-            return format!("{}{}  {}", " ".repeat(indent), label, row.value.trim());
+            return format!("{}{}  {}", " ".repeat(indent), row.value.trim(), label);
         }
         return format!("{}{}", " ".repeat(indent), label);
     }
@@ -1793,6 +1795,7 @@ fn apply_inspector_value_row_text_layout<API: ScriptAPI + ?Sized>(
     ctx: &mut ScriptContext<'_, API>,
     idx: usize,
     row: &InspectorValueRow,
+    changed: bool,
 ) {
     let (name_ratio, name_text_ratio) = if row.source == "section" {
         if row.depth == 0 {
@@ -1809,19 +1812,40 @@ fn apply_inspector_value_row_text_layout<API: ScriptAPI + ?Sized>(
     } else if !row.components.is_empty() || row.kind == "Color" {
         (0.27, 0.32)
     } else {
-        (0.31, 0.31)
+        (0.42, 0.31)
     };
-    set_label_text_ratio(ctx, &format!("inspector_var_{idx}_name"), name_text_ratio);
-    set_label_size_ratio(ctx, &format!("inspector_var_{idx}_name"), (name_ratio, 1.0));
+    let name_label = format!("inspector_var_{idx}_name");
+    set_label_text_ratio(ctx, &name_label, name_text_ratio);
+    set_label_size_ratio(ctx, &name_label, (name_ratio, 1.0));
     if row.source == "section" {
-        set_label(ctx, &format!("inspector_var_{idx}_name"), &row.name);
+        // Categories stay centered like Godot; nested section headers hug
+        // the left edge next to their disclosure marker.
+        let marker = row.value.trim();
+        let text = if marker.is_empty() {
+            row.name.clone()
+        } else {
+            format!("{marker}  {}", row.name)
+        };
+        set_label(ctx, &name_label, &text);
+        set_label_h_align(
+            ctx,
+            &name_label,
+            if row.depth == 0 {
+                UiTextAlign::Center
+            } else {
+                UiTextAlign::Start
+            },
+        );
     }
     if row.kind == "EmptyArrayAdd" || row.kind == "EmptyObject" {
-        set_label_color(ctx, &format!("inspector_var_{idx}_name"), "#A7AFB9");
+        set_label_color(ctx, &name_label, theme::TEXT_FAINT);
     } else if row.source == "section" && row.depth == 0 {
-        set_label_color(ctx, &format!("inspector_var_{idx}_name"), "#D7DBE0");
+        set_label_color(ctx, &name_label, theme::TEXT);
+    } else if changed {
+        // Godot renders overridden properties with a brighter label.
+        set_label_color(ctx, &name_label, theme::TEXT);
     } else {
-        set_label_color(ctx, &format!("inspector_var_{idx}_name"), "#A7AFB9");
+        set_label_color(ctx, &name_label, theme::TEXT_DIM);
     }
     let box_w = if row.kind == "Quat" && row.components.len() == 3 {
         0.28
@@ -3572,7 +3596,7 @@ fn ensure_script_reload_popup<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'
         node.transform.pivot = UiVector2::percent(50.0, 50.0);
         node.text = Cow::Borrowed("Reloading scripts");
         node.text_size_ratio = 0.36;
-        node.color = Color::from_hex("#D7DBE0").unwrap_or(node.color);
+        node.color = Color::from_hex(theme::TEXT).unwrap_or(node.color);
         node.visible = false;
         node.input_enabled = false;
     });
@@ -3784,16 +3808,29 @@ pub fn set_label_color<API: ScriptAPI + ?Sized>(
     }
 }
 
+pub fn set_label_h_align<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    name: &str,
+    align: UiTextAlign,
+) {
+    if let Some(id) = find_named(ctx, name) {
+        let _ = with_node_mut!(ctx.run, UiLabel, id, |node| {
+            node.h_align = align;
+        });
+    }
+}
+
 pub fn set_axis_label_overlay<API: ScriptAPI + ?Sized>(
     ctx: &mut ScriptContext<'_, API>,
     name: &str,
 ) {
     if let Some(id) = find_named(ctx, name) {
         let _ = with_node_mut!(ctx.run, UiLabel, id, |node| {
-            node.layout.anchor = UiAnchor::Center;
+            // Axis letter sits inside the left edge of its box, Godot-style.
+            node.layout.anchor = UiAnchor::Left;
             node.layout.size = UiVector2::ratio(0.28, 1.0);
             node.layout.z_index = 10;
-            node.transform.translation = Vector2::new(0.14, 0.5);
+            node.transform.translation = Vector2::ZERO;
             node.h_align = UiTextAlign::Center;
             node.v_align = UiTextAlign::Center;
             node.input_enabled = false;
@@ -3950,7 +3987,7 @@ pub fn set_row_state<API: ScriptAPI + ?Sized>(
     selected: bool,
     indicator: RowIndicator,
 ) {
-    set_button_fill(ctx, name, if selected { "#4D84D1" } else { "#00000000" });
+    set_button_fill(ctx, name, if selected { theme::ACCENT } else { "#00000000" });
     set_indicator_shape(ctx, &format!("{name}_indicator"), indicator);
 }
 
@@ -4467,7 +4504,7 @@ pub fn set_scene_tree_list<API: ScriptAPI + ?Sized>(
         tree.toggle_size = 11.0;
         tree.line_color = Color::from_hex("#3A414C").unwrap_or(tree.line_color);
         tree.triangle_color = Color::from_hex("#7FA7E6").unwrap_or(tree.triangle_color);
-        tree.text_color = Color::from_hex("#D7DBE0").unwrap_or(tree.text_color);
+        tree.text_color = Color::from_hex(theme::TEXT).unwrap_or(tree.text_color);
         tree.row_style.fill = Color::TRANSPARENT;
         tree.row_style.stroke = Color::TRANSPARENT;
         tree.row_hover_style.fill = Color::from_hex("#303741").unwrap_or(tree.row_hover_style.fill);
@@ -4566,7 +4603,7 @@ pub fn set_file_tree_list<API: ScriptAPI + ?Sized>(
         tree.toggle_size = 11.0;
         tree.line_color = Color::from_hex("#3A414C").unwrap_or(tree.line_color);
         tree.triangle_color = Color::from_hex("#7FA7E6").unwrap_or(tree.triangle_color);
-        tree.text_color = Color::from_hex("#D7DBE0").unwrap_or(tree.text_color);
+        tree.text_color = Color::from_hex(theme::TEXT).unwrap_or(tree.text_color);
         tree.row_style.fill = Color::TRANSPARENT;
         tree.row_style.stroke = Color::TRANSPARENT;
         tree.row_hover_style.fill = Color::from_hex("#303741").unwrap_or(tree.row_hover_style.fill);
@@ -4772,58 +4809,53 @@ pub fn set_project_manager<API: ScriptAPI + ?Sized>(
     }
 }
 
+static NAME_CACHE: OnceLock<Mutex<std::collections::HashMap<String, u64>>> = OnceLock::new();
+
+fn name_cache() -> &'static Mutex<std::collections::HashMap<String, u64>> {
+    NAME_CACHE.get_or_init(|| Mutex::new(std::collections::HashMap::new()))
+}
+
+pub fn clear_name_cache() {
+    if let Ok(mut guard) = name_cache().lock() {
+        guard.clear();
+    }
+}
+
 pub fn find_named<API: ScriptAPI + ?Sized>(
     ctx: &mut ScriptContext<'_, API>,
     name: &str,
 ) -> Option<NodeID> {
-    let cached = with_state!(ctx.run, EditorState, ctx.id, |state| {
-        state
-            .editor_name_cache_names
-            .iter()
-            .position(|cached_name| cached_name == name)
-            .and_then(|idx| state.editor_name_cache_ids.get(idx).copied())
-    });
+    let cached = name_cache().lock().ok().and_then(|g| g.get(name).copied());
     if let Some(raw) = cached {
         let id = NodeID::from_u64(raw);
         if get_node_name!(ctx.run, id).as_deref() == Some(name) {
             return Some(id);
         }
-        let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
-            if let Some(idx) = state
-                .editor_name_cache_ids
-                .iter()
-                .position(|cached_id| *cached_id == raw)
-            {
-                state.editor_name_cache_ids.remove(idx);
-                if idx < state.editor_name_cache_names.len() {
-                    state.editor_name_cache_names.remove(idx);
-                }
-            }
-        });
+        if let Ok(mut guard) = name_cache().lock() {
+            guard.remove(name);
+        }
     }
 
+    // Cache miss: walk the tree once and cache every named node seen, so
+    // one miss doesn't turn a refresh into hundreds of full-tree scans.
+    // First-seen wins, matching the traversal's own match order.
+    let mut found = None;
     let mut stack = vec![ctx.id];
     while let Some(id) = stack.pop() {
-        if get_node_name!(ctx.run, id).as_deref() == Some(name) {
-            let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
-                if let Some(idx) = state
-                    .editor_name_cache_names
-                    .iter_mut()
-                    .position(|cached_name| cached_name == name)
-                {
-                    if let Some(cached_id) = state.editor_name_cache_ids.get_mut(idx) {
-                        *cached_id = id.as_u64();
-                    }
-                } else {
-                    state.editor_name_cache_names.push(name.to_string());
-                    state.editor_name_cache_ids.push(id.as_u64());
+        if let Some(node_name) = get_node_name!(ctx.run, id) {
+            let node_name = node_name.to_string();
+            if !node_name.is_empty() {
+                if found.is_none() && node_name == name {
+                    found = Some(id);
                 }
-            });
-            return Some(id);
+                if let Ok(mut guard) = name_cache().lock() {
+                    guard.entry(node_name).or_insert_with(|| id.as_u64());
+                }
+            }
         }
         stack.extend(get_children!(ctx.run, id));
     }
-    None
+    found
 }
 
 pub fn save_recent_projects(recent: &[String]) {

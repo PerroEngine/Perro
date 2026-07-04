@@ -24,10 +24,10 @@ parent = @inspector_value_row
         input_enabled = false
         mouse_filter = "pass"
         style = {
-            fill = "#23272D",
-            stroke = "#343A43",
-            stroke_width = 1.0,
-            radius = 0.12
+            fill = "#00000000",
+            stroke = "#00000000",
+            stroke_width = 0.0,
+            radius = 0.0
         }
     [/UiPanel]
 [/inspector_value_row_header]
@@ -84,7 +84,6 @@ parent = @inspector_value_row_inner
         h_align = "center"
         v_align = "center"
         spacing = "fill"
-        translation_ratio = (-0.15, 0.0)
     [/UiHLayout]
 [/inspector_value_components]
 
