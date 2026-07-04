@@ -28,7 +28,8 @@ mod water;
 
 use water::*;
 pub(crate) use water::{
-    lookup_water_body_sample, water_physics_sample_for_body_cached, water_target_submerged,
+    RuntimeWater2D, RuntimeWater3D, lookup_water_body_sample, water_physics_sample_for_body_cached,
+    water_target_submerged,
 };
 
 pub(crate) type PhysicsState = PhysicsSystem;
@@ -1222,12 +1223,15 @@ impl Runtime {
     }
 
     fn sync_world_2d(&mut self, bodies: &[BodyDesc2D]) {
-        let mut handle_updates = Vec::new();
+        let mut handle_updates = std::mem::take(&mut self.physics_handle_updates_scratch_2d);
+        handle_updates.clear();
         self.physics
             .sync_world_2d(bodies, |id, handle| handle_updates.push((id, handle)));
-        for (id, handle) in handle_updates {
+        for &(id, handle) in &handle_updates {
             self.set_body_handle_2d(id, handle);
         }
+        handle_updates.clear();
+        self.physics_handle_updates_scratch_2d = handle_updates;
     }
 
     fn sync_world_3d(&mut self, bodies: &[BodyDesc3D]) {
@@ -1244,13 +1248,16 @@ impl Runtime {
                 .project()
                 .and_then(|project| project.static_collision_trimesh_lookup),
         };
-        let mut handle_updates = Vec::new();
+        let mut handle_updates = std::mem::take(&mut self.physics_handle_updates_scratch_3d);
+        handle_updates.clear();
         self.physics.sync_world_3d(bodies, assets, |id, handle| {
             handle_updates.push((id, handle));
         });
-        for (id, handle) in handle_updates {
+        for &(id, handle) in &handle_updates {
             self.set_body_handle_3d(id, handle);
         }
+        handle_updates.clear();
+        self.physics_handle_updates_scratch_3d = handle_updates;
     }
 
     fn sync_joints_parallel(&mut self, joints_2d: &[JointDesc2D], joints_3d: &[JointDesc3D]) {
@@ -1276,7 +1283,8 @@ impl Runtime {
                 matches!(node.data, SceneNodeData::PhysicsForceEmitter2D(_)).then_some(id)
             })
             .collect::<Vec<_>>();
-        let mut emitters = Vec::new();
+        let mut emitters = std::mem::take(&mut self.physics_force_emitters_scratch_2d);
+        emitters.clear();
         for id in ids {
             let Some(global) = self.get_global_transform_2d(id) else {
                 continue;
@@ -1302,9 +1310,10 @@ impl Runtime {
                 .drain(..)
                 .map(|emitter| (emitter.transform.position, emitter)),
         );
-        for (position, emitter) in emitters {
+        for (position, emitter) in emitters.drain(..) {
             self.apply_force_emitter_2d(position, &emitter);
         }
+        self.physics_force_emitters_scratch_2d = emitters;
     }
 
     fn queue_physics_force_emitters_3d(&mut self) {
@@ -1316,7 +1325,8 @@ impl Runtime {
                 matches!(node.data, SceneNodeData::PhysicsForceEmitter3D(_)).then_some(id)
             })
             .collect::<Vec<_>>();
-        let mut emitters = Vec::new();
+        let mut emitters = std::mem::take(&mut self.physics_force_emitters_scratch_3d);
+        emitters.clear();
         for id in ids {
             let Some(global) = self.get_global_transform_3d(id) else {
                 continue;
@@ -1342,9 +1352,10 @@ impl Runtime {
                 .drain(..)
                 .map(|emitter| (emitter.transform.position, emitter)),
         );
-        for (position, emitter) in emitters {
+        for (position, emitter) in emitters.drain(..) {
             self.apply_force_emitter_3d(position, &emitter);
         }
+        self.physics_force_emitters_scratch_3d = emitters;
     }
 
     fn apply_force_emitter_2d(
@@ -1559,7 +1570,8 @@ impl Runtime {
         self.pending_water_queries_2d.clear();
         self.water_contacts_2d.clear();
         let water_ids = self.cached_water_ids_2d().to_vec();
-        let mut waters = Vec::new();
+        let mut waters = std::mem::take(&mut self.physics_waters_scratch_2d);
+        waters.clear();
         for &id in water_ids.iter() {
             let Some(transform) = self.get_global_transform_2d(id) else {
                 continue;
@@ -1586,6 +1598,7 @@ impl Runtime {
             });
         }
         if waters.is_empty() {
+            self.physics_waters_scratch_2d = waters;
             return;
         }
         let water_index = RuntimeWaterIndex2D::new(waters);
@@ -1677,6 +1690,9 @@ impl Runtime {
                 })
                 .collect()
         };
+        let mut waters = water_index.waters;
+        waters.clear();
+        self.physics_waters_scratch_2d = waters;
         for effect in forces {
             self.physics.queue_force_2d(effect.id, effect.force);
             if effect.impulse.length_squared() > 0.000_001 {
@@ -1698,7 +1714,8 @@ impl Runtime {
         self.pending_water_queries_3d.clear();
         self.water_contacts_3d.clear();
         let water_ids = self.cached_water_ids_3d().to_vec();
-        let mut waters = Vec::new();
+        let mut waters = std::mem::take(&mut self.physics_waters_scratch_3d);
+        waters.clear();
         for &id in water_ids.iter() {
             let Some(transform) = self.get_global_transform_3d(id) else {
                 continue;
@@ -1729,6 +1746,7 @@ impl Runtime {
             });
         }
         if waters.is_empty() {
+            self.physics_waters_scratch_3d = waters;
             return;
         }
         let water_index = RuntimeWaterIndex3D::new(waters);
@@ -1820,6 +1838,9 @@ impl Runtime {
                 })
                 .collect()
         };
+        let mut waters = water_index.waters;
+        waters.clear();
+        self.physics_waters_scratch_3d = waters;
         for effect in forces {
             self.physics.queue_force_3d(effect.id, effect.force);
             if effect.impulse.length_squared() > 0.000_001 {

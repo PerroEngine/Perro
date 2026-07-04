@@ -1131,6 +1131,9 @@ mod tests {
 
     #[test]
     fn static_boot_root_of_loads_dlc_scene_from_mount() {
+        // load_boot_scene writes the process-global project root; serialize
+        // with every other test that touches it.
+        let _project_root_guard = crate::rs_ctx::PROJECT_ROOT_TEST_LOCK.lock().unwrap();
         let test_root = std::env::temp_dir().join(format!(
             "perro_runtime_static_dlc_scene_{}",
             std::process::id()

@@ -170,6 +170,34 @@ impl Runtime {
             && !self.dirty.has_transform_dirty(id, Spatial::ThreeD)
     }
 
+    /// Reads the cached global 2D transform without recomputing. Returns
+    /// `None` when the cache is stale or missing; callers fall back to
+    /// [`Self::get_global_transform_2d`].
+    #[inline]
+    pub(crate) fn cached_clean_global_2d(&self, id: NodeID) -> Option<Transform2D> {
+        if !self.is_global_2d_cached_clean(id) {
+            return None;
+        }
+        self.transforms
+            .global_transform_2d
+            .get(id.index() as usize)
+            .copied()
+    }
+
+    /// Reads the cached global 3D transform without recomputing. Returns
+    /// `None` when the cache is stale or missing; callers fall back to
+    /// [`Self::get_global_transform_3d`].
+    #[inline]
+    pub(crate) fn cached_clean_global_3d(&self, id: NodeID) -> Option<Transform3D> {
+        if !self.is_global_3d_cached_clean(id) {
+            return None;
+        }
+        self.transforms
+            .global_transform_3d
+            .get(id.index() as usize)
+            .copied()
+    }
+
     pub(crate) fn get_global_transform_2d(&mut self, id: NodeID) -> Option<Transform2D> {
         if id.is_nil() || self.nodes.get(id).is_none() {
             return None;

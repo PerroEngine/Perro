@@ -195,3 +195,106 @@ fn indexed_missing_required_tag_returns_exact_empty() {
     assert!(candidates.exact);
     assert!(candidates.ids.is_empty());
 }
+
+#[test]
+fn within_matches_spatial_index_positions() {
+    let node = SceneNode::new(SceneNodeData::Node3D(Node3D::new()));
+    let node_type = node.node_type();
+    let spatial = QuerySpatialIndex {
+        pos_2d: vec![None, None],
+        pos_3d: vec![None, Some(Vector3::new(1.0, 2.0, 3.0))],
+    };
+
+    let inside = QueryExpr::Within(QueryBounds::Box3D {
+        origin: Vector3::new(0.0, 0.0, 0.0),
+        size: Vector3::new(10.0, 10.0, 10.0),
+    });
+    assert!(eval_expr_with_type(
+        &inside,
+        &node,
+        node_type,
+        1,
+        Some(&spatial)
+    ));
+
+    let outside = QueryExpr::Within(QueryBounds::Box3D {
+        origin: Vector3::new(100.0, 0.0, 0.0),
+        size: Vector3::new(10.0, 10.0, 10.0),
+    });
+    assert!(!eval_expr_with_type(
+        &outside,
+        &node,
+        node_type,
+        1,
+        Some(&spatial)
+    ));
+
+    // 2D bounds never match a 3D node.
+    let box_2d = QueryExpr::Within(QueryBounds::Box2D {
+        origin: Vector2::new(1.0, 2.0),
+        size: Vector2::new(10.0, 10.0),
+    });
+    assert!(!eval_expr_with_type(
+        &box_2d,
+        &node,
+        node_type,
+        1,
+        Some(&spatial)
+    ));
+
+    // No spatial index -> no match.
+    assert!(!eval_expr_with_type(&inside, &node, node_type, 1, None));
+
+    // Slot without a cached position -> no match.
+    assert!(!eval_expr_with_type(
+        &inside,
+        &node,
+        node_type,
+        0,
+        Some(&spatial)
+    ));
+}
+
+#[test]
+fn within_bounds_edge_is_inclusive() {
+    let bounds = QueryBounds::Box2D {
+        origin: Vector2::new(0.0, 0.0),
+        size: Vector2::new(4.0, 4.0),
+    };
+    assert!(bounds.contains_2d(Vector2::new(2.0, -2.0)));
+    assert!(!bounds.contains_2d(Vector2::new(2.1, 0.0)));
+    assert!(!bounds.contains_3d(Vector3::new(0.0, 0.0, 0.0)));
+}
+
+#[test]
+fn within_narrows_base_type_mask_by_dimension() {
+    let expr_2d = QueryExpr::Within(QueryBounds::Box2D {
+        origin: Vector2::new(0.0, 0.0),
+        size: Vector2::new(1.0, 1.0),
+    });
+    let mask = allowed_type_mask(Some(&expr_2d), TypeFilterKind::Base);
+    assert!(mask.contains_type(NodeType::Node2D));
+    assert!(!mask.contains_type(NodeType::Node3D));
+
+    let expr_3d = QueryExpr::Within(QueryBounds::Box3D {
+        origin: Vector3::new(0.0, 0.0, 0.0),
+        size: Vector3::new(1.0, 1.0, 1.0),
+    });
+    let mask = allowed_type_mask(Some(&expr_3d), TypeFilterKind::Base);
+    assert!(mask.contains_type(NodeType::Node3D));
+    assert!(!mask.contains_type(NodeType::Node2D));
+    assert!(mask.contains_type(NodeType::MeshInstance3D));
+}
+
+#[test]
+fn has_spatial_detects_nested_within() {
+    let expr = QueryExpr::All(vec![
+        QueryExpr::Name(vec!["enemy".to_string()]),
+        QueryExpr::Not(Box::new(QueryExpr::Within(QueryBounds::Box3D {
+            origin: Vector3::new(0.0, 0.0, 0.0),
+            size: Vector3::new(1.0, 1.0, 1.0),
+        }))),
+    ]);
+    assert!(expr.has_spatial());
+    assert!(!QueryExpr::Name(vec!["enemy".to_string()]).has_spatial());
+}

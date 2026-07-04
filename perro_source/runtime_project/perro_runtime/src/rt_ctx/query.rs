@@ -3,8 +3,10 @@ use ahash::{AHashMap, AHashSet};
 use perro_ids::NodeID;
 use perro_ids::TagID;
 use perro_nodes::{Node2D, Node3D, NodeType, SceneNode};
-use perro_runtime_api::sub_apis::{NodeQueryView, QueryExpr, QueryScope, QueryTypeMask};
-use perro_structs::BitMask;
+use perro_runtime_api::sub_apis::{
+    NodeQueryView, QueryBounds, QueryExpr, QueryScope, QueryTypeMask,
+};
+use perro_structs::{BitMask, Vector2, Vector3};
 use rayon::prelude::*;
 #[cfg(feature = "profile")]
 #[cfg(not(target_arch = "wasm32"))]
@@ -16,17 +18,26 @@ use web_time::Instant;
 const PARALLEL_MIN_NODES: usize = 10_000;
 const PARALLEL_MIN_WORK_UNITS: u64 = 30_000;
 
+/// Slot-indexed snapshot of global node positions, built only when a query
+/// contains a [`QueryExpr::Within`] clause.
+pub(crate) struct QuerySpatialIndex {
+    pub pos_2d: Vec<Option<Vector2>>,
+    pub pos_3d: Vec<Option<Vector3>>,
+}
+
 pub(super) fn query_node_ids(
     arena: &NodeArena,
     query: NodeQueryView<'_>,
+    spatial: Option<&QuerySpatialIndex>,
     tag_index: Option<&AHashMap<TagID, AHashSet<NodeID>>>,
 ) -> Vec<NodeID> {
-    query_node_ids_with_worker_override(arena, query, None, tag_index)
+    query_node_ids_with_worker_override(arena, query, spatial, None, tag_index)
 }
 
 pub(super) fn query_first_node_id(
     arena: &NodeArena,
     query: NodeQueryView<'_>,
+    spatial: Option<&QuerySpatialIndex>,
     tag_index: Option<&AHashMap<TagID, AHashSet<NodeID>>>,
 ) -> Option<NodeID> {
     let slot_count = arena.slot_count();
@@ -45,17 +56,17 @@ pub(super) fn query_first_node_id(
                 if candidates.exact {
                     candidates.ids.into_iter().next()
                 } else {
-                    first_in_candidates(arena, candidates.ids, &plan)
+                    first_in_candidates(arena, candidates.ids, &plan, spatial)
                 }
             } else {
-                first_in_range(arena, 1, slot_count, &plan)
+                first_in_range(arena, 1, slot_count, &plan, spatial)
             }
         }
         QueryScope::Subtree(root_id) => {
             if root_id.is_nil() {
                 None
             } else {
-                first_in_subtree(arena, root_id, &plan)
+                first_in_subtree(arena, root_id, &plan, spatial)
             }
         }
     }
@@ -64,6 +75,7 @@ pub(super) fn query_first_node_id(
 fn query_node_ids_with_worker_override(
     arena: &NodeArena,
     query: NodeQueryView<'_>,
+    spatial: Option<&QuerySpatialIndex>,
     worker_override: Option<usize>,
     tag_index: Option<&AHashMap<TagID, AHashSet<NodeID>>>,
 ) -> Vec<NodeID> {
@@ -102,14 +114,14 @@ fn query_node_ids_with_worker_override(
                 if candidates.exact {
                     candidates.ids
                 } else {
-                    scan_candidates(arena, candidates.ids, &plan)
+                    scan_candidates(arena, candidates.ids, &plan, spatial)
                 }
             } else {
                 let worker_count = worker_override.unwrap_or_else(|| {
                     recommended_workers(slot_count, plan.estimated_cost_per_node)
                 });
                 if worker_count <= 1 {
-                    scan_range(arena, 1, slot_count, &plan)
+                    scan_range(arena, 1, slot_count, &plan, spatial)
                 } else {
                     let chunk_size = slot_count.div_ceil(worker_count);
                     let mut ranges = Vec::with_capacity(worker_count);
@@ -119,7 +131,7 @@ fn query_node_ids_with_worker_override(
                     }
                     let mut partials = ranges
                         .into_par_iter()
-                        .map(|(start, end)| scan_range(arena, start, end, &plan))
+                        .map(|(start, end)| scan_range(arena, start, end, &plan, spatial))
                         .collect::<Vec<_>>();
                     let total: usize = partials.iter().map(Vec::len).sum();
                     let mut out = Vec::with_capacity(total);
@@ -134,7 +146,7 @@ fn query_node_ids_with_worker_override(
             if root_id.is_nil() {
                 Vec::new()
             } else {
-                scan_subtree(arena, root_id, &plan)
+                scan_subtree(arena, root_id, &plan, spatial)
             }
         }
     };
@@ -192,7 +204,8 @@ fn candidate_ids_for_expr(
         | QueryExpr::IsTypeMask(_)
         | QueryExpr::BaseTypeMask(_)
         | QueryExpr::Layers(_)
-        | QueryExpr::Mask(_) => None,
+        | QueryExpr::Mask(_)
+        | QueryExpr::Within(_) => None,
     }
 }
 
@@ -411,27 +424,38 @@ fn recommended_workers(total_nodes: usize, estimated_cost_per_node: u32) -> usiz
         .unwrap_or(1)
 }
 
-fn scan_range(arena: &NodeArena, start: usize, end: usize, plan: &QueryPlan) -> Vec<NodeID> {
+fn scan_range(
+    arena: &NodeArena,
+    start: usize,
+    end: usize,
+    plan: &QueryPlan,
+    spatial: Option<&QuerySpatialIndex>,
+) -> Vec<NodeID> {
     let mut out = Vec::with_capacity((end.saturating_sub(start)) / 4);
     for index in start..end {
         let Some((id, node)) = arena.slot_get(index) else {
             continue;
         };
-        if matches_query(node, plan) {
+        if matches_query(node, index, plan, spatial) {
             out.push(id);
         }
     }
     out
 }
 
-fn scan_subtree(arena: &NodeArena, root_id: NodeID, plan: &QueryPlan) -> Vec<NodeID> {
+fn scan_subtree(
+    arena: &NodeArena,
+    root_id: NodeID,
+    plan: &QueryPlan,
+    spatial: Option<&QuerySpatialIndex>,
+) -> Vec<NodeID> {
     let mut out = Vec::new();
     let mut stack = vec![root_id];
     while let Some(id) = stack.pop() {
         let Some(node) = arena.get(id) else {
             continue;
         };
-        if matches_query(node, plan) {
+        if matches_query(node, id.index() as usize, plan, spatial) {
             out.push(id);
         }
         stack.extend(node.children_slice().iter().copied());
@@ -439,38 +463,54 @@ fn scan_subtree(arena: &NodeArena, root_id: NodeID, plan: &QueryPlan) -> Vec<Nod
     out
 }
 
-fn scan_candidates(arena: &NodeArena, candidates: Vec<NodeID>, plan: &QueryPlan) -> Vec<NodeID> {
+fn scan_candidates(
+    arena: &NodeArena,
+    candidates: Vec<NodeID>,
+    plan: &QueryPlan,
+    spatial: Option<&QuerySpatialIndex>,
+) -> Vec<NodeID> {
     let mut out = Vec::with_capacity(candidates.len());
     for id in candidates {
         let Some(node) = arena.get(id) else {
             continue;
         };
-        if matches_query(node, plan) {
+        if matches_query(node, id.index() as usize, plan, spatial) {
             out.push(id);
         }
     }
     out
 }
 
-fn first_in_range(arena: &NodeArena, start: usize, end: usize, plan: &QueryPlan) -> Option<NodeID> {
+fn first_in_range(
+    arena: &NodeArena,
+    start: usize,
+    end: usize,
+    plan: &QueryPlan,
+    spatial: Option<&QuerySpatialIndex>,
+) -> Option<NodeID> {
     for index in start..end {
         let Some((id, node)) = arena.slot_get(index) else {
             continue;
         };
-        if matches_query(node, plan) {
+        if matches_query(node, index, plan, spatial) {
             return Some(id);
         }
     }
     None
 }
 
-fn first_in_subtree(arena: &NodeArena, root_id: NodeID, plan: &QueryPlan) -> Option<NodeID> {
+fn first_in_subtree(
+    arena: &NodeArena,
+    root_id: NodeID,
+    plan: &QueryPlan,
+    spatial: Option<&QuerySpatialIndex>,
+) -> Option<NodeID> {
     let mut stack = vec![root_id];
     while let Some(id) = stack.pop() {
         let Some(node) = arena.get(id) else {
             continue;
         };
-        if matches_query(node, plan) {
+        if matches_query(node, id.index() as usize, plan, spatial) {
             return Some(id);
         }
         stack.extend(node.children_slice().iter().copied());
@@ -482,19 +522,25 @@ fn first_in_candidates(
     arena: &NodeArena,
     candidates: Vec<NodeID>,
     plan: &QueryPlan,
+    spatial: Option<&QuerySpatialIndex>,
 ) -> Option<NodeID> {
     for id in candidates {
         let Some(node) = arena.get(id) else {
             continue;
         };
-        if matches_query(node, plan) {
+        if matches_query(node, id.index() as usize, plan, spatial) {
             return Some(id);
         }
     }
     None
 }
 
-fn matches_query(node: &SceneNode, plan: &QueryPlan) -> bool {
+fn matches_query(
+    node: &SceneNode,
+    slot: usize,
+    plan: &QueryPlan,
+    spatial: Option<&QuerySpatialIndex>,
+) -> bool {
     let node_type = node.node_type();
     if !type_in_mask(node_type, plan.exact_type_mask) {
         return false;
@@ -505,25 +551,31 @@ fn matches_query(node: &SceneNode, plan: &QueryPlan) -> bool {
     }
 
     match &plan.optimized_expr {
-        Some(expr) => eval_expr_with_type(expr, node, node_type),
+        Some(expr) => eval_expr_with_type(expr, node, node_type, slot, spatial),
         None => true,
     }
 }
 
 #[cfg(test)]
 fn eval_expr(expr: &QueryExpr, node: &SceneNode) -> bool {
-    eval_expr_with_type(expr, node, node.node_type())
+    eval_expr_with_type(expr, node, node.node_type(), 0, None)
 }
 
-fn eval_expr_with_type(expr: &QueryExpr, node: &SceneNode, node_type: NodeType) -> bool {
+fn eval_expr_with_type(
+    expr: &QueryExpr,
+    node: &SceneNode,
+    node_type: NodeType,
+    slot: usize,
+    spatial: Option<&QuerySpatialIndex>,
+) -> bool {
     match expr {
-        QueryExpr::All(children) => children
-            .iter()
-            .all(|child| eval_expr_in_context(child, node, node_type, TagClauseContext::All)),
-        QueryExpr::Any(children) => children
-            .iter()
-            .any(|child| eval_expr_in_context(child, node, node_type, TagClauseContext::Any)),
-        QueryExpr::Not(inner) => eval_not_expr(inner, node, node_type),
+        QueryExpr::All(children) => children.iter().all(|child| {
+            eval_expr_in_context(child, node, node_type, slot, spatial, TagClauseContext::All)
+        }),
+        QueryExpr::Any(children) => children.iter().any(|child| {
+            eval_expr_in_context(child, node, node_type, slot, spatial, TagClauseContext::Any)
+        }),
+        QueryExpr::Not(inner) => eval_not_expr(inner, node, node_type, slot, spatial),
         QueryExpr::Name(names) => names.iter().any(|name| node.get_name() == name),
         QueryExpr::Tags(tags) => tags.iter().any(|tag| node.has_tag(*tag)),
         QueryExpr::IsType(types) => types.contains(&node_type),
@@ -539,6 +591,20 @@ fn eval_expr_with_type(expr: &QueryExpr, node: &SceneNode, node_type: NodeType) 
         QueryExpr::Mask(mask) => {
             node_render_layers(node).is_none_or(|layers| !layers.intersects(*mask))
         }
+        QueryExpr::Within(bounds) => spatial.is_some_and(|index| match bounds {
+            QueryBounds::Box2D { .. } => index
+                .pos_2d
+                .get(slot)
+                .copied()
+                .flatten()
+                .is_some_and(|position| bounds.contains_2d(position)),
+            QueryBounds::Box3D { .. } => index
+                .pos_3d
+                .get(slot)
+                .copied()
+                .flatten()
+                .is_some_and(|position| bounds.contains_3d(position)),
+        }),
     }
 }
 
@@ -557,6 +623,8 @@ fn eval_expr_in_context(
     expr: &QueryExpr,
     node: &SceneNode,
     node_type: NodeType,
+    slot: usize,
+    spatial: Option<&QuerySpatialIndex>,
     tag_ctx: TagClauseContext,
 ) -> bool {
     match expr {
@@ -564,14 +632,20 @@ fn eval_expr_in_context(
             TagClauseContext::Any => tags.iter().any(|tag| node.has_tag(*tag)),
             TagClauseContext::All => tags.iter().all(|tag| node.has_tag(*tag)),
         },
-        _ => eval_expr_with_type(expr, node, node_type),
+        _ => eval_expr_with_type(expr, node, node_type, slot, spatial),
     }
 }
 
-fn eval_not_expr(expr: &QueryExpr, node: &SceneNode, node_type: NodeType) -> bool {
+fn eval_not_expr(
+    expr: &QueryExpr,
+    node: &SceneNode,
+    node_type: NodeType,
+    slot: usize,
+    spatial: Option<&QuerySpatialIndex>,
+) -> bool {
     match expr {
         QueryExpr::Tags(tags) => !tags.iter().any(|tag| node.has_tag(*tag)),
-        _ => !eval_expr_with_type(expr, node, node_type),
+        _ => !eval_expr_with_type(expr, node, node_type, slot, spatial),
     }
 }
 
@@ -663,6 +737,7 @@ fn optimize_expr(expr: &QueryExpr) -> QueryExpr {
         QueryExpr::BaseTypeMask(mask) => QueryExpr::BaseTypeMask(*mask),
         QueryExpr::Layers(mask) => QueryExpr::Layers(*mask),
         QueryExpr::Mask(mask) => QueryExpr::Mask(*mask),
+        QueryExpr::Within(bounds) => QueryExpr::Within(*bounds),
     }
 }
 
@@ -672,7 +747,7 @@ fn expr_cost(expr: &QueryExpr) -> u32 {
         QueryExpr::IsType(_) => 1,
         QueryExpr::BaseTypeMask(_) => 1,
         QueryExpr::BaseType(_) => 2,
-        QueryExpr::Layers(_) | QueryExpr::Mask(_) => 3,
+        QueryExpr::Layers(_) | QueryExpr::Mask(_) | QueryExpr::Within(_) => 3,
         QueryExpr::Name(names) => 4 + names.len() as u32,
         QueryExpr::Tags(tags) => 8 + (tags.len() as u32 * 2),
         QueryExpr::Not(inner) => 1 + expr_cost(inner),
@@ -732,6 +807,19 @@ fn allowed_type_mask_inner(expr: &QueryExpr, kind: TypeFilterKind) -> QueryTypeM
         QueryExpr::Name(_) | QueryExpr::Tags(_) | QueryExpr::Layers(_) | QueryExpr::Mask(_) => {
             all_types_mask()
         }
+        // Spatial bounds can only match nodes of the matching dimensionality,
+        // so a `Within` clause narrows the base-type mask for free.
+        QueryExpr::Within(bounds) => match kind {
+            TypeFilterKind::Exact => all_types_mask(),
+            TypeFilterKind::Base => match bounds {
+                QueryBounds::Box2D { .. } => {
+                    mask_from_types(TypeFilterKind::Base, &[NodeType::Node2D])
+                }
+                QueryBounds::Box3D { .. } => {
+                    mask_from_types(TypeFilterKind::Base, &[NodeType::Node3D])
+                }
+            },
+        },
         QueryExpr::IsType(types) => match kind {
             TypeFilterKind::Exact => mask_from_types(TypeFilterKind::Exact, types),
             TypeFilterKind::Base => all_types_mask(),
@@ -768,7 +856,11 @@ fn type_mask_only(expr: &QueryExpr, kind: TypeFilterKind) -> Option<QueryTypeMas
             Some(mask)
         }
         QueryExpr::Not(inner) => type_mask_only(inner, kind).map(QueryTypeMask::complement),
-        QueryExpr::Name(_) | QueryExpr::Tags(_) | QueryExpr::Layers(_) | QueryExpr::Mask(_) => None,
+        QueryExpr::Name(_)
+        | QueryExpr::Tags(_)
+        | QueryExpr::Layers(_)
+        | QueryExpr::Mask(_)
+        | QueryExpr::Within(_) => None,
         QueryExpr::IsType(types) => match kind {
             TypeFilterKind::Exact => Some(mask_from_types(TypeFilterKind::Exact, types)),
             TypeFilterKind::Base => None,

@@ -17,6 +17,7 @@ Use queries when game logic needs a set of nodes chosen by runtime state, not a 
 - Treat tags like dataless components: `enemy`, `alive`, `quest_target`, `damage_zone`.
 - Limit work to one room, UI panel, spawned wave, or scene chunk with `in_subtree(...)`.
 - Find nodes by type when a system owns behavior for all `Node2D`, `Node3D`, camera, light, or UI nodes.
+- Find nodes near a point with `within[origin, size]`: proximity triggers, AI awareness, area damage, spatial pickups.
 - Combine filters for gameplay systems, debug tools, editor panels, and target selection.
 - Use `query_iter!`, `query_each!`, and `query_map!` to keep common loop code short.
 
@@ -208,6 +209,7 @@ Predicate forms:
 - `base_type[Node3D]`
 - `layers[1, 2, 3]`
 - `mask[1]`
+- `within[origin, size]` (global-space box; `Vector2` pair for 2D nodes, `Vector3` pair for 3D nodes)
 
 ## Mental Model
 
@@ -330,6 +332,38 @@ let not_layer_one = query!(ctx.run, all(base_type[Node2D], mask[1]));
 - `mask[1]` means all nodes except ones on layer 1.
 - Combine with `base_type[Node2D]` or `base_type[Node3D]` to avoid non-spatial nodes.
 
+### 10) Spatial Box Filter
+
+Use `within[origin, size]` to match nodes whose **global position** lies inside an axis-aligned box.
+
+- `origin` is the box center in global space.
+- `size` is the full box extent along each axis (half on each side of `origin`).
+- Box edges are inclusive.
+- A `Vector2` pair matches only 2D nodes; a `Vector3` pair matches only 3D nodes.
+- Non-spatial nodes (UI, resource, base nodes) never match `within[...]`, and always match `not(within[...])`.
+
+```rust
+// All living enemies inside a 10x10x10 box around the player.
+let player_pos = get_global_pos_3d!(ctx.run, player_id);
+let nearby = query!(ctx.run, all(
+    tags["enemy"],
+    not(tags["dead"]),
+    within[player_pos, Vector3::new(10.0, 10.0, 10.0)]
+));
+
+// 2D pickups inside a screen-space region.
+let hits = query!(ctx.run, all(
+    tags["pickup"],
+    within[Vector2::new(640.0, 360.0), Vector2::new(200.0, 200.0)]
+));
+
+// Builder form.
+let q = NodeQuery::new()
+    .tags(["enemy"])
+    .within(player_pos, Vector3::new(10.0, 10.0, 10.0));
+let ids = ctx.run.NodeQuery().query(&q);
+```
+
 ## Performance Notes
 
 - Core node/script storage is flat and ID-indexed, so post-query operations stay cheap.
@@ -337,6 +371,9 @@ let not_layer_one = query!(ctx.run, all(base_type[Node2D], mask[1]));
 - Literal `tags["enemy"]` values hash at compile time; dynamic tag expressions hash at runtime.
 - Literal `node_type[...]` and `base_type[...]` predicates compile into growable type bitmasks.
 - Literal `layers[...]` and `mask[...]` predicates compile into `BitMask` layer masks.
+- Queries with `within[...]` snapshot global node positions once up front, so the scan itself stays read-only and parallel-safe. Queries without `within[...]` pay nothing for this.
+- The spatial snapshot refreshes dirty global transforms once, then reads the clean transform cache directly (parallel fill on large scenes, reused buffers, only the dimensions the query tests, subtree-only fill for `in_subtree` scopes).
+- A `within[...]` clause also narrows the base-type mask to `Node2D` or `Node3D` automatically, so non-spatial nodes are pruned before predicate eval.
 - Type-only boolean groups use mask algebra: `all` intersects, `any` unions, and `not` complements.
 - Runtime query planning reorders predicates by estimated cost and uses tag indexes and type masks when possible.
 - Indexed tag candidate sets are intersected smallest-to-largest before full predicate eval.

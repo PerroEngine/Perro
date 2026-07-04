@@ -1,5 +1,80 @@
 use super::*;
 
+pub(super) struct ShadowMultimeshBgArgs<'a> {
+    pub(super) device: &'a wgpu::Device,
+    pub(super) multimesh_bgl: &'a wgpu::BindGroupLayout,
+    pub(super) shadow_camera_buffers: &'a [wgpu::Buffer],
+    pub(super) multimesh_draw_params_buffer: &'a wgpu::Buffer,
+    pub(super) mesh_blend_depth_view: &'a wgpu::TextureView,
+    pub(super) blend_shape_delta_buffer: &'a wgpu::Buffer,
+    pub(super) blend_shape_weight_buffer: &'a wgpu::Buffer,
+    pub(super) blend_shape_instance_meta_buffer: &'a wgpu::Buffer,
+    pub(super) custom_params_meta_buffer: &'a wgpu::Buffer,
+    pub(super) custom_params_values_buffer: &'a wgpu::Buffer,
+    pub(super) shadow_identity_buffer: &'a wgpu::Buffer,
+    pub(super) multimesh_instance_buffer: &'a wgpu::Buffer,
+}
+
+// One multimesh draw bind group per shadow layer: identical to multimesh_bgl
+// except binding 0 = that layer's scene uniform (light view-proj) and binding 8
+// = the dedicated identity index buffer, so vs_depth draws the full instance set
+// projected into the light's view regardless of the camera cull output.
+pub(super) fn build_shadow_multimesh_bind_groups(
+    args: ShadowMultimeshBgArgs<'_>,
+) -> Vec<wgpu::BindGroup> {
+    args.shadow_camera_buffers
+        .iter()
+        .map(|scene_buffer| {
+            args.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("perro_shadow_multimesh_bg"),
+                layout: args.multimesh_bgl,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: scene_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: args.multimesh_draw_params_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: wgpu::BindingResource::TextureView(args.mesh_blend_depth_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: args.blend_shape_delta_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 4,
+                        resource: args.blend_shape_weight_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 5,
+                        resource: args.blend_shape_instance_meta_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 6,
+                        resource: args.custom_params_meta_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 7,
+                        resource: args.custom_params_values_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 8,
+                        resource: args.shadow_identity_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 9,
+                        resource: args.multimesh_instance_buffer.as_entire_binding(),
+                    },
+                ],
+            })
+        })
+        .collect()
+}
+
 struct AppendPackedLodDataArgs<'a> {
     device: &'a wgpu::Device,
     queue: &'a wgpu::Queue,
@@ -521,6 +596,21 @@ impl Gpu3D {
                 },
             ],
         });
+        self.shadow_multimesh_bind_groups =
+            build_shadow_multimesh_bind_groups(ShadowMultimeshBgArgs {
+                device,
+                multimesh_bgl: &self.multimesh_bgl,
+                shadow_camera_buffers: &self.shadow_camera_buffers,
+                multimesh_draw_params_buffer: &self.multimesh_draw_params_buffer,
+                mesh_blend_depth_view: &self.mesh_blend_depth_view,
+                blend_shape_delta_buffer: &self.blend_shape_delta_buffer,
+                blend_shape_weight_buffer: &self.blend_shape_weight_buffer,
+                blend_shape_instance_meta_buffer: &self.blend_shape_instance_meta_buffer,
+                custom_params_meta_buffer: &self.custom_params_meta_buffer,
+                custom_params_values_buffer: &self.custom_params_values_buffer,
+                shadow_identity_buffer: &self.multimesh_shadow_identity_buffer,
+                multimesh_instance_buffer: &self.multimesh_instance_buffer,
+            });
         self.rebuild_multimesh_cull_bind_group(device);
         self.camera_bind_group_generation = self.camera_bind_group_generation.wrapping_add(1);
         if self.camera_bind_group_generation == 0 {
@@ -530,6 +620,60 @@ impl Gpu3D {
         if self.multimesh_bind_group_generation == 0 {
             self.multimesh_bind_group_generation = 1;
         }
+    }
+
+    // Grow (if needed) and fill the multimesh shadow identity index buffer so
+    // visible_indices[i] == i for the full instance set. Grow rebuilds the
+    // shadow multimesh bind groups (binding 8). Called on multimesh topology
+    // change when any multimesh batch casts shadows.
+    pub(super) fn ensure_multimesh_shadow_identity(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        needed: usize,
+    ) {
+        if needed == 0 {
+            return;
+        }
+        if needed > self.multimesh_shadow_identity_capacity {
+            let mut new_capacity = self.multimesh_shadow_identity_capacity.max(1);
+            while new_capacity < needed {
+                new_capacity *= 2;
+            }
+            self.multimesh_shadow_identity_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("perro_multimesh_shadow_identity"),
+                size: (new_capacity * std::mem::size_of::<u32>()) as u64,
+                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+            self.multimesh_shadow_identity_capacity = new_capacity;
+            self.shadow_multimesh_bind_groups =
+                build_shadow_multimesh_bind_groups(ShadowMultimeshBgArgs {
+                    device,
+                    multimesh_bgl: &self.multimesh_bgl,
+                    shadow_camera_buffers: &self.shadow_camera_buffers,
+                    multimesh_draw_params_buffer: &self.multimesh_draw_params_buffer,
+                    mesh_blend_depth_view: &self.mesh_blend_depth_view,
+                    blend_shape_delta_buffer: &self.blend_shape_delta_buffer,
+                    blend_shape_weight_buffer: &self.blend_shape_weight_buffer,
+                    blend_shape_instance_meta_buffer: &self.blend_shape_instance_meta_buffer,
+                    custom_params_meta_buffer: &self.custom_params_meta_buffer,
+                    custom_params_values_buffer: &self.custom_params_values_buffer,
+                    shadow_identity_buffer: &self.multimesh_shadow_identity_buffer,
+                    multimesh_instance_buffer: &self.multimesh_instance_buffer,
+                });
+        }
+        // Reuse the cull identity staging (identical values); rebuild if short.
+        if self.staged_multimesh_visible_identity.len() < needed {
+            self.staged_multimesh_visible_identity.clear();
+            self.staged_multimesh_visible_identity
+                .extend(0..needed as u32);
+        }
+        queue.write_buffer(
+            &self.multimesh_shadow_identity_buffer,
+            0,
+            bytemuck::cast_slice(&self.staged_multimesh_visible_identity[..needed]),
+        );
     }
 
     pub(super) fn rebuild_multimesh_cull_bind_group(&mut self, device: &wgpu::Device) {
@@ -655,7 +799,7 @@ impl Gpu3D {
         }
         self.skeleton_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("perro_skeleton_palette_buffer"),
-            size: (new_capacity * std::mem::size_of::<[[f32; 4]; 4]>()) as u64,
+            size: (new_capacity * std::mem::size_of::<[[f32; 4]; 3]>()) as u64,
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -810,6 +954,35 @@ impl Gpu3D {
             let groups_y = self.hiz_size.1.div_ceil(HIZ_WORKGROUP_SIZE_Y);
             pass.dispatch_workgroups(groups_x, groups_y, 1);
         }
+        // SPD path: all downsample dispatches share ONE compute pass. Each dispatch
+        // reads mip (HIZ_SPD_MIPS*d) and writes the next up-to-HIZ_SPD_MIPS mips
+        // using workgroup shared memory, so the only serialization is between the
+        // chunk dispatches, not per mip. Falls back to the per-mip path below when
+        // the device lacks storage textures for the SPD bind group.
+        if self.hiz_spd_supported && !self.hiz_spd_bind_groups.is_empty() {
+            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("perro_hiz_spd_pass"),
+                timestamp_writes: None,
+            });
+            pass.set_pipeline(&self.hiz_spd_pipeline);
+            // Source-mip index this dispatch reads (mip 0 is filled by the copy).
+            let mut src_mip = 0u32;
+            for spd_bg in &self.hiz_spd_bind_groups {
+                // Base dst mip (src_mip+1) determines the workgroup grid: an 8x8
+                // workgroup owns an 8x8 output region of that base mip.
+                let base_dst = src_mip + 1;
+                let dst_w = (self.hiz_size.0 >> base_dst).max(1);
+                let dst_h = (self.hiz_size.1 >> base_dst).max(1);
+                pass.set_bind_group(0, spd_bg, &[]);
+                pass.dispatch_workgroups(
+                    dst_w.div_ceil(HIZ_WORKGROUP_SIZE_X),
+                    dst_h.div_ceil(HIZ_WORKGROUP_SIZE_Y),
+                    1,
+                );
+                src_mip += HIZ_SPD_MIPS;
+            }
+            return;
+        }
         let mut src_w = self.hiz_size.0;
         let mut src_h = self.hiz_size.1;
         for downsample_bg in &self.hiz_downsample_bind_groups {
@@ -832,6 +1005,8 @@ impl Gpu3D {
     }
 
     pub(super) fn rebuild_hiz_bind_groups(&mut self, device: &wgpu::Device) {
+        self.hiz_spd_bind_groups.clear();
+        self.hiz_spd_params_buffers.clear();
         if self.hiz_mip_views.is_empty() {
             self.hiz_copy_bind_group = None;
             self.hiz_downsample_bind_groups.clear();
@@ -852,6 +1027,13 @@ impl Gpu3D {
                 },
             ],
         }));
+
+        if self.hiz_spd_supported {
+            self.rebuild_hiz_spd_bind_groups(device);
+            // SPD path drives all downsampling; the per-mip groups stay empty.
+            self.hiz_downsample_bind_groups.clear();
+            return;
+        }
 
         self.hiz_downsample_bind_groups.clear();
         self.hiz_downsample_bind_groups
@@ -874,6 +1056,70 @@ impl Gpu3D {
                         },
                     ],
                 }));
+        }
+    }
+
+    // Build the SPD downsample chain: one bind group + uniform per dispatch. Each
+    // dispatch d reads mip (HIZ_SPD_MIPS*d) and writes up to HIZ_SPD_MIPS dst mips
+    // above it. Unused dst slots (last chunk) are bound to a real mip view (mip 0)
+    // as a dummy; the shader guards every store on `mip_count`, so nothing is
+    // written there. Source dims feed NPOT edge clamping.
+    fn rebuild_hiz_spd_bind_groups(&mut self, device: &wgpu::Device) {
+        let total_mips = self.hiz_mip_count as usize;
+        let spd = HIZ_SPD_MIPS as usize;
+        // dst mips are 1..total_mips (mip 0 is the copy output / SPD source).
+        let mut src_mip = 0usize;
+        while src_mip + 1 < total_mips {
+            let dst_count = (total_mips - (src_mip + 1)).min(spd);
+            let src_w = (self.hiz_size.0 >> src_mip).max(1);
+            let src_h = (self.hiz_size.1 >> src_mip).max(1);
+            let params = HizSpdParamsGpu {
+                mip_count: dst_count as u32,
+                src_width: src_w,
+                src_height: src_h,
+                _pad: 0,
+            };
+            let params_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("perro_hiz_spd_params"),
+                size: std::mem::size_of::<HizSpdParamsGpu>() as u64,
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: true,
+            });
+            params_buffer
+                .slice(..)
+                .get_mapped_range_mut()
+                .copy_from_slice(bytemuck::bytes_of(&params));
+            params_buffer.unmap();
+
+            let mut entries = Vec::with_capacity(spd + 2);
+            entries.push(wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::TextureView(&self.hiz_mip_views[src_mip]),
+            });
+            for slot in 0..spd {
+                // Real dst mip for this slot, or mip 0 as a bound-but-unwritten dummy.
+                let dst_mip = if slot < dst_count {
+                    src_mip + 1 + slot
+                } else {
+                    0
+                };
+                entries.push(wgpu::BindGroupEntry {
+                    binding: 1 + slot as u32,
+                    resource: wgpu::BindingResource::TextureView(&self.hiz_mip_views[dst_mip]),
+                });
+            }
+            entries.push(wgpu::BindGroupEntry {
+                binding: 1 + HIZ_SPD_MIPS,
+                resource: params_buffer.as_entire_binding(),
+            });
+            let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("perro_hiz_spd_bg"),
+                layout: &self.hiz_spd_bgl,
+                entries: &entries,
+            });
+            self.hiz_spd_bind_groups.push(bind_group);
+            self.hiz_spd_params_buffers.push(params_buffer);
+            src_mip += spd;
         }
     }
 

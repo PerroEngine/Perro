@@ -73,7 +73,29 @@ struct DecodedMaterialParams {
 @group(0) @binding(0)
 var<uniform> scene: Scene3D;
 @group(0) @binding(1)
-var<storage, read> skeletons: array<mat4x4<f32>>;
+var<storage, read> skeletons: array<SkeletonBone>;
+
+// Bone palettes upload only the 3 affine rows (the w row is never read: the
+// skinned result is consumed as .xyz), cutting palette bandwidth by 25%.
+struct SkeletonBone {
+    row_0: vec4<f32>,
+    row_1: vec4<f32>,
+    row_2: vec4<f32>,
+}
+
+// Weight-blend the 4 bone palettes into 3 affine rows (returned as the columns
+// of a mat3x4 container).
+fn blend_skin_rows(base: u32, joints: vec4<u32>, weights: vec4<f32>) -> mat3x4<f32> {
+    let b0 = skeletons[base + joints.x];
+    let b1 = skeletons[base + joints.y];
+    let b2 = skeletons[base + joints.z];
+    let b3 = skeletons[base + joints.w];
+    return mat3x4<f32>(
+        b0.row_0 * weights.x + b1.row_0 * weights.y + b2.row_0 * weights.z + b3.row_0 * weights.w,
+        b0.row_1 * weights.x + b1.row_1 * weights.y + b2.row_1 * weights.z + b3.row_1 * weights.w,
+        b0.row_2 * weights.x + b1.row_2 * weights.y + b2.row_2 * weights.z + b3.row_2 * weights.w,
+    );
+}
 @group(0) @binding(2)
 var<storage, read> custom_params_meta: array<u32>;
 @group(0) @binding(3)
@@ -402,14 +424,14 @@ fn apply_blend_shapes(v: VertexInput, vertex_index: u32, instance_index: u32) ->
 
 fn perro_vs_main_base(v: VertexInput, inst: InstanceInput, vertex_index: u32, instance_index: u32) -> VertexOutput {
     let blended = apply_blend_shapes(v, vertex_index, instance_index);
-    let base = inst.skeleton_params.x;
-    let m0 = skeletons[base + blended.joints.x] * blended.weights.x;
-    let m1 = skeletons[base + blended.joints.y] * blended.weights.y;
-    let m2 = skeletons[base + blended.joints.z] * blended.weights.z;
-    let m3 = skeletons[base + blended.joints.w] * blended.weights.w;
-    let skin = m0 + m1 + m2 + m3;
-    let pos = (skin * vec4<f32>(blended.pos, 1.0)).xyz;
-    let normal = (skin * vec4<f32>(blended.normal.xyz, 0.0)).xyz;
+    let rows = blend_skin_rows(inst.skeleton_params.x, blended.joints, blended.weights);
+    let p_skin = vec4<f32>(blended.pos, 1.0);
+    let pos = vec3<f32>(dot(rows[0], p_skin), dot(rows[1], p_skin), dot(rows[2], p_skin));
+    let normal = vec3<f32>(
+        dot(rows[0].xyz, blended.normal.xyz),
+        dot(rows[1].xyz, blended.normal.xyz),
+        dot(rows[2].xyz, blended.normal.xyz),
+    );
     let p = vec4<f32>(pos, 1.0);
     let world = vec4<f32>(
         dot(inst.model_row_0, p),

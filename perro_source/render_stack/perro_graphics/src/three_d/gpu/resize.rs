@@ -34,6 +34,9 @@ impl Gpu3D {
         self.mesh_blend_seam_bind_group = None;
         self.mesh_blend_scene_copy = None;
         self.depth_size = (width, height);
+        // Bind group pointers (mesh_blend_depth_view) changed; force a shadow
+        // re-render so the cache does not keep stale layers.
+        self.shadow_casters_dirty = true;
         let (hiz_texture, hiz_mip_views, hiz_sample_view, hiz_mip_count, hiz_size) =
             create_hiz_texture(device, width, height);
         self.hiz_texture = hiz_texture;
@@ -485,6 +488,9 @@ impl Gpu3D {
         self.mesh_blend_seam_bind_group = None;
         self.mesh_blend_scene_copy = None;
         self.rebuild_camera_bind_groups(device);
+        // Shadow depth pipelines + bind group pointers were recreated; force a
+        // full shadow re-render.
+        self.shadow_casters_dirty = true;
         self.depth_size = (width.max(1), height.max(1));
         let (hiz_texture, hiz_mip_views, hiz_sample_view, hiz_mip_count, hiz_size) =
             create_hiz_texture(device, width, height);

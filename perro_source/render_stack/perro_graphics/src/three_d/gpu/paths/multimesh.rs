@@ -113,6 +113,56 @@ pub(super) fn create_multimesh_depth_prepass_pipeline(
     })
 }
 
+// Shadow-depth pipeline: same vertex-only path as the prepass but writes into a
+// shadow layer (SHADOW_DEPTH_FORMAT, biased). Bind group 0 carries the shadow
+// layer's camera scene uniform so vs_depth projects into the light's view.
+pub(super) fn create_multimesh_shadow_depth_pipeline(
+    device: &wgpu::Device,
+    pipeline_layout: &wgpu::PipelineLayout,
+    shader: &wgpu::ShaderModule,
+    cull_mode: Option<wgpu::Face>,
+) -> wgpu::RenderPipeline {
+    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("perro_multimesh_shadow_depth_pipeline"),
+        layout: Some(pipeline_layout),
+        vertex: wgpu::VertexState {
+            module: shader,
+            entry_point: Some("vs_depth"),
+            buffers: &[multimesh_mesh_vertex_layout()],
+            compilation_options: Default::default(),
+        },
+        fragment: Some(wgpu::FragmentState {
+            module: shader,
+            entry_point: Some("fs_depth"),
+            targets: &[],
+            compilation_options: Default::default(),
+        }),
+        primitive: wgpu::PrimitiveState {
+            topology: wgpu::PrimitiveTopology::TriangleList,
+            strip_index_format: None,
+            front_face: wgpu::FrontFace::Ccw,
+            cull_mode,
+            unclipped_depth: false,
+            polygon_mode: wgpu::PolygonMode::Fill,
+            conservative: false,
+        },
+        depth_stencil: Some(wgpu::DepthStencilState {
+            format: SHADOW_DEPTH_FORMAT,
+            depth_write_enabled: Some(true),
+            depth_compare: Some(wgpu::CompareFunction::LessEqual),
+            stencil: wgpu::StencilState::default(),
+            bias: wgpu::DepthBiasState {
+                constant: SHADOW_MAP_DEPTH_BIAS_CONST,
+                slope_scale: SHADOW_MAP_DEPTH_BIAS_SLOPE,
+                clamp: 0.0,
+            },
+        }),
+        multisample: wgpu::MultisampleState::default(),
+        multiview_mask: None,
+        cache: None,
+    })
+}
+
 pub(super) fn create_multimesh_blend_pipeline(
     device: &wgpu::Device,
     pipeline_layout: &wgpu::PipelineLayout,

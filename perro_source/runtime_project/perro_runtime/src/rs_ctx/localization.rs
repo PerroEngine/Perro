@@ -157,11 +157,14 @@ impl RuntimeResourceApi {
         let Some(source) = localization.source_csv.as_deref() else {
             return false;
         };
-        let Ok((by_key, by_hash)) =
-            read_localization_csv(source, &localization.key_column, locale_code)
-        else {
-            return false;
-        };
+        let (by_key, by_hash) =
+            match read_localization_csv(source, &localization.key_column, locale_code) {
+                Ok(maps) => maps,
+                Err(err) => {
+                    eprintln!("[runtime][warn] locale `{locale_code}` load failed: {err}");
+                    return false;
+                }
+            };
         localization.current_locale_code = intern_localization_str(locale_code);
         localization.current_locale = locale_from_code(localization.current_locale_code);
         localization.active_by_key = by_key;

@@ -91,6 +91,9 @@ extern "C" fn dlc_self_resolve_script_ctor() -> *mut dyn ScriptBehavior<RuntimeS
 
 #[test]
 fn dlc_self_context_applies_only_during_script_callback() {
+    // clear_dlc_mounts/mount_dlc_disk mutate process-global io state that
+    // load_boot_scene tests also touch; serialize via the shared root lock.
+    let _project_root_guard = crate::rs_ctx::PROJECT_ROOT_TEST_LOCK.lock().unwrap();
     clear_dlc_mounts();
     DLC_SELF_TEST_PATHS.lock().unwrap().clear();
 

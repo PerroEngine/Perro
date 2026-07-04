@@ -51,15 +51,33 @@ impl Gpu3D {
             self.shadow_camera_frustums
                 .resize(SHADOW_CAMERA_COUNT, [Vec4::ZERO; 6]);
         }
+        if self.shadow_layer_valid.len() != SHADOW_CAMERA_COUNT {
+            self.shadow_layer_valid.resize(SHADOW_CAMERA_COUNT, false);
+        }
+        // Casters moved (rebuild / transform patch / multimesh upload) or a
+        // resize/sample-count change touched the shadow targets: every layer's
+        // depth is stale this frame.
+        let casters_dirty = self.shadow_casters_dirty;
+        self.shadow_casters_dirty = false;
         for (index, scene) in setup.scenes.iter().copied().enumerate() {
             // Cache the frustum planes so shadow draws can sphere-cull per view.
             let view_proj = Mat4::from_cols_array_2d(&scene.view_proj);
             self.shadow_camera_frustums[index] = extract_frustum_planes(view_proj);
-            if self.last_shadow_scenes.get(index).copied().flatten() != Some(scene)
-                && let Some(buffer) = self.shadow_camera_buffers.get(index)
-            {
-                queue.write_buffer(buffer, 0, bytemuck::bytes_of(&scene));
+            // Per-layer scene diff: an unchanged view keeps its cached depth (skip
+            // the buffer write). A changed view (light moved, or a slot newly
+            // enabled with a fresh matrix) re-uploads.
+            let scene_changed =
+                self.last_shadow_scenes.get(index).copied().flatten() != Some(scene);
+            if scene_changed {
+                if let Some(buffer) = self.shadow_camera_buffers.get(index) {
+                    queue.write_buffer(buffer, 0, bytemuck::bytes_of(&scene));
+                }
                 self.last_shadow_scenes[index] = Some(scene);
+            }
+            if let Some(valid) = self.shadow_layer_valid.get_mut(index)
+                && shadow_layer_needs_render(casters_dirty, scene_changed, *valid)
+            {
+                *valid = false;
             }
         }
         if self.last_shadow != Some(setup.uniform) {
@@ -71,6 +89,18 @@ impl Gpu3D {
         self.spot_shadow_count = setup.spot_count;
         self.point_shadow_count = setup.point_count;
     }
+}
+
+// Per-layer cache decision: a layer must re-render when its casters moved
+// (dirty) or its light view-proj (scene uniform) changed since last render.
+// An already-valid layer with an unchanged scene keeps its depth contents.
+#[inline]
+pub(super) fn shadow_layer_needs_render(
+    casters_dirty: bool,
+    scene_changed: bool,
+    was_valid: bool,
+) -> bool {
+    casters_dirty || scene_changed || !was_valid
 }
 
 pub(super) struct ShadowSetupArgs<'a> {
@@ -728,6 +758,18 @@ mod tests {
             cast_shadows: true,
         });
         lighting
+    }
+
+    #[test]
+    fn shadow_layer_cache_decision_matches_invalidation_rules() {
+        // Static scene + static light + already valid: skip re-render.
+        assert!(!shadow_layer_needs_render(false, false, true));
+        // Casters moved: must re-render even if the light view is unchanged.
+        assert!(shadow_layer_needs_render(true, false, true));
+        // Light view changed: must re-render.
+        assert!(shadow_layer_needs_render(false, true, true));
+        // Newly enabled layer (was invalid): must render once.
+        assert!(shadow_layer_needs_render(false, false, false));
     }
 
     #[test]

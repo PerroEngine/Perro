@@ -159,7 +159,8 @@ impl Gpu3D {
             if frustum_cull_active {
                 let frustum_inputs_invalid = !self.frustum_gpu_inputs_valid
                     || self.indirect_staging.len() != self.draw_batches.len()
-                    || self.frustum_cull_dynamic_staging.len() != self.draw_batches.len();
+                    || self.frustum_cull_dynamic_staging.len() != self.draw_batches.len()
+                    || self.frustum_cull_static_staging.len() != self.draw_batches.len();
                 if frustum_inputs_invalid {
                     let indirect_start = Instant::now();
                     self.ensure_frustum_cull_capacity(device, self.draw_batches.len());
@@ -341,7 +342,8 @@ impl Gpu3D {
             if frustum_cull_active {
                 let frustum_inputs_invalid = !self.frustum_gpu_inputs_valid
                     || self.indirect_staging.len() != self.draw_batches.len()
-                    || self.frustum_cull_dynamic_staging.len() != self.draw_batches.len();
+                    || self.frustum_cull_dynamic_staging.len() != self.draw_batches.len()
+                    || self.frustum_cull_static_staging.len() != self.draw_batches.len();
                 if frustum_inputs_invalid {
                     let indirect_start = Instant::now();
                     self.ensure_frustum_cull_capacity(device, self.draw_batches.len());
@@ -372,19 +374,23 @@ impl Gpu3D {
 
                     let cull_start = Instant::now();
                     self.dirty_cull_batch_spans_scratch.clear();
-                    let mut dirty_span_idx = 0usize;
                     for (batch_idx, batch) in self.draw_batches.iter().enumerate() {
-                        while dirty_span_idx < self.merged_instance_spans_scratch.len()
-                            && self.merged_instance_spans_scratch[dirty_span_idx].end
-                                <= batch.instance_start
-                        {
-                            dirty_span_idx += 1;
-                        }
-                        let Some(span) = self.merged_instance_spans_scratch.get(dirty_span_idx)
-                        else {
-                            break;
-                        };
-                        if batch.instance_start >= span.start && batch.instance_start < span.end {
+                        let batch_start = batch.instance_start;
+                        let batch_end = batch.instance_start.saturating_add(batch.instance_count);
+                        // Dirty spans are sorted + disjoint, but instance_start
+                        // is NOT monotonic across batches (compaction can
+                        // repoint a later batch at an earlier shared region), so
+                        // search per batch instead of sweeping. A batch is dirty
+                        // when ANY of its instances moved: multi-instance bounds
+                        // depend on every instance, not just the first.
+                        let candidate = self
+                            .merged_instance_spans_scratch
+                            .partition_point(|span| span.end <= batch_start);
+                        let overlaps = self
+                            .merged_instance_spans_scratch
+                            .get(candidate)
+                            .is_some_and(|span| span.start < batch_end);
+                        if overlaps {
                             if let Some(last) = self.dirty_cull_batch_spans_scratch.last_mut()
                                 && last.end == batch_idx
                             {
@@ -399,12 +405,25 @@ impl Gpu3D {
                         step_timing.cull_input_skipped =
                             step_timing.cull_input_skipped.saturating_add(1);
                     } else {
-                        // Transform-only path: topology (and thus the static
-                        // half) is unchanged, so rewrite only the dynamic model
-                        // rows for the dirty batch spans.
+                        // Transform-only path: topology is unchanged, so rewrite
+                        // only the cull rows for the dirty batch spans. Single
+                        // instance: refresh the dynamic model. Multi instance:
+                        // the static half carries the merged world sphere, so it
+                        // must be recomputed and re-uploaded as well.
                         for batch_span in self.dirty_cull_batch_spans_scratch.iter() {
+                            let mut static_dirty = false;
                             for batch_idx in batch_span.clone() {
                                 let batch = &self.draw_batches[batch_idx];
+                                if batch.instance_count > 1 {
+                                    let (static_row, dynamic_row) = multi_instance_cull_rows(
+                                        batch,
+                                        &self.staged_instance_transforms,
+                                    );
+                                    self.frustum_cull_static_staging[batch_idx] = static_row;
+                                    self.frustum_cull_dynamic_staging[batch_idx] = dynamic_row;
+                                    static_dirty = true;
+                                    continue;
+                                }
                                 let instance =
                                     &self.staged_instance_transforms[batch.instance_start as usize];
                                 let model_cols = model_cols_from_affine_rows(instance);
@@ -427,6 +446,19 @@ impl Gpu3D {
                                         [batch_span.start..batch_span.end],
                                 ),
                             );
+                            if static_dirty {
+                                let byte_start = (batch_span.start
+                                    * std::mem::size_of::<FrustumCullStaticGpu>())
+                                    as u64;
+                                queue.write_buffer(
+                                    &self.frustum_cull_static_buffer,
+                                    byte_start,
+                                    bytemuck::cast_slice(
+                                        &self.frustum_cull_static_staging
+                                            [batch_span.start..batch_span.end],
+                                    ),
+                                );
+                            }
                         }
                         step_timing.cull_input_prep += cull_start.elapsed();
                     }
@@ -465,6 +497,8 @@ impl Gpu3D {
                 self.write_frustum_params_if_needed(queue, &frustum);
                 self.write_multimesh_cull_params_if_needed(queue);
             }
+            // Transform patch moved rigid + multimesh casters; drop the cache.
+            self.shadow_casters_dirty = true;
             self.update_shadow_state(queue, &camera, lighting, self.has_shadow_casters);
             self.last_draws.clear();
             self.last_draws.extend_from_slice(draws);
@@ -820,6 +854,7 @@ impl Gpu3D {
                                 || mirrored_winding
                                 || flat_builtin_double_sided,
                             mesh_blend: resolved_mesh_blend_active(resolved_blend),
+                            casts_shadows: draw.cast_shadows,
                             material_kind,
                         });
                     }
@@ -896,7 +931,7 @@ impl Gpu3D {
                     let start = self.staged_skeletons.len() as u32;
                     let count = skeleton.matrices.len() as u32;
                     self.staged_skeletons
-                        .extend_from_slice(skeleton.matrices.as_ref());
+                        .extend(skeleton.matrices.iter().map(skeleton_bone_rows));
                     (start, count)
                 } else {
                     (0, 0)
@@ -1051,16 +1086,15 @@ impl Gpu3D {
                         let instance_count = (self.staged_instance_transforms.len() as u32)
                             .saturating_sub(instance_start);
                         if instance_count > 0 {
-                            let multi_instance = instance_count > 1;
                             let uses_custom_shader = material_kind.uses_custom_shader();
                             let mirrored_winding = instance_mats
                                 .iter()
                                 .any(|model| Mat4::from_cols_array_2d(model).determinant() < 0.0);
-                            let occlusion_bounds = if multi_instance {
-                                ([0.0, 0.0, 0.0], 1.0e9)
-                            } else {
-                                (mesh_asset.bounds_center, mesh_asset.bounds_radius)
-                            };
+                            // Multi-instance batches keep the tight local bound;
+                            // the cull upload expands it into a merged
+                            // per-instance world sphere.
+                            let occlusion_bounds =
+                                (mesh_asset.bounds_center, mesh_asset.bounds_radius);
                             push_draw_batch(
                                 &mut self.draw_batches,
                                 DrawBatchPush {
@@ -1078,8 +1112,7 @@ impl Gpu3D {
                                     base_color_texture_slot: standard_params.base_color_texture,
                                     local_bounds: occlusion_bounds,
                                     occlusion_query,
-                                    disable_hiz_occlusion: multi_instance
-                                        || uses_custom_shader
+                                    disable_hiz_occlusion: uses_custom_shader
                                         || standard_params.alpha_mode == 2
                                         || resolved_mesh_blend_active(resolved_blend),
                                     casts_shadows: draw.cast_shadows && !is_camera_stream_quad,
@@ -1126,7 +1159,7 @@ impl Gpu3D {
                     let start = self.staged_skeletons.len() as u32;
                     let count = skeleton.matrices.len() as u32;
                     self.staged_skeletons
-                        .extend_from_slice(skeleton.matrices.as_ref());
+                        .extend(skeleton.matrices.iter().map(skeleton_bone_rows));
                     (start, count)
                 } else {
                     (0, 0)
@@ -1137,18 +1170,33 @@ impl Gpu3D {
                     && standard_params.alpha_mode == 0
                     && !is_camera_stream_quad;
                 let meshlet_casts_shadows = draw.cast_shadows && !self.disable_meshlet_shadows;
-                for meshlet in active_lod.meshlets.iter().copied() {
-                    // Keep meshlet casters for stable shadow fitting even when off-screen.
-                    // CPU query occlusion at meshlet granularity self-occludes dynamic meshes.
-                    // Keep meshlet occlusion GPU-driven only; CPU mode skips meshlet occlusion.
-                    let occlusion_query = None;
-                    let instance_start = self.staged_instance_transforms.len() as u32;
+                let render_path = if skeleton_count > 0 {
+                    RenderPath3D::Skinned
+                } else {
+                    RenderPath3D::Rigid
+                };
+                let uses_custom_shader = material_kind.uses_custom_shader();
+                // Per-draw invariants: winding + custom-shader flag do not vary per
+                // meshlet. Hoist the determinant any-scan out of the meshlet loop.
+                let mirrored_winding = instance_mats
+                    .iter()
+                    .any(|model| Mat4::from_cols_array_2d(model).determinant() < 0.0);
+                // Share one instance span across every meshlet batch of this draw:
+                // meshlet batches differ only by index range, not per-instance data,
+                // so stage the instances once and point all batches at the same span.
+                // Debug view keeps per-meshlet staging: it bakes a distinct
+                // debug_color per meshlet into the instance meta (debug-only, perf
+                // irrelevant).
+                let shared_instances = !self.meshlet_debug_view;
+                let shared_instance_start = self.staged_instance_transforms.len() as u32;
+                let mut shared_instance_count = 0u32;
+                if shared_instances {
                     for model in instance_mats.iter().copied() {
                         let instance = build_instance(
                             model,
                             material,
                             BuildInstanceArgs {
-                                debug_view: self.meshlet_debug_view,
+                                debug_view: false,
                                 debug_color: if caster_debug {
                                     if meshlet_casts_shadows {
                                         [0.05, 0.9, 1.0, 1.0]
@@ -1156,9 +1204,7 @@ impl Gpu3D {
                                         [1.0, 0.85, 0.1, 1.0]
                                     }
                                 } else {
-                                    debug_color(
-                                        (draw.node.as_u64() << 32) ^ meshlet.index_start as u64,
-                                    )
+                                    debug_color(draw.node.as_u64())
                                 },
                                 mesh_blend: resolved_blend,
                                 skeleton_start,
@@ -1178,30 +1224,83 @@ impl Gpu3D {
                             draw.blend_shape_weights.as_ref(),
                         );
                     }
-                    let instance_count = (self.staged_instance_transforms.len() as u32)
-                        .saturating_sub(instance_start);
+                    shared_instance_count = (self.staged_instance_transforms.len() as u32)
+                        .saturating_sub(shared_instance_start);
+                    if shared_instance_count == 0 {
+                        // No instances staged: nothing for any meshlet batch to draw.
+                        self.last_draw_instance_spans.push(
+                            draw_instance_start..(self.staged_instance_transforms.len() as u32),
+                        );
+                        let draw_span_end = self.last_draw_instance_spans.len();
+                        self.last_draw_instance_span_ranges
+                            .push(draw_span_start..draw_span_end);
+                        self.last_draw_multimesh_param_ranges.push(
+                            draw_multimesh_param_start
+                                ..(self.staged_multimesh_draw_params.len() as u32),
+                        );
+                        continue;
+                    }
+                }
+                for meshlet in active_lod.meshlets.iter().copied() {
+                    // Keep meshlet casters for stable shadow fitting even when off-screen.
+                    // CPU query occlusion at meshlet granularity self-occludes dynamic meshes.
+                    // Keep meshlet occlusion GPU-driven only; CPU mode skips meshlet occlusion.
+                    let occlusion_query = None;
+                    let (instance_start, instance_count) = if shared_instances {
+                        (shared_instance_start, shared_instance_count)
+                    } else {
+                        let instance_start = self.staged_instance_transforms.len() as u32;
+                        for model in instance_mats.iter().copied() {
+                            let instance = build_instance(
+                                model,
+                                material,
+                                BuildInstanceArgs {
+                                    debug_view: true,
+                                    debug_color: if caster_debug {
+                                        if meshlet_casts_shadows {
+                                            [0.05, 0.9, 1.0, 1.0]
+                                        } else {
+                                            [1.0, 0.85, 0.1, 1.0]
+                                        }
+                                    } else {
+                                        debug_color(
+                                            (draw.node.as_u64() << 32) ^ meshlet.index_start as u64,
+                                        )
+                                    },
+                                    mesh_blend: resolved_blend,
+                                    skeleton_start,
+                                    skeleton_count,
+                                    custom_params_offset,
+                                    custom_params_len,
+                                    packed_lod_param_id: 0,
+                                    receive_shadows: draw.receive_shadows,
+                                },
+                            );
+                            self.staged_instance_transforms.push(instance.transform);
+                            self.staged_rigid_instance_meta.push(instance.rigid_meta);
+                            self.staged_skinned_instance_meta
+                                .push(instance.skinned_meta);
+                            self.stage_blend_shape_instance(
+                                &mesh_asset,
+                                draw.blend_shape_weights.as_ref(),
+                            );
+                        }
+                        let instance_count = (self.staged_instance_transforms.len() as u32)
+                            .saturating_sub(instance_start);
+                        (instance_start, instance_count)
+                    };
                     if instance_count == 0 {
                         continue;
                     }
-                    let multi_instance = instance_count > 1;
-                    let mirrored_winding = instance_mats
-                        .iter()
-                        .any(|model| Mat4::from_cols_array_2d(model).determinant() < 0.0);
-                    // Use per-meshlet local bounds for tighter frustum/occlusion rejection.
-                    let (occlusion_center, occlusion_radius) = if multi_instance {
-                        ([0.0, 0.0, 0.0], 1.0e9)
-                    } else {
-                        (meshlet.center, meshlet.radius.max(0.001))
-                    };
-                    let uses_custom_shader = material_kind.uses_custom_shader();
+                    // Per-meshlet local bounds give tighter frustum/occlusion
+                    // rejection; multi-instance batches expand them into a
+                    // merged per-instance world sphere at cull upload.
+                    let (occlusion_center, occlusion_radius) =
+                        (meshlet.center, meshlet.radius.max(0.001));
                     push_draw_batch(
                         &mut self.draw_batches,
                         DrawBatchPush {
-                            render_path: if skeleton_count > 0 {
-                                RenderPath3D::Skinned
-                            } else {
-                                RenderPath3D::Rigid
-                            },
+                            render_path,
                             mesh: MeshRange {
                                 index_start: meshlet.index_start,
                                 index_count: meshlet.index_count,
@@ -1219,8 +1318,7 @@ impl Gpu3D {
                             base_color_texture_slot: standard_params.base_color_texture,
                             local_bounds: (occlusion_center, occlusion_radius),
                             occlusion_query,
-                            disable_hiz_occlusion: multi_instance
-                                || uses_custom_shader
+                            disable_hiz_occlusion: uses_custom_shader
                                 || standard_params.alpha_mode == 2
                                 || resolved_mesh_blend_active(resolved_blend),
                             casts_shadows: meshlet_casts_shadows,
@@ -1597,6 +1695,21 @@ impl Gpu3D {
             step_timing.indirect_skipped = step_timing.indirect_skipped.saturating_add(1);
             step_timing.cull_input_skipped = step_timing.cull_input_skipped.saturating_add(1);
         }
+        // Full rebuild re-staged every caster (rigid + multimesh); drop cache.
+        self.shadow_casters_dirty = true;
+        // Multimesh shadow path needs an identity index buffer covering the full
+        // instance set. Only maintained when a multimesh batch casts shadows.
+        if self
+            .multimesh_batches
+            .iter()
+            .any(|batch| batch.casts_shadows && !batch.mesh_blend)
+        {
+            self.ensure_multimesh_shadow_identity(
+                device,
+                queue,
+                self.staged_multimesh_instances.len(),
+            );
+        }
         self.update_shadow_state(queue, &camera, lighting, self.has_shadow_casters);
         self.last_total_meshlets = total_meshlets;
         self.last_total_drawn =
@@ -1747,7 +1860,7 @@ fn gather_local_bleed(
 }
 
 // Approximate world bounds of a multimesh draw from sampled instances.
-fn multimesh_world_bounds(
+pub(super) fn multimesh_world_bounds(
     batch: &MultiMeshBatch,
     draw_params: &[MultiMeshDrawParamGpu],
     instances: &[MultiMeshInstanceGpu],
@@ -1862,7 +1975,10 @@ impl Gpu3D {
             if emitters.len() >= BLEED_MAX_EMITTERS {
                 break;
             }
-            if batch.draw_on_top || batch.instance_count == 0 || batch.local_radius >= 1.0e8 {
+            // Multi-instance batches stay out of the bleed emitter/occluder set:
+            // their first-instance transform does not stand in for the whole
+            // batch, and pre-merge behavior excluded them via the 1e9 sentinel.
+            if batch.draw_on_top || batch.instance_count != 1 || batch.local_radius >= 1.0e8 {
                 continue;
             }
             let Some(inst) = self

@@ -25,7 +25,7 @@ pub enum QueryScope {
     Subtree(NodeID),
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum QueryExpr {
     All(Vec<QueryExpr>),
     Any(Vec<QueryExpr>),
@@ -38,6 +38,85 @@ pub enum QueryExpr {
     BaseTypeMask(QueryTypeMask),
     Layers(BitMask),
     Mask(BitMask),
+    Within(QueryBounds),
+}
+
+impl QueryExpr {
+    /// Returns `true` when the expression tree contains a spatial clause.
+    pub fn has_spatial(&self) -> bool {
+        let (has_2d, has_3d) = self.spatial_dims();
+        has_2d || has_3d
+    }
+
+    /// Returns which spatial dimensions the expression tree filters on, as
+    /// `(has_2d, has_3d)`. Lets the runtime skip position snapshots for
+    /// dimensions the query never tests.
+    pub fn spatial_dims(&self) -> (bool, bool) {
+        match self {
+            Self::Within(QueryBounds::Box2D { .. }) => (true, false),
+            Self::Within(QueryBounds::Box3D { .. }) => (false, true),
+            Self::All(children) | Self::Any(children) => {
+                children.iter().fold((false, false), |(d2, d3), child| {
+                    let (c2, c3) = child.spatial_dims();
+                    (d2 || c2, d3 || c3)
+                })
+            }
+            Self::Not(inner) => inner.spatial_dims(),
+            _ => (false, false),
+        }
+    }
+}
+
+/// Axis-aligned box bounds for [`QueryExpr::Within`], in global space.
+///
+/// `origin` is the box center; `size` is the full extent along each axis.
+/// 2D bounds match only 2D nodes; 3D bounds match only 3D nodes.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum QueryBounds {
+    Box2D { origin: Vector2, size: Vector2 },
+    Box3D { origin: Vector3, size: Vector3 },
+}
+
+impl QueryBounds {
+    pub fn contains_2d(&self, position: Vector2) -> bool {
+        match self {
+            Self::Box2D { origin, size } => {
+                (position.x - origin.x).abs() <= size.x * 0.5
+                    && (position.y - origin.y).abs() <= size.y * 0.5
+            }
+            Self::Box3D { .. } => false,
+        }
+    }
+
+    pub fn contains_3d(&self, position: Vector3) -> bool {
+        match self {
+            Self::Box2D { .. } => false,
+            Self::Box3D { origin, size } => {
+                (position.x - origin.x).abs() <= size.x * 0.5
+                    && (position.y - origin.y).abs() <= size.y * 0.5
+                    && (position.z - origin.z).abs() <= size.z * 0.5
+            }
+        }
+    }
+}
+
+/// Converts an `(origin, size)` vector pair into [`QueryBounds`].
+///
+/// Implemented for [`Vector2`] (2D box) and [`Vector3`] (3D box).
+pub trait IntoQueryBounds {
+    fn into_query_bounds(origin: Self, size: Self) -> QueryBounds;
+}
+
+impl IntoQueryBounds for Vector2 {
+    fn into_query_bounds(origin: Self, size: Self) -> QueryBounds {
+        QueryBounds::Box2D { origin, size }
+    }
+}
+
+impl IntoQueryBounds for Vector3 {
+    fn into_query_bounds(origin: Self, size: Self) -> QueryBounds {
+        QueryBounds::Box3D { origin, size }
+    }
 }
 
 pub const QUERY_TYPE_MASK_WORDS: usize = NodeType::ALL.len().div_ceil(64);
@@ -929,6 +1008,20 @@ impl NodeQuery {
         L: IntoBitMaskLayer,
     {
         self.and_expr(QueryExpr::Mask(BitMask::from_layers(layers)))
+    }
+
+    /// Adds a spatial filter: node global position must lie inside an
+    /// axis-aligned box.
+    ///
+    /// `origin` is the box center in global space; `size` is the full box
+    /// extent. Pass [`Vector2`]s to match 2D nodes or [`Vector3`]s to match
+    /// 3D nodes; nodes of the other dimensionality (and non-spatial nodes)
+    /// never match.
+    pub fn within<V>(self, origin: V, size: V) -> Self
+    where
+        V: IntoQueryBounds,
+    {
+        self.and_expr(QueryExpr::Within(V::into_query_bounds(origin, size)))
     }
 
     /// Adds an explicit expression tree.
@@ -3434,6 +3527,9 @@ macro_rules! query_builder {
 /// - `base_type[...]`
 /// - `layers[...]` render layer allow-list for 2D/3D nodes
 /// - `mask[...]` render layer deny-list for 2D/3D nodes
+/// - `within[origin, size]` global-space box filter; `origin` is box center,
+///   `size` is full extent. `Vector2` pair matches 2D nodes, `Vector3` pair
+///   matches 3D nodes.
 ///
 /// Boolean combinators:
 /// - `all(expr, expr, ...)`
@@ -3541,6 +3637,12 @@ macro_rules! query {
     (@expr mask[$($layer:expr),* $(,)?]) => {
         $crate::sub_apis::QueryExpr::Mask(
             $crate::perro_structs::BitMask::from_layers([$($layer),*])
+        )
+    };
+
+    (@expr within[$origin:expr, $size:expr $(,)?]) => {
+        $crate::sub_apis::QueryExpr::Within(
+            $crate::sub_apis::IntoQueryBounds::into_query_bounds($origin, $size)
         )
     };
 }

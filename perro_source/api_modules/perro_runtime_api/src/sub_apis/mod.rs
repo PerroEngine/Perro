@@ -35,11 +35,11 @@ pub use audio::{
 
 pub use node::{
     __query_base_type_mask, __query_type_mask, IntoNodeCollection, IntoNodeCreateBatch,
-    IntoNodeTag, IntoNodeTags, MeshDataSurfaceHit3D, MeshDataSurfaceRegion3D, MeshMaterialRegion3D,
-    MeshQueryModule, MeshSurfaceHit3D, MeshSurfaceRay3D, NodeAPI, NodeCollection,
-    NodeCollectionEntry, NodeCreateBatch, NodeModule, NodeQuery, NodeQueryModule, NodeQueryView,
-    NodeRootPatch, NodeSceneSpec, NodeScriptSpec, NodeScriptVar, NodeSpec, QueryExpr, QueryScope,
-    QueryTypeMask,
+    IntoNodeTag, IntoNodeTags, IntoQueryBounds, MeshDataSurfaceHit3D, MeshDataSurfaceRegion3D,
+    MeshMaterialRegion3D, MeshQueryModule, MeshSurfaceHit3D, MeshSurfaceRay3D, NodeAPI,
+    NodeCollection, NodeCollectionEntry, NodeCreateBatch, NodeModule, NodeQuery, NodeQueryModule,
+    NodeQueryView, NodeRootPatch, NodeSceneSpec, NodeScriptSpec, NodeScriptVar, NodeSpec,
+    QueryBounds, QueryExpr, QueryScope, QueryTypeMask,
 };
 
 // ---- Simulation domains ----

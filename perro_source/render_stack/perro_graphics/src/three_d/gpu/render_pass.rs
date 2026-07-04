@@ -82,11 +82,6 @@ impl Gpu3D {
         } else {
             0
         };
-        let query_set = if query_count > 0 {
-            self.occlusion_query_set.as_ref()
-        } else {
-            None
-        };
         let has_any_work = !self.draw_batches.is_empty()
             || !self.multimesh_batches.is_empty()
             || self.sky_enabled
@@ -117,6 +112,16 @@ impl Gpu3D {
         if self.shadow_pass_enabled && self.has_shadow_casters {
             if self.ray_shadow_enabled {
                 for cascade in 0..MAX_SHADOW_RAY_CASCADES.min(self.shadow_layer_views.len()) {
+                    // Cached-valid layer: depth retained, skip the pass entirely.
+                    if self
+                        .shadow_layer_valid
+                        .get(cascade)
+                        .copied()
+                        .unwrap_or(false)
+                    {
+                        continue;
+                    }
+                    self.compute_shadow_cull(cascade);
                     let mut shadow_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                         label: Some("perro_ray_shadow3d_pass"),
                         color_attachments: &[],
@@ -134,12 +139,20 @@ impl Gpu3D {
                     });
                     draw_shadow_batches(self, &mut shadow_pass, cascade);
                     drop(shadow_pass);
+                    if let Some(valid) = self.shadow_layer_valid.get_mut(cascade) {
+                        *valid = true;
+                    }
                 }
             }
             for spot in 0..self
                 .spot_shadow_count
                 .min(self.spot_shadow_layer_views.len())
             {
+                let flat = MAX_SHADOW_RAY_LIGHTS * MAX_SHADOW_RAY_CASCADES + spot;
+                if self.shadow_layer_valid.get(flat).copied().unwrap_or(false) {
+                    continue;
+                }
+                self.compute_shadow_cull(flat);
                 let mut shadow_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: Some("perro_spot_shadow3d_pass"),
                     color_attachments: &[],
@@ -155,18 +168,24 @@ impl Gpu3D {
                     occlusion_query_set: None,
                     multiview_mask: None,
                 });
-                draw_shadow_batches(
-                    self,
-                    &mut shadow_pass,
-                    MAX_SHADOW_RAY_LIGHTS * MAX_SHADOW_RAY_CASCADES + spot,
-                );
+                draw_shadow_batches(self, &mut shadow_pass, flat);
                 drop(shadow_pass);
+                if let Some(valid) = self.shadow_layer_valid.get_mut(flat) {
+                    *valid = true;
+                }
             }
             let point_layers = self
                 .point_shadow_count
                 .saturating_mul(POINT_SHADOW_FACE_COUNT)
                 .min(self.point_shadow_layer_views.len());
             for layer in 0..point_layers {
+                let flat = MAX_SHADOW_RAY_LIGHTS * MAX_SHADOW_RAY_CASCADES
+                    + MAX_SHADOW_SPOT_LIGHTS
+                    + layer;
+                if self.shadow_layer_valid.get(flat).copied().unwrap_or(false) {
+                    continue;
+                }
+                self.compute_shadow_cull(flat);
                 let mut shadow_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: Some("perro_point_shadow3d_pass"),
                     color_attachments: &[],
@@ -182,14 +201,11 @@ impl Gpu3D {
                     occlusion_query_set: None,
                     multiview_mask: None,
                 });
-                draw_shadow_batches(
-                    self,
-                    &mut shadow_pass,
-                    MAX_SHADOW_RAY_LIGHTS * MAX_SHADOW_RAY_CASCADES
-                        + MAX_SHADOW_SPOT_LIGHTS
-                        + layer,
-                );
+                draw_shadow_batches(self, &mut shadow_pass, flat);
                 drop(shadow_pass);
+                if let Some(valid) = self.shadow_layer_valid.get_mut(flat) {
+                    *valid = true;
+                }
             }
         }
         if frustum_cull_active {
@@ -485,6 +501,13 @@ impl Gpu3D {
             wgpu::LoadOp::Load
         } else {
             wgpu::LoadOp::Clear(clear_color)
+        };
+        // Bound here (not earlier) so the shadow section can still take &mut self
+        // for the per-layer cull; the query set is only read by the main pass.
+        let query_set = if query_count > 0 {
+            self.occlusion_query_set.as_ref()
+        } else {
+            None
         };
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("perro_mesh_pass"),
@@ -899,6 +922,64 @@ fn mesh_blend_receiver_matches(
     mesh_blend_batches_overlap(source, target, transforms)
 }
 
+// Per-layer caster cull: keep only shadow batches whose world sphere touches
+// this light's frustum, preserving draw order. Multi-instance batches use the
+// merged sphere over all instances; batches with no usable bound survive.
+pub(super) fn shadow_layer_cull(
+    shadow_batch_indices: &[usize],
+    draw_batches: &[DrawBatch],
+    transforms: &[TransformInstanceGpu],
+    frustum: &[Vec4; 6],
+    out: &mut Vec<usize>,
+) {
+    out.clear();
+    for &batch_index in shadow_batch_indices {
+        let Some(batch) = draw_batches.get(batch_index) else {
+            continue;
+        };
+        match batch_world_sphere(batch, transforms) {
+            Some((center, radius)) => {
+                if sphere_in_frustum(center, radius, frustum) {
+                    out.push(batch_index);
+                }
+            }
+            // Conservative: no tight sphere (multi-instance / non-finite) => keep.
+            None => out.push(batch_index),
+        }
+    }
+}
+
+#[inline]
+fn sphere_in_frustum(center: Vec3, radius: f32, planes: &[Vec4; 6]) -> bool {
+    for plane in planes {
+        if plane.truncate().dot(center) + plane.w < -radius {
+            return false;
+        }
+    }
+    true
+}
+
+impl Gpu3D {
+    // Populate shadow_cull_scratch with the batches to draw for one shadow layer.
+    pub(super) fn compute_shadow_cull(&mut self, camera_index: usize) {
+        let mut scratch = std::mem::take(&mut self.shadow_cull_scratch);
+        match self.shadow_camera_frustums.get(camera_index) {
+            Some(frustum) => shadow_layer_cull(
+                &self.shadow_batch_indices,
+                &self.draw_batches,
+                &self.staged_instance_transforms,
+                frustum,
+                &mut scratch,
+            ),
+            None => {
+                scratch.clear();
+                scratch.extend_from_slice(&self.shadow_batch_indices);
+            }
+        }
+        self.shadow_cull_scratch = scratch;
+    }
+}
+
 fn draw_shadow_batches<'a>(
     gpu: &'a Gpu3D,
     shadow_pass: &mut wgpu::RenderPass<'a>,
@@ -910,23 +991,11 @@ fn draw_shadow_batches<'a>(
     let Some(rigid_shadow_camera_bg) = gpu.rigid_shadow_camera_bind_groups.get(camera_index) else {
         return;
     };
-    let shadow_frustum = gpu.shadow_camera_frustums.get(camera_index);
     let mut current_state: Option<(RenderPath3D, bool, bool)> = None;
     shadow_pass.set_vertex_buffer(1, gpu.instance_transform_buffer.slice(..));
-    for &batch_index in &gpu.shadow_batch_indices {
+    // shadow_cull_scratch was filled by compute_shadow_cull for this layer.
+    for &batch_index in &gpu.shadow_cull_scratch {
         let batch = &gpu.draw_batches[batch_index];
-        // Skip casters wholly outside this shadow view. Multi-instance batches
-        // carry a huge local_radius, so they always pass (conservative).
-        if let Some(frustum) = shadow_frustum
-            && let Some(inst) = gpu
-                .staged_instance_transforms
-                .get(batch.instance_start as usize)
-        {
-            let model = model_cols_from_affine_rows(inst);
-            if !bounds_in_frustum(model, batch.local_center, batch.local_radius, frustum) {
-                continue;
-            }
-        }
         let state = (batch.path, batch.double_sided, batch.packed_lod);
         if current_state != Some(state) {
             let (camera_bg, vertex_buf, pipeline) = if batch.path == RenderPath3D::Rigid {
@@ -984,6 +1053,62 @@ fn draw_shadow_batches<'a>(
         let end = start + batch.mesh.index_count;
         let instances = batch.instance_start..batch.instance_start + batch.instance_count;
         shadow_pass.draw_indexed(start..end, batch.mesh.base_vertex, instances);
+    }
+    draw_multimesh_shadow_casters(gpu, shadow_pass, camera_index);
+}
+
+// Draw shadow-casting multimesh batches into the current shadow layer. Uses the
+// per-layer shadow bind group (light scene uniform + identity index buffer), so
+// direct draws over the full instance set — the camera cull output is invalid
+// for a light's view. Mesh-blend batches are excluded (alpha, like rigid mode 2).
+fn draw_multimesh_shadow_casters<'a>(
+    gpu: &'a Gpu3D,
+    pass: &mut wgpu::RenderPass<'a>,
+    camera_index: usize,
+) {
+    if gpu.multimesh_batches.is_empty() {
+        return;
+    }
+    let Some(shadow_bg) = gpu.shadow_multimesh_bind_groups.get(camera_index) else {
+        return;
+    };
+    let frustum = gpu.shadow_camera_frustums.get(camera_index);
+    let mut bound = false;
+    let mut current_double_sided: Option<bool> = None;
+    for batch in gpu.multimesh_batches.iter() {
+        if !batch.casts_shadows || batch.mesh_blend {
+            continue;
+        }
+        // Cull whole grass/prop fields outside the light view when bounds exist.
+        if let Some(frustum) = frustum
+            && let Some((center, radius)) = super::prepare::multimesh_world_bounds(
+                batch,
+                &gpu.staged_multimesh_draw_params,
+                &gpu.staged_multimesh_instances,
+            )
+            && !sphere_in_frustum(center, radius, frustum)
+        {
+            continue;
+        }
+        if !bound {
+            pass.set_bind_group(0, shadow_bg, &[]);
+            pass.set_vertex_buffer(0, gpu.rigid_vertex_buffer.slice(..));
+            pass.set_index_buffer(gpu.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+            bound = true;
+        }
+        if current_double_sided != Some(batch.double_sided) {
+            let pipeline = if batch.double_sided {
+                &gpu.pipeline_multimesh_shadow_depth_double_sided
+            } else {
+                &gpu.pipeline_multimesh_shadow_depth_culled
+            };
+            pass.set_pipeline(pipeline);
+            current_double_sided = Some(batch.double_sided);
+        }
+        let start = batch.mesh.index_start;
+        let end = start + batch.mesh.index_count;
+        let instances = batch.instance_start..batch.instance_start + batch.instance_count;
+        pass.draw_indexed(start..end, batch.mesh.base_vertex, instances);
     }
 }
 
@@ -1112,27 +1237,124 @@ fn batch_world_sphere(
     batch: &DrawBatch,
     transforms: &[TransformInstanceGpu],
 ) -> Option<(Vec3, f32)> {
-    if batch.instance_count != 1 || !batch.local_radius.is_finite() || batch.local_radius >= 1.0e8 {
-        return None;
+    // Multi-instance batches merge every instance's world sphere; batches with
+    // no usable bound (non-finite / sentinel radius) return None and survive.
+    batch_merged_world_sphere(batch, transforms)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use perro_graphics_assets::MeshRange;
+    use perro_structs::BitMask;
+
+    fn frustum_at(center: [f32; 3]) -> [Vec4; 6] {
+        let eye = Vec3::new(center[0], center[1], center[2] + 20.0);
+        let view = Mat4::look_at_rh(eye, Vec3::from(center), Vec3::Y);
+        let proj = Mat4::perspective_rh(0.6, 1.0, 0.5, 100.0);
+        extract_frustum_planes(proj * view)
     }
-    let inst = transforms.get(batch.instance_start as usize)?;
-    let model = Mat4::from_cols_array_2d(&model_cols_from_affine_rows(inst));
-    if !model.is_finite() {
-        return None;
+
+    fn translated_instance(pos: [f32; 3]) -> TransformInstanceGpu {
+        TransformInstanceGpu {
+            model_row_0: [1.0, 0.0, 0.0, pos[0]],
+            model_row_1: [0.0, 1.0, 0.0, pos[1]],
+            model_row_2: [0.0, 0.0, 1.0, pos[2]],
+        }
     }
-    let local = Vec4::new(
-        batch.local_center[0],
-        batch.local_center[1],
-        batch.local_center[2],
-        1.0,
-    );
-    let center = model * local;
-    if !center.is_finite() {
-        return None;
+
+    fn test_batch(instance_start: u32, instance_count: u32, local_radius: f32) -> DrawBatch {
+        let material_kind = MaterialPipelineKind::Standard;
+        let state_key =
+            draw_batch_state_key(RenderPath3D::Rigid, false, false, 0, false, &material_kind);
+        DrawBatch {
+            state_key,
+            render_state: render_state_key(state_key, 0, 0, 0, false, 0, false),
+            mesh: MeshRange {
+                index_start: 0,
+                index_count: 3,
+                base_vertex: 0,
+            },
+            instance_start,
+            instance_count,
+            path: RenderPath3D::Rigid,
+            packed_lod: false,
+            double_sided: false,
+            material_kind,
+            alpha_mode: 0,
+            draw_on_top: false,
+            base_color_texture_slot: 0,
+            local_center: [0.0, 0.0, 0.0],
+            local_radius,
+            occlusion_query: None,
+            disable_hiz_occlusion: false,
+            casts_shadows: true,
+            receives_shadows: true,
+            mesh_blend: false,
+            mesh_blend_screen: false,
+            mesh_blend_params: 0,
+            mesh_blend_depth: false,
+            blend_layers: BitMask::ALL.bits(),
+            blend_mask: BitMask::NONE.bits(),
+            order_index: 0,
+        }
     }
-    let sx = Vec3::new(model.x_axis.x, model.x_axis.y, model.x_axis.z).length();
-    let sy = Vec3::new(model.y_axis.x, model.y_axis.y, model.y_axis.z).length();
-    let sz = Vec3::new(model.z_axis.x, model.z_axis.y, model.z_axis.z).length();
-    let scale = sx.max(sy).max(sz).max(1.0e-6);
-    Some((center.truncate(), batch.local_radius.max(0.0) * scale))
+
+    #[test]
+    fn shadow_layer_cull_drops_off_view_single_instance_batches() {
+        // In-view caster at origin, far off-view caster at x=+80.
+        let batches = [test_batch(0, 1, 1.0), test_batch(1, 1, 1.0)];
+        let transforms = [
+            translated_instance([0.0, 0.0, 0.0]),
+            translated_instance([80.0, 0.0, 0.0]),
+        ];
+        let frustum = frustum_at([0.0, 0.0, 0.0]);
+        let indices = [0usize, 1usize];
+        let mut out = Vec::new();
+        shadow_layer_cull(&indices, &batches, &transforms, &frustum, &mut out);
+        assert_eq!(out, vec![0], "off-view caster culled, order preserved");
+    }
+
+    #[test]
+    fn shadow_layer_cull_keeps_multi_instance_batches_conservatively() {
+        // Sentinel local_radius (debug batches) has no tight sphere -> keep.
+        let batches = [test_batch(0, 4, 1.0e9)];
+        let transforms = [translated_instance([80.0, 0.0, 0.0])];
+        let frustum = frustum_at([0.0, 0.0, 0.0]);
+        let indices = [0usize];
+        let mut out = Vec::new();
+        shadow_layer_cull(&indices, &batches, &transforms, &frustum, &mut out);
+        assert_eq!(out, vec![0], "unbounded multi-instance batch survives");
+    }
+
+    #[test]
+    fn shadow_layer_cull_uses_merged_sphere_for_multi_instance_batches() {
+        // Batch 0: both instances far off-view -> merged sphere culled.
+        // Batch 1: one instance in view -> merged sphere survives.
+        let batches = [test_batch(0, 2, 1.0), test_batch(2, 2, 1.0)];
+        let transforms = [
+            translated_instance([80.0, 0.0, 0.0]),
+            translated_instance([90.0, 0.0, 0.0]),
+            translated_instance([0.0, 0.0, 0.0]),
+            translated_instance([85.0, 0.0, 0.0]),
+        ];
+        let frustum = frustum_at([0.0, 0.0, 0.0]);
+        let indices = [0usize, 1usize];
+        let mut out = Vec::new();
+        shadow_layer_cull(&indices, &batches, &transforms, &frustum, &mut out);
+        assert_eq!(out, vec![1], "fully off-view multi-instance batch culled");
+    }
+
+    #[test]
+    fn sphere_in_frustum_accepts_center_and_rejects_far() {
+        let frustum = frustum_at([0.0, 0.0, 0.0]);
+        assert!(sphere_in_frustum(Vec3::ZERO, 1.0, &frustum));
+        assert!(!sphere_in_frustum(
+            Vec3::new(200.0, 0.0, 0.0),
+            1.0,
+            &frustum
+        ));
+        // Large radius rescues a center just outside the planes.
+        assert!(sphere_in_frustum(Vec3::new(30.0, 0.0, 0.0), 40.0, &frustum));
+    }
 }

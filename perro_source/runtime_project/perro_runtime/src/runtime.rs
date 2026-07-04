@@ -34,7 +34,7 @@ mod render_bridge;
 mod render_ui;
 mod scene_loader;
 mod scheduling;
-mod state;
+pub(crate) mod state;
 mod transforms;
 mod world_state;
 
@@ -163,8 +163,8 @@ pub struct Runtime {
     scene_resource_refs_scratch: SceneResourceRefsScratch,
     /// reusable node-id list 4 camera-stream collectors; refill once per drain.
     camera_stream_node_scratch: Vec<NodeID>,
-    dirty: DirtyState,
-    transforms: TransformRuntimeState,
+    pub(crate) dirty: DirtyState,
+    pub(crate) transforms: TransformRuntimeState,
     internal_updates: InternalUpdateState,
 
     render_2d: Render2DState,
@@ -217,6 +217,17 @@ pub struct Runtime {
     pub(crate) force_water_impacts_3d: Vec<ForceWaterImpact3D>,
     pub(crate) pending_force_emitters_2d: Vec<perro_nodes::PhysicsForceEmitter2D>,
     pub(crate) pending_force_emitters_3d: Vec<perro_nodes::PhysicsForceEmitter3D>,
+    /// reusable body-handle update buf 4 sync_world_2d/3d; avoid per-frame alloc.
+    physics_handle_updates_scratch_2d: Vec<(NodeID, Option<u64>)>,
+    physics_handle_updates_scratch_3d: Vec<(NodeID, Option<u64>)>,
+    /// reusable force-emitter collect buf 4 queue_physics_force_emitters_2d/3d.
+    physics_force_emitters_scratch_2d:
+        Vec<(perro_structs::Vector2, perro_nodes::PhysicsForceEmitter2D)>,
+    physics_force_emitters_scratch_3d:
+        Vec<(perro_structs::Vector3, perro_nodes::PhysicsForceEmitter3D)>,
+    /// reusable water-index input buf 4 queue_water_forces_2d/3d.
+    physics_waters_scratch_2d: Vec<physics::RuntimeWater2D>,
+    physics_waters_scratch_3d: Vec<physics::RuntimeWater3D>,
     pub(crate) audio: AudioPropagationState,
 }
 
@@ -429,6 +440,12 @@ impl Runtime {
             force_water_impacts_3d: Vec::new(),
             pending_force_emitters_2d: Vec::new(),
             pending_force_emitters_3d: Vec::new(),
+            physics_handle_updates_scratch_2d: Vec::new(),
+            physics_handle_updates_scratch_3d: Vec::new(),
+            physics_force_emitters_scratch_2d: Vec::new(),
+            physics_force_emitters_scratch_3d: Vec::new(),
+            physics_waters_scratch_2d: Vec::new(),
+            physics_waters_scratch_3d: Vec::new(),
             audio: AudioPropagationState::new(),
         }
     }

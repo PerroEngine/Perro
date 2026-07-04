@@ -2,7 +2,10 @@ use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_ma
 use perro_ids::TagID;
 use perro_nodes::{MeshInstance3D, Node3D, NodeType};
 use perro_runtime::Runtime;
-use perro_runtime_api::sub_apis::{NodeAPI, NodeQuery, QueryExpr, QueryScope, QueryTypeMask};
+use perro_runtime_api::sub_apis::{
+    NodeAPI, NodeQuery, QueryBounds, QueryExpr, QueryScope, QueryTypeMask,
+};
+use perro_structs::{Transform3D, Vector3};
 
 fn build_query_runtime(count: usize) -> Runtime {
     let mut runtime = Runtime::new();
@@ -206,9 +209,96 @@ fn bench_compile_repr_queries(c: &mut Criterion) {
     group.finish();
 }
 
+fn build_spatial_runtime(count: usize) -> Runtime {
+    let mut runtime = build_query_runtime(count);
+    let ids = NodeAPI::query_nodes(
+        &mut runtime,
+        NodeQuery {
+            expr: None,
+            scope: QueryScope::Root,
+        }
+        .as_view(),
+    );
+    for (i, id) in ids.into_iter().enumerate() {
+        let _ = NodeAPI::set_global_transform_3d(
+            &mut runtime,
+            id,
+            Transform3D {
+                position: Vector3::new(i as f32, 0.0, 0.0),
+                ..Transform3D::IDENTITY
+            },
+        );
+    }
+    runtime
+}
+
+fn bench_spatial_queries(c: &mut Criterion) {
+    let mut group = c.benchmark_group("query/spatial");
+    for count in [100usize, 2_500, 10_000, 50_000, 100_000] {
+        // Box around the middle of the position range: ~200 nodes match.
+        let origin = Vector3::new(count as f32 * 0.5, 0.0, 0.0);
+        let size = Vector3::new(200.0, 10.0, 10.0);
+        let within_only = NodeQuery {
+            expr: Some(QueryExpr::Within(QueryBounds::Box3D { origin, size })),
+            scope: QueryScope::Root,
+        };
+        let within_rare_tag = NodeQuery {
+            expr: Some(QueryExpr::All(vec![
+                QueryExpr::Tags(vec![TagID::from_string("boss")]),
+                QueryExpr::Within(QueryBounds::Box3D { origin, size }),
+            ])),
+            scope: QueryScope::Root,
+        };
+        let within_broad_tag = NodeQuery {
+            expr: Some(QueryExpr::All(vec![
+                QueryExpr::Tags(vec![TagID::from_string("enemy")]),
+                QueryExpr::Within(QueryBounds::Box3D { origin, size }),
+            ])),
+            scope: QueryScope::Root,
+        };
+
+        group.bench_with_input(
+            BenchmarkId::new("within_only", count),
+            &count,
+            |b, &count| {
+                let mut runtime = build_spatial_runtime(count);
+                b.iter(|| black_box(NodeAPI::query_nodes(&mut runtime, within_only.as_view())))
+            },
+        );
+        group.bench_with_input(
+            BenchmarkId::new("within_rare_tag", count),
+            &count,
+            |b, &count| {
+                let mut runtime = build_spatial_runtime(count);
+                b.iter(|| {
+                    black_box(NodeAPI::query_nodes(
+                        &mut runtime,
+                        within_rare_tag.as_view(),
+                    ))
+                })
+            },
+        );
+        group.bench_with_input(
+            BenchmarkId::new("within_broad_tag", count),
+            &count,
+            |b, &count| {
+                let mut runtime = build_spatial_runtime(count);
+                b.iter(|| {
+                    black_box(NodeAPI::query_nodes(
+                        &mut runtime,
+                        within_broad_tag.as_view(),
+                    ))
+                })
+            },
+        );
+    }
+    group.finish();
+}
+
 fn benches(c: &mut Criterion) {
     bench_rt_ctx_queries(c);
     bench_compile_repr_queries(c);
+    bench_spatial_queries(c);
 }
 
 criterion_group! {

@@ -95,15 +95,15 @@ pub(super) fn push_draw_batch(draw_batches: &mut Vec<DrawBatch>, batch: DrawBatc
         if same_mesh && same_batch_state && prev_end == instance_start {
             prev.instance_count = prev.instance_count.saturating_add(instance_count);
             prev.disable_hiz_occlusion |= disable_hiz_occlusion;
-            // Multiple instances do not share one tight bound in this path.
-            if prev.instance_count > 1 {
-                prev.local_center = [0.0, 0.0, 0.0];
-                prev.local_radius = 1.0e9;
-                prev.disable_hiz_occlusion = true;
-            } else {
-                prev.local_center = local_center;
-                prev.local_radius = local_radius.max(0.0);
-            }
+            // Same mesh (checked above), so both bounds share one local space;
+            // keep the tight enclosing sphere. The cull upload expands it into a
+            // merged per-instance world sphere for multi-instance batches.
+            let (center, radius) = enclose_local_spheres(
+                (prev.local_center, prev.local_radius),
+                (local_center, local_radius.max(0.0)),
+            );
+            prev.local_center = center;
+            prev.local_radius = radius;
             return;
         }
     }
@@ -646,6 +646,127 @@ pub(super) fn model_cols_from_affine_rows(inst: &TransformInstanceGpu) -> [[f32;
     ]
 }
 
+// Pack one column-major bone matrix into its 3 affine rows for the skeleton
+// palette upload (the shaders never read the w row).
+#[inline]
+pub(super) fn skeleton_bone_rows(cols: &[[f32; 4]; 4]) -> [[f32; 4]; 3] {
+    [
+        [cols[0][0], cols[1][0], cols[2][0], cols[3][0]],
+        [cols[0][1], cols[1][1], cols[2][1], cols[3][1]],
+        [cols[0][2], cols[1][2], cols[2][2], cols[3][2]],
+    ]
+}
+
+// Smallest sphere enclosing two spheres that share one space.
+pub(super) fn enclose_spheres(a: (Vec3, f32), b: (Vec3, f32)) -> (Vec3, f32) {
+    let delta = b.0 - a.0;
+    let dist = delta.length();
+    if !dist.is_finite() {
+        return if a.1 >= b.1 { a } else { b };
+    }
+    if a.1 >= dist + b.1 {
+        return a;
+    }
+    if b.1 >= dist + a.1 {
+        return b;
+    }
+    let radius = (dist + a.1 + b.1) * 0.5;
+    let center = if dist > 1.0e-6 {
+        a.0 + delta * ((radius - a.1) / dist)
+    } else {
+        a.0
+    };
+    (center, radius)
+}
+
+#[inline]
+pub(super) fn enclose_local_spheres(a: ([f32; 3], f32), b: ([f32; 3], f32)) -> ([f32; 3], f32) {
+    let (center, radius) = enclose_spheres(
+        (Vec3::from(a.0), a.1.max(0.0)),
+        (Vec3::from(b.0), b.1.max(0.0)),
+    );
+    (center.to_array(), radius)
+}
+
+// World-space bounding sphere of one instance's local sphere.
+pub(super) fn instance_world_sphere(
+    local_center: [f32; 3],
+    local_radius: f32,
+    inst: &TransformInstanceGpu,
+) -> Option<(Vec3, f32)> {
+    let model = Mat4::from_cols_array_2d(&model_cols_from_affine_rows(inst));
+    if !model.is_finite() {
+        return None;
+    }
+    let center = model * Vec4::new(local_center[0], local_center[1], local_center[2], 1.0);
+    if !center.is_finite() {
+        return None;
+    }
+    let sx = model.x_axis.truncate().length();
+    let sy = model.y_axis.truncate().length();
+    let sz = model.z_axis.truncate().length();
+    let scale = sx.max(sy).max(sz).max(1.0e-6);
+    Some((center.truncate(), local_radius.max(0.0) * scale))
+}
+
+// Merged world sphere over every instance of a batch. None when the instance
+// range is out of bounds, any transform is non-finite, or the bound is too
+// large to be useful for culling (debug batches carry a 1e9 sentinel radius).
+pub(super) fn batch_merged_world_sphere(
+    batch: &DrawBatch,
+    transforms: &[TransformInstanceGpu],
+) -> Option<(Vec3, f32)> {
+    if !batch.local_radius.is_finite() || batch.local_radius >= 1.0e8 {
+        return None;
+    }
+    let start = batch.instance_start as usize;
+    let end = start.checked_add(batch.instance_count as usize)?;
+    if start >= end || end > transforms.len() {
+        return None;
+    }
+    let mut merged: Option<(Vec3, f32)> = None;
+    for inst in &transforms[start..end] {
+        let sphere = instance_world_sphere(batch.local_center, batch.local_radius, inst)?;
+        merged = Some(match merged {
+            Some(current) => enclose_spheres(current, sphere),
+            None => sphere,
+        });
+    }
+    merged.filter(|(center, radius)| center.is_finite() && radius.is_finite() && *radius < 1.0e8)
+}
+
+// GPU cull rows for a multi-instance batch: one model matrix cannot bound every
+// instance, so emit the merged world sphere with an identity model. Falls back
+// to an always-visible, hi-z-disabled row when no usable bound exists.
+pub(super) fn multi_instance_cull_rows(
+    batch: &DrawBatch,
+    transforms: &[TransformInstanceGpu],
+) -> (FrustumCullStaticGpu, FrustumCullDynamicGpu) {
+    let (center_radius, flags) = match batch_merged_world_sphere(batch, transforms) {
+        Some((center, radius)) => (
+            [center.x, center.y, center.z, radius],
+            if batch.disable_hiz_occlusion {
+                CULL_FLAG_DISABLE_HIZ_OCCLUSION
+            } else {
+                0
+            },
+        ),
+        None => ([0.0, 0.0, 0.0, 1.0e9], CULL_FLAG_DISABLE_HIZ_OCCLUSION),
+    };
+    (
+        FrustumCullStaticGpu {
+            local_center_radius: center_radius,
+            cull_flags: [flags, 0, 0, 0],
+        },
+        FrustumCullDynamicGpu {
+            model_0: [1.0, 0.0, 0.0, 0.0],
+            model_1: [0.0, 1.0, 0.0, 0.0],
+            model_2: [0.0, 0.0, 1.0, 0.0],
+            model_3: [0.0, 0.0, 0.0, 1.0],
+        },
+    )
+}
+
 #[inline]
 pub(super) fn encode_custom_param_value_packed(
     value: &perro_render_bridge::CustomMaterialParamValue3D,
@@ -831,13 +952,16 @@ pub(super) fn draw_batches_sorted(batches: &[DrawBatch]) -> bool {
 }
 
 #[inline]
-pub(super) fn multimesh_batch_sort_key(batch: &MultiMeshBatch) -> (bool, bool, u8, u32, u32, u32) {
+pub(super) fn multimesh_batch_sort_key(
+    batch: &MultiMeshBatch,
+) -> (bool, bool, bool, u8, u32, u32, u32) {
     let custom_token = match batch.material_kind {
         MaterialPipelineKind::Custom(token) => token,
         _ => 0,
     };
     (
         batch.mesh_blend,
+        batch.casts_shadows,
         batch.double_sided,
         material_pipeline_kind_rank(&batch.material_kind),
         custom_token,
@@ -1077,6 +1201,14 @@ impl Gpu3D {
         }
         if !mesh_blend_depth_active {
             mesh_blend_depth_active = self.multimesh_batches.iter().any(|batch| batch.mesh_blend);
+        }
+        if !has_shadow_casters {
+            // Multimesh casters render into shadow layers too; mesh_blend
+            // batches are excluded (matching the rigid alpha_mode==2 exclusion).
+            has_shadow_casters = self
+                .multimesh_batches
+                .iter()
+                .any(|batch| batch.casts_shadows && !batch.mesh_blend);
         }
         self.has_shadow_casters = has_shadow_casters;
         self.mesh_blend_depth_active = mesh_blend_depth_active;
@@ -1484,6 +1616,62 @@ mod tests {
         assert!(same_dense_instances(&a, &b));
     }
 
+    fn meshlet_push(index_start: u32, instance_start: u32, instance_count: u32) -> DrawBatchPush {
+        DrawBatchPush {
+            render_path: RenderPath3D::Rigid,
+            mesh: MeshRange {
+                index_start,
+                index_count: 12,
+                base_vertex: 0,
+            },
+            instance_start,
+            instance_count,
+            double_sided: false,
+            packed_lod: false,
+            material_kind: MaterialPipelineKind::Standard,
+            alpha_mode: 0,
+            base_color_texture_slot: 0,
+            local_bounds: ([0.0, 0.0, 0.0], 1.0),
+            occlusion_query: None,
+            disable_hiz_occlusion: false,
+            casts_shadows: true,
+            receives_shadows: true,
+            mesh_blend: false,
+            mesh_blend_screen: false,
+            mesh_blend_params: 0,
+            mesh_blend_depth: false,
+            blend_layers: 0,
+            blend_mask: 0,
+        }
+    }
+
+    #[test]
+    fn push_draw_batch_never_merges_shared_span_meshlet_batches() {
+        // Meshlet batches of one draw share the same instance span but differ by
+        // mesh.index_start. They must NOT merge: same_mesh is false, and their
+        // regions are not adjacent (prev_end != instance_start), so each stays a
+        // distinct batch pointing at the shared span.
+        let mut batches = Vec::new();
+        push_draw_batch(&mut batches, meshlet_push(0, 0, 1));
+        push_draw_batch(&mut batches, meshlet_push(30, 0, 1));
+        push_draw_batch(&mut batches, meshlet_push(60, 0, 1));
+        assert_eq!(batches.len(), 3);
+        for batch in &batches {
+            assert_eq!(batch.instance_start, 0);
+            assert_eq!(batch.instance_count, 1);
+        }
+        assert_eq!(batches[0].mesh.index_start, 0);
+        assert_eq!(batches[1].mesh.index_start, 30);
+        assert_eq!(batches[2].mesh.index_start, 60);
+
+        // Adjacent same-mesh batches DO still merge (regression guard).
+        let mut merged = Vec::new();
+        push_draw_batch(&mut merged, meshlet_push(0, 0, 1));
+        push_draw_batch(&mut merged, meshlet_push(0, 1, 1));
+        assert_eq!(merged.len(), 1);
+        assert_eq!(merged[0].instance_count, 2);
+    }
+
     #[test]
     fn mirrored_winding_flag_tracks_odd_negative_axes() {
         let material = perro_render_bridge::Material3D::default();
@@ -1520,6 +1708,112 @@ mod tests {
         assert_eq!(
             (even.rigid_meta.material.packed_material_params >> 2) & 0x1,
             0
+        );
+    }
+
+    fn bounds_batch(instance_start: u32, instance_count: u32, radius: f32) -> DrawBatch {
+        let material_kind = MaterialPipelineKind::Standard;
+        let state_key =
+            draw_batch_state_key(RenderPath3D::Rigid, false, false, 0, false, &material_kind);
+        DrawBatch {
+            state_key,
+            render_state: render_state_key(state_key, 0, 0, 0, false, 0, false),
+            mesh: MeshRange {
+                index_start: 0,
+                index_count: 3,
+                base_vertex: 0,
+            },
+            instance_start,
+            instance_count,
+            path: RenderPath3D::Rigid,
+            packed_lod: false,
+            double_sided: false,
+            material_kind,
+            alpha_mode: 0,
+            draw_on_top: false,
+            base_color_texture_slot: 0,
+            local_center: [0.0, 0.0, 0.0],
+            local_radius: radius,
+            occlusion_query: None,
+            disable_hiz_occlusion: false,
+            casts_shadows: true,
+            receives_shadows: true,
+            mesh_blend: false,
+            mesh_blend_screen: false,
+            mesh_blend_params: 0,
+            mesh_blend_depth: false,
+            blend_layers: BitMask::ALL.bits(),
+            blend_mask: BitMask::NONE.bits(),
+            order_index: 0,
+        }
+    }
+
+    fn instance_at(pos: [f32; 3]) -> TransformInstanceGpu {
+        TransformInstanceGpu {
+            model_row_0: [1.0, 0.0, 0.0, pos[0]],
+            model_row_1: [0.0, 1.0, 0.0, pos[1]],
+            model_row_2: [0.0, 0.0, 1.0, pos[2]],
+        }
+    }
+
+    #[test]
+    fn enclose_spheres_contains_both_inputs() {
+        let a = (Vec3::new(1.0, 2.0, 3.0), 2.0);
+        let b = (Vec3::new(9.0, 9.0, 9.0), 4.0);
+        let (center, radius) = enclose_spheres(a, b);
+        assert!(center.distance(a.0) + a.1 <= radius + 1.0e-4);
+        assert!(center.distance(b.0) + b.1 <= radius + 1.0e-4);
+        // Containment cases return the bigger sphere unchanged.
+        let inner = (Vec3::new(0.1, 0.0, 0.0), 1.0);
+        let outer = (Vec3::ZERO, 5.0);
+        assert_eq!(enclose_spheres(inner, outer), outer);
+        assert_eq!(enclose_spheres(outer, inner), outer);
+    }
+
+    #[test]
+    fn batch_merged_world_sphere_covers_every_instance() {
+        let transforms = [
+            instance_at([-10.0, 0.0, 0.0]),
+            instance_at([0.0, 0.0, 0.0]),
+            instance_at([10.0, 0.0, 0.0]),
+        ];
+        let batch = bounds_batch(0, 3, 1.0);
+        let (center, radius) = batch_merged_world_sphere(&batch, &transforms).unwrap();
+        for inst in &transforms {
+            let world = Vec3::new(
+                inst.model_row_0[3],
+                inst.model_row_1[3],
+                inst.model_row_2[3],
+            );
+            assert!(center.distance(world) + 1.0 <= radius + 1.0e-4);
+        }
+        // Sentinel radius and out-of-range instance windows yield no bound.
+        assert!(batch_merged_world_sphere(&bounds_batch(0, 3, 1.0e9), &transforms).is_none());
+        assert!(batch_merged_world_sphere(&bounds_batch(2, 4, 1.0), &transforms).is_none());
+    }
+
+    #[test]
+    fn multi_instance_cull_rows_emit_world_sphere_with_identity_model() {
+        let transforms = [instance_at([-5.0, 0.0, 0.0]), instance_at([5.0, 0.0, 0.0])];
+        let batch = bounds_batch(0, 2, 1.0);
+        let (static_row, dynamic_row) = multi_instance_cull_rows(&batch, &transforms);
+        // Identity model: the shader treats the sphere as already world-space.
+        assert_eq!(dynamic_row.model_0, [1.0, 0.0, 0.0, 0.0]);
+        assert_eq!(dynamic_row.model_1, [0.0, 1.0, 0.0, 0.0]);
+        assert_eq!(dynamic_row.model_2, [0.0, 0.0, 1.0, 0.0]);
+        assert_eq!(dynamic_row.model_3, [0.0, 0.0, 0.0, 1.0]);
+        assert_eq!(static_row.cull_flags[0], 0, "hi-z stays enabled");
+        let [x, y, z, r] = static_row.local_center_radius;
+        assert!((x - 0.0).abs() < 1.0e-4 && y == 0.0 && z == 0.0);
+        assert!((r - 6.0).abs() < 1.0e-4, "sphere spans both instances");
+
+        // No usable bound (sentinel radius): always-visible + hi-z disabled.
+        let (fallback_static, _) =
+            multi_instance_cull_rows(&bounds_batch(0, 2, 1.0e9), &transforms);
+        assert_eq!(fallback_static.local_center_radius, [0.0, 0.0, 0.0, 1.0e9]);
+        assert_eq!(
+            fallback_static.cull_flags[0],
+            CULL_FLAG_DISABLE_HIZ_OCCLUSION
         );
     }
 }

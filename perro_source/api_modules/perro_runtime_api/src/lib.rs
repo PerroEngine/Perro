@@ -40,9 +40,9 @@ pub mod prelude {
         PhysicsLaunchSolution3D, PhysicsModule, PhysicsMoveResult2D, PhysicsMoveResult3D,
         PhysicsQueryFilter, PhysicsRayHit2D, PhysicsRayHit3D, PhysicsShapeHit2D, PhysicsShapeHit3D,
         PhysicsSlideResult2D, PhysicsSlideResult3D, PreloadedSceneTarget, ProfilingSnapshot,
-        QueryExpr, QueryScope, RuntimeMidiModule, SceneAPI, SceneLoadSource, SceneModule,
-        ScriptAPI, ScriptModule, SignalAPI, SignalModule, SpatialAudioOptions, TimeAPI, TimeModule,
-        WindowAPI, WindowMode, WindowModule, WindowRequest, program,
+        QueryBounds, QueryExpr, QueryScope, RuntimeMidiModule, SceneAPI, SceneLoadSource,
+        SceneModule, ScriptAPI, ScriptModule, SignalAPI, SignalModule, SpatialAudioOptions,
+        TimeAPI, TimeModule, WindowAPI, WindowMode, WindowModule, WindowRequest, program,
     };
 
     // Convenience macros.

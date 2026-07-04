@@ -21,7 +21,7 @@
 ## Overview
 
 This runtime module belongs to `ctx.run` and documents node query calls.
-Use it when game code needs dynamic node groups by tag, name, type, subtree, or render layer.
+Use it when game code needs dynamic node groups by tag, name, type, subtree, render layer, or spatial bounds (`within[origin, size]`).
 
 Prefer macros for script code:
 

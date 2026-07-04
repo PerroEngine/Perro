@@ -11,7 +11,8 @@ use super::{
         create_depth_prepass_shader_module_rigid_packed_lod,
         create_depth_prepass_shader_module_skinned, create_frustum_cull_shader_module,
         create_hiz_depth_copy_shader_module, create_hiz_downsample_shader_module,
-        create_hiz_occlusion_cull_shader_module, create_mesh_blend_mask_shader_module_rigid,
+        create_hiz_downsample_spd_shader_module, create_hiz_occlusion_cull_shader_module,
+        create_mesh_blend_mask_shader_module_rigid,
         create_mesh_blend_mask_shader_module_rigid_packed_lod,
         create_mesh_blend_mask_shader_module_skinned, create_mesh_blend_screen_shader_module,
         create_mesh_shader_module_rigid, create_mesh_shader_module_rigid_packed_lod,
@@ -71,7 +72,8 @@ mod texture_cache;
 
 use multimesh_path::{
     create_multimesh_blend_pipeline, create_multimesh_covered_pipeline,
-    create_multimesh_depth_prepass_pipeline, create_multimesh_pipeline, pack_unorm4x8,
+    create_multimesh_depth_prepass_pipeline, create_multimesh_pipeline,
+    create_multimesh_shadow_depth_pipeline, pack_unorm4x8,
 };
 use rigid_path::{
     create_depth_prepass_pipeline_rigid, create_depth_prepass_pipeline_rigid_packed_lod,
@@ -128,6 +130,11 @@ const DEPTH_PREPASS_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Fl
 const FRUSTUM_CULL_WORKGROUP_SIZE: u32 = 64;
 const HIZ_WORKGROUP_SIZE_X: u32 = 8;
 const HIZ_WORKGROUP_SIZE_Y: u32 = 8;
+// SPD downsampler: dst mips written per dispatch (one src read + this many
+// storage-texture writes per bind group). Each dispatch's 8x8 workgroup owns a
+// 16x16 source region (2^HIZ_SPD_MIPS). Kept small enough that 1 sampled + this
+// many storage textures stay within max_storage_textures_per_shader_stage.
+const HIZ_SPD_MIPS: u32 = 4;
 const HIZ_OCCLUSION_BIAS: f32 = 0.002;
 const MATERIAL_TEXTURE_NONE: u32 = u32::MAX;
 const PACKED_STANDARD_NORMAL_SCALE_MAX: f32 = 4.0;
@@ -479,6 +486,17 @@ struct HizCullParamsGpu {
     _pad: u32,
 }
 
+// One per SPD downsample dispatch: how many dst mips it writes (1..=HIZ_SPD_MIPS)
+// and the dimensions of its source mip (for NPOT edge clamping in the shader).
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable, PartialEq)]
+struct HizSpdParamsGpu {
+    mip_count: u32,
+    src_width: u32,
+    src_height: u32,
+    _pad: u32,
+}
+
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable, PartialEq)]
 struct ShadowUniform {
@@ -569,6 +587,9 @@ pub struct Gpu3D {
     // Depth-only prepass pipelines for multimesh (Depth32Float, vertex only).
     pipeline_multimesh_depth_prepass_culled: wgpu::RenderPipeline,
     pipeline_multimesh_depth_prepass_double_sided: wgpu::RenderPipeline,
+    // Shadow-depth pipelines for multimesh (biased, into a shadow layer).
+    pipeline_multimesh_shadow_depth_culled: wgpu::RenderPipeline,
+    pipeline_multimesh_shadow_depth_double_sided: wgpu::RenderPipeline,
     pipeline_mask_rigid_culled: wgpu::RenderPipeline,
     pipeline_mask_rigid_double_sided: wgpu::RenderPipeline,
     pipeline_mask_rigid_packed_lod_culled: wgpu::RenderPipeline,
@@ -587,6 +608,14 @@ pub struct Gpu3D {
     shadow_camera_buffers: Vec<wgpu::Buffer>,
     shadow_camera_bind_groups: Vec<wgpu::BindGroup>,
     rigid_shadow_camera_bind_groups: Vec<wgpu::BindGroup>,
+    // Per shadow layer multimesh draw bind groups: same layout as
+    // multimesh_bgl but binding 0 = that layer's scene uniform and binding 8 =
+    // the dedicated identity index buffer (never overwritten by camera cull).
+    shadow_multimesh_bind_groups: Vec<wgpu::BindGroup>,
+    // Identity visible-index buffer for the multimesh shadow path. Grown to the
+    // multimesh instance count; never touched by the GPU cull compute pass.
+    multimesh_shadow_identity_buffer: wgpu::Buffer,
+    multimesh_shadow_identity_capacity: usize,
     shadow_buffer: wgpu::Buffer,
     shadow_bind_group: wgpu::BindGroup,
     _shadow_map_texture: wgpu::Texture,
@@ -623,7 +652,9 @@ pub struct Gpu3D {
     _sky_noise_sampler: wgpu::Sampler,
     skeleton_buffer: wgpu::Buffer,
     skeleton_capacity: usize,
-    staged_skeletons: Vec<[[f32; 4]; 4]>,
+    // Packed bone palettes: 3 affine rows per bone (w row is implicit 0,0,0,1
+    // and never read by the skinning shaders).
+    staged_skeletons: Vec<[[f32; 4]; 3]>,
     custom_params_meta_buffer: wgpu::Buffer,
     custom_params_meta_capacity: usize,
     staged_custom_params_meta: Vec<u32>,
@@ -757,6 +788,13 @@ pub struct Gpu3D {
     compact_dst_skinned_meta_scratch: Vec<SkinnedInstanceMetaGpu>,
     compact_dst_batches_scratch: Vec<DrawBatch>,
     compact_spans_per_draw_scratch: Vec<Vec<Range<u32>>>,
+    // Dedup for compact_sorted_draw_batches: meshlet batches of one draw share
+    // one instance span, so the copy loop must copy that src region once and
+    // repoint later batches at the existing dst region (else the shared span is
+    // re-duplicated per meshlet, defeating the sharing). Maps an exact copied
+    // src region (start, end) to its dst_start. Shared spans are always identical
+    // across sharing batches, never partially overlapping.
+    compact_src_region_dedup_scratch: AHashMap<(u32, u32), u32>,
     // Persistent scratch for compact_sorted_multimesh_batches (same
     // double-buffer swap pattern).
     compact_multimesh_dst_instances_scratch: Vec<MultiMeshInstanceGpu>,
@@ -775,6 +813,15 @@ pub struct Gpu3D {
     // the shadow scenes each frame so shadow draws can CPU-cull off-view batches.
     shadow_camera_frustums: Vec<[Vec4; 6]>,
     last_shadow: Option<ShadowUniform>,
+    // Per shadow layer (flat cascade/spot/point-face index) cache validity. A
+    // valid layer retains prior depth contents and skips its render pass.
+    shadow_layer_valid: Vec<bool>,
+    // Set when any shadow-caster geometry moved this frame (full rebuild,
+    // transform patch, or multimesh instance/pose upload). Invalidates all
+    // shadow layers in update_shadow_state.
+    shadow_casters_dirty: bool,
+    // Scratch surviving-batch indices for the per-layer shadow caster cull.
+    shadow_cull_scratch: Vec<usize>,
     shadow_pass_enabled: bool,
     ray_shadow_enabled: bool,
     spot_shadow_count: usize,
@@ -827,6 +874,17 @@ pub struct Gpu3D {
     hiz_cull_bgl: wgpu::BindGroupLayout,
     hiz_copy_bind_group: Option<wgpu::BindGroup>,
     hiz_downsample_bind_groups: Vec<wgpu::BindGroup>,
+    // Single-pass downsampler (SPD): one dispatch per HIZ_SPD_MIPS-mip chunk,
+    // replacing the per-mip serialized pass loop. `hiz_spd_supported` gates it on
+    // the device having enough storage textures per stage; when false the old
+    // per-mip path (hiz_downsample_bind_groups) runs instead.
+    hiz_spd_supported: bool,
+    hiz_spd_pipeline: wgpu::ComputePipeline,
+    hiz_spd_bgl: wgpu::BindGroupLayout,
+    // One entry per SPD dispatch. `_buffers` holds the per-dispatch uniforms so
+    // they outlive the bind groups that reference them.
+    hiz_spd_bind_groups: Vec<wgpu::BindGroup>,
+    hiz_spd_params_buffers: Vec<wgpu::Buffer>,
     hiz_cull_params: wgpu::Buffer,
     hiz_cull_bind_group: wgpu::BindGroup,
     hiz_debug_readback_buffer: wgpu::Buffer,
@@ -1031,6 +1089,7 @@ struct MultiMeshBatch {
     mesh_local_radius: f32,
     double_sided: bool,
     mesh_blend: bool,
+    casts_shadows: bool,
     material_kind: MaterialPipelineKind,
 }
 
@@ -1478,9 +1537,15 @@ mod tests {
                 &MaterialPipelineKind::Standard
             )
         );
-        assert_eq!(merged.local_center, [0.0, 0.0, 0.0]);
-        assert_eq!(merged.local_radius, 1.0e9);
-        assert!(merged.disable_hiz_occlusion);
+        // Merged bound is the tight enclosing sphere of both local bounds, not
+        // an infinite sentinel; hi-z stays enabled (world sphere emitted at
+        // cull upload handles multi-instance correctness).
+        let center = Vec3::from(merged.local_center);
+        let radius = merged.local_radius;
+        assert!(radius < 1.0e8);
+        assert!(center.distance(Vec3::new(1.0, 2.0, 3.0)) + 2.0 <= radius + 1.0e-3);
+        assert!(center.distance(Vec3::new(9.0, 9.0, 9.0)) + 4.0 <= radius + 1.0e-3);
+        assert!(!merged.disable_hiz_occlusion);
     }
 
     #[test]

@@ -251,14 +251,25 @@ impl Runtime {
                 visible_now.insert(node);
             }
 
-            let sky_data = self.nodes.get(node).and_then(|node| match &node.data {
+            let sky_src = self.nodes.get(node).and_then(|node| match &node.data {
                 SceneNodeData::Sky3D(sky)
                     if sky.active
                         && sky.visible
                         && effective_visible
                         && render_mask_matches(camera_render_mask, sky.render_layers) =>
                 {
-                    Some(Sky3DState {
+                    Some(sky)
+                }
+                _ => None,
+            });
+            if let Some(sky) = sky_src {
+                let unchanged = self
+                    .render_3d
+                    .retained_skies
+                    .get(&node)
+                    .is_some_and(|retained| sky_3d_state_matches(retained, sky));
+                if !unchanged {
+                    let sky = Sky3DState {
                         day_colors: Arc::from(sky.day_colors.as_ref()),
                         evening_colors: Arc::from(sky.evening_colors.as_ref()),
                         night_colors: Arc::from(sky.night_colors.as_ref()),
@@ -277,12 +288,7 @@ impl Runtime {
                                 })
                                 .collect::<Vec<_>>(),
                         ),
-                    })
-                }
-                _ => None,
-            });
-            if let Some(sky) = sky_data {
-                if self.render_3d.retained_skies.get(&node) != Some(&sky) {
+                    };
                     self.queue_render_command(RenderCommand::ThreeD(Box::new(Command3D::SetSky {
                         node,
                         sky: Box::new(sky.clone()),
@@ -2245,6 +2251,29 @@ fn water_link_overlap_weight(local: perro_structs::Vector2, link: &WaterLinkStat
     let edge = (1.0 - (cx / hx.max(0.001))).min(1.0 - (cy / hy.max(0.001)));
     let t = edge.clamp(0.0, 1.0);
     t * t * (3.0 - 2.0 * t)
+}
+
+/// Compares a retained `Sky3DState` against a live `Sky3D` node without
+/// allocating a new `Sky3DState` first. Mirrors the derived `PartialEq` on
+/// `Sky3DState` field-for-field, so callers can skip the SetSky command and
+/// its Arc allocations when nothing actually changed.
+fn sky_3d_state_matches(retained: &Sky3DState, sky: &perro_nodes::Sky3D) -> bool {
+    retained.day_colors[..] == sky.day_colors[..]
+        && retained.evening_colors[..] == sky.evening_colors[..]
+        && retained.night_colors[..] == sky.night_colors[..]
+        && retained.horizon_colors[..] == sky.horizon_colors[..]
+        && retained.time.time_of_day == sky.time.time_of_day
+        && retained.time.paused == sky.time.paused
+        && retained.time.scale == sky.time.scale
+        && retained.shaders.len() == sky.shaders.len()
+        && retained
+            .shaders
+            .iter()
+            .zip(sky.shaders.iter())
+            .all(|(retained_shader, shader)| {
+                retained_shader.path == shader.path
+                    && retained_shader.params[..] == shader.params[..]
+            })
 }
 
 #[cfg(test)]

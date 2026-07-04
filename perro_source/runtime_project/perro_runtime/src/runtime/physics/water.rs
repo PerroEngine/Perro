@@ -46,7 +46,7 @@ pub(super) fn water_buoyancy_cap(mass: f32, submerged: f32, depth: f32, buoyancy
 }
 
 #[derive(Clone, Copy)]
-pub(super) struct RuntimeWater2D {
+pub(crate) struct RuntimeWater2D {
     pub(super) id: NodeID,
     pub(super) half: Vector2,
     pub(super) transform: Mat3,
@@ -58,7 +58,7 @@ pub(super) struct RuntimeWater2D {
 }
 
 #[derive(Clone, Copy)]
-pub(super) struct RuntimeWater3D {
+pub(crate) struct RuntimeWater3D {
     pub(super) id: NodeID,
     pub(super) half: Vector2,
     pub(super) transform: Mat4,

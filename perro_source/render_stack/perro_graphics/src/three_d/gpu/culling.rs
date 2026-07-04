@@ -50,6 +50,13 @@ impl Gpu3D {
         self.frustum_cull_dynamic_staging
             .reserve(self.draw_batches.len());
         for batch in &self.draw_batches {
+            if batch.instance_count > 1 {
+                let (static_row, dynamic_row) =
+                    multi_instance_cull_rows(batch, &self.staged_instance_transforms);
+                self.frustum_cull_static_staging.push(static_row);
+                self.frustum_cull_dynamic_staging.push(dynamic_row);
+                continue;
+            }
             let instance = &self.staged_instance_transforms[batch.instance_start as usize];
             let model_cols = model_cols_from_affine_rows(instance);
             self.frustum_cull_static_staging.push(FrustumCullStaticGpu {
@@ -215,82 +222,22 @@ impl Gpu3D {
         for spans in spans_per_draw.iter_mut() {
             spans.clear();
         }
+        let mut src_region_dedup = std::mem::take(&mut self.compact_src_region_dedup_scratch);
+        src_region_dedup.clear();
 
-        let mut batch_index = 0usize;
-        while batch_index < src_batches.len() {
-            let mut merged_batch = src_batches[batch_index].clone();
-            let batch_group_start = &src_batches[batch_index];
-            let dst_instance_start = dst_transforms.len() as u32;
-            let mut merged_instance_count = 0u32;
-            let mut merged_disable_hiz = false;
-            let mut scan = batch_index;
-            while scan < src_batches.len()
-                && (scan == batch_index
-                    || Self::can_compact_merge_batches(batch_group_start, &src_batches[scan]))
-            {
-                let batch = &src_batches[scan];
-                let src_start = batch.instance_start as usize;
-                let src_end = (batch.instance_start + batch.instance_count) as usize;
-                if src_start < src_end
-                    && src_end <= src_transforms.len()
-                    && src_end <= src_rigid_meta.len()
-                    && src_end <= src_skinned_meta.len()
-                {
-                    let dst_copy_start = dst_transforms.len() as u32;
-                    dst_transforms.extend_from_slice(&src_transforms[src_start..src_end]);
-                    dst_rigid_meta.extend_from_slice(&src_rigid_meta[src_start..src_end]);
-                    dst_skinned_meta.extend_from_slice(&src_skinned_meta[src_start..src_end]);
-                    let copied_count = (src_end - src_start) as u32;
-                    merged_instance_count = merged_instance_count.saturating_add(copied_count);
-
-                    let mut run_owner = u32::MAX;
-                    let mut run_src_start = batch.instance_start;
-                    let src_batch_end = batch.instance_start.saturating_add(batch.instance_count);
-                    for src_instance in batch.instance_start..src_batch_end {
-                        let owner = instance_owner[src_instance as usize];
-                        if owner != run_owner {
-                            if run_owner != u32::MAX {
-                                let run_start =
-                                    dst_copy_start + (run_src_start - batch.instance_start);
-                                let run_end =
-                                    dst_copy_start + (src_instance - batch.instance_start);
-                                Self::push_compacted_draw_span(
-                                    &mut spans_per_draw,
-                                    run_owner as usize,
-                                    run_start..run_end,
-                                );
-                            }
-                            run_owner = owner;
-                            run_src_start = src_instance;
-                        }
-                    }
-                    if run_owner != u32::MAX {
-                        let run_start = dst_copy_start + (run_src_start - batch.instance_start);
-                        let run_end = dst_copy_start + (src_batch_end - batch.instance_start);
-                        Self::push_compacted_draw_span(
-                            &mut spans_per_draw,
-                            run_owner as usize,
-                            run_start..run_end,
-                        );
-                    }
-                }
-                merged_disable_hiz |= batch.disable_hiz_occlusion;
-                scan += 1;
-            }
-
-            if merged_instance_count > 0 {
-                merged_batch.instance_start = dst_instance_start;
-                merged_batch.instance_count = merged_instance_count;
-                merged_batch.disable_hiz_occlusion = merged_disable_hiz;
-                if merged_instance_count > 1 {
-                    merged_batch.local_center = [0.0, 0.0, 0.0];
-                    merged_batch.local_radius = 1.0e9;
-                    merged_batch.disable_hiz_occlusion = true;
-                }
-                dst_batches.push(merged_batch);
-            }
-            batch_index = scan;
-        }
+        compact_draw_batches_core(CompactDrawBatchesInputs {
+            src_transforms: &src_transforms,
+            src_rigid_meta: &src_rigid_meta,
+            src_skinned_meta: &src_skinned_meta,
+            src_batches: &src_batches,
+            instance_owner: &instance_owner,
+            dst_transforms: &mut dst_transforms,
+            dst_rigid_meta: &mut dst_rigid_meta,
+            dst_skinned_meta: &mut dst_skinned_meta,
+            dst_batches: &mut dst_batches,
+            spans_per_draw: &mut spans_per_draw,
+            src_region_dedup: &mut src_region_dedup,
+        });
 
         // dst_* become the new live staged vectors; the vectors they replace
         // (now empty, taken via mem::take above) become next rebuild's scratch.
@@ -314,6 +261,8 @@ impl Gpu3D {
             self.last_draw_instance_span_ranges.push(start..end);
         }
         self.compact_spans_per_draw_scratch = spans_per_draw;
+        src_region_dedup.clear();
+        self.compact_src_region_dedup_scratch = src_region_dedup;
     }
 
     // Gate the multimesh GPU cull: needs frustum-cull support (same gating as
@@ -462,6 +411,7 @@ impl Gpu3D {
             && base.draw_param_index == next.draw_param_index
             && base.double_sided == next.double_sided
             && base.mesh_blend == next.mesh_blend
+            && base.casts_shadows == next.casts_shadows
             && base.material_kind == next.material_kind
     }
 
@@ -505,6 +455,149 @@ impl Gpu3D {
         } else {
             spans.push(span);
         }
+    }
+}
+
+pub(super) struct CompactDrawBatchesInputs<'a> {
+    pub(super) src_transforms: &'a [TransformInstanceGpu],
+    pub(super) src_rigid_meta: &'a [RigidInstanceMetaGpu],
+    pub(super) src_skinned_meta: &'a [SkinnedInstanceMetaGpu],
+    pub(super) src_batches: &'a [DrawBatch],
+    pub(super) instance_owner: &'a [u32],
+    pub(super) dst_transforms: &'a mut Vec<TransformInstanceGpu>,
+    pub(super) dst_rigid_meta: &'a mut Vec<RigidInstanceMetaGpu>,
+    pub(super) dst_skinned_meta: &'a mut Vec<SkinnedInstanceMetaGpu>,
+    pub(super) dst_batches: &'a mut Vec<DrawBatch>,
+    pub(super) spans_per_draw: &'a mut [Vec<Range<u32>>],
+    pub(super) src_region_dedup: &'a mut AHashMap<(u32, u32), u32>,
+}
+
+// Compact sorted draw batches: copy each merge group's instances into dst and
+// repoint. Meshlet batches of one draw share one instance span; that span's src
+// region is copied once and later batches point at the existing dst region
+// (src_region_dedup) so the shared span is not re-duplicated per meshlet. Pure
+// (no GPU/self) so it can be unit-tested.
+pub(super) fn compact_draw_batches_core(inputs: CompactDrawBatchesInputs) {
+    let CompactDrawBatchesInputs {
+        src_transforms,
+        src_rigid_meta,
+        src_skinned_meta,
+        src_batches,
+        instance_owner,
+        dst_transforms,
+        dst_rigid_meta,
+        dst_skinned_meta,
+        dst_batches,
+        spans_per_draw,
+        src_region_dedup,
+    } = inputs;
+
+    let mut batch_index = 0usize;
+    while batch_index < src_batches.len() {
+        let mut merged_batch = src_batches[batch_index].clone();
+        let batch_group_start = &src_batches[batch_index];
+        let dst_instance_start = dst_transforms.len() as u32;
+        let mut merged_instance_count = 0u32;
+        let mut merged_disable_hiz = false;
+        let mut merged_local = (
+            batch_group_start.local_center,
+            batch_group_start.local_radius,
+        );
+        // Track the dst region the first batch of this merge group mapped to,
+        // so a shared-span repoint places the merged batch at that region
+        // instead of the (skipped) append point.
+        let mut group_dst_start: Option<u32> = None;
+        let mut scan = batch_index;
+        while scan < src_batches.len()
+            && (scan == batch_index
+                || Gpu3D::can_compact_merge_batches(batch_group_start, &src_batches[scan]))
+        {
+            let batch = &src_batches[scan];
+            // Merge predicate guarantees one mesh per group, so local bounds
+            // share one space; keep the tight enclosing sphere.
+            merged_local =
+                enclose_local_spheres(merged_local, (batch.local_center, batch.local_radius));
+            let src_start = batch.instance_start as usize;
+            let src_end = (batch.instance_start + batch.instance_count) as usize;
+            if src_start < src_end
+                && src_end <= src_transforms.len()
+                && src_end <= src_rigid_meta.len()
+                && src_end <= src_skinned_meta.len()
+            {
+                // Shared spans (meshlet batches of one draw) resolve to the same
+                // (src_start, src_end). Copy such a region once; later batches
+                // point at the existing dst region and skip both the re-copy and
+                // the span re-emission (the span was already emitted on first copy).
+                if let Some(&existing_dst) =
+                    src_region_dedup.get(&(src_start as u32, src_end as u32))
+                {
+                    merged_instance_count =
+                        merged_instance_count.saturating_add((src_end - src_start) as u32);
+                    if group_dst_start.is_none() {
+                        group_dst_start = Some(existing_dst);
+                    }
+                    merged_disable_hiz |= batch.disable_hiz_occlusion;
+                    scan += 1;
+                    continue;
+                }
+                let dst_copy_start = dst_transforms.len() as u32;
+                if group_dst_start.is_none() {
+                    group_dst_start = Some(dst_copy_start);
+                }
+                src_region_dedup.insert((src_start as u32, src_end as u32), dst_copy_start);
+                dst_transforms.extend_from_slice(&src_transforms[src_start..src_end]);
+                dst_rigid_meta.extend_from_slice(&src_rigid_meta[src_start..src_end]);
+                dst_skinned_meta.extend_from_slice(&src_skinned_meta[src_start..src_end]);
+                let copied_count = (src_end - src_start) as u32;
+                merged_instance_count = merged_instance_count.saturating_add(copied_count);
+
+                let mut run_owner = u32::MAX;
+                let mut run_src_start = batch.instance_start;
+                let src_batch_end = batch.instance_start.saturating_add(batch.instance_count);
+                for src_instance in batch.instance_start..src_batch_end {
+                    let owner = instance_owner[src_instance as usize];
+                    if owner != run_owner {
+                        if run_owner != u32::MAX {
+                            let run_start = dst_copy_start + (run_src_start - batch.instance_start);
+                            let run_end = dst_copy_start + (src_instance - batch.instance_start);
+                            Gpu3D::push_compacted_draw_span(
+                                spans_per_draw,
+                                run_owner as usize,
+                                run_start..run_end,
+                            );
+                        }
+                        run_owner = owner;
+                        run_src_start = src_instance;
+                    }
+                }
+                if run_owner != u32::MAX {
+                    let run_start = dst_copy_start + (run_src_start - batch.instance_start);
+                    let run_end = dst_copy_start + (src_batch_end - batch.instance_start);
+                    Gpu3D::push_compacted_draw_span(
+                        spans_per_draw,
+                        run_owner as usize,
+                        run_start..run_end,
+                    );
+                }
+            }
+            merged_disable_hiz |= batch.disable_hiz_occlusion;
+            scan += 1;
+        }
+
+        if merged_instance_count > 0 {
+            // group_dst_start is the region the group actually landed in; for a
+            // shared-span repoint it is the earlier (deduped) dst region, not the
+            // append point at dst_instance_start.
+            merged_batch.instance_start = group_dst_start.unwrap_or(dst_instance_start);
+            merged_batch.instance_count = merged_instance_count;
+            merged_batch.disable_hiz_occlusion = merged_disable_hiz;
+            // Multi-instance batches keep the tight local bound; the cull upload
+            // expands it into a merged per-instance world sphere.
+            merged_batch.local_center = merged_local.0;
+            merged_batch.local_radius = merged_local.1;
+            dst_batches.push(merged_batch);
+        }
+        batch_index = scan;
     }
 }
 
@@ -569,6 +662,7 @@ mod tests {
             mesh_local_radius: radius,
             double_sided: false,
             mesh_blend: false,
+            casts_shadows: true,
             material_kind: MaterialPipelineKind::Standard,
         }
     }
@@ -608,5 +702,199 @@ mod tests {
         assert_eq!(indirect[1].instance_count, 2);
         assert_eq!(indirect[1].first_instance, 3);
         assert_eq!(indirect[1].base_vertex, 2);
+    }
+
+    fn transform_marked(marker: f32) -> TransformInstanceGpu {
+        let mut t = TransformInstanceGpu::zeroed();
+        t.model_row_0[0] = marker;
+        t
+    }
+
+    // A meshlet-style draw batch: shares an instance span, differs only by mesh
+    // index range. index_start feeds render_state/state so batches don't merge.
+    fn meshlet_batch(index_start: u32, instance_start: u32, instance_count: u32) -> DrawBatch {
+        let state_key = draw_batch_state_key(
+            RenderPath3D::Rigid,
+            false,
+            false,
+            0,
+            false,
+            &MaterialPipelineKind::Standard,
+        );
+        DrawBatch {
+            state_key,
+            render_state: render_state_key(state_key, 0, index_start, 0, false, 0, false),
+            mesh: MeshRange {
+                index_start,
+                index_count: 12,
+                base_vertex: 0,
+            },
+            instance_start,
+            instance_count,
+            path: RenderPath3D::Rigid,
+            packed_lod: false,
+            double_sided: false,
+            material_kind: MaterialPipelineKind::Standard,
+            alpha_mode: 0,
+            draw_on_top: false,
+            base_color_texture_slot: 0,
+            local_center: [index_start as f32, 0.0, 0.0],
+            local_radius: 1.0,
+            occlusion_query: None,
+            disable_hiz_occlusion: false,
+            casts_shadows: true,
+            receives_shadows: true,
+            mesh_blend: false,
+            mesh_blend_screen: false,
+            mesh_blend_params: 0,
+            mesh_blend_depth: false,
+            blend_layers: 0,
+            blend_mask: 0,
+            order_index: index_start,
+        }
+    }
+
+    fn run_compact(
+        src_transforms: &[TransformInstanceGpu],
+        src_batches: &[DrawBatch],
+        instance_owner: &[u32],
+        draw_count: usize,
+    ) -> (
+        Vec<TransformInstanceGpu>,
+        Vec<DrawBatch>,
+        Vec<Vec<Range<u32>>>,
+    ) {
+        let n = src_transforms.len();
+        let src_rigid: Vec<RigidInstanceMetaGpu> = vec![RigidInstanceMetaGpu::zeroed(); n];
+        let src_skinned: Vec<SkinnedInstanceMetaGpu> = vec![SkinnedInstanceMetaGpu::zeroed(); n];
+        let mut dst_transforms = Vec::new();
+        let mut dst_rigid = Vec::new();
+        let mut dst_skinned = Vec::new();
+        let mut dst_batches = Vec::new();
+        let mut spans_per_draw: Vec<Vec<Range<u32>>> = vec![Vec::new(); draw_count];
+        let mut dedup = AHashMap::default();
+        compact_draw_batches_core(CompactDrawBatchesInputs {
+            src_transforms,
+            src_rigid_meta: &src_rigid,
+            src_skinned_meta: &src_skinned,
+            src_batches,
+            instance_owner,
+            dst_transforms: &mut dst_transforms,
+            dst_rigid_meta: &mut dst_rigid,
+            dst_skinned_meta: &mut dst_skinned,
+            dst_batches: &mut dst_batches,
+            spans_per_draw: &mut spans_per_draw,
+            src_region_dedup: &mut dedup,
+        });
+        (dst_transforms, dst_batches, spans_per_draw)
+    }
+
+    #[test]
+    fn compact_shares_one_span_across_meshlet_batches() {
+        // One draw, one instance, 3 meshlet batches all pointing at the same
+        // single-instance span [0,1). Expect dst to hold ONE copy, all 3 batches
+        // repointed to it, and the draw's span list to have ONE range.
+        let src_transforms = vec![transform_marked(7.0)];
+        let src_batches = [
+            meshlet_batch(0, 0, 1),
+            meshlet_batch(30, 0, 1),
+            meshlet_batch(60, 0, 1),
+        ];
+        let instance_owner = [0u32]; // instance owned by draw 0
+        let (dst_transforms, dst_batches, spans_per_draw) =
+            run_compact(&src_transforms, &src_batches, &instance_owner, 1);
+
+        // Exactly one instance copied, not three.
+        assert_eq!(dst_transforms.len(), 1);
+        assert_eq!(dst_transforms[0].model_row_0[0], 7.0);
+        // All three meshlet batches survive and point at the shared dst region.
+        assert_eq!(dst_batches.len(), 3);
+        for batch in &dst_batches {
+            assert_eq!(batch.instance_start, 0);
+            assert_eq!(batch.instance_count, 1);
+        }
+        // Per-meshlet mesh index ranges are preserved (distinct batches).
+        assert_eq!(dst_batches[0].mesh.index_start, 0);
+        assert_eq!(dst_batches[1].mesh.index_start, 30);
+        assert_eq!(dst_batches[2].mesh.index_start, 60);
+        // The draw's span list has ONE range covering the single instance, so the
+        // transform-only patch path uploads the shared region once.
+        assert_eq!(spans_per_draw.len(), 1);
+        assert_eq!(spans_per_draw[0], vec![0..1]);
+    }
+
+    #[test]
+    fn compact_dedups_shared_span_even_when_interleaved() {
+        // Two draws each with 2 meshlet batches, interleaved after sort:
+        //   draw0[a], draw1[a], draw0[b], draw1[b]
+        // draw0 shares span [0,1), draw1 shares span [1,2). Dedup is keyed by src
+        // region (not position) so the later batches repoint regardless of order.
+        let src_transforms = vec![transform_marked(1.0), transform_marked(2.0)];
+        let src_batches = [
+            meshlet_batch(0, 0, 1),  // draw0 meshlet a
+            meshlet_batch(10, 1, 1), // draw1 meshlet a
+            meshlet_batch(20, 0, 1), // draw0 meshlet b (shares [0,1))
+            meshlet_batch(30, 1, 1), // draw1 meshlet b (shares [1,2))
+        ];
+        let instance_owner = [0u32, 1u32];
+        let (dst_transforms, dst_batches, spans_per_draw) =
+            run_compact(&src_transforms, &src_batches, &instance_owner, 2);
+
+        // Only two instances copied total (one per draw), not four.
+        assert_eq!(dst_transforms.len(), 2);
+        assert_eq!(dst_batches.len(), 4);
+        // draw0's two batches share one dst region; draw1's two share another.
+        assert_eq!(dst_batches[0].instance_start, dst_batches[2].instance_start);
+        assert_eq!(dst_batches[1].instance_start, dst_batches[3].instance_start);
+        assert_ne!(dst_batches[0].instance_start, dst_batches[1].instance_start);
+        // Each draw contributes exactly one span (all its meshlet batches share it).
+        assert_eq!(spans_per_draw[0].len(), 1);
+        assert_eq!(spans_per_draw[1].len(), 1);
+    }
+
+    #[test]
+    fn compact_multi_instance_shared_span_keeps_tight_bounds() {
+        // 3-instance draw, 2 meshlet batches sharing span [0,3). Multi-instance
+        // batches keep their tight local bound + hi-z; the cull upload expands
+        // the bound into a merged per-instance world sphere.
+        let src_transforms = vec![
+            transform_marked(1.0),
+            transform_marked(2.0),
+            transform_marked(3.0),
+        ];
+        let src_batches = [meshlet_batch(0, 0, 3), meshlet_batch(40, 0, 3)];
+        let instance_owner = [0u32, 0u32, 0u32];
+        let (dst_transforms, dst_batches, spans_per_draw) =
+            run_compact(&src_transforms, &src_batches, &instance_owner, 1);
+
+        assert_eq!(dst_transforms.len(), 3);
+        assert_eq!(dst_batches.len(), 2);
+        for batch in &dst_batches {
+            assert_eq!(batch.instance_start, 0);
+            assert_eq!(batch.instance_count, 3);
+            assert!(!batch.disable_hiz_occlusion);
+            assert!(batch.local_radius < 1.0e8);
+        }
+        // meshlet_batch centers are [index_start, 0, 0] with radius 1; batches
+        // here don't merge (different mesh ranges) so each keeps its own bound.
+        assert_eq!(dst_batches[0].local_center, [0.0, 0.0, 0.0]);
+        assert_eq!(dst_batches[0].local_radius, 1.0);
+        assert_eq!(dst_batches[1].local_center, [40.0, 0.0, 0.0]);
+        assert_eq!(dst_batches[1].local_radius, 1.0);
+        assert_eq!(spans_per_draw[0], vec![0..3]);
+    }
+
+    #[test]
+    fn compact_regular_adjacent_batches_still_copy_each_region() {
+        // Non-shared (regular) batches with adjacent exclusive regions must each
+        // copy their own instances; dedup only fires on identical src regions.
+        let src_transforms = vec![transform_marked(1.0), transform_marked(2.0)];
+        let src_batches = [meshlet_batch(0, 0, 1), meshlet_batch(30, 1, 1)];
+        let instance_owner = [0u32, 1u32];
+        let (dst_transforms, dst_batches, _spans) =
+            run_compact(&src_transforms, &src_batches, &instance_owner, 2);
+        assert_eq!(dst_transforms.len(), 2);
+        assert_eq!(dst_batches[0].instance_start, 0);
+        assert_eq!(dst_batches[1].instance_start, 1);
     }
 }

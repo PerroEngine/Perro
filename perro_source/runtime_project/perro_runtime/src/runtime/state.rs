@@ -198,12 +198,17 @@ pub(crate) struct ScriptCallbackContext {
 
 pub(crate) struct NodeIndexState {
     pub(crate) node_tag_index: AHashMap<TagID, AHashSet<NodeID>>,
+    // Reused between spatial queries to avoid per-query allocation.
+    pub(crate) query_spatial_pos_2d: Vec<Option<perro_structs::Vector2>>,
+    pub(crate) query_spatial_pos_3d: Vec<Option<perro_structs::Vector3>>,
 }
 
 impl NodeIndexState {
     pub(crate) fn new() -> Self {
         Self {
             node_tag_index: AHashMap::default(),
+            query_spatial_pos_2d: Vec::new(),
+            query_spatial_pos_3d: Vec::new(),
         }
     }
 }

@@ -377,6 +377,9 @@ fn create_nodes_accepts_collections_inside_collections() {
 
 #[test]
 fn create_nodes_accepts_scene_refs_inside_collections() {
+    // from_project boots the scene, which writes the process-global project
+    // root; serialize with every other test that touches it.
+    let _project_root_guard = crate::rs_ctx::PROJECT_ROOT_TEST_LOCK.lock().unwrap();
     let mut project = RuntimeProject::new("Scene Collection Test", ".");
     project.static_scene_lookup = Some(static_scene_lookup);
     let mut runtime = Runtime::from_project(project, ProviderMode::Static);
@@ -508,6 +511,9 @@ fn create_nodes_collection_root_marker_controls_splice_parent_refs() {
 
 #[test]
 fn create_nodes_applies_scene_patch_list_to_loaded_root() {
+    // from_project boots the scene, which writes the process-global project
+    // root; serialize with every other test that touches it.
+    let _project_root_guard = crate::rs_ctx::PROJECT_ROOT_TEST_LOCK.lock().unwrap();
     let mut project = RuntimeProject::new("Scene Patch List Test", ".");
     project.static_scene_lookup = Some(static_scene_lookup);
     let mut runtime = Runtime::from_project(project, ProviderMode::Static);

@@ -29,6 +29,8 @@ mod culling {
         perro_macros::include_str_stripped!("shaders/hiz_depth_copy.wgsl");
     pub const HIZ_DOWNSAMPLE_WGSL: &str =
         perro_macros::include_str_stripped!("shaders/hiz_downsample.wgsl");
+    pub const HIZ_DOWNSAMPLE_SPD_WGSL: &str =
+        perro_macros::include_str_stripped!("shaders/hiz_downsample_spd.wgsl");
     pub const HIZ_OCCLUSION_CULL_WGSL: &str =
         perro_macros::include_str_stripped!("shaders/hiz_occlusion_cull.wgsl");
     pub const MULTIMESH_CULL_WGSL: &str =
@@ -587,6 +589,14 @@ pub fn create_hiz_downsample_shader_module(device: &wgpu::Device) -> wgpu::Shade
 }
 
 #[inline]
+pub fn create_hiz_downsample_spd_shader_module(device: &wgpu::Device) -> wgpu::ShaderModule {
+    device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("perro_hiz_downsample_spd"),
+        source: wgpu::ShaderSource::Wgsl(culling::HIZ_DOWNSAMPLE_SPD_WGSL.into()),
+    })
+}
+
+#[inline]
 pub fn create_hiz_occlusion_cull_shader_module(device: &wgpu::Device) -> wgpu::ShaderModule {
     device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("perro_hiz_occlusion_cull"),
@@ -1139,6 +1149,14 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     #[test]
     fn multimesh_cull_wgsl_validates() {
         parse_and_validate(culling::MULTIMESH_CULL_WGSL, "multimesh cull");
+    }
+
+    #[test]
+    fn hiz_downsample_wgsl_validates() {
+        parse_and_validate(culling::HIZ_DEPTH_COPY_WGSL, "hiz depth copy");
+        parse_and_validate(culling::HIZ_DOWNSAMPLE_WGSL, "hiz downsample");
+        parse_and_validate(culling::HIZ_DOWNSAMPLE_SPD_WGSL, "hiz downsample spd");
+        parse_and_validate(culling::HIZ_OCCLUSION_CULL_WGSL, "hiz occlusion cull");
     }
 
     #[test]

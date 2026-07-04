@@ -605,7 +605,7 @@ impl Gpu3D {
         let skeleton_capacity = 1usize;
         let skeleton_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("perro_skeleton_palette_buffer"),
-            size: (skeleton_capacity * std::mem::size_of::<[[f32; 4]; 4]>()) as u64,
+            size: (skeleton_capacity * std::mem::size_of::<[[f32; 4]; 3]>()) as u64,
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -1225,6 +1225,18 @@ impl Gpu3D {
             &shader_multimesh,
             None,
         );
+        let pipeline_multimesh_shadow_depth_culled = create_multimesh_shadow_depth_pipeline(
+            device,
+            &multimesh_pipeline_layout,
+            &shader_multimesh,
+            Some(wgpu::Face::Back),
+        );
+        let pipeline_multimesh_shadow_depth_double_sided = create_multimesh_shadow_depth_pipeline(
+            device,
+            &multimesh_pipeline_layout,
+            &shader_multimesh,
+            None,
+        );
         let mesh_blend_mask_id_bgl = mesh_blend_screen::create_mesh_blend_mask_id_bgl(device);
         let mask_pipeline_layout_rigid =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -1648,6 +1660,13 @@ impl Gpu3D {
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
+        let multimesh_shadow_identity_capacity = multimesh_cull_instance_capacity;
+        let multimesh_shadow_identity_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("perro_multimesh_shadow_identity"),
+            size: (multimesh_shadow_identity_capacity * std::mem::size_of::<u32>()) as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
         let multimesh_cull_counter_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("perro_multimesh_cull_counters"),
             size: (multimesh_cull_batch_capacity * std::mem::size_of::<u32>()) as u64,
@@ -1728,6 +1747,21 @@ impl Gpu3D {
                 },
             ],
         });
+        let shadow_multimesh_bind_groups =
+            buffers::build_shadow_multimesh_bind_groups(buffers::ShadowMultimeshBgArgs {
+                device,
+                multimesh_bgl: &multimesh_bgl,
+                shadow_camera_buffers: &shadow_camera_buffers,
+                multimesh_draw_params_buffer: &multimesh_draw_params_buffer,
+                mesh_blend_depth_view: &mesh_blend_depth_view,
+                blend_shape_delta_buffer: &blend_shape_delta_buffer,
+                blend_shape_weight_buffer: &blend_shape_weight_buffer,
+                blend_shape_instance_meta_buffer: &blend_shape_instance_meta_buffer,
+                custom_params_meta_buffer: &custom_params_meta_buffer,
+                custom_params_values_buffer: &custom_params_values_buffer,
+                shadow_identity_buffer: &multimesh_shadow_identity_buffer,
+                multimesh_instance_buffer: &multimesh_instance_buffer,
+            });
         let mesh_blend_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("perro_mesh_blend_bg"),
             layout: &mesh_blend_bgl,
@@ -1790,6 +1824,49 @@ impl Gpu3D {
                     },
                 ],
             });
+        // SPD downsampler needs 1 sampled src + HIZ_SPD_MIPS storage writes in a
+        // single stage. Gate on the device supporting that many storage textures
+        // per stage (downlevel gl caps at 4); otherwise fall back to per-mip.
+        let hiz_spd_supported =
+            device.limits().max_storage_textures_per_shader_stage >= HIZ_SPD_MIPS;
+        let hiz_spd_bgl = {
+            let mut entries = vec![wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::COMPUTE,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            }];
+            for mip in 0..HIZ_SPD_MIPS {
+                entries.push(wgpu::BindGroupLayoutEntry {
+                    binding: 1 + mip,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::StorageTexture {
+                        access: wgpu::StorageTextureAccess::WriteOnly,
+                        format: wgpu::TextureFormat::R32Float,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                    },
+                    count: None,
+                });
+            }
+            entries.push(wgpu::BindGroupLayoutEntry {
+                binding: 1 + HIZ_SPD_MIPS,
+                visibility: wgpu::ShaderStages::COMPUTE,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            });
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("perro_hiz_spd_bgl"),
+                entries: &entries,
+            })
+        };
         let hiz_cull_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("perro_hiz_cull_bgl"),
             entries: &[
@@ -1875,6 +1952,20 @@ impl Gpu3D {
                 compilation_options: Default::default(),
                 cache: None,
             });
+        let hiz_spd_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("perro_hiz_spd_pipeline"),
+            layout: Some(
+                &device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                    label: Some("perro_hiz_spd_layout"),
+                    bind_group_layouts: &[Some(&hiz_spd_bgl)],
+                    immediate_size: 0,
+                }),
+            ),
+            module: &create_hiz_downsample_spd_shader_module(device),
+            entry_point: Some("cs_main"),
+            compilation_options: Default::default(),
+            cache: None,
+        });
         let hiz_cull_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
             label: Some("perro_hiz_cull_pipeline"),
             layout: Some(
@@ -1991,6 +2082,8 @@ impl Gpu3D {
             pipeline_multimesh_covered_double_sided,
             pipeline_multimesh_depth_prepass_culled,
             pipeline_multimesh_depth_prepass_double_sided,
+            pipeline_multimesh_shadow_depth_culled,
+            pipeline_multimesh_shadow_depth_double_sided,
             pipeline_mask_rigid_culled,
             pipeline_mask_rigid_double_sided,
             pipeline_mask_rigid_packed_lod_culled,
@@ -2018,6 +2111,9 @@ impl Gpu3D {
             shadow_camera_buffers,
             shadow_camera_bind_groups,
             rigid_shadow_camera_bind_groups,
+            shadow_multimesh_bind_groups,
+            multimesh_shadow_identity_buffer,
+            multimesh_shadow_identity_capacity,
             shadow_buffer,
             shadow_bind_group,
             _shadow_map_texture: shadow_map_texture,
@@ -2149,6 +2245,7 @@ impl Gpu3D {
             compact_dst_skinned_meta_scratch: Vec::new(),
             compact_dst_batches_scratch: Vec::new(),
             compact_spans_per_draw_scratch: Vec::new(),
+            compact_src_region_dedup_scratch: AHashMap::default(),
             compact_multimesh_dst_instances_scratch: Vec::new(),
             compact_multimesh_dst_batches_scratch: Vec::new(),
             multimesh_pose_pack_cache: AHashMap::default(),
@@ -2157,6 +2254,9 @@ impl Gpu3D {
             last_shadow_scenes: vec![None; SHADOW_CAMERA_COUNT],
             shadow_camera_frustums: vec![[Vec4::ZERO; 6]; SHADOW_CAMERA_COUNT],
             last_shadow: None,
+            shadow_layer_valid: Vec::new(),
+            shadow_casters_dirty: true,
+            shadow_cull_scratch: Vec::new(),
             shadow_pass_enabled: false,
             ray_shadow_enabled: false,
             spot_shadow_count: 0,
@@ -2207,6 +2307,11 @@ impl Gpu3D {
             hiz_cull_bgl,
             hiz_copy_bind_group: None,
             hiz_downsample_bind_groups: Vec::new(),
+            hiz_spd_supported,
+            hiz_spd_pipeline,
+            hiz_spd_bgl,
+            hiz_spd_bind_groups: Vec::new(),
+            hiz_spd_params_buffers: Vec::new(),
             hiz_cull_params,
             hiz_cull_bind_group,
             hiz_debug_readback_buffer,

@@ -1755,6 +1755,81 @@ fn active_sky_3d_emits_set_sky_command() {
 }
 
 #[test]
+fn unchanged_sky_3d_does_not_reemit_set_sky_command() {
+    let mut runtime = Runtime::new();
+    let mut sky = Sky3D::new();
+    sky.day_colors = vec![[0.4, 0.6, 0.9], [0.9, 0.95, 1.0]];
+    sky.active = true;
+    let node = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::Sky3D(sky)));
+
+    runtime.extract_render_3d_commands();
+    let commands = collect_commands(&mut runtime);
+    assert!(
+        commands
+            .iter()
+            .any(|command| matches!(command, RenderCommand::ThreeD(command_3d) if matches!(command_3d.as_ref(), Command3D::SetSky { .. })))
+    );
+
+    // Re-mark the node dirty (via a transform touch) without changing any
+    // sky data, so the retained-state comparison runs again on revisit.
+    runtime.mark_transform_dirty_recursive(node);
+    runtime.extract_render_3d_commands();
+    let commands = collect_commands(&mut runtime);
+    assert!(
+        !commands
+            .iter()
+            .any(|command| matches!(command, RenderCommand::ThreeD(command_3d) if matches!(command_3d.as_ref(), Command3D::SetSky { .. })))
+    );
+}
+
+#[test]
+fn sky_3d_state_matches_compares_all_fields() {
+    let mut sky = Sky3D::new();
+    sky.day_colors = vec![[0.1, 0.2, 0.3]];
+    sky.evening_colors = vec![[0.4, 0.5, 0.6]];
+    sky.night_colors = vec![[0.7, 0.8, 0.9]];
+    sky.horizon_colors = vec![[0.2, 0.2, 0.2]];
+    sky.time.time_of_day = 0.5;
+    sky.time.paused = false;
+    sky.time.scale = 1.0;
+    sky.shaders
+        .push(perro_nodes::sky_3d::SkyShaderPass::new("shader_a"));
+
+    let retained = super::Sky3DState {
+        day_colors: Arc::from(sky.day_colors.as_slice()),
+        evening_colors: Arc::from(sky.evening_colors.as_slice()),
+        night_colors: Arc::from(sky.night_colors.as_slice()),
+        horizon_colors: Arc::from(sky.horizon_colors.as_slice()),
+        time: super::SkyTime3DState {
+            time_of_day: sky.time.time_of_day,
+            paused: sky.time.paused,
+            scale: sky.time.scale,
+        },
+        shaders: Arc::from(
+            sky.shaders
+                .iter()
+                .map(|shader| super::SkyShaderPass3DState {
+                    path: shader.path.clone(),
+                    params: Arc::from(shader.params.as_slice()),
+                })
+                .collect::<Vec<_>>(),
+        ),
+    };
+
+    assert!(super::sky_3d_state_matches(&retained, &sky));
+
+    sky.time.time_of_day = 0.75;
+    assert!(!super::sky_3d_state_matches(&retained, &sky));
+    sky.time.time_of_day = 0.5;
+
+    sky.shaders
+        .push(perro_nodes::sky_3d::SkyShaderPass::new("shader_b"));
+    assert!(!super::sky_3d_state_matches(&retained, &sky));
+}
+
+#[test]
 fn mesh_under_parent_uses_global_transform() {
     let mut runtime = Runtime::new();
 
