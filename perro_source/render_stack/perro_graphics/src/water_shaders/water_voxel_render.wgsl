@@ -86,8 +86,8 @@ struct Out {
     @builtin(position) clip_pos: vec4<f32>,
     @location(0) world_pos: vec3<f32>,
     @location(1) local_pos: vec3<f32>,
-    @location(2) voxel_idx: u32,
-    @location(3) water_idx: u32,
+    @location(2) @interpolate(flat) voxel_idx: u32,
+    @location(3) @interpolate(flat) water_idx: u32,
 }
 
 fn cube_vertex(vertex_idx: u32) -> vec3<f32> {

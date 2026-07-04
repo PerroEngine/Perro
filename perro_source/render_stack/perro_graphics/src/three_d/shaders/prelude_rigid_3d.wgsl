@@ -112,12 +112,12 @@ struct InstanceInput {
     @location(4) model_row_0: vec4<f32>,
     @location(5) model_row_1: vec4<f32>,
     @location(6) model_row_2: vec4<f32>,
-    @location(7) packed_color: u32,
-    @location(8) packed_pbr_params_0: u32,
-    @location(9) packed_pbr_params_1: u32,
-    @location(10) packed_emissive: u32,
-    @location(11) packed_material_params: u32,
-    @location(13) custom_params: vec2<u32>,
+    @location(7) @interpolate(flat) packed_color: u32,
+    @location(8) @interpolate(flat) packed_pbr_params_0: u32,
+    @location(9) @interpolate(flat) packed_pbr_params_1: u32,
+    @location(10) @interpolate(flat) packed_emissive: u32,
+    @location(11) @interpolate(flat) packed_material_params: u32,
+    @location(13) @interpolate(flat) custom_params: vec2<u32>,
 };
 
 struct BlendShapeDelta {

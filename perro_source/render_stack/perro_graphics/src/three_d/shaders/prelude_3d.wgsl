@@ -129,7 +129,7 @@ const MESH_BLEND_MIN_PIXELS: f32 = 2.5;
 struct VertexInput {
     @location(0) pos: vec3<f32>,
     @location(1) normal: vec4<f32>,
-    @location(2) joints: vec4<u32>,
+    @location(2) @interpolate(flat) joints: vec4<u32>,
     @location(3) weights: vec4<f32>,
     @location(12) uv: vec2<f32>,
 };
@@ -138,12 +138,12 @@ struct InstanceInput {
     @location(4) model_row_0: vec4<f32>,
     @location(5) model_row_1: vec4<f32>,
     @location(6) model_row_2: vec4<f32>,
-    @location(7) packed_color: u32,
-    @location(8) packed_pbr_params_0: u32,
-    @location(9) packed_pbr_params_1: u32,
-    @location(10) packed_emissive: u32,
-    @location(11) packed_material_params: u32,
-    @location(13) skeleton_params: vec4<u32>,
+    @location(7) @interpolate(flat) packed_color: u32,
+    @location(8) @interpolate(flat) packed_pbr_params_0: u32,
+    @location(9) @interpolate(flat) packed_pbr_params_1: u32,
+    @location(10) @interpolate(flat) packed_emissive: u32,
+    @location(11) @interpolate(flat) packed_material_params: u32,
+    @location(13) @interpolate(flat) skeleton_params: vec4<u32>,
 };
 
 struct BlendShapeDelta {

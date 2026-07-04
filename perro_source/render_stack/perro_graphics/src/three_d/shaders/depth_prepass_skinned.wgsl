@@ -37,7 +37,7 @@ var<storage, read> blend_shape_instances: array<BlendShapeInstance>;
 
 struct VertexInput {
     @location(0) pos: vec3<f32>,
-    @location(2) joints: vec4<u32>,
+    @location(2) @interpolate(flat) joints: vec4<u32>,
     @location(3) weights: vec4<f32>,
 }
 
@@ -45,9 +45,9 @@ struct InstanceInput {
     @location(4) model_row_0: vec4<f32>,
     @location(5) model_row_1: vec4<f32>,
     @location(6) model_row_2: vec4<f32>,
-    @location(7) packed_color: u32,
-    @location(8) packed_material_params: u32,
-    @location(11) skeleton_params: vec4<u32>,
+    @location(7) @interpolate(flat) packed_color: u32,
+    @location(8) @interpolate(flat) packed_material_params: u32,
+    @location(11) @interpolate(flat) skeleton_params: vec4<u32>,
 }
 
 struct VertexOutput {

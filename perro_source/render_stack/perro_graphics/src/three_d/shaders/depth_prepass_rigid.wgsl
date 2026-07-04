@@ -19,8 +19,8 @@ struct InstanceInput {
     @location(4) model_row_0: vec4<f32>,
     @location(5) model_row_1: vec4<f32>,
     @location(6) model_row_2: vec4<f32>,
-    @location(7) packed_color: u32,
-    @location(11) packed_material_params: u32,
+    @location(7) @interpolate(flat) packed_color: u32,
+    @location(11) @interpolate(flat) packed_material_params: u32,
 }
 
 struct VertexOutput {

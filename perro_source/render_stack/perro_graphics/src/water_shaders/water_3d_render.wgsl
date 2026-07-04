@@ -90,7 +90,7 @@ var scene_depth_tex: texture_depth_2d;
 struct Water3DVertexOut {
     @builtin(position) clip_pos: vec4<f32>,
     @location(0) uv: vec2<f32>,
-    @location(1) water_idx: u32,
+    @location(1) @interpolate(flat) water_idx: u32,
     @location(2) world_pos: vec3<f32>,
     @location(3) side_t: f32,
     @location(4) normal: vec3<f32>,

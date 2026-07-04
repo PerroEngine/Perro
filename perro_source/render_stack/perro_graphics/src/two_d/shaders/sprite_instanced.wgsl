@@ -24,7 +24,7 @@ struct InstanceInput {
     @location(5) uv_min: vec2<f32>,
     @location(6) uv_max: vec2<f32>,
     @location(7) size: vec2<f32>,
-    @location(8) z_index: i32,
+    @location(8) @interpolate(flat) z_index: i32,
     @location(9) tint: vec4<f32>,
 };
 

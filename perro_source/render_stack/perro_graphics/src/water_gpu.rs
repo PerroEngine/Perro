@@ -1144,7 +1144,7 @@ impl GpuWater {
         match rx.try_recv() {
             Ok(Ok(())) => {
                 let slice = self.readback_buffer.slice(0..self.readback_mapped_bytes);
-                let data = slice.get_mapped_range();
+                let data = slice.get_mapped_range().expect("map range");
                 let cells: &[[f32; 4]] = bytemuck::cast_slice(&data);
                 self.readback_samples.clear();
                 self.readback_body_samples.clear();

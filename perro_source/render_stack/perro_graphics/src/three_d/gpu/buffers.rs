@@ -1096,6 +1096,7 @@ impl Gpu3D {
             params_buffer
                 .slice(..)
                 .get_mapped_range_mut()
+                .expect("map range mut")
                 .copy_from_slice(bytemuck::bytes_of(&params));
             params_buffer.unmap();
 
@@ -1161,7 +1162,8 @@ impl Gpu3D {
                 let data = self
                     .hiz_debug_readback_buffer
                     .slice(0..byte_len)
-                    .get_mapped_range();
+                    .get_mapped_range()
+                    .expect("map range");
                 let mut visible = 0u32;
                 for bytes in data.chunks_exact(std::mem::size_of::<DrawIndexedIndirectGpu>()) {
                     let cmd = bytemuck::from_bytes::<DrawIndexedIndirectGpu>(bytes);
@@ -1273,7 +1275,10 @@ impl Gpu3D {
         match rx.try_recv() {
             Ok(Ok(())) => {
                 let byte_len = (query_count * 8) as u64;
-                let data = readback.slice(0..byte_len).get_mapped_range();
+                let data = readback
+                    .slice(0..byte_len)
+                    .get_mapped_range()
+                    .expect("map range");
                 let mut visible = 0u32;
                 for (i, bytes) in data.chunks_exact(8).enumerate() {
                     let samples =

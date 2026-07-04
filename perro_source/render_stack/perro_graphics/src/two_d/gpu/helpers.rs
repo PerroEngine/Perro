@@ -162,7 +162,7 @@ pub(super) fn create_rect_pipeline(
             module: shader,
             entry_point: Some("vs_main"),
             buffers: &[
-                wgpu::VertexBufferLayout {
+                Some(wgpu::VertexBufferLayout {
                     array_stride: std::mem::size_of::<QuadVertex>() as u64,
                     step_mode: wgpu::VertexStepMode::Vertex,
                     attributes: &[wgpu::VertexAttribute {
@@ -170,8 +170,8 @@ pub(super) fn create_rect_pipeline(
                         shader_location: 0,
                         format: wgpu::VertexFormat::Float32x2,
                     }],
-                },
-                wgpu::VertexBufferLayout {
+                }),
+                Some(wgpu::VertexBufferLayout {
                     array_stride: std::mem::size_of::<RectInstanceGpu>() as u64,
                     step_mode: wgpu::VertexStepMode::Instance,
                     attributes: &[
@@ -206,7 +206,7 @@ pub(super) fn create_rect_pipeline(
                             format: wgpu::VertexFormat::Float32,
                         },
                     ],
-                },
+                }),
             ],
             compilation_options: Default::default(),
         },
@@ -255,7 +255,7 @@ pub(super) fn create_sprite_pipeline(
             module: shader,
             entry_point: Some("vs_main"),
             buffers: &[
-                wgpu::VertexBufferLayout {
+                Some(wgpu::VertexBufferLayout {
                     array_stride: std::mem::size_of::<SpriteVertex>() as u64,
                     step_mode: wgpu::VertexStepMode::Vertex,
                     attributes: &[
@@ -270,8 +270,8 @@ pub(super) fn create_sprite_pipeline(
                             format: wgpu::VertexFormat::Float32x2,
                         },
                     ],
-                },
-                wgpu::VertexBufferLayout {
+                }),
+                Some(wgpu::VertexBufferLayout {
                     array_stride: std::mem::size_of::<SpriteInstanceGpu>() as u64,
                     step_mode: wgpu::VertexStepMode::Instance,
                     attributes: &[
@@ -316,7 +316,7 @@ pub(super) fn create_sprite_pipeline(
                             format: wgpu::VertexFormat::Unorm8x4,
                         },
                     ],
-                },
+                }),
             ],
             compilation_options: Default::default(),
         },
@@ -364,7 +364,7 @@ pub(super) fn create_point_light_pipeline(
             module: shader,
             entry_point: Some("vs_main"),
             buffers: &[
-                wgpu::VertexBufferLayout {
+                Some(wgpu::VertexBufferLayout {
                     array_stride: std::mem::size_of::<QuadVertex>() as u64,
                     step_mode: wgpu::VertexStepMode::Vertex,
                     attributes: &[wgpu::VertexAttribute {
@@ -372,8 +372,8 @@ pub(super) fn create_point_light_pipeline(
                         shader_location: 0,
                         format: wgpu::VertexFormat::Float32x2,
                     }],
-                },
-                wgpu::VertexBufferLayout {
+                }),
+                Some(wgpu::VertexBufferLayout {
                     array_stride: std::mem::size_of::<Light2DGpu>() as u64,
                     step_mode: wgpu::VertexStepMode::Instance,
                     attributes: &[
@@ -423,7 +423,7 @@ pub(super) fn create_point_light_pipeline(
                             format: wgpu::VertexFormat::Uint32,
                         },
                     ],
-                },
+                }),
             ],
             compilation_options: Default::default(),
         },

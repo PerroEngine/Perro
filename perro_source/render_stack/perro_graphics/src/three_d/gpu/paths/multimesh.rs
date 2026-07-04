@@ -78,7 +78,7 @@ pub(super) fn create_multimesh_depth_prepass_pipeline(
         vertex: wgpu::VertexState {
             module: shader,
             entry_point: Some("vs_depth"),
-            buffers: &[multimesh_mesh_vertex_layout()],
+            buffers: &[Some(multimesh_mesh_vertex_layout())],
             compilation_options: Default::default(),
         },
         fragment: Some(wgpu::FragmentState {
@@ -128,7 +128,7 @@ pub(super) fn create_multimesh_shadow_depth_pipeline(
         vertex: wgpu::VertexState {
             module: shader,
             entry_point: Some("vs_depth"),
-            buffers: &[multimesh_mesh_vertex_layout()],
+            buffers: &[Some(multimesh_mesh_vertex_layout())],
             compilation_options: Default::default(),
         },
         fragment: Some(wgpu::FragmentState {
@@ -202,7 +202,7 @@ fn create_multimesh_pipeline_with_depth_write(
         vertex: wgpu::VertexState {
             module: shader,
             entry_point: Some("vs_main"),
-            buffers: &[multimesh_mesh_vertex_layout()],
+            buffers: &[Some(multimesh_mesh_vertex_layout())],
             compilation_options: Default::default(),
         },
         fragment: Some(wgpu::FragmentState {

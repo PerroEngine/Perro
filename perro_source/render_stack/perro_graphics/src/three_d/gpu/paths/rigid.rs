@@ -195,9 +195,9 @@ fn create_pipeline_rigid_packed_lod_with_depth_write(
             module: shader,
             entry_point: Some("vs_main"),
             buffers: &[
-                rigid_packed_lod_vertex_layout(),
-                rigid_instance_transform_layout(),
-                rigid_meta_layout(),
+                Some(rigid_packed_lod_vertex_layout()),
+                Some(rigid_instance_transform_layout()),
+                Some(rigid_meta_layout()),
             ],
             compilation_options: Default::default(),
         },
@@ -258,7 +258,7 @@ fn create_pipeline_rigid_with_depth_write(
             module: shader,
             entry_point: Some("vs_main"),
             buffers: &[
-                wgpu::VertexBufferLayout {
+                Some(wgpu::VertexBufferLayout {
                     array_stride: std::mem::size_of::<RigidMeshVertex>() as u64,
                     step_mode: wgpu::VertexStepMode::Vertex,
                     attributes: &[
@@ -278,8 +278,8 @@ fn create_pipeline_rigid_with_depth_write(
                             format: wgpu::VertexFormat::Float32x2,
                         },
                     ],
-                },
-                wgpu::VertexBufferLayout {
+                }),
+                Some(wgpu::VertexBufferLayout {
                     array_stride: std::mem::size_of::<TransformInstanceGpu>() as u64,
                     step_mode: wgpu::VertexStepMode::Instance,
                     attributes: &[
@@ -299,8 +299,8 @@ fn create_pipeline_rigid_with_depth_write(
                             format: wgpu::VertexFormat::Float32x4,
                         },
                     ],
-                },
-                wgpu::VertexBufferLayout {
+                }),
+                Some(wgpu::VertexBufferLayout {
                     array_stride: std::mem::size_of::<RigidInstanceMetaGpu>() as u64,
                     step_mode: wgpu::VertexStepMode::Instance,
                     attributes: &[
@@ -335,7 +335,7 @@ fn create_pipeline_rigid_with_depth_write(
                             format: wgpu::VertexFormat::Uint32x2,
                         },
                     ],
-                },
+                }),
             ],
             compilation_options: Default::default(),
         },
@@ -392,7 +392,7 @@ pub(super) fn create_pipeline_overlay_rigid(
             module: shader,
             entry_point: Some("vs_main"),
             buffers: &[
-                wgpu::VertexBufferLayout {
+                Some(wgpu::VertexBufferLayout {
                     array_stride: std::mem::size_of::<RigidMeshVertex>() as u64,
                     step_mode: wgpu::VertexStepMode::Vertex,
                     attributes: &[
@@ -412,8 +412,8 @@ pub(super) fn create_pipeline_overlay_rigid(
                             format: wgpu::VertexFormat::Float32x2,
                         },
                     ],
-                },
-                wgpu::VertexBufferLayout {
+                }),
+                Some(wgpu::VertexBufferLayout {
                     array_stride: std::mem::size_of::<TransformInstanceGpu>() as u64,
                     step_mode: wgpu::VertexStepMode::Instance,
                     attributes: &[
@@ -433,8 +433,8 @@ pub(super) fn create_pipeline_overlay_rigid(
                             format: wgpu::VertexFormat::Float32x4,
                         },
                     ],
-                },
-                wgpu::VertexBufferLayout {
+                }),
+                Some(wgpu::VertexBufferLayout {
                     array_stride: std::mem::size_of::<RigidInstanceMetaGpu>() as u64,
                     step_mode: wgpu::VertexStepMode::Instance,
                     attributes: &[
@@ -469,7 +469,7 @@ pub(super) fn create_pipeline_overlay_rigid(
                             format: wgpu::VertexFormat::Uint32x2,
                         },
                     ],
-                },
+                }),
             ],
             compilation_options: Default::default(),
         },
@@ -524,7 +524,7 @@ pub(super) fn create_depth_prepass_pipeline_rigid(
             module: shader,
             entry_point: Some("vs_main"),
             buffers: &[
-                wgpu::VertexBufferLayout {
+                Some(wgpu::VertexBufferLayout {
                     array_stride: std::mem::size_of::<RigidMeshVertex>() as u64,
                     step_mode: wgpu::VertexStepMode::Vertex,
                     attributes: &[wgpu::VertexAttribute {
@@ -532,8 +532,8 @@ pub(super) fn create_depth_prepass_pipeline_rigid(
                         shader_location: 0,
                         format: wgpu::VertexFormat::Float32x3,
                     }],
-                },
-                wgpu::VertexBufferLayout {
+                }),
+                Some(wgpu::VertexBufferLayout {
                     array_stride: std::mem::size_of::<TransformInstanceGpu>() as u64,
                     step_mode: wgpu::VertexStepMode::Instance,
                     attributes: &[
@@ -553,8 +553,8 @@ pub(super) fn create_depth_prepass_pipeline_rigid(
                             format: wgpu::VertexFormat::Float32x4,
                         },
                     ],
-                },
-                rigid_meta_layout(),
+                }),
+                Some(rigid_meta_layout()),
             ],
             compilation_options: Default::default(),
         },
@@ -599,9 +599,9 @@ pub(super) fn create_depth_prepass_pipeline_rigid_packed_lod(
             module: shader,
             entry_point: Some("vs_main"),
             buffers: &[
-                rigid_packed_lod_vertex_layout(),
-                rigid_instance_transform_layout(),
-                rigid_meta_layout(),
+                Some(rigid_packed_lod_vertex_layout()),
+                Some(rigid_instance_transform_layout()),
+                Some(rigid_meta_layout()),
             ],
             compilation_options: Default::default(),
         },
@@ -646,7 +646,7 @@ pub(super) fn create_shadow_depth_pipeline_rigid(
             module: shader,
             entry_point: Some("vs_main"),
             buffers: &[
-                wgpu::VertexBufferLayout {
+                Some(wgpu::VertexBufferLayout {
                     array_stride: std::mem::size_of::<RigidMeshVertex>() as u64,
                     step_mode: wgpu::VertexStepMode::Vertex,
                     attributes: &[wgpu::VertexAttribute {
@@ -654,8 +654,8 @@ pub(super) fn create_shadow_depth_pipeline_rigid(
                         shader_location: 0,
                         format: wgpu::VertexFormat::Float32x3,
                     }],
-                },
-                wgpu::VertexBufferLayout {
+                }),
+                Some(wgpu::VertexBufferLayout {
                     array_stride: std::mem::size_of::<TransformInstanceGpu>() as u64,
                     step_mode: wgpu::VertexStepMode::Instance,
                     attributes: &[
@@ -675,8 +675,8 @@ pub(super) fn create_shadow_depth_pipeline_rigid(
                             format: wgpu::VertexFormat::Float32x4,
                         },
                     ],
-                },
-                rigid_meta_layout(),
+                }),
+                Some(rigid_meta_layout()),
             ],
             compilation_options: Default::default(),
         },
@@ -725,9 +725,9 @@ pub(super) fn create_shadow_depth_pipeline_rigid_packed_lod(
             module: shader,
             entry_point: Some("vs_main"),
             buffers: &[
-                rigid_packed_lod_vertex_layout(),
-                rigid_instance_transform_layout(),
-                rigid_meta_layout(),
+                Some(rigid_packed_lod_vertex_layout()),
+                Some(rigid_instance_transform_layout()),
+                Some(rigid_meta_layout()),
             ],
             compilation_options: Default::default(),
         },

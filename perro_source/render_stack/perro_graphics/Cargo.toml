@@ -28,23 +28,23 @@ image = { version = "0.25.8", default-features = false, features = ["png", "jpeg
 gltf = "1.4.1"
 
 [target.'cfg(target_os = "windows")'.dependencies]
-wgpu = { version = "29.0.0", default-features = false, features = ["std", "dx12", "vulkan", "wgsl"] }
+wgpu = { version = "30.0.0", default-features = false, features = ["std", "dx12", "vulkan", "wgsl"] }
 winit = { version = "0.30.12", default-features = false, features = ["rwh_06"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
-wgpu = { version = "29.0.0", default-features = false, features = ["std", "vulkan", "wgsl"] }
+wgpu = { version = "30.0.0", default-features = false, features = ["std", "vulkan", "wgsl"] }
 winit = { version = "0.30.12", default-features = false, features = ["rwh_06", "x11", "wayland", "wayland-dlopen"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
-wgpu = { version = "29.0.0", default-features = false, features = ["std", "metal", "wgsl"] }
+wgpu = { version = "30.0.0", default-features = false, features = ["std", "metal", "wgsl"] }
 winit = { version = "0.30.12", default-features = false, features = ["rwh_06"] }
 
 [target.'cfg(target_os = "android")'.dependencies]
-wgpu = { version = "29.0.0", default-features = false, features = ["std", "vulkan", "wgsl"] }
+wgpu = { version = "30.0.0", default-features = false, features = ["std", "vulkan", "wgsl"] }
 winit = { version = "0.30.12", default-features = false, features = ["rwh_06", "android-native-activity"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-wgpu = { version = "29.0.0", default-features = false, features = ["std", "webgpu", "wgsl"] }
+wgpu = { version = "30.0.0", default-features = false, features = ["std", "webgpu", "wgsl"] }
 winit = { version = "0.30.12", default-features = false, features = ["rwh_06"] }
 wasm-bindgen-futures = "0.4.55"
 getrandom = { version = "0.3.4", features = ["wasm_js"] }
@@ -52,7 +52,7 @@ web-time = "1.1.0"
 
 [dev-dependencies]
 criterion = "0.5"
-naga = { version = "29.0.0", features = ["wgsl-in"] }
+naga = { version = "30.0.0", features = ["wgsl-in"] }
 
 [[bench]]
 name = "cpu_prepare"

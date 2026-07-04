@@ -15,8 +15,8 @@ struct InstanceInput {
     @location(1) center: vec2<f32>,
     @location(2) size: vec2<f32>,
     @location(3) color: vec4<f32>,
-    @location(4) z_index: i32,
-    @location(5) packed_kind: u32,
+    @location(4) @interpolate(flat) z_index: i32,
+    @location(5) @interpolate(flat) packed_kind: u32,
     @location(6) thickness: f32,
 };
 
@@ -25,9 +25,9 @@ struct VertexOutput {
     @location(0) color: vec4<f32>,
     @location(1) local_pos: vec2<f32>,
     @location(2) size: vec2<f32>,
-    @location(3) shape_kind: u32,
+    @location(3) @interpolate(flat) shape_kind: u32,
     @location(4) thickness: f32,
-    @location(5) filled: u32,
+    @location(5) @interpolate(flat) filled: u32,
 };
 
 @vertex

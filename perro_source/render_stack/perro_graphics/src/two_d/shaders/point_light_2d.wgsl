@@ -14,13 +14,13 @@ struct VertexInput {
 struct InstanceInput {
     @location(1) position: vec2<f32>,
     @location(2) range: f32,
-    @location(3) z_index: i32,
+    @location(3) @interpolate(flat) z_index: i32,
     @location(4) color: vec3<f32>,
     @location(5) intensity: f32,
     @location(6) direction: vec2<f32>,
     @location(7) inner_cos: f32,
     @location(8) outer_cos: f32,
-    @location(9) kind: u32,
+    @location(9) @interpolate(flat) kind: u32,
 };
 
 struct VertexOutput {
@@ -31,7 +31,7 @@ struct VertexOutput {
     @location(3) direction: vec2<f32>,
     @location(4) inner_cos: f32,
     @location(5) outer_cos: f32,
-    @location(6) kind: u32,
+    @location(6) @interpolate(flat) kind: u32,
 };
 
 @vertex

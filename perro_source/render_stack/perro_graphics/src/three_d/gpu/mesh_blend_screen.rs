@@ -231,7 +231,7 @@ pub(super) fn create_mesh_blend_mask_pipeline_rigid(
             module: shader,
             entry_point: Some("vs_main"),
             buffers: &[
-                wgpu::VertexBufferLayout {
+                Some(wgpu::VertexBufferLayout {
                     array_stride: std::mem::size_of::<RigidMeshVertex>() as u64,
                     step_mode: wgpu::VertexStepMode::Vertex,
                     attributes: &[wgpu::VertexAttribute {
@@ -239,9 +239,9 @@ pub(super) fn create_mesh_blend_mask_pipeline_rigid(
                         shader_location: 0,
                         format: wgpu::VertexFormat::Float32x3,
                     }],
-                },
-                rigid_path::rigid_instance_transform_layout(),
-                rigid_path::rigid_meta_layout(),
+                }),
+                Some(rigid_path::rigid_instance_transform_layout()),
+                Some(rigid_path::rigid_meta_layout()),
             ],
             compilation_options: Default::default(),
         },
@@ -280,9 +280,9 @@ pub(super) fn create_mesh_blend_mask_pipeline_rigid_packed_lod(
             module: shader,
             entry_point: Some("vs_main"),
             buffers: &[
-                rigid_path::rigid_packed_lod_vertex_layout(),
-                rigid_path::rigid_instance_transform_layout(),
-                rigid_path::rigid_meta_layout(),
+                Some(rigid_path::rigid_packed_lod_vertex_layout()),
+                Some(rigid_path::rigid_instance_transform_layout()),
+                Some(rigid_path::rigid_meta_layout()),
             ],
             compilation_options: Default::default(),
         },
@@ -321,7 +321,7 @@ pub(super) fn create_mesh_blend_mask_pipeline_skinned(
             module: shader,
             entry_point: Some("vs_main"),
             buffers: &[
-                wgpu::VertexBufferLayout {
+                Some(wgpu::VertexBufferLayout {
                     array_stride: std::mem::size_of::<SkinnedMeshVertex>() as u64,
                     step_mode: wgpu::VertexStepMode::Vertex,
                     attributes: &[
@@ -341,8 +341,8 @@ pub(super) fn create_mesh_blend_mask_pipeline_skinned(
                             format: wgpu::VertexFormat::Unorm8x4,
                         },
                     ],
-                },
-                wgpu::VertexBufferLayout {
+                }),
+                Some(wgpu::VertexBufferLayout {
                     array_stride: std::mem::size_of::<TransformInstanceGpu>() as u64,
                     step_mode: wgpu::VertexStepMode::Instance,
                     attributes: &[
@@ -362,8 +362,8 @@ pub(super) fn create_mesh_blend_mask_pipeline_skinned(
                             format: wgpu::VertexFormat::Float32x4,
                         },
                     ],
-                },
-                wgpu::VertexBufferLayout {
+                }),
+                Some(wgpu::VertexBufferLayout {
                     array_stride: std::mem::size_of::<SkinnedInstanceMetaGpu>() as u64,
                     step_mode: wgpu::VertexStepMode::Instance,
                     attributes: &[
@@ -383,7 +383,7 @@ pub(super) fn create_mesh_blend_mask_pipeline_skinned(
                             format: wgpu::VertexFormat::Uint32x4,
                         },
                     ],
-                },
+                }),
             ],
             compilation_options: Default::default(),
         },

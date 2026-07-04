@@ -61,7 +61,7 @@ fn create_pipeline_skinned_with_depth_write(
             module: shader,
             entry_point: Some("vs_main"),
             buffers: &[
-                wgpu::VertexBufferLayout {
+                Some(wgpu::VertexBufferLayout {
                     array_stride: std::mem::size_of::<SkinnedMeshVertex>() as u64,
                     step_mode: wgpu::VertexStepMode::Vertex,
                     attributes: &[
@@ -91,8 +91,8 @@ fn create_pipeline_skinned_with_depth_write(
                             format: wgpu::VertexFormat::Unorm8x4,
                         },
                     ],
-                },
-                wgpu::VertexBufferLayout {
+                }),
+                Some(wgpu::VertexBufferLayout {
                     array_stride: std::mem::size_of::<TransformInstanceGpu>() as u64,
                     step_mode: wgpu::VertexStepMode::Instance,
                     attributes: &[
@@ -112,8 +112,8 @@ fn create_pipeline_skinned_with_depth_write(
                             format: wgpu::VertexFormat::Float32x4,
                         },
                     ],
-                },
-                wgpu::VertexBufferLayout {
+                }),
+                Some(wgpu::VertexBufferLayout {
                     array_stride: std::mem::size_of::<SkinnedInstanceMetaGpu>() as u64,
                     step_mode: wgpu::VertexStepMode::Instance,
                     attributes: &[
@@ -148,7 +148,7 @@ fn create_pipeline_skinned_with_depth_write(
                             format: wgpu::VertexFormat::Uint32x4,
                         },
                     ],
-                },
+                }),
             ],
             compilation_options: Default::default(),
         },
@@ -205,7 +205,7 @@ pub(super) fn create_pipeline_overlay_skinned(
             module: shader,
             entry_point: Some("vs_main"),
             buffers: &[
-                wgpu::VertexBufferLayout {
+                Some(wgpu::VertexBufferLayout {
                     array_stride: std::mem::size_of::<SkinnedMeshVertex>() as u64,
                     step_mode: wgpu::VertexStepMode::Vertex,
                     attributes: &[
@@ -235,8 +235,8 @@ pub(super) fn create_pipeline_overlay_skinned(
                             format: wgpu::VertexFormat::Unorm8x4,
                         },
                     ],
-                },
-                wgpu::VertexBufferLayout {
+                }),
+                Some(wgpu::VertexBufferLayout {
                     array_stride: std::mem::size_of::<TransformInstanceGpu>() as u64,
                     step_mode: wgpu::VertexStepMode::Instance,
                     attributes: &[
@@ -256,8 +256,8 @@ pub(super) fn create_pipeline_overlay_skinned(
                             format: wgpu::VertexFormat::Float32x4,
                         },
                     ],
-                },
-                wgpu::VertexBufferLayout {
+                }),
+                Some(wgpu::VertexBufferLayout {
                     array_stride: std::mem::size_of::<SkinnedInstanceMetaGpu>() as u64,
                     step_mode: wgpu::VertexStepMode::Instance,
                     attributes: &[
@@ -292,7 +292,7 @@ pub(super) fn create_pipeline_overlay_skinned(
                             format: wgpu::VertexFormat::Uint32x4,
                         },
                     ],
-                },
+                }),
             ],
             compilation_options: Default::default(),
         },
@@ -347,7 +347,7 @@ pub(super) fn create_depth_prepass_pipeline_skinned(
             module: shader,
             entry_point: Some("vs_main"),
             buffers: &[
-                wgpu::VertexBufferLayout {
+                Some(wgpu::VertexBufferLayout {
                     array_stride: std::mem::size_of::<SkinnedMeshVertex>() as u64,
                     step_mode: wgpu::VertexStepMode::Vertex,
                     attributes: &[
@@ -367,8 +367,8 @@ pub(super) fn create_depth_prepass_pipeline_skinned(
                             format: wgpu::VertexFormat::Unorm8x4,
                         },
                     ],
-                },
-                wgpu::VertexBufferLayout {
+                }),
+                Some(wgpu::VertexBufferLayout {
                     array_stride: std::mem::size_of::<TransformInstanceGpu>() as u64,
                     step_mode: wgpu::VertexStepMode::Instance,
                     attributes: &[
@@ -388,8 +388,8 @@ pub(super) fn create_depth_prepass_pipeline_skinned(
                             format: wgpu::VertexFormat::Float32x4,
                         },
                     ],
-                },
-                wgpu::VertexBufferLayout {
+                }),
+                Some(wgpu::VertexBufferLayout {
                     array_stride: std::mem::size_of::<SkinnedInstanceMetaGpu>() as u64,
                     step_mode: wgpu::VertexStepMode::Instance,
                     attributes: &[
@@ -409,7 +409,7 @@ pub(super) fn create_depth_prepass_pipeline_skinned(
                             format: wgpu::VertexFormat::Uint32x4,
                         },
                     ],
-                },
+                }),
             ],
             compilation_options: Default::default(),
         },
@@ -454,7 +454,7 @@ pub(super) fn create_shadow_depth_pipeline_skinned(
             module: shader,
             entry_point: Some("vs_main"),
             buffers: &[
-                wgpu::VertexBufferLayout {
+                Some(wgpu::VertexBufferLayout {
                     array_stride: std::mem::size_of::<SkinnedMeshVertex>() as u64,
                     step_mode: wgpu::VertexStepMode::Vertex,
                     attributes: &[
@@ -474,8 +474,8 @@ pub(super) fn create_shadow_depth_pipeline_skinned(
                             format: wgpu::VertexFormat::Unorm8x4,
                         },
                     ],
-                },
-                wgpu::VertexBufferLayout {
+                }),
+                Some(wgpu::VertexBufferLayout {
                     array_stride: std::mem::size_of::<TransformInstanceGpu>() as u64,
                     step_mode: wgpu::VertexStepMode::Instance,
                     attributes: &[
@@ -495,8 +495,8 @@ pub(super) fn create_shadow_depth_pipeline_skinned(
                             format: wgpu::VertexFormat::Float32x4,
                         },
                     ],
-                },
-                wgpu::VertexBufferLayout {
+                }),
+                Some(wgpu::VertexBufferLayout {
                     array_stride: std::mem::size_of::<SkinnedInstanceMetaGpu>() as u64,
                     step_mode: wgpu::VertexStepMode::Instance,
                     attributes: &[
@@ -516,7 +516,7 @@ pub(super) fn create_shadow_depth_pipeline_skinned(
                             format: wgpu::VertexFormat::Uint32x4,
                         },
                     ],
-                },
+                }),
             ],
             compilation_options: Default::default(),
         },

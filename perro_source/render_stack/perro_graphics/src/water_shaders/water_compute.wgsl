@@ -264,7 +264,7 @@ fn cs_main(@builtin(global_invocation_id) gid: vec3<u32>) {
 struct Water2DVertexOut {
     @builtin(position) clip_pos: vec4<f32>,
     @location(0) uv: vec2<f32>,
-    @location(1) water_idx: u32,
+    @location(1) @interpolate(flat) water_idx: u32,
 }
 
 fn quad_pos(vertex_idx: u32) -> vec2<f32> {

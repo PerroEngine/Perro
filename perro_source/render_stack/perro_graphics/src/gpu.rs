@@ -326,7 +326,7 @@ impl GpuTimestampTimer {
         match rx.try_recv() {
             Ok(Ok(())) => {
                 let slice = self.readback_buffer.slice(..);
-                let data = slice.get_mapped_range();
+                let data = slice.get_mapped_range().expect("map range");
                 let timestamps: &[u64] = bytemuck::cast_slice(&data);
                 if timestamps.len() >= 2 && timestamps[1] >= timestamps[0] {
                     let nanos = (timestamps[1] - timestamps[0]) as f64
@@ -668,7 +668,7 @@ impl Gpu {
             });
         }
         self.queue.submit(Some(encoder.finish()));
-        frame.present();
+        self.queue.present(frame);
         true
     }
 
@@ -678,6 +678,7 @@ impl Gpu {
 
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
+                apply_limit_buckets: false,
                 power_preference: wgpu::PowerPreference::HighPerformance,
                 compatible_surface: Some(&surface),
                 force_fallback_adapter: false,
@@ -752,6 +753,8 @@ impl Gpu {
             alpha_mode,
             view_formats: vec![],
             desired_maximum_frame_latency: max_frame_latency,
+            // Auto keeps wgpu's pre-30 color-space behavior (sRGB / linear fp16).
+            color_space: wgpu::SurfaceColorSpace::Auto,
         };
         eprintln!(
             "[perro][gfx] vsync=({}) present_mode=({present_mode:?}) max_frame_latency=({max_frame_latency}) present_caps=({:?})",
@@ -2123,7 +2126,7 @@ impl Gpu {
             .unwrap_or(0);
         let present_start = Instant::now();
         if let Some(frame) = frame {
-            frame.present();
+            self.queue.present(frame);
             timing.present = present_start.elapsed();
             timing.presented = true;
         }

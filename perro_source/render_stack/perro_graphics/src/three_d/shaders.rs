@@ -196,8 +196,8 @@ fn build_packed_lod_rigid_prelude() -> String {
             "struct VertexInput {\n    @location(0) pos: vec4<f32>,",
         )
         .replace(
-            "    @location(13) custom_params: vec2<u32>,\n};",
-            "    @location(13) custom_params: vec2<u32>,\n    @location(14) packed_lod_param_id: u32,\n};",
+            "    @location(13) @interpolate(flat) custom_params: vec2<u32>,\n};",
+            "    @location(13) @interpolate(flat) custom_params: vec2<u32>,\n    @location(14) @interpolate(flat) packed_lod_param_id: u32,\n};",
         )
         .replace(
             "struct BlendShapeDelta {\n    position_delta: vec4<f32>,\n    normal_delta: vec4<f32>,\n};",
@@ -229,8 +229,8 @@ fn build_packed_lod_depth_rigid_wgsl() -> String {
             "struct VertexInput {\n    @location(0) pos: vec4<f32>,\n};",
         )
         .replace(
-            "struct InstanceInput {\n    @location(4) model_row_0: vec4<f32>,\n    @location(5) model_row_1: vec4<f32>,\n    @location(6) model_row_2: vec4<f32>,\n    @location(7) packed_color: u32,\n    @location(11) packed_material_params: u32,\n};",
-            "struct InstanceInput {\n    @location(4) model_row_0: vec4<f32>,\n    @location(5) model_row_1: vec4<f32>,\n    @location(6) model_row_2: vec4<f32>,\n    @location(7) packed_color: u32,\n    @location(11) packed_material_params: u32,\n    @location(14) packed_lod_param_id: u32,\n};",
+            "struct InstanceInput {\n    @location(4) model_row_0: vec4<f32>,\n    @location(5) model_row_1: vec4<f32>,\n    @location(6) model_row_2: vec4<f32>,\n    @location(7) @interpolate(flat) packed_color: u32,\n    @location(11) @interpolate(flat) packed_material_params: u32,\n};",
+            "struct InstanceInput {\n    @location(4) model_row_0: vec4<f32>,\n    @location(5) model_row_1: vec4<f32>,\n    @location(6) model_row_2: vec4<f32>,\n    @location(7) @interpolate(flat) packed_color: u32,\n    @location(11) @interpolate(flat) packed_material_params: u32,\n    @location(14) @interpolate(flat) packed_lod_param_id: u32,\n};",
         )
         .replace(
             "struct BlendShapeDelta {\n    position_delta: vec4<f32>,\n    normal_delta: vec4<f32>,\n}",
@@ -877,6 +877,7 @@ fn shade_material(in: FragmentInput) -> vec4<f32> {
                 power_preference: wgpu::PowerPreference::LowPower,
                 compatible_surface: None,
                 force_fallback_adapter: false,
+                apply_limit_buckets: false,
             })
             .await
             .ok()?;
@@ -1006,7 +1007,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
                 module: &shader,
                 entry_point: Some("vs_main"),
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
-                buffers: &[wgpu::VertexBufferLayout {
+                buffers: &[Some(wgpu::VertexBufferLayout {
                     array_stride: std::mem::size_of::<TestVertex>() as u64,
                     step_mode: wgpu::VertexStepMode::Vertex,
                     attributes: &[
@@ -1026,7 +1027,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
                             shader_location: 2,
                         },
                     ],
-                }],
+                })],
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
@@ -1103,7 +1104,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         rx.recv()
             .expect("readback callback")
             .expect("map readback buffer");
-        let mapped = slice.get_mapped_range();
+        let mapped = slice.get_mapped_range().expect("readback map range");
         let mut pixels = Vec::with_capacity((WIDTH * HEIGHT * BYTES_PER_PIXEL) as usize);
         for row in 0..HEIGHT as usize {
             let start = row * READBACK_BYTES_PER_ROW as usize;
