@@ -1,9 +1,5 @@
 use crate::App;
-#[cfg(not(target_arch = "wasm32"))]
-use crate::threaded::RenderThreadBridge;
 use perro_graphics::GraphicsBackend;
-#[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
-use perro_input_api::InputEvent;
 #[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
 use perro_input_api::{
     JoyConButton, JoyConIndicatorRequest, JoyConRumbleRequest, JoyConSide, PlayerBinding,
@@ -81,66 +77,6 @@ impl<B: GraphicsBackend> JoyConSink for App<B> {
     }
     fn bind_player(&mut self, index: usize, binding: PlayerBinding) {
         App::bind_player(self, index, binding);
-    }
-}
-
-#[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
-impl JoyConSink for RenderThreadBridge {
-    fn set_joycon_button_state(&mut self, index: usize, button: JoyConButton, is_down: bool) {
-        self.push_input_event(InputEvent::JoyConButton {
-            index,
-            button,
-            is_down,
-        });
-    }
-    fn set_joycon_stick(&mut self, index: usize, x: f32, y: f32) {
-        self.set_joycon_stick_unit(index, SignedUnitVector2::new(x, y));
-    }
-    fn set_joycon_stick_unit(&mut self, index: usize, stick: SignedUnitVector2) {
-        self.push_input_event(InputEvent::JoyConStick { index, stick });
-    }
-    fn set_joycon_side(&mut self, index: usize, side: JoyConSide) {
-        self.push_input_event(InputEvent::JoyConSide { index, side });
-    }
-    fn set_joycon_connected(&mut self, index: usize, connected: bool) {
-        self.push_input_event(InputEvent::JoyConConnected { index, connected });
-    }
-    fn set_joycon_calibrated(&mut self, index: usize, calibrated: bool) {
-        self.push_input_event(InputEvent::JoyConCalibrated { index, calibrated });
-    }
-    fn set_joycon_calibration_in_progress(&mut self, index: usize, in_progress: bool) {
-        self.push_input_event(InputEvent::JoyConCalibrationInProgress { index, in_progress });
-    }
-    fn set_joycon_calibration_bias(&mut self, index: usize, x: f32, y: f32, z: f32) {
-        self.push_input_event(InputEvent::JoyConCalibrationBias { index, x, y, z });
-    }
-    fn set_joycon_gyro(&mut self, index: usize, x: f32, y: f32, z: f32) {
-        self.push_input_event(InputEvent::JoyConGyro { index, x, y, z });
-    }
-    fn set_joycon_accel(&mut self, index: usize, x: f32, y: f32, z: f32) {
-        self.push_input_event(InputEvent::JoyConAccel { index, x, y, z });
-    }
-    fn set_joycon_mouse_sensor(&mut self, index: usize, x: f32, y: f32, extra: f32, distance: f32) {
-        self.push_input_event(InputEvent::JoyConMouseSensor {
-            index,
-            x,
-            y,
-            extra,
-            distance,
-        });
-    }
-    fn take_joycon_calibration_requests(&mut self) -> Vec<usize> {
-        Vec::new()
-    }
-    fn take_joycon_rumble_requests(&mut self) -> Vec<JoyConRumbleRequest> {
-        Vec::new()
-    }
-    fn take_joycon_indicator_requests(&mut self) -> Vec<JoyConIndicatorRequest> {
-        Vec::new()
-    }
-    fn for_each_player_binding(&self, _f: &mut dyn FnMut(usize, PlayerBinding)) {}
-    fn bind_player(&mut self, index: usize, binding: PlayerBinding) {
-        self.push_input_event(InputEvent::BindPlayer { index, binding });
     }
 }
 
@@ -1502,16 +1438,4 @@ impl JoyConInput {
     pub fn begin_frame<B: GraphicsBackend>(&mut self, app: &mut App<B>) {
         self.backend.begin_frame(app);
     }
-
-    #[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
-    pub fn begin_frame_threaded(&mut self, bridge: &RenderThreadBridge) {
-        let mut bridge = bridge.clone();
-        self.backend.begin_frame(&mut bridge);
-    }
-
-    #[cfg(all(
-        not(target_arch = "wasm32"),
-        not(any(target_os = "windows", target_os = "linux", target_os = "macos"))
-    ))]
-    pub fn begin_frame_threaded(&mut self, _bridge: &RenderThreadBridge) {}
 }

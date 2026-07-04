@@ -45,15 +45,11 @@ use startup_splash::{
     STARTUP_SPLASH_TEXTURE_REQUEST, StartupSplashState,
 };
 
+use crate::frame_pacing::{FRAME_WAKE_HEADROOM, FramePacer, project_frame_rate_cap};
+
 const DEFAULT_FIXED_TIMESTEP: Option<f32> = None;
 const MAX_FIXED_STEPS_PER_FRAME: u32 = 2;
 const MAX_FRAME_DELTA_SECONDS: f32 = 0.250;
-const MIN_FRAME_RATE_CAP_FPS: f32 = 1.0;
-const MAX_FRAME_RATE_CAP_FPS: f32 = 1000.0;
-// OS timer wake-ups overshoot; wake this early, then poll to the deadline.
-// Assumes 1ms system timer resolution on Windows (see timer_resolution.rs,
-// active for the app lifetime); 2ms headroom is generous at that resolution.
-const FRAME_WAKE_HEADROOM: Duration = Duration::from_millis(2);
 const LOG_INTERVAL_SECONDS: f32 = 3.0;
 #[cfg(not(any(feature = "profile_heavy", feature = "ui_profile", feature = "fps")))]
 const LOG_TIMING_SAMPLE_STRIDE: u32 = 20;
@@ -115,65 +111,6 @@ fn normalize_fixed_timestep_seconds(value: Option<f32>) -> Option<f32> {
     } else {
         Some(1.0 / raw)
     }
-}
-
-#[inline]
-fn normalize_frame_rate_cap(cap: RuntimeFrameRateCap) -> RuntimeFrameRateCap {
-    match cap {
-        RuntimeFrameRateCap::Fps(fps) if fps.is_finite() && fps > 0.0 => {
-            RuntimeFrameRateCap::Fps(fps.clamp(MIN_FRAME_RATE_CAP_FPS, MAX_FRAME_RATE_CAP_FPS))
-        }
-        RuntimeFrameRateCap::Fps(_) => RuntimeFrameRateCap::Unlimited,
-        other => other,
-    }
-}
-
-#[inline]
-fn project_frame_rate_cap(cap: perro_runtime::FrameRateCap) -> RuntimeFrameRateCap {
-    match cap {
-        perro_runtime::FrameRateCap::Unlimited => RuntimeFrameRateCap::Unlimited,
-        perro_runtime::FrameRateCap::Fps(fps) => RuntimeFrameRateCap::Fps(fps),
-        perro_runtime::FrameRateCap::RefreshRate => RuntimeFrameRateCap::RefreshRate,
-    }
-}
-
-#[inline]
-fn frame_interval_from_fps(fps: f32) -> Duration {
-    Duration::from_secs_f64(1.0 / f64::from(fps))
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-fn active_refresh_rate_hz(window: Option<&Window>) -> Option<f32> {
-    let window = window?;
-    let monitor = window
-        .current_monitor()
-        .or_else(|| window.primary_monitor())?;
-    let refresh_millihertz = monitor.refresh_rate_millihertz().or_else(|| {
-        monitor
-            .video_modes()
-            .map(|mode| mode.refresh_rate_millihertz())
-            .max()
-    })?;
-    if refresh_millihertz == 0 {
-        return None;
-    }
-    Some(refresh_millihertz as f32 / 1000.0)
-}
-
-#[cfg(target_arch = "wasm32")]
-fn active_refresh_rate_hz(_window: Option<&Window>) -> Option<f32> {
-    Some(60.0)
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-fn refresh_rate_interval(window: Option<&Window>) -> Option<Duration> {
-    let refresh_hz = active_refresh_rate_hz(window)?;
-    Some(Duration::from_secs_f64(1.0 / f64::from(refresh_hz)))
-}
-
-#[cfg(target_arch = "wasm32")]
-fn refresh_rate_interval(_window: Option<&Window>) -> Option<Duration> {
-    Some(frame_interval_from_fps(60.0))
 }
 
 #[inline]
@@ -599,6 +536,108 @@ impl Default for WinitRunner {
     }
 }
 
+/// Always-on per-batch frame accounting. Reset = assign `Default::default()`.
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct BatchCoreStats {
+    pub(crate) frames: u32,
+    pub(crate) timing_samples: u32,
+    pub(crate) work: Duration,
+    pub(crate) simulation: Duration,
+    pub(crate) present: Duration,
+    pub(crate) idle_before_frame: Duration,
+    pub(crate) present_wait: Duration,
+    pub(crate) idle: Duration,
+}
+
+/// UI pipeline batch counters (`ui_profile` or `profile_heavy`).
+#[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
+#[derive(Clone, Copy, Debug, Default)]
+struct BatchUiStats {
+    extract_ui: Duration,
+    layout: Duration,
+    commands: Duration,
+    dirty_nodes: u64,
+    affected_nodes: u64,
+    recalculated_rects: u64,
+    cached_rects: u64,
+    auto_layout_batches: u64,
+    command_nodes: u64,
+    command_emitted: u64,
+    command_skipped: u64,
+    removed_nodes: u64,
+}
+
+/// Deep profiling batch counters (`profile_heavy` only).
+#[cfg(feature = "profile_heavy")]
+#[derive(Clone, Copy, Debug, Default)]
+struct BatchHeavyStats {
+    runtime_update: Duration,
+    input_poll: Duration,
+    fixed_update: Duration,
+    fixed_snapshot_update: Duration,
+    fixed_script_update: Duration,
+    fixed_physics_update: Duration,
+    fixed_internal_update: Duration,
+    fixed_physics_pre_transforms: Duration,
+    fixed_physics_collect: Duration,
+    fixed_physics_sync_world: Duration,
+    fixed_physics_apply_forces_impulses: Duration,
+    fixed_physics_step: Duration,
+    fixed_physics_sync_nodes: Duration,
+    fixed_physics_post_transforms: Duration,
+    fixed_physics_signals: Duration,
+    runtime_start_schedule: Duration,
+    runtime_snapshot_update: Duration,
+    runtime_script_update: Duration,
+    runtime_internal_update: Duration,
+    runtime_slowest_script: Duration,
+    runtime_script_count: u64,
+    present_extract_2d: Duration,
+    present_extract_3d: Duration,
+    present_drain_commands: Duration,
+    present_submit_commands: Duration,
+    present_draw_frame: Duration,
+    draw_process_commands: Duration,
+    draw_prepare_cpu: Duration,
+    draw_gpu_prepare_2d: Duration,
+    draw_gpu_prepare_3d: Duration,
+    draw_gpu_prepare_particles_3d: Duration,
+    draw_gpu_prepare_3d_frustum: Duration,
+    draw_gpu_prepare_3d_hiz: Duration,
+    draw_gpu_prepare_3d_indirect: Duration,
+    draw_gpu_prepare_3d_cull_inputs: Duration,
+    draw_gpu_acquire: Duration,
+    draw_gpu_acquire_surface: Duration,
+    draw_gpu_acquire_view: Duration,
+    draw_gpu_encode_main: Duration,
+    draw_gpu_submit_main: Duration,
+    draw_gpu_submit_finish_main: Duration,
+    draw_gpu_submit_queue_main: Duration,
+    draw_gpu_post_process: Duration,
+    draw_gpu_accessibility: Duration,
+    draw_gpu_present: Duration,
+    draw_calls_2d: u64,
+    draw_calls_3d: u64,
+    draw_calls_total: u64,
+    draw_instances_3d: u64,
+    draw_material_refs_3d: u64,
+    skip_prepare_2d: u64,
+    skip_prepare_3d: u64,
+    skip_prepare_particles_3d: u64,
+    skip_prepare_3d_frustum: u64,
+    skip_prepare_3d_hiz: u64,
+    skip_prepare_3d_indirect: u64,
+    skip_prepare_3d_cull_inputs: u64,
+    present_drain_events: Duration,
+    present_apply_events: Duration,
+    sim_delta_seconds: f64,
+    render_command_count: u64,
+    dirty_node_count: u64,
+    active_meshes: u64,
+    active_materials: u64,
+    active_textures: u64,
+}
+
 struct RunnerState<B: GraphicsBackend> {
     app: App<B>,
     title: String,
@@ -607,160 +646,14 @@ struct RunnerState<B: GraphicsBackend> {
     last_frame_end: Instant,
     run_start: Instant,
     batch_start: Instant,
-    batch_work: Duration,
-    batch_simulation: Duration,
-    batch_present: Duration,
-    batch_idle_before_frame: Duration,
-    batch_present_wait: Duration,
-    #[cfg(feature = "profile_heavy")]
-    batch_runtime_update: Duration,
-    #[cfg(feature = "profile_heavy")]
-    batch_input_poll: Duration,
-    #[cfg(feature = "profile_heavy")]
-    batch_fixed_update: Duration,
-    #[cfg(feature = "profile_heavy")]
-    batch_fixed_snapshot_update: Duration,
-    #[cfg(feature = "profile_heavy")]
-    batch_fixed_script_update: Duration,
-    #[cfg(feature = "profile_heavy")]
-    batch_fixed_physics_update: Duration,
-    #[cfg(feature = "profile_heavy")]
-    batch_fixed_internal_update: Duration,
-    #[cfg(feature = "profile_heavy")]
-    batch_fixed_physics_pre_transforms: Duration,
-    #[cfg(feature = "profile_heavy")]
-    batch_fixed_physics_collect: Duration,
-    #[cfg(feature = "profile_heavy")]
-    batch_fixed_physics_sync_world: Duration,
-    #[cfg(feature = "profile_heavy")]
-    batch_fixed_physics_apply_forces_impulses: Duration,
-    #[cfg(feature = "profile_heavy")]
-    batch_fixed_physics_step: Duration,
-    #[cfg(feature = "profile_heavy")]
-    batch_fixed_physics_sync_nodes: Duration,
-    #[cfg(feature = "profile_heavy")]
-    batch_fixed_physics_post_transforms: Duration,
-    #[cfg(feature = "profile_heavy")]
-    batch_fixed_physics_signals: Duration,
-    #[cfg(feature = "profile_heavy")]
-    batch_runtime_start_schedule: Duration,
-    #[cfg(feature = "profile_heavy")]
-    batch_runtime_snapshot_update: Duration,
-    #[cfg(feature = "profile_heavy")]
-    batch_runtime_script_update: Duration,
-    #[cfg(feature = "profile_heavy")]
-    batch_runtime_internal_update: Duration,
-    #[cfg(feature = "profile_heavy")]
-    batch_runtime_slowest_script: Duration,
-    #[cfg(feature = "profile_heavy")]
-    batch_runtime_script_count: u64,
-    #[cfg(feature = "profile_heavy")]
-    batch_present_extract_2d: Duration,
-    #[cfg(feature = "profile_heavy")]
-    batch_present_extract_3d: Duration,
+    batch: BatchCoreStats,
     #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
-    batch_present_extract_ui: Duration,
-    #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
-    batch_ui_layout: Duration,
-    #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
-    batch_ui_commands: Duration,
-    #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
-    batch_ui_dirty_nodes: u64,
-    #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
-    batch_ui_affected_nodes: u64,
-    #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
-    batch_ui_recalculated_rects: u64,
-    #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
-    batch_ui_cached_rects: u64,
-    #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
-    batch_ui_auto_layout_batches: u64,
-    #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
-    batch_ui_command_nodes: u64,
-    #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
-    batch_ui_command_emitted: u64,
-    #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
-    batch_ui_command_skipped: u64,
-    #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
-    batch_ui_removed_nodes: u64,
+    batch_ui: BatchUiStats,
     #[cfg(feature = "profile_heavy")]
-    batch_present_drain_commands: Duration,
-    #[cfg(feature = "profile_heavy")]
-    batch_present_submit_commands: Duration,
-    #[cfg(feature = "profile_heavy")]
-    batch_present_draw_frame: Duration,
-    #[cfg(feature = "profile_heavy")]
-    batch_draw_process_commands: Duration,
-    #[cfg(feature = "profile_heavy")]
-    batch_draw_prepare_cpu: Duration,
-    #[cfg(feature = "profile_heavy")]
-    batch_draw_gpu_prepare_2d: Duration,
-    #[cfg(feature = "profile_heavy")]
-    batch_draw_gpu_prepare_3d: Duration,
-    #[cfg(feature = "profile_heavy")]
-    batch_draw_gpu_prepare_particles_3d: Duration,
-    #[cfg(feature = "profile_heavy")]
-    batch_draw_gpu_prepare_3d_frustum: Duration,
-    #[cfg(feature = "profile_heavy")]
-    batch_draw_gpu_prepare_3d_hiz: Duration,
-    #[cfg(feature = "profile_heavy")]
-    batch_draw_gpu_prepare_3d_indirect: Duration,
-    #[cfg(feature = "profile_heavy")]
-    batch_draw_gpu_prepare_3d_cull_inputs: Duration,
-    #[cfg(feature = "profile_heavy")]
-    batch_draw_gpu_acquire: Duration,
-    #[cfg(feature = "profile_heavy")]
-    batch_draw_gpu_acquire_surface: Duration,
-    #[cfg(feature = "profile_heavy")]
-    batch_draw_gpu_acquire_view: Duration,
-    #[cfg(feature = "profile_heavy")]
-    batch_draw_gpu_encode_main: Duration,
-    #[cfg(feature = "profile_heavy")]
-    batch_draw_gpu_submit_main: Duration,
-    #[cfg(feature = "profile_heavy")]
-    batch_draw_gpu_submit_finish_main: Duration,
-    #[cfg(feature = "profile_heavy")]
-    batch_draw_gpu_submit_queue_main: Duration,
-    #[cfg(feature = "profile_heavy")]
-    batch_draw_gpu_post_process: Duration,
-    #[cfg(feature = "profile_heavy")]
-    batch_draw_gpu_accessibility: Duration,
-    #[cfg(feature = "profile_heavy")]
-    batch_draw_gpu_present: Duration,
-    #[cfg(feature = "profile_heavy")]
-    batch_draw_calls_2d: u64,
-    #[cfg(feature = "profile_heavy")]
-    batch_draw_calls_3d: u64,
-    #[cfg(feature = "profile_heavy")]
-    batch_draw_calls_total: u64,
-    #[cfg(feature = "profile_heavy")]
-    batch_draw_instances_3d: u64,
-    #[cfg(feature = "profile_heavy")]
-    batch_draw_material_refs_3d: u64,
-    #[cfg(feature = "profile_heavy")]
-    batch_skip_prepare_2d: u64,
-    #[cfg(feature = "profile_heavy")]
-    batch_skip_prepare_3d: u64,
-    #[cfg(feature = "profile_heavy")]
-    batch_skip_prepare_particles_3d: u64,
-    #[cfg(feature = "profile_heavy")]
-    batch_skip_prepare_3d_frustum: u64,
-    #[cfg(feature = "profile_heavy")]
-    batch_skip_prepare_3d_hiz: u64,
-    #[cfg(feature = "profile_heavy")]
-    batch_skip_prepare_3d_indirect: u64,
-    #[cfg(feature = "profile_heavy")]
-    batch_skip_prepare_3d_cull_inputs: u64,
-    #[cfg(feature = "profile_heavy")]
-    batch_present_drain_events: Duration,
-    #[cfg(feature = "profile_heavy")]
-    batch_present_apply_events: Duration,
-    batch_idle: Duration,
-    #[cfg(feature = "profile_heavy")]
-    batch_sim_delta_seconds: f64,
+    batch_heavy: BatchHeavyStats,
     fixed_timestep: Option<f32>,
     fixed_accumulator: f32,
-    frame_rate_cap: RuntimeFrameRateCap,
-    next_frame_deadline: Option<Instant>,
+    pacer: FramePacer,
     frame_index: u64,
     timing_csv: Option<TimingCsvWriter>,
     #[cfg(feature = "profile_heavy")]
@@ -769,19 +662,7 @@ struct RunnerState<B: GraphicsBackend> {
     mem_profile_enabled: bool,
     #[cfg(any(feature = "profile_heavy", feature = "mem_profile"))]
     mem_profile_csv: Option<MemProfileCsvWriter>,
-    batch_frames: u32,
-    batch_timing_samples: u32,
     timing_warmup_frames_left: u32,
-    #[cfg(feature = "profile_heavy")]
-    batch_render_command_count: u64,
-    #[cfg(feature = "profile_heavy")]
-    batch_dirty_node_count: u64,
-    #[cfg(feature = "profile_heavy")]
-    batch_active_meshes: u64,
-    #[cfg(feature = "profile_heavy")]
-    batch_active_materials: u64,
-    #[cfg(feature = "profile_heavy")]
-    batch_active_textures: u64,
     kbm_input: crate::input::KbmInput,
     gamepad_input: crate::input::GamepadInput,
     joycon_input: crate::input::JoyConInput,
@@ -820,6 +701,11 @@ impl<B: GraphicsBackend> RunnerState<B> {
             .project()
             .map(|project| project_frame_rate_cap(project.config.frame_rate_cap))
             .unwrap_or(RuntimeFrameRateCap::Unlimited);
+        let vsync_enabled = app
+            .runtime
+            .project()
+            .map(|project| project.config.vsync)
+            .unwrap_or(false);
         eprintln!("[perro][runtime] frame_rate_cap=({frame_rate_cap:?})");
         Self {
             app,
@@ -827,8 +713,7 @@ impl<B: GraphicsBackend> RunnerState<B> {
             window: None,
             fixed_timestep: normalized_fixed_timestep,
             fixed_accumulator: 0.0,
-            frame_rate_cap: normalize_frame_rate_cap(frame_rate_cap),
-            next_frame_deadline: None,
+            pacer: FramePacer::new(frame_rate_cap, vsync_enabled),
             last_frame_start: now,
             last_frame_end: now,
             run_start: now,
@@ -842,170 +727,13 @@ impl<B: GraphicsBackend> RunnerState<B> {
             }),
             #[cfg(any(feature = "profile_heavy", feature = "mem_profile"))]
             mem_profile_csv: MemProfileCsvWriter::from_env(),
-            batch_frames: 0,
-            batch_timing_samples: 0,
             timing_warmup_frames_left: TIMING_WARMUP_FRAMES,
-            #[cfg(feature = "profile_heavy")]
-            batch_render_command_count: 0,
-            #[cfg(feature = "profile_heavy")]
-            batch_dirty_node_count: 0,
-            #[cfg(feature = "profile_heavy")]
-            batch_active_meshes: 0,
-            #[cfg(feature = "profile_heavy")]
-            batch_active_materials: 0,
-            #[cfg(feature = "profile_heavy")]
-            batch_active_textures: 0,
             batch_start: now,
-            batch_work: Duration::ZERO,
-            batch_simulation: Duration::ZERO,
-            batch_present: Duration::ZERO,
-            batch_idle_before_frame: Duration::ZERO,
-            batch_present_wait: Duration::ZERO,
-            #[cfg(feature = "profile_heavy")]
-            batch_runtime_update: Duration::ZERO,
-            #[cfg(feature = "profile_heavy")]
-            batch_input_poll: Duration::ZERO,
-            #[cfg(feature = "profile_heavy")]
-            batch_fixed_update: Duration::ZERO,
-            #[cfg(feature = "profile_heavy")]
-            batch_fixed_snapshot_update: Duration::ZERO,
-            #[cfg(feature = "profile_heavy")]
-            batch_fixed_script_update: Duration::ZERO,
-            #[cfg(feature = "profile_heavy")]
-            batch_fixed_physics_update: Duration::ZERO,
-            #[cfg(feature = "profile_heavy")]
-            batch_fixed_internal_update: Duration::ZERO,
-            #[cfg(feature = "profile_heavy")]
-            batch_fixed_physics_pre_transforms: Duration::ZERO,
-            #[cfg(feature = "profile_heavy")]
-            batch_fixed_physics_collect: Duration::ZERO,
-            #[cfg(feature = "profile_heavy")]
-            batch_fixed_physics_sync_world: Duration::ZERO,
-            #[cfg(feature = "profile_heavy")]
-            batch_fixed_physics_apply_forces_impulses: Duration::ZERO,
-            #[cfg(feature = "profile_heavy")]
-            batch_fixed_physics_step: Duration::ZERO,
-            #[cfg(feature = "profile_heavy")]
-            batch_fixed_physics_sync_nodes: Duration::ZERO,
-            #[cfg(feature = "profile_heavy")]
-            batch_fixed_physics_post_transforms: Duration::ZERO,
-            #[cfg(feature = "profile_heavy")]
-            batch_fixed_physics_signals: Duration::ZERO,
-            #[cfg(feature = "profile_heavy")]
-            batch_runtime_start_schedule: Duration::ZERO,
-            #[cfg(feature = "profile_heavy")]
-            batch_runtime_snapshot_update: Duration::ZERO,
-            #[cfg(feature = "profile_heavy")]
-            batch_runtime_script_update: Duration::ZERO,
-            #[cfg(feature = "profile_heavy")]
-            batch_runtime_internal_update: Duration::ZERO,
-            #[cfg(feature = "profile_heavy")]
-            batch_runtime_slowest_script: Duration::ZERO,
-            #[cfg(feature = "profile_heavy")]
-            batch_runtime_script_count: 0,
-            #[cfg(feature = "profile_heavy")]
-            batch_present_extract_2d: Duration::ZERO,
-            #[cfg(feature = "profile_heavy")]
-            batch_present_extract_3d: Duration::ZERO,
+            batch: BatchCoreStats::default(),
             #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
-            batch_present_extract_ui: Duration::ZERO,
-            #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
-            batch_ui_layout: Duration::ZERO,
-            #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
-            batch_ui_commands: Duration::ZERO,
-            #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
-            batch_ui_dirty_nodes: 0,
-            #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
-            batch_ui_affected_nodes: 0,
-            #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
-            batch_ui_recalculated_rects: 0,
-            #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
-            batch_ui_cached_rects: 0,
-            #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
-            batch_ui_auto_layout_batches: 0,
-            #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
-            batch_ui_command_nodes: 0,
-            #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
-            batch_ui_command_emitted: 0,
-            #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
-            batch_ui_command_skipped: 0,
-            #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
-            batch_ui_removed_nodes: 0,
+            batch_ui: BatchUiStats::default(),
             #[cfg(feature = "profile_heavy")]
-            batch_present_drain_commands: Duration::ZERO,
-            #[cfg(feature = "profile_heavy")]
-            batch_present_submit_commands: Duration::ZERO,
-            #[cfg(feature = "profile_heavy")]
-            batch_present_draw_frame: Duration::ZERO,
-            #[cfg(feature = "profile_heavy")]
-            batch_draw_process_commands: Duration::ZERO,
-            #[cfg(feature = "profile_heavy")]
-            batch_draw_prepare_cpu: Duration::ZERO,
-            #[cfg(feature = "profile_heavy")]
-            batch_draw_gpu_prepare_2d: Duration::ZERO,
-            #[cfg(feature = "profile_heavy")]
-            batch_draw_gpu_prepare_3d: Duration::ZERO,
-            #[cfg(feature = "profile_heavy")]
-            batch_draw_gpu_prepare_particles_3d: Duration::ZERO,
-            #[cfg(feature = "profile_heavy")]
-            batch_draw_gpu_prepare_3d_frustum: Duration::ZERO,
-            #[cfg(feature = "profile_heavy")]
-            batch_draw_gpu_prepare_3d_hiz: Duration::ZERO,
-            #[cfg(feature = "profile_heavy")]
-            batch_draw_gpu_prepare_3d_indirect: Duration::ZERO,
-            #[cfg(feature = "profile_heavy")]
-            batch_draw_gpu_prepare_3d_cull_inputs: Duration::ZERO,
-            #[cfg(feature = "profile_heavy")]
-            batch_draw_gpu_acquire: Duration::ZERO,
-            #[cfg(feature = "profile_heavy")]
-            batch_draw_gpu_acquire_surface: Duration::ZERO,
-            #[cfg(feature = "profile_heavy")]
-            batch_draw_gpu_acquire_view: Duration::ZERO,
-            #[cfg(feature = "profile_heavy")]
-            batch_draw_gpu_encode_main: Duration::ZERO,
-            #[cfg(feature = "profile_heavy")]
-            batch_draw_gpu_submit_main: Duration::ZERO,
-            #[cfg(feature = "profile_heavy")]
-            batch_draw_gpu_submit_finish_main: Duration::ZERO,
-            #[cfg(feature = "profile_heavy")]
-            batch_draw_gpu_submit_queue_main: Duration::ZERO,
-            #[cfg(feature = "profile_heavy")]
-            batch_draw_gpu_post_process: Duration::ZERO,
-            #[cfg(feature = "profile_heavy")]
-            batch_draw_gpu_accessibility: Duration::ZERO,
-            #[cfg(feature = "profile_heavy")]
-            batch_draw_gpu_present: Duration::ZERO,
-            #[cfg(feature = "profile_heavy")]
-            batch_draw_calls_2d: 0,
-            #[cfg(feature = "profile_heavy")]
-            batch_draw_calls_3d: 0,
-            #[cfg(feature = "profile_heavy")]
-            batch_draw_calls_total: 0,
-            #[cfg(feature = "profile_heavy")]
-            batch_draw_instances_3d: 0,
-            #[cfg(feature = "profile_heavy")]
-            batch_draw_material_refs_3d: 0,
-            #[cfg(feature = "profile_heavy")]
-            batch_skip_prepare_2d: 0,
-            #[cfg(feature = "profile_heavy")]
-            batch_skip_prepare_3d: 0,
-            #[cfg(feature = "profile_heavy")]
-            batch_skip_prepare_particles_3d: 0,
-            #[cfg(feature = "profile_heavy")]
-            batch_skip_prepare_3d_frustum: 0,
-            #[cfg(feature = "profile_heavy")]
-            batch_skip_prepare_3d_hiz: 0,
-            #[cfg(feature = "profile_heavy")]
-            batch_skip_prepare_3d_indirect: 0,
-            #[cfg(feature = "profile_heavy")]
-            batch_skip_prepare_3d_cull_inputs: 0,
-            #[cfg(feature = "profile_heavy")]
-            batch_present_drain_events: Duration::ZERO,
-            #[cfg(feature = "profile_heavy")]
-            batch_present_apply_events: Duration::ZERO,
-            batch_idle: Duration::ZERO,
-            #[cfg(feature = "profile_heavy")]
-            batch_sim_delta_seconds: 0.0,
+            batch_heavy: BatchHeavyStats::default(),
             frame_index: 0,
             kbm_input: crate::input::KbmInput::new(),
             gamepad_input: crate::input::GamepadInput::new(),
@@ -1188,12 +916,11 @@ impl<B: GraphicsBackend> RunnerState<B> {
                     window.set_fullscreen(Some(Fullscreen::Borderless(monitor)));
                 }
                 WindowRequest::SetFrameRateCap(cap) => {
-                    self.frame_rate_cap = normalize_frame_rate_cap(cap);
-                    eprintln!(
-                        "[perro][runtime] frame_rate_cap=({:?})",
-                        self.frame_rate_cap
-                    );
-                    self.next_frame_deadline = None;
+                    // No-op when unchanged: per-frame script calls must not
+                    // spam stderr or re-anchor the deadline.
+                    if self.pacer.set_cap(cap) {
+                        eprintln!("[perro][runtime] frame_rate_cap=({:?})", self.pacer.cap());
+                    }
                 }
                 WindowRequest::SetCursorIcon(icon) => {
                     self.set_cursor_icon(icon);
@@ -1222,43 +949,15 @@ impl<B: GraphicsBackend> RunnerState<B> {
     #[cfg(target_arch = "wasm32")]
     fn sync_window_position(&mut self, _position: PhysicalPosition<i32>) {}
 
-    fn frame_cap_interval(&self) -> Option<Duration> {
-        match self.frame_rate_cap {
-            RuntimeFrameRateCap::Unlimited => None,
-            RuntimeFrameRateCap::Fps(fps) => Some(frame_interval_from_fps(fps)),
-            RuntimeFrameRateCap::RefreshRate => refresh_rate_interval(self.window.as_deref())
-                .or_else(|| Some(frame_interval_from_fps(60.0))),
-        }
-    }
-
-    fn cap_blocks_frame(&mut self, now: Instant) -> bool {
-        let Some(deadline) = self.next_frame_deadline else {
-            return false;
-        };
-        deadline > now
-    }
-
-    fn update_frame_deadline(&mut self, frame_start: Instant, frame_end: Instant) {
-        let Some(interval) = self.frame_cap_interval() else {
-            self.next_frame_deadline = None;
-            return;
-        };
-        let next = self
-            .next_frame_deadline
-            .and_then(|deadline| deadline.checked_add(interval))
-            .filter(|deadline| *deadline > frame_end)
-            .unwrap_or_else(|| frame_start.checked_add(interval).unwrap_or(frame_end));
-        self.next_frame_deadline = Some(next);
+    /// Refresh the cached monitor rate and mirror it into the runtime.
+    /// Hits OS display queries; call on resume/move/scale change only.
+    fn sync_refresh_rate(&mut self) {
+        let refresh_hz = self.pacer.update_refresh_rate(self.window.as_deref());
+        self.app.runtime.set_active_refresh_rate(refresh_hz);
     }
 
     fn apply_frame_control_flow(&self, event_loop: &ActiveEventLoop, now: Instant) {
-        if self.startup_splash.active
-            || matches!(self.frame_rate_cap, RuntimeFrameRateCap::Unlimited)
-        {
-            event_loop.set_control_flow(ControlFlow::Poll);
-            return;
-        }
-        if let Some(deadline) = self.next_frame_deadline
+        if let Some(deadline) = self.pacer.deadline()
             && deadline > now
         {
             // OS timers overshoot by a few ms; wake early and poll the rest.
@@ -1405,14 +1104,7 @@ impl<B: GraphicsBackend> RunnerState<B> {
         self.startup_splash.active = false;
         self.timing_warmup_frames_left = TIMING_WARMUP_FRAMES;
         self.batch_start = Instant::now();
-        self.batch_frames = 0;
-        self.batch_timing_samples = 0;
-        self.batch_work = Duration::ZERO;
-        self.batch_simulation = Duration::ZERO;
-        self.batch_present = Duration::ZERO;
-        self.batch_idle_before_frame = Duration::ZERO;
-        self.batch_present_wait = Duration::ZERO;
-        self.batch_idle = Duration::ZERO;
+        self.batch = BatchCoreStats::default();
     }
 
     fn step_startup_frame(
@@ -1470,19 +1162,21 @@ impl<B: GraphicsBackend> RunnerState<B> {
                     {
                         let timing = self.app.fixed_update_runtime_timed(effective_fixed_step);
                         runtime_update_duration += timing.total;
-                        self.batch_fixed_snapshot_update += timing.snapshot_update;
-                        self.batch_fixed_script_update += timing.script_fixed_update;
-                        self.batch_fixed_physics_update += timing.physics;
-                        self.batch_fixed_internal_update += timing.internal_fixed_update;
-                        self.batch_fixed_physics_pre_transforms += timing.physics_pre_transforms;
-                        self.batch_fixed_physics_collect += timing.physics_collect;
-                        self.batch_fixed_physics_sync_world += timing.physics_sync_world;
-                        self.batch_fixed_physics_apply_forces_impulses +=
+                        self.batch_heavy.fixed_snapshot_update += timing.snapshot_update;
+                        self.batch_heavy.fixed_script_update += timing.script_fixed_update;
+                        self.batch_heavy.fixed_physics_update += timing.physics;
+                        self.batch_heavy.fixed_internal_update += timing.internal_fixed_update;
+                        self.batch_heavy.fixed_physics_pre_transforms +=
+                            timing.physics_pre_transforms;
+                        self.batch_heavy.fixed_physics_collect += timing.physics_collect;
+                        self.batch_heavy.fixed_physics_sync_world += timing.physics_sync_world;
+                        self.batch_heavy.fixed_physics_apply_forces_impulses +=
                             timing.physics_apply_forces_impulses;
-                        self.batch_fixed_physics_step += timing.physics_step;
-                        self.batch_fixed_physics_sync_nodes += timing.physics_sync_nodes;
-                        self.batch_fixed_physics_post_transforms += timing.physics_post_transforms;
-                        self.batch_fixed_physics_signals += timing.physics_signals;
+                        self.batch_heavy.fixed_physics_step += timing.physics_step;
+                        self.batch_heavy.fixed_physics_sync_nodes += timing.physics_sync_nodes;
+                        self.batch_heavy.fixed_physics_post_transforms +=
+                            timing.physics_post_transforms;
+                        self.batch_heavy.fixed_physics_signals += timing.physics_signals;
                     }
                     #[cfg(not(feature = "profile_heavy"))]
                     {
@@ -1502,19 +1196,20 @@ impl<B: GraphicsBackend> RunnerState<B> {
                 {
                     let timing = self.app.fixed_update_runtime_timed(variable_step);
                     runtime_update_duration += timing.total;
-                    self.batch_fixed_snapshot_update += timing.snapshot_update;
-                    self.batch_fixed_script_update += timing.script_fixed_update;
-                    self.batch_fixed_physics_update += timing.physics;
-                    self.batch_fixed_internal_update += timing.internal_fixed_update;
-                    self.batch_fixed_physics_pre_transforms += timing.physics_pre_transforms;
-                    self.batch_fixed_physics_collect += timing.physics_collect;
-                    self.batch_fixed_physics_sync_world += timing.physics_sync_world;
-                    self.batch_fixed_physics_apply_forces_impulses +=
+                    self.batch_heavy.fixed_snapshot_update += timing.snapshot_update;
+                    self.batch_heavy.fixed_script_update += timing.script_fixed_update;
+                    self.batch_heavy.fixed_physics_update += timing.physics;
+                    self.batch_heavy.fixed_internal_update += timing.internal_fixed_update;
+                    self.batch_heavy.fixed_physics_pre_transforms += timing.physics_pre_transforms;
+                    self.batch_heavy.fixed_physics_collect += timing.physics_collect;
+                    self.batch_heavy.fixed_physics_sync_world += timing.physics_sync_world;
+                    self.batch_heavy.fixed_physics_apply_forces_impulses +=
                         timing.physics_apply_forces_impulses;
-                    self.batch_fixed_physics_step += timing.physics_step;
-                    self.batch_fixed_physics_sync_nodes += timing.physics_sync_nodes;
-                    self.batch_fixed_physics_post_transforms += timing.physics_post_transforms;
-                    self.batch_fixed_physics_signals += timing.physics_signals;
+                    self.batch_heavy.fixed_physics_step += timing.physics_step;
+                    self.batch_heavy.fixed_physics_sync_nodes += timing.physics_sync_nodes;
+                    self.batch_heavy.fixed_physics_post_transforms +=
+                        timing.physics_post_transforms;
+                    self.batch_heavy.fixed_physics_signals += timing.physics_signals;
                 }
                 #[cfg(not(feature = "profile_heavy"))]
                 {
@@ -1601,6 +1296,9 @@ impl<B: GraphicsBackend> RunnerState<B> {
             .saturating_add(present_wait_duration);
         let frame_end = Instant::now();
         self.last_frame_end = frame_end;
+        // Splash frames pace at refresh (or a slower explicit cap): no reason
+        // to burn a core rendering an uncapped static image.
+        self.pacer.update_deadline(frame_start, frame_end, true);
         if should_sample_timing {
             self.app.set_frame_timing(
                 simulation_duration,
@@ -1618,31 +1316,31 @@ impl<B: GraphicsBackend> RunnerState<B> {
 
         let warmup_frame = self.timing_warmup_frames_left > 0;
         if !warmup_frame {
-            self.batch_frames = self.batch_frames.saturating_add(1);
+            self.batch.frames = self.batch.frames.saturating_add(1);
             if should_sample_timing {
-                self.batch_timing_samples = self.batch_timing_samples.saturating_add(1);
-                self.batch_work += active_work_duration;
-                self.batch_simulation += simulation_duration;
-                self.batch_present += present_active_duration;
-                self.batch_idle_before_frame += idle_duration;
-                self.batch_present_wait += present_wait_duration;
-                self.batch_idle += idle_duration + present_wait_duration;
+                self.batch.timing_samples = self.batch.timing_samples.saturating_add(1);
+                self.batch.work += active_work_duration;
+                self.batch.simulation += simulation_duration;
+                self.batch.present += present_active_duration;
+                self.batch.idle_before_frame += idle_duration;
+                self.batch.present_wait += present_wait_duration;
+                self.batch.idle += idle_duration + present_wait_duration;
             }
         }
         #[cfg(all(feature = "ui_profile", not(feature = "profile_heavy")))]
         if !warmup_frame && let Some(timing) = present_timing.as_ref() {
-            self.batch_present_extract_ui += timing.extract_ui;
-            self.batch_ui_layout += timing.ui_layout;
-            self.batch_ui_commands += timing.ui_commands;
-            self.batch_ui_dirty_nodes += timing.ui_dirty_nodes as u64;
-            self.batch_ui_affected_nodes += timing.ui_affected_nodes as u64;
-            self.batch_ui_recalculated_rects += timing.ui_recalculated_rects as u64;
-            self.batch_ui_cached_rects += timing.ui_cached_rects as u64;
-            self.batch_ui_auto_layout_batches += timing.ui_auto_layout_batches as u64;
-            self.batch_ui_command_nodes += timing.ui_command_nodes as u64;
-            self.batch_ui_command_emitted += timing.ui_command_emitted as u64;
-            self.batch_ui_command_skipped += timing.ui_command_skipped as u64;
-            self.batch_ui_removed_nodes += timing.ui_removed_nodes as u64;
+            self.batch_ui.extract_ui += timing.extract_ui;
+            self.batch_ui.layout += timing.ui_layout;
+            self.batch_ui.commands += timing.ui_commands;
+            self.batch_ui.dirty_nodes += timing.ui_dirty_nodes as u64;
+            self.batch_ui.affected_nodes += timing.ui_affected_nodes as u64;
+            self.batch_ui.recalculated_rects += timing.ui_recalculated_rects as u64;
+            self.batch_ui.cached_rects += timing.ui_cached_rects as u64;
+            self.batch_ui.auto_layout_batches += timing.ui_auto_layout_batches as u64;
+            self.batch_ui.command_nodes += timing.ui_command_nodes as u64;
+            self.batch_ui.command_emitted += timing.ui_command_emitted as u64;
+            self.batch_ui.command_skipped += timing.ui_command_skipped as u64;
+            self.batch_ui.removed_nodes += timing.ui_removed_nodes as u64;
         }
         if frame_index != 1
             && let Some(csv) = &mut self.timing_csv
@@ -1668,76 +1366,87 @@ impl<B: GraphicsBackend> RunnerState<B> {
         }
         #[cfg(feature = "profile_heavy")]
         if !warmup_frame {
-            self.batch_runtime_update += runtime_update_duration;
-            self.batch_input_poll += input_poll_duration;
-            self.batch_fixed_update += fixed_duration;
-            self.batch_runtime_start_schedule += runtime_timing.start_schedule;
-            self.batch_runtime_snapshot_update += runtime_timing.snapshot_update;
-            self.batch_runtime_script_update += runtime_timing.update_schedule.scripts_total;
-            self.batch_runtime_internal_update += runtime_timing.internal_update;
-            self.batch_runtime_script_count += runtime_timing.update_schedule.script_count as u64;
-            if runtime_timing.update_schedule.slowest_script > self.batch_runtime_slowest_script {
-                self.batch_runtime_slowest_script = runtime_timing.update_schedule.slowest_script;
+            self.batch_heavy.runtime_update += runtime_update_duration;
+            self.batch_heavy.input_poll += input_poll_duration;
+            self.batch_heavy.fixed_update += fixed_duration;
+            self.batch_heavy.runtime_start_schedule += runtime_timing.start_schedule;
+            self.batch_heavy.runtime_snapshot_update += runtime_timing.snapshot_update;
+            self.batch_heavy.runtime_script_update += runtime_timing.update_schedule.scripts_total;
+            self.batch_heavy.runtime_internal_update += runtime_timing.internal_update;
+            self.batch_heavy.runtime_script_count +=
+                runtime_timing.update_schedule.script_count as u64;
+            if runtime_timing.update_schedule.slowest_script
+                > self.batch_heavy.runtime_slowest_script
+            {
+                self.batch_heavy.runtime_slowest_script =
+                    runtime_timing.update_schedule.slowest_script;
             }
-            self.batch_present_extract_2d += present_timing.extract_2d;
-            self.batch_present_extract_3d += present_timing.extract_3d;
-            self.batch_present_extract_ui += present_timing.extract_ui;
-            self.batch_ui_layout += present_timing.ui_layout;
-            self.batch_ui_commands += present_timing.ui_commands;
-            self.batch_ui_dirty_nodes += present_timing.ui_dirty_nodes as u64;
-            self.batch_ui_affected_nodes += present_timing.ui_affected_nodes as u64;
-            self.batch_ui_recalculated_rects += present_timing.ui_recalculated_rects as u64;
-            self.batch_ui_cached_rects += present_timing.ui_cached_rects as u64;
-            self.batch_ui_auto_layout_batches += present_timing.ui_auto_layout_batches as u64;
-            self.batch_ui_command_nodes += present_timing.ui_command_nodes as u64;
-            self.batch_ui_command_emitted += present_timing.ui_command_emitted as u64;
-            self.batch_ui_command_skipped += present_timing.ui_command_skipped as u64;
-            self.batch_ui_removed_nodes += present_timing.ui_removed_nodes as u64;
-            self.batch_present_drain_commands += present_timing.drain_commands;
-            self.batch_present_submit_commands += present_timing.submit_commands;
-            self.batch_present_draw_frame += present_timing.gpu_present;
-            self.batch_draw_process_commands += present_timing.draw_process_commands;
-            self.batch_draw_prepare_cpu += present_timing.draw_prepare_cpu;
-            self.batch_draw_gpu_prepare_2d += present_timing.draw_gpu_prepare_2d;
-            self.batch_draw_gpu_prepare_3d += present_timing.draw_gpu_prepare_3d;
-            self.batch_draw_gpu_prepare_particles_3d +=
+            self.batch_heavy.present_extract_2d += present_timing.extract_2d;
+            self.batch_heavy.present_extract_3d += present_timing.extract_3d;
+            self.batch_ui.extract_ui += present_timing.extract_ui;
+            self.batch_ui.layout += present_timing.ui_layout;
+            self.batch_ui.commands += present_timing.ui_commands;
+            self.batch_ui.dirty_nodes += present_timing.ui_dirty_nodes as u64;
+            self.batch_ui.affected_nodes += present_timing.ui_affected_nodes as u64;
+            self.batch_ui.recalculated_rects += present_timing.ui_recalculated_rects as u64;
+            self.batch_ui.cached_rects += present_timing.ui_cached_rects as u64;
+            self.batch_ui.auto_layout_batches += present_timing.ui_auto_layout_batches as u64;
+            self.batch_ui.command_nodes += present_timing.ui_command_nodes as u64;
+            self.batch_ui.command_emitted += present_timing.ui_command_emitted as u64;
+            self.batch_ui.command_skipped += present_timing.ui_command_skipped as u64;
+            self.batch_ui.removed_nodes += present_timing.ui_removed_nodes as u64;
+            self.batch_heavy.present_drain_commands += present_timing.drain_commands;
+            self.batch_heavy.present_submit_commands += present_timing.submit_commands;
+            self.batch_heavy.present_draw_frame += present_timing.gpu_present;
+            self.batch_heavy.draw_process_commands += present_timing.draw_process_commands;
+            self.batch_heavy.draw_prepare_cpu += present_timing.draw_prepare_cpu;
+            self.batch_heavy.draw_gpu_prepare_2d += present_timing.draw_gpu_prepare_2d;
+            self.batch_heavy.draw_gpu_prepare_3d += present_timing.draw_gpu_prepare_3d;
+            self.batch_heavy.draw_gpu_prepare_particles_3d +=
                 present_timing.draw_gpu_prepare_particles_3d;
-            self.batch_draw_gpu_prepare_3d_frustum += present_timing.draw_gpu_prepare_3d_frustum;
-            self.batch_draw_gpu_prepare_3d_hiz += present_timing.draw_gpu_prepare_3d_hiz;
-            self.batch_draw_gpu_prepare_3d_indirect += present_timing.draw_gpu_prepare_3d_indirect;
-            self.batch_draw_gpu_prepare_3d_cull_inputs +=
+            self.batch_heavy.draw_gpu_prepare_3d_frustum +=
+                present_timing.draw_gpu_prepare_3d_frustum;
+            self.batch_heavy.draw_gpu_prepare_3d_hiz += present_timing.draw_gpu_prepare_3d_hiz;
+            self.batch_heavy.draw_gpu_prepare_3d_indirect +=
+                present_timing.draw_gpu_prepare_3d_indirect;
+            self.batch_heavy.draw_gpu_prepare_3d_cull_inputs +=
                 present_timing.draw_gpu_prepare_3d_cull_inputs;
-            self.batch_draw_gpu_acquire += present_timing.draw_gpu_acquire;
-            self.batch_draw_gpu_acquire_surface += present_timing.draw_gpu_acquire_surface;
-            self.batch_draw_gpu_acquire_view += present_timing.draw_gpu_acquire_view;
-            self.batch_draw_gpu_encode_main += present_timing.draw_gpu_encode_main;
-            self.batch_draw_gpu_submit_main += present_timing.draw_gpu_submit_main;
-            self.batch_draw_gpu_submit_finish_main += present_timing.draw_gpu_submit_finish_main;
-            self.batch_draw_gpu_submit_queue_main += present_timing.draw_gpu_submit_queue_main;
-            self.batch_draw_gpu_post_process += present_timing.draw_gpu_post_process;
-            self.batch_draw_gpu_accessibility += present_timing.draw_gpu_accessibility;
-            self.batch_draw_gpu_present += present_timing.draw_gpu_present;
-            self.batch_draw_calls_2d += present_timing.draw_calls_2d as u64;
-            self.batch_draw_calls_3d += present_timing.draw_calls_3d as u64;
-            self.batch_draw_calls_total += present_timing.draw_calls_total as u64;
-            self.batch_draw_instances_3d += present_timing.draw_instances_3d as u64;
-            self.batch_draw_material_refs_3d += present_timing.draw_material_refs_3d as u64;
-            self.batch_render_command_count += present_timing.render_command_count as u64;
-            self.batch_dirty_node_count += present_timing.dirty_node_count as u64;
-            self.batch_active_meshes += present_timing.active_meshes as u64;
-            self.batch_active_materials += present_timing.active_materials as u64;
-            self.batch_active_textures += present_timing.active_textures as u64;
-            self.batch_skip_prepare_2d += present_timing.skip_prepare_2d as u64;
-            self.batch_skip_prepare_3d += present_timing.skip_prepare_3d as u64;
-            self.batch_skip_prepare_particles_3d += present_timing.skip_prepare_particles_3d as u64;
-            self.batch_skip_prepare_3d_frustum += present_timing.skip_prepare_3d_frustum as u64;
-            self.batch_skip_prepare_3d_hiz += present_timing.skip_prepare_3d_hiz as u64;
-            self.batch_skip_prepare_3d_indirect += present_timing.skip_prepare_3d_indirect as u64;
-            self.batch_skip_prepare_3d_cull_inputs +=
+            self.batch_heavy.draw_gpu_acquire += present_timing.draw_gpu_acquire;
+            self.batch_heavy.draw_gpu_acquire_surface += present_timing.draw_gpu_acquire_surface;
+            self.batch_heavy.draw_gpu_acquire_view += present_timing.draw_gpu_acquire_view;
+            self.batch_heavy.draw_gpu_encode_main += present_timing.draw_gpu_encode_main;
+            self.batch_heavy.draw_gpu_submit_main += present_timing.draw_gpu_submit_main;
+            self.batch_heavy.draw_gpu_submit_finish_main +=
+                present_timing.draw_gpu_submit_finish_main;
+            self.batch_heavy.draw_gpu_submit_queue_main +=
+                present_timing.draw_gpu_submit_queue_main;
+            self.batch_heavy.draw_gpu_post_process += present_timing.draw_gpu_post_process;
+            self.batch_heavy.draw_gpu_accessibility += present_timing.draw_gpu_accessibility;
+            self.batch_heavy.draw_gpu_present += present_timing.draw_gpu_present;
+            self.batch_heavy.draw_calls_2d += present_timing.draw_calls_2d as u64;
+            self.batch_heavy.draw_calls_3d += present_timing.draw_calls_3d as u64;
+            self.batch_heavy.draw_calls_total += present_timing.draw_calls_total as u64;
+            self.batch_heavy.draw_instances_3d += present_timing.draw_instances_3d as u64;
+            self.batch_heavy.draw_material_refs_3d += present_timing.draw_material_refs_3d as u64;
+            self.batch_heavy.render_command_count += present_timing.render_command_count as u64;
+            self.batch_heavy.dirty_node_count += present_timing.dirty_node_count as u64;
+            self.batch_heavy.active_meshes += present_timing.active_meshes as u64;
+            self.batch_heavy.active_materials += present_timing.active_materials as u64;
+            self.batch_heavy.active_textures += present_timing.active_textures as u64;
+            self.batch_heavy.skip_prepare_2d += present_timing.skip_prepare_2d as u64;
+            self.batch_heavy.skip_prepare_3d += present_timing.skip_prepare_3d as u64;
+            self.batch_heavy.skip_prepare_particles_3d +=
+                present_timing.skip_prepare_particles_3d as u64;
+            self.batch_heavy.skip_prepare_3d_frustum +=
+                present_timing.skip_prepare_3d_frustum as u64;
+            self.batch_heavy.skip_prepare_3d_hiz += present_timing.skip_prepare_3d_hiz as u64;
+            self.batch_heavy.skip_prepare_3d_indirect +=
+                present_timing.skip_prepare_3d_indirect as u64;
+            self.batch_heavy.skip_prepare_3d_cull_inputs +=
                 present_timing.skip_prepare_3d_cull_inputs as u64;
-            self.batch_present_drain_events += present_timing.drain_events;
-            self.batch_present_apply_events += present_timing.apply_events;
-            self.batch_sim_delta_seconds += simulated_delta_seconds;
+            self.batch_heavy.present_drain_events += present_timing.drain_events;
+            self.batch_heavy.present_apply_events += present_timing.apply_events;
+            self.batch_heavy.sim_delta_seconds += simulated_delta_seconds;
         }
 
         let shown_for = frame_start.saturating_duration_since(self.startup_splash.shown_at);
@@ -1758,10 +1467,7 @@ impl<B: GraphicsBackend> RunnerState<B> {
         if event_loop.exiting() || self.exit_result.is_some() {
             return;
         }
-        self.app
-            .runtime
-            .set_active_refresh_rate(active_refresh_rate_hz(self.window.as_deref()));
-        if !self.startup_splash.active && self.cap_blocks_frame(now) {
+        if self.pacer.blocks_frame(now) {
             self.apply_frame_control_flow(event_loop, now);
             return;
         }
@@ -1836,19 +1542,21 @@ impl<B: GraphicsBackend> RunnerState<B> {
                     {
                         let timing = self.app.fixed_update_runtime_timed(effective_fixed_step);
                         runtime_update_duration += timing.total;
-                        self.batch_fixed_snapshot_update += timing.snapshot_update;
-                        self.batch_fixed_script_update += timing.script_fixed_update;
-                        self.batch_fixed_physics_update += timing.physics;
-                        self.batch_fixed_internal_update += timing.internal_fixed_update;
-                        self.batch_fixed_physics_pre_transforms += timing.physics_pre_transforms;
-                        self.batch_fixed_physics_collect += timing.physics_collect;
-                        self.batch_fixed_physics_sync_world += timing.physics_sync_world;
-                        self.batch_fixed_physics_apply_forces_impulses +=
+                        self.batch_heavy.fixed_snapshot_update += timing.snapshot_update;
+                        self.batch_heavy.fixed_script_update += timing.script_fixed_update;
+                        self.batch_heavy.fixed_physics_update += timing.physics;
+                        self.batch_heavy.fixed_internal_update += timing.internal_fixed_update;
+                        self.batch_heavy.fixed_physics_pre_transforms +=
+                            timing.physics_pre_transforms;
+                        self.batch_heavy.fixed_physics_collect += timing.physics_collect;
+                        self.batch_heavy.fixed_physics_sync_world += timing.physics_sync_world;
+                        self.batch_heavy.fixed_physics_apply_forces_impulses +=
                             timing.physics_apply_forces_impulses;
-                        self.batch_fixed_physics_step += timing.physics_step;
-                        self.batch_fixed_physics_sync_nodes += timing.physics_sync_nodes;
-                        self.batch_fixed_physics_post_transforms += timing.physics_post_transforms;
-                        self.batch_fixed_physics_signals += timing.physics_signals;
+                        self.batch_heavy.fixed_physics_step += timing.physics_step;
+                        self.batch_heavy.fixed_physics_sync_nodes += timing.physics_sync_nodes;
+                        self.batch_heavy.fixed_physics_post_transforms +=
+                            timing.physics_post_transforms;
+                        self.batch_heavy.fixed_physics_signals += timing.physics_signals;
                     }
                     #[cfg(not(feature = "profile_heavy"))]
                     {
@@ -1868,19 +1576,20 @@ impl<B: GraphicsBackend> RunnerState<B> {
                 {
                     let timing = self.app.fixed_update_runtime_timed(variable_step);
                     runtime_update_duration += timing.total;
-                    self.batch_fixed_snapshot_update += timing.snapshot_update;
-                    self.batch_fixed_script_update += timing.script_fixed_update;
-                    self.batch_fixed_physics_update += timing.physics;
-                    self.batch_fixed_internal_update += timing.internal_fixed_update;
-                    self.batch_fixed_physics_pre_transforms += timing.physics_pre_transforms;
-                    self.batch_fixed_physics_collect += timing.physics_collect;
-                    self.batch_fixed_physics_sync_world += timing.physics_sync_world;
-                    self.batch_fixed_physics_apply_forces_impulses +=
+                    self.batch_heavy.fixed_snapshot_update += timing.snapshot_update;
+                    self.batch_heavy.fixed_script_update += timing.script_fixed_update;
+                    self.batch_heavy.fixed_physics_update += timing.physics;
+                    self.batch_heavy.fixed_internal_update += timing.internal_fixed_update;
+                    self.batch_heavy.fixed_physics_pre_transforms += timing.physics_pre_transforms;
+                    self.batch_heavy.fixed_physics_collect += timing.physics_collect;
+                    self.batch_heavy.fixed_physics_sync_world += timing.physics_sync_world;
+                    self.batch_heavy.fixed_physics_apply_forces_impulses +=
                         timing.physics_apply_forces_impulses;
-                    self.batch_fixed_physics_step += timing.physics_step;
-                    self.batch_fixed_physics_sync_nodes += timing.physics_sync_nodes;
-                    self.batch_fixed_physics_post_transforms += timing.physics_post_transforms;
-                    self.batch_fixed_physics_signals += timing.physics_signals;
+                    self.batch_heavy.fixed_physics_step += timing.physics_step;
+                    self.batch_heavy.fixed_physics_sync_nodes += timing.physics_sync_nodes;
+                    self.batch_heavy.fixed_physics_post_transforms +=
+                        timing.physics_post_transforms;
+                    self.batch_heavy.fixed_physics_signals += timing.physics_signals;
                 }
                 #[cfg(not(feature = "profile_heavy"))]
                 {
@@ -1956,7 +1665,7 @@ impl<B: GraphicsBackend> RunnerState<B> {
 
         let frame_end = Instant::now();
         self.last_frame_end = frame_end;
-        self.update_frame_deadline(frame_start, frame_end);
+        self.pacer.update_deadline(frame_start, frame_end, false);
         if should_sample_timing {
             self.app.set_frame_timing(
                 simulation_duration,
@@ -1974,31 +1683,31 @@ impl<B: GraphicsBackend> RunnerState<B> {
 
         let warmup_frame = self.timing_warmup_frames_left > 0;
         if !warmup_frame {
-            self.batch_frames = self.batch_frames.saturating_add(1);
+            self.batch.frames = self.batch.frames.saturating_add(1);
             if should_sample_timing {
-                self.batch_timing_samples = self.batch_timing_samples.saturating_add(1);
-                self.batch_work += active_work_duration;
-                self.batch_simulation += simulation_duration;
-                self.batch_present += present_active_duration;
-                self.batch_idle_before_frame += idle_duration;
-                self.batch_present_wait += present_wait_duration;
-                self.batch_idle += idle_duration + present_wait_duration;
+                self.batch.timing_samples = self.batch.timing_samples.saturating_add(1);
+                self.batch.work += active_work_duration;
+                self.batch.simulation += simulation_duration;
+                self.batch.present += present_active_duration;
+                self.batch.idle_before_frame += idle_duration;
+                self.batch.present_wait += present_wait_duration;
+                self.batch.idle += idle_duration + present_wait_duration;
             }
         }
         #[cfg(all(feature = "ui_profile", not(feature = "profile_heavy")))]
         if !warmup_frame && let Some(timing) = present_timing.as_ref() {
-            self.batch_present_extract_ui += timing.extract_ui;
-            self.batch_ui_layout += timing.ui_layout;
-            self.batch_ui_commands += timing.ui_commands;
-            self.batch_ui_dirty_nodes += timing.ui_dirty_nodes as u64;
-            self.batch_ui_affected_nodes += timing.ui_affected_nodes as u64;
-            self.batch_ui_recalculated_rects += timing.ui_recalculated_rects as u64;
-            self.batch_ui_cached_rects += timing.ui_cached_rects as u64;
-            self.batch_ui_auto_layout_batches += timing.ui_auto_layout_batches as u64;
-            self.batch_ui_command_nodes += timing.ui_command_nodes as u64;
-            self.batch_ui_command_emitted += timing.ui_command_emitted as u64;
-            self.batch_ui_command_skipped += timing.ui_command_skipped as u64;
-            self.batch_ui_removed_nodes += timing.ui_removed_nodes as u64;
+            self.batch_ui.extract_ui += timing.extract_ui;
+            self.batch_ui.layout += timing.ui_layout;
+            self.batch_ui.commands += timing.ui_commands;
+            self.batch_ui.dirty_nodes += timing.ui_dirty_nodes as u64;
+            self.batch_ui.affected_nodes += timing.ui_affected_nodes as u64;
+            self.batch_ui.recalculated_rects += timing.ui_recalculated_rects as u64;
+            self.batch_ui.cached_rects += timing.ui_cached_rects as u64;
+            self.batch_ui.auto_layout_batches += timing.ui_auto_layout_batches as u64;
+            self.batch_ui.command_nodes += timing.ui_command_nodes as u64;
+            self.batch_ui.command_emitted += timing.ui_command_emitted as u64;
+            self.batch_ui.command_skipped += timing.ui_command_skipped as u64;
+            self.batch_ui.removed_nodes += timing.ui_removed_nodes as u64;
         }
         if let Some(csv) = &mut self.timing_csv {
             csv.write(CsvFrameSample {
@@ -2030,87 +1739,98 @@ impl<B: GraphicsBackend> RunnerState<B> {
         }
         #[cfg(feature = "profile_heavy")]
         {
-            self.batch_runtime_update += runtime_update_duration;
-            self.batch_input_poll += input_poll_duration;
-            self.batch_fixed_update += fixed_duration;
-            self.batch_runtime_start_schedule += runtime_timing.start_schedule;
-            self.batch_runtime_snapshot_update += runtime_timing.snapshot_update;
-            self.batch_runtime_script_update += runtime_timing.update_schedule.scripts_total;
-            self.batch_runtime_internal_update += runtime_timing.internal_update;
-            self.batch_runtime_script_count += runtime_timing.update_schedule.script_count as u64;
-            if runtime_timing.update_schedule.slowest_script > self.batch_runtime_slowest_script {
-                self.batch_runtime_slowest_script = runtime_timing.update_schedule.slowest_script;
+            self.batch_heavy.runtime_update += runtime_update_duration;
+            self.batch_heavy.input_poll += input_poll_duration;
+            self.batch_heavy.fixed_update += fixed_duration;
+            self.batch_heavy.runtime_start_schedule += runtime_timing.start_schedule;
+            self.batch_heavy.runtime_snapshot_update += runtime_timing.snapshot_update;
+            self.batch_heavy.runtime_script_update += runtime_timing.update_schedule.scripts_total;
+            self.batch_heavy.runtime_internal_update += runtime_timing.internal_update;
+            self.batch_heavy.runtime_script_count +=
+                runtime_timing.update_schedule.script_count as u64;
+            if runtime_timing.update_schedule.slowest_script
+                > self.batch_heavy.runtime_slowest_script
+            {
+                self.batch_heavy.runtime_slowest_script =
+                    runtime_timing.update_schedule.slowest_script;
             }
-            self.batch_present_extract_2d += present_timing.extract_2d;
-            self.batch_present_extract_3d += present_timing.extract_3d;
-            self.batch_present_extract_ui += present_timing.extract_ui;
-            self.batch_ui_layout += present_timing.ui_layout;
-            self.batch_ui_commands += present_timing.ui_commands;
-            self.batch_ui_dirty_nodes += present_timing.ui_dirty_nodes as u64;
-            self.batch_ui_affected_nodes += present_timing.ui_affected_nodes as u64;
-            self.batch_ui_recalculated_rects += present_timing.ui_recalculated_rects as u64;
-            self.batch_ui_cached_rects += present_timing.ui_cached_rects as u64;
-            self.batch_ui_auto_layout_batches += present_timing.ui_auto_layout_batches as u64;
-            self.batch_ui_command_nodes += present_timing.ui_command_nodes as u64;
-            self.batch_ui_command_emitted += present_timing.ui_command_emitted as u64;
-            self.batch_ui_command_skipped += present_timing.ui_command_skipped as u64;
-            self.batch_ui_removed_nodes += present_timing.ui_removed_nodes as u64;
-            self.batch_present_drain_commands += present_timing.drain_commands;
-            self.batch_present_submit_commands += present_timing.submit_commands;
-            self.batch_present_draw_frame += present_timing.gpu_present;
-            self.batch_draw_process_commands += present_timing.draw_process_commands;
-            self.batch_draw_prepare_cpu += present_timing.draw_prepare_cpu;
-            self.batch_draw_gpu_prepare_2d += present_timing.draw_gpu_prepare_2d;
-            self.batch_draw_gpu_prepare_3d += present_timing.draw_gpu_prepare_3d;
-            self.batch_draw_gpu_prepare_particles_3d +=
+            self.batch_heavy.present_extract_2d += present_timing.extract_2d;
+            self.batch_heavy.present_extract_3d += present_timing.extract_3d;
+            self.batch_ui.extract_ui += present_timing.extract_ui;
+            self.batch_ui.layout += present_timing.ui_layout;
+            self.batch_ui.commands += present_timing.ui_commands;
+            self.batch_ui.dirty_nodes += present_timing.ui_dirty_nodes as u64;
+            self.batch_ui.affected_nodes += present_timing.ui_affected_nodes as u64;
+            self.batch_ui.recalculated_rects += present_timing.ui_recalculated_rects as u64;
+            self.batch_ui.cached_rects += present_timing.ui_cached_rects as u64;
+            self.batch_ui.auto_layout_batches += present_timing.ui_auto_layout_batches as u64;
+            self.batch_ui.command_nodes += present_timing.ui_command_nodes as u64;
+            self.batch_ui.command_emitted += present_timing.ui_command_emitted as u64;
+            self.batch_ui.command_skipped += present_timing.ui_command_skipped as u64;
+            self.batch_ui.removed_nodes += present_timing.ui_removed_nodes as u64;
+            self.batch_heavy.present_drain_commands += present_timing.drain_commands;
+            self.batch_heavy.present_submit_commands += present_timing.submit_commands;
+            self.batch_heavy.present_draw_frame += present_timing.gpu_present;
+            self.batch_heavy.draw_process_commands += present_timing.draw_process_commands;
+            self.batch_heavy.draw_prepare_cpu += present_timing.draw_prepare_cpu;
+            self.batch_heavy.draw_gpu_prepare_2d += present_timing.draw_gpu_prepare_2d;
+            self.batch_heavy.draw_gpu_prepare_3d += present_timing.draw_gpu_prepare_3d;
+            self.batch_heavy.draw_gpu_prepare_particles_3d +=
                 present_timing.draw_gpu_prepare_particles_3d;
-            self.batch_draw_gpu_prepare_3d_frustum += present_timing.draw_gpu_prepare_3d_frustum;
-            self.batch_draw_gpu_prepare_3d_hiz += present_timing.draw_gpu_prepare_3d_hiz;
-            self.batch_draw_gpu_prepare_3d_indirect += present_timing.draw_gpu_prepare_3d_indirect;
-            self.batch_draw_gpu_prepare_3d_cull_inputs +=
+            self.batch_heavy.draw_gpu_prepare_3d_frustum +=
+                present_timing.draw_gpu_prepare_3d_frustum;
+            self.batch_heavy.draw_gpu_prepare_3d_hiz += present_timing.draw_gpu_prepare_3d_hiz;
+            self.batch_heavy.draw_gpu_prepare_3d_indirect +=
+                present_timing.draw_gpu_prepare_3d_indirect;
+            self.batch_heavy.draw_gpu_prepare_3d_cull_inputs +=
                 present_timing.draw_gpu_prepare_3d_cull_inputs;
-            self.batch_draw_gpu_acquire += present_timing.draw_gpu_acquire;
-            self.batch_draw_gpu_acquire_surface += present_timing.draw_gpu_acquire_surface;
-            self.batch_draw_gpu_acquire_view += present_timing.draw_gpu_acquire_view;
-            self.batch_draw_gpu_encode_main += present_timing.draw_gpu_encode_main;
-            self.batch_draw_gpu_submit_main += present_timing.draw_gpu_submit_main;
-            self.batch_draw_gpu_submit_finish_main += present_timing.draw_gpu_submit_finish_main;
-            self.batch_draw_gpu_submit_queue_main += present_timing.draw_gpu_submit_queue_main;
-            self.batch_draw_gpu_post_process += present_timing.draw_gpu_post_process;
-            self.batch_draw_gpu_accessibility += present_timing.draw_gpu_accessibility;
-            self.batch_draw_gpu_present += present_timing.draw_gpu_present;
-            self.batch_draw_calls_2d += present_timing.draw_calls_2d as u64;
-            self.batch_draw_calls_3d += present_timing.draw_calls_3d as u64;
-            self.batch_draw_calls_total += present_timing.draw_calls_total as u64;
-            self.batch_draw_instances_3d += present_timing.draw_instances_3d as u64;
-            self.batch_draw_material_refs_3d += present_timing.draw_material_refs_3d as u64;
-            self.batch_render_command_count += present_timing.render_command_count as u64;
-            self.batch_dirty_node_count += present_timing.dirty_node_count as u64;
-            self.batch_active_meshes += present_timing.active_meshes as u64;
-            self.batch_active_materials += present_timing.active_materials as u64;
-            self.batch_active_textures += present_timing.active_textures as u64;
-            self.batch_skip_prepare_2d += present_timing.skip_prepare_2d as u64;
-            self.batch_skip_prepare_3d += present_timing.skip_prepare_3d as u64;
-            self.batch_skip_prepare_particles_3d += present_timing.skip_prepare_particles_3d as u64;
-            self.batch_skip_prepare_3d_frustum += present_timing.skip_prepare_3d_frustum as u64;
-            self.batch_skip_prepare_3d_hiz += present_timing.skip_prepare_3d_hiz as u64;
-            self.batch_skip_prepare_3d_indirect += present_timing.skip_prepare_3d_indirect as u64;
-            self.batch_skip_prepare_3d_cull_inputs +=
+            self.batch_heavy.draw_gpu_acquire += present_timing.draw_gpu_acquire;
+            self.batch_heavy.draw_gpu_acquire_surface += present_timing.draw_gpu_acquire_surface;
+            self.batch_heavy.draw_gpu_acquire_view += present_timing.draw_gpu_acquire_view;
+            self.batch_heavy.draw_gpu_encode_main += present_timing.draw_gpu_encode_main;
+            self.batch_heavy.draw_gpu_submit_main += present_timing.draw_gpu_submit_main;
+            self.batch_heavy.draw_gpu_submit_finish_main +=
+                present_timing.draw_gpu_submit_finish_main;
+            self.batch_heavy.draw_gpu_submit_queue_main +=
+                present_timing.draw_gpu_submit_queue_main;
+            self.batch_heavy.draw_gpu_post_process += present_timing.draw_gpu_post_process;
+            self.batch_heavy.draw_gpu_accessibility += present_timing.draw_gpu_accessibility;
+            self.batch_heavy.draw_gpu_present += present_timing.draw_gpu_present;
+            self.batch_heavy.draw_calls_2d += present_timing.draw_calls_2d as u64;
+            self.batch_heavy.draw_calls_3d += present_timing.draw_calls_3d as u64;
+            self.batch_heavy.draw_calls_total += present_timing.draw_calls_total as u64;
+            self.batch_heavy.draw_instances_3d += present_timing.draw_instances_3d as u64;
+            self.batch_heavy.draw_material_refs_3d += present_timing.draw_material_refs_3d as u64;
+            self.batch_heavy.render_command_count += present_timing.render_command_count as u64;
+            self.batch_heavy.dirty_node_count += present_timing.dirty_node_count as u64;
+            self.batch_heavy.active_meshes += present_timing.active_meshes as u64;
+            self.batch_heavy.active_materials += present_timing.active_materials as u64;
+            self.batch_heavy.active_textures += present_timing.active_textures as u64;
+            self.batch_heavy.skip_prepare_2d += present_timing.skip_prepare_2d as u64;
+            self.batch_heavy.skip_prepare_3d += present_timing.skip_prepare_3d as u64;
+            self.batch_heavy.skip_prepare_particles_3d +=
+                present_timing.skip_prepare_particles_3d as u64;
+            self.batch_heavy.skip_prepare_3d_frustum +=
+                present_timing.skip_prepare_3d_frustum as u64;
+            self.batch_heavy.skip_prepare_3d_hiz += present_timing.skip_prepare_3d_hiz as u64;
+            self.batch_heavy.skip_prepare_3d_indirect +=
+                present_timing.skip_prepare_3d_indirect as u64;
+            self.batch_heavy.skip_prepare_3d_cull_inputs +=
                 present_timing.skip_prepare_3d_cull_inputs as u64;
-            self.batch_present_drain_events += present_timing.drain_events;
-            self.batch_present_apply_events += present_timing.apply_events;
-            self.batch_sim_delta_seconds += simulated_delta_seconds;
+            self.batch_heavy.present_drain_events += present_timing.drain_events;
+            self.batch_heavy.present_apply_events += present_timing.apply_events;
+            self.batch_heavy.sim_delta_seconds += simulated_delta_seconds;
         }
 
         let batch_elapsed_secs = frame_end.duration_since(self.batch_start).as_secs_f32();
-        if batch_elapsed_secs >= LOG_INTERVAL_SECONDS && self.batch_timing_samples > 0 {
-            let avg_work_us = avg_micros(self.batch_work, self.batch_timing_samples);
-            let avg_simulation_us = avg_micros(self.batch_simulation, self.batch_timing_samples);
-            let avg_present_us = avg_micros(self.batch_present, self.batch_timing_samples);
+        if batch_elapsed_secs >= LOG_INTERVAL_SECONDS && self.batch.timing_samples > 0 {
+            let avg_work_us = avg_micros(self.batch.work, self.batch.timing_samples);
+            let avg_simulation_us = avg_micros(self.batch.simulation, self.batch.timing_samples);
+            let avg_present_us = avg_micros(self.batch.present, self.batch.timing_samples);
             let avg_idle_before_frame_us =
-                avg_micros(self.batch_idle_before_frame, self.batch_timing_samples);
+                avg_micros(self.batch.idle_before_frame, self.batch.timing_samples);
             let avg_present_wait_us =
-                avg_micros(self.batch_present_wait, self.batch_timing_samples);
+                avg_micros(self.batch.present_wait, self.batch.timing_samples);
             log_avg_sampled(
                 avg_simulation_us,
                 avg_present_us,
@@ -2125,26 +1845,26 @@ impl<B: GraphicsBackend> RunnerState<B> {
             ))]
             {
                 let avg_present_extract_ui_us =
-                    self.batch_present_extract_ui.as_micros() as f64 / self.batch_frames as f64;
+                    self.batch_ui.extract_ui.as_micros() as f64 / self.batch.frames as f64;
                 let avg_ui_layout_us =
-                    self.batch_ui_layout.as_micros() as f64 / self.batch_frames as f64;
+                    self.batch_ui.layout.as_micros() as f64 / self.batch.frames as f64;
                 let avg_ui_commands_us =
-                    self.batch_ui_commands.as_micros() as f64 / self.batch_frames as f64;
-                let avg_ui_dirty = self.batch_ui_dirty_nodes as f64 / self.batch_frames as f64;
+                    self.batch_ui.commands.as_micros() as f64 / self.batch.frames as f64;
+                let avg_ui_dirty = self.batch_ui.dirty_nodes as f64 / self.batch.frames as f64;
                 let avg_ui_affected =
-                    self.batch_ui_affected_nodes as f64 / self.batch_frames as f64;
+                    self.batch_ui.affected_nodes as f64 / self.batch.frames as f64;
                 let avg_ui_recalc =
-                    self.batch_ui_recalculated_rects as f64 / self.batch_frames as f64;
-                let avg_ui_cached = self.batch_ui_cached_rects as f64 / self.batch_frames as f64;
+                    self.batch_ui.recalculated_rects as f64 / self.batch.frames as f64;
+                let avg_ui_cached = self.batch_ui.cached_rects as f64 / self.batch.frames as f64;
                 let avg_ui_batches =
-                    self.batch_ui_auto_layout_batches as f64 / self.batch_frames as f64;
+                    self.batch_ui.auto_layout_batches as f64 / self.batch.frames as f64;
                 let avg_ui_cmd_nodes =
-                    self.batch_ui_command_nodes as f64 / self.batch_frames as f64;
+                    self.batch_ui.command_nodes as f64 / self.batch.frames as f64;
                 let avg_ui_cmd_emit =
-                    self.batch_ui_command_emitted as f64 / self.batch_frames as f64;
+                    self.batch_ui.command_emitted as f64 / self.batch.frames as f64;
                 let avg_ui_cmd_skip =
-                    self.batch_ui_command_skipped as f64 / self.batch_frames as f64;
-                let avg_ui_removed = self.batch_ui_removed_nodes as f64 / self.batch_frames as f64;
+                    self.batch_ui.command_skipped as f64 / self.batch.frames as f64;
+                let avg_ui_removed = self.batch_ui.removed_nodes as f64 / self.batch.frames as f64;
                 println!(
                     "ui profile: total=({avg_present_extract_ui_us:.3}us) layout=({avg_ui_layout_us:.3}us) commands=({avg_ui_commands_us:.3}us) dirty=({avg_ui_dirty:.2}) affected=({avg_ui_affected:.2}) rect_recalc=({avg_ui_recalc:.2}) rect_cache=({avg_ui_cached:.2}) auto_batches=({avg_ui_batches:.2}) cmd_nodes=({avg_ui_cmd_nodes:.2}) cmd_emit=({avg_ui_cmd_emit:.2}) cmd_skip=({avg_ui_cmd_skip:.2}) rm=({avg_ui_removed:.2})"
                 );
@@ -2180,168 +1900,199 @@ impl<B: GraphicsBackend> RunnerState<B> {
             #[cfg(all(feature = "profile_heavy", not(perro_no_console)))]
             {
                 let avg_runtime_update_us =
-                    self.batch_runtime_update.as_micros() as f64 / self.batch_frames as f64;
+                    self.batch_heavy.runtime_update.as_micros() as f64 / self.batch.frames as f64;
                 let avg_input_poll_us =
-                    self.batch_input_poll.as_micros() as f64 / self.batch_frames as f64;
+                    self.batch_heavy.input_poll.as_micros() as f64 / self.batch.frames as f64;
                 let avg_fixed_update_us =
-                    self.batch_fixed_update.as_micros() as f64 / self.batch_frames as f64;
+                    self.batch_heavy.fixed_update.as_micros() as f64 / self.batch.frames as f64;
                 let avg_fixed_snapshot_update_us =
-                    self.batch_fixed_snapshot_update.as_micros() as f64 / self.batch_frames as f64;
-                let avg_fixed_script_update_us =
-                    self.batch_fixed_script_update.as_micros() as f64 / self.batch_frames as f64;
-                let avg_fixed_physics_update_us =
-                    self.batch_fixed_physics_update.as_micros() as f64 / self.batch_frames as f64;
+                    self.batch_heavy.fixed_snapshot_update.as_micros() as f64
+                        / self.batch.frames as f64;
+                let avg_fixed_script_update_us = self.batch_heavy.fixed_script_update.as_micros()
+                    as f64
+                    / self.batch.frames as f64;
+                let avg_fixed_physics_update_us = self.batch_heavy.fixed_physics_update.as_micros()
+                    as f64
+                    / self.batch.frames as f64;
                 let avg_fixed_internal_update_us =
-                    self.batch_fixed_internal_update.as_micros() as f64 / self.batch_frames as f64;
+                    self.batch_heavy.fixed_internal_update.as_micros() as f64
+                        / self.batch.frames as f64;
                 let avg_fixed_physics_pre_transforms_us =
-                    self.batch_fixed_physics_pre_transforms.as_micros() as f64
-                        / self.batch_frames as f64;
+                    self.batch_heavy.fixed_physics_pre_transforms.as_micros() as f64
+                        / self.batch.frames as f64;
                 let avg_fixed_physics_collect_us =
-                    self.batch_fixed_physics_collect.as_micros() as f64 / self.batch_frames as f64;
+                    self.batch_heavy.fixed_physics_collect.as_micros() as f64
+                        / self.batch.frames as f64;
                 let avg_fixed_physics_sync_world_us =
-                    self.batch_fixed_physics_sync_world.as_micros() as f64
-                        / self.batch_frames as f64;
+                    self.batch_heavy.fixed_physics_sync_world.as_micros() as f64
+                        / self.batch.frames as f64;
                 let avg_fixed_physics_apply_forces_impulses_us =
-                    self.batch_fixed_physics_apply_forces_impulses.as_micros() as f64
-                        / self.batch_frames as f64;
-                let avg_fixed_physics_step_us =
-                    self.batch_fixed_physics_step.as_micros() as f64 / self.batch_frames as f64;
+                    self.batch_heavy
+                        .fixed_physics_apply_forces_impulses
+                        .as_micros() as f64
+                        / self.batch.frames as f64;
+                let avg_fixed_physics_step_us = self.batch_heavy.fixed_physics_step.as_micros()
+                    as f64
+                    / self.batch.frames as f64;
                 let avg_fixed_physics_sync_nodes_us =
-                    self.batch_fixed_physics_sync_nodes.as_micros() as f64
-                        / self.batch_frames as f64;
+                    self.batch_heavy.fixed_physics_sync_nodes.as_micros() as f64
+                        / self.batch.frames as f64;
                 let avg_fixed_physics_post_transforms_us =
-                    self.batch_fixed_physics_post_transforms.as_micros() as f64
-                        / self.batch_frames as f64;
+                    self.batch_heavy.fixed_physics_post_transforms.as_micros() as f64
+                        / self.batch.frames as f64;
                 let avg_fixed_physics_signals_us =
-                    self.batch_fixed_physics_signals.as_micros() as f64 / self.batch_frames as f64;
+                    self.batch_heavy.fixed_physics_signals.as_micros() as f64
+                        / self.batch.frames as f64;
                 let avg_runtime_script_update_us =
-                    self.batch_runtime_script_update.as_micros() as f64 / self.batch_frames as f64;
+                    self.batch_heavy.runtime_script_update.as_micros() as f64
+                        / self.batch.frames as f64;
                 let avg_runtime_script_count =
-                    self.batch_runtime_script_count as f64 / self.batch_frames as f64;
+                    self.batch_heavy.runtime_script_count as f64 / self.batch.frames as f64;
 
-                let avg_present_extract_2d_us =
-                    self.batch_present_extract_2d.as_micros() as f64 / self.batch_frames as f64;
-                let avg_present_extract_3d_us =
-                    self.batch_present_extract_3d.as_micros() as f64 / self.batch_frames as f64;
+                let avg_present_extract_2d_us = self.batch_heavy.present_extract_2d.as_micros()
+                    as f64
+                    / self.batch.frames as f64;
+                let avg_present_extract_3d_us = self.batch_heavy.present_extract_3d.as_micros()
+                    as f64
+                    / self.batch.frames as f64;
                 let avg_present_extract_ui_us =
-                    self.batch_present_extract_ui.as_micros() as f64 / self.batch_frames as f64;
+                    self.batch_ui.extract_ui.as_micros() as f64 / self.batch.frames as f64;
                 let avg_ui_layout_us =
-                    self.batch_ui_layout.as_micros() as f64 / self.batch_frames as f64;
+                    self.batch_ui.layout.as_micros() as f64 / self.batch.frames as f64;
                 let avg_ui_commands_us =
-                    self.batch_ui_commands.as_micros() as f64 / self.batch_frames as f64;
-                let avg_ui_dirty = self.batch_ui_dirty_nodes as f64 / self.batch_frames as f64;
+                    self.batch_ui.commands.as_micros() as f64 / self.batch.frames as f64;
+                let avg_ui_dirty = self.batch_ui.dirty_nodes as f64 / self.batch.frames as f64;
                 let avg_ui_affected =
-                    self.batch_ui_affected_nodes as f64 / self.batch_frames as f64;
+                    self.batch_ui.affected_nodes as f64 / self.batch.frames as f64;
                 let avg_ui_recalc =
-                    self.batch_ui_recalculated_rects as f64 / self.batch_frames as f64;
-                let avg_ui_cached = self.batch_ui_cached_rects as f64 / self.batch_frames as f64;
+                    self.batch_ui.recalculated_rects as f64 / self.batch.frames as f64;
+                let avg_ui_cached = self.batch_ui.cached_rects as f64 / self.batch.frames as f64;
                 let avg_ui_batches =
-                    self.batch_ui_auto_layout_batches as f64 / self.batch_frames as f64;
+                    self.batch_ui.auto_layout_batches as f64 / self.batch.frames as f64;
                 let avg_ui_cmd_nodes =
-                    self.batch_ui_command_nodes as f64 / self.batch_frames as f64;
+                    self.batch_ui.command_nodes as f64 / self.batch.frames as f64;
                 let avg_ui_cmd_emit =
-                    self.batch_ui_command_emitted as f64 / self.batch_frames as f64;
+                    self.batch_ui.command_emitted as f64 / self.batch.frames as f64;
                 let avg_ui_cmd_skip =
-                    self.batch_ui_command_skipped as f64 / self.batch_frames as f64;
-                let avg_ui_removed = self.batch_ui_removed_nodes as f64 / self.batch_frames as f64;
+                    self.batch_ui.command_skipped as f64 / self.batch.frames as f64;
+                let avg_ui_removed = self.batch_ui.removed_nodes as f64 / self.batch.frames as f64;
                 let avg_present_drain_commands_us =
-                    self.batch_present_drain_commands.as_micros() as f64 / self.batch_frames as f64;
-                let avg_present_submit_commands_us = self.batch_present_submit_commands.as_micros()
+                    self.batch_heavy.present_drain_commands.as_micros() as f64
+                        / self.batch.frames as f64;
+                let avg_present_submit_commands_us =
+                    self.batch_heavy.present_submit_commands.as_micros() as f64
+                        / self.batch.frames as f64;
+                let avg_present_draw_frame_us = self.batch_heavy.present_draw_frame.as_micros()
                     as f64
-                    / self.batch_frames as f64;
-                let avg_present_draw_frame_us =
-                    self.batch_present_draw_frame.as_micros() as f64 / self.batch_frames as f64;
+                    / self.batch.frames as f64;
                 let avg_draw_process_commands_us =
-                    self.batch_draw_process_commands.as_micros() as f64 / self.batch_frames as f64;
+                    self.batch_heavy.draw_process_commands.as_micros() as f64
+                        / self.batch.frames as f64;
                 let avg_draw_prepare_cpu_us =
-                    self.batch_draw_prepare_cpu.as_micros() as f64 / self.batch_frames as f64;
-                let avg_draw_gpu_prepare_2d_us =
-                    self.batch_draw_gpu_prepare_2d.as_micros() as f64 / self.batch_frames as f64;
-                let avg_draw_gpu_prepare_3d_us =
-                    self.batch_draw_gpu_prepare_3d.as_micros() as f64 / self.batch_frames as f64;
-                let avg_draw_gpu_prepare_particles_3d_us =
-                    self.batch_draw_gpu_prepare_particles_3d.as_micros() as f64
-                        / self.batch_frames as f64;
-                let avg_draw_gpu_prepare_3d_frustum_us =
-                    self.batch_draw_gpu_prepare_3d_frustum.as_micros() as f64
-                        / self.batch_frames as f64;
-                let avg_draw_gpu_prepare_3d_hiz_us = self.batch_draw_gpu_prepare_3d_hiz.as_micros()
+                    self.batch_heavy.draw_prepare_cpu.as_micros() as f64 / self.batch.frames as f64;
+                let avg_draw_gpu_prepare_2d_us = self.batch_heavy.draw_gpu_prepare_2d.as_micros()
                     as f64
-                    / self.batch_frames as f64;
+                    / self.batch.frames as f64;
+                let avg_draw_gpu_prepare_3d_us = self.batch_heavy.draw_gpu_prepare_3d.as_micros()
+                    as f64
+                    / self.batch.frames as f64;
+                let avg_draw_gpu_prepare_particles_3d_us =
+                    self.batch_heavy.draw_gpu_prepare_particles_3d.as_micros() as f64
+                        / self.batch.frames as f64;
+                let avg_draw_gpu_prepare_3d_frustum_us =
+                    self.batch_heavy.draw_gpu_prepare_3d_frustum.as_micros() as f64
+                        / self.batch.frames as f64;
+                let avg_draw_gpu_prepare_3d_hiz_us =
+                    self.batch_heavy.draw_gpu_prepare_3d_hiz.as_micros() as f64
+                        / self.batch.frames as f64;
                 let avg_draw_gpu_prepare_3d_indirect_us =
-                    self.batch_draw_gpu_prepare_3d_indirect.as_micros() as f64
-                        / self.batch_frames as f64;
+                    self.batch_heavy.draw_gpu_prepare_3d_indirect.as_micros() as f64
+                        / self.batch.frames as f64;
                 let avg_draw_gpu_prepare_3d_cull_inputs_us =
-                    self.batch_draw_gpu_prepare_3d_cull_inputs.as_micros() as f64
-                        / self.batch_frames as f64;
+                    self.batch_heavy.draw_gpu_prepare_3d_cull_inputs.as_micros() as f64
+                        / self.batch.frames as f64;
                 let avg_draw_gpu_acquire_us =
-                    self.batch_draw_gpu_acquire.as_micros() as f64 / self.batch_frames as f64;
+                    self.batch_heavy.draw_gpu_acquire.as_micros() as f64 / self.batch.frames as f64;
                 let avg_draw_gpu_acquire_surface_us =
-                    self.batch_draw_gpu_acquire_surface.as_micros() as f64
-                        / self.batch_frames as f64;
+                    self.batch_heavy.draw_gpu_acquire_surface.as_micros() as f64
+                        / self.batch.frames as f64;
                 let avg_draw_gpu_acquire_view_us =
-                    self.batch_draw_gpu_acquire_view.as_micros() as f64 / self.batch_frames as f64;
-                let avg_draw_gpu_encode_main_us =
-                    self.batch_draw_gpu_encode_main.as_micros() as f64 / self.batch_frames as f64;
-                let avg_draw_gpu_submit_main_us =
-                    self.batch_draw_gpu_submit_main.as_micros() as f64 / self.batch_frames as f64;
+                    self.batch_heavy.draw_gpu_acquire_view.as_micros() as f64
+                        / self.batch.frames as f64;
+                let avg_draw_gpu_encode_main_us = self.batch_heavy.draw_gpu_encode_main.as_micros()
+                    as f64
+                    / self.batch.frames as f64;
+                let avg_draw_gpu_submit_main_us = self.batch_heavy.draw_gpu_submit_main.as_micros()
+                    as f64
+                    / self.batch.frames as f64;
                 let avg_draw_gpu_submit_finish_main_us =
-                    self.batch_draw_gpu_submit_finish_main.as_micros() as f64
-                        / self.batch_frames as f64;
+                    self.batch_heavy.draw_gpu_submit_finish_main.as_micros() as f64
+                        / self.batch.frames as f64;
                 let avg_draw_gpu_submit_queue_main_us =
-                    self.batch_draw_gpu_submit_queue_main.as_micros() as f64
-                        / self.batch_frames as f64;
+                    self.batch_heavy.draw_gpu_submit_queue_main.as_micros() as f64
+                        / self.batch.frames as f64;
                 let avg_draw_gpu_post_process_us =
-                    self.batch_draw_gpu_post_process.as_micros() as f64 / self.batch_frames as f64;
+                    self.batch_heavy.draw_gpu_post_process.as_micros() as f64
+                        / self.batch.frames as f64;
                 let avg_draw_gpu_accessibility_us =
-                    self.batch_draw_gpu_accessibility.as_micros() as f64 / self.batch_frames as f64;
+                    self.batch_heavy.draw_gpu_accessibility.as_micros() as f64
+                        / self.batch.frames as f64;
                 let avg_draw_gpu_present_us =
-                    self.batch_draw_gpu_present.as_micros() as f64 / self.batch_frames as f64;
-                let avg_draw_calls_2d = self.batch_draw_calls_2d as f64 / self.batch_frames as f64;
-                let avg_draw_calls_3d = self.batch_draw_calls_3d as f64 / self.batch_frames as f64;
+                    self.batch_heavy.draw_gpu_present.as_micros() as f64 / self.batch.frames as f64;
+                let avg_draw_calls_2d =
+                    self.batch_heavy.draw_calls_2d as f64 / self.batch.frames as f64;
+                let avg_draw_calls_3d =
+                    self.batch_heavy.draw_calls_3d as f64 / self.batch.frames as f64;
                 let avg_draw_calls_total =
-                    self.batch_draw_calls_total as f64 / self.batch_frames as f64;
+                    self.batch_heavy.draw_calls_total as f64 / self.batch.frames as f64;
                 let avg_draw_instances_3d =
-                    self.batch_draw_instances_3d as f64 / self.batch_frames as f64;
-                let avg_instances_per_draw_3d = if self.batch_draw_calls_3d > 0 {
-                    self.batch_draw_instances_3d as f64 / self.batch_draw_calls_3d as f64
+                    self.batch_heavy.draw_instances_3d as f64 / self.batch.frames as f64;
+                let avg_instances_per_draw_3d = if self.batch_heavy.draw_calls_3d > 0 {
+                    self.batch_heavy.draw_instances_3d as f64
+                        / self.batch_heavy.draw_calls_3d as f64
                 } else {
                     0.0
                 };
                 let avg_draw_material_refs_3d =
-                    self.batch_draw_material_refs_3d as f64 / self.batch_frames as f64;
+                    self.batch_heavy.draw_material_refs_3d as f64 / self.batch.frames as f64;
                 let avg_render_commands =
-                    self.batch_render_command_count as f64 / self.batch_frames as f64;
-                let avg_dirty_nodes = self.batch_dirty_node_count as f64 / self.batch_frames as f64;
-                let avg_active_meshes = self.batch_active_meshes as f64 / self.batch_frames as f64;
+                    self.batch_heavy.render_command_count as f64 / self.batch.frames as f64;
+                let avg_dirty_nodes =
+                    self.batch_heavy.dirty_node_count as f64 / self.batch.frames as f64;
+                let avg_active_meshes =
+                    self.batch_heavy.active_meshes as f64 / self.batch.frames as f64;
                 let avg_active_materials =
-                    self.batch_active_materials as f64 / self.batch_frames as f64;
+                    self.batch_heavy.active_materials as f64 / self.batch.frames as f64;
                 let avg_active_textures =
-                    self.batch_active_textures as f64 / self.batch_frames as f64;
-                let avg_present_drain_events_us =
-                    self.batch_present_drain_events.as_micros() as f64 / self.batch_frames as f64;
-                let avg_present_apply_events_us =
-                    self.batch_present_apply_events.as_micros() as f64 / self.batch_frames as f64;
-                let avg_frame_us = (self.batch_work.as_micros() as f64
-                    + self.batch_idle_before_frame.as_micros() as f64
-                    + self.batch_present_wait.as_micros() as f64)
-                    / self.batch_frames as f64;
+                    self.batch_heavy.active_textures as f64 / self.batch.frames as f64;
+                let avg_present_drain_events_us = self.batch_heavy.present_drain_events.as_micros()
+                    as f64
+                    / self.batch.frames as f64;
+                let avg_present_apply_events_us = self.batch_heavy.present_apply_events.as_micros()
+                    as f64
+                    / self.batch.frames as f64;
+                let avg_frame_us = (self.batch.work.as_micros() as f64
+                    + self.batch.idle_before_frame.as_micros() as f64
+                    + self.batch.present_wait.as_micros() as f64)
+                    / self.batch.frames as f64;
                 let pct_skip_prepare_2d =
-                    (self.batch_skip_prepare_2d as f64 * 100.0) / self.batch_frames as f64;
+                    (self.batch_heavy.skip_prepare_2d as f64 * 100.0) / self.batch.frames as f64;
                 let pct_skip_prepare_3d =
-                    (self.batch_skip_prepare_3d as f64 * 100.0) / self.batch_frames as f64;
-                let pct_skip_prepare_particles_3d = (self.batch_skip_prepare_particles_3d as f64
+                    (self.batch_heavy.skip_prepare_3d as f64 * 100.0) / self.batch.frames as f64;
+                let pct_skip_prepare_particles_3d =
+                    (self.batch_heavy.skip_prepare_particles_3d as f64 * 100.0)
+                        / self.batch.frames as f64;
+                let pct_skip_prepare_3d_frustum = (self.batch_heavy.skip_prepare_3d_frustum as f64
                     * 100.0)
-                    / self.batch_frames as f64;
-                let pct_skip_prepare_3d_frustum =
-                    (self.batch_skip_prepare_3d_frustum as f64 * 100.0) / self.batch_frames as f64;
-                let pct_skip_prepare_3d_hiz =
-                    (self.batch_skip_prepare_3d_hiz as f64 * 100.0) / self.batch_frames as f64;
+                    / self.batch.frames as f64;
+                let pct_skip_prepare_3d_hiz = (self.batch_heavy.skip_prepare_3d_hiz as f64 * 100.0)
+                    / self.batch.frames as f64;
                 let pct_skip_prepare_3d_indirect =
-                    (self.batch_skip_prepare_3d_indirect as f64 * 100.0) / self.batch_frames as f64;
+                    (self.batch_heavy.skip_prepare_3d_indirect as f64 * 100.0)
+                        / self.batch.frames as f64;
                 let pct_skip_prepare_3d_cull_inputs =
-                    (self.batch_skip_prepare_3d_cull_inputs as f64 * 100.0)
-                        / self.batch_frames as f64;
+                    (self.batch_heavy.skip_prepare_3d_cull_inputs as f64 * 100.0)
+                        / self.batch.frames as f64;
                 println!(
                     "simulation breakdown: input=({:.3}us) fixed=({:.3}us) runtime=({:.3}us)",
                     avg_input_poll_us, avg_fixed_update_us, avg_runtime_update_us
@@ -2368,7 +2119,7 @@ impl<B: GraphicsBackend> RunnerState<B> {
                     "user scripts: ({:.3}us avg) | script calls/frame: ({:.2}) | slowest script: ({:.3}us)",
                     avg_runtime_script_update_us,
                     avg_runtime_script_count,
-                    self.batch_runtime_slowest_script.as_micros() as f64
+                    self.batch_heavy.runtime_slowest_script.as_micros() as f64
                 );
                 println!(
                     "present breakdown: extract2d=({:.3}us) extract3d=({:.3}us) extract_ui=({:.3}us) ui_layout=({:.3}us) ui_commands=({:.3}us) drain=({:.3}us) submit=({:.3}us) draw=({:.3}us) events_drain=({:.3}us) events_apply=({:.3}us)",
@@ -2427,8 +2178,8 @@ impl<B: GraphicsBackend> RunnerState<B> {
                 if let Some(csv) = &mut self.profile_csv {
                     let row = ProfileCsvRow {
                         batch_end_frame: self.frame_index,
-                        frames: self.batch_frames,
-                        sampled_frames: self.batch_timing_samples,
+                        frames: self.batch.frames,
+                        sampled_frames: self.batch.timing_samples,
                         avg_draw_calls_2d,
                         avg_draw_calls_3d,
                         avg_draw_calls_total,
@@ -2447,115 +2198,22 @@ impl<B: GraphicsBackend> RunnerState<B> {
                         avg_active_meshes,
                         avg_active_materials,
                         avg_active_textures,
-                        avg_present_wait_us: self.batch_present_wait.as_micros() as f64
-                            / self.batch_frames as f64,
+                        avg_present_wait_us: self.batch.present_wait.as_micros() as f64
+                            / self.batch.frames as f64,
                         avg_frame_us,
                     };
                     csv.write(&row);
                 }
             }
-            self.batch_frames = 0;
-            self.batch_timing_samples = 0;
-            self.batch_work = Duration::ZERO;
-            self.batch_simulation = Duration::ZERO;
-            self.batch_present = Duration::ZERO;
-            self.batch_idle_before_frame = Duration::ZERO;
-            self.batch_present_wait = Duration::ZERO;
-            self.batch_idle = Duration::ZERO;
+            self.batch = BatchCoreStats::default();
             #[cfg(all(feature = "ui_profile", not(feature = "profile_heavy")))]
             {
-                self.batch_present_extract_ui = Duration::ZERO;
-                self.batch_ui_layout = Duration::ZERO;
-                self.batch_ui_commands = Duration::ZERO;
-                self.batch_ui_dirty_nodes = 0;
-                self.batch_ui_affected_nodes = 0;
-                self.batch_ui_recalculated_rects = 0;
-                self.batch_ui_cached_rects = 0;
-                self.batch_ui_auto_layout_batches = 0;
-                self.batch_ui_command_nodes = 0;
-                self.batch_ui_command_emitted = 0;
-                self.batch_ui_command_skipped = 0;
-                self.batch_ui_removed_nodes = 0;
+                self.batch_ui = BatchUiStats::default();
             }
             #[cfg(feature = "profile_heavy")]
             {
-                self.batch_runtime_update = Duration::ZERO;
-                self.batch_input_poll = Duration::ZERO;
-                self.batch_fixed_update = Duration::ZERO;
-                self.batch_fixed_snapshot_update = Duration::ZERO;
-                self.batch_fixed_script_update = Duration::ZERO;
-                self.batch_fixed_physics_update = Duration::ZERO;
-                self.batch_fixed_internal_update = Duration::ZERO;
-                self.batch_fixed_physics_pre_transforms = Duration::ZERO;
-                self.batch_fixed_physics_collect = Duration::ZERO;
-                self.batch_fixed_physics_sync_world = Duration::ZERO;
-                self.batch_fixed_physics_apply_forces_impulses = Duration::ZERO;
-                self.batch_fixed_physics_step = Duration::ZERO;
-                self.batch_fixed_physics_sync_nodes = Duration::ZERO;
-                self.batch_fixed_physics_post_transforms = Duration::ZERO;
-                self.batch_fixed_physics_signals = Duration::ZERO;
-                self.batch_runtime_start_schedule = Duration::ZERO;
-                self.batch_runtime_snapshot_update = Duration::ZERO;
-                self.batch_runtime_script_update = Duration::ZERO;
-                self.batch_runtime_internal_update = Duration::ZERO;
-                self.batch_runtime_slowest_script = Duration::ZERO;
-                self.batch_runtime_script_count = 0;
-                self.batch_present_extract_2d = Duration::ZERO;
-                self.batch_present_extract_3d = Duration::ZERO;
-                self.batch_present_extract_ui = Duration::ZERO;
-                self.batch_ui_layout = Duration::ZERO;
-                self.batch_ui_commands = Duration::ZERO;
-                self.batch_ui_dirty_nodes = 0;
-                self.batch_ui_affected_nodes = 0;
-                self.batch_ui_recalculated_rects = 0;
-                self.batch_ui_cached_rects = 0;
-                self.batch_ui_auto_layout_batches = 0;
-                self.batch_ui_command_nodes = 0;
-                self.batch_ui_command_emitted = 0;
-                self.batch_ui_command_skipped = 0;
-                self.batch_ui_removed_nodes = 0;
-                self.batch_present_drain_commands = Duration::ZERO;
-                self.batch_present_submit_commands = Duration::ZERO;
-                self.batch_present_draw_frame = Duration::ZERO;
-                self.batch_draw_process_commands = Duration::ZERO;
-                self.batch_draw_prepare_cpu = Duration::ZERO;
-                self.batch_draw_gpu_prepare_2d = Duration::ZERO;
-                self.batch_draw_gpu_prepare_3d = Duration::ZERO;
-                self.batch_draw_gpu_prepare_particles_3d = Duration::ZERO;
-                self.batch_draw_gpu_prepare_3d_frustum = Duration::ZERO;
-                self.batch_draw_gpu_prepare_3d_hiz = Duration::ZERO;
-                self.batch_draw_gpu_prepare_3d_indirect = Duration::ZERO;
-                self.batch_draw_gpu_prepare_3d_cull_inputs = Duration::ZERO;
-                self.batch_draw_gpu_acquire = Duration::ZERO;
-                self.batch_draw_gpu_acquire_surface = Duration::ZERO;
-                self.batch_draw_gpu_acquire_view = Duration::ZERO;
-                self.batch_draw_gpu_encode_main = Duration::ZERO;
-                self.batch_draw_gpu_submit_main = Duration::ZERO;
-                self.batch_draw_gpu_submit_finish_main = Duration::ZERO;
-                self.batch_draw_gpu_submit_queue_main = Duration::ZERO;
-                self.batch_draw_gpu_post_process = Duration::ZERO;
-                self.batch_draw_gpu_accessibility = Duration::ZERO;
-                self.batch_draw_gpu_present = Duration::ZERO;
-                self.batch_draw_calls_2d = 0;
-                self.batch_draw_calls_3d = 0;
-                self.batch_draw_calls_total = 0;
-                self.batch_draw_instances_3d = 0;
-                self.batch_draw_material_refs_3d = 0;
-                self.batch_render_command_count = 0;
-                self.batch_dirty_node_count = 0;
-                self.batch_active_meshes = 0;
-                self.batch_active_materials = 0;
-                self.batch_active_textures = 0;
-                self.batch_skip_prepare_2d = 0;
-                self.batch_skip_prepare_3d = 0;
-                self.batch_skip_prepare_particles_3d = 0;
-                self.batch_skip_prepare_3d_frustum = 0;
-                self.batch_skip_prepare_3d_hiz = 0;
-                self.batch_skip_prepare_3d_indirect = 0;
-                self.batch_skip_prepare_3d_cull_inputs = 0;
-                self.batch_present_drain_events = Duration::ZERO;
-                self.batch_present_apply_events = Duration::ZERO;
-                self.batch_sim_delta_seconds = 0.0;
+                self.batch_ui = BatchUiStats::default();
+                self.batch_heavy = BatchHeavyStats::default();
             }
             self.batch_start = frame_end;
         }
@@ -2603,12 +2261,10 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<
             }
             self.window = Some(window);
             self.set_mouse_mode(MouseMode::Visible);
-            self.app
-                .runtime
-                .set_active_refresh_rate(active_refresh_rate_hz(self.window.as_deref()));
+            self.sync_refresh_rate();
             eprintln!(
                 "[perro][runtime] active_refresh_rate=({:?})",
-                active_refresh_rate_hz(self.window.as_deref())
+                self.pacer.refresh_hz()
             );
             let now = Instant::now();
             self.last_frame_start = now;
@@ -2622,112 +2278,19 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<
                 self.startup_splash.first_frame_captured = false;
             }
             self.fixed_accumulator = 0.0;
-            self.next_frame_deadline = None;
+            self.pacer.reset_deadline();
             self.frame_index = 0;
             self.batch_start = now;
-            self.batch_frames = 0;
-            self.batch_timing_samples = 0;
             self.timing_warmup_frames_left = TIMING_WARMUP_FRAMES;
-            self.batch_work = Duration::ZERO;
-            self.batch_simulation = Duration::ZERO;
-            self.batch_present = Duration::ZERO;
-            self.batch_idle_before_frame = Duration::ZERO;
-            self.batch_present_wait = Duration::ZERO;
-            self.batch_idle = Duration::ZERO;
+            self.batch = BatchCoreStats::default();
             #[cfg(all(feature = "ui_profile", not(feature = "profile_heavy")))]
             {
-                self.batch_present_extract_ui = Duration::ZERO;
-                self.batch_ui_layout = Duration::ZERO;
-                self.batch_ui_commands = Duration::ZERO;
-                self.batch_ui_dirty_nodes = 0;
-                self.batch_ui_affected_nodes = 0;
-                self.batch_ui_recalculated_rects = 0;
-                self.batch_ui_cached_rects = 0;
-                self.batch_ui_auto_layout_batches = 0;
-                self.batch_ui_command_nodes = 0;
-                self.batch_ui_command_emitted = 0;
-                self.batch_ui_command_skipped = 0;
-                self.batch_ui_removed_nodes = 0;
+                self.batch_ui = BatchUiStats::default();
             }
             #[cfg(feature = "profile_heavy")]
             {
-                self.batch_runtime_update = Duration::ZERO;
-                self.batch_input_poll = Duration::ZERO;
-                self.batch_fixed_update = Duration::ZERO;
-                self.batch_fixed_snapshot_update = Duration::ZERO;
-                self.batch_fixed_script_update = Duration::ZERO;
-                self.batch_fixed_physics_update = Duration::ZERO;
-                self.batch_fixed_internal_update = Duration::ZERO;
-                self.batch_fixed_physics_pre_transforms = Duration::ZERO;
-                self.batch_fixed_physics_collect = Duration::ZERO;
-                self.batch_fixed_physics_sync_world = Duration::ZERO;
-                self.batch_fixed_physics_apply_forces_impulses = Duration::ZERO;
-                self.batch_fixed_physics_step = Duration::ZERO;
-                self.batch_fixed_physics_sync_nodes = Duration::ZERO;
-                self.batch_fixed_physics_post_transforms = Duration::ZERO;
-                self.batch_fixed_physics_signals = Duration::ZERO;
-                self.batch_runtime_start_schedule = Duration::ZERO;
-                self.batch_runtime_snapshot_update = Duration::ZERO;
-                self.batch_runtime_script_update = Duration::ZERO;
-                self.batch_runtime_internal_update = Duration::ZERO;
-                self.batch_runtime_slowest_script = Duration::ZERO;
-                self.batch_runtime_script_count = 0;
-                self.batch_present_extract_2d = Duration::ZERO;
-                self.batch_present_extract_3d = Duration::ZERO;
-                self.batch_present_extract_ui = Duration::ZERO;
-                self.batch_ui_layout = Duration::ZERO;
-                self.batch_ui_commands = Duration::ZERO;
-                self.batch_ui_dirty_nodes = 0;
-                self.batch_ui_affected_nodes = 0;
-                self.batch_ui_recalculated_rects = 0;
-                self.batch_ui_cached_rects = 0;
-                self.batch_ui_auto_layout_batches = 0;
-                self.batch_ui_command_nodes = 0;
-                self.batch_ui_command_emitted = 0;
-                self.batch_ui_command_skipped = 0;
-                self.batch_ui_removed_nodes = 0;
-                self.batch_present_drain_commands = Duration::ZERO;
-                self.batch_present_submit_commands = Duration::ZERO;
-                self.batch_present_draw_frame = Duration::ZERO;
-                self.batch_draw_process_commands = Duration::ZERO;
-                self.batch_draw_prepare_cpu = Duration::ZERO;
-                self.batch_draw_gpu_prepare_2d = Duration::ZERO;
-                self.batch_draw_gpu_prepare_3d = Duration::ZERO;
-                self.batch_draw_gpu_prepare_particles_3d = Duration::ZERO;
-                self.batch_draw_gpu_prepare_3d_frustum = Duration::ZERO;
-                self.batch_draw_gpu_prepare_3d_hiz = Duration::ZERO;
-                self.batch_draw_gpu_prepare_3d_indirect = Duration::ZERO;
-                self.batch_draw_gpu_prepare_3d_cull_inputs = Duration::ZERO;
-                self.batch_draw_gpu_acquire = Duration::ZERO;
-                self.batch_draw_gpu_acquire_surface = Duration::ZERO;
-                self.batch_draw_gpu_acquire_view = Duration::ZERO;
-                self.batch_draw_gpu_encode_main = Duration::ZERO;
-                self.batch_draw_gpu_submit_main = Duration::ZERO;
-                self.batch_draw_gpu_submit_finish_main = Duration::ZERO;
-                self.batch_draw_gpu_submit_queue_main = Duration::ZERO;
-                self.batch_draw_gpu_post_process = Duration::ZERO;
-                self.batch_draw_gpu_accessibility = Duration::ZERO;
-                self.batch_draw_gpu_present = Duration::ZERO;
-                self.batch_draw_calls_2d = 0;
-                self.batch_draw_calls_3d = 0;
-                self.batch_draw_calls_total = 0;
-                self.batch_draw_instances_3d = 0;
-                self.batch_draw_material_refs_3d = 0;
-                self.batch_render_command_count = 0;
-                self.batch_dirty_node_count = 0;
-                self.batch_active_meshes = 0;
-                self.batch_active_materials = 0;
-                self.batch_active_textures = 0;
-                self.batch_skip_prepare_2d = 0;
-                self.batch_skip_prepare_3d = 0;
-                self.batch_skip_prepare_particles_3d = 0;
-                self.batch_skip_prepare_3d_frustum = 0;
-                self.batch_skip_prepare_3d_hiz = 0;
-                self.batch_skip_prepare_3d_indirect = 0;
-                self.batch_skip_prepare_3d_cull_inputs = 0;
-                self.batch_present_drain_events = Duration::ZERO;
-                self.batch_present_apply_events = Duration::ZERO;
-                self.batch_sim_delta_seconds = 0.0;
+                self.batch_ui = BatchUiStats::default();
+                self.batch_heavy = BatchHeavyStats::default();
             }
         }
     }
@@ -2756,6 +2319,8 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<
             }
             WindowEvent::Moved(position) => {
                 self.sync_window_position(position);
+                // Window may land on another monitor; refresh the cached rate.
+                self.sync_refresh_rate();
                 // On Windows title-bar drag can suppress redraw cadence; tick on move events too.
                 self.step_frame(event_loop, Instant::now());
             }
@@ -2854,6 +2419,7 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<
                 self.set_mouse_mode(MouseMode::Visible);
             }
             WindowEvent::ScaleFactorChanged { .. } => {
+                self.sync_refresh_rate();
                 if let Some(window) = &self.window {
                     #[cfg(target_arch = "wasm32")]
                     sync_web_window_size(window.as_ref());
@@ -2900,12 +2466,7 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<
         }
         let now = Instant::now();
         self.apply_frame_control_flow(event_loop, now);
-        if self.window.is_some()
-            && (self
-                .next_frame_deadline
-                .is_none_or(|deadline| deadline <= now)
-                || self.startup_splash.active)
-        {
+        if self.window.is_some() && !self.pacer.blocks_frame(now) {
             self.step_frame(event_loop, now);
         }
     }

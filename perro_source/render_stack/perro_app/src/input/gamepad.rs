@@ -1,9 +1,5 @@
 use crate::App;
-#[cfg(not(target_arch = "wasm32"))]
-use crate::threaded::RenderThreadBridge;
 use perro_graphics::GraphicsBackend;
-#[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
-use perro_input_api::InputEvent;
 #[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
 use perro_input_api::{GamepadAxis, GamepadButton};
 
@@ -36,33 +32,6 @@ impl<B: GraphicsBackend> GamepadSink for App<B> {
 
     fn take_gamepad_rumble_requests(&mut self) -> Vec<perro_input_api::GamepadRumbleRequest> {
         App::take_gamepad_rumble_requests(self)
-    }
-}
-
-#[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
-impl GamepadSink for RenderThreadBridge {
-    fn set_gamepad_button_state(&mut self, index: usize, button: GamepadButton, is_down: bool) {
-        self.push_input_event(InputEvent::GamepadButton {
-            index,
-            button,
-            is_down,
-        });
-    }
-
-    fn set_gamepad_axis(&mut self, index: usize, axis: GamepadAxis, value: f32) {
-        self.push_input_event(InputEvent::GamepadAxis { index, axis, value });
-    }
-
-    fn set_gamepad_gyro(&mut self, index: usize, x: f32, y: f32, z: f32) {
-        self.push_input_event(InputEvent::GamepadGyro { index, x, y, z });
-    }
-
-    fn set_gamepad_accel(&mut self, index: usize, x: f32, y: f32, z: f32) {
-        self.push_input_event(InputEvent::GamepadAccel { index, x, y, z });
-    }
-
-    fn take_gamepad_rumble_requests(&mut self) -> Vec<perro_input_api::GamepadRumbleRequest> {
-        Vec::new()
     }
 }
 
@@ -707,16 +676,4 @@ impl GamepadInput {
     pub fn begin_frame<B: GraphicsBackend>(&mut self, app: &mut App<B>) {
         self.backend.begin_frame(app);
     }
-
-    #[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
-    pub fn begin_frame_threaded(&mut self, bridge: &RenderThreadBridge) {
-        let mut bridge = bridge.clone();
-        self.backend.begin_frame(&mut bridge);
-    }
-
-    #[cfg(all(
-        not(target_arch = "wasm32"),
-        not(any(target_os = "windows", target_os = "linux", target_os = "macos"))
-    ))]
-    pub fn begin_frame_threaded(&mut self, _bridge: &RenderThreadBridge) {}
 }

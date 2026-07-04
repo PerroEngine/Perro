@@ -807,8 +807,8 @@ impl<B: GraphicsBackend> App<B> {
 }
 
 pub mod entry;
+pub(crate) mod frame_pacing;
 pub mod input;
 #[cfg(not(target_arch = "wasm32"))]
-pub mod threaded;
 mod timer_resolution;
 pub mod winit_runner;

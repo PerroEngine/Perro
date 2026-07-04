@@ -1033,9 +1033,10 @@ fn main() {
 
     ensure_source_overrides(&root).expect("overrides");
     let repaired = fs::read_to_string(&main_rs).expect("read repaired dev runner main");
-    assert!(repaired.contains("run_threaded_dev_project_from_path"));
-    assert!(repaired.contains("PERRO_THREADED_RENDER"));
-    assert!(repaired.contains(r#"env::var("PERRO_THREADED_RENDER").as_deref() == Ok("1")"#));
+    assert!(repaired.contains("run_dev_project_from_path"));
+    assert!(repaired.contains("parse_flag_value"));
+    assert!(!repaired.contains("threaded"));
+    assert!(!repaired.contains("PERRO_THREADED_RENDER"));
 
     let before = fs::metadata(&main_rs)
         .and_then(|meta| meta.modified())
