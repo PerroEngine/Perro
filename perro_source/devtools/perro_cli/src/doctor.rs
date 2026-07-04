@@ -1841,11 +1841,19 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     fn temp_project() -> PathBuf {
+        // Nanos alone collide on platforms w/ coarse SystemTime tick (macOS):
+        // parallel tests land on same dir + cross-contaminate scans. Add pid +
+        // atomic counter -> unique per call regardless of clock granularity.
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static COUNTER: AtomicU64 = AtomicU64::new(0);
         let stamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let dir = std::env::temp_dir().join(format!("perro_cli_doctor_test_{stamp}"));
+        let seq = COUNTER.fetch_add(1, Ordering::Relaxed);
+        let pid = std::process::id();
+        let dir =
+            std::env::temp_dir().join(format!("perro_cli_doctor_test_{stamp}_{pid}_{seq}"));
         fs::create_dir_all(&dir).unwrap();
         dir
     }

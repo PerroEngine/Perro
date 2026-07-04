@@ -1132,6 +1132,13 @@ pub trait NodeAPI {
     where
         S: Into<Cow<'static, str>>;
 
+    /// Finds a node by name inside `root`'s subtree (including `root`
+    /// itself). Pass `NodeID::nil()` as `root` to search the whole scene.
+    /// Index-backed: O(nodes sharing the name), not a tree walk.
+    fn find_node_by_name<S>(&mut self, root: NodeID, name: S) -> Option<NodeID>
+    where
+        S: AsRef<str>;
+
     /// Returns skeleton bone name by index.
     fn get_skeleton_bone_name(
         &mut self,
@@ -1484,6 +1491,13 @@ impl<'rt, R: NodeAPI + ?Sized> NodeModule<'rt, R> {
         S: Into<Cow<'static, str>>,
     {
         self.rt.set_node_name(node_id, name)
+    }
+
+    pub fn find_node_by_name<S>(&mut self, root: NodeID, name: S) -> Option<NodeID>
+    where
+        S: AsRef<str>,
+    {
+        self.rt.find_node_by_name(root, name)
     }
 
     pub fn get_skeleton_bone_name(

@@ -65,6 +65,21 @@ fn tree_list_flattens_open_roots_and_skips_closed_children() {
 }
 
 #[test]
+fn tree_list_has_children_hint_marks_childless_rows_expandable() {
+    let mut tree = UiTreeList::new();
+    tree.items.push(UiTreeListItem::new("plain_leaf"));
+    let mut folder = UiTreeListItem::new("culled_folder");
+    folder.open = false;
+    folder.has_children_hint = true;
+    tree.items.push(folder);
+
+    let rows = tree.visible_items();
+    assert_eq!(rows.len(), 2);
+    assert!(!rows[0].has_children);
+    assert!(rows[1].has_children);
+}
+
+#[test]
 fn label_text_align_defaults_to_center() {
     let label = UiLabel::new();
 

@@ -6,8 +6,8 @@ use crate::scripts_assets_editor_file_watch_rs as editor_file_watch;
 use crate::scripts_assets_editor_files_rs as editor_files;
 use crate::scripts_editor_main_rs::{
     EditorState, FILE_WATCH_INTERVAL_FRAMES, MAX_FILES, MAX_NODE_PICKER_ROWS, MAX_NODES,
-    MAX_RECENT, MAX_TABS, RECENT_PROJECTS_PATH, cached_scene_doc, cached_scene_node,
-    set_state_scene_doc, set_state_scene_doc_loaded,
+    MAX_RECENT, MAX_TABS, RECENT_PROJECTS_PATH, cached_scene_doc, cached_scene_doc_shared,
+    cached_scene_node, set_state_scene_doc, set_state_scene_doc_loaded,
 };
 use crate::scripts_scene_editor_animation_rs::*;
 use crate::scripts_scene_editor_gizmos_rs as editor_gizmos;
@@ -1307,7 +1307,7 @@ pub fn load_preview_scene<API: ScriptAPI + ?Sized>(
         if doc_text.is_empty() {
             (Vec::new(), Vec::new(), Vec::new(), Vec::new(), 0, 0)
         } else {
-            let doc = cached_scene_doc(&doc_text);
+            let doc = cached_scene_doc_shared(&doc_text);
             add_preview_env(ctx, root, &doc);
             let preview_camera_2d = if editor_scene::has_2d(&doc) {
                 let name = format!("__editor_preview_camera_2d_{serial}");
@@ -1868,21 +1868,23 @@ pub fn pick_preview_3d<API: ScriptAPI + ?Sized>(
 }
 
 pub fn draw_preview_2d_gizmos<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
-    let (mode, ids, keys, doc_text) = with_state!(ctx.run, EditorState, ctx.id, |state| {
-        (
-            state.viewport_mode.clone(),
+    // Per-frame path: bail before touching the doc, and share the cached
+    // parse instead of deep-cloning it every frame.
+    let Some((ids, keys, doc)) = with_state!(ctx.run, EditorState, ctx.id, |state| {
+        if state.viewport_mode != "2D" || state.doc_text.is_empty() {
+            return None;
+        }
+        Some((
             state.preview_node_ids.clone(),
             state.preview_node_keys.clone(),
-            state.doc_text.clone(),
-        )
-    });
-    if mode != "2D" || doc_text.is_empty() {
+            cached_scene_doc_shared(&state.doc_text),
+        ))
+    }) else {
         return;
-    }
-    let doc = cached_scene_doc(&doc_text);
-    let index = SceneDocIndex::new(&doc);
+    };
+    let index = SceneDocIndex::new(doc.as_ref());
     for (raw_id, key) in ids.into_iter().zip(keys) {
-        let Some(doc_node) = index.node(&doc, key) else {
+        let Some(doc_node) = index.node(doc.as_ref(), key) else {
             continue;
         };
         let id = NodeID::from_u64(raw_id);
@@ -2489,7 +2491,7 @@ pub fn pick_preview_ui<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>
     if doc_text.is_empty() {
         return None;
     }
-    let doc = cached_scene_doc(&doc_text);
+    let doc = cached_scene_doc_shared(&doc_text);
     let point = Vector2::new(pointer.uv.x, 1.0 - pointer.uv.y);
     pick_doc_ui_node(&doc, point)
 }
@@ -2502,7 +2504,7 @@ pub fn pick_resize_handle<API: ScriptAPI + ?Sized>(
         (state.doc_text.clone(), state.selected_key)
     });
     let key = selected?;
-    let doc = cached_scene_doc(&doc_text);
+    let doc = cached_scene_doc_shared(&doc_text);
     let rect = doc_ui_rect(&doc, key)?;
     let point = Vector2::new(pointer.uv.x, 1.0 - pointer.uv.y);
     resize_handles(rect)
@@ -2521,7 +2523,7 @@ pub fn pick_rotation_zone<API: ScriptAPI + ?Sized>(
         (state.doc_text.clone(), state.selected_key)
     });
     let key = selected?;
-    let doc = cached_scene_doc(&doc_text);
+    let doc = cached_scene_doc_shared(&doc_text);
     let rect = doc_ui_rect(&doc, key)?;
     let point = Vector2::new(pointer.uv.x, 1.0 - pointer.uv.y);
     let min = rect.center - rect.size * 0.5;
@@ -2734,7 +2736,7 @@ pub fn scene_field_str(data: &SceneNodeData, field: &str) -> Option<String> {
 }
 
 pub fn selected_node_type_name(doc_text: &str, key: u32) -> Option<String> {
-    let doc = cached_scene_doc(doc_text);
+    let doc = cached_scene_doc_shared(doc_text);
     doc.scene
         .nodes
         .iter()
@@ -2743,7 +2745,7 @@ pub fn selected_node_type_name(doc_text: &str, key: u32) -> Option<String> {
 }
 
 pub fn selected_node_viewport_mode(doc_text: &str, key: u32) -> Option<&'static str> {
-    let doc = cached_scene_doc(doc_text);
+    let doc = cached_scene_doc_shared(doc_text);
     let node_type = doc
         .scene
         .nodes

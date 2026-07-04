@@ -259,7 +259,8 @@ impl Runtime {
         let scroll_input_changed = self.ui_scroll_input_changed();
         let text_input_changed =
             self.render_ui.focused_text_edit.is_some() && self.ui_text_input_changed();
-        let scroll_animation_active = self.has_active_scroll_container_animation();
+        // The scroll-animation probe walks every node; keep it last so the
+        // common dirty/input cases short-circuit past it.
         let has_extraction_work = self.dirty.has_any_dirty()
             || self.dirty.has_pending_transform_roots()
             || !self.render_ui.removed_nodes.is_empty()
@@ -267,7 +268,7 @@ impl Runtime {
             || input_changed
             || scroll_input_changed
             || text_input_changed
-            || scroll_animation_active;
+            || self.has_active_scroll_container_animation();
         if !has_extraction_work {
             if let Some(timing) = timing {
                 timing.total = total_start.expect("ui timing total start exists").elapsed();
@@ -684,16 +685,26 @@ impl Runtime {
 
 impl Runtime {
     fn ensure_tree_list_internal_nodes(&mut self) {
+        // Full sync clones the item list and re-marks every internal row
+        // dirty, so it must not run on unrelated extraction work (pointer
+        // moves, other widgets): gate it on the tree node itself being
+        // dirty. Engine-side mutations (row clicks) call
+        // sync_tree_list_internal_nodes directly.
         let tree_ids = self
             .nodes
             .iter()
-            .filter_map(|(id, node)| {
-                matches!(node.data, SceneNodeData::UiTreeList(_)).then_some(id)
+            .filter_map(|(id, node)| match &node.data {
+                SceneNodeData::UiTreeList(tree) => {
+                    let never_synced = tree.internal_rows.is_empty() && !tree.items.is_empty();
+                    Some((id, never_synced))
+                }
+                _ => None,
             })
             .collect::<Vec<_>>();
-        for tree_id in tree_ids {
-            self.ensure_tree_list_internal_nodes_for(tree_id);
-            self.sync_tree_list_internal_nodes(tree_id);
+        for (tree_id, never_synced) in tree_ids {
+            if never_synced || self.dirty.ui_flags_at(tree_id.index() as usize) != 0 {
+                self.sync_tree_list_internal_nodes(tree_id);
+            }
         }
     }
 
@@ -996,7 +1007,9 @@ impl Runtime {
                 label.base.transform.position =
                     UiVector2::pixels(x + toggle_size + icon_width + 8.0, 0.0);
                 label.color = text_color;
-                label.set_text(item.label.to_string());
+                if label.text != item.label {
+                    label.set_text(item.label.to_string());
+                }
             }
             if let Some(pair) = internal_lines.get(visible_idx).copied() {
                 self.sync_tree_list_line(
@@ -1088,16 +1101,24 @@ impl Runtime {
     }
 
     fn ensure_dropdown_internal_nodes(&mut self) {
+        // Same gating as tree lists: only re-sync dropdowns whose node is
+        // dirty this frame. Engine-side open/select paths call
+        // sync_dropdown_internal_nodes directly.
         let dropdown_ids = self
             .nodes
             .iter()
-            .filter_map(|(id, node)| {
-                matches!(node.data, SceneNodeData::UiDropdown(_)).then_some(id)
+            .filter_map(|(id, node)| match &node.data {
+                SceneNodeData::UiDropdown(dropdown) => {
+                    Some((id, dropdown.internal_label.is_nil()))
+                }
+                _ => None,
             })
             .collect::<Vec<_>>();
-        for dropdown_id in dropdown_ids {
-            self.ensure_dropdown_internal_nodes_for(dropdown_id);
-            self.sync_dropdown_internal_nodes(dropdown_id);
+        for (dropdown_id, never_synced) in dropdown_ids {
+            if never_synced || self.dirty.ui_flags_at(dropdown_id.index() as usize) != 0 {
+                self.ensure_dropdown_internal_nodes_for(dropdown_id);
+                self.sync_dropdown_internal_nodes(dropdown_id);
+            }
         }
     }
 
@@ -1286,16 +1307,24 @@ impl Runtime {
     }
 
     fn ensure_color_picker_internal_nodes(&mut self) {
+        // Same gating as tree lists: only re-sync pickers whose node is
+        // dirty this frame. Engine-side popup/edit paths call
+        // sync_color_picker_internal_nodes directly.
         let picker_ids = self
             .nodes
             .iter()
-            .filter_map(|(id, node)| {
-                matches!(node.data, SceneNodeData::UiColorPicker(_)).then_some(id)
+            .filter_map(|(id, node)| match &node.data {
+                SceneNodeData::UiColorPicker(picker) => {
+                    Some((id, picker.internal_swatch_button.is_nil()))
+                }
+                _ => None,
             })
             .collect::<Vec<_>>();
-        for picker_id in picker_ids {
-            self.ensure_color_picker_internal_nodes_for(picker_id);
-            self.sync_color_picker_internal_nodes(picker_id);
+        for (picker_id, never_synced) in picker_ids {
+            if never_synced || self.dirty.ui_flags_at(picker_id.index() as usize) != 0 {
+                self.ensure_color_picker_internal_nodes_for(picker_id);
+                self.sync_color_picker_internal_nodes(picker_id);
+            }
         }
     }
 

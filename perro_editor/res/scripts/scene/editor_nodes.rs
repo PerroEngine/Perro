@@ -6,7 +6,7 @@ use crate::scripts_assets_editor_file_watch_rs as editor_file_watch;
 use crate::scripts_assets_editor_files_rs as editor_files;
 use crate::scripts_editor_main_rs::{
     EditorState, FILE_WATCH_INTERVAL_FRAMES, LIST_DOUBLE_CLICK_FRAMES, MAX_FILES,
-    MAX_NODE_PICKER_ROWS, MAX_NODES, MAX_RECENT, MAX_TABS, RECENT_PROJECTS_PATH, cached_scene_doc,
+    MAX_NODE_PICKER_ROWS, MAX_NODES, MAX_RECENT, MAX_TABS, RECENT_PROJECTS_PATH, cached_scene_doc, cached_scene_doc_shared,
     cached_scene_node, set_state_scene_doc,
 };
 use crate::scripts_scene_editor_animation_rs::*;
@@ -87,7 +87,7 @@ pub fn select_node_slot<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API
         if state.doc_text.is_empty() {
             None
         } else {
-            let doc = cached_scene_doc(&state.doc_text);
+            let doc = cached_scene_doc_shared(&state.doc_text);
             scene_tree_view(
                 &doc,
                 state.selected_key,
@@ -116,7 +116,7 @@ pub fn select_node_slot<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API
                 }
             }
         });
-        refresh_all(ctx);
+        refresh_selection_panels(ctx);
     }
 }
 
@@ -128,7 +128,7 @@ pub fn click_scene_node_slot<API: ScriptAPI + ?Sized>(
         if state.doc_text.is_empty() {
             None
         } else {
-            let doc = cached_scene_doc(&state.doc_text);
+            let doc = cached_scene_doc_shared(&state.doc_text);
             scene_tree_view(
                 &doc,
                 state.selected_key,
@@ -168,7 +168,7 @@ pub fn click_scene_node_slot<API: ScriptAPI + ?Sized>(
         if state.doc_text.is_empty() {
             false
         } else {
-            let doc = cached_scene_doc(&state.doc_text);
+            let doc = cached_scene_doc_shared(&state.doc_text);
             scene_child_count(&doc, key) > 0
         }
     });
@@ -192,7 +192,7 @@ pub fn click_scene_node_slot<API: ScriptAPI + ?Sized>(
     })
     .unwrap_or(false);
     if changed {
-        refresh_all(ctx);
+        refresh_scene_panel(ctx);
     }
 }
 
@@ -204,7 +204,7 @@ pub fn toggle_scene_node_slot<API: ScriptAPI + ?Sized>(
         if state.doc_text.is_empty() {
             None
         } else {
-            let doc = cached_scene_doc(&state.doc_text);
+            let doc = cached_scene_doc_shared(&state.doc_text);
             scene_tree_view(
                 &doc,
                 state.selected_key,
@@ -222,7 +222,7 @@ pub fn toggle_scene_node_slot<API: ScriptAPI + ?Sized>(
         if state.doc_text.is_empty() {
             false
         } else {
-            let doc = cached_scene_doc(&state.doc_text);
+            let doc = cached_scene_doc_shared(&state.doc_text);
             scene_child_count(&doc, key) > 0
         }
     });
@@ -245,7 +245,7 @@ pub fn toggle_scene_node_slot<API: ScriptAPI + ?Sized>(
     })
     .unwrap_or(false);
     if changed {
-        refresh_all(ctx);
+        refresh_scene_panel(ctx);
     }
 }
 
@@ -258,7 +258,7 @@ pub fn set_scene_node_slot_open<API: ScriptAPI + ?Sized>(
         if state.doc_text.is_empty() {
             None
         } else {
-            let doc = cached_scene_doc(&state.doc_text);
+            let doc = cached_scene_doc_shared(&state.doc_text);
             scene_tree_view(
                 &doc,
                 state.selected_key,
@@ -276,7 +276,7 @@ pub fn set_scene_node_slot_open<API: ScriptAPI + ?Sized>(
         if state.doc_text.is_empty() {
             false
         } else {
-            let doc = cached_scene_doc(&state.doc_text);
+            let doc = cached_scene_doc_shared(&state.doc_text);
             scene_child_count(&doc, key) > 0
         }
     });
@@ -306,7 +306,7 @@ pub fn set_scene_node_slot_open<API: ScriptAPI + ?Sized>(
     })
     .unwrap_or(false);
     if changed {
-        refresh_all(ctx);
+        refresh_scene_panel(ctx);
     }
 }
 
@@ -363,7 +363,7 @@ pub fn expand_scene_tree_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_
 
 pub fn collapse_scene_tree_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
     let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
-        let doc = cached_scene_doc(&state.doc_text);
+        let doc = cached_scene_doc_shared(&state.doc_text);
         let mut keys = doc
             .scene
             .nodes
@@ -390,7 +390,7 @@ pub fn copy_selected_node_path<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<
             state.log = "node path fail\nno open scene".to_string();
             return;
         }
-        let doc = cached_scene_doc(&state.doc_text);
+        let doc = cached_scene_doc_shared(&state.doc_text);
         let Some(node) = cached_scene_node(&state.doc_text, key) else {
             state.log = "node path fail\nmissing node".to_string();
             return;
@@ -462,7 +462,7 @@ pub fn open_selected_node_asset_ref<API: ScriptAPI + ?Sized>(ctx: &mut ScriptCon
         if state.doc_text.is_empty() {
             return None;
         }
-        let doc = cached_scene_doc(&state.doc_text);
+        let doc = cached_scene_doc_shared(&state.doc_text);
         let node = doc
             .scene
             .nodes
@@ -502,7 +502,7 @@ pub fn select_node_using_active_asset<API: ScriptAPI + ?Sized>(ctx: &mut ScriptC
             state.log = "find user fail\nopen scene".to_string();
             return false;
         }
-        let doc = cached_scene_doc(&state.doc_text);
+        let doc = cached_scene_doc_shared(&state.doc_text);
         let users = doc
             .scene
             .nodes
@@ -1235,7 +1235,7 @@ pub fn picker_parent_node_kind(state: &EditorState) -> Option<&'static str> {
     if state.doc_text.is_empty() {
         return None;
     }
-    let doc = cached_scene_doc(&state.doc_text);
+    let doc = cached_scene_doc_shared(&state.doc_text);
     let key = add_node_parent(&doc, state.selected_key, state.add_node_as_sibling)?;
     doc.scene
         .nodes
@@ -1764,7 +1764,7 @@ pub fn copy_selected_node<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, A
             state.log = "copy node fail\nno open scene".to_string();
             return false;
         }
-        let doc = cached_scene_doc(&state.doc_text);
+        let doc = cached_scene_doc_shared(&state.doc_text);
         let Some(node) = cached_scene_node(&state.doc_text, key) else {
             state.log = "copy node fail\nmissing node".to_string();
             return false;

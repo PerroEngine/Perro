@@ -86,20 +86,11 @@ pub(super) fn merge_prepared_scene(
     let mut engine_root = SceneNode::new(SceneNodeData::Node);
     engine_root.name = Cow::Borrowed("Game Root");
     runtime.nodes.reserve(nodes.len().saturating_add(1));
-    // Read type + tags from the owned node before it moves into the arena,
-    // avoiding a post-insert arena lookup.
+    // Read the type from the owned node before it moves into the arena,
+    // avoiding a post-insert arena lookup. The arena indexes tags on insert.
     let engine_root_type = engine_root.node_type();
-    let engine_root_tags = engine_root.get_tag_ids();
     let engine_root = runtime.nodes.insert(engine_root);
     runtime.register_internal_node_schedules(engine_root, engine_root_type);
-    for tag in engine_root_tags {
-        runtime
-            .node_index
-            .node_tag_index
-            .entry(tag)
-            .or_default()
-            .insert(engine_root);
-    }
 
     // Scene keys are sparse `u32` (author-assigned keys plus generated ones from
     // root_of expansion / default light injection), so a `Vec` index is not safe.
@@ -153,22 +144,14 @@ pub(super) fn merge_prepared_scene(
             return Err(format!("duplicate scene key `{}`", key));
         }
 
-        // Compute type, tags, and the camera-active flag from the owned node
-        // before it moves into the arena, eliminating post-insert lookups.
+        // Compute type and the camera-active flag from the owned node before
+        // it moves into the arena, eliminating post-insert lookups. The arena
+        // indexes tags on insert.
         let node_type = node.node_type();
-        let node_tags = node.get_tag_ids();
         let camera_3d_active =
             matches!(&node.data, SceneNodeData::Camera3D(camera) if camera.active);
         let node = runtime.nodes.insert(node);
         runtime.register_internal_node_schedules(node, node_type);
-        for tag in node_tags {
-            runtime
-                .node_index
-                .node_tag_index
-                .entry(tag)
-                .or_default()
-                .insert(node);
-        }
         if camera_3d_active {
             runtime.note_camera_3d_activated(node);
         }

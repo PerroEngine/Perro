@@ -149,6 +149,72 @@ fn node_arena_len_tracks_active_nodes() {
 }
 
 #[test]
+fn node_arena_name_index_tracks_insert_rename_remove() {
+    let mut arena = NodeArena::new();
+    let mut named = SceneNode::new(SceneNodeData::Node3D(Node3D::new()));
+    named.set_name("alpha");
+    let a = arena.insert(named);
+    let b = arena.insert(SceneNode::new(SceneNodeData::Node3D(Node3D::new())));
+
+    assert_eq!(arena.named_ids("alpha"), &[a]);
+    assert!(arena.named_ids("beta").is_empty());
+
+    // Rename keeps the index in sync (old entry gone, new one present).
+    assert!(arena.rename(a, "beta".into()));
+    assert!(arena.named_ids("alpha").is_empty());
+    assert_eq!(arena.named_ids("beta"), &[a]);
+
+    // Naming a second node appends in insertion order.
+    assert!(arena.rename(b, "beta".into()));
+    assert_eq!(arena.named_ids("beta"), &[a, b]);
+
+    // Removal drops only the removed id; empty names never indexed.
+    let _ = arena.remove(a);
+    assert_eq!(arena.named_ids("beta"), &[b]);
+    assert!(arena.rename(b, "".into()));
+    assert!(arena.named_ids("beta").is_empty());
+
+    // Dead ids fail.
+    assert!(!arena.rename(a, "gamma".into()));
+}
+
+#[test]
+fn node_arena_tag_index_tracks_insert_mutate_remove() {
+    let mut arena = NodeArena::new();
+    let enemy = perro_ids::NodeTag::borrowed("enemy");
+    let boss = perro_ids::NodeTag::borrowed("boss");
+    let enemy_id = enemy.id;
+    let boss_id = boss.id;
+
+    let mut tagged = SceneNode::new(SceneNodeData::Node3D(Node3D::new()));
+    tagged.set_tags(Some(vec![enemy.clone()]));
+    let a = arena.insert(tagged);
+    let b = arena.insert(SceneNode::new(SceneNodeData::Node3D(Node3D::new())));
+
+    // Insert indexes pre-set tags.
+    assert!(arena.tag_index().get(&enemy_id).is_some_and(|s| s.contains(&a)));
+
+    // add/remove keep the index in sync; adding a duplicate is a no-op.
+    assert!(arena.add_node_tag(b, enemy.clone()));
+    assert!(arena.add_node_tag(b, enemy.clone()));
+    assert_eq!(arena.tag_index().get(&enemy_id).map(|s| s.len()), Some(2));
+    assert!(arena.remove_node_tag(b, enemy_id));
+    assert!(!arena.tag_index().get(&enemy_id).is_some_and(|s| s.contains(&b)));
+
+    // set_node_tags replaces: enemy entry swaps to boss.
+    assert!(arena.set_node_tags(a, Some(vec![boss.clone()])));
+    assert!(arena.tag_index().get(&enemy_id).is_none());
+    assert!(arena.tag_index().get(&boss_id).is_some_and(|s| s.contains(&a)));
+
+    // Removal + clear drop entries; dead ids fail.
+    let _ = arena.remove(a);
+    assert!(arena.tag_index().get(&boss_id).is_none());
+    assert!(!arena.add_node_tag(a, boss));
+    arena.clear();
+    assert!(arena.tag_index().is_empty());
+}
+
+#[test]
 fn script_update_schedules_toggle_at_runtime() {
     let mut runtime = Runtime::new();
     let update_count = Arc::new(AtomicUsize::new(0));

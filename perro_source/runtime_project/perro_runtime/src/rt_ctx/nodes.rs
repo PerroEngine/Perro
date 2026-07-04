@@ -351,7 +351,6 @@ impl Runtime {
             node.parent = parent;
             node.children.reserve(child_counts[index]);
 
-            let tag_ids = node.get_tag_ids();
             let node_type = node.node_type();
             let id = self.nodes.insert(node);
             ids.push(id);
@@ -375,14 +374,6 @@ impl Runtime {
                     vars,
                 );
             }
-            for tag in tag_ids {
-                self.node_index
-                    .node_tag_index
-                    .entry(tag)
-                    .or_default()
-                    .insert(id);
-            }
-
             if let Some(parent_index) = spec.parent {
                 if let Some(parent_node) = self.nodes.get_mut(ids[parent_index]) {
                     parent_node.children.push(id);
@@ -864,11 +855,25 @@ impl NodeAPI for Runtime {
     where
         S: Into<Cow<'static, str>>,
     {
-        let Some(node) = self.nodes.get_mut(node_id) else {
-            return false;
-        };
-        node.set_name(name);
-        true
+        // Route through the arena so the name index stays in sync.
+        self.nodes.rename(node_id, name.into())
+    }
+
+    fn find_node_by_name<S>(
+        &mut self,
+        root: perro_ids::NodeID,
+        name: S,
+    ) -> Option<perro_ids::NodeID>
+    where
+        S: AsRef<str>,
+    {
+        let name = name.as_ref();
+        for id in self.nodes.named_ids(name) {
+            if root.is_nil() || self.node_is_descendant_of(*id, root) {
+                return Some(*id);
+            }
+        }
+        None
     }
 
     fn get_node_parent_id(&mut self, node_id: perro_ids::NodeID) -> Option<perro_ids::NodeID> {
@@ -1099,19 +1104,7 @@ impl NodeAPI for Runtime {
             let _ = self.remove_script_instance(current);
 
             let parent_id = match self.nodes.get(current) {
-                Some(node) => {
-                    for tag in node.get_tag_ids() {
-                        let mut remove_entry = false;
-                        if let Some(set) = self.node_index.node_tag_index.get_mut(&tag) {
-                            set.remove(&current);
-                            remove_entry = set.is_empty();
-                        }
-                        if remove_entry {
-                            self.node_index.node_tag_index.remove(&tag);
-                        }
-                    }
-                    node.get_parent()
-                }
+                Some(node) => node.get_parent(),
                 None => continue,
             };
 
@@ -1156,85 +1149,23 @@ impl NodeAPI for Runtime {
     where
         T: IntoNodeTags,
     {
-        let old_tags = match self.nodes.get(node_id) {
-            Some(node) => node.get_tag_ids(),
-            None => return false,
-        };
-
-        let Some(node) = self.nodes.get_mut(node_id) else {
-            return false;
-        };
-        if let Some(tags) = tags {
-            node.set_tags(Some(tags.into_node_tags()));
-        } else {
-            node.clear_tags();
-        }
-        let new_tags = node.get_tag_ids();
-
-        for tag in old_tags {
-            if !new_tags.contains(&tag)
-                && let Some(set) = self.node_index.node_tag_index.get_mut(&tag)
-            {
-                set.remove(&node_id);
-                let remove_entry = set.is_empty();
-                if remove_entry {
-                    self.node_index.node_tag_index.remove(&tag);
-                }
-            }
-        }
-        for tag in new_tags {
-            self.node_index
-                .node_tag_index
-                .entry(tag)
-                .or_default()
-                .insert(node_id);
-        }
-        true
+        // Arena keeps the tag index in sync.
+        self.nodes
+            .set_node_tags(node_id, tags.map(|tags| tags.into_node_tags()))
     }
 
     fn add_node_tag<T>(&mut self, node_id: perro_ids::NodeID, tag: T) -> bool
     where
         T: IntoNodeTag,
     {
-        let Some(node) = self.nodes.get_mut(node_id) else {
-            return false;
-        };
-        let tag = tag.into_node_tag();
-        let tag_id = tag.id;
-        let mut added = false;
-        if !node.has_tag(tag_id) {
-            node.add_tag(tag);
-            added = true;
-        }
-        if added {
-            self.node_index
-                .node_tag_index
-                .entry(tag_id)
-                .or_default()
-                .insert(node_id);
-        }
-        true
+        self.nodes.add_node_tag(node_id, tag.into_node_tag())
     }
 
     fn remove_node_tag<T>(&mut self, node_id: perro_ids::NodeID, tag: T) -> bool
     where
         T: IntoTagID,
     {
-        let Some(node) = self.nodes.get_mut(node_id) else {
-            return false;
-        };
-        let tag = tag.into_tag_id();
-        if node.has_tag(tag) {
-            node.remove_tag(tag);
-            if let Some(set) = self.node_index.node_tag_index.get_mut(&tag) {
-                set.remove(&node_id);
-                let remove_entry = set.is_empty();
-                if remove_entry {
-                    self.node_index.node_tag_index.remove(&tag);
-                }
-            }
-        }
-        true
+        self.nodes.remove_node_tag(node_id, tag.into_tag_id())
     }
 
     fn query_nodes(&mut self, query: NodeQueryView<'_>) -> Vec<perro_ids::NodeID> {
@@ -1243,7 +1174,7 @@ impl NodeAPI for Runtime {
             &self.nodes,
             query,
             spatial.as_ref(),
-            Some(&self.node_index.node_tag_index),
+            Some(self.nodes.tag_index()),
         );
         self.recycle_query_spatial_index(spatial);
         out
@@ -1255,7 +1186,7 @@ impl NodeAPI for Runtime {
             &self.nodes,
             query,
             spatial.as_ref(),
-            Some(&self.node_index.node_tag_index),
+            Some(self.nodes.tag_index()),
         );
         self.recycle_query_spatial_index(spatial);
         out
@@ -1492,6 +1423,27 @@ impl NodeAPI for Runtime {
         surface_index: u32,
     ) -> Vec<MeshDataSurfaceRegion3D> {
         self.query_mesh_data_surface_regions(mesh_id, surface_index)
+    }
+}
+
+impl Runtime {
+    fn node_is_descendant_of(&self, mut id: perro_ids::NodeID, root: perro_ids::NodeID) -> bool {
+        let mut hops = 0usize;
+        while !id.is_nil() {
+            if id == root {
+                return true;
+            }
+            let Some(node) = self.nodes.get(id) else {
+                return false;
+            };
+            id = node.get_parent();
+            hops += 1;
+            // Parent-cycle guard; deeper than any real scene tree.
+            if hops > 100_000 {
+                return false;
+            }
+        }
+        false
     }
 }
 

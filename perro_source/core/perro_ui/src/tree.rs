@@ -9,6 +9,10 @@ pub struct UiTreeListItem {
     pub parent: Option<usize>,
     pub open: bool,
     pub selectable: bool,
+    /// Show a disclosure toggle even when no child items are present.
+    /// Lets callers that lazily populate children (e.g. collapsed folders
+    /// whose contents are culled from `items`) still render the triangle.
+    pub has_children_hint: bool,
 }
 
 impl UiTreeListItem {
@@ -22,6 +26,7 @@ impl UiTreeListItem {
             parent: None,
             open: true,
             selectable: true,
+            has_children_hint: false,
         }
     }
 
@@ -127,8 +132,20 @@ impl UiTreeList {
     }
 
     pub fn visible_items(&self) -> Vec<UiTreeListVisibleItem> {
+        // Adjacency built in one pass; slot 0 = roots, slot idx+1 = children
+        // of item idx. Keeps the walk O(n) instead of re-scanning all items
+        // per node.
+        let len = self.items.len();
+        let mut children: Vec<Vec<usize>> = vec![Vec::new(); len + 1];
+        for (idx, item) in self.items.iter().enumerate() {
+            match item.parent {
+                None => children[0].push(idx),
+                Some(parent) if parent < len => children[parent + 1].push(idx),
+                Some(_) => {}
+            }
+        }
         let mut out = Vec::new();
-        self.push_visible_children(None, 0, &mut out);
+        self.push_visible_children(&children, 0, 0, &mut out);
         out
     }
 
@@ -177,26 +194,27 @@ impl UiTreeList {
 
     fn push_visible_children(
         &self,
-        parent: Option<usize>,
+        children: &[Vec<usize>],
+        slot: usize,
         depth: u32,
         out: &mut Vec<UiTreeListVisibleItem>,
     ) {
-        let children = self
-            .items
-            .iter()
-            .enumerate()
-            .filter_map(|(idx, item)| (item.parent == parent).then_some(idx))
-            .collect::<Vec<_>>();
-        for (pos, idx) in children.iter().copied().enumerate() {
-            let has_children = self.items.iter().any(|item| item.parent == Some(idx));
+        let list = &children[slot];
+        for (pos, idx) in list.iter().copied().enumerate() {
+            let has_child_items = !children[idx + 1].is_empty();
+            let has_children = has_child_items
+                || self
+                    .items
+                    .get(idx)
+                    .is_some_and(|item| item.has_children_hint);
             out.push(UiTreeListVisibleItem {
                 index: idx,
                 depth,
                 has_children,
-                last_child: pos + 1 == children.len(),
+                last_child: pos + 1 == list.len(),
             });
-            if has_children && self.items.get(idx).is_some_and(|item| item.open) {
-                self.push_visible_children(Some(idx), depth.saturating_add(1), out);
+            if has_child_items && self.items.get(idx).is_some_and(|item| item.open) {
+                self.push_visible_children(children, idx + 1, depth.saturating_add(1), out);
             }
         }
     }

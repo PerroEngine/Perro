@@ -7,7 +7,7 @@ use crate::scripts_assets_editor_files_rs as editor_files;
 use crate::scripts_editor_main_rs::{
     EditorState, FILE_WATCH_INTERVAL_FRAMES, MAX_FILES, MAX_INSPECTOR_PICKER_ROWS,
     MAX_NODE_PICKER_ROWS, MAX_NODES, MAX_RECENT, MAX_TABS, RECENT_PROJECTS_PATH, cached_scene_doc,
-    cached_scene_node,
+    cached_scene_doc_shared, cached_scene_node,
 };
 use crate::scripts_scene_editor_animation_rs::*;
 use crate::scripts_scene_editor_gizmos_rs as editor_gizmos;
@@ -46,7 +46,52 @@ static EDITOR_TREE_ICON_CACHE: OnceLock<Mutex<Vec<(String, TextureID)>>> = OnceL
 
 pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
     let view = with_state!(ctx.run, EditorState, ctx.id, EditorView::from_state);
+    refresh_chrome_view(ctx, &view);
+    refresh_manager_view(ctx, &view);
+    refresh_node_picker_view(ctx, &view);
+    refresh_files_view(ctx, &view);
+    refresh_tabs_view(ctx, &view);
+    refresh_scene_pane_view(ctx, &view);
+    refresh_inspector_view(ctx, &view);
+}
 
+// Narrow refreshes: most events touch one panel; rebuilding every panel
+// (tree lists, inspector rows) per event was the bulk of click latency.
+
+/// File panel + status only (folder expand/collapse, file-local ops).
+pub fn refresh_file_panel<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let view = with_state!(ctx.run, EditorState, ctx.id, EditorView::from_state);
+    refresh_files_view(ctx, &view);
+    refresh_status_view(ctx, &view);
+}
+
+/// Scene tree pane + status only (node expand/collapse).
+pub fn refresh_scene_panel<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let view = with_state!(ctx.run, EditorState, ctx.id, EditorView::from_state);
+    refresh_scene_pane_view(ctx, &view);
+    refresh_status_view(ctx, &view);
+}
+
+/// Scene node selection: chrome (mode buttons/status), scene pane, inspector.
+/// Skips file tree/tabs/manager/picker rebuilds.
+pub fn refresh_selection_panels<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let view = with_state!(ctx.run, EditorState, ctx.id, EditorView::from_state);
+    refresh_chrome_view(ctx, &view);
+    // Picker labels reference the selected node ("add child of X").
+    refresh_node_picker_view(ctx, &view);
+    refresh_scene_pane_view(ctx, &view);
+    refresh_inspector_view(ctx, &view);
+}
+
+/// File/asset selection: chrome, file panel, inspector. Skips scene pane.
+pub fn refresh_asset_panels<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let view = with_state!(ctx.run, EditorState, ctx.id, EditorView::from_state);
+    refresh_chrome_view(ctx, &view);
+    refresh_files_view(ctx, &view);
+    refresh_inspector_view(ctx, &view);
+}
+
+fn refresh_chrome_view<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, view: &EditorView) {
     set_label(
         ctx,
         "project_status",
@@ -164,7 +209,9 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
         "file_rows",
         (1.0, if glb_mode { 0.776 } else { 0.296 }),
     );
+}
 
+fn refresh_manager_view<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, view: &EditorView) {
     for idx in 0..MAX_RECENT {
         let has_recent = view.recent_projects.get(idx).is_some();
         let text = view
@@ -187,7 +234,9 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
             editor_view::short_path(&view.create_parent_dir, 34)
         ),
     );
+}
 
+fn refresh_node_picker_view<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, view: &EditorView) {
     set_label(ctx, "add_node_page_label", &view.node_picker_page);
     set_label(ctx, "add_node_parent_label", &view.node_picker_parent);
     set_text_box(ctx, "add_node_search_box", &view.node_picker_filter);
@@ -199,10 +248,14 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
             .unwrap_or_else(|| "-".to_string());
         set_label(ctx, &format!("add_node_type_{idx}_label"), &text);
     }
+}
 
+fn refresh_files_view<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, view: &EditorView) {
     apply_file_tree_layout(ctx);
     set_file_tree_list(ctx, &view);
+}
 
+fn refresh_tabs_view<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, view: &EditorView) {
     for idx in 0..MAX_TABS {
         let has_tab = view.open_paths.get(idx).is_some();
         let text = view
@@ -234,14 +287,18 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
             },
         );
     }
+}
 
+fn refresh_scene_pane_view<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, view: &EditorView) {
     apply_scene_list_layout(ctx);
     set_scene_tree_list(ctx, &view);
     apply_viewport_mode(ctx, &view.viewport_mode);
     apply_editor_gizmos(ctx, &view.gizmo, &view.viewport_mode);
     apply_selected_ui_overlay(ctx, view.selected_ui_rect);
     sync_selected_preview_gizmo(ctx);
+}
 
+fn refresh_inspector_view<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, view: &EditorView) {
     if take_inspector_layout_pass(ctx) {
         apply_inspector_static_layout(ctx);
         remove_legacy_transform_rows(ctx);
@@ -381,12 +438,17 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
     if selected_key_changed {
         clear_inspector_value_rows(ctx);
     }
+    let override_view = inspector_override_view(ctx);
     for idx in 0..view.inspector.script_vars.len() {
         let row = view.inspector.script_vars.get(idx);
         ensure_inspector_value_row(ctx, idx, row);
         let parent_idx = row_parents.get(idx).copied().flatten();
         place_inspector_value_row(ctx, idx, parent_idx);
-        if let Some(row_id) = inspector_value_row_inner(ctx, idx) {
+        // Bitmask grid = ~40 nodes; only instantiate it for rows that
+        // actually show one instead of hiding a copy under every row.
+        if row.is_some_and(|item| item.kind == "BitMask")
+            && let Some(row_id) = inspector_value_row_inner(ctx, idx)
+        {
             ensure_inspector_bitmask_grid(ctx, idx, row_id);
         }
         ensure_inspector_matrix_grid(ctx, idx, row);
@@ -615,12 +677,12 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
             &checkbox_name,
             row.is_some_and(|item| item.kind == "Bool" && item.value == "true"),
         );
+        let changed_row = row.is_some_and(|item| inspector_row_has_override(&override_view, item));
         if let Some(row) = row {
             let has_children = row_subtree_heights
                 .get(idx)
                 .zip(row_base_heights.get(idx))
                 .is_some_and(|(total, base)| *total > *base);
-            let changed_row = inspector_row_has_override(ctx, row);
             apply_inspector_value_row_panel(
                 ctx,
                 idx,
@@ -647,9 +709,7 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
                 && row.is_some_and(|item| item.source != "section" && item.removable)
                 && !vars_closed,
         );
-        let show_default_button = view.inspector.node_actions
-            && !vars_closed
-            && row.is_some_and(|item| inspector_row_has_override(ctx, item));
+        let show_default_button = view.inspector.node_actions && !vars_closed && changed_row;
         set_ui_display(
             ctx,
             &format!("inspector_var_{idx}_default_button"),
@@ -702,6 +762,18 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
     }
 }
 
+fn refresh_status_view<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, view: &EditorView) {
+    set_label(
+        ctx,
+        "project_status",
+        &format!("{}  {}", view.project_name, view.project_root),
+    );
+    set_label(ctx, "status_bar", &view.status);
+    set_label(ctx, "log_text", &view.log);
+    set_label(ctx, "viewport_label", &view.viewport);
+    apply_script_reload_popup(ctx, view.script_schema_reloading);
+}
+
 fn set_component_row_input_type<API: ScriptAPI + ?Sized>(
     ctx: &mut ScriptContext<'_, API>,
     prefix: &str,
@@ -733,15 +805,7 @@ fn inspector_row_component_input_type(row: &InspectorValueRow) -> UiTextInputTyp
 
 pub fn refresh_status<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
     let view = with_state!(ctx.run, EditorState, ctx.id, EditorView::from_state);
-    set_label(
-        ctx,
-        "project_status",
-        &format!("{}  {}", view.project_name, view.project_root),
-    );
-    set_label(ctx, "status_bar", &view.status);
-    set_label(ctx, "log_text", &view.log);
-    set_label(ctx, "viewport_label", &view.viewport);
-    apply_script_reload_popup(ctx, view.script_schema_reloading);
+    refresh_status_view(ctx, &view);
 }
 
 pub fn apply_component_row<API: ScriptAPI + ?Sized>(
@@ -1070,6 +1134,7 @@ pub struct EditorView {
     file_filter: String,
     file_scope: String,
     file_expanded_paths: Vec<String>,
+    file_dirs_with_children: std::collections::HashSet<String>,
     file_title: String,
     active_asset_path: String,
     scene_paths: Vec<String>,
@@ -1282,15 +1347,17 @@ impl EditorView {
         let mut glb_summary = "select .glb asset".to_string();
 
         if !state.doc_text.is_empty() {
-            let doc = cached_scene_doc(&state.doc_text);
+            let doc = cached_scene_doc_shared(&state.doc_text);
             let tree = scene_tree_view(
-                &doc,
+                doc.as_ref(),
                 state.selected_key,
                 &state.scene_filter,
                 &state.collapsed_scene_keys,
             );
-            gizmo = editor_gizmos::gizmo_view(&doc, state.selected_key);
-            selected_ui_rect = state.selected_key.and_then(|key| doc_ui_rect(&doc, key));
+            gizmo = editor_gizmos::gizmo_view(doc.as_ref(), state.selected_key);
+            selected_ui_rect = state
+                .selected_key
+                .and_then(|key| doc_ui_rect(doc.as_ref(), key));
             nodes = tree.labels;
             node_icons = tree.icons;
             scene_disclosures = tree.disclosures;
@@ -1300,7 +1367,7 @@ impl EditorView {
             if let Some(key) = state.selected_key
                 && let Some(node) = cached_scene_node(&state.doc_text, key)
             {
-                inspector = InspectorViewData::for_node(&doc, &node, state);
+                inspector = InspectorViewData::for_node(doc.as_ref(), &node, state);
             }
         }
 
@@ -1358,6 +1425,7 @@ impl EditorView {
             file_filter: state.file_filter.clone(),
             file_scope: state.file_scope.clone(),
             file_expanded_paths: state.file_expanded_paths.clone(),
+            file_dirs_with_children: file_dirs_with_children(state),
             file_title: file_panel_title(state),
             active_asset_path: state.active_asset_path.clone(),
             scene_paths: state.scene_paths.clone(),
@@ -1421,7 +1489,7 @@ pub fn editor_status_text(state: &EditorState) -> String {
     let node_count = if state.doc_text.is_empty() {
         0
     } else {
-        cached_scene_doc(&state.doc_text).scene.nodes.len()
+        cached_scene_doc_shared(&state.doc_text).scene.nodes.len()
     };
     let file_count = filtered_file_paths(state).len();
     let scope = if state.file_scope.is_empty() {
@@ -1666,59 +1734,80 @@ fn asset_ref_assign_label(kind: &str) -> &str {
         .unwrap_or("Asset")
 }
 
-fn inspector_row_has_override<API: ScriptAPI + ?Sized>(
+/// Per-refresh snapshot of the selected node's field/default lists. The
+/// override check runs for every inspector row; rebuilding these lists per
+/// row re-expanded the full script schema each time, so they are computed
+/// once here and shared across the row loop.
+#[derive(Default)]
+struct InspectorOverrideView {
+    node: Option<SceneNodeEntry>,
+    script_defaults: Vec<(SceneFieldName, SceneValue)>,
+    script_fields: Vec<(SceneFieldName, SceneValue)>,
+    scene_fields: Vec<(SceneFieldName, SceneValue)>,
+    scene_defaults: Vec<(SceneFieldName, SceneValue)>,
+}
+
+fn inspector_override_view<API: ScriptAPI + ?Sized>(
     ctx: &mut ScriptContext<'_, API>,
-    row: &InspectorValueRow,
-) -> bool {
+) -> InspectorOverrideView {
+    with_state!(ctx.run, EditorState, ctx.id, |state| {
+        let node = state
+            .selected_key
+            .and_then(|key| cached_scene_node(&state.doc_text, key));
+        let Some(node_ref) = node.as_ref() else {
+            return InspectorOverrideView::default();
+        };
+        InspectorOverrideView {
+            script_defaults: inspector_script_var_default_fields_for_node(state, node_ref),
+            script_fields: inspector_script_var_fields_for_node(state, node_ref),
+            scene_fields: inspector_scene_value_fields_for_node(node_ref),
+            scene_defaults: inspector_scene_default_value_fields_for_type(node_ref.data.node_type),
+            node,
+        }
+    })
+}
+
+fn inspector_row_has_override(view: &InspectorOverrideView, row: &InspectorValueRow) -> bool {
+    let Some(node) = view.node.as_ref() else {
+        return false;
+    };
     let Some(ValuePathStep::Root(root_idx)) = row.path.first() else {
         return false;
     };
-    with_state!(ctx.run, EditorState, ctx.id, |state| {
-        let Some(key) = state.selected_key else {
-            return false;
-        };
-        let Some(node) = cached_scene_node(&state.doc_text, key) else {
-            return false;
-        };
-        match row.source.as_str() {
-            "script" => {
-                let defaults = inspector_script_var_default_fields_for_node(state, &node);
-                let fields = inspector_script_var_fields_for_node(state, &node);
-                let Some((name, _)) = defaults.get(*root_idx) else {
-                    return false;
-                };
-                if !node.script_vars.iter().any(|(field, _)| field == name) {
-                    return false;
-                }
-                let Some(current) = value_at_path_in_fields(&fields, &row.path) else {
-                    return false;
-                };
-                let Some(default) = value_at_path_in_fields(&defaults, &row.path) else {
-                    return true;
-                };
-                !scene_values_equal(current, default)
+    match row.source.as_str() {
+        "script" => {
+            let Some((name, _)) = view.script_defaults.get(*root_idx) else {
+                return false;
+            };
+            if !node.script_vars.iter().any(|(field, _)| field == name) {
+                return false;
             }
-            "scene" => {
-                let fields = inspector_scene_value_fields_for_node(&node);
-                let defaults = inspector_scene_default_value_fields_for_type(node.data.node_type);
-                let Some((name, _)) = fields.get(*root_idx) else {
-                    return false;
-                };
-                if !node.data.fields.iter().any(|(field, _)| field == name) {
-                    return false;
-                }
-                let Some(current) = value_at_path_in_fields(&fields, &row.path) else {
-                    return false;
-                };
-                let Some(default) = value_at_path_in_fields(&defaults, &row.path) else {
-                    return true;
-                };
-                !scene_values_equal(current, default)
-            }
-            "tags" => !node.tags.is_empty(),
-            _ => false,
+            let Some(current) = value_at_path_in_fields(&view.script_fields, &row.path) else {
+                return false;
+            };
+            let Some(default) = value_at_path_in_fields(&view.script_defaults, &row.path) else {
+                return true;
+            };
+            !scene_values_equal(current, default)
         }
-    })
+        "scene" => {
+            let Some((name, _)) = view.scene_fields.get(*root_idx) else {
+                return false;
+            };
+            if !node.data.fields.iter().any(|(field, _)| field == name) {
+                return false;
+            }
+            let Some(current) = value_at_path_in_fields(&view.scene_fields, &row.path) else {
+                return false;
+            };
+            let Some(default) = value_at_path_in_fields(&view.scene_defaults, &row.path) else {
+                return true;
+            };
+            !scene_values_equal(current, default)
+        }
+        "tags" => !node.tags.is_empty(),
+        _ => false,
+    }
 }
 
 fn inspector_row_display_name(row: &InspectorValueRow) -> String {
@@ -2011,7 +2100,7 @@ fn inspector_enum_picker_entries(state: &EditorState) -> Vec<InspectorPickerEntr
     let Some(key) = state.selected_key else {
         return Vec::new();
     };
-    let doc = cached_scene_doc(&state.doc_text);
+    let doc = cached_scene_doc_shared(&state.doc_text);
     let Some(node) = cached_scene_node(&state.doc_text, key) else {
         return Vec::new();
     };
@@ -2039,7 +2128,7 @@ fn inspector_node_picker_entries(state: &EditorState) -> Vec<InspectorPickerEntr
         return Vec::new();
     }
     let filter = NodePickerFilter::parse(&state.inspector_picker_filter);
-    let doc = cached_scene_doc(&state.doc_text);
+    let doc = cached_scene_doc_shared(&state.doc_text);
     let allowed = inspector_picker_node_ref_types(state);
     doc.scene
         .nodes
@@ -2077,7 +2166,7 @@ fn inspector_picker_node_ref_types(state: &EditorState) -> Vec<String> {
     let Some(key) = state.selected_key else {
         return Vec::new();
     };
-    let doc = cached_scene_doc(&state.doc_text);
+    let doc = cached_scene_doc_shared(&state.doc_text);
     let Some(node) = doc.scene.nodes.iter().find(|node| node.key.as_u32() == key) else {
         return Vec::new();
     };
@@ -2145,7 +2234,7 @@ fn inspector_picker_asset_kind(state: &EditorState) -> Option<perro_scene::Scene
     if state.inspector_picker_kind == "value_asset" {
         let row_idx = state.inspector_picker_field.parse::<usize>().ok()?;
         let key = state.selected_key?;
-        let doc = cached_scene_doc(&state.doc_text);
+        let doc = cached_scene_doc_shared(&state.doc_text);
         let node = doc
             .scene
             .nodes
@@ -2160,7 +2249,7 @@ fn inspector_picker_asset_kind(state: &EditorState) -> Option<perro_scene::Scene
         return Some(perro_scene::SceneAssetKind::Script);
     }
     let key = state.selected_key?;
-    let doc = cached_scene_doc(&state.doc_text);
+    let doc = cached_scene_doc_shared(&state.doc_text);
     let node = doc
         .scene
         .nodes
@@ -2342,7 +2431,7 @@ pub fn asset_user_text(state: &EditorState, path: &str) -> String {
     if state.doc_text.is_empty() || path.ends_with('/') {
         return "users: -".to_string();
     }
-    let doc = cached_scene_doc(&state.doc_text);
+    let doc = cached_scene_doc_shared(&state.doc_text);
     let mut users = Vec::new();
     for node in doc.scene.nodes.iter() {
         if !node_uses_asset_path(node, path) {
@@ -2394,7 +2483,7 @@ pub fn asset_detail_text(state: &EditorState, path: &str, kind: &str) -> String 
         && !state.doc_text.is_empty()
         && state.open_paths.get(state.active_open).map(String::as_str) == Some(path)
     {
-        let doc = cached_scene_doc(&state.doc_text);
+        let doc = cached_scene_doc_shared(&state.doc_text);
         return format!(
             "nodes={}\nmode={}",
             doc.scene.nodes.len(),
@@ -2465,7 +2554,7 @@ pub fn animation_drawer_text(state: &EditorState) -> (String, String, String, bo
             false,
         );
     };
-    let doc = cached_scene_doc(&state.doc_text);
+    let doc = cached_scene_doc_shared(&state.doc_text);
     let name = doc
         .scene
         .nodes
@@ -2977,6 +3066,21 @@ pub fn filtered_file_paths(state: &EditorState) -> Vec<String> {
     paths
 }
 
+/// Dirs (trailing `/`, plus the synthetic `res://` root) that contain at
+/// least one entry in the full unfiltered file list. Collapsed folders keep
+/// their disclosure triangle from this set even though their contents are
+/// culled from the visible rows.
+fn file_dirs_with_children(state: &EditorState) -> std::collections::HashSet<String> {
+    let mut out = std::collections::HashSet::new();
+    for path in &state.file_paths {
+        let trimmed = path.strip_suffix('/').unwrap_or(path);
+        if let Some(pos) = trimmed.rfind('/') {
+            out.insert(trimmed[..pos + 1].to_string());
+        }
+    }
+    out
+}
+
 fn filtered_file_cache_key(state: &EditorState) -> String {
     format!(
         "{}\n{}\n{}\n{}\n{}",
@@ -3171,7 +3275,7 @@ pub fn picker_parent_text(state: &EditorState) -> String {
     if state.doc_text.is_empty() {
         return "target: -".to_string();
     }
-    let doc = cached_scene_doc(&state.doc_text);
+    let doc = cached_scene_doc_shared(&state.doc_text);
     let Some(key) = state
         .selected_key
         .or_else(|| doc.scene.root.map(|key| key.as_u32()))
@@ -3608,9 +3712,10 @@ pub fn set_label<API: ScriptAPI + ?Sized>(
     text: &str,
 ) {
     if let Some(id) = find_named(ctx, name) {
-        let text = text.to_string();
         let _ = with_node_mut!(ctx.run, UiLabel, id, |node| {
-            node.set_text(text);
+            if node.text.as_ref() != text {
+                node.set_text(text.to_string());
+            }
         });
     }
 }
@@ -4459,23 +4564,19 @@ pub fn set_scene_tree_list<API: ScriptAPI + ?Sized>(
                 ctx,
                 view.node_icons.get(idx).map(String::as_str).unwrap_or(""),
             ));
+        let disclosure = view
+            .scene_disclosures
+            .get(idx)
+            .copied()
+            .unwrap_or(RowIndicator::None);
         item.parent = parents.last().copied();
-        item.open = !matches!(
-            view.scene_disclosures
-                .get(idx)
-                .copied()
-                .unwrap_or(RowIndicator::None),
-            RowIndicator::Collapsed
-        );
+        item.open = !matches!(disclosure, RowIndicator::Collapsed);
         item.selectable = true;
+        // Collapsed nodes have their children culled from the row list, so
+        // the tree cannot infer expandability from child items alone.
+        item.has_children_hint = !matches!(disclosure, RowIndicator::None);
         items.push(item);
-        if !matches!(
-            view.scene_disclosures
-                .get(idx)
-                .copied()
-                .unwrap_or(RowIndicator::None),
-            RowIndicator::None
-        ) {
+        if !matches!(disclosure, RowIndicator::None) {
             parents.push(idx);
         }
     }
@@ -4569,6 +4670,11 @@ pub fn set_file_tree_list<API: ScriptAPI + ?Sized>(
             RowIndicator::Collapsed
         );
         item.selectable = true;
+        // Collapsed folders have their contents culled from the path list,
+        // so hint expandability from the full (unfiltered) file set.
+        item.has_children_hint = view.file_filter.is_empty()
+            && path.ends_with('/')
+            && view.file_dirs_with_children.contains(path.as_str());
         items.push(item);
         if path.ends_with('/') {
             parents.push(idx);
@@ -4809,53 +4915,12 @@ pub fn set_project_manager<API: ScriptAPI + ?Sized>(
     }
 }
 
-static NAME_CACHE: OnceLock<Mutex<std::collections::HashMap<String, u64>>> = OnceLock::new();
-
-fn name_cache() -> &'static Mutex<std::collections::HashMap<String, u64>> {
-    NAME_CACHE.get_or_init(|| Mutex::new(std::collections::HashMap::new()))
-}
-
-pub fn clear_name_cache() {
-    if let Ok(mut guard) = name_cache().lock() {
-        guard.clear();
-    }
-}
-
 pub fn find_named<API: ScriptAPI + ?Sized>(
     ctx: &mut ScriptContext<'_, API>,
     name: &str,
 ) -> Option<NodeID> {
-    let cached = name_cache().lock().ok().and_then(|g| g.get(name).copied());
-    if let Some(raw) = cached {
-        let id = NodeID::from_u64(raw);
-        if get_node_name!(ctx.run, id).as_deref() == Some(name) {
-            return Some(id);
-        }
-        if let Ok(mut guard) = name_cache().lock() {
-            guard.remove(name);
-        }
-    }
-
-    // Cache miss: walk the tree once and cache every named node seen, so
-    // one miss doesn't turn a refresh into hundreds of full-tree scans.
-    // First-seen wins, matching the traversal's own match order.
-    let mut found = None;
-    let mut stack = vec![ctx.id];
-    while let Some(id) = stack.pop() {
-        if let Some(node_name) = get_node_name!(ctx.run, id) {
-            let node_name = node_name.to_string();
-            if !node_name.is_empty() {
-                if found.is_none() && node_name == name {
-                    found = Some(id);
-                }
-                if let Ok(mut guard) = name_cache().lock() {
-                    guard.entry(node_name).or_insert_with(|| id.as_u64());
-                }
-            }
-        }
-        stack.extend(get_children!(ctx.run, id));
-    }
-    found
+    // Engine-side name index: O(1) hits AND misses, no cache to invalidate.
+    ctx.run.Nodes().find_node_by_name(ctx.id, name)
 }
 
 pub fn save_recent_projects(recent: &[String]) {

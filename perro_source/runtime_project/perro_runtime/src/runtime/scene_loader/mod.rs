@@ -458,7 +458,6 @@ impl Runtime {
         self.script_runtime.script_instance_dlc_mounts.clear();
         self.script_runtime.script_behavior_cache.clear();
         self.script_runtime.script_libraries.clear();
-        self.node_index.node_tag_index.clear();
         self.active_route_href = None;
         self.active_route_root = None;
         let mode_label;
@@ -1053,8 +1052,8 @@ mod tests {
 
         assert!(
             runtime
-                .node_index
-                .node_tag_index
+                .nodes
+                .tag_index()
                 .get(&tag)
                 .is_some_and(|nodes| nodes.contains(&merged.scene_root))
         );

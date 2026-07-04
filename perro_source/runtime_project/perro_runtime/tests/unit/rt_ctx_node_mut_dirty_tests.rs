@@ -396,6 +396,7 @@ fn with_node_mut_uitreelist_items_layout_flags() {
             parent: None,
             open: false,
             selectable: true,
+            has_children_hint: false,
         });
     });
 

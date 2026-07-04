@@ -5,7 +5,7 @@ use crate::scripts_assets_editor_file_watch_rs as editor_file_watch;
 use crate::scripts_assets_editor_files_rs as editor_files;
 use crate::scripts_editor_main_rs::{
     EditorState, FILE_WATCH_INTERVAL_FRAMES, LIST_DOUBLE_CLICK_FRAMES, MAX_FILES,
-    MAX_NODE_PICKER_ROWS, MAX_NODES, MAX_RECENT, MAX_TABS, RECENT_PROJECTS_PATH, cached_scene_doc,
+    MAX_NODE_PICKER_ROWS, MAX_NODES, MAX_RECENT, MAX_TABS, RECENT_PROJECTS_PATH, cached_scene_doc, cached_scene_doc_shared,
     cached_scene_node, clear_scene_doc_cache, set_state_scene_doc, set_state_scene_doc_loaded,
 };
 use crate::scripts_scene_editor_animation_rs::*;
@@ -130,7 +130,6 @@ pub fn load_editor_shell<API: ScriptAPI + ?Sized>(
         (old, old_picker)
     })
     .unwrap_or((0, 0));
-    clear_name_cache();
     if old != 0 {
         let _ = ctx.run.Nodes().remove_node(NodeID::from_u64(old));
     }
@@ -156,7 +155,6 @@ pub fn load_editor_shell<API: ScriptAPI + ?Sized>(
         state.editor_name_cache_names.clear();
         state.editor_name_cache_ids.clear();
     });
-    clear_name_cache();
     Ok(())
 }
 
@@ -425,7 +423,7 @@ pub fn click_or_open_file_slot<API: ScriptAPI + ?Sized>(
             &format!("folder\n{}", editor_files::rel_label(&scene_path)),
         );
     }
-    refresh_all(ctx);
+    refresh_asset_panels(ctx);
 }
 
 pub fn toggle_file_folder_expanded(state: &mut EditorState, path: &str) {
@@ -1882,7 +1880,7 @@ pub fn quick_asset_stem(state: &EditorState, kind: &str) -> String {
     if !state.doc_text.is_empty()
         && let Some(key) = state.selected_key
     {
-        let doc = cached_scene_doc(&state.doc_text);
+        let doc = cached_scene_doc_shared(&state.doc_text);
         if let Some(node) = cached_scene_node(&state.doc_text, key) {
             let name = sanitize_file_stem(&doc.scene.key_name_or_id(node.key));
             if !name.is_empty() {

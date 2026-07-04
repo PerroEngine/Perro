@@ -1,5 +1,7 @@
-use perro_ids::NodeID;
+use ahash::{AHashMap, AHashSet};
+use perro_ids::{NodeID, NodeTag, TagID};
 use perro_nodes::SceneNode;
+use std::borrow::Cow;
 
 /// Generational node store used by runtime hot paths.
 ///
@@ -7,10 +9,19 @@ use perro_nodes::SceneNode;
 /// node. Removing a node bumps its generation and adds the slot to the free
 /// list. Every public lookup checks both slot bounds and generation before it
 /// returns a node reference.
+///
+/// Node names and tags are indexed for O(1) lookup via [`Self::named_ids`] /
+/// [`Self::tag_index`]. Both indices are maintained by insert/remove/clear
+/// plus the mutating accessors ([`Self::rename`], [`Self::set_node_tags`],
+/// [`Self::add_node_tag`], [`Self::remove_node_tag`]); writing `node.name` or
+/// `node.tags` through `get_mut` bypasses them — set both before insert or go
+/// through the arena methods.
 pub struct NodeArena {
     nodes: Vec<Option<SceneNode>>,
     generations: Vec<u32>,
     free_indices: Vec<usize>,
+    name_index: AHashMap<Cow<'static, str>, Vec<NodeID>>,
+    tag_index: AHashMap<TagID, AHashSet<NodeID>>,
     active_len: usize,
     /// bump on any mut access / structural chg; cache invalidation key 4 systems
     /// that mirror node data (resource-ref scan)
@@ -46,6 +57,8 @@ impl NodeArena {
             nodes,
             generations,
             free_indices: Vec::new(),
+            name_index: AHashMap::default(),
+            tag_index: AHashMap::default(),
             active_len: 0,
             mutation_version: 0,
             physics_version: 0,
@@ -65,6 +78,8 @@ impl NodeArena {
             nodes,
             generations,
             free_indices: Vec::new(),
+            name_index: AHashMap::default(),
+            tag_index: AHashMap::default(),
             active_len: 0,
             mutation_version: 0,
             physics_version: 0,
@@ -116,20 +131,29 @@ impl NodeArena {
     /// Reuses a free slot when available. Otherwise appends a new slot.
     pub fn insert(&mut self, node: SceneNode) -> NodeID {
         self.bump_mutation_version();
+        let name = node.name.clone();
+        let tags = node.get_tag_ids();
         // Reuse a previously freed slot in O(1).
-        if let Some(index) = self.free_indices.pop() {
+        let id = if let Some(index) = self.free_indices.pop() {
             self.nodes[index] = Some(node);
             self.active_len = self.active_len.saturating_add(1);
             let generation = self.generations[index];
-            return NodeID::from_parts(index as u32, generation);
+            NodeID::from_parts(index as u32, generation)
+        } else {
+            // No free slots, push to end
+            let index = self.nodes.len();
+            self.nodes.push(Some(node));
+            self.generations.push(0);
+            self.active_len = self.active_len.saturating_add(1);
+            NodeID::from_parts(index as u32, 0)
+        };
+        if !name.is_empty() {
+            self.name_index.entry(name).or_default().push(id);
         }
-
-        // No free slots, push to end
-        let index = self.nodes.len();
-        self.nodes.push(Some(node));
-        self.generations.push(0);
-        self.active_len = self.active_len.saturating_add(1);
-        NodeID::from_parts(index as u32, 0)
+        for tag in tags {
+            self.tag_index.entry(tag).or_default().insert(id);
+        }
+        id
     }
 
     // ---- Checked lookup ----
@@ -174,11 +198,148 @@ impl NodeArena {
         self.bump_mutation_version();
         self.generations[index] = self.generations[index].wrapping_add(1);
         let removed = self.nodes[index].take();
-        if removed.is_some() {
+        if let Some(node) = &removed {
             self.active_len = self.active_len.saturating_sub(1);
             self.free_indices.push(index);
+            let name = node.name.clone();
+            self.unindex_name(&name, id);
+            for tag in node.get_tag_ids() {
+                self.unindex_tag(tag, id);
+            }
         }
         removed
+    }
+
+    // ---- Name index ----
+
+    /// All live nodes currently carrying `name`, in insertion order.
+    pub fn named_ids(&self, name: &str) -> &[NodeID] {
+        self.name_index
+            .get(name)
+            .map(Vec::as_slice)
+            .unwrap_or(&[])
+    }
+
+    /// Rename a node, keeping the name index in sync. Bumps the mutation
+    /// version like any `get_mut` write. Returns `false` for dead ids.
+    pub fn rename(&mut self, id: NodeID, name: Cow<'static, str>) -> bool {
+        let Some(index) = self.valid_slot(id) else {
+            return false;
+        };
+        let Some(node) = self.nodes[index].as_mut() else {
+            return false;
+        };
+        if node.name == name {
+            return true;
+        }
+        self.bump_mutation_version();
+        let node = self.nodes[index]
+            .as_mut()
+            .expect("slot checked live above");
+        let old = std::mem::replace(&mut node.name, name.clone());
+        self.unindex_name(&old, id);
+        if !name.is_empty() {
+            self.name_index.entry(name).or_default().push(id);
+        }
+        true
+    }
+
+    fn unindex_name(&mut self, name: &str, id: NodeID) {
+        if name.is_empty() {
+            return;
+        }
+        if let Some(ids) = self.name_index.get_mut(name) {
+            ids.retain(|item| *item != id);
+            if ids.is_empty() {
+                self.name_index.remove(name);
+            }
+        }
+    }
+
+    // ---- Tag index ----
+
+    /// Tag → live node ids, kept in sync with node tag state.
+    pub fn tag_index(&self) -> &AHashMap<TagID, AHashSet<NodeID>> {
+        &self.tag_index
+    }
+
+    /// Replace (or clear, with `None`) a node's tags, keeping the tag index
+    /// in sync. Returns `false` for dead ids.
+    pub fn set_node_tags(&mut self, id: NodeID, tags: Option<Vec<NodeTag>>) -> bool {
+        let Some(index) = self.valid_slot(id) else {
+            return false;
+        };
+        let Some(node) = self.nodes[index].as_mut() else {
+            return false;
+        };
+        let old = node.get_tag_ids();
+        match tags {
+            Some(tags) => node.set_tags(Some(tags)),
+            None => node.clear_tags(),
+        }
+        let new = node.get_tag_ids();
+        self.bump_mutation_version();
+        for tag in old {
+            if !new.contains(&tag) {
+                self.unindex_tag(tag, id);
+            }
+        }
+        for tag in new {
+            self.tag_index.entry(tag).or_default().insert(id);
+        }
+        true
+    }
+
+    /// Add a tag to a node (no-op when already present). Returns `false` for
+    /// dead ids.
+    pub fn add_node_tag(&mut self, id: NodeID, tag: NodeTag) -> bool {
+        let Some(index) = self.valid_slot(id) else {
+            return false;
+        };
+        let Some(node) = self.nodes[index].as_mut() else {
+            return false;
+        };
+        let tag_id = tag.id;
+        let added = if node.has_tag(tag_id) {
+            false
+        } else {
+            node.add_tag(tag);
+            true
+        };
+        self.bump_mutation_version();
+        if added {
+            self.tag_index.entry(tag_id).or_default().insert(id);
+        }
+        true
+    }
+
+    /// Remove a tag from a node (no-op when absent). Returns `false` for
+    /// dead ids.
+    pub fn remove_node_tag(&mut self, id: NodeID, tag: TagID) -> bool {
+        let Some(index) = self.valid_slot(id) else {
+            return false;
+        };
+        let Some(node) = self.nodes[index].as_mut() else {
+            return false;
+        };
+        let removed = node.has_tag(tag);
+        if removed {
+            node.remove_tag(tag);
+        }
+        self.bump_mutation_version();
+        if removed {
+            self.unindex_tag(tag, id);
+        }
+        true
+    }
+
+    fn unindex_tag(&mut self, tag: TagID, id: NodeID) {
+        if let Some(set) = self.tag_index.get_mut(&tag) {
+            set.remove(&id);
+            if set.is_empty() {
+                self.tag_index.remove(&tag);
+            }
+        }
     }
 
     /// Check if a [`NodeID`] currently points at a live node.
@@ -223,6 +384,8 @@ impl NodeArena {
         self.nodes.clear();
         self.generations.clear();
         self.free_indices.clear();
+        self.name_index.clear();
+        self.tag_index.clear();
         self.active_len = 0;
         self.nodes.push(None);
         self.generations.push(0);

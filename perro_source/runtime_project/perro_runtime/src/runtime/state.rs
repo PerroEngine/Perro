@@ -4,7 +4,7 @@ use crate::{
     runtime::{RuntimeScriptBehavior, RuntimeScriptCtor},
 };
 use ahash::{AHashMap, AHashSet};
-use perro_ids::{NodeID, SignalID, TagID};
+use perro_ids::{NodeID, SignalID};
 use perro_input_api::InputSnapshot;
 use perro_nodes::Spatial;
 use perro_structs::{Transform2D, Transform3D};
@@ -197,8 +197,8 @@ pub(crate) struct ScriptCallbackContext {
 }
 
 pub(crate) struct NodeIndexState {
-    pub(crate) node_tag_index: AHashMap<TagID, AHashSet<NodeID>>,
     // Reused between spatial queries to avoid per-query allocation.
+    // (Tag and name indices live on NodeArena, maintained by node lifecycle.)
     pub(crate) query_spatial_pos_2d: Vec<Option<perro_structs::Vector2>>,
     pub(crate) query_spatial_pos_3d: Vec<Option<perro_structs::Vector3>>,
 }
@@ -206,7 +206,6 @@ pub(crate) struct NodeIndexState {
 impl NodeIndexState {
     pub(crate) fn new() -> Self {
         Self {
-            node_tag_index: AHashMap::default(),
             query_spatial_pos_2d: Vec::new(),
             query_spatial_pos_3d: Vec::new(),
         }

@@ -1,5 +1,5 @@
 use crate::scripts_assets_editor_assets_rs::*;
-use crate::scripts_editor_main_rs::{EditorState, cached_scene_doc, set_state_scene_doc};
+use crate::scripts_editor_main_rs::{EditorState, cached_scene_doc, cached_scene_doc_shared, set_state_scene_doc};
 use crate::scripts_scene_editor_animation_rs::*;
 use crate::scripts_scene_editor_viewport_rs::*;
 use crate::scripts_ui_editor_ui_rs::*;
@@ -3773,7 +3773,7 @@ pub fn edit_selected_script_var_path<API: ScriptAPI + ?Sized>(
 ) {
     let rows = with_state!(ctx.run, EditorState, ctx.id, |state| {
         let key = state.selected_key?;
-        let doc = cached_scene_doc(&state.doc_text);
+        let doc = cached_scene_doc_shared(&state.doc_text);
         let node = doc
             .scene
             .nodes
@@ -3951,7 +3951,7 @@ pub fn edit_selected_script_var_path<API: ScriptAPI + ?Sized>(
     let script_preview = if row.source == "script" {
         with_state!(ctx.run, EditorState, ctx.id, |state| {
             let key = state.selected_key?;
-            let doc = cached_scene_doc(&state.doc_text);
+            let doc = cached_scene_doc_shared(&state.doc_text);
             let node = doc
                 .scene
                 .nodes
@@ -4172,7 +4172,7 @@ pub fn mutate_selected_inspector_array<API: ScriptAPI + ?Sized>(
 ) {
     let row = with_state!(ctx.run, EditorState, ctx.id, |state| {
         let key = state.selected_key?;
-        let doc = cached_scene_doc(&state.doc_text);
+        let doc = cached_scene_doc_shared(&state.doc_text);
         let node = doc
             .scene
             .nodes
@@ -4265,7 +4265,7 @@ pub fn reset_selected_inspector_value<API: ScriptAPI + ?Sized>(
 ) {
     let row = with_state!(ctx.run, EditorState, ctx.id, |state| {
         let key = state.selected_key?;
-        let doc = cached_scene_doc(&state.doc_text);
+        let doc = cached_scene_doc_shared(&state.doc_text);
         let node = doc
             .scene
             .nodes
@@ -4414,7 +4414,7 @@ fn current_inspector_bitmask<API: ScriptAPI + ?Sized>(
 ) -> Option<u32> {
     with_state!(ctx.run, EditorState, ctx.id, |state| {
         let key = state.selected_key?;
-        let doc = cached_scene_doc(&state.doc_text);
+        let doc = cached_scene_doc_shared(&state.doc_text);
         let node = doc
             .scene
             .nodes
@@ -4437,7 +4437,7 @@ fn write_selected_inspector_bitmask<API: ScriptAPI + ?Sized>(
 ) {
     let row = with_state!(ctx.run, EditorState, ctx.id, |state| {
         let key = state.selected_key?;
-        let doc = cached_scene_doc(&state.doc_text);
+        let doc = cached_scene_doc_shared(&state.doc_text);
         let node = doc
             .scene
             .nodes

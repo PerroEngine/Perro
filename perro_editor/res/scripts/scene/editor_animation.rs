@@ -6,7 +6,7 @@ use crate::scripts_assets_editor_file_watch_rs as editor_file_watch;
 use crate::scripts_assets_editor_files_rs as editor_files;
 use crate::scripts_editor_main_rs::{
     EditorState, FILE_WATCH_INTERVAL_FRAMES, MAX_FILES, MAX_INSPECTOR_PICKER_ROWS,
-    MAX_NODE_PICKER_ROWS, MAX_NODES, MAX_RECENT, MAX_TABS, RECENT_PROJECTS_PATH, cached_scene_doc,
+    MAX_NODE_PICKER_ROWS, MAX_NODES, MAX_RECENT, MAX_TABS, RECENT_PROJECTS_PATH, cached_scene_doc, cached_scene_doc_shared,
     set_state_scene_doc,
 };
 use crate::scripts_scene_editor_gizmos_rs as editor_gizmos;
@@ -1058,7 +1058,7 @@ pub fn pick_selected_script_var_ref<API: ScriptAPI + ?Sized>(
 ) {
     let pick = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
         let key = state.selected_key?;
-        let doc = cached_scene_doc(&state.doc_text);
+        let doc = cached_scene_doc_shared(&state.doc_text);
         let node = doc
             .scene
             .nodes

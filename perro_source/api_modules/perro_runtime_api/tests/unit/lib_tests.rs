@@ -134,6 +134,13 @@ impl NodeAPI for DummyRuntime {
         false
     }
 
+    fn find_node_by_name<S>(&mut self, _root: NodeID, _name: S) -> Option<NodeID>
+    where
+        S: AsRef<str>,
+    {
+        None
+    }
+
     fn bind_locale_text<S>(&mut self, _node: NodeID, _key: S) -> bool
     where
         S: AsRef<str>,

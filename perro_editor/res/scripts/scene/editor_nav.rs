@@ -6,7 +6,7 @@ use crate::scripts_assets_editor_file_watch_rs as editor_file_watch;
 use crate::scripts_assets_editor_files_rs as editor_files;
 use crate::scripts_editor_main_rs::{
     EditorState, FILE_WATCH_INTERVAL_FRAMES, MAX_FILES, MAX_NODE_PICKER_ROWS, MAX_NODES,
-    MAX_RECENT, MAX_TABS, RECENT_PROJECTS_PATH, cached_scene_doc, cached_scene_node,
+    MAX_RECENT, MAX_TABS, RECENT_PROJECTS_PATH, cached_scene_doc, cached_scene_doc_shared, cached_scene_node,
     redo_scene_doc, undo_scene_doc,
 };
 use crate::scripts_scene_editor_animation_rs::*;
@@ -693,7 +693,7 @@ pub fn prepare_rename_selection<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext
                 state.active_asset_path
             );
         } else if let Some(key) = state.selected_key {
-            let doc = cached_scene_doc(&state.doc_text);
+            let doc = cached_scene_doc_shared(&state.doc_text);
             let name = cached_scene_node(&state.doc_text, key)
                 .as_ref()
                 .map(|node| doc.scene.key_name_or_id(node.key).to_string())
@@ -791,7 +791,7 @@ pub fn select_scene_delta<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, A
         if state.doc_text.is_empty() {
             return false;
         }
-        let doc = cached_scene_doc(&state.doc_text);
+        let doc = cached_scene_doc_shared(&state.doc_text);
         let tree = scene_tree_view(
             &doc,
             state.selected_key,
@@ -841,7 +841,7 @@ pub fn select_scene_edge<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, AP
         if state.doc_text.is_empty() {
             return false;
         }
-        let doc = cached_scene_doc(&state.doc_text);
+        let doc = cached_scene_doc_shared(&state.doc_text);
         let tree = scene_tree_view(
             &doc,
             state.selected_key,
@@ -885,7 +885,7 @@ pub fn select_related_node<API: ScriptAPI + ?Sized>(
         if state.doc_text.is_empty() {
             return false;
         }
-        let doc = cached_scene_doc(&state.doc_text);
+        let doc = cached_scene_doc_shared(&state.doc_text);
         let Some(node) = cached_scene_node(&state.doc_text, key) else {
             return false;
         };
@@ -948,7 +948,7 @@ pub fn collapse_selected_scene_node<API: ScriptAPI + ?Sized>(ctx: &mut ScriptCon
         let Some(key) = state.selected_key else {
             return false;
         };
-        let doc = cached_scene_doc(&state.doc_text);
+        let doc = cached_scene_doc_shared(&state.doc_text);
         if scene_child_count(&doc, key) > 0 && !state.collapsed_scene_keys.contains(&key) {
             state.collapsed_scene_keys.push(key);
             state.log = "collapse node".to_string();
@@ -990,7 +990,7 @@ pub fn expand_selected_scene_node<API: ScriptAPI + ?Sized>(ctx: &mut ScriptConte
             state.log = "expand node".to_string();
             return true;
         }
-        let doc = cached_scene_doc(&state.doc_text);
+        let doc = cached_scene_doc_shared(&state.doc_text);
         let Some(child) = doc
             .scene
             .nodes
@@ -1209,7 +1209,7 @@ pub fn open_sidebar_selection<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'
         if state.doc_text.is_empty() {
             return None;
         }
-        let doc = cached_scene_doc(&state.doc_text);
+        let doc = cached_scene_doc_shared(&state.doc_text);
         let node = doc
             .scene
             .nodes
@@ -1429,7 +1429,7 @@ pub fn frame_selected_node<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, 
             state.log = "frame fail\nno open scene".to_string();
             return false;
         }
-        let doc = cached_scene_doc(&state.doc_text);
+        let doc = cached_scene_doc_shared(&state.doc_text);
         let Some(node) = cached_scene_node(&state.doc_text, key) else {
             state.log = "frame fail\nmissing node".to_string();
             return false;

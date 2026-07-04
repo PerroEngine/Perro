@@ -577,6 +577,7 @@ pub(super) fn ui_payload_fingerprint(data: &SceneNodeData) -> UiPayloadFingerpri
                 }
                 a.write_u8(item.open as u8);
                 a.write_u8(item.selectable as u8);
+                a.write_u8(item.has_children_hint as u8);
             }
             match node.selected_index {
                 Some(index) => {

@@ -319,20 +319,6 @@ impl Runtime {
         }
     }
 
-    #[allow(dead_code)]
-    pub(crate) fn rebuild_node_tag_index(&mut self) {
-        self.node_index.node_tag_index.clear();
-        for (id, node) in self.nodes.iter() {
-            for tag in node.get_tag_ids() {
-                self.node_index
-                    .node_tag_index
-                    .entry(tag)
-                    .or_default()
-                    .insert(id);
-            }
-        }
-    }
-
     pub(crate) fn run_internal_update_schedule(&mut self) {
         let resource_api = self.resource_api.clone();
         let res = ResourceWindow::new(resource_api.as_ref());

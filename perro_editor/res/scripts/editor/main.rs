@@ -6,7 +6,7 @@ use std::borrow::Cow;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::scripts_assets_editor_assets_rs::*;
 use crate::scripts_assets_editor_file_watch_rs as editor_file_watch;
@@ -22,7 +22,7 @@ type SelfNodeType = UiPanel;
 #[derive(Clone)]
 struct CachedSceneDoc {
     text: String,
-    doc: SceneDoc,
+    doc: Arc<SceneDoc>,
     node_indices: Vec<(u32, usize)>,
 }
 
@@ -30,10 +30,16 @@ static ACTIVE_SCENE_DOC_CACHE: OnceLock<Mutex<Vec<CachedSceneDoc>>> = OnceLock::
 
 const SCENE_DOC_CACHE_LIMIT: usize = MAX_SCENE_UNDO + 8;
 
+/// Deep-cloned doc for callers that mutate it. Read-only paths use
+/// [`cached_scene_doc_shared`] to skip the full clone.
 pub fn cached_scene_doc(text: &str) -> SceneDoc {
+    (*cached_scene_doc_shared(text)).clone()
+}
+
+pub fn cached_scene_doc_shared(text: &str) -> Arc<SceneDoc> {
     let cache = ACTIVE_SCENE_DOC_CACHE.get_or_init(|| Mutex::new(Vec::new()));
     let Ok(mut guard) = cache.lock() else {
-        return SceneDoc::parse(text);
+        return Arc::new(SceneDoc::parse(text));
     };
     if let Some(idx) = guard.iter().position(|cached| cached.text == text) {
         let cached = guard.remove(idx);
@@ -41,7 +47,7 @@ pub fn cached_scene_doc(text: &str) -> SceneDoc {
         guard.push(cached);
         return doc;
     }
-    let doc = SceneDoc::parse(text);
+    let doc = Arc::new(SceneDoc::parse(text));
     guard.push(CachedSceneDoc::new(text.to_string(), doc.clone()));
     if guard.len() > SCENE_DOC_CACHE_LIMIT {
         guard.remove(0);
@@ -55,7 +61,7 @@ pub fn store_scene_doc_cache(text: &str, doc: &SceneDoc) {
         if let Some(idx) = guard.iter().position(|cached| cached.text == text) {
             guard.remove(idx);
         }
-        guard.push(CachedSceneDoc::new(text.to_string(), doc.clone()));
+        guard.push(CachedSceneDoc::new(text.to_string(), Arc::new(doc.clone())));
         if guard.len() > SCENE_DOC_CACHE_LIMIT {
             guard.remove(0);
         }
@@ -63,7 +69,7 @@ pub fn store_scene_doc_cache(text: &str, doc: &SceneDoc) {
 }
 
 impl CachedSceneDoc {
-    fn new(text: String, doc: SceneDoc) -> Self {
+    fn new(text: String, doc: Arc<SceneDoc>) -> Self {
         let mut node_indices = doc
             .scene
             .nodes
@@ -104,7 +110,7 @@ pub fn cached_scene_node(text: &str, key: u32) -> Option<SceneNodeEntry> {
         guard.push(cached);
         return node;
     }
-    let doc = SceneDoc::parse(text);
+    let doc = Arc::new(SceneDoc::parse(text));
     let cached = CachedSceneDoc::new(text.to_string(), doc);
     let node = cached.node(key);
     guard.push(cached);
@@ -157,8 +163,7 @@ pub fn undo_scene_doc(state: &mut EditorState) -> bool {
         state.scene_redo_stack.push(state.doc_text.clone());
     }
     state.doc_text = prev;
-    let doc = cached_scene_doc(&state.doc_text);
-    store_scene_doc_cache(&state.doc_text, &doc);
+    let _ = cached_scene_doc_shared(&state.doc_text);
     state.dirty = true;
     mark_active_scene_dirty(state);
     state.log = format!("undo\n{} left", state.scene_undo_stack.len());
@@ -172,8 +177,7 @@ pub fn redo_scene_doc(state: &mut EditorState) -> bool {
     };
     push_scene_undo_snapshot(state);
     state.doc_text = next;
-    let doc = cached_scene_doc(&state.doc_text);
-    store_scene_doc_cache(&state.doc_text, &doc);
+    let _ = cached_scene_doc_shared(&state.doc_text);
     state.dirty = true;
     mark_active_scene_dirty(state);
     state.log = format!("redo\n{} left", state.scene_redo_stack.len());
@@ -592,7 +596,7 @@ methods!({
         })
         .unwrap_or(false);
         if changed {
-            refresh_all(ctx);
+            refresh_file_panel(ctx);
         }
     }
 });
