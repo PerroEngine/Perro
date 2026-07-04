@@ -245,10 +245,44 @@ The engine detects the helper call and skips automatic lighting.
 In a scene with no sky and no lights, lit custom output returns black unless `emissive` is non-zero.
 A material like `emissive_factor = (0.01, 0.08, 0.12)` stays visible because emissive is added after lighting.
 
+### Frame Globals
+
+Custom material shaders (single-mesh and multimesh, vertex and fragment stage) can read
+engine frame globals through these helpers:
+
+- `perro_time() -> f32`: seconds since app start. Wraps every hour so `f32`
+  stays sub-millisecond precise; use `perro_time_phase()` or `sin(perro_time())`
+  style math that tolerates the wrap.
+- `perro_delta_time() -> f32`: seconds covered by the previous frame.
+- `perro_frame_index() -> f32`: frames rendered since app start.
+- `perro_time_phase() -> f32`: normalized `0..1` sawtooth over 60 seconds —
+  a precision-safe driver for looping animation
+  (`sin(perro_time_phase() * TAU * cycles_per_minute)`).
+- `perro_resolution() -> vec2<f32>`: viewport size in pixels.
+- `perro_inv_resolution() -> vec2<f32>`: `1.0 / viewport size` (e.g.
+  `in.frag_pos.xy * perro_inv_resolution()` gives normalized screen UV).
+
+Example — a pulsing, screen-aware effect with a vertex wobble:
+
+```wgsl
+fn shade_vertex(out_in: VertexOutput) -> VertexOutput {
+    var out = out_in;
+    out.world_pos.y += sin(perro_time() * 2.0 + out.world_pos.x) * 0.1;
+    return out;
+}
+
+fn shade_material(in: FragmentInput) -> vec4<f32> {
+    let color = unpack_rgba8(in.packed_color);
+    let pulse = 0.5 + 0.5 * sin(perro_time_phase() * 6.28318 * 12.0);
+    let screen_uv = in.frag_pos.xy * perro_inv_resolution();
+    return vec4<f32>(color.rgb * pulse, color.a);
+}
+```
+
 ### Current Limitations
 
-- Custom shaders can implement any shading model, but the only built-in inputs are the fields in
-  `FragmentInput` plus `custom_f_param(in, index)`.
+- Custom shaders can implement any shading model; the built-in inputs are the fields in
+  `FragmentInput`, `custom_f_param(in, index)`, and the frame globals above.
 
 ### Runtime Performance Notes
 

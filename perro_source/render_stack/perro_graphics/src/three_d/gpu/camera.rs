@@ -270,6 +270,9 @@ pub(super) fn build_scene_uniform(
         },
         ground_color: [0.0; 4],
         sky_horizon_color: [0.0; 4],
+        // Zeroed for the change gate; live values patched per frame.
+        time_params: [0.0; 4],
+        resolution: [0.0; 4],
     };
 
     if let Some(sky) = lighting.sky.as_ref() {

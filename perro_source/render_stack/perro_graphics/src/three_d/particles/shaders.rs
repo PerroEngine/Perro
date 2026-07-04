@@ -97,3 +97,34 @@ pub fn create_point_particles_compute_render_shader_module(
         source: wgpu::ShaderSource::Wgsl(POINT_PARTICLES_COMPUTE_RENDER_WGSL.into()),
     })
 }
+
+#[cfg(test)]
+mod wgsl_validation_tests {
+    use super::*;
+
+    fn parse_and_validate(wgsl: &str, label: &str) {
+        let module =
+            naga::front::wgsl::parse_str(wgsl).unwrap_or_else(|err| panic!("{label}: {err}"));
+        naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .unwrap_or_else(|err| panic!("{label}: {err}"));
+    }
+
+    #[test]
+    fn particle_shaders_validate() {
+        parse_and_validate(POINT_PARTICLES_WGSL, "point particles");
+        parse_and_validate(POINT_PARTICLES_GPU_WGSL, "point particles gpu");
+        parse_and_validate(POINT_PARTICLES_COMPUTE_WGSL, "point particles compute");
+        parse_and_validate(
+            POINT_PARTICLES_COMPUTE_RENDER_WGSL,
+            "point particles compute render",
+        );
+        parse_and_validate(
+            POINT_PARTICLES_COMPUTE_STUB_WGSL,
+            "point particles compute stub",
+        );
+    }
+}

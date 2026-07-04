@@ -37,6 +37,11 @@ struct Scene3D {
     inv_view_proj: mat4x4<f32>,
     ground_color: vec4<f32>,
     sky_horizon_color: vec4<f32>,
+    // Frame globals: x = time seconds (wraps hourly), y = delta seconds,
+    // z = frame index, w = 0..1 phase over 60 seconds.
+    time_params: vec4<f32>,
+    // xy = viewport pixels, zw = 1 / pixels.
+    resolution: vec4<f32>,
 }
 
 @group(0) @binding(0)

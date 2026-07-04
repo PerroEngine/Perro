@@ -185,7 +185,26 @@ struct Scene3DUniform {
     ground_color: [f32; 4],
     // Sky radiance at the horizon (premultiplied) for env reflections.
     sky_horizon_color: [f32; 4],
+    // Frame globals for custom shaders: [time (wraps hourly), delta seconds,
+    // frame index, 0..1 phase over 60s]. Zeroed in the dedup copy; the live
+    // values are patched every frame at SCENE_GLOBALS_OFFSET so time does not
+    // defeat the camera-uniform change gate.
+    time_params: [f32; 4],
+    // [width, height, 1/width, 1/height].
+    resolution: [f32; 4],
 }
+
+// Tail of Scene3DUniform written every frame (time + resolution globals).
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct SceneGlobalsGpu {
+    time_params: [f32; 4],
+    resolution: [f32; 4],
+}
+
+const SCENE_GLOBALS_TAIL_BYTES: u64 = std::mem::size_of::<SceneGlobalsGpu>() as u64;
+const SCENE_GLOBALS_OFFSET: u64 =
+    std::mem::size_of::<Scene3DUniform>() as u64 - SCENE_GLOBALS_TAIL_BYTES;
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable, PartialEq)]

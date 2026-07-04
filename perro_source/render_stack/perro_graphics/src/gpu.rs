@@ -201,6 +201,9 @@ fn fill_camera_stream_draws_3d(draws: &[CameraStreamDraw3DState], out: &mut Vec<
 
 fn camera_stream_lighting_3d(lighting: &CameraStreamLighting3DState) -> Lighting3DState {
     Lighting3DState {
+        frame_time_seconds: 0.0,
+        frame_delta_seconds: 0.0,
+        frame_index: 0,
         ambient_light: lighting.ambient_light,
         sky: lighting.sky.clone(),
         sky_time_seconds: 0.0,

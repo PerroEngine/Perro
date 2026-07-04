@@ -660,6 +660,34 @@ mod tests {
     }
 
     #[test]
+    fn custom_material_frame_globals_validate() {
+        // Locks the custom-shader frame-globals API: time, delta, frame index,
+        // phase, and resolution must stay available in every prelude.
+        let material = r#"
+fn shade_vertex(out_in: VertexOutput) -> VertexOutput {
+    var out = out_in;
+    out.world_pos.y += sin(perro_time() * 2.0 + out.world_pos.x) * 0.1;
+    return out;
+}
+
+fn shade_material(in: FragmentInput) -> vec4<f32> {
+    let pulse = 0.5 + 0.5 * sin(perro_time_phase() * 6.28318);
+    let px = in.frag_pos.xy * perro_inv_resolution();
+    let speed = perro_delta_time() + perro_frame_index() * 0.0;
+    return vec4<f32>(px * pulse, speed, 1.0);
+}
+"#;
+        for prelude in [regular::PRELUDE_RIGID_WGSL, regular::PRELUDE_SKINNED_WGSL] {
+            let wgsl = build_custom_material_shader_with_prelude(
+                prelude,
+                material,
+                perro_render_bridge::CustomMaterialLighting3D::Raw,
+            );
+            parse_and_validate(&wgsl, "custom material frame globals");
+        }
+    }
+
+    #[test]
     fn custom_material_raw_wrapper_wgsl_parses() {
         let material = "fn shade_material(in: FragmentInput) -> vec4<f32> { return vec4<f32>(in.normal_ws * 0.5 + vec3<f32>(0.5), 1.0); }";
         for prelude in [regular::PRELUDE_RIGID_WGSL, regular::PRELUDE_SKINNED_WGSL] {

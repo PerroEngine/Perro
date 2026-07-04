@@ -67,6 +67,10 @@ pub struct Renderer3DStats {
 
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Lighting3DState {
+    // Frame globals exposed to custom shaders (perro_time() etc.).
+    pub frame_time_seconds: f32,
+    pub frame_delta_seconds: f32,
+    pub frame_index: u32,
     pub ambient_light: Option<AmbientLight3DState>,
     pub sky: Option<Sky3DState>,
     pub sky_time_seconds: f32,
@@ -102,6 +106,10 @@ pub struct Renderer3D {
     camera: Camera3DState,
     draw_revision: u64,
     last_frame_time: Option<Instant>,
+    // App-time accumulator for shader frame globals (f64 so hours of play
+    // don't lose precision before the hourly f32 wrap).
+    app_time_seconds: f64,
+    frame_index: u32,
     sky_time_seconds: f32,
     sky_time_pending_seconds: f32,
     sky_time_pending_frames: u32,
@@ -391,6 +399,8 @@ impl Renderer3D {
             .unwrap_or(0.0);
         let dt = dt.max(0.0);
         self.last_frame_time = Some(now);
+        self.app_time_seconds += f64::from(dt);
+        self.frame_index = self.frame_index.wrapping_add(1);
         self.sky_time_pending_seconds += dt;
         self.sky_time_pending_frames = self.sky_time_pending_frames.wrapping_add(1);
         if self.sky_time_pending_frames >= SKY_TIME_UPDATE_EVERY_FRAMES {
@@ -440,7 +450,13 @@ impl Renderer3D {
             }
         }
 
-        let mut lighting = Lighting3DState::default();
+        let mut lighting = Lighting3DState {
+            // Hourly wrap keeps f32 time sub-millisecond precise for shaders.
+            frame_time_seconds: (self.app_time_seconds % 3600.0) as f32,
+            frame_delta_seconds: dt,
+            frame_index: self.frame_index,
+            ..Lighting3DState::default()
+        };
         // Deterministic pick: lowest node id wins, matching the stream path.
         // Raw AHashMap iteration order can flip between frames on rehash.
         if let Some((_, ambient)) = self.ambient_lights.iter().min_by_key(|(node, _)| **node) {
@@ -772,6 +788,8 @@ impl Default for Renderer3D {
             },
             draw_revision: 0,
             last_frame_time: None,
+            app_time_seconds: 0.0,
+            frame_index: 0,
             sky_time_seconds: 0.0,
             sky_time_pending_seconds: 0.0,
             sky_time_pending_frames: 0,

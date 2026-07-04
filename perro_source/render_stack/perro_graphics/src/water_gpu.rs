@@ -2728,3 +2728,26 @@ mod tests {
         assert!(cells_3d.iter().any(|cell| cell[2] < 0.0));
     }
 }
+
+#[cfg(test)]
+mod wgsl_validation_tests {
+    use super::*;
+
+    fn parse_and_validate(wgsl: &str, label: &str) {
+        let module =
+            naga::front::wgsl::parse_str(wgsl).unwrap_or_else(|err| panic!("{label}: {err}"));
+        naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .unwrap_or_else(|err| panic!("{label}: {err}"));
+    }
+
+    #[test]
+    fn water_shaders_validate() {
+        parse_and_validate(WATER_WGSL, "water compute");
+        parse_and_validate(WATER_3D_RENDER_WGSL, "water 3d render");
+        parse_and_validate(&water_render_wgsl(), "water render composed");
+    }
+}

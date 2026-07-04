@@ -33,6 +33,11 @@ struct Scene3D {
     ground_color: vec4<f32>,
     // Sky radiance at the horizon (premultiplied) for env reflections.
     sky_horizon_color: vec4<f32>,
+    // Frame globals: x = time seconds (wraps hourly), y = delta seconds,
+    // z = frame index, w = 0..1 phase over 60 seconds.
+    time_params: vec4<f32>,
+    // xy = viewport pixels, zw = 1 / pixels.
+    resolution: vec4<f32>,
 }
 
 struct MultiMeshDrawParam {
@@ -508,6 +513,20 @@ fn fetch_instance(instance_index: u32) -> InstanceInput {
         raw.blend_meta_id,
     );
 }
+
+// ---- Frame globals for custom shaders ----------------------------------
+// Seconds since app start; wraps every hour to stay f32-precise.
+fn perro_time() -> f32 { return scene.time_params.x; }
+// Seconds covered by the previous frame.
+fn perro_delta_time() -> f32 { return scene.time_params.y; }
+// Frames rendered since app start (wraps with f32 precision).
+fn perro_frame_index() -> f32 { return scene.time_params.z; }
+// 0..1 sawtooth over 60 seconds; precision-safe looping animation driver.
+fn perro_time_phase() -> f32 { return scene.time_params.w; }
+// Viewport size in pixels.
+fn perro_resolution() -> vec2<f32> { return scene.resolution.xy; }
+// 1 / viewport size.
+fn perro_inv_resolution() -> vec2<f32> { return scene.resolution.zw; }
 
 @vertex
 fn vs_main(

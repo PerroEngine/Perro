@@ -39,6 +39,11 @@ struct Scene3D {
     ground_color: vec4<f32>,
     // Sky radiance at the horizon (premultiplied) for env reflections.
     sky_horizon_color: vec4<f32>,
+    // Frame globals: x = time seconds (wraps hourly), y = delta seconds,
+    // z = frame index, w = 0..1 phase over 60 seconds.
+    time_params: vec4<f32>,
+    // xy = viewport pixels, zw = 1 / pixels.
+    resolution: vec4<f32>,
 }
 
 struct Shadow3D {
@@ -538,8 +543,10 @@ fn sample_ray_shadow_array(light_view_proj: mat4x4<f32>, world_pos: vec3<f32>, n
     return sum / 9.0;
 }
 
-fn sample_shadow_array(light_view_proj: mat4x4<f32>, world_pos: vec3<f32>, normal_ws: vec3<f32>, bias_dir: vec3<f32>, layer: u32, is_point: bool) -> f32 {
-    let sample_pos = world_pos + normalize(normal_ws) * shadow.params0.w + normalize(bias_dir) * shadow.params0.w * 0.25;
+// normal_dir must already be normalized (perro_lit_standard normalizes once;
+// re-normalizing per shadowed light wastes ALU).
+fn sample_shadow_array(light_view_proj: mat4x4<f32>, world_pos: vec3<f32>, normal_dir: vec3<f32>, bias_dir: vec3<f32>, layer: u32, is_point: bool) -> f32 {
+    let sample_pos = world_pos + normal_dir * shadow.params0.w + normalize(bias_dir) * shadow.params0.w * 0.25;
     let light_clip = light_view_proj * vec4<f32>(sample_pos, 1.0);
     if abs(light_clip.w) <= 1.0e-6 {
         return 1.0;
@@ -902,3 +909,17 @@ fn perro_lit_standard(
     let shaded = ambient_diffuse + ambient_specular + light_rgb + emissive;
     return vec4<f32>(tonemap_aces(shaded), alpha);
 }
+
+// ---- Frame globals for custom shaders ----------------------------------
+// Seconds since app start; wraps every hour to stay f32-precise.
+fn perro_time() -> f32 { return scene.time_params.x; }
+// Seconds covered by the previous frame.
+fn perro_delta_time() -> f32 { return scene.time_params.y; }
+// Frames rendered since app start (wraps with f32 precision).
+fn perro_frame_index() -> f32 { return scene.time_params.z; }
+// 0..1 sawtooth over 60 seconds; precision-safe looping animation driver.
+fn perro_time_phase() -> f32 { return scene.time_params.w; }
+// Viewport size in pixels.
+fn perro_resolution() -> vec2<f32> { return scene.resolution.xy; }
+// 1 / viewport size.
+fn perro_inv_resolution() -> vec2<f32> { return scene.resolution.zw; }

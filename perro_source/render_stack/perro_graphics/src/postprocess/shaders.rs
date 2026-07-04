@@ -133,6 +133,12 @@ mod tests {
     #[test]
     fn builtin_post_wgsl_parses() {
         let wgsl = build_builtin_post_shader();
-        naga::front::wgsl::parse_str(&wgsl).expect("builtin post wgsl parses");
+        let module = naga::front::wgsl::parse_str(&wgsl).expect("builtin post wgsl parses");
+        naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .expect("builtin post wgsl validates");
     }
 }

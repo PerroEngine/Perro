@@ -144,6 +144,27 @@ impl Gpu3D {
             queue.write_buffer(&self.camera_buffer, 0, bytemuck::bytes_of(&uniform));
             self.last_scene = Some(uniform);
         }
+        // Frame globals (time / resolution) live in the uniform tail and are
+        // patched every frame so they never defeat the change gate above.
+        let scene_globals = SceneGlobalsGpu {
+            time_params: [
+                lighting.frame_time_seconds,
+                lighting.frame_delta_seconds,
+                lighting.frame_index as f32,
+                (lighting.frame_time_seconds / 60.0).fract(),
+            ],
+            resolution: [
+                width.max(1) as f32,
+                height.max(1) as f32,
+                1.0 / width.max(1) as f32,
+                1.0 / height.max(1) as f32,
+            ],
+        };
+        queue.write_buffer(
+            &self.camera_buffer,
+            SCENE_GLOBALS_OFFSET,
+            bytemuck::bytes_of(&scene_globals),
+        );
         if self.cpu_occlusion_enabled && scene_changed {
             // Retained-mode correctness: when camera/transforms/resources update,
             // previous query visibility is stale and must not gate current frame.

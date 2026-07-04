@@ -95,3 +95,25 @@ fn fs_composite_linear_framebuffer(in: VsOut) -> @location(0) vec4<f32> {
     return vec4<f32>(linear_from_gamma_rgb(gamma.rgb), gamma.a);
 }
 "#;
+
+#[cfg(test)]
+mod wgsl_validation_tests {
+    use super::*;
+
+    fn parse_and_validate(wgsl: &str, label: &str) {
+        let module =
+            naga::front::wgsl::parse_str(wgsl).unwrap_or_else(|err| panic!("{label}: {err}"));
+        naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .unwrap_or_else(|err| panic!("{label}: {err}"));
+    }
+
+    #[test]
+    fn ui_shaders_validate() {
+        parse_and_validate(UI_SHADER, "ui shader");
+        parse_and_validate(UI_COMPOSITE_SHADER, "ui composite shader");
+    }
+}

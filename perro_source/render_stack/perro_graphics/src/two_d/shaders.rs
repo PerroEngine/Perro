@@ -28,3 +28,26 @@ pub fn create_point_light_2d_shader_module(device: &wgpu::Device) -> wgpu::Shade
         source: wgpu::ShaderSource::Wgsl(POINT_LIGHT_2D_WGSL.into()),
     })
 }
+
+#[cfg(test)]
+mod wgsl_validation_tests {
+    use super::*;
+
+    fn parse_and_validate(wgsl: &str, label: &str) {
+        let module =
+            naga::front::wgsl::parse_str(wgsl).unwrap_or_else(|err| panic!("{label}: {err}"));
+        naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .unwrap_or_else(|err| panic!("{label}: {err}"));
+    }
+
+    #[test]
+    fn two_d_shaders_validate() {
+        parse_and_validate(SPRITE_INSTANCED_WGSL, "sprite instanced");
+        parse_and_validate(RECT_INSTANCED_WGSL, "rect instanced");
+        parse_and_validate(POINT_LIGHT_2D_WGSL, "point light 2d");
+    }
+}
