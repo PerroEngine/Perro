@@ -424,6 +424,16 @@ fn recommended_workers(total_nodes: usize, estimated_cost_per_node: u32) -> usiz
         .unwrap_or(1)
 }
 
+/// Cheap slot-lane type reject. The mirror value is always accurate for
+/// occupied slots; free slots may hold a stale type, but a false pass just
+/// falls through to `slot_get`/`get` which rejects on occupancy/generation.
+/// Never falsely rejects a live node. Callers gate on `plan.has_type_filter`
+/// so unconstrained queries skip the lane read entirely.
+#[inline]
+fn slot_type_rejects(node_type: NodeType, plan: &QueryPlan) -> bool {
+    !type_in_mask(node_type, plan.exact_type_mask) || !type_in_mask(node_type, plan.base_type_mask)
+}
+
 fn scan_range(
     arena: &NodeArena,
     start: usize,
@@ -432,7 +442,15 @@ fn scan_range(
     spatial: Option<&QuerySpatialIndex>,
 ) -> Vec<NodeID> {
     let mut out = Vec::with_capacity((end.saturating_sub(start)) / 4);
+    let types = arena.node_type_slots();
+    let type_gate = plan.has_type_filter;
+    // index feeds types[], slot_get, + matches_query; enumerate rewrite loses clarity
+    #[allow(clippy::needless_range_loop)]
     for index in start..end {
+        // Type lane runs first so rejected slots never touch the wide node Vec.
+        if type_gate && slot_type_rejects(types[index], plan) {
+            continue;
+        }
         let Some((id, node)) = arena.slot_get(index) else {
             continue;
         };
@@ -470,7 +488,15 @@ fn scan_candidates(
     spatial: Option<&QuerySpatialIndex>,
 ) -> Vec<NodeID> {
     let mut out = Vec::with_capacity(candidates.len());
+    let type_gate = plan.has_type_filter;
     for id in candidates {
+        if type_gate
+            && arena
+                .slot_node_type(id.index() as usize)
+                .is_none_or(|node_type| slot_type_rejects(node_type, plan))
+        {
+            continue;
+        }
         let Some(node) = arena.get(id) else {
             continue;
         };
@@ -488,7 +514,14 @@ fn first_in_range(
     plan: &QueryPlan,
     spatial: Option<&QuerySpatialIndex>,
 ) -> Option<NodeID> {
+    let types = arena.node_type_slots();
+    let type_gate = plan.has_type_filter;
+    // index feeds types[], slot_get, + matches_query; enumerate rewrite loses clarity
+    #[allow(clippy::needless_range_loop)]
     for index in start..end {
+        if type_gate && slot_type_rejects(types[index], plan) {
+            continue;
+        }
         let Some((id, node)) = arena.slot_get(index) else {
             continue;
         };
@@ -524,7 +557,15 @@ fn first_in_candidates(
     plan: &QueryPlan,
     spatial: Option<&QuerySpatialIndex>,
 ) -> Option<NodeID> {
+    let type_gate = plan.has_type_filter;
     for id in candidates {
+        if type_gate
+            && arena
+                .slot_node_type(id.index() as usize)
+                .is_none_or(|node_type| slot_type_rejects(node_type, plan))
+        {
+            continue;
+        }
         let Some(node) = arena.get(id) else {
             continue;
         };
@@ -654,6 +695,9 @@ struct QueryPlan {
     estimated_cost_per_node: u32,
     exact_type_mask: QueryTypeMask,
     base_type_mask: QueryTypeMask,
+    /// True when either mask actually constrains types; unconstrained queries
+    /// skip the slot type-lane pre-check (it would be pure overhead).
+    has_type_filter: bool,
 }
 
 impl QueryPlan {
@@ -663,11 +707,14 @@ impl QueryPlan {
         let base_type_mask = allowed_type_mask(optimized.as_ref(), TypeFilterKind::Base);
         let optimized_expr = optimized.as_ref().and_then(strip_redundant_type_filters);
         let estimated_cost_per_node = optimized_expr.as_ref().map(expr_cost).unwrap_or(1);
+        let has_type_filter =
+            exact_type_mask != QueryTypeMask::all() || base_type_mask != QueryTypeMask::all();
         Self {
             optimized_expr,
             estimated_cost_per_node,
             exact_type_mask,
             base_type_mask,
+            has_type_filter,
         }
     }
 }

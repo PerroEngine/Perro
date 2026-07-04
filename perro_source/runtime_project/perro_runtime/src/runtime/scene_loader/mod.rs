@@ -447,6 +447,7 @@ impl Runtime {
         self.render_ui.cursor_icon = perro_ui::CursorIcon::Default;
         self.render_ui.cursor_icon_2d = perro_ui::CursorIcon::Default;
         self.render_ui.cursor_icon_ui = perro_ui::CursorIcon::Default;
+        self.render_ui.cursor_icon_script = perro_ui::CursorIcon::Default;
         self.render_ui.removed_nodes.clear();
         self.locale_text.bindings.clear();
         self.locale_text.last_epoch = self.resource_api.localization_epoch();

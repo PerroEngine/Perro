@@ -328,9 +328,7 @@ pub(super) fn merge_prepared_scene(
             format!("parent node key `{parent_key}` not found while linking child `{child_key}`")
         })?;
 
-        if let Some(child) = runtime.nodes.get_mut(child) {
-            child.parent = parent;
-        }
+        runtime.nodes.set_parent(child, parent);
         edges.push((parent, child));
     }
 
@@ -468,9 +466,7 @@ pub(super) fn merge_prepared_scene(
     }
 
     for root in &attach_order {
-        if let Some(root_node) = runtime.nodes.get_mut(*root) {
-            root_node.parent = engine_root;
-        }
+        runtime.nodes.set_parent(*root, engine_root);
         if let Some(engine_root_node) = runtime.nodes.get_mut(engine_root) {
             engine_root_node.add_child(*root);
         }

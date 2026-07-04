@@ -805,17 +805,17 @@ mod fingerprint_tests {
 
     #[test]
     fn label_unchanged_is_zero() {
-        let data = SceneNodeData::UiLabel(UiLabel::new());
+        let data = SceneNodeData::UiLabel(Box::new(UiLabel::new()));
         assert_eq!(payload_flags(&data, &data), 0);
         assert_eq!(snapshot_flags(&data, &data), 0);
     }
 
     #[test]
     fn label_text_change_text_layout_commands() {
-        let before = SceneNodeData::UiLabel(UiLabel::new());
+        let before = SceneNodeData::UiLabel(Box::new(UiLabel::new()));
         let mut label = UiLabel::new();
         label.text = Cow::Borrowed("hi");
-        let after = SceneNodeData::UiLabel(label);
+        let after = SceneNodeData::UiLabel(Box::new(label));
         assert_eq!(
             payload_flags(&before, &after),
             F_TEXT | F_LAYOUT_SELF | F_LAYOUT_PARENT | F_COMMANDS
@@ -824,31 +824,31 @@ mod fingerprint_tests {
 
     #[test]
     fn label_color_change_commands_only() {
-        let before = SceneNodeData::UiLabel(UiLabel::new());
+        let before = SceneNodeData::UiLabel(Box::new(UiLabel::new()));
         let mut label = UiLabel::new();
         label.color = Color::RED;
-        let after = SceneNodeData::UiLabel(label);
+        let after = SceneNodeData::UiLabel(Box::new(label));
         assert_eq!(payload_flags(&before, &after), F_COMMANDS);
     }
 
     #[test]
     fn button_disabled_change_commands() {
-        let before = SceneNodeData::UiButton(UiButton::new());
+        let before = SceneNodeData::UiButton(Box::new(UiButton::new()));
         let mut button = UiButton::new();
         button.disabled = true;
-        let after = SceneNodeData::UiButton(button);
+        let after = SceneNodeData::UiButton(Box::new(button));
         assert_eq!(payload_flags(&before, &after), F_COMMANDS);
     }
 
     #[test]
     fn dropdown_option_and_variant_change_commands() {
-        let before = SceneNodeData::UiDropdown(UiDropdown::new());
+        let before = SceneNodeData::UiDropdown(Box::new(UiDropdown::new()));
         let mut dd = UiDropdown::new();
         dd.options.push(UiDropdownOption {
             label: Cow::Borrowed("A"),
             value: perro_variant::Variant::from(1i64),
         });
-        let after = SceneNodeData::UiDropdown(dd);
+        let after = SceneNodeData::UiDropdown(Box::new(dd));
         assert_eq!(payload_flags(&before, &after), F_COMMANDS);
 
         // Same option label, different Variant value -> still detected.
@@ -863,18 +863,21 @@ mod fingerprint_tests {
             value: perro_variant::Variant::from(2i64),
         });
         assert_eq!(
-            payload_flags(&SceneNodeData::UiDropdown(a), &SceneNodeData::UiDropdown(b)),
+            payload_flags(
+                &SceneNodeData::UiDropdown(Box::new(a)),
+                &SceneNodeData::UiDropdown(Box::new(b))
+            ),
             F_COMMANDS
         );
     }
 
     #[test]
     fn textbox_text_vs_caret_groups() {
-        let before = SceneNodeData::UiTextBox(UiTextBox::new());
+        let before = SceneNodeData::UiTextBox(Box::new(UiTextBox::new()));
         let mut text = UiTextBox::new();
         text.inner.text = Cow::Borrowed("x");
         assert_eq!(
-            payload_flags(&before, &SceneNodeData::UiTextBox(text)),
+            payload_flags(&before, &SceneNodeData::UiTextBox(Box::new(text))),
             F_TEXT | F_LAYOUT_SELF | F_LAYOUT_PARENT | F_COMMANDS
         );
 
@@ -882,7 +885,7 @@ mod fingerprint_tests {
         caret.inner.caret = 0; // default already 0; bump to force change
         caret.inner.anchor = 1;
         assert_eq!(
-            payload_flags(&before, &SceneNodeData::UiTextBox(caret)),
+            payload_flags(&before, &SceneNodeData::UiTextBox(Box::new(caret))),
             F_COMMANDS
         );
     }
@@ -911,31 +914,31 @@ mod fingerprint_tests {
 
     #[test]
     fn treelist_items_layout_flags() {
-        let before = SceneNodeData::UiTreeList(UiTreeList::new());
+        let before = SceneNodeData::UiTreeList(Box::new(UiTreeList::new()));
         let mut tree = UiTreeList::new();
         tree.items.push(UiTreeListItem::new("n"));
         assert_eq!(
-            payload_flags(&before, &SceneNodeData::UiTreeList(tree)),
+            payload_flags(&before, &SceneNodeData::UiTreeList(Box::new(tree))),
             F_LAYOUT_SELF | F_LAYOUT_PARENT | F_COMMANDS
         );
     }
 
     #[test]
     fn base_transform_via_snapshot() {
-        let before = SceneNodeData::UiLabel(UiLabel::new());
+        let before = SceneNodeData::UiLabel(Box::new(UiLabel::new()));
         let mut label = UiLabel::new();
         label.base.transform.position = UiVector2::pixels(9.0, 9.0);
-        let after = SceneNodeData::UiLabel(label);
+        let after = SceneNodeData::UiLabel(Box::new(label));
         // Base transform change -> TRANSFORM|COMMANDS (payload unchanged).
         assert_eq!(snapshot_flags(&before, &after), F_TRANSFORM | F_COMMANDS);
     }
 
     #[test]
     fn base_layout_size_via_snapshot() {
-        let before = SceneNodeData::UiLabel(UiLabel::new());
+        let before = SceneNodeData::UiLabel(Box::new(UiLabel::new()));
         let mut label = UiLabel::new();
         label.base.layout.size = UiVector2::pixels(100.0, 40.0);
-        let after = SceneNodeData::UiLabel(label);
+        let after = SceneNodeData::UiLabel(Box::new(label));
         assert_eq!(
             snapshot_flags(&before, &after),
             F_LAYOUT_SELF | F_LAYOUT_PARENT | F_COMMANDS

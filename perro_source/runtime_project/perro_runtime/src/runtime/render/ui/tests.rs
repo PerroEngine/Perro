@@ -164,7 +164,10 @@ fn ui_animated_image_emits_current_frame_region() {
         columns: 2,
         fps: 12.0,
     });
-    let node = insert_ui_node(&mut runtime, SceneNodeData::UiAnimatedImage(image));
+    let node = insert_ui_node(
+        &mut runtime,
+        SceneNodeData::UiAnimatedImage(Box::new(image)),
+    );
 
     runtime.extract_render_ui_commands();
     let mut commands = Vec::new();
@@ -189,7 +192,7 @@ fn ui_image_button_emits_image_command_with_state_tint() {
     button.hover_tint = Color::new(0.4, 0.5, 0.6, 1.0);
     button.pressed_tint = Color::new(0.7, 0.8, 0.9, 1.0);
     button.scale_mode = perro_ui::UiImageScaleMode::Fit;
-    let node = insert_ui_node(&mut runtime, SceneNodeData::UiImageButton(button));
+    let node = insert_ui_node(&mut runtime, SceneNodeData::UiImageButton(Box::new(button)));
 
     runtime.extract_render_ui_commands();
     runtime.drain_render_commands(&mut Vec::new());
@@ -219,13 +222,13 @@ fn ui_image_uses_inherited_ui_modulate() {
     parent.layout.size = UiVector2::pixels(120.0, 80.0);
     parent.modulate.children_modulate = Color::new(1.0, 0.5, 1.0, 1.0);
     parent.modulate.self_modulate = Color::RED;
-    let parent = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(parent));
+    let parent = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(Box::new(parent)));
 
     let mut image = perro_ui::UiImage::new();
     image.texture = TextureID::from_parts(44, 0);
     image.layout.size = UiVector2::pixels(32.0, 32.0);
     image.tint = Color::new(0.5, 1.0, 1.0, 1.0);
-    let child = insert_ui_node(&mut runtime, SceneNodeData::UiImage(image));
+    let child = insert_ui_node(&mut runtime, SceneNodeData::UiImage(Box::new(image)));
     attach_child(&mut runtime, parent, child);
 
     runtime.extract_render_ui_commands();
@@ -253,7 +256,10 @@ fn ui_nine_slice_emits_nine_slice_command() {
     node_data.layout.size = UiVector2::pixels(120.0, 40.0);
     node_data.texture_region = Some([1.0, 2.0, 30.0, 20.0]);
     node_data.margins = [5.0, 6.0, 7.0, 8.0];
-    let node = insert_ui_node(&mut runtime, SceneNodeData::UiNineSlice(node_data));
+    let node = insert_ui_node(
+        &mut runtime,
+        SceneNodeData::UiNineSlice(Box::new(node_data)),
+    );
 
     runtime.extract_render_ui_commands();
     let mut commands = Vec::new();
@@ -285,7 +291,7 @@ fn ui_image_keeps_retained_texture_while_replacement_texture_is_pending() {
     let mut image = perro_ui::UiImage::new();
     image.texture = old_texture;
     image.layout.size = UiVector2::pixels(64.0, 64.0);
-    let node = insert_ui_node(&mut runtime, SceneNodeData::UiImage(image));
+    let node = insert_ui_node(&mut runtime, SceneNodeData::UiImage(Box::new(image)));
 
     runtime.extract_render_ui_commands();
     let mut commands = Vec::new();
@@ -352,7 +358,7 @@ fn viewport_resize_recomputes_percent_ui_rects() {
     panel.layout.anchor = UiAnchor::TopRight;
     panel.layout.size = UiVector2::ratio(0.5, 0.25);
     panel.style.fill = Color::new(0.1, 0.2, 0.3, 1.0);
-    let node = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(panel));
+    let node = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(Box::new(panel)));
 
     runtime.extract_render_ui_commands();
     runtime.drain_render_commands(&mut Vec::new());
@@ -627,11 +633,11 @@ fn ui_parent_scale_preserves_child_virtual_layout_size() {
     let mut parent = UiPanel::new();
     parent.layout.size = UiVector2::pixels(200.0, 100.0);
     parent.transform.scale = Vector2::new(0.5, 0.5);
-    let parent = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(parent));
+    let parent = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(Box::new(parent)));
 
     let mut child = UiPanel::new();
     child.layout.size = UiVector2::ratio(1.0, 1.0);
-    let child = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(child));
+    let child = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(Box::new(child)));
     attach_child(&mut runtime, parent, child);
 
     runtime.extract_render_ui_commands();
@@ -687,12 +693,12 @@ fn ui_reparent_marks_layout_dirty_without_resize() {
     let mut parent_a = UiPanel::new();
     parent_a.layout.size = UiVector2::pixels(200.0, 200.0);
     parent_a.transform.translation.x = -0.125;
-    let parent_a = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(parent_a));
+    let parent_a = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(Box::new(parent_a)));
 
     let mut parent_b = UiPanel::new();
     parent_b.layout.size = UiVector2::pixels(200.0, 200.0);
     parent_b.transform.translation.x = 0.125;
-    let parent_b = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(parent_b));
+    let parent_b = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(Box::new(parent_b)));
 
     let child = insert_panel(&mut runtime, [40.0, 40.0], Color::new(0.1, 0.2, 0.3, 1.0));
     attach_child(&mut runtime, parent_a, child);
@@ -721,12 +727,12 @@ fn ui_descendant_reparented_via_non_ui_wrapper_recomputes_parent_space() {
     let mut preview = UiPanel::new();
     preview.layout.size = UiVector2::ratio(1.0, 1.0);
     preview.transform.scale = Vector2::new(0.5, 0.5);
-    let preview = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(preview));
+    let preview = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(Box::new(preview)));
 
     let wrapper = runtime.create::<perro_nodes::Node2D>();
     let mut ui_root = UiPanel::new();
     ui_root.layout.size = UiVector2::ratio(1.0, 1.0);
-    let ui_root = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(ui_root));
+    let ui_root = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(Box::new(ui_root)));
     attach_child(&mut runtime, wrapper, ui_root);
 
     runtime.extract_render_ui_commands();
@@ -752,12 +758,12 @@ fn ui_descendant_under_node3d_wrapper_resolves_against_closest_ui_parent() {
 
     let mut root = UiPanel::new();
     root.layout.size = UiVector2::ratio(0.5, 0.5);
-    let root = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(root));
+    let root = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(Box::new(root)));
 
     let wrapper = runtime.create::<perro_nodes::Node3D>();
     let mut child = UiPanel::new();
     child.layout.size = UiVector2::ratio(1.0, 1.0);
-    let child = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(child));
+    let child = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(Box::new(child)));
     attach_child(&mut runtime, wrapper, child);
     attach_child(&mut runtime, root, wrapper);
 
@@ -786,12 +792,12 @@ fn ui_descendant_under_animation_player_wrapper_resolves_against_closest_ui_pare
 
     let mut root = UiPanel::new();
     root.layout.size = UiVector2::ratio(0.5, 0.5);
-    let root = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(root));
+    let root = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(Box::new(root)));
 
     let wrapper = runtime.create::<perro_nodes::AnimationPlayer>();
     let mut child = UiPanel::new();
     child.layout.size = UiVector2::ratio(1.0, 1.0);
-    let child = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(child));
+    let child = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(Box::new(child)));
     attach_child(&mut runtime, wrapper, child);
     attach_child(&mut runtime, root, wrapper);
 
@@ -953,7 +959,7 @@ fn same_z_ui_child_draws_above_newer_parent_after_reparent() {
     let mut label = perro_ui::UiLabel::new();
     label.layout.size = UiVector2::pixels(90.0, 45.0);
     label.text = "7".into();
-    let label = insert_ui_node(&mut runtime, SceneNodeData::UiLabel(label));
+    let label = insert_ui_node(&mut runtime, SceneNodeData::UiLabel(Box::new(label)));
 
     let panel = insert_panel(&mut runtime, [120.0, 60.0], Color::new(0.2, 0.4, 0.7, 1.0));
     attach_child(&mut runtime, panel, label);
@@ -1336,7 +1342,7 @@ fn text_box_focus_accepts_committed_text_and_backspace() {
     runtime.set_viewport_size(800, 600);
     let mut text_box = perro_ui::UiTextBox::new();
     text_box.inner.base.layout.size = UiVector2::pixels(200.0, 40.0);
-    let node = insert_ui_node(&mut runtime, SceneNodeData::UiTextBox(text_box));
+    let node = insert_ui_node(&mut runtime, SceneNodeData::UiTextBox(Box::new(text_box)));
 
     runtime.extract_render_ui_commands();
     runtime.drain_render_commands(&mut Vec::new());
@@ -1408,7 +1414,7 @@ fn text_box_ctrl_shortcut_does_not_insert_key_text() {
     runtime.set_viewport_size(800, 600);
     let mut text_box = perro_ui::UiTextBox::new();
     text_box.inner.base.layout.size = UiVector2::pixels(200.0, 40.0);
-    let node = insert_ui_node(&mut runtime, SceneNodeData::UiTextBox(text_box));
+    let node = insert_ui_node(&mut runtime, SceneNodeData::UiTextBox(Box::new(text_box)));
 
     runtime.extract_render_ui_commands();
     runtime.drain_render_commands(&mut Vec::new());
@@ -1445,7 +1451,7 @@ fn held_backspace_repeats_in_text_box() {
     text_box.inner.text = Cow::Borrowed("abcd");
     text_box.inner.caret = 4;
     text_box.inner.anchor = 4;
-    let node = insert_ui_node(&mut runtime, SceneNodeData::UiTextBox(text_box));
+    let node = insert_ui_node(&mut runtime, SceneNodeData::UiTextBox(Box::new(text_box)));
 
     runtime.extract_render_ui_commands();
     runtime.drain_render_commands(&mut Vec::new());
@@ -1589,7 +1595,7 @@ fn clipped_text_edit_hit_area_does_not_block_visible_text_edit() {
     clip_parent.layout.size = UiVector2::pixels(20.0, 20.0);
     clip_parent.layout.z_index = 10;
     clip_parent.clip_children = true;
-    let clip_parent = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(clip_parent));
+    let clip_parent = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(Box::new(clip_parent)));
 
     let high = insert_text_box_at(&mut runtime, 0.0, 0.0);
     attach_child(&mut runtime, clip_parent, high);
@@ -1614,7 +1620,7 @@ fn clipped_button_hit_area_does_not_block_visible_button() {
     clip_parent.layout.size = UiVector2::pixels(20.0, 20.0);
     clip_parent.layout.z_index = 10;
     clip_parent.clip_children = true;
-    let clip_parent = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(clip_parent));
+    let clip_parent = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(Box::new(clip_parent)));
 
     let high = insert_button(&mut runtime, [120.0, 40.0]);
     attach_child(&mut runtime, clip_parent, high);
@@ -1644,12 +1650,12 @@ fn clipped_image_button_hit_area_does_not_hover() {
     let mut clip_parent = perro_ui::UiPanel::new();
     clip_parent.layout.size = UiVector2::pixels(20.0, 20.0);
     clip_parent.clip_children = true;
-    let clip_parent = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(clip_parent));
+    let clip_parent = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(Box::new(clip_parent)));
 
     let mut button = perro_ui::UiImageButton::new();
     button.layout.size = UiVector2::pixels(120.0, 40.0);
     button.texture = TextureID::from_parts(99, 0);
-    let button = insert_ui_node(&mut runtime, SceneNodeData::UiImageButton(button));
+    let button = insert_ui_node(&mut runtime, SceneNodeData::UiImageButton(Box::new(button)));
     attach_child(&mut runtime, clip_parent, button);
 
     runtime.extract_render_ui_commands();
@@ -1673,7 +1679,10 @@ fn panel_over_scroll_vlayout_button_blocks_click() {
 
     let mut scroller = UiScrollContainer::new();
     scroller.layout.size = UiVector2::pixels(220.0, 120.0);
-    let scroller = insert_ui_node(&mut runtime, SceneNodeData::UiScrollContainer(scroller));
+    let scroller = insert_ui_node(
+        &mut runtime,
+        SceneNodeData::UiScrollContainer(Box::new(scroller)),
+    );
 
     let mut list = UiVLayout::new();
     list.layout.size = UiVector2::pixels(220.0, 120.0);
@@ -1686,7 +1695,7 @@ fn panel_over_scroll_vlayout_button_blocks_click() {
     let mut panel = UiPanel::new();
     panel.layout.size = UiVector2::pixels(180.0, 90.0);
     panel.layout.z_index = 20;
-    let panel = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(panel));
+    let panel = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(Box::new(panel)));
 
     runtime.extract_render_ui_commands();
     runtime.drain_render_commands(&mut Vec::new());
@@ -1946,7 +1955,7 @@ fn button_state_base_overrides_rect_transform() {
     hover_base.transform.rotation = 0.25;
     button.hover_base = Some(hover_base);
     button.hover_size_override = true;
-    let node = insert_ui_node(&mut runtime, SceneNodeData::UiButton(button));
+    let node = insert_ui_node(&mut runtime, SceneNodeData::UiButton(Box::new(button)));
 
     runtime.extract_render_ui_commands();
     let mut commands = Vec::new();
@@ -1978,7 +1987,7 @@ fn button_hover_style_without_size_override_keeps_base_size() {
     let mut hover_base = button.base.clone();
     hover_base.transform.translation = Vector2::new(8.0, 0.0);
     button.hover_base = Some(hover_base);
-    let node = insert_ui_node(&mut runtime, SceneNodeData::UiButton(button));
+    let node = insert_ui_node(&mut runtime, SceneNodeData::UiButton(Box::new(button)));
 
     runtime.extract_render_ui_commands();
     runtime.drain_render_commands(&mut Vec::new());
@@ -2014,7 +2023,7 @@ fn button_event_signals_include_named_and_custom_signals() {
     button
         .pressed_signals
         .push(SignalID::from_string("custom_b"));
-    let custom = insert_ui_node(&mut runtime, SceneNodeData::UiButton(button));
+    let custom = insert_ui_node(&mut runtime, SceneNodeData::UiButton(Box::new(button)));
     runtime.nodes.get_mut(custom).expect("custom button").name = Cow::Borrowed("fire");
     assert_eq!(
         runtime.button_event_signals(custom, "pressed"),
@@ -2033,7 +2042,7 @@ fn image_button_event_signals_include_named_and_custom_signals() {
     button
         .clicked_signals
         .push(SignalID::from_string("custom_click"));
-    let node = insert_ui_node(&mut runtime, SceneNodeData::UiImageButton(button));
+    let node = insert_ui_node(&mut runtime, SceneNodeData::UiImageButton(Box::new(button)));
     runtime.nodes.get_mut(node).expect("image button").name = Cow::Borrowed("icon");
 
     assert_eq!(
@@ -2169,7 +2178,7 @@ fn text_edit_event_signals_include_named_and_custom_signals() {
     let mut runtime = Runtime::new();
     let named = insert_ui_node(
         &mut runtime,
-        SceneNodeData::UiTextBox(perro_ui::UiTextBox::new()),
+        SceneNodeData::UiTextBox(Box::new(perro_ui::UiTextBox::new())),
     );
     runtime.nodes.get_mut(named).expect("named text box").name = Cow::Borrowed("name");
     assert_eq!(
@@ -2190,7 +2199,10 @@ fn text_edit_event_signals_include_named_and_custom_signals() {
         .inner
         .text_changed_signals
         .push(SignalID::from_string("custom_text"));
-    let custom = insert_ui_node(&mut runtime, SceneNodeData::UiTextBlock(text_block));
+    let custom = insert_ui_node(
+        &mut runtime,
+        SceneNodeData::UiTextBlock(Box::new(text_block)),
+    );
     runtime
         .nodes
         .get_mut(custom)
@@ -2566,13 +2578,13 @@ fn parent_ui_scale_scales_child_label_font() {
     let mut parent_panel = UiPanel::new();
     parent_panel.layout.size = UiVector2::pixels(400.0, 200.0);
     parent_panel.transform.scale = Vector2::new(0.5, 0.5);
-    let parent = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(parent_panel));
+    let parent = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(Box::new(parent_panel)));
 
     let mut label = perro_ui::UiLabel::new().with_text("Scaled");
     label.layout.size = UiVector2::pixels(200.0, 40.0);
     label.font_size = 20.0;
     label.text_size_ratio = 0.0;
-    let child = insert_ui_node(&mut runtime, SceneNodeData::UiLabel(label));
+    let child = insert_ui_node(&mut runtime, SceneNodeData::UiLabel(Box::new(label)));
     attach_child(&mut runtime, parent, child);
 
     runtime.extract_render_ui_commands();
@@ -2599,7 +2611,7 @@ fn label_relative_font_size_scales_with_virtual_resolution() {
     label.font_size = 20.0;
     label.text_size_ratio = 0.0;
     label.font_sizing.relative_to_virtual = true;
-    let node = insert_ui_node(&mut runtime, SceneNodeData::UiLabel(label));
+    let node = insert_ui_node(&mut runtime, SceneNodeData::UiLabel(Box::new(label)));
 
     runtime.extract_render_ui_commands();
     let mut commands = Vec::new();
@@ -2626,7 +2638,7 @@ fn text_box_relative_font_size_uses_min_and_max_scale_clamp() {
     text_box.inner.font_sizing.relative_to_virtual = true;
     text_box.inner.font_sizing.min_scale = 0.5;
     text_box.inner.font_sizing.max_scale = 1.5;
-    let node = insert_ui_node(&mut runtime, SceneNodeData::UiTextBox(text_box));
+    let node = insert_ui_node(&mut runtime, SceneNodeData::UiTextBox(Box::new(text_box)));
 
     runtime.extract_render_ui_commands();
     let mut commands = Vec::new();
@@ -2647,13 +2659,13 @@ fn parent_ui_scale_keeps_child_panel_radius_ratio() {
     let mut parent_panel = UiPanel::new();
     parent_panel.layout.size = UiVector2::pixels(400.0, 200.0);
     parent_panel.transform.scale = Vector2::new(0.5, 0.5);
-    let parent = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(parent_panel));
+    let parent = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(Box::new(parent_panel)));
 
     let mut child_panel = UiPanel::new();
     child_panel.layout.size = UiVector2::pixels(200.0, 40.0);
     child_panel.style.set_corner_radius(0.4);
     child_panel.style.stroke_width = 2.0;
-    let child = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(child_panel));
+    let child = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(Box::new(child_panel)));
     attach_child(&mut runtime, parent, child);
 
     runtime.extract_render_ui_commands();
@@ -2762,14 +2774,14 @@ fn child_fit_size_uses_spawn_baseline_for_relative_max_scale() {
 
     let mut parent = UiPanel::new();
     parent.layout.size = UiVector2::ratio(0.5, 0.5);
-    let parent_id = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(parent));
+    let parent_id = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(Box::new(parent)));
 
     let mut child = UiPanel::new();
     child.layout.size = UiVector2::ratio(0.5, 0.5);
     child.layout.h_size = UiSizeMode::FitChildren;
     child.layout.v_size = UiSizeMode::FitChildren;
     child.layout.max_size_scale = Vector2::new(2.0, 2.0);
-    let child_id = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(child));
+    let child_id = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(Box::new(child)));
     attach_child(&mut runtime, parent_id, child_id);
 
     let oversized = insert_panel(
@@ -2797,14 +2809,14 @@ fn relative_min_max_scale_rebases_when_size_definition_changes() {
 
     let mut parent = UiPanel::new();
     parent.layout.size = UiVector2::ratio(0.5, 0.5);
-    let parent_id = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(parent));
+    let parent_id = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(Box::new(parent)));
 
     let mut child = UiPanel::new();
     child.layout.size = UiVector2::ratio(0.5, 0.5);
     child.layout.h_size = UiSizeMode::FitChildren;
     child.layout.v_size = UiSizeMode::FitChildren;
     child.layout.max_size_scale = Vector2::new(2.0, 2.0);
-    let child_id = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(child));
+    let child_id = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(Box::new(child)));
     attach_child(&mut runtime, parent_id, child_id);
     let oversized = insert_panel(
         &mut runtime,
@@ -2856,7 +2868,7 @@ fn min_size_ratio_one_locks_spawn_floor() {
     top.layout.anchor = perro_ui::UiAnchor::Top;
     top.layout.size = UiVector2::ratio(0.96, 0.09);
     top.layout.min_size_scale = Vector2::new(1.0, 1.0);
-    let top_id = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(top));
+    let top_id = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(Box::new(top)));
 
     runtime.extract_render_ui_commands();
     let rect = runtime
@@ -2877,7 +2889,7 @@ fn min_size_ratio_rebases_when_size_ratio_changes() {
     let mut panel = UiPanel::new();
     panel.layout.size = UiVector2::ratio(1.0, 1.0);
     panel.layout.min_size_scale = Vector2::new(0.5, 0.5);
-    let panel_id = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(panel));
+    let panel_id = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(Box::new(panel)));
 
     runtime.extract_render_ui_commands();
     runtime.set_viewport_size(400, 400);
@@ -2918,13 +2930,13 @@ fn label_fill_mode_uses_parent_space_without_auto_layout_parent() {
 
     let mut parent = UiPanel::new();
     parent.layout.size = UiVector2::ratio(1.0, 1.0);
-    let parent_id = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(parent));
+    let parent_id = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(Box::new(parent)));
 
     let mut label = perro_ui::UiLabel::new().with_text("HP");
     label.layout.h_size = UiSizeMode::Fill;
     label.layout.v_size = UiSizeMode::Fill;
     label.text_size_ratio = 1.0;
-    let label_id = insert_ui_node(&mut runtime, SceneNodeData::UiLabel(label));
+    let label_id = insert_ui_node(&mut runtime, SceneNodeData::UiLabel(Box::new(label)));
     attach_child(&mut runtime, parent_id, label_id);
 
     runtime.extract_render_ui_commands();
@@ -2954,7 +2966,10 @@ fn scroll_container_offsets_children_and_clips_to_view() {
     let mut scroller = UiScrollContainer::new();
     scroller.layout.size = UiVector2::pixels(200.0, 100.0);
     scroller.scroll = Vector2::new(30.0, 40.0);
-    let scroller_id = insert_ui_node(&mut runtime, SceneNodeData::UiScrollContainer(scroller));
+    let scroller_id = insert_ui_node(
+        &mut runtime,
+        SceneNodeData::UiScrollContainer(Box::new(scroller)),
+    );
 
     let child = insert_panel(&mut runtime, [50.0, 30.0], Color::new(0.1, 0.2, 0.3, 1.0));
     attach_child(&mut runtime, scroller_id, child);
@@ -3002,7 +3017,10 @@ fn scroll_container_places_large_child_at_top() {
 
     let mut scroller = UiScrollContainer::new();
     scroller.layout.size = UiVector2::pixels(200.0, 100.0);
-    let scroller_id = insert_ui_node(&mut runtime, SceneNodeData::UiScrollContainer(scroller));
+    let scroller_id = insert_ui_node(
+        &mut runtime,
+        SceneNodeData::UiScrollContainer(Box::new(scroller)),
+    );
 
     let mut list = UiVLayout::new();
     list.layout.size = UiVector2::pixels(200.0, 300.0);
@@ -3046,7 +3064,10 @@ fn scroll_container_scroll_to_snaps_to_normalized_part() {
 
     let mut scroller = UiScrollContainer::new();
     scroller.layout.size = UiVector2::pixels(200.0, 100.0);
-    let scroller_id = insert_ui_node(&mut runtime, SceneNodeData::UiScrollContainer(scroller));
+    let scroller_id = insert_ui_node(
+        &mut runtime,
+        SceneNodeData::UiScrollContainer(Box::new(scroller)),
+    );
 
     let mut list = UiVLayout::new();
     list.layout.size = UiVector2::pixels(200.0, 300.0);
@@ -3079,7 +3100,10 @@ fn scroll_container_scroll_to_animates_to_normalized_part() {
 
     let mut scroller = UiScrollContainer::new();
     scroller.layout.size = UiVector2::pixels(200.0, 100.0);
-    let scroller_id = insert_ui_node(&mut runtime, SceneNodeData::UiScrollContainer(scroller));
+    let scroller_id = insert_ui_node(
+        &mut runtime,
+        SceneNodeData::UiScrollContainer(Box::new(scroller)),
+    );
 
     let mut list = UiVLayout::new();
     list.layout.size = UiVector2::pixels(200.0, 300.0);
@@ -3130,7 +3154,10 @@ fn scroll_container_emits_right_scrollbar_thumb() {
 
     let mut scroller = UiScrollContainer::new();
     scroller.layout.size = UiVector2::pixels(200.0, 100.0);
-    let scroller_id = insert_ui_node(&mut runtime, SceneNodeData::UiScrollContainer(scroller));
+    let scroller_id = insert_ui_node(
+        &mut runtime,
+        SceneNodeData::UiScrollContainer(Box::new(scroller)),
+    );
 
     let mut list = UiVLayout::new();
     list.layout.size = UiVector2::pixels(200.0, 300.0);
@@ -3165,7 +3192,10 @@ fn scroll_container_reserves_default_gap_for_scrollbar() {
 
     let mut scroller = UiScrollContainer::new();
     scroller.layout.size = UiVector2::pixels(200.0, 100.0);
-    let scroller_id = insert_ui_node(&mut runtime, SceneNodeData::UiScrollContainer(scroller));
+    let scroller_id = insert_ui_node(
+        &mut runtime,
+        SceneNodeData::UiScrollContainer(Box::new(scroller)),
+    );
 
     let mut list = UiVLayout::new();
     list.layout.h_size = UiSizeMode::Fill;
@@ -3193,7 +3223,10 @@ fn scroll_container_uses_custom_scrollbar_gap() {
     let mut scroller = UiScrollContainer::new();
     scroller.layout.size = UiVector2::pixels(200.0, 100.0);
     scroller.scroll_bar_padding = 18.0;
-    let scroller_id = insert_ui_node(&mut runtime, SceneNodeData::UiScrollContainer(scroller));
+    let scroller_id = insert_ui_node(
+        &mut runtime,
+        SceneNodeData::UiScrollContainer(Box::new(scroller)),
+    );
 
     let mut list = UiVLayout::new();
     list.layout.h_size = UiSizeMode::Fill;
@@ -3220,7 +3253,10 @@ fn scroll_container_thumb_drag_updates_scroll() {
 
     let mut scroller = UiScrollContainer::new();
     scroller.layout.size = UiVector2::pixels(200.0, 100.0);
-    let scroller_id = insert_ui_node(&mut runtime, SceneNodeData::UiScrollContainer(scroller));
+    let scroller_id = insert_ui_node(
+        &mut runtime,
+        SceneNodeData::UiScrollContainer(Box::new(scroller)),
+    );
 
     let mut list = UiVLayout::new();
     list.layout.size = UiVector2::pixels(200.0, 300.0);
@@ -3259,7 +3295,10 @@ fn scroll_container_track_click_updates_scroll() {
 
     let mut scroller = UiScrollContainer::new();
     scroller.layout.size = UiVector2::pixels(200.0, 100.0);
-    let scroller_id = insert_ui_node(&mut runtime, SceneNodeData::UiScrollContainer(scroller));
+    let scroller_id = insert_ui_node(
+        &mut runtime,
+        SceneNodeData::UiScrollContainer(Box::new(scroller)),
+    );
 
     let mut list = UiVLayout::new();
     list.layout.size = UiVector2::pixels(200.0, 300.0);
@@ -3293,7 +3332,10 @@ fn scroll_container_scrollbar_requests_pointer_cursor() {
 
     let mut scroller = UiScrollContainer::new();
     scroller.layout.size = UiVector2::pixels(200.0, 100.0);
-    let scroller_id = insert_ui_node(&mut runtime, SceneNodeData::UiScrollContainer(scroller));
+    let scroller_id = insert_ui_node(
+        &mut runtime,
+        SceneNodeData::UiScrollContainer(Box::new(scroller)),
+    );
 
     let mut list = UiVLayout::new();
     list.layout.size = UiVector2::pixels(200.0, 300.0);
@@ -3321,7 +3363,10 @@ fn wheel_scroll_updates_hovered_scroll_container() {
 
     let mut scroller = UiScrollContainer::new();
     scroller.layout.size = UiVector2::pixels(200.0, 100.0);
-    let scroller_id = insert_ui_node(&mut runtime, SceneNodeData::UiScrollContainer(scroller));
+    let scroller_id = insert_ui_node(
+        &mut runtime,
+        SceneNodeData::UiScrollContainer(Box::new(scroller)),
+    );
 
     let child = insert_panel(&mut runtime, [200.0, 300.0], Color::new(0.1, 0.2, 0.3, 1.0));
     attach_child(&mut runtime, scroller_id, child);
@@ -3352,11 +3397,17 @@ fn wheel_scroll_skips_scroll_container_without_overflow() {
 
     let mut outer = UiScrollContainer::new();
     outer.layout.size = UiVector2::pixels(240.0, 120.0);
-    let outer_id = insert_ui_node(&mut runtime, SceneNodeData::UiScrollContainer(outer));
+    let outer_id = insert_ui_node(
+        &mut runtime,
+        SceneNodeData::UiScrollContainer(Box::new(outer)),
+    );
 
     let mut inner = UiScrollContainer::new();
     inner.layout.size = UiVector2::pixels(220.0, 100.0);
-    let inner_id = insert_ui_node(&mut runtime, SceneNodeData::UiScrollContainer(inner));
+    let inner_id = insert_ui_node(
+        &mut runtime,
+        SceneNodeData::UiScrollContainer(Box::new(inner)),
+    );
     attach_child(&mut runtime, outer_id, inner_id);
 
     let inner_child = insert_panel(&mut runtime, [200.0, 80.0], Color::new(0.1, 0.2, 0.3, 1.0));
@@ -3401,11 +3452,14 @@ fn keyboard_scroll_targets_focused_scroll_container_ancestor() {
 
     let mut scroller = UiScrollContainer::new();
     scroller.layout.size = UiVector2::pixels(200.0, 100.0);
-    let scroller_id = insert_ui_node(&mut runtime, SceneNodeData::UiScrollContainer(scroller));
+    let scroller_id = insert_ui_node(
+        &mut runtime,
+        SceneNodeData::UiScrollContainer(Box::new(scroller)),
+    );
 
     let mut button = perro_ui::UiButton::new();
     button.layout.size = UiVector2::pixels(120.0, 40.0);
-    let button_id = insert_ui_node(&mut runtime, SceneNodeData::UiButton(button));
+    let button_id = insert_ui_node(&mut runtime, SceneNodeData::UiButton(Box::new(button)));
     attach_child(&mut runtime, scroller_id, button_id);
 
     let child = insert_panel(&mut runtime, [200.0, 300.0], Color::new(0.1, 0.2, 0.3, 1.0));
@@ -3448,7 +3502,10 @@ fn keyboard_scroll_falls_back_to_sole_root_scroll_container() {
 
     let mut scroller = UiScrollContainer::new();
     scroller.layout.size = UiVector2::pixels(200.0, 100.0);
-    let scroller_id = insert_ui_node(&mut runtime, SceneNodeData::UiScrollContainer(scroller));
+    let scroller_id = insert_ui_node(
+        &mut runtime,
+        SceneNodeData::UiScrollContainer(Box::new(scroller)),
+    );
 
     let child = insert_panel(&mut runtime, [200.0, 300.0], Color::new(0.1, 0.2, 0.3, 1.0));
     attach_child(&mut runtime, scroller_id, child);
@@ -3476,12 +3533,18 @@ fn multiline_text_edit_wheel_takes_precedence_over_parent_scroll_container() {
 
     let mut scroller = UiScrollContainer::new();
     scroller.layout.size = UiVector2::pixels(240.0, 120.0);
-    let scroller_id = insert_ui_node(&mut runtime, SceneNodeData::UiScrollContainer(scroller));
+    let scroller_id = insert_ui_node(
+        &mut runtime,
+        SceneNodeData::UiScrollContainer(Box::new(scroller)),
+    );
 
     let mut text_block = perro_ui::UiTextBlock::new();
     text_block.inner.base.layout.size = UiVector2::pixels(220.0, 100.0);
     text_block.inner.text = Cow::Borrowed("line1\nline2\nline3\nline4\nline5\nline6");
-    let text_id = insert_ui_node(&mut runtime, SceneNodeData::UiTextBlock(text_block));
+    let text_id = insert_ui_node(
+        &mut runtime,
+        SceneNodeData::UiTextBlock(Box::new(text_block)),
+    );
     attach_child(&mut runtime, scroller_id, text_id);
 
     let filler = insert_panel(&mut runtime, [220.0, 260.0], Color::new(0.1, 0.2, 0.3, 1.0));
@@ -3598,7 +3661,7 @@ fn input_change_rechecks_retained_label_visibility() {
     let mut label = perro_ui::UiLabel::new();
     label.layout.size = UiVector2::pixels(120.0, 30.0);
     label.text = "Play".into();
-    let label = insert_ui_node(&mut runtime, SceneNodeData::UiLabel(label));
+    let label = insert_ui_node(&mut runtime, SceneNodeData::UiLabel(Box::new(label)));
     attach_child(&mut runtime, parent, button);
     attach_child(&mut runtime, parent, label);
 
@@ -3632,7 +3695,7 @@ fn non_ui_parent_visibility_change_removes_retained_ui_descendants() {
     let mut label = perro_ui::UiLabel::new();
     label.layout.size = UiVector2::pixels(120.0, 30.0);
     label.text = "New".into();
-    let label = insert_ui_node(&mut runtime, SceneNodeData::UiLabel(label));
+    let label = insert_ui_node(&mut runtime, SceneNodeData::UiLabel(Box::new(label)));
     attach_child(&mut runtime, root, button);
     attach_child(&mut runtime, button, label);
 
@@ -3669,7 +3732,7 @@ fn parent_visibility_toggle_restores_all_ui_descendants_without_resize() {
     let mut label = perro_ui::UiLabel::new();
     label.layout.size = UiVector2::pixels(120.0, 30.0);
     label.text = "Play".into();
-    let label = insert_ui_node(&mut runtime, SceneNodeData::UiLabel(label));
+    let label = insert_ui_node(&mut runtime, SceneNodeData::UiLabel(Box::new(label)));
     attach_child(&mut runtime, parent, button);
     attach_child(&mut runtime, parent, label);
 
@@ -3709,12 +3772,12 @@ fn initially_hidden_parent_show_extracts_button_label_descendant() {
     let mut parent = UiPanel::new();
     parent.layout.size = UiVector2::pixels(260.0, 120.0);
     parent.visible = false;
-    let parent = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(parent));
+    let parent = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(Box::new(parent)));
     let button = insert_button(&mut runtime, [120.0, 40.0]);
     let mut label = perro_ui::UiLabel::new();
     label.layout.size = UiVector2::pixels(120.0, 30.0);
     label.text = "Play".into();
-    let label = insert_ui_node(&mut runtime, SceneNodeData::UiLabel(label));
+    let label = insert_ui_node(&mut runtime, SceneNodeData::UiLabel(Box::new(label)));
     attach_child(&mut runtime, parent, button);
     attach_child(&mut runtime, button, label);
 
@@ -3749,7 +3812,7 @@ fn force_rerender_marks_ui_subtree_after_raw_visibility_change() {
     let mut label = perro_ui::UiLabel::new();
     label.layout.size = UiVector2::pixels(120.0, 30.0);
     label.text = "Play".into();
-    let label = insert_ui_node(&mut runtime, SceneNodeData::UiLabel(label));
+    let label = insert_ui_node(&mut runtime, SceneNodeData::UiLabel(Box::new(label)));
     attach_child(&mut runtime, parent, button);
     attach_child(&mut runtime, button, label);
 
@@ -3872,7 +3935,7 @@ fn menu_like_nested_layout_restores_all_buttons_and_labels_after_show() {
         let mut label = perro_ui::UiLabel::new();
         label.layout.size = UiVector2::ratio(1.0, 1.0);
         label.text = "Sport".into();
-        let label = insert_ui_node(&mut runtime, SceneNodeData::UiLabel(label));
+        let label = insert_ui_node(&mut runtime, SceneNodeData::UiLabel(Box::new(label)));
         attach_child(&mut runtime, button, label);
         labels.push(label);
     }
@@ -3923,7 +3986,7 @@ fn tree_list_rows_expand_down_from_top_and_hide_closed_children() {
         .push(perro_ui::UiTreeListItem::new("child").child(0));
     tree.items
         .push(perro_ui::UiTreeListItem::new("leaf").child(1));
-    let tree_id = insert_ui_node(&mut runtime, SceneNodeData::UiTreeList(tree));
+    let tree_id = insert_ui_node(&mut runtime, SceneNodeData::UiTreeList(Box::new(tree)));
 
     runtime.extract_render_ui_commands();
     let rows = runtime
@@ -4020,7 +4083,7 @@ fn dropdown_options_match_button_width() {
         "Two",
         perro_variant::Variant::from(2_i32),
     ));
-    let dropdown_id = insert_ui_node(&mut runtime, SceneNodeData::UiDropdown(dropdown));
+    let dropdown_id = insert_ui_node(&mut runtime, SceneNodeData::UiDropdown(Box::new(dropdown)));
 
     runtime.extract_render_ui_commands();
     let (button_width, option_id) = runtime
@@ -4040,11 +4103,71 @@ fn dropdown_options_match_button_width() {
     assert_eq!(option_width, button_width);
 }
 
+#[test]
+fn dropdown_click_open_renders_options_after_frame_dirty_clear() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+
+    let mut dropdown = perro_ui::UiDropdown::new();
+    dropdown.layout.size = UiVector2::pixels(180.0, 32.0);
+    dropdown.options.push(perro_ui::UiDropdownOption::new(
+        "One",
+        perro_variant::Variant::from(1_i32),
+    ));
+    let dropdown_id = insert_ui_node(&mut runtime, SceneNodeData::UiDropdown(Box::new(dropdown)));
+
+    runtime.extract_render_ui_commands();
+    runtime.drain_render_commands(&mut Vec::new());
+    runtime.clear_dirty_flags();
+
+    // Press over the dropdown, then release: the click opens the dropdown
+    // during the post-layout input phase of extraction.
+    runtime.set_mouse_position(400.0, 300.0);
+    runtime.set_mouse_button_state(MouseButton::Left, true);
+    runtime.extract_render_ui_commands();
+    runtime.drain_render_commands(&mut Vec::new());
+    runtime.clear_dirty_flags();
+
+    runtime.set_mouse_button_state(MouseButton::Left, false);
+    runtime.begin_input_frame();
+    runtime.extract_render_ui_commands();
+    runtime.drain_render_commands(&mut Vec::new());
+    runtime.clear_dirty_flags();
+
+    let (open, option_id) = runtime
+        .nodes
+        .get(dropdown_id)
+        .and_then(|node| match &node.data {
+            SceneNodeData::UiDropdown(dropdown) => Some((
+                dropdown.open,
+                dropdown.internal_option_buttons.first().copied(),
+            )),
+            _ => None,
+        })
+        .expect("dropdown node");
+    assert!(open, "click opens dropdown");
+    let option_id = option_id.expect("dropdown option button exists");
+
+    // Next frame has no new input; the deferred dirty marks must force a
+    // relayout so the option renders without waiting for other UI work.
+    runtime.begin_input_frame();
+    runtime.extract_render_ui_commands();
+    let mut commands = Vec::new();
+    runtime.drain_render_commands(&mut commands);
+    assert!(
+        commands.iter().any(|command| matches!(
+            command,
+            RenderCommand::Ui(UiCommand::UpsertButton { node, .. }) if *node == option_id
+        )),
+        "open dropdown option renders on the following frame"
+    );
+}
+
 fn insert_panel(runtime: &mut Runtime, size: [f32; 2], fill: Color) -> NodeID {
     let mut panel = UiPanel::new();
     panel.layout.size = UiVector2::pixels(size[0], size[1]);
     panel.style.fill = fill;
-    insert_ui_node(runtime, SceneNodeData::UiPanel(panel))
+    insert_ui_node(runtime, SceneNodeData::UiPanel(Box::new(panel)))
 }
 
 fn insert_button(runtime: &mut Runtime, size: [f32; 2]) -> NodeID {
@@ -4053,7 +4176,7 @@ fn insert_button(runtime: &mut Runtime, size: [f32; 2]) -> NodeID {
     button.style.fill = Color::new(0.1, 0.2, 0.3, 1.0);
     button.hover_style.fill = Color::new(0.2, 0.3, 0.4, 1.0);
     button.pressed_style.fill = Color::new(0.3, 0.4, 0.5, 1.0);
-    insert_ui_node(runtime, SceneNodeData::UiButton(button))
+    insert_ui_node(runtime, SceneNodeData::UiButton(Box::new(button)))
 }
 
 fn insert_button_at(runtime: &mut Runtime, size: [f32; 2], x: f32, y: f32) -> NodeID {
@@ -4063,21 +4186,21 @@ fn insert_button_at(runtime: &mut Runtime, size: [f32; 2], x: f32, y: f32) -> No
     button.style.fill = Color::new(0.1, 0.2, 0.3, 1.0);
     button.hover_style.fill = Color::new(0.2, 0.3, 0.4, 1.0);
     button.pressed_style.fill = Color::new(0.3, 0.4, 0.5, 1.0);
-    insert_ui_node(runtime, SceneNodeData::UiButton(button))
+    insert_ui_node(runtime, SceneNodeData::UiButton(Box::new(button)))
 }
 
 fn insert_text_box_at(runtime: &mut Runtime, x: f32, y: f32) -> NodeID {
     let mut text_box = perro_ui::UiTextBox::new();
     text_box.inner.base.layout.size = UiVector2::pixels(140.0, 40.0);
     text_box.inner.base.transform.position = UiVector2::pixels(x, y);
-    insert_ui_node(runtime, SceneNodeData::UiTextBox(text_box))
+    insert_ui_node(runtime, SceneNodeData::UiTextBox(Box::new(text_box)))
 }
 
 fn insert_text_block_at(runtime: &mut Runtime, x: f32, y: f32) -> NodeID {
     let mut text_block = perro_ui::UiTextBlock::new();
     text_block.inner.base.layout.size = UiVector2::pixels(140.0, 80.0);
     text_block.inner.base.transform.position = UiVector2::pixels(x, y);
-    insert_ui_node(runtime, SceneNodeData::UiTextBlock(text_block))
+    insert_ui_node(runtime, SceneNodeData::UiTextBlock(Box::new(text_block)))
 }
 
 fn tap_key_and_extract(runtime: &mut Runtime, key: KeyCode) {
@@ -4138,7 +4261,7 @@ fn attach_child(runtime: &mut Runtime, parent: NodeID, child: NodeID) {
         .get_mut(parent)
         .expect("parent exists")
         .add_child(child);
-    runtime.nodes.get_mut(child).expect("child exists").parent = parent;
+    assert!(runtime.nodes.set_parent(child, parent), "child exists");
     runtime.mark_needs_rerender(parent);
     runtime.mark_needs_rerender(child);
 }

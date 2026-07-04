@@ -14,6 +14,78 @@ fn node_with_name_tags(name: &str, tags: &[&str]) -> SceneNode {
 }
 
 #[test]
+fn slot_type_fast_path_matches_full_scan_over_churned_arena() {
+    use perro_nodes::Sprite2D;
+
+    // Mixed types + remove/reinsert churn so free slots carry stale mirror
+    // types — fast path must still return exactly what a full scan does.
+    let mut arena = NodeArena::new();
+    let mut ids = Vec::new();
+    for i in 0..300usize {
+        let mut node = match i % 3 {
+            0 => SceneNode::new(SceneNodeData::Node3D(Node3D::new())),
+            1 => SceneNode::new(SceneNodeData::Node2D(Node2D::default())),
+            _ => SceneNode::new(SceneNodeData::Sprite2D(Sprite2D::default())),
+        };
+        if i % 4 == 0 {
+            node.set_name("enemy".to_string());
+        }
+        if i % 5 == 0 {
+            node.add_tag(TagID::from_string("enemy"));
+        }
+        ids.push(arena.insert(node));
+    }
+    // Remove every 7th node; leave slots free (stale type lane entries).
+    for id in ids.iter().step_by(7) {
+        let _ = arena.remove(*id);
+    }
+    // Reuse some free slots with a different type than the previous occupant.
+    for _ in 0..10 {
+        let _ = arena.insert(SceneNode::new(SceneNodeData::Node2D(Node2D::default())));
+    }
+    arena.validate_mirrors();
+
+    let exprs = [
+        Some(QueryExpr::IsType(vec![NodeType::Sprite2D])),
+        Some(QueryExpr::All(vec![
+            QueryExpr::BaseType(vec![NodeType::Node2D]),
+            QueryExpr::Name(vec!["enemy".to_string()]),
+        ])),
+        Some(QueryExpr::All(vec![
+            QueryExpr::Tags(vec![TagID::from_string("enemy")]),
+            QueryExpr::IsType(vec![NodeType::Node3D]),
+        ])),
+    ];
+
+    for expr in &exprs {
+        let query = NodeQueryView {
+            expr,
+            scope: QueryScope::Root,
+        };
+        let plan = QueryPlan::from_query(expr);
+        // Brute force: every live node through matches_query, no fast path.
+        let expected: Vec<NodeID> = arena
+            .iter()
+            .filter(|(id, node)| matches_query(node, id.index() as usize, &plan, None))
+            .map(|(id, _)| id)
+            .collect();
+
+        let scanned = query_node_ids(&arena, query, None, None);
+        assert_eq!(scanned, expected, "scan path diverged");
+
+        let indexed = query_node_ids(&arena, query, None, Some(arena.tag_index()));
+        let mut indexed_sorted = indexed.clone();
+        indexed_sorted.sort_by_key(|id| id.index());
+        let mut expected_sorted = expected.clone();
+        expected_sorted.sort_by_key(|id| id.index());
+        assert_eq!(indexed_sorted, expected_sorted, "indexed path diverged");
+
+        let first = query_first_node_id(&arena, query, None, None);
+        assert_eq!(first, expected.first().copied(), "first path diverged");
+    }
+}
+
+#[test]
 fn optimize_all_sorts_cheapest_first() {
     let expr = QueryExpr::All(vec![
         QueryExpr::Tags(vec![

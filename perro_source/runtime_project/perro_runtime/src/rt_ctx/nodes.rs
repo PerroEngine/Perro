@@ -944,9 +944,7 @@ impl NodeAPI for Runtime {
             parent.remove_child(child_id);
         }
 
-        if let Some(child) = self.nodes.get_mut(child_id) {
-            child.parent = parent_id;
-        } else {
+        if !self.nodes.set_parent(child_id, parent_id) {
             return false;
         }
 

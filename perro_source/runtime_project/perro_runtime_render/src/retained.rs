@@ -360,9 +360,16 @@ pub struct RenderUiState {
     pub cursor_icon: perro_ui::CursorIcon,
     pub cursor_icon_2d: perro_ui::CursorIcon,
     pub cursor_icon_ui: perro_ui::CursorIcon,
+    pub cursor_icon_script: perro_ui::CursorIcon,
     pub removed_nodes: Vec<NodeID>,
     pub event_signal_scratch: Vec<SignalID>,
     pub event_signal_name_scratch: String,
+    /// Dirty marks made during the post-layout input phase of extraction
+    /// (clicks opening dropdowns, toggling tree rows). The frame-end dirty
+    /// clear would drop them before the next layout pass, so they are
+    /// re-applied after the clear.
+    pub deferred_dirty: Vec<(NodeID, u16)>,
+    pub defer_dirty_marks: bool,
 }
 
 pub type RenderUiSystem = RenderUiState;
@@ -427,9 +434,12 @@ impl RenderUiState {
             cursor_icon: perro_ui::CursorIcon::Default,
             cursor_icon_2d: perro_ui::CursorIcon::Default,
             cursor_icon_ui: perro_ui::CursorIcon::Default,
+            cursor_icon_script: perro_ui::CursorIcon::Default,
             removed_nodes: Vec::new(),
             event_signal_scratch: Vec::new(),
             event_signal_name_scratch: String::new(),
+            deferred_dirty: Vec::new(),
+            defer_dirty_marks: false,
         }
     }
 

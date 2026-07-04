@@ -101,8 +101,20 @@ impl Runtime {
         self.apply_render_cursor_icon_request();
     }
 
+    pub(crate) fn set_render_cursor_icon_script(&mut self, icon: perro_ui::CursorIcon) {
+        if self.render_ui.cursor_icon_script == icon {
+            return;
+        }
+        self.render_ui.cursor_icon_script = icon;
+        self.apply_render_cursor_icon_request();
+    }
+
     fn apply_render_cursor_icon_request(&mut self) {
-        let icon = if self.render_ui.cursor_icon_ui != perro_ui::CursorIcon::Default {
+        // Script-requested icons (viewport drag/resize) win; a script set
+        // back to Default releases the cursor to UI hover, then 2D buttons.
+        let icon = if self.render_ui.cursor_icon_script != perro_ui::CursorIcon::Default {
+            self.render_ui.cursor_icon_script
+        } else if self.render_ui.cursor_icon_ui != perro_ui::CursorIcon::Default {
             self.render_ui.cursor_icon_ui
         } else {
             self.render_ui.cursor_icon_2d

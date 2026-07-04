@@ -214,7 +214,7 @@ parent = @top_bar
     [UiLabel]
         size_ratio = (0.72, 0.78)
         text = "No project"
-        text_size_ratio = 0.274
+        text_size_ratio = 0.316
         color = "#D7DBE0"
         h_align = "start"
         v_align = "center"
@@ -398,7 +398,7 @@ parent = @add_node_sibling_button
     [UiLabel]
         size_ratio = (1.0, 1.0)
         text = "+ Sibling"
-        text_size_ratio = 0.288
+        text_size_ratio = 0.316
         color = "#D7DBE0"
         input_enabled = false
         mouse_filter = "pass"
@@ -454,7 +454,7 @@ parent = @scene_copy_button
     [UiLabel]
         size_ratio = (1.0, 1.0)
         text = "Copy"
-        text_size_ratio = 0.288
+        text_size_ratio = 0.316
         color = "#D7DBE0"
         input_enabled = false
         mouse_filter = "pass"
@@ -482,7 +482,7 @@ parent = @scene_paste_button
     [UiLabel]
         size_ratio = (1.0, 1.0)
         text = "Paste"
-        text_size_ratio = 0.274
+        text_size_ratio = 0.316
         color = "#D7DBE0"
         input_enabled = false
         mouse_filter = "pass"
@@ -577,7 +577,7 @@ parent = @scene_move_down_button
     [UiLabel]
         size_ratio = (1.0, 1.0)
         text = "Down"
-        text_size_ratio = 0.288
+        text_size_ratio = 0.316
         color = "#D7DBE0"
         input_enabled = false
         mouse_filter = "pass"
@@ -672,7 +672,7 @@ parent = @scene_clear_button
     [UiLabel]
         size_ratio = (1.0, 1.0)
         text = "Clear"
-        text_size_ratio = 0.288
+        text_size_ratio = 0.316
         color = "#D7DBE0"
         input_enabled = false
         mouse_filter = "pass"
@@ -728,7 +728,7 @@ parent = @scene_collapse_all_button
     [UiLabel]
         size_ratio = (1.0, 1.0)
         text = "Fold"
-        text_size_ratio = 0.288
+        text_size_ratio = 0.316
         color = "#D7DBE0"
         input_enabled = false
         mouse_filter = "pass"
@@ -756,7 +756,7 @@ parent = @scene_copy_path_button
     [UiLabel]
         size_ratio = (1.0, 1.0)
         text = "Path"
-        text_size_ratio = 0.288
+        text_size_ratio = 0.316
         color = "#D7DBE0"
         input_enabled = false
         mouse_filter = "pass"
@@ -784,7 +784,7 @@ parent = @scene_select_parent_button
     [UiLabel]
         size_ratio = (1.0, 1.0)
         text = "Par"
-        text_size_ratio = 0.288
+        text_size_ratio = 0.316
         color = "#D7DBE0"
         input_enabled = false
         mouse_filter = "pass"
@@ -812,7 +812,7 @@ parent = @scene_select_child_button
     [UiLabel]
         size_ratio = (1.0, 1.0)
         text = "Kid"
-        text_size_ratio = 0.288
+        text_size_ratio = 0.316
         color = "#D7DBE0"
         input_enabled = false
         mouse_filter = "pass"
@@ -840,7 +840,7 @@ parent = @scene_select_prev_button
     [UiLabel]
         size_ratio = (1.0, 1.0)
         text = "Prev"
-        text_size_ratio = 0.259
+        text_size_ratio = 0.302
         color = "#D7DBE0"
         input_enabled = false
         mouse_filter = "pass"
@@ -868,7 +868,7 @@ parent = @scene_select_next_button
     [UiLabel]
         size_ratio = (1.0, 1.0)
         text = "Next"
-        text_size_ratio = 0.259
+        text_size_ratio = 0.302
         color = "#D7DBE0"
         input_enabled = false
         mouse_filter = "pass"
@@ -899,10 +899,18 @@ parent = @left_panel
     [/UiTextBox]
 [/scene_filter_box]
 
-[scene_rows]
+[scene_scroll]
 parent = @left_panel
-    [UiTreeList]
+    [UiScrollContainer]
         size_ratio = (1.0, 0.312)
+    [/UiScrollContainer]
+[/scene_scroll]
+
+[scene_rows]
+parent = @scene_scroll
+    [UiTreeList]
+        size_ratio = (1.0, 0.0)
+        v_size = "fit"
         h_align = "fill"
         v_align = "start"
         v_spacing = 0.001
@@ -1114,7 +1122,7 @@ parent = @file_refresh_button
     [UiLabel]
         size_ratio = (1.0, 1.0)
         text = "Rescan"
-        text_size_ratio = 0.259
+        text_size_ratio = 0.302
         color = "#D7DBE0"
         input_enabled = false
         mouse_filter = "pass"
@@ -1142,7 +1150,7 @@ parent = @file_clear_button
     [UiLabel]
         size_ratio = (1.0, 1.0)
         text = "Clear"
-        text_size_ratio = 0.288
+        text_size_ratio = 0.316
         color = "#D7DBE0"
         input_enabled = false
         mouse_filter = "pass"
@@ -1198,7 +1206,7 @@ parent = @file_collapse_all_button
     [UiLabel]
         size_ratio = (1.0, 1.0)
         text = "Fold"
-        text_size_ratio = 0.288
+        text_size_ratio = 0.316
         color = "#D7DBE0"
         input_enabled = false
         mouse_filter = "pass"
@@ -1321,7 +1329,7 @@ parent = @file_copy_path_button
     [UiLabel]
         size_ratio = (1.0, 1.0)
         text = "Path"
-        text_size_ratio = 0.288
+        text_size_ratio = 0.316
         color = "#D7DBE0"
         input_enabled = false
         mouse_filter = "pass"
@@ -1352,10 +1360,18 @@ parent = @left_panel
     [/UiTextBox]
 [/file_filter_box]
 
-[file_rows]
+[file_scroll]
 parent = @left_panel
-    [UiTreeList]
+    [UiScrollContainer]
         size_ratio = (1.0, 0.328)
+    [/UiScrollContainer]
+[/file_scroll]
+
+[file_rows]
+parent = @file_scroll
+    [UiTreeList]
+        size_ratio = (1.0, 0.0)
+        v_size = "fit"
         h_align = "fill"
         v_align = "start"
         v_spacing = 0.001
@@ -2326,7 +2342,7 @@ parent = @glb_viewer_panel
     [UiLabel]
         size_ratio = (1.0, 0.36)
         text = "select .glb"
-        text_size_ratio = 0.259
+        text_size_ratio = 0.302
         color = "#A7AFB9"
         h_align = "start"
         v_align = "start"
@@ -2444,7 +2460,7 @@ parent = @bottom_panel
     [UiLabel]
         size_ratio = (1.0, 0.72)
         text = "open project"
-        text_size_ratio = 0.23
+        text_size_ratio = 0.316
         color = "#A7AFB9"
         h_align = "start"
         v_align = "start"
@@ -2578,7 +2594,7 @@ parent = @anim_drawer
     [UiLabel]
         size_ratio = (1.0, 0.28)
         text = "select AnimationPlayer"
-        text_size_ratio = 0.288
+        text_size_ratio = 0.316
         color = "#A7AFB9"
         h_align = "start"
         v_align = "start"
@@ -2590,7 +2606,7 @@ parent = @anim_drawer
     [UiLabel]
         size_ratio = (1.0, 0.42)
         text = "tracks"
-        text_size_ratio = 0.259
+        text_size_ratio = 0.302
         color = "#A7AFB9"
         h_align = "start"
         v_align = "start"
@@ -2725,7 +2741,7 @@ parent = @inspector_content
         size_ratio = (0.95, 0.0)
         visible = false
         text = "Script  -"
-        text_size_ratio = 0.259
+        text_size_ratio = 0.302
         color = "#D7DBE0"
         h_align = "start"
         v_align = "start"
@@ -2738,7 +2754,7 @@ parent = @inspector_content
         size_ratio = (1.0, 0.0)
         visible = false
         text = "type: -"
-        text_size_ratio = 0.288
+        text_size_ratio = 0.316
         color = "#D7DBE0"
         h_align = "start"
     [/UiLabel]
@@ -2750,7 +2766,7 @@ parent = @inspector_content
         size_ratio = (1.0, 0.0)
         visible = false
         text = "parent: -"
-        text_size_ratio = 0.288
+        text_size_ratio = 0.316
         color = "#D7DBE0"
         h_align = "start"
     [/UiLabel]
@@ -2872,7 +2888,7 @@ parent = @inspector_pos
     [UiLabel]
         size_ratio = (0.96, 1.0)
         text = "Transform"
-        text_size_ratio = 0.288
+        text_size_ratio = 0.316
         color = "#D7DBE0"
         h_align = "start"
         input_enabled = false
@@ -2899,7 +2915,7 @@ parent = @inspector_position_label
     [UiLabel]
         size_ratio = (0.96, 1.0)
         text = "Position"
-        text_size_ratio = 0.259
+        text_size_ratio = 0.302
         color = "#A7AFB9"
         h_align = "start"
         input_enabled = false
@@ -3113,7 +3129,7 @@ parent = @inspector_rotation_label
     [UiLabel]
         size_ratio = (0.96, 1.0)
         text = "Rotation"
-        text_size_ratio = 0.259
+        text_size_ratio = 0.302
         color = "#A7AFB9"
         h_align = "start"
         input_enabled = false
@@ -3394,7 +3410,7 @@ parent = @inspector_scale_label
     [UiLabel]
         size_ratio = (0.96, 1.0)
         text = "Scale"
-        text_size_ratio = 0.259
+        text_size_ratio = 0.302
         color = "#A7AFB9"
         h_align = "start"
         input_enabled = false
@@ -3610,7 +3626,7 @@ parent = @inspector_vars
     [UiLabel]
         size_ratio = (0.96, 1.0)
         text = "Script Variables"
-        text_size_ratio = 0.288
+        text_size_ratio = 0.316
         color = "#D7DBE0"
         h_align = "start"
         input_enabled = false
@@ -3625,7 +3641,7 @@ parent = @inspector_content
         text = ""
         placeholder = "speed = 3.0\\\\\\\\npath = @Node\\\\\\\\nname = \"value\""
         placeholder_color = "#A7AFB9"
-        text_size_ratio = 0.288
+        text_size_ratio = 0.316
         focused_signals = ["editor_inspector_focus"]
         unfocused_signals = ["editor_inspector_commit"]
         style = {
@@ -3749,7 +3765,7 @@ parent = @inspector_var_row_0
     [UiLabel]
         size_ratio = (0.16, 1.0)
         text = "-"
-        text_size_ratio = 0.288
+        text_size_ratio = 0.316
         color = "#A7AFB9"
     [/UiLabel]
 [/inspector_var_0_type]
@@ -3860,7 +3876,7 @@ parent = @inspector_var_row_1
     [UiLabel]
         size_ratio = (0.16, 1.0)
         text = "-"
-        text_size_ratio = 0.288
+        text_size_ratio = 0.316
         color = "#A7AFB9"
     [/UiLabel]
 [/inspector_var_1_type]
@@ -3971,7 +3987,7 @@ parent = @inspector_var_row_2
     [UiLabel]
         size_ratio = (0.16, 1.0)
         text = "-"
-        text_size_ratio = 0.288
+        text_size_ratio = 0.316
         color = "#A7AFB9"
     [/UiLabel]
 [/inspector_var_2_type]
@@ -4082,7 +4098,7 @@ parent = @inspector_var_row_3
     [UiLabel]
         size_ratio = (0.16, 1.0)
         text = "-"
-        text_size_ratio = 0.288
+        text_size_ratio = 0.316
         color = "#A7AFB9"
     [/UiLabel]
 [/inspector_var_3_type]
@@ -4193,7 +4209,7 @@ parent = @inspector_var_row_4
     [UiLabel]
         size_ratio = (0.16, 1.0)
         text = "-"
-        text_size_ratio = 0.288
+        text_size_ratio = 0.316
         color = "#A7AFB9"
     [/UiLabel]
 [/inspector_var_4_type]
@@ -4304,7 +4320,7 @@ parent = @inspector_var_row_5
     [UiLabel]
         size_ratio = (0.16, 1.0)
         text = "-"
-        text_size_ratio = 0.288
+        text_size_ratio = 0.316
         color = "#A7AFB9"
     [/UiLabel]
 [/inspector_var_5_type]
@@ -4415,7 +4431,7 @@ parent = @inspector_var_row_6
     [UiLabel]
         size_ratio = (0.16, 1.0)
         text = "-"
-        text_size_ratio = 0.288
+        text_size_ratio = 0.316
         color = "#A7AFB9"
     [/UiLabel]
 [/inspector_var_6_type]
@@ -4526,7 +4542,7 @@ parent = @inspector_var_row_7
     [UiLabel]
         size_ratio = (0.16, 1.0)
         text = "-"
-        text_size_ratio = 0.288
+        text_size_ratio = 0.316
         color = "#A7AFB9"
     [/UiLabel]
 [/inspector_var_7_type]
@@ -4536,7 +4552,7 @@ parent = @root_stack
     [UiLabel]
         size_ratio = (1.0, 0.022)
         text = "ready"
-        text_size_ratio = 0.259
+        text_size_ratio = 0.302
         color = "#D7DBE0"
         h_align = "start"
         style = {
@@ -4617,7 +4633,7 @@ parent = @add_node_popup
         size_ratio = (0.95, 0.0)
         visible = false
         text = "parent: -"
-        text_size_ratio = 0.259
+        text_size_ratio = 0.302
         color = "#A7AFB9"
         h_align = "start"
     [/UiLabel]

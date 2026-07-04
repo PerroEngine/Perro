@@ -1852,8 +1852,7 @@ mod tests {
             .as_nanos();
         let seq = COUNTER.fetch_add(1, Ordering::Relaxed);
         let pid = std::process::id();
-        let dir =
-            std::env::temp_dir().join(format!("perro_cli_doctor_test_{stamp}_{pid}_{seq}"));
+        let dir = std::env::temp_dir().join(format!("perro_cli_doctor_test_{stamp}_{pid}_{seq}"));
         fs::create_dir_all(&dir).unwrap();
         dir
     }

@@ -440,6 +440,11 @@ impl Runtime {
                 .elapsed();
         }
 
+        // Layout already ran; dirty marks made by these input handlers
+        // (dropdown open, tree toggle, checkbox) would be wiped by the
+        // frame-end dirty clear before the next layout pass sees them.
+        // Collect them so the bridge can re-apply after the clear.
+        self.render_ui.defer_dirty_marks = true;
         self.process_ui_focus_input(&computed, &mut command_ids, &mut command_seen);
         self.process_text_edit_input(&computed, &mut command_ids, &mut command_seen);
         self.process_ui_scroll_input(
@@ -450,6 +455,7 @@ impl Runtime {
             &mut command_seen,
         );
         self.refresh_button_visual_states(&computed, &mut command_ids, &mut command_seen);
+        self.render_ui.defer_dirty_marks = false;
 
         let commands_start = timing.as_ref().map(|_| Instant::now());
         for node in command_ids.iter().copied() {
@@ -826,7 +832,7 @@ impl Runtime {
         self.insert_color_picker_internal_node(
             tree_id,
             Box::leak(format!("__perro_tree_list_row_{idx}").into_boxed_str()),
-            SceneNodeData::UiButton(button),
+            SceneNodeData::UiButton(Box::new(button)),
         )
     }
 
@@ -853,7 +859,7 @@ impl Runtime {
         self.insert_color_picker_internal_node(
             row_id,
             Box::leak(format!("__perro_tree_list_icon_{idx}").into_boxed_str()),
-            SceneNodeData::UiImage(image),
+            SceneNodeData::UiImage(Box::new(image)),
         )
     }
 
@@ -865,11 +871,11 @@ impl Runtime {
         label.base.mouse_filter = perro_ui::UiMouseFilter::Pass;
         label.h_align = perro_ui::UiTextAlign::Start;
         label.v_align = perro_ui::UiTextAlign::Center;
-        label.text_size_ratio = 0.56;
+        label.text_size_ratio = 0.62;
         self.insert_color_picker_internal_node(
             row_id,
             Box::leak(format!("__perro_tree_list_label_{idx}").into_boxed_str()),
-            SceneNodeData::UiLabel(label),
+            SceneNodeData::UiLabel(Box::new(label)),
         )
     }
 
@@ -883,7 +889,7 @@ impl Runtime {
         self.insert_color_picker_internal_node(
             row_id,
             Box::leak(format!("__perro_tree_list_line_{idx}_{line_idx}").into_boxed_str()),
-            SceneNodeData::UiPanel(panel),
+            SceneNodeData::UiPanel(Box::new(panel)),
         )
     }
 
@@ -1108,9 +1114,7 @@ impl Runtime {
             .nodes
             .iter()
             .filter_map(|(id, node)| match &node.data {
-                SceneNodeData::UiDropdown(dropdown) => {
-                    Some((id, dropdown.internal_label.is_nil()))
-                }
+                SceneNodeData::UiDropdown(dropdown) => Some((id, dropdown.internal_label.is_nil())),
                 _ => None,
             })
             .collect::<Vec<_>>();
@@ -1199,7 +1203,7 @@ impl Runtime {
         self.insert_color_picker_internal_node(
             dropdown_id,
             Box::leak(format!("__perro_dropdown_option_{idx}").into_boxed_str()),
-            SceneNodeData::UiButton(button),
+            SceneNodeData::UiButton(Box::new(button)),
         )
     }
 
@@ -1212,7 +1216,11 @@ impl Runtime {
         label.text_size_ratio = 0.55;
         label.base.layout.padding = perro_ui::UiRect::symmetric(6.0, 2.0);
         label.h_align = perro_ui::UiTextAlign::Start;
-        self.insert_color_picker_internal_node(parent_id, name, SceneNodeData::UiLabel(label))
+        self.insert_color_picker_internal_node(
+            parent_id,
+            name,
+            SceneNodeData::UiLabel(Box::new(label)),
+        )
     }
 
     fn sync_dropdown_internal_nodes(&mut self, dropdown_id: NodeID) {
@@ -1417,7 +1425,7 @@ impl Runtime {
         self.insert_color_picker_internal_node(
             picker_id,
             "__perro_color_picker_swatch",
-            SceneNodeData::UiButton(button),
+            SceneNodeData::UiButton(Box::new(button)),
         )
     }
 
@@ -1429,7 +1437,7 @@ impl Runtime {
         self.insert_color_picker_internal_node(
             picker_id,
             "__perro_color_picker_popup",
-            SceneNodeData::UiPanel(panel),
+            SceneNodeData::UiPanel(Box::new(panel)),
         )
     }
 
@@ -1439,7 +1447,11 @@ impl Runtime {
         text_box.inner.font_size = 15.0;
         text_box.inner.text_size_ratio = 0.58;
         text_box.inner.padding = perro_ui::UiRect::symmetric(6.0, 3.0);
-        self.insert_color_picker_internal_node(popup_id, name, SceneNodeData::UiTextBox(text_box))
+        self.insert_color_picker_internal_node(
+            popup_id,
+            name,
+            SceneNodeData::UiTextBox(Box::new(text_box)),
+        )
     }
 
     fn insert_color_picker_internal_node(

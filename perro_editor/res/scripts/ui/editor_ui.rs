@@ -190,7 +190,7 @@ fn refresh_chrome_view<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>
     set_ui_display(ctx, "scene_tools_row", !glb_mode);
     set_ui_display(ctx, "scene_filter_box", !glb_mode);
     set_text_box(ctx, "scene_filter_box", &view.scene_filter);
-    set_ui_display(ctx, "scene_rows", !glb_mode);
+    set_ui_display(ctx, "scene_scroll", !glb_mode);
     set_ui_display(ctx, "file_title", true);
     set_label(ctx, "file_title", &view.file_title);
     set_ui_display(ctx, "file_action_row", true);
@@ -198,15 +198,15 @@ fn refresh_chrome_view<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>
     set_ui_display(ctx, "file_ops_row", true);
     set_ui_display(ctx, "file_filter_box", true);
     set_text_box(ctx, "file_filter_box", &view.file_filter);
-    set_ui_display(ctx, "file_rows", true);
+    set_ui_display(ctx, "file_scroll", true);
     set_ui_node_size(ctx, "scene_tools_row", (1.0, 0.032));
-    set_ui_node_size(ctx, "scene_rows", (1.0, if glb_mode { 0.0 } else { 0.312 }));
+    set_ui_node_size(ctx, "scene_scroll", (1.0, if glb_mode { 0.0 } else { 0.312 }));
     set_ui_node_size(ctx, "file_action_row", (1.0, 0.034));
     set_ui_node_size(ctx, "file_tools_row", (1.0, 0.032));
     set_ui_node_size(ctx, "file_ops_row", (1.0, 0.032));
     set_ui_node_size(
         ctx,
-        "file_rows",
+        "file_scroll",
         (1.0, if glb_mode { 0.776 } else { 0.296 }),
     );
 }

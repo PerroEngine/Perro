@@ -26,8 +26,10 @@ impl WindowAPI for Runtime {
     }
 
     fn set_cursor_icon(&mut self, icon: CursorIcon) {
-        self.window_requests
-            .push(WindowRequest::SetCursorIcon(icon));
+        // Routed through the cursor combiner instead of a raw window
+        // request so a script setting Default (e.g. editor viewport idle)
+        // does not stomp UI hover pointers every frame.
+        self.set_render_cursor_icon_script(icon);
     }
 
     fn close_app(&mut self) {
@@ -67,7 +69,6 @@ mod tests {
         runtime.set_window_size(800, 600);
         runtime.set_window_mode(WindowMode::BorderlessFullscreen);
         runtime.set_frame_rate_cap(FrameRateCap::Fps(120.0));
-        runtime.set_cursor_icon(CursorIcon::Move);
         runtime.close_app();
         runtime.set_active_refresh_rate(Some(144.0));
 
@@ -84,11 +85,31 @@ mod tests {
                 },
                 WindowRequest::SetMode(WindowMode::BorderlessFullscreen),
                 WindowRequest::SetFrameRateCap(FrameRateCap::Fps(120.0)),
-                WindowRequest::SetCursorIcon(CursorIcon::Move),
                 WindowRequest::CloseApp,
             ]
         );
         assert_eq!(runtime.get_active_refresh_rate(), Some(144.0));
+    }
+
+    #[test]
+    fn script_cursor_icon_routes_through_cursor_combiner() {
+        let mut runtime = Runtime::new();
+        runtime.set_cursor_icon(CursorIcon::Move);
+
+        let mut requests = Vec::new();
+        runtime.drain_window_requests(&mut requests);
+        assert!(requests.is_empty(), "no raw window request");
+        assert_eq!(runtime.take_cursor_icon_request(), Some(CursorIcon::Move));
+
+        // Setting Default releases the cursor instead of forcing it, so UI
+        // hover pointers are not stomped by per-frame script resets.
+        runtime.set_cursor_icon(CursorIcon::Default);
+        assert_eq!(
+            runtime.take_cursor_icon_request(),
+            Some(CursorIcon::Default)
+        );
+        runtime.set_cursor_icon(CursorIcon::Default);
+        assert_eq!(runtime.take_cursor_icon_request(), None);
     }
 
     #[test]

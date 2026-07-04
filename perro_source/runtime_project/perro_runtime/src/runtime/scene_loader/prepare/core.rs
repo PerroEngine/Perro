@@ -1783,8 +1783,8 @@ fn scene_node_data_from(
         NodeType::CameraStream2D => {
             Ok(SceneNodeData::CameraStream2D(build_camera_stream_2d(data)))
         }
-        NodeType::Button2D => Ok(SceneNodeData::Button2D(build_button_2d(data))),
-        NodeType::ImageButton2D => Ok(SceneNodeData::ImageButton2D(build_image_button_2d(data))),
+        NodeType::Button2D => Ok(SceneNodeData::Button2D(Box::new(build_button_2d(data)))),
+        NodeType::ImageButton2D => Ok(SceneNodeData::ImageButton2D(Box::new(build_image_button_2d(data)))),
         NodeType::Sprite2D => Ok(SceneNodeData::Sprite2D(build_sprite_2d(data))),
         NodeType::NineSlice2D => Ok(SceneNodeData::NineSlice2D(build_nine_slice_2d(data))),
         NodeType::AnimatedSprite2D => Ok(SceneNodeData::AnimatedSprite2D(build_animated_sprite_2d(
@@ -1798,14 +1798,14 @@ fn scene_node_data_from(
         NodeType::PointLight2D => Ok(SceneNodeData::PointLight2D(build_point_light_2d(data))),
         NodeType::SpotLight2D => Ok(SceneNodeData::SpotLight2D(build_spot_light_2d(data))),
         NodeType::TileMap2D => Ok(SceneNodeData::TileMap2D(build_tilemap_2d(data))),
-        NodeType::WaterBody2D => Ok(SceneNodeData::WaterBody2D(build_water_body_2d(data))),
+        NodeType::WaterBody2D => Ok(SceneNodeData::WaterBody2D(Box::new(build_water_body_2d(data)))),
         NodeType::Skeleton2D => Ok(SceneNodeData::Skeleton2D(build_skeleton_2d(data))),
         NodeType::BoneAttachment2D => Ok(SceneNodeData::BoneAttachment2D(build_bone_attachment_2d(
             data,
         ))),
         NodeType::IKTarget2D => Ok(SceneNodeData::IKTarget2D(build_ik_target_2d(data))),
         NodeType::PhysicsBoneChain2D => Ok(SceneNodeData::PhysicsBoneChain2D(
-            build_physics_bone_chain_2d(data),
+            Box::new(build_physics_bone_chain_2d(data)),
         )),
         NodeType::BoneCollider2D => Ok(SceneNodeData::BoneCollider2D(build_bone_collider_2d(data))),
         NodeType::Camera2D => Ok(SceneNodeData::Camera2D(build_camera_2d(data))),
@@ -1865,14 +1865,14 @@ fn scene_node_data_from(
         ))),
         NodeType::IKTarget3D => Ok(SceneNodeData::IKTarget3D(build_ik_target_3d(data))),
         NodeType::PhysicsBoneChain3D => Ok(SceneNodeData::PhysicsBoneChain3D(
-            build_physics_bone_chain_3d(data),
+            Box::new(build_physics_bone_chain_3d(data)),
         )),
         NodeType::BoneCollider3D => Ok(SceneNodeData::BoneCollider3D(build_bone_collider_3d(data))),
         NodeType::Camera3D => Ok(SceneNodeData::Camera3D(build_camera_3d(data))),
         NodeType::ParticleEmitter3D => Ok(SceneNodeData::ParticleEmitter3D(build_particle_emitter_3d(
             data,
         ))),
-        NodeType::WaterBody3D => Ok(SceneNodeData::WaterBody3D(build_water_body_3d(data))),
+        NodeType::WaterBody3D => Ok(SceneNodeData::WaterBody3D(Box::new(build_water_body_3d(data)))),
         NodeType::AnimationPlayer => Ok(SceneNodeData::AnimationPlayer(build_animation_player(data))),
         NodeType::AnimationTree => Ok(SceneNodeData::AnimationTree(build_animation_tree(data))),
         NodeType::AmbientLight3D => Ok(SceneNodeData::AmbientLight3D(build_ambient_light_3d(data))),
@@ -1881,51 +1881,51 @@ fn scene_node_data_from(
         NodeType::PointLight3D => Ok(SceneNodeData::PointLight3D(build_point_light_3d(data))),
         NodeType::SpotLight3D => Ok(SceneNodeData::SpotLight3D(build_spot_light_3d(data))),
         NodeType::UiNode => Ok(SceneNodeData::UiNode(build_ui_node(data))),
-        NodeType::UiPanel => Ok(SceneNodeData::UiPanel(build_ui_panel(
+        NodeType::UiPanel => Ok(SceneNodeData::UiPanel(Box::new(build_ui_panel(
             data,
             static_ui_style_lookup,
-        ))),
-        NodeType::UiButton => Ok(SceneNodeData::UiButton(build_ui_button(
+        )))),
+        NodeType::UiButton => Ok(SceneNodeData::UiButton(Box::new(build_ui_button(
             data,
             static_ui_style_lookup,
-        ))),
-        NodeType::UiDropdown => Ok(SceneNodeData::UiDropdown(build_ui_dropdown(
+        )))),
+        NodeType::UiDropdown => Ok(SceneNodeData::UiDropdown(Box::new(build_ui_dropdown(
             data,
             static_ui_style_lookup,
-        ))),
+        )))),
         NodeType::UiShape => Ok(SceneNodeData::UiShape(build_ui_shape(data))),
-        NodeType::UiCheckbox => Ok(SceneNodeData::UiCheckbox(build_ui_checkbox(
+        NodeType::UiCheckbox => Ok(SceneNodeData::UiCheckbox(Box::new(build_ui_checkbox(
             data,
             static_ui_style_lookup,
-        ))),
-        NodeType::UiColorPicker => Ok(SceneNodeData::UiColorPicker(build_ui_color_picker(
+        )))),
+        NodeType::UiColorPicker => Ok(SceneNodeData::UiColorPicker(Box::new(build_ui_color_picker(
             data,
             static_ui_style_lookup,
-        ))),
-        NodeType::UiCameraStream => Ok(SceneNodeData::UiCameraStream(build_ui_camera_stream(data))),
-        NodeType::UiImage => Ok(SceneNodeData::UiImage(build_ui_image(data))),
-        NodeType::UiImageButton => Ok(SceneNodeData::UiImageButton(build_ui_image_button(data))),
-        NodeType::UiNineSlice => Ok(SceneNodeData::UiNineSlice(build_ui_nine_slice(data))),
-        NodeType::UiAnimatedImage => Ok(SceneNodeData::UiAnimatedImage(build_ui_animated_image(
+        )))),
+        NodeType::UiCameraStream => Ok(SceneNodeData::UiCameraStream(Box::new(build_ui_camera_stream(data)))),
+        NodeType::UiImage => Ok(SceneNodeData::UiImage(Box::new(build_ui_image(data)))),
+        NodeType::UiImageButton => Ok(SceneNodeData::UiImageButton(Box::new(build_ui_image_button(data)))),
+        NodeType::UiNineSlice => Ok(SceneNodeData::UiNineSlice(Box::new(build_ui_nine_slice(data)))),
+        NodeType::UiAnimatedImage => Ok(SceneNodeData::UiAnimatedImage(Box::new(build_ui_animated_image(
             data,
-        ))),
-        NodeType::UiLabel => Ok(SceneNodeData::UiLabel(build_ui_label(data))),
-        NodeType::UiTextBox => Ok(SceneNodeData::UiTextBox(build_ui_text_box(
-            data,
-            static_ui_style_lookup,
-        ))),
-        NodeType::UiTextBlock => Ok(SceneNodeData::UiTextBlock(build_ui_text_block(
+        )))),
+        NodeType::UiLabel => Ok(SceneNodeData::UiLabel(Box::new(build_ui_label(data)))),
+        NodeType::UiTextBox => Ok(SceneNodeData::UiTextBox(Box::new(build_ui_text_box(
             data,
             static_ui_style_lookup,
-        ))),
+        )))),
+        NodeType::UiTextBlock => Ok(SceneNodeData::UiTextBlock(Box::new(build_ui_text_block(
+            data,
+            static_ui_style_lookup,
+        )))),
         NodeType::UiScrollContainer => Ok(SceneNodeData::UiScrollContainer(
-            build_ui_scroll_container(data),
+            Box::new(build_ui_scroll_container(data)),
         )),
         NodeType::UiLayout => Ok(SceneNodeData::UiLayout(build_ui_layout(data))),
         NodeType::UiHLayout => Ok(SceneNodeData::UiHLayout(build_ui_hlayout(data))),
         NodeType::UiVLayout => Ok(SceneNodeData::UiVLayout(build_ui_vlayout(data))),
         NodeType::UiGrid => Ok(SceneNodeData::UiGrid(build_ui_grid(data))),
-        NodeType::UiTreeList => Ok(SceneNodeData::UiTreeList(build_ui_tree_list(data))),
+        NodeType::UiTreeList => Ok(SceneNodeData::UiTreeList(Box::new(build_ui_tree_list(data)))),
     }
 }
 

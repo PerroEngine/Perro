@@ -179,6 +179,54 @@ fn node_arena_name_index_tracks_insert_rename_remove() {
 }
 
 #[test]
+fn node_arena_slot_mirrors_track_insert_remove_reuse_reparent() {
+    use perro_nodes::{Node2D, NodeType, Sprite2D};
+
+    let mut arena = NodeArena::new();
+    let parent = arena.insert(SceneNode::new(SceneNodeData::Node3D(Node3D::new())));
+    let mut child = SceneNode::new(SceneNodeData::Sprite2D(Sprite2D::default()));
+    child.parent = parent; // pre-insert parent is captured by insert
+    let child = arena.insert(child);
+
+    assert_eq!(
+        arena.slot_node_type(parent.index() as usize),
+        Some(NodeType::Node3D)
+    );
+    assert_eq!(
+        arena.slot_node_type(child.index() as usize),
+        Some(NodeType::Sprite2D)
+    );
+    assert_eq!(arena.parent_slots()[child.index() as usize], parent);
+    assert_eq!(arena.parent_slots()[parent.index() as usize], NodeID::nil());
+    arena.validate_mirrors();
+
+    // Reparent through the arena keeps mirror + node in sync and moves versions.
+    let other = arena.insert(SceneNode::new(SceneNodeData::Node3D(Node3D::new())));
+    let before = arena.mutation_version();
+    assert!(arena.set_parent(child, other));
+    assert!(arena.mutation_version() > before);
+    assert_eq!(arena.parent_slots()[child.index() as usize], other);
+    assert_eq!(arena.get(child).expect("live").parent, other);
+    arena.validate_mirrors();
+    assert!(!arena.set_parent(NodeID::nil(), other));
+
+    // Remove clears the parent lane; slot reuse rewrites both lanes.
+    let child_slot = child.index() as usize;
+    let _ = arena.remove(child);
+    assert_eq!(arena.parent_slots()[child_slot], NodeID::nil());
+    let reused = arena.insert(SceneNode::new(SceneNodeData::Node2D(Node2D::default())));
+    assert_eq!(reused.index() as usize, child_slot);
+    assert_eq!(arena.slot_node_type(child_slot), Some(NodeType::Node2D));
+    arena.validate_mirrors();
+
+    // Clear resets lanes to the nil sentinel only.
+    arena.clear();
+    assert_eq!(arena.node_type_slots().len(), 1);
+    assert_eq!(arena.parent_slots().len(), 1);
+    arena.validate_mirrors();
+}
+
+#[test]
 fn node_arena_tag_index_tracks_insert_mutate_remove() {
     let mut arena = NodeArena::new();
     let enemy = perro_ids::NodeTag::borrowed("enemy");
@@ -192,19 +240,34 @@ fn node_arena_tag_index_tracks_insert_mutate_remove() {
     let b = arena.insert(SceneNode::new(SceneNodeData::Node3D(Node3D::new())));
 
     // Insert indexes pre-set tags.
-    assert!(arena.tag_index().get(&enemy_id).is_some_and(|s| s.contains(&a)));
+    assert!(
+        arena
+            .tag_index()
+            .get(&enemy_id)
+            .is_some_and(|s| s.contains(&a))
+    );
 
     // add/remove keep the index in sync; adding a duplicate is a no-op.
     assert!(arena.add_node_tag(b, enemy.clone()));
     assert!(arena.add_node_tag(b, enemy.clone()));
     assert_eq!(arena.tag_index().get(&enemy_id).map(|s| s.len()), Some(2));
     assert!(arena.remove_node_tag(b, enemy_id));
-    assert!(!arena.tag_index().get(&enemy_id).is_some_and(|s| s.contains(&b)));
+    assert!(
+        !arena
+            .tag_index()
+            .get(&enemy_id)
+            .is_some_and(|s| s.contains(&b))
+    );
 
     // set_node_tags replaces: enemy entry swaps to boss.
     assert!(arena.set_node_tags(a, Some(vec![boss.clone()])));
     assert!(arena.tag_index().get(&enemy_id).is_none());
-    assert!(arena.tag_index().get(&boss_id).is_some_and(|s| s.contains(&a)));
+    assert!(
+        arena
+            .tag_index()
+            .get(&boss_id)
+            .is_some_and(|s| s.contains(&a))
+    );
 
     // Removal + clear drop entries; dead ids fail.
     let _ = arena.remove(a);

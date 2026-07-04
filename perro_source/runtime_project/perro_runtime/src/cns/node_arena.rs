@@ -1,6 +1,6 @@
 use ahash::{AHashMap, AHashSet};
 use perro_ids::{NodeID, NodeTag, TagID};
-use perro_nodes::SceneNode;
+use perro_nodes::{NodeType, SceneNode};
 use std::borrow::Cow;
 
 /// Generational node store used by runtime hot paths.
@@ -15,10 +15,21 @@ use std::borrow::Cow;
 /// plus the mutating accessors ([`Self::rename`], [`Self::set_node_tags`],
 /// [`Self::add_node_tag`], [`Self::remove_node_tag`]); writing `node.name` or
 /// `node.tags` through `get_mut` bypasses them — set both before insert or go
-/// through the arena methods.
+/// through the arena methods. Same rule for `node.parent`: reparenting a node
+/// already in the arena must go through [`Self::set_parent`] so the slot
+/// mirror stays in sync (setting `parent` on a detached node before `insert`
+/// is fine — insert captures it).
 pub struct NodeArena {
     nodes: Vec<Option<SceneNode>>,
     generations: Vec<u32>,
+    /// Slot-indexed hot mirror of each node's type tag. Contiguous scan lane
+    /// so type filters skip the wide `SceneNode` slots entirely. Value only
+    /// meaningful while the slot is occupied (stale after remove; scans must
+    /// still validate occupancy via `slot_get`). Node type is fixed at insert.
+    node_types: Vec<NodeType>,
+    /// Slot-indexed hot mirror of each node's parent id. Kept in sync by
+    /// insert/remove/clear + [`Self::set_parent`]. Nil while slot is free.
+    parents: Vec<NodeID>,
     free_indices: Vec<usize>,
     name_index: AHashMap<Cow<'static, str>, Vec<NodeID>>,
     tag_index: AHashMap<TagID, AHashSet<NodeID>>,
@@ -56,6 +67,8 @@ impl NodeArena {
         Self {
             nodes,
             generations,
+            node_types: vec![NodeType::Node],
+            parents: vec![NodeID::nil()],
             free_indices: Vec::new(),
             name_index: AHashMap::default(),
             tag_index: AHashMap::default(),
@@ -74,9 +87,15 @@ impl NodeArena {
         let mut generations = Vec::with_capacity(capacity.saturating_add(1));
         nodes.push(None);
         generations.push(0);
+        let mut node_types = Vec::with_capacity(capacity.saturating_add(1));
+        node_types.push(NodeType::Node);
+        let mut parents = Vec::with_capacity(capacity.saturating_add(1));
+        parents.push(NodeID::nil());
         Self {
             nodes,
             generations,
+            node_types,
+            parents,
             free_indices: Vec::new(),
             name_index: AHashMap::default(),
             tag_index: AHashMap::default(),
@@ -124,6 +143,8 @@ impl NodeArena {
     pub fn reserve(&mut self, additional: usize) {
         self.nodes.reserve(additional);
         self.generations.reserve(additional);
+        self.node_types.reserve(additional);
+        self.parents.reserve(additional);
     }
 
     /// Insert a node and return its current slot/generation id.
@@ -133,9 +154,13 @@ impl NodeArena {
         self.bump_mutation_version();
         let name = node.name.clone();
         let tags = node.get_tag_ids();
+        let node_type = node.node_type();
+        let parent = node.parent;
         // Reuse a previously freed slot in O(1).
         let id = if let Some(index) = self.free_indices.pop() {
             self.nodes[index] = Some(node);
+            self.node_types[index] = node_type;
+            self.parents[index] = parent;
             self.active_len = self.active_len.saturating_add(1);
             let generation = self.generations[index];
             NodeID::from_parts(index as u32, generation)
@@ -144,6 +169,8 @@ impl NodeArena {
             let index = self.nodes.len();
             self.nodes.push(Some(node));
             self.generations.push(0);
+            self.node_types.push(node_type);
+            self.parents.push(parent);
             self.active_len = self.active_len.saturating_add(1);
             NodeID::from_parts(index as u32, 0)
         };
@@ -200,6 +227,7 @@ impl NodeArena {
         let removed = self.nodes[index].take();
         if let Some(node) = &removed {
             self.active_len = self.active_len.saturating_sub(1);
+            self.parents[index] = NodeID::nil();
             self.free_indices.push(index);
             let name = node.name.clone();
             self.unindex_name(&name, id);
@@ -214,10 +242,7 @@ impl NodeArena {
 
     /// All live nodes currently carrying `name`, in insertion order.
     pub fn named_ids(&self, name: &str) -> &[NodeID] {
-        self.name_index
-            .get(name)
-            .map(Vec::as_slice)
-            .unwrap_or(&[])
+        self.name_index.get(name).map(Vec::as_slice).unwrap_or(&[])
     }
 
     /// Rename a node, keeping the name index in sync. Bumps the mutation
@@ -233,9 +258,7 @@ impl NodeArena {
             return true;
         }
         self.bump_mutation_version();
-        let node = self.nodes[index]
-            .as_mut()
-            .expect("slot checked live above");
+        let node = self.nodes[index].as_mut().expect("slot checked live above");
         let old = std::mem::replace(&mut node.name, name.clone());
         self.unindex_name(&old, id);
         if !name.is_empty() {
@@ -333,6 +356,27 @@ impl NodeArena {
         true
     }
 
+    // ---- Parent mirror ----
+
+    /// Reparent a live node, keeping the slot parent mirror in sync. Bumps
+    /// the mutation version like any `get_mut` write (reparent = structural,
+    /// so the physics version moves too). Returns `false` for dead ids.
+    ///
+    /// Writing `node.parent` through `get_mut` on an arena-resident node
+    /// bypasses the mirror — always use this method instead.
+    pub fn set_parent(&mut self, id: NodeID, parent: NodeID) -> bool {
+        let Some(index) = self.valid_slot(id) else {
+            return false;
+        };
+        let Some(node) = self.nodes[index].as_mut() else {
+            return false;
+        };
+        node.parent = parent;
+        self.parents[index] = parent;
+        self.bump_mutation_version();
+        true
+    }
+
     fn unindex_tag(&mut self, tag: TagID, id: NodeID) {
         if let Some(set) = self.tag_index.get_mut(&tag) {
             set.remove(&id);
@@ -383,12 +427,16 @@ impl NodeArena {
         self.bump_mutation_version();
         self.nodes.clear();
         self.generations.clear();
+        self.node_types.clear();
+        self.parents.clear();
         self.free_indices.clear();
         self.name_index.clear();
         self.tag_index.clear();
         self.active_len = 0;
         self.nodes.push(None);
         self.generations.push(0);
+        self.node_types.push(NodeType::Node);
+        self.parents.push(NodeID::nil());
     }
 
     /// Return the number of live nodes.
@@ -418,6 +466,49 @@ impl NodeArena {
             NodeID::from_parts(index as u32, self.generations[index]),
             node,
         ))
+    }
+
+    /// Contiguous slot-indexed lane of node type tags (index 0 = nil slot).
+    /// Values are only meaningful for occupied slots; freed slots keep their
+    /// last occupant's type until reuse. Pair with `slot_get` for occupancy.
+    #[inline]
+    pub fn node_type_slots(&self) -> &[NodeType] {
+        &self.node_types
+    }
+
+    /// Contiguous slot-indexed lane of parent ids (index 0 = nil slot).
+    /// Nil for free slots.
+    #[inline]
+    pub fn parent_slots(&self) -> &[NodeID] {
+        &self.parents
+    }
+
+    /// Type tag at a raw slot index. See [`Self::node_type_slots`] for
+    /// staleness semantics on free slots.
+    #[inline]
+    pub fn slot_node_type(&self, index: usize) -> Option<NodeType> {
+        self.node_types.get(index).copied()
+    }
+
+    /// Debug-only consistency check: every occupied slot's mirror entries
+    /// must match the node they mirror. Called from characterization tests.
+    #[cfg(any(test, debug_assertions))]
+    pub fn validate_mirrors(&self) {
+        for (index, slot) in self.nodes.iter().enumerate() {
+            if let Some(node) = slot {
+                debug_assert_eq!(
+                    self.node_types[index],
+                    node.node_type(),
+                    "node_types mirror out of sync at slot {index}",
+                );
+                debug_assert_eq!(
+                    self.parents[index], node.parent,
+                    "parents mirror out of sync at slot {index}",
+                );
+            }
+        }
+        debug_assert_eq!(self.node_types.len(), self.nodes.len());
+        debug_assert_eq!(self.parents.len(), self.nodes.len());
     }
 
     // ---- Slot validation ----

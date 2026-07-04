@@ -438,7 +438,7 @@ impl Runtime {
         let max_scroll = self.scroll_container_max(node, computed);
         let thumb = ui_scrollbar_rect(scroller, rect, max_scroll)?;
         let track = ui_scrollbar_track_rect(scroller, rect, max_scroll)?;
-        Some((track, thumb, scroller.clone()))
+        Some((track, thumb, *scroller.clone()))
     }
 
     fn set_scroll_from_scrollbar_pointer(
@@ -767,31 +767,44 @@ impl Runtime {
         let Some(item) = tree.items.get_mut(row.index) else {
             return;
         };
-        if (tree.selected_index == Some(row.index) || toggle) && row.has_children {
+        // Row clicks expand/collapse parents in the same click as selection;
+        // dedicated toggle arrows never change selection.
+        let mut toggled = None;
+        if row.has_children {
             item.open = !item.open;
-            let signals = tree.toggled_signals.clone();
-            let params = [
-                Variant::from(tree_id),
-                Variant::from(row.index as i32),
-                Variant::from(item.open),
-                item.value.clone(),
-            ];
-            self.sync_tree_list_internal_nodes(tree_id);
+            toggled = Some((
+                tree.toggled_signals.clone(),
+                [
+                    Variant::from(tree_id),
+                    Variant::from(row.index as i32),
+                    Variant::from(item.open),
+                    item.value.clone(),
+                ],
+            ));
+        }
+        let mut selected = None;
+        if !toggle && item.selectable {
+            let value = item.value.clone();
+            tree.selected_index = Some(row.index);
+            selected = Some((
+                tree.selected_signals.clone(),
+                [
+                    Variant::from(tree_id),
+                    Variant::from(row.index as i32),
+                    value,
+                ],
+            ));
+        }
+        if toggled.is_none() && selected.is_none() {
+            return;
+        }
+        self.sync_tree_list_internal_nodes(tree_id);
+        if let Some((signals, params)) = toggled {
             for signal in signals {
                 self.queue_ui_signal(signal, &params);
             }
-            return;
         }
-        if item.selectable {
-            tree.selected_index = Some(row.index);
-            let signals = tree.selected_signals.clone();
-            let value = item.value.clone();
-            let params = [
-                Variant::from(tree_id),
-                Variant::from(row.index as i32),
-                value,
-            ];
-            self.sync_tree_list_internal_nodes(tree_id);
+        if let Some((signals, params)) = selected {
             for signal in signals {
                 self.queue_ui_signal(signal, &params);
             }

@@ -444,6 +444,9 @@ impl Runtime {
 
     pub(crate) fn mark_ui_dirty(&mut self, id: NodeID, flags: u16) {
         self.dirty.mark_ui(id, flags);
+        if self.render_ui.defer_dirty_marks {
+            self.render_ui.deferred_dirty.push((id, flags));
+        }
     }
 
     pub fn mark_transform_dirty_recursive(&mut self, root: NodeID) {
@@ -459,6 +462,15 @@ impl Runtime {
 
     pub fn clear_dirty_flags(&mut self) {
         self.dirty.clear();
+        // Marks made during the post-layout input phase of UI extraction
+        // (dropdown open, tree toggle) must survive into the next frame's
+        // layout pass; re-apply them after the wholesale clear.
+        if !self.render_ui.deferred_dirty.is_empty() {
+            let deferred = std::mem::take(&mut self.render_ui.deferred_dirty);
+            for (id, flags) in deferred {
+                self.dirty.mark_ui(id, flags);
+            }
+        }
     }
 
     pub fn clear_dirty_flags_keep_ui(&mut self) {
