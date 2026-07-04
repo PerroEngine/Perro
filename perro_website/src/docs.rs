@@ -392,6 +392,7 @@ let _ = value;
             "perro_source/runtime_project/perro_runtime",
             "perro_source/runtime_project/perro_scene",
             "perro_source/core",
+            "perro_source/audio_stack",
         ] {
             collect_source_api_names_dir(&root.join(dir), &mut names);
         }

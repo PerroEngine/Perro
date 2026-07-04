@@ -56,29 +56,10 @@ pub fn ensure_project_layout(root: &Path) -> std::io::Result<()> {
 pub fn ensure_project_scaffold(root: &Path, project_name: &str) -> std::io::Result<()> {
     let res_dir = root.join("res");
     let res_scripts_dir = res_dir.join("scripts");
-    let perro_dir = root.join(".perro");
-    let project_crate = perro_dir.join("project");
-    let scripts_crate = perro_dir.join("scripts");
-    let dev_runner_crate = perro_dir.join("dev_runner");
-    let project_cargo_config = project_crate.join(".cargo");
-    let scripts_cargo_config = scripts_crate.join(".cargo");
-    let project_src = project_crate.join("src");
-    let project_static_src = project_src.join("static");
-    let project_embedded = project_crate.join("embedded");
-    let scripts_src = scripts_crate.join("src");
-    let dev_runner_src = dev_runner_crate.join("src");
 
     fs::create_dir_all(&res_dir)?;
     fs::create_dir_all(&res_scripts_dir)?;
-    fs::create_dir_all(&project_src)?;
-    fs::create_dir_all(&project_static_src)?;
-    fs::create_dir_all(&project_embedded)?;
-    fs::create_dir_all(&project_cargo_config)?;
-    fs::create_dir_all(&scripts_src)?;
-    fs::create_dir_all(&scripts_cargo_config)?;
-    fs::create_dir_all(&dev_runner_src)?;
 
-    let crate_name = crate_name_from_project_name(project_name);
     write_if_missing(root.join(".gitignore"), &default_gitignore())?;
     write_if_missing(root.join("deps.toml"), &default_deps_toml())?;
     write_if_missing(root.join("input_map.toml"), &default_input_map_toml())?;
@@ -91,6 +72,36 @@ pub fn ensure_project_scaffold(root: &Path, project_name: &str) -> std::io::Resu
         res_scripts_dir.join("script.rs"),
         &default_script_empty_rs(),
     )?;
+
+    ensure_build_crates_scaffold(root, project_name)
+}
+
+/// Creates the generated `.perro` build crates (project, scripts, dev_runner)
+/// without touching user-facing files (`res/`, `project.toml`, `deps.toml`, ...).
+/// `.perro` is gitignored, so builds from a fresh checkout must be able to
+/// recreate it.
+pub fn ensure_build_crates_scaffold(root: &Path, project_name: &str) -> std::io::Result<()> {
+    let perro_dir = root.join(".perro");
+    let project_crate = perro_dir.join("project");
+    let scripts_crate = perro_dir.join("scripts");
+    let dev_runner_crate = perro_dir.join("dev_runner");
+    let project_cargo_config = project_crate.join(".cargo");
+    let scripts_cargo_config = scripts_crate.join(".cargo");
+    let project_src = project_crate.join("src");
+    let project_static_src = project_src.join("static");
+    let project_embedded = project_crate.join("embedded");
+    let scripts_src = scripts_crate.join("src");
+    let dev_runner_src = dev_runner_crate.join("src");
+
+    fs::create_dir_all(&project_src)?;
+    fs::create_dir_all(&project_static_src)?;
+    fs::create_dir_all(&project_embedded)?;
+    fs::create_dir_all(&project_cargo_config)?;
+    fs::create_dir_all(&scripts_src)?;
+    fs::create_dir_all(&scripts_cargo_config)?;
+    fs::create_dir_all(&dev_runner_src)?;
+
+    let crate_name = crate_name_from_project_name(project_name);
     write_if_missing(
         project_crate.join("Cargo.toml"),
         &default_project_crate_toml(&crate_name),

@@ -229,34 +229,38 @@ UDP notes:
 Use `MicDenoiseSettings::voice()` for a default voice gate.
 Use `MicDenoiseSettings::off()` to disable it.
 
-### `MicClip::denoised`
+### `denoised`
 
 | Field     | Detail                                                            |
 | --------- | ----------------------------------------------------------------- |
+| Access    | `MicClip`                                                         |
 | Signature | `pub fn denoised(&self, settings: MicDenoiseSettings) -> MicClip` |
 | Returns   | `MicClip`                                                         |
 | Use when  | Clean a captured clip without changing the active capture stream. |
 
-### `MicClip::compressed_bytes`
+### `compressed_bytes`
 
 | Field     | Detail                                              |
 | --------- | --------------------------------------------------- |
+| Access    | `MicClip`                                           |
 | Signature | `pub fn compressed_bytes(&self) -> Vec<u8>`         |
 | Returns   | `Vec<u8>`                                           |
 | Use when  | Pack with the smallest available `PMIC` byte codec. |
 
-### `MicClip::raw_bytes`
+### `raw_bytes`
 
 | Field     | Detail                                      |
 | --------- | ------------------------------------------- |
+| Access    | `MicClip`                                   |
 | Signature | `pub fn raw_bytes(&self) -> Vec<u8>`        |
 | Returns   | `Vec<u8>`                                   |
 | Use when  | Force legacy raw `PMIC` v1 bytes.           |
 
-### `MicClip::compression_ratio`
+### `compression_ratio`
 
 | Field     | Detail                                      |
 | --------- | ------------------------------------------- |
+| Access    | `MicClip`                                   |
 | Signature | `pub fn compression_ratio(&self) -> f32`    |
 | Returns   | `f32`                                       |
 | Use when  | Compare packed byte length to raw v1 length. |

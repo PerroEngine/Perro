@@ -79,7 +79,12 @@ fn build_and_sync_demo(root: &Path, project_name: &str, public_name: &str) -> io
     emit_rerun_for_tree(&project_root)?;
 
     let output_dir = project_root.join(".output").join("web");
-    if needs_demo_rebuild(&project_root, &output_dir)? {
+    let public_dir = root
+        .join("perro_website")
+        .join("public")
+        .join("demos")
+        .join(public_name);
+    if needs_demo_rebuild(&project_root, &output_dir, &public_dir)? {
         compile_project_bundle(
             &project_root,
             ProjectBuildOptions::new(false, false)
@@ -89,12 +94,9 @@ fn build_and_sync_demo(root: &Path, project_name: &str, public_name: &str) -> io
         .map_err(|err| io::Error::other(format!("{project_name} web build failed: {err}")))?;
     }
 
-    let public_dir = root
-        .join("perro_website")
-        .join("public")
-        .join("demos")
-        .join(public_name);
-    sync_dir(&output_dir, &public_dir)?;
+    if bundle_complete(&output_dir) {
+        sync_dir(&output_dir, &public_dir)?;
+    }
     Ok(())
 }
 
@@ -120,14 +122,28 @@ fn emit_rerun_for_tree(dir: &Path) -> io::Result<()> {
     Ok(())
 }
 
-fn needs_demo_rebuild(project_root: &Path, output_dir: &Path) -> io::Result<bool> {
-    for required in ["index.html", "boot.js", "app.js", "app_bg.wasm"] {
-        if !output_dir.join(required).exists() {
-            return Ok(true);
-        }
-    }
+fn bundle_complete(dir: &Path) -> bool {
+    ["index.html", "boot.js", "app.js", "app_bg.wasm"]
+        .iter()
+        .all(|required| dir.join(required).exists())
+}
 
-    let Some(output_time) = newest_mtime(output_dir)? else {
+fn needs_demo_rebuild(
+    project_root: &Path,
+    output_dir: &Path,
+    public_dir: &Path,
+) -> io::Result<bool> {
+    // `.output` is gitignored; on a fresh checkout the committed bundle in
+    // `public/` is the up-to-date reference, so no rebuild is needed there.
+    let reference_dir = if bundle_complete(output_dir) {
+        output_dir
+    } else if bundle_complete(public_dir) {
+        public_dir
+    } else {
+        return Ok(true);
+    };
+
+    let Some(output_time) = newest_mtime(reference_dir)? else {
         return Ok(true);
     };
     let Some(input_time) = newest_demo_input_mtime(project_root)? else {

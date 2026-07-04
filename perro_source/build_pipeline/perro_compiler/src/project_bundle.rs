@@ -65,9 +65,10 @@ pub fn compile_project_bundle(
     project_root: &Path,
     options: ProjectBuildOptions,
 ) -> Result<(), CompilerError> {
-    ensure_source_overrides(project_root)?;
     let cfg = load_project_toml(project_root)
         .map_err(|e| CompilerError::SceneParse(format!("failed to load project.toml: {e}")))?;
+    perro_project::ensure_build_crates_scaffold(project_root, &cfg.name)?;
+    ensure_source_overrides(project_root)?;
     sync_android_project_manifest(project_root, &cfg, options)?;
     reset_embedded_dir(project_root)?;
     let _ = sync_scripts(project_root)?;
