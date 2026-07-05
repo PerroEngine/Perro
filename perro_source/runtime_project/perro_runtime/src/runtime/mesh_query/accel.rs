@@ -26,6 +26,23 @@ pub(super) struct QueryNodeData {
     pub(super) instance_local: Vec<Mat4>,
 }
 
+/// Per-node cache entry for [`QueryNodeData`]. `instance_local` is the
+/// expensive-to-rebuild part on `MultiMeshInstance3D` (one
+/// `Mat4::from_scale_rotation_translation` per instance, plus a
+/// `surfaces.clone()`), so point/ray/region queries reuse it across calls
+/// instead of rebuilding on every query.
+pub(crate) struct QueryNodeDataCacheEntry {
+    pub(super) data: Arc<QueryNodeData>,
+    /// `nodes.mutation_version()` snapshot taken when `data` was built. Any
+    /// node mutation anywhere bumps this (see `NodeArena::bump_mutation_version`),
+    /// so it's a conservative-but-correct invalidation signal: no false
+    /// cache hits, occasional false invalidations when unrelated nodes
+    /// change between queries.
+    pub(super) built_at_version: u64,
+}
+
+pub(crate) type QueryNodeDataCache = AHashMap<NodeID, QueryNodeDataCacheEntry>;
+
 #[derive(Clone, Copy)]
 pub(super) struct QueryHitCandidate {
     pub(super) instance_index: u32,

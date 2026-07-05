@@ -29,6 +29,13 @@ const SPATIAL_INVERSE_SCALE_EPSILON: f32 = 1.0e-5;
 /// Below this slot count the spatial fill runs single-threaded.
 const QUERY_SPATIAL_PAR_MIN_SLOTS: usize = 10_000;
 
+/// Candidate-restricted fill only pays off once the candidate set is a small
+/// fraction of the arena; otherwise touching every candidate one-by-one
+/// (random slot order, no prefetch) loses to the cache-friendly linear
+/// whole-arena walk. Picked so a candidate set under ~1/8 of the arena
+/// switches to the restricted path.
+const QUERY_SPATIAL_CANDIDATE_FILL_DIVISOR: usize = 8;
+
 /// Lock-free read of a clean cached global 2D position. `None` means the
 /// cache is stale or missing and the caller must use the full getter.
 #[inline]
@@ -128,6 +135,7 @@ impl Runtime {
         &mut self,
         expr: &Option<QueryExpr>,
         scope: QueryScope,
+        candidates: Option<&[NodeID]>,
     ) -> Option<super::query::QuerySpatialIndex> {
         let (needs_2d, needs_3d) = expr
             .as_ref()
@@ -146,6 +154,36 @@ impl Runtime {
         pos_3d.clear();
         pos_2d.resize(slot_count, None);
         pos_3d.resize(slot_count, None);
+
+        // Root-scope queries w/ a small candidate set (rare tag/name index)
+        // only need positions for those ids -- filling every occupied slot
+        // to then scan a handful of candidates wastes the whole arena walk.
+        // Only worth it once candidates are a small fraction of slot_count;
+        // otherwise the linear whole-arena walk below is more cache-friendly.
+        let use_candidate_fill = matches!(scope, QueryScope::Root)
+            && candidates.is_some_and(|ids| {
+                ids.len() < slot_count / QUERY_SPATIAL_CANDIDATE_FILL_DIVISOR.max(1)
+            });
+
+        if use_candidate_fill {
+            let ids = candidates.expect("checked by use_candidate_fill");
+            for &id in ids {
+                let Some(node) = self.nodes.get(id) else {
+                    continue;
+                };
+                let kind = node.spatial();
+                self.fill_query_spatial_slot(
+                    kind,
+                    needs_2d,
+                    needs_3d,
+                    id.index() as usize,
+                    id,
+                    &mut pos_2d,
+                    &mut pos_3d,
+                );
+            }
+            return Some(super::query::QuerySpatialIndex { pos_2d, pos_3d });
+        }
 
         match scope {
             QueryScope::Root => {
@@ -1167,24 +1205,64 @@ impl NodeAPI for Runtime {
     }
 
     fn query_nodes(&mut self, query: NodeQueryView<'_>) -> Vec<perro_ids::NodeID> {
-        let spatial = self.build_query_spatial_index(query.expr, query.scope);
-        let out = super::query::query_node_ids(
+        // Spatial queries hoist candidate computation up front so a rare
+        // tag/name index can also restrict the spatial-index fill below,
+        // not just the post-fill scan; the candidates are then handed to
+        // `query_node_ids_with_candidates` so they aren't computed twice.
+        let has_spatial = query.expr.as_ref().is_some_and(QueryExpr::has_spatial);
+        let candidates = if has_spatial && matches!(query.scope, QueryScope::Root) {
+            super::query::candidate_ids_from_index(
+                query.expr,
+                Some(self.nodes.tag_index()),
+                self.nodes.slot_count(),
+            )
+        } else {
+            None
+        };
+
+        let spatial = self.build_query_spatial_index(
+            query.expr,
+            query.scope,
+            candidates
+                .as_ref()
+                .map(|candidates| candidates.ids.as_slice()),
+        );
+        let out = super::query::query_node_ids_with_candidates(
             &self.nodes,
             query,
             spatial.as_ref(),
             Some(self.nodes.tag_index()),
+            candidates,
         );
         self.recycle_query_spatial_index(spatial);
         out
     }
 
     fn query_first_node(&mut self, query: NodeQueryView<'_>) -> Option<perro_ids::NodeID> {
-        let spatial = self.build_query_spatial_index(query.expr, query.scope);
-        let out = super::query::query_first_node_id(
+        let has_spatial = query.expr.as_ref().is_some_and(QueryExpr::has_spatial);
+        let candidates = if has_spatial && matches!(query.scope, QueryScope::Root) {
+            super::query::candidate_ids_from_index(
+                query.expr,
+                Some(self.nodes.tag_index()),
+                self.nodes.slot_count(),
+            )
+        } else {
+            None
+        };
+
+        let spatial = self.build_query_spatial_index(
+            query.expr,
+            query.scope,
+            candidates
+                .as_ref()
+                .map(|candidates| candidates.ids.as_slice()),
+        );
+        let out = super::query::query_first_node_id_with_candidates(
             &self.nodes,
             query,
             spatial.as_ref(),
             Some(self.nodes.tag_index()),
+            Some(candidates),
         );
         self.recycle_query_spatial_index(spatial);
         out

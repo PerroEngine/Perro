@@ -2,13 +2,15 @@ use crate::{
     Runtime,
     runtime_project::{ProviderMode, RuntimeProject},
 };
-use perro_ids::{NodeID, ScriptMemberID, tags};
+use perro_ids::{NodeID, ScriptMemberID, TagID, tags};
 use perro_nodes::{
     Bone3D, BoneAttachment3D, Camera2D, Node2D, Node3D, NodeType, SceneNode, SceneNodeData,
     Skeleton3D, Sprite2D, UiButton, UiLabel, UiNode, UiPanel,
 };
 use perro_runtime_api::node_collection;
-use perro_runtime_api::sub_apis::{NodeAPI, NodeScriptSpec, NodeScriptVar, NodeSpec};
+use perro_runtime_api::sub_apis::{
+    NodeAPI, NodeQuery, NodeScriptSpec, NodeScriptVar, NodeSpec, QueryBounds, QueryExpr, QueryScope,
+};
 use perro_scene::{Scene, SceneKey, SceneNodeEntry};
 use perro_structs::{Quaternion, Transform2D, Transform3D, Vector2, Vector3};
 use std::borrow::Cow;
@@ -1294,4 +1296,126 @@ fn create_nodes_borrowed_valid_batch_builds_tree() {
     assert_eq!(runtime.get_node_parent_id(ids[1]), Some(ids[0]));
     assert_eq!(runtime.get_node_children_ids(parent_id), Some(vec![ids[0]]));
     assert_eq!(runtime.get_node_children_ids(ids[0]), Some(vec![ids[1]]));
+}
+
+/// `all(tags[rare], within[box])` must return byte-identical results whether
+/// the spatial-index fill goes through the candidate-restricted path (small
+/// rare-tag set) or the whole-arena fill (broad tag / no candidates). Arena
+/// is churned (remove + reinsert) first so free slots carry stale mirror
+/// data, matching how the fast paths are stressed elsewhere in this suite.
+#[test]
+fn spatial_query_candidate_fill_matches_whole_arena_fill_over_churned_arena() {
+    let mut runtime = Runtime::new();
+    let rare = TagID::from_string("rare");
+    let common = TagID::from_string("common");
+
+    let mut ids = Vec::new();
+    for i in 0..600usize {
+        let id = runtime.create::<Node3D>();
+        let _ = runtime.set_global_transform_3d(
+            id,
+            Transform3D {
+                position: Vector3::new(i as f32, 0.0, 0.0),
+                ..Transform3D::IDENTITY
+            },
+        );
+        // ~1/50 nodes carry the rare tag -- well under the candidate-fill
+        // threshold. ~1/2 carry the common tag -- comfortably over it.
+        if i % 50 == 0 {
+            let _ = runtime.add_node_tag(id, "rare");
+        }
+        if i % 2 == 0 {
+            let _ = runtime.add_node_tag(id, "common");
+        }
+        ids.push(id);
+    }
+    // Churn: remove every 11th node and reinsert a fresh one so some slots
+    // are freed then reused, leaving stale mirror-lane entries behind.
+    for id in ids.iter().step_by(11) {
+        let _ = runtime.remove_node(*id);
+    }
+    for i in 0..40usize {
+        let id = runtime.create::<Node3D>();
+        let _ = runtime.set_global_transform_3d(
+            id,
+            Transform3D {
+                position: Vector3::new(300.0 + i as f32, 0.0, 0.0),
+                ..Transform3D::IDENTITY
+            },
+        );
+        if i % 3 == 0 {
+            let _ = runtime.add_node_tag(id, "rare");
+        }
+    }
+
+    let bounds = QueryBounds::Box3D {
+        origin: Vector3::new(150.0, 0.0, 0.0),
+        size: Vector3::new(400.0, 10.0, 10.0),
+    };
+
+    let rare_and_within = NodeQuery {
+        expr: Some(QueryExpr::All(vec![
+            QueryExpr::Tags(vec![rare]),
+            QueryExpr::Within(bounds),
+        ])),
+        scope: QueryScope::Root,
+    };
+    let common_and_within = NodeQuery {
+        expr: Some(QueryExpr::All(vec![
+            QueryExpr::Tags(vec![common]),
+            QueryExpr::Within(bounds),
+        ])),
+        scope: QueryScope::Root,
+    };
+    let within_only = NodeQuery {
+        expr: Some(QueryExpr::Within(bounds)),
+        scope: QueryScope::Root,
+    };
+
+    // Rare-tag query: candidate set is small -> takes the restricted fill.
+    let mut rare_result = runtime.query_nodes(rare_and_within.as_view());
+    rare_result.sort_by_key(|id| id.index());
+
+    // Common-tag query: candidate set is broad -> falls back to whole-arena
+    // fill. Within-only has no candidates at all -> always whole-arena.
+    let mut common_result = runtime.query_nodes(common_and_within.as_view());
+    common_result.sort_by_key(|id| id.index());
+    let mut within_only_result = runtime.query_nodes(within_only.as_view());
+    within_only_result.sort_by_key(|id| id.index());
+
+    // Cross-check against a brute-force scan done purely through the public
+    // API, independent of which internal fill path ran.
+    let expected_rare: Vec<NodeID> = within_only_result
+        .iter()
+        .copied()
+        .filter(|&id| {
+            runtime
+                .get_node_tags(id)
+                .is_some_and(|tags| tags.iter().any(|t| t == "rare"))
+        })
+        .collect();
+    let expected_common: Vec<NodeID> = within_only_result
+        .iter()
+        .copied()
+        .filter(|&id| {
+            runtime
+                .get_node_tags(id)
+                .is_some_and(|tags| tags.iter().any(|t| t == "common"))
+        })
+        .collect();
+
+    assert_eq!(
+        rare_result, expected_rare,
+        "candidate-restricted fill diverged from whole-arena scan"
+    );
+    assert_eq!(
+        common_result, expected_common,
+        "broad-tag (whole-arena fill) result diverged from brute-force scan"
+    );
+
+    // Re-run the rare query again to make sure the recycled spatial-index
+    // scratch buffers don't leak stale positions between the two fill modes.
+    let mut rare_result_again = runtime.query_nodes(rare_and_within.as_view());
+    rare_result_again.sort_by_key(|id| id.index());
+    assert_eq!(rare_result_again, rare_result);
 }

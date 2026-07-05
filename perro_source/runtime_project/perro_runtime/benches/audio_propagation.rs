@@ -1,6 +1,7 @@
 use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 use perro_nodes::{
-    CollisionShape2D, CollisionShape3D, Node2D, Node3D, SceneNodeData, StaticBody2D, StaticBody3D,
+    AudioEffectZone2D, AudioMask2D, AudioPortal2D, CollisionShape2D, CollisionShape3D, Node2D,
+    Node3D, SceneNode, SceneNodeData, StaticBody2D, StaticBody3D,
 };
 use perro_runtime::Runtime;
 use perro_runtime_api::sub_apis::{
@@ -191,5 +192,88 @@ fn bench_audio_propagation(c: &mut Criterion) {
     });
 }
 
-criterion_group!(benches, bench_audio_propagation);
+/// Scene padded with many decoy nodes (plain `Node2D`) plus a handful of
+/// `AudioMask2D`/`AudioEffectZone2D`/`AudioPortal2D` nodes scattered among
+/// them, and a few sounds with propagation enabled. Isolates the cost of
+/// finding those few relevant nodes per sound per tick: a full-arena scan
+/// pays for `decoy_count`, a type-lane scan doesn't.
+fn runtime_2d_with_decoys(
+    decoy_count: usize,
+    mask_zone_portal_count: usize,
+    sounds: usize,
+) -> Runtime {
+    let mut runtime = Runtime::new();
+    for i in 0..decoy_count {
+        let node = NodeAPI::create::<Node2D>(&mut runtime);
+        let x = -50.0 - (i % 32) as f32;
+        let y = -50.0 - (i / 32) as f32;
+        let _ = NodeAPI::set_global_transform_2d(
+            &mut runtime,
+            node,
+            Transform2D::new(Vector2::new(x, y), 0.0, Vector2::ONE),
+        );
+    }
+    for i in 0..mask_zone_portal_count {
+        match i % 3 {
+            0 => {
+                runtime
+                    .nodes
+                    .insert(SceneNode::new(SceneNodeData::AudioMask2D(
+                        AudioMask2D::new(),
+                    )));
+            }
+            1 => {
+                runtime
+                    .nodes
+                    .insert(SceneNode::new(SceneNodeData::AudioEffectZone2D(
+                        AudioEffectZone2D::new(),
+                    )));
+            }
+            _ => {
+                runtime
+                    .nodes
+                    .insert(SceneNode::new(SceneNodeData::AudioPortal2D(
+                        AudioPortal2D::new(),
+                    )));
+            }
+        }
+    }
+    for i in 0..sounds {
+        let node = NodeAPI::create::<Node2D>(&mut runtime);
+        let x = 30.0 + (i % 8) as f32 * 2.5;
+        let y = (i / 8) as f32 * 2.0 - 8.0;
+        assert!(NodeAPI::set_global_transform_2d(
+            &mut runtime,
+            node,
+            Transform2D::new(Vector2::new(x, y), 0.0, Vector2::ONE),
+        ));
+        assert!(runtime.play_runtime_audio_attached(
+            None,
+            looped_audio(),
+            node,
+            spatial_options(80.0),
+        ));
+    }
+    runtime.update(1.0);
+    runtime
+}
+
+fn bench_audio_scene_scan(c: &mut Criterion) {
+    let mut group = c.benchmark_group("audio_propagation_2d_scene_scan");
+    for decoy_count in [100usize, 1_000, 10_000] {
+        group.bench_with_input(
+            BenchmarkId::new("8_sounds_20_mask_zone_portal", decoy_count),
+            &decoy_count,
+            |b, &decoy_count| {
+                let mut runtime = runtime_2d_with_decoys(decoy_count, 20, 8);
+                b.iter(|| {
+                    runtime.update(black_box(0.05));
+                });
+            },
+        );
+    }
+    group.finish();
+}
+
+criterion_group!(benches, bench_audio_propagation, bench_audio_scene_scan);
 criterion_main!(benches);

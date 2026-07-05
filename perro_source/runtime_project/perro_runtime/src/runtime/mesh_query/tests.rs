@@ -1,5 +1,7 @@
 use super::*;
-use perro_structs::UnitVector4;
+use perro_nodes::{MultiMeshInstance3D, MultiMeshInstanceTransform};
+use perro_runtime_api::sub_apis::NodeAPI;
+use perro_structs::{Quaternion, Transform3D, UnitVector4};
 
 #[test]
 fn runtime_mesh_data_builds_query_surfaces() {
@@ -86,4 +88,131 @@ fn batch_global_ray_query_preserves_order_and_surface_index() {
 
     assert_eq!(hits[0].as_ref().map(|hit| hit.surface_index), Some(0));
     assert!(hits[1].is_none());
+}
+
+/// Builds a `MultiMeshInstance3D` node wired to the builtin cube mesh, with
+/// `instance_count` instances laid out along +X so each has a distinct hit
+/// position for a straight-down ray.
+fn build_multimesh_cube_node(runtime: &mut Runtime, instance_count: usize) -> NodeID {
+    let node_id = runtime.create::<MultiMeshInstance3D>();
+    runtime
+        .render_3d
+        .mesh_sources
+        .insert(node_id, "__cube__".to_string());
+    runtime.with_node_mut::<MultiMeshInstance3D, _, _>(node_id, |mesh| {
+        mesh.instances = (0..instance_count)
+            .map(|i| {
+                MultiMeshInstanceTransform::new(Transform3D::new(
+                    Vector3::new(i as f32 * 4.0, 0.0, 0.0),
+                    Quaternion::IDENTITY,
+                    Vector3::ONE,
+                ))
+            })
+            .collect();
+    });
+    node_id
+}
+
+#[test]
+fn repeated_multimesh_query_hits_cache_and_skips_rebuild() {
+    let mut runtime = Runtime::new();
+    let node_id = build_multimesh_cube_node(&mut runtime, 8);
+
+    let ray_origin = Vector3::new(0.0, 10.0, 0.0);
+    let ray_dir = Vector3::new(0.0, -1.0, 0.0);
+
+    let first = NodeAPI::mesh_instance_surface_on_global_ray(
+        &mut runtime,
+        node_id,
+        ray_origin,
+        ray_dir,
+        100.0,
+    );
+    assert!(first.is_some(), "ray must hit instance 0's cube");
+    let rebuilds_after_first = runtime.mesh_query_node_rebuilds.get();
+    assert!(
+        rebuilds_after_first >= 1,
+        "first query must build the cache entry"
+    );
+
+    // Repeated queries against the same unchanged node must reuse the cached
+    // QueryNodeData -- no further rebuilds, and identical results.
+    for _ in 0..5 {
+        let hit = NodeAPI::mesh_instance_surface_on_global_ray(
+            &mut runtime,
+            node_id,
+            ray_origin,
+            ray_dir,
+            100.0,
+        );
+        assert_eq!(
+            hit.map(|h| (h.instance_index, h.surface_index)),
+            first.map(|h| (h.instance_index, h.surface_index)),
+            "cached query must return identical hit"
+        );
+    }
+    assert_eq!(
+        runtime.mesh_query_node_rebuilds.get(),
+        rebuilds_after_first,
+        "repeated query on unchanged multimesh must not rebuild QueryNodeData"
+    );
+
+    // A point query against a different instance's expected position must
+    // also hit via the same cached instance_local snapshot.
+    let point_hit = NodeAPI::mesh_instance_surface_at_global_point(
+        &mut runtime,
+        node_id,
+        Vector3::new(4.0, 0.0, 0.0),
+    );
+    assert!(
+        point_hit.is_some(),
+        "point query must hit instance 1's cube"
+    );
+    assert_eq!(
+        runtime.mesh_query_node_rebuilds.get(),
+        rebuilds_after_first,
+        "point query against unchanged node must also hit the cache"
+    );
+}
+
+#[test]
+fn mutating_multimesh_instance_transform_invalidates_cache_and_reflects_change() {
+    let mut runtime = Runtime::new();
+    let node_id = build_multimesh_cube_node(&mut runtime, 4);
+
+    let ray_origin = Vector3::new(0.0, 10.0, 0.0);
+    let ray_dir = Vector3::new(0.0, -1.0, 0.0);
+
+    // Warm the cache at instance 0's original position (origin).
+    let before = NodeAPI::mesh_instance_surface_on_global_ray(
+        &mut runtime,
+        node_id,
+        ray_origin,
+        ray_dir,
+        100.0,
+    );
+    assert!(before.is_some(), "ray must hit instance 0 @ origin");
+    let rebuilds_before_mutation = runtime.mesh_query_node_rebuilds.get();
+
+    // Move instance 0 away from the ray so the straight-down ray @ origin no
+    // longer hits it (only instance 0 was ever under the ray).
+    runtime.with_node_mut::<MultiMeshInstance3D, _, _>(node_id, |mesh| {
+        mesh.instances[0].transform.position = Vector3::new(100.0, 0.0, 0.0);
+    });
+
+    let after = NodeAPI::mesh_instance_surface_on_global_ray(
+        &mut runtime,
+        node_id,
+        ray_origin,
+        ray_dir,
+        100.0,
+    );
+    assert!(
+        after.is_none(),
+        "cache must reflect the moved instance, not the stale cached transform"
+    );
+    assert!(
+        runtime.mesh_query_node_rebuilds.get() > rebuilds_before_mutation,
+        "mutating an instance transform must invalidate the cached QueryNodeData"
+    );
 }

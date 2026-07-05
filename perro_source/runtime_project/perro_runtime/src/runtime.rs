@@ -246,6 +246,15 @@ pub struct Runtime {
     /// children_slice().to_vec() alloc on every visited node.
     force_rerender_stack_scratch: Vec<NodeID>,
     pub(crate) audio: AudioPropagationState,
+    /// Per-node cache 4 mesh point/ray/region queries; avoids re-cloning
+    /// surfaces + rebuilding per-instance Mat4s (MultiMeshInstance3D) on
+    /// every query. Keyed by NodeID (generation-safe on slot reuse) +
+    /// validated against `nodes.mutation_version()` @ build time.
+    mesh_query_node_cache: mesh_query::QueryNodeDataCache,
+    /// test/bench probe: # of QueryNodeData rebuilds (cache misses). proves
+    /// repeated queries on an unchanged node hit the cache.
+    #[cfg(any(test, feature = "bench"))]
+    pub(crate) mesh_query_node_rebuilds: std::cell::Cell<u64>,
     /// test/bench probe: # of collect_body_descs_2d/3d calls. proves the
     /// physics-scoped dirty gate skip collect 4 non-physics node moves.
     #[cfg(any(test, feature = "bench"))]
@@ -479,6 +488,9 @@ impl Runtime {
             physics_waters_scratch_3d: Vec::new(),
             force_rerender_stack_scratch: Vec::new(),
             audio: AudioPropagationState::new(),
+            mesh_query_node_cache: AHashMap::default(),
+            #[cfg(any(test, feature = "bench"))]
+            mesh_query_node_rebuilds: std::cell::Cell::new(0),
             #[cfg(any(test, feature = "bench"))]
             physics_collect_calls_2d: std::cell::Cell::new(0),
             #[cfg(any(test, feature = "bench"))]
@@ -491,6 +503,16 @@ impl Runtime {
         use perro_resource_api::sub_apis::MeshAPI;
 
         self.resource_api.create_mesh_data(data)
+    }
+
+    /// Wires a node's mesh-query source path (normally set by the scene
+    /// loader on mesh assignment). Lets benches exercise
+    /// `mesh_instance_surface_*` node queries without a full scene load.
+    #[cfg(feature = "bench")]
+    pub fn bench_set_mesh_source(&mut self, node_id: NodeID, source: &str) {
+        self.render_3d
+            .mesh_sources
+            .insert(node_id, source.to_string());
     }
 
     #[cfg(feature = "bench")]

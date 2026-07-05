@@ -111,6 +111,11 @@ impl Runtime {
     }
 
     pub(super) fn refresh_audio_scene_flags(&mut self) {
+        // NOTE: node-count gate is coarse (see TODO on the field) -- misses
+        // add+remove pairs that leave count unchanged. Not switched to
+        // `mutation_version()`: that counter bumps on every node mutation
+        // crate-wide (not just structural changes), which would turn this
+        // into a full-arena rescan every audio tick.
         let node_count = self.nodes.len();
         if self.audio.audio_scene_flags_node_count == node_count {
             return;

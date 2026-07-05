@@ -74,6 +74,8 @@ mod simd;
 use accel::*;
 use decode::*;
 
+pub(crate) use accel::QueryNodeDataCache;
+
 impl Runtime {
     pub(crate) fn query_mesh_instance_surface_at_global_point(
         &mut self,
@@ -644,7 +646,38 @@ impl Runtime {
         }]
     }
 
-    fn query_node_mesh_data(&self, node_id: NodeID) -> Option<QueryNodeData> {
+    /// Cached lookup for the per-node query snapshot (source path, surfaces,
+    /// per-instance transforms). Rebuilding this is the expensive part for
+    /// `MultiMeshInstance3D` (a `surfaces.clone()` plus one
+    /// `Mat4::from_scale_rotation_translation` per instance), so repeated
+    /// point/ray/region queries against an unchanged node reuse the cached
+    /// `Arc` instead of rebuilding every call. Cache entries are validated
+    /// against `nodes.mutation_version()`, which bumps on ANY node mutation
+    /// (not just this node) -- conservative but always correct, never a
+    /// stale hit.
+    fn query_node_mesh_data(&mut self, node_id: NodeID) -> Option<Arc<QueryNodeData>> {
+        let current_version = self.nodes.mutation_version();
+        if let Some(entry) = self.mesh_query_node_cache.get(&node_id)
+            && entry.built_at_version == current_version
+        {
+            return Some(entry.data.clone());
+        }
+
+        let data = Arc::new(self.build_query_node_mesh_data(node_id)?);
+        #[cfg(any(test, feature = "bench"))]
+        self.mesh_query_node_rebuilds
+            .set(self.mesh_query_node_rebuilds.get() + 1);
+        self.mesh_query_node_cache.insert(
+            node_id,
+            QueryNodeDataCacheEntry {
+                data: data.clone(),
+                built_at_version: current_version,
+            },
+        );
+        Some(data)
+    }
+
+    fn build_query_node_mesh_data(&self, node_id: NodeID) -> Option<QueryNodeData> {
         let node = self.nodes.get(node_id)?;
         let source = self.render_3d.mesh_sources.get(&node_id)?.clone();
         match &node.data {

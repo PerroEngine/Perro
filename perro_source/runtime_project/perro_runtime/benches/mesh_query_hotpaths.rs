@@ -168,9 +168,61 @@ fn bench_mesh_query_bvh_runtime_api(c: &mut Criterion) {
     group.finish();
 }
 
+/// Node-level point/ray/region queries against a `MultiMeshInstance3D`.
+/// Rebuilds a per-instance `Vec<Mat4>` (+ a surfaces clone) from scratch on
+/// every call unless the runtime caches `QueryNodeData` per node -- this is
+/// the hot path a per-node cache targets.
+fn build_multimesh_node(runtime: &mut Runtime, instance_count: usize) -> perro_ids::NodeID {
+    use perro_nodes::{MultiMeshInstance3D, MultiMeshInstanceTransform};
+    use perro_structs::{Quaternion, Transform3D};
+
+    let node_id = NodeAPI::create::<MultiMeshInstance3D>(runtime);
+    runtime.bench_set_mesh_source(node_id, "__cube__");
+    NodeAPI::with_node_mut::<MultiMeshInstance3D, _, _>(runtime, node_id, |mesh| {
+        mesh.instances = (0..instance_count)
+            .map(|i| {
+                MultiMeshInstanceTransform::new(Transform3D::new(
+                    Vector3::new(i as f32 * 4.0, 0.0, 0.0),
+                    Quaternion::IDENTITY,
+                    Vector3::ONE,
+                ))
+            })
+            .collect();
+    });
+    node_id
+}
+
+fn bench_multimesh_node_query(c: &mut Criterion) {
+    let mut group = c.benchmark_group("mesh_query/multimesh_node");
+    for instance_count in [100usize, 1_000, 10_000] {
+        let mut runtime = Runtime::new();
+        let node_id = build_multimesh_node(&mut runtime, instance_count);
+        let ray_origin = Vector3::new(0.0, 10.0, 0.0);
+        let ray_dir = Vector3::new(0.0, -1.0, 0.0);
+
+        group.bench_with_input(
+            BenchmarkId::new("ray_hit_repeated", instance_count),
+            &instance_count,
+            |b, _| {
+                b.iter(|| {
+                    black_box(NodeAPI::mesh_instance_surface_on_global_ray(
+                        &mut runtime,
+                        node_id,
+                        black_box(ray_origin),
+                        black_box(ray_dir),
+                        black_box(100.0),
+                    ))
+                })
+            },
+        );
+    }
+    group.finish();
+}
+
 fn benches(c: &mut Criterion) {
     bench_mesh_query_synthetic(c);
     bench_mesh_query_bvh_runtime_api(c);
+    bench_multimesh_node_query(c);
 }
 
 criterion_group! {

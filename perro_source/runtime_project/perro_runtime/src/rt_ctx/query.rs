@@ -25,20 +25,57 @@ pub(crate) struct QuerySpatialIndex {
     pub pos_3d: Vec<Option<Vector3>>,
 }
 
+// Only exercised directly by tests now; the live call sites in `nodes.rs`
+// hoist candidate computation and go through `query_node_ids_with_candidates`.
+#[cfg(test)]
 pub(super) fn query_node_ids(
     arena: &NodeArena,
     query: NodeQueryView<'_>,
     spatial: Option<&QuerySpatialIndex>,
     tag_index: Option<&AHashMap<TagID, AHashSet<NodeID>>>,
 ) -> Vec<NodeID> {
-    query_node_ids_with_worker_override(arena, query, spatial, None, tag_index)
+    query_node_ids_with_worker_override(arena, query, spatial, None, tag_index, None)
 }
 
+/// Same as [`query_node_ids`] but reuses a candidate set the caller already
+/// computed (e.g. to size the spatial-index fill), so the tag-index
+/// intersection doesn't run twice per query.
+pub(super) fn query_node_ids_with_candidates(
+    arena: &NodeArena,
+    query: NodeQueryView<'_>,
+    spatial: Option<&QuerySpatialIndex>,
+    tag_index: Option<&AHashMap<TagID, AHashSet<NodeID>>>,
+    candidates: Option<QueryCandidates>,
+) -> Vec<NodeID> {
+    query_node_ids_with_worker_override(
+        arena,
+        query,
+        spatial,
+        None,
+        tag_index,
+        Some(PrecomputedCandidates { candidates }),
+    )
+}
+
+// Only exercised directly by tests now; see `query_node_ids` above.
+#[cfg(test)]
 pub(super) fn query_first_node_id(
     arena: &NodeArena,
     query: NodeQueryView<'_>,
     spatial: Option<&QuerySpatialIndex>,
     tag_index: Option<&AHashMap<TagID, AHashSet<NodeID>>>,
+) -> Option<NodeID> {
+    query_first_node_id_with_candidates(arena, query, spatial, tag_index, None)
+}
+
+/// Same as [`query_first_node_id`] but reuses a candidate set the caller
+/// already computed, mirroring [`query_node_ids_with_candidates`].
+pub(super) fn query_first_node_id_with_candidates(
+    arena: &NodeArena,
+    query: NodeQueryView<'_>,
+    spatial: Option<&QuerySpatialIndex>,
+    tag_index: Option<&AHashMap<TagID, AHashSet<NodeID>>>,
+    precomputed: Option<Option<QueryCandidates>>,
 ) -> Option<NodeID> {
     let slot_count = arena.slot_count();
     if slot_count <= 1 {
@@ -52,7 +89,11 @@ pub(super) fn query_first_node_id(
 
     match query.scope {
         QueryScope::Root => {
-            if let Some(candidates) = candidate_ids_from_index(query.expr, tag_index, slot_count) {
+            let candidates = match precomputed {
+                Some(candidates) => candidates,
+                None => candidate_ids_from_index(query.expr, tag_index, slot_count),
+            };
+            if let Some(candidates) = candidates {
                 if candidates.exact {
                     candidates.ids.into_iter().next()
                 } else {
@@ -72,12 +113,20 @@ pub(super) fn query_first_node_id(
     }
 }
 
+/// Precomputed candidate set handed in from the caller (e.g. `nodes.rs`,
+/// which also uses it to restrict the spatial-index fill). Passing it in
+/// avoids recomputing the same tag-index intersection twice per query.
+pub(super) struct PrecomputedCandidates {
+    pub(super) candidates: Option<QueryCandidates>,
+}
+
 fn query_node_ids_with_worker_override(
     arena: &NodeArena,
     query: NodeQueryView<'_>,
     spatial: Option<&QuerySpatialIndex>,
     worker_override: Option<usize>,
     tag_index: Option<&AHashMap<TagID, AHashSet<NodeID>>>,
+    precomputed: Option<PrecomputedCandidates>,
 ) -> Vec<NodeID> {
     #[cfg(feature = "profile")]
     let start = Instant::now();
@@ -110,7 +159,11 @@ fn query_node_ids_with_worker_override(
     }
     let out = match query.scope {
         QueryScope::Root => {
-            if let Some(candidates) = candidate_ids_from_index(query.expr, tag_index, slot_count) {
+            let candidates = match precomputed {
+                Some(precomputed) => precomputed.candidates,
+                None => candidate_ids_from_index(query.expr, tag_index, slot_count),
+            };
+            if let Some(candidates) = candidates {
                 if candidates.exact {
                     candidates.ids
                 } else {
@@ -163,12 +216,12 @@ fn query_node_ids_with_worker_override(
     out
 }
 
-struct QueryCandidates {
-    ids: Vec<NodeID>,
-    exact: bool,
+pub(super) struct QueryCandidates {
+    pub(super) ids: Vec<NodeID>,
+    pub(super) exact: bool,
 }
 
-fn candidate_ids_from_index<'a>(
+pub(super) fn candidate_ids_from_index<'a>(
     expr: &'a Option<QueryExpr>,
     tag_index: Option<&'a AHashMap<TagID, AHashSet<NodeID>>>,
     slot_count: usize,
