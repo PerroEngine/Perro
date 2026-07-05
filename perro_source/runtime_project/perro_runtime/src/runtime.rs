@@ -246,6 +246,12 @@ pub struct Runtime {
     /// children_slice().to_vec() alloc on every visited node.
     force_rerender_stack_scratch: Vec<NodeID>,
     pub(crate) audio: AudioPropagationState,
+    /// test/bench probe: # of collect_body_descs_2d/3d calls. proves the
+    /// physics-scoped dirty gate skip collect 4 non-physics node moves.
+    #[cfg(any(test, feature = "bench"))]
+    pub(crate) physics_collect_calls_2d: std::cell::Cell<u64>,
+    #[cfg(any(test, feature = "bench"))]
+    pub(crate) physics_collect_calls_3d: std::cell::Cell<u64>,
 }
 
 pub struct Timing {
@@ -473,6 +479,10 @@ impl Runtime {
             physics_waters_scratch_3d: Vec::new(),
             force_rerender_stack_scratch: Vec::new(),
             audio: AudioPropagationState::new(),
+            #[cfg(any(test, feature = "bench"))]
+            physics_collect_calls_2d: std::cell::Cell::new(0),
+            #[cfg(any(test, feature = "bench"))]
+            physics_collect_calls_3d: std::cell::Cell::new(0),
         }
     }
 

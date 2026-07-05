@@ -296,6 +296,13 @@ pub(crate) struct DirtyState {
     /// scanning `dirty_indices` (which also holds plain FLAG_RERENDER
     /// entries). Kept in sync by every set/clear path on the transform mask.
     transform_dirty_count: u32,
+    /// physics-scoped transform-dirty counts, split 2d/3d. bumped only when a
+    /// physics-mirrored node (`NodeType::is_physics`) transform go dirty.
+    /// gate physics collect+sync so non-physics tweens (spin coin, ui slide)
+    /// not force full world re-sync each step / raycast. maintain in same
+    /// set/clear paths as transform_dirty_count, keyed on physics flag bits.
+    physics_transform_dirty_count_2d: u32,
+    physics_transform_dirty_count_3d: u32,
 }
 
 pub(crate) use perro_runtime_render::{
@@ -312,6 +319,10 @@ impl DirtyState {
     pub(crate) const DIRTY_LAYOUT_PARENT: u16 = 1 << 5;
     pub(crate) const DIRTY_COMMANDS: u16 = 1 << 6;
     pub(crate) const DIRTY_TEXT: u16 = 1 << 7;
+    /// set alongside transform bit only when node is physics-mirrored.
+    /// distinct 2d/3d so each world gate independently.
+    pub(crate) const FLAG_DIRTY_PHYSICS_2D: u16 = 1 << 8;
+    pub(crate) const FLAG_DIRTY_PHYSICS_3D: u16 = 1 << 9;
     pub(crate) const UI_DIRTY_MASK: u16 = Self::DIRTY_TRANSFORM
         | Self::DIRTY_LAYOUT_SELF
         | Self::DIRTY_LAYOUT_PARENT
@@ -331,6 +342,8 @@ impl DirtyState {
             pending_transform_roots: Vec::new(),
             pending_transform_root_flags: Vec::new(),
             transform_dirty_count: 0,
+            physics_transform_dirty_count_2d: 0,
+            physics_transform_dirty_count_3d: 0,
         }
     }
 
@@ -342,13 +355,25 @@ impl DirtyState {
         self.mark(id, Self::FLAG_RERENDER | (flags & Self::UI_DIRTY_MASK));
     }
 
-    pub(crate) fn mark_transform(&mut self, id: NodeID, spatial: Spatial) {
+    /// `physics` = node is physics-mirrored (`NodeType::is_physics`); set the
+    /// scoped physics-dirty bit so only physics-node moves gate world re-sync.
+    pub(crate) fn mark_transform(&mut self, id: NodeID, spatial: Spatial, physics: bool) {
         match spatial {
             Spatial::TwoD => {
-                self.mark(id, Self::FLAG_DIRTY_2D_TRANSFORM);
+                let flags = if physics {
+                    Self::FLAG_DIRTY_2D_TRANSFORM | Self::FLAG_DIRTY_PHYSICS_2D
+                } else {
+                    Self::FLAG_DIRTY_2D_TRANSFORM
+                };
+                self.mark(id, flags);
             }
             Spatial::ThreeD => {
-                self.mark(id, Self::FLAG_DIRTY_3D_TRANSFORM);
+                let flags = if physics {
+                    Self::FLAG_DIRTY_3D_TRANSFORM | Self::FLAG_DIRTY_PHYSICS_3D
+                } else {
+                    Self::FLAG_DIRTY_3D_TRANSFORM
+                };
+                self.mark(id, flags);
             }
             Spatial::None => {}
         }
@@ -378,29 +403,49 @@ impl DirtyState {
 
     #[inline]
     pub(crate) fn clear_transform_dirty(&mut self, id: NodeID, spatial: Spatial) {
-        let index = id.index() as usize;
         let mask = Self::transform_mask(spatial);
         if mask == 0 {
             return;
         }
-        if let Some(flags) = self.node_flags.get_mut(index) {
-            let had_transform = (*flags & Self::TRANSFORM_MASK_ANY) != 0;
-            *flags &= !mask;
-            if had_transform && (*flags & Self::TRANSFORM_MASK_ANY) == 0 {
-                self.transform_dirty_count = self.transform_dirty_count.saturating_sub(1);
-            }
-        }
+        // clear_transform_dirty_at_index expand -> paired physics bit go too.
+        self.clear_transform_dirty_at_index(id.index() as usize, mask);
     }
 
     #[inline]
     pub(crate) fn clear_transform_dirty_at_index(&mut self, index: usize, mask: u16) {
+        // clearing a spatial transform bit also drop its paired physics bit;
+        // physics dirty only make sense while the transform is dirty.
+        let mask = Self::expand_mask_with_physics(mask);
         if let Some(flags) = self.node_flags.get_mut(index) {
             let had_transform = (*flags & Self::TRANSFORM_MASK_ANY) != 0;
+            let had_phys_2d = (*flags & Self::FLAG_DIRTY_PHYSICS_2D) != 0;
+            let had_phys_3d = (*flags & Self::FLAG_DIRTY_PHYSICS_3D) != 0;
             *flags &= !mask;
             if had_transform && (*flags & Self::TRANSFORM_MASK_ANY) == 0 {
                 self.transform_dirty_count = self.transform_dirty_count.saturating_sub(1);
             }
+            if had_phys_2d && (*flags & Self::FLAG_DIRTY_PHYSICS_2D) == 0 {
+                self.physics_transform_dirty_count_2d =
+                    self.physics_transform_dirty_count_2d.saturating_sub(1);
+            }
+            if had_phys_3d && (*flags & Self::FLAG_DIRTY_PHYSICS_3D) == 0 {
+                self.physics_transform_dirty_count_3d =
+                    self.physics_transform_dirty_count_3d.saturating_sub(1);
+            }
         }
+    }
+
+    /// callers clear via transform bits; ensure paired physics bit go too.
+    #[inline]
+    fn expand_mask_with_physics(mask: u16) -> u16 {
+        let mut out = mask;
+        if (mask & Self::FLAG_DIRTY_2D_TRANSFORM) != 0 {
+            out |= Self::FLAG_DIRTY_PHYSICS_2D;
+        }
+        if (mask & Self::FLAG_DIRTY_3D_TRANSFORM) != 0 {
+            out |= Self::FLAG_DIRTY_PHYSICS_3D;
+        }
+        out
     }
 
     #[inline]
@@ -457,6 +502,19 @@ impl DirtyState {
         self.transform_dirty_count != 0 || self.has_pending_transform_roots()
     }
 
+    /// physics-scoped 2d gate: any 2d physics node transform dirty, or pending
+    /// roots not yet propagated (type unknown til walk -> conservative dirty).
+    #[inline]
+    pub(crate) fn has_physics_transform_dirty_2d(&self) -> bool {
+        self.physics_transform_dirty_count_2d != 0 || self.has_pending_transform_roots()
+    }
+
+    /// physics-scoped 3d gate; see [`Self::has_physics_transform_dirty_2d`].
+    #[inline]
+    pub(crate) fn has_physics_transform_dirty_3d(&self) -> bool {
+        self.physics_transform_dirty_count_3d != 0 || self.has_pending_transform_roots()
+    }
+
     pub(crate) fn has_pending_transform_roots(&self) -> bool {
         !self.pending_transform_roots.is_empty()
     }
@@ -476,9 +534,17 @@ impl DirtyState {
             self.dirty_indices.push(index as u32);
         }
         let had_transform = (*entry & Self::TRANSFORM_MASK_ANY) != 0;
+        let had_phys_2d = (*entry & Self::FLAG_DIRTY_PHYSICS_2D) != 0;
+        let had_phys_3d = (*entry & Self::FLAG_DIRTY_PHYSICS_3D) != 0;
         *entry |= flag;
         if !had_transform && (*entry & Self::TRANSFORM_MASK_ANY) != 0 {
             self.transform_dirty_count += 1;
+        }
+        if !had_phys_2d && (*entry & Self::FLAG_DIRTY_PHYSICS_2D) != 0 {
+            self.physics_transform_dirty_count_2d += 1;
+        }
+        if !had_phys_3d && (*entry & Self::FLAG_DIRTY_PHYSICS_3D) != 0 {
+            self.physics_transform_dirty_count_3d += 1;
         }
     }
 
@@ -491,6 +557,8 @@ impl DirtyState {
         }
         self.dirty_indices.clear();
         self.transform_dirty_count = 0;
+        self.physics_transform_dirty_count_2d = 0;
+        self.physics_transform_dirty_count_3d = 0;
 
         for id in self.pending_transform_roots.drain(..) {
             let index = id.index() as usize;
@@ -510,12 +578,22 @@ impl DirtyState {
                 continue;
             }
             let had_transform = (self.node_flags[i] & Self::TRANSFORM_MASK_ANY) != 0;
+            let had_phys_2d = (self.node_flags[i] & Self::FLAG_DIRTY_PHYSICS_2D) != 0;
+            let had_phys_3d = (self.node_flags[i] & Self::FLAG_DIRTY_PHYSICS_3D) != 0;
             let preserved = self.node_flags[i] & Self::UI_DIRTY_MASK;
             self.node_flags[i] = preserved;
-            // UI_DIRTY_MASK never overlaps TRANSFORM_MASK_ANY, so any prior
-            // transform bit is always cleared here.
+            // UI_DIRTY_MASK never overlaps TRANSFORM_MASK_ANY or physics bits,
+            // so any prior transform / physics bit is always cleared here.
             if had_transform {
                 self.transform_dirty_count = self.transform_dirty_count.saturating_sub(1);
+            }
+            if had_phys_2d {
+                self.physics_transform_dirty_count_2d =
+                    self.physics_transform_dirty_count_2d.saturating_sub(1);
+            }
+            if had_phys_3d {
+                self.physics_transform_dirty_count_3d =
+                    self.physics_transform_dirty_count_3d.saturating_sub(1);
             }
             if preserved != 0 {
                 self.dirty_indices[write] = index;

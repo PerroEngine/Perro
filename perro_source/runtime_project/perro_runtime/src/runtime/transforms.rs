@@ -51,7 +51,10 @@ impl Runtime {
                 let Some(node) = self.nodes.get(id) else {
                     continue;
                 };
-                self.dirty.mark_transform(id, node.spatial());
+                // physics flag frm node type -> scoped gate; non-physics
+                // subtree moves not force full physics world re-sync.
+                let physics = node.node_type().is_physics();
+                self.dirty.mark_transform(id, node.spatial(), physics);
                 stack.extend_from_slice(node.children_slice());
             }
         }

@@ -457,7 +457,10 @@ impl Runtime {
             return;
         };
         if node.children_slice().is_empty() {
-            self.dirty.mark_transform(root, node.spatial());
+            // leaf: type known now -> scoped physics gate. w/ children,
+            // defer to root walk (propagate) where each descendant typed.
+            let physics = node.node_type().is_physics();
+            self.dirty.mark_transform(root, node.spatial(), physics);
         } else {
             self.dirty.mark_transform_root(root);
         }

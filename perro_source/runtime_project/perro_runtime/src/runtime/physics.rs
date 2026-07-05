@@ -109,8 +109,11 @@ impl Runtime {
         let total_start = Instant::now();
 
         let pre_transforms_start = Instant::now();
-        // capture external chg b4 propagate clear dirty flags
-        let had_transform_dirty = self.dirty.has_transform_dirty_any();
+        // capture external chg b4 propagate clear dirty flags. physics-scoped:
+        // non-physics node move (spin coin / ui tween) not force world re-sync.
+        // pending roots -> conservative dirty (type unknown til walk).
+        let had_physics_dirty_2d = self.dirty.has_physics_transform_dirty_2d();
+        let had_physics_dirty_3d = self.dirty.has_physics_transform_dirty_3d();
         self.propagate_pending_transform_dirty();
         self.refresh_dirty_global_transforms();
         let pre_transforms = pre_transforms_start.elapsed();
@@ -135,9 +138,9 @@ impl Runtime {
         // ver re-record aft post_transforms so internal write-back not invalidate.
         let node_version = self.nodes.physics_version();
         let sync_2d_needed =
-            self.physics_synced_node_version_2d != Some(node_version) || had_transform_dirty;
+            self.physics_synced_node_version_2d != Some(node_version) || had_physics_dirty_2d;
         let sync_3d_needed =
-            self.physics_synced_node_version_3d != Some(node_version) || had_transform_dirty;
+            self.physics_synced_node_version_3d != Some(node_version) || had_physics_dirty_3d;
 
         let collect_start = Instant::now();
         let bodies_2d = sync_2d_needed.then(|| self.collect_body_descs_2d());
@@ -291,8 +294,10 @@ impl Runtime {
     /// world may lag nodes: node data / structure chg outside fixed step.
     /// query path cal this b4 query; skip full collect+sync when world fresh.
     pub(crate) fn ensure_physics_world_synced_2d(&mut self) {
+        // physics-scoped gate: only 2d physics node moves (or unpropagated
+        // roots) invalidate; non-physics tweens skip the full collect+sync.
         if self.physics_synced_node_version_2d == Some(self.nodes.physics_version())
-            && !self.dirty.has_transform_dirty_any()
+            && !self.dirty.has_physics_transform_dirty_2d()
         {
             return;
         }
@@ -305,8 +310,9 @@ impl Runtime {
     }
 
     pub(crate) fn ensure_physics_world_synced_3d(&mut self) {
+        // physics-scoped gate: see ensure_physics_world_synced_2d.
         if self.physics_synced_node_version_3d == Some(self.nodes.physics_version())
-            && !self.dirty.has_transform_dirty_any()
+            && !self.dirty.has_physics_transform_dirty_3d()
         {
             return;
         }
@@ -478,6 +484,9 @@ impl Runtime {
         filter: &PhysicsQueryFilter,
     ) -> Option<PhysicsMoveResult2D> {
         self.ensure_physics_world_synced_2d();
+        // world in-sync now (ensure just ran); safe 2 re-record if fast path
+        // reproduce next full sync 4 this one body.
+        let was_synced = self.physics_synced_node_version_2d == Some(self.nodes.physics_version());
         let result = self.physics.move_body_2d(body_id, target, margin, filter)?;
         let mut transform = self.get_global_transform_2d(body_id)?;
         transform.position = result.position;
@@ -486,10 +495,71 @@ impl Runtime {
         }
         self.propagate_pending_transform_dirty();
         self.refresh_dirty_global_transforms();
-        // node mv aft sync -> world stale 4 next query
-        self.physics_synced_node_version_2d = None;
+        // fast path: write resolved pose straight -> rapier + re-record sync ver
+        // instead of full O(bodies) collect+sync next op. only when world was
+        // in-sync b4 move (else other stale chg must still trigger full sync).
+        if !was_synced || !self.commit_moved_body_2d_fast(body_id) {
+            // node mv aft sync -> world stale 4 next query
+            self.physics_synced_node_version_2d = None;
+        }
         self.record_character_sweep_hit_2d(body_id, &result);
         Some(result)
+    }
+
+    /// reproduce next full sync_world_2d 4 the just-moved `body_id`: push
+    /// re-read global + fresh sig into rapier, then re-record synced ver so the
+    /// next op skip the O(bodies) walk. ret false -> caller full-invalidate.
+    /// re-read global == collect input; sig computed same as collect => next
+    /// legit full sync see no mismatch 4 this body.
+    fn commit_moved_body_2d_fast(&mut self, body_id: NodeID) -> bool {
+        // other node chg since ensure (unlikely w/in move, but guard) => bail.
+        let node_version = self.nodes.physics_version();
+        let Some((kind, enabled, rigid)) = self.physics_body_sync_props_2d(body_id) else {
+            return false;
+        };
+        let Some(global) = self.get_global_transform_2d(body_id) else {
+            return false;
+        };
+        let signature = body_sync_signature_2d_if_useful(kind, enabled, global, rigid);
+        if !self.physics.commit_moved_body_2d(body_id, global, signature) {
+            return false;
+        }
+        self.physics_synced_node_version_2d = Some(node_version);
+        true
+    }
+
+    /// body kind/enabled/rigid props as collect_body_descs_2d see them.
+    /// only bodies move_body target (char, rigid, static, area); ret None else.
+    fn physics_body_sync_props_2d(
+        &self,
+        id: NodeID,
+    ) -> Option<(BodyKind, bool, Option<RigidProps2D>)> {
+        let node = self.nodes.get(id)?;
+        match &node.data {
+            SceneNodeData::StaticBody2D(body) => Some((BodyKind::Static, body.enabled, None)),
+            SceneNodeData::Area2D(body) => Some((BodyKind::Area, body.enabled, None)),
+            SceneNodeData::CharacterBody2D(body) => {
+                Some((BodyKind::Character, body.enabled, None))
+            }
+            SceneNodeData::RigidBody2D(body) => Some((
+                BodyKind::Rigid,
+                body.enabled,
+                Some(RigidProps2D {
+                    enabled: body.enabled,
+                    can_sleep: body.can_sleep,
+                    lock_rotation: body.lock_rotation,
+                    mass: body.mass,
+                    density: body.density,
+                    continuous_collision_detection: body.continuous_collision_detection,
+                    linear_velocity: body.linear_velocity,
+                    angular_velocity: body.angular_velocity,
+                    gravity_scale: body.gravity_scale,
+                    linear_damping: body.linear_damping,
+                    angular_damping: body.angular_damping,
+                }),
+            )),
+            _ => None,
+        }
     }
 
     pub fn physics_move_body_3d(
@@ -500,6 +570,7 @@ impl Runtime {
         filter: &PhysicsQueryFilter,
     ) -> Option<PhysicsMoveResult3D> {
         self.ensure_physics_world_synced_3d();
+        let was_synced = self.physics_synced_node_version_3d == Some(self.nodes.physics_version());
         let result = self.physics.move_body_3d(body_id, target, margin, filter)?;
         let mut transform = self.get_global_transform_3d(body_id)?;
         transform.position = result.position;
@@ -508,10 +579,62 @@ impl Runtime {
         }
         self.propagate_pending_transform_dirty();
         self.refresh_dirty_global_transforms();
-        // node mv aft sync -> world stale 4 next query
-        self.physics_synced_node_version_3d = None;
+        // fast path: see physics_move_body_2d.
+        if !was_synced || !self.commit_moved_body_3d_fast(body_id) {
+            // node mv aft sync -> world stale 4 next query
+            self.physics_synced_node_version_3d = None;
+        }
         self.record_character_sweep_hit_3d(body_id, &result);
         Some(result)
+    }
+
+    /// 3d twin of [`Self::commit_moved_body_2d_fast`].
+    fn commit_moved_body_3d_fast(&mut self, body_id: NodeID) -> bool {
+        let node_version = self.nodes.physics_version();
+        let Some((kind, enabled, rigid)) = self.physics_body_sync_props_3d(body_id) else {
+            return false;
+        };
+        let Some(global) = self.get_global_transform_3d(body_id) else {
+            return false;
+        };
+        let signature = body_sync_signature_3d_if_useful(kind, enabled, global, rigid);
+        if !self.physics.commit_moved_body_3d(body_id, global, signature) {
+            return false;
+        }
+        self.physics_synced_node_version_3d = Some(node_version);
+        true
+    }
+
+    /// body kind/enabled/rigid props as collect_body_descs_3d see them.
+    fn physics_body_sync_props_3d(
+        &self,
+        id: NodeID,
+    ) -> Option<(BodyKind, bool, Option<RigidProps3D>)> {
+        let node = self.nodes.get(id)?;
+        match &node.data {
+            SceneNodeData::StaticBody3D(body) => Some((BodyKind::Static, body.enabled, None)),
+            SceneNodeData::Area3D(body) => Some((BodyKind::Area, body.enabled, None)),
+            SceneNodeData::CharacterBody3D(body) => {
+                Some((BodyKind::Character, body.enabled, None))
+            }
+            SceneNodeData::RigidBody3D(body) => Some((
+                BodyKind::Rigid,
+                body.enabled,
+                Some(RigidProps3D {
+                    enabled: body.enabled,
+                    can_sleep: body.can_sleep,
+                    mass: body.mass,
+                    density: body.density,
+                    continuous_collision_detection: body.continuous_collision_detection,
+                    linear_velocity: body.linear_velocity,
+                    angular_velocity: body.angular_velocity,
+                    gravity_scale: body.gravity_scale,
+                    linear_damping: body.linear_damping,
+                    angular_damping: body.angular_damping,
+                }),
+            )),
+            _ => None,
+        }
     }
 
     /// sweep along `motion`; on hit, project remainder onto hit plane +
@@ -762,6 +885,9 @@ impl Runtime {
     }
 
     fn collect_body_descs_2d(&mut self) -> Vec<BodyDesc2D> {
+        #[cfg(any(test, feature = "bench"))]
+        self.physics_collect_calls_2d
+            .set(self.physics_collect_calls_2d.get() + 1);
         let node_count = self.internal_updates.physics_body_nodes_2d.len();
         let mut out = std::mem::take(&mut self.physics_body_descs_2d);
         out.clear();
@@ -950,6 +1076,9 @@ impl Runtime {
     }
 
     fn collect_body_descs_3d(&mut self) -> Vec<BodyDesc3D> {
+        #[cfg(any(test, feature = "bench"))]
+        self.physics_collect_calls_3d
+            .set(self.physics_collect_calls_3d.get() + 1);
         let node_count = self.internal_updates.physics_body_nodes_3d.len();
         let mut out = std::mem::take(&mut self.physics_body_descs_3d);
         out.clear();

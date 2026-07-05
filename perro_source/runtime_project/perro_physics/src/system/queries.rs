@@ -602,6 +602,58 @@ impl PhysicsSystem {
         })
     }
 
+    /// write resolved move pose straight into rapier body + refresh signature,
+    /// replicate what next full sync_world_2d would do 4 this one body.
+    /// let move_and_slide / apply_gravity skip O(bodies) collect+sync per iter.
+    /// ret false when body absent (caller fall back to full invalidate).
+    /// `global` = re-read node global aft set (== collect input) so pose +
+    /// sig match sync_world exactly; rot kp (move only translates).
+    pub fn commit_moved_body_2d(
+        &mut self,
+        body_id: NodeID,
+        global: perro_structs::Transform2D,
+        sync_signature: u64,
+    ) -> bool {
+        let Some(world) = self.world_2d.as_mut() else {
+            return false;
+        };
+        let Some(state) = world.body_map.get_mut(&body_id) else {
+            return false;
+        };
+        let Some(rb) = world.bodies.get_mut(state.handle) else {
+            return false;
+        };
+        // set_position(., true) wake body -> mirror sync_world_2d wake.
+        rb.set_position(transform_to_iso2(global), true);
+        state.sync_signature = sync_signature;
+        self.query_pipeline_dirty_2d = true;
+        self.refresh_world_2d_idle_cache();
+        true
+    }
+
+    /// 3d twin of [`Self::commit_moved_body_2d`].
+    pub fn commit_moved_body_3d(
+        &mut self,
+        body_id: NodeID,
+        global: perro_structs::Transform3D,
+        sync_signature: u64,
+    ) -> bool {
+        let Some(world) = self.world_3d.as_mut() else {
+            return false;
+        };
+        let Some(state) = world.body_map.get_mut(&body_id) else {
+            return false;
+        };
+        let Some(rb) = world.bodies.get_mut(state.handle) else {
+            return false;
+        };
+        rb.set_position(transform_to_iso3(global), true);
+        state.sync_signature = sync_signature;
+        self.query_pipeline_dirty_3d = true;
+        self.refresh_world_3d_idle_cache();
+        true
+    }
+
     pub fn contacts_2d(&self, body_id: NodeID) -> Vec<PhysicsContact2D> {
         let Some(world) = self.world_2d.as_ref() else {
             return Vec::new();
