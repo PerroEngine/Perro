@@ -17,13 +17,20 @@ const AUDIO_DIFFUSION_FAR_WEIGHT: f32 = 0.6;
 const AUDIO_DIFFUSION_LEAK: f32 = 0.6;
 
 // --- Bidirectional ray reconciliation (Phase 1) ---
-// A listener-side path point and a source-side path point are the same aperture
-// when within this distance, OR when a single verification raycast between them
-// is unobstructed and shorter than RECONCILE_VERIFY_MAX.
+// A listener-side and source-side path point reconcile into one aperture when a
+// verification raycast between them is unobstructed. Pairs within
+// RECONCILE_EPSILON are treated as coincident (tightest matches, preferred in
+// scoring); pairs out to RECONCILE_VERIFY_MAX still reconcile if the connecting
+// segment is clear. Both cases verify the segment so points straddling a thin
+// wall never falsely reconcile.
 const RECONCILE_EPSILON: f32 = 0.5;
 const RECONCILE_VERIFY_MAX: f32 = 2.0;
-// Free-segment sample points recorded between bounces (endpoints + interior).
-const RECONCILE_SEGMENT_SAMPLES: usize = 3;
+// Spacing between free-segment sample points (world units). Fixed spacing keeps
+// sample density high near apertures regardless of how far a ray travels, so
+// listener-side and source-side points can reconcile within RECONCILE_VERIFY_MAX.
+const RECONCILE_SAMPLE_SPACING: f32 = 0.75;
+// Cap on samples per segment to bound work on very long free rays.
+const RECONCILE_MAX_SAMPLES: usize = 32;
 // Full fan re-search cadence: verified caches survive this many ticks before a
 // forced re-search even when verification keeps passing.
 const APERTURE_RESEARCH_TICKS: u32 = 10;
@@ -832,11 +839,17 @@ impl Runtime {
         }
         self.audio.counters.raycasts = self.audio.counters.raycasts.saturating_add(1);
         let dir = delta * dist.recip();
+        // Small skin at each end skips the surface a bounce point sits ON while
+        // still catching any wall strictly BETWEEN the two points (so two
+        // points straddling a thin wall do NOT falsely reconcile).
+        let skin = AUDIO_PORTAL_EPSILON.min(dist * 0.25);
+        let start = a + dir * skin;
+        let seg = (dist - skin * 2.0).max(0.0);
         let blocked_physics = self
             .prepared_audio_raycast_2d(
-                a,
+                start,
                 dir,
-                dist - RECONCILE_EPSILON.min(dist),
+                seg,
                 &PhysicsQueryFilter {
                     layers: audio_layer,
                     include_areas: false,
@@ -848,7 +861,9 @@ impl Runtime {
         if blocked_physics {
             return None;
         }
-        if self.audio.has_audio_mask_2d && self.first_audio_mask_2d(a, b, audio_layer).is_some() {
+        if self.audio.has_audio_mask_2d
+            && self.first_audio_mask_2d(start, b - dir * skin, audio_layer).is_some()
+        {
             return None;
         }
         Some(dist)
@@ -868,15 +883,20 @@ impl Runtime {
         }
         self.audio.counters.raycasts = self.audio.counters.raycasts.saturating_add(1);
         let dir = delta * dist.recip();
+        let skin = AUDIO_PORTAL_EPSILON.min(dist * 0.25);
+        let start = a + dir * skin;
+        let seg = (dist - skin * 2.0).max(0.0);
         let blocked_physics = self
-            .prepared_audio_raycast_3d(a, dir, dist - RECONCILE_EPSILON.min(dist), false)
+            .prepared_audio_raycast_3d(start, dir, seg, false)
             .is_some_and(|hit| {
                 Some(hit.node) != attached_node && hit.distance > LISTENER_EMBED_EPSILON
             });
         if blocked_physics {
             return None;
         }
-        if self.audio.has_audio_mask_3d && self.first_audio_mask_3d(a, b, audio_layer).is_some() {
+        if self.audio.has_audio_mask_3d
+            && self.first_audio_mask_3d(start, b - dir * skin, audio_layer).is_some()
+        {
             return None;
         }
         Some(dist)
@@ -906,27 +926,27 @@ impl Runtime {
         for lp in listener_pts.iter().copied() {
             for sp in source_pts.iter().copied() {
                 let gap = lp.point.distance_to(sp.point);
-                let (aperture, verify_dist) = if gap <= RECONCILE_EPSILON {
-                    ((lp.point + sp.point) * 0.5, gap)
-                } else if gap <= RECONCILE_VERIFY_MAX {
-                    // One verification ray decides whether the two halves connect.
+                if gap > RECONCILE_VERIFY_MAX {
+                    continue;
+                }
+                // Always verify the connecting segment is unobstructed, even for
+                // sub-epsilon gaps: two points can sit within epsilon on
+                // opposite sides of a thin wall and must NOT reconcile.
+                let (aperture, verify_dist) =
                     match self.reconcile_segment_clear_2d(lp.point, sp.point, audio_layer, attached_node) {
                         Some(d) => ((lp.point + sp.point) * 0.5, d),
                         None => continue,
-                    }
-                } else {
-                    continue;
-                };
+                    };
                 let total = lp.traveled + verify_dist + sp.traveled;
                 if total > range {
                     continue;
                 }
-                let loss = lp.loss * sp.loss;
-                // Prefer higher loss (less lost) then shorter path.
+                // Effective loss: higher is better. Give sub-epsilon coincident
+                // matches a small edge over verified-across-a-gap matches.
+                let tight = if gap <= RECONCILE_EPSILON { 1.05 } else { 1.0 };
+                let loss = (lp.loss * sp.loss * tight).min(1.0);
                 let score = loss / (1.0 + total);
-                if best.as_ref().is_none_or(|(_, bt, bl)| {
-                    score > *bl / (1.0 + *bt)
-                }) {
+                if best.as_ref().is_none_or(|&(_, bt, bl)| score > bl / (1.0 + bt)) {
                     best = Some((aperture, total, loss));
                 }
             }
@@ -957,23 +977,22 @@ impl Runtime {
         for lp in listener_pts.iter().copied() {
             for sp in source_pts.iter().copied() {
                 let gap = lp.point.distance_to(sp.point);
-                let (aperture, verify_dist) = if gap <= RECONCILE_EPSILON {
-                    ((lp.point + sp.point) * 0.5, gap)
-                } else if gap <= RECONCILE_VERIFY_MAX {
+                if gap > RECONCILE_VERIFY_MAX {
+                    continue;
+                }
+                let (aperture, verify_dist) =
                     match self.reconcile_segment_clear_3d(lp.point, sp.point, audio_layer, attached_node) {
                         Some(d) => ((lp.point + sp.point) * 0.5, d),
                         None => continue,
-                    }
-                } else {
-                    continue;
-                };
+                    };
                 let total = lp.traveled + verify_dist + sp.traveled;
                 if total > range {
                     continue;
                 }
-                let loss = lp.loss * sp.loss;
+                let tight = if gap <= RECONCILE_EPSILON { 1.05 } else { 1.0 };
+                let loss = (lp.loss * sp.loss * tight).min(1.0);
                 let score = loss / (1.0 + total);
-                if best.as_ref().is_none_or(|(_, bt, bl)| score > *bl / (1.0 + *bt)) {
+                if best.as_ref().is_none_or(|&(_, bt, bl)| score > bl / (1.0 + bt)) {
                     best = Some((aperture, total, loss));
                 }
             }
@@ -1056,13 +1075,17 @@ impl Runtime {
             }
             let hit = self.nearest_audio_bounce_hit_2d(pos, direction, remaining, audio_layer);
             let seg_len = hit.as_ref().map(|h| h.distance).unwrap_or(remaining);
-            // Sample points along the free segment (interior only; endpoints
-            // handled by the bounce point / origin).
-            for s in 1..RECONCILE_SEGMENT_SAMPLES {
-                let t = s as f32 / RECONCILE_SEGMENT_SAMPLES as f32;
+            // Sample points along the free segment at fixed spacing so density
+            // stays high near apertures on long rays.
+            let samples = ((seg_len / RECONCILE_SAMPLE_SPACING) as usize).min(RECONCILE_MAX_SAMPLES);
+            for s in 1..=samples {
+                let d = s as f32 * RECONCILE_SAMPLE_SPACING;
+                if d >= seg_len {
+                    break;
+                }
                 out.push(ReconcilePoint2D {
-                    point: pos + direction * (seg_len * t),
-                    traveled: traveled + seg_len * t,
+                    point: pos + direction * d,
+                    traveled: traveled + d,
                     loss,
                 });
             }
@@ -1131,11 +1154,15 @@ impl Runtime {
             }
             let hit = self.nearest_audio_bounce_hit_3d(pos, direction, remaining, audio_layer);
             let seg_len = hit.as_ref().map(|h| h.distance).unwrap_or(remaining);
-            for s in 1..RECONCILE_SEGMENT_SAMPLES {
-                let t = s as f32 / RECONCILE_SEGMENT_SAMPLES as f32;
+            let samples = ((seg_len / RECONCILE_SAMPLE_SPACING) as usize).min(RECONCILE_MAX_SAMPLES);
+            for s in 1..=samples {
+                let d = s as f32 * RECONCILE_SAMPLE_SPACING;
+                if d >= seg_len {
+                    break;
+                }
                 out.push(ReconcilePoint3D {
-                    point: pos + direction * (seg_len * t),
-                    traveled: traveled + seg_len * t,
+                    point: pos + direction * d,
+                    traveled: traveled + d,
                     loss,
                 });
             }
@@ -1245,24 +1272,8 @@ impl Runtime {
                 best = Some(path);
             }
         }
-        // Listener-emitted pass: rays cast from the listener sample paths the
-        // source-side fan misses (e.g. bouncing out through a window) and
-        // reconcile against the source with the same miss tolerance. The
-        // perceived point is the first bounce, the reflector nearest the ear.
-        if best.as_ref().is_none_or(|path| path.volume < 0.5) {
-            for i in 0..AUDIO_BOUNCE_RAYS_2D {
-                let angle = (i as f32 + 0.5) * TAU / AUDIO_BOUNCE_RAYS_2D as f32;
-                let direction = Vector2::new(angle.cos(), angle.sin());
-                if let Some(path) = self
-                    .trace_audio_bounce_ray_2d(listener, source, direction, audio_layer, range, true)
-                    && best.as_ref().is_none_or(|best| {
-                        path.volume > best.volume || path.distance < best.distance
-                    })
-                {
-                    best = Some(path);
-                }
-            }
-        }
+        // (The listener-emitted reverse pass is subsumed by the bidirectional
+        // reconciler in solve_2d, which finds window-exit apertures directly.)
         best
     }
 
@@ -1397,27 +1408,8 @@ impl Runtime {
                 best = Some(path);
             }
         }
-        // Listener-emitted pass: rays cast from the listener sample paths the
-        // source-side fan misses (e.g. bouncing out through a window) and
-        // reconcile against the source with the same miss tolerance. The
-        // perceived point is the first bounce, the reflector nearest the ear.
-        if best.as_ref().is_none_or(|path| path.volume < 0.5) {
-            for i in 0..AUDIO_BOUNCE_RAYS_3D {
-                let n = AUDIO_BOUNCE_RAYS_3D as f32;
-                let y = 1.0 - (i as f32 + 0.5) * 2.0 / n;
-                let radius = (1.0 - y * y).max(0.0).sqrt();
-                let theta = (i as f32 + 0.5) * 2.399_963_1;
-                let direction = Vector3::new(theta.cos() * radius, y, theta.sin() * radius);
-                if let Some(path) = self
-                    .trace_audio_bounce_ray_3d(listener, source, direction, audio_layer, range, true)
-                    && best.as_ref().is_none_or(|best| {
-                        path.volume > best.volume || path.distance < best.distance
-                    })
-                {
-                    best = Some(path);
-                }
-            }
-        }
+        // (The listener-emitted reverse pass is subsumed by the bidirectional
+        // reconciler in solve_3d.)
         best
     }
 

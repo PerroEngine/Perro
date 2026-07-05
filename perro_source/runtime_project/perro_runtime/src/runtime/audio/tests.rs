@@ -19,6 +19,35 @@ fn looped_audio() -> RuntimeAudio<'static> {
     }
 }
 
+// Build a StaticBody2D wall (Quad collider) centered at `pos` with the given
+// half-extents. Returns the body id.
+fn wall_2d(runtime: &mut Runtime, pos: Vector2, width: f32, height: f32) -> NodeID {
+    let wall = NodeAPI::create::<StaticBody2D>(runtime);
+    // Nearly opaque wall so sealed rooms genuinely muffle.
+    if let Some(node) = runtime.nodes.get_mut(wall)
+        && let SceneNodeData::StaticBody2D(body) = &mut node.data
+    {
+        let mut audio = AudioInteraction::new();
+        audio.material.transmission = 0.02;
+        audio.material.absorption = 0.85;
+        audio.material.reflection = 0.1;
+        body.audio_interaction = Some(audio);
+    }
+    let shape = NodeAPI::create::<CollisionShape2D>(runtime);
+    assert!(NodeAPI::reparent(runtime, wall, shape));
+    if let Some(node) = runtime.nodes.get_mut(shape)
+        && let SceneNodeData::CollisionShape2D(shape) = &mut node.data
+    {
+        shape.shape = perro_nodes::Shape2D::Quad { width, height };
+    }
+    assert!(NodeAPI::set_global_transform_2d(
+        runtime,
+        wall,
+        Transform2D::new(pos, 0.0, Vector2::ONE),
+    ));
+    wall
+}
+
 fn spatial_options(range: f32) -> SpatialAudioOptions {
     SpatialAudioOptions {
         range,
@@ -1266,4 +1295,133 @@ fn stop_attached_matches_node_and_source() {
     assert!(runtime.stop_runtime_audio_attached(a, "res://missing.wav"));
     assert_eq!(runtime.audio.sounds.len(), 1);
     assert!(matches!(runtime.audio.sounds[0].pos, SpatialSoundPos::Attached(id) if id == b));
+}
+
+// Build a box room of StaticBody2D walls centered on the origin (listener).
+// `right_gap` leaves the right wall (facing +x) open around y=0 so audio can
+// reconcile out through it.
+fn box_room_2d(runtime: &mut Runtime, half: f32, right_gap: bool) {
+    let t = 0.4;
+    // Top + bottom + left walls: full span.
+    wall_2d(runtime, Vector2::new(0.0, half), half * 2.0, t);
+    wall_2d(runtime, Vector2::new(0.0, -half), half * 2.0, t);
+    wall_2d(runtime, Vector2::new(-half, 0.0), t, half * 2.0);
+    if right_gap {
+        // Split right wall into two, leaving a gap of ~2 units around y=0.
+        let seg = (half - 1.0) * 0.5;
+        wall_2d(runtime, Vector2::new(half, 1.0 + seg), t, seg * 2.0);
+        wall_2d(runtime, Vector2::new(half, -(1.0 + seg)), t, seg * 2.0);
+    } else {
+        wall_2d(runtime, Vector2::new(half, 0.0), t, half * 2.0);
+    }
+}
+
+#[test]
+fn reconcile_window_2d_opens_muffled_room() {
+    let emitter = Vector2::new(12.0, 3.0);
+    // Sealed room: emitter fully boxed off from the listener.
+    let mut sealed = Runtime::new();
+    box_room_2d(&mut sealed, 4.0, false);
+    assert!(sealed.play_runtime_audio_2d(looped_audio(), emitter, spatial_options(16.0)));
+    sealed.update_audio_propagation(1.0);
+    let sealed_result = sealed.audio.sounds[0].last_result.expect("sealed");
+
+    // Same room with a window in the wall facing the emitter. Emitter sits
+    // off-axis so the DIRECT line is blocked by the wall segment (forcing the
+    // reconciler to engage), but audio can still escape through the window.
+    let mut open = Runtime::new();
+    box_room_2d(&mut open, 4.0, true);
+    assert!(open.play_runtime_audio_2d(looped_audio(), emitter, spatial_options(16.0)));
+    open.update_audio_propagation(1.0);
+    let open_result = open.audio.sounds[0].last_result.expect("open");
+
+    // Window path is significantly louder than the sealed room.
+    assert!(
+        open_result.volume > sealed_result.volume * 1.5,
+        "open {} vs sealed {}",
+        open_result.volume,
+        sealed_result.volume
+    );
+    // Reconciler found a virtual source; occlusion is lower than sealed.
+    assert!(open.audio.sounds[0].aperture_2d.is_some());
+    assert!(open_result.occlusion < sealed_result.occlusion);
+    // Perceived comes from the reconciled path, not the raw source position.
+    let perceived = open_result.perceived_2d.expect("perceived");
+    assert_ne!(perceived, emitter);
+}
+
+#[test]
+fn reconcile_sealed_room_stays_muffled() {
+    let mut runtime = Runtime::new();
+    box_room_2d(&mut runtime, 4.0, false);
+    assert!(runtime.play_runtime_audio_2d(
+        looped_audio(),
+        Vector2::new(12.0, 3.0),
+        spatial_options(16.0),
+    ));
+    runtime.update_audio_propagation(1.0);
+    let result = runtime.audio.sounds[0].last_result.expect("result");
+    assert!(result.occlusion > 0.3, "occlusion {}", result.occlusion);
+    assert!(result.volume < 0.2, "volume {}", result.volume);
+}
+
+#[test]
+fn reconcile_aperture_cache_cuts_second_tick_rays() {
+    let mut runtime = Runtime::new();
+    box_room_2d(&mut runtime, 4.0, true);
+    assert!(runtime.play_runtime_audio_2d(
+        looped_audio(),
+        Vector2::new(12.0, 3.0),
+        spatial_options(16.0),
+    ));
+    runtime.update_audio_propagation(1.0);
+    let first_rays = runtime.audio.counters.raycasts;
+    assert!(
+        runtime.audio.sounds[0].aperture_2d.is_some(),
+        "reconciler should have found an aperture"
+    );
+    // Second tick verifies the cached aperture with a couple of cheap rays
+    // instead of re-running the full bidirectional fan.
+    runtime.update_audio_propagation(1.0);
+    let second_rays = runtime.audio.counters.raycasts;
+    assert!(
+        second_rays < first_rays,
+        "cached tick {} should cast fewer rays than search tick {}",
+        second_rays,
+        first_rays
+    );
+}
+
+#[test]
+fn reconcile_openness_hysteresis_does_not_oscillate() {
+    // A wall the emitter sits just behind: the openness probes straddle its
+    // edge. Flip the wall in/out on alternate ticks and confirm the stored
+    // openness (hence volume) does not swing hard each tick.
+    let mut runtime = Runtime::new();
+    let wall = wall_2d(&mut runtime, Vector2::new(2.5, 0.0), 0.25, 4.0);
+    assert!(runtime.play_runtime_audio_2d(
+        looped_audio(),
+        Vector2::new(5.0, 0.0),
+        spatial_options(10.0),
+    ));
+    // Prime the field with the wall present.
+    runtime.update_audio_propagation(1.0);
+    let mut volumes = Vec::new();
+    for tick in 0..6 {
+        // Toggle a probe's blocked state by nudging the wall aside and back.
+        let x = if tick % 2 == 0 { 2.5 } else { 40.0 };
+        assert!(NodeAPI::set_global_transform_2d(
+            &mut runtime,
+            wall,
+            Transform2D::new(Vector2::new(x, 0.0), 0.0, Vector2::ONE),
+        ));
+        runtime.update_audio_propagation(1.0);
+        volumes.push(runtime.audio.sounds[0].last_result.expect("result").volume);
+    }
+    // Consecutive volumes must not swing by more than a bounded step: the
+    // hysteresis + result smoothing damps the alternating probe flip.
+    for pair in volumes.windows(2) {
+        let swing = (pair[1] - pair[0]).abs();
+        assert!(swing < 0.4, "volume swing {} too large: {:?}", swing, volumes);
+    }
 }
