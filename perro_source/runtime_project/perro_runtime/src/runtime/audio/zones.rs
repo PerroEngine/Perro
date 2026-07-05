@@ -496,6 +496,7 @@ impl Runtime {
             aperture_2d: None,
             aperture_3d: None,
             aperture_age: 0,
+            field: PropagationField::default(),
         });
         true
     }
@@ -549,6 +550,7 @@ impl Runtime {
             aperture_2d: None,
             aperture_3d: None,
             aperture_age: 0,
+            field: PropagationField::default(),
         });
         true
     }
@@ -591,6 +593,7 @@ impl Runtime {
             aperture_2d: None,
             aperture_3d: None,
             aperture_age: 0,
+            field: PropagationField::default(),
         });
         true
     }

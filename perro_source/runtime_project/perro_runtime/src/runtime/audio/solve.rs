@@ -31,6 +31,16 @@ const APERTURE_RESEARCH_TICKS: u32 = 10;
 const RECONCILE_FAN_2D: usize = AUDIO_BOUNCE_RAYS_2D;
 const RECONCILE_FAN_3D: usize = AUDIO_BOUNCE_RAYS_3D;
 
+// Persistent field (Phase 2): probes refreshed per tick, round-robin. The rest
+// keep their stored value, so total openness rays/tick drop from the full fan
+// (4/6) to PROBE_SLICE while the blended openness stays stable.
+const PROBE_SLICE: usize = 2;
+// Openness hysteresis: opening reads fast, closing fades slow (mirror
+// smooth_volume in scene.rs) so a probe flipping on alternate ticks does not
+// oscillate the level.
+const OPENNESS_RISE: f32 = 0.6;
+const OPENNESS_FALL: f32 = 0.25;
+
 fn attached_node_of(sound: &ActiveSpatialSound) -> Option<NodeID> {
     match sound.pos {
         SpatialSoundPos::Attached(node) => Some(node),
@@ -156,10 +166,12 @@ impl Runtime {
             );
         }
         if hit.is_some() && sound.options.enable_propagation {
+            let audio_layer = sound.options.audio_layer;
             let (openness, open_shift) = self.occlusion_openness_2d(
+                &mut sound.field,
                 listener_pos,
                 source_pos,
-                sound.options.audio_layer,
+                audio_layer,
                 attached_node,
             );
             if openness > 0.0 {
@@ -419,10 +431,12 @@ impl Runtime {
             }
         }
         if hit.is_some() && sound.options.enable_propagation {
+            let audio_layer = sound.options.audio_layer;
             let (openness, open_shift) = self.occlusion_openness_3d(
+                &mut sound.field,
                 listener_pos,
                 source_pos,
-                sound.options.audio_layer,
+                audio_layer,
                 attached_node,
             );
             if openness > 0.0 {
@@ -579,11 +593,15 @@ impl Runtime {
         Some(result)
     }
 
-    // Cast probe rays at points spread around an occluded source ("sound wave
-    // cloud"). Returns (open fraction, average open offset) so the solver can
-    // soften occlusion and pull the perceived position toward the open edge.
+    // Probe a small cloud around an occluded source ("sound wave cloud") to let
+    // energy diffract around edges. Phase 2: only PROBE_SLICE probes are
+    // recast per tick (round-robin via `field.cursor`); the rest reuse their
+    // stored open weight. The returned openness is the hysteresis-blended
+    // integral of all seen probes, so it does not flicker when one probe flips
+    // on alternate ticks. Returns (smoothed open fraction, average open offset).
     fn occlusion_openness_2d(
         &mut self,
+        field: &mut PropagationField,
         listener_pos: Vector2,
         source_pos: Vector2,
         audio_layer: BitMask,
@@ -602,22 +620,23 @@ impl Runtime {
             (perp * AUDIO_DIFFUSION_SPREAD, AUDIO_DIFFUSION_FAR_WEIGHT),
             (perp * -AUDIO_DIFFUSION_SPREAD, AUDIO_DIFFUSION_FAR_WEIGHT),
         ];
+        let n = offsets.len();
         let exclude: Vec<NodeID> = attached_node.into_iter().collect();
-        let mut attempted = 0.0f32;
-        let mut open = 0.0f32;
-        let mut open_shift = Vector2::ZERO;
-        for (offset, weight) in offsets {
+        // First-time sample: probe every slot so openness starts accurate.
+        let refresh = if field.initialized { PROBE_SLICE } else { n };
+        for step in 0..refresh {
             if self.audio.counters.raycasts >= self.audio.config.rays_per_tick_2d {
                 break;
             }
-            self.audio.counters.raycasts = self.audio.counters.raycasts.saturating_add(1);
-            attempted += weight;
+            let idx = (field.cursor + step) % n;
+            let (offset, _weight) = offsets[idx];
             let probe = source_pos + offset;
             let probe_delta = probe - listener_pos;
             let probe_dist = probe_delta.length();
             if probe_dist <= 0.0001 {
                 continue;
             }
+            self.audio.counters.raycasts = self.audio.counters.raycasts.saturating_add(1);
             let blocked_physics = self
                 .prepared_audio_raycast_2d(
                     listener_pos,
@@ -636,9 +655,9 @@ impl Runtime {
                     && self
                         .first_audio_mask_2d(listener_pos, probe, audio_layer)
                         .is_some());
+            field.probe_open[idx] = if blocked { 0.0 } else { 1.0 };
+            field.probe_seen[idx] = true;
             if !blocked {
-                open += weight;
-                open_shift += offset * weight;
                 self.queue_audio_debug_ray_2d(
                     listener_pos,
                     probe,
@@ -647,15 +666,35 @@ impl Runtime {
                 );
             }
         }
-        if open <= 0.0 || attempted <= 0.0 {
-            (0.0, Vector2::ZERO)
-        } else {
-            (open / attempted, open_shift / open)
+        field.cursor = (field.cursor + refresh) % n;
+        field.initialized = true;
+
+        let mut attempted = 0.0f32;
+        let mut open = 0.0f32;
+        let mut open_shift = Vector2::ZERO;
+        for (idx, (offset, weight)) in offsets.iter().enumerate() {
+            if !field.probe_seen[idx] {
+                continue;
+            }
+            attempted += weight;
+            if field.probe_open[idx] > 0.5 {
+                open += weight;
+                open_shift += *offset * *weight;
+            }
         }
+        let instant = if attempted > 0.0 { open / attempted } else { 0.0 };
+        field.smoothed_openness = smooth_openness(field.smoothed_openness, instant);
+        let shift = if open > 0.0 {
+            open_shift / open
+        } else {
+            Vector2::ZERO
+        };
+        (field.smoothed_openness, shift)
     }
 
     fn occlusion_openness_3d(
         &mut self,
+        field: &mut PropagationField,
         listener_pos: Vector3,
         source_pos: Vector3,
         audio_layer: BitMask,
@@ -685,21 +724,21 @@ impl Runtime {
             (bitangent * AUDIO_DIFFUSION_SPREAD, AUDIO_DIFFUSION_FAR_WEIGHT),
             (bitangent * -AUDIO_DIFFUSION_SPREAD, AUDIO_DIFFUSION_FAR_WEIGHT),
         ];
-        let mut attempted = 0.0f32;
-        let mut open = 0.0f32;
-        let mut open_shift = zero;
-        for (offset, weight) in offsets {
+        let n = offsets.len();
+        let refresh = if field.initialized { PROBE_SLICE } else { n };
+        for step in 0..refresh {
             if self.audio.counters.raycasts >= self.audio.config.rays_per_tick_3d {
                 break;
             }
-            self.audio.counters.raycasts = self.audio.counters.raycasts.saturating_add(1);
-            attempted += weight;
+            let idx = (field.cursor + step) % n;
+            let (offset, _weight) = offsets[idx];
             let probe = source_pos + offset;
             let probe_delta = probe - listener_pos;
             let probe_dist = probe_delta.length();
             if probe_dist <= 0.0001 {
                 continue;
             }
+            self.audio.counters.raycasts = self.audio.counters.raycasts.saturating_add(1);
             let blocked_physics = self
                 .prepared_audio_raycast_3d(
                     listener_pos,
@@ -715,9 +754,9 @@ impl Runtime {
                     && self
                         .first_audio_mask_3d(listener_pos, probe, audio_layer)
                         .is_some());
+            field.probe_open[idx] = if blocked { 0.0 } else { 1.0 };
+            field.probe_seen[idx] = true;
             if !blocked {
-                open += weight;
-                open_shift += offset * weight;
                 self.queue_audio_debug_ray_3d(
                     listener_pos,
                     probe,
@@ -726,11 +765,26 @@ impl Runtime {
                 );
             }
         }
-        if open <= 0.0 || attempted <= 0.0 {
-            (0.0, zero)
-        } else {
-            (open / attempted, open_shift / open)
+        field.cursor = (field.cursor + refresh) % n;
+        field.initialized = true;
+
+        let mut attempted = 0.0f32;
+        let mut open = 0.0f32;
+        let mut open_shift = zero;
+        for (idx, (offset, weight)) in offsets.iter().enumerate() {
+            if !field.probe_seen[idx] {
+                continue;
+            }
+            attempted += weight;
+            if field.probe_open[idx] > 0.5 {
+                open += weight;
+                open_shift += *offset * *weight;
+            }
         }
+        let instant = if attempted > 0.0 { open / attempted } else { 0.0 };
+        field.smoothed_openness = smooth_openness(field.smoothed_openness, instant);
+        let shift = if open > 0.0 { open_shift / open } else { zero };
+        (field.smoothed_openness, shift)
     }
 
     // Verify a cached aperture cheaply: two raycasts (listener->aperture,
@@ -2389,6 +2443,15 @@ fn emitter_lobe(mode: EmitterMode, dot: f32) -> f32 {
 
 fn directional_lobe(dot: f32) -> f32 {
     0.15 + 0.85 * dot.max(0.0).powf(1.5)
+}
+
+// Hysteresis blend for stored openness: rise fast on opening, fall slow on
+// closing, so a probe flipping blocked/unblocked on alternate ticks does not
+// oscillate the perceived level.
+#[inline]
+fn smooth_openness(prev: f32, next: f32) -> f32 {
+    let rate = if next > prev { OPENNESS_RISE } else { OPENNESS_FALL };
+    prev + (next - prev) * rate
 }
 
 fn listener_effect_mix(

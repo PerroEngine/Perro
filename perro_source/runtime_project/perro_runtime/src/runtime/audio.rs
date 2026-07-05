@@ -116,6 +116,39 @@ struct ActiveSpatialSound {
     aperture_2d: Option<ApertureCache2D>,
     aperture_3d: Option<ApertureCache3D>,
     aperture_age: u32,
+    // Persistent field state (Phase 2): per-probe openness stored across ticks,
+    // refreshed round-robin (only PROBE_SLICE probes per tick). Openness the
+    // solver reads is the hysteresis-blended integral of these, so it does not
+    // flicker when a single probe flips blocked/unblocked on alternate ticks.
+    field: PropagationField,
+}
+
+// Max probe count across 2D (4) and 3D (6) openness fans.
+const MAX_FIELD_PROBES: usize = 6;
+
+#[derive(Clone, Copy, Debug)]
+struct PropagationField {
+    // Per-probe open weight (1 = open, 0 = blocked), one slot per fan probe.
+    probe_open: [f32; MAX_FIELD_PROBES],
+    // Whether each slot has been sampled at least once.
+    probe_seen: [bool; MAX_FIELD_PROBES],
+    // Round-robin cursor into the probe fan.
+    cursor: usize,
+    // Hysteresis-smoothed openness fraction (rise fast, fall slow).
+    smoothed_openness: f32,
+    initialized: bool,
+}
+
+impl Default for PropagationField {
+    fn default() -> Self {
+        Self {
+            probe_open: [0.0; MAX_FIELD_PROBES],
+            probe_seen: [false; MAX_FIELD_PROBES],
+            cursor: 0,
+            smoothed_openness: 0.0,
+            initialized: false,
+        }
+    }
 }
 
 // A recorded point on a reconciler path: its world position, distance traveled
