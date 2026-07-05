@@ -108,6 +108,43 @@ struct ActiveSpatialSound {
     elapsed_since_prop: f32,
     remaining: Option<f32>,
     last_result: Option<PropagationResult>,
+    // Persistent reconciled-aperture cache (Phase 1). When the direct ray is
+    // blocked, the reconciler finds a virtual source (aperture) where
+    // listener-side and source-side ray paths meet. Cached across ticks and
+    // re-verified cheaply; full fan re-search only on verify-fail or every
+    // APERTURE_RESEARCH_TICKS ticks.
+    aperture_2d: Option<ApertureCache2D>,
+    aperture_3d: Option<ApertureCache3D>,
+    aperture_age: u32,
+}
+
+// A recorded point on a reconciler path: its world position, distance traveled
+// from the ray origin to reach it, and accumulated loss multiplier (0..1).
+#[derive(Clone, Copy, Debug)]
+struct ReconcilePoint2D {
+    point: Vector2,
+    traveled: f32,
+    loss: f32,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct ReconcilePoint3D {
+    point: Vector3,
+    traveled: f32,
+    loss: f32,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct ApertureCache2D {
+    point: Vector2,
+    // Accumulated material/openness loss multiplier along the path (0..1).
+    loss: f32,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct ApertureCache3D {
+    point: Vector3,
+    loss: f32,
 }
 
 #[derive(Clone, Debug)]
@@ -255,6 +292,12 @@ pub(crate) struct AudioPropagationState {
     scratch_ray_outputs: Vec<AudioRaycastResult>,
     scratch_sound_ray_results: Vec<AudioRaycastResult>,
     scratch_field_dirs_3d: Vec<Vector3>,
+    // Reconciler path-point scratch (Phase 1): listener-side + source-side
+    // polyline points, reused each tick to avoid heap churn in the hot path.
+    scratch_reconcile_listener_2d: Vec<ReconcilePoint2D>,
+    scratch_reconcile_source_2d: Vec<ReconcilePoint2D>,
+    scratch_reconcile_listener_3d: Vec<ReconcilePoint3D>,
+    scratch_reconcile_source_3d: Vec<ReconcilePoint3D>,
     has_audio_mask_2d: bool,
     has_audio_mask_3d: bool,
     has_audio_portal_2d: bool,
@@ -288,6 +331,10 @@ impl AudioPropagationState {
             scratch_ray_outputs: Vec::new(),
             scratch_sound_ray_results: Vec::new(),
             scratch_field_dirs_3d: Vec::new(),
+            scratch_reconcile_listener_2d: Vec::new(),
+            scratch_reconcile_source_2d: Vec::new(),
+            scratch_reconcile_listener_3d: Vec::new(),
+            scratch_reconcile_source_3d: Vec::new(),
             has_audio_mask_2d: false,
             has_audio_mask_3d: false,
             has_audio_portal_2d: false,

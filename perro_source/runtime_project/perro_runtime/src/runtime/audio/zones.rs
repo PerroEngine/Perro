@@ -493,6 +493,9 @@ impl Runtime {
             elapsed_since_prop: f32::MAX,
             remaining,
             last_result: None,
+            aperture_2d: None,
+            aperture_3d: None,
+            aperture_age: 0,
         });
         true
     }
@@ -543,6 +546,9 @@ impl Runtime {
             elapsed_since_prop: f32::MAX,
             remaining,
             last_result: None,
+            aperture_2d: None,
+            aperture_3d: None,
+            aperture_age: 0,
         });
         true
     }
@@ -582,6 +588,9 @@ impl Runtime {
             elapsed_since_prop: f32::MAX,
             remaining: None,
             last_result: None,
+            aperture_2d: None,
+            aperture_3d: None,
+            aperture_age: 0,
         });
         true
     }
