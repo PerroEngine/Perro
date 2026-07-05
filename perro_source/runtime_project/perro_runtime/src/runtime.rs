@@ -220,6 +220,9 @@ pub struct Runtime {
     /// reusable body-handle update buf 4 sync_world_2d/3d; avoid per-frame alloc.
     physics_handle_updates_scratch_2d: Vec<(NodeID, Option<u64>)>,
     physics_handle_updates_scratch_3d: Vec<(NodeID, Option<u64>)>,
+    /// reusable staged-pose buf 4 sync_world_to_nodes_2d/3d writeback.
+    physics_writeback_scratch_2d: Vec<physics::StagedBodyPose2D>,
+    physics_writeback_scratch_3d: Vec<physics::StagedBodyPose3D>,
     /// reusable force-emitter collect buf 4 queue_physics_force_emitters_2d/3d.
     physics_force_emitters_scratch_2d:
         Vec<(perro_structs::Vector2, perro_nodes::PhysicsForceEmitter2D)>,
@@ -442,6 +445,8 @@ impl Runtime {
             pending_force_emitters_3d: Vec::new(),
             physics_handle_updates_scratch_2d: Vec::new(),
             physics_handle_updates_scratch_3d: Vec::new(),
+            physics_writeback_scratch_2d: Vec::new(),
+            physics_writeback_scratch_3d: Vec::new(),
             physics_force_emitters_scratch_2d: Vec::new(),
             physics_force_emitters_scratch_3d: Vec::new(),
             physics_waters_scratch_2d: Vec::new(),

@@ -6,7 +6,7 @@ use glam::{Mat3, Mat4};
 use perro_ids::{NodeID, SignalID};
 #[cfg(test)]
 use perro_nodes::TileMap2D;
-use perro_nodes::{Node2D, Node3D, SceneNodeData, Shape2D, Shape3D, WaterShape};
+use perro_nodes::{SceneNodeData, Shape2D, Shape3D, WaterShape};
 use perro_physics::*;
 use perro_runtime_api::sub_apis::{
     NodeAPI, PhysicsContact2D, PhysicsContact3D, PhysicsMoveResult2D, PhysicsMoveResult3D,
@@ -33,6 +33,25 @@ pub(crate) use water::{
 };
 
 pub(crate) type PhysicsState = PhysicsSystem;
+
+/// staged awake-body pose 4 SoA writeback (sync_world_to_nodes_2d).
+/// dense scratch lane: rapier reads 1st, arena writes 2nd in slot order.
+pub(crate) struct StagedBodyPose2D {
+    pub id: NodeID,
+    pub position: Vector2,
+    pub rotation: f32,
+    pub lin: Vector2,
+    pub ang: f32,
+}
+
+/// staged awake-body pose 4 SoA writeback (sync_world_to_nodes_3d).
+pub(crate) struct StagedBodyPose3D {
+    pub id: NodeID,
+    pub position: Vector3,
+    pub rotation: Quaternion,
+    pub lin: Vector3,
+    pub ang: Vector3,
+}
 
 /// gap kp btw body + hit surface on move_and_slide sweep
 const CHARACTER_MOVE_MARGIN: f32 = 0.005;
@@ -2124,10 +2143,13 @@ impl Runtime {
         let Some(mut world) = self.physics.world_2d.take() else {
             return false;
         };
-        let mut changed = false;
 
+        // SoA writeback: stage awake rigid poses frm rapier, sort by slot,
+        // then 1 fused fat-slot write / body (parent + b4 + pose + vel).
+        // handle write drop: set @ create/rm via sync_world callback.
+        let mut staged = std::mem::take(&mut self.physics_writeback_scratch_2d);
+        staged.clear();
         for (&id, state) in &mut world.body_map {
-            self.set_body_handle_2d(id, Some(state.opaque_handle));
             if state.kind != BodyKind::Rigid {
                 continue;
             }
@@ -2143,30 +2165,6 @@ impl Runtime {
             if sleeping && same_as_last_sync && state.idle_sync_frames >= 1 {
                 continue;
             }
-            let parent = self
-                .nodes
-                .get(id)
-                .map(|node| node.parent)
-                .unwrap_or(NodeID::nil());
-            let before = self
-                .get_global_transform_2d(id)
-                .unwrap_or(Transform2D::IDENTITY);
-            let curr = Transform2D {
-                position,
-                rotation,
-                scale: before.scale,
-            };
-
-            self.record_physics_pose_2d(id, parent, before, curr);
-            self.set_physics_body_transform_2d(id, position, rotation);
-            changed = true;
-
-            if let Some(scene_node) = self.nodes.get_mut(id)
-                && let SceneNodeData::RigidBody2D(node) = &mut scene_node.data
-            {
-                node.linear_velocity = lin;
-                node.angular_velocity = ang;
-            }
             update_body_sync_state_2d(
                 state,
                 position,
@@ -2176,9 +2174,70 @@ impl Runtime {
                 sleeping,
                 same_as_last_sync,
             );
+            staged.push(StagedBodyPose2D {
+                id,
+                position,
+                rotation,
+                lin,
+                ang,
+            });
+        }
+        self.physics.world_2d = Some(world);
+        // slot order -> arena writes sequential-ish, not hashmap order
+        staged.sort_unstable_by_key(|pose| pose.id.index());
+
+        let mut changed = false;
+        for pose in &staged {
+            // 1 fat-slot touch: parent read + b4 capture + pose/vel write fused
+            let Some((parent, before_local, moved)) =
+                self.nodes.get_mut(pose.id).and_then(|scene_node| {
+                    let parent = scene_node.parent;
+                    let SceneNodeData::RigidBody2D(node) = &mut scene_node.data else {
+                        return None;
+                    };
+                    let before_local = node.transform;
+                    node.linear_velocity = pose.lin;
+                    node.angular_velocity = pose.ang;
+                    if parent.is_nil() {
+                        let moved = before_local.position != pose.position
+                            || before_local.rotation != pose.rotation;
+                        node.transform.position = pose.position;
+                        node.transform.rotation = pose.rotation;
+                        Some((parent, before_local, moved))
+                    } else {
+                        Some((parent, before_local, true))
+                    }
+                })
+            else {
+                continue;
+            };
+            changed = true;
+            if parent.is_nil() {
+                // root body: global = local; skip parent walk
+                let curr = Transform2D {
+                    position: pose.position,
+                    rotation: pose.rotation,
+                    scale: before_local.scale,
+                };
+                self.record_physics_pose_2d(pose.id, parent, before_local, curr);
+                if moved {
+                    self.mark_transform_dirty_recursive(pose.id);
+                }
+            } else {
+                // nested body: kp global-space slow path
+                let before = self
+                    .get_global_transform_2d(pose.id)
+                    .unwrap_or(Transform2D::IDENTITY);
+                let mut curr = before;
+                curr.position = pose.position;
+                curr.rotation = pose.rotation;
+                self.record_physics_pose_2d(pose.id, parent, before, curr);
+                let _ = NodeAPI::set_global_transform_2d(self, pose.id, curr);
+            }
         }
 
-        self.physics.world_2d = Some(world);
+        staged.clear();
+        self.physics_writeback_scratch_2d = staged;
         changed
     }
 
@@ -2186,10 +2245,13 @@ impl Runtime {
         let Some(mut world) = self.physics.world_3d.take() else {
             return false;
         };
-        let mut changed = false;
 
+        // SoA writeback: stage awake rigid poses frm rapier, sort by slot,
+        // then 1 fused fat-slot write / body (parent + b4 + pose + vel).
+        // handle write drop: set @ create/rm via sync_world callback.
+        let mut staged = std::mem::take(&mut self.physics_writeback_scratch_3d);
+        staged.clear();
         for (&id, state) in &mut world.body_map {
-            self.set_body_handle_3d(id, Some(state.opaque_handle));
             if state.kind != BodyKind::Rigid {
                 continue;
             }
@@ -2210,30 +2272,6 @@ impl Runtime {
             if sleeping && same_as_last_sync && state.idle_sync_frames >= 1 {
                 continue;
             }
-            let parent = self
-                .nodes
-                .get(id)
-                .map(|node| node.parent)
-                .unwrap_or(NodeID::nil());
-            let before = self
-                .get_global_transform_3d(id)
-                .unwrap_or(Transform3D::IDENTITY);
-            let curr = Transform3D {
-                position,
-                rotation,
-                scale: before.scale,
-            };
-
-            self.record_physics_pose_3d(id, parent, before, curr);
-            self.set_physics_body_transform_3d(id, position, rotation);
-            changed = true;
-
-            if let Some(scene_node) = self.nodes.get_mut(id)
-                && let SceneNodeData::RigidBody3D(node) = &mut scene_node.data
-            {
-                node.linear_velocity = lin;
-                node.angular_velocity = ang;
-            }
             update_body_sync_state_3d(
                 state,
                 position,
@@ -2243,55 +2281,99 @@ impl Runtime {
                 sleeping,
                 same_as_last_sync,
             );
+            staged.push(StagedBodyPose3D {
+                id,
+                position,
+                rotation,
+                lin,
+                ang,
+            });
+        }
+        self.physics.world_3d = Some(world);
+        // slot order -> arena writes sequential-ish, not hashmap order
+        staged.sort_unstable_by_key(|pose| pose.id.index());
+
+        let mut changed = false;
+        for pose in &staged {
+            // 1 fat-slot touch: parent read + b4 capture + pose/vel write fused
+            let Some((parent, before_local, moved)) =
+                self.nodes.get_mut(pose.id).and_then(|scene_node| {
+                    let parent = scene_node.parent;
+                    let SceneNodeData::RigidBody3D(node) = &mut scene_node.data else {
+                        return None;
+                    };
+                    let before_local = node.transform;
+                    node.linear_velocity = pose.lin;
+                    node.angular_velocity = pose.ang;
+                    if parent.is_nil() {
+                        let moved = before_local.position != pose.position
+                            || before_local.rotation != pose.rotation;
+                        node.transform.position = pose.position;
+                        node.transform.rotation = pose.rotation;
+                        Some((parent, before_local, moved))
+                    } else {
+                        Some((parent, before_local, true))
+                    }
+                })
+            else {
+                continue;
+            };
+            changed = true;
+            if parent.is_nil() {
+                // root body: global = local; skip parent walk
+                let curr = Transform3D {
+                    position: pose.position,
+                    rotation: pose.rotation,
+                    scale: before_local.scale,
+                };
+                self.record_physics_pose_3d(pose.id, parent, before_local, curr);
+                if moved {
+                    self.mark_transform_dirty_recursive(pose.id);
+                }
+            } else {
+                // nested body: kp global-space slow path
+                let before = self
+                    .get_global_transform_3d(pose.id)
+                    .unwrap_or(Transform3D::IDENTITY);
+                let mut curr = before;
+                curr.position = pose.position;
+                curr.rotation = pose.rotation;
+                self.record_physics_pose_3d(pose.id, parent, before, curr);
+                let _ = NodeAPI::set_global_transform_3d(self, pose.id, curr);
+            }
         }
 
-        self.physics.world_3d = Some(world);
+        staged.clear();
+        self.physics_writeback_scratch_3d = staged;
         changed
     }
 
-    fn set_physics_body_transform_2d(&mut self, id: NodeID, position: Vector2, rotation: f32) {
-        let Some(parent) = self.nodes.get(id).map(|node| node.parent) else {
-            return;
-        };
-        if parent.is_nil() {
-            let _ = self.with_base_node_mut::<Node2D, _, _>(id, |node| {
-                node.transform.position = position;
-                node.transform.rotation = rotation;
-            });
-            return;
-        }
-
-        let mut target = self
-            .get_global_transform_2d(id)
-            .unwrap_or(Transform2D::IDENTITY);
-        target.position = position;
-        target.rotation = rotation;
-        let _ = NodeAPI::set_global_transform_2d(self, id, target);
+    // bench-only isolators 4 SoA phase-5 gate.
+    // collect wrapper store Vec back -> mirror real scratch reuse, no fake realloc.
+    #[cfg(feature = "bench")]
+    pub fn bench_collect_body_descs_2d(&mut self) -> usize {
+        let bodies = self.collect_body_descs_2d();
+        let len = bodies.len();
+        self.physics_body_descs_2d = bodies;
+        len
     }
 
-    fn set_physics_body_transform_3d(
-        &mut self,
-        id: NodeID,
-        position: Vector3,
-        rotation: Quaternion,
-    ) {
-        let Some(parent) = self.nodes.get(id).map(|node| node.parent) else {
-            return;
-        };
-        if parent.is_nil() {
-            let _ = self.with_base_node_mut::<Node3D, _, _>(id, |node| {
-                node.transform.position = position;
-                node.transform.rotation = rotation;
-            });
-            return;
-        }
+    #[cfg(feature = "bench")]
+    pub fn bench_collect_body_descs_3d(&mut self) -> usize {
+        let bodies = self.collect_body_descs_3d();
+        let len = bodies.len();
+        self.physics_body_descs_3d = bodies;
+        len
+    }
 
-        let mut target = self
-            .get_global_transform_3d(id)
-            .unwrap_or(Transform3D::IDENTITY);
-        target.position = position;
-        target.rotation = rotation;
-        let _ = NodeAPI::set_global_transform_3d(self, id, target);
+    #[cfg(feature = "bench")]
+    pub fn bench_sync_world_to_nodes_2d(&mut self) -> bool {
+        self.sync_world_to_nodes_2d()
+    }
+
+    #[cfg(feature = "bench")]
+    pub fn bench_sync_world_to_nodes_3d(&mut self) -> bool {
+        self.sync_world_to_nodes_3d()
     }
 
     fn set_body_handle_2d(&mut self, id: NodeID, handle: Option<u64>) {

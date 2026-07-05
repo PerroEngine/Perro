@@ -4,8 +4,8 @@ use crate::runtime::render_2d::{
 };
 use perro_nodes::{
     Area2D, Area3D, CharacterBody2D, CharacterBody3D, CollisionShape2D, CollisionShape3D,
-    FixedJoint2D, FixedJoint3D, RigidBody2D, RigidBody3D, Sprite2D, StaticBody2D, StaticBody3D,
-    WaterBody2D, WaterBody3D, WaterIdleMode, WaterShape, WaterSurfaceParams,
+    FixedJoint2D, FixedJoint3D, MeshInstance3D, RigidBody2D, RigidBody3D, Sprite2D, StaticBody2D,
+    StaticBody3D, WaterBody2D, WaterBody3D, WaterIdleMode, WaterShape, WaterSurfaceParams,
 };
 use perro_runtime_api::sub_apis::PhysicsAPI;
 use perro_structs::CollisionPolicy;
@@ -894,6 +894,137 @@ fn sleeping_rigidbody_3d_sync_settles_once_then_skips() {
     assert_eq!(idle_frames, 1);
 
     assert!(!runtime.sync_world_to_nodes_3d());
+}
+
+// SoA writeback (sync_world_to_nodes): nested rigid body back-solves local
+// frm rapier global thru parent offset. guards nested slow path.
+#[test]
+fn soa_writeback_nested_rigid_body_2d_keeps_parent_offset() {
+    let mut runtime = Runtime::new();
+    let holder = NodeAPI::create::<Sprite2D>(&mut runtime);
+    let body_id = NodeAPI::create::<RigidBody2D>(&mut runtime);
+    let shape_id = NodeAPI::create::<CollisionShape2D>(&mut runtime);
+    assert!(NodeAPI::reparent(&mut runtime, holder, body_id));
+    assert!(NodeAPI::reparent(&mut runtime, body_id, shape_id));
+    let _ = NodeAPI::set_global_transform_2d(
+        &mut runtime,
+        holder,
+        Transform2D::new(Vector2::new(5.0, 0.0), 0.0, Vector2::ONE),
+    );
+
+    runtime.time.fixed_delta = 1.0 / 60.0;
+    for _ in 0..4 {
+        runtime.physics_fixed_step();
+    }
+
+    let global = runtime
+        .get_global_transform_2d(body_id)
+        .expect("body global");
+    // no horizontal force -> stays under holder x; gravity -> fell
+    assert!(approx(global.position.x, 5.0));
+    assert!(global.position.y < -0.001);
+
+    let local = runtime
+        .nodes
+        .get(body_id)
+        .and_then(|node| match &node.data {
+            SceneNodeData::RigidBody2D(body) => Some(body.transform),
+            _ => None,
+        })
+        .expect("body local");
+    // stored local = parent-relative: x back-solved to ~0, not global 5
+    assert!(approx(local.position.x, 0.0));
+    assert!(approx(local.position.y, global.position.y));
+}
+
+#[test]
+fn soa_writeback_nested_rigid_body_3d_keeps_parent_offset() {
+    let mut runtime = Runtime::new();
+    let holder = NodeAPI::create::<MeshInstance3D>(&mut runtime);
+    let body_id = NodeAPI::create::<RigidBody3D>(&mut runtime);
+    let shape_id = NodeAPI::create::<CollisionShape3D>(&mut runtime);
+    assert!(NodeAPI::reparent(&mut runtime, holder, body_id));
+    assert!(NodeAPI::reparent(&mut runtime, body_id, shape_id));
+    let _ = NodeAPI::set_global_transform_3d(
+        &mut runtime,
+        holder,
+        Transform3D::new(
+            Vector3::new(0.0, 0.0, 7.0),
+            Quaternion::IDENTITY,
+            Vector3::ONE,
+        ),
+    );
+
+    runtime.time.fixed_delta = 1.0 / 60.0;
+    for _ in 0..4 {
+        runtime.physics_fixed_step();
+    }
+
+    let global = runtime
+        .get_global_transform_3d(body_id)
+        .expect("body global");
+    assert!(approx(global.position.z, 7.0));
+    assert!(global.position.y < -0.001);
+
+    let local = runtime
+        .nodes
+        .get(body_id)
+        .and_then(|node| match &node.data {
+            SceneNodeData::RigidBody3D(body) => Some(body.transform),
+            _ => None,
+        })
+        .expect("body local");
+    assert!(approx(local.position.z, 0.0));
+    assert!(approx(local.position.y, global.position.y));
+}
+
+// SoA writeback stages poses then sorts by slot; guard no cross-contam:
+// each body keeps its own velocity + moves per its own vx.
+#[test]
+fn soa_writeback_multi_body_keeps_per_body_identity_2d() {
+    let mut runtime = Runtime::new();
+    let mut bodies = Vec::new();
+    for i in 0..8u32 {
+        let body_id = NodeAPI::create::<RigidBody2D>(&mut runtime);
+        let shape_id = NodeAPI::create::<CollisionShape2D>(&mut runtime);
+        assert!(NodeAPI::reparent(&mut runtime, body_id, shape_id));
+        if let Some(node) = runtime.nodes.get_mut(body_id)
+            && let SceneNodeData::RigidBody2D(body) = &mut node.data
+        {
+            body.gravity_scale = 0.0;
+            body.can_sleep = false;
+            body.linear_velocity = Vector2::new(1.0 + i as f32, 0.0);
+        }
+        // spacing thru dirtying API so global cache picks it up (no overlap)
+        let _ = NodeAPI::set_global_transform_2d(
+            &mut runtime,
+            body_id,
+            Transform2D::new(Vector2::new(i as f32 * 10.0, 0.0), 0.0, Vector2::ONE),
+        );
+        bodies.push((body_id, 1.0 + i as f32));
+    }
+
+    runtime.time.fixed_delta = 1.0 / 60.0;
+    runtime.physics_fixed_step();
+
+    for (i, &(body_id, expected_vx)) in bodies.iter().enumerate() {
+        let (vel, pos) = runtime
+            .nodes
+            .get(body_id)
+            .and_then(|node| match &node.data {
+                SceneNodeData::RigidBody2D(body) => {
+                    Some((body.linear_velocity, body.transform.position))
+                }
+                _ => None,
+            })
+            .expect("body exists");
+        // per-body identity: vx stays near its OWN target (damping ok),
+        // never swapped w/ another body's -> tol < half the 1.0 spacing
+        assert!((vel.x - expected_vx).abs() < 0.1, "body {i} vx {}", vel.x);
+        assert!(vel.y.abs() < 0.001);
+        // moved right frm its own start by its own vx
+        assert!(pos.x > i as f32 * 10.0, "body {i} pos {}", pos.x);
+    }
 }
 
 #[test]

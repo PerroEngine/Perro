@@ -618,6 +618,35 @@ fn bench_physics_visual_interp_render_extract(c: &mut Criterion) {
     });
 }
 
+fn bench_physics_soa_gate(c: &mut Criterion) {
+    // SoA phase-5 gate: collect + writeback cost vs AWAKE body count.
+    // gate = flat @ low count + real gain @ high count.
+    let mut group = c.benchmark_group("physics/soa_gate");
+    for &count in &[100u32, 500, 2000] {
+        group.bench_function(format!("collect_2d_{count}"), |b| {
+            let (mut runtime, _bodies) = runtime_with_rigid_bodies_2d(count);
+            runtime.fixed_update(DT);
+            b.iter(|| black_box(runtime.bench_collect_body_descs_2d()))
+        });
+        group.bench_function(format!("writeback_2d_{count}"), |b| {
+            let (mut runtime, _bodies) = runtime_with_rigid_bodies_2d(count);
+            runtime.fixed_update(DT);
+            b.iter(|| black_box(runtime.bench_sync_world_to_nodes_2d()))
+        });
+        group.bench_function(format!("collect_3d_{count}"), |b| {
+            let (mut runtime, _bodies) = runtime_with_rigid_bodies_3d(count);
+            runtime.fixed_update(DT);
+            b.iter(|| black_box(runtime.bench_collect_body_descs_3d()))
+        });
+        group.bench_function(format!("writeback_3d_{count}"), |b| {
+            let (mut runtime, _bodies) = runtime_with_rigid_bodies_3d(count);
+            runtime.fixed_update(DT);
+            b.iter(|| black_box(runtime.bench_sync_world_to_nodes_3d()))
+        });
+    }
+    group.finish();
+}
+
 fn benches(c: &mut Criterion) {
     bench_physics_scan_ids_clone_vs_scratch(c);
     bench_physics_children_clone_vs_slice_scan(c);
@@ -630,6 +659,7 @@ fn benches(c: &mut Criterion) {
     bench_runtime_fixed_step_resting(c);
     bench_runtime_force_emitters(c);
     bench_physics_visual_interp_render_extract(c);
+    bench_physics_soa_gate(c);
 }
 
 criterion_group! {
