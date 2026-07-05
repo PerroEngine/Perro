@@ -1,3 +1,24 @@
+// Pan is a direction cue: rodio's ears sit at x = ±1, so the emitter must live
+// near the unit sphere for audible channel separation. Near-fade keeps close
+// fly-bys from hard-flipping left/right.
+const PAN_RADIUS: f32 = 0.85;
+const PAN_NEAR_FADE: f32 = 0.5;
+
+pub(crate) fn spatial_pan(local: [f32; 3]) -> [f32; 3] {
+    let dist = (local[0] * local[0] + local[1] * local[1] + local[2] * local[2]).sqrt();
+    if dist <= 0.0001 {
+        return [0.0, 0.0, 0.0];
+    }
+    let scale = PAN_RADIUS * (dist / (dist + PAN_NEAR_FADE)) / dist;
+    [local[0] * scale, local[1] * scale, local[2] * scale]
+}
+
+// Squared linear falloff: audibly louder up close, exactly 0 at range.
+pub(crate) fn distance_attenuation(distance: f32, range: f32) -> f32 {
+    let linear = 1.0 - (distance / range.max(0.0001)).clamp(0.0, 1.0);
+    linear * linear
+}
+
 pub(crate) fn inverse_rotate_vec3(rotation: [f32; 4], v: [f32; 3]) -> [f32; 3] {
     let [x, y, z, w] = normalized_quat(rotation);
     rotate_vec3([-x, -y, -z, w], v)

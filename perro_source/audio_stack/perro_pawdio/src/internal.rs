@@ -442,6 +442,9 @@ pub(crate) enum AudioCommand {
     MidiNote {
         request: OwnedMidiNoteRequest,
     },
+    MidiNoteSpatial {
+        request: OwnedMidiNoteRequest,
+    },
     MidiNotes {
         requests: Vec<OwnedMidiNoteRequest>,
     },

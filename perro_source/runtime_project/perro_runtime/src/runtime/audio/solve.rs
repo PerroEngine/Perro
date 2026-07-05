@@ -1,5 +1,22 @@
 use super::*;
 
+// Hits this close to the listener are the listener's own body (camera inside a
+// character collider casts solid rays with t = 0); ignore them.
+const LISTENER_EMBED_EPSILON: f32 = 0.05;
+
+// Occluded sounds probe a small cloud of points around the source; the open
+// fraction lets energy diffract around edges instead of a binary wall cutoff.
+const AUDIO_DIFFUSION_SPREAD: f32 = 1.25;
+// How much of the unoccluded level leaks through a fully open side.
+const AUDIO_DIFFUSION_LEAK: f32 = 0.6;
+
+fn attached_node_of(sound: &ActiveSpatialSound) -> Option<NodeID> {
+    match sound.pos {
+        SpatialSoundPos::Attached(node) => Some(node),
+        _ => None,
+    }
+}
+
 const AUDIO_DEBUG_DIRECT: [f32; 4] = [0.1, 1.0, 0.55, 1.0];
 const AUDIO_DEBUG_THROUGH: [f32; 4] = [0.68, 0.18, 1.0, 0.9];
 const AUDIO_DEBUG_BOUNCE: [f32; 4] = [1.0, 0.56, 0.12, 0.9];
@@ -41,26 +58,30 @@ impl Runtime {
         } else {
             None
         };
-        let direct_attenuation = 1.0 - (distance / range).clamp(0.0, 1.0);
+        let direct_attenuation = distance_attenuation(distance, range);
         let mut attenuation =
             direct_attenuation * self.emitter_attenuation_2d(sound, source_pos, listener_pos);
+        let unoccluded_attenuation = attenuation;
         let mut low_pass = 0.0;
         let mut occlusion = 0.0;
         let mut perceived = source_pos;
         let mut reflection = 0.0;
         let mut bounce_reverb_send = 0.0;
         let mut bounce_echo = 0.0;
-        let physics_hit = physics_hit.and_then(|a| {
-            let material = self.audio_material_for_node(a.node)?;
-            Some(AudioHit2D {
-                node: a.node,
-                point: a.point,
-                normal: a.normal,
-                distance: a.distance,
-                material,
-                thickness: self.audio_thickness_2d(a.node),
-            })
-        });
+        let attached_node = attached_node_of(sound);
+        let physics_hit = physics_hit
+            .filter(|a| Some(a.node) != attached_node && a.distance > LISTENER_EMBED_EPSILON)
+            .and_then(|a| {
+                let material = self.audio_material_for_node(a.node)?;
+                Some(AudioHit2D {
+                    node: a.node,
+                    point: a.point,
+                    normal: a.normal,
+                    distance: a.distance,
+                    material,
+                    thickness: self.audio_thickness_2d(a.node),
+                })
+            });
         let hit = match (physics_hit, mask_hit) {
             (Some(a), Some(b)) if b.distance < a.distance => Some(AudioHit2D {
                 node: b.node,
@@ -113,12 +134,31 @@ impl Runtime {
                 reflection,
             );
         }
+        if hit.is_some() && sound.options.enable_propagation {
+            let (openness, open_shift) = self.occlusion_openness_2d(
+                listener_pos,
+                source_pos,
+                sound.options.audio_layer,
+                attached_node,
+            );
+            if openness > 0.0 {
+                occlusion *= 1.0 - 0.7 * openness;
+                low_pass = (low_pass * (1.0 - 0.45 * openness)).clamp(0.0, 1.0);
+                attenuation =
+                    attenuation.max(unoccluded_attenuation * openness * AUDIO_DIFFUSION_LEAK);
+                // Pull the perceived position toward the open edge; a
+                // symmetric opening (shift ~0) keeps the reflection point.
+                if open_shift.length_squared() > 0.01 {
+                    perceived = source_pos + open_shift * 0.75;
+                }
+            }
+        }
         if self.audio.has_audio_portal_2d
             && let Some(path) =
                 self.best_audio_portal_2d(source_pos, listener_pos, sound.options.audio_layer)
         {
             let portal_strength = path.strength.clamp(0.0, 1.0);
-            let portal_attenuation = 1.0 - (path.distance / range).clamp(0.0, 1.0);
+            let portal_attenuation = distance_attenuation(path.distance, range);
             attenuation = attenuation.max(portal_attenuation * (0.65 + portal_strength * 0.35));
             low_pass *= 1.0 - portal_strength * 0.75;
             occlusion *= 1.0 - portal_strength * 0.75;
@@ -133,7 +173,7 @@ impl Runtime {
                 range,
             )
         {
-            let bounce_attenuation = (1.0 - (path.distance / range).clamp(0.0, 1.0)) * path.volume;
+            let bounce_attenuation = distance_attenuation(path.distance, range) * path.volume;
             if bounce_attenuation > attenuation {
                 attenuation = bounce_attenuation;
                 perceived = path.perceived;
@@ -181,7 +221,7 @@ impl Runtime {
                 .clamp(0.0, 1.0)
                 * 0.35;
         let result = PropagationResult {
-            pan: [local_x / range, local_y / range, 0.0],
+            pan: spatial_pan([local_x, local_y, 0.0]),
             volume: sound.volume * attenuation,
             low_pass,
             reflection,
@@ -221,8 +261,9 @@ impl Runtime {
             return None;
         }
         let dir = listener_pos.direction_to(source_pos);
-        let mut attenuation = (1.0 - (distance / range).clamp(0.0, 1.0))
+        let mut attenuation = distance_attenuation(distance, range)
             * self.emitter_attenuation_3d(sound, source_pos, listener_pos);
+        let unoccluded_attenuation = attenuation;
         let mut low_pass = 0.0;
         let mut occlusion = 0.0;
         let mut perceived = source_pos;
@@ -234,17 +275,20 @@ impl Runtime {
         } else {
             None
         };
-        let physics_hit = hit.and_then(|a| {
-            let material = self.audio_material_for_node(a.node)?;
-            Some(AudioHit3D {
-                node: a.node,
-                point: a.point,
-                normal: a.normal,
-                distance: a.distance,
-                material,
-                thickness: self.audio_thickness_3d(a.node),
-            })
-        });
+        let attached_node = attached_node_of(sound);
+        let physics_hit = hit
+            .filter(|a| Some(a.node) != attached_node && a.distance > LISTENER_EMBED_EPSILON)
+            .and_then(|a| {
+                let material = self.audio_material_for_node(a.node)?;
+                Some(AudioHit3D {
+                    node: a.node,
+                    point: a.point,
+                    normal: a.normal,
+                    distance: a.distance,
+                    material,
+                    thickness: self.audio_thickness_3d(a.node),
+                })
+            });
         let hit = match (physics_hit, mask_hit) {
             (Some(a), Some(b)) if b.distance < a.distance => Some(b),
             (Some(a), _) => Some(a),
@@ -295,11 +339,30 @@ impl Runtime {
                 self.queue_audio_debug_absorption_3d(hit.point, hit.normal, absorbed);
             }
         }
+        if hit.is_some() && sound.options.enable_propagation {
+            let (openness, open_shift) = self.occlusion_openness_3d(
+                listener_pos,
+                source_pos,
+                sound.options.audio_layer,
+                attached_node,
+            );
+            if openness > 0.0 {
+                occlusion *= 1.0 - 0.7 * openness;
+                low_pass = (low_pass * (1.0 - 0.45 * openness)).clamp(0.0, 1.0);
+                attenuation =
+                    attenuation.max(unoccluded_attenuation * openness * AUDIO_DIFFUSION_LEAK);
+                // Pull the perceived position toward the open edge; a
+                // symmetric opening (shift ~0) keeps the reflection point.
+                if open_shift.length_squared() > 0.01 {
+                    perceived = source_pos + open_shift * 0.75;
+                }
+            }
+        }
         if self.audio.has_audio_portal_3d
             && let Some(path) = self.best_audio_portal_3d(source_pos, listener_pos)
         {
             let portal_strength = path.strength.clamp(0.0, 1.0);
-            let portal_attenuation = 1.0 - (path.distance / range).clamp(0.0, 1.0);
+            let portal_attenuation = distance_attenuation(path.distance, range);
             attenuation = attenuation.max(portal_attenuation * (0.65 + portal_strength * 0.35));
             low_pass *= 1.0 - portal_strength * 0.75;
             occlusion *= 1.0 - portal_strength * 0.75;
@@ -314,7 +377,7 @@ impl Runtime {
                 range,
             )
         {
-            let bounce_attenuation = (1.0 - (path.distance / range).clamp(0.0, 1.0)) * path.volume;
+            let bounce_attenuation = distance_attenuation(path.distance, range) * path.volume;
             if bounce_attenuation > attenuation {
                 attenuation = bounce_attenuation;
                 perceived = path.perceived;
@@ -325,6 +388,12 @@ impl Runtime {
             bounce_echo = path.echo;
         }
         let local = inverse_rotate_vec3(listener.rotation, perceived - listener_pos);
+        // Ears pan only on the horizontal axis; give strongly above/below
+        // sources a subtle darkening so elevation still reads.
+        let local_len = local.length();
+        if local_len > 0.0001 {
+            low_pass = low_pass.max((local.y.abs() / local_len) * 0.12);
+        }
         let zone = if self.audio.has_audio_effect_zone_3d {
             self.audio_effect_zone_mix_3d(listener_pos, source_pos, sound.options.audio_layer)
         } else {
@@ -359,7 +428,7 @@ impl Runtime {
                 .clamp(0.0, 1.0)
                 * 0.35;
         let result = PropagationResult {
-            pan: [local.x / range, local.y / range, -local.z / range],
+            pan: spatial_pan([local.x, local.y, -local.z]),
             volume: sound.volume * attenuation,
             low_pass,
             reflection,
@@ -373,6 +442,156 @@ impl Runtime {
             self.queue_audio_debug_ray_3d(listener_pos, perceived, AUDIO_DEBUG_DIRECT, attenuation);
         }
         Some(result)
+    }
+
+    // Cast probe rays at points spread around an occluded source ("sound wave
+    // cloud"). Returns (open fraction, average open offset) so the solver can
+    // soften occlusion and pull the perceived position toward the open edge.
+    fn occlusion_openness_2d(
+        &mut self,
+        listener_pos: Vector2,
+        source_pos: Vector2,
+        audio_layer: BitMask,
+        attached_node: Option<NodeID>,
+    ) -> (f32, Vector2) {
+        let to_source = source_pos - listener_pos;
+        let distance = to_source.length();
+        if distance <= 0.0001 {
+            return (0.0, Vector2::ZERO);
+        }
+        let dir = to_source * distance.recip();
+        let perp = Vector2::new(-dir.y, dir.x);
+        let offsets = [
+            perp * AUDIO_DIFFUSION_SPREAD,
+            perp * -AUDIO_DIFFUSION_SPREAD,
+        ];
+        let exclude: Vec<NodeID> = attached_node.into_iter().collect();
+        let mut attempted = 0u32;
+        let mut open = 0u32;
+        let mut open_shift = Vector2::ZERO;
+        for offset in offsets {
+            if self.audio.counters.raycasts >= self.audio.config.rays_per_tick_2d {
+                break;
+            }
+            self.audio.counters.raycasts = self.audio.counters.raycasts.saturating_add(1);
+            attempted += 1;
+            let probe = source_pos + offset;
+            let probe_delta = probe - listener_pos;
+            let probe_dist = probe_delta.length();
+            if probe_dist <= 0.0001 {
+                continue;
+            }
+            let blocked_physics = self
+                .prepared_audio_raycast_2d(
+                    listener_pos,
+                    probe_delta * probe_dist.recip(),
+                    probe_dist,
+                    &PhysicsQueryFilter {
+                        layers: audio_layer,
+                        include_areas: false,
+                        exclude_nodes: exclude.clone(),
+                        ..PhysicsQueryFilter::default()
+                    },
+                )
+                .is_some_and(|hit| hit.distance > LISTENER_EMBED_EPSILON);
+            let blocked = blocked_physics
+                || (self.audio.has_audio_mask_2d
+                    && self
+                        .first_audio_mask_2d(listener_pos, probe, audio_layer)
+                        .is_some());
+            if !blocked {
+                open += 1;
+                open_shift += offset;
+                self.queue_audio_debug_ray_2d(
+                    listener_pos,
+                    probe,
+                    audio_debug_color(AUDIO_DEBUG_DIRECT, 0.5),
+                    0.5,
+                );
+            }
+        }
+        if open == 0 || attempted == 0 {
+            (0.0, Vector2::ZERO)
+        } else {
+            (open as f32 / attempted as f32, open_shift / open as f32)
+        }
+    }
+
+    fn occlusion_openness_3d(
+        &mut self,
+        listener_pos: Vector3,
+        source_pos: Vector3,
+        audio_layer: BitMask,
+        attached_node: Option<NodeID>,
+    ) -> (f32, Vector3) {
+        let zero = Vector3::new(0.0, 0.0, 0.0);
+        let to_source = source_pos - listener_pos;
+        let distance = to_source.length();
+        if distance <= 0.0001 {
+            return (0.0, zero);
+        }
+        let dir = to_source * distance.recip();
+        let mut tangent = dir.cross(Vector3::new(0.0, 1.0, 0.0));
+        if tangent.length_squared() <= 0.0001 {
+            tangent = dir.cross(Vector3::new(1.0, 0.0, 0.0));
+        }
+        if tangent.length_squared() <= 0.0001 {
+            return (0.0, zero);
+        }
+        let tangent = tangent.normalized();
+        let bitangent = dir.cross(tangent).normalized();
+        let offsets = [
+            tangent * AUDIO_DIFFUSION_SPREAD,
+            tangent * -AUDIO_DIFFUSION_SPREAD,
+            bitangent * AUDIO_DIFFUSION_SPREAD,
+            bitangent * -AUDIO_DIFFUSION_SPREAD,
+        ];
+        let mut attempted = 0u32;
+        let mut open = 0u32;
+        let mut open_shift = zero;
+        for offset in offsets {
+            if self.audio.counters.raycasts >= self.audio.config.rays_per_tick_3d {
+                break;
+            }
+            self.audio.counters.raycasts = self.audio.counters.raycasts.saturating_add(1);
+            attempted += 1;
+            let probe = source_pos + offset;
+            let probe_delta = probe - listener_pos;
+            let probe_dist = probe_delta.length();
+            if probe_dist <= 0.0001 {
+                continue;
+            }
+            let blocked_physics = self
+                .prepared_audio_raycast_3d(
+                    listener_pos,
+                    probe_delta * probe_dist.recip(),
+                    probe_dist,
+                    false,
+                )
+                .is_some_and(|hit| {
+                    Some(hit.node) != attached_node && hit.distance > LISTENER_EMBED_EPSILON
+                });
+            let blocked = blocked_physics
+                || (self.audio.has_audio_mask_3d
+                    && self
+                        .first_audio_mask_3d(listener_pos, probe, audio_layer)
+                        .is_some());
+            if !blocked {
+                open += 1;
+                open_shift += offset;
+                self.queue_audio_debug_ray_3d(
+                    listener_pos,
+                    probe,
+                    audio_debug_color(AUDIO_DEBUG_DIRECT, 0.5),
+                    0.5,
+                );
+            }
+        }
+        if open == 0 || attempted == 0 {
+            (0.0, zero)
+        } else {
+            (open as f32 / attempted as f32, open_shift / open as f32)
+        }
     }
 
     pub(super) fn bounce_energy(&self, reflection: f32, max_bounces: u32) -> f32 {
@@ -894,6 +1113,9 @@ impl Runtime {
 
     pub(super) fn audio_material_for_node(&self, node: NodeID) -> Option<AudioMaterial> {
         let data = &self.nodes.get(node)?.data;
+        // Bodies default to Some(AudioInteraction::new()) at construction, so
+        // colliders occlude out of the box; `audio_interaction = none` is the
+        // documented opt-out and must stay silent here.
         match data {
             SceneNodeData::StaticBody2D(v) => v.audio_interaction.map(|audio| audio.material),
             SceneNodeData::StaticBody3D(v) => v.audio_interaction.map(|audio| audio.material),

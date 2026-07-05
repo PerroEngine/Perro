@@ -1,5 +1,28 @@
 use super::*;
 
+// Pan is a direction cue, not a distance cue: rodio's ears sit at x = ±1, so an
+// emitter must live near the unit sphere to produce audible channel separation.
+// Dividing by `range` (the old mapping) collapsed everything to near-center.
+const PAN_RADIUS: f32 = 0.85;
+// Fade pan toward center for very close sounds so walking past an emitter
+// sweeps smoothly instead of hard-flipping left/right.
+const PAN_NEAR_FADE: f32 = 0.5;
+
+pub(super) fn spatial_pan(local: [f32; 3]) -> [f32; 3] {
+    let dist = (local[0] * local[0] + local[1] * local[1] + local[2] * local[2]).sqrt();
+    if dist <= 0.0001 {
+        return [0.0, 0.0, 0.0];
+    }
+    let scale = PAN_RADIUS * (dist / (dist + PAN_NEAR_FADE)) / dist;
+    [local[0] * scale, local[1] * scale, local[2] * scale]
+}
+
+// Squared linear falloff: audibly louder up close, still exactly 0 at range.
+pub(super) fn distance_attenuation(distance: f32, range: f32) -> f32 {
+    let linear = 1.0 - (distance / range.max(0.0001)).clamp(0.0, 1.0);
+    linear * linear
+}
+
 pub(super) fn rotate_vec2(v: Vector2, radians: f32) -> Vector2 {
     let (sin, cos) = radians.sin_cos();
     Vector2::new(v.x * cos - v.y * sin, v.x * sin + v.y * cos)

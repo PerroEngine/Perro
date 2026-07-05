@@ -48,7 +48,8 @@ fn unobstructed_sound_stays_direct() {
     runtime.update_audio_propagation(1.0);
     let result = runtime.audio.sounds[0].last_result.expect("result");
     assert_eq!(result.occlusion, 0.0);
-    assert!(result.volume > 0.4);
+    // Squared falloff: half range -> quarter volume.
+    assert!(result.volume > 0.2);
     assert_eq!(result.perceived_2d, Some(Vector2::new(5.0, 0.0)));
 }
 
@@ -163,7 +164,7 @@ fn attached_directional_audio_uses_node_forward() {
     ));
     runtime.update_audio_propagation(1.0);
     let result = runtime.audio.sounds[0].last_result.expect("result");
-    assert!(result.volume > 0.4);
+    assert!(result.volume > 0.2);
 }
 
 #[test]

@@ -545,6 +545,15 @@ The runtime sends those params to `perro_pawdio`.
 `perro_pawdio` applies pan and volume to the sink.
 It also applies low-pass, EQ, compression, echo, reverb send, reflection, and occlusion in DSP.
 
+Spatial mapping rules:
+
+- pan is direction-based: unit direction to the perceived source, near-faded so close fly-bys sweep instead of flipping channels
+- volume uses squared linear falloff: half range = quarter volume, zero at range
+- occluded sources probe extra rays around the source ("sound wave cloud"); open sides soften occlusion, restore leaked volume, and pull the perceived position toward the open edge
+- spatial MIDI notes play on dedicated per-note sinks so pan, occlusion, and low-pass track each note
+- params smooth between propagation ticks to avoid stepping
+- strongly above/below sources get subtle extra low-pass as an elevation cue
+
 Propagation runs only while active positional or attached spatial sounds exist.
 If no active spatial sounds exist, no audio ray work runs that frame.
 

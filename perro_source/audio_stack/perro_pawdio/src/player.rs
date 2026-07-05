@@ -956,6 +956,57 @@ impl BarkPlayer {
         self.play_soundfont_midi_note(request)
     }
 
+    /// Spatial notes get a dedicated sink + finite source registered under the
+    /// request id, so `update_spatial`/`stop_playback`/`release_midi` address
+    /// this note alone. Mixer-shared sinks can't pan per note.
+    pub fn play_midi_note_spatial(&self, request: MidiNoteRequest) -> Result<(), String> {
+        let (control, rx) = crossbeam_channel::unbounded();
+        let pan = request.options.pan.clamped();
+        let sink = SpatialSink::try_new(
+            &self.handle,
+            Self::pan_emitter_position(pan),
+            [-1.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+        )
+        .map_err(|err| format!("failed to create sink: {err}"))?;
+        let dsp = DspControl::new(DspParams::dry());
+        match request.options.sound {
+            MidiSound::BuiltIn => {
+                // Voice volume is carried by the sink (spatial updates rewrite
+                // it); keep the source itself at unit gain to avoid squaring.
+                let mut source_request = request;
+                source_request.options.volume = 1.0;
+                sink.append(DspSource::new(
+                    BuiltInMidiSource::note(source_request, rx).convert_samples::<f32>(),
+                    dsp.clone(),
+                ));
+            }
+            MidiSound::SoundFont(id) => {
+                let font = {
+                    let state = self
+                        .state
+                        .lock()
+                        .map_err(|_| "audio mutex poisoned".to_string())?;
+                    Self::get_soundfont_locked(&state, id)?.1
+                };
+                sink.append(DspSource::new(
+                    crate::midi::RustyNoteSource::new(font, &request, rx)?.convert_samples::<f32>(),
+                    dsp.clone(),
+                ));
+            }
+        }
+        self.activate_midi_sink(MidiSinkActivation {
+            id: request.id,
+            source: None,
+            bus_id: request.options.bus_id,
+            volume: request.options.volume,
+            pan,
+            control,
+            dsp,
+            sink,
+        })
+    }
+
     fn play_built_in_midi_note(&self, request: MidiNoteRequest) -> Result<(), String> {
         let pan = request.options.pan.clamped();
         let key = MidiMixerKey::new(request.options.bus_id, pan);

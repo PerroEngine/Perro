@@ -164,6 +164,9 @@ impl AudioController {
                         AudioCommand::MidiNote { request } => {
                             let _ = player.play_midi_note(request.as_request());
                         }
+                        AudioCommand::MidiNoteSpatial { request } => {
+                            let _ = player.play_midi_note_spatial(request.as_request());
+                        }
                         AudioCommand::MidiNotes { requests } => {
                             for request in requests {
                                 let _ = player.play_midi_note(request.as_request());
@@ -439,12 +442,17 @@ impl AudioController {
     pub fn play_spatial_midi_note(&self, mut request: MidiNoteRequest) -> Option<u64> {
         let id = self.next_playback_id.fetch_add(1, Ordering::Relaxed).max(1);
         request.id = id;
+        self.play_midi_note_spatial(request).then_some(id)
+    }
+
+    /// Play a note on a dedicated per-note sink addressable by `request.id`
+    /// via `update_spatial`/`stop_playback`. Caller keeps the id.
+    pub fn play_midi_note_spatial(&self, request: MidiNoteRequest) -> bool {
         self.tx
-            .try_send(AudioCommand::MidiNote {
+            .try_send(AudioCommand::MidiNoteSpatial {
                 request: OwnedMidiNoteRequest::from_request(request),
             })
             .is_ok()
-            .then_some(id)
     }
 
     pub fn play_midi_file(&self, request: MidiFileRequest<'_>) -> bool {

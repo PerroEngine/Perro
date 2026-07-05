@@ -56,9 +56,12 @@ mod tests {
         let req = Audio2D::new("res://hit.wav", [5.0, 0.0], 10.0)
             .to_playback(AudioListener2D::default())
             .expect("in range");
-        assert!((req.pan.x - 0.5).abs() < 1.0e-6);
+        // Pan is direction-based: unit right scaled by radius + near fade.
+        let expected_pan = 0.85 * (5.0 / 5.5);
+        assert!((req.pan.x - expected_pan).abs() < 1.0e-4);
         assert!((req.pan.y - 0.0).abs() < 1.0e-6);
-        assert!((req.volume - 0.5).abs() < 1.0e-6);
+        // Squared falloff: half range -> quarter volume.
+        assert!((req.volume - 0.25).abs() < 1.0e-6);
     }
 
     #[test]
@@ -73,9 +76,10 @@ mod tests {
         let req = Audio3D::new("res://hit.wav", [0.0, 0.0, -5.0], 10.0)
             .to_playback(AudioListener3D::default())
             .expect("in range");
+        let expected_pan = 0.85 * (5.0 / 5.5);
         assert!((req.pan.x - 0.0).abs() < 1.0e-6);
         assert!((req.pan.y - 0.0).abs() < 1.0e-6);
-        assert!((req.pan.z - 0.5).abs() < 1.0e-6);
-        assert!((req.volume - 0.5).abs() < 1.0e-6);
+        assert!((req.pan.z - expected_pan).abs() < 1.0e-4);
+        assert!((req.volume - 0.25).abs() < 1.0e-6);
     }
 }

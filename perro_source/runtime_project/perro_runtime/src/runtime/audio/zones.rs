@@ -503,7 +503,7 @@ impl Runtime {
         let playback_id = self.resource_api.bark.lock().ok().and_then(|guard| {
             guard.as_ref().and_then(|player| {
                 player
-                    .play_midi_note(perro_pawdio::midi::MidiNoteRequest {
+                    .play_midi_note_spatial(perro_pawdio::midi::MidiNoteRequest {
                         id,
                         note,
                         options: play_options,

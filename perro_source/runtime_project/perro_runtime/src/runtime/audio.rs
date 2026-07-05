@@ -492,44 +492,7 @@ impl Runtime {
                 _ => None,
             };
             if let Some(result) = result {
-                if self.audio.config.debug_rays {
-                    let _ = (result.perceived_2d, result.perceived_3d);
-                }
-                sound.last_result = Some(result);
-                let bark_start = Instant::now();
-                if let Some(id) = sound.playback_id
-                    && let Ok(guard) = self.resource_api.bark.lock()
-                    && let Some(player) = guard.as_ref()
-                {
-                    let _ = player.update_spatial(
-                        id,
-                        perro_pawdio::SpatialAudioParams {
-                            pan: perro_pawdio::AudioPan::new(
-                                result.pan[0],
-                                result.pan[1],
-                                result.pan[2],
-                            ),
-                            volume: result.volume,
-                            low_pass: result.low_pass,
-                            reverb_send: result.reverb_send,
-                            echo: result.echo,
-                            reflection: result.reflection,
-                            occlusion: result.occlusion,
-                            eq: perro_pawdio::AudioEq {
-                                low_gain: sound.effects.eq.low_gain,
-                                mid_gain: sound.effects.eq.mid_gain,
-                                high_gain: sound.effects.eq.high_gain,
-                            },
-                            compression: perro_pawdio::AudioCompression {
-                                threshold: sound.effects.compression.threshold,
-                                ratio: sound.effects.compression.ratio,
-                                attack: sound.effects.compression.attack,
-                                release: sound.effects.compression.release,
-                            },
-                        },
-                    );
-                }
-                self.audio.counters.bark_update_time += bark_start.elapsed();
+                self.apply_spatial_result(sound, result);
             }
         }
         self.audio.counters.active_positional = sounds.len() as u32;

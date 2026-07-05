@@ -326,6 +326,12 @@ impl Runtime {
         if self.audio.config.debug_rays {
             let _ = (result.perceived_2d, result.perceived_3d);
         }
+        // Smooth toward the new solve so 20Hz propagation ticks fade instead
+        // of stepping (audible zipper on occlusion transitions).
+        let result = match sound.last_result {
+            Some(prev) => smooth_propagation_result(prev, result),
+            None => result,
+        };
         sound.last_result = Some(result);
         let bark_start = Instant::now();
         if let Some(id) = sound.playback_id
@@ -563,6 +569,34 @@ impl Runtime {
                 }
             }
         }
+    }
+}
+
+const AUDIO_PARAM_SMOOTHING: f32 = 0.5;
+
+#[inline]
+fn smooth_toward(prev: f32, next: f32) -> f32 {
+    prev + (next - prev) * AUDIO_PARAM_SMOOTHING
+}
+
+fn smooth_propagation_result(
+    prev: PropagationResult,
+    next: PropagationResult,
+) -> PropagationResult {
+    PropagationResult {
+        pan: [
+            smooth_toward(prev.pan[0], next.pan[0]),
+            smooth_toward(prev.pan[1], next.pan[1]),
+            smooth_toward(prev.pan[2], next.pan[2]),
+        ],
+        volume: smooth_toward(prev.volume, next.volume),
+        low_pass: smooth_toward(prev.low_pass, next.low_pass),
+        reflection: smooth_toward(prev.reflection, next.reflection),
+        reverb_send: smooth_toward(prev.reverb_send, next.reverb_send),
+        echo: smooth_toward(prev.echo, next.echo),
+        occlusion: smooth_toward(prev.occlusion, next.occlusion),
+        perceived_2d: next.perceived_2d,
+        perceived_3d: next.perceived_3d,
     }
 }
 

@@ -182,7 +182,7 @@ where
         let mut sample = input;
 
         sample = self.apply_eq(ch, sample, params.eq);
-        sample = self.apply_low_pass(ch, sample, params.low_pass.max(params.occlusion * 0.65));
+        sample = self.apply_low_pass(ch, sample, params.low_pass.max(params.occlusion * 0.8));
 
         let echo_wet = params.echo.max(params.reflection * 0.35).clamp(0.0, 1.0);
         let reverb_wet = params
@@ -198,7 +198,7 @@ where
             + reverb_sample * reverb_wet * 0.35;
 
         sample = apply_compression(sample, params.compression);
-        sample *= 1.0 - params.occlusion.clamp(0.0, 1.0) * 0.25;
+        sample *= 1.0 - params.occlusion.clamp(0.0, 1.0) * 0.45;
 
         self.channel_index += 1;
         if self.channel_index >= self.channels {

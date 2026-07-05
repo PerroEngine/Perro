@@ -822,7 +822,12 @@ impl Iterator for BuiltInMidiSource {
         if self.released && self.voices.is_empty() {
             return None;
         }
-        if self.events.is_empty() && self.voices.is_empty() {
+        // Non-looped sources end once every event fired and every voice decayed,
+        // so per-note spatial sinks drain and get pruned instead of idling forever.
+        if self.loop_samples.is_none()
+            && self.event_index >= self.events.len()
+            && self.voices.is_empty()
+        {
             return None;
         }
         Some(mixed.clamp(-1.0, 1.0))
@@ -941,6 +946,141 @@ impl Iterator for RustyNoteMixerSource {
 }
 
 impl Source for RustyNoteMixerSource {
+    fn current_frame_len(&self) -> Option<usize> {
+        None
+    }
+
+    fn channels(&self) -> u16 {
+        2
+    }
+
+    fn sample_rate(&self) -> u32 {
+        SAMPLE_RATE
+    }
+
+    fn total_duration(&self) -> Option<Duration> {
+        None
+    }
+}
+
+/// Finite single-note soundfont source for spatial playback: renders one note
+/// on a dedicated synthesizer and ends once the release tail falls silent, so
+/// its per-note sink drains and gets pruned.
+pub struct RustyNoteSource {
+    synth: Synthesizer,
+    rx: Receiver<MidiControl>,
+    channel: MidiChannel,
+    note: Note,
+    release_at: Option<u64>,
+    release_deadline: Option<u64>,
+    sample: u64,
+    released: bool,
+    stopped: bool,
+    silent_run: u32,
+    next_right: Option<f32>,
+}
+
+impl RustyNoteSource {
+    const SILENCE_FLOOR: f32 = 1.0e-4;
+    const SILENCE_END_SAMPLES: u32 = SAMPLE_RATE / 8;
+    const RELEASE_TAIL_CAP_SAMPLES: u64 = SAMPLE_RATE as u64 * 8;
+
+    pub fn new(
+        font: Arc<SoundFont>,
+        request: &MidiNoteRequest,
+        rx: Receiver<MidiControl>,
+    ) -> Result<Self, String> {
+        let settings = SynthesizerSettings::new(SAMPLE_RATE as i32);
+        let mut synth = Synthesizer::new(&font, &settings).map_err(|err| err.to_string())?;
+        let channel = request.options.channel;
+        synth.process_midi_message(channel.0 as i32, 0xC0, request.options.program.0 as i32, 0);
+        synth.process_midi_message(
+            channel.0 as i32,
+            0x90,
+            request.note.0 as i32,
+            request.options.velocity as i32,
+        );
+        Ok(Self {
+            synth,
+            rx,
+            channel,
+            note: request.note,
+            release_at: (!request.held).then(|| duration_samples(request.options.sustain)),
+            release_deadline: None,
+            sample: 0,
+            released: false,
+            stopped: false,
+            silent_run: 0,
+            next_right: None,
+        })
+    }
+
+    fn release(&mut self) {
+        if self.released {
+            return;
+        }
+        self.released = true;
+        self.release_deadline = Some(self.sample.saturating_add(Self::RELEASE_TAIL_CAP_SAMPLES));
+        self.synth
+            .process_midi_message(self.channel.0 as i32, 0x80, self.note.0 as i32, 0);
+    }
+
+    fn process_controls(&mut self) {
+        while let Ok(cmd) = self.rx.try_recv() {
+            match cmd {
+                MidiControl::Release => self.release(),
+                MidiControl::Stop => self.stopped = true,
+            }
+        }
+    }
+}
+
+impl Iterator for RustyNoteSource {
+    type Item = f32;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some(right) = self.next_right.take() {
+            return Some(right);
+        }
+        if self.stopped {
+            return None;
+        }
+        self.process_controls();
+        if self
+            .release_at
+            .is_some_and(|release_at| release_at <= self.sample)
+        {
+            self.release_at = None;
+            self.release();
+        }
+        if self.released {
+            if self.silent_run >= Self::SILENCE_END_SAMPLES {
+                return None;
+            }
+            if self
+                .release_deadline
+                .is_some_and(|deadline| self.sample >= deadline)
+            {
+                return None;
+            }
+        }
+        let mut left = [0.0f32];
+        let mut right = [0.0f32];
+        self.synth.render(&mut left, &mut right);
+        self.sample = self.sample.saturating_add(1);
+        if self.released {
+            if left[0].abs() + right[0].abs() < Self::SILENCE_FLOOR {
+                self.silent_run = self.silent_run.saturating_add(1);
+            } else {
+                self.silent_run = 0;
+            }
+        }
+        self.next_right = Some(right[0]);
+        Some(left[0])
+    }
+}
+
+impl Source for RustyNoteSource {
     fn current_frame_len(&self) -> Option<usize> {
         None
     }

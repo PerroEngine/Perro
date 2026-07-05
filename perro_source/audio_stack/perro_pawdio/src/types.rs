@@ -1,6 +1,6 @@
 use perro_ids::AudioBusID;
 
-use crate::math::inverse_rotate_vec3;
+use crate::math::{distance_attenuation, inverse_rotate_vec3, spatial_pan};
 
 #[derive(Clone, Copy, Debug)]
 pub struct AudioEq {
@@ -153,7 +153,8 @@ impl<'a> Audio2D<'a> {
         let (sin, cos) = (-listener.rotation_radians).sin_cos();
         let local_x = dx * cos - dy * sin;
         let local_y = dx * sin + dy * cos;
-        let attenuation = 1.0 - (distance / range).clamp(0.0, 1.0);
+        let attenuation = distance_attenuation(distance, range);
+        let pan = spatial_pan([local_x, local_y, 0.0]);
         Some(AudioPlaybackRequest {
             id: 0,
             source: self.source,
@@ -161,7 +162,7 @@ impl<'a> Audio2D<'a> {
             looped: self.looped,
             volume: self.volume * attenuation,
             speed: self.speed,
-            pan: AudioPan::new(local_x / range, local_y / range, 0.0),
+            pan: AudioPan::new(pan[0], pan[1], pan[2]),
             low_pass: 0.0,
             reverb_send: 0.0,
             echo: 0.0,
@@ -213,7 +214,8 @@ impl<'a> Audio3D<'a> {
             return None;
         }
         let local = inverse_rotate_vec3(listener.rotation, [dx, dy, dz]);
-        let attenuation = 1.0 - (distance / range).clamp(0.0, 1.0);
+        let attenuation = distance_attenuation(distance, range);
+        let pan = spatial_pan([local[0], local[1], -local[2]]);
         Some(AudioPlaybackRequest {
             id: 0,
             source: self.source,
@@ -221,7 +223,7 @@ impl<'a> Audio3D<'a> {
             looped: self.looped,
             volume: self.volume * attenuation,
             speed: self.speed,
-            pan: AudioPan::new(local[0] / range, local[1] / range, -local[2] / range),
+            pan: AudioPan::new(pan[0], pan[1], pan[2]),
             low_pass: 0.0,
             reverb_send: 0.0,
             echo: 0.0,
