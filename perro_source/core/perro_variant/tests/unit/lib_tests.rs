@@ -1,4 +1,18 @@
-use std::{cell::RefCell, collections::BTreeMap, rc::Rc, sync::Arc};
+use std::{
+    borrow::Cow,
+    cell::{Cell, RefCell},
+    cmp::Reverse,
+    collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet, LinkedList, VecDeque},
+    num::{NonZeroI32, NonZeroU32, Saturating, Wrapping},
+    ops::{Range, RangeInclusive},
+    path::PathBuf,
+    rc::Rc,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, AtomicI32, Ordering},
+    },
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 
 use perro_ids::{
     AnimationID, AudioBusID, LightID, MaterialID, MeshID, NodeID, PreloadedSceneID, SignalID,
@@ -94,9 +108,15 @@ fn test_variant_parse_helper() {
     let num = Variant::from(42_i32);
     assert_eq!(num.parse::<i32>(), Ok(42));
     assert!(num.parse::<u32>().is_err());
+    assert_eq!(num.as_type::<i32>(), Some(42));
+    assert_eq!(num.as_type::<u32>(), None);
+    assert!(num.is_type::<i32>());
+    assert!(!num.is_type::<u32>());
+    assert_eq!(num.clone().into_type::<i32>(), Some(42));
 
     let list = Variant::Array(vec![Variant::from(1_i32), Variant::from(2_i32)]);
     assert_eq!(list.parse::<Vec<i32>>(), Ok(vec![1, 2]));
+    assert_eq!(list.into_type::<Vec<i32>>(), Some(vec![1, 2]));
 }
 
 #[test]
@@ -645,6 +665,206 @@ fn test_from_bytes_types() {
 fn test_from_vec_variant() {
     let v: Variant = vec![Variant::Bool(true), Variant::Bool(false)].into();
     assert_eq!(v.as_array().unwrap().len(), 2);
+}
+
+#[test]
+fn test_derive_variant_tuple_roundtrip() {
+    let node = NodeID::from_parts(42, 1);
+    let value = (-9_i64, node);
+    let encoded = value.to_variant();
+
+    let items = encoded.as_array().expect("tuple uses array");
+    assert_eq!(items.len(), 2);
+    assert_eq!(items[0].as_i64(), Some(-9));
+    assert_eq!(items[1].as_node(), Some(node));
+
+    let decoded = <(i64, NodeID) as DeriveVariant>::from_variant(&encoded).expect("decode tuple");
+    assert_eq!(decoded, value);
+}
+
+#[test]
+fn test_derive_variant_vec_tuple_roundtrip() {
+    let node_a = NodeID::from_parts(7, 0);
+    let node_b = NodeID::from_parts(8, 2);
+    let value = vec![(1_i64, node_a), (2_i64, node_b)];
+    let encoded = value.to_variant();
+
+    let rows = encoded.as_array().expect("vec uses array");
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[0].as_array().expect("tuple row").len(), 2);
+
+    let decoded =
+        <Vec<(i64, NodeID)> as DeriveVariant>::from_variant(&encoded).expect("decode vec tuple");
+    assert_eq!(decoded, value);
+}
+
+#[test]
+fn test_derive_variant_std_qol_roundtrips() {
+    let boxed = Box::new(12_i32);
+    let encoded = boxed.to_variant();
+    assert_eq!(
+        <Box<i32> as DeriveVariant>::from_variant(&encoded).as_deref(),
+        Some(&12)
+    );
+
+    let cell = Cell::new(7_i32);
+    let encoded = cell.to_variant();
+    let decoded = <Cell<i32> as DeriveVariant>::from_variant(&encoded).expect("decode cell");
+    assert_eq!(decoded.get(), 7);
+
+    let array = [1_i32, 2, 3];
+    let encoded = array.to_variant();
+    let decoded = <[i32; 3] as DeriveVariant>::from_variant(&encoded).expect("decode array");
+    assert_eq!(decoded, array);
+
+    let deque = VecDeque::from([1_i32, 2, 3]);
+    let encoded = deque.to_variant();
+    let decoded = <VecDeque<i32> as DeriveVariant>::from_variant(&encoded).expect("decode deque");
+    assert_eq!(decoded, deque);
+
+    let btree_set = BTreeSet::from([String::from("a"), String::from("b")]);
+    let encoded = btree_set.to_variant();
+    let decoded =
+        <BTreeSet<String> as DeriveVariant>::from_variant(&encoded).expect("decode btree set");
+    assert_eq!(decoded, btree_set);
+
+    let hash_set = HashSet::from([1_i32, 2, 3]);
+    let encoded = hash_set.to_variant();
+    let decoded = <HashSet<i32> as DeriveVariant>::from_variant(&encoded).expect("decode hash set");
+    assert_eq!(decoded, hash_set);
+
+    let mut hash_map = HashMap::<String, i32>::new();
+    hash_map.insert(String::from("score"), 9);
+    let encoded = hash_map.to_variant();
+    let decoded =
+        <HashMap<String, i32> as DeriveVariant>::from_variant(&encoded).expect("decode hash map");
+    assert_eq!(decoded, hash_map);
+}
+
+#[test]
+fn test_derive_variant_more_std_qol_roundtrips() {
+    let boxed: Box<str> = Box::from("boxed");
+    let encoded = boxed.to_variant();
+    let decoded = <Box<str> as DeriveVariant>::from_variant(&encoded).expect("decode box str");
+    assert_eq!(&*decoded, "boxed");
+
+    let cow: Cow<'static, str> = Cow::Borrowed("borrowed");
+    let encoded = cow.to_variant();
+    let decoded = <Cow<'static, str> as DeriveVariant>::from_variant(&encoded).expect("decode cow");
+    assert_eq!(decoded.as_ref(), "borrowed");
+
+    let range: Range<i32> = 2..7;
+    let encoded = range.to_variant();
+    let decoded = <Range<i32> as DeriveVariant>::from_variant(&encoded).expect("decode range");
+    assert_eq!(decoded, 2..7);
+
+    let range_inc: RangeInclusive<i32> = 2..=7;
+    let encoded = range_inc.to_variant();
+    let decoded = <RangeInclusive<i32> as DeriveVariant>::from_variant(&encoded)
+        .expect("decode inclusive range");
+    assert_eq!(decoded, 2..=7);
+
+    let duration = Duration::new(3, 400);
+    let encoded = duration.to_variant();
+    let decoded = <Duration as DeriveVariant>::from_variant(&encoded).expect("decode duration");
+    assert_eq!(decoded, duration);
+}
+
+#[test]
+fn test_derive_variant_rust_std_qol_roundtrips() {
+    let unit = ();
+    let encoded = unit.to_variant();
+    assert_eq!(<() as DeriveVariant>::from_variant(&encoded), Some(()));
+
+    let ch = 'x';
+    let encoded = ch.to_variant();
+    assert_eq!(<char as DeriveVariant>::from_variant(&encoded), Some(ch));
+
+    let boxed_slice: Box<[i32]> = Box::from([1, 2, 3]);
+    let encoded = boxed_slice.to_variant();
+    let decoded = <Box<[i32]> as DeriveVariant>::from_variant(&encoded).expect("decode box slice");
+    assert_eq!(&*decoded, &[1, 2, 3]);
+
+    let arc_slice: Arc<[i32]> = Arc::from([4, 5, 6]);
+    let encoded = arc_slice.to_variant();
+    let decoded = <Arc<[i32]> as DeriveVariant>::from_variant(&encoded).expect("decode arc slice");
+    assert_eq!(&*decoded, &[4, 5, 6]);
+
+    let rc_slice: Rc<[i32]> = Rc::from([7, 8, 9]);
+    let encoded = rc_slice.to_variant();
+    let decoded = <Rc<[i32]> as DeriveVariant>::from_variant(&encoded).expect("decode rc slice");
+    assert_eq!(&*decoded, &[7, 8, 9]);
+
+    let list = LinkedList::from([1_i32, 2, 3]);
+    let encoded = list.to_variant();
+    let decoded = <LinkedList<i32> as DeriveVariant>::from_variant(&encoded).expect("decode list");
+    assert_eq!(decoded, list);
+
+    let heap = BinaryHeap::from([1_i32, 5, 3]);
+    let encoded = heap.to_variant();
+    let decoded = <BinaryHeap<i32> as DeriveVariant>::from_variant(&encoded).expect("decode heap");
+    assert_eq!(decoded.into_sorted_vec(), heap.into_sorted_vec());
+}
+
+#[test]
+fn test_derive_variant_rust_std_scalar_wrappers_roundtrips() {
+    let nonzero = NonZeroI32::new(-12).expect("nonzero");
+    let encoded = nonzero.to_variant();
+    assert_eq!(
+        <NonZeroI32 as DeriveVariant>::from_variant(&encoded),
+        Some(nonzero)
+    );
+    assert!(<NonZeroU32 as DeriveVariant>::from_variant(&Variant::from(0_u32)).is_none());
+
+    let wrapping = Wrapping(250_u8);
+    let encoded = wrapping.to_variant();
+    assert_eq!(
+        <Wrapping<u8> as DeriveVariant>::from_variant(&encoded),
+        Some(wrapping)
+    );
+
+    let saturating = Saturating(120_i32);
+    let encoded = saturating.to_variant();
+    assert_eq!(
+        <Saturating<i32> as DeriveVariant>::from_variant(&encoded),
+        Some(saturating)
+    );
+
+    let reverse = Reverse(9_i32);
+    let encoded = reverse.to_variant();
+    assert_eq!(
+        <Reverse<i32> as DeriveVariant>::from_variant(&encoded),
+        Some(reverse)
+    );
+
+    let atomic_bool = AtomicBool::new(true);
+    let encoded = atomic_bool.to_variant();
+    let decoded =
+        <AtomicBool as DeriveVariant>::from_variant(&encoded).expect("decode atomic bool");
+    assert!(decoded.load(Ordering::SeqCst));
+
+    let atomic_i32 = AtomicI32::new(-99);
+    let encoded = atomic_i32.to_variant();
+    let decoded = <AtomicI32 as DeriveVariant>::from_variant(&encoded).expect("decode atomic i32");
+    assert_eq!(decoded.load(Ordering::SeqCst), -99);
+}
+
+#[test]
+fn test_derive_variant_path_and_system_time_roundtrips() {
+    let path = PathBuf::from("assets/player.panim");
+    let encoded = path.to_variant();
+    let decoded = <PathBuf as DeriveVariant>::from_variant(&encoded).expect("decode path");
+    assert_eq!(decoded, path);
+
+    let time = UNIX_EPOCH + Duration::new(5, 1_000);
+    let encoded = time.to_variant();
+    let decoded = <SystemTime as DeriveVariant>::from_variant(&encoded).expect("decode time");
+    assert_eq!(
+        decoded
+            .duration_since(UNIX_EPOCH)
+            .expect("time since epoch"),
+        Duration::new(5, 1_000)
+    );
 }
 
 #[test]

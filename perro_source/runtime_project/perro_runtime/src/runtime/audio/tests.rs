@@ -1422,6 +1422,11 @@ fn reconcile_openness_hysteresis_does_not_oscillate() {
     // hysteresis + result smoothing damps the alternating probe flip.
     for pair in volumes.windows(2) {
         let swing = (pair[1] - pair[0]).abs();
-        assert!(swing < 0.4, "volume swing {} too large: {:?}", swing, volumes);
+        assert!(
+            swing < 0.4,
+            "volume swing {} too large: {:?}",
+            swing,
+            volumes
+        );
     }
 }

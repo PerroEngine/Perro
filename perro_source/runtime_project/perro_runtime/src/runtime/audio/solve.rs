@@ -257,10 +257,8 @@ impl Runtime {
                         attached,
                         range,
                     );
-                    sound.aperture_2d = found.map(|(point, _total, loss)| ApertureCache2D {
-                        point,
-                        loss,
-                    });
+                    sound.aperture_2d =
+                        found.map(|(point, _total, loss)| ApertureCache2D { point, loss });
                     sound.aperture_age = 0;
                     found
                 }
@@ -519,10 +517,8 @@ impl Runtime {
                         attached,
                         range,
                     );
-                    sound.aperture_3d = found.map(|(point, _total, loss)| ApertureCache3D {
-                        point,
-                        loss,
-                    });
+                    sound.aperture_3d =
+                        found.map(|(point, _total, loss)| ApertureCache3D { point, loss });
                     sound.aperture_age = 0;
                     found
                 }
@@ -622,8 +618,14 @@ impl Runtime {
         let dir = to_source * distance.recip();
         let perp = Vector2::new(-dir.y, dir.x);
         let offsets = [
-            (perp * AUDIO_DIFFUSION_SPREAD_NEAR, AUDIO_DIFFUSION_NEAR_WEIGHT),
-            (perp * -AUDIO_DIFFUSION_SPREAD_NEAR, AUDIO_DIFFUSION_NEAR_WEIGHT),
+            (
+                perp * AUDIO_DIFFUSION_SPREAD_NEAR,
+                AUDIO_DIFFUSION_NEAR_WEIGHT,
+            ),
+            (
+                perp * -AUDIO_DIFFUSION_SPREAD_NEAR,
+                AUDIO_DIFFUSION_NEAR_WEIGHT,
+            ),
             (perp * AUDIO_DIFFUSION_SPREAD, AUDIO_DIFFUSION_FAR_WEIGHT),
             (perp * -AUDIO_DIFFUSION_SPREAD, AUDIO_DIFFUSION_FAR_WEIGHT),
         ];
@@ -689,7 +691,11 @@ impl Runtime {
                 open_shift += *offset * *weight;
             }
         }
-        let instant = if attempted > 0.0 { open / attempted } else { 0.0 };
+        let instant = if attempted > 0.0 {
+            open / attempted
+        } else {
+            0.0
+        };
         field.smoothed_openness = smooth_openness(field.smoothed_openness, instant);
         let shift = if open > 0.0 {
             open_shift / open
@@ -724,12 +730,27 @@ impl Runtime {
         let tangent = tangent.normalized();
         let bitangent = dir.cross(tangent).normalized();
         let offsets = [
-            (tangent * AUDIO_DIFFUSION_SPREAD_NEAR, AUDIO_DIFFUSION_NEAR_WEIGHT),
-            (tangent * -AUDIO_DIFFUSION_SPREAD_NEAR, AUDIO_DIFFUSION_NEAR_WEIGHT),
+            (
+                tangent * AUDIO_DIFFUSION_SPREAD_NEAR,
+                AUDIO_DIFFUSION_NEAR_WEIGHT,
+            ),
+            (
+                tangent * -AUDIO_DIFFUSION_SPREAD_NEAR,
+                AUDIO_DIFFUSION_NEAR_WEIGHT,
+            ),
             (tangent * AUDIO_DIFFUSION_SPREAD, AUDIO_DIFFUSION_FAR_WEIGHT),
-            (tangent * -AUDIO_DIFFUSION_SPREAD, AUDIO_DIFFUSION_FAR_WEIGHT),
-            (bitangent * AUDIO_DIFFUSION_SPREAD, AUDIO_DIFFUSION_FAR_WEIGHT),
-            (bitangent * -AUDIO_DIFFUSION_SPREAD, AUDIO_DIFFUSION_FAR_WEIGHT),
+            (
+                tangent * -AUDIO_DIFFUSION_SPREAD,
+                AUDIO_DIFFUSION_FAR_WEIGHT,
+            ),
+            (
+                bitangent * AUDIO_DIFFUSION_SPREAD,
+                AUDIO_DIFFUSION_FAR_WEIGHT,
+            ),
+            (
+                bitangent * -AUDIO_DIFFUSION_SPREAD,
+                AUDIO_DIFFUSION_FAR_WEIGHT,
+            ),
         ];
         let n = offsets.len();
         let refresh = if field.initialized { PROBE_SLICE } else { n };
@@ -788,7 +809,11 @@ impl Runtime {
                 open_shift += *offset * *weight;
             }
         }
-        let instant = if attempted > 0.0 { open / attempted } else { 0.0 };
+        let instant = if attempted > 0.0 {
+            open / attempted
+        } else {
+            0.0
+        };
         field.smoothed_openness = smooth_openness(field.smoothed_openness, instant);
         let shift = if open > 0.0 { open_shift / open } else { zero };
         (field.smoothed_openness, shift)
@@ -805,8 +830,10 @@ impl Runtime {
         audio_layer: BitMask,
         attached_node: Option<NodeID>,
     ) -> Option<f32> {
-        let leg_a = self.reconcile_segment_clear_2d(listener_pos, aperture, audio_layer, attached_node)?;
-        let leg_b = self.reconcile_segment_clear_2d(aperture, source_pos, audio_layer, attached_node)?;
+        let leg_a =
+            self.reconcile_segment_clear_2d(listener_pos, aperture, audio_layer, attached_node)?;
+        let leg_b =
+            self.reconcile_segment_clear_2d(aperture, source_pos, audio_layer, attached_node)?;
         Some(leg_a + leg_b)
     }
 
@@ -818,8 +845,10 @@ impl Runtime {
         audio_layer: BitMask,
         attached_node: Option<NodeID>,
     ) -> Option<f32> {
-        let leg_a = self.reconcile_segment_clear_3d(listener_pos, aperture, audio_layer, attached_node)?;
-        let leg_b = self.reconcile_segment_clear_3d(aperture, source_pos, audio_layer, attached_node)?;
+        let leg_a =
+            self.reconcile_segment_clear_3d(listener_pos, aperture, audio_layer, attached_node)?;
+        let leg_b =
+            self.reconcile_segment_clear_3d(aperture, source_pos, audio_layer, attached_node)?;
         Some(leg_a + leg_b)
     }
 
@@ -862,7 +891,9 @@ impl Runtime {
             return None;
         }
         if self.audio.has_audio_mask_2d
-            && self.first_audio_mask_2d(start, b - dir * skin, audio_layer).is_some()
+            && self
+                .first_audio_mask_2d(start, b - dir * skin, audio_layer)
+                .is_some()
         {
             return None;
         }
@@ -895,7 +926,9 @@ impl Runtime {
             return None;
         }
         if self.audio.has_audio_mask_3d
-            && self.first_audio_mask_3d(start, b - dir * skin, audio_layer).is_some()
+            && self
+                .first_audio_mask_3d(start, b - dir * skin, audio_layer)
+                .is_some()
         {
             return None;
         }
@@ -919,8 +952,20 @@ impl Runtime {
         let mut source_pts = std::mem::take(&mut self.audio.scratch_reconcile_source_2d);
         listener_pts.clear();
         source_pts.clear();
-        self.collect_reconcile_points_2d(listener_pos, source_pos, audio_layer, range, &mut listener_pts);
-        self.collect_reconcile_points_2d(source_pos, listener_pos, audio_layer, range, &mut source_pts);
+        self.collect_reconcile_points_2d(
+            listener_pos,
+            source_pos,
+            audio_layer,
+            range,
+            &mut listener_pts,
+        );
+        self.collect_reconcile_points_2d(
+            source_pos,
+            listener_pos,
+            audio_layer,
+            range,
+            &mut source_pts,
+        );
 
         let mut best: Option<(Vector2, f32, f32)> = None;
         for lp in listener_pts.iter().copied() {
@@ -932,11 +977,15 @@ impl Runtime {
                 // Always verify the connecting segment is unobstructed, even for
                 // sub-epsilon gaps: two points can sit within epsilon on
                 // opposite sides of a thin wall and must NOT reconcile.
-                let (aperture, verify_dist) =
-                    match self.reconcile_segment_clear_2d(lp.point, sp.point, audio_layer, attached_node) {
-                        Some(d) => ((lp.point + sp.point) * 0.5, d),
-                        None => continue,
-                    };
+                let (aperture, verify_dist) = match self.reconcile_segment_clear_2d(
+                    lp.point,
+                    sp.point,
+                    audio_layer,
+                    attached_node,
+                ) {
+                    Some(d) => ((lp.point + sp.point) * 0.5, d),
+                    None => continue,
+                };
                 let total = lp.traveled + verify_dist + sp.traveled;
                 if total > range {
                     continue;
@@ -946,7 +995,10 @@ impl Runtime {
                 let tight = if gap <= RECONCILE_EPSILON { 1.05 } else { 1.0 };
                 let loss = (lp.loss * sp.loss * tight).min(1.0);
                 let score = loss / (1.0 + total);
-                if best.as_ref().is_none_or(|&(_, bt, bl)| score > bl / (1.0 + bt)) {
+                if best
+                    .as_ref()
+                    .is_none_or(|&(_, bt, bl)| score > bl / (1.0 + bt))
+                {
                     best = Some((aperture, total, loss));
                 }
             }
@@ -970,8 +1022,20 @@ impl Runtime {
         let mut source_pts = std::mem::take(&mut self.audio.scratch_reconcile_source_3d);
         listener_pts.clear();
         source_pts.clear();
-        self.collect_reconcile_points_3d(listener_pos, source_pos, audio_layer, range, &mut listener_pts);
-        self.collect_reconcile_points_3d(source_pos, listener_pos, audio_layer, range, &mut source_pts);
+        self.collect_reconcile_points_3d(
+            listener_pos,
+            source_pos,
+            audio_layer,
+            range,
+            &mut listener_pts,
+        );
+        self.collect_reconcile_points_3d(
+            source_pos,
+            listener_pos,
+            audio_layer,
+            range,
+            &mut source_pts,
+        );
 
         let mut best: Option<(Vector3, f32, f32)> = None;
         for lp in listener_pts.iter().copied() {
@@ -980,11 +1044,15 @@ impl Runtime {
                 if gap > RECONCILE_VERIFY_MAX {
                     continue;
                 }
-                let (aperture, verify_dist) =
-                    match self.reconcile_segment_clear_3d(lp.point, sp.point, audio_layer, attached_node) {
-                        Some(d) => ((lp.point + sp.point) * 0.5, d),
-                        None => continue,
-                    };
+                let (aperture, verify_dist) = match self.reconcile_segment_clear_3d(
+                    lp.point,
+                    sp.point,
+                    audio_layer,
+                    attached_node,
+                ) {
+                    Some(d) => ((lp.point + sp.point) * 0.5, d),
+                    None => continue,
+                };
                 let total = lp.traveled + verify_dist + sp.traveled;
                 if total > range {
                     continue;
@@ -992,7 +1060,10 @@ impl Runtime {
                 let tight = if gap <= RECONCILE_EPSILON { 1.05 } else { 1.0 };
                 let loss = (lp.loss * sp.loss * tight).min(1.0);
                 let score = loss / (1.0 + total);
-                if best.as_ref().is_none_or(|&(_, bt, bl)| score > bl / (1.0 + bt)) {
+                if best
+                    .as_ref()
+                    .is_none_or(|&(_, bt, bl)| score > bl / (1.0 + bt))
+                {
                     best = Some((aperture, total, loss));
                 }
             }
@@ -1077,7 +1148,8 @@ impl Runtime {
             let seg_len = hit.as_ref().map(|h| h.distance).unwrap_or(remaining);
             // Sample points along the free segment at fixed spacing so density
             // stays high near apertures on long rays.
-            let samples = ((seg_len / RECONCILE_SAMPLE_SPACING) as usize).min(RECONCILE_MAX_SAMPLES);
+            let samples =
+                ((seg_len / RECONCILE_SAMPLE_SPACING) as usize).min(RECONCILE_MAX_SAMPLES);
             for s in 1..=samples {
                 let d = s as f32 * RECONCILE_SAMPLE_SPACING;
                 if d >= seg_len {
@@ -1106,7 +1178,9 @@ impl Runtime {
                 loss,
             });
             let reflect_energy = hit.reflection.clamp(0.0, 1.0);
-            if reflect_energy < self.audio.config.energy_cutoff || loss < self.audio.config.energy_cutoff {
+            if reflect_energy < self.audio.config.energy_cutoff
+                || loss < self.audio.config.energy_cutoff
+            {
                 break;
             }
             let Some(reflected) = reflect_2d(direction, hit.normal) else {
@@ -1154,7 +1228,8 @@ impl Runtime {
             }
             let hit = self.nearest_audio_bounce_hit_3d(pos, direction, remaining, audio_layer);
             let seg_len = hit.as_ref().map(|h| h.distance).unwrap_or(remaining);
-            let samples = ((seg_len / RECONCILE_SAMPLE_SPACING) as usize).min(RECONCILE_MAX_SAMPLES);
+            let samples =
+                ((seg_len / RECONCILE_SAMPLE_SPACING) as usize).min(RECONCILE_MAX_SAMPLES);
             for s in 1..=samples {
                 let d = s as f32 * RECONCILE_SAMPLE_SPACING;
                 if d >= seg_len {
@@ -1182,7 +1257,9 @@ impl Runtime {
                 loss,
             });
             let reflect_energy = hit.reflection.clamp(0.0, 1.0);
-            if reflect_energy < self.audio.config.energy_cutoff || loss < self.audio.config.energy_cutoff {
+            if reflect_energy < self.audio.config.energy_cutoff
+                || loss < self.audio.config.energy_cutoff
+            {
                 break;
             }
             let Some(reflected) = reflect_3d(direction, hit.normal) else {
@@ -1263,11 +1340,16 @@ impl Runtime {
         for i in 0..AUDIO_BOUNCE_RAYS_2D {
             let angle = i as f32 * TAU / AUDIO_BOUNCE_RAYS_2D as f32;
             let direction = Vector2::new(angle.cos(), angle.sin());
-            if let Some(path) = self
-                .trace_audio_bounce_ray_2d(source, listener, direction, audio_layer, range, false)
-                && best
-                    .as_ref()
-                    .is_none_or(|best| path.volume > best.volume || path.distance < best.distance)
+            if let Some(path) = self.trace_audio_bounce_ray_2d(
+                source,
+                listener,
+                direction,
+                audio_layer,
+                range,
+                false,
+            ) && best
+                .as_ref()
+                .is_none_or(|best| path.volume > best.volume || path.distance < best.distance)
             {
                 best = Some(path);
             }
@@ -1399,11 +1481,16 @@ impl Runtime {
             let radius = (1.0 - y * y).max(0.0).sqrt();
             let theta = i as f32 * 2.399_963_1;
             let direction = Vector3::new(theta.cos() * radius, y, theta.sin() * radius);
-            if let Some(path) = self
-                .trace_audio_bounce_ray_3d(source, listener, direction, audio_layer, range, false)
-                && best
-                    .as_ref()
-                    .is_none_or(|best| path.volume > best.volume || path.distance < best.distance)
+            if let Some(path) = self.trace_audio_bounce_ray_3d(
+                source,
+                listener,
+                direction,
+                audio_layer,
+                range,
+                false,
+            ) && best
+                .as_ref()
+                .is_none_or(|best| path.volume > best.volume || path.distance < best.distance)
             {
                 best = Some(path);
             }
@@ -2442,7 +2529,11 @@ fn directional_lobe(dot: f32) -> f32 {
 // oscillate the perceived level.
 #[inline]
 fn smooth_openness(prev: f32, next: f32) -> f32 {
-    let rate = if next > prev { OPENNESS_RISE } else { OPENNESS_FALL };
+    let rate = if next > prev {
+        OPENNESS_RISE
+    } else {
+        OPENNESS_FALL
+    };
     prev + (next - prev) * rate
 }
 

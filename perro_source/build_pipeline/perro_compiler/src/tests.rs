@@ -524,8 +524,17 @@ lifecycle!({});
     fn generated_state_all_variant_types_compiles() {
         let source = r#"
 use perro_api::prelude::*;
-use std::collections::BTreeMap;
+use std::borrow::Cow;
+use std::cell::Cell;
+use std::cmp::Reverse;
+use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet, LinkedList, VecDeque};
+use std::num::{NonZeroI32, Saturating, Wrapping};
+use std::ops::{Range, RangeInclusive};
+use std::path::PathBuf;
+use std::rc::Rc;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicI32};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 #[derive(Clone, PartialEq, Variant)]
 #[variant(mode = "array")]
@@ -588,6 +597,10 @@ impl Default for NestedCombo {
 pub struct AllVariantState {
     #[default = true]
     pub bool_value: bool,
+    #[default = ()]
+    pub unit_value: (),
+    #[default = 'x']
+    pub char_value: char,
     #[default = -1_i8]
     pub i8_value: i8,
     #[default = -2_i16]
@@ -662,8 +675,64 @@ pub struct AllVariantState {
     pub vec_i32: Vec<i32>,
     #[default = vec![CustomLeaf::default()]]
     pub vec_custom: Vec<CustomLeaf>,
+    #[default = Vec::new()]
+    pub vec_tuple_node: Vec<(i64, NodeID)>,
+    #[default = Box::new(CustomLeaf::default())]
+    pub boxed_custom: Box<CustomLeaf>,
+    #[default = Box::<str>::from("boxed")]
+    pub boxed_str: Box<str>,
+    #[default = Cow::Borrowed("borrowed")]
+    pub cow_str: Cow<'static, str>,
+    #[default = Cell::new(4_i32)]
+    pub cell_i32: Cell<i32>,
+    #[default = [1_i32, 2, 3]]
+    pub array_i32: [i32; 3],
+    #[default = Box::<[i32]>::from([1_i32, 2, 3])]
+    pub boxed_slice_i32: Box<[i32]>,
+    #[default = Arc::<[i32]>::from([1_i32, 2, 3])]
+    pub arc_slice_i32: Arc<[i32]>,
+    #[default = Rc::<[i32]>::from([1_i32, 2, 3])]
+    pub rc_slice_i32: Rc<[i32]>,
+    #[default = VecDeque::new()]
+    pub deque_i32: VecDeque<i32>,
+    #[default = LinkedList::new()]
+    pub linked_list_i32: LinkedList<i32>,
+    #[default = BinaryHeap::new()]
+    pub binary_heap_i32: BinaryHeap<i32>,
+    #[default = BTreeSet::new()]
+    pub btree_set_string: BTreeSet<String>,
+    #[default = HashSet::new()]
+    pub hash_set_i32: HashSet<i32>,
     #[default = BTreeMap::new()]
     pub map_i32: BTreeMap<Arc<str>, i32>,
+    #[default = BTreeMap::new()]
+    pub map_string_i32: BTreeMap<String, i32>,
+    #[default = HashMap::new()]
+    pub hash_map_string_i32: HashMap<String, i32>,
+    #[default = HashMap::new()]
+    pub hash_map_arc_i32: HashMap<Arc<str>, i32>,
+    #[default = 1_i32..5_i32]
+    pub range_i32: Range<i32>,
+    #[default = 1_i32..=5_i32]
+    pub range_inc_i32: RangeInclusive<i32>,
+    #[default = Duration::from_millis(250)]
+    pub duration_value: Duration,
+    #[default = UNIX_EPOCH + Duration::from_secs(1)]
+    pub system_time_value: SystemTime,
+    #[default = NonZeroI32::new(1).unwrap()]
+    pub nonzero_i32: NonZeroI32,
+    #[default = Wrapping(1_u32)]
+    pub wrapping_u32: Wrapping<u32>,
+    #[default = Saturating(1_i32)]
+    pub saturating_i32: Saturating<i32>,
+    #[default = Reverse(1_i32)]
+    pub reverse_i32: Reverse<i32>,
+    #[default = AtomicBool::new(true)]
+    pub atomic_bool: AtomicBool,
+    #[default = AtomicI32::new(1)]
+    pub atomic_i32: AtomicI32,
+    #[default = PathBuf::from("assets/player.panim")]
+    pub path_buf: PathBuf,
     #[default = BTreeMap::new()]
     pub map_custom: BTreeMap<Arc<str>, CustomLeaf>,
     #[default = CustomLeaf::default()]

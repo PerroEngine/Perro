@@ -13,6 +13,11 @@ use perro_render_bridge::{
 use perro_runtime::{WindowMode, WindowRequest};
 use perro_runtime_api::sub_apis::FrameRateCap as RuntimeFrameRateCap;
 use std::io::Write;
+#[cfg(not(target_arch = "wasm32"))]
+use std::sync::{
+    Mutex, OnceLock,
+    atomic::{AtomicBool, Ordering},
+};
 use std::time::Duration;
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
@@ -30,7 +35,7 @@ use winit::{dpi::Position, monitor::MonitorHandle};
 use winit::{
     dpi::{PhysicalPosition, PhysicalSize, Size},
     event::{DeviceEvent, ElementState, WindowEvent},
-    event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
+    event_loop::{ActiveEventLoop, ControlFlow, EventLoop, EventLoopProxy},
     keyboard::{KeyCode, PhysicalKey},
     window::{CursorGrabMode, CursorIcon as WinitCursorIcon, Fullscreen, Window, WindowAttributes},
 };
@@ -407,6 +412,11 @@ fn log_avg_sampled(
 
 pub struct WinitRunner;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum RunnerUserEvent {
+    RequestExit,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum AppExitKind {
     WindowClose,
@@ -479,9 +489,11 @@ impl WinitRunner {
         #[cfg(not(target_arch = "wasm32"))] preloaded_images: Option<PreloadedProjectImages>,
         #[cfg(target_arch = "wasm32")] _preloaded_images: Option<()>,
     ) -> Result<AppExitResult, AppExitError> {
-        let event_loop = EventLoop::new().map_err(|err| AppExitError {
-            message: format!("failed to create winit event loop: {err}"),
-        })?;
+        let event_loop = EventLoop::<RunnerUserEvent>::with_user_event()
+            .build()
+            .map_err(|err| AppExitError {
+                message: format!("failed to create winit event loop: {err}"),
+            })?;
         #[cfg(target_arch = "wasm32")]
         {
             let state = RunnerState::new(app, title, fixed_timestep);
@@ -491,6 +503,7 @@ impl WinitRunner {
         #[cfg(not(target_arch = "wasm32"))]
         {
             let _timer_resolution = crate::timer_resolution::TimerResolutionGuard::acquire_1ms();
+            install_ctrl_c_exit_proxy(event_loop.create_proxy());
             let mut state = RunnerState::new(app, title, fixed_timestep, preloaded_images);
             event_loop.run_app(&mut state).map_err(|err| AppExitError {
                 message: format!("winit event loop failed: {err}"),
@@ -510,7 +523,7 @@ impl WinitRunner {
         fixed_timestep: Option<f32>,
         android_app: AndroidApp,
     ) -> Result<AppExitResult, AppExitError> {
-        let mut builder = EventLoop::<()>::builder();
+        let mut builder = EventLoop::<RunnerUserEvent>::with_user_event();
         builder.with_android_app(android_app);
         let event_loop = builder.build().map_err(|err| AppExitError {
             message: format!("failed to create android winit event loop: {err}"),
@@ -533,6 +546,36 @@ impl WinitRunner {
 impl Default for WinitRunner {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn ctrl_c_proxy_slot() -> &'static Mutex<Option<EventLoopProxy<RunnerUserEvent>>> {
+    static SLOT: OnceLock<Mutex<Option<EventLoopProxy<RunnerUserEvent>>>> = OnceLock::new();
+    SLOT.get_or_init(|| Mutex::new(None))
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn install_ctrl_c_exit_proxy(proxy: EventLoopProxy<RunnerUserEvent>) {
+    if let Ok(mut slot) = ctrl_c_proxy_slot().lock() {
+        *slot = Some(proxy);
+    }
+
+    static INSTALLED: AtomicBool = AtomicBool::new(false);
+    if INSTALLED.swap(true, Ordering::SeqCst) {
+        return;
+    }
+
+    if let Err(err) = ctrlc::set_handler(|| {
+        let proxy = ctrl_c_proxy_slot()
+            .lock()
+            .ok()
+            .and_then(|slot| slot.as_ref().cloned());
+        if let Some(proxy) = proxy {
+            let _ = proxy.send_event(RunnerUserEvent::RequestExit);
+        }
+    }) {
+        eprintln!("[perro][runtime] failed to install ctrl-c handler: {err}");
     }
 }
 
@@ -885,12 +928,7 @@ impl<B: GraphicsBackend> RunnerState<B> {
             .any(|request| matches!(request, WindowRequest::CloseApp))
         {
             self.window_requests.clear();
-            self.exit_result = Some(AppExitResult::event_loop_exit());
-            self.reset_mouse_mode_for_exit();
-            if let Some(window) = self.window.take() {
-                window.set_visible(false);
-            }
-            event_loop.exit();
+            self.request_exit(event_loop, AppExitResult::event_loop_exit());
             return;
         }
 
@@ -928,6 +966,18 @@ impl<B: GraphicsBackend> RunnerState<B> {
                 WindowRequest::CloseApp => {}
             }
         }
+    }
+
+    fn request_exit(&mut self, event_loop: &ActiveEventLoop, result: AppExitResult) {
+        if self.exit_result.is_some() {
+            return;
+        }
+        self.exit_result = Some(result);
+        self.reset_mouse_mode_for_exit();
+        if let Some(window) = self.window.take() {
+            window.set_visible(false);
+        }
+        event_loop.exit();
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -2224,7 +2274,9 @@ impl<B: GraphicsBackend> RunnerState<B> {
     }
 }
 
-impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<B> {
+impl<B: GraphicsBackend> winit::application::ApplicationHandler<RunnerUserEvent>
+    for RunnerState<B>
+{
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         event_loop.set_control_flow(ControlFlow::Poll);
         if self.window.is_none() {
@@ -2431,14 +2483,17 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<
                 self.step_frame(event_loop, Instant::now());
             }
             WindowEvent::CloseRequested => {
-                self.exit_result = Some(AppExitResult::window_close());
-                self.reset_mouse_mode_for_exit();
-                if let Some(window) = self.window.take() {
-                    window.set_visible(false);
-                }
-                event_loop.exit();
+                self.request_exit(event_loop, AppExitResult::window_close());
             }
             _ => {}
+        }
+    }
+
+    fn user_event(&mut self, event_loop: &ActiveEventLoop, event: RunnerUserEvent) {
+        match event {
+            RunnerUserEvent::RequestExit => {
+                self.request_exit(event_loop, AppExitResult::event_loop_exit());
+            }
         }
     }
 

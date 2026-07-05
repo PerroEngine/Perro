@@ -7,6 +7,7 @@
 | Purpose       | [Purpose](#purpose)             |
 | Dynamic Calls | [Dynamic Calls](#dynamic-calls) |
 | Accessors     | [Accessors](#accessors)         |
+| Supported Types | [Supported Types](#supported-types) |
 | Custom Types  | [Custom Types](#custom-types)   |
 | Construction  | [Construction](#construction)   |
 
@@ -46,6 +47,26 @@ call_method!(ctx.run, target, method!("set_active"), params![true]);
 They return `Option<T>`.
 
 Wrong stored type returns `None`.
+
+Use them when you care about the stored shape.
+
+Use typed decode helpers when you care about the Rust target type.
+
+| Helper | Result | Use |
+| ------ | ------ | --- |
+| `as_type::<T>()` | `Option<T>` | Borrow `Variant`, no error text |
+| `is_type::<T>()` | `bool` | Cheap target-type check |
+| `parse::<T>()` | `Result<T, VariantParseError>` | Borrow `Variant`, keep error text |
+| `into_type::<T>()` | `Option<T>` | Consume `Variant`, no error text |
+| `into_parse::<T>()` | `Result<T, VariantParseError>` | Consume `Variant`, keep error text |
+
+All typed helpers use `DeriveVariant`.
+
+```rust
+let hp = value.as_type::<i32>().unwrap_or(0);
+let pos = value.parse::<Vector3>()?;
+let queue = value.into_type::<VecDeque<NodeID>>().unwrap_or_default();
+```
 
 | Value          | Accessor                                                                                                                                                                          |
 | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -106,6 +127,31 @@ match value.get_kind() {
 
 Use exact `as_*` accessor to know which ID/math/number subtype is stored.
 
+Wrapper/container Rust types do not get unique `VariantKind` values.
+
+They encode into stored shapes.
+
+Examples:
+
+| Rust value | Stored kind |
+| ---------- | ----------- |
+| `Box<i32>` | `Number(I32)` |
+| `Cell<i32>` | `Number(I32)` |
+| `Arc<String>` | `String` |
+| `(i64, NodeID)` | `Array` |
+| `VecDeque<T>` | `Array` |
+| `HashMap<String, T>` | `Object` |
+| `Duration` | `Object { secs, nanos }` |
+| `PathBuf` | `String` |
+| `SystemTime` | `Object { secs, nanos }` |
+
+`Vec<u8>` has two common paths:
+
+| Code | Stored kind |
+| ---- | ----------- |
+| `Variant::from(vec![1_u8, 2])` | `Bytes` |
+| `vec![1_u8, 2].to_variant()` | `Array` |
+
 Matrix variants store row-major data.
 
 `Matrix2`/`Matrix3`/`Matrix4` decode through `as_matrix*()`.
@@ -145,6 +191,52 @@ let dynamic = match (shape.rows, shape.cols, shape.cell_type) {
     _ => None,
 };
 ```
+
+## Supported Types
+
+These types support `DeriveVariant` and can be used in `#[State]`, typed `methods!` params/returns, signal params, and typed decode helpers.
+
+Primitive and scalar types:
+
+| Group | Types |
+| ----- | ----- |
+| unit/bool/text | `()`, `bool`, `char`, `String`, `Arc<str>`, `Box<str>`, `Cow<'static, str>` |
+| signed ints | `i8`, `i16`, `i32`, `i64`, `i128`, `isize` |
+| unsigned ints | `u8`, `u16`, `u32`, `u64`, `u128`, `usize` |
+| floats | `f32`, `f64` |
+| non-zero nums | all `NonZero*` int types |
+| wrappers | `Wrapping<T>`, `Saturating<T>`, `Reverse<T>` |
+| atomics | `AtomicBool`, `AtomicI32`, `AtomicI64`, `AtomicU32`, `AtomicU64`, `AtomicUsize` |
+| time/path | `Duration`, `SystemTime`, `PathBuf` |
+
+Engine types:
+
+| Group | Types |
+| ----- | ----- |
+| ids | `NodeID`, `TextureID`, `MaterialID`, `MeshID`, `AnimationID`, `LightID`, `SignalID`, `AudioBusID`, `TagID`, `PreloadedSceneID` |
+| math | `Vector2`, `Vector3`, `Vector4`, `IVector2`, `IVector3`, `IVector4`, `UVector2`, `UVector3`, `UVector4`, `UnitVector2`, `UnitVector3`, `UnitVector4`, `Matrix2`, `Matrix3`, `Matrix4`, `Matrix<ROWS, COLS, T>`, `Quaternion`, `Transform2D`, `Transform3D` |
+| misc | `Variant`, `PostProcessSet`, `VisualAccessibilitySettings` |
+
+Std containers and pointers:
+
+| Group | Types |
+| ----- | ----- |
+| optional/shared | `Option<T>`, `Box<T>`, `Arc<T>`, `Rc<T>`, `Cell<T>`, `RefCell<T>` |
+| arrays/slices | `[T; N]`, `Box<[T]>`, `Arc<[T]>`, `Rc<[T]>` |
+| sequences | `Vec<T>`, `VecDeque<T>`, `LinkedList<T>`, `BinaryHeap<T>` |
+| sets | `BTreeSet<T>`, `HashSet<T>` |
+| maps | `BTreeMap<Arc<str>, T>`, `BTreeMap<String, T>`, `BTreeMap<Box<str>, T>`, `BTreeMap<Cow<'static, str>, T>`, plus same key types for `HashMap` |
+| ranges | `Range<T>`, `RangeInclusive<T>` |
+| tuples | tuple length `2..=6` where each item supports `DeriveVariant` |
+
+Skipped on purpose:
+
+| Type | Reason |
+| ---- | ------ |
+| `Mutex<T>`, `RwLock<T>` | lock/poison path does not fit infallible `to_variant()` |
+| `Instant` | process-local time point, bad save/load value |
+| `OnceCell`, `OnceLock` | set-once state semantics do not fit script var mutation |
+| `OsString` | platform encoding can fail text roundtrip |
 
 ## Custom Types
 

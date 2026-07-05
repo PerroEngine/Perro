@@ -832,8 +832,8 @@ fn scan_node_type_slots(
     out: &mut Vec<NodeID>,
 ) {
     let types = arena.node_type_slots();
-    for index in 0..types.len() {
-        if types[index] != want {
+    for (index, node_type) in types.iter().enumerate() {
+        if *node_type != want {
             continue;
         }
         let Some((id, node)) = arena.slot_get(index) else {

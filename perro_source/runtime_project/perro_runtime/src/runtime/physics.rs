@@ -521,7 +521,10 @@ impl Runtime {
             return false;
         };
         let signature = body_sync_signature_2d_if_useful(kind, enabled, global, rigid);
-        if !self.physics.commit_moved_body_2d(body_id, global, signature) {
+        if !self
+            .physics
+            .commit_moved_body_2d(body_id, global, signature)
+        {
             return false;
         }
         self.physics_synced_node_version_2d = Some(node_version);
@@ -538,9 +541,7 @@ impl Runtime {
         match &node.data {
             SceneNodeData::StaticBody2D(body) => Some((BodyKind::Static, body.enabled, None)),
             SceneNodeData::Area2D(body) => Some((BodyKind::Area, body.enabled, None)),
-            SceneNodeData::CharacterBody2D(body) => {
-                Some((BodyKind::Character, body.enabled, None))
-            }
+            SceneNodeData::CharacterBody2D(body) => Some((BodyKind::Character, body.enabled, None)),
             SceneNodeData::RigidBody2D(body) => Some((
                 BodyKind::Rigid,
                 body.enabled,
@@ -598,7 +599,10 @@ impl Runtime {
             return false;
         };
         let signature = body_sync_signature_3d_if_useful(kind, enabled, global, rigid);
-        if !self.physics.commit_moved_body_3d(body_id, global, signature) {
+        if !self
+            .physics
+            .commit_moved_body_3d(body_id, global, signature)
+        {
             return false;
         }
         self.physics_synced_node_version_3d = Some(node_version);
@@ -614,9 +618,7 @@ impl Runtime {
         match &node.data {
             SceneNodeData::StaticBody3D(body) => Some((BodyKind::Static, body.enabled, None)),
             SceneNodeData::Area3D(body) => Some((BodyKind::Area, body.enabled, None)),
-            SceneNodeData::CharacterBody3D(body) => {
-                Some((BodyKind::Character, body.enabled, None))
-            }
+            SceneNodeData::CharacterBody3D(body) => Some((BodyKind::Character, body.enabled, None)),
             SceneNodeData::RigidBody3D(body) => Some((
                 BodyKind::Rigid,
                 body.enabled,

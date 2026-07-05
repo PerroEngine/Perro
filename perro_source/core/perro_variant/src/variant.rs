@@ -2,11 +2,24 @@
 
 #![forbid(unsafe_code)]
 
-use std::cell::RefCell;
-use std::collections::BTreeMap;
+use std::borrow::Cow;
+use std::cell::{Cell, RefCell};
+use std::cmp::Reverse;
+use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet, LinkedList, VecDeque};
 use std::fmt;
+use std::hash::Hash;
+use std::num::{
+    NonZeroI8, NonZeroI16, NonZeroI32, NonZeroI64, NonZeroI128, NonZeroIsize, NonZeroU8,
+    NonZeroU16, NonZeroU32, NonZeroU64, NonZeroU128, NonZeroUsize, Saturating, Wrapping,
+};
+use std::ops::{Range, RangeInclusive};
+use std::path::PathBuf;
 use std::rc::Rc;
-use std::sync::Arc;
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, AtomicI32, AtomicI64, AtomicU32, AtomicU64, AtomicUsize, Ordering},
+};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use perro_ids::*;
 use perro_structs::*;
@@ -323,6 +336,108 @@ pub trait VariantSchema {
     }
 }
 
+macro_rules! impl_empty_variant_schema {
+    ($($ty:ty),+ $(,)?) => {
+        $(impl VariantSchema for $ty {})+
+    };
+}
+
+impl_empty_variant_schema!(
+    bool,
+    i8,
+    i16,
+    i32,
+    i64,
+    i128,
+    isize,
+    u8,
+    u16,
+    u32,
+    u64,
+    u128,
+    usize,
+    f32,
+    f64,
+    char,
+    (),
+    String,
+    Cow<'static, str>,
+    Variant,
+    Unit,
+    NodeID,
+    TextureID,
+    MaterialID,
+    MeshID,
+    AnimationID,
+    LightID,
+    SignalID,
+    AudioBusID,
+    TagID,
+    PreloadedSceneID,
+    Vector2,
+    Vector3,
+    Vector4,
+    IVector2,
+    IVector3,
+    IVector4,
+    UVector2,
+    UVector3,
+    UVector4,
+    UnitVector2,
+    UnitVector3,
+    UnitVector4,
+    Matrix2,
+    Matrix3,
+    Matrix4,
+    Quaternion,
+    Transform2D,
+    Transform3D,
+    PostProcessSet,
+    VisualAccessibilitySettings,
+    Duration,
+    SystemTime,
+    PathBuf,
+    AtomicBool,
+    AtomicI32,
+    AtomicI64,
+    AtomicU32,
+    AtomicU64,
+    AtomicUsize,
+    NonZeroI8,
+    NonZeroI16,
+    NonZeroI32,
+    NonZeroI64,
+    NonZeroI128,
+    NonZeroIsize,
+    NonZeroU8,
+    NonZeroU16,
+    NonZeroU32,
+    NonZeroU64,
+    NonZeroU128,
+    NonZeroUsize,
+);
+
+impl<T> VariantSchema for Option<T> {}
+impl<T: ?Sized> VariantSchema for Box<T> {}
+impl<T: ?Sized> VariantSchema for Arc<T> {}
+impl<T: ?Sized> VariantSchema for Rc<T> {}
+impl<T> VariantSchema for Cell<T> {}
+impl<T> VariantSchema for RefCell<T> {}
+impl<T> VariantSchema for Wrapping<T> {}
+impl<T> VariantSchema for Saturating<T> {}
+impl<T> VariantSchema for Reverse<T> {}
+impl<T, const N: usize> VariantSchema for [T; N] {}
+impl<T> VariantSchema for Vec<T> {}
+impl<T> VariantSchema for LinkedList<T> {}
+impl<T> VariantSchema for VecDeque<T> {}
+impl<T> VariantSchema for BTreeSet<T> {}
+impl<T> VariantSchema for HashSet<T> {}
+impl<T> VariantSchema for BinaryHeap<T> {}
+impl<K, T> VariantSchema for BTreeMap<K, T> {}
+impl<K, T> VariantSchema for HashMap<K, T> {}
+impl<T> VariantSchema for Range<T> {}
+impl<T> VariantSchema for RangeInclusive<T> {}
+
 pub trait VariantMatrixCell: Sized {
     fn from_matrix_cell_variant(value: &Variant) -> Option<Self>;
     fn to_matrix_cell_variant(&self) -> Variant;
@@ -436,6 +551,24 @@ impl Variant {
         })
     }
 
+    /// Decode this [`Variant`] into typed value, returning `None` on mismatch.
+    #[inline]
+    pub fn as_type<T>(&self) -> Option<T>
+    where
+        T: DeriveVariant,
+    {
+        T::from_variant(self)
+    }
+
+    /// Check whether this [`Variant`] can decode into `T`.
+    #[inline]
+    pub fn is_type<T>(&self) -> bool
+    where
+        T: DeriveVariant,
+    {
+        T::from_variant(self).is_some()
+    }
+
     /// Decode this [`Variant`] into typed value while consuming the variant.
     ///
     /// This avoids clone work for container-heavy values when the caller no
@@ -450,6 +583,15 @@ impl Variant {
             target: std::any::type_name::<T>(),
             actual,
         })
+    }
+
+    /// Decode this [`Variant`] into typed value while consuming it, returning `None` on mismatch.
+    #[inline]
+    pub fn into_type<T>(self) -> Option<T>
+    where
+        T: DeriveVariant,
+    {
+        T::from_owned_variant(self)
     }
 }
 
@@ -484,6 +626,18 @@ impl DeriveVariant for bool {
     #[inline]
     fn to_variant(&self) -> Variant {
         Variant::from(*self)
+    }
+}
+
+impl DeriveVariant for () {
+    #[inline]
+    fn from_variant(value: &Variant) -> Option<Self> {
+        matches!(value, Variant::Null).then_some(())
+    }
+
+    #[inline]
+    fn to_variant(&self) -> Variant {
+        Variant::Null
     }
 }
 
@@ -536,6 +690,40 @@ impl_statefield_unsigned!(u16, Number::U16(v) => v);
 impl_statefield_unsigned!(u32, Number::U32(v) => v);
 impl_statefield_unsigned!(u64, Number::U64(v) => v);
 impl_statefield_unsigned!(u128, Number::U128(v) => v);
+
+macro_rules! impl_nonzero_derive_variant {
+    ($nonzero:ty, $inner:ty) => {
+        impl DeriveVariant for $nonzero {
+            #[inline]
+            fn from_variant(value: &Variant) -> Option<Self> {
+                <$inner as DeriveVariant>::from_variant(value).and_then(Self::new)
+            }
+
+            #[inline]
+            fn from_owned_variant(value: Variant) -> Option<Self> {
+                <$inner as DeriveVariant>::from_owned_variant(value).and_then(Self::new)
+            }
+
+            #[inline]
+            fn to_variant(&self) -> Variant {
+                <$inner as DeriveVariant>::to_variant(&self.get())
+            }
+        }
+    };
+}
+
+impl_nonzero_derive_variant!(NonZeroI8, i8);
+impl_nonzero_derive_variant!(NonZeroI16, i16);
+impl_nonzero_derive_variant!(NonZeroI32, i32);
+impl_nonzero_derive_variant!(NonZeroI64, i64);
+impl_nonzero_derive_variant!(NonZeroI128, i128);
+impl_nonzero_derive_variant!(NonZeroIsize, isize);
+impl_nonzero_derive_variant!(NonZeroU8, u8);
+impl_nonzero_derive_variant!(NonZeroU16, u16);
+impl_nonzero_derive_variant!(NonZeroU32, u32);
+impl_nonzero_derive_variant!(NonZeroU64, u64);
+impl_nonzero_derive_variant!(NonZeroU128, u128);
+impl_nonzero_derive_variant!(NonZeroUsize, usize);
 
 impl DeriveVariant for isize {
     #[inline]
@@ -635,6 +823,20 @@ impl DeriveVariant for String {
     }
 }
 
+impl DeriveVariant for char {
+    #[inline]
+    fn from_variant(value: &Variant) -> Option<Self> {
+        let mut chars = value.as_str()?.chars();
+        let out = chars.next()?;
+        chars.next().is_none().then_some(out)
+    }
+
+    #[inline]
+    fn to_variant(&self) -> Variant {
+        Variant::from(self.to_string())
+    }
+}
+
 impl DeriveVariant for Arc<str> {
     #[inline]
     fn from_variant(value: &Variant) -> Option<Self> {
@@ -657,6 +859,84 @@ impl DeriveVariant for Arc<str> {
     #[inline]
     fn into_variant(self) -> Variant {
         Variant::from(self)
+    }
+}
+
+impl DeriveVariant for Box<str> {
+    #[inline]
+    fn from_variant(value: &Variant) -> Option<Self> {
+        value.as_str().map(Box::<str>::from)
+    }
+
+    #[inline]
+    fn from_owned_variant(value: Variant) -> Option<Self> {
+        match value {
+            Variant::String(v) => Some(Box::<str>::from(v.as_ref())),
+            _ => None,
+        }
+    }
+
+    #[inline]
+    fn to_variant(&self) -> Variant {
+        Variant::from(self.as_ref())
+    }
+
+    #[inline]
+    fn into_variant(self) -> Variant {
+        Variant::from(String::from(self))
+    }
+}
+
+impl DeriveVariant for Cow<'static, str> {
+    #[inline]
+    fn from_variant(value: &Variant) -> Option<Self> {
+        value.as_str().map(|value| Cow::Owned(value.to_string()))
+    }
+
+    #[inline]
+    fn from_owned_variant(value: Variant) -> Option<Self> {
+        match value {
+            Variant::String(v) => Some(Cow::Owned(v.to_string())),
+            _ => None,
+        }
+    }
+
+    #[inline]
+    fn to_variant(&self) -> Variant {
+        Variant::from(self.as_ref())
+    }
+
+    #[inline]
+    fn into_variant(self) -> Variant {
+        Variant::from(self.into_owned())
+    }
+}
+
+impl DeriveVariant for PathBuf {
+    #[inline]
+    fn from_variant(value: &Variant) -> Option<Self> {
+        value.as_str().map(PathBuf::from)
+    }
+
+    #[inline]
+    fn from_owned_variant(value: Variant) -> Option<Self> {
+        match value {
+            Variant::String(v) => Some(PathBuf::from(v.as_ref())),
+            _ => None,
+        }
+    }
+
+    #[inline]
+    fn to_variant(&self) -> Variant {
+        self.to_str().map(Variant::from).unwrap_or(Variant::Null)
+    }
+
+    #[inline]
+    fn into_variant(self) -> Variant {
+        self.into_os_string()
+            .into_string()
+            .map(Variant::from)
+            .unwrap_or(Variant::Null)
     }
 }
 
@@ -1305,6 +1585,31 @@ where
     }
 }
 
+impl<T> DeriveVariant for Box<T>
+where
+    T: DeriveVariant,
+{
+    #[inline]
+    fn from_variant(value: &Variant) -> Option<Self> {
+        T::from_variant(value).map(Box::new)
+    }
+
+    #[inline]
+    fn from_owned_variant(value: Variant) -> Option<Self> {
+        T::from_owned_variant(value).map(Box::new)
+    }
+
+    #[inline]
+    fn to_variant(&self) -> Variant {
+        self.as_ref().to_variant()
+    }
+
+    #[inline]
+    fn into_variant(self) -> Variant {
+        (*self).into_variant()
+    }
+}
+
 impl<T> DeriveVariant for Arc<T>
 where
     T: DeriveVariant,
@@ -1355,6 +1660,64 @@ where
     }
 }
 
+impl<T> DeriveVariant for Cell<T>
+where
+    T: Copy + DeriveVariant,
+{
+    #[inline]
+    fn from_variant(value: &Variant) -> Option<Self> {
+        T::from_variant(value).map(Cell::new)
+    }
+
+    #[inline]
+    fn from_owned_variant(value: Variant) -> Option<Self> {
+        T::from_owned_variant(value).map(Cell::new)
+    }
+
+    #[inline]
+    fn to_variant(&self) -> Variant {
+        self.get().to_variant()
+    }
+
+    #[inline]
+    fn into_variant(self) -> Variant {
+        self.into_inner().into_variant()
+    }
+}
+
+macro_rules! impl_atomic_derive_variant {
+    ($atomic:ty, $inner:ty) => {
+        impl DeriveVariant for $atomic {
+            #[inline]
+            fn from_variant(value: &Variant) -> Option<Self> {
+                <$inner as DeriveVariant>::from_variant(value).map(<$atomic>::new)
+            }
+
+            #[inline]
+            fn from_owned_variant(value: Variant) -> Option<Self> {
+                <$inner as DeriveVariant>::from_owned_variant(value).map(<$atomic>::new)
+            }
+
+            #[inline]
+            fn to_variant(&self) -> Variant {
+                self.load(Ordering::SeqCst).to_variant()
+            }
+
+            #[inline]
+            fn into_variant(self) -> Variant {
+                self.into_inner().into_variant()
+            }
+        }
+    };
+}
+
+impl_atomic_derive_variant!(AtomicBool, bool);
+impl_atomic_derive_variant!(AtomicI32, i32);
+impl_atomic_derive_variant!(AtomicI64, i64);
+impl_atomic_derive_variant!(AtomicU32, u32);
+impl_atomic_derive_variant!(AtomicU64, u64);
+impl_atomic_derive_variant!(AtomicUsize, usize);
+
 impl<T> DeriveVariant for RefCell<T>
 where
     T: DeriveVariant,
@@ -1377,6 +1740,238 @@ where
     #[inline]
     fn into_variant(self) -> Variant {
         self.into_inner().into_variant()
+    }
+}
+
+impl<T> DeriveVariant for Wrapping<T>
+where
+    T: DeriveVariant,
+{
+    #[inline]
+    fn from_variant(value: &Variant) -> Option<Self> {
+        T::from_variant(value).map(Wrapping)
+    }
+
+    #[inline]
+    fn from_owned_variant(value: Variant) -> Option<Self> {
+        T::from_owned_variant(value).map(Wrapping)
+    }
+
+    #[inline]
+    fn to_variant(&self) -> Variant {
+        self.0.to_variant()
+    }
+
+    #[inline]
+    fn into_variant(self) -> Variant {
+        self.0.into_variant()
+    }
+}
+
+impl<T> DeriveVariant for Saturating<T>
+where
+    T: DeriveVariant,
+{
+    #[inline]
+    fn from_variant(value: &Variant) -> Option<Self> {
+        T::from_variant(value).map(Saturating)
+    }
+
+    #[inline]
+    fn from_owned_variant(value: Variant) -> Option<Self> {
+        T::from_owned_variant(value).map(Saturating)
+    }
+
+    #[inline]
+    fn to_variant(&self) -> Variant {
+        self.0.to_variant()
+    }
+
+    #[inline]
+    fn into_variant(self) -> Variant {
+        self.0.into_variant()
+    }
+}
+
+impl<T> DeriveVariant for Reverse<T>
+where
+    T: DeriveVariant,
+{
+    #[inline]
+    fn from_variant(value: &Variant) -> Option<Self> {
+        T::from_variant(value).map(Reverse)
+    }
+
+    #[inline]
+    fn from_owned_variant(value: Variant) -> Option<Self> {
+        T::from_owned_variant(value).map(Reverse)
+    }
+
+    #[inline]
+    fn to_variant(&self) -> Variant {
+        self.0.to_variant()
+    }
+
+    #[inline]
+    fn into_variant(self) -> Variant {
+        self.0.into_variant()
+    }
+}
+
+impl<T, const N: usize> DeriveVariant for [T; N]
+where
+    T: DeriveVariant,
+{
+    #[inline]
+    fn from_variant(value: &Variant) -> Option<Self> {
+        let items = value.as_array()?;
+        if items.len() != N {
+            return None;
+        }
+        let mut out = Vec::with_capacity(N);
+        for item in items {
+            out.push(T::from_variant(item)?);
+        }
+        let boxed: Box<[T]> = out.into_boxed_slice();
+        let boxed: Box<[T; N]> = boxed.try_into().ok()?;
+        Some(*boxed)
+    }
+
+    #[inline]
+    fn from_owned_variant(value: Variant) -> Option<Self> {
+        let items = match value {
+            Variant::Array(items) => items,
+            _ => return None,
+        };
+        if items.len() != N {
+            return None;
+        }
+        let mut out = Vec::with_capacity(N);
+        for item in items {
+            out.push(T::from_owned_variant(item)?);
+        }
+        let boxed: Box<[T]> = out.into_boxed_slice();
+        let boxed: Box<[T; N]> = boxed.try_into().ok()?;
+        Some(*boxed)
+    }
+
+    #[inline]
+    fn to_variant(&self) -> Variant {
+        Variant::Array(self.iter().map(DeriveVariant::to_variant).collect())
+    }
+
+    #[inline]
+    fn into_variant(self) -> Variant {
+        Variant::Array(self.into_iter().map(DeriveVariant::into_variant).collect())
+    }
+}
+
+impl<T> DeriveVariant for Box<[T]>
+where
+    T: DeriveVariant,
+{
+    #[inline]
+    fn from_variant(value: &Variant) -> Option<Self> {
+        let items = value.as_array()?;
+        let mut out = Vec::with_capacity(items.len());
+        for item in items {
+            out.push(T::from_variant(item)?);
+        }
+        Some(out.into_boxed_slice())
+    }
+
+    #[inline]
+    fn from_owned_variant(value: Variant) -> Option<Self> {
+        let items = match value {
+            Variant::Array(items) => items,
+            _ => return None,
+        };
+        let mut out = Vec::with_capacity(items.len());
+        for item in items {
+            out.push(T::from_owned_variant(item)?);
+        }
+        Some(out.into_boxed_slice())
+    }
+
+    #[inline]
+    fn to_variant(&self) -> Variant {
+        Variant::Array(self.iter().map(DeriveVariant::to_variant).collect())
+    }
+
+    #[inline]
+    fn into_variant(self) -> Variant {
+        Variant::Array(
+            Vec::from(self)
+                .into_iter()
+                .map(DeriveVariant::into_variant)
+                .collect(),
+        )
+    }
+}
+
+impl<T> DeriveVariant for Arc<[T]>
+where
+    T: DeriveVariant,
+{
+    #[inline]
+    fn from_variant(value: &Variant) -> Option<Self> {
+        let items = value.as_array()?;
+        let mut out = Vec::with_capacity(items.len());
+        for item in items {
+            out.push(T::from_variant(item)?);
+        }
+        Some(Arc::from(out.into_boxed_slice()))
+    }
+
+    #[inline]
+    fn from_owned_variant(value: Variant) -> Option<Self> {
+        let items = match value {
+            Variant::Array(items) => items,
+            _ => return None,
+        };
+        let mut out = Vec::with_capacity(items.len());
+        for item in items {
+            out.push(T::from_owned_variant(item)?);
+        }
+        Some(Arc::from(out.into_boxed_slice()))
+    }
+
+    #[inline]
+    fn to_variant(&self) -> Variant {
+        Variant::Array(self.iter().map(DeriveVariant::to_variant).collect())
+    }
+}
+
+impl<T> DeriveVariant for Rc<[T]>
+where
+    T: DeriveVariant,
+{
+    #[inline]
+    fn from_variant(value: &Variant) -> Option<Self> {
+        let items = value.as_array()?;
+        let mut out = Vec::with_capacity(items.len());
+        for item in items {
+            out.push(T::from_variant(item)?);
+        }
+        Some(Rc::from(out.into_boxed_slice()))
+    }
+
+    #[inline]
+    fn from_owned_variant(value: Variant) -> Option<Self> {
+        let items = match value {
+            Variant::Array(items) => items,
+            _ => return None,
+        };
+        let mut out = Vec::with_capacity(items.len());
+        for item in items {
+            out.push(T::from_owned_variant(item)?);
+        }
+        Some(Rc::from(out.into_boxed_slice()))
+    }
+
+    #[inline]
+    fn to_variant(&self) -> Variant {
+        Variant::Array(self.iter().map(DeriveVariant::to_variant).collect())
     }
 }
 
@@ -1418,8 +2013,251 @@ where
     }
 }
 
-impl<T> DeriveVariant for BTreeMap<Arc<str>, T>
+impl<T> DeriveVariant for VecDeque<T>
 where
+    T: DeriveVariant,
+{
+    #[inline]
+    fn from_variant(value: &Variant) -> Option<Self> {
+        let items = value.as_array()?;
+        let mut out = VecDeque::with_capacity(items.len());
+        for item in items {
+            out.push_back(T::from_variant(item)?);
+        }
+        Some(out)
+    }
+
+    #[inline]
+    fn from_owned_variant(value: Variant) -> Option<Self> {
+        let items = match value {
+            Variant::Array(items) => items,
+            _ => return None,
+        };
+        let mut out = VecDeque::with_capacity(items.len());
+        for item in items {
+            out.push_back(T::from_owned_variant(item)?);
+        }
+        Some(out)
+    }
+
+    #[inline]
+    fn to_variant(&self) -> Variant {
+        Variant::Array(self.iter().map(DeriveVariant::to_variant).collect())
+    }
+
+    #[inline]
+    fn into_variant(self) -> Variant {
+        Variant::Array(self.into_iter().map(DeriveVariant::into_variant).collect())
+    }
+}
+
+impl<T> DeriveVariant for LinkedList<T>
+where
+    T: DeriveVariant,
+{
+    #[inline]
+    fn from_variant(value: &Variant) -> Option<Self> {
+        let items = value.as_array()?;
+        let mut out = LinkedList::new();
+        for item in items {
+            out.push_back(T::from_variant(item)?);
+        }
+        Some(out)
+    }
+
+    #[inline]
+    fn from_owned_variant(value: Variant) -> Option<Self> {
+        let items = match value {
+            Variant::Array(items) => items,
+            _ => return None,
+        };
+        let mut out = LinkedList::new();
+        for item in items {
+            out.push_back(T::from_owned_variant(item)?);
+        }
+        Some(out)
+    }
+
+    #[inline]
+    fn to_variant(&self) -> Variant {
+        Variant::Array(self.iter().map(DeriveVariant::to_variant).collect())
+    }
+
+    #[inline]
+    fn into_variant(self) -> Variant {
+        Variant::Array(self.into_iter().map(DeriveVariant::into_variant).collect())
+    }
+}
+
+impl<T> DeriveVariant for BinaryHeap<T>
+where
+    T: Ord + DeriveVariant,
+{
+    #[inline]
+    fn from_variant(value: &Variant) -> Option<Self> {
+        let items = value.as_array()?;
+        let mut out = BinaryHeap::with_capacity(items.len());
+        for item in items {
+            out.push(T::from_variant(item)?);
+        }
+        Some(out)
+    }
+
+    #[inline]
+    fn from_owned_variant(value: Variant) -> Option<Self> {
+        let items = match value {
+            Variant::Array(items) => items,
+            _ => return None,
+        };
+        let mut out = BinaryHeap::with_capacity(items.len());
+        for item in items {
+            out.push(T::from_owned_variant(item)?);
+        }
+        Some(out)
+    }
+
+    #[inline]
+    fn to_variant(&self) -> Variant {
+        Variant::Array(self.iter().map(DeriveVariant::to_variant).collect())
+    }
+
+    #[inline]
+    fn into_variant(self) -> Variant {
+        Variant::Array(
+            self.into_vec()
+                .into_iter()
+                .map(DeriveVariant::into_variant)
+                .collect(),
+        )
+    }
+}
+
+macro_rules! impl_tuple_derive_variant {
+    ($len:expr; $($ty:ident: $idx:tt),+ $(,)?) => {
+        impl<$($ty),+> DeriveVariant for ($($ty,)+)
+        where
+            $($ty: DeriveVariant),+
+        {
+            #[inline]
+            fn from_variant(value: &Variant) -> Option<Self> {
+                let items = value.as_array()?;
+                if items.len() != $len {
+                    return None;
+                }
+                Some(($(<$ty as DeriveVariant>::from_variant(items.get($idx)?)?,)+))
+            }
+
+            #[inline]
+            fn from_owned_variant(value: Variant) -> Option<Self> {
+                let items = match value {
+                    Variant::Array(items) => items,
+                    _ => return None,
+                };
+                if items.len() != $len {
+                    return None;
+                }
+                let mut items = items.into_iter();
+                Some(($(<$ty as DeriveVariant>::from_owned_variant(items.next()?)?,)+))
+            }
+
+            #[inline]
+            fn to_variant(&self) -> Variant {
+                Variant::Array(vec![$(self.$idx.to_variant()),+])
+            }
+
+            #[inline]
+            fn into_variant(self) -> Variant {
+                Variant::Array(vec![$(self.$idx.into_variant()),+])
+            }
+        }
+
+        impl<$($ty),+> VariantSchema for ($($ty,)+) {}
+    };
+}
+
+impl_tuple_derive_variant!(2; A: 0, B: 1);
+impl_tuple_derive_variant!(3; A: 0, B: 1, C: 2);
+impl_tuple_derive_variant!(4; A: 0, B: 1, C: 2, D: 3);
+impl_tuple_derive_variant!(5; A: 0, B: 1, C: 2, D: 3, E: 4);
+impl_tuple_derive_variant!(6; A: 0, B: 1, C: 2, D: 3, E: 4, F: 5);
+
+trait VariantObjectKey: Sized {
+    fn from_arc_key(key: Arc<str>) -> Self;
+    fn to_arc_key(&self) -> Arc<str>;
+    fn into_arc_key(self) -> Arc<str>;
+}
+
+impl VariantObjectKey for Arc<str> {
+    #[inline]
+    fn from_arc_key(key: Arc<str>) -> Self {
+        key
+    }
+
+    #[inline]
+    fn to_arc_key(&self) -> Arc<str> {
+        Arc::clone(self)
+    }
+
+    #[inline]
+    fn into_arc_key(self) -> Arc<str> {
+        self
+    }
+}
+
+impl VariantObjectKey for String {
+    #[inline]
+    fn from_arc_key(key: Arc<str>) -> Self {
+        key.to_string()
+    }
+
+    #[inline]
+    fn to_arc_key(&self) -> Arc<str> {
+        Arc::from(self.as_str())
+    }
+
+    #[inline]
+    fn into_arc_key(self) -> Arc<str> {
+        Arc::from(self)
+    }
+}
+
+impl VariantObjectKey for Box<str> {
+    #[inline]
+    fn from_arc_key(key: Arc<str>) -> Self {
+        Box::from(key.as_ref())
+    }
+
+    #[inline]
+    fn to_arc_key(&self) -> Arc<str> {
+        Arc::from(self.as_ref())
+    }
+
+    #[inline]
+    fn into_arc_key(self) -> Arc<str> {
+        Arc::from(String::from(self))
+    }
+}
+
+impl VariantObjectKey for Cow<'static, str> {
+    #[inline]
+    fn from_arc_key(key: Arc<str>) -> Self {
+        Cow::Owned(key.to_string())
+    }
+
+    #[inline]
+    fn to_arc_key(&self) -> Arc<str> {
+        Arc::from(self.as_ref())
+    }
+
+    #[inline]
+    fn into_arc_key(self) -> Arc<str> {
+        Arc::from(self.into_owned())
+    }
+}
+
+impl<K, T> DeriveVariant for BTreeMap<K, T>
+where
+    K: Ord + VariantObjectKey,
     T: DeriveVariant,
 {
     #[inline]
@@ -1427,7 +2265,7 @@ where
         let object = value.as_object()?;
         let mut out = BTreeMap::new();
         for (k, v) in object {
-            out.insert(Arc::clone(k), T::from_variant(v)?);
+            out.insert(K::from_arc_key(Arc::clone(k)), T::from_variant(v)?);
         }
         Some(out)
     }
@@ -1440,7 +2278,7 @@ where
         };
         let mut out = BTreeMap::new();
         for (k, v) in object {
-            out.insert(k, T::from_owned_variant(v)?);
+            out.insert(K::from_arc_key(k), T::from_owned_variant(v)?);
         }
         Some(out)
     }
@@ -1449,7 +2287,7 @@ where
     fn to_variant(&self) -> Variant {
         let mut out = BTreeMap::new();
         for (k, v) in self {
-            out.insert(Arc::clone(k), v.to_variant());
+            out.insert(k.to_arc_key(), v.to_variant());
         }
         Variant::Object(out)
     }
@@ -1458,9 +2296,264 @@ where
     fn into_variant(self) -> Variant {
         let mut out = BTreeMap::new();
         for (k, v) in self {
-            out.insert(k, v.into_variant());
+            out.insert(k.into_arc_key(), v.into_variant());
         }
         Variant::Object(out)
+    }
+}
+
+impl<K, T> DeriveVariant for HashMap<K, T>
+where
+    K: Eq + Hash + VariantObjectKey,
+    T: DeriveVariant,
+{
+    #[inline]
+    fn from_variant(value: &Variant) -> Option<Self> {
+        let object = value.as_object()?;
+        let mut out = HashMap::with_capacity(object.len());
+        for (k, v) in object {
+            out.insert(K::from_arc_key(Arc::clone(k)), T::from_variant(v)?);
+        }
+        Some(out)
+    }
+
+    #[inline]
+    fn from_owned_variant(value: Variant) -> Option<Self> {
+        let object = match value {
+            Variant::Object(object) => object,
+            _ => return None,
+        };
+        let mut out = HashMap::with_capacity(object.len());
+        for (k, v) in object {
+            out.insert(K::from_arc_key(k), T::from_owned_variant(v)?);
+        }
+        Some(out)
+    }
+
+    #[inline]
+    fn to_variant(&self) -> Variant {
+        let mut out = BTreeMap::new();
+        for (k, v) in self {
+            out.insert(k.to_arc_key(), v.to_variant());
+        }
+        Variant::Object(out)
+    }
+
+    #[inline]
+    fn into_variant(self) -> Variant {
+        let mut out = BTreeMap::new();
+        for (k, v) in self {
+            out.insert(k.into_arc_key(), v.into_variant());
+        }
+        Variant::Object(out)
+    }
+}
+
+impl<T> DeriveVariant for BTreeSet<T>
+where
+    T: Ord + DeriveVariant,
+{
+    #[inline]
+    fn from_variant(value: &Variant) -> Option<Self> {
+        let items = value.as_array()?;
+        let mut out = BTreeSet::new();
+        for item in items {
+            out.insert(T::from_variant(item)?);
+        }
+        Some(out)
+    }
+
+    #[inline]
+    fn from_owned_variant(value: Variant) -> Option<Self> {
+        let items = match value {
+            Variant::Array(items) => items,
+            _ => return None,
+        };
+        let mut out = BTreeSet::new();
+        for item in items {
+            out.insert(T::from_owned_variant(item)?);
+        }
+        Some(out)
+    }
+
+    #[inline]
+    fn to_variant(&self) -> Variant {
+        Variant::Array(self.iter().map(DeriveVariant::to_variant).collect())
+    }
+
+    #[inline]
+    fn into_variant(self) -> Variant {
+        Variant::Array(self.into_iter().map(DeriveVariant::into_variant).collect())
+    }
+}
+
+impl<T> DeriveVariant for HashSet<T>
+where
+    T: Eq + Hash + DeriveVariant,
+{
+    #[inline]
+    fn from_variant(value: &Variant) -> Option<Self> {
+        let items = value.as_array()?;
+        let mut out = HashSet::with_capacity(items.len());
+        for item in items {
+            out.insert(T::from_variant(item)?);
+        }
+        Some(out)
+    }
+
+    #[inline]
+    fn from_owned_variant(value: Variant) -> Option<Self> {
+        let items = match value {
+            Variant::Array(items) => items,
+            _ => return None,
+        };
+        let mut out = HashSet::with_capacity(items.len());
+        for item in items {
+            out.insert(T::from_owned_variant(item)?);
+        }
+        Some(out)
+    }
+
+    #[inline]
+    fn to_variant(&self) -> Variant {
+        Variant::Array(self.iter().map(DeriveVariant::to_variant).collect())
+    }
+
+    #[inline]
+    fn into_variant(self) -> Variant {
+        Variant::Array(self.into_iter().map(DeriveVariant::into_variant).collect())
+    }
+}
+
+impl<T> DeriveVariant for Range<T>
+where
+    T: DeriveVariant,
+{
+    #[inline]
+    fn from_variant(value: &Variant) -> Option<Self> {
+        let items = value.as_array()?;
+        if items.len() != 2 {
+            return None;
+        }
+        let start = T::from_variant(&items[0])?;
+        let end = T::from_variant(&items[1])?;
+        Some(start..end)
+    }
+
+    #[inline]
+    fn from_owned_variant(value: Variant) -> Option<Self> {
+        let items = match value {
+            Variant::Array(items) => items,
+            _ => return None,
+        };
+        if items.len() != 2 {
+            return None;
+        }
+        let mut items = items.into_iter();
+        let start = T::from_owned_variant(items.next()?)?;
+        let end = T::from_owned_variant(items.next()?)?;
+        Some(start..end)
+    }
+
+    #[inline]
+    fn to_variant(&self) -> Variant {
+        Variant::Array(vec![self.start.to_variant(), self.end.to_variant()])
+    }
+
+    #[inline]
+    fn into_variant(self) -> Variant {
+        Variant::Array(vec![self.start.into_variant(), self.end.into_variant()])
+    }
+}
+
+impl<T> DeriveVariant for RangeInclusive<T>
+where
+    T: DeriveVariant,
+{
+    #[inline]
+    fn from_variant(value: &Variant) -> Option<Self> {
+        let items = value.as_array()?;
+        if items.len() != 2 {
+            return None;
+        }
+        let start = T::from_variant(&items[0])?;
+        let end = T::from_variant(&items[1])?;
+        Some(start..=end)
+    }
+
+    #[inline]
+    fn from_owned_variant(value: Variant) -> Option<Self> {
+        let items = match value {
+            Variant::Array(items) => items,
+            _ => return None,
+        };
+        if items.len() != 2 {
+            return None;
+        }
+        let mut items = items.into_iter();
+        let start = T::from_owned_variant(items.next()?)?;
+        let end = T::from_owned_variant(items.next()?)?;
+        Some(start..=end)
+    }
+
+    #[inline]
+    fn to_variant(&self) -> Variant {
+        Variant::Array(vec![self.start().to_variant(), self.end().to_variant()])
+    }
+
+    #[inline]
+    fn into_variant(self) -> Variant {
+        let (start, end) = self.into_inner();
+        Variant::Array(vec![start.into_variant(), end.into_variant()])
+    }
+}
+
+impl DeriveVariant for Duration {
+    #[inline]
+    fn from_variant(value: &Variant) -> Option<Self> {
+        if let Some(secs) = value.as_f64() {
+            return secs
+                .is_finite()
+                .then_some(secs)
+                .filter(|secs| *secs >= 0.0)
+                .map(Duration::from_secs_f64);
+        }
+        if let Some(secs) = value.as_u64() {
+            return Some(Duration::from_secs(secs));
+        }
+        let obj = value.as_object()?;
+        let secs = obj.get("secs")?.as_u64()?;
+        let nanos = obj.get("nanos")?.as_u32()?;
+        (nanos < 1_000_000_000).then_some(Duration::new(secs, nanos))
+    }
+
+    #[inline]
+    fn to_variant(&self) -> Variant {
+        let mut out = BTreeMap::new();
+        out.insert(Arc::from("secs"), Variant::from(self.as_secs()));
+        out.insert(Arc::from("nanos"), Variant::from(self.subsec_nanos()));
+        Variant::Object(out)
+    }
+}
+
+impl DeriveVariant for SystemTime {
+    #[inline]
+    fn from_variant(value: &Variant) -> Option<Self> {
+        let duration = Duration::from_variant(value)?;
+        UNIX_EPOCH.checked_add(duration)
+    }
+
+    #[inline]
+    fn from_owned_variant(value: Variant) -> Option<Self> {
+        let duration = Duration::from_owned_variant(value)?;
+        UNIX_EPOCH.checked_add(duration)
+    }
+
+    #[inline]
+    fn to_variant(&self) -> Variant {
+        self.duration_since(UNIX_EPOCH)
+            .map(|duration| duration.to_variant())
+            .unwrap_or(Variant::Null)
     }
 }
 

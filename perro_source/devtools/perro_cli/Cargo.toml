@@ -9,3 +9,4 @@ perro_project.workspace = true
 perro_scene.workspace = true
 gltf = { version = "1.4.1", features = ["import", "utils"] }
 serde_json = "1"
+ctrlc = "3.4"

@@ -2148,7 +2148,11 @@ fn char_over_floor_3d(runtime: &mut Runtime) -> (NodeID, NodeID) {
     assert!(NodeAPI::set_global_transform_3d(
         runtime,
         char_id,
-        Transform3D::new(Vector3::new(0.0, 3.0, 0.0), Quaternion::IDENTITY, Vector3::ONE),
+        Transform3D::new(
+            Vector3::new(0.0, 3.0, 0.0),
+            Quaternion::IDENTITY,
+            Vector3::ONE
+        ),
     ));
     (char_id, floor_id)
 }
@@ -2210,7 +2214,11 @@ fn move_body_interleaved_unrelated_mutation_forces_resync() {
     assert!(NodeAPI::set_global_transform_3d(
         &mut runtime,
         other,
-        Transform3D::new(Vector3::new(5.0, 3.0, 0.0), Quaternion::IDENTITY, Vector3::ONE),
+        Transform3D::new(
+            Vector3::new(5.0, 3.0, 0.0),
+            Quaternion::IDENTITY,
+            Vector3::ONE
+        ),
     ));
     let filter = PhysicsQueryFilter {
         include_areas: false,
@@ -2228,7 +2236,11 @@ fn move_body_interleaved_unrelated_mutation_forces_resync() {
     assert!(NodeAPI::set_global_transform_3d(
         &mut runtime,
         other,
-        Transform3D::new(Vector3::new(6.0, 3.0, 0.0), Quaternion::IDENTITY, Vector3::ONE),
+        Transform3D::new(
+            Vector3::new(6.0, 3.0, 0.0),
+            Quaternion::IDENTITY,
+            Vector3::ONE
+        ),
     ));
     let _ = runtime
         .physics_move_body_3d(char_id, Vector3::new(0.0, 2.0, 0.0), 0.005, &filter)
@@ -2263,7 +2275,11 @@ fn move_body_nested_char_pose_consistent_after_fast_path() {
     assert!(NodeAPI::set_global_transform_3d(
         &mut runtime,
         pivot,
-        Transform3D::new(Vector3::new(4.0, 0.0, 0.0), Quaternion::IDENTITY, Vector3::ONE),
+        Transform3D::new(
+            Vector3::new(4.0, 0.0, 0.0),
+            Quaternion::IDENTITY,
+            Vector3::ONE
+        ),
     ));
     let char_id = NodeAPI::create::<CharacterBody3D>(&mut runtime);
     let char_shape = NodeAPI::create::<CollisionShape3D>(&mut runtime);
@@ -2272,7 +2288,11 @@ fn move_body_nested_char_pose_consistent_after_fast_path() {
     assert!(NodeAPI::set_global_transform_3d(
         &mut runtime,
         char_id,
-        Transform3D::new(Vector3::new(4.0, 3.0, 0.0), Quaternion::IDENTITY, Vector3::ONE),
+        Transform3D::new(
+            Vector3::new(4.0, 3.0, 0.0),
+            Quaternion::IDENTITY,
+            Vector3::ONE
+        ),
     ));
 
     let filter = PhysicsQueryFilter {
@@ -2286,7 +2306,10 @@ fn move_body_nested_char_pose_consistent_after_fast_path() {
         .get_global_transform_3d(char_id)
         .expect("char global")
         .position;
-    assert!(approx(node_pos.y, result.position.y), "node global == result");
+    assert!(
+        approx(node_pos.y, result.position.y),
+        "node global == result"
+    );
     assert!(approx(node_pos.x, 4.0), "x parent offset preserved");
 
     // ray straight down thru char world-x must hit the char (rapier body at
@@ -2365,7 +2388,11 @@ fn physics_node_move_does_recollect() {
     assert!(NodeAPI::set_global_transform_3d(
         &mut runtime,
         char_id,
-        Transform3D::new(Vector3::new(1.0, 3.0, 0.0), Quaternion::IDENTITY, Vector3::ONE),
+        Transform3D::new(
+            Vector3::new(1.0, 3.0, 0.0),
+            Quaternion::IDENTITY,
+            Vector3::ONE
+        ),
     ));
     let _ = runtime.physics_raycast_3d(
         Vector3::new(0.0, 10.0, 0.0),
@@ -2391,7 +2418,11 @@ fn collision_shape_child_move_does_recollect() {
     assert!(NodeAPI::set_global_transform_3d(
         &mut runtime,
         body,
-        Transform3D::new(Vector3::new(8.0, 0.0, 0.0), Quaternion::IDENTITY, Vector3::ONE),
+        Transform3D::new(
+            Vector3::new(8.0, 0.0, 0.0),
+            Quaternion::IDENTITY,
+            Vector3::ONE
+        ),
     ));
     let _ = runtime.physics_raycast_3d(
         Vector3::new(0.0, 10.0, 0.0),
@@ -2404,7 +2435,11 @@ fn collision_shape_child_move_does_recollect() {
     assert!(NodeAPI::set_global_transform_3d(
         &mut runtime,
         shape,
-        Transform3D::new(Vector3::new(8.0, 1.0, 0.0), Quaternion::IDENTITY, Vector3::ONE),
+        Transform3D::new(
+            Vector3::new(8.0, 1.0, 0.0),
+            Quaternion::IDENTITY,
+            Vector3::ONE
+        ),
     ));
     let _ = runtime.physics_raycast_3d(
         Vector3::new(0.0, 10.0, 0.0),
@@ -2434,7 +2469,11 @@ fn parent_of_physics_node_move_does_recollect() {
     assert!(NodeAPI::set_global_transform_3d(
         &mut runtime,
         parent,
-        Transform3D::new(Vector3::new(8.0, 0.0, 0.0), Quaternion::IDENTITY, Vector3::ONE),
+        Transform3D::new(
+            Vector3::new(8.0, 0.0, 0.0),
+            Quaternion::IDENTITY,
+            Vector3::ONE
+        ),
     ));
     let _ = runtime.physics_raycast_3d(
         Vector3::new(0.0, 10.0, 0.0),
@@ -2449,7 +2488,11 @@ fn parent_of_physics_node_move_does_recollect() {
     assert!(NodeAPI::set_global_transform_3d(
         &mut runtime,
         parent,
-        Transform3D::new(Vector3::new(9.0, 0.0, 0.0), Quaternion::IDENTITY, Vector3::ONE),
+        Transform3D::new(
+            Vector3::new(9.0, 0.0, 0.0),
+            Quaternion::IDENTITY,
+            Vector3::ONE
+        ),
     ));
     let _ = runtime.physics_raycast_3d(
         Vector3::new(0.0, 10.0, 0.0),

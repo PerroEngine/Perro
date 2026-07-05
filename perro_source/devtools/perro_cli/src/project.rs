@@ -23,7 +23,10 @@ use std::net::{TcpListener, TcpStream};
 use std::panic::{self, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::{LazyLock, Mutex};
+use std::sync::{
+    LazyLock, Mutex,
+    atomic::{AtomicBool, Ordering},
+};
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -318,6 +321,7 @@ pub(crate) fn dev_command(args: &[String], cwd: &Path) -> Result<(), String> {
         run_cmd.env("PERRO_PROFILE_CSV", path.to_string_lossy().to_string());
     }
 
+    install_dev_ctrl_c_handler();
     let run_status = run_cmd.status().map_err(|err| {
         format!(
             "failed to launch project dev runner at {}: {err}",
@@ -333,6 +337,17 @@ pub(crate) fn dev_command(args: &[String], cwd: &Path) -> Result<(), String> {
     }
     log_done("Dev Runner Finished");
     Ok(())
+}
+
+fn install_dev_ctrl_c_handler() {
+    static INSTALLED: AtomicBool = AtomicBool::new(false);
+    if INSTALLED.swap(true, Ordering::SeqCst) {
+        return;
+    }
+
+    if let Err(err) = ctrlc::set_handler(|| {}) {
+        eprintln!("perro warning: failed to install ctrl-c handler: {err}");
+    }
 }
 
 fn prepare_dev_runner_launch_path(
