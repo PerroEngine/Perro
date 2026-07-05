@@ -578,10 +578,23 @@ impl Runtime {
 }
 
 const AUDIO_PARAM_SMOOTHING: f32 = 0.5;
+// Volume rises faster than it falls: clearing an occluder should read as
+// immediate, while onset of occlusion still fades without zipper.
+const AUDIO_VOLUME_ATTACK: f32 = 0.8;
 
 #[inline]
 fn smooth_toward(prev: f32, next: f32) -> f32 {
     prev + (next - prev) * AUDIO_PARAM_SMOOTHING
+}
+
+#[inline]
+fn smooth_volume(prev: f32, next: f32) -> f32 {
+    let rate = if next > prev {
+        AUDIO_VOLUME_ATTACK
+    } else {
+        AUDIO_PARAM_SMOOTHING
+    };
+    prev + (next - prev) * rate
 }
 
 fn smooth_propagation_result(
@@ -594,7 +607,7 @@ fn smooth_propagation_result(
             smooth_toward(prev.pan[1], next.pan[1]),
             smooth_toward(prev.pan[2], next.pan[2]),
         ],
-        volume: smooth_toward(prev.volume, next.volume),
+        volume: smooth_volume(prev.volume, next.volume),
         low_pass: smooth_toward(prev.low_pass, next.low_pass),
         reflection: smooth_toward(prev.reflection, next.reflection),
         reverb_send: smooth_toward(prev.reverb_send, next.reverb_send),

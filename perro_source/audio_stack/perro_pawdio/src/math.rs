@@ -2,15 +2,26 @@
 // near the unit sphere for audible channel separation. Near-fade keeps close
 // fly-bys from hard-flipping left/right.
 const PAN_RADIUS: f32 = 0.85;
-const PAN_NEAR_FADE: f32 = 0.5;
+const PAN_NEAR_FADE: f32 = 0.15;
+// Ears only resolve the horizontal axis; boost x and damp elevation before
+// projecting onto the pan sphere so left/right stays legible at oblique angles.
+const PAN_LATERAL_BOOST: f32 = 1.9;
+const PAN_VERTICAL_SCALE: f32 = 0.35;
 
 pub(crate) fn spatial_pan(local: [f32; 3]) -> [f32; 3] {
     let dist = (local[0] * local[0] + local[1] * local[1] + local[2] * local[2]).sqrt();
     if dist <= 0.0001 {
         return [0.0, 0.0, 0.0];
     }
-    let scale = PAN_RADIUS * (dist / (dist + PAN_NEAR_FADE)) / dist;
-    [local[0] * scale, local[1] * scale, local[2] * scale]
+    let x = local[0] * PAN_LATERAL_BOOST;
+    let y = local[1] * PAN_VERTICAL_SCALE;
+    let z = local[2];
+    let warped = (x * x + y * y + z * z).sqrt();
+    if warped <= 0.0001 {
+        return [0.0, 0.0, 0.0];
+    }
+    let scale = PAN_RADIUS * (dist / (dist + PAN_NEAR_FADE)) / warped;
+    [x * scale, y * scale, z * scale]
 }
 
 // Squared linear falloff: audibly louder up close, exactly 0 at range.

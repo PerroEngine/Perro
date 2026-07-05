@@ -6,7 +6,13 @@ const LISTENER_EMBED_EPSILON: f32 = 0.05;
 
 // Occluded sounds probe a small cloud of points around the source; the open
 // fraction lets energy diffract around edges instead of a binary wall cutoff.
+// Two rings: probes near the direct line weigh more than the wide ring, so
+// openness rises gradually as the listener sweeps past a corner instead of
+// snapping between coarse fractions.
 const AUDIO_DIFFUSION_SPREAD: f32 = 1.25;
+const AUDIO_DIFFUSION_SPREAD_NEAR: f32 = 0.45;
+const AUDIO_DIFFUSION_NEAR_WEIGHT: f32 = 1.0;
+const AUDIO_DIFFUSION_FAR_WEIGHT: f32 = 0.6;
 // How much of the unoccluded level leaks through a fully open side.
 const AUDIO_DIFFUSION_LEAK: f32 = 0.6;
 
@@ -142,10 +148,13 @@ impl Runtime {
                 attached_node,
             );
             if openness > 0.0 {
-                occlusion *= 1.0 - 0.7 * openness;
-                low_pass = (low_pass * (1.0 - 0.45 * openness)).clamp(0.0, 1.0);
-                attenuation =
-                    attenuation.max(unoccluded_attenuation * openness * AUDIO_DIFFUSION_LEAK);
+                occlusion *= 1.0 - 0.85 * openness;
+                low_pass = (low_pass * (1.0 - 0.7 * openness)).clamp(0.0, 1.0);
+                // Quadratic ramp that reaches the full unoccluded level at
+                // openness 1: no level jump the frame the direct ray clears.
+                let open_gain =
+                    openness * (AUDIO_DIFFUSION_LEAK + (1.0 - AUDIO_DIFFUSION_LEAK) * openness);
+                attenuation = attenuation.max(unoccluded_attenuation * open_gain);
                 // Pull the perceived position toward the open edge; a
                 // symmetric opening (shift ~0) keeps the reflection point.
                 if open_shift.length_squared() > 0.01 {
@@ -347,10 +356,13 @@ impl Runtime {
                 attached_node,
             );
             if openness > 0.0 {
-                occlusion *= 1.0 - 0.7 * openness;
-                low_pass = (low_pass * (1.0 - 0.45 * openness)).clamp(0.0, 1.0);
-                attenuation =
-                    attenuation.max(unoccluded_attenuation * openness * AUDIO_DIFFUSION_LEAK);
+                occlusion *= 1.0 - 0.85 * openness;
+                low_pass = (low_pass * (1.0 - 0.7 * openness)).clamp(0.0, 1.0);
+                // Quadratic ramp that reaches the full unoccluded level at
+                // openness 1: no level jump the frame the direct ray clears.
+                let open_gain =
+                    openness * (AUDIO_DIFFUSION_LEAK + (1.0 - AUDIO_DIFFUSION_LEAK) * openness);
+                attenuation = attenuation.max(unoccluded_attenuation * open_gain);
                 // Pull the perceived position toward the open edge; a
                 // symmetric opening (shift ~0) keeps the reflection point.
                 if open_shift.length_squared() > 0.01 {
@@ -462,19 +474,21 @@ impl Runtime {
         let dir = to_source * distance.recip();
         let perp = Vector2::new(-dir.y, dir.x);
         let offsets = [
-            perp * AUDIO_DIFFUSION_SPREAD,
-            perp * -AUDIO_DIFFUSION_SPREAD,
+            (perp * AUDIO_DIFFUSION_SPREAD_NEAR, AUDIO_DIFFUSION_NEAR_WEIGHT),
+            (perp * -AUDIO_DIFFUSION_SPREAD_NEAR, AUDIO_DIFFUSION_NEAR_WEIGHT),
+            (perp * AUDIO_DIFFUSION_SPREAD, AUDIO_DIFFUSION_FAR_WEIGHT),
+            (perp * -AUDIO_DIFFUSION_SPREAD, AUDIO_DIFFUSION_FAR_WEIGHT),
         ];
         let exclude: Vec<NodeID> = attached_node.into_iter().collect();
-        let mut attempted = 0u32;
-        let mut open = 0u32;
+        let mut attempted = 0.0f32;
+        let mut open = 0.0f32;
         let mut open_shift = Vector2::ZERO;
-        for offset in offsets {
+        for (offset, weight) in offsets {
             if self.audio.counters.raycasts >= self.audio.config.rays_per_tick_2d {
                 break;
             }
             self.audio.counters.raycasts = self.audio.counters.raycasts.saturating_add(1);
-            attempted += 1;
+            attempted += weight;
             let probe = source_pos + offset;
             let probe_delta = probe - listener_pos;
             let probe_dist = probe_delta.length();
@@ -500,8 +514,8 @@ impl Runtime {
                         .first_audio_mask_2d(listener_pos, probe, audio_layer)
                         .is_some());
             if !blocked {
-                open += 1;
-                open_shift += offset;
+                open += weight;
+                open_shift += offset * weight;
                 self.queue_audio_debug_ray_2d(
                     listener_pos,
                     probe,
@@ -510,10 +524,10 @@ impl Runtime {
                 );
             }
         }
-        if open == 0 || attempted == 0 {
+        if open <= 0.0 || attempted <= 0.0 {
             (0.0, Vector2::ZERO)
         } else {
-            (open as f32 / attempted as f32, open_shift / open as f32)
+            (open / attempted, open_shift / open)
         }
     }
 
@@ -541,20 +555,22 @@ impl Runtime {
         let tangent = tangent.normalized();
         let bitangent = dir.cross(tangent).normalized();
         let offsets = [
-            tangent * AUDIO_DIFFUSION_SPREAD,
-            tangent * -AUDIO_DIFFUSION_SPREAD,
-            bitangent * AUDIO_DIFFUSION_SPREAD,
-            bitangent * -AUDIO_DIFFUSION_SPREAD,
+            (tangent * AUDIO_DIFFUSION_SPREAD_NEAR, AUDIO_DIFFUSION_NEAR_WEIGHT),
+            (tangent * -AUDIO_DIFFUSION_SPREAD_NEAR, AUDIO_DIFFUSION_NEAR_WEIGHT),
+            (tangent * AUDIO_DIFFUSION_SPREAD, AUDIO_DIFFUSION_FAR_WEIGHT),
+            (tangent * -AUDIO_DIFFUSION_SPREAD, AUDIO_DIFFUSION_FAR_WEIGHT),
+            (bitangent * AUDIO_DIFFUSION_SPREAD, AUDIO_DIFFUSION_FAR_WEIGHT),
+            (bitangent * -AUDIO_DIFFUSION_SPREAD, AUDIO_DIFFUSION_FAR_WEIGHT),
         ];
-        let mut attempted = 0u32;
-        let mut open = 0u32;
+        let mut attempted = 0.0f32;
+        let mut open = 0.0f32;
         let mut open_shift = zero;
-        for offset in offsets {
+        for (offset, weight) in offsets {
             if self.audio.counters.raycasts >= self.audio.config.rays_per_tick_3d {
                 break;
             }
             self.audio.counters.raycasts = self.audio.counters.raycasts.saturating_add(1);
-            attempted += 1;
+            attempted += weight;
             let probe = source_pos + offset;
             let probe_delta = probe - listener_pos;
             let probe_dist = probe_delta.length();
@@ -577,8 +593,8 @@ impl Runtime {
                         .first_audio_mask_3d(listener_pos, probe, audio_layer)
                         .is_some());
             if !blocked {
-                open += 1;
-                open_shift += offset;
+                open += weight;
+                open_shift += offset * weight;
                 self.queue_audio_debug_ray_3d(
                     listener_pos,
                     probe,
@@ -587,10 +603,10 @@ impl Runtime {
                 );
             }
         }
-        if open == 0 || attempted == 0 {
+        if open <= 0.0 || attempted <= 0.0 {
             (0.0, zero)
         } else {
-            (open as f32 / attempted as f32, open_shift / open as f32)
+            (open / attempted, open_shift / open)
         }
     }
 
@@ -651,12 +667,13 @@ impl Runtime {
             source.direction_to(listener),
             audio_layer,
             range,
+            false,
         );
         for i in 0..AUDIO_BOUNCE_RAYS_2D {
             let angle = i as f32 * TAU / AUDIO_BOUNCE_RAYS_2D as f32;
             let direction = Vector2::new(angle.cos(), angle.sin());
-            if let Some(path) =
-                self.trace_audio_bounce_ray_2d(source, listener, direction, audio_layer, range)
+            if let Some(path) = self
+                .trace_audio_bounce_ray_2d(source, listener, direction, audio_layer, range, false)
                 && best
                     .as_ref()
                     .is_none_or(|best| path.volume > best.volume || path.distance < best.distance)
@@ -664,9 +681,30 @@ impl Runtime {
                 best = Some(path);
             }
         }
+        // Listener-emitted pass: rays cast from the listener sample paths the
+        // source-side fan misses (e.g. bouncing out through a window) and
+        // reconcile against the source with the same miss tolerance. The
+        // perceived point is the first bounce, the reflector nearest the ear.
+        if best.as_ref().is_none_or(|path| path.volume < 0.5) {
+            for i in 0..AUDIO_BOUNCE_RAYS_2D {
+                let angle = (i as f32 + 0.5) * TAU / AUDIO_BOUNCE_RAYS_2D as f32;
+                let direction = Vector2::new(angle.cos(), angle.sin());
+                if let Some(path) = self
+                    .trace_audio_bounce_ray_2d(listener, source, direction, audio_layer, range, true)
+                    && best.as_ref().is_none_or(|best| {
+                        path.volume > best.volume || path.distance < best.distance
+                    })
+                {
+                    best = Some(path);
+                }
+            }
+        }
         best
     }
 
+    // `perceive_first`: track the first bounce point instead of the last, for
+    // listener-emitted rays where the reflector nearest the ear is the one the
+    // sound should appear to come from.
     fn trace_audio_bounce_ray_2d(
         &mut self,
         source: Vector2,
@@ -674,6 +712,7 @@ impl Runtime {
         initial_direction: Vector2,
         audio_layer: BitMask,
         range: f32,
+        perceive_first: bool,
     ) -> Option<AudioBouncePath2D> {
         let mut origin = source;
         let mut direction = initial_direction;
@@ -727,12 +766,20 @@ impl Runtime {
             let Some(hit) = hit else {
                 break;
             };
+            // A listener-emitted ray's first hit at t ~ 0 is the listener's own
+            // body (camera inside a character collider); not a real reflector.
+            if perceive_first && !bounced && hit.distance <= LISTENER_EMBED_EPSILON {
+                break;
+            }
             let Some(reflected) = reflect_2d(direction, hit.normal) else {
                 break;
             };
             let reflect_energy = hit.reflection.clamp(0.0, 1.0);
             if reflect_energy < self.audio.config.energy_cutoff {
                 break;
+            }
+            if !(perceive_first && bounced) {
+                perceived = hit.point;
             }
             bounced = true;
             traveled += hit.distance;
@@ -744,7 +791,6 @@ impl Runtime {
             reverb_send = reverb_send.max(hit.reverb_send);
             echo = echo.max(hit.echo);
             low_pass = low_pass.max(hit.low_pass);
-            perceived = hit.point;
             self.queue_audio_debug_ray_2d(
                 origin,
                 hit.point,
@@ -770,6 +816,7 @@ impl Runtime {
             source.direction_to(listener),
             audio_layer,
             range,
+            false,
         );
         for i in 0..AUDIO_BOUNCE_RAYS_3D {
             let n = AUDIO_BOUNCE_RAYS_3D as f32;
@@ -777,8 +824,8 @@ impl Runtime {
             let radius = (1.0 - y * y).max(0.0).sqrt();
             let theta = i as f32 * 2.399_963_1;
             let direction = Vector3::new(theta.cos() * radius, y, theta.sin() * radius);
-            if let Some(path) =
-                self.trace_audio_bounce_ray_3d(source, listener, direction, audio_layer, range)
+            if let Some(path) = self
+                .trace_audio_bounce_ray_3d(source, listener, direction, audio_layer, range, false)
                 && best
                     .as_ref()
                     .is_none_or(|best| path.volume > best.volume || path.distance < best.distance)
@@ -786,9 +833,33 @@ impl Runtime {
                 best = Some(path);
             }
         }
+        // Listener-emitted pass: rays cast from the listener sample paths the
+        // source-side fan misses (e.g. bouncing out through a window) and
+        // reconcile against the source with the same miss tolerance. The
+        // perceived point is the first bounce, the reflector nearest the ear.
+        if best.as_ref().is_none_or(|path| path.volume < 0.5) {
+            for i in 0..AUDIO_BOUNCE_RAYS_3D {
+                let n = AUDIO_BOUNCE_RAYS_3D as f32;
+                let y = 1.0 - (i as f32 + 0.5) * 2.0 / n;
+                let radius = (1.0 - y * y).max(0.0).sqrt();
+                let theta = (i as f32 + 0.5) * 2.399_963_1;
+                let direction = Vector3::new(theta.cos() * radius, y, theta.sin() * radius);
+                if let Some(path) = self
+                    .trace_audio_bounce_ray_3d(listener, source, direction, audio_layer, range, true)
+                    && best.as_ref().is_none_or(|best| {
+                        path.volume > best.volume || path.distance < best.distance
+                    })
+                {
+                    best = Some(path);
+                }
+            }
+        }
         best
     }
 
+    // `perceive_first`: track the first bounce point instead of the last, for
+    // listener-emitted rays where the reflector nearest the ear is the one the
+    // sound should appear to come from.
     fn trace_audio_bounce_ray_3d(
         &mut self,
         source: Vector3,
@@ -796,6 +867,7 @@ impl Runtime {
         initial_direction: Vector3,
         audio_layer: BitMask,
         range: f32,
+        perceive_first: bool,
     ) -> Option<AudioBouncePath3D> {
         let mut origin = source;
         let mut direction = initial_direction;
@@ -849,12 +921,20 @@ impl Runtime {
             let Some(hit) = hit else {
                 break;
             };
+            // A listener-emitted ray's first hit at t ~ 0 is the listener's own
+            // body (camera inside a character collider); not a real reflector.
+            if perceive_first && !bounced && hit.distance <= LISTENER_EMBED_EPSILON {
+                break;
+            }
             let Some(reflected) = reflect_3d(direction, hit.normal) else {
                 break;
             };
             let reflect_energy = hit.reflection.clamp(0.0, 1.0);
             if reflect_energy < self.audio.config.energy_cutoff {
                 break;
+            }
+            if !(perceive_first && bounced) {
+                perceived = hit.point;
             }
             bounced = true;
             traveled += hit.distance;
@@ -866,7 +946,6 @@ impl Runtime {
             reverb_send = reverb_send.max(hit.reverb_send);
             echo = echo.max(hit.echo);
             low_pass = low_pass.max(hit.low_pass);
-            perceived = hit.point;
             self.queue_audio_debug_ray_3d(
                 origin,
                 hit.point,

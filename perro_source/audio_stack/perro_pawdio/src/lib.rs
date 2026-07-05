@@ -57,7 +57,8 @@ mod tests {
             .to_playback(AudioListener2D::default())
             .expect("in range");
         // Pan is direction-based: unit right scaled by radius + near fade.
-        let expected_pan = 0.85 * (5.0 / 5.5);
+        // Pure-lateral direction normalizes the lateral boost back out.
+        let expected_pan = 0.85 * (5.0 / 5.15);
         assert!((req.pan.x - expected_pan).abs() < 1.0e-4);
         assert!((req.pan.y - 0.0).abs() < 1.0e-6);
         // Squared falloff: half range -> quarter volume.
@@ -76,7 +77,7 @@ mod tests {
         let req = Audio3D::new("res://hit.wav", [0.0, 0.0, -5.0], 10.0)
             .to_playback(AudioListener3D::default())
             .expect("in range");
-        let expected_pan = 0.85 * (5.0 / 5.5);
+        let expected_pan = 0.85 * (5.0 / 5.15);
         assert!((req.pan.x - 0.0).abs() < 1.0e-6);
         assert!((req.pan.y - 0.0).abs() < 1.0e-6);
         assert!((req.pan.z - expected_pan).abs() < 1.0e-4);
