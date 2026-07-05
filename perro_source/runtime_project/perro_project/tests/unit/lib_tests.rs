@@ -729,6 +729,20 @@ fn unique_temp_dir(prefix: &str) -> PathBuf {
     std::env::temp_dir().join(format!("{prefix}_{nanos}_{}", std::process::id()))
 }
 
+fn manifest_dep_has_path(manifest_src: &str, dep: &str) -> bool {
+    let value = manifest_src
+        .parse::<toml::Value>()
+        .expect("parse manifest");
+    value
+        .get("dependencies")
+        .and_then(toml::Value::as_table)
+        .and_then(|deps| deps.get(dep))
+        .and_then(toml::Value::as_table)
+        .and_then(|spec| spec.get("path"))
+        .and_then(toml::Value::as_str)
+        .is_some()
+}
+
 #[test]
 fn ensure_source_overrides_merges_deps_toml_into_scripts_manifest() {
     let root = unique_temp_dir("perro_deps_merge");
@@ -748,8 +762,8 @@ serde = { version = "1", features = ["derive"] }
     let scripts_manifest =
         fs::read_to_string(root.join(".perro").join("scripts").join("Cargo.toml"))
             .expect("read scripts manifest");
-    assert!(scripts_manifest.contains("perro_api = \"0.1.0\""));
-    assert!(scripts_manifest.contains("perro_runtime = \"0.1.0\""));
+    assert!(manifest_dep_has_path(&scripts_manifest, "perro_api"));
+    assert!(manifest_dep_has_path(&scripts_manifest, "perro_runtime"));
     assert!(scripts_manifest.contains("serde"));
 
     fs::remove_dir_all(&root).expect("cleanup");
@@ -785,7 +799,7 @@ app_id = 480
     let project_manifest =
         fs::read_to_string(root.join(".perro").join("project").join("Cargo.toml"))
             .expect("read project manifest");
-    assert!(scripts_manifest.contains("perro_api = \"0.1.0\""));
+    assert!(manifest_dep_has_path(&scripts_manifest, "perro_api"));
     assert!(!scripts_manifest.contains("\nperro_steamworks = \"0.1.0\""));
     assert!(project_manifest.contains("\"scripts/steamworks\""));
 
@@ -911,8 +925,8 @@ rand = "0.9"
     let scripts_manifest =
         fs::read_to_string(root.join(".perro").join("scripts").join("Cargo.toml"))
             .expect("read scripts manifest");
-    assert!(scripts_manifest.contains("perro_api = \"0.1.0\""));
-    assert!(scripts_manifest.contains("perro_runtime = \"0.1.0\""));
+    assert!(manifest_dep_has_path(&scripts_manifest, "perro_api"));
+    assert!(manifest_dep_has_path(&scripts_manifest, "perro_runtime"));
     assert!(scripts_manifest.contains("rand = \"0.9\""));
     assert!(!scripts_manifest.contains("perro_api = \"9.9.9\""));
 
@@ -940,8 +954,8 @@ rand = "0.9"
     let scripts_manifest =
         fs::read_to_string(root.join(".perro").join("scripts").join("Cargo.toml"))
             .expect("read scripts manifest");
-    assert!(scripts_manifest.contains("perro_api = \"0.1.0\""));
-    assert!(scripts_manifest.contains("perro_runtime = \"0.1.0\""));
+    assert!(manifest_dep_has_path(&scripts_manifest, "perro_api"));
+    assert!(manifest_dep_has_path(&scripts_manifest, "perro_runtime"));
     assert!(!scripts_manifest.contains("rand = \"0.9\""));
 
     fs::remove_dir_all(&root).expect("cleanup");
@@ -1066,8 +1080,8 @@ fn ensure_source_overrides_recreates_missing_scripts_manifest() {
     let repaired = fs::read_to_string(&manifest).expect("read repaired scripts manifest");
     assert!(repaired.contains("name = \"scripts\""));
     assert!(repaired.contains("crate-type = [\"cdylib\", \"rlib\"]"));
-    assert!(repaired.contains("perro_api = \"0.1.0\""));
-    assert!(repaired.contains("perro_runtime = \"0.1.0\""));
+    assert!(manifest_dep_has_path(&repaired, "perro_api"));
+    assert!(manifest_dep_has_path(&repaired, "perro_runtime"));
     let repaired_lib =
         fs::read_to_string(scripts_src.join("lib.rs")).expect("read repaired scripts lib");
     assert!(repaired_lib.contains("SCRIPT_REGISTRY"));

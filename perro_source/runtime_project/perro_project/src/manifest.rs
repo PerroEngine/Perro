@@ -209,19 +209,11 @@ fn ensure_project_manifest_deps(path: &Path) -> std::io::Result<()> {
         return Ok(());
     };
 
-    let mut changed = false;
-
-    if !deps_table.contains_key("perro_api") {
-        deps_table.insert("perro_api".to_string(), Value::String("0.1.0".to_string()));
-        changed = true;
-    }
-    if !deps_table.contains_key("perro_runtime") {
-        deps_table.insert(
-            "perro_runtime".to_string(),
-            Value::String("0.1.0".to_string()),
-        );
-        changed = true;
-    }
+    let manifest_dir = manifest_dir_for(path);
+    let engine_root = engine_root_dir();
+    let mut changed = ensure_existing_local_perro_deps(deps_table, &manifest_dir, &engine_root);
+    changed |= ensure_local_perro_dep(deps_table, &manifest_dir, &engine_root, "perro_api");
+    changed |= ensure_local_perro_dep(deps_table, &manifest_dir, &engine_root, "perro_runtime");
 
     if !changed {
         return Ok(());
@@ -341,10 +333,14 @@ fn ensure_project_manifest_icon_build_support(path: &Path) -> std::io::Result<()
         );
         changed = true;
     }
-    if !build_deps_table.contains_key("perro_api") {
-        build_deps_table.insert("perro_api".to_string(), Value::String("0.1.0".to_string()));
-        changed = true;
-    }
+    let manifest_dir = manifest_dir_for(path);
+    let engine_root = engine_root_dir();
+    changed |= ensure_local_perro_dep(
+        build_deps_table,
+        &manifest_dir,
+        &engine_root,
+        "perro_api",
+    );
     if build_deps_table.get("toml").and_then(Value::as_str) != Some("0.8.23") {
         build_deps_table.insert("toml".to_string(), Value::String("0.8.23".to_string()));
         changed = true;
@@ -606,19 +602,11 @@ fn ensure_scripts_manifest_deps(path: &Path) -> std::io::Result<()> {
         return Ok(());
     };
 
-    let mut changed = false;
-
-    if !deps_table.contains_key("perro_api") {
-        deps_table.insert("perro_api".to_string(), Value::String("0.1.0".to_string()));
-        changed = true;
-    }
-    if !deps_table.contains_key("perro_runtime") {
-        deps_table.insert(
-            "perro_runtime".to_string(),
-            Value::String("0.1.0".to_string()),
-        );
-        changed = true;
-    }
+    let manifest_dir = manifest_dir_for(path);
+    let engine_root = engine_root_dir();
+    let mut changed = ensure_existing_local_perro_deps(deps_table, &manifest_dir, &engine_root);
+    changed |= ensure_local_perro_dep(deps_table, &manifest_dir, &engine_root, "perro_api");
+    changed |= ensure_local_perro_dep(deps_table, &manifest_dir, &engine_root, "perro_runtime");
 
     if !changed {
         return Ok(());
@@ -685,19 +673,11 @@ fn ensure_dev_runner_manifest_deps(path: &Path) -> std::io::Result<()> {
         return Ok(());
     };
 
-    let mut changed = false;
-
-    if !deps_table.contains_key("perro_app") {
-        deps_table.insert("perro_app".to_string(), Value::String("0.1.0".to_string()));
-        changed = true;
-    }
-    if !deps_table.contains_key("perro_project") {
-        deps_table.insert(
-            "perro_project".to_string(),
-            Value::String("0.1.0".to_string()),
-        );
-        changed = true;
-    }
+    let manifest_dir = manifest_dir_for(path);
+    let engine_root = engine_root_dir();
+    let mut changed = ensure_existing_local_perro_deps(deps_table, &manifest_dir, &engine_root);
+    changed |= ensure_local_perro_dep(deps_table, &manifest_dir, &engine_root, "perro_app");
+    changed |= ensure_local_perro_dep(deps_table, &manifest_dir, &engine_root, "perro_project");
 
     if !changed {
         return Ok(());
@@ -891,6 +871,71 @@ fn ensure_dev_package_fast_checks(
     changed
 }
 
+fn manifest_dir_for(manifest_path: &Path) -> PathBuf {
+    manifest_path
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| PathBuf::from("."))
+        .canonicalize()
+        .unwrap_or_else(|_| {
+            manifest_path
+                .parent()
+                .map(Path::to_path_buf)
+                .unwrap_or_else(|| PathBuf::from("."))
+        })
+}
+
+fn engine_root_dir() -> PathBuf {
+    let raw = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
+        .join("..");
+    raw.canonicalize().unwrap_or(raw)
+}
+
+fn ensure_existing_local_perro_deps(
+    deps_table: &mut toml::map::Map<String, Value>,
+    manifest_dir: &Path,
+    engine_root: &Path,
+) -> bool {
+    let crate_names: Vec<String> = deps_table
+        .keys()
+        .filter(|name| crate_workspace_rel_path(name).is_some())
+        .cloned()
+        .collect();
+    let mut changed = false;
+    for crate_name in crate_names {
+        changed |= ensure_local_perro_dep(deps_table, manifest_dir, engine_root, &crate_name);
+    }
+    changed
+}
+
+fn ensure_local_perro_dep(
+    deps_table: &mut toml::map::Map<String, Value>,
+    manifest_dir: &Path,
+    engine_root: &Path,
+    crate_name: &str,
+) -> bool {
+    let Some(spec) = local_perro_dep_spec(manifest_dir, engine_root, crate_name) else {
+        return false;
+    };
+    if deps_table.get(crate_name) == Some(&spec) {
+        return false;
+    }
+    deps_table.insert(crate_name.to_string(), spec);
+    true
+}
+
+fn local_perro_dep_spec(manifest_dir: &Path, engine_root: &Path, crate_name: &str) -> Option<Value> {
+    let rel_crate_path = crate_workspace_rel_path(crate_name)?;
+    let mut spec = toml::value::Table::new();
+    spec.insert(
+        "path".to_string(),
+        Value::String(rel_path(manifest_dir, &engine_root.join(rel_crate_path))),
+    );
+    Some(Value::Table(spec))
+}
+
 fn ensure_scripts_manifest_rust_analyzer_cfg(path: &Path) -> std::io::Result<()> {
     if !path.exists() {
         return Ok(());
@@ -951,28 +996,8 @@ fn strip_patch_crates_io(src: &str) -> String {
 }
 
 fn source_overrides_block_for_manifest(manifest_path: &Path, manifest_src: &str) -> String {
-    let engine_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("..")
-        .join("..")
-        .canonicalize()
-        .unwrap_or_else(|_| {
-            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .join("..")
-                .join("..")
-                .join("..")
-        });
-    let manifest_dir = manifest_path
-        .parent()
-        .map(Path::to_path_buf)
-        .unwrap_or_else(|| PathBuf::from("."))
-        .canonicalize()
-        .unwrap_or_else(|_| {
-            manifest_path
-                .parent()
-                .map(Path::to_path_buf)
-                .unwrap_or_else(|| PathBuf::from("."))
-        });
+    let engine_root = engine_root_dir();
+    let manifest_dir = manifest_dir_for(manifest_path);
 
     let Some(mut crates) = direct_perro_deps_from_manifest(manifest_src) else {
         return String::new();
