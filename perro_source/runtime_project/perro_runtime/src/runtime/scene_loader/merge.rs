@@ -414,7 +414,7 @@ pub(super) fn merge_prepared_scene(
                 node: target_id,
             });
         }
-        player.bindings = resolved;
+        player.replace_bindings(resolved);
     }
 
     for (tree_id, scene_bindings) in animation_tree_animation_bindings {

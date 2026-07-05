@@ -419,15 +419,17 @@ impl Runtime {
             return;
         }
 
-        let mut stack = vec![root_id];
+        let mut stack = std::mem::take(&mut self.force_rerender_stack_scratch);
+        stack.clear();
+        stack.push(root_id);
         while let Some(id) = stack.pop() {
-            let Some((ui_dirty, children)) = self
-                .nodes
-                .get(id)
-                .map(|node| (is_ui_node_data(&node.data), node.children_slice().to_vec()))
-            else {
+            let Some(node) = self.nodes.get(id) else {
                 continue;
             };
+            let ui_dirty = is_ui_node_data(&node.data);
+            // direct field-path split: &self.nodes borrow (via `node`) stays
+            // live across the &mut self.dirty calls below (disjoint fields).
+            stack.extend_from_slice(node.children_slice());
             self.dirty.mark_rerender(id);
             if ui_dirty {
                 self.dirty.mark_ui(
@@ -438,8 +440,9 @@ impl Runtime {
                         | Self::UI_DIRTY_COMMANDS,
                 );
             }
-            stack.extend(children);
         }
+        stack.clear();
+        self.force_rerender_stack_scratch = stack;
     }
 
     pub(crate) fn mark_ui_dirty(&mut self, id: NodeID, flags: u16) {

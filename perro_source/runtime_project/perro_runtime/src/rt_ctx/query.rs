@@ -702,10 +702,24 @@ struct QueryPlan {
 
 impl QueryPlan {
     fn from_query(expr: &Option<QueryExpr>) -> Self {
-        let optimized = expr.as_ref().map(optimize_expr);
-        let exact_type_mask = allowed_type_mask(optimized.as_ref(), TypeFilterKind::Exact);
-        let base_type_mask = allowed_type_mask(optimized.as_ref(), TypeFilterKind::Base);
-        let optimized_expr = optimized.as_ref().and_then(strip_redundant_type_filters);
+        // Masks + cost don't depend on child order, so compute frm the
+        // original (borrowed) expr -- no need to wait on optimize's clone.
+        let exact_type_mask = allowed_type_mask(expr.as_ref(), TypeFilterKind::Exact);
+        let base_type_mask = allowed_type_mask(expr.as_ref(), TypeFilterKind::Base);
+        // Reorder only possible 4 All/Any w/ >1 child; single/no-clause exprs
+        // skip the recursive rebuild+sort entirely (was an unconditional
+        // clone-heavy walk even when there was nothing to reorder).
+        let optimized: Option<QueryExpr> = expr.as_ref().map(|e| {
+            if expr_may_reorder(e) {
+                optimize_expr(e)
+            } else {
+                e.clone()
+            }
+        });
+        // Move (not clone) into strip; it hands the same value back untouched
+        // when nothing gets stripped, so the common case pays 1 clone total
+        // (the line above) instead of 2.
+        let optimized_expr = optimized.and_then(strip_redundant_type_filters_owned);
         let estimated_cost_per_node = optimized_expr.as_ref().map(expr_cost).unwrap_or(1);
         let has_type_filter =
             exact_type_mask != QueryTypeMask::all() || base_type_mask != QueryTypeMask::all();
@@ -719,8 +733,20 @@ impl QueryPlan {
     }
 }
 
-fn strip_redundant_type_filters(expr: &QueryExpr) -> Option<QueryExpr> {
-    if type_filter_only(expr) {
+/// True only when reordering could actually change eval order (All/Any w/
+/// >1 child). Guards the expensive recursive rebuild+sort in `optimize_expr`.
+#[inline]
+fn expr_may_reorder(expr: &QueryExpr) -> bool {
+    matches!(expr, QueryExpr::All(children) | QueryExpr::Any(children) if children.len() > 1)
+}
+
+/// Owned variant of the strip pass: consumes `expr` + hands it right back
+/// when nothing needs stripping (the overwhelming common case), so the
+/// caller pays 0 extra clones instead of 1. Only `All` children actually
+/// ever get removed; every other shape is either dropped whole (all-filter)
+/// or passed through unchanged w/o rebuild.
+fn strip_redundant_type_filters_owned(expr: QueryExpr) -> Option<QueryExpr> {
+    if type_filter_only(&expr) {
         return None;
     }
 
@@ -728,10 +754,7 @@ fn strip_redundant_type_filters(expr: &QueryExpr) -> Option<QueryExpr> {
         QueryExpr::All(children) => {
             let mut stripped = Vec::with_capacity(children.len());
             for child in children {
-                if type_filter_only(child) {
-                    continue;
-                }
-                if let Some(child) = strip_redundant_type_filters(child) {
+                if let Some(child) = strip_redundant_type_filters_owned(child) {
                     stripped.push(child);
                 }
             }
@@ -743,7 +766,7 @@ fn strip_redundant_type_filters(expr: &QueryExpr) -> Option<QueryExpr> {
         }
         // Do not strip mixed `Any` branches. A type filter inside one branch is
         // branch-local, not a global mask constraint.
-        _ => Some(expr.clone()),
+        other => Some(other),
     }
 }
 

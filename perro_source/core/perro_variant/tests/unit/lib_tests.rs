@@ -434,6 +434,67 @@ fn test_nested_sq_matrix_parse_and_shape() {
 }
 
 #[test]
+fn test_generic_square_matrix_parses_from_engine_struct_fast_variant() {
+    // `SqMatrix<N>` (== `Matrix<N, N, f32>`) round-trips through the fast
+    // `EngineStruct::Matrix2/3/4` variant shape without a `serde_json`
+    // round trip: `to_variant()` on a square f32 matrix always takes the
+    // fast path, so `from_variant()` must recognize that shape directly.
+    let m2 = SqMatrix::<2>::new([[1.0, 2.0], [3.0, 4.0]]);
+    let m3 = SqMatrix::<3>::new([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 9.0]]);
+    let m4 = SqMatrix::<4>::identity();
+
+    let v2 = m2.to_variant();
+    let v3 = m3.to_variant();
+    let v4 = m4.to_variant();
+
+    assert!(matches!(v2, Variant::EngineStruct(_)));
+    assert!(matches!(v3, Variant::EngineStruct(_)));
+    assert!(matches!(v4, Variant::EngineStruct(_)));
+
+    assert_eq!(v2.parse::<Matrix<2, 2>>(), Ok(m2));
+    assert_eq!(v3.parse::<Matrix<3, 3>>(), Ok(m3));
+    assert_eq!(v4.parse::<Matrix<4, 4>>(), Ok(m4));
+}
+
+#[test]
+fn test_f64_matrix_cell_lossy_retry_accepts_f32_number() {
+    // f64 matrix cells accept any numeric variant (lossy widening),
+    // mirroring the f32 cell impl, so an f32-typed cell value still parses
+    // into an f64-typed matrix without a JSON round trip.
+    let value = Variant::Array(vec![
+        Variant::Array(vec![Variant::from(1.0_f32), Variant::from(2.0_f32)]),
+        Variant::Array(vec![Variant::from(3.0_f32), Variant::from(4.0_f32)]),
+    ]);
+    let expected = Matrix::<2, 2, f64>::new([[1.0, 2.0], [3.0, 4.0]]);
+    assert_eq!(value.parse::<Matrix<2, 2, f64>>(), Ok(expected));
+}
+
+#[test]
+fn test_f64_matrix_cell_lossy_retry_accepts_integer_numbers() {
+    let value = Variant::Array(vec![
+        Variant::Array(vec![Variant::from(1_i32), Variant::from(2_u32)]),
+        Variant::Array(vec![Variant::from(3_i64), Variant::from(4_u64)]),
+    ]);
+    let expected = Matrix::<2, 2, f64>::new([[1.0, 2.0], [3.0, 4.0]]);
+    assert_eq!(value.parse::<Matrix<2, 2, f64>>(), Ok(expected));
+}
+
+#[test]
+fn test_integer_matrix_cell_does_not_accept_mismatched_numeric_variant() {
+    // Integer cell types require an exact `Number` variant match (e.g.
+    // `i32` only accepts `Number::I32`). This was never rescuable by the
+    // old JSON round-trip fallback either, since JSON normalizes every
+    // integer back to `I64`/`U64` on the way in — never back to the
+    // original narrower type. Confirms removing the JSON fallback did not
+    // change this (already-failing) behavior.
+    let value = Variant::Array(vec![Variant::Array(vec![
+        Variant::from(1_i64),
+        Variant::from(2_i64),
+    ])]);
+    assert!(value.parse::<Matrix<1, 2, i32>>().is_err());
+}
+
+#[test]
 fn test_uvec_parse_from_object() {
     let mut vec2 = BTreeMap::new();
     vec2.insert(Arc::from("x"), Variant::from(8_u32));

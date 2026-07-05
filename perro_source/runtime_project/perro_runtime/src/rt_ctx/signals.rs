@@ -136,6 +136,14 @@ impl SignalAPI for Runtime {
         self.signal_runtime
             .registry
             .copy_signal_connections(signal, &mut pending);
+        if pending.is_empty() {
+            // No listeners: skip context/window setup below entirely. Emit is
+            // side-effect-free when unconnected (no queued/deferred/wildcard
+            // dispatch), so returning 0 here is behavior-identical to running
+            // the (now-empty) loop.
+            self.signal_runtime.emit_scratch = pending;
+            return 0;
+        }
         let active_context = self.current_script_callback_context();
         let resource_api = active_context.is_none().then(|| self.resource_api.clone());
         let context = active_context.unwrap_or_else(|| {

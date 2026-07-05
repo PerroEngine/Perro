@@ -79,6 +79,8 @@ pub fn internal_update<RT, R, IP>(
     );
     let _ = with_node_mut!(ctx, SelfNodeType, id, |player| {
         player.internal.applied_transforms = applied_transforms;
+        // Hand the scratch bindings buffer back for reuse next frame.
+        player.internal.bindings_scratch = step.bindings;
     });
 }
 
@@ -133,9 +135,9 @@ where
             player.internal.playback_frame = player.current_frame as f32;
         }
 
-        let binding_hash = hash_bindings(&player.bindings);
+        let binding_revision = player.bindings_revision;
         let frame_changed = player.current_frame != previous_frame;
-        let binding_changed = binding_hash != player.internal.last_binding_hash;
+        let binding_changed = binding_revision != player.internal.last_binding_revision;
         let animation_changed = animation_id != player.internal.last_applied_animation;
         let frame_unapplied = player.current_frame != player.internal.last_applied_frame;
         let should_apply = animation_changed || frame_changed || binding_changed || frame_unapplied;
@@ -143,16 +145,21 @@ where
         if should_apply {
             player.internal.last_applied_animation = animation_id;
             player.internal.last_applied_frame = player.current_frame;
-            player.internal.last_binding_hash = binding_hash;
+            player.internal.last_binding_revision = binding_revision;
         }
+
+        let bindings = if should_apply {
+            let mut scratch = std::mem::take(&mut player.internal.bindings_scratch);
+            scratch.clear();
+            scratch.extend_from_slice(&player.bindings);
+            scratch
+        } else {
+            Vec::new()
+        };
 
         AnimationStep {
             frame: player.current_frame,
-            bindings: if should_apply {
-                player.bindings.to_vec()
-            } else {
-                Vec::new()
-            },
+            bindings,
             should_apply,
         }
     })
@@ -180,6 +187,14 @@ fn apply_clip_frame<RT>(
     apply_frame_events(ctx, clip, frame, bindings);
 }
 
+/// Cheap presence check used to skip building the event-resolution maps in
+/// `apply_frame_events` when nothing fires on `frame`. Split out as its own
+/// function so it can be unit-tested without a `RuntimeWindow`.
+#[inline]
+fn frame_has_event(frame_events: &[perro_animation::AnimationFrameEvent], frame: u32) -> bool {
+    frame_events.iter().any(|entry| entry.frame == frame)
+}
+
 pub(super) fn apply_frame_events<RT>(
     ctx: &mut RuntimeWindow<'_, RT>,
     clip: &Arc<perro_animation::AnimationClip>,
@@ -188,7 +203,9 @@ pub(super) fn apply_frame_events<RT>(
 ) where
     RT: RuntimeAPI + ?Sized,
 {
-    if clip.frame_events.is_empty() {
+    // Avoid building the binding/object-type maps when nothing on this
+    // frame actually fires — the common case for most advanced frames.
+    if !frame_has_event(&clip.frame_events, frame) {
         return;
     }
 
@@ -1056,19 +1073,22 @@ pub(super) fn sample_track_value(
     if track.keys.is_empty() {
         return None;
     }
+    debug_assert!(
+        track.keys.windows(2).all(|w| w[0].frame <= w[1].frame),
+        "animation track keys must be frame-sorted ascending"
+    );
 
-    let mut prev_index = None::<usize>;
-    let mut next_index = None::<usize>;
-    for (index, key) in track.keys.iter().enumerate() {
-        if key.frame <= frame {
-            prev_index = Some(index);
-        } else {
-            next_index = Some(index);
-            break;
-        }
-    }
+    // Keys are frame-sorted ascending (guaranteed at build time), so the
+    // split point between "<= frame" and "> frame" keys can be found with
+    // a binary search instead of a linear scan.
+    let split = track.keys.partition_point(|key| key.frame <= frame);
+    let prev_index = if split == 0 { 0 } else { split - 1 };
+    let next_index = if split < track.keys.len() {
+        Some(split)
+    } else {
+        None
+    };
 
-    let prev_index = prev_index.or(Some(0))?;
     let prev_key = &track.keys[prev_index];
     let prev = &prev_key.value;
 
@@ -1291,23 +1311,178 @@ fn normalize_playback_frame(
     }
 }
 
-fn hash_bindings(bindings: &[AnimationObjectBinding]) -> u64 {
-    let mut h = 0x9E37_79B9_7F4A_7C15u64 ^ bindings.len() as u64;
-    for binding in bindings {
-        h ^= binding.node.as_u64();
-        h = h.rotate_left(7).wrapping_mul(0xBF58_476D_1CE4_E5B9);
-        for b in binding.object.as_bytes() {
-            h ^= *b as u64;
-            h = h.rotate_left(5).wrapping_mul(0x94D0_49BB_1331_11EB);
-        }
-    }
-    h
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use perro_animation::{AnimationKeyMode, AnimationObjectKey};
     use perro_nodes::Bone3D;
+    use std::borrow::Cow;
+
+    fn key(frame: u32, value: f32) -> AnimationObjectKey {
+        AnimationObjectKey {
+            frame,
+            mode: AnimationKeyMode::Closed,
+            interpolation: AnimationInterpolation::Linear,
+            ease: AnimationEase::Linear,
+            value: AnimationTrackValue::F32(value),
+        }
+    }
+
+    fn track_with_keys(keys: Vec<AnimationObjectKey>) -> AnimationObjectTrack {
+        AnimationObjectTrack {
+            keys: Cow::Owned(keys),
+            ..Default::default()
+        }
+    }
+
+    fn f32_value(value: Option<AnimationTrackValue>) -> f32 {
+        match value {
+            Some(AnimationTrackValue::F32(v)) => v,
+            other => panic!("expected F32 track value, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn sample_track_value_empty_track_returns_none() {
+        let track = track_with_keys(vec![]);
+        assert!(sample_track_value(&track, 0).is_none());
+    }
+
+    #[test]
+    fn sample_track_value_frame_before_first_key_clamps_to_first() {
+        let track = track_with_keys(vec![key(5, 10.0), key(10, 20.0)]);
+        assert_eq!(f32_value(sample_track_value(&track, 0)), 10.0);
+        assert_eq!(f32_value(sample_track_value(&track, 4)), 10.0);
+    }
+
+    #[test]
+    fn sample_track_value_frame_after_last_key_clamps_to_last() {
+        let track = track_with_keys(vec![key(5, 10.0), key(10, 20.0)]);
+        assert_eq!(f32_value(sample_track_value(&track, 10)), 20.0);
+        assert_eq!(f32_value(sample_track_value(&track, 100)), 20.0);
+    }
+
+    #[test]
+    fn sample_track_value_exactly_on_key_returns_key_value() {
+        let track = track_with_keys(vec![key(0, 1.0), key(5, 2.0), key(10, 3.0)]);
+        assert_eq!(f32_value(sample_track_value(&track, 0)), 1.0);
+        assert_eq!(f32_value(sample_track_value(&track, 5)), 2.0);
+        assert_eq!(f32_value(sample_track_value(&track, 10)), 3.0);
+    }
+
+    #[test]
+    fn sample_track_value_between_keys_interpolates_linearly() {
+        let track = track_with_keys(vec![key(0, 0.0), key(10, 10.0)]);
+        assert_eq!(f32_value(sample_track_value(&track, 5)), 5.0);
+        assert_eq!(f32_value(sample_track_value(&track, 2)), 2.0);
+        assert_eq!(f32_value(sample_track_value(&track, 8)), 8.0);
+    }
+
+    #[test]
+    fn sample_track_value_single_key_returns_constant() {
+        let track = track_with_keys(vec![key(3, 42.0)]);
+        assert_eq!(f32_value(sample_track_value(&track, 0)), 42.0);
+        assert_eq!(f32_value(sample_track_value(&track, 3)), 42.0);
+        assert_eq!(f32_value(sample_track_value(&track, 999)), 42.0);
+    }
+
+    #[test]
+    fn sample_track_value_many_keys_matches_linear_scan_reference() {
+        // Cross-check the binary-search based lookup against a naive
+        // linear scan (the pre-optimization algorithm) across every frame
+        // in range, including boundaries, to guard against off-by-one
+        // errors in the `partition_point` split.
+        fn linear_scan_reference(track: &AnimationObjectTrack, frame: u32) -> Option<f32> {
+            let mut prev_index = None::<usize>;
+            let mut next_index = None::<usize>;
+            for (index, k) in track.keys.iter().enumerate() {
+                if k.frame <= frame {
+                    prev_index = Some(index);
+                } else {
+                    next_index = Some(index);
+                    break;
+                }
+            }
+            let prev_index = prev_index.or(Some(0))?;
+            let prev_key = &track.keys[prev_index];
+            let AnimationTrackValue::F32(prev) = prev_key.value else {
+                unreachable!()
+            };
+            match prev_key.interpolation {
+                AnimationInterpolation::Step => Some(prev),
+                AnimationInterpolation::Linear => {
+                    let Some(next_index) = next_index else {
+                        return Some(prev);
+                    };
+                    let next_key = &track.keys[next_index];
+                    let AnimationTrackValue::F32(next) = next_key.value else {
+                        unreachable!()
+                    };
+                    let frame_span = next_key.frame.saturating_sub(prev_key.frame);
+                    if frame_span == 0 {
+                        return Some(prev);
+                    }
+                    let local = frame.saturating_sub(prev_key.frame);
+                    let t = (local as f32 / frame_span as f32).clamp(0.0, 1.0);
+                    Some(prev + (next - prev) * t)
+                }
+            }
+        }
+
+        let keys = vec![
+            key(0, 0.0),
+            key(3, 30.0),
+            key(3, 33.0),
+            key(7, 70.0),
+            key(20, 200.0),
+        ];
+        let track = track_with_keys(keys);
+
+        for frame in 0..25u32 {
+            let expected = linear_scan_reference(&track, frame);
+            let actual = f32_value(sample_track_value(&track, frame));
+            assert_eq!(
+                Some(actual),
+                expected,
+                "mismatch at frame {frame}: binary search vs linear scan"
+            );
+        }
+    }
+
+    fn signal_event(frame: u32) -> perro_animation::AnimationFrameEvent {
+        perro_animation::AnimationFrameEvent {
+            frame,
+            scope: AnimationEventScope::Global,
+            event: AnimationEvent::EmitSignal {
+                name: Cow::Borrowed("noop"),
+                params: Cow::Owned(vec![]),
+            },
+        }
+    }
+
+    #[test]
+    fn frame_has_event_empty_list_is_false() {
+        assert!(!frame_has_event(&[], 0));
+    }
+
+    #[test]
+    fn frame_has_event_true_only_on_matching_frame() {
+        let events = vec![signal_event(2), signal_event(7)];
+        assert!(frame_has_event(&events, 2));
+        assert!(frame_has_event(&events, 7));
+        assert!(!frame_has_event(&events, 5));
+        assert!(!frame_has_event(&events, 0));
+    }
+
+    #[test]
+    fn frame_has_event_handles_loop_wraparound_frame_zero() {
+        // Loop playback can land back on frame 0 after wrapping; an event
+        // authored at frame 0 must still be detected on every pass.
+        let events = vec![signal_event(0), signal_event(15)];
+        assert!(frame_has_event(&events, 0));
+        assert!(frame_has_event(&events, 15));
+        assert!(!frame_has_event(&events, 1));
+    }
 
     #[test]
     fn boomerang_keeps_moving_after_turnaround() {

@@ -759,6 +759,9 @@ impl Runtime {
     }
 
     pub(crate) fn refresh_dirty_global_transforms(&mut self) {
+        if !self.dirty.has_transform_dirty_any() {
+            return;
+        }
         let mut dirty_indices = std::mem::take(&mut self.transforms.dirty_indices_scratch);
         dirty_indices.clear();
         dirty_indices.extend_from_slice(self.dirty.dirty_indices());

@@ -192,7 +192,9 @@ impl Runtime {
         }
 
         let apply_forces_impulses_start = Instant::now();
-        self.reset_water_scan_cache_all();
+        // Water/rigid-body id caches self-invalidate on nodes.physics_version()
+        // chg (cached_water_ids_2d/3d, cached_rigid_body_ids_2d/3d in runtime.rs)
+        // -- no unconditional reset needed; empty-arena scenes now cache too.
         self.queue_physics_force_emitters_2d();
         self.queue_physics_force_emitters_3d();
         self.queue_water_forces_2d();
@@ -1295,16 +1297,17 @@ impl Runtime {
 
     fn queue_physics_force_emitters_2d(&mut self) {
         self.force_water_impacts_2d.clear();
-        let ids = self
-            .nodes
-            .iter()
-            .filter_map(|(id, node)| {
-                matches!(node.data, SceneNodeData::PhysicsForceEmitter2D(_)).then_some(id)
-            })
-            .collect::<Vec<_>>();
+        let mut ids = std::mem::take(&mut self.physics_force_emitter_ids_scratch_2d);
+        ids.clear();
+        super::scan_node_type_slots(
+            &self.nodes,
+            perro_nodes::NodeType::PhysicsForceEmitter2D,
+            |node| matches!(node.data, SceneNodeData::PhysicsForceEmitter2D(_)),
+            &mut ids,
+        );
         let mut emitters = std::mem::take(&mut self.physics_force_emitters_scratch_2d);
         emitters.clear();
-        for id in ids {
+        for id in ids.drain(..) {
             let Some(global) = self.get_global_transform_2d(id) else {
                 continue;
             };
@@ -1324,6 +1327,7 @@ impl Runtime {
             }
             emitter.age += self.time.fixed_delta.max(0.0);
         }
+        self.physics_force_emitter_ids_scratch_2d = ids;
         emitters.extend(
             self.pending_force_emitters_2d
                 .drain(..)
@@ -1337,16 +1341,17 @@ impl Runtime {
 
     fn queue_physics_force_emitters_3d(&mut self) {
         self.force_water_impacts_3d.clear();
-        let ids = self
-            .nodes
-            .iter()
-            .filter_map(|(id, node)| {
-                matches!(node.data, SceneNodeData::PhysicsForceEmitter3D(_)).then_some(id)
-            })
-            .collect::<Vec<_>>();
+        let mut ids = std::mem::take(&mut self.physics_force_emitter_ids_scratch_3d);
+        ids.clear();
+        super::scan_node_type_slots(
+            &self.nodes,
+            perro_nodes::NodeType::PhysicsForceEmitter3D,
+            |node| matches!(node.data, SceneNodeData::PhysicsForceEmitter3D(_)),
+            &mut ids,
+        );
         let mut emitters = std::mem::take(&mut self.physics_force_emitters_scratch_3d);
         emitters.clear();
-        for id in ids {
+        for id in ids.drain(..) {
             let Some(global) = self.get_global_transform_3d(id) else {
                 continue;
             };
@@ -1366,6 +1371,7 @@ impl Runtime {
             }
             emitter.age += self.time.fixed_delta.max(0.0);
         }
+        self.physics_force_emitter_ids_scratch_3d = ids;
         emitters.extend(
             self.pending_force_emitters_3d
                 .drain(..)

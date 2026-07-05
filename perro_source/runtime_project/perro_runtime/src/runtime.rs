@@ -211,6 +211,13 @@ pub struct Runtime {
     water_rigid_body_ids_3d_cache: Vec<NodeID>,
     water_ids_2d_cache: Vec<NodeID>,
     water_ids_3d_cache: Vec<NodeID>,
+    /// `nodes.physics_version()` snapshot @ last fill of each cache above.
+    /// `None` means unfilled. Lets empty-result scenes cache too (`is_empty`
+    /// used 2 be the unfilled sentinel, so 0-water scenes rescanned forever).
+    water_rigid_body_ids_2d_cache_version: Option<u64>,
+    water_rigid_body_ids_3d_cache_version: Option<u64>,
+    water_ids_2d_cache_version: Option<u64>,
+    water_ids_3d_cache_version: Option<u64>,
     pending_skeleton_sources_2d: AHashMap<NodeID, String>,
     pending_skeleton_sources_3d: AHashMap<NodeID, String>,
     pub(crate) force_water_impacts_2d: Vec<ForceWaterImpact2D>,
@@ -228,9 +235,16 @@ pub struct Runtime {
         Vec<(perro_structs::Vector2, perro_nodes::PhysicsForceEmitter2D)>,
     physics_force_emitters_scratch_3d:
         Vec<(perro_structs::Vector3, perro_nodes::PhysicsForceEmitter3D)>,
+    /// reusable emitter-id scan buf 4 queue_physics_force_emitters_2d/3d;
+    /// avoid per-step alloc on the type-lane scan result.
+    physics_force_emitter_ids_scratch_2d: Vec<NodeID>,
+    physics_force_emitter_ids_scratch_3d: Vec<NodeID>,
     /// reusable water-index input buf 4 queue_water_forces_2d/3d.
     physics_waters_scratch_2d: Vec<physics::RuntimeWater2D>,
     physics_waters_scratch_3d: Vec<physics::RuntimeWater3D>,
+    /// reusable subtree-walk stack 4 force_rerender; avoid per-node
+    /// children_slice().to_vec() alloc on every visited node.
+    force_rerender_stack_scratch: Vec<NodeID>,
     pub(crate) audio: AudioPropagationState,
 }
 
@@ -437,6 +451,10 @@ impl Runtime {
             water_rigid_body_ids_3d_cache: Vec::new(),
             water_ids_2d_cache: Vec::new(),
             water_ids_3d_cache: Vec::new(),
+            water_rigid_body_ids_2d_cache_version: None,
+            water_rigid_body_ids_3d_cache_version: None,
+            water_ids_2d_cache_version: None,
+            water_ids_3d_cache_version: None,
             pending_skeleton_sources_2d: AHashMap::new(),
             pending_skeleton_sources_3d: AHashMap::new(),
             force_water_impacts_2d: Vec::new(),
@@ -449,8 +467,11 @@ impl Runtime {
             physics_writeback_scratch_3d: Vec::new(),
             physics_force_emitters_scratch_2d: Vec::new(),
             physics_force_emitters_scratch_3d: Vec::new(),
+            physics_force_emitter_ids_scratch_2d: Vec::new(),
+            physics_force_emitter_ids_scratch_3d: Vec::new(),
             physics_waters_scratch_2d: Vec::new(),
             physics_waters_scratch_3d: Vec::new(),
+            force_rerender_stack_scratch: Vec::new(),
             audio: AudioPropagationState::new(),
         }
     }
@@ -491,62 +512,74 @@ impl Runtime {
     pub(crate) fn reset_water_scan_cache_2d(&mut self) {
         self.water_rigid_body_ids_2d_cache.clear();
         self.water_ids_2d_cache.clear();
+        self.water_rigid_body_ids_2d_cache_version = None;
+        self.water_ids_2d_cache_version = None;
     }
 
     #[inline]
     pub(crate) fn reset_water_scan_cache_3d(&mut self) {
         self.water_rigid_body_ids_3d_cache.clear();
         self.water_ids_3d_cache.clear();
-    }
-
-    #[inline]
-    pub(crate) fn reset_water_scan_cache_all(&mut self) {
-        self.reset_water_scan_cache_2d();
-        self.reset_water_scan_cache_3d();
+        self.water_rigid_body_ids_3d_cache_version = None;
+        self.water_ids_3d_cache_version = None;
     }
 
     pub(crate) fn cached_rigid_body_ids_2d(&mut self) -> &[NodeID] {
-        if self.water_rigid_body_ids_2d_cache.is_empty() {
-            self.water_rigid_body_ids_2d_cache
-                .extend(self.nodes.iter().filter_map(|(id, node)| match &node.data {
-                    perro_nodes::SceneNodeData::RigidBody2D(body) if body.enabled => Some(id),
-                    _ => None,
-                }));
+        let version = self.nodes.physics_version();
+        if self.water_rigid_body_ids_2d_cache_version != Some(version) {
+            self.water_rigid_body_ids_2d_cache.clear();
+            scan_node_type_slots(
+                &self.nodes,
+                perro_nodes::NodeType::RigidBody2D,
+                |node| matches!(&node.data, perro_nodes::SceneNodeData::RigidBody2D(body) if body.enabled),
+                &mut self.water_rigid_body_ids_2d_cache,
+            );
+            self.water_rigid_body_ids_2d_cache_version = Some(version);
         }
         &self.water_rigid_body_ids_2d_cache
     }
 
     pub(crate) fn cached_rigid_body_ids_3d(&mut self) -> &[NodeID] {
-        if self.water_rigid_body_ids_3d_cache.is_empty() {
-            self.water_rigid_body_ids_3d_cache
-                .extend(self.nodes.iter().filter_map(|(id, node)| match &node.data {
-                    perro_nodes::SceneNodeData::RigidBody3D(body) if body.enabled => Some(id),
-                    _ => None,
-                }));
+        let version = self.nodes.physics_version();
+        if self.water_rigid_body_ids_3d_cache_version != Some(version) {
+            self.water_rigid_body_ids_3d_cache.clear();
+            scan_node_type_slots(
+                &self.nodes,
+                perro_nodes::NodeType::RigidBody3D,
+                |node| matches!(&node.data, perro_nodes::SceneNodeData::RigidBody3D(body) if body.enabled),
+                &mut self.water_rigid_body_ids_3d_cache,
+            );
+            self.water_rigid_body_ids_3d_cache_version = Some(version);
         }
         &self.water_rigid_body_ids_3d_cache
     }
 
     pub(crate) fn cached_water_ids_2d(&mut self) -> &[NodeID] {
-        if self.water_ids_2d_cache.is_empty() {
-            self.water_ids_2d_cache.extend(self.nodes.iter().filter_map(
-                |(id, node)| match node.data {
-                    perro_nodes::SceneNodeData::WaterBody2D(_) => Some(id),
-                    _ => None,
-                },
-            ));
+        let version = self.nodes.physics_version();
+        if self.water_ids_2d_cache_version != Some(version) {
+            self.water_ids_2d_cache.clear();
+            scan_node_type_slots(
+                &self.nodes,
+                perro_nodes::NodeType::WaterBody2D,
+                |node| matches!(node.data, perro_nodes::SceneNodeData::WaterBody2D(_)),
+                &mut self.water_ids_2d_cache,
+            );
+            self.water_ids_2d_cache_version = Some(version);
         }
         &self.water_ids_2d_cache
     }
 
     pub(crate) fn cached_water_ids_3d(&mut self) -> &[NodeID] {
-        if self.water_ids_3d_cache.is_empty() {
-            self.water_ids_3d_cache.extend(self.nodes.iter().filter_map(
-                |(id, node)| match node.data {
-                    perro_nodes::SceneNodeData::WaterBody3D(_) => Some(id),
-                    _ => None,
-                },
-            ));
+        let version = self.nodes.physics_version();
+        if self.water_ids_3d_cache_version != Some(version) {
+            self.water_ids_3d_cache.clear();
+            scan_node_type_slots(
+                &self.nodes,
+                perro_nodes::NodeType::WaterBody3D,
+                |node| matches!(node.data, perro_nodes::SceneNodeData::WaterBody3D(_)),
+                &mut self.water_ids_3d_cache,
+            );
+            self.water_ids_3d_cache_version = Some(version);
         }
         &self.water_ids_3d_cache
     }
@@ -757,6 +790,29 @@ impl Runtime {
     }
 }
 
+/// Cheap slot-lane occupancy+type scan. Type mirror lane only meaningful on
+/// occupied slots (see `NodeArena::node_type_slots`), so pair every read w/
+/// `slot_get` before trusting the payload match.
+fn scan_node_type_slots(
+    arena: &NodeArena,
+    want: perro_nodes::NodeType,
+    keep: impl Fn(&perro_nodes::SceneNode) -> bool,
+    out: &mut Vec<NodeID>,
+) {
+    let types = arena.node_type_slots();
+    for index in 0..types.len() {
+        if types[index] != want {
+            continue;
+        }
+        let Some((id, node)) = arena.slot_get(index) else {
+            continue;
+        };
+        if keep(node) {
+            out.push(id);
+        }
+    }
+}
+
 impl Default for Runtime {
     fn default() -> Self {
         Self::new()
@@ -783,3 +839,7 @@ mod runtime_hotpath_tests;
 #[cfg(test)]
 #[path = "../tests/unit/rt_ctx_node_mut_dirty_tests.rs"]
 mod rt_ctx_node_mut_dirty_tests;
+
+#[cfg(test)]
+#[path = "../tests/unit/dirty_state_transform_count_tests.rs"]
+mod dirty_state_transform_count_tests;

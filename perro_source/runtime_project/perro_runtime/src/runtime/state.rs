@@ -291,6 +291,11 @@ pub(crate) struct DirtyState {
     dirty_indices: Vec<u32>,
     pending_transform_roots: Vec<NodeID>,
     pending_transform_root_flags: Vec<u8>,
+    /// # of slots w/ a transform-dirty bit set (0->has-flag transitions only,
+    /// not per mark call). O(1) gate 4 `has_transform_dirty_any` instead of
+    /// scanning `dirty_indices` (which also holds plain FLAG_RERENDER
+    /// entries). Kept in sync by every set/clear path on the transform mask.
+    transform_dirty_count: u32,
 }
 
 pub(crate) use perro_runtime_render::{
@@ -317,12 +322,15 @@ impl DirtyState {
         | Self::DIRTY_LAYOUT_PARENT
         | Self::DIRTY_TEXT;
 
+    const TRANSFORM_MASK_ANY: u16 = Self::FLAG_DIRTY_2D_TRANSFORM | Self::FLAG_DIRTY_3D_TRANSFORM;
+
     pub(crate) fn new() -> Self {
         Self {
             node_flags: Vec::new(),
             dirty_indices: Vec::new(),
             pending_transform_roots: Vec::new(),
             pending_transform_root_flags: Vec::new(),
+            transform_dirty_count: 0,
         }
     }
 
@@ -376,14 +384,22 @@ impl DirtyState {
             return;
         }
         if let Some(flags) = self.node_flags.get_mut(index) {
+            let had_transform = (*flags & Self::TRANSFORM_MASK_ANY) != 0;
             *flags &= !mask;
+            if had_transform && (*flags & Self::TRANSFORM_MASK_ANY) == 0 {
+                self.transform_dirty_count = self.transform_dirty_count.saturating_sub(1);
+            }
         }
     }
 
     #[inline]
     pub(crate) fn clear_transform_dirty_at_index(&mut self, index: usize, mask: u16) {
         if let Some(flags) = self.node_flags.get_mut(index) {
+            let had_transform = (*flags & Self::TRANSFORM_MASK_ANY) != 0;
             *flags &= !mask;
+            if had_transform && (*flags & Self::TRANSFORM_MASK_ANY) == 0 {
+                self.transform_dirty_count = self.transform_dirty_count.saturating_sub(1);
+            }
         }
     }
 
@@ -436,12 +452,9 @@ impl DirtyState {
         !self.dirty_indices.is_empty()
     }
 
+    #[inline]
     pub(crate) fn has_transform_dirty_any(&self) -> bool {
-        self.dirty_indices.iter().any(|&index| {
-            self.transform_flags_at(index as usize)
-                & (Self::FLAG_DIRTY_2D_TRANSFORM | Self::FLAG_DIRTY_3D_TRANSFORM)
-                != 0
-        }) || self.has_pending_transform_roots()
+        self.transform_dirty_count != 0 || self.has_pending_transform_roots()
     }
 
     pub(crate) fn has_pending_transform_roots(&self) -> bool {
@@ -462,7 +475,11 @@ impl DirtyState {
         if *entry == 0 {
             self.dirty_indices.push(index as u32);
         }
+        let had_transform = (*entry & Self::TRANSFORM_MASK_ANY) != 0;
         *entry |= flag;
+        if !had_transform && (*entry & Self::TRANSFORM_MASK_ANY) != 0 {
+            self.transform_dirty_count += 1;
+        }
     }
 
     pub(crate) fn clear(&mut self) {
@@ -473,6 +490,7 @@ impl DirtyState {
             }
         }
         self.dirty_indices.clear();
+        self.transform_dirty_count = 0;
 
         for id in self.pending_transform_roots.drain(..) {
             let index = id.index() as usize;
@@ -491,8 +509,14 @@ impl DirtyState {
             if i >= self.node_flags.len() {
                 continue;
             }
+            let had_transform = (self.node_flags[i] & Self::TRANSFORM_MASK_ANY) != 0;
             let preserved = self.node_flags[i] & Self::UI_DIRTY_MASK;
             self.node_flags[i] = preserved;
+            // UI_DIRTY_MASK never overlaps TRANSFORM_MASK_ANY, so any prior
+            // transform bit is always cleared here.
+            if had_transform {
+                self.transform_dirty_count = self.transform_dirty_count.saturating_sub(1);
+            }
             if preserved != 0 {
                 self.dirty_indices[write] = index;
                 write += 1;

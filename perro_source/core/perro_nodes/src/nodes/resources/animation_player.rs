@@ -20,10 +20,13 @@ pub struct AppliedAnimationTransform {
 pub struct InternalAnimationData {
     pub last_applied_animation: AnimationID,
     pub last_applied_frame: u32,
-    pub last_binding_hash: u64,
+    pub last_binding_revision: u64,
     pub playback_frame: f32,
     pub boomerang_direction: f32,
     pub applied_transforms: Vec<AppliedAnimationTransform>,
+    /// Scratch buffer reused to move bindings out of the node while it is
+    /// borrowed, avoiding a per-frame `bindings.to_vec()` allocation.
+    pub bindings_scratch: Vec<AnimationObjectBinding>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -48,6 +51,10 @@ pub struct AnimationPlayer {
     pub paused: bool,
     pub playback_type: AnimationPlaybackType,
     pub bindings: Vec<AnimationObjectBinding>,
+    /// Bumped on every mutation of `bindings` (see `set_binding`,
+    /// `clear_bindings`, `replace_bindings`). Used for cheap change
+    /// detection instead of re-hashing binding strings every frame.
+    pub bindings_revision: u64,
     pub internal: InternalAnimationData,
 }
 
@@ -60,13 +67,15 @@ impl AnimationPlayer {
             paused: false,
             playback_type: AnimationPlaybackType::Loop,
             bindings: Vec::new(),
+            bindings_revision: 0,
             internal: InternalAnimationData {
                 last_applied_animation: AnimationID::nil(),
                 last_applied_frame: 0,
-                last_binding_hash: 0,
+                last_binding_revision: 0,
                 playback_frame: 0.0,
                 boomerang_direction: 1.0,
                 applied_transforms: Vec::new(),
+                bindings_scratch: Vec::new(),
             },
         }
     }
@@ -121,10 +130,21 @@ impl AnimationPlayer {
                 node,
             });
         }
+        self.bindings_revision = self.bindings_revision.wrapping_add(1);
     }
 
     #[inline]
     pub fn clear_bindings(&mut self) {
         self.bindings.clear();
+        self.bindings_revision = self.bindings_revision.wrapping_add(1);
+    }
+
+    /// Wholesale replace bindings (e.g. scene load / merge resolution).
+    /// Bumps `bindings_revision` like the other mutators so change
+    /// detection stays correct.
+    #[inline]
+    pub fn replace_bindings(&mut self, bindings: Vec<AnimationObjectBinding>) {
+        self.bindings = bindings;
+        self.bindings_revision = self.bindings_revision.wrapping_add(1);
     }
 }

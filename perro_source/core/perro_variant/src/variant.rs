@@ -1050,8 +1050,14 @@ where
 {
     #[inline]
     fn from_variant(value: &Variant) -> Option<Self> {
+        // Cell types handle their own lossy numeric coercion (see the
+        // `VariantMatrixCell` impls for `f32`/`f64`), so a single direct
+        // parse covers every rescuable shape. A `serde_json` round-trip
+        // fallback used to run here on first-parse miss, but it could never
+        // rescue integer cell types (JSON normalizes all integers to
+        // `I64`/`U64`, which still fails an exact-match `iN`/`uN` parse)
+        // and floats are now rescued directly without serializing at all.
         parse_matrix_rows_generic(value)
-            .or_else(|| parse_matrix_rows_generic(&Variant::from_json_value(value.to_json_value())))
     }
 
     #[inline]
@@ -1092,7 +1098,6 @@ impl_variant_matrix_cell!(
     u64,
     u128,
     usize,
-    f64,
     String,
     Vector2,
     Vector3,
@@ -1122,6 +1127,32 @@ impl VariantMatrixCell for f32 {
     #[inline]
     fn as_matrix_cell_f32(&self) -> Option<f32> {
         Some(*self)
+    }
+}
+
+impl VariantMatrixCell for f64 {
+    // Lossy numeric retry (mirrors the `from_matrix_cell_variant` half of
+    // the `f32` impl above): accepts any numeric variant, not just an exact
+    // `Number::F64` match. This is what rescues e.g. a matrix cell that was
+    // authored/typed as `f32` but the matrix element type is `f64` —
+    // previously handled by round-tripping the whole `Variant` through
+    // `serde_json`, which only ever widened `F32 -> F64` anyway (integer
+    // cell types can never be rescued by a JSON round trip, since ints
+    // always come back as `I64`/`U64`).
+    //
+    // Note: `as_matrix_cell_f32` is intentionally left at the trait default
+    // (`None`), not overridden to `Some(*self as f32)` — doing so would
+    // route square f64 matrices through the f32-backed `Matrix2/3/4` fast
+    // `to_variant()` path and silently lose precision on serialize. This
+    // fix only touches deserialization (`from_variant`).
+    #[inline]
+    fn from_matrix_cell_variant(value: &Variant) -> Option<Self> {
+        value.as_number()?.as_f64_lossy()
+    }
+
+    #[inline]
+    fn to_matrix_cell_variant(&self) -> Variant {
+        <Self as DeriveVariant>::to_variant(self)
     }
 }
 
@@ -2909,6 +2940,47 @@ where
         && let Some(rows) = obj.get("rows")
     {
         return parse_matrix_rows_generic(rows);
+    }
+
+    // `to_variant()` on a square 2x2/3x3/4x4 matrix takes the fast path and
+    // produces a `Variant::EngineStruct(Matrix2/3/4(..))`, not a plain
+    // array. Recognize that shape directly (no `serde_json` round trip
+    // needed) by rebuilding it as row arrays and re-dispatching.
+    if let Variant::EngineStruct(engine_struct) = value {
+        let rows: Option<[[f32; 4]; 4]> = match (engine_struct, ROWS, COLS) {
+            (EngineStruct::Matrix2(m), 2, 2) => {
+                let r = m.to_rows();
+                Some([
+                    [r[0][0], r[0][1], 0.0, 0.0],
+                    [r[1][0], r[1][1], 0.0, 0.0],
+                    [0.0; 4],
+                    [0.0; 4],
+                ])
+            }
+            (EngineStruct::Matrix3(m), 3, 3) => {
+                let r = m.to_rows();
+                Some([
+                    [r[0][0], r[0][1], r[0][2], 0.0],
+                    [r[1][0], r[1][1], r[1][2], 0.0],
+                    [r[2][0], r[2][1], r[2][2], 0.0],
+                    [0.0; 4],
+                ])
+            }
+            (EngineStruct::Matrix4(m), 4, 4) => Some(m.to_rows()),
+            _ => None,
+        };
+        if let Some(rows) = rows {
+            let array = Variant::Array(
+                rows.iter()
+                    .take(ROWS)
+                    .map(|row| {
+                        Variant::Array(row.iter().take(COLS).copied().map(Variant::from).collect())
+                    })
+                    .collect(),
+            );
+            return parse_matrix_rows_generic(&array);
+        }
+        return None;
     }
 
     let values = value.as_array()?;
