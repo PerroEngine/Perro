@@ -554,10 +554,13 @@ fn ensure_project_dependency_line(
         .join("Cargo.toml");
     let mut src = fs::read_to_string(&manifest_path)?;
 
-    // Only treat entries inside [dependencies] as satisfying this check.
+    let dotted_dependency = format!("[dependencies.{crate_name}]");
     let mut in_dependencies = false;
     for line in src.lines() {
         let trimmed = line.trim();
+        if trimmed == dotted_dependency {
+            return Ok(());
+        }
         if trimmed.starts_with('[') && trimmed.ends_with(']') {
             in_dependencies = trimmed == "[dependencies]";
             continue;
@@ -578,6 +581,9 @@ fn ensure_project_dependency_line(
             .map(|off| idx + off + 1)
             .unwrap_or(src.len());
         src.insert_str(insert_pos, &format!("{dependency_line}\n"));
+        fs::write(manifest_path, src)?;
+    } else if let Some(idx) = src.find("[dependencies.") {
+        src.insert_str(idx, &format!("[dependencies]\n{dependency_line}\n\n"));
         fs::write(manifest_path, src)?;
     }
     Ok(())
