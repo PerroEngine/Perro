@@ -482,6 +482,7 @@ pub struct NestedState {
     }
 
     #[test]
+    #[ignore = "spawns nested cargo check; run in CI slow job via --ignored"]
     fn transpiled_state_supports_array_mode_nested_script_vars() {
         let source = r#"
 use perro_api::prelude::*;
@@ -521,6 +522,7 @@ lifecycle!({});
     }
 
     #[test]
+    #[ignore = "spawns nested cargo check; run in CI slow job via --ignored"]
     fn generated_state_all_variant_types_compiles() {
         let source = r#"
 use perro_api::prelude::*;
@@ -778,6 +780,7 @@ lifecycle!({});
     }
 
     #[test]
+    #[ignore = "spawns nested cargo check; run in CI slow job via --ignored"]
     fn generated_project_crate_compiles_after_static_embed() {
         let root = unique_temp_dir("perro_compiler_project_crate_check");
         ensure_project_layout(&root).expect("layout");
