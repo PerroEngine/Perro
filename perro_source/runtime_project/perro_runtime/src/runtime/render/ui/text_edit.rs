@@ -18,7 +18,6 @@ pub(in crate::runtime::render_ui) fn text_edit_command(ctx: TextEditCommandCtx<'
     let focused_style = &edit.focused_style;
     let style = &edit.style;
     let style_scale = ui_style_scale(scale);
-    let font_scale = ui_font_scale(scale);
     UiCommand::UpsertTextEdit {
         node,
         rect,
@@ -94,29 +93,36 @@ pub(in crate::runtime::render_ui) fn text_edit_command(ctx: TextEditCommandCtx<'
         placeholder_color: Runtime::color_modulate(edit.placeholder_color, modulate),
         selection_color: Runtime::color_modulate(edit.selection_color, modulate),
         caret_color: Runtime::color_modulate(edit.caret_color, modulate),
-        font_size: {
-            let (base, node_scale) =
-                if let Some(px) = text_size_from_rect_ratio(rect.size, edit.text_size_ratio) {
-                    (px, 1.0)
-                } else {
-                    (fallback_text_size(edit.font_size), font_scale)
-                };
-            resolve_font_size(base, node_scale, virtual_font_scale, edit.font_sizing)
-        },
+        font_size: text_edit_effective_font_size(edit, rect.size, scale, virtual_font_scale),
         h_align: text_align_state(edit.h_align),
         v_align: text_align_state(edit.v_align),
-        padding: [
-            edit.padding.left * scale.x.abs().max(0.0001),
-            edit.padding.top * scale.y.abs().max(0.0001),
-            edit.padding.right * scale.x.abs().max(0.0001),
-            edit.padding.bottom * scale.y.abs().max(0.0001),
-        ],
+        padding: scaled_text_edit_padding(edit, scale),
         scroll: [edit.h_scroll, edit.v_scroll],
         caret: edit.caret,
         anchor: edit.anchor,
         focused,
         multiline,
     }
+}
+
+/// Font size the renderer actually draws with; input hit-testing must use
+/// this same value or caret placement drifts when window != virtual size.
+pub(in crate::runtime::render_ui) fn text_edit_effective_font_size(
+    edit: &UiTextEdit,
+    rect_size: [f32; 2],
+    node_scale: Vector2,
+    virtual_font_scale: f32,
+) -> f32 {
+    let (base, font_scale) =
+        if let Some(px) = text_size_from_rect_ratio(rect_size, edit.text_size_ratio) {
+            (px, 1.0)
+        } else {
+            (
+                fallback_text_size(edit.font_size),
+                ui_font_scale(node_scale),
+            )
+        };
+    resolve_font_size(base, font_scale, virtual_font_scale, edit.font_sizing)
 }
 
 pub(in crate::runtime::render_ui) fn resolve_font_size(
@@ -476,14 +482,23 @@ pub(in crate::runtime::render_ui) fn move_vertical(
 pub(in crate::runtime::render_ui) fn ensure_caret_visible(
     edit: &mut UiTextEdit,
     rect: Option<ComputedUiRect>,
+    node_scale: Vector2,
+    virtual_font_scale: f32,
 ) {
     let Some(rect) = rect else {
         return;
     };
-    let content_w = (rect.size.x - edit.padding.horizontal()).max(1.0);
-    let content_h = (rect.size.y - edit.padding.vertical()).max(1.0);
-    let caret_pos = caret_text_pos(edit);
-    let line_h = text_line_height(edit);
+    let font_size = text_edit_effective_font_size(
+        edit,
+        [rect.size.x, rect.size.y],
+        node_scale,
+        virtual_font_scale,
+    );
+    let pad = scaled_text_edit_padding(edit, node_scale);
+    let content_w = (rect.size.x - pad[0] - pad[2]).max(1.0);
+    let content_h = (rect.size.y - pad[1] - pad[3]).max(1.0);
+    let caret_pos = caret_text_pos(edit, font_size);
+    let line_h = text_line_height(font_size);
     if caret_pos.x < edit.h_scroll {
         edit.h_scroll = caret_pos.x.max(0.0);
     } else if caret_pos.x + 2.0 > edit.h_scroll + content_w {
@@ -503,10 +518,11 @@ pub(in crate::runtime::render_ui) fn ensure_caret_visible(
 pub(in crate::runtime::render_ui) fn text_index_from_local(
     edit: &UiTextEdit,
     local: Vector2,
+    font_size: f32,
 ) -> usize {
     let lines = text_line_ranges(edit.text.as_ref());
-    let line_h = text_line_height(edit);
-    let char_w = text_char_width(edit);
+    let line_h = text_line_height(font_size);
+    let char_w = text_char_width(font_size);
     let line_idx = if edit.multiline {
         ((local.y / line_h).floor() as isize).clamp(0, lines.len() as isize - 1) as usize
     } else {
@@ -516,7 +532,7 @@ pub(in crate::runtime::render_ui) fn text_index_from_local(
     index_at_col(edit.text.as_ref(), lines[line_idx], col)
 }
 
-pub(in crate::runtime::render_ui) fn caret_text_pos(edit: &UiTextEdit) -> Vector2 {
+pub(in crate::runtime::render_ui) fn caret_text_pos(edit: &UiTextEdit, font_size: f32) -> Vector2 {
     let text = edit.text.as_ref();
     let lines = text_line_ranges(text);
     let mut line_idx = 0usize;
@@ -530,9 +546,24 @@ pub(in crate::runtime::render_ui) fn caret_text_pos(edit: &UiTextEdit) -> Vector
     }
     let col = text[line.start..edit.caret.min(line.end)].chars().count();
     Vector2::new(
-        col as f32 * text_char_width(edit),
-        line_idx as f32 * text_line_height(edit),
+        col as f32 * text_char_width(font_size),
+        line_idx as f32 * text_line_height(font_size),
     )
+}
+
+/// Padding in screen px, matching the renderer's per-axis node-scale factor.
+pub(in crate::runtime::render_ui) fn scaled_text_edit_padding(
+    edit: &UiTextEdit,
+    node_scale: Vector2,
+) -> [f32; 4] {
+    let sx = node_scale.x.abs().max(0.0001);
+    let sy = node_scale.y.abs().max(0.0001);
+    [
+        edit.padding.left * sx,
+        edit.padding.top * sy,
+        edit.padding.right * sx,
+        edit.padding.bottom * sy,
+    ]
 }
 
 #[derive(Clone, Copy)]
@@ -695,10 +726,10 @@ pub(in crate::runtime::render_ui) fn clamp_char_boundary(text: &str, mut index: 
     index
 }
 
-pub(in crate::runtime::render_ui) fn text_char_width(edit: &UiTextEdit) -> f32 {
-    (edit.font_size * 0.6).max(1.0)
+pub(in crate::runtime::render_ui) fn text_char_width(font_size: f32) -> f32 {
+    (font_size * 0.6).max(1.0)
 }
 
-pub(in crate::runtime::render_ui) fn text_line_height(edit: &UiTextEdit) -> f32 {
-    (edit.font_size * 1.25).max(1.0)
+pub(in crate::runtime::render_ui) fn text_line_height(font_size: f32) -> f32 {
+    (font_size * 1.25).max(1.0)
 }

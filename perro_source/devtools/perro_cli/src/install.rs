@@ -21,7 +21,20 @@ pub(crate) fn install_command(args: &[String]) -> Result<(), String> {
             "{PROFILE_SNIPPET_BEGIN}\n\
 function perro {{\n\
     param([Parameter(ValueFromRemainingArguments = $true)][string[]]$Args)\n\
-    cargo run --manifest-path \"{workspace_manifest}\" -p perro_cli -- @Args\n\
+    $manifest = \"{workspace_manifest}\"\n\
+    cargo build --manifest-path $manifest -p perro_cli\n\
+    if ($LASTEXITCODE -ne 0) {{ return }}\n\
+    $root = Split-Path -Parent $manifest\n\
+    $targetDir = if ($env:CARGO_TARGET_DIR) {{ $env:CARGO_TARGET_DIR }} else {{ Join-Path $root \"target\" }}\n\
+    $cliExe = Join-Path $targetDir \"debug\\perro_cli.exe\"\n\
+    $runRoot = Join-Path ([System.IO.Path]::GetTempPath()) \"perro_cli_runs\"\n\
+    New-Item -ItemType Directory -Force -Path $runRoot | Out-Null\n\
+    Get-ChildItem -Path $runRoot -Directory -ErrorAction SilentlyContinue | Where-Object {{ $_.LastWriteTimeUtc -lt (Get-Date).ToUniversalTime().AddDays(-1) }} | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue\n\
+    $runDir = Join-Path $runRoot (\"$PID-\" + [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())\n\
+    New-Item -ItemType Directory -Force -Path $runDir | Out-Null\n\
+    $runExe = Join-Path $runDir \"perro_cli.exe\"\n\
+    Copy-Item -LiteralPath $cliExe -Destination $runExe -Force\n\
+    & $runExe @Args\n\
 }}\n\
 {PROFILE_SNIPPET_END}\n"
         );
@@ -42,7 +55,17 @@ function perro {{\n\
         let snippet = format!(
             "{PROFILE_SNIPPET_BEGIN}\n\
 perro() {{\n\
-    cargo run --manifest-path {workspace_manifest} -p perro_cli -- \"$@\"\n\
+    manifest={workspace_manifest}\n\
+    cargo build --manifest-path \"$manifest\" -p perro_cli || return\n\
+    root=$(dirname \"$manifest\")\n\
+    target_dir=${{CARGO_TARGET_DIR:-$root/target}}\n\
+    run_root=${{TMPDIR:-/tmp}}/perro_cli_runs\n\
+    mkdir -p \"$run_root\" || return\n\
+    find \"$run_root\" -mindepth 1 -maxdepth 1 -type d -mtime +1 -exec rm -rf {{}} + 2>/dev/null\n\
+    run_dir=\"$run_root/$$-$(date +%s%3N 2>/dev/null || date +%s)\"\n\
+    mkdir -p \"$run_dir\" || return\n\
+    cp \"$target_dir/debug/perro_cli\" \"$run_dir/perro_cli\" || return\n\
+    \"$run_dir/perro_cli\" \"$@\"\n\
 }}\n\
 {PROFILE_SNIPPET_END}\n"
         );

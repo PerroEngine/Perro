@@ -112,9 +112,11 @@ impl Runtime {
     pub(super) fn process_text_edit_input(
         &mut self,
         computed: &AHashMap<NodeID, ComputedUiRect>,
+        computed_scales: &AHashMap<NodeID, Vector2>,
         command_ids: &mut Vec<NodeID>,
         command_seen: &mut ahash::AHashSet<NodeID>,
     ) {
+        let virtual_font_scale = self.ui_virtual_font_scale(self.input.viewport_size());
         let mouse_pos = self.input.mouse_position();
         let pointer_point = self.ui_pointer_screen_point();
         let mouse_pressed = self.input.is_mouse_pressed(MouseButton::Left);
@@ -133,7 +135,7 @@ impl Runtime {
             let hit = hovered;
             self.render_ui.pressed_text_edit = hit;
             if let Some(node) = hit {
-                self.seek_text_edit_at_mouse(node, computed, mouse_pos, false);
+                self.seek_text_edit_at_mouse(node, computed, computed_scales, mouse_pos, false);
                 if command_seen.insert(node) {
                     command_ids.push(node);
                 }
@@ -142,7 +144,7 @@ impl Runtime {
             && let Some(node) = self.render_ui.pressed_text_edit
             && self.render_ui.focused_text_edit == Some(node)
         {
-            self.seek_text_edit_at_mouse(node, computed, mouse_pos, true);
+            self.seek_text_edit_at_mouse(node, computed, computed_scales, mouse_pos, true);
             if command_seen.insert(node) {
                 command_ids.push(node);
             }
@@ -188,11 +190,34 @@ impl Runtime {
                 }
             }
             changed |= apply_text_edit_key_input(edit, shift, ctrl, repeat_key, &self.input);
+            let node_scale = computed_scales
+                .get(&focused)
+                .copied()
+                .unwrap_or(Vector2::ONE);
+            // Caret clamp only after edits; wheel scroll must stay free.
+            if changed {
+                ensure_caret_visible(
+                    edit,
+                    computed.get(&focused).copied(),
+                    node_scale,
+                    virtual_font_scale,
+                );
+            }
             if edit.multiline && wheel.y != 0.0 {
-                edit.v_scroll = (edit.v_scroll - wheel.y * edit.font_size * 2.0).max(0.0);
+                let font_size = computed
+                    .get(&focused)
+                    .map(|rect| {
+                        text_edit_effective_font_size(
+                            edit,
+                            [rect.size.x, rect.size.y],
+                            node_scale,
+                            virtual_font_scale,
+                        )
+                    })
+                    .unwrap_or(edit.font_size);
+                edit.v_scroll = (edit.v_scroll - wheel.y * font_size * 2.0).max(0.0);
                 changed = true;
             }
-            ensure_caret_visible(edit, computed.get(&focused).copied());
             if edit.text.as_ref() != old_text {
                 text_changed = true;
                 changed_text = Some(edit.text.to_string());
@@ -575,13 +600,16 @@ impl Runtime {
         &mut self,
         node: NodeID,
         computed: &AHashMap<NodeID, ComputedUiRect>,
+        computed_scales: &AHashMap<NodeID, Vector2>,
         mouse_pos: Vector2,
         extend: bool,
     ) {
         let viewport = self.input.viewport_size();
+        let virtual_font_scale = self.ui_virtual_font_scale(viewport);
         let Some(rect) = computed.get(&node).copied() else {
             return;
         };
+        let node_scale = computed_scales.get(&node).copied().unwrap_or(Vector2::ONE);
         if let Some(scene_node) = self.nodes.get_mut(node)
             && let Some(edit) = text_edit_mut(&mut scene_node.data)
         {
@@ -589,17 +617,24 @@ impl Runtime {
                 (mouse_pos.x - 0.5) * viewport.x,
                 (mouse_pos.y - 0.5) * viewport.y,
             );
+            let font_size = text_edit_effective_font_size(
+                edit,
+                [rect.size.x, rect.size.y],
+                node_scale,
+                virtual_font_scale,
+            );
+            let pad = scaled_text_edit_padding(edit, node_scale);
             let min = rect.min();
             let local = Vector2::new(
-                point.x - min.x - edit.padding.left + edit.h_scroll,
-                rect.max().y - point.y - edit.padding.top + edit.v_scroll,
+                point.x - min.x - pad[0] + edit.h_scroll,
+                rect.max().y - point.y - pad[1] + edit.v_scroll,
             );
-            let index = text_index_from_local(edit, local);
+            let index = text_index_from_local(edit, local, font_size);
             edit.caret = index;
             if !extend {
                 edit.anchor = index;
             }
-            ensure_caret_visible(edit, Some(rect));
+            ensure_caret_visible(edit, Some(rect), node_scale, virtual_font_scale);
         }
     }
 

@@ -1397,6 +1397,12 @@ parent = $root
 [/WaterBody3D]
 [/water_3d]
 
+[decal_3d]
+parent = $root
+[Decal3D]
+[/Decal3D]
+[/decal_3d]
+
 [sky_3d]
 parent = $root
 [Sky3D]
@@ -1835,13 +1841,25 @@ perro_runtime = {{ path = "{perro_runtime}" }}
             .expect("copy workspace Cargo.lock");
 
         let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
-        let output = std::process::Command::new(cargo)
+        let mut output = std::process::Command::new(&cargo)
             .arg("check")
             .arg("--quiet")
             .arg("--offline")
             .current_dir(&tmp)
             .output()
             .expect("run cargo check");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        if !output.status.success()
+            && (stderr.contains("failed to download")
+                || stderr.contains("attempting to make an HTTP request"))
+        {
+            output = std::process::Command::new(cargo)
+                .arg("check")
+                .arg("--quiet")
+                .current_dir(&tmp)
+                .output()
+                .expect("run cargo check online");
+        }
 
         if output.status.success() {
             let _ = std::fs::remove_dir_all(&tmp);

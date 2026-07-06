@@ -669,7 +669,7 @@ What it does:
 1. Adds/updates a `perro` shell function in your profile.
 2. On Windows, updates PowerShell profiles.
 3. On Linux, updates POSIX shell profiles: `~/.profile`, `~/.bashrc`, `~/.zshrc`.
-4. Function runs source-mode CLI from your local repo via `cargo run -p perro_cli -- ...`.
+4. Function builds source-mode CLI, copies it to temp, then runs args.
 
 After running install, open a new shell or source your updated profile.
 

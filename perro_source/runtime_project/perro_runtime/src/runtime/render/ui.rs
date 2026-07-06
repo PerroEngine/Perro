@@ -446,7 +446,12 @@ impl Runtime {
         // Collect them so the bridge can re-apply after the clear.
         self.render_ui.defer_dirty_marks = true;
         self.process_ui_focus_input(&computed, &mut command_ids, &mut command_seen);
-        self.process_text_edit_input(&computed, &mut command_ids, &mut command_seen);
+        self.process_text_edit_input(
+            &computed,
+            &computed_scales,
+            &mut command_ids,
+            &mut command_seen,
+        );
         self.process_ui_scroll_input(
             &mut computed,
             &mut computed_scales,
