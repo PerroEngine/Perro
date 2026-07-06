@@ -8,6 +8,8 @@
 | Use Cases | [Use Cases](#use-cases) |
 | Example | [Example](#example) |
 | Reference | [Reference](#reference) |
+| Avatars | [Avatars](#avatars) |
+| Steam Input | [Steam Input](#steam-input) |
 
 ## Purpose
 
@@ -46,11 +48,21 @@ Add Steam cfg to `project.toml`:
 [steam]
 enabled = true
 app_id = 480
+input = "off"
 ```
 
 Use `480` for local Steamworks tests.
 
 When Steam cfg disabled, Steam calls return `Err(steam::SteamError::Disabled)`.
+
+`input` controls Steam Input access:
+
+- `"off"`: no Steam Input init; keep native Perro input only.
+- `"metadata"`: init Steam Input for controller type/glyph/origin/motion metadata, but action reads stay disabled.
+- `"actions"`: init Steam Input and allow Steam Input action reads.
+
+Use `"off"` or `"metadata"` when Joy-Con / Joy-Con 2 stay on Perro custom input.
+Use `"actions"` only when the game opts into Steam Input action maps.
 
 ## Frame Model
 
@@ -116,6 +128,10 @@ let file = steam::WorkshopFileID::from_id(raw_file);
 | `steam_account_ctx.id!()` | read local user id |
 | `steam_account_name!(id)` | read user name |
 | `steam_friend_list!()` | read friend list |
+| `steam_friend_avatar!(id, size)` | read friend avatar RGBA bytes |
+| `steam_friend_avatar_small!(id)` | read 32x32 avatar RGBA bytes |
+| `steam_friend_avatar_medium!(id)` | read 64x64 avatar RGBA bytes |
+| `steam_friend_avatar_large!(id)` | read 184x184 avatar RGBA bytes |
 | `steam_rich_presence_set!(key, val)` | set rich presence |
 | `steam_lobby_create!(kind, max)` | request lobby create |
 | `steam_lobby_join!(id)` | request lobby join |
@@ -153,6 +169,7 @@ let file = steam::WorkshopFileID::from_id(raw_file);
 - `cloud`
 - `events`
 - `friends`
+- `input`
 - `leaderboards`
 - `lobbies`
 - `networking`
@@ -163,6 +180,88 @@ let file = steam::WorkshopFileID::from_id(raw_file);
 No script API for Steam init.
 No script API for callback pump.
 No script API for stat store.
+
+## Avatars
+
+Friend avatar calls return `Option<steam::SteamAvatar>`.
+
+`None` means Steam has no avatar data ready.
+Call `steam::friends::request_user_information(id, false)?` and try again later.
+
+`SteamAvatar` fields:
+
+- `width`: pixel width
+- `height`: pixel height
+- `rgba`: RGBA8 bytes
+
+Use `texture_create_from_rgba!` to turn avatar bytes into a runtime texture.
+
+```rust
+let user = steam::SteamID::from_id(raw_user);
+
+if let Some(avatar) = steam_friend_avatar_large!(user)? {
+    let texture = texture_create_from_rgba!(
+        ctx.res,
+        avatar.width,
+        avatar.height,
+        avatar.rgba.as_slice(),
+    );
+    let _ = texture;
+}
+```
+
+See [Runtime Bytes Resources](../resources/runtime_bytes.md).
+
+## Steam Input
+
+Steam Input is opt-in through `[steam].input`.
+
+Perro supports three modes:
+
+| Value | Init Steam Input | Action reads | Use |
+| --- | --- | --- | --- |
+| `"off"` | no | no | Default; Steam does not own controller input. |
+| `"metadata"` | yes | no | Read connected Steam controller metadata, glyphs, origins, and motion. |
+| `"actions"` | yes | yes | Use Steam Input action sets and action data. |
+
+Joy-Con and Joy-Con 2 custom input should use `"off"` or `"metadata"`.
+That keeps `ctx.ipt.JoyCons()` as the gameplay source.
+
+Steam Input metadata calls:
+
+- `steam::input::mode()`
+- `steam::input::get_connected_controllers()`
+- `steam::input::get_controller_info()`
+- `steam::input::input_type(handle)`
+- `steam::input::input_type_is_joycon(kind)`
+- `steam::input::digital_action_origins(handle, set, action)`
+- `steam::input::analog_action_origins(handle, set, action)`
+- `steam::input::glyph_for_action_origin(origin)`
+- `steam::input::string_for_action_origin(origin)`
+- `steam::input::motion_data(handle)`
+
+Steam Input action calls require `input = "actions"`:
+
+- `steam::input::is_action_manifest_set(path)`
+- `steam::input::is_binding_panel_shown(handle)`
+- `steam::input::action_set_handle(name)`
+- `steam::input::activate_action_set(handle, set)`
+- `steam::input::digital_action_handle(name)`
+- `steam::input::analog_action_handle(name)`
+- `steam::input::digital_action_data(handle, action)`
+- `steam::input::analog_action_data(handle, action)`
+
+Example metadata-only Joy-Con filter:
+
+```rust
+for controller in steam::input::get_controller_info()? {
+    if controller.is_joycon {
+        continue;
+    }
+
+    let _kind = controller.input_type;
+}
+```
 
 ## Achievements + Stats
 

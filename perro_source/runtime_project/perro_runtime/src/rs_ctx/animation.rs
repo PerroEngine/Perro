@@ -79,6 +79,20 @@ impl AnimationAPI for RuntimeResourceApi {
         true
     }
 
+    fn create_animation_from_bytes(&self, bytes: &[u8]) -> AnimationID {
+        let Ok(text) = std::str::from_utf8(bytes) else {
+            return AnimationID::nil();
+        };
+        let Ok(clip) = perro_animation::parse_panim(text) else {
+            return AnimationID::nil();
+        };
+        let mut state = self.state.lock().expect("resource api mutex poisoned");
+        let id = state.allocate_animation_id();
+        state.animation_data_by_id.insert(id, Arc::new(clip));
+        state.animation_loaded_by_id.insert(id);
+        id
+    }
+
     fn get_animation(&self, id: AnimationID) -> Option<Arc<AnimationClip>> {
         if id.is_nil() {
             return None;

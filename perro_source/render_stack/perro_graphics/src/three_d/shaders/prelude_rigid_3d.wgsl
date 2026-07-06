@@ -91,6 +91,22 @@ var<storage, read> blend_shape_instances: array<BlendShapeInstance>;
 var material_sampler: sampler;
 @group(1) @binding(1)
 var material_base_color_tex: texture_2d<f32>;
+@group(1) @binding(2)
+var custom_image_tex_0: texture_2d<f32>;
+@group(1) @binding(3)
+var custom_image_tex_1: texture_2d<f32>;
+@group(1) @binding(4)
+var custom_image_tex_2: texture_2d<f32>;
+@group(1) @binding(5)
+var custom_image_tex_3: texture_2d<f32>;
+@group(1) @binding(6)
+var custom_image_tex_4: texture_2d<f32>;
+@group(1) @binding(7)
+var custom_image_tex_5: texture_2d<f32>;
+@group(1) @binding(8)
+var custom_image_tex_6: texture_2d<f32>;
+@group(1) @binding(9)
+var custom_image_tex_7: texture_2d<f32>;
 @group(2) @binding(0)
 var<uniform> shadow: Shadow3D;
 @group(2) @binding(1)
@@ -103,6 +119,31 @@ var spot_shadow_map_tex: texture_depth_2d_array;
 var point_shadow_map_tex: texture_depth_2d_array;
 @group(3) @binding(0)
 var mesh_blend_depth_tex: texture_depth_2d;
+
+fn custom_image_sample_at(index: u32, uv: vec2<f32>) -> vec4<f32> {
+    if index == 0u {
+        return textureSample(custom_image_tex_0, material_sampler, uv);
+    }
+    if index == 1u {
+        return textureSample(custom_image_tex_1, material_sampler, uv);
+    }
+    if index == 2u {
+        return textureSample(custom_image_tex_2, material_sampler, uv);
+    }
+    if index == 3u {
+        return textureSample(custom_image_tex_3, material_sampler, uv);
+    }
+    if index == 4u {
+        return textureSample(custom_image_tex_4, material_sampler, uv);
+    }
+    if index == 5u {
+        return textureSample(custom_image_tex_5, material_sampler, uv);
+    }
+    if index == 6u {
+        return textureSample(custom_image_tex_6, material_sampler, uv);
+    }
+    return textureSample(custom_image_tex_7, material_sampler, uv);
+}
 
 // Seam width floor in pixels so distant blends never collapse to a hard line.
 const MESH_BLEND_MIN_PIXELS: f32 = 2.5;
@@ -161,6 +202,10 @@ struct FragmentInput {
     @location(7) @interpolate(flat) custom_range: vec2<u32>,
     @location(8) uv: vec2<f32>,
 };
+
+fn custom_image_sample(in: FragmentInput, index: u32, uv: vec2<f32>) -> vec4<f32> {
+    return custom_image_sample_at(index, uv);
+}
 
 fn unpack_byte(packed: u32, shift: u32) -> u32 {
     return (packed >> shift) & 0xffu;

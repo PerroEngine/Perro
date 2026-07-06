@@ -6,6 +6,7 @@
 | --- | --- |
 | Overview | [Overview](#overview) |
 | Context | [Context](#context) |
+| Runtime Bytes | [Runtime Bytes](#runtime-bytes) |
 | API Reference | [API Reference](#api-reference) |
 | `load_bones_2d` | [`load_bones_2d`](#load_bones_2d) |
 | `load_bones_3d` | [`load_bones_3d`](#load_bones_3d) |
@@ -21,6 +22,19 @@ This resource module belongs to `ctx.res` and documents skeletons calls.
 - Script context path: `ctx.res`
 - Module access: `ctx.res.Skeletons()`
 - Lifecycle examples stay inside `lifecycle!` because script hooks get `API` from the macro expansion.
+
+## Runtime Bytes
+
+Use runtime bytes when skeleton data is already in memory.
+
+| Call | Return | Notes |
+| --- | --- | --- |
+| `ctx.res.Skeletons().load_bones_2d_from_bytes(bytes)` | `Vec<Bone2D>` | Decodes packed 2D skeleton bytes. |
+| `ctx.res.Skeletons().load_bones_3d_from_bytes(bytes)` | `Vec<Bone3D>` | Decodes packed 3D skeleton bytes. |
+| `skeleton_load_bones_2d_from_bytes!(ctx.res, bytes)` | `Vec<Bone2D>` | Macro form. |
+| `skeleton_load_bones_3d_from_bytes!(ctx.res, bytes)` | `Vec<Bone3D>` | Macro form. |
+
+See [Runtime Bytes Resources](../../../resources/runtime_bytes.md).
 
 ## API Reference
 

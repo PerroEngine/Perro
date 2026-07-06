@@ -61,6 +61,20 @@ impl AnimationTreeAPI for RuntimeResourceApi {
         state.animation_tree_data_by_id.get(&id).cloned()
     }
 
+    fn create_animation_tree_from_bytes(&self, bytes: &[u8]) -> AnimationTreeID {
+        let Ok(text) = std::str::from_utf8(bytes) else {
+            return AnimationTreeID::nil();
+        };
+        let Ok(tree) = perro_animation::parse_panimtree(text) else {
+            return AnimationTreeID::nil();
+        };
+        let mut state = self.state.lock().expect("resource api mutex poisoned");
+        let id = state.allocate_animation_tree_id();
+        state.animation_tree_data_by_id.insert(id, Arc::new(tree));
+        state.animation_tree_loaded_by_id.insert(id);
+        id
+    }
+
     fn drop_animation_tree_source(&self, id: AnimationTreeID) -> bool {
         if id.is_nil() {
             return false;

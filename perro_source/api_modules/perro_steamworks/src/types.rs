@@ -204,6 +204,44 @@ pub struct FriendInfo {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum SteamAvatarSize {
+    Small,
+    Medium,
+    Large,
+}
+
+impl SteamAvatarSize {
+    pub const fn width(self) -> u32 {
+        match self {
+            Self::Small => 32,
+            Self::Medium => 64,
+            Self::Large => 184,
+        }
+    }
+
+    pub const fn height(self) -> u32 {
+        self.width()
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SteamAvatar {
+    pub width: u32,
+    pub height: u32,
+    pub rgba: Vec<u8>,
+}
+
+impl SteamAvatar {
+    pub fn new(size: SteamAvatarSize, rgba: Vec<u8>) -> Self {
+        Self {
+            width: size.width(),
+            height: size.height(),
+            rgba,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum FriendListKind {
     Friends,
     All,

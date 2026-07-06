@@ -43,6 +43,24 @@ fn steam_achievement_macros_accept_single_multi_slice_and_vec() {
     );
     assert_eq!(steam_friend_list!(), Err(steam::SteamError::Disabled));
     assert_eq!(
+        steam_friend_avatar!(steam::SteamID::from_id(1), steam::SteamAvatarSize::Small),
+        Err(steam::SteamError::Disabled)
+    );
+    assert_eq!(
+        steam_friend_avatar_small!(steam::SteamID::from_id(1)),
+        Err(steam::SteamError::Disabled)
+    );
+    assert_eq!(
+        steam_friend_avatar_medium!(steam::SteamID::from_id(1)),
+        Err(steam::SteamError::Disabled)
+    );
+    assert_eq!(
+        steam_friend_avatar_large!(steam::SteamID::from_id(1)),
+        Err(steam::SteamError::Disabled)
+    );
+    assert_eq!(steam::SteamAvatarSize::Large.width(), 184);
+    assert_eq!(steam::SteamAvatarSize::Large.height(), 184);
+    assert_eq!(
         steam_rich_presence_set!(steam::RichPresenceKey::Status, "menu"),
         Err(steam::SteamError::Disabled)
     );

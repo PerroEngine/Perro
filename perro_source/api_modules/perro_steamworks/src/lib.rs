@@ -65,22 +65,39 @@ pub mod runtime {
         crate::app::init_from_config(enabled, app_id)
     }
 
+    pub fn init_from_config_with_input(
+        enabled: bool,
+        app_id: Option<u32>,
+        input_mode: crate::input::SteamInputMode,
+    ) -> Result<(), SteamError> {
+        crate::app::init_from_config_with_input(enabled, app_id, input_mode)
+    }
+
     pub fn run_callbacks() -> Result<(), SteamError> {
         crate::app::run_callbacks()
     }
 }
 
+pub use auth::{AuthSessionError, AuthTicket, UserHasLicense};
 pub use error::SteamError;
+pub use input::{
+    ActionSetHandle, AnalogActionData, AnalogActionHandle, DigitalActionData, DigitalActionHandle,
+    InputActionOrigin, InputController, InputHandle, InputSourceMode, InputType, MotionData,
+    SteamInputMode,
+};
 pub use leaderboards::{
     LeaderboardDisplay, LeaderboardEntry, LeaderboardEntryScope, LeaderboardID,
     LeaderboardScoreUpload, LeaderboardSort, LeaderboardUploadMode,
 };
+pub use remote_play::{RemotePlaySession, RemotePlaySessionID, SteamDeviceFormFactor};
+pub use screenshots::ScreenshotHandle;
+pub use timeline::{TimelineEventClipPriority, TimelineGameMode};
 pub use types::{
     AppID, ConnectionID, DLCID, FriendGame, FriendInfo, FriendListKind, FriendState, LobbyDataKey,
     LobbyDistance, LobbyID, LobbyInfo, LobbyJoinability, LobbyNearValueFilter,
     LobbyNumberComparison, LobbyNumberFilter, LobbySearch, LobbyStringFilter,
-    LobbyStringFilterKind, LobbyType, OverlayDialog, RichPresenceKey, SocketID, SteamEvent,
-    SteamID, StoreOverlayAction, UserOverlayDialog, WorkshopFileID,
+    LobbyStringFilterKind, LobbyType, OverlayDialog, RichPresenceKey, SocketID, SteamAvatar,
+    SteamAvatarSize, SteamEvent, SteamID, StoreOverlayAction, UserOverlayDialog, WorkshopFileID,
 };
 
 #[macro_export]
@@ -118,6 +135,34 @@ macro_rules! steam_ach_clear {
 macro_rules! steam_friend_list {
     () => {
         $crate::friends::get_list()
+    };
+}
+
+#[macro_export]
+macro_rules! steam_friend_avatar {
+    ($id:expr, $size:expr) => {
+        $crate::friends::get_avatar($id, $size)
+    };
+}
+
+#[macro_export]
+macro_rules! steam_friend_avatar_small {
+    ($id:expr) => {
+        $crate::friends::get_small_avatar($id)
+    };
+}
+
+#[macro_export]
+macro_rules! steam_friend_avatar_medium {
+    ($id:expr) => {
+        $crate::friends::get_medium_avatar($id)
+    };
+}
+
+#[macro_export]
+macro_rules! steam_friend_avatar_large {
+    ($id:expr) => {
+        $crate::friends::get_large_avatar($id)
     };
 }
 
@@ -327,21 +372,27 @@ pub mod prelude {
     pub use crate::utils;
     pub use crate::workshop;
     pub use crate::{
-        AppID, ConnectionID, DLCID, FriendGame, FriendInfo, FriendListKind, FriendState,
-        LeaderboardDisplay, LeaderboardEntry, LeaderboardEntryScope, LeaderboardID,
-        LeaderboardScoreUpload, LeaderboardSort, LeaderboardUploadMode, LobbyDataKey,
-        LobbyDistance, LobbyID, LobbyInfo, LobbyJoinability, LobbyNearValueFilter,
+        ActionSetHandle, AnalogActionData, AnalogActionHandle, AppID, AuthSessionError, AuthTicket,
+        ConnectionID, DLCID, DigitalActionData, DigitalActionHandle, FriendGame, FriendInfo,
+        FriendListKind, FriendState, InputActionOrigin, InputController, InputHandle,
+        InputSourceMode, InputType, LeaderboardDisplay, LeaderboardEntry, LeaderboardEntryScope,
+        LeaderboardID, LeaderboardScoreUpload, LeaderboardSort, LeaderboardUploadMode,
+        LobbyDataKey, LobbyDistance, LobbyID, LobbyInfo, LobbyJoinability, LobbyNearValueFilter,
         LobbyNumberComparison, LobbyNumberFilter, LobbySearch, LobbyStringFilter,
-        LobbyStringFilterKind, LobbyType, OverlayDialog, RichPresenceKey, SocketID, SteamError,
-        SteamEvent, SteamID, StoreOverlayAction, UserOverlayDialog, WorkshopFileID,
+        LobbyStringFilterKind, LobbyType, MotionData, OverlayDialog, RemotePlaySession,
+        RemotePlaySessionID, RichPresenceKey, ScreenshotHandle, SocketID, SteamAvatar,
+        SteamAvatarSize, SteamDeviceFormFactor, SteamError, SteamEvent, SteamID, SteamInputMode,
+        StoreOverlayAction, TimelineEventClipPriority, TimelineGameMode, UserHasLicense,
+        UserOverlayDialog, WorkshopFileID,
     };
     pub use crate::{
         steam_account_name, steam_account_self_id, steam_account_self_name, steam_ach_clear,
         steam_ach_unlock, steam_app_dlc_installed, steam_app_subscribed, steam_clear,
-        steam_cloud_read, steam_cloud_write, steam_events, steam_friend_list,
-        steam_leaderboard_create, steam_leaderboard_entries, steam_leaderboard_find,
-        steam_leaderboard_upload, steam_lobby_chat, steam_lobby_create, steam_lobby_data_set,
-        steam_lobby_join, steam_lobby_leave, steam_p2p_read, steam_p2p_send,
+        steam_cloud_read, steam_cloud_write, steam_events, steam_friend_avatar,
+        steam_friend_avatar_large, steam_friend_avatar_medium, steam_friend_avatar_small,
+        steam_friend_list, steam_leaderboard_create, steam_leaderboard_entries,
+        steam_leaderboard_find, steam_leaderboard_upload, steam_lobby_chat, steam_lobby_create,
+        steam_lobby_data_set, steam_lobby_join, steam_lobby_leave, steam_p2p_read, steam_p2p_send,
         steam_rich_presence_set, steam_stat_get_i32, steam_stat_set_i32, steam_unlock,
         steam_workshop_download, steam_workshop_subscribe,
     };
@@ -422,6 +473,22 @@ mod tests {
             Err(SteamError::Disabled)
         );
         assert_eq!(steam_friend_list!(), Err(SteamError::Disabled));
+        assert_eq!(
+            steam_friend_avatar!(SteamID::from_id(1), SteamAvatarSize::Small),
+            Err(SteamError::Disabled)
+        );
+        assert_eq!(
+            steam_friend_avatar_small!(SteamID::from_id(1)),
+            Err(SteamError::Disabled)
+        );
+        assert_eq!(
+            steam_friend_avatar_medium!(SteamID::from_id(1)),
+            Err(SteamError::Disabled)
+        );
+        assert_eq!(
+            steam_friend_avatar_large!(SteamID::from_id(1)),
+            Err(SteamError::Disabled)
+        );
         assert_eq!(
             steam_rich_presence_set!(RichPresenceKey::Status, "menu"),
             Err(SteamError::Disabled)

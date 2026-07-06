@@ -6,6 +6,7 @@
 | --- | --- |
 | Overview | [Overview](#overview) |
 | Context | [Context](#context) |
+| Runtime Bytes | [Runtime Bytes](#runtime-bytes) |
 | API Reference | [API Reference](#api-reference) |
 | `load` | [`load`](#load) |
 | `load_hashed` | [`load_hashed`](#load_hashed) |
@@ -37,6 +38,17 @@ Renderer uses the mesh once async decode/upload completes.
 - Script context path: `ctx.res`
 - Module access: `ctx.res.Meshes()`
 - Lifecycle examples stay inside `lifecycle!` because script hooks get `API` from the macro expansion.
+
+## Runtime Bytes
+
+Use runtime bytes when mesh data is already in memory.
+
+| Call | Return | Notes |
+| --- | --- | --- |
+| `ctx.res.Meshes().create_from_bytes(bytes)` | `MeshID` | Decodes `PMESH` or glTF/GLB mesh index `0`. |
+| `mesh_create_from_bytes!(ctx.res, bytes)` | `MeshID` | Macro form. |
+
+See [Runtime Bytes Resources](../../../resources/runtime_bytes.md).
 
 ## Practical Example
 

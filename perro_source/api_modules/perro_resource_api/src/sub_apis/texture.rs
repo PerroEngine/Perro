@@ -9,6 +9,8 @@ pub trait TextureAPI {
     fn load_texture_hashed(&self, source_hash: u64, source: Option<&str>) -> TextureID;
     fn reserve_texture_hashed(&self, source_hash: u64, source: Option<&str>) -> TextureID;
     fn reserve_texture_id(&self, id: TextureID) -> bool;
+    fn create_texture_from_bytes(&self, bytes: &[u8]) -> TextureID;
+    fn create_texture_from_rgba(&self, width: u32, height: u32, rgba: &[u8]) -> TextureID;
     fn load_texture(&self, source: &str) -> TextureID {
         self.load_texture_hashed(perro_ids::string_to_u64(source), Some(source))
     }
@@ -126,6 +128,16 @@ impl<'res, R: TextureAPI + ?Sized> TextureModule<'res, R> {
     }
 
     #[inline]
+    pub fn create_from_rgba(&self, width: u32, height: u32, rgba: &[u8]) -> TextureID {
+        self.api.create_texture_from_rgba(width, height, rgba)
+    }
+
+    #[inline]
+    pub fn create_from_bytes(&self, bytes: &[u8]) -> TextureID {
+        self.api.create_texture_from_bytes(bytes)
+    }
+
+    #[inline]
     pub fn is_loaded(&self, id: TextureID) -> bool {
         self.api.is_texture_loaded(id)
     }
@@ -162,6 +174,20 @@ macro_rules! texture_reserve {
 macro_rules! texture_drop {
     ($res:expr, $id:expr) => {
         $res.Textures().drop($id)
+    };
+}
+
+#[macro_export]
+macro_rules! texture_create_from_rgba {
+    ($res:expr, $width:expr, $height:expr, $rgba:expr) => {
+        $res.Textures().create_from_rgba($width, $height, $rgba)
+    };
+}
+
+#[macro_export]
+macro_rules! texture_create_from_bytes {
+    ($res:expr, $bytes:expr) => {
+        $res.Textures().create_from_bytes($bytes)
     };
 }
 

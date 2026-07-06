@@ -7,6 +7,7 @@ use perro_csv::{Csv, CsvBuf};
 
 pub trait CsvAPI {
     fn load_csv_source_hashed(&self, source_hash: u64, source: Option<&str>) -> &'static Csv;
+    fn load_csv_bytes(&self, bytes: &[u8]) -> &'static Csv;
     fn save_csv_source(&self, source: &str, csv: &CsvBuf) -> Result<(), String>;
     fn save_csv_source_hashed(
         &self,
@@ -53,6 +54,11 @@ impl<'res, R: CsvAPI + ?Sized> CsvModule<'res, R> {
     }
 
     #[inline]
+    pub fn load_bytes(&self, bytes: &[u8]) -> &'static Csv {
+        self.api.load_csv_bytes(bytes)
+    }
+
+    #[inline]
     pub fn save<S: ResPathSource>(&self, source: S, csv: &CsvBuf) -> Result<(), String> {
         self.api.save_csv_source(source.as_res_path_str(), csv)
     }
@@ -77,6 +83,13 @@ macro_rules! csv_load {
     }};
     ($res:expr, $source:expr) => {
         $res.Csv().load($source)
+    };
+}
+
+#[macro_export]
+macro_rules! csv_load_bytes {
+    ($res:expr, $bytes:expr) => {
+        $res.Csv().load_bytes($bytes)
     };
 }
 

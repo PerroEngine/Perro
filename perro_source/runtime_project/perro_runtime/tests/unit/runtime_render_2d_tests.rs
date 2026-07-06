@@ -14,7 +14,9 @@ use perro_nodes::{
 use perro_render_bridge::{
     CameraStreamCommand, Command2D, ParticlePath2D, RenderCommand, RenderEvent, ResourceCommand,
 };
-use perro_resource_api::sub_apis::TextureAPI;
+use perro_resource_api::sub_apis::{
+    AnimationAPI, AnimationTreeAPI, CsvAPI, MaterialAPI, MeshAPI, TextureAPI,
+};
 use perro_runtime_api::sub_apis::{NodeAPI, NodeSpec};
 use perro_structs::{BitMask, Color, Vector2};
 use std::sync::Arc;
@@ -491,6 +493,157 @@ fn sprite_requests_texture_once_until_created() {
         RenderCommand::TwoD(Command2D::UpsertSprite { node, sprite })
         if node == expected_node && sprite.texture == texture
     ));
+}
+
+#[test]
+fn texture_create_from_rgba_queues_runtime_texture() {
+    let mut runtime = Runtime::new();
+    let rgba = vec![255u8, 0, 0, 255, 0, 255, 0, 255];
+
+    let texture = TextureAPI::create_texture_from_rgba(runtime.resource_api.as_ref(), 2, 1, &rgba);
+
+    assert!(!texture.is_nil());
+    let commands = collect_commands(&mut runtime);
+    assert_eq!(commands.len(), 1);
+    let request = match &commands[0] {
+        RenderCommand::Resource(ResourceCommand::CreateRuntimeTexture {
+            request,
+            id,
+            source,
+            reserved,
+            width,
+            height,
+            rgba: command_rgba,
+        }) => {
+            assert_eq!(*id, texture);
+            assert!(source.starts_with("runtime://texture/"));
+            assert!(!reserved);
+            assert_eq!(*width, 2);
+            assert_eq!(*height, 1);
+            assert_eq!(command_rgba.as_ref(), rgba.as_slice());
+            *request
+        }
+        _ => panic!("expected CreateRuntimeTexture"),
+    };
+
+    runtime.apply_render_event(RenderEvent::TextureCreated {
+        request,
+        id: texture,
+    });
+    runtime.apply_render_event(RenderEvent::TextureLoaded { id: texture });
+
+    assert!(TextureAPI::is_texture_loaded(
+        runtime.resource_api.as_ref(),
+        texture
+    ));
+}
+
+#[test]
+fn texture_create_from_rgba_rejects_bad_len() {
+    let mut runtime = Runtime::new();
+
+    let texture =
+        TextureAPI::create_texture_from_rgba(runtime.resource_api.as_ref(), 2, 1, &[255u8; 4]);
+
+    assert!(texture.is_nil());
+    assert!(collect_commands(&mut runtime).is_empty());
+}
+
+#[test]
+fn texture_create_from_bytes_queues_runtime_texture_bytes() {
+    let mut runtime = Runtime::new();
+    let bytes = b"not a texture";
+
+    let texture = TextureAPI::create_texture_from_bytes(runtime.resource_api.as_ref(), bytes);
+
+    assert!(!texture.is_nil());
+    let commands = collect_commands(&mut runtime);
+    assert_eq!(commands.len(), 1);
+    assert!(matches!(
+        &commands[0],
+        RenderCommand::Resource(ResourceCommand::CreateRuntimeTextureBytes { id, bytes: got, .. })
+            if *id == texture && got.as_ref() == bytes
+    ));
+}
+
+#[test]
+fn mesh_create_from_bytes_queues_runtime_mesh_bytes() {
+    let mut runtime = Runtime::new();
+    let bytes = b"not a mesh";
+
+    let mesh = MeshAPI::create_mesh_from_bytes(runtime.resource_api.as_ref(), bytes);
+
+    assert!(!mesh.is_nil());
+    let commands = collect_commands(&mut runtime);
+    assert_eq!(commands.len(), 1);
+    assert!(matches!(
+        &commands[0],
+        RenderCommand::Resource(ResourceCommand::CreateRuntimeMeshBytes { id, bytes: got, .. })
+            if *id == mesh && got.as_ref() == bytes
+    ));
+}
+
+#[test]
+fn material_create_from_bytes_parses_pmat() {
+    let runtime = Runtime::new();
+    let material = MaterialAPI::create_material_from_bytes(
+        runtime.resource_api.as_ref(),
+        b"roughness_factor = 0.5",
+    );
+
+    assert!(!material.is_nil());
+    assert!(MaterialAPI::get_material_data(runtime.resource_api.as_ref(), material).is_some());
+}
+
+#[test]
+fn animation_and_tree_create_from_bytes_parse_text() {
+    let runtime = Runtime::new();
+    let animation_src = br#"
+[Animation]
+name = "Bytes"
+fps = 30
+[/Animation]
+"#;
+    let tree_src = br#"
+[AnimationTree]
+name = "BytesTree"
+[/AnimationTree]
+[AnimationSlots]
+Idle
+[/AnimationSlots]
+[Output]
+input = @Idle
+[/Output]
+"#;
+
+    let animation =
+        AnimationAPI::create_animation_from_bytes(runtime.resource_api.as_ref(), animation_src);
+    let tree =
+        AnimationTreeAPI::create_animation_tree_from_bytes(runtime.resource_api.as_ref(), tree_src);
+
+    assert!(!animation.is_nil());
+    assert!(!tree.is_nil());
+    assert!(AnimationAPI::is_animation_loaded(
+        runtime.resource_api.as_ref(),
+        animation
+    ));
+    assert!(AnimationTreeAPI::is_animation_tree_loaded(
+        runtime.resource_api.as_ref(),
+        tree
+    ));
+}
+
+#[test]
+fn csv_load_bytes_parses_table() {
+    let runtime = Runtime::new();
+
+    let csv = CsvAPI::load_csv_bytes(runtime.resource_api.as_ref(), b"id,name\nsword,Sword\n");
+
+    assert_eq!(csv.row_count(), 1);
+    assert_eq!(
+        csv.find_primary("sword").and_then(|row| row.get(1)),
+        Some("Sword")
+    );
 }
 
 #[test]

@@ -7,6 +7,7 @@
 | Purpose           | [Purpose](#purpose)                     |
 | Resource States   | [Resource States](#resource-states)     |
 | Async ID Flow     | [Async ID Flow](#async-id-flow)         |
+| Runtime Bytes     | [Runtime Bytes](#runtime-bytes)         |
 | Load Reserve Drop | [Load Reserve Drop](#load-reserve-drop) |
 | Auto Load         | [Auto Load](#auto-load)                 |
 | Ref Counts        | [Ref Counts](#ref-counts)               |
@@ -51,6 +52,28 @@ Release builds usually load much faster, but the contract stays the same, with n
 
 Use `*_is_loaded!` only when gameplay needs to branch on readiness.
 Do not wait on it just to assign a mesh, texture, or material to a node.
+
+## Runtime Bytes
+
+Scripts can create resource data from in-memory bytes.
+
+Use this when bytes come from Steam, network, save data, DLC, mod packs, generated data, or platform APIs.
+
+Common calls:
+
+- `texture_create_from_rgba!(ctx.res, w, h, rgba)` -> `TextureID`
+- `texture_create_from_bytes!(ctx.res, bytes)` -> `TextureID`
+- `mesh_create_from_bytes!(ctx.res, bytes)` -> `MeshID`
+- `material_create_from_bytes!(ctx.res, bytes)` -> `MaterialID`
+- `animation_create_from_bytes!(ctx.res, bytes)` -> `AnimationID`
+- `animation_tree_create_from_bytes!(ctx.res, bytes)` -> `AnimationTreeID`
+- `audio_create_from_bytes!(ctx.res, bytes)` -> `Option<String>`
+- `midi_load_soundfont_from_bytes!(ctx.res, bytes)` -> `SoundFontID`
+- `csv_load_bytes!(ctx.res, bytes)` -> `&'static Csv`
+- `skeleton_load_bones_2d_from_bytes!(ctx.res, bytes)` -> `Vec<Bone2D>`
+- `skeleton_load_bones_3d_from_bytes!(ctx.res, bytes)` -> `Vec<Bone3D>`
+
+See [Runtime Bytes Resources](runtime_bytes.md).
 
 ## Resource States
 

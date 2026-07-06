@@ -1,4 +1,4 @@
-use crate::error::SteamError;
+use crate::{error::SteamError, input::SteamInputMode};
 use std::sync::{Mutex, OnceLock};
 
 const STEAM_APP_ID_ENV: &str = "SteamAppId";
@@ -24,33 +24,48 @@ pub(crate) fn reset_for_tests() {
 }
 
 pub fn init_from_config(enabled: bool, app_id: Option<u32>) -> Result<(), SteamError> {
+    init_from_config_with_input(enabled, app_id, SteamInputMode::Off)
+}
+
+pub fn init_from_config_with_input(
+    enabled: bool,
+    app_id: Option<u32>,
+    input_mode: SteamInputMode,
+) -> Result<(), SteamError> {
     if !enabled {
         let mut state = state().lock().map_err(|_| SteamError::NotReady)?;
         if state.client.is_none() {
             state.enabled = false;
             state.app_id = None;
         }
+        crate::input::set_mode(SteamInputMode::Off)?;
         return Ok(());
     }
 
     let app_id = app_id.ok_or(SteamError::MissingAppId)?;
-    let mut state = state().lock().map_err(|_| SteamError::NotReady)?;
-    if state.client.is_some() {
-        if state.app_id == Some(app_id) {
-            state.enabled = true;
-            return Ok(());
+    {
+        let mut state = state().lock().map_err(|_| SteamError::NotReady)?;
+        if state.client.is_some() {
+            if state.app_id == Some(app_id) {
+                state.enabled = true;
+                drop(state);
+                crate::input::init_for_mode(input_mode)?;
+                return Ok(());
+            }
+            return Err(SteamError::AlreadyInitialized {
+                current: state.app_id.unwrap_or_default(),
+                requested: app_id,
+            });
         }
-        return Err(SteamError::AlreadyInitialized {
-            current: state.app_id.unwrap_or_default(),
-            requested: app_id,
-        });
+
+        let client = steamworks::Client::init_app(app_id)
+            .map_err(|err| SteamError::InitFailed(err.to_string()))?;
+        state.enabled = true;
+        state.app_id = Some(app_id);
+        state.client = Some(client);
     }
 
-    let client = steamworks::Client::init_app(app_id)
-        .map_err(|err| SteamError::InitFailed(err.to_string()))?;
-    state.enabled = true;
-    state.app_id = Some(app_id);
-    state.client = Some(client);
+    crate::input::init_for_mode(input_mode)?;
     Ok(())
 }
 

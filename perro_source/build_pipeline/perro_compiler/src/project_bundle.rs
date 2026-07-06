@@ -660,6 +660,7 @@ perro_app::entry::run_static_embedded_project(perro_app::entry::StaticEmbeddedPr
   steam: perro_app::entry::StaticEmbeddedSteamConfig {{\n\
         enabled: {steam_enabled},\n\
         app_id: {steam_app_id},\n\
+        input_mode: {steam_input_mode},\n\
   }},\n\
   assets: perro_app::entry::StaticEmbeddedAssetsConfig {{\n\
         perro_assets: PERRO_ASSETS,\n\
@@ -716,6 +717,7 @@ perro_app::entry::run_static_embedded_project(perro_app::entry::StaticEmbeddedPr
         ),
         steam_enabled = cfg.steam.enabled,
         steam_app_id = emit_optional_steam_app_id_fn(cfg.steam.app_id),
+        steam_input_mode = emit_steam_input_mode(cfg.steam.input_mode),
     );
     let embedded_block = indent_block(&embedded_block, 2);
     let embedded_web_block = format!(
@@ -766,6 +768,7 @@ perro_app::entry::run_static_embedded_project_web(perro_app::entry::StaticEmbedd
   steam: perro_app::entry::StaticEmbeddedSteamConfig {{\n\
         enabled: {steam_enabled},\n\
         app_id: {steam_app_id},\n\
+        input_mode: {steam_input_mode},\n\
   }},\n\
   assets: perro_app::entry::StaticEmbeddedAssetsConfig {{\n\
         perro_assets: PERRO_ASSETS,\n\
@@ -821,6 +824,7 @@ perro_app::entry::run_static_embedded_project_web(perro_app::entry::StaticEmbedd
         ),
         steam_enabled = cfg.steam.enabled,
         steam_app_id = emit_optional_steam_app_id_fn(cfg.steam.app_id),
+        steam_input_mode = emit_steam_input_mode(cfg.steam.input_mode),
     );
     let embedded_android_block = format!(
         "let root = project_root();\n\
@@ -870,6 +874,7 @@ perro_app::entry::run_static_embedded_project_android(app, perro_app::entry::Sta
   steam: perro_app::entry::StaticEmbeddedSteamConfig {{\n\
         enabled: {steam_enabled},\n\
         app_id: {steam_app_id},\n\
+        input_mode: {steam_input_mode},\n\
   }},\n\
   assets: perro_app::entry::StaticEmbeddedAssetsConfig {{\n\
         perro_assets: PERRO_ASSETS,\n\
@@ -926,6 +931,7 @@ perro_app::entry::run_static_embedded_project_android(app, perro_app::entry::Sta
         ),
         steam_enabled = cfg.steam.enabled,
         steam_app_id = emit_optional_steam_app_id_fn(cfg.steam.app_id),
+        steam_input_mode = emit_steam_input_mode(cfg.steam.input_mode),
     );
     let embedded_android_block = indent_block(&embedded_android_block, 2);
     let embedded_web_block = indent_block(&embedded_web_block, 4);
@@ -1865,6 +1871,14 @@ fn emit_optional_steam_app_id_fn(value: Option<u32>) -> String {
     match value {
         Some(_) => "Some(steam_app_id)".to_string(),
         None => "None".to_string(),
+    }
+}
+
+fn emit_steam_input_mode(mode: perro_project::SteamInputMode) -> &'static str {
+    match mode {
+        perro_project::SteamInputMode::Off => "perro_runtime::SteamInputMode::Off",
+        perro_project::SteamInputMode::Metadata => "perro_runtime::SteamInputMode::Metadata",
+        perro_project::SteamInputMode::Actions => "perro_runtime::SteamInputMode::Actions",
     }
 }
 

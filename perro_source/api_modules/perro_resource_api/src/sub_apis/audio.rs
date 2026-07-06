@@ -12,6 +12,7 @@ use perro_structs::{BitMask, Vector2, Vector3};
 
 pub trait AudioAPI {
     fn load_audio_source(&self, source: &str) -> bool;
+    fn create_audio_source_from_bytes(&self, bytes: &[u8]) -> Option<String>;
     fn reserve_audio_source(&self, source: &str) -> bool;
     fn drop_audio_source(&self, source: &str) -> bool;
     fn is_audio_source_loaded(&self, source: &str) -> bool;
@@ -29,6 +30,7 @@ pub trait AudioAPI {
     fn resume_bus(&self, bus_id: AudioBusID) -> bool;
     fn stop_bus(&self, bus_id: AudioBusID) -> bool;
     fn load_midi_soundfont_hashed(&self, source_hash: u64, source: Option<&str>) -> SoundFontID;
+    fn load_midi_soundfont_from_bytes(&self, bytes: &[u8]) -> SoundFontID;
     fn load_midi_soundfont(&self, source: &str) -> SoundFontID {
         self.load_midi_soundfont_hashed(perro_ids::string_to_u64(source), Some(source))
     }
@@ -496,6 +498,11 @@ impl<'res, R: AudioAPI + ?Sized> AudioModule<'res, R> {
     pub fn stop_bus(&self, bus_id: AudioBusID) -> bool {
         self.api.stop_bus(bus_id)
     }
+
+    #[inline]
+    pub fn create_source_from_bytes(&self, bytes: &[u8]) -> Option<String> {
+        self.api.create_audio_source_from_bytes(bytes)
+    }
 }
 
 pub struct Audio2DModule<'res, R: AudioAPI + ?Sized> {
@@ -541,6 +548,11 @@ impl<'res, R: AudioAPI + ?Sized> MidiModule<'res, R> {
     ) -> SoundFontID {
         self.api
             .load_midi_soundfont_hashed(source_hash, Some(source.as_res_path_str()))
+    }
+
+    #[inline]
+    pub fn load_soundfont_from_bytes(&self, bytes: &[u8]) -> SoundFontID {
+        self.api.load_midi_soundfont_from_bytes(bytes)
     }
 
     pub fn is_soundfont_loaded(&self, id: SoundFontID) -> bool {
@@ -636,6 +648,13 @@ impl<'res, R: AudioAPI + ?Sized> Audio3DModule<'res, R> {
 macro_rules! audio_load {
     ($res:expr, $source:expr) => {
         $res.Audio().load_source($source)
+    };
+}
+
+#[macro_export]
+macro_rules! audio_create_from_bytes {
+    ($res:expr, $bytes:expr) => {
+        $res.Audio().create_source_from_bytes($bytes)
     };
 }
 
@@ -773,6 +792,13 @@ macro_rules! midi_load_soundfont {
 }
 
 #[macro_export]
+macro_rules! midi_load_soundfont_from_bytes {
+    ($res:expr, $bytes:expr) => {
+        $res.Audio().midi().load_soundfont_from_bytes($bytes)
+    };
+}
+
+#[macro_export]
 macro_rules! midi_soundfont_is_loaded {
     ($res:expr, $id:expr) => {
         $res.Audio().midi().is_soundfont_loaded($id)
@@ -843,6 +869,10 @@ mod tests {
     impl AudioAPI for DummyAudioApi {
         fn load_audio_source(&self, _source: &str) -> bool {
             true
+        }
+
+        fn create_audio_source_from_bytes(&self, _bytes: &[u8]) -> Option<String> {
+            Some("runtime://audio/test".to_string())
         }
 
         fn reserve_audio_source(&self, _source: &str) -> bool {
@@ -923,6 +953,10 @@ mod tests {
             _source: Option<&str>,
         ) -> SoundFontID {
             SoundFontID::from_u64(source_hash)
+        }
+
+        fn load_midi_soundfont_from_bytes(&self, _bytes: &[u8]) -> SoundFontID {
+            SoundFontID::from_u64(1)
         }
 
         fn is_midi_soundfont_loaded(&self, _id: SoundFontID) -> bool {

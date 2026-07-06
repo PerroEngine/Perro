@@ -8,6 +8,8 @@ use perro_nodes::{skeleton_2d::Bone2D, skeleton_3d::Bone3D};
 pub trait SkeletonAPI {
     fn load_bones_2d(&self, source: &str) -> Vec<Bone2D>;
     fn load_bones_3d(&self, source: &str) -> Vec<Bone3D>;
+    fn load_bones_2d_from_bytes(&self, bytes: &[u8]) -> Vec<Bone2D>;
+    fn load_bones_3d_from_bytes(&self, bytes: &[u8]) -> Vec<Bone3D>;
 
     fn load_bones(&self, source: &str) -> Vec<Bone3D>;
 }
@@ -32,6 +34,16 @@ impl<'res, R: SkeletonAPI + ?Sized> SkeletonModule<'res, R> {
     }
 
     #[inline]
+    pub fn load_bones_2d_from_bytes(&self, bytes: &[u8]) -> Vec<Bone2D> {
+        self.api.load_bones_2d_from_bytes(bytes)
+    }
+
+    #[inline]
+    pub fn load_bones_3d_from_bytes(&self, bytes: &[u8]) -> Vec<Bone3D> {
+        self.api.load_bones_3d_from_bytes(bytes)
+    }
+
+    #[inline]
     pub fn load_bones<S: ResPathSource>(&self, source: S) -> Vec<Bone3D> {
         self.api.load_bones(source.as_res_path_str())
     }
@@ -41,5 +53,19 @@ impl<'res, R: SkeletonAPI + ?Sized> SkeletonModule<'res, R> {
 macro_rules! skeleton_load_bones {
     ($res:expr, $source:expr) => {
         $res.Skeletons().load_bones($source)
+    };
+}
+
+#[macro_export]
+macro_rules! skeleton_load_bones_2d_from_bytes {
+    ($res:expr, $bytes:expr) => {
+        $res.Skeletons().load_bones_2d_from_bytes($bytes)
+    };
+}
+
+#[macro_export]
+macro_rules! skeleton_load_bones_3d_from_bytes {
+    ($res:expr, $bytes:expr) => {
+        $res.Skeletons().load_bones_3d_from_bytes($bytes)
     };
 }

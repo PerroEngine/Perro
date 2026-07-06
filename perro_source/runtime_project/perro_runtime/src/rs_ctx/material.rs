@@ -78,6 +78,13 @@ impl MaterialAPI for RuntimeResourceApi {
         id
     }
 
+    fn create_material_from_bytes(&self, bytes: &[u8]) -> MaterialID {
+        let Some(material) = crate::material_schema::load_from_bytes(bytes) else {
+            return MaterialID::nil();
+        };
+        self.create_material(material)
+    }
+
     fn get_material_data(&self, id: MaterialID) -> Option<Material3D> {
         let state = self.state.lock().expect("resource api mutex poisoned");
         state.material_data_by_id.get(&id).cloned()

@@ -191,7 +191,20 @@ pub fn load_mesh3d_from_source(
     static_mesh_lookup: Option<StaticMeshBytesLookup>,
 ) -> Option<Mesh3D> {
     let decoded = load_mesh_from_source_inner(source, static_mesh_lookup, None, false, false)?;
-    Some(Mesh3D {
+    Some(mesh3d_from_decoded(decoded))
+}
+
+pub fn load_mesh3d_from_bytes(bytes: &[u8]) -> Option<Mesh3D> {
+    let decoded = if bytes.starts_with(PMESH_MAGIC) {
+        decode_pmesh(bytes)
+    } else {
+        decode_gltf_mesh(bytes, 0)
+    }?;
+    Some(mesh3d_from_decoded(decoded))
+}
+
+fn mesh3d_from_decoded(decoded: DecodedMesh) -> Mesh3D {
+    Mesh3D {
         vertices: decoded
             .vertices
             .into_iter()
@@ -227,7 +240,7 @@ pub fn load_mesh3d_from_source(
                 has_normal_deltas: shape.has_normal_deltas,
             })
             .collect(),
-    })
+    }
 }
 
 fn load_mesh_from_asset_source(source: &str) -> Option<DecodedMesh> {

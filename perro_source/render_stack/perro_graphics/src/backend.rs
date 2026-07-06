@@ -16,7 +16,9 @@ use crate::{
     ui::renderer::UiRenderer,
 };
 use ahash::{AHashMap, AHashSet};
-use perro_graphics_assets::{decode_image_rgba, decode_ptex, load_texture_rgba};
+use perro_graphics_assets::{
+    decode_image_rgba, decode_ptex, load_mesh3d_from_bytes, load_texture_rgba,
+};
 use perro_ids::{MaterialID, MeshID, NodeID, TextureID};
 use perro_render_bridge::{
     CameraStreamCommand, CameraStreamState, Command2D, Command3D, Light2DState, Material3D,
@@ -828,6 +830,37 @@ impl PerroGraphics {
                             mesh: Some(mesh),
                         });
                     }
+                    ResourceCommand::CreateRuntimeMeshBytes {
+                        request,
+                        id,
+                        source,
+                        reserved,
+                        bytes,
+                    } => {
+                        let Some(mesh) = load_mesh3d_from_bytes(bytes.as_ref()) else {
+                            self.events.push(RenderEvent::Failed {
+                                request,
+                                reason: format!("invalid mesh bytes len={}", bytes.len()),
+                            });
+                            continue;
+                        };
+                        let out_id = if id.is_nil() {
+                            self.resources.create_mesh(source.as_str(), reserved)
+                        } else {
+                            self.resources
+                                .create_mesh_with_id(id, source.as_str(), reserved)
+                        };
+                        self.resources
+                            .set_runtime_mesh_data(source.as_str(), mesh.clone());
+                        let _ = self
+                            .resources
+                            .set_runtime_mesh_data_by_id(out_id, mesh.clone());
+                        self.events.push(RenderEvent::MeshCreated {
+                            request,
+                            id: out_id,
+                            mesh: Some(mesh),
+                        });
+                    }
                     ResourceCommand::WriteMeshData { id, mesh } => {
                         let _ = self.resources.set_runtime_mesh_data_by_id(id, mesh);
                     }
@@ -855,6 +888,78 @@ impl PerroGraphics {
                         }
                         self.events
                             .push(RenderEvent::TextureCreated { request, id });
+                    }
+                    ResourceCommand::CreateRuntimeTexture {
+                        request,
+                        id,
+                        source,
+                        reserved,
+                        width,
+                        height,
+                        rgba,
+                    } => {
+                        let expected_len = (width as usize)
+                            .checked_mul(height as usize)
+                            .and_then(|pixels| pixels.checked_mul(4));
+                        if width == 0 || height == 0 || expected_len != Some(rgba.len()) {
+                            self.events.push(RenderEvent::Failed {
+                                request,
+                                reason: format!(
+                                    "invalid rgba texture {width}x{height} len={}",
+                                    rgba.len()
+                                ),
+                            });
+                            continue;
+                        }
+                        let id = if id.is_nil() {
+                            self.resources.create_texture(source.as_str(), reserved)
+                        } else {
+                            self.resources
+                                .create_texture_with_id(id, source.as_str(), reserved)
+                        };
+                        let _ = self.resources.set_decoded_texture_data(
+                            id,
+                            DecodedTextureRgba {
+                                rgba: rgba.to_vec(),
+                                width,
+                                height,
+                            },
+                        );
+                        self.events
+                            .push(RenderEvent::TextureCreated { request, id });
+                        self.events.push(RenderEvent::TextureLoaded { id });
+                    }
+                    ResourceCommand::CreateRuntimeTextureBytes {
+                        request,
+                        id,
+                        source,
+                        reserved,
+                        bytes,
+                    } => {
+                        let decoded = decode_ptex(bytes.as_ref())
+                            .or_else(|| decode_image_rgba(bytes.as_ref()))
+                            .map(|(rgba, width, height)| DecodedTextureRgba {
+                                rgba,
+                                width,
+                                height,
+                            });
+                        let Some(decoded) = decoded else {
+                            self.events.push(RenderEvent::Failed {
+                                request,
+                                reason: format!("invalid texture bytes len={}", bytes.len()),
+                            });
+                            continue;
+                        };
+                        let id = if id.is_nil() {
+                            self.resources.create_texture(source.as_str(), reserved)
+                        } else {
+                            self.resources
+                                .create_texture_with_id(id, source.as_str(), reserved)
+                        };
+                        let _ = self.resources.set_decoded_texture_data(id, decoded);
+                        self.events
+                            .push(RenderEvent::TextureCreated { request, id });
+                        self.events.push(RenderEvent::TextureLoaded { id });
                     }
                     ResourceCommand::CreateMaterial {
                         request,

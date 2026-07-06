@@ -697,9 +697,11 @@ impl Runtime {
             }
         }
         #[cfg(feature = "steamworks")]
-        if let Err(err) =
-            perro_steamworks::runtime::init_from_config(steam_config.enabled, steam_config.app_id)
-        {
+        if let Err(err) = perro_steamworks::runtime::init_from_config_with_input(
+            steam_config.enabled,
+            steam_config.app_id,
+            map_steam_input_mode(steam_config.input_mode),
+        ) {
             eprintln!(
                 "[runtime][warn] Steam enabled but init failed: {err}. Steam features stay unavailable. Check that Steam is open, the app_id is valid, and the account has access."
             );
@@ -819,6 +821,19 @@ impl Runtime {
             internal_fixed_update,
             total: total_start.elapsed(),
         }
+    }
+}
+
+#[cfg(feature = "steamworks")]
+fn map_steam_input_mode(
+    mode: perro_project::SteamInputMode,
+) -> perro_steamworks::input::SteamInputMode {
+    match mode {
+        perro_project::SteamInputMode::Off => perro_steamworks::input::SteamInputMode::Off,
+        perro_project::SteamInputMode::Metadata => {
+            perro_steamworks::input::SteamInputMode::Metadata
+        }
+        perro_project::SteamInputMode::Actions => perro_steamworks::input::SteamInputMode::Actions,
     }
 }
 

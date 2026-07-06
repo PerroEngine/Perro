@@ -21,6 +21,7 @@ pub trait AnimationAPI {
         self.reserve_animation_source_hashed(perro_ids::string_to_u64(source), Some(source))
     }
     fn drop_animation_source(&self, id: AnimationID) -> bool;
+    fn create_animation_from_bytes(&self, bytes: &[u8]) -> AnimationID;
     fn get_animation(&self, id: AnimationID) -> Option<Arc<AnimationClip>>;
     fn is_animation_loaded(&self, id: AnimationID) -> bool;
 }
@@ -80,6 +81,11 @@ impl<'res, R: AnimationAPI + ?Sized> AnimationModule<'res, R> {
     }
 
     #[inline]
+    pub fn create_from_bytes(&self, bytes: &[u8]) -> AnimationID {
+        self.api.create_animation_from_bytes(bytes)
+    }
+
+    #[inline]
     pub fn get(&self, id: AnimationID) -> Option<Arc<AnimationClip>> {
         self.api.get_animation(id)
     }
@@ -117,6 +123,13 @@ macro_rules! animation_reserve {
 macro_rules! animation_drop {
     ($res:expr, $id:expr) => {
         $res.Animations().drop($id)
+    };
+}
+
+#[macro_export]
+macro_rules! animation_create_from_bytes {
+    ($res:expr, $bytes:expr) => {
+        $res.Animations().create_from_bytes($bytes)
     };
 }
 

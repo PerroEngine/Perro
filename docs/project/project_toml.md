@@ -90,6 +90,7 @@ default_locale = "en"
 [steam]
 enabled = false
 app_id = 480
+input = "off"
 ```
 
 ## Tables
@@ -285,14 +286,20 @@ If sibling csv exists w/o `[localization]`, default locale = `en`.
 [steam]
 enabled = false
 app_id = 480
+input = "off"
 ```
 
-| Field     | Type | Default | Note              |
-| --------- | ---- | ------- | ----------------- |
-| `enabled` | bool | `false` | Steamworks on/off |
-| `app_id`  | int  | none    | need when enabled |
+| Field     | Type   | Default | Note                              |
+| --------- | ------ | ------- | --------------------------------- |
+| `enabled` | bool   | `false` | Steamworks on/off                 |
+| `app_id`  | int    | none    | need when enabled                 |
+| `input`   | string | `"off"` | Steam Input mode: off/metadata/actions |
 
 `app_id` must fit `u32`.
+
+Use `input = "off"` to keep native Perro input only.
+Use `input = "metadata"` to read Steam controller type/glyph/origin data without Steam Input action reads.
+Use `input = "actions"` only when the game opts into Steam Input action maps.
 
 ## Web
 

@@ -438,28 +438,31 @@ impl Gpu3D {
                 },
             ],
         });
-        let material_texture_bgl =
+        let material_texture_bgl = {
+            let mut entries = Vec::with_capacity(MATERIAL_TEXTURE_SET_SIZE + 1);
+            entries.push(wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                count: None,
+            });
+            for binding in 1..=(MATERIAL_TEXTURE_SET_SIZE as u32) {
+                entries.push(wgpu::BindGroupLayoutEntry {
+                    binding,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                });
+            }
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 label: Some("perro_material_texture_bgl"),
-                entries: &[
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                        count: None,
-                    },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 1,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Texture {
-                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                            view_dimension: wgpu::TextureViewDimension::D2,
-                            multisampled: false,
-                        },
-                        count: None,
-                    },
-                ],
-            });
+                entries: &entries,
+            })
+        };
         let shadow_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("perro_shadow3d_bgl"),
             entries: &[
@@ -2181,6 +2184,9 @@ impl Gpu3D {
             staged_custom_params_values_scratch: Vec::new(),
             material_fallback_texture: None,
             material_textures: AHashMap::new(),
+            material_texture_bind_groups: AHashMap::new(),
+            custom_material_texture_slots: AHashMap::new(),
+            next_custom_material_texture_slot: CUSTOM_MATERIAL_TEXTURE_SLOT_BASE,
             texture_filter,
             instance_transform_buffer,
             instance_transform_capacity,

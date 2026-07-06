@@ -1042,6 +1042,9 @@ impl Gpu3D {
                             mesh_source,
                             static_texture_lookup,
                         );
+                        let material_texture_key =
+                            self.custom_material_image_key(device, queue, resources, material);
+                        self.ensure_material_texture_bind_group(device, material_texture_key);
                         let render_path = if skeleton_count > 0 {
                             RenderPath3D::Skinned
                         } else {
@@ -1131,6 +1134,7 @@ impl Gpu3D {
                                     material_kind,
                                     alpha_mode: standard_params.alpha_mode,
                                     base_color_texture_slot: standard_params.base_color_texture,
+                                    material_texture_key,
                                     local_bounds: occlusion_bounds,
                                     occlusion_query,
                                     disable_hiz_occlusion: uses_custom_shader
@@ -1165,6 +1169,9 @@ impl Gpu3D {
                     mesh_source,
                     static_texture_lookup,
                 );
+                let material_texture_key =
+                    self.custom_material_image_key(device, queue, resources, material);
+                self.ensure_material_texture_bind_group(device, material_texture_key);
                 let material_kind = self.material_pipeline_kind(
                     device,
                     if draw.skeleton.is_some() {
@@ -1337,6 +1344,7 @@ impl Gpu3D {
                             material_kind: material_kind.clone(),
                             alpha_mode: standard_params.alpha_mode,
                             base_color_texture_slot: standard_params.base_color_texture,
+                            material_texture_key,
                             local_bounds: (occlusion_center, occlusion_radius),
                             occlusion_query,
                             disable_hiz_occlusion: uses_custom_shader
@@ -1396,6 +1404,7 @@ impl Gpu3D {
             && debug_points_count > 0
         {
             let material_kind = MaterialPipelineKind::Standard;
+            let material_texture_key = MaterialTextureKey::empty();
             let state_key = draw_batch_state_key(
                 RenderPath3D::Rigid,
                 true,
@@ -1408,7 +1417,7 @@ impl Gpu3D {
                 state_key,
                 render_state: render_state_key(
                     state_key,
-                    MATERIAL_TEXTURE_NONE,
+                    material_texture_key.state_hash(),
                     default_mesh.full.index_start,
                     default_mesh.full.base_vertex,
                     true,
@@ -1425,6 +1434,7 @@ impl Gpu3D {
                 alpha_mode: 0,
                 draw_on_top: true,
                 base_color_texture_slot: MATERIAL_TEXTURE_NONE,
+                material_texture_key,
                 local_center: debug_points_local_center,
                 local_radius: 1.0e9,
                 occlusion_query: None,
@@ -1447,6 +1457,7 @@ impl Gpu3D {
                 .resolve_builtin_mesh_asset("__cylinder__")
                 .unwrap_or_else(|| default_mesh.clone());
             let material_kind = MaterialPipelineKind::Standard;
+            let material_texture_key = MaterialTextureKey::empty();
             let state_key = draw_batch_state_key(
                 RenderPath3D::Rigid,
                 true,
@@ -1459,7 +1470,7 @@ impl Gpu3D {
                 state_key,
                 render_state: render_state_key(
                     state_key,
-                    MATERIAL_TEXTURE_NONE,
+                    material_texture_key.state_hash(),
                     debug_edge_mesh.full.index_start,
                     debug_edge_mesh.full.base_vertex,
                     true,
@@ -1476,6 +1487,7 @@ impl Gpu3D {
                 alpha_mode: 0,
                 draw_on_top: true,
                 base_color_texture_slot: MATERIAL_TEXTURE_NONE,
+                material_texture_key,
                 local_center: debug_edges_local_center,
                 local_radius: 1.0e9,
                 occlusion_query: None,

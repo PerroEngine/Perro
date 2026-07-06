@@ -1,7 +1,7 @@
 use perro_io::load_asset;
 use perro_render_bridge::{
-    CustomMaterial3D, CustomMaterialLighting3D, CustomMaterialParam3D, CustomMaterialParamValue3D,
-    Material3D, StandardMaterial3D, ToonMaterial3D, UnlitMaterial3D,
+    CustomMaterial3D, CustomMaterialImage3D, CustomMaterialLighting3D, CustomMaterialParam3D,
+    CustomMaterialParamValue3D, Material3D, StandardMaterial3D, ToonMaterial3D, UnlitMaterial3D,
 };
 use perro_scene::{Parser, SceneObjectField, SceneValue};
 
@@ -52,9 +52,22 @@ pub fn load_from_text(text: &str) -> Option<Material3D> {
     from_object(entries.as_ref())
 }
 
+pub fn load_from_bytes(bytes: &[u8]) -> Option<Material3D> {
+    if let Ok(text) = std::str::from_utf8(bytes)
+        && let Some(material) = load_from_text(text)
+    {
+        return Some(material);
+    }
+    load_gltf_material_from_bytes(bytes, None)
+}
+
 fn load_gltf_material(path: &str, fragment: Option<&str>) -> Option<Material3D> {
     let bytes = load_asset(path).ok()?;
-    let (doc, _buffers, _images) = gltf::import_slice(&bytes).ok()?;
+    load_gltf_material_from_bytes(&bytes, fragment)
+}
+
+fn load_gltf_material_from_bytes(bytes: &[u8], fragment: Option<&str>) -> Option<Material3D> {
+    let (doc, _buffers, _images) = gltf::import_slice(bytes).ok()?;
     let index = parse_fragment_index(fragment, &["mat", "material"]).unwrap_or(0) as usize;
 
     let material = doc.materials().nth(index);
@@ -288,6 +301,7 @@ fn material_from_entries(entries: &[SceneObjectField], any: &mut bool) -> Materi
             let mut params = CustomMaterial3D {
                 shader_path: "".into(),
                 params: std::borrow::Cow::Borrowed(&[]),
+                images: std::borrow::Cow::Borrowed(&[]),
                 lighting: CustomMaterialLighting3D::Standard,
                 surface: StandardMaterial3D::default(),
             };
@@ -420,6 +434,12 @@ fn apply_custom(entries: &[SceneObjectField], out: &mut CustomMaterial3D, any: &
                     *any = true;
                 }
             }
+            Some("images") => {
+                if let Some(images) = as_custom_images(value) {
+                    out.images = std::borrow::Cow::Owned(images);
+                    *any = true;
+                }
+            }
             Some("lighting") => {
                 if let Some(lighting) = as_custom_lighting(value) {
                     out.lighting = lighting;
@@ -493,6 +513,7 @@ fn canonical_custom_key(name: &str) -> Option<&'static str> {
         "type" | "Type" => None,
         "shader" | "shaderPath" | "shader_path" | "path" => Some("shaderPath"),
         "params" | "customParams" | "custom_params" => Some("params"),
+        "images" | "imageParams" | "image_params" | "textures" => Some("images"),
         "lighting" | "light" | "lit" => Some("lighting"),
         _ => None,
     }
@@ -668,6 +689,29 @@ fn as_custom_params(value: &SceneValue) -> Option<Vec<CustomMaterialParam3D>> {
     }
 }
 
+fn as_custom_images(value: &SceneValue) -> Option<Vec<CustomMaterialImage3D>> {
+    match value {
+        SceneValue::Object(entries) => {
+            let mut out = Vec::new();
+            for (name, inner) in entries.as_ref() {
+                if let Some(source) = as_source_token(inner) {
+                    out.push(CustomMaterialImage3D {
+                        name: Some(std::borrow::Cow::Owned(name.to_string())),
+                        source: std::borrow::Cow::Owned(source),
+                    });
+                }
+            }
+            Some(out)
+        }
+        other => as_source_token(other).map(|source| {
+            vec![CustomMaterialImage3D {
+                name: None,
+                source: std::borrow::Cow::Owned(source),
+            }]
+        }),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -742,5 +786,27 @@ params = {
         );
         assert_eq!(custom.params[1].name.as_deref(), Some("glow"));
         assert_eq!(custom.params[1].value, CustomMaterialParamValue3D::F32(0.9));
+    }
+
+    #[test]
+    fn pmat_accepts_custom_images() {
+        let material = material_from_text(
+            r#"{
+                type = "custom",
+                shader_path = "res://shaders/portal.wgsl",
+                images = {
+                    mask = "res://textures/mask.png",
+                    noise = "res://textures/noise.png",
+                },
+            }"#,
+        );
+        let Material3D::Custom(custom) = material else {
+            panic!("expected custom material");
+        };
+        assert_eq!(custom.images.len(), 2);
+        assert_eq!(custom.images[0].name.as_deref(), Some("mask"));
+        assert_eq!(custom.images[0].source.as_ref(), "res://textures/mask.png");
+        assert_eq!(custom.images[1].name.as_deref(), Some("noise"));
+        assert_eq!(custom.images[1].source.as_ref(), "res://textures/noise.png");
     }
 }

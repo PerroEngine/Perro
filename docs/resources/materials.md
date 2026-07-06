@@ -124,6 +124,11 @@ params = {
     glow = 1.25
     tint = (1.0, 0.2, 0.4, 1.0)
 }
+
+images = {
+    mask = "res://textures/mask.png"
+    noise = "res://textures/noise.png"
+}
 ```
 
 ## Assign In Scenes
@@ -241,6 +246,7 @@ See [Performance + Flexibility Philosophy](../project/performance_philosophy.md)
 - glTF mesh refs use `res://path/to/model.glb:mesh[index]`.
 - a single `.glb` can provide both mesh and material refs for the same scene node.
 - texture slots are material-local/glTF texture indices, not global texture IDs.
+- custom `images` bind up to 8 `res://` texture paths for `custom_image_sample(in, index, uv)`.
 - custom materials use standard lighting by default; set `lighting = "raw"` for exact shader output.
 - custom material parameter order binds shader indices: `custom_f_param(in, 0u)` reads the first param.
 - custom param names are metadata for humans and tooling; order controls shader access.

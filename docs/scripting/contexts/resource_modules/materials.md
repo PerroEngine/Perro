@@ -6,6 +6,7 @@
 | --- | --- |
 | Overview | [Overview](#overview) |
 | Context | [Context](#context) |
+| Runtime Bytes | [Runtime Bytes](#runtime-bytes) |
 | API Reference | [API Reference](#api-reference) |
 | `load` | [`load`](#load) |
 | `load_hashed` | [`load_hashed`](#load_hashed) |
@@ -37,6 +38,17 @@ Renderer uses the material once async load/upload completes.
 - Script context path: `ctx.res`
 - Module access: `ctx.res.Materials()`
 - Lifecycle examples stay inside `lifecycle!` because script hooks get `API` from the macro expansion.
+
+## Runtime Bytes
+
+Use runtime bytes when material data is already in memory.
+
+| Call | Return | Notes |
+| --- | --- | --- |
+| `ctx.res.Materials().create_from_bytes(bytes)` | `MaterialID` | Decodes `.pmat` text or glTF/GLB material index `0`. |
+| `material_create_from_bytes!(ctx.res, bytes)` | `MaterialID` | Macro form. |
+
+See [Runtime Bytes Resources](../../../resources/runtime_bytes.md).
 
 ## Practical Example
 

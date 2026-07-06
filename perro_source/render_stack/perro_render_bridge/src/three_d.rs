@@ -558,9 +558,34 @@ impl CustomMaterialParam3D {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct CustomMaterialImage3D {
+    pub name: Option<Cow<'static, str>>,
+    pub source: Cow<'static, str>,
+}
+
+impl CustomMaterialImage3D {
+    #[inline]
+    pub fn named(name: impl Into<Cow<'static, str>>, source: impl Into<Cow<'static, str>>) -> Self {
+        Self {
+            name: Some(name.into()),
+            source: source.into(),
+        }
+    }
+
+    #[inline]
+    pub fn unnamed(source: impl Into<Cow<'static, str>>) -> Self {
+        Self {
+            name: None,
+            source: source.into(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct CustomMaterial3D {
     pub shader_path: Cow<'static, str>,
     pub params: Cow<'static, [CustomMaterialParam3D]>,
+    pub images: Cow<'static, [CustomMaterialImage3D]>,
     pub lighting: CustomMaterialLighting3D,
     pub surface: StandardMaterial3D,
 }
@@ -577,6 +602,7 @@ impl CustomMaterial3D {
         Self {
             shader_path: shader_path.into(),
             params: Cow::Borrowed(&[]),
+            images: Cow::Borrowed(&[]),
             lighting: CustomMaterialLighting3D::Standard,
             surface: StandardMaterial3D::default(),
         }
@@ -590,6 +616,7 @@ impl CustomMaterial3D {
         Self {
             shader_path: shader_path.into(),
             params: Cow::Owned(params),
+            images: Cow::Borrowed(&[]),
             lighting: CustomMaterialLighting3D::Standard,
             surface: StandardMaterial3D::default(),
         }
@@ -598,6 +625,12 @@ impl CustomMaterial3D {
     #[inline]
     pub fn with_lighting(mut self, lighting: CustomMaterialLighting3D) -> Self {
         self.lighting = lighting;
+        self
+    }
+
+    #[inline]
+    pub fn with_images(mut self, images: Vec<CustomMaterialImage3D>) -> Self {
+        self.images = Cow::Owned(images);
         self
     }
 

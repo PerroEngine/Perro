@@ -10,6 +10,7 @@ pub(super) struct DrawBatchPush {
     pub(super) material_kind: MaterialPipelineKind,
     pub(super) alpha_mode: u8,
     pub(super) base_color_texture_slot: u32,
+    pub(super) material_texture_key: MaterialTextureKey,
     pub(super) local_bounds: ([f32; 3], f32),
     pub(super) occlusion_query: Option<u32>,
     pub(super) disable_hiz_occlusion: bool,
@@ -34,6 +35,7 @@ pub(super) fn push_draw_batch(draw_batches: &mut Vec<DrawBatch>, batch: DrawBatc
         material_kind,
         alpha_mode,
         base_color_texture_slot,
+        material_texture_key,
         local_bounds,
         occlusion_query,
         disable_hiz_occlusion,
@@ -59,7 +61,7 @@ pub(super) fn push_draw_batch(draw_batches: &mut Vec<DrawBatch>, batch: DrawBatc
     );
     let render_state = render_state_key(
         state_key,
-        base_color_texture_slot,
+        material_texture_key.state_hash(),
         mesh.index_start,
         mesh.base_vertex,
         false,
@@ -83,6 +85,7 @@ pub(super) fn push_draw_batch(draw_batches: &mut Vec<DrawBatch>, batch: DrawBatc
             && prev.alpha_mode == alpha_mode
             && !prev.draw_on_top
             && prev.base_color_texture_slot == base_color_texture_slot
+            && prev.material_texture_key == material_texture_key
             && prev.occlusion_query.is_none()
             && prev.casts_shadows == casts_shadows
             && prev.receives_shadows == receives_shadows
@@ -120,6 +123,7 @@ pub(super) fn push_draw_batch(draw_batches: &mut Vec<DrawBatch>, batch: DrawBatc
         alpha_mode,
         draw_on_top: false,
         base_color_texture_slot,
+        material_texture_key,
         local_center,
         local_radius: local_radius.max(0.0),
         occlusion_query,
@@ -1016,7 +1020,7 @@ pub(super) fn draw_batch_state_key(
 #[inline]
 pub(super) fn render_state_key(
     pipeline_key: u64,
-    texture_slot: u32,
+    texture_slot: u64,
     mesh_index_start: u32,
     mesh_base_vertex: i32,
     draw_on_top: bool,
@@ -1631,6 +1635,7 @@ mod tests {
             material_kind: MaterialPipelineKind::Standard,
             alpha_mode: 0,
             base_color_texture_slot: 0,
+            material_texture_key: MaterialTextureKey::from_base(0),
             local_bounds: ([0.0, 0.0, 0.0], 1.0),
             occlusion_query: None,
             disable_hiz_occlusion: false,
@@ -1715,9 +1720,18 @@ mod tests {
         let material_kind = MaterialPipelineKind::Standard;
         let state_key =
             draw_batch_state_key(RenderPath3D::Rigid, false, false, 0, false, &material_kind);
+        let material_texture_key = MaterialTextureKey::from_base(0);
         DrawBatch {
             state_key,
-            render_state: render_state_key(state_key, 0, 0, 0, false, 0, false),
+            render_state: render_state_key(
+                state_key,
+                material_texture_key.state_hash(),
+                0,
+                0,
+                false,
+                0,
+                false,
+            ),
             mesh: MeshRange {
                 index_start: 0,
                 index_count: 3,
@@ -1732,6 +1746,7 @@ mod tests {
             alpha_mode: 0,
             draw_on_top: false,
             base_color_texture_slot: 0,
+            material_texture_key,
             local_center: [0.0, 0.0, 0.0],
             local_radius: radius,
             occlusion_query: None,

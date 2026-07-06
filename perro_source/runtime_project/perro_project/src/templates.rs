@@ -1057,6 +1057,7 @@ fn project_root() -> std::path::PathBuf {
           steam: perro_app::entry::StaticEmbeddedSteamConfig {
               enabled: false,
               app_id: None,
+              input_mode: perro_runtime::SteamInputMode::Off,
           },
           assets: perro_app::entry::StaticEmbeddedAssetsConfig {
               perro_assets: PERRO_ASSETS,

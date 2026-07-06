@@ -34,8 +34,8 @@ pub use runtime_project::{
     StaticAnimationLookup, StaticAnimationTreeLookup, StaticAudioLookup, StaticBytesLookup,
     StaticCsvLookup, StaticLocalizationLookup, StaticMaterialLookup, StaticParticleLookup,
     StaticProjectConfig, StaticSceneLookup, StaticShaderLookup, StaticSkeletonLookup,
-    StaticTilesetLookup, StaticUiStyleLookup, default_input_map_toml, default_project_toml,
-    default_routes_config, ensure_project_layout, ensure_project_toml, load_input_map_toml,
-    load_project_toml, load_routes_toml, normalize_route_href, parse_input_map_toml,
-    parse_project_toml, parse_routes_toml,
+    StaticTilesetLookup, StaticUiStyleLookup, SteamInputMode, default_input_map_toml,
+    default_project_toml, default_routes_config, ensure_project_layout, ensure_project_toml,
+    load_input_map_toml, load_project_toml, load_routes_toml, normalize_route_href,
+    parse_input_map_toml, parse_project_toml, parse_routes_toml,
 };

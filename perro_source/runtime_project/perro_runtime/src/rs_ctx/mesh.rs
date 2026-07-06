@@ -2,6 +2,7 @@ use super::core::RuntimeResourceApi;
 use perro_ids::{MeshID, string_to_u64};
 use perro_render_bridge::{Mesh3D, RenderCommand, ResourceCommand};
 use perro_resource_api::sub_apis::MeshAPI;
+use std::sync::Arc;
 
 impl MeshAPI for RuntimeResourceApi {
     fn load_mesh(&self, source: &str) -> MeshID {
@@ -42,6 +43,34 @@ impl MeshAPI for RuntimeResourceApi {
                 source,
                 reserved: false,
                 mesh: data,
+            },
+        ));
+        id
+    }
+
+    fn create_mesh_from_bytes(&self, bytes: &[u8]) -> MeshID {
+        if bytes.is_empty() {
+            return MeshID::nil();
+        }
+        let mut state = self.state.lock().expect("resource api mutex poisoned");
+        let request = state.allocate_request();
+        let id = state.allocate_mesh_id();
+        let source = format!("runtime://mesh-bytes/{}:{}", id.index(), id.generation());
+        let source_hash = string_to_u64(&source);
+        state.mesh_by_source.insert(source_hash, id);
+        state.mesh_source_by_id.insert(id, source.clone());
+        state.mesh_pending_by_source.insert(source_hash, request);
+        state
+            .mesh_pending_source_by_request
+            .insert(request, source.clone());
+        state.mesh_pending_id_by_request.insert(request, id);
+        state.queued_commands.push(RenderCommand::Resource(
+            ResourceCommand::CreateRuntimeMeshBytes {
+                request,
+                id,
+                source,
+                reserved: false,
+                bytes: Arc::from(bytes),
             },
         ));
         id

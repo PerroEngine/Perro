@@ -15,6 +15,13 @@ pub enum ResourceCommand {
         reserved: bool,
         mesh: Mesh3D,
     },
+    CreateRuntimeMeshBytes {
+        request: RenderRequestID,
+        id: MeshID,
+        source: String,
+        reserved: bool,
+        bytes: Arc<[u8]>,
+    },
     WriteMeshData {
         id: MeshID,
         mesh: Mesh3D,
@@ -24,6 +31,22 @@ pub enum ResourceCommand {
         id: TextureID,
         source: String,
         reserved: bool,
+    },
+    CreateRuntimeTexture {
+        request: RenderRequestID,
+        id: TextureID,
+        source: String,
+        reserved: bool,
+        width: u32,
+        height: u32,
+        rgba: Arc<[u8]>,
+    },
+    CreateRuntimeTextureBytes {
+        request: RenderRequestID,
+        id: TextureID,
+        source: String,
+        reserved: bool,
+        bytes: Arc<[u8]>,
     },
     CreateMaterial {
         request: RenderRequestID,

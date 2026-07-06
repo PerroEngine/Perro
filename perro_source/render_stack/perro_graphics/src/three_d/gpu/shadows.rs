@@ -708,9 +708,18 @@ mod tests {
         let material_kind = MaterialPipelineKind::Standard;
         let state_key =
             draw_batch_state_key(RenderPath3D::Rigid, false, false, 0, false, &material_kind);
+        let material_texture_key = MaterialTextureKey::from_base(0);
         DrawBatch {
             state_key,
-            render_state: render_state_key(state_key, 0, 0, 0, false, 0, false),
+            render_state: render_state_key(
+                state_key,
+                material_texture_key.state_hash(),
+                0,
+                0,
+                false,
+                0,
+                false,
+            ),
             mesh: MeshRange {
                 index_start: 0,
                 index_count: 3,
@@ -725,6 +734,7 @@ mod tests {
             alpha_mode: 0,
             draw_on_top: false,
             base_color_texture_slot: 0,
+            material_texture_key,
             local_center: [0.0, 0.0, 0.0],
             local_radius: 2.0,
             occlusion_query: None,

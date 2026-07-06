@@ -312,6 +312,81 @@ fn sprite_texture_upsert_is_accepted_after_texture_creation() {
 }
 
 #[test]
+fn runtime_texture_rgba_create_sets_decoded_data_and_loaded_event() {
+    let mut graphics = PerroGraphics::new();
+    let request = perro_render_bridge::RenderRequestID::new(101);
+    let texture = TextureID::from_parts(77, 0);
+    let rgba = vec![1u8, 2, 3, 4, 5, 6, 7, 8];
+
+    graphics.submit(RenderCommand::Resource(
+        ResourceCommand::CreateRuntimeTexture {
+            request,
+            id: texture,
+            source: "runtime://texture/test".to_string(),
+            reserved: false,
+            width: 2,
+            height: 1,
+            rgba: Arc::from(rgba.as_slice()),
+        },
+    ));
+    graphics.draw_frame();
+
+    let decoded = graphics
+        .resources
+        .decoded_texture_data(texture)
+        .expect("runtime texture data");
+    assert_eq!(decoded.width, 2);
+    assert_eq!(decoded.height, 1);
+    assert_eq!(decoded.rgba, rgba);
+
+    let mut events = Vec::new();
+    graphics.drain_events(&mut events);
+    assert!(events.iter().any(|event| matches!(
+        event,
+        perro_render_bridge::RenderEvent::TextureCreated { request: got, id }
+            if *got == request && *id == texture
+    )));
+    assert!(events.iter().any(|event| matches!(
+        event,
+        perro_render_bridge::RenderEvent::TextureLoaded { id } if *id == texture
+    )));
+}
+
+#[test]
+fn runtime_texture_bytes_create_decodes_ptex() {
+    let mut graphics = PerroGraphics::new();
+    let request = perro_render_bridge::RenderRequestID::new(102);
+    let texture = TextureID::from_parts(78, 0);
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(b"PTEX");
+    bytes.extend_from_slice(&1u32.to_le_bytes());
+    bytes.extend_from_slice(&1u32.to_le_bytes());
+    bytes.extend_from_slice(&1u32.to_le_bytes());
+    bytes.extend_from_slice(&(1u32 << 31).to_le_bytes());
+    bytes.extend_from_slice(&4u32.to_le_bytes());
+    bytes.extend_from_slice(&[9u8, 8, 7, 6]);
+
+    graphics.submit(RenderCommand::Resource(
+        ResourceCommand::CreateRuntimeTextureBytes {
+            request,
+            id: texture,
+            source: "runtime://texture-bytes/test".to_string(),
+            reserved: false,
+            bytes: Arc::from(bytes.as_slice()),
+        },
+    ));
+    graphics.draw_frame();
+
+    let decoded = graphics
+        .resources
+        .decoded_texture_data(texture)
+        .expect("runtime texture data");
+    assert_eq!(decoded.width, 1);
+    assert_eq!(decoded.height, 1);
+    assert_eq!(decoded.rgba, vec![9, 8, 7, 6]);
+}
+
+#[test]
 fn draw_3d_updates_retained_state_per_node() {
     let mut graphics = PerroGraphics::new();
     let node_a = NodeID::from_parts(10, 0);

@@ -67,6 +67,19 @@ impl AudioController {
                                 loaded.sources.remove(&source);
                             }
                         }
+                        AudioCommand::LoadBytes {
+                            source,
+                            bytes,
+                            reserved,
+                        } => {
+                            if player.load_source_bytes(&source, bytes, reserved).is_ok() {
+                                if let Ok(mut loaded) = loaded_for_thread.lock() {
+                                    loaded.sources.insert(Arc::clone(&source));
+                                }
+                            } else if let Ok(mut loaded) = loaded_for_thread.lock() {
+                                loaded.sources.remove(&source);
+                            }
+                        }
                         AudioCommand::DropAsset { source } => {
                             let _ = player.drop_source_asset(&source);
                             if let Ok(mut loaded) = loaded_for_thread.lock() {
@@ -151,6 +164,15 @@ impl AudioController {
                         }
                         AudioCommand::LoadSoundFont { id, source } => {
                             if player.load_soundfont(id, &source).is_ok() {
+                                if let Ok(mut loaded) = loaded_for_thread.lock() {
+                                    loaded.soundfonts.insert(id);
+                                }
+                            } else if let Ok(mut loaded) = loaded_for_thread.lock() {
+                                loaded.soundfonts.remove(&id);
+                            }
+                        }
+                        AudioCommand::LoadSoundFontBytes { id, source, bytes } => {
+                            if player.load_soundfont_bytes(id, &source, bytes).is_ok() {
                                 if let Ok(mut loaded) = loaded_for_thread.lock() {
                                     loaded.soundfonts.insert(id);
                                 }
@@ -303,6 +325,17 @@ impl AudioController {
             .is_ok()
     }
 
+    pub fn load_source_bytes(&self, source: &str, bytes: Arc<[u8]>) -> bool {
+        let source = self.intern_source(source);
+        self.tx
+            .try_send(AudioCommand::LoadBytes {
+                source,
+                bytes,
+                reserved: false,
+            })
+            .is_ok()
+    }
+
     pub fn is_source_loaded(&self, source: &str) -> bool {
         let source = self.intern_source(source);
         self.loaded
@@ -316,6 +349,17 @@ impl AudioController {
         self.tx
             .try_send(AudioCommand::Load {
                 source,
+                reserved: true,
+            })
+            .is_ok()
+    }
+
+    pub fn reserve_source_bytes(&self, source: &str, bytes: Arc<[u8]>) -> bool {
+        let source = self.intern_source(source);
+        self.tx
+            .try_send(AudioCommand::LoadBytes {
+                source,
+                bytes,
                 reserved: true,
             })
             .is_ok()
@@ -402,6 +446,19 @@ impl AudioController {
     ) -> perro_ids::SoundFontID {
         let source = self.intern_source(source);
         let _ = self.tx.try_send(AudioCommand::LoadSoundFont { id, source });
+        id
+    }
+
+    pub fn load_soundfont_bytes_with_id(
+        &self,
+        id: perro_ids::SoundFontID,
+        source: &str,
+        bytes: Arc<[u8]>,
+    ) -> perro_ids::SoundFontID {
+        let source = self.intern_source(source);
+        let _ = self
+            .tx
+            .try_send(AudioCommand::LoadSoundFontBytes { id, source, bytes });
         id
     }
 

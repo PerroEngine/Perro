@@ -78,6 +78,14 @@ impl SkeletonAPI for RuntimeResourceApi {
         Vec::new()
     }
 
+    fn load_bones_2d_from_bytes(&self, bytes: &[u8]) -> Vec<Bone2D> {
+        decode_pskel_2d(bytes).unwrap_or_default()
+    }
+
+    fn load_bones_3d_from_bytes(&self, bytes: &[u8]) -> Vec<Bone3D> {
+        decode_pskel(bytes).unwrap_or_default()
+    }
+
     fn load_bones(&self, source: &str) -> Vec<Bone3D> {
         self.load_bones_3d(source)
     }

@@ -108,6 +108,24 @@ Comments:
 - `occlusion_texture` (alias: `occlusionTexture`) int
 - `emissive_texture` (alias: `emissiveTexture`) int
 
+Custom materials also accept `images`:
+
+```txt
+type = "custom"
+shader_path = "res://shaders/portal.wgsl"
+
+images = {
+    mask = "res://textures/portal_mask.png"
+    noise = "res://textures/noise.png"
+}
+```
+
+Image order is the shader index.
+Names are metadata for tools and humans.
+Use `custom_image_sample(in, 0u, in.uv)` for `mask`.
+Use `custom_image_sample(in, 1u, in.uv)` for `noise`.
+Max custom images: 8.
+
 Note:
 - When `base_color_texture` is unset (`MATERIAL_TEXTURE_NONE` internally), the renderer skips the
   base-color texture sample in Standard shading and uses factor-only color.

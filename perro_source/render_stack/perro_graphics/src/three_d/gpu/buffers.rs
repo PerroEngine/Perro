@@ -102,10 +102,12 @@ impl Gpu3D {
             .expect("material fallback texture must be initialized in prepare")
     }
 
-    pub(super) fn material_texture_bind_group(&self, slot: u32) -> &wgpu::BindGroup {
-        self.material_textures
-            .get(&slot)
-            .map(|cached| &cached.bind_group)
+    pub(super) fn material_texture_set_bind_group(
+        &self,
+        key: MaterialTextureKey,
+    ) -> &wgpu::BindGroup {
+        self.material_texture_bind_groups
+            .get(&key)
             .unwrap_or_else(|| self.fallback_material_texture_bind_group())
     }
 
@@ -130,6 +132,86 @@ impl Gpu3D {
             },
         );
         self.material_fallback_texture = Some(cached);
+    }
+
+    pub(super) fn custom_material_image_key(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        resources: &ResourceStore,
+        material: &Material3D,
+    ) -> MaterialTextureKey {
+        let mut key = MaterialTextureKey::from_base(material.standard_params().base_color_texture);
+        let Material3D::Custom(custom) = material else {
+            return key;
+        };
+        self.ensure_material_fallback_texture(device, queue);
+        for (index, image) in custom
+            .images
+            .iter()
+            .take(CUSTOM_MATERIAL_IMAGE_COUNT)
+            .enumerate()
+        {
+            let slot = self.custom_material_texture_slot(image.source.as_ref());
+            self.ensure_material_texture_source(
+                device,
+                queue,
+                resources,
+                slot,
+                image.source.as_ref(),
+            );
+            key.slots[index + 1] = slot;
+        }
+        key
+    }
+
+    fn custom_material_texture_slot(&mut self, source: &str) -> u32 {
+        if let Some(slot) = self.custom_material_texture_slots.get(source).copied() {
+            return slot;
+        }
+        let slot = self.next_custom_material_texture_slot;
+        self.next_custom_material_texture_slot =
+            self.next_custom_material_texture_slot.saturating_add(1);
+        self.custom_material_texture_slots
+            .insert(source.to_string(), slot);
+        slot
+    }
+
+    pub(super) fn ensure_material_texture_bind_group(
+        &mut self,
+        device: &wgpu::Device,
+        key: MaterialTextureKey,
+    ) {
+        if self.material_texture_bind_groups.contains_key(&key) {
+            return;
+        }
+        let Some(fallback) = self.material_fallback_texture.as_ref() else {
+            return;
+        };
+        let base_cached = self.material_textures.get(&key.slots[0]);
+        let base_view = base_cached
+            .map(|cached| &cached.view)
+            .unwrap_or(&fallback.view);
+        let sampler = base_cached
+            .map(|cached| &cached.sampler)
+            .unwrap_or(&fallback.sampler);
+        let mut custom_views = Vec::with_capacity(CUSTOM_MATERIAL_IMAGE_COUNT);
+        for slot in key.slots.iter().skip(1) {
+            let view = self
+                .material_textures
+                .get(slot)
+                .map(|cached| &cached.view)
+                .unwrap_or(&fallback.view);
+            custom_views.push(view);
+        }
+        let bind_group = create_material_texture_bind_group(
+            device,
+            &self.material_texture_bgl,
+            sampler,
+            base_view,
+            &custom_views,
+        );
+        self.material_texture_bind_groups.insert(key, bind_group);
     }
 
     pub(super) fn ensure_material_texture_slot(
@@ -160,6 +242,7 @@ impl Gpu3D {
         };
         let Some(source) = source else {
             self.material_textures.remove(&slot);
+            self.material_texture_bind_groups.clear();
             return;
         };
         if self
@@ -175,11 +258,13 @@ impl Gpu3D {
                 (decoded.rgba.clone(), decoded.width, decoded.height)
             } else if resources.has_texture_source(source.as_str()) {
                 self.material_textures.remove(&slot);
+                self.material_texture_bind_groups.clear();
                 return;
             } else if let Some(decoded) = load_texture_rgba(source.as_str()) {
                 decoded
             } else {
                 self.material_textures.remove(&slot);
+                self.material_texture_bind_groups.clear();
                 return;
             };
         let cached = create_cached_material_texture(
@@ -195,6 +280,52 @@ impl Gpu3D {
             },
         );
         self.material_textures.insert(slot, cached);
+        self.material_texture_bind_groups.clear();
+    }
+
+    fn ensure_material_texture_source(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        resources: &ResourceStore,
+        slot: u32,
+        source: &str,
+    ) {
+        if self
+            .material_textures
+            .get(&slot)
+            .is_some_and(|cached| cached.source == source)
+        {
+            return;
+        }
+        let (rgba, width, height) =
+            if let Some(decoded) = resources.decoded_texture_data_by_source(source) {
+                (decoded.rgba.clone(), decoded.width, decoded.height)
+            } else if resources.has_texture_source(source) {
+                self.material_textures.remove(&slot);
+                self.material_texture_bind_groups.clear();
+                return;
+            } else if let Some(decoded) = load_texture_rgba(source) {
+                decoded
+            } else {
+                self.material_textures.remove(&slot);
+                self.material_texture_bind_groups.clear();
+                return;
+            };
+        let cached = create_cached_material_texture(
+            device,
+            queue,
+            &self.material_texture_bgl,
+            CachedMaterialTextureInput {
+                rgba,
+                width,
+                height,
+                source: source.to_string(),
+                filter: self.texture_filter,
+            },
+        );
+        self.material_textures.insert(slot, cached);
+        self.material_texture_bind_groups.clear();
     }
 
     pub fn upsert_external_material_texture(
@@ -210,6 +341,7 @@ impl Gpu3D {
         let cached =
             create_external_material_texture(device, &self.material_texture_bgl, view, source);
         self.material_textures.insert(slot, cached);
+        self.material_texture_bind_groups.clear();
     }
 
     pub(super) fn ensure_instance_transform_capacity(

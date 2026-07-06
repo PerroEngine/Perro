@@ -7,7 +7,17 @@ use perro_resource_api::sub_apis::{
     Audio, Audio2D, Audio3D, AudioAPI, AudioDirection, MidiNoteHandle, MidiNoteOptions, MidiSong,
     MidiSpatialPosition, Note,
 };
-use std::sync::atomic::Ordering;
+use std::{
+    collections::hash_map::DefaultHasher,
+    hash::{Hash, Hasher},
+    sync::{Arc, atomic::Ordering},
+};
+
+fn bytes_hash(bytes: &[u8]) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    bytes.hash(&mut hasher);
+    hasher.finish()
+}
 
 impl AudioAPI for RuntimeResourceApi {
     fn load_audio_source(&self, source: &str) -> bool {
@@ -18,6 +28,20 @@ impl AudioAPI for RuntimeResourceApi {
             return false;
         };
         player.load_source(source)
+    }
+
+    fn create_audio_source_from_bytes(&self, bytes: &[u8]) -> Option<String> {
+        if bytes.is_empty() {
+            return None;
+        }
+        let Ok(guard) = self.bark.lock() else {
+            return None;
+        };
+        let player = guard.as_ref()?;
+        let source = format!("runtime://audio/{}", bytes_hash(bytes));
+        player
+            .load_source_bytes(&source, Arc::from(bytes))
+            .then_some(source)
     }
 
     fn reserve_audio_source(&self, source: &str) -> bool {
@@ -283,6 +307,21 @@ impl AudioAPI for RuntimeResourceApi {
             return id;
         };
         player.load_soundfont_with_id(id, source)
+    }
+
+    fn load_midi_soundfont_from_bytes(&self, bytes: &[u8]) -> SoundFontID {
+        if bytes.is_empty() {
+            return SoundFontID::nil();
+        }
+        let Ok(guard) = self.bark.lock() else {
+            return SoundFontID::nil();
+        };
+        let Some(player) = guard.as_ref() else {
+            return SoundFontID::nil();
+        };
+        let id = SoundFontID::from_u64(bytes_hash(bytes));
+        let source = format!("runtime://soundfont/{}", id.as_u64());
+        player.load_soundfont_bytes_with_id(id, &source, Arc::from(bytes))
     }
 
     fn is_midi_soundfont_loaded(&self, id: SoundFontID) -> bool {

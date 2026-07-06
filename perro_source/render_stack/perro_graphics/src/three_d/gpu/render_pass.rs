@@ -568,7 +568,7 @@ impl Gpu3D {
                 pass.set_bind_group(3, &self.mesh_blend_bind_group, &[]);
             }
             let mut current_state_key = None;
-            let mut current_texture_slot = MATERIAL_TEXTURE_NONE;
+            let mut current_texture_key = MaterialTextureKey::empty();
             // Local counters: `pass` holds a shared borrow of self for the
             // multimesh draw, so self.perf_counters can't be written here.
             let mut pipeline_switches: u32 = 0;
@@ -596,7 +596,7 @@ impl Gpu3D {
                 for &i in batch_indices.iter() {
                     let batch = &self.draw_batches[i];
                     let state_change = current_state_key != Some(batch.state_key);
-                    let texture_change = current_texture_slot != batch.base_color_texture_slot;
+                    let texture_change = current_texture_key != batch.material_texture_key;
                     // Any state/texture switch or query batch ends the current run.
                     if state_change || texture_change || batch.occlusion_query.is_some() {
                         run.flush(&self.indirect_buffer, &mut pass);
@@ -636,10 +636,10 @@ impl Gpu3D {
                     if texture_change {
                         pass.set_bind_group(
                             1,
-                            self.material_texture_bind_group(batch.base_color_texture_slot),
+                            self.material_texture_set_bind_group(batch.material_texture_key),
                             &[],
                         );
-                        current_texture_slot = batch.base_color_texture_slot;
+                        current_texture_key = batch.material_texture_key;
                         texture_bind_group_switches = texture_bind_group_switches.saturating_add(1);
                     }
                     if let Some(query_index) = batch.occlusion_query {
@@ -670,7 +670,7 @@ impl Gpu3D {
                 }
                 run.flush(&self.indirect_buffer, &mut pass);
                 current_state_key = None;
-                current_texture_slot = MATERIAL_TEXTURE_NONE;
+                current_texture_key = MaterialTextureKey::empty();
                 if group_index == 0 {
                     draw_multimesh_batches(self, &mut pass);
                     // Restore slot 1 after the multimesh draw rebinds it.
@@ -813,7 +813,7 @@ impl Gpu3D {
             });
             blend_pass.set_bind_group(
                 1,
-                self.material_texture_bind_group(source_batch.base_color_texture_slot),
+                self.material_texture_set_bind_group(source_batch.material_texture_key),
                 &[],
             );
             blend_pass.set_bind_group(2, &self.shadow_bind_group, &[]);
@@ -1290,9 +1290,18 @@ mod tests {
         let material_kind = MaterialPipelineKind::Standard;
         let state_key =
             draw_batch_state_key(RenderPath3D::Rigid, false, false, 0, false, &material_kind);
+        let material_texture_key = MaterialTextureKey::from_base(0);
         DrawBatch {
             state_key,
-            render_state: render_state_key(state_key, 0, 0, 0, false, 0, false),
+            render_state: render_state_key(
+                state_key,
+                material_texture_key.state_hash(),
+                0,
+                0,
+                false,
+                0,
+                false,
+            ),
             mesh: MeshRange {
                 index_start: 0,
                 index_count: 3,
@@ -1307,6 +1316,7 @@ mod tests {
             alpha_mode: 0,
             draw_on_top: false,
             base_color_texture_slot: 0,
+            material_texture_key,
             local_center: [0.0, 0.0, 0.0],
             local_radius,
             occlusion_query: None,

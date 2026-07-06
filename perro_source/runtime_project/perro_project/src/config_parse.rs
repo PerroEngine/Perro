@@ -77,6 +77,7 @@ max_ray_distance = 500.0
 # [steam]
 # enabled = false
 # app_id = 480
+# input = "off" # off | metadata | actions
 "#
     )
 }
@@ -459,7 +460,32 @@ fn parse_steam(table: Option<&toml::map::Map<String, Value>>) -> Result<SteamCon
     if enabled && app_id.is_none() {
         return Err(ProjectError::MissingField("steam.app_id"));
     }
-    Ok(SteamConfig { enabled, app_id })
+    let input_mode = parse_steam_input_mode(table)?;
+    Ok(SteamConfig {
+        enabled,
+        app_id,
+        input_mode,
+    })
+}
+
+fn parse_steam_input_mode(
+    table: &toml::map::Map<String, Value>,
+) -> Result<SteamInputMode, ProjectError> {
+    let Some(value) = table.get("input") else {
+        return Ok(SteamInputMode::Off);
+    };
+    let raw = value.as_str().ok_or_else(|| {
+        ProjectError::InvalidField("steam.input", "must be a string".to_string())
+    })?;
+    match raw {
+        "off" => Ok(SteamInputMode::Off),
+        "metadata" => Ok(SteamInputMode::Metadata),
+        "actions" => Ok(SteamInputMode::Actions),
+        _ => Err(ProjectError::InvalidField(
+            "steam.input",
+            "must be off, metadata, or actions".to_string(),
+        )),
+    }
 }
 
 fn parse_audio(table: Option<&toml::map::Map<String, Value>>) -> Result<AudioConfig, ProjectError> {

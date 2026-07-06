@@ -6,6 +6,7 @@
 | --- | --- |
 | Overview | [Overview](#overview) |
 | Context | [Context](#context) |
+| Runtime Bytes | [Runtime Bytes](#runtime-bytes) |
 | API Reference | [API Reference](#api-reference) |
 | `load` | [`load`](#load) |
 | `load_hashed` | [`load_hashed`](#load_hashed) |
@@ -24,6 +25,17 @@ This resource module belongs to `ctx.res` and documents csv calls.
 - Script context path: `ctx.res`
 - Module access: `ctx.res.Csv()`
 - Lifecycle examples stay inside `lifecycle!` because script hooks get `API` from the macro expansion.
+
+## Runtime Bytes
+
+Use runtime bytes when CSV data is already in memory.
+
+| Call | Return | Notes |
+| --- | --- | --- |
+| `ctx.res.Csv().load_bytes(bytes)` | `&'static Csv` | Parses CSV bytes immediately. |
+| `csv_load_bytes!(ctx.res, bytes)` | `&'static Csv` | Macro form. |
+
+See [Runtime Bytes Resources](../../../resources/runtime_bytes.md).
 
 ## API Reference
 

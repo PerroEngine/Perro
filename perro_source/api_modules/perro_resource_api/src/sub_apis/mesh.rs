@@ -11,6 +11,7 @@ pub trait MeshAPI {
     fn reserve_mesh_hashed(&self, source_hash: u64, source: Option<&str>) -> MeshID;
     fn reserve_mesh_id(&self, id: MeshID) -> bool;
     fn create_mesh_data(&self, data: Mesh3D) -> MeshID;
+    fn create_mesh_from_bytes(&self, bytes: &[u8]) -> MeshID;
     fn get_mesh_data(&self, id: MeshID) -> Option<Mesh3D>;
     fn write_mesh_data(&self, id: MeshID, data: Mesh3D) -> bool;
     fn is_mesh_loaded(&self, id: MeshID) -> bool;
@@ -128,6 +129,11 @@ impl<'res, R: MeshAPI + ?Sized> MeshModule<'res, R> {
     }
 
     #[inline]
+    pub fn create_from_bytes(&self, bytes: &[u8]) -> MeshID {
+        self.api.create_mesh_from_bytes(bytes)
+    }
+
+    #[inline]
     pub fn get_data(&self, id: MeshID) -> Option<Mesh3D> {
         self.api.get_mesh_data(id)
     }
@@ -176,6 +182,13 @@ macro_rules! mesh_drop {
 macro_rules! mesh_create {
     ($res:expr, $data:expr) => {
         $res.Meshes().create($data)
+    };
+}
+
+#[macro_export]
+macro_rules! mesh_create_from_bytes {
+    ($res:expr, $bytes:expr) => {
+        $res.Meshes().create_from_bytes($bytes)
     };
 }
 

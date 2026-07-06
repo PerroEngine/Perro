@@ -50,10 +50,29 @@ pub struct LocalizationConfig {
     pub default_locale: String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SteamInputMode {
+    #[default]
+    Off,
+    Metadata,
+    Actions,
+}
+
+impl SteamInputMode {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Off => "off",
+            Self::Metadata => "metadata",
+            Self::Actions => "actions",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct SteamConfig {
     pub enabled: bool,
     pub app_id: Option<u32>,
+    pub input_mode: SteamInputMode,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -189,6 +208,7 @@ pub struct StaticProjectConfig {
     pub localization_default_locale: &'static str,
     pub steam_enabled: bool,
     pub steam_app_id: Option<u32>,
+    pub steam_input_mode: SteamInputMode,
 }
 
 impl StaticProjectConfig {
@@ -239,6 +259,7 @@ impl StaticProjectConfig {
             localization_default_locale: "en",
             steam_enabled: false,
             steam_app_id: None,
+            steam_input_mode: SteamInputMode::Off,
         }
     }
 
@@ -353,6 +374,11 @@ impl StaticProjectConfig {
         self
     }
 
+    pub const fn with_steam_input_mode(mut self, input_mode: SteamInputMode) -> Self {
+        self.steam_input_mode = input_mode;
+        self
+    }
+
     pub fn to_runtime(self) -> ProjectConfig {
         ProjectConfig {
             name: self.name.to_string(),
@@ -415,6 +441,7 @@ impl StaticProjectConfig {
             steam: SteamConfig {
                 enabled: self.steam_enabled,
                 app_id: self.steam_app_id,
+                input_mode: self.steam_input_mode,
             },
         }
     }

@@ -473,6 +473,24 @@ impl BarkPlayer {
         Ok(())
     }
 
+    pub fn load_source_bytes(
+        &self,
+        source: &str,
+        bytes: Arc<[u8]>,
+        reserved: bool,
+    ) -> Result<(), String> {
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| "audio mutex poisoned".to_string())?;
+        let now = Instant::now();
+        Self::prune_finished_playbacks_locked(&mut state, now);
+        Self::insert_audio_bytes_locked(&mut state, source, bytes, reserved)?;
+        Self::evict_unreserved_unused_locked(&mut state, now);
+        Self::enforce_cache_soft_limit_locked(&mut state);
+        Ok(())
+    }
+
     pub fn drop_source_asset(&self, source: &str) -> bool {
         let Ok(mut state) = self.state.lock() else {
             return false;
@@ -939,6 +957,29 @@ impl BarkPlayer {
         Ok(())
     }
 
+    pub fn load_soundfont_bytes(
+        &self,
+        id: perro_ids::SoundFontID,
+        source: &str,
+        bytes: Arc<[u8]>,
+    ) -> Result<(), String> {
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| "audio mutex poisoned".to_string())?;
+        let mut cursor = Cursor::new(bytes);
+        let font =
+            Arc::new(rustysynth::SoundFont::new(&mut cursor).map_err(|err| err.to_string())?);
+        state.soundfonts.insert(
+            id,
+            CachedSoundFont {
+                source: Arc::from(source),
+                font,
+            },
+        );
+        Ok(())
+    }
+
     pub fn load_midi_file(&self, source: &str) -> Result<(), String> {
         let mut state = self
             .state
@@ -1377,6 +1418,46 @@ impl BarkPlayer {
             false,
             load_stats,
         ))
+    }
+
+    fn insert_audio_bytes_locked(
+        state: &mut AudioState,
+        source: &str,
+        bytes: Arc<[u8]>,
+        reserved: bool,
+    ) -> Result<(), String> {
+        let source_hash = perro_ids::string_to_u64(source);
+        if let Some(existing) = state.cache.get(&source_hash)
+            && existing.source.as_ref() != source
+        {
+            return Err(format!(
+                "audio source hash collision: `{}` conflicts with `{source}`",
+                existing.source
+            ));
+        }
+        if let Some(old) = state.cache.remove(&source_hash) {
+            state.cache_bytes = state.cache_bytes.saturating_sub(old.cache_len());
+        }
+        let asset_epoch = state.next_cache_epoch.max(1);
+        state.next_cache_epoch = state.next_cache_epoch.wrapping_add(1).max(1);
+        state.cache_bytes = state.cache_bytes.saturating_add(bytes.len());
+        state.cache.insert(
+            source_hash,
+            CachedAudioAsset {
+                source: Arc::from(source),
+                source_hash,
+                asset_epoch,
+                bytes,
+                duration: None,
+                duration_known: false,
+                reserved,
+                active_uses: 0,
+                last_touched: Instant::now(),
+                pcm: None,
+                pcm_oversized: false,
+            },
+        );
+        Ok(())
     }
 
     // Decode the full clip to f32 PCM and cache it when it fits the cap.

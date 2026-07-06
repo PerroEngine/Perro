@@ -1,6 +1,6 @@
 use crate::types::{
-    AppID, FriendInfo, FriendListKind, LobbyID, OverlayDialog, RichPresenceKey, SteamID,
-    StoreOverlayAction, UserOverlayDialog,
+    AppID, FriendInfo, FriendListKind, LobbyID, OverlayDialog, RichPresenceKey, SteamAvatar,
+    SteamAvatarSize, SteamID, StoreOverlayAction, UserOverlayDialog,
 };
 use crate::{app, error::SteamError};
 
@@ -21,6 +21,33 @@ pub fn get_list_by(kind: FriendListKind) -> Result<Vec<FriendInfo>, SteamError> 
 
 pub fn get(id: SteamID) -> Result<FriendInfo, SteamError> {
     app::with_client(|client| Ok(friend_info(client.friends().get_friend(id.into()))))
+}
+
+pub fn get_avatar(id: SteamID, size: SteamAvatarSize) -> Result<Option<SteamAvatar>, SteamError> {
+    app::with_client(|client| {
+        let friend = client.friends().get_friend(id.into());
+        Ok(friend_avatar(friend, size))
+    })
+}
+
+pub fn get_small_avatar(id: SteamID) -> Result<Option<SteamAvatar>, SteamError> {
+    get_avatar(id, SteamAvatarSize::Small)
+}
+
+pub fn get_medium_avatar(id: SteamID) -> Result<Option<SteamAvatar>, SteamError> {
+    get_avatar(id, SteamAvatarSize::Medium)
+}
+
+pub fn get_large_avatar(id: SteamID) -> Result<Option<SteamAvatar>, SteamError> {
+    get_avatar(id, SteamAvatarSize::Large)
+}
+
+pub fn request_user_information(id: SteamID, name_only: bool) -> Result<bool, SteamError> {
+    app::with_client(|client| {
+        Ok(client
+            .friends()
+            .request_user_information(id.into(), name_only))
+    })
 }
 
 pub fn get_rich_presence<'a>(
@@ -115,4 +142,13 @@ fn friend_info(friend: steamworks::Friend) -> FriendInfo {
         state: friend.state().into(),
         game: friend.game_played().map(Into::into),
     }
+}
+
+fn friend_avatar(friend: steamworks::Friend, size: SteamAvatarSize) -> Option<SteamAvatar> {
+    let rgba = match size {
+        SteamAvatarSize::Small => friend.small_avatar(),
+        SteamAvatarSize::Medium => friend.medium_avatar(),
+        SteamAvatarSize::Large => friend.large_avatar(),
+    }?;
+    Some(SteamAvatar::new(size, rgba))
 }

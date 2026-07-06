@@ -35,6 +35,10 @@ impl CsvAPI for RuntimeResourceApi {
         table
     }
 
+    fn load_csv_bytes(&self, bytes: &[u8]) -> &'static Csv {
+        perro_csv::parse_csv_static(bytes).unwrap_or(&EMPTY_CSV)
+    }
+
     fn save_csv_source(&self, source: &str, csv: &CsvBuf) -> Result<(), String> {
         let bytes = csv.to_bytes()?;
         if let Some(stripped) = source.strip_prefix("res://")

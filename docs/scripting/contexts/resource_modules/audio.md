@@ -6,6 +6,7 @@
 | --- | --- |
 | Overview | [Overview](#overview) |
 | Context | [Context](#context) |
+| Runtime Bytes | [Runtime Bytes](#runtime-bytes) |
 | API Reference | [API Reference](#api-reference) |
 | `load_source` | [`load_source`](#load_source) |
 | `reserve_source` | [`reserve_source`](#reserve_source) |
@@ -83,6 +84,19 @@ This resource module belongs to `ctx.res` and documents audio calls.
 - Script context path: `ctx.res`
 - Module access: `ctx.res.Audio()`
 - Lifecycle examples stay inside `lifecycle!` because script hooks get `API` from the macro expansion.
+
+## Runtime Bytes
+
+Use runtime bytes when audio data is already in memory.
+
+| Call | Return | Notes |
+| --- | --- | --- |
+| `ctx.res.Audio().create_source_from_bytes(bytes)` | `Option<String>` | Returns runtime source string for normal playback calls. |
+| `ctx.res.Audio().midi().load_soundfont_from_bytes(bytes)` | `SoundFontID` | Loads in-memory `.sf2` bytes. |
+| `audio_create_from_bytes!(ctx.res, bytes)` | `Option<String>` | Macro form. |
+| `midi_load_soundfont_from_bytes!(ctx.res, bytes)` | `SoundFontID` | Macro form. |
+
+See [Runtime Bytes Resources](../../../resources/runtime_bytes.md).
 
 ## API Reference
 

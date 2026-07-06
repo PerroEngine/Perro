@@ -1,7 +1,14 @@
 use super::core::RuntimeResourceApi;
-use perro_ids::TextureID;
+use perro_ids::{TextureID, string_to_u64};
 use perro_render_bridge::{RenderCommand, ResourceCommand};
 use perro_resource_api::sub_apis::TextureAPI;
+use std::sync::Arc;
+
+fn expected_rgba_len(width: u32, height: u32) -> Option<usize> {
+    (width as usize)
+        .checked_mul(height as usize)?
+        .checked_mul(4)
+}
 
 impl TextureAPI for RuntimeResourceApi {
     fn load_texture(&self, source: &str) -> TextureID {
@@ -18,6 +25,62 @@ impl TextureAPI for RuntimeResourceApi {
         } else {
             self.reserve_texture_hashed(perro_ids::string_to_u64(source), Some(source))
         }
+    }
+
+    fn create_texture_from_rgba(&self, width: u32, height: u32, rgba: &[u8]) -> TextureID {
+        if width == 0 || height == 0 || expected_rgba_len(width, height) != Some(rgba.len()) {
+            return TextureID::nil();
+        }
+        let mut state = self.state.lock().expect("resource api mutex poisoned");
+        let request = state.allocate_request();
+        let id = state.allocate_texture_id();
+        let source = format!("runtime://texture/{}:{}", id.index(), id.generation());
+        let source_hash = string_to_u64(&source);
+        state.texture_by_source.insert(source_hash, id);
+        state.texture_pending_by_source.insert(source_hash, request);
+        state
+            .texture_pending_source_by_request
+            .insert(request, source.clone());
+        state.texture_pending_id_by_request.insert(request, id);
+        state.queued_commands.push(RenderCommand::Resource(
+            ResourceCommand::CreateRuntimeTexture {
+                request,
+                id,
+                source,
+                reserved: false,
+                width,
+                height,
+                rgba: Arc::from(rgba),
+            },
+        ));
+        id
+    }
+
+    fn create_texture_from_bytes(&self, bytes: &[u8]) -> TextureID {
+        if bytes.is_empty() {
+            return TextureID::nil();
+        }
+        let mut state = self.state.lock().expect("resource api mutex poisoned");
+        let request = state.allocate_request();
+        let id = state.allocate_texture_id();
+        let source = format!("runtime://texture-bytes/{}:{}", id.index(), id.generation());
+        let source_hash = string_to_u64(&source);
+        state.texture_by_source.insert(source_hash, id);
+        state.texture_pending_by_source.insert(source_hash, request);
+        state
+            .texture_pending_source_by_request
+            .insert(request, source.clone());
+        state.texture_pending_id_by_request.insert(request, id);
+        state.queued_commands.push(RenderCommand::Resource(
+            ResourceCommand::CreateRuntimeTextureBytes {
+                request,
+                id,
+                source,
+                reserved: false,
+                bytes: Arc::from(bytes),
+            },
+        ));
+        id
     }
 
     fn load_texture_hashed(&self, source_hash: u64, source: Option<&str>) -> TextureID {

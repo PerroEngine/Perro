@@ -17,21 +17,36 @@ pub mod steam {
     pub use perro_steamworks::account;
     pub use perro_steamworks::achievements;
     pub use perro_steamworks::apps;
+    pub use perro_steamworks::auth;
     pub use perro_steamworks::cloud;
     pub use perro_steamworks::events;
     pub use perro_steamworks::friends;
+    pub use perro_steamworks::input;
+    pub use perro_steamworks::leaderboards;
     pub use perro_steamworks::lobbies;
     pub use perro_steamworks::networking;
+    pub use perro_steamworks::networking_messages;
+    pub use perro_steamworks::networking_sockets;
+    pub use perro_steamworks::networking_utils;
+    pub use perro_steamworks::remote_play;
+    pub use perro_steamworks::screenshots;
+    pub use perro_steamworks::servers;
     pub use perro_steamworks::stats;
+    pub use perro_steamworks::timeline;
     pub use perro_steamworks::utils;
     pub use perro_steamworks::workshop;
     pub use perro_steamworks::{
-        AppID, DLCID, FriendGame, FriendInfo, FriendListKind, FriendState, LeaderboardDisplay,
-        LeaderboardEntry, LeaderboardEntryScope, LeaderboardID, LeaderboardScoreUpload,
-        LeaderboardSort, LeaderboardUploadMode, LobbyDataKey, LobbyDistance, LobbyID, LobbyInfo,
-        LobbyJoinability, LobbyNearValueFilter, LobbyNumberComparison, LobbyNumberFilter,
-        LobbySearch, LobbyStringFilter, LobbyStringFilterKind, LobbyType, OverlayDialog,
-        RichPresenceKey, SteamError, SteamEvent, SteamID, StoreOverlayAction, UserOverlayDialog,
+        ActionSetHandle, AnalogActionData, AnalogActionHandle, AppID, AuthSessionError, AuthTicket,
+        DLCID, DigitalActionData, DigitalActionHandle, FriendGame, FriendInfo, FriendListKind,
+        FriendState, InputActionOrigin, InputController, InputHandle, InputSourceMode, InputType,
+        LeaderboardDisplay, LeaderboardEntry, LeaderboardEntryScope, LeaderboardID,
+        LeaderboardScoreUpload, LeaderboardSort, LeaderboardUploadMode, LobbyDataKey,
+        LobbyDistance, LobbyID, LobbyInfo, LobbyJoinability, LobbyNearValueFilter,
+        LobbyNumberComparison, LobbyNumberFilter, LobbySearch, LobbyStringFilter,
+        LobbyStringFilterKind, LobbyType, MotionData, OverlayDialog, RemotePlaySession,
+        RemotePlaySessionID, RichPresenceKey, ScreenshotHandle, SteamAvatar, SteamAvatarSize,
+        SteamDeviceFormFactor, SteamError, SteamEvent, SteamID, SteamInputMode, StoreOverlayAction,
+        TimelineEventClipPriority, TimelineGameMode, UserHasLicense, UserOverlayDialog,
         WorkshopFileID,
     };
 }
@@ -70,11 +85,13 @@ pub mod prelude {
     pub use perro_steamworks::{
         steam_account_name, steam_account_self_id, steam_account_self_name, steam_ach_clear,
         steam_ach_unlock, steam_app_dlc_installed, steam_app_subscribed, steam_cloud_read,
-        steam_cloud_write, steam_events, steam_friend_list, steam_leaderboard_create,
-        steam_leaderboard_entries, steam_leaderboard_find, steam_leaderboard_upload,
-        steam_lobby_chat, steam_lobby_create, steam_lobby_data_set, steam_lobby_join,
-        steam_lobby_leave, steam_p2p_read, steam_p2p_send, steam_rich_presence_set,
-        steam_stat_get_i32, steam_stat_set_i32, steam_workshop_download, steam_workshop_subscribe,
+        steam_cloud_write, steam_events, steam_friend_avatar, steam_friend_avatar_large,
+        steam_friend_avatar_medium, steam_friend_avatar_small, steam_friend_list,
+        steam_leaderboard_create, steam_leaderboard_entries, steam_leaderboard_find,
+        steam_leaderboard_upload, steam_lobby_chat, steam_lobby_create, steam_lobby_data_set,
+        steam_lobby_join, steam_lobby_leave, steam_p2p_read, steam_p2p_send,
+        steam_rich_presence_set, steam_stat_get_i32, steam_stat_set_i32, steam_workshop_download,
+        steam_workshop_subscribe,
     };
     pub use perro_structs::{bitmask, prelude::*};
     pub use perro_ui::*;

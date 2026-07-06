@@ -428,6 +428,7 @@ impl Gpu3D {
             && base.alpha_mode == next.alpha_mode
             && base.draw_on_top == next.draw_on_top
             && base.base_color_texture_slot == next.base_color_texture_slot
+            && base.material_texture_key == next.material_texture_key
             && base.occlusion_query.is_none()
             && next.occlusion_query.is_none()
             && base.casts_shadows == next.casts_shadows
@@ -721,9 +722,18 @@ mod tests {
             false,
             &MaterialPipelineKind::Standard,
         );
+        let material_texture_key = MaterialTextureKey::from_base(0);
         DrawBatch {
             state_key,
-            render_state: render_state_key(state_key, 0, index_start, 0, false, 0, false),
+            render_state: render_state_key(
+                state_key,
+                material_texture_key.state_hash(),
+                index_start,
+                0,
+                false,
+                0,
+                false,
+            ),
             mesh: MeshRange {
                 index_start,
                 index_count: 12,
@@ -738,6 +748,7 @@ mod tests {
             alpha_mode: 0,
             draw_on_top: false,
             base_color_texture_slot: 0,
+            material_texture_key,
             local_center: [index_start as f32, 0.0, 0.0],
             local_radius: 1.0,
             occlusion_query: None,

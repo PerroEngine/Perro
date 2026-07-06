@@ -38,6 +38,14 @@ pub mod app {
     }
 
     pub fn init_from_config(enabled: bool, app_id: Option<u32>) -> Result<(), SteamError> {
+        init_from_config_with_input(enabled, app_id, super::input::SteamInputMode::Off)
+    }
+
+    pub fn init_from_config_with_input(
+        enabled: bool,
+        app_id: Option<u32>,
+        input_mode: super::input::SteamInputMode,
+    ) -> Result<(), SteamError> {
         if enabled {
             if app_id.is_none() {
                 return Err(SteamError::MissingAppId);
@@ -47,6 +55,7 @@ pub mod app {
         let mut state = state().lock().map_err(|_| SteamError::NotReady)?;
         state.app_id = None;
         let _ = app_id;
+        let _ = super::input::set_mode(input_mode);
         Ok(())
     }
 
@@ -299,6 +308,24 @@ pub mod friends {
     pub fn get(_id: SteamID) -> Result<FriendInfo, SteamError> {
         disabled()
     }
+    pub fn get_avatar(
+        _id: SteamID,
+        _size: SteamAvatarSize,
+    ) -> Result<Option<SteamAvatar>, SteamError> {
+        disabled()
+    }
+    pub fn get_small_avatar(_id: SteamID) -> Result<Option<SteamAvatar>, SteamError> {
+        disabled()
+    }
+    pub fn get_medium_avatar(_id: SteamID) -> Result<Option<SteamAvatar>, SteamError> {
+        disabled()
+    }
+    pub fn get_large_avatar(_id: SteamID) -> Result<Option<SteamAvatar>, SteamError> {
+        disabled()
+    }
+    pub fn request_user_information(_id: SteamID, _name_only: bool) -> Result<bool, SteamError> {
+        disabled()
+    }
     pub fn get_rich_presence<'a>(
         _id: SteamID,
         _key: impl Into<RichPresenceKey<'a>>,
@@ -337,7 +364,99 @@ pub mod friends {
 pub mod input {
     use super::{DisabledEnum, SteamError, disabled};
 
+    #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+    pub enum SteamInputMode {
+        #[default]
+        Off,
+        Metadata,
+        Actions,
+    }
+
+    impl SteamInputMode {
+        pub const fn allows_action_reads(self) -> bool {
+            matches!(self, Self::Actions)
+        }
+    }
+
     pub type InputType = DisabledEnum;
+    pub type InputSourceMode = DisabledEnum;
+    pub type InputActionOrigin = DisabledEnum;
+
+    #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+    pub struct InputHandle(pub u64);
+
+    impl InputHandle {
+        pub const fn from_raw(raw: u64) -> Self {
+            Self(raw)
+        }
+
+        pub const fn raw(self) -> u64 {
+            self.0
+        }
+    }
+
+    #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+    pub struct ActionSetHandle(pub u64);
+
+    impl ActionSetHandle {
+        pub const fn raw(self) -> u64 {
+            self.0
+        }
+    }
+
+    #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+    pub struct DigitalActionHandle(pub u64);
+
+    impl DigitalActionHandle {
+        pub const fn raw(self) -> u64 {
+            self.0
+        }
+    }
+
+    #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+    pub struct AnalogActionHandle(pub u64);
+
+    impl AnalogActionHandle {
+        pub const fn raw(self) -> u64 {
+            self.0
+        }
+    }
+
+    #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+    pub struct InputController {
+        pub handle: InputHandle,
+        pub input_type: InputType,
+        pub is_joycon: bool,
+    }
+
+    #[derive(Clone, Copy, Debug, Default, PartialEq)]
+    pub struct DigitalActionData {
+        pub state: bool,
+        pub active: bool,
+    }
+
+    #[derive(Clone, Copy, Debug, Default, PartialEq)]
+    pub struct AnalogActionData {
+        pub mode: InputSourceMode,
+        pub x: f32,
+        pub y: f32,
+        pub active: bool,
+    }
+
+    #[derive(Clone, Copy, Debug, Default, PartialEq)]
+    pub struct MotionData {
+        pub rot_quat: [f32; 4],
+        pub pos_accel: [f32; 3],
+        pub rot_vel: [f32; 3],
+    }
+
+    pub(crate) fn set_mode(_mode: SteamInputMode) -> Result<(), SteamError> {
+        Ok(())
+    }
+
+    pub fn mode() -> Result<SteamInputMode, SteamError> {
+        Ok(SteamInputMode::Off)
+    }
 
     pub fn is_init(_explicitly_call_run_frame: bool) -> Result<bool, SteamError> {
         disabled()
@@ -345,13 +464,72 @@ pub mod input {
     pub fn run_frame() -> Result<(), SteamError> {
         disabled()
     }
-    pub fn get_connected_controllers() -> Result<Vec<u64>, SteamError> {
+    pub fn get_connected_controllers() -> Result<Vec<InputHandle>, SteamError> {
+        disabled()
+    }
+    pub fn get_controller_info() -> Result<Vec<InputController>, SteamError> {
+        disabled()
+    }
+    pub const fn input_type_is_joycon(_input_type: InputType) -> bool {
+        false
+    }
+    pub fn input_type(_handle: InputHandle) -> Result<InputType, SteamError> {
         disabled()
     }
     pub fn is_action_manifest_set(_path: &str) -> Result<bool, SteamError> {
         disabled()
     }
-    pub fn is_binding_panel_shown(_input_handle: u64) -> Result<bool, SteamError> {
+    pub fn is_binding_panel_shown(_input_handle: InputHandle) -> Result<bool, SteamError> {
+        disabled()
+    }
+    pub fn action_set_handle(_name: &str) -> Result<ActionSetHandle, SteamError> {
+        disabled()
+    }
+    pub fn activate_action_set(
+        _input_handle: InputHandle,
+        _action_set: ActionSetHandle,
+    ) -> Result<(), SteamError> {
+        disabled()
+    }
+    pub fn digital_action_handle(_name: &str) -> Result<DigitalActionHandle, SteamError> {
+        disabled()
+    }
+    pub fn analog_action_handle(_name: &str) -> Result<AnalogActionHandle, SteamError> {
+        disabled()
+    }
+    pub fn digital_action_data(
+        _input_handle: InputHandle,
+        _action: DigitalActionHandle,
+    ) -> Result<DigitalActionData, SteamError> {
+        disabled()
+    }
+    pub fn analog_action_data(
+        _input_handle: InputHandle,
+        _action: AnalogActionHandle,
+    ) -> Result<AnalogActionData, SteamError> {
+        disabled()
+    }
+    pub fn digital_action_origins(
+        _input_handle: InputHandle,
+        _action_set: ActionSetHandle,
+        _action: DigitalActionHandle,
+    ) -> Result<Vec<InputActionOrigin>, SteamError> {
+        disabled()
+    }
+    pub fn analog_action_origins(
+        _input_handle: InputHandle,
+        _action_set: ActionSetHandle,
+        _action: AnalogActionHandle,
+    ) -> Result<Vec<InputActionOrigin>, SteamError> {
+        disabled()
+    }
+    pub fn glyph_for_action_origin(_origin: InputActionOrigin) -> Result<String, SteamError> {
+        disabled()
+    }
+    pub fn string_for_action_origin(_origin: InputActionOrigin) -> Result<String, SteamError> {
+        disabled()
+    }
+    pub fn motion_data(_input_handle: InputHandle) -> Result<MotionData, SteamError> {
         disabled()
     }
     pub fn shutdown() -> Result<(), SteamError> {
@@ -395,7 +573,7 @@ pub mod auth {
     pub fn begin_authentication_session(
         _user: SteamID,
         _ticket: &[u8],
-    ) -> Result<AuthSessionError, SteamError> {
+    ) -> Result<Result<(), AuthSessionError>, SteamError> {
         disabled()
     }
     pub fn end_authentication_session(_user: SteamID) -> Result<(), SteamError> {

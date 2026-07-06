@@ -235,11 +235,13 @@ aspect_ratio = "16:9"
 [steam]
 enabled = true
 app_id = 123456
+input = "metadata"
 "#;
 
     let parsed = parse_project_toml(toml).expect("failed to parse project.toml");
     assert!(parsed.steam.enabled);
     assert_eq!(parsed.steam.app_id, Some(123456));
+    assert_eq!(parsed.steam.input_mode, SteamInputMode::Metadata);
 }
 
 #[test]

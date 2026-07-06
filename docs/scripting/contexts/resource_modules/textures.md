@@ -6,6 +6,7 @@
 | --- | --- |
 | Overview | [Overview](#overview) |
 | Context | [Context](#context) |
+| Runtime Bytes | [Runtime Bytes](#runtime-bytes) |
 | API Reference | [API Reference](#api-reference) |
 | `load` | [`load`](#load) |
 | `load_hashed` | [`load_hashed`](#load_hashed) |
@@ -31,6 +32,19 @@ Renderer uses the texture once async decode/upload completes.
 - Script context path: `ctx.res`
 - Module access: `ctx.res.Textures()`
 - Lifecycle examples stay inside `lifecycle!` because script hooks get `API` from the macro expansion.
+
+## Runtime Bytes
+
+Use runtime bytes when texture data is already in memory.
+
+| Call | Return | Notes |
+| --- | --- | --- |
+| `ctx.res.Textures().create_from_rgba(w, h, rgba)` | `TextureID` | Raw RGBA8 bytes; length must be `w * h * 4`. |
+| `ctx.res.Textures().create_from_bytes(bytes)` | `TextureID` | Decodes image bytes or `PTEX`. |
+| `texture_create_from_rgba!(ctx.res, w, h, rgba)` | `TextureID` | Macro form. |
+| `texture_create_from_bytes!(ctx.res, bytes)` | `TextureID` | Macro form. |
+
+See [Runtime Bytes Resources](../../../resources/runtime_bytes.md).
 
 ## Practical Example
 

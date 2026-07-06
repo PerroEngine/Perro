@@ -57,6 +57,38 @@ use wgpu::util::DeviceExt;
 
 type MeshVertex = DecodedMeshVertex;
 
+const CUSTOM_MATERIAL_IMAGE_COUNT: usize = 8;
+const MATERIAL_TEXTURE_SET_SIZE: usize = 1 + CUSTOM_MATERIAL_IMAGE_COUNT;
+const CUSTOM_MATERIAL_TEXTURE_SLOT_BASE: u32 = 0x8000_0000;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+struct MaterialTextureKey {
+    slots: [u32; MATERIAL_TEXTURE_SET_SIZE],
+}
+
+impl MaterialTextureKey {
+    const fn empty() -> Self {
+        Self {
+            slots: [MATERIAL_TEXTURE_NONE; MATERIAL_TEXTURE_SET_SIZE],
+        }
+    }
+
+    fn from_base(base: u32) -> Self {
+        let mut key = Self::empty();
+        key.slots[0] = base;
+        key
+    }
+
+    fn state_hash(self) -> u64 {
+        let mut hash = 0xcbf2_9ce4_8422_2325u64;
+        for slot in self.slots {
+            hash ^= slot as u64;
+            hash = hash.wrapping_mul(0x1000_0000_01b3);
+        }
+        hash
+    }
+}
+
 // Pose-pack cache entry: pinned source Arc + its packed geometry lanes.
 type PosePackCacheEntry = (Arc<[DenseInstancePose3D]>, Arc<[MultiMeshPosePacked]>);
 
@@ -87,7 +119,7 @@ use skinned_path::{
 };
 use texture_cache::{
     CachedMaterialTexture, CachedMaterialTextureInput, create_cached_material_texture,
-    create_external_material_texture,
+    create_external_material_texture, create_material_texture_bind_group,
 };
 
 #[path = "gpu/asset_bridge.rs"]
@@ -688,6 +720,9 @@ pub struct Gpu3D {
     staged_custom_params_values_scratch: Vec<f32>,
     material_fallback_texture: Option<CachedMaterialTexture>,
     material_textures: AHashMap<u32, CachedMaterialTexture>,
+    material_texture_bind_groups: AHashMap<MaterialTextureKey, wgpu::BindGroup>,
+    custom_material_texture_slots: AHashMap<String, u32>,
+    next_custom_material_texture_slot: u32,
     texture_filter: TextureFilterMode,
     instance_transform_buffer: wgpu::Buffer,
     instance_transform_capacity: usize,
@@ -1000,7 +1035,7 @@ enum RenderBatchKind {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct RenderStateKey {
     pipeline_key: u64,
-    texture_slot: u32,
+    texture_slot: u64,
     mesh_index_start: u32,
     mesh_base_vertex: i32,
     batch_kind: RenderBatchKind,
@@ -1072,6 +1107,7 @@ struct DrawBatch {
     alpha_mode: u8,
     draw_on_top: bool,
     base_color_texture_slot: u32,
+    material_texture_key: MaterialTextureKey,
     local_center: [f32; 3],
     local_radius: f32,
     occlusion_query: Option<u32>,
@@ -1167,8 +1203,8 @@ const OCCLUSION_PROBE_INTERVAL: u64 = 1;
 mod tests {
     use super::{
         DrawBatch, DrawBatchPush, MATERIAL_TEXTURE_NONE, MaterialInstanceGpu, MaterialPipelineKind,
-        MultiMeshDrawParamGpu, MultiMeshInstanceGpu, PackedLodParamGpu, PackedRigidLodVertex,
-        RenderBatchKind, RenderPath3D, RigidInstanceMetaGpu, RigidMeshVertex,
+        MaterialTextureKey, MultiMeshDrawParamGpu, MultiMeshInstanceGpu, PackedLodParamGpu,
+        PackedRigidLodVertex, RenderBatchKind, RenderPath3D, RigidInstanceMetaGpu, RigidMeshVertex,
         SkinnedInstanceMetaGpu, SkinnedMeshVertex, camera, compare_draw_batch_keys,
         draw_batch_state_key, push_draw_batch, render_state_key,
     };
@@ -1506,6 +1542,7 @@ mod tests {
                 material_kind: MaterialPipelineKind::Standard,
                 alpha_mode: 0,
                 base_color_texture_slot: MATERIAL_TEXTURE_NONE,
+                material_texture_key: MaterialTextureKey::from_base(MATERIAL_TEXTURE_NONE),
                 local_bounds: ([1.0, 2.0, 3.0], 2.0),
                 occlusion_query: None,
                 disable_hiz_occlusion: false,
@@ -1531,6 +1568,7 @@ mod tests {
                 material_kind: MaterialPipelineKind::Standard,
                 alpha_mode: 0,
                 base_color_texture_slot: MATERIAL_TEXTURE_NONE,
+                material_texture_key: MaterialTextureKey::from_base(MATERIAL_TEXTURE_NONE),
                 local_bounds: ([9.0, 9.0, 9.0], 4.0),
                 occlusion_query: None,
                 disable_hiz_occlusion: false,
@@ -1592,6 +1630,7 @@ mod tests {
                 material_kind: MaterialPipelineKind::Standard,
                 alpha_mode: 0,
                 base_color_texture_slot: MATERIAL_TEXTURE_NONE,
+                material_texture_key: MaterialTextureKey::from_base(MATERIAL_TEXTURE_NONE),
                 local_bounds: ([0.0, 0.0, 0.0], 1.0),
                 occlusion_query: None,
                 disable_hiz_occlusion: false,
@@ -1617,6 +1656,7 @@ mod tests {
                 material_kind: MaterialPipelineKind::Standard,
                 alpha_mode: 0,
                 base_color_texture_slot: MATERIAL_TEXTURE_NONE,
+                material_texture_key: MaterialTextureKey::from_base(MATERIAL_TEXTURE_NONE),
                 local_bounds: ([0.0, 0.0, 0.0], 1.0),
                 occlusion_query: None,
                 disable_hiz_occlusion: false,
@@ -1642,6 +1682,7 @@ mod tests {
                 material_kind: MaterialPipelineKind::Standard,
                 alpha_mode: 0,
                 base_color_texture_slot: MATERIAL_TEXTURE_NONE,
+                material_texture_key: MaterialTextureKey::from_base(MATERIAL_TEXTURE_NONE),
                 local_bounds: ([0.0, 0.0, 0.0], 1.0),
                 occlusion_query: Some(11),
                 disable_hiz_occlusion: false,
@@ -1673,6 +1714,7 @@ mod tests {
             material_kind: material_kind.clone(),
             alpha_mode: 0,
             base_color_texture_slot: MATERIAL_TEXTURE_NONE,
+            material_texture_key: MaterialTextureKey::from_base(MATERIAL_TEXTURE_NONE),
             local_bounds: ([0.0, 0.0, 0.0], 1.0),
             occlusion_query: None,
             disable_hiz_occlusion: false,
@@ -1765,11 +1807,12 @@ mod tests {
             false,
             &material_kind,
         );
+        let material_texture_key = MaterialTextureKey::from_base(texture_slot);
         DrawBatch {
             state_key,
             render_state: render_state_key(
                 state_key,
-                texture_slot,
+                material_texture_key.state_hash(),
                 mesh_index_start,
                 0,
                 draw_on_top,
@@ -1790,6 +1833,7 @@ mod tests {
             alpha_mode,
             draw_on_top,
             base_color_texture_slot: texture_slot,
+            material_texture_key,
             local_center: [0.0; 3],
             local_radius: 1.0,
             occlusion_query: None,

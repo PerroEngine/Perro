@@ -9,6 +9,7 @@ use perro_render_bridge::Material3D;
 pub trait MaterialAPI {
     fn load_material_source_hashed(&self, source_hash: u64, source: Option<&str>) -> MaterialID;
     fn create_material(&self, material: Material3D) -> MaterialID;
+    fn create_material_from_bytes(&self, bytes: &[u8]) -> MaterialID;
     fn get_material_data(&self, id: MaterialID) -> Option<Material3D>;
     fn write_material_data(&self, id: MaterialID, material: Material3D) -> bool;
     fn is_material_loaded(&self, id: MaterialID) -> bool;
@@ -104,6 +105,11 @@ impl<'res, R: MaterialAPI + ?Sized> MaterialModule<'res, R> {
     }
 
     #[inline]
+    pub fn create_from_bytes(&self, bytes: &[u8]) -> MaterialID {
+        self.api.create_material_from_bytes(bytes)
+    }
+
+    #[inline]
     pub fn get_data(&self, id: MaterialID) -> Option<Material3D> {
         self.api.get_material_data(id)
     }
@@ -180,6 +186,13 @@ macro_rules! material_drop {
 macro_rules! material_create {
     ($res:expr, $material:expr) => {
         $res.Materials().create($material)
+    };
+}
+
+#[macro_export]
+macro_rules! material_create_from_bytes {
+    ($res:expr, $bytes:expr) => {
+        $res.Materials().create_from_bytes($bytes)
     };
 }
 

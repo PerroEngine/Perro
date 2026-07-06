@@ -381,6 +381,11 @@ pub(crate) enum AudioCommand {
         source: Arc<str>,
         reserved: bool,
     },
+    LoadBytes {
+        source: Arc<str>,
+        bytes: Arc<[u8]>,
+        reserved: bool,
+    },
     DropAsset {
         source: Arc<str>,
     },
@@ -435,6 +440,11 @@ pub(crate) enum AudioCommand {
     LoadSoundFont {
         id: perro_ids::SoundFontID,
         source: Arc<str>,
+    },
+    LoadSoundFontBytes {
+        id: perro_ids::SoundFontID,
+        source: Arc<str>,
+        bytes: Arc<[u8]>,
     },
     LoadMidiFile {
         source: Arc<str>,

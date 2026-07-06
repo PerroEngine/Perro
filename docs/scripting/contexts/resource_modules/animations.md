@@ -6,6 +6,7 @@
 | --- | --- |
 | Overview | [Overview](#overview) |
 | Context | [Context](#context) |
+| Runtime Bytes | [Runtime Bytes](#runtime-bytes) |
 | API Reference | [API Reference](#api-reference) |
 | `load` | [`load`](#load) |
 | `load_hashed` | [`load_hashed`](#load_hashed) |
@@ -36,6 +37,19 @@ This resource module belongs to `ctx.res` and documents animations calls.
 - Script context path: `ctx.res`
 - Module access: `ctx.res.Animations() / ctx.res.AnimationTrees()`
 - Lifecycle examples stay inside `lifecycle!` because script hooks get `API` from the macro expansion.
+
+## Runtime Bytes
+
+Use runtime bytes when animation data is already in memory.
+
+| Call | Return | Notes |
+| --- | --- | --- |
+| `ctx.res.Animations().create_from_bytes(bytes)` | `AnimationID` | Decodes `.panim` text. |
+| `ctx.res.AnimationTrees().create_from_bytes(bytes)` | `AnimationTreeID` | Decodes `.panimtree` text. |
+| `animation_create_from_bytes!(ctx.res, bytes)` | `AnimationID` | Macro form. |
+| `animation_tree_create_from_bytes!(ctx.res, bytes)` | `AnimationTreeID` | Macro form. |
+
+See [Runtime Bytes Resources](../../../resources/runtime_bytes.md).
 
 ## API Reference
 

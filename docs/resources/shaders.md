@@ -27,6 +27,10 @@ params = {
     glow = 1.25
     tint = (1.0, 0.2, 0.4, 1.0)
 }
+images = {
+    mask = "res://textures/mask.png"
+    noise = "res://textures/noise.png"
+}
 ```
 
 ```rust
@@ -97,6 +101,7 @@ Notes for custom shaders:
 - If a scene has no `Sky3D`, no `AmbientLight3D`, and no 3D lights, standard materials render black except for `emissive_factor`.
 - Use `custom_f_param(in, index)` to read custom params in fragment stage.
 - Use `custom_v_param(out, index)` inside `shade_vertex` for same params in vertex stage.
+- Use `custom_image_sample(in, index, uv)` to sample custom `images` from `.pmat`.
 - Legacy aliases `custom_param` and `custom_param_vertex` stay valid.
 
 ## Custom Sky3D Shaders
@@ -188,6 +193,13 @@ Custom param ordering:
 - `custom_f_param(in, 0u)` maps to the **first** entry in `CustomMaterial3D::params`.
 - Names are metadata only; ordering is what binds to indices.
 
+Custom image ordering:
+
+- `.pmat images` order maps to `custom_image_sample(in, index, uv)`.
+- Max images per custom material: 8.
+- Missing images sample the white fallback texture.
+- Custom image sampling is for single-mesh/skinned custom material shaders.
+
 ### Default Lit Custom Example
 
 ```wgsl
@@ -218,6 +230,27 @@ fn shade_material(in: FragmentInput) -> vec4<f32> {
     let glow = custom_f_param(in, 0u).x;
     let alpha = perro_material_alpha(in, color.a);
     return vec4<f32>(color.rgb + glow, alpha);
+}
+```
+
+### Custom Image Example
+
+```txt
+type = "custom"
+shader_path = "res://shaders/portal.wgsl"
+lighting = "raw"
+
+images = {
+    mask = "res://textures/portal_mask.png"
+    noise = "res://textures/noise.png"
+}
+```
+
+```wgsl
+fn shade_material(in: FragmentInput) -> vec4<f32> {
+    let mask = custom_image_sample(in, 0u, in.uv);
+    let noise = custom_image_sample(in, 1u, in.uv * 4.0);
+    return vec4<f32>(noise.rgb, mask.r);
 }
 ```
 
