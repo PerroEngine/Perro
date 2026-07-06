@@ -61,6 +61,7 @@ impl Runtime {
             SceneNodeData::SpotLight3D(node) => node.visible,
             SceneNodeData::ParticleEmitter3D(node) => node.visible,
             SceneNodeData::WaterBody3D(node) => node.base.visible,
+            SceneNodeData::Decal3D(node) => node.base.visible,
             SceneNodeData::Skeleton3D(node) => node.visible,
             SceneNodeData::BoneAttachment3D(node) => node.visible,
             SceneNodeData::IKTarget3D(node) => node.visible,

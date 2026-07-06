@@ -1150,12 +1150,3 @@ fn generated_script_rel(rel: &str) -> String {
         format!("{rel}.gen.rs")
     }
 }
-
-#[allow(dead_code)]
-fn rel_to_path(base: &Path, rel: &str) -> PathBuf {
-    base.join(
-        rel.split('/')
-            .filter(|part| !part.is_empty())
-            .collect::<PathBuf>(),
-    )
-}

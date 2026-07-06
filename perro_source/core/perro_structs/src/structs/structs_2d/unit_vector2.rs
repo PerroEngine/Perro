@@ -62,6 +62,34 @@ impl From<UnitVector2> for Vector2 {
     }
 }
 
+impl From<[f32; 2]> for UnitVector2 {
+    #[inline]
+    fn from(v: [f32; 2]) -> Self {
+        Self::new(v[0], v[1])
+    }
+}
+
+impl From<UnitVector2> for [f32; 2] {
+    #[inline]
+    fn from(v: UnitVector2) -> Self {
+        v.to_array()
+    }
+}
+
+impl From<(f32, f32)> for UnitVector2 {
+    #[inline]
+    fn from(v: (f32, f32)) -> Self {
+        Self::new(v.0, v.1)
+    }
+}
+
+impl From<UnitVector2> for (f32, f32) {
+    #[inline]
+    fn from(v: UnitVector2) -> Self {
+        v.to_tuple()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

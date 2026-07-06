@@ -57,6 +57,74 @@ fn build_water_body_3d(data: &SceneDefNodeData) -> WaterBody3D {
     node
 }
 
+fn build_decal_3d(data: &SceneDefNodeData) -> Decal3D {
+    let mut node = Decal3D::new();
+    if let Some(base) = data.base_ref() {
+        apply_node_3d_data(&mut node, base);
+    }
+    apply_node_3d_fields(&mut node, &data.fields);
+    apply_decal_3d_fields(&mut node, &data.fields);
+    node
+}
+
+fn apply_decal_3d_fields(node: &mut Decal3D, fields: &[SceneObjectField]) {
+    // Texture paths are resolved to TextureIDs at merge time (see
+    // decal_texture_sources on PendingNode); only scalars apply here.
+    SceneFieldIterRef::new(fields).for_each(|name, value| match name {
+        "size" | "extents" => {
+            if let Some(v) = as_vec3(value) {
+                node.size = Vector3::new(v.x.max(0.001), v.y.max(0.001), v.z.max(0.001));
+            }
+        }
+        "modulate" | "tint" | "color" => {
+            if let Some(v) = as_scene_color(value) {
+                node.modulate = v;
+            }
+        }
+        "albedo_mix" => {
+            if let Some(v) = as_f32(value) {
+                node.surface.albedo_mix = v.clamp(0.0, 1.0);
+            }
+        }
+        "emission_energy" => {
+            if let Some(v) = as_f32(value) {
+                node.surface.emission_energy = v.max(0.0);
+            }
+        }
+        "normal_strength" => {
+            if let Some(v) = as_f32(value) {
+                node.surface.normal_strength = v.max(0.0);
+            }
+        }
+        "normal_fade" => {
+            if let Some(v) = as_f32(value) {
+                node.surface.normal_fade = v.clamp(0.0, 1.0);
+            }
+        }
+        "distance_fade_begin" => {
+            if let Some(v) = as_f32(value) {
+                node.distance_fade.begin = v.max(0.0);
+            }
+        }
+        "distance_fade_length" => {
+            if let Some(v) = as_f32(value) {
+                node.distance_fade.length = v.max(0.001);
+            }
+        }
+        "sort_priority" | "priority" => {
+            if let Some(v) = as_i32(value) {
+                node.sort_priority = v;
+            }
+        }
+        "active" => {
+            if let Some(v) = as_bool(value) {
+                node.active = v;
+            }
+        }
+        _ => {}
+    });
+}
+
 fn build_skeleton_3d(data: &SceneDefNodeData) -> Skeleton3D {
     let mut node = Skeleton3D::new();
     if let Some(base) = data.base_ref() {

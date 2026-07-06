@@ -1,10 +1,10 @@
 use super::*;
 
-pub(super) fn build_skeleton_palette(
+pub(crate) fn build_skeleton_palette(
     nodes: &crate::cns::NodeArena,
     skeleton_id: NodeID,
     global: &mut Vec<Mat4>,
-    out: &mut Vec<[[f32; 4]; 4]>,
+    out: &mut Vec<[[f32; 4]; 3]>,
 ) -> Option<()> {
     let skeleton_node = nodes.get(skeleton_id)?;
     let skeleton = match &skeleton_node.data {
@@ -35,11 +35,34 @@ pub(super) fn build_skeleton_palette(
     if out.capacity() < skeleton.bones.len() {
         out.reserve(skeleton.bones.len() - out.capacity());
     }
+    // Precomputed inverse-bind lane (constant bind pose); fall back to an inline
+    // TRS→matrix conversion when the lane is absent/stale for this bone set.
+    let inv_bind_mats = skeleton.inv_bind_mats();
+    let use_cache = inv_bind_mats.len() == skeleton.bones.len();
     for (i, bone) in skeleton.bones.iter().enumerate() {
-        let joint = global[i] * bone.inv_bind.to_mat4();
-        out.push(joint.to_cols_array_2d());
+        let inv_bind = if use_cache {
+            inv_bind_mats[i].0
+        } else {
+            bone.inv_bind.to_mat4()
+        };
+        let joint = global[i] * inv_bind;
+        out.push(pack_bone_affine_rows(&joint));
     }
     Some(())
+}
+
+/// Pack a column-major bone matrix into its 3 affine rows (row-major). The
+/// bottom row of a skinning matrix is always `(0,0,0,1)`, so it is dropped —
+/// this is the exact layout the skinning shaders read, uploaded without a
+/// second repack on the GPU staging path.
+#[inline]
+pub(super) fn pack_bone_affine_rows(joint: &Mat4) -> [[f32; 4]; 3] {
+    let c = joint.to_cols_array_2d();
+    [
+        [c[0][0], c[1][0], c[2][0], c[3][0]],
+        [c[0][1], c[1][1], c[2][1], c[3][1]],
+        [c[0][2], c[1][2], c[2][2], c[3][2]],
+    ]
 }
 
 pub(super) fn collision_debug_edge_node(node: NodeID, index: u32) -> NodeID {

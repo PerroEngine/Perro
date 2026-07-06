@@ -6,11 +6,15 @@ script_vars = {
     fps_label = @profiling_overlay_fps,
     cpu_label = @profiling_overlay_cpu,
     delta_label = @profiling_overlay_delta,
-    gfx_label = @profiling_overlay_gfx
+    gfx_label = @profiling_overlay_gfx,
+    cap_label = @profiling_overlay_cap,
+    script_fps_label = @profiling_overlay_script_fps,
+    strobe_label = @profiling_overlay_strobe,
+    strobe_dot = @profiling_overlay_strobe_dot
 }
     [UiPanel]
         anchor = "top"
-        size_ratio = (0.68, 0.07)
+        size_ratio = (0.78, 0.12)
         style = {
             fill = "#071018B8",
             stroke = "#88AADDEE",
@@ -24,35 +28,61 @@ script_vars = {
     [/UiPanel]
 [/profiling_overlay_root]
 
-[profiling_overlay_row]
+[profiling_overlay_stack]
 parent = @profiling_overlay_root
-    [UiHLayout]
+    [UiVLayout]
         anchor = "center"
-        size_ratio = (0.96, 0.8)
+        size_ratio = (0.96, 0.86)
+        spacing = 0.035
+        h_align = "fill"
+        v_align = "fill"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiVLayout]
+[/profiling_overlay_stack]
+
+[profiling_overlay_row]
+parent = @profiling_overlay_stack
+    [UiHLayout]
+        size_ratio = (1.0, 0.46)
         spacing = 0.02
         h_align = "fill"
         v_align = "fill"
+        input_enabled = false
+        mouse_filter = "pass"
     [/UiHLayout]
 [/profiling_overlay_row]
 
 [profiling_overlay_fps]
 parent = @profiling_overlay_row
     [UiLabel]
-        size_ratio = (0.2, 1.0)
+        size_ratio = (0.18, 1.0)
         text = "FPS 0.0"
-        text_size_ratio = 0.24
+        text_size_ratio = 0.26
         color = "#D9E7FFFF"
         input_enabled = false
         mouse_filter = "pass"
     [/UiLabel]
 [/profiling_overlay_fps]
 
+[profiling_overlay_script_fps]
+parent = @profiling_overlay_row
+    [UiLabel]
+        size_ratio = (0.18, 1.0)
+        text = "Script 0.0"
+        text_size_ratio = 0.26
+        color = "#D9E7FFFF"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/profiling_overlay_script_fps]
+
 [profiling_overlay_cpu]
 parent = @profiling_overlay_row
     [UiLabel]
-        size_ratio = (0.27, 1.0)
+        size_ratio = (0.2, 1.0)
         text = "CPU 0 us"
-        text_size_ratio = 0.24
+        text_size_ratio = 0.26
         color = "#D9E7FFFF"
         input_enabled = false
         mouse_filter = "pass"
@@ -62,9 +92,9 @@ parent = @profiling_overlay_row
 [profiling_overlay_delta]
 parent = @profiling_overlay_row
     [UiLabel]
-        size_ratio = (0.28, 1.0)
+        size_ratio = (0.22, 1.0)
         text = "Delta 0 us"
-        text_size_ratio = 0.24
+        text_size_ratio = 0.26
         color = "#D9E7FFFF"
         input_enabled = false
         mouse_filter = "pass"
@@ -74,11 +104,87 @@ parent = @profiling_overlay_row
 [profiling_overlay_gfx]
 parent = @profiling_overlay_row
     [UiLabel]
-        size_ratio = (0.25, 1.0)
+        size_ratio = (0.18, 1.0)
         text = "Gfx 0 us"
-        text_size_ratio = 0.24
+        text_size_ratio = 0.26
         color = "#D9E7FFFF"
         input_enabled = false
         mouse_filter = "pass"
     [/UiLabel]
 [/profiling_overlay_gfx]
+
+[profiling_overlay_test_row]
+parent = @profiling_overlay_stack
+    [UiHLayout]
+        size_ratio = (1.0, 0.46)
+        spacing = 0.02
+        h_align = "fill"
+        v_align = "fill"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiHLayout]
+[/profiling_overlay_test_row]
+
+[profiling_overlay_cap]
+parent = @profiling_overlay_test_row
+    [UiLabel]
+        size_ratio = (0.16, 1.0)
+        text = "Cap off"
+        text_size_ratio = 0.28
+        color = "#FFE7A3FF"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/profiling_overlay_cap]
+
+[profiling_overlay_strobe]
+parent = @profiling_overlay_test_row
+    [UiLabel]
+        size_ratio = (0.14, 1.0)
+        text = "Tick 0000"
+        text_size_ratio = 0.28
+        color = "#D9E7FFFF"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/profiling_overlay_strobe]
+
+[profiling_overlay_strobe_track]
+parent = @profiling_overlay_test_row
+    [UiPanel]
+        size_ratio = (0.45, 1.0)
+        style = {
+            fill = "#010408D0",
+            stroke = "#88AADDEE",
+            stroke_width = 1.0,
+            radius = 0.02
+        }
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiPanel]
+[/profiling_overlay_strobe_track]
+
+[profiling_overlay_strobe_dot]
+parent = @profiling_overlay_strobe_track
+    [UiShape]
+        size_ratio = (0.08, 0.7)
+        kind = "rect"
+        fill = "#19E6FFFF"
+        stroke = "#FFFFFFFF"
+        stroke_width = 1.0
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiShape]
+[/profiling_overlay_strobe_dot]
+
+[profiling_overlay_keys]
+parent = @profiling_overlay_test_row
+    [UiLabel]
+        size_ratio = (0.19, 1.0)
+        text = "F6 cap F7- F8+"
+        text_size_ratio = 0.24
+        color = "#B8C7DAFF"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/profiling_overlay_keys]

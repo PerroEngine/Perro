@@ -179,6 +179,7 @@ pub(super) struct BuildInstanceArgs {
     pub(super) custom_params_len: u32,
     pub(super) packed_lod_param_id: u32,
     pub(super) receive_shadows: bool,
+    pub(super) modulate_bias: bool,
 }
 
 #[derive(Clone, Copy, Default)]
@@ -496,6 +497,7 @@ pub(super) fn build_instance(
         custom_params_len,
         packed_lod_param_id,
         receive_shadows,
+        modulate_bias,
     } = args;
     let (color, packed_pbr_params_0, packed_pbr_params_1, emissive_factor, debug_flags) =
         if debug_view {
@@ -565,6 +567,9 @@ pub(super) fn build_instance(
     }
     if receive_shadows && !matches!(material, Material3D::Unlit(_)) {
         material_flags |= MATERIAL_FLAG_RECEIVE_SHADOWS;
+    }
+    if modulate_bias {
+        material_flags |= MATERIAL_FLAG_MODULATE_BIAS;
     }
     let blend_active = resolved_mesh_blend_active(mesh_blend);
     let packed_blend_params = if blend_active && !debug_view {
@@ -647,17 +652,6 @@ pub(super) fn model_cols_from_affine_rows(inst: &TransformInstanceGpu) -> [[f32;
             inst.model_row_2[3],
             1.0,
         ],
-    ]
-}
-
-// Pack one column-major bone matrix into its 3 affine rows for the skeleton
-// palette upload (the shaders never read the w row).
-#[inline]
-pub(super) fn skeleton_bone_rows(cols: &[[f32; 4]; 4]) -> [[f32; 4]; 3] {
-    [
-        [cols[0][0], cols[1][0], cols[2][0], cols[3][0]],
-        [cols[0][1], cols[1][1], cols[2][1], cols[3][1]],
-        [cols[0][2], cols[1][2], cols[2][2], cols[3][2]],
     ]
 }
 
@@ -807,32 +801,68 @@ pub(super) fn encode_custom_param_value_packed(
 pub(super) fn apply_surface_binding(
     mut material: Material3D,
     surface: &MeshSurfaceBinding3D,
-) -> Material3D {
-    apply_modulate(&mut material, surface.modulate);
+) -> (Material3D, bool) {
+    let modulate_bias = apply_modulate(&mut material, surface.modulate);
     apply_overrides(&mut material, &surface.overrides);
-    material
+    (material, modulate_bias)
 }
 
-pub(super) fn apply_modulate(material: &mut Material3D, modulate: perro_structs::Color) {
+/// Pull strength toward the modulate hue on top of the straight multiply.
+/// Scaled by modulate saturation, so white/grey modulates stay a pure
+/// multiply (white = exact passthrough). Mirrored by the WGSL constant in
+/// material_standard.wgsl, which extends the same bias past the base color
+/// texture.
+const MODULATE_TINT_BIAS: f32 = 0.2;
+
+pub(super) fn modulate_bias_strength(modulate: [f32; 4]) -> f32 {
+    let max_c = modulate[0].max(modulate[1]).max(modulate[2]);
+    let min_c = modulate[0].min(modulate[1]).min(modulate[2]);
+    MODULATE_TINT_BIAS * (max_c - min_c).clamp(0.0, 1.0)
+}
+
+pub(super) fn modulate_color_mix(base: [f32; 4], modulate: [f32; 4]) -> [f32; 4] {
+    let mul = [
+        base[0] * modulate[0],
+        base[1] * modulate[1],
+        base[2] * modulate[2],
+    ];
+    let alpha = base[3] * modulate[3];
+    let k = modulate_bias_strength(modulate);
+    if k <= 0.0 {
+        return [mul[0], mul[1], mul[2], alpha];
+    }
+    // Luminance-preserving target: modulate hue at the base color's
+    // brightness. Keeps opposing hues (red base x green modulate) from
+    // collapsing to black.
+    let luma = 0.2126 * base[0] + 0.7152 * base[1] + 0.0722 * base[2];
+    [
+        mul[0] + (modulate[0] * luma - mul[0]) * k,
+        mul[1] + (modulate[1] * luma - mul[1]) * k,
+        mul[2] + (modulate[2] * luma - mul[2]) * k,
+        alpha,
+    ]
+}
+
+/// Returns true when a chromatic modulate was folded in, so the shader can
+/// carry the bias past the base color texture (MATERIAL_FLAG_MODULATE_BIAS).
+pub(super) fn apply_modulate(material: &mut Material3D, modulate: perro_structs::Color) -> bool {
+    if modulate == perro_structs::Color::WHITE {
+        return false;
+    }
     let modulate = modulate.to_float_slice();
     match material {
         Material3D::Standard(m) => {
-            for (dst, src) in m.base_color_factor.iter_mut().zip(modulate) {
-                *dst *= src;
-            }
+            m.base_color_factor = modulate_color_mix(m.base_color_factor, modulate);
         }
         Material3D::Unlit(m) => {
-            for (dst, src) in m.base_color_factor.iter_mut().zip(modulate) {
-                *dst *= src;
-            }
+            m.base_color_factor = modulate_color_mix(m.base_color_factor, modulate);
         }
         Material3D::Toon(m) => {
-            for (dst, src) in m.base_color_factor.iter_mut().zip(modulate) {
-                *dst *= src;
-            }
+            m.base_color_factor = modulate_color_mix(m.base_color_factor, modulate);
         }
-        Material3D::Custom(_) => {}
+        Material3D::Custom(_) => return false,
     }
+    modulate_bias_strength(modulate) > 0.0
 }
 
 pub(super) fn apply_overrides(material: &mut Material3D, overrides: &[MaterialParamOverride3D]) {
@@ -1288,6 +1318,84 @@ mod tests {
         }
     }
 
+    fn assert_rgba_near(actual: [f32; 4], expected: [f32; 4]) {
+        for (a, e) in actual.iter().zip(expected) {
+            assert!((a - e).abs() < 1.0e-5, "{actual:?} vs {expected:?}");
+        }
+    }
+
+    #[test]
+    fn modulate_white_passthrough() {
+        let base = [0.8, 0.3, 0.1, 0.9];
+        assert_rgba_near(modulate_color_mix(base, [1.0; 4]), base);
+
+        let mut material = Material3D::Standard(perro_render_bridge::StandardMaterial3D {
+            base_color_factor: base,
+            ..Default::default()
+        });
+        assert!(!apply_modulate(&mut material, perro_structs::Color::WHITE));
+        assert_eq!(material.standard_params().base_color_factor, base);
+    }
+
+    #[test]
+    fn modulate_bias_flag_tracks_chromatic_modulate() {
+        let mut material = Material3D::default();
+        assert!(!apply_modulate(
+            &mut material,
+            perro_structs::Color::new(0.5, 0.5, 0.5, 1.0)
+        ));
+        let mut material = Material3D::default();
+        assert!(apply_modulate(
+            &mut material,
+            perro_structs::Color::new(0.2, 1.0, 0.2, 1.0)
+        ));
+
+        let args = BuildInstanceArgs {
+            debug_view: false,
+            debug_color: [1.0, 1.0, 1.0, 1.0],
+            mesh_blend: ResolvedMeshBlend::default(),
+            skeleton_start: 0,
+            skeleton_count: 0,
+            custom_params_offset: 0,
+            custom_params_len: 0,
+            packed_lod_param_id: 0,
+            receive_shadows: true,
+            modulate_bias: true,
+        };
+        let built = build_instance(glam::Mat4::IDENTITY.to_cols_array_2d(), &material, args);
+        let flags = (built.rigid_meta.material.packed_material_params >> 3) & 0x1fff;
+        assert_ne!(flags & MATERIAL_FLAG_MODULATE_BIAS, 0);
+    }
+
+    #[test]
+    fn modulate_grey_stays_pure_multiply() {
+        let out = modulate_color_mix([0.8, 0.3, 0.1, 1.0], [0.5, 0.5, 0.5, 1.0]);
+        assert_rgba_near(out, [0.4, 0.15, 0.05, 1.0]);
+    }
+
+    #[test]
+    fn modulate_white_base_takes_modulate_color_exactly() {
+        let green = [0.0, 1.0, 0.0, 1.0];
+        assert_rgba_near(modulate_color_mix([1.0; 4], green), green);
+    }
+
+    #[test]
+    fn modulate_opposing_hue_biases_toward_modulate() {
+        // Red base x green modulate: pure multiply collapses to black;
+        // bias keeps a hint of green at the base color's luminance.
+        let out = modulate_color_mix([1.0, 0.0, 0.0, 1.0], [0.0, 1.0, 0.0, 1.0]);
+        assert!(out[0].abs() < 1.0e-5 && out[2].abs() < 1.0e-5);
+        assert!(out[1] > 0.0, "green channel survives: {out:?}");
+        assert!(out[1] < 0.1, "bias stays slight: {out:?}");
+        assert_rgba_near(out, [0.0, MODULATE_TINT_BIAS * 0.2126, 0.0, 1.0]);
+    }
+
+    #[test]
+    fn modulate_alpha_multiplies_straight() {
+        let out = modulate_color_mix([1.0, 1.0, 1.0, 0.5], [0.0, 1.0, 0.0, 0.5]);
+        assert!((out[3] - 0.25).abs() < 1.0e-5);
+    }
+
     #[test]
     fn blend_resolve_requires_matching_target() {
         let draws = [draw(1, BitMask::with([1]), BitMask::without([2]), 1)];
@@ -1476,6 +1584,7 @@ mod tests {
             custom_params_len: 0,
             packed_lod_param_id: 0,
             receive_shadows: true,
+            modulate_bias: false,
         };
         let built = build_instance(
             glam::Mat4::IDENTITY.to_cols_array_2d(),
@@ -1519,6 +1628,7 @@ mod tests {
                 custom_params_len: 0,
                 packed_lod_param_id: 0,
                 receive_shadows: true,
+                modulate_bias: false,
             },
         );
         let flags = (built.rigid_meta.material.packed_material_params >> 3) & 0x1fff;
@@ -1690,6 +1800,7 @@ mod tests {
             custom_params_len: 0,
             packed_lod_param_id: 0,
             receive_shadows: true,
+            modulate_bias: false,
         };
         let odd = build_instance(
             glam::Mat4::from_scale(glam::Vec3::new(-1.0, 1.0, 1.0)).to_cols_array_2d(),

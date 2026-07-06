@@ -67,6 +67,10 @@ name = "unsafe_hotpaths"
 harness = false
 
 [[bench]]
+name = "skeletal_palette"
+harness = false
+
+[[bench]]
 name = "scene_loading"
 harness = false
 required-features = ["bench"]

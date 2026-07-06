@@ -11,7 +11,7 @@ use perro_nodes::{
 use perro_particle_math::compile_expression;
 use perro_render_bridge::{
     AmbientLight3DState, Camera3DState, CameraProjectionState, CameraStream3DState,
-    CameraStreamCommand, Command3D, DenseInstancePose3D, LODOptions3D, Material3D,
+    CameraStreamCommand, Command3D, Decal3DState, DenseInstancePose3D, LODOptions3D, Material3D,
     MaterialParamOverride3D, MeshBlendOptions3D, MeshSurfaceBinding3D, ParticlePath3D,
     ParticleProfile3D, ParticleRenderMode3D, ParticleSimulationMode3D, PointLight3DState,
     PointParticles3DState, RayLight3DState, RenderCommand, ResourceCommand, SkeletonPalette,
@@ -21,7 +21,7 @@ use perro_render_bridge::{
 };
 use perro_resource_api::sub_apis::{MaterialAPI, MeshAPI};
 use perro_runtime_render::{material_3d_request, mesh_3d_request};
-use perro_structs::BitMask;
+use perro_structs::{BitMask, Vector3};
 use std::borrow::Cow;
 use std::sync::Arc;
 
@@ -63,8 +63,8 @@ fn modulated_mesh_surfaces(
 mod helpers;
 use helpers::*;
 pub(crate) use helpers::{
-    derived_particle_budget as derived_particle_budget_3d, resolve_particle_profile,
-    resolve_particle_render_mode, resolve_particle_sim_mode,
+    build_skeleton_palette, derived_particle_budget as derived_particle_budget_3d,
+    resolve_particle_profile, resolve_particle_render_mode, resolve_particle_sim_mode,
 };
 
 impl Runtime {
@@ -105,6 +105,7 @@ impl Runtime {
             && self.render_3d.retained_ray_lights.is_empty()
             && self.render_3d.retained_point_lights.is_empty()
             && self.render_3d.retained_spot_lights.is_empty()
+            && self.render_3d.retained_decals.is_empty()
             && self.render_3d.retained_mesh_draws.is_empty()
             && self.render_3d.collision_debug_state.is_empty()
             && self.render_3d.last_camera.is_none();
@@ -563,6 +564,76 @@ impl Runtime {
                         Command3D::SetSpotLight { node, light },
                     )));
                     self.render_3d.retained_spot_lights.insert(node, light);
+                }
+                visible_now.insert(node);
+            }
+
+            let decal_data = self.nodes.get(node).and_then(|node| match &node.data {
+                SceneNodeData::Decal3D(decal)
+                    if decal.active
+                        && decal.visible
+                        && effective_visible
+                        && render_mask_matches(camera_render_mask, decal.render_layers) =>
+                {
+                    Some((
+                        decal.transform,
+                        decal.size,
+                        (
+                            decal.albedo_texture,
+                            decal.normal_texture,
+                            decal.emission_texture,
+                        ),
+                        decal.modulate,
+                        decal.surface,
+                        decal.distance_fade,
+                        decal.sort_priority,
+                    ))
+                }
+                _ => None,
+            });
+            if let Some((
+                local_transform,
+                size,
+                (albedo_texture, normal_texture, emission_texture),
+                modulate,
+                surface,
+                distance_fade,
+                sort_priority,
+            )) = decal_data
+            {
+                let modulate =
+                    Runtime::color_modulate(modulate, self.effective_self_modulate(node));
+                let global = self
+                    .get_render_global_transform_3d(node)
+                    .unwrap_or(local_transform);
+                let decal = Decal3DState {
+                    position: global.position,
+                    rotation: global.rotation,
+                    size: Vector3::new(
+                        (size.x * global.scale.x).max(0.001),
+                        (size.y * global.scale.y).max(0.001),
+                        (size.z * global.scale.z).max(0.001),
+                    ),
+                    albedo_texture,
+                    normal_texture,
+                    emission_texture,
+                    modulate,
+                    albedo_mix: surface.albedo_mix.clamp(0.0, 1.0),
+                    emission_energy: surface.emission_energy.max(0.0),
+                    normal_strength: surface.normal_strength.max(0.0),
+                    normal_fade: surface.normal_fade.clamp(0.0, 1.0),
+                    distance_fade_begin: distance_fade.begin.max(0.0),
+                    distance_fade_length: distance_fade.length.max(0.001),
+                    sort_priority,
+                };
+                if self.render_3d.retained_decals.get(&node).copied() != Some(decal) {
+                    self.render_3d.retained_decals.insert(node, decal);
+                    self.queue_render_command(RenderCommand::ThreeD(Box::new(
+                        Command3D::SetDecal {
+                            node,
+                            decal: Box::new(decal),
+                        },
+                    )));
                 }
                 visible_now.insert(node);
             }
@@ -1150,6 +1221,7 @@ impl Runtime {
         self.render_3d.retained_ray_lights.remove(&node);
         self.render_3d.retained_point_lights.remove(&node);
         self.render_3d.retained_spot_lights.remove(&node);
+        self.render_3d.retained_decals.remove(&node);
         self.render_3d.retained_mesh_draws.remove(&node);
         self.queue_render_command(RenderCommand::ThreeD(Box::new(Command3D::RemoveNode {
             node,

@@ -14,7 +14,7 @@ struct DemoFreecam3DState {
 }
 
 lifecycle!({
-    fn on_fixed_update(&self, ctx: &mut ScriptContext<'_, API>) {
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
         let input_enabled = with_state!(ctx.run, DemoFreecam3DState, ctx.id, |state| {
             state.input_enabled
         });

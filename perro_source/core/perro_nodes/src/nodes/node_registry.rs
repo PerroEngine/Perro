@@ -3,13 +3,13 @@ use crate::{
     Area3D, AudioEffectZone2D, AudioEffectZone3D, AudioMask2D, AudioMask3D, AudioPortal2D,
     AudioPortal3D, BallJoint3D, BoneAttachment2D, BoneAttachment3D, BoneCollider2D, BoneCollider3D,
     Button2D, Camera2D, Camera3D, CameraStream2D, CameraStream3D, CharacterBody2D, CharacterBody3D,
-    CollisionShape2D, CollisionShape3D, DistanceJoint2D, FixedJoint2D, FixedJoint3D, HingeJoint3D,
-    IKTarget2D, IKTarget3D, ImageButton2D, MeshInstance3D, MultiMeshInstance3D, NineSlice2D,
-    Node2D, Node3D, ParticleEmitter2D, ParticleEmitter3D, PhysicsBoneChain2D, PhysicsBoneChain3D,
-    PhysicsForceEmitter2D, PhysicsForceEmitter3D, PinJoint2D, PointLight2D, PointLight3D,
-    RayLight2D, RayLight3D, RigidBody2D, RigidBody3D, Skeleton2D, Skeleton3D, Sky3D, SpotLight2D,
-    SpotLight3D, Sprite2D, StaticBody2D, StaticBody3D, TileMap2D, UiCameraStream, WaterBody2D,
-    WaterBody3D,
+    CollisionShape2D, CollisionShape3D, Decal3D, DistanceJoint2D, FixedJoint2D, FixedJoint3D,
+    HingeJoint3D, IKTarget2D, IKTarget3D, ImageButton2D, MeshInstance3D, MultiMeshInstance3D,
+    NineSlice2D, Node2D, Node3D, ParticleEmitter2D, ParticleEmitter3D, PhysicsBoneChain2D,
+    PhysicsBoneChain3D, PhysicsForceEmitter2D, PhysicsForceEmitter3D, PinJoint2D, PointLight2D,
+    PointLight3D, RayLight2D, RayLight3D, RigidBody2D, RigidBody3D, Skeleton2D, Skeleton3D, Sky3D,
+    SpotLight2D, SpotLight3D, Sprite2D, StaticBody2D, StaticBody3D, TileMap2D, UiCameraStream,
+    WaterBody2D, WaterBody3D,
 };
 use perro_ids::{NodeID, NodeTag, TagID};
 use perro_structs::{Transform2D, Transform3D};
@@ -908,6 +908,7 @@ define_scene_nodes! {
         MultiMeshInstance3D => (Node3D, MultiMeshInstance3D, Inline, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         ParticleEmitter3D => (Node3D, ParticleEmitter3D, Inline, Renderable::True, InternalUpdate::True, InternalFixedUpdate::False),
         WaterBody3D => (Node3D, WaterBody3D, Boxed, Renderable::True, InternalUpdate::False, InternalFixedUpdate::True),
+        Decal3D => (Node3D, Decal3D, Inline, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         Sky3D => (None, Sky3D, Inline, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
 
         // lights

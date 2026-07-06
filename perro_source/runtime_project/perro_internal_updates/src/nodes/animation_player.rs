@@ -175,7 +175,14 @@ fn apply_clip_frame<RT>(
 ) where
     RT: RuntimeAPI + ?Sized,
 {
+    let mut has_bone_tracks = false;
     for track in clip.object_tracks.iter() {
+        if track.bone_target.is_some() {
+            // Bone tracks share one skeleton node; apply them in one borrow
+            // below instead of one per bone (see `apply_bone_tracks_batched`).
+            has_bone_tracks = true;
+            continue;
+        }
         for binding in bindings
             .iter()
             .filter(|b| b.object.as_ref() == track.object.as_ref())
@@ -184,7 +191,78 @@ fn apply_clip_frame<RT>(
         }
     }
 
+    if has_bone_tracks {
+        apply_bone_tracks_batched(ctx, clip, frame, bindings);
+    }
+
     apply_frame_events(ctx, clip, frame, bindings);
+}
+
+/// Apply every bone track of a skeleton under a single mutable borrow and a
+/// single `force_rerender`. A humanoid clip drives ~60 bone tracks that all
+/// target the same skeleton node; the per-track path (`apply_skeleton_bone_track`)
+/// re-borrows the node and re-flags a rerender for each, so batching collapses
+/// N heavy borrows + N subtree rerender walks down to 1 each per skeleton.
+fn apply_bone_tracks_batched<RT>(
+    ctx: &mut RuntimeWindow<'_, RT>,
+    clip: &Arc<perro_animation::AnimationClip>,
+    frame: u32,
+    bindings: &[AnimationObjectBinding],
+) where
+    RT: RuntimeAPI + ?Sized,
+{
+    for binding in bindings {
+        let object = binding.object.as_ref();
+        // `with_base_node_mut` only runs the closure on a concrete-type match,
+        // so a non-skeleton (or wrong-dimension) node yields `None` and falls
+        // through. 3D first, then 2D.
+        let applied_3d = with_base_node_mut!(ctx, Skeleton3D, binding.node, |skeleton| {
+            let mut any = false;
+            for track in clip.object_tracks.iter() {
+                let Some(bone_target) = &track.bone_target else {
+                    continue;
+                };
+                if track.object.as_ref() != object {
+                    continue;
+                }
+                if let Some(AnimationTrackValue::Transform3D(pose)) =
+                    sample_track_value(track, frame)
+                    && apply_bone_pose_3d(skeleton, bone_target, pose, track.transform3d_mask)
+                {
+                    any = true;
+                }
+            }
+            any
+        });
+        if let Some(any) = applied_3d {
+            if any {
+                let _ = ctx.Nodes().force_rerender(binding.node);
+            }
+            continue;
+        }
+
+        let applied_2d = with_base_node_mut!(ctx, Skeleton2D, binding.node, |skeleton| {
+            let mut any = false;
+            for track in clip.object_tracks.iter() {
+                let Some(bone_target) = &track.bone_target else {
+                    continue;
+                };
+                if track.object.as_ref() != object {
+                    continue;
+                }
+                if let Some(AnimationTrackValue::Transform2D(pose)) =
+                    sample_track_value(track, frame)
+                    && apply_bone_pose_2d(skeleton, bone_target, pose, track.transform2d_mask)
+                {
+                    any = true;
+                }
+            }
+            any
+        });
+        if applied_2d == Some(true) {
+            let _ = ctx.Nodes().force_rerender(binding.node);
+        }
+    }
 }
 
 /// Cheap presence check used to skip building the event-resolution maps in

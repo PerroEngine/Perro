@@ -6,11 +6,12 @@ script_vars = {
     fps_label = @profiling_overlay_fps,
     cpu_label = @profiling_overlay_cpu,
     delta_label = @profiling_overlay_delta,
-    gfx_label = @profiling_overlay_gfx
+    gfx_label = @profiling_overlay_gfx,
+    script_fps_label = @profiling_overlay_script_fps
 }
     [UiPanel]
         anchor = "top"
-        size_ratio = (0.68, 0.07)
+        size_ratio = (0.72, 0.07)
         style = {
             fill = "#071018B8",
             stroke = "#88AADDEE",
@@ -28,31 +29,45 @@ script_vars = {
 parent = @profiling_overlay_root
     [UiHLayout]
         anchor = "center"
-        size_ratio = (0.96, 0.8)
+        size_ratio = (0.96, 0.72)
         spacing = 0.02
         h_align = "fill"
         v_align = "fill"
+        input_enabled = false
+        mouse_filter = "pass"
     [/UiHLayout]
 [/profiling_overlay_row]
 
 [profiling_overlay_fps]
 parent = @profiling_overlay_row
     [UiLabel]
-        size_ratio = (0.2, 1.0)
+        size_ratio = (0.18, 1.0)
         text = "FPS 0.0"
-        text_size_ratio = 0.24
+        text_size_ratio = 0.26
         color = "#D9E7FFFF"
         input_enabled = false
         mouse_filter = "pass"
     [/UiLabel]
 [/profiling_overlay_fps]
 
+[profiling_overlay_script_fps]
+parent = @profiling_overlay_row
+    [UiLabel]
+        size_ratio = (0.18, 1.0)
+        text = "Script 0.0"
+        text_size_ratio = 0.26
+        color = "#D9E7FFFF"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/profiling_overlay_script_fps]
+
 [profiling_overlay_cpu]
 parent = @profiling_overlay_row
     [UiLabel]
-        size_ratio = (0.27, 1.0)
+        size_ratio = (0.2, 1.0)
         text = "CPU 0 us"
-        text_size_ratio = 0.24
+        text_size_ratio = 0.26
         color = "#D9E7FFFF"
         input_enabled = false
         mouse_filter = "pass"
@@ -62,9 +77,9 @@ parent = @profiling_overlay_row
 [profiling_overlay_delta]
 parent = @profiling_overlay_row
     [UiLabel]
-        size_ratio = (0.28, 1.0)
+        size_ratio = (0.22, 1.0)
         text = "Delta 0 us"
-        text_size_ratio = 0.24
+        text_size_ratio = 0.26
         color = "#D9E7FFFF"
         input_enabled = false
         mouse_filter = "pass"
@@ -74,9 +89,9 @@ parent = @profiling_overlay_row
 [profiling_overlay_gfx]
 parent = @profiling_overlay_row
     [UiLabel]
-        size_ratio = (0.25, 1.0)
+        size_ratio = (0.18, 1.0)
         text = "Gfx 0 us"
-        text_size_ratio = 0.24
+        text_size_ratio = 0.26
         color = "#D9E7FFFF"
         input_enabled = false
         mouse_filter = "pass"

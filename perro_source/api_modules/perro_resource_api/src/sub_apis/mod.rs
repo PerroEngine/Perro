@@ -27,7 +27,7 @@ mod visual_accessibility;
 pub use animation::{AnimationAPI, AnimationModule};
 pub use animation_tree::{AnimationTreeAPI, AnimationTreeModule};
 pub use audio::{
-    Audio, Audio2D, Audio2DModule, Audio3D, Audio3DModule, AudioAPI, AudioCompression,
+    Audio, Audio2D, Audio2DModule, Audio3D, Audio3DModule, AudioAPI, AudioClip, AudioCompression,
     AudioDirection, AudioEffects, AudioEq, AudioModule, AudioPan, AudioPlayConfig, MidiChannel,
     MidiModule, MidiNoteHandle, MidiNoteOptions, MidiProgram, MidiSong, MidiSound, MidiSpatialPos,
     MidiSpatialPosition, Note, PannedAudio, SpatialAudioOptions, bus_id, program,

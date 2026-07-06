@@ -1069,6 +1069,12 @@ impl Runtime {
         stream_node: NodeID,
     ) -> Arc<[CameraStreamDraw3DState]> {
         let mut out = Vec::new();
+        // Reuse the render-state scratch for skeleton palettes (see
+        // `stream_skeleton_palette`) instead of allocating per skinned draw.
+        let mut skeleton_global_scratch =
+            std::mem::take(&mut self.render_3d.skeleton_global_scratch);
+        let mut skeleton_palette_scratch =
+            std::mem::take(&mut self.render_3d.skeleton_palette_scratch);
         for idx in 0..self.camera_stream_node_scratch.len() {
             let node = self.camera_stream_node_scratch[idx];
             if node == stream_node || !self.is_effectively_visible(node) {
@@ -1180,7 +1186,14 @@ impl Runtime {
                 .to_mat4()
                 .to_cols_array_2d();
             let skeleton_palette = _skeleton.and_then(|skeleton| {
-                (!skeleton.is_nil()).then(|| stream_skeleton_palette(&self.nodes, skeleton))?
+                (!skeleton.is_nil()).then(|| {
+                    stream_skeleton_palette(
+                        &self.nodes,
+                        skeleton,
+                        &mut skeleton_global_scratch,
+                        &mut skeleton_palette_scratch,
+                    )
+                })?
             });
             match instance_kind {
                 StreamMeshInstanceKind::Single => out.push(CameraStreamDraw3DState::Draw {
@@ -1209,6 +1222,8 @@ impl Runtime {
                 }),
             }
         }
+        self.render_3d.skeleton_global_scratch = skeleton_global_scratch;
+        self.render_3d.skeleton_palette_scratch = skeleton_palette_scratch;
         Arc::from(out)
     }
 
@@ -1680,40 +1695,24 @@ impl Runtime {
     }
 }
 
+/// Camera-stream skinning palette. Shares the retained builder
+/// (`build_skeleton_palette`) so the inverse-bind lane and 3-row affine packing
+/// stay in one place; scratch buffers are threaded in from the caller to avoid
+/// a per-draw allocation.
 fn stream_skeleton_palette(
     nodes: &crate::cns::NodeArena,
     skeleton_id: NodeID,
+    global_scratch: &mut Vec<Mat4>,
+    palette_scratch: &mut Vec<[[f32; 4]; 3]>,
 ) -> Option<perro_render_bridge::SkeletonPalette> {
-    let skeleton_node = nodes.get(skeleton_id)?;
-    let skeleton = match &skeleton_node.data {
-        SceneNodeData::Skeleton3D(skeleton) => skeleton,
-        _ => return None,
-    };
-    if skeleton.bones.is_empty() {
-        return None;
-    }
-    let mut global = vec![Mat4::IDENTITY; skeleton.bones.len()];
-    for (i, bone) in skeleton.bones.iter().enumerate() {
-        let local = bone.pose.to_mat4();
-        global[i] = if bone.parent >= 0 {
-            let parent = bone.parent as usize;
-            if parent < global.len() {
-                global[parent] * local
-            } else {
-                local
-            }
-        } else {
-            local
-        };
-    }
-    let matrices = skeleton
-        .bones
-        .iter()
-        .enumerate()
-        .map(|(i, bone)| (global[i] * bone.inv_bind.to_mat4()).to_cols_array_2d())
-        .collect::<Vec<_>>();
+    crate::runtime::render_3d::build_skeleton_palette(
+        nodes,
+        skeleton_id,
+        global_scratch,
+        palette_scratch,
+    )?;
     Some(perro_render_bridge::SkeletonPalette {
-        matrices: Arc::from(matrices),
+        matrices: Arc::from(palette_scratch.as_slice()),
     })
 }
 

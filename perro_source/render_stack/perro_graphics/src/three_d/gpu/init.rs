@@ -10,6 +10,41 @@ fn frustum_cull_default(_: bool) -> bool {
     false
 }
 
+fn decal_buffer_layout_entry(binding: u32) -> wgpu::BindGroupLayoutEntry {
+    wgpu::BindGroupLayoutEntry {
+        binding,
+        visibility: wgpu::ShaderStages::FRAGMENT,
+        ty: wgpu::BindingType::Buffer {
+            ty: wgpu::BufferBindingType::Storage { read_only: true },
+            has_dynamic_offset: false,
+            min_binding_size: None,
+        },
+        count: None,
+    }
+}
+
+fn decal_texture_layout_entry(binding: u32) -> wgpu::BindGroupLayoutEntry {
+    wgpu::BindGroupLayoutEntry {
+        binding,
+        visibility: wgpu::ShaderStages::FRAGMENT,
+        ty: wgpu::BindingType::Texture {
+            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+            view_dimension: wgpu::TextureViewDimension::D2Array,
+            multisampled: false,
+        },
+        count: None,
+    }
+}
+
+fn decal_sampler_layout_entry(binding: u32) -> wgpu::BindGroupLayoutEntry {
+    wgpu::BindGroupLayoutEntry {
+        binding,
+        visibility: wgpu::ShaderStages::FRAGMENT,
+        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+        count: None,
+    }
+}
+
 fn multimesh_cull_bgl_entries() -> [wgpu::BindGroupLayoutEntry; 11] {
     let uniform = |binding: u32| wgpu::BindGroupLayoutEntry {
         binding,
@@ -232,6 +267,9 @@ impl Gpu3D {
                     },
                     count: None,
                 },
+                decal_buffer_layout_entry(7),
+                decal_texture_layout_entry(8),
+                decal_sampler_layout_entry(9),
             ],
         });
         let water_camera_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -326,6 +364,9 @@ impl Gpu3D {
                     },
                     count: None,
                 },
+                decal_buffer_layout_entry(7),
+                decal_texture_layout_entry(8),
+                decal_sampler_layout_entry(9),
             ],
         });
         let multimesh_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -436,6 +477,9 @@ impl Gpu3D {
                     },
                     count: None,
                 },
+                decal_buffer_layout_entry(10),
+                decal_texture_layout_entry(11),
+                decal_sampler_layout_entry(12),
             ],
         });
         let material_texture_bgl = {
@@ -675,6 +719,21 @@ impl Gpu3D {
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
+        let decal_buffer_capacity = 8usize;
+        let decal_buffer = create_decal_buffer(device, decal_buffer_capacity);
+        let decal_texture_layers = decals::DECAL_INITIAL_LAYERS;
+        let (decal_texture, decal_texture_view) =
+            create_decal_texture_array(device, decal_texture_layers);
+        let decal_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("perro_decal_sampler"),
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::MipmapFilterMode::Linear,
+            ..Default::default()
+        });
         let multimesh_draw_params_capacity = 256usize;
         let multimesh_draw_params_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("perro_multimesh_draw_params"),
@@ -714,6 +773,18 @@ impl Gpu3D {
                 wgpu::BindGroupEntry {
                     binding: 6,
                     resource: blend_shape_instance_meta_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 7,
+                    resource: decal_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 8,
+                    resource: wgpu::BindingResource::TextureView(&decal_texture_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 9,
+                    resource: wgpu::BindingResource::Sampler(&decal_sampler),
                 },
             ],
         });
@@ -757,6 +828,18 @@ impl Gpu3D {
                     binding: 6,
                     resource: packed_lod_param_buffer.as_entire_binding(),
                 },
+                wgpu::BindGroupEntry {
+                    binding: 7,
+                    resource: decal_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 8,
+                    resource: wgpu::BindingResource::TextureView(&decal_texture_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 9,
+                    resource: wgpu::BindingResource::Sampler(&decal_sampler),
+                },
             ],
         });
         let shadow_camera_bind_groups: Vec<_> = shadow_camera_buffers
@@ -793,6 +876,18 @@ impl Gpu3D {
                         wgpu::BindGroupEntry {
                             binding: 6,
                             resource: blend_shape_instance_meta_buffer.as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 7,
+                            resource: decal_buffer.as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 8,
+                            resource: wgpu::BindingResource::TextureView(&decal_texture_view),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 9,
+                            resource: wgpu::BindingResource::Sampler(&decal_sampler),
                         },
                     ],
                 })
@@ -832,6 +927,18 @@ impl Gpu3D {
                         wgpu::BindGroupEntry {
                             binding: 6,
                             resource: packed_lod_param_buffer.as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 7,
+                            resource: decal_buffer.as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 8,
+                            resource: wgpu::BindingResource::TextureView(&decal_texture_view),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 9,
+                            resource: wgpu::BindingResource::Sampler(&decal_sampler),
                         },
                     ],
                 })
@@ -1764,6 +1871,18 @@ impl Gpu3D {
                     binding: 9,
                     resource: multimesh_instance_buffer.as_entire_binding(),
                 },
+                wgpu::BindGroupEntry {
+                    binding: 10,
+                    resource: decal_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 11,
+                    resource: wgpu::BindingResource::TextureView(&decal_texture_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 12,
+                    resource: wgpu::BindingResource::Sampler(&decal_sampler),
+                },
             ],
         });
         let shadow_multimesh_bind_groups =
@@ -1780,6 +1899,9 @@ impl Gpu3D {
                 custom_params_values_buffer: &custom_params_values_buffer,
                 shadow_identity_buffer: &multimesh_shadow_identity_buffer,
                 multimesh_instance_buffer: &multimesh_instance_buffer,
+                decal_buffer: &decal_buffer,
+                decal_texture_view: &decal_texture_view,
+                decal_sampler: &decal_sampler,
             });
         let mesh_blend_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("perro_mesh_blend_bg"),
@@ -2209,6 +2331,16 @@ impl Gpu3D {
             packed_lod_param_buffer,
             packed_lod_param_capacity,
             packed_lod_params: Vec::new(),
+            decal_buffer,
+            decal_buffer_capacity,
+            decal_texture,
+            decal_texture_view,
+            decal_texture_layers,
+            decal_sampler,
+            decal_layer_by_texture: AHashMap::new(),
+            decal_sources_pending: false,
+            decal_count: 0,
+            last_decals_revision: u64::MAX,
             multimesh_bind_group,
             multimesh_draw_params_buffer,
             multimesh_draw_params_capacity,

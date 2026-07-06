@@ -224,6 +224,10 @@ pub enum Command3D {
         node: NodeID,
         light: SpotLight3DState,
     },
+    SetDecal {
+        node: NodeID,
+        decal: Box<Decal3DState>,
+    },
     UpsertPointParticles {
         node: NodeID,
         particles: Box<PointParticles3DState>,

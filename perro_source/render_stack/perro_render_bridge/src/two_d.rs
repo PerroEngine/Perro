@@ -405,6 +405,12 @@ pub fn encode_tileset_2d_binary(tileset: &TileSet2D) -> Vec<u8> {
     out
 }
 
+/// min bytes 1 tile record occupy: id i32 + atlas u32×2 + collision u8 + shape tag u8.
+/// clamp `Vec::with_capacity` vs hostile tile_count -> no huge alloc.
+const MIN_TILE_RECORD_BYTES: usize = 14;
+/// min bytes 1 polygon point occupy: 2 f32.
+const MIN_POLY_POINT_BYTES: usize = 8;
+
 pub fn decode_tileset_2d_binary(bytes: &[u8]) -> Option<TileSet2D> {
     let mut cursor = 0usize;
     if read_bytes(bytes, &mut cursor, TILESET2D_MAGIC.len())? != TILESET2D_MAGIC {
@@ -422,7 +428,9 @@ pub fn decode_tileset_2d_binary(bytes: &[u8]) -> Option<TileSet2D> {
     let columns = read_u32(bytes, &mut cursor)?;
     let rows = read_u32(bytes, &mut cursor)?;
     let tile_count = read_u32(bytes, &mut cursor)? as usize;
-    let mut tiles = Vec::with_capacity(tile_count);
+    let mut tiles = Vec::with_capacity(
+        tile_count.min(bytes.len().saturating_sub(cursor) / MIN_TILE_RECORD_BYTES),
+    );
     for _ in 0..tile_count {
         let id = read_i32(bytes, &mut cursor)?;
         let atlas = [read_u32(bytes, &mut cursor)?, read_u32(bytes, &mut cursor)?];
@@ -510,7 +518,9 @@ fn decode_tileset_collision_shape(
         }
         2 => {
             let count = read_u32(bytes, cursor)? as usize;
-            let mut points = Vec::with_capacity(count);
+            let mut points = Vec::with_capacity(
+                count.min(bytes.len().saturating_sub(*cursor) / MIN_POLY_POINT_BYTES),
+            );
             for _ in 0..count {
                 points.push(perro_structs::Vector2::new(
                     read_f32(bytes, cursor)?,

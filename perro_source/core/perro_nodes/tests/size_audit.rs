@@ -73,6 +73,7 @@ fn print_scene_node_sizes() {
         MultiMeshInstance3D,
         ParticleEmitter3D,
         WaterBody3D,
+        Decal3D,
         Sky3D,
         AmbientLight3D,
         RayLight3D,

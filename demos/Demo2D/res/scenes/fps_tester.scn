@@ -1,0 +1,328 @@
+$root = @FpsTester2D
+$button_hover_style = { fill: "#233044E8", stroke: "#C7E2FF", stroke_width: 1.0, radius: 0.08 }
+$button_pressed_style = { fill: "#071018E8", stroke: "#FFFFFF", stroke_width: 1.0, radius: 0.06 }
+$button_style = { fill: "#101820E8", stroke: "#88AADD", stroke_width: 1.0, radius: 0.08 }
+
+[FpsTester2D]
+script = "res://scripts/fps_tester_demo.rs"
+script_vars = {
+    status_label = @fps_status,
+    profiler_label = @fps_profiler,
+    render_dot = @fps_render_dot,
+    cap_dot = @fps_cap_dot,
+    smooth_dot = @fps_smooth_dot
+}
+    [Node2D]
+        position = (0.0, 0.0)
+    [/Node2D]
+[/FpsTester2D]
+
+[fps_panel]
+parent = @FpsTester2D
+    [UiPanel]
+        anchor = "center"
+        size_ratio = (0.78, 0.58)
+        style = {
+            fill = "#071018E8",
+            stroke = "#D0E6FF",
+            stroke_width = 1.0,
+            radius = 0.035
+        }
+        padding = 0.04
+    [/UiPanel]
+[/fps_panel]
+
+[fps_stack]
+parent = @fps_panel
+    [UiVLayout]
+        anchor = "center"
+        size_ratio = (0.94, 0.9)
+        spacing = 0.035
+        h_align = "fill"
+        v_align = "fill"
+    [/UiVLayout]
+[/fps_stack]
+
+[fps_status]
+parent = @fps_stack
+    [UiLabel]
+        size_ratio = (1.0, 0.12)
+        text = "Cap 30 fps"
+        text_size_ratio = 0.28
+        color = "#FFE7A3FF"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/fps_status]
+
+[fps_profiler]
+parent = @fps_stack
+    [UiLabel]
+        size_ratio = (1.0, 0.10)
+        text = "Profiler 0.0 | script 0.0"
+        text_size_ratio = 0.24
+        color = "#D9E7FFFF"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/fps_profiler]
+
+[fps_buttons]
+parent = @fps_stack
+    [UiHLayout]
+        size_ratio = (1.0, 0.14)
+        spacing = 0.018
+        h_align = "fill"
+        v_align = "fill"
+    [/UiHLayout]
+[/fps_buttons]
+
+[fps_btn_10]
+parent = @fps_buttons
+    [UiButton]
+        size_ratio = (0.2, 1.0)
+        click_signals = ["fps_test_10_click"]
+        style = $button_style
+        hover = $button_hover_style
+        pressed = $button_pressed_style
+    [/UiButton]
+[/fps_btn_10]
+
+[fps_btn_10_label]
+parent = @fps_btn_10
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "10"
+        text_size_ratio = 0.34
+        color = "#FFFFFF"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/fps_btn_10_label]
+
+[fps_btn_30]
+parent = @fps_buttons
+    [UiButton]
+        size_ratio = (0.2, 1.0)
+        click_signals = ["fps_test_30_click"]
+        style = $button_style
+        hover = $button_hover_style
+        pressed = $button_pressed_style
+    [/UiButton]
+[/fps_btn_30]
+
+[fps_btn_30_label]
+parent = @fps_btn_30
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "30"
+        text_size_ratio = 0.34
+        color = "#FFFFFF"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/fps_btn_30_label]
+
+[fps_btn_60]
+parent = @fps_buttons
+    [UiButton]
+        size_ratio = (0.2, 1.0)
+        click_signals = ["fps_test_60_click"]
+        style = $button_style
+        hover = $button_hover_style
+        pressed = $button_pressed_style
+    [/UiButton]
+[/fps_btn_60]
+
+[fps_btn_60_label]
+parent = @fps_btn_60
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "60"
+        text_size_ratio = 0.34
+        color = "#FFFFFF"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/fps_btn_60_label]
+
+[fps_btn_120]
+parent = @fps_buttons
+    [UiButton]
+        size_ratio = (0.2, 1.0)
+        click_signals = ["fps_test_120_click"]
+        style = $button_style
+        hover = $button_hover_style
+        pressed = $button_pressed_style
+    [/UiButton]
+[/fps_btn_120]
+
+[fps_btn_120_label]
+parent = @fps_btn_120
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "120"
+        text_size_ratio = 0.32
+        color = "#FFFFFF"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/fps_btn_120_label]
+
+[fps_btn_144]
+parent = @fps_buttons
+    [UiButton]
+        size_ratio = (0.2, 1.0)
+        click_signals = ["fps_test_144_click"]
+        style = $button_style
+        hover = $button_hover_style
+        pressed = $button_pressed_style
+    [/UiButton]
+[/fps_btn_144]
+
+[fps_btn_144_label]
+parent = @fps_btn_144
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "144"
+        text_size_ratio = 0.32
+        color = "#FFFFFF"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/fps_btn_144_label]
+
+[fps_render_row]
+parent = @fps_stack
+    [UiHLayout]
+        size_ratio = (1.0, 0.16)
+        spacing = 0.025
+        h_align = "fill"
+        v_align = "fill"
+    [/UiHLayout]
+[/fps_render_row]
+
+[fps_render_label]
+parent = @fps_render_row
+    [UiLabel]
+        size_ratio = (0.22, 1.0)
+        text = "render tick"
+        text_size_ratio = 0.25
+        color = "#D9E7FFFF"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/fps_render_label]
+
+[fps_render_track]
+parent = @fps_render_row
+    [UiPanel]
+        size_ratio = (0.78, 1.0)
+        style = { fill: "#010408D0", stroke: "#88AADDEE", stroke_width: 1.0, radius: 0.02 }
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiPanel]
+[/fps_render_track]
+
+[fps_render_dot]
+parent = @fps_render_track
+    [UiShape]
+        size_ratio = (0.07, 0.7)
+        kind = "rect"
+        fill = "#19E6FFFF"
+        stroke = "#FFFFFFFF"
+        stroke_width = 1.0
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiShape]
+[/fps_render_dot]
+
+[fps_cap_row]
+parent = @fps_stack
+    [UiHLayout]
+        size_ratio = (1.0, 0.16)
+        spacing = 0.025
+        h_align = "fill"
+        v_align = "fill"
+    [/UiHLayout]
+[/fps_cap_row]
+
+[fps_cap_label]
+parent = @fps_cap_row
+    [UiLabel]
+        size_ratio = (0.22, 1.0)
+        text = "cap tick"
+        text_size_ratio = 0.25
+        color = "#D9E7FFFF"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/fps_cap_label]
+
+[fps_cap_track]
+parent = @fps_cap_row
+    [UiPanel]
+        size_ratio = (0.78, 1.0)
+        style = { fill: "#010408D0", stroke: "#88AADDEE", stroke_width: 1.0, radius: 0.02 }
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiPanel]
+[/fps_cap_track]
+
+[fps_cap_dot]
+parent = @fps_cap_track
+    [UiShape]
+        size_ratio = (0.07, 0.7)
+        kind = "rect"
+        fill = "#19E6FFFF"
+        stroke = "#FFFFFFFF"
+        stroke_width = 1.0
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiShape]
+[/fps_cap_dot]
+
+[fps_smooth_row]
+parent = @fps_stack
+    [UiHLayout]
+        size_ratio = (1.0, 0.16)
+        spacing = 0.025
+        h_align = "fill"
+        v_align = "fill"
+    [/UiHLayout]
+[/fps_smooth_row]
+
+[fps_smooth_label]
+parent = @fps_smooth_row
+    [UiLabel]
+        size_ratio = (0.22, 1.0)
+        text = "dt sweep"
+        text_size_ratio = 0.25
+        color = "#D9E7FFFF"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/fps_smooth_label]
+
+[fps_smooth_track]
+parent = @fps_smooth_row
+    [UiPanel]
+        size_ratio = (0.78, 1.0)
+        style = { fill: "#010408D0", stroke: "#88AADDEE", stroke_width: 1.0, radius: 0.02 }
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiPanel]
+[/fps_smooth_track]
+
+[fps_smooth_dot]
+parent = @fps_smooth_track
+    [UiShape]
+        size_ratio = (0.07, 0.7)
+        kind = "rect"
+        fill = "#19E6FFFF"
+        stroke = "#FFFFFFFF"
+        stroke_width = 1.0
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiShape]
+[/fps_smooth_dot]

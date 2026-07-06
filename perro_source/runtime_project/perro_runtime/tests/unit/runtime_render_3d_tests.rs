@@ -1418,6 +1418,9 @@ fn skinned_mesh_palette_uses_bone_pose_not_rest() {
         inv_bind: Transform3D::IDENTITY,
         ..Bone3D::new()
     }];
+    // Populate the derived inv-bind lane like a real scene load so the palette
+    // builder takes the cached (non-fallback) path.
+    skeleton.refresh_inv_bind_cache();
     let skeleton_id = runtime
         .nodes
         .insert(SceneNode::new(SceneNodeData::Skeleton3D(skeleton)));
@@ -1440,7 +1443,8 @@ fn skinned_mesh_palette_uses_bone_pose_not_rest() {
                 Command3D::Draw {
                     skeleton: Some(palette),
                     ..
-                } if palette.matrices.first().is_some_and(|m| m[3][0] == 2.0)
+                    // Palette rows are affine (row-major); translation.x is row0[3].
+                } if palette.matrices.first().is_some_and(|m| m[0][3] == 2.0)
             )
     )));
 }
@@ -1488,7 +1492,7 @@ fn dirty_skeleton_refreshes_sibling_skinned_mesh_draw() {
                     skeleton: Some(palette),
                     ..
                 } if *node == mesh_id
-                    && palette.matrices.first().is_some_and(|m| m[3][0] == 3.0)
+                    && palette.matrices.first().is_some_and(|m| m[0][3] == 3.0)
             )
     )));
 }

@@ -576,6 +576,7 @@ fn push_node_fields(fields: &mut Vec<SceneNodeField>, node_type: NodeType) {
         | NodeType::PointLight3D
         | NodeType::SpotLight3D => light_fields(fields, node_type),
         NodeType::MeshInstance3D | NodeType::MultiMeshInstance3D => mesh_fields(fields, node_type),
+        NodeType::Decal3D => decal_fields(fields),
         NodeType::Skeleton2D | NodeType::Skeleton3D => {
             asset_field(fields, "Skeleton", "skeleton", SceneAssetKind::Skeleton);
         }
@@ -916,6 +917,21 @@ fn asset_field(
 
 fn texture_field(fields: &mut Vec<SceneNodeField>, section: &'static str, name: &'static str) {
     asset_field(fields, section, name, SceneAssetKind::Texture);
+}
+
+fn decal_fields(fields: &mut Vec<SceneNodeField>) {
+    push(fields, "Decal", "size", NodeFieldType::Vec3);
+    texture_field(fields, "Decal", "albedo_texture");
+    texture_field(fields, "Decal", "normal_texture");
+    texture_field(fields, "Decal", "emission_texture");
+    push(fields, "Decal", "albedo_mix", NodeFieldType::F32);
+    push(fields, "Decal", "emission_energy", NodeFieldType::F32);
+    push(fields, "Decal", "normal_strength", NodeFieldType::F32);
+    push(fields, "Decal", "normal_fade", NodeFieldType::F32);
+    push(fields, "Decal", "distance_fade_begin", NodeFieldType::F32);
+    push(fields, "Decal", "distance_fade_length", NodeFieldType::F32);
+    push(fields, "Decal", "sort_priority", NodeFieldType::I32);
+    push(fields, "Decal", "active", NodeFieldType::Bool);
 }
 
 fn sprite_fields(fields: &mut Vec<SceneNodeField>, section: &'static str) {

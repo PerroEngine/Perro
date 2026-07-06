@@ -3,6 +3,7 @@ use perro_api::prelude::*;
 type SelfNodeType = Node2D;
 
 const SPRITE_SHEET: &ResPath = res_path!("res://sprite_sheet.png");
+const PERRO_LOGO: &ResPath = res_path!("res://perro.svg");
 const HERO_SHEET: &ResPath = res_path!("res://hero_sheet.png");
 const LIGHT_DISC: &ResPath = res_path!("res://light_disc.png");
 const RIG_SCENE: &ResPath = res_path!("res://scenes/rig_actor.scn");
@@ -13,6 +14,7 @@ const PAUSE_MENU_SCENE: &ResPath = res_path!("res://Menu/PauseMenu.scn");
 const TRANSITION_FADE_SCENE: &ResPath = res_path!("res://Menu/TransitionFade.scn");
 const PROFILING_OVERLAY_SCENE: &ResPath = res_path!("res://Menu/ProfilingOverlay.scn");
 const INFO_OVERLAY_SCENE: &ResPath = res_path!("res://Menu/InfoOverlay.scn");
+const FPS_TESTER_SCENE: &ResPath = res_path!("res://scenes/fps_tester.scn");
 const DEMO_UI_ROOT_NODE_NAME: &str = "demo_ui_root";
 const CAMERA_NODE_NAME: &str = "Camera";
 const TRANSITION_FADE_PANEL_NODE_NAME: &str = "transition_fade_panel";
@@ -35,6 +37,7 @@ enum DemoKind {
     MultiMesh,
     ParticlesGap,
     AudioGap,
+    FpsTester,
 }
 
 #[derive(Variant, Clone, Copy, Default)]
@@ -47,6 +50,7 @@ struct DemoAssets {
     fade: PreloadedSceneID,
     profiling_overlay: PreloadedSceneID,
     info_overlay: PreloadedSceneID,
+    fps_tester: PreloadedSceneID,
 }
 
 #[derive(Variant, Clone, Default)]
@@ -125,6 +129,7 @@ lifecycle!({
                 .expect("preload profiling overlay"),
             info_overlay: scene_preload!(ctx.run, INFO_OVERLAY_SCENE)
                 .expect("preload info overlay"),
+            fps_tester: scene_preload!(ctx.run, FPS_TESTER_SCENE).expect("preload fps tester"),
         };
         with_state_mut!(ctx.run, Demo2DState, ctx.id, |state| state.assets = assets);
         self.load_ui(ctx);
@@ -188,6 +193,9 @@ methods!({
     }
     fn on_demo_audio_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
         self.activate_demo(ctx, DemoKind::AudioGap);
+    }
+    fn on_demo_fps_tester_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
+        self.activate_demo(ctx, DemoKind::FpsTester);
     }
     fn on_pause_resume_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
         self.resume_demo(ctx);
@@ -253,6 +261,9 @@ methods!({
             }
             DemoKind::AudioGap => {
                 self.spawn_audio_zone(ctx, Vector2::new(1950.0, 1250.0));
+            }
+            DemoKind::FpsTester => {
+                self.spawn_fps_tester_scene(ctx);
             }
             DemoKind::SkyGap | DemoKind::BlendGap => {}
             DemoKind::MultiMesh => {
@@ -325,6 +336,7 @@ methods!({
             ("demo_multimesh_click", "on_demo_multimesh_click"),
             ("demo_particles_click", "on_demo_particles_click"),
             ("demo_audio_click", "on_demo_audio_click"),
+            ("demo_fps_tester_click", "on_demo_fps_tester_click"),
             ("pause_resume_click", "on_pause_resume_click"),
             ("pause_restart_click", "on_pause_restart_click"),
             ("pause_hub_click", "on_pause_hub_click"),
@@ -539,6 +551,16 @@ methods!({
         }
     }
 
+    fn spawn_fps_tester_scene(&self, ctx: &mut ScriptContext<'_, API>) {
+        let scene = self.assets(ctx).fps_tester;
+        let Ok(root) = scene_load!(ctx.run, scene) else {
+            log_error!("[Demo2D] fps tester load fail");
+            return;
+        };
+        reparent!(ctx.run, ctx.id, root);
+        tag_add!(ctx.run, root, tags!["demo2d_dynamic"]);
+    }
+
     fn spawn_static_sprite_zone(
         &self,
         ctx: &mut ScriptContext<'_, API>,
@@ -549,9 +571,11 @@ methods!({
         _name: &str,
     ) {
         let tex = texture_load!(ctx.res, SPRITE_SHEET);
+        let logo = texture_load!(ctx.res, PERRO_LOGO);
         for y in 0..rows {
             for x in 0..cols {
                 let idx = ((y * cols + x) % 64) as f32;
+                let use_logo = (x + y * cols) % 17 == 0;
                 let node = create_node!(
                     ctx.run,
                     Sprite2D,
@@ -562,11 +586,17 @@ methods!({
                 let px = origin.x + x as f32 * step;
                 let py = origin.y - y as f32 * step;
                 let _ = with_node_mut!(ctx.run, Sprite2D, node, |sprite| {
-                    sprite.texture = tex;
-                    sprite.texture_region =
-                        Some([32.0 * (idx % 8.0), 32.0 * (idx / 8.0).floor(), 32.0, 32.0]);
+                    if use_logo {
+                        sprite.texture = logo;
+                        sprite.texture_region = Some([0.0, 0.0, 1197.96, 1018.47]);
+                        sprite.transform.scale = Vector2::new(0.026, 0.026);
+                    } else {
+                        sprite.texture = tex;
+                        sprite.texture_region =
+                            Some([32.0 * (idx % 8.0), 32.0 * (idx / 8.0).floor(), 32.0, 32.0]);
+                        sprite.transform.scale = Vector2::new(0.55, 0.55);
+                    }
                     sprite.transform.position = Vector2::new(px, py);
-                    sprite.transform.scale = Vector2::new(0.55, 0.55);
                 });
             }
         }
@@ -1093,6 +1123,7 @@ methods!({
             DemoKind::MultiMesh => "Sprite Batch".to_string(),
             DemoKind::ParticlesGap => "Particles".to_string(),
             DemoKind::AudioGap => "Audio".to_string(),
+            DemoKind::FpsTester => "FPS Tester".to_string(),
         };
         let active_anim_sprites = query!(
             ctx.run,
@@ -1111,6 +1142,7 @@ methods!({
             DemoKind::PhysicsCollisions => "rigid 240".to_string(),
             DemoKind::ParticlesGap => "emitters 4 | mixed cpu particles".to_string(),
             DemoKind::AudioGap => "masks 3 | fx zones 3".to_string(),
+            DemoKind::FpsTester => "cap btns | render tick vs cap tick".to_string(),
             DemoKind::SkyGap | DemoKind::BlendGap => "gap lane".to_string(),
             DemoKind::MultiMesh => "dense retained sprite batch".to_string(),
         };
@@ -1201,6 +1233,7 @@ fn demo_anchor(demo: DemoKind) -> Vector2 {
         DemoKind::MultiMesh => Vector2::new(-450.0, 900.0),
         DemoKind::ParticlesGap => Vector2::new(1300.0, 1250.0),
         DemoKind::AudioGap => Vector2::new(1950.0, 1250.0),
+        DemoKind::FpsTester => Vector2::new(0.0, 0.0),
     }
 }
 

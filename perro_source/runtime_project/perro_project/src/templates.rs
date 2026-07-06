@@ -397,7 +397,7 @@ profile = ["perro_app/profile"]
 steamworks = ["perro_app/steamworks", "perro_api/steamworks", "perro_runtime/steamworks", "scripts/steamworks"]
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-wasm-bindgen = "0.2.105"
+wasm-bindgen = "=0.2.126"
 console_error_panic_hook = "0.1.7"
 getrandom = {{ version = "0.3.4", features = ["wasm_js"] }}
 getrandom_js = {{ package = "getrandom", version = "0.2.17", features = ["js"] }}

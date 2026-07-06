@@ -1,6 +1,6 @@
 use super::*;
 use crate::two_d::{WaterBodyQueryState, WaterIdleModeState, WaterLinkState, WaterShapeState};
-use perro_structs::{AudioListenerOptions, BitMask, Color, CustomPostParam};
+use perro_structs::{AudioListenerOptions, BitMask, Color, CustomPostParam, Quaternion, Vector3};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Camera3DState {
@@ -68,6 +68,27 @@ pub struct SpotLight3DState {
     pub inner_angle_radians: f32,
     pub outer_angle_radians: f32,
     pub cast_shadows: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Decal3DState {
+    pub position: Vector3,
+    /// World rotation; projects along local -Z.
+    pub rotation: Quaternion,
+    /// World-space box extents (node size * node scale).
+    pub size: Vector3,
+    /// Nil = slot unused.
+    pub albedo_texture: TextureID,
+    pub normal_texture: TextureID,
+    pub emission_texture: TextureID,
+    pub modulate: Color,
+    pub albedo_mix: f32,
+    pub emission_energy: f32,
+    pub normal_strength: f32,
+    pub normal_fade: f32,
+    pub distance_fade_begin: f32,
+    pub distance_fade_length: f32,
+    pub sort_priority: i32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -762,7 +783,10 @@ pub type RuntimeMeshData = Mesh3D;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct SkeletonPalette {
-    pub matrices: Arc<[[[f32; 4]; 4]]>,
+    /// One packed bone matrix per joint: 3 affine rows (row-major), the
+    /// implicit `w` row `(0,0,0,1)` is never stored or read by the skinning
+    /// shaders. Uploaded to the GPU verbatim (no repack).
+    pub matrices: Arc<[[[f32; 4]; 3]]>,
 }
 
 pub type MaterialParamOverrideValue3D = perro_structs::ConstParamValue;

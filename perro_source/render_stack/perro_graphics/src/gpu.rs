@@ -22,7 +22,7 @@ use glam::{Mat4, Quat, Vec3, Vec4};
 use perro_ids::NodeID;
 use perro_render_bridge::{
     Camera3DState, CameraProjectionState, CameraStreamDraw3DState, CameraStreamLighting3DState,
-    CameraStreamSourceState, CameraStreamState, Light2DState, PointParticles3DState,
+    CameraStreamSourceState, CameraStreamState, Decal3DState, Light2DState, PointParticles3DState,
     Sprite2DCommand, Water2DState, Water3DState, WaterBodySampleState, WaterSampleState,
 };
 use perro_structs::TextureFilterMode;
@@ -437,6 +437,7 @@ pub struct Gpu {
     last_prepare_3d_camera: Option<Camera3DState>,
     last_prepare_3d_lighting: Option<Lighting3DState>,
     last_prepare_3d_draws_revision: u64,
+    last_prepare_3d_decals_revision: u64,
     last_prepare_3d_width: u32,
     last_prepare_3d_height: u32,
     meshlets_enabled: bool,
@@ -477,6 +478,8 @@ pub struct RenderFrame<'a> {
     pub point_particles_3d_revision: u64,
     pub waters_3d: &'a [(NodeID, Water3DState)],
     pub waters_3d_revision: u64,
+    pub decals_3d: &'a [(NodeID, Decal3DState)],
+    pub decals_3d_revision: u64,
     pub camera_streams: &'a [(NodeID, CameraStreamState)],
     pub camera_2d: Camera2DUniform,
     pub camera_2d_position: [f32; 2],
@@ -853,6 +856,7 @@ impl Gpu {
             last_prepare_3d_camera: None,
             last_prepare_3d_lighting: None,
             last_prepare_3d_draws_revision: u64::MAX,
+            last_prepare_3d_decals_revision: u64::MAX,
             last_prepare_3d_width: render_width,
             last_prepare_3d_height: render_height,
             meshlets_enabled: cfg.meshlets_enabled,
@@ -988,6 +992,8 @@ impl Gpu {
             point_particles_3d_revision,
             waters_3d,
             waters_3d_revision,
+            decals_3d,
+            decals_3d_revision,
             camera_streams,
             camera_2d,
             camera_2d_position,
@@ -1039,9 +1045,19 @@ impl Gpu {
             || (has(DIRTY_RESOURCES) && has_2d_content)
             || (redraw_requested && has_2d_content);
 
+        // A decal whose texture is still decoding must be retried each frame
+        // until it resolves; otherwise it stays hidden until the next dirty
+        // frame forces a re-prepare (looked like "white until reload").
+        let decals_texture_pending = self
+            .three_d
+            .as_ref()
+            .is_some_and(|three_d| three_d.decals_pending());
+
         let three_d_content_changed = self.last_prepare_3d_camera.as_ref() != Some(&camera_3d)
             || self.last_prepare_3d_lighting.as_ref() != Some(lighting_3d)
             || self.last_prepare_3d_draws_revision != draws_3d_revision
+            || self.last_prepare_3d_decals_revision != decals_3d_revision
+            || decals_texture_pending
             || self.last_prepare_3d_width != self.render_width
             || self.last_prepare_3d_height != self.render_height;
 
@@ -1284,6 +1300,8 @@ impl Gpu {
                         lighting: lighting_3d,
                         draws: draws_3d,
                         draws_revision: draws_3d_revision,
+                        decals: decals_3d,
+                        decals_revision: decals_3d_revision,
                         width: self.render_width,
                         height: self.render_height,
                         static_texture_lookup,
@@ -1296,6 +1314,7 @@ impl Gpu {
                 self.last_prepare_3d_camera = Some(camera_3d.clone());
                 self.last_prepare_3d_lighting = Some(lighting_3d.clone());
                 self.last_prepare_3d_draws_revision = draws_3d_revision;
+                self.last_prepare_3d_decals_revision = decals_3d_revision;
                 self.last_prepare_3d_width = self.render_width;
                 self.last_prepare_3d_height = self.render_height;
             }
@@ -1688,6 +1707,8 @@ impl Gpu {
                             lighting: &stream_lighting,
                             draws: &self.camera_stream_draws_scratch,
                             draws_revision: draws_3d_revision ^ node.as_u64(),
+                            decals: &[],
+                            decals_revision: 0,
                             width,
                             height,
                             static_texture_lookup,

@@ -30,6 +30,10 @@ struct DemoMainMenuRefsState {
     pub demo_btn_particles: NodeID,
     #[default = NodeID::nil()]
     pub demo_btn_audio: NodeID,
+    #[default = NodeID::nil()]
+    pub demo_btn_decals: NodeID,
+    #[default = NodeID::nil()]
+    pub demo_btn_fps_tester: NodeID,
 }
 
 lifecycle!({});

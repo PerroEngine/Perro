@@ -49,6 +49,58 @@ members = [
     "perro_website",
 ]
 
+# website kp in workspace (docs/book/demos usable via `-p perro_website`)
+# but off default build set: bare `cargo test`/`check`/`build` skip leptos+axum+tokio.
+# use `--workspace` 2 include it.
+default-members = [
+    "perro_source/core/perro_ids",
+    "perro_source/core/perro_animation",
+    "perro_source/core/perro_nodes",
+    "perro_source/core/perro_ui",
+    "perro_source/core/perro_structs",
+    "perro_source/core/perro_variant",
+    "perro_source/core/perro_particle_math",
+    "perro_source/core/perro_builtin_meshes",
+    "perro_source/core/perro_asset_formats",
+    "perro_source/core/perro_csv",
+
+    "perro_source/runtime_project/perro_runtime",
+    "perro_source/runtime_project/perro_physics",
+    "perro_source/runtime_project/perro_runtime_render",
+    "perro_source/runtime_project/perro_internal_updates",
+    "perro_source/runtime_project/perro_scene",
+    "perro_source/runtime_project/perro_project",
+
+    "perro_source/api_modules/perro_modules",
+    "perro_source/api_modules/perro_networking",
+    "perro_source/api_modules/perro_input_api",
+    "perro_source/api_modules/perro_api",
+    "perro_source/api_modules/perro_resource_api",
+    "perro_source/api_modules/perro_runtime_api",
+    "perro_source/api_modules/perro_web",
+    "perro_source/api_modules/perro_steamworks",
+
+    "perro_source/render_stack/perro_app",
+    "perro_source/render_stack/perro_graphics",
+    "perro_source/render_stack/perro_graphics_assets",
+    "perro_source/render_stack/perro_meshlets",
+    "perro_source/render_stack/perro_render_bridge",
+
+    "perro_source/script_stack/perro_scripting",
+    "perro_source/script_stack/perro_scripting_macros",
+    "perro_source/render_stack/perro_macros",
+
+    "perro_source/build_pipeline/perro_compiler",
+    "perro_source/build_pipeline/perro_static_pipeline",
+
+    "perro_source/io_stack/perro_assets",
+    "perro_source/io_stack/perro_io",
+    "perro_source/audio_stack/perro_pawdio",
+
+    "perro_source/devtools/perro_cli",
+    "perro_source/devtools/perro_dev_runner",
+]
+
 resolver = "3"
 
 [workspace.dependencies]
@@ -107,7 +159,7 @@ opt-level = 3
 
 [profile.release]
 opt-level = 2
-lto = "none"
+lto = "off"
 codegen-units = 64
 panic = "abort"
 incremental = true

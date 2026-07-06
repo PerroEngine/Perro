@@ -128,6 +128,7 @@ pub(super) fn merge_prepared_scene(
             animation_tree_source,
             animation_tree_animations,
             texture_source,
+            decal_texture_sources,
             mesh_source,
             material_surfaces,
             skeleton_source,
@@ -210,6 +211,21 @@ pub(super) fn merge_prepared_scene(
         if let Some(source) = texture_source {
             runtime.render_2d.texture_sources.insert(node, source);
         }
+        if decal_texture_sources.iter().any(Option::is_some)
+            && let Some(node_data) = runtime.nodes.get_mut(node)
+            && let SceneNodeData::Decal3D(decal) = &mut node_data.data
+        {
+            let [albedo, normal, emission] = decal_texture_sources;
+            if let Some(source) = albedo {
+                decal.albedo_texture = res.Textures().load(&source);
+            }
+            if let Some(source) = normal {
+                decal.normal_texture = res.Textures().load(&source);
+            }
+            if let Some(source) = emission {
+                decal.emission_texture = res.Textures().load(&source);
+            }
+        }
         if let Some(source) = mesh_source {
             let mesh = res.Meshes().load(&source);
             if let Some(node_data) = runtime.nodes.get_mut(node) {
@@ -279,6 +295,7 @@ pub(super) fn merge_prepared_scene(
                 }
                 SceneNodeData::Skeleton3D(skeleton) => {
                     skeleton.bones = res.Skeletons().load_bones_3d(&source);
+                    skeleton.refresh_inv_bind_cache();
                     if resource_api.is_skeleton_3d_pending(&source) {
                         runtime
                             .pending_skeleton_sources_3d

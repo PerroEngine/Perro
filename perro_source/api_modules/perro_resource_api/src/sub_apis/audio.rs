@@ -6,7 +6,8 @@
 use crate::ResPathSource;
 use perro_ids::{AudioBusID, SoundFontID};
 pub use perro_pawdio::{
-    MidiChannel, MidiNoteHandle, MidiNoteOptions, MidiProgram, MidiSong, MidiSound, Note, program,
+    MicClip, MidiChannel, MidiNoteHandle, MidiNoteOptions, MidiProgram, MidiSong, MidiSound, Note,
+    program,
 };
 use perro_structs::{BitMask, Vector2, Vector3};
 
@@ -17,6 +18,13 @@ pub trait AudioAPI {
     fn drop_audio_source(&self, source: &str) -> bool;
     fn is_audio_source_loaded(&self, source: &str) -> bool;
     fn play_audio(&self, bus_id: Option<AudioBusID>, audio: Audio<'_>, pan: AudioPan) -> bool;
+    fn play_audio_clip(
+        &self,
+        bus_id: Option<AudioBusID>,
+        clip: &MicClip,
+        volume: f32,
+        pan: AudioPan,
+    ) -> bool;
     fn play_audio_2d(&self, bus_id: Option<AudioBusID>, audio: Audio2D<'_>) -> bool;
     fn play_audio_3d(&self, bus_id: Option<AudioBusID>, audio: Audio3D<'_>) -> bool;
     fn stop_audio(&self, bus_id: Option<AudioBusID>, audio: Audio<'_>, pan: AudioPan) -> bool;
@@ -253,6 +261,33 @@ impl<'a> PannedAudio<'a> {
 }
 
 #[derive(Clone, Copy, Debug)]
+pub struct AudioClip<'a> {
+    pub clip: &'a MicClip,
+    pub volume: f32,
+    pub pan: AudioPan,
+}
+
+impl<'a> AudioClip<'a> {
+    pub const fn new(clip: &'a MicClip) -> Self {
+        Self {
+            clip,
+            volume: 1.0,
+            pan: AudioPan::CENTER,
+        }
+    }
+
+    pub const fn with_volume(mut self, volume: f32) -> Self {
+        self.volume = volume;
+        self
+    }
+
+    pub const fn with_pan(mut self, pan: AudioPan) -> Self {
+        self.pan = pan;
+        self
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
 pub struct Audio2D<'a> {
     pub audio: Audio<'a>,
     pub position: Vector2,
@@ -345,6 +380,20 @@ impl<'a, R: AudioAPI + ?Sized> AudioPlayConfig<R> for (Audio<'a>, AudioPan) {
     }
 }
 
+impl<'a, R: AudioAPI + ?Sized> AudioPlayConfig<R> for AudioClip<'a> {
+    #[inline]
+    fn play_with(self, api: &R, bus_id: Option<AudioBusID>) -> bool {
+        api.play_audio_clip(bus_id, self.clip, self.volume, self.pan)
+    }
+}
+
+impl<R: AudioAPI + ?Sized> AudioPlayConfig<R> for &MicClip {
+    #[inline]
+    fn play_with(self, api: &R, bus_id: Option<AudioBusID>) -> bool {
+        api.play_audio_clip(bus_id, self, 1.0, AudioPan::CENTER)
+    }
+}
+
 impl<'a, R: AudioAPI + ?Sized> AudioPlayConfig<R> for Audio2D<'a> {
     #[inline]
     fn play_with(self, api: &R, bus_id: Option<AudioBusID>) -> bool {
@@ -421,6 +470,23 @@ impl<'res, R: AudioAPI + ?Sized> AudioModule<'res, R> {
     #[inline]
     pub fn play_master_panned(&self, audio: Audio<'_>, pan: AudioPan) -> bool {
         self.api.play_audio(None, audio, pan)
+    }
+
+    #[inline]
+    pub fn play_clip(&self, clip: &MicClip) -> bool {
+        self.api.play_audio_clip(None, clip, 1.0, AudioPan::CENTER)
+    }
+
+    #[inline]
+    pub fn play_clip_bus(&self, bus_id: AudioBusID, clip: &MicClip) -> bool {
+        self.api
+            .play_audio_clip(Some(bus_id), clip, 1.0, AudioPan::CENTER)
+    }
+
+    #[inline]
+    pub fn play_clip_bus_volume(&self, bus_id: AudioBusID, clip: &MicClip, volume: f32) -> bool {
+        self.api
+            .play_audio_clip(Some(bus_id), clip, volume, AudioPan::CENTER)
     }
 
     #[inline]
@@ -690,6 +756,19 @@ macro_rules! audio_play {
 }
 
 #[macro_export]
+macro_rules! audio_play_clip {
+    ($res:expr, $clip:expr) => {
+        $res.Audio().play_clip($clip)
+    };
+    ($res:expr, $bus_id:expr, $clip:expr) => {
+        $res.Audio().play_clip_bus($bus_id, $clip)
+    };
+    ($res:expr, $bus_id:expr, $clip:expr, $volume:expr) => {
+        $res.Audio().play_clip_bus_volume($bus_id, $clip, $volume)
+    };
+}
+
+#[macro_export]
 macro_rules! audio_stop {
     ($res:expr, $bus_id:expr, $audio:expr) => {
         $res.Audio().stop_audio($bus_id, $audio)
@@ -896,6 +975,16 @@ mod tests {
             true
         }
 
+        fn play_audio_clip(
+            &self,
+            _bus_id: Option<AudioBusID>,
+            _clip: &MicClip,
+            _volume: f32,
+            _pan: AudioPan,
+        ) -> bool {
+            true
+        }
+
         fn play_audio_2d(&self, _bus_id: Option<AudioBusID>, _audio: Audio2D<'_>) -> bool {
             true
         }
@@ -1043,6 +1132,13 @@ mod tests {
             bus,
             Audio3D::new("res://step.wav", Vector3::new(1.0, 2.0, 3.0), 10.0)
         ));
+        let clip = MicClip::new(vec![0; 64], 48_000, 1);
+        assert!(crate::audio_play!(res, &clip));
+        assert!(crate::audio_play!(
+            res,
+            AudioClip::new(&clip).with_volume(0.5)
+        ));
+        assert!(crate::audio_play_clip!(res, bus, &clip, 0.5));
     }
 
     #[test]

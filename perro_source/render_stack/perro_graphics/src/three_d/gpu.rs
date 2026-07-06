@@ -130,6 +130,8 @@ mod buffers;
 mod camera;
 #[path = "gpu/culling.rs"]
 mod culling;
+#[path = "gpu/decals.rs"]
+mod decals;
 #[path = "gpu/draw.rs"]
 mod draw;
 #[path = "gpu/init.rs"]
@@ -154,6 +156,7 @@ mod targets;
 use asset_bridge::*;
 pub(crate) use asset_bridge::{load_mesh3d_from_source, validate_mesh_source};
 use camera::*;
+use decals::{create_decal_buffer, create_decal_texture_array};
 use draw::*;
 use sky::*;
 use targets::*;
@@ -192,6 +195,9 @@ const MATERIAL_FLAG_HAS_BASE_COLOR_TEXTURE: u32 = 1u32 << 2;
 const MATERIAL_FLAG_MESH_BLEND: u32 = 1u32 << 3;
 const MATERIAL_FLAG_NORMAL_BLEND: u32 = 1u32 << 4;
 const MATERIAL_FLAG_RECEIVE_SHADOWS: u32 = 1u32 << 6;
+// Surface carries a chromatic modulate: the standard shader re-applies the
+// hue bias against the base color texture sample (0x100 in WGSL).
+const MATERIAL_FLAG_MODULATE_BIAS: u32 = 1u32 << 8;
 const CUSTOM_PARAM_KIND_SCALAR: u32 = 0;
 const CUSTOM_PARAM_KIND_VEC2: u32 = 1;
 const CUSTOM_PARAM_KIND_VEC3: u32 = 2;
@@ -745,6 +751,16 @@ pub struct Gpu3D {
     packed_lod_param_buffer: wgpu::Buffer,
     packed_lod_param_capacity: usize,
     packed_lod_params: Vec<PackedLodParamGpu>,
+    decal_buffer: wgpu::Buffer,
+    decal_buffer_capacity: usize,
+    decal_texture: wgpu::Texture,
+    decal_texture_view: wgpu::TextureView,
+    decal_texture_layers: u32,
+    decal_sampler: wgpu::Sampler,
+    decal_layer_by_texture: AHashMap<perro_ids::TextureID, u32>,
+    decal_sources_pending: bool,
+    decal_count: u32,
+    last_decals_revision: u64,
     multimesh_bind_group: wgpu::BindGroup,
     multimesh_draw_params_buffer: wgpu::Buffer,
     multimesh_draw_params_capacity: usize,
@@ -992,6 +1008,8 @@ pub struct Prepare3D<'a> {
     pub lighting: &'a Lighting3DState,
     pub draws: &'a [Draw3DInstance],
     pub draws_revision: u64,
+    pub decals: &'a [(perro_ids::NodeID, perro_render_bridge::Decal3DState)],
+    pub decals_revision: u64,
     pub width: u32,
     pub height: u32,
     pub static_texture_lookup: Option<StaticTextureLookup>,
@@ -1129,6 +1147,7 @@ struct SurfaceEntry3D {
     packed_range: Option<MeshRange>,
     packed_lod_param_id: u32,
     material: Material3D,
+    modulate_bias: bool,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]

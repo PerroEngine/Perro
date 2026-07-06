@@ -7,7 +7,7 @@ fn shade_material(in: FragmentInput) -> vec4<f32> {
     let emissive = unpack_emissive_hdr(in.packed_emissive);
     let toon = decode_toon_params(in.packed_pbr_params_0, in.packed_pbr_params_1);
     let material = decode_material_params(in.packed_material_params);
-    let albedo = color.rgb;
+    var albedo = color.rgb;
     var n = normalize(in.normal_ws);
     if material.flat_shading {
         n = normalize(cross(dpdx(in.world_pos), dpdy(in.world_pos)));
@@ -20,6 +20,13 @@ fn shade_material(in: FragmentInput) -> vec4<f32> {
     }
     let mesh_fade = mesh_blend_fade(in, material);
     n = apply_mesh_normal_blend(material, n, in.world_pos, mesh_fade);
+    var decal_emissive = vec3<f32>(0.0);
+    if scene_decals.count.x > 0u {
+        let decal_surface = perro_apply_decals(in.world_pos, albedo, n);
+        albedo = decal_surface.albedo;
+        n = decal_surface.normal;
+        decal_emissive = decal_surface.emissive;
+    }
     let v = normalize(scene.camera_pos.xyz - in.world_pos);
     var alpha = clamp(color.a, 0.0, 1.0);
     if material.alpha_mode == 1u && alpha < material.alpha_cutoff {
@@ -118,6 +125,6 @@ fn shade_material(in: FragmentInput) -> vec4<f32> {
     let rim_power = 2.0 + outline_width * 4.0;
     let rim = pow(1.0 - max(dot(n, v), 0.0), rim_power) * rim_strength;
 
-    let shaded = albedo * light_rgb + emissive + rim;
+    let shaded = albedo * light_rgb + emissive + decal_emissive + rim;
     return vec4<f32>(tonemap_aces(shaded), alpha);
 }

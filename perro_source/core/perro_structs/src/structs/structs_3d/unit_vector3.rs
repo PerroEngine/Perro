@@ -71,3 +71,31 @@ impl From<UnitVector3> for Vector3 {
         value.as_vector3()
     }
 }
+
+impl From<[f32; 3]> for UnitVector3 {
+    #[inline]
+    fn from(v: [f32; 3]) -> Self {
+        Self::new(v[0], v[1], v[2])
+    }
+}
+
+impl From<UnitVector3> for [f32; 3] {
+    #[inline]
+    fn from(v: UnitVector3) -> Self {
+        v.to_array()
+    }
+}
+
+impl From<(f32, f32, f32)> for UnitVector3 {
+    #[inline]
+    fn from(v: (f32, f32, f32)) -> Self {
+        Self::new(v.0, v.1, v.2)
+    }
+}
+
+impl From<UnitVector3> for (f32, f32, f32) {
+    #[inline]
+    fn from(v: UnitVector3) -> Self {
+        v.to_tuple()
+    }
+}

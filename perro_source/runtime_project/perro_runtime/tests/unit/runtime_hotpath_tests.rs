@@ -252,7 +252,10 @@ fn node_arena_structural_revision_moves_only_on_structural_change() {
 
     let sv = arena.structural_revision();
     assert!(arena.set_parent(a, b));
-    assert!(arena.structural_revision() > sv, "reparent bumps structural");
+    assert!(
+        arena.structural_revision() > sv,
+        "reparent bumps structural"
+    );
 
     let sv = arena.structural_revision();
     let _ = arena.remove(a);

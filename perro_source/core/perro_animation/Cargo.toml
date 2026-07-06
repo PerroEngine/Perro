@@ -4,6 +4,5 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-perro_ids = { path = "../perro_ids" }
 perro_structs = { path = "../perro_structs" }
 perro_scene = { path = "../../runtime_project/perro_scene" }

@@ -45,6 +45,7 @@ Demo table:
 | Positional Audio | `res://scenes/demos/positional_audio.scn` | `positional_audio_demo.rs` | Audio mask, reverb zone, debug rays.                | [positional_audio.md](positional_audio.md) |
 | Physics Bones    | `res://scenes/demos/physics_bones.scn`    | `physics_bones_demo.rs`    | glTF rig, `.panim` bones, physics chain collisions. | [physics_bones.md](physics_bones.md)       |
 | Physics Collisions | `res://scenes/demos/physics_collisions.scn` | `physics_collisions_demo.rs` | Rigid/static contacts and `Area3D` color signal. | [physics_collisions.md](physics_collisions.md) |
+| Decals           | `res://scenes/demos/decals.scn`           | `decals_demo.rs`           | `Decal3D` albedo/normal/emission projected onto lit geometry. | [decals.md](decals.md)                     |
 
 Why scenes stay split:
 

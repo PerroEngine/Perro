@@ -458,11 +458,14 @@ fn ensure_project_manifest_web_support(path: &Path) -> std::io::Result<()> {
     };
 
     for (name, version) in [
-        ("wasm-bindgen", "0.2.105"),
+        ("wasm-bindgen", "=0.2.126"),
         ("console_error_panic_hook", "0.1.7"),
         ("getrandom", "0.3.4"),
     ] {
-        if !deps_table.contains_key(name) {
+        let missing = !deps_table.contains_key(name);
+        let stale_wasm_bindgen =
+            name == "wasm-bindgen" && deps_table.get(name).and_then(Value::as_str) != Some(version);
+        if missing || stale_wasm_bindgen {
             deps_table.insert(name.to_string(), Value::String(version.to_string()));
             changed = true;
         }

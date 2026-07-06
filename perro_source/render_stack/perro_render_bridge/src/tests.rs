@@ -39,3 +39,21 @@ fn tileset_binary_roundtrip_keeps_collision_shapes() {
 
     assert_eq!(decoded, tileset);
 }
+
+#[test]
+fn tileset_binary_rejects_hostile_tile_count_no_huge_alloc() {
+    // tile_count = u32::MAX but no tile data follow.
+    // clamp -> with_capacity stay small, decode ret None on exhausted bytes.
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(b"PTSET");
+    bytes.extend_from_slice(&1u32.to_le_bytes()); // version
+    bytes.extend_from_slice(&3u32.to_le_bytes()); // texture_len
+    bytes.extend_from_slice(b"abc"); // texture
+    bytes.extend_from_slice(&16.0f32.to_le_bytes()); // tile_size.x
+    bytes.extend_from_slice(&16.0f32.to_le_bytes()); // tile_size.y
+    bytes.extend_from_slice(&2u32.to_le_bytes()); // columns
+    bytes.extend_from_slice(&1u32.to_le_bytes()); // rows
+    bytes.extend_from_slice(&u32::MAX.to_le_bytes()); // hostile tile_count
+
+    assert!(decode_tileset_2d_binary(&bytes).is_none());
+}

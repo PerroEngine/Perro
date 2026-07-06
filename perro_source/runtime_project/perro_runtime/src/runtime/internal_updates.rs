@@ -8,6 +8,9 @@ use perro_runtime_api::RuntimeWindow;
 const NONE_POS: u32 = u32::MAX;
 
 impl Runtime {
+    // full rebuild of internal schedules frm live node set.
+    // kp 4 hot-reload / scene swap: reset then re-register all nodes.
+    // wire-by: hot-reload land. incremental `register_internal_node_schedules` = normal path.
     #[allow(dead_code)]
     pub(crate) fn rebuild_internal_node_schedules(&mut self) {
         self.internal_updates.internal_update_nodes.clear();

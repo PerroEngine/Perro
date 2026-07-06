@@ -1,10 +1,10 @@
 use ahash::{AHashMap, AHashSet};
 use perro_ids::{MeshID, NodeID, SignalID};
 use perro_render_bridge::{
-    AmbientLight3DState, Camera2DState, Camera3DState, DenseInstancePose3D, LODOptions3D,
-    Material3D, MeshBlendOptions3D, MeshSurfaceBinding3D, PointLight3DState, RayLight3DState,
-    RenderEvent, RenderRequestID, SkeletonPalette, Sky3DState, SpotLight3DState, Sprite2DCommand,
-    UiCommand, UiRectState,
+    AmbientLight3DState, Camera2DState, Camera3DState, Decal3DState, DenseInstancePose3D,
+    LODOptions3D, Material3D, MeshBlendOptions3D, MeshSurfaceBinding3D, PointLight3DState,
+    RayLight3DState, RenderEvent, RenderRequestID, SkeletonPalette, Sky3DState, SpotLight3DState,
+    Sprite2DCommand, UiCommand, UiRectState,
 };
 use perro_structs::Vector2;
 use perro_ui::{ComputedUiRect, UiSizeMode, UiVector2};
@@ -642,6 +642,7 @@ pub struct Render3DState {
     pub retained_ray_lights: AHashMap<NodeID, RayLight3DState>,
     pub retained_point_lights: AHashMap<NodeID, PointLight3DState>,
     pub retained_spot_lights: AHashMap<NodeID, SpotLight3DState>,
+    pub retained_decals: AHashMap<NodeID, Decal3DState>,
     pub retained_mesh_draws: AHashMap<NodeID, RetainedMeshDrawState>,
     pub camera_activation_order: AHashMap<NodeID, u64>,
     pub next_camera_activation_order: u64,
@@ -650,7 +651,7 @@ pub struct Render3DState {
     pub dirty_skeletons_scratch: AHashSet<NodeID>,
     pub skeleton_cache_scratch: AHashMap<NodeID, SkeletonPalette>,
     pub skeleton_global_scratch: Vec<glam::Mat4>,
-    pub skeleton_palette_scratch: Vec<[[f32; 4]; 4]>,
+    pub skeleton_palette_scratch: Vec<[[f32; 4]; 3]>,
     pub dense_instance_pose_scratch: Vec<DenseInstancePose3D>,
     pub removed_nodes: Vec<NodeID>,
     pub force_full_scan_once: bool,
@@ -683,6 +684,7 @@ impl Render3DState {
             retained_ray_lights: AHashMap::default(),
             retained_point_lights: AHashMap::default(),
             retained_spot_lights: AHashMap::default(),
+            retained_decals: AHashMap::default(),
             retained_mesh_draws: AHashMap::default(),
             camera_activation_order: AHashMap::default(),
             next_camera_activation_order: 1,

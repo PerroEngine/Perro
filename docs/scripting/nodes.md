@@ -309,6 +309,18 @@ See [TileMap2D](tilemap.md).
 - Add `StaticBody3D`, `Area3D`, or `CollisionShape3D` nodes separately for lake beds, shores, triggers, or queries.
 - See [Water Bodies](water.md).
 
+`Decal3D`
+
+- Projected box decal: paints albedo/normal/emission onto lit 3D geometry inside its `size` box.
+- Projects along local -Z (rotate the node like a spotlight to aim it).
+- Applied in the material shaders before lighting, so decals receive shadows and lights like the surface under them.
+- `albedo_texture`, `normal_texture`, `emission_texture` are all optional; with no albedo texture the `modulate` color paints flat.
+- `albedo_mix` blends decal albedo over the surface; `normal_strength` scales the normal patch.
+- `normal_fade` (0..1) rejects surfaces facing away from the projection axis.
+- `distance_fade_begin`/`distance_fade_length` fade by camera distance; begin `0` disables.
+- Higher `sort_priority` blends over lower when decals overlap.
+- Affects standard and toon materials plus multimesh instances; unlit materials ignore decals.
+
 `ParticleEmitter2D`
 
 - 2D particle emitter driven by a particle profile.

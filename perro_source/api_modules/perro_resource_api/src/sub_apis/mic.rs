@@ -1,5 +1,4 @@
 use crate::ResPathSource;
-use perro_ids::AudioBusID;
 pub use perro_pawdio::{MicClip, MicDenoiseSettings, MicSettings};
 
 pub trait MicAPI {
@@ -9,7 +8,6 @@ pub trait MicAPI {
     fn mic_stream_clip(&self) -> Option<MicClip>;
     fn mic_stream_bytes(&self) -> Option<Vec<u8>>;
     fn mic_is_listening(&self) -> bool;
-    fn mic_play(&self, bus_id: Option<AudioBusID>, clip: &MicClip, volume: f32) -> bool;
     fn mic_save_wav(&self, source: &str, clip: &MicClip) -> Result<(), String>;
 }
 
@@ -85,26 +83,6 @@ impl<'res, R: MicAPI + ?Sized> MicModule<'res, R> {
     #[inline]
     pub fn is_listening(&self) -> bool {
         self.api.mic_is_listening()
-    }
-
-    #[inline]
-    pub fn play_master(&self, clip: &MicClip) -> bool {
-        self.api.mic_play(None, clip, 1.0)
-    }
-
-    #[inline]
-    pub fn play_master_volume(&self, clip: &MicClip, volume: f32) -> bool {
-        self.api.mic_play(None, clip, volume)
-    }
-
-    #[inline]
-    pub fn play_bus(&self, bus_id: AudioBusID, clip: &MicClip) -> bool {
-        self.api.mic_play(Some(bus_id), clip, 1.0)
-    }
-
-    #[inline]
-    pub fn play_bus_volume(&self, bus_id: AudioBusID, clip: &MicClip, volume: f32) -> bool {
-        self.api.mic_play(Some(bus_id), clip, volume)
     }
 
     #[inline]
@@ -235,47 +213,6 @@ macro_rules! mic_frame_bytes {
 macro_rules! mic_is_listening {
     ($res:expr) => {
         $res.Mic().is_listening()
-    };
-}
-
-#[macro_export]
-macro_rules! mic_play {
-    ($res:expr, $clip:expr) => {
-        $res.Mic().play_master($clip)
-    };
-    ($res:expr, $bus_id:expr, $clip:expr) => {
-        $res.Mic().play_bus($bus_id, $clip)
-    };
-    ($res:expr, $bus_id:expr, $clip:expr, $volume:expr) => {
-        $res.Mic().play_bus_volume($bus_id, $clip, $volume)
-    };
-}
-
-#[macro_export]
-macro_rules! mic_play_master {
-    ($res:expr, $clip:expr) => {
-        $res.Mic().play_master($clip)
-    };
-}
-
-#[macro_export]
-macro_rules! mic_play_master_volume {
-    ($res:expr, $clip:expr, $volume:expr) => {
-        $res.Mic().play_master_volume($clip, $volume)
-    };
-}
-
-#[macro_export]
-macro_rules! mic_play_bus {
-    ($res:expr, $bus_id:expr, $clip:expr) => {
-        $res.Mic().play_bus($bus_id, $clip)
-    };
-}
-
-#[macro_export]
-macro_rules! mic_play_bus_volume {
-    ($res:expr, $bus_id:expr, $clip:expr, $volume:expr) => {
-        $res.Mic().play_bus_volume($bus_id, $clip, $volume)
     };
 }
 

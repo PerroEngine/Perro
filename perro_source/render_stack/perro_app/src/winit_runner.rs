@@ -24,6 +24,8 @@ use std::time::Instant;
 use std::{fs, sync::Arc};
 #[cfg(target_arch = "wasm32")]
 use web_time::Instant;
+#[cfg(not(target_arch = "wasm32"))]
+use winit::event_loop::EventLoopProxy;
 #[cfg(target_arch = "wasm32")]
 use winit::monitor::MonitorHandle;
 #[cfg(target_os = "android")]
@@ -35,7 +37,7 @@ use winit::{dpi::Position, monitor::MonitorHandle};
 use winit::{
     dpi::{PhysicalPosition, PhysicalSize, Size},
     event::{DeviceEvent, ElementState, WindowEvent},
-    event_loop::{ActiveEventLoop, ControlFlow, EventLoop, EventLoopProxy},
+    event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
     keyboard::{KeyCode, PhysicalKey},
     window::{CursorGrabMode, CursorIcon as WinitCursorIcon, Fullscreen, Window, WindowAttributes},
 };
@@ -59,6 +61,9 @@ const LOG_INTERVAL_SECONDS: f32 = 3.0;
 #[cfg(not(any(feature = "profile_heavy", feature = "ui_profile", feature = "fps")))]
 const LOG_TIMING_SAMPLE_STRIDE: u32 = 20;
 const TIMING_WARMUP_FRAMES: u32 = 8;
+// Reported fps averages real frame counts over this window; a single-frame
+// reciprocal is too noisy to represent perceived smoothness.
+const FPS_WINDOW_SECONDS: f32 = 0.5;
 #[cfg(not(target_arch = "wasm32"))]
 const INITIAL_WINDOW_MONITOR_FRACTION: f32 = 0.75;
 
@@ -412,10 +417,14 @@ fn log_avg_sampled(
 
 pub struct WinitRunner;
 
+#[cfg(not(target_arch = "wasm32"))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum RunnerUserEvent {
     RequestExit,
 }
+
+#[cfg(target_arch = "wasm32")]
+type RunnerUserEvent = ();
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum AppExitKind {
@@ -698,6 +707,8 @@ struct RunnerState<B: GraphicsBackend> {
     fixed_accumulator: f32,
     pacer: FramePacer,
     frame_index: u64,
+    fps_window_start: Instant,
+    fps_window_frames: u32,
     timing_csv: Option<TimingCsvWriter>,
     #[cfg(feature = "profile_heavy")]
     profile_csv: Option<ProfileCsvWriter>,
@@ -778,6 +789,8 @@ impl<B: GraphicsBackend> RunnerState<B> {
             #[cfg(feature = "profile_heavy")]
             batch_heavy: BatchHeavyStats::default(),
             frame_index: 0,
+            fps_window_start: now,
+            fps_window_frames: 0,
             kbm_input: crate::input::KbmInput::new(),
             gamepad_input: crate::input::GamepadInput::new(),
             joycon_input: crate::input::JoyConInput::new(),
@@ -1354,11 +1367,6 @@ impl<B: GraphicsBackend> RunnerState<B> {
                 simulation_duration,
                 present_active_duration,
                 measured_frame_duration,
-                if measured_frame_duration.is_zero() {
-                    0.0
-                } else {
-                    1.0 / measured_frame_duration.as_secs_f32()
-                },
             );
             #[cfg(feature = "profile_heavy")]
             self.app.set_present_timing_profile(&present_timing);
@@ -1526,6 +1534,15 @@ impl<B: GraphicsBackend> RunnerState<B> {
         let frame_start = now;
         let frame_delta = frame_start.duration_since(self.last_frame_start);
         self.last_frame_start = frame_start;
+
+        let fps_window_elapsed = frame_start.duration_since(self.fps_window_start);
+        if fps_window_elapsed.as_secs_f32() >= FPS_WINDOW_SECONDS && self.fps_window_frames > 0 {
+            self.app
+                .set_fps(self.fps_window_frames as f32 / fps_window_elapsed.as_secs_f32());
+            self.fps_window_start = frame_start;
+            self.fps_window_frames = 0;
+        }
+        self.fps_window_frames = self.fps_window_frames.saturating_add(1);
 
         let elapsed_since_start = frame_start.duration_since(self.run_start);
         self.app.set_elapsed_time(elapsed_since_start.as_secs_f32());
@@ -1721,11 +1738,6 @@ impl<B: GraphicsBackend> RunnerState<B> {
                 simulation_duration,
                 present_active_duration,
                 measured_frame_duration,
-                if measured_frame_duration.is_zero() {
-                    0.0
-                } else {
-                    1.0 / measured_frame_duration.as_secs_f32()
-                },
             );
             #[cfg(feature = "profile_heavy")]
             self.app.set_present_timing_profile(&present_timing);
@@ -2332,6 +2344,8 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler<RunnerUserEvent>
             self.fixed_accumulator = 0.0;
             self.pacer.reset_deadline();
             self.frame_index = 0;
+            self.fps_window_start = now;
+            self.fps_window_frames = 0;
             self.batch_start = now;
             self.timing_warmup_frames_left = TIMING_WARMUP_FRAMES;
             self.batch = BatchCoreStats::default();
@@ -2489,6 +2503,7 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler<RunnerUserEvent>
         }
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     fn user_event(&mut self, event_loop: &ActiveEventLoop, event: RunnerUserEvent) {
         match event {
             RunnerUserEvent::RequestExit => {
@@ -2496,6 +2511,9 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler<RunnerUserEvent>
             }
         }
     }
+
+    #[cfg(target_arch = "wasm32")]
+    fn user_event(&mut self, _event_loop: &ActiveEventLoop, _event: RunnerUserEvent) {}
 
     fn device_event(
         &mut self,

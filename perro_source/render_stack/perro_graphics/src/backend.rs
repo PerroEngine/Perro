@@ -15,15 +15,18 @@ use crate::{
     two_d::renderer::{RectInstanceGpu, Renderer2D},
     ui::renderer::UiRenderer,
 };
-use ahash::{AHashMap, AHashSet};
+use ahash::AHashMap;
+#[cfg(not(target_arch = "wasm32"))]
+use ahash::AHashSet;
 use perro_graphics_assets::{
     decode_image_rgba, decode_ptex, load_mesh3d_from_bytes, load_texture_rgba,
 };
 use perro_ids::{MaterialID, MeshID, NodeID, TextureID};
 use perro_render_bridge::{
-    CameraStreamCommand, CameraStreamState, Command2D, Command3D, Light2DState, Material3D,
-    PointParticles3DState, PostProcessingCommand, RenderBridge, RenderCommand, RenderEvent,
-    ResourceCommand, Sprite2DCommand, VisualAccessibilityCommand, Water2DState, Water3DState,
+    CameraStreamCommand, CameraStreamState, Command2D, Command3D, Decal3DState, Light2DState,
+    Material3D, PointParticles3DState, PostProcessingCommand, RenderBridge, RenderCommand,
+    RenderEvent, ResourceCommand, Sprite2DCommand, VisualAccessibilityCommand, Water2DState,
+    Water3DState,
 };
 use perro_structs::TextureFilterMode;
 use perro_structs::{PostProcessSet, VisualAccessibilitySettings};
@@ -253,7 +256,8 @@ fn command_dirty_bits(command: &RenderCommand) -> u32 {
             | Command3D::SetSky { .. }
             | Command3D::SetRayLight { .. }
             | Command3D::SetPointLight { .. }
-            | Command3D::SetSpotLight { .. } => DIRTY_LIGHTS_3D,
+            | Command3D::SetSpotLight { .. }
+            | Command3D::SetDecal { .. } => DIRTY_LIGHTS_3D,
             Command3D::UpsertPointParticles { .. } => DIRTY_PARTICLES_3D,
         },
         RenderCommand::Resource(_) | RenderCommand::CameraStream(_) => DIRTY_RESOURCES,
@@ -368,6 +372,8 @@ pub struct PerroGraphics {
     retained_waters_2d_cache_revision: u64,
     retained_waters_3d_cache: Vec<(NodeID, Water3DState)>,
     retained_waters_3d_cache_revision: u64,
+    retained_decals_3d_cache: Vec<(NodeID, Decal3DState)>,
+    retained_decals_3d_cache_revision: u64,
     retained_sprites_cache: Vec<Sprite2DCommand>,
     retained_sprites_cache_revision: u64,
     retained_point_lights_cache: Vec<Light2DState>,
@@ -651,6 +657,8 @@ impl PerroGraphics {
             retained_waters_2d_cache_revision: u64::MAX,
             retained_waters_3d_cache: Vec::new(),
             retained_waters_3d_cache_revision: u64::MAX,
+            retained_decals_3d_cache: Vec::new(),
+            retained_decals_3d_cache_revision: u64::MAX,
             retained_sprites_cache: Vec::new(),
             retained_sprites_cache_revision: u64::MAX,
             retained_point_lights_cache: Vec::new(),
@@ -1250,6 +1258,9 @@ impl PerroGraphics {
                     Command3D::SetSpotLight { node, light } => {
                         self.renderer_3d.set_spot_light(node, light);
                     }
+                    Command3D::SetDecal { node, decal } => {
+                        self.renderer_3d.set_decal(node, *decal);
+                    }
                     Command3D::UpsertPointParticles { node, particles } => {
                         self.particles_3d.queue_point_particles(node, *particles);
                     }
@@ -1730,6 +1741,13 @@ impl PerroGraphics {
                 .extend_from_slice(self.renderer_3d.retained_waters_sorted());
             self.retained_waters_3d_cache_revision = waters_3d_revision;
         }
+        let decals_3d_revision = self.renderer_3d.retained_decals_revision();
+        if decals_3d_revision != self.retained_decals_3d_cache_revision {
+            self.retained_decals_3d_cache.clear();
+            self.retained_decals_3d_cache
+                .extend_from_slice(self.renderer_3d.retained_decals_sorted());
+            self.retained_decals_3d_cache_revision = decals_3d_revision;
+        }
         let waters_2d_revision = self.renderer_2d.retained_waters_revision();
         if waters_2d_revision != self.retained_waters_2d_cache_revision {
             self.retained_waters_2d_cache.clear();
@@ -1902,6 +1920,8 @@ impl PerroGraphics {
                 point_particles_3d_revision: self.retained_point_particles_cache_revision,
                 waters_3d: &self.retained_waters_3d_cache,
                 waters_3d_revision: self.retained_waters_3d_cache_revision,
+                decals_3d: &self.retained_decals_3d_cache,
+                decals_3d_revision: self.retained_decals_3d_cache_revision,
                 camera_streams: &self.retained_camera_streams,
                 camera_2d,
                 camera_2d_position: camera_2d_state.position,

@@ -1,8 +1,8 @@
 [project]
 name = "Demo3D"
 main_scene = "res://main.scn"
-icon = "res://icon.png"
-startup_splash = "res://icon.png"
+icon = "res://perro.svg"
+startup_splash = "res://perro.svg"
 
 # Optional export metadata.
 # Used for Windows executable version info + engine detection strings.

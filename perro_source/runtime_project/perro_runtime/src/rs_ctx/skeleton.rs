@@ -443,6 +443,10 @@ fn quat_from_basis(x: Vector3, y: Vector3, z: Vector3) -> Quaternion {
     }
 }
 
+/// min bytes 1 bone occupy in decoded payload: name_len u32 + flags u32.
+/// use 2 clamp `Vec::with_capacity` vs hostile bone_count -> no huge alloc.
+const MIN_BONE_RECORD_BYTES: usize = 8;
+
 fn decode_pskel(bytes: &[u8]) -> Result<Vec<Bone3D>, String> {
     if bytes.len() < 5 + 4 * 3 {
         return Err("pskel too small".to_string());
@@ -467,7 +471,7 @@ fn decode_pskel(bytes: &[u8]) -> Result<Vec<Bone3D>, String> {
     }
 
     let mut cursor = 0usize;
-    let mut bones = Vec::with_capacity(bone_count);
+    let mut bones = Vec::with_capacity(bone_count.min(raw.len() / MIN_BONE_RECORD_BYTES));
     for _ in 0..bone_count {
         let name_len = read_u32(&raw, &mut cursor)? as usize;
         let name_bytes = read_bytes(&raw, &mut cursor, name_len)?;
@@ -532,7 +536,7 @@ fn decode_pskel_2d(bytes: &[u8]) -> Result<Vec<Bone2D>, String> {
     }
 
     let mut cursor = 0usize;
-    let mut bones = Vec::with_capacity(bone_count);
+    let mut bones = Vec::with_capacity(bone_count.min(raw.len() / MIN_BONE_RECORD_BYTES));
     for _ in 0..bone_count {
         let name_len = read_u32(&raw, &mut cursor)? as usize;
         let name_bytes = read_bytes(&raw, &mut cursor, name_len)?;
@@ -1008,6 +1012,45 @@ mod tests {
         assert_eq!(bones[0].parent, -1);
         assert_eq!(bones[0].rest.position, Vector2::new(2.0, 3.0));
         assert_eq!(bones[0].rest.scale, Vector2::ONE);
+    }
+
+    #[test]
+    fn decode_pskel_rejects_hostile_bone_count_no_huge_alloc() {
+        // bone_count = u32::MAX but payload hold 1 tiny bone.
+        // clamp -> Vec::with_capacity stay small, decode err on exhausted payload.
+        let mut raw = Vec::new();
+        raw.extend_from_slice(&4u32.to_le_bytes());
+        raw.extend_from_slice(b"root");
+        raw.extend_from_slice(&0u32.to_le_bytes());
+
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(b"PSKEL");
+        bytes.extend_from_slice(&1u32.to_le_bytes());
+        bytes.extend_from_slice(&u32::MAX.to_le_bytes()); // hostile bone_count
+        bytes.extend_from_slice(&(raw.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(&(1u32 << 31).to_le_bytes());
+        bytes.extend_from_slice(&raw);
+
+        // no abort/OOM; graceful err once payload run out.
+        assert!(decode_pskel(&bytes).is_err());
+    }
+
+    #[test]
+    fn decode_pskel2d_rejects_hostile_bone_count_no_huge_alloc() {
+        let mut raw = Vec::new();
+        raw.extend_from_slice(&4u32.to_le_bytes());
+        raw.extend_from_slice(b"root");
+        raw.extend_from_slice(&0u32.to_le_bytes());
+
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(b"PSKEL");
+        bytes.extend_from_slice(&1u32.to_le_bytes());
+        bytes.extend_from_slice(&u32::MAX.to_le_bytes());
+        bytes.extend_from_slice(&(raw.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(&(1u32 << 31).to_le_bytes());
+        bytes.extend_from_slice(&raw);
+
+        assert!(decode_pskel_2d(&bytes).is_err());
     }
 
     #[test]

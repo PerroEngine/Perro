@@ -20,6 +20,8 @@ const MULTIMESH_DEMO_SCENE_PATH: &ResPath = res_path!("res://scenes/demos/multim
 const PARTICLES_DEMO_SCENE_PATH: &ResPath = res_path!("res://scenes/demos/particles.scn");
 const POSITIONAL_AUDIO_DEMO_SCENE_PATH: &ResPath =
     res_path!("res://scenes/demos/positional_audio.scn");
+const DECALS_DEMO_SCENE_PATH: &ResPath = res_path!("res://scenes/demos/decals.scn");
+const FPS_TESTER_DEMO_SCENE_PATH: &ResPath = res_path!("res://scenes/demos/fps_tester.scn");
 
 const DEMO_CAMERA_NODE_NAME: &str = "DemoCamera";
 
@@ -54,6 +56,8 @@ enum DemoKind {
     MultiMesh,
     Particles,
     PositionalAudio,
+    Decals,
+    FpsTester,
 }
 
 impl DemoKind {
@@ -71,6 +75,8 @@ impl DemoKind {
             DemoKind::MultiMesh => Some(MULTIMESH_DEMO_SCENE_PATH),
             DemoKind::Particles => Some(PARTICLES_DEMO_SCENE_PATH),
             DemoKind::PositionalAudio => Some(POSITIONAL_AUDIO_DEMO_SCENE_PATH),
+            DemoKind::Decals => Some(DECALS_DEMO_SCENE_PATH),
+            DemoKind::FpsTester => Some(FPS_TESTER_DEMO_SCENE_PATH),
         }
     }
 }
@@ -119,6 +125,8 @@ struct DemoScenesState {
     pub multimesh: PreloadedSceneID,
     pub particles: PreloadedSceneID,
     pub positional_audio: PreloadedSceneID,
+    pub decals: PreloadedSceneID,
+    pub fps_tester: PreloadedSceneID,
 }
 
 impl Default for DemoScenesState {
@@ -140,6 +148,8 @@ impl Default for DemoScenesState {
             multimesh: PreloadedSceneID::nil(),
             particles: PreloadedSceneID::nil(),
             positional_audio: PreloadedSceneID::nil(),
+            decals: PreloadedSceneID::nil(),
+            fps_tester: PreloadedSceneID::nil(),
         }
     }
 }
@@ -175,7 +185,7 @@ impl Default for DemoRefsState {
             info_overlay_root: NodeID::nil(),
             active_demo_root: NodeID::nil(),
             pause_sens_label: NodeID::nil(),
-            hub_buttons: vec![NodeID::nil(); 12],
+            hub_buttons: vec![NodeID::nil(); 13],
             pause_buttons: vec![NodeID::nil(); 5],
         }
     }
@@ -290,6 +300,9 @@ lifecycle!({
             scene_preload!(ctx.run, PARTICLES_DEMO_SCENE_PATH).expect("preload particles demo");
         let positional_audio = scene_preload!(ctx.run, POSITIONAL_AUDIO_DEMO_SCENE_PATH)
             .expect("preload positional audio demo");
+        let decals = scene_preload!(ctx.run, DECALS_DEMO_SCENE_PATH).expect("preload decals demo");
+        let fps_tester =
+            scene_preload!(ctx.run, FPS_TESTER_DEMO_SCENE_PATH).expect("preload fps tester demo");
 
         with_state_mut!(ctx.run, DemoManagerState, ctx.id, |state| {
             state.scenes = DemoScenesState {
@@ -309,6 +322,8 @@ lifecycle!({
                 multimesh,
                 particles,
                 positional_audio,
+                decals,
+                fps_tester,
             };
             state.runtime = DemoRuntimeState::default();
         });
@@ -378,6 +393,18 @@ lifecycle!({
             ctx.id,
             signal!("demo_audio_click"),
             func!("on_demo_audio_click")
+        );
+        signal_connect!(
+            ctx.run,
+            ctx.id,
+            signal!("demo_decals_click"),
+            func!("on_demo_decals_click")
+        );
+        signal_connect!(
+            ctx.run,
+            ctx.id,
+            signal!("demo_fps_tester_click"),
+            func!("on_demo_fps_tester_click")
         );
         signal_connect!(
             ctx.run,
@@ -498,6 +525,14 @@ methods!({
         self.queue_load_demo(ctx, DemoKind::PositionalAudio);
     }
 
+    fn on_demo_decals_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
+        self.queue_load_demo(ctx, DemoKind::Decals);
+    }
+
+    fn on_demo_fps_tester_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
+        self.queue_load_demo(ctx, DemoKind::FpsTester);
+    }
+
     fn on_pause_resume_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
         self.resume_demo(ctx);
     }
@@ -550,6 +585,8 @@ methods!({
             node_var(ctx, root, "demo_btn_multimesh"),
             node_var(ctx, root, "demo_btn_particles"),
             node_var(ctx, root, "demo_btn_audio"),
+            node_var(ctx, root, "demo_btn_decals"),
+            node_var(ctx, root, "demo_btn_fps_tester"),
         ];
 
         with_state_mut!(ctx.run, DemoManagerState, ctx.id, |state| {
@@ -850,7 +887,11 @@ methods!({
         self.apply_info_overlay_to_active_demo(ctx);
         self.apply_mouse_sensitivity_to_active_demo(ctx);
         self.apply_freecam_speed_to_active_demo(ctx);
-        mouse_capture!(ctx.ipt);
+        if demo == DemoKind::FpsTester {
+            mouse_show!(ctx.ipt);
+        } else {
+            mouse_capture!(ctx.ipt);
+        }
     }
 
     fn unload_active_demo(&self, ctx: &mut ScriptContext<'_, API>) {
@@ -880,9 +921,10 @@ methods!({
     }
 
     fn resume_demo(&self, ctx: &mut ScriptContext<'_, API>) {
-        let has_demo = with_state!(ctx.run, DemoManagerState, ctx.id, |state| {
-            state.runtime.active_demo != DemoKind::None
+        let active_demo = with_state!(ctx.run, DemoManagerState, ctx.id, |state| {
+            state.runtime.active_demo
         });
+        let has_demo = active_demo != DemoKind::None;
         self.apply_demo_pause(ctx, false);
         with_state_mut!(ctx.run, DemoManagerState, ctx.id, |state| {
             state.runtime.mode = if has_demo {
@@ -891,7 +933,7 @@ methods!({
                 DemoMode::Hub
             };
         });
-        if has_demo {
+        if has_demo && active_demo != DemoKind::FpsTester {
             mouse_capture!(ctx.ipt);
         } else {
             mouse_show!(ctx.ipt);
@@ -1134,10 +1176,11 @@ methods!({
     }
 
     fn apply_mode_io(&self, ctx: &mut ScriptContext<'_, API>) {
-        let (mode, fade_active, fade_action, hub_buttons, pause_buttons, pause_alpha) =
+        let (mode, active_demo, fade_active, fade_action, hub_buttons, pause_buttons, pause_alpha) =
             with_state!(ctx.run, DemoManagerState, ctx.id, |state| {
                 (
                     state.runtime.mode,
+                    state.runtime.active_demo,
                     state.runtime.fade_active,
                     state.runtime.fade_action,
                     state.refs.hub_buttons.clone(),
@@ -1153,7 +1196,8 @@ methods!({
         let pause_enabled = mode == DemoMode::Paused
             && !fade_active
             && (pause_alpha / PAUSE_BG_MAX_ALPHA).clamp(0.0, 1.0) >= 0.85;
-        let freecam_enabled = !(hub_visible || pause_visible);
+        let tester_visible = mode == DemoMode::DemoActive && active_demo == DemoKind::FpsTester;
+        let freecam_enabled = !(hub_visible || pause_visible || tester_visible);
         let mouse_captured = freecam_enabled;
         let (chg_hub, chg_pause, chg_freecam, chg_mouse) =
             with_state_mut!(ctx.run, DemoManagerState, ctx.id, |state| {
@@ -1547,5 +1591,7 @@ fn active_demo_name(demo: DemoKind) -> &'static str {
         DemoKind::MultiMesh => "multimesh",
         DemoKind::Particles => "particles",
         DemoKind::PositionalAudio => "positional_audio",
+        DemoKind::Decals => "decals",
+        DemoKind::FpsTester => "fps_tester",
     }
 }

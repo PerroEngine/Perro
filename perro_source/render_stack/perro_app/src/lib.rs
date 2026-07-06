@@ -155,17 +155,20 @@ impl<B: GraphicsBackend> App<B> {
     }
 
     #[inline]
+    pub fn set_fps(&mut self, fps: f32) {
+        self.runtime.time.fps = fps;
+    }
+
+    #[inline]
     pub fn set_frame_timing(
         &mut self,
         simulation_time: Duration,
         graphics_time: Duration,
         frame_time: Duration,
-        fps: f32,
     ) {
         self.runtime.time.simulation = simulation_time;
         self.runtime.time.graphics = graphics_time;
         self.runtime.time.frame = frame_time;
-        self.runtime.time.fps = fps;
         self.runtime.time.draw_gpu_prepare_3d = Duration::ZERO;
         self.runtime.time.draw_gpu_prepare_3d_frustum = Duration::ZERO;
         self.runtime.time.draw_gpu_prepare_3d_hiz = Duration::ZERO;

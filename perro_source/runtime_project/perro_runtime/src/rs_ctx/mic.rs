@@ -33,22 +33,6 @@ impl MicAPI for RuntimeResourceApi {
             .unwrap_or(false)
     }
 
-    fn mic_play(&self, bus_id: Option<perro_ids::AudioBusID>, clip: &MicClip, volume: f32) -> bool {
-        let Ok(guard) = self.bark.lock() else {
-            return false;
-        };
-        let Some(player) = guard.as_ref() else {
-            return false;
-        };
-        player.play_clip(
-            "mic://clip",
-            clip.clone(),
-            bus_id,
-            volume,
-            perro_pawdio::AudioPan::CENTER,
-        )
-    }
-
     fn mic_save_wav(&self, source: &str, clip: &MicClip) -> Result<(), String> {
         let bytes = clip.wav_bytes();
         if let Some(stripped) = source.strip_prefix("res://")

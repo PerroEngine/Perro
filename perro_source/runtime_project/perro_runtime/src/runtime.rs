@@ -276,7 +276,8 @@ pub struct Timing {
     pub graphics: Duration,
     /// Last measured frame time.
     pub frame: Duration,
-    /// Last measured frames per second.
+    /// Frames per second averaged over the runner's fps window (~0.5s), not a
+    /// single-frame reciprocal.
     pub fps: f32,
     /// Last measured 3D gpu prepare total.
     pub draw_gpu_prepare_3d: Duration,
@@ -640,6 +641,7 @@ impl Runtime {
                 && let perro_nodes::SceneNodeData::Skeleton3D(skeleton) = &mut scene_node.data
             {
                 skeleton.bones = bones;
+                skeleton.refresh_inv_bind_cache();
                 changed_3d.push(*node);
             }
         }

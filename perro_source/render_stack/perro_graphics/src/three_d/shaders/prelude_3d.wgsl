@@ -169,6 +169,109 @@ fn custom_image_sample_at(index: u32, uv: vec2<f32>) -> vec4<f32> {
     return textureSample(custom_image_tex_7, material_sampler, uv);
 }
 
+// ---- Decals -------------------------------------------------------------
+// Projected box decals patched into the lit path before lighting: albedo
+// and normal are modified in place, emission is added on top. Records are
+// pre-sorted by priority on the CPU (later records blend over earlier).
+struct DecalGpu {
+    inv_row_0: vec4<f32>,
+    inv_row_1: vec4<f32>,
+    inv_row_2: vec4<f32>,
+    // rgb tint, a = opacity.
+    tint: vec4<f32>,
+    // rgb = emission color * energy, w = normal strength.
+    emission: vec4<f32>,
+    // x = albedo layer (-1 none), y = normal layer, z = emission layer,
+    // w = normal fade threshold.
+    params0: vec4<f32>,
+    // x = albedo mix, y = distance fade begin (0 off), z = 1/fade length.
+    params1: vec4<f32>,
+}
+
+struct DecalsBuffer {
+    count: vec4<u32>,
+    decals: array<DecalGpu>,
+}
+
+@group(0) @binding(7)
+var<storage, read> scene_decals: DecalsBuffer;
+@group(0) @binding(8)
+var decal_textures: texture_2d_array<f32>;
+@group(0) @binding(9)
+var decal_sampler: sampler;
+
+struct DecalSurface {
+    albedo: vec3<f32>,
+    normal: vec3<f32>,
+    emissive: vec3<f32>,
+}
+
+// Decal layers hold raw sRGB bytes behind a linear view; color layers decode
+// here, normal layers read raw.
+fn decal_srgb_to_linear(c: vec3<f32>) -> vec3<f32> {
+    return pow(max(c, vec3<f32>(0.0)), vec3<f32>(2.2));
+}
+
+fn perro_apply_decals(world_pos: vec3<f32>, albedo_in: vec3<f32>, normal_in: vec3<f32>) -> DecalSurface {
+    var out: DecalSurface;
+    out.albedo = albedo_in;
+    out.normal = normal_in;
+    out.emissive = vec3<f32>(0.0);
+    // Derivatives before any branch (uniform control flow); per-decal uv
+    // gradients are linear transforms of these, keeping textureSampleGrad
+    // valid inside the non-uniform loop body.
+    let dpx = dpdx(world_pos);
+    let dpy = dpdy(world_pos);
+    let count = scene_decals.count.x;
+    for (var i = 0u; i < count; i = i + 1u) {
+        let d = scene_decals.decals[i];
+        let p = vec4<f32>(world_pos, 1.0);
+        let local = vec3<f32>(dot(d.inv_row_0, p), dot(d.inv_row_1, p), dot(d.inv_row_2, p));
+        if any(abs(local) > vec3<f32>(0.5)) {
+            continue;
+        }
+        // Rows of the inverse are the decal axes scaled by 1/size; the decal
+        // projects along its -Z, so +Z is the receiving direction.
+        let axis = normalize(d.inv_row_2.xyz);
+        let facing = dot(normal_in, axis);
+        let fade_t = d.params0.w;
+        let angle_fade = clamp((facing - fade_t) / max(1.0 - fade_t, 0.001), 0.0, 1.0);
+        var opacity = d.tint.a * angle_fade;
+        if d.params1.y > 0.0 {
+            let dist = distance(scene.camera_pos.xyz, world_pos);
+            opacity *= clamp(1.0 - (dist - d.params1.y) * d.params1.z, 0.0, 1.0);
+        }
+        if opacity <= 0.001 {
+            continue;
+        }
+        let uv = vec2<f32>(local.x + 0.5, 0.5 - local.y);
+        let g0 = vec2<f32>(dot(d.inv_row_0.xyz, dpx), -dot(d.inv_row_1.xyz, dpx));
+        let g1 = vec2<f32>(dot(d.inv_row_0.xyz, dpy), -dot(d.inv_row_1.xyz, dpy));
+        var albedo_alpha = opacity;
+        if d.params0.x >= 0.0 {
+            let s = textureSampleGrad(decal_textures, decal_sampler, uv, i32(d.params0.x), g0, g1);
+            albedo_alpha = s.a * opacity;
+            out.albedo = mix(out.albedo, decal_srgb_to_linear(s.rgb) * d.tint.rgb, albedo_alpha * d.params1.x);
+        } else {
+            out.albedo = mix(out.albedo, d.tint.rgb, opacity * d.params1.x);
+        }
+        if d.params0.y >= 0.0 && d.emission.w > 0.0 {
+            let ns = textureSampleGrad(decal_textures, decal_sampler, uv, i32(d.params0.y), g0, g1);
+            let nt = ns.xyz * 2.0 - vec3<f32>(1.0);
+            let t_axis = normalize(d.inv_row_0.xyz);
+            let b_axis = normalize(d.inv_row_1.xyz);
+            // The v axis is flipped in uv space, so the bitangent negates.
+            let mapped = normalize(t_axis * nt.x - b_axis * nt.y + out.normal * max(nt.z, 0.35));
+            out.normal = normalize(mix(out.normal, mapped, albedo_alpha * min(d.emission.w, 1.0)));
+        }
+        if d.params0.z >= 0.0 {
+            let es = textureSampleGrad(decal_textures, decal_sampler, uv, i32(d.params0.z), g0, g1);
+            out.emissive += decal_srgb_to_linear(es.rgb) * d.emission.rgb * es.a * opacity;
+        }
+    }
+    return out;
+}
+
 // Seam width floor in pixels so distant blends never collapse to a hard line.
 const MESH_BLEND_MIN_PIXELS: f32 = 2.5;
 
@@ -866,7 +969,7 @@ fn perro_lit_standard(
     emissive: vec3<f32>,
 ) -> vec4<f32> {
     let material = decode_material_params(in.packed_material_params);
-    let albedo = base_color.rgb;
+    var albedo = base_color.rgb;
     var n = normalize(in.normal_ws);
     if material.flat_shading {
         n = normalize(cross(dpdx(in.world_pos), dpdy(in.world_pos)));
@@ -879,6 +982,13 @@ fn perro_lit_standard(
     }
     let mesh_fade = mesh_blend_fade(in, material);
     n = apply_mesh_normal_blend(material, n, in.world_pos, mesh_fade);
+    var decal_emissive = vec3<f32>(0.0);
+    if scene_decals.count.x > 0u {
+        let decal_surface = perro_apply_decals(in.world_pos, albedo, n);
+        albedo = decal_surface.albedo;
+        n = decal_surface.normal;
+        decal_emissive = decal_surface.emissive;
+    }
     let v = normalize(scene.camera_pos.xyz - in.world_pos);
     let roughness = clamp(roughness_in, 0.04, 1.0);
     let metallic = clamp(metallic_in, 0.0, 1.0);
@@ -986,7 +1096,7 @@ fn perro_lit_standard(
             k_s_ambient * env_spec * spec_tint * (0.25 + 0.75 * (1.0 - roughness)) * ao;
     }
 
-    let shaded = ambient_diffuse + ambient_specular + light_rgb + emissive;
+    let shaded = ambient_diffuse + ambient_specular + light_rgb + emissive + decal_emissive;
     return vec4<f32>(tonemap_aces(shaded), alpha);
 }
 

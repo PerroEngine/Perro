@@ -2,7 +2,8 @@ use perro_api::prelude::*;
 
 type SelfNodeType = UiPanel;
 
-const REFRESH_SECONDS: f32 = 2.0;
+const REFRESH_SECONDS: f32 = 0.25;
+const SCRIPT_FPS_WINDOW_SECONDS: f32 = 0.5;
 
 #[State]
 struct DemoProfilingOverlayState {
@@ -14,7 +15,12 @@ struct DemoProfilingOverlayState {
     pub delta_label: NodeID,
     #[default = NodeID::nil()]
     pub gfx_label: NodeID,
+    #[default = NodeID::nil()]
+    pub script_fps_label: NodeID,
     pub refresh_timer: f32,
+    pub script_fps_timer: f32,
+    pub script_fps_frames: i32,
+    pub script_fps: f32,
 }
 
 lifecycle!({
@@ -28,6 +34,14 @@ lifecycle!({
         let should_refresh =
             with_state_mut!(ctx.run, DemoProfilingOverlayState, ctx.id, |state| {
                 state.refresh_timer += dt;
+                state.script_fps_timer += dt;
+                state.script_fps_frames += 1;
+
+                if state.script_fps_timer >= SCRIPT_FPS_WINDOW_SECONDS {
+                    state.script_fps = state.script_fps_frames as f32 / state.script_fps_timer;
+                    state.script_fps_timer = 0.0;
+                    state.script_fps_frames = 0;
+                }
 
                 if state.refresh_timer >= REFRESH_SECONDS {
                     state.refresh_timer = 0.0;
@@ -57,13 +71,15 @@ methods!({
         let delta_us = p.frame_time.as_micros();
         let gfx_us = p.graphics_time.as_micros();
 
-        let (fps_label, cpu_label, delta_label, gfx_label) =
+        let (fps_label, cpu_label, delta_label, gfx_label, script_fps_label, script_fps) =
             with_state!(ctx.run, DemoProfilingOverlayState, ctx.id, |state| {
                 (
                     state.fps_label,
                     state.cpu_label,
                     state.delta_label,
                     state.gfx_label,
+                    state.script_fps_label,
+                    state.script_fps,
                 )
             });
 
@@ -71,6 +87,7 @@ methods!({
         set_label_text(ctx, cpu_label, format!("CPU {} us", cpu_us));
         set_label_text(ctx, delta_label, format!("Delta {} us", delta_us));
         set_label_text(ctx, gfx_label, format!("Gfx {} us", gfx_us));
+        set_label_text(ctx, script_fps_label, format!("Script {:.1}", script_fps.max(0.0)));
     }
 });
 

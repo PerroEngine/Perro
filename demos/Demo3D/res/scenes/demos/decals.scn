@@ -1,0 +1,345 @@
+$root = @DecalsDemo
+
+[DecalsDemo]
+script = "res://scripts/decals_demo.rs"
+script_vars = {
+    slider = @SliderRune,
+    spinner = @SpinnerHazard,
+    pulse = @PulseSplat
+}
+    [Node3D]
+        position = (0.0, 0.0, 0.0)
+    [/Node3D]
+[/DecalsDemo]
+
+[DemoCamera]
+parent = @DecalsDemo
+script = "res://scripts/demo_freecam_3d.rs"
+script_vars = {
+    yaw = 0.0,
+    pitch = -0.42,
+    speed = 7.5
+}
+    [Camera3D]
+        active = true
+        perspective_fov_y_degrees = 62.0
+        [Node3D]
+            position = (0.0, 6.2, 11.5)
+            rotation = (-0.208, 0.0, 0.0, 0.978)
+        [/Node3D]
+    [/Camera3D]
+[/DemoCamera]
+
+[Ambient]
+parent = @DecalsDemo
+    [AmbientLight3D]
+        color = (0.40, 0.43, 0.52)
+        intensity = 0.42
+    [/AmbientLight3D]
+[/Ambient]
+
+[DaySky]
+parent = @DecalsDemo
+    [Sky3D]
+        day_colors = [
+            (0.44, 0.58, 0.82),
+            (0.30, 0.44, 0.70),
+            (0.18, 0.28, 0.52)
+        ]
+        evening_colors = [
+            (0.42, 0.34, 0.54),
+            (0.28, 0.22, 0.42),
+            (0.14, 0.11, 0.26)
+        ]
+        night_colors = [
+            (0.05, 0.05, 0.12),
+            (0.08, 0.08, 0.18),
+            (0.12, 0.11, 0.26)
+        ]
+        horizon_colors = [
+            (0.72, 0.66, 0.60),
+            (0.52, 0.46, 0.48),
+            (0.30, 0.24, 0.34)
+        ]
+        time = {
+            time_of_day = 0.32,
+            paused = true,
+            scale = 0.0
+        }
+    [/Sky3D]
+[/DaySky]
+
+[KeyRay]
+parent = @DecalsDemo
+    [RayLight3D]
+        color = (1.0, 0.96, 0.86)
+        intensity = 1.15
+        cast_shadows = true
+        [Node3D]
+            rotation_deg = (-52.0, -34.0, 0.0)
+        [/Node3D]
+    [/RayLight3D]
+[/KeyRay]
+
+[FillRay]
+parent = @DecalsDemo
+    [RayLight3D]
+        color = (0.52, 0.62, 0.82)
+        intensity = 0.35
+        cast_shadows = false
+        [Node3D]
+            rotation_deg = (-24.0, 140.0, 0.0)
+        [/Node3D]
+    [/RayLight3D]
+[/FillRay]
+
+[Floor]
+parent = @DecalsDemo
+    [MeshInstance3D]
+        mesh = "__cube__"
+        material = {
+            type = "standard",
+            base_color_factor = (0.52, 0.54, 0.58, 1.0),
+            roughness_factor = 0.72,
+            metallic_factor = 0.0,
+            alpha_mode = "OPAQUE",
+            double_sided = false
+        }
+        [Node3D]
+            position = (0.0, -0.1, 0.0)
+            scale = (16.0, 0.2, 16.0)
+        [/Node3D]
+    [/MeshInstance3D]
+[/Floor]
+
+[BackWall]
+parent = @DecalsDemo
+    [MeshInstance3D]
+        mesh = "__cube__"
+        material = {
+            type = "standard",
+            base_color_factor = (0.44, 0.47, 0.55, 1.0),
+            roughness_factor = 0.6,
+            metallic_factor = 0.0,
+            alpha_mode = "OPAQUE",
+            double_sided = false
+        }
+        [Node3D]
+            position = (0.0, 3.0, -6.2)
+            scale = (16.0, 7.0, 0.3)
+        [/Node3D]
+    [/MeshInstance3D]
+[/BackWall]
+
+[Ramp]
+parent = @DecalsDemo
+    [MeshInstance3D]
+        mesh = "__cube__"
+        material = {
+            type = "standard",
+            base_color_factor = (0.58, 0.55, 0.5, 1.0),
+            roughness_factor = 0.66,
+            metallic_factor = 0.0,
+            alpha_mode = "OPAQUE",
+            double_sided = false
+        }
+        [Node3D]
+            position = (-5.2, 0.55, -3.0)
+            rotation_deg = (0.0, 0.0, 22.0)
+            scale = (3.4, 0.3, 3.4)
+        [/Node3D]
+    [/MeshInstance3D]
+[/Ramp]
+
+[Pillar]
+parent = @DecalsDemo
+    [MeshInstance3D]
+        mesh = "__cylinder__"
+        material = {
+            type = "standard",
+            base_color_factor = (0.5, 0.52, 0.56, 1.0),
+            roughness_factor = 0.5,
+            metallic_factor = 0.1,
+            alpha_mode = "OPAQUE",
+            double_sided = false
+        }
+        [Node3D]
+            position = (4.6, 1.4, -2.4)
+            scale = (0.9, 2.8, 0.9)
+        [/Node3D]
+    [/MeshInstance3D]
+[/Pillar]
+
+# ---- Floor decals (project straight down, -Z -> -Y) ----
+
+# Splat under the arrow; lower priority so the arrow draws over it.
+[PulseSplat]
+parent = @DecalsDemo
+    [Decal3D]
+        size = (3.6, 3.6, 1.6)
+        albedo_texture = "res://textures/decal_paint_splat.png"
+        modulate = (1.0, 1.0, 1.0, 1.0)
+        albedo_mix = 1.0
+        normal_fade = 0.5
+        sort_priority = 0
+        [Node3D]
+            position = (-2.6, 0.4, 2.4)
+            rotation_deg = (-90.0, 0.0, 0.0)
+        [/Node3D]
+    [/Decal3D]
+[/PulseSplat]
+
+# Direction arrow, higher priority -> paints over the splat where they overlap.
+[FloorArrow]
+parent = @DecalsDemo
+    [Decal3D]
+        size = (2.4, 2.4, 1.6)
+        albedo_texture = "res://textures/decal_arrow.png"
+        modulate = (1.0, 0.92, 0.4, 1.0)
+        albedo_mix = 1.0
+        normal_fade = 0.5
+        sort_priority = 3
+        [Node3D]
+            position = (-3.1, 0.4, 1.9)
+            rotation_deg = (-90.0, 12.0, 0.0)
+        [/Node3D]
+    [/Decal3D]
+[/FloorArrow]
+
+# Hazard ring projected down onto the floor.
+[FloorHazard]
+parent = @DecalsDemo
+    [Decal3D]
+        size = (3.4, 3.4, 1.6)
+        albedo_texture = "res://textures/decal_hazard.png"
+        albedo_mix = 1.0
+        normal_fade = 0.5
+        sort_priority = 1
+        [Node3D]
+            position = (2.6, 0.4, 1.4)
+            rotation_deg = (-90.0, 0.0, 0.0)
+        [/Node3D]
+    [/Decal3D]
+[/FloorHazard]
+
+# Emissive rune, no albedo -> glowing glyph added on top of the lit floor.
+[FloorGlyph]
+parent = @DecalsDemo
+    [Decal3D]
+        size = (3.2, 3.2, 1.6)
+        emission_texture = "res://textures/decal_glow_glyph.png"
+        modulate = (0.3, 0.95, 1.0, 1.0)
+        albedo_mix = 0.0
+        emission_energy = 3.2
+        normal_fade = 0.5
+        sort_priority = 2
+        [Node3D]
+            position = (0.2, 0.4, -1.8)
+            rotation_deg = (-90.0, 0.0, 0.0)
+        [/Node3D]
+    [/Decal3D]
+[/FloorGlyph]
+
+# Splat wrapping across the tilted ramp edge (shows projection onto angled geo).
+[RampSplat]
+parent = @DecalsDemo
+    [Decal3D]
+        size = (2.6, 2.6, 2.4)
+        albedo_texture = "res://textures/decal_paint_splat.png"
+        modulate = (0.4, 0.7, 1.0, 1.0)
+        albedo_mix = 1.0
+        normal_fade = 0.25
+        sort_priority = 1
+        [Node3D]
+            position = (-5.2, 0.7, -3.0)
+            rotation_deg = (-90.0, 0.0, 0.0)
+        [/Node3D]
+    [/Decal3D]
+[/RampSplat]
+
+# ---- Wall decals (project along -Z into the wall face) ----
+
+# Rivet normal map, no albedo -> perturbs the wall normal so the key light
+# catches raised bumps. normal_strength exaggerates the effect.
+[WallRivets]
+parent = @DecalsDemo
+    [Decal3D]
+        size = (4.0, 3.4, 0.9)
+        normal_texture = "res://textures/decal_rivets_normal.png"
+        albedo_mix = 0.0
+        normal_strength = 1.6
+        sort_priority = 0
+        [Node3D]
+            position = (2.8, 3.1, -5.95)
+        [/Node3D]
+    [/Decal3D]
+[/WallRivets]
+
+# Hazard on the wall, fades out when the camera backs far away.
+[WallHazard]
+parent = @DecalsDemo
+    [Decal3D]
+        size = (3.2, 3.2, 0.9)
+        albedo_texture = "res://textures/decal_hazard.png"
+        albedo_mix = 1.0
+        distance_fade_begin = 16.0
+        distance_fade_length = 8.0
+        sort_priority = 1
+        [Node3D]
+            position = (-2.8, 3.1, -5.95)
+        [/Node3D]
+    [/Decal3D]
+[/WallHazard]
+
+# Perro logo floor stamp.
+# Aspect -> SVG viewBox, no square resample squash.
+[FloorLogo]
+parent = @DecalsDemo
+    [Decal3D]
+        size = (3.0, 2.55, 1.6)
+        albedo_texture = "res://perro.svg"
+        albedo_mix = 1.0
+        normal_fade = 0.5
+        sort_priority = 2
+        [Node3D]
+            position = (0.4, 0.4, 1.4)
+            rotation_deg = (-90.0, 0.0, 0.0)
+        [/Node3D]
+    [/Decal3D]
+[/FloorLogo]
+
+# ---- Scripted decals ----
+
+# Emissive rune that slides back and forth across the floor (moving projector).
+[SliderRune]
+parent = @DecalsDemo
+    [Decal3D]
+        size = (2.8, 2.8, 1.6)
+        emission_texture = "res://textures/decal_glow_glyph.png"
+        modulate = (1.0, 0.55, 0.2, 1.0)
+        albedo_mix = 0.0
+        emission_energy = 3.0
+        normal_fade = 0.5
+        sort_priority = 2
+        [Node3D]
+            position = (0.0, 0.4, 4.6)
+            rotation_deg = (-90.0, 0.0, 0.0)
+        [/Node3D]
+    [/Decal3D]
+[/SliderRune]
+
+# Hazard ring that spins in place about its projection axis.
+[SpinnerHazard]
+parent = @DecalsDemo
+    [Decal3D]
+        size = (2.8, 2.8, 1.6)
+        albedo_texture = "res://textures/decal_hazard.png"
+        albedo_mix = 1.0
+        normal_fade = 0.5
+        sort_priority = 2
+        [Node3D]
+            position = (4.4, 0.4, 3.4)
+            rotation_deg = (-90.0, 0.0, 0.0)
+        [/Node3D]
+    [/Decal3D]
+[/SpinnerHazard]

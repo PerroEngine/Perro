@@ -123,6 +123,20 @@ impl From<IVector4> for [i32; 4] {
     }
 }
 
+impl From<(i32, i32, i32, i32)> for IVector4 {
+    #[inline]
+    fn from(v: (i32, i32, i32, i32)) -> Self {
+        Self::new(v.0, v.1, v.2, v.3)
+    }
+}
+
+impl From<IVector4> for (i32, i32, i32, i32) {
+    #[inline]
+    fn from(v: IVector4) -> Self {
+        (v.x, v.y, v.z, v.w)
+    }
+}
+
 impl From<IVector4> for Vector4 {
     #[inline]
     fn from(v: IVector4) -> Self {

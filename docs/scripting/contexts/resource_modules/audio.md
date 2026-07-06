@@ -18,6 +18,9 @@
 | `play_master_audio` | [`play_master_audio`](#play_master_audio) |
 | `play_panned` | [`play_panned`](#play_panned) |
 | `play_master_panned` | [`play_master_panned`](#play_master_panned) |
+| `play_clip` | [`play_clip`](#play_clip) |
+| `play_clip_bus` | [`play_clip_bus`](#play_clip_bus) |
+| `play_clip_bus_volume` | [`play_clip_bus_volume`](#play_clip_bus_volume) |
 | `two_d` | [`two_d`](#two_d) |
 | `three_d` | [`three_d`](#three_d) |
 | `midi` | [`midi`](#midi) |
@@ -55,6 +58,7 @@
 | `audio_reserve` | [`audio_reserve`](#audio_reserve) |
 | `audio_drop` | [`audio_drop`](#audio_drop) |
 | `audio_play` | [`audio_play`](#audio_play) |
+| `audio_play_clip` | [`audio_play_clip`](#audio_play_clip) |
 | `audio_stop` | [`audio_stop`](#audio_stop) |
 | `audio_stop_source` | [`audio_stop_source`](#audio_stop_source) |
 | `audio_length_seconds` | [`audio_length_seconds`](#audio_length_seconds) |
@@ -88,12 +92,16 @@ This resource module belongs to `ctx.res` and documents audio calls.
 ## Runtime Bytes
 
 Use runtime bytes when audio data is already in memory.
+Use `MicClip` when data already came from `ctx.res.Mic()`.
 
 | Call | Return | Notes |
 | --- | --- | --- |
 | `ctx.res.Audio().create_source_from_bytes(bytes)` | `Option<String>` | Returns runtime source string for normal playback calls. |
+| `ctx.res.Audio().play_clip(&clip)` | `bool` | Plays a mic/captured clip through the audio backend. |
 | `ctx.res.Audio().midi().load_soundfont_from_bytes(bytes)` | `SoundFontID` | Loads in-memory `.sf2` bytes. |
 | `audio_create_from_bytes!(ctx.res, bytes)` | `Option<String>` | Macro form. |
+| `audio_play!(ctx.res, &clip)` | `bool` | Macro form for master clip playback. |
+| `audio_play_clip!(ctx.res, bus, &clip, volume)` | `bool` | Macro form for bus + volume clip playback. |
 | `midi_load_soundfont_from_bytes!(ctx.res, bytes)` | `SoundFontID` | Macro form. |
 
 See [Runtime Bytes Resources](../../../resources/runtime_bytes.md).
@@ -209,6 +217,39 @@ See [Runtime Bytes Resources](../../../resources/runtime_bytes.md).
 | Returns | `bool` |
 | Use when | Use when gameplay must change engine state or queue an action this frame. |
 | Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+
+### `play_clip`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Audio()` |
+| Signature | `pub fn play_clip(&self, clip: &MicClip) -> bool` |
+| Params | `&self, clip: &MicClip` |
+| Returns | `bool` |
+| Use when | Play captured mic audio on the master output. |
+| Fails when / edge behavior | Returns `false` when audio backend is unavailable. |
+
+### `play_clip_bus`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Audio()` |
+| Signature | `pub fn play_clip_bus(&self, bus_id: AudioBusID, clip: &MicClip) -> bool` |
+| Params | `&self, bus_id: AudioBusID, clip: &MicClip` |
+| Returns | `bool` |
+| Use when | Play captured mic audio through an audio bus. |
+| Fails when / edge behavior | Returns `false` when audio backend is unavailable. |
+
+### `play_clip_bus_volume`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Audio()` |
+| Signature | `pub fn play_clip_bus_volume(&self, bus_id: AudioBusID, clip: &MicClip, volume: f32) -> bool` |
+| Params | `&self, bus_id: AudioBusID, clip: &MicClip, volume: f32` |
+| Returns | `bool` |
+| Use when | Play captured mic audio through an audio bus with volume. |
+| Fails when / edge behavior | Returns `false` when audio backend is unavailable. |
 
 ### `two_d`
 
@@ -616,6 +657,17 @@ See [Runtime Bytes Resources](../../../resources/runtime_bytes.md).
 | Returns | `same as backing method` |
 | Use when | Use when gameplay must change engine state or queue an action this frame. |
 | Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+
+### `audio_play_clip`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Audio()` |
+| Signature | `audio_play_clip!(ctx.res, bus_id, clip, volume)` |
+| Params | `ctx.res, bus_id, clip, volume` |
+| Returns | `same as backing method` |
+| Use when | Play captured mic audio through the audio API. |
+| Fails when / edge behavior | Returns `false` when audio backend is unavailable. |
 
 ### `audio_stop`
 

@@ -112,6 +112,20 @@ impl From<UVector4> for [u32; 4] {
     }
 }
 
+impl From<(u32, u32, u32, u32)> for UVector4 {
+    #[inline]
+    fn from(v: (u32, u32, u32, u32)) -> Self {
+        Self::new(v.0, v.1, v.2, v.3)
+    }
+}
+
+impl From<UVector4> for (u32, u32, u32, u32) {
+    #[inline]
+    fn from(v: UVector4) -> Self {
+        (v.x, v.y, v.z, v.w)
+    }
+}
+
 impl From<UVector4> for Vector4 {
     #[inline]
     fn from(v: UVector4) -> Self {

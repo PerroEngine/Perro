@@ -23,7 +23,6 @@ Mic clips are `MicClip` values:
 - optional denoise pass
 - compressed packable bytes for UDP, TCP, HTTP, or save data
 - WAV save support
-- playback through `perro_pawdio`
 
 The mic is a live stream while capture is active.
 Call `get_clip` or `get_bytes` when your game decides it is time to send.
@@ -40,12 +39,13 @@ Add Opus later for real voice chat bandwidth.
 
 Proximity chat split:
 
-- engine owns mic capture, encode/decode, jitter buffers, and 2D/3D playback hooks
+- engine owns mic capture and encode/decode
+- audio API owns clip playback
 - game/server owns who hears whom, room/team rules, auth, mute, push-to-talk, and net relay
 - client captures while push-to-talk or VAD is active
 - client drains live bytes and sends packed bytes to server
 - server filters recipients by position, team, room, or other game rules
-- receiving client decodes frames and plays them from speaker entity space
+- receiving client decodes frames and gives clips to the audio API
 
 ## Context
 
@@ -53,7 +53,7 @@ Proximity chat split:
 - Module access: `ctx.res.Mic()`
 - Native backend: `cpal`
 - Wasm backend: unsupported, returns an error or empty clip
-- Audio output: mic clip playback goes through the audio backend and buses
+- Audio output: use `ctx.res.Audio()` with `MicClip`
 
 ## Example
 
@@ -73,7 +73,7 @@ lifecycle!({
 
         if key_pressed!(ctx.ipt, KeyCode::KeyT) {
             if let Some(clip) = mic_stop!(ctx.res) {
-                let _ = mic_play!(ctx.res, &clip);
+                let _ = audio_play!(ctx.res, &clip);
                 let bytes = mic_pack!(ctx.res, &clip);
                 let copy = mic_unpack!(ctx.res, &bytes).ok();
                 let _ = copy;
@@ -109,16 +109,16 @@ Clip cleanup:
 ```rust
 if let Some(clip) = mic_clip!(ctx.res) {
     let clean = clip.denoised(MicDenoiseSettings::voice());
-    let _ = mic_play!(ctx.res, &clean);
+    let _ = audio_play!(ctx.res, &clean);
 }
 ```
 
-Bus playback:
+Audio bus playback:
 
 ```rust
 if let Some(clip) = mic_clip!(ctx.res) {
     let voice = audio_bus!("voice");
-    let _ = mic_play!(ctx.res, voice, &clip, 0.8);
+    let _ = audio_play_clip!(ctx.res, voice, &clip, 0.8);
 }
 ```
 
@@ -127,7 +127,7 @@ Live receive:
 ```rust
 // bytes came from a remote speaker packet.
 if let Ok(clip) = mic_unpack!(ctx.res, &bytes) {
-    let _ = mic_play!(ctx.res, audio_bus!("voice"), &clip, 1.0);
+    let _ = audio_play_clip!(ctx.res, audio_bus!("voice"), &clip, 1.0);
 }
 ```
 
@@ -169,7 +169,7 @@ Client receive loop:
 ```rust
 if let Ok(clip) = mic_unpack!(ctx.res, &bytes) {
     // Pick speaker position from replicated game state.
-    let _ = mic_play_bus_volume!(ctx.res, audio_bus!("voice"), &clip, 1.0);
+    let _ = audio_play_clip!(ctx.res, audio_bus!("voice"), &clip, 1.0);
 }
 ```
 
@@ -319,24 +319,6 @@ Use `MicDenoiseSettings::off()` to disable it.
 | Returns   | `bool`                               |
 | Use when  | Check whether capture is active.     |
 
-### `play_master`
-
-| Field     | Detail                                              |
-| --------- | --------------------------------------------------- |
-| Access    | `ctx.res.Mic()`                                     |
-| Signature | `pub fn play_master(&self, clip: &MicClip) -> bool` |
-| Returns   | `bool`                                              |
-| Use when  | Play recorded clip on master output.                |
-
-### `play_bus`
-
-| Field     | Detail                                                               |
-| --------- | -------------------------------------------------------------------- |
-| Access    | `ctx.res.Mic()`                                                      |
-| Signature | `pub fn play_bus(&self, bus_id: AudioBusID, clip: &MicClip) -> bool` |
-| Returns   | `bool`                                                               |
-| Use when  | Play recorded clip through an audio bus.                             |
-
 ### `save_wav`
 
 | Field     | Detail                                                                                      |
@@ -385,13 +367,6 @@ Use `MicDenoiseSettings::off()` to disable it.
 | `mic_frame!(ctx.res)`                               | `ctx.res.Mic().stream_clip()`                       |
 | `mic_frame_bytes!(ctx.res)`                         | `ctx.res.Mic().stream_bytes()`                      |
 | `mic_is_listening!(ctx.res)`                        | `ctx.res.Mic().is_listening()`                      |
-| `mic_play!(ctx.res, &clip)`                         | `ctx.res.Mic().play_master(&clip)`                  |
-| `mic_play!(ctx.res, bus, &clip)`                    | `ctx.res.Mic().play_bus(bus, &clip)`                |
-| `mic_play!(ctx.res, bus, &clip, volume)`            | `ctx.res.Mic().play_bus_volume(bus, &clip, volume)` |
-| `mic_play_master!(ctx.res, &clip)`                  | `ctx.res.Mic().play_master(&clip)`                  |
-| `mic_play_master_volume!(ctx.res, &clip, volume)`   | `ctx.res.Mic().play_master_volume(&clip, volume)`   |
-| `mic_play_bus!(ctx.res, bus, &clip)`                | `ctx.res.Mic().play_bus(bus, &clip)`                |
-| `mic_play_bus_volume!(ctx.res, bus, &clip, volume)` | `ctx.res.Mic().play_bus_volume(bus, &clip, volume)` |
 | `mic_save_wav!(ctx.res, path, &clip)`               | `ctx.res.Mic().save_wav(path, &clip)`               |
 | `mic_pack!(ctx.res, &clip)`                         | `ctx.res.Mic().pack(&clip)`                         |
 | `mic_unpack!(ctx.res, &bytes)`                      | `ctx.res.Mic().unpack(&bytes)`                      |

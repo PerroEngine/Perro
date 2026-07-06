@@ -354,6 +354,44 @@ impl From<Quaternion> for Quat {
     }
 }
 
+impl From<[f32; 4]> for Quaternion {
+    #[inline]
+    fn from(v: [f32; 4]) -> Self {
+        Self {
+            x: v[0],
+            y: v[1],
+            z: v[2],
+            w: v[3],
+        }
+    }
+}
+
+impl From<Quaternion> for [f32; 4] {
+    #[inline]
+    fn from(q: Quaternion) -> Self {
+        [q.x, q.y, q.z, q.w]
+    }
+}
+
+impl From<(f32, f32, f32, f32)> for Quaternion {
+    #[inline]
+    fn from(v: (f32, f32, f32, f32)) -> Self {
+        Self {
+            x: v.0,
+            y: v.1,
+            z: v.2,
+            w: v.3,
+        }
+    }
+}
+
+impl From<Quaternion> for (f32, f32, f32, f32) {
+    #[inline]
+    fn from(q: Quaternion) -> Self {
+        (q.x, q.y, q.z, q.w)
+    }
+}
+
 impl Default for Quaternion {
     fn default() -> Self {
         Self::IDENTITY

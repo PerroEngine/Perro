@@ -1,3 +1,4 @@
+#[cfg(not(target_arch = "wasm32"))]
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 

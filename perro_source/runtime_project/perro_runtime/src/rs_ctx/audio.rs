@@ -4,8 +4,8 @@ use super::core::{
 };
 use perro_ids::{AudioBusID, SoundFontID};
 use perro_resource_api::sub_apis::{
-    Audio, Audio2D, Audio3D, AudioAPI, AudioDirection, MidiNoteHandle, MidiNoteOptions, MidiSong,
-    MidiSpatialPosition, Note,
+    Audio, Audio2D, Audio3D, AudioAPI, AudioDirection, MicClip, MidiNoteHandle, MidiNoteOptions,
+    MidiSong, MidiSpatialPosition, Note,
 };
 use std::{
     collections::hash_map::DefaultHasher,
@@ -117,6 +117,32 @@ impl AudioAPI for RuntimeResourceApi {
             from_start: audio.from_start,
             from_end: audio.from_end,
         })
+    }
+
+    fn play_audio_clip(
+        &self,
+        bus_id: Option<AudioBusID>,
+        clip: &MicClip,
+        volume: f32,
+        pan: perro_resource_api::sub_apis::AudioPan,
+    ) -> bool {
+        let Ok(guard) = self.bark.lock() else {
+            return false;
+        };
+        let Some(player) = guard.as_ref() else {
+            return false;
+        };
+        player.play_clip(
+            "runtime://audio/clip",
+            clip.clone(),
+            bus_id,
+            volume,
+            perro_pawdio::AudioPan {
+                x: pan.x,
+                y: pan.y,
+                z: pan.z,
+            },
+        )
     }
 
     fn play_audio_2d(&self, bus_id: Option<AudioBusID>, audio: Audio2D<'_>) -> bool {

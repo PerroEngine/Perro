@@ -60,6 +60,8 @@ impl Gpu3D {
             lighting,
             draws,
             draws_revision,
+            decals,
+            decals_revision,
             width,
             height,
             static_texture_lookup,
@@ -70,6 +72,7 @@ impl Gpu3D {
             .retain(|mesh_id, _| resources.has_mesh(*mesh_id));
         self.resize(device, width, height);
         self.ensure_material_fallback_texture(device, queue);
+        self.prepare_decals(device, queue, resources, decals, decals_revision);
         self.frustum_cull_enabled = self.frustum_cull_supported;
         let (gpu_occlusion_enabled, cpu_occlusion_enabled) = occlusion_flags(self.occlusion_mode);
         self.gpu_occlusion_enabled = gpu_occlusion_enabled && self.frustum_cull_enabled;
@@ -667,6 +670,7 @@ impl Gpu3D {
                             ],
                             ..StandardMaterial3D::default()
                         }),
+                        modulate_bias: false,
                     });
                 }
                 Draw3DKind::DebugEdgeCylinder => {
@@ -686,6 +690,7 @@ impl Gpu3D {
                             ],
                             ..StandardMaterial3D::default()
                         }),
+                        modulate_bias: false,
                     });
                 }
                 Draw3DKind::CameraStreamQuad { texture, tint } => {
@@ -700,6 +705,7 @@ impl Gpu3D {
                             base_color_texture: texture.index(),
                             ..perro_render_bridge::UnlitMaterial3D::default()
                         }),
+                        modulate_bias: false,
                     });
                 }
                 Draw3DKind::Mesh(_) => {
@@ -719,11 +725,14 @@ impl Gpu3D {
                             .material
                             .and_then(|id| resources.material(id))
                             .unwrap_or_default();
+                        let (material, modulate_bias) =
+                            apply_surface_binding(base_material, surface);
                         surface_entries.push(SurfaceEntry3D {
                             range,
                             packed_range: packed.map(|(range, _)| range),
                             packed_lod_param_id: packed.map(|(_, param)| param).unwrap_or(0),
-                            material: apply_surface_binding(base_material, surface),
+                            material,
+                            modulate_bias,
                         });
                     }
                     if surface_entries.is_empty() {
@@ -735,6 +744,7 @@ impl Gpu3D {
                                 .map(|packed| packed.param_index)
                                 .unwrap_or(0),
                             material: Material3D::default(),
+                            modulate_bias: false,
                         });
                     }
                 }
@@ -951,8 +961,8 @@ impl Gpu3D {
                 let (skeleton_start, skeleton_count) = if let Some(skeleton) = &draw.skeleton {
                     let start = self.staged_skeletons.len() as u32;
                     let count = skeleton.matrices.len() as u32;
-                    self.staged_skeletons
-                        .extend(skeleton.matrices.iter().map(skeleton_bone_rows));
+                    // Palette matrices are already packed as 3 affine rows.
+                    self.staged_skeletons.extend_from_slice(&skeleton.matrices);
                     (start, count)
                 } else {
                     (0, 0)
@@ -990,6 +1000,7 @@ impl Gpu3D {
                                 custom_params_len,
                                 packed_lod_param_id: 0,
                                 receive_shadows: false,
+                                modulate_bias: false,
                             },
                         ));
                         debug_points_count = debug_points_count.saturating_add(1);
@@ -1026,6 +1037,7 @@ impl Gpu3D {
                                 custom_params_len,
                                 packed_lod_param_id: 0,
                                 receive_shadows: false,
+                                modulate_bias: false,
                             },
                         ));
                         debug_edges_count = debug_edges_count.saturating_add(1);
@@ -1096,6 +1108,7 @@ impl Gpu3D {
                                     custom_params_len,
                                     packed_lod_param_id,
                                     receive_shadows: draw.receive_shadows,
+                                    modulate_bias: entry.modulate_bias,
                                 },
                             );
                             self.staged_instance_transforms.push(instance.transform);
@@ -1186,8 +1199,8 @@ impl Gpu3D {
                 let (skeleton_start, skeleton_count) = if let Some(skeleton) = &draw.skeleton {
                     let start = self.staged_skeletons.len() as u32;
                     let count = skeleton.matrices.len() as u32;
-                    self.staged_skeletons
-                        .extend(skeleton.matrices.iter().map(skeleton_bone_rows));
+                    // Palette matrices are already packed as 3 affine rows.
+                    self.staged_skeletons.extend_from_slice(&skeleton.matrices);
                     (start, count)
                 } else {
                     (0, 0)
@@ -1241,6 +1254,7 @@ impl Gpu3D {
                                 custom_params_len,
                                 packed_lod_param_id: 0,
                                 receive_shadows: draw.receive_shadows,
+                                modulate_bias: surface_entries[0].modulate_bias,
                             },
                         );
                         self.staged_instance_transforms.push(instance.transform);
@@ -1302,6 +1316,7 @@ impl Gpu3D {
                                     custom_params_len,
                                     packed_lod_param_id: 0,
                                     receive_shadows: draw.receive_shadows,
+                                    modulate_bias: surface_entries[0].modulate_bias,
                                 },
                             );
                             self.staged_instance_transforms.push(instance.transform);

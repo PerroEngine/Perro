@@ -20,7 +20,9 @@ script_vars = {
     demo_btn_blend = @demo_btn_blend,
     demo_btn_multimesh = @demo_btn_multimesh,
     demo_btn_particles = @demo_btn_particles,
-    demo_btn_audio = @demo_btn_audio
+    demo_btn_audio = @demo_btn_audio,
+    demo_btn_decals = @demo_btn_decals,
+    demo_btn_fps_tester = @demo_btn_fps_tester
 }
     [UiPanel]
         anchor = "center"
@@ -109,7 +111,7 @@ parent = @hub_menu_columns
 parent = @hub_menu_columns
     [UiVLayout]
         size_ratio = (0.46, 1.0)
-        v_spacing = 0.03
+        v_spacing = 0.012
         h_align = "center"
         v_align = "center"
     [/UiVLayout]
@@ -367,3 +369,49 @@ parent = @demo_btn_audio
         mouse_filter = "pass"
     [/UiLabel]
 [/demo_btn_audio_label]
+
+[demo_btn_decals]
+parent = @hub_menu_col_right
+    [UiButton]
+        size_ratio = (0.82, 0.13)
+        click_signals = ["demo_decals_click"]
+        style = $button_style
+        hover = $var2
+        pressed = $var1
+    [/UiButton]
+[/demo_btn_decals]
+
+[demo_btn_decals_label]
+parent = @demo_btn_decals
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "Decals"
+        text_size_ratio = 0.24
+        color = "#FFFFFF"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/demo_btn_decals_label]
+
+[demo_btn_fps_tester]
+parent = @hub_menu_col_right
+    [UiButton]
+        size_ratio = (0.82, 0.13)
+        click_signals = ["demo_fps_tester_click"]
+        style = $button_style
+        hover = $var2
+        pressed = $var1
+    [/UiButton]
+[/demo_btn_fps_tester]
+
+[demo_btn_fps_tester_label]
+parent = @demo_btn_fps_tester
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "FPS Tester"
+        text_size_ratio = 0.24
+        color = "#FFFFFF"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/demo_btn_fps_tester_label]

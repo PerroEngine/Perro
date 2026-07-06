@@ -66,6 +66,7 @@ Run `perro check` to sync scripts and get rust-analyzer working.
 | Positional Audio | `res://scenes/demos/positional_audio.scn` | `docs/positional_audio.md` |
 | Physics Bones | `res://scenes/demos/physics_bones.scn` | `docs/physics_bones.md` |
 | Physics Collisions | `res://scenes/demos/physics_collisions.scn` | `docs/physics_collisions.md` |
+| Decals | `res://scenes/demos/decals.scn` | `docs/decals.md` |
 
 ## Demo Controls
 

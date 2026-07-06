@@ -13,6 +13,9 @@ pub(super) struct ShadowMultimeshBgArgs<'a> {
     pub(super) custom_params_values_buffer: &'a wgpu::Buffer,
     pub(super) shadow_identity_buffer: &'a wgpu::Buffer,
     pub(super) multimesh_instance_buffer: &'a wgpu::Buffer,
+    pub(super) decal_buffer: &'a wgpu::Buffer,
+    pub(super) decal_texture_view: &'a wgpu::TextureView,
+    pub(super) decal_sampler: &'a wgpu::Sampler,
 }
 
 // One multimesh draw bind group per shadow layer: identical to multimesh_bgl
@@ -68,6 +71,18 @@ pub(super) fn build_shadow_multimesh_bind_groups(
                     wgpu::BindGroupEntry {
                         binding: 9,
                         resource: args.multimesh_instance_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 10,
+                        resource: args.decal_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 11,
+                        resource: wgpu::BindingResource::TextureView(args.decal_texture_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 12,
+                        resource: wgpu::BindingResource::Sampler(args.decal_sampler),
                     },
                 ],
             })
@@ -558,6 +573,18 @@ impl Gpu3D {
                     binding: 6,
                     resource: self.blend_shape_instance_meta_buffer.as_entire_binding(),
                 },
+                wgpu::BindGroupEntry {
+                    binding: 7,
+                    resource: self.decal_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 8,
+                    resource: wgpu::BindingResource::TextureView(&self.decal_texture_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 9,
+                    resource: wgpu::BindingResource::Sampler(&self.decal_sampler),
+                },
             ],
         });
         self.water_camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -604,6 +631,18 @@ impl Gpu3D {
                             binding: 6,
                             resource: self.blend_shape_instance_meta_buffer.as_entire_binding(),
                         },
+                        wgpu::BindGroupEntry {
+                            binding: 7,
+                            resource: self.decal_buffer.as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 8,
+                            resource: wgpu::BindingResource::TextureView(&self.decal_texture_view),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 9,
+                            resource: wgpu::BindingResource::Sampler(&self.decal_sampler),
+                        },
                     ],
                 })
             })
@@ -639,6 +678,18 @@ impl Gpu3D {
                 wgpu::BindGroupEntry {
                     binding: 6,
                     resource: self.packed_lod_param_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 7,
+                    resource: self.decal_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 8,
+                    resource: wgpu::BindingResource::TextureView(&self.decal_texture_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 9,
+                    resource: wgpu::BindingResource::Sampler(&self.decal_sampler),
                 },
             ],
         });
@@ -677,6 +728,18 @@ impl Gpu3D {
                         wgpu::BindGroupEntry {
                             binding: 6,
                             resource: self.packed_lod_param_buffer.as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 7,
+                            resource: self.decal_buffer.as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 8,
+                            resource: wgpu::BindingResource::TextureView(&self.decal_texture_view),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 9,
+                            resource: wgpu::BindingResource::Sampler(&self.decal_sampler),
                         },
                     ],
                 })
@@ -726,6 +789,18 @@ impl Gpu3D {
                     binding: 9,
                     resource: self.multimesh_instance_buffer.as_entire_binding(),
                 },
+                wgpu::BindGroupEntry {
+                    binding: 10,
+                    resource: self.decal_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 11,
+                    resource: wgpu::BindingResource::TextureView(&self.decal_texture_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 12,
+                    resource: wgpu::BindingResource::Sampler(&self.decal_sampler),
+                },
             ],
         });
         self.shadow_multimesh_bind_groups =
@@ -742,6 +817,9 @@ impl Gpu3D {
                 custom_params_values_buffer: &self.custom_params_values_buffer,
                 shadow_identity_buffer: &self.multimesh_shadow_identity_buffer,
                 multimesh_instance_buffer: &self.multimesh_instance_buffer,
+                decal_buffer: &self.decal_buffer,
+                decal_texture_view: &self.decal_texture_view,
+                decal_sampler: &self.decal_sampler,
             });
         self.rebuild_multimesh_cull_bind_group(device);
         self.camera_bind_group_generation = self.camera_bind_group_generation.wrapping_add(1);
@@ -793,6 +871,9 @@ impl Gpu3D {
                     custom_params_values_buffer: &self.custom_params_values_buffer,
                     shadow_identity_buffer: &self.multimesh_shadow_identity_buffer,
                     multimesh_instance_buffer: &self.multimesh_instance_buffer,
+                    decal_buffer: &self.decal_buffer,
+                    decal_texture_view: &self.decal_texture_view,
+                    decal_sampler: &self.decal_sampler,
                 });
         }
         // Reuse the cull identity staging (identical values); rebuild if short.
