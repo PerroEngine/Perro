@@ -2230,7 +2230,7 @@ fn move_body_interleaved_unrelated_mutation_forces_resync() {
         .expect("move 1");
     let baseline = runtime.physics_collect_calls_3d.get();
 
-    // mutate a DIFFERENT body's transform -> physics_version bumps + physics
+    // mutate a DIFFERENT body's transform -> physics_revision bumps + physics
     // dirty set -> next move's ensure_synced MUST re-collect (fast path re-record
     // must not mask unrelated staleness).
     assert!(NodeAPI::set_global_transform_3d(

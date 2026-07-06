@@ -652,11 +652,11 @@ impl Runtime {
     /// `Mat4::from_scale_rotation_translation` per instance), so repeated
     /// point/ray/region queries against an unchanged node reuse the cached
     /// `Arc` instead of rebuilding every call. Cache entries are validated
-    /// against `nodes.mutation_version()`, which bumps on ANY node mutation
+    /// against `nodes.mutation_revision()`, which bumps on ANY node mutation
     /// (not just this node) -- conservative but always correct, never a
     /// stale hit.
     fn query_node_mesh_data(&mut self, node_id: NodeID) -> Option<Arc<QueryNodeData>> {
-        let current_version = self.nodes.mutation_version();
+        let current_version = self.nodes.mutation_revision();
         if let Some(entry) = self.mesh_query_node_cache.get(&node_id)
             && entry.built_at_version == current_version
         {

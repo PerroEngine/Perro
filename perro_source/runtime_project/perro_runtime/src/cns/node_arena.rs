@@ -36,18 +36,18 @@ pub struct NodeArena {
     active_len: usize,
     /// bump on any mut access / structural chg; cache invalidation key 4 systems
     /// that mirror node data (resource-ref scan)
-    mutation_version: u64,
+    mutation_revision: u64,
     /// bump on structural chg + physics-relevant mut access. Split frm
-    /// mutation_version so per-frame non-physics data mut (UI text, sprite
+    /// mutation_revision so per-frame non-physics data mut (UI text, sprite
     /// frames) not invalidate physics world sync gate. Raw `get_mut` bump both
     /// (conservative); only `get_mut_non_physics` callers skip the physics bump
     /// and must cal `mark_physics_change` when the node is physics-relevant.
-    physics_version: u64,
+    physics_revision: u64,
     /// bump ONLY on structural chg: insert / remove / clear / reparent. Data
     /// mut (transform, script var, UI text) never move this. Cheap gate 4
     /// systems that care only whether node set/topology chg (audio scene-flag
-    /// rescan). Structural bumps also move mutation_version + physics_version.
-    structural_version: u64,
+    /// rescan). Structural bumps also move mutation_revision + physics_revision.
+    structural_revision: u64,
 }
 
 impl Default for NodeArena {
@@ -78,9 +78,9 @@ impl NodeArena {
             name_index: AHashMap::default(),
             tag_index: AHashMap::default(),
             active_len: 0,
-            mutation_version: 0,
-            physics_version: 0,
-            structural_version: 0,
+            mutation_revision: 0,
+            physics_revision: 0,
+            structural_revision: 0,
         }
     }
 
@@ -106,58 +106,58 @@ impl NodeArena {
             name_index: AHashMap::default(),
             tag_index: AHashMap::default(),
             active_len: 0,
-            mutation_version: 0,
-            physics_version: 0,
-            structural_version: 0,
+            mutation_revision: 0,
+            physics_revision: 0,
+            structural_revision: 0,
         }
     }
 
-    /// Current mutation version. Chg every time node data may have chg.
+    /// Current mutation revision. Chg every time node data may have chg.
     #[inline]
-    pub fn mutation_version(&self) -> u64 {
-        self.mutation_version
+    pub fn mutation_revision(&self) -> u64 {
+        self.mutation_revision
     }
 
-    /// Physics-facing version: chg on structural changes + mutations that may
+    /// Physics-facing revision: chg on structural changes + mutations that may
     /// touch physics-relevant node data. Non-physics data mutations routed
-    /// through [`Self::get_mut_non_physics`] do NOT move this version.
+    /// through [`Self::get_mut_non_physics`] do NOT move this revision.
     #[inline]
-    pub fn physics_version(&self) -> u64 {
-        self.physics_version
+    pub fn physics_revision(&self) -> u64 {
+        self.physics_revision
     }
 
     /// Record a possible physics-relevant data change. Pairs with
     /// [`Self::get_mut_non_physics`].
     #[inline]
     pub fn mark_physics_change(&mut self) {
-        self.physics_version = self.physics_version.wrapping_add(1);
+        self.physics_revision = self.physics_revision.wrapping_add(1);
     }
 
-    /// Structural version: chg only on insert / remove / clear / reparent —
+    /// Structural revision: chg only on insert / remove / clear / reparent —
     /// NOT on data mutations. Cheap gate 4 systems that care only whether the
     /// node set or topology chg (e.g. audio scene-flag rescan).
     #[inline]
-    pub fn structural_version(&self) -> u64 {
-        self.structural_version
+    pub fn structural_revision(&self) -> u64 {
+        self.structural_revision
     }
 
     #[inline]
-    fn bump_mutation_version(&mut self) {
-        self.mutation_version = self.mutation_version.wrapping_add(1);
-        self.physics_version = self.physics_version.wrapping_add(1);
+    fn bump_mutation_revision(&mut self) {
+        self.mutation_revision = self.mutation_revision.wrapping_add(1);
+        self.physics_revision = self.physics_revision.wrapping_add(1);
     }
 
-    /// Structural change: bump structural + mutation + physics versions.
+    /// Structural change: bump structural + mutation + physics revisions.
     #[inline]
-    fn bump_structural_version(&mut self) {
-        self.structural_version = self.structural_version.wrapping_add(1);
-        self.mutation_version = self.mutation_version.wrapping_add(1);
-        self.physics_version = self.physics_version.wrapping_add(1);
+    fn bump_structural_revision(&mut self) {
+        self.structural_revision = self.structural_revision.wrapping_add(1);
+        self.mutation_revision = self.mutation_revision.wrapping_add(1);
+        self.physics_revision = self.physics_revision.wrapping_add(1);
     }
 
     #[inline]
-    fn bump_data_version_only(&mut self) {
-        self.mutation_version = self.mutation_version.wrapping_add(1);
+    fn bump_data_revision_only(&mut self) {
+        self.mutation_revision = self.mutation_revision.wrapping_add(1);
     }
 
     // ---- Allocation ----
@@ -174,7 +174,7 @@ impl NodeArena {
     ///
     /// Reuses a free slot when available. Otherwise appends a new slot.
     pub fn insert(&mut self, node: SceneNode) -> NodeID {
-        self.bump_structural_version();
+        self.bump_structural_revision();
         let name = node.name.clone();
         let tags = node.get_tag_ids();
         let node_type = node.node_type();
@@ -223,17 +223,17 @@ impl NodeArena {
     /// empty slots.
     pub fn get_mut(&mut self, id: NodeID) -> Option<&mut SceneNode> {
         let index = self.valid_slot(id)?;
-        self.bump_mutation_version();
+        self.bump_mutation_revision();
         self.nodes[index].as_mut()
     }
 
-    /// Mutable lookup that bumps only the data version. The caller MUST call
+    /// Mutable lookup that bumps only the data revision. The caller MUST call
     /// [`Self::mark_physics_change`] afterwards when the mutated node is a
     /// physics-relevant type ([`perro_nodes::NodeType::is_physics`]); use plain
     /// [`Self::get_mut`] when unsure.
     pub fn get_mut_non_physics(&mut self, id: NodeID) -> Option<&mut SceneNode> {
         let index = self.valid_slot(id)?;
-        self.bump_data_version_only();
+        self.bump_data_revision_only();
         self.nodes[index].as_mut()
     }
 
@@ -245,7 +245,7 @@ impl NodeArena {
     /// the free list for later reuse.
     pub fn remove(&mut self, id: NodeID) -> Option<SceneNode> {
         let index = self.valid_slot(id)?;
-        self.bump_structural_version();
+        self.bump_structural_revision();
         self.generations[index] = self.generations[index].wrapping_add(1);
         let removed = self.nodes[index].take();
         if let Some(node) = &removed {
@@ -269,7 +269,7 @@ impl NodeArena {
     }
 
     /// Rename a node, keeping the name index in sync. Bumps the mutation
-    /// version like any `get_mut` write. Returns `false` for dead ids.
+    /// revision like any `get_mut` write. Returns `false` for dead ids.
     pub fn rename(&mut self, id: NodeID, name: Cow<'static, str>) -> bool {
         let Some(index) = self.valid_slot(id) else {
             return false;
@@ -280,7 +280,7 @@ impl NodeArena {
         if node.name == name {
             return true;
         }
-        self.bump_mutation_version();
+        self.bump_mutation_revision();
         let node = self.nodes[index].as_mut().expect("slot checked live above");
         let old = std::mem::replace(&mut node.name, name.clone());
         self.unindex_name(&old, id);
@@ -324,7 +324,7 @@ impl NodeArena {
             None => node.clear_tags(),
         }
         let new = node.get_tag_ids();
-        self.bump_mutation_version();
+        self.bump_mutation_revision();
         for tag in old {
             if !new.contains(&tag) {
                 self.unindex_tag(tag, id);
@@ -352,7 +352,7 @@ impl NodeArena {
             node.add_tag(tag);
             true
         };
-        self.bump_mutation_version();
+        self.bump_mutation_revision();
         if added {
             self.tag_index.entry(tag_id).or_default().insert(id);
         }
@@ -372,7 +372,7 @@ impl NodeArena {
         if removed {
             node.remove_tag(tag);
         }
-        self.bump_mutation_version();
+        self.bump_mutation_revision();
         if removed {
             self.unindex_tag(tag, id);
         }
@@ -382,8 +382,8 @@ impl NodeArena {
     // ---- Parent mirror ----
 
     /// Reparent a live node, keeping the slot parent mirror in sync. Bumps
-    /// the mutation version like any `get_mut` write (reparent = structural,
-    /// so the physics version moves too). Returns `false` for dead ids.
+    /// the mutation revision like any `get_mut` write (reparent = structural,
+    /// so the physics revision moves too). Returns `false` for dead ids.
     ///
     /// Writing `node.parent` through `get_mut` on an arena-resident node
     /// bypasses the mirror — always use this method instead.
@@ -396,7 +396,7 @@ impl NodeArena {
         };
         node.parent = parent;
         self.parents[index] = parent;
-        self.bump_structural_version();
+        self.bump_structural_revision();
         true
     }
 
@@ -431,7 +431,7 @@ impl NodeArena {
 
     /// Iterate mutably over all live nodes with their current ids.
     pub fn iter_mut(&mut self) -> impl Iterator<Item = (NodeID, &mut SceneNode)> {
-        self.bump_mutation_version();
+        self.bump_mutation_revision();
         self.nodes
             .iter_mut()
             .zip(self.generations.iter())
@@ -447,7 +447,7 @@ impl NodeArena {
 
     /// Clear all nodes and reset the arena to only the nil sentinel slot.
     pub fn clear(&mut self) {
-        self.bump_structural_version();
+        self.bump_structural_revision();
         self.nodes.clear();
         self.generations.clear();
         self.node_types.clear();

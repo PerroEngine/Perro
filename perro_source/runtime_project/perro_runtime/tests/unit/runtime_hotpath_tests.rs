@@ -202,9 +202,9 @@ fn node_arena_slot_mirrors_track_insert_remove_reuse_reparent() {
 
     // Reparent through the arena keeps mirror + node in sync and moves versions.
     let other = arena.insert(SceneNode::new(SceneNodeData::Node3D(Node3D::new())));
-    let before = arena.mutation_version();
+    let before = arena.mutation_revision();
     assert!(arena.set_parent(child, other));
-    assert!(arena.mutation_version() > before);
+    assert!(arena.mutation_revision() > before);
     assert_eq!(arena.parent_slots()[child.index() as usize], other);
     assert_eq!(arena.get(child).expect("live").parent, other);
     arena.validate_mirrors();
@@ -227,46 +227,46 @@ fn node_arena_slot_mirrors_track_insert_remove_reuse_reparent() {
 }
 
 #[test]
-fn node_arena_structural_version_moves_only_on_structural_change() {
+fn node_arena_structural_revision_moves_only_on_structural_change() {
     let mut arena = NodeArena::new();
     let a = arena.insert(SceneNode::new(SceneNodeData::Node3D(Node3D::new())));
 
-    // Data mutation via get_mut bumps mutation_version but NOT structural.
-    let sv = arena.structural_version();
-    let mv = arena.mutation_version();
+    // Data mutation via get_mut bumps mutation_revision but NOT structural.
+    let sv = arena.structural_revision();
+    let mv = arena.mutation_revision();
     let _ = arena.get_mut(a);
     assert_eq!(
-        arena.structural_version(),
+        arena.structural_revision(),
         sv,
         "data mut must not bump structural"
     );
     assert!(
-        arena.mutation_version() > mv,
+        arena.mutation_revision() > mv,
         "data mut still bumps mutation"
     );
 
-    // Insert, reparent, remove each move structural_version.
-    let sv = arena.structural_version();
+    // Insert, reparent, remove each move structural_revision.
+    let sv = arena.structural_revision();
     let b = arena.insert(SceneNode::new(SceneNodeData::Node3D(Node3D::new())));
-    assert!(arena.structural_version() > sv, "insert bumps structural");
+    assert!(arena.structural_revision() > sv, "insert bumps structural");
 
-    let sv = arena.structural_version();
+    let sv = arena.structural_revision();
     assert!(arena.set_parent(a, b));
-    assert!(arena.structural_version() > sv, "reparent bumps structural");
+    assert!(arena.structural_revision() > sv, "reparent bumps structural");
 
-    let sv = arena.structural_version();
+    let sv = arena.structural_revision();
     let _ = arena.remove(a);
-    assert!(arena.structural_version() > sv, "remove bumps structural");
+    assert!(arena.structural_revision() > sv, "remove bumps structural");
 
     // The audio-flag bug: a remove+insert pair that leaves len() unchanged must
-    // still move structural_version so downstream gates rescan.
+    // still move structural_revision so downstream gates rescan.
     let len_before = arena.len();
-    let sv = arena.structural_version();
+    let sv = arena.structural_revision();
     let _ = arena.remove(b);
     let _ = arena.insert(SceneNode::new(SceneNodeData::Node3D(Node3D::new())));
     assert_eq!(arena.len(), len_before, "count unchanged by remove+insert");
     assert!(
-        arena.structural_version() > sv,
+        arena.structural_revision() > sv,
         "count-neutral remove+insert must still bump structural"
     );
 }

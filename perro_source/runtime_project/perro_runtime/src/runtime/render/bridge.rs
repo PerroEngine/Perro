@@ -223,9 +223,9 @@ impl Runtime {
         self.resource_api
             .drain_commands(&mut queued_resource_commands);
 
-        // gate scan: node data / structure changes bump arena mutation_version;
+        // gate scan: node data / structure changes bump arena mutation_revision;
         // resource events (pending resolve / retained invalidation) set dirty.
-        let arena_version = self.nodes.mutation_version();
+        let arena_version = self.nodes.mutation_revision();
         if self.scene_resource_refs_dirty
             || arena_version != self.scene_resource_refs_scanned_version
         {
@@ -367,7 +367,7 @@ impl Runtime {
             self.request_full_3d_scan_once();
         }
         // render events resolve pending resources / invalidate retained draws,
-        // which arena mutation_version can't see. force resource-ref re-scan.
+        // which arena mutation_revision can't see. force resource-ref re-scan.
         self.scene_resource_refs_dirty = true;
         self.resource_api.apply_render_event(&event);
         self.render.apply_event(event);

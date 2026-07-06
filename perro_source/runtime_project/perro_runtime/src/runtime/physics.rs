@@ -136,7 +136,7 @@ impl Runtime {
         // arena ver unchanged since last sync + no transform dirty.
         // physics-driven moves land in nodes via sync_world_to_nodes;
         // ver re-record aft post_transforms so internal write-back not invalidate.
-        let node_version = self.nodes.physics_version();
+        let node_version = self.nodes.physics_revision();
         let sync_2d_needed =
             self.physics_synced_node_version_2d != Some(node_version) || had_physics_dirty_2d;
         let sync_3d_needed =
@@ -175,7 +175,7 @@ impl Runtime {
             (None, None) => {}
         }
         // world fresh vs nodes til next node chg; query path skip re-sync
-        let synced_version = Some(self.nodes.physics_version());
+        let synced_version = Some(self.nodes.physics_revision());
         self.physics_synced_node_version_2d = synced_version;
         self.physics_synced_node_version_3d = synced_version;
         let sync_world = sync_world_start.elapsed();
@@ -195,7 +195,7 @@ impl Runtime {
         }
 
         let apply_forces_impulses_start = Instant::now();
-        // Water/rigid-body id caches self-invalidate on nodes.physics_version()
+        // Water/rigid-body id caches self-invalidate on nodes.physics_revision()
         // chg (cached_water_ids_2d/3d, cached_rigid_body_ids_2d/3d in runtime.rs)
         // -- no unconditional reset needed; empty-arena scenes now cache too.
         self.queue_physics_force_emitters_2d();
@@ -232,7 +232,7 @@ impl Runtime {
 
         // internal write-back (world -> nodes, emitter age) bump arena ver;
         // nodes still mirror world -> re-record so next step / query skip
-        let synced_version = Some(self.nodes.physics_version());
+        let synced_version = Some(self.nodes.physics_revision());
         self.physics_synced_node_version_2d = synced_version;
         self.physics_synced_node_version_3d = synced_version;
 
@@ -296,7 +296,7 @@ impl Runtime {
     pub(crate) fn ensure_physics_world_synced_2d(&mut self) {
         // physics-scoped gate: only 2d physics node moves (or unpropagated
         // roots) invalidate; non-physics tweens skip the full collect+sync.
-        if self.physics_synced_node_version_2d == Some(self.nodes.physics_version())
+        if self.physics_synced_node_version_2d == Some(self.nodes.physics_revision())
             && !self.dirty.has_physics_transform_dirty_2d()
         {
             return;
@@ -306,12 +306,12 @@ impl Runtime {
         let bodies_2d = self.collect_body_descs_2d();
         self.sync_world_2d(&bodies_2d);
         self.physics_body_descs_2d = bodies_2d;
-        self.physics_synced_node_version_2d = Some(self.nodes.physics_version());
+        self.physics_synced_node_version_2d = Some(self.nodes.physics_revision());
     }
 
     pub(crate) fn ensure_physics_world_synced_3d(&mut self) {
         // physics-scoped gate: see ensure_physics_world_synced_2d.
-        if self.physics_synced_node_version_3d == Some(self.nodes.physics_version())
+        if self.physics_synced_node_version_3d == Some(self.nodes.physics_revision())
             && !self.dirty.has_physics_transform_dirty_3d()
         {
             return;
@@ -321,7 +321,7 @@ impl Runtime {
         let bodies_3d = self.collect_body_descs_3d();
         self.sync_world_3d(&bodies_3d);
         self.physics_body_descs_3d = bodies_3d;
-        self.physics_synced_node_version_3d = Some(self.nodes.physics_version());
+        self.physics_synced_node_version_3d = Some(self.nodes.physics_revision());
     }
 
     pub(crate) fn invalidate_physics_query_sync(&mut self) {
@@ -486,7 +486,7 @@ impl Runtime {
         self.ensure_physics_world_synced_2d();
         // world in-sync now (ensure just ran); safe 2 re-record if fast path
         // reproduce next full sync 4 this one body.
-        let was_synced = self.physics_synced_node_version_2d == Some(self.nodes.physics_version());
+        let was_synced = self.physics_synced_node_version_2d == Some(self.nodes.physics_revision());
         let result = self.physics.move_body_2d(body_id, target, margin, filter)?;
         let mut transform = self.get_global_transform_2d(body_id)?;
         transform.position = result.position;
@@ -513,7 +513,7 @@ impl Runtime {
     /// legit full sync see no mismatch 4 this body.
     fn commit_moved_body_2d_fast(&mut self, body_id: NodeID) -> bool {
         // other node chg since ensure (unlikely w/in move, but guard) => bail.
-        let node_version = self.nodes.physics_version();
+        let node_version = self.nodes.physics_revision();
         let Some((kind, enabled, rigid)) = self.physics_body_sync_props_2d(body_id) else {
             return false;
         };
@@ -571,7 +571,7 @@ impl Runtime {
         filter: &PhysicsQueryFilter,
     ) -> Option<PhysicsMoveResult3D> {
         self.ensure_physics_world_synced_3d();
-        let was_synced = self.physics_synced_node_version_3d == Some(self.nodes.physics_version());
+        let was_synced = self.physics_synced_node_version_3d == Some(self.nodes.physics_revision());
         let result = self.physics.move_body_3d(body_id, target, margin, filter)?;
         let mut transform = self.get_global_transform_3d(body_id)?;
         transform.position = result.position;
@@ -591,7 +591,7 @@ impl Runtime {
 
     /// 3d twin of [`Self::commit_moved_body_2d_fast`].
     fn commit_moved_body_3d_fast(&mut self, body_id: NodeID) -> bool {
-        let node_version = self.nodes.physics_version();
+        let node_version = self.nodes.physics_revision();
         let Some((kind, enabled, rigid)) = self.physics_body_sync_props_3d(body_id) else {
             return false;
         };

@@ -736,33 +736,33 @@ fn with_base_node_mut_active_camera3d_transform_requests_3d_scan() {
 // node mutations and structural changes must.
 
 #[test]
-fn with_node_mut_non_physics_keeps_physics_version() {
+fn with_node_mut_non_physics_keeps_physics_revision() {
     let mut runtime = Runtime::new();
     let sprite = NodeAPI::create::<Sprite2D>(&mut runtime);
-    let physics_before = runtime.nodes.physics_version();
-    let data_before = runtime.nodes.mutation_version();
+    let physics_before = runtime.nodes.physics_revision();
+    let data_before = runtime.nodes.mutation_revision();
 
     <Runtime as NodeAPI>::with_node_mut::<Sprite2D, _, _>(&mut runtime, sprite, |s| {
         s.base.transform.position.x += 1.0;
     });
 
     assert_eq!(
-        runtime.nodes.physics_version(),
+        runtime.nodes.physics_revision(),
         physics_before,
         "sprite data mutation must not invalidate the physics sync gate"
     );
     assert_ne!(
-        runtime.nodes.mutation_version(),
+        runtime.nodes.mutation_revision(),
         data_before,
         "data mutation version still moves for resource-ref scans"
     );
 }
 
 #[test]
-fn with_node_mut_physics_node_bumps_physics_version() {
+fn with_node_mut_physics_node_bumps_physics_revision() {
     let mut runtime = Runtime::new();
     let body = NodeAPI::create::<perro_nodes::RigidBody3D>(&mut runtime);
-    let physics_before = runtime.nodes.physics_version();
+    let physics_before = runtime.nodes.physics_revision();
 
     <Runtime as NodeAPI>::with_node_mut::<perro_nodes::RigidBody3D, _, _>(
         &mut runtime,
@@ -773,20 +773,20 @@ fn with_node_mut_physics_node_bumps_physics_version() {
     );
 
     assert_ne!(
-        runtime.nodes.physics_version(),
+        runtime.nodes.physics_revision(),
         physics_before,
         "rigid body mutation must invalidate the physics sync gate"
     );
 }
 
 #[test]
-fn structural_changes_bump_physics_version() {
+fn structural_changes_bump_physics_revision() {
     let mut runtime = Runtime::new();
-    let before_insert = runtime.nodes.physics_version();
+    let before_insert = runtime.nodes.physics_revision();
     let node = NodeAPI::create::<Sprite2D>(&mut runtime);
-    assert_ne!(runtime.nodes.physics_version(), before_insert);
+    assert_ne!(runtime.nodes.physics_revision(), before_insert);
 
-    let before_remove = runtime.nodes.physics_version();
+    let before_remove = runtime.nodes.physics_revision();
     NodeAPI::remove_node(&mut runtime, node);
-    assert_ne!(runtime.nodes.physics_version(), before_remove);
+    assert_ne!(runtime.nodes.physics_revision(), before_remove);
 }

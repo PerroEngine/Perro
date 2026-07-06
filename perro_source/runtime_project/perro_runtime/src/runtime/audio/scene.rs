@@ -111,14 +111,14 @@ impl Runtime {
     }
 
     pub(super) fn refresh_audio_scene_flags(&mut self) {
-        // Gate on structural version: bumps only on insert / remove / clear /
+        // Gate on structural revision: bumps only on insert / remove / clear /
         // reparent, so add+remove pairs that leave the count unchanged still
         // trigger a rescan, while per-tick data mutations do not.
-        let structural_version = self.nodes.structural_version();
-        if self.audio.audio_scene_flags_structural_version == structural_version {
+        let structural_revision = self.nodes.structural_revision();
+        if self.audio.audio_scene_flags_structural_revision == structural_revision {
             return;
         }
-        self.audio.audio_scene_flags_structural_version = structural_version;
+        self.audio.audio_scene_flags_structural_revision = structural_revision;
         self.audio.has_audio_mask_2d = false;
         self.audio.has_audio_mask_3d = false;
         self.audio.has_audio_portal_2d = false;

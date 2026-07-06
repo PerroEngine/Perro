@@ -337,11 +337,11 @@ pub(crate) struct AudioPropagationState {
     has_audio_portal_3d: bool,
     has_audio_effect_zone_2d: bool,
     has_audio_effect_zone_3d: bool,
-    // Gated on NodeArena `structural_version` (bumps only on insert / remove /
+    // Gated on NodeArena `structural_revision` (bumps only on insert / remove /
     // clear / reparent, not data mut). Catches add+remove pairs that leave the
     // node count unchanged (e.g. remove an AudioMask2D, add a Node3D) without
     // rescanning every audio tick on ordinary data mutations.
-    audio_scene_flags_structural_version: u64,
+    audio_scene_flags_structural_revision: u64,
     debug_ray_count_3d: u32,
     prev_debug_ray_count_3d: u32,
     pub counters: AudioPropagationCounters,
@@ -369,7 +369,7 @@ impl AudioPropagationState {
             has_audio_portal_3d: false,
             has_audio_effect_zone_2d: false,
             has_audio_effect_zone_3d: false,
-            audio_scene_flags_structural_version: u64::MAX,
+            audio_scene_flags_structural_revision: u64::MAX,
             debug_ray_count_3d: 0,
             prev_debug_ray_count_3d: 0,
             counters: AudioPropagationCounters::default(),

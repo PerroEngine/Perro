@@ -33,8 +33,8 @@ pub(super) struct QueryNodeData {
 /// instead of rebuilding on every query.
 pub(crate) struct QueryNodeDataCacheEntry {
     pub(super) data: Arc<QueryNodeData>,
-    /// `nodes.mutation_version()` snapshot taken when `data` was built. Any
-    /// node mutation anywhere bumps this (see `NodeArena::bump_mutation_version`),
+    /// `nodes.mutation_revision()` snapshot taken when `data` was built. Any
+    /// node mutation anywhere bumps this (see `NodeArena::bump_mutation_revision`),
     /// so it's a conservative-but-correct invalidation signal: no false
     /// cache hits, occasional false invalidations when unrelated nodes
     /// change between queries.

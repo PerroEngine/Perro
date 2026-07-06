@@ -154,7 +154,7 @@ pub struct Runtime {
     scene_texture_refs_cache: AHashMap<TextureID, Vec<NodeID>>,
     scene_mesh_refs_cache: AHashMap<MeshID, Vec<NodeID>>,
     scene_material_refs_cache: AHashMap<MaterialID, Vec<NodeID>>,
-    /// last arena mutation_version seen by resource-ref scan. gate re-scan.
+    /// last arena mutation_revision seen by resource-ref scan. gate re-scan.
     scene_resource_refs_scanned_version: u64,
     /// force resource-ref re-scan next drain. set on resource render events
     /// (pending resolve / retained invalidation) that arena version misses.
@@ -211,7 +211,7 @@ pub struct Runtime {
     water_rigid_body_ids_3d_cache: Vec<NodeID>,
     water_ids_2d_cache: Vec<NodeID>,
     water_ids_3d_cache: Vec<NodeID>,
-    /// `nodes.physics_version()` snapshot @ last fill of each cache above.
+    /// `nodes.physics_revision()` snapshot @ last fill of each cache above.
     /// `None` means unfilled. Lets empty-result scenes cache too (`is_empty`
     /// used 2 be the unfilled sentinel, so 0-water scenes rescanned forever).
     water_rigid_body_ids_2d_cache_version: Option<u64>,
@@ -249,7 +249,7 @@ pub struct Runtime {
     /// Per-node cache 4 mesh point/ray/region queries; avoids re-cloning
     /// surfaces + rebuilding per-instance Mat4s (MultiMeshInstance3D) on
     /// every query. Keyed by NodeID (generation-safe on slot reuse) +
-    /// validated against `nodes.mutation_version()` @ build time.
+    /// validated against `nodes.mutation_revision()` @ build time.
     mesh_query_node_cache: mesh_query::QueryNodeDataCache,
     /// test/bench probe: # of QueryNodeData rebuilds (cache misses). proves
     /// repeated queries on an unchanged node hit the cache.
@@ -557,7 +557,7 @@ impl Runtime {
     }
 
     pub(crate) fn cached_rigid_body_ids_2d(&mut self) -> &[NodeID] {
-        let version = self.nodes.physics_version();
+        let version = self.nodes.physics_revision();
         if self.water_rigid_body_ids_2d_cache_version != Some(version) {
             self.water_rigid_body_ids_2d_cache.clear();
             scan_node_type_slots(
@@ -572,7 +572,7 @@ impl Runtime {
     }
 
     pub(crate) fn cached_rigid_body_ids_3d(&mut self) -> &[NodeID] {
-        let version = self.nodes.physics_version();
+        let version = self.nodes.physics_revision();
         if self.water_rigid_body_ids_3d_cache_version != Some(version) {
             self.water_rigid_body_ids_3d_cache.clear();
             scan_node_type_slots(
@@ -587,7 +587,7 @@ impl Runtime {
     }
 
     pub(crate) fn cached_water_ids_2d(&mut self) -> &[NodeID] {
-        let version = self.nodes.physics_version();
+        let version = self.nodes.physics_revision();
         if self.water_ids_2d_cache_version != Some(version) {
             self.water_ids_2d_cache.clear();
             scan_node_type_slots(
@@ -602,7 +602,7 @@ impl Runtime {
     }
 
     pub(crate) fn cached_water_ids_3d(&mut self) -> &[NodeID] {
-        let version = self.nodes.physics_version();
+        let version = self.nodes.physics_revision();
         if self.water_ids_3d_cache_version != Some(version) {
             self.water_ids_3d_cache.clear();
             scan_node_type_slots(
