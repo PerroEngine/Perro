@@ -337,16 +337,11 @@ pub(crate) struct AudioPropagationState {
     has_audio_portal_3d: bool,
     has_audio_effect_zone_2d: bool,
     has_audio_effect_zone_3d: bool,
-    // TODO(perf/correctness): node-COUNT snapshot misses add+remove pairs
-    // that leave count unchanged (e.g. remove an AudioMask2D, add a Node3D
-    // -- flags never refresh). `nodes.mutation_version()` would catch that,
-    // but it bumps on ANY node mutation crate-wide (every transform write,
-    // script var write, etc.), so gating on it here would turn this into a
-    // full-arena rescan every audio tick instead of only on structural
-    // scene changes -- worse than the bug it fixes. Needs a
-    // structural-only counter (insert/remove count, not general mutation)
-    // before this can safely switch off node-count.
-    audio_scene_flags_node_count: usize,
+    // Gated on NodeArena `structural_version` (bumps only on insert / remove /
+    // clear / reparent, not data mut). Catches add+remove pairs that leave the
+    // node count unchanged (e.g. remove an AudioMask2D, add a Node3D) without
+    // rescanning every audio tick on ordinary data mutations.
+    audio_scene_flags_structural_version: u64,
     debug_ray_count_3d: u32,
     prev_debug_ray_count_3d: u32,
     pub counters: AudioPropagationCounters,
@@ -374,7 +369,7 @@ impl AudioPropagationState {
             has_audio_portal_3d: false,
             has_audio_effect_zone_2d: false,
             has_audio_effect_zone_3d: false,
-            audio_scene_flags_node_count: usize::MAX,
+            audio_scene_flags_structural_version: u64::MAX,
             debug_ray_count_3d: 0,
             prev_debug_ray_count_3d: 0,
             counters: AudioPropagationCounters::default(),

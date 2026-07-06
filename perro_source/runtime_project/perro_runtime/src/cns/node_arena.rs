@@ -43,6 +43,11 @@ pub struct NodeArena {
     /// (conservative); only `get_mut_non_physics` callers skip the physics bump
     /// and must cal `mark_physics_change` when the node is physics-relevant.
     physics_version: u64,
+    /// bump ONLY on structural chg: insert / remove / clear / reparent. Data
+    /// mut (transform, script var, UI text) never move this. Cheap gate 4
+    /// systems that care only whether node set/topology chg (audio scene-flag
+    /// rescan). Structural bumps also move mutation_version + physics_version.
+    structural_version: u64,
 }
 
 impl Default for NodeArena {
@@ -75,6 +80,7 @@ impl NodeArena {
             active_len: 0,
             mutation_version: 0,
             physics_version: 0,
+            structural_version: 0,
         }
     }
 
@@ -102,6 +108,7 @@ impl NodeArena {
             active_len: 0,
             mutation_version: 0,
             physics_version: 0,
+            structural_version: 0,
         }
     }
 
@@ -126,8 +133,24 @@ impl NodeArena {
         self.physics_version = self.physics_version.wrapping_add(1);
     }
 
+    /// Structural version: chg only on insert / remove / clear / reparent —
+    /// NOT on data mutations. Cheap gate 4 systems that care only whether the
+    /// node set or topology chg (e.g. audio scene-flag rescan).
+    #[inline]
+    pub fn structural_version(&self) -> u64 {
+        self.structural_version
+    }
+
     #[inline]
     fn bump_mutation_version(&mut self) {
+        self.mutation_version = self.mutation_version.wrapping_add(1);
+        self.physics_version = self.physics_version.wrapping_add(1);
+    }
+
+    /// Structural change: bump structural + mutation + physics versions.
+    #[inline]
+    fn bump_structural_version(&mut self) {
+        self.structural_version = self.structural_version.wrapping_add(1);
         self.mutation_version = self.mutation_version.wrapping_add(1);
         self.physics_version = self.physics_version.wrapping_add(1);
     }
@@ -151,7 +174,7 @@ impl NodeArena {
     ///
     /// Reuses a free slot when available. Otherwise appends a new slot.
     pub fn insert(&mut self, node: SceneNode) -> NodeID {
-        self.bump_mutation_version();
+        self.bump_structural_version();
         let name = node.name.clone();
         let tags = node.get_tag_ids();
         let node_type = node.node_type();
@@ -222,7 +245,7 @@ impl NodeArena {
     /// the free list for later reuse.
     pub fn remove(&mut self, id: NodeID) -> Option<SceneNode> {
         let index = self.valid_slot(id)?;
-        self.bump_mutation_version();
+        self.bump_structural_version();
         self.generations[index] = self.generations[index].wrapping_add(1);
         let removed = self.nodes[index].take();
         if let Some(node) = &removed {
@@ -373,7 +396,7 @@ impl NodeArena {
         };
         node.parent = parent;
         self.parents[index] = parent;
-        self.bump_mutation_version();
+        self.bump_structural_version();
         true
     }
 
@@ -424,7 +447,7 @@ impl NodeArena {
 
     /// Clear all nodes and reset the arena to only the nil sentinel slot.
     pub fn clear(&mut self) {
-        self.bump_mutation_version();
+        self.bump_structural_version();
         self.nodes.clear();
         self.generations.clear();
         self.node_types.clear();

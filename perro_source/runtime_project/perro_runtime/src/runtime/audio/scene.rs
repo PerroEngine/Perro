@@ -111,16 +111,14 @@ impl Runtime {
     }
 
     pub(super) fn refresh_audio_scene_flags(&mut self) {
-        // NOTE: node-count gate is coarse (see TODO on the field) -- misses
-        // add+remove pairs that leave count unchanged. Not switched to
-        // `mutation_version()`: that counter bumps on every node mutation
-        // crate-wide (not just structural changes), which would turn this
-        // into a full-arena rescan every audio tick.
-        let node_count = self.nodes.len();
-        if self.audio.audio_scene_flags_node_count == node_count {
+        // Gate on structural version: bumps only on insert / remove / clear /
+        // reparent, so add+remove pairs that leave the count unchanged still
+        // trigger a rescan, while per-tick data mutations do not.
+        let structural_version = self.nodes.structural_version();
+        if self.audio.audio_scene_flags_structural_version == structural_version {
             return;
         }
-        self.audio.audio_scene_flags_node_count = node_count;
+        self.audio.audio_scene_flags_structural_version = structural_version;
         self.audio.has_audio_mask_2d = false;
         self.audio.has_audio_mask_3d = false;
         self.audio.has_audio_portal_2d = false;
