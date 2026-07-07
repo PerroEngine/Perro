@@ -34,6 +34,7 @@ fn extract_decal_texture_sources(data: &SceneDefNodeData) -> [Option<String>; 3]
 fn extract_texture_source(data: &SceneDefNodeData) -> Option<String> {
     let texture_field = match data.node_type {
         NodeType::Sprite2D => NodeField::Sprite2D(Sprite2DField::Texture),
+        NodeType::Sprite3D => NodeField::Sprite3D(Sprite2DField::Texture),
         NodeType::ImageButton2D => NodeField::ImageButton2D(Button2DField::Texture),
         NodeType::NineSlice2D => NodeField::NineSlice2D(Button2DField::Texture),
         NodeType::AnimatedSprite2D => {
@@ -51,4 +52,3 @@ fn extract_texture_source(data: &SceneDefNodeData) -> Option<String> {
             .flatten()
     })
 }
-

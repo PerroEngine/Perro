@@ -11,6 +11,19 @@ use perro_structs::{Quaternion, Transform2D, Transform3D, Vector2, Vector3};
 use perro_variant::Variant;
 use std::{any::Any, borrow::Cow, time::Duration};
 
+#[test]
+fn runtime_prelude_exports_world_label_and_sprite_nodes() {
+    fn _uses_node_types(
+        _label_2d: Option<Label2D>,
+        _label_3d: Option<Label3D>,
+        _sprite_3d: Option<Sprite3D>,
+    ) {
+    }
+
+    let _node_type = NodeType::Label3D;
+    let _data = SceneNodeData::Label3D(Label3D::new());
+}
+
 struct DummyRuntime {
     state: Box<dyn Any>,
     gravity: f32,
@@ -1157,6 +1170,8 @@ fn script_macros_typecheck_and_forward() {
         physics_predict_body_3d!(&mut ctx, id, 1.0, Vector3::new(0.5, 0.0, 0.0)),
         None
     );
+    assert_eq!(physics_get_body_gravity_scale!(&mut ctx, id), None);
+    assert!(!physics_set_body_gravity_scale!(&mut ctx, id, 0.5));
     assert_eq!(
         physics_raycast_3d!(
             &mut ctx,

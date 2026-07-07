@@ -294,8 +294,8 @@ This runtime module belongs to `ctx.run` and documents nodes calls.
 | Signature | `pub fn bind_locale_text<S>(&mut self, node_id: NodeID, key: S) -> bool where S: AsRef<str>,` |
 | Params | `&mut self, node_id: NodeID, key: S` |
 | Returns | `bool where S: AsRef<str>,` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Bind locale text on `UiLabel`, `Label2D`, or `Label3D`. |
+| Fails when / edge behavior | Returns `false` when backing runtime data is missing, stale, or the target type does not support locale text. |
 
 ### `bind_locale_placeholder`
 
@@ -1163,8 +1163,8 @@ This runtime module belongs to `ctx.run` and documents nodes calls.
 | Signature | `bind_locale_text!(ctx.run, id, key)` |
 | Params | `ctx, id, key` |
 | Returns | `bool or () as shown by backing method` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Bind locale text on `UiLabel`, `Label2D`, or `Label3D`. |
+| Fails when / edge behavior | Returns `false` when backing runtime data is missing, stale, or the target type does not support locale text. |
 
 ### `bind_locale_placeholder`
 

@@ -76,8 +76,8 @@ pub mod prelude {
     pub use perro_runtime_api::prelude::{
         PhysicsMoveResult2D, PhysicsMoveResult3D, PhysicsQueryFilter, PhysicsSlideResult2D,
         PhysicsSlideResult3D, close_app, physics_apply_gravity_2d, physics_apply_gravity_3d,
-        physics_move_and_slide_2d, physics_move_and_slide_3d, physics_move_body_2d,
-        physics_move_body_3d,
+        physics_get_body_gravity_scale, physics_move_and_slide_2d, physics_move_and_slide_3d,
+        physics_move_body_2d, physics_move_body_3d, physics_set_body_gravity_scale,
     };
     pub use perro_scene;
     pub use perro_scripting::prelude::*;

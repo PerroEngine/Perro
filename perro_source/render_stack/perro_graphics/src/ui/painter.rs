@@ -1219,6 +1219,7 @@ fn push_label_shape(
                 clip_rect: clip_rect_from_state(label.clip_rect, viewport),
                 text: label.text.as_ref(),
                 font_size: label.font_size,
+                wrap_width: label.wrap_width,
                 color: label.color,
                 h_align: label.h_align,
                 v_align: label.v_align,
@@ -1237,6 +1238,7 @@ fn push_label_shape(
             clip_rect: clip_rect_from_state(label.clip_rect, viewport),
             text: label.text.as_ref(),
             font_size: label.font_size,
+            wrap_width: label.wrap_width,
             color: label.color,
             h_align: label.h_align,
             v_align: label.v_align,
@@ -1258,6 +1260,7 @@ fn push_harfbuzz_text_shape(
         clip_rect,
         text,
         font_size,
+        wrap_width: _,
         color,
         h_align,
         v_align,
@@ -1986,6 +1989,7 @@ struct TextShapeInput<'a> {
     clip_rect: Rect,
     text: &'a str,
     font_size: f32,
+    wrap_width: Option<f32>,
     color: perro_structs::Color,
     h_align: UiTextAlignState,
     v_align: UiTextAlignState,
@@ -1998,6 +2002,7 @@ fn push_text_shape(input: TextShapeInput<'_>, fonts: &mut Fonts, out: &mut Vec<C
         clip_rect,
         text,
         font_size,
+        wrap_width,
         color,
         h_align,
         v_align,
@@ -2012,11 +2017,15 @@ fn push_text_shape(input: TextShapeInput<'_>, fonts: &mut Fonts, out: &mut Vec<C
     }
 
     let (min, max) = rect.screen_min_max(viewport);
+    let wrap_width = wrap_width
+        .filter(|width| width.is_finite() && *width > 0.0)
+        .unwrap_or(rect.size[0])
+        .max(1.0);
     let mut job = LayoutJob::simple(
         text.to_string(),
         FontId::new(font_size, text_font_family(text, FontFamily::Proportional)),
         color32(color),
-        rect.size[0].max(1.0),
+        wrap_width,
     );
     job.halign = match h_align {
         UiTextAlignState::Start => Align::LEFT,
@@ -2307,6 +2316,7 @@ mod tests {
                 clip_rect: Rect::from_min_max(pos2(0.0, 0.0), pos2(800.0, 600.0)),
                 text: "alpha beta gamma delta epsilon",
                 font_size: 24.0,
+                wrap_width: None,
                 color: perro_structs::Color::WHITE,
                 h_align: UiTextAlignState::Start,
                 v_align: UiTextAlignState::Start,
@@ -2352,6 +2362,7 @@ mod tests {
                     clip_rect: Rect::from_min_max(pos2(0.0, 0.0), pos2(800.0, 600.0)),
                     text: "seed\nfood",
                     font_size: 16.0,
+                    wrap_width: None,
                     color: perro_structs::Color::WHITE,
                     h_align,
                     v_align: UiTextAlignState::Start,
@@ -2387,6 +2398,7 @@ mod tests {
                 clip_rect: Rect::from_min_max(pos2(0.0, 0.0), pos2(800.0, 600.0)),
                 text: "Perro",
                 font_size: 24.0,
+                wrap_width: None,
                 color: perro_structs::Color::WHITE,
                 h_align: UiTextAlignState::Center,
                 v_align: UiTextAlignState::Center,

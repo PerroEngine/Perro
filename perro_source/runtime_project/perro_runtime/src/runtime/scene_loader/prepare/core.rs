@@ -14,7 +14,7 @@ use perro_nodes::{
     AudioPortal2D, AudioPortal3D, BallJoint3D, Button2D, CameraStream, CameraStream2D,
     CameraStream3D, CharacterBody2D, CharacterBody3D, CollisionShape2D, CollisionShape3D,
     Decal3D, DistanceJoint2D, FixedJoint2D,
-    FixedJoint3D, HingeJoint3D, ImageButton2D, NineSlice2D, NodeType, PhysicsForceEmitter2D,
+    FixedJoint3D, HingeJoint3D, ImageButton2D, Label2D, Label3D, NineSlice2D, NodeType, PhysicsForceEmitter2D,
     PhysicsForceEmitter3D, PhysicsForceProfile, PinJoint2D, PointLight2D, RayLight2D,
     RigidBody2D, RigidBody3D, SceneNode, SceneNodeData, Shape2D, Shape3D, SpotLight2D,
     StaticBody2D, StaticBody3D, Triangle2DKind, UiCameraStream, WaterBody2D, WaterBody3D,
@@ -46,6 +46,7 @@ use perro_nodes::{
     sky_3d::{Sky3D, SkyShaderPass},
     spot_light_3d::SpotLight3D,
     sprite_2d::{AnimatedSprite, AnimatedSprite2D, Sprite2D},
+    sprite_3d::Sprite3D,
     tilemap_2d::TileMap2D,
 };
 use perro_render_bridge::Material3D;
@@ -1661,7 +1662,7 @@ fn extract_locale_text_bindings(
 ) -> Vec<PendingLocaleTextBinding> {
     let mut out = Vec::new();
     match data.node_type {
-        NodeType::UiLabel => {
+        NodeType::UiLabel | NodeType::Label2D | NodeType::Label3D => {
             let fields = scratch_flatten_scene_node_fields(data, scratch);
             push_locale_text_binding(
                 &mut out,
@@ -1791,6 +1792,7 @@ fn scene_node_data_from(
         NodeType::Button2D => Ok(SceneNodeData::Button2D(Box::new(build_button_2d(data)))),
         NodeType::ImageButton2D => Ok(SceneNodeData::ImageButton2D(Box::new(build_image_button_2d(data)))),
         NodeType::Sprite2D => Ok(SceneNodeData::Sprite2D(build_sprite_2d(data))),
+        NodeType::Label2D => Ok(SceneNodeData::Label2D(build_label_2d(data))),
         NodeType::NineSlice2D => Ok(SceneNodeData::NineSlice2D(build_nine_slice_2d(data))),
         NodeType::AnimatedSprite2D => Ok(SceneNodeData::AnimatedSprite2D(build_animated_sprite_2d(
             data,
@@ -1844,6 +1846,8 @@ fn scene_node_data_from(
         NodeType::MultiMeshInstance3D => Ok(SceneNodeData::MultiMeshInstance3D(
             build_multi_mesh_instance_3d(data),
         )),
+        NodeType::Sprite3D => Ok(SceneNodeData::Sprite3D(build_sprite_3d(data))),
+        NodeType::Label3D => Ok(SceneNodeData::Label3D(build_label_3d(data))),
         NodeType::CollisionShape3D => Ok(SceneNodeData::CollisionShape3D(build_collision_shape_3d(
             data,
         ))),

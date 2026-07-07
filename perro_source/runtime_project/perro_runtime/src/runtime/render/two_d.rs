@@ -13,8 +13,9 @@ use perro_render_bridge::{
     AmbientLight2DState, Camera2DState, CameraStreamCommand, Command2D, ParticlePath2D,
     ParticleProfile2D, ParticleSimulationMode2D, PointLight2DState, PointParticles2DState,
     RayLight2DState, Rect2DCommand, RenderCommand, ResourceCommand, SpotLight2DState,
-    Sprite2DCommand, TileMap2DCommand, Water2DState, WaterBodyQueryState, WaterCoastlineShape2D,
-    WaterIdleModeState, WaterImpact2D, WaterLinkState, WaterShapeState,
+    Sprite2DCommand, TileMap2DCommand, UiCommand, UiRectState, UiTextAlignState, Water2DState,
+    WaterBodyQueryState, WaterCoastlineShape2D, WaterIdleModeState, WaterImpact2D, WaterLinkState,
+    WaterShapeState,
 };
 use perro_runtime_render::{sprite_2d_texture_request, tilemap_2d_texture_request};
 use perro_structs::{BitMask, UVector2, Vector2};
@@ -98,7 +99,7 @@ impl Runtime {
                 );
                 self.queue_render_command(RenderCommand::TwoD(Command2D::SetCamera { camera }));
             }
-            self.render_2d.last_camera = active_camera;
+            self.render_2d.last_camera = active_camera.clone();
         }
 
         let nodes = &self.nodes;
@@ -214,6 +215,67 @@ impl Runtime {
                     },
                     &mut visible_now,
                 );
+            }
+
+            let label_data = self
+                .nodes
+                .get(node)
+                .and_then(|scene_node| match &scene_node.data {
+                    SceneNodeData::Label2D(label) => Some((
+                        effective_visible
+                            && label.visible
+                            && render_mask_matches(camera_render_mask, label.render_layers),
+                        label.transform,
+                        label.size,
+                        label.text.clone(),
+                        label.color,
+                        label.font_size,
+                        label.h_align,
+                        label.v_align,
+                        label.z_index,
+                        self.effective_self_modulate(node),
+                    )),
+                    _ => None,
+                });
+            if let Some((
+                visible,
+                local_transform,
+                size,
+                text,
+                color,
+                font_size,
+                h_align,
+                v_align,
+                z_index,
+                modulate,
+            )) = label_data
+            {
+                if visible {
+                    let transform = self
+                        .get_render_global_transform_2d(node)
+                        .unwrap_or(local_transform);
+                    let rect = label_2d_rect(
+                        transform,
+                        size,
+                        active_camera.as_ref(),
+                        self.input.viewport_size(),
+                        z_index,
+                    );
+                    self.queue_render_command(RenderCommand::Ui(UiCommand::UpsertLabel {
+                        node,
+                        rect,
+                        clip_rect: viewport_clip(self.input.viewport_size()),
+                        text,
+                        color: Runtime::color_modulate(color, modulate),
+                        font_size: (font_size * transform.scale.y.abs()).max(0.001),
+                        wrap_width: None,
+                        h_align: text_align_state_2d(h_align),
+                        v_align: text_align_state_2d(v_align),
+                    }));
+                    visible_now.insert(node);
+                } else {
+                    self.queue_render_command(RenderCommand::Ui(UiCommand::RemoveNode { node }));
+                }
             }
 
             let button_2d_data =
@@ -779,6 +841,7 @@ impl Runtime {
                 continue;
             }
             self.queue_render_command(RenderCommand::TwoD(Command2D::RemoveNode { node }));
+            self.queue_render_command(RenderCommand::Ui(UiCommand::RemoveNode { node }));
             self.render_2d.retained_sprites.remove(&node);
         }
         self.render_2d
@@ -880,6 +943,7 @@ impl Runtime {
                                 SceneNodeData::AnimatedSprite2D(sprite) => sprite.texture = id,
                                 SceneNodeData::ImageButton2D(button) => button.texture = id,
                                 SceneNodeData::NineSlice2D(nine) => nine.texture = id,
+                                SceneNodeData::Sprite3D(sprite) => sprite.texture = id,
                                 _ => {}
                             }
                         }
@@ -1499,6 +1563,54 @@ impl Runtime {
             });
         }
         Arc::from(links)
+    }
+}
+
+fn viewport_clip(viewport: Vector2) -> [f32; 4] {
+    [0.0, 0.0, viewport.x.max(1.0), viewport.y.max(1.0)]
+}
+
+fn text_align_state_2d(align: perro_ui::UiTextAlign) -> UiTextAlignState {
+    match align {
+        perro_ui::UiTextAlign::Start => UiTextAlignState::Start,
+        perro_ui::UiTextAlign::Center => UiTextAlignState::Center,
+        perro_ui::UiTextAlign::End => UiTextAlignState::End,
+    }
+}
+
+fn label_2d_rect(
+    transform: perro_structs::Transform2D,
+    size: Vector2,
+    camera: Option<&Camera2DState>,
+    viewport: Vector2,
+    z_index: i32,
+) -> UiRectState {
+    let mut center = transform.position;
+    let mut rotation = transform.rotation;
+    let mut zoom = 1.0;
+    if let Some(camera) = camera {
+        let x = center.x - camera.position[0];
+        let y = center.y - camera.position[1];
+        let sin = (-camera.rotation_radians).sin();
+        let cos = (-camera.rotation_radians).cos();
+        center = Vector2::new(x * cos - y * sin, x * sin + y * cos);
+        rotation -= camera.rotation_radians;
+        zoom = camera.zoom.max(0.0001);
+    }
+    let scale = transform.scale;
+    UiRectState {
+        center: [center.x * zoom, center.y * zoom],
+        size: [
+            (size.x * scale.x.abs() * zoom)
+                .max(0.001)
+                .min(viewport.x.max(1.0)),
+            (size.y * scale.y.abs() * zoom)
+                .max(0.001)
+                .min(viewport.y.max(1.0)),
+        ],
+        pivot: [0.5, 0.5],
+        rotation_radians: rotation,
+        z_index,
     }
 }
 

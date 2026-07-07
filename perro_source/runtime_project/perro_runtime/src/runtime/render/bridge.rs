@@ -117,6 +117,15 @@ impl Runtime {
                         add_ref(textures, sprite.texture, node_id);
                     }
                 }
+                SceneNodeData::Sprite3D(sprite)
+                    if !self.render_2d.retained_sprites.contains_key(&node_id) =>
+                {
+                    if !sprite.texture.is_nil()
+                        && !self.resource_api.is_texture_id_pending(sprite.texture)
+                    {
+                        add_ref(textures, sprite.texture, node_id);
+                    }
+                }
                 SceneNodeData::AnimatedSprite2D(sprite)
                     if !self.render_2d.retained_sprites.contains_key(&node_id) =>
                 {
@@ -363,7 +372,10 @@ impl Runtime {
             RenderEvent::MeshCreated { .. }
                 | RenderEvent::MaterialCreated { .. }
                 | RenderEvent::MaterialLoaded { .. }
+                | RenderEvent::TextureCreated { .. }
+                | RenderEvent::TextureLoaded { .. }
         ) {
+            self.request_full_2d_scan_once();
             self.request_full_3d_scan_once();
         }
         // render events resolve pending resources / invalidate retained draws,

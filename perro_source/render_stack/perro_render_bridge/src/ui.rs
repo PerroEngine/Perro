@@ -162,6 +162,7 @@ pub enum UiCommand {
         text: Cow<'static, str>,
         color: Color,
         font_size: f32,
+        wrap_width: Option<f32>,
         h_align: UiTextAlignState,
         v_align: UiTextAlignState,
     },

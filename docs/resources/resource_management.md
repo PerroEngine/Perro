@@ -138,6 +138,7 @@ Examples:
 
 - `Sprite2D.texture`
 - `AnimatedSprite2D.texture`
+- `Sprite3D.texture`
 - `MeshInstance3D.mesh`
 - `MeshInstance3D` surface materials
 - `MultiMeshInstance3D.mesh`
@@ -147,6 +148,7 @@ Examples:
 
 When a scene or animation assigns a resource path, runtime asks the resource API for an ID.
 Render backend creates the resource if missing and reuses the existing ID if the source already exists.
+Texture-created and texture-loaded events wake 2D/3D render scans so pending sprite textures, including `Sprite3D.texture`, become visible without waiting for unrelated scene dirtiness.
 
 If several nodes ask for the same source, they share one ID.
 Duplicate load requests do not duplicate GPU resource identity.
@@ -159,7 +161,7 @@ They count live nodes using the resources
 Per frame when retained render refs change:
 
 1. clear old nonzero refs
-2. count `Sprite2D` and `AnimatedSprite2D` texture users
+2. count `Sprite2D`, `AnimatedSprite2D`, and `Sprite3D` texture users
 3. count UI image texture users
 4. count `MeshInstance3D` and `MultiMeshInstance3D` mesh users
 5. count material users from mesh surfaces

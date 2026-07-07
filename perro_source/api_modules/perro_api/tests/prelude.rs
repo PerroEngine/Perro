@@ -29,3 +29,16 @@ fn prelude_exports_runtime_physics_move_api() {
     let _macro_2d = stringify!(physics_move_body_2d!(ctx.run, body, target));
     let _macro_3d = stringify!(physics_move_body_3d!(ctx.run, body, target));
 }
+
+#[test]
+fn prelude_exports_world_label_and_sprite_nodes() {
+    fn _uses_node_types(
+        _label_2d: Option<Label2D>,
+        _label_3d: Option<Label3D>,
+        _sprite_3d: Option<Sprite3D>,
+    ) {
+    }
+
+    let _node_type = NodeType::Label3D;
+    let _data = SceneNodeData::Label3D(Label3D::new());
+}

@@ -59,6 +59,15 @@ Rendering and resource loading are handled by the runtime and `ResourceWindow`.
 - Holds a `TextureID` (not raw pixels). Use `Texture` module to load.
 - `texture_region` selects an atlas rect.
 
+`Label2D`
+
+- Renders world-space text through the UI text renderer.
+- Uses `Node2D` position, rotation, scale, z index, visibility, render layers, and modulation.
+- `size` is in 2D world units before camera projection.
+- Uses `text`, `color`, `font_size`, `h_align`, and `v_align` like `UiLabel`.
+- Supports `%loc:` scene text markers and runtime locale text binding like `UiLabel`.
+- Use it for nameplates, speech text, signs, and diegetic UI.
+
 `Button2D`
 
 - Clickable world-space rect.
@@ -283,6 +292,26 @@ See [TileMap2D](tilemap.md).
 - Supports `flip_x`, `flip_y`, and `flip_z` on the whole multimesh node.
 - `blend_shape_weights` is the default blend shape weight array for every dense instance.
 - Per-instance `blend_shape_weights` inside `instances` overrides the node default for that instance.
+
+`Sprite3D`
+
+- Renders a floating textured rect in 3D space.
+- Uses `Node3D` position, rotation, scale, visibility, render layers, and modulation.
+- `size` is world-space width/height before camera projection.
+- Holds a `TextureID` through `texture`; `texture_region` selects an atlas rect.
+- Supports `flip_x`, `flip_y`, and `tint`.
+- Unlike `Decal3D`, it does not project onto geometry. It can float in front of or above meshes.
+- Use it for pickups, markers, billboards, damage icons, and world prompts.
+
+`Label3D`
+
+- Renders floating text in 3D space through the UI text renderer.
+- Uses `Node3D` position, rotation, scale, visibility, render layers, and modulation.
+- `size` is world-space width/height before camera projection.
+- Uses `text`, `color`, `font_size`, `h_align`, and `v_align` like `UiLabel`.
+- Text wrapping uses the authored `size` aspect and `font_size`, so camera angle/distance does not change line breaks.
+- Supports `%loc:` scene text markers and runtime locale text binding like `UiLabel`.
+- Use it for nameplates, signs, speech text, and world HUD labels.
 
 `Camera3D`
 
@@ -659,6 +688,7 @@ All UI nodes can have children.
 `UiNineSlice` draws a scalable texture panel with fixed corners and stretched edges/center.
 `UiAnimatedImage` draws sprite-sheet animation in UI space.
 `UiLabel` draws text.
+Use `Label2D` or `Label3D` for world-space text that still uses `UiLabel` text, alignment, and locale binding fields.
 `UiTextBox` edits one line of text.
 `UiTextBlock` edits multi-line text.
 `UiLayout`, `UiHLayout`, `UiVLayout`, and `UiGrid` add automatic child placement.

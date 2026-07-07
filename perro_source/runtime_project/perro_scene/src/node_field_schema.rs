@@ -532,6 +532,7 @@ fn push_node_fields(fields: &mut Vec<SceneNodeField>, node_type: NodeType) {
             push(fields, "Camera Stream", "enabled", NodeFieldType::Bool);
         }
         NodeType::Sprite2D => sprite_fields(fields, "Sprite"),
+        NodeType::Label2D => label_world_fields(fields, "Label"),
         NodeType::Button2D => button_2d_fields(fields, "Button"),
         NodeType::ImageButton2D => {
             button_2d_fields(fields, "Button");
@@ -576,6 +577,8 @@ fn push_node_fields(fields: &mut Vec<SceneNodeField>, node_type: NodeType) {
         | NodeType::PointLight3D
         | NodeType::SpotLight3D => light_fields(fields, node_type),
         NodeType::MeshInstance3D | NodeType::MultiMeshInstance3D => mesh_fields(fields, node_type),
+        NodeType::Sprite3D => sprite_world_fields(fields, "Sprite"),
+        NodeType::Label3D => label_world_fields(fields, "Label"),
         NodeType::Decal3D => decal_fields(fields),
         NodeType::Skeleton2D | NodeType::Skeleton3D => {
             asset_field(fields, "Skeleton", "skeleton", SceneAssetKind::Skeleton);
@@ -939,6 +942,31 @@ fn sprite_fields(fields: &mut Vec<SceneNodeField>, section: &'static str) {
     push(fields, section, "texture_region", NodeFieldType::Vec4);
     push(fields, section, "flip_x", NodeFieldType::Bool);
     push(fields, section, "flip_y", NodeFieldType::Bool);
+}
+
+fn sprite_world_fields(fields: &mut Vec<SceneNodeField>, section: &'static str) {
+    sprite_fields(fields, section);
+    push(fields, section, "size", NodeFieldType::Vec2);
+    push(fields, section, "tint", NodeFieldType::Color);
+}
+
+fn label_world_fields(fields: &mut Vec<SceneNodeField>, section: &'static str) {
+    push(fields, section, "text", NodeFieldType::String);
+    push(fields, section, "size", NodeFieldType::Vec2);
+    push(fields, section, "color", NodeFieldType::Color);
+    push(fields, section, "font_size", NodeFieldType::F32);
+    push(
+        fields,
+        section,
+        "h_align",
+        NodeFieldType::enumeration(UI_TEXT_ALIGN_OPTIONS),
+    );
+    push(
+        fields,
+        section,
+        "v_align",
+        NodeFieldType::enumeration(UI_TEXT_ALIGN_OPTIONS),
+    );
 }
 
 fn button_2d_fields(fields: &mut Vec<SceneNodeField>, section: &'static str) {
@@ -1354,5 +1382,24 @@ mod tests {
                 .iter()
                 .any(|field| field.name == "pressed_outer_shadow")
         );
+    }
+
+    #[test]
+    fn world_label_and_sprite_schemas_expose_runtime_fields() {
+        let label_2d = scene_node_fields(NodeType::Label2D);
+        let label_3d = scene_node_fields(NodeType::Label3D);
+        for fields in [&label_2d, &label_3d] {
+            assert!(fields.iter().any(|field| field.name == "text"));
+            assert!(fields.iter().any(|field| field.name == "size"));
+            assert!(fields.iter().any(|field| field.name == "font_size"));
+            assert!(fields.iter().any(|field| field.name == "h_align"));
+            assert!(fields.iter().any(|field| field.name == "v_align"));
+        }
+
+        let sprite_3d = scene_node_fields(NodeType::Sprite3D);
+        assert!(sprite_3d.iter().any(|field| field.name == "texture"));
+        assert!(sprite_3d.iter().any(|field| field.name == "texture_region"));
+        assert!(sprite_3d.iter().any(|field| field.name == "size"));
+        assert!(sprite_3d.iter().any(|field| field.name == "tint"));
     }
 }

@@ -155,6 +155,12 @@ pub struct PhysicsBodyPrediction3D {
 pub trait PhysicsAPI {
     fn get_gravity(&mut self) -> f32;
     fn set_gravity(&mut self, gravity: f32);
+    fn get_body_gravity_scale(&mut self, _body_id: NodeID) -> Option<f32> {
+        None
+    }
+    fn set_body_gravity_scale(&mut self, _body_id: NodeID, _scale: f32) -> bool {
+        false
+    }
     fn get_coefficient(&mut self) -> f32;
     fn set_coefficient(&mut self, coefficient: f32);
     fn apply_force_2d(&mut self, body_id: NodeID, force: Vector2) -> bool;
@@ -445,6 +451,14 @@ impl<'rt, R: PhysicsAPI + ?Sized> PhysicsModule<'rt, R> {
 
     pub fn set_gravity(&mut self, gravity: f32) {
         self.rt.set_gravity(gravity);
+    }
+
+    pub fn get_body_gravity_scale(&mut self, body_id: NodeID) -> Option<f32> {
+        self.rt.get_body_gravity_scale(body_id)
+    }
+
+    pub fn set_body_gravity_scale(&mut self, body_id: NodeID, scale: f32) -> bool {
+        self.rt.set_body_gravity_scale(body_id, scale)
     }
 
     pub fn get_coefficient(&mut self) -> f32 {
@@ -1044,6 +1058,20 @@ macro_rules! physics_get_gravity {
 macro_rules! physics_set_gravity {
     ($ctx:expr, $gravity:expr) => {
         $ctx.Physics().set_gravity($gravity)
+    };
+}
+
+#[macro_export]
+macro_rules! physics_get_body_gravity_scale {
+    ($ctx:expr, $body_id:expr) => {
+        $ctx.Physics().get_body_gravity_scale($body_id)
+    };
+}
+
+#[macro_export]
+macro_rules! physics_set_body_gravity_scale {
+    ($ctx:expr, $body_id:expr, $scale:expr) => {
+        $ctx.Physics().set_body_gravity_scale($body_id, $scale)
     };
 }
 

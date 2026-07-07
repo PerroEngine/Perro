@@ -2,9 +2,9 @@ use super::Runtime;
 use perro_ids::TextureID;
 use perro_input_api::MouseButton;
 use perro_nodes::{
-    AmbientLight2D, Button2D, CameraStream2D, CollisionShape2D, ImageButton2D, NineSlice2D,
-    PointLight2D, RayLight2D, SceneNode, SceneNodeData, Shape2D, SpotLight2D, StaticBody2D,
-    WaterBody2D,
+    AmbientLight2D, Button2D, CameraStream2D, CollisionShape2D, ImageButton2D, Label2D,
+    NineSlice2D, PointLight2D, RayLight2D, SceneNode, SceneNodeData, Shape2D, SpotLight2D,
+    StaticBody2D, WaterBody2D,
     camera_2d::Camera2D,
     node_2d::Node2D,
     particle_emitter_2d::ParticleEmitter2D,
@@ -13,6 +13,7 @@ use perro_nodes::{
 };
 use perro_render_bridge::{
     CameraStreamCommand, Command2D, ParticlePath2D, RenderCommand, RenderEvent, ResourceCommand,
+    UiCommand,
 };
 use perro_resource_api::sub_apis::{
     AnimationAPI, AnimationTreeAPI, CsvAPI, MaterialAPI, MeshAPI, TextureAPI,
@@ -110,6 +111,29 @@ fn sprite_2d_uses_inherited_node_modulate() {
         Color::new(1.0, 0.25, 1.0, 1.0),
     );
     assert_eq!(sprite.tint, expected);
+}
+
+#[test]
+fn label_2d_emits_ui_label_with_world_rect() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+    let label = NodeAPI::create::<Label2D>(&mut runtime);
+    if let Some(node) = runtime.nodes.get_mut(label)
+        && let SceneNodeData::Label2D(data) = &mut node.data
+    {
+        data.text = "HP".into();
+        data.size = Vector2::new(100.0, 24.0);
+        data.transform.position = Vector2::new(12.0, 8.0);
+    }
+
+    runtime.extract_render_2d_commands();
+    let commands = collect_commands(&mut runtime);
+
+    assert!(commands.iter().any(|command| matches!(
+        command,
+        RenderCommand::Ui(UiCommand::UpsertLabel { node, rect, text, .. })
+            if *node == label && text.as_ref() == "HP" && rect.center == [12.0, 8.0]
+    )));
 }
 
 #[test]

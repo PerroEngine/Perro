@@ -1585,6 +1585,74 @@ where
     }
 }
 
+impl<T, E> DeriveVariant for Result<T, E>
+where
+    T: DeriveVariant,
+    E: DeriveVariant,
+{
+    #[inline]
+    fn from_variant(value: &Variant) -> Option<Self> {
+        let obj = value.as_object()?;
+        let tag = obj.get("__variant")?.as_str()?;
+        let data = obj.get("__data")?;
+        match tag {
+            "Ok" => T::from_variant(data).map(Ok),
+            "Err" => E::from_variant(data).map(Err),
+            _ => None,
+        }
+    }
+
+    #[inline]
+    fn from_owned_variant(value: Variant) -> Option<Self> {
+        let mut obj = match value {
+            Variant::Object(obj) => obj,
+            _ => return None,
+        };
+        let tag = match obj.remove("__variant")? {
+            Variant::String(tag) => tag,
+            _ => return None,
+        };
+        let data = obj.remove("__data")?;
+        match tag.as_ref() {
+            "Ok" => T::from_owned_variant(data).map(Ok),
+            "Err" => E::from_owned_variant(data).map(Err),
+            _ => None,
+        }
+    }
+
+    #[inline]
+    fn to_variant(&self) -> Variant {
+        let mut obj = BTreeMap::new();
+        match self {
+            Ok(value) => {
+                obj.insert(Arc::from("__variant"), Variant::String(Arc::from("Ok")));
+                obj.insert(Arc::from("__data"), value.to_variant());
+            }
+            Err(err) => {
+                obj.insert(Arc::from("__variant"), Variant::String(Arc::from("Err")));
+                obj.insert(Arc::from("__data"), err.to_variant());
+            }
+        }
+        Variant::Object(obj)
+    }
+
+    #[inline]
+    fn into_variant(self) -> Variant {
+        let mut obj = BTreeMap::new();
+        match self {
+            Ok(value) => {
+                obj.insert(Arc::from("__variant"), Variant::String(Arc::from("Ok")));
+                obj.insert(Arc::from("__data"), value.into_variant());
+            }
+            Err(err) => {
+                obj.insert(Arc::from("__variant"), Variant::String(Arc::from("Err")));
+                obj.insert(Arc::from("__data"), err.into_variant());
+            }
+        }
+        Variant::Object(obj)
+    }
+}
+
 impl<T> DeriveVariant for Box<T>
 where
     T: DeriveVariant,

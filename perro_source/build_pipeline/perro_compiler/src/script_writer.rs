@@ -142,16 +142,58 @@ pub unsafe extern \"C\" fn perro_script_registry_get(\n\
 }
 
 fn write_string_if_changed(path: &Path, content: &str) -> std::io::Result<bool> {
-    if let Ok(existing) = fs::read_to_string(path)
-        && existing == content
-    {
+    if file_text_matches(path, content)? {
         return Ok(false);
     }
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
+    let _guard = WriteLock::acquire(path)?;
+    if file_text_matches(path, content)? {
+        return Ok(false);
+    }
     fs::write(path, content)?;
     Ok(true)
+}
+
+fn file_text_matches(path: &Path, content: &str) -> std::io::Result<bool> {
+    match fs::read_to_string(path) {
+        Ok(existing) => Ok(existing == content),
+        Err(err)
+            if matches!(
+                err.kind(),
+                std::io::ErrorKind::NotFound | std::io::ErrorKind::InvalidData
+            ) =>
+        {
+            Ok(false)
+        }
+        Err(err) => Err(err),
+    }
+}
+
+struct WriteLock {
+    path: PathBuf,
+}
+
+impl WriteLock {
+    fn acquire(path: &Path) -> std::io::Result<Self> {
+        let lock_path = path.with_extension("write-lock");
+        loop {
+            match fs::create_dir(&lock_path) {
+                Ok(()) => return Ok(Self { path: lock_path }),
+                Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                }
+                Err(err) => return Err(err),
+            }
+        }
+    }
+}
+
+impl Drop for WriteLock {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir(&self.path);
+    }
 }
 
 fn remove_stale_generated_scripts(

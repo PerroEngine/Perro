@@ -581,10 +581,10 @@ fn ensure_project_dependency_line(
             .map(|off| idx + off + 1)
             .unwrap_or(src.len());
         src.insert_str(insert_pos, &format!("{dependency_line}\n"));
-        fs::write(manifest_path, src)?;
+        write_string_if_changed(&manifest_path, &src)?;
     } else if let Some(idx) = src.find("[dependencies.") {
         src.insert_str(idx, &format!("[dependencies]\n{dependency_line}\n\n"));
-        fs::write(manifest_path, src)?;
+        write_string_if_changed(&manifest_path, &src)?;
     }
     Ok(())
 }
@@ -1004,9 +1004,9 @@ pub fn run_web() -> Result<(), wasm_bindgen::JsValue> {{\n\
     );
     let lib_src = "#![cfg_attr(all(perro_no_console, target_os = \"windows\"), windows_subsystem = \"windows\")]\n\n#[path = \"entry_shared.rs\"]\nmod entry_shared;\n\npub use entry_shared::*;\n\n#[cfg(target_os = \"android\")]\n#[unsafe(no_mangle)]\npub fn android_main(app: perro_app::entry::AndroidApp) {\n    keep_perro_engine_marker();\n    run_android(app);\n}\n\n#[cfg(target_arch = \"wasm32\")]\n#[wasm_bindgen::prelude::wasm_bindgen(start)]\npub fn run_web_entry() -> Result<(), wasm_bindgen::JsValue> {\n    keep_perro_engine_marker();\n    run_web()\n}\n";
     let main_src = "#![cfg_attr(all(perro_no_console, target_os = \"windows\"), windows_subsystem = \"windows\")]\n\n#[path = \"entry_shared.rs\"]\nmod entry_shared;\n\n#[cfg(all(not(target_os = \"android\"), not(target_arch = \"wasm32\")))]\nfn main() {\n  entry_shared::keep_perro_engine_marker();\n  entry_shared::run_native();\n}\n";
-    fs::write(project_src.join("entry_shared.rs"), shared_src)?;
-    fs::write(project_src.join("lib.rs"), lib_src)?;
-    fs::write(project_src.join("main.rs"), main_src)?;
+    write_string_if_changed(&project_src.join("entry_shared.rs"), &shared_src)?;
+    write_string_if_changed(&project_src.join("lib.rs"), lib_src)?;
+    write_string_if_changed(&project_src.join("main.rs"), main_src)?;
     Ok(())
 }
 
@@ -1053,7 +1053,7 @@ fn export_project_web_bundle(
         })
         .map_err(|err| CompilerError::SceneParse(format!("wasm-bindgen failed: {err:#}")))?;
 
-    fs::write(output_dir.join("boot.js"), web_boot_js())?;
+    write_string_if_changed(&output_dir.join("boot.js"), web_boot_js())?;
     emit_web_route_html_files(project_root, &output_dir, &project_cfg, &routes)?;
     println!("exported web bundle: {}", output_dir.display());
     Ok(())
@@ -1140,7 +1140,7 @@ fn sync_android_project_manifest(
             manifest_path.display()
         ))
     })?;
-    fs::write(&manifest_path, rendered)?;
+    write_string_if_changed(&manifest_path, &rendered)?;
     Ok(())
 }
 
@@ -1404,7 +1404,7 @@ fn emit_web_route_html_files(
             body_html,
             boot_label: format!("{title} boot"),
         };
-        fs::write(&html_path, web_index_html(&page))?;
+        write_string_if_changed(&html_path, &web_index_html(&page))?;
     }
     Ok(())
 }

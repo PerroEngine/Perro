@@ -19,6 +19,7 @@ pub enum NodeField {
     ImageButton2D(Button2DField),
     NineSlice2D(Button2DField),
     Sprite2D(Sprite2DField),
+    Sprite3D(Sprite2DField),
     AnimatedSprite2D(AnimatedSprite2DField),
     ParticleEmitter2D(ParticleEmitter2DField),
     WaterBody2D(WaterBodyField),
@@ -1568,6 +1569,15 @@ fn resolve_node_field_for_type(node_type: NodeType, field: &str) -> Option<NodeF
             "flip_y" | "flip_v" | "mirror_y" => Some(NodeField::Sprite2D(Sprite2DField::FlipY)),
             _ => None,
         },
+        NodeType::Sprite3D => match field {
+            "texture" => Some(NodeField::Sprite3D(Sprite2DField::Texture)),
+            "texture_region" | "region" | "atlas_region" => {
+                Some(NodeField::Sprite3D(Sprite2DField::TextureRegion))
+            }
+            "flip_x" | "flip_h" | "mirror_x" => Some(NodeField::Sprite3D(Sprite2DField::FlipX)),
+            "flip_y" | "flip_v" | "mirror_y" => Some(NodeField::Sprite3D(Sprite2DField::FlipY)),
+            _ => None,
+        },
         NodeType::Button2D => match field {
             "size" => Some(NodeField::Button2D(Button2DField::Size)),
             _ => None,
@@ -2738,6 +2748,10 @@ mod tests {
             Some(NodeField::Sprite2D(Sprite2DField::FlipX))
         );
         assert_eq!(
+            resolve_node_field("Sprite3D", "flip_y"),
+            Some(NodeField::Sprite3D(Sprite2DField::FlipY))
+        );
+        assert_eq!(
             resolve_node_field("AnimatedSprite2D", "flip_y"),
             Some(NodeField::AnimatedSprite2D(AnimatedSprite2DField::FlipY))
         );
@@ -2768,6 +2782,9 @@ mod tests {
             ("Camera2D", "render_mask"),
             ("Camera2D", "audio_options"),
             ("Sprite2D", "texture_region"),
+            ("Sprite3D", "texture_region"),
+            ("Label2D", "render_layers"),
+            ("Label3D", "render_layers"),
             ("StaticBody2D", "collision_layers"),
             ("StaticBody2D", "collision_mask"),
             ("RigidBody2D", "continuous_collision_detection"),

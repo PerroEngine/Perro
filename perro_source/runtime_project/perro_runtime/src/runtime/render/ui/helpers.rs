@@ -677,6 +677,7 @@ pub(super) fn ui_command_from_node(
                     };
                 resolve_font_size(base, node_scale, virtual_font_scale, label.font_sizing)
             },
+            wrap_width: None,
             h_align: text_align_state(label.h_align),
             v_align: text_align_state(label.v_align),
         }),

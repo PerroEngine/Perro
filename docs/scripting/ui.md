@@ -111,6 +111,7 @@ UiNode
 - Text visual.
 - Holds `text`, `color`, `text_size_ratio`, and text alignment.
 - Can have children, but usually should not.
+- Use `Label2D` or `Label3D` for world-space labels with the same text and locale binding model.
 
 `UiScrollContainer`
 

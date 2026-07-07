@@ -776,6 +776,26 @@ fn test_derive_variant_rust_std_qol_roundtrips() {
     let encoded = unit.to_variant();
     assert_eq!(<() as DeriveVariant>::from_variant(&encoded), Some(()));
 
+    let ok: Result<i32, String> = Ok(7);
+    let encoded = ok.to_variant();
+    let obj = encoded.as_object().expect("result encodes as object");
+    assert_eq!(obj.get("__variant").and_then(Variant::as_str), Some("Ok"));
+    assert_eq!(obj.get("__data").and_then(Variant::as_i32), Some(7));
+    assert_eq!(
+        <Result<i32, String> as DeriveVariant>::from_variant(&encoded),
+        Some(Ok(7))
+    );
+
+    let err: Result<i32, String> = Err("bad".to_string());
+    let encoded = err.into_variant();
+    let obj = encoded.as_object().expect("result encodes as object");
+    assert_eq!(obj.get("__variant").and_then(Variant::as_str), Some("Err"));
+    assert_eq!(obj.get("__data").and_then(Variant::as_str), Some("bad"));
+    assert_eq!(
+        <Result<i32, String> as DeriveVariant>::from_owned_variant(encoded),
+        Some(Err("bad".to_string()))
+    );
+
     let ch = 'x';
     let encoded = ch.to_variant();
     assert_eq!(<char as DeriveVariant>::from_variant(&encoded), Some(ch));

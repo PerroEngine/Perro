@@ -15,13 +15,13 @@ use perro_render_bridge::{
     MaterialParamOverride3D, MeshBlendOptions3D, MeshSurfaceBinding3D, ParticlePath3D,
     ParticleProfile3D, ParticleRenderMode3D, ParticleSimulationMode3D, PointLight3DState,
     PointParticles3DState, RayLight3DState, RenderCommand, ResourceCommand, SkeletonPalette,
-    Sky3DState, SkyShaderPass3DState, SkyTime3DState, SpotLight3DState, Water3DState,
-    WaterBodyQueryState, WaterCoastlineShape3D, WaterIdleModeState, WaterImpact3D, WaterLinkState,
-    WaterShapeState,
+    Sky3DState, SkyShaderPass3DState, SkyTime3DState, SpotLight3DState, UiCommand,
+    UiImageScaleState, UiRectState, UiTextAlignState, Water3DState, WaterBodyQueryState,
+    WaterCoastlineShape3D, WaterIdleModeState, WaterImpact3D, WaterLinkState, WaterShapeState,
 };
 use perro_resource_api::sub_apis::{MaterialAPI, MeshAPI};
 use perro_runtime_render::{material_3d_request, mesh_3d_request};
-use perro_structs::{BitMask, Vector3};
+use perro_structs::{BitMask, Vector2, Vector3};
 use std::borrow::Cow;
 use std::sync::Arc;
 
@@ -156,7 +156,7 @@ impl Runtime {
                     camera,
                 })));
             }
-            self.render_3d.last_camera = active_camera;
+            self.render_3d.last_camera = active_camera.clone();
         }
 
         let mut dirty_ids = std::mem::take(&mut self.render_3d.dirty_ids_scratch);
@@ -636,6 +636,128 @@ impl Runtime {
                     )));
                 }
                 visible_now.insert(node);
+            }
+
+            let overlay_camera = active_camera
+                .clone()
+                .unwrap_or_else(fallback_camera_3d_state);
+            let overlay_viewport = self.input.viewport_size();
+            let sprite_3d_data =
+                self.nodes
+                    .get(node)
+                    .and_then(|scene_node| match &scene_node.data {
+                        SceneNodeData::Sprite3D(sprite) => Some((
+                            effective_visible
+                                && sprite.visible
+                                && render_mask_matches(camera_render_mask, sprite.render_layers),
+                            sprite.transform,
+                            sprite.texture,
+                            sprite.size,
+                            sprite.texture_region,
+                            sprite.flip_x,
+                            sprite.flip_y,
+                            sprite.tint,
+                            self.effective_self_modulate(node),
+                        )),
+                        _ => None,
+                    });
+            if let Some((
+                visible,
+                local_transform,
+                texture,
+                size,
+                texture_region,
+                flip_x,
+                flip_y,
+                tint,
+                modulate,
+            )) = sprite_3d_data
+            {
+                if visible {
+                    if let Some(texture) = self.resolve_sprite_texture(node, texture) {
+                        let transform = self
+                            .get_render_global_transform_3d(node)
+                            .unwrap_or(local_transform);
+                        if let Some(rect) =
+                            world_rect_3d(transform, size, &overlay_camera, overlay_viewport)
+                        {
+                            let (uv_min, uv_max) = sprite_3d_uv(texture_region, flip_x, flip_y);
+                            self.queue_render_command(RenderCommand::Ui(UiCommand::UpsertImage {
+                                node,
+                                rect,
+                                clip_rect: viewport_clip_3d(overlay_viewport),
+                                texture,
+                                tint: Runtime::color_modulate(tint, modulate),
+                                uv_min,
+                                uv_max,
+                                scale_mode: UiImageScaleState::Stretch,
+                                h_align: UiTextAlignState::Center,
+                                v_align: UiTextAlignState::Center,
+                                aspect_ratio: 1.0,
+                                corner_radii: Default::default(),
+                            }));
+                            visible_now.insert(node);
+                        }
+                    }
+                } else {
+                    self.queue_render_command(RenderCommand::Ui(UiCommand::RemoveNode { node }));
+                }
+            }
+
+            let label_3d_data =
+                self.nodes
+                    .get(node)
+                    .and_then(|scene_node| match &scene_node.data {
+                        SceneNodeData::Label3D(label) => Some((
+                            effective_visible
+                                && label.visible
+                                && render_mask_matches(camera_render_mask, label.render_layers),
+                            label.transform,
+                            label.size,
+                            label.text.clone(),
+                            label.color,
+                            label.font_size,
+                            label.h_align,
+                            label.v_align,
+                            self.effective_self_modulate(node),
+                        )),
+                        _ => None,
+                    });
+            if let Some((
+                visible,
+                local_transform,
+                size,
+                text,
+                color,
+                font_size,
+                h_align,
+                v_align,
+                modulate,
+            )) = label_3d_data
+            {
+                if visible {
+                    let transform = self
+                        .get_render_global_transform_3d(node)
+                        .unwrap_or(local_transform);
+                    if let Some(rect) =
+                        world_rect_3d(transform, size, &overlay_camera, overlay_viewport)
+                    {
+                        self.queue_render_command(RenderCommand::Ui(UiCommand::UpsertLabel {
+                            node,
+                            rect,
+                            clip_rect: viewport_clip_3d(overlay_viewport),
+                            text,
+                            color: Runtime::color_modulate(color, modulate),
+                            font_size: font_size.max(0.001),
+                            wrap_width: label_3d_wrap_width(size, font_size),
+                            h_align: text_align_state_3d(h_align),
+                            v_align: text_align_state_3d(v_align),
+                        }));
+                        visible_now.insert(node);
+                    }
+                } else {
+                    self.queue_render_command(RenderCommand::Ui(UiCommand::RemoveNode { node }));
+                }
             }
 
             enum LocalMeshInstanceData {
@@ -1226,6 +1348,7 @@ impl Runtime {
         self.queue_render_command(RenderCommand::ThreeD(Box::new(Command3D::RemoveNode {
             node,
         })));
+        self.queue_render_command(RenderCommand::Ui(UiCommand::RemoveNode { node }));
     }
 
     fn active_render_camera_3d(&mut self) -> Option<Camera3DState> {
@@ -2170,6 +2293,200 @@ fn fallback_camera_3d_state() -> Camera3DState {
         post_processing: Arc::from([]),
         audio_options: perro_structs::AudioListenerOptions::new(),
     }
+}
+
+fn viewport_clip_3d(viewport: Vector2) -> [f32; 4] {
+    [0.0, 0.0, viewport.x.max(1.0), viewport.y.max(1.0)]
+}
+
+fn text_align_state_3d(align: perro_ui::UiTextAlign) -> UiTextAlignState {
+    match align {
+        perro_ui::UiTextAlign::Start => UiTextAlignState::Start,
+        perro_ui::UiTextAlign::Center => UiTextAlignState::Center,
+        perro_ui::UiTextAlign::End => UiTextAlignState::End,
+    }
+}
+
+fn label_3d_wrap_width(size: Vector2, font_size: f32) -> Option<f32> {
+    if !size.x.is_finite() || !size.y.is_finite() || !font_size.is_finite() {
+        return None;
+    }
+    let height = size.y.abs().max(0.001);
+    let aspect = (size.x.abs() / height).max(1.0);
+    Some((aspect * font_size.max(1.0)).max(1.0))
+}
+
+fn sprite_3d_uv(
+    texture_region: Option<[f32; 4]>,
+    flip_x: bool,
+    flip_y: bool,
+) -> ([f32; 2], [f32; 2]) {
+    let (mut min, mut max) = if let Some([x, y, w, h]) = texture_region {
+        ([x, y], [x + w, y + h])
+    } else {
+        ([0.0, 0.0], [1.0, 1.0])
+    };
+    if flip_x {
+        std::mem::swap(&mut min[0], &mut max[0]);
+    }
+    if flip_y {
+        std::mem::swap(&mut min[1], &mut max[1]);
+    }
+    (min, max)
+}
+
+fn world_rect_3d(
+    transform: perro_structs::Transform3D,
+    size: Vector2,
+    camera: &Camera3DState,
+    viewport: Vector2,
+) -> Option<UiRectState> {
+    let view_proj = camera_view_proj_3d(camera, viewport);
+    let center = Vec3::new(
+        transform.position.x,
+        transform.position.y,
+        transform.position.z,
+    );
+    let rotation = Quat::from_xyzw(
+        transform.rotation.x,
+        transform.rotation.y,
+        transform.rotation.z,
+        transform.rotation.w,
+    );
+    let rotation = if rotation.is_finite() && rotation.length_squared() > 1.0e-6 {
+        rotation.normalize()
+    } else {
+        Quat::IDENTITY
+    };
+    let right = rotation * Vec3::X * (size.x * transform.scale.x.abs() * 0.5);
+    let up = rotation * Vec3::Y * (size.y * transform.scale.y.abs() * 0.5);
+    let center_screen = project_world_to_ui(center, view_proj, viewport)?;
+    let right_screen = project_world_to_ui(center + right, view_proj, viewport)?;
+    let up_screen = project_world_to_ui(center + up, view_proj, viewport)?;
+    let width = ((right_screen[0] - center_screen[0]).hypot(right_screen[1] - center_screen[1])
+        * 2.0)
+        .max(0.001);
+    let height =
+        ((up_screen[0] - center_screen[0]).hypot(up_screen[1] - center_screen[1]) * 2.0).max(0.001);
+    Some(UiRectState {
+        center: center_screen,
+        size: [width, height],
+        pivot: [0.5, 0.5],
+        rotation_radians: 0.0,
+        z_index: 0,
+    })
+}
+
+fn project_world_to_ui(world: Vec3, view_proj: Mat4, viewport: Vector2) -> Option<[f32; 2]> {
+    let clip = view_proj * world.extend(1.0);
+    if !clip.is_finite() || clip.w <= 1.0e-6 {
+        return None;
+    }
+    let ndc = clip.truncate() / clip.w;
+    if ndc.z < -1.0 || ndc.z > 1.0 {
+        return None;
+    }
+    Some([
+        ndc.x * viewport.x.max(1.0) * 0.5,
+        ndc.y * viewport.y.max(1.0) * 0.5,
+    ])
+}
+
+fn camera_view_proj_3d(camera: &Camera3DState, viewport: Vector2) -> Mat4 {
+    let aspect = viewport.x.max(1.0) / viewport.y.max(1.0);
+    let proj = projection_matrix_3d(camera.projection, aspect);
+    let pos = Vec3::from(camera.position);
+    let rot = Quat::from_xyzw(
+        camera.rotation[0],
+        camera.rotation[1],
+        camera.rotation[2],
+        camera.rotation[3],
+    );
+    let rot = if rot.is_finite() && rot.length_squared() > 1.0e-6 {
+        rot.normalize()
+    } else {
+        Quat::IDENTITY
+    };
+    proj * Mat4::from_rotation_translation(rot, pos).inverse()
+}
+
+fn projection_matrix_3d(projection: CameraProjectionState, aspect: f32) -> Mat4 {
+    match projection {
+        CameraProjectionState::Perspective {
+            fov_y_degrees,
+            near,
+            far,
+        } => Mat4::perspective_rh(
+            perspective_fov_y_radians_3d(fov_y_degrees),
+            aspect.max(1.0e-6),
+            sanitize_near_3d(near),
+            sanitize_far_3d(far, sanitize_near_3d(near)),
+        ),
+        CameraProjectionState::Orthographic { size, near, far } => {
+            let half_h = if size.is_finite() {
+                (size.abs() * 0.5).max(1.0e-3)
+            } else {
+                5.0
+            };
+            let half_w = half_h * aspect.max(1.0e-6);
+            let near = sanitize_near_3d(near);
+            let far = sanitize_far_3d(far, near);
+            Mat4::orthographic_rh(-half_w, half_w, -half_h, half_h, near, far)
+        }
+        CameraProjectionState::Frustum {
+            left,
+            right,
+            bottom,
+            top,
+            near,
+            far,
+        } => {
+            let near = sanitize_near_3d(near);
+            let far = sanitize_far_3d(far, near);
+            let (left, right) = sanitize_range_3d(left, right, -1.0, 1.0);
+            let (bottom, top) = sanitize_range_3d(bottom, top, -1.0, 1.0);
+            Mat4::frustum_rh(left, right, bottom, top, near, far)
+        }
+    }
+}
+
+fn perspective_fov_y_radians_3d(fov_y_degrees: f32) -> f32 {
+    if fov_y_degrees.is_finite() {
+        fov_y_degrees
+            .to_radians()
+            .clamp(10.0f32.to_radians(), 120.0f32.to_radians())
+    } else {
+        60.0f32.to_radians()
+    }
+}
+
+fn sanitize_near_3d(near: f32) -> f32 {
+    if near.is_finite() {
+        near.max(1.0e-3)
+    } else {
+        0.1
+    }
+}
+
+fn sanitize_far_3d(far: f32, near: f32) -> f32 {
+    if far.is_finite() {
+        far.max(near + 1.0e-3)
+    } else {
+        (near + 1000.0).max(near + 1.0e-3)
+    }
+}
+
+fn sanitize_range_3d(min: f32, max: f32, fallback_min: f32, fallback_max: f32) -> (f32, f32) {
+    let mut a = if min.is_finite() { min } else { fallback_min };
+    let mut b = if max.is_finite() { max } else { fallback_max };
+    if (b - a).abs() < 1.0e-6 {
+        a = fallback_min;
+        b = fallback_max;
+    }
+    if b < a {
+        std::mem::swap(&mut a, &mut b);
+    }
+    (a, b)
 }
 
 #[inline]

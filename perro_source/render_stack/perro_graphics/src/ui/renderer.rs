@@ -31,6 +31,7 @@ pub(crate) struct UiLabelDraw {
     pub(crate) text: Cow<'static, str>,
     pub(crate) color: Color,
     pub(crate) font_size: f32,
+    pub(crate) wrap_width: Option<f32>,
     pub(crate) h_align: UiTextAlignState,
     pub(crate) v_align: UiTextAlignState,
 }
@@ -286,6 +287,7 @@ impl UiRenderer {
                 text,
                 color,
                 font_size,
+                wrap_width,
                 h_align,
                 v_align,
             } => self.upsert(
@@ -296,6 +298,7 @@ impl UiRenderer {
                     text,
                     color,
                     font_size,
+                    wrap_width,
                     h_align,
                     v_align,
                 }),
@@ -511,6 +514,7 @@ mod tests {
             text: Cow::Borrowed("Run"),
             color: Color::WHITE,
             font_size: 18.0,
+            wrap_width: None,
             h_align: UiTextAlignState::Center,
             v_align: UiTextAlignState::Center,
         });

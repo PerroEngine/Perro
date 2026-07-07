@@ -1878,6 +1878,54 @@ mod tests {
     }
 
     #[test]
+    fn scene_loader_parses_world_label_locale_text_markers() {
+        let scene = Parser::new(
+            r#"
+            [label_2d]
+            [Label2D]
+                text = "%loc:\"ui.hp\""
+            [/Label2D]
+            [/label_2d]
+
+            [label_3d]
+            [Label3D]
+                text = %loc: "ui.name"
+            [/Label3D]
+            [/label_3d]
+            "#,
+        )
+        .parse_scene();
+
+        let prepared =
+            prepare_scene_with_loader(&scene, &|path| Err(format!("unknown scene path `{path}`")))
+                .expect("prepare scene");
+
+        let label_2d = prepared
+            .nodes
+            .iter()
+            .find(|pending| pending.key_name == "label_2d")
+            .expect("label2d node");
+        assert_eq!(label_2d.locale_text_bindings.len(), 1);
+        assert_eq!(label_2d.locale_text_bindings[0].key, "ui.hp");
+        match &label_2d.node.data {
+            SceneNodeData::Label2D(label) => assert_eq!(label.text.as_ref(), "ui.hp"),
+            other => panic!("expected Label2D node, got {other:?}"),
+        }
+
+        let label_3d = prepared
+            .nodes
+            .iter()
+            .find(|pending| pending.key_name == "label_3d")
+            .expect("label3d node");
+        assert_eq!(label_3d.locale_text_bindings.len(), 1);
+        assert_eq!(label_3d.locale_text_bindings[0].key, "ui.name");
+        match &label_3d.node.data {
+            SceneNodeData::Label3D(label) => assert_eq!(label.text.as_ref(), "ui.name"),
+            other => panic!("expected Label3D node, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn scene_loader_escapes_locale_text_marker_prefix() {
         let scene = Parser::new(
             r#"
@@ -1995,6 +2043,47 @@ mod tests {
             body.field == PendingJointBodyField::BodyB
                 && scene.key_name(SceneKey::new(body.target_key)) == Some("SwingBody")
         }));
+    }
+
+    #[test]
+    fn scene_loader_builds_rigid_body_gravity_scale() {
+        let scene = Parser::new(
+            r#"
+            [Body2D]
+                [RigidBody2D]
+                    gravity_scale = 0.5
+                [/RigidBody2D]
+            [/Body2D]
+
+            [Body3D]
+                [RigidBody3D]
+                    gravity_scale = 0.25
+                [/RigidBody3D]
+            [/Body3D]
+            "#,
+        )
+        .parse_scene();
+
+        let prepared = prepare_scene_with_loader(&scene, &|_| unreachable!()).unwrap();
+        let body_2d = prepared
+            .nodes
+            .iter()
+            .find(|pending| pending.key_name == "Body2D")
+            .expect("body2d node");
+        let body_3d = prepared
+            .nodes
+            .iter()
+            .find(|pending| pending.key_name == "Body3D")
+            .expect("body3d node");
+
+        match &body_2d.node.data {
+            SceneNodeData::RigidBody2D(body) => assert_eq!(body.gravity_scale, 0.5),
+            other => panic!("expected RigidBody2D node, got {other:?}"),
+        }
+        match &body_3d.node.data {
+            SceneNodeData::RigidBody3D(body) => assert_eq!(body.gravity_scale, 0.25),
+            other => panic!("expected RigidBody3D node, got {other:?}"),
+        }
     }
 
     #[test]

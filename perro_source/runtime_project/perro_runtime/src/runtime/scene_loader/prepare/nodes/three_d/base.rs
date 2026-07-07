@@ -67,6 +67,96 @@ fn build_decal_3d(data: &SceneDefNodeData) -> Decal3D {
     node
 }
 
+fn build_sprite_3d(data: &SceneDefNodeData) -> Sprite3D {
+    let mut node = Sprite3D::new();
+    if let Some(base) = data.base_ref() {
+        apply_node_3d_data(&mut node, base);
+    }
+    apply_node_3d_fields(&mut node, &data.fields);
+    apply_sprite_3d_fields(&mut node, &data.fields);
+    node
+}
+
+fn build_label_3d(data: &SceneDefNodeData) -> Label3D {
+    let mut node = Label3D::new();
+    if let Some(base) = data.base_ref() {
+        apply_node_3d_data(&mut node, base);
+    }
+    apply_node_3d_fields(&mut node, &data.fields);
+    apply_label_3d_fields(&mut node, &data.fields);
+    node
+}
+
+fn apply_sprite_3d_fields(node: &mut Sprite3D, fields: &[SceneObjectField]) {
+    SceneFieldIterRef::new(fields).for_each(|name, value| match name {
+        "texture_region" | "region" | "atlas_region" => {
+            if let Some((x, y, w, h)) = value.as_vec4()
+                && w > 0.0
+                && h > 0.0
+            {
+                node.texture_region = Some([x, y, w, h]);
+            }
+        }
+        "size" => {
+            if let Some(v) = as_vec2(value) {
+                node.size = Vector2::new(v.x.max(0.001), v.y.max(0.001));
+            }
+        }
+        "flip_x" | "flip_h" | "mirror_x" => {
+            if let Some(v) = as_bool(value) {
+                node.flip_x = v;
+            }
+        }
+        "flip_y" | "flip_v" | "mirror_y" => {
+            if let Some(v) = as_bool(value) {
+                node.flip_y = v;
+            }
+        }
+        "tint" | "color" | "modulate" => {
+            if let Some(v) = as_scene_color(value) {
+                node.tint = v;
+            }
+        }
+        _ => {}
+    });
+}
+
+fn apply_label_3d_fields(node: &mut Label3D, fields: &[SceneObjectField]) {
+    SceneFieldIterRef::new(fields).for_each(|name, value| match name {
+        "text" => {
+            if let Some(v) = as_str(value) {
+                node.text = Cow::Owned(decode_scene_text_literal(v));
+            }
+        }
+        "size" => {
+            if let Some(v) = as_vec2(value) {
+                node.size = Vector2::new(v.x.max(0.001), v.y.max(0.001));
+            }
+        }
+        "color" | "text_color" | "modulate" => {
+            if let Some(v) = as_scene_color(value) {
+                node.color = v;
+            }
+        }
+        "font_size" | "text_size" => {
+            if let Some(v) = as_f32(value) {
+                node.font_size = v.max(0.001);
+            }
+        }
+        "h_align" | "text_h_align" => {
+            if let Some(v) = as_ui_text_align(value) {
+                node.h_align = v;
+            }
+        }
+        "v_align" | "text_v_align" => {
+            if let Some(v) = as_ui_text_align(value) {
+                node.v_align = v;
+            }
+        }
+        _ => {}
+    });
+}
+
 fn apply_decal_3d_fields(node: &mut Decal3D, fields: &[SceneObjectField]) {
     // Texture paths are resolved to TextureIDs at merge time (see
     // decal_texture_sources on PendingNode); only scalars apply here.

@@ -10,6 +10,8 @@
 | `apply_force_2d` | [`apply_force_2d`](#apply_force_2d) |
 | `get_gravity` | [`get_gravity`](#get_gravity) |
 | `set_gravity` | [`set_gravity`](#set_gravity) |
+| `get_body_gravity_scale` | [`get_body_gravity_scale`](#get_body_gravity_scale) |
+| `set_body_gravity_scale` | [`set_body_gravity_scale`](#set_body_gravity_scale) |
 | `get_coefficient` | [`get_coefficient`](#get_coefficient) |
 | `set_coefficient` | [`set_coefficient`](#set_coefficient) |
 | `apply_force_3d` | [`apply_force_3d`](#apply_force_3d) |
@@ -46,6 +48,8 @@
 | `apply_force` | [`apply_force`](#apply_force) |
 | `physics_get_gravity` | [`physics_get_gravity`](#physics_get_gravity) |
 | `physics_set_gravity` | [`physics_set_gravity`](#physics_set_gravity) |
+| `physics_get_body_gravity_scale` | [`physics_get_body_gravity_scale`](#physics_get_body_gravity_scale) |
+| `physics_set_body_gravity_scale` | [`physics_set_body_gravity_scale`](#physics_set_body_gravity_scale) |
 | `physics_get_coefficient` | [`physics_get_coefficient`](#physics_get_coefficient) |
 | `physics_set_coefficient` | [`physics_set_coefficient`](#physics_set_coefficient) |
 | `physics_solve_velocity_to_target_2d` | [`physics_solve_velocity_to_target_2d`](#physics_solve_velocity_to_target_2d) |
@@ -116,6 +120,28 @@ This runtime module belongs to `ctx.run` and documents physics calls.
 | Returns | `()` |
 | Use when | Use when gameplay must change engine state or queue an action this frame. |
 | Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+
+### `get_body_gravity_scale`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Physics()` |
+| Signature | `pub fn get_body_gravity_scale(&mut self, body_id: NodeID) -> Option<f32>` |
+| Params | `&mut self, body_id: NodeID` |
+| Returns | `Option<f32>` |
+| Use when | Read local gravity multiplier for `RigidBody2D` or `RigidBody3D`. |
+| Fails when / edge behavior | Returns `None` when node is missing or not a rigid body. |
+
+### `set_body_gravity_scale`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Physics()` |
+| Signature | `pub fn set_body_gravity_scale(&mut self, body_id: NodeID, scale: f32) -> bool` |
+| Params | `&mut self, body_id: NodeID, scale: f32` |
+| Returns | `bool` |
+| Use when | Set local gravity multiplier for `RigidBody2D` or `RigidBody3D`. |
+| Fails when / edge behavior | Returns `false` when node is missing, not a rigid body, or `scale` is not finite. Effective gravity is `world gravity * physics coefficient * gravity_scale`. |
 
 ### `get_coefficient`
 
@@ -512,6 +538,28 @@ This runtime module belongs to `ctx.run` and documents physics calls.
 | Returns | `bool or () as shown by backing method` |
 | Use when | Use when gameplay must change engine state or queue an action this frame. |
 | Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+
+### `physics_get_body_gravity_scale`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Physics()` |
+| Signature | `physics_get_body_gravity_scale!(ctx.run, body_id)` |
+| Params | `ctx, body_id` |
+| Returns | `Option<f32>` |
+| Use when | Read local gravity multiplier for a rigid body. |
+| Fails when / edge behavior | Returns `None` when node is missing or not a rigid body. |
+
+### `physics_set_body_gravity_scale`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Physics()` |
+| Signature | `physics_set_body_gravity_scale!(ctx.run, body_id, scale)` |
+| Params | `ctx, body_id, scale` |
+| Returns | `bool` |
+| Use when | Set local gravity multiplier for a rigid body. |
+| Fails when / edge behavior | Returns `false` when node is missing, not a rigid body, or `scale` is not finite. |
 
 ### `physics_get_coefficient`
 

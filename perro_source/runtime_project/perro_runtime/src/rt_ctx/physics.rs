@@ -19,6 +19,34 @@ impl PhysicsAPI for Runtime {
         self.set_physics_gravity(gravity);
     }
 
+    fn get_body_gravity_scale(&mut self, body_id: NodeID) -> Option<f32> {
+        match &self.nodes.get(body_id)?.data {
+            SceneNodeData::RigidBody2D(body) => Some(body.gravity_scale),
+            SceneNodeData::RigidBody3D(body) => Some(body.gravity_scale),
+            _ => None,
+        }
+    }
+
+    fn set_body_gravity_scale(&mut self, body_id: NodeID, scale: f32) -> bool {
+        if !scale.is_finite() {
+            return false;
+        }
+        let Some(node) = self.nodes.get_mut(body_id) else {
+            return false;
+        };
+        match &mut node.data {
+            SceneNodeData::RigidBody2D(body) => {
+                body.gravity_scale = scale;
+                true
+            }
+            SceneNodeData::RigidBody3D(body) => {
+                body.gravity_scale = scale;
+                true
+            }
+            _ => false,
+        }
+    }
+
     fn get_coefficient(&mut self) -> f32 {
         self.get_physics_coefficient()
     }
@@ -322,6 +350,52 @@ mod tests {
 
         assert_eq!(PhysicsAPI::get_coefficient(&mut runtime), 2.0);
         assert_eq!(PhysicsAPI::get_gravity(&mut runtime), -4.0);
+    }
+
+    #[test]
+    fn physics_api_sets_body_gravity_scale() {
+        let mut runtime = Runtime::new();
+        let body_2d = NodeAPI::create::<RigidBody2D>(&mut runtime);
+        let body_3d = NodeAPI::create::<RigidBody3D>(&mut runtime);
+        let invalid = NodeID::from_u32(999);
+
+        assert_eq!(
+            PhysicsAPI::get_body_gravity_scale(&mut runtime, body_2d),
+            Some(1.0)
+        );
+        assert!(PhysicsAPI::set_body_gravity_scale(
+            &mut runtime,
+            body_2d,
+            0.5
+        ));
+        assert!(PhysicsAPI::set_body_gravity_scale(
+            &mut runtime,
+            body_3d,
+            0.25
+        ));
+        assert!(!PhysicsAPI::set_body_gravity_scale(
+            &mut runtime,
+            body_2d,
+            f32::NAN
+        ));
+        assert!(!PhysicsAPI::set_body_gravity_scale(
+            &mut runtime,
+            invalid,
+            0.5
+        ));
+
+        assert_eq!(
+            PhysicsAPI::get_body_gravity_scale(&mut runtime, body_2d),
+            Some(0.5)
+        );
+        assert_eq!(
+            PhysicsAPI::get_body_gravity_scale(&mut runtime, body_3d),
+            Some(0.25)
+        );
+        assert_eq!(
+            PhysicsAPI::get_body_gravity_scale(&mut runtime, invalid),
+            None
+        );
     }
 
     #[test]

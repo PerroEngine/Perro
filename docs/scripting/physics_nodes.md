@@ -19,6 +19,7 @@ parent = $root
     [RigidBody2D]
         collision_layers = [1]
         collision_mask = []
+        gravity_scale = 0.5
         [Node2D/]
     [/RigidBody2D]
 [/Body]
@@ -36,11 +37,12 @@ parent = @Body
 ```text
 [Body]
 parent = $root
-    [StaticBody3D]
+    [RigidBody3D]
         collision_layers = [1]
         collision_mask = []
+        gravity_scale = 0.5
         [Node3D/]
-    [/StaticBody3D]
+    [/RigidBody3D]
 [/Body]
 
 [BodyShape]
@@ -49,6 +51,31 @@ parent = @Body
         shape = { type = cube, size = (1, 1, 1) }
     [/CollisionShape3D]
 [/BodyShape]
+```
+
+## Rigid Body Gravity Scale
+
+`RigidBody2D` and `RigidBody3D` use world gravity times local `gravity_scale`.
+Default is `1.0`.
+Set `0.5` for half gravity, `0.0` for no gravity, or a negative value to invert it.
+
+Scene file:
+
+```text
+[Ball]
+parent = $root
+    [RigidBody3D]
+        gravity_scale = 0.5
+        [Node3D/]
+    [/RigidBody3D]
+[/Ball]
+```
+
+Script:
+
+```rust
+physics_set_body_gravity_scale!(ctx.run, body_id, 0.5);
+let scale = physics_get_body_gravity_scale!(ctx.run, body_id);
 ```
 
 ## Character Body

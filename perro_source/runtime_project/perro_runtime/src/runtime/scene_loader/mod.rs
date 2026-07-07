@@ -1318,4 +1318,80 @@ mod tests {
                 })
         );
     }
+
+    #[test]
+    fn runtime_locale_text_binding_supports_world_labels() {
+        fn static_lookup(locale: Locale, key_hash: u64) -> &'static str {
+            match (locale, key_hash) {
+                (Locale::EN, hash) if hash == perro_ids::string_to_u64("ui.hp") => "HP",
+                (Locale::ES, hash) if hash == perro_ids::string_to_u64("ui.hp") => "PV",
+                (Locale::EN, hash) if hash == perro_ids::string_to_u64("ui.name") => "Name",
+                (Locale::ES, hash) if hash == perro_ids::string_to_u64("ui.name") => "Nombre",
+                _ => "",
+            }
+        }
+
+        let scene = Parser::new(
+            r#"
+            [label_2d]
+            [Label2D]
+                text = %loc: "ui.hp"
+            [/Label2D]
+            [/label_2d]
+
+            [label_3d]
+            [Label3D]
+                text = %loc: "ui.name"
+            [/Label3D]
+            [/label_3d]
+            "#,
+        )
+        .parse_scene();
+        let prepared = prepare::prepare_scene_with_loader(&scene, &|path| {
+            Err(format!("unknown scene path `{path}`"))
+        })
+        .expect("prepare scene");
+        let mut runtime = Runtime::new();
+        runtime.resource_api = RuntimeResourceApi::new(
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(static_lookup),
+            None,
+            Some(LocalizationConfig {
+                source_csv: "locale.csv".to_string(),
+                key_column: "key".to_string(),
+                default_locale: "en".to_string(),
+            }),
+        );
+        merge::merge_prepared_scene(&mut runtime, prepared).expect("merge scene");
+
+        let mut label_texts = runtime
+            .nodes
+            .iter()
+            .filter_map(|(_, node)| match &node.data {
+                perro_nodes::SceneNodeData::Label2D(label) => Some(label.text.as_ref().to_string()),
+                perro_nodes::SceneNodeData::Label3D(label) => Some(label.text.as_ref().to_string()),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        label_texts.sort();
+        assert_eq!(label_texts, ["HP", "Name"]);
+
+        assert!(runtime.resource_api.localization_set_locale(Locale::ES));
+        runtime.extract_render_ui_commands();
+        let mut label_texts = runtime
+            .nodes
+            .iter()
+            .filter_map(|(_, node)| match &node.data {
+                perro_nodes::SceneNodeData::Label2D(label) => Some(label.text.as_ref().to_string()),
+                perro_nodes::SceneNodeData::Label3D(label) => Some(label.text.as_ref().to_string()),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        label_texts.sort();
+        assert_eq!(label_texts, ["Nombre", "PV"]);
+    }
 }

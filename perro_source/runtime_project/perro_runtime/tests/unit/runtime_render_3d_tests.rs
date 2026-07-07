@@ -2,10 +2,10 @@ use super::Runtime;
 use perro_animation::{
     AnimationClip, AnimationObject, AnimationObjectKey, AnimationObjectTrack, AnimationTrackValue,
 };
-use perro_ids::{MaterialID, MeshID};
+use perro_ids::{MaterialID, MeshID, TextureID};
 use perro_nodes::{
-    AnimationPlayer, CameraProjection, CollisionShape3D, SceneNode, SceneNodeData, StaticBody3D,
-    WaterBody3D,
+    AnimationPlayer, CameraProjection, CollisionShape3D, Label3D, SceneNode, SceneNodeData,
+    StaticBody3D, WaterBody3D,
     ambient_light_3d::AmbientLight3D,
     camera_3d::Camera3D,
     mesh_instance_3d::MeshInstance3D,
@@ -17,12 +17,13 @@ use perro_nodes::{
     ray_light_3d::RayLight3D,
     skeleton_3d::{Bone3D, Skeleton3D},
     sky_3d::Sky3D,
+    sprite_3d::Sprite3D,
 };
 use perro_render_bridge::{
     CameraProjectionState, Command3D, Material3D, Mesh3D, RenderCommand, RenderEvent,
-    ResourceCommand, StandardMaterial3D,
+    ResourceCommand, StandardMaterial3D, UiCommand,
 };
-use perro_resource_api::sub_apis::{MaterialAPI, MeshAPI};
+use perro_resource_api::sub_apis::{MaterialAPI, MeshAPI, TextureAPI};
 use perro_runtime_api::sub_apis::{AnimPlayerAPI, NodeAPI};
 use perro_scene::{Node3DField, NodeField, NodeType};
 use perro_structs::Transform3D;
@@ -34,6 +35,25 @@ fn collect_commands(runtime: &mut Runtime) -> Vec<RenderCommand> {
     let mut out = Vec::new();
     runtime.drain_render_commands(&mut out);
     out
+}
+
+fn collect_resource_texture_request(
+    runtime: &mut Runtime,
+    texture: TextureID,
+) -> perro_render_bridge::RenderRequestID {
+    let mut commands = Vec::new();
+    runtime.drain_render_commands(&mut commands);
+    commands
+        .into_iter()
+        .find_map(|command| match command {
+            RenderCommand::Resource(ResourceCommand::CreateTexture { request, id, .. })
+                if id == texture =>
+            {
+                Some(request)
+            }
+            _ => None,
+        })
+        .expect("expected texture create command")
 }
 
 fn water_3d_command(
@@ -84,6 +104,93 @@ fn linked_3d_water_mirrors_wake_across_overlap() {
     assert_eq!(water.impacts.len(), 1);
     assert!(water.impacts[0].strength > 0.0);
     assert!(water.impacts[0].strength < 10.0);
+}
+
+#[test]
+fn sprite_3d_and_label_3d_emit_projected_ui_commands() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+    let camera = NodeAPI::create::<Camera3D>(&mut runtime);
+    let sprite = NodeAPI::create::<Sprite3D>(&mut runtime);
+    let label = NodeAPI::create::<Label3D>(&mut runtime);
+    if let Some(node) = runtime.nodes.get_mut(camera)
+        && let SceneNodeData::Camera3D(data) = &mut node.data
+    {
+        data.active = true;
+    }
+    if let Some(node) = runtime.nodes.get_mut(sprite)
+        && let SceneNodeData::Sprite3D(data) = &mut node.data
+    {
+        data.texture = TextureID::from_parts(12, 0);
+        data.transform.position = Vector3::new(0.0, 0.0, -5.0);
+    }
+    if let Some(node) = runtime.nodes.get_mut(label)
+        && let SceneNodeData::Label3D(data) = &mut node.data
+    {
+        data.text = "Name".into();
+        data.transform.position = Vector3::new(0.0, 1.0, -5.0);
+    }
+
+    runtime.extract_render_3d_commands();
+    let commands = collect_commands(&mut runtime);
+
+    assert!(commands.iter().any(|command| matches!(
+        command,
+        RenderCommand::Ui(UiCommand::UpsertImage { node, texture, .. })
+            if *node == sprite && *texture == TextureID::from_parts(12, 0)
+    )));
+    assert!(commands.iter().any(|command| matches!(
+        command,
+        RenderCommand::Ui(UiCommand::UpsertLabel { node, text, wrap_width, .. })
+            if *node == label && text.as_ref() == "Name" && *wrap_width == Some(80.0)
+    )));
+}
+
+#[test]
+fn sprite_3d_emits_after_async_texture_create_without_other_dirty_work() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+    let camera = NodeAPI::create::<Camera3D>(&mut runtime);
+    let sprite = NodeAPI::create::<Sprite3D>(&mut runtime);
+    if let Some(node) = runtime.nodes.get_mut(camera)
+        && let SceneNodeData::Camera3D(data) = &mut node.data
+    {
+        data.active = true;
+    }
+
+    let texture = runtime
+        .resource_api
+        .load_texture("res://textures/floating_prompt.png");
+    let request = collect_resource_texture_request(&mut runtime, texture);
+    if let Some(node) = runtime.nodes.get_mut(sprite)
+        && let SceneNodeData::Sprite3D(data) = &mut node.data
+    {
+        data.texture = texture;
+        data.transform.position = Vector3::new(0.0, 0.0, -5.0);
+    }
+
+    runtime.extract_render_3d_commands();
+    assert!(
+        !collect_commands(&mut runtime)
+            .iter()
+            .any(|command| matches!(
+                command,
+                RenderCommand::Ui(UiCommand::UpsertImage { node, .. }) if *node == sprite
+            ))
+    );
+
+    runtime.apply_render_event(RenderEvent::TextureCreated {
+        request,
+        id: texture,
+    });
+    runtime.extract_render_3d_commands();
+    let commands = collect_commands(&mut runtime);
+
+    assert!(commands.iter().any(|command| matches!(
+        command,
+        RenderCommand::Ui(UiCommand::UpsertImage { node, texture: id, .. })
+            if *node == sprite && *id == texture
+    )));
 }
 
 #[test]

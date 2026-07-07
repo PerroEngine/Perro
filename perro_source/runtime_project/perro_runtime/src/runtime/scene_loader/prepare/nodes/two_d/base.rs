@@ -32,6 +32,16 @@ fn build_sprite_2d(data: &SceneDefNodeData) -> Sprite2D {
     node
 }
 
+fn build_label_2d(data: &SceneDefNodeData) -> Label2D {
+    let mut node = Label2D::new();
+    if let Some(base) = data.base_ref() {
+        apply_node_2d_data(&mut node, base);
+    }
+    apply_node_2d_fields(&mut node, &data.fields);
+    apply_label_2d_fields(&mut node, &data.fields);
+    node
+}
+
 fn build_button_2d(data: &SceneDefNodeData) -> Button2D {
     let mut node = Button2D::new();
     if let Some(base) = data.base_ref() {
@@ -707,6 +717,42 @@ fn apply_sprite_2d_fields(node: &mut Sprite2D, fields: &[SceneObjectField]) {
             }
             _ => {}
         }
+    });
+}
+
+fn apply_label_2d_fields(node: &mut Label2D, fields: &[SceneObjectField]) {
+    SceneFieldIterRef::new(fields).for_each(|name, value| match name {
+        "text" => {
+            if let Some(v) = as_str(value) {
+                node.text = Cow::Owned(decode_scene_text_literal(v));
+            }
+        }
+        "size" => {
+            if let Some(v) = as_vec2(value) {
+                node.size = Vector2::new(v.x.max(0.001), v.y.max(0.001));
+            }
+        }
+        "color" | "text_color" | "modulate" => {
+            if let Some(v) = as_scene_color(value) {
+                node.color = v;
+            }
+        }
+        "font_size" | "text_size" => {
+            if let Some(v) = as_f32(value) {
+                node.font_size = v.max(0.001);
+            }
+        }
+        "h_align" | "text_h_align" => {
+            if let Some(v) = as_ui_text_align(value) {
+                node.h_align = v;
+            }
+        }
+        "v_align" | "text_v_align" => {
+            if let Some(v) = as_ui_text_align(value) {
+                node.v_align = v;
+            }
+        }
+        _ => {}
     });
 }
 

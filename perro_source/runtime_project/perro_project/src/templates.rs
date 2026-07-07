@@ -6,12 +6,57 @@ fn write_if_missing(path: PathBuf, contents: &str) -> std::io::Result<()> {
 }
 
 fn write_if_changed(path: &Path, contents: &str) -> std::io::Result<()> {
-    if let Ok(existing) = fs::read_to_string(path)
-        && existing == contents
-    {
+    if file_text_matches(path, contents)? {
+        return Ok(());
+    }
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let _guard = WriteLock::acquire(path)?;
+    if file_text_matches(path, contents)? {
         return Ok(());
     }
     fs::write(path, contents)
+}
+
+fn file_text_matches(path: &Path, contents: &str) -> std::io::Result<bool> {
+    match fs::read_to_string(path) {
+        Ok(existing) => Ok(existing == contents),
+        Err(err)
+            if matches!(
+                err.kind(),
+                std::io::ErrorKind::NotFound | std::io::ErrorKind::InvalidData
+            ) =>
+        {
+            Ok(false)
+        }
+        Err(err) => Err(err),
+    }
+}
+
+struct WriteLock {
+    path: PathBuf,
+}
+
+impl WriteLock {
+    fn acquire(path: &Path) -> std::io::Result<Self> {
+        let lock_path = path.with_extension("write-lock");
+        loop {
+            match fs::create_dir(&lock_path) {
+                Ok(()) => return Ok(Self { path: lock_path }),
+                Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                }
+                Err(err) => return Err(err),
+            }
+        }
+    }
+}
+
+impl Drop for WriteLock {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir(&self.path);
+    }
 }
 
 fn crate_name_from_project_name(project_name: &str) -> String {
