@@ -10,6 +10,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
+const STRING_POOL_ITEMS_PER_LINE: usize = 50;
+
 #[derive(Debug)]
 struct StaticCsvTable {
     asset_path: String,
@@ -239,13 +241,20 @@ fn emit_csv_table(
 }
 
 fn emit_string_pool(out: &mut String, string_pool: &CsvStringPool) {
-    for (index, value) in string_pool.values.iter().enumerate() {
-        let escaped = escape_rust_str(value);
-        let _ = writeln!(out, "static CSV_STR_{index}: &str = \"{escaped}\";");
-    }
-    if !string_pool.values.is_empty() {
+    let _ = writeln!(
+        out,
+        "const CSV_STRINGS: [&str; {}] = [",
+        string_pool.values.len()
+    );
+    for chunk in string_pool.values.chunks(STRING_POOL_ITEMS_PER_LINE) {
+        out.push_str("    ");
+        for value in chunk {
+            let escaped = escape_rust_str(value);
+            let _ = write!(out, "\"{escaped}\", ");
+        }
         out.push('\n');
     }
+    out.push_str("];\n\n");
 }
 
 fn emit_cells(out: &mut String, name: &str, values: &[String], string_pool: &CsvStringPool) {
@@ -256,7 +265,10 @@ fn emit_cells(out: &mut String, name: &str, values: &[String], string_pool: &Csv
             .get(value)
             .expect("csv string must be interned before emit");
         let hash = string_to_u64(value);
-        let _ = writeln!(out, "    CsvCell::new(CSV_STR_{string_index}, {hash}),");
+        let _ = writeln!(
+            out,
+            "    CsvCell::new(CSV_STRINGS[{string_index}], {hash}),"
+        );
     }
     out.push_str("];\n\n");
 }
@@ -295,7 +307,7 @@ mod tests {
         assert_eq!(out.matches("static CSV_0_ROW_CELLS_").count(), 2);
         assert_eq!(out.matches("CsvRow::new(&CSV_0_ROW_CELLS_0),").count(), 2);
         assert_eq!(out.matches("CsvRow::new(&CSV_0_ROW_CELLS_1),").count(), 1);
-        assert_eq!(out.matches("static CSV_STR_").count(), 8);
+        assert!(out.contains("const CSV_STRINGS: [&str; 8]"));
         assert_eq!(out.matches("\"22\"").count(), 1);
         assert_eq!(out.matches("\"Tiernan\"").count(), 1);
         assert!(out.contains("static CSV_0_ROWS: [CsvRow; 3]"));
@@ -329,7 +341,7 @@ mod tests {
 
         assert_eq!(out.matches("\"Shared\"").count(), 1);
         assert_eq!(out.matches("\"id\"").count(), 1);
-        assert_eq!(out.matches("CsvCell::new(CSV_STR_").count(), 8);
+        assert_eq!(out.matches("CsvCell::new(CSV_STRINGS[").count(), 8);
     }
 
     #[test]
