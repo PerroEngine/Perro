@@ -9,6 +9,8 @@ use epaint::{ClippedPrimitive, ImageData, Primitive, TextureId, textures::Textur
 use perro_ids::TextureID;
 use perro_structs::TextureFilterMode;
 use std::borrow::Cow;
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 
 #[path = "gpu/helpers.rs"]
 mod helpers;
@@ -63,6 +65,21 @@ struct UiPerfCounters {
     draw_calls: u32,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct UiMeshSignature {
+    hash: u64,
+    mesh_count: usize,
+    vertex_count: usize,
+    index_count: usize,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+struct UiMeshTotals {
+    mesh_count: usize,
+    vertex_count: usize,
+    index_count: usize,
+}
+
 pub struct GpuUi {
     pipeline: wgpu::RenderPipeline,
     composite_pipeline: wgpu::RenderPipeline,
@@ -83,6 +100,7 @@ pub struct GpuUi {
     index_capacity_bytes: u64,
     vertices: Vec<UiVertexGpu>,
     indices: Vec<u32>,
+    prepared_mesh_signature: Option<UiMeshSignature>,
     prepared_revision: u64,
     prepared_viewport: [u32; 2],
     perf_counters: UiPerfCounters,
@@ -96,6 +114,14 @@ pub struct UiPrepareInput<'a> {
     pub texture_size: [u32; 2],
     pub revision: u64,
     pub static_texture_lookup: Option<StaticTextureLookup>,
+}
+
+struct UiMeshSignatureInput<'a> {
+    resources: &'a ResourceStore,
+    primitives: &'a [ClippedPrimitive],
+    render_viewport: [u32; 2],
+    render_scale: [f32; 2],
+    static_texture_lookup: Option<StaticTextureLookup>,
 }
 
 impl GpuUi {
@@ -327,6 +353,7 @@ impl GpuUi {
             index_capacity_bytes: 0,
             vertices: Vec::new(),
             indices: Vec::new(),
+            prepared_mesh_signature: None,
             prepared_revision: u64::MAX,
             prepared_viewport: [0, 0],
             perf_counters: UiPerfCounters::default(),
@@ -373,9 +400,29 @@ impl GpuUi {
                 self.apply_harfbuzz_font_delta(device, queue, delta);
             }
         }
+        let (mesh_signature, mesh_totals) = self.mesh_signature(
+            device,
+            queue,
+            UiMeshSignatureInput {
+                resources,
+                primitives,
+                render_viewport,
+                render_scale,
+                static_texture_lookup,
+            },
+        );
+        if self.prepared_mesh_signature == Some(mesh_signature) {
+            self.perf_counters.draw_calls = self.meshes.len() as u32;
+            self.prepared_revision = revision;
+            self.prepared_viewport = viewport;
+            return;
+        }
         self.meshes.clear();
         self.vertices.clear();
         self.indices.clear();
+        self.meshes.reserve(mesh_totals.mesh_count);
+        self.vertices.reserve(mesh_totals.vertex_count);
+        self.indices.reserve(mesh_totals.index_count);
         self.perf_counters = UiPerfCounters::default();
         for primitive in primitives {
             let Primitive::Mesh(mesh) = &primitive.primitive else {
@@ -402,8 +449,6 @@ impl GpuUi {
             }
             let vertex_offset = self.vertices.len().min(u32::MAX as usize) as u32;
             let index_start = self.indices.len().min(u32::MAX as usize) as u32;
-            self.vertices.reserve(mesh.vertices.len());
-            self.indices.reserve(mesh.indices.len());
             self.indices.extend(
                 mesh.indices
                     .iter()
@@ -429,6 +474,7 @@ impl GpuUi {
         }
         self.perf_counters.draw_calls = self.meshes.len() as u32;
         self.upload_mesh_buffers(device, queue);
+        self.prepared_mesh_signature = Some(mesh_signature);
         self.prepared_revision = revision;
         self.prepared_viewport = viewport;
     }
@@ -522,7 +568,34 @@ impl GpuUi {
         self.meshes.clear();
         self.vertices.clear();
         self.indices.clear();
+        self.prepared_mesh_signature = None;
         self.prepared_revision = u64::MAX;
+    }
+
+    fn mesh_signature(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        input: UiMeshSignatureInput<'_>,
+    ) -> (UiMeshSignature, UiMeshTotals) {
+        let UiMeshSignatureInput {
+            resources,
+            primitives,
+            render_viewport,
+            render_scale,
+            static_texture_lookup,
+        } = input;
+        hash_renderable_meshes(primitives, render_viewport, render_scale, |texture_id| {
+            texture_id == TextureId::default()
+                || texture_id == UI_HARFBUZZ_TEXTURE_ID
+                || self.ensure_image_texture(
+                    device,
+                    queue,
+                    resources,
+                    texture_id,
+                    static_texture_lookup,
+                )
+        })
     }
 
     fn upload_mesh_buffers(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
@@ -796,6 +869,8 @@ impl GpuUi {
 
     pub fn invalidate_image_texture(&mut self, texture: TextureID) {
         self.image_textures.remove(&texture);
+        self.prepared_mesh_signature = None;
+        self.prepared_revision = u64::MAX;
     }
 
     fn ensure_image_texture(
@@ -892,7 +967,91 @@ impl GpuUi {
                 size: [size[0].max(1), size[1].max(1)],
             },
         );
+        self.prepared_mesh_signature = None;
         self.prepared_revision = u64::MAX;
+    }
+}
+
+fn hash_f32(value: f32, hasher: &mut impl Hasher) {
+    value.to_bits().hash(hasher);
+}
+
+fn hash_renderable_meshes(
+    primitives: &[ClippedPrimitive],
+    render_viewport: [u32; 2],
+    render_scale: [f32; 2],
+    mut texture_available: impl FnMut(TextureId) -> bool,
+) -> (UiMeshSignature, UiMeshTotals) {
+    let mut hasher = DefaultHasher::new();
+    let mut totals = UiMeshTotals::default();
+    render_viewport.hash(&mut hasher);
+    hash_f32(render_scale[0], &mut hasher);
+    hash_f32(render_scale[1], &mut hasher);
+    for primitive in primitives {
+        let Primitive::Mesh(mesh) = &primitive.primitive else {
+            continue;
+        };
+        if mesh.vertices.is_empty() || mesh.indices.is_empty() {
+            continue;
+        }
+        if !texture_available(mesh.texture_id) {
+            continue;
+        }
+        let clip_rect = clip_rect_scaled(primitive, render_viewport, render_scale);
+        if clip_rect[2] == 0 || clip_rect[3] == 0 {
+            continue;
+        }
+        let vertex_offset = totals.vertex_count.min(u32::MAX as usize) as u32;
+        let index_start = totals.index_count.min(u32::MAX as usize) as u32;
+        index_start.hash(&mut hasher);
+        clip_rect.hash(&mut hasher);
+        hash_texture_id(mesh.texture_id, &mut hasher);
+        mesh.vertices.len().hash(&mut hasher);
+        mesh.indices.len().hash(&mut hasher);
+        for vertex in &mesh.vertices {
+            hash_f32(vertex.pos.x * render_scale[0], &mut hasher);
+            hash_f32(vertex.pos.y * render_scale[1], &mut hasher);
+            hash_f32(vertex.uv.x, &mut hasher);
+            hash_f32(vertex.uv.y, &mut hasher);
+            vertex.color.to_array().hash(&mut hasher);
+        }
+        for index in &mesh.indices {
+            index.saturating_add(vertex_offset).hash(&mut hasher);
+        }
+        totals.mesh_count = totals.mesh_count.saturating_add(1);
+        totals.vertex_count = totals.vertex_count.saturating_add(mesh.vertices.len());
+        totals.index_count = totals.index_count.saturating_add(mesh.indices.len());
+    }
+    (
+        UiMeshSignature {
+            hash: hasher.finish(),
+            mesh_count: totals.mesh_count,
+            vertex_count: totals.vertex_count,
+            index_count: totals.index_count,
+        },
+        totals,
+    )
+}
+
+#[cfg(test)]
+fn ui_mesh_signature_for_test(
+    primitives: &[ClippedPrimitive],
+    render_viewport: [u32; 2],
+    render_scale: [f32; 2],
+) -> UiMeshSignature {
+    hash_renderable_meshes(primitives, render_viewport, render_scale, |_| true).0
+}
+
+fn hash_texture_id(texture_id: TextureId, hasher: &mut impl Hasher) {
+    match texture_id {
+        TextureId::Managed(id) => {
+            0_u8.hash(hasher);
+            id.hash(hasher);
+        }
+        TextureId::User(id) => {
+            1_u8.hash(hasher);
+            id.hash(hasher);
+        }
     }
 }
 
@@ -921,8 +1080,8 @@ fn push_ui_mesh(
 
 #[cfg(test)]
 mod tests {
-    use super::{UiMeshGpu, push_ui_mesh};
-    use epaint::TextureId;
+    use super::{UiMeshGpu, push_ui_mesh, ui_mesh_signature_for_test};
+    use epaint::{ClippedPrimitive, Color32, Mesh, Primitive, Rect, TextureId, Vertex, pos2};
 
     #[test]
     fn compact_meshes_only_merge_exact_clip_and_texture() {
@@ -942,5 +1101,45 @@ mod tests {
                 texture_id: TextureId::Managed(1),
             }
         );
+    }
+
+    #[test]
+    fn mesh_signature_matches_unchanged_mesh_data() {
+        let primitives = [primitive(TextureId::Managed(1), 0.0)];
+        let first = ui_mesh_signature_for_test(&primitives, [100, 100], [1.0, 1.0]);
+        let second = ui_mesh_signature_for_test(&primitives, [100, 100], [1.0, 1.0]);
+
+        assert_eq!(first, second);
+    }
+
+    #[test]
+    fn mesh_signature_changes_with_texture_or_viewport() {
+        let primitives = [primitive(TextureId::Managed(1), 0.0)];
+        let texture_changed = [primitive(TextureId::Managed(2), 0.0)];
+
+        let base = ui_mesh_signature_for_test(&primitives, [100, 100], [1.0, 1.0]);
+        let texture = ui_mesh_signature_for_test(&texture_changed, [100, 100], [1.0, 1.0]);
+        let viewport = ui_mesh_signature_for_test(&primitives, [200, 100], [2.0, 1.0]);
+
+        assert_ne!(base, texture);
+        assert_ne!(base, viewport);
+    }
+
+    fn primitive(texture_id: TextureId, x: f32) -> ClippedPrimitive {
+        let mut mesh = Mesh::with_texture(texture_id);
+        mesh.vertices = vec![vertex(x, 0.0), vertex(x + 1.0, 0.0), vertex(x + 1.0, 1.0)];
+        mesh.indices = vec![0, 1, 2];
+        ClippedPrimitive {
+            clip_rect: Rect::from_min_max(pos2(0.0, 0.0), pos2(10.0, 10.0)),
+            primitive: Primitive::Mesh(mesh),
+        }
+    }
+
+    fn vertex(x: f32, y: f32) -> Vertex {
+        Vertex {
+            pos: pos2(x, y),
+            uv: pos2(x, y),
+            color: Color32::WHITE,
+        }
     }
 }
