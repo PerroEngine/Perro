@@ -75,7 +75,13 @@
   - partial: 2D/3D particle profile caches keyed by source hash instead of source `String`
   - commit: this commit
   - verify: full `cargo check`, full `cargo clippy`, full `cargo test`
-- [ ] 2.5 per-frame str alloc in render extract
+- [x] 2.5 per-frame str alloc in render extract
+  - triage: particle cache source copies reduced by 2.4 hash-key change
+  - triage: default texture `String` allocs are request-miss/inflight-gated, not per-frame steady-state
+  - triage: UI tree/dropdown names allocate only on internal-node creation; text edit/event strings are input-gated
+  - triage: color picker component formatting runs from color picker sync path, not broad scene extract loop
+  - commit: this commit
+  - verify: full `cargo check`, full `cargo clippy`, full `cargo test`
 - [ ] 2.6 lock surface
 - [ ] 2.7 wgsl prelude triplication
 - [ ] 2.8 test coverage holes
