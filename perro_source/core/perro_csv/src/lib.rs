@@ -826,6 +826,14 @@ impl CSVQuery {
     }
 
     fn candidate_rows(&self) -> Option<Vec<usize>> {
+        if self
+            .filters
+            .iter()
+            .any(|filter| filter.logic == CsvLogic::Or)
+        {
+            return None;
+        }
+
         let seed = self.filters.iter().find_map(|filter| {
             if filter.logic != CsvLogic::And {
                 return None;
@@ -1109,6 +1117,29 @@ mod tests {
             .map(|row| row.get_header("id").unwrap())
             .collect();
         assert_eq!(ids, vec!["scroll", "sword"]);
+    }
+
+    #[test]
+    fn query_or_filters_scan_rows_outside_and_seed() {
+        let csv = parse_csv_static(
+            b"id,name,kind,power\n\
+              sword,Iron Sword,weapon,10\n\
+              potion,Small Potion,consumable,0\n\
+              bow,Oak Bow,weapon,8\n",
+        )
+        .unwrap();
+
+        let ids: Vec<_> = csv
+            .query()
+            .where_eq("kind", "weapon")
+            .or_where_eq("id", "potion")
+            .order_by_asc("id")
+            .run()
+            .iter()
+            .map(|row| row.get_header("id").unwrap())
+            .collect();
+
+        assert_eq!(ids, vec!["bow", "potion", "sword"]);
     }
 
     #[test]
