@@ -857,3 +857,159 @@ pub struct CollisionDebugState {
     pub signature: u64,
     pub edge_count: u32,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn node(raw: u64) -> NodeID {
+        NodeID::from_u64(raw)
+    }
+
+    fn node_set(ids: &[NodeID]) -> AHashSet<NodeID> {
+        ids.iter().copied().collect()
+    }
+
+    #[test]
+    fn render_request_ids_round_trip_supported_kinds() {
+        let sprite_node = node(11);
+        let mesh_node = node(12);
+        let material_node = node(13);
+
+        let sprite = sprite_2d_texture_request(sprite_node);
+        let mesh = mesh_3d_request(mesh_node);
+        let material = material_3d_request(material_node, 3);
+
+        assert_eq!(decode_2d_texture_request_node(sprite), Some(sprite_node));
+        assert_eq!(decode_3d_mesh_request_node(mesh), Some(mesh_node));
+        assert_eq!(
+            decode_3d_material_request_node(material),
+            Some(material_node)
+        );
+        assert_eq!(decode_render_request_node(sprite), Some(sprite_node));
+        assert_eq!(decode_render_request_node(mesh), Some(mesh_node));
+        assert_eq!(decode_render_request_node(material), Some(material_node));
+        assert_eq!(decode_2d_texture_request_node(mesh), None);
+        assert_eq!(decode_3d_mesh_request_node(sprite), None);
+    }
+
+    #[test]
+    fn render_request_event_decode_skips_non_request_events() {
+        let request_node = node(21);
+        let request = mesh_3d_request(request_node);
+
+        assert_eq!(
+            decode_render_request_node_from_event(&RenderEvent::MeshCreated {
+                request,
+                id: MeshID::new(1),
+                mesh: None,
+            }),
+            Some(request_node)
+        );
+        assert_eq!(
+            decode_render_request_node_from_event(&RenderEvent::TextureLoaded {
+                id: TextureID::new(2),
+            }),
+            None
+        );
+    }
+
+    #[test]
+    fn render_2d_traversal_walks_dirty_roots_and_children_once() {
+        let mut state = Render2DState::new();
+
+        let traversal = state.collect_traversal([node(1)], [node(99)], false, |id, children| {
+            match id.as_u64() {
+                1 => children.extend([node(2), node(3)]),
+                2 => children.push(node(4)),
+                3 => children.push(node(4)),
+                _ => {}
+            }
+        });
+        assert_eq!(traversal, vec![node(1), node(2), node(3), node(4)]);
+
+        state.request_full_scan_once();
+        assert!(state.full_scan_pending());
+        let traversal =
+            state.collect_traversal(Vec::<NodeID>::new(), [node(8), node(9)], false, |_, _| {});
+        assert_eq!(traversal, vec![node(8), node(9)]);
+        assert!(!state.full_scan_pending());
+    }
+
+    #[test]
+    fn render_2d_visible_pass_drops_removed_nodes() {
+        let mut state = Render2DState::new();
+        state.prev_visible.extend([node(1), node(2), node(3)]);
+        state.note_removed_node(node(2));
+
+        let visible_now = state.begin_visible_pass();
+        assert_eq!(visible_now, node_set(&[node(1), node(3)]));
+
+        let removed = state.collect_removed_visible_nodes(&visible_now);
+        assert_eq!(removed, vec![node(2)]);
+
+        state.finish_visible_pass(vec![node(7), node(8)], visible_now);
+        assert_eq!(state.prev_visible, node_set(&[node(1), node(3)]));
+        assert!(state.visible_now.is_empty());
+        assert!(state.traversal_ids.is_empty());
+    }
+
+    #[test]
+    fn ui_extraction_plan_adds_layout_children_commands_and_retained_input() {
+        let mut state = RenderUiState::new();
+        let retained = node(50);
+        state
+            .retained_commands
+            .insert(retained, UiCommand::RemoveNode { node: retained });
+
+        let options = UiExtractionOptions {
+            mask: UiDirtyMask {
+                layout_mask: 0b0001,
+                layout_parent: 0b0010,
+                commands: 0b0100,
+                default_flags: 0b0001,
+            },
+            bootstrap_scan: false,
+            input_changed: true,
+        };
+        let plan = state.collect_extraction_plan(
+            [
+                (node(1), 0b0001),
+                (node(2), 0b0010),
+                (node(3), 0b0100),
+                (node(4), 0),
+            ],
+            Vec::<NodeID>::new(),
+            options,
+            |id| {
+                if id == node(2) {
+                    vec![node(20), node(21)]
+                } else {
+                    Vec::new()
+                }
+            },
+            |id, children| match id.as_u64() {
+                1 => children.push(node(10)),
+                20 => children.push(node(200)),
+                _ => {}
+            },
+        );
+
+        assert_eq!(plan.dirty_nodes, 4);
+        assert_eq!(plan.affected_nodes, 6);
+        assert_eq!(
+            node_set(&plan.traversal_ids),
+            node_set(&[node(1), node(20), node(21), node(4), node(10), node(200)])
+        );
+        assert!(plan.command_ids.contains(&node(3)));
+        assert!(plan.command_ids.contains(&retained));
+        for id in plan.traversal_ids.iter().copied() {
+            assert!(plan.command_ids.contains(&id));
+        }
+
+        state.restore_extraction_plan(plan.traversal_ids, plan.command_ids, plan.command_seen);
+        assert!(state.traversal_ids.is_empty());
+        assert!(state.command_ids.is_empty());
+        assert!(state.command_seen.is_empty());
+    }
+}
