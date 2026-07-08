@@ -820,7 +820,7 @@ impl PostProcessor {
     }
 
     /// Ensure the full-res blur scratch target exists.
-    fn ensure_blur_scratch(&mut self, device: &wgpu::Device) {
+    fn ensure_blur_scratch(&mut self, device: &wgpu::Device) -> Option<wgpu::TextureView> {
         if self.blur_scratch.is_none() {
             let (texture, view) = create_color_target(
                 device,
@@ -831,10 +831,16 @@ impl PostProcessor {
             );
             self.blur_scratch = Some(CachedPostTexture { texture, view });
         }
+        self.blur_scratch
+            .as_ref()
+            .map(|scratch| scratch.view.clone())
     }
 
     /// Ensure the two half-res bloom targets exist.
-    fn ensure_bloom_targets(&mut self, device: &wgpu::Device) {
+    fn ensure_bloom_targets(
+        &mut self,
+        device: &wgpu::Device,
+    ) -> Option<(wgpu::TextureView, wgpu::TextureView)> {
         let hw = (self.width / 2).max(1);
         let hh = (self.height / 2).max(1);
         if self.bloom_half_a.is_none() {
@@ -847,6 +853,9 @@ impl PostProcessor {
                 create_color_target(device, self.format, hw, hh, "perro_post_bloom_b");
             self.bloom_half_b = Some(CachedPostTexture { texture, view });
         }
+        let view_a = self.bloom_half_a.as_ref()?.view.clone();
+        let view_b = self.bloom_half_b.as_ref()?.view.clone();
+        Some((view_a, view_b))
     }
 
     /// Record one full-screen builtin pass into `target`, using a transient
@@ -947,14 +956,10 @@ impl PostProcessor {
         depth_view: &wgpu::TextureView,
         target_view: &wgpu::TextureView,
     ) {
-        self.ensure_blur_scratch(device);
+        let Some(scratch) = self.ensure_blur_scratch(device) else {
+            return;
+        };
         let dims = [self.width, self.height];
-        let scratch = self
-            .blur_scratch
-            .as_ref()
-            .expect("blur scratch exists")
-            .view
-            .clone();
         let default_lut = self.default_lut_2d_view.clone();
         // Horizontal (axis 0): input -> scratch.
         self.record_sub_pass(
@@ -1004,21 +1009,11 @@ impl PostProcessor {
         depth_view: &wgpu::TextureView,
         target_view: &wgpu::TextureView,
     ) {
-        self.ensure_bloom_targets(device);
+        let Some((view_a, view_b)) = self.ensure_bloom_targets(device) else {
+            return;
+        };
         let full = [self.width, self.height];
         let half = [(self.width / 2).max(1), (self.height / 2).max(1)];
-        let view_a = self
-            .bloom_half_a
-            .as_ref()
-            .expect("bloom a exists")
-            .view
-            .clone();
-        let view_b = self
-            .bloom_half_b
-            .as_ref()
-            .expect("bloom b exists")
-            .view
-            .clone();
         let default_lut = self.default_lut_2d_view.clone();
         // Bright-pass + downsample: full-res input -> half-res A.
         self.record_sub_pass(
@@ -1251,33 +1246,30 @@ impl PostProcessor {
             lut_2d_key,
             lut_3d_key,
         };
-        if !self.post_bind_groups.contains_key(&key) {
-            let (lut_2d_view, lut_3d_view) = self.lut_views(effect);
-            let bind_group = create_post_bind_group(
-                device,
-                PostBindGroupDesc {
-                    bgl: &self.bgl,
-                    input_view,
-                    sampler: &self.sampler,
-                    depth_view,
-                    uniform_buffer: &self.uniform_buffer,
-                    uniform_size_bytes: std::mem::size_of::<PostUniform>() as u64,
-                    params_buffer: &self.params_buffer,
-                    lut_2d_view,
-                    lut_3d_view,
-                },
-            );
-            self.post_bind_groups.insert(key, bind_group);
-            self.perf_counters.bind_group_misses =
-                self.perf_counters.bind_group_misses.saturating_add(1);
-        } else {
+        if let Some(bind_group) = self.post_bind_groups.get(&key) {
             self.perf_counters.bind_group_hits =
                 self.perf_counters.bind_group_hits.saturating_add(1);
+            return bind_group.clone();
         }
-        self.post_bind_groups
-            .get(&key)
-            .expect("post bind group cache must contain built key")
-            .clone()
+        let (lut_2d_view, lut_3d_view) = self.lut_views(effect);
+        let bind_group = create_post_bind_group(
+            device,
+            PostBindGroupDesc {
+                bgl: &self.bgl,
+                input_view,
+                sampler: &self.sampler,
+                depth_view,
+                uniform_buffer: &self.uniform_buffer,
+                uniform_size_bytes: std::mem::size_of::<PostUniform>() as u64,
+                params_buffer: &self.params_buffer,
+                lut_2d_view,
+                lut_3d_view,
+            },
+        );
+        self.post_bind_groups.insert(key, bind_group.clone());
+        self.perf_counters.bind_group_misses =
+            self.perf_counters.bind_group_misses.saturating_add(1);
+        bind_group
     }
 
     /// Bind group for a merged color-op pass. Uses default LUT views (merged
@@ -1304,27 +1296,25 @@ impl PostProcessor {
             lut_2d_key: u64::MAX,
             lut_3d_key: u64::MAX,
         };
-        if !self.post_bind_groups.contains_key(&key) {
-            let bind_group = create_post_bind_group(
-                device,
-                PostBindGroupDesc {
-                    bgl: &self.bgl,
-                    input_view,
-                    sampler: &self.sampler,
-                    depth_view,
-                    uniform_buffer: &self.uniform_buffer,
-                    uniform_size_bytes: std::mem::size_of::<PostUniform>() as u64,
-                    params_buffer: &self.params_buffer,
-                    lut_2d_view: &self.default_lut_2d_view,
-                    lut_3d_view: &self.default_lut_3d_view,
-                },
-            );
-            self.post_bind_groups.insert(key, bind_group);
+        if let Some(bind_group) = self.post_bind_groups.get(&key) {
+            return bind_group.clone();
         }
-        self.post_bind_groups
-            .get(&key)
-            .expect("merged bind group cache must contain built key")
-            .clone()
+        let bind_group = create_post_bind_group(
+            device,
+            PostBindGroupDesc {
+                bgl: &self.bgl,
+                input_view,
+                sampler: &self.sampler,
+                depth_view,
+                uniform_buffer: &self.uniform_buffer,
+                uniform_size_bytes: std::mem::size_of::<PostUniform>() as u64,
+                params_buffer: &self.params_buffer,
+                lut_2d_view: &self.default_lut_2d_view,
+                lut_3d_view: &self.default_lut_3d_view,
+            },
+        );
+        self.post_bind_groups.insert(key, bind_group.clone());
+        bind_group
     }
 
     fn bump_lut_generation(&mut self) {
