@@ -59,14 +59,10 @@ impl Gpu3D {
         let wgsl = if path == RenderPath3D::MultiMesh {
             build_custom_multimesh_material_shader(src.as_ref(), lighting)
         } else if path == RenderPath3D::Rigid {
-            build_custom_material_shader_with_prelude(
-                perro_macros::include_str_stripped!("shaders/prelude_rigid_3d.wgsl"),
-                src.as_ref(),
-                lighting,
-            )
+            build_custom_material_shader_with_prelude(prelude_rigid_wgsl(), src.as_ref(), lighting)
         } else {
             build_custom_material_shader_with_prelude(
-                perro_macros::include_str_stripped!("shaders/prelude_skinned_3d.wgsl"),
+                prelude_skinned_wgsl(),
                 src.as_ref(),
                 lighting,
             )

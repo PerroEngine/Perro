@@ -20,7 +20,7 @@ use super::{
         create_multimesh_shader_module, create_sky_shader_module,
         create_sky_shader_module_from_source, create_toon_shader_module_rigid,
         create_toon_shader_module_skinned, create_unlit_shader_module_rigid,
-        create_unlit_shader_module_skinned,
+        create_unlit_shader_module_skinned, prelude_rigid_wgsl, prelude_skinned_wgsl,
     },
 };
 use crate::backend::{

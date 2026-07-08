@@ -93,7 +93,11 @@
   - triage: replacing resource API `Mutex` with `RefCell` needs a wider `Send`/script API contract change, so not mixed into this audit fix
   - commit: this commit
   - verify: full `cargo check`, full `cargo clippy`, full `cargo test`
-- [ ] 2.7 wgsl prelude triplication
+- [x] 2.7 wgsl prelude triplication
+  - chg: keep one `prelude_3d.wgsl`
+  - add: derive rigid/skinned preludes from minified common prelude in `shaders.rs`
+  - rm: duplicate `prelude_rigid_3d.wgsl` + `prelude_skinned_3d.wgsl`
+  - verify: shader validation tests, full `cargo check`, full `cargo clippy`, full `cargo test`
 - [ ] 2.8 test coverage holes
 - [ ] 2.9 misc sweep
 

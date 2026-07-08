@@ -1,9 +1,11 @@
 mod regular {
+    use std::sync::LazyLock;
+
     pub const PRELUDE_WGSL: &str = perro_macros::include_str_stripped!("shaders/prelude_3d.wgsl");
-    pub const PRELUDE_RIGID_WGSL: &str =
-        perro_macros::include_str_stripped!("shaders/prelude_rigid_3d.wgsl");
-    pub const PRELUDE_SKINNED_WGSL: &str =
-        perro_macros::include_str_stripped!("shaders/prelude_skinned_3d.wgsl");
+    static PRELUDE_RIGID_WGSL: LazyLock<String> =
+        LazyLock::new(|| super::build_rigid_prelude(PRELUDE_WGSL));
+    static PRELUDE_SKINNED_WGSL: LazyLock<String> =
+        LazyLock::new(|| super::build_skinned_prelude(PRELUDE_WGSL));
     pub const MATERIAL_STANDARD_WGSL: &str =
         perro_macros::include_str_stripped!("shaders/material_standard.wgsl");
     pub const MATERIAL_UNLIT_WGSL: &str =
@@ -20,6 +22,16 @@ mod regular {
     pub const MESH_BLEND_SCREEN_WGSL: &str =
         perro_macros::include_str_stripped!("shaders/mesh_blend_screen.wgsl");
     pub const SKY3D_WGSL: &str = perro_macros::include_str_stripped!("shaders/sky3d.wgsl");
+
+    #[inline]
+    pub fn prelude_rigid_wgsl() -> &'static str {
+        PRELUDE_RIGID_WGSL.as_str()
+    }
+
+    #[inline]
+    pub fn prelude_skinned_wgsl() -> &'static str {
+        PRELUDE_SKINNED_WGSL.as_str()
+    }
 }
 
 mod culling {
@@ -38,6 +50,16 @@ mod culling {
 }
 
 #[inline]
+pub fn prelude_rigid_wgsl() -> &'static str {
+    regular::prelude_rigid_wgsl()
+}
+
+#[inline]
+pub fn prelude_skinned_wgsl() -> &'static str {
+    regular::prelude_skinned_wgsl()
+}
+
+#[inline]
 pub fn create_mesh_shader_module(device: &wgpu::Device) -> wgpu::ShaderModule {
     device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("perro_mesh_instanced"),
@@ -53,7 +75,7 @@ pub fn create_mesh_shader_module_rigid(device: &wgpu::Device) -> wgpu::ShaderMod
         label: Some("perro_mesh_instanced_rigid"),
         source: wgpu::ShaderSource::Wgsl(
             build_material_shader_with_prelude(
-                regular::PRELUDE_RIGID_WGSL,
+                regular::prelude_rigid_wgsl(),
                 regular::MATERIAL_STANDARD_WGSL,
             )
             .into(),
@@ -81,7 +103,7 @@ pub fn create_unlit_shader_module_rigid(device: &wgpu::Device) -> wgpu::ShaderMo
         label: Some("perro_mesh_unlit_rigid"),
         source: wgpu::ShaderSource::Wgsl(
             build_material_shader_with_prelude(
-                regular::PRELUDE_RIGID_WGSL,
+                regular::prelude_rigid_wgsl(),
                 regular::MATERIAL_UNLIT_WGSL,
             )
             .into(),
@@ -95,7 +117,7 @@ pub fn create_toon_shader_module_rigid(device: &wgpu::Device) -> wgpu::ShaderMod
         label: Some("perro_mesh_toon_rigid"),
         source: wgpu::ShaderSource::Wgsl(
             build_material_shader_with_prelude(
-                regular::PRELUDE_RIGID_WGSL,
+                regular::prelude_rigid_wgsl(),
                 regular::MATERIAL_TOON_WGSL,
             )
             .into(),
@@ -109,7 +131,7 @@ pub fn create_mesh_shader_module_skinned(device: &wgpu::Device) -> wgpu::ShaderM
         label: Some("perro_mesh_instanced_skinned"),
         source: wgpu::ShaderSource::Wgsl(
             build_material_shader_with_prelude(
-                regular::PRELUDE_SKINNED_WGSL,
+                regular::prelude_skinned_wgsl(),
                 regular::MATERIAL_STANDARD_WGSL,
             )
             .into(),
@@ -123,7 +145,7 @@ pub fn create_unlit_shader_module_skinned(device: &wgpu::Device) -> wgpu::Shader
         label: Some("perro_mesh_unlit_skinned"),
         source: wgpu::ShaderSource::Wgsl(
             build_material_shader_with_prelude(
-                regular::PRELUDE_SKINNED_WGSL,
+                regular::prelude_skinned_wgsl(),
                 regular::MATERIAL_UNLIT_WGSL,
             )
             .into(),
@@ -137,7 +159,7 @@ pub fn create_toon_shader_module_skinned(device: &wgpu::Device) -> wgpu::ShaderM
         label: Some("perro_mesh_toon_skinned"),
         source: wgpu::ShaderSource::Wgsl(
             build_material_shader_with_prelude(
-                regular::PRELUDE_SKINNED_WGSL,
+                regular::prelude_skinned_wgsl(),
                 regular::MATERIAL_TOON_WGSL,
             )
             .into(),
@@ -168,6 +190,50 @@ pub fn build_material_shader(material_wgsl: &str) -> String {
     build_material_shader_with_prelude(regular::PRELUDE_WGSL, material_wgsl)
 }
 
+fn build_rigid_prelude(prelude: &str) -> String {
+    prelude
+        .replace(
+            "@group(0) @binding(1) var<storage, read> skeletons: array<SkeletonBone>; struct SkeletonBone { row_0: vec4<f32>, row_1: vec4<f32>, row_2: vec4<f32>, } fn blend_skin_rows(base: u32, joints: vec4<u32>, weights: vec4<f32>) -> mat3x4<f32> { let b0 = skeletons[base + joints.x]; let b1 = skeletons[base + joints.y]; let b2 = skeletons[base + joints.z]; let b3 = skeletons[base + joints.w]; return mat3x4<f32>( b0.row_0 * weights.x + b1.row_0 * weights.y + b2.row_0 * weights.z + b3.row_0 * weights.w, b0.row_1 * weights.x + b1.row_1 * weights.y + b2.row_1 * weights.z + b3.row_1 * weights.w, b0.row_2 * weights.x + b1.row_2 * weights.y + b2.row_2 * weights.z + b3.row_2 * weights.w, ); } ",
+            "",
+        )
+        .replace("@group(0) @binding(2)", "@group(0) @binding(1)")
+        .replace("@group(0) @binding(3)", "@group(0) @binding(2)")
+        .replace("@group(0) @binding(4)", "@group(0) @binding(3)")
+        .replace("@group(0) @binding(5)", "@group(0) @binding(4)")
+        .replace("@group(0) @binding(6)", "@group(0) @binding(5)")
+        .replace(
+            "@location(2) @interpolate(flat) joints: vec4<u32>, @location(3) weights: vec4<f32>, ",
+            "",
+        )
+        .replace(
+            "@location(13) @interpolate(flat) skeleton_params: vec4<u32>,",
+            "@location(13) @interpolate(flat) custom_params: vec2<u32>,",
+        )
+        .replace(
+            "return VertexInput(out_pos, vec4<f32>(normalize(out_normal), 0.0), v.joints, v.weights, v.uv);",
+            "return VertexInput(out_pos, vec4<f32>(normalize(out_normal), 0.0), v.uv);",
+        )
+        .replace(
+            "var pos = blended.pos; var normal = blended.normal.xyz; if inst.skeleton_params.y > 0u { let rows = blend_skin_rows(inst.skeleton_params.x, blended.joints, blended.weights); let p_skin = vec4<f32>(pos, 1.0); let skinned_pos = vec3<f32>(dot(rows[0], p_skin), dot(rows[1], p_skin), dot(rows[2], p_skin)); normal = vec3<f32>(dot(rows[0].xyz, normal), dot(rows[1].xyz, normal), dot(rows[2].xyz, normal)); pos = skinned_pos; } let p = vec4<f32>(pos, 1.0);",
+            "let p = vec4<f32>(blended.pos, 1.0);",
+        )
+        .replace(
+            "normal, );",
+            "blended.normal.xyz, );",
+        )
+        .replace(
+            "out.custom_range = vec2<u32>(inst.skeleton_params.z, inst.skeleton_params.w); out.uv = blended.uv;",
+            "out.custom_range = inst.custom_params; out.uv = v.uv;",
+        )
+}
+
+fn build_skinned_prelude(prelude: &str) -> String {
+    prelude.replace(
+        "var pos = blended.pos; var normal = blended.normal.xyz; if inst.skeleton_params.y > 0u { let rows = blend_skin_rows(inst.skeleton_params.x, blended.joints, blended.weights); let p_skin = vec4<f32>(pos, 1.0); let skinned_pos = vec3<f32>(dot(rows[0], p_skin), dot(rows[1], p_skin), dot(rows[2], p_skin)); normal = vec3<f32>(dot(rows[0].xyz, normal), dot(rows[1].xyz, normal), dot(rows[2].xyz, normal)); pos = skinned_pos; }",
+        "let rows = blend_skin_rows(inst.skeleton_params.x, blended.joints, blended.weights); let p_skin = vec4<f32>(blended.pos, 1.0); let pos = vec3<f32>(dot(rows[0], p_skin), dot(rows[1], p_skin), dot(rows[2], p_skin)); let normal = vec3<f32>( dot(rows[0].xyz, blended.normal.xyz), dot(rows[1].xyz, blended.normal.xyz), dot(rows[2].xyz, blended.normal.xyz), );",
+    )
+}
+
 #[inline]
 fn sanitize_reserved_meta_identifier(wgsl: &str) -> String {
     wgsl.replace(
@@ -186,7 +252,7 @@ fn sanitize_reserved_meta_identifier(wgsl: &str) -> String {
 }
 
 fn build_packed_lod_rigid_prelude() -> String {
-    regular::PRELUDE_RIGID_WGSL
+    regular::prelude_rigid_wgsl()
         .replace(
             "@group(0) @binding(5)\nvar<storage, read> blend_shape_instances: array<BlendShapeInstance>;",
             "@group(0) @binding(5)\nvar<storage, read> blend_shape_instances: array<BlendShapeInstance>;\n@group(0) @binding(6)\nvar<storage, read> packed_lod_params: array<PackedLodParam>;",
@@ -631,8 +697,8 @@ mod tests {
     fn three_d_material_wgsl_parses() {
         for prelude in [
             regular::PRELUDE_WGSL,
-            regular::PRELUDE_RIGID_WGSL,
-            regular::PRELUDE_SKINNED_WGSL,
+            regular::prelude_rigid_wgsl(),
+            regular::prelude_skinned_wgsl(),
         ] {
             for material in [
                 regular::MATERIAL_STANDARD_WGSL,
@@ -648,7 +714,10 @@ mod tests {
     #[test]
     fn custom_material_standard_lighting_wrapper_wgsl_parses() {
         let material = "fn shade_material(in: FragmentInput) -> vec4<f32> { return vec4<f32>(in.normal_ws * 0.5 + vec3<f32>(0.5), 1.0); }";
-        for prelude in [regular::PRELUDE_RIGID_WGSL, regular::PRELUDE_SKINNED_WGSL] {
+        for prelude in [
+            regular::prelude_rigid_wgsl(),
+            regular::prelude_skinned_wgsl(),
+        ] {
             let wgsl = build_custom_material_shader_with_prelude(
                 prelude,
                 material,
@@ -677,7 +746,10 @@ fn shade_material(in: FragmentInput) -> vec4<f32> {
     return vec4<f32>(px * pulse, speed, 1.0);
 }
 "#;
-        for prelude in [regular::PRELUDE_RIGID_WGSL, regular::PRELUDE_SKINNED_WGSL] {
+        for prelude in [
+            regular::prelude_rigid_wgsl(),
+            regular::prelude_skinned_wgsl(),
+        ] {
             let wgsl = build_custom_material_shader_with_prelude(
                 prelude,
                 material,
@@ -690,7 +762,10 @@ fn shade_material(in: FragmentInput) -> vec4<f32> {
     #[test]
     fn custom_material_raw_wrapper_wgsl_parses() {
         let material = "fn shade_material(in: FragmentInput) -> vec4<f32> { return vec4<f32>(in.normal_ws * 0.5 + vec3<f32>(0.5), 1.0); }";
-        for prelude in [regular::PRELUDE_RIGID_WGSL, regular::PRELUDE_SKINNED_WGSL] {
+        for prelude in [
+            regular::prelude_rigid_wgsl(),
+            regular::prelude_skinned_wgsl(),
+        ] {
             let wgsl = build_custom_material_shader_with_prelude(
                 prelude,
                 material,
@@ -711,7 +786,10 @@ fn shade_material(in: FragmentInput) -> vec4<f32> {
     return perro_lit_standard(in, color, pbr.x, pbr.y, pbr.z, emissive);
 }
 "#;
-        for prelude in [regular::PRELUDE_RIGID_WGSL, regular::PRELUDE_SKINNED_WGSL] {
+        for prelude in [
+            regular::prelude_rigid_wgsl(),
+            regular::prelude_skinned_wgsl(),
+        ] {
             let wgsl = build_custom_material_shader_with_prelude(
                 prelude,
                 material,
@@ -738,10 +816,10 @@ fn shade_material(in: FragmentInput) -> vec4<f32> {
     return vec4<f32>(color.rgb, perro_material_alpha(in, color.a));
 }
 "#;
-        for prelude in [
-            regular::PRELUDE_WGSL,
-            regular::PRELUDE_RIGID_WGSL,
-            regular::PRELUDE_SKINNED_WGSL,
+        for (prelude_name, prelude) in [
+            ("default", regular::PRELUDE_WGSL),
+            ("rigid", regular::prelude_rigid_wgsl()),
+            ("skinned", regular::prelude_skinned_wgsl()),
         ] {
             let wgsl = build_custom_material_shader_with_prelude(
                 prelude,
@@ -749,7 +827,10 @@ fn shade_material(in: FragmentInput) -> vec4<f32> {
                 perro_render_bridge::CustomMaterialLighting3D::Raw,
             );
             assert!(wgsl.contains("return shade_vertex(perro_vs_main_base"));
-            parse_and_validate(&wgsl, "custom shade_vertex material wgsl validates");
+            parse_and_validate(
+                &wgsl,
+                &format!("custom shade_vertex material wgsl validates ({prelude_name})"),
+            );
         }
     }
 
@@ -794,7 +875,7 @@ fn shade_material(in: FragmentInput) -> vec4<f32> {
 }
 "#;
         let single = build_custom_material_shader_with_prelude(
-            regular::PRELUDE_RIGID_WGSL,
+            regular::prelude_rigid_wgsl(),
             material,
             perro_render_bridge::CustomMaterialLighting3D::Raw,
         );
@@ -832,8 +913,8 @@ fn shade_material(in: FragmentInput) -> vec4<f32> {
         let fragment_entry = "fn fs_main(in: FragmentInput) -> @location(0) vec4<f32>";
         for prelude in [
             regular::PRELUDE_WGSL,
-            regular::PRELUDE_RIGID_WGSL,
-            regular::PRELUDE_SKINNED_WGSL,
+            regular::prelude_rigid_wgsl(),
+            regular::prelude_skinned_wgsl(),
         ] {
             let wgsl = build_custom_material_shader_with_prelude(
                 prelude,
@@ -867,8 +948,8 @@ fn shade_material(in: FragmentInput) -> vec4<f32> {
         let vertex_entry = "fn vs_main(v: VertexInput, inst: InstanceInput, @builtin(vertex_index) vertex_index: u32, @builtin(instance_index) instance_index: u32) -> VertexOutput";
         for prelude in [
             regular::PRELUDE_WGSL,
-            regular::PRELUDE_RIGID_WGSL,
-            regular::PRELUDE_SKINNED_WGSL,
+            regular::prelude_rigid_wgsl(),
+            regular::prelude_skinned_wgsl(),
         ] {
             let wgsl = build_custom_material_shader_with_prelude(
                 prelude,

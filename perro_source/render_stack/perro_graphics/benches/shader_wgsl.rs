@@ -6,9 +6,6 @@ use perro_graphics::two_d::shaders::{
 };
 
 const PRELUDE_3D_WGSL: &str = include_str!("../src/three_d/shaders/prelude_3d.wgsl");
-const PRELUDE_RIGID_3D_WGSL: &str = include_str!("../src/three_d/shaders/prelude_rigid_3d.wgsl");
-const PRELUDE_SKINNED_3D_WGSL: &str =
-    include_str!("../src/three_d/shaders/prelude_skinned_3d.wgsl");
 const MATERIAL_STANDARD_WGSL: &str = include_str!("../src/three_d/shaders/material_standard.wgsl");
 const MATERIAL_UNLIT_WGSL: &str = include_str!("../src/three_d/shaders/material_unlit.wgsl");
 const MATERIAL_TOON_WGSL: &str = include_str!("../src/three_d/shaders/material_toon.wgsl");
@@ -91,12 +88,12 @@ fn bench_shader_build(c: &mut Criterion) {
         ("standard", PRELUDE_3D_WGSL, MATERIAL_STANDARD_WGSL),
         (
             "rigid_standard",
-            PRELUDE_RIGID_3D_WGSL,
+            three_d::shaders::prelude_rigid_wgsl(),
             MATERIAL_STANDARD_WGSL,
         ),
         (
             "skinned_standard",
-            PRELUDE_SKINNED_3D_WGSL,
+            three_d::shaders::prelude_skinned_wgsl(),
             MATERIAL_STANDARD_WGSL,
         ),
         ("unlit", PRELUDE_3D_WGSL, MATERIAL_UNLIT_WGSL),
@@ -127,7 +124,7 @@ fn bench_shader_parse_validate(c: &mut Criterion) {
         MATERIAL_STANDARD_WGSL,
     );
     let material_skinned = three_d::shaders::build_material_shader_with_prelude(
-        PRELUDE_SKINNED_3D_WGSL,
+        three_d::shaders::prelude_skinned_wgsl(),
         MATERIAL_STANDARD_WGSL,
     );
     let cases = [
