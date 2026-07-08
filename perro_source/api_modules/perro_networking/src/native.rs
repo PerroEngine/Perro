@@ -13,7 +13,7 @@ use perro_variant::Variant;
 use tokio::task;
 use tungstenite::{
     ClientRequestBuilder, Message, WebSocket,
-    http::Uri,
+    http::{StatusCode, Uri},
     protocol::{
         CloseFrame, WebSocketConfig,
         frame::{Utf8Bytes, coding::CloseCode},

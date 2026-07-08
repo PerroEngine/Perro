@@ -624,9 +624,15 @@ fn accept_websocket_with_options(
                 &protocols,
             );
             if let Some(protocol) = selected {
+                let value = protocol.parse().map_err(|err| {
+                    websocket_handshake_error(
+                        StatusCode::BAD_REQUEST,
+                        format!("invalid websocket subprotocol: {err}"),
+                    )
+                })?;
                 response
                     .headers_mut()
-                    .insert("Sec-WebSocket-Protocol", protocol.parse().unwrap());
+                    .insert("Sec-WebSocket-Protocol", value);
                 *selected_subprotocol = Some(protocol);
             } else if require_subprotocol {
                 *selected_subprotocol = None;
@@ -643,6 +649,17 @@ fn accept_websocket_with_options(
         ));
     }
     Ok(socket)
+}
+
+fn websocket_handshake_error(
+    status: StatusCode,
+    message: impl Into<String>,
+) -> tungstenite::handshake::server::ErrorResponse {
+    let message = message.into();
+    tungstenite::http::Response::builder()
+        .status(status)
+        .body(Some(message.clone()))
+        .unwrap_or_else(|_| tungstenite::http::Response::new(Some(message)))
 }
 
 fn select_websocket_subprotocol(header: Option<&str>, supported: &[String]) -> Option<String> {
