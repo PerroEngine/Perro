@@ -44,8 +44,8 @@ fn apply_ray_light_3d_fields(node: &mut RayLight3D, fields: &[SceneObjectField])
     SceneFieldIterRef::new(fields).for_each(|name, value| {
         match resolve_node_field("RayLight3D", name) {
             Some(NodeField::Light3D(Light3DField::Color)) => {
-                if let Some(v) = as_vec3(value) {
-                    node.color = [v.x, v.y, v.z];
+                if let Some(v) = as_light_color(value) {
+                    node.color = v;
                 }
             }
             Some(NodeField::Light3D(Light3DField::Intensity)) => {
@@ -82,8 +82,8 @@ fn apply_ambient_light_3d_fields(node: &mut AmbientLight3D, fields: &[SceneObjec
     SceneFieldIterRef::new(fields).for_each(|name, value| {
         match resolve_node_field("AmbientLight3D", name) {
             Some(NodeField::Light3D(Light3DField::Color)) => {
-                if let Some(v) = as_vec3(value) {
-                    node.color = [v.x, v.y, v.z];
+                if let Some(v) = as_light_color(value) {
+                    node.color = v;
                 }
             }
             Some(NodeField::Light3D(Light3DField::Intensity)) => {
@@ -120,8 +120,8 @@ fn apply_point_light_3d_fields(node: &mut PointLight3D, fields: &[SceneObjectFie
     SceneFieldIterRef::new(fields).for_each(|name, value| {
         match resolve_node_field("PointLight3D", name) {
             Some(NodeField::Light3D(Light3DField::Color)) => {
-                if let Some(v) = as_vec3(value) {
-                    node.color = [v.x, v.y, v.z];
+                if let Some(v) = as_light_color(value) {
+                    node.color = v;
                 }
             }
             Some(NodeField::Light3D(Light3DField::Intensity)) => {
@@ -280,8 +280,8 @@ fn apply_spot_light_3d_fields(node: &mut SpotLight3D, fields: &[SceneObjectField
     SceneFieldIterRef::new(fields).for_each(|name, value| {
         match resolve_node_field("SpotLight3D", name) {
             Some(NodeField::Light3D(Light3DField::Color)) => {
-                if let Some(v) = as_vec3(value) {
-                    node.color = [v.x, v.y, v.z];
+                if let Some(v) = as_light_color(value) {
+                    node.color = v;
                 }
             }
             Some(NodeField::Light3D(Light3DField::Intensity)) => {

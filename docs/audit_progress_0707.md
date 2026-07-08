@@ -142,7 +142,7 @@
   - verify: `cargo test -p perro_resource_api`, `cargo test -p perro_runtime_api`, targeted `perro_runtime` typed-handle test, full `cargo check`, full `cargo clippy`, full `cargo test`
 - [ ] 1.1 color vocabulary
 - [ ] 1.2 on/off vocabulary
-- [ ] 2.1 light colors use `Color`
+- [x] 2.1 light colors use `Color`
 - [ ] 2.2 typed IDs for string asset refs
 - [ ] 2.3 nested settings structs
 - [ ] 2.4 base embedding

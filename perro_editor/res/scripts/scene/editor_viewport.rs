@@ -1080,7 +1080,7 @@ pub fn sync_preview_field_for_key<API: ScriptAPI + ?Sized>(
             let SceneValue::Vec4 { x, y, z, .. } = value else {
                 return false;
             };
-            let color = [*x, *y, *z];
+            let color = Color::rgb(*x, *y, *z);
             if set_preview_light_color(ctx, id, node_type, color) {
                 return true;
             }
@@ -1160,7 +1160,7 @@ fn set_preview_light_color<API: ScriptAPI + ?Sized>(
     ctx: &mut ScriptContext<'_, API>,
     id: NodeID,
     node_type: perro_scene::NodeType,
-    color: [f32; 3],
+    color: Color,
 ) -> bool {
     match node_type {
         perro_scene::NodeType::AmbientLight2D => {

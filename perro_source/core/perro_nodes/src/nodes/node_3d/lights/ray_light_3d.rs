@@ -1,4 +1,5 @@
 use crate::node_3d::Node3D;
+use perro_structs::Color;
 use std::ops::{Deref, DerefMut};
 
 impl Deref for RayLight3D {
@@ -18,7 +19,7 @@ impl DerefMut for RayLight3D {
 #[derive(Clone, Debug)]
 pub struct RayLight3D {
     pub base: Node3D,
-    pub color: [f32; 3],
+    pub color: Color,
     pub intensity: f32,
     pub cast_shadows: bool,
     pub active: bool,
@@ -28,7 +29,7 @@ impl RayLight3D {
     pub const fn new() -> Self {
         Self {
             base: Node3D::new(),
-            color: [1.0, 1.0, 1.0],
+            color: Color::WHITE,
             intensity: 1.0,
             cast_shadows: true,
             active: true,

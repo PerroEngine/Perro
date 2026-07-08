@@ -1,3 +1,29 @@
+fn as_light_color(value: &SceneValue) -> Option<Color> {
+    match value {
+        SceneValue::Vec4 { x, y, z, w } => Some(Color::new(*x, *y, *z, *w)),
+        SceneValue::Vec3 { x, y, z } => Some(Color::rgb(*x, *y, *z)),
+        SceneValue::Str(v) => Color::from_hex(v.as_ref()),
+        SceneValue::Key(v) => Color::from_hex(v.as_ref()),
+        SceneValue::Object(entries) => {
+            let mut r = None;
+            let mut g = None;
+            let mut b = None;
+            let mut a = Some(1.0);
+            for (k, v) in entries.iter() {
+                match k.as_ref() {
+                    "r" | "x" => r = as_f32(v),
+                    "g" | "y" => g = as_f32(v),
+                    "b" | "z" => b = as_f32(v),
+                    "a" | "w" => a = as_f32(v),
+                    _ => {}
+                }
+            }
+            Some(Color::new(r?, g?, b?, a?))
+        }
+        _ => None,
+    }
+}
+
 fn build_ambient_light_2d(data: &SceneDefNodeData) -> AmbientLight2D {
     let mut node = AmbientLight2D::new();
     apply_ambient_light_2d_fields(&mut node, &data.fields);
@@ -38,10 +64,8 @@ fn apply_ambient_light_2d_fields(node: &mut AmbientLight2D, fields: &[SceneObjec
     SceneFieldIterRef::new(fields).for_each(|name, value| {
         apply_light_2d_common("AmbientLight2D", name, value, |field| match field {
             Light2DField::Color => {
-                if let Some(v) = as_vec3(value) {
-                    node.color = [v.x, v.y, v.z];
-                } else if let Some((x, y, z, _)) = value.as_vec4() {
-                    node.color = [x, y, z];
+                if let Some(v) = as_light_color(value) {
+                    node.color = v;
                 }
             }
             Light2DField::Intensity => {
@@ -72,10 +96,8 @@ fn apply_ray_light_2d_fields(node: &mut RayLight2D, fields: &[SceneObjectField])
     SceneFieldIterRef::new(fields).for_each(|name, value| {
         apply_light_2d_common("RayLight2D", name, value, |field| match field {
             Light2DField::Color => {
-                if let Some(v) = as_vec3(value) {
-                    node.color = [v.x, v.y, v.z];
-                } else if let Some((x, y, z, _)) = value.as_vec4() {
-                    node.color = [x, y, z];
+                if let Some(v) = as_light_color(value) {
+                    node.color = v;
                 }
             }
             Light2DField::Intensity => {
@@ -112,10 +134,8 @@ fn apply_point_light_2d_fields(node: &mut PointLight2D, fields: &[SceneObjectFie
     SceneFieldIterRef::new(fields).for_each(|name, value| {
         match resolve_node_field("PointLight2D", name) {
             Some(NodeField::Light2D(Light2DField::Color)) => {
-                if let Some(v) = as_vec3(value) {
-                    node.color = [v.x, v.y, v.z];
-                } else if let Some((x, y, z, _)) = value.as_vec4() {
-                    node.color = [x, y, z];
+                if let Some(v) = as_light_color(value) {
+                    node.color = v;
                 }
             }
             Some(NodeField::Light2D(Light2DField::Intensity)) => {
@@ -152,10 +172,8 @@ fn apply_spot_light_2d_fields(node: &mut SpotLight2D, fields: &[SceneObjectField
     SceneFieldIterRef::new(fields).for_each(|name, value| {
         match resolve_node_field("SpotLight2D", name) {
             Some(NodeField::Light2D(Light2DField::Color)) => {
-                if let Some(v) = as_vec3(value) {
-                    node.color = [v.x, v.y, v.z];
-                } else if let Some((x, y, z, _)) = value.as_vec4() {
-                    node.color = [x, y, z];
+                if let Some(v) = as_light_color(value) {
+                    node.color = v;
                 }
             }
             Some(NodeField::Light2D(Light2DField::Intensity)) => {

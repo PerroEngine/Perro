@@ -204,6 +204,55 @@ mod tests {
     }
 
     #[test]
+    fn scene_loader_parses_light_colors_as_color() {
+        let scene = Parser::new(
+            r##"
+            $root = @root
+            [root]
+            [Node2D/]
+            [/root]
+
+            [lamp2d]
+            [PointLight2D]
+                color = (0.25, 0.5, 0.75, 0.4)
+            [/PointLight2D]
+            [/lamp2d]
+
+            [lamp3d]
+            [RayLight3D]
+                color = "#336699"
+            [/RayLight3D]
+            [/lamp3d]
+            "##,
+        )
+        .parse_scene();
+
+        let prepared =
+            prepare_scene_with_loader(&scene, &|path| Err(format!("unknown scene path `{path}`")))
+                .expect("prepare scene");
+
+        let point = prepared
+            .nodes
+            .iter()
+            .find_map(|pending| match &pending.node.data {
+                SceneNodeData::PointLight2D(node) => Some(node),
+                _ => None,
+            })
+            .expect("point light");
+        assert_eq!(point.color, Color::new(0.25, 0.5, 0.75, 0.4));
+
+        let ray = prepared
+            .nodes
+            .iter()
+            .find_map(|pending| match &pending.node.data {
+                SceneNodeData::RayLight3D(node) if pending.key_name == "lamp3d" => Some(node),
+                _ => None,
+            })
+            .expect("ray light");
+        assert_eq!(ray.color, Color::from_hex("#336699").unwrap());
+    }
+
+    #[test]
     fn sky3d_horizon_and_shader_stack_parse() {
         let scene = Parser::new(
             r#"

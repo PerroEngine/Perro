@@ -241,18 +241,16 @@ impl Runtime {
                         && effective_visible
                         && render_mask_matches(camera_render_mask, light.render_layers) =>
                 {
-                    Some(AmbientLight3DState {
-                        color: light.color,
-                        intensity: light.intensity.max(0.0),
-                        cast_shadows: light.cast_shadows,
-                    })
+                    Some((light.color, light.intensity, light.cast_shadows))
                 }
                 _ => None,
             });
-            if let Some(light) = ambient_light_data {
-                let mut light = light;
-                light.color =
-                    Runtime::color_modulate_rgb(light.color, self.effective_self_modulate(node));
+            if let Some((color, intensity, cast_shadows)) = ambient_light_data {
+                let light = AmbientLight3DState {
+                    color: Runtime::color_modulate_rgb(color, self.effective_self_modulate(node)),
+                    intensity: intensity.max(0.0),
+                    cast_shadows,
+                };
                 if self.render_3d.retained_ambient_lights.get(&node).copied() != Some(light) {
                     self.queue_render_command(RenderCommand::ThreeD(Box::new(
                         Command3D::SetAmbientLight { node, light },

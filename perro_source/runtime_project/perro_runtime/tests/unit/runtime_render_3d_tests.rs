@@ -1939,7 +1939,7 @@ fn camera_3d_move_does_not_rewalk_mesh_render_layers() {
 fn active_ray_light_3d_emits_set_ray_light_command() {
     let mut runtime = Runtime::new();
     let mut light = RayLight3D::new();
-    light.color = [0.8, 0.7, 0.6];
+    light.color = Color::new(0.8, 0.7, 0.6, 1.0);
     light.intensity = 2.5;
     light.active = true;
     runtime
@@ -1954,7 +1954,8 @@ fn active_ray_light_3d_emits_set_ray_light_command() {
             if matches!(
                 command_3d.as_ref(),
                 Command3D::SetRayLight { light, .. }
-                    if light.color == [0.8, 0.7, 0.6] && light.intensity == 2.5
+                    if light.color == Color::new(0.8, 0.7, 0.6, 1.0).to_rgb()
+                        && light.intensity == 2.5
             )
     )));
 }
@@ -1963,7 +1964,7 @@ fn active_ray_light_3d_emits_set_ray_light_command() {
 fn active_ambient_light_3d_emits_set_ambient_light_command() {
     let mut runtime = Runtime::new();
     let mut light = AmbientLight3D::new();
-    light.color = [0.25, 0.3, 0.4];
+    light.color = Color::new(0.25, 0.3, 0.4, 1.0);
     light.intensity = 0.2;
     light.active = true;
     runtime
@@ -1978,7 +1979,8 @@ fn active_ambient_light_3d_emits_set_ambient_light_command() {
             if matches!(
                 command_3d.as_ref(),
                 Command3D::SetAmbientLight { light, .. }
-                    if light.color == [0.25, 0.3, 0.4] && light.intensity == 0.2
+                    if light.color == Color::new(0.25, 0.3, 0.4, 1.0).to_rgb()
+                        && light.intensity == 0.2
             )
     )));
 }

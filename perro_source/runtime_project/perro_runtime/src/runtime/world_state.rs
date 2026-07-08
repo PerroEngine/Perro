@@ -145,14 +145,14 @@ impl Runtime {
         ]
     }
 
-    pub(crate) fn color_modulate_rgb(color: [f32; 3], modulate: Color) -> [f32; 3] {
+    pub(crate) fn color_modulate_rgb(color: Color, modulate: Color) -> [f32; 3] {
         if modulate == Color::WHITE {
-            return color;
+            return color.to_rgb();
         }
         [
-            color[0] * modulate.r(),
-            color[1] * modulate.g(),
-            color[2] * modulate.b(),
+            color.r() * modulate.r(),
+            color.g() * modulate.g(),
+            color.b() * modulate.b(),
         ]
     }
 

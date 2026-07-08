@@ -1,4 +1,5 @@
 use crate::node_3d::Node3D;
+use perro_structs::Color;
 use std::ops::{Deref, DerefMut};
 
 impl Deref for SpotLight3D {
@@ -18,7 +19,7 @@ impl DerefMut for SpotLight3D {
 #[derive(Clone, Debug)]
 pub struct SpotLight3D {
     pub base: Node3D,
-    pub color: [f32; 3],
+    pub color: Color,
     pub intensity: f32,
     pub range: f32,
     pub inner_angle_radians: f32,
@@ -31,7 +32,7 @@ impl SpotLight3D {
     pub const fn new() -> Self {
         Self {
             base: Node3D::new(),
-            color: [1.0, 1.0, 1.0],
+            color: Color::WHITE,
             intensity: 1.0,
             range: 12.0,
             inner_angle_radians: 20.0_f32.to_radians(),

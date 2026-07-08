@@ -13,7 +13,9 @@ use perro_nodes::{
     AmbientLight3D, AnimationPlayer, Camera3D, MeshInstance3D, Node2D, Node3D, PointLight3D,
     RayLight3D, Skeleton2D, Skeleton3D, SpotLight3D, Sprite2D,
 };
-use perro_runtime_api::perro_structs::{Quaternion, Transform2D, Transform3D, Vector2, Vector3};
+use perro_runtime_api::perro_structs::{
+    Color, Quaternion, Transform2D, Transform3D, Vector2, Vector3,
+};
 use perro_runtime_api::perro_variant::Variant;
 use perro_scene::{
     Camera3DField, Light3DField, MeshInstance3DField, Node2DField, Node3DField, NodeField,
@@ -524,21 +526,25 @@ where
             ))
         }
         NodeField::Light3D(Light3DField::Color) => with_base_node!(ctx, RayLight3D, node_id, |n| {
-            Variant::from(Vector3::new(n.color[0], n.color[1], n.color[2]))
+            Variant::from(Vector3::new(n.color.r(), n.color.g(), n.color.b()))
         })
         .or_else(|| {
             with_base_node!(ctx, PointLight3D, node_id, |n| Variant::from(Vector3::new(
-                n.color[0], n.color[1], n.color[2]
+                n.color.r(),
+                n.color.g(),
+                n.color.b()
             )))
         })
         .or_else(|| {
             with_base_node!(ctx, SpotLight3D, node_id, |n| Variant::from(Vector3::new(
-                n.color[0], n.color[1], n.color[2]
+                n.color.r(),
+                n.color.g(),
+                n.color.b()
             )))
         })
         .or_else(|| {
             with_base_node!(ctx, AmbientLight3D, node_id, |n| Variant::from(
-                Vector3::new(n.color[0], n.color[1], n.color[2])
+                Vector3::new(n.color.r(), n.color.g(), n.color.b())
             ))
         }),
         NodeField::Light3D(Light3DField::Intensity) => {
@@ -825,7 +831,7 @@ pub(super) fn apply_track<RT>(
         NodeField::Light3D(channel) => match channel {
             Light3DField::Color => {
                 if let AnimationTrackValue::Vec3(color) = value {
-                    let c = color;
+                    let c = Color::rgb(color[0], color[1], color[2]);
                     if with_base_node_mut!(ctx, RayLight3D, node_id, |n| n.color = c).is_none()
                         && with_base_node_mut!(ctx, PointLight3D, node_id, |n| n.color = c)
                             .is_none()

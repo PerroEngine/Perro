@@ -351,7 +351,7 @@ fn point_light_2d_emits_light_command() {
     let mut light = PointLight2D::new();
     light.transform.position.x = 24.0;
     light.transform.position.y = -6.0;
-    light.color = [1.0, 0.5, 0.25];
+    light.color = Color::new(1.0, 0.5, 0.25, 1.0);
     light.intensity = 3.0;
     light.range = 300.0;
     let expected_node = runtime
@@ -366,7 +366,7 @@ fn point_light_2d_emits_light_command() {
         RenderCommand::TwoD(Command2D::SetPointLight { node, light })
             if *node == expected_node
                 && light.position == [24.0, -6.0]
-                && light.color == [1.0, 0.5, 0.25]
+                && light.color == Color::new(1.0, 0.5, 0.25, 1.0).to_rgb()
                 && light.intensity == 3.0
                 && light.range == 300.0
     )));

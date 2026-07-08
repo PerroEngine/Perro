@@ -668,9 +668,9 @@ methods!({
             );
             let _ = with_node_mut!(ctx.run, SpotLight2D, node, |light| {
                 light.color = if i == 0 {
-                    [1.0, 0.9, 0.45]
+                    Color::rgb(1.0, 0.9, 0.45)
                 } else {
-                    [0.45, 0.95, 1.0]
+                    Color::rgb(0.45, 0.95, 1.0)
                 };
                 light.intensity = 2.6;
                 light.range = 260.0;
@@ -691,9 +691,9 @@ methods!({
             );
             let _ = with_node_mut!(ctx.run, RayLight2D, node, |light| {
                 light.color = if i == 0 {
-                    [1.0, 0.35, 0.5]
+                    Color::rgb(1.0, 0.35, 0.5)
                 } else {
-                    [0.55, 1.0, 0.45]
+                    Color::rgb(0.55, 1.0, 0.45)
                 };
                 light.intensity = 2.0;
                 light.transform.position = origin + Vector2::new(-250.0 + i as f32 * 500.0, -260.0);
@@ -1150,13 +1150,13 @@ methods!({
     }
 });
 
-fn palette_rgb(t: f32) -> [f32; 3] {
+fn palette_rgb(t: f32) -> Color {
     let a = std::f32::consts::TAU * t;
-    [
+    Color::rgb(
         0.5 + 0.5 * a.cos(),
         0.5 + 0.5 * (a + 2.094).cos(),
         0.5 + 0.5 * (a + 4.188).cos(),
-    ]
+    )
 }
 
 fn scene_ui_parent<API: ScriptAPI + ?Sized>(

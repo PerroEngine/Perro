@@ -17,7 +17,7 @@ use perro_render_bridge::{
     Water3DState,
 };
 use perro_runtime_render::{decode_3d_mesh_request_node, decode_render_request_node_from_event};
-use perro_structs::BitMask;
+use perro_structs::{BitMask, Color};
 use std::sync::Arc;
 
 use crate::runtime::render_2d::{
@@ -720,25 +720,25 @@ impl Runtime {
     ) -> Arc<[Light2DState]> {
         enum StreamLight2DData {
             Ambient {
-                color: [f32; 3],
+                color: Color,
                 intensity: f32,
             },
             Ray {
                 transform: perro_structs::Transform2D,
-                color: [f32; 3],
+                color: Color,
                 intensity: f32,
                 z_index: i32,
             },
             Point {
                 transform: perro_structs::Transform2D,
-                color: [f32; 3],
+                color: Color,
                 intensity: f32,
                 range: f32,
                 z_index: i32,
             },
             Spot {
                 transform: perro_structs::Transform2D,
-                color: [f32; 3],
+                color: Color,
                 intensity: f32,
                 range: f32,
                 inner_angle_radians: f32,
@@ -817,7 +817,7 @@ impl Runtime {
             match data {
                 Some(StreamLight2DData::Ambient { color, intensity }) => {
                     out.push(Light2DState::Ambient(AmbientLight2DState {
-                        color,
+                        color: color.to_rgb(),
                         intensity: intensity.max(0.0),
                     }));
                 }
@@ -832,7 +832,7 @@ impl Runtime {
                         .unwrap_or(transform);
                     out.push(Light2DState::Ray(RayLight2DState {
                         direction: direction_from_rotation_2d(global.rotation),
-                        color,
+                        color: color.to_rgb(),
                         intensity: intensity.max(0.0),
                         z_index,
                     }));
@@ -849,7 +849,7 @@ impl Runtime {
                         .unwrap_or(transform);
                     out.push(Light2DState::Point(PointLight2DState {
                         position: [global.position.x, global.position.y],
-                        color,
+                        color: color.to_rgb(),
                         intensity: intensity.max(0.0),
                         range: range.max(0.001),
                         z_index,
@@ -870,7 +870,7 @@ impl Runtime {
                     out.push(Light2DState::Spot(SpotLight2DState {
                         position: [global.position.x, global.position.y],
                         direction: direction_from_rotation_2d(global.rotation),
-                        color,
+                        color: color.to_rgb(),
                         intensity: intensity.max(0.0),
                         range: range.max(0.001),
                         inner_angle_radians: inner_angle_radians.max(0.0),
@@ -1249,20 +1249,20 @@ impl Runtime {
             Sky(Sky3DState),
             Ray {
                 transform: perro_structs::Transform3D,
-                color: [f32; 3],
+                color: Color,
                 intensity: f32,
                 cast_shadows: bool,
             },
             Point {
                 transform: perro_structs::Transform3D,
-                color: [f32; 3],
+                color: Color,
                 intensity: f32,
                 range: f32,
                 cast_shadows: bool,
             },
             Spot {
                 transform: perro_structs::Transform3D,
-                color: [f32; 3],
+                color: Color,
                 intensity: f32,
                 range: f32,
                 inner_angle_radians: f32,
@@ -1291,7 +1291,7 @@ impl Runtime {
                             && stream_render_mask_matches(camera_mask, light.render_layers) =>
                     {
                         Some(StreamLight3DData::Ambient(AmbientLight3DState {
-                            color: light.color,
+                            color: light.color.to_rgb(),
                             intensity: light.intensity.max(0.0),
                             cast_shadows: light.cast_shadows,
                         }))
@@ -1381,7 +1381,7 @@ impl Runtime {
                         .unwrap_or(transform);
                     ray_lights.push(RayLight3DState {
                         direction: stream_quaternion_forward(global.rotation),
-                        color,
+                        color: color.to_rgb(),
                         intensity: intensity.max(0.0),
                         cast_shadows,
                     });
@@ -1398,7 +1398,7 @@ impl Runtime {
                         .unwrap_or(transform);
                     point_lights.push(PointLight3DState {
                         position: [global.position.x, global.position.y, global.position.z],
-                        color,
+                        color: color.to_rgb(),
                         intensity: intensity.max(0.0),
                         range: range.max(0.001),
                         cast_shadows,
@@ -1419,7 +1419,7 @@ impl Runtime {
                     spot_lights.push(SpotLight3DState {
                         position: [global.position.x, global.position.y, global.position.z],
                         direction: stream_quaternion_forward(global.rotation),
-                        color,
+                        color: color.to_rgb(),
                         intensity: intensity.max(0.0),
                         range: range.max(0.001),
                         inner_angle_radians: inner_angle_radians.max(0.0),

@@ -1,10 +1,11 @@
 use crate::node_2d::Node2D;
+use perro_structs::Color;
 use std::ops::{Deref, DerefMut};
 
 #[derive(Clone, Debug)]
 pub struct RayLight2D {
     pub base: Node2D,
-    pub color: [f32; 3],
+    pub color: Color,
     pub intensity: f32,
     pub cast_shadows: bool,
     pub active: bool,
@@ -14,7 +15,7 @@ impl RayLight2D {
     pub const fn new() -> Self {
         Self {
             base: Node2D::new(),
-            color: [1.0, 1.0, 1.0],
+            color: Color::WHITE,
             intensity: 1.0,
             cast_shadows: false,
             active: true,
