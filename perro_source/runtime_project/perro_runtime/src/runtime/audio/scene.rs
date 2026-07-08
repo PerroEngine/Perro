@@ -172,6 +172,13 @@ impl Runtime {
             .ok()
             .and_then(|guard| *guard)
             .unwrap_or_default();
+        let listener_options = self
+            .resource_api
+            .audio_listener_options_2d
+            .lock()
+            .ok()
+            .map(|guard| guard.clone())
+            .unwrap_or_default();
         let listener_pos = Vector2::new(listener.position[0], listener.position[1]);
         self.audio.scratch_ray_inputs.clear();
         self.audio.scratch_ray_outputs.clear();
@@ -215,7 +222,8 @@ impl Runtime {
                 AudioRaycastResult::TwoD(Some(hit)) if hit.distance <= distance + 0.25 => Some(hit),
                 _ => None,
             };
-            if let Some(result) = self.solve_2d(pos, sound, hit) {
+            if let Some(result) = self.solve_2d(pos, sound, hit, listener, listener_options.clone())
+            {
                 self.apply_spatial_result(sound, result);
             }
         }
@@ -238,6 +246,13 @@ impl Runtime {
             .lock()
             .ok()
             .and_then(|guard| *guard)
+            .unwrap_or_default();
+        let listener_options = self
+            .resource_api
+            .audio_listener_options_3d
+            .lock()
+            .ok()
+            .map(|guard| guard.clone())
             .unwrap_or_default();
         let listener_pos = Vector3::new(
             listener.position[0],
@@ -308,7 +323,8 @@ impl Runtime {
                 }
                 _ => None,
             };
-            if let Some(result) = self.solve_3d(pos, sound, hit) {
+            if let Some(result) = self.solve_3d(pos, sound, hit, listener, listener_options.clone())
+            {
                 self.apply_spatial_result(sound, result);
             }
         }

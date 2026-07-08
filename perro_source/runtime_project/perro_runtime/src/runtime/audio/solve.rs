@@ -77,14 +77,9 @@ impl Runtime {
         source_pos: Vector2,
         sound: &mut ActiveSpatialSound,
         physics_hit: Option<perro_runtime_api::sub_apis::PhysicsRayHit2D>,
+        listener: perro_pawdio::AudioListener2D,
+        listener_options: perro_structs::AudioListenerOptions,
     ) -> Option<PropagationResult> {
-        let listener = self
-            .resource_api
-            .audio_listener_2d
-            .lock()
-            .ok()
-            .and_then(|guard| *guard)
-            .unwrap_or_default();
         let listener_pos = Vector2::new(listener.position[0], listener.position[1]);
         let range = sound.options.range.max(0.0001);
         let distance = listener_pos.distance_to(source_pos);
@@ -288,7 +283,7 @@ impl Runtime {
         } else {
             AudioEffectZoneMix::default()
         };
-        let listener_effects = self.listener_effect_mix_2d(sound.options.audio_layer);
+        let listener_effects = listener_effect_mix(listener_options, sound.options.audio_layer);
         low_pass = low_pass.max(zone.dampening).max(sound.effects.low_pass);
         low_pass = low_pass.max(listener_effects.dampening);
         reflection = reflection
@@ -338,14 +333,9 @@ impl Runtime {
         source_pos: Vector3,
         sound: &mut ActiveSpatialSound,
         hit: Option<perro_runtime_api::sub_apis::PhysicsRayHit3D>,
+        listener: perro_pawdio::AudioListener3D,
+        listener_options: perro_structs::AudioListenerOptions,
     ) -> Option<PropagationResult> {
-        let listener = self
-            .resource_api
-            .audio_listener_3d
-            .lock()
-            .ok()
-            .and_then(|guard| *guard)
-            .unwrap_or_default();
         let listener_pos = Vector3::new(
             listener.position[0],
             listener.position[1],
@@ -551,7 +541,7 @@ impl Runtime {
         } else {
             AudioEffectZoneMix::default()
         };
-        let listener_effects = self.listener_effect_mix_3d(sound.options.audio_layer);
+        let listener_effects = listener_effect_mix(listener_options, sound.options.audio_layer);
         low_pass = low_pass.max(zone.dampening).max(sound.effects.low_pass);
         low_pass = low_pass.max(listener_effects.dampening);
         reflection = reflection
@@ -1892,28 +1882,6 @@ impl Runtime {
                 .unwrap_or_default(),
             _ => AudioDiffusion::default(),
         }
-    }
-
-    pub(super) fn listener_effect_mix_2d(&self, audio_layer: BitMask) -> AudioEffectZoneMix {
-        let options = self
-            .resource_api
-            .audio_listener_options_2d
-            .lock()
-            .ok()
-            .map(|guard| guard.clone())
-            .unwrap_or_default();
-        listener_effect_mix(options, audio_layer)
-    }
-
-    pub(super) fn listener_effect_mix_3d(&self, audio_layer: BitMask) -> AudioEffectZoneMix {
-        let options = self
-            .resource_api
-            .audio_listener_options_3d
-            .lock()
-            .ok()
-            .map(|guard| guard.clone())
-            .unwrap_or_default();
-        listener_effect_mix(options, audio_layer)
     }
 
     pub(super) fn audio_thickness_2d(&self, node: NodeID) -> f32 {

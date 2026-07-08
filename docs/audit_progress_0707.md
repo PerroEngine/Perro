@@ -88,6 +88,7 @@
   - verify: full `cargo check`, full `cargo clippy`, full `cargo test`
 - [ ] 2.6 lock surface
   - partial: skeleton bone cache/pending locks now use `u64` source hash keys, not `String`
+  - partial: audio propagation snapshots listener/options once per solve batch, not per active sound
   - commit: this commit
   - verify: full `cargo check`, full `cargo clippy`, full `cargo test`
 - [ ] 2.7 wgsl prelude triplication

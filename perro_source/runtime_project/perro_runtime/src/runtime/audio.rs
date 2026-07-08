@@ -553,6 +553,34 @@ impl Runtime {
         self.audio.scratch_ray_inputs = ray_inputs;
         self.audio.scratch_ray_indices = ray_indices;
         self.audio.scratch_ray_outputs = ray_outputs;
+        let listener_2d = self
+            .resource_api
+            .audio_listener_2d
+            .lock()
+            .ok()
+            .and_then(|guard| *guard)
+            .unwrap_or_default();
+        let listener_3d = self
+            .resource_api
+            .audio_listener_3d
+            .lock()
+            .ok()
+            .and_then(|guard| *guard)
+            .unwrap_or_default();
+        let listener_options_2d = self
+            .resource_api
+            .audio_listener_options_2d
+            .lock()
+            .ok()
+            .map(|guard| guard.clone())
+            .unwrap_or_default();
+        let listener_options_3d = self
+            .resource_api
+            .audio_listener_options_3d
+            .lock()
+            .ok()
+            .map(|guard| guard.clone())
+            .unwrap_or_default();
         for (index, sound) in sounds.iter_mut().enumerate() {
             if sound.elapsed_since_prop < tick {
                 self.audio.counters.cache_hits = self.audio.counters.cache_hits.saturating_add(1);
@@ -571,8 +599,12 @@ impl Runtime {
                 sound.last_3d,
                 self.audio.scratch_sound_ray_results[index],
             ) {
-                (Some(pos), _, AudioRaycastResult::TwoD(hit)) => self.solve_2d(pos, sound, hit),
-                (_, Some(pos), AudioRaycastResult::ThreeD(hit)) => self.solve_3d(pos, sound, hit),
+                (Some(pos), _, AudioRaycastResult::TwoD(hit)) => {
+                    self.solve_2d(pos, sound, hit, listener_2d, listener_options_2d.clone())
+                }
+                (_, Some(pos), AudioRaycastResult::ThreeD(hit)) => {
+                    self.solve_3d(pos, sound, hit, listener_3d, listener_options_3d.clone())
+                }
                 _ => None,
             };
             if let Some(result) = result {
