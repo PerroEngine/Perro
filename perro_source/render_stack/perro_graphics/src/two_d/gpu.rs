@@ -516,19 +516,22 @@ impl Gpu2D {
                     continue;
                 }
                 let idx = self.sprite_instances.len() as u32;
-                self.sprite_instances.push(staged.instance);
                 if let Some(batch) = self.sprite_batches.last_mut()
                     && batch.texture == staged.texture
                     && batch.instance_start + batch.instance_count == idx
                 {
+                    self.sprite_instances.push(staged.instance);
                     batch.instance_count += 1;
                     continue;
                 }
-                let bind_group = self
+                let Some(bind_group) = self
                     .sprite_textures
                     .get(&staged.texture)
                     .map(|texture| texture.bind_group.clone())
-                    .expect("sprite texture cache must contain prepared texture");
+                else {
+                    continue;
+                };
+                self.sprite_instances.push(staged.instance);
                 self.sprite_batches.push(SpriteBatch {
                     texture: staged.texture,
                     bind_group,
