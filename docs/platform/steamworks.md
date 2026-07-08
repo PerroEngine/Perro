@@ -125,7 +125,7 @@ let file = steam::WorkshopFileID::from_id(raw_file);
 | `steam_ach_unlock!(a, b, ...)` | unlock many achs + mark store dirty |
 | `steam_ach_clear!(id)` | clear ach + mark store dirty |
 | `steam_account_self_name!()` | read local user name |
-| `steam_account_ctx.id!()` | read local user id |
+| `steam_account_self_id!()` | read local user id |
 | `steam_account_name!(id)` | read user name |
 | `steam_friend_list!()` | read friend list |
 | `steam_friend_avatar!(id, size)` | read friend avatar RGBA bytes |
@@ -387,7 +387,7 @@ Auth uses Perro ticket + result enums.
 
 ```rust
 let (ticket, bytes) = steam::auth::authentication_session_ticket()?;
-let user = steam_account_ctx.id!()?;
+let user = steam_account_self_id!()?;
 
 match steam::auth::begin_authentication_session(user, &bytes)? {
     Ok(()) => {}
