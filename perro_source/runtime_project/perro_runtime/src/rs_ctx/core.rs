@@ -260,12 +260,10 @@ pub struct RuntimeResourceApi {
     pub(super) static_localization_lookup: Option<StaticLocalizationLookup>,
     pub(super) static_csv_lookup: Option<StaticCsvLookup>,
     pub(super) csv_cache: Mutex<HashMap<u64, &'static perro_csv::Csv>>,
-    pub(super) skeleton_bones_2d_cache:
-        Mutex<HashMap<String, Vec<perro_nodes::skeleton_2d::Bone2D>>>,
-    pub(super) skeleton_bones_3d_cache:
-        Mutex<HashMap<String, Vec<perro_nodes::skeleton_3d::Bone3D>>>,
-    pub(super) skeleton_bones_2d_pending: Mutex<std::collections::HashSet<String>>,
-    pub(super) skeleton_bones_3d_pending: Mutex<std::collections::HashSet<String>>,
+    pub(super) skeleton_bones_2d_cache: Mutex<HashMap<u64, Vec<perro_nodes::skeleton_2d::Bone2D>>>,
+    pub(super) skeleton_bones_3d_cache: Mutex<HashMap<u64, Vec<perro_nodes::skeleton_3d::Bone3D>>>,
+    pub(super) skeleton_bones_2d_pending: Mutex<std::collections::HashSet<u64>>,
+    pub(super) skeleton_bones_3d_pending: Mutex<std::collections::HashSet<u64>>,
     pub(super) skeleton_2d_load_tx: mpsc::Sender<AsyncSkeleton2DLoadResult>,
     pub(super) skeleton_2d_load_rx: Mutex<mpsc::Receiver<AsyncSkeleton2DLoadResult>>,
     pub(super) skeleton_3d_load_tx: mpsc::Sender<AsyncSkeleton3DLoadResult>,

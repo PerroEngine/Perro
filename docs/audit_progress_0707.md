@@ -87,6 +87,9 @@
   - commit: this commit
   - verify: full `cargo check`, full `cargo clippy`, full `cargo test`
 - [ ] 2.6 lock surface
+  - partial: skeleton bone cache/pending locks now use `u64` source hash keys, not `String`
+  - commit: this commit
+  - verify: full `cargo check`, full `cargo clippy`, full `cargo test`
 - [ ] 2.7 wgsl prelude triplication
 - [ ] 2.8 test coverage holes
 - [ ] 2.9 misc sweep
