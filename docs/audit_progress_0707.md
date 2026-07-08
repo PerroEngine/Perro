@@ -100,7 +100,8 @@
   - verify: shader validation tests, full `cargo check`, full `cargo clippy`, full `cargo test`
 - [ ] 2.8 test coverage holes
   - partial: add `perro_runtime_render` unit coverage for retained request decode, 2D traversal/visible state, UI extraction plans, and render exchange inflight/result handling
-  - verify: `cargo test -p perro_runtime_render -- --nocapture`, full `cargo check`, full `cargo clippy`, full `cargo test`
+  - partial: add `perro_dev_runner` arg parser unit coverage
+  - verify: `cargo test -p perro_runtime_render -- --nocapture`, `cargo test -p perro_dev_runner -- --nocapture`, full `cargo check`, full `cargo clippy`, full `cargo test`
 - [ ] 2.9 misc sweep
 
 ## Coherence Audit Next

@@ -36,3 +36,39 @@ fn main() {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn args(values: &[&str]) -> Vec<String> {
+        values.iter().map(|value| (*value).to_owned()).collect()
+    }
+
+    #[test]
+    fn parse_flag_value_reads_value_after_flag() {
+        let values = args(&["perro_dev_runner", "--path", "demo", "--name", "Demo"]);
+
+        assert_eq!(parse_flag_value(&values, "--path"), Some("demo".to_owned()));
+        assert_eq!(parse_flag_value(&values, "--name"), Some("Demo".to_owned()));
+    }
+
+    #[test]
+    fn parse_flag_value_returns_none_when_flag_missing_or_value_missing() {
+        let missing = args(&["perro_dev_runner", "--path", "demo"]);
+        let no_value = args(&["perro_dev_runner", "--path"]);
+
+        assert_eq!(parse_flag_value(&missing, "--name"), None);
+        assert_eq!(parse_flag_value(&no_value, "--path"), None);
+    }
+
+    #[test]
+    fn parse_flag_value_uses_first_flag_occurrence() {
+        let values = args(&["perro_dev_runner", "--path", "first", "--path", "second"]);
+
+        assert_eq!(
+            parse_flag_value(&values, "--path"),
+            Some("first".to_owned())
+        );
+    }
+}
