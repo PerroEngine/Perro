@@ -15,7 +15,7 @@ Scope:
 | Mesh blend polish | done | MSAA and multimesh use the screen seam path | keep renderer tests + Demo3D docs current |
 | 3D shadow controls | done | shadow tuning fields and guide exist | keep Demo3D tuning lane on backlog |
 | Navmesh | partial | text `.pnav`, resource API, and runtime path query exist | static bake, node, binary format, and Demo3D lane |
-| Auto retarget | research | skinned asset reuse limited to exact rig contract | offline retarget bake tool |
+| Auto retarget | partial | `.pretarget` alias maps and CLI import remap exist | rest-pose bake, static pipeline, and humanoid solve |
 | 2D shadows | planned | `cast_shadows` fields exist but do nothing in 2D | hard-shadow mask from 2D colliders |
 | Editor release | in dev | editor exists but not release-grade | smoke, docs, save/load tests, inspector coverage |
 | Joint polish | planned | current joints cover core use, not tuning-heavy rigs | optional limits/motors/springs only after demo need |
@@ -25,7 +25,7 @@ Scope:
 ## Priority
 
 1. Navmesh static bake + Demo3D lane
-2. Auto retarget bake
+2. Auto retarget rest-pose/static bake
 3. 2D shadowed lights
 4. Editor release pass
 5. Joint polish

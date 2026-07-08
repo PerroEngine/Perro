@@ -4099,6 +4099,7 @@ version = "0.1.0"
 dependencies = [
  "ctrlc",
  "gltf",
+ "perro_animation",
  "perro_compiler",
  "perro_project",
  "perro_scene",
