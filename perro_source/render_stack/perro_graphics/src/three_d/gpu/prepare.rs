@@ -581,9 +581,9 @@ impl Gpu3D {
         self.indirect_staging.clear();
         let mut total_meshlets = 0usize;
         let frustum = extract_frustum_planes(view_proj);
-        let default_mesh = self
-            .resolve_builtin_mesh_asset("__cube__")
-            .expect("cube mesh preset must exist");
+        let Some(default_mesh) = self.resolve_builtin_mesh_asset("__cube__") else {
+            return;
+        };
         let mut debug_points_start: Option<u32> = None;
         let mut debug_points_count: u32 = 0;
         let mut debug_points_double_sided = false;

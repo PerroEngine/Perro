@@ -655,10 +655,9 @@ impl Gpu3D {
             self.mesh_blend_scene_copy = Some((texture, view));
             self.mesh_blend_seam_bind_group = None;
         }
-        let (copy_texture, copy_view) = self
-            .mesh_blend_scene_copy
-            .as_ref()
-            .expect("scene copy exists");
+        let Some((copy_texture, copy_view)) = self.mesh_blend_scene_copy.as_ref() else {
+            return;
+        };
         encoder.copy_texture_to_texture(
             scene_texture.as_image_copy(),
             copy_texture.as_image_copy(),
@@ -716,11 +715,10 @@ impl Gpu3D {
             multiview_mask: None,
         });
         pass.set_pipeline(&self.mesh_blend_seam_pipeline);
-        pass.set_bind_group(
-            0,
-            self.mesh_blend_seam_bind_group.as_ref().expect("seam bg"),
-            &[],
-        );
+        let Some(seam_bind_group) = self.mesh_blend_seam_bind_group.as_ref() else {
+            return;
+        };
+        pass.set_bind_group(0, seam_bind_group, &[]);
         pass.draw(0..3, 0..1);
     }
 }
