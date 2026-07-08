@@ -1488,14 +1488,18 @@ impl Gpu3D {
         match rx.try_recv() {
             Ok(Ok(())) => {
                 let byte_len = (query_count * 8) as u64;
-                let data = readback
-                    .slice(0..byte_len)
-                    .get_mapped_range()
-                    .expect("map range");
+                let Ok(data) = readback.slice(0..byte_len).get_mapped_range() else {
+                    readback.unmap();
+                    self.pending_occlusion_query_count = 0;
+                    self.pending_occlusion_query_keys.clear();
+                    self.pending_occlusion_map_rx = None;
+                    return;
+                };
                 let mut visible = 0u32;
                 for (i, bytes) in data.chunks_exact(8).enumerate() {
-                    let samples =
-                        u64::from_le_bytes(bytes.try_into().expect("8-byte occlusion sample"));
+                    let mut sample_bytes = [0u8; 8];
+                    sample_bytes.copy_from_slice(bytes);
+                    let samples = u64::from_le_bytes(sample_bytes);
                     if samples > 0 {
                         visible = visible.saturating_add(1);
                     }
