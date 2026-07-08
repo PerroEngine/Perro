@@ -8,6 +8,7 @@ use perro_io::load_asset;
 use perro_render_bridge::{Camera3DState, CameraProjectionState};
 use perro_structs::{CustomPostParam, CustomPostParamValue, PostProcessEffect};
 use std::collections::HashMap;
+use std::ops::Range;
 
 mod shaders;
 
@@ -46,14 +47,14 @@ struct PostUniformFrameCtx {
 
 /// One executable step in the resolved chain. Consecutive cheap color ops fold
 /// into a single Merged step so they cost one pass instead of one pass each.
-enum ChainStep<'a> {
-    Single(&'a PostProcessEffect),
+enum ChainStep {
+    Single(usize),
     /// A merged run of color ops. `ops` is the op count; `descriptors` packs
     /// each op as a header vec4 ([type, param_vec4_count, _, _]) followed by
-    /// that many param vec4s.
+    /// that many param vec4s in the retained merged descriptor scratch.
     Merged {
         ops: u32,
-        descriptors: Vec<[f32; 4]>,
+        descriptors: Range<usize>,
     },
 }
 
@@ -84,10 +85,16 @@ fn encode_merged_op(effect: &PostProcessEffect, descriptors: &mut Vec<[f32; 4]>)
     }
 }
 
-/// Collapse consecutive mergeable ops into Merged steps; everything else stays a
-/// Single step. Runs of length 1 stay Single so the fast per-effect path runs.
-fn build_chain_steps(effects: &[PostProcessEffect]) -> Vec<ChainStep<'_>> {
-    let mut steps: Vec<ChainStep> = Vec::with_capacity(effects.len());
+/// Collapse consecutive mergeable ops into Merged steps; everything else stays
+/// Single. Retained scratch vectors keep repeated frames allocation-free.
+fn build_chain_steps_into(
+    effects: &[PostProcessEffect],
+    steps: &mut Vec<ChainStep>,
+    merged_descriptors: &mut Vec<[f32; 4]>,
+) {
+    steps.clear();
+    merged_descriptors.clear();
+    steps.reserve(effects.len().saturating_sub(steps.len()));
     let mut i = 0;
     while i < effects.len() {
         if is_mergeable_color_op(&effects[i]) {
@@ -96,25 +103,25 @@ fn build_chain_steps(effects: &[PostProcessEffect]) -> Vec<ChainStep<'_>> {
                 i += 1;
             }
             if i - start >= 2 {
-                let mut descriptors = Vec::with_capacity((i - start) * 3);
+                let descriptor_start = merged_descriptors.len();
                 for effect in &effects[start..i] {
-                    encode_merged_op(effect, &mut descriptors);
+                    encode_merged_op(effect, merged_descriptors);
                 }
+                let descriptor_end = merged_descriptors.len();
                 steps.push(ChainStep::Merged {
                     ops: (i - start) as u32,
-                    descriptors,
+                    descriptors: descriptor_start..descriptor_end,
                 });
                 continue;
             }
             // Single mergeable op: keep the normal path.
-            steps.push(ChainStep::Single(&effects[start]));
+            steps.push(ChainStep::Single(start));
             i = start + 1;
             continue;
         }
-        steps.push(ChainStep::Single(&effects[i]));
+        steps.push(ChainStep::Single(i));
         i += 1;
     }
-    steps
 }
 
 #[repr(C)]
@@ -225,6 +232,8 @@ pub struct PostProcessor {
     lut_generation: u32,
     frame_counter: u64,
     perf_counters: PostPerfCounters,
+    chain_steps_scratch: Vec<ChainStep>,
+    merged_descriptors_scratch: Vec<[f32; 4]>,
 }
 
 struct PostBindGroupDesc<'a> {
@@ -451,6 +460,8 @@ impl PostProcessor {
             lut_generation: 1,
             frame_counter: 0,
             perf_counters: PostPerfCounters::default(),
+            chain_steps_scratch: Vec::new(),
+            merged_descriptors_scratch: Vec::new(),
         }
     }
 
@@ -535,7 +546,9 @@ impl PostProcessor {
 
         // Resolve the chain into executable steps, folding consecutive cheap
         // color ops into single merged passes.
-        let steps = build_chain_steps(effects);
+        let mut steps = std::mem::take(&mut self.chain_steps_scratch);
+        let mut merged_descriptors = std::mem::take(&mut self.merged_descriptors_scratch);
+        build_chain_steps_into(effects, &mut steps, &mut merged_descriptors);
 
         let mut max_params = 0usize;
         for effect in *effects {
@@ -599,6 +612,7 @@ impl PostProcessor {
 
             // Merged run of cheap color ops: one pass applies the whole run.
             if let ChainStep::Merged { ops, descriptors } = step {
+                let descriptors = &merged_descriptors[descriptors.clone()];
                 let vec4_base = merged_vec4_base;
                 merged_vec4_base += descriptors.len() as u32;
                 queue.write_buffer(
@@ -671,10 +685,10 @@ impl PostProcessor {
                 continue;
             }
 
-            let ChainStep::Single(effect) = step else {
+            let ChainStep::Single(effect_index) = step else {
                 continue;
             };
-            let effect = *effect;
+            let effect = &effects[*effect_index];
             self.ensure_lut_texture(device, queue, effect, *static_texture_lookup);
 
             // Multi-pass effects (separable blur, downsampled bloom) run their
@@ -817,6 +831,8 @@ impl PostProcessor {
             };
             use_ping_a = !use_ping_a;
         }
+        self.chain_steps_scratch = steps;
+        self.merged_descriptors_scratch = merged_descriptors;
     }
 
     /// Ensure the full-res blur scratch target exists.
@@ -2031,12 +2047,15 @@ mod tests {
             },
             PostProcessEffect::BlackWhite { amount: 0.5 },
         ];
-        let steps = build_chain_steps(&effects);
+        let mut steps = Vec::new();
+        let mut descriptors_scratch = Vec::new();
+        build_chain_steps_into(&effects, &mut steps, &mut descriptors_scratch);
         assert_eq!(steps.len(), 1, "whole run folds into one merged pass");
         let ChainStep::Merged { ops, descriptors } = &steps[0] else {
             panic!("expected merged step");
         };
         assert_eq!(*ops, 3);
+        let descriptors = &descriptors_scratch[descriptors.clone()];
         // saturate: header + 2, color_grade: header + 5, black_white: header + 2.
         assert_eq!(descriptors.len(), 3 + 6 + 3);
         // Headers carry [type, param_vec4_count, ...] at the right cursors.
@@ -2047,5 +2066,39 @@ mod tests {
         assert_eq!(descriptors[4], [0.5, 1.1, 0.05, 1.0]);
         assert_eq!(descriptors[9][0] as u32, EFFECT_BLACK_WHITE);
         assert_eq!(descriptors[9][1], 2.0);
+    }
+
+    #[test]
+    fn chain_builder_reuses_step_and_descriptor_capacity() {
+        let effects = [
+            PostProcessEffect::Saturate { amount: 1.2 },
+            PostProcessEffect::BlackWhite { amount: 0.5 },
+            PostProcessEffect::Pixelate { size: 4.0 },
+            PostProcessEffect::Vignette {
+                radius: 0.75,
+                softness: 0.2,
+                strength: 0.6,
+            },
+            PostProcessEffect::ReverseFilter {
+                color: [1.0, 0.5, 0.25],
+                strength: 0.4,
+                softness: 0.1,
+            },
+        ];
+        let mut steps = Vec::new();
+        let mut descriptors = Vec::new();
+
+        build_chain_steps_into(&effects, &mut steps, &mut descriptors);
+        let step_capacity = steps.capacity();
+        let descriptor_capacity = descriptors.capacity();
+        let step_count = steps.len();
+        let descriptor_count = descriptors.len();
+
+        build_chain_steps_into(&effects, &mut steps, &mut descriptors);
+
+        assert_eq!(steps.capacity(), step_capacity);
+        assert_eq!(descriptors.capacity(), descriptor_capacity);
+        assert_eq!(steps.len(), step_count);
+        assert_eq!(descriptors.len(), descriptor_count);
     }
 }
