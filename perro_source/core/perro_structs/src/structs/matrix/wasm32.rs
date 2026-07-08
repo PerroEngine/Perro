@@ -16,6 +16,7 @@ macro_rules! impl_vec_binop {
             let chunks = out.len() / $lanes;
             for i in 0..chunks {
                 let offset = i * $lanes;
+                // SAFETY: chunk count keeps offset + lanes within both slices; wasm loads permit unaligned ptrs.
                 unsafe {
                     let lhs_v = v128_load(out.as_ptr().add(offset).cast::<v128>());
                     let rhs_v = v128_load(rhs.as_ptr().add(offset).cast::<v128>());
@@ -40,6 +41,7 @@ macro_rules! impl_vec_scale {
             let rhs_v = $splat(rhs);
             for i in 0..chunks {
                 let offset = i * $lanes;
+                // SAFETY: chunk count keeps offset + lanes within out; wasm loads permit unaligned ptrs.
                 unsafe {
                     let lhs_v = v128_load(out.as_ptr().add(offset).cast::<v128>());
                     v128_store(
@@ -170,6 +172,7 @@ pub(super) fn try_dot_f32(lhs: &[f32], rhs: &[f32]) -> Option<f32> {
     let mut acc = f32x4_splat(0.0);
     for i in 0..chunks {
         let offset = i * 4;
+        // SAFETY: chunk count keeps offset + 4 within both slices; wasm loads permit unaligned ptrs.
         unsafe {
             let lhs_v = v128_load(lhs.as_ptr().add(offset).cast::<v128>());
             let rhs_v = v128_load(rhs.as_ptr().add(offset).cast::<v128>());

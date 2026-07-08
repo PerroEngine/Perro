@@ -17,6 +17,7 @@ macro_rules! impl_vec_binop {
             let chunks = out.len() / $lanes;
             for i in 0..chunks {
                 let offset = i * $lanes;
+                // SAFETY: chunk count keeps offset + lanes within both slices; NEON loads permit unaligned ptrs.
                 unsafe {
                     let lhs_v: $vec = $load(out.as_ptr().add(offset));
                     let rhs_v: $vec = $load(rhs.as_ptr().add(offset));
@@ -35,9 +36,11 @@ macro_rules! impl_vec_scale {
         #[inline]
         pub(super) fn $name(out: &mut [$ty], rhs: $ty) -> bool {
             let chunks = out.len() / $lanes;
+            // SAFETY: duplicating a scalar into a NEON vector has no pointer or aliasing preconditions.
             let rhs_v: $vec = unsafe { $splat(rhs) };
             for i in 0..chunks {
                 let offset = i * $lanes;
+                // SAFETY: chunk count keeps offset + lanes within out; NEON loads permit unaligned ptrs.
                 unsafe {
                     let lhs_v: $vec = $load(out.as_ptr().add(offset));
                     $store(out.as_mut_ptr().add(offset), $mul(lhs_v, rhs_v));
@@ -225,6 +228,7 @@ pub(super) fn try_dot_f32(lhs: &[f32], rhs: &[f32]) -> Option<f32> {
     let mut acc = [0.0; 4];
     for i in 0..chunks {
         let offset = i * 4;
+        // SAFETY: chunk count keeps offset + 4 within both slices; acc has 4 lanes.
         unsafe {
             let lhs_v = vld1q_f32(lhs.as_ptr().add(offset));
             let rhs_v = vld1q_f32(rhs.as_ptr().add(offset));

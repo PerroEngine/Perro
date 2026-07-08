@@ -25,6 +25,9 @@
   - commit: this commit
   - verify: full `cargo check`, full `cargo clippy`, full `cargo test`, `cargo tree -d --workspace`
 - [ ] 2.2 unsafe w/o safety comment
+  - partial: matrix SIMD arch unsafe blocks documented
+  - commit: this commit
+  - verify: full `cargo check`, full `cargo clippy`, full `cargo test`
 - [ ] 2.3 unwrap/panic in runtime paths
 - [ ] 2.4 string-keyed maps in hot structs
 - [ ] 2.5 per-frame str alloc in render extract

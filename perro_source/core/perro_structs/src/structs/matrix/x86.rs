@@ -89,6 +89,7 @@ macro_rules! impl_float_binop {
             let chunks = out.len() / $lanes;
             for i in 0..chunks {
                 let offset = i * $lanes;
+                // SAFETY: chunk count keeps offset + lanes within both slices; unaligned loads are used.
                 unsafe {
                     let lhs_v = $load(out.as_ptr().add(offset));
                     let rhs_v = $load(rhs.as_ptr().add(offset));
@@ -109,6 +110,7 @@ macro_rules! impl_float_scale {
             let rhs_v = $splat(rhs);
             for i in 0..chunks {
                 let offset = i * $lanes;
+                // SAFETY: chunk count keeps offset + lanes within out; unaligned loads are used.
                 unsafe {
                     let lhs_v = $load(out.as_ptr().add(offset));
                     $store(out.as_mut_ptr().add(offset), $op(lhs_v, rhs_v));
@@ -126,6 +128,7 @@ macro_rules! impl_int_binop {
             let chunks = out.len() / $lanes;
             for i in 0..chunks {
                 let offset = i * $lanes;
+                // SAFETY: chunk count keeps offset + lanes within both slices; unaligned loads are used.
                 unsafe {
                     let lhs_v = _mm_loadu_si128(out.as_ptr().add(offset).cast::<__m128i>());
                     let rhs_v = _mm_loadu_si128(rhs.as_ptr().add(offset).cast::<__m128i>());
@@ -149,6 +152,7 @@ macro_rules! impl_int_scale {
             let rhs_v = $splat(rhs);
             for i in 0..chunks {
                 let offset = i * $lanes;
+                // SAFETY: chunk count keeps offset + lanes within out; unaligned loads are used.
                 unsafe {
                     let lhs_v = _mm_loadu_si128(out.as_ptr().add(offset).cast::<__m128i>());
                     _mm_storeu_si128(
@@ -354,6 +358,7 @@ unsafe fn simd_dot_f32_sse(lhs: &[f32], rhs: &[f32]) -> f32 {
     let mut acc = _mm_setzero_ps();
     for i in 0..chunks {
         let offset = i * 4;
+        // SAFETY: chunk count keeps offset + 4 within both slices; unaligned loads are used.
         unsafe {
             let lhs_v = _mm_loadu_ps(lhs.as_ptr().add(offset));
             let rhs_v = _mm_loadu_ps(rhs.as_ptr().add(offset));
@@ -362,6 +367,7 @@ unsafe fn simd_dot_f32_sse(lhs: &[f32], rhs: &[f32]) -> f32 {
     }
 
     let mut lanes = [0.0; 4];
+    // SAFETY: lanes has exactly four f32 slots for the SSE register store.
     unsafe {
         _mm_storeu_ps(lanes.as_mut_ptr(), acc);
     }
