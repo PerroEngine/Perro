@@ -28,7 +28,7 @@
   - partial: matrix SIMD arch unsafe blocks documented
   - commit: this commit
   - verify: full `cargo check`, full `cargo clippy`, full `cargo test`
-- [ ] 2.3 unwrap/panic in runtime paths
+- [x] 2.3 unwrap/panic in runtime paths
   - partial: UI render timing/layout unwraps removed
   - commit: this commit
   - verify: full `cargo check`, full `cargo clippy`, full `cargo test`
@@ -63,6 +63,9 @@
   - commit: this commit
   - verify: full `cargo check`, full `cargo clippy`, full `cargo test`
   - partial: mesh blend seam and cube preset expects removed
+  - commit: this commit
+  - verify: full `cargo check`, full `cargo clippy`, full `cargo test`
+  - final: shipped runtime path hits triaged; remaining hits are init-only `NonZeroU64`/uniform-size asserts with messages or cfg-test/shader-validation code
   - commit: this commit
   - verify: full `cargo check`, full `cargo clippy`, full `cargo test`
 - [ ] 2.4 string-keyed maps in hot structs
