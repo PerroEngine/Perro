@@ -104,8 +104,13 @@
   - partial: add proc macro integration coverage for `perro_macros` minify includes and `perro_scripting_macros` `State`/`Variant` expansion
   - final: zero-test crates now have targeted tests; thin-crate count audit stale for `perro_compiler`, `perro_csv`, `perro_io`, `perro_meshlets`, `perro_graphics_assets`; add low-risk flag/mask coverage to `perro_asset_formats`
   - verify: `cargo test -p perro_runtime_render -- --nocapture`, `cargo test -p perro_dev_runner -- --nocapture`, `cargo test -p perro_macros -- --nocapture`, `cargo test -p perro_scripting_macros -- --nocapture`, `cargo test -p perro_asset_formats -- --nocapture`, full `cargo check`, full `cargo clippy`, full `cargo test`
-- [ ] 2.9 misc sweep
+- [x] 2.9 misc sweep
   - partial: cut UI retained-visible temp `Vec` in render extraction hot path
+  - triage: `allow(dead_code)` hits are generated module headers/templates, disabled/stub APIs, target-specific SIMD modules, and audio/physics prep helpers
+  - triage: remaining `collect::<Vec<_>>()` hits are build/static pipeline, scene load/prepare, tests/benches, or larger scratch-buffer refactors; no other low-risk hot-path edit found
+  - triage: `Box<dyn>` hits are script-state ABI, generated glue, panic payloads, or tests/benches; keep
+  - triage: sort hits are deterministic build/load/query ordering or small focus/render ordering; keep
+  - verify: full `cargo check`, full `cargo clippy`, full `cargo test`
 
 ## Coherence Audit Next
 
