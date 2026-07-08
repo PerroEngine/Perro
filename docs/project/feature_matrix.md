@@ -107,7 +107,7 @@ Status keys:
 | Automatic retargeting      | research | Bone-name remap, rest-pose solve, and mismatched rig conversion are not implemented.                                                                                                                                                                                                                                                                                                                                   |
 | LOD                        | done     | Automatic mesh LOD works for dynamic/dev loads and static `.pmesh` v2 builds. Mesh nodes can clamp automatic LOD quality with `min_lod`/`max_lod` (`0` least detail, `5` most detail).                                                                                                                                                                                                                                 |
 | Decals                     | done     | `Decal3D` and `TextDecal3D` project albedo/normal/emission onto lit geometry before lighting. Standard, toon, and multimesh surfaces receive decals; unlit materials ignore them. Demo3D includes decal docs, textures, and a working scene.                                                                                                                                                                           |
-| Navmesh                    | research | Needs design and use-case clarity.                                                                                                                                                                                                                                                                                                                                                                                     |
+| Navmesh                    | partial  | `NavMeshID`, `.pnav` text assets, `ctx.res.NavMeshes()`, and `ctx.run.NavMesh().find_path_3d(...)` exist for static 3D triangle navmeshes. Runtime query supports snap-to-mesh, layer masks, shared-edge A*, and simple corridor midpoint smoothing. Static bake, binary `.pnav`, `NavMesh3D` scene node, off-mesh links, area costs, and Demo3D lane remain planned. |
 
 ## UI
 
@@ -140,7 +140,7 @@ Status keys:
 
 ## Planned Work Packets
 
-1. Navmesh MVP.
+1. Navmesh static bake + Demo3D lane.
 2. Automatic retargeting.
 3. 2D shadowed lights.
 4. Perro editor release polish and docs.

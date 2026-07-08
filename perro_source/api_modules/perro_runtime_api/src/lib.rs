@@ -33,7 +33,8 @@ pub mod prelude {
         IntoPreloadedSceneID, IntoPreloadedSceneTarget, IntoSceneLoadSource, IntoScenePath,
         IntoScriptMemberID, MeshDataSurfaceHit3D, MeshDataSurfaceRegion3D, MeshMaterialRegion3D,
         MeshQueryModule, MeshSurfaceHit3D, MeshSurfaceRay3D, MidiChannel, MidiNoteHandle,
-        MidiNoteOptions, MidiProgram, MidiSong, MidiSound, NodeAPI, NodeCollection,
+        MidiNoteOptions, MidiProgram, MidiSong, MidiSound, NavMeshAPI, NavMeshModule,
+        NavMeshPath3D, NavMeshPathOptions, NavMeshPathStatus, NodeAPI, NodeCollection,
         NodeCollectionEntry, NodeCreateBatch, NodeModule, NodeQuery, NodeQueryModule,
         NodeQueryView, NodeSceneSpec, NodeScriptSpec, NodeScriptVar, NodeSpec, Note, PhysicsAPI,
         PhysicsBodyPrediction2D, PhysicsBodyPrediction3D, PhysicsLaunchSolution2D,
@@ -63,7 +64,7 @@ pub mod prelude {
         mesh_instance_material_regions_3d, mesh_instance_surface_at_global_point_3d,
         mesh_instance_surface_on_global_ray_3d, mesh_instance_surfaces_on_global_rays_3d,
         midi_play_attached, midi_release_attached, midi_start_attached, midi_stop_attached,
-        node_collection, physics_apply_gravity_2d, physics_apply_gravity_3d,
+        navmesh_find_path_3d, node_collection, physics_apply_gravity_2d, physics_apply_gravity_3d,
         physics_get_body_gravity_scale, physics_get_coefficient, physics_get_gravity,
         physics_is_paused, physics_move_and_slide_2d, physics_move_and_slide_3d,
         physics_move_body_2d, physics_move_body_3d, physics_pause, physics_predict_body_2d,
@@ -90,7 +91,7 @@ pub mod prelude {
 
     // Common id and variant helpers.
     pub use perro_ids::prelude::{
-        AnimationID, AudioBusID, LightID, MaterialID, MeshID, NodeID, PreloadedSceneID,
+        AnimationID, AudioBusID, LightID, MaterialID, MeshID, NavMeshID, NodeID, PreloadedSceneID,
         ScriptMemberID, SignalID, TagID, TextureID,
     };
     pub use perro_ids::{func, method, sid, signal, smid, tag, tags, var};

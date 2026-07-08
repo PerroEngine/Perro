@@ -1,9 +1,9 @@
 use perro_animation::{AnimationClip, AnimationTreeAsset};
-use perro_ids::{AnimationID, AnimationTreeID, MaterialID, MeshID, TextureID};
+use perro_ids::{AnimationID, AnimationTreeID, MaterialID, MeshID, NavMeshID, TextureID};
 use perro_project::LocalizationConfig;
 use perro_render_bridge::{Material3D, Mesh3D};
 use perro_render_bridge::{RenderCommand, RenderRequestID};
-use perro_resource_api::sub_apis::Locale;
+use perro_resource_api::sub_apis::{Locale, NavMesh3D};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
@@ -140,6 +140,7 @@ pub(super) struct RuntimeResourceState {
     texture_slots: LocalSlotArena,
     mesh_slots: LocalSlotArena,
     material_slots: LocalSlotArena,
+    navmesh_slots: LocalSlotArena,
     animation_slots: LocalSlotArena,
     animation_tree_slots: LocalSlotArena,
     pub(super) queued_commands: Vec<RenderCommand>,
@@ -161,6 +162,10 @@ pub(super) struct RuntimeResourceState {
     pub(super) mesh_data_by_id: HashMap<MeshID, Mesh3D>,
     pub(super) mesh_revision_by_id: HashMap<MeshID, u64>,
     pub(super) mesh_loaded_by_id: HashSet<MeshID>,
+    pub(super) navmesh_by_source: HashMap<u64, NavMeshID>,
+    pub(super) navmesh_source_by_id: HashMap<NavMeshID, String>,
+    pub(super) navmesh_data_by_id: HashMap<NavMeshID, NavMesh3D>,
+    pub(super) navmesh_loaded_by_id: HashSet<NavMeshID>,
     pub(super) material_by_source: HashMap<u64, MaterialID>,
     pub(super) material_pending_by_source: HashMap<u64, RenderRequestID>,
     pub(super) material_pending_source_by_request: HashMap<RenderRequestID, String>,
@@ -212,6 +217,11 @@ impl RuntimeResourceState {
         MaterialID::from_parts(index, generation)
     }
 
+    pub(super) fn allocate_navmesh_id(&mut self) -> NavMeshID {
+        let (index, generation) = self.navmesh_slots.allocate_parts();
+        NavMeshID::from_parts(index, generation)
+    }
+
     pub(super) fn free_texture_id(&mut self, id: TextureID) -> bool {
         self.texture_slots.free_parts(id.index(), id.generation())
     }
@@ -235,6 +245,15 @@ impl RuntimeResourceState {
     pub(super) fn occupy_material_id(&mut self, id: MaterialID) -> bool {
         self.material_slots
             .occupy_parts(id.index(), id.generation())
+    }
+
+    pub(super) fn free_navmesh_id(&mut self, id: NavMeshID) -> bool {
+        self.navmesh_slots.free_parts(id.index(), id.generation())
+    }
+
+    pub(super) fn has_navmesh_id(&self, id: NavMeshID) -> bool {
+        self.navmesh_slots
+            .contains_parts(id.index(), id.generation())
     }
 
     pub(super) fn allocate_animation_id(&mut self) -> AnimationID {

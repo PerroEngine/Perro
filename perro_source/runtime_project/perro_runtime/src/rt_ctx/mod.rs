@@ -1,5 +1,6 @@
 pub mod animation;
 pub mod animation_tree;
+pub mod navmesh;
 pub mod nodes;
 pub mod physics;
 pub mod query;

@@ -16,6 +16,7 @@ mod localization;
 mod material;
 mod mesh;
 mod mic;
+mod navmesh;
 mod post_processing;
 mod scene_doc;
 mod skeleton;
@@ -45,6 +46,9 @@ pub use localization::{IntoLocale, Locale, LocalizationAPI, LocalizationModule};
 pub use material::{MaterialAPI, MaterialModule, MaterialReserveArg};
 pub use mesh::{MeshAPI, MeshModule, MeshReserveArg};
 pub use mic::{MicAPI, MicClip, MicDenoiseSettings, MicModule, MicSettings};
+pub use navmesh::{
+    NavMesh3D, NavMeshAPI, NavMeshModule, NavMeshTriangle3D, parse_pnav_bytes, parse_pnav_text,
+};
 pub use perro_ids::{AudioBusID, SoundFontID};
 pub use post_processing::PostProcessingAPI;
 

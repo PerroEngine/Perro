@@ -1,8 +1,8 @@
 use crate::sub_apis::{
-    AnimPlayerAPI, AnimPlayerModule, AnimTreeAPI, AnimTreeModule, MeshQueryModule, NodeAPI,
-    NodeModule, NodeQueryModule, PhysicsAPI, PhysicsModule, RuntimeAudioAPI, RuntimeAudioModule,
-    SceneAPI, SceneModule, ScriptAPI, ScriptModule, SignalAPI, SignalModule, TimeAPI, TimeModule,
-    WindowAPI, WindowModule,
+    AnimPlayerAPI, AnimPlayerModule, AnimTreeAPI, AnimTreeModule, MeshQueryModule, NavMeshAPI,
+    NavMeshModule, NodeAPI, NodeModule, NodeQueryModule, PhysicsAPI, PhysicsModule,
+    RuntimeAudioAPI, RuntimeAudioModule, SceneAPI, SceneModule, ScriptAPI, ScriptModule, SignalAPI,
+    SignalModule, TimeAPI, TimeModule, WindowAPI, WindowModule,
 };
 
 /// Full runtime contract required by [`RuntimeWindow`].
@@ -87,6 +87,15 @@ impl<'rt, RT: RuntimeAPI + ?Sized> RuntimeWindow<'rt, RT> {
     #[inline]
     pub fn MeshQuery(&mut self) -> MeshQueryModule<'_, RT> {
         MeshQueryModule::new(self.rt)
+    }
+
+    /// Query 3D navigation meshes.
+    #[inline]
+    pub fn NavMesh(&mut self) -> NavMeshModule<'_, RT>
+    where
+        RT: NavMeshAPI,
+    {
+        NavMeshModule::new(self.rt)
     }
 
     // ---- Script and signals ----

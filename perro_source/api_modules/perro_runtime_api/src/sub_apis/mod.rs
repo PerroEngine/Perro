@@ -10,6 +10,7 @@
 mod animation;
 mod animation_tree;
 mod audio;
+mod navmesh;
 mod node;
 mod physics;
 mod scene;
@@ -29,6 +30,9 @@ pub use audio::{
     AttachedMidiTarget, AudioCompression, AudioDirection, AudioEffects, AudioEq, MidiChannel,
     MidiNoteHandle, MidiNoteOptions, MidiProgram, MidiSong, MidiSound, Note, RuntimeAudio,
     RuntimeAudioAPI, RuntimeAudioModule, RuntimeMidiModule, SpatialAudioOptions, program,
+};
+pub use navmesh::{
+    NavMeshAPI, NavMeshModule, NavMeshPath3D, NavMeshPathOptions, NavMeshPathStatus,
 };
 
 // ---- Nodes + queries ----

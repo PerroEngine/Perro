@@ -14,7 +14,7 @@ Scope:
 | Demo2D parity | done | parity zones shipped in Demo2D | keep smoke/web checks current |
 | Mesh blend polish | done | MSAA and multimesh use the screen seam path | keep renderer tests + Demo3D docs current |
 | 3D shadow controls | done | shadow tuning fields and guide exist | keep Demo3D tuning lane on backlog |
-| Navmesh | research | most game-blocking missing gameplay feature | static baked navmesh + path query API |
+| Navmesh | partial | text `.pnav`, resource API, and runtime path query exist | static bake, node, binary format, and Demo3D lane |
 | Auto retarget | research | skinned asset reuse limited to exact rig contract | offline retarget bake tool |
 | 2D shadows | planned | `cast_shadows` fields exist but do nothing in 2D | hard-shadow mask from 2D colliders |
 | Editor release | in dev | editor exists but not release-grade | smoke, docs, save/load tests, inspector coverage |
@@ -24,7 +24,7 @@ Scope:
 
 ## Priority
 
-1. Navmesh MVP
+1. Navmesh static bake + Demo3D lane
 2. Auto retarget bake
 3. 2D shadowed lights
 4. Editor release pass
@@ -185,12 +185,26 @@ Use:
 - resource ID/cache model
 - `Draw2D/3D` debug lines if useful
 
+Current packet:
+
+- done: `NavMeshID`
+- done: `.pnav` text parser
+- done: `ctx.res.NavMeshes()` load/create/write/drop API
+- done: `ctx.run.NavMesh()` static 3D path query API
+- done: triangle shared-edge A*
+- done: layer mask, same-poly, corridor, unreachable tests
+- todo: binary `.pnav`
+- todo: static pipeline bake
+- todo: `NavMesh3D` node + scene fields
+- todo: Demo3D lane
+- todo: real funnel/string-pull smoothing
+
 New:
 
 - `NavMeshID`
 - `.pnav` asset format
 - `ctx.res.NavMeshes()` load API
-- `ctx.run.Navigation()` query API
+- `ctx.run.NavMesh()` query API
 
 Impl:
 

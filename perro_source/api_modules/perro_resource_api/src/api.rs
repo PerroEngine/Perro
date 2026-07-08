@@ -3,8 +3,8 @@ use crate::sub_apis::{
     AnimationAPI, AnimationModule, AnimationTreeAPI, AnimationTreeModule, AudioAPI, AudioModule,
     CsvAPI, CsvModule, Draw2DAPI, Draw2DModule, GlbModule, GltfAPI, IntoLocale, Locale,
     LocalizationAPI, LocalizationModule, MaterialAPI, MaterialModule, MeshAPI, MeshModule, MicAPI,
-    MicModule, PostProcessingAPI, SceneDocAPI, SceneDocModule, SkeletonAPI, SkeletonModule,
-    TextureAPI, TextureModule, VisualAccessibilityAPI,
+    MicModule, NavMeshAPI, NavMeshModule, PostProcessingAPI, SceneDocAPI, SceneDocModule,
+    SkeletonAPI, SkeletonModule, TextureAPI, TextureModule, VisualAccessibilityAPI,
 };
 use perro_scene::{SceneDoc, SceneWrite};
 use perro_structs::{ColorBlindFilter, PostProcessEffect, PostProcessSet, Vector2};
@@ -111,6 +111,15 @@ impl<'res, R: ResourceAPI + ?Sized> ResourceWindow<'res, R> {
     #[inline]
     pub fn Meshes(&self) -> MeshModule<'_, R> {
         MeshModule::new(self.api)
+    }
+
+    /// Access navigation mesh load, create, inspect, and write helpers.
+    #[inline]
+    pub fn NavMeshes(&self) -> NavMeshModule<'_, R>
+    where
+        R: NavMeshAPI,
+    {
+        NavMeshModule::new(self.api)
     }
 
     /// Access material load, reserve, create, inspect, and write helpers.

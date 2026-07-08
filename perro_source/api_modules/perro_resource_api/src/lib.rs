@@ -43,9 +43,9 @@ pub mod prelude {
         MaterialReserveArg, MeshAPI, MeshModule, MeshReserveArg, MicAPI, MicClip,
         MicDenoiseSettings, MicModule, MicSettings, MidiChannel, MidiModule, MidiNoteHandle,
         MidiNoteOptions, MidiProgram, MidiSong, MidiSound, MidiSpatialPos, MidiSpatialPosition,
-        Note, PannedAudio, PostProcessingAPI, SceneDocAPI, SceneDocModule, SkeletonAPI,
-        SkeletonModule, SpatialAudioOptions, TextureAPI, TextureModule, TextureReserveArg,
-        VisualAccessibilityAPI, program,
+        NavMesh3D, NavMeshTriangle3D, Note, PannedAudio, PostProcessingAPI, SceneDocAPI,
+        SceneDocModule, SkeletonAPI, SkeletonModule, SpatialAudioOptions, TextureAPI,
+        TextureModule, TextureReserveArg, VisualAccessibilityAPI, program,
     };
 
     // Convenience macros.
@@ -67,7 +67,8 @@ pub mod prelude {
         mic_start_stream, mic_start_with, mic_stop, mic_stop_listening, mic_stop_stream,
         mic_stream_bytes, mic_stream_clip, mic_unpack, midi_load_soundfont,
         midi_load_soundfont_from_bytes, midi_play, midi_play_at, midi_release,
-        midi_soundfont_is_loaded, midi_start, midi_start_at, node_count, post_processing_add,
+        midi_soundfont_is_loaded, midi_start, midi_start_at, navmesh_create,
+        navmesh_create_from_bytes, navmesh_load, node_count, post_processing_add,
         post_processing_clear, post_processing_remove, post_processing_set, res_path, res_path_buf,
         scene_count, scene_load_doc, scene_save_doc, skeleton_count, skeleton_load_bones,
         skeleton_load_bones_2d_from_bytes, skeleton_load_bones_3d_from_bytes, texture_count,
@@ -81,8 +82,8 @@ pub mod prelude {
         CsvOrder, CsvRow, CsvRowIndex,
     };
     pub use perro_ids::prelude::{
-        AnimationID, AnimationTreeID, LightID, MaterialID, MeshID, NodeID, ScriptMemberID,
-        SignalID, TagID, TextureID,
+        AnimationID, AnimationTreeID, LightID, MaterialID, MeshID, NavMeshID, NodeID,
+        ScriptMemberID, SignalID, TagID, TextureID,
     };
     pub use perro_render_bridge::{
         CustomMaterial3D, CustomMaterialLighting3D, CustomMaterialParam3D,

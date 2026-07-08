@@ -9,6 +9,7 @@ mod localization;
 mod material;
 mod mesh;
 mod mic;
+mod navmesh;
 mod post_processing;
 mod scene_doc;
 mod skeleton;
