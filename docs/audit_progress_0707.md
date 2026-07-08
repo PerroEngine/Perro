@@ -17,13 +17,15 @@
 
 ## Spec Audit
 
-- [ ] 2.1 dup dep versions
+- [x] 2.1 dup dep versions
   - partial: direct `base64` / `gltf` / `toml` moved to workspace deps
   - commit: `4bd48b28`
   - verify: full `cargo check`, full `cargo clippy`, full `cargo test`
   - partial: workspace `toml` upgraded `0.8.23` -> `0.9.12`; `toml` / `toml_datetime` dups each cut 3 -> 2
   - commit: this commit
   - verify: full `cargo check`, full `cargo clippy`, full `cargo test`, `cargo tree -d --workspace`
+  - final: current duplicate set is transitive/upstream only (`gltf`, `rapier`/`parry`, `symphonia`, `wgpu`/`naga`, `btleplug`, `trybuild`, `windows` family); no remaining direct safe bump found
+  - verify: `cargo tree -d --workspace`
 - [x] 2.2 unsafe w/o safety comment
   - partial: matrix SIMD arch unsafe blocks documented
   - commit: this commit
