@@ -1003,8 +1003,8 @@ mod tests {
         );
         assert!(plan.command_ids.contains(&node(3)));
         assert!(plan.command_ids.contains(&retained));
-        for id in plan.traversal_ids.iter().copied() {
-            assert!(plan.command_ids.contains(&id));
+        for id in plan.traversal_ids.iter() {
+            assert!(plan.command_ids.contains(id));
         }
 
         state.restore_extraction_plan(plan.traversal_ids, plan.command_ids, plan.command_seen);

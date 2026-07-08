@@ -1303,10 +1303,10 @@ impl Runtime {
                             && stream_render_mask_matches(camera_mask, sky.render_layers) =>
                     {
                         Some(StreamLight3DData::Sky(Sky3DState {
-                            day_colors: Arc::from(sky.day_colors.as_ref()),
-                            evening_colors: Arc::from(sky.evening_colors.as_ref()),
-                            night_colors: Arc::from(sky.night_colors.as_ref()),
-                            horizon_colors: Arc::from(sky.horizon_colors.as_ref()),
+                            day_colors: Arc::from(sky.palette.day_colors.as_ref()),
+                            evening_colors: Arc::from(sky.palette.evening_colors.as_ref()),
+                            night_colors: Arc::from(sky.palette.night_colors.as_ref()),
+                            horizon_colors: Arc::from(sky.palette.horizon_colors.as_ref()),
                             time: SkyTime3DState {
                                 time_of_day: sky.time.time_of_day,
                                 paused: sky.time.paused,

@@ -1758,12 +1758,14 @@ fn dirty_skeleton_refreshes_sibling_skinned_mesh_draw() {
 #[test]
 fn active_camera_3d_emits_set_camera_command() {
     let mut runtime = Runtime::new();
-    let mut camera = Camera3D::default();
-    camera.active = true;
-    camera.projection = CameraProjection::Orthographic {
-        size: 24.0,
-        near: 0.2,
-        far: 600.0,
+    let mut camera = Camera3D {
+        active: true,
+        projection: CameraProjection::Orthographic {
+            size: 24.0,
+            near: 0.2,
+            far: 600.0,
+        },
+        ..Default::default()
     };
     camera.transform.position.x = 6.0;
     camera.transform.position.y = 7.0;
@@ -1798,8 +1800,10 @@ fn active_camera_3d_emits_set_camera_command() {
 #[test]
 fn deactivating_last_camera_3d_resets_renderer_camera() {
     let mut runtime = Runtime::new();
-    let mut camera = Camera3D::default();
-    camera.active = true;
+    let mut camera = Camera3D {
+        active: true,
+        ..Default::default()
+    };
     camera.transform.position.x = 12.0;
     let camera_node = runtime
         .nodes
@@ -1856,9 +1860,11 @@ fn newly_activated_camera_3d_wins_over_higher_slot_old_camera() {
 #[test]
 fn camera_3d_render_mask_filters_meshes() {
     let mut runtime = Runtime::new();
-    let mut camera = Camera3D::default();
-    camera.active = true;
-    camera.render_mask = BitMask::with([2]);
+    let camera = Camera3D {
+        active: true,
+        render_mask: BitMask::with([2]),
+        ..Default::default()
+    };
     let camera_node = runtime
         .nodes
         .insert(SceneNode::new(SceneNodeData::Camera3D(camera)));
@@ -1898,8 +1904,10 @@ fn camera_3d_render_mask_filters_meshes() {
 #[test]
 fn camera_3d_move_does_not_rewalk_mesh_render_layers() {
     let mut runtime = Runtime::new();
-    let mut camera = Camera3D::default();
-    camera.active = true;
+    let camera = Camera3D {
+        active: true,
+        ..Default::default()
+    };
     let camera_node = runtime
         .nodes
         .insert(SceneNode::new(SceneNodeData::Camera3D(camera)));
@@ -1989,9 +1997,9 @@ fn active_ambient_light_3d_emits_set_ambient_light_command() {
 fn active_sky_3d_emits_set_sky_command() {
     let mut runtime = Runtime::new();
     let mut sky = Sky3D::default();
-    sky.day_colors = vec![[0.4, 0.6, 0.9], [0.9, 0.95, 1.0]];
-    sky.evening_colors = vec![[0.95, 0.45, 0.22], [0.7, 0.2, 0.35]];
-    sky.night_colors = vec![[0.01, 0.02, 0.05], [0.04, 0.08, 0.18]];
+    sky.palette.day_colors = vec![[0.4, 0.6, 0.9], [0.9, 0.95, 1.0]];
+    sky.palette.evening_colors = vec![[0.95, 0.45, 0.22], [0.7, 0.2, 0.35]];
+    sky.palette.night_colors = vec![[0.01, 0.02, 0.05], [0.04, 0.08, 0.18]];
     sky.time.time_of_day = 0.67;
     sky.time.paused = true;
     sky.time.scale = 0.25;
@@ -2022,7 +2030,7 @@ fn active_sky_3d_emits_set_sky_command() {
 fn unchanged_sky_3d_does_not_reemit_set_sky_command() {
     let mut runtime = Runtime::new();
     let mut sky = Sky3D::default();
-    sky.day_colors = vec![[0.4, 0.6, 0.9], [0.9, 0.95, 1.0]];
+    sky.palette.day_colors = vec![[0.4, 0.6, 0.9], [0.9, 0.95, 1.0]];
     sky.active = true;
     let node = runtime
         .nodes
@@ -2051,10 +2059,10 @@ fn unchanged_sky_3d_does_not_reemit_set_sky_command() {
 #[test]
 fn sky_3d_state_matches_compares_all_fields() {
     let mut sky = Sky3D::default();
-    sky.day_colors = vec![[0.1, 0.2, 0.3]];
-    sky.evening_colors = vec![[0.4, 0.5, 0.6]];
-    sky.night_colors = vec![[0.7, 0.8, 0.9]];
-    sky.horizon_colors = vec![[0.2, 0.2, 0.2]];
+    sky.palette.day_colors = vec![[0.1, 0.2, 0.3]];
+    sky.palette.evening_colors = vec![[0.4, 0.5, 0.6]];
+    sky.palette.night_colors = vec![[0.7, 0.8, 0.9]];
+    sky.palette.horizon_colors = vec![[0.2, 0.2, 0.2]];
     sky.time.time_of_day = 0.5;
     sky.time.paused = false;
     sky.time.scale = 1.0;
@@ -2062,10 +2070,10 @@ fn sky_3d_state_matches_compares_all_fields() {
         .push(perro_nodes::sky_3d::SkyShaderPass::new("shader_a"));
 
     let retained = super::Sky3DState {
-        day_colors: Arc::from(sky.day_colors.as_slice()),
-        evening_colors: Arc::from(sky.evening_colors.as_slice()),
-        night_colors: Arc::from(sky.night_colors.as_slice()),
-        horizon_colors: Arc::from(sky.horizon_colors.as_slice()),
+        day_colors: Arc::from(sky.palette.day_colors.as_slice()),
+        evening_colors: Arc::from(sky.palette.evening_colors.as_slice()),
+        night_colors: Arc::from(sky.palette.night_colors.as_slice()),
+        horizon_colors: Arc::from(sky.palette.horizon_colors.as_slice()),
         time: super::SkyTime3DState {
             time_of_day: sky.time.time_of_day,
             paused: sky.time.paused,
@@ -2213,10 +2221,12 @@ fn collision_shape_debug_rebuilds_when_parent_moves() {
         .nodes
         .insert(SceneNode::new(SceneNodeData::Node3D(parent_node)));
 
-    let mut collision = perro_nodes::CollisionShape3D::default();
-    collision.debug = true;
-    collision.shape = Shape3D::Cube {
-        size: Vector3::new(2.0, 2.0, 2.0),
+    let collision = perro_nodes::CollisionShape3D {
+        debug: true,
+        shape: Shape3D::Cube {
+            size: Vector3::new(2.0, 2.0, 2.0),
+        },
+        ..Default::default()
     };
     let child = runtime
         .nodes

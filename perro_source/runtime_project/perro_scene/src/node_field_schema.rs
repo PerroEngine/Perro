@@ -1329,30 +1329,7 @@ fn joint_fields(fields: &mut Vec<SceneNodeField>, node_type: NodeType) {
 }
 
 fn sky_fields(fields: &mut Vec<SceneNodeField>) {
-    push(
-        fields,
-        "Sky",
-        "day_colors",
-        NodeFieldType::array(NodeFieldType::Color),
-    );
-    push(
-        fields,
-        "Sky",
-        "evening_colors",
-        NodeFieldType::array(NodeFieldType::Color),
-    );
-    push(
-        fields,
-        "Sky",
-        "night_colors",
-        NodeFieldType::array(NodeFieldType::Color),
-    );
-    push(
-        fields,
-        "Sky",
-        "horizon_colors",
-        NodeFieldType::array(NodeFieldType::Color),
-    );
+    push(fields, "Sky", "palette", NodeFieldType::object(Vec::new()));
     push(fields, "Sky", "time_of_day", NodeFieldType::F32);
     push(fields, "Sky", "time_paused", NodeFieldType::Bool);
     push(fields, "Sky", "time_scale", NodeFieldType::F32);

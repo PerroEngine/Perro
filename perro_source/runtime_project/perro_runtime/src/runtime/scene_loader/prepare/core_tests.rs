@@ -361,10 +361,12 @@ mod tests {
             $root = @sky
             [sky]
             [Sky3D]
-                day_colors = [(0.1, 0.2, 0.3), (0.4, 0.5, 0.6)]
-                evening_colors = [(0.7, 0.4, 0.2), (0.2, 0.1, 0.3)]
-                night_colors = [(0.0, 0.0, 0.1), (0.0, 0.0, 0.2)]
-                horizon_colors = [(0.6, 0.6, 0.6), (0.3, 0.3, 0.3)]
+                palette = {
+                    day_colors = [(0.1, 0.2, 0.3), (0.4, 0.5, 0.6)]
+                    evening_colors = [(0.7, 0.4, 0.2), (0.2, 0.1, 0.3)]
+                    night_colors = [(0.0, 0.0, 0.1), (0.0, 0.0, 0.2)]
+                    horizon_colors = [(0.6, 0.6, 0.6), (0.3, 0.3, 0.3)]
+                }
                 time = { time_of_day = 0.25 paused = true scale = 0.5 }
                 shaders = [
                     { path = "res://shaders/sky.wgsl", params = [1.0, (1.0, 2.0, 3.0)] }
@@ -386,7 +388,8 @@ mod tests {
 
         match &sky.node.data {
             SceneNodeData::Sky3D(node) => {
-                assert_eq!(node.horizon_colors.len(), 2);
+                assert_eq!(node.palette.horizon_colors.len(), 2);
+                assert_eq!(node.palette.day_colors[0], [0.1, 0.2, 0.3]);
                 assert_eq!(node.time.time_of_day, 0.25);
                 assert!(node.time.paused);
                 assert_eq!(node.shaders.len(), 1);

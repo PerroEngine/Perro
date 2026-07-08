@@ -525,6 +525,7 @@ pub enum RayLight3DField {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Sky3DField {
+    Palette,
     DayColors,
     EveningColors,
     NightColors,
@@ -2524,6 +2525,7 @@ fn resolve_light2d_common(field: &str) -> Option<Light2DField> {
 
 fn resolve_sky3d_field(field: &str) -> Option<Sky3DField> {
     match field {
+        "palette" => Some(Sky3DField::Palette),
         "sky_colors" | "colors" | "day_colors" => Some(Sky3DField::DayColors),
         "evening_colors" | "sunset_colors" | "dusk_colors" => Some(Sky3DField::EveningColors),
         "night_colors" => Some(Sky3DField::NightColors),

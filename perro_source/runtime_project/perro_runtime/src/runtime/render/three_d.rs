@@ -281,10 +281,10 @@ impl Runtime {
                     .is_some_and(|retained| sky_3d_state_matches(retained, sky));
                 if !unchanged {
                     let sky = Sky3DState {
-                        day_colors: Arc::from(sky.day_colors.as_ref()),
-                        evening_colors: Arc::from(sky.evening_colors.as_ref()),
-                        night_colors: Arc::from(sky.night_colors.as_ref()),
-                        horizon_colors: Arc::from(sky.horizon_colors.as_ref()),
+                        day_colors: Arc::from(sky.palette.day_colors.as_ref()),
+                        evening_colors: Arc::from(sky.palette.evening_colors.as_ref()),
+                        night_colors: Arc::from(sky.palette.night_colors.as_ref()),
+                        horizon_colors: Arc::from(sky.palette.horizon_colors.as_ref()),
                         time: SkyTime3DState {
                             time_of_day: sky.time.time_of_day,
                             paused: sky.time.paused,
@@ -3122,10 +3122,10 @@ fn water_link_overlap_weight(local: perro_structs::Vector2, link: &WaterLinkStat
 /// `Sky3DState` field-for-field, so callers can skip the SetSky command and
 /// its Arc allocations when nothing actually changed.
 fn sky_3d_state_matches(retained: &Sky3DState, sky: &perro_nodes::Sky3D) -> bool {
-    retained.day_colors[..] == sky.day_colors[..]
-        && retained.evening_colors[..] == sky.evening_colors[..]
-        && retained.night_colors[..] == sky.night_colors[..]
-        && retained.horizon_colors[..] == sky.horizon_colors[..]
+    retained.day_colors[..] == sky.palette.day_colors[..]
+        && retained.evening_colors[..] == sky.palette.evening_colors[..]
+        && retained.night_colors[..] == sky.palette.night_colors[..]
+        && retained.horizon_colors[..] == sky.palette.horizon_colors[..]
         && retained.time.time_of_day == sky.time.time_of_day
         && retained.time.paused == sky.time.paused
         && retained.time.scale == sky.time.scale

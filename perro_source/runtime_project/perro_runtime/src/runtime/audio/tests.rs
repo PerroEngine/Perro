@@ -262,9 +262,10 @@ fn resource_point_audio_preserves_spatial_options() {
 #[test]
 fn active_camera_2d_drives_spatial_audio_listener() {
     let mut runtime = Runtime::new();
-    let mut camera = Camera2D::default();
-    camera.active = true;
-    camera.transform.position = Vector2::new(0.0, 0.0);
+    let camera = Camera2D {
+        active: true,
+        ..Default::default()
+    };
     let camera_id = runtime
         .nodes
         .insert(SceneNode::new(SceneNodeData::Camera2D(camera)));

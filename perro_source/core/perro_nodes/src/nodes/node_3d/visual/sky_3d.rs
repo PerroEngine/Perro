@@ -40,14 +40,36 @@ impl Default for SkyTime {
 }
 
 #[derive(Clone, Debug)]
-pub struct Sky3D {
-    pub transform: Transform3D,
-    pub visible: bool,
-    pub active: bool,
+pub struct SkyPalette {
     pub day_colors: Vec<[f32; 3]>,
     pub evening_colors: Vec<[f32; 3]>,
     pub night_colors: Vec<[f32; 3]>,
     pub horizon_colors: Vec<[f32; 3]>,
+}
+
+impl SkyPalette {
+    pub fn new() -> Self {
+        Self {
+            day_colors: vec![[0.06, 0.12, 0.25], [0.35, 0.55, 0.9], [0.8, 0.9, 1.0]],
+            evening_colors: vec![[1.00, 0.62, 0.40], [0.95, 0.42, 0.58], [0.42, 0.20, 0.42]],
+            night_colors: vec![[0.01, 0.02, 0.06], [0.04, 0.06, 0.15], [0.09, 0.12, 0.25]],
+            horizon_colors: vec![[0.55, 0.57, 0.60], [0.42, 0.43, 0.45], [0.30, 0.31, 0.33]],
+        }
+    }
+}
+
+impl Default for SkyPalette {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct Sky3D {
+    pub transform: Transform3D,
+    pub visible: bool,
+    pub active: bool,
+    pub palette: SkyPalette,
     pub time: SkyTime,
     pub shaders: Vec<SkyShaderPass>,
     pub render_layers: BitMask,
@@ -66,10 +88,7 @@ impl Default for Sky3D {
             transform: Transform3D::IDENTITY,
             visible: true,
             active: true,
-            day_colors: vec![[0.06, 0.12, 0.25], [0.35, 0.55, 0.9], [0.8, 0.9, 1.0]],
-            evening_colors: vec![[1.00, 0.62, 0.40], [0.95, 0.42, 0.58], [0.42, 0.20, 0.42]],
-            night_colors: vec![[0.01, 0.02, 0.06], [0.04, 0.06, 0.15], [0.09, 0.12, 0.25]],
-            horizon_colors: vec![[0.55, 0.57, 0.60], [0.42, 0.43, 0.45], [0.30, 0.31, 0.33]],
+            palette: SkyPalette::new(),
             time: SkyTime::new(),
             shaders: Vec::new(),
             render_layers: BitMask::ALL,

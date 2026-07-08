@@ -159,23 +159,26 @@ fn apply_sky_3d_fields(node: &mut Sky3D, fields: &[SceneObjectField]) {
         match resolve_node_field("Sky3D", name) {
             Some(NodeField::Sky3D(Sky3DField::DayColors)) => {
                 if let Some(colors) = as_color_array(value) {
-                    node.day_colors = colors;
+                    node.palette.day_colors = colors;
                 }
             }
             Some(NodeField::Sky3D(Sky3DField::EveningColors)) => {
                 if let Some(colors) = as_color_array(value) {
-                    node.evening_colors = colors;
+                    node.palette.evening_colors = colors;
                 }
             }
             Some(NodeField::Sky3D(Sky3DField::NightColors)) => {
                 if let Some(colors) = as_color_array(value) {
-                    node.night_colors = colors;
+                    node.palette.night_colors = colors;
                 }
             }
             Some(NodeField::Sky3D(Sky3DField::HorizonColors)) => {
                 if let Some(colors) = as_color_array(value) {
-                    node.horizon_colors = colors;
+                    node.palette.horizon_colors = colors;
                 }
+            }
+            Some(NodeField::Sky3D(Sky3DField::Palette)) => {
+                apply_sky_palette_fields(node, value);
             }
             Some(NodeField::Sky3D(Sky3DField::Time)) => {
                 if let SceneValue::Object(entries) = value {
@@ -234,6 +237,37 @@ fn apply_sky_3d_fields(node: &mut Sky3D, fields: &[SceneObjectField]) {
             _ => {}
         }
     });
+}
+
+fn apply_sky_palette_fields(node: &mut Sky3D, value: &SceneValue) {
+    let SceneValue::Object(entries) = value else {
+        return;
+    };
+    for (name, value) in entries.iter() {
+        match resolve_node_field("Sky3D", name) {
+            Some(NodeField::Sky3D(Sky3DField::DayColors)) => {
+                if let Some(colors) = as_color_array(value) {
+                    node.palette.day_colors = colors;
+                }
+            }
+            Some(NodeField::Sky3D(Sky3DField::EveningColors)) => {
+                if let Some(colors) = as_color_array(value) {
+                    node.palette.evening_colors = colors;
+                }
+            }
+            Some(NodeField::Sky3D(Sky3DField::NightColors)) => {
+                if let Some(colors) = as_color_array(value) {
+                    node.palette.night_colors = colors;
+                }
+            }
+            Some(NodeField::Sky3D(Sky3DField::HorizonColors)) => {
+                if let Some(colors) = as_color_array(value) {
+                    node.palette.horizon_colors = colors;
+                }
+            }
+            _ => {}
+        }
+    }
 }
 
 fn as_sky_shaders(value: &SceneValue) -> Option<Vec<SkyShaderPass>> {
