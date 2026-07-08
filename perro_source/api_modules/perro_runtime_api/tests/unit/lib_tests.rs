@@ -744,11 +744,11 @@ impl SceneAPI for DummyRuntime {
         }
     }
 
-    fn scene_free_preloaded(&mut self, id: PreloadedSceneID) -> bool {
+    fn scene_drop_preloaded(&mut self, id: PreloadedSceneID) -> bool {
         id == PreloadedSceneID::from_u64(11)
     }
 
-    fn scene_free_preloaded_by_path(&mut self, path: &str) -> bool {
+    fn scene_drop_preloaded_by_path(&mut self, path: &str) -> bool {
         path == "res://scenes/preloaded.scene"
     }
 }
@@ -1313,8 +1313,8 @@ fn script_macros_typecheck_and_forward() {
         .expect("preload should return deterministic id");
     assert_eq!(preloaded, PreloadedSceneID::from_u64(11));
     assert_eq!(scene_load!(&mut ctx, preloaded), Ok(NodeID::new(8)));
-    assert!(scene_free_preloaded!(&mut ctx, preloaded));
-    assert!(scene_free_preloaded!(
+    assert!(scene_drop_preloaded!(&mut ctx, preloaded));
+    assert!(scene_drop_preloaded!(
         &mut ctx,
         "res://scenes/preloaded.scene"
     ));

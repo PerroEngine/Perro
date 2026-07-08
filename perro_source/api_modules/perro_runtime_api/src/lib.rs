@@ -46,6 +46,7 @@ pub mod prelude {
     };
 
     // Convenience macros.
+    #[allow(deprecated)]
     pub use crate::{
         anim_player_bind, anim_player_clear_bindings, anim_player_pause, anim_player_play,
         anim_player_seek_frame, anim_player_set_clip, anim_player_set_speed, apply_force,

@@ -239,15 +239,29 @@ pub trait SceneAPI {
     fn scene_load_preloaded(&mut self, _id: PreloadedSceneID) -> Result<NodeID, String> {
         Err("preloaded scene loading is not supported by this runtime".to_string())
     }
+    fn scene_drop_preloaded(&mut self, id: PreloadedSceneID) -> bool {
+        #[allow(deprecated)]
+        self.scene_free_preloaded(id)
+    }
+    fn scene_drop_preloaded_by_path(&mut self, path: &str) -> bool {
+        #[allow(deprecated)]
+        self.scene_free_preloaded_by_path(path)
+    }
+    fn scene_drop_preloaded_by_path_hash(&mut self, path_hash: u64, path: &str) -> bool {
+        let _ = path_hash;
+        self.scene_drop_preloaded_by_path(path)
+    }
+    #[deprecated(note = "use scene_drop_preloaded")]
     fn scene_free_preloaded(&mut self, _id: PreloadedSceneID) -> bool {
         false
     }
+    #[deprecated(note = "use scene_drop_preloaded_by_path")]
     fn scene_free_preloaded_by_path(&mut self, _path: &str) -> bool {
         false
     }
+    #[deprecated(note = "use scene_drop_preloaded_by_path_hash")]
     fn scene_free_preloaded_by_path_hash(&mut self, path_hash: u64, path: &str) -> bool {
-        let _ = path_hash;
-        self.scene_free_preloaded_by_path(path)
+        self.scene_drop_preloaded_by_path_hash(path_hash, path)
     }
 }
 
@@ -296,19 +310,20 @@ impl<'rt, R: SceneAPI + ?Sized> SceneModule<'rt, R> {
         self.rt.scene_load_preloaded(id.into_preloaded_scene_id())
     }
 
+    #[deprecated(note = "use drop_preloaded")]
     pub fn free_preloaded<I: IntoPreloadedSceneID>(&mut self, id: I) -> bool {
-        self.rt.scene_free_preloaded(id.into_preloaded_scene_id())
+        self.drop_preloaded(id.into_preloaded_scene_id())
     }
 
     pub fn drop_preloaded<T: IntoPreloadedSceneTarget>(&mut self, target: T) -> bool {
         match target.into_preloaded_scene_target() {
-            PreloadedSceneTarget::Id(id) => self.rt.scene_free_preloaded(id),
-            PreloadedSceneTarget::Path(path) => self.rt.scene_free_preloaded_by_path(path.as_ref()),
+            PreloadedSceneTarget::Id(id) => self.rt.scene_drop_preloaded(id),
+            PreloadedSceneTarget::Path(path) => self.rt.scene_drop_preloaded_by_path(path.as_ref()),
         }
     }
 
     pub fn drop_preloaded_hashed(&mut self, path_hash: u64, path: &str) -> bool {
-        self.rt.scene_free_preloaded_by_path_hash(path_hash, path)
+        self.rt.scene_drop_preloaded_by_path_hash(path_hash, path)
     }
 }
 
@@ -334,6 +349,7 @@ macro_rules! scene_preload {
     };
 }
 
+#[deprecated(note = "use scene_drop_preloaded")]
 #[macro_export]
 macro_rules! scene_free_preloaded {
     ($ctx:expr, $path:literal) => {{
