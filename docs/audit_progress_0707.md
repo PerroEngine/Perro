@@ -73,6 +73,8 @@
   - verify: full `cargo check`, full `cargo clippy`, full `cargo test`
 - [ ] 2.4 string-keyed maps in hot structs
   - partial: 2D/3D particle profile caches keyed by source hash instead of source `String`
+  - partial: postprocess LUT/custom pipeline caches keyed by `u64` source/size hash
+  - partial: 3D custom pipeline tokens, custom material texture slots, sky pipeline cache, particle expression cache keyed by `u64`
   - commit: this commit
   - verify: full `cargo check`, full `cargo clippy`, full `cargo test`
 - [x] 2.5 per-frame str alloc in render extract

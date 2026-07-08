@@ -1,6 +1,6 @@
 use super::*;
 
-pub(super) fn sky_shader_pipeline_key(sky: &perro_render_bridge::Sky3DState) -> Option<String> {
+pub(super) fn sky_shader_pipeline_key(sky: &perro_render_bridge::Sky3DState) -> Option<u64> {
     if sky.shaders.is_empty() {
         return None;
     }
@@ -13,7 +13,7 @@ pub(super) fn sky_shader_pipeline_key(sky: &perro_render_bridge::Sky3DState) -> 
         }
         key.push('|');
     }
-    Some(key)
+    Some(perro_ids::string_to_u64(&key))
 }
 
 impl Gpu3D {
@@ -43,7 +43,7 @@ impl Gpu3D {
             self.color_format,
             self.sample_count,
         );
-        self.custom_sky_pipelines.insert(key.clone(), pipeline);
+        self.custom_sky_pipelines.insert(key, pipeline);
         self.active_sky_pipeline_key = Some(key);
     }
 }

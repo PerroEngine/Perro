@@ -1,14 +1,12 @@
 use super::*;
 
-fn custom_pipeline_key(shader_path: &str, lighting: CustomMaterialLighting3D) -> String {
-    let suffix = match lighting {
-        CustomMaterialLighting3D::Standard => "#standard",
-        CustomMaterialLighting3D::Raw => "#raw",
-    };
-    let mut key = String::with_capacity(shader_path.len() + suffix.len());
-    key.push_str(shader_path);
-    key.push_str(suffix);
-    key
+fn custom_pipeline_key(shader_path: &str, lighting: CustomMaterialLighting3D) -> u64 {
+    let source_hash = perro_ids::parse_hashed_source_uri(shader_path)
+        .unwrap_or_else(|| perro_ids::string_to_u64(shader_path));
+    match lighting {
+        CustomMaterialLighting3D::Standard => source_hash ^ 0x9e37_79b9_7f4a_7c15,
+        CustomMaterialLighting3D::Raw => source_hash ^ 0xc2b2_ae3d_27d4_eb4f,
+    }
 }
 
 impl Gpu3D {

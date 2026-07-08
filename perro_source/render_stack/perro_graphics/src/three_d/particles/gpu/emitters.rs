@@ -795,13 +795,14 @@ impl GpuPointParticles3D {
     }
 
     pub(super) fn get_or_compile_expr(&mut self, expr: &str) -> Option<usize> {
-        if let Some(id) = self.compiled_expr_lookup.get(expr).copied() {
+        let expr_hash = perro_ids::string_to_u64(expr);
+        if let Some(id) = self.compiled_expr_lookup.get(&expr_hash).copied() {
             return Some(id);
         }
         let compiled = compile_expression(expr).ok()?;
         let id = self.compiled_exprs.len();
         self.compiled_exprs.push(compiled);
-        self.compiled_expr_lookup.insert(expr.to_string(), id);
+        self.compiled_expr_lookup.insert(expr_hash, id);
         Some(id)
     }
 

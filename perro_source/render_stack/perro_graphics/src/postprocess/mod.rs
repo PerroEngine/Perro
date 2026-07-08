@@ -208,12 +208,12 @@ pub struct PostProcessor {
     default_lut_2d_view: wgpu::TextureView,
     _default_lut_3d_texture: wgpu::Texture,
     default_lut_3d_view: wgpu::TextureView,
-    lut_2d_textures: HashMap<String, CachedPostTexture>,
-    lut_3d_textures: HashMap<String, CachedPostTexture>,
+    lut_2d_textures: HashMap<u64, CachedPostTexture>,
+    lut_3d_textures: HashMap<u64, CachedPostTexture>,
     bgl: wgpu::BindGroupLayout,
     pipeline_layout: wgpu::PipelineLayout,
     builtin_pipeline: wgpu::RenderPipeline,
-    custom_pipelines: HashMap<String, wgpu::RenderPipeline>,
+    custom_pipelines: HashMap<u64, wgpu::RenderPipeline>,
     post_bind_groups: HashMap<PostBindGroupKey, wgpu::BindGroup>,
     uniform_buffer: wgpu::Buffer,
     uniform_stride: u64,
@@ -781,7 +781,7 @@ impl PostProcessor {
             let pipeline = match effect {
                 PostProcessEffect::Custom { shader_path, .. } => self
                     .custom_pipelines
-                    .get(shader_path.as_ref())
+                    .get(&post_shader_key(shader_path.as_ref()))
                     .unwrap_or(&self.builtin_pipeline),
                 _ => &self.builtin_pipeline,
             };
@@ -1083,8 +1083,9 @@ impl PostProcessor {
         shader_path: &str,
         static_shader_lookup: Option<StaticShaderLookup>,
     ) -> Option<&wgpu::RenderPipeline> {
-        if self.custom_pipelines.contains_key(shader_path) {
-            return self.custom_pipelines.get(shader_path);
+        let shader_key = post_shader_key(shader_path);
+        if self.custom_pipelines.contains_key(&shader_key) {
+            return self.custom_pipelines.get(&shader_key);
         }
         let src = if let Some(lookup) = static_shader_lookup {
             let shader_hash = perro_ids::parse_hashed_source_uri(shader_path)
@@ -1105,9 +1106,8 @@ impl PostProcessor {
             source: wgpu::ShaderSource::Wgsl(wgsl.into()),
         });
         let pipeline = create_pipeline(device, &self.pipeline_layout, &shader, self.format);
-        self.custom_pipelines
-            .insert(shader_path.to_string(), pipeline);
-        self.custom_pipelines.get(shader_path)
+        self.custom_pipelines.insert(shader_key, pipeline);
+        self.custom_pipelines.get(&shader_key)
     }
 
     fn ensure_lut_texture(
@@ -1339,7 +1339,7 @@ fn lut_hash_2d(effect: &PostProcessEffect) -> u64 {
     match effect {
         PostProcessEffect::Lut2D {
             texture_path, size, ..
-        } => perro_ids::string_to_u64(&lut_key(texture_path.as_ref(), *size)),
+        } => lut_key(texture_path.as_ref(), *size),
         _ => 0,
     }
 }
@@ -1349,7 +1349,7 @@ fn lut_hash_3d(effect: &PostProcessEffect) -> u64 {
     match effect {
         PostProcessEffect::Lut3D {
             texture_path, size, ..
-        } => perro_ids::string_to_u64(&lut_key(texture_path.as_ref(), *size)),
+        } => lut_key(texture_path.as_ref(), *size),
         _ => 0,
     }
 }
@@ -1643,8 +1643,12 @@ fn copy_lut_texel(
     dst[dst_index..dst_index + 4].copy_from_slice(&src[src_index..src_index + 4]);
 }
 
-fn lut_key(path: &str, size: u32) -> String {
-    format!("{path}#{size}")
+fn post_shader_key(path: &str) -> u64 {
+    perro_ids::parse_hashed_source_uri(path).unwrap_or_else(|| perro_ids::string_to_u64(path))
+}
+
+fn lut_key(path: &str, size: u32) -> u64 {
+    post_shader_key(path) ^ (u64::from(size) << 32) ^ 0x517c_c1b7_2722_0a95
 }
 
 fn projection_uniform_params(camera: &Camera3DState) -> (u32, f32, f32) {

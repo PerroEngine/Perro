@@ -242,7 +242,7 @@ pub struct GpuPointParticles3D {
     compute_custom_param_buffer: wgpu::Buffer,
     compute_custom_param_capacity: usize,
     compiled_exprs: Vec<Program>,
-    compiled_expr_lookup: AHashMap<String, usize>,
+    compiled_expr_lookup: AHashMap<u64, usize>,
     eval_stack: Vec<f32>,
     emitter_order: Vec<usize>,
     hybrid_spawn_rings: AHashMap<NodeID, SpawnRingState>,

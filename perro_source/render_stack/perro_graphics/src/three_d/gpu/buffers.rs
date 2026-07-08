@@ -180,14 +180,19 @@ impl Gpu3D {
     }
 
     fn custom_material_texture_slot(&mut self, source: &str) -> u32 {
-        if let Some(slot) = self.custom_material_texture_slots.get(source).copied() {
+        let source_hash = perro_ids::parse_hashed_source_uri(source)
+            .unwrap_or_else(|| perro_ids::string_to_u64(source));
+        if let Some(slot) = self
+            .custom_material_texture_slots
+            .get(&source_hash)
+            .copied()
+        {
             return slot;
         }
         let slot = self.next_custom_material_texture_slot;
         self.next_custom_material_texture_slot =
             self.next_custom_material_texture_slot.saturating_add(1);
-        self.custom_material_texture_slots
-            .insert(source.to_string(), slot);
+        self.custom_material_texture_slots.insert(source_hash, slot);
         slot
     }
 
