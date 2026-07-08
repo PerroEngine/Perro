@@ -6,7 +6,7 @@ use std::ops::{Deref, DerefMut};
 #[derive(Clone, Debug)]
 pub struct AudioMask3D {
     pub base: Node3D,
-    pub enabled: bool,
+    pub active: bool,
     pub material: AudioMaterial,
 }
 
@@ -14,7 +14,7 @@ impl AudioMask3D {
     pub const fn new() -> Self {
         Self {
             base: Node3D::new(),
-            enabled: true,
+            active: true,
             material: AudioMaterial::new(),
         }
     }
@@ -43,7 +43,7 @@ impl DerefMut for AudioMask3D {
 #[derive(Clone, Debug)]
 pub struct AudioEffectZone3D {
     pub base: Node3D,
-    pub enabled: bool,
+    pub active: bool,
     pub audio_mask: perro_structs::BitMask,
     pub bounce: bool,
     pub effects: Vec<AudioEffect>,
@@ -60,7 +60,7 @@ impl Default for AudioEffectZone3D {
     fn default() -> Self {
         Self {
             base: Node3D::new(),
-            enabled: true,
+            active: true,
             audio_mask: perro_structs::BitMask::NONE,
             bounce: false,
             effects: vec![AudioEffect::new()],
@@ -85,7 +85,7 @@ impl DerefMut for AudioEffectZone3D {
 #[derive(Clone, Debug)]
 pub struct AudioPortal3D {
     pub base: Node3D,
-    pub enabled: bool,
+    pub active: bool,
     pub targets: Vec<NodeID>,
     pub strength: f32,
 }
@@ -94,7 +94,7 @@ impl AudioPortal3D {
     pub const fn new() -> Self {
         Self {
             base: Node3D::new(),
-            enabled: true,
+            active: true,
             targets: Vec::new(),
             strength: 1.0,
         }

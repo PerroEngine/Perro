@@ -862,8 +862,11 @@ fn push_node_fields(fields: &mut Vec<SceneNodeField>, node_type: NodeType) {
                 push(fields, "Tree", "text_color", NodeFieldType::Color);
             }
         }
+        NodeType::AudioMask2D | NodeType::AudioMask3D => {
+            push(fields, "Audio", "active", NodeFieldType::Bool);
+        }
         NodeType::AudioEffectZone2D | NodeType::AudioEffectZone3D => {
-            push(fields, "Audio", "enabled", NodeFieldType::Bool);
+            push(fields, "Audio", "active", NodeFieldType::Bool);
             push(fields, "Audio", "audio_mask", NodeFieldType::BitMask);
             push(fields, "Audio", "bounce", NodeFieldType::Bool);
             push(
@@ -874,7 +877,7 @@ fn push_node_fields(fields: &mut Vec<SceneNodeField>, node_type: NodeType) {
             );
         }
         NodeType::AudioPortal2D | NodeType::AudioPortal3D => {
-            push(fields, "Audio", "enabled", NodeFieldType::Bool);
+            push(fields, "Audio", "active", NodeFieldType::Bool);
             push(fields, "Audio", "strength", NodeFieldType::F32);
             push(
                 fields,
@@ -1005,7 +1008,6 @@ fn label_world_fields(fields: &mut Vec<SceneNodeField>, section: &'static str) {
 fn button_2d_fields(fields: &mut Vec<SceneNodeField>, section: &'static str) {
     push(fields, section, "size", NodeFieldType::Vec2);
     push(fields, section, "input_enabled", NodeFieldType::Bool);
-    push(fields, section, "disabled", NodeFieldType::Bool);
 }
 
 fn animated_image_fields(fields: &mut Vec<SceneNodeField>, section: &'static str) {
@@ -1434,5 +1436,21 @@ mod tests {
         assert!(sprite_3d.iter().any(|field| field.name == "texture_region"));
         assert!(sprite_3d.iter().any(|field| field.name == "size"));
         assert!(sprite_3d.iter().any(|field| field.name == "modulate"));
+    }
+
+    #[test]
+    fn audio_node_schemas_use_active_state() {
+        for ty in [
+            NodeType::AudioMask2D,
+            NodeType::AudioMask3D,
+            NodeType::AudioEffectZone2D,
+            NodeType::AudioEffectZone3D,
+            NodeType::AudioPortal2D,
+            NodeType::AudioPortal3D,
+        ] {
+            let fields = scene_node_fields(ty);
+            assert!(fields.iter().any(|field| field.name == "active"));
+            assert!(!fields.iter().any(|field| field.name == "enabled"));
+        }
     }
 }

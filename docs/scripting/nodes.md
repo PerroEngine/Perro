@@ -72,7 +72,7 @@ Rendering and resource loading are handled by the runtime and `ResourceWindow`.
 
 - Clickable world-space rect.
 - Uses `Node2D` position, rotation, scale, z index, visibility, and render layers.
-- Holds `size`, normal/hover/pressed fills, disabled state, cursor icon, and extra button signal lists.
+- Holds `size`, normal/hover/pressed fills, input state, cursor icon, and extra button signal lists.
 - Uses pointer cursor by default on hover. Set `cursor_icon` or `hover_cursor_icon` to override.
 - Emits default `<node_name>_<event>` signals for hover enter, hover exit, pressed, released, and clicked.
 - `*_signals` fields add extra signals; they do not replace the default named signal.
@@ -82,7 +82,7 @@ Rendering and resource loading are handled by the runtime and `ResourceWindow`.
 
 - Clickable world-space image.
 - Uses `Node2D` transform fields like `Button2D`.
-- Holds `texture`, `texture_region`, `size`, normal/hover/pressed tint, disabled state, cursor icon, and extra button signal lists.
+- Holds `texture`, `texture_region`, `size`, normal/hover/pressed tint, input state, cursor icon, and extra button signal lists.
 - Uses pointer cursor by default on hover. Set `cursor_icon` or `hover_cursor_icon` to override.
 - Emits the same default `<node_name>_<event>` signals as `Button2D`.
 - `*_signals` fields add extra signals; they do not replace the default named signal.
@@ -214,6 +214,7 @@ Audio 2D:
 ```text
 [Zone]
     [AudioEffectZone2D]
+        active = true
         effects = [{ reverb_send = 0.35 echo = 0.0 dampening = 0.0 }]
         [Node2D/]
     [/AudioEffectZone2D]
@@ -603,6 +604,7 @@ Audio 3D:
 ```text
 [AudioWall]
     [AudioMask3D]
+        active = true
         [Node3D/]
     [/AudioMask3D]
 [/AudioWall]

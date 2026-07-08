@@ -13,7 +13,7 @@ Set each shape `parent` to the audio node key.
 [Zone]
 parent = $root
     [AudioEffectZone2D]
-        enabled = true
+        active = true
         audio_mask = []
         effects = [{ reverb_send = 0.35 echo = 0.0 dampening = 0.0 }]
         [Node2D/]
@@ -33,7 +33,9 @@ parent = @Zone
 ```text
 [AudioWall]
 parent = $root
-    [AudioMask3D/]
+    [AudioMask3D]
+        active = true
+    [/AudioMask3D]
 [/AudioWall]
 
 [AudioWallShape]

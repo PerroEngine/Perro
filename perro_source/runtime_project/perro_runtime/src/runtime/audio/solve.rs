@@ -1837,8 +1837,8 @@ impl Runtime {
             SceneNodeData::CharacterBody3D(v) => v.audio_interaction.map(|audio| audio.material),
             SceneNodeData::Area2D(v) => v.audio_interaction.map(|audio| audio.material),
             SceneNodeData::Area3D(v) => v.audio_interaction.map(|audio| audio.material),
-            SceneNodeData::AudioMask2D(v) if v.enabled => Some(v.material),
-            SceneNodeData::AudioMask3D(v) if v.enabled => Some(v.material),
+            SceneNodeData::AudioMask2D(v) if v.active => Some(v.material),
+            SceneNodeData::AudioMask3D(v) if v.active => Some(v.material),
             _ => Some(AudioMaterial::default()),
         }
     }
@@ -1932,7 +1932,7 @@ impl Runtime {
             else {
                 continue;
             };
-            if !mask.enabled || mask.material.audio_mask.intersects(audio_layer) {
+            if !mask.active || mask.material.audio_mask.intersects(audio_layer) {
                 continue;
             }
             let material = mask.material;
@@ -2012,7 +2012,7 @@ impl Runtime {
             else {
                 continue;
             };
-            if !mask.enabled || mask.material.audio_mask.intersects(audio_layer) {
+            if !mask.active || mask.material.audio_mask.intersects(audio_layer) {
                 continue;
             }
             let material = mask.material;
@@ -2169,7 +2169,7 @@ impl Runtime {
                 else {
                     continue;
                 };
-                if !exit.enabled || target == hit.portal_id {
+                if !exit.active || target == hit.portal_id {
                     continue;
                 }
                 let exit_point = transform_point_2d(exit_transform, hit.local_entry);
@@ -2223,7 +2223,7 @@ impl Runtime {
             else {
                 continue;
             };
-            if !portal.enabled {
+            if !portal.active {
                 continue;
             }
             let strength = portal.strength;
@@ -2372,7 +2372,7 @@ impl Runtime {
                 else {
                     continue;
                 };
-                if !exit.enabled || target == hit.portal_id {
+                if !exit.active || target == hit.portal_id {
                     continue;
                 }
                 let exit_point = transform_point_3d(exit_transform, hit.local_entry);
@@ -2426,7 +2426,7 @@ impl Runtime {
             else {
                 continue;
             };
-            if !portal.enabled {
+            if !portal.active {
                 continue;
             }
             let strength = portal.strength;

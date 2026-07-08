@@ -144,7 +144,11 @@
   - chg: `Sprite3D` uses base `modulate` instead of local `tint`
   - keep: scene aliases `tint` + `color` + `modulate`
   - verify: `cargo check`, targeted `perro_runtime` scene-loader test, targeted `perro_scene` schema test, full `cargo clippy`, full `cargo test`
-- [ ] 1.2 on/off vocabulary
+- [x] 1.2 on/off vocabulary
+  - chg: audio node `enabled` fields -> `active`
+  - chg: world button nodes use `input_enabled`; `disabled` scene key remains compat alias
+  - keep: `enabled` for nested feature toggles + physics/joint state
+  - verify: `cargo check`, targeted `perro_runtime` scene-loader tests, targeted `perro_scene` schema test, full `cargo clippy`, full `cargo test`
 - [x] 2.1 light colors use `Color`
 - [x] 2.2 typed IDs for string asset refs
 - [ ] 2.3 nested settings structs

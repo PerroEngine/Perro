@@ -1054,14 +1054,12 @@ impl Runtime {
                 size,
                 z_index,
                 render_layers,
-                disabled,
                 input_enabled,
                 mouse_filter,
                 input_mask,
             } = hit;
             let input_accepted = self.ui_input_mask_accepts_kbm_2d(input_mask);
             if !visible
-                || disabled
                 || !input_enabled
                 || !input_accepted
                 || !self.is_effectively_visible(node)
@@ -1618,7 +1616,7 @@ fn button_2d_style(
     button: &perro_nodes::Button2D,
     state: UiButtonVisualState,
 ) -> &perro_ui::UiStyle {
-    if button.disabled || !button.input_enabled {
+    if !button.input_enabled {
         return &button.style;
     }
     match state {
@@ -1632,7 +1630,7 @@ fn image_button_2d_tint(
     button: &perro_nodes::ImageButton2D,
     state: UiButtonVisualState,
 ) -> perro_structs::Color {
-    if button.disabled || !button.input_enabled {
+    if !button.input_enabled {
         return button.tint;
     }
     match state {
@@ -1644,8 +1642,8 @@ fn image_button_2d_tint(
 
 fn button_2d_inactive_from_data(data: &SceneNodeData) -> Option<bool> {
     match data {
-        SceneNodeData::Button2D(button) => Some(button.disabled || !button.input_enabled),
-        SceneNodeData::ImageButton2D(button) => Some(button.disabled || !button.input_enabled),
+        SceneNodeData::Button2D(button) => Some(!button.input_enabled),
+        SceneNodeData::ImageButton2D(button) => Some(!button.input_enabled),
         _ => None,
     }
 }
@@ -1663,7 +1661,6 @@ struct Button2DHitData<'a> {
     size: Vector2,
     z_index: i32,
     render_layers: BitMask,
-    disabled: bool,
     input_enabled: bool,
     mouse_filter: perro_ui::UiMouseFilter,
     input_mask: &'a perro_ui::UiInputMask,
@@ -1676,7 +1673,6 @@ fn button_2d_hit_data(data: &SceneNodeData) -> Option<Button2DHitData<'_>> {
             size: button.size,
             z_index: button.z_index,
             render_layers: button.render_layers,
-            disabled: button.disabled,
             input_enabled: button.input_enabled,
             mouse_filter: button.mouse_filter,
             input_mask: &button.input_mask,
@@ -1686,7 +1682,6 @@ fn button_2d_hit_data(data: &SceneNodeData) -> Option<Button2DHitData<'_>> {
             size: button.size,
             z_index: button.z_index,
             render_layers: button.render_layers,
-            disabled: button.disabled,
             input_enabled: button.input_enabled,
             mouse_filter: button.mouse_filter,
             input_mask: &button.input_mask,

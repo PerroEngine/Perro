@@ -2243,7 +2243,7 @@ mod tests {
             r#"
             [zone2d]
             [AudioEffectZone2D]
-                enabled = false
+                active = false
                 audio_mask = [2, 4]
                 bounce = true
                 effects = [
@@ -2284,7 +2284,7 @@ mod tests {
         let SceneNodeData::AudioEffectZone2D(zone2d) = &zone2d.node.data else {
             panic!("expected AudioEffectZone2D");
         };
-        assert!(!zone2d.enabled);
+        assert!(!zone2d.active);
         assert_eq!(zone2d.audio_mask.bits(), 0b1010);
         assert!(zone2d.bounce);
         assert_eq!(zone2d.effects.len(), 2);
@@ -2313,6 +2313,12 @@ mod tests {
     fn scene_loader_builds_audio_portal_link_fields() {
         let scene = Parser::new(
             r#"
+            [mask2d]
+            [AudioMask2D]
+                enabled = false
+            [/AudioMask2D]
+            [/mask2d]
+
             [portal2d]
             [AudioPortal2D]
                 enabled = false
@@ -2334,6 +2340,16 @@ mod tests {
         let prepared =
             prepare_scene_with_loader(&scene, &|_| Err("unexpected root_of".to_string()))
                 .expect("prepare scene");
+        let mask2d = prepared
+            .nodes
+            .iter()
+            .find(|node| node.key_name == "mask2d")
+            .expect("mask2d");
+        let SceneNodeData::AudioMask2D(mask2d) = &mask2d.node.data else {
+            panic!("expected AudioMask2D");
+        };
+        assert!(!mask2d.active);
+
         let portal2d = prepared
             .nodes
             .iter()
@@ -2342,7 +2358,7 @@ mod tests {
         let SceneNodeData::AudioPortal2D(portal2d) = &portal2d.node.data else {
             panic!("expected AudioPortal2D");
         };
-        assert!(!portal2d.enabled);
+        assert!(!portal2d.active);
         assert_eq!(portal2d.strength, 0.55);
         assert_eq!(
             portal2d.targets,
@@ -2616,6 +2632,7 @@ mod tests {
                 fill = "#112233FF"
                 hover_fill = "#445566FF"
                 pressed_fill = "#778899FF"
+                disabled = true
                 clicked_signals = ["play_clicked"]
             [/Button2D]
             [/play]
@@ -2628,6 +2645,7 @@ mod tests {
                 hover_tint = "#CCCCCCFF"
                 pressed_tint = "#999999FF"
                 texture_region = (1, 2, 8, 9)
+                input_enabled = false
             [/ImageButton2D]
             [/icon]
             "##,
@@ -2653,6 +2671,7 @@ mod tests {
                     button.clicked_signals,
                     vec![SignalID::from_string("play_clicked")]
                 );
+                assert!(!button.input_enabled);
             }
             other => panic!("expected Button2D node, got {other:?}"),
         }
@@ -2669,6 +2688,7 @@ mod tests {
                 assert_eq!(button.hover_tint, Color::new(0.8, 0.8, 0.8, 1.0));
                 assert_eq!(button.pressed_tint, Color::new(0.6, 0.6, 0.6, 1.0));
                 assert_eq!(button.texture_region, Some([1.0, 2.0, 8.0, 9.0]));
+                assert!(!button.input_enabled);
             }
             other => panic!("expected ImageButton2D node, got {other:?}"),
         }

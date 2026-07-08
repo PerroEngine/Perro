@@ -202,7 +202,6 @@ fn apply_button_2d_fields(node: &mut Button2D, fields: &[SceneObjectField]) {
             mouse_filter: &mut node.mouse_filter,
             cursor_icon: &mut node.cursor_icon,
             input_enabled: &mut node.input_enabled,
-            disabled: &mut node.disabled,
             clicked_signals: &mut node.clicked_signals,
             hover_signals: &mut node.hover_signals,
             hover_exit_signals: &mut node.hover_exit_signals,
@@ -247,7 +246,6 @@ fn apply_image_button_2d_fields(node: &mut ImageButton2D, fields: &[SceneObjectF
             mouse_filter: &mut node.mouse_filter,
             cursor_icon: &mut node.cursor_icon,
             input_enabled: &mut node.input_enabled,
-            disabled: &mut node.disabled,
             clicked_signals: &mut node.clicked_signals,
             hover_signals: &mut node.hover_signals,
             hover_exit_signals: &mut node.hover_exit_signals,
@@ -361,7 +359,6 @@ struct Button2DCommonFields<'a> {
     mouse_filter: &'a mut UiMouseFilter,
     cursor_icon: &'a mut perro_ui::CursorIcon,
     input_enabled: &'a mut bool,
-    disabled: &'a mut bool,
     clicked_signals: &'a mut Vec<perro_ids::SignalID>,
     hover_signals: &'a mut Vec<perro_ids::SignalID>,
     hover_exit_signals: &'a mut Vec<perro_ids::SignalID>,
@@ -380,7 +377,7 @@ fn apply_button_2d_common(target: Button2DCommonFields<'_>, fields: &[SceneObjec
         }
         "disabled" => {
             if let Some(v) = as_bool(value) {
-                *target.disabled = v;
+                *target.input_enabled = !v;
             }
         }
         "mouse_filter" => {

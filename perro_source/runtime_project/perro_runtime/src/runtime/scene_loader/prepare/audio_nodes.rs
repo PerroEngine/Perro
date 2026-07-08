@@ -3,6 +3,7 @@ use super::*;
 pub(super) fn build_audio_mask_2d(data: &SceneDefNodeData) -> AudioMask2D {
     let mut node = AudioMask2D::default();
     apply_node_2d_data(&mut node.base, data);
+    apply_audio_mask_2d_data(&mut node, data);
     node
 }
 
@@ -23,6 +24,7 @@ pub(super) fn build_audio_portal_2d(data: &SceneDefNodeData) -> AudioPortal2D {
 pub(super) fn build_audio_mask_3d(data: &SceneDefNodeData) -> AudioMask3D {
     let mut node = AudioMask3D::default();
     apply_node_3d_data(&mut node.base, data);
+    apply_audio_mask_3d_data(&mut node, data);
     node
 }
 
@@ -43,9 +45,9 @@ pub(super) fn build_audio_portal_3d(data: &SceneDefNodeData) -> AudioPortal3D {
 pub(super) fn apply_audio_portal_2d_data(node: &mut AudioPortal2D, data: &SceneDefNodeData) {
     for (name, value) in flatten_scene_node_fields(data) {
         match name.as_ref() {
-            "enabled" => {
+            "active" | "enabled" => {
                 if let Some(v) = as_bool(&value) {
-                    node.enabled = v;
+                    node.active = v;
                 }
             }
             "strength" => {
@@ -64,9 +66,9 @@ pub(super) fn apply_audio_portal_2d_data(node: &mut AudioPortal2D, data: &SceneD
 pub(super) fn apply_audio_portal_3d_data(node: &mut AudioPortal3D, data: &SceneDefNodeData) {
     for (name, value) in flatten_scene_node_fields(data) {
         match name.as_ref() {
-            "enabled" => {
+            "active" | "enabled" => {
                 if let Some(v) = as_bool(&value) {
-                    node.enabled = v;
+                    node.active = v;
                 }
             }
             "strength" => {
@@ -82,15 +84,41 @@ pub(super) fn apply_audio_portal_3d_data(node: &mut AudioPortal3D, data: &SceneD
     }
 }
 
+pub(super) fn apply_audio_mask_2d_data(node: &mut AudioMask2D, data: &SceneDefNodeData) {
+    for (name, value) in flatten_scene_node_fields(data) {
+        match name.as_ref() {
+            "active" | "enabled" => {
+                if let Some(v) = as_bool(&value) {
+                    node.active = v;
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+pub(super) fn apply_audio_mask_3d_data(node: &mut AudioMask3D, data: &SceneDefNodeData) {
+    for (name, value) in flatten_scene_node_fields(data) {
+        match name.as_ref() {
+            "active" | "enabled" => {
+                if let Some(v) = as_bool(&value) {
+                    node.active = v;
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
 pub(super) fn apply_audio_effect_zone_2d_data(
     node: &mut AudioEffectZone2D,
     data: &SceneDefNodeData,
 ) {
     for (name, value) in flatten_scene_node_fields(data) {
         match name.as_ref() {
-            "enabled" => {
+            "active" | "enabled" => {
                 if let Some(v) = as_bool(&value) {
-                    node.enabled = v;
+                    node.active = v;
                 }
             }
             "audio_mask" | "audio_masks" | "mask" | "masks" => {
@@ -133,9 +161,9 @@ pub(super) fn apply_audio_effect_zone_3d_data(
 ) {
     for (name, value) in flatten_scene_node_fields(data) {
         match name.as_ref() {
-            "enabled" => {
+            "active" | "enabled" => {
                 if let Some(v) = as_bool(&value) {
-                    node.enabled = v;
+                    node.active = v;
                 }
             }
             "audio_mask" | "audio_masks" | "mask" | "masks" => {

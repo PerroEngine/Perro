@@ -24,7 +24,7 @@ impl Runtime {
             else {
                 continue;
             };
-            if !zone.enabled || zone.bounce || zone.audio_mask.intersects(audio_layer) {
+            if !zone.active || zone.bounce || zone.audio_mask.intersects(audio_layer) {
                 continue;
             }
             let effects = zone.effects.clone();
@@ -140,7 +140,7 @@ impl Runtime {
             else {
                 continue;
             };
-            if !zone.enabled || zone.bounce || zone.audio_mask.intersects(audio_layer) {
+            if !zone.active || zone.bounce || zone.audio_mask.intersects(audio_layer) {
                 continue;
             }
             let effects = zone.effects.clone();
@@ -307,7 +307,7 @@ impl Runtime {
             else {
                 continue;
             };
-            if !zone.enabled || !zone.bounce || zone.audio_mask.intersects(audio_layer) {
+            if !zone.active || !zone.bounce || zone.audio_mask.intersects(audio_layer) {
                 continue;
             }
             let effects = zone.effects.clone();
@@ -383,7 +383,7 @@ impl Runtime {
             else {
                 continue;
             };
-            if !zone.enabled || !zone.bounce || zone.audio_mask.intersects(audio_layer) {
+            if !zone.active || !zone.bounce || zone.audio_mask.intersects(audio_layer) {
                 continue;
             }
             let effects = zone.effects.clone();
