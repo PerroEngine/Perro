@@ -1,5 +1,5 @@
 use ahash::{AHashMap, AHashSet};
-use perro_ids::{MeshID, NodeID, SignalID};
+use perro_ids::{MeshID, NodeID, SignalID, TextureID};
 use perro_render_bridge::{
     AmbientLight3DState, Camera2DState, Camera3DState, Decal3DState, DenseInstancePose3D,
     LODOptions3D, Material3D, MeshBlendOptions3D, MeshSurfaceBinding3D, PointLight3DState,
@@ -643,6 +643,7 @@ pub struct Render3DState {
     pub retained_point_lights: AHashMap<NodeID, PointLight3DState>,
     pub retained_spot_lights: AHashMap<NodeID, SpotLight3DState>,
     pub retained_decals: AHashMap<NodeID, Decal3DState>,
+    pub text_decal_texture_cache: AHashMap<NodeID, TextDecalTextureCache>,
     pub retained_mesh_draws: AHashMap<NodeID, RetainedMeshDrawState>,
     pub camera_activation_order: AHashMap<NodeID, u64>,
     pub next_camera_activation_order: u64,
@@ -685,6 +686,7 @@ impl Render3DState {
             retained_point_lights: AHashMap::default(),
             retained_spot_lights: AHashMap::default(),
             retained_decals: AHashMap::default(),
+            text_decal_texture_cache: AHashMap::default(),
             retained_mesh_draws: AHashMap::default(),
             camera_activation_order: AHashMap::default(),
             next_camera_activation_order: 1,
@@ -704,6 +706,7 @@ impl Render3DState {
         self.mesh_sources.remove(&node);
         self.material_surface_sources.remove(&node);
         self.material_surface_overrides.remove(&node);
+        self.text_decal_texture_cache.remove(&node);
         self.retained_mesh_draws.remove(&node);
         self.removed_nodes.push(node);
     }
@@ -790,6 +793,12 @@ impl Default for Render3DState {
 pub struct DenseInstancePoseCache {
     pub signature: u64,
     pub poses: Arc<[DenseInstancePose3D]>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TextDecalTextureCache {
+    pub signature: u64,
+    pub texture: TextureID,
 }
 
 #[derive(Debug, Clone, PartialEq)]

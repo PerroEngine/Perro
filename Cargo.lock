@@ -4350,9 +4350,11 @@ dependencies = [
 name = "perro_runtime"
 version = "0.1.0"
 dependencies = [
+ "ab_glyph",
  "ahash",
  "arboard",
  "criterion",
+ "fontdb",
  "glam",
  "gltf",
  "image",

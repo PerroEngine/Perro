@@ -9,7 +9,7 @@ use crate::{
     PhysicsBoneChain2D, PhysicsBoneChain3D, PhysicsForceEmitter2D, PhysicsForceEmitter3D,
     PinJoint2D, PointLight2D, PointLight3D, RayLight2D, RayLight3D, RigidBody2D, RigidBody3D,
     Skeleton2D, Skeleton3D, Sky3D, SpotLight2D, SpotLight3D, Sprite2D, Sprite3D, StaticBody2D,
-    StaticBody3D, TileMap2D, UiCameraStream, WaterBody2D, WaterBody3D,
+    StaticBody3D, TextDecal3D, TileMap2D, UiCameraStream, WaterBody2D, WaterBody3D,
 };
 use perro_ids::{NodeID, NodeTag, TagID};
 use perro_structs::{Transform2D, Transform3D};
@@ -912,6 +912,7 @@ define_scene_nodes! {
         ParticleEmitter3D => (Node3D, ParticleEmitter3D, Inline, Renderable::True, InternalUpdate::True, InternalFixedUpdate::False),
         WaterBody3D => (Node3D, WaterBody3D, Boxed, Renderable::True, InternalUpdate::False, InternalFixedUpdate::True),
         Decal3D => (Node3D, Decal3D, Inline, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
+        TextDecal3D => (Node3D, TextDecal3D, Boxed, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         Sky3D => (None, Sky3D, Inline, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
 
         // lights

@@ -350,6 +350,16 @@ See [TileMap2D](tilemap.md).
 - Higher `sort_priority` blends over lower when decals overlap.
 - Affects standard and toon materials plus multimesh instances; unlit materials ignore decals.
 
+`TextDecal3D`
+
+- Projected text decal: rasterizes `text` into a runtime texture, then paints it through the Decal3D path.
+- Uses Node3D transform; projects along local -Z.
+- `size` is `(width, height, depth)` of the projection box.
+- `color` tints the text; alpha controls opacity.
+- `font_size`, `h_align`, `v_align`, and `texture_resolution` control the backing texture.
+- `emission_energy > 0` reuses the text mask as an emissive decal.
+- Use it for wall text, signs, floor labels, and labels that must stick to geometry.
+
 `ParticleEmitter2D`
 
 - 2D particle emitter driven by a particle profile.

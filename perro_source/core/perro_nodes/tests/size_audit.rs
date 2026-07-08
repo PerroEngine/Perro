@@ -74,6 +74,7 @@ fn print_scene_node_sizes() {
         ParticleEmitter3D,
         WaterBody3D,
         Decal3D,
+        TextDecal3D,
         Sky3D,
         AmbientLight3D,
         RayLight3D,

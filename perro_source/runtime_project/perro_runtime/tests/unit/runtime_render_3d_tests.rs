@@ -5,7 +5,7 @@ use perro_animation::{
 use perro_ids::{MaterialID, MeshID, TextureID};
 use perro_nodes::{
     AnimationPlayer, CameraProjection, CollisionShape3D, Label3D, SceneNode, SceneNodeData,
-    StaticBody3D, WaterBody3D,
+    StaticBody3D, TextDecal3D, WaterBody3D,
     ambient_light_3d::AmbientLight3D,
     camera_3d::Camera3D,
     mesh_instance_3d::MeshInstance3D,
@@ -147,6 +147,51 @@ fn sprite_3d_and_label_3d_emit_projected_ui_commands() {
 }
 
 #[test]
+fn text_decal_3d_rasterizes_text_and_emits_decal_state() {
+    let mut runtime = Runtime::new();
+    let text_decal = NodeAPI::create::<TextDecal3D>(&mut runtime);
+    if let Some(node) = runtime.nodes.get_mut(text_decal)
+        && let SceneNodeData::TextDecal3D(data) = &mut node.data
+    {
+        data.text = "Door".into();
+        data.transform.position = Vector3::new(0.0, 0.0, -2.0);
+        data.surface.emission_energy = 0.5;
+    }
+
+    runtime.extract_render_3d_commands();
+    let commands = collect_commands(&mut runtime);
+    let texture = commands
+        .iter()
+        .find_map(|command| match command {
+            RenderCommand::Resource(ResourceCommand::CreateRuntimeTexture {
+                id,
+                width,
+                height,
+                ..
+            }) => {
+                assert!(*width > 0);
+                assert!(*height > 0);
+                Some(*id)
+            }
+            _ => None,
+        })
+        .expect("expected text decal runtime texture");
+
+    assert!(commands.iter().any(|command| matches!(
+        command,
+        RenderCommand::ThreeD(command)
+            if matches!(
+                command.as_ref(),
+                Command3D::SetDecal { node, decal }
+                    if *node == text_decal
+                        && decal.albedo_texture == texture
+                        && decal.emission_texture == texture
+                        && decal.modulate == Color::WHITE
+            )
+    )));
+}
+
+#[test]
 fn sprite_3d_emits_after_async_texture_create_without_other_dirty_work() {
     let mut runtime = Runtime::new();
     runtime.set_viewport_size(800, 600);
@@ -190,6 +235,112 @@ fn sprite_3d_emits_after_async_texture_create_without_other_dirty_work() {
         command,
         RenderCommand::Ui(UiCommand::UpsertImage { node, texture: id, .. })
             if *node == sprite && *id == texture
+    )));
+}
+
+#[test]
+fn sprite_3d_and_label_3d_hide_when_mesh_blocks_center() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+    let camera = NodeAPI::create::<Camera3D>(&mut runtime);
+    if let Some(node) = runtime.nodes.get_mut(camera)
+        && let SceneNodeData::Camera3D(data) = &mut node.data
+    {
+        data.active = true;
+    }
+
+    let mut blocker = MeshInstance3D::new();
+    blocker.mesh = MeshID::from_parts(31, 0);
+    blocker.transform.position = Vector3::new(0.0, 0.0, -2.5);
+    let blocker = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::MeshInstance3D(blocker)));
+    runtime
+        .render_3d
+        .mesh_sources
+        .insert(blocker, "__cube__".to_string());
+
+    let sprite = NodeAPI::create::<Sprite3D>(&mut runtime);
+    let label = NodeAPI::create::<Label3D>(&mut runtime);
+    if let Some(node) = runtime.nodes.get_mut(sprite)
+        && let SceneNodeData::Sprite3D(data) = &mut node.data
+    {
+        data.texture = TextureID::from_parts(12, 0);
+        data.transform.position = Vector3::new(0.0, 0.0, -5.0);
+    }
+    if let Some(node) = runtime.nodes.get_mut(label)
+        && let SceneNodeData::Label3D(data) = &mut node.data
+    {
+        data.text = "Hidden".into();
+        data.transform.position = Vector3::new(0.0, 0.0, -5.0);
+    }
+
+    runtime.extract_render_3d_commands();
+    let commands = collect_commands(&mut runtime);
+
+    assert!(commands.iter().any(|command| matches!(
+        command,
+        RenderCommand::Ui(UiCommand::RemoveNode { node }) if *node == sprite
+    )));
+    assert!(commands.iter().any(|command| matches!(
+        command,
+        RenderCommand::Ui(UiCommand::RemoveNode { node }) if *node == label
+    )));
+    assert!(!commands.iter().any(|command| matches!(
+        command,
+        RenderCommand::Ui(UiCommand::UpsertImage { node, .. }) if *node == sprite
+    )));
+    assert!(!commands.iter().any(|command| matches!(
+        command,
+        RenderCommand::Ui(UiCommand::UpsertLabel { node, .. }) if *node == label
+    )));
+}
+
+#[test]
+fn sprite_3d_hides_behind_mesh_with_orthographic_camera() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+    let camera = NodeAPI::create::<Camera3D>(&mut runtime);
+    if let Some(node) = runtime.nodes.get_mut(camera)
+        && let SceneNodeData::Camera3D(data) = &mut node.data
+    {
+        data.active = true;
+        data.projection = CameraProjection::Orthographic {
+            size: 10.0,
+            near: 0.1,
+            far: 100.0,
+        };
+    }
+
+    let mut blocker = MeshInstance3D::new();
+    blocker.mesh = MeshID::from_parts(31, 0);
+    blocker.transform.position = Vector3::new(2.0, 0.0, -2.5);
+    let blocker = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::MeshInstance3D(blocker)));
+    runtime
+        .render_3d
+        .mesh_sources
+        .insert(blocker, "__cube__".to_string());
+
+    let sprite = NodeAPI::create::<Sprite3D>(&mut runtime);
+    if let Some(node) = runtime.nodes.get_mut(sprite)
+        && let SceneNodeData::Sprite3D(data) = &mut node.data
+    {
+        data.texture = TextureID::from_parts(12, 0);
+        data.transform.position = Vector3::new(2.0, 0.0, -5.0);
+    }
+
+    runtime.extract_render_3d_commands();
+    let commands = collect_commands(&mut runtime);
+
+    assert!(commands.iter().any(|command| matches!(
+        command,
+        RenderCommand::Ui(UiCommand::RemoveNode { node }) if *node == sprite
+    )));
+    assert!(!commands.iter().any(|command| matches!(
+        command,
+        RenderCommand::Ui(UiCommand::UpsertImage { node, .. }) if *node == sprite
     )));
 }
 

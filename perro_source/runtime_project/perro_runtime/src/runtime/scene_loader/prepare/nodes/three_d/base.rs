@@ -67,6 +67,16 @@ fn build_decal_3d(data: &SceneDefNodeData) -> Decal3D {
     node
 }
 
+fn build_text_decal_3d(data: &SceneDefNodeData) -> TextDecal3D {
+    let mut node = TextDecal3D::new();
+    if let Some(base) = data.base_ref() {
+        apply_node_3d_data(&mut node, base);
+    }
+    apply_node_3d_fields(&mut node, &data.fields);
+    apply_text_decal_3d_fields(&mut node, &data.fields);
+    node
+}
+
 fn build_sprite_3d(data: &SceneDefNodeData) -> Sprite3D {
     let mut node = Sprite3D::new();
     if let Some(base) = data.base_ref() {
@@ -169,6 +179,87 @@ fn apply_decal_3d_fields(node: &mut Decal3D, fields: &[SceneObjectField]) {
         "modulate" | "tint" | "color" => {
             if let Some(v) = as_scene_color(value) {
                 node.modulate = v;
+            }
+        }
+        "albedo_mix" => {
+            if let Some(v) = as_f32(value) {
+                node.surface.albedo_mix = v.clamp(0.0, 1.0);
+            }
+        }
+        "emission_energy" => {
+            if let Some(v) = as_f32(value) {
+                node.surface.emission_energy = v.max(0.0);
+            }
+        }
+        "normal_strength" => {
+            if let Some(v) = as_f32(value) {
+                node.surface.normal_strength = v.max(0.0);
+            }
+        }
+        "normal_fade" => {
+            if let Some(v) = as_f32(value) {
+                node.surface.normal_fade = v.clamp(0.0, 1.0);
+            }
+        }
+        "distance_fade_begin" => {
+            if let Some(v) = as_f32(value) {
+                node.distance_fade.begin = v.max(0.0);
+            }
+        }
+        "distance_fade_length" => {
+            if let Some(v) = as_f32(value) {
+                node.distance_fade.length = v.max(0.001);
+            }
+        }
+        "sort_priority" | "priority" => {
+            if let Some(v) = as_i32(value) {
+                node.sort_priority = v;
+            }
+        }
+        "active" => {
+            if let Some(v) = as_bool(value) {
+                node.active = v;
+            }
+        }
+        _ => {}
+    });
+}
+
+fn apply_text_decal_3d_fields(node: &mut TextDecal3D, fields: &[SceneObjectField]) {
+    SceneFieldIterRef::new(fields).for_each(|name, value| match name {
+        "text" => {
+            if let Some(v) = as_str(value) {
+                node.text = Cow::Owned(decode_scene_text_literal(v));
+            }
+        }
+        "size" | "extents" => {
+            if let Some(v) = as_vec3(value) {
+                node.size = Vector3::new(v.x.max(0.001), v.y.max(0.001), v.z.max(0.001));
+            }
+        }
+        "color" | "text_color" | "modulate" | "tint" => {
+            if let Some(v) = as_scene_color(value) {
+                node.color = v;
+            }
+        }
+        "font_size" | "text_size" => {
+            if let Some(v) = as_f32(value) {
+                node.font_size = v.max(0.001);
+            }
+        }
+        "h_align" | "text_h_align" => {
+            if let Some(v) = as_ui_text_align(value) {
+                node.h_align = v;
+            }
+        }
+        "v_align" | "text_v_align" => {
+            if let Some(v) = as_ui_text_align(value) {
+                node.v_align = v;
+            }
+        }
+        "texture_resolution" | "resolution" => {
+            if let Some(v) = as_u32(value) {
+                node.texture_resolution = v.clamp(16, 4096);
             }
         }
         "albedo_mix" => {

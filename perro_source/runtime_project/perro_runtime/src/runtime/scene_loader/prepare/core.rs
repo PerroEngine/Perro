@@ -17,7 +17,7 @@ use perro_nodes::{
     FixedJoint3D, HingeJoint3D, ImageButton2D, Label2D, Label3D, NineSlice2D, NodeType, PhysicsForceEmitter2D,
     PhysicsForceEmitter3D, PhysicsForceProfile, PinJoint2D, PointLight2D, RayLight2D,
     RigidBody2D, RigidBody3D, SceneNode, SceneNodeData, Shape2D, Shape3D, SpotLight2D,
-    StaticBody2D, StaticBody3D, Triangle2DKind, UiCameraStream, WaterBody2D, WaterBody3D,
+    StaticBody2D, StaticBody3D, TextDecal3D, Triangle2DKind, UiCameraStream, WaterBody2D, WaterBody3D,
     WaterIdleMode, WaterShape, WaterSkyBias, WaterSurfaceParams,
     ambient_light_3d::AmbientLight3D,
     animation_player::AnimationPlayer,
@@ -1662,7 +1662,7 @@ fn extract_locale_text_bindings(
 ) -> Vec<PendingLocaleTextBinding> {
     let mut out = Vec::new();
     match data.node_type {
-        NodeType::UiLabel | NodeType::Label2D | NodeType::Label3D => {
+        NodeType::UiLabel | NodeType::Label2D | NodeType::Label3D | NodeType::TextDecal3D => {
             let fields = scratch_flatten_scene_node_fields(data, scratch);
             push_locale_text_binding(
                 &mut out,
@@ -1883,6 +1883,7 @@ fn scene_node_data_from(
         ))),
         NodeType::WaterBody3D => Ok(SceneNodeData::WaterBody3D(Box::new(build_water_body_3d(data)))),
         NodeType::Decal3D => Ok(SceneNodeData::Decal3D(build_decal_3d(data))),
+        NodeType::TextDecal3D => Ok(SceneNodeData::TextDecal3D(Box::new(build_text_decal_3d(data)))),
         NodeType::AnimationPlayer => Ok(SceneNodeData::AnimationPlayer(build_animation_player(data))),
         NodeType::AnimationTree => Ok(SceneNodeData::AnimationTree(build_animation_tree(data))),
         NodeType::AmbientLight3D => Ok(SceneNodeData::AmbientLight3D(build_ambient_light_3d(data))),
