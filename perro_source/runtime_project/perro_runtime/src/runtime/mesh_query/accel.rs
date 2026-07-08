@@ -39,7 +39,7 @@ pub(crate) struct QueryNodeDataCacheEntry {
     /// so it's a conservative-but-correct invalidation signal: no false
     /// cache hits, occasional false invalidations when unrelated nodes
     /// change between queries.
-    pub(super) built_at_version: u64,
+    pub(super) built_at_revision: u64,
 }
 
 pub(crate) type QueryNodeDataCache = AHashMap<NodeID, QueryNodeDataCacheEntry>;

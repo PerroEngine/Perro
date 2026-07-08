@@ -183,9 +183,9 @@ pub struct Runtime {
     pub(crate) physics_gravity_override: Option<f32>,
     pub(crate) physics_coef_override: Option<f32>,
     physics: physics::PhysicsState,
-    /// arena mutation ver @ last node->world sync; match + no dirty => skip re-sync
-    physics_synced_node_version_2d: Option<u64>,
-    physics_synced_node_version_3d: Option<u64>,
+    /// arena mutation revision @ last node->world sync; match + no dirty => skip re-sync
+    physics_synced_node_revision_2d: Option<u64>,
+    physics_synced_node_revision_3d: Option<u64>,
     physics_body_descs_2d: Vec<perro_physics::BodyDesc2D>,
     physics_body_descs_3d: Vec<perro_physics::BodyDesc3D>,
     physics_joint_descs_2d: Vec<perro_physics::JointDesc2D>,
@@ -446,8 +446,8 @@ impl Runtime {
             physics_gravity_override: None,
             physics_coef_override: None,
             physics: physics::PhysicsState::new(),
-            physics_synced_node_version_2d: None,
-            physics_synced_node_version_3d: None,
+            physics_synced_node_revision_2d: None,
+            physics_synced_node_revision_3d: None,
             physics_body_descs_2d: Vec::new(),
             physics_body_descs_3d: Vec::new(),
             physics_joint_descs_2d: Vec::new(),

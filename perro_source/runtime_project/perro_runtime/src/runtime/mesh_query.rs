@@ -656,9 +656,9 @@ impl Runtime {
     /// (not just this node) -- conservative but always correct, never a
     /// stale hit.
     fn query_node_mesh_data(&mut self, node_id: NodeID) -> Option<Arc<QueryNodeData>> {
-        let current_version = self.nodes.mutation_revision();
+        let current_revision = self.nodes.mutation_revision();
         if let Some(entry) = self.mesh_query_node_cache.get(&node_id)
-            && entry.built_at_version == current_version
+            && entry.built_at_revision == current_revision
         {
             return Some(entry.data.clone());
         }
@@ -671,7 +671,7 @@ impl Runtime {
             node_id,
             QueryNodeDataCacheEntry {
                 data: data.clone(),
-                built_at_version: current_version,
+                built_at_revision: current_revision,
             },
         );
         Some(data)
