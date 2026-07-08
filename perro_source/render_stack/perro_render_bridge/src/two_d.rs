@@ -12,6 +12,105 @@ pub struct Camera2DState {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub enum ParticlePath2D {
+    None,
+    Ballistic,
+    Spiral {
+        angular_velocity: f32,
+        radius: f32,
+    },
+    NoiseDrift {
+        amplitude: f32,
+        frequency: f32,
+    },
+    FlatDisk {
+        radius: f32,
+    },
+    Custom {
+        expr_x: Cow<'static, str>,
+        expr_y: Cow<'static, str>,
+    },
+    CustomCompiled {
+        expr_x_ops: Cow<'static, [ParticleExprOp2D]>,
+        expr_y_ops: Cow<'static, [ParticleExprOp2D]>,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ParticleSimulationMode2D {
+    Cpu,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ParticleProfile2D {
+    pub path: ParticlePath2D,
+    pub expr_x_ops: Option<Cow<'static, [ParticleExprOp2D]>>,
+    pub expr_y_ops: Option<Cow<'static, [ParticleExprOp2D]>>,
+    pub lifetime_min: f32,
+    pub lifetime_max: f32,
+    pub speed_min: f32,
+    pub speed_max: f32,
+    pub spread_radians: f32,
+    pub size: f32,
+    pub size_min: f32,
+    pub size_max: f32,
+    pub force: [f32; 2],
+    pub color_start: Color,
+    pub color_end: Color,
+    pub spin_angular_velocity: f32,
+}
+
+impl Default for ParticleProfile2D {
+    fn default() -> Self {
+        Self {
+            path: ParticlePath2D::None,
+            expr_x_ops: None,
+            expr_y_ops: None,
+            lifetime_min: 0.6,
+            lifetime_max: 1.4,
+            speed_min: 1.0,
+            speed_max: 3.0,
+            spread_radians: std::f32::consts::FRAC_PI_3,
+            size: 6.0,
+            size_min: 0.65,
+            size_max: 1.35,
+            force: [0.0, 0.0],
+            color_start: Color::WHITE,
+            color_end: Color::new(1.0, 0.4, 0.1, 0.0),
+            spin_angular_velocity: 0.0,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct PointParticles2DState {
+    pub model: [[f32; 3]; 3],
+    pub z_index: i32,
+    pub active: bool,
+    pub looping: bool,
+    pub prewarm: bool,
+    pub alive_budget: u32,
+    pub emission_rate: f32,
+    pub lifetime_min: f32,
+    pub lifetime_max: f32,
+    pub speed_min: f32,
+    pub speed_max: f32,
+    pub spread_radians: f32,
+    pub size: f32,
+    pub size_min: f32,
+    pub size_max: f32,
+    pub force: [f32; 2],
+    pub color_start: Color,
+    pub color_end: Color,
+    pub seed: u32,
+    pub params: Vec<f32>,
+    pub simulation_time: f32,
+    pub simulation_delta: f32,
+    pub profile: ParticleProfile2D,
+    pub sim_mode: ParticleSimulationMode2D,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum CameraStreamSourceState {
     TwoD(Camera2DState),
     ThreeD(Camera3DState),
@@ -32,57 +131,6 @@ pub struct CameraStreamState {
     pub lighting_3d: CameraStreamLighting3DState,
     pub point_particles_3d: Arc<[(NodeID, PointParticles3DState)]>,
     pub waters_3d: Arc<[(NodeID, Water3DState)]>,
-}
-
-#[derive(Debug, Clone, PartialEq, Default)]
-pub struct CameraStreamLighting3DState {
-    pub ambient_light: Option<AmbientLight3DState>,
-    pub sky: Option<Sky3DState>,
-    pub ray_lights: [Option<RayLight3DState>; 3],
-    pub point_lights: [Option<PointLight3DState>; 8],
-    pub spot_lights: [Option<SpotLight3DState>; 8],
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum CameraStreamDraw3DState {
-    Draw {
-        mesh: MeshID,
-        surfaces: Arc<[MeshSurfaceBinding3D]>,
-        node: NodeID,
-        model: [[f32; 4]; 4],
-        skeleton: Option<SkeletonPalette>,
-        meshlet_override: Option<bool>,
-        lod: LODOptions3D,
-        blend: MeshBlendOptions3D,
-    },
-    DrawMulti {
-        mesh: MeshID,
-        surfaces: Arc<[MeshSurfaceBinding3D]>,
-        node: NodeID,
-        instance_mats: Arc<[[[f32; 4]; 4]]>,
-        skeleton: Option<SkeletonPalette>,
-        meshlet_override: Option<bool>,
-        lod: LODOptions3D,
-        blend: MeshBlendOptions3D,
-    },
-    DrawMultiDense {
-        mesh: MeshID,
-        surfaces: Arc<[MeshSurfaceBinding3D]>,
-        node: NodeID,
-        node_model: [[f32; 4]; 4],
-        instance_scale: f32,
-        instances: Arc<[DenseInstancePose3D]>,
-        meshlet_override: Option<bool>,
-        lod: LODOptions3D,
-        blend: MeshBlendOptions3D,
-    },
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct CameraStream3DState {
-    pub model: [[f32; 4]; 4],
-    pub size: [f32; 2],
-    pub tint: Color,
 }
 
 impl Default for Camera2DState {

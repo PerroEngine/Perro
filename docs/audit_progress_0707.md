@@ -38,7 +38,9 @@
 - [x] 4.1 central scene-key alias table
   - commit: this commit
   - verify: full `cargo check`, full `cargo clippy`, full `cargo test`
-- [ ] 5.1 move mis-filed bridge types
+- [x] 5.1 move mis-filed bridge types
+  - commit: this commit
+  - verify: full `cargo check`, full `cargo clippy`, full `cargo test`
 - [ ] 4.3 split 2D prepare modules
 - [ ] 5.2 uniform naming
 - [ ] 3.1 getter prefix policy
