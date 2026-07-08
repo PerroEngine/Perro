@@ -784,7 +784,7 @@ impl CSVQuery {
                     return false;
                 };
                 if matches!(op, CsvCompare::Eq | CsvCompare::Ne) {
-                    return compare_bool(cell.hash == *hash, *op);
+                    return compare_bool(cell.hash == *hash && cell.text == value.as_str(), *op);
                 }
                 compare_ord(cell.text.cmp(value.as_str()), *op)
             }
@@ -817,8 +817,10 @@ impl CSVQuery {
                 let Some(cell) = self.table.row(row_idx).and_then(|row| row.cells.get(*col)) else {
                     return false;
                 };
-                hashes.contains(&cell.hash)
-                    || values.iter().any(|value| value.as_str() == cell.text)
+                hashes
+                    .iter()
+                    .zip(values)
+                    .any(|(hash, value)| cell.hash == *hash && value.as_str() == cell.text)
             }
         }
     }
@@ -1107,6 +1109,44 @@ mod tests {
             .map(|row| row.get_header("id").unwrap())
             .collect();
         assert_eq!(ids, vec!["scroll", "sword"]);
+    }
+
+    #[test]
+    fn query_text_filters_recheck_text_after_hash_match() {
+        const TARGET_HASH: u64 = perro_ids::string_to_u64("potion");
+        static HEADERS: [CsvCell; 1] = [CsvCell::new("id", perro_ids::string_to_u64("id"))];
+        static SWORD: [CsvCell; 1] = [CsvCell::new("sword", TARGET_HASH)];
+        static POTION: [CsvCell; 1] = [CsvCell::new("potion", TARGET_HASH)];
+        static ROWS: [CsvRow; 2] = [CsvRow::new(&SWORD), CsvRow::new(&POTION)];
+
+        let csv = Box::leak(Box::new(Csv::new(&HEADERS, &ROWS, &[])));
+
+        let eq_ids: Vec<_> = csv
+            .query()
+            .where_eq("id", "potion")
+            .run()
+            .iter()
+            .map(|row| row.get_header("id").unwrap())
+            .collect();
+        assert_eq!(eq_ids, vec!["potion"]);
+
+        let ne_ids: Vec<_> = csv
+            .query()
+            .where_ne("id", "potion")
+            .run()
+            .iter()
+            .map(|row| row.get_header("id").unwrap())
+            .collect();
+        assert_eq!(ne_ids, vec!["sword"]);
+
+        let in_ids: Vec<_> = csv
+            .query()
+            .where_in("id", &["potion"])
+            .run()
+            .iter()
+            .map(|row| row.get_header("id").unwrap())
+            .collect();
+        assert_eq!(in_ids, vec!["potion"]);
     }
 
     #[test]
