@@ -555,6 +555,27 @@ pub struct RenderGpuTiming {
 }
 
 impl Gpu {
+    pub fn invalidate_texture(&mut self, texture: perro_ids::TextureID) {
+        if let Some(two_d) = self.two_d.as_mut() {
+            two_d.invalidate_texture(texture);
+        }
+        if let Some(late_overlay_2d) = self.late_overlay_2d.as_mut() {
+            late_overlay_2d.invalidate_texture(texture);
+        }
+        if let Some(camera_stream_2d) = self.camera_stream_2d.as_mut() {
+            camera_stream_2d.invalidate_texture(texture);
+        }
+        if let Some(ui) = self.ui.as_mut() {
+            ui.invalidate_image_texture(texture);
+        }
+        if let Some(three_d) = self.three_d.as_mut() {
+            three_d.invalidate_material_texture(texture.index());
+        }
+        if let Some(camera_stream_3d) = self.camera_stream_3d.as_mut() {
+            camera_stream_3d.invalidate_material_texture(texture.index());
+        }
+    }
+
     fn ensure_camera_stream_target(
         &mut self,
         node: NodeID,
@@ -1104,6 +1125,9 @@ impl Gpu {
             ));
         }
         for (node, stream) in camera_streams {
+            if matches!(stream.source, CameraStreamSourceState::Webcam { .. }) {
+                continue;
+            }
             let resolution = [stream.resolution[0].max(1), stream.resolution[1].max(1)];
             let needs_external_binding =
                 self.camera_stream_external_bindings.get(node).copied() != Some(resolution);
@@ -1283,6 +1307,9 @@ impl Gpu {
                 && needs_3d_prepare
             {
                 for (node, stream) in camera_streams {
+                    if matches!(stream.source, CameraStreamSourceState::Webcam { .. }) {
+                        continue;
+                    }
                     let Some(target) = self.camera_stream_targets.get(node) else {
                         continue;
                     };

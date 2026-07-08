@@ -179,9 +179,15 @@ impl Runtime {
                 .iter()
                 .filter_map(|&raw_index| self.nodes.slot_get(raw_index as usize).map(|(id, _)| id)),
         );
+        let include_all_nodes = self.render_3d.full_scan_pending()
+            || bootstrap_scan
+            || camera_changed
+            || camera_render_mask_changed;
         let mut all_ids = std::mem::take(&mut self.render_3d.all_ids_scratch);
         all_ids.clear();
-        all_ids.extend(self.nodes.iter().map(|(id, _)| id));
+        if include_all_nodes {
+            all_ids.extend(self.nodes.iter().map(|(id, _)| id));
+        }
         let nodes = &self.nodes;
         let mut traversal_ids = self.render_3d.collect_traversal(
             dirty_ids.iter().copied(),

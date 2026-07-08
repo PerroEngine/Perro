@@ -4,7 +4,7 @@ use perro_nodes::NodeType;
 
 use crate::{SceneFieldName, SceneObjectField, SceneValue, default_scene_field_value_by_name};
 
-const CAMERA_REF_TYPES: &[NodeType] = &[NodeType::Camera2D, NodeType::Camera3D];
+const CAMERA_REF_TYPES: &[NodeType] = &[NodeType::Camera2D, NodeType::Camera3D, NodeType::Webcam];
 const SKELETON_2D_REF_TYPES: &[NodeType] = &[NodeType::Skeleton2D];
 const SKELETON_3D_REF_TYPES: &[NodeType] = &[NodeType::Skeleton3D];
 const BODY_2D_REF_TYPES: &[NodeType] = &[
@@ -530,6 +530,16 @@ fn push_node_fields(fields: &mut Vec<SceneNodeField>, node_type: NodeType) {
                 NodeFieldType::object(Vec::new()),
             );
             push(fields, "Camera Stream", "enabled", NodeFieldType::Bool);
+        }
+        NodeType::Webcam => {
+            push(fields, "Webcam", "slot", NodeFieldType::String);
+            push(fields, "Webcam", "resolution", NodeFieldType::Vec2);
+            push(fields, "Webcam", "width", NodeFieldType::U32);
+            push(fields, "Webcam", "height", NodeFieldType::U32);
+            push(fields, "Webcam", "fps", NodeFieldType::U32);
+            push(fields, "Webcam", "mirror", NodeFieldType::Bool);
+            push(fields, "Webcam", "cpu_frames", NodeFieldType::Bool);
+            push(fields, "Webcam", "enabled", NodeFieldType::Bool);
         }
         NodeType::Sprite2D => sprite_fields(fields, "Sprite"),
         NodeType::Label2D => label_world_fields(fields, "Label"),
@@ -1350,6 +1360,7 @@ mod tests {
         };
         assert!(stream_hint.allows(NodeType::Camera2D));
         assert!(stream_hint.allows(NodeType::Camera3D));
+        assert!(stream_hint.allows(NodeType::Webcam));
         assert!(!stream_hint.allows(NodeType::MeshInstance3D));
 
         let mesh = scene_node_field(NodeType::MeshInstance3D, "skeleton").unwrap();

@@ -349,7 +349,7 @@ impl Runtime {
                             .to_mat3()
                             .to_cols_array_2d();
                         let sprite = Sprite2DCommand {
-                            texture: Runtime::camera_stream_texture_id(node),
+                            texture: stream_state.output_texture,
                             model,
                             tint,
                             uv_min: [0.0, 0.0],

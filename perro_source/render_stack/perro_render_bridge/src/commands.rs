@@ -48,6 +48,20 @@ pub enum ResourceCommand {
         reserved: bool,
         bytes: Arc<[u8]>,
     },
+    CreateExternalTexture {
+        request: RenderRequestID,
+        id: TextureID,
+        source: String,
+        reserved: bool,
+        width: u32,
+        height: u32,
+    },
+    WriteTextureRgba {
+        id: TextureID,
+        width: u32,
+        height: u32,
+        rgba: Arc<[u8]>,
+    },
     CreateMaterial {
         request: RenderRequestID,
         id: MaterialID,

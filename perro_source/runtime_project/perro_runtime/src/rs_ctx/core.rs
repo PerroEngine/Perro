@@ -5,6 +5,7 @@ use crate::runtime_project::{
 };
 #[cfg(all(not(target_arch = "wasm32"), not(test)))]
 use perro_animation::{AnimationClip, AnimationTreeAsset};
+use perro_ids::WebcamID;
 use perro_ids::{SoundFontID, string_to_u64};
 use perro_pawdio::{AudioController, MicRecorder, MidiChannel, MidiProgram, MidiSound, Note};
 use perro_project::LocalizationConfig;
@@ -16,6 +17,19 @@ use std::{
     collections::HashMap,
     sync::{Arc, Mutex, mpsc},
 };
+
+#[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
+use std::sync::atomic::AtomicBool;
+
+pub(crate) struct WebcamFrameMessage {
+    pub(crate) id: WebcamID,
+    pub(crate) frame: perro_resource_api::sub_apis::WebcamFrame,
+}
+
+pub(crate) struct WebcamErrorMessage {
+    pub(crate) id: WebcamID,
+    pub(crate) error: String,
+}
 
 #[cfg(not(target_arch = "wasm32"))]
 struct AsyncMaterialLoadResult {
@@ -269,6 +283,13 @@ pub struct RuntimeResourceApi {
     pub(super) skeleton_3d_load_tx: mpsc::Sender<AsyncSkeleton3DLoadResult>,
     pub(super) skeleton_3d_load_rx: Mutex<mpsc::Receiver<AsyncSkeleton3DLoadResult>>,
     pub(super) viewport_size: Mutex<(u32, u32)>,
+    #[cfg_attr(test, allow(dead_code))]
+    pub(crate) webcam_frame_tx: mpsc::Sender<WebcamFrameMessage>,
+    pub(crate) webcam_frame_rx: Mutex<mpsc::Receiver<WebcamFrameMessage>>,
+    pub(crate) webcam_error_tx: mpsc::Sender<WebcamErrorMessage>,
+    pub(crate) webcam_error_rx: Mutex<mpsc::Receiver<WebcamErrorMessage>>,
+    #[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
+    pub(crate) webcam_stop_by_id: Mutex<HashMap<WebcamID, Arc<AtomicBool>>>,
     #[cfg(not(target_arch = "wasm32"))]
     material_load_tx: mpsc::Sender<AsyncMaterialLoadResult>,
     #[cfg(not(target_arch = "wasm32"))]
@@ -303,6 +324,8 @@ impl RuntimeResourceApi {
         let (animation_tree_load_tx, animation_tree_load_rx) = mpsc::channel();
         let (skeleton_2d_load_tx, skeleton_2d_load_rx) = mpsc::channel();
         let (skeleton_3d_load_tx, skeleton_3d_load_rx) = mpsc::channel();
+        let (webcam_frame_tx, webcam_frame_rx) = mpsc::channel();
+        let (webcam_error_tx, webcam_error_rx) = mpsc::channel();
         let api = Arc::new(Self {
             state: Mutex::new(RuntimeResourceState::new()),
             localization: std::sync::RwLock::new(RuntimeLocalizationState::new(
@@ -333,6 +356,12 @@ impl RuntimeResourceApi {
             skeleton_3d_load_tx,
             skeleton_3d_load_rx: Mutex::new(skeleton_3d_load_rx),
             viewport_size: Mutex::new((1, 1)),
+            webcam_frame_tx,
+            webcam_frame_rx: Mutex::new(webcam_frame_rx),
+            webcam_error_tx,
+            webcam_error_rx: Mutex::new(webcam_error_rx),
+            #[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
+            webcam_stop_by_id: Mutex::new(HashMap::new()),
             #[cfg(not(target_arch = "wasm32"))]
             material_load_tx,
             #[cfg(not(target_arch = "wasm32"))]
@@ -401,6 +430,7 @@ impl RuntimeResourceApi {
         self.poll_async_material_loads();
         self.poll_async_animation_loads();
         self.poll_async_animation_tree_loads();
+        self.poll_webcam_messages();
         let mut state = self.state.lock().expect("resource api mutex poisoned");
         out.append(&mut state.queued_commands);
     }

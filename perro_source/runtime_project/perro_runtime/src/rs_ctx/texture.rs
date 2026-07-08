@@ -1,5 +1,5 @@
 use super::core::RuntimeResourceApi;
-use perro_ids::{TextureID, string_to_u64};
+use perro_ids::{TextureID, WebcamID, string_to_u64};
 use perro_render_bridge::{RenderCommand, ResourceCommand};
 use perro_resource_api::sub_apis::TextureAPI;
 use std::sync::Arc;
@@ -216,6 +216,14 @@ impl TextureAPI for RuntimeResourceApi {
         }
         let state = self.state.lock().expect("resource api mutex poisoned");
         state.texture_loaded_by_id.contains(&id)
+    }
+
+    fn webcam_texture(&self, webcam: WebcamID) -> TextureID {
+        self.state
+            .lock()
+            .ok()
+            .and_then(|state| state.webcam_texture_by_id.get(&webcam).copied())
+            .unwrap_or_else(TextureID::nil)
     }
 }
 

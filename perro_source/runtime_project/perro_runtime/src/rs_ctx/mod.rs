@@ -16,6 +16,7 @@ mod state;
 mod texture;
 mod viewport;
 mod visual_accessibility;
+mod webcam;
 
 pub use core::RuntimeResourceApi;
 pub(crate) use core::{QueuedSpatialAudioPos, QueuedSpatialMidiKind};

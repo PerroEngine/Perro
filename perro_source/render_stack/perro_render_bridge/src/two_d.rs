@@ -114,6 +114,10 @@ pub struct PointParticles2DState {
 pub enum CameraStreamSourceState {
     TwoD(Camera2DState),
     ThreeD(Camera3DState),
+    Webcam {
+        texture: TextureID,
+        resolution: [u32; 2],
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]

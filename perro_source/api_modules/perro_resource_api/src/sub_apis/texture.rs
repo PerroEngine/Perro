@@ -3,7 +3,7 @@
 //! Loads, reserves, drops, and checks texture resources.
 
 use crate::ResPathSource;
-use perro_ids::{NodeID, TextureID};
+use perro_ids::{NodeID, TextureID, WebcamID};
 
 pub trait TextureAPI {
     fn load_texture_hashed(&self, source_hash: u64, source: Option<&str>) -> TextureID;
@@ -21,6 +21,9 @@ pub trait TextureAPI {
     fn is_texture_loaded(&self, id: TextureID) -> bool;
     fn camera_stream_texture(&self, stream_node: NodeID) -> TextureID {
         TextureID::from_parts(stream_node.index(), stream_node.generation())
+    }
+    fn webcam_texture(&self, webcam: WebcamID) -> TextureID {
+        TextureID::from_parts(webcam.index(), webcam.generation())
     }
 }
 
@@ -145,6 +148,11 @@ impl<'res, R: TextureAPI + ?Sized> TextureModule<'res, R> {
     #[inline]
     pub fn camera_stream(&self, stream_node: NodeID) -> TextureID {
         self.api.camera_stream_texture(stream_node)
+    }
+
+    #[inline]
+    pub fn webcam(&self, webcam: WebcamID) -> TextureID {
+        self.api.webcam_texture(webcam)
     }
 }
 

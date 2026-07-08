@@ -3489,9 +3489,11 @@ macro_rules! set_tags {
     };
 }
 
-/// Deprecated alias for [`set_tags!`](macro@crate::set_tags).
+/// Sets or clears node tags, matching the `tag_*` macro family.
+///
+/// `set_tags!` is the method-style spelling; `tag_set!` sits next to
+/// `tag_add!` and `tag_remove!` for script call sites.
 #[macro_export]
-#[deprecated(note = "use set_tags!")]
 macro_rules! tag_set {
     ($ctx:expr, $id:expr, $tags:expr) => {
         $crate::set_tags!($ctx, $id, $tags)

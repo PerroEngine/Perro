@@ -21,6 +21,7 @@ mod scene_doc;
 mod skeleton;
 mod texture;
 mod visual_accessibility;
+mod webcam;
 
 // ---- Animation + audio ----
 
@@ -54,3 +55,4 @@ pub use scene_doc::{IntoSceneDoc, SceneDocAPI, SceneDocModule};
 pub use skeleton::{SkeletonAPI, SkeletonModule};
 pub use texture::{TextureAPI, TextureModule, TextureReserveArg};
 pub use visual_accessibility::VisualAccessibilityAPI;
+pub use webcam::{WebcamAPI, WebcamConfig, WebcamFrame, WebcamModule};

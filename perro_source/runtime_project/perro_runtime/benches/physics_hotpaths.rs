@@ -472,16 +472,18 @@ fn bench_runtime_force_emitters(c: &mut Criterion) {
                 runtime
             },
             |mut runtime| {
-                let mut emitter = PhysicsForceEmitter2D::default();
-                emitter.profile = PhysicsForceProfile::Custom;
-                emitter.radius = 96.0;
-                emitter.strength = 2.0;
-                emitter.falloff = 1.0;
-                emitter.vectors = vec![
-                    Vector2::new(0.0, 1.0),
-                    Vector2::new(1.0, 0.25),
-                    Vector2::new(-0.25, 0.8),
-                ];
+                let emitter = PhysicsForceEmitter2D {
+                    profile: PhysicsForceProfile::Custom,
+                    radius: 96.0,
+                    strength: 2.0,
+                    falloff: 1.0,
+                    vectors: vec![
+                        Vector2::new(0.0, 1.0),
+                        Vector2::new(1.0, 0.25),
+                        Vector2::new(-0.25, 0.8),
+                    ],
+                    ..Default::default()
+                };
                 black_box(PhysicsAPI::emit_force_2d(&mut runtime, emitter));
                 runtime.fixed_update(DT);
                 black_box(runtime.nodes.len())
@@ -496,16 +498,18 @@ fn bench_runtime_force_emitters(c: &mut Criterion) {
                 runtime
             },
             |mut runtime| {
-                let mut emitter = PhysicsForceEmitter3D::default();
-                emitter.profile = PhysicsForceProfile::Custom;
-                emitter.radius = 96.0;
-                emitter.strength = 2.0;
-                emitter.falloff = 1.0;
-                emitter.vectors = vec![
-                    Vector3::new(0.0, 1.0, 0.0),
-                    Vector3::new(1.0, 0.25, -0.25),
-                    Vector3::new(-0.25, 0.8, 0.5),
-                ];
+                let emitter = PhysicsForceEmitter3D {
+                    profile: PhysicsForceProfile::Custom,
+                    radius: 96.0,
+                    strength: 2.0,
+                    falloff: 1.0,
+                    vectors: vec![
+                        Vector3::new(0.0, 1.0, 0.0),
+                        Vector3::new(1.0, 0.25, -0.25),
+                        Vector3::new(-0.25, 0.8, 0.5),
+                    ],
+                    ..Default::default()
+                };
                 black_box(PhysicsAPI::emit_force_3d(&mut runtime, emitter));
                 runtime.fixed_update(DT);
                 black_box(runtime.nodes.len())

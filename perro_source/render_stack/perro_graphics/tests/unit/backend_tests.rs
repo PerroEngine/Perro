@@ -72,6 +72,44 @@ fn auto_gc_runs_on_interval_not_every_frame() {
     assert!(!graphics.resources.has_texture(texture));
 }
 
+#[test]
+fn write_texture_rgba_updates_resource_texture() {
+    let mut graphics = PerroGraphics::new();
+    let texture = TextureID::from_parts(77, 0);
+
+    graphics.submit(RenderCommand::Resource(
+        ResourceCommand::CreateExternalTexture {
+            request: perro_render_bridge::RenderRequestID::new(1),
+            id: texture,
+            source: "webcam://test".to_string(),
+            reserved: true,
+            width: 2,
+            height: 1,
+        },
+    ));
+    graphics.submit(RenderCommand::Resource(ResourceCommand::WriteTextureRgba {
+        id: texture,
+        width: 2,
+        height: 1,
+        rgba: Arc::from([1, 2, 3, 4, 5, 6, 7, 8]),
+    }));
+    graphics.draw_frame();
+
+    let decoded = graphics
+        .resources
+        .decoded_texture_data(texture)
+        .expect("decoded webcam texture");
+    assert_eq!(decoded.width, 2);
+    assert_eq!(decoded.height, 1);
+    assert_eq!(decoded.rgba, [1, 2, 3, 4, 5, 6, 7, 8]);
+    assert!(graphics.events.iter().any(|event| {
+        matches!(
+            event,
+            perro_render_bridge::RenderEvent::TextureLoaded { id } if *id == texture
+        )
+    }));
+}
+
 fn water_2d_state() -> Water2DState {
     Water2DState {
         model: [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],

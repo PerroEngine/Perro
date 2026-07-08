@@ -1,9 +1,10 @@
 use perro_animation::{AnimationClip, AnimationTreeAsset};
-use perro_ids::{AnimationID, AnimationTreeID, MaterialID, MeshID, TextureID};
+use perro_ids::{AnimationID, AnimationTreeID, MaterialID, MeshID, NodeID, TextureID, WebcamID};
 use perro_project::LocalizationConfig;
 use perro_render_bridge::{Material3D, Mesh3D};
 use perro_render_bridge::{RenderCommand, RenderRequestID};
 use perro_resource_api::sub_apis::Locale;
+use perro_resource_api::sub_apis::{WebcamConfig, WebcamFrame};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
@@ -140,6 +141,7 @@ pub(super) struct RuntimeResourceState {
     texture_slots: LocalSlotArena,
     mesh_slots: LocalSlotArena,
     material_slots: LocalSlotArena,
+    webcam_slots: LocalSlotArena,
     animation_slots: LocalSlotArena,
     animation_tree_slots: LocalSlotArena,
     pub(super) queued_commands: Vec<RenderCommand>,
@@ -150,6 +152,13 @@ pub(super) struct RuntimeResourceState {
     pub(super) texture_reserve_pending: HashSet<u64>,
     pub(super) texture_drop_pending: HashSet<u64>,
     pub(super) texture_loaded_by_id: HashSet<TextureID>,
+    pub(super) webcam_default_id: Option<WebcamID>,
+    pub(super) webcam_texture_by_id: HashMap<WebcamID, TextureID>,
+    pub(super) webcam_config_by_id: HashMap<WebcamID, WebcamConfig>,
+    pub(super) webcam_frame_by_id: HashMap<WebcamID, WebcamFrame>,
+    pub(super) webcam_open_by_id: HashSet<WebcamID>,
+    pub(super) webcam_last_error_by_id: HashMap<WebcamID, String>,
+    pub(super) webcam_node_by_node: HashMap<NodeID, WebcamID>,
     pub(super) mesh_by_source: HashMap<u64, MeshID>,
     pub(super) mesh_source_by_id: HashMap<MeshID, String>,
     pub(super) mesh_id_alias: HashMap<MeshID, MeshID>,
@@ -212,6 +221,11 @@ impl RuntimeResourceState {
         MaterialID::from_parts(index, generation)
     }
 
+    pub(super) fn allocate_webcam_id(&mut self) -> WebcamID {
+        let (index, generation) = self.webcam_slots.allocate_parts();
+        WebcamID::from_parts(index, generation)
+    }
+
     pub(super) fn free_texture_id(&mut self, id: TextureID) -> bool {
         self.texture_slots.free_parts(id.index(), id.generation())
     }
@@ -235,6 +249,10 @@ impl RuntimeResourceState {
     pub(super) fn occupy_material_id(&mut self, id: MaterialID) -> bool {
         self.material_slots
             .occupy_parts(id.index(), id.generation())
+    }
+
+    pub(super) fn free_webcam_id(&mut self, id: WebcamID) -> bool {
+        self.webcam_slots.free_parts(id.index(), id.generation())
     }
 
     pub(super) fn allocate_animation_id(&mut self) -> AnimationID {

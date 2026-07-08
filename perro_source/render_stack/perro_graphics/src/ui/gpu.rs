@@ -794,6 +794,10 @@ impl GpuUi {
             .map(|texture| &texture.bind_group)
     }
 
+    pub fn invalidate_image_texture(&mut self, texture: TextureID) {
+        self.image_textures.remove(&texture);
+    }
+
     fn ensure_image_texture(
         &mut self,
         device: &wgpu::Device,

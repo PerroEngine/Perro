@@ -15,6 +15,7 @@ pub enum NodeField {
     Node3D(Node3DField),
     Camera2D(Camera2DField),
     CameraStream(CameraStreamField),
+    Webcam(WebcamField),
     Button2D(Button2DField),
     ImageButton2D(Button2DField),
     NineSlice2D(Button2DField),
@@ -86,6 +87,18 @@ pub enum CameraStreamField {
     Enabled,
     Size,
     ZIndex,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WebcamField {
+    Device,
+    Resolution,
+    Width,
+    Height,
+    Fps,
+    Mirror,
+    CpuFrames,
+    Enabled,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1080,6 +1093,7 @@ fn resolve_scene_node_field_for_type(
         NodeType::CameraStream2D | NodeType::CameraStream3D | NodeType::UiCameraStream => {
             resolve_scene_camera_stream(field).map(NodeField::CameraStream)
         }
+        NodeType::Webcam => resolve_scene_webcam(field).map(NodeField::Webcam),
         NodeType::Camera3D => match field {
             SceneFieldName::Zoom => Some(NodeField::Camera3D(Camera3DField::Zoom)),
             SceneFieldName::RenderMask => Some(NodeField::Camera3D(Camera3DField::RenderMask)),
@@ -1559,6 +1573,40 @@ fn resolve_node_field_for_type(node_type: NodeType, field: &str) -> Option<NodeF
             "audio_options" => Some(NodeField::Camera2D(Camera2DField::AudioOptions)),
             "audio_mask" => Some(NodeField::Camera2D(Camera2DField::AudioMask)),
             "active" => Some(NodeField::Camera2D(Camera2DField::Active)),
+            _ => None,
+        },
+        NodeType::CameraStream2D | NodeType::CameraStream3D | NodeType::UiCameraStream => {
+            match field {
+                "camera" | "source" | "webcam" => {
+                    Some(NodeField::CameraStream(CameraStreamField::Camera))
+                }
+                "resolution" => Some(NodeField::CameraStream(CameraStreamField::Resolution)),
+                "width" => Some(NodeField::CameraStream(CameraStreamField::Width)),
+                "height" => Some(NodeField::CameraStream(CameraStreamField::Height)),
+                "aspect_ratio" => Some(NodeField::CameraStream(CameraStreamField::AspectRatio)),
+                "aspect_mode" => Some(NodeField::CameraStream(CameraStreamField::AspectMode)),
+                "post_processing" => {
+                    Some(NodeField::CameraStream(CameraStreamField::PostProcessing))
+                }
+                "enabled" | "active" => Some(NodeField::CameraStream(CameraStreamField::Enabled)),
+                "size" => Some(NodeField::CameraStream(CameraStreamField::Size)),
+                "z_index" => Some(NodeField::CameraStream(CameraStreamField::ZIndex)),
+                _ => None,
+            }
+        }
+        NodeType::Webcam => match field {
+            "slot" | "device" | "device_id" | "name" | "source" | "src" => {
+                Some(NodeField::Webcam(WebcamField::Device))
+            }
+            "resolution" => Some(NodeField::Webcam(WebcamField::Resolution)),
+            "width" => Some(NodeField::Webcam(WebcamField::Width)),
+            "height" => Some(NodeField::Webcam(WebcamField::Height)),
+            "fps" | "frame_rate" | "fps_scale" => Some(NodeField::Webcam(WebcamField::Fps)),
+            "mirror" | "flip_x" => Some(NodeField::Webcam(WebcamField::Mirror)),
+            "cpu_frames" | "cpu_frame" | "readback" => {
+                Some(NodeField::Webcam(WebcamField::CpuFrames))
+            }
+            "enabled" | "active" => Some(NodeField::Webcam(WebcamField::Enabled)),
             _ => None,
         },
         NodeType::Sprite2D => match field {
@@ -2659,7 +2707,7 @@ fn resolve_base_scene_node_field(node_type: NodeType, field: &SceneFieldName) ->
 
 fn resolve_scene_camera_stream(field: &SceneFieldName) -> Option<CameraStreamField> {
     match field {
-        SceneFieldName::Camera => Some(CameraStreamField::Camera),
+        SceneFieldName::Camera | SceneFieldName::Source => Some(CameraStreamField::Camera),
         SceneFieldName::Resolution => Some(CameraStreamField::Resolution),
         SceneFieldName::Width => Some(CameraStreamField::Width),
         SceneFieldName::Height => Some(CameraStreamField::Height),
@@ -2669,6 +2717,29 @@ fn resolve_scene_camera_stream(field: &SceneFieldName) -> Option<CameraStreamFie
         SceneFieldName::Enabled | SceneFieldName::Active => Some(CameraStreamField::Enabled),
         SceneFieldName::Size => Some(CameraStreamField::Size),
         SceneFieldName::ZIndex => Some(CameraStreamField::ZIndex),
+        SceneFieldName::Custom(name) if name.as_ref() == "webcam" => {
+            Some(CameraStreamField::Camera)
+        }
+        _ => None,
+    }
+}
+
+fn resolve_scene_webcam(field: &SceneFieldName) -> Option<WebcamField> {
+    match field {
+        SceneFieldName::Source | SceneFieldName::Src => Some(WebcamField::Device),
+        SceneFieldName::Resolution => Some(WebcamField::Resolution),
+        SceneFieldName::Width => Some(WebcamField::Width),
+        SceneFieldName::Height => Some(WebcamField::Height),
+        SceneFieldName::FpsScale => Some(WebcamField::Fps),
+        SceneFieldName::FlipX => Some(WebcamField::Mirror),
+        SceneFieldName::Enabled | SceneFieldName::Active => Some(WebcamField::Enabled),
+        SceneFieldName::Custom(name) => match name.as_ref() {
+            "slot" | "device" | "device_id" | "name" => Some(WebcamField::Device),
+            "fps" | "frame_rate" => Some(WebcamField::Fps),
+            "mirror" => Some(WebcamField::Mirror),
+            "cpu_frames" | "cpu_frame" | "readback" => Some(WebcamField::CpuFrames),
+            _ => None,
+        },
         _ => None,
     }
 }
@@ -2716,6 +2787,26 @@ mod tests {
             Some(NodeField::Node3D(Node3DField::RenderLayers))
         );
         assert_eq!(resolve_node_field("MeshInstance3D", "render_mask"), None);
+    }
+
+    #[test]
+    fn camera_stream_accepts_webcam_alias_and_webcam_fields() {
+        assert_eq!(
+            resolve_node_field("UiCameraStream", "webcam"),
+            Some(NodeField::CameraStream(CameraStreamField::Camera))
+        );
+        assert_eq!(
+            resolve_node_field("CameraStream2D", "source"),
+            Some(NodeField::CameraStream(CameraStreamField::Camera))
+        );
+        assert_eq!(
+            resolve_node_field("Webcam", "slot"),
+            Some(NodeField::Webcam(WebcamField::Device))
+        );
+        assert_eq!(
+            resolve_node_field("Webcam", "cpu_frames"),
+            Some(NodeField::Webcam(WebcamField::CpuFrames))
+        );
     }
 
     #[test]

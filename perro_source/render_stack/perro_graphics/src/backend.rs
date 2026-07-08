@@ -23,10 +23,10 @@ use perro_graphics_assets::{
 };
 use perro_ids::{MaterialID, MeshID, NodeID, TextureID};
 use perro_render_bridge::{
-    CameraStreamCommand, CameraStreamState, Command2D, Command3D, Decal3DState, Light2DState,
-    Material3D, PointParticles3DState, PostProcessingCommand, RenderBridge, RenderCommand,
-    RenderEvent, ResourceCommand, Sprite2DCommand, VisualAccessibilityCommand, Water2DState,
-    Water3DState,
+    CameraStreamCommand, CameraStreamSourceState, CameraStreamState, Command2D, Command3D,
+    Decal3DState, Light2DState, Material3D, PointParticles3DState, PostProcessingCommand,
+    RenderBridge, RenderCommand, RenderEvent, ResourceCommand, Sprite2DCommand,
+    VisualAccessibilityCommand, Water2DState, Water3DState,
 };
 use perro_structs::TextureFilterMode;
 use perro_structs::{PostProcessSet, VisualAccessibilitySettings};
@@ -765,11 +765,13 @@ impl PerroGraphics {
                             node,
                             state.clone(),
                         );
-                        self.upsert_camera_stream_texture(
-                            node,
-                            state.output_texture,
-                            state.resolution,
-                        );
+                        if !matches!(state.source, CameraStreamSourceState::Webcam { .. }) {
+                            self.upsert_camera_stream_texture(
+                                node,
+                                state.output_texture,
+                                state.resolution,
+                            );
+                        }
                     }
                     CameraStreamCommand::RemoveNode { node } => {
                         let id = camera_stream_texture_id(node);
@@ -973,6 +975,64 @@ impl PerroGraphics {
                         self.events
                             .push(RenderEvent::TextureCreated { request, id });
                         self.events.push(RenderEvent::TextureLoaded { id });
+                    }
+                    ResourceCommand::CreateExternalTexture {
+                        request,
+                        id,
+                        source,
+                        reserved,
+                        width,
+                        height,
+                    } => {
+                        let id = if id.is_nil() {
+                            self.resources.create_texture(source.as_str(), reserved)
+                        } else {
+                            self.resources
+                                .create_texture_with_id(id, source.as_str(), reserved)
+                        };
+                        let width = width.clamp(1, 8192);
+                        let height = height.clamp(1, 8192);
+                        let rgba = vec![0; width as usize * height as usize * 4];
+                        let _ = self.resources.set_decoded_texture_data(
+                            id,
+                            DecodedTextureRgba {
+                                rgba,
+                                width,
+                                height,
+                            },
+                        );
+                        self.events
+                            .push(RenderEvent::TextureCreated { request, id });
+                        self.events.push(RenderEvent::TextureLoaded { id });
+                    }
+                    ResourceCommand::WriteTextureRgba {
+                        id,
+                        width,
+                        height,
+                        rgba,
+                    } => {
+                        let expected_len = (width as usize)
+                            .checked_mul(height as usize)
+                            .and_then(|pixels| pixels.checked_mul(4));
+                        if width == 0 || height == 0 || expected_len != Some(rgba.len()) {
+                            continue;
+                        }
+                        let _ = self.resources.set_decoded_texture_data(
+                            id,
+                            DecodedTextureRgba {
+                                rgba: rgba.to_vec(),
+                                width,
+                                height,
+                            },
+                        );
+                        if let Some(gpu) = self.gpu.as_mut() {
+                            gpu.invalidate_texture(id);
+                        }
+                        self.retained_draws_cache_revision = u64::MAX;
+                        self.retained_decals_3d_cache_revision = u64::MAX;
+                        self.retained_sprites_cache_revision = u64::MAX;
+                        self.events.push(RenderEvent::TextureLoaded { id });
+                        self.redraw_requested = true;
                     }
                     ResourceCommand::CreateMaterial {
                         request,

@@ -160,6 +160,10 @@ define_generational!(
     "Texture ID — allocated by TextureManager. Index + generation."
 );
 define_generational!(
+    WebcamID,
+    "Webcam ID - allocated by webcam capture system. Index + generation."
+);
+define_generational!(
     MaterialID,
     "Material ID — allocated by material system. Index + generation."
 );

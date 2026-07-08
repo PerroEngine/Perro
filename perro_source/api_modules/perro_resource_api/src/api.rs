@@ -3,7 +3,7 @@ use crate::sub_apis::{
     CsvAPI, CsvModule, Draw2DAPI, Draw2DModule, GlbModule, GltfAPI, IntoLocale, Locale,
     LocalizationAPI, LocalizationModule, MaterialAPI, MaterialModule, MeshAPI, MeshModule, MicAPI,
     MicModule, PostProcessingAPI, SceneDocAPI, SceneDocModule, SkeletonAPI, SkeletonModule,
-    TextureAPI, TextureModule, VisualAccessibilityAPI,
+    TextureAPI, TextureModule, VisualAccessibilityAPI, WebcamAPI, WebcamModule,
 };
 use crate::{LoadResult, ResPathSource};
 use perro_scene::{SceneDoc, SceneWrite};
@@ -19,6 +19,7 @@ pub trait ResourceAPI:
     + VisualAccessibilityAPI
     + AudioAPI
     + MicAPI
+    + WebcamAPI
     + CsvAPI
     + TextureAPI
     + MeshAPI
@@ -40,6 +41,7 @@ impl<T> ResourceAPI for T where
         + VisualAccessibilityAPI
         + AudioAPI
         + MicAPI
+        + WebcamAPI
         + CsvAPI
         + TextureAPI
         + MeshAPI
@@ -99,6 +101,12 @@ impl<'res, R: ResourceAPI + ?Sized> ResourceWindow<'res, R> {
     #[inline]
     pub fn Mic(&self) -> MicModule<'_, R> {
         MicModule::new(self.api)
+    }
+
+    /// Access webcam capture and live texture helpers.
+    #[inline]
+    pub fn Webcams(&self) -> WebcamModule<'_, R> {
+        WebcamModule::new(self.api)
     }
 
     /// Access CSV load/save and query helpers.

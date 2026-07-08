@@ -18,6 +18,7 @@ use perro_nodes::{
     PhysicsForceEmitter3D, PhysicsForceProfile, PinJoint2D, PointLight2D, RayLight2D,
     RigidBody2D, RigidBody3D, SceneNode, SceneNodeData, Shape2D, Shape3D, SpotLight2D,
     StaticBody2D, StaticBody3D, TextDecal3D, Triangle2DKind, UiCameraStream, WaterBody2D, WaterBody3D,
+    Webcam,
     WaterIdleMode, WaterShape, WaterSkyBias, WaterSurfaceParams,
     ambient_light_3d::AmbientLight3D,
     animation_player::AnimationPlayer,
@@ -1785,6 +1786,7 @@ fn scene_node_data_from(
 ) -> Result<SceneNodeData, String> {
     match data.node_type {
         NodeType::Node => Ok(SceneNodeData::Node),
+        NodeType::Webcam => Ok(SceneNodeData::Webcam(build_webcam(data))),
         NodeType::Node2D => Ok(SceneNodeData::Node2D(build_node_2d(data))),
         NodeType::CameraStream2D => {
             Ok(SceneNodeData::CameraStream2D(build_camera_stream_2d(data)))
@@ -1942,7 +1944,7 @@ fn scene_node_data_from(
 
 fn apply_camera_stream_fields(stream: &mut CameraStream, fields: &[SceneObjectField]) {
     SceneFieldIterRef::new(fields).for_each(|name, value| match name {
-        "camera" | "camera_id" | "source_camera" => {
+        "camera" | "camera_id" | "source_camera" | "source" | "webcam" => {
             if let Some(v) = as_node_id(value) {
                 stream.camera = v;
             }
@@ -1990,5 +1992,54 @@ fn apply_camera_stream_fields(stream: &mut CameraStream, fields: &[SceneObjectFi
     });
     stream.resolution.x = stream.resolution.x.clamp(1, 8192);
     stream.resolution.y = stream.resolution.y.clamp(1, 8192);
+}
+
+fn build_webcam(data: &SceneDefNodeData) -> Webcam {
+    let mut node = Webcam::default();
+    SceneFieldIterRef::new(&data.fields).for_each(|name, value| match name {
+        "slot" | "device" | "device_id" | "name" => {
+            if let Some(v) = as_str(value) {
+                node.config.device = v.to_string().into();
+            }
+        }
+        "resolution" => {
+            if let Some(v) = as_vec2(value) {
+                node.config.width = (v.x.max(1.0) as u32).clamp(1, 8192);
+                node.config.height = (v.y.max(1.0) as u32).clamp(1, 8192);
+            }
+        }
+        "width" => {
+            if let Some(v) = as_u32(value) {
+                node.config.width = v.clamp(1, 8192);
+            }
+        }
+        "height" => {
+            if let Some(v) = as_u32(value) {
+                node.config.height = v.clamp(1, 8192);
+            }
+        }
+        "fps" | "frame_rate" => {
+            if let Some(v) = as_u32(value) {
+                node.config.fps = v.clamp(1, 240);
+            }
+        }
+        "mirror" => {
+            if let Some(v) = as_bool(value) {
+                node.config.mirror = v;
+            }
+        }
+        "cpu_frames" | "cpu_frame" | "readback" => {
+            if let Some(v) = as_bool(value) {
+                node.config.cpu_frames = v;
+            }
+        }
+        "enabled" | "active" => {
+            if let Some(v) = as_bool(value) {
+                node.enabled = v;
+            }
+        }
+        _ => {}
+    });
+    node
 }
 

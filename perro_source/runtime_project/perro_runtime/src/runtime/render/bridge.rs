@@ -500,6 +500,7 @@ impl Runtime {
     }
 
     pub(crate) fn note_removed_render_node(&mut self, node: NodeID) {
+        let _ = self.resource_api.release_webcam_node_slot(node);
         self.render_2d.note_removed_node(node);
         self.render_3d.note_removed_node(node);
         self.render_ui.note_removed_node(node);
@@ -537,6 +538,7 @@ impl Runtime {
         let mut post_processing = match &source {
             CameraStreamSourceState::TwoD(camera) => camera.post_processing.to_vec(),
             CameraStreamSourceState::ThreeD(camera) => camera.post_processing.to_vec(),
+            CameraStreamSourceState::Webcam { .. } => Vec::new(),
         };
         post_processing.extend(stream.post_processing.to_effects_vec());
         let (
@@ -569,6 +571,20 @@ impl Runtime {
                 self.collect_camera_stream_point_particles_3d(camera.render_mask, stream_node),
                 self.collect_camera_stream_waters_3d(camera.render_mask, stream_node),
             ),
+            CameraStreamSourceState::Webcam { .. } => (
+                Arc::from([]),
+                Arc::from([]),
+                Arc::from([]),
+                Arc::from([]),
+                Arc::from([]),
+                CameraStreamLighting3DState::default(),
+                Arc::from([]),
+                Arc::from([]),
+            ),
+        };
+        let output_texture = match &source {
+            CameraStreamSourceState::Webcam { texture, .. } => *texture,
+            _ => Self::camera_stream_texture_id(stream_node),
         };
         Some(CameraStreamState {
             source,
@@ -578,7 +594,7 @@ impl Runtime {
             ],
             aspect_ratio: stream.aspect_ratio.max(0.0),
             post_processing: Arc::from(post_processing),
-            output_texture: Self::camera_stream_texture_id(stream_node),
+            output_texture,
             sprites_2d,
             lights_2d,
             point_particles_2d,
@@ -1642,7 +1658,44 @@ impl Runtime {
         camera_node: NodeID,
     ) -> Option<CameraStreamSourceState> {
         if !self.is_effectively_visible(camera_node) {
+            let _ = self.resource_api.release_webcam_node_slot(camera_node);
             return None;
+        }
+        if self.nodes.get(camera_node).is_some_and(
+            |node| matches!(&node.data, SceneNodeData::Webcam(webcam) if !webcam.enabled),
+        ) {
+            let _ = self.resource_api.release_webcam_node_slot(camera_node);
+            return None;
+        }
+        let webcam_data = self
+            .nodes
+            .get(camera_node)
+            .and_then(|node| match &node.data {
+                SceneNodeData::Webcam(webcam) if webcam.enabled => Some(webcam.config.clone()),
+                _ => None,
+            });
+        if let Some(config) = webcam_data {
+            let webcam = self
+                .resource_api
+                .ensure_webcam_node_slot(camera_node, config);
+            let texture = perro_resource_api::sub_apis::WebcamAPI::webcam_texture(
+                self.resource_api.as_ref(),
+                webcam,
+            );
+            let resolution = self
+                .nodes
+                .get(camera_node)
+                .and_then(|node| match &node.data {
+                    SceneNodeData::Webcam(webcam) => {
+                        Some([webcam.config.width.max(1), webcam.config.height.max(1)])
+                    }
+                    _ => None,
+                })
+                .unwrap_or([1, 1]);
+            return Some(CameraStreamSourceState::Webcam {
+                texture,
+                resolution,
+            });
         }
         let camera_data = self
             .nodes

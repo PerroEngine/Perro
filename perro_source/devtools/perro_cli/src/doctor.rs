@@ -2288,7 +2288,7 @@ mod tests {
             report
                 .messages
                 .iter()
-                .any(|msg| msg.contains("Stream.camera wants Node(Camera2D|Camera3D)"))
+                .any(|msg| msg.contains("Stream.camera wants Node(Camera2D|Camera3D|Webcam)"))
         );
     }
 }
