@@ -32,9 +32,11 @@ How blending works (screen-space seam pass):
   times 20 (scale 10 = 0.5 world units per tile).
 - Blend width (`blend_distance`, world units) is distance-compensated in
   screen space and capped at ~20 px so it stays a seam, not a smear.
-- Needs MSAA off (single-sample scene target); with MSAA the engine falls
-  back to the legacy one-sided depth fade. Multimesh sources also use the
-  legacy fade for now.
+- MSAA renders resolve to the single-sample scene target before the seam pass,
+  so sample count does not change the feature class.
+- `MultiMeshInstance3D` batches write stable participant ids into the same
+  mask path as `MeshInstance3D`. The legacy one-sided depth fade remains a
+  compatibility fallback when the screen seam path is disabled.
 
 Why scene works this way:
 
@@ -47,7 +49,8 @@ Why scene works this way:
   and the rocks show one consistent look.
 - Target shapes tag receiver layer `1` but do not fade.
 - Inserted shapes use `blend_mask = none`, so they can fade against any explicit receiver layer.
-- Runtime uses source blend tuning for the contact.
+- Runtime uses source blend tuning for the contact. `MultiMeshInstance3D`
+  sources use the same tuning and mask rules.
 - `blend_enabled` enables screen fade.
 - `blend_normals` enables normal assist where seam smoothing needs it.
 - Fade is depth-gated so only close contact seams fade.

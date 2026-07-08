@@ -1388,6 +1388,7 @@ impl Gpu {
             && self.sample_count > 1
             && !post_requested
             && !accessibility_enabled
+            && !blend_screen_active
             && self.render_format == self.config.format;
         let direct_present = surface_sized_render
             && self.sample_count == 1
@@ -1944,6 +1945,19 @@ impl Gpu {
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
+        }
+        if blend_screen_active
+            && !direct_present
+            && !msaa_direct_present
+            && self.sample_count > 1
+            && let Some(three_d) = self.three_d.as_mut()
+        {
+            three_d.mesh_blend_screen_pass(
+                &self.device,
+                &mut encoder,
+                self.post.scene_texture(),
+                &scene_view,
+            );
         }
         timing.encode_main = encode_start.elapsed();
 

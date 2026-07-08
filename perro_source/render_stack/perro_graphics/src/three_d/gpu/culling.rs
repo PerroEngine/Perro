@@ -411,6 +411,11 @@ impl Gpu3D {
             && base.draw_param_index == next.draw_param_index
             && base.double_sided == next.double_sided
             && base.mesh_blend == next.mesh_blend
+            && base.mesh_blend_screen == next.mesh_blend_screen
+            && base.mesh_blend_params == next.mesh_blend_params
+            && base.mesh_blend_depth == next.mesh_blend_depth
+            && base.blend_layers == next.blend_layers
+            && base.blend_mask == next.blend_mask
             && base.casts_shadows == next.casts_shadows
             && base.material_kind == next.material_kind
     }
@@ -663,6 +668,11 @@ mod tests {
             mesh_local_radius: radius,
             double_sided: false,
             mesh_blend: false,
+            mesh_blend_screen: false,
+            mesh_blend_params: 0,
+            mesh_blend_depth: false,
+            blend_layers: BitMask::ALL.bits(),
+            blend_mask: BitMask::NONE.bits(),
             casts_shadows: true,
             material_kind: MaterialPipelineKind::Standard,
         }
@@ -703,6 +713,19 @@ mod tests {
         assert_eq!(indirect[1].instance_count, 2);
         assert_eq!(indirect[1].first_instance, 3);
         assert_eq!(indirect[1].base_vertex, 2);
+    }
+
+    #[test]
+    fn multimesh_compaction_keeps_screen_blend_participants_separate() {
+        let base = batch(0, 2, 1.0);
+        let mut screen = batch(2, 2, 1.0);
+        screen.mesh.index_start = base.mesh.index_start;
+        screen.draw_param_index = base.draw_param_index;
+        screen.mesh_blend_screen = true;
+        screen.mesh_blend_params = 0x0102_0304;
+        screen.mesh_blend_depth = true;
+
+        assert!(!Gpu3D::can_compact_merge_multimesh_batches(&base, &screen));
     }
 
     fn transform_marked(marker: f32) -> TransformInstanceGpu {

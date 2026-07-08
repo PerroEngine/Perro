@@ -89,7 +89,7 @@ Status keys:
 | Area                       | Status   | Notes                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | -------------------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Mesh rendering             | done     | Mesh instances, surfaces, material bindings, and meshlet path exist.                                                                                                                                                                                                                                                                                                                                                   |
-| Mesh blending              | partial  | Screen-space seam pass exists for `MeshInstance3D` through `blend_enabled`, `blend_layers`, `blend_mask`, and blend distance/noise controls. MSAA falls back to legacy one-sided depth fade, and `MultiMeshInstance3D` still uses the legacy fade path. See the Demo3D mesh blending docs. |
+| Mesh blending              | done     | Screen-space seam pass covers `MeshInstance3D` and `MultiMeshInstance3D` through `blend_enabled`, `blend_layers`, `blend_mask`, and blend distance/noise controls. MSAA resolves through the single-sample scene target before the seam pass. Legacy in-material depth fade remains as the compatibility fallback when the screen seam path is disabled. See the Demo3D mesh blending docs. |
 | `Sprite3D`                 | done     | Floating 3D sprite projected from `Node3D` transform and world-space `size`, with texture, atlas region, flips, tint, render layers, and modulation.                                                                                                                                                                                                         |
 | `Label3D`                  | done     | Floating 3D text label projected from `Node3D` transform and world-space `size`, with `UiLabel` alignment fields and the same locale text binding path as `UiLabel`.                                                                                                                                                                                       |
 | 3D materials               | done     | `.pmat`, glTF `:mat[index]` refs, inline scene materials, runtime load/reserve/create/write APIs, per-surface material bindings, and custom WGSL materials exist. See [Materials Guide](../resources/materials.md).                                                                                                                                                                                                    |
@@ -142,8 +142,7 @@ Status keys:
 
 1. Navmesh MVP.
 2. Automatic retargeting.
-3. Mesh blending polish: MSAA path and multimesh screen-seam path.
-4. 3D shadow controls and dedicated docs.
-5. 2D shadowed lights.
-6. Perro editor release polish and docs.
-7. Joint polish: optional limits/motors/springs if needed.
+3. 3D shadow controls and dedicated docs.
+4. 2D shadowed lights.
+5. Perro editor release polish and docs.
+6. Joint polish: optional limits/motors/springs if needed.

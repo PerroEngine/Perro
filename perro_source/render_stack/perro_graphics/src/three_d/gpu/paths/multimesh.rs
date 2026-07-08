@@ -1,3 +1,4 @@
+use super::mesh_blend_screen::MESH_BLEND_MASK_FORMAT;
 use super::*;
 
 const MULTIMESH_MESH_VERTEX_ATTRIBUTES: [wgpu::VertexAttribute; 2] = [
@@ -182,6 +183,53 @@ pub(super) fn create_multimesh_blend_pipeline(
         wgpu::CompareFunction::LessEqual,
         "fs_main",
     )
+}
+
+pub(super) fn create_multimesh_mask_pipeline(
+    device: &wgpu::Device,
+    pipeline_layout: &wgpu::PipelineLayout,
+    shader: &wgpu::ShaderModule,
+    cull_mode: Option<wgpu::Face>,
+) -> wgpu::RenderPipeline {
+    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("perro_multimesh_mask_pipeline"),
+        layout: Some(pipeline_layout),
+        vertex: wgpu::VertexState {
+            module: shader,
+            entry_point: Some("vs_main"),
+            buffers: &[Some(multimesh_mesh_vertex_layout())],
+            compilation_options: Default::default(),
+        },
+        fragment: Some(wgpu::FragmentState {
+            module: shader,
+            entry_point: Some("fs_mask"),
+            targets: &[Some(wgpu::ColorTargetState {
+                format: MESH_BLEND_MASK_FORMAT,
+                blend: None,
+                write_mask: wgpu::ColorWrites::ALL,
+            })],
+            compilation_options: Default::default(),
+        }),
+        primitive: wgpu::PrimitiveState {
+            topology: wgpu::PrimitiveTopology::TriangleList,
+            strip_index_format: None,
+            front_face: wgpu::FrontFace::Ccw,
+            cull_mode,
+            unclipped_depth: false,
+            polygon_mode: wgpu::PolygonMode::Fill,
+            conservative: false,
+        },
+        depth_stencil: Some(wgpu::DepthStencilState {
+            format: DEPTH_PREPASS_FORMAT,
+            depth_write_enabled: Some(false),
+            depth_compare: Some(wgpu::CompareFunction::LessEqual),
+            stencil: wgpu::StencilState::default(),
+            bias: wgpu::DepthBiasState::default(),
+        }),
+        multisample: wgpu::MultisampleState::default(),
+        multiview_mask: None,
+        cache: None,
+    })
 }
 
 #[allow(clippy::too_many_arguments)]

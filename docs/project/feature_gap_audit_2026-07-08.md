@@ -12,7 +12,7 @@ Scope:
 | Gap | State | Why it matters | Best first ship |
 | --- | --- | --- | --- |
 | Demo2D parity | done | parity zones shipped in Demo2D | keep smoke/web checks current |
-| Mesh blend polish | partial | feature exists but output differs by path | MSAA-safe seam mask + multimesh IDs |
+| Mesh blend polish | done | MSAA and multimesh use the screen seam path | keep renderer tests + Demo3D docs current |
 | 3D shadow controls | partial | shadows work but tuning is hidden | cfg + per-light bias/quality + docs |
 | Navmesh | research | most game-blocking missing gameplay feature | static baked navmesh + path query API |
 | Auto retarget | research | skinned asset reuse limited to exact rig contract | offline retarget bake tool |
@@ -24,15 +24,14 @@ Scope:
 
 ## Priority
 
-1. Mesh blend polish
-2. 3D shadow controls + docs
-3. Navmesh MVP
-4. Auto retarget bake
-5. 2D shadowed lights
-6. Editor release pass
-7. Joint polish
-8. Docs parity
-9. Test/smoke coverage
+1. 3D shadow controls + docs
+2. Navmesh MVP
+3. Auto retarget bake
+4. 2D shadowed lights
+5. Editor release pass
+6. Joint polish
+7. Docs parity
+8. Test/smoke coverage
 
 Reason:
 
@@ -95,11 +94,13 @@ Goal:
 
 - same blend behavior for single mesh, multimesh, and MSAA
 
-Current:
+State:
 
+- done in `feature/mesh-blend-polish`
 - screen-space seam pass works for `MeshInstance3D`
-- MSAA falls back to legacy one-sided depth fade
-- `MultiMeshInstance3D` uses legacy fade
+- MSAA resolves to the single-sample scene target before seam
+- `MultiMeshInstance3D` writes stable batch ids into the seam mask
+- legacy depth fade stays as compatibility fallback when the seam path is disabled
 
 Use:
 
@@ -110,13 +111,13 @@ Use:
 
 Impl:
 
-1. move blend ID/depth mask to single-sample target when MSAA > 1
-2. resolve scene color before seam pass or sample non-MSAA color target
-3. assign stable participant IDs for multimesh batches
-4. write multimesh instance IDs into blend mask path
-5. keep legacy fade as fallback cfg for low-end path
-6. add renderer tests for mask IDs and pass routing
-7. add screenshot captures for MSAA off/on and multimesh
+1. done: move blend ID/depth mask to single-sample target when MSAA > 1
+2. done: resolve scene color before seam pass
+3. done: assign stable participant IDs for multimesh batches
+4. done: write multimesh batch IDs into blend mask path
+5. done: keep legacy fade as fallback cfg for low-end path
+6. done: add renderer tests for mask IDs and pass routing
+7. todo: add screenshot captures for MSAA off/on and multimesh
 
 Done:
 

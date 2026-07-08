@@ -18,7 +18,8 @@ startup_splash = "res://perro.svg"
 aspect_ratio = "16:9"
 vsync = false
 
-# Mesh blend screen-space seam pass needs a single-sample scene target.
+# Mesh blend screen-space seam pass also works with MSAA; keep Demo3D
+# single-sample for stable docs captures and lower GPU load.
 msaa = false
 
 meshlets = false
