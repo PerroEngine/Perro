@@ -15,7 +15,6 @@ pub struct Sprite3D {
     pub texture_region: Option<[f32; 4]>,
     pub flip_x: bool,
     pub flip_y: bool,
-    pub tint: Color,
 }
 
 impl Sprite3D {
@@ -27,7 +26,6 @@ impl Sprite3D {
             texture_region: None,
             flip_x: false,
             flip_y: false,
-            tint: Color::WHITE,
         }
     }
 }

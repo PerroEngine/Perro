@@ -753,7 +753,6 @@ impl Runtime {
                             sprite.texture_region,
                             sprite.flip_x,
                             sprite.flip_y,
-                            sprite.tint,
                             self.effective_self_modulate(node),
                         )),
                         _ => None,
@@ -766,7 +765,6 @@ impl Runtime {
                 texture_region,
                 flip_x,
                 flip_y,
-                tint,
                 modulate,
             )) = sprite_3d_data
             {
@@ -798,7 +796,7 @@ impl Runtime {
                             rect,
                             clip_rect: viewport_clip_3d(overlay_viewport),
                             texture,
-                            tint: Runtime::color_modulate(tint, modulate),
+                            tint: modulate,
                             uv_min,
                             uv_max,
                             scale_mode: UiImageScaleState::Stretch,

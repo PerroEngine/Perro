@@ -299,7 +299,7 @@ See [TileMap2D](tilemap.md).
 - Uses `Node3D` position, rotation, scale, visibility, render layers, and modulation.
 - `size` is world-space width/height before camera projection.
 - Holds a `TextureID` through `texture`; `texture_region` selects an atlas rect.
-- Supports `flip_x`, `flip_y`, and `tint`.
+- Supports `flip_x` and `flip_y`.
 - Unlike `Decal3D`, it does not project onto geometry. It can float in front of or above meshes.
 - Use it for pickups, markers, billboards, damage icons, and world prompts.
 

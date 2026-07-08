@@ -253,6 +253,51 @@ mod tests {
     }
 
     #[test]
+    fn scene_loader_maps_sprite_3d_color_aliases_to_modulate() {
+        let scene = Parser::new(
+            r##"
+            $root = @root
+            [root]
+            [Node3D/]
+            [/root]
+
+            [sprite_tint]
+            [Sprite3D]
+                tint = "#11223344"
+            [/Sprite3D]
+            [/sprite_tint]
+
+            [sprite_color]
+            [Sprite3D]
+                color = "#55667788"
+            [/Sprite3D]
+            [/sprite_color]
+            "##,
+        )
+        .parse_scene();
+
+        let prepared =
+            prepare_scene_with_loader(&scene, &|path| Err(format!("unknown scene path `{path}`")))
+                .expect("prepare scene");
+
+        let sprite_color = |name: &str| {
+            prepared
+                .nodes
+                .iter()
+                .find_map(|pending| match &pending.node.data {
+                    SceneNodeData::Sprite3D(node) if pending.key_name == name => {
+                        Some(node.modulate.modulate)
+                    }
+                    _ => None,
+                })
+                .expect("sprite")
+        };
+
+        assert_eq!(sprite_color("sprite_tint"), Color::from_hex("#11223344").unwrap());
+        assert_eq!(sprite_color("sprite_color"), Color::from_hex("#55667788").unwrap());
+    }
+
+    #[test]
     fn scene_loader_builds_typed_asset_refs() {
         let scene = Parser::new(
             r#"

@@ -124,7 +124,7 @@ fn apply_sprite_3d_fields(node: &mut Sprite3D, fields: &[SceneObjectField]) {
         }
         name if scene_key_in(name, COLOR_MODULATE_KEYS) => {
             if let Some(v) = as_scene_color(value) {
-                node.tint = v;
+                node.modulate.modulate = v;
             }
         }
         _ => {}

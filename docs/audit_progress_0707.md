@@ -140,7 +140,10 @@
   - add: typed scene-doc load/save API + typed runtime scene load/preload API
   - keep: old `Result<_, String>` API as compat wrappers
   - verify: `cargo test -p perro_resource_api`, `cargo test -p perro_runtime_api`, targeted `perro_runtime` typed-handle test, full `cargo check`, full `cargo clippy`, full `cargo test`
-- [ ] 1.1 color vocabulary
+- [x] 1.1 color vocabulary
+  - chg: `Sprite3D` uses base `modulate` instead of local `tint`
+  - keep: scene aliases `tint` + `color` + `modulate`
+  - verify: `cargo check`, targeted `perro_runtime` scene-loader test, targeted `perro_scene` schema test, full `cargo clippy`, full `cargo test`
 - [ ] 1.2 on/off vocabulary
 - [x] 2.1 light colors use `Color`
 - [x] 2.2 typed IDs for string asset refs

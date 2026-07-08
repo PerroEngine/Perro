@@ -980,7 +980,7 @@ fn sprite_fields(fields: &mut Vec<SceneNodeField>, section: &'static str) {
 fn sprite_world_fields(fields: &mut Vec<SceneNodeField>, section: &'static str) {
     sprite_fields(fields, section);
     push(fields, section, "size", NodeFieldType::Vec2);
-    push(fields, section, "tint", NodeFieldType::Color);
+    push(fields, section, "modulate", NodeFieldType::Color);
 }
 
 fn label_world_fields(fields: &mut Vec<SceneNodeField>, section: &'static str) {
@@ -1433,6 +1433,6 @@ mod tests {
         assert!(sprite_3d.iter().any(|field| field.name == "texture"));
         assert!(sprite_3d.iter().any(|field| field.name == "texture_region"));
         assert!(sprite_3d.iter().any(|field| field.name == "size"));
-        assert!(sprite_3d.iter().any(|field| field.name == "tint"));
+        assert!(sprite_3d.iter().any(|field| field.name == "modulate"));
     }
 }
