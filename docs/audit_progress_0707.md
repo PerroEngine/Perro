@@ -86,9 +86,11 @@
   - triage: color picker component formatting runs from color picker sync path, not broad scene extract loop
   - commit: this commit
   - verify: full `cargo check`, full `cargo clippy`, full `cargo test`
-- [ ] 2.6 lock surface
+- [x] 2.6 lock surface
   - partial: skeleton bone cache/pending locks now use `u64` source hash keys, not `String`
   - partial: audio propagation snapshots listener/options once per solve batch, not per active sound
+  - final: remaining lock groups are resource API shared state, async load receivers, audio controller/queues, SVG decode caches, GPU handoff, and test-only guards
+  - triage: replacing resource API `Mutex` with `RefCell` needs a wider `Send`/script API contract change, so not mixed into this audit fix
   - commit: this commit
   - verify: full `cargo check`, full `cargo clippy`, full `cargo test`
 - [ ] 2.7 wgsl prelude triplication
