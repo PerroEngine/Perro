@@ -25,7 +25,7 @@ pub fn collect_files(dir: &Path, base: &Path) -> io::Result<Vec<(String, Vec<u8>
     walk_dir(dir, &mut |path| {
         let rel = path
             .strip_prefix(base)
-            .unwrap()
+            .map_err(|err| io::Error::new(io::ErrorKind::InvalidInput, err))?
             .to_string_lossy()
             .to_string();
         let data = fs::read(path)?;
@@ -43,7 +43,7 @@ pub fn collect_file_paths(dir: &Path, base: &Path) -> io::Result<Vec<String>> {
     walk_dir(dir, &mut |path| {
         let rel = path
             .strip_prefix(base)
-            .unwrap()
+            .map_err(|err| io::Error::new(io::ErrorKind::InvalidInput, err))?
             .to_string_lossy()
             .to_string();
         paths.push(rel);

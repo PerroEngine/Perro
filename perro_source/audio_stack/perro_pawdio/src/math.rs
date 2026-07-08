@@ -1,4 +1,4 @@
-// Pan is a direction cue: rodio's ears sit at x = ±1, so the emitter must live
+// Pan is a direction cue: rodio's ears sit at x = +/-1, so the emitter must live
 // near the unit sphere for audible channel separation. Near-fade keeps close
 // fly-bys from hard-flipping left/right.
 const PAN_RADIUS: f32 = 0.85;

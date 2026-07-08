@@ -230,8 +230,8 @@ impl Seek for PerroAssetsFile {
     fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
         let new_pos = match pos {
             SeekFrom::Start(n) => n,
-            SeekFrom::End(n) => (self.entry.size as i64 + n) as u64,
-            SeekFrom::Current(n) => (self.pos as i64 + n) as u64,
+            SeekFrom::End(n) => checked_seek(self.entry.size, n)?,
+            SeekFrom::Current(n) => checked_seek(self.pos, n)?,
         };
 
         if new_pos > self.entry.size {
@@ -243,5 +243,28 @@ impl Seek for PerroAssetsFile {
 
         self.pos = new_pos;
         Ok(self.pos)
+    }
+}
+
+fn checked_seek(base: u64, offset: i64) -> io::Result<u64> {
+    if offset >= 0 {
+        base.checked_add(offset as u64)
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "seek offset overflow"))
+    } else {
+        base.checked_sub(offset.unsigned_abs())
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "seek before start"))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::checked_seek;
+
+    #[test]
+    fn checked_seek_rejects_wraparound() {
+        assert_eq!(checked_seek(10, 5).unwrap(), 15);
+        assert_eq!(checked_seek(10, -5).unwrap(), 5);
+        assert!(checked_seek(10, -11).is_err());
+        assert!(checked_seek(u64::MAX, 1).is_err());
     }
 }
