@@ -445,6 +445,10 @@ impl<'rt, R: PhysicsAPI + ?Sized> PhysicsModule<'rt, R> {
         self.rt.apply_force_2d(body_id, force)
     }
 
+    pub fn gravity(&mut self) -> f32 {
+        self.get_gravity()
+    }
+
     pub fn get_gravity(&mut self) -> f32 {
         self.rt.get_gravity()
     }
@@ -459,6 +463,10 @@ impl<'rt, R: PhysicsAPI + ?Sized> PhysicsModule<'rt, R> {
 
     pub fn set_body_gravity_scale(&mut self, body_id: NodeID, scale: f32) -> bool {
         self.rt.set_body_gravity_scale(body_id, scale)
+    }
+
+    pub fn coefficient(&mut self) -> f32 {
+        self.get_coefficient()
     }
 
     pub fn get_coefficient(&mut self) -> f32 {
@@ -734,11 +742,19 @@ impl<'rt, R: PhysicsAPI + ?Sized> PhysicsModule<'rt, R> {
     }
 
     pub fn pause(&mut self, paused: bool) {
+        self.set_paused(paused);
+    }
+
+    pub fn set_paused(&mut self, paused: bool) {
         self.rt.physics_pause(paused);
     }
 
     pub fn is_paused(&mut self) -> bool {
         self.rt.physics_is_paused()
+    }
+
+    pub fn paused(&mut self) -> bool {
+        self.is_paused()
     }
 }
 

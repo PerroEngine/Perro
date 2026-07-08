@@ -1494,6 +1494,10 @@ impl<'rt, R: NodeAPI + ?Sized> NodeModule<'rt, R> {
         self.rt.get_node_name(node_id)
     }
 
+    pub fn name(&mut self, node_id: NodeID) -> Option<Cow<'static, str>> {
+        self.get_node_name(node_id)
+    }
+
     pub fn set_node_name<S>(&mut self, node_id: NodeID, name: S) -> bool
     where
         S: Into<Cow<'static, str>>,
@@ -1547,6 +1551,10 @@ impl<'rt, R: NodeAPI + ?Sized> NodeModule<'rt, R> {
 
     pub fn get_node_children_ids(&mut self, node_id: NodeID) -> Option<Vec<NodeID>> {
         self.rt.get_node_children_ids(node_id)
+    }
+
+    pub fn children_ids(&mut self, node_id: NodeID) -> Option<Vec<NodeID>> {
+        self.get_node_children_ids(node_id)
     }
 
     pub fn get_children(&mut self, node_id: NodeID) -> Vec<NodeID> {

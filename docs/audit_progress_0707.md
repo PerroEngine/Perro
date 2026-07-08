@@ -128,7 +128,10 @@
 - [x] 5.2 uniform naming
   - commit: this commit
   - verify: full `cargo check`, full `cargo clippy`, full `cargo test`
-- [ ] 3.1 getter prefix policy
+- [x] 3.1 getter prefix policy
+  - add: bare getter aliases on time/window/node/physics modules
+  - add: `set_paused` + `paused` physics aliases; keep old `pause` + `is_paused`
+  - verify: `cargo test -p perro_runtime_api`, full `cargo check`, full `cargo clippy`, full `cargo test`
 - [x] 3.2 redundant module prefixes
   - commit: this commit
   - verify: full `cargo check`, full `cargo clippy`, full `cargo test`

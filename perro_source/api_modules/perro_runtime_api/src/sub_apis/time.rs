@@ -115,32 +115,64 @@ impl<'rt, R: TimeAPI + ?Sized> TimeModule<'rt, R> {
         Self { rt }
     }
 
+    pub fn delta(&mut self) -> f32 {
+        self.get_delta()
+    }
+
     pub fn get_delta(&mut self) -> f32 {
         self.rt.get_delta()
+    }
+
+    pub fn fixed_delta(&mut self) -> f32 {
+        self.get_fixed_delta()
     }
 
     pub fn get_fixed_delta(&mut self) -> f32 {
         self.rt.get_fixed_delta()
     }
 
+    pub fn elapsed(&mut self) -> f32 {
+        self.get_elapsed()
+    }
+
     pub fn get_elapsed(&mut self) -> f32 {
         self.rt.get_elapsed()
+    }
+
+    pub fn simulation_time(&mut self) -> Duration {
+        self.get_simulation_time()
     }
 
     pub fn get_simulation_time(&mut self) -> Duration {
         self.rt.get_simulation_time()
     }
 
+    pub fn graphics_time(&mut self) -> Duration {
+        self.get_graphics_time()
+    }
+
     pub fn get_graphics_time(&mut self) -> Duration {
         self.rt.get_graphics_time()
+    }
+
+    pub fn frame_time(&mut self) -> Duration {
+        self.get_frame_time()
     }
 
     pub fn get_frame_time(&mut self) -> Duration {
         self.rt.get_frame_time()
     }
 
+    pub fn fps(&mut self) -> f32 {
+        self.get_fps()
+    }
+
     pub fn get_fps(&mut self) -> f32 {
         self.rt.get_fps()
+    }
+
+    pub fn profiling(&mut self) -> ProfilingSnapshot {
+        self.get_profiling()
     }
 
     pub fn get_profiling(&mut self) -> ProfilingSnapshot {
@@ -155,7 +187,7 @@ impl<'rt, R: TimeAPI + ?Sized> TimeModule<'rt, R> {
 #[macro_export]
 macro_rules! delta_time {
     ($ctx:expr) => {
-        $ctx.Time().get_delta()
+        $ctx.Time().delta()
     };
 }
 

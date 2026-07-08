@@ -90,6 +90,10 @@ impl<'rt, R: WindowAPI + ?Sized> WindowModule<'rt, R> {
         self.rt.close_app();
     }
 
+    pub fn active_refresh_rate(&mut self) -> Option<f32> {
+        self.get_active_refresh_rate()
+    }
+
     pub fn get_active_refresh_rate(&mut self) -> Option<f32> {
         self.rt.get_active_refresh_rate()
     }

@@ -1374,6 +1374,33 @@ fn script_macros_typecheck_and_forward() {
 }
 
 #[test]
+fn runtime_api_getter_aliases_forward() {
+    let mut rt = DummyRuntime {
+        state: Box::new(5_i32),
+        gravity: -9.81,
+        coefficient: 0.7,
+    };
+    let mut ctx = RuntimeWindow::new(&mut rt);
+    let id = NodeID::new(42);
+
+    assert_eq!(ctx.Time().delta(), 0.016);
+    assert_eq!(ctx.Time().fixed_delta(), 0.016);
+    assert_eq!(ctx.Time().elapsed(), 1.0);
+    assert_eq!(ctx.Time().simulation_time(), Duration::from_micros(1_000));
+    assert_eq!(ctx.Time().graphics_time(), Duration::from_micros(2_000));
+    assert_eq!(ctx.Time().frame_time(), Duration::from_micros(16_000));
+    assert_eq!(ctx.Time().fps(), 60.0);
+    assert_eq!(ctx.Time().profiling().fps, 60.0);
+    assert_eq!(ctx.Window().active_refresh_rate(), Some(60.0));
+    assert_eq!(ctx.Nodes().name(id), None);
+    assert_eq!(ctx.Nodes().children_ids(id), None);
+    assert_eq!(ctx.Physics().gravity(), -9.81);
+    assert_eq!(ctx.Physics().coefficient(), 0.7);
+    ctx.Physics().set_paused(true);
+    assert!(!ctx.Physics().paused());
+}
+
+#[test]
 fn node_query_iterator_macros_typecheck_and_forward() {
     let ids = vec![NodeID::new(1), NodeID::new(2), NodeID::new(3)];
     let mut rt = DummyRuntime {
