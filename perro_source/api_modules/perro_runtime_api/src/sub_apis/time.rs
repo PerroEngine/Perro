@@ -18,6 +18,11 @@ pub struct ProfilingSnapshot {
     pub draw_calls_2d: u32,
     pub draw_calls_3d: u32,
     pub draw_calls_total: u32,
+    pub sprite_batches_2d: u32,
+    pub sprite_bind_group_switches_2d: u32,
+    pub draw_batches_3d: u32,
+    pub pipeline_switches_3d: u32,
+    pub texture_bind_group_switches_3d: u32,
     pub draw_instances_3d: u32,
     pub draw_material_refs_3d: u32,
     pub skip_prepare_3d: u32,
@@ -59,6 +64,21 @@ pub trait TimeAPI {
     fn get_draw_calls_total(&self) -> u32 {
         0
     }
+    fn get_sprite_batches_2d(&self) -> u32 {
+        0
+    }
+    fn get_sprite_bind_group_switches_2d(&self) -> u32 {
+        0
+    }
+    fn get_draw_batches_3d(&self) -> u32 {
+        0
+    }
+    fn get_pipeline_switches_3d(&self) -> u32 {
+        0
+    }
+    fn get_texture_bind_group_switches_3d(&self) -> u32 {
+        0
+    }
     fn get_draw_instances_3d(&self) -> u32 {
         0
     }
@@ -95,6 +115,11 @@ pub trait TimeAPI {
             draw_calls_2d: self.get_draw_calls_2d(),
             draw_calls_3d: self.get_draw_calls_3d(),
             draw_calls_total: self.get_draw_calls_total(),
+            sprite_batches_2d: self.get_sprite_batches_2d(),
+            sprite_bind_group_switches_2d: self.get_sprite_bind_group_switches_2d(),
+            draw_batches_3d: self.get_draw_batches_3d(),
+            pipeline_switches_3d: self.get_pipeline_switches_3d(),
+            texture_bind_group_switches_3d: self.get_texture_bind_group_switches_3d(),
             draw_instances_3d: self.get_draw_instances_3d(),
             draw_material_refs_3d: self.get_draw_material_refs_3d(),
             skip_prepare_3d: self.get_skip_prepare_3d(),

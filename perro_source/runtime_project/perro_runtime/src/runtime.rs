@@ -295,6 +295,16 @@ pub struct Timing {
     pub draw_calls_3d: u32,
     /// Last measured total draw calls.
     pub draw_calls_total: u32,
+    /// Last measured 2D sprite batches.
+    pub sprite_batches_2d: u32,
+    /// Last measured 2D sprite texture bind switches.
+    pub sprite_bind_group_switches_2d: u32,
+    /// Last measured 3D draw batches.
+    pub draw_batches_3d: u32,
+    /// Last measured 3D pipeline switches.
+    pub pipeline_switches_3d: u32,
+    /// Last measured 3D material texture bind switches.
+    pub texture_bind_group_switches_3d: u32,
     /// Last measured 3D instances.
     pub draw_instances_3d: u32,
     /// Last measured 3D material refs.
@@ -398,6 +408,11 @@ impl Runtime {
                 draw_calls_2d: 0,
                 draw_calls_3d: 0,
                 draw_calls_total: 0,
+                sprite_batches_2d: 0,
+                sprite_bind_group_switches_2d: 0,
+                draw_batches_3d: 0,
+                pipeline_switches_3d: 0,
+                texture_bind_group_switches_3d: 0,
                 draw_instances_3d: 0,
                 draw_material_refs_3d: 0,
                 skip_prepare_3d: 0,

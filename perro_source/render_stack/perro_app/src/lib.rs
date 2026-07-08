@@ -102,6 +102,16 @@ pub struct PresentTiming {
     #[cfg(feature = "profile_heavy")]
     pub draw_calls_total: u32,
     #[cfg(feature = "profile_heavy")]
+    pub sprite_batches_2d: u32,
+    #[cfg(feature = "profile_heavy")]
+    pub sprite_bind_group_switches_2d: u32,
+    #[cfg(feature = "profile_heavy")]
+    pub draw_batches_3d: u32,
+    #[cfg(feature = "profile_heavy")]
+    pub pipeline_switches_3d: u32,
+    #[cfg(feature = "profile_heavy")]
+    pub texture_bind_group_switches_3d: u32,
+    #[cfg(feature = "profile_heavy")]
     pub draw_instances_3d: u32,
     #[cfg(feature = "profile_heavy")]
     pub draw_material_refs_3d: u32,
@@ -177,6 +187,11 @@ impl<B: GraphicsBackend> App<B> {
         self.runtime.time.draw_calls_2d = 0;
         self.runtime.time.draw_calls_3d = 0;
         self.runtime.time.draw_calls_total = 0;
+        self.runtime.time.sprite_batches_2d = 0;
+        self.runtime.time.sprite_bind_group_switches_2d = 0;
+        self.runtime.time.draw_batches_3d = 0;
+        self.runtime.time.pipeline_switches_3d = 0;
+        self.runtime.time.texture_bind_group_switches_3d = 0;
         self.runtime.time.draw_instances_3d = 0;
         self.runtime.time.draw_material_refs_3d = 0;
         self.runtime.time.skip_prepare_3d = 0;
@@ -199,6 +214,12 @@ impl<B: GraphicsBackend> App<B> {
             self.runtime.time.draw_calls_2d = timing.draw_calls_2d;
             self.runtime.time.draw_calls_3d = timing.draw_calls_3d;
             self.runtime.time.draw_calls_total = timing.draw_calls_total;
+            self.runtime.time.sprite_batches_2d = timing.sprite_batches_2d;
+            self.runtime.time.sprite_bind_group_switches_2d = timing.sprite_bind_group_switches_2d;
+            self.runtime.time.draw_batches_3d = timing.draw_batches_3d;
+            self.runtime.time.pipeline_switches_3d = timing.pipeline_switches_3d;
+            self.runtime.time.texture_bind_group_switches_3d =
+                timing.texture_bind_group_switches_3d;
             self.runtime.time.draw_instances_3d = timing.draw_instances_3d;
             self.runtime.time.draw_material_refs_3d = timing.draw_material_refs_3d;
             self.runtime.time.skip_prepare_3d = timing.skip_prepare_3d;
@@ -739,6 +760,28 @@ impl<B: GraphicsBackend> App<B> {
             draw_calls_total: draw_timing
                 .as_ref()
                 .map(|t| t.draw_calls_2d.saturating_add(t.draw_calls_3d))
+                .unwrap_or(0),
+            #[cfg(feature = "profile_heavy")]
+            sprite_batches_2d: draw_timing
+                .as_ref()
+                .map(|t| t.sprite_batches_2d)
+                .unwrap_or(0),
+            #[cfg(feature = "profile_heavy")]
+            sprite_bind_group_switches_2d: draw_timing
+                .as_ref()
+                .map(|t| t.sprite_bind_group_switches_2d)
+                .unwrap_or(0),
+            #[cfg(feature = "profile_heavy")]
+            draw_batches_3d: draw_timing.as_ref().map(|t| t.draw_batches_3d).unwrap_or(0),
+            #[cfg(feature = "profile_heavy")]
+            pipeline_switches_3d: draw_timing
+                .as_ref()
+                .map(|t| t.pipeline_switches_3d)
+                .unwrap_or(0),
+            #[cfg(feature = "profile_heavy")]
+            texture_bind_group_switches_3d: draw_timing
+                .as_ref()
+                .map(|t| t.texture_bind_group_switches_3d)
                 .unwrap_or(0),
             #[cfg(feature = "profile_heavy")]
             draw_instances_3d: draw_timing

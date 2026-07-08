@@ -239,6 +239,11 @@ struct ProfileCsvRow {
     avg_draw_calls_2d: f64,
     avg_draw_calls_3d: f64,
     avg_draw_calls_total: f64,
+    avg_sprite_batches_2d: f64,
+    avg_sprite_bind_group_switches_2d: f64,
+    avg_draw_batches_3d: f64,
+    avg_pipeline_switches_3d: f64,
+    avg_texture_bind_group_switches_3d: f64,
     avg_draw_instances_3d: f64,
     avg_instances_per_draw_3d: f64,
     avg_draw_material_refs_3d: f64,
@@ -269,7 +274,7 @@ impl ProfileCsvWriter {
             .ok()?;
         let _ = writeln!(
             file,
-            "batch_end_frame,frames,sampled_frames,avg_draw_calls_2d,avg_draw_calls_3d,avg_draw_calls_total,avg_draw_instances_3d,avg_instances_per_draw_3d,avg_draw_material_refs_3d,avg_render_commands,avg_dirty_nodes,avg_extract2d_us,avg_extract3d_us,avg_extract_ui_us,avg_drain_commands_us,avg_submit_commands_us,avg_draw_process_us,avg_draw_prep_us,avg_active_meshes,avg_active_materials,avg_active_textures,avg_present_wait_us,avg_frame_us"
+            "batch_end_frame,frames,sampled_frames,avg_draw_calls_2d,avg_draw_calls_3d,avg_draw_calls_total,avg_sprite_batches_2d,avg_sprite_bind_group_switches_2d,avg_draw_batches_3d,avg_pipeline_switches_3d,avg_texture_bind_group_switches_3d,avg_draw_instances_3d,avg_instances_per_draw_3d,avg_draw_material_refs_3d,avg_render_commands,avg_dirty_nodes,avg_extract2d_us,avg_extract3d_us,avg_extract_ui_us,avg_drain_commands_us,avg_submit_commands_us,avg_draw_process_us,avg_draw_prep_us,avg_active_meshes,avg_active_materials,avg_active_textures,avg_present_wait_us,avg_frame_us"
         );
         Some(Self { file })
     }
@@ -277,13 +282,18 @@ impl ProfileCsvWriter {
     fn write(&mut self, row: &ProfileCsvRow) {
         let _ = writeln!(
             self.file,
-            "{},{},{},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6}",
+            "{},{},{},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6}",
             row.batch_end_frame,
             row.frames,
             row.sampled_frames,
             row.avg_draw_calls_2d,
             row.avg_draw_calls_3d,
             row.avg_draw_calls_total,
+            row.avg_sprite_batches_2d,
+            row.avg_sprite_bind_group_switches_2d,
+            row.avg_draw_batches_3d,
+            row.avg_pipeline_switches_3d,
+            row.avg_texture_bind_group_switches_3d,
             row.avg_draw_instances_3d,
             row.avg_instances_per_draw_3d,
             row.avg_draw_material_refs_3d,
@@ -671,6 +681,11 @@ struct BatchHeavyStats {
     draw_calls_2d: u64,
     draw_calls_3d: u64,
     draw_calls_total: u64,
+    sprite_batches_2d: u64,
+    sprite_bind_group_switches_2d: u64,
+    draw_batches_3d: u64,
+    pipeline_switches_3d: u64,
+    texture_bind_group_switches_3d: u64,
     draw_instances_3d: u64,
     draw_material_refs_3d: u64,
     skip_prepare_2d: u64,
@@ -1484,6 +1499,13 @@ impl<B: GraphicsBackend> RunnerState<B> {
             self.batch_heavy.draw_calls_2d += present_timing.draw_calls_2d as u64;
             self.batch_heavy.draw_calls_3d += present_timing.draw_calls_3d as u64;
             self.batch_heavy.draw_calls_total += present_timing.draw_calls_total as u64;
+            self.batch_heavy.sprite_batches_2d += present_timing.sprite_batches_2d as u64;
+            self.batch_heavy.sprite_bind_group_switches_2d +=
+                present_timing.sprite_bind_group_switches_2d as u64;
+            self.batch_heavy.draw_batches_3d += present_timing.draw_batches_3d as u64;
+            self.batch_heavy.pipeline_switches_3d += present_timing.pipeline_switches_3d as u64;
+            self.batch_heavy.texture_bind_group_switches_3d +=
+                present_timing.texture_bind_group_switches_3d as u64;
             self.batch_heavy.draw_instances_3d += present_timing.draw_instances_3d as u64;
             self.batch_heavy.draw_material_refs_3d += present_timing.draw_material_refs_3d as u64;
             self.batch_heavy.render_command_count += present_timing.render_command_count as u64;
@@ -1861,6 +1883,13 @@ impl<B: GraphicsBackend> RunnerState<B> {
             self.batch_heavy.draw_calls_2d += present_timing.draw_calls_2d as u64;
             self.batch_heavy.draw_calls_3d += present_timing.draw_calls_3d as u64;
             self.batch_heavy.draw_calls_total += present_timing.draw_calls_total as u64;
+            self.batch_heavy.sprite_batches_2d += present_timing.sprite_batches_2d as u64;
+            self.batch_heavy.sprite_bind_group_switches_2d +=
+                present_timing.sprite_bind_group_switches_2d as u64;
+            self.batch_heavy.draw_batches_3d += present_timing.draw_batches_3d as u64;
+            self.batch_heavy.pipeline_switches_3d += present_timing.pipeline_switches_3d as u64;
+            self.batch_heavy.texture_bind_group_switches_3d +=
+                present_timing.texture_bind_group_switches_3d as u64;
             self.batch_heavy.draw_instances_3d += present_timing.draw_instances_3d as u64;
             self.batch_heavy.draw_material_refs_3d += present_timing.draw_material_refs_3d as u64;
             self.batch_heavy.render_command_count += present_timing.render_command_count as u64;
@@ -2107,6 +2136,18 @@ impl<B: GraphicsBackend> RunnerState<B> {
                     self.batch_heavy.draw_calls_3d as f64 / self.batch.frames as f64;
                 let avg_draw_calls_total =
                     self.batch_heavy.draw_calls_total as f64 / self.batch.frames as f64;
+                let avg_sprite_batches_2d =
+                    self.batch_heavy.sprite_batches_2d as f64 / self.batch.frames as f64;
+                let avg_sprite_bind_group_switches_2d =
+                    self.batch_heavy.sprite_bind_group_switches_2d as f64
+                        / self.batch.frames as f64;
+                let avg_draw_batches_3d =
+                    self.batch_heavy.draw_batches_3d as f64 / self.batch.frames as f64;
+                let avg_pipeline_switches_3d =
+                    self.batch_heavy.pipeline_switches_3d as f64 / self.batch.frames as f64;
+                let avg_texture_bind_group_switches_3d =
+                    self.batch_heavy.texture_bind_group_switches_3d as f64
+                        / self.batch.frames as f64;
                 let avg_draw_instances_3d =
                     self.batch_heavy.draw_instances_3d as f64 / self.batch.frames as f64;
                 let avg_instances_per_draw_3d = if self.batch_heavy.draw_calls_3d > 0 {
@@ -2237,6 +2278,9 @@ impl<B: GraphicsBackend> RunnerState<B> {
                     pct_skip_prepare_3d_indirect,
                     pct_skip_prepare_3d_cull_inputs
                 );
+                println!(
+                    "renderer counters: sprite_batches=({avg_sprite_batches_2d:.2}) sprite_binds=({avg_sprite_bind_group_switches_2d:.2}) draw_batches3d=({avg_draw_batches_3d:.2}) pipe_sw3d=({avg_pipeline_switches_3d:.2}) tex_sw3d=({avg_texture_bind_group_switches_3d:.2})"
+                );
                 if let Some(csv) = &mut self.profile_csv {
                     let row = ProfileCsvRow {
                         batch_end_frame: self.frame_index,
@@ -2245,6 +2289,11 @@ impl<B: GraphicsBackend> RunnerState<B> {
                         avg_draw_calls_2d,
                         avg_draw_calls_3d,
                         avg_draw_calls_total,
+                        avg_sprite_batches_2d,
+                        avg_sprite_bind_group_switches_2d,
+                        avg_draw_batches_3d,
+                        avg_pipeline_switches_3d,
+                        avg_texture_bind_group_switches_3d,
                         avg_draw_instances_3d,
                         avg_instances_per_draw_3d,
                         avg_draw_material_refs_3d,

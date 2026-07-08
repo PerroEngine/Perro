@@ -64,6 +64,26 @@ impl TimeAPI for Runtime {
         self.time.draw_calls_total
     }
 
+    fn get_sprite_batches_2d(&self) -> u32 {
+        self.time.sprite_batches_2d
+    }
+
+    fn get_sprite_bind_group_switches_2d(&self) -> u32 {
+        self.time.sprite_bind_group_switches_2d
+    }
+
+    fn get_draw_batches_3d(&self) -> u32 {
+        self.time.draw_batches_3d
+    }
+
+    fn get_pipeline_switches_3d(&self) -> u32 {
+        self.time.pipeline_switches_3d
+    }
+
+    fn get_texture_bind_group_switches_3d(&self) -> u32 {
+        self.time.texture_bind_group_switches_3d
+    }
+
     fn get_draw_instances_3d(&self) -> u32 {
         self.time.draw_instances_3d
     }

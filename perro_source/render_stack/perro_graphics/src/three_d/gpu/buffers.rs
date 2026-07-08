@@ -100,9 +100,32 @@ struct AppendPackedLodDataArgs<'a> {
     decoded_surfaces: &'a [MeshRange],
 }
 
+fn material_texture_key_uses_slot(key: &MaterialTextureKey, slot: u32) -> bool {
+    slot != MATERIAL_TEXTURE_NONE && key.slots.contains(&slot)
+}
+
+fn material_texture_key_survives_slot_evict(key: &MaterialTextureKey, slot: u32) -> bool {
+    !material_texture_key_uses_slot(key, slot)
+}
+
 impl Gpu3D {
     pub fn draw_call_count(&self) -> u32 {
         (self.draw_batches.len() + self.multimesh_batches.len()) as u32
+    }
+
+    #[inline]
+    pub fn draw_batch_count(&self) -> u32 {
+        self.perf_counters.draw_batches
+    }
+
+    #[inline]
+    pub fn pipeline_switch_count(&self) -> u32 {
+        self.perf_counters.pipeline_switches
+    }
+
+    #[inline]
+    pub fn texture_bind_group_switch_count(&self) -> u32 {
+        self.perf_counters.texture_bind_group_switches
     }
 
     #[inline]
@@ -261,7 +284,7 @@ impl Gpu3D {
         };
         let Some(source) = source else {
             self.material_textures.remove(&slot);
-            self.material_texture_bind_groups.clear();
+            self.evict_material_texture_bind_groups_for_slot(slot);
             return;
         };
         if self
@@ -277,13 +300,13 @@ impl Gpu3D {
                 (decoded.rgba.clone(), decoded.width, decoded.height)
             } else if resources.has_texture_source(source.as_str()) {
                 self.material_textures.remove(&slot);
-                self.material_texture_bind_groups.clear();
+                self.evict_material_texture_bind_groups_for_slot(slot);
                 return;
             } else if let Some(decoded) = load_texture_rgba(source.as_str()) {
                 decoded
             } else {
                 self.material_textures.remove(&slot);
-                self.material_texture_bind_groups.clear();
+                self.evict_material_texture_bind_groups_for_slot(slot);
                 return;
             };
         let cached = create_cached_material_texture(
@@ -299,7 +322,7 @@ impl Gpu3D {
             },
         );
         self.material_textures.insert(slot, cached);
-        self.material_texture_bind_groups.clear();
+        self.evict_material_texture_bind_groups_for_slot(slot);
     }
 
     fn ensure_material_texture_source(
@@ -322,13 +345,13 @@ impl Gpu3D {
                 (decoded.rgba.clone(), decoded.width, decoded.height)
             } else if resources.has_texture_source(source) {
                 self.material_textures.remove(&slot);
-                self.material_texture_bind_groups.clear();
+                self.evict_material_texture_bind_groups_for_slot(slot);
                 return;
             } else if let Some(decoded) = load_texture_rgba(source) {
                 decoded
             } else {
                 self.material_textures.remove(&slot);
-                self.material_texture_bind_groups.clear();
+                self.evict_material_texture_bind_groups_for_slot(slot);
                 return;
             };
         let cached = create_cached_material_texture(
@@ -344,7 +367,7 @@ impl Gpu3D {
             },
         );
         self.material_textures.insert(slot, cached);
-        self.material_texture_bind_groups.clear();
+        self.evict_material_texture_bind_groups_for_slot(slot);
     }
 
     pub fn upsert_external_material_texture(
@@ -360,7 +383,17 @@ impl Gpu3D {
         let cached =
             create_external_material_texture(device, &self.material_texture_bgl, view, source);
         self.material_textures.insert(slot, cached);
-        self.material_texture_bind_groups.clear();
+        self.evict_material_texture_bind_groups_for_slot(slot);
+    }
+
+    pub fn invalidate_material_texture(&mut self, slot: u32) {
+        self.material_textures.remove(&slot);
+        self.evict_material_texture_bind_groups_for_slot(slot);
+    }
+
+    fn evict_material_texture_bind_groups_for_slot(&mut self, slot: u32) {
+        self.material_texture_bind_groups
+            .retain(|key, _| material_texture_key_survives_slot_evict(key, slot));
     }
 
     pub(super) fn ensure_instance_transform_capacity(
@@ -2217,5 +2250,48 @@ fn pack_packed_lod_vertex(vertex: &MeshVertex, param: &PackedLodParamGpu) -> Pac
             pack_unorm16_local(vertex.uv[0], param.uv_min_extent[0], param.uv_min_extent[2]),
             pack_unorm16_local(vertex.uv[1], param.uv_min_extent[1], param.uv_min_extent[3]),
         ],
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        CUSTOM_MATERIAL_TEXTURE_SLOT_BASE, MATERIAL_TEXTURE_NONE, MaterialTextureKey,
+        material_texture_key_survives_slot_evict,
+    };
+
+    #[test]
+    fn material_texture_slot_evict_targets_matching_keys() {
+        let slot = CUSTOM_MATERIAL_TEXTURE_SLOT_BASE + 3;
+        let other_slot = CUSTOM_MATERIAL_TEXTURE_SLOT_BASE + 4;
+        let affected = MaterialTextureKey {
+            slots: [
+                MATERIAL_TEXTURE_NONE,
+                MATERIAL_TEXTURE_NONE,
+                MATERIAL_TEXTURE_NONE,
+                MATERIAL_TEXTURE_NONE,
+                slot,
+                MATERIAL_TEXTURE_NONE,
+                MATERIAL_TEXTURE_NONE,
+                MATERIAL_TEXTURE_NONE,
+                MATERIAL_TEXTURE_NONE,
+            ],
+        };
+        let unaffected = MaterialTextureKey {
+            slots: [
+                MATERIAL_TEXTURE_NONE,
+                MATERIAL_TEXTURE_NONE,
+                MATERIAL_TEXTURE_NONE,
+                MATERIAL_TEXTURE_NONE,
+                other_slot,
+                MATERIAL_TEXTURE_NONE,
+                MATERIAL_TEXTURE_NONE,
+                MATERIAL_TEXTURE_NONE,
+                MATERIAL_TEXTURE_NONE,
+            ],
+        };
+
+        assert!(!material_texture_key_survives_slot_evict(&affected, slot));
+        assert!(material_texture_key_survives_slot_evict(&unaffected, slot));
     }
 }

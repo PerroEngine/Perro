@@ -538,6 +538,11 @@ pub struct RenderGpuTiming {
     pub gpu_timestamp_water: Duration,
     pub draw_calls_2d: u32,
     pub draw_calls_3d: u32,
+    pub sprite_batches_2d: u32,
+    pub sprite_bind_group_switches_2d: u32,
+    pub draw_batches_3d: u32,
+    pub pipeline_switches_3d: u32,
+    pub texture_bind_group_switches_3d: u32,
     pub skip_prepare_2d: u32,
     pub skip_prepare_3d: u32,
     pub skip_prepare_particles_3d: u32,
@@ -1169,6 +1174,10 @@ impl Gpu {
         }
         if !did_prepare_2d {
             timing.skip_prepare_2d = 1;
+        }
+        if let Some(two_d) = self.two_d.as_ref() {
+            timing.sprite_batches_2d = two_d.sprite_batch_count();
+            timing.sprite_bind_group_switches_2d = two_d.sprite_bind_group_switch_count();
         }
         timing.prepare_2d = prepare_2d_start.elapsed();
 
@@ -2146,6 +2155,11 @@ impl Gpu {
             .as_ref()
             .map(|three_d| three_d.draw_call_count())
             .unwrap_or(0);
+        if let Some(three_d) = self.three_d.as_ref() {
+            timing.draw_batches_3d = three_d.draw_batch_count();
+            timing.pipeline_switches_3d = three_d.pipeline_switch_count();
+            timing.texture_bind_group_switches_3d = three_d.texture_bind_group_switch_count();
+        }
         let present_start = Instant::now();
         if let Some(frame) = frame {
             self.queue.present(frame);

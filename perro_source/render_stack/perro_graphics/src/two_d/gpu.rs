@@ -107,6 +107,12 @@ struct SpritePerfCounters {
     bind_group_switches: u32,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct PointLightStageKey {
+    len: usize,
+    hash: u64,
+}
+
 pub struct Gpu2D {
     camera_bgl: wgpu::BindGroupLayout,
     texture_bgl: wgpu::BindGroupLayout,
@@ -136,6 +142,7 @@ pub struct Gpu2D {
     last_camera: Option<Camera2DUniform>,
     last_sprite_stage: Option<u64>,
     last_sprite_prepare: Option<SpritePrepareKey>,
+    last_point_light_stage: Option<PointLightStageKey>,
     sprite_perf: SpritePerfCounters,
 }
 
@@ -336,6 +343,7 @@ impl Gpu2D {
             last_camera: None,
             last_sprite_stage: None,
             last_sprite_prepare: None,
+            last_point_light_stage: None,
             sprite_perf: SpritePerfCounters::default(),
         }
     }
@@ -392,7 +400,6 @@ impl Gpu2D {
             self.last_sprite_prepare = None;
         }
         self.ensure_rect_instance_capacity(device, upload.draw_count);
-        self.ensure_point_light_instance_capacity(device, point_lights.len());
         if self.last_camera != Some(camera) {
             queue.write_buffer(&self.camera_buffer, 0, bytemuck::bytes_of(&camera));
             self.last_camera = Some(camera);
@@ -551,19 +558,24 @@ impl Gpu2D {
             self.last_sprite_prepare = Some(sprite_key);
         }
 
-        self.point_light_instances.clear();
-        self.point_light_instances.reserve(point_lights.len());
-        for light in point_lights {
-            if let Some(light) = light_2d_gpu(*light) {
-                self.point_light_instances.push(light);
+        let point_light_stage = point_light_stage_key(point_lights);
+        if self.last_point_light_stage != Some(point_light_stage) {
+            self.ensure_point_light_instance_capacity(device, point_lights.len());
+            self.point_light_instances.clear();
+            self.point_light_instances.reserve(point_lights.len());
+            for light in point_lights {
+                if let Some(light) = light_2d_gpu(*light) {
+                    self.point_light_instances.push(light);
+                }
             }
-        }
-        if !self.point_light_instances.is_empty() {
-            queue.write_buffer(
-                &self.point_light_instance_buffer,
-                0,
-                bytemuck::cast_slice(&self.point_light_instances),
-            );
+            if !self.point_light_instances.is_empty() {
+                queue.write_buffer(
+                    &self.point_light_instance_buffer,
+                    0,
+                    bytemuck::cast_slice(&self.point_light_instances),
+                );
+            }
+            self.last_point_light_stage = Some(point_light_stage);
         }
     }
 
@@ -698,6 +710,20 @@ impl Gpu2D {
         &self.camera_bgl
     }
 
+    pub fn invalidate_texture(&mut self, texture: TextureID) {
+        self.sprite_textures.remove(&texture);
+    }
+
+    #[inline]
+    pub fn sprite_batch_count(&self) -> u32 {
+        self.sprite_perf.draw_batches
+    }
+
+    #[inline]
+    pub fn sprite_bind_group_switch_count(&self) -> u32 {
+        self.sprite_perf.bind_group_switches
+    }
+
     #[inline]
     pub fn draw_call_count(&self, rect_draw_count: u32) -> u32 {
         u32::from(rect_draw_count > 0)
@@ -825,6 +851,7 @@ impl Gpu2D {
             mapped_at_creation: false,
         });
         self.point_light_instance_capacity = new_capacity;
+        self.last_point_light_stage = None;
     }
 
     pub fn virtual_size() -> [f32; 2] {
@@ -838,6 +865,65 @@ fn sort_sprite_batch_candidates(candidates: &mut [SpriteBatchCandidate]) {
             &sprite_batch_sort_key(b.z_index, b.texture_key, b.original_order),
         )
     });
+}
+
+fn point_light_stage_key(lights: &[Light2DState]) -> PointLightStageKey {
+    let mut hash = 0xcbf29ce484222325;
+    hash = hash_mix(hash, lights.len() as u64);
+    for light in lights {
+        match *light {
+            Light2DState::Ambient(light) => {
+                hash = hash_mix(hash, 0);
+                hash = hash_f32_slice(hash, &light.color);
+                hash = hash_f32(hash, light.intensity);
+            }
+            Light2DState::Ray(light) => {
+                hash = hash_mix(hash, 1);
+                hash = hash_f32_slice(hash, &light.direction);
+                hash = hash_f32_slice(hash, &light.color);
+                hash = hash_f32(hash, light.intensity);
+                hash = hash_mix(hash, light.z_index as u32 as u64);
+            }
+            Light2DState::Point(light) => {
+                hash = hash_mix(hash, 2);
+                hash = hash_f32_slice(hash, &light.position);
+                hash = hash_f32_slice(hash, &light.color);
+                hash = hash_f32(hash, light.intensity);
+                hash = hash_f32(hash, light.range);
+                hash = hash_mix(hash, light.z_index as u32 as u64);
+            }
+            Light2DState::Spot(light) => {
+                hash = hash_mix(hash, 3);
+                hash = hash_f32_slice(hash, &light.position);
+                hash = hash_f32_slice(hash, &light.direction);
+                hash = hash_f32_slice(hash, &light.color);
+                hash = hash_f32(hash, light.intensity);
+                hash = hash_f32(hash, light.range);
+                hash = hash_f32(hash, light.inner_angle_radians);
+                hash = hash_f32(hash, light.outer_angle_radians);
+                hash = hash_mix(hash, light.z_index as u32 as u64);
+            }
+        }
+    }
+    PointLightStageKey {
+        len: lights.len(),
+        hash,
+    }
+}
+
+fn hash_f32_slice(mut hash: u64, values: &[f32]) -> u64 {
+    for value in values {
+        hash = hash_f32(hash, *value);
+    }
+    hash
+}
+
+fn hash_f32(hash: u64, value: f32) -> u64 {
+    hash_mix(hash, value.to_bits() as u64)
+}
+
+fn hash_mix(hash: u64, value: u64) -> u64 {
+    (hash ^ value).wrapping_mul(0x100000001b3)
 }
 
 #[cfg(test)]
@@ -890,11 +976,11 @@ fn resolve_sprite_geometry(
 #[cfg(test)]
 mod tests {
     use super::{
-        SpriteBatchCandidate, resolve_sprite_geometry, sprite_batch_candidates_sorted,
-        sprite_batch_sort_key,
+        SpriteBatchCandidate, point_light_stage_key, resolve_sprite_geometry,
+        sprite_batch_candidates_sorted, sprite_batch_sort_key,
     };
     use perro_ids::TextureID;
-    use perro_render_bridge::Sprite2DCommand;
+    use perro_render_bridge::{Light2DState, PointLight2DState, Sprite2DCommand};
 
     #[test]
     fn sprite_sort_keeps_z_buckets_and_groups_textures() {
@@ -997,5 +1083,45 @@ mod tests {
             resolve_sprite_geometry(&sprite, 32, 64),
             ([16.0, 8.0], [0.0, 0.0], [32.0, 64.0])
         );
+    }
+
+    #[test]
+    fn point_light_stage_key_changes_on_light_revision_inputs() {
+        let base = [Light2DState::Point(PointLight2DState {
+            position: [10.0, 20.0],
+            color: [1.0, 0.5, 0.25],
+            intensity: 2.0,
+            range: 128.0,
+            z_index: 4,
+        })];
+        let same = [Light2DState::Point(PointLight2DState {
+            position: [10.0, 20.0],
+            color: [1.0, 0.5, 0.25],
+            intensity: 2.0,
+            range: 128.0,
+            z_index: 4,
+        })];
+        let moved = [Light2DState::Point(PointLight2DState {
+            position: [11.0, 20.0],
+            ..match base[0] {
+                Light2DState::Point(light) => light,
+                _ => unreachable!(),
+            }
+        })];
+        let added = [
+            base[0],
+            Light2DState::Point(PointLight2DState {
+                position: [0.0, 0.0],
+                color: [1.0, 1.0, 1.0],
+                intensity: 1.0,
+                range: 64.0,
+                z_index: 0,
+            }),
+        ];
+
+        assert_eq!(point_light_stage_key(&base), point_light_stage_key(&same));
+        assert_ne!(point_light_stage_key(&base), point_light_stage_key(&moved));
+        assert_ne!(point_light_stage_key(&base), point_light_stage_key(&added));
+        assert_ne!(point_light_stage_key(&base), point_light_stage_key(&[]));
     }
 }
