@@ -17,11 +17,17 @@ pub struct PhysicsBoneChain2D {
     pub radius: f32,
     pub collisions: bool,
     pub iterations: u32,
+    #[doc(hidden)]
     pub internal_bones: Vec<usize>,
+    #[doc(hidden)]
     pub internal_positions: Vec<Vector2>,
+    #[doc(hidden)]
     pub internal_prev_positions: Vec<Vector2>,
+    #[doc(hidden)]
     pub internal_rest_world: Vec<Vector2>,
+    #[doc(hidden)]
     pub internal_lengths: Vec<f32>,
+    #[doc(hidden)]
     pub internal_local_positions: Vec<Vector2>,
 }
 

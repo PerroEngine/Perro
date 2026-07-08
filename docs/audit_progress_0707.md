@@ -139,7 +139,9 @@
 - [ ] 2.2 typed IDs for string asset refs
 - [ ] 2.3 nested settings structs
 - [ ] 2.4 base embedding
-- [ ] 2.5 internal state fields
+- [x] 2.5 internal state fields
+  - add: `#[doc(hidden)]` on public runtime-state fields for particle emitters, physics bone chains, and animated sprite frame accumulator
+  - verify: `cargo test -p perro_nodes`, full `cargo check`, full `cargo clippy`, full `cargo test`
 - [ ] 2.6 zero-arg constructors
 - [ ] 3.5 dimension-generic APIs
 - [x] 6.2 variant suffix casing

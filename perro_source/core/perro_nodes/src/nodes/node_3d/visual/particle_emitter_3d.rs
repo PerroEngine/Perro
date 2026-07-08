@@ -27,9 +27,13 @@ pub struct ParticleEmitter3D {
     pub profile: String,
     pub sim_mode: ParticleEmitterSimMode3D,
     pub render_mode: ParticleType,
+    #[doc(hidden)]
     pub internal_simulation_time: f32,
+    #[doc(hidden)]
     pub internal_prev_active: bool,
+    #[doc(hidden)]
     pub internal_finished_emitted: bool,
+    #[doc(hidden)]
     pub internal_lifetime_max: f32,
 }
 

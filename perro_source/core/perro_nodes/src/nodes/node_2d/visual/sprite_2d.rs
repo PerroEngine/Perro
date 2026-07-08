@@ -158,6 +158,7 @@ pub struct AnimatedSprite2D {
     pub fps_scale: f32,
     pub playing: bool,
     pub looping: bool,
+    #[doc(hidden)]
     pub frame_accum: f32,
 }
 
