@@ -141,13 +141,10 @@ impl Runtime {
         let children = scene_node.get_children_ids();
         let child_size = match &scene_node.data {
             SceneNodeData::UiTreeList(list) => self.ui_tree_list_content_size(list, available),
-            _ if ui_auto_layout_from_data(&scene_node.data).is_some() => self
-                .auto_layout_content_size(
-                    children,
-                    available,
-                    ui_auto_layout_from_data(&scene_node.data).unwrap(),
-                ),
-            _ => self.absolute_children_content_size(children, available),
+            _ => match ui_auto_layout_from_data(&scene_node.data) {
+                Some(auto) => self.auto_layout_content_size(children, available, auto),
+                None => self.absolute_children_content_size(children, available),
+            },
         };
         let content = text.x.max(child_size.x);
         let content_h = text.y.max(child_size.y);

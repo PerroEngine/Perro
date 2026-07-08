@@ -270,8 +270,8 @@ impl Runtime {
             || text_input_changed
             || self.has_active_scroll_container_animation();
         if !has_extraction_work {
-            if let Some(timing) = timing {
-                timing.total = total_start.expect("ui timing total start exists").elapsed();
+            if let (Some(timing), Some(total_start)) = (timing, total_start) {
+                timing.total = total_start.elapsed();
             }
             return;
         }
@@ -434,10 +434,8 @@ impl Runtime {
         }
         self.render_ui.auto_layout_computed = auto_layout_computed;
         self.rebuild_visible_interactive_ui_cache(&computed);
-        if let Some(timing) = timing.as_deref_mut() {
-            timing.layout += layout_start
-                .expect("ui layout timing start exists")
-                .elapsed();
+        if let (Some(timing), Some(layout_start)) = (timing.as_deref_mut(), layout_start) {
+            timing.layout += layout_start.elapsed();
         }
 
         // Layout already ran; dirty marks made by these input handlers
@@ -663,10 +661,8 @@ impl Runtime {
             }
         }
         self.remove_no_longer_visible_ui_nodes(&visible_now);
-        if let Some(timing) = timing.as_deref_mut() {
-            timing.commands += commands_start
-                .expect("ui commands timing start exists")
-                .elapsed();
+        if let (Some(timing), Some(commands_start)) = (timing.as_deref_mut(), commands_start) {
+            timing.commands += commands_start.elapsed();
         }
 
         self.render_ui.computed_rects = computed;
@@ -678,8 +674,8 @@ impl Runtime {
         self.render_ui
             .restore_extraction_plan(traversal_ids, command_ids, command_seen);
 
-        if let Some(timing) = timing {
-            timing.total = total_start.expect("ui timing total start exists").elapsed();
+        if let (Some(timing), Some(total_start)) = (timing, total_start) {
+            timing.total = total_start.elapsed();
         }
     }
 
