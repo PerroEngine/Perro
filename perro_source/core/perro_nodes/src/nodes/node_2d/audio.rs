@@ -50,7 +50,14 @@ pub struct AudioEffectZone2D {
 }
 
 impl AudioEffectZone2D {
+    #[deprecated(note = "use AudioEffectZone2D::default()")]
     pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+impl Default for AudioEffectZone2D {
+    fn default() -> Self {
         Self {
             base: Node2D::new(),
             enabled: true,
@@ -58,12 +65,6 @@ impl AudioEffectZone2D {
             bounce: false,
             effects: vec![AudioEffect::new()],
         }
-    }
-}
-
-impl Default for AudioEffectZone2D {
-    fn default() -> Self {
-        Self::new()
     }
 }
 

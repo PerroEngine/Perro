@@ -1,40 +1,40 @@
 use super::*;
 
 pub(super) fn build_audio_mask_2d(data: &SceneDefNodeData) -> AudioMask2D {
-    let mut node = AudioMask2D::new();
+    let mut node = AudioMask2D::default();
     apply_node_2d_data(&mut node.base, data);
     node
 }
 
 pub(super) fn build_audio_effect_zone_2d(data: &SceneDefNodeData) -> AudioEffectZone2D {
-    let mut node = AudioEffectZone2D::new();
+    let mut node = AudioEffectZone2D::default();
     apply_node_2d_data(&mut node.base, data);
     apply_audio_effect_zone_2d_data(&mut node, data);
     node
 }
 
 pub(super) fn build_audio_portal_2d(data: &SceneDefNodeData) -> AudioPortal2D {
-    let mut node = AudioPortal2D::new();
+    let mut node = AudioPortal2D::default();
     apply_node_2d_data(&mut node.base, data);
     apply_audio_portal_2d_data(&mut node, data);
     node
 }
 
 pub(super) fn build_audio_mask_3d(data: &SceneDefNodeData) -> AudioMask3D {
-    let mut node = AudioMask3D::new();
+    let mut node = AudioMask3D::default();
     apply_node_3d_data(&mut node.base, data);
     node
 }
 
 pub(super) fn build_audio_effect_zone_3d(data: &SceneDefNodeData) -> AudioEffectZone3D {
-    let mut node = AudioEffectZone3D::new();
+    let mut node = AudioEffectZone3D::default();
     apply_node_3d_data(&mut node.base, data);
     apply_audio_effect_zone_3d_data(&mut node, data);
     node
 }
 
 pub(super) fn build_audio_portal_3d(data: &SceneDefNodeData) -> AudioPortal3D {
-    let mut node = AudioPortal3D::new();
+    let mut node = AudioPortal3D::default();
     apply_node_3d_data(&mut node.base, data);
     apply_audio_portal_3d_data(&mut node, data);
     node

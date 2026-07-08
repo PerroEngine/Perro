@@ -737,7 +737,7 @@ fn default_ui_node_field_value(field: UiNodeField) -> Option<SceneValue> {
 }
 
 fn default_camera_2d_field_value(field: Camera2DField) -> Option<SceneValue> {
-    let node = Camera2D::new();
+    let node = Camera2D::default();
     Some(match field {
         Camera2DField::Zoom => SceneValue::F32(node.zoom),
         Camera2DField::RenderMask => bit_mask_value(node.render_mask),
@@ -749,7 +749,7 @@ fn default_camera_2d_field_value(field: Camera2DField) -> Option<SceneValue> {
 }
 
 fn default_camera_3d_field_value(field: Camera3DField) -> Option<SceneValue> {
-    let node = Camera3D::new();
+    let node = Camera3D::default();
     Some(match field {
         Camera3DField::Zoom => SceneValue::F32(1.0),
         Camera3DField::RenderMask => bit_mask_value(node.render_mask),
@@ -805,7 +805,7 @@ fn default_mesh_instance_3d_field_value(field: MeshInstance3DField) -> Option<Sc
 
 fn default_character_body_field_value(field: CharacterBodyField) -> Option<SceneValue> {
     // 2d + 3d char defaults match; use 3d node as source
-    let node = CharacterBody3D::new();
+    let node = CharacterBody3D::default();
     Some(match field {
         CharacterBodyField::Enabled => SceneValue::Bool(node.enabled),
         CharacterBodyField::CollisionLayers => bit_mask_value(node.collision_layers),
@@ -817,7 +817,7 @@ fn default_character_body_field_value(field: CharacterBodyField) -> Option<Scene
 }
 
 fn default_static_body_2d_field_value(field: StaticBody2DField) -> Option<SceneValue> {
-    let node = StaticBody2D::new();
+    let node = StaticBody2D::default();
     Some(match field {
         StaticBody2DField::Enabled => SceneValue::Bool(node.enabled),
         StaticBody2DField::CollisionLayers => bit_mask_value(node.collision_layers),
@@ -829,7 +829,7 @@ fn default_static_body_2d_field_value(field: StaticBody2DField) -> Option<SceneV
 }
 
 fn default_static_body_3d_field_value(field: StaticBody3DField) -> Option<SceneValue> {
-    let node = StaticBody3D::new();
+    let node = StaticBody3D::default();
     Some(match field {
         StaticBody3DField::Enabled => SceneValue::Bool(node.enabled),
         StaticBody3DField::CollisionLayers => bit_mask_value(node.collision_layers),
@@ -841,7 +841,7 @@ fn default_static_body_3d_field_value(field: StaticBody3DField) -> Option<SceneV
 }
 
 fn default_rigid_body_2d_field_value(field: RigidBody2DField) -> Option<SceneValue> {
-    let node = RigidBody2D::new();
+    let node = RigidBody2D::default();
     Some(match field {
         RigidBody2DField::Enabled => SceneValue::Bool(node.enabled),
         RigidBody2DField::CollisionLayers => bit_mask_value(node.collision_layers),
@@ -864,7 +864,7 @@ fn default_rigid_body_2d_field_value(field: RigidBody2DField) -> Option<SceneVal
 }
 
 fn default_rigid_body_3d_field_value(field: RigidBody3DField) -> Option<SceneValue> {
-    let node = RigidBody3D::new();
+    let node = RigidBody3D::default();
     Some(match field {
         RigidBody3DField::Enabled => SceneValue::Bool(node.enabled),
         RigidBody3DField::CollisionLayers => bit_mask_value(node.collision_layers),
@@ -886,7 +886,7 @@ fn default_rigid_body_3d_field_value(field: RigidBody3DField) -> Option<SceneVal
 }
 
 fn default_area_2d_field_value(field: Area2DField) -> Option<SceneValue> {
-    let node = Area2D::new();
+    let node = Area2D::default();
     Some(match field {
         Area2DField::Enabled => SceneValue::Bool(node.enabled),
         Area2DField::CollisionLayers => bit_mask_value(node.collision_layers),
@@ -895,7 +895,7 @@ fn default_area_2d_field_value(field: Area2DField) -> Option<SceneValue> {
 }
 
 fn default_area_3d_field_value(field: Area3DField) -> Option<SceneValue> {
-    let node = Area3D::new();
+    let node = Area3D::default();
     Some(match field {
         Area3DField::Enabled => SceneValue::Bool(node.enabled),
         Area3DField::CollisionLayers => bit_mask_value(node.collision_layers),
@@ -906,7 +906,7 @@ fn default_area_3d_field_value(field: Area3DField) -> Option<SceneValue> {
 fn default_physics_force_emitter_2d_field_value(
     field: PhysicsForceEmitterField,
 ) -> Option<SceneValue> {
-    let node = PhysicsForceEmitter2D::new();
+    let node = PhysicsForceEmitter2D::default();
     default_physics_force_emitter_field_value(
         field,
         node.enabled,
@@ -925,7 +925,7 @@ fn default_physics_force_emitter_2d_field_value(
 fn default_physics_force_emitter_3d_field_value(
     field: PhysicsForceEmitterField,
 ) -> Option<SceneValue> {
-    let node = PhysicsForceEmitter3D::new();
+    let node = PhysicsForceEmitter3D::default();
     default_physics_force_emitter_field_value(
         field,
         node.enabled,

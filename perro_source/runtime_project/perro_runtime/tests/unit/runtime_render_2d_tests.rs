@@ -321,7 +321,7 @@ fn water_2d_impacts_use_live_body_pos_not_stale_cached_sample() {
 #[test]
 fn particle_emitter_2d_queues_point_particles() {
     let mut runtime = Runtime::new();
-    let mut emitter = ParticleEmitter2D::new();
+    let mut emitter = ParticleEmitter2D::default();
     emitter.profile = "inline://preset = ballistic\nz = 999\nforce_z = 777".to_string();
     emitter.spawn_rate = 10.0;
     emitter.internal_simulation_time = 0.25;
@@ -975,7 +975,7 @@ fn physics_pause_updates_water_2d_state() {
 #[test]
 fn unchanged_camera_2d_skips_redundant_set_camera() {
     let mut runtime = Runtime::new();
-    let mut camera = Camera2D::new();
+    let mut camera = Camera2D::default();
     camera.active = true;
     camera.zoom = 1.5;
     runtime
@@ -998,7 +998,7 @@ fn unchanged_camera_2d_skips_redundant_set_camera() {
 #[test]
 fn active_camera_2d_emits_set_camera_command() {
     let mut runtime = Runtime::new();
-    let mut camera = Camera2D::new();
+    let mut camera = Camera2D::default();
     camera.active = true;
     camera.zoom = 2.0;
     camera.transform.position.x = 128.0;
@@ -1201,7 +1201,7 @@ fn nine_slice_2d_emits_nine_sprite_tilemap() {
 #[test]
 fn deactivating_last_camera_2d_resets_renderer_camera() {
     let mut runtime = Runtime::new();
-    let mut camera = Camera2D::new();
+    let mut camera = Camera2D::default();
     camera.active = true;
     camera.transform.position.x = 128.0;
     let camera_node = runtime
@@ -1229,7 +1229,7 @@ fn deactivating_last_camera_2d_resets_renderer_camera() {
 #[test]
 fn camera_2d_render_mask_filters_sprites() {
     let mut runtime = Runtime::new();
-    let mut camera = Camera2D::new();
+    let mut camera = Camera2D::default();
     camera.active = true;
     camera.render_mask = BitMask::with([3]);
     runtime
@@ -1268,7 +1268,7 @@ fn camera_2d_render_mask_filters_sprites() {
 #[test]
 fn camera_2d_move_does_not_rewalk_sprite_render_layers() {
     let mut runtime = Runtime::new();
-    let mut camera = Camera2D::new();
+    let mut camera = Camera2D::default();
     camera.active = true;
     let camera_node = runtime
         .nodes
@@ -1307,14 +1307,14 @@ fn camera_2d_move_does_not_rewalk_sprite_render_layers() {
 fn active_camera_2d_change_via_node_api_forces_full_rescan() {
     let mut runtime = Runtime::new();
 
-    let mut camera_a = Camera2D::new();
+    let mut camera_a = Camera2D::default();
     camera_a.active = true;
     camera_a.render_mask = BitMask::with([1]);
     let camera_a = runtime
         .nodes
         .insert(SceneNode::new(SceneNodeData::Camera2D(camera_a)));
 
-    let mut camera_b = Camera2D::new();
+    let mut camera_b = Camera2D::default();
     camera_b.active = false;
     camera_b.render_mask = BitMask::with([2]);
     let camera_b = runtime

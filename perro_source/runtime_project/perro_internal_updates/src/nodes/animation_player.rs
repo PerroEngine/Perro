@@ -1602,7 +1602,7 @@ mod tests {
             Quaternion::new(0.0, 0.0, 0.70710677, 0.70710677),
             Vector3::ONE,
         );
-        let mut skeleton = Skeleton3D::new();
+        let mut skeleton = Skeleton3D::default();
         skeleton.bones.push(Bone3D {
             rest,
             pose: rest,
@@ -1638,7 +1638,7 @@ mod tests {
         );
         let delta = Quaternion::new(0.0, 0.0, 0.300706, 0.953717);
         let pose = Transform3D::new(Vector3::ZERO, delta, Vector3::ZERO);
-        let mut skeleton = Skeleton3D::new();
+        let mut skeleton = Skeleton3D::default();
         skeleton.bones.push(Bone3D {
             rest,
             pose: rest,

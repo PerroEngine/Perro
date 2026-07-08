@@ -43,7 +43,14 @@ impl DerefMut for ParticleEmitter2D {
 }
 
 impl ParticleEmitter2D {
+    #[deprecated(note = "use ParticleEmitter2D::default()")]
     pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+impl Default for ParticleEmitter2D {
+    fn default() -> Self {
         Self {
             base: Node2D::new(),
             active: true,
@@ -59,11 +66,5 @@ impl ParticleEmitter2D {
             internal_finished_emitted: false,
             internal_lifetime_max: 1.0,
         }
-    }
-}
-
-impl Default for ParticleEmitter2D {
-    fn default() -> Self {
-        Self::new()
     }
 }

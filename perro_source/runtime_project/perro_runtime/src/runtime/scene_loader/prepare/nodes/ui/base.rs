@@ -141,7 +141,7 @@ fn build_ui_nine_slice(data: &SceneDefNodeData) -> UiNineSlice {
 }
 
 fn build_ui_camera_stream(data: &SceneDefNodeData) -> UiCameraStream {
-    let mut node = UiCameraStream::new();
+    let mut node = UiCameraStream::default();
     if let Some(base) = data.base_ref() {
         apply_ui_root_data(&mut node.base, base);
     }

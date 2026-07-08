@@ -50,7 +50,14 @@ pub struct AudioEffectZone3D {
 }
 
 impl AudioEffectZone3D {
+    #[deprecated(note = "use AudioEffectZone3D::default()")]
     pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+impl Default for AudioEffectZone3D {
+    fn default() -> Self {
         Self {
             base: Node3D::new(),
             enabled: true,
@@ -58,12 +65,6 @@ impl AudioEffectZone3D {
             bounce: false,
             effects: vec![AudioEffect::new()],
         }
-    }
-}
-
-impl Default for AudioEffectZone3D {
-    fn default() -> Self {
-        Self::new()
     }
 }
 

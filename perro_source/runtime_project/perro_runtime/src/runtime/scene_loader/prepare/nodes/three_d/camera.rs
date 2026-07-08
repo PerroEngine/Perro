@@ -1,5 +1,5 @@
 fn build_camera_3d(data: &SceneDefNodeData) -> Camera3D {
-    let mut node = Camera3D::new();
+    let mut node = Camera3D::default();
     if let Some(base) = data.base_ref() {
         apply_node_3d_data(&mut node, base);
     }

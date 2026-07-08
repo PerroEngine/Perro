@@ -16,7 +16,14 @@ pub struct CameraStream {
 }
 
 impl CameraStream {
+    #[deprecated(note = "use CameraStream::default()")]
     pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+impl Default for CameraStream {
+    fn default() -> Self {
         Self {
             camera: NodeID::nil(),
             resolution: UVector2::new(512, 512),
@@ -25,12 +32,6 @@ impl CameraStream {
             post_processing: PostProcessSet::new(),
             enabled: true,
         }
-    }
-}
-
-impl Default for CameraStream {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
@@ -43,19 +44,20 @@ pub struct UiCameraStream {
 }
 
 impl UiCameraStream {
+    #[deprecated(note = "use UiCameraStream::default()")]
     pub fn new() -> Self {
-        Self {
-            base: UiNode::new(),
-            stream: CameraStream::new(),
-            tint: Color::WHITE,
-            corner_radius: 0.0,
-        }
+        Self::default()
     }
 }
 
 impl Default for UiCameraStream {
     fn default() -> Self {
-        Self::new()
+        Self {
+            base: UiNode::new(),
+            stream: CameraStream::default(),
+            tint: Color::WHITE,
+            corner_radius: 0.0,
+        }
     }
 }
 
@@ -91,18 +93,19 @@ pub struct CameraStream2D {
 }
 
 impl CameraStream2D {
+    #[deprecated(note = "use CameraStream2D::default()")]
     pub fn new() -> Self {
-        Self {
-            base: Node2D::new(),
-            stream: CameraStream::new(),
-            tint: Color::WHITE,
-        }
+        Self::default()
     }
 }
 
 impl Default for CameraStream2D {
     fn default() -> Self {
-        Self::new()
+        Self {
+            base: Node2D::new(),
+            stream: CameraStream::default(),
+            tint: Color::WHITE,
+        }
     }
 }
 
@@ -129,19 +132,20 @@ pub struct CameraStream3D {
 }
 
 impl CameraStream3D {
+    #[deprecated(note = "use CameraStream3D::default()")]
     pub fn new() -> Self {
-        Self {
-            base: Node3D::new(),
-            stream: CameraStream::new(),
-            size: [1.0, 1.0],
-            tint: Color::WHITE,
-        }
+        Self::default()
     }
 }
 
 impl Default for CameraStream3D {
     fn default() -> Self {
-        Self::new()
+        Self {
+            base: Node3D::new(),
+            stream: CameraStream::default(),
+            size: [1.0, 1.0],
+            tint: Color::WHITE,
+        }
     }
 }
 

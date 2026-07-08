@@ -1665,7 +1665,7 @@ fn multi_mesh_instance_passes_instance_scale_to_dense_draw() {
 fn skinned_mesh_palette_uses_bone_pose_not_rest() {
     let mut runtime = Runtime::new();
 
-    let mut skeleton = Skeleton3D::new();
+    let mut skeleton = Skeleton3D::default();
     skeleton.bones = vec![Bone3D {
         rest: Transform3D::IDENTITY,
         pose: Transform3D::new(
@@ -1711,7 +1711,7 @@ fn skinned_mesh_palette_uses_bone_pose_not_rest() {
 fn dirty_skeleton_refreshes_sibling_skinned_mesh_draw() {
     let mut runtime = Runtime::new();
 
-    let mut skeleton = Skeleton3D::new();
+    let mut skeleton = Skeleton3D::default();
     skeleton.bones = vec![Bone3D {
         pose: Transform3D::IDENTITY,
         ..Bone3D::new()
@@ -1758,7 +1758,7 @@ fn dirty_skeleton_refreshes_sibling_skinned_mesh_draw() {
 #[test]
 fn active_camera_3d_emits_set_camera_command() {
     let mut runtime = Runtime::new();
-    let mut camera = Camera3D::new();
+    let mut camera = Camera3D::default();
     camera.active = true;
     camera.projection = CameraProjection::Orthographic {
         size: 24.0,
@@ -1798,7 +1798,7 @@ fn active_camera_3d_emits_set_camera_command() {
 #[test]
 fn deactivating_last_camera_3d_resets_renderer_camera() {
     let mut runtime = Runtime::new();
-    let mut camera = Camera3D::new();
+    let mut camera = Camera3D::default();
     camera.active = true;
     camera.transform.position.x = 12.0;
     let camera_node = runtime
@@ -1856,7 +1856,7 @@ fn newly_activated_camera_3d_wins_over_higher_slot_old_camera() {
 #[test]
 fn camera_3d_render_mask_filters_meshes() {
     let mut runtime = Runtime::new();
-    let mut camera = Camera3D::new();
+    let mut camera = Camera3D::default();
     camera.active = true;
     camera.render_mask = BitMask::with([2]);
     let camera_node = runtime
@@ -1898,7 +1898,7 @@ fn camera_3d_render_mask_filters_meshes() {
 #[test]
 fn camera_3d_move_does_not_rewalk_mesh_render_layers() {
     let mut runtime = Runtime::new();
-    let mut camera = Camera3D::new();
+    let mut camera = Camera3D::default();
     camera.active = true;
     let camera_node = runtime
         .nodes
@@ -1986,7 +1986,7 @@ fn active_ambient_light_3d_emits_set_ambient_light_command() {
 #[test]
 fn active_sky_3d_emits_set_sky_command() {
     let mut runtime = Runtime::new();
-    let mut sky = Sky3D::new();
+    let mut sky = Sky3D::default();
     sky.day_colors = vec![[0.4, 0.6, 0.9], [0.9, 0.95, 1.0]];
     sky.evening_colors = vec![[0.95, 0.45, 0.22], [0.7, 0.2, 0.35]];
     sky.night_colors = vec![[0.01, 0.02, 0.05], [0.04, 0.08, 0.18]];
@@ -2019,7 +2019,7 @@ fn active_sky_3d_emits_set_sky_command() {
 #[test]
 fn unchanged_sky_3d_does_not_reemit_set_sky_command() {
     let mut runtime = Runtime::new();
-    let mut sky = Sky3D::new();
+    let mut sky = Sky3D::default();
     sky.day_colors = vec![[0.4, 0.6, 0.9], [0.9, 0.95, 1.0]];
     sky.active = true;
     let node = runtime
@@ -2048,7 +2048,7 @@ fn unchanged_sky_3d_does_not_reemit_set_sky_command() {
 
 #[test]
 fn sky_3d_state_matches_compares_all_fields() {
-    let mut sky = Sky3D::new();
+    let mut sky = Sky3D::default();
     sky.day_colors = vec![[0.1, 0.2, 0.3]];
     sky.evening_colors = vec![[0.4, 0.5, 0.6]];
     sky.night_colors = vec![[0.7, 0.8, 0.9]];
@@ -2211,7 +2211,7 @@ fn collision_shape_debug_rebuilds_when_parent_moves() {
         .nodes
         .insert(SceneNode::new(SceneNodeData::Node3D(parent_node)));
 
-    let mut collision = perro_nodes::CollisionShape3D::new();
+    let mut collision = perro_nodes::CollisionShape3D::default();
     collision.debug = true;
     collision.shape = Shape3D::Cube {
         size: Vector3::new(2.0, 2.0, 2.0),

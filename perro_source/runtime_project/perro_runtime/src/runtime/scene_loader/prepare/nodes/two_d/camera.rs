@@ -1,5 +1,5 @@
 fn build_camera_2d(data: &SceneDefNodeData) -> Camera2D {
-    let mut node = Camera2D::new();
+    let mut node = Camera2D::default();
     if let Some(base) = data.base_ref() {
         apply_node_2d_data(&mut node, base);
     }

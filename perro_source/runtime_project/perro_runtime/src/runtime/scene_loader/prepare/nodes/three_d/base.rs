@@ -5,7 +5,7 @@ fn build_node_3d(data: &SceneDefNodeData) -> Node3D {
 }
 
 fn build_camera_stream_3d(data: &SceneDefNodeData) -> CameraStream3D {
-    let mut node = CameraStream3D::new();
+    let mut node = CameraStream3D::default();
     if let Some(base) = data.base_ref() {
         apply_node_3d_data(&mut node, base);
     }
@@ -307,7 +307,7 @@ fn apply_text_decal_3d_fields(node: &mut TextDecal3D, fields: &[SceneObjectField
 }
 
 fn build_skeleton_3d(data: &SceneDefNodeData) -> Skeleton3D {
-    let mut node = Skeleton3D::new();
+    let mut node = Skeleton3D::default();
     if let Some(base) = data.base_ref() {
         apply_node_3d_data(&mut node, base);
     }

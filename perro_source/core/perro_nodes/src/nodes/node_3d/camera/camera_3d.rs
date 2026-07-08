@@ -28,7 +28,14 @@ pub struct Camera3D {
 
 impl Default for Camera3D {
     fn default() -> Self {
-        Self::new()
+        Self {
+            base: Node3D::new(),
+            active: false,
+            render_mask: BitMask::NONE,
+            projection: CameraProjection::default(),
+            post_processing: PostProcessSet::new(),
+            audio_options: AudioListenerOptions::new(),
+        }
     }
 }
 
@@ -99,19 +106,9 @@ impl CameraProjection {
 }
 
 impl Camera3D {
+    #[deprecated(note = "use Camera3D::default()")]
     pub fn new() -> Self {
-        Self {
-            base: Node3D::new(),
-            active: false,
-            render_mask: BitMask::NONE,
-            projection: CameraProjection::Perspective {
-                fov_y_degrees: 60.0,
-                near: 0.1,
-                far: 1_000_000.0,
-            },
-            post_processing: PostProcessSet::new(),
-            audio_options: AudioListenerOptions::new(),
-        }
+        Self::default()
     }
 
     pub fn set_projection(&mut self, projection: CameraProjection) {

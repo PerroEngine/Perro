@@ -249,7 +249,7 @@ fn create_nodes_accepts_multi_root_mixed_collection() {
                 },
                 {
                     name = "camera",
-                    node = Camera2D::new(),
+                    node = Camera2D::default(),
                 },
             ],
         },
@@ -723,7 +723,7 @@ fn create_nodes_handles_10k_children_and_transform_propagation() {
 fn skeleton_bone_lookup_helpers_return_name_and_index() {
     let mut runtime = Runtime::new();
 
-    let mut skeleton = Skeleton3D::new();
+    let mut skeleton = Skeleton3D::default();
     skeleton.bones = vec![
         Bone3D {
             name: "Root".into(),
@@ -804,7 +804,7 @@ fn get_set_global_transform_3d_works_under_scaled_parent() {
 fn bone_attachment_3d_follows_skeleton_bone_global_transform() {
     let mut runtime = Runtime::new();
 
-    let mut skeleton = Skeleton3D::new();
+    let mut skeleton = Skeleton3D::default();
     skeleton.transform.position = Vector3::new(10.0, 0.0, 0.0);
     skeleton.bones = vec![
         Bone3D {
@@ -870,7 +870,7 @@ fn bone_attachment_3d_follows_skeleton_bone_global_transform() {
 fn bone_attachment_3d_child_follows_bone_global_transform() {
     let mut runtime = Runtime::new();
 
-    let mut skeleton = Skeleton3D::new();
+    let mut skeleton = Skeleton3D::default();
     skeleton.transform.position = Vector3::new(10.0, 0.0, 0.0);
     skeleton.bones = vec![Bone3D {
         rest: Transform3D::new(

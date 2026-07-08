@@ -15,7 +15,7 @@ use perro_structs::{Quaternion, Transform3D, Vector3};
 
 /// A parent-before-child bone chain with non-trivial pose + bind transforms.
 fn make_skeleton(bone_count: usize) -> Skeleton3D {
-    let mut skeleton = Skeleton3D::new();
+    let mut skeleton = Skeleton3D::default();
     skeleton.bones = (0..bone_count)
         .map(|i| {
             let parent = if i == 0 { -1 } else { i as i32 - 1 };

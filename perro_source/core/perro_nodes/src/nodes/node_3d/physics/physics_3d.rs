@@ -23,14 +23,15 @@ pub struct PhysicsForceEmitter3D {
     pub age: f32,
 }
 
-impl Default for PhysicsForceEmitter3D {
-    fn default() -> Self {
-        Self::new()
+impl PhysicsForceEmitter3D {
+    #[deprecated(note = "use PhysicsForceEmitter3D::default()")]
+    pub fn new() -> Self {
+        Self::default()
     }
 }
 
-impl PhysicsForceEmitter3D {
-    pub fn new() -> Self {
+impl Default for PhysicsForceEmitter3D {
+    fn default() -> Self {
         Self {
             base: Node3D::new(),
             enabled: true,

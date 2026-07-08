@@ -5,7 +5,7 @@ fn build_node_2d(data: &SceneDefNodeData) -> Node2D {
 }
 
 fn build_camera_stream_2d(data: &SceneDefNodeData) -> CameraStream2D {
-    let mut node = CameraStream2D::new();
+    let mut node = CameraStream2D::default();
     if let Some(base) = data.base_ref() {
         apply_node_2d_data(&mut node, base);
     }
@@ -23,7 +23,7 @@ fn build_camera_stream_2d(data: &SceneDefNodeData) -> CameraStream2D {
 }
 
 fn build_skeleton_2d(data: &SceneDefNodeData) -> Skeleton2D {
-    let mut node = Skeleton2D::new();
+    let mut node = Skeleton2D::default();
     if let Some(base) = data.base_ref() {
         apply_node_2d_data(&mut node, base);
     }

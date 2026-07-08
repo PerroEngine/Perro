@@ -19,7 +19,7 @@ fn build_label_2d(data: &SceneDefNodeData) -> Label2D {
 }
 
 fn build_button_2d(data: &SceneDefNodeData) -> Button2D {
-    let mut node = Button2D::new();
+    let mut node = Button2D::default();
     if let Some(base) = data.base_ref() {
         apply_node_2d_data(&mut node, base);
     }
@@ -29,7 +29,7 @@ fn build_button_2d(data: &SceneDefNodeData) -> Button2D {
 }
 
 fn build_image_button_2d(data: &SceneDefNodeData) -> ImageButton2D {
-    let mut node = ImageButton2D::new();
+    let mut node = ImageButton2D::default();
     if let Some(base) = data.base_ref() {
         apply_node_2d_data(&mut node, base);
     }

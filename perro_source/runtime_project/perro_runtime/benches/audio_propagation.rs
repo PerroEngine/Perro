@@ -219,21 +219,21 @@ fn runtime_2d_with_decoys(
                 runtime
                     .nodes
                     .insert(SceneNode::new(SceneNodeData::AudioMask2D(
-                        AudioMask2D::new(),
+                        AudioMask2D::default(),
                     )));
             }
             1 => {
                 runtime
                     .nodes
                     .insert(SceneNode::new(SceneNodeData::AudioEffectZone2D(
-                        AudioEffectZone2D::new(),
+                        AudioEffectZone2D::default(),
                     )));
             }
             _ => {
                 runtime
                     .nodes
                     .insert(SceneNode::new(SceneNodeData::AudioPortal2D(
-                        AudioPortal2D::new(),
+                        AudioPortal2D::default(),
                     )));
             }
         }

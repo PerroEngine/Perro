@@ -31,14 +31,15 @@ pub struct PhysicsForceEmitter2D {
     pub age: f32,
 }
 
-impl Default for PhysicsForceEmitter2D {
-    fn default() -> Self {
-        Self::new()
+impl PhysicsForceEmitter2D {
+    #[deprecated(note = "use PhysicsForceEmitter2D::default()")]
+    pub fn new() -> Self {
+        Self::default()
     }
 }
 
-impl PhysicsForceEmitter2D {
-    pub fn new() -> Self {
+impl Default for PhysicsForceEmitter2D {
+    fn default() -> Self {
         Self {
             base: Node2D::new(),
             enabled: true,

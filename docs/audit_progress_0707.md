@@ -145,7 +145,11 @@
 - [x] 2.5 internal state fields
   - add: `#[doc(hidden)]` on public runtime-state fields for particle emitters, physics bone chains, and animated sprite frame accumulator
   - verify: `cargo test -p perro_nodes`, full `cargo check`, full `cargo clippy`, full `cargo test`
-- [ ] 2.6 zero-arg constructors
+- [x] 2.6 zero-arg constructors
+  - chg: engine call sites use `Default` for zero-arg node construction
+  - add: deprecation notes on non-const zero-arg `new()` aliases
+  - keep: `new()` compat aliases; keep const constructors where useful
+  - verify: `cargo test -p perro_nodes`, targeted node/scene/runtime/internal tests, full `cargo check`, full `cargo clippy`, full `cargo test`
 - [ ] 3.5 dimension-generic APIs
 - [x] 6.2 variant suffix casing
   - add: `Variant::as_transform2()` + `as_transform3()` digit-suffix aliases

@@ -28,12 +28,6 @@ pub struct Camera2D {
 
 impl Default for Camera2D {
     fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl Camera2D {
-    pub fn new() -> Self {
         Self {
             base: Node2D::new(),
             zoom: 0f32,
@@ -42,6 +36,13 @@ impl Camera2D {
             post_processing: PostProcessSet::new(),
             audio_options: AudioListenerOptions::new(),
         }
+    }
+}
+
+impl Camera2D {
+    #[deprecated(note = "use Camera2D::default()")]
+    pub fn new() -> Self {
+        Self::default()
     }
 }
 

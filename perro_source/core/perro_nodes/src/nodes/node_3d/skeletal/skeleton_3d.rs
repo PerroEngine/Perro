@@ -51,12 +51,9 @@ pub struct Skeleton3D {
 }
 
 impl Skeleton3D {
+    #[deprecated(note = "use Skeleton3D::default()")]
     pub fn new() -> Self {
-        Self {
-            base: Node3D::new(),
-            bones: Vec::new(),
-            inv_bind_mats: Vec::new(),
-        }
+        Self::default()
     }
 
     /// Rebuild the derived inverse-bind matrix lane from `bones`. Cheap (one
@@ -95,7 +92,7 @@ mod tests {
 
     #[test]
     fn refresh_inv_bind_cache_matches_inline_conversion() {
-        let mut skeleton = Skeleton3D::new();
+        let mut skeleton = Skeleton3D::default();
         // Non-identity inv_bind so a stale/identity lane would be caught.
         let inv_bind = Transform3D::new(
             Vector3::new(1.0, -2.0, 3.0),

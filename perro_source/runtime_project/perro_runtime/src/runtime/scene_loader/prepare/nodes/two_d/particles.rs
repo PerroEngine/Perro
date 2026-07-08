@@ -1,5 +1,5 @@
 fn build_particle_emitter_2d(data: &SceneDefNodeData) -> ParticleEmitter2D {
-    let mut node = ParticleEmitter2D::new();
+    let mut node = ParticleEmitter2D::default();
     if let Some(base) = data.base_ref() {
         apply_node_2d_data(&mut node, base);
     }

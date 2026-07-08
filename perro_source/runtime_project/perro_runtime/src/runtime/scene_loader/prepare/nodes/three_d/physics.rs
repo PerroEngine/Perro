@@ -1,5 +1,5 @@
 fn build_collision_shape_3d(data: &SceneDefNodeData) -> CollisionShape3D {
-    let mut node = CollisionShape3D::new();
+    let mut node = CollisionShape3D::default();
     if let Some(base) = data.base_ref() {
         apply_node_3d_data(&mut node, base);
     }
@@ -9,7 +9,7 @@ fn build_collision_shape_3d(data: &SceneDefNodeData) -> CollisionShape3D {
 }
 
 fn build_static_body_3d(data: &SceneDefNodeData) -> StaticBody3D {
-    let mut node = StaticBody3D::new();
+    let mut node = StaticBody3D::default();
     if let Some(base) = data.base_ref() {
         apply_node_3d_data(&mut node, base);
     }
@@ -19,7 +19,7 @@ fn build_static_body_3d(data: &SceneDefNodeData) -> StaticBody3D {
 }
 
 fn build_rigid_body_3d(data: &SceneDefNodeData) -> RigidBody3D {
-    let mut node = RigidBody3D::new();
+    let mut node = RigidBody3D::default();
     if let Some(base) = data.base_ref() {
         apply_node_3d_data(&mut node, base);
     }
@@ -29,7 +29,7 @@ fn build_rigid_body_3d(data: &SceneDefNodeData) -> RigidBody3D {
 }
 
 fn build_character_body_3d(data: &SceneDefNodeData) -> CharacterBody3D {
-    let mut node = CharacterBody3D::new();
+    let mut node = CharacterBody3D::default();
     if let Some(base) = data.base_ref() {
         apply_node_3d_data(&mut node, base);
     }
@@ -77,7 +77,7 @@ fn apply_character_body_3d_fields(node: &mut CharacterBody3D, fields: &[SceneObj
 }
 
 fn build_physics_force_emitter_3d(data: &SceneDefNodeData) -> PhysicsForceEmitter3D {
-    let mut node = PhysicsForceEmitter3D::new();
+    let mut node = PhysicsForceEmitter3D::default();
     if let Some(base) = data.base_ref() {
         apply_node_3d_data(&mut node, base);
     }
@@ -87,7 +87,7 @@ fn build_physics_force_emitter_3d(data: &SceneDefNodeData) -> PhysicsForceEmitte
 }
 
 fn build_area_3d(data: &SceneDefNodeData) -> Area3D {
-    let mut node = Area3D::new();
+    let mut node = Area3D::default();
     if let Some(base) = data.base_ref() {
         apply_node_3d_data(&mut node, base);
     }
@@ -168,7 +168,7 @@ fn apply_physics_force_emitter_3d_fields(
 }
 
 fn build_ball_joint_3d(data: &SceneDefNodeData) -> BallJoint3D {
-    let mut node = BallJoint3D::new();
+    let mut node = BallJoint3D::default();
     if let Some(base) = data.base_ref() {
         apply_node_3d_data(&mut node, base);
     }
@@ -178,7 +178,7 @@ fn build_ball_joint_3d(data: &SceneDefNodeData) -> BallJoint3D {
 }
 
 fn build_hinge_joint_3d(data: &SceneDefNodeData) -> HingeJoint3D {
-    let mut node = HingeJoint3D::new();
+    let mut node = HingeJoint3D::default();
     if let Some(base) = data.base_ref() {
         apply_node_3d_data(&mut node, base);
     }
@@ -188,7 +188,7 @@ fn build_hinge_joint_3d(data: &SceneDefNodeData) -> HingeJoint3D {
 }
 
 fn build_fixed_joint_3d(data: &SceneDefNodeData) -> FixedJoint3D {
-    let mut node = FixedJoint3D::new();
+    let mut node = FixedJoint3D::default();
     if let Some(base) = data.base_ref() {
         apply_node_3d_data(&mut node, base);
     }

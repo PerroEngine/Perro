@@ -180,7 +180,7 @@ fn physics_3d_body_desc_carries_mass_and_density() {
 
 #[test]
 fn collision_shape_3d_flip_signs_local_mesh_scale() {
-    let mut shape = CollisionShape3D::new();
+    let mut shape = CollisionShape3D::default();
     shape.shape = Shape3D::TriMesh {
         source: "res://models/one_sided.pmesh".to_string(),
     };
@@ -196,8 +196,8 @@ fn collision_shape_3d_flip_signs_local_mesh_scale() {
 
 #[test]
 fn collision_shape_3d_flip_changes_shape_signature() {
-    let a = CollisionShape3D::new();
-    let mut b = CollisionShape3D::new();
+    let a = CollisionShape3D::default();
+    let mut b = CollisionShape3D::default();
     b.flip_x = true;
 
     let base = body_signature_seed(BodyKind::Static);
@@ -1029,7 +1029,7 @@ fn soa_writeback_multi_body_keeps_per_body_identity_2d() {
 
 #[test]
 fn custom_force_vectors_interpolate_by_radius() {
-    let mut emitter = perro_nodes::PhysicsForceEmitter2D::new();
+    let mut emitter = perro_nodes::PhysicsForceEmitter2D::default();
     emitter.profile = perro_nodes::PhysicsForceProfile::Custom;
     emitter.radius = 10.0;
     emitter.strength = 2.0;
@@ -1123,7 +1123,7 @@ fn emitted_force_2d_affects_nearby_body_and_water() {
         body.gravity_scale = 0.0;
     }
 
-    let mut emitter = perro_nodes::PhysicsForceEmitter2D::new();
+    let mut emitter = perro_nodes::PhysicsForceEmitter2D::default();
     emitter.profile = perro_nodes::PhysicsForceProfile::Current;
     emitter.transform.position = Vector2::new(0.0, 0.0);
     emitter.radius = 6.0;
@@ -1161,7 +1161,7 @@ fn emitted_force_3d_affects_nearby_body_and_water() {
         body.gravity_scale = 0.0;
     }
 
-    let mut emitter = perro_nodes::PhysicsForceEmitter3D::new();
+    let mut emitter = perro_nodes::PhysicsForceEmitter3D::default();
     emitter.profile = perro_nodes::PhysicsForceProfile::Current;
     emitter.transform.position = Vector3::new(0.0, -1.0, 0.0);
     emitter.radius = 6.0;

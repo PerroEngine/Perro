@@ -163,8 +163,8 @@ fn bench_api_force_impulse_emit_dispatch(c: &mut Criterion) {
                 black_box(physics.apply_force(id, Vector3::new(1.0, 0.5, -0.25)));
                 black_box(physics.apply_impulse(id, Vector2::new(0.2, 0.1)));
                 black_box(physics.apply_impulse(id, Vector3::new(0.2, 0.1, -0.05)));
-                black_box(physics.emit_force_2d(PhysicsForceEmitter2D::new()));
-                black_box(physics.emit_force_3d(PhysicsForceEmitter3D::new()));
+                black_box(physics.emit_force_2d(PhysicsForceEmitter2D::default()));
+                black_box(physics.emit_force_3d(PhysicsForceEmitter3D::default()));
             }
             black_box(runtime.calls)
         })

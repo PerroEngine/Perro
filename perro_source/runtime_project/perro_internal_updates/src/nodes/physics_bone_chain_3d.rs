@@ -726,7 +726,7 @@ mod tests {
 
     #[test]
     fn collect_chain_caps_length() {
-        let mut skeleton = Skeleton3D::new();
+        let mut skeleton = Skeleton3D::default();
         skeleton.bones = vec![bone(-1, 0.0), bone(0, 1.0), bone(1, 1.0), bone(2, 1.0)];
         assert_eq!(collect_chain(&skeleton, 3, 2), vec![1, 2, 3]);
     }

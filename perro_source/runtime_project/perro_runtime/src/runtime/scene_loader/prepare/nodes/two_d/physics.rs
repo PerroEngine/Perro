@@ -1,5 +1,5 @@
 fn build_collision_shape_2d(data: &SceneDefNodeData) -> CollisionShape2D {
-    let mut node = CollisionShape2D::new();
+    let mut node = CollisionShape2D::default();
     if let Some(base) = data.base_ref() {
         apply_node_2d_data(&mut node, base);
     }
@@ -9,7 +9,7 @@ fn build_collision_shape_2d(data: &SceneDefNodeData) -> CollisionShape2D {
 }
 
 fn build_static_body_2d(data: &SceneDefNodeData) -> StaticBody2D {
-    let mut node = StaticBody2D::new();
+    let mut node = StaticBody2D::default();
     if let Some(base) = data.base_ref() {
         apply_node_2d_data(&mut node, base);
     }
@@ -19,7 +19,7 @@ fn build_static_body_2d(data: &SceneDefNodeData) -> StaticBody2D {
 }
 
 fn build_rigid_body_2d(data: &SceneDefNodeData) -> RigidBody2D {
-    let mut node = RigidBody2D::new();
+    let mut node = RigidBody2D::default();
     if let Some(base) = data.base_ref() {
         apply_node_2d_data(&mut node, base);
     }
@@ -29,7 +29,7 @@ fn build_rigid_body_2d(data: &SceneDefNodeData) -> RigidBody2D {
 }
 
 fn build_character_body_2d(data: &SceneDefNodeData) -> CharacterBody2D {
-    let mut node = CharacterBody2D::new();
+    let mut node = CharacterBody2D::default();
     if let Some(base) = data.base_ref() {
         apply_node_2d_data(&mut node, base);
     }
@@ -77,7 +77,7 @@ fn apply_character_body_2d_fields(node: &mut CharacterBody2D, fields: &[SceneObj
 }
 
 fn build_physics_force_emitter_2d(data: &SceneDefNodeData) -> PhysicsForceEmitter2D {
-    let mut node = PhysicsForceEmitter2D::new();
+    let mut node = PhysicsForceEmitter2D::default();
     if let Some(base) = data.base_ref() {
         apply_node_2d_data(&mut node, base);
     }
@@ -87,7 +87,7 @@ fn build_physics_force_emitter_2d(data: &SceneDefNodeData) -> PhysicsForceEmitte
 }
 
 fn build_area_2d(data: &SceneDefNodeData) -> Area2D {
-    let mut node = Area2D::new();
+    let mut node = Area2D::default();
     if let Some(base) = data.base_ref() {
         apply_node_2d_data(&mut node, base);
     }
@@ -168,7 +168,7 @@ fn apply_physics_force_emitter_2d_fields(
 }
 
 fn build_pin_joint_2d(data: &SceneDefNodeData) -> PinJoint2D {
-    let mut node = PinJoint2D::new();
+    let mut node = PinJoint2D::default();
     if let Some(base) = data.base_ref() {
         apply_node_2d_data(&mut node, base);
     }
@@ -178,7 +178,7 @@ fn build_pin_joint_2d(data: &SceneDefNodeData) -> PinJoint2D {
 }
 
 fn build_distance_joint_2d(data: &SceneDefNodeData) -> DistanceJoint2D {
-    let mut node = DistanceJoint2D::new();
+    let mut node = DistanceJoint2D::default();
     if let Some(base) = data.base_ref() {
         apply_node_2d_data(&mut node, base);
     }
@@ -188,7 +188,7 @@ fn build_distance_joint_2d(data: &SceneDefNodeData) -> DistanceJoint2D {
 }
 
 fn build_fixed_joint_2d(data: &SceneDefNodeData) -> FixedJoint2D {
-    let mut node = FixedJoint2D::new();
+    let mut node = FixedJoint2D::default();
     if let Some(base) = data.base_ref() {
         apply_node_2d_data(&mut node, base);
     }

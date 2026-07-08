@@ -39,11 +39,9 @@ pub struct Skeleton2D {
 }
 
 impl Skeleton2D {
+    #[deprecated(note = "use Skeleton2D::default()")]
     pub fn new() -> Self {
-        Self {
-            base: Node2D::new(),
-            bones: Vec::new(),
-        }
+        Self::default()
     }
 
     pub fn bone_name(&self, index: usize) -> Option<&str> {

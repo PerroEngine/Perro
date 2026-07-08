@@ -54,7 +54,14 @@ pub struct Sky3D {
 }
 
 impl Sky3D {
+    #[deprecated(note = "use Sky3D::default()")]
     pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+impl Default for Sky3D {
+    fn default() -> Self {
         Self {
             transform: Transform3D::IDENTITY,
             visible: true,
@@ -67,11 +74,5 @@ impl Sky3D {
             shaders: Vec::new(),
             render_layers: BitMask::ALL,
         }
-    }
-}
-
-impl Default for Sky3D {
-    fn default() -> Self {
-        Self::new()
     }
 }

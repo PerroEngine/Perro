@@ -432,7 +432,7 @@ mod tests {
     use std::borrow::Cow;
 
     fn chain_skeleton(count: usize) -> Skeleton2D {
-        let mut skeleton = Skeleton2D::new();
+        let mut skeleton = Skeleton2D::default();
         skeleton.bones.reserve(count);
         for i in 0..count {
             let pose = Transform2D {

@@ -472,7 +472,7 @@ fn bench_runtime_force_emitters(c: &mut Criterion) {
                 runtime
             },
             |mut runtime| {
-                let mut emitter = PhysicsForceEmitter2D::new();
+                let mut emitter = PhysicsForceEmitter2D::default();
                 emitter.profile = PhysicsForceProfile::Custom;
                 emitter.radius = 96.0;
                 emitter.strength = 2.0;
@@ -496,7 +496,7 @@ fn bench_runtime_force_emitters(c: &mut Criterion) {
                 runtime
             },
             |mut runtime| {
-                let mut emitter = PhysicsForceEmitter3D::new();
+                let mut emitter = PhysicsForceEmitter3D::default();
                 emitter.profile = PhysicsForceProfile::Custom;
                 emitter.radius = 96.0;
                 emitter.strength = 2.0;

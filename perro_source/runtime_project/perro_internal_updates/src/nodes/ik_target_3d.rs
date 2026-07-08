@@ -657,7 +657,7 @@ mod tests {
     use std::borrow::Cow;
 
     fn two_bone_skeleton() -> Skeleton3D {
-        let mut skeleton = Skeleton3D::new();
+        let mut skeleton = Skeleton3D::default();
         let root = Transform3D::IDENTITY;
         let child = Transform3D {
             position: Vector3::new(0.0, 1.0, 0.0),
@@ -757,7 +757,7 @@ mod tests {
     }
 
     fn chain_skeleton(count: usize) -> Skeleton3D {
-        let mut skeleton = Skeleton3D::new();
+        let mut skeleton = Skeleton3D::default();
         skeleton.bones.reserve(count);
         for i in 0..count {
             let pose = Transform3D {

@@ -262,7 +262,7 @@ fn resource_point_audio_preserves_spatial_options() {
 #[test]
 fn active_camera_2d_drives_spatial_audio_listener() {
     let mut runtime = Runtime::new();
-    let mut camera = Camera2D::new();
+    let mut camera = Camera2D::default();
     camera.active = true;
     camera.transform.position = Vector2::new(0.0, 0.0);
     let camera_id = runtime
@@ -445,7 +445,7 @@ fn audio_mask_blocks_without_physical_collision() {
     let mask = runtime
         .nodes
         .insert(SceneNode::new(SceneNodeData::AudioMask2D(
-            AudioMask2D::new(),
+            AudioMask2D::default(),
         )));
     let shape = NodeAPI::create::<CollisionShape2D>(&mut runtime);
     assert!(NodeAPI::reparent(&mut runtime, mask, shape));
@@ -470,7 +470,7 @@ fn audio_mask_ignores_masked_audio_layer() {
     let mask = runtime
         .nodes
         .insert(SceneNode::new(SceneNodeData::AudioMask2D(
-            AudioMask2D::new(),
+            AudioMask2D::default(),
         )));
     if let Some(node) = runtime.nodes.get_mut(mask)
         && let SceneNodeData::AudioMask2D(mask) = &mut node.data
@@ -504,7 +504,7 @@ fn audio_mask_3d_blocks_without_physical_collision() {
     let mask = runtime
         .nodes
         .insert(SceneNode::new(SceneNodeData::AudioMask3D(
-            AudioMask3D::new(),
+            AudioMask3D::default(),
         )));
     let shape = NodeAPI::create::<CollisionShape3D>(&mut runtime);
     assert!(NodeAPI::reparent(&mut runtime, mask, shape));
@@ -574,7 +574,7 @@ fn audio_debug_rays_color_direct_vs_wall_diffusion() {
     let mut wall = Runtime::new();
     wall.set_audio_debug_rays(true);
     let mask = wall.nodes.insert(SceneNode::new(SceneNodeData::AudioMask3D(
-        AudioMask3D::new(),
+        AudioMask3D::default(),
     )));
     if let Some(node) = wall.nodes.get_mut(mask)
         && let SceneNodeData::AudioMask3D(mask) = &mut node.data
@@ -696,7 +696,7 @@ fn bounce_audio_effect_zone_reflects_instead_of_pass_through() {
     let zone = runtime
         .nodes
         .insert(SceneNode::new(SceneNodeData::AudioEffectZone2D(
-            AudioEffectZone2D::new(),
+            AudioEffectZone2D::default(),
         )));
     if let Some(node) = runtime.nodes.get_mut(zone)
         && let SceneNodeData::AudioEffectZone2D(zone) = &mut node.data
@@ -769,12 +769,12 @@ fn audio_portal_improves_corner_opening_path() {
     let portal = with_portal
         .nodes
         .insert(SceneNode::new(SceneNodeData::AudioPortal2D(
-            AudioPortal2D::new(),
+            AudioPortal2D::default(),
         )));
     let portal_exit = with_portal
         .nodes
         .insert(SceneNode::new(SceneNodeData::AudioPortal2D(
-            AudioPortal2D::new(),
+            AudioPortal2D::default(),
         )));
     if let Some(node) = with_portal.nodes.get_mut(portal)
         && let SceneNodeData::AudioPortal2D(portal) = &mut node.data
@@ -822,12 +822,12 @@ fn audio_portal_2d_transforms_exit_direction_with_rotation() {
     let portal = runtime
         .nodes
         .insert(SceneNode::new(SceneNodeData::AudioPortal2D(
-            AudioPortal2D::new(),
+            AudioPortal2D::default(),
         )));
     let portal_exit = runtime
         .nodes
         .insert(SceneNode::new(SceneNodeData::AudioPortal2D(
-            AudioPortal2D::new(),
+            AudioPortal2D::default(),
         )));
     if let Some(node) = runtime.nodes.get_mut(portal)
         && let SceneNodeData::AudioPortal2D(portal) = &mut node.data
@@ -867,22 +867,22 @@ fn audio_portal_2d_chains_multiple_hops() {
     let portal_a = runtime
         .nodes
         .insert(SceneNode::new(SceneNodeData::AudioPortal2D(
-            AudioPortal2D::new(),
+            AudioPortal2D::default(),
         )));
     let portal_b = runtime
         .nodes
         .insert(SceneNode::new(SceneNodeData::AudioPortal2D(
-            AudioPortal2D::new(),
+            AudioPortal2D::default(),
         )));
     let portal_c = runtime
         .nodes
         .insert(SceneNode::new(SceneNodeData::AudioPortal2D(
-            AudioPortal2D::new(),
+            AudioPortal2D::default(),
         )));
     let portal_d = runtime
         .nodes
         .insert(SceneNode::new(SceneNodeData::AudioPortal2D(
-            AudioPortal2D::new(),
+            AudioPortal2D::default(),
         )));
     if let Some(node) = runtime.nodes.get_mut(portal_a)
         && let SceneNodeData::AudioPortal2D(portal) = &mut node.data
@@ -934,17 +934,17 @@ fn audio_portal_skip_is_per_ray_branch() {
     let portal_a = runtime
         .nodes
         .insert(SceneNode::new(SceneNodeData::AudioPortal2D(
-            AudioPortal2D::new(),
+            AudioPortal2D::default(),
         )));
     let portal_b = runtime
         .nodes
         .insert(SceneNode::new(SceneNodeData::AudioPortal2D(
-            AudioPortal2D::new(),
+            AudioPortal2D::default(),
         )));
     let portal_c = runtime
         .nodes
         .insert(SceneNode::new(SceneNodeData::AudioPortal2D(
-            AudioPortal2D::new(),
+            AudioPortal2D::default(),
         )));
     if let Some(node) = runtime.nodes.get_mut(portal_a)
         && let SceneNodeData::AudioPortal2D(portal) = &mut node.data
@@ -1039,12 +1039,12 @@ fn audio_portal_3d_transports_through_connected_exit() {
     let portal = with_portal
         .nodes
         .insert(SceneNode::new(SceneNodeData::AudioPortal3D(
-            AudioPortal3D::new(),
+            AudioPortal3D::default(),
         )));
     let portal_exit = with_portal
         .nodes
         .insert(SceneNode::new(SceneNodeData::AudioPortal3D(
-            AudioPortal3D::new(),
+            AudioPortal3D::default(),
         )));
     if let Some(node) = with_portal.nodes.get_mut(portal)
         && let SceneNodeData::AudioPortal3D(portal) = &mut node.data
@@ -1089,7 +1089,7 @@ fn audio_effect_zone_2d_mixes_effect_when_source_enters() {
     let zone = runtime
         .nodes
         .insert(SceneNode::new(SceneNodeData::AudioEffectZone2D(
-            AudioEffectZone2D::new(),
+            AudioEffectZone2D::default(),
         )));
     if let Some(node) = runtime.nodes.get_mut(zone)
         && let SceneNodeData::AudioEffectZone2D(zone) = &mut node.data
@@ -1132,7 +1132,7 @@ fn audio_effect_zone_ignores_masked_audio_layer() {
     let zone = runtime
         .nodes
         .insert(SceneNode::new(SceneNodeData::AudioEffectZone2D(
-            AudioEffectZone2D::new(),
+            AudioEffectZone2D::default(),
         )));
     if let Some(node) = runtime.nodes.get_mut(zone)
         && let SceneNodeData::AudioEffectZone2D(zone) = &mut node.data
@@ -1178,7 +1178,7 @@ fn audio_effect_zone_3d_mixes_effect_when_path_crosses() {
     let zone = runtime
         .nodes
         .insert(SceneNode::new(SceneNodeData::AudioEffectZone3D(
-            AudioEffectZone3D::new(),
+            AudioEffectZone3D::default(),
         )));
     if let Some(node) = runtime.nodes.get_mut(zone)
         && let SceneNodeData::AudioEffectZone3D(zone) = &mut node.data

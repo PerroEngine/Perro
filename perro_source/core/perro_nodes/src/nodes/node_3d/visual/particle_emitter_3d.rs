@@ -52,7 +52,14 @@ impl DerefMut for ParticleEmitter3D {
 }
 
 impl ParticleEmitter3D {
+    #[deprecated(note = "use ParticleEmitter3D::default()")]
     pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+impl Default for ParticleEmitter3D {
+    fn default() -> Self {
         Self {
             base: Node3D::new(),
             active: true,
@@ -69,11 +76,5 @@ impl ParticleEmitter3D {
             internal_finished_emitted: false,
             internal_lifetime_max: 1.0,
         }
-    }
-}
-
-impl Default for ParticleEmitter3D {
-    fn default() -> Self {
-        Self::new()
     }
 }

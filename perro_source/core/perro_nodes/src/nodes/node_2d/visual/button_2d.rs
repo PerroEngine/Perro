@@ -29,7 +29,14 @@ pub struct Button2D {
 }
 
 impl Button2D {
+    #[deprecated(note = "use Button2D::default()")]
     pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+impl Default for Button2D {
+    fn default() -> Self {
         Self {
             base: Node2D::new(),
             size: Vector2::new(128.0, 48.0),
@@ -54,12 +61,6 @@ impl Button2D {
             released_signals: Vec::new(),
             web: None,
         }
-    }
-}
-
-impl Default for Button2D {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
@@ -101,7 +102,14 @@ pub struct ImageButton2D {
 }
 
 impl ImageButton2D {
+    #[deprecated(note = "use ImageButton2D::default()")]
     pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+impl Default for ImageButton2D {
+    fn default() -> Self {
         Self {
             base: Node2D::new(),
             size: Vector2::new(64.0, 64.0),
@@ -126,12 +134,6 @@ impl ImageButton2D {
     }
 }
 
-impl Default for ImageButton2D {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl Deref for ImageButton2D {
     type Target = Node2D;
 
@@ -153,11 +155,11 @@ mod tests {
 
     #[test]
     fn button_2d_defaults_to_pointer_cursor() {
-        assert_eq!(Button2D::new().cursor_icon, CursorIcon::Pointer);
+        assert_eq!(Button2D::default().cursor_icon, CursorIcon::Pointer);
     }
 
     #[test]
     fn image_button_2d_defaults_to_pointer_cursor() {
-        assert_eq!(ImageButton2D::new().cursor_icon, CursorIcon::Pointer);
+        assert_eq!(ImageButton2D::default().cursor_icon, CursorIcon::Pointer);
     }
 }

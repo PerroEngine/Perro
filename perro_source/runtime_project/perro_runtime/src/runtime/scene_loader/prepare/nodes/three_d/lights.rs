@@ -25,7 +25,7 @@ fn build_point_light_3d(data: &SceneDefNodeData) -> PointLight3D {
 }
 
 fn build_sky_3d(data: &SceneDefNodeData) -> Sky3D {
-    let mut node = Sky3D::new();
+    let mut node = Sky3D::default();
     apply_sky_3d_fields(&mut node, &data.fields);
     node
 }
