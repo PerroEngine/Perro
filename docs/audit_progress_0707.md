@@ -24,10 +24,13 @@
   - partial: workspace `toml` upgraded `0.8.23` -> `0.9.12`; `toml` / `toml_datetime` dups each cut 3 -> 2
   - commit: this commit
   - verify: full `cargo check`, full `cargo clippy`, full `cargo test`, `cargo tree -d --workspace`
-- [ ] 2.2 unsafe w/o safety comment
+- [x] 2.2 unsafe w/o safety comment
   - partial: matrix SIMD arch unsafe blocks documented
   - commit: this commit
   - verify: full `cargo check`, full `cargo clippy`, full `cargo test`
+  - partial: mesh query SIMD unsafe blocks documented
+  - commit: this commit
+  - verify: full `cargo check`, full `cargo clippy`, full `cargo test`, `cargo clippy --all-targets -- -W clippy::undocumented_unsafe_blocks`
 - [x] 2.3 unwrap/panic in runtime paths
   - partial: UI render timing/layout unwraps removed
   - commit: this commit

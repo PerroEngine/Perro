@@ -172,6 +172,7 @@ mod x86 {
         let d = _mm_add_ps(below, above);
         let sq = _mm_mul_ps(d, d);
         let mut lanes = [0.0; 4];
+        // SAFETY: lanes has four f32 slots and storeu permits unaligned writes.
         unsafe {
             _mm_storeu_ps(lanes.as_mut_ptr(), sq);
         }
@@ -203,6 +204,7 @@ mod x86 {
         let t2 = _mm_max_ps(ta, tb);
         let mut near = [0.0; 4];
         let mut far = [0.0; 4];
+        // SAFETY: near/far each have four f32 slots and storeu permits unaligned writes.
         unsafe {
             _mm_storeu_ps(near.as_mut_ptr(), t1);
             _mm_storeu_ps(far.as_mut_ptr(), t2);
@@ -229,11 +231,13 @@ mod aarch64 {
     #[inline]
     fn vec4(v: Vec3, w: f32) -> float32x4_t {
         let lanes = [v.x, v.y, v.z, w];
+        // SAFETY: lanes has four f32 slots; NEON load reads exactly that many values.
         unsafe { vld1q_f32(lanes.as_ptr()) }
     }
 
     #[inline]
     pub(super) fn aabb_distance2(p: Vec3, min: Vec3, max: Vec3) -> f32 {
+        // SAFETY: NEON intrinsics operate on local values; vec4 builds valid lane vectors.
         unsafe {
             let p_v = vec4(p, 0.0);
             let min_v = vec4(min, 0.0);
@@ -254,6 +258,7 @@ mod aarch64 {
         max: Vec3,
         max_t: f32,
     ) -> Option<f32> {
+        // SAFETY: NEON intrinsics operate on local values; vec4 builds valid lane vectors.
         unsafe {
             let origin_v = vec4(origin, 0.0);
             let dir_v = vec4(dir, 1.0);
