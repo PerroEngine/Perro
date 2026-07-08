@@ -155,6 +155,7 @@ pub struct Prepare2D<'a> {
     pub sprites_revision: u64,
     pub force_sprite_prepare: bool,
     pub point_lights: &'a [Light2DState],
+    pub point_lights_revision: u64,
     pub static_texture_lookup: Option<StaticTextureLookup>,
 }
 
@@ -391,6 +392,7 @@ impl Gpu2D {
             sprites_revision,
             force_sprite_prepare,
             point_lights,
+            point_lights_revision,
             static_texture_lookup,
         } = frame;
         if force_sprite_prepare {
@@ -558,7 +560,8 @@ impl Gpu2D {
             self.last_sprite_prepare = Some(sprite_key);
         }
 
-        let point_light_stage = point_light_stage_key(point_lights);
+        let point_light_stage =
+            point_light_stage_key_with_revision(point_lights, point_lights_revision);
         if self.last_point_light_stage != Some(point_light_stage) {
             self.ensure_point_light_instance_capacity(device, point_lights.len());
             self.point_light_instances.clear();
@@ -911,6 +914,19 @@ fn point_light_stage_key(lights: &[Light2DState]) -> PointLightStageKey {
     }
 }
 
+fn point_light_stage_key_with_revision(
+    lights: &[Light2DState],
+    revision: u64,
+) -> PointLightStageKey {
+    if revision == u64::MAX {
+        return point_light_stage_key(lights);
+    }
+    PointLightStageKey {
+        len: lights.len(),
+        hash: revision,
+    }
+}
+
 fn hash_f32_slice(mut hash: u64, values: &[f32]) -> u64 {
     for value in values {
         hash = hash_f32(hash, *value);
@@ -976,8 +992,8 @@ fn resolve_sprite_geometry(
 #[cfg(test)]
 mod tests {
     use super::{
-        SpriteBatchCandidate, point_light_stage_key, resolve_sprite_geometry,
-        sprite_batch_candidates_sorted, sprite_batch_sort_key,
+        SpriteBatchCandidate, point_light_stage_key, point_light_stage_key_with_revision,
+        resolve_sprite_geometry, sprite_batch_candidates_sorted, sprite_batch_sort_key,
     };
     use perro_ids::TextureID;
     use perro_render_bridge::{Light2DState, PointLight2DState, Sprite2DCommand};
@@ -1123,5 +1139,36 @@ mod tests {
         assert_ne!(point_light_stage_key(&base), point_light_stage_key(&moved));
         assert_ne!(point_light_stage_key(&base), point_light_stage_key(&added));
         assert_ne!(point_light_stage_key(&base), point_light_stage_key(&[]));
+    }
+
+    #[test]
+    fn point_light_stage_key_uses_revision_when_available() {
+        let base = vec![Light2DState::Point(PointLight2DState {
+            position: [10.0, 20.0],
+            color: [1.0, 0.5, 0.25],
+            intensity: 2.0,
+            range: 100.0,
+            z_index: 3,
+        })];
+        let moved = vec![Light2DState::Point(PointLight2DState {
+            position: [11.0, 20.0],
+            ..match base[0] {
+                Light2DState::Point(light) => light,
+                _ => unreachable!(),
+            }
+        })];
+
+        assert_eq!(
+            point_light_stage_key_with_revision(&base, 7),
+            point_light_stage_key_with_revision(&moved, 7)
+        );
+        assert_ne!(
+            point_light_stage_key_with_revision(&base, 7),
+            point_light_stage_key_with_revision(&base, 8)
+        );
+        assert_eq!(
+            point_light_stage_key_with_revision(&base, u64::MAX),
+            point_light_stage_key(&base)
+        );
     }
 }

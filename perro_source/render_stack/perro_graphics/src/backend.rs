@@ -2021,6 +2021,7 @@ impl PerroGraphics {
                 sprites_2d: &self.retained_sprites_cache,
                 sprites_2d_revision: self.retained_sprites_cache_revision,
                 point_lights_2d: &self.retained_point_lights_cache,
+                point_lights_2d_revision: self.retained_point_lights_cache_revision,
                 waters_2d: &self.retained_waters_2d_cache,
                 waters_2d_revision: self.retained_waters_2d_cache_revision,
                 late_overlay_camera_2d,
@@ -2029,6 +2030,8 @@ impl PerroGraphics {
                 late_overlay_sprites_2d: &self.late_overlay_sprites_cache,
                 late_overlay_sprites_2d_revision: self.late_overlay_sprites_cache_revision,
                 late_overlay_point_lights_2d: &self.late_overlay_point_lights_cache,
+                late_overlay_point_lights_2d_revision: self
+                    .late_overlay_point_lights_cache_revision,
                 ui_primitives: ui_paint.primitives,
                 ui_textures_delta: ui_paint.textures_delta,
                 ui_texture_size: ui_paint.texture_size,
