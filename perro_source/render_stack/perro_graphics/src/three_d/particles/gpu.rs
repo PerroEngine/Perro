@@ -30,7 +30,7 @@ use helpers::*;
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
-struct CameraUniform {
+struct Camera3DUniform {
     view_proj: [[f32; 4]; 4],
     inv_view_size: [f32; 2],
     _pad: [f32; 2],

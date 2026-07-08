@@ -42,7 +42,9 @@
   - commit: this commit
   - verify: full `cargo check`, full `cargo clippy`, full `cargo test`
 - [ ] 4.3 split 2D prepare modules
-- [ ] 5.2 uniform naming
+- [x] 5.2 uniform naming
+  - commit: this commit
+  - verify: full `cargo check`, full `cargo clippy`, full `cargo test`
 - [ ] 3.1 getter prefix policy
 - [ ] 3.2 redundant module prefixes
 - [ ] 3.4 typed load errors

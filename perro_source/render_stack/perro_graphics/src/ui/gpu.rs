@@ -32,7 +32,7 @@ struct UiVertexGpu {
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Zeroable, Pod)]
-struct UiUniformGpu {
+struct UiUniform {
     screen_size: [f32; 2],
     _pad: [f32; 2],
 }
@@ -114,7 +114,7 @@ impl GpuUi {
         });
         let uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("perro_ui_uniform"),
-            size: std::mem::size_of::<UiUniformGpu>() as u64,
+            size: std::mem::size_of::<UiUniform>() as u64,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -361,7 +361,7 @@ impl GpuUi {
         queue.write_buffer(
             &self.uniform_buffer,
             0,
-            bytemuck::bytes_of(&UiUniformGpu {
+            bytemuck::bytes_of(&UiUniform {
                 screen_size: [render_viewport[0] as f32, render_viewport[1] as f32],
                 _pad: [0.0, 0.0],
             }),

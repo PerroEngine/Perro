@@ -224,7 +224,7 @@ impl GpuPointParticles3D {
             }
         }
 
-        let uniform = CameraUniform {
+        let uniform = Camera3DUniform {
             view_proj: compute_view_proj(&frame.camera, frame.width, frame.height)
                 .to_cols_array_2d(),
             inv_view_size: [

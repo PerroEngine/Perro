@@ -15,7 +15,7 @@ impl GpuPointParticles3D {
                     ty: wgpu::BufferBindingType::Uniform,
                     has_dynamic_offset: false,
                     min_binding_size: Some(
-                        std::num::NonZeroU64::new(std::mem::size_of::<CameraUniform>() as u64)
+                        std::num::NonZeroU64::new(std::mem::size_of::<Camera3DUniform>() as u64)
                             .expect("camera uniform size must be non-zero"),
                     ),
                 },
@@ -24,7 +24,7 @@ impl GpuPointParticles3D {
         });
         let camera_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("perro_particles3d_camera_buffer"),
-            size: std::mem::size_of::<CameraUniform>() as u64,
+            size: std::mem::size_of::<Camera3DUniform>() as u64,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });

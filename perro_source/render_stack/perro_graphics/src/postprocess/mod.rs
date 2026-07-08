@@ -37,7 +37,7 @@ const SUBPASS_UNIFORM_SLOTS: usize = 4;
 const EFFECT_MERGED: u32 = 15;
 
 /// Per-frame uniform fields shared across an effect's sub-passes.
-struct UniformFrameCtx {
+struct PostUniformFrameCtx {
     projection_mode: u32,
     near: f32,
     far: f32,
@@ -568,7 +568,7 @@ impl PostProcessor {
         let subpass_base = steps.len();
         self.ensure_uniform_capacity(device, steps.len() + SUBPASS_UNIFORM_SLOTS);
 
-        let uniform_ctx = UniformFrameCtx {
+        let uniform_ctx = PostUniformFrameCtx {
             projection_mode,
             near,
             far,
@@ -855,7 +855,7 @@ impl PostProcessor {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         encoder: &mut wgpu::CommandEncoder,
-        ctx: &UniformFrameCtx,
+        ctx: &PostUniformFrameCtx,
         uniform_slot: usize,
         effect_type: u32,
         params0: [f32; 4],
@@ -937,7 +937,7 @@ impl PostProcessor {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         encoder: &mut wgpu::CommandEncoder,
-        ctx: &UniformFrameCtx,
+        ctx: &PostUniformFrameCtx,
         subpass_base: usize,
         strength: f32,
         input_view: &wgpu::TextureView,
@@ -993,7 +993,7 @@ impl PostProcessor {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         encoder: &mut wgpu::CommandEncoder,
-        ctx: &UniformFrameCtx,
+        ctx: &PostUniformFrameCtx,
         subpass_base: usize,
         strength: f32,
         threshold: f32,
