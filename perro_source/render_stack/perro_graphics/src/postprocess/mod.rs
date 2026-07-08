@@ -624,8 +624,9 @@ impl PostProcessor {
                     time: [time, time],
                 };
                 let uniform_offset = index as u64 * self.uniform_stride;
-                let dynamic_offset =
-                    u32::try_from(uniform_offset).expect("post uniform dynamic offset overflow");
+                let Ok(dynamic_offset) = u32::try_from(uniform_offset) else {
+                    continue;
+                };
                 queue.write_buffer(
                     &self.uniform_buffer,
                     uniform_offset,
@@ -757,8 +758,9 @@ impl PostProcessor {
                 time: [time, time],
             };
             let uniform_offset = index as u64 * self.uniform_stride;
-            let uniform_dynamic_offset =
-                u32::try_from(uniform_offset).expect("post uniform dynamic offset overflow");
+            let Ok(uniform_dynamic_offset) = u32::try_from(uniform_offset) else {
+                continue;
+            };
             queue.write_buffer(
                 &self.uniform_buffer,
                 uniform_offset,
@@ -885,8 +887,9 @@ impl PostProcessor {
             time: [ctx.time, ctx.time],
         };
         let uniform_offset = uniform_slot as u64 * self.uniform_stride;
-        let dynamic_offset =
-            u32::try_from(uniform_offset).expect("post subpass uniform offset overflow");
+        let Ok(dynamic_offset) = u32::try_from(uniform_offset) else {
+            return;
+        };
         queue.write_buffer(
             &self.uniform_buffer,
             uniform_offset,

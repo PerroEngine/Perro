@@ -44,6 +44,9 @@
   - partial: 3D occlusion readback expects removed
   - commit: this commit
   - verify: full `cargo check`, full `cargo clippy`, full `cargo test`
+  - partial: postprocess dynamic offset expects removed
+  - commit: this commit
+  - verify: full `cargo check`, full `cargo clippy`, full `cargo test`
 - [ ] 2.4 string-keyed maps in hot structs
 - [ ] 2.5 per-frame str alloc in render extract
 - [ ] 2.6 lock surface
