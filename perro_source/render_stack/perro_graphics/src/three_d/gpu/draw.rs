@@ -1182,6 +1182,16 @@ pub(super) fn classify_transform_only_scene(
     true
 }
 
+#[inline]
+pub(super) fn draws_semantically_unchanged(
+    prev_revision: u64,
+    next_revision: u64,
+    prev: &[Draw3DInstance],
+    next: &[Draw3DInstance],
+) -> bool {
+    prev_revision == next_revision || (prev_revision != u64::MAX && prev == next)
+}
+
 impl Gpu3D {
     pub(super) fn rebuild_batch_views(&mut self) {
         self.opaque_batch_indices.clear();
@@ -1728,6 +1738,25 @@ mod tests {
         };
         // node_model differs but instances share the Arc: patchable.
         assert!(same_dense_instances(&a, &b));
+    }
+
+    #[test]
+    fn draws_semantically_unchanged_accepts_noisy_revision_bump() {
+        let prev = vec![draw(1, BitMask::NONE, BitMask::NONE, 1)];
+        let next = prev.clone();
+        assert!(draws_semantically_unchanged(10, 11, &prev, &next));
+    }
+
+    #[test]
+    fn draws_semantically_unchanged_rejects_cold_empty_cache() {
+        assert!(!draws_semantically_unchanged(u64::MAX, 1, &[], &[]));
+    }
+
+    #[test]
+    fn draws_semantically_unchanged_rejects_data_change() {
+        let prev = vec![draw(1, BitMask::NONE, BitMask::NONE, 1)];
+        let next = vec![draw(2, BitMask::NONE, BitMask::NONE, 1)];
+        assert!(!draws_semantically_unchanged(10, 11, &prev, &next));
     }
 
     fn meshlet_push(index_start: u32, instance_start: u32, instance_count: u32) -> DrawBatchPush {

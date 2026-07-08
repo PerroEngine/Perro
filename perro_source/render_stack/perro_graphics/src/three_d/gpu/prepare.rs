@@ -109,7 +109,12 @@ impl Gpu3D {
                 self.last_sky_time_seconds = -1.0;
             }
         }
-        let draws_unchanged = self.last_draws_revision == draws_revision;
+        let draws_unchanged = draws_semantically_unchanged(
+            self.last_draws_revision,
+            draws_revision,
+            &self.last_draws,
+            draws,
+        );
         // Classify each draw pair: single-instance regular draws (model-only)
         // and dense multimeshes whose poses are unchanged (node_model-only) both
         // stay on the transform-only fast path. A multimesh present but unchanged
@@ -242,6 +247,7 @@ impl Gpu3D {
                 step_timing.cull_input_skipped = step_timing.cull_input_skipped.saturating_add(1);
             }
             self.update_shadow_state(queue, &camera, lighting, self.has_shadow_casters);
+            self.last_draws_revision = draws_revision;
             self.last_total_drawn =
                 self.staged_instance_transforms.len() + self.staged_multimesh_instances.len();
             self.last_prepare_step_timing = step_timing;
