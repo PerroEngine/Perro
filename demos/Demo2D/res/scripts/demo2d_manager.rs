@@ -1,4 +1,5 @@
 use perro_api::prelude::*;
+use std::time::Duration;
 
 type SelfNodeType = Node2D;
 
@@ -89,6 +90,8 @@ struct DemoRuntimeState {
     fade_active: bool,
     fade_phase: FadePhase,
     fade_action: FadeAction,
+    audio_timer: f32,
+    audio_debug: bool,
 }
 
 impl Default for DemoRuntimeState {
@@ -101,6 +104,8 @@ impl Default for DemoRuntimeState {
             fade_active: false,
             fade_phase: FadePhase::Idle,
             fade_action: FadeAction::None,
+            audio_timer: 0.0,
+            audio_debug: false,
         }
     }
 }
@@ -156,6 +161,21 @@ lifecycle!({
 
         if key_pressed!(ctx.ipt, KeyCode::KeyR) {
             self.restart_active_demo(ctx);
+        }
+
+        if self.active_demo(ctx) == DemoKind::AudioGap {
+            if key_pressed!(ctx.ipt, KeyCode::KeyT) {
+                let debug = with_state_mut!(ctx.run, Demo2DState, ctx.id, |state| {
+                    state.runtime.audio_debug = !state.runtime.audio_debug;
+                    state.runtime.audio_debug
+                })
+                .unwrap_or(false);
+                ctx.run.Audio().set_debug_rays(debug);
+                self.sync_info_overlay(ctx);
+            }
+            if !paused {
+                self.update_audio_zone(ctx);
+            }
         }
     }
 });
@@ -546,6 +566,11 @@ methods!({
     }
 
     fn clear_dynamic(&self, ctx: &mut ScriptContext<'_, API>) {
+        ctx.run.Audio().set_debug_rays(false);
+        with_state_mut!(ctx.run, Demo2DState, ctx.id, |state| {
+            state.runtime.audio_timer = 0.0;
+            state.runtime.audio_debug = false;
+        });
         for node in query!(ctx.run, all(tags["demo2d_dynamic"]), in_subtree(ctx.id)) {
             let _ = remove_node!(ctx.run, node);
         }
@@ -990,6 +1015,11 @@ methods!({
             "audio_bg",
         );
         let disc = texture_load!(ctx.res, LIGHT_DISC);
+        ctx.run.Audio().set_debug_rays(true);
+        with_state_mut!(ctx.run, Demo2DState, ctx.id, |state| {
+            state.runtime.audio_timer = 0.0;
+            state.runtime.audio_debug = true;
+        });
         for i in 0..3 {
             let pos =
                 origin + Vector2::new(-180.0 + i as f32 * 180.0, 40.0 + (i % 2) as f32 * 80.0);
@@ -1002,7 +1032,12 @@ methods!({
             );
             let _ = with_node_mut!(ctx.run, AudioMask2D, mask, |node| {
                 node.transform.position = pos;
+                node.material.transmission = 0.12 + i as f32 * 0.1;
+                node.material.low_pass_strength = 0.52 + i as f32 * 0.12;
+                node.material.reflection = 0.16 + i as f32 * 0.05;
+                node.material.thickness_multiplier = 0.75 + i as f32 * 0.2;
             });
+            self.spawn_audio_quad_shape(ctx, mask, 70.0, 24.0);
             let zone = create_node!(
                 ctx.run,
                 AudioEffectZone2D,
@@ -1013,9 +1048,109 @@ methods!({
             let _ = with_node_mut!(ctx.run, AudioEffectZone2D, zone, |node| {
                 node.transform.position = pos + Vector2::new(0.0, -70.0);
                 node.bounce = i % 2 == 0;
+                node.effects = vec![AudioEffect {
+                    reverb_send: 0.25 + i as f32 * 0.15,
+                    echo: 0.05 + i as f32 * 0.08,
+                    dampening: 0.1 + i as f32 * 0.15,
+                }];
             });
-            self.spawn_marker_sprite(ctx, disc, pos, 1.8);
+            self.spawn_audio_circle_shape(ctx, zone, 64.0 + i as f32 * 18.0);
+            let speaker = self.spawn_marker_sprite(ctx, disc, pos, 1.8);
+            tag_add!(ctx.run, speaker, tags!["demo2d_audio_speaker"]);
             self.spawn_ring(ctx, pos, 56.0 + i as f32 * 18.0, 18 + i * 6);
+        }
+        self.sync_info_overlay(ctx);
+    }
+
+    fn spawn_audio_quad_shape(
+        &self,
+        ctx: &mut ScriptContext<'_, API>,
+        parent: NodeID,
+        width: f32,
+        height: f32,
+    ) {
+        let node = create_node!(
+            ctx.run,
+            CollisionShape2D,
+            "audio_shape",
+            tags!["demo2d_dynamic"],
+            parent
+        );
+        let _ = with_node_mut!(ctx.run, CollisionShape2D, node, |node| {
+            node.shape = Shape2D::Quad { width, height };
+        });
+    }
+
+    fn spawn_audio_circle_shape(
+        &self,
+        ctx: &mut ScriptContext<'_, API>,
+        parent: NodeID,
+        radius: f32,
+    ) {
+        let node = create_node!(
+            ctx.run,
+            CollisionShape2D,
+            "audio_shape",
+            tags!["demo2d_dynamic"],
+            parent
+        );
+        let _ = with_node_mut!(ctx.run, CollisionShape2D, node, |node| {
+            node.shape = Shape2D::Circle { radius };
+        });
+    }
+
+    fn update_audio_zone(&self, ctx: &mut ScriptContext<'_, API>) {
+        let dt = delta_time!(ctx.run);
+        let play = with_state_mut!(ctx.run, Demo2DState, ctx.id, |state| {
+            state.runtime.audio_timer -= dt;
+            if state.runtime.audio_timer <= 0.0 {
+                state.runtime.audio_timer = 0.38;
+                true
+            } else {
+                false
+            }
+        })
+        .unwrap_or(false);
+        if !play {
+            return;
+        }
+
+        let opts = MidiNoteOptions {
+            velocity: 76,
+            sustain: Duration::from_millis(520),
+            program: program::Piano::Electric1,
+            volume: 0.42,
+            ..MidiNoteOptions::default()
+        };
+        let spatial = SpatialAudioOptions {
+            range: 520.0,
+            audio_layer: BitMask::ALL,
+            enable_propagation: true,
+            direction_2d: AudioDirection::Omni,
+            direction_3d: AudioDirection::Omni,
+        };
+        for (i, speaker) in query!(
+            ctx.run,
+            all(tags["demo2d_audio_speaker"]),
+            in_subtree(ctx.id)
+        )
+        .into_iter()
+        .enumerate()
+        {
+            let note = match i % 3 {
+                0 => Note::C4,
+                1 => Note::E4,
+                _ => Note::G4,
+            };
+            let opts = MidiNoteOptions {
+                velocity: 62 + i as u8 * 10,
+                ..opts
+            };
+            let _ = ctx
+                .run
+                .Audio()
+                .midi()
+                .play_note_attached(note, speaker, opts, spatial);
         }
     }
 
@@ -1052,7 +1187,7 @@ methods!({
         tex: TextureID,
         pos: Vector2,
         scale: f32,
-    ) {
+    ) -> NodeID {
         let node = create_node!(
             ctx.run,
             Sprite2D,
@@ -1065,6 +1200,7 @@ methods!({
             sprite.transform.position = pos;
             sprite.transform.scale = Vector2::new(scale, scale);
         });
+        node
     }
 
     fn spawn_child_sprite(
@@ -1103,9 +1239,14 @@ methods!({
     }
 
     fn sync_info_overlay(&self, ctx: &mut ScriptContext<'_, API>) {
-        let (overlay, active_demo) = with_state!(ctx.run, Demo2DState, ctx.id, |state| {
-            (state.ui.info_overlay_root, state.runtime.active_demo)
-        });
+        let (overlay, active_demo, audio_debug) =
+            with_state!(ctx.run, Demo2DState, ctx.id, |state| {
+                (
+                    state.ui.info_overlay_root,
+                    state.runtime.active_demo,
+                    state.runtime.audio_debug,
+                )
+            });
         if overlay.is_nil() {
             return;
         }
@@ -1141,7 +1282,10 @@ methods!({
             DemoKind::PhysicsBones => "rigs 12 | bone chains 12".to_string(),
             DemoKind::PhysicsCollisions => "rigid 240".to_string(),
             DemoKind::ParticlesGap => "emitters 4 | mixed cpu particles".to_string(),
-            DemoKind::AudioGap => "masks 3 | fx zones 3".to_string(),
+            DemoKind::AudioGap => format!(
+                "speakers 3 | masks 3 | fx zones 3 | rays {} | T toggle",
+                if audio_debug { "on" } else { "off" }
+            ),
             DemoKind::FpsTester => "cap btns | render tick vs cap tick".to_string(),
             DemoKind::SkyGap | DemoKind::BlendGap => "gap lane".to_string(),
             DemoKind::MultiMesh => "dense retained sprite batch".to_string(),

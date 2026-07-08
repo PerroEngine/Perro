@@ -11,7 +11,7 @@ Scope:
 
 | Gap | State | Why it matters | Best first ship |
 | --- | --- | --- | --- |
-| Demo2D parity | partial | fastest user-facing proof; no engine design block | particle zone + positional-audio zone |
+| Demo2D parity | done | parity zones shipped in Demo2D | keep smoke/web checks current |
 | Mesh blend polish | partial | feature exists but output differs by path | MSAA-safe seam mask + multimesh IDs |
 | 3D shadow controls | partial | shadows work but tuning is hidden | cfg + per-light bias/quality + docs |
 | Navmesh | research | most game-blocking missing gameplay feature | static baked navmesh + path query API |
@@ -24,16 +24,15 @@ Scope:
 
 ## Priority
 
-1. Demo2D parity
-2. Mesh blend polish
-3. 3D shadow controls + docs
-4. Navmesh MVP
-5. Auto retarget bake
-6. 2D shadowed lights
-7. Editor release pass
-8. Joint polish
-9. Docs parity
-10. Test/smoke coverage
+1. Mesh blend polish
+2. 3D shadow controls + docs
+3. Navmesh MVP
+4. Auto retarget bake
+5. 2D shadowed lights
+6. Editor release pass
+7. Joint polish
+8. Docs parity
+9. Test/smoke coverage
 
 Reason:
 
@@ -48,11 +47,14 @@ Goal:
 - make Demo2D mirror major runtime paths
 - avoid new engine work
 
-Missing:
+Shipped:
 
 - 2D particle stress lane
 - positional audio lane
 - docs rows + controls
+
+Still needed:
+
 - web sync after assets added
 
 Use:
@@ -79,7 +81,13 @@ Done:
 
 - hub button reaches both zones
 - profiler overlay shows cost
+- particle lane uses 4 mixed `ParticleEmitter2D` profiles
+- positional-audio lane uses attached MIDI speakers, `AudioMask2D`, `AudioEffectZone2D`, debug rays
+
+Follow-up:
+
 - web build runs
+- website demo files synced
 
 ## 2. Mesh Blend Polish
 
@@ -443,7 +451,7 @@ Keep this only as proof that matrix changed:
 | Camera streams | missing | done |
 | UI widgets | missing | done |
 | Editor | missing | in dev |
-| Demo2D parity | missing | partial |
+| Demo2D parity | missing | done |
 | 3D shadows | partial | partial |
 | Retargeting | research | research |
 | Navmesh | research | research |

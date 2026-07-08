@@ -23,6 +23,7 @@ script = "res://scripts/camera_pan_2d.rs"
     [Camera2D]
         zoom = 1.0
         active = true
+        audio_options = { audio_mask = [], effects = [] }
         [Node2D]
             position = (0.0, 0.0)
         [/Node2D]

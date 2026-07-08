@@ -135,7 +135,7 @@ Status keys:
 | `perro doctor`      | done   | Checks project config, scene/resource refs, and user script path/member warnings.                                                         |
 | Web export          | done   | `perro_cli build --target web`, WASM docs, and `perro_website` demo hosting exist.                                                        |
 | Demo hubs           | done   | `demos/Demo3D` has a hub, pause flow, feature scenes, docs, and web bundle. `demos/Demo2D` has matching hub/pause flow and stress zones. |
-| Demo2D parity       | partial | Demo2D covers sprite, light, water, animation, physics, skeletal, and dense batch stress zones. Particles and positional audio zones are not mirrored yet. |
+| Demo2D parity       | done | Demo2D covers sprite, light, water, animation, physics, skeletal, dense batch, particle, and positional-audio stress zones. |
 | Perro editor        | in dev | `perro_editor` project exists with manager/editor scenes, asset browser/watch scripts, scene nav, viewport, gizmos, inspector, and animation editor scripts. Release polish and full docs still needed. |
 
 ## Planned Work Packets
@@ -145,6 +145,5 @@ Status keys:
 3. Mesh blending polish: MSAA path and multimesh screen-seam path.
 4. 3D shadow controls and dedicated docs.
 5. 2D shadowed lights.
-6. Demo2D particle and positional-audio parity.
-7. Perro editor release polish and docs.
-8. Joint polish: optional limits/motors/springs if needed.
+6. Perro editor release polish and docs.
+7. Joint polish: optional limits/motors/springs if needed.

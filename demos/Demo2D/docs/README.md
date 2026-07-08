@@ -24,6 +24,8 @@ cargo run -p perro_cli -- dev --path demos\Demo2D
 | Physics | rigid body broad/narrow phase | `240` dynamic bodies |
 | Animation players | clip playback scale | `48` actors + `48` `AnimationPlayer` |
 | Skeletal | bone anim + physics chain | `12` rigs + `12` tail chains |
+| Particles | emitter profile + spawn cost | `4` mixed `ParticleEmitter2D` emitters |
+| Positional audio | propagation + occlusion + fx | `3` MIDI speakers + `3` masks + `3` zones |
 
 ## Demo3D Parity
 
@@ -36,15 +38,15 @@ cargo run -p perro_cli -- dev --path demos\Demo2D
 | Physics Bones | 12 `Skeleton2D` rigs + `PhysicsBoneChain2D` tails |
 | Physics Collisions | 240 rigid bodies on shared floor |
 | MultiMesh | Dense retained sprite batch stress |
+| Particles | 4 `ParticleEmitter2D` emitters using mixed inline `.ppart` profiles |
+| Positional Audio | 3 attached MIDI speakers with `AudioMask2D` + `AudioEffectZone2D` geometry |
 
-## Gap Map
+## No-Analog Map
 
 | Demo3D lane | Demo2D state |
 | --- | --- |
 | Sky | no 2D analog |
 | Mesh Blending | no 2D analog |
-| Particles | not added yet |
-| Positional Audio | not added yet |
 
 ## Compare Use
 
@@ -54,6 +56,7 @@ cargo run -p perro_cli -- dev --path demos\Demo2D
 - cmp static sprite zone vs anim sprite zone
 - cmp anim player zone vs skeletal zone
 - cmp dry physics stack vs water pool floaters
+- press `T` in positional-audio lane -> toggle debug rays
 
 ## Assets
 
