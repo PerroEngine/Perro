@@ -563,7 +563,12 @@ impl Gpu3D {
             drop(pass);
         } else {
             if !self.draw_batches.is_empty() {
-                pass.set_bind_group(1, self.fallback_material_texture_bind_group(), &[]);
+                let Some(fallback_material_bind_group) =
+                    self.fallback_material_texture_bind_group()
+                else {
+                    return;
+                };
+                pass.set_bind_group(1, fallback_material_bind_group, &[]);
                 pass.set_bind_group(2, &self.shadow_bind_group, &[]);
                 pass.set_bind_group(3, &self.mesh_blend_bind_group, &[]);
             }
@@ -634,11 +639,12 @@ impl Gpu3D {
                         current_state_key = Some(batch.state_key);
                     }
                     if texture_change {
-                        pass.set_bind_group(
-                            1,
-                            self.material_texture_set_bind_group(batch.material_texture_key),
-                            &[],
-                        );
+                        let Some(material_bind_group) =
+                            self.material_texture_set_bind_group(batch.material_texture_key)
+                        else {
+                            continue;
+                        };
+                        pass.set_bind_group(1, material_bind_group, &[]);
                         current_texture_key = batch.material_texture_key;
                         texture_bind_group_switches = texture_bind_group_switches.saturating_add(1);
                     }
@@ -811,11 +817,12 @@ impl Gpu3D {
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
-            blend_pass.set_bind_group(
-                1,
-                self.material_texture_set_bind_group(source_batch.material_texture_key),
-                &[],
-            );
+            let Some(material_bind_group) =
+                self.material_texture_set_bind_group(source_batch.material_texture_key)
+            else {
+                return;
+            };
+            blend_pass.set_bind_group(1, material_bind_group, &[]);
             blend_pass.set_bind_group(2, &self.shadow_bind_group, &[]);
             blend_pass.set_bind_group(3, &self.mesh_blend_bind_group, &[]);
             blend_pass.set_pipeline(self.pipeline_for_batch(source_batch));

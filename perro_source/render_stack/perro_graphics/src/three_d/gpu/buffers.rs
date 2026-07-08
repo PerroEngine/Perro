@@ -110,20 +110,19 @@ impl Gpu3D {
         self.last_prepare_step_timing
     }
 
-    pub(super) fn fallback_material_texture_bind_group(&self) -> &wgpu::BindGroup {
+    pub(super) fn fallback_material_texture_bind_group(&self) -> Option<&wgpu::BindGroup> {
         self.material_fallback_texture
             .as_ref()
             .map(|cached| &cached.bind_group)
-            .expect("material fallback texture must be initialized in prepare")
     }
 
     pub(super) fn material_texture_set_bind_group(
         &self,
         key: MaterialTextureKey,
-    ) -> &wgpu::BindGroup {
+    ) -> Option<&wgpu::BindGroup> {
         self.material_texture_bind_groups
             .get(&key)
-            .unwrap_or_else(|| self.fallback_material_texture_bind_group())
+            .or_else(|| self.fallback_material_texture_bind_group())
     }
 
     pub(super) fn ensure_material_fallback_texture(
@@ -1306,11 +1305,12 @@ impl Gpu3D {
                 usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
                 mapped_at_creation: true,
             });
-            params_buffer
-                .slice(..)
-                .get_mapped_range_mut()
-                .expect("map range mut")
-                .copy_from_slice(bytemuck::bytes_of(&params));
+            let Ok(mut data) = params_buffer.slice(..).get_mapped_range_mut() else {
+                params_buffer.unmap();
+                return;
+            };
+            data.copy_from_slice(bytemuck::bytes_of(&params));
+            drop(data);
             params_buffer.unmap();
 
             let mut entries = Vec::with_capacity(spd + 2);
@@ -1372,11 +1372,17 @@ impl Gpu3D {
         match rx.try_recv() {
             Ok(Ok(())) => {
                 let byte_len = (count * std::mem::size_of::<DrawIndexedIndirectGpu>()) as u64;
-                let data = self
+                let Ok(data) = self
                     .hiz_debug_readback_buffer
                     .slice(0..byte_len)
                     .get_mapped_range()
-                    .expect("map range");
+                else {
+                    self.hiz_debug_readback_buffer.unmap();
+                    self.pending_hiz_debug_count = 0;
+                    self.pending_hiz_debug_frustum_visible_est = 0;
+                    self.pending_hiz_debug_map_rx = None;
+                    return;
+                };
                 let mut visible = 0u32;
                 for bytes in data.chunks_exact(std::mem::size_of::<DrawIndexedIndirectGpu>()) {
                     let cmd = bytemuck::from_bytes::<DrawIndexedIndirectGpu>(bytes);
