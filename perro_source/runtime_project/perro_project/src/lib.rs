@@ -8,6 +8,10 @@ use std::{
 };
 use toml::Value;
 
+fn parse_toml_document_value(src: impl AsRef<str>) -> Result<Value, toml::de::Error> {
+    src.as_ref().parse::<toml::Table>().map(Value::Table)
+}
+
 include!("config.rs");
 include!("error.rs");
 include!("scaffold.rs");

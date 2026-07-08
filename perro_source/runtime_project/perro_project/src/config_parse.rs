@@ -116,7 +116,7 @@ pub fn load_routes_toml(
 }
 
 pub fn parse_project_toml(contents: &str) -> Result<ProjectConfig, ProjectError> {
-    let value: Value = contents.parse::<Value>()?;
+    let value = parse_toml_document_value(contents)?;
     let project_table = value
         .get("project")
         .and_then(Value::as_table)
@@ -237,7 +237,7 @@ pub fn parse_project_toml(contents: &str) -> Result<ProjectConfig, ProjectError>
 }
 
 pub fn parse_input_map_toml(contents: &str) -> Result<perro_input_api::InputMap, ProjectError> {
-    let value: Value = contents.parse::<Value>()?;
+    let value = parse_toml_document_value(contents)?;
     let root = value.as_table().ok_or_else(|| {
         ProjectError::InvalidField("input_map", "must be a TOML table".to_string())
     })?;
@@ -387,7 +387,7 @@ pub fn default_routes_config(project: &ProjectConfig) -> ProjectRoutesConfig {
 }
 
 pub fn parse_routes_toml(contents: &str) -> Result<ProjectRoutesConfig, ProjectError> {
-    let value: Value = contents.parse::<Value>()?;
+    let value = parse_toml_document_value(contents)?;
     let route_entries = value
         .get("route")
         .and_then(Value::as_array)

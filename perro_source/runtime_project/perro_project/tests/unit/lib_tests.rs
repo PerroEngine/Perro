@@ -732,9 +732,11 @@ fn unique_temp_dir(prefix: &str) -> PathBuf {
 }
 
 fn manifest_dep_has_path(manifest_src: &str, dep: &str) -> bool {
-    let value = manifest_src
-        .parse::<toml::Value>()
-        .expect("parse manifest");
+    let value = toml::Value::Table(
+        manifest_src
+            .parse::<toml::Table>()
+            .expect("parse manifest"),
+    );
     value
         .get("dependencies")
         .and_then(toml::Value::as_table)

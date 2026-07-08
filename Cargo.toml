@@ -146,7 +146,7 @@ perro_scripting_macros = { version = "0.1.0", path = "perro_source/script_stack/
 
 base64 = "0.22.1"
 gltf = { version = "1.4.1", features = ["import", "utils"] }
-toml = "0.8.23"
+toml = "0.9.12"
 
 [profile.release.package.rapier2d]
 opt-level = 3

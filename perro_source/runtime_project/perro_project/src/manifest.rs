@@ -114,7 +114,7 @@ fn ensure_scripts_manifest_user_deps(
     }
 
     let scripts_src = fs::read_to_string(scripts_manifest)?;
-    let Ok(mut scripts_value) = scripts_src.parse::<Value>() else {
+    let Ok(mut scripts_value) = parse_toml_document_value(&scripts_src) else {
         return Ok(());
     };
     let Some(scripts_root) = scripts_value.as_table_mut() else {
@@ -131,7 +131,7 @@ fn ensure_scripts_manifest_user_deps(
     let deps_toml = project_root.join("deps.toml");
     if deps_toml.exists() {
         let deps_src = fs::read_to_string(&deps_toml)?;
-        let deps_value = deps_src.parse::<Value>().map_err(|err| {
+        let deps_value = parse_toml_document_value(&deps_src).map_err(|err| {
             std::io::Error::other(format!("failed to parse {}: {err}", deps_toml.display()))
         })?;
         if let Some(extra_deps) = deps_value.get("dependencies").and_then(Value::as_table) {
@@ -195,7 +195,7 @@ fn ensure_project_manifest_deps(path: &Path) -> std::io::Result<()> {
     }
 
     let src = fs::read_to_string(path)?;
-    let Ok(mut value) = src.parse::<Value>() else {
+    let Ok(mut value) = parse_toml_document_value(src) else {
         return Ok(());
     };
     let Some(root) = value.as_table_mut() else {
@@ -230,7 +230,7 @@ fn ensure_project_manifest_features(path: &Path) -> std::io::Result<()> {
     }
 
     let src = fs::read_to_string(path)?;
-    let Ok(mut value) = src.parse::<Value>() else {
+    let Ok(mut value) = parse_toml_document_value(src) else {
         return Ok(());
     };
     let Some(root) = value.as_table_mut() else {
@@ -286,7 +286,7 @@ fn ensure_project_manifest_icon_build_support(path: &Path) -> std::io::Result<()
     }
 
     let src = fs::read_to_string(path)?;
-    let Ok(mut value) = src.parse::<Value>() else {
+    let Ok(mut value) = parse_toml_document_value(src) else {
         return Ok(());
     };
     let Some(root) = value.as_table_mut() else {
@@ -409,7 +409,7 @@ fn ensure_project_manifest_web_support(path: &Path) -> std::io::Result<()> {
     }
 
     let src = fs::read_to_string(path)?;
-    let Ok(mut value) = src.parse::<Value>() else {
+    let Ok(mut value) = parse_toml_document_value(src) else {
         return Ok(());
     };
     let Some(root) = value.as_table_mut() else {
@@ -507,7 +507,7 @@ fn ensure_project_manifest_android_support(path: &Path) -> std::io::Result<()> {
     }
 
     let src = fs::read_to_string(path)?;
-    let Ok(mut value) = src.parse::<Value>() else {
+    let Ok(mut value) = parse_toml_document_value(src) else {
         return Ok(());
     };
     let Some(root) = value.as_table_mut() else {
@@ -591,7 +591,7 @@ fn ensure_scripts_manifest_deps(path: &Path) -> std::io::Result<()> {
     }
 
     let src = fs::read_to_string(path)?;
-    let Ok(mut value) = src.parse::<Value>() else {
+    let Ok(mut value) = parse_toml_document_value(src) else {
         return Ok(());
     };
     let Some(root) = value.as_table_mut() else {
@@ -626,7 +626,7 @@ fn ensure_scripts_manifest_features(path: &Path) -> std::io::Result<()> {
     }
 
     let src = fs::read_to_string(path)?;
-    let Ok(mut value) = src.parse::<Value>() else {
+    let Ok(mut value) = parse_toml_document_value(src) else {
         return Ok(());
     };
     let Some(root) = value.as_table_mut() else {
@@ -662,7 +662,7 @@ fn ensure_dev_runner_manifest_deps(path: &Path) -> std::io::Result<()> {
     }
 
     let src = fs::read_to_string(path)?;
-    let Ok(mut value) = src.parse::<Value>() else {
+    let Ok(mut value) = parse_toml_document_value(src) else {
         return Ok(());
     };
     let Some(root) = value.as_table_mut() else {
@@ -697,7 +697,7 @@ fn ensure_dev_runner_manifest_features(path: &Path) -> std::io::Result<()> {
     }
 
     let src = fs::read_to_string(path)?;
-    let Ok(mut value) = src.parse::<Value>() else {
+    let Ok(mut value) = parse_toml_document_value(src) else {
         return Ok(());
     };
     let Some(root) = value.as_table_mut() else {
@@ -764,7 +764,7 @@ fn ensure_dev_runner_manifest_profile_debug(path: &Path) -> std::io::Result<()> 
     }
 
     let src = fs::read_to_string(path)?;
-    let Ok(mut value) = src.parse::<Value>() else {
+    let Ok(mut value) = parse_toml_document_value(src) else {
         return Ok(());
     };
     let Some(root) = value.as_table_mut() else {
@@ -1057,7 +1057,7 @@ fn collect_perro_deps_from_local_path_deps(
 }
 
 fn direct_perro_deps_from_manifest(src: &str) -> Option<BTreeSet<String>> {
-    let value: Value = src.parse::<Value>().ok()?;
+    let value: Value = parse_toml_document_value(src).ok()?;
     let mut out = BTreeSet::new();
     collect_perro_dep_keys(value.get("dependencies"), &mut out);
     collect_perro_dep_keys(value.get("build-dependencies"), &mut out);
@@ -1066,7 +1066,7 @@ fn direct_perro_deps_from_manifest(src: &str) -> Option<BTreeSet<String>> {
 }
 
 fn local_path_dependencies_from_manifest(src: &str) -> Vec<String> {
-    let Ok(value) = src.parse::<Value>() else {
+    let Ok(value) = parse_toml_document_value(src) else {
         return Vec::new();
     };
     let mut out = Vec::new();
