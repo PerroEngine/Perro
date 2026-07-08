@@ -3,7 +3,7 @@
 //! This crate exposes the runtime-side script surface: time, window requests,
 //! node access, node queries, scripts, signals, physics, animation, scene
 //! loading, and runtime audio. Scripts normally import [`prelude`] and receive a
-//! [`RuntimeWindow`] from the script context.
+//! [`RuntimeApiSurface`] from the script context.
 
 pub mod api;
 pub mod sub_apis;
@@ -19,12 +19,12 @@ pub use perro_variant;
 
 // ---- Window facade ----
 
-pub use api::RuntimeWindow;
+pub use api::{RuntimeApiSurface, RuntimeWindow};
 
 /// Common imports for scripts that use runtime APIs.
 pub mod prelude {
     // Facade traits and module accessors.
-    pub use crate::api::{RuntimeAPI, RuntimeWindow};
+    pub use crate::api::{RuntimeAPI, RuntimeApiSurface, RuntimeWindow};
 
     // Runtime domain APIs.
     pub use crate::sub_apis::{

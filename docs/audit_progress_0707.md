@@ -146,4 +146,7 @@
   - add: `Variant::as_transform2()` + `as_transform3()` digit-suffix aliases
   - keep: `as_transform2d()` + `as_transform3d()` compat aliases
   - verify: `cargo test -p perro_variant`, full `cargo check`, full `cargo clippy`, full `cargo test`
-- [ ] 7.2 runtime API facade name
+- [x] 7.2 runtime API facade name
+  - add: canonical `RuntimeApiSurface` facade name
+  - keep: `RuntimeWindow` type alias for compatibility
+  - verify: `cargo test -p perro_runtime_api`, full `cargo check`, full `cargo clippy`, full `cargo test`

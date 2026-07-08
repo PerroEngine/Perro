@@ -5,7 +5,7 @@ use crate::sub_apis::{
     WindowAPI, WindowModule,
 };
 
-/// Full runtime contract required by [`RuntimeWindow`].
+/// Full runtime contract required by [`RuntimeApiSurface`].
 ///
 /// Engine runtime types implement this by implementing every runtime sub-API.
 /// Scripts normally do not name this trait directly; it exists to keep the
@@ -39,15 +39,18 @@ impl<T> RuntimeAPI for T where
 
 /// Script-facing runtime facade.
 ///
-/// `RuntimeWindow` owns a temporary mutable borrow of the runtime for one script
-/// callback. Domain accessors such as [`RuntimeWindow::Nodes`] and
-/// [`RuntimeWindow::Physics`] return lightweight wrappers over the same borrow.
-pub struct RuntimeWindow<'rt, RT: RuntimeAPI + ?Sized> {
+/// `RuntimeApiSurface` owns a temporary mutable borrow of the runtime for one
+/// script callback. Domain accessors such as [`RuntimeApiSurface::Nodes`] and
+/// [`RuntimeApiSurface::Physics`] return lightweight wrappers over the same borrow.
+pub struct RuntimeApiSurface<'rt, RT: RuntimeAPI + ?Sized> {
     rt: &'rt mut RT,
 }
 
+/// Backward-compatible facade name.
+pub type RuntimeWindow<'rt, RT> = RuntimeApiSurface<'rt, RT>;
+
 #[allow(non_snake_case)]
-impl<'rt, RT: RuntimeAPI + ?Sized> RuntimeWindow<'rt, RT> {
+impl<'rt, RT: RuntimeAPI + ?Sized> RuntimeApiSurface<'rt, RT> {
     // ---- Construction ----
 
     /// Create a runtime window around an existing runtime borrow.
