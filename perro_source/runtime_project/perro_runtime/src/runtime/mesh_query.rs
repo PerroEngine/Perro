@@ -123,7 +123,7 @@ impl Runtime {
         resolve_material: bool,
     ) -> Option<MeshSurfaceHit3D> {
         let node = self.query_node_mesh_data(node_id)?;
-        let mesh = self.load_query_mesh_data(node.source.as_str())?;
+        let mesh = self.load_query_node_mesh_data(&node)?;
         if mesh.vertices.is_empty() || mesh.triangles.is_empty() {
             return None;
         }
@@ -287,7 +287,7 @@ impl Runtime {
         resolve_material: bool,
     ) -> Option<MeshSurfaceHit3D> {
         let node = self.query_node_mesh_data(node_id)?;
-        let mesh = self.load_query_mesh_data(node.source.as_str())?;
+        let mesh = self.load_query_node_mesh_data(&node)?;
         if mesh.vertices.is_empty() || mesh.triangles.is_empty() {
             return None;
         }
@@ -395,7 +395,7 @@ impl Runtime {
         let Some(node) = self.query_node_mesh_data(node_id) else {
             return vec![None; rays.len()];
         };
-        let Some(mesh) = self.load_query_mesh_data(node.source.as_str()) else {
+        let Some(mesh) = self.load_query_node_mesh_data(&node) else {
             return vec![None; rays.len()];
         };
         if mesh.vertices.is_empty() || mesh.triangles.is_empty() {
@@ -457,7 +457,7 @@ impl Runtime {
         let Some(node) = self.query_node_mesh_data(node_id) else {
             return Vec::new();
         };
-        let Some(mesh) = self.load_query_mesh_data(node.source.as_str()) else {
+        let Some(mesh) = self.load_query_node_mesh_data(&node) else {
             return Vec::new();
         };
         if mesh.vertices.is_empty() || mesh.triangles.is_empty() {
@@ -679,10 +679,10 @@ impl Runtime {
 
     fn build_query_node_mesh_data(&self, node_id: NodeID) -> Option<QueryNodeData> {
         let node = self.nodes.get(node_id)?;
-        let source = self.render_3d.mesh_sources.get(&node_id)?.clone();
         match &node.data {
             SceneNodeData::MeshInstance3D(mesh) => Some(QueryNodeData {
-                source,
+                mesh_id: mesh.mesh,
+                source: self.render_3d.mesh_sources.get(&node_id).cloned(),
                 surfaces: mesh.surfaces.clone(),
                 instance_local: vec![Mat4::IDENTITY],
             }),
@@ -716,7 +716,8 @@ impl Runtime {
                         .collect()
                 };
                 Some(QueryNodeData {
-                    source,
+                    mesh_id: mesh.mesh,
+                    source: self.render_3d.mesh_sources.get(&node_id).cloned(),
                     surfaces: mesh.surfaces.clone(),
                     instance_local,
                 })
@@ -824,6 +825,17 @@ impl Runtime {
             cache.insert(cache_key, mesh.clone());
         }
         Some(mesh)
+    }
+
+    fn load_query_node_mesh_data(&self, node: &QueryNodeData) -> Option<Arc<QueryMeshData>> {
+        if !node.mesh_id.is_nil()
+            && let Some(mesh) = self.load_query_mesh_data_by_id(node.mesh_id)
+        {
+            return Some(mesh);
+        }
+        node.source
+            .as_deref()
+            .and_then(|source| self.load_query_mesh_data(source))
     }
 
     fn load_query_mesh_data_by_id(&self, mesh_id: MeshID) -> Option<Arc<QueryMeshData>> {

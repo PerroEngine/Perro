@@ -21,7 +21,8 @@ thread_local! {
 }
 
 pub(super) struct QueryNodeData {
-    pub(super) source: String,
+    pub(super) mesh_id: MeshID,
+    pub(super) source: Option<String>,
     pub(super) surfaces: Vec<MeshSurfaceBinding>,
     pub(super) instance_local: Vec<Mat4>,
 }
