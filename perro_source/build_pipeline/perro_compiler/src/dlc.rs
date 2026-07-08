@@ -110,6 +110,9 @@ fn write_dlc_pack_lib(
     );
     src.push_str("    pub collision_trimesh_lookup: extern \"C\" fn(u64, *mut *const u8, *mut usize) -> bool,\n");
     src.push_str(
+        "    pub navmesh_lookup: extern \"C\" fn(u64, *mut *const u8, *mut usize) -> bool,\n",
+    );
+    src.push_str(
         "    pub skeleton_lookup: extern \"C\" fn(u64, *mut *const u8, *mut usize) -> bool,\n",
     );
     src.push_str(
@@ -131,6 +134,7 @@ fn write_dlc_pack_lib(
     src.push_str("    animation_lookup: perro_dlc_pack_lookup_animation,\n");
     src.push_str("    mesh_lookup: perro_dlc_pack_lookup_mesh,\n");
     src.push_str("    collision_trimesh_lookup: perro_dlc_pack_lookup_collision_trimesh,\n");
+    src.push_str("    navmesh_lookup: perro_dlc_pack_lookup_navmesh,\n");
     src.push_str("    skeleton_lookup: perro_dlc_pack_lookup_skeleton,\n");
     src.push_str("    texture_lookup: perro_dlc_pack_lookup_texture,\n");
     src.push_str("    shader_lookup: perro_dlc_pack_lookup_shader,\n");
@@ -181,6 +185,9 @@ fn write_dlc_pack_lib(
         "#[unsafe(no_mangle)]\npub extern \"C\" fn perro_dlc_pack_lookup_collision_trimesh(path_hash: u64, data_out: *mut *const u8, len_out: *mut usize) -> bool {\n    write_bytes_out(static_assets::collision_trimeshes::lookup_collision_trimesh(path_hash), data_out, len_out)\n}\n\n",
     );
     src.push_str(
+        "#[unsafe(no_mangle)]\npub extern \"C\" fn perro_dlc_pack_lookup_navmesh(path_hash: u64, data_out: *mut *const u8, len_out: *mut usize) -> bool {\n    write_bytes_out(static_assets::navmeshes::lookup_navmesh(path_hash), data_out, len_out)\n}\n\n",
+    );
+    src.push_str(
         "#[unsafe(no_mangle)]\npub extern \"C\" fn perro_dlc_pack_lookup_skeleton(path_hash: u64, data_out: *mut *const u8, len_out: *mut usize) -> bool {\n    write_bytes_out(static_assets::skeletons::lookup_skeleton(path_hash), data_out, len_out)\n}\n\n",
     );
     src.push_str(
@@ -196,6 +203,7 @@ fn write_dlc_pack_lib(
     src.push_str("    let bytes = static_assets::textures::lookup_texture(path_hash);\n    if !bytes.is_empty() {\n        return Some(bytes);\n    }\n");
     src.push_str("    let bytes = static_assets::meshes::lookup_mesh(path_hash);\n    if !bytes.is_empty() {\n        return Some(bytes);\n    }\n");
     src.push_str("    let bytes = static_assets::collision_trimeshes::lookup_collision_trimesh(path_hash);\n    if !bytes.is_empty() {\n        return Some(bytes);\n    }\n");
+    src.push_str("    let bytes = static_assets::navmeshes::lookup_navmesh(path_hash);\n    if !bytes.is_empty() {\n        return Some(bytes);\n    }\n");
     src.push_str("    let bytes = static_assets::skeletons::lookup_skeleton(path_hash);\n    if !bytes.is_empty() {\n        return Some(bytes);\n    }\n");
     src.push_str("    let bytes = static_assets::audios::lookup_audio(path_hash);\n    if !bytes.is_empty() {\n        return Some(bytes);\n    }\n");
     src.push_str("    let shader = static_assets::shaders::lookup_shader(path_hash);\n    if !shader.is_empty() {\n        return Some(shader.as_bytes());\n    }\n");

@@ -74,6 +74,10 @@ fn generate_project_static_modules(
                 }),
             ),
             (
+                "navmesh",
+                scope.spawn(|| perro_static_pipeline::generate_static_navmeshes(project_root)),
+            ),
+            (
                 "skeleton",
                 scope.spawn(|| perro_static_pipeline::generate_static_skeletons(project_root)),
             ),
@@ -154,6 +158,10 @@ fn generate_dlc_static_modules(
                 scope.spawn(|| {
                     perro_static_pipeline::generate_static_meshes(project_root, bake_meshlets)
                 }),
+            ),
+            (
+                "navmesh",
+                scope.spawn(|| perro_static_pipeline::generate_static_navmeshes(project_root)),
             ),
             (
                 "skeleton",

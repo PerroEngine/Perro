@@ -57,6 +57,7 @@ pub struct RuntimeProject {
     pub static_animation_tree_lookup: Option<StaticAnimationTreeLookup>,
     pub static_mesh_lookup: Option<StaticBytesLookup>,
     pub static_collision_trimesh_lookup: Option<StaticBytesLookup>,
+    pub static_navmesh_lookup: Option<StaticBytesLookup>,
     pub static_skeleton_lookup: Option<StaticSkeletonLookup>,
     pub static_audio_lookup: Option<StaticAudioLookup>,
     pub static_icon_lookup: Option<StaticBytesLookup>,
@@ -85,6 +86,7 @@ impl RuntimeProject {
             static_animation_tree_lookup: None,
             static_mesh_lookup: None,
             static_collision_trimesh_lookup: None,
+            static_navmesh_lookup: None,
             static_skeleton_lookup: None,
             static_audio_lookup: None,
             static_icon_lookup: None,
@@ -113,6 +115,7 @@ impl RuntimeProject {
             static_animation_tree_lookup: None,
             static_mesh_lookup: None,
             static_collision_trimesh_lookup: None,
+            static_navmesh_lookup: None,
             static_skeleton_lookup: None,
             static_audio_lookup: None,
             static_icon_lookup: None,
@@ -150,6 +153,7 @@ impl RuntimeProject {
             static_animation_tree_lookup: None,
             static_mesh_lookup: None,
             static_collision_trimesh_lookup: None,
+            static_navmesh_lookup: None,
             static_skeleton_lookup: None,
             static_audio_lookup: None,
             static_icon_lookup: None,
@@ -227,6 +231,12 @@ impl RuntimeProject {
     pub fn with_static_collision_trimesh_lookup(mut self, lookup: StaticBytesLookup) -> Self {
         self.static_collision_trimesh_lookup = Some(lookup);
         self.static_resource_lookups.collision_trimesh_lookup = Some(lookup);
+        self
+    }
+
+    pub fn with_static_navmesh_lookup(mut self, lookup: StaticBytesLookup) -> Self {
+        self.static_navmesh_lookup = Some(lookup);
+        self.static_resource_lookups.navmesh_lookup = Some(lookup);
         self
     }
 

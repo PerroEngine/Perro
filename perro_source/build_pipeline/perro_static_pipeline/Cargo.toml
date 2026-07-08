@@ -12,6 +12,7 @@ perro_scene.workspace = true
 perro_render_bridge.workspace = true
 perro_graphics_assets.workspace = true
 perro_animation.workspace = true
+perro_resource_api.workspace = true
 perro_project.workspace = true
 perro_ids.workspace = true
 perro_nodes.workspace = true

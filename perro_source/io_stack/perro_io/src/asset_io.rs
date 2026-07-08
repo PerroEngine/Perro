@@ -20,6 +20,7 @@ pub struct StaticResourceLookups {
     pub texture_lookup: Option<StaticBytesLookup>,
     pub mesh_lookup: Option<StaticBytesLookup>,
     pub collision_trimesh_lookup: Option<StaticBytesLookup>,
+    pub navmesh_lookup: Option<StaticBytesLookup>,
     pub skeleton_lookup: Option<StaticBytesLookup>,
     pub shader_lookup: Option<StaticShaderLookup>,
     pub audio_lookup: Option<StaticBytesLookup>,
@@ -561,6 +562,7 @@ fn load_static_resource_binary(lookups: StaticResourceLookups, path: &str) -> io
             }
         }
         "pskel" => lookups.skeleton_lookup.map(|lookup| lookup(hash)),
+        "pnav" => lookups.navmesh_lookup.map(|lookup| lookup(hash)),
         "wgsl" => lookups.shader_lookup.map(|lookup| lookup(hash).as_bytes()),
         "mp3" | "wav" | "ogg" | "flac" | "mid" | "midi" | "sf2" => {
             lookups.audio_lookup.map(|lookup| lookup(hash))
@@ -596,6 +598,7 @@ fn is_static_binary_path(path: &str) -> bool {
             | "glb"
             | "gltf"
             | "pmesh"
+            | "pnav"
             | "pskel"
             | "wgsl"
             | "mp3"
@@ -656,6 +659,8 @@ mod tests {
     fn static_lookup(path_hash: u64) -> &'static [u8] {
         if path_hash == perro_ids::string_to_u64("res://textures/player.png") {
             b"static-ptex"
+        } else if path_hash == perro_ids::string_to_u64("res://nav/level.pnav") {
+            b"pnav 1\nv 0 0 0\nv 1 0 0\nv 0 0 1\ntri 0 1 2 1\n"
         } else if path_hash == perro_ids::string_to_u64("res://music/theme.mid") {
             b"MThd"
         } else if path_hash == perro_ids::string_to_u64("res://soundfonts/game.sf2") {
@@ -692,6 +697,7 @@ mod tests {
             name: "Static Test".to_string(),
             static_resource_lookups: StaticResourceLookups {
                 texture_lookup: Some(static_lookup),
+                navmesh_lookup: Some(static_lookup),
                 audio_lookup: Some(static_lookup),
                 ..StaticResourceLookups::default()
             },
@@ -711,6 +717,7 @@ mod tests {
             name: "Static Test".to_string(),
             static_resource_lookups: StaticResourceLookups {
                 texture_lookup: Some(static_lookup),
+                navmesh_lookup: Some(static_lookup),
                 audio_lookup: Some(static_lookup),
                 ..StaticResourceLookups::default()
             },
@@ -721,6 +728,10 @@ mod tests {
             b"static-ptex"
         );
         assert_eq!(load_asset("res://music/theme.mid").unwrap(), b"MThd");
+        assert_eq!(
+            load_asset("res://nav/level.pnav").unwrap(),
+            b"pnav 1\nv 0 0 0\nv 1 0 0\nv 0 0 1\ntri 0 1 2 1\n"
+        );
         assert_eq!(load_asset("res://soundfonts/game.sf2").unwrap(), b"RIFF");
         assert!(load_asset("res://textures/missing.png").is_err());
     }

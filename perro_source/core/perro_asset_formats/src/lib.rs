@@ -66,6 +66,10 @@ pub mod ptset {
     pub const VERSION: u32 = 1;
 }
 
+pub mod pnav {
+    pub const EXTENSION: &str = "pnav";
+}
+
 pub mod source_ext {
     //! Shared source and generated asset extensions for archive packing and static build.
 
@@ -101,6 +105,7 @@ pub mod source_ext {
         MATERIAL,
         PARTICLE,
         crate::pmesh::EXTENSION,
+        crate::pnav::EXTENSION,
         crate::pskel::EXTENSION,
         crate::pskel::EXTENSION_2D,
         crate::pskel::EXTENSION_3D,
@@ -129,6 +134,7 @@ mod tests {
         assert_eq!(super::pskel::VERSION_2D, 1);
         assert_eq!(super::ptex::VERSION, 1);
         assert_eq!(super::ptset::VERSION, 1);
+        assert_eq!(super::pnav::EXTENSION, "pnav");
     }
 
     #[test]
@@ -136,6 +142,10 @@ mod tests {
         assert!(super::source_ext::contains(
             super::source_ext::MESH_INPUT,
             super::pmesh::EXTENSION,
+        ));
+        assert!(super::source_ext::contains(
+            super::source_ext::STATIC_RESOURCE,
+            super::pnav::EXTENSION,
         ));
         assert!(super::source_ext::contains(
             super::source_ext::SKELETON_INPUT,

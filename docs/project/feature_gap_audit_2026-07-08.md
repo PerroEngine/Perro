@@ -14,7 +14,7 @@ Scope:
 | Demo2D parity | done | parity zones shipped in Demo2D | keep smoke/web checks current |
 | Mesh blend polish | done | MSAA and multimesh use the screen seam path | keep renderer tests + Demo3D docs current |
 | 3D shadow controls | done | shadow tuning fields and guide exist | keep Demo3D tuning lane on backlog |
-| Navmesh | partial | text `.pnav`, resource API, and runtime path query exist | static bake, node, binary format, and Demo3D lane |
+| Navmesh | partial | text `.pnav`, static `.pnav` embedding, resource API, and runtime path query exist | mesh/scene-to-nav bake, node, binary format, and Demo3D lane |
 | Auto retarget | partial | `.pretarget` alias maps and CLI import remap exist | rest-pose bake, static pipeline, and humanoid solve |
 | 2D shadows | partial | `cast_shadows` drives hard 2D shadows from visible `CollisionShape2D` casters | soft shadows, sprite/tilemap casters, Demo2D lane |
 | Editor release | in dev | editor exists but not release-grade | smoke, docs, save/load tests, inspector coverage |
@@ -193,8 +193,10 @@ Current packet:
 - done: `ctx.run.NavMesh()` static 3D path query API
 - done: triangle shared-edge A*
 - done: layer mask, same-poly, corridor, unreachable tests
+- done: static pipeline embeds valid `.pnav` assets
+- done: packed/static runtime can load `.pnav` through `load_asset`
 - todo: binary `.pnav`
-- todo: static pipeline bake
+- todo: mesh/scene-to-nav static bake
 - todo: `NavMesh3D` node + scene fields
 - todo: Demo3D lane
 - todo: real funnel/string-pull smoothing
@@ -209,14 +211,15 @@ New:
 Impl:
 
 1. add `NavMeshID` in ids crate
-2. define `.pnav` text + binary static bake format
+2. define `.pnav` text format and static embed path
 3. write navmesh data structs in core/asset formats
-4. add static pipeline bake from mesh or scene-marked geometry
-5. add runtime loader/cache
-6. add polygon graph A*
-7. add funnel/string-pull smoothing
-8. expose `find_path(nav, start, end, opts) -> Vec<Vector3>`
-9. add Demo3D nav lane with click-to-path or scripted agents
+4. add static pipeline pass-through bake for authored `.pnav`
+5. add static pipeline bake from mesh or scene-marked geometry
+6. add runtime loader/cache
+7. add polygon graph A*
+8. add funnel/string-pull smoothing
+9. expose `find_path(nav, start, end, opts) -> Vec<Vector3>`
+10. add Demo3D nav lane with click-to-path or scripted agents
 
 Later:
 
