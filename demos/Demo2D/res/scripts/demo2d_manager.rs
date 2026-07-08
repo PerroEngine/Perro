@@ -973,7 +973,7 @@ methods!({
                 emitter.transform.position = pos;
                 emitter.spawn_rate = 180.0 + i as f32 * 70.0;
                 emitter.seed = 10 + i as u32;
-                emitter.profile = profile.clone();
+                emitter.profile = profile.clone().into();
                 emitter.prewarm = true;
             });
             self.spawn_marker_sprite(ctx, disc, pos, 1.0 + i as f32 * 0.2);

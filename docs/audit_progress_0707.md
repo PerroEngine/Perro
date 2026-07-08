@@ -143,7 +143,7 @@
 - [ ] 1.1 color vocabulary
 - [ ] 1.2 on/off vocabulary
 - [x] 2.1 light colors use `Color`
-- [ ] 2.2 typed IDs for string asset refs
+- [x] 2.2 typed IDs for string asset refs
 - [ ] 2.3 nested settings structs
 - [ ] 2.4 base embedding
 - [x] 2.5 internal state fields

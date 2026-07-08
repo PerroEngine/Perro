@@ -1,11 +1,12 @@
 use crate::node_2d::Node2D;
+use perro_ids::TileSetRef;
 use perro_structs::BitMask;
 use std::ops::{Deref, DerefMut};
 
 #[derive(Clone, Debug)]
 pub struct TileMap2D {
     pub base: Node2D,
-    pub tileset: String,
+    pub tileset: TileSetRef,
     pub width: u32,
     pub height: u32,
     pub empty_tile: i32,
@@ -25,7 +26,7 @@ impl TileMap2D {
     pub const fn new() -> Self {
         Self {
             base: Node2D::new(),
-            tileset: String::new(),
+            tileset: TileSetRef::empty(),
             width: 0,
             height: 0,
             empty_tile: -1,

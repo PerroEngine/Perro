@@ -43,9 +43,9 @@ fn apply_particle_emitter_2d_fields(node: &mut ParticleEmitter2D, fields: &[Scen
             }
             Some(NodeField::ParticleEmitter2D(ParticleEmitter2DField::Profile)) => {
                 if let Some(path) = as_str(value) {
-                    node.profile = path.to_string();
+                    node.profile = path.into();
                 } else if let SceneValue::Object(entries) = value {
-                    node.profile = inline_pparticle(entries);
+                    node.profile = inline_pparticle(entries).into();
                 }
             }
             Some(NodeField::ParticleEmitter2D(ParticleEmitter2DField::SimMode)) => {

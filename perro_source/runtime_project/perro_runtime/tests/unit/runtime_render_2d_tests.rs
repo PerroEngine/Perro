@@ -322,7 +322,7 @@ fn water_2d_impacts_use_live_body_pos_not_stale_cached_sample() {
 fn particle_emitter_2d_queues_point_particles() {
     let mut runtime = Runtime::new();
     let mut emitter = ParticleEmitter2D::default();
-    emitter.profile = "inline://preset = ballistic\nz = 999\nforce_z = 777".to_string();
+    emitter.profile = "inline://preset = ballistic\nz = 999\nforce_z = 777".into();
     emitter.spawn_rate = 10.0;
     emitter.internal_simulation_time = 0.25;
     let expected_node = runtime

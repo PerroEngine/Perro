@@ -253,6 +253,63 @@ mod tests {
     }
 
     #[test]
+    fn scene_loader_builds_typed_asset_refs() {
+        let scene = Parser::new(
+            r#"
+            $root = @root
+            [root]
+            [Node2D/]
+            [/root]
+
+            [map]
+            [TileMap2D]
+                tileset = "res://tiles/world.ptileset"
+            [/TileMap2D]
+            [/map]
+
+            [particles]
+            [ParticleEmitter2D]
+                profile = "res://particles/smoke.pparticle"
+            [/ParticleEmitter2D]
+            [/particles]
+            "#,
+        )
+        .parse_scene();
+
+        let prepared =
+            prepare_scene_with_loader(&scene, &|path| Err(format!("unknown scene path `{path}`")))
+                .expect("prepare scene");
+
+        let tilemap = prepared
+            .nodes
+            .iter()
+            .find_map(|pending| match &pending.node.data {
+                SceneNodeData::TileMap2D(node) => Some(node),
+                _ => None,
+            })
+            .expect("tilemap");
+        assert_eq!(tilemap.tileset.source(), "res://tiles/world.ptileset");
+        assert_eq!(
+            tilemap.tileset.id(),
+            perro_ids::TileSetID::from_string("res://tiles/world.ptileset")
+        );
+
+        let emitter = prepared
+            .nodes
+            .iter()
+            .find_map(|pending| match &pending.node.data {
+                SceneNodeData::ParticleEmitter2D(node) => Some(node),
+                _ => None,
+            })
+            .expect("emitter");
+        assert_eq!(emitter.profile.source(), "res://particles/smoke.pparticle");
+        assert_eq!(
+            emitter.profile.id(),
+            perro_ids::ParticleProfileID::from_string("res://particles/smoke.pparticle")
+        );
+    }
+
+    #[test]
     fn sky3d_horizon_and_shader_stack_parse() {
         let scene = Parser::new(
             r#"

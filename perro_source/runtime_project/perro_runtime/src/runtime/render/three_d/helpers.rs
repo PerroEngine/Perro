@@ -588,15 +588,17 @@ pub(super) fn quaternion_forward(rotation: perro_structs::Quaternion) -> [f32; 3
 
 pub(crate) fn resolve_particle_profile(
     runtime: &mut Runtime,
-    source: &str,
+    source: &ParticleProfileRef,
 ) -> Option<ParticleProfile3D> {
-    let source = source.trim();
-    if source.is_empty() {
+    let source_path = source.source().trim();
+    if source_path.is_empty() {
         return None;
     }
-    let source_key = particle_profile_source_key(source);
+    let source_key = source.id().as_u64();
     while let Ok((loaded_source, profile)) = runtime.render_3d.particle_path_load_rx.try_recv() {
-        let loaded_key = particle_profile_source_key(&loaded_source);
+        let loaded_key = ParticleProfileRef::from(loaded_source.as_str())
+            .id()
+            .as_u64();
         runtime
             .render_3d
             .pending_particle_path_loads
@@ -609,29 +611,27 @@ pub(crate) fn resolve_particle_profile(
         return Some(path.clone());
     }
     let parsed = if runtime.provider_mode() == crate::runtime_project::ProviderMode::Static {
-        if let Some(inline) = source.strip_prefix("inline://") {
+        if let Some(inline) = source_path.strip_prefix("inline://") {
             parse_pparticle_source(inline)?
         } else if let Some(lookup) = runtime
             .project()
             .and_then(|project| project.static_particle_lookup)
         {
-            let source_hash =
-                parse_hashed_source_uri(source).unwrap_or_else(|| string_to_u64(source));
-            lookup(source_hash).clone()
+            lookup(source_key).clone()
         } else if runtime
             .render_3d
             .pending_particle_path_loads
             .insert(source_key)
         {
             spawn_particle_profile_load(
-                source.to_string(),
+                source_path.to_string(),
                 runtime.render_3d.particle_path_load_tx.clone(),
             );
             return None;
         } else {
             return None;
         }
-    } else if let Some(inline) = source.strip_prefix("inline://") {
+    } else if let Some(inline) = source_path.strip_prefix("inline://") {
         parse_pparticle_source(inline)?
     } else if runtime
         .render_3d
@@ -639,7 +639,7 @@ pub(crate) fn resolve_particle_profile(
         .insert(source_key)
     {
         spawn_particle_profile_load(
-            source.to_string(),
+            source_path.to_string(),
             runtime.render_3d.particle_path_load_tx.clone(),
         );
         return None;
@@ -648,10 +648,6 @@ pub(crate) fn resolve_particle_profile(
     };
     cache_particle_profile(runtime, source_key, parsed.clone());
     Some(parsed)
-}
-
-fn particle_profile_source_key(source: &str) -> u64 {
-    parse_hashed_source_uri(source).unwrap_or_else(|| string_to_u64(source))
 }
 
 fn cache_particle_profile(runtime: &mut Runtime, source_key: u64, parsed: ParticleProfile3D) {

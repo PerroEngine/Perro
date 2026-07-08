@@ -1,4 +1,5 @@
 use crate::node_3d::Node3D;
+use perro_ids::ParticleProfileRef;
 use std::ops::{Deref, DerefMut};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -24,7 +25,7 @@ pub struct ParticleEmitter3D {
     pub spawn_rate: f32,
     pub seed: u32,
     pub params: Vec<f32>,
-    pub profile: String,
+    pub profile: ParticleProfileRef,
     pub sim_mode: ParticleEmitterSimMode3D,
     pub render_mode: ParticleType,
     #[doc(hidden)]
@@ -68,7 +69,7 @@ impl Default for ParticleEmitter3D {
             spawn_rate: 256.0,
             seed: 1,
             params: Vec::new(),
-            profile: String::new(),
+            profile: ParticleProfileRef::empty(),
             sim_mode: ParticleEmitterSimMode3D::Default,
             render_mode: ParticleType::Point,
             internal_simulation_time: 0.0,

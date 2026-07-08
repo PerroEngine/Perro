@@ -971,7 +971,7 @@ impl Runtime {
                 _ => None,
             });
             let tileset = tileset_source
-                .as_deref()
+                .as_ref()
                 .and_then(|source| crate::runtime::render_2d::resolve_tileset_2d(self, source));
             let is_tilemap = tileset_source.is_some();
             let mut shape_signature = body_signature_seed(kind);

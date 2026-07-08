@@ -2,7 +2,9 @@
 
 use super::Runtime;
 use glam::{Mat4, Quat, Vec3};
-use perro_ids::{MaterialID, MeshID, NodeID, parse_hashed_source_uri, string_to_u64};
+use perro_ids::{
+    MaterialID, MeshID, NodeID, ParticleProfileRef, parse_hashed_source_uri, string_to_u64,
+};
 use perro_nodes::{
     CameraProjection, MeshSurfaceBinding, SceneNodeData, Shape3D,
     particle_emitter_3d::{ParticleEmitterSimMode3D, ParticleType},

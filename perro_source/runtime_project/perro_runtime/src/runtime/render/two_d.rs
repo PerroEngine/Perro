@@ -3,7 +3,7 @@
 use super::Runtime;
 use super::state::UiButtonVisualState;
 use ahash::AHashSet;
-use perro_ids::{NodeID, SignalID, TextureID, parse_hashed_source_uri, string_to_u64};
+use perro_ids::{NodeID, ParticleProfileRef, SignalID, TextureID, TileSetRef};
 use perro_input_api::MouseButton;
 use perro_nodes::{
     SceneNodeData, Shape2D, particle_emitter_2d::ParticleEmitterSimMode2D, water_impact_strength,
@@ -1881,9 +1881,12 @@ fn water_link_overlap_weight(local: perro_structs::Vector2, link: &WaterLinkStat
 
 pub(crate) fn resolve_tileset_2d(
     runtime: &mut Runtime,
-    source: &str,
+    source: &TileSetRef,
 ) -> Option<Arc<ParsedTileset2D>> {
-    let source_hash = parse_hashed_source_uri(source).unwrap_or_else(|| string_to_u64(source));
+    if source.is_empty() {
+        return None;
+    }
+    let source_hash = source.id().as_u64();
     while let Ok((hash, tileset)) = runtime.render_2d.tileset_load_rx.try_recv() {
         runtime.render_2d.pending_tileset_loads.remove(&hash);
         if let Some(tileset) = tileset {
@@ -1916,7 +1919,7 @@ pub(crate) fn resolve_tileset_2d(
     }
 
     if runtime.render_2d.pending_tileset_loads.insert(source_hash) {
-        let source = source.to_string();
+        let source = source.source().to_string();
         let tx = runtime.render_2d.tileset_load_tx.clone();
         #[cfg(not(target_arch = "wasm32"))]
         rayon::spawn(move || {
@@ -2025,15 +2028,17 @@ pub(crate) fn resolve_particle_sim_mode_2d(
 
 pub(crate) fn resolve_particle_profile_2d(
     runtime: &mut Runtime,
-    source: &str,
+    source: &ParticleProfileRef,
 ) -> Option<ParticleProfile2D> {
-    let source = source.trim();
-    if source.is_empty() {
+    let source_path = source.source().trim();
+    if source_path.is_empty() {
         return None;
     }
-    let source_key = particle_profile_source_key(source);
+    let source_key = source.id().as_u64();
     while let Ok((loaded_source, profile)) = runtime.render_2d.particle_path_load_rx.try_recv() {
-        let loaded_key = particle_profile_source_key(&loaded_source);
+        let loaded_key = ParticleProfileRef::from(loaded_source.as_str())
+            .id()
+            .as_u64();
         runtime
             .render_2d
             .pending_particle_path_loads
@@ -2046,29 +2051,27 @@ pub(crate) fn resolve_particle_profile_2d(
         return Some(path.clone());
     }
     let parsed = if runtime.provider_mode() == crate::runtime_project::ProviderMode::Static {
-        if let Some(inline) = source.strip_prefix("inline://") {
+        if let Some(inline) = source_path.strip_prefix("inline://") {
             parse_pparticle_source_2d(inline)?
         } else if let Some(lookup) = runtime
             .project()
             .and_then(|project| project.static_particle_lookup)
         {
-            let source_hash =
-                parse_hashed_source_uri(source).unwrap_or_else(|| string_to_u64(source));
-            particle_profile_2d_from_3d(lookup(source_hash))
+            particle_profile_2d_from_3d(lookup(source_key))
         } else if runtime
             .render_2d
             .pending_particle_path_loads
             .insert(source_key)
         {
             spawn_particle_profile_2d_load(
-                source.to_string(),
+                source_path.to_string(),
                 runtime.render_2d.particle_path_load_tx.clone(),
             );
             return None;
         } else {
             return None;
         }
-    } else if let Some(inline) = source.strip_prefix("inline://") {
+    } else if let Some(inline) = source_path.strip_prefix("inline://") {
         parse_pparticle_source_2d(inline)?
     } else if runtime
         .render_2d
@@ -2076,7 +2079,7 @@ pub(crate) fn resolve_particle_profile_2d(
         .insert(source_key)
     {
         spawn_particle_profile_2d_load(
-            source.to_string(),
+            source_path.to_string(),
             runtime.render_2d.particle_path_load_tx.clone(),
         );
         return None;
@@ -2085,10 +2088,6 @@ pub(crate) fn resolve_particle_profile_2d(
     };
     cache_particle_profile_2d(runtime, source_key, parsed.clone());
     Some(parsed)
-}
-
-fn particle_profile_source_key(source: &str) -> u64 {
-    parse_hashed_source_uri(source).unwrap_or_else(|| string_to_u64(source))
 }
 
 fn cache_particle_profile_2d(runtime: &mut Runtime, source_key: u64, parsed: ParticleProfile2D) {

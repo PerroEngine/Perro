@@ -43,9 +43,9 @@ fn apply_particle_emitter_3d_fields(node: &mut ParticleEmitter3D, fields: &[Scen
             }
             Some(NodeField::ParticleEmitter3D(ParticleEmitter3DField::Profile)) => {
                 if let Some(v) = as_asset_source(value) {
-                    node.profile = v;
+                    node.profile = v.into();
                 } else if let SceneValue::Object(entries) = value {
-                    node.profile = inline_pparticle(entries);
+                    node.profile = inline_pparticle(entries).into();
                 }
             }
             Some(NodeField::ParticleEmitter3D(ParticleEmitter3DField::SimMode)) => {

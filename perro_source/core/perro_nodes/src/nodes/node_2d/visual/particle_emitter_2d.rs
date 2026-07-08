@@ -1,4 +1,5 @@
 use crate::node_2d::Node2D;
+use perro_ids::ParticleProfileRef;
 use std::ops::{Deref, DerefMut};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -16,7 +17,7 @@ pub struct ParticleEmitter2D {
     pub spawn_rate: f32,
     pub seed: u32,
     pub params: Vec<f32>,
-    pub profile: String,
+    pub profile: ParticleProfileRef,
     pub sim_mode: ParticleEmitterSimMode2D,
     #[doc(hidden)]
     pub internal_simulation_time: f32,
@@ -59,7 +60,7 @@ impl Default for ParticleEmitter2D {
             spawn_rate: 256.0,
             seed: 1,
             params: Vec::new(),
-            profile: String::new(),
+            profile: ParticleProfileRef::empty(),
             sim_mode: ParticleEmitterSimMode2D::Default,
             internal_simulation_time: 0.0,
             internal_prev_active: true,

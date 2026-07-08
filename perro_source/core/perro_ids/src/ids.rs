@@ -2,7 +2,7 @@
 //! All IDs use u64 = index (low 32 bits) | generation (high 32 bits). Index 0 = nil.
 //! IDs are created by their owning arena/manager; slot reuse bumps generation so stale IDs are invalid.
 
-use std::{borrow::Cow, fmt};
+use std::{borrow::Cow, fmt, ops::Deref};
 
 const STRING_HASH_SEED: u64 = 0xA0761D6478BD642F;
 const STRING_HASH_PRIME: u64 = 0xE7037ED1A0B428DB;
@@ -176,6 +176,10 @@ define_generational!(
     "Tile set ID - stable hashed tile set resource key. Index + generation."
 );
 define_generational!(
+    ParticleProfileID,
+    "Particle profile ID - stable hashed particle profile resource key."
+);
+define_generational!(
     AnimationTreeID,
     "Animation tree ID - allocated by animation tree system. Index + generation."
 );
@@ -258,10 +262,210 @@ impl SoundFontID {
     }
 }
 
+impl TileSetID {
+    /// Deterministic ID from tile set asset path. Uses hash; generation 0.
+    pub const fn from_string(s: &str) -> Self {
+        Self::from_u64(string_to_u64(s))
+    }
+}
+
+impl ParticleProfileID {
+    /// Deterministic ID from particle profile asset path. Uses hash; generation 0.
+    pub const fn from_string(s: &str) -> Self {
+        Self::from_u64(string_to_u64(s))
+    }
+}
+
 impl TagID {
     /// Deterministic ID from tag name. Uses hash; generation 0.
     pub const fn from_string(s: &str) -> Self {
         Self::from_u64(string_to_u64(s))
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct TileSetRef {
+    pub id: TileSetID,
+    pub source: Cow<'static, str>,
+}
+
+impl TileSetRef {
+    pub const fn empty() -> Self {
+        Self {
+            id: TileSetID::nil(),
+            source: Cow::Borrowed(""),
+        }
+    }
+
+    pub const fn borrowed(source: &'static str) -> Self {
+        Self {
+            id: TileSetID::from_string(source),
+            source: Cow::Borrowed(source),
+        }
+    }
+
+    pub fn new<S>(source: S) -> Self
+    where
+        S: Into<Cow<'static, str>>,
+    {
+        let source = source.into();
+        let id = if source.as_ref().is_empty() {
+            TileSetID::nil()
+        } else {
+            parse_hashed_source_uri(source.as_ref())
+                .map(TileSetID::from_u64)
+                .unwrap_or_else(|| TileSetID::from_string(source.as_ref()))
+        };
+        Self { id, source }
+    }
+
+    pub const fn id(&self) -> TileSetID {
+        self.id
+    }
+
+    pub fn source(&self) -> &str {
+        self.source.as_ref()
+    }
+
+    pub fn as_str(&self) -> &str {
+        self.source()
+    }
+
+    pub fn as_bytes(&self) -> &[u8] {
+        self.source().as_bytes()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.source().is_empty()
+    }
+}
+
+impl AsRef<str> for TileSetRef {
+    fn as_ref(&self) -> &str {
+        self.source()
+    }
+}
+
+impl Deref for TileSetRef {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        self.source()
+    }
+}
+
+impl Default for TileSetRef {
+    fn default() -> Self {
+        Self::empty()
+    }
+}
+
+impl From<&str> for TileSetRef {
+    fn from(source: &str) -> Self {
+        Self::new(source.to_string())
+    }
+}
+
+impl From<String> for TileSetRef {
+    fn from(source: String) -> Self {
+        Self::new(source)
+    }
+}
+
+impl From<&String> for TileSetRef {
+    fn from(source: &String) -> Self {
+        Self::new(source.clone())
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct ParticleProfileRef {
+    pub id: ParticleProfileID,
+    pub source: Cow<'static, str>,
+}
+
+impl ParticleProfileRef {
+    pub const fn empty() -> Self {
+        Self {
+            id: ParticleProfileID::nil(),
+            source: Cow::Borrowed(""),
+        }
+    }
+
+    pub const fn borrowed(source: &'static str) -> Self {
+        Self {
+            id: ParticleProfileID::from_string(source),
+            source: Cow::Borrowed(source),
+        }
+    }
+
+    pub fn new<S>(source: S) -> Self
+    where
+        S: Into<Cow<'static, str>>,
+    {
+        let source = source.into();
+        let id = if source.as_ref().is_empty() {
+            ParticleProfileID::nil()
+        } else {
+            parse_hashed_source_uri(source.as_ref())
+                .map(ParticleProfileID::from_u64)
+                .unwrap_or_else(|| ParticleProfileID::from_string(source.as_ref()))
+        };
+        Self { id, source }
+    }
+
+    pub const fn id(&self) -> ParticleProfileID {
+        self.id
+    }
+
+    pub fn source(&self) -> &str {
+        self.source.as_ref()
+    }
+
+    pub fn as_str(&self) -> &str {
+        self.source()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.source().is_empty()
+    }
+}
+
+impl AsRef<str> for ParticleProfileRef {
+    fn as_ref(&self) -> &str {
+        self.source()
+    }
+}
+
+impl Deref for ParticleProfileRef {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        self.source()
+    }
+}
+
+impl Default for ParticleProfileRef {
+    fn default() -> Self {
+        Self::empty()
+    }
+}
+
+impl From<&str> for ParticleProfileRef {
+    fn from(source: &str) -> Self {
+        Self::new(source.to_string())
+    }
+}
+
+impl From<String> for ParticleProfileRef {
+    fn from(source: String) -> Self {
+        Self::new(source)
+    }
+}
+
+impl From<&String> for ParticleProfileRef {
+    fn from(source: &String) -> Self {
+        Self::new(source.clone())
     }
 }
 
@@ -396,7 +600,10 @@ impl ScriptMemberID {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_hashed_source_uri, string_to_u64};
+    use super::{
+        ParticleProfileID, ParticleProfileRef, TileSetID, TileSetRef, parse_hashed_source_uri,
+        string_to_u64,
+    };
     use std::{hint::black_box, time::Instant};
 
     #[test]
@@ -408,6 +615,18 @@ mod tests {
     fn parse_hashed_source_uri_rejects_raw_dlc_path() {
         let dlc_path = "dlc://test/scripts/script.rs";
         assert_eq!(parse_hashed_source_uri(dlc_path), None);
+    }
+
+    #[test]
+    fn asset_refs_keep_source_and_typed_id() {
+        let tileset = TileSetRef::from("res://tiles.ptileset");
+        assert_eq!(tileset.id(), TileSetID::from_string("res://tiles.ptileset"));
+        assert_eq!(tileset.source(), "res://tiles.ptileset");
+        assert_eq!(tileset.as_ref(), "res://tiles.ptileset");
+
+        let profile = ParticleProfileRef::from("12345");
+        assert_eq!(profile.id(), ParticleProfileID::from_u64(12345));
+        assert_eq!(profile.source(), "12345");
     }
 
     #[test]

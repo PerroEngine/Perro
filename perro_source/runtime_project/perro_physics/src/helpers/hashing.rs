@@ -155,10 +155,7 @@ pub fn hash_tilemap_2d(mut state: u64, tilemap: &TileMap2D) -> u64 {
     for tile in &tilemap.tiles {
         state = hash_u64(state, *tile as u64);
     }
-    for b in tilemap.tileset.as_bytes() {
-        state = hash_u64(state, *b as u64);
-    }
-    state
+    hash_u64(state, tilemap.tileset.id().as_u64())
 }
 
 pub fn hash_tile_collision_shape_2d(mut state: u64, shape: &ParsedTileCollisionShape2D) -> u64 {

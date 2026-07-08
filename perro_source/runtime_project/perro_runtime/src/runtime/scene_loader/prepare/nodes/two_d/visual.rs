@@ -83,7 +83,7 @@ fn apply_tilemap_2d_fields(node: &mut TileMap2D, fields: &[SceneObjectField]) {
         match resolve_node_field("TileMap2D", name) {
             Some(NodeField::TileMap2D(TileMap2DField::Tileset)) => {
                 if let Some(v) = as_str(value) {
-                    node.tileset = v.to_string();
+                    node.tileset = v.into();
                 }
             }
             Some(NodeField::TileMap2D(TileMap2DField::Width)) => {
