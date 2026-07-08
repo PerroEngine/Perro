@@ -55,4 +55,4 @@ pub use scene_doc::{IntoSceneDoc, SceneDocAPI, SceneDocModule};
 pub use skeleton::{SkeletonAPI, SkeletonModule};
 pub use texture::{TextureAPI, TextureModule, TextureReserveArg};
 pub use visual_accessibility::VisualAccessibilityAPI;
-pub use webcam::{WebcamAPI, WebcamConfig, WebcamFrame, WebcamModule};
+pub use webcam::{WebcamAPI, WebcamConfig, WebcamDevice, WebcamFrame, WebcamModule};

@@ -107,6 +107,38 @@ parent = $root
 Camera post-processing runs first.
 Stream post-processing runs after.
 
+## Webcam Stream
+
+```text
+[FaceCam]
+parent = $root
+    [Webcam]
+        slot = ""
+        resolution = (640, 480)
+        fps = 30
+        mirror = true
+        cpu_frames = false
+        enabled = true
+    [/Webcam]
+[/FaceCam]
+
+[FaceCamView]
+parent = $root
+    [UiCameraStream]
+        camera = @FaceCam
+        aspect_mode = "fit"
+        [UiNode]
+            anchor = "bottom_right"
+            size_ratio = (0.25, 0.25)
+            pivot_ratio = (1, 1)
+        [/UiNode]
+    [/UiCameraStream]
+[/FaceCamView]
+```
+
+`UiCameraStream.camera` accepts `Camera2D`, `Camera3D`, or `Webcam`.
+When it points at an enabled visible `Webcam`, capture opens automatically.
+
 ## Script Vars
 
 `script_vars` seeds the attached script state when the node is created.

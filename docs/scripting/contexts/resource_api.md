@@ -32,6 +32,7 @@ For lifetime rules, auto load, auto drop, and ref-count behavior, see [Resource 
 | Skeletons | [skeletons](resource_modules/skeletons.md) | `ctx.res.Skeletons()` |
 | Textures | [textures](resource_modules/textures.md) | `ctx.res.Textures()` |
 | Visual Accessibility | [visual_accessibility](resource_modules/visual_accessibility.md) | `ctx.res` |
+| Webcams | [webcam](resource_modules/webcam.md) | `ctx.res.Webcams()` |
 
 ## Example
 

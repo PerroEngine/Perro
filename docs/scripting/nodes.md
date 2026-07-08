@@ -43,6 +43,20 @@ Rendering and resource loading are handled by the runtime and `ResourceWindow`.
 - Generic non-spatial scene node.
 - Use it as a script/root grouping node when no 2D, 3D, UI, or resource data is needed.
 
+## Resource Nodes
+
+`Webcam`
+
+- Live webcam capture source for camera stream nodes.
+- Does not draw by itself.
+- Use it as `CameraStream2D.camera`, `CameraStream3D.camera`, or `UiCameraStream.camera`.
+- `slot` is the device slot string. Empty uses the default device at index `0`.
+- `resolution`, `width`, `height`, `fps`, `mirror`, `cpu_frames`, and `enabled` configure capture.
+- The stream path opens capture automatically while the referenced `Webcam` node is enabled and visible.
+- The stream path closes capture when the node is disabled, hidden, or no longer referenced.
+- Use `ctx.res.Webcams().devices()` to list connected devices and avoid direct `nokhwa` use.
+- See [Webcam Module](contexts/resource_modules/webcam.md).
+
 ## 2D Nodes
 
 `Node2D`

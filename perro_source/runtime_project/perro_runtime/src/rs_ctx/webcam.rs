@@ -7,7 +7,7 @@ use super::core::WebcamErrorMessage;
 use super::core::WebcamFrameMessage;
 use perro_ids::{TextureID, WebcamID, string_to_u64};
 use perro_render_bridge::{RenderCommand, ResourceCommand};
-use perro_resource_api::sub_apis::{WebcamAPI, WebcamConfig, WebcamFrame};
+use perro_resource_api::sub_apis::{WebcamAPI, WebcamConfig, WebcamDevice, WebcamFrame};
 use std::sync::Arc;
 
 fn clamp_size(width: u32, height: u32) -> (u32, u32) {
@@ -242,6 +242,39 @@ impl RuntimeResourceApi {
 }
 
 impl WebcamAPI for RuntimeResourceApi {
+    #[cfg(all(
+        any(target_os = "windows", target_os = "linux", target_os = "macos"),
+        not(test)
+    ))]
+    fn webcam_devices(&self) -> Result<Vec<WebcamDevice>, String> {
+        use nokhwa::utils::{ApiBackend, CameraIndex};
+
+        Ok(nokhwa::query(ApiBackend::Auto)
+            .map_err(|err| err.to_string())?
+            .into_iter()
+            .map(|info| {
+                let extra = info.misc();
+                let index = match info.index() {
+                    CameraIndex::Index(index) => Some(*index),
+                    CameraIndex::String(index) => index.parse::<u32>().ok(),
+                };
+                let slot = webcam_device_slot(&info, &extra);
+                WebcamDevice {
+                    slot,
+                    index,
+                    name: info.human_name(),
+                    description: info.description().to_string(),
+                    extra,
+                }
+            })
+            .collect())
+    }
+
+    #[cfg(any(test, target_arch = "wasm32", target_os = "android"))]
+    fn webcam_devices(&self) -> Result<Vec<WebcamDevice>, String> {
+        Err("webcam device query backend unavailable for this build".to_string())
+    }
+
     fn webcam_open(&self, mut config: WebcamConfig) -> Result<WebcamID, String> {
         let mut state = self
             .state
@@ -378,6 +411,20 @@ impl WebcamAPI for RuntimeResourceApi {
         let _ = state.free_webcam_id(id);
         true
     }
+}
+
+#[cfg(all(
+    any(target_os = "windows", target_os = "linux", target_os = "macos"),
+    not(test)
+))]
+fn webcam_device_slot(info: &nokhwa::utils::CameraInfo, extra: &str) -> String {
+    #[cfg(any(target_os = "windows", target_os = "macos"))]
+    {
+        if !extra.trim().is_empty() {
+            return extra.to_string();
+        }
+    }
+    info.index().as_string()
 }
 
 #[cfg_attr(test, allow(dead_code))]
