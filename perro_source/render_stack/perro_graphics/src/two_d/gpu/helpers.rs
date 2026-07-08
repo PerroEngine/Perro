@@ -64,53 +64,67 @@ pub(super) fn sprite_bounds_intersect_screen(bounds: &[f32; 4], camera: &Camera2
 }
 
 pub(super) fn light_2d_gpu(light: Light2DState) -> Option<Light2DGpu> {
-    let (position, range, z_index, color, intensity, direction, inner_cos, outer_cos, kind) =
-        match light {
-            Light2DState::Ambient(light) => (
-                [0.0, 0.0],
-                1.0,
-                i32::MAX,
-                light.color,
-                light.intensity,
-                [0.0, -1.0],
-                1.0,
-                -1.0,
-                0,
-            ),
-            Light2DState::Ray(light) => (
-                [0.0, 0.0],
-                1.0,
-                light.z_index,
-                light.color,
-                light.intensity,
-                normalize2(light.direction).unwrap_or([0.0, -1.0]),
-                1.0,
-                -1.0,
-                1,
-            ),
-            Light2DState::Point(light) => (
-                light.position,
-                light.range,
-                light.z_index,
-                light.color,
-                light.intensity,
-                [0.0, -1.0],
-                1.0,
-                -1.0,
-                2,
-            ),
-            Light2DState::Spot(light) => (
-                light.position,
-                light.range,
-                light.z_index,
-                light.color,
-                light.intensity,
-                normalize2(light.direction).unwrap_or([0.0, -1.0]),
-                light.inner_angle_radians.cos(),
-                light.outer_angle_radians.cos(),
-                3,
-            ),
-        };
+    let (
+        position,
+        range,
+        z_index,
+        color,
+        intensity,
+        direction,
+        inner_cos,
+        outer_cos,
+        kind,
+        cast_shadows,
+    ) = match light {
+        Light2DState::Ambient(light) => (
+            [0.0, 0.0],
+            1.0,
+            i32::MAX,
+            light.color,
+            light.intensity,
+            [0.0, -1.0],
+            1.0,
+            -1.0,
+            0,
+            false,
+        ),
+        Light2DState::Ray(light) => (
+            [0.0, 0.0],
+            1.0,
+            light.z_index,
+            light.color,
+            light.intensity,
+            normalize2(light.direction).unwrap_or([0.0, -1.0]),
+            1.0,
+            -1.0,
+            1,
+            light.cast_shadows,
+        ),
+        Light2DState::Point(light) => (
+            light.position,
+            light.range,
+            light.z_index,
+            light.color,
+            light.intensity,
+            [0.0, -1.0],
+            1.0,
+            -1.0,
+            2,
+            light.cast_shadows,
+        ),
+        Light2DState::Spot(light) => (
+            light.position,
+            light.range,
+            light.z_index,
+            light.color,
+            light.intensity,
+            normalize2(light.direction).unwrap_or([0.0, -1.0]),
+            light.inner_angle_radians.cos(),
+            light.outer_angle_radians.cos(),
+            3,
+            light.cast_shadows,
+        ),
+    };
     if !(range.is_finite()
         && range > 0.0
         && intensity.is_finite()
@@ -133,7 +147,34 @@ pub(super) fn light_2d_gpu(light: Light2DState) -> Option<Light2DGpu> {
         inner_cos,
         outer_cos,
         kind,
-        pad: [0; 3],
+        shadow_flags: u32::from(cast_shadows),
+        pad: [0; 2],
+    })
+}
+
+pub(super) fn shadow_caster_2d_gpu(caster: ShadowCaster2DState) -> Option<ShadowCaster2DGpu> {
+    if !(caster.center.iter().all(|v| v.is_finite())
+        && caster.half_extents.iter().all(|v| v.is_finite())
+        && caster.half_extents[0] > 0.0
+        && caster.half_extents[1] > 0.0
+        && caster.rotation_radians.is_finite())
+    {
+        return None;
+    }
+    let (sin_r, cos_r) = caster.rotation_radians.sin_cos();
+    let shape = match caster.shape {
+        ShadowCaster2DShapeState::Quad => 0,
+        ShadowCaster2DShapeState::Circle => 1,
+        ShadowCaster2DShapeState::Triangle => 2,
+    };
+    Some(ShadowCaster2DGpu {
+        center: caster.center,
+        axis_x: [cos_r, sin_r],
+        axis_y: [-sin_r, cos_r],
+        half_extents: caster.half_extents,
+        shape,
+        z_index: caster.z_index,
+        pad: [0; 2],
     })
 }
 
@@ -347,13 +388,14 @@ pub(super) fn create_sprite_pipeline(
 pub(super) fn create_point_light_pipeline(
     device: &wgpu::Device,
     camera_bgl: &wgpu::BindGroupLayout,
+    shadow_caster_bgl: &wgpu::BindGroupLayout,
     shader: &wgpu::ShaderModule,
     format: wgpu::TextureFormat,
     sample_count: u32,
 ) -> wgpu::RenderPipeline {
     let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("perro_point_light_2d_pipeline_layout"),
-        bind_group_layouts: &[Some(camera_bgl)],
+        bind_group_layouts: &[Some(camera_bgl), Some(shadow_caster_bgl)],
         immediate_size: 0,
     });
 
@@ -420,6 +462,11 @@ pub(super) fn create_point_light_pipeline(
                         wgpu::VertexAttribute {
                             offset: 48,
                             shader_location: 9,
+                            format: wgpu::VertexFormat::Uint32,
+                        },
+                        wgpu::VertexAttribute {
+                            offset: 52,
+                            shader_location: 10,
                             format: wgpu::VertexFormat::Uint32,
                         },
                     ],

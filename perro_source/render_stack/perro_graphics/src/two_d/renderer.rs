@@ -5,8 +5,8 @@ use perro_ids::NodeID;
 use perro_particle_math::{ParticleEvalInput, eval_ops_particle};
 use perro_render_bridge::{
     AmbientLight2DState, Camera2DState, DrawShape2DCommand, Light2DState, ParticlePath2D,
-    PointLight2DState, PointParticles2DState, RayLight2DState, Rect2DCommand, SpotLight2DState,
-    Sprite2DCommand, TileMap2DCommand, Water2DState,
+    PointLight2DState, PointParticles2DState, RayLight2DState, Rect2DCommand, ShadowCaster2DState,
+    SpotLight2DState, Sprite2DCommand, TileMap2DCommand, Water2DState,
 };
 use perro_structs::{DrawShape2D, UnitVector4};
 use std::ops::Range;
@@ -89,6 +89,8 @@ pub struct Renderer2D {
     retained_waters_revision: u64,
     retained_lights: AHashMap<NodeID, Light2DState>,
     retained_point_lights_revision: u64,
+    retained_shadow_casters: AHashMap<NodeID, ShadowCaster2DState>,
+    retained_shadow_casters_revision: u64,
     retained_sprites_revision: u64,
     frame_shapes: Vec<RectInstanceGpu>,
     frame_sprites: Vec<Sprite2DCommand>,
@@ -117,6 +119,8 @@ impl Renderer2D {
             retained_waters_revision: 0,
             retained_lights: AHashMap::new(),
             retained_point_lights_revision: 0,
+            retained_shadow_casters: AHashMap::new(),
+            retained_shadow_casters_revision: 0,
             retained_sprites_revision: 0,
             frame_shapes: Vec::new(),
             frame_sprites: Vec::new(),
@@ -210,6 +214,13 @@ impl Renderer2D {
         self.set_light(node, Light2DState::Spot(light));
     }
 
+    pub fn upsert_shadow_caster(&mut self, node: NodeID, caster: ShadowCaster2DState) {
+        if self.retained_shadow_casters.insert(node, caster) != Some(caster) {
+            self.retained_shadow_casters_revision =
+                self.retained_shadow_casters_revision.wrapping_add(1);
+        }
+    }
+
     fn set_light(&mut self, node: NodeID, light: Light2DState) {
         if self.retained_lights.insert(node, light) != Some(light) {
             self.retained_point_lights_revision =
@@ -233,6 +244,10 @@ impl Renderer2D {
         if self.retained_lights.remove(&node).is_some() {
             self.retained_point_lights_revision =
                 self.retained_point_lights_revision.wrapping_add(1);
+        }
+        if self.retained_shadow_casters.remove(&node).is_some() {
+            self.retained_shadow_casters_revision =
+                self.retained_shadow_casters_revision.wrapping_add(1);
         }
         if self.retained_tilemaps.remove(&node).is_some() {
             self.retained_sprites_revision = self.retained_sprites_revision.wrapping_add(1);
@@ -489,6 +504,10 @@ impl Renderer2D {
         self.retained_lights.values().copied()
     }
 
+    pub fn shadow_casters(&self) -> impl Iterator<Item = ShadowCaster2DState> + '_ {
+        self.retained_shadow_casters.values().copied()
+    }
+
     pub fn retained_waters(&self) -> impl Iterator<Item = (NodeID, Water2DState)> + '_ {
         self.retained_waters
             .iter()
@@ -513,6 +532,11 @@ impl Renderer2D {
     #[inline]
     pub fn retained_point_lights_revision(&self) -> u64 {
         self.retained_point_lights_revision
+    }
+
+    #[inline]
+    pub fn retained_shadow_casters_revision(&self) -> u64 {
+        self.retained_shadow_casters_revision
     }
 
     pub fn camera(&self) -> Camera2DState {

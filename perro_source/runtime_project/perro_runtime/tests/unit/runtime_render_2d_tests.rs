@@ -114,6 +114,58 @@ fn sprite_2d_uses_inherited_node_modulate() {
 }
 
 #[test]
+fn point_light_2d_emits_cast_shadows_flag() {
+    let mut runtime = Runtime::new();
+    let light = NodeAPI::create::<PointLight2D>(&mut runtime);
+    if let Some(node) = runtime.nodes.get_mut(light)
+        && let SceneNodeData::PointLight2D(data) = &mut node.data
+    {
+        data.cast_shadows = true;
+        data.range = 64.0;
+    }
+
+    runtime.extract_render_2d_commands();
+    let commands = collect_commands(&mut runtime);
+
+    assert!(commands.iter().any(|command| matches!(
+        command,
+        RenderCommand::TwoD(Command2D::SetPointLight { node, light: state })
+            if *node == light && state.cast_shadows
+    )));
+}
+
+#[test]
+fn collision_shape_2d_emits_shadow_caster() {
+    let mut runtime = Runtime::new();
+    let caster = NodeAPI::create::<CollisionShape2D>(&mut runtime);
+    if let Some(node) = runtime.nodes.get_mut(caster)
+        && let SceneNodeData::CollisionShape2D(data) = &mut node.data
+    {
+        data.shape = Shape2D::Quad {
+            width: 8.0,
+            height: 4.0,
+        };
+        data.transform.position = Vector2::new(3.0, 5.0);
+        data.transform.scale = Vector2::new(2.0, 3.0);
+        data.transform.rotation = 0.25;
+        data.z_index = 7;
+    }
+
+    runtime.extract_render_2d_commands();
+    let commands = collect_commands(&mut runtime);
+
+    assert!(commands.iter().any(|command| matches!(
+        command,
+        RenderCommand::TwoD(Command2D::UpsertShadowCaster { node, caster: state })
+            if *node == caster
+                && state.center == [3.0, 5.0]
+                && state.half_extents == [8.0, 6.0]
+                && state.rotation_radians == 0.25
+                && state.z_index == 7
+    )));
+}
+
+#[test]
 fn label_2d_emits_ui_label_with_world_rect() {
     let mut runtime = Runtime::new();
     runtime.set_viewport_size(800, 600);

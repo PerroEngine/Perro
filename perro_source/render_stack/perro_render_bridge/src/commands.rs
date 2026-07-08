@@ -114,6 +114,10 @@ pub enum Command2D {
         node: NodeID,
         water: Box<Water2DState>,
     },
+    UpsertShadowCaster {
+        node: NodeID,
+        caster: ShadowCaster2DState,
+    },
     SetAmbientLight {
         node: NodeID,
         light: AmbientLight2DState,

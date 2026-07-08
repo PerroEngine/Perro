@@ -82,7 +82,7 @@ Status keys:
 | `WaterBody2D`           | done   | Shaped 2D water surface node with quad/circle bounds, GPU height/foam sim, idle modes, flow/wind, render-layer filtering, max-rate GPU sample readback, analytic fallback, camera-distance sim LOD, and fixed-step buoyancy/drag LOD for `RigidBody2D`. Water is not a solid collider; add physics bodies/areas separately for banks, floors, triggers, or raycast targets. See [Water Bodies](../scripting/water.md).                                                                                                                           |
 | 2D skeleton nodes       | done   | `Skeleton2D` owns `Vec<Bone2D>` data loaded from `.pskel2d`; attachment, IK target, physics chain, and bone collider nodes mirror the 3D rig workflow.                                                                                                                                                                                                                                                                                                                                                                      |
 | 2D particles            | done   | `ParticleEmitter2D` uses `.ppart` profiles; `z` fields are ignored.                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| 2D lights               | done   | `AmbientLight2D`, `RayLight2D`, `PointLight2D`, and `SpotLight2D` render unshadowed additive 2D lights. Light nodes expose `cast_shadows`, but 2D shadow rendering remains future work.                                                                                                                                                                                                                                                                       |
+| 2D lights               | partial | `AmbientLight2D`, `RayLight2D`, `PointLight2D`, and `SpotLight2D` render additive 2D lights. `RayLight2D`, `PointLight2D`, and `SpotLight2D` honor `cast_shadows` through a hard-shadow MVP using visible `CollisionShape2D` casters. Soft penumbra, sprite-alpha silhouettes, tilemap collision casters, and camera-stream caster capture remain future work.                                                                                                                                       |
 
 ## 3D
 
@@ -142,6 +142,6 @@ Status keys:
 
 1. Navmesh static bake + Demo3D lane.
 2. Automatic retargeting.
-3. 2D shadowed lights.
+3. 2D shadow polish.
 4. Perro editor release polish and docs.
 5. Joint polish: optional limits/motors/springs if needed.

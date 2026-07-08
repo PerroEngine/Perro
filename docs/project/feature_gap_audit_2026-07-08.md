@@ -16,7 +16,7 @@ Scope:
 | 3D shadow controls | done | shadow tuning fields and guide exist | keep Demo3D tuning lane on backlog |
 | Navmesh | partial | text `.pnav`, resource API, and runtime path query exist | static bake, node, binary format, and Demo3D lane |
 | Auto retarget | partial | `.pretarget` alias maps and CLI import remap exist | rest-pose bake, static pipeline, and humanoid solve |
-| 2D shadows | planned | `cast_shadows` fields exist but do nothing in 2D | hard-shadow mask from 2D colliders |
+| 2D shadows | partial | `cast_shadows` drives hard 2D shadows from visible `CollisionShape2D` casters | soft shadows, sprite/tilemap casters, Demo2D lane |
 | Editor release | in dev | editor exists but not release-grade | smoke, docs, save/load tests, inspector coverage |
 | Joint polish | planned | current joints cover core use, not tuning-heavy rigs | optional limits/motors/springs only after demo need |
 | Docs parity | partial | features exist but docs hide them or split them | camera stream, decals, editor paths |
@@ -26,7 +26,7 @@ Scope:
 
 1. Navmesh static bake + Demo3D lane
 2. Auto retarget rest-pose/static bake
-3. 2D shadowed lights
+3. 2D shadow polish
 4. Editor release pass
 5. Joint polish
 6. Docs parity
@@ -288,12 +288,18 @@ Goal:
 
 - make 2D `cast_shadows` meaningful
 
-MVP:
+Current packet:
 
-- hard shadows
-- static/dynamic 2D collision blockers
-- point + spot first
-- ray light after
+- done: `cast_shadows` reaches `RayLight2DState`, `PointLight2DState`, and `SpotLight2DState`
+- done: visible `CollisionShape2D` nodes emit `ShadowCaster2DState`
+- done: GPU light shader reads caster storage buffer
+- done: point and spot lights hard-mask pixels blocked by quad/circle/triangle casters
+- done: ray lights use directional hard shadows in virtual 2D space
+- todo: body layer/mask filtering
+- todo: sprite alpha silhouettes
+- todo: tilemap collision casters
+- todo: soft penumbra
+- todo: Demo2D shadow lane
 
 Use:
 
@@ -304,14 +310,13 @@ Use:
 
 Impl:
 
-1. collect blocker edges from 2D collision shapes
-2. filter blockers by layer/mask + camera
-3. extrude silhouette quads from light origin
-4. render shadow mask into light target
-5. multiply/subtract mask during light draw
-6. add spot cone clipping
-7. add ray-light directional extrusion
-8. add Demo2D shadow lane
+1. done: add bridge shadow flags + caster state
+2. done: retain shadow casters in 2D renderer
+3. done: upload caster storage buffer beside the 2D light pass
+4. done: mask light fragments with segment-vs-caster tests
+5. done: add runtime + renderer tests
+6. todo: filter blockers by body layer/mask + camera
+7. todo: add Demo2D shadow lane
 
 Later:
 
@@ -321,9 +326,9 @@ Later:
 
 Done:
 
-- point/spot shadows visible
-- moving blockers update
-- cost stable with many sprites
+- `cast_shadows` no longer no-ops for ray/point/spot 2D lights
+- collision shape blockers update through retained render state
+- shader validation covers the new storage-buffer light mask
 
 ## 7. Editor Release Pass
 

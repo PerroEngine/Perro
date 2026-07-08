@@ -728,6 +728,7 @@ impl Runtime {
                 color: [f32; 3],
                 intensity: f32,
                 z_index: i32,
+                cast_shadows: bool,
             },
             Point {
                 transform: perro_structs::Transform2D,
@@ -735,6 +736,7 @@ impl Runtime {
                 intensity: f32,
                 range: f32,
                 z_index: i32,
+                cast_shadows: bool,
             },
             Spot {
                 transform: perro_structs::Transform2D,
@@ -744,6 +746,7 @@ impl Runtime {
                 inner_angle_radians: f32,
                 outer_angle_radians: f32,
                 z_index: i32,
+                cast_shadows: bool,
             },
         }
         let mut out = Vec::new();
@@ -778,6 +781,7 @@ impl Runtime {
                             color: light.color,
                             intensity: light.intensity,
                             z_index: light.z_index,
+                            cast_shadows: light.cast_shadows,
                         })
                     }
                     SceneNodeData::PointLight2D(light)
@@ -793,6 +797,7 @@ impl Runtime {
                             intensity: light.intensity,
                             range: light.range,
                             z_index: light.z_index,
+                            cast_shadows: light.cast_shadows,
                         })
                     }
                     SceneNodeData::SpotLight2D(light)
@@ -810,6 +815,7 @@ impl Runtime {
                             inner_angle_radians: light.inner_angle_radians,
                             outer_angle_radians: light.outer_angle_radians,
                             z_index: light.z_index,
+                            cast_shadows: light.cast_shadows,
                         })
                     }
                     _ => None,
@@ -826,6 +832,7 @@ impl Runtime {
                     color,
                     intensity,
                     z_index,
+                    cast_shadows,
                 }) => {
                     let global = self
                         .get_render_global_transform_2d(node)
@@ -835,6 +842,7 @@ impl Runtime {
                         color,
                         intensity: intensity.max(0.0),
                         z_index,
+                        cast_shadows,
                     }));
                 }
                 Some(StreamLight2DData::Point {
@@ -843,6 +851,7 @@ impl Runtime {
                     intensity,
                     range,
                     z_index,
+                    cast_shadows,
                 }) => {
                     let global = self
                         .get_render_global_transform_2d(node)
@@ -853,6 +862,7 @@ impl Runtime {
                         intensity: intensity.max(0.0),
                         range: range.max(0.001),
                         z_index,
+                        cast_shadows,
                     }));
                 }
                 Some(StreamLight2DData::Spot {
@@ -863,6 +873,7 @@ impl Runtime {
                     inner_angle_radians,
                     outer_angle_radians,
                     z_index,
+                    cast_shadows,
                 }) => {
                     let global = self
                         .get_render_global_transform_2d(node)
@@ -876,6 +887,7 @@ impl Runtime {
                         inner_angle_radians: inner_angle_radians.max(0.0),
                         outer_angle_radians: outer_angle_radians.max(inner_angle_radians),
                         z_index,
+                        cast_shadows,
                     }));
                 }
                 None => {}

@@ -23,7 +23,8 @@ use perro_ids::NodeID;
 use perro_render_bridge::{
     Camera3DState, CameraProjectionState, CameraStreamDraw3DState, CameraStreamLighting3DState,
     CameraStreamSourceState, CameraStreamState, Decal3DState, Light2DState, PointParticles3DState,
-    Sprite2DCommand, Water2DState, Water3DState, WaterBodySampleState, WaterSampleState,
+    ShadowCaster2DState, Sprite2DCommand, Water2DState, Water3DState, WaterBodySampleState,
+    WaterSampleState,
 };
 use perro_structs::TextureFilterMode;
 use perro_structs::VisualAccessibilitySettings;
@@ -491,6 +492,7 @@ pub struct RenderFrame<'a> {
     pub sprites_2d: &'a [Sprite2DCommand],
     pub sprites_2d_revision: u64,
     pub point_lights_2d: &'a [Light2DState],
+    pub shadow_casters_2d: &'a [ShadowCaster2DState],
     pub waters_2d: &'a [(NodeID, Water2DState)],
     pub waters_2d_revision: u64,
     pub late_overlay_camera_2d: Camera2DUniform,
@@ -498,6 +500,7 @@ pub struct RenderFrame<'a> {
     pub late_overlay_upload_2d: &'a RectUploadPlan,
     pub late_overlay_sprites_2d: &'a [Sprite2DCommand],
     pub late_overlay_point_lights_2d: &'a [Light2DState],
+    pub late_overlay_shadow_casters_2d: &'a [ShadowCaster2DState],
     pub ui_primitives: &'a [ClippedPrimitive],
     pub ui_textures_delta: &'a TexturesDelta,
     pub ui_texture_size: [u32; 2],
@@ -1005,6 +1008,7 @@ impl Gpu {
             sprites_2d,
             sprites_2d_revision,
             point_lights_2d,
+            shadow_casters_2d,
             waters_2d,
             waters_2d_revision,
             late_overlay_camera_2d,
@@ -1012,6 +1016,7 @@ impl Gpu {
             late_overlay_upload_2d,
             late_overlay_sprites_2d,
             late_overlay_point_lights_2d,
+            late_overlay_shadow_casters_2d,
             redraw_requested,
             frame_time_seconds,
             frame_delta_seconds,
@@ -1165,6 +1170,7 @@ impl Gpu {
                         sprites_revision: sprites_2d_revision,
                         force_sprite_prepare: has(DIRTY_RESOURCES),
                         point_lights: point_lights_2d,
+                        shadow_casters: shadow_casters_2d,
                         static_texture_lookup,
                     },
                 );
@@ -1579,6 +1585,7 @@ impl Gpu {
                             sprites_revision: sprites_2d_revision ^ node.as_u64(),
                             force_sprite_prepare: true,
                             point_lights: stream.lights_2d.as_ref(),
+                            shadow_casters: &[],
                             static_texture_lookup,
                         },
                     );
@@ -2119,6 +2126,7 @@ impl Gpu {
                         sprites_revision: 0,
                         force_sprite_prepare: true,
                         point_lights: late_overlay_point_lights_2d,
+                        shadow_casters: late_overlay_shadow_casters_2d,
                         static_texture_lookup,
                     },
                 );

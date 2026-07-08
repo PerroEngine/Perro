@@ -2,7 +2,8 @@ use super::{RectInstanceGpu, Renderer2D};
 use crate::resources::ResourceStore;
 use perro_ids::{NodeID, TextureID};
 use perro_render_bridge::{
-    DrawShape2DCommand, Light2DState, PointLight2DState, Rect2DCommand, Sprite2DCommand,
+    DrawShape2DCommand, Light2DState, PointLight2DState, Rect2DCommand, ShadowCaster2DShapeState,
+    ShadowCaster2DState, Sprite2DCommand,
 };
 use perro_structs::{Color, DrawShape2D, Vector2};
 
@@ -202,6 +203,7 @@ fn point_light_is_retained_and_removed_by_node() {
         intensity: 2.0,
         range: 128.0,
         z_index: 3,
+        cast_shadows: true,
     };
 
     renderer.set_point_light(node, light);
@@ -216,6 +218,27 @@ fn point_light_is_retained_and_removed_by_node() {
     renderer.remove_node(node);
 
     assert_eq!(renderer.light_count(), 0);
+}
+
+#[test]
+fn shadow_caster_is_retained_and_removed_by_node() {
+    let mut renderer = Renderer2D::new();
+    let node = NodeID::from_parts(10, 0);
+    let caster = ShadowCaster2DState {
+        center: [4.0, 8.0],
+        half_extents: [16.0, 6.0],
+        rotation_radians: 0.25,
+        shape: ShadowCaster2DShapeState::Quad,
+        z_index: 2,
+    };
+
+    renderer.upsert_shadow_caster(node, caster);
+
+    assert!(renderer.shadow_casters().any(|stored| stored == caster));
+
+    renderer.remove_node(node);
+
+    assert_eq!(renderer.shadow_casters().count(), 0);
 }
 
 #[test]
