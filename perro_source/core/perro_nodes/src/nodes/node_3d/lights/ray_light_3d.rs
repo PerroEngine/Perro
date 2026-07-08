@@ -21,6 +21,9 @@ pub struct RayLight3D {
     pub color: [f32; 3],
     pub intensity: f32,
     pub cast_shadows: bool,
+    pub shadow_strength: f32,
+    pub shadow_depth_bias: f32,
+    pub shadow_normal_bias: f32,
     pub active: bool,
 }
 
@@ -31,6 +34,9 @@ impl RayLight3D {
             color: [1.0, 1.0, 1.0],
             intensity: 1.0,
             cast_shadows: true,
+            shadow_strength: 0.82,
+            shadow_depth_bias: 0.00018,
+            shadow_normal_bias: 0.045,
             active: true,
         }
     }

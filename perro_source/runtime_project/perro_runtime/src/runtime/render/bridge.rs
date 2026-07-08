@@ -1252,6 +1252,9 @@ impl Runtime {
                 color: [f32; 3],
                 intensity: f32,
                 cast_shadows: bool,
+                shadow_strength: f32,
+                shadow_depth_bias: f32,
+                shadow_normal_bias: f32,
             },
             Point {
                 transform: perro_structs::Transform3D,
@@ -1259,6 +1262,9 @@ impl Runtime {
                 intensity: f32,
                 range: f32,
                 cast_shadows: bool,
+                shadow_strength: f32,
+                shadow_depth_bias: f32,
+                shadow_normal_bias: f32,
             },
             Spot {
                 transform: perro_structs::Transform3D,
@@ -1268,6 +1274,9 @@ impl Runtime {
                 inner_angle_radians: f32,
                 outer_angle_radians: f32,
                 cast_shadows: bool,
+                shadow_strength: f32,
+                shadow_depth_bias: f32,
+                shadow_normal_bias: f32,
             },
         }
         let mut lighting = CameraStreamLighting3DState::default();
@@ -1333,6 +1342,9 @@ impl Runtime {
                             color: light.color,
                             intensity: light.intensity,
                             cast_shadows: light.cast_shadows,
+                            shadow_strength: light.shadow_strength,
+                            shadow_depth_bias: light.shadow_depth_bias,
+                            shadow_normal_bias: light.shadow_normal_bias,
                         })
                     }
                     SceneNodeData::PointLight3D(light)
@@ -1347,6 +1359,9 @@ impl Runtime {
                             intensity: light.intensity,
                             range: light.range,
                             cast_shadows: light.cast_shadows,
+                            shadow_strength: light.shadow_strength,
+                            shadow_depth_bias: light.shadow_depth_bias,
+                            shadow_normal_bias: light.shadow_normal_bias,
                         })
                     }
                     SceneNodeData::SpotLight3D(light)
@@ -1363,6 +1378,9 @@ impl Runtime {
                             inner_angle_radians: light.inner_angle_radians,
                             outer_angle_radians: light.outer_angle_radians,
                             cast_shadows: light.cast_shadows,
+                            shadow_strength: light.shadow_strength,
+                            shadow_depth_bias: light.shadow_depth_bias,
+                            shadow_normal_bias: light.shadow_normal_bias,
                         })
                     }
                     _ => None,
@@ -1375,6 +1393,9 @@ impl Runtime {
                     color,
                     intensity,
                     cast_shadows,
+                    shadow_strength,
+                    shadow_depth_bias,
+                    shadow_normal_bias,
                 }) => {
                     let global = self
                         .get_render_global_transform_3d(node)
@@ -1384,6 +1405,9 @@ impl Runtime {
                         color,
                         intensity: intensity.max(0.0),
                         cast_shadows,
+                        shadow_strength,
+                        shadow_depth_bias,
+                        shadow_normal_bias,
                     });
                 }
                 Some(StreamLight3DData::Point {
@@ -1392,6 +1416,9 @@ impl Runtime {
                     intensity,
                     range,
                     cast_shadows,
+                    shadow_strength,
+                    shadow_depth_bias,
+                    shadow_normal_bias,
                 }) => {
                     let global = self
                         .get_render_global_transform_3d(node)
@@ -1402,6 +1429,9 @@ impl Runtime {
                         intensity: intensity.max(0.0),
                         range: range.max(0.001),
                         cast_shadows,
+                        shadow_strength,
+                        shadow_depth_bias,
+                        shadow_normal_bias,
                     });
                 }
                 Some(StreamLight3DData::Spot {
@@ -1412,6 +1442,9 @@ impl Runtime {
                     inner_angle_radians,
                     outer_angle_radians,
                     cast_shadows,
+                    shadow_strength,
+                    shadow_depth_bias,
+                    shadow_normal_bias,
                 }) => {
                     let global = self
                         .get_render_global_transform_3d(node)
@@ -1425,6 +1458,9 @@ impl Runtime {
                         inner_angle_radians: inner_angle_radians.max(0.0),
                         outer_angle_radians: outer_angle_radians.max(inner_angle_radians),
                         cast_shadows,
+                        shadow_strength,
+                        shadow_depth_bias,
+                        shadow_normal_bias,
                     });
                 }
                 None => {}

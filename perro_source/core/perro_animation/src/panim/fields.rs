@@ -256,8 +256,17 @@ fn parse_light_3d_action(
         Light3DField::CastShadows => {
             Light3DAction::CastShadows(expect_bool(value, key, line_no)?)
         }
+        Light3DField::ShadowStrength => {
+            Light3DAction::ShadowStrength(expect_f32(value, key, line_no)?)
+        }
+        Light3DField::ShadowDepthBias => {
+            Light3DAction::ShadowDepthBias(expect_f32(value, key, line_no)?)
+        }
+        Light3DField::ShadowNormalBias => {
+            Light3DAction::ShadowNormalBias(expect_f32(value, key, line_no)?)
+        }
         Light3DField::Active => Light3DAction::Active(expect_bool(value, key, line_no)?),
-        Light3DField::RenderLayers => {
+        Light3DField::Shadow | Light3DField::RenderLayers => {
             return Err(format!(
                 "line {}: `{}` is valid but not animatable in `.panim`",
                 line_no, key
@@ -733,7 +742,22 @@ fn resolve_animatable_channel(
             NodeField::Light3D(Light3DField::CastShadows),
             None,
         )),
-        NodeField::Light3D(Light3DField::RenderLayers) => Err(format!(
+        NodeField::Light3D(Light3DField::ShadowStrength) => Ok((
+            "light3d.shadow_strength".to_string(),
+            NodeField::Light3D(Light3DField::ShadowStrength),
+            None,
+        )),
+        NodeField::Light3D(Light3DField::ShadowDepthBias) => Ok((
+            "light3d.shadow_depth_bias".to_string(),
+            NodeField::Light3D(Light3DField::ShadowDepthBias),
+            None,
+        )),
+        NodeField::Light3D(Light3DField::ShadowNormalBias) => Ok((
+            "light3d.shadow_normal_bias".to_string(),
+            NodeField::Light3D(Light3DField::ShadowNormalBias),
+            None,
+        )),
+        NodeField::Light3D(Light3DField::Shadow | Light3DField::RenderLayers) => Err(format!(
             "line {}: `{}` is valid but not animatable in `.panim`",
             line_no, key
         )),
@@ -836,6 +860,9 @@ enum Light3DAction {
     Color([f32; 3]),
     Intensity(f32),
     CastShadows(bool),
+    ShadowStrength(f32),
+    ShadowDepthBias(f32),
+    ShadowNormalBias(f32),
     Active(bool),
 }
 

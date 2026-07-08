@@ -1941,6 +1941,9 @@ fn active_ray_light_3d_emits_set_ray_light_command() {
     let mut light = RayLight3D::new();
     light.color = [0.8, 0.7, 0.6];
     light.intensity = 2.5;
+    light.shadow_strength = 0.55;
+    light.shadow_depth_bias = 0.001;
+    light.shadow_normal_bias = 0.12;
     light.active = true;
     runtime
         .nodes
@@ -1954,7 +1957,11 @@ fn active_ray_light_3d_emits_set_ray_light_command() {
             if matches!(
                 command_3d.as_ref(),
                 Command3D::SetRayLight { light, .. }
-                    if light.color == [0.8, 0.7, 0.6] && light.intensity == 2.5
+                    if light.color == [0.8, 0.7, 0.6]
+                        && light.intensity == 2.5
+                        && light.shadow_strength == 0.55
+                        && light.shadow_depth_bias == 0.001
+                        && light.shadow_normal_bias == 0.12
             )
     )));
 }

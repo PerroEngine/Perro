@@ -379,6 +379,7 @@ Lights:
 - `RayLight3D`
 - `PointLight3D`
 - `SpotLight3D`
+- Shadow-casting 3D lights use `cast_shadows`, `shadow_strength`, `shadow_depth_bias`, and `shadow_normal_bias`. See [3D Shadows](../resources/shadows3d.md).
 
 Physics 3D:
 

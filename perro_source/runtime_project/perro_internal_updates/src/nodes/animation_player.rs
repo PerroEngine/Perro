@@ -581,6 +581,52 @@ where
                 ))
             })
         }
+        NodeField::Light3D(Light3DField::ShadowStrength) => {
+            with_base_node!(ctx, RayLight3D, node_id, |n| Variant::from(
+                n.shadow_strength
+            ))
+            .or_else(|| {
+                with_base_node!(ctx, PointLight3D, node_id, |n| Variant::from(
+                    n.shadow_strength
+                ))
+            })
+            .or_else(|| {
+                with_base_node!(ctx, SpotLight3D, node_id, |n| Variant::from(
+                    n.shadow_strength
+                ))
+            })
+        }
+        NodeField::Light3D(Light3DField::ShadowDepthBias) => {
+            with_base_node!(ctx, RayLight3D, node_id, |n| Variant::from(
+                n.shadow_depth_bias
+            ))
+            .or_else(|| {
+                with_base_node!(ctx, PointLight3D, node_id, |n| Variant::from(
+                    n.shadow_depth_bias
+                ))
+            })
+            .or_else(|| {
+                with_base_node!(ctx, SpotLight3D, node_id, |n| Variant::from(
+                    n.shadow_depth_bias
+                ))
+            })
+        }
+        NodeField::Light3D(Light3DField::ShadowNormalBias) => {
+            with_base_node!(ctx, RayLight3D, node_id, |n| Variant::from(
+                n.shadow_normal_bias
+            ))
+            .or_else(|| {
+                with_base_node!(ctx, PointLight3D, node_id, |n| Variant::from(
+                    n.shadow_normal_bias
+                ))
+            })
+            .or_else(|| {
+                with_base_node!(ctx, SpotLight3D, node_id, |n| Variant::from(
+                    n.shadow_normal_bias
+                ))
+            })
+        }
+        NodeField::Light3D(Light3DField::Shadow) => None,
         NodeField::PointLight3D(PointLight3DField::Range) => {
             with_base_node!(ctx, PointLight3D, node_id, |n| Variant::from(n.range))
         }
@@ -870,6 +916,41 @@ pub(super) fn apply_track<RT>(
                     });
                 }
             }
+            Light3DField::ShadowStrength => {
+                if let Some(v) = as_f32_track(&value)
+                    && with_base_node_mut!(ctx, RayLight3D, node_id, |n| n.shadow_strength = v)
+                        .is_none()
+                    && with_base_node_mut!(ctx, PointLight3D, node_id, |n| n.shadow_strength = v)
+                        .is_none()
+                {
+                    let _ =
+                        with_base_node_mut!(ctx, SpotLight3D, node_id, |n| n.shadow_strength = v);
+                }
+            }
+            Light3DField::ShadowDepthBias => {
+                if let Some(v) = as_f32_track(&value)
+                    && with_base_node_mut!(ctx, RayLight3D, node_id, |n| n.shadow_depth_bias = v)
+                        .is_none()
+                    && with_base_node_mut!(ctx, PointLight3D, node_id, |n| n.shadow_depth_bias = v)
+                        .is_none()
+                {
+                    let _ =
+                        with_base_node_mut!(ctx, SpotLight3D, node_id, |n| n.shadow_depth_bias = v);
+                }
+            }
+            Light3DField::ShadowNormalBias => {
+                if let Some(v) = as_f32_track(&value)
+                    && with_base_node_mut!(ctx, RayLight3D, node_id, |n| n.shadow_normal_bias = v)
+                        .is_none()
+                    && with_base_node_mut!(ctx, PointLight3D, node_id, |n| n.shadow_normal_bias = v)
+                        .is_none()
+                {
+                    let _ = with_base_node_mut!(ctx, SpotLight3D, node_id, |n| {
+                        n.shadow_normal_bias = v
+                    });
+                }
+            }
+            Light3DField::Shadow => {}
             Light3DField::RenderLayers => {}
         },
         NodeField::PointLight3D(PointLight3DField::Range) => {

@@ -98,6 +98,9 @@ pub struct RayLight3DState {
     pub color: [f32; 3],
     pub intensity: f32,
     pub cast_shadows: bool,
+    pub shadow_strength: f32,
+    pub shadow_depth_bias: f32,
+    pub shadow_normal_bias: f32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -107,6 +110,9 @@ pub struct PointLight3DState {
     pub intensity: f32,
     pub range: f32,
     pub cast_shadows: bool,
+    pub shadow_strength: f32,
+    pub shadow_depth_bias: f32,
+    pub shadow_normal_bias: f32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -119,6 +125,9 @@ pub struct SpotLight3DState {
     pub inner_angle_radians: f32,
     pub outer_angle_radians: f32,
     pub cast_shadows: bool,
+    pub shadow_strength: f32,
+    pub shadow_depth_bias: f32,
+    pub shadow_normal_bias: f32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]

@@ -177,6 +177,9 @@ fn point_light_3d_command(i: u32) -> RenderCommand {
             intensity: 3.0,
             range: 64.0,
             cast_shadows: false,
+            shadow_strength: 0.82,
+            shadow_depth_bias: 0.00018,
+            shadow_normal_bias: 0.045,
         },
     }))
 }

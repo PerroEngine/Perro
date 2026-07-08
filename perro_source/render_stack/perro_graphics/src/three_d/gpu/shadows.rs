@@ -1,5 +1,9 @@
 use super::*;
 
+const DEFAULT_SHADOW_STRENGTH: f32 = 0.82;
+const DEFAULT_SHADOW_DEPTH_BIAS: f32 = 0.00018;
+const DEFAULT_SHADOW_NORMAL_BIAS: f32 = 0.045;
+
 pub(super) struct ShadowSetup {
     pub(super) scenes: Vec<Scene3DUniform>,
     pub(super) uniform: ShadowUniform,
@@ -251,8 +255,10 @@ pub(super) fn build_shadow_setup(args: ShadowSetupArgs<'_>) -> ShadowSetup {
         any_enabled = true;
     }
 
+    let [shadow_strength, shadow_depth_bias, shadow_normal_bias] =
+        shadow_tuning_from_lighting(lighting);
     uniform.params0 = if any_enabled {
-        [1.0, 0.82, 0.00018, 0.045]
+        [1.0, shadow_strength, shadow_depth_bias, shadow_normal_bias]
     } else {
         [0.0; 4]
     };
@@ -267,6 +273,58 @@ pub(super) fn build_shadow_setup(args: ShadowSetupArgs<'_>) -> ShadowSetup {
         focus_center,
         focus_radius,
     }
+}
+
+fn shadow_tuning_from_lighting(lighting: &Lighting3DState) -> [f32; 3] {
+    if let Some(light) = lighting
+        .ray_lights
+        .iter()
+        .flatten()
+        .find(|light| light.cast_shadows && light.intensity > 1.0e-4)
+    {
+        return sanitize_shadow_tuning(
+            light.shadow_strength,
+            light.shadow_depth_bias,
+            light.shadow_normal_bias,
+        );
+    }
+    if let Some(light) = lighting
+        .spot_lights
+        .iter()
+        .flatten()
+        .find(|light| light.cast_shadows && light.intensity > 1.0e-4)
+    {
+        return sanitize_shadow_tuning(
+            light.shadow_strength,
+            light.shadow_depth_bias,
+            light.shadow_normal_bias,
+        );
+    }
+    if let Some(light) = lighting
+        .point_lights
+        .iter()
+        .flatten()
+        .find(|light| light.cast_shadows && light.intensity > 1.0e-4 && light.range > 0.01)
+    {
+        return sanitize_shadow_tuning(
+            light.shadow_strength,
+            light.shadow_depth_bias,
+            light.shadow_normal_bias,
+        );
+    }
+    [
+        DEFAULT_SHADOW_STRENGTH,
+        DEFAULT_SHADOW_DEPTH_BIAS,
+        DEFAULT_SHADOW_NORMAL_BIAS,
+    ]
+}
+
+fn sanitize_shadow_tuning(strength: f32, depth_bias: f32, normal_bias: f32) -> [f32; 3] {
+    [
+        strength.clamp(0.0, 1.0),
+        depth_bias.clamp(0.0, 0.01),
+        normal_bias.clamp(0.0, 1.0),
+    ]
 }
 
 struct RayShadowSceneArgs<'a> {
@@ -766,6 +824,9 @@ mod tests {
             color: [1.0, 1.0, 1.0],
             intensity: 1.0,
             cast_shadows: true,
+            shadow_strength: 0.82,
+            shadow_depth_bias: 0.00018,
+            shadow_normal_bias: 0.045,
         });
         lighting
     }
@@ -853,6 +914,30 @@ mod tests {
     }
 
     #[test]
+    fn shadow_tuning_uses_first_active_caster() {
+        let batches = [caster_batch()];
+        let instances = [identity_instance()];
+        let mut lighting = lighting_with_ray([-0.5, -1.0, -0.2]);
+        if let Some(light) = lighting.ray_lights[0].as_mut() {
+            light.shadow_strength = 0.5;
+            light.shadow_depth_bias = 0.001;
+            light.shadow_normal_bias = 0.1;
+        }
+        let setup = build_shadow_setup(ShadowSetupArgs {
+            camera: &camera(Quat::IDENTITY),
+            lighting: &lighting,
+            draw_batches: &batches,
+            staged_instances: &instances,
+            fallback_focus_center: Vec3::ZERO,
+            fallback_focus_radius: 64.0,
+            viewport_width: 1280,
+            viewport_height: 720,
+            has_casters: true,
+        });
+        assert_eq!(setup.uniform.params0, [1.0, 0.5, 0.001, 0.1]);
+    }
+
+    #[test]
     fn spot_and_point_shadow_slots_follow_cast_shadow_flags() {
         let batches = [caster_batch()];
         let instances = [identity_instance()];
@@ -866,6 +951,9 @@ mod tests {
             inner_angle_radians: 0.25,
             outer_angle_radians: 0.5,
             cast_shadows: true,
+            shadow_strength: 0.82,
+            shadow_depth_bias: 0.00018,
+            shadow_normal_bias: 0.045,
         });
         lighting.spot_lights[1] = Some(SpotLight3DState {
             cast_shadows: false,
@@ -877,6 +965,9 @@ mod tests {
             intensity: 1.0,
             range: 10.0,
             cast_shadows: true,
+            shadow_strength: 0.82,
+            shadow_depth_bias: 0.00018,
+            shadow_normal_bias: 0.045,
         });
         let setup = build_shadow_setup(ShadowSetupArgs {
             camera: &camera(Quat::IDENTITY),

@@ -251,7 +251,7 @@ Semantics:
 
 `Light3D`:
 
-- `color`, `intensity`, `cast_shadows`, `active`
+- `color`, `intensity`, `cast_shadows`, `shadow_strength`, `shadow_depth_bias`, `shadow_normal_bias`, `active`
 
 `PointLight3D`:
 

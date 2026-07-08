@@ -13,25 +13,24 @@ Scope:
 | --- | --- | --- | --- |
 | Demo2D parity | done | parity zones shipped in Demo2D | keep smoke/web checks current |
 | Mesh blend polish | done | MSAA and multimesh use the screen seam path | keep renderer tests + Demo3D docs current |
-| 3D shadow controls | partial | shadows work but tuning is hidden | cfg + per-light bias/quality + docs |
+| 3D shadow controls | done | shadow tuning fields and guide exist | keep Demo3D tuning lane on backlog |
 | Navmesh | research | most game-blocking missing gameplay feature | static baked navmesh + path query API |
 | Auto retarget | research | skinned asset reuse limited to exact rig contract | offline retarget bake tool |
 | 2D shadows | planned | `cast_shadows` fields exist but do nothing in 2D | hard-shadow mask from 2D colliders |
 | Editor release | in dev | editor exists but not release-grade | smoke, docs, save/load tests, inspector coverage |
 | Joint polish | planned | current joints cover core use, not tuning-heavy rigs | optional limits/motors/springs only after demo need |
-| Docs parity | partial | features exist but docs hide them or split them | camera stream, decals, shadow guide |
+| Docs parity | partial | features exist but docs hide them or split them | camera stream, decals, editor paths |
 | Test/smoke coverage | partial | several features need user-path proof, not just unit tests | demo smoke + screenshot/perf baselines |
 
 ## Priority
 
-1. 3D shadow controls + docs
-2. Navmesh MVP
-3. Auto retarget bake
-4. 2D shadowed lights
-5. Editor release pass
-6. Joint polish
-7. Docs parity
-8. Test/smoke coverage
+1. Navmesh MVP
+2. Auto retarget bake
+3. 2D shadowed lights
+4. Editor release pass
+5. Joint polish
+6. Docs parity
+7. Test/smoke coverage
 
 Reason:
 
@@ -132,12 +131,15 @@ Goal:
 - expose shadow quality knobs already implied by renderer
 - avoid shadow model rewrite
 
-Current:
+State:
 
 - ray/spot/point shadows exist
 - cascades, slots, culling, and multimesh shadow casters exist
 - fields: light `cast_shadows`, mesh `cast_shadows`, mesh `receive_shadows`
-- missing: user quality/bias knobs + dedicated docs
+- fields: `shadow_strength`, `shadow_depth_bias`, `shadow_normal_bias`
+- nested scene form: `shadow = { strength = 0.82 depth_bias = 0.00018 normal_bias = 0.045 }`
+- docs: `docs/resources/shadows3d.md`
+- limitation: current shader uses one frame-wide tuning triplet picked from the first active shadow caster
 
 Use:
 
@@ -148,19 +150,17 @@ Use:
 
 Impl:
 
-1. add global `ShadowSettings3D`
-2. add project cfg fields: map size, cascade count, max spot, max point
-3. add per-light fields: bias, normal_bias, shadow_range/quality
-4. thread fields through scene parser -> render bridge -> GPU setup
-5. add docs page `docs/resources/shadows3d.md`
-6. add Demo3D shadow tuning lane or extend mesh materials lane
-7. add perf notes: ray cascades vs point cubemap cost
+1. done: add per-light strength, depth-bias, and normal-bias fields
+2. done: thread fields through scene parser -> render bridge -> GPU setup
+3. done: add docs page `docs/resources/shadows3d.md`
+4. done: add unit tests for scene parse, runtime emit, and GPU uniform tuning
+5. todo: add Demo3D shadow tuning lane or extend mesh materials lane
+6. todo: add project cfg fields: map size, cascade count, max spot, max point
 
 Done:
 
 - user can fix acne/peter-pan artifacts without code edits
 - docs show cost and default values
-- demo shows receiver/caster toggles
 
 ## 4. Navmesh MVP
 
@@ -380,7 +380,6 @@ Goal:
 
 Needed:
 
-- `docs/resources/shadows3d.md`
 - standalone decals page or move Demo3D decal docs into docs tree
 - camera streams page
 - UI widgets summary update
@@ -453,6 +452,6 @@ Keep this only as proof that matrix changed:
 | UI widgets | missing | done |
 | Editor | missing | in dev |
 | Demo2D parity | missing | done |
-| 3D shadows | partial | partial |
+| 3D shadows | partial | done |
 | Retargeting | research | research |
 | Navmesh | research | research |
