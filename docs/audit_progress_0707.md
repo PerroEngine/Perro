@@ -18,6 +18,9 @@
 ## Spec Audit
 
 - [ ] 2.1 dup dep versions
+  - partial: direct `base64` / `gltf` / `toml` moved to workspace deps
+  - commit: `4bd48b28`
+  - verify: full `cargo check`, full `cargo clippy`, full `cargo test`
 - [ ] 2.2 unsafe w/o safety comment
 - [ ] 2.3 unwrap/panic in runtime paths
 - [ ] 2.4 string-keyed maps in hot structs
