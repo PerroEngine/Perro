@@ -41,7 +41,9 @@
 - [x] 5.1 move mis-filed bridge types
   - commit: this commit
   - verify: full `cargo check`, full `cargo clippy`, full `cargo test`
-- [ ] 4.3 split 2D prepare modules
+- [x] 4.3 split 2D prepare modules
+  - commit: this commit
+  - verify: full `cargo check`, full `cargo clippy`, full `cargo test`
 - [x] 5.2 uniform naming
   - commit: this commit
   - verify: full `cargo check`, full `cargo clippy`, full `cargo test`
