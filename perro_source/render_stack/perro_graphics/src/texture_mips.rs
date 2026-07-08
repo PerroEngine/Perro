@@ -68,11 +68,10 @@ fn build_rgba_mip_chain_from_base(rgba: Vec<u8>, width: u32, height: u32) -> Vec
         height,
     });
 
-    while levels
+    while let Some(prev) = levels
         .last()
-        .is_some_and(|level| level.width > 1 || level.height > 1)
+        .filter(|level| level.width > 1 || level.height > 1)
     {
-        let prev = levels.last().expect("base mip exists");
         let next_width = (prev.width / 2).max(1);
         let next_height = (prev.height / 2).max(1);
         let mut next = vec![0u8; next_width as usize * next_height as usize * 4];
