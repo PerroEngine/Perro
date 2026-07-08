@@ -636,7 +636,7 @@ impl GpuWater {
                     water,
                 );
             }
-            self.staged_waters.push(water_gpu_3d(
+            let staged = water_gpu_3d(
                 *node,
                 water,
                 lod.grid,
@@ -644,10 +644,10 @@ impl GpuWater {
                 cells as u32,
                 lod.ripple_blend,
                 ctx.sky_color,
-            ));
+            );
+            self.staged_waters.push(staged);
             let water_idx = (self.staged_waters.len().saturating_sub(1)) as u32;
             if lod.grid.render[0] > 0 && lod.grid.render[1] > 0 {
-                let staged = *self.staged_waters.last().expect("staged water");
                 build_render_chunks_3d(
                     &mut self.staged_render_chunks,
                     water_idx,
@@ -1144,7 +1144,11 @@ impl GpuWater {
         match rx.try_recv() {
             Ok(Ok(())) => {
                 let slice = self.readback_buffer.slice(0..self.readback_mapped_bytes);
-                let data = slice.get_mapped_range().expect("map range");
+                let Ok(data) = slice.get_mapped_range() else {
+                    self.readback_buffer.unmap();
+                    self.readback_pending_rx = None;
+                    return;
+                };
                 let cells: &[[f32; 4]] = bytemuck::cast_slice(&data);
                 self.readback_samples.clear();
                 self.readback_body_samples.clear();
