@@ -1255,7 +1255,15 @@ fn handle_http_connection(mut stream: TcpStream, root: &Path) -> Result<(), Stri
     let rel = raw_path.split('?').next().unwrap_or("/");
     let rel = rel.trim_start_matches('/');
     let rel = if rel.is_empty() { "index.html" } else { rel };
-    let path = root.join(rel_to_path(rel));
+    let Some(rel_path) = rel_to_path(rel) else {
+        return write_http_response(
+            &mut stream,
+            "400 Bad Request",
+            "text/plain; charset=utf-8",
+            b"bad request",
+        );
+    };
+    let path = root.join(rel_path);
     let path = if path.is_dir() {
         path.join("index.html")
     } else {
@@ -1274,10 +1282,18 @@ fn handle_http_connection(mut stream: TcpStream, root: &Path) -> Result<(), Stri
     write_http_response(&mut stream, "200 OK", content_type_for_path(&path), &body)
 }
 
-fn rel_to_path(rel: &str) -> PathBuf {
-    rel.split('/')
-        .filter(|part| !part.is_empty())
-        .collect::<PathBuf>()
+fn rel_to_path(rel: &str) -> Option<PathBuf> {
+    let mut path = PathBuf::new();
+    for part in rel.split('/') {
+        if part.is_empty() || part == "." {
+            continue;
+        }
+        if part == ".." || part.contains('\\') {
+            return None;
+        }
+        path.push(part);
+    }
+    Some(path)
 }
 
 fn write_http_response(
@@ -1354,13 +1370,19 @@ tint = (1.0, 0.2, 0.4, 1.0)
 
     #[test]
     fn rel_to_path_splits_url_slashes_into_components() {
-        let path = rel_to_path("assets/pages/index.html");
+        let path = rel_to_path("assets/pages/index.html").expect("valid rel path");
         let parts = path
             .iter()
             .map(|part| part.to_string_lossy().to_string())
             .collect::<Vec<_>>();
 
         assert_eq!(parts, ["assets", "pages", "index.html"]);
+    }
+
+    #[test]
+    fn rel_to_path_rejects_traversal_parts() {
+        assert_eq!(rel_to_path("../project.toml"), None);
+        assert_eq!(rel_to_path("assets\\secret.txt"), None);
     }
 
     #[test]
