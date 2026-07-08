@@ -387,7 +387,9 @@ pub struct PerroGraphics {
     retained_camera_streams: Vec<(NodeID, CameraStreamState)>,
     frame_rects_cache: Vec<RectInstanceGpu>,
     late_overlay_sprites_cache: Vec<Sprite2DCommand>,
+    late_overlay_sprites_cache_revision: u64,
     late_overlay_point_lights_cache: Vec<Light2DState>,
+    late_overlay_point_lights_cache_revision: u64,
     late_overlay_rects_cache: Vec<RectInstanceGpu>,
     used_texture_refs_cache: AHashMap<TextureID, u32>,
     used_mesh_refs_cache: AHashMap<MeshID, u32>,
@@ -672,7 +674,9 @@ impl PerroGraphics {
             retained_camera_streams: Vec::new(),
             frame_rects_cache: Vec::new(),
             late_overlay_sprites_cache: Vec::new(),
+            late_overlay_sprites_cache_revision: u64::MAX,
             late_overlay_point_lights_cache: Vec::new(),
+            late_overlay_point_lights_cache_revision: u64::MAX,
             late_overlay_rects_cache: Vec::new(),
             used_texture_refs_cache: AHashMap::new(),
             used_mesh_refs_cache: AHashMap::new(),
@@ -1876,12 +1880,31 @@ impl PerroGraphics {
             .extend_from_slice(self.late_overlay_2d.retained_rects());
         self.late_overlay_rects_cache
             .extend_from_slice(self.late_overlay_2d.frame_shapes());
-        self.late_overlay_sprites_cache.clear();
-        self.late_overlay_sprites_cache
-            .extend(self.late_overlay_2d.retained_sprites());
-        self.late_overlay_point_lights_cache.clear();
-        self.late_overlay_point_lights_cache
-            .extend(self.late_overlay_2d.lights());
+        let late_overlay_sprites_revision = self.late_overlay_2d.retained_sprites_revision();
+        if late_overlay_sprites_revision != self.late_overlay_sprites_cache_revision {
+            self.late_overlay_sprites_cache.clear();
+            let sprite_count = self.late_overlay_2d.retained_sprite_count();
+            if self.late_overlay_sprites_cache.capacity() < sprite_count {
+                self.late_overlay_sprites_cache
+                    .reserve(sprite_count - self.late_overlay_sprites_cache.capacity());
+            }
+            self.late_overlay_sprites_cache
+                .extend(self.late_overlay_2d.retained_sprites());
+            self.late_overlay_sprites_cache_revision = late_overlay_sprites_revision;
+        }
+        let late_overlay_point_lights_revision =
+            self.late_overlay_2d.retained_point_lights_revision();
+        if late_overlay_point_lights_revision != self.late_overlay_point_lights_cache_revision {
+            self.late_overlay_point_lights_cache.clear();
+            let point_light_count = self.late_overlay_2d.light_count();
+            if self.late_overlay_point_lights_cache.capacity() < point_light_count {
+                self.late_overlay_point_lights_cache
+                    .reserve(point_light_count - self.late_overlay_point_lights_cache.capacity());
+            }
+            self.late_overlay_point_lights_cache
+                .extend(self.late_overlay_2d.lights());
+            self.late_overlay_point_lights_cache_revision = late_overlay_point_lights_revision;
+        }
         let ui_image_textures: Vec<_> = self.renderer_ui.image_textures().collect();
         let ui_paint = self
             .renderer_ui
@@ -2004,6 +2027,7 @@ impl PerroGraphics {
                 late_overlay_rects_2d: &self.late_overlay_rects_cache,
                 late_overlay_upload_2d: &late_overlay_upload,
                 late_overlay_sprites_2d: &self.late_overlay_sprites_cache,
+                late_overlay_sprites_2d_revision: self.late_overlay_sprites_cache_revision,
                 late_overlay_point_lights_2d: &self.late_overlay_point_lights_cache,
                 ui_primitives: ui_paint.primitives,
                 ui_textures_delta: ui_paint.textures_delta,
