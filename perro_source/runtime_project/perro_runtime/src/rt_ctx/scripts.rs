@@ -641,7 +641,7 @@ mod active_script_stack_tests {
                         .with_state_mut::<ChainState, _, _>(ctx.id, |state| {
                             state.value = 10;
                         });
-                    assert_eq!(ctx.run.Signals().signal_emit(self.signal, &[]), 1);
+                    assert_eq!(ctx.run.Signals().emit(self.signal, &[]), 1);
                     let _ = ctx.run.Scripts().call_method(self.c, GO, &[]);
                 }
                 (ChainRole::C, GO) => {

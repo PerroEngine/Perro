@@ -34,7 +34,7 @@ impl<'rt, R: SignalAPI + ?Sized> SignalModule<'rt, R> {
         Self { rt }
     }
 
-    pub fn signal_connect(
+    pub fn connect(
         &mut self,
         script_id: NodeID,
         signal: SignalID,
@@ -44,7 +44,7 @@ impl<'rt, R: SignalAPI + ?Sized> SignalModule<'rt, R> {
         self.rt.signal_connect(script_id, signal, function, params)
     }
 
-    pub fn signal_connect_many<S, F>(
+    pub fn connect_many<S, F>(
         &mut self,
         script_id: NodeID,
         signals: S,
@@ -75,7 +75,7 @@ impl<'rt, R: SignalAPI + ?Sized> SignalModule<'rt, R> {
         connected
     }
 
-    pub fn signal_disconnect(
+    pub fn disconnect(
         &mut self,
         script_id: NodeID,
         signal: SignalID,
@@ -84,12 +84,7 @@ impl<'rt, R: SignalAPI + ?Sized> SignalModule<'rt, R> {
         self.rt.signal_disconnect(script_id, signal, function)
     }
 
-    pub fn signal_disconnect_many<S, F>(
-        &mut self,
-        script_id: NodeID,
-        signals: S,
-        functions: F,
-    ) -> usize
+    pub fn disconnect_many<S, F>(&mut self, script_id: NodeID, signals: S, functions: F) -> usize
     where
         S: IntoIterator,
         S::Item: Borrow<SignalID>,
@@ -114,8 +109,67 @@ impl<'rt, R: SignalAPI + ?Sized> SignalModule<'rt, R> {
         disconnected
     }
 
-    pub fn signal_emit(&mut self, signal: SignalID, params: &[Variant]) -> usize {
+    pub fn emit(&mut self, signal: SignalID, params: &[Variant]) -> usize {
         self.rt.signal_emit(signal, params)
+    }
+
+    #[deprecated(note = "use Signals().connect(...)")]
+    pub fn signal_connect(
+        &mut self,
+        script_id: NodeID,
+        signal: SignalID,
+        function: ScriptMemberID,
+        params: &[Variant],
+    ) -> bool {
+        self.connect(script_id, signal, function, params)
+    }
+
+    #[deprecated(note = "use Signals().connect_many(...)")]
+    pub fn signal_connect_many<S, F>(
+        &mut self,
+        script_id: NodeID,
+        signals: S,
+        functions: F,
+        params: &[Variant],
+    ) -> usize
+    where
+        S: IntoIterator,
+        S::Item: Borrow<SignalID>,
+        F: IntoIterator,
+        F::Item: Borrow<ScriptMemberID>,
+    {
+        self.connect_many(script_id, signals, functions, params)
+    }
+
+    #[deprecated(note = "use Signals().disconnect(...)")]
+    pub fn signal_disconnect(
+        &mut self,
+        script_id: NodeID,
+        signal: SignalID,
+        function: ScriptMemberID,
+    ) -> bool {
+        self.disconnect(script_id, signal, function)
+    }
+
+    #[deprecated(note = "use Signals().disconnect_many(...)")]
+    pub fn signal_disconnect_many<S, F>(
+        &mut self,
+        script_id: NodeID,
+        signals: S,
+        functions: F,
+    ) -> usize
+    where
+        S: IntoIterator,
+        S::Item: Borrow<SignalID>,
+        F: IntoIterator,
+        F::Item: Borrow<ScriptMemberID>,
+    {
+        self.disconnect_many(script_id, signals, functions)
+    }
+
+    #[deprecated(note = "use Signals().emit(...)")]
+    pub fn signal_emit(&mut self, signal: SignalID, params: &[Variant]) -> usize {
+        self.emit(signal, params)
     }
 }
 
@@ -130,12 +184,10 @@ impl<'rt, R: SignalAPI + ?Sized> SignalModule<'rt, R> {
 #[macro_export]
 macro_rules! signal_connect {
     ($ctx:expr, $script:expr, $signal:expr, $function:expr, $params:expr) => {
-        $ctx.Signals()
-            .signal_connect($script, $signal, $function, $params)
+        $ctx.Signals().connect($script, $signal, $function, $params)
     };
     ($ctx:expr, $script:expr, $signal:expr, $function:expr) => {
-        $ctx.Signals()
-            .signal_connect($script, $signal, $function, &[])
+        $ctx.Signals().connect($script, $signal, $function, &[])
     };
 }
 
@@ -153,11 +205,11 @@ macro_rules! signal_connect {
 macro_rules! signal_connect_many {
     ($ctx:expr, $script:expr, $signals:expr, $functions:expr, $params:expr) => {
         $ctx.Signals()
-            .signal_connect_many($script, $signals, $functions, $params)
+            .connect_many($script, $signals, $functions, $params)
     };
     ($ctx:expr, $script:expr, $signals:expr, $functions:expr) => {
         $ctx.Signals()
-            .signal_connect_many($script, $signals, $functions, &[])
+            .connect_many($script, $signals, $functions, &[])
     };
 }
 
@@ -171,8 +223,7 @@ macro_rules! signal_connect_many {
 #[macro_export]
 macro_rules! signal_disconnect {
     ($ctx:expr, $script:expr, $signal:expr, $function:expr) => {
-        $ctx.Signals()
-            .signal_disconnect($script, $signal, $function)
+        $ctx.Signals().disconnect($script, $signal, $function)
     };
 }
 
@@ -189,7 +240,7 @@ macro_rules! signal_disconnect {
 macro_rules! signal_disconnect_many {
     ($ctx:expr, $script:expr, $signals:expr, $functions:expr) => {
         $ctx.Signals()
-            .signal_disconnect_many($script, $signals, $functions)
+            .disconnect_many($script, $signals, $functions)
     };
 }
 
@@ -202,9 +253,9 @@ macro_rules! signal_disconnect_many {
 #[macro_export]
 macro_rules! signal_emit {
     ($ctx:expr, $signal:expr, $params:expr) => {
-        $ctx.Signals().signal_emit($signal, $params)
+        $ctx.Signals().emit($signal, $params)
     };
     ($ctx:expr, $signal:expr) => {
-        $ctx.Signals().signal_emit($signal, &[])
+        $ctx.Signals().emit($signal, &[])
     };
 }

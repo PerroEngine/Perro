@@ -51,7 +51,9 @@
   - commit: this commit
   - verify: full `cargo check`, full `cargo clippy`, full `cargo test`
 - [ ] 3.1 getter prefix policy
-- [ ] 3.2 redundant module prefixes
+- [x] 3.2 redundant module prefixes
+  - commit: this commit
+  - verify: full `cargo check`, full `cargo clippy`, full `cargo test`
 - [ ] 3.4 typed load errors
 - [ ] 1.1 color vocabulary
 - [ ] 1.2 on/off vocabulary

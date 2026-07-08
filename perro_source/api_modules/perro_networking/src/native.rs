@@ -60,8 +60,7 @@ macro_rules! emit_net_event {
     ($ctx:expr, $event:expr) => {{
         let event = $event;
         let params = event.signal_params();
-        $ctx.Signals()
-            .signal_emit(event.signal_id(), params.as_slice())
+        $ctx.Signals().emit(event.signal_id(), params.as_slice())
     }};
 }
 

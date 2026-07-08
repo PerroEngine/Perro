@@ -1254,13 +1254,17 @@ fn script_macros_typecheck_and_forward() {
         2
     );
     assert_eq!(
-        ctx.Signals().signal_connect_many(
+        ctx.Signals().connect_many(
             id,
             vec![signal!("on_d"), signal!("on_e")],
             vec![func!("handle_d"), func!("handle_e")],
             &[]
         ),
         4
+    );
+    assert!(
+        ctx.Signals()
+            .connect(id, signal!("on_direct"), func!("handle_direct"), &[])
     );
     assert!(signal_disconnect!(
         &mut ctx,
@@ -1287,18 +1291,23 @@ fn script_macros_typecheck_and_forward() {
         2
     );
     assert_eq!(
-        ctx.Signals().signal_disconnect_many(
+        ctx.Signals().disconnect_many(
             id,
             vec![signal!("on_d"), signal!("on_e")],
             vec![func!("handle_d"), func!("handle_e")]
         ),
         4
     );
+    assert!(
+        ctx.Signals()
+            .disconnect(id, signal!("on_direct"), func!("handle_direct"))
+    );
     assert_eq!(
         signal_emit!(&mut ctx, signal!("on_test"), params![1_i32]),
         1
     );
     assert_eq!(signal_emit!(&mut ctx, signal!("on_test")), 1);
+    assert_eq!(ctx.Signals().emit(signal!("on_test"), &[]), 1);
     assert_eq!(
         scene_load!(&mut ctx, "res://scenes/a.scene"),
         Ok(NodeID::new(7))
