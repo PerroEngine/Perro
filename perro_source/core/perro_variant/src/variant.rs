@@ -3047,7 +3047,7 @@ impl Variant {
     }
 
     #[inline]
-    pub fn as_transform2d(&self) -> Option<Transform2D> {
+    pub fn as_transform2(&self) -> Option<Transform2D> {
         match self {
             Variant::EngineStruct(EngineStruct::Transform2D(t)) => Some(*t),
             _ => None,
@@ -3055,11 +3055,21 @@ impl Variant {
     }
 
     #[inline]
-    pub fn as_transform3d(&self) -> Option<Transform3D> {
+    pub fn as_transform3(&self) -> Option<Transform3D> {
         match self {
             Variant::EngineStruct(EngineStruct::Transform3D(t)) => Some(*t),
             _ => None,
         }
+    }
+
+    #[inline]
+    pub fn as_transform2d(&self) -> Option<Transform2D> {
+        self.as_transform2()
+    }
+
+    #[inline]
+    pub fn as_transform3d(&self) -> Option<Transform3D> {
+        self.as_transform3()
     }
 
     #[inline]

@@ -142,5 +142,8 @@
 - [ ] 2.5 internal state fields
 - [ ] 2.6 zero-arg constructors
 - [ ] 3.5 dimension-generic APIs
-- [ ] 6.2 variant suffix casing
+- [x] 6.2 variant suffix casing
+  - add: `Variant::as_transform2()` + `as_transform3()` digit-suffix aliases
+  - keep: `as_transform2d()` + `as_transform3d()` compat aliases
+  - verify: `cargo test -p perro_variant`, full `cargo check`, full `cargo clippy`, full `cargo test`
 - [ ] 7.2 runtime API facade name

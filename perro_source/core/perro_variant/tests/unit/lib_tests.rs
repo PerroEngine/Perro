@@ -20,7 +20,7 @@ use perro_ids::{
 };
 use perro_structs::{
     ColorBlindFilter, IVector2, IVector3, Matrix, Matrix3, PostProcessEffect, PostProcessSet,
-    SqMatrix, UVector2, UVector3, UnitVector4, Vector2, Vector3, Vector4,
+    SqMatrix, Transform2D, Transform3D, UVector2, UVector3, UnitVector4, Vector2, Vector3, Vector4,
     VisualAccessibilitySettings,
 };
 
@@ -284,6 +284,19 @@ fn test_variant_as_uvec3() {
     let vec = UVector3::new(1, 2, 3);
     let v = Variant::from(vec);
     assert_eq!(v.as_uvec3(), Some(vec));
+}
+
+#[test]
+fn test_variant_transform_digit_aliases() {
+    let transform_2d = Transform2D::new(Vector2::new(1.0, 2.0), 0.5, Vector2::new(3.0, 4.0));
+    let variant_2d = Variant::from(transform_2d);
+    assert_eq!(variant_2d.as_transform2(), Some(transform_2d));
+    assert_eq!(variant_2d.as_transform2d(), Some(transform_2d));
+
+    let transform_3d = Transform3D::IDENTITY;
+    let variant_3d = Variant::from(transform_3d);
+    assert_eq!(variant_3d.as_transform3(), Some(transform_3d));
+    assert_eq!(variant_3d.as_transform3d(), Some(transform_3d));
 }
 
 #[test]
