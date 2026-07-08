@@ -163,7 +163,7 @@ note: user want website in workspace (docs+book+demos). NOT mv out. default-memb
 | mesh blend | in dev | fx known rndr iss in screen-space id-mask + seam pass |
 | 3d shadows | partial | add control knobs + docs |
 | steamworks | partial | fill missing api surface, doc matrix |
-| demo hubs | planned | build `playground/Demo2D` + `Demo3D` — biggest adoption lever |
+| demo hubs | done | build `demos/Demo2D` + `demos/Demo3D` — biggest adoption lever |
 | retarget / decals / navmesh | research | navmesh 1st: most game-blocking of 3 |
 
 ### 6.2 perf backlog (open, frm past audits)

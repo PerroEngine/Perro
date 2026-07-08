@@ -33,10 +33,10 @@ Run `perro check` to sync scripts and get rust-analyzer working.
 - Example:
 ```text
 [Player]
-    script = "res://scripts/player.rs"
-    [Node2D]
-            position = (0, 0)
-    [/Node2D]
+    script = "res://scripts/demo_manager.rs"
+    [Node3D]
+        position = (0, 0, 0)
+    [/Node3D]
 [/Player]
 ```
 - Use `res://` paths to reference files in res/

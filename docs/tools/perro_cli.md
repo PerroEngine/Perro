@@ -88,15 +88,15 @@ perro install
 
 Recommended workflow:
 
-1. Put temporary test/sandbox projects under `playground/` in this repo to be shared.
-2. Put real game/application projects outside this monorepo, for example `D:\GameProjects\MyGame`.
+1. Use shipped sample projects under `demos/` for repo examples.
+2. Put temporary test/sandbox projects outside this monorepo, for example `D:\GameProjects\MyGame`.
 3. Open external project folders directly in VS Code.
 
 Why:
 
 1. External projects keep project-local `.vscode/settings.json` active.
-2. Internal `playground/*` projects still work from the monorepo root.
-3. `perro check`, `perro dev`, and `perro build` refresh root workspace wiring for detected `playground/*` projects.
+2. `demos/Demo2D` and `demos/Demo3D` stay as known-good sample projects.
+3. `perro check`, `perro dev`, and `perro build` work with any project passed by `--path`.
 
 ## Build And Run
 

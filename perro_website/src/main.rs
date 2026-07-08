@@ -301,7 +301,14 @@ async fn sitemap_xml(headers: axum::http::HeaderMap) -> impl axum::response::Int
     urls.extend(
         perro_website_lib::docs::docs()
             .iter()
-            .map(|doc| SitemapUrl::new(format!("docs/{}", doc.slug), "monthly", doc_priority(doc))),
+            .filter(|doc| doc.route_path != "/book" && doc.route_path != "/docs")
+            .map(|doc| {
+                SitemapUrl::new(
+                    doc.route_path.trim_start_matches('/'),
+                    "monthly",
+                    doc_priority(doc),
+                )
+            }),
     );
 
     let mut xml = String::from(
