@@ -148,7 +148,7 @@ fn build_ui_camera_stream(data: &SceneDefNodeData) -> UiCameraStream {
     apply_ui_root_fields(&mut node.base, &data.fields);
     apply_camera_stream_fields(&mut node.stream, &data.fields);
     SceneFieldIterRef::new(&data.fields).for_each(|name, value| match name {
-        "tint" | "color" | "modulate" => {
+        name if scene_key_in(name, COLOR_MODULATE_KEYS) => {
             if let Some(v) = as_scene_color(value) {
                 node.tint = v;
             }
@@ -557,10 +557,10 @@ fn apply_ui_button_fields(
                 node.disabled = v;
             }
         }
-        "hover_signals" | "hovered_signals" | "hover_enter_signals" => {
+        name if scene_key_in(name, HOVER_ENTER_SIGNAL_KEYS) => {
             node.hover_signals = as_signal_ids(value);
         }
-        "hover_exit_signals" | "unhover_signals" => {
+        name if scene_key_in(name, HOVER_EXIT_SIGNAL_KEYS) => {
             node.hover_exit_signals = as_signal_ids(value);
         }
         "pressed_signals" | "press_signals" => {
@@ -748,10 +748,10 @@ fn apply_ui_image_button_fields(node: &mut UiImageButton, fields: &[SceneObjectF
                 node.disabled = v;
             }
         }
-        "hover_signals" | "hovered_signals" | "hover_enter_signals" => {
+        name if scene_key_in(name, HOVER_ENTER_SIGNAL_KEYS) => {
             node.hover_signals = as_signal_ids(value);
         }
-        "hover_exit_signals" | "unhover_signals" => {
+        name if scene_key_in(name, HOVER_EXIT_SIGNAL_KEYS) => {
             node.hover_exit_signals = as_signal_ids(value);
         }
         "pressed_signals" | "press_signals" => {
@@ -819,7 +819,7 @@ fn apply_ui_image_button_state_fields(
 
 fn ui_state_tint(fields: &[SceneObjectField]) -> Option<Color> {
     fields.iter().find_map(|(name, value)| match name.as_ref() {
-        "tint" | "color" | "modulate" => as_scene_color(value),
+        name if scene_key_in(name, COLOR_MODULATE_KEYS) => as_scene_color(value),
         _ => None,
     })
 }
@@ -1083,7 +1083,7 @@ fn apply_ui_label_fields(node: &mut UiLabel, fields: &[SceneObjectField]) {
 
 fn apply_ui_image_fields(node: &mut UiImage, fields: &[SceneObjectField]) {
     SceneFieldIterRef::new(fields).for_each(|name, value| match name {
-        "tint" | "color" | "modulate" => {
+        name if scene_key_in(name, COLOR_MODULATE_KEYS) => {
             if let Some(v) = as_scene_color(value) {
                 node.tint = v;
             }
@@ -1108,7 +1108,7 @@ fn apply_ui_image_fields(node: &mut UiImage, fields: &[SceneObjectField]) {
                 node.aspect_ratio = v.max(0.0);
             }
         }
-        "atlas_region" | "texture_region" | "region" => {
+        name if scene_key_in(name, TEXTURE_REGION_KEYS) => {
             if let Some(v) = as_vec4_array(value) {
                 node.texture_region = Some(v);
             }
@@ -1119,12 +1119,12 @@ fn apply_ui_image_fields(node: &mut UiImage, fields: &[SceneObjectField]) {
 
 fn apply_ui_nine_slice_fields(node: &mut UiNineSlice, fields: &[SceneObjectField]) {
     SceneFieldIterRef::new(fields).for_each(|name, value| match name {
-        "tint" | "color" | "modulate" => {
+        name if scene_key_in(name, COLOR_MODULATE_KEYS) => {
             if let Some(v) = as_scene_color(value) {
                 node.tint = v;
             }
         }
-        "atlas_region" | "texture_region" | "region" => {
+        name if scene_key_in(name, TEXTURE_REGION_KEYS) => {
             if let Some((x, y, w, h)) = value.as_vec4() && w > 0.0 && h > 0.0 {
                 node.texture_region = Some([x, y, w, h]);
             }
@@ -1148,7 +1148,7 @@ fn apply_ui_image_button_image_fields(
             return;
         };
         match field {
-            "tint" | "color" | "modulate" => {
+            name if scene_key_in(name, COLOR_MODULATE_KEYS) => {
                 if let Some(v) = as_scene_color(value) {
                     match prefix {
                         "hover_" => node.hover_tint = v,
@@ -1177,7 +1177,7 @@ fn apply_ui_image_button_image_fields(
                     node.aspect_ratio = v.max(0.0);
                 }
             }
-            "atlas_region" | "texture_region" | "region" => {
+            name if scene_key_in(name, TEXTURE_REGION_KEYS) => {
                 if let Some(v) = as_vec4_array(value) {
                     node.texture_region = Some(v);
                 }
@@ -1233,7 +1233,7 @@ fn apply_ui_animated_image_fields(node: &mut UiAnimatedImage, fields: &[SceneObj
                 }
             }
             _ => match name {
-                "tint" | "color" | "modulate" => {
+                name if scene_key_in(name, COLOR_MODULATE_KEYS) => {
                     if let Some(v) = as_scene_color(value) {
                         node.tint = v;
                     }
@@ -1309,7 +1309,7 @@ fn parse_ui_animated_image(value: &SceneValue) -> Option<UiAnimatedImageFrameSet
                     animation.start = [v.x, v.y];
                 }
             }
-            "atlas_region" | "texture_region" | "region" => {
+            name if scene_key_in(name, TEXTURE_REGION_KEYS) => {
                 if let Some([x, y, _, _]) = as_vec4_array(value) {
                     animation.start = [x, y];
                 }
@@ -1431,10 +1431,10 @@ fn apply_ui_text_edit_fields(
                 node.input_type = v;
             }
         }
-        "hover_signals" | "hovered_signals" | "hover_enter_signals" => {
+        name if scene_key_in(name, HOVER_ENTER_SIGNAL_KEYS) => {
             node.hover_signals = as_signal_ids(value);
         }
-        "hover_exit_signals" | "unhover_signals" | "unhovered_signals" => {
+        name if scene_key_in(name, HOVER_EXIT_SIGNAL_KEYS) => {
             node.hover_exit_signals = as_signal_ids(value);
         }
         "focused_signals" | "focus_signals" => {

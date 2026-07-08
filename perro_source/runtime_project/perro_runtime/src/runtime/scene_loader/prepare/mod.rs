@@ -2,6 +2,7 @@ include!("core.rs");
 include!("common/values_runtime.rs");
 include!("common/assets.rs");
 include!("common/post_processing.rs");
+include!("common/scene_keys.rs");
 include!("nodes/two_d/base.rs");
 include!("nodes/two_d/camera.rs");
 include!("nodes/two_d/physics.rs");

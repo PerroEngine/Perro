@@ -17,7 +17,7 @@ fn build_camera_stream_3d(data: &SceneDefNodeData) -> CameraStream3D {
                 node.size = [v.x.max(0.001), v.y.max(0.001)];
             }
         }
-        "tint" | "color" | "modulate" => {
+        name if scene_key_in(name, COLOR_MODULATE_KEYS) => {
             if let Some(v) = as_scene_color(value) {
                 node.tint = v;
             }
@@ -99,7 +99,7 @@ fn build_label_3d(data: &SceneDefNodeData) -> Label3D {
 
 fn apply_sprite_3d_fields(node: &mut Sprite3D, fields: &[SceneObjectField]) {
     SceneFieldIterRef::new(fields).for_each(|name, value| match name {
-        "texture_region" | "region" | "atlas_region" => {
+        name if scene_key_in(name, TEXTURE_REGION_KEYS) => {
             if let Some((x, y, w, h)) = value.as_vec4()
                 && w > 0.0
                 && h > 0.0
@@ -112,17 +112,17 @@ fn apply_sprite_3d_fields(node: &mut Sprite3D, fields: &[SceneObjectField]) {
                 node.size = Vector2::new(v.x.max(0.001), v.y.max(0.001));
             }
         }
-        "flip_x" | "flip_h" | "mirror_x" => {
+        name if scene_key_in(name, FLIP_X_KEYS) => {
             if let Some(v) = as_bool(value) {
                 node.flip_x = v;
             }
         }
-        "flip_y" | "flip_v" | "mirror_y" => {
+        name if scene_key_in(name, FLIP_Y_KEYS) => {
             if let Some(v) = as_bool(value) {
                 node.flip_y = v;
             }
         }
-        "tint" | "color" | "modulate" => {
+        name if scene_key_in(name, COLOR_MODULATE_KEYS) => {
             if let Some(v) = as_scene_color(value) {
                 node.tint = v;
             }
@@ -143,7 +143,7 @@ fn apply_label_3d_fields(node: &mut Label3D, fields: &[SceneObjectField]) {
                 node.size = Vector2::new(v.x.max(0.001), v.y.max(0.001));
             }
         }
-        "color" | "text_color" | "modulate" => {
+        name if scene_key_in(name, TEXT_COLOR_KEYS) => {
             if let Some(v) = as_scene_color(value) {
                 node.color = v;
             }
@@ -176,7 +176,7 @@ fn apply_decal_3d_fields(node: &mut Decal3D, fields: &[SceneObjectField]) {
                 node.size = Vector3::new(v.x.max(0.001), v.y.max(0.001), v.z.max(0.001));
             }
         }
-        "modulate" | "tint" | "color" => {
+        name if scene_key_in(name, COLOR_MODULATE_KEYS) => {
             if let Some(v) = as_scene_color(value) {
                 node.modulate = v;
             }
@@ -237,7 +237,7 @@ fn apply_text_decal_3d_fields(node: &mut TextDecal3D, fields: &[SceneObjectField
                 node.size = Vector3::new(v.x.max(0.001), v.y.max(0.001), v.z.max(0.001));
             }
         }
-        "color" | "text_color" | "modulate" | "tint" => {
+        name if scene_key_in(name, TEXT_COLOR_KEYS) => {
             if let Some(v) = as_scene_color(value) {
                 node.color = v;
             }
@@ -448,7 +448,7 @@ fn apply_mesh_instance_3d_fields(node: &mut MeshInstance3D, fields: &[SceneObjec
                     node.meshlet_override = Some(v);
                 }
             }
-            "flip_x" | "mirror_x" => {
+            name if scene_key_in(name, FLIP_X_KEYS) => {
                 if let Some(v) = as_bool(value) {
                     node.flip_x = v;
                 }
@@ -563,7 +563,7 @@ fn apply_multi_mesh_instance_3d_fields(
                     node.meshlet_override = Some(v);
                 }
             }
-            "flip_x" | "mirror_x" => {
+            name if scene_key_in(name, FLIP_X_KEYS) => {
                 if let Some(v) = as_bool(value) {
                     node.flip_x = v;
                 }

@@ -12,7 +12,7 @@ fn build_camera_stream_2d(data: &SceneDefNodeData) -> CameraStream2D {
     apply_node_2d_fields(&mut node, &data.fields);
     apply_camera_stream_fields(&mut node.stream, &data.fields);
     SceneFieldIterRef::new(&data.fields).for_each(|name, value| match name {
-        "tint" | "color" | "modulate" => {
+        name if scene_key_in(name, COLOR_MODULATE_KEYS) => {
             if let Some(v) = as_scene_color(value) {
                 node.tint = v;
             }
@@ -732,7 +732,7 @@ fn apply_label_2d_fields(node: &mut Label2D, fields: &[SceneObjectField]) {
                 node.size = Vector2::new(v.x.max(0.001), v.y.max(0.001));
             }
         }
-        "color" | "text_color" | "modulate" => {
+        name if scene_key_in(name, TEXT_COLOR_KEYS) => {
             if let Some(v) = as_scene_color(value) {
                 node.color = v;
             }
@@ -793,10 +793,10 @@ fn apply_button_2d_common(target: Button2DCommonFields<'_>, fields: &[SceneObjec
                 *target.cursor_icon = v;
             }
         }
-        "hover_signals" | "hovered_signals" | "hover_enter_signals" => {
+        name if scene_key_in(name, HOVER_ENTER_SIGNAL_KEYS) => {
             *target.hover_signals = as_signal_ids(value);
         }
-        "hover_exit_signals" | "unhover_signals" => {
+        name if scene_key_in(name, HOVER_EXIT_SIGNAL_KEYS) => {
             *target.hover_exit_signals = as_signal_ids(value);
         }
         "pressed_signals" | "press_signals" => {
@@ -853,7 +853,7 @@ fn apply_image_button_2d_fields(node: &mut ImageButton2D, fields: &[SceneObjectF
                 node.size = Vector2::new(x.max(0.0), y.max(0.0));
             }
         }
-        "texture_region" | "region" | "atlas_region" => {
+        name if scene_key_in(name, TEXTURE_REGION_KEYS) => {
             if let Some((x, y, w, h)) = value.as_vec4()
                 && w > 0.0
                 && h > 0.0
@@ -861,7 +861,7 @@ fn apply_image_button_2d_fields(node: &mut ImageButton2D, fields: &[SceneObjectF
                 node.texture_region = Some([x, y, w, h]);
             }
         }
-        "tint" | "color" | "modulate" => {
+        name if scene_key_in(name, COLOR_MODULATE_KEYS) => {
             if let Some(v) = as_scene_color(value) {
                 node.tint = v;
             }
@@ -908,7 +908,7 @@ fn apply_nine_slice_2d_fields(node: &mut NineSlice2D, fields: &[SceneObjectField
                 node.size = Vector2::new(x.max(0.0), y.max(0.0));
             }
         }
-        "texture_region" | "region" | "atlas_region" => {
+        name if scene_key_in(name, TEXTURE_REGION_KEYS) => {
             if let Some((x, y, w, h)) = value.as_vec4() && w > 0.0 && h > 0.0 {
                 node.texture_region = Some([x, y, w, h]);
             }
@@ -918,7 +918,7 @@ fn apply_nine_slice_2d_fields(node: &mut NineSlice2D, fields: &[SceneObjectField
                 node.margins = v;
             }
         }
-        "tint" | "color" | "modulate" => {
+        name if scene_key_in(name, COLOR_MODULATE_KEYS) => {
             if let Some(v) = as_scene_color(value) {
                 node.tint = v;
             }
@@ -1030,7 +1030,7 @@ fn parse_animated_sprite(value: &SceneValue) -> Option<AnimatedSprite> {
                     animation.start = [x, y];
                 }
             }
-            "atlas_region" | "texture_region" | "region" => {
+            name if scene_key_in(name, TEXTURE_REGION_KEYS) => {
                 if let Some((x, y, _, _)) = value.as_vec4() {
                     animation.start = [x, y];
                 }
