@@ -646,13 +646,7 @@ impl Runtime {
             visible_now.insert(node);
         }
         self.emit_color_picker_wheel_commands(&computed, viewport);
-        for node in self
-            .render_ui
-            .prev_visible
-            .iter()
-            .copied()
-            .collect::<Vec<_>>()
-        {
+        for node in self.render_ui.prev_visible.iter().copied() {
             if !visible_now.contains(&node)
                 && self.render_ui.retained_commands.contains_key(&node)
                 && self.ui_image_has_pending_texture(node)

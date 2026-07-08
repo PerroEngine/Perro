@@ -105,6 +105,7 @@
   - final: zero-test crates now have targeted tests; thin-crate count audit stale for `perro_compiler`, `perro_csv`, `perro_io`, `perro_meshlets`, `perro_graphics_assets`; add low-risk flag/mask coverage to `perro_asset_formats`
   - verify: `cargo test -p perro_runtime_render -- --nocapture`, `cargo test -p perro_dev_runner -- --nocapture`, `cargo test -p perro_macros -- --nocapture`, `cargo test -p perro_scripting_macros -- --nocapture`, `cargo test -p perro_asset_formats -- --nocapture`, full `cargo check`, full `cargo clippy`, full `cargo test`
 - [ ] 2.9 misc sweep
+  - partial: cut UI retained-visible temp `Vec` in render extraction hot path
 
 ## Coherence Audit Next
 
