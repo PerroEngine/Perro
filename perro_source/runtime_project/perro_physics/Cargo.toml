@@ -5,7 +5,7 @@ edition = "2024"
 
 [dependencies]
 ahash = "0.8"
-gltf = { version = "1.4.1", features = ["import", "utils"] }
+gltf.workspace = true
 rayon = "1.10"
 perro_asset_formats.workspace = true
 perro_ids.workspace = true

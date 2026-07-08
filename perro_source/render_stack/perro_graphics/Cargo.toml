@@ -25,7 +25,7 @@ perro_io.workspace = true
 perro_structs.workspace = true
 perro_macros.workspace = true
 image = { version = "0.25.8", default-features = false, features = ["png", "jpeg", "webp", "bmp", "tga", "ico"] }
-gltf = "1.4.1"
+gltf.workspace = true
 
 [target.'cfg(target_os = "windows")'.dependencies]
 wgpu = { version = "30.0.0", default-features = false, features = ["std", "dx12", "vulkan", "wgsl"] }

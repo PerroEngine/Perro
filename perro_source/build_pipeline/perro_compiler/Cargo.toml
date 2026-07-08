@@ -11,5 +11,5 @@ perro_io.workspace = true
 perro_project.workspace = true
 perro_scene.workspace = true
 perro_static_pipeline.workspace = true
-toml = "0.8.23"
+toml.workspace = true
 wasm-bindgen-cli-support = "=0.2.126"

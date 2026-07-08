@@ -144,6 +144,9 @@ perro_scene = { version = "0.1.0", path = "perro_source/runtime_project/perro_sc
 perro_scripting = { version = "0.1.0", path = "perro_source/script_stack/perro_scripting" }
 perro_scripting_macros = { version = "0.1.0", path = "perro_source/script_stack/perro_scripting_macros" }
 
+base64 = "0.22.1"
+gltf = { version = "1.4.1", features = ["import", "utils"] }
+toml = "0.8.23"
 
 [profile.release.package.rapier2d]
 opt-level = 3
