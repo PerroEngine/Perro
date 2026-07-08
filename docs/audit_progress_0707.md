@@ -71,10 +71,12 @@
   - final: shipped runtime path hits triaged; remaining hits are init-only `NonZeroU64`/uniform-size asserts with messages or cfg-test/shader-validation code
   - commit: this commit
   - verify: full `cargo check`, full `cargo clippy`, full `cargo test`
-- [ ] 2.4 string-keyed maps in hot structs
+- [x] 2.4 string-keyed maps in hot structs
   - partial: 2D/3D particle profile caches keyed by source hash instead of source `String`
   - partial: postprocess LUT/custom pipeline caches keyed by `u64` source/size hash
   - partial: 3D custom pipeline tokens, custom material texture slots, sky pipeline cache, particle expression cache keyed by `u64`
+  - final: graphics resource source lookup maps keyed by `u64`; reverse `String` maps kept for public source/log APIs
+  - triage: remaining runtime render `String` maps are retained authored source payloads; scene/doc/bone maps are load-time/editor parse surfaces
   - commit: this commit
   - verify: full `cargo check`, full `cargo clippy`, full `cargo test`
 - [x] 2.5 per-frame str alloc in render extract

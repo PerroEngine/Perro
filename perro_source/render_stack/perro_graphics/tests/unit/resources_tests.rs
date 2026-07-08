@@ -373,7 +373,7 @@ fn stale_source_entries_are_not_reused() {
     let texture = store.create_texture(texture_source, false);
     store
         .texture_by_source
-        .insert(texture_source.to_string(), texture);
+        .insert(perro_ids::string_to_u64(texture_source), texture);
     store.texture_source_by.remove(&texture);
     assert!(store.drop_texture(texture));
     let texture_next = store.create_texture(texture_source, false);
@@ -381,7 +381,9 @@ fn stale_source_entries_are_not_reused() {
 
     let mesh_source = "res://meshes/stale.glb";
     let mesh = store.create_mesh(mesh_source, false);
-    store.mesh_by_source.insert(mesh_source.to_string(), mesh);
+    store
+        .mesh_by_source
+        .insert(perro_ids::string_to_u64(mesh_source), mesh);
     store.mesh_source_by.remove(&mesh);
     assert!(store.drop_mesh(mesh));
     let mesh_next = store.create_mesh(mesh_source, false);
@@ -391,7 +393,7 @@ fn stale_source_entries_are_not_reused() {
     let material = store.create_material(Material3D::default(), Some(material_source), false);
     store
         .material_by_source
-        .insert(material_source.to_string(), material);
+        .insert(perro_ids::string_to_u64(material_source), material);
     store.material_source_by.remove(&material);
     assert!(store.drop_material(material));
     let material_next = store.create_material(Material3D::default(), Some(material_source), false);
