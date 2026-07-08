@@ -672,7 +672,7 @@ impl PostProcessor {
             }
 
             let ChainStep::Single(effect) = step else {
-                unreachable!("merged handled above");
+                continue;
             };
             let effect = *effect;
             self.ensure_lut_texture(device, queue, effect, *static_texture_lookup);
