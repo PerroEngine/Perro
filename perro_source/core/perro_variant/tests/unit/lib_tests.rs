@@ -137,22 +137,19 @@ fn test_variant_shared_cell_parse_helper() {
 // -------------------- Variant Accessors --------------------
 
 #[test]
-fn test_variant_get_kind() {
-    assert_eq!(Variant::Null.get_kind(), VariantKind::Null);
-    assert_eq!(Variant::from(true).get_kind(), VariantKind::Bool);
-    assert_eq!(Variant::from(7_i32).get_kind(), VariantKind::Number);
-    assert_eq!(Variant::from("text").get_kind(), VariantKind::String);
-    assert_eq!(Variant::bytes([1_u8]).get_kind(), VariantKind::Bytes);
+fn test_variant_kind() {
+    assert_eq!(Variant::Null.kind(), VariantKind::Null);
+    assert_eq!(Variant::from(true).kind(), VariantKind::Bool);
+    assert_eq!(Variant::from(7_i32).kind(), VariantKind::Number);
+    assert_eq!(Variant::from("text").kind(), VariantKind::String);
+    assert_eq!(Variant::bytes([1_u8]).kind(), VariantKind::Bytes);
+    assert_eq!(Variant::from(NodeID::from_u64(1)).kind(), VariantKind::ID);
     assert_eq!(
-        Variant::from(NodeID::from_u64(1)).get_kind(),
-        VariantKind::ID
-    );
-    assert_eq!(
-        Variant::from(Vector2::new(1.0, 2.0)).get_kind(),
+        Variant::from(Vector2::new(1.0, 2.0)).kind(),
         VariantKind::EngineStruct
     );
-    assert_eq!(Variant::Array(Vec::new()).get_kind(), VariantKind::Array);
-    assert_eq!(Variant::object().get_kind(), VariantKind::Object);
+    assert_eq!(Variant::Array(Vec::new()).kind(), VariantKind::Array);
+    assert_eq!(Variant::object().kind(), VariantKind::Object);
     assert_eq!(Variant::Null.kind_name(), "Null");
     assert_eq!(VariantKind::Bool.as_str(), "Bool");
 }

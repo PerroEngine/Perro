@@ -2629,7 +2629,7 @@ impl DeriveVariant for SystemTime {
 
 impl Variant {
     #[inline]
-    pub fn get_kind(&self) -> VariantKind {
+    pub fn kind(&self) -> VariantKind {
         match self {
             Variant::Null => VariantKind::Null,
             Variant::Bool(_) => VariantKind::Bool,
@@ -2643,9 +2643,15 @@ impl Variant {
         }
     }
 
+    #[deprecated(note = "use Variant::kind()")]
+    #[inline]
+    pub fn get_kind(&self) -> VariantKind {
+        self.kind()
+    }
+
     #[inline]
     pub fn kind_name(&self) -> &'static str {
-        self.get_kind().as_str()
+        self.kind().as_str()
     }
 
     #[inline]
