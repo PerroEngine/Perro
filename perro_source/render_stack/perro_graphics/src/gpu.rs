@@ -329,7 +329,11 @@ impl GpuTimestampTimer {
         match rx.try_recv() {
             Ok(Ok(())) => {
                 let slice = self.readback_buffer.slice(..);
-                let data = slice.get_mapped_range().expect("map range");
+                let Ok(data) = slice.get_mapped_range() else {
+                    self.readback_buffer.unmap();
+                    self.pending_rx = None;
+                    return;
+                };
                 let timestamps: &[u64] = bytemuck::cast_slice(&data);
                 if timestamps.len() >= 2 && timestamps[1] >= timestamps[0] {
                     let nanos = (timestamps[1] - timestamps[0]) as f64
@@ -550,7 +554,7 @@ impl Gpu {
         &mut self,
         node: NodeID,
         resolution: [u32; 2],
-    ) -> &GpuCameraStreamTarget {
+    ) -> Option<&GpuCameraStreamTarget> {
         let resolution = [resolution[0].max(1), resolution[1].max(1)];
         let recreate = self
             .camera_stream_targets
@@ -613,9 +617,7 @@ impl Gpu {
             );
             self.camera_stream_external_bindings.remove(&node);
         }
-        self.camera_stream_targets
-            .get(&node)
-            .expect("camera stream target exists")
+        self.camera_stream_targets.get(&node)
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -1100,23 +1102,17 @@ impl Gpu {
             let resolution = [stream.resolution[0].max(1), stream.resolution[1].max(1)];
             let needs_external_binding =
                 self.camera_stream_external_bindings.get(node).copied() != Some(resolution);
-            self.ensure_camera_stream_target(*node, resolution);
+            let Some(target) = self.ensure_camera_stream_target(*node, resolution) else {
+                continue;
+            };
             if needs_external_binding {
                 let texture_id = stream.output_texture;
-                let (view_2d, view_ui) = {
-                    let target = self
-                        .camera_stream_targets
-                        .get(node)
-                        .expect("camera stream target exists");
-                    (
-                        target
-                            .texture
-                            .create_view(&wgpu::TextureViewDescriptor::default()),
-                        target
-                            .texture
-                            .create_view(&wgpu::TextureViewDescriptor::default()),
-                    )
-                };
+                let view_2d = target
+                    .texture
+                    .create_view(&wgpu::TextureViewDescriptor::default());
+                let view_ui = target
+                    .texture
+                    .create_view(&wgpu::TextureViewDescriptor::default());
                 if let Some(two_d) = self.two_d.as_mut() {
                     two_d.upsert_external_texture(
                         &self.device,
