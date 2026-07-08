@@ -135,7 +135,11 @@
 - [x] 3.2 redundant module prefixes
   - commit: this commit
   - verify: full `cargo check`, full `cargo clippy`, full `cargo test`
-- [ ] 3.4 typed load errors
+- [x] 3.4 typed load errors
+  - add: shared `LoadError` + `LoadResult`
+  - add: typed scene-doc load/save API + typed runtime scene load/preload API
+  - keep: old `Result<_, String>` API as compat wrappers
+  - verify: `cargo test -p perro_resource_api`, `cargo test -p perro_runtime_api`, targeted `perro_runtime` typed-handle test, full `cargo check`, full `cargo clippy`, full `cargo test`
 - [ ] 1.1 color vocabulary
 - [ ] 1.2 on/off vocabulary
 - [ ] 2.1 light colors use `Color`

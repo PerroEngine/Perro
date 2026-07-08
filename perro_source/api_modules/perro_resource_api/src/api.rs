@@ -1,4 +1,3 @@
-use crate::ResPathSource;
 use crate::sub_apis::{
     AnimationAPI, AnimationModule, AnimationTreeAPI, AnimationTreeModule, AudioAPI, AudioModule,
     CsvAPI, CsvModule, Draw2DAPI, Draw2DModule, GlbModule, GltfAPI, IntoLocale, Locale,
@@ -6,6 +5,7 @@ use crate::sub_apis::{
     MicModule, PostProcessingAPI, SceneDocAPI, SceneDocModule, SkeletonAPI, SkeletonModule,
     TextureAPI, TextureModule, VisualAccessibilityAPI,
 };
+use crate::{LoadResult, ResPathSource};
 use perro_scene::{SceneDoc, SceneWrite};
 use perro_structs::{ColorBlindFilter, PostProcessEffect, PostProcessSet, Vector2};
 
@@ -169,10 +169,26 @@ impl<'res, R: ResourceAPI + ?Sized> ResourceWindow<'res, R> {
         self.api.scene_load_doc(path.as_res_path_str())
     }
 
+    /// Load a scene document from a resource path with typed errors.
+    #[inline]
+    pub fn scene_load_doc_typed<P: ResPathSource>(&self, path: P) -> LoadResult<SceneDoc> {
+        self.api.scene_load_doc_typed(path.as_res_path_str())
+    }
+
     /// Save a scene document to a resource path.
     #[inline]
     pub fn scene_save_doc<P: ResPathSource>(&self, path: P, doc: &SceneDoc) -> Result<(), String> {
         self.api.scene_save_doc(path.as_res_path_str(), doc)
+    }
+
+    /// Save a scene document to a resource path with typed errors.
+    #[inline]
+    pub fn scene_save_doc_typed<P: ResPathSource>(
+        &self,
+        path: P,
+        doc: &SceneDoc,
+    ) -> LoadResult<()> {
+        self.api.scene_save_doc_typed(path.as_res_path_str(), doc)
     }
 
     /// Create a read-only writer helper for an existing scene document.

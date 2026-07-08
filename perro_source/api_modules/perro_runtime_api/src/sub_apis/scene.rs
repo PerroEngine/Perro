@@ -4,7 +4,7 @@
 //! preloaded scene resources.
 
 use perro_ids::NodeID;
-use perro_resource_api::{ResPath, ResPathBuf};
+use perro_resource_api::{LoadError, LoadResult, ResPath, ResPathBuf};
 use perro_scene::{Scene, SceneDoc};
 use std::borrow::Cow;
 
@@ -218,15 +218,28 @@ impl IntoPreloadedSceneTarget for &Cow<'static, str> {
 
 pub trait SceneAPI {
     fn scene_load(&mut self, path: &str) -> Result<NodeID, String>;
+    fn scene_load_typed(&mut self, path: &str) -> LoadResult<NodeID> {
+        self.scene_load(path).map_err(LoadError::Legacy)
+    }
     fn scene_load_doc(&mut self, _scene: Scene) -> Result<NodeID, String> {
         Err("scene doc loading is not supported by this runtime".to_string())
+    }
+    fn scene_load_doc_typed(&mut self, scene: Scene) -> LoadResult<NodeID> {
+        self.scene_load_doc(scene).map_err(LoadError::Legacy)
     }
     fn scene_load_hashed(&mut self, path_hash: u64, path: &str) -> Result<NodeID, String> {
         let _ = path_hash;
         self.scene_load(path)
     }
+    fn scene_load_hashed_typed(&mut self, path_hash: u64, path: &str) -> LoadResult<NodeID> {
+        let _ = path_hash;
+        self.scene_load_typed(path)
+    }
     fn scene_preload(&mut self, _path: &str) -> Result<PreloadedSceneID, String> {
         Err("scene preload is not supported by this runtime".to_string())
+    }
+    fn scene_preload_typed(&mut self, path: &str) -> LoadResult<PreloadedSceneID> {
+        self.scene_preload(path).map_err(LoadError::Legacy)
     }
     fn scene_preload_hashed(
         &mut self,
@@ -236,8 +249,19 @@ pub trait SceneAPI {
         let _ = path_hash;
         self.scene_preload(path)
     }
+    fn scene_preload_hashed_typed(
+        &mut self,
+        path_hash: u64,
+        path: &str,
+    ) -> LoadResult<PreloadedSceneID> {
+        let _ = path_hash;
+        self.scene_preload_typed(path)
+    }
     fn scene_load_preloaded(&mut self, _id: PreloadedSceneID) -> Result<NodeID, String> {
         Err("preloaded scene loading is not supported by this runtime".to_string())
+    }
+    fn scene_load_preloaded_typed(&mut self, id: PreloadedSceneID) -> LoadResult<NodeID> {
+        self.scene_load_preloaded(id).map_err(LoadError::Legacy)
     }
     fn scene_drop_preloaded(&mut self, id: PreloadedSceneID) -> bool {
         #[allow(deprecated)]
@@ -281,21 +305,45 @@ impl<'rt, R: SceneAPI + ?Sized> SceneModule<'rt, R> {
         }
     }
 
+    pub fn load_typed<S: IntoSceneLoadSource>(&mut self, source: S) -> LoadResult<NodeID> {
+        match source.into_scene_load_source() {
+            SceneLoadSource::Path(path) => self.rt.scene_load_typed(path.as_ref()),
+            SceneLoadSource::Preloaded(id) => self.rt.scene_load_preloaded_typed(id),
+        }
+    }
+
     pub fn load_hashed(&mut self, path_hash: u64, path: &str) -> Result<NodeID, String> {
         self.rt.scene_load_hashed(path_hash, path)
+    }
+
+    pub fn load_hashed_typed(&mut self, path_hash: u64, path: &str) -> LoadResult<NodeID> {
+        self.rt.scene_load_hashed_typed(path_hash, path)
     }
 
     pub fn load_doc<D: Into<Scene>>(&mut self, doc: D) -> Result<NodeID, String> {
         self.rt.scene_load_doc(doc.into())
     }
 
+    pub fn load_doc_typed<D: Into<Scene>>(&mut self, doc: D) -> LoadResult<NodeID> {
+        self.rt.scene_load_doc_typed(doc.into())
+    }
+
     pub fn load_scene_doc(&mut self, doc: SceneDoc) -> Result<NodeID, String> {
         self.rt.scene_load_doc(doc.into_scene())
+    }
+
+    pub fn load_scene_doc_typed(&mut self, doc: SceneDoc) -> LoadResult<NodeID> {
+        self.rt.scene_load_doc_typed(doc.into_scene())
     }
 
     pub fn preload<P: IntoScenePath>(&mut self, path: P) -> Result<PreloadedSceneID, String> {
         let path = path.into_scene_path();
         self.rt.scene_preload(path.as_ref())
+    }
+
+    pub fn preload_typed<P: IntoScenePath>(&mut self, path: P) -> LoadResult<PreloadedSceneID> {
+        let path = path.into_scene_path();
+        self.rt.scene_preload_typed(path.as_ref())
     }
 
     pub fn preload_hashed(
@@ -306,8 +354,21 @@ impl<'rt, R: SceneAPI + ?Sized> SceneModule<'rt, R> {
         self.rt.scene_preload_hashed(path_hash, path)
     }
 
+    pub fn preload_hashed_typed(
+        &mut self,
+        path_hash: u64,
+        path: &str,
+    ) -> LoadResult<PreloadedSceneID> {
+        self.rt.scene_preload_hashed_typed(path_hash, path)
+    }
+
     pub fn load_preloaded<I: IntoPreloadedSceneID>(&mut self, id: I) -> Result<NodeID, String> {
         self.rt.scene_load_preloaded(id.into_preloaded_scene_id())
+    }
+
+    pub fn load_preloaded_typed<I: IntoPreloadedSceneID>(&mut self, id: I) -> LoadResult<NodeID> {
+        self.rt
+            .scene_load_preloaded_typed(id.into_preloaded_scene_id())
     }
 
     #[deprecated(note = "use drop_preloaded")]

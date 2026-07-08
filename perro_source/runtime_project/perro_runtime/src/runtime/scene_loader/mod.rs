@@ -992,6 +992,25 @@ mod tests {
     }
 
     #[test]
+    fn typed_preloaded_scene_load_reports_invalid_handle() {
+        use perro_resource_api::LoadError;
+        use perro_runtime_api::sub_apis::SceneAPI;
+
+        let mut runtime = Runtime::new();
+        let err = runtime
+            .scene_load_preloaded_typed(PreloadedSceneID::from_u64(99))
+            .unwrap_err();
+
+        assert_eq!(
+            err,
+            LoadError::InvalidHandle {
+                kind: "preloaded scene",
+                id: 99
+            }
+        );
+    }
+
+    #[test]
     fn apply_route_change_swaps_scene_root() {
         let mut project = RuntimeProject::new("Route Test", ".");
         project.routes = perro_project::ProjectRoutesConfig {

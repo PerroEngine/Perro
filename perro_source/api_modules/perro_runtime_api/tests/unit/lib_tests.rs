@@ -6,7 +6,7 @@ use crate::{
 };
 use perro_ids::{AnimationID, AudioBusID, IntoTagID, MeshID, NodeID};
 use perro_nodes::prelude::{Node2D, NodeTypeDispatch, SceneNodeData, UiLabel};
-use perro_resource_api::res_path;
+use perro_resource_api::{LoadError, res_path};
 use perro_structs::{Quaternion, Transform2D, Transform3D, Vector2, Vector3};
 use perro_variant::Variant;
 use std::{any::Any, borrow::Cow, time::Duration};
@@ -1318,10 +1318,22 @@ fn script_macros_typecheck_and_forward() {
     );
     let cow_path = std::borrow::Cow::Borrowed("res://scenes/c.scene");
     assert_eq!(scene_load!(&mut ctx, cow_path), Ok(NodeID::new(7)));
+    assert_eq!(
+        ctx.Scene()
+            .load_typed("res://scenes/typed.scene")
+            .expect("typed scene load"),
+        NodeID::new(7)
+    );
     let preloaded = scene_preload!(&mut ctx, "res://scenes/preloaded.scene")
         .expect("preload should return deterministic id");
     assert_eq!(preloaded, PreloadedSceneID::from_u64(11));
     assert_eq!(scene_load!(&mut ctx, preloaded), Ok(NodeID::new(8)));
+    assert_eq!(
+        ctx.Scene()
+            .load_preloaded_typed(PreloadedSceneID::from_u64(99))
+            .unwrap_err(),
+        LoadError::Legacy("bad preloaded scene id".to_string())
+    );
     assert!(scene_drop_preloaded!(&mut ctx, preloaded));
     assert!(scene_drop_preloaded!(
         &mut ctx,

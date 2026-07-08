@@ -6,12 +6,14 @@
 //! viewport data, post-processing, and visual accessibility.
 
 pub mod api;
+pub mod load_error;
 pub mod res_path;
 pub mod sub_apis;
 
 // ---- Resource facade ----
 
 pub use api::ResourceWindow;
+pub use load_error::{LoadError, LoadResult};
 
 // ---- Shared data types ----
 
@@ -32,6 +34,7 @@ pub use res_path::{ResPath, ResPathBuf, ResPathError, ResPathKind, ResPathSource
 pub mod prelude {
     // Facade traits and module accessors.
     pub use crate::api::{ResourceAPI, ResourceWindow, ViewportAPI};
+    pub use crate::load_error::{LoadError, LoadResult};
     pub use crate::res_path::{ResPath, ResPathBuf, ResPathError, ResPathKind, ResPathSource};
 
     // Resource domain APIs.
