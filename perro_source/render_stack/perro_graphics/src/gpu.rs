@@ -1431,9 +1431,11 @@ impl Gpu {
         let scene_view = self.post.scene_view().clone();
         let intermediate_view = self.accessibility.intermediate_view().clone();
         let color_view = if direct_present {
-            swap_view
-                .as_ref()
-                .expect("swap view exists for direct present path")
+            let Some(view) = swap_view.as_ref() else {
+                timing.total = total_start.elapsed();
+                return timing;
+            };
+            view
         } else {
             self.msaa_color
                 .as_ref()
@@ -1443,11 +1445,11 @@ impl Gpu {
         let resolve_view = if direct_present {
             None
         } else if msaa_direct_present {
-            Some(
-                swap_view
-                    .as_ref()
-                    .expect("swap view exists for msaa direct present path"),
-            )
+            let Some(view) = swap_view.as_ref() else {
+                timing.total = total_start.elapsed();
+                return timing;
+            };
+            Some(view)
         } else if self.sample_count > 1 {
             Some(&scene_view)
         } else {
@@ -1495,12 +1497,12 @@ impl Gpu {
                     }),
                 )
             };
-            let render_view = if has_stream_post {
-                post_input_view
-                    .as_ref()
-                    .expect("camera stream post input view exists")
+            let Some(render_view) = (if has_stream_post {
+                post_input_view.as_ref()
             } else {
-                &target_view
+                Some(&target_view)
+            }) else {
+                continue;
             };
             let mut stream_post_camera = None;
             let mut stream_post_depth_view = post_depth_view;
@@ -1523,13 +1525,14 @@ impl Gpu {
                 });
                 drop(_clear_stream);
                 if has_stream_post {
+                    let Some(depth_view) = stream_post_depth_view.as_ref() else {
+                        continue;
+                    };
                     let _clear_depth = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                         label: Some("perro_camera_stream_depth_clear_2d"),
                         color_attachments: &[],
                         depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                            view: stream_post_depth_view
-                                .as_ref()
-                                .expect("camera stream post depth view exists"),
+                            view: depth_view,
                             depth_ops: Some(wgpu::Operations {
                                 load: wgpu::LoadOp::Clear(1.0),
                                 store: wgpu::StoreOp::Store,
@@ -1803,6 +1806,11 @@ impl Gpu {
                 }
                 let camera = stream_post_camera.unwrap_or_default();
                 if let Some(post) = self.camera_stream_post.as_mut() {
+                    let (Some(depth_view), Some(input_view)) =
+                        (stream_post_depth_view.as_ref(), post_input_view.as_ref())
+                    else {
+                        continue;
+                    };
                     post.resize(
                         &self.device,
                         stream.resolution[0].max(1),
@@ -1816,13 +1824,8 @@ impl Gpu {
                         static_shader_lookup,
                         static_texture_lookup,
                     };
-                    let depth_view = stream_post_depth_view
-                        .as_ref()
-                        .expect("camera stream post depth view exists");
                     let post_chain_data = PostProcessChainData {
-                        input_view: post_input_view
-                            .as_ref()
-                            .expect("camera stream post input view exists"),
+                        input_view,
                         depth_view,
                         effects: stream.post_processing.as_ref(),
                     };
@@ -1967,13 +1970,12 @@ impl Gpu {
                 static_shader_lookup,
                 static_texture_lookup,
             };
+            let Some(three_d) = self.three_d.as_ref() else {
+                return;
+            };
             let post_chain_data = PostProcessChainData {
                 input_view,
-                depth_view: self
-                    .three_d
-                    .as_ref()
-                    .expect("three_d is initialized when post-processing is active")
-                    .depth_prepass_view(),
+                depth_view: three_d.depth_prepass_view(),
                 effects,
             };
             self.post
