@@ -276,6 +276,15 @@ fn svg_attr_value<'a>(tag: &'a str, name: &str) -> Option<&'a str> {
     let mut rest = tag;
     loop {
         let idx = rest.find(name)?;
+        if idx > 0
+            && rest[..idx]
+                .chars()
+                .next_back()
+                .is_some_and(is_svg_attr_name_char)
+        {
+            rest = &rest[idx + name.len()..];
+            continue;
+        }
         let after_name = &rest[idx + name.len()..];
         let after_eq = after_name.trim_start();
         if !after_eq.starts_with('=') {
@@ -294,6 +303,10 @@ fn svg_attr_value<'a>(tag: &'a str, name: &str) -> Option<&'a str> {
             .unwrap_or(value.len());
         return Some(&value[..end]);
     }
+}
+
+fn is_svg_attr_name_char(ch: char) -> bool {
+    ch.is_ascii_alphanumeric() || ch == '_' || ch == '-' || ch == ':'
 }
 
 fn svg_viewbox_size(tag: &str) -> Option<(u32, u32)> {
@@ -461,6 +474,14 @@ mod tests {
         assert_eq!((width, height), (8, 12));
         assert_eq!(rgba.len(), 8 * 12 * 4);
         assert_eq!(decode_image_size(svg), Some((8, 12)));
+        assert_eq!(decode_image_logical_size(svg), Some((2, 3)));
+    }
+
+    #[test]
+    fn decode_image_rgba_ignores_svg_attr_name_substrings() {
+        let svg = br#"<svg xmlns="http://www.w3.org/2000/svg" stroke-width="99" data-height="88" width="2" height="3"><rect width="2" height="3" fill="red"/></svg>"#;
+        let (_, width, height) = decode_image_rgba(svg).expect("decode svg");
+        assert_eq!((width, height), (8, 12));
         assert_eq!(decode_image_logical_size(svg), Some((2, 3)));
     }
 
