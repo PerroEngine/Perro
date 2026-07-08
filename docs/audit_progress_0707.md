@@ -72,6 +72,9 @@
   - commit: this commit
   - verify: full `cargo check`, full `cargo clippy`, full `cargo test`
 - [ ] 2.4 string-keyed maps in hot structs
+  - partial: 2D/3D particle profile caches keyed by source hash instead of source `String`
+  - commit: this commit
+  - verify: full `cargo check`, full `cargo clippy`, full `cargo test`
 - [ ] 2.5 per-frame str alloc in render extract
 - [ ] 2.6 lock surface
 - [ ] 2.7 wgsl prelude triplication

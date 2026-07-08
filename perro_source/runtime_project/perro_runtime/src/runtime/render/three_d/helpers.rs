@@ -594,16 +594,18 @@ pub(crate) fn resolve_particle_profile(
     if source.is_empty() {
         return None;
     }
+    let source_key = particle_profile_source_key(source);
     while let Ok((loaded_source, profile)) = runtime.render_3d.particle_path_load_rx.try_recv() {
+        let loaded_key = particle_profile_source_key(&loaded_source);
         runtime
             .render_3d
             .pending_particle_path_loads
-            .remove(loaded_source.as_str());
+            .remove(&loaded_key);
         if let Some(profile) = profile {
-            cache_particle_profile(runtime, loaded_source, profile);
+            cache_particle_profile(runtime, loaded_key, profile);
         }
     }
-    if let Some(path) = runtime.render_3d.particle_path_cache.get(source) {
+    if let Some(path) = runtime.render_3d.particle_path_cache.get(&source_key) {
         return Some(path.clone());
     }
     let parsed = if runtime.provider_mode() == crate::runtime_project::ProviderMode::Static {
@@ -619,7 +621,7 @@ pub(crate) fn resolve_particle_profile(
         } else if runtime
             .render_3d
             .pending_particle_path_loads
-            .insert(source.to_string())
+            .insert(source_key)
         {
             spawn_particle_profile_load(
                 source.to_string(),
@@ -634,7 +636,7 @@ pub(crate) fn resolve_particle_profile(
     } else if runtime
         .render_3d
         .pending_particle_path_loads
-        .insert(source.to_string())
+        .insert(source_key)
     {
         spawn_particle_profile_load(
             source.to_string(),
@@ -644,31 +646,35 @@ pub(crate) fn resolve_particle_profile(
     } else {
         return None;
     };
-    cache_particle_profile(runtime, source.to_string(), parsed.clone());
+    cache_particle_profile(runtime, source_key, parsed.clone());
     Some(parsed)
 }
 
-fn cache_particle_profile(runtime: &mut Runtime, source: String, parsed: ParticleProfile3D) {
+fn particle_profile_source_key(source: &str) -> u64 {
+    parse_hashed_source_uri(source).unwrap_or_else(|| string_to_u64(source))
+}
+
+fn cache_particle_profile(runtime: &mut Runtime, source_key: u64, parsed: ParticleProfile3D) {
     if !runtime
         .render_3d
         .particle_path_cache
-        .contains_key(source.as_str())
+        .contains_key(&source_key)
     {
         while runtime.render_3d.particle_path_cache.len() >= PARTICLE_PATH_CACHE_MAX {
             let Some(evict_key) = runtime.render_3d.particle_path_cache_order.pop_front() else {
                 break;
             };
-            runtime
-                .render_3d
-                .particle_path_cache
-                .remove(evict_key.as_str());
+            runtime.render_3d.particle_path_cache.remove(&evict_key);
         }
         runtime
             .render_3d
             .particle_path_cache_order
-            .push_back(source.clone());
+            .push_back(source_key);
     }
-    runtime.render_3d.particle_path_cache.insert(source, parsed);
+    runtime
+        .render_3d
+        .particle_path_cache
+        .insert(source_key, parsed);
 }
 
 fn spawn_particle_profile_load(

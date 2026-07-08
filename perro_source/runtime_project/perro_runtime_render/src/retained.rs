@@ -149,9 +149,9 @@ pub struct Render2DState {
     pub visible_now: AHashSet<NodeID>,
     pub prev_visible: AHashSet<NodeID>,
     pub retained_sprites: AHashMap<NodeID, Sprite2DCommand>,
-    pub particle_path_cache: AHashMap<String, perro_render_bridge::ParticleProfile2D>,
-    pub particle_path_cache_order: VecDeque<String>,
-    pub pending_particle_path_loads: AHashSet<String>,
+    pub particle_path_cache: AHashMap<u64, perro_render_bridge::ParticleProfile2D>,
+    pub particle_path_cache_order: VecDeque<u64>,
+    pub pending_particle_path_loads: AHashSet<u64>,
     pub particle_path_load_tx:
         mpsc::Sender<(String, Option<perro_render_bridge::ParticleProfile2D>)>,
     pub particle_path_load_rx:
@@ -629,9 +629,9 @@ pub struct Render3DState {
     pub material_surface_sources: AHashMap<NodeID, Vec<Option<String>>>,
     pub material_surface_overrides: AHashMap<NodeID, Vec<Option<Material3D>>>,
     pub collision_debug_state: AHashMap<NodeID, CollisionDebugState>,
-    pub particle_path_cache: AHashMap<String, perro_render_bridge::ParticleProfile3D>,
-    pub particle_path_cache_order: VecDeque<String>,
-    pub pending_particle_path_loads: AHashSet<String>,
+    pub particle_path_cache: AHashMap<u64, perro_render_bridge::ParticleProfile3D>,
+    pub particle_path_cache_order: VecDeque<u64>,
+    pub pending_particle_path_loads: AHashSet<u64>,
     pub particle_path_load_tx:
         mpsc::Sender<(String, Option<perro_render_bridge::ParticleProfile3D>)>,
     pub particle_path_load_rx:
