@@ -1273,6 +1273,14 @@ pub trait NodeAPI {
     fn get_node_tags(&mut self, node_id: NodeID) -> Option<Vec<Cow<'static, str>>>;
 
     /// Sets node tags (`Some`) or clears all tags (`None`).
+    fn set_tags<T>(&mut self, node_id: NodeID, tags: Option<T>) -> bool
+    where
+        T: IntoNodeTags,
+    {
+        self.tag_set(node_id, tags)
+    }
+
+    /// Compatibility hook for runtimes that still implement `tag_set`.
     fn tag_set<T>(&mut self, node_id: NodeID, tags: Option<T>) -> bool
     where
         T: IntoNodeTags;
@@ -1625,11 +1633,19 @@ impl<'rt, R: NodeAPI + ?Sized> NodeModule<'rt, R> {
         self.rt.get_node_tags(node_id)
     }
 
+    pub fn set_tags<T>(&mut self, node_id: NodeID, tags: Option<T>) -> bool
+    where
+        T: IntoNodeTags,
+    {
+        self.rt.set_tags(node_id, tags)
+    }
+
+    #[deprecated(note = "use set_tags")]
     pub fn tag_set<T>(&mut self, node_id: NodeID, tags: Option<T>) -> bool
     where
         T: IntoNodeTags,
     {
-        self.rt.tag_set(node_id, tags)
+        self.set_tags(node_id, tags)
     }
 
     pub fn add_node_tag<T>(&mut self, node_id: NodeID, tag: T) -> bool
@@ -2204,13 +2220,13 @@ macro_rules! create_node {
     ($ctx:expr, $node_ty:ty, $name:expr, $tags:expr) => {{
         let __id = $ctx.Nodes().create::<$node_ty>();
         let _ = $ctx.Nodes().set_node_name(__id, $name);
-        let _ = $ctx.Nodes().tag_set(__id, Some($tags));
+        let _ = $ctx.Nodes().set_tags(__id, Some($tags));
         __id
     }};
     ($ctx:expr, $node_ty:ty, $name:expr, $tags:expr, $parent:expr) => {{
         let __id = $ctx.Nodes().create::<$node_ty>();
         let _ = $ctx.Nodes().set_node_name(__id, $name);
-        let _ = $ctx.Nodes().tag_set(__id, Some($tags));
+        let _ = $ctx.Nodes().set_tags(__id, Some($tags));
         let _ = $ctx.Nodes().reparent($parent, __id);
         __id
     }};
@@ -2820,7 +2836,7 @@ macro_rules! node_collection {
 /// - name (`get_node_name!`, `set_node_name!`)
 /// - hierarchy (`get_node_parent_id!`, `get_node_children_ids!`)
 /// - runtime typing (`get_node_type!`)
-/// - tags (`get_node_tags!`, `tag_set!`, `tag_add!`, `tag_remove!`)
+/// - tags (`get_node_tags!`, `set_tags!`, `tag_set!`, `tag_add!`, `tag_remove!`)
 /// - global transform helpers (`get_global_transform_*`, `set_global_transform_*`, `to_*`)
 ///
 /// Gets node display name.
@@ -3447,21 +3463,33 @@ macro_rules! get_node_tags {
 
 /// Sets or clears node tags.
 /// Usage:
-/// - `tag_set!(ctx, node_id, tags)` where `tags` converts into node tag data.
-/// - `tag_set!(ctx, node_id)` clears all tags.
+/// - `set_tags!(ctx, node_id, tags)` where `tags` converts into node tag data.
+/// - `set_tags!(ctx, node_id)` clears all tags.
 ///
 /// Arguments:
 /// - `ctx`: `&mut RuntimeWindow<_>`
 /// - `node_id`: `NodeID`
 /// - `tags`: usually from `tags![...]`, or string/id tag collections
 #[macro_export]
-macro_rules! tag_set {
+macro_rules! set_tags {
     ($ctx:expr, $id:expr, $tags:expr) => {
-        $ctx.Nodes().tag_set($id, Some($tags))
+        $ctx.Nodes().set_tags($id, Some($tags))
     };
     ($ctx:expr, $id:expr) => {
         $ctx.Nodes()
-            .tag_set::<&'static [$crate::perro_ids::TagID]>($id, None)
+            .set_tags::<&'static [$crate::perro_ids::TagID]>($id, None)
+    };
+}
+
+/// Deprecated alias for [`set_tags!`](macro@crate::set_tags).
+#[macro_export]
+#[deprecated(note = "use set_tags!")]
+macro_rules! tag_set {
+    ($ctx:expr, $id:expr, $tags:expr) => {
+        $crate::set_tags!($ctx, $id, $tags)
+    };
+    ($ctx:expr, $id:expr) => {
+        $crate::set_tags!($ctx, $id)
     };
 }
 
@@ -3498,7 +3526,7 @@ macro_rules! tag_remove {
     };
     ($ctx:expr, $id:expr) => {
         $ctx.Nodes()
-            .tag_set::<&'static [$crate::perro_ids::TagID]>($id, None)
+            .set_tags::<&'static [$crate::perro_ids::TagID]>($id, None)
     };
 }
 

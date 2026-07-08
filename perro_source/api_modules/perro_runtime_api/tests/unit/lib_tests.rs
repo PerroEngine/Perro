@@ -975,8 +975,8 @@ fn script_macros_typecheck_and_forward() {
     assert_eq!(get_node_children_ids!(&mut ctx, id), None);
     assert_eq!(get_node_type!(&mut ctx, id), None);
     assert_eq!(get_node_tags!(&mut ctx, id), None);
-    assert!(!tag_set!(&mut ctx, id, tags!["player", "enemy"]));
-    assert!(!tag_set!(&mut ctx, id));
+    assert!(!crate::set_tags!(&mut ctx, id, tags!["player", "enemy"]));
+    assert!(!crate::set_tags!(&mut ctx, id));
     assert!(!tag_add!(&mut ctx, id, "player"));
     assert!(!tag_remove!(&mut ctx, id, "player"));
     assert!(query!(&mut ctx, all(tags["player"], not(tags["enemy"]))).is_empty());
