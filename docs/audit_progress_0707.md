@@ -98,11 +98,12 @@
   - add: derive rigid/skinned preludes from minified common prelude in `shaders.rs`
   - rm: duplicate `prelude_rigid_3d.wgsl` + `prelude_skinned_3d.wgsl`
   - verify: shader validation tests, full `cargo check`, full `cargo clippy`, full `cargo test`
-- [ ] 2.8 test coverage holes
+- [x] 2.8 test coverage holes
   - partial: add `perro_runtime_render` unit coverage for retained request decode, 2D traversal/visible state, UI extraction plans, and render exchange inflight/result handling
   - partial: add `perro_dev_runner` arg parser unit coverage
   - partial: add proc macro integration coverage for `perro_macros` minify includes and `perro_scripting_macros` `State`/`Variant` expansion
-  - verify: `cargo test -p perro_runtime_render -- --nocapture`, `cargo test -p perro_dev_runner -- --nocapture`, `cargo test -p perro_macros -- --nocapture`, `cargo test -p perro_scripting_macros -- --nocapture`, full `cargo check`, full `cargo clippy`, full `cargo test`
+  - final: zero-test crates now have targeted tests; thin-crate count audit stale for `perro_compiler`, `perro_csv`, `perro_io`, `perro_meshlets`, `perro_graphics_assets`; add low-risk flag/mask coverage to `perro_asset_formats`
+  - verify: `cargo test -p perro_runtime_render -- --nocapture`, `cargo test -p perro_dev_runner -- --nocapture`, `cargo test -p perro_macros -- --nocapture`, `cargo test -p perro_scripting_macros -- --nocapture`, `cargo test -p perro_asset_formats -- --nocapture`, full `cargo check`, full `cargo clippy`, full `cargo test`
 - [ ] 2.9 misc sweep
 
 ## Coherence Audit Next

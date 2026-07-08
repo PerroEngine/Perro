@@ -149,4 +149,45 @@ mod tests {
             "SF2",
         ));
     }
+
+    #[test]
+    fn pmesh_flags_use_unique_bits_and_keep_payload_high_bit() {
+        let flags = [
+            super::pmesh::FLAG_HAS_NORMAL,
+            super::pmesh::FLAG_HAS_UV0,
+            super::pmesh::FLAG_HAS_JOINTS,
+            super::pmesh::FLAG_HAS_WEIGHTS,
+            super::pmesh::FLAG_INDEX_U16,
+            super::pmesh::FLAG_WEIGHTS_UNORM8,
+            super::pmesh::FLAG_HAS_BLEND_SHAPE_NORMALS,
+            super::pmesh::FLAG_PAYLOAD_RAW,
+        ];
+        let mut seen = 0u32;
+        for flag in flags {
+            assert_eq!(flag.count_ones(), 1);
+            assert_eq!(seen & flag, 0);
+            seen |= flag;
+        }
+        assert_eq!(super::pmesh::FLAG_PAYLOAD_RAW, 1 << 31);
+    }
+
+    #[test]
+    fn ptex_format_mask_accepts_known_formats_only() {
+        assert_eq!(
+            super::ptex::FLAG_FORMAT_RGBA8 & super::ptex::FLAG_FORMAT_MASK,
+            0
+        );
+        assert_eq!(
+            super::ptex::FLAG_FORMAT_RGB8 & super::ptex::FLAG_FORMAT_MASK,
+            1
+        );
+        assert_eq!(
+            super::ptex::FLAG_FORMAT_R8 & super::ptex::FLAG_FORMAT_MASK,
+            2
+        );
+        assert!(!super::source_ext::contains(
+            super::source_ext::IMAGE,
+            "txt"
+        ));
+    }
 }
