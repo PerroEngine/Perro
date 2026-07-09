@@ -66,6 +66,62 @@ pub const fn mix64(mut x: u64) -> u64 {
     x
 }
 
+/// Error returned when a generational ID string has invalid hex syntax.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ParseGenerationalIDError {
+    /// No hex digits remain after the optional prefix.
+    Empty,
+    /// An unseparated value contains more than 16 hex digits.
+    TooLong,
+    /// A hyphen does not split two groups of exactly 8 hex digits.
+    MisplacedSeparator,
+    /// A group contains a non-hex digit.
+    InvalidHex,
+}
+
+impl fmt::Display for ParseGenerationalIDError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let message = match self {
+            Self::Empty => "ID string is empty",
+            Self::TooLong => "ID string has more than 16 hex digits",
+            Self::MisplacedSeparator => "ID separator must split two groups of 8 hex digits",
+            Self::InvalidHex => "ID string contains a non-hex digit",
+        };
+        f.write_str(message)
+    }
+}
+
+impl std::error::Error for ParseGenerationalIDError {}
+
+/// Parse a generational ID from 1-16 hex digits.
+///
+/// A lowercase `0x` prefix is optional. The legacy `xxxxxxxx-xxxxxxxx` form is
+/// accepted; a hyphen at any other position is rejected.
+pub fn parse_generational_id(s: &str) -> Result<u64, ParseGenerationalIDError> {
+    let hex = s.strip_prefix("0x").unwrap_or(s);
+    if hex.is_empty() {
+        return Err(ParseGenerationalIDError::Empty);
+    }
+
+    if let Some((high, low)) = hex.split_once('-') {
+        if high.len() != 8 || low.len() != 8 || low.contains('-') {
+            return Err(ParseGenerationalIDError::MisplacedSeparator);
+        }
+        let high = parse_hex_group(high)?;
+        let low = parse_hex_group(low)?;
+        return Ok((high << 32) | low);
+    }
+
+    if hex.len() > 16 {
+        return Err(ParseGenerationalIDError::TooLong);
+    }
+    parse_hex_group(hex)
+}
+
+fn parse_hex_group(hex: &str) -> Result<u64, ParseGenerationalIDError> {
+    u64::from_str_radix(hex, 16).map_err(|_| ParseGenerationalIDError::InvalidHex)
+}
+
 // ---- Generational ID: base encoding ----
 // u64 layout: low 32 = index (0 = nil, 1.. = slot), high 32 = generation.
 // When a slot is reused, generation is bumped so old IDs no longer match.
@@ -148,6 +204,14 @@ macro_rules! define_generational {
                 write!(f, "{}:{}", self.index(), self.generation())
             }
         }
+
+        impl std::str::FromStr for $type_name {
+            type Err = ParseGenerationalIDError;
+
+            fn from_str(s: &str) -> Result<Self, Self::Err> {
+                parse_generational_id(s).map(Self::from_u64)
+            }
+        }
     };
 }
 
@@ -214,34 +278,16 @@ define_generational!(
 
 impl NodeID {
     pub const ROOT: NodeID = Self::new(1);
-    /// Parse hex string (8 or 16 chars, optional 0x prefix) into NodeID.
-    pub fn parse_str(s: &str) -> Result<Self, String> {
-        let s = s.strip_prefix("0x").unwrap_or(s).replace('-', "");
-        if s.len() <= 8 {
-            u32::from_str_radix(&s, 16)
-                .map(|u| Self::from_parts(u, 0))
-                .map_err(|e| format!("Invalid NodeID string: {}", e))
-        } else {
-            u64::from_str_radix(&s[..16.min(s.len())], 16)
-                .map(Self::from_u64)
-                .map_err(|e| format!("Invalid NodeID string: {}", e))
-        }
+    /// Parse 1-16 hex digits, optionally prefixed with `0x`.
+    pub fn parse_str(s: &str) -> Result<Self, ParseGenerationalIDError> {
+        s.parse()
     }
 }
 
 impl TextureID {
-    /// Parse hex string (8 or 16 chars, optional 0x prefix) into TextureID.
-    pub fn parse_str(s: &str) -> Result<Self, String> {
-        let s = s.strip_prefix("0x").unwrap_or(s).replace('-', "");
-        if s.len() <= 8 {
-            u32::from_str_radix(&s, 16)
-                .map(Self::from_u32)
-                .map_err(|e| format!("Invalid TextureID string: {}", e))
-        } else {
-            u64::from_str_radix(&s[..16.min(s.len())], 16)
-                .map(Self::from_u64)
-                .map_err(|e| format!("Invalid TextureID string: {}", e))
-        }
+    /// Parse 1-16 hex digits, optionally prefixed with `0x`.
+    pub fn parse_str(s: &str) -> Result<Self, ParseGenerationalIDError> {
+        s.parse()
     }
 }
 

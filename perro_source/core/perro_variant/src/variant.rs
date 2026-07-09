@@ -992,12 +992,7 @@ macro_rules! impl_statefield_plain_id {
                     .and_then(|n| n.as_i64_lossy())
                     .and_then(|n| u64::try_from(n).ok())
                     .map(<$id_ty>::from_u64)
-                    .or_else(|| {
-                        value
-                            .as_str()
-                            .and_then(parse_u64_id_string)
-                            .map(<$id_ty>::from_u64)
-                    })
+                    .or_else(|| value.as_str().and_then(|s| s.parse::<$id_ty>().ok()))
                     .or_else(|| value.as_id().map(IDs::as_u64).map(<$id_ty>::from_u64))
             }
 
@@ -4059,18 +4054,6 @@ fn post_process_effect_to_json(effect: &PostProcessEffect) -> JsonValue {
         }
     }
     JsonValue::Object(map)
-}
-
-fn parse_u64_id_string(s: &str) -> Option<u64> {
-    let compact = s.strip_prefix("0x").unwrap_or(s).replace('-', "");
-    if compact.is_empty() {
-        return None;
-    }
-    if compact.chars().all(|c| c.is_ascii_hexdigit()) {
-        u64::from_str_radix(&compact[..16.min(compact.len())], 16).ok()
-    } else {
-        compact.parse::<u64>().ok()
-    }
 }
 
 fn parse_matrix_rows<const N: usize>(value: &Variant) -> Option<[[f32; N]; N]> {
