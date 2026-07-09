@@ -15,6 +15,55 @@ mod tests {
     };
     use perro_scene::NodeType;
 
+    fn unique_temp_path(name: &str) -> std::path::PathBuf {
+        std::env::temp_dir().join(format!(
+            "perro_compiler_{name}_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system clock")
+                .as_nanos()
+        ))
+    }
+
+    #[test]
+    fn generated_script_write_lock_times_out_when_live() {
+        let target = unique_temp_path("write_lock_live").join("script.rs");
+        let lock_path = target.with_extension("write-lock");
+        std::fs::create_dir_all(&lock_path).expect("create live lock");
+
+        let err = match super::WriteLock::acquire_with_policy(
+            &target,
+            std::time::Duration::ZERO,
+            std::time::Duration::MAX,
+        ) {
+            Ok(_) => panic!("live lock must time out"),
+            Err(err) => err,
+        };
+
+        assert_eq!(err.kind(), std::io::ErrorKind::TimedOut);
+        std::fs::remove_dir_all(target.parent().expect("temp parent")).expect("remove fixture");
+    }
+
+    #[test]
+    fn generated_script_write_lock_reclaims_stale_lock() {
+        let target = unique_temp_path("write_lock_stale").join("script.rs");
+        let lock_path = target.with_extension("write-lock");
+        std::fs::create_dir_all(&lock_path).expect("create stale lock");
+
+        let guard = super::WriteLock::acquire_with_policy(
+            &target,
+            std::time::Duration::ZERO,
+            std::time::Duration::ZERO,
+        )
+        .expect("reclaim stale lock");
+
+        assert!(lock_path.is_dir());
+        drop(guard);
+        assert!(!lock_path.exists());
+        std::fs::remove_dir_all(target.parent().expect("temp parent")).expect("remove fixture");
+    }
+
     fn assert_methods_emitted(transpiled: &str, expected_method_names: &[&str]) {
         assert!(
             transpiled.contains("match method {"),
