@@ -68,14 +68,11 @@ impl Runtime {
             ));
         }
 
-        let ctor = *self
+        let ctor = self
             .script_runtime
-            .dynamic_script_registry
-            .get(&script_path_hash)
+            .resolve_script_constructor(script_path_hash)
             .ok_or_else(|| {
-                format!(
-                    "script hash `{script_path_hash}` is not present in dynamic script registry"
-                )
+                format!("script hash `{script_path_hash}` is not present in script registry")
             })?;
         let behavior: Arc<dyn ScriptBehavior<crate::runtime::RuntimeScriptApi>> =
             if let Some(cached) = self
@@ -297,7 +294,7 @@ impl Runtime {
             for (path_hash, ctor) in entries {
                 self.script_runtime
                     .dynamic_script_registry
-                    .insert(path_hash, crate::runtime::RuntimeScriptCtor::Dynamic(ctor));
+                    .insert(path_hash, ctor);
             }
         }
 

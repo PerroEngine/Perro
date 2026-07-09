@@ -1,12 +1,13 @@
 use crate::{
     cns::{ScriptCollection, SignalConnection, SignalRegistry},
     rs_ctx::RuntimeResourceApi,
-    runtime::{RuntimeScriptBehavior, RuntimeScriptCtor},
+    runtime::{RuntimeScriptApi, RuntimeScriptBehavior, RuntimeScriptCtor},
 };
 use ahash::{AHashMap, AHashSet};
 use perro_ids::{NodeID, SignalID};
 use perro_input_api::InputSnapshot;
 use perro_nodes::Spatial;
+use perro_scripting::{DynamicScriptConstructor, ScriptConstructor};
 use perro_structs::{Transform2D, Transform3D};
 use std::{path::PathBuf, sync::Arc};
 #[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
@@ -24,7 +25,10 @@ pub(crate) struct ScriptRuntimeState {
     pub(crate) mounted_dlc_script_libs: AHashMap<String, PathBuf>,
     pub(crate) loaded_dlc_script_libs: AHashSet<String>,
     pub(crate) script_instance_dlc_mounts: AHashMap<NodeID, String>,
-    pub(crate) dynamic_script_registry: AHashMap<u64, RuntimeScriptCtor>,
+    /// Hash-sorted generated release registry; runtime only borrows this slice.
+    pub(crate) static_script_registry: &'static [(u64, ScriptConstructor<RuntimeScriptApi>)],
+    /// Dev/DLC constructors; these override matching release entries.
+    pub(crate) dynamic_script_registry: AHashMap<u64, DynamicScriptConstructor<RuntimeScriptApi>>,
     pub(crate) script_behavior_cache: AHashMap<u64, Arc<RuntimeScriptBehavior>>,
 }
 
@@ -40,9 +44,24 @@ impl ScriptRuntimeState {
             mounted_dlc_script_libs: AHashMap::default(),
             loaded_dlc_script_libs: AHashSet::default(),
             script_instance_dlc_mounts: AHashMap::default(),
+            static_script_registry: &[],
             dynamic_script_registry: AHashMap::default(),
             script_behavior_cache: AHashMap::default(),
         }
+    }
+}
+
+impl ScriptRuntimeState {
+    #[inline]
+    pub(crate) fn resolve_script_constructor(&self, path_hash: u64) -> Option<RuntimeScriptCtor> {
+        if let Some(ctor) = self.dynamic_script_registry.get(&path_hash) {
+            return Some(RuntimeScriptCtor::Dynamic(*ctor));
+        }
+
+        self.static_script_registry
+            .binary_search_by_key(&path_hash, |(hash, _)| *hash)
+            .ok()
+            .map(|index| RuntimeScriptCtor::Static(self.static_script_registry[index].1))
     }
 }
 

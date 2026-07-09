@@ -74,6 +74,7 @@ fn write_scripts_lib(
         }
         script_entries.push((module, hash));
     }
+    script_entries.sort_unstable_by_key(|(_, hash)| *hash);
 
     out.push_str(
         "pub static SCRIPT_REGISTRY: &[(u64, ScriptConstructor<RuntimeScriptApi>)] = &[\n",
