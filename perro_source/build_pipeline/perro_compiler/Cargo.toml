@@ -1,7 +1,13 @@
 [package]
 name = "perro_compiler"
 version = "0.1.0"
-edition = "2024"
+description = "Build compiler for Perro game projects"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
 
 [dependencies]
 perro_assets.workspace = true
