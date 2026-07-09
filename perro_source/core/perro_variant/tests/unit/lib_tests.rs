@@ -214,6 +214,31 @@ fn test_variant_as_texture() {
 }
 
 #[test]
+fn test_id_string_parse_uses_strict_shared_syntax() {
+    let value = Variant::from("01234567-89abcdef");
+    assert_eq!(
+        value.parse::<NodeID>(),
+        Ok(NodeID::from_u64(0x0123_4567_89ab_cdef))
+    );
+    assert_eq!(
+        value.parse::<MaterialID>(),
+        Ok(MaterialID::from_u64(0x0123_4567_89ab_cdef))
+    );
+
+    for malformed in ["", "1-2", "10000000000000000"] {
+        let value = Variant::from(malformed);
+        assert!(value.parse::<NodeID>().is_err());
+        assert!(value.parse::<TextureID>().is_err());
+        assert!(value.parse::<MaterialID>().is_err());
+    }
+
+    assert_eq!(
+        Variant::from(NodeID::from_u64(0x0123_4567_89ab_cdef)).to_json_value(),
+        serde_json::json!(0x0123_4567_89ab_cdef_u64)
+    );
+}
+
+#[test]
 fn test_variant_as_preloaded_scene() {
     let id = PreloadedSceneID::from_u64(1234);
     let v = Variant::from(id);
