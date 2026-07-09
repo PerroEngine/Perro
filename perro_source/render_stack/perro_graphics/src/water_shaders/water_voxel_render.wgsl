@@ -157,28 +157,30 @@ fn clamp_coord(dims: vec3<u32>, p: vec3<i32>) -> vec3<u32> {
     );
 }
 
-fn sample_buffer_cell(buf_idx: u32, dims: vec3<u32>, p: vec3<i32>, use_surface: bool) -> vec4<f32> {
+// cell_offset + dims passed in frm loaded struct so storage read once per
+// fragment, not once per trilinear tap
+fn sample_buffer_cell(cell_offset: u32, dims: vec3<u32>, p: vec3<i32>, use_surface: bool) -> vec4<f32> {
     let q = clamp_coord(dims, p);
-    let idx = voxel_waters[buf_idx].cell_offset + voxel_idx(dims, q);
+    let idx = cell_offset + voxel_idx(dims, q);
     if use_surface {
         return surface[idx];
     }
     return density[idx];
 }
 
-fn trilinear_sample(buf_idx: u32, uvw: vec3<f32>, use_surface: bool) -> vec4<f32> {
-    let dims = voxel_waters[buf_idx].dims.xyz;
+fn trilinear_sample(v: VoxelWater, uvw: vec3<f32>, use_surface: bool) -> vec4<f32> {
+    let dims = v.dims.xyz;
     let grid = clamp(uvw, vec3<f32>(0.0), vec3<f32>(0.999999)) * vec3<f32>(max(dims - vec3<u32>(1u), vec3<u32>(1u)));
     let base = vec3<i32>(floor(grid));
     let f = fract(grid);
-    let c000 = sample_buffer_cell(buf_idx, dims, base + vec3<i32>(0, 0, 0), use_surface);
-    let c100 = sample_buffer_cell(buf_idx, dims, base + vec3<i32>(1, 0, 0), use_surface);
-    let c010 = sample_buffer_cell(buf_idx, dims, base + vec3<i32>(0, 1, 0), use_surface);
-    let c110 = sample_buffer_cell(buf_idx, dims, base + vec3<i32>(1, 1, 0), use_surface);
-    let c001 = sample_buffer_cell(buf_idx, dims, base + vec3<i32>(0, 0, 1), use_surface);
-    let c101 = sample_buffer_cell(buf_idx, dims, base + vec3<i32>(1, 0, 1), use_surface);
-    let c011 = sample_buffer_cell(buf_idx, dims, base + vec3<i32>(0, 1, 1), use_surface);
-    let c111 = sample_buffer_cell(buf_idx, dims, base + vec3<i32>(1, 1, 1), use_surface);
+    let c000 = sample_buffer_cell(v.cell_offset, dims, base + vec3<i32>(0, 0, 0), use_surface);
+    let c100 = sample_buffer_cell(v.cell_offset, dims, base + vec3<i32>(1, 0, 0), use_surface);
+    let c010 = sample_buffer_cell(v.cell_offset, dims, base + vec3<i32>(0, 1, 0), use_surface);
+    let c110 = sample_buffer_cell(v.cell_offset, dims, base + vec3<i32>(1, 1, 0), use_surface);
+    let c001 = sample_buffer_cell(v.cell_offset, dims, base + vec3<i32>(0, 0, 1), use_surface);
+    let c101 = sample_buffer_cell(v.cell_offset, dims, base + vec3<i32>(1, 0, 1), use_surface);
+    let c011 = sample_buffer_cell(v.cell_offset, dims, base + vec3<i32>(0, 1, 1), use_surface);
+    let c111 = sample_buffer_cell(v.cell_offset, dims, base + vec3<i32>(1, 1, 1), use_surface);
     let x00 = mix(c000, c100, f.x);
     let x10 = mix(c010, c110, f.x);
     let x01 = mix(c001, c101, f.x);
@@ -212,6 +214,10 @@ fn scene_world_from_depth(coord: vec2<i32>, dims_u: vec2<u32>, depth: f32) -> ve
 }
 
 fn screen_contact(world_pos: vec3<f32>, blend: f32) -> vec2<f32> {
+    // result scales by blend at end; skip 49-tap loop when contact off
+    if blend <= 0.0 {
+        return vec2<f32>(0.0);
+    }
     let dims_u = textureDimensions(scene_depth_tex);
     let dims = vec2<i32>(i32(dims_u.x), i32(dims_u.y));
     let clip = scene.view_proj * vec4<f32>(world_pos, 1.0);
@@ -273,8 +279,8 @@ fn fs_voxel_water(in: Out) -> @location(0) vec4<f32> {
         let p = cam_local + ray_dir * t;
         let uvw = uvw_from_local(v, p);
         if all(uvw >= vec3<f32>(0.0)) && all(uvw <= vec3<f32>(1.0)) {
-            let d = trilinear_sample(in.voxel_idx, uvw, false).x;
-            let s = trilinear_sample(in.voxel_idx, uvw, true);
+            let d = trilinear_sample(v, uvw, false).x;
+            let s = trilinear_sample(v, uvw, true);
             let top_fade = 1.0 - smoothstep(0.10, 0.36, uvw.y);
             let fluid = smoothstep(0.16, 0.72, d) * top_fade;
             let surface_density = smoothstep(0.10, 0.55, s.x) * fluid;

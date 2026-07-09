@@ -1912,17 +1912,8 @@ impl Runtime {
             return None;
         }
         let mut best: Option<AudioHit2D> = None;
-        let mut scratch_ids = std::mem::take(&mut self.audio.scratch_ids);
-        scratch_ids.clear();
-        crate::runtime::scan_node_type_slots(
-            &self.nodes,
-            perro_nodes::NodeType::AudioMask2D,
-            |_| true,
-            &mut scratch_ids,
-        );
-        self.audio.scratch_ids = scratch_ids;
-        for index in 0..self.audio.scratch_ids.len() {
-            let mask_id = self.audio.scratch_ids[index];
+        for index in 0..self.audio.audio_mask_ids_2d.len() {
+            let mask_id = self.audio.audio_mask_ids_2d[index];
             let Some(SceneNodeData::AudioMask2D(mask)) = self.nodes.get(mask_id).map(|n| &n.data)
             else {
                 continue;
@@ -1992,17 +1983,8 @@ impl Runtime {
             return None;
         }
         let mut best: Option<AudioHit3D> = None;
-        let mut scratch_ids = std::mem::take(&mut self.audio.scratch_ids);
-        scratch_ids.clear();
-        crate::runtime::scan_node_type_slots(
-            &self.nodes,
-            perro_nodes::NodeType::AudioMask3D,
-            |_| true,
-            &mut scratch_ids,
-        );
-        self.audio.scratch_ids = scratch_ids;
-        for index in 0..self.audio.scratch_ids.len() {
-            let mask_id = self.audio.scratch_ids[index];
+        for index in 0..self.audio.audio_mask_ids_3d.len() {
+            let mask_id = self.audio.audio_mask_ids_3d[index];
             let Some(SceneNodeData::AudioMask3D(mask)) = self.nodes.get(mask_id).map(|n| &n.data)
             else {
                 continue;
@@ -2199,17 +2181,8 @@ impl Runtime {
         let dir = direction.normalized();
         let sweep = dir * self.audio.config.max_ray_distance_2d;
         let mut best: Option<AudioPortalHit2D> = None;
-        let mut scratch_ids = std::mem::take(&mut self.audio.scratch_ids);
-        scratch_ids.clear();
-        crate::runtime::scan_node_type_slots(
-            &self.nodes,
-            perro_nodes::NodeType::AudioPortal2D,
-            |_| true,
-            &mut scratch_ids,
-        );
-        self.audio.scratch_ids = scratch_ids;
-        for index in 0..self.audio.scratch_ids.len() {
-            let portal_id = self.audio.scratch_ids[index];
+        for index in 0..self.audio.audio_portal_ids_2d.len() {
+            let portal_id = self.audio.audio_portal_ids_2d[index];
             if skip_portal == Some(portal_id) {
                 continue;
             }
@@ -2402,17 +2375,8 @@ impl Runtime {
         let dir = direction.normalized();
         let sweep = dir * self.audio.config.max_ray_distance_3d;
         let mut best: Option<AudioPortalHit3D> = None;
-        let mut scratch_ids = std::mem::take(&mut self.audio.scratch_ids);
-        scratch_ids.clear();
-        crate::runtime::scan_node_type_slots(
-            &self.nodes,
-            perro_nodes::NodeType::AudioPortal3D,
-            |_| true,
-            &mut scratch_ids,
-        );
-        self.audio.scratch_ids = scratch_ids;
-        for index in 0..self.audio.scratch_ids.len() {
-            let portal_id = self.audio.scratch_ids[index];
+        for index in 0..self.audio.audio_portal_ids_3d.len() {
+            let portal_id = self.audio.audio_portal_ids_3d[index];
             if skip_portal == Some(portal_id) {
                 continue;
             }

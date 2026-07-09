@@ -46,7 +46,6 @@ pub(crate) use perro_render_bridge::{
 
 impl Runtime {
     pub fn extract_render_2d_commands(&mut self) {
-        self.reset_water_scan_cache_2d();
         let bootstrap_scan = self.render_2d.prev_visible.is_empty()
             && self.render_2d.retained_sprites.is_empty()
             && self.render_2d.last_camera.is_none();
@@ -537,14 +536,17 @@ impl Runtime {
             });
             if let Some((visible, local_transform, z_index, water)) = water_data {
                 if visible {
-                    let model = self
-                        .get_render_global_transform_2d(node)
+                    // resolve water global transform once; reused for model +
+                    // coastline + impacts (was recomputed 3x).
+                    let water_global = self.get_render_global_transform_2d(node);
+                    let model = water_global
                         .unwrap_or(local_transform)
                         .to_mat3()
                         .to_cols_array_2d();
-                    let coastline_shapes = self.collect_water_coastline_shapes_2d(node, &water);
+                    let coastline_shapes =
+                        self.collect_water_coastline_shapes_2d(&water, water_global);
                     let queries = self.collect_water_queries_2d(node);
-                    let impacts = self.collect_water_impacts_2d(node, &water);
+                    let impacts = self.collect_water_impacts_2d(node, &water, water_global);
                     let links = self.collect_water_links_2d(node, &water);
                     let modulate = self.effective_self_modulate(node);
                     self.queue_render_command(RenderCommand::TwoD(Command2D::UpsertWater {
@@ -1231,49 +1233,38 @@ impl Runtime {
 
     pub(crate) fn collect_water_coastline_shapes_2d(
         &mut self,
-        water_id: NodeID,
         water: &perro_nodes::WaterSurfaceParams,
+        water_global: Option<perro_structs::Transform2D>,
     ) -> Arc<[WaterCoastlineShape2D]> {
-        let Some(water_global) = self.get_render_global_transform_2d(water_id) else {
+        let Some(water_global) = water_global else {
             return Arc::from([]);
         };
         let water_half = water.shape.surface_size() * 0.5;
         let mut shapes = Vec::new();
-        let body_ids: Vec<_> = self
-            .nodes
-            .iter()
-            .filter_map(|(id, node)| {
-                matches!(
-                    node.data,
-                    SceneNodeData::StaticBody2D(_)
-                        | SceneNodeData::RigidBody2D(_)
-                        | SceneNodeData::CharacterBody2D(_)
-                )
-                .then_some(id)
-            })
-            .collect();
-        for body_id in body_ids {
-            let Some((enabled, layers, mask, children, scale_bias)) =
+        // cached candidate ids (static/rigid/character bodies), gated on
+        // physics_revision -> no per-tick full-arena scan. take out to iterate
+        // while calling &mut self transform lookups, then restore.
+        self.cached_water_collision_body_ids_2d();
+        let body_ids = std::mem::take(&mut self.water_collision_body_ids_2d_cache);
+        for body_id in body_ids.iter().copied() {
+            let Some((enabled, layers, mask, scale_bias)) =
                 self.nodes.get(body_id).and_then(|node| match &node.data {
                     SceneNodeData::StaticBody2D(body) => Some((
                         body.enabled,
                         body.collision_layers,
                         body.collision_mask,
-                        node.children_slice().to_vec(),
                         0.85f32,
                     )),
                     SceneNodeData::RigidBody2D(body) => Some((
                         body.enabled,
                         body.collision_layers,
                         body.collision_mask,
-                        node.children_slice().to_vec(),
                         0.50f32,
                     )),
                     SceneNodeData::CharacterBody2D(body) => Some((
                         body.enabled,
                         body.collision_layers,
                         body.collision_mask,
-                        node.children_slice().to_vec(),
                         0.50f32,
                     )),
                     _ => None,
@@ -1288,6 +1279,14 @@ impl Runtime {
                 continue;
             }
             let Some(_body_global) = self.get_render_global_transform_2d(body_id) else {
+                continue;
+            };
+            // defer children clone until after enabled/mask filter passes.
+            let Some(children) = self
+                .nodes
+                .get(body_id)
+                .map(|node| node.children_slice().to_vec())
+            else {
                 continue;
             };
             for child_id in children {
@@ -1346,6 +1345,7 @@ impl Runtime {
                 }
             }
         }
+        self.water_collision_body_ids_2d_cache = body_ids;
         Arc::from(shapes)
     }
 
@@ -1374,8 +1374,9 @@ impl Runtime {
         &mut self,
         water_id: NodeID,
         water: &perro_nodes::WaterSurfaceParams,
+        water_global: Option<perro_structs::Transform2D>,
     ) -> Arc<[WaterImpact2D]> {
-        let Some(water_global) = self.get_render_global_transform_2d(water_id) else {
+        let Some(water_global) = water_global else {
             return Arc::from([]);
         };
         let water_inv = water_global.to_mat3().inverse();

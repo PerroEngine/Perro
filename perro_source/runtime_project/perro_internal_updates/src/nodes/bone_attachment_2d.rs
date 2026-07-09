@@ -16,26 +16,27 @@ where
     }
 
     let bone_index = bone_index as usize;
-    let Some(bones) = with_base_node!(ctx, Skeleton2D, skeleton_id, |skeleton| {
-        skeleton.bones.clone()
-    }) else {
+    // Compose only the bone-to-root chain inside the borrow; return the small
+    // Mat3 so no whole-`bones` Vec clone escapes per frame.
+    let Some(bone_global) = with_base_node!(ctx, Skeleton2D, skeleton_id, |skeleton| {
+        let bones = &skeleton.bones;
+        let bone = bones.get(bone_index)?;
+        let mut bone_global = bone.pose.to_mat3();
+        let mut parent = bone.parent;
+        let mut hops = 0usize;
+        while parent >= 0 && hops < bones.len() {
+            let Some(parent_bone) = bones.get(parent as usize) else {
+                break;
+            };
+            bone_global = parent_bone.pose.to_mat3() * bone_global;
+            parent = parent_bone.parent;
+            hops += 1;
+        }
+        Some(bone_global)
+    })
+    .flatten() else {
         return;
     };
-    let Some(bone) = bones.get(bone_index) else {
-        return;
-    };
-
-    let mut bone_global = bone.pose.to_mat3();
-    let mut parent = bone.parent;
-    let mut hops = 0usize;
-    while parent >= 0 && hops < bones.len() {
-        let Some(parent_bone) = bones.get(parent as usize) else {
-            break;
-        };
-        bone_global = parent_bone.pose.to_mat3() * bone_global;
-        parent = parent_bone.parent;
-        hops += 1;
-    }
 
     let skeleton_global = ctx
         .Nodes()

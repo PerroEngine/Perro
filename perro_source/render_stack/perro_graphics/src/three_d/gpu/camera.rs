@@ -225,14 +225,15 @@ const GROUND_BOUNCE_FACTOR: f32 = 0.4;
 // Neutral horizon radiance fraction when no sky gradient is available.
 const HORIZON_ENV_FACTOR: f32 = 0.75;
 
+// view_proj / inv_view_proj are computed once by the caller and shared with the
+// sky uniform and frustum extraction; inv_view_proj is the raw inverse and the
+// is_finite fallback stays here.
 pub(super) fn build_scene_uniform(
     camera: &Camera3DState,
     lighting: &Lighting3DState,
-    width: u32,
-    height: u32,
+    view_proj: Mat4,
+    inv_view_proj: Mat4,
 ) -> Scene3DUniform {
-    let view_proj = compute_view_proj_mat(camera, width, height);
-    let inv_view_proj = view_proj.inverse();
     let mut scene = Scene3DUniform {
         view_proj: view_proj.to_cols_array_2d(),
         ambient_and_counts: [0.0, 0.0, 0.0, 0.0],
@@ -455,11 +456,12 @@ mod tests {
 
     #[test]
     fn scene_uniform_no_sky_or_lights_gets_default_ambient_and_no_light_counts() {
+        let view_proj = compute_view_proj_mat(&Camera3DState::default(), 1280, 720);
         let scene = build_scene_uniform(
             &Camera3DState::default(),
             &Lighting3DState::default(),
-            1280,
-            720,
+            view_proj,
+            view_proj.inverse(),
         );
 
         assert_eq!(
@@ -482,7 +484,9 @@ mod tests {
             }),
             ..Default::default()
         };
-        let scene = build_scene_uniform(&Camera3DState::default(), &lighting, 1280, 720);
+        let view_proj = compute_view_proj_mat(&Camera3DState::default(), 1280, 720);
+        let scene =
+            build_scene_uniform(&Camera3DState::default(), &lighting, view_proj, view_proj.inverse());
         assert_eq!(scene.ambient_color[3], 0.0);
         assert_eq!(scene.ground_color, [0.0, 0.0, 0.0, 0.0]);
     }

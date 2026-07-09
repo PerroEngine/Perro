@@ -300,6 +300,10 @@ impl Runtime {
         all_ids.extend(self.nodes.iter().map(|(id, _)| id));
         let mut parent_siblings = std::mem::take(&mut self.render_ui.parent_siblings_scratch);
         parent_siblings.clear();
+        // dedup the layout-children DFS per ui_parent: when a container changes,
+        // all its children get DIRTY_LAYOUT_PARENT, so many dirty nodes resolve
+        // to the same ui_parent + would rescan the same subtree otherwise.
+        let mut layout_children_memo: AHashMap<NodeID, Vec<NodeID>> = AHashMap::new();
         for &(node, flags) in &dirty_entries {
             let flags = if flags == 0 {
                 DirtyState::UI_LAYOUT_MASK | DirtyState::DIRTY_COMMANDS
@@ -317,7 +321,13 @@ impl Runtime {
                     .and_then(|parent_node| ui_auto_layout_from_data(&parent_node.data))
                     .is_some()
             {
-                parent_siblings.insert(node, self.ui_layout_children(ui_parent));
+                if !layout_children_memo.contains_key(&ui_parent) {
+                    let computed = self.ui_layout_children(ui_parent);
+                    layout_children_memo.insert(ui_parent, computed);
+                }
+                if let Some(siblings) = layout_children_memo.get(&ui_parent) {
+                    parent_siblings.insert(node, siblings.clone());
+                }
             }
         }
         let nodes = &self.nodes;

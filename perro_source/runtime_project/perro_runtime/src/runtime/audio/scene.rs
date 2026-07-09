@@ -125,36 +125,42 @@ impl Runtime {
         self.audio.has_audio_portal_3d = false;
         self.audio.has_audio_effect_zone_2d = false;
         self.audio.has_audio_effect_zone_3d = false;
-        for (_, node) in self.nodes.iter() {
+        self.audio.audio_mask_ids_2d.clear();
+        self.audio.audio_mask_ids_3d.clear();
+        self.audio.audio_portal_ids_2d.clear();
+        self.audio.audio_portal_ids_3d.clear();
+        self.audio.audio_effect_zone_ids_2d.clear();
+        self.audio.audio_effect_zone_ids_3d.clear();
+        // Single pass fills both the has_* fast-gate flags and the per-type id
+        // lists the ray/zone helpers iterate; no early break since the lists
+        // must be complete.
+        for (id, node) in self.nodes.iter() {
             match &node.data {
                 SceneNodeData::AudioMask2D(_) => {
                     self.audio.has_audio_mask_2d = true;
+                    self.audio.audio_mask_ids_2d.push(id);
                 }
                 SceneNodeData::AudioMask3D(_) => {
                     self.audio.has_audio_mask_3d = true;
+                    self.audio.audio_mask_ids_3d.push(id);
                 }
                 SceneNodeData::AudioPortal2D(_) => {
                     self.audio.has_audio_portal_2d = true;
+                    self.audio.audio_portal_ids_2d.push(id);
                 }
                 SceneNodeData::AudioPortal3D(_) => {
                     self.audio.has_audio_portal_3d = true;
+                    self.audio.audio_portal_ids_3d.push(id);
                 }
                 SceneNodeData::AudioEffectZone2D(_) => {
                     self.audio.has_audio_effect_zone_2d = true;
+                    self.audio.audio_effect_zone_ids_2d.push(id);
                 }
                 SceneNodeData::AudioEffectZone3D(_) => {
                     self.audio.has_audio_effect_zone_3d = true;
+                    self.audio.audio_effect_zone_ids_3d.push(id);
                 }
                 _ => {}
-            }
-            if self.audio.has_audio_mask_2d
-                && self.audio.has_audio_mask_3d
-                && self.audio.has_audio_portal_2d
-                && self.audio.has_audio_portal_3d
-                && self.audio.has_audio_effect_zone_2d
-                && self.audio.has_audio_effect_zone_3d
-            {
-                break;
             }
         }
     }

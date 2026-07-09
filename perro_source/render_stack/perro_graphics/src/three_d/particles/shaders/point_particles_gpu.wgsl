@@ -84,8 +84,6 @@ fn vs_main(@builtin(instance_index) particle_index: u32) -> ParticleOut {
 
     let e = emitters[emitter_idx];
     let local_i = particle_index - e.counts_seed.x;
-    let model = mat4x4<f32>(e.model_0, e.model_1, e.model_2, e.model_3);
-    let up = safe_normalize((model * vec4<f32>(0.0, 1.0, 0.0, 0.0)).xyz, vec3<f32>(0.0, 1.0, 0.0));
     let time = max(e.time_path.x, 0.0);
     let life_min = max(e.life_speed.x, 0.001);
     let life_max = max(e.life_speed.y, life_min);
@@ -203,7 +201,6 @@ fn vs_billboard(
 
     let e = emitters[emitter_idx];
     let local_i = particle_index - e.counts_seed.x;
-    let model = mat4x4<f32>(e.model_0, e.model_1, e.model_2, e.model_3);
     let time = max(e.time_path.x, 0.0);
     let life_min = max(e.life_speed.x, 0.001);
     let life_max = max(e.life_speed.y, life_min);

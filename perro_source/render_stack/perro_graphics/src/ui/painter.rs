@@ -137,7 +137,7 @@ const UI_KOREAN_FONT_FAMILIES: &[&str] = &[
 ];
 
 pub struct UiPaintFrame<'a> {
-    pub primitives: &'a [ClippedPrimitive],
+    pub primitives: &'a [Arc<ClippedPrimitive>],
     pub textures_delta: &'a TexturesDelta,
     pub texture_size: [u32; 2],
     pub revision: u64,
@@ -156,10 +156,13 @@ pub(crate) trait UiPainter {
 /// own draw data + viewport are unchanged, so only mutated nodes re-tessellate.
 /// Text nodes (Label/TextEdit) are never cached because they depend on the
 /// shared font atlas pass, which resets each rebuild.
+///
+/// Primitives are shared behind `Arc` so reusing an unchanged node is a
+/// refcount bump instead of a deep clone of its vertex/index meshes.
 struct CachedNode {
     draw: UiDraw,
     viewport: [f32; 2],
-    primitives: Vec<ClippedPrimitive>,
+    primitives: Vec<Arc<ClippedPrimitive>>,
 }
 
 /// Per-node staging entry for the two-phase rebuild: shapes are staged for
@@ -179,7 +182,11 @@ pub(crate) struct EpaintUiPainter {
     harfbuzz_atlas: HarfBuzzAtlas,
     shapes: Vec<ClippedShape>,
     shape_rotations: Vec<(f32, epaint::Pos2)>,
-    primitives: Vec<ClippedPrimitive>,
+    primitives: Vec<Arc<ClippedPrimitive>>,
+    // Previous generation of `primitives`, kept alive for one rebuild so fresh
+    // tessellations cannot reuse a freed Arc address while the GPU's
+    // pointer-identity mesh signature still references it (ABA guard).
+    prev_primitives: Vec<Arc<ClippedPrimitive>>,
     node_cache: AHashMap<NodeID, CachedNode>,
     // Cached z-sorted draw order + the (node, z_index) signature it was built
     // from. Reused when the structure (id set / z-order) is unchanged, so a
@@ -211,6 +218,7 @@ impl EpaintUiPainter {
             shapes: Vec::new(),
             shape_rotations: Vec::new(),
             primitives: Vec::new(),
+            prev_primitives: Vec::new(),
             node_cache: AHashMap::new(),
             ordered_nodes: Vec::new(),
             order_signature: Vec::new(),
@@ -280,6 +288,11 @@ impl EpaintUiPainter {
             .begin_pass(UI_FONT_ATLAS_SIZE, AlphaFromCoverage::default());
         self.shapes.clear();
         self.shape_rotations.clear();
+        // Hold the previous generation's Arcs alive through this rebuild: the
+        // GPU mesh signature keys on Arc pointer identity, so freshly
+        // tessellated primitives must not reuse a just-freed allocation (ABA)
+        // while the prior signature is still the comparison baseline.
+        std::mem::swap(&mut self.prev_primitives, &mut self.primitives);
         self.primitives.clear();
 
         // Only re-sort when the structure (id set / z-order) changed. A pure
@@ -373,14 +386,19 @@ impl EpaintUiPainter {
                     rotations,
                     is_text,
                 } => {
-                    let mut node_primitives = tessellator.tessellate_shapes(shapes);
-                    rotate_primitives(&mut node_primitives, &rotations);
-                    node_primitives.retain(|primitive| match &primitive.primitive {
+                    let mut tessellated = tessellator.tessellate_shapes(shapes);
+                    rotate_primitives(&mut tessellated, &rotations);
+                    tessellated.retain(|primitive| match &primitive.primitive {
                         Primitive::Mesh(mesh) => {
                             !mesh.vertices.is_empty() && !mesh.indices.is_empty()
                         }
                         Primitive::Callback(_) => false,
                     });
+                    // Wrap each primitive in an Arc so the shared copy stored in
+                    // the cache and the copy handed to the frame refer to the
+                    // same heap mesh; downstream reuse is a refcount bump.
+                    let node_primitives: Vec<Arc<ClippedPrimitive>> =
+                        tessellated.into_iter().map(Arc::new).collect();
                     self.primitives.extend(node_primitives.iter().cloned());
                     if is_text {
                         // Text depends on the shared atlas pass; do not cache it.

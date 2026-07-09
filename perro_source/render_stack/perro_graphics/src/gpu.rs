@@ -429,6 +429,10 @@ pub struct Gpu {
     water: Option<GpuWater>,
     camera_stream_targets: AHashMap<NodeID, GpuCameraStreamTarget>,
     camera_stream_external_bindings: AHashMap<NodeID, [u32; 2]>,
+    // Per-node resolution of the 3D material-texture slot last bound to a
+    // camera-stream target, so the external upsert (view + bind group + retain
+    // scan) only runs when the target is (re)created, not every frame.
+    camera_stream_3d_bindings: AHashMap<NodeID, [u32; 2]>,
     camera_stream_2d: Option<Gpu2D>,
     camera_stream_3d: Option<Gpu3D>,
     camera_stream_particles_3d: Option<GpuPointParticles3D>,
@@ -505,7 +509,7 @@ pub struct RenderFrame<'a> {
     pub late_overlay_sprites_2d_revision: u64,
     pub late_overlay_point_lights_2d: &'a [Light2DState],
     pub late_overlay_point_lights_2d_revision: u64,
-    pub ui_primitives: &'a [ClippedPrimitive],
+    pub ui_primitives: &'a [Arc<ClippedPrimitive>],
     pub ui_textures_delta: &'a TexturesDelta,
     pub ui_texture_size: [u32; 2],
     pub ui_revision: u64,
@@ -645,6 +649,7 @@ impl Gpu {
                 },
             );
             self.camera_stream_external_bindings.remove(&node);
+            self.camera_stream_3d_bindings.remove(&node);
         }
         self.camera_stream_targets.get(&node)
     }
@@ -875,6 +880,7 @@ impl Gpu {
             water,
             camera_stream_targets: AHashMap::new(),
             camera_stream_external_bindings: AHashMap::new(),
+            camera_stream_3d_bindings: AHashMap::new(),
             camera_stream_2d: Some(camera_stream_2d),
             camera_stream_3d: None,
             camera_stream_particles_3d: None,
@@ -1317,6 +1323,13 @@ impl Gpu {
                     if matches!(stream.source, CameraStreamSourceState::Webcam { .. }) {
                         continue;
                     }
+                    let resolution = [stream.resolution[0].max(1), stream.resolution[1].max(1)];
+                    // Skip when the slot is already bound to the current target
+                    // generation; `ensure_camera_stream_target` clears this entry
+                    // whenever it recreates the target (resolution change).
+                    if self.camera_stream_3d_bindings.get(node).copied() == Some(resolution) {
+                        continue;
+                    }
                     let Some(target) = self.camera_stream_targets.get(node) else {
                         continue;
                     };
@@ -1329,6 +1342,7 @@ impl Gpu {
                         &view,
                         format!("__camera_stream__:{}", node.as_u64()),
                     );
+                    self.camera_stream_3d_bindings.insert(*node, resolution);
                 }
                 three_d.prepare(
                     &self.device,
@@ -1618,7 +1632,7 @@ impl Gpu {
                             upload: &empty_upload,
                             sprites: stream.sprites_2d.as_ref(),
                             sprites_revision: sprites_2d_revision ^ node.as_u64(),
-                            force_sprite_prepare: true,
+                            force_sprite_prepare: has(DIRTY_RESOURCES),
                             point_lights: stream.lights_2d.as_ref(),
                             point_lights_revision: u64::MAX,
                             static_texture_lookup,

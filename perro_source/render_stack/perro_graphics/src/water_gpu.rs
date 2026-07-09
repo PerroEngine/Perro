@@ -6,6 +6,7 @@ use perro_render_bridge::{
     WaterCoastlineShape3D, WaterIdleModeState, WaterSampleState, WaterShapeState,
 };
 use std::collections::HashMap;
+use std::hash::{BuildHasher, Hash, Hasher};
 use std::sync::mpsc;
 
 const WATER_WORKGROUP_SIZE: u32 = 64;
@@ -124,6 +125,19 @@ pub struct GpuWater {
     staged_waters: Vec<WaterGpu>,
     staged_render_chunks: Vec<WaterRenderChunkGpu>,
     coastline_cells_scratch: Vec<[f32; 4]>,
+    // Per-water cached static coastline field (solid/edge/spill from the
+    // coastline shapes), keyed by a content signature. Only the dynamic impacts
+    // wake is re-blended each frame, so static coastlines skip the expensive
+    // per-cell signed-distance raster.
+    coastline_cache: HashMap<NodeID, CachedCoastline>,
+}
+
+/// Cached static per-cell coastline field for one water node. `base` holds
+/// `[solid, edge (foam), spill_energy]` derived only from the coastline shapes
+/// and grid; the frame-varying impacts wake is blended on top per prepare.
+struct CachedCoastline {
+    signature: u64,
+    base: Vec<[f32; 3]>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -525,6 +539,7 @@ impl GpuWater {
             staged_waters: Vec::new(),
             staged_render_chunks: Vec::new(),
             coastline_cells_scratch: Vec::new(),
+            coastline_cache: HashMap::new(),
         }
     }
 
@@ -584,6 +599,7 @@ impl GpuWater {
             self.max_3d_chunk_vertices = 0;
             self.render_3d_chunk_count = 0;
             self.readback_accum_seconds = 0.0;
+            self.coastline_cache.clear();
             return;
         }
         if !all_paused {
@@ -610,6 +626,8 @@ impl GpuWater {
                     &mut self.coastline_cells_scratch[offset..offset + cells],
                     lod.grid.sim,
                     water,
+                    *node,
+                    &mut self.coastline_cache,
                 );
             }
             self.staged_waters.push(water_gpu_2d(
@@ -634,6 +652,8 @@ impl GpuWater {
                     &mut self.coastline_cells_scratch[offset..offset + cells],
                     lod.grid.sim,
                     water,
+                    *node,
+                    &mut self.coastline_cache,
                 );
             }
             let staged = water_gpu_3d(
@@ -657,6 +677,13 @@ impl GpuWater {
                 );
             }
             cell_needed = cell_needed.saturating_add(cells);
+        }
+        // Drop cached coastlines for waters no longer present this frame.
+        if !self.coastline_cache.is_empty() {
+            self.coastline_cache.retain(|node, _| {
+                waters_2d.iter().any(|(n, _)| n == node)
+                    || waters_3d.iter().any(|(n, _)| n == node)
+            });
         }
         self.staged_render_chunks.sort_by(|a, b| {
             let da = water_render_chunk_distance_sq(
@@ -772,8 +799,16 @@ impl GpuWater {
             }
         }
         self.readback_water_sample_count = self.readback_nodes.len();
+        // Sort once so the membership checks below are O(log n) binary searches
+        // rather than O(n) scans per water.
+        self.readback_scheduled_nodes
+            .sort_unstable_by_key(|node| node.as_u64());
         for ((node, state), water) in waters_2d.iter().zip(self.staged_waters.iter()) {
-            if !self.readback_scheduled_nodes.contains(node) {
+            if self
+                .readback_scheduled_nodes
+                .binary_search_by_key(&node.as_u64(), |n| n.as_u64())
+                .is_err()
+            {
                 continue;
             }
             for query in state.queries.iter() {
@@ -790,7 +825,11 @@ impl GpuWater {
             .iter()
             .zip(self.staged_waters.iter().skip(waters_2d.len()))
         {
-            if !self.readback_scheduled_nodes.contains(node) {
+            if self
+                .readback_scheduled_nodes
+                .binary_search_by_key(&node.as_u64(), |n| n.as_u64())
+                .is_err()
+            {
                 continue;
             }
             for query in state.queries.iter() {
@@ -822,6 +861,7 @@ impl GpuWater {
         self.readback_scheduled_nodes.clear();
         self.readback_copy_encoded = false;
         self.staged_render_chunks.clear();
+        self.coastline_cache.clear();
     }
 
     pub fn encode(&self, encoder: &mut wgpu::CommandEncoder) {
@@ -1490,28 +1530,76 @@ fn water_render_chunk_distance_sq(
     dx * dx + dy * dy + dz * dz
 }
 
-fn raster_coastline_2d(out: &mut [[f32; 4]], resolution: [u32; 2], water: &Water2DState) {
+fn raster_coastline_2d(
+    out: &mut [[f32; 4]],
+    resolution: [u32; 2],
+    water: &Water2DState,
+    node: NodeID,
+    cache: &mut HashMap<NodeID, CachedCoastline>,
+) {
     let width = resolution[0].clamp(1, 256) as usize;
     let height = resolution[1].clamp(1, 256) as usize;
     if water.coastline_shapes.is_empty() {
+        cache.remove(&node);
         raster_impacts_2d(out, width, height, water);
         return;
     }
     let foam_width = water.coastline_foam_width.max(0.001);
     let softness = water.coastline_cutoff_softness.max(0.001);
+
+    let mut hasher = coastline_hasher();
+    width.hash(&mut hasher);
+    height.hash(&mut hasher);
+    water.size[0].to_bits().hash(&mut hasher);
+    water.size[1].to_bits().hash(&mut hasher);
+    foam_width.to_bits().hash(&mut hasher);
+    softness.to_bits().hash(&mut hasher);
+    water.coastline_shapes.len().hash(&mut hasher);
+    for shape in water.coastline_shapes.iter() {
+        hash_coastline_shape_2d(shape, &mut hasher);
+    }
+    let signature = hasher.finish();
+
+    let cell_count = width * height;
+    let entry = cache
+        .entry(node)
+        .or_insert_with(|| CachedCoastline {
+            signature,
+            base: Vec::new(),
+        });
+    // Rebuild the static field only when the shapes/params/grid changed.
+    if entry.signature != signature || entry.base.len() != cell_count {
+        entry.signature = signature;
+        entry.base.clear();
+        entry.base.reserve(cell_count);
+        for y in 0..height {
+            for x in 0..width {
+                let fx = x as f32 / (width.saturating_sub(1).max(1) as f32);
+                let fy = y as f32 / (height.saturating_sub(1).max(1) as f32);
+                let p = [(fx - 0.5) * water.size[0], (fy - 0.5) * water.size[1]];
+                let mut signed_min = f32::INFINITY;
+                let mut edge = 0.0f32;
+                for shape in water.coastline_shapes.iter() {
+                    let signed = signed_distance_2d(p, *shape);
+                    signed_min = signed_min.min(signed);
+                    edge = edge.max(1.0 - (signed / foam_width).clamp(0.0, 1.0));
+                }
+                let (solid, foam_edge, spill_energy) =
+                    coastline_fill(signed_min, foam_width, softness);
+                entry.base.push([solid, edge.max(foam_edge), spill_energy]);
+            }
+        }
+    }
+    let base = &entry.base;
+
+    // Blend the frame-varying impacts wake over the cached static field.
     for y in 0..height {
         for x in 0..width {
+            let i = y * width + x;
+            let [solid, edge_foam, spill_energy] = base[i];
             let fx = x as f32 / (width.saturating_sub(1).max(1) as f32);
             let fy = y as f32 / (height.saturating_sub(1).max(1) as f32);
             let p = [(fx - 0.5) * water.size[0], (fy - 0.5) * water.size[1]];
-            let mut signed_min = f32::INFINITY;
-            let mut edge = 0.0f32;
-            for shape in water.coastline_shapes.iter() {
-                let signed = signed_distance_2d(p, *shape);
-                signed_min = signed_min.min(signed);
-                edge = edge.max(1.0 - (signed / foam_width).clamp(0.0, 1.0));
-            }
-            let (solid, foam_edge, spill_energy) = coastline_fill(signed_min, foam_width, softness);
             let mut wake = 0.0f32;
             for impact in water.impacts.iter() {
                 let dx = p[0] - impact.position[0];
@@ -1526,13 +1614,82 @@ fn raster_coastline_2d(out: &mut [[f32; 4]], resolution: [u32; 2], water: &Water
                     - push * (strength * 0.70 + impact.cavitation * 0.28);
             }
             let wake = wake.clamp(-1.0, 1.0);
-            out[y * width + x] = [
-                solid,
-                edge.max(foam_edge),
-                wake,
-                spill_energy.max(wake.abs()),
-            ];
+            out[i] = [solid, edge_foam, wake, spill_energy.max(wake.abs())];
         }
+    }
+}
+
+fn coastline_hasher() -> ahash::AHasher {
+    ahash::RandomState::with_seeds(0xc0a5_0001, 0xc0a5_0002, 0xc0a5_0003, 0xc0a5_0004).build_hasher()
+}
+
+fn hash_coastline_shape_2d(shape: &WaterCoastlineShape2D, hasher: &mut ahash::AHasher) {
+    match shape {
+        WaterCoastlineShape2D::Quad {
+            center,
+            half_extents,
+            rotation,
+        } => {
+            0u8.hash(hasher);
+            hash_f32_slice(center, hasher);
+            hash_f32_slice(half_extents, hasher);
+            rotation.to_bits().hash(hasher);
+        }
+        WaterCoastlineShape2D::Circle { center, radius } => {
+            1u8.hash(hasher);
+            hash_f32_slice(center, hasher);
+            radius.to_bits().hash(hasher);
+        }
+        WaterCoastlineShape2D::Triangle { points } => {
+            2u8.hash(hasher);
+            for point in points {
+                hash_f32_slice(point, hasher);
+            }
+        }
+    }
+}
+
+fn hash_coastline_shape_3d(shape: &WaterCoastlineShape3D, hasher: &mut ahash::AHasher) {
+    match shape {
+        WaterCoastlineShape3D::Box {
+            center,
+            half_extents,
+            axis_x,
+            axis_z,
+        } => {
+            0u8.hash(hasher);
+            hash_f32_slice(center, hasher);
+            hash_f32_slice(half_extents, hasher);
+            hash_f32_slice(axis_x, hasher);
+            hash_f32_slice(axis_z, hasher);
+        }
+        WaterCoastlineShape3D::Sphere { center, radius } => {
+            1u8.hash(hasher);
+            hash_f32_slice(center, hasher);
+            radius.to_bits().hash(hasher);
+        }
+        WaterCoastlineShape3D::Cylinder {
+            center,
+            radius,
+            half_height,
+        } => {
+            2u8.hash(hasher);
+            hash_f32_slice(center, hasher);
+            radius.to_bits().hash(hasher);
+            half_height.to_bits().hash(hasher);
+        }
+        WaterCoastlineShape3D::Triangle { points } => {
+            3u8.hash(hasher);
+            for point in points {
+                hash_f32_slice(point, hasher);
+            }
+        }
+    }
+}
+
+fn hash_f32_slice(values: &[f32], hasher: &mut ahash::AHasher) {
+    for value in values {
+        value.to_bits().hash(hasher);
     }
 }
 
@@ -1643,28 +1800,76 @@ fn distance_segment(p: [f32; 2], a: [f32; 2], b: [f32; 2]) -> f32 {
     (dx * dx + dy * dy).sqrt()
 }
 
-fn raster_coastline_3d(out: &mut [[f32; 4]], resolution: [u32; 2], water: &Water3DState) {
+fn raster_coastline_3d(
+    out: &mut [[f32; 4]],
+    resolution: [u32; 2],
+    water: &Water3DState,
+    node: NodeID,
+    cache: &mut HashMap<NodeID, CachedCoastline>,
+) {
     let width = resolution[0].clamp(1, 256) as usize;
     let height = resolution[1].clamp(1, 256) as usize;
     if water.coastline_shapes.is_empty() {
+        cache.remove(&node);
         raster_impacts_3d(out, width, height, water);
         return;
     }
     let foam_width = water.coastline_foam_width.max(0.001);
     let softness = water.coastline_cutoff_softness.max(0.001);
+
+    let mut hasher = coastline_hasher();
+    width.hash(&mut hasher);
+    height.hash(&mut hasher);
+    water.size[0].to_bits().hash(&mut hasher);
+    water.size[1].to_bits().hash(&mut hasher);
+    foam_width.to_bits().hash(&mut hasher);
+    softness.to_bits().hash(&mut hasher);
+    water.coastline_shapes.len().hash(&mut hasher);
+    for shape in water.coastline_shapes.iter() {
+        hash_coastline_shape_3d(shape, &mut hasher);
+    }
+    let signature = hasher.finish();
+
+    let cell_count = width * height;
+    let entry = cache
+        .entry(node)
+        .or_insert_with(|| CachedCoastline {
+            signature,
+            base: Vec::new(),
+        });
+    // Rebuild the static field only when the shapes/params/grid changed.
+    if entry.signature != signature || entry.base.len() != cell_count {
+        entry.signature = signature;
+        entry.base.clear();
+        entry.base.reserve(cell_count);
+        for y in 0..height {
+            for x in 0..width {
+                let fx = x as f32 / (width.saturating_sub(1).max(1) as f32);
+                let fy = y as f32 / (height.saturating_sub(1).max(1) as f32);
+                let p = [(fx - 0.5) * water.size[0], (fy - 0.5) * water.size[1]];
+                let mut signed_min = f32::INFINITY;
+                let mut edge = 0.0f32;
+                for shape in water.coastline_shapes.iter() {
+                    let signed = signed_distance_3d_xz(p, *shape);
+                    signed_min = signed_min.min(signed);
+                    edge = edge.max(1.0 - (signed / foam_width).clamp(0.0, 1.0));
+                }
+                let (solid, foam_edge, spill_energy) =
+                    coastline_fill(signed_min, foam_width, softness);
+                entry.base.push([solid, edge.max(foam_edge), spill_energy]);
+            }
+        }
+    }
+    let base = &entry.base;
+
+    // Blend the frame-varying impacts wake over the cached static field.
     for y in 0..height {
         for x in 0..width {
+            let i = y * width + x;
+            let [solid, edge_foam, spill_energy] = base[i];
             let fx = x as f32 / (width.saturating_sub(1).max(1) as f32);
             let fy = y as f32 / (height.saturating_sub(1).max(1) as f32);
             let p = [(fx - 0.5) * water.size[0], (fy - 0.5) * water.size[1]];
-            let mut signed_min = f32::INFINITY;
-            let mut edge = 0.0f32;
-            for shape in water.coastline_shapes.iter() {
-                let signed = signed_distance_3d_xz(p, *shape);
-                signed_min = signed_min.min(signed);
-                edge = edge.max(1.0 - (signed / foam_width).clamp(0.0, 1.0));
-            }
-            let (solid, foam_edge, spill_energy) = coastline_fill(signed_min, foam_width, softness);
             let mut wake = 0.0f32;
             for impact in water.impacts.iter() {
                 let dx = p[0] - impact.position[0];
@@ -1679,12 +1884,7 @@ fn raster_coastline_3d(out: &mut [[f32; 4]], resolution: [u32; 2], water: &Water
                     - push * (strength * 0.70 + impact.cavitation * 0.28);
             }
             let wake = wake.clamp(-1.0, 1.0);
-            out[y * width + x] = [
-                solid,
-                edge.max(foam_edge),
-                wake,
-                spill_energy.max(wake.abs()),
-            ];
+            out[i] = [solid, edge_foam, wake, spill_energy.max(wake.abs())];
         }
     }
 }

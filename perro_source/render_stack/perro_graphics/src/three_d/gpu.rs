@@ -843,6 +843,10 @@ pub struct Gpu3D {
     // depth passes skip the O(N) receiver scan.
     mesh_blend_source_receivers: Vec<(usize, Range<usize>)>,
     mesh_blend_receiver_indices: Vec<usize>,
+    // Per draw batch: merged world sphere, cached once per receiver rebuild so
+    // the source x target overlap loop never recomputes a batch's O(instances)
+    // sphere per source. Reused across calls.
+    mesh_blend_batch_spheres_scratch: Vec<Option<(Vec3, f32)>>,
     last_draws: Vec<Draw3DInstance>,
     last_draws_revision: u64,
     last_draw_instance_spans: Vec<Range<u32>>,

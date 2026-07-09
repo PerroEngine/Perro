@@ -66,6 +66,16 @@ pub(crate) struct TransformRuntimeState {
     pub(crate) physics_pose_id_flags_2d: Vec<u8>,
     pub(crate) physics_pose_id_flags_3d: Vec<u8>,
     pub(crate) render_alpha: f32,
+    /// per-pass memo of render-transform interp-ancestor walks: a node index
+    /// whose stamp == `interp_clean_current` proved to have NO interpolating
+    /// physics ancestor (inclusive), so its render transform takes the plain
+    /// cached path w/o re-walking the parent chain. separate 2d/3d arrays keep
+    /// cross-type ancestry distinct. stamp bumps on pose-set / render-alpha /
+    /// structural change -> old entries lazily go stale (no clear).
+    pub(crate) interp_clean_stamp_2d: Vec<u32>,
+    pub(crate) interp_clean_stamp_3d: Vec<u32>,
+    pub(crate) interp_clean_current: u32,
+    pub(crate) interp_clean_structural_rev: u64,
 }
 
 impl TransformRuntimeState {
@@ -90,6 +100,10 @@ impl TransformRuntimeState {
             physics_pose_id_flags_2d: Vec::new(),
             physics_pose_id_flags_3d: Vec::new(),
             render_alpha: 1.0,
+            interp_clean_stamp_2d: Vec::new(),
+            interp_clean_stamp_3d: Vec::new(),
+            interp_clean_current: 1,
+            interp_clean_structural_rev: 0,
         }
     }
 }

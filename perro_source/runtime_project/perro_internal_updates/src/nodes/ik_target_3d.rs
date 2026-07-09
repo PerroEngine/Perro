@@ -6,6 +6,7 @@ use std::cell::RefCell;
 
 thread_local! {
     static FABRIK_SCRATCH_3D: RefCell<FabrikScratch> = RefCell::new(FabrikScratch::default());
+    static CCD_SCRATCH_3D: RefCell<CcdScratch> = RefCell::new(CcdScratch::default());
 }
 
 pub fn internal_update<RT>(ctx: &mut RuntimeWindow<'_, RT>, id: NodeID)
@@ -103,6 +104,17 @@ fn solve_auto(skeleton: &mut Skeleton3D, cfg: CcdSolve) -> bool {
 }
 
 fn solve_ccd(skeleton: &mut Skeleton3D, cfg: CcdSolve) -> bool {
+    CCD_SCRATCH_3D.with(|scratch| {
+        let mut scratch = scratch.borrow_mut();
+        solve_ccd_with_scratch(skeleton, cfg, &mut scratch)
+    })
+}
+
+fn solve_ccd_with_scratch(
+    skeleton: &mut Skeleton3D,
+    cfg: CcdSolve,
+    scratch: &mut CcdScratch,
+) -> bool {
     let CcdSolve {
         end,
         chain_length,
@@ -117,28 +129,27 @@ fn solve_ccd(skeleton: &mut Skeleton3D, cfg: CcdSolve) -> bool {
     if end >= skeleton.bones.len() {
         return false;
     }
-    let mut chain = Vec::with_capacity(chain_length.saturating_add(1).min(skeleton.bones.len()));
-    collect_root_to_end(skeleton, end, &mut chain);
-    if chain.is_empty() {
+    collect_root_to_end(skeleton, end, &mut scratch.chain);
+    if scratch.chain.is_empty() {
         return false;
     }
     let mut changed = false;
-    let joint_count = chain.len().saturating_sub(1).min(chain_length);
+    let joint_count = scratch.chain.len().saturating_sub(1).min(chain_length);
     if joint_count == 0 {
         if match_rotation {
-            let mut state = ChainState::default();
-            compute_chain_state(skeleton, &chain, &mut state);
-            changed |= blend_end_rotation(skeleton, &chain, &state, end, target_rot, weight);
+            let CcdScratch { chain, state } = scratch;
+            compute_chain_state(skeleton, chain, state);
+            changed |= blend_end_rotation(skeleton, chain, state, end, target_rot, weight);
         }
         return changed;
     }
 
-    let joint_start = chain.len().saturating_sub(1 + joint_count);
-    let mut state = ChainState::with_capacity(chain.len());
+    let joint_start = scratch.chain.len().saturating_sub(1 + joint_count);
+    let CcdScratch { chain, state } = scratch;
     let tolerance_sq = tolerance * tolerance;
     for _ in 0..iterations {
-        compute_chain_state(skeleton, &chain, &mut state);
-        let Some(end_pos) = chain_end_pos(&state) else {
+        compute_chain_state(skeleton, chain, state);
+        let Some(end_pos) = chain_end_pos(state) else {
             break;
         };
         if end_pos.distance_squared(target_pos) <= tolerance_sq {
@@ -148,7 +159,7 @@ fn solve_ccd(skeleton: &mut Skeleton3D, cfg: CcdSolve) -> bool {
         for chain_index in (joint_start..chain.len() - 1).rev() {
             let joint = chain[chain_index];
             let joint_pos = state.globals[chain_index].transform_point3(Vec3::ZERO);
-            let Some(end_pos) = chain_end_pos(&state) else {
+            let Some(end_pos) = chain_end_pos(state) else {
                 break;
             };
             let to_end = (end_pos - joint_pos).normalize_or_zero();
@@ -162,16 +173,16 @@ fn solve_ccd(skeleton: &mut Skeleton3D, cfg: CcdSolve) -> bool {
             if !delta.is_finite() || quat_near_identity(delta) {
                 continue;
             }
-            if rotate_bone_world(skeleton, &state, chain_index, joint, delta, weight) {
+            if rotate_bone_world(skeleton, state, chain_index, joint, delta, weight) {
                 changed = true;
             }
-            compute_chain_state_from(skeleton, &chain, chain_index, &mut state);
+            compute_chain_state_from(skeleton, chain, chain_index, state);
         }
     }
 
     if match_rotation {
-        compute_chain_state(skeleton, &chain, &mut state);
-        changed |= blend_end_rotation(skeleton, &chain, &state, end, target_rot, weight);
+        compute_chain_state(skeleton, chain, state);
+        changed |= blend_end_rotation(skeleton, chain, state, end, target_rot, weight);
     }
     changed
 }
@@ -358,15 +369,6 @@ struct ChainState {
     rotations: Vec<Quat>,
 }
 
-impl ChainState {
-    fn with_capacity(capacity: usize) -> Self {
-        Self {
-            globals: Vec::with_capacity(capacity),
-            rotations: Vec::with_capacity(capacity),
-        }
-    }
-}
-
 #[derive(Default)]
 struct FabrikScratch {
     chain: Vec<usize>,
@@ -374,6 +376,12 @@ struct FabrikScratch {
     points: Vec<Vec3>,
     rotations: Vec<Quat>,
     lengths: Vec<f32>,
+}
+
+#[derive(Default)]
+struct CcdScratch {
+    chain: Vec<usize>,
+    state: ChainState,
 }
 
 fn compute_parent_fabrik_basis(skeleton: &Skeleton3D, first: usize) -> (Vec3, Quat, Vec3) {

@@ -443,7 +443,9 @@ impl Renderer3D {
             self.sky_time_pending_frames = 0;
         }
 
-        let queued = std::mem::take(&mut self.queued_draws);
+        // Reuse the queue's backing allocation across frames: take it, consume
+        // the draws, then hand the emptied Vec back so capacity persists.
+        let mut queued = std::mem::take(&mut self.queued_draws);
         let used_sequential_draw_fast_path = if let Some((fast_stats, fast_changed)) =
             self.try_apply_sequential_draw_packets(queued.as_slice(), resources)
         {
@@ -451,7 +453,7 @@ impl Renderer3D {
             draws_changed = fast_changed;
             true
         } else {
-            for draw in queued {
+            for draw in queued.drain(..) {
                 let (material_ready, mesh_ready, draw_ready) = draw_readiness(&draw, resources);
                 if draw_ready {
                     let changed = self.retained_draw(draw.node).as_ref() != Some(&draw);
@@ -476,6 +478,8 @@ impl Renderer3D {
             }
             false
         };
+        queued.clear();
+        self.queued_draws = queued;
         if draws_changed {
             self.draw_revision = self.draw_revision.wrapping_add(1);
             if !used_sequential_draw_fast_path {

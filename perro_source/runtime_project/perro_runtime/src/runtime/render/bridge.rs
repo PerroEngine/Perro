@@ -378,9 +378,18 @@ impl Runtime {
             self.request_full_2d_scan_once();
             self.request_full_3d_scan_once();
         }
-        // render events resolve pending resources / invalidate retained draws,
-        // which arena mutation_revision can't see. force resource-ref re-scan.
-        self.scene_resource_refs_dirty = true;
+        // resource lifecycle events resolve pending resources / invalidate
+        // retained draws, which arena mutation_revision can't see. force
+        // resource-ref re-scan. water sample telemetry arrives every physics
+        // tick + never touches resource pending/loaded/retained state (its
+        // handlers only write water sample caches), so exclude it: else the
+        // O(all nodes) ref scan reruns every tick in any scene w/ water.
+        if !matches!(
+            event,
+            RenderEvent::WaterSamples { .. } | RenderEvent::WaterBodySamples { .. }
+        ) {
+            self.scene_resource_refs_dirty = true;
+        }
         self.resource_api.apply_render_event(&event);
         self.render.apply_event(event);
     }
@@ -1062,14 +1071,14 @@ impl Runtime {
             let Some((local_transform, z_index, water)) = data else {
                 continue;
             };
-            let model = self
-                .get_render_global_transform_2d(node)
+            let water_global = self.get_render_global_transform_2d(node);
+            let model = water_global
                 .unwrap_or(local_transform)
                 .to_mat3()
                 .to_cols_array_2d();
-            let coastline_shapes = self.collect_water_coastline_shapes_2d(node, &water);
+            let coastline_shapes = self.collect_water_coastline_shapes_2d(&water, water_global);
             let queries = self.collect_water_queries_2d(node);
-            let impacts = self.collect_water_impacts_2d(node, &water);
+            let impacts = self.collect_water_impacts_2d(node, &water, water_global);
             let links = self.collect_water_links_2d(node, &water);
             out.push((
                 node,
@@ -1331,12 +1340,18 @@ impl Runtime {
             },
         }
         let mut lighting = CameraStreamLighting3DState::default();
-        let mut ray_lights = Vec::new();
-        let mut point_lights = Vec::new();
-        let mut spot_lights = Vec::new();
-        let mut ids = self.camera_stream_node_scratch.clone();
-        ids.sort_unstable_by_key(|id| id.as_u64());
-        for node in ids {
+        let mut best_ambient: Option<(NodeID, AmbientLight3DState)> = None;
+        let mut best_sky: Option<(NodeID, Sky3DState)> = None;
+        let mut ray_lights: Vec<(NodeID, RayLight3DState)> = Vec::new();
+        let mut point_lights: Vec<(NodeID, PointLight3DState)> = Vec::new();
+        let mut spot_lights: Vec<(NodeID, SpotLight3DState)> = Vec::new();
+        // single pass over the full scene scratch; no clone/sort of scene ids.
+        // min-NodeID wins ambient/sky (was sorted-first-wins). capped light
+        // arrays keep deterministic lowest-id selection by sorting only the
+        // (few) matched lights below. index loop keeps NodeID copied out so the
+        // &mut self transform lookups in the match dispatch stay borrow-clean.
+        for scan_index in 0..self.camera_stream_node_scratch.len() {
+            let node = self.camera_stream_node_scratch[scan_index];
             if node == stream_node || !self.is_effectively_visible(node) {
                 continue;
             }
@@ -1345,8 +1360,7 @@ impl Runtime {
                 .get(node)
                 .and_then(|node_ref| match &node_ref.data {
                     SceneNodeData::AmbientLight3D(light)
-                        if lighting.ambient_light.is_none()
-                            && light.visible
+                        if light.visible
                             && light.active
                             && stream_render_mask_matches(camera_mask, light.render_layers) =>
                     {
@@ -1357,8 +1371,7 @@ impl Runtime {
                         }))
                     }
                     SceneNodeData::Sky3D(sky)
-                        if lighting.sky.is_none()
-                            && sky.visible
+                        if sky.visible
                             && sky.active
                             && stream_render_mask_matches(camera_mask, sky.render_layers) =>
                     {
@@ -1428,8 +1441,22 @@ impl Runtime {
                     _ => None,
                 });
             match data {
-                Some(StreamLight3DData::Ambient(light)) => lighting.ambient_light = Some(light),
-                Some(StreamLight3DData::Sky(sky)) => lighting.sky = Some(sky),
+                Some(StreamLight3DData::Ambient(light)) => {
+                    if best_ambient
+                        .as_ref()
+                        .is_none_or(|(id, _)| node.as_u64() < id.as_u64())
+                    {
+                        best_ambient = Some((node, light));
+                    }
+                }
+                Some(StreamLight3DData::Sky(sky)) => {
+                    if best_sky
+                        .as_ref()
+                        .is_none_or(|(id, _)| node.as_u64() < id.as_u64())
+                    {
+                        best_sky = Some((node, sky));
+                    }
+                }
                 Some(StreamLight3DData::Ray {
                     transform,
                     color,
@@ -1439,12 +1466,15 @@ impl Runtime {
                     let global = self
                         .get_render_global_transform_3d(node)
                         .unwrap_or(transform);
-                    ray_lights.push(RayLight3DState {
-                        direction: stream_quaternion_forward(global.rotation),
-                        color: color.to_rgb(),
-                        intensity: intensity.max(0.0),
-                        cast_shadows,
-                    });
+                    ray_lights.push((
+                        node,
+                        RayLight3DState {
+                            direction: stream_quaternion_forward(global.rotation),
+                            color: color.to_rgb(),
+                            intensity: intensity.max(0.0),
+                            cast_shadows,
+                        },
+                    ));
                 }
                 Some(StreamLight3DData::Point {
                     transform,
@@ -1456,13 +1486,16 @@ impl Runtime {
                     let global = self
                         .get_render_global_transform_3d(node)
                         .unwrap_or(transform);
-                    point_lights.push(PointLight3DState {
-                        position: [global.position.x, global.position.y, global.position.z],
-                        color: color.to_rgb(),
-                        intensity: intensity.max(0.0),
-                        range: range.max(0.001),
-                        cast_shadows,
-                    });
+                    point_lights.push((
+                        node,
+                        PointLight3DState {
+                            position: [global.position.x, global.position.y, global.position.z],
+                            color: color.to_rgb(),
+                            intensity: intensity.max(0.0),
+                            range: range.max(0.001),
+                            cast_shadows,
+                        },
+                    ));
                 }
                 Some(StreamLight3DData::Spot {
                     transform,
@@ -1476,27 +1509,37 @@ impl Runtime {
                     let global = self
                         .get_render_global_transform_3d(node)
                         .unwrap_or(transform);
-                    spot_lights.push(SpotLight3DState {
-                        position: [global.position.x, global.position.y, global.position.z],
-                        direction: stream_quaternion_forward(global.rotation),
-                        color: color.to_rgb(),
-                        intensity: intensity.max(0.0),
-                        range: range.max(0.001),
-                        inner_angle_radians: inner_angle_radians.max(0.0),
-                        outer_angle_radians: outer_angle_radians.max(inner_angle_radians),
-                        cast_shadows,
-                    });
+                    spot_lights.push((
+                        node,
+                        SpotLight3DState {
+                            position: [global.position.x, global.position.y, global.position.z],
+                            direction: stream_quaternion_forward(global.rotation),
+                            color: color.to_rgb(),
+                            intensity: intensity.max(0.0),
+                            range: range.max(0.001),
+                            inner_angle_radians: inner_angle_radians.max(0.0),
+                            outer_angle_radians: outer_angle_radians.max(inner_angle_radians),
+                            cast_shadows,
+                        },
+                    ));
                 }
                 None => {}
             }
         }
-        for (slot, light) in lighting.ray_lights.iter_mut().zip(ray_lights) {
+        // deterministic lowest-id order for the capped light arrays (matches old
+        // sorted-scratch fill; slot cap keeps lowest-id lights).
+        ray_lights.sort_unstable_by_key(|(id, _)| id.as_u64());
+        point_lights.sort_unstable_by_key(|(id, _)| id.as_u64());
+        spot_lights.sort_unstable_by_key(|(id, _)| id.as_u64());
+        lighting.ambient_light = best_ambient.map(|(_, light)| light);
+        lighting.sky = best_sky.map(|(_, sky)| sky);
+        for (slot, (_, light)) in lighting.ray_lights.iter_mut().zip(ray_lights) {
             *slot = Some(light);
         }
-        for (slot, light) in lighting.point_lights.iter_mut().zip(point_lights) {
+        for (slot, (_, light)) in lighting.point_lights.iter_mut().zip(point_lights) {
             *slot = Some(light);
         }
-        for (slot, light) in lighting.spot_lights.iter_mut().zip(spot_lights) {
+        for (slot, (_, light)) in lighting.spot_lights.iter_mut().zip(spot_lights) {
             *slot = Some(light);
         }
         lighting
@@ -1625,14 +1668,14 @@ impl Runtime {
             let Some((local_transform, water)) = data else {
                 continue;
             };
-            let model = self
-                .get_render_global_transform_3d(node)
+            let water_global = self.get_render_global_transform_3d(node);
+            let model = water_global
                 .unwrap_or(local_transform)
                 .to_mat4()
                 .to_cols_array_2d();
-            let coastline_shapes = self.collect_water_coastline_shapes_3d(node, &water);
+            let coastline_shapes = self.collect_water_coastline_shapes_3d(&water, water_global);
             let queries = self.collect_water_queries_3d(node);
-            let impacts = self.collect_water_impacts_3d(node, &water);
+            let impacts = self.collect_water_impacts_3d(node, &water, water_global);
             let links = self.collect_water_links_3d(node, &water);
             out.push((
                 node,

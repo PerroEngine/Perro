@@ -399,6 +399,11 @@ pub struct PerroGraphics {
     used_ref_draws_revision: u64,
     used_ref_sprites_revision: u64,
     global_post_processing: PostProcessSet,
+    // Cached built effects Arc handed to the renderer each frame, rebuilt only
+    // when `global_post_processing` is mutated instead of cloned+allocated every
+    // frame.
+    global_post_processing_cache: Arc<[perro_structs::PostProcessEffect]>,
+    global_post_processing_cache_dirty: bool,
     accessibility: VisualAccessibilitySettings,
     frame_index: u32,
     redraw_requested: bool,
@@ -685,6 +690,8 @@ impl PerroGraphics {
             used_ref_draws_revision: u64::MAX,
             used_ref_sprites_revision: u64::MAX,
             global_post_processing: PostProcessSet::new(),
+            global_post_processing_cache: Arc::from(Vec::new()),
+            global_post_processing_cache_dirty: true,
             accessibility: VisualAccessibilitySettings::default(),
             frame_index: 0,
             redraw_requested: true,
@@ -1354,26 +1361,31 @@ impl PerroGraphics {
                         self.accessibility.color_blind = None;
                     }
                 },
-                RenderCommand::PostProcessing(command) => match command {
-                    PostProcessingCommand::SetGlobal(set) => {
-                        self.global_post_processing = set;
+                RenderCommand::PostProcessing(command) => {
+                    match command {
+                        PostProcessingCommand::SetGlobal(set) => {
+                            self.global_post_processing = set;
+                        }
+                        PostProcessingCommand::AddGlobalNamed { name, effect } => {
+                            self.global_post_processing.add(name, effect);
+                        }
+                        PostProcessingCommand::AddGlobalUnnamed(effect) => {
+                            self.global_post_processing.add_unnamed(effect);
+                        }
+                        PostProcessingCommand::RemoveGlobalByName(name) => {
+                            self.global_post_processing.remove(name.as_ref());
+                        }
+                        PostProcessingCommand::RemoveGlobalByIndex(index) => {
+                            self.global_post_processing.remove_index(index);
+                        }
+                        PostProcessingCommand::ClearGlobal => {
+                            self.global_post_processing.clear();
+                        }
                     }
-                    PostProcessingCommand::AddGlobalNamed { name, effect } => {
-                        self.global_post_processing.add(name, effect);
-                    }
-                    PostProcessingCommand::AddGlobalUnnamed(effect) => {
-                        self.global_post_processing.add_unnamed(effect);
-                    }
-                    PostProcessingCommand::RemoveGlobalByName(name) => {
-                        self.global_post_processing.remove(name.as_ref());
-                    }
-                    PostProcessingCommand::RemoveGlobalByIndex(index) => {
-                        self.global_post_processing.remove_index(index);
-                    }
-                    PostProcessingCommand::ClearGlobal => {
-                        self.global_post_processing.clear();
-                    }
-                },
+                    // Any global post-processing edit invalidates the cached
+                    // effects Arc rebuilt in `render`.
+                    self.global_post_processing_cache_dirty = true;
+                }
             }
         }
         self.flush_async_mesh_loads();
@@ -1989,6 +2001,12 @@ impl PerroGraphics {
         }
         let prepare_cpu = prepare_start.elapsed();
 
+        if self.global_post_processing_cache_dirty {
+            self.global_post_processing_cache =
+                Arc::from(self.global_post_processing.to_effects_vec());
+            self.global_post_processing_cache_dirty = false;
+        }
+
         let mut gpu_timing = RenderGpuTiming::default();
         if let Some(gpu) = &mut self.gpu {
             gpu_timing = gpu.render(RenderFrame {
@@ -2007,7 +2025,7 @@ impl PerroGraphics {
                 camera_2d,
                 camera_2d_position: camera_2d_state.position,
                 post_processing_2d: camera_2d_state.post_processing.clone(),
-                post_processing_global: Arc::from(self.global_post_processing.to_effects_vec()),
+                post_processing_global: self.global_post_processing_cache.clone(),
                 accessibility: self.accessibility,
                 rects_2d: &self.frame_rects_cache,
                 upload_2d: &upload,

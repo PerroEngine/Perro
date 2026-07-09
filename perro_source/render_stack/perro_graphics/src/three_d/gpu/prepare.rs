@@ -78,8 +78,12 @@ impl Gpu3D {
         self.gpu_occlusion_enabled = gpu_occlusion_enabled && self.frustum_cull_enabled;
         self.cpu_occlusion_enabled = cpu_occlusion_enabled;
 
-        let uniform = build_scene_uniform(&camera, lighting, width, height);
-        let sky_uniform = build_sky_uniform(&camera, lighting, width, height);
+        // Compute view_proj + its inverse once; scene/sky uniforms and frustum
+        // extraction below all reuse them instead of recomputing per consumer.
+        let view_proj = compute_view_proj_mat(&camera, width, height);
+        let inv_view_proj = view_proj.inverse();
+        let uniform = build_scene_uniform(&camera, lighting, view_proj, inv_view_proj);
+        let sky_uniform = build_sky_uniform(&camera, lighting, inv_view_proj);
         self.sky_enabled = sky_uniform.is_some();
         if let Some(sky) = lighting.sky.as_ref() {
             self.ensure_sky_pipeline(device, sky, static_shader_lookup);
@@ -178,7 +182,6 @@ impl Gpu3D {
             // previous query visibility is stale and must not gate current frame.
             self.occlusion_state.clear();
         }
-        let view_proj = compute_view_proj_mat(&camera, width, height);
         self.last_aspect = (width.max(1) as f32) / (height.max(1) as f32);
         self.last_proj_y_scale = projection_y_scale_from_projection(camera.projection);
 
@@ -1958,21 +1961,26 @@ pub(super) fn multimesh_world_bounds(
     let count = end - start;
     let step = (count / 64).max(1);
     let mut sum = Vec3::ZERO;
-    let mut samples: Vec<Vec3> = Vec::with_capacity(count.min(64) + 1);
+    // step>=2 whenever count>=128, so an integer-floored step leaves step=1 only
+    // for count<128; the sampled count never exceeds 127. A fixed stack array
+    // holds every sample with no heap alloc; the length guard is defensive.
+    let mut samples = [Vec3::ZERO; 128];
+    let mut sample_count = 0usize;
     let mut i = start;
-    while i < end {
+    while i < end && sample_count < samples.len() {
         let world = (model * Vec3::from(instances[i].position).extend(1.0)).truncate();
         if world.is_finite() {
             sum += world;
-            samples.push(world);
+            samples[sample_count] = world;
+            sample_count += 1;
         }
         i += step;
     }
-    if samples.is_empty() {
+    if sample_count == 0 {
         return None;
     }
-    let center = sum / samples.len() as f32;
-    let radius = samples
+    let center = sum / sample_count as f32;
+    let radius = samples[..sample_count]
         .iter()
         .map(|p| p.distance(center))
         .fold(0.0f32, f32::max)
