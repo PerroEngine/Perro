@@ -97,6 +97,7 @@ pub fn compile_scripts_with_profile(
         cmd.arg("--release");
         apply_fast_release_dylib_profile(&mut cmd);
     }
+    add_dynamic_scripts_feature(&mut cmd);
     add_steamworks_feature(&mut cmd, cfg.steam.enabled);
     run_cargo_command_with_normalized_paths(&mut cmd, project_root)?;
     compile_all_dlc_scripts_with_profile(project_root, profile, cfg.steam.enabled)?;
@@ -161,6 +162,7 @@ fn compile_scripts_crate(
         cmd.arg("--release");
         apply_fast_release_dylib_profile(&mut cmd);
     }
+    add_dynamic_scripts_feature(&mut cmd);
     add_steamworks_feature(&mut cmd, steam_enabled);
     run_cargo_command_with_normalized_paths(&mut cmd, project_root)?;
     Ok(())
@@ -169,6 +171,7 @@ fn compile_scripts_crate(
 fn compile_dlc_package_crate(
     project_root: &Path,
     scripts_crate: &Path,
+    dynamic_scripts: bool,
 ) -> Result<(), CompilerError> {
     let target_dir = project_root.join("target");
     let mut cmd = Command::new("cargo");
@@ -179,6 +182,9 @@ fn compile_dlc_package_crate(
     apply_dlc_release_dylib_profile(&mut cmd);
     let cfg = load_project_toml(project_root)
         .map_err(|e| CompilerError::SceneParse(format!("failed to load project.toml: {e}")))?;
+    if dynamic_scripts {
+        add_dynamic_scripts_feature(&mut cmd);
+    }
     add_steamworks_feature(&mut cmd, cfg.steam.enabled);
     run_cargo_command_with_normalized_paths(&mut cmd, project_root)?;
     Ok(())
@@ -381,6 +387,10 @@ fn add_steamworks_feature(cmd: &mut Command, steam_enabled: bool) {
     }
 }
 
+fn add_dynamic_scripts_feature(cmd: &mut Command) {
+    cmd.arg("--features").arg("dynamic-scripts");
+}
+
 fn write_dlc_scripts_manifest(
     project_root: &Path,
     crate_name: &str,
@@ -401,7 +411,7 @@ fn write_dlc_scripts_manifest(
             .join("perro_runtime"),
     );
     let mut manifest = format!(
-        "[workspace]\n\n[package]\nname = \"{crate_name}\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[lib]\ncrate-type = [\"cdylib\", \"rlib\"]\n\n[dependencies]\nperro_api = {{ path = \"{perro_api_path}\" }}\nperro_runtime = {{ path = \"{perro_runtime_path}\" }}\n\n[features]\nsteamworks = [\"perro_api/steamworks\", \"perro_runtime/steamworks\"]\n"
+        "[workspace]\n\n[package]\nname = \"{crate_name}\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[lib]\ncrate-type = [\"cdylib\", \"rlib\"]\n\n[dependencies]\nperro_api = {{ path = \"{perro_api_path}\" }}\nperro_runtime = {{ path = \"{perro_runtime_path}\" }}\n\n[features]\ndynamic-scripts = []\nsteamworks = [\"perro_api/steamworks\", \"perro_runtime/steamworks\"]\n"
     );
     let extra_deps = read_extra_script_deps(project_root)?;
     if !extra_deps.is_empty() {

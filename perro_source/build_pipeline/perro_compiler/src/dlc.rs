@@ -275,19 +275,26 @@ fn resolve_compiled_dylib(
 }
 
 fn default_scripts_lib_rs() -> String {
-    r#"use perro_runtime::{RuntimeScriptApi, SCRIPT_ABI_BUILD_FINGERPRINT};
-use perro_api::scripting::{ScriptAbiDescriptor, ScriptAbiDescriptorHeader, ScriptConstructor};
+    r#"use perro_runtime::RuntimeScriptApi;
+use perro_api::scripting::ScriptConstructor;
+#[cfg(feature = "dynamic-scripts")]
+use perro_runtime::SCRIPT_ABI_BUILD_FINGERPRINT;
+#[cfg(feature = "dynamic-scripts")]
+use perro_api::scripting::{ScriptAbiDescriptor, ScriptAbiDescriptorHeader};
 
 pub static SCRIPT_REGISTRY: &[(u64, ScriptConstructor<RuntimeScriptApi>)] = &[];
 
+#[cfg(feature = "dynamic-scripts")]
 static PERRO_SCRIPT_ABI_DESCRIPTOR_V2: ScriptAbiDescriptor =
     ScriptAbiDescriptor::v2(SCRIPT_ABI_BUILD_FINGERPRINT);
 
+#[cfg(feature = "dynamic-scripts")]
 #[unsafe(no_mangle)]
 pub extern "C" fn perro_script_abi_descriptor_v2() -> *const ScriptAbiDescriptorHeader {
     std::ptr::addr_of!(PERRO_SCRIPT_ABI_DESCRIPTOR_V2).cast()
 }
 
+#[cfg(feature = "dynamic-scripts")]
 #[unsafe(no_mangle)]
 pub extern "C" fn perro_scripts_init() {}
 "#
@@ -430,7 +437,7 @@ pub fn compile_dlc_bundle(project_root: &Path, dlc_name: &str) -> Result<PathBuf
     write_string_if_changed(&scripts_src.join("lib.rs"), &default_scripts_lib_rs())?;
 
     let _ = sync_dlc_scripts(project_root, dlc_name)?;
-    compile_dlc_package_crate(project_root, &scripts_crate)?;
+    compile_dlc_package_crate(project_root, &scripts_crate, true)?;
     let output_dylib_name = scripts_dylib_name();
     let dylib = resolve_compiled_dylib(
         project_root,
@@ -444,7 +451,7 @@ pub fn compile_dlc_bundle(project_root: &Path, dlc_name: &str) -> Result<PathBuf
     write_dlc_pack_manifest(project_root, &pack_crate_name, &pack_dir)?;
     generate_dlc_static_assets(project_root, dlc_name, &dlc_root, &pack_dir)?;
     write_dlc_pack_lib(project_root, dlc_name, &dlc_root, &pack_dir)?;
-    compile_dlc_package_crate(project_root, &pack_dir)?;
+    compile_dlc_package_crate(project_root, &pack_dir, false)?;
     let pack_dylib_name = runtime_pack_dylib_name();
     let built_pack_dylib = resolve_compiled_dylib(
         project_root,

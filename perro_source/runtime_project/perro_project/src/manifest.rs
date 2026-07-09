@@ -640,16 +640,25 @@ fn ensure_scripts_manifest_features(path: &Path) -> std::io::Result<()> {
         return Ok(());
     };
 
-    if features_table.contains_key("steamworks") {
+    let mut changed = false;
+    if !features_table.contains_key("dynamic-scripts") {
+        features_table.insert("dynamic-scripts".to_string(), Value::Array(Vec::new()));
+        changed = true;
+    }
+    if !features_table.contains_key("steamworks") {
+        features_table.insert(
+            "steamworks".to_string(),
+            Value::Array(vec![
+                Value::String("perro_api/steamworks".to_string()),
+                Value::String("perro_runtime/steamworks".to_string()),
+            ]),
+        );
+        changed = true;
+    }
+
+    if !changed {
         return Ok(());
     }
-    features_table.insert(
-        "steamworks".to_string(),
-        Value::Array(vec![
-            Value::String("perro_api/steamworks".to_string()),
-            Value::String("perro_runtime/steamworks".to_string()),
-        ]),
-    );
 
     let rendered = toml::to_string(&value)
         .map_err(|err| std::io::Error::other(format!("failed to render Cargo.toml: {err}")))?;
