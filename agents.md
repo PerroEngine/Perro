@@ -19,7 +19,7 @@ Root:
 - `Cargo.toml`: workspace crate list.
 - `perro_source/`: engine source.
 - `docs/`: markdown docs.
-- `playground/`: sample projects.
+- `demos/`: sample projects.
 
 In `perro_source/`: 
 
