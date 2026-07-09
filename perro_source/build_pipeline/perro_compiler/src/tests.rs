@@ -1149,6 +1149,17 @@ parent = $root
 [/Sprite2D]
 [/sprite]
 
+[label_2d]
+parent = $root
+
+[Label2D]
+    text = "Label"
+    [Node2D]
+        position = (0, 0)
+    [/Node2D]
+[/Label2D]
+[/label_2d]
+
 [particles]
 parent = $root
 
@@ -1391,6 +1402,20 @@ parent = $root
 [/MultiMeshInstance3D]
 [/multi_mesh]
 
+[sprite_3d]
+parent = $root
+[Sprite3D]
+    texture = "res://textures/pixel.bmp"
+[/Sprite3D]
+[/sprite_3d]
+
+[label_3d]
+parent = $root
+[Label3D]
+    text = "Label"
+[/Label3D]
+[/label_3d]
+
 [water_3d]
 parent = $root
 [WaterBody3D]
@@ -1402,6 +1427,13 @@ parent = $root
 [Decal3D]
 [/Decal3D]
 [/decal_3d]
+
+[text_decal_3d]
+parent = $root
+[TextDecal3D]
+    text = "Label"
+[/TextDecal3D]
+[/text_decal_3d]
 
 [sky_3d]
 parent = $root
@@ -1528,6 +1560,12 @@ parent = $root
 [AudioPortal3D]
 [/AudioPortal3D]
 [/audio_portal_3d]
+
+[webcam]
+parent = $root
+[Webcam]
+[/Webcam]
+[/webcam]
 
 [ui_node]
 parent = $root

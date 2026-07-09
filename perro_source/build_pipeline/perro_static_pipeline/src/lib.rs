@@ -438,15 +438,15 @@ mod tests {
     static SHADER_ITEM: &str =
         "@fragment\nfn fs_main() -> @location(0) vec4<f32> { return vec4<f32>(1.0); }\n";
     static PTEX_ITEM: &[u8] = &[
-        b'P', b'T', b'E', b'X', 2, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 128, 4, 0, 0, 0, 255,
+        b'P', b'T', b'E', b'X', 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 128, 4, 0, 0, 0, 255,
         255, 255, 255,
     ];
     static PAWDIO_ITEM: &[u8] = &[
-        b'P', b'A', b'W', b'D', b'I', b'O', 2, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, b't', b'e', b's',
+        b'P', b'A', b'W', b'D', b'I', b'O', 1, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, b't', b'e', b's',
         b't',
     ];
     static PSKEL_ITEM: &[u8] = &[
-        b'P', b'S', b'K', b'E', b'L', 4, 0, 0, 0, 0, 0, 0, 128, 0, 0, 0, 0,
+        b'P', b'S', b'K', b'E', b'L', 1, 0, 0, 0, 0, 0, 0, 128, 0, 0, 0, 0,
     ];
 
     fn lookup_scene(hash: u64) -> &'static Scene {
@@ -652,6 +652,7 @@ mod tests {
             bytes.extend_from_slice(&0u32.to_le_bytes());
             bytes.extend_from_slice(&0u32.to_le_bytes());
             bytes.extend_from_slice(&(raw.len() as u32).to_le_bytes());
+            bytes.extend_from_slice(&0u32.to_le_bytes());
             bytes.extend_from_slice(&raw);
             bytes
         })
