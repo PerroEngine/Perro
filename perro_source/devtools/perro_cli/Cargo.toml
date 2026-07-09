@@ -1,7 +1,13 @@
 [package]
 name = "perro_cli"
 version = "0.1.0"
-edition = "2024"
+description = "Command-line tools for Perro game projects"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
 
 [dependencies]
 perro_compiler.workspace = true

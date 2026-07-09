@@ -1,7 +1,13 @@
 [package]
 name = "perro_scripting"
 version = "0.1.0"
-edition = "2024"
+description = "Scripting API for the Perro game engine"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
 
 [dependencies]
 perro_ids.workspace = true
