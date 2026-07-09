@@ -491,12 +491,17 @@ impl Runtime {
     /// change; structural changes are caught lazily in `refresh_interp_clean`.
     #[inline]
     pub(crate) fn bump_interp_clean_epoch(&mut self) {
-        self.transforms.interp_clean_current =
-            self.transforms.interp_clean_current.wrapping_add(1);
+        self.transforms.interp_clean_current = self.transforms.interp_clean_current.wrapping_add(1);
         if self.transforms.interp_clean_current == 0 {
             // wrapped: reset stamps so stale 0 entries don't read as clean.
-            self.transforms.interp_clean_stamp_2d.iter_mut().for_each(|s| *s = 0);
-            self.transforms.interp_clean_stamp_3d.iter_mut().for_each(|s| *s = 0);
+            self.transforms
+                .interp_clean_stamp_2d
+                .iter_mut()
+                .for_each(|s| *s = 0);
+            self.transforms
+                .interp_clean_stamp_3d
+                .iter_mut()
+                .for_each(|s| *s = 0);
             self.transforms.interp_clean_current = 1;
         }
     }

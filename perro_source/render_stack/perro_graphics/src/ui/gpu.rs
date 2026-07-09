@@ -983,13 +983,9 @@ fn hash_renderable_meshes(
     mut texture_available: impl FnMut(TextureId) -> bool,
 ) -> (UiMeshSignature, UiMeshTotals) {
     // Fixed-seed ahash (fast, deterministic across frames) instead of SipHash.
-    let mut hasher = ahash::RandomState::with_seeds(
-        0x5eed_0001,
-        0x5eed_0002,
-        0x5eed_0003,
-        0x5eed_0004,
-    )
-    .build_hasher();
+    let mut hasher =
+        ahash::RandomState::with_seeds(0x5eed_0001, 0x5eed_0002, 0x5eed_0003, 0x5eed_0004)
+            .build_hasher();
     let mut totals = UiMeshTotals::default();
     render_viewport.hash(&mut hasher);
     hash_f32(render_scale[0], &mut hasher);

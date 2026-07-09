@@ -383,8 +383,7 @@ impl Runtime {
                     .unwrap_or(local_transform)
                     .to_mat4()
                     .to_cols_array_2d();
-                let coastline_shapes =
-                    self.collect_water_coastline_shapes_3d(&water, water_global);
+                let coastline_shapes = self.collect_water_coastline_shapes_3d(&water, water_global);
                 let queries = self.collect_water_queries_3d(node);
                 let impacts = self.collect_water_impacts_3d(node, &water, water_global);
                 let links = self.collect_water_links_3d(node, &water);

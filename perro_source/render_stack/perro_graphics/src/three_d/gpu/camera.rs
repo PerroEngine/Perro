@@ -485,8 +485,12 @@ mod tests {
             ..Default::default()
         };
         let view_proj = compute_view_proj_mat(&Camera3DState::default(), 1280, 720);
-        let scene =
-            build_scene_uniform(&Camera3DState::default(), &lighting, view_proj, view_proj.inverse());
+        let scene = build_scene_uniform(
+            &Camera3DState::default(),
+            &lighting,
+            view_proj,
+            view_proj.inverse(),
+        );
         assert_eq!(scene.ambient_color[3], 0.0);
         assert_eq!(scene.ground_color, [0.0, 0.0, 0.0, 0.0]);
     }

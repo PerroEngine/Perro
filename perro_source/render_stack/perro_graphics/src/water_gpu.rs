@@ -681,8 +681,7 @@ impl GpuWater {
         // Drop cached coastlines for waters no longer present this frame.
         if !self.coastline_cache.is_empty() {
             self.coastline_cache.retain(|node, _| {
-                waters_2d.iter().any(|(n, _)| n == node)
-                    || waters_3d.iter().any(|(n, _)| n == node)
+                waters_2d.iter().any(|(n, _)| n == node) || waters_3d.iter().any(|(n, _)| n == node)
             });
         }
         self.staged_render_chunks.sort_by(|a, b| {
@@ -1561,12 +1560,10 @@ fn raster_coastline_2d(
     let signature = hasher.finish();
 
     let cell_count = width * height;
-    let entry = cache
-        .entry(node)
-        .or_insert_with(|| CachedCoastline {
-            signature,
-            base: Vec::new(),
-        });
+    let entry = cache.entry(node).or_insert_with(|| CachedCoastline {
+        signature,
+        base: Vec::new(),
+    });
     // Rebuild the static field only when the shapes/params/grid changed.
     if entry.signature != signature || entry.base.len() != cell_count {
         entry.signature = signature;
@@ -1620,7 +1617,8 @@ fn raster_coastline_2d(
 }
 
 fn coastline_hasher() -> ahash::AHasher {
-    ahash::RandomState::with_seeds(0xc0a5_0001, 0xc0a5_0002, 0xc0a5_0003, 0xc0a5_0004).build_hasher()
+    ahash::RandomState::with_seeds(0xc0a5_0001, 0xc0a5_0002, 0xc0a5_0003, 0xc0a5_0004)
+        .build_hasher()
 }
 
 fn hash_coastline_shape_2d(shape: &WaterCoastlineShape2D, hasher: &mut ahash::AHasher) {
@@ -1831,12 +1829,10 @@ fn raster_coastline_3d(
     let signature = hasher.finish();
 
     let cell_count = width * height;
-    let entry = cache
-        .entry(node)
-        .or_insert_with(|| CachedCoastline {
-            signature,
-            base: Vec::new(),
-        });
+    let entry = cache.entry(node).or_insert_with(|| CachedCoastline {
+        signature,
+        base: Vec::new(),
+    });
     // Rebuild the static field only when the shapes/params/grid changed.
     if entry.signature != signature || entry.base.len() != cell_count {
         entry.signature = signature;

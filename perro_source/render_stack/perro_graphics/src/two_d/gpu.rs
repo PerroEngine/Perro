@@ -1212,6 +1212,7 @@ mod tests {
             intensity: 2.0,
             range: 128.0,
             z_index: 4,
+            cast_shadows: false,
         })];
         let same = [Light2DState::Point(PointLight2DState {
             position: [10.0, 20.0],
@@ -1219,6 +1220,7 @@ mod tests {
             intensity: 2.0,
             range: 128.0,
             z_index: 4,
+            cast_shadows: false,
         })];
         let moved = [Light2DState::Point(PointLight2DState {
             position: [11.0, 20.0],
@@ -1235,6 +1237,7 @@ mod tests {
                 intensity: 1.0,
                 range: 64.0,
                 z_index: 0,
+                cast_shadows: false,
             }),
         ];
 
@@ -1252,6 +1255,7 @@ mod tests {
             intensity: 2.0,
             range: 100.0,
             z_index: 3,
+            cast_shadows: false,
         })];
         let moved = vec![Light2DState::Point(PointLight2DState {
             position: [11.0, 20.0],
