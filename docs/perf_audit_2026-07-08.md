@@ -10,6 +10,12 @@
 - res: too slow + disk full
 - run `cargo clean`
 - res: rm 13.5GiB, free 26.15GB
+- 2nd audit run: 2026-07-08
+- chk tree clean b4 run
+- run metadata + static scans
+- run 3 short bench groups
+- res: pass, but cold runtime bench still ~14m total
+- disk aft: 25.27GB free
 
 ## Bench Done
 
@@ -41,12 +47,56 @@ short Criterion run: `--sample-size 10 --warm-up-time 0.5 --measurement-time 1`
 - `huge_csv_header_get`: ~2.86us
 - `huge_csv_query_filter_sort_limit`: ~1.67ms
 
+2nd short Criterion run: `--sample-size 10 --warm-up-time 0.3 --measurement-time 0.7`
+
+- `perro_structs/vector2_bulk_ops`: ~102.9us
+- `perro_structs/vector3_bulk_ops`: ~235.4us
+- `perro_structs/quaternion_bulk_ops`: ~989.2us
+- `perro_structs/quaternion_lerp/slerp`: ~780.8us
+- `perro_structs/quaternion_lerp/nlerp`: ~201.3us
+- `perro_structs/matrix4_bulk_ops`: ~458.1us
+- `perro_structs/matrix20x20_mul`: ~439.9us
+- `perro_structs/matrix25x15_mul_15x25`: ~472.0us
+- `perro_structs/matrix15x25_mul_25x15`: ~686.3us
+- `perro_structs/neighbors_8_api`: ~1.634ms
+- `perro_structs/neighbors_8_unchecked`: ~2.206ms
+- `perro_structs/count_neighbors_4_api`: ~172.1us
+- `perro_structs/count_neighbors_4_unchecked`: ~396.4us
+- `perro_structs/count_neighbors_8_api`: ~825.9us
+- `perro_structs/count_neighbors_8_unchecked`: ~1.843ms
+- `huge_csv_primary_find`: ~5.58us
+- `huge_csv_primary_hash_find`: ~2.36us
+- `huge_csv_header_get`: ~2.87us
+- `huge_csv_query_filter_sort_limit`: ~1.736ms
+- `runtime_core/internal_schedule_unregister_remove_nodes`: ~98.1ms
+- `runtime_core/dirty_indices_snapshot_to_vec`: ~53.1us
+- `runtime_core/dirty_indices_scratch_extend`: ~25.3us
+- `runtime_core/transform_dirty_propagate_and_refresh`: ~1.574ms
+- `runtime_core/create_nodes_10k_batch_transform_and_render`: ~18.68ms
+- `runtime_core/extract_moving_sprite2d_nodes/10000 mutate_extract`: ~7.91ms
+- `runtime_core/extract_moving_sprite2d_nodes/10000 extract_only`: ~7.29ms
+- `runtime_core/physics_sync_world_keys_collect_then_get`: ~2.648ms
+- `runtime_core/physics_sync_world_direct_iter`: ~754.1us
+- `runtime_core/physics_scan_ids_copy_then_iter`: ~143.1us
+- `runtime_core/physics_scan_ids_direct_iter`: ~34.8us
+- `runtime_core/trimesh_vertices_clone`: ~50.9us
+- `runtime_core/trimesh_vertices_arc_share`: ~123.6ns
+- `runtime_core/animated_sprite_leaf_force_rerender`: ~506.7us
+
+## Static Scan
+
+- dup dep names: 29
+- `lock()` hits in runtime/audio/render stacks: 244
+- string map hits: 41
+- alloc-ish hits in runtime render + graphics: 302
+
 ## Bench Gaps
 
 - full workspace bench fails: lib harness rejects Criterion args
 - runtime benches need `--features bench`
 - release bench link fills disk on Windows PDB
 - graphics bench hits `LNK1318` / `LNK1108`
+- cold build dominates short bench wall time after `cargo clean`
 - fix bench flow b4 next full run:
   - use per-target bench only
   - use `CARGO_PROFILE_BENCH_DEBUG=0`
@@ -71,6 +121,8 @@ short Criterion run: `--sample-size 10 --warm-up-time 0.5 --measurement-time 1`
 - file: `perro_source/core/perro_structs/src/structs/matrix/mod.rs`
 - issue: unchecked 8-neighbor slower than safe api
 - data: api ~975us, unchecked ~1.908ms
+- data2: count 4 api ~172us vs unchecked ~396us
+- data2: count 8 api ~826us vs unchecked ~1.843ms
 - chg: inspect branch shape + closure call count
 - add bench case 4 direct index math
 - target: keep 4-neighbor unchecked win, fix 8-neighbor regress
@@ -83,6 +135,30 @@ short Criterion run: `--sample-size 10 --warm-up-time 0.5 --measurement-time 1`
 - chg: reuse query scratch Vec
 - chg: cache header col index path
 - target: cut sort-heavy query
+
+### 3.5 Runtime Core Scans
+
+- file: `perro_source/runtime_project/perro_runtime/benches/runtime_core_hotpaths.rs`
+- issue: collect/copy scans much slower than direct iter
+- data: physics keys collect+get ~2.648ms vs direct iter ~754us
+- data: physics scan ids copy+iter ~143us vs direct iter ~34.8us
+- chg: replace remaining hot collect scans w/ direct iter or scratch reuse
+- target: 3-4x less scan overhead
+
+### 3.6 Internal Schedule Unregister
+
+- file: `perro_source/runtime_project/perro_runtime/src/runtime/scheduling.rs`
+- issue: unregister/remove bench ~98ms
+- chg: add indexed removal path or generational free list
+- chg: avoid O(n) retain scans per removal burst
+- target: make batch unregister scale near O(k)
+
+### 3.7 Trimesh Vertex Share
+
+- file: `perro_source/runtime_project/perro_runtime/src/runtime/physics.rs`
+- issue: vertex clone ~50.9us vs arc share ~123ns
+- chg: keep `Arc<[Vec3]>`/shared payload through physics sync
+- target: avoid large mesh clone on collider build/sync
 
 ### 4. Runtime Resource Locks
 
@@ -166,4 +242,3 @@ short Criterion run: `--sample-size 10 --warm-up-time 0.5 --measurement-time 1`
 4. optimize CSV limit sort
 5. audit render write counts
 6. lock batch in `rs_ctx`
-
