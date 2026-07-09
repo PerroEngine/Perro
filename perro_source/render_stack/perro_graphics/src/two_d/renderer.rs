@@ -92,6 +92,9 @@ pub struct Renderer2D {
     retained_sprites_revision: u64,
     frame_shapes: Vec<RectInstanceGpu>,
     frame_sprites: Vec<Sprite2DCommand>,
+    // Last frame's immediate sprites, kept to detect byte-identical frames and
+    // skip the revision bump that would defeat the sprite staging cache.
+    prev_frame_sprites: Vec<Sprite2DCommand>,
     particle_eval_stack: Vec<f32>,
 }
 
@@ -120,6 +123,7 @@ impl Renderer2D {
             retained_sprites_revision: 0,
             frame_shapes: Vec::new(),
             frame_sprites: Vec::new(),
+            prev_frame_sprites: Vec::new(),
             particle_eval_stack: Vec::new(),
         }
     }
@@ -256,7 +260,9 @@ impl Renderer2D {
     }
 
     fn flush_shape_packets(&mut self) {
-        let had_frame_sprites = !self.frame_sprites.is_empty();
+        // Retain last frame's immediate sprites for the change check below.
+        // Swap (no clone) so the old buffer becomes this frame's scratch.
+        std::mem::swap(&mut self.frame_sprites, &mut self.prev_frame_sprites);
         self.frame_shapes.clear();
         self.frame_sprites.clear();
         if self.frame_shapes.capacity() < self.queued_shapes.len() {
@@ -388,7 +394,9 @@ impl Renderer2D {
                 }
             }
         }
-        if had_frame_sprites || !self.frame_sprites.is_empty() {
+        // Bump only when the immediate set actually changed; byte-identical
+        // frames keep the revision so the staging cache holds.
+        if self.frame_sprites != self.prev_frame_sprites {
             self.retained_sprites_revision = self.retained_sprites_revision.wrapping_add(1);
         }
         self.flush_point_particles();

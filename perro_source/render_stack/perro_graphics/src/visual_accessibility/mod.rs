@@ -24,6 +24,10 @@ pub struct VisualAccessibilityProcessor {
     bgl: wgpu::BindGroupLayout,
     pipeline: wgpu::RenderPipeline,
     uniform_buffer: wgpu::Buffer,
+    // Cached bind group + the input view id it was built for. Only the input
+    // view varies between frames (sampler + uniform buffer are stable), so we
+    // rebuild solely when that view identity changes or on resize.
+    cached_bind_group: Option<(usize, wgpu::BindGroup)>,
 }
 
 impl VisualAccessibilityProcessor {
@@ -140,6 +144,7 @@ impl VisualAccessibilityProcessor {
             bgl,
             pipeline,
             uniform_buffer,
+            cached_bind_group: None,
         }
     }
 
@@ -158,6 +163,9 @@ impl VisualAccessibilityProcessor {
         );
         self.intermediate_texture = intermediate_texture;
         self.intermediate_view = intermediate_view;
+        // Input views (scene / intermediate) are recreated on resize, so the
+        // cached bind group is stale.
+        self.cached_bind_group = None;
     }
 
     pub fn has_settings(&self, settings: VisualAccessibilitySettings) -> bool {
@@ -195,24 +203,37 @@ impl VisualAccessibilityProcessor {
         };
         queue.write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(&uniform));
 
-        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("perro_visual_accessibility_bg"),
-            layout: &self.bgl,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(input_view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&self.sampler),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: self.uniform_buffer.as_entire_binding(),
-                },
-            ],
-        });
+        let input_view_id = input_view as *const _ as usize;
+        if self
+            .cached_bind_group
+            .as_ref()
+            .is_none_or(|(id, _)| *id != input_view_id)
+        {
+            let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("perro_visual_accessibility_bg"),
+                layout: &self.bgl,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(input_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::Sampler(&self.sampler),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: self.uniform_buffer.as_entire_binding(),
+                    },
+                ],
+            });
+            self.cached_bind_group = Some((input_view_id, bind_group));
+        }
+        let bind_group = &self
+            .cached_bind_group
+            .as_ref()
+            .expect("bind group cached above")
+            .1;
 
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -232,7 +253,7 @@ impl VisualAccessibilityProcessor {
                 multiview_mask: None,
             });
             pass.set_pipeline(&self.pipeline);
-            pass.set_bind_group(0, &bind_group, &[]);
+            pass.set_bind_group(0, bind_group, &[]);
             pass.draw(0..3, 0..1);
         }
     }

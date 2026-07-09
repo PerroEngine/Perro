@@ -909,21 +909,36 @@ impl Gpu3D {
         let mut receivers = std::mem::take(&mut self.mesh_blend_receiver_indices);
         spans.clear();
         receivers.clear();
-        for &source_i in &self.mesh_blend_batch_indices {
-            let source_batch = &self.draw_batches[source_i];
-            let start = receivers.len();
-            for (target_i, target_batch) in self.draw_batches.iter().enumerate() {
-                if mesh_blend_receiver_matches(
-                    source_i,
-                    source_batch,
-                    target_i,
-                    target_batch,
-                    &self.staged_instance_transforms,
-                ) {
-                    receivers.push(target_i);
-                }
+        // No sources => no receivers; leave spans/receivers cleared.
+        if !self.mesh_blend_batch_indices.is_empty() {
+            // Each batch's merged world sphere is O(instance_count); cache it
+            // once so the source x target loop below never recomputes a target's
+            // sphere per source.
+            let mut spheres = std::mem::take(&mut self.mesh_blend_batch_spheres_scratch);
+            spheres.clear();
+            spheres.reserve(self.draw_batches.len());
+            for batch in &self.draw_batches {
+                spheres.push(batch_world_sphere(batch, &self.staged_instance_transforms));
             }
-            spans.push((source_i, start..receivers.len()));
+            for &source_i in &self.mesh_blend_batch_indices {
+                let source_batch = &self.draw_batches[source_i];
+                let source_sphere = spheres[source_i];
+                let start = receivers.len();
+                for (target_i, target_batch) in self.draw_batches.iter().enumerate() {
+                    if mesh_blend_receiver_matches(
+                        source_i,
+                        source_batch,
+                        source_sphere,
+                        target_i,
+                        target_batch,
+                        spheres[target_i],
+                    ) {
+                        receivers.push(target_i);
+                    }
+                }
+                spans.push((source_i, start..receivers.len()));
+            }
+            self.mesh_blend_batch_spheres_scratch = spheres;
         }
         self.mesh_blend_source_receivers = spans;
         self.mesh_blend_receiver_indices = receivers;
@@ -933,9 +948,10 @@ impl Gpu3D {
 fn mesh_blend_receiver_matches(
     source_index: usize,
     source: &DrawBatch,
+    source_sphere: Option<(Vec3, f32)>,
     target_index: usize,
     target: &DrawBatch,
-    transforms: &[TransformInstanceGpu],
+    target_sphere: Option<(Vec3, f32)>,
 ) -> bool {
     if source_index == target_index
         || target.draw_on_top
@@ -949,7 +965,7 @@ fn mesh_blend_receiver_matches(
     if !source_accepts_target || !target_accepts_source {
         return false;
     }
-    mesh_blend_batches_overlap(source, target, transforms)
+    mesh_blend_batches_overlap(source_sphere, target_sphere)
 }
 
 // Per-layer caster cull: keep only shadow batches whose world sphere touches
@@ -1248,15 +1264,17 @@ fn draw_multimesh_depth_prepass<'a>(gpu: &'a Gpu3D, pass: &mut wgpu::RenderPass<
     }
 }
 
+// Spheres are precomputed per batch by the caller; None (non-finite / sentinel
+// radius / out-of-range) means no usable bound, so the pair conservatively
+// overlaps.
 fn mesh_blend_batches_overlap(
-    source: &DrawBatch,
-    target: &DrawBatch,
-    transforms: &[TransformInstanceGpu],
+    source_sphere: Option<(Vec3, f32)>,
+    target_sphere: Option<(Vec3, f32)>,
 ) -> bool {
-    let Some((source_center, source_radius)) = batch_world_sphere(source, transforms) else {
+    let Some((source_center, source_radius)) = source_sphere else {
         return true;
     };
-    let Some((target_center, target_radius)) = batch_world_sphere(target, transforms) else {
+    let Some((target_center, target_radius)) = target_sphere else {
         return true;
     };
     source_center.distance_squared(target_center)

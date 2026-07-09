@@ -440,25 +440,25 @@ struct WaterDepthInfo {
     hit: f32,
 }
 
-fn water_depth_thickness(in: Water3DVertexOut, normal: vec3<f32>) -> WaterDepthInfo {
+fn water_depth_thickness(in: Water3DVertexOut, w: Water, normal: vec3<f32>) -> WaterDepthInfo {
     let dims_u = textureDimensions(scene_depth_tex);
     let dims = vec2<i32>(i32(dims_u.x), i32(dims_u.y));
     let base_coord = clamp(vec2<i32>(floor(in.clip_pos.xy)), vec2<i32>(0), dims - vec2<i32>(1));
     let base_depth = textureLoad(scene_depth_tex, base_coord, 0);
     let view_water = distance(in.world_pos, scene.camera_pos.xyz);
-    var base_thickness = waters[in.water_idx].size_depth_time.z;
+    var base_thickness = w.size_depth_time.z;
     if base_depth < 0.999999 {
         let base_world = water_scene_world_from_depth(base_coord, dims_u, base_depth);
         base_thickness = max(distance(base_world, scene.camera_pos.xyz) - view_water, 0.0);
     }
-    let thickness_refraction = clamp(0.35 + smoothstep(0.08, max(waters[in.water_idx].size_depth_time.z * 0.45, 0.5), base_thickness) * 0.65, 0.0, 1.0);
-    let offset = vec2<i32>(round(normal.xz * clamp(waters[in.water_idx].visual2.y * 26.0 * thickness_refraction, 0.0, 48.0)));
+    let thickness_refraction = clamp(0.35 + smoothstep(0.08, max(w.size_depth_time.z * 0.45, 0.5), base_thickness) * 0.65, 0.0, 1.0);
+    let offset = vec2<i32>(round(normal.xz * clamp(w.visual2.y * 26.0 * thickness_refraction, 0.0, 48.0)));
     let coord = clamp(base_coord + offset, vec2<i32>(0), dims - vec2<i32>(1));
     let scene_depth = textureLoad(scene_depth_tex, coord, 0);
     var info: WaterDepthInfo;
     if scene_depth >= 0.999999 {
-        info.thickness = waters[in.water_idx].size_depth_time.z;
-        info.bed_world = in.world_pos - vec3<f32>(0.0, waters[in.water_idx].size_depth_time.z, 0.0);
+        info.thickness = w.size_depth_time.z;
+        info.bed_world = in.world_pos - vec3<f32>(0.0, w.size_depth_time.z, 0.0);
         info.hit = 0.0;
         return info;
     }
@@ -736,7 +736,7 @@ fn fs_water_3d(in: Water3DVertexOut, @builtin(front_facing) front_facing: bool) 
     let fresnel = water_schlick_fresnel(dot(normal, view_dir), w.visual0.w) * w.visual0.y;
     let auto_shallow_depth = max(max(w.size_depth_time.x, w.size_depth_time.y) * 0.25, 0.001);
     let shallow_depth = select(auto_shallow_depth, max(w.size_depth_time.w, 0.001), w.size_depth_time.w >= 0.0);
-    let depth_info = water_depth_thickness(in, normal);
+    let depth_info = water_depth_thickness(in, w, normal);
     let scene_thickness = max(depth_info.thickness, 0.0);
     let depth_t = clamp(1.0 - exp(-scene_thickness / max(shallow_depth, 0.001)), 0.0, 1.0);
 

@@ -224,6 +224,8 @@ pub struct Runtime {
     water_contacts_3d: AHashMap<NodeID, Vec<WaterBodyContact3D>>,
     water_rigid_body_ids_2d_cache: Vec<NodeID>,
     water_rigid_body_ids_3d_cache: Vec<NodeID>,
+    water_collision_body_ids_2d_cache: Vec<NodeID>,
+    water_collision_body_ids_3d_cache: Vec<NodeID>,
     water_ids_2d_cache: Vec<NodeID>,
     water_ids_3d_cache: Vec<NodeID>,
     /// `nodes.physics_revision()` snapshot @ last fill of each cache above.
@@ -231,6 +233,8 @@ pub struct Runtime {
     /// used 2 be the unfilled sentinel, so 0-water scenes rescanned forever).
     water_rigid_body_ids_2d_cache_version: Option<u64>,
     water_rigid_body_ids_3d_cache_version: Option<u64>,
+    water_collision_body_ids_2d_cache_version: Option<u64>,
+    water_collision_body_ids_3d_cache_version: Option<u64>,
     water_ids_2d_cache_version: Option<u64>,
     water_ids_3d_cache_version: Option<u64>,
     pending_skeleton_sources_2d: AHashMap<NodeID, String>,
@@ -257,6 +261,9 @@ pub struct Runtime {
     /// reusable water-index input buf 4 queue_water_forces_2d/3d.
     physics_waters_scratch_2d: Vec<physics::RuntimeWater2D>,
     physics_waters_scratch_3d: Vec<physics::RuntimeWater3D>,
+    /// reusable rigid-body sample buf 4 queue_water_forces_2d/3d.
+    physics_water_bodies_scratch_2d: Vec<physics::RuntimeWaterBody2D>,
+    physics_water_bodies_scratch_3d: Vec<physics::RuntimeWaterBody3D>,
     /// reusable subtree-walk stack 4 force_rerender; avoid per-node
     /// children_slice().to_vec() alloc on every visited node.
     force_rerender_stack_scratch: Vec<NodeID>,
@@ -495,10 +502,14 @@ impl Runtime {
             water_contacts_3d: AHashMap::new(),
             water_rigid_body_ids_2d_cache: Vec::new(),
             water_rigid_body_ids_3d_cache: Vec::new(),
+            water_collision_body_ids_2d_cache: Vec::new(),
+            water_collision_body_ids_3d_cache: Vec::new(),
             water_ids_2d_cache: Vec::new(),
             water_ids_3d_cache: Vec::new(),
             water_rigid_body_ids_2d_cache_version: None,
             water_rigid_body_ids_3d_cache_version: None,
+            water_collision_body_ids_2d_cache_version: None,
+            water_collision_body_ids_3d_cache_version: None,
             water_ids_2d_cache_version: None,
             water_ids_3d_cache_version: None,
             pending_skeleton_sources_2d: AHashMap::new(),
@@ -517,6 +528,8 @@ impl Runtime {
             physics_force_emitter_ids_scratch_3d: Vec::new(),
             physics_waters_scratch_2d: Vec::new(),
             physics_waters_scratch_3d: Vec::new(),
+            physics_water_bodies_scratch_2d: Vec::new(),
+            physics_water_bodies_scratch_3d: Vec::new(),
             force_rerender_stack_scratch: Vec::new(),
             audio: AudioPropagationState::new(),
             mesh_query_node_cache: AHashMap::default(),
@@ -571,22 +584,6 @@ impl Runtime {
         Self::from_project_with_script_registry(project, provider_mode, None)
     }
 
-    #[inline]
-    pub(crate) fn reset_water_scan_cache_2d(&mut self) {
-        self.water_rigid_body_ids_2d_cache.clear();
-        self.water_ids_2d_cache.clear();
-        self.water_rigid_body_ids_2d_cache_version = None;
-        self.water_ids_2d_cache_version = None;
-    }
-
-    #[inline]
-    pub(crate) fn reset_water_scan_cache_3d(&mut self) {
-        self.water_rigid_body_ids_3d_cache.clear();
-        self.water_ids_3d_cache.clear();
-        self.water_rigid_body_ids_3d_cache_version = None;
-        self.water_ids_3d_cache_version = None;
-    }
-
     pub(crate) fn cached_rigid_body_ids_2d(&mut self) -> &[NodeID] {
         let version = self.nodes.physics_revision();
         if self.water_rigid_body_ids_2d_cache_version != Some(version) {
@@ -615,6 +612,46 @@ impl Runtime {
             self.water_rigid_body_ids_3d_cache_version = Some(version);
         }
         &self.water_rigid_body_ids_3d_cache
+    }
+
+    /// Coastline scan candidates: StaticBody2D + RigidBody2D + CharacterBody2D.
+    /// `enabled` + mask filter applied by caller; keep cache type/existence only
+    /// so it self-invalidates on physics_revision like the rigid-body caches.
+    pub(crate) fn cached_water_collision_body_ids_2d(&mut self) -> &[NodeID] {
+        let version = self.nodes.physics_revision();
+        if self.water_collision_body_ids_2d_cache_version != Some(version) {
+            self.water_collision_body_ids_2d_cache.clear();
+            scan_node_type_slots_any(
+                &self.nodes,
+                &[
+                    perro_nodes::NodeType::StaticBody2D,
+                    perro_nodes::NodeType::RigidBody2D,
+                    perro_nodes::NodeType::CharacterBody2D,
+                ],
+                &mut self.water_collision_body_ids_2d_cache,
+            );
+            self.water_collision_body_ids_2d_cache_version = Some(version);
+        }
+        &self.water_collision_body_ids_2d_cache
+    }
+
+    /// Coastline scan candidates: StaticBody3D + RigidBody3D + CharacterBody3D.
+    pub(crate) fn cached_water_collision_body_ids_3d(&mut self) -> &[NodeID] {
+        let version = self.nodes.physics_revision();
+        if self.water_collision_body_ids_3d_cache_version != Some(version) {
+            self.water_collision_body_ids_3d_cache.clear();
+            scan_node_type_slots_any(
+                &self.nodes,
+                &[
+                    perro_nodes::NodeType::StaticBody3D,
+                    perro_nodes::NodeType::RigidBody3D,
+                    perro_nodes::NodeType::CharacterBody3D,
+                ],
+                &mut self.water_collision_body_ids_3d_cache,
+            );
+            self.water_collision_body_ids_3d_cache_version = Some(version);
+        }
+        &self.water_collision_body_ids_3d_cache
     }
 
     pub(crate) fn cached_water_ids_2d(&mut self) -> &[NodeID] {
@@ -887,6 +924,25 @@ fn scan_node_type_slots(
             continue;
         };
         if keep(node) {
+            out.push(id);
+        }
+    }
+}
+
+/// Collect ids of any node whose type matches one in `want`, in arena slot
+/// order. Cheap tag compare per slot; used for the multi-type water coastline
+/// body cache (static/rigid/character bodies).
+fn scan_node_type_slots_any(
+    arena: &NodeArena,
+    want: &[perro_nodes::NodeType],
+    out: &mut Vec<NodeID>,
+) {
+    let types = arena.node_type_slots();
+    for (index, node_type) in types.iter().enumerate() {
+        if !want.contains(node_type) {
+            continue;
+        }
+        if let Some((id, _node)) = arena.slot_get(index) {
             out.push(id);
         }
     }

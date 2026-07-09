@@ -6,6 +6,7 @@ use std::cell::RefCell;
 
 thread_local! {
     static FABRIK_SCRATCH_2D: RefCell<FabrikScratch> = RefCell::new(FabrikScratch::default());
+    static CCD_SCRATCH_2D: RefCell<CcdScratch> = RefCell::new(CcdScratch::default());
 }
 
 pub fn internal_update<RT>(ctx: &mut RuntimeWindow<'_, RT>, id: NodeID)
@@ -101,6 +102,17 @@ fn solve_auto(skeleton: &mut Skeleton2D, cfg: CcdSolve) -> bool {
 }
 
 fn solve_ccd(skeleton: &mut Skeleton2D, cfg: CcdSolve) -> bool {
+    CCD_SCRATCH_2D.with(|scratch| {
+        let mut scratch = scratch.borrow_mut();
+        solve_ccd_with_scratch(skeleton, cfg, &mut scratch)
+    })
+}
+
+fn solve_ccd_with_scratch(
+    skeleton: &mut Skeleton2D,
+    cfg: CcdSolve,
+    scratch: &mut CcdScratch,
+) -> bool {
     let CcdSolve {
         end,
         chain_length,
@@ -115,13 +127,12 @@ fn solve_ccd(skeleton: &mut Skeleton2D, cfg: CcdSolve) -> bool {
     if end >= skeleton.bones.len() {
         return false;
     }
-    let mut chain = Vec::with_capacity(chain_length.saturating_add(1).min(skeleton.bones.len()));
-    collect_root_to_end(skeleton, end, &mut chain);
-    if chain.is_empty() {
+    collect_root_to_end(skeleton, end, &mut scratch.chain);
+    if scratch.chain.is_empty() {
         return false;
     }
     let mut changed = false;
-    let joint_count = chain.len().saturating_sub(1).min(chain_length);
+    let joint_count = scratch.chain.len().saturating_sub(1).min(chain_length);
     if joint_count == 0 {
         if match_rotation {
             changed |= apply_angle_delta(skeleton, end, target_rot, weight);
@@ -129,11 +140,14 @@ fn solve_ccd(skeleton: &mut Skeleton2D, cfg: CcdSolve) -> bool {
         return changed;
     }
 
-    let joint_start = chain.len().saturating_sub(1 + joint_count);
-    let mut globals = vec![Mat3::IDENTITY; chain.len()];
+    let joint_start = scratch.chain.len().saturating_sub(1 + joint_count);
+    let CcdScratch { chain, globals } = scratch;
+    if globals.len() < chain.len() {
+        globals.resize(chain.len(), Mat3::IDENTITY);
+    }
     let tolerance_sq = tolerance * tolerance;
     for _ in 0..iterations {
-        compute_chain_globals(skeleton, &chain, &mut globals);
+        compute_chain_globals(skeleton, chain, globals);
         let mut end_pos = globals[chain.len() - 1].transform_point2(Vec2::ZERO);
         if end_pos.distance_squared(target_pos) <= tolerance_sq {
             break;
@@ -153,7 +167,7 @@ fn solve_ccd(skeleton: &mut Skeleton2D, cfg: CcdSolve) -> bool {
             }
             skeleton.bones[joint].pose.rotation += delta;
             changed = true;
-            compute_chain_globals_from(skeleton, &chain, chain_index, &mut globals);
+            compute_chain_globals_from(skeleton, chain, chain_index, globals);
             end_pos = globals[chain.len() - 1].transform_point2(Vec2::ZERO);
         }
     }
@@ -301,6 +315,12 @@ struct FabrikScratch {
     globals: Vec<Mat3>,
     points: Vec<Vec2>,
     lengths: Vec<f32>,
+}
+
+#[derive(Default)]
+struct CcdScratch {
+    chain: Vec<usize>,
+    globals: Vec<Mat3>,
 }
 
 fn collect_tail_to_end(skeleton: &Skeleton2D, end: usize, max_len: usize, out: &mut Vec<usize>) {

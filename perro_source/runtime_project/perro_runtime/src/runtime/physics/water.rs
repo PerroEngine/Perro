@@ -84,7 +84,7 @@ pub(super) struct RuntimeWaterIndex3D {
 }
 
 #[derive(Clone, Copy)]
-pub(super) struct RuntimeWaterBody2D {
+pub(crate) struct RuntimeWaterBody2D {
     pub(super) id: NodeID,
     pub(super) pos: Vector2,
     pub(super) velocity: Vector2,
@@ -97,7 +97,7 @@ pub(super) struct RuntimeWaterBody2D {
 }
 
 #[derive(Clone, Copy)]
-pub(super) struct RuntimeWaterBody3D {
+pub(crate) struct RuntimeWaterBody3D {
     pub(super) id: NodeID,
     pub(super) pos: Vector3,
     pub(super) velocity: Vector3,

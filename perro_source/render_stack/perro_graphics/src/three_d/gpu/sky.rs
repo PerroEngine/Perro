@@ -1,19 +1,62 @@
 use super::*;
 
 pub(super) fn sky_shader_pipeline_key(sky: &perro_render_bridge::Sky3DState) -> Option<u64> {
+    use std::hash::{Hash, Hasher};
     if sky.shaders.is_empty() {
         return None;
     }
-    let mut key = String::new();
+    // In-memory cache key: feed the parts straight into the hasher instead of
+    // building a String per frame. Only per-run determinism matters here.
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
     for shader in sky.shaders.iter() {
-        key.push_str(shader.path.as_ref());
-        key.push('#');
+        // str's Hash writes a delimiter, so path bytes stay self-framed.
+        shader.path.as_ref().hash(&mut hasher);
         for param in shader.params.iter() {
-            key.push_str(&format!("{:?};", param.value));
+            hash_const_param_value(&param.value, &mut hasher);
         }
-        key.push('|');
     }
-    Some(perro_ids::string_to_u64(&key))
+    Some(hasher.finish())
+}
+
+// Discriminant byte + fixed-width raw bits frame each value unambiguously; f32
+// bits are hashed (not the float) so the key stays deterministic for NaN/-0.
+fn hash_const_param_value<H: std::hash::Hasher>(
+    value: &perro_structs::ConstParamValue,
+    hasher: &mut H,
+) {
+    use perro_structs::ConstParamValue;
+    match value {
+        ConstParamValue::F32(v) => {
+            hasher.write_u8(0);
+            hasher.write_u32(v.to_bits());
+        }
+        ConstParamValue::I32(v) => {
+            hasher.write_u8(1);
+            hasher.write_i32(*v);
+        }
+        ConstParamValue::Bool(v) => {
+            hasher.write_u8(2);
+            hasher.write_u8(u8::from(*v));
+        }
+        ConstParamValue::Vec2(v) => {
+            hasher.write_u8(3);
+            for c in v {
+                hasher.write_u32(c.to_bits());
+            }
+        }
+        ConstParamValue::Vec3(v) => {
+            hasher.write_u8(4);
+            for c in v {
+                hasher.write_u32(c.to_bits());
+            }
+        }
+        ConstParamValue::Vec4(v) => {
+            hasher.write_u8(5);
+            for c in v {
+                hasher.write_u32(c.to_bits());
+            }
+        }
+    }
 }
 
 impl Gpu3D {
@@ -77,15 +120,15 @@ fn load_shader_source(
     Some(src.to_string())
 }
 
+// view_proj / inv_view_proj are computed once by the caller and shared with the
+// scene uniform and frustum extraction; inv_view_proj is the raw inverse and the
+// is_finite fallback stays here.
 pub(super) fn build_sky_uniform(
     camera: &Camera3DState,
     lighting: &Lighting3DState,
-    width: u32,
-    height: u32,
+    inv_view_proj: Mat4,
 ) -> Option<SkyUniform> {
     let sky = lighting.sky.as_ref()?;
-    let view_proj = compute_view_proj_mat(camera, width, height);
-    let inv_view_proj = view_proj.inverse();
     let inv = if inv_view_proj.is_finite() {
         inv_view_proj.to_cols_array_2d()
     } else {

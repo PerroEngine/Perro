@@ -422,6 +422,10 @@ impl Runtime {
         if self.transforms.physics_pose_id_flags_2d[index] == 0 {
             self.transforms.physics_pose_id_flags_2d[index] = 1;
             self.transforms.physics_pose_ids_2d.push(id);
+            // new interpolating body -> descendants may flip to interp path;
+            // invalidate the interp-ancestor memo. stable sets skip this so the
+            // memo persists across frames.
+            self.bump_interp_clean_epoch();
         }
         let entry = &mut self.transforms.physics_pose_2d[index];
         let snap = !entry.valid
@@ -461,6 +465,10 @@ impl Runtime {
         if self.transforms.physics_pose_id_flags_3d[index] == 0 {
             self.transforms.physics_pose_id_flags_3d[index] = 1;
             self.transforms.physics_pose_ids_3d.push(id);
+            // new interpolating body -> descendants may flip to interp path;
+            // invalidate the interp-ancestor memo. stable sets skip this so the
+            // memo persists across frames.
+            self.bump_interp_clean_epoch();
         }
         let entry = &mut self.transforms.physics_pose_3d[index];
         let snap = !entry.valid
@@ -479,11 +487,94 @@ impl Runtime {
         self.mark_needs_rerender(id);
     }
 
+    /// Invalidate the interp-ancestor memo. Call on any pose-set / render-alpha
+    /// change; structural changes are caught lazily in `refresh_interp_clean`.
+    #[inline]
+    pub(crate) fn bump_interp_clean_epoch(&mut self) {
+        self.transforms.interp_clean_current =
+            self.transforms.interp_clean_current.wrapping_add(1);
+        if self.transforms.interp_clean_current == 0 {
+            // wrapped: reset stamps so stale 0 entries don't read as clean.
+            self.transforms.interp_clean_stamp_2d.iter_mut().for_each(|s| *s = 0);
+            self.transforms.interp_clean_stamp_3d.iter_mut().for_each(|s| *s = 0);
+            self.transforms.interp_clean_current = 1;
+        }
+    }
+
+    /// Bump the memo epoch when node topology changed (reparent/insert/remove
+    /// bump structural_revision) and grow the per-node stamp arrays to cover the
+    /// current slot count.
+    fn refresh_interp_clean(&mut self) {
+        let rev = self.nodes.structural_revision();
+        if self.transforms.interp_clean_structural_rev != rev {
+            self.transforms.interp_clean_structural_rev = rev;
+            self.bump_interp_clean_epoch();
+        }
+        let slot_count = self.nodes.slot_count();
+        if self.transforms.interp_clean_stamp_2d.len() < slot_count {
+            self.transforms.interp_clean_stamp_2d.resize(slot_count, 0);
+        }
+        if self.transforms.interp_clean_stamp_3d.len() < slot_count {
+            self.transforms.interp_clean_stamp_3d.resize(slot_count, 0);
+        }
+    }
+
+    #[inline]
+    fn interp_clean_lookup_2d(&self, id: NodeID) -> bool {
+        self.transforms
+            .interp_clean_stamp_2d
+            .get(id.index() as usize)
+            .copied()
+            == Some(self.transforms.interp_clean_current)
+    }
+
+    #[inline]
+    fn interp_clean_lookup_3d(&self, id: NodeID) -> bool {
+        self.transforms
+            .interp_clean_stamp_3d
+            .get(id.index() as usize)
+            .copied()
+            == Some(self.transforms.interp_clean_current)
+    }
+
+    fn mark_interp_clean_2d(&mut self, ids: &[NodeID]) {
+        let current = self.transforms.interp_clean_current;
+        for id in ids {
+            if let Some(stamp) = self
+                .transforms
+                .interp_clean_stamp_2d
+                .get_mut(id.index() as usize)
+            {
+                *stamp = current;
+            }
+        }
+    }
+
+    fn mark_interp_clean_3d(&mut self, ids: &[NodeID]) {
+        let current = self.transforms.interp_clean_current;
+        for id in ids {
+            if let Some(stamp) = self
+                .transforms
+                .interp_clean_stamp_3d
+                .get_mut(id.index() as usize)
+            {
+                *stamp = current;
+            }
+        }
+    }
+
     pub(crate) fn get_render_global_transform_2d(&mut self, id: NodeID) -> Option<Transform2D> {
         if id.is_nil() || self.nodes.get(id).is_none() {
             return None;
         }
         if self.transforms.physics_pose_ids_2d.is_empty() {
+            return self.get_global_transform_2d(id);
+        }
+        // per-pass memo: node already proven interp-ancestor-free -> skip the
+        // O(depth) parent-chain walk + take the plain cached transform. keeps
+        // static (UI/non-physics) subtrees O(1) while any body interpolates.
+        self.refresh_interp_clean();
+        if self.interp_clean_lookup_2d(id) {
             return self.get_global_transform_2d(id);
         }
         if let Some(pose) = self.interpolated_physics_pose_2d(id) {
@@ -505,6 +596,11 @@ impl Runtime {
         let mut has_interp = false;
         let max_hops = self.nodes.len().saturating_add(1);
         for _ in 0..max_hops {
+            // stop at an ancestor already proven interp-free this pass (only safe
+            // while no interp found below -> chain stays complete for recompute).
+            if !has_interp && self.interp_clean_lookup_2d(cursor) {
+                break;
+            }
             let Some(node) = self.nodes.get(cursor) else {
                 break;
             };
@@ -527,6 +623,9 @@ impl Runtime {
             cursor = parent;
         }
         if !has_interp {
+            // whole walked chain is interp-free -> memoize the negatives so
+            // sibling / repeat lookups short-circuit this pass.
+            self.mark_interp_clean_2d(&chain);
             chain.clear();
             self.transforms.global_chain_scratch = chain;
             return self.get_global_transform_2d(id);
@@ -576,6 +675,13 @@ impl Runtime {
         if self.transforms.physics_pose_ids_3d.is_empty() {
             return self.get_global_transform_3d(id);
         }
+        // per-pass memo: node already proven interp-ancestor-free -> skip the
+        // O(depth) parent-chain walk + take the plain cached transform. keeps
+        // static (UI/non-physics) subtrees O(1) while any body interpolates.
+        self.refresh_interp_clean();
+        if self.interp_clean_lookup_3d(id) {
+            return self.get_global_transform_3d(id);
+        }
         if let Some(pose) = self.interpolated_physics_pose_3d(id) {
             return Some(pose);
         }
@@ -595,6 +701,11 @@ impl Runtime {
         let mut has_interp = false;
         let max_hops = self.nodes.len().saturating_add(1);
         for _ in 0..max_hops {
+            // stop at an ancestor already proven interp-free this pass (only safe
+            // while no interp found below -> chain stays complete for recompute).
+            if !has_interp && self.interp_clean_lookup_3d(cursor) {
+                break;
+            }
             let Some(node) = self.nodes.get(cursor) else {
                 break;
             };
@@ -617,6 +728,9 @@ impl Runtime {
             cursor = parent;
         }
         if !has_interp {
+            // whole walked chain is interp-free -> memoize the negatives so
+            // sibling / repeat lookups short-circuit this pass.
+            self.mark_interp_clean_3d(&chain);
             chain.clear();
             self.transforms.global_chain_scratch = chain;
             return self.get_global_transform_3d(id);

@@ -318,7 +318,6 @@ impl AudioEffectZoneMix {
 pub(crate) struct AudioPropagationState {
     pub config: AudioPropagationConfigRt,
     sounds: Vec<ActiveSpatialSound>,
-    scratch_ids: Vec<NodeID>,
     scratch_child_ids: Vec<NodeID>,
     scratch_ray_inputs: Vec<AudioRaycastInput>,
     scratch_ray_indices: Vec<usize>,
@@ -337,6 +336,16 @@ pub(crate) struct AudioPropagationState {
     has_audio_portal_3d: bool,
     has_audio_effect_zone_2d: bool,
     has_audio_effect_zone_3d: bool,
+    // Cached slot ids per audio node type, refilled by `refresh_audio_scene_flags`
+    // on the same structural-revision gate as the flags above. Lets the ray/zone
+    // helpers iterate a tight id list instead of a full arena `scan_node_type_slots`
+    // per ray per sound per propagation tick.
+    audio_mask_ids_2d: Vec<NodeID>,
+    audio_mask_ids_3d: Vec<NodeID>,
+    audio_portal_ids_2d: Vec<NodeID>,
+    audio_portal_ids_3d: Vec<NodeID>,
+    audio_effect_zone_ids_2d: Vec<NodeID>,
+    audio_effect_zone_ids_3d: Vec<NodeID>,
     // Gated on NodeArena `structural_revision` (bumps only on insert / remove /
     // clear / reparent, not data mut). Catches add+remove pairs that leave the
     // node count unchanged (e.g. remove an AudioMask2D, add a Node3D) without
@@ -352,7 +361,6 @@ impl AudioPropagationState {
         Self {
             config: AudioPropagationConfigRt::default(),
             sounds: Vec::new(),
-            scratch_ids: Vec::new(),
             scratch_child_ids: Vec::new(),
             scratch_ray_inputs: Vec::new(),
             scratch_ray_indices: Vec::new(),
@@ -369,6 +377,12 @@ impl AudioPropagationState {
             has_audio_portal_3d: false,
             has_audio_effect_zone_2d: false,
             has_audio_effect_zone_3d: false,
+            audio_mask_ids_2d: Vec::new(),
+            audio_mask_ids_3d: Vec::new(),
+            audio_portal_ids_2d: Vec::new(),
+            audio_portal_ids_3d: Vec::new(),
+            audio_effect_zone_ids_2d: Vec::new(),
+            audio_effect_zone_ids_3d: Vec::new(),
             audio_scene_flags_structural_revision: u64::MAX,
             debug_ray_count_3d: 0,
             prev_debug_ray_count_3d: 0,
@@ -453,6 +467,22 @@ impl Runtime {
             self.finish_audio_sound_updates(sounds, start);
             return;
         }
+        // Listener stays fixed for this propagation pass, so lock+read once and
+        // reuse for both ray-prep and the solve loop (was re-locked per sound).
+        let listener_2d = self
+            .resource_api
+            .audio_listener_2d
+            .lock()
+            .ok()
+            .and_then(|guard| *guard)
+            .unwrap_or_default();
+        let listener_3d = self
+            .resource_api
+            .audio_listener_3d
+            .lock()
+            .ok()
+            .and_then(|guard| *guard)
+            .unwrap_or_default();
         for (index, sound) in sounds.iter_mut().enumerate() {
             sound.elapsed_since_prop += dt;
             if sound.elapsed_since_prop < tick {
@@ -463,14 +493,7 @@ impl Runtime {
                 if self.audio.counters.raycasts >= self.audio.config.rays_per_tick_2d {
                     continue;
                 }
-                let listener = self
-                    .resource_api
-                    .audio_listener_2d
-                    .lock()
-                    .ok()
-                    .and_then(|guard| *guard)
-                    .unwrap_or_default();
-                let listener_pos = Vector2::new(listener.position[0], listener.position[1]);
+                let listener_pos = Vector2::new(listener_2d.position[0], listener_2d.position[1]);
                 let distance = listener_pos.distance_to(pos);
                 let direction = listener_pos.direction_to(pos);
                 self.audio.counters.raycasts = self.audio.counters.raycasts.saturating_add(1);
@@ -489,17 +512,10 @@ impl Runtime {
                 if self.audio.counters.raycasts >= self.audio.config.rays_per_tick_3d {
                     continue;
                 }
-                let listener = self
-                    .resource_api
-                    .audio_listener_3d
-                    .lock()
-                    .ok()
-                    .and_then(|guard| *guard)
-                    .unwrap_or_default();
                 let listener_pos = Vector3::new(
-                    listener.position[0],
-                    listener.position[1],
-                    listener.position[2],
+                    listener_3d.position[0],
+                    listener_3d.position[1],
+                    listener_3d.position[2],
                 );
                 let distance = listener_pos.distance_to(pos);
                 let direction = listener_pos.direction_to(pos);
@@ -553,20 +569,6 @@ impl Runtime {
         self.audio.scratch_ray_inputs = ray_inputs;
         self.audio.scratch_ray_indices = ray_indices;
         self.audio.scratch_ray_outputs = ray_outputs;
-        let listener_2d = self
-            .resource_api
-            .audio_listener_2d
-            .lock()
-            .ok()
-            .and_then(|guard| *guard)
-            .unwrap_or_default();
-        let listener_3d = self
-            .resource_api
-            .audio_listener_3d
-            .lock()
-            .ok()
-            .and_then(|guard| *guard)
-            .unwrap_or_default();
         let listener_options_2d = self
             .resource_api
             .audio_listener_options_2d

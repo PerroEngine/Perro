@@ -9,8 +9,8 @@ use epaint::{ClippedPrimitive, ImageData, Primitive, TextureId, textures::Textur
 use perro_ids::TextureID;
 use perro_structs::TextureFilterMode;
 use std::borrow::Cow;
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
+use std::hash::{BuildHasher, Hash, Hasher};
+use std::sync::Arc;
 
 #[path = "gpu/helpers.rs"]
 mod helpers;
@@ -109,7 +109,7 @@ pub struct GpuUi {
 pub struct UiPrepareInput<'a> {
     pub resources: &'a ResourceStore,
     pub viewport: [u32; 2],
-    pub primitives: &'a [ClippedPrimitive],
+    pub primitives: &'a [Arc<ClippedPrimitive>],
     pub textures_delta: &'a TexturesDelta,
     pub texture_size: [u32; 2],
     pub revision: u64,
@@ -118,7 +118,7 @@ pub struct UiPrepareInput<'a> {
 
 struct UiMeshSignatureInput<'a> {
     resources: &'a ResourceStore,
-    primitives: &'a [ClippedPrimitive],
+    primitives: &'a [Arc<ClippedPrimitive>],
     render_viewport: [u32; 2],
     render_scale: [f32; 2],
     static_texture_lookup: Option<StaticTextureLookup>,
@@ -977,12 +977,19 @@ fn hash_f32(value: f32, hasher: &mut impl Hasher) {
 }
 
 fn hash_renderable_meshes(
-    primitives: &[ClippedPrimitive],
+    primitives: &[Arc<ClippedPrimitive>],
     render_viewport: [u32; 2],
     render_scale: [f32; 2],
     mut texture_available: impl FnMut(TextureId) -> bool,
 ) -> (UiMeshSignature, UiMeshTotals) {
-    let mut hasher = DefaultHasher::new();
+    // Fixed-seed ahash (fast, deterministic across frames) instead of SipHash.
+    let mut hasher = ahash::RandomState::with_seeds(
+        0x5eed_0001,
+        0x5eed_0002,
+        0x5eed_0003,
+        0x5eed_0004,
+    )
+    .build_hasher();
     let mut totals = UiMeshTotals::default();
     render_viewport.hash(&mut hasher);
     hash_f32(render_scale[0], &mut hasher);
@@ -1001,23 +1008,17 @@ fn hash_renderable_meshes(
         if clip_rect[2] == 0 || clip_rect[3] == 0 {
             continue;
         }
-        let vertex_offset = totals.vertex_count.min(u32::MAX as usize) as u32;
         let index_start = totals.index_count.min(u32::MAX as usize) as u32;
         index_start.hash(&mut hasher);
         clip_rect.hash(&mut hasher);
         hash_texture_id(mesh.texture_id, &mut hasher);
+        // The painter hands out the same Arc for a node whose tessellation is
+        // unchanged and a fresh Arc for any mutated (or text) node, so pointer
+        // identity plus lengths proxy the vertex/index bytes without walking
+        // them. Position scaling is folded in via render_scale hashed above.
+        (Arc::as_ptr(primitive) as usize).hash(&mut hasher);
         mesh.vertices.len().hash(&mut hasher);
         mesh.indices.len().hash(&mut hasher);
-        for vertex in &mesh.vertices {
-            hash_f32(vertex.pos.x * render_scale[0], &mut hasher);
-            hash_f32(vertex.pos.y * render_scale[1], &mut hasher);
-            hash_f32(vertex.uv.x, &mut hasher);
-            hash_f32(vertex.uv.y, &mut hasher);
-            vertex.color.to_array().hash(&mut hasher);
-        }
-        for index in &mesh.indices {
-            index.saturating_add(vertex_offset).hash(&mut hasher);
-        }
         totals.mesh_count = totals.mesh_count.saturating_add(1);
         totals.vertex_count = totals.vertex_count.saturating_add(mesh.vertices.len());
         totals.index_count = totals.index_count.saturating_add(mesh.indices.len());
@@ -1035,7 +1036,7 @@ fn hash_renderable_meshes(
 
 #[cfg(test)]
 fn ui_mesh_signature_for_test(
-    primitives: &[ClippedPrimitive],
+    primitives: &[Arc<ClippedPrimitive>],
     render_viewport: [u32; 2],
     render_scale: [f32; 2],
 ) -> UiMeshSignature {
@@ -1125,14 +1126,14 @@ mod tests {
         assert_ne!(base, viewport);
     }
 
-    fn primitive(texture_id: TextureId, x: f32) -> ClippedPrimitive {
+    fn primitive(texture_id: TextureId, x: f32) -> std::sync::Arc<ClippedPrimitive> {
         let mut mesh = Mesh::with_texture(texture_id);
         mesh.vertices = vec![vertex(x, 0.0), vertex(x + 1.0, 0.0), vertex(x + 1.0, 1.0)];
         mesh.indices = vec![0, 1, 2];
-        ClippedPrimitive {
+        std::sync::Arc::new(ClippedPrimitive {
             clip_rect: Rect::from_min_max(pos2(0.0, 0.0), pos2(10.0, 10.0)),
             primitive: Primitive::Mesh(mesh),
-        }
+        })
     }
 
     fn vertex(x: f32, y: f32) -> Vertex {

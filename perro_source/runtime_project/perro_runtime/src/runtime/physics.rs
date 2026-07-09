@@ -28,8 +28,8 @@ mod water;
 
 use water::*;
 pub(crate) use water::{
-    RuntimeWater2D, RuntimeWater3D, lookup_water_body_sample, water_physics_sample_for_body_cached,
-    water_target_submerged,
+    RuntimeWater2D, RuntimeWater3D, RuntimeWaterBody2D, RuntimeWaterBody3D,
+    lookup_water_body_sample, water_physics_sample_for_body_cached, water_target_submerged,
 };
 
 pub(crate) type PhysicsState = PhysicsSystem;
@@ -85,20 +85,20 @@ impl Runtime {
             return;
         }
         self.physics.set_paused(paused);
-        let water_nodes = self
-            .nodes
-            .iter()
-            .filter_map(|(id, node)| {
-                matches!(
-                    node.data,
-                    SceneNodeData::WaterBody2D(_) | SceneNodeData::WaterBody3D(_)
-                )
-                .then_some(id)
-            })
-            .collect::<Vec<_>>();
-        for id in water_nodes {
+        // reuse cached water id lists; skip full node scan + per-call Vec alloc.
+        // mark_needs_rerender only touch dirty state, so taken caches stay valid.
+        self.cached_water_ids_2d();
+        let water_ids_2d = std::mem::take(&mut self.water_ids_2d_cache);
+        for &id in water_ids_2d.iter() {
             self.mark_needs_rerender(id);
         }
+        self.water_ids_2d_cache = water_ids_2d;
+        self.cached_water_ids_3d();
+        let water_ids_3d = std::mem::take(&mut self.water_ids_3d_cache);
+        for &id in water_ids_3d.iter() {
+            self.mark_needs_rerender(id);
+        }
+        self.water_ids_3d_cache = water_ids_3d;
     }
 
     pub fn physics_paused(&self) -> bool {
@@ -651,6 +651,8 @@ impl Runtime {
     ) -> Option<PhysicsSlideResult2D> {
         let mut position = self.get_global_transform_2d(body_id)?.position;
         let mut remaining = motion;
+        // hits move into the returned (API-owned) result -> no scratch reuse;
+        // Vec::new stay alloc-free til a real hit, bounded by MAX_SLIDE_ITERATIONS.
         let mut hits = Vec::new();
         for _ in 0..MAX_SLIDE_ITERATIONS {
             if remaining.length_squared() <= 1.0e-12 {
@@ -686,6 +688,8 @@ impl Runtime {
     ) -> Option<PhysicsSlideResult3D> {
         let mut position = self.get_global_transform_3d(body_id)?.position;
         let mut remaining = motion;
+        // hits move into the returned (API-owned) result -> no scratch reuse;
+        // Vec::new stay alloc-free til a real hit, bounded by MAX_SLIDE_ITERATIONS.
         let mut hits = Vec::new();
         for _ in 0..MAX_SLIDE_ITERATIONS {
             if remaining.length_squared() <= 1.0e-12 {
@@ -1775,7 +1779,11 @@ impl Runtime {
 
         self.cached_rigid_body_ids_2d();
         let body_ids = std::mem::take(&mut self.water_rigid_body_ids_2d_cache);
-        let mut bodies = Vec::with_capacity(body_ids.len());
+        let mut bodies = std::mem::take(&mut self.physics_water_bodies_scratch_2d);
+        bodies.clear();
+        if bodies.capacity() < body_ids.len() {
+            bodies.reserve(body_ids.len() - bodies.capacity());
+        }
         for &body_id in body_ids.iter() {
             let Some(body_transform) = self.get_global_transform_2d(body_id) else {
                 continue;
@@ -1855,6 +1863,8 @@ impl Runtime {
                 })
                 .collect()
         };
+        bodies.clear();
+        self.physics_water_bodies_scratch_2d = bodies;
         let mut waters = water_index.waters;
         waters.clear();
         self.physics_waters_scratch_2d = waters;
@@ -1928,7 +1938,11 @@ impl Runtime {
 
         self.cached_rigid_body_ids_3d();
         let body_ids = std::mem::take(&mut self.water_rigid_body_ids_3d_cache);
-        let mut bodies = Vec::with_capacity(body_ids.len());
+        let mut bodies = std::mem::take(&mut self.physics_water_bodies_scratch_3d);
+        bodies.clear();
+        if bodies.capacity() < body_ids.len() {
+            bodies.reserve(body_ids.len() - bodies.capacity());
+        }
         for &body_id in body_ids.iter() {
             let Some(body_transform) = self.get_global_transform_3d(body_id) else {
                 continue;
@@ -2008,6 +2022,8 @@ impl Runtime {
                 })
                 .collect()
         };
+        bodies.clear();
+        self.physics_water_bodies_scratch_3d = bodies;
         let mut waters = water_index.waters;
         waters.clear();
         self.physics_waters_scratch_3d = waters;

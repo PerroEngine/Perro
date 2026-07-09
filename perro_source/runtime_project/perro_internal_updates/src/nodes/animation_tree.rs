@@ -8,10 +8,42 @@ use perro_nodes::AnimationTree;
 use perro_nodes::animation_tree::AnimationTreeSlotPlayback;
 use perro_scene::{Node3DField, NodeField};
 use std::borrow::Cow;
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 type SelfNodeType = AnimationTree;
+
+// Compact pose-track identity. Replaces the old formatted `String` key so
+// sampling/blending no longer allocs per track per frame. `NodeField` is `Eq`
+// but not `Hash`, so `Hash` is impl'd by hand (see below).
+#[derive(Clone, PartialEq, Eq)]
+struct PoseKey {
+    node: NodeID,
+    object: Cow<'static, str>,
+    field: NodeField,
+    bone: Option<AnimationBoneSelector>,
+}
+
+impl std::hash::Hash for PoseKey {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.node.hash(state);
+        self.object.hash(state);
+        // Outer `NodeField` discriminant only; inner variants (few per node)
+        // may collide but `Eq` compares the full field, so lookups stay correct.
+        std::mem::discriminant(&self.field).hash(state);
+        match &self.bone {
+            None => state.write_u8(0),
+            Some(AnimationBoneSelector::Index(index)) => {
+                state.write_u8(1);
+                index.hash(state);
+            }
+            Some(AnimationBoneSelector::Name(name)) => {
+                state.write_u8(2);
+                name.hash(state);
+            }
+        }
+    }
+}
 
 #[derive(Clone)]
 struct PoseTrack {
@@ -26,7 +58,7 @@ struct PoseTrack {
 
 #[derive(Clone, Default)]
 struct Pose {
-    tracks: BTreeMap<String, PoseTrack>,
+    tracks: HashMap<PoseKey, PoseTrack>,
 }
 
 pub fn internal_update<RT, R, IP>(
@@ -276,7 +308,7 @@ fn sample_clip_pose(
         };
         let key = pose_key(
             binding.node,
-            track.object.as_ref(),
+            track.object.clone(),
             track.field,
             &track.bone_target,
         );
@@ -305,38 +337,40 @@ fn blend_poses(poses: &[Pose], weights: &[f32], mask: &AnimationTreeMask) -> Pos
         return poses[0].clone();
     }
     let mut out = Pose::default();
-    let mut keys = BTreeMap::<String, ()>::new();
+    // Borrow the union of keys (was a second map cloning every key). Each key's
+    // accumulation is independent, so encounter order does not affect the result.
+    let mut seen = HashSet::<&PoseKey>::new();
     for pose in poses {
         for key in pose.tracks.keys() {
-            keys.insert(key.clone(), ());
-        }
-    }
-    for key in keys.keys() {
-        let mut acc: Option<PoseTrack> = None;
-        for (idx, pose) in poses.iter().enumerate() {
-            let Some(track) = pose.tracks.get(key) else {
-                continue;
-            };
-            if !mask_allows(mask, track) {
+            if !seen.insert(key) {
                 continue;
             }
-            let w = weights.get(idx).copied().unwrap_or(0.0).max(0.0) / sum;
-            if w <= 0.0 {
-                continue;
+            let mut acc: Option<PoseTrack> = None;
+            for (idx, pose) in poses.iter().enumerate() {
+                let Some(track) = pose.tracks.get(key) else {
+                    continue;
+                };
+                if !mask_allows(mask, track) {
+                    continue;
+                }
+                let w = weights.get(idx).copied().unwrap_or(0.0).max(0.0) / sum;
+                if w <= 0.0 {
+                    continue;
+                }
+                acc = Some(if let Some(mut prev) = acc {
+                    prev.value = add_value(&prev.value, &scale_value(&track.value, w));
+                    prev.transform2d_mask |= track.transform2d_mask;
+                    prev.transform3d_mask |= track.transform3d_mask;
+                    prev
+                } else {
+                    let mut first = track.clone();
+                    first.value = scale_value(&first.value, w);
+                    first
+                });
             }
-            acc = Some(if let Some(mut prev) = acc {
-                prev.value = add_value(&prev.value, &scale_value(&track.value, w));
-                prev.transform2d_mask |= track.transform2d_mask;
-                prev.transform3d_mask |= track.transform3d_mask;
-                prev
-            } else {
-                let mut first = track.clone();
-                first.value = scale_value(&first.value, w);
-                first
-            });
-        }
-        if let Some(track) = acc {
-            out.tracks.insert(key.clone(), track);
+            if let Some(track) = acc {
+                out.tracks.insert(key.clone(), track);
+            }
         }
     }
     out
@@ -491,18 +525,16 @@ fn field_mask_name(field: NodeField) -> &'static str {
 
 fn pose_key(
     node: NodeID,
-    object: &str,
+    object: Cow<'static, str>,
     field: NodeField,
     bone_target: &Option<perro_animation::AnimationBoneTarget>,
-) -> String {
-    let bone = match bone_target {
-        Some(target) => match &target.selector {
-            AnimationBoneSelector::Index(index) => format!("i{index}"),
-            AnimationBoneSelector::Name(name) => format!("n{}", name.as_ref()),
-        },
-        None => String::new(),
-    };
-    format!("{}:{object}:{field:?}:{bone}", node.as_u64())
+) -> PoseKey {
+    PoseKey {
+        node,
+        object,
+        field,
+        bone: bone_target.as_ref().map(|target| target.selector.clone()),
+    }
 }
 
 fn scale_value(value: &AnimationTrackValue, weight: f32) -> AnimationTrackValue {

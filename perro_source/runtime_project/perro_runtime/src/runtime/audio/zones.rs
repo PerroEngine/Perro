@@ -8,17 +8,8 @@ impl Runtime {
         audio_layer: BitMask,
     ) -> AudioEffectZoneMix {
         let mut mix = AudioEffectZoneMix::default();
-        let mut scratch_ids = std::mem::take(&mut self.audio.scratch_ids);
-        scratch_ids.clear();
-        crate::runtime::scan_node_type_slots(
-            &self.nodes,
-            perro_nodes::NodeType::AudioEffectZone2D,
-            |_| true,
-            &mut scratch_ids,
-        );
-        self.audio.scratch_ids = scratch_ids;
-        for index in 0..self.audio.scratch_ids.len() {
-            let zone_id = self.audio.scratch_ids[index];
+        for index in 0..self.audio.audio_effect_zone_ids_2d.len() {
+            let zone_id = self.audio.audio_effect_zone_ids_2d[index];
             let Some(SceneNodeData::AudioEffectZone2D(zone)) =
                 self.nodes.get(zone_id).map(|n| &n.data)
             else {
@@ -27,13 +18,15 @@ impl Runtime {
             if !zone.active || zone.bounce || zone.audio_mask.intersects(audio_layer) {
                 continue;
             }
-            let effects = zone.effects.clone();
             let touches_zone = self.point_in_audio_effect_zone_2d(zone_id, listener_pos)
                 || self.point_in_audio_effect_zone_2d(zone_id, source_pos)
                 || self.segment_hits_audio_effect_zone_2d(zone_id, listener_pos, source_pos);
-            if touches_zone {
-                for effect in effects {
-                    mix.apply(effect);
+            if touches_zone
+                && let Some(SceneNodeData::AudioEffectZone2D(zone)) =
+                    self.nodes.get(zone_id).map(|n| &n.data)
+            {
+                for effect in &zone.effects {
+                    mix.apply(*effect);
                 }
             }
         }
@@ -124,17 +117,8 @@ impl Runtime {
         audio_layer: BitMask,
     ) -> AudioEffectZoneMix {
         let mut mix = AudioEffectZoneMix::default();
-        let mut scratch_ids = std::mem::take(&mut self.audio.scratch_ids);
-        scratch_ids.clear();
-        crate::runtime::scan_node_type_slots(
-            &self.nodes,
-            perro_nodes::NodeType::AudioEffectZone3D,
-            |_| true,
-            &mut scratch_ids,
-        );
-        self.audio.scratch_ids = scratch_ids;
-        for index in 0..self.audio.scratch_ids.len() {
-            let zone_id = self.audio.scratch_ids[index];
+        for index in 0..self.audio.audio_effect_zone_ids_3d.len() {
+            let zone_id = self.audio.audio_effect_zone_ids_3d[index];
             let Some(SceneNodeData::AudioEffectZone3D(zone)) =
                 self.nodes.get(zone_id).map(|n| &n.data)
             else {
@@ -143,13 +127,15 @@ impl Runtime {
             if !zone.active || zone.bounce || zone.audio_mask.intersects(audio_layer) {
                 continue;
             }
-            let effects = zone.effects.clone();
             let touches_zone = self.point_in_audio_effect_zone_3d(zone_id, listener_pos)
                 || self.point_in_audio_effect_zone_3d(zone_id, source_pos)
                 || self.segment_hits_audio_effect_zone_3d(zone_id, listener_pos, source_pos);
-            if touches_zone {
-                for effect in effects {
-                    mix.apply(effect);
+            if touches_zone
+                && let Some(SceneNodeData::AudioEffectZone3D(zone)) =
+                    self.nodes.get(zone_id).map(|n| &n.data)
+            {
+                for effect in &zone.effects {
+                    mix.apply(*effect);
                 }
             }
         }
@@ -291,17 +277,8 @@ impl Runtime {
         }
         let sweep = direction.normalized() * max_distance;
         let mut best: Option<AudioBounceHit2D> = None;
-        let mut scratch_ids = std::mem::take(&mut self.audio.scratch_ids);
-        scratch_ids.clear();
-        crate::runtime::scan_node_type_slots(
-            &self.nodes,
-            perro_nodes::NodeType::AudioEffectZone2D,
-            |_| true,
-            &mut scratch_ids,
-        );
-        self.audio.scratch_ids = scratch_ids;
-        for index in 0..self.audio.scratch_ids.len() {
-            let zone_id = self.audio.scratch_ids[index];
+        for index in 0..self.audio.audio_effect_zone_ids_2d.len() {
+            let zone_id = self.audio.audio_effect_zone_ids_2d[index];
             let Some(SceneNodeData::AudioEffectZone2D(zone)) =
                 self.nodes.get(zone_id).map(|n| &n.data)
             else {
@@ -310,7 +287,12 @@ impl Runtime {
             if !zone.active || !zone.bounce || zone.audio_mask.intersects(audio_layer) {
                 continue;
             }
-            let effects = zone.effects.clone();
+            // Zone mix is child-independent: fold once per zone, not per child hit.
+            let mut mix = AudioEffectZoneMix::default();
+            for effect in &zone.effects {
+                mix.apply(*effect);
+            }
+            let reflection = mix.echo.max(mix.reverb_send * 0.5).clamp(0.0, 1.0);
             self.audio.scratch_child_ids.clear();
             if let Some(node) = self.nodes.get(zone_id) {
                 self.audio
@@ -329,11 +311,6 @@ impl Runtime {
                 if distance <= AUDIO_PORTAL_EPSILON {
                     continue;
                 }
-                let mut mix = AudioEffectZoneMix::default();
-                for effect in effects.iter().copied() {
-                    mix.apply(effect);
-                }
-                let reflection = mix.echo.max(mix.reverb_send * 0.5).clamp(0.0, 1.0);
                 let hit = AudioBounceHit2D {
                     point: origin + sweep * t,
                     normal,
@@ -367,17 +344,8 @@ impl Runtime {
         }
         let sweep = direction.normalized() * max_distance;
         let mut best: Option<AudioBounceHit3D> = None;
-        let mut scratch_ids = std::mem::take(&mut self.audio.scratch_ids);
-        scratch_ids.clear();
-        crate::runtime::scan_node_type_slots(
-            &self.nodes,
-            perro_nodes::NodeType::AudioEffectZone3D,
-            |_| true,
-            &mut scratch_ids,
-        );
-        self.audio.scratch_ids = scratch_ids;
-        for index in 0..self.audio.scratch_ids.len() {
-            let zone_id = self.audio.scratch_ids[index];
+        for index in 0..self.audio.audio_effect_zone_ids_3d.len() {
+            let zone_id = self.audio.audio_effect_zone_ids_3d[index];
             let Some(SceneNodeData::AudioEffectZone3D(zone)) =
                 self.nodes.get(zone_id).map(|n| &n.data)
             else {
@@ -386,7 +354,12 @@ impl Runtime {
             if !zone.active || !zone.bounce || zone.audio_mask.intersects(audio_layer) {
                 continue;
             }
-            let effects = zone.effects.clone();
+            // Zone mix is child-independent: fold once per zone, not per child hit.
+            let mut mix = AudioEffectZoneMix::default();
+            for effect in &zone.effects {
+                mix.apply(*effect);
+            }
+            let reflection = mix.echo.max(mix.reverb_send * 0.5).clamp(0.0, 1.0);
             self.audio.scratch_child_ids.clear();
             if let Some(node) = self.nodes.get(zone_id) {
                 self.audio
@@ -406,11 +379,6 @@ impl Runtime {
                 if distance <= AUDIO_PORTAL_EPSILON {
                     continue;
                 }
-                let mut mix = AudioEffectZoneMix::default();
-                for effect in effects.iter().copied() {
-                    mix.apply(effect);
-                }
-                let reflection = mix.echo.max(mix.reverb_send * 0.5).clamp(0.0, 1.0);
                 let hit = AudioBounceHit3D {
                     point: origin + sweep * t,
                     normal,
