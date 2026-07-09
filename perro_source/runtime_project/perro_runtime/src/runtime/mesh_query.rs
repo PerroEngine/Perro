@@ -843,14 +843,21 @@ impl Runtime {
             return None;
         }
         let mesh_id = self.resource_api.canonical_mesh_id(mesh_id);
-        if let Some((data, revision)) = self.resource_api.mesh_data_with_revision(mesh_id) {
+        if let Some(revision) = self.resource_api.mesh_revision(mesh_id) {
             let cache_key = runtime_mesh_query_cache_key(mesh_id, revision);
             if let Ok(cache) = mesh_query_cache().read()
                 && let Some(mesh) = cache.get(&cache_key)
             {
                 return Some(mesh.clone());
             }
-            let mesh = build_query_mesh_from_runtime_mesh(&data).map(Arc::new)?;
+            let (cache_key, mesh) = self
+                .resource_api
+                .with_mesh_data_and_revision(mesh_id, |data, revision| {
+                    build_query_mesh_from_runtime_mesh(data)
+                        .map(Arc::new)
+                        .map(|mesh| (runtime_mesh_query_cache_key(mesh_id, revision), mesh))
+                })
+                .flatten()?;
             if let Ok(mut cache) = mesh_query_cache().write() {
                 cache.insert(cache_key, mesh.clone());
             }

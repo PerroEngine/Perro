@@ -97,6 +97,13 @@ opt run aft physics id cache reuse:
 - chg: take cached id vec during water loops
 - chg: restore cache aft loop, no per-tick id copy
 
+opt run aft mesh query clone rm:
+
+- `mesh_query/bvh_runtime_api/*`: smoke pass
+- res: hot cached path stays ~150-196ns
+- chg: query build reads runtime `Mesh3D` by ref
+- rm: cold query `Mesh3D` clone b4 BVH cache fill
+
 ## Static Scan
 
 - dup dep names: 29

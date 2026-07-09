@@ -313,16 +313,33 @@ impl RuntimeResourceApi {
             })
     }
 
-    pub(crate) fn mesh_data_with_revision(&self, mesh: MeshID) -> Option<(Mesh3D, u64)> {
+    pub(crate) fn mesh_revision(&self, mesh: MeshID) -> Option<u64> {
         let canonical = self.canonical_mesh_id(mesh);
         let state = self.state.lock().expect("resource api mutex poisoned");
-        let data = state.mesh_data_by_id.get(&canonical)?.clone();
+        state.mesh_data_by_id.get(&canonical)?;
+        Some(
+            state
+                .mesh_revision_by_id
+                .get(&canonical)
+                .copied()
+                .unwrap_or(0),
+        )
+    }
+
+    pub(crate) fn with_mesh_data_and_revision<R>(
+        &self,
+        mesh: MeshID,
+        f: impl FnOnce(&Mesh3D, u64) -> R,
+    ) -> Option<R> {
+        let canonical = self.canonical_mesh_id(mesh);
+        let state = self.state.lock().expect("resource api mutex poisoned");
+        let data = state.mesh_data_by_id.get(&canonical)?;
         let revision = state
             .mesh_revision_by_id
             .get(&canonical)
             .copied()
             .unwrap_or(0);
-        Some((data, revision))
+        Some(f(data, revision))
     }
 
     pub(crate) fn mesh_source(&self, mesh: MeshID) -> Option<String> {
