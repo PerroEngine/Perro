@@ -723,6 +723,8 @@ impl Runtime {
                     unsafe {
                         type Lookup = unsafe extern "C" fn(u64, *mut *const u8, *mut usize) -> bool;
                         if let Ok(symbol) = lib.get::<Lookup>(b"perro_dlc_pack_lookup") {
+                            // SAFETY: Compiler-generated callback returns immutable static
+                            // bytes and the pack library remains loaded for runtime lifetime.
                             register_dlc_static_binary_lookup(stem, *symbol);
                         }
                     }
