@@ -1,0 +1,29 @@
+[project]
+name = "DemoUI"
+main_scene = "res://main.scn"
+icon = "res://icon.png"
+startup_splash = "res://perro.svg"
+
+[graphics]
+aspect_ratio = "16:9"
+vsync = false
+msaa = true
+occlusion_culling = "off"
+particle_sim_default = "gpu"
+
+[rendering.ui]
+pixel_snapping = true
+
+[runtime]
+frame_rate_cap = "uncapped"
+target_fixed_update = 60
+
+[physics]
+gravity = -9.81
+coef = 1.0
+
+[audio]
+listener_max_distance = 500.0
+propagation_tick_hz = 20
+energy_cutoff = 0.02
+debug_rays = false

@@ -21,6 +21,7 @@ const PARTICLES_DEMO_SCENE_PATH: &ResPath = res_path!("res://scenes/demos/partic
 const POSITIONAL_AUDIO_DEMO_SCENE_PATH: &ResPath =
     res_path!("res://scenes/demos/positional_audio.scn");
 const DECALS_DEMO_SCENE_PATH: &ResPath = res_path!("res://scenes/demos/decals.scn");
+const WEBCAM_DEMO_SCENE_PATH: &ResPath = res_path!("res://scenes/demos/webcam.scn");
 const FPS_TESTER_DEMO_SCENE_PATH: &ResPath = res_path!("res://scenes/demos/fps_tester.scn");
 
 const DEMO_CAMERA_NODE_NAME: &str = "DemoCamera";
@@ -57,6 +58,7 @@ enum DemoKind {
     Particles,
     PositionalAudio,
     Decals,
+    Webcam,
     FpsTester,
 }
 
@@ -76,6 +78,7 @@ impl DemoKind {
             DemoKind::Particles => Some(PARTICLES_DEMO_SCENE_PATH),
             DemoKind::PositionalAudio => Some(POSITIONAL_AUDIO_DEMO_SCENE_PATH),
             DemoKind::Decals => Some(DECALS_DEMO_SCENE_PATH),
+            DemoKind::Webcam => Some(WEBCAM_DEMO_SCENE_PATH),
             DemoKind::FpsTester => Some(FPS_TESTER_DEMO_SCENE_PATH),
         }
     }
@@ -126,6 +129,7 @@ struct DemoScenesState {
     pub particles: PreloadedSceneID,
     pub positional_audio: PreloadedSceneID,
     pub decals: PreloadedSceneID,
+    pub webcam: PreloadedSceneID,
     pub fps_tester: PreloadedSceneID,
 }
 
@@ -149,6 +153,7 @@ impl Default for DemoScenesState {
             particles: PreloadedSceneID::nil(),
             positional_audio: PreloadedSceneID::nil(),
             decals: PreloadedSceneID::nil(),
+            webcam: PreloadedSceneID::nil(),
             fps_tester: PreloadedSceneID::nil(),
         }
     }
@@ -185,7 +190,7 @@ impl Default for DemoRefsState {
             info_overlay_root: NodeID::nil(),
             active_demo_root: NodeID::nil(),
             pause_sens_label: NodeID::nil(),
-            hub_buttons: vec![NodeID::nil(); 13],
+            hub_buttons: vec![NodeID::nil(); 14],
             pause_buttons: vec![NodeID::nil(); 5],
         }
     }
@@ -301,6 +306,8 @@ lifecycle!({
         let positional_audio = scene_preload!(ctx.run, POSITIONAL_AUDIO_DEMO_SCENE_PATH)
             .expect("preload positional audio demo");
         let decals = scene_preload!(ctx.run, DECALS_DEMO_SCENE_PATH).expect("preload decals demo");
+        let webcam =
+            scene_preload!(ctx.run, WEBCAM_DEMO_SCENE_PATH).expect("preload webcam demo");
         let fps_tester =
             scene_preload!(ctx.run, FPS_TESTER_DEMO_SCENE_PATH).expect("preload fps tester demo");
 
@@ -323,6 +330,7 @@ lifecycle!({
                 particles,
                 positional_audio,
                 decals,
+                webcam,
                 fps_tester,
             };
             state.runtime = DemoRuntimeState::default();
@@ -399,6 +407,12 @@ lifecycle!({
             ctx.id,
             signal!("demo_decals_click"),
             func!("on_demo_decals_click")
+        );
+        signal_connect!(
+            ctx.run,
+            ctx.id,
+            signal!("demo_webcam_click"),
+            func!("on_demo_webcam_click")
         );
         signal_connect!(
             ctx.run,
@@ -529,6 +543,10 @@ methods!({
         self.queue_load_demo(ctx, DemoKind::Decals);
     }
 
+    fn on_demo_webcam_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
+        self.queue_load_demo(ctx, DemoKind::Webcam);
+    }
+
     fn on_demo_fps_tester_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
         self.queue_load_demo(ctx, DemoKind::FpsTester);
     }
@@ -586,6 +604,7 @@ methods!({
             node_var(ctx, root, "demo_btn_particles"),
             node_var(ctx, root, "demo_btn_audio"),
             node_var(ctx, root, "demo_btn_decals"),
+            node_var(ctx, root, "demo_btn_webcam"),
             node_var(ctx, root, "demo_btn_fps_tester"),
         ];
 
@@ -1592,6 +1611,7 @@ fn active_demo_name(demo: DemoKind) -> &'static str {
         DemoKind::Particles => "particles",
         DemoKind::PositionalAudio => "positional_audio",
         DemoKind::Decals => "decals",
+        DemoKind::Webcam => "webcam",
         DemoKind::FpsTester => "fps_tester",
     }
 }

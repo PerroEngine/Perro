@@ -466,7 +466,7 @@ impl Renderer3D {
                         // but continue applying latest transform updates.
                         draws_changed |= update_unready_retained_draw(
                             retained,
-                            draw,
+                            &draw,
                             mesh_ready,
                             material_ready,
                         );
@@ -563,12 +563,8 @@ impl Renderer3D {
                 stats.accepted_draws = stats.accepted_draws.saturating_add(1);
             } else {
                 if let Some(retained) = self.retained_draw_mut(draw.node) {
-                    draws_changed |= update_unready_retained_draw(
-                        retained,
-                        draw.clone(),
-                        mesh_ready,
-                        material_ready,
-                    );
+                    draws_changed |=
+                        update_unready_retained_draw(retained, draw, mesh_ready, material_ready);
                     let retained_updated = retained.clone();
                     if self.retained_draws_sorted_cache[index] != retained_updated {
                         self.retained_draws_sorted_cache[index] = retained_updated;
@@ -736,29 +732,29 @@ fn draw_readiness(draw: &Draw3DInstance, resources: &ResourceStore) -> (bool, bo
 
 fn update_unready_retained_draw(
     retained: &mut Draw3DInstance,
-    draw: Draw3DInstance,
+    draw: &Draw3DInstance,
     mesh_ready: bool,
     material_ready: bool,
 ) -> bool {
     let mut changed = false;
     if retained.instance_mats != draw.instance_mats {
-        retained.instance_mats = draw.instance_mats;
+        retained.instance_mats = draw.instance_mats.clone();
         changed = true;
     }
     if mesh_ready && retained.kind != draw.kind {
-        retained.kind = draw.kind;
+        retained.kind = draw.kind.clone();
         changed = true;
     }
     if material_ready && retained.surfaces != draw.surfaces {
-        retained.surfaces = draw.surfaces;
+        retained.surfaces = draw.surfaces.clone();
         changed = true;
     }
     if draw.skeleton.is_some() && retained.skeleton != draw.skeleton {
-        retained.skeleton = draw.skeleton;
+        retained.skeleton = draw.skeleton.clone();
         changed = true;
     }
     if draw.dense_multimesh.is_some() && retained.dense_multimesh != draw.dense_multimesh {
-        retained.dense_multimesh = draw.dense_multimesh;
+        retained.dense_multimesh = draw.dense_multimesh.clone();
         changed = true;
     }
     if retained.meshlet_override != draw.meshlet_override {

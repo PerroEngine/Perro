@@ -14,6 +14,16 @@ fn clamp_size(width: u32, height: u32) -> (u32, u32) {
     (width.clamp(1, 8192), height.clamp(1, 8192))
 }
 
+#[cfg(all(
+    any(target_os = "windows", target_os = "linux", target_os = "macos"),
+    not(test)
+))]
+fn webcam_log_enabled() -> bool {
+    std::env::var("PERRO_WEBCAM_LOG")
+        .ok()
+        .is_some_and(|raw| matches!(raw.as_str(), "1" | "true" | "yes" | "on"))
+}
+
 impl RuntimeResourceApi {
     pub(crate) fn poll_webcam_messages(&self) {
         let mut frames = Vec::new();
@@ -46,9 +56,7 @@ impl RuntimeResourceApi {
     ))]
     fn start_webcam_capture(&self, id: WebcamID, config: WebcamConfig) {
         use nokhwa::pixel_format::RgbAFormat;
-        use nokhwa::utils::{
-            CameraFormat, CameraIndex, FrameFormat, RequestedFormat, RequestedFormatType,
-        };
+        use nokhwa::utils::CameraIndex;
         use std::sync::atomic::{AtomicBool, Ordering};
         use std::time::{Duration, Instant};
 
@@ -65,6 +73,7 @@ impl RuntimeResourceApi {
         let frame_tx = self.webcam_frame_tx.clone();
         let error_tx = self.webcam_error_tx.clone();
         std::thread::spawn(move || {
+            let log_enabled = webcam_log_enabled();
             let index = if config.device.trim().is_empty() {
                 CameraIndex::Index(0)
             } else if let Ok(index) = config.device.parse::<u32>() {
@@ -72,17 +81,36 @@ impl RuntimeResourceApi {
             } else {
                 CameraIndex::String(config.device.to_string())
             };
-            let requested = RequestedFormat::new::<RgbAFormat>(RequestedFormatType::Closest(
-                CameraFormat::new_from(
+            if log_enabled {
+                eprintln!(
+                    "[perro][webcam] start id={} device={} {}x{}@{} mirror={}",
+                    id.as_u64(),
+                    index.as_string(),
                     config.width.max(1),
                     config.height.max(1),
-                    FrameFormat::MJPEG,
                     config.fps.max(1),
-                ),
-            ));
-            let mut camera = match nokhwa::Camera::new(index, requested) {
-                Ok(camera) => camera,
+                    config.mirror
+                );
+            }
+            let mut camera = match open_webcam_camera(index, &config) {
+                Ok(camera) => {
+                    if log_enabled {
+                        let format = camera.camera_format();
+                        eprintln!(
+                            "[perro][webcam] open id={} fmt={} {}x{}@{}",
+                            id.as_u64(),
+                            format.format(),
+                            format.width(),
+                            format.height(),
+                            format.frame_rate()
+                        );
+                    }
+                    camera
+                }
                 Err(err) => {
+                    if log_enabled {
+                        eprintln!("[perro][webcam] open fail id={} err={err}", id.as_u64());
+                    }
                     let _ = error_tx.send(WebcamErrorMessage {
                         id,
                         error: err.to_string(),
@@ -91,6 +119,9 @@ impl RuntimeResourceApi {
                 }
             };
             if let Err(err) = camera.open_stream() {
+                if log_enabled {
+                    eprintln!("[perro][webcam] stream fail id={} err={err}", id.as_u64());
+                }
                 let _ = error_tx.send(WebcamErrorMessage {
                     id,
                     error: err.to_string(),
@@ -98,6 +129,7 @@ impl RuntimeResourceApi {
                 return;
             }
             let frame_delay = Duration::from_millis((1000 / config.fps.max(1) as u64).max(1));
+            let mut logged_first_frame = false;
             while !stop.load(Ordering::Relaxed) {
                 let start = Instant::now();
                 match camera
@@ -108,6 +140,16 @@ impl RuntimeResourceApi {
                         let width = image.width();
                         let height = image.height();
                         let mut rgba = image.into_raw();
+                        if log_enabled && !logged_first_frame {
+                            eprintln!(
+                                "[perro][webcam] first frame id={} {}x{} len={}",
+                                id.as_u64(),
+                                width,
+                                height,
+                                rgba.len()
+                            );
+                            logged_first_frame = true;
+                        }
                         if config.mirror {
                             mirror_rgba_rows(width, height, &mut rgba);
                         }
@@ -121,6 +163,9 @@ impl RuntimeResourceApi {
                         });
                     }
                     Err(err) => {
+                        if log_enabled {
+                            eprintln!("[perro][webcam] frame fail id={} err={err}", id.as_u64());
+                        }
                         let _ = error_tx.send(WebcamErrorMessage {
                             id,
                             error: err.to_string(),
@@ -411,6 +456,55 @@ impl WebcamAPI for RuntimeResourceApi {
         let _ = state.free_webcam_id(id);
         true
     }
+}
+
+#[cfg(all(
+    any(target_os = "windows", target_os = "linux", target_os = "macos"),
+    not(test)
+))]
+fn open_webcam_camera(
+    index: nokhwa::utils::CameraIndex,
+    config: &WebcamConfig,
+) -> Result<nokhwa::Camera, nokhwa::NokhwaError> {
+    use nokhwa::pixel_format::RgbAFormat;
+    use nokhwa::utils::{CameraFormat, FrameFormat, RequestedFormat, RequestedFormatType};
+
+    let width = config.width.max(1);
+    let height = config.height.max(1);
+    let fps = config.fps.max(1);
+    let formats = [
+        FrameFormat::MJPEG,
+        FrameFormat::YUYV,
+        FrameFormat::NV12,
+        FrameFormat::RAWRGB,
+        FrameFormat::RAWBGR,
+    ];
+    let mut last_err = None;
+
+    for format in formats {
+        let requested = RequestedFormat::new::<RgbAFormat>(RequestedFormatType::Exact(
+            CameraFormat::new_from(width, height, format, fps),
+        ));
+        match nokhwa::Camera::new(index.clone(), requested) {
+            Ok(camera) => return Ok(camera),
+            Err(err) => last_err = Some(err),
+        }
+    }
+
+    for requested in [
+        RequestedFormat::new::<RgbAFormat>(RequestedFormatType::HighestFrameRate(fps)),
+        RequestedFormat::new::<RgbAFormat>(RequestedFormatType::AbsoluteHighestFrameRate),
+        RequestedFormat::new::<RgbAFormat>(RequestedFormatType::None),
+    ] {
+        match nokhwa::Camera::new(index.clone(), requested) {
+            Ok(camera) => return Ok(camera),
+            Err(err) => last_err = Some(err),
+        }
+    }
+
+    Err(last_err.unwrap_or_else(|| {
+        nokhwa::NokhwaError::GeneralError("no supported webcam format".to_string())
+    }))
 }
 
 #[cfg(all(

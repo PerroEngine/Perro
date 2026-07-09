@@ -93,7 +93,7 @@ parent = @hub_menu_columns
 parent = @hub_menu_columns
     [UiVLayout]
         size_ratio = (0.46, 1.0)
-        v_spacing = 0.03
+        v_spacing = 0.018
         h_align = "center"
         v_align = "center"
     [/UiVLayout]
@@ -240,7 +240,7 @@ parent = @demo_btn_physics_collisions
 [demo_btn_sky]
 parent = @hub_menu_col_right
     [UiButton]
-        size_ratio = (0.82, 0.13)
+        size_ratio = (0.82, 0.115)
         click_signals = ["demo_sky_click"]
         style = $button_style
         hover = $var2
@@ -263,7 +263,7 @@ parent = @demo_btn_sky
 [demo_btn_blend]
 parent = @hub_menu_col_right
     [UiButton]
-        size_ratio = (0.82, 0.13)
+        size_ratio = (0.82, 0.115)
         click_signals = ["demo_blend_click"]
         style = $button_style
         hover = $var2
@@ -286,7 +286,7 @@ parent = @demo_btn_blend
 [demo_btn_multimesh]
 parent = @hub_menu_col_right
     [UiButton]
-        size_ratio = (0.82, 0.13)
+        size_ratio = (0.82, 0.115)
         click_signals = ["demo_multimesh_click"]
         style = $button_style
         hover = $var2
@@ -309,7 +309,7 @@ parent = @demo_btn_multimesh
 [demo_btn_particles]
 parent = @hub_menu_col_right
     [UiButton]
-        size_ratio = (0.82, 0.13)
+        size_ratio = (0.82, 0.115)
         click_signals = ["demo_particles_click"]
         style = $button_style
         hover = $var2
@@ -332,7 +332,7 @@ parent = @demo_btn_particles
 [demo_btn_audio]
 parent = @hub_menu_col_right
     [UiButton]
-        size_ratio = (0.82, 0.13)
+        size_ratio = (0.82, 0.115)
         click_signals = ["demo_audio_click"]
         style = $button_style
         hover = $var2
@@ -352,10 +352,33 @@ parent = @demo_btn_audio
     [/UiLabel]
 [/demo_btn_audio_label]
 
+[demo_btn_webcam]
+parent = @hub_menu_col_right
+    [UiButton]
+        size_ratio = (0.82, 0.115)
+        click_signals = ["demo_webcam_click"]
+        style = $button_style
+        hover = $var2
+        pressed = $var1
+    [/UiButton]
+[/demo_btn_webcam]
+
+[demo_btn_webcam_label]
+parent = @demo_btn_webcam
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "Webcam"
+        text_size_ratio = 0.24
+        color = "#FFFFFF"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/demo_btn_webcam_label]
+
 [demo_btn_fps_tester]
 parent = @hub_menu_col_right
     [UiButton]
-        size_ratio = (0.82, 0.13)
+        size_ratio = (0.82, 0.115)
         click_signals = ["demo_fps_tester_click"]
         style = $button_style
         hover = $var2

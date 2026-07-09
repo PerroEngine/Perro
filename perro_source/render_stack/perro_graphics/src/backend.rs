@@ -368,7 +368,6 @@ pub struct PerroGraphics {
     meshlet_debug_view: bool,
     occlusion_culling: OcclusionCullingMode,
     texture_filter: TextureFilterMode,
-    retained_draws_cache: Vec<Draw3DInstance>,
     retained_draws_cache_revision: u64,
     retained_draw_instances_cache: u32,
     retained_point_particles_cache: Vec<(NodeID, PointParticles3DState)>,
@@ -655,7 +654,6 @@ impl PerroGraphics {
             meshlet_debug_view: false,
             occlusion_culling: OcclusionCullingMode::Gpu,
             texture_filter: TextureFilterMode::LinearMipmap,
-            retained_draws_cache: Vec::new(),
             retained_draws_cache_revision: u64::MAX,
             retained_draw_instances_cache: 0,
             retained_point_particles_cache: Vec::new(),
@@ -996,7 +994,10 @@ impl PerroGraphics {
                         };
                         let width = width.clamp(1, 8192);
                         let height = height.clamp(1, 8192);
-                        let rgba = vec![0; width as usize * height as usize * 4];
+                        let mut rgba = vec![0; width as usize * height as usize * 4];
+                        for pixel in rgba.chunks_exact_mut(4) {
+                            pixel[3] = 255;
+                        }
                         let _ = self.resources.set_decoded_texture_data(
                             id,
                             DecodedTextureRgba {
@@ -1773,21 +1774,6 @@ impl PerroGraphics {
         };
         let camera_2d_state = self.renderer_2d.camera();
         let draws_revision = self.renderer_3d.draw_revision();
-        if draws_revision != self.retained_draws_cache_revision {
-            self.retained_draws_cache.clear();
-            let draw_count = self.renderer_3d.retained_draw_count();
-            if self.retained_draws_cache.capacity() < draw_count {
-                self.retained_draws_cache
-                    .reserve(draw_count - self.retained_draws_cache.capacity());
-            }
-            self.retained_draws_cache
-                .extend_from_slice(self.renderer_3d.retained_draws_sorted());
-            self.retained_draw_instances_cache =
-                self.retained_draws_cache.iter().fold(0u32, |acc, draw| {
-                    acc.saturating_add(draw_instance_count(draw))
-                });
-            self.retained_draws_cache_revision = draws_revision;
-        }
         let point_particles_revision = self.particles_3d.retained_point_particles_revision();
         if point_particles_revision != self.retained_point_particles_cache_revision {
             self.retained_point_particles_cache.clear();
@@ -1816,6 +1802,14 @@ impl PerroGraphics {
             self.retained_decals_3d_cache
                 .extend_from_slice(self.renderer_3d.retained_decals_sorted());
             self.retained_decals_3d_cache_revision = decals_3d_revision;
+        }
+        let retained_draws_3d = self.renderer_3d.retained_draws_sorted();
+        if draws_revision != self.retained_draws_cache_revision {
+            self.retained_draw_instances_cache =
+                retained_draws_3d.iter().fold(0u32, |acc, draw| {
+                    acc.saturating_add(draw_instance_count(draw))
+                });
+            self.retained_draws_cache_revision = draws_revision;
         }
         let waters_2d_revision = self.renderer_2d.retained_waters_revision();
         if waters_2d_revision != self.retained_waters_2d_cache_revision {
@@ -1926,11 +1920,10 @@ impl PerroGraphics {
         if draws_refs_changed {
             self.used_mesh_refs_cache.clear();
             self.used_material_refs_cache.clear();
-            self.used_mesh_refs_cache
-                .reserve(self.retained_draws_cache.len());
+            self.used_mesh_refs_cache.reserve(retained_draws_3d.len());
             self.used_material_refs_cache
-                .reserve(self.retained_draws_cache.len());
-            for draw in &self.retained_draws_cache {
+                .reserve(retained_draws_3d.len());
+            for draw in retained_draws_3d {
                 if let Draw3DKind::Mesh(mesh) = draw.kind {
                     *self.used_mesh_refs_cache.entry(mesh).or_insert(0) += 1;
                 }
@@ -2002,8 +1995,8 @@ impl PerroGraphics {
                 resources: &self.resources,
                 camera_3d,
                 lighting_3d: &lighting_3d,
-                draws_3d: &self.retained_draws_cache,
-                draws_3d_revision: self.retained_draws_cache_revision,
+                draws_3d: retained_draws_3d,
+                draws_3d_revision: draws_revision,
                 point_particles_3d: &self.retained_point_particles_cache,
                 point_particles_3d_revision: self.retained_point_particles_cache_revision,
                 waters_3d: &self.retained_waters_3d_cache,

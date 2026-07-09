@@ -1,0 +1,592 @@
+$root = @DemoUI
+$panel_style = { fill: "#0B1018E8", stroke: "#D0E0EF", stroke_width: 1.0, radius: 0.04 }
+$subpanel_style = { fill: "#101820E8", stroke: "#476782", stroke_width: 1.0, radius: 0.035 }
+$button_style = { fill: "#17324AE8", stroke: "#88AADD", stroke_width: 1.0, radius: 0.08 }
+$button_hover = { style: { fill: "#214764E8", stroke: "#B8D8FF", stroke_width: 1.0, radius: 0.08 } }
+$button_pressed = { style: { fill: "#071018E8", stroke: "#FFFFFF", stroke_width: 1.0, radius: 0.06 } }
+
+[DemoUI]
+script = "res://scripts/demo_ui_showcase.rs"
+script_vars = {
+    shell = @shell,
+    left_panel = @left_panel,
+    mid_panel = @mid_panel,
+    right_panel = @right_panel,
+    title = @title,
+    subtitle = @subtitle,
+    scroll_view = @scroll_view,
+    scroll_items = @scroll_items,
+    grid = @grid,
+    grid_a = @grid_a,
+    grid_b = @grid_b,
+    grid_c = @grid_c,
+    nested_panel = @nested_panel,
+    nested_grid = @nested_grid,
+    shape_a = @shape_a
+}
+    [Node2D]
+        position = (0.0, 0.0)
+    [/Node2D]
+[/DemoUI]
+
+[FaceCam]
+parent = @DemoUI
+    [Webcam]
+        slot = ""
+        resolution = (640, 480)
+        fps = 30
+        mirror = true
+        cpu_frames = false
+        enabled = true
+    [/Webcam]
+[/FaceCam]
+
+[ui_root]
+parent = @DemoUI
+    [UiPanel]
+        anchor = "center"
+        size_ratio = (1.0, 1.0)
+        style = { fill: "#070A0FFF", stroke: "#00000000", stroke_width: 0.0, radius: 0.0 }
+        padding = 0.025
+    [/UiPanel]
+[/ui_root]
+
+[shell]
+parent = @ui_root
+    [UiHLayout]
+        anchor = "center"
+        size_ratio = (0.96, 0.92)
+        h_spacing = 0.025
+        h_align = "fill"
+        v_align = "fill"
+    [/UiHLayout]
+[/shell]
+
+[left_panel]
+parent = @shell
+    [UiPanel]
+        size_ratio = (0.34, 1.0)
+        style = $panel_style
+        padding = 0.035
+    [/UiPanel]
+[/left_panel]
+
+[left_stack]
+parent = @left_panel
+    [UiVLayout]
+        anchor = "center"
+        size_ratio = (0.92, 0.94)
+        v_spacing = 0.018
+        h_align = "fill"
+        v_align = "fill"
+    [/UiVLayout]
+[/left_stack]
+
+[title]
+parent = @left_stack
+    [UiLabel]
+        size_ratio = (1.0, 0.11)
+        text = "DemoUI"
+        text_size_ratio = 0.36
+        color = "#FFFFFF"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/title]
+
+[subtitle]
+parent = @left_stack
+    [UiLabel]
+        size_ratio = (1.0, 0.08)
+        text = "layout, state widgets, image, text, stream"
+        text_size_ratio = 0.18
+        color = "#B9C7D8"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/subtitle]
+
+[primary_button]
+parent = @left_stack
+    [UiButton]
+        size_ratio = (1.0, 0.11)
+        text = "Primary Button"
+        style = $button_style
+        hover = $button_hover
+        pressed = $button_pressed
+    [/UiButton]
+[/primary_button]
+
+[primary_button_label]
+parent = @primary_button
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "Primary Button"
+        text_size_ratio = 0.28
+        color = "#FFFFFF"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/primary_button_label]
+
+[checkbox]
+parent = @left_stack
+    [UiCheckbox]
+        size_ratio = (1.0, 0.10)
+        text = "Checkbox"
+        checked = true
+        style = $subpanel_style
+        hover = $button_hover
+        pressed = $button_pressed
+    [/UiCheckbox]
+[/checkbox]
+
+[dropdown]
+parent = @left_stack
+    [UiDropdown]
+        size_ratio = (1.0, 0.10)
+        text = "Dropdown"
+        selected_index = 0
+        open = false
+        style = $subpanel_style
+        hover = $button_hover
+        pressed = $button_pressed
+    [/UiDropdown]
+[/dropdown]
+
+[color_picker]
+parent = @left_stack
+    [UiColorPicker]
+        size_ratio = (1.0, 0.12)
+        color = "#47A7FFFF"
+        style = $subpanel_style
+    [/UiColorPicker]
+[/color_picker]
+
+[logo_row]
+parent = @left_stack
+    [UiHLayout]
+        size_ratio = (1.0, 0.20)
+        h_spacing = 0.04
+        h_align = "fill"
+        v_align = "fill"
+    [/UiHLayout]
+[/logo_row]
+
+[logo_image]
+parent = @logo_row
+    [UiImage]
+        texture = "res://perro.svg"
+        scale_mode = "fit"
+        tint = "#FFFFFFFF"
+        [UiNode]
+            size_ratio = (0.46, 1.0)
+            input_enabled = false
+            mouse_filter = "pass"
+        [/UiNode]
+    [/UiImage]
+[/logo_image]
+
+[logo_button]
+parent = @logo_row
+    [UiImageButton]
+        texture = "res://perro.svg"
+        scale_mode = "fit"
+        tint = "#FFFFFFFF"
+        hover_tint = "#B8D8FFFF"
+        pressed_tint = "#88AADDFF"
+        [UiNode]
+            size_ratio = (0.46, 1.0)
+        [/UiNode]
+    [/UiImageButton]
+[/logo_button]
+
+[animated_logo]
+parent = @left_stack
+    [UiAnimatedImage]
+        size_ratio = (1.0, 0.12)
+        texture = "res://icon.png"
+        scale_mode = "fit"
+        animations = [
+            { name = "pulse" start = (0, 0) frame_size = (256, 256) frame_count = 1 columns = 1 fps = 1 }
+        ]
+        animation = "pulse"
+        playing = true
+        looping = true
+        tint = "#FFFFFFCC"
+    [/UiAnimatedImage]
+[/animated_logo]
+
+[mid_panel]
+parent = @shell
+    [UiPanel]
+        size_ratio = (0.34, 1.0)
+        style = $panel_style
+        padding = 0.035
+    [/UiPanel]
+[/mid_panel]
+
+[mid_stack]
+parent = @mid_panel
+    [UiVLayout]
+        anchor = "center"
+        size_ratio = (0.92, 0.94)
+        v_spacing = 0.018
+        h_align = "fill"
+        v_align = "fill"
+    [/UiVLayout]
+[/mid_stack]
+
+[text_title]
+parent = @mid_stack
+    [UiLabel]
+        size_ratio = (1.0, 0.08)
+        text = "Text + Lists"
+        text_size_ratio = 0.28
+        color = "#FFFFFF"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/text_title]
+
+[name_box]
+parent = @mid_stack
+    [UiTextBox]
+        size_ratio = (1.0, 0.10)
+        text = "Perro"
+        placeholder = "Name"
+        text_size_ratio = 0.28
+        style = $subpanel_style
+        focused_style = { fill: "#0E1924F0", stroke: "#B8D8FF", stroke_width: 1.0, radius: 0.035 }
+    [/UiTextBox]
+[/name_box]
+
+[note_block]
+parent = @mid_stack
+    [UiTextBlock]
+        size_ratio = (1.0, 0.22)
+        text = "UiTextBlock\nmulti line\nselection + caret"
+        placeholder = "Notes"
+        text_size_ratio = 0.18
+        style = $subpanel_style
+        focused_style = { fill: "#0E1924F0", stroke: "#B8D8FF", stroke_width: 1.0, radius: 0.035 }
+    [/UiTextBlock]
+[/note_block]
+
+[scroll_box]
+parent = @mid_stack
+    [UiPanel]
+        size_ratio = (1.0, 0.21)
+        style = $subpanel_style
+        padding = 0.025
+    [/UiPanel]
+[/scroll_box]
+
+[scroll_view]
+parent = @scroll_box
+    [UiScrollContainer]
+        scroll = (0.0, 0.0)
+        scroll_dir = "vertical"
+        [UiNode]
+            anchor = "center"
+            size_ratio = (0.94, 0.90)
+            clip_children = true
+        [/UiNode]
+    [/UiScrollContainer]
+[/scroll_view]
+
+[scroll_items]
+parent = @scroll_view
+    [UiVLayout]
+        anchor = "top"
+        size_ratio = (1.0, 1.7)
+        v_spacing = 0.02
+        h_align = "fill"
+        v_align = "top"
+    [/UiVLayout]
+[/scroll_items]
+
+[item_a]
+parent = @scroll_items
+    [UiLabel]
+        size_ratio = (1.0, 0.10)
+        text = "Row A"
+        text_size_ratio = 0.36
+        color = "#FFFFFF"
+    [/UiLabel]
+[/item_a]
+
+[item_b]
+parent = @scroll_items
+    [UiLabel]
+        size_ratio = (1.0, 0.10)
+        text = "Row B"
+        text_size_ratio = 0.36
+        color = "#B8D8FF"
+    [/UiLabel]
+[/item_b]
+
+[item_c]
+parent = @scroll_items
+    [UiLabel]
+        size_ratio = (1.0, 0.10)
+        text = "Row C"
+        text_size_ratio = 0.36
+        color = "#FFD18A"
+    [/UiLabel]
+[/item_c]
+
+[tree]
+parent = @mid_stack
+    [UiTreeList]
+        size_ratio = (1.0, 0.18)
+        indent = 18.0
+        row_height = 24.0
+        selected_index = 1
+        items = [
+            { id = "ui", label = "UI", open = true },
+            { id = "layout", label = "Layouts", parent = 0 },
+            { id = "input", label = "Inputs", parent = 0 },
+            { id = "stream", label = "Streams", parent = 0 }
+        ]
+    [/UiTreeList]
+[/tree]
+
+[grid]
+parent = @mid_stack
+    [UiGrid]
+        size_ratio = (1.0, 0.13)
+        columns = 3
+        h_spacing = 0.02
+        v_spacing = 0.02
+    [/UiGrid]
+[/grid]
+
+[grid_a]
+parent = @grid
+    [UiPanel]
+        size_ratio = (1.0, 1.0)
+        style = { fill: "#47A7FFFF", stroke: "#B8D8FF", stroke_width: 1.0, radius: 0.04 }
+    [/UiPanel]
+[/grid_a]
+
+[grid_b]
+parent = @grid
+    [UiPanel]
+        size_ratio = (1.0, 1.0)
+        style = { fill: "#FFD18AFF", stroke: "#FFF0C2", stroke_width: 1.0, radius: 0.04 }
+    [/UiPanel]
+[/grid_b]
+
+[grid_c]
+parent = @grid
+    [UiPanel]
+        size_ratio = (1.0, 1.0)
+        style = { fill: "#67D391FF", stroke: "#C8F6D7", stroke_width: 1.0, radius: 0.04 }
+    [/UiPanel]
+[/grid_c]
+
+[dynamic_title]
+parent = @mid_stack
+    [UiLabel]
+        size_ratio = (1.0, 0.07)
+        text = "Dynamic nesting"
+        text_size_ratio = 0.28
+        color = "#FFFFFF"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/dynamic_title]
+
+[nested_panel]
+parent = @mid_stack
+    [UiPanel]
+        size_ratio = (1.0, 0.15)
+        style = { fill: "#0E1924F0", stroke: "#88AADD", stroke_width: 1.0, radius: 0.035 }
+        padding = 0.02
+    [/UiPanel]
+[/nested_panel]
+
+[nested_split]
+parent = @nested_panel
+    [UiHLayout]
+        anchor = "center"
+        size_ratio = (0.96, 0.82)
+        h_spacing = 0.02
+        h_align = "fill"
+        v_align = "fill"
+    [/UiHLayout]
+[/nested_split]
+
+[nested_grid]
+parent = @nested_split
+    [UiGrid]
+        size_ratio = (0.56, 1.0)
+        columns = 2
+        h_spacing = 0.02
+        v_spacing = 0.02
+    [/UiGrid]
+[/nested_grid]
+
+[nested_grid_a]
+parent = @nested_grid
+    [UiShape]
+        size_ratio = (1.0, 1.0)
+        shape = { kind = "rect", color = "#47A7FFFF" }
+    [/UiShape]
+[/nested_grid_a]
+
+[nested_grid_b]
+parent = @nested_grid
+    [UiShape]
+        size_ratio = (1.0, 1.0)
+        shape = { kind = "circle", color = "#FFD18AFF" }
+    [/UiShape]
+[/nested_grid_b]
+
+[nested_grid_c]
+parent = @nested_grid
+    [UiShape]
+        size_ratio = (1.0, 1.0)
+        shape = { kind = "triangle", color = "#67D391FF" }
+    [/UiShape]
+[/nested_grid_c]
+
+[nested_grid_d]
+parent = @nested_grid
+    [UiShape]
+        size_ratio = (1.0, 1.0)
+        shape = { kind = "rect", color = "#B8D8FFFF" }
+    [/UiShape]
+[/nested_grid_d]
+
+[nested_note]
+parent = @nested_split
+    [UiTextBlock]
+        size_ratio = (0.40, 1.0)
+        text = "containers\ninside\ncontainers"
+        placeholder = "Nested"
+        text_size_ratio = 0.22
+        style = $subpanel_style
+    [/UiTextBlock]
+[/nested_note]
+
+[right_panel]
+parent = @shell
+    [UiPanel]
+        size_ratio = (0.27, 1.0)
+        style = $panel_style
+        padding = 0.035
+    [/UiPanel]
+[/right_panel]
+
+[right_stack]
+parent = @right_panel
+    [UiVLayout]
+        anchor = "center"
+        size_ratio = (0.92, 0.94)
+        v_spacing = 0.018
+        h_align = "fill"
+        v_align = "fill"
+    [/UiVLayout]
+[/right_stack]
+
+[stream_title]
+parent = @right_stack
+    [UiLabel]
+        size_ratio = (1.0, 0.08)
+        text = "Webcam UI Stream"
+        text_size_ratio = 0.25
+        color = "#FFFFFF"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/stream_title]
+
+[face_cam_view]
+parent = @right_stack
+    [UiCameraStream]
+        camera = @FaceCam
+        resolution = (512, 384)
+        aspect_mode = "fit"
+        radius = 0.035
+        tint = "#FFFFFFFF"
+        [UiNode]
+            size_ratio = (1.0, 0.35)
+            input_enabled = false
+            mouse_filter = "pass"
+        [/UiNode]
+    [/UiCameraStream]
+[/face_cam_view]
+
+[stream_note]
+parent = @right_stack
+    [UiLabel]
+        size_ratio = (1.0, 0.11)
+        text = "Same Webcam node can feed UI, 2D, and 3D camera streams."
+        text_size_ratio = 0.17
+        color = "#B9C7D8"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/stream_note]
+
+[generic_layout]
+parent = @right_stack
+    [UiLayout]
+        mode = "h"
+        size_ratio = (1.0, 0.11)
+        h_spacing = 0.025
+        h_align = "fill"
+        v_align = "fill"
+    [/UiLayout]
+[/generic_layout]
+
+[layout_chip_a]
+parent = @generic_layout
+    [UiPanel]
+        size_ratio = (0.48, 1.0)
+        style = { fill: "#192B37E8", stroke: "#88AADD", stroke_width: 1.0, radius: 0.05 }
+    [/UiPanel]
+[/layout_chip_a]
+
+[layout_chip_b]
+parent = @generic_layout
+    [UiPanel]
+        size_ratio = (0.48, 1.0)
+        style = { fill: "#2E2535E8", stroke: "#FFD18A", stroke_width: 1.0, radius: 0.05 }
+    [/UiPanel]
+[/layout_chip_b]
+
+[shape_a]
+parent = @right_stack
+    [UiShape]
+        size_ratio = (1.0, 0.14)
+        shape = { kind = "circle", color = "#47A7FFFF" }
+    [/UiShape]
+[/shape_a]
+
+[shape_anim]
+parent = @shape_a
+    [AnimationPlayer]
+        animation = "res://animations/ui_shape_spin.panim"
+        bindings = { shape_a = @shape_a }
+        playback = looping
+        speed = 1.0
+        paused = false
+    [/AnimationPlayer]
+[/shape_anim]
+
+[nine_slice]
+parent = @right_stack
+    [UiNineSlice]
+        texture = "res://perro.svg"
+        margins = (8, 8, 8, 8)
+        tint = "#FFFFFF88"
+        [UiNode]
+            size_ratio = (1.0, 0.16)
+            input_enabled = false
+            mouse_filter = "pass"
+        [/UiNode]
+    [/UiNineSlice]
+[/nine_slice]

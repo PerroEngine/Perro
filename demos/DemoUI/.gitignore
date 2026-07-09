@@ -1,0 +1,4 @@
+target/
+.perro/
+.output/
+.vscode/

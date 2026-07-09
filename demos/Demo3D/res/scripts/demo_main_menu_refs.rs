@@ -33,6 +33,8 @@ struct DemoMainMenuRefsState {
     #[default = NodeID::nil()]
     pub demo_btn_decals: NodeID,
     #[default = NodeID::nil()]
+    pub demo_btn_webcam: NodeID,
+    #[default = NodeID::nil()]
     pub demo_btn_fps_tester: NodeID,
 }
 

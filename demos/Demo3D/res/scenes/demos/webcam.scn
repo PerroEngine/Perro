@@ -1,0 +1,95 @@
+$root = @WebcamDemo3D
+
+[WebcamDemo3D]
+    [Node3D]
+        position = (0.0, 0.0, 0.0)
+    [/Node3D]
+[/WebcamDemo3D]
+
+[DemoCamera]
+parent = @WebcamDemo3D
+    [Camera3D]
+        active = true
+        perspective_fov_y_degrees = 58.0
+        [Node3D]
+            position = (0.0, 2.2, 6.4)
+            rotation_deg = (-13.0, 0.0, 0.0)
+        [/Node3D]
+    [/Camera3D]
+[/DemoCamera]
+
+[Ambient]
+parent = @WebcamDemo3D
+    [AmbientLight3D]
+        color = (0.48, 0.52, 0.60)
+        intensity = 0.45
+    [/AmbientLight3D]
+[/Ambient]
+
+[KeyLight]
+parent = @WebcamDemo3D
+    [RayLight3D]
+        color = (0.82, 0.90, 1.0)
+        intensity = 0.9
+        [Node3D]
+            rotation_deg = (-42.0, -28.0, 0.0)
+        [/Node3D]
+    [/RayLight3D]
+[/KeyLight]
+
+[Floor]
+parent = @WebcamDemo3D
+    [MeshInstance3D]
+        mesh = "__cube__"
+        material = {
+            type = "standard",
+            base_color_factor = (0.08, 0.10, 0.13, 1.0),
+            roughness_factor = 0.8,
+            metallic_factor = 0.0,
+            alpha_mode = "OPAQUE",
+            double_sided = false
+        }
+        [Node3D]
+            position = (0.0, -0.12, 0.0)
+            scale = (7.0, 0.1, 4.0)
+        [/Node3D]
+    [/MeshInstance3D]
+[/Floor]
+
+[DemoWebcam]
+parent = @WebcamDemo3D
+    [Webcam]
+        slot = ""
+        resolution = (640, 480)
+        fps = 30
+        mirror = true
+        cpu_frames = false
+        enabled = true
+    [/Webcam]
+[/DemoWebcam]
+
+[WebcamStream3D]
+parent = @WebcamDemo3D
+    [CameraStream3D]
+        camera = @DemoWebcam
+        resolution = (512, 384)
+        aspect_mode = "fit"
+        size = (3.2, 2.4)
+        tint = "#FFFFFFFF"
+        [Node3D]
+            position = (0.0, 1.65, 0.0)
+        [/Node3D]
+    [/CameraStream3D]
+[/WebcamStream3D]
+
+[WebcamStream3DLabel]
+parent = @WebcamDemo3D
+    [Label3D]
+        text = "Webcam -> CameraStream3D"
+        color = "#FFFFFFFF"
+        size = 0.24
+        [Node3D]
+            position = (0.0, 0.22, 0.0)
+        [/Node3D]
+    [/Label3D]
+[/WebcamStream3DLabel]

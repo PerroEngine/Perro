@@ -1,0 +1,31 @@
+[Animation]
+name = "UiShapeSpin"
+fps = 60
+default_interp = "interpolate"
+default_ease = "ease_in_out"
+[/Animation]
+
+[Objects]
+shape_a = UiShape
+[/Objects]
+
+[Frame0]
+@shape_a {
+    rotation = 0.0
+    scale = (0.90, 0.90)
+}
+[/Frame0]
+
+[Frame30]
+@shape_a {
+    rotation_deg = 180.0
+    scale = (1.08, 1.08)
+}
+[/Frame30]
+
+[Frame60]
+@shape_a {
+    rotation_deg = 360.0
+    scale = (0.90, 0.90)
+}
+[/Frame60]

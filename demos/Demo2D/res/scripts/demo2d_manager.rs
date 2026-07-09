@@ -14,6 +14,7 @@ const PAUSE_MENU_SCENE: &ResPath = res_path!("res://Menu/PauseMenu.scn");
 const TRANSITION_FADE_SCENE: &ResPath = res_path!("res://Menu/TransitionFade.scn");
 const PROFILING_OVERLAY_SCENE: &ResPath = res_path!("res://Menu/ProfilingOverlay.scn");
 const INFO_OVERLAY_SCENE: &ResPath = res_path!("res://Menu/InfoOverlay.scn");
+const WEBCAM_SCENE: &ResPath = res_path!("res://scenes/webcam.scn");
 const FPS_TESTER_SCENE: &ResPath = res_path!("res://scenes/fps_tester.scn");
 const DEMO_UI_ROOT_NODE_NAME: &str = "demo_ui_root";
 const CAMERA_NODE_NAME: &str = "Camera";
@@ -37,6 +38,7 @@ enum DemoKind {
     MultiMesh,
     ParticlesGap,
     AudioGap,
+    Webcam,
     FpsTester,
 }
 
@@ -50,6 +52,7 @@ struct DemoAssets {
     fade: PreloadedSceneID,
     profiling_overlay: PreloadedSceneID,
     info_overlay: PreloadedSceneID,
+    webcam: PreloadedSceneID,
     fps_tester: PreloadedSceneID,
 }
 
@@ -129,6 +132,7 @@ lifecycle!({
                 .expect("preload profiling overlay"),
             info_overlay: scene_preload!(ctx.run, INFO_OVERLAY_SCENE)
                 .expect("preload info overlay"),
+            webcam: scene_preload!(ctx.run, WEBCAM_SCENE).expect("preload webcam demo"),
             fps_tester: scene_preload!(ctx.run, FPS_TESTER_SCENE).expect("preload fps tester"),
         };
         with_state_mut!(ctx.run, Demo2DState, ctx.id, |state| state.assets = assets);
@@ -193,6 +197,9 @@ methods!({
     }
     fn on_demo_audio_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
         self.activate_demo(ctx, DemoKind::AudioGap);
+    }
+    fn on_demo_webcam_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
+        self.activate_demo(ctx, DemoKind::Webcam);
     }
     fn on_demo_fps_tester_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
         self.activate_demo(ctx, DemoKind::FpsTester);
@@ -261,6 +268,9 @@ methods!({
             }
             DemoKind::AudioGap => {
                 self.spawn_audio_zone(ctx, Vector2::new(1950.0, 1250.0));
+            }
+            DemoKind::Webcam => {
+                self.spawn_webcam_scene(ctx);
             }
             DemoKind::FpsTester => {
                 self.spawn_fps_tester_scene(ctx);
@@ -336,6 +346,7 @@ methods!({
             ("demo_multimesh_click", "on_demo_multimesh_click"),
             ("demo_particles_click", "on_demo_particles_click"),
             ("demo_audio_click", "on_demo_audio_click"),
+            ("demo_webcam_click", "on_demo_webcam_click"),
             ("demo_fps_tester_click", "on_demo_fps_tester_click"),
             ("pause_resume_click", "on_pause_resume_click"),
             ("pause_restart_click", "on_pause_restart_click"),
@@ -555,6 +566,16 @@ methods!({
         let scene = self.assets(ctx).fps_tester;
         let Ok(root) = scene_load!(ctx.run, scene) else {
             log_error!("[Demo2D] fps tester load fail");
+            return;
+        };
+        reparent!(ctx.run, ctx.id, root);
+        tag_add!(ctx.run, root, tags!["demo2d_dynamic"]);
+    }
+
+    fn spawn_webcam_scene(&self, ctx: &mut ScriptContext<'_, API>) {
+        let scene = self.assets(ctx).webcam;
+        let Ok(root) = scene_load!(ctx.run, scene) else {
+            log_error!("[Demo2D] webcam demo load fail");
             return;
         };
         reparent!(ctx.run, ctx.id, root);
@@ -1123,6 +1144,7 @@ methods!({
             DemoKind::MultiMesh => "Sprite Batch".to_string(),
             DemoKind::ParticlesGap => "Particles".to_string(),
             DemoKind::AudioGap => "Audio".to_string(),
+            DemoKind::Webcam => "Webcam Stream".to_string(),
             DemoKind::FpsTester => "FPS Tester".to_string(),
         };
         let active_anim_sprites = query!(
@@ -1142,6 +1164,7 @@ methods!({
             DemoKind::PhysicsCollisions => "rigid 240".to_string(),
             DemoKind::ParticlesGap => "emitters 4 | mixed cpu particles".to_string(),
             DemoKind::AudioGap => "masks 3 | fx zones 3".to_string(),
+            DemoKind::Webcam => "Webcam node -> CameraStream2D".to_string(),
             DemoKind::FpsTester => "cap btns | render tick vs cap tick".to_string(),
             DemoKind::SkyGap | DemoKind::BlendGap => "gap lane".to_string(),
             DemoKind::MultiMesh => "dense retained sprite batch".to_string(),
@@ -1233,6 +1256,7 @@ fn demo_anchor(demo: DemoKind) -> Vector2 {
         DemoKind::MultiMesh => Vector2::new(-450.0, 900.0),
         DemoKind::ParticlesGap => Vector2::new(1300.0, 1250.0),
         DemoKind::AudioGap => Vector2::new(1950.0, 1250.0),
+        DemoKind::Webcam => Vector2::new(0.0, 0.0),
         DemoKind::FpsTester => Vector2::new(0.0, 0.0),
     }
 }

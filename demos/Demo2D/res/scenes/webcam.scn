@@ -1,0 +1,47 @@
+$root = @WebcamDemo2D
+
+[WebcamDemo2D]
+    [Node2D]
+        position = (0.0, 0.0)
+    [/Node2D]
+[/WebcamDemo2D]
+
+[DemoWebcam]
+parent = @WebcamDemo2D
+    [Webcam]
+        slot = ""
+        resolution = (640, 480)
+        fps = 30
+        mirror = true
+        cpu_frames = false
+        enabled = true
+    [/Webcam]
+[/DemoWebcam]
+
+[WebcamStream2D]
+parent = @WebcamDemo2D
+    [CameraStream2D]
+        camera = @DemoWebcam
+        resolution = (512, 384)
+        aspect_mode = "fit"
+        tint = "#FFFFFFFF"
+        [Node2D]
+            position = (0.0, 70.0)
+            scale = (320.0, 240.0)
+            z_index = 100
+        [/Node2D]
+    [/CameraStream2D]
+[/WebcamStream2D]
+
+[WebcamStream2DLabel]
+parent = @WebcamDemo2D
+    [Label2D]
+        text = "Webcam -> CameraStream2D"
+        color = "#FFFFFFFF"
+        size = 26.0
+        [Node2D]
+            position = (0.0, -210.0)
+            z_index = 101
+        [/Node2D]
+    [/Label2D]
+[/WebcamStream2DLabel]

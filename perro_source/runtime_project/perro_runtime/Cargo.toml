@@ -40,7 +40,7 @@ perro_steamworks = { workspace = true, optional = true }
 [target.'cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))'.dependencies]
 arboard = "3.6"
 libloading = "0.8"
-nokhwa = { version = "0.10.11", features = ["input-native"] }
+nokhwa = { version = "0.10.11", default-features = false, features = ["input-native"] }
 rapier2d = { version = "0.23", features = ["simd-stable", "parallel"] }
 rapier3d = { version = "0.23", features = ["simd-stable", "parallel"] }
 

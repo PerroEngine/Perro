@@ -1,9 +1,11 @@
 use super::*;
 use crate::RuntimeScriptApi;
 use perro_ids::ScriptMemberID;
-use perro_nodes::{Node3D, SceneNode, SceneNodeData, Sky3D, UiCameraStream, camera_3d::Camera3D};
+use perro_nodes::{
+    Node3D, SceneNode, SceneNodeData, Sky3D, UiCameraStream, Webcam, camera_3d::Camera3D,
+};
 use perro_render_bridge::{CameraStreamCommand, CameraStreamSourceState, RenderEvent};
-use perro_resource_api::sub_apis::TextureAPI;
+use perro_resource_api::sub_apis::{TextureAPI, WebcamAPI};
 use perro_runtime_api::sub_apis::{NodeAPI, NodeSpec, SignalAPI};
 use perro_scripting::{ScriptBehavior, ScriptContext, ScriptFlags, ScriptLifecycle};
 use perro_structs::{Color, Quaternion, Transform3D, Vector3};
@@ -38,6 +40,58 @@ fn collect_resource_texture_request(
             _ => None,
         })
         .expect("expected texture create request")
+}
+
+fn has_external_texture_create(commands: &[RenderCommand]) -> bool {
+    commands.iter().any(|command| {
+        matches!(
+            command,
+            RenderCommand::Resource(ResourceCommand::CreateExternalTexture { .. })
+        )
+    })
+}
+
+#[test]
+fn webcam_node_does_not_open_without_stream_or_api_use() {
+    let mut runtime = Runtime::new();
+    let _webcam = NodeAPI::create::<Webcam>(&mut runtime);
+
+    runtime.extract_render_snapshot_commands(&mut Vec::new());
+    let mut commands = Vec::new();
+    runtime.drain_render_commands(&mut commands);
+
+    assert!(!has_external_texture_create(&commands));
+}
+
+#[test]
+fn ui_camera_stream_opens_referenced_webcam_node() {
+    let mut runtime = Runtime::new();
+    let webcam = NodeAPI::create::<Webcam>(&mut runtime);
+    let stream = NodeAPI::create::<UiCameraStream>(&mut runtime);
+    if let Some(node) = runtime.nodes.get_mut(stream)
+        && let SceneNodeData::UiCameraStream(data) = &mut node.data
+    {
+        data.stream.camera = webcam;
+    }
+
+    runtime.extract_render_ui_commands();
+    let mut commands = Vec::new();
+    runtime.drain_render_commands(&mut commands);
+
+    assert!(has_external_texture_create(&commands));
+}
+
+#[test]
+fn webcam_api_default_opens_without_node() {
+    let mut runtime = Runtime::new();
+    let id = WebcamAPI::webcam_default(runtime.resource_api.as_ref()).expect("webcam id");
+
+    assert!(WebcamAPI::webcam_is_open(runtime.resource_api.as_ref(), id));
+
+    let mut commands = Vec::new();
+    runtime.drain_render_commands(&mut commands);
+
+    assert!(has_external_texture_create(&commands));
 }
 
 #[test]
