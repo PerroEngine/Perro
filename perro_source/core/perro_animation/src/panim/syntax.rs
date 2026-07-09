@@ -37,12 +37,19 @@ fn split_key_value(line: &str) -> Option<(&str, &str)> {
 }
 
 fn strip_comment(line: &str) -> &str {
-    let mut cut = line.len();
-    if let Some(i) = line.find("//") {
-        cut = cut.min(i);
+    // Comment markers inside quoted strings (e.g. `"res://path"`) are content.
+    let bytes = line.as_bytes();
+    let mut in_string = false;
+    let mut i = 0;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'"' => in_string = !in_string,
+            b'\\' if in_string => i += 1,
+            b'/' if !in_string && bytes.get(i + 1) == Some(&b'/') => return &line[..i],
+            b'#' if !in_string => return &line[..i],
+            _ => {}
+        }
+        i += 1;
     }
-    if let Some(i) = line.find('#') {
-        cut = cut.min(i);
-    }
-    &line[..cut]
+    line
 }
