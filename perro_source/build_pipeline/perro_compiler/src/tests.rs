@@ -2,9 +2,9 @@
 mod tests {
     use super::{
         emit_static_steam_app_id_fn, emit_web_route_html_files, generate_call_param_binding,
-        generate_embedded_entry_files, generate_perro_assets, generate_project_static_modules,
-        module_name_from_rel, module_short_name_from_rel, native_output_artifact_name,
-        native_output_folder_name, normalize_cargo_output_paths,
+        generate_dlc_static_modules, generate_embedded_entry_files, generate_perro_assets,
+        generate_project_static_modules, module_name_from_rel, module_short_name_from_rel,
+        native_output_artifact_name, native_output_folder_name, normalize_cargo_output_paths,
         reset_embedded_dir, sync_scripts, transpile_frontend_script,
         target_slug_from_triple, transpiled_exports_script_ctor, ProjectBuildOptions,
         ScriptMethodParam,
@@ -801,6 +801,38 @@ lifecycle!({});
         assert_generated_native_main_hides_windows_console(&root);
 
         assert_project_crate_checks(&root, ProjectBuildOptions::new(false, true));
+    }
+
+    #[test]
+    fn dlc_static_generators_keep_thread_local_pack_paths() {
+        let root = unique_temp_dir("perro_compiler_dlc_static_paths");
+        let dlc_root = root.join("dlcs").join("fixture");
+        let static_dir = root.join("pack").join("src").join("static");
+        let embedded_dir = root.join("pack").join("embedded");
+        std::fs::create_dir_all(dlc_root.join("shaders")).expect("shader dir");
+        std::fs::write(
+            dlc_root.join("shaders").join("fixture.wgsl"),
+            "@fragment\nfn fs_main() -> @location(0) vec4<f32> { return vec4<f32>(1.0); }\n",
+        )
+        .expect("write shader");
+
+        perro_static_pipeline::set_static_pipeline_overrides(Some(
+            perro_static_pipeline::StaticPipelineOverrides {
+                res_dir: dlc_root,
+                static_dir: static_dir.clone(),
+                embedded_dir,
+                asset_prefix: "dlc://fixture/".to_string(),
+            },
+        ));
+        let result = generate_dlc_static_modules(&root, false);
+        perro_static_pipeline::set_static_pipeline_overrides(None);
+        result.expect("generate dlc static modules");
+
+        let shaders = std::fs::read_to_string(static_dir.join("shaders.rs"))
+            .expect("read dlc shaders");
+        assert!(shaders.contains("dlc://fixture/shaders/fixture.wgsl"));
+        assert!(!root.join(".perro").join("project").exists());
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
