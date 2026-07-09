@@ -286,20 +286,20 @@ impl Runtime {
         let viewport = self.input.viewport_size();
         let virtual_font_scale = self.ui_virtual_font_scale(viewport);
         let root_rect = ComputedUiRect::new(Vector2::ZERO, viewport);
-        let dirty_entries = self
-            .dirty
-            .dirty_indices()
-            .iter()
-            .filter_map(|&raw_index| {
-                let index = raw_index as usize;
-                self.nodes
-                    .slot_get(index)
-                    .map(|(node, _)| (node, self.dirty.ui_flags_at(index)))
-            })
-            .collect::<Vec<_>>();
+        let mut dirty_entries = std::mem::take(&mut self.render_ui.dirty_entries_scratch);
+        dirty_entries.clear();
+        dirty_entries.extend(self.dirty.dirty_indices().iter().filter_map(|&raw_index| {
+            let index = raw_index as usize;
+            self.nodes
+                .slot_get(index)
+                .map(|(node, _)| (node, self.dirty.ui_flags_at(index)))
+        }));
         let dirty_node_count = dirty_entries.len();
-        let all_ids = self.nodes.iter().map(|(id, _)| id).collect::<Vec<_>>();
-        let mut parent_siblings = AHashMap::<NodeID, Vec<NodeID>>::default();
+        let mut all_ids = std::mem::take(&mut self.render_ui.all_ids_scratch);
+        all_ids.clear();
+        all_ids.extend(self.nodes.iter().map(|(id, _)| id));
+        let mut parent_siblings = std::mem::take(&mut self.render_ui.parent_siblings_scratch);
+        parent_siblings.clear();
         for &(node, flags) in &dirty_entries {
             let flags = if flags == 0 {
                 DirtyState::UI_LAYOUT_MASK | DirtyState::DIRTY_COMMANDS
@@ -322,8 +322,8 @@ impl Runtime {
         }
         let nodes = &self.nodes;
         let plan = self.render_ui.collect_extraction_plan(
-            dirty_entries,
-            all_ids,
+            dirty_entries.iter().copied(),
+            all_ids.iter().copied(),
             UiExtractionOptions {
                 mask: UiDirtyMask {
                     layout_mask: DirtyState::UI_LAYOUT_MASK,
@@ -334,13 +334,23 @@ impl Runtime {
                 bootstrap_scan,
                 input_changed,
             },
-            |node| parent_siblings.get(&node).cloned().unwrap_or_default(),
+            |node, out| {
+                if let Some(siblings) = parent_siblings.get(&node) {
+                    out.extend(siblings.iter().copied());
+                }
+            },
             |node, out| {
                 if let Some(node_ref) = nodes.get(node) {
                     out.extend(node_ref.get_children_ids().iter().copied());
                 }
             },
         );
+        dirty_entries.clear();
+        all_ids.clear();
+        parent_siblings.clear();
+        self.render_ui.dirty_entries_scratch = dirty_entries;
+        self.render_ui.all_ids_scratch = all_ids;
+        self.render_ui.parent_siblings_scratch = parent_siblings;
         let traversal_ids = plan.traversal_ids;
         let mut command_ids = plan.command_ids;
         let mut command_seen = plan.command_seen;

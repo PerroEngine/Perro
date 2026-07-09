@@ -104,6 +104,18 @@ opt run aft mesh query clone rm:
 - chg: query build reads runtime `Mesh3D` by ref
 - rm: cold query `Mesh3D` clone b4 BVH cache fill
 
+opt run aft ui dirty scratch + render water id reuse:
+
+- `perro_runtime_render` tests: pass
+- `perro_runtime` tests: pass
+- `runtime_core/physics_scan_ids_copy_then_iter`: ~126.9us
+- `runtime_core/physics_scan_ids_direct_iter`: ~33.9us
+- `perro_structs/matrix_api_vs_unchecked_helpers`: no matrix regression
+- chg: UI extraction reuses dirty/all-id/parent-sibling scratch
+- chg: UI parent-sibling callback fills scratch vec, no cloned vec
+- chg: 2D/3D render water collectors take cached ids, no `to_vec`
+- note: matrix neighbor API already optimized; manual unchecked bench still slower than API
+
 ## Static Scan
 
 - dup dep names: 29

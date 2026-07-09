@@ -1380,7 +1380,8 @@ impl Runtime {
         };
         let water_inv = water_global.to_mat3().inverse();
         let half = water.shape.surface_size() * 0.5;
-        let body_ids = self.cached_rigid_body_ids_2d().to_vec();
+        self.cached_rigid_body_ids_2d();
+        let body_ids = std::mem::take(&mut self.water_rigid_body_ids_2d_cache);
         let mut impacts = Vec::new();
         for body_id in body_ids.iter().copied() {
             let Some((layers, mask, mass, density, velocity)) =
@@ -1444,6 +1445,7 @@ impl Runtime {
                 cavitation: 0.0,
             });
         }
+        self.water_rigid_body_ids_2d_cache = body_ids;
         for impact in self.force_water_impacts_2d.iter() {
             let local = water_local_point_2d(water_inv, impact.position);
             if local.x.abs() > half.x + impact.radius || local.y.abs() > half.y + impact.radius {
@@ -1512,7 +1514,8 @@ impl Runtime {
         let Some(water_global) = self.get_render_global_transform_2d(water_id) else {
             return Arc::from([]);
         };
-        let other_ids = self.cached_water_ids_2d().to_vec();
+        self.cached_water_ids_2d();
+        let other_ids = std::mem::take(&mut self.water_ids_2d_cache);
         let mut links = Vec::new();
         for other_id in other_ids.iter().copied() {
             if other_id == water_id {
@@ -1560,6 +1563,7 @@ impl Runtime {
                 flow_transfer: water.link.flow_transfer.min(other_water.link.flow_transfer),
             });
         }
+        self.water_ids_2d_cache = other_ids;
         Arc::from(links)
     }
 }

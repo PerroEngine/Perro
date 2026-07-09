@@ -330,6 +330,10 @@ pub struct RenderUiState {
     pub traversal_seen: AHashSet<NodeID>,
     pub command_ids: Vec<NodeID>,
     pub command_seen: AHashSet<NodeID>,
+    pub dirty_entries_scratch: Vec<(NodeID, u16)>,
+    pub all_ids_scratch: Vec<NodeID>,
+    pub parent_siblings_scratch: AHashMap<NodeID, Vec<NodeID>>,
+    pub traversal_child_scratch: Vec<NodeID>,
     pub visible_now: AHashSet<NodeID>,
     pub prev_visible: AHashSet<NodeID>,
     pub computed_rects: AHashMap<NodeID, ComputedUiRect>,
@@ -404,6 +408,10 @@ impl RenderUiState {
             traversal_seen: AHashSet::default(),
             command_ids: Vec::new(),
             command_seen: AHashSet::default(),
+            dirty_entries_scratch: Vec::new(),
+            all_ids_scratch: Vec::new(),
+            parent_siblings_scratch: AHashMap::default(),
+            traversal_child_scratch: Vec::new(),
             visible_now: AHashSet::default(),
             prev_visible: AHashSet::default(),
             computed_rects: AHashMap::default(),
@@ -458,7 +466,7 @@ impl RenderUiState {
     where
         I: IntoIterator<Item = (NodeID, u16)>,
         A: IntoIterator<Item = NodeID>,
-        FP: FnMut(NodeID) -> Vec<NodeID>,
+        FP: FnMut(NodeID, &mut Vec<NodeID>),
         FC: FnMut(NodeID, &mut Vec<NodeID>),
     {
         let mut traversal_ids = std::mem::take(&mut self.traversal_ids);
@@ -484,7 +492,10 @@ impl RenderUiState {
                 command_ids.push(node);
             }
             if (flags & mask.layout_parent) != 0 {
-                for sibling in parent_layout_siblings(node) {
+                let mut sibling_scratch = std::mem::take(&mut self.traversal_child_scratch);
+                sibling_scratch.clear();
+                parent_layout_siblings(node, &mut sibling_scratch);
+                for sibling in sibling_scratch.iter().copied() {
                     if traversal_seen.insert(sibling) {
                         traversal_ids.push(sibling);
                     }
@@ -492,6 +503,8 @@ impl RenderUiState {
                         command_ids.push(sibling);
                     }
                 }
+                sibling_scratch.clear();
+                self.traversal_child_scratch = sibling_scratch;
             }
         }
 
@@ -502,19 +515,21 @@ impl RenderUiState {
         }
         traversal_seen.extend(traversal_ids.iter().copied());
 
-        let mut child_scratch = Vec::new();
+        let mut child_scratch = std::mem::take(&mut self.traversal_child_scratch);
         let mut traversal_cursor = 0usize;
         while traversal_cursor < traversal_ids.len() {
             let node = traversal_ids[traversal_cursor];
             traversal_cursor += 1;
             child_scratch.clear();
             children_of(node, &mut child_scratch);
-            for child in child_scratch.drain(..) {
+            for child in child_scratch.iter().copied() {
                 if traversal_seen.insert(child) {
                     traversal_ids.push(child);
                 }
             }
         }
+        child_scratch.clear();
+        self.traversal_child_scratch = child_scratch;
 
         for &node in &traversal_ids {
             if command_seen.insert(node) {
@@ -981,11 +996,9 @@ mod tests {
             ],
             Vec::<NodeID>::new(),
             options,
-            |id| {
+            |id, out| {
                 if id == node(2) {
-                    vec![node(20), node(21)]
-                } else {
-                    Vec::new()
+                    out.extend([node(20), node(21)]);
                 }
             },
             |id, children| match id.as_u64() {
