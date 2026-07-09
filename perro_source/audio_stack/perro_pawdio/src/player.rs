@@ -376,7 +376,7 @@ impl BarkPlayer {
         )
         .map_err(|err| format!("failed to create sink: {err}"))?;
         let samples = clip.samples_f32();
-        let source_buffer = SamplesBuffer::new(clip.channels, clip.sample_rate, samples);
+        let source_buffer = SamplesBuffer::new(clip.channels(), clip.sample_rate(), samples);
         sink.append(DspSource::new(source_buffer, dsp.clone()));
 
         let mut state = self

@@ -14,18 +14,70 @@ const PMIC_CODEC_ZLIB_DELTA: u8 = 3;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct MicClip {
-    pub samples: Vec<i16>,
-    pub sample_rate: u32,
-    pub channels: u16,
+    samples: Vec<i16>,
+    sample_rate: u32,
+    channels: u16,
 }
 
 impl MicClip {
+    /// Creates a clip and panics when its format cannot be encoded losslessly.
+    ///
+    /// Prefer [`Self::try_new`] for data that is not already trusted.
     pub fn new(samples: Vec<i16>, sample_rate: u32, channels: u16) -> Self {
-        Self {
-            samples,
-            sample_rate: sample_rate.max(1),
-            channels: channels.max(1),
+        Self::try_new(samples, sample_rate, channels).expect("invalid mic clip format")
+    }
+
+    /// Creates a clip after validating channel frames and encoder size limits.
+    pub fn try_new(samples: Vec<i16>, sample_rate: u32, channels: u16) -> Result<Self, String> {
+        if sample_rate == 0 {
+            return Err("mic clip sample rate must be non-zero".to_string());
         }
+        if channels == 0 {
+            return Err("mic clip channel count must be non-zero".to_string());
+        }
+        let channel_count = channels as usize;
+        if !samples.len().is_multiple_of(channel_count) {
+            return Err(format!(
+                "mic clip sample count {} is not divisible by {channels} channels",
+                samples.len()
+            ));
+        }
+        let frames = samples.len() / channel_count;
+        u32::try_from(frames).map_err(|_| "mic clip frame count exceeds u32".to_string())?;
+        let data_len = samples
+            .len()
+            .checked_mul(std::mem::size_of::<i16>())
+            .ok_or_else(|| "mic clip byte length overflow".to_string())?;
+        let data_len =
+            u32::try_from(data_len).map_err(|_| "mic clip WAV data exceeds u32".to_string())?;
+        data_len
+            .checked_add(36)
+            .ok_or_else(|| "mic clip WAV RIFF length exceeds u32".to_string())?;
+        channels
+            .checked_mul(std::mem::size_of::<i16>() as u16)
+            .ok_or_else(|| "mic clip WAV block alignment exceeds u16".to_string())?;
+        sample_rate
+            .checked_mul(channels as u32)
+            .and_then(|rate| rate.checked_mul(std::mem::size_of::<i16>() as u32))
+            .ok_or_else(|| "mic clip WAV byte rate exceeds u32".to_string())?;
+
+        Ok(Self {
+            samples,
+            sample_rate,
+            channels,
+        })
+    }
+
+    pub fn samples(&self) -> &[i16] {
+        &self.samples
+    }
+
+    pub const fn sample_rate(&self) -> u32 {
+        self.sample_rate
+    }
+
+    pub const fn channels(&self) -> u16 {
+        self.channels
     }
 
     pub fn duration(&self) -> Duration {
@@ -115,24 +167,20 @@ impl MicClip {
     }
 
     fn unpack_v1(bytes: &[u8]) -> Result<Self, String> {
-        let channels = u16::from_le_bytes([bytes[6], bytes[7]]).max(1);
-        let sample_rate = u32::from_le_bytes([bytes[8], bytes[9], bytes[10], bytes[11]]).max(1);
+        let channels = u16::from_le_bytes([bytes[6], bytes[7]]);
+        let sample_rate = u32::from_le_bytes([bytes[8], bytes[9], bytes[10], bytes[11]]);
         let frames = u32::from_le_bytes([bytes[12], bytes[13], bytes[14], bytes[15]]) as usize;
         let payload = &bytes[PMIC_HEADER_LEN..];
         let samples = decode_pcm_payload(payload, frames, channels)?;
-        Ok(Self {
-            samples,
-            sample_rate,
-            channels,
-        })
+        Self::try_new(samples, sample_rate, channels)
     }
 
     fn unpack_v2(bytes: &[u8]) -> Result<Self, String> {
         if bytes.len() < PMIC_COMPRESSED_HEADER_LEN {
             return Err("mic clip v2 too small".to_string());
         }
-        let channels = u16::from_le_bytes([bytes[6], bytes[7]]).max(1);
-        let sample_rate = u32::from_le_bytes([bytes[8], bytes[9], bytes[10], bytes[11]]).max(1);
+        let channels = u16::from_le_bytes([bytes[6], bytes[7]]);
+        let sample_rate = u32::from_le_bytes([bytes[8], bytes[9], bytes[10], bytes[11]]);
         let frames = u32::from_le_bytes([bytes[12], bytes[13], bytes[14], bytes[15]]) as usize;
         let codec = bytes[16];
         let expected_samples = checked_sample_len(frames, channels)?;
@@ -152,11 +200,7 @@ impl MicClip {
             }
             other => return Err(format!("unsupported mic clip codec {other}")),
         };
-        Ok(Self {
-            samples,
-            sample_rate,
-            channels,
-        })
+        Self::try_new(samples, sample_rate, channels)
     }
 
     pub fn raw_bytes(&self) -> Vec<u8> {
@@ -840,5 +884,25 @@ mod tests {
         });
         assert!(denoised.samples[0].abs() < clip.samples[0].abs());
         assert!(denoised.samples[1].abs() > 10_000);
+    }
+
+    #[test]
+    fn mic_clip_rejects_invalid_format_invariants() {
+        assert!(MicClip::try_new(vec![0], 0, 1).is_err());
+        assert!(MicClip::try_new(vec![0], 48_000, 0).is_err());
+        assert!(MicClip::try_new(vec![0, 1, 2], 48_000, 2).is_err());
+        assert!(MicClip::try_new(vec![], u32::MAX, u16::MAX).is_err());
+    }
+
+    #[test]
+    fn mic_clip_unpack_rejects_zero_format_fields() {
+        let clip = MicClip::new(vec![0, 1], 48_000, 1);
+        let mut packed = clip.raw_bytes();
+        packed[6..8].copy_from_slice(&0u16.to_le_bytes());
+        assert!(MicClip::unpack(&packed).is_err());
+
+        let mut packed = clip.raw_bytes();
+        packed[8..12].copy_from_slice(&0u32.to_le_bytes());
+        assert!(MicClip::unpack(&packed).is_err());
     }
 }
