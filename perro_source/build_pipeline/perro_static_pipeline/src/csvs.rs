@@ -181,7 +181,7 @@ fn emit_csv_table(
     let mut unique_rows = Vec::<Vec<String>>::new();
     let mut unique_row_by_values = HashMap::<Vec<String>, usize>::new();
     let mut primary_index = Vec::<(u64, usize, String)>::new();
-    let mut seen_primary = std::collections::HashSet::<u64>::new();
+    let mut seen_primary = std::collections::HashSet::<&str>::new();
     for values in &table.rows {
         let row_count = row_cell_refs.len();
         let row_cell_ref = if let Some(existing) = unique_row_by_values.get(values) {
@@ -195,7 +195,7 @@ fn emit_csv_table(
         row_cell_refs.push(row_cell_ref);
         if let Some(first) = values.first() {
             let hash = string_to_u64(first);
-            if seen_primary.insert(hash) {
+            if seen_primary.insert(first) {
                 primary_index.push((hash, row_count, first.clone()));
             }
         }
