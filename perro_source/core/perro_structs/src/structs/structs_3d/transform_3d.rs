@@ -99,13 +99,10 @@ impl Transform3D {
     /// Create a transform looking at a target
     #[inline]
     pub fn looking_at(eye: Vector3, target: Vector3, up: Vector3) -> Self {
-        let mat = Mat4::look_at_rh(eye.into(), target.into(), up.into());
-        let rotation = glam::Quat::from_mat4(&mat);
-
         Self {
             position: eye,
             scale: Vector3::ONE,
-            rotation: rotation.into(),
+            rotation: Quaternion::looking_at(target - eye, up),
         }
     }
 }
@@ -113,5 +110,39 @@ impl Transform3D {
 impl Default for Transform3D {
     fn default() -> Self {
         Self::IDENTITY
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn looking_at_points_local_forward_at_target() {
+        let cases = [
+            (Vector3::new(3.0, 2.0, 5.0), Vector3::new(7.0, -1.0, -2.0)),
+            (Vector3::new(-4.0, 0.5, 1.0), Vector3::new(-8.0, 3.0, 6.0)),
+            (Vector3::ZERO, Vector3::new(0.0, 0.0, -10.0)),
+        ];
+
+        for (eye, target) in cases {
+            let transform = Transform3D::looking_at(eye, target, Vector3::new(0.0, 1.0, 0.0));
+            let forward = transform
+                .rotation
+                .rotate_vector3(Vector3::new(0.0, 0.0, -1.0));
+            let expected = (target - eye).normalized();
+
+            assert!((forward - expected).length() < 1.0e-5);
+            assert_eq!(transform.position, eye);
+            assert_eq!(transform.scale, Vector3::ONE);
+        }
+    }
+
+    #[test]
+    fn looking_at_same_point_uses_identity_rotation() {
+        let eye = Vector3::new(1.0, 2.0, 3.0);
+        let transform = Transform3D::looking_at(eye, eye, Vector3::new(0.0, 1.0, 0.0));
+
+        assert_eq!(transform.rotation, Quaternion::IDENTITY);
     }
 }
