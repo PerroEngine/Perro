@@ -22,9 +22,13 @@ impl SceneDoc {
     }
 
     pub(crate) fn parse_lenient(src: &str) -> Self {
-        let vars = Parser::new_lenient(src).collect_var_entries();
-        let scene = Parser::new(src).parse_scene_lenient();
-        Self::from_parts(vars, scene)
+        Self::try_parse_lenient(src).unwrap_or_else(|err| panic!("{err}"))
+    }
+
+    pub(crate) fn try_parse_lenient(src: &str) -> Result<Self, String> {
+        let vars = Parser::new_lenient(src).try_collect_var_entries()?;
+        let scene = Parser::new(src).try_parse_scene_lenient()?;
+        Ok(Self::from_parts(vars, scene))
     }
 
     fn from_parts(vars: Vec<(String, SceneValue)>, scene: Scene) -> Self {
