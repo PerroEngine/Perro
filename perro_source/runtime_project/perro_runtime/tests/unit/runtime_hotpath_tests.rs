@@ -89,6 +89,44 @@ extern "C" fn dlc_self_resolve_script_ctor() -> *mut dyn ScriptBehavior<RuntimeS
     Box::into_raw(Box::new(DlcSelfResolveScript))
 }
 
+fn static_self_resolve_script_ctor() -> *mut dyn ScriptBehavior<RuntimeScriptApi> {
+    Box::into_raw(Box::new(DlcSelfResolveScript))
+}
+
+static STATIC_SCRIPT_REGISTRY_FIXTURE: &[(
+    u64,
+    perro_scripting::ScriptConstructor<RuntimeScriptApi>,
+)] = &[
+    (0x1111, static_self_resolve_script_ctor),
+    (0x3333, static_self_resolve_script_ctor),
+];
+
+#[test]
+fn static_script_registry_stays_borrowed_and_dynamic_entries_override() {
+    let mut runtime = Runtime::new();
+    runtime.script_runtime.static_script_registry = STATIC_SCRIPT_REGISTRY_FIXTURE;
+
+    assert!(matches!(
+        runtime.script_runtime.resolve_script_constructor(0x1111),
+        Some(RuntimeScriptCtor::Static(_))
+    ));
+    assert!(
+        runtime
+            .script_runtime
+            .resolve_script_constructor(0x2222)
+            .is_none()
+    );
+
+    runtime
+        .script_runtime
+        .dynamic_script_registry
+        .insert(0x1111, dlc_self_resolve_script_ctor);
+    assert!(matches!(
+        runtime.script_runtime.resolve_script_constructor(0x1111),
+        Some(RuntimeScriptCtor::Dynamic(_))
+    ));
+}
+
 #[test]
 fn dlc_self_context_applies_only_during_script_callback() {
     // clear_dlc_mounts/mount_dlc_disk mutate process-global io state that
@@ -108,10 +146,10 @@ fn dlc_self_context_applies_only_during_script_callback() {
         .nodes
         .insert(SceneNode::new(SceneNodeData::Node3D(Node3D::new())));
     let script_hash = 0xD1C5_E1F0_u64;
-    runtime.script_runtime.dynamic_script_registry.insert(
-        script_hash,
-        RuntimeScriptCtor::Dynamic(dlc_self_resolve_script_ctor),
-    );
+    runtime
+        .script_runtime
+        .dynamic_script_registry
+        .insert(script_hash, dlc_self_resolve_script_ctor);
 
     runtime
         .attach_script_instance(node, script_hash, Some("Expansion"), Vec::new())

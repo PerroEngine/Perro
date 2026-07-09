@@ -721,12 +721,8 @@ impl Runtime {
         runtime.configure_audio_from_project();
         runtime.input.set_input_map(input_map);
         if let Some(entries) = script_registry {
-            for (path_hash, ctor) in entries {
-                runtime
-                    .script_runtime
-                    .dynamic_script_registry
-                    .insert(*path_hash, RuntimeScriptCtor::Static(*ctor));
-            }
+            debug_assert!(entries.windows(2).all(|pair| pair[0].0 < pair[1].0));
+            runtime.script_runtime.static_script_registry = entries;
         }
         #[cfg(feature = "steamworks")]
         if let Err(err) = perro_steamworks::runtime::init_from_config_with_input(
