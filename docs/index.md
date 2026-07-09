@@ -4,7 +4,7 @@ Perro docs are split by system and module. API pages use one block shape for eve
 
 Ctx map: `ctx.run` = runtime, `ctx.res` = resource, `ctx.ipt` = input.
 
-Start with [Perro Book](/book) for a linear install-to-release guide.
+Start with [Perro Book](../perro_book/index.md) for a linear install-to-release guide.
 
 ## Page Table
 
