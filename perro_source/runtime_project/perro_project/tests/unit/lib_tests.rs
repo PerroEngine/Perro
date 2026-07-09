@@ -1105,6 +1105,10 @@ fn scaffold_project_release_strip_only_targets_project_package() {
         fs::read_to_string(root.join(".perro").join("project").join("Cargo.toml"))
             .expect("read project manifest");
     assert!(project_manifest.contains("[profile.release]\n"));
+    assert!(project_manifest.contains("opt-level = 3"));
+    assert!(project_manifest.contains("lto = \"fat\""));
+    assert!(project_manifest.contains("codegen-units = 1"));
+    assert!(project_manifest.contains("panic = \"abort\""));
     assert!(project_manifest.contains("strip = \"none\""));
     assert!(project_manifest.contains("[profile.release.package.strip_scope]"));
     assert!(project_manifest.contains("strip = \"symbols\""));
