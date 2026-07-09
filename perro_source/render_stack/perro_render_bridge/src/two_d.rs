@@ -182,6 +182,23 @@ pub struct PointLight2DState {
     pub intensity: f32,
     pub range: f32,
     pub z_index: i32,
+    pub cast_shadows: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ShadowCaster2DShapeState {
+    Quad,
+    Circle,
+    Triangle,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ShadowCaster2DState {
+    pub center: [f32; 2],
+    pub half_extents: [f32; 2],
+    pub rotation_radians: f32,
+    pub shape: ShadowCaster2DShapeState,
+    pub z_index: i32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -350,6 +367,7 @@ pub struct RayLight2DState {
     pub color: [f32; 3],
     pub intensity: f32,
     pub z_index: i32,
+    pub cast_shadows: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -362,6 +380,7 @@ pub struct SpotLight2DState {
     pub inner_angle_radians: f32,
     pub outer_angle_radians: f32,
     pub z_index: i32,
+    pub cast_shadows: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]

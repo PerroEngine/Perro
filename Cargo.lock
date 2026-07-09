@@ -4390,6 +4390,7 @@ version = "0.1.0"
 dependencies = [
  "ctrlc",
  "gltf",
+ "perro_animation",
  "perro_compiler",
  "perro_project",
  "perro_scene",
@@ -4763,6 +4764,7 @@ dependencies = [
  "perro_particle_math",
  "perro_project",
  "perro_render_bridge",
+ "perro_resource_api",
  "perro_runtime",
  "perro_scene",
  "perro_structs",

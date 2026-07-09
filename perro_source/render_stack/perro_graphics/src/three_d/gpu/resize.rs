@@ -135,6 +135,15 @@ impl Gpu3D {
                 bind_group_layouts: &[Some(&self.multimesh_bgl)],
                 immediate_size: 0,
             });
+        let multimesh_mask_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("perro_mesh_blend_mask_layout_multimesh"),
+                bind_group_layouts: &[
+                    Some(&self.multimesh_bgl),
+                    Some(&self.mesh_blend_mask_id_bgl),
+                ],
+                immediate_size: 0,
+            });
         let sky_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("perro_sky3d_pipeline_layout"),
             bind_group_layouts: &[Some(&self.sky_bgl)],
@@ -394,6 +403,18 @@ impl Gpu3D {
             &shader_multimesh,
             color_format,
             sample_count,
+            None,
+        );
+        self.pipeline_multimesh_mask_culled = create_multimesh_mask_pipeline(
+            device,
+            &multimesh_mask_pipeline_layout,
+            &shader_multimesh,
+            Some(wgpu::Face::Back),
+        );
+        self.pipeline_multimesh_mask_double_sided = create_multimesh_mask_pipeline(
+            device,
+            &multimesh_mask_pipeline_layout,
+            &shader_multimesh,
             None,
         );
         let depth_prepass_shader = create_depth_prepass_shader_module_skinned(device);

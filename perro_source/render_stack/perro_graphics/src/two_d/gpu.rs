@@ -8,7 +8,10 @@ use crate::texture_mips::{build_rgba_levels_for_filter, sampler_descriptor, writ
 use ahash::AHashMap;
 use bytemuck::{Pod, Zeroable};
 use perro_ids::{NodeID, TextureID};
-use perro_render_bridge::{Light2DState, PointParticles2DState, Sprite2DCommand};
+use perro_render_bridge::{
+    Light2DState, PointParticles2DState, ShadowCaster2DShapeState, ShadowCaster2DState,
+    Sprite2DCommand,
+};
 use perro_structs::TextureFilterMode;
 use wgpu::util::DeviceExt;
 
@@ -59,7 +62,20 @@ struct Light2DGpu {
     inner_cos: f32,
     outer_cos: f32,
     kind: u32,
-    pad: [u32; 3],
+    shadow_flags: u32,
+    pad: [u32; 2],
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct ShadowCaster2DGpu {
+    center: [f32; 2],
+    axis_x: [f32; 2],
+    axis_y: [f32; 2],
+    half_extents: [f32; 2],
+    shape: u32,
+    z_index: i32,
+    pad: [u32; 2],
 }
 
 #[derive(Clone)]
@@ -119,6 +135,10 @@ pub struct Gpu2D {
     rect_pipeline: wgpu::RenderPipeline,
     sprite_pipeline: wgpu::RenderPipeline,
     point_light_pipeline: wgpu::RenderPipeline,
+    shadow_caster_bgl: wgpu::BindGroupLayout,
+    shadow_caster_buffer: wgpu::Buffer,
+    shadow_caster_capacity: usize,
+    shadow_caster_bind_group: wgpu::BindGroup,
     rect_vertex_buffer: wgpu::Buffer,
     rect_instance_buffer: wgpu::Buffer,
     rect_instance_capacity: usize,
@@ -138,6 +158,7 @@ pub struct Gpu2D {
     stream_particle_eval_stack: Vec<f32>,
     sprite_batches: Vec<SpriteBatch>,
     sprite_textures: AHashMap<TextureID, CachedSpriteTexture>,
+    shadow_caster_instances: Vec<ShadowCaster2DGpu>,
     texture_filter: TextureFilterMode,
     last_camera: Option<Camera2DUniform>,
     last_sprite_stage: Option<u64>,
@@ -156,6 +177,7 @@ pub struct Prepare2D<'a> {
     pub force_sprite_prepare: bool,
     pub point_lights: &'a [Light2DState],
     pub point_lights_revision: u64,
+    pub shadow_casters: &'a [ShadowCaster2DState],
     pub static_texture_lookup: Option<StaticTextureLookup>,
 }
 
@@ -207,6 +229,22 @@ impl Gpu2D {
                 },
             ],
         });
+        let shadow_caster_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("perro_shadow_caster_2d_bgl"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: true },
+                    has_dynamic_offset: false,
+                    min_binding_size: Some(
+                        std::num::NonZeroU64::new(std::mem::size_of::<ShadowCaster2DGpu>() as u64)
+                            .expect("shadow caster size must be non-zero"),
+                    ),
+                },
+                count: None,
+            }],
+        });
 
         let camera_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("perro_camera2d_buffer"),
@@ -240,6 +278,7 @@ impl Gpu2D {
         let point_light_pipeline = create_point_light_pipeline(
             device,
             &camera_bgl,
+            &shadow_caster_bgl,
             &point_light_shader,
             color_format,
             sample_count,
@@ -314,6 +353,21 @@ impl Gpu2D {
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
+        let shadow_caster_capacity = 1usize;
+        let shadow_caster_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("perro_shadow_caster_2d_instances"),
+            size: (shadow_caster_capacity * std::mem::size_of::<ShadowCaster2DGpu>()) as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let shadow_caster_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("perro_shadow_caster_2d_bg"),
+            layout: &shadow_caster_bgl,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: shadow_caster_buffer.as_entire_binding(),
+            }],
+        });
 
         Self {
             camera_bgl,
@@ -321,6 +375,10 @@ impl Gpu2D {
             rect_pipeline,
             sprite_pipeline,
             point_light_pipeline,
+            shadow_caster_bgl,
+            shadow_caster_buffer,
+            shadow_caster_capacity,
+            shadow_caster_bind_group,
             rect_vertex_buffer,
             rect_instance_buffer,
             rect_instance_capacity,
@@ -336,6 +394,7 @@ impl Gpu2D {
             sprite_staged_sort_scratch: Vec::new(),
             sprite_batch_candidates: Vec::new(),
             point_light_instances: Vec::new(),
+            shadow_caster_instances: Vec::new(),
             stream_particle_rects: Vec::new(),
             stream_particle_eval_stack: Vec::new(),
             sprite_batches: Vec::new(),
@@ -376,6 +435,7 @@ impl Gpu2D {
         self.point_light_pipeline = create_point_light_pipeline(
             device,
             &self.camera_bgl,
+            &self.shadow_caster_bgl,
             &point_light_shader,
             color_format,
             sample_count,
@@ -393,6 +453,7 @@ impl Gpu2D {
             force_sprite_prepare,
             point_lights,
             point_lights_revision,
+            shadow_casters,
             static_texture_lookup,
         } = frame;
         if force_sprite_prepare {
@@ -402,6 +463,7 @@ impl Gpu2D {
             self.last_sprite_prepare = None;
         }
         self.ensure_rect_instance_capacity(device, upload.draw_count);
+        self.ensure_shadow_caster_capacity(device, shadow_casters.len().max(1));
         if self.last_camera != Some(camera) {
             queue.write_buffer(&self.camera_buffer, 0, bytemuck::bytes_of(&camera));
             self.last_camera = Some(camera);
@@ -580,6 +642,21 @@ impl Gpu2D {
             }
             self.last_point_light_stage = Some(point_light_stage);
         }
+        self.shadow_caster_instances.clear();
+        self.shadow_caster_instances.extend(
+            shadow_casters
+                .iter()
+                .filter_map(|caster| shadow_caster_2d_gpu(*caster)),
+        );
+        if self.shadow_caster_instances.is_empty() {
+            self.shadow_caster_instances
+                .push(ShadowCaster2DGpu::zeroed());
+        }
+        queue.write_buffer(
+            &self.shadow_caster_buffer,
+            0,
+            bytemuck::cast_slice(&self.shadow_caster_instances),
+        );
     }
 
     pub fn prepare_stream_point_particles(
@@ -699,6 +776,7 @@ impl Gpu2D {
         if !self.point_light_instances.is_empty() {
             pass.set_pipeline(&self.point_light_pipeline);
             pass.set_bind_group(0, &self.camera_bind_group, &[]);
+            pass.set_bind_group(1, &self.shadow_caster_bind_group, &[]);
             pass.set_vertex_buffer(0, self.rect_vertex_buffer.slice(..));
             pass.set_vertex_buffer(1, self.point_light_instance_buffer.slice(..));
             pass.draw(0..6, 0..self.point_light_instances.len() as u32);
@@ -855,6 +933,31 @@ impl Gpu2D {
         });
         self.point_light_instance_capacity = new_capacity;
         self.last_point_light_stage = None;
+    }
+
+    fn ensure_shadow_caster_capacity(&mut self, device: &wgpu::Device, needed: usize) {
+        if needed <= self.shadow_caster_capacity {
+            return;
+        }
+        let mut new_capacity = self.shadow_caster_capacity.max(1);
+        while new_capacity < needed {
+            new_capacity *= 2;
+        }
+        self.shadow_caster_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("perro_shadow_caster_2d_instances"),
+            size: (new_capacity * std::mem::size_of::<ShadowCaster2DGpu>()) as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        self.shadow_caster_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("perro_shadow_caster_2d_bg"),
+            layout: &self.shadow_caster_bgl,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: self.shadow_caster_buffer.as_entire_binding(),
+            }],
+        });
+        self.shadow_caster_capacity = new_capacity;
     }
 
     pub fn virtual_size() -> [f32; 2] {

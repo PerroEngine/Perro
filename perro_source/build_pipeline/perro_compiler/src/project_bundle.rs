@@ -681,6 +681,7 @@ perro_app::entry::run_static_embedded_project(perro_app::entry::StaticEmbeddedPr
         csv_lookup: static_assets::csvs::lookup_csv,\n\
         mesh_lookup: static_assets::meshes::lookup_mesh,\n\
         collision_trimesh_lookup: static_assets::collision_trimeshes::lookup_collision_trimesh,\n\
+        navmesh_lookup: static_assets::navmeshes::lookup_navmesh,\n\
         skeleton_lookup: static_assets::skeletons::lookup_skeleton,\n\
         texture_lookup: static_assets::textures::lookup_texture,\n\
         shader_lookup: static_assets::shaders::lookup_shader,\n\
@@ -789,6 +790,7 @@ perro_app::entry::run_static_embedded_project_web(perro_app::entry::StaticEmbedd
         csv_lookup: static_assets::csvs::lookup_csv,\n\
         mesh_lookup: static_assets::meshes::lookup_mesh,\n\
         collision_trimesh_lookup: static_assets::collision_trimeshes::lookup_collision_trimesh,\n\
+        navmesh_lookup: static_assets::navmeshes::lookup_navmesh,\n\
         skeleton_lookup: static_assets::skeletons::lookup_skeleton,\n\
         texture_lookup: static_assets::textures::lookup_texture,\n\
         shader_lookup: static_assets::shaders::lookup_shader,\n\
@@ -895,6 +897,7 @@ perro_app::entry::run_static_embedded_project_android(app, perro_app::entry::Sta
         csv_lookup: static_assets::csvs::lookup_csv,\n\
         mesh_lookup: static_assets::meshes::lookup_mesh,\n\
         collision_trimesh_lookup: static_assets::collision_trimeshes::lookup_collision_trimesh,\n\
+        navmesh_lookup: static_assets::navmeshes::lookup_navmesh,\n\
         skeleton_lookup: static_assets::skeletons::lookup_skeleton,\n\
         texture_lookup: static_assets::textures::lookup_texture,\n\
         shader_lookup: static_assets::shaders::lookup_shader,\n\

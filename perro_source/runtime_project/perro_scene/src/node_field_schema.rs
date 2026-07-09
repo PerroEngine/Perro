@@ -926,6 +926,17 @@ fn push(
     fields.push(SceneNodeField::new(section, name, kind));
 }
 
+fn push_f32_default(
+    fields: &mut Vec<SceneNodeField>,
+    section: &'static str,
+    name: &'static str,
+    value: f32,
+) {
+    let mut field = SceneNodeField::new(section, name, NodeFieldType::F32);
+    field.default = Some(SceneValue::F32(value));
+    fields.push(field);
+}
+
 fn asset_field(
     fields: &mut Vec<SceneNodeField>,
     section: &'static str,
@@ -1162,6 +1173,27 @@ fn light_fields(fields: &mut Vec<SceneNodeField>, node_type: NodeType) {
     push(fields, "Light", "color", NodeFieldType::Color);
     push(fields, "Light", "intensity", NodeFieldType::F32);
     push(fields, "Light", "cast_shadows", NodeFieldType::Bool);
+    if matches!(
+        node_type,
+        NodeType::RayLight3D | NodeType::PointLight3D | NodeType::SpotLight3D
+    ) {
+        push_f32_default(fields, "Shadow", "shadow_strength", 0.82);
+        push_f32_default(fields, "Shadow", "shadow_depth_bias", 0.00018);
+        push_f32_default(fields, "Shadow", "shadow_normal_bias", 0.045);
+        push(
+            fields,
+            "Shadow",
+            "shadow",
+            NodeFieldType::object(vec![
+                NodeFieldDef::new("strength", NodeFieldType::F32)
+                    .with_default(SceneValue::F32(0.82)),
+                NodeFieldDef::new("depth_bias", NodeFieldType::F32)
+                    .with_default(SceneValue::F32(0.00018)),
+                NodeFieldDef::new("normal_bias", NodeFieldType::F32)
+                    .with_default(SceneValue::F32(0.045)),
+            ]),
+        );
+    }
     push(fields, "Light", "active", NodeFieldType::Bool);
     push(fields, "Light", "render_layers", NodeFieldType::BitMask);
     if matches!(

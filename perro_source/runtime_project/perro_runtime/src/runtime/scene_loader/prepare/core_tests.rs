@@ -355,6 +355,87 @@ mod tests {
     }
 
     #[test]
+    fn light3d_shadow_tuning_fields_parse() {
+        let scene = Parser::new(
+            r#"
+            $root = @root
+            [root]
+            [Node3D/]
+            [/root]
+
+            [sun]
+            [RayLight3D]
+                shadow = { strength = 0.44 depth_bias = 0.002 normal_bias = 0.09 }
+            [/RayLight3D]
+            [/sun]
+
+            [bulb]
+            [PointLight3D]
+                shadow_opacity = 0.33
+                shadow_bias = 0.003
+                shadow_normal_bias = 0.11
+            [/PointLight3D]
+            [/bulb]
+
+            [cone]
+            [SpotLight3D]
+                shadow_strength = 0.22
+                shadow_depth_bias = 0.004
+                shadow_normal_bias = 0.13
+            [/SpotLight3D]
+            [/cone]
+            "#,
+        )
+        .parse_scene();
+
+        let prepared =
+            prepare_scene_with_loader(&scene, &|path| Err(format!("unknown scene path `{path}`")))
+                .expect("prepare scene");
+
+        let sun = prepared
+            .nodes
+            .iter()
+            .find(|pending| pending.key_name == "sun")
+            .expect("sun node");
+        match &sun.node.data {
+            SceneNodeData::RayLight3D(light) => {
+                assert_eq!(light.shadow_strength, 0.44);
+                assert_eq!(light.shadow_depth_bias, 0.002);
+                assert_eq!(light.shadow_normal_bias, 0.09);
+            }
+            other => panic!("expected RayLight3D, got {other:?}"),
+        }
+
+        let bulb = prepared
+            .nodes
+            .iter()
+            .find(|pending| pending.key_name == "bulb")
+            .expect("bulb node");
+        match &bulb.node.data {
+            SceneNodeData::PointLight3D(light) => {
+                assert_eq!(light.shadow_strength, 0.33);
+                assert_eq!(light.shadow_depth_bias, 0.003);
+                assert_eq!(light.shadow_normal_bias, 0.11);
+            }
+            other => panic!("expected PointLight3D, got {other:?}"),
+        }
+
+        let cone = prepared
+            .nodes
+            .iter()
+            .find(|pending| pending.key_name == "cone")
+            .expect("cone node");
+        match &cone.node.data {
+            SceneNodeData::SpotLight3D(light) => {
+                assert_eq!(light.shadow_strength, 0.22);
+                assert_eq!(light.shadow_depth_bias, 0.004);
+                assert_eq!(light.shadow_normal_bias, 0.13);
+            }
+            other => panic!("expected SpotLight3D, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn sky3d_horizon_and_shader_stack_parse() {
         let scene = Parser::new(
             r#"

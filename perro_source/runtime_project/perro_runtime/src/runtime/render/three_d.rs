@@ -471,11 +471,23 @@ impl Runtime {
                         light.color,
                         light.intensity,
                         light.cast_shadows,
+                        light.shadow_strength,
+                        light.shadow_depth_bias,
+                        light.shadow_normal_bias,
                     ))
                 }
                 _ => None,
             });
-            if let Some((local_transform, color, intensity, cast_shadows)) = ray_light_data {
+            if let Some((
+                local_transform,
+                color,
+                intensity,
+                cast_shadows,
+                shadow_strength,
+                shadow_depth_bias,
+                shadow_normal_bias,
+            )) = ray_light_data
+            {
                 let color = Runtime::color_modulate_rgb(color, self.effective_self_modulate(node));
                 let global = self
                     .get_render_global_transform_3d(node)
@@ -485,6 +497,9 @@ impl Runtime {
                     color,
                     intensity: intensity.max(0.0),
                     cast_shadows,
+                    shadow_strength,
+                    shadow_depth_bias,
+                    shadow_normal_bias,
                 };
                 if self.render_3d.retained_ray_lights.get(&node).copied() != Some(light) {
                     self.queue_render_command(RenderCommand::ThreeD(Box::new(
@@ -508,11 +523,23 @@ impl Runtime {
                         light.intensity,
                         light.range,
                         light.cast_shadows,
+                        light.shadow_strength,
+                        light.shadow_depth_bias,
+                        light.shadow_normal_bias,
                     ))
                 }
                 _ => None,
             });
-            if let Some((local_transform, color, intensity, range, cast_shadows)) = point_light_data
+            if let Some((
+                local_transform,
+                color,
+                intensity,
+                range,
+                cast_shadows,
+                shadow_strength,
+                shadow_depth_bias,
+                shadow_normal_bias,
+            )) = point_light_data
             {
                 let color = Runtime::color_modulate_rgb(color, self.effective_self_modulate(node));
                 let global = self
@@ -524,6 +551,9 @@ impl Runtime {
                     intensity: intensity.max(0.0),
                     range: range.max(0.001),
                     cast_shadows,
+                    shadow_strength,
+                    shadow_depth_bias,
+                    shadow_normal_bias,
                 };
                 if self.render_3d.retained_point_lights.get(&node).copied() != Some(light) {
                     self.queue_render_command(RenderCommand::ThreeD(Box::new(
@@ -549,6 +579,9 @@ impl Runtime {
                         light.inner_angle_radians,
                         light.outer_angle_radians,
                         light.cast_shadows,
+                        light.shadow_strength,
+                        light.shadow_depth_bias,
+                        light.shadow_normal_bias,
                     ))
                 }
                 _ => None,
@@ -561,6 +594,9 @@ impl Runtime {
                 inner_angle_radians,
                 outer_angle_radians,
                 cast_shadows,
+                shadow_strength,
+                shadow_depth_bias,
+                shadow_normal_bias,
             )) = spot_light_data
             {
                 let color = Runtime::color_modulate_rgb(color, self.effective_self_modulate(node));
@@ -576,6 +612,9 @@ impl Runtime {
                     inner_angle_radians: inner_angle_radians.max(0.0),
                     outer_angle_radians: outer_angle_radians.max(inner_angle_radians),
                     cast_shadows,
+                    shadow_strength,
+                    shadow_depth_bias,
+                    shadow_normal_bias,
                 };
                 if self.render_3d.retained_spot_lights.get(&node).copied() != Some(light) {
                     self.queue_render_command(RenderCommand::ThreeD(Box::new(

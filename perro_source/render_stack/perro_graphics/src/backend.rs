@@ -25,8 +25,8 @@ use perro_ids::{MaterialID, MeshID, NodeID, TextureID};
 use perro_render_bridge::{
     CameraStreamCommand, CameraStreamSourceState, CameraStreamState, Command2D, Command3D,
     Decal3DState, Light2DState, Material3D, PointParticles3DState, PostProcessingCommand,
-    RenderBridge, RenderCommand, RenderEvent, ResourceCommand, Sprite2DCommand,
-    VisualAccessibilityCommand, Water2DState, Water3DState,
+    RenderBridge, RenderCommand, RenderEvent, ResourceCommand, ShadowCaster2DState,
+    Sprite2DCommand, VisualAccessibilityCommand, Water2DState, Water3DState,
 };
 use perro_structs::TextureFilterMode;
 use perro_structs::{PostProcessSet, VisualAccessibilitySettings};
@@ -398,6 +398,8 @@ pub struct PerroGraphics {
     retained_sprites_cache_revision: u64,
     retained_point_lights_cache: Vec<Light2DState>,
     retained_point_lights_cache_revision: u64,
+    retained_shadow_casters_cache: Vec<ShadowCaster2DState>,
+    retained_shadow_casters_cache_revision: u64,
     camera_stream_targets: AHashMap<NodeID, [u32; 2]>,
     retained_camera_streams: Vec<(NodeID, CameraStreamState)>,
     frame_rects_cache: Vec<RectInstanceGpu>,
@@ -405,6 +407,7 @@ pub struct PerroGraphics {
     late_overlay_sprites_cache_revision: u64,
     late_overlay_point_lights_cache: Vec<Light2DState>,
     late_overlay_point_lights_cache_revision: u64,
+    late_overlay_shadow_casters_cache: Vec<ShadowCaster2DState>,
     late_overlay_rects_cache: Vec<RectInstanceGpu>,
     used_texture_refs_cache: AHashMap<TextureID, u32>,
     used_mesh_refs_cache: AHashMap<MeshID, u32>,
@@ -689,6 +692,8 @@ impl PerroGraphics {
             retained_sprites_cache_revision: u64::MAX,
             retained_point_lights_cache: Vec::new(),
             retained_point_lights_cache_revision: u64::MAX,
+            retained_shadow_casters_cache: Vec::new(),
+            retained_shadow_casters_cache_revision: u64::MAX,
             camera_stream_targets: AHashMap::new(),
             retained_camera_streams: Vec::new(),
             frame_rects_cache: Vec::new(),
@@ -696,6 +701,7 @@ impl PerroGraphics {
             late_overlay_sprites_cache_revision: u64::MAX,
             late_overlay_point_lights_cache: Vec::new(),
             late_overlay_point_lights_cache_revision: u64::MAX,
+            late_overlay_shadow_casters_cache: Vec::new(),
             late_overlay_rects_cache: Vec::new(),
             used_texture_refs_cache: AHashMap::new(),
             used_mesh_refs_cache: AHashMap::new(),
@@ -1194,6 +1200,9 @@ impl PerroGraphics {
                     Command2D::UpsertWater { node, water } => {
                         self.renderer_2d.upsert_water(node, *water);
                     }
+                    Command2D::UpsertShadowCaster { node, caster } => {
+                        self.renderer_2d.upsert_shadow_caster(node, caster);
+                    }
                     Command2D::SetAmbientLight { node, light } => {
                         self.renderer_2d.set_ambient_light(node, light);
                     }
@@ -1491,6 +1500,9 @@ impl PerroGraphics {
                     }
                     Command2D::UpsertWater { node, water } => {
                         self.late_overlay_2d.upsert_water(node, *water);
+                    }
+                    Command2D::UpsertShadowCaster { node, caster } => {
+                        self.late_overlay_2d.upsert_shadow_caster(node, caster);
                     }
                     Command2D::SetAmbientLight { node, light } => {
                         self.late_overlay_2d.set_ambient_light(node, light);
@@ -1888,6 +1900,13 @@ impl PerroGraphics {
                 .extend(self.renderer_2d.lights());
             self.retained_point_lights_cache_revision = point_lights_revision;
         }
+        let shadow_casters_revision = self.renderer_2d.retained_shadow_casters_revision();
+        if shadow_casters_revision != self.retained_shadow_casters_cache_revision {
+            self.retained_shadow_casters_cache.clear();
+            self.retained_shadow_casters_cache
+                .extend(self.renderer_2d.shadow_casters());
+            self.retained_shadow_casters_cache_revision = shadow_casters_revision;
+        }
         let retained_rect_count = self.renderer_2d.retained_rects().len();
         let frame_shape_count = self.renderer_2d.frame_shapes().len();
         let total_rect_count = retained_rect_count + frame_shape_count;
@@ -1938,6 +1957,9 @@ impl PerroGraphics {
                 .extend(self.late_overlay_2d.lights());
             self.late_overlay_point_lights_cache_revision = late_overlay_point_lights_revision;
         }
+        self.late_overlay_shadow_casters_cache.clear();
+        self.late_overlay_shadow_casters_cache
+            .extend(self.late_overlay_2d.shadow_casters());
         let ui_image_textures: Vec<_> = self.renderer_ui.image_textures().collect();
         let ui_paint = self
             .renderer_ui
@@ -2060,6 +2082,7 @@ impl PerroGraphics {
                 sprites_2d_revision: self.retained_sprites_cache_revision,
                 point_lights_2d: &self.retained_point_lights_cache,
                 point_lights_2d_revision: self.retained_point_lights_cache_revision,
+                shadow_casters_2d: &self.retained_shadow_casters_cache,
                 waters_2d: &self.retained_waters_2d_cache,
                 waters_2d_revision: self.retained_waters_2d_cache_revision,
                 late_overlay_camera_2d,
@@ -2070,6 +2093,7 @@ impl PerroGraphics {
                 late_overlay_point_lights_2d: &self.late_overlay_point_lights_cache,
                 late_overlay_point_lights_2d_revision: self
                     .late_overlay_point_lights_cache_revision,
+                late_overlay_shadow_casters_2d: &self.late_overlay_shadow_casters_cache,
                 ui_primitives: ui_paint.primitives,
                 ui_textures_delta: ui_paint.textures_delta,
                 ui_texture_size: ui_paint.texture_size,

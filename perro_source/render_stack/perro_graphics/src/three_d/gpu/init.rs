@@ -1369,6 +1369,12 @@ impl Gpu3D {
             None,
         );
         let mesh_blend_mask_id_bgl = mesh_blend_screen::create_mesh_blend_mask_id_bgl(device);
+        let mask_pipeline_layout_multimesh =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("perro_mesh_blend_mask_layout_multimesh"),
+                bind_group_layouts: &[Some(&multimesh_bgl), Some(&mesh_blend_mask_id_bgl)],
+                immediate_size: 0,
+            });
         let mask_pipeline_layout_rigid =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("perro_mesh_blend_mask_layout_rigid"),
@@ -1385,6 +1391,18 @@ impl Gpu3D {
         let mask_shader_rigid_packed_lod =
             create_mesh_blend_mask_shader_module_rigid_packed_lod(device);
         let mask_shader_skinned = create_mesh_blend_mask_shader_module_skinned(device);
+        let pipeline_multimesh_mask_culled = create_multimesh_mask_pipeline(
+            device,
+            &mask_pipeline_layout_multimesh,
+            &shader_multimesh,
+            Some(wgpu::Face::Back),
+        );
+        let pipeline_multimesh_mask_double_sided = create_multimesh_mask_pipeline(
+            device,
+            &mask_pipeline_layout_multimesh,
+            &shader_multimesh,
+            None,
+        );
         let pipeline_mask_rigid_culled = mesh_blend_screen::create_mesh_blend_mask_pipeline_rigid(
             device,
             &mask_pipeline_layout_rigid,
@@ -2234,6 +2252,8 @@ impl Gpu3D {
             pipeline_multimesh_double_sided,
             pipeline_multimesh_blend_culled,
             pipeline_multimesh_blend_double_sided,
+            pipeline_multimesh_mask_culled,
+            pipeline_multimesh_mask_double_sided,
             pipeline_multimesh_covered,
             pipeline_multimesh_covered_double_sided,
             pipeline_multimesh_depth_prepass_culled,

@@ -2,8 +2,13 @@ use perro_scene::{Node3DField, NodeField, NodeType};
 use std::borrow::Cow;
 mod anim_tree;
 mod panim;
+mod retarget;
 pub use anim_tree::*;
 pub use panim::parse_panim;
+pub use retarget::{
+    AnimationBoneRetarget, AnimationRetargetMap, AnimationRetargetReport, parse_pretarget,
+    retarget_skeleton3d_clip,
+};
 
 #[derive(Clone, Debug, Default)]
 pub struct AnimationClip {

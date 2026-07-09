@@ -609,13 +609,11 @@ impl Gpu3D {
         surface_entries.clear();
         let mut mesh_blends = std::mem::take(&mut self.mesh_blend_scratch);
         resolve_mesh_blends(draws, &mut mesh_blends);
-        // Screen-space seam pass handles single-sample non-multimesh sources;
-        // everything else keeps the in-material depth fade.
-        if self.screen_blend_supported && self.sample_count == 1 {
-            for (draw, blend) in draws.iter().zip(mesh_blends.iter_mut()) {
-                if draw.dense_multimesh.is_none() {
-                    promote_mesh_blend_screen_pass(blend);
-                }
+        // Screen-space seam pass handles single-mesh and multimesh sources.
+        // MSAA resolves into the single-sample scene texture before the seam.
+        if self.screen_blend_supported {
+            for blend in mesh_blends.iter_mut() {
+                promote_mesh_blend_screen_pass(blend);
             }
         }
 
@@ -893,7 +891,13 @@ impl Gpu3D {
                             double_sided: params.double_sided
                                 || mirrored_winding
                                 || flat_builtin_double_sided,
-                            mesh_blend: resolved_mesh_blend_active(resolved_blend),
+                            mesh_blend: resolved_mesh_blend_active(resolved_blend)
+                                && !resolved_mesh_blend_screen_pass(resolved_blend),
+                            mesh_blend_screen: resolved_mesh_blend_screen_pass(resolved_blend),
+                            mesh_blend_params: resolved_blend.packed_params,
+                            mesh_blend_depth: resolved_mesh_blend_depth_receiver(resolved_blend),
+                            blend_layers: draw.blend.blend_layers.bits(),
+                            blend_mask: draw.blend.blend_mask.bits(),
                             casts_shadows: draw.cast_shadows,
                             material_kind,
                         });
@@ -1559,7 +1563,6 @@ impl Gpu3D {
         self.compact_sorted_draw_batches(draws.len());
         self.rebuild_batch_views();
         self.rebuild_mesh_blend_receivers();
-        self.prepare_mesh_blend_screen(device, queue);
         self.apply_local_color_bleed();
         if !multimesh_batches_sorted(&self.multimesh_batches) {
             if self.multimesh_batches.len() >= PARALLEL_BATCH_SORT_MIN {
@@ -1571,6 +1574,7 @@ impl Gpu3D {
             }
         }
         self.compact_sorted_multimesh_batches();
+        self.prepare_mesh_blend_screen(device, queue);
         if HIZ_DEBUG_READBACK_ENABLED {
             self.debug_frustum_visible_est = 0;
             for batch in &self.draw_batches {

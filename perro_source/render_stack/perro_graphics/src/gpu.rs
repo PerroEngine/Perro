@@ -23,7 +23,8 @@ use perro_ids::NodeID;
 use perro_render_bridge::{
     Camera3DState, CameraProjectionState, CameraStreamDraw3DState, CameraStreamLighting3DState,
     CameraStreamSourceState, CameraStreamState, Decal3DState, Light2DState, PointParticles3DState,
-    Sprite2DCommand, Water2DState, Water3DState, WaterBodySampleState, WaterSampleState,
+    ShadowCaster2DState, Sprite2DCommand, Water2DState, Water3DState, WaterBodySampleState,
+    WaterSampleState,
 };
 use perro_structs::TextureFilterMode;
 use perro_structs::VisualAccessibilitySettings;
@@ -500,6 +501,7 @@ pub struct RenderFrame<'a> {
     pub sprites_2d_revision: u64,
     pub point_lights_2d: &'a [Light2DState],
     pub point_lights_2d_revision: u64,
+    pub shadow_casters_2d: &'a [ShadowCaster2DState],
     pub waters_2d: &'a [(NodeID, Water2DState)],
     pub waters_2d_revision: u64,
     pub late_overlay_camera_2d: Camera2DUniform,
@@ -509,6 +511,7 @@ pub struct RenderFrame<'a> {
     pub late_overlay_sprites_2d_revision: u64,
     pub late_overlay_point_lights_2d: &'a [Light2DState],
     pub late_overlay_point_lights_2d_revision: u64,
+    pub late_overlay_shadow_casters_2d: &'a [ShadowCaster2DState],
     pub ui_primitives: &'a [Arc<ClippedPrimitive>],
     pub ui_textures_delta: &'a TexturesDelta,
     pub ui_texture_size: [u32; 2],
@@ -1043,6 +1046,7 @@ impl Gpu {
             sprites_2d_revision,
             point_lights_2d,
             point_lights_2d_revision,
+            shadow_casters_2d,
             waters_2d,
             waters_2d_revision,
             late_overlay_camera_2d,
@@ -1052,6 +1056,7 @@ impl Gpu {
             late_overlay_sprites_2d_revision,
             late_overlay_point_lights_2d,
             late_overlay_point_lights_2d_revision,
+            late_overlay_shadow_casters_2d,
             redraw_requested,
             frame_time_seconds,
             frame_delta_seconds,
@@ -1203,6 +1208,7 @@ impl Gpu {
                         force_sprite_prepare: has(DIRTY_RESOURCES),
                         point_lights: point_lights_2d,
                         point_lights_revision: point_lights_2d_revision,
+                        shadow_casters: shadow_casters_2d,
                         static_texture_lookup,
                     },
                 );
@@ -1441,6 +1447,7 @@ impl Gpu {
             && self.sample_count > 1
             && !post_requested
             && !accessibility_enabled
+            && !blend_screen_active
             && self.render_format == self.config.format;
         let direct_present = surface_sized_render
             && self.sample_count == 1
@@ -1635,6 +1642,7 @@ impl Gpu {
                             force_sprite_prepare: has(DIRTY_RESOURCES),
                             point_lights: stream.lights_2d.as_ref(),
                             point_lights_revision: u64::MAX,
+                            shadow_casters: &[],
                             static_texture_lookup,
                         },
                     );
@@ -2002,6 +2010,19 @@ impl Gpu {
                 multiview_mask: None,
             });
         }
+        if blend_screen_active
+            && !direct_present
+            && !msaa_direct_present
+            && self.sample_count > 1
+            && let Some(three_d) = self.three_d.as_mut()
+        {
+            three_d.mesh_blend_screen_pass(
+                &self.device,
+                &mut encoder,
+                self.post.scene_texture(),
+                &scene_view,
+            );
+        }
         timing.encode_main = encode_start.elapsed();
 
         let post_start = Instant::now();
@@ -2162,6 +2183,7 @@ impl Gpu {
                         force_sprite_prepare: has(DIRTY_RESOURCES),
                         point_lights: late_overlay_point_lights_2d,
                         point_lights_revision: late_overlay_point_lights_2d_revision,
+                        shadow_casters: late_overlay_shadow_casters_2d,
                         static_texture_lookup,
                     },
                 );

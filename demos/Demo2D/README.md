@@ -24,15 +24,18 @@ Parity map:
 - `Physics Bones` -> `Skeleton2D` + `PhysicsBoneChain2D`
 - `Physics Collisions` -> rigid-body stacks
 - `MultiMesh` analog -> dense sprite batches
+- `Particles` -> 4 `ParticleEmitter2D` stress emitters
+- `Positional Audio` -> 3 MIDI speakers + masks + effect zones
 
-Gap note:
+No-analog note:
 
-- `Sky`, `Mesh Blending`, `Positional Audio`, `3D Particles` no full 2D mirror in this pass
+- `Sky` and `Mesh Blending` stay 3D-only lanes
 
 Controls:
 
 - `WASD` / arrows => pan
 - mouse wheel => zoom
 - `R` => rebuild stress sections
+- `T` => toggle audio debug rays in positional-audio lane
 
 Docs: `docs/README.md`

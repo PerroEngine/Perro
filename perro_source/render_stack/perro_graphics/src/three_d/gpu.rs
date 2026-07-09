@@ -104,8 +104,8 @@ mod texture_cache;
 
 use multimesh_path::{
     create_multimesh_blend_pipeline, create_multimesh_covered_pipeline,
-    create_multimesh_depth_prepass_pipeline, create_multimesh_pipeline,
-    create_multimesh_shadow_depth_pipeline, pack_unorm4x8,
+    create_multimesh_depth_prepass_pipeline, create_multimesh_mask_pipeline,
+    create_multimesh_pipeline, create_multimesh_shadow_depth_pipeline, pack_unorm4x8,
 };
 use rigid_path::{
     create_depth_prepass_pipeline_rigid, create_depth_prepass_pipeline_rigid_packed_lod,
@@ -637,6 +637,8 @@ pub struct Gpu3D {
     pipeline_multimesh_double_sided: wgpu::RenderPipeline,
     pipeline_multimesh_blend_culled: wgpu::RenderPipeline,
     pipeline_multimesh_blend_double_sided: wgpu::RenderPipeline,
+    pipeline_multimesh_mask_culled: wgpu::RenderPipeline,
+    pipeline_multimesh_mask_double_sided: wgpu::RenderPipeline,
     // Prepass-covered variants (depth write off, LessEqual) used when unified
     // depth is active and the batch was primed in the depth prepass.
     pipeline_multimesh_covered: wgpu::RenderPipeline,
@@ -690,7 +692,7 @@ pub struct Gpu3D {
     // Screen-space mesh blend (seam pass) state.
     screen_blend_supported: bool,
     mesh_blend_screen_active: bool,
-    mesh_blend_mask_batch_entries: Vec<(usize, u32)>,
+    mesh_blend_mask_batch_entries: Vec<MeshBlendMaskEntry>,
     _mesh_blend_mask_texture: wgpu::Texture,
     mesh_blend_mask_view: wgpu::TextureView,
     mesh_blend_mask_id_bgl: wgpu::BindGroupLayout,
@@ -1171,8 +1173,19 @@ struct MultiMeshBatch {
     mesh_local_radius: f32,
     double_sided: bool,
     mesh_blend: bool,
+    mesh_blend_screen: bool,
+    mesh_blend_params: u32,
+    mesh_blend_depth: bool,
+    blend_layers: u32,
+    blend_mask: u32,
     casts_shadows: bool,
     material_kind: MaterialPipelineKind,
+}
+
+#[derive(Clone, Copy)]
+enum MeshBlendMaskEntry {
+    Draw { batch_index: usize, id: u32 },
+    MultiMesh { batch_index: usize, id: u32 },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]

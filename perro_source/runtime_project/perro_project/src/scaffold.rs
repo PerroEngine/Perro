@@ -174,6 +174,10 @@ pub fn ensure_build_crates_scaffold(root: &Path, project_name: &str) -> std::io:
         &default_static_collision_trimeshes_rs(),
     )?;
     write_if_missing(
+        project_static_src.join("navmeshes.rs"),
+        &default_static_navmeshes_rs(),
+    )?;
+    write_if_missing(
         project_static_src.join("skeletons.rs"),
         &default_static_skeletons_rs(),
     )?;

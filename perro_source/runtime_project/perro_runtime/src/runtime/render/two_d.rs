@@ -12,10 +12,10 @@ use perro_particle_math::compile_expression;
 use perro_render_bridge::{
     AmbientLight2DState, Camera2DState, CameraStreamCommand, Command2D, ParticlePath2D,
     ParticleProfile2D, ParticleSimulationMode2D, PointLight2DState, PointParticles2DState,
-    RayLight2DState, Rect2DCommand, RenderCommand, ResourceCommand, SpotLight2DState,
-    Sprite2DCommand, TileMap2DCommand, UiCommand, UiRectState, UiTextAlignState, Water2DState,
-    WaterBodyQueryState, WaterCoastlineShape2D, WaterIdleModeState, WaterImpact2D, WaterLinkState,
-    WaterShapeState,
+    RayLight2DState, Rect2DCommand, RenderCommand, ResourceCommand, ShadowCaster2DShapeState,
+    ShadowCaster2DState, SpotLight2DState, Sprite2DCommand, TileMap2DCommand, UiCommand,
+    UiRectState, UiTextAlignState, Water2DState, WaterBodyQueryState, WaterCoastlineShape2D,
+    WaterIdleModeState, WaterImpact2D, WaterLinkState, WaterShapeState,
 };
 use perro_runtime_render::{sprite_2d_texture_request, tilemap_2d_texture_request};
 use perro_structs::{BitMask, UVector2, Vector2};
@@ -669,11 +669,18 @@ impl Runtime {
                         && light.active
                         && render_mask_matches(camera_render_mask, light.render_layers) =>
                 {
-                    Some((light.transform, light.z_index, light.color, light.intensity))
+                    Some((
+                        light.transform,
+                        light.z_index,
+                        light.color,
+                        light.intensity,
+                        light.cast_shadows,
+                    ))
                 }
                 _ => None,
             });
-            if let Some((local_transform, z_index, color, intensity)) = ray_light_data {
+            if let Some((local_transform, z_index, color, intensity, cast_shadows)) = ray_light_data
+            {
                 if intensity > 0.0 {
                     let color =
                         Runtime::color_modulate_rgb(color, self.effective_self_modulate(node));
@@ -687,6 +694,7 @@ impl Runtime {
                             color,
                             intensity: intensity.max(0.0),
                             z_index,
+                            cast_shadows,
                         },
                     }));
                     visible_now.insert(node);
@@ -706,11 +714,19 @@ impl Runtime {
                     light.color,
                     light.intensity,
                     light.range,
+                    light.cast_shadows,
                 )),
                 _ => None,
             });
-            if let Some((visible, local_transform, z_index, color, intensity, range)) =
-                point_light_data
+            if let Some((
+                visible,
+                local_transform,
+                z_index,
+                color,
+                intensity,
+                range,
+                cast_shadows,
+            )) = point_light_data
             {
                 if visible && intensity > 0.0 && range > 0.0 {
                     let color =
@@ -726,6 +742,7 @@ impl Runtime {
                             intensity,
                             range,
                             z_index,
+                            cast_shadows,
                         },
                     }));
                     visible_now.insert(node);
@@ -749,6 +766,7 @@ impl Runtime {
                         light.range,
                         light.inner_angle_radians,
                         light.outer_angle_radians,
+                        light.cast_shadows,
                     ))
                 }
                 _ => None,
@@ -761,6 +779,7 @@ impl Runtime {
                 range,
                 inner_angle_radians,
                 outer_angle_radians,
+                cast_shadows,
             )) = spot_light_data
             {
                 if intensity > 0.0 && range > 0.0 {
@@ -780,9 +799,41 @@ impl Runtime {
                             inner_angle_radians: inner_angle_radians.max(0.0),
                             outer_angle_radians: outer_angle_radians.max(inner_angle_radians),
                             z_index,
+                            cast_shadows,
                         },
                     }));
                     visible_now.insert(node);
+                } else {
+                    self.queue_render_command(RenderCommand::TwoD(Command2D::RemoveNode { node }));
+                }
+            }
+
+            let shadow_caster_data = self.nodes.get(node).and_then(|node| match &node.data {
+                SceneNodeData::CollisionShape2D(shape) => Some((
+                    effective_visible
+                        && shape.visible
+                        && render_mask_matches(camera_render_mask, shape.render_layers),
+                    shape.transform,
+                    shape.z_index,
+                    shape.shape,
+                )),
+                _ => None,
+            });
+            if let Some((visible, local_transform, z_index, shape)) = shadow_caster_data {
+                if visible {
+                    let global = self
+                        .get_render_global_transform_2d(node)
+                        .unwrap_or(local_transform);
+                    if let Some(caster) = shadow_caster_2d_state(global, z_index, shape) {
+                        self.queue_render_command(RenderCommand::TwoD(
+                            Command2D::UpsertShadowCaster { node, caster },
+                        ));
+                        visible_now.insert(node);
+                    } else {
+                        self.queue_render_command(RenderCommand::TwoD(Command2D::RemoveNode {
+                            node,
+                        }));
+                    }
                 } else {
                     self.queue_render_command(RenderCommand::TwoD(Command2D::RemoveNode { node }));
                 }
@@ -1772,6 +1823,47 @@ fn collect_button_2d_events(
 #[inline]
 fn render_mask_matches(camera_mask: BitMask, render_layers: BitMask) -> bool {
     !camera_mask.intersects(render_layers)
+}
+
+fn shadow_caster_2d_state(
+    transform: perro_structs::Transform2D,
+    z_index: i32,
+    shape: Shape2D,
+) -> Option<ShadowCaster2DState> {
+    let (half_extents, shape) = match shape {
+        Shape2D::Quad { width, height } => (
+            [
+                width.abs() * transform.scale.x.abs() * 0.5,
+                height.abs() * transform.scale.y.abs() * 0.5,
+            ],
+            ShadowCaster2DShapeState::Quad,
+        ),
+        Shape2D::Circle { radius } => {
+            let scaled_radius = radius.abs() * transform.scale.x.abs().max(transform.scale.y.abs());
+            (
+                [scaled_radius, scaled_radius],
+                ShadowCaster2DShapeState::Circle,
+            )
+        }
+        Shape2D::Triangle { width, height, .. } => (
+            [
+                width.abs() * transform.scale.x.abs() * 0.5,
+                height.abs() * transform.scale.y.abs() * 0.5,
+            ],
+            ShadowCaster2DShapeState::Triangle,
+        ),
+    };
+    (half_extents[0].is_finite()
+        && half_extents[1].is_finite()
+        && half_extents[0] > 0.0
+        && half_extents[1] > 0.0)
+        .then_some(ShadowCaster2DState {
+            center: [transform.position.x, transform.position.y],
+            half_extents,
+            rotation_radians: transform.rotation,
+            shape,
+            z_index,
+        })
 }
 
 fn camera_stream_aspect_ratio(aspect_ratio: f32, resolution: UVector2) -> f32 {

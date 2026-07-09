@@ -437,7 +437,11 @@ impl Gpu3D {
         let any_screen = self
             .draw_batches
             .iter()
-            .any(|batch| batch.mesh_blend_screen);
+            .any(|batch| batch.mesh_blend_screen)
+            || self
+                .multimesh_batches
+                .iter()
+                .any(|batch| batch.mesh_blend_screen);
         self.mesh_blend_screen_active = any_screen;
         if !any_screen {
             return;
@@ -446,6 +450,15 @@ impl Gpu3D {
         // source's tuning so both sides of a seam agree.
         let mut receiver_params = [0.0f32; 4];
         for batch in &self.draw_batches {
+            if !batch.mesh_blend_screen {
+                continue;
+            }
+            let params = unpack_mesh_blend_params(batch.mesh_blend_params);
+            if params[0] > receiver_params[0] {
+                receiver_params = params;
+            }
+        }
+        for batch in &self.multimesh_batches {
             if !batch.mesh_blend_screen {
                 continue;
             }
@@ -466,7 +479,11 @@ impl Gpu3D {
                     next_source_id + 1
                 };
                 id_params[id as usize] = unpack_mesh_blend_params(batch.mesh_blend_params);
-                self.mesh_blend_mask_batch_entries.push((index, id));
+                self.mesh_blend_mask_batch_entries
+                    .push(MeshBlendMaskEntry::Draw {
+                        batch_index: index,
+                        id,
+                    });
             } else if batch.mesh_blend_depth
                 && !batch.mesh_blend
                 && !batch.draw_on_top
@@ -479,7 +496,40 @@ impl Gpu3D {
                     next_receiver_id + 1
                 };
                 id_params[id as usize] = receiver_params;
-                self.mesh_blend_mask_batch_entries.push((index, id));
+                self.mesh_blend_mask_batch_entries
+                    .push(MeshBlendMaskEntry::Draw {
+                        batch_index: index,
+                        id,
+                    });
+            }
+        }
+        for (index, batch) in self.multimesh_batches.iter().enumerate() {
+            if batch.mesh_blend_screen {
+                let id = next_source_id;
+                next_source_id = if next_source_id + 1 >= RECEIVER_ID_BASE {
+                    1
+                } else {
+                    next_source_id + 1
+                };
+                id_params[id as usize] = unpack_mesh_blend_params(batch.mesh_blend_params);
+                self.mesh_blend_mask_batch_entries
+                    .push(MeshBlendMaskEntry::MultiMesh {
+                        batch_index: index,
+                        id,
+                    });
+            } else if batch.mesh_blend_depth && !batch.mesh_blend {
+                let id = next_receiver_id;
+                next_receiver_id = if next_receiver_id == 255 {
+                    RECEIVER_ID_BASE
+                } else {
+                    next_receiver_id + 1
+                };
+                id_params[id as usize] = receiver_params;
+                self.mesh_blend_mask_batch_entries
+                    .push(MeshBlendMaskEntry::MultiMesh {
+                        batch_index: index,
+                        id,
+                    });
             }
         }
         queue.write_buffer(
@@ -502,7 +552,12 @@ impl Gpu3D {
             self.mesh_blend_mask_id_capacity = capacity;
         }
         let mut staged = vec![0u8; (entries * MASK_ID_STRIDE) as usize];
-        for (slot, &(_, id)) in self.mesh_blend_mask_batch_entries.iter().enumerate() {
+        for (slot, entry) in self.mesh_blend_mask_batch_entries.iter().enumerate() {
+            let id = match *entry {
+                MeshBlendMaskEntry::Draw { id, .. } | MeshBlendMaskEntry::MultiMesh { id, .. } => {
+                    id
+                }
+            };
             let offset = slot * MASK_ID_STRIDE as usize;
             staged[offset..offset + 4].copy_from_slice(&id.to_le_bytes());
         }
@@ -543,7 +598,10 @@ impl Gpu3D {
             multiview_mask: None,
         });
         let mut current_state: Option<(RenderPath3D, bool, bool)> = None;
-        for (slot, &(batch_index, _)) in self.mesh_blend_mask_batch_entries.iter().enumerate() {
+        for (slot, entry) in self.mesh_blend_mask_batch_entries.iter().enumerate() {
+            let MeshBlendMaskEntry::Draw { batch_index, .. } = *entry else {
+                continue;
+            };
             let batch = &self.draw_batches[batch_index];
             let state = (batch.path, batch.double_sided, batch.packed_lod);
             if current_state != Some(state) {
@@ -602,6 +660,41 @@ impl Gpu3D {
             if frustum_cull_active {
                 let offset = (batch_index * std::mem::size_of::<DrawIndexedIndirectGpu>()) as u64;
                 pass.draw_indexed_indirect(&self.indirect_buffer, offset);
+            } else {
+                let start = batch.mesh.index_start;
+                let end = start + batch.mesh.index_count;
+                let instances = batch.instance_start..batch.instance_start + batch.instance_count;
+                pass.draw_indexed(start..end, batch.mesh.base_vertex, instances);
+            }
+        }
+        let mut current_multimesh_double_sided: Option<bool> = None;
+        for (slot, entry) in self.mesh_blend_mask_batch_entries.iter().enumerate() {
+            let MeshBlendMaskEntry::MultiMesh { batch_index, .. } = *entry else {
+                continue;
+            };
+            let batch = &self.multimesh_batches[batch_index];
+            if current_multimesh_double_sided.is_none() {
+                pass.set_bind_group(0, &self.multimesh_bind_group, &[]);
+                pass.set_vertex_buffer(0, self.rigid_vertex_buffer.slice(..));
+                pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+            }
+            if current_multimesh_double_sided != Some(batch.double_sided) {
+                let pipeline = if batch.double_sided {
+                    &self.pipeline_multimesh_mask_double_sided
+                } else {
+                    &self.pipeline_multimesh_mask_culled
+                };
+                pass.set_pipeline(pipeline);
+                current_multimesh_double_sided = Some(batch.double_sided);
+            }
+            pass.set_bind_group(
+                1,
+                &self.mesh_blend_mask_id_bind_group,
+                &[(slot as u32) * MASK_ID_STRIDE as u32],
+            );
+            if self.multimesh_cull_active {
+                let offset = (batch_index * std::mem::size_of::<DrawIndexedIndirectGpu>()) as u64;
+                pass.draw_indexed_indirect(&self.multimesh_indirect_buffer, offset);
             } else {
                 let start = batch.mesh.index_start;
                 let end = start + batch.mesh.index_count;

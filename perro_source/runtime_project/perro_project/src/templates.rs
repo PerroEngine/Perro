@@ -1117,6 +1117,7 @@ fn project_root() -> std::path::PathBuf {
               animation_tree_lookup: static_assets::animation_trees::lookup_animation_tree,
               mesh_lookup: static_assets::meshes::lookup_mesh,
               collision_trimesh_lookup: static_assets::collision_trimeshes::lookup_collision_trimesh,
+              navmesh_lookup: static_assets::navmeshes::lookup_navmesh,
               skeleton_lookup: static_assets::skeletons::lookup_skeleton,
               texture_lookup: static_assets::textures::lookup_texture,
               shader_lookup: static_assets::shaders::lookup_shader,
@@ -1131,7 +1132,7 @@ fn project_root() -> std::path::PathBuf {
 }
 
 fn default_static_mod_rs() -> String {
-    "#![allow(unused_imports)]\n\npub mod scenes;\npub mod materials;\npub mod ui_styles;\npub mod tilesets;\npub mod particles;\npub mod animations;\npub mod animation_trees;\npub mod meshes;\npub mod collision_trimeshes;\npub mod skeletons;\npub mod textures;\npub mod shaders;\npub mod audios;\npub mod localizations;\n".to_string()
+    "#![allow(unused_imports)]\n\npub mod scenes;\npub mod materials;\npub mod ui_styles;\npub mod tilesets;\npub mod particles;\npub mod animations;\npub mod animation_trees;\npub mod meshes;\npub mod collision_trimeshes;\npub mod navmeshes;\npub mod skeletons;\npub mod textures;\npub mod shaders;\npub mod audios;\npub mod localizations;\n".to_string()
 }
 
 fn default_static_scenes_rs() -> String {
@@ -1315,6 +1316,16 @@ fn default_static_collision_trimeshes_rs() -> String {
     r#"#![allow(unused_imports)]
 
 pub const fn lookup_collision_trimesh(_path_hash: u64) -> &'static [u8] {
+    b""
+}
+"#
+    .to_string()
+}
+
+fn default_static_navmeshes_rs() -> String {
+    r#"#![allow(unused_imports)]
+
+pub const fn lookup_navmesh(_path_hash: u64) -> &'static [u8] {
     b""
 }
 "#

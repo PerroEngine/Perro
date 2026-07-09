@@ -988,13 +988,14 @@ pub(super) fn draw_batches_sorted(batches: &[DrawBatch]) -> bool {
 #[inline]
 pub(super) fn multimesh_batch_sort_key(
     batch: &MultiMeshBatch,
-) -> (bool, bool, bool, u8, u32, u32, u32) {
+) -> (bool, bool, bool, bool, u8, u32, u32, u32) {
     let custom_token = match batch.material_kind {
         MaterialPipelineKind::Custom(token) => token,
         _ => 0,
     };
     (
         batch.mesh_blend,
+        batch.mesh_blend_screen,
         batch.casts_shadows,
         batch.double_sided,
         material_pipeline_kind_rank(&batch.material_kind),

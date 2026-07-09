@@ -58,6 +58,21 @@ fn apply_ray_light_3d_fields(node: &mut RayLight3D, fields: &[SceneObjectField])
                     node.cast_shadows = v;
                 }
             }
+            Some(NodeField::Light3D(Light3DField::Shadow)) => apply_shadow_tuning_object(
+                &mut node.shadow_strength,
+                &mut node.shadow_depth_bias,
+                &mut node.shadow_normal_bias,
+                value,
+            ),
+            Some(NodeField::Light3D(Light3DField::ShadowStrength)) => {
+                set_shadow_strength(&mut node.shadow_strength, value);
+            }
+            Some(NodeField::Light3D(Light3DField::ShadowDepthBias)) => {
+                set_shadow_depth_bias(&mut node.shadow_depth_bias, value);
+            }
+            Some(NodeField::Light3D(Light3DField::ShadowNormalBias)) => {
+                set_shadow_normal_bias(&mut node.shadow_normal_bias, value);
+            }
             Some(NodeField::Light3D(Light3DField::Active)) => {
                 if let Some(v) = as_bool(value) {
                     node.active = v;
@@ -96,6 +111,12 @@ fn apply_ambient_light_3d_fields(node: &mut AmbientLight3D, fields: &[SceneObjec
                     node.cast_shadows = v;
                 }
             }
+            Some(NodeField::Light3D(
+                Light3DField::Shadow
+                | Light3DField::ShadowStrength
+                | Light3DField::ShadowDepthBias
+                | Light3DField::ShadowNormalBias,
+            )) => {}
             Some(NodeField::Light3D(Light3DField::Active)) => {
                 if let Some(v) = as_bool(value) {
                     node.active = v;
@@ -138,6 +159,21 @@ fn apply_point_light_3d_fields(node: &mut PointLight3D, fields: &[SceneObjectFie
                 if let Some(v) = as_bool(value) {
                     node.cast_shadows = v;
                 }
+            }
+            Some(NodeField::Light3D(Light3DField::Shadow)) => apply_shadow_tuning_object(
+                &mut node.shadow_strength,
+                &mut node.shadow_depth_bias,
+                &mut node.shadow_normal_bias,
+                value,
+            ),
+            Some(NodeField::Light3D(Light3DField::ShadowStrength)) => {
+                set_shadow_strength(&mut node.shadow_strength, value);
+            }
+            Some(NodeField::Light3D(Light3DField::ShadowDepthBias)) => {
+                set_shadow_depth_bias(&mut node.shadow_depth_bias, value);
+            }
+            Some(NodeField::Light3D(Light3DField::ShadowNormalBias)) => {
+                set_shadow_normal_bias(&mut node.shadow_normal_bias, value);
             }
             Some(NodeField::Light3D(Light3DField::Active)) => {
                 if let Some(v) = as_bool(value) {
@@ -343,6 +379,21 @@ fn apply_spot_light_3d_fields(node: &mut SpotLight3D, fields: &[SceneObjectField
                     node.cast_shadows = v;
                 }
             }
+            Some(NodeField::Light3D(Light3DField::Shadow)) => apply_shadow_tuning_object(
+                &mut node.shadow_strength,
+                &mut node.shadow_depth_bias,
+                &mut node.shadow_normal_bias,
+                value,
+            ),
+            Some(NodeField::Light3D(Light3DField::ShadowStrength)) => {
+                set_shadow_strength(&mut node.shadow_strength, value);
+            }
+            Some(NodeField::Light3D(Light3DField::ShadowDepthBias)) => {
+                set_shadow_depth_bias(&mut node.shadow_depth_bias, value);
+            }
+            Some(NodeField::Light3D(Light3DField::ShadowNormalBias)) => {
+                set_shadow_normal_bias(&mut node.shadow_normal_bias, value);
+            }
             Some(NodeField::Light3D(Light3DField::Active)) => {
                 if let Some(v) = as_bool(value) {
                     node.active = v;
@@ -356,6 +407,49 @@ fn apply_spot_light_3d_fields(node: &mut SpotLight3D, fields: &[SceneObjectField
             _ => {}
         }
     });
+}
+
+fn apply_shadow_tuning_object(
+    strength: &mut f32,
+    depth_bias: &mut f32,
+    normal_bias: &mut f32,
+    value: &SceneValue,
+) {
+    let SceneValue::Object(entries) = value else {
+        return;
+    };
+    for (name, value) in entries.iter() {
+        match name.as_str() {
+            "strength" | "shadow_strength" | "opacity" | "shadow_opacity" => {
+                set_shadow_strength(strength, value);
+            }
+            "depth_bias" | "bias" | "shadow_depth_bias" | "shadow_bias" => {
+                set_shadow_depth_bias(depth_bias, value);
+            }
+            "normal_bias" | "normal" | "shadow_normal_bias" => {
+                set_shadow_normal_bias(normal_bias, value);
+            }
+            _ => {}
+        }
+    }
+}
+
+fn set_shadow_strength(out: &mut f32, value: &SceneValue) {
+    if let Some(v) = as_f32(value) {
+        *out = v;
+    }
+}
+
+fn set_shadow_depth_bias(out: &mut f32, value: &SceneValue) {
+    if let Some(v) = as_f32(value) {
+        *out = v;
+    }
+}
+
+fn set_shadow_normal_bias(out: &mut f32, value: &SceneValue) {
+    if let Some(v) = as_f32(value) {
+        *out = v;
+    }
 }
 
 fn as_color_array(value: &SceneValue) -> Option<Vec<[f32; 3]>> {

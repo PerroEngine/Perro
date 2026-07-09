@@ -133,6 +133,9 @@ var decal_textures: texture_2d_array<f32>;
 @group(0) @binding(12)
 var decal_sampler: sampler;
 
+@group(1) @binding(0)
+var<uniform> mesh_blend_mask_id: vec4<u32>;
+
 struct DecalSurface {
     albedo: vec3<f32>,
     normal: vec3<f32>,
@@ -685,4 +688,9 @@ fn vs_depth(
 
 @fragment
 fn fs_depth() {
+}
+
+@fragment
+fn fs_mask(in: VertexOutput) -> @location(0) u32 {
+    return mesh_blend_mask_id.x;
 }

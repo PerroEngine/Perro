@@ -23,6 +23,7 @@ mod audio;
 mod input_bridge;
 mod internal_updates;
 mod mesh_query;
+pub(crate) mod navmesh;
 mod physics;
 #[path = "runtime/render/two_d.rs"]
 mod render_2d;

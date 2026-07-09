@@ -148,7 +148,8 @@ Rendering and resource loading are handled by the runtime and `ResourceWindow`.
 - Uses `color`, `intensity`, `cast_shadows`, and `active`.
 - `PointLight2D` and `SpotLight2D` use `range`.
 - `SpotLight2D` uses `inner_angle_radians` and `outer_angle_radians`.
-- Shadows are not implemented.
+- `cast_shadows = true` uses hard shadows from visible `CollisionShape2D` casters.
+- Soft shadows and sprite-alpha silhouettes are future work.
 
 `Skeleton2D`
 
@@ -394,6 +395,7 @@ Lights:
 - `RayLight3D`
 - `PointLight3D`
 - `SpotLight3D`
+- Shadow-casting 3D lights use `cast_shadows`, `shadow_strength`, `shadow_depth_bias`, and `shadow_normal_bias`. See [3D Shadows](../resources/shadows3d.md).
 
 Physics 3D:
 

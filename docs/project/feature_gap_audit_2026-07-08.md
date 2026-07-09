@@ -11,29 +11,26 @@ Scope:
 
 | Gap | State | Why it matters | Best first ship |
 | --- | --- | --- | --- |
-| Demo2D parity | partial | fastest user-facing proof; no engine design block | particle zone + positional-audio zone |
-| Mesh blend polish | partial | feature exists but output differs by path | MSAA-safe seam mask + multimesh IDs |
-| 3D shadow controls | partial | shadows work but tuning is hidden | cfg + per-light bias/quality + docs |
-| Navmesh | research | most game-blocking missing gameplay feature | static baked navmesh + path query API |
-| Auto retarget | research | skinned asset reuse limited to exact rig contract | offline retarget bake tool |
-| 2D shadows | planned | `cast_shadows` fields exist but do nothing in 2D | hard-shadow mask from 2D colliders |
+| Demo2D parity | done | parity zones shipped in Demo2D | keep smoke/web checks current |
+| Mesh blend polish | done | MSAA and multimesh use the screen seam path | keep renderer tests + Demo3D docs current |
+| 3D shadow controls | done | shadow tuning fields and guide exist | keep Demo3D tuning lane on backlog |
+| Navmesh | partial | text `.pnav`, static `.pnav` embedding, resource API, and runtime path query exist | mesh/scene-to-nav bake, node, binary format, and Demo3D lane |
+| Auto retarget | partial | `.pretarget` alias maps and CLI import remap exist | rest-pose bake, static pipeline, and humanoid solve |
+| 2D shadows | partial | `cast_shadows` drives hard 2D shadows from visible `CollisionShape2D` casters | soft shadows, sprite/tilemap casters, Demo2D lane |
 | Editor release | in dev | editor exists but not release-grade | smoke, docs, save/load tests, inspector coverage |
 | Joint polish | planned | current joints cover core use, not tuning-heavy rigs | optional limits/motors/springs only after demo need |
-| Docs parity | partial | features exist but docs hide them or split them | camera stream, decals, shadow guide |
+| Docs parity | partial | features exist but docs hide them or split them | camera stream, decals, editor paths |
 | Test/smoke coverage | partial | several features need user-path proof, not just unit tests | demo smoke + screenshot/perf baselines |
 
 ## Priority
 
-1. Demo2D parity
-2. Mesh blend polish
-3. 3D shadow controls + docs
-4. Navmesh MVP
-5. Auto retarget bake
-6. 2D shadowed lights
-7. Editor release pass
-8. Joint polish
-9. Docs parity
-10. Test/smoke coverage
+1. Navmesh static bake + Demo3D lane
+2. Auto retarget rest-pose/static bake
+3. 2D shadow polish
+4. Editor release pass
+5. Joint polish
+6. Docs parity
+7. Test/smoke coverage
 
 Reason:
 
@@ -48,11 +45,14 @@ Goal:
 - make Demo2D mirror major runtime paths
 - avoid new engine work
 
-Missing:
+Shipped:
 
 - 2D particle stress lane
 - positional audio lane
 - docs rows + controls
+
+Still needed:
+
 - web sync after assets added
 
 Use:
@@ -79,7 +79,13 @@ Done:
 
 - hub button reaches both zones
 - profiler overlay shows cost
+- particle lane uses 4 mixed `ParticleEmitter2D` profiles
+- positional-audio lane uses attached MIDI speakers, `AudioMask2D`, `AudioEffectZone2D`, debug rays
+
+Follow-up:
+
 - web build runs
+- website demo files synced
 
 ## 2. Mesh Blend Polish
 
@@ -87,11 +93,13 @@ Goal:
 
 - same blend behavior for single mesh, multimesh, and MSAA
 
-Current:
+State:
 
+- done in `feature/mesh-blend-polish`
 - screen-space seam pass works for `MeshInstance3D`
-- MSAA falls back to legacy one-sided depth fade
-- `MultiMeshInstance3D` uses legacy fade
+- MSAA resolves to the single-sample scene target before seam
+- `MultiMeshInstance3D` writes stable batch ids into the seam mask
+- legacy depth fade stays as compatibility fallback when the seam path is disabled
 
 Use:
 
@@ -102,13 +110,13 @@ Use:
 
 Impl:
 
-1. move blend ID/depth mask to single-sample target when MSAA > 1
-2. resolve scene color before seam pass or sample non-MSAA color target
-3. assign stable participant IDs for multimesh batches
-4. write multimesh instance IDs into blend mask path
-5. keep legacy fade as fallback cfg for low-end path
-6. add renderer tests for mask IDs and pass routing
-7. add screenshot captures for MSAA off/on and multimesh
+1. done: move blend ID/depth mask to single-sample target when MSAA > 1
+2. done: resolve scene color before seam pass
+3. done: assign stable participant IDs for multimesh batches
+4. done: write multimesh batch IDs into blend mask path
+5. done: keep legacy fade as fallback cfg for low-end path
+6. done: add renderer tests for mask IDs and pass routing
+7. todo: add screenshot captures for MSAA off/on and multimesh
 
 Done:
 
@@ -123,12 +131,15 @@ Goal:
 - expose shadow quality knobs already implied by renderer
 - avoid shadow model rewrite
 
-Current:
+State:
 
 - ray/spot/point shadows exist
 - cascades, slots, culling, and multimesh shadow casters exist
 - fields: light `cast_shadows`, mesh `cast_shadows`, mesh `receive_shadows`
-- missing: user quality/bias knobs + dedicated docs
+- fields: `shadow_strength`, `shadow_depth_bias`, `shadow_normal_bias`
+- nested scene form: `shadow = { strength = 0.82 depth_bias = 0.00018 normal_bias = 0.045 }`
+- docs: `docs/resources/shadows3d.md`
+- limitation: current shader uses one frame-wide tuning triplet picked from the first active shadow caster
 
 Use:
 
@@ -139,19 +150,17 @@ Use:
 
 Impl:
 
-1. add global `ShadowSettings3D`
-2. add project cfg fields: map size, cascade count, max spot, max point
-3. add per-light fields: bias, normal_bias, shadow_range/quality
-4. thread fields through scene parser -> render bridge -> GPU setup
-5. add docs page `docs/resources/shadows3d.md`
-6. add Demo3D shadow tuning lane or extend mesh materials lane
-7. add perf notes: ray cascades vs point cubemap cost
+1. done: add per-light strength, depth-bias, and normal-bias fields
+2. done: thread fields through scene parser -> render bridge -> GPU setup
+3. done: add docs page `docs/resources/shadows3d.md`
+4. done: add unit tests for scene parse, runtime emit, and GPU uniform tuning
+5. todo: add Demo3D shadow tuning lane or extend mesh materials lane
+6. todo: add project cfg fields: map size, cascade count, max spot, max point
 
 Done:
 
 - user can fix acne/peter-pan artifacts without code edits
 - docs show cost and default values
-- demo shows receiver/caster toggles
 
 ## 4. Navmesh MVP
 
@@ -176,24 +185,41 @@ Use:
 - resource ID/cache model
 - `Draw2D/3D` debug lines if useful
 
+Current packet:
+
+- done: `NavMeshID`
+- done: `.pnav` text parser
+- done: `ctx.res.NavMeshes()` load/create/write/drop API
+- done: `ctx.run.NavMesh()` static 3D path query API
+- done: triangle shared-edge A*
+- done: layer mask, same-poly, corridor, unreachable tests
+- done: static pipeline embeds valid `.pnav` assets
+- done: packed/static runtime can load `.pnav` through `load_asset`
+- todo: binary `.pnav`
+- todo: mesh/scene-to-nav static bake
+- todo: `NavMesh3D` node + scene fields
+- todo: Demo3D lane
+- todo: real funnel/string-pull smoothing
+
 New:
 
 - `NavMeshID`
 - `.pnav` asset format
 - `ctx.res.NavMeshes()` load API
-- `ctx.run.Navigation()` query API
+- `ctx.run.NavMesh()` query API
 
 Impl:
 
 1. add `NavMeshID` in ids crate
-2. define `.pnav` text + binary static bake format
+2. define `.pnav` text format and static embed path
 3. write navmesh data structs in core/asset formats
-4. add static pipeline bake from mesh or scene-marked geometry
-5. add runtime loader/cache
-6. add polygon graph A*
-7. add funnel/string-pull smoothing
-8. expose `find_path(nav, start, end, opts) -> Vec<Vector3>`
-9. add Demo3D nav lane with click-to-path or scripted agents
+4. add static pipeline pass-through bake for authored `.pnav`
+5. add static pipeline bake from mesh or scene-marked geometry
+6. add runtime loader/cache
+7. add polygon graph A*
+8. add funnel/string-pull smoothing
+9. expose `find_path(nav, start, end, opts) -> Vec<Vector3>`
+10. add Demo3D nav lane with click-to-path or scripted agents
 
 Later:
 
@@ -265,12 +291,18 @@ Goal:
 
 - make 2D `cast_shadows` meaningful
 
-MVP:
+Current packet:
 
-- hard shadows
-- static/dynamic 2D collision blockers
-- point + spot first
-- ray light after
+- done: `cast_shadows` reaches `RayLight2DState`, `PointLight2DState`, and `SpotLight2DState`
+- done: visible `CollisionShape2D` nodes emit `ShadowCaster2DState`
+- done: GPU light shader reads caster storage buffer
+- done: point and spot lights hard-mask pixels blocked by quad/circle/triangle casters
+- done: ray lights use directional hard shadows in virtual 2D space
+- todo: body layer/mask filtering
+- todo: sprite alpha silhouettes
+- todo: tilemap collision casters
+- todo: soft penumbra
+- todo: Demo2D shadow lane
 
 Use:
 
@@ -281,14 +313,13 @@ Use:
 
 Impl:
 
-1. collect blocker edges from 2D collision shapes
-2. filter blockers by layer/mask + camera
-3. extrude silhouette quads from light origin
-4. render shadow mask into light target
-5. multiply/subtract mask during light draw
-6. add spot cone clipping
-7. add ray-light directional extrusion
-8. add Demo2D shadow lane
+1. done: add bridge shadow flags + caster state
+2. done: retain shadow casters in 2D renderer
+3. done: upload caster storage buffer beside the 2D light pass
+4. done: mask light fragments with segment-vs-caster tests
+5. done: add runtime + renderer tests
+6. todo: filter blockers by body layer/mask + camera
+7. todo: add Demo2D shadow lane
 
 Later:
 
@@ -298,9 +329,9 @@ Later:
 
 Done:
 
-- point/spot shadows visible
-- moving blockers update
-- cost stable with many sprites
+- `cast_shadows` no longer no-ops for ray/point/spot 2D lights
+- collision shape blockers update through retained render state
+- shader validation covers the new storage-buffer light mask
 
 ## 7. Editor Release Pass
 
@@ -371,7 +402,6 @@ Goal:
 
 Needed:
 
-- `docs/resources/shadows3d.md`
 - standalone decals page or move Demo3D decal docs into docs tree
 - camera streams page
 - UI widgets summary update
@@ -443,7 +473,7 @@ Keep this only as proof that matrix changed:
 | Camera streams | missing | done |
 | UI widgets | missing | done |
 | Editor | missing | in dev |
-| Demo2D parity | missing | partial |
-| 3D shadows | partial | partial |
+| Demo2D parity | missing | done |
+| 3D shadows | partial | done |
 | Retargeting | research | research |
 | Navmesh | research | research |

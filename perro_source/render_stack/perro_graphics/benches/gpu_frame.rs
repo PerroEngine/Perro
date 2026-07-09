@@ -484,6 +484,9 @@ fn setup_lit_meshes(
             color: [1.0, 0.95, 0.9],
             intensity: 0.6,
             cast_shadows: false,
+            shadow_strength: 0.82,
+            shadow_depth_bias: 0.00018,
+            shadow_normal_bias: 0.045,
         },
     })));
     graphics.submit_many((0..point_count).map(point_light_3d_command));
@@ -503,6 +506,9 @@ fn setup_overdraw_meshes(window: &Arc<Window>, count: u32) -> PerroGraphics {
             color: [1.0, 1.0, 1.0],
             intensity: 0.7,
             cast_shadows: false,
+            shadow_strength: 0.82,
+            shadow_depth_bias: 0.00018,
+            shadow_normal_bias: 0.045,
         },
     })));
     graphics.submit_many((0..count).map(|i| draw_overdraw_command(i, mesh, material)));
@@ -538,6 +544,9 @@ fn setup_blend_stack_scene(
             color: [1.0, 1.0, 1.0],
             intensity: 0.7,
             cast_shadows: false,
+            shadow_strength: 0.82,
+            shadow_depth_bias: 0.00018,
+            shadow_normal_bias: 0.045,
         },
     })));
     let blend = MeshBlendOptions3D {
@@ -826,6 +835,9 @@ fn point_light_3d_command(i: u32) -> RenderCommand {
             intensity: 12.0,
             range: 8.0,
             cast_shadows: false,
+            shadow_strength: 0.82,
+            shadow_depth_bias: 0.00018,
+            shadow_normal_bias: 0.045,
         },
     }))
 }
@@ -842,6 +854,9 @@ fn spot_light_3d_command(i: u32) -> RenderCommand {
             inner_angle_radians: 0.45,
             outer_angle_radians: 0.9,
             cast_shadows: false,
+            shadow_strength: 0.82,
+            shadow_depth_bias: 0.00018,
+            shadow_normal_bias: 0.045,
         },
     }))
 }

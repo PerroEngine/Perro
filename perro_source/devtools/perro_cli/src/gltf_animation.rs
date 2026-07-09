@@ -1,4 +1,10 @@
 use crate::{parse_flag_value, resolve_local_path};
+use perro_animation::{
+    ANIMATION_TRANSFORM_MASK_POSITION, ANIMATION_TRANSFORM_MASK_ROTATION,
+    ANIMATION_TRANSFORM_MASK_SCALE, AnimationBoneSelector, AnimationClip, AnimationKeyMode,
+    AnimationTrackValue,
+};
+use perro_scene::{Node2DField, Node3DField, NodeField, Skeleton2DField, Skeleton3DField};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fmt::Write as _;
 use std::path::Path;
@@ -45,12 +51,26 @@ pub(crate) fn gltf_to_panim_command(args: &[String], cwd: &Path) -> Result<(), S
         .map(|name| sanitize_ident(&name))
         .unwrap_or_else(|| "Rig".to_string());
 
-    let panim = convert_gltf_animation_to_panim(
+    let mut panim = convert_gltf_animation_to_panim(
         &input_path,
         fps,
         clip_selector.as_deref(),
         &skeleton_object,
     )?;
+    if let Some(raw_map) =
+        parse_flag_value(args, "--retarget-map").or_else(|| parse_flag_value(args, "--retarget"))
+    {
+        let map_path = resolve_local_path(&raw_map, cwd);
+        let map_text = std::fs::read_to_string(&map_path)
+            .map_err(|err| format!("failed to read {}: {err}", map_path.display()))?;
+        let map = perro_animation::parse_pretarget(&map_text)?;
+        let clip = perro_animation::parse_panim(&panim)?;
+        let (retargeted, report) = perro_animation::retarget_skeleton3d_clip(&clip, &map);
+        if report.remapped_tracks == 0 && report.kept_unmapped_tracks == 0 {
+            return Err("retarget map matched no Skeleton3D bone tracks".to_string());
+        }
+        panim = render_clip_to_panim(&retargeted)?;
+    }
 
     if let Some(parent) = output_path.parent() {
         std::fs::create_dir_all(parent)
@@ -278,6 +298,161 @@ fn render_panim(
         let _ = writeln!(out, "[/Frame{frame}]\n");
     }
 
+    Ok(out)
+}
+
+fn render_clip_to_panim(clip: &AnimationClip) -> Result<String, String> {
+    let mut frames = BTreeMap::<u32, FrameBlock>::new();
+    let mut objects = BTreeMap::<String, String>::new();
+    for object in clip.objects.iter() {
+        objects.insert(
+            object.name.to_string(),
+            object.node_type.as_str().to_string(),
+        );
+    }
+    for track in clip.object_tracks.iter() {
+        for key in track.keys.iter() {
+            if key.mode != AnimationKeyMode::Closed {
+                continue;
+            }
+            for (prop, value) in track_key_values(track, &key.value)? {
+                frames.entry(key.frame).or_default().tracks.insert(
+                    TrackTarget {
+                        object: track.object.to_string(),
+                        prop,
+                    },
+                    value,
+                );
+            }
+        }
+    }
+    render_panim(clip.name.as_ref(), clip.fps, &objects, &frames)
+}
+
+fn track_key_values(
+    track: &perro_animation::AnimationObjectTrack,
+    value: &AnimationTrackValue,
+) -> Result<Vec<(String, String)>, String> {
+    if let Some(target) = &track.bone_target {
+        let bone = match &target.selector {
+            AnimationBoneSelector::Name(name) => format!("bone[\"{}\"]", escape_str(name)),
+            AnimationBoneSelector::Index(index) => format!("bone[{index}]"),
+        };
+        return transform_key_values(&bone, track.transform3d_mask, value);
+    }
+
+    match &track.field {
+        NodeField::Node3D(Node3DField::Position)
+        | NodeField::Skeleton3D(Skeleton3DField::Skeleton) => {
+            transform_key_values("", track.transform3d_mask, value)
+        }
+        NodeField::Node2D(Node2DField::Position)
+        | NodeField::Skeleton2D(Skeleton2DField::Skeleton) => {
+            transform2d_key_values("", track.transform2d_mask, value)
+        }
+        NodeField::Node3D(Node3DField::Visible) | NodeField::Node2D(Node2DField::Visible) => {
+            match value {
+                AnimationTrackValue::Bool(value) => {
+                    Ok(vec![("visible".to_string(), value.to_string())])
+                }
+                _ => Err("visible track needs bool value".to_string()),
+            }
+        }
+        _ => Ok(Vec::new()),
+    }
+}
+
+fn transform_key_values(
+    prefix: &str,
+    mask: u8,
+    value: &AnimationTrackValue,
+) -> Result<Vec<(String, String)>, String> {
+    let AnimationTrackValue::Transform3D(transform) = value else {
+        return Err("3D transform track needs Transform3D value".to_string());
+    };
+    let prefix = if prefix.is_empty() {
+        String::new()
+    } else {
+        format!("{prefix}.")
+    };
+    let mask = if mask == 0 {
+        ANIMATION_TRANSFORM_MASK_POSITION
+            | ANIMATION_TRANSFORM_MASK_ROTATION
+            | ANIMATION_TRANSFORM_MASK_SCALE
+    } else {
+        mask
+    };
+    let mut out = Vec::new();
+    if mask & ANIMATION_TRANSFORM_MASK_POSITION != 0 {
+        out.push((
+            format!("{prefix}position"),
+            vec3_value(transform.position.to_array()),
+        ));
+    }
+    if mask & ANIMATION_TRANSFORM_MASK_ROTATION != 0 {
+        out.push((
+            format!("{prefix}rotation"),
+            quat_value([
+                transform.rotation.x,
+                transform.rotation.y,
+                transform.rotation.z,
+                transform.rotation.w,
+            ]),
+        ));
+    }
+    if mask & ANIMATION_TRANSFORM_MASK_SCALE != 0 {
+        out.push((
+            format!("{prefix}scale"),
+            vec3_value(transform.scale.to_array()),
+        ));
+    }
+    Ok(out)
+}
+
+fn transform2d_key_values(
+    prefix: &str,
+    mask: u8,
+    value: &AnimationTrackValue,
+) -> Result<Vec<(String, String)>, String> {
+    let AnimationTrackValue::Transform2D(transform) = value else {
+        return Err("2D transform track needs Transform2D value".to_string());
+    };
+    let prefix = if prefix.is_empty() {
+        String::new()
+    } else {
+        format!("{prefix}.")
+    };
+    let mask = if mask == 0 {
+        ANIMATION_TRANSFORM_MASK_POSITION
+            | ANIMATION_TRANSFORM_MASK_ROTATION
+            | ANIMATION_TRANSFORM_MASK_SCALE
+    } else {
+        mask
+    };
+    let mut out = Vec::new();
+    if mask & ANIMATION_TRANSFORM_MASK_POSITION != 0 {
+        out.push((
+            format!("{prefix}position"),
+            format!(
+                "({}, {})",
+                fmt_f32(transform.position.x),
+                fmt_f32(transform.position.y)
+            ),
+        ));
+    }
+    if mask & ANIMATION_TRANSFORM_MASK_ROTATION != 0 {
+        out.push((format!("{prefix}rotation"), fmt_f32(transform.rotation)));
+    }
+    if mask & ANIMATION_TRANSFORM_MASK_SCALE != 0 {
+        out.push((
+            format!("{prefix}scale"),
+            format!(
+                "({}, {})",
+                fmt_f32(transform.scale.x),
+                fmt_f32(transform.scale.y)
+            ),
+        ));
+    }
     Ok(out)
 }
 

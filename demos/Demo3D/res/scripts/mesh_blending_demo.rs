@@ -28,7 +28,13 @@ methods!({
         if overlay.is_nil() {
             return;
         }
-        let meshes = query!(ctx.run, all(node_type[MeshInstance3D]), in_subtree(ctx.id)).len();
+        let meshes = query!(ctx.run, all(node_type[MeshInstance3D]), in_subtree(ctx.id)).len()
+            + query!(
+                ctx.run,
+                all(node_type[MultiMeshInstance3D]),
+                in_subtree(ctx.id)
+            )
+            .len();
         let lights = query!(ctx.run, all(node_type[AmbientLight3D]), in_subtree(ctx.id)).len()
             + query!(ctx.run, all(node_type[RayLight3D]), in_subtree(ctx.id)).len();
         let body = format!("blend targets {}\nlight rigs {}", meshes, lights);

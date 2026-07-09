@@ -354,6 +354,7 @@ pub struct StaticEmbeddedAssetsConfig {
     pub csv_lookup: perro_runtime::StaticCsvLookup,
     pub mesh_lookup: perro_graphics::StaticMeshLookup,
     pub collision_trimesh_lookup: perro_runtime::StaticBytesLookup,
+    pub navmesh_lookup: perro_runtime::StaticBytesLookup,
     pub skeleton_lookup: perro_runtime::StaticSkeletonLookup,
     pub texture_lookup: perro_graphics::StaticTextureLookup,
     pub shader_lookup: perro_graphics::StaticShaderLookup,
@@ -414,6 +415,7 @@ pub fn run_static_embedded_project(
         .with_static_csv_lookup(input.assets.csv_lookup)
         .with_static_mesh_lookup(input.assets.mesh_lookup)
         .with_static_collision_trimesh_lookup(input.assets.collision_trimesh_lookup)
+        .with_static_navmesh_lookup(input.assets.navmesh_lookup)
         .with_static_skeleton_lookup(input.assets.skeleton_lookup)
         .with_static_audio_lookup(input.assets.audio_lookup)
         .with_static_texture_lookup(input.assets.texture_lookup)
@@ -496,6 +498,7 @@ pub fn run_static_embedded_project_android(
         .with_static_csv_lookup(input.assets.csv_lookup)
         .with_static_mesh_lookup(input.assets.mesh_lookup)
         .with_static_collision_trimesh_lookup(input.assets.collision_trimesh_lookup)
+        .with_static_navmesh_lookup(input.assets.navmesh_lookup)
         .with_static_skeleton_lookup(input.assets.skeleton_lookup)
         .with_static_audio_lookup(input.assets.audio_lookup)
         .with_static_texture_lookup(input.assets.texture_lookup)
@@ -586,6 +589,7 @@ pub fn run_static_embedded_project_web(input: StaticEmbeddedProject<'_>) -> Resu
             .with_static_csv_lookup(input.assets.csv_lookup)
             .with_static_mesh_lookup(input.assets.mesh_lookup)
             .with_static_collision_trimesh_lookup(input.assets.collision_trimesh_lookup)
+            .with_static_navmesh_lookup(input.assets.navmesh_lookup)
             .with_static_skeleton_lookup(input.assets.skeleton_lookup)
             .with_static_audio_lookup(input.assets.audio_lookup)
             .with_static_texture_lookup(input.assets.texture_lookup)
