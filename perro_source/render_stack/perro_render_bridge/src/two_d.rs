@@ -403,7 +403,7 @@ impl TileSet2D {
     }
 
     pub fn is_empty(&self) -> bool {
-        self.texture.is_empty() || self.tile_size[0] <= 0.0 || self.tile_size[1] <= 0.0
+        self.texture.is_empty() || !valid_positive_vec2(self.tile_size)
     }
 }
 
@@ -488,6 +488,9 @@ pub fn decode_tileset_2d_binary(bytes: &[u8]) -> Option<TileSet2D> {
         let atlas = [read_u32(bytes, &mut cursor)?, read_u32(bytes, &mut cursor)?];
         let collision = read_u8(bytes, &mut cursor)? != 0;
         let collision_shape = decode_tileset_collision_shape(bytes, &mut cursor)?;
+        if !valid_tileset_collision_shape(&collision_shape) {
+            return None;
+        }
         tiles.push(TileSetTile2D {
             id,
             atlas,
@@ -495,7 +498,7 @@ pub fn decode_tileset_2d_binary(bytes: &[u8]) -> Option<TileSet2D> {
             collision_shape,
         });
     }
-    if cursor != bytes.len() || texture.is_empty() || tile_size[0] <= 0.0 || tile_size[1] <= 0.0 {
+    if cursor != bytes.len() || texture.is_empty() || !valid_positive_vec2(tile_size) {
         return None;
     }
     Some(TileSet2D {
@@ -592,6 +595,41 @@ fn decode_tileset_collision_shape(
     }
 }
 
+fn valid_positive(value: f32) -> bool {
+    value.is_finite() && value > 0.0
+}
+
+fn valid_vec2(value: [f32; 2]) -> bool {
+    value[0].is_finite() && value[1].is_finite()
+}
+
+fn valid_positive_vec2(value: [f32; 2]) -> bool {
+    valid_positive(value[0]) && valid_positive(value[1])
+}
+
+fn valid_tileset_collision_shape(shape: &TileSetCollisionShape2D) -> bool {
+    match shape {
+        TileSetCollisionShape2D::Auto => true,
+        TileSetCollisionShape2D::Shape { shape, offset } => {
+            valid_vec2(*offset)
+                && match shape {
+                    TileSetShape2D::Rect { width, height }
+                    | TileSetShape2D::Triangle { width, height } => {
+                        valid_positive(*width) && valid_positive(*height)
+                    }
+                    TileSetShape2D::Circle { radius } => valid_positive(*radius),
+                }
+        }
+        TileSetCollisionShape2D::Polygon { points, offset } => {
+            points.len() >= 3
+                && valid_vec2(*offset)
+                && points
+                    .iter()
+                    .all(|point| point.x.is_finite() && point.y.is_finite())
+        }
+    }
+}
+
 pub fn parse_ptileset_source(source: &str) -> Option<TileSet2D> {
     let mut texture = String::new();
     let mut tile_size = [0.0, 0.0];
@@ -624,7 +662,12 @@ pub fn parse_ptileset_source(source: &str) -> Option<TileSet2D> {
             collision_shape,
         });
     }
-    if texture.is_empty() || tile_size[0] <= 0.0 || tile_size[1] <= 0.0 {
+    if texture.is_empty()
+        || !valid_positive_vec2(tile_size)
+        || tiles
+            .iter()
+            .any(|tile| !valid_tileset_collision_shape(&tile.collision_shape))
+    {
         return None;
     }
     tiles.sort_by_key(|tile| tile.id);
