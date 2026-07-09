@@ -2,6 +2,7 @@ use ahash::{AHashMap, AHashSet};
 use perro_ids::{NodeID, NodeTag, TagID};
 use perro_nodes::{NodeType, SceneNode};
 use std::borrow::Cow;
+use std::ops::{Deref, DerefMut};
 
 /// Generational node store used by runtime hot paths.
 ///
@@ -12,20 +13,23 @@ use std::borrow::Cow;
 ///
 /// Node names and tags are indexed for O(1) lookup via [`Self::named_ids`] /
 /// [`Self::tag_index`]. Both indices are maintained by insert/remove/clear
-/// plus the mutating accessors ([`Self::rename`], [`Self::set_node_tags`],
-/// [`Self::add_node_tag`], [`Self::remove_node_tag`]); writing `node.name` or
-/// `node.tags` through `get_mut` bypasses them — set both before insert or go
-/// through the arena methods. Same rule for `node.parent`: reparenting a node
-/// already in the arena must go through [`Self::set_parent`] so the slot
-/// mirror stays in sync (setting `parent` on a detached node before `insert`
-/// is fine — insert captures it).
+/// plus the tracked mutating accessors ([`Self::edit`], [`Self::rename`],
+/// [`Self::set_node_tags`], [`Self::add_node_tag`],
+/// [`Self::remove_node_tag`], [`Self::set_parent`]). Prefer [`Self::edit`] when
+/// one operation may change both indexed and ordinary fields.
+///
+/// [`Self::get_mut`] and [`Self::iter_mut`] are untracked compatibility escape
+/// hatches. Writing `node.name`, `node.tags`, or `node.parent` through either
+/// bypasses the corresponding index or slot mirror. Use tracked accessors for
+/// arena-resident nodes; setting those fields before [`Self::insert`] is safe.
 pub struct NodeArena {
     nodes: Vec<Option<SceneNode>>,
     generations: Vec<u32>,
     /// Slot-indexed hot mirror of each node's type tag. Contiguous scan lane
     /// so type filters skip the wide `SceneNode` slots entirely. Value only
     /// meaningful while the slot is occupied (stale after remove; scans must
-    /// still validate occupancy via `slot_get`). Node type is fixed at insert.
+    /// still validate occupancy via `slot_get`). Node type is fixed at insert
+    /// unless the data variant is replaced through [`Self::edit`].
     node_types: Vec<NodeType>,
     /// Slot-indexed hot mirror of each node's parent id. Kept in sync by
     /// insert/remove/clear + [`Self::set_parent`]. Nil while slot is free.
@@ -48,6 +52,80 @@ pub struct NodeArena {
     /// systems that care only whether node set/topology chg (audio scene-flag
     /// rescan). Structural bumps also move mutation_revision + physics_revision.
     structural_revision: u64,
+}
+
+/// Internal guard used by [`NodeArena::edit`] to restore indices on normal
+/// return and during unwinding.
+struct TrackedNodeMut<'a> {
+    arena: &'a mut NodeArena,
+    id: NodeID,
+    index: usize,
+    old_name: Cow<'static, str>,
+    old_tags: Vec<TagID>,
+    old_parent: NodeID,
+    old_node_type: NodeType,
+}
+
+impl Deref for TrackedNodeMut<'_> {
+    type Target = SceneNode;
+
+    fn deref(&self) -> &Self::Target {
+        self.arena.nodes[self.index]
+            .as_ref()
+            .expect("tracked node slot stays live while borrowed")
+    }
+}
+
+impl DerefMut for TrackedNodeMut<'_> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.arena.nodes[self.index]
+            .as_mut()
+            .expect("tracked node slot stays live while borrowed")
+    }
+}
+
+impl Drop for TrackedNodeMut<'_> {
+    fn drop(&mut self) {
+        let (new_name, new_tags, new_parent, new_node_type) = {
+            let node = self.arena.nodes[self.index]
+                .as_ref()
+                .expect("tracked node slot stays live while borrowed");
+            (
+                node.name.clone(),
+                node.get_tag_ids(),
+                node.parent,
+                node.node_type(),
+            )
+        };
+
+        if self.old_name != new_name {
+            self.arena.unindex_name(&self.old_name, self.id);
+            if !new_name.is_empty() {
+                self.arena
+                    .name_index
+                    .entry(new_name)
+                    .or_default()
+                    .push(self.id);
+            }
+        }
+
+        for tag in &self.old_tags {
+            if !new_tags.contains(tag) {
+                self.arena.unindex_tag(*tag, self.id);
+            }
+        }
+        for tag in new_tags {
+            self.arena.tag_index.entry(tag).or_default().insert(self.id);
+        }
+
+        self.arena.parents[self.index] = new_parent;
+        self.arena.node_types[self.index] = new_node_type;
+        if self.old_parent != new_parent || self.old_node_type != new_node_type {
+            self.arena.bump_structural_revision();
+        } else {
+            self.arena.bump_mutation_revision();
+        }
+    }
 }
 
 impl Default for NodeArena {
@@ -217,14 +295,42 @@ impl NodeArena {
         self.nodes[index].as_ref()
     }
 
-    /// Get a mutable node by id.
+    /// Get an untracked mutable node by id.
     ///
     /// Returns `None` for nil ids, stale generations, out-of-bounds slots, or
     /// empty slots.
+    ///
+    /// # Index consistency
+    ///
+    /// Do not change `SceneNode::name`, its tags, or `SceneNode::parent`
+    /// through this reference. Such writes bypass the arena's name/tag indices
+    /// and parent mirror. Use [`Self::edit`] for mixed changes or the focused
+    /// tracked accessors for individual indexed fields.
     pub fn get_mut(&mut self, id: NodeID) -> Option<&mut SceneNode> {
         let index = self.valid_slot(id)?;
         self.bump_mutation_revision();
         self.nodes[index].as_mut()
+    }
+
+    /// Edit a node while keeping its name/tag indices and parent mirror in
+    /// sync.
+    ///
+    /// The callback may mutate any public [`SceneNode`] field. Index/mirror
+    /// repair and revision updates run when the callback returns or unwinds.
+    /// Returns `None` without calling the callback when `id` is not live.
+    pub fn edit<R>(&mut self, id: NodeID, edit: impl FnOnce(&mut SceneNode) -> R) -> Option<R> {
+        let index = self.valid_slot(id)?;
+        let node = self.nodes[index].as_ref()?;
+        let mut tracked = TrackedNodeMut {
+            id,
+            index,
+            old_name: node.name.clone(),
+            old_tags: node.get_tag_ids(),
+            old_parent: node.parent,
+            old_node_type: node.node_type(),
+            arena: self,
+        };
+        Some(edit(&mut tracked))
     }
 
     /// Mutable lookup that bumps only the data revision. The caller MUST call
@@ -430,6 +536,9 @@ impl NodeArena {
     }
 
     /// Iterate mutably over all live nodes with their current ids.
+    ///
+    /// This is untracked mutable access: do not change node names, tags, or
+    /// parents through this iterator. Use [`Self::edit`] for those fields.
     pub fn iter_mut(&mut self) -> impl Iterator<Item = (NodeID, &mut SceneNode)> {
         self.bump_mutation_revision();
         self.nodes

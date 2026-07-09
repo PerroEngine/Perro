@@ -326,6 +326,77 @@ fn node_arena_tag_index_tracks_insert_mutate_remove() {
 }
 
 #[test]
+fn node_arena_edit_tracks_name_tags_and_parent() {
+    let mut arena = NodeArena::new();
+    let parent = arena.insert(SceneNode::new(SceneNodeData::Node3D(Node3D::new())));
+    let other_parent = arena.insert(SceneNode::new(SceneNodeData::Node3D(Node3D::new())));
+    let old_tag = perro_ids::NodeTag::borrowed("old");
+    let new_tag = perro_ids::NodeTag::borrowed("new");
+
+    let mut node = SceneNode::new(SceneNodeData::Node3D(Node3D::new()));
+    node.name = "before".into();
+    node.set_tags(Some(vec![old_tag.clone()]));
+    node.parent = parent;
+    let id = arena.insert(node);
+    let structural_before = arena.structural_revision();
+
+    let result = arena.edit(id, |node| {
+        node.name = "after".into();
+        node.set_tags(Some(vec![new_tag.clone()]));
+        node.parent = other_parent;
+        42
+    });
+
+    assert_eq!(result, Some(42));
+    assert!(arena.named_ids("before").is_empty());
+    assert_eq!(arena.named_ids("after"), &[id]);
+    assert!(
+        !arena
+            .tag_index()
+            .get(&old_tag.id)
+            .is_some_and(|ids| ids.contains(&id))
+    );
+    assert!(
+        arena
+            .tag_index()
+            .get(&new_tag.id)
+            .is_some_and(|ids| ids.contains(&id))
+    );
+    assert_eq!(arena.parent_slots()[id.index() as usize], other_parent);
+    assert_eq!(arena.get(id).expect("edited node").parent, other_parent);
+    assert!(arena.structural_revision() > structural_before);
+    arena.validate_mirrors();
+}
+
+#[test]
+fn node_arena_edit_repairs_indices_during_unwind() {
+    let mut arena = NodeArena::new();
+    let parent = arena.insert(SceneNode::new(SceneNodeData::Node3D(Node3D::new())));
+    let tag = perro_ids::NodeTag::borrowed("panic-safe");
+    let id = arena.insert(SceneNode::new(SceneNodeData::Node3D(Node3D::new())));
+
+    let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        arena.edit(id, |node| {
+            node.name = "unwound".into();
+            node.set_tags(Some(vec![tag.clone()]));
+            node.parent = parent;
+            panic!("test panic");
+        });
+    }));
+
+    assert!(panic.is_err());
+    assert_eq!(arena.named_ids("unwound"), &[id]);
+    assert!(
+        arena
+            .tag_index()
+            .get(&tag.id)
+            .is_some_and(|ids| ids.contains(&id))
+    );
+    assert_eq!(arena.parent_slots()[id.index() as usize], parent);
+    arena.validate_mirrors();
+}
+
+#[test]
 fn script_update_schedules_toggle_at_runtime() {
     let mut runtime = Runtime::new();
     let update_count = Arc::new(AtomicUsize::new(0));
