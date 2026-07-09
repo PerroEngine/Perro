@@ -7,7 +7,7 @@ mod tests {
         module_name_from_rel, module_short_name_from_rel, native_output_artifact_name,
         native_output_folder_name, normalize_cargo_output_paths, reset_embedded_dir,
         sync_dlc_scripts, sync_scripts, target_slug_from_triple, transpile_frontend_script,
-        transpiled_exports_script_ctor,
+        transpiled_exports_script_ctor, write_scripts_lib,
     };
     use perro_project::{
         ensure_project_layout, ensure_project_scaffold, ensure_project_toml,
@@ -487,6 +487,20 @@ pub fn mix(a: f32, b: f32) -> f32 {
             !transpiled_exports_script_ctor(&transpiled),
             "bare modules should not register as script constructors"
         );
+    }
+
+    #[test]
+    fn generated_scripts_lib_exports_v2_abi_descriptor() {
+        let root = unique_temp_dir("perro_compiler_script_abi_descriptor");
+        let src = root.join("src");
+        write_scripts_lib(&src, &[], &[], "res://").expect("write scripts lib");
+        let generated = std::fs::read_to_string(src.join("lib.rs")).expect("read scripts lib");
+
+        assert!(generated.contains("perro_script_abi_descriptor_v2"));
+        assert!(generated.contains("ScriptAbiDescriptor::v2(SCRIPT_ABI_BUILD_FINGERPRINT)"));
+        assert!(generated.contains("-> *const ScriptAbiDescriptorHeader"));
+
+        std::fs::remove_dir_all(root).expect("remove script ABI fixture");
     }
 
     #[test]

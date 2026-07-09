@@ -4,6 +4,8 @@
 //! audio propagation, and render command extraction. Leaf modules keep
 //! subsystem behavior split by domain so this crate stays navigable.
 
+include!(concat!(env!("OUT_DIR"), "/script_abi_fingerprint.rs"));
+
 mod cns;
 mod material_schema;
 mod render_result;
