@@ -379,23 +379,19 @@ fn generate_dlc_static_assets(
         embedded_dir: embedded_root.clone(),
         asset_prefix: format!("dlc://{dlc_name}/"),
     };
-    perro_static_pipeline::set_static_pipeline_overrides(Some(overrides));
-    let bake_result = (|| -> Result<(), CompilerError> {
-        let cfg = load_project_toml(project_root)
-            .map_err(|e| CompilerError::SceneParse(format!("failed to load project.toml: {e}")))?;
-        generate_dlc_static_modules(project_root, cfg.meshlets)?;
-        perro_static_pipeline::write_static_mod_rs(project_root)
-            .map_err(|e| CompilerError::SceneParse(e.to_string()))?;
-        build_perro_assets_archive(
-            &embedded_root.join("assets.perro"),
-            dlc_root,
-            project_root,
-            &[],
-        )?;
-        Ok(())
-    })();
-    perro_static_pipeline::set_static_pipeline_overrides(None);
-    bake_result
+    let _override_guard = perro_static_pipeline::push_static_pipeline_overrides(overrides);
+    let cfg = load_project_toml(project_root)
+        .map_err(|e| CompilerError::SceneParse(format!("failed to load project.toml: {e}")))?;
+    generate_dlc_static_modules(project_root, cfg.meshlets)?;
+    perro_static_pipeline::write_static_mod_rs(project_root)
+        .map_err(|e| CompilerError::SceneParse(e.to_string()))?;
+    build_perro_assets_archive(
+        &embedded_root.join("assets.perro"),
+        dlc_root,
+        project_root,
+        &[],
+    )?;
+    Ok(())
 }
 
 pub fn compile_dlc_bundle(project_root: &Path, dlc_name: &str) -> Result<PathBuf, CompilerError> {
