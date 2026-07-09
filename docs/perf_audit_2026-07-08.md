@@ -83,6 +83,13 @@ short Criterion run: `--sample-size 10 --warm-up-time 0.5 --measurement-time 1`
 - `runtime_core/trimesh_vertices_arc_share`: ~123.6ns
 - `runtime_core/animated_sprite_leaf_force_rerender`: ~506.7us
 
+opt run aft rm-node cleanup:
+
+- `runtime_core/internal_schedule_unregister_remove_nodes`: ~82.5ms
+- res: +18.0% faster vs ~98.1ms
+- chg: skip render remove cmds for non-render nodes
+- chg: skip schedule list scans by node type
+
 ## Static Scan
 
 - dup dep names: 29

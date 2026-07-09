@@ -5,7 +5,7 @@ use crate::render_result::RuntimeRenderResult;
 use ahash::AHashMap;
 use glam::Mat4;
 use perro_ids::{MaterialID, MeshID, NodeID, TextureID};
-use perro_nodes::{CameraProjection, CameraStream, SceneNodeData};
+use perro_nodes::{CameraProjection, CameraStream, NodeType, Renderable, SceneNodeData, Spatial};
 use perro_render_bridge::{
     AmbientLight2DState, AmbientLight3DState, Camera2DState, Camera3DState, CameraProjectionState,
     CameraStreamCommand, CameraStreamDraw3DState, CameraStreamLighting3DState,
@@ -499,22 +499,66 @@ impl Runtime {
         self.dirty.dirty_count()
     }
 
-    pub(crate) fn note_removed_render_node(&mut self, node: NodeID) {
-        let _ = self.resource_api.release_webcam_node_slot(node);
+    pub(crate) fn note_removed_render_node(&mut self, node: NodeID, ty: NodeType) {
+        if matches!(ty, NodeType::Webcam) {
+            let _ = self.resource_api.release_webcam_node_slot(node);
+        }
         self.render_2d.note_removed_node(node);
         self.render_3d.note_removed_node(node);
         self.render_ui.note_removed_node(node);
         self.locale_text.remove_node_bindings(node);
-        self.queue_render_command(RenderCommand::CameraStream(
-            CameraStreamCommand::RemoveNode { node },
-        ));
-        self.queue_render_command(RenderCommand::TwoD(Command2D::RemoveNode { node }));
-        self.queue_render_command(RenderCommand::ThreeD(Box::new(Command3D::RemoveNode {
-            node,
-        })));
-        self.queue_render_command(RenderCommand::Ui(
-            perro_render_bridge::UiCommand::RemoveNode { node },
-        ));
+        if matches!(
+            ty,
+            NodeType::CameraStream2D
+                | NodeType::CameraStream3D
+                | NodeType::UiCameraStream
+                | NodeType::Webcam
+        ) {
+            self.queue_render_command(RenderCommand::CameraStream(
+                CameraStreamCommand::RemoveNode { node },
+            ));
+        }
+        if matches!(ty.get_renderable(), Renderable::True) {
+            match ty.get_spatial() {
+                Spatial::TwoD => {
+                    self.queue_render_command(RenderCommand::TwoD(Command2D::RemoveNode { node }));
+                    self.queue_render_command(RenderCommand::Ui(
+                        perro_render_bridge::UiCommand::RemoveNode { node },
+                    ));
+                }
+                Spatial::ThreeD => {
+                    self.queue_render_command(RenderCommand::ThreeD(Box::new(
+                        Command3D::RemoveNode { node },
+                    )));
+                    self.queue_render_command(RenderCommand::Ui(
+                        perro_render_bridge::UiCommand::RemoveNode { node },
+                    ));
+                }
+                Spatial::None => {
+                    if matches!(
+                        ty,
+                        NodeType::UiCameraStream
+                            | NodeType::UiPanel
+                            | NodeType::UiButton
+                            | NodeType::UiDropdown
+                            | NodeType::UiColorPicker
+                            | NodeType::UiShape
+                            | NodeType::UiCheckbox
+                            | NodeType::UiImage
+                            | NodeType::UiImageButton
+                            | NodeType::UiNineSlice
+                            | NodeType::UiAnimatedImage
+                            | NodeType::UiLabel
+                            | NodeType::UiTextBox
+                            | NodeType::UiTextBlock
+                    ) {
+                        self.queue_render_command(RenderCommand::Ui(
+                            perro_render_bridge::UiCommand::RemoveNode { node },
+                        ));
+                    }
+                }
+            }
+        }
     }
 
     pub(crate) fn camera_stream_texture_id(node: NodeID) -> TextureID {

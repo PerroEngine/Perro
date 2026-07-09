@@ -1130,10 +1130,11 @@ impl NodeAPI for Runtime {
         }
 
         for current in postorder.iter().rev().copied() {
-            if self.nodes.get(current).is_none() {
-                continue;
-            }
-            self.note_removed_render_node(current);
+            let ty = match self.nodes.get(current) {
+                Some(node) => node.node_type(),
+                None => continue,
+            };
+            self.note_removed_render_node(current, ty);
             self.remove_attached_audio_for_node(current);
 
             // Remove script state first so script-side lookups cannot outlive node removal.
@@ -1158,7 +1159,7 @@ impl NodeAPI for Runtime {
                 parent.remove_child(current);
             }
 
-            self.unregister_internal_node_schedules(current);
+            self.unregister_internal_node_schedules(current, ty);
             let _ = self.nodes.remove(current);
         }
 

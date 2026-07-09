@@ -62,19 +62,57 @@ impl Runtime {
         }
     }
 
-    pub(crate) fn unregister_internal_node_schedules(&mut self, id: NodeID) {
-        self.invalidate_physics_query_sync();
+    pub(crate) fn unregister_internal_node_schedules(&mut self, id: NodeID, ty: NodeType) {
+        match ty {
+            NodeType::StaticBody2D
+            | NodeType::Area2D
+            | NodeType::RigidBody2D
+            | NodeType::CharacterBody2D
+            | NodeType::WaterBody2D
+            | NodeType::TileMap2D
+            | NodeType::StaticBody3D
+            | NodeType::Area3D
+            | NodeType::RigidBody3D
+            | NodeType::CharacterBody3D
+            | NodeType::WaterBody3D
+            | NodeType::PinJoint2D
+            | NodeType::DistanceJoint2D
+            | NodeType::FixedJoint2D
+            | NodeType::BallJoint3D
+            | NodeType::HingeJoint3D
+            | NodeType::FixedJoint3D => self.invalidate_physics_query_sync(),
+            _ => {}
+        }
+
         self.unregister_physics_body(id);
-        self.unregister_button_2d(id);
-        self.internal_updates
-            .internal_fixed_dispatch_nodes
-            .retain(|&node_id| node_id != id);
-        self.internal_updates
-            .physics_joint_nodes_2d
-            .retain(|&node_id| node_id != id);
-        self.internal_updates
-            .physics_joint_nodes_3d
-            .retain(|&node_id| node_id != id);
+
+        if matches!(ty, NodeType::Button2D | NodeType::ImageButton2D) {
+            self.unregister_button_2d(id);
+        }
+
+        if matches!(
+            ty,
+            NodeType::PhysicsBoneChain2D | NodeType::PhysicsBoneChain3D
+        ) {
+            self.internal_updates
+                .internal_fixed_dispatch_nodes
+                .retain(|&node_id| node_id != id);
+        }
+
+        match ty {
+            NodeType::PinJoint2D | NodeType::DistanceJoint2D | NodeType::FixedJoint2D => {
+                self.internal_updates
+                    .physics_joint_nodes_2d
+                    .retain(|&node_id| node_id != id);
+            }
+            NodeType::BallJoint3D | NodeType::HingeJoint3D | NodeType::FixedJoint3D => {
+                self.internal_updates
+                    .physics_joint_nodes_3d
+                    .retain(|&node_id| node_id != id);
+            }
+            _ => {}
+        }
+
         let slot = id.index() as usize;
 
         if let Some(&raw_pos) = self.internal_updates.internal_update_pos.get(slot)
