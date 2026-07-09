@@ -177,15 +177,78 @@ struct WriteLock {
 
 impl WriteLock {
     fn acquire(path: &Path) -> std::io::Result<Self> {
+        Self::acquire_with_policy(
+            path,
+            std::time::Duration::from_secs(10),
+            std::time::Duration::from_secs(60),
+        )
+    }
+
+    fn acquire_with_policy(
+        path: &Path,
+        wait_timeout: std::time::Duration,
+        stale_after: std::time::Duration,
+    ) -> std::io::Result<Self> {
         let lock_path = path.with_extension("write-lock");
+        let started = std::time::Instant::now();
         loop {
             match fs::create_dir(&lock_path) {
                 Ok(()) => return Ok(Self { path: lock_path }),
                 Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {
+                    if Self::reclaim_if_stale(&lock_path, stale_after)? {
+                        continue;
+                    }
+                    if started.elapsed() >= wait_timeout {
+                        return Err(std::io::Error::new(
+                            std::io::ErrorKind::TimedOut,
+                            format!(
+                                "timed out waiting for generated-script write lock: {}",
+                                lock_path.display()
+                            ),
+                        ));
+                    }
                     std::thread::sleep(std::time::Duration::from_millis(10));
                 }
                 Err(err) => return Err(err),
             }
+        }
+    }
+
+    fn reclaim_if_stale(
+        lock_path: &Path,
+        stale_after: std::time::Duration,
+    ) -> std::io::Result<bool> {
+        let modified = match fs::metadata(lock_path).and_then(|metadata| metadata.modified()) {
+            Ok(modified) => modified,
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(true),
+            Err(err) => return Err(err),
+        };
+        if modified.elapsed().unwrap_or_default() < stale_after {
+            return Ok(false);
+        }
+
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        let stale_path = lock_path.with_extension(format!(
+            "write-lock.stale-{}-{unique}",
+            std::process::id()
+        ));
+        match fs::rename(lock_path, &stale_path) {
+            Ok(()) => {
+                fs::remove_dir_all(stale_path)?;
+                Ok(true)
+            }
+            Err(err)
+                if matches!(
+                    err.kind(),
+                    std::io::ErrorKind::NotFound | std::io::ErrorKind::AlreadyExists
+                ) =>
+            {
+                Ok(true)
+            }
+            Err(err) => Err(err),
         }
     }
 }
