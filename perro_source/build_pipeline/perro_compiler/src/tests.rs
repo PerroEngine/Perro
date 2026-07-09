@@ -5,7 +5,7 @@ mod tests {
         generate_embedded_entry_files, generate_perro_assets, generate_project_static_modules,
         module_name_from_rel, module_short_name_from_rel, native_output_artifact_name,
         native_output_folder_name, normalize_cargo_output_paths,
-        reset_embedded_dir, sync_scripts, transpile_frontend_script,
+        reset_embedded_dir, sync_dlc_scripts, sync_scripts, transpile_frontend_script,
         target_slug_from_triple, transpiled_exports_script_ctor, ProjectBuildOptions,
         ScriptMethodParam,
     };
@@ -36,6 +36,19 @@ mod tests {
                 "missing call_method arm for {method_name}"
             );
         }
+    }
+
+    #[test]
+    fn dlc_script_sync_rejects_names_that_escape_or_corrupt_generated_paths() {
+        let root = unique_temp_dir("perro_compiler_invalid_dlc_name");
+        std::fs::create_dir_all(&root).unwrap();
+
+        for name in ["", ".", "..", "../escape", "..\\escape", "self", "SELF", "bad\"name", "bad\nname"] {
+            assert!(sync_dlc_scripts(&root, name).is_err(), "accepted `{name:?}`");
+        }
+
+        assert!(!root.join(".perro/escape").exists());
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]

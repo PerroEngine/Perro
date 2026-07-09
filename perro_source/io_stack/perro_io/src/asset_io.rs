@@ -76,6 +76,25 @@ pub fn is_reserved_dlc_name(name: &str) -> bool {
     name.eq_ignore_ascii_case("self")
 }
 
+pub fn validate_dlc_name(name: &str) -> io::Result<()> {
+    let mut components = Path::new(name).components();
+    let is_single_normal =
+        matches!(components.next(), Some(Component::Normal(_))) && components.next().is_none();
+    if !is_single_normal || name.contains(['/', '\\', '"']) || name.chars().any(char::is_control) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "invalid dlc name",
+        ));
+    }
+    if is_reserved_dlc_name(name) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "dlc name `self` is reserved",
+        ));
+    }
+    Ok(())
+}
+
 pub fn get_project_root() -> ProjectRoot {
     PROJECT_ROOT
         .read()
@@ -125,12 +144,7 @@ pub fn read_mounted_dlc_file(name: &str, virtual_path: &str) -> io::Result<Vec<u
 }
 
 pub fn mount_dlc_disk(name: &str, root: impl AsRef<Path>) -> io::Result<()> {
-    if is_reserved_dlc_name(name) {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "dlc name `self` is reserved",
-        ));
-    }
+    validate_dlc_name(name)?;
     let root = root.as_ref().to_path_buf();
     if !root.exists() {
         return Err(io::Error::new(
@@ -149,12 +163,7 @@ pub fn mount_dlc_disk(name: &str, root: impl AsRef<Path>) -> io::Result<()> {
 }
 
 pub fn mount_dlc_archive(name: &str, archive_path: impl AsRef<Path>) -> io::Result<()> {
-    if is_reserved_dlc_name(name) {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "dlc name `self` is reserved",
-        ));
-    }
+    validate_dlc_name(name)?;
     let archive_path = archive_path.as_ref().to_path_buf();
     let archive = Arc::new(PerroAssetsArchive::open_from_file(&archive_path)?);
     let key = name.to_ascii_lowercase();
@@ -651,6 +660,26 @@ mod tests {
         assert!(validate_virtual_asset_path("dlc://Expansion/../secret.txt").is_err());
         assert!(validate_virtual_asset_path("user://save/slot1.dat").is_ok());
         assert!(validate_virtual_asset_path("dlc://Expansion/scenes/main.scn").is_ok());
+    }
+
+    #[test]
+    fn dlc_names_reject_path_components_and_manifest_control_chars() {
+        for name in [
+            "",
+            ".",
+            "..",
+            "../escape",
+            "..\\escape",
+            "self",
+            "SELF",
+            "bad\"name",
+            "bad\nname",
+        ] {
+            assert!(validate_dlc_name(name).is_err(), "accepted `{name:?}`");
+        }
+        for name in ["Expansion", "expansion-pack", "my expansion", "v1.2"] {
+            assert!(validate_dlc_name(name).is_ok(), "rejected `{name}`");
+        }
     }
 
     fn static_lookup(path_hash: u64) -> &'static [u8] {

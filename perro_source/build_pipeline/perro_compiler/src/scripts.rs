@@ -5,12 +5,8 @@ pub enum ScriptsBuildProfile {
 }
 
 fn validate_dlc_name(dlc_name: &str) -> Result<(), CompilerError> {
-    if dlc_name.eq_ignore_ascii_case("self") {
-        return Err(CompilerError::SceneParse(
-            "dlc name `self` is reserved".to_string(),
-        ));
-    }
-    Ok(())
+    perro_io::validate_dlc_name(dlc_name)
+        .map_err(|err| CompilerError::SceneParse(format!("invalid dlc name `{dlc_name}`: {err}")))
 }
 
 pub fn sync_scripts(project_root: &Path) -> Result<Vec<String>, CompilerError> {
@@ -123,6 +119,7 @@ fn compile_all_dlc_scripts_with_profile(
         let Some(dlc_name) = path.file_name().and_then(|v| v.to_str()) else {
             continue;
         };
+        validate_dlc_name(dlc_name)?;
         let crate_slug = sanitize_crate_slug(dlc_name);
         let crate_name = format!("scripts_{crate_slug}");
         let scripts_crate = project_root
