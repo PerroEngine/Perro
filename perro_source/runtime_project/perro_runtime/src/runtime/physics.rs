@@ -1621,8 +1621,9 @@ impl Runtime {
         emitter_pos: Vector2,
         emitter: &perro_nodes::PhysicsForceEmitter2D,
     ) {
-        let ids = self.cached_water_ids_2d().to_vec();
-        for id in ids {
+        self.cached_water_ids_2d();
+        let ids = std::mem::take(&mut self.water_ids_2d_cache);
+        for &id in ids.iter() {
             let Some(global) = self.get_global_transform_2d(id) else {
                 continue;
             };
@@ -1664,6 +1665,7 @@ impl Runtime {
                 });
             self.mark_needs_rerender(id);
         }
+        self.water_ids_2d_cache = ids;
     }
 
     fn queue_force_water_impacts_3d(
@@ -1671,8 +1673,9 @@ impl Runtime {
         emitter_pos: Vector3,
         emitter: &perro_nodes::PhysicsForceEmitter3D,
     ) {
-        let ids = self.cached_water_ids_3d().to_vec();
-        for id in ids {
+        self.cached_water_ids_3d();
+        let ids = std::mem::take(&mut self.water_ids_3d_cache);
+        for &id in ids.iter() {
             let Some(global) = self.get_global_transform_3d(id) else {
                 continue;
             };
@@ -1722,12 +1725,14 @@ impl Runtime {
                 });
             self.mark_needs_rerender(id);
         }
+        self.water_ids_3d_cache = ids;
     }
 
     fn queue_water_forces_2d(&mut self) {
         self.pending_water_queries_2d.clear();
         self.water_contacts_2d.clear();
-        let water_ids = self.cached_water_ids_2d().to_vec();
+        self.cached_water_ids_2d();
+        let water_ids = std::mem::take(&mut self.water_ids_2d_cache);
         let mut waters = std::mem::take(&mut self.physics_waters_scratch_2d);
         waters.clear();
         for &id in water_ids.iter() {
@@ -1757,6 +1762,7 @@ impl Runtime {
         }
         if waters.is_empty() {
             self.physics_waters_scratch_2d = waters;
+            self.water_ids_2d_cache = water_ids;
             return;
         }
         let water_index = RuntimeWaterIndex2D::new(waters);
@@ -1767,9 +1773,10 @@ impl Runtime {
             .map(|camera| Vector2::new(camera.position[0], camera.position[1]))
             .unwrap_or(Vector2::ZERO);
 
-        let body_ids = self.cached_rigid_body_ids_2d().to_vec();
+        self.cached_rigid_body_ids_2d();
+        let body_ids = std::mem::take(&mut self.water_rigid_body_ids_2d_cache);
         let mut bodies = Vec::with_capacity(body_ids.len());
-        for body_id in body_ids {
+        for &body_id in body_ids.iter() {
             let Some(body_transform) = self.get_global_transform_2d(body_id) else {
                 continue;
             };
@@ -1851,6 +1858,7 @@ impl Runtime {
         let mut waters = water_index.waters;
         waters.clear();
         self.physics_waters_scratch_2d = waters;
+        self.water_rigid_body_ids_2d_cache = body_ids;
         for effect in forces {
             self.physics.queue_force_2d(effect.id, effect.force);
             if effect.impulse.length_squared() > 0.000_001 {
@@ -1863,15 +1871,17 @@ impl Runtime {
         }
         // waves animate on the water's sim clock carried in render state, so
         // re-extract every tick or the surface freezes while the camera rests
-        for id in water_ids {
+        for &id in water_ids.iter() {
             self.mark_needs_rerender(id);
         }
+        self.water_ids_2d_cache = water_ids;
     }
 
     fn queue_water_forces_3d(&mut self) {
         self.pending_water_queries_3d.clear();
         self.water_contacts_3d.clear();
-        let water_ids = self.cached_water_ids_3d().to_vec();
+        self.cached_water_ids_3d();
+        let water_ids = std::mem::take(&mut self.water_ids_3d_cache);
         let mut waters = std::mem::take(&mut self.physics_waters_scratch_3d);
         waters.clear();
         for &id in water_ids.iter() {
@@ -1905,6 +1915,7 @@ impl Runtime {
         }
         if waters.is_empty() {
             self.physics_waters_scratch_3d = waters;
+            self.water_ids_3d_cache = water_ids;
             return;
         }
         let water_index = RuntimeWaterIndex3D::new(waters);
@@ -1915,9 +1926,10 @@ impl Runtime {
             .map(|camera| Vector2::new(camera.position[0], camera.position[2]))
             .unwrap_or(Vector2::ZERO);
 
-        let body_ids = self.cached_rigid_body_ids_3d().to_vec();
+        self.cached_rigid_body_ids_3d();
+        let body_ids = std::mem::take(&mut self.water_rigid_body_ids_3d_cache);
         let mut bodies = Vec::with_capacity(body_ids.len());
-        for body_id in body_ids {
+        for &body_id in body_ids.iter() {
             let Some(body_transform) = self.get_global_transform_3d(body_id) else {
                 continue;
             };
@@ -1999,6 +2011,7 @@ impl Runtime {
         let mut waters = water_index.waters;
         waters.clear();
         self.physics_waters_scratch_3d = waters;
+        self.water_rigid_body_ids_3d_cache = body_ids;
         for effect in forces {
             self.physics.queue_force_3d(effect.id, effect.force);
             if effect.impulse.length_squared() > 0.000_001 {
@@ -2014,9 +2027,10 @@ impl Runtime {
         }
         // waves animate on the water's sim clock carried in render state, so
         // re-extract every tick or the surface freezes while the camera rests
-        for id in water_ids {
+        for &id in water_ids.iter() {
             self.mark_needs_rerender(id);
         }
+        self.water_ids_3d_cache = water_ids;
     }
 
     fn apply_water_angular_nudge_2d(&mut self, id: NodeID, delta: f32) {

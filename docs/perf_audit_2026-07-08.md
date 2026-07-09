@@ -90,6 +90,13 @@ opt run aft rm-node cleanup:
 - chg: skip render remove cmds for non-render nodes
 - chg: skip schedule list scans by node type
 
+opt run aft physics id cache reuse:
+
+- `runtime_core/physics_scan_ids_copy_then_iter`: ~128.4us
+- res: +9.6% faster vs ~143.1us
+- chg: take cached id vec during water loops
+- chg: restore cache aft loop, no per-tick id copy
+
 ## Static Scan
 
 - dup dep names: 29
