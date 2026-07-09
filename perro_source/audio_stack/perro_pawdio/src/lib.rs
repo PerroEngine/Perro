@@ -8,7 +8,7 @@ pub mod midi;
 mod player;
 mod types;
 
-pub use controller::{AudioController, AudioSourceHandle};
+pub use controller::{AudioController, AudioEnqueueError, AudioEnqueueResult, AudioSourceHandle};
 pub use mic::{MicClip, MicDenoiseSettings, MicRecorder, MicSettings};
 pub use midi::{
     MidiChannel, MidiNoteHandle, MidiNoteOptions, MidiProgram, MidiSong, MidiSound, Note, program,
