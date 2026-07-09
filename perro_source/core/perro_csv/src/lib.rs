@@ -1,11 +1,34 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     hash::{BuildHasherDefault, Hasher},
     sync::{OnceLock, RwLock},
 };
 
 const INVALID_COL: usize = usize::MAX;
 type U64HashMap<V> = HashMap<u64, V, BuildHasherDefault<U64IdentityHasher>>;
+
+#[derive(Debug)]
+struct PrimaryRowBucket {
+    first: usize,
+    collisions: Vec<usize>,
+}
+
+impl PrimaryRowBucket {
+    fn new(first: usize) -> Self {
+        Self {
+            first,
+            collisions: Vec::new(),
+        }
+    }
+
+    fn push(&mut self, row: usize) {
+        self.collisions.push(row);
+    }
+
+    fn rows(&self) -> impl Iterator<Item = usize> + '_ {
+        std::iter::once(self.first).chain(self.collisions.iter().copied())
+    }
+}
 
 #[derive(Default)]
 struct U64IdentityHasher(u64);
@@ -82,7 +105,7 @@ pub struct Csv {
     pub headers: &'static [CsvCell],
     pub rows: &'static [CsvRow],
     pub primary_index: &'static [CsvRowIndex],
-    primary_lookup: OnceLock<U64HashMap<usize>>,
+    primary_lookup: OnceLock<U64HashMap<PrimaryRowBucket>>,
     query_indexes: OnceLock<RwLock<HashMap<usize, CsvColumnHashIndex>>>,
 }
 
@@ -143,9 +166,16 @@ impl Csv {
 
     #[inline]
     pub fn header_index(&self, name: &str) -> Option<usize> {
-        self.header_index_hash(perro_ids::string_to_u64(name))
+        let name_hash = perro_ids::string_to_u64(name);
+        self.headers
+            .iter()
+            .position(|cell| cell.hash == name_hash && cell.text == name)
     }
 
+    /// Returns the first header with `name_hash`.
+    ///
+    /// Hash-only lookups cannot distinguish collisions. Use [`Self::header_index`] when the
+    /// original header text is available.
     #[inline]
     pub fn header_index_hash(&self, name_hash: u64) -> Option<usize> {
         self.headers.iter().position(|cell| cell.hash == name_hash)
@@ -158,26 +188,48 @@ impl Csv {
 
     #[inline]
     pub fn get_by_header(&self, row: usize, header: &str) -> Option<&'static str> {
-        self.get_by_header_hash(row, perro_ids::string_to_u64(header))
+        let col = self.header_index(header)?;
+        self.get(row, col)
     }
 
+    /// Returns a value for the first header with `header_hash`.
+    ///
+    /// Hash-only lookups cannot distinguish collisions. Use [`Self::get_by_header`] when the
+    /// original header text is available.
     #[inline]
     pub fn get_by_header_hash(&self, row: usize, header_hash: u64) -> Option<&'static str> {
         let col = self.header_index_hash(header_hash)?;
         self.get(row, col)
     }
 
+    /// Returns the first primary row with `key_hash`.
+    ///
+    /// Hash-only lookups cannot distinguish collisions. Use [`Self::find_primary`] when the
+    /// original key text is available.
     #[inline]
     pub fn find_primary_hash(&self, key_hash: u64) -> Option<&'static CsvRow> {
-        let row = self.primary_lookup().get(&key_hash).copied()?;
-        self.rows.get(row)
+        self.rows.get(self.primary_lookup().get(&key_hash)?.first)
     }
 
     #[inline]
     pub fn find_primary(&self, key: &str) -> Option<&'static CsvRow> {
-        self.find_primary_hash(perro_ids::string_to_u64(key))
+        let key_hash = perro_ids::string_to_u64(key);
+        self.primary_lookup()
+            .get(&key_hash)?
+            .rows()
+            .find_map(|row| {
+                self.rows.get(row).filter(|row| {
+                    row.cells
+                        .first()
+                        .is_some_and(|cell| cell.hash == key_hash && cell.text == key)
+                })
+            })
     }
 
+    /// Returns the first row whose cell in `col` has `key_hash`.
+    ///
+    /// Hash-only lookups cannot distinguish collisions. Use [`Self::find`] when the original
+    /// key text is available.
     pub fn find_hash(&self, col: usize, key_hash: u64) -> Option<&'static CsvRow> {
         if col == 0 && !self.primary_index.is_empty() {
             return self.find_primary_hash(key_hash);
@@ -189,7 +241,15 @@ impl Csv {
 
     #[inline]
     pub fn find(&self, col: usize, key: &str) -> Option<&'static CsvRow> {
-        self.find_hash(col, perro_ids::string_to_u64(key))
+        if col == 0 && !self.primary_index.is_empty() {
+            return self.find_primary(key);
+        }
+        let key_hash = perro_ids::string_to_u64(key);
+        self.rows.iter().find(|row| {
+            row.cells
+                .get(col)
+                .is_some_and(|cell| cell.hash == key_hash && cell.text == key)
+        })
     }
 
     #[inline]
@@ -222,12 +282,15 @@ impl Csv {
         index
     }
 
-    fn primary_lookup(&self) -> &U64HashMap<usize> {
+    fn primary_lookup(&self) -> &U64HashMap<PrimaryRowBucket> {
         self.primary_lookup.get_or_init(|| {
-            let mut lookup = U64HashMap::default();
+            let mut lookup = U64HashMap::<PrimaryRowBucket>::default();
             lookup.reserve(self.primary_index.len());
             for entry in self.primary_index {
-                lookup.insert(entry.key_hash, entry.row);
+                lookup
+                    .entry(entry.key_hash)
+                    .and_modify(|bucket| bucket.push(entry.row))
+                    .or_insert_with(|| PrimaryRowBucket::new(entry.row));
             }
             lookup
         })
@@ -516,6 +579,10 @@ impl CSVQuery {
         self
     }
 
+    /// Selects the first header with each supplied hash.
+    ///
+    /// Hash-only lookups cannot distinguish collisions. Use [`Self::select`] when the original
+    /// header text is available.
     pub fn select_hashes(mut self, cols: &[u64]) -> Self {
         self.select_cols = Some(
             cols.iter()
@@ -995,16 +1062,15 @@ pub fn parse_csv_static(bytes: &[u8]) -> Result<&'static Csv, String> {
     let headers = leak_cells(headers.iter().map(|value| value.trim()), &mut interner);
     let mut rows = Vec::<CsvRow>::with_capacity(row_capacity.saturating_sub(1));
     let mut index_rows = Vec::<CsvRowIndex>::with_capacity(row_capacity.saturating_sub(1));
-    let mut primary_seen = HashMap::<u64, usize>::new();
+    let mut primary_seen = HashSet::<&str>::new();
 
     for record in reader.records() {
         let record = record.map_err(|err| format!("failed to parse csv row: {err}"))?;
         let cells = leak_cells(record.iter().map(|value| value.trim()), &mut interner);
         let row_idx = rows.len();
         if let Some(first) = cells.first()
-            && !primary_seen.contains_key(&first.hash)
+            && primary_seen.insert(first.text)
         {
-            primary_seen.insert(first.hash, row_idx);
             index_rows.push(CsvRowIndex::new(first.hash, row_idx));
         }
         rows.push(CsvRow::new(cells));
@@ -1178,6 +1244,51 @@ mod tests {
             .map(|row| row.get_header("id").unwrap())
             .collect();
         assert_eq!(in_ids, vec!["potion"]);
+    }
+
+    #[test]
+    fn string_lookups_recheck_text_in_hash_collision_buckets() {
+        const HEADER_HASH: u64 = perro_ids::string_to_u64("name");
+        const KEY_HASH: u64 = perro_ids::string_to_u64("potion");
+        static HEADERS: [CsvCell; 2] = [
+            CsvCell::new("id", HEADER_HASH),
+            CsvCell::new("name", HEADER_HASH),
+        ];
+        static SWORD: [CsvCell; 2] = [
+            CsvCell::new("sword", KEY_HASH),
+            CsvCell::new("Sword", perro_ids::string_to_u64("Potion")),
+        ];
+        static POTION: [CsvCell; 2] = [
+            CsvCell::new("potion", KEY_HASH),
+            CsvCell::new("Potion", perro_ids::string_to_u64("Potion")),
+        ];
+        static ROWS: [CsvRow; 2] = [CsvRow::new(&SWORD), CsvRow::new(&POTION)];
+        static PRIMARY_INDEX: [CsvRowIndex; 2] =
+            [CsvRowIndex::new(KEY_HASH, 0), CsvRowIndex::new(KEY_HASH, 1)];
+
+        let csv = Csv::new(&HEADERS, &ROWS, &PRIMARY_INDEX);
+
+        assert_eq!(csv.header_index("name"), Some(1));
+        assert_eq!(csv.get_by_header(0, "name"), Some("Sword"));
+        assert_eq!(csv.header_index_hash(HEADER_HASH), Some(0));
+        assert_eq!(csv.get_by_header_hash(0, HEADER_HASH), Some("sword"));
+
+        assert_eq!(
+            csv.find_primary("potion").and_then(|row| row.get(1)),
+            Some("Potion")
+        );
+        assert_eq!(
+            csv.find(0, "potion").and_then(|row| row.get(1)),
+            Some("Potion")
+        );
+        assert_eq!(
+            csv.find(1, "Potion").and_then(|row| row.get(0)),
+            Some("potion")
+        );
+        assert_eq!(
+            csv.find_primary_hash(KEY_HASH).and_then(|row| row.get(1)),
+            Some("Sword")
+        );
     }
 
     #[test]
