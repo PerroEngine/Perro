@@ -8,6 +8,8 @@ pub mod archive {
     pub const FLAG_COMPRESSED: u32 = 1 << 0;
 }
 
+pub mod dlc;
+
 pub mod pawdio {
     pub const EXTENSION: &str = "pawdio";
     pub const MAGIC: &[u8; 6] = b"PAWDIO";
@@ -123,6 +125,7 @@ mod tests {
     #[test]
     fn current_versions_are_v1() {
         assert_eq!(super::archive::VERSION, 1);
+        assert_eq!(super::dlc::REGISTRY_ABI_VERSION, 1);
         assert_eq!(super::pawdio::VERSION, 1);
         assert_eq!(super::pmesh::VERSION, 1);
         assert_eq!(super::pskel::VERSION, 1);
