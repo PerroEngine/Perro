@@ -132,11 +132,21 @@ impl From<SpatialAudioParams> for DspParams {
     }
 }
 
+// Refresh the atomic param snapshot only every N samples: snapshotting per
+// sample costs 10 relaxed loads + clamps (~1M loads/s for a 48kHz stereo
+// source). At 48kHz, 64 samples is sub-2ms, inaudibly coarse for spatial ramps.
+const PARAM_REFRESH_SAMPLES: u32 = 64;
+
 pub(crate) struct DspSource<S> {
     input: S,
     control: Arc<DspControl>,
     channels: usize,
     channel_index: usize,
+    params: DspParams,
+    param_counter: u32,
+    // Delay lines run only while wet; on a dry->wet transition their buffers
+    // hold stale audio, so track wet state to clear them at the edge.
+    wet_active: bool,
     low_state: Vec<f32>,
     eq_low_state: Vec<f32>,
     eq_high_prev_in: Vec<f32>,
@@ -158,6 +168,9 @@ where
             control,
             channels,
             channel_index: 0,
+            params: DspParams::dry(),
+            param_counter: 0,
+            wet_active: false,
             low_state: vec![0.0; channels],
             eq_low_state: vec![0.0; channels],
             eq_high_prev_in: vec![0.0; channels],
@@ -177,11 +190,22 @@ where
 
     fn next(&mut self) -> Option<Self::Item> {
         let input = self.input.next()?;
-        let params = self.control.snapshot();
+        // First call (counter 0) always snapshots; refresh every N samples.
+        if self.param_counter == 0 {
+            self.params = self.control.snapshot();
+        }
+        self.param_counter += 1;
+        if self.param_counter >= PARAM_REFRESH_SAMPLES {
+            self.param_counter = 0;
+        }
+        let params = self.params;
         let ch = self.channel_index.min(self.channels - 1);
         let mut sample = input;
 
-        sample = self.apply_eq(ch, sample, params.eq);
+        // Unity EQ is an identity passthrough; skip the two filter updates.
+        if !eq_is_dry(params.eq) {
+            sample = self.apply_eq(ch, sample, params.eq);
+        }
         sample = self.apply_low_pass(ch, sample, params.low_pass.max(params.occlusion * 0.8));
 
         let echo_wet = params.echo.max(params.reflection * 0.35).clamp(0.0, 1.0);
@@ -189,13 +213,27 @@ where
             .reverb_send
             .max(params.reflection * 0.25)
             .clamp(0.0, 1.0);
-        let echo_sample = self.echo.process(ch, sample, echo_wet);
-        let reverb_sample = (self.reverb_a.process(ch, sample, reverb_wet)
-            + self.reverb_b.process(ch, sample, reverb_wet))
-            * 0.5;
-        sample = sample * (1.0 - (echo_wet + reverb_wet * 0.5).min(0.45))
-            + echo_sample * echo_wet * 0.45
-            + reverb_sample * reverb_wet * 0.35;
+        // All-dry: the wet mix collapses to a passthrough, so skip the three
+        // delay-line read/writes entirely.
+        if echo_wet > 0.001 || reverb_wet > 0.001 {
+            if !self.wet_active {
+                // Dry->wet edge: buffers hold stale audio from the skipped dry
+                // stretch; clear so re-engaging does not burst old signal.
+                self.echo.clear();
+                self.reverb_a.clear();
+                self.reverb_b.clear();
+                self.wet_active = true;
+            }
+            let echo_sample = self.echo.process(ch, sample, echo_wet);
+            let reverb_sample = (self.reverb_a.process(ch, sample, reverb_wet)
+                + self.reverb_b.process(ch, sample, reverb_wet))
+                * 0.5;
+            sample = sample * (1.0 - (echo_wet + reverb_wet * 0.5).min(0.45))
+                + echo_sample * echo_wet * 0.45
+                + reverb_sample * reverb_wet * 0.35;
+        } else {
+            self.wet_active = false;
+        }
 
         sample = apply_compression(sample, params.compression);
         sample *= 1.0 - params.occlusion.clamp(0.0, 1.0) * 0.45;
@@ -259,6 +297,12 @@ where
     }
 }
 
+fn eq_is_dry(eq: AudioEq) -> bool {
+    (eq.low_gain - 1.0).abs() <= 1e-3
+        && (eq.mid_gain - 1.0).abs() <= 1e-3
+        && (eq.high_gain - 1.0).abs() <= 1e-3
+}
+
 fn apply_compression(sample: f32, compression: AudioCompression) -> f32 {
     let threshold = compression.threshold.clamp(0.0, 1.0);
     let ratio = compression.ratio.max(1.0);
@@ -303,6 +347,11 @@ impl DelayLine {
             self.index = 0;
         }
         delayed
+    }
+
+    fn clear(&mut self) {
+        self.buffer.fill(0.0);
+        self.index = 0;
     }
 }
 

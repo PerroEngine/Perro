@@ -242,6 +242,9 @@ pub struct Runtime {
     /// reusable water-index input buf 4 queue_water_forces_2d/3d.
     physics_waters_scratch_2d: Vec<physics::RuntimeWater2D>,
     physics_waters_scratch_3d: Vec<physics::RuntimeWater3D>,
+    /// reusable rigid-body sample buf 4 queue_water_forces_2d/3d.
+    physics_water_bodies_scratch_2d: Vec<physics::RuntimeWaterBody2D>,
+    physics_water_bodies_scratch_3d: Vec<physics::RuntimeWaterBody3D>,
     /// reusable subtree-walk stack 4 force_rerender; avoid per-node
     /// children_slice().to_vec() alloc on every visited node.
     force_rerender_stack_scratch: Vec<NodeID>,
@@ -502,6 +505,8 @@ impl Runtime {
             physics_force_emitter_ids_scratch_3d: Vec::new(),
             physics_waters_scratch_2d: Vec::new(),
             physics_waters_scratch_3d: Vec::new(),
+            physics_water_bodies_scratch_2d: Vec::new(),
+            physics_water_bodies_scratch_3d: Vec::new(),
             force_rerender_stack_scratch: Vec::new(),
             audio: AudioPropagationState::new(),
             mesh_query_node_cache: AHashMap::default(),

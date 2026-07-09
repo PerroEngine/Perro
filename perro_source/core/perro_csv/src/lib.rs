@@ -201,25 +201,28 @@ impl Csv {
         CsvBuf::from_static(self)
     }
 
-    fn hash_index(&'static self, col: usize) -> CsvColumnHashIndex {
+    /// Run `f` against the cached hash index for `col`, building it on first
+    /// use. Holds the lock guard across `f` so the index is never cloned out
+    /// (a per-query `O(rows)` copy on the seeded fast path).
+    fn with_hash_index<R>(
+        &'static self,
+        col: usize,
+        f: impl FnOnce(&CsvColumnHashIndex) -> R,
+    ) -> R {
         let indexes = self
             .query_indexes
             .get_or_init(|| RwLock::new(HashMap::new()));
-        if let Some(index) = indexes
-            .read()
-            .expect("csv query index rwlock poisoned")
-            .get(&col)
-            .cloned()
         {
-            return index;
+            let read = indexes.read().expect("csv query index rwlock poisoned");
+            if let Some(index) = read.get(&col) {
+                return f(index);
+            }
         }
         let mut write = indexes.write().expect("csv query index rwlock poisoned");
-        if let Some(index) = write.get(&col).cloned() {
-            return index;
-        }
-        let index = CsvColumnHashIndex::build(self, col);
-        write.insert(col, index.clone());
-        index
+        let index = write
+            .entry(col)
+            .or_insert_with(|| CsvColumnHashIndex::build(self, col));
+        f(index)
     }
 
     fn primary_lookup(&self) -> &U64HashMap<usize> {
@@ -638,16 +641,22 @@ impl CSVQuery {
 
     pub fn run(&self) -> CSVQueryResult {
         let mut rows = Vec::<usize>::new();
-        let candidates = self.candidate_rows();
-        let iter: Box<dyn Iterator<Item = usize> + '_> =
-            if let Some(candidates) = candidates.as_ref() {
-                Box::new(candidates.iter().copied())
-            } else {
-                Box::new(0..self.table.rows.len())
-            };
-        for row_idx in iter {
-            if self.matches(row_idx) {
-                rows.push(row_idx);
+        // Direct loops instead of a boxed `dyn Iterator`: avoids a per-run heap
+        // alloc and the vtable `next()` call on every row.
+        match self.candidate_rows() {
+            Some(candidates) => {
+                for row_idx in candidates {
+                    if self.matches(row_idx) {
+                        rows.push(row_idx);
+                    }
+                }
+            }
+            None => {
+                for row_idx in 0..self.table.rows.len() {
+                    if self.matches(row_idx) {
+                        rows.push(row_idx);
+                    }
+                }
             }
         }
         if let Some(sort) = self.sort
@@ -853,9 +862,8 @@ impl CSVQuery {
         })?;
 
         let (col, seed) = seed;
-        let index = self.table.hash_index(col);
         let mut rows = Vec::new();
-        match seed {
+        self.table.with_hash_index(col, |index| match seed {
             CandidateSeed::One(hash) => index.rows_for_hash(hash, &mut rows),
             CandidateSeed::Many(hashes) => {
                 for hash in hashes {
@@ -864,7 +872,7 @@ impl CSVQuery {
                 rows.sort_unstable();
                 rows.dedup();
             }
-        }
+        });
         Some(rows)
     }
 }

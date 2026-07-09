@@ -55,6 +55,17 @@ fn attached_node_of(sound: &ActiveSpatialSound) -> Option<NodeID> {
     }
 }
 
+// Build the shared audio raycast filter once so callers casting many rays
+// (probe clouds, reconcile pairs) do not re-alloc the exclude list per ray.
+fn audio_raycast_filter(audio_layer: BitMask, attached_node: Option<NodeID>) -> PhysicsQueryFilter {
+    PhysicsQueryFilter {
+        layers: audio_layer,
+        include_areas: false,
+        exclude_nodes: attached_node.into_iter().collect(),
+        ..PhysicsQueryFilter::default()
+    }
+}
+
 const AUDIO_DEBUG_DIRECT: [f32; 4] = [0.1, 1.0, 0.55, 1.0];
 const AUDIO_DEBUG_THROUGH: [f32; 4] = [0.68, 0.18, 1.0, 0.9];
 const AUDIO_DEBUG_BOUNCE: [f32; 4] = [1.0, 0.56, 0.12, 0.9];
@@ -620,7 +631,7 @@ impl Runtime {
             (perp * -AUDIO_DIFFUSION_SPREAD, AUDIO_DIFFUSION_FAR_WEIGHT),
         ];
         let n = offsets.len();
-        let exclude: Vec<NodeID> = attached_node.into_iter().collect();
+        let filter = audio_raycast_filter(audio_layer, attached_node);
         // First-time sample: probe every slot so openness starts accurate.
         let refresh = if field.initialized { PROBE_SLICE } else { n };
         for step in 0..refresh {
@@ -641,12 +652,7 @@ impl Runtime {
                     listener_pos,
                     probe_delta * probe_dist.recip(),
                     probe_dist,
-                    &PhysicsQueryFilter {
-                        layers: audio_layer,
-                        include_areas: false,
-                        exclude_nodes: exclude.clone(),
-                        ..PhysicsQueryFilter::default()
-                    },
+                    &filter,
                 )
                 .is_some_and(|hit| hit.distance > LISTENER_EMBED_EPSILON);
             let blocked = blocked_physics
@@ -820,10 +826,10 @@ impl Runtime {
         audio_layer: BitMask,
         attached_node: Option<NodeID>,
     ) -> Option<f32> {
+        let filter = audio_raycast_filter(audio_layer, attached_node);
         let leg_a =
-            self.reconcile_segment_clear_2d(listener_pos, aperture, audio_layer, attached_node)?;
-        let leg_b =
-            self.reconcile_segment_clear_2d(aperture, source_pos, audio_layer, attached_node)?;
+            self.reconcile_segment_clear_2d(listener_pos, aperture, audio_layer, &filter)?;
+        let leg_b = self.reconcile_segment_clear_2d(aperture, source_pos, audio_layer, &filter)?;
         Some(leg_a + leg_b)
     }
 
@@ -849,7 +855,7 @@ impl Runtime {
         a: Vector2,
         b: Vector2,
         audio_layer: BitMask,
-        attached_node: Option<NodeID>,
+        filter: &PhysicsQueryFilter,
     ) -> Option<f32> {
         let delta = b - a;
         let dist = delta.length();
@@ -865,17 +871,7 @@ impl Runtime {
         let start = a + dir * skin;
         let seg = (dist - skin * 2.0).max(0.0);
         let blocked_physics = self
-            .prepared_audio_raycast_2d(
-                start,
-                dir,
-                seg,
-                &PhysicsQueryFilter {
-                    layers: audio_layer,
-                    include_areas: false,
-                    exclude_nodes: attached_node.into_iter().collect(),
-                    ..PhysicsQueryFilter::default()
-                },
-            )
+            .prepared_audio_raycast_2d(start, dir, seg, filter)
             .is_some_and(|hit| hit.distance > LISTENER_EMBED_EPSILON);
         if blocked_physics {
             return None;
@@ -957,6 +953,8 @@ impl Runtime {
             &mut source_pts,
         );
 
+        // One filter for every pair verification (O(listener_pts × source_pts)).
+        let filter = audio_raycast_filter(audio_layer, attached_node);
         let mut best: Option<(Vector2, f32, f32)> = None;
         for lp in listener_pts.iter().copied() {
             for sp in source_pts.iter().copied() {
@@ -967,15 +965,12 @@ impl Runtime {
                 // Always verify the connecting segment is unobstructed, even for
                 // sub-epsilon gaps: two points can sit within epsilon on
                 // opposite sides of a thin wall and must NOT reconcile.
-                let (aperture, verify_dist) = match self.reconcile_segment_clear_2d(
-                    lp.point,
-                    sp.point,
-                    audio_layer,
-                    attached_node,
-                ) {
-                    Some(d) => ((lp.point + sp.point) * 0.5, d),
-                    None => continue,
-                };
+                let (aperture, verify_dist) =
+                    match self.reconcile_segment_clear_2d(lp.point, sp.point, audio_layer, &filter)
+                    {
+                        Some(d) => ((lp.point + sp.point) * 0.5, d),
+                        None => continue,
+                    };
                 let total = lp.traveled + verify_dist + sp.traveled;
                 if total > range {
                     continue;
