@@ -104,6 +104,9 @@ impl<'a> Parser<'a> {
     fn try_collect_var_entries(&mut self) -> ParseResult<Vec<(String, SceneValue)>> {
         let mut vars = Vec::new();
         while self.current != Token::Eof {
+            if let Token::Error(err) = &self.current {
+                return Err(err.to_string());
+            }
             if self.current == Token::Dollar {
                 self.advance();
                 let name = self.expect_ident()?.to_string();
@@ -543,6 +546,7 @@ impl<'a> Parser<'a> {
 
         while self.current != Token::Eof {
             match self.current {
+                Token::Error(ref err) => return Err(err.to_string()),
                 Token::Dollar => {
                     self.advance();
                     let name = self.expect_ident()?;
