@@ -114,9 +114,12 @@ pub fn set_project_root(root: ProjectRoot) {
 }
 
 pub fn clear_dlc_mounts() {
-    DLC_MOUNTS.write().unwrap().clear();
-    DLC_ARCHIVES.write().unwrap().clear();
-    DLC_STATIC_BINARY_LOOKUPS.write().unwrap().clear();
+    let mut mounts = DLC_MOUNTS.write().unwrap();
+    let mut archives = DLC_ARCHIVES.write().unwrap();
+    let mut lookups = DLC_STATIC_BINARY_LOOKUPS.write().unwrap();
+    mounts.clear();
+    archives.clear();
+    lookups.clear();
 }
 
 pub fn mounted_dlc_names() -> Vec<String> {
@@ -152,12 +155,13 @@ pub fn mount_dlc_disk(name: &str, root: impl AsRef<Path>) -> io::Result<()> {
             format!("dlc disk root not found: {}", root.display()),
         ));
     }
-    DLC_MOUNTS.write().unwrap().insert(
-        name.to_ascii_lowercase(),
+    replace_dlc_mount(
+        name,
         DlcMount {
             name: name.to_string(),
             source: DlcMountSource::Disk(root),
         },
+        None,
     );
     Ok(())
 }
@@ -166,16 +170,28 @@ pub fn mount_dlc_archive(name: &str, archive_path: impl AsRef<Path>) -> io::Resu
     validate_dlc_name(name)?;
     let archive_path = archive_path.as_ref().to_path_buf();
     let archive = Arc::new(PerroAssetsArchive::open_from_file(&archive_path)?);
-    let key = name.to_ascii_lowercase();
-    DLC_ARCHIVES.write().unwrap().insert(key.clone(), archive);
-    DLC_MOUNTS.write().unwrap().insert(
-        key,
+    replace_dlc_mount(
+        name,
         DlcMount {
             name: name.to_string(),
             source: DlcMountSource::Archive(archive_path),
         },
+        Some(archive),
     );
     Ok(())
+}
+
+fn replace_dlc_mount(name: &str, mount: DlcMount, archive: Option<Arc<PerroAssetsArchive>>) {
+    let key = name.to_ascii_lowercase();
+    let mut mounts = DLC_MOUNTS.write().unwrap();
+    let mut archives = DLC_ARCHIVES.write().unwrap();
+    let mut lookups = DLC_STATIC_BINARY_LOOKUPS.write().unwrap();
+    archives.remove(&key);
+    lookups.remove(&key);
+    if let Some(archive) = archive {
+        archives.insert(key.clone(), archive);
+    }
+    mounts.insert(key, mount);
 }
 
 pub fn register_dlc_static_binary_lookup(name: &str, lookup: DlcStaticBinaryLookup) {
@@ -803,6 +819,52 @@ mod tests {
 
         clear_dlc_mounts();
         let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn remount_replaces_archive_and_static_lookup_backing() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        let root =
+            std::env::temp_dir().join(format!("perro_io_dlc_remount_{}", std::process::id()));
+        let disk = root.join("disk");
+        let archive = root.join("Expansion.dlc");
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&disk).unwrap();
+        fs::write(&archive, EMPTY_ARCHIVE).unwrap();
+
+        clear_dlc_mounts();
+        mount_dlc_archive("Expansion", &archive).unwrap();
+        register_dlc_static_binary_lookup("Expansion", dlc_static_lookup);
+        mount_dlc_disk("EXPANSION", &disk).unwrap();
+
+        assert!(!DLC_ARCHIVES.read().unwrap().contains_key("expansion"));
+        assert!(
+            !DLC_STATIC_BINARY_LOOKUPS
+                .read()
+                .unwrap()
+                .contains_key("expansion")
+        );
+        assert!(matches!(
+            &DLC_MOUNTS.read().unwrap().get("expansion").unwrap().source,
+            DlcMountSource::Disk(_)
+        ));
+
+        register_dlc_static_binary_lookup("Expansion", dlc_static_lookup);
+        mount_dlc_archive("expansion", &archive).unwrap();
+        assert!(DLC_ARCHIVES.read().unwrap().contains_key("expansion"));
+        assert!(
+            !DLC_STATIC_BINARY_LOOKUPS
+                .read()
+                .unwrap()
+                .contains_key("expansion")
+        );
+        assert!(matches!(
+            &DLC_MOUNTS.read().unwrap().get("expansion").unwrap().source,
+            DlcMountSource::Archive(_)
+        ));
+
+        clear_dlc_mounts();
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]
