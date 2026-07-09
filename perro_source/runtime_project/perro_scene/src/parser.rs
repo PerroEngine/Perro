@@ -101,7 +101,7 @@ impl<'a> Parser<'a> {
             .unwrap_or_else(|err| panic!("{err}"))
     }
 
-    fn try_collect_var_entries(&mut self) -> ParseResult<Vec<(String, SceneValue)>> {
+    pub(crate) fn try_collect_var_entries(&mut self) -> ParseResult<Vec<(String, SceneValue)>> {
         let mut vars = Vec::new();
         while self.current != Token::Eof {
             if self.current == Token::Dollar {
@@ -766,28 +766,51 @@ impl<'a> Parser<'a> {
         parser.parse_scene_inner()
     }
 
-    pub(crate) fn parse_scene_lenient(self) -> Scene {
+    pub(crate) fn try_parse_scene_lenient(self) -> ParseResult<Scene> {
         let mut parser = Parser::new_lenient(self.src);
         if needs_var_prefetch(self.src) {
-            parser.vars = Parser::new_lenient(self.src)
-                .try_collect_vars()
-                .unwrap_or_else(|err| panic!("{err}"));
+            parser.vars = Parser::new_lenient(self.src).try_collect_vars()?;
         }
-        parser
-            .parse_scene_inner()
-            .unwrap_or_else(|err| panic!("{err}"))
+        parser.parse_scene_inner()
     }
 
-    pub fn parse_scene_doc(self) -> crate::SceneDoc {
+    /// Parses a scene document, returning an error for invalid input.
+    pub fn try_parse_scene_doc(self) -> Result<crate::SceneDoc, String> {
+        crate::SceneDoc::try_parse_lenient(self.src)
+    }
+
+    /// Parses a scene document, panicking if the input is invalid.
+    pub fn parse_scene_doc_or_panic(self) -> crate::SceneDoc {
         crate::SceneDoc::parse_lenient(self.src)
     }
 
-    pub fn parse_value_literal(mut self) -> SceneValue {
-        let value = self.parse_value().unwrap_or_else(|err| panic!("{err}"));
+    /// Parses a scene document, panicking if the input is invalid.
+    ///
+    /// Use [`Parser::try_parse_scene_doc`] for user-provided input.
+    pub fn parse_scene_doc(self) -> crate::SceneDoc {
+        self.parse_scene_doc_or_panic()
+    }
+
+    /// Parses one value literal, returning an error for invalid input.
+    pub fn try_parse_value_literal(mut self) -> Result<SceneValue, String> {
+        let value = self.parse_value()?;
         if self.current != Token::Eof {
-            panic!("Expected end of value, got {:?}", self.current);
+            return Err(format!("Expected end of value, got {:?}", self.current));
         }
-        value
+        Ok(value)
+    }
+
+    /// Parses one value literal, panicking if the input is invalid.
+    pub fn parse_value_literal_or_panic(self) -> SceneValue {
+        self.try_parse_value_literal()
+            .unwrap_or_else(|err| panic!("{err}"))
+    }
+
+    /// Parses one value literal, panicking if the input is invalid.
+    ///
+    /// Use [`Parser::try_parse_value_literal`] for user-provided input.
+    pub fn parse_value_literal(self) -> SceneValue {
+        self.parse_value_literal_or_panic()
     }
 }
 
@@ -924,6 +947,24 @@ mod tests {
             Err(err) => err,
         };
         assert!(err.contains("Expected"));
+    }
+
+    #[test]
+    fn try_parse_scene_doc_returns_parse_error() {
+        let err = Parser::new("$speed =").try_parse_scene_doc().unwrap_err();
+        assert!(err.contains("Invalid value token"), "{err}");
+    }
+
+    #[test]
+    fn try_parse_value_literal_returns_parse_error() {
+        let err = Parser::new("[1, 2").try_parse_value_literal().unwrap_err();
+        assert!(err.contains("Expected"), "{err}");
+    }
+
+    #[test]
+    fn try_parse_value_literal_rejects_trailing_input() {
+        let err = Parser::new("1 2").try_parse_value_literal().unwrap_err();
+        assert!(err.contains("Expected end of value"), "{err}");
     }
 
     #[test]
