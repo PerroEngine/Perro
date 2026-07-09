@@ -87,6 +87,17 @@ fn build_sprite_3d(data: &SceneDefNodeData) -> Sprite3D {
     node
 }
 
+fn build_video_player_3d(data: &SceneDefNodeData) -> VideoPlayer3D {
+    let mut node = VideoPlayer3D::new();
+    if let Some(base) = data.base_ref() {
+        apply_node_3d_data(&mut node, base);
+    }
+    apply_node_3d_fields(&mut node, &data.fields);
+    apply_video_player_fields(&mut node.video, &data.fields);
+    apply_video_player_3d_fields(&mut node, &data.fields);
+    node
+}
+
 fn build_label_3d(data: &SceneDefNodeData) -> Label3D {
     let mut node = Label3D::new();
     if let Some(base) = data.base_ref() {
@@ -125,6 +136,32 @@ fn apply_sprite_3d_fields(node: &mut Sprite3D, fields: &[SceneObjectField]) {
         name if scene_key_in(name, COLOR_MODULATE_KEYS) => {
             if let Some(v) = as_scene_color(value) {
                 node.modulate.modulate = v;
+            }
+        }
+        _ => {}
+    });
+}
+
+fn apply_video_player_3d_fields(node: &mut VideoPlayer3D, fields: &[SceneObjectField]) {
+    SceneFieldIterRef::new(fields).for_each(|name, value| match name {
+        "size" => {
+            if let Some(v) = as_vec2(value) {
+                node.size = Vector2::new(v.x.max(0.001), v.y.max(0.001));
+            }
+        }
+        name if scene_key_in(name, COLOR_MODULATE_KEYS) => {
+            if let Some(v) = as_scene_color(value) {
+                node.tint = v;
+            }
+        }
+        name if scene_key_in(name, FLIP_X_KEYS) => {
+            if let Some(v) = as_bool(value) {
+                node.flip_x = v;
+            }
+        }
+        name if scene_key_in(name, FLIP_Y_KEYS) => {
+            if let Some(v) = as_bool(value) {
+                node.flip_y = v;
             }
         }
         _ => {}

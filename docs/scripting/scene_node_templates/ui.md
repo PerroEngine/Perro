@@ -11,28 +11,40 @@
 
 ## Purpose
 
-Use this page when editing UI nodes in `.scn` scene files.
+Use this page as a copy-paste field reference for UI nodes in `.scn` scene files.
 
 Use [Node Collections](../node_collections.md) for runtime Rust-built node trees.
 
 ## Use Cases
 
-Use the types, APIs, file formats, and workflows in this doc when the feature matches the game system you are building. Prefer `ctx.run` for runtime state, `ctx.res` for resource/data access, and `ctx.ipt` for input state.
+- Author HUDs, menus, and dialogs directly in `.scn`.
+- Look up the full field list and defaults for one UI node type.
+- Copy a template block, then trim fields you do not set.
+- Keep scene field names and value forms consistent across a project.
 
 ## Example
 
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let dt = delta_time!(ctx.run);
-        let _ = dt;
-    }
-});
+A minimal panel with a centered button:
+
+```text
+[panel]
+[UiPanel]
+    anchor = "center"
+    size_ratio = (0.4, 0.25)
+    style = { fill = "#20242C" stroke = "#586070" radius = 0.12 }
+[/UiPanel]
+[/panel]
+
+[ok_button]
+parent = @panel
+[UiButton]
+    size_ratio = (0.5, 0.3)
+    clicked_signals = ["ok_clicked"]
+[/UiButton]
+[/ok_button]
 ```
 
 ## Reference
-
-# UI `.scn` Node Fields
 
 [Back to index](index.md)
 
@@ -159,6 +171,39 @@ script = "res://path/to/script.rs"
     [/UiPanel]
 [/ui_panel]
 
+[ui_shape]
+parent = @PARENTKEY
+script = "res://path/to/script.rs"
+    [UiShape]
+        # shape: "rect" | "circle" | "triangle"
+        shape = "rect"
+        fill = (1, 1, 1, 1)
+        stroke = (0, 0, 0, 0)
+        stroke_width = 0.0
+        [UiNode]
+            visible = true
+            input_enabled = true
+            mouse_filter = "stop"
+            clip_children = false
+            anchor = "center"
+            size_ratio = (0.5, 0.5)
+            pivot_ratio = (0.5, 0.5)
+
+            scale = (1, 1)
+            rotation = 0.0
+            h_size = "fixed"
+            v_size = "fixed"
+            h_align = "center"
+            v_align = "center"
+            min_size_ratio = (1.0, 1.0)
+            max_size_ratio = (inf, inf)
+            padding = 0
+            margin = 0
+            z_index = 0
+        [/UiNode]
+    [/UiShape]
+[/ui_shape]
+
 [ui_button]
 parent = @PARENTKEY
 script = "res://path/to/script.rs"
@@ -183,17 +228,15 @@ script = "res://path/to/script.rs"
             inner_shadow = { color = (0, 0, 0, 0.18) distance = 2 falloff = 5 vector = (0, -1) size = 1 }
             inner_highlight = { color = (1, 1, 1, 0.18) distance = 1 falloff = 3 vector = (-1, 1) size = 1 }
         }
-        # Planned 1.0 alternative:
+        # Or load the style from a resource:
         # style = "res://ui/button.uistyle"
         hover = {
             style = { fill_kind = "linear" fill = (0.24, 0.27, 0.32, 1.0) gradient = { start_color = (0.30, 0.34, 0.40, 1.0) end_color = (0.18, 0.21, 0.27, 1.0) vector = (0, -1) } stroke = (0.42, 0.46, 0.54, 1.0) stroke_width = 1.0 radius = 0.45 }
-            # Planned 1.0 alternative:
-            # style = "res://ui/button_hover.uistyle"
+            # Or: style = "res://ui/button_hover.uistyle"
         }
         pressed = {
             style = { fill_kind = "linear" fill = (0.12, 0.14, 0.18, 1.0) gradient = { start_color = (0.10, 0.12, 0.16, 1.0) end_color = (0.18, 0.20, 0.25, 1.0) vector = (0, 1) } stroke = (0.42, 0.46, 0.54, 1.0) stroke_width = 1.0 radius = 0.45 }
-            # Planned 1.0 alternative:
-            # style = "res://ui/button_down.uistyle"
+            # Or: style = "res://ui/button_down.uistyle"
         }
         [UiNode]
             visible = true
@@ -218,6 +261,115 @@ script = "res://path/to/script.rs"
         [/UiNode]
     [/UiButton]
 [/ui_button]
+
+[ui_checkbox]
+parent = @PARENTKEY
+script = "res://path/to/script.rs"
+    [UiCheckbox]
+        # Also takes every [UiButton] field (disabled, cursor_icon, hover, pressed, *_signals).
+        checked = false
+        dot_fill = (1, 1, 1, 1)
+        clicked_signals = []
+        style = { fill = (0.18, 0.20, 0.24, 1.0) stroke = (0.32, 0.35, 0.40, 1.0) stroke_width = 1.0 radius = 0.3 }
+        checked_style = { fill = (0.20, 0.40, 0.28, 1.0) stroke = (0.40, 0.70, 0.50, 1.0) stroke_width = 1.0 radius = 0.3 }
+        [UiNode]
+            visible = true
+            input_enabled = true
+            mouse_filter = "stop"
+            clip_children = false
+            anchor = "center"
+            size_ratio = (0.5, 0.5)
+            pivot_ratio = (0.5, 0.5)
+
+            scale = (1, 1)
+            rotation = 0.0
+            h_size = "fixed"
+            v_size = "fixed"
+            h_align = "center"
+            v_align = "center"
+            min_size_ratio = (1.0, 1.0)
+            max_size_ratio = (inf, inf)
+            padding = 0
+            margin = 0
+            z_index = 0
+        [/UiNode]
+    [/UiCheckbox]
+[/ui_checkbox]
+
+[ui_dropdown]
+parent = @PARENTKEY
+script = "res://path/to/script.rs"
+    [UiDropdown]
+        # Also takes every [UiButton] field.
+        options = [
+            { label = "Low" value = 0 },
+            { label = "High" value = 1 },
+        ]
+        selected_index = 0
+        open = false
+        option_height = 28.0
+        selected_signals = []
+        style = { fill = (0.18, 0.20, 0.24, 1.0) stroke = (0.32, 0.35, 0.40, 1.0) stroke_width = 1.0 radius = 0.2 }
+        popup_style = { fill = (0.11, 0.12, 0.14, 0.98) stroke = (0.22, 0.24, 0.28, 1.0) stroke_width = 1.0 radius = 0.12 }
+        option_style = { fill = (0.16, 0.18, 0.22, 1.0) stroke = (0.28, 0.30, 0.34, 1.0) stroke_width = 1.0 radius = 0.1 }
+        [UiNode]
+            visible = true
+            input_enabled = true
+            mouse_filter = "stop"
+            clip_children = false
+            anchor = "center"
+            size_ratio = (0.5, 0.5)
+            pivot_ratio = (0.5, 0.5)
+
+            scale = (1, 1)
+            rotation = 0.0
+            h_size = "fixed"
+            v_size = "fixed"
+            h_align = "center"
+            v_align = "center"
+            min_size_ratio = (1.0, 1.0)
+            max_size_ratio = (inf, inf)
+            padding = 0
+            margin = 0
+            z_index = 0
+        [/UiNode]
+    [/UiDropdown]
+[/ui_dropdown]
+
+[ui_color_picker]
+parent = @PARENTKEY
+script = "res://path/to/script.rs"
+    [UiColorPicker]
+        # Also takes every [UiButton] field.
+        color = (1, 1, 1, 1)
+        popup_open = false
+        popup_size = (260, 340)
+        wheel_radius = 72.0
+        color_changed_signals = []
+        popup_style = { fill = (0.11, 0.12, 0.14, 0.98) stroke = (0.22, 0.24, 0.28, 1.0) stroke_width = 1.0 radius = 0.12 }
+        [UiNode]
+            visible = true
+            input_enabled = true
+            mouse_filter = "stop"
+            clip_children = false
+            anchor = "center"
+            size_ratio = (0.5, 0.5)
+            pivot_ratio = (0.5, 0.5)
+
+            scale = (1, 1)
+            rotation = 0.0
+            h_size = "fixed"
+            v_size = "fixed"
+            h_align = "center"
+            v_align = "center"
+            min_size_ratio = (1.0, 1.0)
+            max_size_ratio = (inf, inf)
+            padding = 0
+            margin = 0
+            z_index = 0
+        [/UiNode]
+    [/UiColorPicker]
+[/ui_color_picker]
 
 [ui_image_button]
 parent = @PARENTKEY
@@ -265,6 +417,84 @@ script = "res://path/to/script.rs"
         [/UiNode]
     [/UiNineSlice]
 [/ui_nine_slice]
+
+[ui_image]
+parent = @PARENTKEY
+script = "res://path/to/script.rs"
+    [UiImage]
+        texture = "res://ui/icon.png"
+        texture_region = (0, 0, 32, 32)
+        tint = (1, 1, 1, 1)
+        # scale_mode: "stretch" | "fit" | "cover"
+        scale_mode = "stretch"
+        h_align = "center"
+        v_align = "center"
+        aspect_ratio = 0.0
+        [UiNode]
+            visible = true
+            input_enabled = true
+            mouse_filter = "ignore"
+            clip_children = false
+            anchor = "center"
+            size_ratio = (0.2, 0.2)
+            pivot_ratio = (0.5, 0.5)
+
+            scale = (1, 1)
+            rotation = 0.0
+            h_size = "fixed"
+            v_size = "fixed"
+            h_align = "center"
+            v_align = "center"
+            min_size_ratio = (1.0, 1.0)
+            max_size_ratio = (inf, inf)
+            padding = 0
+            margin = 0
+            z_index = 0
+        [/UiNode]
+    [/UiImage]
+[/ui_image]
+
+[ui_animated_image]
+parent = @PARENTKEY
+script = "res://path/to/script.rs"
+    [UiAnimatedImage]
+        texture = "res://ui/coin_strip.png"
+        animations = [
+            { name = "spin" start = (0, 0) frame_size = (32, 32) frame_count = 8 columns = 8 fps = 12 },
+        ]
+        animation = "spin"
+        current_frame = 0
+        fps_scale = 1.0
+        playing = true
+        looping = true
+        tint = (1, 1, 1, 1)
+        scale_mode = "fit"
+        h_align = "center"
+        v_align = "center"
+        aspect_ratio = 0.0
+        [UiNode]
+            visible = true
+            input_enabled = true
+            mouse_filter = "ignore"
+            clip_children = false
+            anchor = "center"
+            size_ratio = (0.1, 0.1)
+            pivot_ratio = (0.5, 0.5)
+
+            scale = (1, 1)
+            rotation = 0.0
+            h_size = "fixed"
+            v_size = "fixed"
+            h_align = "center"
+            v_align = "center"
+            min_size_ratio = (1.0, 1.0)
+            max_size_ratio = (inf, inf)
+            padding = 0
+            margin = 0
+            z_index = 0
+        [/UiNode]
+    [/UiAnimatedImage]
+[/ui_animated_image]
 
 [ui_label]
 parent = @PARENTKEY
@@ -359,7 +589,7 @@ script = "res://path/to/script.rs"
         text_changed_signals = []
         style = { fill = (0.11, 0.12, 0.14, 0.92) stroke = (0.22, 0.24, 0.28, 1.0) stroke_width = 1.0 radius = 0.2 }
         focused_style = { fill = (0.10, 0.11, 0.13, 0.96) stroke = (0.45, 0.58, 0.85, 1.0) stroke_width = 1.0 radius = 0.2 }
-        # Planned 1.0 alternatives:
+        # Or load styles from resources:
         # style = "res://ui/text_box.uistyle"
         # focused_style = "res://ui/text_box_focus.uistyle"
         [UiNode]
@@ -561,8 +791,45 @@ script = "res://path/to/script.rs"
     [/UiGrid]
 [/ui_grid]
 
+[ui_scroll_container]
+parent = @PARENTKEY
+script = "res://path/to/script.rs"
+    [UiScrollContainer]
+        scroll = (0, 0)
+        # scroll_dir: "vertical" | "horizontal"
+        scroll_dir = "vertical"
+        # scroll_bar_side: "left" | "right" | "top" | "bottom"
+        scroll_bar_side = "right"
+        # -1 uses the built-in default bar padding.
+        scroll_bar_padding = -1.0
+        [UiNode]
+            visible = true
+            input_enabled = true
+            mouse_filter = "stop"
+            # UiScrollContainer clips its children by default.
+            clip_children = true
+            anchor = "center"
+            size_ratio = (0.5, 0.5)
+            pivot_ratio = (0.5, 0.5)
+
+            scale = (1, 1)
+            rotation = 0.0
+            h_size = "fixed"
+            v_size = "fixed"
+            h_align = "center"
+            v_align = "center"
+            min_size_ratio = (1.0, 1.0)
+            max_size_ratio = (inf, inf)
+            padding = 0
+            margin = 0
+            z_index = 0
+        [/UiNode]
+    [/UiScrollContainer]
+[/ui_scroll_container]
+
 [ui_tree_list]
-parent = $root
+parent = @PARENTKEY
+script = "res://path/to/script.rs"
     [UiTreeList]
         indent = 18.0
         row_height = 24.0

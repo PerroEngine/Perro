@@ -760,6 +760,7 @@ pub(super) fn ui_base_from_data(data: &SceneNodeData) -> Option<&UiNode> {
         SceneNodeData::UiCheckbox(node) => Some(&node.button.base),
         SceneNodeData::UiColorPicker(node) => Some(&node.button.base),
         SceneNodeData::UiImage(node) => Some(&node.base),
+        SceneNodeData::UiVideoPlayer(node) => Some(&node.base),
         SceneNodeData::UiImageButton(node) => Some(&node.base),
         SceneNodeData::UiNineSlice(node) => Some(&node.base),
         SceneNodeData::UiAnimatedImage(node) => Some(&node.base),

@@ -87,9 +87,10 @@ lifecycle!({
 methods!({});
 
 fn resize_columns<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, refs: UiRefs, t: f32) {
-    let left = 0.28 + 0.08 * t;
-    let mid = 0.38 - 0.04 * t;
-    let right = 0.28 + 0.04 * (1.0 - t);
+    // widths trade around a constant 0.95 sum; + h_spacing 0.025*2 = exact 1.0 fit
+    let left = 0.31 + 0.06 * t;
+    let mid = 0.35 - 0.04 * t;
+    let right = 0.29 - 0.02 * t;
     set_ui_size(ctx, refs.left_panel, left, 1.0);
     set_ui_size(ctx, refs.mid_panel, mid, 1.0);
     set_ui_size(ctx, refs.right_panel, right, 1.0);
@@ -102,8 +103,10 @@ fn animate_nested<API: ScriptAPI + ?Sized>(
     t: f32,
     fast: f32,
 ) {
-    set_ui_size(ctx, refs.nested_panel, 1.0, 0.13 + 0.06 * t);
-    set_ui_size(ctx, refs.nested_grid, 0.48 + 0.16 * fast, 1.0);
+    // nested_panel grows within budget; scroll_box (fill row) absorbs the delta
+    set_ui_size(ctx, refs.nested_panel, 1.0, 0.12 + 0.03 * t);
+    // nested_grid grows in width; nested_note (h fill) absorbs the delta
+    set_ui_size(ctx, refs.nested_grid, 0.44 + 0.14 * fast, 1.0);
     with_node_mut!(ctx.run, UiGrid, refs.nested_grid, |grid| {
         grid.columns = if fast > 0.55 { 3 } else { 2 };
         grid.h_spacing = 0.012 + 0.018 * t;
@@ -145,14 +148,10 @@ fn refresh_text<API: ScriptAPI + ?Sized>(
         return;
     }
     with_node_mut!(ctx.run, UiLabel, refs.subtitle, |label| {
-        label.text = format!(
-            "dynamic layout {:.0}% | dirty UI rerender | nested grids",
-            wave * 100.0
-        )
-        .into();
+        label.text = format!("live layout {:.0}%", wave * 100.0).into();
     });
     with_node_mut!(ctx.run, UiLabel, refs.title, |label| {
-        label.text = "DemoUI: nodes + live layout".into();
+        label.text = "DemoUI".into();
     });
 }
 

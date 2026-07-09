@@ -45,7 +45,16 @@ impl RuntimeResourceApi {
         if !errors.is_empty() {
             let mut state = self.state.lock().expect("resource api mutex poisoned");
             for error in errors {
-                state.webcam_last_error_by_id.insert(error.id, error.error);
+                let prev = state
+                    .webcam_last_error_by_id
+                    .insert(error.id, error.error.clone());
+                if prev.as_deref() != Some(error.error.as_str()) {
+                    eprintln!(
+                        "[perro][webcam] error id={} err={}",
+                        error.id.as_u64(),
+                        error.error
+                    );
+                }
             }
         }
     }
@@ -56,7 +65,6 @@ impl RuntimeResourceApi {
     ))]
     fn start_webcam_capture(&self, id: WebcamID, config: WebcamConfig) {
         use nokhwa::pixel_format::RgbAFormat;
-        use nokhwa::utils::CameraIndex;
         use std::sync::atomic::{AtomicBool, Ordering};
         use std::time::{Duration, Instant};
 
@@ -74,13 +82,7 @@ impl RuntimeResourceApi {
         let error_tx = self.webcam_error_tx.clone();
         std::thread::spawn(move || {
             let log_enabled = webcam_log_enabled();
-            let index = if config.device.trim().is_empty() {
-                CameraIndex::Index(0)
-            } else if let Ok(index) = config.device.parse::<u32>() {
-                CameraIndex::Index(index)
-            } else {
-                CameraIndex::String(config.device.to_string())
-            };
+            let index = webcam_camera_index_for_device(config.device.as_ref());
             if log_enabled {
                 eprintln!(
                     "[perro][webcam] start id={} device={} {}x{}@{} mirror={}",
@@ -118,18 +120,10 @@ impl RuntimeResourceApi {
                     return;
                 }
             };
-            if let Err(err) = camera.open_stream() {
-                if log_enabled {
-                    eprintln!("[perro][webcam] stream fail id={} err={err}", id.as_u64());
-                }
-                let _ = error_tx.send(WebcamErrorMessage {
-                    id,
-                    error: err.to_string(),
-                });
-                return;
-            }
             let frame_delay = Duration::from_millis((1000 / config.fps.max(1) as u64).max(1));
             let mut logged_first_frame = false;
+            let mut frame_count = 0u32;
+            let mut fps_window_start = Instant::now();
             while !stop.load(Ordering::Relaxed) {
                 let start = Instant::now();
                 match camera
@@ -149,6 +143,18 @@ impl RuntimeResourceApi {
                                 rgba.len()
                             );
                             logged_first_frame = true;
+                        }
+                        frame_count += 1;
+                        if log_enabled && frame_count.is_multiple_of(120) {
+                            let window = fps_window_start.elapsed().as_secs_f64();
+                            if window > 0.0 {
+                                eprintln!(
+                                    "[perro][webcam] id={} measured_fps={:.1}",
+                                    id.as_u64(),
+                                    120.0 / window
+                                );
+                            }
+                            fps_window_start = Instant::now();
                         }
                         if config.mirror {
                             mirror_rgba_rows(width, height, &mut rgba);
@@ -225,7 +231,12 @@ impl RuntimeResourceApi {
         node: perro_ids::NodeID,
         config: WebcamConfig,
     ) -> WebcamID {
-        let mut config = config;
+        let mut config = self.resolve_webcam_config(config);
+        // Clamp before the same-config compare below; the stored config is
+        // post-clamp, so an unclamped compare would thrash close/reopen.
+        let (width, height) = clamp_size(config.width, config.height);
+        config.width = width;
+        config.height = height;
         let mut state = self.state.lock().expect("resource api mutex poisoned");
         if let Some(id) = state.webcam_node_by_node.get(&node).copied() {
             let same_config = state
@@ -244,9 +255,6 @@ impl RuntimeResourceApi {
         let source = format!("webcam://node/{}", node.as_u64());
         let source_hash = string_to_u64(&source);
         let request = state.allocate_request();
-        let (width, height) = clamp_size(config.width, config.height);
-        config.width = width;
-        config.height = height;
         state.webcam_texture_by_id.insert(id, texture);
         let start_config = config.clone();
         state.webcam_config_by_id.insert(id, config);
@@ -294,7 +302,7 @@ impl WebcamAPI for RuntimeResourceApi {
     fn webcam_devices(&self) -> Result<Vec<WebcamDevice>, String> {
         use nokhwa::utils::{ApiBackend, CameraIndex};
 
-        Ok(nokhwa::query(ApiBackend::Auto)
+        let devices: Vec<_> = nokhwa::query(ApiBackend::Auto)
             .map_err(|err| err.to_string())?
             .into_iter()
             .map(|info| {
@@ -312,7 +320,14 @@ impl WebcamAPI for RuntimeResourceApi {
                     extra,
                 }
             })
-            .collect())
+            .collect();
+        if devices.is_empty() {
+            #[cfg(target_os = "windows")]
+            if let Some(fallback) = windows_pnp_webcam_devices() {
+                return Ok(fallback);
+            }
+        }
+        Ok(devices)
     }
 
     #[cfg(any(test, target_arch = "wasm32", target_os = "android"))]
@@ -321,6 +336,7 @@ impl WebcamAPI for RuntimeResourceApi {
     }
 
     fn webcam_open(&self, mut config: WebcamConfig) -> Result<WebcamID, String> {
+        config = self.resolve_webcam_config(config);
         let mut state = self
             .state
             .lock()
@@ -486,7 +502,16 @@ fn open_webcam_camera(
             CameraFormat::new_from(width, height, format, fps),
         ));
         match nokhwa::Camera::new(index.clone(), requested) {
-            Ok(camera) => return Ok(camera),
+            Ok(mut camera) => match camera.open_stream() {
+                Ok(()) => match camera
+                    .frame()
+                    .and_then(|frame| frame.decode_image::<RgbAFormat>())
+                {
+                    Ok(_) => return Ok(camera),
+                    Err(err) => last_err = Some(err),
+                },
+                Err(err) => last_err = Some(err),
+            },
             Err(err) => last_err = Some(err),
         }
     }
@@ -497,7 +522,16 @@ fn open_webcam_camera(
         RequestedFormat::new::<RgbAFormat>(RequestedFormatType::None),
     ] {
         match nokhwa::Camera::new(index.clone(), requested) {
-            Ok(camera) => return Ok(camera),
+            Ok(mut camera) => match camera.open_stream() {
+                Ok(()) => match camera
+                    .frame()
+                    .and_then(|frame| frame.decode_image::<RgbAFormat>())
+                {
+                    Ok(_) => return Ok(camera),
+                    Err(err) => last_err = Some(err),
+                },
+                Err(err) => last_err = Some(err),
+            },
             Err(err) => last_err = Some(err),
         }
     }
@@ -511,17 +545,169 @@ fn open_webcam_camera(
     any(target_os = "windows", target_os = "linux", target_os = "macos"),
     not(test)
 ))]
-fn webcam_device_slot(info: &nokhwa::utils::CameraInfo, extra: &str) -> String {
-    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
-    let _ = extra;
+fn default_webcam_camera_index() -> nokhwa::utils::CameraIndex {
+    use nokhwa::utils::{ApiBackend, CameraIndex};
 
-    #[cfg(any(target_os = "windows", target_os = "macos"))]
-    {
-        if !extra.trim().is_empty() {
-            return extra.to_string();
+    nokhwa::query(ApiBackend::Auto)
+        .ok()
+        .and_then(|devices| devices.into_iter().next().map(|info| info.index().clone()))
+        .unwrap_or(CameraIndex::Index(0))
+}
+
+impl RuntimeResourceApi {
+    #[cfg(all(
+        any(target_os = "windows", target_os = "linux", target_os = "macos"),
+        not(test)
+    ))]
+    fn resolve_webcam_config(&self, config: WebcamConfig) -> WebcamConfig {
+        use nokhwa::utils::ApiBackend;
+
+        if !config.device.trim().is_empty() {
+            return config;
+        }
+        if let Ok(cache) = self.webcam_default_slot.lock()
+            && let Some(slot) = cache.as_ref()
+        {
+            return WebcamConfig {
+                device: slot.clone().into(),
+                ..config
+            };
+        }
+        let Ok(devices) = nokhwa::query(ApiBackend::Auto) else {
+            return config;
+        };
+        let Some(info) = devices.into_iter().next() else {
+            return config;
+        };
+        let extra = info.misc();
+        let slot = webcam_device_slot(&info, &extra);
+        if slot.trim().is_empty() {
+            return config;
+        }
+        if let Ok(mut cache) = self.webcam_default_slot.lock() {
+            *cache = Some(slot.clone());
+        }
+        WebcamConfig {
+            device: slot.into(),
+            ..config
         }
     }
+
+    #[cfg(any(test, target_arch = "wasm32", target_os = "android"))]
+    fn resolve_webcam_config(&self, config: WebcamConfig) -> WebcamConfig {
+        config
+    }
+}
+
+#[cfg(all(
+    any(target_os = "windows", target_os = "linux", target_os = "macos"),
+    not(test)
+))]
+fn webcam_camera_index_for_device(device: &str) -> nokhwa::utils::CameraIndex {
+    use nokhwa::utils::{ApiBackend, CameraIndex};
+
+    let device = device.trim();
+    if device.is_empty() {
+        return default_webcam_camera_index();
+    }
+    if let Ok(index) = device.parse::<u32>() {
+        return CameraIndex::Index(index);
+    }
+    if let Ok(devices) = nokhwa::query(ApiBackend::Auto)
+        && let Some(index) = devices.into_iter().find_map(|info| {
+            let extra = info.misc();
+            let slot = webcam_device_slot(&info, &extra);
+            let matches = slot == device
+                || extra == device
+                || info.human_name() == device
+                || info.description() == device;
+            if !matches {
+                return None;
+            }
+            match info.index() {
+                CameraIndex::Index(index) => Some(CameraIndex::Index(*index)),
+                CameraIndex::String(index) => index
+                    .parse::<u32>()
+                    .ok()
+                    .map(CameraIndex::Index)
+                    .or_else(|| Some(CameraIndex::String(index.clone()))),
+            }
+        })
+    {
+        return index;
+    }
+    CameraIndex::String(device.to_string())
+}
+
+#[cfg(all(
+    any(target_os = "windows", target_os = "linux", target_os = "macos"),
+    not(test)
+))]
+fn webcam_device_slot(info: &nokhwa::utils::CameraInfo, extra: &str) -> String {
+    let _ = extra;
+
     info.index().as_string()
+}
+
+#[cfg(all(
+    target_os = "windows",
+    any(target_os = "windows", target_os = "linux", target_os = "macos"),
+    not(test)
+))]
+fn windows_pnp_webcam_devices() -> Option<Vec<WebcamDevice>> {
+    use std::process::Command;
+
+    let script = concat!(
+        "Get-CimInstance Win32_PnPEntity | ",
+        "Where-Object { ",
+        "($_.PNPClass -in @('Camera','Image','MEDIA')) -and ",
+        "($_.Name -match '(?i)camera|webcam|video|logitech|c922') ",
+        "} | ForEach-Object { ",
+        "\"$($_.Name)`t$($_.PNPClass)`t$($_.Status)`t$($_.DeviceID)\" ",
+        "}"
+    );
+    let output = Command::new("powershell")
+        .args(["-NoProfile", "-Command", script])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let text = String::from_utf8_lossy(&output.stdout);
+    let devices: Vec<_> = text
+        .lines()
+        .filter_map(parse_windows_pnp_webcam_line)
+        .enumerate()
+        .map(|(i, mut device)| {
+            device.slot = i.to_string();
+            device.index = Some(i as u32);
+            device
+        })
+        .collect();
+    (!devices.is_empty()).then_some(devices)
+}
+
+#[cfg(all(
+    target_os = "windows",
+    any(target_os = "windows", target_os = "linux", target_os = "macos"),
+    not(test)
+))]
+fn parse_windows_pnp_webcam_line(line: &str) -> Option<WebcamDevice> {
+    let mut parts = line.splitn(4, '\t');
+    let name = parts.next()?.trim();
+    let class = parts.next()?.trim();
+    let status = parts.next()?.trim();
+    let device_id = parts.next()?.trim();
+    if name.is_empty() {
+        return None;
+    }
+    Some(WebcamDevice {
+        slot: String::new(),
+        index: None,
+        name: name.to_string(),
+        description: format!("Windows PnP fallback; class={class}; status={status}"),
+        extra: device_id.to_string(),
+    })
 }
 
 #[cfg_attr(test, allow(dead_code))]

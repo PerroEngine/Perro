@@ -17,8 +17,8 @@ use perro_nodes::{
     FixedJoint3D, HingeJoint3D, ImageButton2D, Label2D, Label3D, NineSlice2D, NodeType, PhysicsForceEmitter2D,
     PhysicsForceEmitter3D, PhysicsForceProfile, PinJoint2D, PointLight2D, RayLight2D,
     RigidBody2D, RigidBody3D, SceneNode, SceneNodeData, Shape2D, Shape3D, SpotLight2D,
-    StaticBody2D, StaticBody3D, TextDecal3D, Triangle2DKind, UiCameraStream, WaterBody2D, WaterBody3D,
-    Webcam,
+    StaticBody2D, StaticBody3D, TextDecal3D, Triangle2DKind, UiCameraStream, UiVideoPlayer,
+    VideoPlayer, VideoPlayer2D, VideoPlayer3D, WaterBody2D, WaterBody3D, Webcam,
     WaterIdleMode, WaterShape, WaterSkyBias, WaterSurfaceParams,
     ambient_light_3d::AmbientLight3D,
     animation_player::AnimationPlayer,
@@ -748,6 +748,7 @@ pub(super) struct PendingNode {
     pub(super) bone_attachment_skeleton_target: Option<u32>,
     pub(super) ik_target_skeleton_target: Option<u32>,
     pub(super) physics_bone_chain_skeleton_target: Option<u32>,
+    pub(super) camera_stream_target: Option<u32>,
     pub(super) joint_body_links: Vec<PendingJointBodyLink>,
     pub(super) animation_bindings: Vec<(String, u32)>,
     pub(super) locale_text_bindings: Vec<PendingLocaleTextBinding>,
@@ -802,6 +803,7 @@ type SceneNodeExtraction = (
     Option<String>,
     Option<String>,
     Vec<PendingSurfaceMaterial>,
+    Option<String>,
     Option<String>,
     Option<String>,
     Option<String>,
@@ -1076,6 +1078,7 @@ fn ensure_default_ray_light_3d(prepared: &mut PreparedScene) {
         bone_attachment_skeleton_target: None,
         ik_target_skeleton_target: None,
         physics_bone_chain_skeleton_target: None,
+        camera_stream_target: None,
         joint_body_links: Vec::new(),
         animation_bindings: Vec::new(),
         locale_text_bindings: Vec::new(),
@@ -1133,6 +1136,7 @@ fn prepare_node_no_root(
         bone_attachment_skeleton_target,
         ik_target_skeleton_target,
         physics_bone_chain_skeleton_target,
+        camera_stream_target,
         joint_body_targets,
         animation_bindings,
         locale_text_bindings,
@@ -1178,6 +1182,9 @@ fn prepare_node_no_root(
             .and_then(|v| scene_key_by_name(scene, v.as_str()))
             .map(|target| target.as_u32()),
         physics_bone_chain_skeleton_target: physics_bone_chain_skeleton_target
+            .and_then(|v| scene_key_by_name(scene, v.as_str()))
+            .map(|target| target.as_u32()),
+        camera_stream_target: camera_stream_target
             .and_then(|v| scene_key_by_name(scene, v.as_str()))
             .map(|target| target.as_u32()),
         joint_body_links: joint_body_targets
@@ -1265,6 +1272,7 @@ fn push_entry_prepared(
         bone_attachment_skeleton_target,
         ik_target_skeleton_target,
         physics_bone_chain_skeleton_target,
+        camera_stream_target,
         joint_body_targets,
         animation_bindings,
         locale_text_bindings,
@@ -1313,6 +1321,9 @@ fn push_entry_prepared(
             .and_then(|v| scene_key_by_name(scene, v.as_str()))
             .map(|target| remap_key(target, key_map)),
         physics_bone_chain_skeleton_target: physics_bone_chain_skeleton_target
+            .and_then(|v| scene_key_by_name(scene, v.as_str()))
+            .map(|target| remap_key(target, key_map)),
+        camera_stream_target: camera_stream_target
             .and_then(|v| scene_key_by_name(scene, v.as_str()))
             .map(|target| remap_key(target, key_map)),
         joint_body_links: joint_body_targets
@@ -1623,6 +1634,7 @@ fn scene_node_from_entry(
     let ik_target_skeleton_target = extract_ik_target_skeleton_target(&entry.data)?;
     let physics_bone_chain_skeleton_target =
         extract_physics_bone_chain_skeleton_target(&entry.data)?;
+    let camera_stream_target = extract_camera_stream_target(&entry.data);
     let joint_body_targets = extract_joint_body_targets(&entry.data, scratch);
     let animation_bindings = extract_animation_scene_bindings(&entry.data);
     let locale_text_bindings = extract_locale_text_bindings(&entry.data, scratch);
@@ -1651,10 +1663,32 @@ fn scene_node_from_entry(
         bone_attachment_skeleton_target,
         ik_target_skeleton_target,
         physics_bone_chain_skeleton_target,
+        camera_stream_target,
         joint_body_targets,
         animation_bindings,
         locale_text_bindings,
     ))
+}
+
+fn extract_camera_stream_target(data: &SceneDefNodeData) -> Option<String> {
+    if !matches!(
+        data.node_type,
+        NodeType::CameraStream2D | NodeType::CameraStream3D | NodeType::UiCameraStream
+    ) {
+        return None;
+    }
+    data.fields.iter().find_map(|(name, value)| {
+        if !matches!(
+            name.as_ref(),
+            "camera" | "camera_id" | "source_camera" | "source" | "webcam"
+        ) {
+            return None;
+        }
+        match value {
+            SceneValue::Key(v) => Some(v.to_string()),
+            _ => None,
+        }
+    })
 }
 
 fn extract_locale_text_bindings(
@@ -1794,6 +1828,7 @@ fn scene_node_data_from(
         NodeType::Button2D => Ok(SceneNodeData::Button2D(Box::new(build_button_2d(data)))),
         NodeType::ImageButton2D => Ok(SceneNodeData::ImageButton2D(Box::new(build_image_button_2d(data)))),
         NodeType::Sprite2D => Ok(SceneNodeData::Sprite2D(build_sprite_2d(data))),
+        NodeType::VideoPlayer2D => Ok(SceneNodeData::VideoPlayer2D(build_video_player_2d(data))),
         NodeType::Label2D => Ok(SceneNodeData::Label2D(build_label_2d(data))),
         NodeType::NineSlice2D => Ok(SceneNodeData::NineSlice2D(build_nine_slice_2d(data))),
         NodeType::AnimatedSprite2D => Ok(SceneNodeData::AnimatedSprite2D(build_animated_sprite_2d(
@@ -1849,6 +1884,7 @@ fn scene_node_data_from(
             build_multi_mesh_instance_3d(data),
         )),
         NodeType::Sprite3D => Ok(SceneNodeData::Sprite3D(build_sprite_3d(data))),
+        NodeType::VideoPlayer3D => Ok(SceneNodeData::VideoPlayer3D(build_video_player_3d(data))),
         NodeType::Label3D => Ok(SceneNodeData::Label3D(build_label_3d(data))),
         NodeType::CollisionShape3D => Ok(SceneNodeData::CollisionShape3D(build_collision_shape_3d(
             data,
@@ -1917,6 +1953,7 @@ fn scene_node_data_from(
         )))),
         NodeType::UiCameraStream => Ok(SceneNodeData::UiCameraStream(Box::new(build_ui_camera_stream(data)))),
         NodeType::UiImage => Ok(SceneNodeData::UiImage(Box::new(build_ui_image(data)))),
+        NodeType::UiVideoPlayer => Ok(SceneNodeData::UiVideoPlayer(Box::new(build_ui_video_player(data)))),
         NodeType::UiImageButton => Ok(SceneNodeData::UiImageButton(Box::new(build_ui_image_button(data)))),
         NodeType::UiNineSlice => Ok(SceneNodeData::UiNineSlice(Box::new(build_ui_nine_slice(data)))),
         NodeType::UiAnimatedImage => Ok(SceneNodeData::UiAnimatedImage(Box::new(build_ui_animated_image(
@@ -1992,6 +2029,42 @@ fn apply_camera_stream_fields(stream: &mut CameraStream, fields: &[SceneObjectFi
     });
     stream.resolution.x = stream.resolution.x.clamp(1, 8192);
     stream.resolution.y = stream.resolution.y.clamp(1, 8192);
+}
+
+fn apply_video_player_fields(node: &mut VideoPlayer, fields: &[SceneObjectField]) {
+    SceneFieldIterRef::new(fields).for_each(|name, value| match name {
+        "source" | "path" | "video" | "stream" => {
+            if let Some(v) = as_str(value) {
+                node.source = Cow::Owned(v.to_string());
+            }
+        }
+        "playing" | "play" | "autoplay" => {
+            if let Some(v) = as_bool(value) {
+                node.playing = v;
+            }
+        }
+        "paused" => {
+            if let Some(v) = as_bool(value) {
+                node.playing = !v;
+            }
+        }
+        "looping" | "loop" => {
+            if let Some(v) = as_bool(value) {
+                node.looping = v;
+            }
+        }
+        "fps_scale" | "speed" | "playback_speed" => {
+            if let Some(v) = as_f32(value) {
+                node.fps_scale = v.max(0.0);
+            }
+        }
+        "volume" => {
+            if let Some(v) = as_f32(value) {
+                node.volume = v.max(0.0);
+            }
+        }
+        _ => {}
+    });
 }
 
 fn build_webcam(data: &SceneDefNodeData) -> Webcam {

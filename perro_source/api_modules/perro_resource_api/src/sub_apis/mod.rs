@@ -20,6 +20,7 @@ mod post_processing;
 mod scene_doc;
 mod skeleton;
 mod texture;
+mod video;
 mod visual_accessibility;
 mod webcam;
 
@@ -54,5 +55,6 @@ pub use post_processing::PostProcessingAPI;
 pub use scene_doc::{IntoSceneDoc, SceneDocAPI, SceneDocModule};
 pub use skeleton::{SkeletonAPI, SkeletonModule};
 pub use texture::{TextureAPI, TextureModule, TextureReserveArg};
+pub use video::{VideoAPI, VideoModule, VideoUpdate};
 pub use visual_accessibility::VisualAccessibilityAPI;
 pub use webcam::{WebcamAPI, WebcamConfig, WebcamDevice, WebcamFrame, WebcamModule};

@@ -9,7 +9,8 @@ use crate::{
     PhysicsBoneChain2D, PhysicsBoneChain3D, PhysicsForceEmitter2D, PhysicsForceEmitter3D,
     PinJoint2D, PointLight2D, PointLight3D, RayLight2D, RayLight3D, RigidBody2D, RigidBody3D,
     Skeleton2D, Skeleton3D, Sky3D, SpotLight2D, SpotLight3D, Sprite2D, Sprite3D, StaticBody2D,
-    StaticBody3D, TextDecal3D, TileMap2D, UiCameraStream, WaterBody2D, WaterBody3D, Webcam,
+    StaticBody3D, TextDecal3D, TileMap2D, UiCameraStream, UiVideoPlayer, VideoPlayer2D,
+    VideoPlayer3D, WaterBody2D, WaterBody3D, Webcam,
 };
 use perro_ids::{NodeID, NodeTag, TagID};
 use perro_structs::{Transform2D, Transform3D};
@@ -860,6 +861,7 @@ define_scene_nodes! {
         Button2D => (Node2D, Button2D, Boxed, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         ImageButton2D => (Node2D, ImageButton2D, Boxed, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         Sprite2D => (Node2D, Sprite2D, Inline, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
+        VideoPlayer2D => (Node2D, VideoPlayer2D, Inline, Renderable::True, InternalUpdate::True, InternalFixedUpdate::False),
         Label2D => (Node2D, Label2D, Inline, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         NineSlice2D => (Node2D, NineSlice2D, Inline, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         AnimatedSprite2D => (Node2D, AnimatedSprite2D, Inline, Renderable::True, InternalUpdate::True, InternalFixedUpdate::False),
@@ -908,6 +910,7 @@ define_scene_nodes! {
         MeshInstance3D => (Node3D, MeshInstance3D, Inline, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         MultiMeshInstance3D => (Node3D, MultiMeshInstance3D, Inline, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         Sprite3D => (Node3D, Sprite3D, Inline, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
+        VideoPlayer3D => (Node3D, VideoPlayer3D, Inline, Renderable::True, InternalUpdate::True, InternalFixedUpdate::False),
         Label3D => (Node3D, Label3D, Inline, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         ParticleEmitter3D => (Node3D, ParticleEmitter3D, Inline, Renderable::True, InternalUpdate::True, InternalFixedUpdate::False),
         WaterBody3D => (Node3D, WaterBody3D, Boxed, Renderable::True, InternalUpdate::False, InternalFixedUpdate::True),
@@ -957,6 +960,7 @@ define_scene_nodes! {
         UiShape => (UiNode, UiShape, Inline, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         UiCheckbox => (UiNode, UiCheckbox, Boxed, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         UiImage => (UiNode, UiImage, Boxed, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
+        UiVideoPlayer => (UiNode, UiVideoPlayer, Boxed, Renderable::True, InternalUpdate::True, InternalFixedUpdate::False),
         UiImageButton => (UiNode, UiImageButton, Boxed, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         UiNineSlice => (UiNode, UiNineSlice, Boxed, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         UiAnimatedImage => (UiNode, UiAnimatedImage, Boxed, Renderable::True, InternalUpdate::True, InternalFixedUpdate::False),

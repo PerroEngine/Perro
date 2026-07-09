@@ -8,6 +8,17 @@ fn build_sprite_2d(data: &SceneDefNodeData) -> Sprite2D {
     node
 }
 
+fn build_video_player_2d(data: &SceneDefNodeData) -> VideoPlayer2D {
+    let mut node = VideoPlayer2D::new();
+    if let Some(base) = data.base_ref() {
+        apply_node_2d_data(&mut node, base);
+    }
+    apply_node_2d_fields(&mut node, &data.fields);
+    apply_video_player_fields(&mut node.video, &data.fields);
+    apply_video_player_2d_fields(&mut node, &data.fields);
+    node
+}
+
 fn build_label_2d(data: &SceneDefNodeData) -> Label2D {
     let mut node = Label2D::new();
     if let Some(base) = data.base_ref() {
@@ -492,4 +503,30 @@ fn parse_animated_sprite(value: &SceneValue) -> Option<AnimatedSprite> {
     }
     animation.frame_count = animation.frame_count.max(1);
     Some(animation)
+}
+
+fn apply_video_player_2d_fields(node: &mut VideoPlayer2D, fields: &[SceneObjectField]) {
+    SceneFieldIterRef::new(fields).for_each(|name, value| match name {
+        "size" => {
+            if let Some(v) = as_vec2(value) {
+                node.size = Vector2::new(v.x.max(0.001), v.y.max(0.001));
+            }
+        }
+        name if scene_key_in(name, COLOR_MODULATE_KEYS) => {
+            if let Some(v) = as_scene_color(value) {
+                node.tint = v;
+            }
+        }
+        name if scene_key_in(name, FLIP_X_KEYS) => {
+            if let Some(v) = as_bool(value) {
+                node.flip_x = v;
+            }
+        }
+        name if scene_key_in(name, FLIP_Y_KEYS) => {
+            if let Some(v) = as_bool(value) {
+                node.flip_y = v;
+            }
+        }
+        _ => {}
+    });
 }

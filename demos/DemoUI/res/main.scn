@@ -65,7 +65,7 @@ parent = @ui_root
 [left_panel]
 parent = @shell
     [UiPanel]
-        size_ratio = (0.34, 1.0)
+        size_ratio = (0.31, 1.0)
         style = $panel_style
         padding = 0.035
     [/UiPanel]
@@ -78,16 +78,15 @@ parent = @left_panel
         size_ratio = (0.92, 0.94)
         v_spacing = 0.018
         h_align = "fill"
-        v_align = "fill"
     [/UiVLayout]
 [/left_stack]
 
 [title]
 parent = @left_stack
     [UiLabel]
-        size_ratio = (1.0, 0.11)
+        size_ratio = (1.0, 0.12)
         text = "DemoUI"
-        text_size_ratio = 0.36
+        text_size_ratio = 0.34
         color = "#FFFFFF"
         input_enabled = false
         mouse_filter = "pass"
@@ -97,9 +96,9 @@ parent = @left_stack
 [subtitle]
 parent = @left_stack
     [UiLabel]
-        size_ratio = (1.0, 0.08)
-        text = "layout, state widgets, image, text, stream"
-        text_size_ratio = 0.18
+        size_ratio = (1.0, 0.07)
+        text = "controls, inputs, images"
+        text_size_ratio = 0.22
         color = "#B9C7D8"
         input_enabled = false
         mouse_filter = "pass"
@@ -132,7 +131,7 @@ parent = @primary_button
 [checkbox]
 parent = @left_stack
     [UiCheckbox]
-        size_ratio = (1.0, 0.10)
+        size_ratio = (1.0, 0.09)
         text = "Checkbox"
         checked = true
         style = $subpanel_style
@@ -144,7 +143,7 @@ parent = @left_stack
 [dropdown]
 parent = @left_stack
     [UiDropdown]
-        size_ratio = (1.0, 0.10)
+        size_ratio = (1.0, 0.09)
         text = "Dropdown"
         selected_index = 0
         open = false
@@ -157,7 +156,7 @@ parent = @left_stack
 [color_picker]
 parent = @left_stack
     [UiColorPicker]
-        size_ratio = (1.0, 0.12)
+        size_ratio = (1.0, 0.11)
         color = "#47A7FFFF"
         style = $subpanel_style
     [/UiColorPicker]
@@ -166,7 +165,8 @@ parent = @left_stack
 [logo_row]
 parent = @left_stack
     [UiHLayout]
-        size_ratio = (1.0, 0.20)
+        size_ratio = (1.0, 0.18)
+        v_size = "fill"
         h_spacing = 0.04
         h_align = "fill"
         v_align = "fill"
@@ -204,7 +204,7 @@ parent = @logo_row
 [animated_logo]
 parent = @left_stack
     [UiAnimatedImage]
-        size_ratio = (1.0, 0.12)
+        size_ratio = (1.0, 0.11)
         texture = "res://icon.png"
         scale_mode = "fit"
         animations = [
@@ -220,7 +220,7 @@ parent = @left_stack
 [mid_panel]
 parent = @shell
     [UiPanel]
-        size_ratio = (0.34, 1.0)
+        size_ratio = (0.35, 1.0)
         style = $panel_style
         padding = 0.035
     [/UiPanel]
@@ -233,16 +233,15 @@ parent = @mid_panel
         size_ratio = (0.92, 0.94)
         v_spacing = 0.018
         h_align = "fill"
-        v_align = "fill"
     [/UiVLayout]
 [/mid_stack]
 
 [text_title]
 parent = @mid_stack
     [UiLabel]
-        size_ratio = (1.0, 0.08)
+        size_ratio = (1.0, 0.07)
         text = "Text + Lists"
-        text_size_ratio = 0.28
+        text_size_ratio = 0.32
         color = "#FFFFFF"
         input_enabled = false
         mouse_filter = "pass"
@@ -252,10 +251,10 @@ parent = @mid_stack
 [name_box]
 parent = @mid_stack
     [UiTextBox]
-        size_ratio = (1.0, 0.10)
+        size_ratio = (1.0, 0.09)
         text = "Perro"
         placeholder = "Name"
-        text_size_ratio = 0.28
+        text_size_ratio = 0.30
         style = $subpanel_style
         focused_style = { fill: "#0E1924F0", stroke: "#B8D8FF", stroke_width: 1.0, radius: 0.035 }
     [/UiTextBox]
@@ -264,10 +263,10 @@ parent = @mid_stack
 [note_block]
 parent = @mid_stack
     [UiTextBlock]
-        size_ratio = (1.0, 0.22)
+        size_ratio = (1.0, 0.15)
         text = "UiTextBlock\nmulti line\nselection + caret"
         placeholder = "Notes"
-        text_size_ratio = 0.18
+        text_size_ratio = 0.16
         style = $subpanel_style
         focused_style = { fill: "#0E1924F0", stroke: "#B8D8FF", stroke_width: 1.0, radius: 0.035 }
     [/UiTextBlock]
@@ -276,7 +275,8 @@ parent = @mid_stack
 [scroll_box]
 parent = @mid_stack
     [UiPanel]
-        size_ratio = (1.0, 0.21)
+        size_ratio = (1.0, 0.13)
+        v_size = "fill"
         style = $subpanel_style
         padding = 0.025
     [/UiPanel]
@@ -339,7 +339,7 @@ parent = @scroll_items
 [tree]
 parent = @mid_stack
     [UiTreeList]
-        size_ratio = (1.0, 0.18)
+        size_ratio = (1.0, 0.14)
         indent = 18.0
         row_height = 24.0
         selected_index = 1
@@ -355,7 +355,7 @@ parent = @mid_stack
 [grid]
 parent = @mid_stack
     [UiGrid]
-        size_ratio = (1.0, 0.13)
+        size_ratio = (1.0, 0.11)
         columns = 3
         h_spacing = 0.02
         v_spacing = 0.02
@@ -365,7 +365,7 @@ parent = @mid_stack
 [grid_a]
 parent = @grid
     [UiPanel]
-        size_ratio = (1.0, 1.0)
+        size_ratio = (0.30, 0.44)
         style = { fill: "#47A7FFFF", stroke: "#B8D8FF", stroke_width: 1.0, radius: 0.04 }
     [/UiPanel]
 [/grid_a]
@@ -373,7 +373,7 @@ parent = @grid
 [grid_b]
 parent = @grid
     [UiPanel]
-        size_ratio = (1.0, 1.0)
+        size_ratio = (0.30, 0.44)
         style = { fill: "#FFD18AFF", stroke: "#FFF0C2", stroke_width: 1.0, radius: 0.04 }
     [/UiPanel]
 [/grid_b]
@@ -381,7 +381,7 @@ parent = @grid
 [grid_c]
 parent = @grid
     [UiPanel]
-        size_ratio = (1.0, 1.0)
+        size_ratio = (0.30, 0.44)
         style = { fill: "#67D391FF", stroke: "#C8F6D7", stroke_width: 1.0, radius: 0.04 }
     [/UiPanel]
 [/grid_c]
@@ -389,9 +389,9 @@ parent = @grid
 [dynamic_title]
 parent = @mid_stack
     [UiLabel]
-        size_ratio = (1.0, 0.07)
+        size_ratio = (1.0, 0.06)
         text = "Dynamic nesting"
-        text_size_ratio = 0.28
+        text_size_ratio = 0.30
         color = "#FFFFFF"
         input_enabled = false
         mouse_filter = "pass"
@@ -401,7 +401,7 @@ parent = @mid_stack
 [nested_panel]
 parent = @mid_stack
     [UiPanel]
-        size_ratio = (1.0, 0.15)
+        size_ratio = (1.0, 0.12)
         style = { fill: "#0E1924F0", stroke: "#88AADD", stroke_width: 1.0, radius: 0.035 }
         padding = 0.02
     [/UiPanel]
@@ -421,7 +421,7 @@ parent = @nested_panel
 [nested_grid]
 parent = @nested_split
     [UiGrid]
-        size_ratio = (0.56, 1.0)
+        size_ratio = (0.50, 1.0)
         columns = 2
         h_spacing = 0.02
         v_spacing = 0.02
@@ -431,7 +431,7 @@ parent = @nested_split
 [nested_grid_a]
 parent = @nested_grid
     [UiShape]
-        size_ratio = (1.0, 1.0)
+        size_ratio = (0.30, 0.44)
         shape = { kind = "rect", color = "#47A7FFFF" }
     [/UiShape]
 [/nested_grid_a]
@@ -439,7 +439,7 @@ parent = @nested_grid
 [nested_grid_b]
 parent = @nested_grid
     [UiShape]
-        size_ratio = (1.0, 1.0)
+        size_ratio = (0.30, 0.44)
         shape = { kind = "circle", color = "#FFD18AFF" }
     [/UiShape]
 [/nested_grid_b]
@@ -447,7 +447,7 @@ parent = @nested_grid
 [nested_grid_c]
 parent = @nested_grid
     [UiShape]
-        size_ratio = (1.0, 1.0)
+        size_ratio = (0.30, 0.44)
         shape = { kind = "triangle", color = "#67D391FF" }
     [/UiShape]
 [/nested_grid_c]
@@ -455,7 +455,7 @@ parent = @nested_grid
 [nested_grid_d]
 parent = @nested_grid
     [UiShape]
-        size_ratio = (1.0, 1.0)
+        size_ratio = (0.30, 0.44)
         shape = { kind = "rect", color = "#B8D8FFFF" }
     [/UiShape]
 [/nested_grid_d]
@@ -464,9 +464,10 @@ parent = @nested_grid
 parent = @nested_split
     [UiTextBlock]
         size_ratio = (0.40, 1.0)
+        h_size = "fill"
         text = "containers\ninside\ncontainers"
         placeholder = "Nested"
-        text_size_ratio = 0.22
+        text_size_ratio = 0.20
         style = $subpanel_style
     [/UiTextBlock]
 [/nested_note]
@@ -474,7 +475,7 @@ parent = @nested_split
 [right_panel]
 parent = @shell
     [UiPanel]
-        size_ratio = (0.27, 1.0)
+        size_ratio = (0.29, 1.0)
         style = $panel_style
         padding = 0.035
     [/UiPanel]
@@ -487,7 +488,6 @@ parent = @right_panel
         size_ratio = (0.92, 0.94)
         v_spacing = 0.018
         h_align = "fill"
-        v_align = "fill"
     [/UiVLayout]
 [/right_stack]
 
@@ -512,7 +512,8 @@ parent = @right_stack
         radius = 0.035
         tint = "#FFFFFFFF"
         [UiNode]
-            size_ratio = (1.0, 0.35)
+            size_ratio = (1.0, 0.30)
+            v_size = "fill"
             input_enabled = false
             mouse_filter = "pass"
         [/UiNode]
@@ -522,8 +523,8 @@ parent = @right_stack
 [stream_note]
 parent = @right_stack
     [UiLabel]
-        size_ratio = (1.0, 0.11)
-        text = "Same Webcam node can feed UI, 2D, and 3D camera streams."
+        size_ratio = (1.0, 0.10)
+        text = "One Webcam node feeds UI, 2D, and 3D streams."
         text_size_ratio = 0.17
         color = "#B9C7D8"
         input_enabled = false
@@ -561,7 +562,7 @@ parent = @generic_layout
 [shape_a]
 parent = @right_stack
     [UiShape]
-        size_ratio = (1.0, 0.14)
+        size_ratio = (1.0, 0.16)
         shape = { kind = "circle", color = "#47A7FFFF" }
     [/UiShape]
 [/shape_a]
@@ -584,7 +585,7 @@ parent = @right_stack
         margins = (8, 8, 8, 8)
         tint = "#FFFFFF88"
         [UiNode]
-            size_ratio = (1.0, 0.16)
+            size_ratio = (1.0, 0.14)
             input_enabled = false
             mouse_filter = "pass"
         [/UiNode]

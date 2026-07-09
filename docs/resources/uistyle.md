@@ -11,31 +11,43 @@
 
 ## Purpose
 
-Use ``.uistyle` Format` when this feature, type group, file format, or workflow appears in game code or assets.
+Use `.uistyle` files to store one reusable UI style and share it across panels, buttons, and text fields instead of repeating inline `style = { ... }` blocks.
 
 ## Use Cases
 
-Use the types, APIs, file formats, and workflows in this doc when the feature matches the game system you are building. Prefer `ctx.run` for runtime state, `ctx.res` for resource/data access, and `ctx.ipt` for input state.
+- Shared panel/button look across many scenes.
+- Themed HUD, menu, and dialog styling from one file.
+- Swap a whole style by pointing `style` at a different resource.
+- Feed button `hover`/`pressed` and text-edit `focused_style` states from separate files.
 
 ## Example
 
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let dt = delta_time!(ctx.run);
-        let _ = dt;
-    }
-});
+`res://ui/panel.uistyle`:
+
+```text
+fill = "#20242C"
+stroke = "#586070"
+radius = 0.12
+```
+
+Use it from a scene node:
+
+```text
+[card]
+[UiPanel]
+    anchor = "center"
+    size_ratio = (0.45, 0.35)
+    style = "res://ui/panel.uistyle"
+[/UiPanel]
+[/card]
 ```
 
 ## Reference
 
-# `.uistyle` Format
-
 `.uistyle` is the Perro UI style resource.
-It uses the same schema as current scene `style = { ... }` blocks.
+It uses the same schema as scene `style = { ... }` blocks.
 
-## Example
+Bare field list form:
 
 ```text
 fill = "#222222DD"
@@ -50,7 +62,7 @@ outer_highlight = { color = "#FFFFFF22" distance = 2 falloff = 4 vector = (-1, 1
 inner_highlight = { color = "#FFFFFF33" distance = 2 falloff = 3 vector = (-1, 1) size = 1 }
 ```
 
-Object form should also parse:
+Object form parses too:
 
 ```text
 {
@@ -59,6 +71,10 @@ Object form should also parse:
     radius = 0.2
 }
 ```
+
+Both the static pipeline and dev-mode runtime accept either form.
+The parser wraps a bare field list in `{ }` before parsing, so the two are equivalent.
+A file with no valid style field fails the static pipeline.
 
 ## Scene Use
 

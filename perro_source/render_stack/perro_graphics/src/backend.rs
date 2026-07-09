@@ -1143,11 +1143,13 @@ impl PerroGraphics {
                         sprite,
                     } => {
                         let stream = *stream;
-                        self.upsert_camera_stream_texture(
-                            node,
-                            stream.output_texture,
-                            stream.resolution,
-                        );
+                        if !matches!(stream.source, CameraStreamSourceState::Webcam { .. }) {
+                            self.upsert_camera_stream_texture(
+                                node,
+                                stream.output_texture,
+                                stream.resolution,
+                            );
+                        }
                         self.renderer_2d.queue_sprite(node, sprite);
                     }
                     Command2D::UpsertSprite { node, sprite } => {
@@ -1190,11 +1192,13 @@ impl PerroGraphics {
                 RenderCommand::ThreeD(cmd_3d) => match *cmd_3d {
                     Command3D::UpsertCameraStream { node, stream, quad } => {
                         let stream = *stream;
-                        self.upsert_camera_stream_texture(
-                            node,
-                            stream.output_texture,
-                            stream.resolution,
-                        );
+                        if !matches!(stream.source, CameraStreamSourceState::Webcam { .. }) {
+                            self.upsert_camera_stream_texture(
+                                node,
+                                stream.output_texture,
+                                stream.resolution,
+                            );
+                        }
                         self.renderer_3d.queue_camera_stream_quad(
                             node,
                             stream.output_texture,
@@ -1431,11 +1435,13 @@ impl PerroGraphics {
                         sprite,
                     } => {
                         let stream = *stream;
-                        self.upsert_camera_stream_texture(
-                            node,
-                            stream.output_texture,
-                            stream.resolution,
-                        );
+                        if !matches!(stream.source, CameraStreamSourceState::Webcam { .. }) {
+                            self.upsert_camera_stream_texture(
+                                node,
+                                stream.output_texture,
+                                stream.resolution,
+                            );
+                        }
                         self.late_overlay_2d.queue_sprite(node, sprite);
                     }
                     Command2D::UpsertSprite { node, sprite } => {

@@ -44,6 +44,7 @@ fn is_ui_node_data(data: &SceneNodeData) -> bool {
             | SceneNodeData::UiCheckbox(_)
             | SceneNodeData::UiColorPicker(_)
             | SceneNodeData::UiImage(_)
+            | SceneNodeData::UiVideoPlayer(_)
             | SceneNodeData::UiImageButton(_)
             | SceneNodeData::UiNineSlice(_)
             | SceneNodeData::UiAnimatedImage(_)
@@ -135,6 +136,22 @@ impl Runtime {
                         add_ref(textures, sprite.texture, node_id);
                     }
                 }
+                SceneNodeData::VideoPlayer2D(video)
+                    if !self.render_2d.retained_sprites.contains_key(&node_id) =>
+                {
+                    if !video.video.texture.is_nil()
+                        && !self.resource_api.is_texture_id_pending(video.video.texture)
+                    {
+                        add_ref(textures, video.video.texture, node_id);
+                    }
+                }
+                SceneNodeData::VideoPlayer3D(video) => {
+                    if !video.video.texture.is_nil()
+                        && !self.resource_api.is_texture_id_pending(video.video.texture)
+                    {
+                        add_ref(textures, video.video.texture, node_id);
+                    }
+                }
                 SceneNodeData::ImageButton2D(button)
                     if !self.render_2d.retained_sprites.contains_key(&node_id) =>
                 {
@@ -169,6 +186,15 @@ impl Runtime {
                         && !self.resource_api.is_texture_id_pending(image.texture)
                     {
                         add_ref(textures, image.texture, node_id);
+                    }
+                }
+                SceneNodeData::UiVideoPlayer(video)
+                    if !self.render_ui.retained_commands.contains_key(&node_id) =>
+                {
+                    if !video.video.texture.is_nil()
+                        && !self.resource_api.is_texture_id_pending(video.video.texture)
+                    {
+                        add_ref(textures, video.video.texture, node_id);
                     }
                 }
                 SceneNodeData::UiImageButton(button)
@@ -502,6 +528,15 @@ impl Runtime {
     pub(crate) fn note_removed_render_node(&mut self, node: NodeID, ty: NodeType) {
         if matches!(ty, NodeType::Webcam) {
             let _ = self.resource_api.release_webcam_node_slot(node);
+        }
+        if matches!(
+            ty,
+            NodeType::VideoPlayer2D | NodeType::VideoPlayer3D | NodeType::UiVideoPlayer
+        ) {
+            let _ = perro_resource_api::sub_apis::VideoAPI::video_release_node(
+                self.resource_api.as_ref(),
+                node,
+            );
         }
         self.render_2d.note_removed_node(node);
         self.render_3d.note_removed_node(node);

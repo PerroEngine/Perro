@@ -14,6 +14,7 @@ mod scene_doc;
 mod skeleton;
 mod state;
 mod texture;
+mod video;
 mod viewport;
 mod visual_accessibility;
 mod webcam;

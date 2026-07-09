@@ -11,26 +11,52 @@
 
 ## Purpose
 
-Use `UI Nodes` when this feature, type group, file format, or workflow appears in game code or assets.
+Use this page to build screen-space UI — HUDs, menus, and on-screen controls — from `Ui*` scene nodes and script.
 
 ## Use Cases
 
-Use the types, APIs, file formats, and workflows in this doc when the feature matches the game system you are building. Prefer `ctx.run` for runtime state, `ctx.res` for resource/data access, and `ctx.ipt` for input state.
+- HUDs: score, health bars, ammo counters, minimaps.
+- Menus: title, pause, and settings screens.
+- Inventory and shop screens built from grids and scroll lists.
+- Editor-style panels: tree lists, dropdowns, color pickers, text fields.
+- Dialogs and toasts layered over gameplay.
 
 ## Example
 
+Scene: a top-left HUD panel with a score label.
+
+```text
+[hud]
+[UiPanel]
+    anchor = "tl"
+    size_ratio = (0.25, 0.12)
+    translation_ratio = (0.15, -0.15)
+    style = { fill = "#111827CC" stroke = "#93A4B8" radius = 0.15 }
+[/UiPanel]
+[/hud]
+
+[score]
+parent = @hud
+[UiLabel]
+    text = "Score: 0"
+    text_size_ratio = 0.5
+[/UiLabel]
+[/score]
+```
+
+Script: update the label text.
+
 ```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let dt = delta_time!(ctx.run);
-        let _ = dt;
+methods!({
+    fn set_score(&self, ctx: &mut ScriptContext<'_, API>, score: NodeID, value: i64) {
+        let _ = with_node_mut!(ctx.run, UiLabel, score, |label| {
+            label.set_text(format!("Score: {value}"));
+        });
     }
 });
 ```
 
 ## Reference
-
-# UI Nodes
 
 UI nodes are data-only scene nodes backed by `perro_ui`.
 They use `UiNode` as their base node type.
@@ -40,12 +66,20 @@ They use `UiNode` as their base node type.
 ```text
 UiNode
 - UiPanel
-- UiButton
+- UiShape
 - UiImage
-- UiImageButton
 - UiNineSlice
 - UiAnimatedImage
+- UiCameraStream
+- UiVideoPlayer
 - UiLabel
+- UiButton
+- UiImageButton
+- UiCheckbox
+- UiDropdown
+- UiColorPicker
+- UiTextBox
+- UiTextBlock
 - UiScrollContainer
 - UiLayout
 - UiHLayout
@@ -53,6 +87,9 @@ UiNode
 - UiGrid
 - UiTreeList
 ```
+
+Every `Ui*` type above loads from a `.scn` scene and mutates from script.
+All inherit `UiNode` layout fields.
 
 ## Nodes
 
@@ -69,6 +106,13 @@ UiNode
 - Drawn rect.
 - Holds `style`.
 - Can have children.
+
+`UiShape`
+
+- Drawn primitive shape.
+- Holds `kind` (`rect` | `circle` | `triangle`), `fill`, `stroke`, `stroke_width`.
+- Default `kind` is `rect`; `fill` white; `stroke` transparent; `stroke_width` `0`.
+- Use it for solid dots, arrows, markers, and simple shapes without a style block.
 
 `UiButton`
 
@@ -92,6 +136,27 @@ UiNode
 - Emits default `<node_name>_<event>` signals plus extra event signal lists.
 - Use it for icon buttons, irregular-looking buttons, HUD slots, and image-only controls.
 
+`UiCheckbox`
+
+- `UiButton` that toggles a `checked` bool.
+- Adds `checked`, `dot_fill`, and `checked_style` / `checked_hover_style` / `checked_pressed_style` on top of button fields.
+- Emits the same button signals; read `checked` to branch.
+- Use it for options, toggles, and settings rows.
+
+`UiDropdown`
+
+- `UiButton` that opens an option-list popup.
+- Holds `options` (`label` / `value`), `selected_index`, `open`, `popup_style`, `option_style`, `option_height`.
+- Emits `selected_signals` on choice.
+- Use it for enum pickers, quality settings, and menu selects.
+
+`UiColorPicker`
+
+- `UiButton` plus a popup that edits a `color`.
+- Holds `color`, `popup_open`, `popup_style`, `popup_size`, `wheel_radius`.
+- Emits `color_changed_signals`.
+- Use it for editor swatches, theme pickers, and tint controls.
+
 `UiNineSlice`
 
 - Scalable image panel.
@@ -106,12 +171,38 @@ UiNode
 - Uses same strip/grid animation data shape as `AnimatedSprite2D`.
 - Use it for animated icons, portraits, cooldowns, indicators, and HUD effects.
 
+`UiCameraStream`
+
+- Draws a camera's render target into UI space.
+- Holds `camera`, `resolution`, `aspect_ratio`, `aspect_mode`, `enabled`, `tint`, `post_processing`, and `corner_radius`.
+- Use it for minimaps, security-feed panels, and picture-in-picture views.
+
+`UiVideoPlayer`
+
+- Plays video into UI space.
+- Holds video source / playback fields plus `tint`, `scale_mode`, `aspect_ratio`, and `corner_radius`.
+- Default `scale_mode` is `fit`; `aspect_ratio` `1.0`.
+- Use it for cutscene panels, menu backdrops, and in-UI clips.
+
 `UiLabel`
 
 - Text visual.
 - Holds `text`, `color`, `text_size_ratio`, and text alignment.
 - Can have children, but usually should not.
 - Use `Label2D` or `Label3D` for world-space labels with the same text and locale binding model.
+
+`UiTextBox`
+
+- Single-line text input.
+- Holds `text`, `placeholder`, text colors, `text_size_ratio`, `style`, `focused_style`, `editable`, and `input_type`.
+- Emits hover / focus / `text_changed` signals (see text-edit signals near the end of this page).
+- Use it for name fields, search bars, and numeric entry.
+
+`UiTextBlock`
+
+- Multi-line text input.
+- Same fields and signals as `UiTextBox`, but wraps and keeps newlines.
+- Use it for chat input, notes, and multi-line forms.
 
 `UiScrollContainer`
 
@@ -258,6 +349,39 @@ UI layout always resolves from a parent rect.
 Use `force_rerender!` only when code bypasses the normal mutation APIs and edits hidden/visible state directly.
 Normal `with_node_mut!`, `with_base_node_mut!`, `create_node!`, `create_nodes!`, and `reparent!` calls do not need it.
 
+## Column Budget
+
+`UiHLayout`, `UiVLayout`, and `UiLayout` stack fixed-size children in order.
+No shrink-to-fit.
+Each child keeps its own `size_ratio`.
+
+`padding` insets the container content rect first.
+Spacing is a ratio of that content size.
+`h_spacing` uses content width.
+`v_spacing` uses content height.
+
+Main-axis budget for `n` children:
+`Σ child size_ratio + spacing × (n − 1)`.
+If that sum exceeds `1.0`, children overflow the container.
+`clip_children` defaults to `false`, so overflow renders outside the parent and can leave the screen.
+
+`h_align` (for `h` layouts) and `v_align` (for `v` layouts) only place the packed run when it is smaller than the content rect.
+On the main axis, `fill` align acts like `start`; it does not stretch fixed children.
+
+Absorb variable or animated content with fill children, not overflow.
+`h_size = "fill"` and `v_size = "fill"` children split the leftover:
+`fill = (available − fixed − spacing) / fill_count`.
+
+Worked column example, 6 rows in a `UiVLayout` with `v_spacing = 0.018`:
+
+- 4 fixed rows, `size_ratio` height `0.15` each => `0.60` total.
+- spacing = `0.018 × 5` gaps = `0.09`.
+- leftover = `1.0 − 0.60 − 0.09` = `0.31`.
+- 2 `v_size = "fill"` rows share it => `0.155` each.
+
+Fixed rows summing past `1.0 − spacing` push the last rows off the container.
+A fill row absorbs a changing fixed row without breaking the budget.
+
 ## Ratio Guide
 
 Scene UI uses ratio/percent fields.
@@ -324,31 +448,33 @@ If resolved node size changes, translation values that hit the same parent-space
 
 ## `.uistyle` Resources
 
-Current inline style blocks remain the base schema:
+Inline style blocks are the base schema:
 
 ```text
 style = { fill = "#222" stroke = "#555" radius = 0.2 }
 ```
 
-The same schema can load from `.uistyle`:
+The same schema loads from a `.uistyle` resource:
 
 ```text
 style = "res://ui/panel.uistyle"
 ```
 
-Button states should accept style resources:
+Button state styles take resources:
 
 ```text
 hover = { style = "res://ui/button_hover.uistyle" }
 pressed = { style = "res://ui/button_down.uistyle" }
 ```
 
-Text edit focus should accept:
+Text edit focus takes a resource:
 
 ```text
 focused_style = "res://ui/input_focus.uistyle"
 ```
 
+`UiPanel`, `UiButton`, `UiCheckbox`, `UiDropdown`, `UiColorPicker`, `UiTextBox`, and `UiTextBlock` accept `style` as an inline block or a `.uistyle` path.
+Both forms ship today; inline and resource styles are interchangeable.
 `.uistyle` is visual-only.
 It mirrors `UiStyle` fields such as `fill`, `stroke`, `stroke_width`, `radius`, `shadow`, and `highlight`.
 It does not define layout, classes, or global themes.

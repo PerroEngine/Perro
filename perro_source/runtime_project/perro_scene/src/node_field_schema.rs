@@ -542,6 +542,7 @@ fn push_node_fields(fields: &mut Vec<SceneNodeField>, node_type: NodeType) {
             push(fields, "Webcam", "enabled", NodeFieldType::Bool);
         }
         NodeType::Sprite2D => sprite_fields(fields, "Sprite"),
+        NodeType::VideoPlayer2D => video_player_fields(fields, "Video", true, false),
         NodeType::Label2D => label_world_fields(fields, "Label"),
         NodeType::Button2D => button_2d_fields(fields, "Button"),
         NodeType::ImageButton2D => {
@@ -588,6 +589,7 @@ fn push_node_fields(fields: &mut Vec<SceneNodeField>, node_type: NodeType) {
         | NodeType::SpotLight3D => light_fields(fields, node_type),
         NodeType::MeshInstance3D | NodeType::MultiMeshInstance3D => mesh_fields(fields, node_type),
         NodeType::Sprite3D => sprite_world_fields(fields, "Sprite"),
+        NodeType::VideoPlayer3D => video_player_fields(fields, "Video", true, false),
         NodeType::Label3D => label_world_fields(fields, "Label"),
         NodeType::Decal3D => decal_fields(fields),
         NodeType::TextDecal3D => text_decal_fields(fields),
@@ -768,6 +770,7 @@ fn push_node_fields(fields: &mut Vec<SceneNodeField>, node_type: NodeType) {
             }
         }
         NodeType::UiAnimatedImage => animated_image_fields(fields, "Image"),
+        NodeType::UiVideoPlayer => video_player_fields(fields, "Video", false, true),
         NodeType::UiPanel
         | NodeType::UiButton
         | NodeType::UiDropdown
@@ -1034,6 +1037,36 @@ fn animated_image_fields(fields: &mut Vec<SceneNodeField>, section: &'static str
     push(fields, section, "fps_scale", NodeFieldType::F32);
     push(fields, section, "playing", NodeFieldType::Bool);
     push(fields, section, "looping", NodeFieldType::Bool);
+}
+
+fn video_player_fields(
+    fields: &mut Vec<SceneNodeField>,
+    section: &'static str,
+    world_size: bool,
+    ui_image: bool,
+) {
+    push(fields, section, "source", NodeFieldType::String);
+    push(fields, section, "playing", NodeFieldType::Bool);
+    push(fields, section, "looping", NodeFieldType::Bool);
+    push(fields, section, "fps_scale", NodeFieldType::F32);
+    push(fields, section, "volume", NodeFieldType::F32);
+    if world_size {
+        push(fields, section, "size", NodeFieldType::Vec2);
+        push(fields, section, "tint", NodeFieldType::Color);
+        push(fields, section, "flip_x", NodeFieldType::Bool);
+        push(fields, section, "flip_y", NodeFieldType::Bool);
+    }
+    if ui_image {
+        push(fields, section, "tint", NodeFieldType::Color);
+        push(
+            fields,
+            section,
+            "scale_mode",
+            NodeFieldType::enumeration(CAMERA_STREAM_ASPECT_MODE_OPTIONS),
+        );
+        push(fields, section, "aspect_ratio", NodeFieldType::F32);
+        push(fields, section, "corner_radius", NodeFieldType::F32);
+    }
 }
 
 fn ui_style_fields(fields: &mut Vec<SceneNodeField>, section: &'static str, prefix: &'static str) {
@@ -1424,6 +1457,25 @@ mod tests {
         assert!(sprite_3d.iter().any(|field| field.name == "texture_region"));
         assert!(sprite_3d.iter().any(|field| field.name == "size"));
         assert!(sprite_3d.iter().any(|field| field.name == "modulate"));
+    }
+
+    #[test]
+    fn video_player_schemas_expose_runtime_fields() {
+        for ty in [NodeType::VideoPlayer2D, NodeType::VideoPlayer3D] {
+            let fields = scene_node_fields(ty);
+            assert!(fields.iter().any(|field| field.name == "source"));
+            assert!(fields.iter().any(|field| field.name == "playing"));
+            assert!(fields.iter().any(|field| field.name == "looping"));
+            assert!(fields.iter().any(|field| field.name == "fps_scale"));
+            assert!(fields.iter().any(|field| field.name == "size"));
+            assert!(fields.iter().any(|field| field.name == "tint"));
+        }
+
+        let ui = scene_node_fields(NodeType::UiVideoPlayer);
+        assert!(ui.iter().any(|field| field.name == "source"));
+        assert!(ui.iter().any(|field| field.name == "playing"));
+        assert!(ui.iter().any(|field| field.name == "scale_mode"));
+        assert!(ui.iter().any(|field| field.name == "corner_radius"));
     }
 
     #[test]

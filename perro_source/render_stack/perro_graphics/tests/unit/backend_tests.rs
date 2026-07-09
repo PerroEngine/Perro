@@ -3,7 +3,8 @@ use crate::backend::GraphicsBackend;
 use crate::three_d::renderer::Draw3DKind;
 use perro_ids::{MaterialID, MeshID, NodeID, TextureID};
 use perro_render_bridge::{
-    Camera3DState, CameraProjectionState, Command2D, Command3D, LODOptions3D, Material3D,
+    Camera3DState, CameraProjectionState, CameraStream3DState, CameraStreamLighting3DState,
+    CameraStreamSourceState, CameraStreamState, Command2D, Command3D, LODOptions3D, Material3D,
     MeshSurfaceBinding3D, PostProcessingCommand, Rect2DCommand, RenderBridge, RenderCommand,
     ResourceCommand, Sprite2DCommand, VisualAccessibilityCommand, Water2DState, Water3DState,
     WaterIdleModeState, WaterLinkState, WaterShapeState,
@@ -108,6 +109,66 @@ fn write_texture_rgba_updates_resource_texture() {
             perro_render_bridge::RenderEvent::TextureLoaded { id } if *id == texture
         )
     }));
+}
+
+#[test]
+fn webcam_camera_stream_does_not_overwrite_webcam_texture() {
+    let mut graphics = PerroGraphics::new();
+    let texture = TextureID::from_parts(91, 0);
+    let node = NodeID::from_parts(92, 0);
+    let rgba: Arc<[u8]> = Arc::from([9, 8, 7, 6, 5, 4, 3, 2]);
+
+    graphics.submit(RenderCommand::Resource(
+        ResourceCommand::CreateExternalTexture {
+            request: perro_render_bridge::RenderRequestID::new(2),
+            id: texture,
+            source: "webcam://test/no_overwrite".to_string(),
+            reserved: true,
+            width: 2,
+            height: 1,
+        },
+    ));
+    graphics.submit(RenderCommand::Resource(ResourceCommand::WriteTextureRgba {
+        id: texture,
+        width: 2,
+        height: 1,
+        rgba: rgba.clone(),
+    }));
+    graphics.submit(RenderCommand::ThreeD(Box::new(
+        Command3D::UpsertCameraStream {
+            node,
+            stream: Box::new(CameraStreamState {
+                source: CameraStreamSourceState::Webcam {
+                    texture,
+                    resolution: [2, 1],
+                },
+                resolution: [2, 1],
+                aspect_ratio: 2.0,
+                post_processing: Arc::from([]),
+                output_texture: texture,
+                sprites_2d: Arc::from([]),
+                lights_2d: Arc::from([]),
+                point_particles_2d: Arc::from([]),
+                waters_2d: Arc::from([]),
+                draws_3d: Arc::from([]),
+                lighting_3d: CameraStreamLighting3DState::default(),
+                point_particles_3d: Arc::from([]),
+                waters_3d: Arc::from([]),
+            }),
+            quad: CameraStream3DState {
+                model: glam::Mat4::IDENTITY.to_cols_array_2d(),
+                size: [1.0, 1.0],
+                tint: Color::WHITE,
+            },
+        },
+    )));
+    graphics.draw_frame();
+
+    let decoded = graphics
+        .resources
+        .decoded_texture_data(texture)
+        .expect("decoded webcam texture");
+    assert_eq!(decoded.rgba, rgba.as_ref());
 }
 
 fn water_2d_state() -> Water2DState {

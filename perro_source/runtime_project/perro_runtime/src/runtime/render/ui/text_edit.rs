@@ -10,6 +10,7 @@ pub(in crate::runtime::render_ui) fn text_edit_command(ctx: TextEditCommandCtx<'
                 scale,
                 virtual_font_scale,
                 modulate,
+                ..
             },
         edit,
         multiline,

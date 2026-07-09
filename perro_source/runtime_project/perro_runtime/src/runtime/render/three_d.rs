@@ -761,6 +761,18 @@ impl Runtime {
                             sprite.flip_y,
                             self.effective_self_modulate(node),
                         )),
+                        SceneNodeData::VideoPlayer3D(video) => Some((
+                            effective_visible
+                                && video.visible
+                                && render_mask_matches(camera_render_mask, video.render_layers),
+                            video.transform,
+                            video.video.texture,
+                            video.size,
+                            None,
+                            video.flip_x,
+                            video.flip_y,
+                            Runtime::color_modulate(video.tint, self.effective_self_modulate(node)),
+                        )),
                         _ => None,
                     });
             if let Some((

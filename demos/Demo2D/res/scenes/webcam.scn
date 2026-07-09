@@ -1,6 +1,7 @@
 $root = @WebcamDemo2D
 
 [WebcamDemo2D]
+script = "res://scripts/webcam_demo_2d.rs"
     [Node2D]
         position = (0.0, 0.0)
     [/Node2D]
@@ -45,3 +46,19 @@ parent = @WebcamDemo2D
         [/Node2D]
     [/Label2D]
 [/WebcamStream2DLabel]
+
+[WebcamDevices2DLabel]
+parent = @WebcamDemo2D
+    [Label2D]
+        text = "Webcams: query pending"
+        color = "#FFFFFFFF"
+        size = (720.0, 120.0)
+        font_size = 18.0
+        h_align = "left"
+        v_align = "top"
+        [Node2D]
+            position = (-350.0, 230.0)
+            z_index = 101
+        [/Node2D]
+    [/Label2D]
+[/WebcamDevices2DLabel]

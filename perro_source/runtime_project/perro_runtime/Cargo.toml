@@ -11,6 +11,7 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg",
 rayon = "1.10"
 ab_glyph = "0.2"
 fontdb = "0.23"
+y4m = "0.8"
 
 perro_ids.workspace = true
 perro_asset_formats.workspace = true

@@ -110,6 +110,7 @@ pub(super) fn merge_prepared_scene(
     let mut bone_attachment_skeleton_links: Vec<(NodeID, u32)> = Vec::new();
     let mut ik_target_skeleton_links: Vec<(NodeID, u32)> = Vec::new();
     let mut physics_bone_chain_skeleton_links: Vec<(NodeID, u32)> = Vec::new();
+    let mut camera_stream_links: Vec<(NodeID, u32)> = Vec::new();
     let mut joint_body_links: Vec<(NodeID, super::prepare::PendingJointBodyField, u32)> =
         Vec::new();
     let resource_api = runtime.resource_api.clone();
@@ -136,6 +137,7 @@ pub(super) fn merge_prepared_scene(
             bone_attachment_skeleton_target,
             ik_target_skeleton_target,
             physics_bone_chain_skeleton_target,
+            camera_stream_target,
             joint_body_links: pending_joint_body_links,
             animation_bindings,
             locale_text_bindings,
@@ -317,6 +319,9 @@ pub(super) fn merge_prepared_scene(
         if let Some(target) = physics_bone_chain_skeleton_target {
             physics_bone_chain_skeleton_links.push((node, target));
         }
+        if let Some(target) = camera_stream_target {
+            camera_stream_links.push((node, target));
+        }
         for link in pending_joint_body_links {
             joint_body_links.push((node, link.field, link.target_key));
         }
@@ -400,6 +405,20 @@ pub(super) fn merge_prepared_scene(
             match &mut node_data.data {
                 SceneNodeData::PhysicsBoneChain2D(chain) => chain.skeleton = target,
                 SceneNodeData::PhysicsBoneChain3D(chain) => chain.skeleton = target,
+                _ => {}
+            }
+        }
+    }
+
+    for (stream_node, target_key) in camera_stream_links {
+        let target = *key_to
+            .get(&target_key)
+            .ok_or_else(|| format!("camera stream target `{target_key}` not found"))?;
+        if let Some(node_data) = runtime.nodes.get_mut(stream_node) {
+            match &mut node_data.data {
+                SceneNodeData::CameraStream2D(stream) => stream.stream.camera = target,
+                SceneNodeData::CameraStream3D(stream) => stream.stream.camera = target,
+                SceneNodeData::UiCameraStream(stream) => stream.stream.camera = target,
                 _ => {}
             }
         }

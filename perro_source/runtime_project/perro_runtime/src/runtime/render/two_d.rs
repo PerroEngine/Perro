@@ -158,6 +158,19 @@ impl Runtime {
                         self.effective_self_modulate(node),
                         None,
                     )),
+                    SceneNodeData::VideoPlayer2D(video) => Some((
+                        effective_visible
+                            && video.visible
+                            && render_mask_matches(camera_render_mask, video.render_layers),
+                        video.video.texture,
+                        None,
+                        video.flip_x,
+                        video.flip_y,
+                        video.transform,
+                        video.z_index,
+                        Runtime::color_modulate(video.tint, self.effective_self_modulate(node)),
+                        Some([video.size.x, video.size.y]),
+                    )),
                     SceneNodeData::ImageButton2D(button) => Some((
                         effective_visible
                             && button.visible

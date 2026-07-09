@@ -174,6 +174,7 @@ impl Runtime {
                 SceneNodeData::UiImageButton(image) => Some(image.texture),
                 SceneNodeData::UiNineSlice(image) => Some(image.texture),
                 SceneNodeData::UiAnimatedImage(image) => Some(image.texture),
+                SceneNodeData::UiVideoPlayer(video) => Some(video.video.texture),
                 _ => None,
             })?;
 
@@ -233,6 +234,10 @@ impl Runtime {
                 SceneNodeData::UiAnimatedImage(image) => {
                     !image.texture.is_nil()
                         && self.resource_api.is_texture_id_pending(image.texture)
+                }
+                SceneNodeData::UiVideoPlayer(video) => {
+                    !video.video.texture.is_nil()
+                        && self.resource_api.is_texture_id_pending(video.video.texture)
                 }
                 _ => false,
             })
@@ -537,8 +542,10 @@ impl Runtime {
                 SceneNodeData::UiCameraStream(stream_node) => Some(stream_node.stream.clone()),
                 _ => None,
             };
+            let mut camera_stream_texture = None;
             if let Some(stream) = ui_stream {
                 if let Some(state) = self.camera_stream_state(node, &stream) {
+                    camera_stream_texture = Some(state.output_texture);
                     self.queue_render_command(RenderCommand::CameraStream(
                         CameraStreamCommand::Upsert {
                             node,
@@ -614,6 +621,7 @@ impl Runtime {
                             scale,
                             virtual_font_scale,
                             modulate: self.effective_self_modulate(node),
+                            camera_stream_texture,
                         };
                         ui_command_matches_node(
                             command,
@@ -631,6 +639,7 @@ impl Runtime {
                     scale,
                     virtual_font_scale,
                     modulate: self.effective_self_modulate(node),
+                    camera_stream_texture,
                 };
                 let Some(command) = ui_command_from_node(
                     &scene_node.data,

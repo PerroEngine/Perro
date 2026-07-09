@@ -4,7 +4,7 @@ use perro_input_api::MouseButton;
 use perro_nodes::{
     AmbientLight2D, Button2D, CameraStream2D, CollisionShape2D, ImageButton2D, Label2D,
     NineSlice2D, PointLight2D, RayLight2D, SceneNode, SceneNodeData, Shape2D, SpotLight2D,
-    StaticBody2D, WaterBody2D,
+    StaticBody2D, WaterBody2D, Webcam,
     camera_2d::Camera2D,
     node_2d::Node2D,
     particle_emitter_2d::ParticleEmitter2D,
@@ -69,6 +69,34 @@ fn camera_stream_2d_emits_stream_and_sprite_commands() {
         command,
         RenderCommand::TwoD(Command2D::UpsertCameraStream { node, sprite, .. })
             if *node == stream && sprite.texture == Runtime::camera_stream_texture_id(stream)
+    )));
+}
+
+#[test]
+fn webcam_config_change_reextracts_referencing_camera_stream() {
+    let mut runtime = Runtime::new();
+    let webcam = NodeAPI::create::<Webcam>(&mut runtime);
+    let stream = NodeAPI::create::<CameraStream2D>(&mut runtime);
+    if let Some(node) = runtime.nodes.get_mut(stream)
+        && let SceneNodeData::CameraStream2D(data) = &mut node.data
+    {
+        data.stream.camera = webcam;
+    }
+
+    runtime.extract_render_2d_commands();
+    runtime.drain_render_commands(&mut Vec::new());
+    runtime.clear_dirty_flags();
+
+    <Runtime as NodeAPI>::with_node_mut::<Webcam, _, _>(&mut runtime, webcam, |node| {
+        node.config.device = "1".to_string().into();
+    });
+    runtime.extract_render_2d_commands();
+    let commands = collect_commands(&mut runtime);
+
+    assert!(commands.iter().any(|command| matches!(
+        command,
+        RenderCommand::CameraStream(CameraStreamCommand::Upsert { node, state })
+            if *node == stream && matches!(state.source, perro_render_bridge::CameraStreamSourceState::Webcam { .. })
     )));
 }
 

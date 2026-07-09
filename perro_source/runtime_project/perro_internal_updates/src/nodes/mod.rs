@@ -10,3 +10,4 @@ pub mod particle_emitter_3d;
 pub mod physics_bone_chain_2d;
 pub mod physics_bone_chain_3d;
 pub mod ui_animated_image;
+pub mod video_player;

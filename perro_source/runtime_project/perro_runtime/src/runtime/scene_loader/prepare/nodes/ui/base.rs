@@ -120,6 +120,39 @@ fn build_ui_image(data: &SceneDefNodeData) -> UiImage {
     node
 }
 
+fn build_ui_video_player(data: &SceneDefNodeData) -> UiVideoPlayer {
+    let mut node = UiVideoPlayer::new();
+    if let Some(base) = data.base_ref() {
+        apply_ui_root_data(&mut node.base, base);
+    }
+    apply_ui_root_fields(&mut node.base, &data.fields);
+    apply_video_player_fields(&mut node.video, &data.fields);
+    SceneFieldIterRef::new(&data.fields).for_each(|name, value| match name {
+        name if scene_key_in(name, COLOR_MODULATE_KEYS) => {
+            if let Some(v) = as_scene_color(value) {
+                node.tint = v;
+            }
+        }
+        "scale_mode" | "aspect_mode" => {
+            if let Some(v) = as_ui_image_scale_mode(value) {
+                node.scale_mode = v;
+            }
+        }
+        "aspect_ratio" => {
+            if let Some(v) = as_f32(value) {
+                node.aspect_ratio = v.max(0.0);
+            }
+        }
+        "corner_radius" | "radius" => {
+            if let Some(v) = as_ui_corner_radius(value) {
+                node.corner_radius = v;
+            }
+        }
+        _ => {}
+    });
+    node
+}
+
 fn build_ui_image_button(data: &SceneDefNodeData) -> UiImageButton {
     let mut node = UiImageButton::new();
     if let Some(base) = data.base_ref() {

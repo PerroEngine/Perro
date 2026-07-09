@@ -34,6 +34,7 @@ pub(super) struct UiCommandCtx {
     pub(super) scale: Vector2,
     pub(super) virtual_font_scale: f32,
     pub(super) modulate: Color,
+    pub(super) camera_stream_texture: Option<TextureID>,
 }
 
 #[derive(Clone, Copy)]
@@ -55,6 +56,7 @@ pub(super) fn ui_root_from_data(data: &SceneNodeData) -> Option<&UiNode> {
         SceneNodeData::UiCheckbox(node) => Some(&node.button.base),
         SceneNodeData::UiColorPicker(node) => Some(&node.button.base),
         SceneNodeData::UiImage(node) => Some(&node.base),
+        SceneNodeData::UiVideoPlayer(node) => Some(&node.base),
         SceneNodeData::UiImageButton(node) => Some(&node.base),
         SceneNodeData::UiNineSlice(node) => Some(&node.base),
         SceneNodeData::UiAnimatedImage(node) => Some(&node.base),
@@ -82,6 +84,7 @@ pub(super) fn ui_root_mut_from_data(data: &mut SceneNodeData) -> Option<&mut UiN
         SceneNodeData::UiCheckbox(node) => Some(&mut node.button.base),
         SceneNodeData::UiColorPicker(node) => Some(&mut node.button.base),
         SceneNodeData::UiImage(node) => Some(&mut node.base),
+        SceneNodeData::UiVideoPlayer(node) => Some(&mut node.base),
         SceneNodeData::UiImageButton(node) => Some(&mut node.base),
         SceneNodeData::UiNineSlice(node) => Some(&mut node.base),
         SceneNodeData::UiAnimatedImage(node) => Some(&mut node.base),
@@ -580,6 +583,7 @@ pub(super) fn ui_command_from_node(
         scale,
         virtual_font_scale,
         modulate,
+        camera_stream_texture,
     } = command_ctx;
     match data {
         SceneNodeData::UiPanel(panel) => Some(panel_command(
@@ -760,6 +764,27 @@ pub(super) fn ui_command_from_node(
                 corner_radii: UiCornerRadiiState::default(),
             })
         }
+        SceneNodeData::UiVideoPlayer(video) => {
+            if video.video.texture.is_nil() {
+                return None;
+            }
+            Some(UiCommand::UpsertImage {
+                node,
+                rect,
+                clip_rect,
+                texture: video.video.texture,
+                tint: Runtime::color_modulate(video.tint, modulate),
+                uv_min: [0.0, 0.0],
+                uv_max: [1.0, 1.0],
+                scale_mode: ui_image_scale_state(video.scale_mode),
+                h_align: UiTextAlignState::Center,
+                v_align: UiTextAlignState::Center,
+                aspect_ratio: video.aspect_ratio,
+                corner_radii: ui_corner_radii_state(perro_ui::UiCornerRadii::all(
+                    video.corner_radius,
+                )),
+            })
+        }
         SceneNodeData::UiCameraStream(stream) => {
             if !stream.stream.enabled || stream.stream.camera.is_nil() {
                 return None;
@@ -768,7 +793,8 @@ pub(super) fn ui_command_from_node(
                 node,
                 rect,
                 clip_rect,
-                texture: Runtime::camera_stream_texture_id(node),
+                texture: camera_stream_texture
+                    .unwrap_or_else(|| Runtime::camera_stream_texture_id(node)),
                 tint: Runtime::color_modulate(stream.tint, modulate),
                 uv_min: [0.0, 0.0],
                 uv_max: [1.0, 1.0],

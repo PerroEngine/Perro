@@ -1,6 +1,7 @@
 $root = @WebcamDemo3D
 
 [WebcamDemo3D]
+script = "res://scripts/webcam_demo_3d.rs"
     [Node3D]
         position = (0.0, 0.0, 0.0)
     [/Node3D]
@@ -93,3 +94,18 @@ parent = @WebcamDemo3D
         [/Node3D]
     [/Label3D]
 [/WebcamStream3DLabel]
+
+[WebcamDevices3DLabel]
+parent = @WebcamDemo3D
+    [Label3D]
+        text = "Webcams: query pending"
+        color = "#FFFFFFFF"
+        size = (4.8, 0.9)
+        font_size = 20.0
+        h_align = "left"
+        v_align = "top"
+        [Node3D]
+            position = (-2.35, 3.05, 0.0)
+        [/Node3D]
+    [/Label3D]
+[/WebcamDevices3DLabel]

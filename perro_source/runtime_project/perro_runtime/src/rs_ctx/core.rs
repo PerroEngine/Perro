@@ -5,7 +5,7 @@ use crate::runtime_project::{
 };
 #[cfg(all(not(target_arch = "wasm32"), not(test)))]
 use perro_animation::{AnimationClip, AnimationTreeAsset};
-use perro_ids::WebcamID;
+use perro_ids::{NodeID, TextureID, WebcamID};
 use perro_ids::{SoundFontID, string_to_u64};
 use perro_pawdio::{AudioController, MicRecorder, MidiChannel, MidiProgram, MidiSound, Note};
 use perro_project::LocalizationConfig;
@@ -29,6 +29,27 @@ pub(crate) struct WebcamFrameMessage {
 pub(crate) struct WebcamErrorMessage {
     pub(crate) id: WebcamID,
     pub(crate) error: String,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct RuntimeVideoFrame {
+    pub(crate) rgba: Arc<[u8]>,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct RuntimeVideoClip {
+    pub(crate) width: u32,
+    pub(crate) height: u32,
+    pub(crate) fps: f32,
+    pub(crate) frames: Arc<[RuntimeVideoFrame]>,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct RuntimeVideoNode {
+    pub(crate) source_hash: u64,
+    pub(crate) texture: TextureID,
+    pub(crate) frame_index: usize,
+    pub(crate) accum: f32,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -276,6 +297,8 @@ pub struct RuntimeResourceApi {
     pub(super) csv_cache: Mutex<HashMap<u64, &'static perro_csv::Csv>>,
     pub(super) skeleton_bones_2d_cache: Mutex<HashMap<u64, Vec<perro_nodes::skeleton_2d::Bone2D>>>,
     pub(super) skeleton_bones_3d_cache: Mutex<HashMap<u64, Vec<perro_nodes::skeleton_3d::Bone3D>>>,
+    pub(super) video_clip_cache: Mutex<HashMap<u64, Arc<RuntimeVideoClip>>>,
+    pub(super) video_node_state: Mutex<HashMap<NodeID, RuntimeVideoNode>>,
     pub(super) skeleton_bones_2d_pending: Mutex<std::collections::HashSet<u64>>,
     pub(super) skeleton_bones_3d_pending: Mutex<std::collections::HashSet<u64>>,
     pub(super) skeleton_2d_load_tx: mpsc::Sender<AsyncSkeleton2DLoadResult>,
@@ -290,6 +313,11 @@ pub struct RuntimeResourceApi {
     pub(crate) webcam_error_rx: Mutex<mpsc::Receiver<WebcamErrorMessage>>,
     #[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
     pub(crate) webcam_stop_by_id: Mutex<HashMap<WebcamID, Arc<AtomicBool>>>,
+    // Cache of the auto-picked default device slot so empty-device configs do
+    // not re-query the OS camera backend on every render extraction.
+    #[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
+    #[cfg_attr(test, allow(dead_code))]
+    pub(crate) webcam_default_slot: Mutex<Option<String>>,
     #[cfg(not(target_arch = "wasm32"))]
     material_load_tx: mpsc::Sender<AsyncMaterialLoadResult>,
     #[cfg(not(target_arch = "wasm32"))]
@@ -349,6 +377,8 @@ impl RuntimeResourceApi {
             csv_cache: Mutex::new(HashMap::new()),
             skeleton_bones_2d_cache: Mutex::new(HashMap::new()),
             skeleton_bones_3d_cache: Mutex::new(HashMap::new()),
+            video_clip_cache: Mutex::new(HashMap::new()),
+            video_node_state: Mutex::new(HashMap::new()),
             skeleton_bones_2d_pending: Mutex::new(std::collections::HashSet::new()),
             skeleton_bones_3d_pending: Mutex::new(std::collections::HashSet::new()),
             skeleton_2d_load_tx,
@@ -362,6 +392,8 @@ impl RuntimeResourceApi {
             webcam_error_rx: Mutex::new(webcam_error_rx),
             #[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
             webcam_stop_by_id: Mutex::new(HashMap::new()),
+            #[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
+            webcam_default_slot: Mutex::new(None),
             #[cfg(not(target_arch = "wasm32"))]
             material_load_tx,
             #[cfg(not(target_arch = "wasm32"))]

@@ -1567,6 +1567,24 @@ parent = $root
 [/Webcam]
 [/webcam]
 
+[video_player_2d]
+parent = $root
+[VideoPlayer2D]
+[/VideoPlayer2D]
+[/video_player_2d]
+
+[video_player_3d]
+parent = $root
+[VideoPlayer3D]
+[/VideoPlayer3D]
+[/video_player_3d]
+
+[ui_video_player]
+parent = $root
+[UiVideoPlayer]
+[/UiVideoPlayer]
+[/ui_video_player]
+
 [ui_node]
 parent = $root
 [UiNode]

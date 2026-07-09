@@ -48,8 +48,8 @@ pub mod prelude {
         MidiNoteOptions, MidiProgram, MidiSong, MidiSound, MidiSpatialPos, MidiSpatialPosition,
         Note, PannedAudio, PostProcessingAPI, SceneDocAPI, SceneDocModule, SkeletonAPI,
         SkeletonModule, SpatialAudioOptions, TextureAPI, TextureModule, TextureReserveArg,
-        VisualAccessibilityAPI, WebcamAPI, WebcamConfig, WebcamDevice, WebcamFrame, WebcamModule,
-        program,
+        VideoAPI, VideoModule, VideoUpdate, VisualAccessibilityAPI, WebcamAPI, WebcamConfig,
+        WebcamDevice, WebcamFrame, WebcamModule, program,
     };
 
     // Convenience macros.
@@ -76,8 +76,8 @@ pub mod prelude {
         scene_count, scene_load_doc, scene_save_doc, skeleton_count, skeleton_load_bones,
         skeleton_load_bones_2d_from_bytes, skeleton_load_bones_3d_from_bytes, texture_count,
         texture_create_from_bytes, texture_create_from_rgba, texture_drop, texture_is_loaded,
-        texture_load, texture_reserve, webcam_default, webcam_devices, webcam_frame_rgba,
-        webcam_open, webcam_open_device, webcam_texture,
+        texture_load, texture_reserve, video_release_node, video_update_node, webcam_default,
+        webcam_devices, webcam_frame_rgba, webcam_open, webcam_open_device, webcam_texture,
     };
 
     // Shared data types.

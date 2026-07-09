@@ -2,9 +2,10 @@ use super::*;
 use crate::RuntimeScriptApi;
 use perro_ids::ScriptMemberID;
 use perro_nodes::{
-    Node3D, SceneNode, SceneNodeData, Sky3D, UiCameraStream, Webcam, camera_3d::Camera3D,
+    CameraStream3D, Node3D, SceneNode, SceneNodeData, Sky3D, UiCameraStream, Webcam,
+    camera_3d::Camera3D,
 };
-use perro_render_bridge::{CameraStreamCommand, CameraStreamSourceState, RenderEvent};
+use perro_render_bridge::{CameraStreamCommand, CameraStreamSourceState, RenderEvent, UiCommand};
 use perro_resource_api::sub_apis::{TextureAPI, WebcamAPI};
 use perro_runtime_api::sub_apis::{NodeAPI, NodeSpec, SignalAPI};
 use perro_scripting::{ScriptBehavior, ScriptContext, ScriptFlags, ScriptLifecycle};
@@ -77,6 +78,37 @@ fn ui_camera_stream_opens_referenced_webcam_node() {
     runtime.extract_render_ui_commands();
     let mut commands = Vec::new();
     runtime.drain_render_commands(&mut commands);
+
+    assert!(has_external_texture_create(&commands));
+    let stream_texture = Runtime::camera_stream_texture_id(stream);
+    assert!(commands.iter().any(|command| {
+        matches!(
+            command,
+            RenderCommand::Ui(UiCommand::UpsertImage { texture, .. })
+                if !texture.is_nil() && *texture != stream_texture
+        )
+    }));
+}
+
+#[test]
+fn camera_stream_3d_opens_referenced_webcam_node() {
+    let mut runtime = Runtime::new();
+    let camera = NodeAPI::create::<Camera3D>(&mut runtime);
+    let webcam = NodeAPI::create::<Webcam>(&mut runtime);
+    let stream = NodeAPI::create::<CameraStream3D>(&mut runtime);
+    if let Some(node) = runtime.nodes.get_mut(camera)
+        && let SceneNodeData::Camera3D(data) = &mut node.data
+    {
+        data.active = true;
+    }
+    if let Some(node) = runtime.nodes.get_mut(stream)
+        && let SceneNodeData::CameraStream3D(data) = &mut node.data
+    {
+        data.stream.camera = webcam;
+    }
+
+    let mut commands = Vec::new();
+    runtime.extract_render_snapshot_commands(&mut commands);
 
     assert!(has_external_texture_create(&commands));
 }
