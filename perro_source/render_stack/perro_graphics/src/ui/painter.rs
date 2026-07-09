@@ -1004,7 +1004,7 @@ fn push_color_wheel(
             center,
             radius: radius * 0.42,
             fill: Color32::from_white_alpha(210),
-            stroke: Stroke::new(1.0, Color32::from_black_alpha(80)),
+            stroke: Stroke::new(1.0_f32, Color32::from_black_alpha(80)),
         }),
     });
 }

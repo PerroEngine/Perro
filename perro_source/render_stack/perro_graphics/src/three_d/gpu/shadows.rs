@@ -313,10 +313,9 @@ fn build_ray_shadow_scenes(args: RayShadowSceneArgs<'_>) -> Option<RayShadowScen
             DEBUG_WORLD_SUN_DIR[2],
         )
         .normalize_or_zero()
-    } else if let Some(ray) = explicit_shadow_ray {
-        Vec3::from(ray.direction).normalize_or_zero()
     } else {
-        return None;
+        let ray = explicit_shadow_ray?;
+        Vec3::from(ray.direction).normalize_or_zero()
     };
     if dir.length_squared() <= 1.0e-6 || !dir.is_finite() {
         return None;
