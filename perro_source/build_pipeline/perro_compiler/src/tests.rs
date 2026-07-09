@@ -1,13 +1,13 @@
 #[cfg(test)]
 mod tests {
     use super::{
-        emit_static_steam_app_id_fn, emit_web_route_html_files, generate_call_param_binding,
-        generate_dlc_static_modules, generate_embedded_entry_files, generate_perro_assets,
-        generate_project_static_modules, module_name_from_rel, module_short_name_from_rel,
-        native_output_artifact_name, native_output_folder_name, normalize_cargo_output_paths,
-        reset_embedded_dir, sync_dlc_scripts, sync_scripts, transpile_frontend_script,
-        target_slug_from_triple, transpiled_exports_script_ctor, ProjectBuildOptions,
-        ScriptMethodParam,
+        ProjectBuildOptions, ScriptMethodParam, emit_static_steam_app_id_fn,
+        emit_web_route_html_files, generate_call_param_binding, generate_dlc_static_modules,
+        generate_embedded_entry_files, generate_perro_assets, generate_project_static_modules,
+        module_name_from_rel, module_short_name_from_rel, native_output_artifact_name,
+        native_output_folder_name, normalize_cargo_output_paths, reset_embedded_dir,
+        sync_dlc_scripts, sync_scripts, target_slug_from_triple, transpile_frontend_script,
+        transpiled_exports_script_ctor,
     };
     use perro_project::{
         ensure_project_layout, ensure_project_scaffold, ensure_project_toml,
@@ -123,8 +123,21 @@ mod tests {
         let root = unique_temp_dir("perro_compiler_invalid_dlc_name");
         std::fs::create_dir_all(&root).unwrap();
 
-        for name in ["", ".", "..", "../escape", "..\\escape", "self", "SELF", "bad\"name", "bad\nname"] {
-            assert!(sync_dlc_scripts(&root, name).is_err(), "accepted `{name:?}`");
+        for name in [
+            "",
+            ".",
+            "..",
+            "../escape",
+            "..\\escape",
+            "self",
+            "SELF",
+            "bad\"name",
+            "bad\nname",
+        ] {
+            assert!(
+                sync_dlc_scripts(&root, name).is_err(),
+                "accepted `{name:?}`"
+            );
         }
 
         assert!(!root.join(".perro/escape").exists());
@@ -187,10 +200,7 @@ mod tests {
         let crate_dir = project.join(".perro/scripts");
         let input = "src\\scripts\\../../../../res/scripts/game_manager.rs:1929:68: error: bad\n";
         let out = normalize_cargo_output_paths(project, Some(&crate_dir), input);
-        assert_eq!(
-            out,
-            "res/scripts/game_manager.rs:1929:68: error: bad\n"
-        );
+        assert_eq!(out, "res/scripts/game_manager.rs:1929:68: error: bad\n");
     }
 
     #[test]
@@ -274,10 +284,16 @@ lifecycle!({
 
         let transpiled = transpile_frontend_script(source, "res://tests/player.rs");
         assert!(transpiled.contains("Box::new(<PlayerState as Default>::default())"));
-        assert!(transpiled.contains("const __PERRO_VAR_HEALTH: ScriptMemberID = var!(\"health\");"));
+        assert!(
+            transpiled.contains("const __PERRO_VAR_HEALTH: ScriptMemberID = var!(\"health\");")
+        );
         assert!(transpiled.contains("const __PERRO_VAR_SPEED: ScriptMemberID = var!(\"speed\");"));
-        assert!(transpiled.contains("const __PERRO_VAR_VELOCITY: ScriptMemberID = var!(\"velocity\");"));
-        assert!(transpiled.contains("const __PERRO_VAR_GROUNDED: ScriptMemberID = var!(\"grounded\");"));
+        assert!(
+            transpiled.contains("const __PERRO_VAR_VELOCITY: ScriptMemberID = var!(\"velocity\");")
+        );
+        assert!(
+            transpiled.contains("const __PERRO_VAR_GROUNDED: ScriptMemberID = var!(\"grounded\");")
+        );
     }
 
     #[test]
@@ -608,9 +624,9 @@ lifecycle!({});
 
         let transpiled = transpile_frontend_script(source, "all_variant_types.rs");
         assert!(transpiled.contains("__perro_apply_nested_object"));
-        assert!(transpiled.contains(
-            "<ActorRefs as perro_api::variant::VariantSchema>::field_names()"
-        ));
+        assert!(
+            transpiled.contains("<ActorRefs as perro_api::variant::VariantSchema>::field_names()")
+        );
         assert_generated_script_compiles(source, &transpiled);
     }
 
@@ -865,8 +881,12 @@ lifecycle!({});
         assert!(!transpiled.contains("unsafe fn __perro_state_ref"));
         assert!(!transpiled.contains("unsafe fn __perro_state_mut"));
         assert!(!transpiled.contains("std::any::TypeId::of"));
-        assert!(transpiled.contains("perro_api::scripting::state_ref_unchecked::<AllVariantState>"));
-        assert!(transpiled.contains("perro_api::scripting::state_mut_unchecked::<AllVariantState>"));
+        assert!(
+            transpiled.contains("perro_api::scripting::state_ref_unchecked::<AllVariantState>")
+        );
+        assert!(
+            transpiled.contains("perro_api::scripting::state_mut_unchecked::<AllVariantState>")
+        );
         assert!(transpiled.contains("value.clone().into_parse::<NestedCombo>()"));
         assert!(transpiled.contains("fn __perro_set_nested_var"));
         assert_generated_script_compiles(source, &transpiled);
@@ -921,8 +941,8 @@ lifecycle!({});
         perro_static_pipeline::set_static_pipeline_overrides(None);
         result.expect("generate dlc static modules");
 
-        let shaders = std::fs::read_to_string(static_dir.join("shaders.rs"))
-            .expect("read dlc shaders");
+        let shaders =
+            std::fs::read_to_string(static_dir.join("shaders.rs")).expect("read dlc shaders");
         assert!(shaders.contains("dlc://fixture/shaders/fixture.wgsl"));
         assert!(!root.join(".perro").join("project").exists());
         let _ = std::fs::remove_dir_all(root);
@@ -1226,7 +1246,10 @@ rest_rot_deg = 0
         .expect("read static scenes");
         for node_type in NodeType::ALL {
             let needle = format!("NodeType::{node_type}");
-            assert!(scenes.contains(&needle), "missing `{needle}` in static scene fixture");
+            assert!(
+                scenes.contains(&needle),
+                "missing `{needle}` in static scene fixture"
+            );
         }
     }
 
