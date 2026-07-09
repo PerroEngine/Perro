@@ -512,6 +512,9 @@ fn open_webcam_camera(
     not(test)
 ))]
 fn webcam_device_slot(info: &nokhwa::utils::CameraInfo, extra: &str) -> String {
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    let _ = extra;
+
     #[cfg(any(target_os = "windows", target_os = "macos"))]
     {
         if !extra.trim().is_empty() {
