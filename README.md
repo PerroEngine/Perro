@@ -9,7 +9,7 @@
 ## Philosophy
 
 - **Simple To Learn**: start with scenes, nodes, and Rust scripts without large registration steps or boilerplate.
-- **Flexible To Use**: removes a lot of borrow checker issues by having direct apis and scoped closures for when we need mutable access, seperating state from the script behavior means we will never have a runtime borrow fail.
+- **Flexible To Use**: reduces borrow-checker friction with direct APIs and scoped closures for mutable access. Separating state from script behavior prevents runtime borrow failures.
 - **Fast In Release**: nodes and scripts are laid out for efficient node and state access, all resources are statically baked in release for efficient and quick retrieval
 
 ## Design Goals
@@ -47,7 +47,7 @@ Local reference:
 - **Compiler-Backed Asset Flow**: dev stays flexible with plain files, while build/export bakes supported assets into fast static lookup paths and packs the rest.
 - **Powerful UI System**: UI is built as a real engine system with relative sizing, clamping, and layouts designed to scale from simple menus to larger game interfaces.
 - **Flat ID-Based Runtime Access**: node and script data are addressed by `NodeID`, enabling constant-time lookups for common operations and efficient cross-system interaction.
-- **Predictable Failure Modes**: most runtime misses come from real-world state changes (deleted node, missing tag/name match, unbound script), not from borrow contention between unrelated systems. (NoT "try_get_mut" runtime errors)
+- **Predictable Failure Modes**: most runtime misses come from real-world state changes (deleted node, missing tag/name match, unbound script), not from borrow contention between unrelated systems (no `try_get_mut` runtime errors).
 - **Powerful Query Layer**: if you prefer query-style access, filter by type, base type, tag, name, and subtree to gather `NodeID`s, then operate directly through script/node APIs. See [Query System](docs/scripting/query_system.md).
 
 ## Contributions

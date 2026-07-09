@@ -5,8 +5,58 @@ use perro_runtime_api::{RuntimeWindow, api::RuntimeAPI};
 use perro_variant::Variant;
 use std::any::Any;
 
+/// Magic bytes at the start of every v2 dynamic-script ABI descriptor.
+pub const SCRIPT_ABI_V2_MAGIC: [u8; 8] = *b"PERROSC\0";
+/// Dynamic-script ABI version understood by this engine build.
+pub const SCRIPT_ABI_V2_VERSION: u32 = 2;
+
+/// Prefix read before the runtime trusts the full dynamic-script descriptor.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ScriptAbiDescriptorHeader {
+    /// Fixed marker used to reject unrelated or corrupt symbols.
+    pub magic: [u8; 8],
+    /// Layout and calling-convention contract version.
+    pub abi_version: u32,
+    /// Byte size of the full descriptor supplied by the script library.
+    pub descriptor_size: u32,
+}
+
+/// Compatibility gate exported by every compiler-generated script library.
+///
+/// Rust trait objects and their vtables do not have a stable C ABI. The runtime
+/// therefore validates this descriptor before it reads constructors or calls
+/// any other library function. `build_fingerprint` binds a library to the same
+/// compiler, target, synchronized ABI features, and engine sources as its host.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ScriptAbiDescriptor {
+    /// Stable prefix that can be checked before reading the full descriptor.
+    pub header: ScriptAbiDescriptorHeader,
+    /// Fingerprint generated while compiling `perro_runtime`.
+    pub build_fingerprint: u64,
+}
+
+impl ScriptAbiDescriptor {
+    /// Build a v2 descriptor for compiler-generated library glue.
+    pub const fn v2(build_fingerprint: u64) -> Self {
+        Self {
+            header: ScriptAbiDescriptorHeader {
+                magic: SCRIPT_ABI_V2_MAGIC,
+                abi_version: SCRIPT_ABI_V2_VERSION,
+                descriptor_size: std::mem::size_of::<Self>() as u32,
+            },
+            build_fingerprint,
+        }
+    }
+}
+
+/// Native Rust constructor used by statically linked script registries.
+pub type ScriptConstructor<API> = fn() -> *mut dyn ScriptBehavior<API>;
+
+/// Constructor pointer transferred through the dynamic script-library ABI.
 #[allow(improper_ctypes_definitions)]
-pub type ScriptConstructor<API> = extern "C" fn() -> *mut dyn ScriptBehavior<API>;
+pub type DynamicScriptConstructor<API> = extern "C" fn() -> *mut dyn ScriptBehavior<API>;
 
 /// API surface bundle used by script callbacks.
 ///

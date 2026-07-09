@@ -50,6 +50,22 @@ const GC_INTERVAL_FRAMES: u32 = 60;
 const GC_MAX_DROPS_PER_KIND: usize = 64;
 const PARALLEL_COMMAND_SUMMARY_MIN: usize = 10_000;
 const PARALLEL_RENDER_PREPARE_MIN: usize = 4_096;
+const MAX_RUNTIME_TEXTURE_DIMENSION: u32 = 8_192;
+const MAX_RUNTIME_TEXTURE_RGBA_BYTES: usize = 64 * 1024 * 1024;
+
+fn checked_runtime_texture_rgba_len(width: u32, height: u32) -> Option<usize> {
+    if width == 0
+        || height == 0
+        || width > MAX_RUNTIME_TEXTURE_DIMENSION
+        || height > MAX_RUNTIME_TEXTURE_DIMENSION
+    {
+        return None;
+    }
+    (width as usize)
+        .checked_mul(height as usize)
+        .and_then(|pixels| pixels.checked_mul(4))
+        .filter(|len| *len <= MAX_RUNTIME_TEXTURE_RGBA_BYTES)
+}
 
 #[cfg(not(target_arch = "wasm32"))]
 fn asset_ready_log_enabled() -> bool {
@@ -986,15 +1002,22 @@ impl PerroGraphics {
                         width,
                         height,
                     } => {
+                        let Some(len) = checked_runtime_texture_rgba_len(width, height) else {
+                            self.events.push(RenderEvent::Failed {
+                                request,
+                                reason: format!(
+                                    "external texture size {width}x{height} exceeds runtime limits"
+                                ),
+                            });
+                            continue;
+                        };
                         let id = if id.is_nil() {
                             self.resources.create_texture(source.as_str(), reserved)
                         } else {
                             self.resources
                                 .create_texture_with_id(id, source.as_str(), reserved)
                         };
-                        let width = width.clamp(1, 8192);
-                        let height = height.clamp(1, 8192);
-                        let mut rgba = vec![0; width as usize * height as usize * 4];
+                        let mut rgba = vec![0; len];
                         for pixel in rgba.chunks_exact_mut(4) {
                             pixel[3] = 255;
                         }
@@ -1016,10 +1039,7 @@ impl PerroGraphics {
                         height,
                         rgba,
                     } => {
-                        let expected_len = (width as usize)
-                            .checked_mul(height as usize)
-                            .and_then(|pixels| pixels.checked_mul(4));
-                        if width == 0 || height == 0 || expected_len != Some(rgba.len()) {
+                        if checked_runtime_texture_rgba_len(width, height) != Some(rgba.len()) {
                             continue;
                         }
                         let _ = self.resources.set_decoded_texture_data(
@@ -1392,6 +1412,10 @@ impl PerroGraphics {
         texture: TextureID,
         resolution: [u32; 2],
     ) {
+        let [width, height] = resolution;
+        let Some(len) = checked_runtime_texture_rgba_len(width, height) else {
+            return;
+        };
         let texture = if texture.is_nil() {
             camera_stream_texture_id(node)
         } else {
@@ -1401,14 +1425,11 @@ impl PerroGraphics {
         let id = self
             .resources
             .create_texture_with_id(texture, &source, true);
-        let width = resolution[0].clamp(1, 8192);
-        let height = resolution[1].clamp(1, 8192);
         let resolution = [width, height];
         if self.camera_stream_targets.get(&node).copied() == Some(resolution) {
             return;
         }
         self.camera_stream_targets.insert(node, resolution);
-        let len = width as usize * height as usize * 4;
         let _ = self.resources.set_decoded_texture_data(
             id,
             DecodedTextureRgba {

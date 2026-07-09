@@ -76,6 +76,25 @@ pub fn is_reserved_dlc_name(name: &str) -> bool {
     name.eq_ignore_ascii_case("self")
 }
 
+pub fn validate_dlc_name(name: &str) -> io::Result<()> {
+    let mut components = Path::new(name).components();
+    let is_single_normal =
+        matches!(components.next(), Some(Component::Normal(_))) && components.next().is_none();
+    if !is_single_normal || name.contains(['/', '\\', '"']) || name.chars().any(char::is_control) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "invalid dlc name",
+        ));
+    }
+    if is_reserved_dlc_name(name) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "dlc name `self` is reserved",
+        ));
+    }
+    Ok(())
+}
+
 pub fn get_project_root() -> ProjectRoot {
     PROJECT_ROOT
         .read()
@@ -95,9 +114,12 @@ pub fn set_project_root(root: ProjectRoot) {
 }
 
 pub fn clear_dlc_mounts() {
-    DLC_MOUNTS.write().unwrap().clear();
-    DLC_ARCHIVES.write().unwrap().clear();
-    DLC_STATIC_BINARY_LOOKUPS.write().unwrap().clear();
+    let mut mounts = DLC_MOUNTS.write().unwrap();
+    let mut archives = DLC_ARCHIVES.write().unwrap();
+    let mut lookups = DLC_STATIC_BINARY_LOOKUPS.write().unwrap();
+    mounts.clear();
+    archives.clear();
+    lookups.clear();
 }
 
 pub fn mounted_dlc_names() -> Vec<String> {
@@ -125,12 +147,7 @@ pub fn read_mounted_dlc_file(name: &str, virtual_path: &str) -> io::Result<Vec<u
 }
 
 pub fn mount_dlc_disk(name: &str, root: impl AsRef<Path>) -> io::Result<()> {
-    if is_reserved_dlc_name(name) {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "dlc name `self` is reserved",
-        ));
-    }
+    validate_dlc_name(name)?;
     let root = root.as_ref().to_path_buf();
     if !root.exists() {
         return Err(io::Error::new(
@@ -138,38 +155,54 @@ pub fn mount_dlc_disk(name: &str, root: impl AsRef<Path>) -> io::Result<()> {
             format!("dlc disk root not found: {}", root.display()),
         ));
     }
-    DLC_MOUNTS.write().unwrap().insert(
-        name.to_ascii_lowercase(),
+    replace_dlc_mount(
+        name,
         DlcMount {
             name: name.to_string(),
             source: DlcMountSource::Disk(root),
         },
+        None,
     );
     Ok(())
 }
 
 pub fn mount_dlc_archive(name: &str, archive_path: impl AsRef<Path>) -> io::Result<()> {
-    if is_reserved_dlc_name(name) {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "dlc name `self` is reserved",
-        ));
-    }
+    validate_dlc_name(name)?;
     let archive_path = archive_path.as_ref().to_path_buf();
     let archive = Arc::new(PerroAssetsArchive::open_from_file(&archive_path)?);
-    let key = name.to_ascii_lowercase();
-    DLC_ARCHIVES.write().unwrap().insert(key.clone(), archive);
-    DLC_MOUNTS.write().unwrap().insert(
-        key,
+    replace_dlc_mount(
+        name,
         DlcMount {
             name: name.to_string(),
             source: DlcMountSource::Archive(archive_path),
         },
+        Some(archive),
     );
     Ok(())
 }
 
-pub fn register_dlc_static_binary_lookup(name: &str, lookup: DlcStaticBinaryLookup) {
+fn replace_dlc_mount(name: &str, mount: DlcMount, archive: Option<Arc<PerroAssetsArchive>>) {
+    let key = name.to_ascii_lowercase();
+    let mut mounts = DLC_MOUNTS.write().unwrap();
+    let mut archives = DLC_ARCHIVES.write().unwrap();
+    let mut lookups = DLC_STATIC_BINARY_LOOKUPS.write().unwrap();
+    archives.remove(&key);
+    lookups.remove(&key);
+    if let Some(archive) = archive {
+        archives.insert(key.clone(), archive);
+    }
+    mounts.insert(key, mount);
+}
+
+/// Register a DLC callback that returns borrowed binary asset bytes.
+///
+/// # Safety
+/// When `lookup` returns `true`, it must initialize both output pointers. The
+/// returned data pointer must be non-null, point to `len` initialized bytes in
+/// one allocation, and remain valid until the bytes are copied immediately
+/// after the callback returns. `len` must not exceed `isize::MAX`. The callback
+/// must not unwind across the C ABI boundary.
+pub unsafe fn register_dlc_static_binary_lookup(name: &str, lookup: DlcStaticBinaryLookup) {
     DLC_STATIC_BINARY_LOOKUPS
         .write()
         .unwrap()
@@ -520,6 +553,12 @@ fn load_dlc_static_binary(dlc: &str, path: &str) -> io::Result<Vec<u8>> {
             format!("dlc static binary not found: {path}"),
         ));
     }
+    if len > isize::MAX as usize {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("dlc static binary too large: {len} bytes"),
+        ));
+    }
     // SAFETY: Successful lookup guarantees ptr is non-null and len bytes remain valid
     // for the duration of this call; copy immediately into an owned Vec.
     let bytes = unsafe { std::slice::from_raw_parts(ptr, len) };
@@ -653,6 +692,26 @@ mod tests {
         assert!(validate_virtual_asset_path("dlc://Expansion/scenes/main.scn").is_ok());
     }
 
+    #[test]
+    fn dlc_names_reject_path_components_and_manifest_control_chars() {
+        for name in [
+            "",
+            ".",
+            "..",
+            "../escape",
+            "..\\escape",
+            "self",
+            "SELF",
+            "bad\"name",
+            "bad\nname",
+        ] {
+            assert!(validate_dlc_name(name).is_err(), "accepted `{name:?}`");
+        }
+        for name in ["Expansion", "expansion-pack", "my expansion", "v1.2"] {
+            assert!(validate_dlc_name(name).is_ok(), "rejected `{name}`");
+        }
+    }
+
     fn static_lookup(path_hash: u64) -> &'static [u8] {
         if path_hash == perro_ids::string_to_u64("res://textures/player.png") {
             b"static-ptex"
@@ -680,6 +739,22 @@ mod tests {
         unsafe {
             *data_out = b"dlc-static-ptex".as_ptr();
             *len_out = b"dlc-static-ptex".len();
+        }
+        true
+    }
+
+    unsafe extern "C" fn oversized_dlc_static_lookup(
+        _path_hash: u64,
+        data_out: *mut *const u8,
+        len_out: *mut usize,
+    ) -> bool {
+        if data_out.is_null() || len_out.is_null() {
+            return false;
+        }
+        // SAFETY: Test callback receives writable output pointers from the loader.
+        unsafe {
+            *data_out = std::ptr::NonNull::<u8>::dangling().as_ptr();
+            *len_out = isize::MAX as usize + 1;
         }
         true
     }
@@ -758,7 +833,8 @@ mod tests {
 
         clear_dlc_mounts();
         mount_dlc_archive("Expansion", &archive).unwrap();
-        register_dlc_static_binary_lookup("Expansion", dlc_static_lookup);
+        // SAFETY: Test callback returns static bytes and follows the registration contract.
+        unsafe { register_dlc_static_binary_lookup("Expansion", dlc_static_lookup) };
 
         match resolve_path("dlc://Expansion/textures/player.png") {
             ResolvedPath::DlcStaticBinary { dlc, path } => {
@@ -774,6 +850,70 @@ mod tests {
 
         clear_dlc_mounts();
         let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn remount_replaces_archive_and_static_lookup_backing() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        let root =
+            std::env::temp_dir().join(format!("perro_io_dlc_remount_{}", std::process::id()));
+        let disk = root.join("disk");
+        let archive = root.join("Expansion.dlc");
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&disk).unwrap();
+        fs::write(&archive, EMPTY_ARCHIVE).unwrap();
+
+        clear_dlc_mounts();
+        mount_dlc_archive("Expansion", &archive).unwrap();
+        // SAFETY: Test callback returns immutable static bytes.
+        unsafe { register_dlc_static_binary_lookup("Expansion", dlc_static_lookup) };
+        mount_dlc_disk("EXPANSION", &disk).unwrap();
+
+        assert!(!DLC_ARCHIVES.read().unwrap().contains_key("expansion"));
+        assert!(
+            !DLC_STATIC_BINARY_LOOKUPS
+                .read()
+                .unwrap()
+                .contains_key("expansion")
+        );
+        assert!(matches!(
+            &DLC_MOUNTS.read().unwrap().get("expansion").unwrap().source,
+            DlcMountSource::Disk(_)
+        ));
+
+        // SAFETY: Test callback returns immutable static bytes.
+        unsafe { register_dlc_static_binary_lookup("Expansion", dlc_static_lookup) };
+        mount_dlc_archive("expansion", &archive).unwrap();
+        assert!(DLC_ARCHIVES.read().unwrap().contains_key("expansion"));
+        assert!(
+            !DLC_STATIC_BINARY_LOOKUPS
+                .read()
+                .unwrap()
+                .contains_key("expansion")
+        );
+        assert!(matches!(
+            &DLC_MOUNTS.read().unwrap().get("expansion").unwrap().source,
+            DlcMountSource::Archive(_)
+        ));
+
+        clear_dlc_mounts();
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn load_asset_rejects_oversized_dlc_static_binary() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        clear_dlc_mounts();
+        // SAFETY: Test callback initializes both outputs; the loader rejects its
+        // oversized length before constructing a slice from the dangling pointer.
+        unsafe {
+            register_dlc_static_binary_lookup("Oversized", oversized_dlc_static_lookup);
+        }
+
+        let err = load_dlc_static_binary("oversized", "dlc://Oversized/huge.bin")
+            .expect_err("oversized lookup must fail");
+        assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+        clear_dlc_mounts();
     }
 
     #[test]

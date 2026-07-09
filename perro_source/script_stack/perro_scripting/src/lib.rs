@@ -16,8 +16,9 @@ pub mod prelude {
     pub use crate::lifecycle;
     pub use crate::methods;
     pub use crate::script_trait::{
-        ScriptAPI, ScriptBehavior, ScriptConstructor, ScriptContext, ScriptFlags, ScriptLifecycle,
-        state_mut_unchecked, state_ref_unchecked,
+        DynamicScriptConstructor, SCRIPT_ABI_V2_MAGIC, SCRIPT_ABI_V2_VERSION, ScriptAPI,
+        ScriptAbiDescriptor, ScriptAbiDescriptorHeader, ScriptBehavior, ScriptConstructor,
+        ScriptContext, ScriptFlags, ScriptLifecycle, state_mut_unchecked, state_ref_unchecked,
     };
     pub use crate::{State, Variant};
     pub use perro_ids::prelude::*;

@@ -1,4 +1,7 @@
-use super::{GC_INTERVAL_FRAMES, PerroGraphics};
+use super::{
+    GC_INTERVAL_FRAMES, MAX_RUNTIME_TEXTURE_RGBA_BYTES, PerroGraphics,
+    checked_runtime_texture_rgba_len,
+};
 use crate::backend::GraphicsBackend;
 use crate::three_d::renderer::Draw3DKind;
 use perro_ids::{MaterialID, MeshID, NodeID, TextureID};
@@ -169,6 +172,44 @@ fn webcam_camera_stream_does_not_overwrite_webcam_texture() {
         .decoded_texture_data(texture)
         .expect("decoded webcam texture");
     assert_eq!(decoded.rgba, rgba.as_ref());
+}
+
+#[test]
+fn runtime_texture_size_limit_rejects_oversized_allocations() {
+    assert_eq!(checked_runtime_texture_rgba_len(1, 1), Some(4));
+    assert_eq!(checked_runtime_texture_rgba_len(0, 1), None);
+    assert_eq!(checked_runtime_texture_rgba_len(8_193, 1), None);
+    assert_eq!(checked_runtime_texture_rgba_len(8_192, 8_192), None);
+    assert_eq!(
+        checked_runtime_texture_rgba_len(4_096, 4_096),
+        Some(MAX_RUNTIME_TEXTURE_RGBA_BYTES)
+    );
+
+    let mut graphics = PerroGraphics::new();
+    let texture = TextureID::from_parts(78, 0);
+    let request = perro_render_bridge::RenderRequestID::new(2);
+    graphics.submit(RenderCommand::Resource(
+        ResourceCommand::CreateExternalTexture {
+            request,
+            id: texture,
+            source: "webcam://oversized".to_string(),
+            reserved: true,
+            width: 8_192,
+            height: 8_192,
+        },
+    ));
+    graphics.draw_frame();
+
+    assert!(!graphics.resources.has_texture(texture));
+    assert!(graphics.events.iter().any(|event| {
+        matches!(
+            event,
+            perro_render_bridge::RenderEvent::Failed {
+                request: failed_request,
+                ..
+            } if *failed_request == request
+        )
+    }));
 }
 
 fn water_2d_state() -> Water2DState {

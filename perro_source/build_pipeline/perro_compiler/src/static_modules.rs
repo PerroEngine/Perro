@@ -112,78 +112,73 @@ fn generate_dlc_static_modules(
     project_root: &Path,
     bake_meshlets: bool,
 ) -> Result<(), CompilerError> {
-    thread::scope(|scope| {
-        let tasks = [
-            (
-                "collision trimesh",
-                scope.spawn(|| {
-                    perro_static_pipeline::generate_static_collision_trimeshes(project_root)
-                }),
-            ),
-            (
-                "scene",
-                scope.spawn(|| perro_static_pipeline::generate_static_scenes(project_root)),
-            ),
-            (
-                "material",
-                scope.spawn(|| perro_static_pipeline::generate_static_materials(project_root)),
-            ),
-            (
-                "ui style",
-                scope.spawn(|| perro_static_pipeline::generate_static_ui_styles(project_root)),
-            ),
-            (
-                "tileset",
-                scope.spawn(|| perro_static_pipeline::generate_static_tilesets(project_root)),
-            ),
-            (
-                "particle",
-                scope.spawn(|| perro_static_pipeline::generate_static_particles(project_root)),
-            ),
-            (
-                "animation",
-                scope.spawn(|| perro_static_pipeline::generate_static_animations(project_root)),
-            ),
-            (
-                "animation tree",
-                scope
-                    .spawn(|| perro_static_pipeline::generate_static_animation_trees(project_root)),
-            ),
-            (
-                "mesh",
-                scope.spawn(|| {
-                    perro_static_pipeline::generate_static_meshes(project_root, bake_meshlets)
-                }),
-            ),
-            (
-                "skeleton",
-                scope.spawn(|| perro_static_pipeline::generate_static_skeletons(project_root)),
-            ),
-            (
-                "texture",
-                scope.spawn(|| perro_static_pipeline::generate_static_textures(project_root)),
-            ),
-            (
-                "shader",
-                scope.spawn(|| perro_static_pipeline::generate_static_shaders(project_root)),
-            ),
-            (
-                "audio",
-                scope.spawn(|| perro_static_pipeline::generate_static_audios(project_root)),
-            ),
-            (
-                "csv",
-                scope.spawn(|| perro_static_pipeline::generate_static_csvs(project_root)),
-            ),
-            (
-                "localization",
-                scope.spawn(|| perro_static_pipeline::generate_empty_localizations(project_root)),
-            ),
-        ];
-        let mut first_error = None;
-        for (kind, handle) in tasks {
-            join_static_generation(kind, handle, &mut first_error);
-        }
-        first_error.map_or(Ok(()), Err)
-    })
+    macro_rules! generate {
+        ($kind:literal, $call:expr) => {
+            $call.map_err(|err| static_generation_error($kind, err))?
+        };
+    }
+
+    // DLC path overrides are thread-local. Keep every generator on this thread
+    // so each one writes into the pack crate with the dlc:// asset prefix.
+    generate!(
+        "collision trimesh",
+        perro_static_pipeline::generate_static_collision_trimeshes(project_root)
+    );
+    generate!(
+        "scene",
+        perro_static_pipeline::generate_static_scenes(project_root)
+    );
+    generate!(
+        "material",
+        perro_static_pipeline::generate_static_materials(project_root)
+    );
+    generate!(
+        "ui style",
+        perro_static_pipeline::generate_static_ui_styles(project_root)
+    );
+    generate!(
+        "tileset",
+        perro_static_pipeline::generate_static_tilesets(project_root)
+    );
+    generate!(
+        "particle",
+        perro_static_pipeline::generate_static_particles(project_root)
+    );
+    generate!(
+        "animation",
+        perro_static_pipeline::generate_static_animations(project_root)
+    );
+    generate!(
+        "animation tree",
+        perro_static_pipeline::generate_static_animation_trees(project_root)
+    );
+    generate!(
+        "mesh",
+        perro_static_pipeline::generate_static_meshes(project_root, bake_meshlets)
+    );
+    generate!(
+        "skeleton",
+        perro_static_pipeline::generate_static_skeletons(project_root)
+    );
+    generate!(
+        "texture",
+        perro_static_pipeline::generate_static_textures(project_root)
+    );
+    generate!(
+        "shader",
+        perro_static_pipeline::generate_static_shaders(project_root)
+    );
+    generate!(
+        "audio",
+        perro_static_pipeline::generate_static_audios(project_root)
+    );
+    generate!(
+        "csv",
+        perro_static_pipeline::generate_static_csvs(project_root)
+    );
+    generate!(
+        "localization",
+        perro_static_pipeline::generate_empty_localizations(project_root)
+    );
+    Ok(())
 }

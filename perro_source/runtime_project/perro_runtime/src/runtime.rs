@@ -8,7 +8,7 @@ use perro_ids::{MaterialID, MeshID, NodeID, TextureID};
 use perro_input_api::InputSnapshot;
 use perro_runtime_api::sub_apis::{PreloadedSceneID, WindowRequest};
 use perro_scene::Scene;
-use perro_scripting::{ScriptAPI, ScriptBehavior, ScriptConstructor};
+use perro_scripting::{DynamicScriptConstructor, ScriptAPI, ScriptBehavior, ScriptConstructor};
 use std::time::Duration;
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
@@ -58,9 +58,24 @@ impl ScriptAPI for RuntimeScriptApi {
     type RS = RuntimeResourceApi;
     type IP = InputSnapshot;
 }
-type RuntimeScriptCtor = ScriptConstructor<RuntimeScriptApi>;
-type RuntimeScriptBehavior = dyn ScriptBehavior<RuntimeScriptApi>;
-type StaticScriptRegistry = &'static [(u64, RuntimeScriptCtor)];
+pub(crate) type RuntimeScriptBehavior = dyn ScriptBehavior<RuntimeScriptApi>;
+type StaticScriptRegistry = &'static [(u64, ScriptConstructor<RuntimeScriptApi>)];
+
+#[derive(Clone, Copy)]
+pub(crate) enum RuntimeScriptCtor {
+    Static(ScriptConstructor<RuntimeScriptApi>),
+    Dynamic(DynamicScriptConstructor<RuntimeScriptApi>),
+}
+
+impl RuntimeScriptCtor {
+    #[inline]
+    pub(crate) fn call(self) -> *mut RuntimeScriptBehavior {
+        match self {
+            Self::Static(ctor) => ctor(),
+            Self::Dynamic(ctor) => ctor(),
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct ForceWaterImpact2D {
@@ -710,7 +725,7 @@ impl Runtime {
                 runtime
                     .script_runtime
                     .dynamic_script_registry
-                    .insert(*path_hash, *ctor);
+                    .insert(*path_hash, RuntimeScriptCtor::Static(*ctor));
             }
         }
         #[cfg(feature = "steamworks")]

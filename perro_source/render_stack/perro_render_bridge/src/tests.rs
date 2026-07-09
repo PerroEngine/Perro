@@ -57,3 +57,71 @@ fn tileset_binary_rejects_hostile_tile_count_no_huge_alloc() {
 
     assert!(decode_tileset_2d_binary(&bytes).is_none());
 }
+
+#[test]
+fn tileset_binary_rejects_non_finite_or_non_positive_geometry() {
+    let base = TileSet2D {
+        texture: "res://tiles/world.png".into(),
+        tile_size: [16.0, 16.0],
+        columns: 1,
+        rows: 1,
+        tiles: vec![TileSetTile2D {
+            id: 1,
+            atlas: [0, 0],
+            collision: true,
+            collision_shape: TileSetCollisionShape2D::Auto,
+        }]
+        .into(),
+    };
+
+    for invalid_size in [
+        [f32::NAN, 16.0],
+        [f32::INFINITY, 16.0],
+        [16.0, f32::NEG_INFINITY],
+        [0.0, 16.0],
+    ] {
+        let mut tileset = base.clone();
+        tileset.tile_size = invalid_size;
+        assert!(decode_tileset_2d_binary(&encode_tileset_2d_binary(&tileset)).is_none());
+    }
+
+    let invalid_shapes = [
+        TileSetCollisionShape2D::Shape {
+            shape: TileSetShape2D::Rect {
+                width: f32::NAN,
+                height: 1.0,
+            },
+            offset: [0.0, 0.0],
+        },
+        TileSetCollisionShape2D::Shape {
+            shape: TileSetShape2D::Circle { radius: -1.0 },
+            offset: [0.0, 0.0],
+        },
+        TileSetCollisionShape2D::Shape {
+            shape: TileSetShape2D::Triangle {
+                width: 1.0,
+                height: f32::INFINITY,
+            },
+            offset: [0.0, 0.0],
+        },
+        TileSetCollisionShape2D::Polygon {
+            points: vec![
+                perro_structs::Vector2::new(0.0, 0.0),
+                perro_structs::Vector2::new(f32::NAN, 0.0),
+                perro_structs::Vector2::new(0.0, 1.0),
+            ]
+            .into(),
+            offset: [0.0, 0.0],
+        },
+        TileSetCollisionShape2D::Shape {
+            shape: TileSetShape2D::Circle { radius: 1.0 },
+            offset: [f32::INFINITY, 0.0],
+        },
+    ];
+
+    for invalid_shape in invalid_shapes {
+        let mut tileset = base.clone();
+        tileset.tiles.to_mut()[0].collision_shape = invalid_shape;
+        assert!(decode_tileset_2d_binary(&encode_tileset_2d_binary(&tileset)).is_none());
+    }
+}

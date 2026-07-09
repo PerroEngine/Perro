@@ -38,7 +38,9 @@ use std::{
     collections::HashMap,
     fmt::Write as _,
     fs,
+    marker::PhantomData,
     path::{Path, PathBuf},
+    rc::Rc,
 };
 
 const PERRO_DIR: &str = ".perro";
@@ -64,6 +66,38 @@ fn current_overrides() -> Option<StaticPipelineOverrides> {
     STATIC_PIPELINE_OVERRIDES.with(|slot| slot.borrow().clone())
 }
 
+/// Replace static pipeline paths for the current thread until the guard drops.
+///
+/// Guards restore the prior override, so nested pipeline work and early returns
+/// do not leak paths into later builds. The guard cannot move to another thread.
+#[must_use = "dropping the guard restores the prior static pipeline paths"]
+pub struct StaticPipelineOverrideGuard {
+    previous: Option<StaticPipelineOverrides>,
+    _not_send: PhantomData<Rc<()>>,
+}
+
+pub fn push_static_pipeline_overrides(
+    overrides: StaticPipelineOverrides,
+) -> StaticPipelineOverrideGuard {
+    let previous = STATIC_PIPELINE_OVERRIDES.with(|slot| slot.replace(Some(overrides)));
+    StaticPipelineOverrideGuard {
+        previous,
+        _not_send: PhantomData,
+    }
+}
+
+impl Drop for StaticPipelineOverrideGuard {
+    fn drop(&mut self) {
+        STATIC_PIPELINE_OVERRIDES.with(|slot| {
+            *slot.borrow_mut() = self.previous.take();
+        });
+    }
+}
+
+/// Set static pipeline paths for the current thread without scoped restoration.
+///
+/// Prefer [`push_static_pipeline_overrides`] for build work that can return or
+/// panic before a matching reset.
 pub fn set_static_pipeline_overrides(overrides: Option<StaticPipelineOverrides>) {
     STATIC_PIPELINE_OVERRIDES.with(|slot| {
         *slot.borrow_mut() = overrides;
@@ -241,6 +275,10 @@ pub fn write_static_mod_rs(project_root: &Path) -> Result<(), StaticPipelineErro
 
 #[cfg(test)]
 mod tests {
+    use super::{
+        StaticPipelineOverrides, current_overrides, push_static_pipeline_overrides,
+        set_static_pipeline_overrides,
+    };
     use perro_animation::{AnimationClip, AnimationTreeAsset};
     use perro_nodes::NodeType;
     use perro_render_bridge::{
@@ -259,6 +297,54 @@ mod tests {
 
     const ITEM_COUNT: usize = 16;
     const ITERATIONS: usize = 20_000;
+
+    fn test_overrides(name: &str) -> StaticPipelineOverrides {
+        StaticPipelineOverrides {
+            res_dir: format!("{name}/res").into(),
+            static_dir: format!("{name}/static").into(),
+            embedded_dir: format!("{name}/embedded").into(),
+            asset_prefix: format!("{name}://"),
+        }
+    }
+
+    #[test]
+    fn static_pipeline_override_guards_restore_nested_paths() {
+        set_static_pipeline_overrides(None);
+        let outer = push_static_pipeline_overrides(test_overrides("outer"));
+        assert_eq!(
+            current_overrides().expect("outer override").asset_prefix,
+            "outer://"
+        );
+
+        {
+            let _inner = push_static_pipeline_overrides(test_overrides("inner"));
+            assert_eq!(
+                current_overrides().expect("inner override").asset_prefix,
+                "inner://"
+            );
+        }
+
+        assert_eq!(
+            current_overrides()
+                .expect("restored outer override")
+                .asset_prefix,
+            "outer://"
+        );
+        drop(outer);
+        assert!(current_overrides().is_none());
+    }
+
+    #[test]
+    fn static_pipeline_override_guard_restores_after_panic() {
+        set_static_pipeline_overrides(None);
+        let result = std::panic::catch_unwind(|| {
+            let _guard = push_static_pipeline_overrides(test_overrides("panic"));
+            panic!("test panic");
+        });
+
+        assert!(result.is_err());
+        assert!(current_overrides().is_none());
+    }
 
     #[test]
     #[ignore = "bench probe; run with --release --ignored --nocapture"]

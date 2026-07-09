@@ -106,20 +106,20 @@ fn write_dlc_pack_lib(
     src.push_str("    pub particle_lookup: extern \"C\" fn(u64) -> *const ParticleProfile3D,\n");
     src.push_str("    pub animation_lookup: extern \"C\" fn(u64) -> *const AnimationClip,\n");
     src.push_str(
-        "    pub mesh_lookup: extern \"C\" fn(u64, *mut *const u8, *mut usize) -> bool,\n",
+        "    pub mesh_lookup: unsafe extern \"C\" fn(u64, *mut *const u8, *mut usize) -> bool,\n",
     );
-    src.push_str("    pub collision_trimesh_lookup: extern \"C\" fn(u64, *mut *const u8, *mut usize) -> bool,\n");
+    src.push_str("    pub collision_trimesh_lookup: unsafe extern \"C\" fn(u64, *mut *const u8, *mut usize) -> bool,\n");
     src.push_str(
-        "    pub skeleton_lookup: extern \"C\" fn(u64, *mut *const u8, *mut usize) -> bool,\n",
-    );
-    src.push_str(
-        "    pub texture_lookup: extern \"C\" fn(u64, *mut *const u8, *mut usize) -> bool,\n",
+        "    pub skeleton_lookup: unsafe extern \"C\" fn(u64, *mut *const u8, *mut usize) -> bool,\n",
     );
     src.push_str(
-        "    pub shader_lookup: extern \"C\" fn(u64, *mut *const u8, *mut usize) -> bool,\n",
+        "    pub texture_lookup: unsafe extern \"C\" fn(u64, *mut *const u8, *mut usize) -> bool,\n",
     );
     src.push_str(
-        "    pub audio_lookup: extern \"C\" fn(u64, *mut *const u8, *mut usize) -> bool,\n",
+        "    pub shader_lookup: unsafe extern \"C\" fn(u64, *mut *const u8, *mut usize) -> bool,\n",
+    );
+    src.push_str(
+        "    pub audio_lookup: unsafe extern \"C\" fn(u64, *mut *const u8, *mut usize) -> bool,\n",
     );
     src.push_str("    pub assets_ptr: extern \"C\" fn() -> *const u8,\n");
     src.push_str("    pub assets_len: extern \"C\" fn() -> usize,\n");
@@ -145,7 +145,7 @@ fn write_dlc_pack_lib(
         "static DLC_PACK_ASSETS_PERRO: &[u8] = include_bytes!(\"../embedded/assets.perro\");\n\n",
     );
     src.push_str(
-        "fn write_bytes_out(bytes: &'static [u8], data_out: *mut *const u8, len_out: *mut usize) -> bool {\n",
+        "unsafe fn write_bytes_out(bytes: &'static [u8], data_out: *mut *const u8, len_out: *mut usize) -> bool {\n",
     );
     src.push_str(
         "    if data_out.is_null() || len_out.is_null() {\n        return false;\n    }\n",
@@ -153,9 +153,9 @@ fn write_dlc_pack_lib(
     src.push_str("    // SAFETY: Null checks above ensure output ptrs are writable for this call.\n    unsafe {\n        *data_out = bytes.as_ptr();\n        *len_out = bytes.len();\n    }\n");
     src.push_str("    true\n}\n\n");
     src.push_str(
-        "fn write_str_out(text: &'static str, data_out: *mut *const u8, len_out: *mut usize) -> bool {\n",
+        "unsafe fn write_str_out(text: &'static str, data_out: *mut *const u8, len_out: *mut usize) -> bool {\n",
     );
-    src.push_str("    write_bytes_out(text.as_bytes(), data_out, len_out)\n}\n\n");
+    src.push_str("    // SAFETY: Caller upholds this helper's output-pointer contract.\n    unsafe { write_bytes_out(text.as_bytes(), data_out, len_out) }\n}\n\n");
     src.push_str(
         "#[unsafe(no_mangle)]\npub extern \"C\" fn perro_dlc_pack_assets_ptr() -> *const u8 {\n    DLC_PACK_ASSETS_PERRO.as_ptr()\n}\n\n",
     );
@@ -175,22 +175,22 @@ fn write_dlc_pack_lib(
         "#[unsafe(no_mangle)]\npub extern \"C\" fn perro_dlc_pack_lookup_animation(path_hash: u64) -> *const AnimationClip {\n    static_assets::animations::lookup_animation(path_hash) as *const AnimationClip\n}\n\n",
     );
     src.push_str(
-        "#[unsafe(no_mangle)]\npub extern \"C\" fn perro_dlc_pack_lookup_mesh(path_hash: u64, data_out: *mut *const u8, len_out: *mut usize) -> bool {\n    write_bytes_out(static_assets::meshes::lookup_mesh(path_hash), data_out, len_out)\n}\n\n",
+        "#[unsafe(no_mangle)]\n/// # Safety\n/// Output pointers must be non-null, writable, and valid for this call.\npub unsafe extern \"C\" fn perro_dlc_pack_lookup_mesh(path_hash: u64, data_out: *mut *const u8, len_out: *mut usize) -> bool {\n    // SAFETY: Caller contract supplies valid output pointers.\n    unsafe { write_bytes_out(static_assets::meshes::lookup_mesh(path_hash), data_out, len_out) }\n}\n\n",
     );
     src.push_str(
-        "#[unsafe(no_mangle)]\npub extern \"C\" fn perro_dlc_pack_lookup_collision_trimesh(path_hash: u64, data_out: *mut *const u8, len_out: *mut usize) -> bool {\n    write_bytes_out(static_assets::collision_trimeshes::lookup_collision_trimesh(path_hash), data_out, len_out)\n}\n\n",
+        "#[unsafe(no_mangle)]\n/// # Safety\n/// Output pointers must be non-null, writable, and valid for this call.\npub unsafe extern \"C\" fn perro_dlc_pack_lookup_collision_trimesh(path_hash: u64, data_out: *mut *const u8, len_out: *mut usize) -> bool {\n    // SAFETY: Caller contract supplies valid output pointers.\n    unsafe { write_bytes_out(static_assets::collision_trimeshes::lookup_collision_trimesh(path_hash), data_out, len_out) }\n}\n\n",
     );
     src.push_str(
-        "#[unsafe(no_mangle)]\npub extern \"C\" fn perro_dlc_pack_lookup_skeleton(path_hash: u64, data_out: *mut *const u8, len_out: *mut usize) -> bool {\n    write_bytes_out(static_assets::skeletons::lookup_skeleton(path_hash), data_out, len_out)\n}\n\n",
+        "#[unsafe(no_mangle)]\n/// # Safety\n/// Output pointers must be non-null, writable, and valid for this call.\npub unsafe extern \"C\" fn perro_dlc_pack_lookup_skeleton(path_hash: u64, data_out: *mut *const u8, len_out: *mut usize) -> bool {\n    // SAFETY: Caller contract supplies valid output pointers.\n    unsafe { write_bytes_out(static_assets::skeletons::lookup_skeleton(path_hash), data_out, len_out) }\n}\n\n",
     );
     src.push_str(
-        "#[unsafe(no_mangle)]\npub extern \"C\" fn perro_dlc_pack_lookup_texture(path_hash: u64, data_out: *mut *const u8, len_out: *mut usize) -> bool {\n    write_bytes_out(static_assets::textures::lookup_texture(path_hash), data_out, len_out)\n}\n\n",
+        "#[unsafe(no_mangle)]\n/// # Safety\n/// Output pointers must be non-null, writable, and valid for this call.\npub unsafe extern \"C\" fn perro_dlc_pack_lookup_texture(path_hash: u64, data_out: *mut *const u8, len_out: *mut usize) -> bool {\n    // SAFETY: Caller contract supplies valid output pointers.\n    unsafe { write_bytes_out(static_assets::textures::lookup_texture(path_hash), data_out, len_out) }\n}\n\n",
     );
     src.push_str(
-        "#[unsafe(no_mangle)]\npub extern \"C\" fn perro_dlc_pack_lookup_audio(path_hash: u64, data_out: *mut *const u8, len_out: *mut usize) -> bool {\n    write_bytes_out(static_assets::audios::lookup_audio(path_hash), data_out, len_out)\n}\n\n",
+        "#[unsafe(no_mangle)]\n/// # Safety\n/// Output pointers must be non-null, writable, and valid for this call.\npub unsafe extern \"C\" fn perro_dlc_pack_lookup_audio(path_hash: u64, data_out: *mut *const u8, len_out: *mut usize) -> bool {\n    // SAFETY: Caller contract supplies valid output pointers.\n    unsafe { write_bytes_out(static_assets::audios::lookup_audio(path_hash), data_out, len_out) }\n}\n\n",
     );
     src.push_str(
-        "#[unsafe(no_mangle)]\npub extern \"C\" fn perro_dlc_pack_lookup_shader(path_hash: u64, data_out: *mut *const u8, len_out: *mut usize) -> bool {\n    write_str_out(static_assets::shaders::lookup_shader(path_hash), data_out, len_out)\n}\n\n",
+        "#[unsafe(no_mangle)]\n/// # Safety\n/// Output pointers must be non-null, writable, and valid for this call.\npub unsafe extern \"C\" fn perro_dlc_pack_lookup_shader(path_hash: u64, data_out: *mut *const u8, len_out: *mut usize) -> bool {\n    // SAFETY: Caller contract supplies valid output pointers.\n    unsafe { write_str_out(static_assets::shaders::lookup_shader(path_hash), data_out, len_out) }\n}\n\n",
     );
     src.push_str("pub fn perro_dlc_pack_lookup_typed(path_hash: u64) -> Option<&'static [u8]> {\n");
     src.push_str("    let bytes = static_assets::textures::lookup_texture(path_hash);\n    if !bytes.is_empty() {\n        return Some(bytes);\n    }\n");
@@ -201,7 +201,7 @@ fn write_dlc_pack_lib(
     src.push_str("    let shader = static_assets::shaders::lookup_shader(path_hash);\n    if !shader.is_empty() {\n        return Some(shader.as_bytes());\n    }\n");
     src.push_str("    None\n}\n\n");
     src.push_str(
-        "#[unsafe(no_mangle)]\npub extern \"C\" fn perro_dlc_pack_lookup(path_hash: u64, data_out: *mut *const u8, len_out: *mut usize) -> bool {\n",
+        "#[unsafe(no_mangle)]\n/// # Safety\n/// Output pointers must be non-null, writable, and valid for this call.\npub unsafe extern \"C\" fn perro_dlc_pack_lookup(path_hash: u64, data_out: *mut *const u8, len_out: *mut usize) -> bool {\n",
     );
     src.push_str(
         "    if data_out.is_null() || len_out.is_null() {\n        return false;\n    }\n",
@@ -277,9 +277,24 @@ fn resolve_compiled_dylib(
 fn default_scripts_lib_rs() -> String {
     r#"use perro_runtime::RuntimeScriptApi;
 use perro_api::scripting::ScriptConstructor;
+#[cfg(feature = "dynamic-scripts")]
+use perro_runtime::SCRIPT_ABI_BUILD_FINGERPRINT;
+#[cfg(feature = "dynamic-scripts")]
+use perro_api::scripting::{ScriptAbiDescriptor, ScriptAbiDescriptorHeader};
 
 pub static SCRIPT_REGISTRY: &[(u64, ScriptConstructor<RuntimeScriptApi>)] = &[];
 
+#[cfg(feature = "dynamic-scripts")]
+static PERRO_SCRIPT_ABI_DESCRIPTOR_V2: ScriptAbiDescriptor =
+    ScriptAbiDescriptor::v2(SCRIPT_ABI_BUILD_FINGERPRINT);
+
+#[cfg(feature = "dynamic-scripts")]
+#[unsafe(no_mangle)]
+pub extern "C" fn perro_script_abi_descriptor_v2() -> *const ScriptAbiDescriptorHeader {
+    std::ptr::addr_of!(PERRO_SCRIPT_ABI_DESCRIPTOR_V2).cast()
+}
+
+#[cfg(feature = "dynamic-scripts")]
 #[unsafe(no_mangle)]
 pub extern "C" fn perro_scripts_init() {}
 "#
@@ -379,23 +394,19 @@ fn generate_dlc_static_assets(
         embedded_dir: embedded_root.clone(),
         asset_prefix: format!("dlc://{dlc_name}/"),
     };
-    perro_static_pipeline::set_static_pipeline_overrides(Some(overrides));
-    let bake_result = (|| -> Result<(), CompilerError> {
-        let cfg = load_project_toml(project_root)
-            .map_err(|e| CompilerError::SceneParse(format!("failed to load project.toml: {e}")))?;
-        generate_dlc_static_modules(project_root, cfg.meshlets)?;
-        perro_static_pipeline::write_static_mod_rs(project_root)
-            .map_err(|e| CompilerError::SceneParse(e.to_string()))?;
-        build_perro_assets_archive(
-            &embedded_root.join("assets.perro"),
-            dlc_root,
-            project_root,
-            &[],
-        )?;
-        Ok(())
-    })();
-    perro_static_pipeline::set_static_pipeline_overrides(None);
-    bake_result
+    let _override_guard = perro_static_pipeline::push_static_pipeline_overrides(overrides);
+    let cfg = load_project_toml(project_root)
+        .map_err(|e| CompilerError::SceneParse(format!("failed to load project.toml: {e}")))?;
+    generate_dlc_static_modules(project_root, cfg.meshlets)?;
+    perro_static_pipeline::write_static_mod_rs(project_root)
+        .map_err(|e| CompilerError::SceneParse(e.to_string()))?;
+    build_perro_assets_archive(
+        &embedded_root.join("assets.perro"),
+        dlc_root,
+        project_root,
+        &[],
+    )?;
+    Ok(())
 }
 
 pub fn compile_dlc_bundle(project_root: &Path, dlc_name: &str) -> Result<PathBuf, CompilerError> {
@@ -422,7 +433,7 @@ pub fn compile_dlc_bundle(project_root: &Path, dlc_name: &str) -> Result<PathBuf
     write_string_if_changed(&scripts_src.join("lib.rs"), &default_scripts_lib_rs())?;
 
     let _ = sync_dlc_scripts(project_root, dlc_name)?;
-    compile_dlc_package_crate(project_root, &scripts_crate)?;
+    compile_dlc_package_crate(project_root, &scripts_crate, true)?;
     let output_dylib_name = scripts_dylib_name();
     let dylib = resolve_compiled_dylib(
         project_root,
@@ -436,7 +447,7 @@ pub fn compile_dlc_bundle(project_root: &Path, dlc_name: &str) -> Result<PathBuf
     write_dlc_pack_manifest(project_root, &pack_crate_name, &pack_dir)?;
     generate_dlc_static_assets(project_root, dlc_name, &dlc_root, &pack_dir)?;
     write_dlc_pack_lib(project_root, dlc_name, &dlc_root, &pack_dir)?;
-    compile_dlc_package_crate(project_root, &pack_dir)?;
+    compile_dlc_package_crate(project_root, &pack_dir, false)?;
     let pack_dylib_name = runtime_pack_dylib_name();
     let built_pack_dylib = resolve_compiled_dylib(
         project_root,

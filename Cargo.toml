@@ -103,6 +103,14 @@ default-members = [
 
 resolver = "3"
 
+[workspace.package]
+edition = "2024"
+rust-version = "1.85.0"
+license = "Apache-2.0"
+repository = "https://github.com/PerroEngine/Perro"
+homepage = "https://www.perroengine.com"
+readme = "README.md"
+
 [workspace.dependencies]
 perro_api = { version = "0.1.0", path = "perro_source/api_modules/perro_api" }
 perro_input_api = { version = "0.1.0", path = "perro_source/api_modules/perro_input_api" }

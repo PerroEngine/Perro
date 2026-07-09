@@ -1,3 +1,5 @@
+use std::fmt;
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Token<'a> {
     Ident(&'a str), // name, position, Sprite2D
@@ -24,6 +26,53 @@ pub enum Token<'a> {
 
     True,
     False,
+
+    Error(LexError),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Span {
+    pub start: usize,
+    pub end: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LexErrorKind {
+    MalformedNumber,
+    UnknownCharacter(char),
+    UnterminatedString,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LexError {
+    pub kind: LexErrorKind,
+    pub span: Span,
+}
+
+impl fmt::Display for LexError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let message = match self.kind {
+            LexErrorKind::MalformedNumber => "malformed number".to_string(),
+            LexErrorKind::UnknownCharacter(c) => format!("unknown character `{c}`"),
+            LexErrorKind::UnterminatedString => "unterminated string".to_string(),
+        };
+        write!(
+            f,
+            "{message} at bytes {}..{}",
+            self.span.start, self.span.end
+        )
+    }
+}
+
+impl std::error::Error for LexError {}
+
+impl LexError {
+    fn new(kind: LexErrorKind, start: usize, end: usize) -> Self {
+        Self {
+            kind,
+            span: Span { start, end },
+        }
+    }
 }
 
 pub struct Lexer<'a> {
@@ -62,7 +111,21 @@ impl<'a> Lexer<'a> {
     }
 
     pub fn next_token(&mut self) -> Token<'a> {
-        self.skip_ws();
+        loop {
+            self.skip_ws();
+            match (self.peek(), self.src[self.pos..].chars().nth(1)) {
+                (Some('#'), _) => {
+                    self.bump();
+                    self.skip_until_newline();
+                }
+                (Some('/'), Some('/')) => {
+                    self.bump();
+                    self.bump();
+                    self.skip_until_newline();
+                }
+                _ => break,
+            }
+        }
 
         let start = self.pos;
         let c = match self.bump() {
@@ -83,23 +146,11 @@ impl<'a> Lexer<'a> {
             ':' => Token::Colon,
             '[' => Token::LBracket,
             ']' => Token::RBracket,
-            '/' => {
-                // Support // line comments while preserving '/' token for closing tags.
-                if self.peek() == Some('/') {
-                    self.bump();
-                    self.skip_until_newline();
-                    return self.next_token();
-                }
-                Token::Slash
-            }
-            '#' => {
-                // Support # line comments.
-                self.skip_until_newline();
-                self.next_token()
-            }
+            '/' => Token::Slash,
 
             '"' => {
                 let mut s = String::new();
+                let mut terminated = false;
                 while let Some(c) = self.bump() {
                     if c == '\\' && self.peek() == Some('"') {
                         self.bump();
@@ -107,11 +158,20 @@ impl<'a> Lexer<'a> {
                         continue;
                     }
                     if c == '"' {
+                        terminated = true;
                         break;
                     }
                     s.push(c);
                 }
-                Token::String(s)
+                if terminated {
+                    Token::String(s)
+                } else {
+                    Token::Error(LexError::new(
+                        LexErrorKind::UnterminatedString,
+                        start,
+                        self.pos,
+                    ))
+                }
             }
 
             c if c.is_ascii_digit()
@@ -123,8 +183,12 @@ impl<'a> Lexer<'a> {
                     self.bump();
                 }
                 match self.src[start..self.pos].parse::<f32>() {
-                    Ok(v) => Token::Number(v),
-                    Err(_) => self.next_token(),
+                    Ok(v) if v.is_finite() => Token::Number(v),
+                    _ => Token::Error(LexError::new(
+                        LexErrorKind::MalformedNumber,
+                        start,
+                        self.pos,
+                    )),
                 }
             }
 
@@ -139,7 +203,61 @@ impl<'a> Lexer<'a> {
                 }
             }
 
-            _ => self.next_token(),
+            other => Token::Error(LexError::new(
+                LexErrorKind::UnknownCharacter(other),
+                start,
+                self.pos,
+            )),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reports_malformed_number_with_span() {
+        let mut lexer = Lexer::new("12.3.4]");
+        assert_eq!(
+            lexer.next_token(),
+            Token::Error(LexError {
+                kind: LexErrorKind::MalformedNumber,
+                span: Span { start: 0, end: 6 },
+            })
+        );
+        assert_eq!(lexer.next_token(), Token::RBracket);
+    }
+
+    #[test]
+    fn reports_unknown_multibyte_character_with_byte_span() {
+        let mut lexer = Lexer::new(" 🐕ok");
+        assert_eq!(
+            lexer.next_token(),
+            Token::Error(LexError {
+                kind: LexErrorKind::UnknownCharacter('🐕'),
+                span: Span { start: 1, end: 5 },
+            })
+        );
+        assert_eq!(lexer.next_token(), Token::Ident("ok"));
+    }
+
+    #[test]
+    fn reports_unterminated_string_with_span() {
+        let mut lexer = Lexer::new("\"open");
+        assert_eq!(
+            lexer.next_token(),
+            Token::Error(LexError {
+                kind: LexErrorKind::UnterminatedString,
+                span: Span { start: 0, end: 5 },
+            })
+        );
+    }
+
+    #[test]
+    fn skips_many_comments_without_recursion() {
+        let src = "# comment\n".repeat(100_000) + "done";
+        let mut lexer = Lexer::new(&src);
+        assert_eq!(lexer.next_token(), Token::Ident("done"));
     }
 }

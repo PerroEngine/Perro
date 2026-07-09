@@ -1,19 +1,99 @@
 #[cfg(test)]
 mod tests {
     use super::{
-        emit_static_steam_app_id_fn, emit_web_route_html_files, generate_call_param_binding,
-        generate_embedded_entry_files, generate_perro_assets, generate_project_static_modules,
-        module_name_from_rel, module_short_name_from_rel, native_output_artifact_name,
-        native_output_folder_name, normalize_cargo_output_paths,
-        reset_embedded_dir, sync_scripts, transpile_frontend_script,
-        target_slug_from_triple, transpiled_exports_script_ctor, ProjectBuildOptions,
-        ScriptMethodParam,
+        compile_scripts_with_profile, emit_static_steam_app_id_fn, emit_web_route_html_files,
+        generate_call_param_binding, generate_dlc_static_modules, generate_embedded_entry_files,
+        generate_perro_assets, generate_project_static_modules, module_name_from_rel,
+        module_short_name_from_rel, native_output_artifact_name, native_output_folder_name,
+        normalize_cargo_output_paths, reset_embedded_dir, sync_dlc_scripts, sync_scripts,
+        target_slug_from_triple, transpile_frontend_script, transpiled_exports_script_ctor,
+        write_scripts_lib, ProjectBuildOptions, ScriptMethodParam, ScriptsBuildProfile,
     };
     use perro_project::{
         ensure_project_layout, ensure_project_scaffold, ensure_project_toml,
         ensure_source_overrides, load_project_toml, load_routes_toml,
     };
     use perro_scene::NodeType;
+
+    fn unique_temp_path(name: &str) -> std::path::PathBuf {
+        std::env::temp_dir().join(format!(
+            "perro_compiler_{name}_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system clock")
+                .as_nanos()
+        ))
+    }
+
+    #[test]
+    fn generated_script_write_lock_times_out_when_live() {
+        let target = unique_temp_path("write_lock_live").join("script.rs");
+        let lock_path = target.with_extension("write-lock");
+        std::fs::create_dir_all(&lock_path).expect("create live lock");
+
+        let err = match super::WriteLock::acquire_with_policy(
+            &target,
+            std::time::Duration::ZERO,
+            std::time::Duration::MAX,
+        ) {
+            Ok(_) => panic!("live lock must time out"),
+            Err(err) => err,
+        };
+
+        assert_eq!(err.kind(), std::io::ErrorKind::TimedOut);
+        std::fs::remove_dir_all(target.parent().expect("temp parent")).expect("remove fixture");
+    }
+
+    #[test]
+    fn generated_script_write_lock_reclaims_stale_lock() {
+        let target = unique_temp_path("write_lock_stale").join("script.rs");
+        let lock_path = target.with_extension("write-lock");
+        std::fs::create_dir_all(&lock_path).expect("create stale lock");
+
+        let guard = super::WriteLock::acquire_with_policy(
+            &target,
+            std::time::Duration::ZERO,
+            std::time::Duration::ZERO,
+        )
+        .expect("reclaim stale lock");
+
+        assert!(lock_path.is_dir());
+        drop(guard);
+        assert!(!lock_path.exists());
+        std::fs::remove_dir_all(target.parent().expect("temp parent")).expect("remove fixture");
+    }
+
+    #[test]
+    fn dlc_pack_pointer_callbacks_require_unsafe_calls() {
+        let pack_dir = unique_temp_path("dlc_pack_unsafe_callbacks");
+        super::write_dlc_pack_lib(
+            std::path::Path::new("project"),
+            "Expansion",
+            std::path::Path::new("dlc"),
+            &pack_dir,
+        )
+        .expect("write pack source");
+        let source = std::fs::read_to_string(pack_dir.join("src/lib.rs"))
+            .expect("read generated pack source");
+
+        for callback in [
+            "perro_dlc_pack_lookup_mesh",
+            "perro_dlc_pack_lookup_collision_trimesh",
+            "perro_dlc_pack_lookup_skeleton",
+            "perro_dlc_pack_lookup_texture",
+            "perro_dlc_pack_lookup_audio",
+            "perro_dlc_pack_lookup_shader",
+            "perro_dlc_pack_lookup",
+        ] {
+            assert!(
+                source.contains(&format!("pub unsafe extern \"C\" fn {callback}")),
+                "safe raw-pointer callback emitted for {callback}"
+            );
+        }
+        assert!(source.contains("pub mesh_lookup: unsafe extern \"C\" fn"));
+        std::fs::remove_dir_all(pack_dir).expect("remove fixture");
+    }
 
     fn assert_methods_emitted(transpiled: &str, expected_method_names: &[&str]) {
         assert!(
@@ -36,6 +116,32 @@ mod tests {
                 "missing call_method arm for {method_name}"
             );
         }
+    }
+
+    #[test]
+    fn dlc_script_sync_rejects_names_that_escape_or_corrupt_generated_paths() {
+        let root = unique_temp_dir("perro_compiler_invalid_dlc_name");
+        std::fs::create_dir_all(&root).unwrap();
+
+        for name in [
+            "",
+            ".",
+            "..",
+            "../escape",
+            "..\\escape",
+            "self",
+            "SELF",
+            "bad\"name",
+            "bad\nname",
+        ] {
+            assert!(
+                sync_dlc_scripts(&root, name).is_err(),
+                "accepted `{name:?}`"
+            );
+        }
+
+        assert!(!root.join(".perro/escape").exists());
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
@@ -94,10 +200,7 @@ mod tests {
         let crate_dir = project.join(".perro/scripts");
         let input = "src\\scripts\\../../../../res/scripts/game_manager.rs:1929:68: error: bad\n";
         let out = normalize_cargo_output_paths(project, Some(&crate_dir), input);
-        assert_eq!(
-            out,
-            "res/scripts/game_manager.rs:1929:68: error: bad\n"
-        );
+        assert_eq!(out, "res/scripts/game_manager.rs:1929:68: error: bad\n");
     }
 
     #[test]
@@ -181,10 +284,16 @@ lifecycle!({
 
         let transpiled = transpile_frontend_script(source, "res://tests/player.rs");
         assert!(transpiled.contains("Box::new(<PlayerState as Default>::default())"));
-        assert!(transpiled.contains("const __PERRO_VAR_HEALTH: ScriptMemberID = var!(\"health\");"));
+        assert!(
+            transpiled.contains("const __PERRO_VAR_HEALTH: ScriptMemberID = var!(\"health\");")
+        );
         assert!(transpiled.contains("const __PERRO_VAR_SPEED: ScriptMemberID = var!(\"speed\");"));
-        assert!(transpiled.contains("const __PERRO_VAR_VELOCITY: ScriptMemberID = var!(\"velocity\");"));
-        assert!(transpiled.contains("const __PERRO_VAR_GROUNDED: ScriptMemberID = var!(\"grounded\");"));
+        assert!(
+            transpiled.contains("const __PERRO_VAR_VELOCITY: ScriptMemberID = var!(\"velocity\");")
+        );
+        assert!(
+            transpiled.contains("const __PERRO_VAR_GROUNDED: ScriptMemberID = var!(\"grounded\");")
+        );
     }
 
     #[test]
@@ -381,6 +490,29 @@ pub fn mix(a: f32, b: f32) -> f32 {
     }
 
     #[test]
+    fn generated_scripts_lib_exports_v2_abi_descriptor() {
+        let root = unique_temp_dir("perro_compiler_script_abi_descriptor");
+        let src = root.join("src");
+        write_scripts_lib(
+            &src,
+            &["player.rs".to_string()],
+            &["player.rs".to_string()],
+            "res://",
+        )
+        .expect("write scripts lib");
+        let generated = std::fs::read_to_string(src.join("lib.rs")).expect("read scripts lib");
+
+        assert!(generated.contains("perro_script_abi_descriptor_v2"));
+        assert!(generated.contains("ScriptAbiDescriptor::v2(SCRIPT_ABI_BUILD_FINGERPRINT)"));
+        assert!(generated.contains("-> *const ScriptAbiDescriptorHeader"));
+        assert!(generated.contains("#[cfg(feature = \"dynamic-scripts\")]"));
+        assert!(generated.contains("DYNAMIC_SCRIPT_REGISTRY"));
+        assert!(generated.contains("perro_create_script_dynamic as DynamicScriptConstructor"));
+
+        std::fs::remove_dir_all(root).expect("remove script ABI fixture");
+    }
+
+    #[test]
     fn state_script_exports_ctor() {
         let source = r#"
 use perro_api::prelude::*;
@@ -397,6 +529,8 @@ pub struct StateOnly {
             transpiled_exports_script_ctor(&transpiled),
             "state-backed scripts should register constructors"
         );
+        assert!(transpiled.contains("pub(crate) fn perro_create_script()"));
+        assert!(transpiled.contains("extern \"C\" fn perro_create_script_dynamic()"));
     }
 
     #[test]
@@ -515,9 +649,9 @@ lifecycle!({});
 
         let transpiled = transpile_frontend_script(source, "all_variant_types.rs");
         assert!(transpiled.contains("__perro_apply_nested_object"));
-        assert!(transpiled.contains(
-            "<ActorRefs as perro_api::variant::VariantSchema>::field_names()"
-        ));
+        assert!(
+            transpiled.contains("<ActorRefs as perro_api::variant::VariantSchema>::field_names()")
+        );
         assert_generated_script_compiles(source, &transpiled);
     }
 
@@ -772,8 +906,12 @@ lifecycle!({});
         assert!(!transpiled.contains("unsafe fn __perro_state_ref"));
         assert!(!transpiled.contains("unsafe fn __perro_state_mut"));
         assert!(!transpiled.contains("std::any::TypeId::of"));
-        assert!(transpiled.contains("perro_api::scripting::state_ref_unchecked::<AllVariantState>"));
-        assert!(transpiled.contains("perro_api::scripting::state_mut_unchecked::<AllVariantState>"));
+        assert!(
+            transpiled.contains("perro_api::scripting::state_ref_unchecked::<AllVariantState>")
+        );
+        assert!(
+            transpiled.contains("perro_api::scripting::state_mut_unchecked::<AllVariantState>")
+        );
         assert!(transpiled.contains("value.clone().into_parse::<NestedCombo>()"));
         assert!(transpiled.contains("fn __perro_set_nested_var"));
         assert_generated_script_compiles(source, &transpiled);
@@ -801,6 +939,53 @@ lifecycle!({});
         assert_generated_native_main_hides_windows_console(&root);
 
         assert_project_crate_checks(&root, ProjectBuildOptions::new(false, true));
+    }
+
+    #[test]
+    fn dlc_static_generators_keep_thread_local_pack_paths() {
+        let root = unique_temp_dir("perro_compiler_dlc_static_paths");
+        let dlc_root = root.join("dlcs").join("fixture");
+        let static_dir = root.join("pack").join("src").join("static");
+        let embedded_dir = root.join("pack").join("embedded");
+        std::fs::create_dir_all(dlc_root.join("shaders")).expect("shader dir");
+        std::fs::write(
+            dlc_root.join("shaders").join("fixture.wgsl"),
+            "@fragment\nfn fs_main() -> @location(0) vec4<f32> { return vec4<f32>(1.0); }\n",
+        )
+        .expect("write shader");
+
+        perro_static_pipeline::set_static_pipeline_overrides(Some(
+            perro_static_pipeline::StaticPipelineOverrides {
+                res_dir: dlc_root,
+                static_dir: static_dir.clone(),
+                embedded_dir,
+                asset_prefix: "dlc://fixture/".to_string(),
+            },
+        ));
+        let result = generate_dlc_static_modules(&root, false);
+        perro_static_pipeline::set_static_pipeline_overrides(None);
+        result.expect("generate dlc static modules");
+
+        let shaders =
+            std::fs::read_to_string(static_dir.join("shaders.rs")).expect("read dlc shaders");
+        assert!(shaders.contains("dlc://fixture/shaders/fixture.wgsl"));
+        assert!(!root.join(".perro").join("project").exists());
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    #[ignore = "spawns nested cargo build; run in CI slow job via --ignored"]
+    fn generated_dynamic_scripts_crate_compiles_with_abi_feature() {
+        let root = unique_temp_dir("perro_compiler_dynamic_scripts_check");
+        ensure_project_layout(&root).expect("layout");
+        ensure_project_toml(&root, "Generated Dynamic Scripts").expect("project toml");
+        ensure_project_scaffold(&root, "Generated Dynamic Scripts").expect("scaffold");
+        create_static_embed_fixture(&root);
+
+        compile_scripts_with_profile(&root, ScriptsBuildProfile::Debug)
+            .expect("compile dynamic scripts");
+
+        std::fs::remove_dir_all(root).expect("cleanup dynamic scripts fixture");
     }
 
     #[test]
@@ -1101,7 +1286,10 @@ rest_rot_deg = 0
         .expect("read static scenes");
         for node_type in NodeType::ALL {
             let needle = format!("NodeType::{node_type}");
-            assert!(scenes.contains(&needle), "missing `{needle}` in static scene fixture");
+            assert!(
+                scenes.contains(&needle),
+                "missing `{needle}` in static scene fixture"
+            );
         }
     }
 

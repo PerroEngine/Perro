@@ -67,6 +67,66 @@ fn texture_id_generational() {
 }
 
 #[test]
+fn generational_id_parse_accepts_documented_hex_forms() {
+    assert_eq!("1".parse::<NodeID>(), Ok(NodeID::from_u64(1)));
+    assert_eq!(
+        NodeID::parse_str("0x0123456789abcdef"),
+        Ok(NodeID::from_u64(0x0123_4567_89ab_cdef))
+    );
+    assert_eq!(
+        "01234567-89ABCDEF".parse::<TextureID>(),
+        Ok(TextureID::from_u64(0x0123_4567_89ab_cdef))
+    );
+    assert_eq!(
+        "ffffffffffffffff".parse::<MaterialID>(),
+        Ok(MaterialID::from_u64(u64::MAX))
+    );
+}
+
+#[test]
+fn generational_id_parse_rejects_malformed_input() {
+    for malformed in [
+        "",
+        "0x",
+        "10000000000000000",
+        "0x10000000000000000",
+        "1-2",
+        "-0123456789abcdef",
+        "0123456789abcdef-",
+        "01234567--89abcdef",
+        "01234567-89abcdef-",
+        "0123456g",
+    ] {
+        assert!(
+            malformed.parse::<NodeID>().is_err(),
+            "accepted malformed ID: {malformed}"
+        );
+        assert!(
+            TextureID::parse_str(malformed).is_err(),
+            "accepted malformed ID: {malformed}"
+        );
+    }
+
+    assert_eq!("".parse::<NodeID>(), Err(ParseGenerationalIDError::Empty));
+    assert_eq!(
+        "10000000000000000".parse::<NodeID>(),
+        Err(ParseGenerationalIDError::TooLong)
+    );
+    assert_eq!(
+        "1-2".parse::<NodeID>(),
+        Err(ParseGenerationalIDError::MisplacedSeparator)
+    );
+    assert_eq!(
+        "not-hex".parse::<NodeID>(),
+        Err(ParseGenerationalIDError::MisplacedSeparator)
+    );
+    assert_eq!(
+        "xyz".parse::<NodeID>(),
+        Err(ParseGenerationalIDError::InvalidHex)
+    );
+}
+
+#[test]
 fn signal_id_from_string_deterministic() {
     let a = SignalID::from_string("on_damage");
     let b = SignalID::from_string("on_damage");
