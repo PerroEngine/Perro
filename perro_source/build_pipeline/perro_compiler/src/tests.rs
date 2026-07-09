@@ -64,6 +64,37 @@ mod tests {
         std::fs::remove_dir_all(target.parent().expect("temp parent")).expect("remove fixture");
     }
 
+    #[test]
+    fn dlc_pack_pointer_callbacks_require_unsafe_calls() {
+        let pack_dir = unique_temp_path("dlc_pack_unsafe_callbacks");
+        super::write_dlc_pack_lib(
+            std::path::Path::new("project"),
+            "Expansion",
+            std::path::Path::new("dlc"),
+            &pack_dir,
+        )
+        .expect("write pack source");
+        let source = std::fs::read_to_string(pack_dir.join("src/lib.rs"))
+            .expect("read generated pack source");
+
+        for callback in [
+            "perro_dlc_pack_lookup_mesh",
+            "perro_dlc_pack_lookup_collision_trimesh",
+            "perro_dlc_pack_lookup_skeleton",
+            "perro_dlc_pack_lookup_texture",
+            "perro_dlc_pack_lookup_audio",
+            "perro_dlc_pack_lookup_shader",
+            "perro_dlc_pack_lookup",
+        ] {
+            assert!(
+                source.contains(&format!("pub unsafe extern \"C\" fn {callback}")),
+                "safe raw-pointer callback emitted for {callback}"
+            );
+        }
+        assert!(source.contains("pub mesh_lookup: unsafe extern \"C\" fn"));
+        std::fs::remove_dir_all(pack_dir).expect("remove fixture");
+    }
+
     fn assert_methods_emitted(transpiled: &str, expected_method_names: &[&str]) {
         assert!(
             transpiled.contains("match method {"),

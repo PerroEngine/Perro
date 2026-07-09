@@ -169,7 +169,15 @@ pub fn mount_dlc_archive(name: &str, archive_path: impl AsRef<Path>) -> io::Resu
     Ok(())
 }
 
-pub fn register_dlc_static_binary_lookup(name: &str, lookup: DlcStaticBinaryLookup) {
+/// Register a DLC callback that returns borrowed binary asset bytes.
+///
+/// # Safety
+/// When `lookup` returns `true`, it must initialize both output pointers. The
+/// returned data pointer must be non-null, point to `len` initialized bytes in
+/// one allocation, and remain valid until the bytes are copied immediately
+/// after the callback returns. `len` must not exceed `isize::MAX`. The callback
+/// must not unwind across the C ABI boundary.
+pub unsafe fn register_dlc_static_binary_lookup(name: &str, lookup: DlcStaticBinaryLookup) {
     DLC_STATIC_BINARY_LOOKUPS
         .write()
         .unwrap()
@@ -520,6 +528,12 @@ fn load_dlc_static_binary(dlc: &str, path: &str) -> io::Result<Vec<u8>> {
             format!("dlc static binary not found: {path}"),
         ));
     }
+    if len > isize::MAX as usize {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("dlc static binary too large: {len} bytes"),
+        ));
+    }
     // SAFETY: Successful lookup guarantees ptr is non-null and len bytes remain valid
     // for the duration of this call; copy immediately into an owned Vec.
     let bytes = unsafe { std::slice::from_raw_parts(ptr, len) };
@@ -684,6 +698,22 @@ mod tests {
         true
     }
 
+    unsafe extern "C" fn oversized_dlc_static_lookup(
+        _path_hash: u64,
+        data_out: *mut *const u8,
+        len_out: *mut usize,
+    ) -> bool {
+        if data_out.is_null() || len_out.is_null() {
+            return false;
+        }
+        // SAFETY: Test callback receives writable output pointers from the loader.
+        unsafe {
+            *data_out = std::ptr::NonNull::<u8>::dangling().as_ptr();
+            *len_out = isize::MAX as usize + 1;
+        }
+        true
+    }
+
     #[test]
     fn resolve_static_binary_path_in_perro_assets_mode() {
         let _guard = TEST_LOCK.lock().unwrap();
@@ -758,7 +788,8 @@ mod tests {
 
         clear_dlc_mounts();
         mount_dlc_archive("Expansion", &archive).unwrap();
-        register_dlc_static_binary_lookup("Expansion", dlc_static_lookup);
+        // SAFETY: Test callback returns static bytes and follows the registration contract.
+        unsafe { register_dlc_static_binary_lookup("Expansion", dlc_static_lookup) };
 
         match resolve_path("dlc://Expansion/textures/player.png") {
             ResolvedPath::DlcStaticBinary { dlc, path } => {
@@ -774,6 +805,22 @@ mod tests {
 
         clear_dlc_mounts();
         let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn load_asset_rejects_oversized_dlc_static_binary() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        clear_dlc_mounts();
+        // SAFETY: Test callback initializes both outputs; the loader rejects its
+        // oversized length before constructing a slice from the dangling pointer.
+        unsafe {
+            register_dlc_static_binary_lookup("Oversized", oversized_dlc_static_lookup);
+        }
+
+        let err = load_dlc_static_binary("oversized", "dlc://Oversized/huge.bin")
+            .expect_err("oversized lookup must fail");
+        assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+        clear_dlc_mounts();
     }
 
     #[test]

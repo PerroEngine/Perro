@@ -106,20 +106,20 @@ fn write_dlc_pack_lib(
     src.push_str("    pub particle_lookup: extern \"C\" fn(u64) -> *const ParticleProfile3D,\n");
     src.push_str("    pub animation_lookup: extern \"C\" fn(u64) -> *const AnimationClip,\n");
     src.push_str(
-        "    pub mesh_lookup: extern \"C\" fn(u64, *mut *const u8, *mut usize) -> bool,\n",
+        "    pub mesh_lookup: unsafe extern \"C\" fn(u64, *mut *const u8, *mut usize) -> bool,\n",
     );
-    src.push_str("    pub collision_trimesh_lookup: extern \"C\" fn(u64, *mut *const u8, *mut usize) -> bool,\n");
+    src.push_str("    pub collision_trimesh_lookup: unsafe extern \"C\" fn(u64, *mut *const u8, *mut usize) -> bool,\n");
     src.push_str(
-        "    pub skeleton_lookup: extern \"C\" fn(u64, *mut *const u8, *mut usize) -> bool,\n",
-    );
-    src.push_str(
-        "    pub texture_lookup: extern \"C\" fn(u64, *mut *const u8, *mut usize) -> bool,\n",
+        "    pub skeleton_lookup: unsafe extern \"C\" fn(u64, *mut *const u8, *mut usize) -> bool,\n",
     );
     src.push_str(
-        "    pub shader_lookup: extern \"C\" fn(u64, *mut *const u8, *mut usize) -> bool,\n",
+        "    pub texture_lookup: unsafe extern \"C\" fn(u64, *mut *const u8, *mut usize) -> bool,\n",
     );
     src.push_str(
-        "    pub audio_lookup: extern \"C\" fn(u64, *mut *const u8, *mut usize) -> bool,\n",
+        "    pub shader_lookup: unsafe extern \"C\" fn(u64, *mut *const u8, *mut usize) -> bool,\n",
+    );
+    src.push_str(
+        "    pub audio_lookup: unsafe extern \"C\" fn(u64, *mut *const u8, *mut usize) -> bool,\n",
     );
     src.push_str("    pub assets_ptr: extern \"C\" fn() -> *const u8,\n");
     src.push_str("    pub assets_len: extern \"C\" fn() -> usize,\n");
@@ -145,7 +145,7 @@ fn write_dlc_pack_lib(
         "static DLC_PACK_ASSETS_PERRO: &[u8] = include_bytes!(\"../embedded/assets.perro\");\n\n",
     );
     src.push_str(
-        "fn write_bytes_out(bytes: &'static [u8], data_out: *mut *const u8, len_out: *mut usize) -> bool {\n",
+        "unsafe fn write_bytes_out(bytes: &'static [u8], data_out: *mut *const u8, len_out: *mut usize) -> bool {\n",
     );
     src.push_str(
         "    if data_out.is_null() || len_out.is_null() {\n        return false;\n    }\n",
@@ -153,9 +153,9 @@ fn write_dlc_pack_lib(
     src.push_str("    // SAFETY: Null checks above ensure output ptrs are writable for this call.\n    unsafe {\n        *data_out = bytes.as_ptr();\n        *len_out = bytes.len();\n    }\n");
     src.push_str("    true\n}\n\n");
     src.push_str(
-        "fn write_str_out(text: &'static str, data_out: *mut *const u8, len_out: *mut usize) -> bool {\n",
+        "unsafe fn write_str_out(text: &'static str, data_out: *mut *const u8, len_out: *mut usize) -> bool {\n",
     );
-    src.push_str("    write_bytes_out(text.as_bytes(), data_out, len_out)\n}\n\n");
+    src.push_str("    // SAFETY: Caller upholds this helper's output-pointer contract.\n    unsafe { write_bytes_out(text.as_bytes(), data_out, len_out) }\n}\n\n");
     src.push_str(
         "#[unsafe(no_mangle)]\npub extern \"C\" fn perro_dlc_pack_assets_ptr() -> *const u8 {\n    DLC_PACK_ASSETS_PERRO.as_ptr()\n}\n\n",
     );
@@ -175,22 +175,22 @@ fn write_dlc_pack_lib(
         "#[unsafe(no_mangle)]\npub extern \"C\" fn perro_dlc_pack_lookup_animation(path_hash: u64) -> *const AnimationClip {\n    static_assets::animations::lookup_animation(path_hash) as *const AnimationClip\n}\n\n",
     );
     src.push_str(
-        "#[unsafe(no_mangle)]\npub extern \"C\" fn perro_dlc_pack_lookup_mesh(path_hash: u64, data_out: *mut *const u8, len_out: *mut usize) -> bool {\n    write_bytes_out(static_assets::meshes::lookup_mesh(path_hash), data_out, len_out)\n}\n\n",
+        "#[unsafe(no_mangle)]\n/// # Safety\n/// Output pointers must be non-null, writable, and valid for this call.\npub unsafe extern \"C\" fn perro_dlc_pack_lookup_mesh(path_hash: u64, data_out: *mut *const u8, len_out: *mut usize) -> bool {\n    // SAFETY: Caller contract supplies valid output pointers.\n    unsafe { write_bytes_out(static_assets::meshes::lookup_mesh(path_hash), data_out, len_out) }\n}\n\n",
     );
     src.push_str(
-        "#[unsafe(no_mangle)]\npub extern \"C\" fn perro_dlc_pack_lookup_collision_trimesh(path_hash: u64, data_out: *mut *const u8, len_out: *mut usize) -> bool {\n    write_bytes_out(static_assets::collision_trimeshes::lookup_collision_trimesh(path_hash), data_out, len_out)\n}\n\n",
+        "#[unsafe(no_mangle)]\n/// # Safety\n/// Output pointers must be non-null, writable, and valid for this call.\npub unsafe extern \"C\" fn perro_dlc_pack_lookup_collision_trimesh(path_hash: u64, data_out: *mut *const u8, len_out: *mut usize) -> bool {\n    // SAFETY: Caller contract supplies valid output pointers.\n    unsafe { write_bytes_out(static_assets::collision_trimeshes::lookup_collision_trimesh(path_hash), data_out, len_out) }\n}\n\n",
     );
     src.push_str(
-        "#[unsafe(no_mangle)]\npub extern \"C\" fn perro_dlc_pack_lookup_skeleton(path_hash: u64, data_out: *mut *const u8, len_out: *mut usize) -> bool {\n    write_bytes_out(static_assets::skeletons::lookup_skeleton(path_hash), data_out, len_out)\n}\n\n",
+        "#[unsafe(no_mangle)]\n/// # Safety\n/// Output pointers must be non-null, writable, and valid for this call.\npub unsafe extern \"C\" fn perro_dlc_pack_lookup_skeleton(path_hash: u64, data_out: *mut *const u8, len_out: *mut usize) -> bool {\n    // SAFETY: Caller contract supplies valid output pointers.\n    unsafe { write_bytes_out(static_assets::skeletons::lookup_skeleton(path_hash), data_out, len_out) }\n}\n\n",
     );
     src.push_str(
-        "#[unsafe(no_mangle)]\npub extern \"C\" fn perro_dlc_pack_lookup_texture(path_hash: u64, data_out: *mut *const u8, len_out: *mut usize) -> bool {\n    write_bytes_out(static_assets::textures::lookup_texture(path_hash), data_out, len_out)\n}\n\n",
+        "#[unsafe(no_mangle)]\n/// # Safety\n/// Output pointers must be non-null, writable, and valid for this call.\npub unsafe extern \"C\" fn perro_dlc_pack_lookup_texture(path_hash: u64, data_out: *mut *const u8, len_out: *mut usize) -> bool {\n    // SAFETY: Caller contract supplies valid output pointers.\n    unsafe { write_bytes_out(static_assets::textures::lookup_texture(path_hash), data_out, len_out) }\n}\n\n",
     );
     src.push_str(
-        "#[unsafe(no_mangle)]\npub extern \"C\" fn perro_dlc_pack_lookup_audio(path_hash: u64, data_out: *mut *const u8, len_out: *mut usize) -> bool {\n    write_bytes_out(static_assets::audios::lookup_audio(path_hash), data_out, len_out)\n}\n\n",
+        "#[unsafe(no_mangle)]\n/// # Safety\n/// Output pointers must be non-null, writable, and valid for this call.\npub unsafe extern \"C\" fn perro_dlc_pack_lookup_audio(path_hash: u64, data_out: *mut *const u8, len_out: *mut usize) -> bool {\n    // SAFETY: Caller contract supplies valid output pointers.\n    unsafe { write_bytes_out(static_assets::audios::lookup_audio(path_hash), data_out, len_out) }\n}\n\n",
     );
     src.push_str(
-        "#[unsafe(no_mangle)]\npub extern \"C\" fn perro_dlc_pack_lookup_shader(path_hash: u64, data_out: *mut *const u8, len_out: *mut usize) -> bool {\n    write_str_out(static_assets::shaders::lookup_shader(path_hash), data_out, len_out)\n}\n\n",
+        "#[unsafe(no_mangle)]\n/// # Safety\n/// Output pointers must be non-null, writable, and valid for this call.\npub unsafe extern \"C\" fn perro_dlc_pack_lookup_shader(path_hash: u64, data_out: *mut *const u8, len_out: *mut usize) -> bool {\n    // SAFETY: Caller contract supplies valid output pointers.\n    unsafe { write_str_out(static_assets::shaders::lookup_shader(path_hash), data_out, len_out) }\n}\n\n",
     );
     src.push_str("pub fn perro_dlc_pack_lookup_typed(path_hash: u64) -> Option<&'static [u8]> {\n");
     src.push_str("    let bytes = static_assets::textures::lookup_texture(path_hash);\n    if !bytes.is_empty() {\n        return Some(bytes);\n    }\n");
@@ -201,7 +201,7 @@ fn write_dlc_pack_lib(
     src.push_str("    let shader = static_assets::shaders::lookup_shader(path_hash);\n    if !shader.is_empty() {\n        return Some(shader.as_bytes());\n    }\n");
     src.push_str("    None\n}\n\n");
     src.push_str(
-        "#[unsafe(no_mangle)]\npub extern \"C\" fn perro_dlc_pack_lookup(path_hash: u64, data_out: *mut *const u8, len_out: *mut usize) -> bool {\n",
+        "#[unsafe(no_mangle)]\n/// # Safety\n/// Output pointers must be non-null, writable, and valid for this call.\npub unsafe extern \"C\" fn perro_dlc_pack_lookup(path_hash: u64, data_out: *mut *const u8, len_out: *mut usize) -> bool {\n",
     );
     src.push_str(
         "    if data_out.is_null() || len_out.is_null() {\n        return false;\n    }\n",
