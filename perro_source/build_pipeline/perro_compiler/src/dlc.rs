@@ -275,10 +275,18 @@ fn resolve_compiled_dylib(
 }
 
 fn default_scripts_lib_rs() -> String {
-    r#"use perro_runtime::RuntimeScriptApi;
-use perro_api::scripting::ScriptConstructor;
+    r#"use perro_runtime::{RuntimeScriptApi, SCRIPT_ABI_BUILD_FINGERPRINT};
+use perro_api::scripting::{ScriptAbiDescriptor, ScriptAbiDescriptorHeader, ScriptConstructor};
 
 pub static SCRIPT_REGISTRY: &[(u64, ScriptConstructor<RuntimeScriptApi>)] = &[];
+
+static PERRO_SCRIPT_ABI_DESCRIPTOR_V2: ScriptAbiDescriptor =
+    ScriptAbiDescriptor::v2(SCRIPT_ABI_BUILD_FINGERPRINT);
+
+#[unsafe(no_mangle)]
+pub extern "C" fn perro_script_abi_descriptor_v2() -> *const ScriptAbiDescriptorHeader {
+    std::ptr::addr_of!(PERRO_SCRIPT_ABI_DESCRIPTOR_V2).cast()
+}
 
 #[unsafe(no_mangle)]
 pub extern "C" fn perro_scripts_init() {}
