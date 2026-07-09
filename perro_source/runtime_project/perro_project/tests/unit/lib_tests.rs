@@ -1084,6 +1084,7 @@ fn ensure_source_overrides_recreates_missing_scripts_manifest() {
     let repaired = fs::read_to_string(&manifest).expect("read repaired scripts manifest");
     assert!(repaired.contains("name = \"scripts\""));
     assert!(repaired.contains("crate-type = [\"cdylib\", \"rlib\"]"));
+    assert!(repaired.contains("dynamic-scripts = []"));
     assert!(manifest_dep_has_path(&repaired, "perro_api"));
     assert!(manifest_dep_has_path(&repaired, "perro_runtime"));
     let repaired_lib =

@@ -5,8 +5,8 @@ use perro_resource_api::ResourceWindow;
 use perro_runtime_api::RuntimeWindow;
 #[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
 use perro_scripting::{
-    SCRIPT_ABI_V2_MAGIC, SCRIPT_ABI_V2_VERSION, ScriptAbiDescriptor, ScriptAbiDescriptorHeader,
-    ScriptConstructor,
+    DynamicScriptConstructor, SCRIPT_ABI_V2_MAGIC, SCRIPT_ABI_V2_VERSION, ScriptAbiDescriptor,
+    ScriptAbiDescriptorHeader,
 };
 use perro_scripting::{ScriptBehavior, ScriptContext};
 use perro_variant::Variant;
@@ -85,7 +85,7 @@ impl Runtime {
             {
                 Arc::clone(cached)
             } else {
-                let raw = ctor();
+                let raw = ctor.call();
                 if raw.is_null() {
                     return Err(format!(
                         "script constructor returned null for hash `{script_path_hash}`"
@@ -230,7 +230,7 @@ impl Runtime {
             type RegistryGetFn = unsafe extern "C" fn(
                 usize,
                 *mut u64,
-                *mut ScriptConstructor<crate::runtime::RuntimeScriptApi>,
+                *mut DynamicScriptConstructor<crate::runtime::RuntimeScriptApi>,
             ) -> bool;
 
             let abi_descriptor = *library
@@ -286,7 +286,7 @@ impl Runtime {
             for i in 0..registry_len {
                 let mut path_hash = 0u64;
                 let mut ctor = std::mem::MaybeUninit::<
-                    ScriptConstructor<crate::runtime::RuntimeScriptApi>,
+                    DynamicScriptConstructor<crate::runtime::RuntimeScriptApi>,
                 >::uninit();
                 let ok = registry_get(i, &mut path_hash, ctor.as_mut_ptr());
                 if !ok {
@@ -297,7 +297,7 @@ impl Runtime {
             for (path_hash, ctor) in entries {
                 self.script_runtime
                     .dynamic_script_registry
-                    .insert(path_hash, ctor);
+                    .insert(path_hash, crate::runtime::RuntimeScriptCtor::Dynamic(ctor));
             }
         }
 

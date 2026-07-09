@@ -51,8 +51,12 @@ impl ScriptAbiDescriptor {
     }
 }
 
+/// Native Rust constructor used by statically linked script registries.
+pub type ScriptConstructor<API> = fn() -> *mut dyn ScriptBehavior<API>;
+
+/// Constructor pointer transferred through the dynamic script-library ABI.
 #[allow(improper_ctypes_definitions)]
-pub type ScriptConstructor<API> = extern "C" fn() -> *mut dyn ScriptBehavior<API>;
+pub type DynamicScriptConstructor<API> = extern "C" fn() -> *mut dyn ScriptBehavior<API>;
 
 /// API surface bundle used by script callbacks.
 ///

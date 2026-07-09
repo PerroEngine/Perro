@@ -1,13 +1,13 @@
 #[cfg(test)]
 mod tests {
     use super::{
-        ProjectBuildOptions, ScriptMethodParam, emit_static_steam_app_id_fn,
-        emit_web_route_html_files, generate_call_param_binding, generate_dlc_static_modules,
-        generate_embedded_entry_files, generate_perro_assets, generate_project_static_modules,
-        module_name_from_rel, module_short_name_from_rel, native_output_artifact_name,
-        native_output_folder_name, normalize_cargo_output_paths, reset_embedded_dir,
-        sync_dlc_scripts, sync_scripts, target_slug_from_triple, transpile_frontend_script,
-        transpiled_exports_script_ctor, write_scripts_lib,
+        compile_scripts_with_profile, emit_static_steam_app_id_fn, emit_web_route_html_files,
+        generate_call_param_binding, generate_dlc_static_modules, generate_embedded_entry_files,
+        generate_perro_assets, generate_project_static_modules, module_name_from_rel,
+        module_short_name_from_rel, native_output_artifact_name, native_output_folder_name,
+        normalize_cargo_output_paths, reset_embedded_dir, sync_dlc_scripts, sync_scripts,
+        target_slug_from_triple, transpile_frontend_script, transpiled_exports_script_ctor,
+        write_scripts_lib, ProjectBuildOptions, ScriptMethodParam, ScriptsBuildProfile,
     };
     use perro_project::{
         ensure_project_layout, ensure_project_scaffold, ensure_project_toml,
@@ -493,12 +493,21 @@ pub fn mix(a: f32, b: f32) -> f32 {
     fn generated_scripts_lib_exports_v2_abi_descriptor() {
         let root = unique_temp_dir("perro_compiler_script_abi_descriptor");
         let src = root.join("src");
-        write_scripts_lib(&src, &[], &[], "res://").expect("write scripts lib");
+        write_scripts_lib(
+            &src,
+            &["player.rs".to_string()],
+            &["player.rs".to_string()],
+            "res://",
+        )
+        .expect("write scripts lib");
         let generated = std::fs::read_to_string(src.join("lib.rs")).expect("read scripts lib");
 
         assert!(generated.contains("perro_script_abi_descriptor_v2"));
         assert!(generated.contains("ScriptAbiDescriptor::v2(SCRIPT_ABI_BUILD_FINGERPRINT)"));
         assert!(generated.contains("-> *const ScriptAbiDescriptorHeader"));
+        assert!(generated.contains("#[cfg(feature = \"dynamic-scripts\")]"));
+        assert!(generated.contains("DYNAMIC_SCRIPT_REGISTRY"));
+        assert!(generated.contains("perro_create_script_dynamic as DynamicScriptConstructor"));
 
         std::fs::remove_dir_all(root).expect("remove script ABI fixture");
     }
@@ -520,6 +529,8 @@ pub struct StateOnly {
             transpiled_exports_script_ctor(&transpiled),
             "state-backed scripts should register constructors"
         );
+        assert!(transpiled.contains("pub(crate) fn perro_create_script()"));
+        assert!(transpiled.contains("extern \"C\" fn perro_create_script_dynamic()"));
     }
 
     #[test]
@@ -960,6 +971,21 @@ lifecycle!({});
         assert!(shaders.contains("dlc://fixture/shaders/fixture.wgsl"));
         assert!(!root.join(".perro").join("project").exists());
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    #[ignore = "spawns nested cargo build; run in CI slow job via --ignored"]
+    fn generated_dynamic_scripts_crate_compiles_with_abi_feature() {
+        let root = unique_temp_dir("perro_compiler_dynamic_scripts_check");
+        ensure_project_layout(&root).expect("layout");
+        ensure_project_toml(&root, "Generated Dynamic Scripts").expect("project toml");
+        ensure_project_scaffold(&root, "Generated Dynamic Scripts").expect("scaffold");
+        create_static_embed_fixture(&root);
+
+        compile_scripts_with_profile(&root, ScriptsBuildProfile::Debug)
+            .expect("compile dynamic scripts");
+
+        std::fs::remove_dir_all(root).expect("cleanup dynamic scripts fixture");
     }
 
     #[test]

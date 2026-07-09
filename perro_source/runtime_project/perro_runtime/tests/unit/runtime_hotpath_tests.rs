@@ -108,10 +108,10 @@ fn dlc_self_context_applies_only_during_script_callback() {
         .nodes
         .insert(SceneNode::new(SceneNodeData::Node3D(Node3D::new())));
     let script_hash = 0xD1C5_E1F0_u64;
-    runtime
-        .script_runtime
-        .dynamic_script_registry
-        .insert(script_hash, dlc_self_resolve_script_ctor);
+    runtime.script_runtime.dynamic_script_registry.insert(
+        script_hash,
+        RuntimeScriptCtor::Dynamic(dlc_self_resolve_script_ctor),
+    );
 
     runtime
         .attach_script_instance(node, script_hash, Some("Expansion"), Vec::new())

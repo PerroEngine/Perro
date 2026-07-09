@@ -136,11 +136,16 @@ impl<API: ScriptAPI + ?Sized> ScriptBehavior<API> for {script_ty} {{
     }}
 }}
 
-#[allow(improper_ctypes_definitions)]
-pub(crate) extern "C" fn perro_create_script() -> *mut dyn ScriptBehavior<crate::RuntimeScriptApi> {{
+pub(crate) fn perro_create_script() -> *mut dyn ScriptBehavior<crate::RuntimeScriptApi> {{
     let script: Box<dyn ScriptBehavior<crate::RuntimeScriptApi>> =
         Box::new({script_ctor_expr});
     Box::into_raw(script)
+}}
+
+#[cfg(feature = "dynamic-scripts")]
+#[allow(improper_ctypes_definitions)]
+pub(crate) extern "C" fn perro_create_script_dynamic() -> *mut dyn ScriptBehavior<crate::RuntimeScriptApi> {{
+    perro_create_script()
 }}
 "#
     )
