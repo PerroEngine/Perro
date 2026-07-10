@@ -1344,7 +1344,8 @@ mod tests {
     #[test]
     fn multimesh_vertex_layout_matches_gpu_structs() {
         let mesh_layout = super::multimesh_path::multimesh_mesh_vertex_layout();
-        assert_eq!(mesh_layout.array_stride, 28);
+        // Stride tracks RigidMeshVertex: pos(12) + normal(8) + uv(8) + paint_uv(8).
+        assert_eq!(mesh_layout.array_stride, 36);
         assert_eq!(mesh_layout.attributes[0].offset, 0);
         assert_eq!(mesh_layout.attributes[0].shader_location, 0);
         assert_eq!(
