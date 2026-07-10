@@ -6,8 +6,8 @@ use crate::scripts_assets_editor_file_watch_rs as editor_file_watch;
 use crate::scripts_assets_editor_files_rs as editor_files;
 use crate::scripts_editor_main_rs::{
     EditorState, FILE_WATCH_INTERVAL_FRAMES, MAX_FILES, MAX_NODE_PICKER_ROWS, MAX_NODES,
-    MAX_RECENT, MAX_TABS, RECENT_PROJECTS_PATH, cached_scene_doc, cached_scene_doc_shared,
-    begin_ui_drag_doc, cached_scene_node, set_state_scene_doc, set_state_scene_doc_loaded,
+    MAX_RECENT, MAX_TABS, RECENT_PROJECTS_PATH, begin_ui_drag_doc, cached_scene_doc,
+    cached_scene_doc_shared, cached_scene_node, set_state_scene_doc, set_state_scene_doc_loaded,
     take_ui_drag_doc, with_ui_drag_doc_mut,
 };
 use crate::scripts_scene_editor_animation_rs::*;
@@ -2291,45 +2291,41 @@ pub fn move_doc_ui_node<API: ScriptAPI + ?Sized>(
 ) {
     let update = with_ui_drag_doc_mut(ctx.id.as_u64(), |doc| {
         with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
-        let Some(parent_rect) = doc_ui_parent_rect(doc, key) else {
-            return None;
-        };
-        if parent_rect.size.x <= 0.0 || parent_rect.size.y <= 0.0 {
-            return None;
-        }
-        let delta = Vector2::new(
-            root_delta.x / parent_rect.size.x,
-            root_delta.y / parent_rect.size.y,
-        );
-        let Some(node) = doc
-            .scene
-            .nodes
-            .to_mut()
-            .iter_mut()
-            .find(|node| node.key.as_u32() == key)
-        else {
-            return None;
-        };
-        let current = scene_field_vec2(&node.data, "translation_ratio").unwrap_or(Vector2::ZERO);
-        let next = if snap {
-            snap_vec2(current + delta, 0.01)
-        } else {
-            current + delta
-        };
-        set_scene_vec2(&mut node.data, "translation_ratio", next);
-        let value = scene_field(&node.data, "translation_ratio")?;
-        state.log = if snap {
-            "move ui\nsnap=0.01".to_string()
-        } else {
-            "move ui".to_string()
-        };
-        state.ui_drag_changed = true;
-        state.dirty = true;
-        if let Some(path) = state.open_paths.get(state.active_open).cloned()
-            && !state.dirty_scene_paths.iter().any(|item| item == &path)
-        {
-            state.dirty_scene_paths.push(path);
-        }
+            let parent_rect = doc_ui_parent_rect(doc, key)?;
+            if parent_rect.size.x <= 0.0 || parent_rect.size.y <= 0.0 {
+                return None;
+            }
+            let delta = Vector2::new(
+                root_delta.x / parent_rect.size.x,
+                root_delta.y / parent_rect.size.y,
+            );
+            let node = doc
+                .scene
+                .nodes
+                .to_mut()
+                .iter_mut()
+                .find(|node| node.key.as_u32() == key)?;
+            let current =
+                scene_field_vec2(&node.data, "translation_ratio").unwrap_or(Vector2::ZERO);
+            let next = if snap {
+                snap_vec2(current + delta, 0.01)
+            } else {
+                current + delta
+            };
+            set_scene_vec2(&mut node.data, "translation_ratio", next);
+            let value = scene_field(&node.data, "translation_ratio")?;
+            state.log = if snap {
+                "move ui\nsnap=0.01".to_string()
+            } else {
+                "move ui".to_string()
+            };
+            state.ui_drag_changed = true;
+            state.dirty = true;
+            if let Some(path) = state.open_paths.get(state.active_open).cloned()
+                && !state.dirty_scene_paths.iter().any(|item| item == &path)
+            {
+                state.dirty_scene_paths.push(path);
+            }
             Some((value, doc_ui_rect(doc, key)))
         })
         .flatten()
@@ -2355,97 +2351,86 @@ pub fn resize_doc_ui_node<API: ScriptAPI + ?Sized>(
 ) {
     let update = with_ui_drag_doc_mut(ctx.id.as_u64(), |doc| {
         with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
-        let Some(parent_rect) = doc_ui_parent_rect(doc, key) else {
-            return None;
-        };
-        let Some(rect) = doc_ui_rect(doc, key) else {
-            return None;
-        };
-        if parent_rect.size.x <= 0.0 || parent_rect.size.y <= 0.0 {
-            return None;
-        }
+            let parent_rect = doc_ui_parent_rect(doc, key)?;
+            let rect = doc_ui_rect(doc, key)?;
+            if parent_rect.size.x <= 0.0 || parent_rect.size.y <= 0.0 {
+                return None;
+            }
 
-        let mut min = rect.center - rect.size * 0.5;
-        let mut max = rect.center + rect.size * 0.5;
-        let (sx, sy) = resize_handle_sign(handle);
-        if sx < 0.0 {
-            min.x += root_delta.x;
-        } else if sx > 0.0 {
-            max.x += root_delta.x;
-        }
-        if sy < 0.0 {
-            min.y += root_delta.y;
-        } else if sy > 0.0 {
-            max.y += root_delta.y;
-        }
-        let min_size = Vector2::new(0.02, 0.02);
-        if max.x - min.x < min_size.x {
+            let mut min = rect.center - rect.size * 0.5;
+            let mut max = rect.center + rect.size * 0.5;
+            let (sx, sy) = resize_handle_sign(handle);
             if sx < 0.0 {
-                min.x = max.x - min_size.x;
-            } else {
-                max.x = min.x + min_size.x;
+                min.x += root_delta.x;
+            } else if sx > 0.0 {
+                max.x += root_delta.x;
             }
-        }
-        if max.y - min.y < min_size.y {
             if sy < 0.0 {
-                min.y = max.y - min_size.y;
-            } else {
-                max.y = min.y + min_size.y;
+                min.y += root_delta.y;
+            } else if sy > 0.0 {
+                max.y += root_delta.y;
             }
-        }
-        let new_size = max - min;
-        let new_center = min + new_size * 0.5;
-        let Some(node) = doc
-            .scene
-            .nodes
-            .to_mut()
-            .iter_mut()
-            .find(|node| node.key.as_u32() == key)
-        else {
-            return None;
-        };
-        let anchor_text =
-            scene_field_str(&node.data, "anchor").unwrap_or_else(|| "center".to_string());
-        let anchor = scene_anchor_dir(&anchor_text);
-        let anchor_point = parent_rect.center
-            + Vector2::new(
-                parent_rect.size.x * 0.5 * anchor.x,
-                parent_rect.size.y * 0.5 * anchor.y,
+            let min_size = Vector2::new(0.02, 0.02);
+            if max.x - min.x < min_size.x {
+                if sx < 0.0 {
+                    min.x = max.x - min_size.x;
+                } else {
+                    max.x = min.x + min_size.x;
+                }
+            }
+            if max.y - min.y < min_size.y {
+                if sy < 0.0 {
+                    min.y = max.y - min_size.y;
+                } else {
+                    max.y = min.y + min_size.y;
+                }
+            }
+            let new_size = max - min;
+            let new_center = min + new_size * 0.5;
+            let node = doc
+                .scene
+                .nodes
+                .to_mut()
+                .iter_mut()
+                .find(|node| node.key.as_u32() == key)?;
+            let anchor_text =
+                scene_field_str(&node.data, "anchor").unwrap_or_else(|| "center".to_string());
+            let anchor = scene_anchor_dir(&anchor_text);
+            let anchor_point = parent_rect.center
+                + Vector2::new(
+                    parent_rect.size.x * 0.5 * anchor.x,
+                    parent_rect.size.y * 0.5 * anchor.y,
+                );
+            let inward = Vector2::new(new_size.x * 0.5 * anchor.x, new_size.y * 0.5 * anchor.y);
+            let mut translation = Vector2::new(
+                (new_center.x - anchor_point.x + inward.x) / parent_rect.size.x,
+                (new_center.y - anchor_point.y + inward.y) / parent_rect.size.y,
             );
-        let inward = Vector2::new(new_size.x * 0.5 * anchor.x, new_size.y * 0.5 * anchor.y);
-        let mut translation = Vector2::new(
-            (new_center.x - anchor_point.x + inward.x) / parent_rect.size.x,
-            (new_center.y - anchor_point.y + inward.y) / parent_rect.size.y,
-        );
-        let mut size_ratio = Vector2::new(
-            new_size.x / parent_rect.size.x,
-            new_size.y / parent_rect.size.y,
-        );
-        if snap {
-            translation = snap_vec2(translation, 0.01);
-            size_ratio = snap_vec2(size_ratio, 0.01);
-        }
-        set_scene_vec2(&mut node.data, "size_ratio", size_ratio);
-        set_scene_vec2(&mut node.data, "translation_ratio", translation);
-        let size_value = scene_field(&node.data, "size_ratio")?;
-        let translation_value = scene_field(&node.data, "translation_ratio")?;
-        state.log = if snap {
-            "resize ui\nsnap=0.01".to_string()
-        } else {
-            "resize ui".to_string()
-        };
-        state.ui_drag_changed = true;
-        state.dirty = true;
-        if let Some(path) = state.open_paths.get(state.active_open).cloned()
-            && !state.dirty_scene_paths.iter().any(|item| item == &path)
-        {
-            state.dirty_scene_paths.push(path);
-        }
-            Some((
-                size_value,
-                translation_value,
-                doc_ui_rect(doc, key),
-            ))
+            let mut size_ratio = Vector2::new(
+                new_size.x / parent_rect.size.x,
+                new_size.y / parent_rect.size.y,
+            );
+            if snap {
+                translation = snap_vec2(translation, 0.01);
+                size_ratio = snap_vec2(size_ratio, 0.01);
+            }
+            set_scene_vec2(&mut node.data, "size_ratio", size_ratio);
+            set_scene_vec2(&mut node.data, "translation_ratio", translation);
+            let size_value = scene_field(&node.data, "size_ratio")?;
+            let translation_value = scene_field(&node.data, "translation_ratio")?;
+            state.log = if snap {
+                "resize ui\nsnap=0.01".to_string()
+            } else {
+                "resize ui".to_string()
+            };
+            state.ui_drag_changed = true;
+            state.dirty = true;
+            if let Some(path) = state.open_paths.get(state.active_open).cloned()
+                && !state.dirty_scene_paths.iter().any(|item| item == &path)
+            {
+                state.dirty_scene_paths.push(path);
+            }
+            Some((size_value, translation_value, doc_ui_rect(doc, key)))
         })
         .flatten()
     })
@@ -2480,44 +2465,39 @@ pub fn rotate_doc_ui_node<API: ScriptAPI + ?Sized>(
     });
     let update = with_ui_drag_doc_mut(ctx.id.as_u64(), |doc| {
         with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
-        let Some(rect) = doc_ui_rect(doc, key) else {
-            return None;
-        };
-        let prev_angle = (prev.y - rect.center.y).atan2(prev.x - rect.center.x);
-        let curr_angle = (curr.y - rect.center.y).atan2(curr.x - rect.center.x);
-        let delta = curr_angle - prev_angle;
-        if !delta.is_finite() || delta.abs() < 0.0001 {
-            return None;
-        }
-        let Some(node) = doc
-            .scene
-            .nodes
-            .to_mut()
-            .iter_mut()
-            .find(|node| node.key.as_u32() == key)
-        else {
-            return None;
-        };
-        let current = scene_field_f32(&node.data, "rotation").unwrap_or(0.0);
-        let next = if snap {
-            snap_f32(current + delta, std::f32::consts::TAU / 24.0)
-        } else {
-            current + delta
-        };
-        set_scene_f32(&mut node.data, "rotation", next);
-        let value = scene_field(&node.data, "rotation")?;
-        state.log = if snap {
-            "rotate ui\nsnap=15deg".to_string()
-        } else {
-            "rotate ui".to_string()
-        };
-        state.ui_drag_changed = true;
-        state.dirty = true;
-        if let Some(path) = state.open_paths.get(state.active_open).cloned()
-            && !state.dirty_scene_paths.iter().any(|item| item == &path)
-        {
-            state.dirty_scene_paths.push(path);
-        }
+            let rect = doc_ui_rect(doc, key)?;
+            let prev_angle = (prev.y - rect.center.y).atan2(prev.x - rect.center.x);
+            let curr_angle = (curr.y - rect.center.y).atan2(curr.x - rect.center.x);
+            let delta = curr_angle - prev_angle;
+            if !delta.is_finite() || delta.abs() < 0.0001 {
+                return None;
+            }
+            let node = doc
+                .scene
+                .nodes
+                .to_mut()
+                .iter_mut()
+                .find(|node| node.key.as_u32() == key)?;
+            let current = scene_field_f32(&node.data, "rotation").unwrap_or(0.0);
+            let next = if snap {
+                snap_f32(current + delta, std::f32::consts::TAU / 24.0)
+            } else {
+                current + delta
+            };
+            set_scene_f32(&mut node.data, "rotation", next);
+            let value = scene_field(&node.data, "rotation")?;
+            state.log = if snap {
+                "rotate ui\nsnap=15deg".to_string()
+            } else {
+                "rotate ui".to_string()
+            };
+            state.ui_drag_changed = true;
+            state.dirty = true;
+            if let Some(path) = state.open_paths.get(state.active_open).cloned()
+                && !state.dirty_scene_paths.iter().any(|item| item == &path)
+            {
+                state.dirty_scene_paths.push(path);
+            }
             Some((value, doc_ui_rect(doc, key)))
         })
         .flatten()
