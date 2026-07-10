@@ -252,6 +252,17 @@ fn refresh_node_picker_view<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_,
 
 fn refresh_files_view<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, view: &EditorView) {
     apply_file_tree_layout(ctx);
+    set_label(
+        ctx,
+        "file_delete_label",
+        if view.destructive_confirm_action == "file_delete_button"
+            && view.destructive_confirm_target == view.active_asset_path
+        {
+            "Confirm"
+        } else {
+            "Delete"
+        },
+    );
     set_file_tree_list(ctx, view);
 }
 
@@ -277,6 +288,18 @@ fn refresh_tabs_view<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, 
         );
         set_ui_display(ctx, &format!("scene_tab_{idx}"), has_tab);
         set_ui_display(ctx, &format!("scene_tab_close_{idx}"), has_tab);
+        let close_action = format!("scene_tab_close_{idx}");
+        let close_label = if view.destructive_confirm_action == close_action
+            && view
+                .open_paths
+                .get(idx)
+                .is_some_and(|path| path == &view.destructive_confirm_target)
+        {
+            "save"
+        } else {
+            "x"
+        };
+        set_label(ctx, &format!("scene_tab_close_{idx}_label"), close_label);
         set_button_fill(
             ctx,
             &format!("scene_tab_{idx}"),
@@ -969,7 +992,7 @@ fn apply_inspector_static_layout<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContex
     }
 
     set_ui_node_size(ctx, "center_stack", (0.565, 1.0));
-    set_ui_node_size(ctx, "inspector_panel", (0.25, 1.0));
+    set_ui_node_size(ctx, "inspector_panel", (0.222, 1.0));
     set_ui_node_size(ctx, "inspector_content", (1.0, 1.0));
     set_vlayout_h_align(ctx, "inspector_content", UiHorizontalAlign::Center);
     set_vlayout_spacing_padding(ctx, "inspector_content", 0.004, 0.0, 0.0, 0.0);
@@ -1174,6 +1197,8 @@ pub struct EditorView {
     inspector_picker_page: String,
     inspector_picker_filter: String,
     script_schema_reloading: bool,
+    destructive_confirm_action: String,
+    destructive_confirm_target: String,
 }
 
 pub struct InspectorViewData {
@@ -1467,6 +1492,8 @@ impl EditorView {
             ),
             inspector_picker_filter: state.inspector_picker_filter.clone(),
             script_schema_reloading: state.script_schema_reload_frames > 0,
+            destructive_confirm_action: state.destructive_confirm_action.clone(),
+            destructive_confirm_target: state.destructive_confirm_target.clone(),
         }
     }
 }
@@ -4487,8 +4514,8 @@ pub fn ui_canvas_size_ratio(window_aspect: f32, zoom: f32) -> (f32, f32) {
     const MAIN_SPACING: f32 = 0.0025;
     const SPLIT_CONTENT_W: f32 = 1.0 - (MAIN_PADDING * 2.0) - (MAIN_SPACING * 3.0);
     const SPLIT_CONTENT_H: f32 = 0.944 - (0.003 * 2.0);
-    const CENTER_W: f32 = 0.596;
-    const VIEWPORT_PANEL_H: f32 = 0.828;
+    const CENTER_W: f32 = 0.565;
+    const VIEWPORT_PANEL_H: f32 = 0.85;
     const BASE_W: f32 = 0.98;
     const ASPECT: f32 = 16.0 / 9.0;
 

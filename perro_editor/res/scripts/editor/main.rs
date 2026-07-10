@@ -234,6 +234,80 @@ pub const RECENT_PROJECTS_PATH: &str = "user://recent_projects.json";
 pub const FILE_WATCH_INTERVAL_FRAMES: u32 = 30;
 pub const LIST_DOUBLE_CLICK_FRAMES: u32 = 18;
 pub const MAX_SCENE_UNDO: usize = 64;
+pub const DESTRUCTIVE_CONFIRM_TIMEOUT_FRAMES: u32 = 180;
+
+pub fn destructive_confirmation_matches(
+    armed_action: &str,
+    armed_target: &str,
+    armed_frame: u32,
+    action: &str,
+    target: &str,
+    frame: u32,
+) -> bool {
+    !armed_action.is_empty()
+        && armed_action == action
+        && armed_target == target
+        && frame.wrapping_sub(armed_frame) <= DESTRUCTIVE_CONFIRM_TIMEOUT_FRAMES
+}
+
+pub fn clear_destructive_confirmation(state: &mut EditorState) -> bool {
+    if state.destructive_confirm_action.is_empty() {
+        return false;
+    }
+    state.destructive_confirm_action.clear();
+    state.destructive_confirm_target.clear();
+    state.destructive_confirm_frame = 0;
+    true
+}
+
+pub fn cancel_destructive_confirmation_for_action(state: &mut EditorState, action: &str) -> bool {
+    if state.destructive_confirm_action.is_empty() || state.destructive_confirm_action == action {
+        return false;
+    }
+    clear_destructive_confirmation(state)
+}
+
+pub fn arm_or_confirm_destructive_action(
+    state: &mut EditorState,
+    action: &str,
+    target: &str,
+) -> bool {
+    if destructive_confirmation_matches(
+        &state.destructive_confirm_action,
+        &state.destructive_confirm_target,
+        state.destructive_confirm_frame,
+        action,
+        target,
+        state.file_watch_frame,
+    ) {
+        clear_destructive_confirmation(state);
+        return true;
+    }
+    state.destructive_confirm_action = action.to_string();
+    state.destructive_confirm_target = target.to_string();
+    state.destructive_confirm_frame = state.file_watch_frame;
+    false
+}
+
+pub fn tick_destructive_confirmation<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let expired = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        if state.destructive_confirm_action.is_empty()
+            || state
+                .file_watch_frame
+                .wrapping_sub(state.destructive_confirm_frame)
+                <= DESTRUCTIVE_CONFIRM_TIMEOUT_FRAMES
+        {
+            return false;
+        }
+        clear_destructive_confirmation(state);
+        state.log = "confirm canceled\ntimeout".to_string();
+        true
+    })
+    .unwrap_or(false);
+    if expired {
+        refresh_all(ctx);
+    }
+}
 
 #[State]
 pub struct EditorState {
@@ -324,6 +398,9 @@ pub struct EditorState {
     pub inspector_layout_applied: bool,
     pub inspector_selected_key: Option<u32>,
     pub script_schema_reload_frames: u32,
+    pub destructive_confirm_action: String,
+    pub destructive_confirm_target: String,
+    pub destructive_confirm_frame: u32,
     pub log: String,
 }
 
@@ -359,6 +436,7 @@ lifecycle!({
         update_editor_shortcuts(ctx);
         poll_project_diffs(ctx);
         tick_script_schema_reload(ctx);
+        tick_destructive_confirmation(ctx);
     }
 });
 
@@ -367,6 +445,13 @@ methods!({
         let Some(name) = get_node_name!(ctx.run, sender).map(|v| v.to_string()) else {
             return;
         };
+        let canceled = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+            cancel_destructive_confirmation_for_action(state, &name)
+        })
+        .unwrap_or(false);
+        if canceled {
+            refresh_all(ctx);
+        }
         let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
             if state.focused_inspector_box == name {
                 state.focused_inspector_box.clear();
@@ -573,6 +658,9 @@ methods!({
         _value: Variant,
     ) {
         if idx >= 0 {
+            let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+                clear_destructive_confirmation(state)
+            });
             click_scene_node_slot(ctx, idx as usize);
         }
     }
@@ -598,6 +686,9 @@ methods!({
         _value: Variant,
     ) {
         if idx >= 0 {
+            let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+                clear_destructive_confirmation(state)
+            });
             click_or_open_file_slot(ctx, idx as usize);
         }
     }
@@ -613,6 +704,9 @@ methods!({
         if idx < 0 {
             return;
         }
+        let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+            clear_destructive_confirmation(state)
+        });
         let Some(path) = with_state!(ctx.run, EditorState, ctx.id, |state| {
             filtered_file_paths(state).get(idx as usize).cloned()
         }) else {
@@ -634,6 +728,63 @@ fn inspector_var_bit_button(name: &str) -> Option<(usize, usize)> {
     let idx = idx.parse().ok()?;
     let bit = bit.parse().ok()?;
     Some((idx, bit))
+}
+
+#[cfg(test)]
+mod destructive_confirmation_tests {
+    use super::*;
+
+    #[test]
+    fn repeat_same_action_and_target_confirms() {
+        assert!(destructive_confirmation_matches(
+            "file_delete_button",
+            "res://art/",
+            20,
+            "file_delete_button",
+            "res://art/",
+            40,
+        ));
+    }
+
+    #[test]
+    fn action_or_target_change_cancels() {
+        assert!(!destructive_confirmation_matches(
+            "file_delete_button",
+            "res://old.png",
+            20,
+            "scene_tab_close_0",
+            "res://old.png",
+            21,
+        ));
+        assert!(!destructive_confirmation_matches(
+            "file_delete_button",
+            "res://old.png",
+            20,
+            "file_delete_button",
+            "res://new.png",
+            21,
+        ));
+    }
+
+    #[test]
+    fn timeout_and_frame_wrap_stay_safe() {
+        assert!(!destructive_confirmation_matches(
+            "file_delete_button",
+            "res://old.png",
+            20,
+            "file_delete_button",
+            "res://old.png",
+            20 + DESTRUCTIVE_CONFIRM_TIMEOUT_FRAMES + 1,
+        ));
+        assert!(destructive_confirmation_matches(
+            "file_delete_button",
+            "res://old.png",
+            u32::MAX - 2,
+            "file_delete_button",
+            "res://old.png",
+            1,
+        ));
+    }
 }
 
 fn connect_editor_signals<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {

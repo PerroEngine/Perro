@@ -5,8 +5,10 @@ use crate::scripts_assets_editor_file_watch_rs as editor_file_watch;
 use crate::scripts_assets_editor_files_rs as editor_files;
 use crate::scripts_editor_main_rs::{
     EditorState, FILE_WATCH_INTERVAL_FRAMES, LIST_DOUBLE_CLICK_FRAMES, MAX_FILES,
-    MAX_NODE_PICKER_ROWS, MAX_NODES, MAX_RECENT, MAX_TABS, RECENT_PROJECTS_PATH, cached_scene_doc, cached_scene_doc_shared,
-    cached_scene_node, clear_scene_doc_cache, set_state_scene_doc, set_state_scene_doc_loaded,
+    MAX_NODE_PICKER_ROWS, MAX_NODES, MAX_RECENT, MAX_TABS, RECENT_PROJECTS_PATH,
+    arm_or_confirm_destructive_action, cached_scene_doc, cached_scene_doc_shared,
+    cached_scene_node, cancel_destructive_confirmation_for_action, clear_destructive_confirmation,
+    clear_scene_doc_cache, set_state_scene_doc, set_state_scene_doc_loaded,
 };
 use crate::scripts_scene_editor_animation_rs::*;
 use crate::scripts_scene_editor_gizmos_rs as editor_gizmos;
@@ -105,6 +107,7 @@ pub fn open_project<API: ScriptAPI + ?Sized>(
         state.active_glb_path.clear();
         state.active_glb_summary.clear();
         state.script_schema_reload_frames = 0;
+        clear_destructive_confirmation(state);
         state.log = log;
     });
 
@@ -334,6 +337,9 @@ pub fn refresh_project_assets<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'
 }
 
 pub fn open_file_slot<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, idx: usize) {
+    let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        clear_destructive_confirmation(state)
+    });
     let res_path = with_state!(ctx.run, EditorState, ctx.id, |state| {
         filtered_file_paths(state).get(idx).cloned()
     });
@@ -385,6 +391,9 @@ pub fn click_or_open_file_slot<API: ScriptAPI + ?Sized>(
     ctx: &mut ScriptContext<'_, API>,
     idx: usize,
 ) {
+    let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        clear_destructive_confirmation(state)
+    });
     let res_path = with_state!(ctx.run, EditorState, ctx.id, |state| {
         filtered_file_paths(state).get(idx).cloned()
     });
@@ -751,6 +760,9 @@ pub fn cycle_active_glb_ref<API: ScriptAPI + ?Sized>(
 }
 
 pub fn set_active_tab<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, idx: usize) {
+    let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        clear_destructive_confirmation(state)
+    });
     let needs_save = with_state!(ctx.run, EditorState, ctx.id, |state| {
         state
             .open_paths
@@ -820,17 +832,47 @@ pub fn close_all_scene_tabs<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_,
 }
 
 pub fn close_scene_tab<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, idx: usize) {
-    let should_save = with_state!(ctx.run, EditorState, ctx.id, |state| {
-        idx == state.active_open
-            && state
-                .open_paths
-                .get(idx)
-                .map(|path| state.dirty_scene_paths.iter().any(|dirty| dirty == path))
-                .unwrap_or(false)
-    });
-    if should_save && !save_active_scene_to_disk(ctx, true) {
+    let action = format!("scene_tab_close_{idx}");
+    let request = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        cancel_destructive_confirmation_for_action(state, &action);
+        let target = state.open_paths.get(idx).cloned()?;
+        let dirty = state.dirty_scene_paths.iter().any(|path| path == &target);
+        if !dirty {
+            clear_destructive_confirmation(state);
+            return Some((target, false, idx == state.active_open));
+        }
+        let confirmed = arm_or_confirm_destructive_action(state, &action, &target);
+        if !confirmed {
+            state.log = format!("close dirty?\nclick x again -> save + close\n{target}");
+        }
+        Some((target, !confirmed, idx == state.active_open))
+    })
+    .flatten();
+    let Some((target, armed, active)) = request else {
         refresh_all(ctx);
         return;
+    };
+    if armed {
+        refresh_all(ctx);
+        return;
+    }
+    if with_state!(ctx.run, EditorState, ctx.id, |state| state
+        .dirty_scene_paths
+        .iter()
+        .any(|path| path == &target))
+    {
+        if !active {
+            set_log(
+                ctx,
+                &format!("close blocked\nselect + save first\n{target}"),
+            );
+            refresh_all(ctx);
+            return;
+        }
+        if !save_active_scene_to_disk(ctx, true) {
+            refresh_all(ctx);
+            return;
+        }
     }
     let next = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
         if idx >= state.open_paths.len() {
@@ -1158,6 +1200,23 @@ pub fn delete_active_asset<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, 
     };
     if dirty_blocked {
         set_log(ctx, &format!("delete asset blocked\nsave first\n{path}"));
+        return;
+    }
+    let confirmed = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        let confirmed = arm_or_confirm_destructive_action(state, "file_delete_button", &path);
+        if !confirmed {
+            let kind = if path.ends_with('/') {
+                "folder"
+            } else {
+                "asset"
+            };
+            state.log = format!("delete {kind}?\nclick Confirm to delete\n{path}");
+        }
+        confirmed
+    })
+    .unwrap_or(false);
+    if !confirmed {
+        refresh_file_panel(ctx);
         return;
     }
     let abs = res_to_abs(&root, &path);
