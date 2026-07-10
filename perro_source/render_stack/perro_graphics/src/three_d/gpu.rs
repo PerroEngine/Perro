@@ -857,6 +857,10 @@ pub struct Gpu3D {
     // the source x target overlap loop never recomputes a batch's O(instances)
     // sphere per source. Reused across calls.
     mesh_blend_batch_spheres_scratch: Vec<Option<(Vec3, f32)>>,
+    // Batch world spheres as of the last receiver-list build. On a transform-only
+    // frame the receiver lists can be reused when no blend-relevant batch sphere
+    // moved vs this snapshot (see rebuild_mesh_blend_receivers).
+    mesh_blend_prev_spheres: Vec<Option<(Vec3, f32)>>,
     last_draws: Vec<Draw3DInstance>,
     last_draws_revision: u64,
     last_draw_instance_spans: Vec<Range<u32>>,

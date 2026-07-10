@@ -905,21 +905,47 @@ impl Gpu3D {
     // Precompute source->receiver batch lists so the per-source depth passes
     // skip the O(N) scan over all batches in render_pass.
     pub(super) fn rebuild_mesh_blend_receivers(&mut self) {
-        let mut spans = std::mem::take(&mut self.mesh_blend_source_receivers);
-        let mut receivers = std::mem::take(&mut self.mesh_blend_receiver_indices);
-        spans.clear();
-        receivers.clear();
-        // No sources => no receivers; leave spans/receivers cleared.
-        if !self.mesh_blend_batch_indices.is_empty() {
-            // Each batch's merged world sphere is O(instance_count); cache it
-            // once so the source x target loop below never recomputes a target's
-            // sphere per source.
-            let mut spheres = std::mem::take(&mut self.mesh_blend_batch_spheres_scratch);
-            spheres.clear();
-            spheres.reserve(self.draw_batches.len());
-            for batch in &self.draw_batches {
-                spheres.push(batch_world_sphere(batch, &self.staged_instance_transforms));
-            }
+        self.rebuild_mesh_blend_receivers_gated(false);
+    }
+
+    // `allow_skip` (transform-only frames): reuse the existing receiver lists when
+    // no blend-relevant batch sphere moved since the last build. Conservative:
+    // any structural change or any doubt falls through to a full rebuild.
+    pub(super) fn rebuild_mesh_blend_receivers_gated(&mut self, allow_skip: bool) {
+        // No sources => no receivers; keep everything cleared.
+        if self.mesh_blend_batch_indices.is_empty() {
+            self.mesh_blend_source_receivers.clear();
+            self.mesh_blend_receiver_indices.clear();
+            self.mesh_blend_prev_spheres.clear();
+            return;
+        }
+
+        // Each batch's merged world sphere is O(instance_count); cache it once so
+        // the source x target loop never recomputes a target's sphere per source.
+        let mut spheres = std::mem::take(&mut self.mesh_blend_batch_spheres_scratch);
+        spheres.clear();
+        spheres.reserve(self.draw_batches.len());
+        for batch in &self.draw_batches {
+            spheres.push(batch_world_sphere(batch, &self.staged_instance_transforms));
+        }
+
+        // Reuse the current lists when the previous snapshot is structurally
+        // comparable and no source / potential-target sphere moved.
+        let can_skip = allow_skip
+            && self.mesh_blend_source_receivers.len() == self.mesh_blend_batch_indices.len()
+            && self.mesh_blend_prev_spheres.len() == spheres.len()
+            && !mesh_blend_relevant_sphere_changed(
+                &self.draw_batches,
+                &self.mesh_blend_batch_indices,
+                &self.mesh_blend_prev_spheres,
+                &spheres,
+            );
+
+        if !can_skip {
+            let mut spans = std::mem::take(&mut self.mesh_blend_source_receivers);
+            let mut receivers = std::mem::take(&mut self.mesh_blend_receiver_indices);
+            spans.clear();
+            receivers.clear();
             for &source_i in &self.mesh_blend_batch_indices {
                 let source_batch = &self.draw_batches[source_i];
                 let source_sphere = spheres[source_i];
@@ -938,11 +964,42 @@ impl Gpu3D {
                 }
                 spans.push((source_i, start..receivers.len()));
             }
-            self.mesh_blend_batch_spheres_scratch = spheres;
+            self.mesh_blend_source_receivers = spans;
+            self.mesh_blend_receiver_indices = receivers;
         }
-        self.mesh_blend_source_receivers = spans;
-        self.mesh_blend_receiver_indices = receivers;
+
+        // Snapshot spheres for next-frame comparison, recycle the scratch.
+        self.mesh_blend_prev_spheres.clear();
+        self.mesh_blend_prev_spheres.extend_from_slice(&spheres);
+        self.mesh_blend_batch_spheres_scratch = spheres;
     }
+}
+
+// A batch is blend-relevant if it can be a mesh-blend source or a valid receiver
+// target; only such a batch's movement can change any receiver list. Anything
+// uncertain is treated as relevant (=> rebuild). draw_on_top / alpha batches that
+// are not sources never participate, so their movement can be ignored.
+fn mesh_blend_relevant_sphere_changed(
+    batches: &[DrawBatch],
+    sources: &[usize],
+    prev: &[Option<(Vec3, f32)>],
+    cur: &[Option<(Vec3, f32)>],
+) -> bool {
+    for &source_i in sources {
+        if prev.get(source_i) != cur.get(source_i) {
+            return true;
+        }
+    }
+    for (i, batch) in batches.iter().enumerate() {
+        // Skip batches excluded as receiver targets (mesh_blend_receiver_matches).
+        if batch.draw_on_top || batch.alpha_mode != 0 || batch.mesh_blend {
+            continue;
+        }
+        if prev.get(i) != cur.get(i) {
+            return true;
+        }
+    }
+    false
 }
 
 fn mesh_blend_receiver_matches(

@@ -2426,6 +2426,7 @@ impl Gpu3D {
             mesh_blend_source_receivers: Vec::new(),
             mesh_blend_receiver_indices: Vec::new(),
             mesh_blend_batch_spheres_scratch: Vec::new(),
+            mesh_blend_prev_spheres: Vec::new(),
             last_draws: Vec::new(),
             last_draws_revision: u64::MAX,
             last_draw_instance_spans: Vec::new(),
