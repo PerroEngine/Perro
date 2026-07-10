@@ -466,9 +466,9 @@ pub fn viewport_stream_rect_ratio(window_aspect: f32) -> (f32, f32, f32, f32) {
     const MAIN_SPLIT_H: f32 = 0.944;
     const MAIN_PADDING: f32 = 0.0025;
     const MAIN_SPACING: f32 = 0.0025;
-    const ACTIVITY_W: f32 = 0.024;
-    const LEFT_W: f32 = 0.132;
-    const CENTER_W: f32 = 0.596;
+    const ACTIVITY_W: f32 = 0.03;
+    const LEFT_W: f32 = 0.16;
+    const CENTER_W: f32 = 0.565;
     const VIEWPORT_PANEL_H: f32 = 0.85;
     const SCENE_TABS_H: f32 = 0.042;
     const CENTER_STACK_SPACING: f32 = 0.004;
@@ -575,13 +575,26 @@ pub fn poll_project_diffs<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, A
             return None;
         }
         state.file_watch_frame = state.file_watch_frame.wrapping_add(1);
-        if state.file_watch_frame % FILE_WATCH_INTERVAL_FRAMES != 0 {
-            return None;
-        }
-
         let root = PathBuf::from(&state.project_root);
-        let next = editor_file_watch::scan_project(root.as_path());
-        let changed = editor_file_watch::changed_paths(&state.project_file_sigs, &next);
+        let Some(scan) = editor_file_watch::take_project_scan(root.as_path()) else {
+            if state.file_watch_frame % FILE_WATCH_INTERVAL_FRAMES == 0 {
+                editor_file_watch::request_project_scan(
+                    root,
+                    state.project_file_sigs.clone(),
+                );
+            }
+            return None;
+        };
+
+        let editor_file_watch::ProjectScan {
+            before,
+            next,
+            mut changed,
+            res_paths,
+        } = scan;
+        if state.project_file_sigs != before {
+            changed = editor_file_watch::changed_paths(&state.project_file_sigs, &next);
+        }
         if changed.is_empty() {
             state.project_file_sigs = next;
             return None;
@@ -606,11 +619,17 @@ pub fn poll_project_diffs<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, A
         if !changed_scripts.is_empty() {
             state.script_schema_reload_frames = 8;
         }
-        Some((root, res_changed, changed_scenes, changed_scripts))
+        Some((
+            root,
+            res_changed,
+            changed_scenes,
+            changed_scripts,
+            res_paths,
+        ))
     })
     .flatten();
 
-    let Some((root, res_changed, changed_scenes, changed_scripts)) = action else {
+    let Some((root, res_changed, changed_scenes, changed_scripts, mut res_paths)) = action else {
         return;
     };
 
@@ -621,14 +640,15 @@ pub fn poll_project_diffs<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, A
         );
     }
 
-    if res_changed && let Ok(paths) = scan_res_paths(root.as_path()) {
-        let scene_paths = paths
+    if res_changed {
+        res_paths.sort_by_key(|path| editor_files::res_browser_sort_key(path));
+        let scene_paths = res_paths
             .iter()
             .filter(|path| path.ends_with(".scn"))
             .cloned()
             .collect::<Vec<_>>();
         let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
-            state.file_paths = paths;
+            state.file_paths = res_paths;
             state.scene_paths = scene_paths;
         });
     }
