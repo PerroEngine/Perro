@@ -52,10 +52,15 @@ lifecycle!({
             return;
         }
 
-        let delta = move_dir.normalized() * speed * dt;
-
+        // `move_dir` is camera-local: x = right, -z = forward, y = world up.
         let _ = with_node_mut!(ctx.run, Camera3D, ctx.id, |camera| {
-            camera.transform.position += delta;
+            let forward = camera.transform.forward();
+            let right = camera.transform.right();
+            let mut world = right * move_dir.x + forward * (-move_dir.z);
+            world.y += move_dir.y;
+            if world.length_squared() > 0.000001 {
+                camera.transform.position += world.normalized() * speed * dt;
+            }
         });
     }
 });

@@ -1633,3 +1633,29 @@ fn physics_trajectory_solver_uses_gravity_coefficient() {
 
     assert_vec2_close(velocity, Vector2::new(10.0, 5.0), 1.0e-6);
 }
+
+#[test]
+fn collect_subtree_ids_walks_root_and_descendants() {
+    use crate::sub_apis::collect_subtree_ids;
+    use std::collections::HashMap;
+
+    let n = |v: u32| NodeID::new(v);
+    let mut children: HashMap<NodeID, Vec<NodeID>> = HashMap::new();
+    children.insert(n(1), vec![n(2), n(3)]);
+    children.insert(n(2), vec![n(4), NodeID::nil()]);
+    children.insert(n(3), vec![n(5)]);
+
+    let mut ids = collect_subtree_ids(n(1), |id| children.get(&id).cloned().unwrap_or_default());
+    ids.sort_by_key(|id| id.index());
+
+    // Root included, all descendants collected once, nil children skipped.
+    assert_eq!(ids, vec![n(1), n(2), n(3), n(4), n(5)]);
+}
+
+#[test]
+fn collect_subtree_ids_nil_root_is_empty() {
+    use crate::sub_apis::collect_subtree_ids;
+
+    let ids = collect_subtree_ids(NodeID::nil(), |_| vec![NodeID::new(9)]);
+    assert!(ids.is_empty());
+}

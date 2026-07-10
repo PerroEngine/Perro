@@ -267,6 +267,25 @@ macro_rules! get_var {
     };
 }
 
+/// Reads a node-ref script var, returning `NodeID::nil()` when the var is
+/// missing or is not a node reference.
+///
+/// Signature:
+/// - `get_node_var!(&mut RuntimeWindow<_, _>, NodeID, member) -> NodeID`
+///
+/// Usage:
+/// - `get_node_var!(ctx, root, var!("pause_panel")) -> NodeID`
+/// - `get_node_var!(ctx, root, "pause_panel") -> NodeID`
+///
+/// Accepted member inputs:
+/// - `var!("...")`, `ScriptMemberID`, `&str`, `String`, `Cow<str>`
+#[macro_export]
+macro_rules! get_node_var {
+    ($ctx:expr, $id:expr, $member:expr) => {
+        $ctx.Scripts().get_var($id, $member).as_node_or_nil()
+    };
+}
+
 /// Sets a script variable by member identifier.
 ///
 /// Signature:

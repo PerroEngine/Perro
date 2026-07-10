@@ -93,6 +93,6 @@ pub mod prelude {
         steam_rich_presence_set, steam_stat_get_i32, steam_stat_set_i32, steam_workshop_download,
         steam_workshop_subscribe,
     };
-    pub use perro_structs::{bitmask, prelude::*};
+    pub use perro_structs::{bitmask, color, prelude::*};
     pub use perro_ui::*;
 }

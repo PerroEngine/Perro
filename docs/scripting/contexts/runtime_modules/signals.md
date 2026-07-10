@@ -13,6 +13,7 @@
 | `disconnect_many`        | [`disconnect_many`](#disconnect_many)               |
 | `emit`                   | [`emit`](#emit)                                     |
 | `signal_connect!`        | [`signal_connect!`](#signal_connect-1)              |
+| `signal_connect_pairs!`  | [`signal_connect_pairs!`](#signal_connect_pairs-1)  |
 | `signal_disconnect!`     | [`signal_disconnect!`](#signal_disconnect-1)        |
 | `signal_disconnect_many!` | [`signal_disconnect_many!`](#signal_disconnect_many-1) |
 | `signal_emit!`           | [`signal_emit!`](#signal_emit-1)                    |
@@ -142,6 +143,17 @@ let _ = signal_disconnect_many!(
 | Returns                    | `same as backing method`                                                                                                                                                                                           |
 | Use when                   | Use when gameplay must change engine state or queue an action this frame.                                                                                                                                          |
 | Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+
+### `signal_connect_pairs!`
+
+| Field                      | Detail                                                                                                                                                                                                             |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Access                     | `ctx.run.Signals()`                                                                                                                                                                                                |
+| Signature                  | `signal_connect_pairs!(ctx.run, script, [(signal, function), ...][, params]) -> usize`                                                                                                                             |
+| Params                     | `ctx, script, [(signal_name, function_name), ...], [params]`                                                                                                                                                       |
+| Returns                    | `usize` (count of new connections)                                                                                                                                                                                 |
+| Use when                   | Use to wire many signals to their 1:1 same-purpose handlers at once. Unlike `connect_many` (cartesian product), each signal connects only to its paired function. Pair elements are name strings.                  |
+| Fails when / edge behavior | Each pair that fails to connect simply does not increment the returned count.                                                                                                                                      |
 
 ### `signal_disconnect!`
 

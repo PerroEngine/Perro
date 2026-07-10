@@ -42,6 +42,14 @@ const PAUSE_FADE_OUT_SECONDS: f32 = 0.12;
 const PAUSE_BG_MAX_ALPHA: f32 = 0.75;
 const PAUSE_PANEL_ALPHA: f32 = 0.92;
 
+const FADE_COLOR: Color = color!("#000000");
+const PAUSE_BG_COLOR: Color = color!("#070A0F");
+const PAUSE_PANEL_FILL_COLOR: Color = color!("#0B1018");
+const PAUSE_PANEL_STROKE_COLOR: Color = color!("#D0E0EF");
+const WHITE_COLOR: Color = color!("#FFFFFF");
+const BUTTON_FILL_COLOR: Color = color!("#101820");
+const BUTTON_STROKE_COLOR: Color = color!("#88AADD");
+
 #[derive(Variant, Clone, Copy, PartialEq, Eq, Default)]
 enum DemoKind {
     #[default]
@@ -336,119 +344,30 @@ lifecycle!({
             state.runtime = DemoRuntimeState::default();
         });
 
-        signal_connect!(
+        signal_connect_pairs!(
             ctx.run,
             ctx.id,
-            signal!("demo_mesh_click"),
-            func!("on_demo_mesh_click")
-        );
-        signal_connect!(
-            ctx.run,
-            ctx.id,
-            signal!("demo_lights_click"),
-            func!("on_demo_lights_click")
-        );
-        signal_connect!(
-            ctx.run,
-            ctx.id,
-            signal!("demo_water_click"),
-            func!("on_demo_water_click")
-        );
-        signal_connect!(
-            ctx.run,
-            ctx.id,
-            signal!("demo_animations_click"),
-            func!("on_demo_animations_click")
-        );
-        signal_connect!(
-            ctx.run,
-            ctx.id,
-            signal!("demo_physics_bones_click"),
-            func!("on_demo_physics_bones_click")
-        );
-        signal_connect!(
-            ctx.run,
-            ctx.id,
-            signal!("demo_physics_collisions_click"),
-            func!("on_demo_physics_collisions_click")
-        );
-        signal_connect!(
-            ctx.run,
-            ctx.id,
-            signal!("demo_sky_click"),
-            func!("on_demo_sky_click")
-        );
-        signal_connect!(
-            ctx.run,
-            ctx.id,
-            signal!("demo_blend_click"),
-            func!("on_demo_blend_click")
-        );
-        signal_connect!(
-            ctx.run,
-            ctx.id,
-            signal!("demo_multimesh_click"),
-            func!("on_demo_multimesh_click")
-        );
-        signal_connect!(
-            ctx.run,
-            ctx.id,
-            signal!("demo_particles_click"),
-            func!("on_demo_particles_click")
-        );
-        signal_connect!(
-            ctx.run,
-            ctx.id,
-            signal!("demo_audio_click"),
-            func!("on_demo_audio_click")
-        );
-        signal_connect!(
-            ctx.run,
-            ctx.id,
-            signal!("demo_decals_click"),
-            func!("on_demo_decals_click")
-        );
-        signal_connect!(
-            ctx.run,
-            ctx.id,
-            signal!("demo_webcam_click"),
-            func!("on_demo_webcam_click")
-        );
-        signal_connect!(
-            ctx.run,
-            ctx.id,
-            signal!("demo_fps_tester_click"),
-            func!("on_demo_fps_tester_click")
-        );
-        signal_connect!(
-            ctx.run,
-            ctx.id,
-            signal!("pause_sens_down_click"),
-            func!("on_pause_sens_down_click")
-        );
-        signal_connect!(
-            ctx.run,
-            ctx.id,
-            signal!("pause_sens_up_click"),
-            func!("on_pause_sens_up_click")
-        );
-        signal_connect!(
-            ctx.run,
-            ctx.id,
-            signal!("pause_resume_click"),
-            func!("on_pause_resume_click")
-        );
-        signal_connect!(
-            ctx.run,
-            ctx.id,
-            signal!("pause_restart_click"),
-            func!("on_pause_restart_click")
-        );
-        signal_connect!(
-            ctx.run,
-            ctx.id,
-            signal!("pause_hub_click"),
-            func!("on_pause_hub_click")
+            [
+                ("demo_mesh_click", "on_demo_mesh_click"),
+                ("demo_lights_click", "on_demo_lights_click"),
+                ("demo_water_click", "on_demo_water_click"),
+                ("demo_animations_click", "on_demo_animations_click"),
+                ("demo_physics_bones_click", "on_demo_physics_bones_click"),
+                ("demo_physics_collisions_click", "on_demo_physics_collisions_click"),
+                ("demo_sky_click", "on_demo_sky_click"),
+                ("demo_blend_click", "on_demo_blend_click"),
+                ("demo_multimesh_click", "on_demo_multimesh_click"),
+                ("demo_particles_click", "on_demo_particles_click"),
+                ("demo_audio_click", "on_demo_audio_click"),
+                ("demo_decals_click", "on_demo_decals_click"),
+                ("demo_webcam_click", "on_demo_webcam_click"),
+                ("demo_fps_tester_click", "on_demo_fps_tester_click"),
+                ("pause_sens_down_click", "on_pause_sens_down_click"),
+                ("pause_sens_up_click", "on_pause_sens_up_click"),
+                ("pause_resume_click", "on_pause_resume_click"),
+                ("pause_restart_click", "on_pause_restart_click"),
+                ("pause_hub_click", "on_pause_hub_click"),
+            ]
         );
 
         self.load_main_menu_scene(ctx);
@@ -592,20 +511,20 @@ methods!({
         reparent!(ctx.run, parent, root);
 
         let buttons = vec![
-            node_var(ctx, root, "demo_btn_mesh"),
-            node_var(ctx, root, "demo_btn_lights"),
-            node_var(ctx, root, "demo_btn_water"),
-            node_var(ctx, root, "demo_btn_animations"),
-            node_var(ctx, root, "demo_btn_physics_bones"),
-            node_var(ctx, root, "demo_btn_physics_collisions"),
-            node_var(ctx, root, "demo_btn_sky"),
-            node_var(ctx, root, "demo_btn_blend"),
-            node_var(ctx, root, "demo_btn_multimesh"),
-            node_var(ctx, root, "demo_btn_particles"),
-            node_var(ctx, root, "demo_btn_audio"),
-            node_var(ctx, root, "demo_btn_decals"),
-            node_var(ctx, root, "demo_btn_webcam"),
-            node_var(ctx, root, "demo_btn_fps_tester"),
+            get_node_var!(ctx.run, root, "demo_btn_mesh"),
+            get_node_var!(ctx.run, root, "demo_btn_lights"),
+            get_node_var!(ctx.run, root, "demo_btn_water"),
+            get_node_var!(ctx.run, root, "demo_btn_animations"),
+            get_node_var!(ctx.run, root, "demo_btn_physics_bones"),
+            get_node_var!(ctx.run, root, "demo_btn_physics_collisions"),
+            get_node_var!(ctx.run, root, "demo_btn_sky"),
+            get_node_var!(ctx.run, root, "demo_btn_blend"),
+            get_node_var!(ctx.run, root, "demo_btn_multimesh"),
+            get_node_var!(ctx.run, root, "demo_btn_particles"),
+            get_node_var!(ctx.run, root, "demo_btn_audio"),
+            get_node_var!(ctx.run, root, "demo_btn_decals"),
+            get_node_var!(ctx.run, root, "demo_btn_webcam"),
+            get_node_var!(ctx.run, root, "demo_btn_fps_tester"),
         ];
 
         with_state_mut!(ctx.run, DemoManagerState, ctx.id, |state| {
@@ -634,16 +553,16 @@ methods!({
         };
         reparent!(ctx.run, parent, root);
 
-        let panel = node_var(ctx, root, "pause_panel");
-        let content = node_var(ctx, root, "pause_content");
-        let title = node_var(ctx, root, "pause_title");
-        let sens_label = node_var(ctx, root, "pause_sens_label");
+        let panel = get_node_var!(ctx.run, root, "pause_panel");
+        let content = get_node_var!(ctx.run, root, "pause_content");
+        let title = get_node_var!(ctx.run, root, "pause_title");
+        let sens_label = get_node_var!(ctx.run, root, "pause_sens_label");
         let buttons = vec![
-            node_var(ctx, root, "pause_btn_sens_down"),
-            node_var(ctx, root, "pause_btn_sens_up"),
-            node_var(ctx, root, "pause_btn_resume"),
-            node_var(ctx, root, "pause_btn_restart"),
-            node_var(ctx, root, "pause_btn_hub"),
+            get_node_var!(ctx.run, root, "pause_btn_sens_down"),
+            get_node_var!(ctx.run, root, "pause_btn_sens_up"),
+            get_node_var!(ctx.run, root, "pause_btn_resume"),
+            get_node_var!(ctx.run, root, "pause_btn_restart"),
+            get_node_var!(ctx.run, root, "pause_btn_hub"),
         ];
 
         with_state_mut!(ctx.run, DemoManagerState, ctx.id, |state| {
@@ -675,7 +594,7 @@ methods!({
             }
         };
         reparent!(ctx.run, parent, root);
-        let panel = node_var(ctx, root, "transition_fade_panel");
+        let panel = get_node_var!(ctx.run, root, "transition_fade_panel");
         with_state_mut!(ctx.run, DemoManagerState, ctx.id, |state| {
             state.refs.fade_root = root;
             state.refs.fade_panel = panel;
@@ -705,7 +624,7 @@ methods!({
         with_state_mut!(ctx.run, DemoManagerState, ctx.id, |state| {
             state.refs.profiling_overlay_root = root;
         });
-        set_ui_tree_visible(ctx, root, true);
+        set_tree_visible!(ctx.run, root, true);
     }
 
     fn load_info_overlay_scene(&self, ctx: &mut ScriptContext<'_, API>) {
@@ -974,7 +893,7 @@ methods!({
             physics_pause!(ctx.run, true);
 
             let mut scripts = Vec::new();
-            for node in subtree_nodes(ctx, root) {
+            for node in descendants!(ctx.run, root) {
                 let update = script_set_update_enabled!(ctx.run, node, false);
                 let fixed_update = script_set_fixed_update_enabled!(ctx.run, node, false);
                 if update || fixed_update {
@@ -1134,13 +1053,13 @@ methods!({
         });
         let show_hub_menu = mode == DemoMode::Hub
             && !matches!(fade_action, FadeAction::LoadDemo | FadeAction::RestartDemo);
-        set_ui_tree_visible(ctx, menu_root, show_hub_menu);
-        set_ui_tree_visible(ctx, profiling_overlay_root, true);
-        set_ui_tree_visible(ctx, info_overlay_root, true);
-        set_ui_tree_visible(
-            ctx,
+        set_tree_visible!(ctx.run, menu_root, show_hub_menu);
+        set_tree_visible!(ctx.run, profiling_overlay_root, true);
+        set_tree_visible!(ctx.run, info_overlay_root, true);
+        set_tree_visible!(
+            ctx.run,
             pause_root,
-            mode == DemoMode::Paused || pause_alpha > 0.001,
+            mode == DemoMode::Paused || pause_alpha > 0.001
         );
         self.apply_pause_alpha(ctx, pause_alpha);
         self.apply_mode_io(ctx);
@@ -1181,16 +1100,8 @@ methods!({
             return;
         }
 
-        let mut stack = vec![root];
-        while let Some(id) = stack.pop() {
+        for id in descendants!(ctx.run, root) {
             let _ = call_method!(ctx.run, id, func!("set_info_overlay"), params![overlay]);
-            if let Some(children) = get_node_children_ids!(ctx.run, id) {
-                for child in children {
-                    if !child.is_nil() {
-                        stack.push(child);
-                    }
-                }
-            }
         }
     }
 
@@ -1292,22 +1203,7 @@ methods!({
             return;
         }
 
-        let mut stack = vec![root];
-        while let Some(id) = stack.pop() {
-            set_var!(
-                ctx.run,
-                id,
-                var!("mouse_sensitivity"),
-                variant!(sensitivity)
-            );
-            if let Some(children) = get_node_children_ids!(ctx.run, id) {
-                for child in children {
-                    if !child.is_nil() {
-                        stack.push(child);
-                    }
-                }
-            }
-        }
+        broadcast_var!(ctx.run, root, var!("mouse_sensitivity"), variant!(sensitivity));
     }
 
     fn apply_freecam_input_enabled_to_active_demo(
@@ -1322,17 +1218,7 @@ methods!({
             return;
         }
 
-        let mut stack = vec![root];
-        while let Some(id) = stack.pop() {
-            set_var!(ctx.run, id, var!("input_enabled"), variant!(enabled));
-            if let Some(children) = get_node_children_ids!(ctx.run, id) {
-                for child in children {
-                    if !child.is_nil() {
-                        stack.push(child);
-                    }
-                }
-            }
-        }
+        broadcast_var!(ctx.run, root, var!("input_enabled"), variant!(enabled));
     }
 
     fn apply_freecam_speed_to_active_demo(&self, ctx: &mut ScriptContext<'_, API>) {
@@ -1349,7 +1235,7 @@ methods!({
             return;
         }
 
-        let camera = find_descendant_by_name(ctx, root, DEMO_CAMERA_NODE_NAME);
+        let camera = find_node!(ctx.run, root, DEMO_CAMERA_NODE_NAME).unwrap_or(NodeID::nil());
         if camera.is_nil() {
             return;
         }
@@ -1363,17 +1249,15 @@ methods!({
         });
         let clamped = if visible { alpha.clamp(0.0, 1.0) } else { 0.0 };
         let show = visible && clamped > 0.001;
-        let color = color_with_alpha("#000000", clamped);
+        let color = FADE_COLOR.with_alpha(clamped);
         for id in [root, panel] {
             if id.is_nil() {
                 continue;
             }
             with_node_mut!(ctx.run, UiPanel, id, |node| {
-                if let Some(color) = color {
-                    node.style.fill = color;
-                    node.style.stroke = color;
-                    node.style.stroke_width = 0.0;
-                }
+                node.style.fill = color;
+                node.style.stroke = color;
+                node.style.stroke_width = 0.0;
                 node.visible = show;
                 node.input_enabled = false;
             });
@@ -1399,46 +1283,36 @@ methods!({
 
         let show = mode == DemoMode::Paused || alpha > 0.001;
         let t = (alpha / PAUSE_BG_MAX_ALPHA).clamp(0.0, 1.0);
-        let bg = color_with_alpha("#070A0F", alpha);
+        let bg = PAUSE_BG_COLOR.with_alpha(alpha);
 
         with_node_mut!(ctx.run, UiPanel, root, |panel| {
             panel.visible = show;
-            if let Some(color) = bg {
-                panel.style.fill = color;
-                panel.style.stroke = color;
-                panel.style.stroke_width = 0.0;
-            }
+            panel.style.fill = bg;
+            panel.style.stroke = bg;
+            panel.style.stroke_width = 0.0;
         });
 
         if !panel.is_nil() {
             with_node_mut!(ctx.run, UiPanel, panel, |node| {
                 node.visible = show;
-                if let Some(color) = color_with_alpha("#0B1018", PAUSE_PANEL_ALPHA * t) {
-                    node.style.fill = color;
-                }
-                if let Some(color) = color_with_alpha("#D0E0EF", t) {
-                    node.style.stroke = color;
-                }
+                node.style.fill = PAUSE_PANEL_FILL_COLOR.with_alpha(PAUSE_PANEL_ALPHA * t);
+                node.style.stroke = PAUSE_PANEL_STROKE_COLOR.with_alpha(t);
                 node.style.stroke_width = if show { 1.0 } else { 0.0 };
             });
         }
 
         if !content.is_nil() {
-            set_ui_tree_visible(ctx, content, show);
+            set_tree_visible!(ctx.run, content, show);
             if !title.is_nil() {
                 with_node_mut!(ctx.run, UiLabel, title, |label| {
                     label.visible = show;
-                    if let Some(color) = color_with_alpha("#FFFFFF", t) {
-                        label.color = color;
-                    }
+                    label.color = WHITE_COLOR.with_alpha(t);
                 });
             }
             if !sens_label.is_nil() {
                 with_node_mut!(ctx.run, UiLabel, sens_label, |label| {
                     label.visible = show;
-                    if let Some(color) = color_with_alpha("#FFFFFF", t) {
-                        label.color = color;
-                    }
+                    label.color = WHITE_COLOR.with_alpha(t);
                 });
             }
         }
@@ -1451,29 +1325,6 @@ methods!({
         }
     }
 });
-
-fn set_ui_tree_visible<API: ScriptAPI + ?Sized>(
-    ctx: &mut ScriptContext<'_, API>,
-    root: NodeID,
-    visible: bool,
-) {
-    if root.is_nil() {
-        return;
-    }
-    let mut stack = vec![root];
-    while let Some(id) = stack.pop() {
-        let _ = with_base_node_mut!(ctx.run, UiNode, id, |node| {
-            node.visible = visible;
-        });
-        if let Some(children) = get_node_children_ids!(ctx.run, id) {
-            for child in children {
-                if !child.is_nil() {
-                    stack.push(child);
-                }
-            }
-        }
-    }
-}
 
 fn scene_ui_parent<API: ScriptAPI + ?Sized>(
     ctx: &mut ScriptContext<'_, API>,
@@ -1488,64 +1339,6 @@ fn scene_ui_parent<API: ScriptAPI + ?Sized>(
     scene_root
 }
 
-fn node_var<API: ScriptAPI + ?Sized>(
-    ctx: &mut ScriptContext<'_, API>,
-    node: NodeID,
-    name: &str,
-) -> NodeID {
-    get_var!(ctx.run, node, name)
-        .as_node()
-        .unwrap_or(NodeID::nil())
-}
-
-fn find_descendant_by_name<API: ScriptAPI + ?Sized>(
-    ctx: &mut ScriptContext<'_, API>,
-    root: NodeID,
-    name: &str,
-) -> NodeID {
-    if root.is_nil() {
-        return NodeID::nil();
-    }
-
-    let mut stack = vec![root];
-    while let Some(id) = stack.pop() {
-        if let Some(child) = get_child!(ctx.run, id, name) {
-            return child;
-        }
-        if let Some(children) = get_node_children_ids!(ctx.run, id) {
-            for child in children {
-                if !child.is_nil() {
-                    stack.push(child);
-                }
-            }
-        }
-    }
-    NodeID::nil()
-}
-
-fn subtree_nodes<API: ScriptAPI + ?Sized>(
-    ctx: &mut ScriptContext<'_, API>,
-    root: NodeID,
-) -> Vec<NodeID> {
-    if root.is_nil() {
-        return Vec::new();
-    }
-
-    let mut nodes = Vec::new();
-    let mut stack = vec![root];
-    while let Some(id) = stack.pop() {
-        nodes.push(id);
-        if let Some(children) = get_node_children_ids!(ctx.run, id) {
-            for child in children {
-                if !child.is_nil() {
-                    stack.push(child);
-                }
-            }
-        }
-    }
-    nodes
-}
-
 fn set_button_alpha<API: ScriptAPI + ?Sized>(
     ctx: &mut ScriptContext<'_, API>,
     button: NodeID,
@@ -1554,29 +1347,18 @@ fn set_button_alpha<API: ScriptAPI + ?Sized>(
 ) {
     with_node_mut!(ctx.run, UiButton, button, |node| {
         node.visible = visible;
-        if let Some(color) = color_with_alpha("#101820", 0.94 * alpha) {
-            node.style.fill = color;
-        }
-        if let Some(color) = color_with_alpha("#88AADD", alpha) {
-            node.style.stroke = color;
-        }
+        node.style.fill = BUTTON_FILL_COLOR.with_alpha(0.94 * alpha);
+        node.style.stroke = BUTTON_STROKE_COLOR.with_alpha(alpha);
     });
 
     if let Some(children) = get_node_children_ids!(ctx.run, button) {
         for child in children {
             with_node_mut!(ctx.run, UiLabel, child, |label| {
                 label.visible = visible;
-                if let Some(color) = color_with_alpha("#FFFFFF", alpha) {
-                    label.color = color;
-                }
+                label.color = WHITE_COLOR.with_alpha(alpha);
             });
         }
     }
-}
-
-fn color_with_alpha(base: &str, alpha: f32) -> Option<Color> {
-    let byte = (alpha.clamp(0.0, 1.0) * 255.0).round() as u8;
-    Color::from_hex(&format!("{base}{byte:02X}"))
 }
 
 fn demo_mode_name(mode: DemoMode) -> &'static str {

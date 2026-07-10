@@ -90,8 +90,14 @@
 | `with_base_node` | [`with_base_node`](#with_base_node) |
 | `with_base_node_mut` | [`with_base_node_mut`](#with_base_node_mut) |
 | `create_node` | [`create_node`](#create_node) |
+| `spawn` | [`spawn`](#spawn) |
 | `node_collection` | [`node_collection`](#node_collection) |
 | `create_nodes` | [`create_nodes`](#create_nodes) |
+| `find_node` | [`find_node`](#find_node) |
+| `descendants` | [`descendants`](#descendants) |
+| `set_tree_visible` | [`set_tree_visible`](#set_tree_visible) |
+| `broadcast_var` | [`broadcast_var`](#broadcast_var) |
+| `look_at_3d` | [`look_at_3d`](#look_at_3d) |
 | `get_node_name` | [`get_node_name`](#get_node_name) |
 | `set_node_name` | [`set_node_name`](#set_node_name) |
 | `get_skeleton_bone_name` | [`get_skeleton_bone_name`](#get_skeleton_bone_name) |
@@ -1769,4 +1775,70 @@ This runtime module belongs to `ctx.run` and documents nodes calls.
 | Returns | `bool or () as shown by backing method` |
 | Use when | Use when code must release, remove, stop, or disconnect existing engine state. |
 | Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+
+### `spawn`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `spawn!(ctx.run, NodeTy, name, tags, parent, \|node\| { ... }) -> NodeID` |
+| Params | `ctx, node_ty, [name], [tags], [parent], closure` |
+| Returns | `NodeID` |
+| Use when | Use when a single dynamically-computed node needs create + configure in one step (`create_node!` then `with_node_mut!`). Name/tags/parent are optional, matching `create_node!` arms. |
+| Fails when / edge behavior | Configuration closure is a no-op if the created node type does not match; the id is still returned. |
+
+### `find_node`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `find_node!(ctx.run, root, name) -> Option<NodeID>` |
+| Params | `ctx, root, name` |
+| Returns | `Option<NodeID>` |
+| Use when | Use to locate a node by name inside `root`'s subtree (including `root`). Index-backed: O(nodes sharing the name), not a tree walk. Pass `NodeID::nil()` as `root` to search the whole scene. |
+| Fails when / edge behavior | Returns `None` when no node in scope has the name. |
+
+### `descendants`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `descendants!(ctx.run, root) -> Vec<NodeID>` |
+| Params | `ctx, root` |
+| Returns | `Vec<NodeID>` |
+| Use when | Use to iterate `root` plus every descendant without a manual stack walk. |
+| Fails when / edge behavior | Returns an empty vec when `root` is nil. |
+
+### `set_tree_visible`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `set_tree_visible!(ctx.run, root, visible) -> usize` |
+| Params | `ctx, root, visible` |
+| Returns | `usize` (count of UI nodes updated) |
+| Use when | Use to toggle visibility across a whole `UiNode` subtree in one runtime call. Non-UI nodes are skipped. |
+| Fails when / edge behavior | Returns `0` when `root` is nil or contains no UI nodes. |
+
+### `broadcast_var`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` + `ctx.run.Scripts()` |
+| Signature | `broadcast_var!(ctx.run, root, member, value) -> usize` |
+| Params | `ctx, root, member, value` |
+| Returns | `usize` (count of nodes visited) |
+| Use when | Use to set one script var across an entire subtree (for example pushing a shared setting into every demo node). `value` is cloned per node. |
+| Fails when / edge behavior | Returns `0` when `root` is nil; nodes without the var silently ignore the set. |
+
+### `look_at_3d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `look_at_3d!(ctx.run, node, target[, up]) -> bool` |
+| Params | `ctx, node, target, [up]` |
+| Returns | `bool` |
+| Use when | Use to rotate a 3D spatial node to face a world-space point. Default up is world `+Y`. |
+| Fails when / edge behavior | Returns `false` when the node has no 3D global transform. |
 

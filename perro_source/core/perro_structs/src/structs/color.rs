@@ -60,6 +60,17 @@ impl Color {
         Self::new(r, g, b, 1.0)
     }
 
+    /// Returns a copy with alpha overridden. `const` and allocation-free.
+    #[inline]
+    pub const fn with_alpha(self, a: f32) -> Self {
+        Self {
+            r: self.r,
+            g: self.g,
+            b: self.b,
+            a: Unit::new(a),
+        }
+    }
+
     #[inline]
     pub const fn from_rgba_u8(v: [u8; 4]) -> Self {
         Self {
@@ -123,6 +134,75 @@ impl Color {
     #[inline]
     pub const fn to_rgb(self) -> [f32; 3] {
         [self.r(), self.g(), self.b()]
+    }
+
+    /// `const` hex parser for the [`color!`] macro. Accepts `#RGB`, `#RGBA`,
+    /// `#RRGGBB`, `#RRGGBBAA`, or the same without the leading `#`.
+    ///
+    /// Returns `None` on malformed input so the macro can panic at compile time.
+    pub const fn try_from_hex_const(hex: &str) -> Option<Self> {
+        let bytes = hex.as_bytes();
+        let start = if !bytes.is_empty() && bytes[0] == b'#' {
+            1
+        } else {
+            0
+        };
+        let len = bytes.len() - start;
+        match len {
+            3 => match (
+                nibble_const(bytes[start]),
+                nibble_const(bytes[start + 1]),
+                nibble_const(bytes[start + 2]),
+            ) {
+                (Some(r), Some(g), Some(b)) => Some(Self::from_rgba_u8([
+                    (r << 4) | r,
+                    (g << 4) | g,
+                    (b << 4) | b,
+                    255,
+                ])),
+                _ => None,
+            },
+            4 => match (
+                nibble_const(bytes[start]),
+                nibble_const(bytes[start + 1]),
+                nibble_const(bytes[start + 2]),
+                nibble_const(bytes[start + 3]),
+            ) {
+                (Some(r), Some(g), Some(b), Some(a)) => Some(Self::from_rgba_u8([
+                    (r << 4) | r,
+                    (g << 4) | g,
+                    (b << 4) | b,
+                    (a << 4) | a,
+                ])),
+                _ => None,
+            },
+            6 => match (
+                byte_const(bytes[start], bytes[start + 1]),
+                byte_const(bytes[start + 2], bytes[start + 3]),
+                byte_const(bytes[start + 4], bytes[start + 5]),
+            ) {
+                (Some(r), Some(g), Some(b)) => Some(Self::from_rgba_u8([r, g, b, 255])),
+                _ => None,
+            },
+            8 => match (
+                byte_const(bytes[start], bytes[start + 1]),
+                byte_const(bytes[start + 2], bytes[start + 3]),
+                byte_const(bytes[start + 4], bytes[start + 5]),
+                byte_const(bytes[start + 6], bytes[start + 7]),
+            ) {
+                (Some(r), Some(g), Some(b), Some(a)) => Some(Self::from_rgba_u8([r, g, b, a])),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
+    /// `const` hex parser that panics on malformed input. Used by [`color!`].
+    pub const fn from_hex_const(hex: &str) -> Self {
+        match Self::try_from_hex_const(hex) {
+            Some(color) => color,
+            None => panic!("color! expects `#RGB`, `#RGBA`, `#RRGGBB`, or `#RRGGBBAA`"),
+        }
     }
 
     pub fn from_hex(hex: &str) -> Option<Self> {
@@ -198,6 +278,24 @@ impl Color {
     }
 }
 
+/// Builds a compile-time-validated [`Color`] from a hex literal.
+///
+/// Signature:
+/// - `color!(&str) -> Color`
+///
+/// Usage:
+/// - `const PANEL_BG: Color = color!("#0B1018");`
+/// - `let tint = color!("#88AADDFF");`
+///
+/// Malformed literals fail at compile time. Accepts `#RGB`, `#RGBA`,
+/// `#RRGGBB`, `#RRGGBBAA`, or the same forms without the leading `#`.
+#[macro_export]
+macro_rules! color {
+    ($hex:expr) => {
+        $crate::Color::from_hex_const($hex)
+    };
+}
+
 impl fmt::Display for Color {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
@@ -254,6 +352,24 @@ fn nibble(c: u8) -> Option<u8> {
     }
 }
 
+#[inline]
+const fn nibble_const(c: u8) -> Option<u8> {
+    match c {
+        b'0'..=b'9' => Some(c - b'0'),
+        b'a'..=b'f' => Some(c - b'a' + 10),
+        b'A'..=b'F' => Some(c - b'A' + 10),
+        _ => None,
+    }
+}
+
+#[inline]
+const fn byte_const(hi: u8, lo: u8) -> Option<u8> {
+    match (nibble_const(hi), nibble_const(lo)) {
+        (Some(h), Some(l)) => Some((h << 4) | l),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -275,6 +391,48 @@ mod tests {
 
         assert_eq!(color.to_rgba_u8(), [0x33, 0x66, 0x99, 0xCC]);
         assert_eq!(color.to_hex_rgba(), "#336699CC");
+    }
+
+    #[test]
+    fn with_alpha_overrides_only_alpha() {
+        let base = Color::from_hex("#336699").unwrap();
+        let faded = base.with_alpha(0.5);
+
+        assert_eq!(faded.to_rgba_u8()[0..3], base.to_rgba_u8()[0..3]);
+        assert_eq!(faded.a.to_u8(), 128);
+        // Source stays untouched (value semantics).
+        assert_eq!(base.a.to_u8(), 255);
+    }
+
+    #[test]
+    fn with_alpha_clamps_and_is_const() {
+        const OPAQUE: Color = Color::WHITE.with_alpha(2.0);
+        const CLEAR: Color = Color::WHITE.with_alpha(-1.0);
+
+        assert_eq!(OPAQUE.a.to_u8(), 255);
+        assert_eq!(CLEAR.a.to_u8(), 0);
+    }
+
+    #[test]
+    fn color_macro_parses_hex_at_compile_time() {
+        const PANEL: Color = color!("#0B1018");
+        const SHORT: Color = color!("#FFF");
+        const WITH_ALPHA: Color = color!("#336699CC");
+        const NO_HASH: Color = color!("336699");
+
+        assert_eq!(PANEL.to_rgba_u8(), [0x0B, 0x10, 0x18, 0xFF]);
+        assert_eq!(SHORT.to_rgba_u8(), [0xFF, 0xFF, 0xFF, 0xFF]);
+        assert_eq!(WITH_ALPHA.to_rgba_u8(), [0x33, 0x66, 0x99, 0xCC]);
+        assert_eq!(NO_HASH.to_rgba_u8(), [0x33, 0x66, 0x99, 0xFF]);
+    }
+
+    #[test]
+    fn try_from_hex_const_matches_runtime_parser() {
+        for hex in ["#336699CC", "#abc", "#ABCD", "112233", "#ffffff"] {
+            assert_eq!(Color::try_from_hex_const(hex), Color::from_hex(hex), "{hex}");
+        }
+        assert_eq!(Color::try_from_hex_const("#zzz"), None);
+        assert_eq!(Color::try_from_hex_const("12"), None);
     }
 
     #[test]

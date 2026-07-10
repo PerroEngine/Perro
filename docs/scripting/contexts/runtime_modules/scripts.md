@@ -16,6 +16,7 @@
 | `set_update_enabled` | [`set_update_enabled`](#set_update_enabled) |
 | `set_fixed_update_enabled` | [`set_fixed_update_enabled`](#set_fixed_update_enabled) |
 | `get_var` | [`get_var`](#get_var) |
+| `get_node_var` | [`get_node_var`](#get_node_var) |
 | `set_var` | [`set_var`](#set_var) |
 | `call_method` | [`call_method`](#call_method) |
 | `with_state` | [`with_state`](#with_state) |
@@ -270,6 +271,17 @@ See [Variant](../../variant.md).
 | Returns | `Variant` |
 | Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
 | Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+
+### `get_node_var`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Scripts()` |
+| Signature | `get_node_var!(ctx.run, id, member) -> NodeID` |
+| Params | `ctx, id, member` |
+| Returns | `NodeID` |
+| Use when | Use to read a node-ref script var (`NodeScriptVar::NodeRef`) back as a `NodeID` without manual `Variant::as_node` unwrapping. |
+| Fails when / edge behavior | Returns `NodeID::nil()` when the var is missing or is not a node reference. |
 
 ### `set_var`
 
