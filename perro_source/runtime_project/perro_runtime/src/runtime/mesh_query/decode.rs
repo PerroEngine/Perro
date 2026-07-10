@@ -212,7 +212,7 @@ pub(super) fn decode_pmesh_query(bytes: &[u8]) -> Option<QueryMeshData> {
     let raw_len = u32::from_le_bytes(bytes[33..37].try_into().ok()?) as usize;
     let payload_start = 41usize;
 
-    let raw = decode_pmesh_payload(flags, &bytes[payload_start..])?;
+    let raw = decode_pmesh_payload(flags, &bytes[payload_start..], raw_len)?;
     if raw.len() != raw_len {
         return None;
     }
@@ -370,11 +370,21 @@ pub(super) fn decode_pmesh_query(bytes: &[u8]) -> Option<QueryMeshData> {
     build_query_mesh_data_with_skin(vertices, uv0, paint_uv, joints, weights, triangles)
 }
 
-pub(super) fn decode_pmesh_payload(flags: u32, payload: &[u8]) -> Option<Vec<u8>> {
+pub(super) fn decode_pmesh_payload(
+    flags: u32,
+    payload: &[u8],
+    expected_raw_len: usize,
+) -> Option<Vec<u8>> {
+    if expected_raw_len > perro_asset_formats::pmesh::MAX_RAW_BYTES {
+        return None;
+    }
     if (flags & PMESH_FLAG_PAYLOAD_RAW) != 0 {
-        Some(payload.to_vec())
+        (payload.len() == expected_raw_len).then(|| payload.to_vec())
     } else {
-        decompress_zlib(payload).ok()
+        if payload.len() > perro_asset_formats::pmesh::MAX_COMPRESSED_BYTES {
+            return None;
+        }
+        perro_io::decompress_zlib_limited(payload, expected_raw_len).ok()
     }
 }
 

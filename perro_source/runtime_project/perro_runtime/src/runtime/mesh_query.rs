@@ -10,7 +10,6 @@ use perro_asset_formats::pmesh::{
     FLAG_PAYLOAD_RAW as PMESH_FLAG_PAYLOAD_RAW, VERSION as PMESH_VERSION,
 };
 use perro_ids::{MaterialID, MeshID, NodeID, parse_hashed_source_uri, string_to_u64};
-use perro_io::decompress_zlib;
 use perro_nodes::{MeshSurfaceBinding, SceneNodeData};
 use perro_render_bridge::Mesh3D;
 use perro_runtime_api::sub_apis::{
@@ -858,7 +857,8 @@ impl Runtime {
         let Some(skeleton_id) = node.skeleton else {
             return Some(mesh);
         };
-        self.skin_query_mesh(mesh.as_ref(), skeleton_id).map(Arc::new)
+        self.skin_query_mesh(mesh.as_ref(), skeleton_id)
+            .map(Arc::new)
     }
 
     /// Build posed query geometry with the same joint palette contract as GPU

@@ -13,7 +13,7 @@ use perro_asset_formats::{
     },
     source_ext,
 };
-use perro_io::{compress_zlib_best, decompress_zlib, walkdir::collect_file_paths};
+use perro_io::{compress_zlib_best, decompress_zlib_limited, walkdir::collect_file_paths};
 use perro_scene::{NodeType, Parser, SceneNodeData, SceneValue};
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap},
@@ -279,7 +279,7 @@ fn decode_collision_pmesh_trimesh(bytes: &[u8]) -> Option<TriMeshData> {
     let vertex_count = u32::from_le_bytes(bytes[13..17].try_into().ok()?) as usize;
     let index_count = u32::from_le_bytes(bytes[17..21].try_into().ok()?) as usize;
     let raw_len = u32::from_le_bytes(bytes[29..33].try_into().ok()?) as usize;
-    let raw = decode_pmesh_payload(flags, &bytes[33..])?;
+    let raw = decode_pmesh_payload(flags, &bytes[33..], raw_len)?;
     if raw.len() != raw_len {
         return None;
     }
@@ -309,7 +309,7 @@ fn decode_render_pmesh_trimesh(bytes: &[u8]) -> Option<TriMeshData> {
     let meshlet_count = u32::from_le_bytes(bytes[25..29].try_into().ok()?) as usize;
     let lod_count = u32::from_le_bytes(bytes[29..33].try_into().ok()?) as usize;
     let raw_len = u32::from_le_bytes(bytes[33..37].try_into().ok()?) as usize;
-    let raw = decode_pmesh_payload(flags, &bytes[41..])?;
+    let raw = decode_pmesh_payload(flags, &bytes[41..], raw_len)?;
     if raw.len() != raw_len {
         return None;
     }
@@ -542,11 +542,17 @@ fn encode_collision_pmesh(
     Ok(out)
 }
 
-fn decode_pmesh_payload(flags: u32, payload: &[u8]) -> Option<Vec<u8>> {
+fn decode_pmesh_payload(flags: u32, payload: &[u8], expected_raw_len: usize) -> Option<Vec<u8>> {
+    if expected_raw_len > perro_asset_formats::pmesh::MAX_RAW_BYTES {
+        return None;
+    }
     if (flags & PMESH_FLAG_PAYLOAD_RAW) != 0 {
-        Some(payload.to_vec())
+        (payload.len() == expected_raw_len).then(|| payload.to_vec())
     } else {
-        decompress_zlib(payload).ok()
+        if payload.len() > perro_asset_formats::pmesh::MAX_COMPRESSED_BYTES {
+            return None;
+        }
+        decompress_zlib_limited(payload, expected_raw_len).ok()
     }
 }
 
