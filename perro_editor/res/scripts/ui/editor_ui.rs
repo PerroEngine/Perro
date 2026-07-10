@@ -252,7 +252,7 @@ fn refresh_node_picker_view<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_,
 
 fn refresh_files_view<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, view: &EditorView) {
     apply_file_tree_layout(ctx);
-    set_file_tree_list(ctx, &view);
+    set_file_tree_list(ctx, view);
 }
 
 fn refresh_tabs_view<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, view: &EditorView) {
@@ -291,7 +291,7 @@ fn refresh_tabs_view<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, 
 
 fn refresh_scene_pane_view<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, view: &EditorView) {
     apply_scene_list_layout(ctx);
-    set_scene_tree_list(ctx, &view);
+    set_scene_tree_list(ctx, view);
     apply_viewport_mode(ctx, &view.viewport_mode);
     apply_editor_gizmos(ctx, &view.gizmo, &view.viewport_mode);
     apply_selected_ui_overlay(ctx, view.selected_ui_rect);

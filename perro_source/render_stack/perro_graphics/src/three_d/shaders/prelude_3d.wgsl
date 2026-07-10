@@ -703,11 +703,13 @@ fn shadow_factor(world_pos: vec3<f32>, normal_ws: vec3<f32>, light_dir_to_light:
 // normalize() calls out of the per-cascade loop).
 fn sample_ray_shadow_array(light_view_proj: mat4x4<f32>, world_pos: vec3<f32>, normal_dir: vec3<f32>, bias_dir: vec3<f32>, layer: u32) -> f32 {
     let texel_world = max(shadow.ray_texel[layer], 1.0e-4);
-    // Cap the texel-derived offset in world units: a coarse cascade (large
-    // world-per-texel) must degrade to a soft/offset shadow, not push the
-    // sample a meter off the surface and erase contact shadows entirely.
-    let normal_offset = max(min(texel_world * 1.75, 0.35), shadow.params0.w * 0.25);
-    let sample_pos = world_pos + normal_dir * normal_offset + bias_dir * normal_offset * 0.25;
+    // Keep receiver bias below one shadow texel and below the light's world-space
+    // limit. The depth compare and shadow raster pass already carry depth bias;
+    // pushing toward the light here detaches contact shadows (peter-panning).
+    let normal_light_dot = clamp(dot(normal_dir, bias_dir), 0.0, 1.0);
+    let slope = sqrt(max(1.0 - normal_light_dot * normal_light_dot, 0.0));
+    let normal_offset = min(texel_world * 0.35 * slope, shadow.params0.w);
+    let sample_pos = world_pos + normal_dir * normal_offset;
     let light_clip = light_view_proj * vec4<f32>(sample_pos, 1.0);
     if abs(light_clip.w) <= 1.0e-6 {
         return -1.0;
