@@ -16,6 +16,8 @@ use perro_variant::Variant;
 #[cfg(not(target_arch = "wasm32"))]
 use std::fs;
 #[cfg(not(target_arch = "wasm32"))]
+use std::io::{self, Write};
+#[cfg(not(target_arch = "wasm32"))]
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 #[cfg(feature = "profile")]
@@ -688,13 +690,14 @@ impl Runtime {
                 let pack_rel = parse_manifest_string(&manifest_text, "pack_lib")
                     .unwrap_or_else(|| format!("pack/{}", runtime_pack_dylib_name()));
 
-                let extract_root = install_root.join(".runtime_cache").join(stem);
-                fs::create_dir_all(&extract_root).map_err(|err| {
-                    format!(
-                        "failed to create dlc runtime cache dir `{}`: {err}",
-                        extract_root.display()
-                    )
-                })?;
+                let extract_root =
+                    ensure_secure_cache_dir(&install_root, &Path::new(".runtime_cache").join(stem))
+                        .map_err(|err| {
+                            format!(
+                                "failed to create dlc runtime cache dir `{}`: {err}",
+                                install_root.join(".runtime_cache").join(stem).display()
+                            )
+                        })?;
 
                 let script_path =
                     extract_dlc_archive_file_to_cache(stem, &script_rel, &extract_root).map_err(
@@ -814,17 +817,163 @@ fn extract_dlc_archive_file_to_cache(
 ) -> Result<PathBuf, std::io::Error> {
     validate_asset_relative_path(virtual_path)?;
     let bytes = read_mounted_dlc_file(dlc_name, virtual_path)?;
+    write_dlc_cache_file(cache_root, virtual_path, &bytes)
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn write_dlc_cache_file(
+    cache_root: &Path,
+    virtual_path: &str,
+    bytes: &[u8],
+) -> io::Result<PathBuf> {
+    validate_asset_relative_path(virtual_path)?;
+    let relative = Path::new(virtual_path);
+    let parent = relative.parent().unwrap_or_else(|| Path::new(""));
+    let secure_parent = ensure_secure_cache_dir(cache_root, parent)?;
+    let canonical_root = cache_root.canonicalize()?;
     let mut target = cache_root.to_path_buf();
     for segment in virtual_path.split('/') {
         if !segment.is_empty() {
             target.push(segment);
         }
     }
-    if let Some(parent) = target.parent() {
-        fs::create_dir_all(parent)?;
+    if target.parent() != Some(secure_parent.as_path()) {
+        return Err(cache_permission_error(
+            "dlc cache target escapes cache root",
+        ));
     }
-    fs::write(&target, bytes)?;
+    reject_linked_cache_target(&target)?;
+
+    let mut file = open_cache_target_no_follow(&target)?;
+    let metadata = file.metadata()?;
+    if is_link_or_reparse(&metadata) || !metadata.is_file() {
+        return Err(cache_permission_error(
+            "dlc cache target is link, reparse point, or non-file",
+        ));
+    }
+    if !target.canonicalize()?.starts_with(&canonical_root) {
+        return Err(cache_permission_error(
+            "dlc cache target escapes cache root",
+        ));
+    }
+    file.set_len(0)?;
+    file.write_all(bytes)?;
     Ok(target)
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn ensure_secure_cache_dir(root: &Path, relative: &Path) -> io::Result<PathBuf> {
+    if relative
+        .components()
+        .any(|component| !matches!(component, std::path::Component::Normal(_)))
+        && !relative.as_os_str().is_empty()
+    {
+        return Err(cache_permission_error("invalid dlc cache path"));
+    }
+
+    let root_metadata = fs::symlink_metadata(root)?;
+    if is_link_or_reparse(&root_metadata) || !root_metadata.is_dir() {
+        return Err(cache_permission_error(
+            "dlc cache root is link, reparse point, or non-directory",
+        ));
+    }
+    let canonical_root = root.canonicalize()?;
+    let mut current = root.to_path_buf();
+    for component in relative.components() {
+        let std::path::Component::Normal(component) = component else {
+            return Err(cache_permission_error("invalid dlc cache path"));
+        };
+        current.push(component);
+        match fs::symlink_metadata(&current) {
+            Ok(metadata) => validate_cache_dir(&canonical_root, &current, &metadata)?,
+            Err(err) if err.kind() == io::ErrorKind::NotFound => {
+                match fs::create_dir(&current) {
+                    Ok(()) => {}
+                    Err(err) if err.kind() == io::ErrorKind::AlreadyExists => {}
+                    Err(err) => return Err(err),
+                }
+                let metadata = fs::symlink_metadata(&current)?;
+                validate_cache_dir(&canonical_root, &current, &metadata)?;
+            }
+            Err(err) => return Err(err),
+        }
+    }
+    Ok(current)
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn validate_cache_dir(
+    canonical_root: &Path,
+    path: &Path,
+    metadata: &fs::Metadata,
+) -> io::Result<()> {
+    if is_link_or_reparse(metadata) || !metadata.is_dir() {
+        return Err(cache_permission_error(
+            "dlc cache path contains link, reparse point, or non-directory",
+        ));
+    }
+    if !path.canonicalize()?.starts_with(canonical_root) {
+        return Err(cache_permission_error("dlc cache path escapes cache root"));
+    }
+    Ok(())
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn reject_linked_cache_target(path: &Path) -> io::Result<()> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) if is_link_or_reparse(&metadata) => Err(cache_permission_error(
+            "dlc cache target is link or reparse point",
+        )),
+        Ok(metadata) if !metadata.is_file() => {
+            Err(cache_permission_error("dlc cache target is not a file"))
+        }
+        Ok(_) => Ok(()),
+        Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(err) => Err(err),
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn open_cache_target_no_follow(path: &Path) -> io::Result<fs::File> {
+    let mut options = fs::OpenOptions::new();
+    options.write(true).create(true);
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        const O_NOFOLLOW: i32 = 0x2_0000;
+        options.custom_flags(O_NOFOLLOW);
+    }
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        const O_NOFOLLOW: i32 = 0x100;
+        options.custom_flags(O_NOFOLLOW);
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+        const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x20_0000;
+        options.custom_flags(FILE_FLAG_OPEN_REPARSE_POINT);
+    }
+    options.open(path)
+}
+
+#[cfg(windows)]
+fn is_link_or_reparse(metadata: &fs::Metadata) -> bool {
+    use std::os::windows::fs::MetadataExt;
+
+    const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
+    metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
+}
+
+#[cfg(all(not(target_arch = "wasm32"), not(windows)))]
+fn is_link_or_reparse(metadata: &fs::Metadata) -> bool {
+    metadata.file_type().is_symlink()
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn cache_permission_error(message: &'static str) -> io::Error {
+    io::Error::new(io::ErrorKind::PermissionDenied, message)
 }
 
 #[cfg(feature = "profile")]
@@ -849,7 +998,35 @@ mod tests {
     use perro_render_bridge::{RenderCommand, UiCommand};
     use perro_resource_api::sub_apis::{Locale, LocalizationAPI};
     use perro_scene::{Parser, Scene, SceneKey, SceneNodeData, SceneNodeEntry};
-    use std::{borrow::Cow, fs};
+    use std::{
+        borrow::Cow,
+        fs,
+        path::{Path, PathBuf},
+        sync::atomic::{AtomicU64, Ordering},
+    };
+
+    static NEXT_CACHE_TEMP: AtomicU64 = AtomicU64::new(0);
+
+    struct CacheTempDir(PathBuf);
+
+    impl CacheTempDir {
+        fn new(label: &str) -> Self {
+            let id = NEXT_CACHE_TEMP.fetch_add(1, Ordering::Relaxed);
+            let path = std::env::temp_dir().join(format!(
+                "perro-runtime-cache-{label}-{}-{id}",
+                std::process::id()
+            ));
+            let _ = fs::remove_dir_all(&path);
+            fs::create_dir_all(&path).unwrap();
+            Self(path)
+        }
+    }
+
+    impl Drop for CacheTempDir {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
 
     const EMPTY_FIELDS: &[perro_scene::SceneObjectField] = &[];
     const EMPTY_KEYS: &[SceneKey] = &[];
@@ -941,6 +1118,111 @@ mod tests {
         root: None,
         key_names: Cow::Borrowed(EMPTY_KEY_NAMES),
     };
+
+    #[test]
+    fn dlc_cache_write_stays_under_cache_root() {
+        let temp = CacheTempDir::new("write");
+        let cache = temp.0.join("cache");
+        fs::create_dir(&cache).unwrap();
+
+        let target = write_dlc_cache_file(&cache, "scripts/lib.bin", b"one").unwrap();
+        write_dlc_cache_file(&cache, "scripts/lib.bin", b"two").unwrap();
+
+        assert_eq!(target, cache.join("scripts/lib.bin"));
+        assert_eq!(fs::read(target).unwrap(), b"two");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn dlc_cache_rejects_linked_dir() {
+        use std::os::unix::fs::symlink;
+
+        let temp = CacheTempDir::new("linked-dir");
+        let cache = temp.0.join("cache");
+        let outside = temp.0.join("outside");
+        fs::create_dir(&cache).unwrap();
+        fs::create_dir(&outside).unwrap();
+        symlink(&outside, cache.join("scripts")).unwrap();
+
+        assert!(write_dlc_cache_file(&cache, "scripts/lib.bin", b"bad").is_err());
+        assert!(!outside.join("lib.bin").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn dlc_cache_rejects_linked_target() {
+        use std::os::unix::fs::symlink;
+
+        let temp = CacheTempDir::new("linked-target");
+        let cache = temp.0.join("cache");
+        let outside = temp.0.join("outside.bin");
+        fs::create_dir(&cache).unwrap();
+        fs::write(&outside, b"safe").unwrap();
+        symlink(&outside, cache.join("lib.bin")).unwrap();
+
+        assert!(write_dlc_cache_file(&cache, "lib.bin", b"bad").is_err());
+        assert_eq!(fs::read(outside).unwrap(), b"safe");
+    }
+
+    #[cfg(windows)]
+    fn try_cache_symlink_dir(original: &Path, link: &Path) -> bool {
+        match std::os::windows::fs::symlink_dir(original, link) {
+            Ok(()) => true,
+            Err(err)
+                if err.kind() == io::ErrorKind::PermissionDenied
+                    || err.raw_os_error() == Some(1314) =>
+            {
+                false
+            }
+            Err(err) => panic!("symlink create failed: {err}"),
+        }
+    }
+
+    #[cfg(windows)]
+    fn try_cache_symlink_file(original: &Path, link: &Path) -> bool {
+        match std::os::windows::fs::symlink_file(original, link) {
+            Ok(()) => true,
+            Err(err)
+                if err.kind() == io::ErrorKind::PermissionDenied
+                    || err.raw_os_error() == Some(1314) =>
+            {
+                false
+            }
+            Err(err) => panic!("symlink create failed: {err}"),
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn dlc_cache_rejects_linked_dir() {
+        let temp = CacheTempDir::new("linked-dir");
+        let cache = temp.0.join("cache");
+        let outside = temp.0.join("outside");
+        fs::create_dir(&cache).unwrap();
+        fs::create_dir(&outside).unwrap();
+        if !try_cache_symlink_dir(&outside, &cache.join("scripts")) {
+            return;
+        }
+
+        assert!(write_dlc_cache_file(&cache, "scripts/lib.bin", b"bad").is_err());
+        assert!(!outside.join("lib.bin").exists());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn dlc_cache_rejects_linked_target() {
+        let temp = CacheTempDir::new("linked-target");
+        let cache = temp.0.join("cache");
+        let outside = temp.0.join("outside.bin");
+        fs::create_dir(&cache).unwrap();
+        fs::write(&outside, b"safe").unwrap();
+        if !try_cache_symlink_file(&outside, &cache.join("lib.bin")) {
+            return;
+        }
+
+        assert!(write_dlc_cache_file(&cache, "lib.bin", b"bad").is_err());
+        assert_eq!(fs::read(outside).unwrap(), b"safe");
+    }
 
     fn test_lookup(path_hash: u64) -> &'static Scene {
         if path_hash == perro_ids::string_to_u64("res://boot.scn") {

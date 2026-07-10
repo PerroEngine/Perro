@@ -379,6 +379,15 @@ let _ = value;
     }
 
     #[test]
+    fn heading_ids_probe_past_text_suffix_collisions() {
+        let html = crate::highlight::markdown_html("# Foo\n\n# Foo\n\n# Foo-1\n");
+
+        assert!(html.contains("id=\"foo\""));
+        assert!(html.contains("id=\"foo-1\""));
+        assert!(html.contains("id=\"foo-1-1\""));
+    }
+
+    #[test]
     fn generated_internal_links_resolve() {
         let by_route = docs()
             .iter()
