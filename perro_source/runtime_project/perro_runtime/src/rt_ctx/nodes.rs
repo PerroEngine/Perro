@@ -944,8 +944,27 @@ impl NodeAPI for Runtime {
         if child_id.is_nil() {
             return false;
         }
+        if parent_id == child_id {
+            return false;
+        }
         if !parent_id.is_nil() && self.nodes.get(parent_id).is_none() {
             return false;
+        }
+
+        // Reject a parent inside the child's subtree. Bound the upward walk by
+        // the live-node count so an already-corrupt parent cycle also fails
+        // closed instead of hanging this API.
+        let mut ancestor = parent_id;
+        let mut remaining = self.nodes.len();
+        while !ancestor.is_nil() {
+            if ancestor == child_id || remaining == 0 {
+                return false;
+            }
+            let Some(node) = self.nodes.get(ancestor) else {
+                return false;
+            };
+            ancestor = node.get_parent();
+            remaining -= 1;
         }
 
         let old_parent = match self.nodes.get(child_id) {
@@ -1108,6 +1127,11 @@ impl NodeAPI for Runtime {
     }
 
     fn remove_node(&mut self, node_id: perro_ids::NodeID) -> bool {
+        let node_id = self
+            .scene_ownership_roots
+            .get(&node_id)
+            .copied()
+            .unwrap_or(node_id);
         if node_id.is_nil() || self.nodes.get(node_id).is_none() {
             return false;
         }
@@ -1165,6 +1189,9 @@ impl NodeAPI for Runtime {
             self.unregister_internal_node_schedules(current, ty);
             let _ = self.nodes.remove(current);
         }
+
+        self.scene_ownership_roots
+            .retain(|scene_root, owner| !visited.contains(scene_root) && !visited.contains(owner));
 
         stack.clear();
         postorder.clear();

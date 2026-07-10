@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::io::{self, Cursor, Read, Seek, SeekFrom};
-use std::ops::Range;
+use std::ops::{Deref, Range};
 use std::path::Path;
 use std::sync::Arc;
 
@@ -14,23 +14,39 @@ pub type PerroAssetsEntry = PerroAssetsEntryMeta;
 
 const MAX_DECOMPRESSED_ARCHIVE_BYTES: usize = 1024 * 1024 * 1024;
 
+#[derive(Clone)]
+enum ArchiveBytes {
+    Static(&'static [u8]),
+    Owned(Arc<[u8]>),
+}
+
+impl Deref for ArchiveBytes {
+    type Target = [u8];
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            Self::Static(data) => data,
+            Self::Owned(data) => data,
+        }
+    }
+}
+
 pub struct PerroAssetsArchive {
-    data: Arc<[u8]>,
+    data: ArchiveBytes,
     index: HashMap<String, PerroAssetsEntry>,
 }
 
 impl PerroAssetsArchive {
     /// Open a .perro archive from embedded bytes (include_bytes!)
     pub fn open_from_bytes(data: &'static [u8]) -> io::Result<Self> {
-        let arc: Arc<[u8]> = Arc::from(data);
-        Self::open_from_arc(arc)
+        Self::open_from_data(ArchiveBytes::Static(data))
     }
 
     /// Open a .perro archive from owned bytes.
     pub fn open_from_owned_bytes(data: Vec<u8>) -> io::Result<Self> {
         let data = decode_archive_container(data)?;
         let arc: Arc<[u8]> = Arc::from(data.into_boxed_slice());
-        Self::open_from_arc(arc)
+        Self::open_from_data(ArchiveBytes::Owned(arc))
     }
 
     /// Open a .perro archive from file path.
@@ -39,10 +55,10 @@ impl PerroAssetsArchive {
         Self::open_from_owned_bytes(bytes)
     }
 
-    fn open_from_arc(arc: Arc<[u8]>) -> io::Result<Self> {
-        let mut cursor = Cursor::new(&*arc);
+    fn open_from_data(data: ArchiveBytes) -> io::Result<Self> {
+        let mut cursor = Cursor::new(&*data);
         let index = Self::parse_index(&mut cursor)?;
-        Ok(Self { data: arc, index })
+        Ok(Self { data, index })
     }
 
     fn parse_index(cursor: &mut Cursor<&[u8]>) -> io::Result<HashMap<String, PerroAssetsEntry>> {
@@ -205,7 +221,7 @@ fn checked_entry_range(data_len: usize, entry: &PerroAssetsEntry) -> io::Result<
 
 /// Streaming file handle (for uncompressed files only)
 pub struct PerroAssetsFile {
-    data: Arc<[u8]>,
+    data: ArchiveBytes,
     entry: PerroAssetsEntry,
     pos: u64,
 }
@@ -258,7 +274,11 @@ fn checked_seek(base: u64, offset: i64) -> io::Result<u64> {
 
 #[cfg(test)]
 mod tests {
-    use super::checked_seek;
+    use super::{ArchiveBytes, PerroAssetsArchive, checked_seek};
+
+    static EMPTY_ARCHIVE: &[u8] = &[
+        b'P', b'R', b'A', b'1', 1, 0, 0, 0, 0, 0, 0, 0, 20, 0, 0, 0, 0, 0, 0, 0,
+    ];
 
     #[test]
     fn checked_seek_rejects_wraparound() {
@@ -266,5 +286,14 @@ mod tests {
         assert_eq!(checked_seek(10, -5).unwrap(), 5);
         assert!(checked_seek(10, -11).is_err());
         assert!(checked_seek(u64::MAX, 1).is_err());
+    }
+
+    #[test]
+    fn embedded_archive_borrows_static_bytes_without_copy() {
+        let archive = PerroAssetsArchive::open_from_bytes(EMPTY_ARCHIVE).unwrap();
+        let ArchiveBytes::Static(data) = archive.data else {
+            panic!("embedded archive copied bytes");
+        };
+        assert_eq!(data.as_ptr(), EMPTY_ARCHIVE.as_ptr());
     }
 }

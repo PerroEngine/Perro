@@ -53,9 +53,15 @@ fn main() {
         std::process::exit(2);
     };
 
-    let result = if command == "--help" || command == "-h" || command == "help" {
+    let result = if command == "--help"
+        || command == "-h"
+        || command == "help"
+        || command_help_requested(&args)
+    {
         print_usage();
         Ok(())
+    } else if let Err(err) = validate_command_args(command, &args) {
+        Err(err)
     } else {
         match command {
             "new" => new_command(&args, &cwd),
@@ -89,6 +95,179 @@ fn main() {
         eprintln!("{err}");
         std::process::exit(1);
     }
+}
+
+#[derive(Clone, Copy)]
+enum FlagArity {
+    Switch,
+    Value,
+    OptionalValue,
+}
+
+#[derive(Clone, Copy)]
+struct FlagSpec {
+    name: &'static str,
+    arity: FlagArity,
+}
+
+const fn switch(name: &'static str) -> FlagSpec {
+    FlagSpec {
+        name,
+        arity: FlagArity::Switch,
+    }
+}
+
+const fn value(name: &'static str) -> FlagSpec {
+    FlagSpec {
+        name,
+        arity: FlagArity::Value,
+    }
+}
+
+const fn optional_value(name: &'static str) -> FlagSpec {
+    FlagSpec {
+        name,
+        arity: FlagArity::OptionalValue,
+    }
+}
+
+const PATH: &[FlagSpec] = &[value("--path")];
+const NEW: &[FlagSpec] = &[value("--path"), value("--name")];
+const NEW_DLC: &[FlagSpec] = &[value("--path"), value("--name"), switch("--no-open")];
+const NEW_SCRIPT: &[FlagSpec] = &[
+    value("--path"),
+    value("--name"),
+    value("--res"),
+    value("--dlc"),
+    switch("--no-open"),
+];
+const NEW_SCENE: &[FlagSpec] = &[
+    value("--path"),
+    value("--name"),
+    value("--res"),
+    value("--dlc"),
+    value("--template"),
+    switch("--no-open"),
+];
+const IMPORT_ANIM: &[FlagSpec] = &[
+    value("--input"),
+    value("--in"),
+    value("--output"),
+    value("--out"),
+    value("--fps"),
+    value("--clip"),
+    value("--skeleton"),
+    value("--retarget-map"),
+    value("--retarget"),
+];
+const INSTALL: &[FlagSpec] = &[value("--profile")];
+const BUILD: &[FlagSpec] = &[
+    value("--path"),
+    value("--target"),
+    switch("--profile"),
+    switch("--console"),
+];
+const DLC: &[FlagSpec] = &[value("--name"), value("--path")];
+const DEV: &[FlagSpec] = &[
+    value("--path"),
+    value("--target"),
+    switch("--timings"),
+    switch("--profile"),
+    switch("--ui-profile"),
+    switch("--release"),
+    optional_value("--csv-profile"),
+    value("--host"),
+    value("--port"),
+];
+const BENCH: &[FlagSpec] = &[
+    value("--path"),
+    value("--script"),
+    value("--method"),
+    value("--var"),
+];
+const MEM_PROFILE: &[FlagSpec] = &[
+    value("--path"),
+    switch("--release"),
+    optional_value("--csv"),
+];
+const FLAMEGRAPH: &[FlagSpec] = &[value("--path"), switch("--profile"), switch("--root")];
+const FORMAT: &[FlagSpec] = &[value("--path"), switch("--dedup")];
+
+fn command_schema(command: &str) -> Option<&'static [FlagSpec]> {
+    match command {
+        "new" => Some(NEW),
+        "new_dlc" => Some(NEW_DLC),
+        "new_script" | "new_animation" | "new_panimtree" => Some(NEW_SCRIPT),
+        "new_scene" => Some(NEW_SCENE),
+        "import_anim" | "gltf_to_panim" | "glb_to_panim" => Some(IMPORT_ANIM),
+        "clean" | "check" | "test" | "doctor" | "clippy" => Some(PATH),
+        "install" => Some(INSTALL),
+        "build" => Some(BUILD),
+        "dlc" => Some(DLC),
+        "dev" => Some(DEV),
+        "bench" => Some(BENCH),
+        "mem-profile" => Some(MEM_PROFILE),
+        "flamegraph" => Some(FLAMEGRAPH),
+        "format" => Some(FORMAT),
+        _ => None,
+    }
+}
+
+fn command_help_requested(args: &[String]) -> bool {
+    args.iter()
+        .skip(2)
+        .take_while(|arg| arg.as_str() != "--")
+        .any(|arg| arg == "--help" || arg == "-h")
+}
+
+fn validate_command_args(command: &str, args: &[String]) -> Result<(), String> {
+    let Some(schema) = command_schema(command) else {
+        return Ok(());
+    };
+    let mut index = 2;
+    while index < args.len() {
+        let arg = &args[index];
+        if arg == "--" {
+            break;
+        }
+        if !arg.starts_with('-') {
+            index += 1;
+            continue;
+        }
+        let Some(spec) = schema.iter().find(|spec| spec.name == arg) else {
+            let valid = schema
+                .iter()
+                .map(|spec| spec.name)
+                .collect::<Vec<_>>()
+                .join(", ");
+            return Err(format!(
+                "unknown flag `{arg}` for `{command}`; valid flags: {valid}"
+            ));
+        };
+        match spec.arity {
+            FlagArity::Switch => index += 1,
+            FlagArity::Value => {
+                let next = args.get(index + 1);
+                if next.is_none_or(|value| value == "--" || value.starts_with('-')) {
+                    return Err(format!(
+                        "missing value for flag `{}` in `{command}`",
+                        spec.name
+                    ));
+                }
+                index += 2;
+            }
+            FlagArity::OptionalValue => {
+                index += 1;
+                if args
+                    .get(index)
+                    .is_some_and(|value| value != "--" && !value.starts_with('-'))
+                {
+                    index += 1;
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 fn print_usage() {
@@ -151,14 +330,17 @@ fn print_usage() {
 
 fn parse_flag_value(args: &[String], flag: &str) -> Option<String> {
     let idx = args.iter().position(|a| a == flag)?;
-    args.get(idx + 1).cloned()
+    args.get(idx + 1)
+        .filter(|value| value.as_str() != "--" && !value.starts_with('-'))
+        .cloned()
 }
 
 fn parse_optional_flag_value(args: &[String], flag: &str) -> Option<Option<String>> {
     let idx = args.iter().position(|a| a == flag)?;
     let next = args.get(idx + 1);
     if let Some(val) = next
-        && !val.starts_with("--")
+        && val != "--"
+        && !val.starts_with('-')
     {
         return Some(Some(val.clone()));
     }
@@ -202,4 +384,51 @@ fn find_project_root(start: &Path) -> Option<PathBuf> {
         }
     }
     None
+}
+
+#[cfg(test)]
+mod cli_arg_tests {
+    use super::*;
+
+    fn args(values: &[&str]) -> Vec<String> {
+        values.iter().map(|value| (*value).to_string()).collect()
+    }
+
+    #[test]
+    fn required_flag_value_does_not_consume_next_flag() {
+        let args = args(&["perro", "dev", "--path", "--release"]);
+
+        let err = validate_command_args("dev", &args).unwrap_err();
+
+        assert_eq!(err, "missing value for flag `--path` in `dev`");
+        assert_eq!(parse_flag_value(&args, "--path"), None);
+    }
+
+    #[test]
+    fn unknown_flag_reports_command_and_valid_schema() {
+        let args = args(&["perro", "clean", "--pth", "project"]);
+
+        let err = validate_command_args("clean", &args).unwrap_err();
+
+        assert!(err.contains("unknown flag `--pth` for `clean`"));
+        assert!(err.contains("valid flags: --path"));
+    }
+
+    #[test]
+    fn optional_value_does_not_consume_switch() {
+        let args = args(&["perro", "dev", "--csv-profile", "--release"]);
+
+        assert_eq!(validate_command_args("dev", &args), Ok(()));
+        assert_eq!(
+            parse_optional_flag_value(&args, "--csv-profile"),
+            Some(None)
+        );
+    }
+
+    #[test]
+    fn passthrough_flags_skip_command_validation() {
+        let args = args(&["perro", "test", "--path", "game", "--", "--nocapture"]);
+
+        assert_eq!(validate_command_args("test", &args), Ok(()));
+    }
 }

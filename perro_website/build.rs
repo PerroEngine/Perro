@@ -4,7 +4,6 @@ use perro_compiler::{
 use pulldown_cmark::{Event, HeadingLevel, Parser, Tag, TagEnd};
 use serde::Serialize;
 use std::{
-    collections::HashMap,
     env, fs, io,
     path::{Path, PathBuf},
     time::SystemTime,
@@ -454,7 +453,7 @@ fn headings(markdown: &str) -> Vec<HeadingOut> {
     let mut out = Vec::new();
     let mut in_heading = None::<u8>;
     let mut text = String::new();
-    let mut seen = HashMap::new();
+    let mut seen = highlight::AnchorIds::default();
 
     for event in Parser::new(markdown) {
         match event {

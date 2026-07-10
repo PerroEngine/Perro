@@ -60,7 +60,13 @@ impl Runtime {
             self.call_start_script(id);
             ran_start = true;
         }
-        self.script_runtime.pending_start_scripts = queued;
+        // Callbacks may attach scripts and queue their all-init work into the
+        // live field while `queued` is drained. Preserve that work for the next
+        // pass while reusing this allocation.
+        super::state::recycle_callback_queue(
+            queued,
+            &mut self.script_runtime.pending_start_scripts,
+        );
         if ran_start {
             self.mark_ui_viewport_dirty();
         }

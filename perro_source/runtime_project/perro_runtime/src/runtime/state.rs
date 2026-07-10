@@ -15,11 +15,18 @@ type DynamicScriptLibrary = libloading::Library;
 #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
 type DynamicScriptLibrary = ();
 
+pub(crate) fn recycle_callback_queue<T>(mut scratch: Vec<T>, live: &mut Vec<T>) {
+    scratch.clear();
+    scratch.append(live);
+    *live = scratch;
+}
+
 pub(crate) struct ScriptRuntimeState {
     pub(crate) active_script_stack: Vec<(usize, NodeID)>,
     pub(crate) active_callback_context: Option<ScriptCallbackContext>,
     pub(crate) pending_start_scripts: Vec<NodeID>,
     pub(crate) pending_start_flags: Vec<Option<NodeID>>,
+    pub(crate) removing_scripts: AHashSet<NodeID>,
     pub(crate) script_libraries: Vec<DynamicScriptLibrary>,
     pub(crate) base_scripts_loaded: bool,
     pub(crate) mounted_dlc_script_libs: AHashMap<String, PathBuf>,
@@ -39,6 +46,7 @@ impl ScriptRuntimeState {
             active_callback_context: None,
             pending_start_scripts: Vec::new(),
             pending_start_flags: Vec::new(),
+            removing_scripts: AHashSet::default(),
             script_libraries: Vec::new(),
             base_scripts_loaded: false,
             mounted_dlc_script_libs: AHashMap::default(),
@@ -171,8 +179,10 @@ impl Default for PhysicsPose3D {
 
 pub(crate) struct InternalUpdateState {
     pub(crate) internal_update_nodes: Vec<NodeID>,
+    pub(crate) internal_update_dispatch_scratch: Vec<NodeID>,
     pub(crate) internal_fixed_update_nodes: Vec<NodeID>,
     pub(crate) internal_fixed_dispatch_nodes: Vec<NodeID>,
+    pub(crate) internal_fixed_dispatch_scratch: Vec<NodeID>,
     pub(crate) internal_update_pos: Vec<u32>,
     pub(crate) internal_fixed_update_pos: Vec<u32>,
     pub(crate) physics_body_nodes_2d: Vec<NodeID>,
@@ -189,8 +199,10 @@ impl InternalUpdateState {
     pub(crate) fn new() -> Self {
         Self {
             internal_update_nodes: Vec::new(),
+            internal_update_dispatch_scratch: Vec::new(),
             internal_fixed_update_nodes: Vec::new(),
             internal_fixed_dispatch_nodes: Vec::new(),
+            internal_fixed_dispatch_scratch: Vec::new(),
             internal_update_pos: Vec::new(),
             internal_fixed_update_pos: Vec::new(),
             physics_body_nodes_2d: Vec::new(),
@@ -641,5 +653,20 @@ impl DirtyState {
                 self.pending_transform_root_flags[index] = 0;
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod callback_queue_tests {
+    use super::recycle_callback_queue;
+
+    #[test]
+    fn recycle_callback_queue_preserves_new_work() {
+        let scratch = vec![1, 2];
+        let mut queued_during_callbacks = vec![3, 4];
+
+        recycle_callback_queue(scratch, &mut queued_during_callbacks);
+
+        assert_eq!(queued_during_callbacks, vec![3, 4]);
     }
 }

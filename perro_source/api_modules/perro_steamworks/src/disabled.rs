@@ -147,19 +147,19 @@ pub mod achievements {
 }
 
 pub mod events {
-    use super::{SteamError, SteamEvent};
-    use std::collections::VecDeque;
+    use super::{SteamError, SteamEvent, SteamEventQueueStats};
+    use crate::event_queue::SteamEventQueue;
     use std::sync::{Mutex, OnceLock};
 
-    fn queue() -> &'static Mutex<VecDeque<SteamEvent>> {
-        static QUEUE: OnceLock<Mutex<VecDeque<SteamEvent>>> = OnceLock::new();
-        QUEUE.get_or_init(|| Mutex::new(VecDeque::new()))
+    fn queue() -> &'static Mutex<SteamEventQueue> {
+        static QUEUE: OnceLock<Mutex<SteamEventQueue>> = OnceLock::new();
+        QUEUE.get_or_init(|| Mutex::new(SteamEventQueue::new()))
     }
 
     #[allow(dead_code)]
     pub(crate) fn push(event: SteamEvent) {
         if let Ok(mut queue) = queue().lock() {
-            queue.push_back(event);
+            queue.push(event);
         }
     }
 
@@ -173,7 +173,7 @@ pub mod events {
     pub fn drain() -> Result<Vec<SteamEvent>, SteamError> {
         queue()
             .lock()
-            .map(|mut queue| queue.drain(..).collect())
+            .map(|mut queue| queue.drain())
             .map_err(|_| SteamError::NotReady)
     }
 
@@ -181,6 +181,13 @@ pub mod events {
         queue()
             .lock()
             .map(|mut queue| queue.clear())
+            .map_err(|_| SteamError::NotReady)
+    }
+
+    pub fn queue_stats() -> Result<SteamEventQueueStats, SteamError> {
+        queue()
+            .lock()
+            .map(|queue| queue.stats())
             .map_err(|_| SteamError::NotReady)
     }
 }

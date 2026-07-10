@@ -7,7 +7,7 @@ use perro_render_bridge::{
 
 fn texture_create(source: &str, request: u64) -> RenderCommand {
     RenderCommand::Resource(ResourceCommand::CreateTexture {
-        request: RenderRequestID(request),
+        request: RenderRequestID::new(request),
         id: TextureID::nil(),
         source: source.to_string(),
         reserved: false,
@@ -16,7 +16,7 @@ fn texture_create(source: &str, request: u64) -> RenderCommand {
 
 fn mesh_create(source: &str, request: u64) -> RenderCommand {
     RenderCommand::Resource(ResourceCommand::CreateMesh {
-        request: RenderRequestID(request),
+        request: RenderRequestID::new(request),
         id: MeshID::nil(),
         source: source.to_string(),
         reserved: false,
@@ -25,7 +25,7 @@ fn mesh_create(source: &str, request: u64) -> RenderCommand {
 
 fn material_create(source: &str, request: u64) -> RenderCommand {
     RenderCommand::Resource(ResourceCommand::CreateMaterial {
-        request: RenderRequestID(request),
+        request: RenderRequestID::new(request),
         id: MaterialID::nil(),
         material: Material3D::default(),
         source: Some(source.to_string()),

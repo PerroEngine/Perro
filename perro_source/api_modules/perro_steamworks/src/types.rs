@@ -661,6 +661,14 @@ pub enum SteamEvent {
     },
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct SteamEventQueueStats {
+    pub capacity: usize,
+    pub len: usize,
+    pub dropped: u64,
+    pub coalesced: u64,
+}
+
 #[cfg(all(test, feature = "steamworks-runtime"))]
 mod tests {
     use super::*;

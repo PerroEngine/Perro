@@ -129,6 +129,9 @@ where
                     playback_frame: 0.0,
                     boomerang_direction: 1.0,
                     paused: false,
+                    last_event_animation: AnimationID::nil(),
+                    last_event_frame: u32::MAX,
+                    pending_event_frames: Vec::new(),
                 })
                 .collect();
         }
@@ -142,12 +145,10 @@ where
 {
     let delta_seconds = delta_time!(ctx).max(0.0);
     let _ = with_node_mut!(ctx, SelfNodeType, id, |tree| {
-        if tree.paused {
-            return;
-        }
         for idx in 0..tree.internal.slots.len() {
             let entry = tree.animations.get(idx).cloned().unwrap_or_default();
             let slot = &mut tree.internal.slots[idx];
+            slot.pending_event_frames.clear();
             let animation = if res.Animations().is_loaded(entry.animation) {
                 slot.last_animation = entry.animation;
                 entry.animation
@@ -156,33 +157,63 @@ where
             } else {
                 AnimationID::nil()
             };
-            if slot.paused || entry.paused || animation.is_nil() {
+            if animation.is_nil() {
                 continue;
             }
             let Some(clip) = res.Animations().get(animation) else {
                 continue;
             };
             let frame_count = clip.frame_count();
+            let previous_playback_frame = slot.playback_frame;
+            let previous_direction = slot.boomerang_direction;
             if frame_count <= 1 {
                 slot.current_frame = 0;
                 slot.playback_frame = 0.0;
                 slot.boomerang_direction = 1.0;
-                continue;
+            } else if !(tree.paused || slot.paused || entry.paused) {
+                let delta_frames = delta_seconds * clip.fps.max(0.0) * tree.speed * entry.speed;
+                slot.playback_frame = super::animation_player::advance_playback_frame(
+                    slot.playback_frame,
+                    delta_frames,
+                    frame_count,
+                    entry.playback_type,
+                    &mut slot.boomerang_direction,
+                );
+                super::animation_player::crossed_animation_frames(
+                    previous_playback_frame,
+                    delta_frames,
+                    frame_count,
+                    entry.playback_type,
+                    previous_direction,
+                    &clip.frame_events,
+                    &mut slot.pending_event_frames,
+                );
+                slot.current_frame = super::animation_player::playback_frame_to_frame(
+                    slot.playback_frame,
+                    frame_count,
+                    entry.playback_type,
+                );
             }
-            slot.playback_frame = super::animation_player::advance_playback_frame(
-                slot.playback_frame,
-                delta_seconds * clip.fps.max(0.0) * tree.speed * entry.speed,
-                frame_count,
-                entry.playback_type,
-                &mut slot.boomerang_direction,
-            );
-            slot.current_frame = super::animation_player::playback_frame_to_frame(
-                slot.playback_frame,
-                frame_count,
-                entry.playback_type,
-            );
+            queue_current_slot_event_once(slot, animation, &clip.frame_events);
         }
     });
+}
+
+fn queue_current_slot_event_once(
+    slot: &mut AnimationTreeSlotPlayback,
+    animation: AnimationID,
+    events: &[perro_animation::AnimationFrameEvent],
+) {
+    let cursor_changed =
+        slot.last_event_animation != animation || slot.last_event_frame != slot.current_frame;
+    if cursor_changed
+        && slot.pending_event_frames.last().copied() != Some(slot.current_frame)
+        && super::animation_player::frame_has_event(events, slot.current_frame)
+    {
+        slot.pending_event_frames.push(slot.current_frame);
+    }
+    slot.last_event_animation = animation;
+    slot.last_event_frame = slot.current_frame;
 }
 
 fn eval_tree_pose<R>(
@@ -345,7 +376,7 @@ fn blend_poses(poses: &[Pose], weights: &[f32], mask: &AnimationTreeMask) -> Pos
             if !seen.insert(key) {
                 continue;
             }
-            let mut acc: Option<PoseTrack> = None;
+            let mut acc: Option<(PoseTrack, BlendWeights)> = None;
             for (idx, pose) in poses.iter().enumerate() {
                 let Some(track) = pose.tracks.get(key) else {
                     continue;
@@ -357,23 +388,147 @@ fn blend_poses(poses: &[Pose], weights: &[f32], mask: &AnimationTreeMask) -> Pos
                 if w <= 0.0 {
                     continue;
                 }
-                acc = Some(if let Some(mut prev) = acc {
-                    prev.value = add_value(&prev.value, &scale_value(&track.value, w));
-                    prev.transform2d_mask |= track.transform2d_mask;
-                    prev.transform3d_mask |= track.transform3d_mask;
-                    prev
+                acc = Some(if let Some((mut prev, mut blended_weights)) = acc {
+                    blend_track(&mut prev, &mut blended_weights, track, w);
+                    (prev, blended_weights)
                 } else {
-                    let mut first = track.clone();
-                    first.value = scale_value(&first.value, w);
-                    first
+                    (track.clone(), BlendWeights::new(track, w))
                 });
             }
-            if let Some(track) = acc {
+            if let Some((track, _)) = acc {
                 out.tracks.insert(key.clone(), track);
             }
         }
     }
     out
+}
+
+#[derive(Clone, Copy, Default)]
+struct BlendWeights {
+    value: f32,
+    position: f32,
+    rotation: f32,
+    scale: f32,
+}
+
+impl BlendWeights {
+    fn new(track: &PoseTrack, weight: f32) -> Self {
+        let transform_mask = if matches!(track.value, AnimationTrackValue::Transform2D(_)) {
+            track.transform2d_mask
+        } else {
+            track.transform3d_mask
+        };
+        Self {
+            value: weight,
+            position: if transform_mask & perro_animation::ANIMATION_TRANSFORM_MASK_POSITION != 0 {
+                weight
+            } else {
+                0.0
+            },
+            rotation: if transform_mask & perro_animation::ANIMATION_TRANSFORM_MASK_ROTATION != 0 {
+                weight
+            } else {
+                0.0
+            },
+            scale: if transform_mask & perro_animation::ANIMATION_TRANSFORM_MASK_SCALE != 0 {
+                weight
+            } else {
+                0.0
+            },
+        }
+    }
+}
+
+fn blend_track(out: &mut PoseTrack, weights: &mut BlendWeights, next: &PoseTrack, weight: f32) {
+    match (&mut out.value, &next.value) {
+        (AnimationTrackValue::Transform2D(a), AnimationTrackValue::Transform2D(b)) => {
+            blend_transform2d_channel(a, b, next.transform2d_mask, weights, weight);
+        }
+        (AnimationTrackValue::Transform3D(a), AnimationTrackValue::Transform3D(b)) => {
+            blend_transform3d_channel(a, b, next.transform3d_mask, weights, weight);
+        }
+        (a, b) => {
+            let total = weights.value + weight;
+            *a = blend_value(a, b, weight / total);
+            weights.value = total;
+        }
+    }
+    out.transform2d_mask |= next.transform2d_mask;
+    out.transform3d_mask |= next.transform3d_mask;
+}
+
+fn blend_transform2d_channel(
+    out: &mut perro_runtime_api::perro_structs::Transform2D,
+    next: &perro_runtime_api::perro_structs::Transform2D,
+    mask: u8,
+    weights: &mut BlendWeights,
+    weight: f32,
+) {
+    if mask & perro_animation::ANIMATION_TRANSFORM_MASK_POSITION != 0 {
+        let t = weight / (weights.position + weight);
+        out.position = out.position.lerped(next.position, t);
+        weights.position += weight;
+    }
+    if mask & perro_animation::ANIMATION_TRANSFORM_MASK_ROTATION != 0 {
+        let t = weight / (weights.rotation + weight);
+        out.rotation = lerp_angle(out.rotation, next.rotation, t);
+        weights.rotation += weight;
+    }
+    if mask & perro_animation::ANIMATION_TRANSFORM_MASK_SCALE != 0 {
+        let t = weight / (weights.scale + weight);
+        out.scale = out.scale.lerped(next.scale, t);
+        weights.scale += weight;
+    }
+}
+
+fn blend_transform3d_channel(
+    out: &mut perro_runtime_api::perro_structs::Transform3D,
+    next: &perro_runtime_api::perro_structs::Transform3D,
+    mask: u8,
+    weights: &mut BlendWeights,
+    weight: f32,
+) {
+    if mask & perro_animation::ANIMATION_TRANSFORM_MASK_POSITION != 0 {
+        let t = weight / (weights.position + weight);
+        out.position = out.position.lerped(next.position, t);
+        weights.position += weight;
+    }
+    if mask & perro_animation::ANIMATION_TRANSFORM_MASK_ROTATION != 0 {
+        let t = weight / (weights.rotation + weight);
+        out.rotation = out.rotation.slerped(next.rotation, t);
+        weights.rotation += weight;
+    }
+    if mask & perro_animation::ANIMATION_TRANSFORM_MASK_SCALE != 0 {
+        let t = weight / (weights.scale + weight);
+        out.scale = out.scale.lerped(next.scale, t);
+        weights.scale += weight;
+    }
+}
+
+fn lerp_angle(a: f32, b: f32, t: f32) -> f32 {
+    let delta =
+        (b - a + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU) - std::f32::consts::PI;
+    a + delta * t
+}
+
+fn blend_value(a: &AnimationTrackValue, b: &AnimationTrackValue, t: f32) -> AnimationTrackValue {
+    match (a, b) {
+        (AnimationTrackValue::F32(a), AnimationTrackValue::F32(b)) => {
+            AnimationTrackValue::F32(a + (b - a) * t)
+        }
+        (AnimationTrackValue::Vec2(a), AnimationTrackValue::Vec2(b)) => {
+            AnimationTrackValue::Vec2([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t])
+        }
+        (AnimationTrackValue::Vec3(a), AnimationTrackValue::Vec3(b)) => {
+            AnimationTrackValue::Vec3([
+                a[0] + (b[0] - a[0]) * t,
+                a[1] + (b[1] - a[1]) * t,
+                a[2] + (b[2] - a[2]) * t,
+            ])
+        }
+        _ if t >= 0.5 => b.clone(),
+        _ => a.clone(),
+    }
 }
 
 fn add_pose_delta(base: &mut Pose, pose: &Pose, weight: f32, mask: &AnimationTreeMask) {
@@ -447,27 +602,42 @@ where
     RT: RuntimeAPI + ?Sized,
     R: ResourceAPI + ?Sized,
 {
-    let entries = with_node!(ctx, SelfNodeType, id, |tree| {
+    let entries = with_node_mut!(ctx, SelfNodeType, id, |tree| {
         tree.internal
             .slots
-            .iter()
+            .iter_mut()
             .enumerate()
             .filter_map(|(idx, slot)| {
-                tree.animations
-                    .get(idx)
-                    .cloned()
-                    .map(|animation| (animation, slot.current_frame))
+                if slot.pending_event_frames.is_empty() {
+                    return None;
+                }
+                tree.animations.get(idx).cloned().map(|animation| {
+                    (
+                        idx,
+                        animation,
+                        slot.last_event_animation,
+                        std::mem::take(&mut slot.pending_event_frames),
+                    )
+                })
             })
             .collect::<Vec<_>>()
-    });
-    for (animation, frame) in entries {
-        if !res.Animations().is_loaded(animation.animation) {
-            continue;
-        }
-        let Some(clip) = res.Animations().get(animation.animation) else {
+    })
+    .unwrap_or_default();
+    for (idx, animation, animation_id, mut frames) in entries {
+        let Some(clip) = res.Animations().get(animation_id) else {
             continue;
         };
-        super::animation_player::apply_frame_events(ctx, &clip, frame, &animation.bindings);
+        for frame in frames.iter().copied() {
+            super::animation_player::apply_frame_events(ctx, &clip, frame, &animation.bindings);
+        }
+        frames.clear();
+        let _ = with_node_mut!(ctx, SelfNodeType, id, |tree| {
+            if let Some(slot) = tree.internal.slots.get_mut(idx)
+                && slot.pending_event_frames.is_empty()
+            {
+                slot.pending_event_frames = frames;
+            }
+        });
     }
 }
 
@@ -574,5 +744,118 @@ fn add_value(a: &AnimationTrackValue, b: &AnimationTrackValue) -> AnimationTrack
             AnimationTrackValue::Transform3D(out)
         }
         _ => a.clone(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use perro_animation::{AnimationEvent, AnimationEventScope, AnimationFrameEvent};
+
+    fn event(frame: u32) -> AnimationFrameEvent {
+        AnimationFrameEvent {
+            frame,
+            scope: AnimationEventScope::Global,
+            event: AnimationEvent::EmitSignal {
+                name: Cow::Borrowed("test"),
+                params: Cow::Borrowed(&[]),
+            },
+        }
+    }
+
+    #[test]
+    fn paused_slot_queues_current_event_once() {
+        let animation = AnimationID::new(1);
+        let events = [event(2)];
+        let mut slot = AnimationTreeSlotPlayback {
+            current_frame: 2,
+            last_event_frame: u32::MAX,
+            ..Default::default()
+        };
+
+        queue_current_slot_event_once(&mut slot, animation, &events);
+        assert_eq!(slot.pending_event_frames, [2]);
+        slot.pending_event_frames.clear();
+        queue_current_slot_event_once(&mut slot, animation, &events);
+
+        assert!(slot.pending_event_frames.is_empty());
+    }
+
+    #[test]
+    fn changed_current_frame_queues_event_once() {
+        let animation = AnimationID::new(1);
+        let events = [event(1), event(3)];
+        let mut slot = AnimationTreeSlotPlayback {
+            current_frame: 1,
+            last_event_frame: u32::MAX,
+            ..Default::default()
+        };
+        queue_current_slot_event_once(&mut slot, animation, &events);
+        slot.pending_event_frames.clear();
+
+        slot.current_frame = 3;
+        queue_current_slot_event_once(&mut slot, animation, &events);
+
+        assert_eq!(slot.pending_event_frames, [3]);
+    }
+
+    #[test]
+    fn transform2d_blend_uses_short_rotation_arc_and_scale() {
+        let mut out = perro_runtime_api::perro_structs::Transform2D::new(
+            perro_runtime_api::perro_structs::Vector2::ZERO,
+            350.0_f32.to_radians(),
+            perro_runtime_api::perro_structs::Vector2::ONE,
+        );
+        let next = perro_runtime_api::perro_structs::Transform2D::new(
+            perro_runtime_api::perro_structs::Vector2::ZERO,
+            10.0_f32.to_radians(),
+            perro_runtime_api::perro_structs::Vector2::new(3.0, 5.0),
+        );
+        let mut weights = BlendWeights {
+            rotation: 1.0,
+            scale: 1.0,
+            ..Default::default()
+        };
+
+        blend_transform2d_channel(
+            &mut out,
+            &next,
+            perro_animation::ANIMATION_TRANSFORM_MASK_ROTATION
+                | perro_animation::ANIMATION_TRANSFORM_MASK_SCALE,
+            &mut weights,
+            1.0,
+        );
+
+        assert!(out.rotation.sin().abs() < 1e-5);
+        assert_eq!(
+            out.scale,
+            perro_runtime_api::perro_structs::Vector2::new(2.0, 3.0)
+        );
+    }
+
+    #[test]
+    fn transform3d_mask_does_not_dilute_only_authored_rotation() {
+        let mut out = perro_runtime_api::perro_structs::Transform3D::IDENTITY;
+        let next_rotation = perro_runtime_api::perro_structs::Quaternion::from_euler_xyz(
+            0.0,
+            0.0,
+            std::f32::consts::FRAC_PI_2,
+        );
+        let next = perro_runtime_api::perro_structs::Transform3D::new(
+            perro_runtime_api::perro_structs::Vector3::ZERO,
+            next_rotation,
+            perro_runtime_api::perro_structs::Vector3::ONE,
+        );
+        let mut weights = BlendWeights::default();
+
+        blend_transform3d_channel(
+            &mut out,
+            &next,
+            perro_animation::ANIMATION_TRANSFORM_MASK_ROTATION,
+            &mut weights,
+            1.0,
+        );
+
+        assert!(out.rotation.dot(next_rotation).abs() > 0.9999);
     }
 }

@@ -1110,6 +1110,23 @@ fn reparent_preserves_child_global_transform_3d() {
 }
 
 #[test]
+fn reparent_rejects_self_and_descendant_cycles() {
+    let mut runtime = Runtime::new();
+    let root = NodeAPI::create::<Node3D>(&mut runtime);
+    let child = NodeAPI::create::<Node3D>(&mut runtime);
+    let grandchild = NodeAPI::create::<Node3D>(&mut runtime);
+
+    assert!(runtime.reparent(root, child));
+    assert!(runtime.reparent(child, grandchild));
+    assert!(!runtime.reparent(root, root));
+    assert!(!runtime.reparent(grandchild, root));
+
+    assert_eq!(runtime.get_node_parent_id(root), Some(NodeID::nil()));
+    assert_eq!(runtime.get_node_parent_id(child), Some(root));
+    assert_eq!(runtime.get_node_parent_id(grandchild), Some(child));
+}
+
+#[test]
 fn reparent_to_zero_scale_parent_uses_safe_inverse_3d() {
     let mut runtime = Runtime::new();
 

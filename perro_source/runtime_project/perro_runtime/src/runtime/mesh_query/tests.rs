@@ -80,17 +80,24 @@ fn posed_skin_query_keeps_tri_and_uv_attrs() {
     let mesh = build_query_mesh_data_with_skin(
         vec![Vec3::ZERO, Vec3::X, Vec3::Y],
         vec![Vec2::ZERO, Vec2::X, Vec2::Y],
-        vec![Vec2::new(0.1, 0.2), Vec2::new(0.8, 0.2), Vec2::new(0.1, 0.9)],
+        vec![
+            Vec2::new(0.1, 0.2),
+            Vec2::new(0.8, 0.2),
+            Vec2::new(0.1, 0.9),
+        ],
         vec![[0, 0, 0, 0]; 3],
         vec![[1.0, 0.0, 0.0, 0.0]; 3],
-        vec![QueryTri { a: 0, b: 1, c: 2, surface_index: 7 }],
+        vec![QueryTri {
+            a: 0,
+            b: 1,
+            c: 2,
+            surface_index: 7,
+        }],
     )
     .expect("bind query mesh");
-    let posed = skin_query_mesh_with_palette(
-        &mesh,
-        &[Mat4::from_translation(Vec3::new(0.0, 0.0, 2.0))],
-    )
-    .expect("posed query mesh");
+    let posed =
+        skin_query_mesh_with_palette(&mesh, &[Mat4::from_translation(Vec3::new(0.0, 0.0, 2.0))])
+            .expect("posed query mesh");
     let hit = query_ray_tri_local(
         &posed,
         0,
@@ -104,8 +111,14 @@ fn posed_skin_query_keeps_tri_and_uv_attrs() {
 
     assert_eq!(hit.surface_index, 7);
     assert_eq!(hit.triangle_index, 0);
-    assert!(hit.local_point.abs_diff_eq(Vec3::new(0.25, 0.25, 2.0), 1e-5));
-    assert!(hit.barycentric.abs_diff_eq(Vec3::new(0.5, 0.25, 0.25), 1e-5));
+    assert!(
+        hit.local_point
+            .abs_diff_eq(Vec3::new(0.25, 0.25, 2.0), 1e-5)
+    );
+    assert!(
+        hit.barycentric
+            .abs_diff_eq(Vec3::new(0.5, 0.25, 0.25), 1e-5)
+    );
     assert!(hit.uv0.abs_diff_eq(Vec2::new(0.25, 0.25), 1e-5));
     assert!(hit.paint_uv.abs_diff_eq(Vec2::new(0.275, 0.375), 1e-5));
 }

@@ -56,6 +56,9 @@ impl PhysicsAPI for Runtime {
     }
 
     fn apply_force_2d(&mut self, body_id: NodeID, force: Vector2) -> bool {
+        if !force.x.is_finite() || !force.y.is_finite() {
+            return false;
+        }
         let Some(node) = self.nodes.get(body_id) else {
             return false;
         };
@@ -67,6 +70,9 @@ impl PhysicsAPI for Runtime {
     }
 
     fn apply_force_3d(&mut self, body_id: NodeID, force: Vector3) -> bool {
+        if !force.x.is_finite() || !force.y.is_finite() || !force.z.is_finite() {
+            return false;
+        }
         let Some(node) = self.nodes.get(body_id) else {
             return false;
         };
@@ -78,6 +84,9 @@ impl PhysicsAPI for Runtime {
     }
 
     fn apply_impulse_2d(&mut self, body_id: NodeID, impulse: Vector2) -> bool {
+        if !impulse.x.is_finite() || !impulse.y.is_finite() {
+            return false;
+        }
         let Some(node) = self.nodes.get(body_id) else {
             return false;
         };
@@ -89,6 +98,9 @@ impl PhysicsAPI for Runtime {
     }
 
     fn apply_impulse_3d(&mut self, body_id: NodeID, impulse: Vector3) -> bool {
+        if !impulse.x.is_finite() || !impulse.y.is_finite() || !impulse.z.is_finite() {
+            return false;
+        }
         let Some(node) = self.nodes.get(body_id) else {
             return false;
         };

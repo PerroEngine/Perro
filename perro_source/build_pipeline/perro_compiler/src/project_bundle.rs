@@ -164,6 +164,15 @@ fn build_project_crate(
     if !features.is_empty() {
         cmd.arg("--features").arg(features.join(","));
     }
+    let android_apk = if options.target == ProjectBuildTarget::Android {
+        let path = android_apk_artifact_path(project_root, &target_dir, options.release)?;
+        if path.exists() {
+            fs::remove_file(&path)?;
+        }
+        Some(path)
+    } else {
+        None
+    };
     let status = cmd.status()?;
 
     if !status.success() {
@@ -178,7 +187,12 @@ fn build_project_crate(
             version,
         )?,
         ProjectBuildTarget::Web => export_project_web_bundle(project_root, &target_dir, options)?,
-        ProjectBuildTarget::Android => export_project_android_bundle(project_root, &target_dir)?,
+        ProjectBuildTarget::Android => export_project_android_bundle(
+            project_root,
+            android_apk
+                .as_deref()
+                .expect("android build must resolve one apk path"),
+        )?,
     }
     Ok(())
 }
@@ -304,7 +318,11 @@ fn target_slug_from_triple(triple: &str) -> Option<String> {
     } else {
         triple.split('-').nth(2).unwrap_or(std::env::consts::OS)
     };
-    Some(format!("{}-{}", package_name_slug(os), package_name_slug(arch)))
+    Some(format!(
+        "{}-{}",
+        package_name_slug(os),
+        package_name_slug(arch)
+    ))
 }
 
 fn copy_steam_runtime_library(
@@ -350,44 +368,74 @@ fn find_steam_runtime_library(build_dir: &Path, library_name: &str) -> Option<Pa
     None
 }
 
-fn export_project_android_bundle(
+fn android_apk_artifact_path(
     project_root: &Path,
     target_dir: &Path,
-) -> Result<(), CompilerError> {
-    let output_name = read_project_output_binary_name(
-        project_root,
-        &read_project_package_name(project_root)?,
-    )?;
-    let mut newest_apk = None::<(std::time::SystemTime, PathBuf)>;
-    walk_dir(target_dir, &mut |path| {
-        if !path
-            .extension()
-            .is_some_and(|ext| ext.eq_ignore_ascii_case("apk"))
-        {
-            return Ok(());
-        }
-        if let Ok(meta) = fs::metadata(path)
-            && let Ok(modified) = meta.modified()
-        {
-            match &newest_apk {
-                Some((current, _)) if *current >= modified => {}
-                _ => newest_apk = Some((modified, path.to_path_buf())),
-            }
-        }
-        Ok(())
-    })
-    .map_err(|err| CompilerError::SceneParse(format!("failed to scan target dir: {err}")))?;
-    let newest_apk = newest_apk.map(|(_, path)| path).ok_or_else(|| {
+    release: bool,
+) -> Result<PathBuf, CompilerError> {
+    let package_name = read_project_package_name(project_root)?;
+    let library_name = read_project_library_name(project_root, &package_name)?;
+    let manifest_path = project_root
+        .join(".perro")
+        .join("project")
+        .join("Cargo.toml");
+    let source = fs::read_to_string(&manifest_path)?;
+    let manifest = toml::from_str::<toml::Value>(&source).map_err(|err| {
         CompilerError::SceneParse(format!(
-            "android apk not found after build under {}",
-            target_dir.display()
+            "failed to parse generated project manifest {}: {err}",
+            manifest_path.display()
         ))
     })?;
+    let apk_name = manifest
+        .get("package")
+        .and_then(|package| package.get("metadata"))
+        .and_then(|metadata| metadata.get("android"))
+        .and_then(|android| android.get("apk_name"))
+        .and_then(toml::Value::as_str)
+        .unwrap_or(&library_name);
+    if apk_name.is_empty()
+        || Path::new(apk_name)
+            .file_name()
+            .is_none_or(|name| name != std::ffi::OsStr::new(apk_name))
+    {
+        return Err(CompilerError::SceneParse(format!(
+            "invalid Android apk_name `{apk_name}` in {}",
+            manifest_path.display()
+        )));
+    }
+    let profile_dir = if release { "release" } else { "debug" };
+    Ok(target_dir
+        .join(profile_dir)
+        .join("apk")
+        .join(format!("{apk_name}.apk")))
+}
+
+fn export_project_android_bundle(
+    project_root: &Path,
+    built_apk: &Path,
+) -> Result<(), CompilerError> {
+    let output_name =
+        read_project_output_binary_name(project_root, &read_project_package_name(project_root)?)?;
+    if !built_apk.is_file() {
+        return Err(CompilerError::SceneParse(format!(
+            "android apk not found after build: {}",
+            built_apk.display()
+        )));
+    }
+    if !built_apk
+        .extension()
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("apk"))
+    {
+        return Err(CompilerError::SceneParse(format!(
+            "android build artifact is not an apk: {}",
+            built_apk.display()
+        )));
+    }
 
     let output_dir = project_root.join(".output").join("android");
     fs::create_dir_all(&output_dir)?;
     let output_apk = output_dir.join(format!("{output_name}.apk"));
-    fs::copy(&newest_apk, &output_apk)?;
+    fs::copy(built_apk, &output_apk)?;
     println!("exported android apk: {}", output_apk.display());
     Ok(())
 }
@@ -1076,7 +1124,7 @@ fn sync_android_project_manifest(
         .join("project")
         .join("Cargo.toml");
     let src = fs::read_to_string(&manifest_path)?;
-    let mut value = src.parse::<toml::Value>().map_err(|err| {
+    let mut value = toml::from_str::<toml::Value>(&src).map_err(|err| {
         CompilerError::SceneParse(format!(
             "failed to parse generated project manifest {}: {err}",
             manifest_path.display()
@@ -1362,11 +1410,14 @@ fn emit_web_route_html_files(
 ) -> Result<(), CompilerError> {
     let icon_output = copy_res_asset_into_web_output(project_root, output_dir, &project_cfg.icon)?;
     for route in &routes.routes {
-        let html_path = web_route_html_path(output_dir, &route.href);
+        let html_path = web_route_html_path(output_dir, &route.href)?;
+        ensure_web_write_path(output_dir, &html_path, "route output")?;
         if let Some(parent) = html_path.parent() {
             fs::create_dir_all(parent)?;
         }
-        let body_html = render_route_scene_html(project_root, output_dir, &html_path, &route.scene)?;
+        ensure_web_write_path(output_dir, &html_path, "route output")?;
+        let body_html =
+            render_route_scene_html(project_root, output_dir, &html_path, &route.scene)?;
         let title = route
             .title
             .clone()
@@ -1412,14 +1463,13 @@ fn emit_web_route_html_files(
     Ok(())
 }
 
-fn web_route_html_path(output_dir: &Path, href: &str) -> PathBuf {
+fn web_route_html_path(output_dir: &Path, href: &str) -> Result<PathBuf, CompilerError> {
     let href = perro_project::normalize_route_href(href);
     if href == "/" {
-        return output_dir.join("index.html");
+        return Ok(output_dir.join("index.html"));
     }
-    output_dir
-        .join(href.trim_start_matches('/'))
-        .join("index.html")
+    let relative = checked_portable_relative_path(href.trim_start_matches('/'), "route href")?;
+    Ok(output_dir.join(relative).join("index.html"))
 }
 
 fn copy_res_asset_into_web_output(
@@ -1427,20 +1477,22 @@ fn copy_res_asset_into_web_output(
     output_dir: &Path,
     res_path: &str,
 ) -> Result<PathBuf, CompilerError> {
-    let rel = res_path.trim().strip_prefix("res://").ok_or_else(|| {
-        CompilerError::SceneParse(format!("expected res:// path for web asset, got `{res_path}`"))
-    })?;
-    let source = project_root.join("res").join(res_rel_to_path(rel));
+    let rel = checked_res_relative_path(res_path, "web asset")?;
+    let res_root = project_root.join("res");
+    let source = res_root.join(&rel);
     if !source.exists() {
         return Err(CompilerError::SceneParse(format!(
             "web asset not found: {}",
             source.display()
         )));
     }
-    let target = output_dir.join("assets").join(res_rel_to_path(rel));
+    ensure_existing_path_within(&res_root, &source, "web asset source")?;
+    let target = output_dir.join("assets").join(rel);
+    ensure_web_write_path(output_dir, &target, "web asset output")?;
     if let Some(parent) = target.parent() {
         fs::create_dir_all(parent)?;
     }
+    ensure_web_write_path(output_dir, &target, "web asset output")?;
     fs::copy(&source, &target)?;
     Ok(target)
 }
@@ -1451,10 +1503,10 @@ fn render_route_scene_html(
     html_path: &Path,
     scene_path: &str,
 ) -> Result<String, CompilerError> {
-    let rel = scene_path.trim().strip_prefix("res://").ok_or_else(|| {
-        CompilerError::SceneParse(format!("expected res:// scene path, got `{scene_path}`"))
-    })?;
-    let scene_file = project_root.join("res").join(res_rel_to_path(rel));
+    let rel = checked_res_relative_path(scene_path, "web scene")?;
+    let res_root = project_root.join("res");
+    let scene_file = res_root.join(rel);
+    ensure_existing_path_within(&res_root, &scene_file, "web scene source")?;
     let scene_src = fs::read_to_string(&scene_file)?;
     let scene = std::panic::catch_unwind(|| perro_scene::Parser::new(&scene_src).parse_scene())
         .map_err(|_| {
@@ -1502,7 +1554,8 @@ fn render_scene_entry_html(
     if scene_field_bool(&entry.data, "visible") == Some(false) {
         return Ok(String::new());
     }
-    let children_html = render_scene_children_html(project_root, output_dir, html_path, scene, entry)?;
+    let children_html =
+        render_scene_children_html(project_root, output_dir, html_path, scene, entry)?;
     let name_attr = entry
         .name
         .as_deref()
@@ -1526,7 +1579,9 @@ fn render_scene_entry_html(
         "UiTextBox" | "UiTextBlock" => {
             let text = scene_field_str(&entry.data, "text")
                 .map(decode_scene_text_literal)
-                .or_else(|| scene_field_str(&entry.data, "placeholder").map(decode_scene_text_literal))
+                .or_else(|| {
+                    scene_field_str(&entry.data, "placeholder").map(decode_scene_text_literal)
+                })
                 .map(normalize_static_html_text)
                 .unwrap_or_default();
             Ok(format!("<p{node_attr}>{}</p>", escape_html(&text)))
@@ -1548,7 +1603,9 @@ fn render_scene_entry_html(
                     escape_html_attr(&href)
                 ))
             } else {
-                Ok(format!("<button type=\"button\"{node_attr}>{inner}</button>"))
+                Ok(format!(
+                    "<button type=\"button\"{node_attr}>{inner}</button>"
+                ))
             }
         }
         "UiImage" | "UiImageButton" | "UiNineSlice" | "UiAnimatedImage" | "NineSlice2D" => {
@@ -1582,7 +1639,8 @@ fn render_scene_children_html(
 ) -> Result<String, CompilerError> {
     let mut out = String::new();
     let child_keys: Vec<_> = if entry.children.is_empty() {
-        scene.nodes
+        scene
+            .nodes
             .iter()
             .filter(|candidate| candidate.parent == Some(entry.key))
             .map(|candidate| candidate.key)
@@ -1646,7 +1704,9 @@ fn scene_field_value<'a>(
     data: &'a perro_scene::SceneNodeData,
     field: &str,
 ) -> Option<&'a perro_scene::SceneValue> {
-    let mut found = data.base_ref().and_then(|base| scene_field_value(base, field));
+    let mut found = data
+        .base_ref()
+        .and_then(|base| scene_field_value(base, field));
     for (name, value) in data.fields.iter() {
         if name.as_ref() == field {
             found = Some(value);
@@ -1740,17 +1800,71 @@ fn relative_output_href(from_html: &Path, to: &Path) -> String {
     relative_include_path(from_html, to).replace('\\', "/")
 }
 
-fn res_rel_to_path(rel: &str) -> PathBuf {
-    rel.split('/')
-        .filter(|part| !part.is_empty())
-        .collect::<PathBuf>()
+fn checked_res_relative_path(res_path: &str, label: &str) -> Result<PathBuf, CompilerError> {
+    let relative = res_path.trim().strip_prefix("res://").ok_or_else(|| {
+        CompilerError::SceneParse(format!(
+            "expected res:// path for {label}, got `{res_path}`"
+        ))
+    })?;
+    checked_portable_relative_path(relative, label)
+}
+
+fn checked_portable_relative_path(value: &str, label: &str) -> Result<PathBuf, CompilerError> {
+    if value.is_empty()
+        || value.contains(['\\', ':'])
+        || value.chars().any(char::is_control)
+        || value
+            .split('/')
+            .any(|component| component.is_empty() || component == "." || component == "..")
+    {
+        return Err(CompilerError::SceneParse(format!(
+            "{label} must use normal relative path components: `{value}`"
+        )));
+    }
+    Ok(value.split('/').collect())
+}
+
+fn ensure_existing_path_within(root: &Path, path: &Path, label: &str) -> Result<(), CompilerError> {
+    let root = fs::canonicalize(root).map_err(CompilerError::Io)?;
+    let path = fs::canonicalize(path).map_err(CompilerError::Io)?;
+    if path.starts_with(&root) {
+        return Ok(());
+    }
+    Err(CompilerError::SceneParse(format!(
+        "{label} escapes root: {}",
+        path.display()
+    )))
+}
+
+fn ensure_web_write_path(
+    output_dir: &Path,
+    target: &Path,
+    label: &str,
+) -> Result<(), CompilerError> {
+    let mut check_path = if target.exists() {
+        target
+    } else {
+        target.parent().unwrap_or(output_dir)
+    };
+    while !check_path.exists() {
+        let Some(parent) = check_path.parent() else {
+            break;
+        };
+        check_path = parent;
+    }
+    ensure_existing_path_within(output_dir, check_path, label)
 }
 
 fn web_index_html(page: &StaticWebPage) -> String {
     let description = page
         .description
         .as_deref()
-        .map(|value| format!("<meta name=\"description\" content=\"{}\">\n", escape_html_attr(value)))
+        .map(|value| {
+            format!(
+                "<meta name=\"description\" content=\"{}\">\n",
+                escape_html_attr(value)
+            )
+        })
         .unwrap_or_default();
     let keywords = if page.keywords.is_empty() {
         String::new()

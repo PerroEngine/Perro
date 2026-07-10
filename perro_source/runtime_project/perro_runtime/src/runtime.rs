@@ -156,6 +156,7 @@ pub struct Runtime {
     project: Option<Arc<RuntimeProject>>,
     pub(crate) active_route_href: Option<String>,
     pub(crate) active_route_root: Option<NodeID>,
+    pub(crate) scene_ownership_roots: AHashMap<NodeID, NodeID>,
     pub(crate) scene_cache: RefCell<AHashMap<String, Arc<Scene>>>,
     pub(crate) preloaded_scenes: AHashMap<PreloadedSceneID, Arc<Scene>>,
     pub(crate) preloaded_scene_paths: AHashMap<u64, PreloadedSceneID>,
@@ -450,6 +451,7 @@ impl Runtime {
             provider_mode: ProviderMode::Dynamic,
             active_route_href: None,
             active_route_root: None,
+            scene_ownership_roots: AHashMap::new(),
             scene_cache: RefCell::new(AHashMap::new()),
             preloaded_scenes: AHashMap::new(),
             preloaded_scene_paths: AHashMap::new(),
@@ -568,11 +570,7 @@ impl Runtime {
     /// effective-modulate microbench can build a deep tinted hierarchy without a
     /// scene load.
     #[cfg(feature = "bench")]
-    pub fn bench_set_node3d_modulate(
-        &mut self,
-        id: NodeID,
-        modulate: perro_structs::NodeModulate,
-    ) {
+    pub fn bench_set_node3d_modulate(&mut self, id: NodeID, modulate: perro_structs::NodeModulate) {
         if let Some(mut node) = self.nodes.get_mut(id) {
             node.with_base_mut::<perro_nodes::Node3D, _>(|base| base.modulate = modulate);
         }

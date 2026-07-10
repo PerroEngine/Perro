@@ -729,9 +729,19 @@ impl CSVQuery {
         if let Some(sort) = self.sort
             && sort.col != INVALID_COL
         {
-            rows.sort_unstable_by(|a, b| self.compare_rows(*a, *b, sort));
-        }
-        if let Some(limit) = self.limit {
+            if let Some(limit) = self.limit.filter(|limit| *limit < rows.len()) {
+                if limit == 0 {
+                    rows.clear();
+                } else {
+                    let _ =
+                        rows.select_nth_unstable_by(limit, |a, b| self.compare_rows(*a, *b, sort));
+                    rows.truncate(limit);
+                    rows.sort_unstable_by(|a, b| self.compare_rows(*a, *b, sort));
+                }
+            } else {
+                rows.sort_unstable_by(|a, b| self.compare_rows(*a, *b, sort));
+            }
+        } else if let Some(limit) = self.limit {
             rows.truncate(limit);
         }
         let select_cols = self
@@ -833,19 +843,20 @@ impl CSVQuery {
     }
 
     fn compare_rows(&self, a: usize, b: usize, sort: CsvSort) -> std::cmp::Ordering {
+        let row_a = a;
+        let row_b = b;
         let a = self.table.get(a, sort.col).unwrap_or("");
         let b = self.table.get(b, sort.col).unwrap_or("");
         let ord = if sort.numeric {
-            let a = a.parse::<f64>().unwrap_or(f64::NAN);
-            let b = b.parse::<f64>().unwrap_or(f64::NAN);
-            a.partial_cmp(&b).unwrap_or(std::cmp::Ordering::Equal)
+            compare_numeric_cells(a, b)
         } else {
             a.cmp(b)
         };
-        match sort.order {
+        let ord = match sort.order {
             CsvOrder::Asc => ord,
             CsvOrder::Desc => ord.reverse(),
-        }
+        };
+        ord.then_with(|| row_a.cmp(&row_b))
     }
 
     fn predicate_matches(&self, row_idx: usize, predicate: &CsvPredicate) -> bool {
@@ -941,6 +952,17 @@ impl CSVQuery {
             }
         });
         Some(rows)
+    }
+}
+
+fn compare_numeric_cells(a: &str, b: &str) -> std::cmp::Ordering {
+    let a_number = a.parse::<f64>().ok().filter(|value| value.is_finite());
+    let b_number = b.parse::<f64>().ok().filter(|value| value.is_finite());
+    match (a_number, b_number) {
+        (Some(a), Some(b)) => a.total_cmp(&b),
+        (Some(_), None) => std::cmp::Ordering::Less,
+        (None, Some(_)) => std::cmp::Ordering::Greater,
+        (None, None) => a.cmp(b),
     }
 }
 
@@ -1056,25 +1078,18 @@ impl CSVQueryRow<'_> {
 }
 
 pub fn parse_csv_static(bytes: &[u8]) -> Result<&'static Csv, String> {
-    let mut reader = csv::ReaderBuilder::new()
-        .has_headers(true)
-        .from_reader(bytes);
-    let headers = reader
-        .headers()
-        .map_err(|err| format!("failed to parse csv headers: {err}"))?
-        .clone();
-
-    let row_capacity = bytes.iter().filter(|&&byte| byte == b'\n').count();
+    // Parse every fallible record before leaking promoted storage.
+    let parsed = CsvBuf::from_bytes(bytes)?;
+    let row_capacity = parsed.rows.len();
     let mut interner = LocalCsvInterner::new(row_capacity);
 
-    let headers = leak_cells(headers.iter().map(|value| value.trim()), &mut interner);
-    let mut rows = Vec::<CsvRow>::with_capacity(row_capacity.saturating_sub(1));
-    let mut index_rows = Vec::<CsvRowIndex>::with_capacity(row_capacity.saturating_sub(1));
+    let headers = leak_cells(parsed.headers.iter().map(String::as_str), &mut interner);
+    let mut rows = Vec::<CsvRow>::with_capacity(row_capacity);
+    let mut index_rows = Vec::<CsvRowIndex>::with_capacity(row_capacity);
     let mut primary_seen = HashSet::<&str>::new();
 
-    for record in reader.records() {
-        let record = record.map_err(|err| format!("failed to parse csv row: {err}"))?;
-        let cells = leak_cells(record.iter().map(|value| value.trim()), &mut interner);
+    for record in &parsed.rows {
+        let cells = leak_cells(record.iter().map(String::as_str), &mut interner);
         let row_idx = rows.len();
         if let Some(first) = cells.first()
             && primary_seen.insert(first.text)
@@ -1167,6 +1182,55 @@ mod tests {
             .map(|row| (row.get(0).unwrap(), row.get(1).unwrap()))
             .collect();
         assert_eq!(rows, vec![("axe", "14"), ("sword", "10")]);
+    }
+
+    #[test]
+    fn numeric_sort_has_total_deterministic_order() {
+        let csv = parse_csv_static(b"id,value\na,bad\nb,2\nc,NaN\nd,1\ne,1\n").unwrap();
+
+        let asc: Vec<_> = csv
+            .query()
+            .order_by_num_asc("value")
+            .run()
+            .iter()
+            .map(|row| row.get_header("id").unwrap())
+            .collect();
+        assert_eq!(asc, vec!["d", "e", "b", "c", "a"]);
+
+        let desc: Vec<_> = csv
+            .query()
+            .order_by_num_desc("value")
+            .run()
+            .iter()
+            .map(|row| row.get_header("id").unwrap())
+            .collect();
+        assert_eq!(desc, vec!["a", "c", "b", "d", "e"]);
+    }
+
+    #[test]
+    fn sorted_limit_selects_exact_top_k() {
+        let mut csv = CsvBuf::new(["id", "value"]);
+        for value in (1..=100).rev() {
+            csv.push_row([value.to_string(), value.to_string()])
+                .unwrap();
+        }
+        let bytes = csv.to_bytes().unwrap();
+        let csv = parse_csv_static(&bytes).unwrap();
+
+        let ids: Vec<_> = csv
+            .query()
+            .order_by_num_asc("value")
+            .limit(5)
+            .run()
+            .iter()
+            .map(|row| row.get_header("id").unwrap())
+            .collect();
+        assert_eq!(ids, vec!["1", "2", "3", "4", "5"]);
+    }
+
+    #[test]
+    fn static_parse_rejects_late_bad_row_before_promotion() {
+        assert!(parse_csv_static(b"id,name\nok,Good\nbad\n").is_err());
     }
 
     #[test]

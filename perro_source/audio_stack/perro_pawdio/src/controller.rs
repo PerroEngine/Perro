@@ -69,16 +69,34 @@ impl AudioController {
             return Err(format!("audio disabled by {AUDIO_DISABLED_ENV}"));
         }
 
+        Self::new_with_player_factory(static_audio_lookup, BarkPlayer::new)
+    }
+
+    fn new_with_player_factory<F>(
+        static_audio_lookup: Option<fn(u64) -> &'static [u8]>,
+        player_factory: F,
+    ) -> Result<Self, String>
+    where
+        F: FnOnce(Option<fn(u64) -> &'static [u8]>) -> Result<BarkPlayer, String> + Send + 'static,
+    {
         let (tx, rx) = crossbeam_channel::bounded::<AudioCommand>(Self::COMMAND_QUEUE_CAPACITY);
+        let (startup_tx, startup_rx) = crossbeam_channel::bounded::<Result<(), String>>(1);
         let next_playback_id = Arc::new(AtomicU64::new(1));
         let loaded = Arc::new(Mutex::new(AudioLoadedState::default()));
         let loaded_for_thread = Arc::clone(&loaded);
         std::thread::Builder::new()
             .name("perro_pawdio_audio".to_string())
             .spawn(move || {
-                let Ok(player) = BarkPlayer::new(static_audio_lookup) else {
-                    return;
+                let player = match player_factory(static_audio_lookup) {
+                    Ok(player) => player,
+                    Err(err) => {
+                        let _ = startup_tx.send(Err(err));
+                        return;
+                    }
                 };
+                if startup_tx.send(Ok(())).is_err() {
+                    return;
+                }
 
                 while let Ok(cmd) = rx.recv() {
                     match cmd {
@@ -228,6 +246,9 @@ impl AudioController {
                 }
             })
             .map_err(|err| format!("failed to spawn audio thread: {err}"))?;
+        startup_rx
+            .recv()
+            .map_err(|_| "audio worker stopped during startup".to_string())??;
         Ok(Self {
             tx,
             next_playback_id,
@@ -826,5 +847,16 @@ mod tests {
             Err(AudioEnqueueError::Disconnected)
         );
         assert!(!controller.stop_all());
+    }
+
+    #[test]
+    fn constructor_reports_worker_player_init_failure() {
+        let err = AudioController::new_with_player_factory(None, |_| {
+            Err("injected player init failure".to_string())
+        })
+        .err()
+        .expect("worker init must fail controller construction");
+
+        assert_eq!(err, "injected player init failure");
     }
 }

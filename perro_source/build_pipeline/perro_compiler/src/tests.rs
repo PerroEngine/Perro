@@ -1,13 +1,15 @@
 #[cfg(test)]
 mod tests {
     use super::{
-        ProjectBuildOptions, ScriptMethodParam, ScriptsBuildProfile, compile_scripts_with_profile,
-        emit_static_steam_app_id_fn, emit_web_route_html_files, generate_call_param_binding,
-        generate_dlc_static_modules, generate_embedded_entry_files, generate_perro_assets,
-        generate_project_static_modules, module_name_from_rel, module_short_name_from_rel,
-        native_output_artifact_name, native_output_folder_name, normalize_cargo_output_paths,
-        reset_embedded_dir, sync_dlc_scripts, sync_scripts, target_slug_from_triple,
-        transpile_frontend_script, transpiled_exports_script_ctor, write_scripts_lib,
+        ProjectBuildOptions, ProjectBuildTarget, ScriptMethodParam, ScriptsBuildProfile,
+        android_apk_artifact_path, checked_res_relative_path, compile_scripts_with_profile,
+        emit_static_steam_app_id_fn, emit_web_route_html_files, export_project_android_bundle,
+        generate_call_param_binding, generate_dlc_static_modules, generate_embedded_entry_files,
+        generate_perro_assets, generate_project_static_modules, module_name_from_rel,
+        module_short_name_from_rel, native_output_artifact_name, native_output_folder_name,
+        normalize_cargo_output_paths, reset_embedded_dir, sync_android_project_manifest,
+        sync_dlc_scripts, sync_scripts, target_slug_from_triple, transpile_frontend_script,
+        transpiled_exports_script_ctor, web_route_html_path, write_scripts_lib,
     };
     use perro_project::{
         ensure_project_layout, ensure_project_scaffold, ensure_project_toml,
@@ -193,6 +195,56 @@ mod tests {
             target_slug_from_triple("x86_64-unknown-linux-gnu").as_deref(),
             Some("linux-x86_64")
         );
+    }
+
+    #[test]
+    fn android_export_uses_exact_apk_path() {
+        let root = unique_temp_path("android_exact_apk");
+        std::fs::create_dir_all(&root).expect("project dir");
+        ensure_project_toml(&root, "Android Pick").expect("project toml");
+        let manifest_dir = root.join(".perro/project");
+        std::fs::create_dir_all(&manifest_dir).expect("manifest dir");
+        std::fs::write(
+            manifest_dir.join("Cargo.toml"),
+            r#"[package]
+name = "android_pick"
+version = "0.1.0"
+
+[lib]
+name = "main"
+
+[package.metadata.android]
+apk_name = "main"
+"#,
+        )
+        .expect("manifest");
+        let cfg = load_project_toml(&root).expect("load project");
+        sync_android_project_manifest(
+            &root,
+            &cfg,
+            ProjectBuildOptions::new(false, false).with_target(ProjectBuildTarget::Android),
+        )
+        .expect("sync Android manifest");
+
+        let target = root.join("target");
+        let exact = target.join("release/apk/main.apk");
+        let unrelated = target.join("other/release/newer.apk");
+        std::fs::create_dir_all(exact.parent().expect("exact parent")).expect("exact dir");
+        std::fs::create_dir_all(unrelated.parent().expect("other parent")).expect("other dir");
+        std::fs::write(&exact, b"current project").expect("exact apk");
+        std::fs::write(&unrelated, b"other project").expect("other apk");
+
+        let selected = android_apk_artifact_path(&root, &target, true).expect("artifact path");
+        assert_eq!(selected, exact);
+        export_project_android_bundle(&root, &selected).expect("export exact apk");
+        assert_eq!(
+            std::fs::read(root.join(".output/android/Android Pick.apk")).expect("exported apk"),
+            b"current project"
+        );
+
+        std::fs::remove_file(&exact).expect("remove exact apk");
+        assert!(export_project_android_bundle(&root, &selected).is_err());
+        std::fs::remove_dir_all(root).expect("remove fixture");
     }
 
     #[test]
@@ -1027,8 +1079,8 @@ lifecycle!({});
         perro_static_pipeline::begin_static_asset_inventory();
         generate_dlc_static_modules(&root, false).expect("generate static modules");
         perro_static_pipeline::write_static_mod_rs(&root).expect("write static mod");
-        let inventory = perro_static_pipeline::take_static_asset_inventory()
-            .expect("take canonical inventory");
+        let inventory =
+            perro_static_pipeline::take_static_asset_inventory().expect("take canonical inventory");
         std::fs::create_dir_all(&embedded_dir).expect("embedded dir");
         std::fs::write(embedded_dir.join("assets.perro"), b"").expect("assets archive fixture");
         super::write_dlc_pack_manifest(&root, "pack_fixture", &pack_dir)
@@ -1145,6 +1197,24 @@ keywords = ["docs", "api"]
         assert!(docs_html.contains("rel=\"icon\" href=\"../assets/textures/icon.bmp\""));
 
         std::fs::remove_dir_all(&root).expect("cleanup");
+    }
+
+    #[test]
+    fn web_export_paths_reject_root_escape() {
+        let output = std::path::Path::new("web-output");
+        for href in ["/../outside", "/dir\\outside", "/C:/outside"] {
+            assert!(web_route_html_path(output, href).is_err(), "{href}");
+        }
+        for source in [
+            "res://../outside.png",
+            "res://dir\\outside.png",
+            "res://C:/outside.png",
+        ] {
+            assert!(
+                checked_res_relative_path(source, "test asset").is_err(),
+                "{source}"
+            );
+        }
     }
 
     #[test]

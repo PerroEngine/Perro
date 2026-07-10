@@ -2330,10 +2330,8 @@ macro_rules! look_at_3d {
         let __target = $target;
         match $ctx.Nodes().get_global_transform_3d(__node) {
             Some(__t) => {
-                let __rot = $crate::perro_structs::Quaternion::looking_at(
-                    __target - __t.position,
-                    $up,
-                );
+                let __rot =
+                    $crate::perro_structs::Quaternion::looking_at(__target - __t.position, $up);
                 $ctx.Nodes().set_global_rot_3d(__node, __rot)
             }
             None => false,

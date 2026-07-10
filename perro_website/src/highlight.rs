@@ -1,5 +1,5 @@
 use pulldown_cmark::{html, CodeBlockKind, CowStr, Event, Options, Parser, Tag, TagEnd};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 pub fn markdown_html(markdown: &str) -> String {
     let mut options = Options::empty();
@@ -18,7 +18,7 @@ pub fn markdown_html(markdown: &str) -> String {
 fn add_heading_ids<'a>(events: impl IntoIterator<Item = Event<'a>>) -> Vec<Event<'a>> {
     let mut out = Vec::new();
     let mut heading = None::<(pulldown_cmark::HeadingLevel, Vec<Event<'a>>, String)>;
-    let mut seen = HashMap::<String, usize>::new();
+    let mut seen = AnchorIds::default();
 
     for event in events {
         match (&mut heading, event) {
@@ -101,16 +101,26 @@ pub fn anchor_id(text: &str) -> String {
     }
 }
 
-pub fn unique_anchor_id(text: &str, seen: &mut HashMap<String, usize>) -> String {
+#[derive(Default)]
+pub struct AnchorIds {
+    next_suffix: HashMap<String, usize>,
+    emitted: HashSet<String>,
+}
+
+pub fn unique_anchor_id(text: &str, seen: &mut AnchorIds) -> String {
     let base = anchor_id(text);
-    let count = seen.entry(base.clone()).or_insert(0);
-    let id = if *count == 0 {
-        base
-    } else {
-        format!("{base}-{count}")
-    };
-    *count += 1;
-    id
+    let suffix = seen.next_suffix.entry(base.clone()).or_insert(0);
+    loop {
+        let id = if *suffix == 0 {
+            base.clone()
+        } else {
+            format!("{base}-{suffix}")
+        };
+        *suffix += 1;
+        if seen.emitted.insert(id.clone()) {
+            return id;
+        }
+    }
 }
 
 fn heading_level_num(level: pulldown_cmark::HeadingLevel) -> u8 {

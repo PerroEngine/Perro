@@ -43,8 +43,15 @@ pub enum ProjectRoot {
     },
 }
 
-static PROJECT_ROOT: RwLock<Option<ProjectRoot>> = RwLock::new(None);
-static PERRO_ASSETS_ARCHIVE: RwLock<Option<PerroAssetsArchive>> = RwLock::new(None);
+struct ProjectAssetState {
+    root: Option<ProjectRoot>,
+    archive: Option<PerroAssetsArchive>,
+}
+
+static PROJECT_ASSET_STATE: RwLock<ProjectAssetState> = RwLock::new(ProjectAssetState {
+    root: None,
+    archive: None,
+});
 static DLC_MOUNTS: LazyLock<RwLock<HashMap<String, DlcMount>>> =
     LazyLock::new(|| RwLock::new(HashMap::new()));
 static DLC_ARCHIVES: LazyLock<RwLock<HashMap<String, Arc<PerroAssetsArchive>>>> =
@@ -97,21 +104,32 @@ pub fn validate_dlc_name(name: &str) -> io::Result<()> {
 }
 
 pub fn get_project_root() -> ProjectRoot {
-    PROJECT_ROOT
+    PROJECT_ASSET_STATE
         .read()
         .unwrap()
+        .root
         .clone()
         .expect("Project root not set")
 }
 
-pub fn set_project_root(root: ProjectRoot) {
-    *PROJECT_ROOT.write().unwrap() = Some(root.clone());
+/// Parse and atomically install a project root and its archive backing.
+pub fn try_set_project_root(root: ProjectRoot) -> io::Result<()> {
+    let archive = match &root {
+        ProjectRoot::PerroAssets { data, .. } => Some(PerroAssetsArchive::open_from_bytes(data)?),
+        ProjectRoot::Disk { .. } => None,
+    };
 
-    if let ProjectRoot::PerroAssets { data, .. } = root {
-        let archive =
-            PerroAssetsArchive::open_from_bytes(data).expect("Failed to open PerroAssets archive");
-        *PERRO_ASSETS_ARCHIVE.write().unwrap() = Some(archive);
-    }
+    let mut state = PROJECT_ASSET_STATE.write().unwrap();
+    state.root = Some(root);
+    state.archive = archive;
+    Ok(())
+}
+
+/// Install a project root, panicking when an embedded archive is invalid.
+///
+/// Use [`try_set_project_root`] for untrusted or fallible startup paths.
+pub fn set_project_root(root: ProjectRoot) {
+    try_set_project_root(root).expect("Failed to open PerroAssets archive");
 }
 
 pub fn clear_dlc_mounts() {
@@ -331,7 +349,7 @@ pub fn resolve_path(path: &str) -> ResolvedPath {
         return ResolvedPath::Disk(PathBuf::from(path));
     }
 
-    let project_root_opt = PROJECT_ROOT.read().unwrap().clone();
+    let project_root_opt = PROJECT_ASSET_STATE.read().unwrap().root.clone();
 
     // Handle user:// paths (always disk)
     if let Some(stripped) = path.strip_prefix("user://") {
@@ -425,7 +443,7 @@ pub fn load_asset(path: &str) -> io::Result<Vec<u8>> {
         ResolvedPath::Disk(pb) => fs::read(pb),
         ResolvedPath::WebUserStorage(key) => load_web_user_asset(&key),
         ResolvedPath::PerroAssets(virtual_path) => {
-            if let Some(archive) = PERRO_ASSETS_ARCHIVE.read().unwrap().as_ref() {
+            if let Some(archive) = PROJECT_ASSET_STATE.read().unwrap().archive.as_ref() {
                 archive.read_file(&virtual_path)
             } else {
                 Err(io::Error::other("PerroAssets archive not loaded"))
@@ -459,7 +477,7 @@ pub fn stream_asset(path: &str) -> io::Result<Box<dyn ReadSeek>> {
             Ok(Box::new(std::io::Cursor::new(bytes)))
         }
         ResolvedPath::PerroAssets(virtual_path) => {
-            if let Some(archive) = PERRO_ASSETS_ARCHIVE.read().unwrap().as_ref() {
+            if let Some(archive) = PROJECT_ASSET_STATE.read().unwrap().archive.as_ref() {
                 let file: PerroAssetsFile = archive.stream_file(&virtual_path)?;
                 Ok(Box::new(file))
             } else {
@@ -567,7 +585,7 @@ fn load_dlc_static_binary(dlc: &str, path: &str) -> io::Result<Vec<u8>> {
 }
 
 fn load_static_binary(path: &str) -> io::Result<Vec<u8>> {
-    match PROJECT_ROOT.read().unwrap().as_ref() {
+    match PROJECT_ASSET_STATE.read().unwrap().root.as_ref() {
         Some(ProjectRoot::PerroAssets {
             static_resource_lookups,
             ..
@@ -660,6 +678,80 @@ mod tests {
         b'P', b'R', b'A', b'1', 1, 0, 0, 0, 0, 0, 0, 0, 20, 0, 0, 0, 0, 0, 0, 0,
     ];
     static TEST_LOCK: LazyLock<std::sync::Mutex<()>> = LazyLock::new(|| std::sync::Mutex::new(()));
+
+    fn test_archive(label: &str, contents: &[u8]) -> &'static [u8] {
+        let root = std::env::temp_dir().join(format!(
+            "perro_io_project_root_{label}_{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        let source = root.join("config.txt");
+        let archive = root.join("project.perro");
+        fs::write(&source, contents).unwrap();
+        perro_assets::packer::build_perro_archive_from_entries(
+            &archive,
+            &[("res/config.txt".to_string(), source)],
+        )
+        .unwrap();
+        let bytes = fs::read(&archive).unwrap().into_boxed_slice();
+        let _ = fs::remove_dir_all(root);
+        Box::leak(bytes)
+    }
+
+    #[test]
+    fn invalid_archive_keeps_prior_root_and_backing() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        let valid = test_archive("atomic", b"old backing");
+        try_set_project_root(ProjectRoot::PerroAssets {
+            data: valid,
+            name: "Old Root".to_string(),
+            static_resource_lookups: StaticResourceLookups::default(),
+        })
+        .unwrap();
+        assert_eq!(load_asset("res://config.txt").unwrap(), b"old backing");
+
+        let err = try_set_project_root(ProjectRoot::PerroAssets {
+            data: b"invalid archive",
+            name: "Broken Root".to_string(),
+            static_resource_lookups: StaticResourceLookups::default(),
+        })
+        .unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+        assert!(matches!(
+            get_project_root(),
+            ProjectRoot::PerroAssets { name, .. } if name == "Old Root"
+        ));
+        assert_eq!(load_asset("res://config.txt").unwrap(), b"old backing");
+    }
+
+    #[test]
+    fn disk_root_switch_clears_archive_backing() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        let packed = test_archive("disk-switch", b"packed backing");
+        try_set_project_root(ProjectRoot::PerroAssets {
+            data: packed,
+            name: "Packed Root".to_string(),
+            static_resource_lookups: StaticResourceLookups::default(),
+        })
+        .unwrap();
+        assert_eq!(load_asset("res://config.txt").unwrap(), b"packed backing");
+
+        let disk =
+            std::env::temp_dir().join(format!("perro_io_project_disk_{}", std::process::id()));
+        let _ = fs::remove_dir_all(&disk);
+        fs::create_dir_all(disk.join("res")).unwrap();
+        fs::write(disk.join("res/config.txt"), b"disk backing").unwrap();
+        try_set_project_root(ProjectRoot::Disk {
+            root: disk.clone(),
+            name: "Disk Root".to_string(),
+        })
+        .unwrap();
+
+        assert!(PROJECT_ASSET_STATE.read().unwrap().archive.is_none());
+        assert_eq!(load_asset("res://config.txt").unwrap(), b"disk backing");
+        let _ = fs::remove_dir_all(disk);
+    }
 
     #[test]
     fn resolve_user_path_normalizes_game_name_spaces() {

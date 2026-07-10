@@ -11,48 +11,66 @@ use perro_ui::{ComputedUiRect, UiSizeMode, UiVector2};
 use std::{cell::RefCell, collections::VecDeque, sync::Arc, sync::mpsc};
 
 pub fn sprite_2d_texture_request(node: NodeID) -> RenderRequestID {
-    RenderRequestID::new((node.as_u64() << 8) | 0x2D)
+    RenderRequestID::from_u128(((node.as_u64() as u128) << 8) | 0x2D)
 }
 
 pub fn tilemap_2d_texture_request(node: NodeID) -> RenderRequestID {
-    RenderRequestID::new((node.as_u64() << 8) | 0x71)
+    RenderRequestID::from_u128(((node.as_u64() as u128) << 8) | 0x71)
 }
 
 pub fn mesh_3d_request(node: NodeID) -> RenderRequestID {
-    RenderRequestID::new((node.as_u64() << 8) | 0x3E)
+    RenderRequestID::from_u128(((node.as_u64() as u128) << 8) | 0x3E)
 }
 
 pub fn material_3d_request(node: NodeID, surface_index: u32) -> RenderRequestID {
-    RenderRequestID::new((node.as_u64() << 16) | ((surface_index as u64) << 8) | 0x3F)
+    RenderRequestID::from_u128(
+        ((node.as_u64() as u128) << 40) | ((surface_index as u128) << 8) | 0x3F,
+    )
 }
 
 pub fn ui_image_texture_request(node: NodeID) -> RenderRequestID {
-    RenderRequestID::new((node.as_u64() << 8) | 0xE9)
+    RenderRequestID::from_u128(((node.as_u64() as u128) << 8) | 0xE9)
 }
 
 pub fn decode_3d_mesh_request_node(request: RenderRequestID) -> Option<NodeID> {
     if (request.0 & 0xFF) != 0x3E {
         return None;
     }
-    Some(NodeID::from_u64(request.0 >> 8))
+    Some(NodeID::from_u64(u64::try_from(request.0 >> 8).ok()?))
 }
 
 pub fn decode_2d_texture_request_node(request: RenderRequestID) -> Option<NodeID> {
     if (request.0 & 0xFF) != 0x2D {
         return None;
     }
-    Some(NodeID::from_u64(request.0 >> 8))
+    Some(NodeID::from_u64(u64::try_from(request.0 >> 8).ok()?))
+}
+
+pub fn decode_tilemap_2d_texture_request_node(request: RenderRequestID) -> Option<NodeID> {
+    if (request.0 & 0xFF) != 0x71 {
+        return None;
+    }
+    Some(NodeID::from_u64(u64::try_from(request.0 >> 8).ok()?))
+}
+
+pub fn decode_ui_image_texture_request_node(request: RenderRequestID) -> Option<NodeID> {
+    if (request.0 & 0xFF) != 0xE9 {
+        return None;
+    }
+    Some(NodeID::from_u64(u64::try_from(request.0 >> 8).ok()?))
 }
 
 pub fn decode_3d_material_request_node(request: RenderRequestID) -> Option<NodeID> {
     if (request.0 & 0xFF) != 0x3F {
         return None;
     }
-    Some(NodeID::from_u64(request.0 >> 16))
+    Some(NodeID::from_u64(u64::try_from(request.0 >> 40).ok()?))
 }
 
 pub fn decode_render_request_node(request: RenderRequestID) -> Option<NodeID> {
     decode_2d_texture_request_node(request)
+        .or_else(|| decode_tilemap_2d_texture_request_node(request))
+        .or_else(|| decode_ui_image_texture_request_node(request))
         .or_else(|| decode_3d_mesh_request_node(request))
         .or_else(|| decode_3d_material_request_node(request))
 }
@@ -939,10 +957,14 @@ mod tests {
         let sprite_node = node(11);
         let mesh_node = node(12);
         let material_node = node(13);
+        let tilemap_node = node(14);
+        let ui_node = node(15);
 
         let sprite = sprite_2d_texture_request(sprite_node);
         let mesh = mesh_3d_request(mesh_node);
         let material = material_3d_request(material_node, 3);
+        let tilemap = tilemap_2d_texture_request(tilemap_node);
+        let ui = ui_image_texture_request(ui_node);
 
         assert_eq!(decode_2d_texture_request_node(sprite), Some(sprite_node));
         assert_eq!(decode_3d_mesh_request_node(mesh), Some(mesh_node));
@@ -953,8 +975,37 @@ mod tests {
         assert_eq!(decode_render_request_node(sprite), Some(sprite_node));
         assert_eq!(decode_render_request_node(mesh), Some(mesh_node));
         assert_eq!(decode_render_request_node(material), Some(material_node));
+        assert_eq!(decode_render_request_node(tilemap), Some(tilemap_node));
+        assert_eq!(decode_render_request_node(ui), Some(ui_node));
         assert_eq!(decode_2d_texture_request_node(mesh), None);
         assert_eq!(decode_3d_mesh_request_node(sprite), None);
+    }
+
+    #[test]
+    fn render_request_ids_keep_full_node_generation_and_surface() {
+        let node = NodeID::from_parts(u32::MAX, u32::MAX);
+
+        assert_eq!(
+            decode_2d_texture_request_node(sprite_2d_texture_request(node)),
+            Some(node)
+        );
+        assert_eq!(
+            decode_3d_mesh_request_node(mesh_3d_request(node)),
+            Some(node)
+        );
+        assert_eq!(
+            decode_ui_image_texture_request_node(ui_image_texture_request(node)),
+            Some(node)
+        );
+        let first = material_3d_request(node, 0);
+        let last = material_3d_request(node, u32::MAX);
+        assert_ne!(first, last);
+        assert_eq!(decode_3d_material_request_node(first), Some(node));
+        assert_eq!(decode_3d_material_request_node(last), Some(node));
+        assert_eq!(
+            decode_3d_mesh_request_node(RenderRequestID::from_u128(u128::MAX - 0xC1)),
+            None
+        );
     }
 
     #[test]

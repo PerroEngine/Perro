@@ -1,6 +1,8 @@
 const LOCALIZATION_CSV_CANDIDATES: &[&str] =
     &["localization.csv", "locale.csv", "translations.csv"];
 
+pub const MAX_AUDIO_PROPAGATION_BOUNCES: u32 = 32;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OcclusionCulling {
     Cpu,
@@ -524,4 +526,3 @@ impl ProjectRoutesConfig {
             .map(|route| route.scene.as_str())
     }
 }
-

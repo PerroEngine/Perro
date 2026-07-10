@@ -51,10 +51,10 @@ pub mod prelude {
     pub use crate::{
         anim_player_bind, anim_player_clear_bindings, anim_player_pause, anim_player_play,
         anim_player_seek_frame, anim_player_set_clip, anim_player_set_speed, apply_force,
-        apply_impulse, audio_play_attached, bind_locale_placeholder, bind_locale_text, broadcast_var,
-        call_method, close_app, create_node, create_nodes, delta_time, delta_time_capped,
-        delta_time_clamped, descendants, elapsed_time, find_node, fixed_delta_time, force_rerender,
-        fps, frame_time, get_child, get_children,
+        apply_impulse, audio_play_attached, bind_locale_placeholder, bind_locale_text,
+        broadcast_var, call_method, close_app, create_node, create_nodes, delta_time,
+        delta_time_capped, delta_time_clamped, descendants, elapsed_time, find_node,
+        fixed_delta_time, force_rerender, fps, frame_time, get_child, get_children,
         get_global_pos_2d, get_global_pos_3d, get_global_rot_2d, get_global_rot_3d,
         get_global_scale_2d, get_global_scale_3d, get_global_transform_2d, get_global_transform_3d,
         get_local_pos_2d, get_local_pos_3d, get_local_rot_2d, get_local_rot_3d, get_local_scale_2d,
@@ -83,12 +83,11 @@ pub mod prelude {
         set_local_transform_3d, set_node_name, set_tree_visible, set_ui_rotation, set_var,
         signal_connect, signal_connect_many, signal_connect_pairs, signal_disconnect,
         signal_disconnect_many, signal_emit, simulation_time, spawn, tag_add, tag_remove, tag_set,
-        to_global_point_2d, to_global_point_3d,
-        to_global_transform_2d, to_global_transform_3d, to_local_point_2d, to_local_point_3d,
-        to_local_transform_2d, to_local_transform_3d, window_get_active_refresh_rate,
-        window_set_cursor_icon, window_set_frame_rate_cap, window_set_frame_rate_limit,
-        window_set_mode, window_set_size, window_set_title, with_base_node, with_base_node_mut,
-        with_node, with_node_mut, with_state, with_state_mut,
+        to_global_point_2d, to_global_point_3d, to_global_transform_2d, to_global_transform_3d,
+        to_local_point_2d, to_local_point_3d, to_local_transform_2d, to_local_transform_3d,
+        window_get_active_refresh_rate, window_set_cursor_icon, window_set_frame_rate_cap,
+        window_set_frame_rate_limit, window_set_mode, window_set_size, window_set_title,
+        with_base_node, with_base_node_mut, with_node, with_node_mut, with_state, with_state_mut,
     };
 
     // Common id and variant helpers.

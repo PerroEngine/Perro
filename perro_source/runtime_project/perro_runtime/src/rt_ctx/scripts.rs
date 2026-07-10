@@ -278,11 +278,16 @@ impl Runtime {
 
     #[inline(always)]
     pub(crate) fn remove_script_instance(&mut self, id: NodeID) -> bool {
+        if !self.script_runtime.removing_scripts.insert(id) {
+            return false;
+        }
         self.call_removal_script(id);
         self.unqueue_start_script(id);
         self.signal_runtime.registry.disconnect_script(id);
         self.script_runtime.script_instance_dlc_mounts.remove(&id);
-        self.scripts.remove(id).is_some()
+        let removed = self.scripts.remove(id).is_some();
+        self.script_runtime.removing_scripts.remove(&id);
+        removed
     }
 
     #[inline(always)]
@@ -512,9 +517,190 @@ impl ScriptAPI for Runtime {
 #[cfg(test)]
 mod active_script_stack_tests {
     use super::*;
+    use perro_nodes::{NodeType, SceneNode, SceneNodeData};
     use perro_runtime_api::sub_apis::{ScriptAPI, SignalAPI};
+    use perro_scene::{Scene, SceneKey, SceneNodeEntry};
     use perro_scripting::{ScriptBehavior, ScriptFlags, ScriptLifecycle};
-    use std::any::Any;
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    use std::{any::Any, borrow::Cow};
+
+    static REMOVAL_CALLS: AtomicUsize = AtomicUsize::new(0);
+    static REATTACH_SUCCEEDED: AtomicBool = AtomicBool::new(false);
+    const REPLACEMENT_HASH: u64 = 7;
+
+    struct SelfRemovingScript;
+
+    struct ReattachingRemovalScript;
+
+    impl ScriptLifecycle<crate::RuntimeScriptApi> for ReattachingRemovalScript {
+        fn on_removal(&self, ctx: &mut ScriptContext<'_, crate::RuntimeScriptApi>) {
+            REATTACH_SUCCEEDED.store(
+                ctx.run
+                    .Scripts()
+                    .script_attach_hashed(ctx.id, REPLACEMENT_HASH),
+                Ordering::Relaxed,
+            );
+        }
+    }
+
+    impl ScriptBehavior<crate::RuntimeScriptApi> for ReattachingRemovalScript {
+        fn script_flags(&self) -> ScriptFlags {
+            ScriptFlags::new(ScriptFlags::HAS_REMOVAL)
+        }
+
+        fn create_state(&self) -> Box<dyn Any> {
+            Box::new(())
+        }
+
+        fn get_var(&self, _state: &dyn Any, _var: ScriptMemberID) -> Variant {
+            Variant::Null
+        }
+
+        fn set_var(&self, _state: &mut dyn Any, _var: ScriptMemberID, _value: Variant) {}
+
+        fn call_method(
+            &self,
+            _method: ScriptMemberID,
+            _ctx: &mut ScriptContext<'_, crate::RuntimeScriptApi>,
+            _params: &[Variant],
+        ) -> Variant {
+            Variant::Null
+        }
+    }
+
+    struct ReplacementScript;
+
+    impl ScriptLifecycle<crate::RuntimeScriptApi> for ReplacementScript {}
+
+    impl ScriptBehavior<crate::RuntimeScriptApi> for ReplacementScript {
+        fn script_flags(&self) -> ScriptFlags {
+            ScriptFlags::new(0)
+        }
+
+        fn create_state(&self) -> Box<dyn Any> {
+            Box::new(())
+        }
+
+        fn get_var(&self, _state: &dyn Any, _var: ScriptMemberID) -> Variant {
+            Variant::Null
+        }
+
+        fn set_var(&self, _state: &mut dyn Any, _var: ScriptMemberID, _value: Variant) {}
+
+        fn call_method(
+            &self,
+            _method: ScriptMemberID,
+            _ctx: &mut ScriptContext<'_, crate::RuntimeScriptApi>,
+            _params: &[Variant],
+        ) -> Variant {
+            Variant::Null
+        }
+    }
+
+    fn replacement_script_ctor() -> *mut dyn ScriptBehavior<crate::RuntimeScriptApi> {
+        Box::into_raw(Box::new(ReplacementScript))
+    }
+
+    static REPLACEMENT_REGISTRY: [(
+        u64,
+        perro_scripting::ScriptConstructor<crate::RuntimeScriptApi>,
+    ); 1] = [(REPLACEMENT_HASH, replacement_script_ctor)];
+
+    const BOOT_DATA: perro_scene::SceneNodeData =
+        perro_scene::SceneNodeData::new(NodeType::Node, Cow::Borrowed(&[]), None);
+    const BOOT_NODES: &[SceneNodeEntry] = &[SceneNodeEntry {
+        data: BOOT_DATA,
+        has_data_override: true,
+        key: SceneKey(0),
+        name: Some(Cow::Borrowed("root")),
+        tags: Cow::Borrowed(&[]),
+        children: Cow::Borrowed(&[]),
+        parent: None,
+        script: None,
+        clear_script: false,
+        root_of: None,
+        script_vars: Cow::Borrowed(&[]),
+    }];
+    static BOOT_SCENE: Scene = Scene {
+        nodes: Cow::Borrowed(BOOT_NODES),
+        root: Some(SceneKey(0)),
+        key_names: Cow::Borrowed(&[]),
+    };
+
+    fn empty_scene_lookup(_path_hash: u64) -> &'static Scene {
+        &BOOT_SCENE
+    }
+
+    impl ScriptLifecycle<crate::RuntimeScriptApi> for SelfRemovingScript {
+        fn on_removal(&self, ctx: &mut ScriptContext<'_, crate::RuntimeScriptApi>) {
+            REMOVAL_CALLS.fetch_add(1, Ordering::Relaxed);
+            assert!(!ctx.run.Scripts().remove(ctx.id));
+        }
+    }
+
+    impl ScriptBehavior<crate::RuntimeScriptApi> for SelfRemovingScript {
+        fn script_flags(&self) -> ScriptFlags {
+            ScriptFlags::new(ScriptFlags::HAS_REMOVAL)
+        }
+
+        fn create_state(&self) -> Box<dyn Any> {
+            Box::new(())
+        }
+
+        fn get_var(&self, _state: &dyn Any, _var: ScriptMemberID) -> Variant {
+            Variant::Null
+        }
+
+        fn set_var(&self, _state: &mut dyn Any, _var: ScriptMemberID, _value: Variant) {}
+
+        fn call_method(
+            &self,
+            _method: ScriptMemberID,
+            _ctx: &mut ScriptContext<'_, crate::RuntimeScriptApi>,
+            _params: &[Variant],
+        ) -> Variant {
+            Variant::Null
+        }
+    }
+
+    #[test]
+    fn removal_callback_cannot_reenter_same_script_removal() {
+        REMOVAL_CALLS.store(0, Ordering::Relaxed);
+        let mut runtime = Runtime::new();
+        let id = NodeID::new(1);
+        runtime
+            .scripts
+            .insert(id, Arc::new(SelfRemovingScript), Box::new(()));
+
+        assert!(runtime.remove_script_instance(id));
+
+        assert_eq!(REMOVAL_CALLS.load(Ordering::Relaxed), 1);
+        assert!(runtime.scripts.get_instance(id).is_none());
+        assert!(runtime.script_runtime.removing_scripts.is_empty());
+        assert!(runtime.script_runtime.active_script_stack.is_empty());
+    }
+
+    #[test]
+    fn removal_callback_cannot_replace_same_script() {
+        REATTACH_SUCCEEDED.store(false, Ordering::Relaxed);
+        let mut project = crate::runtime_project::RuntimeProject::new("Test", ".");
+        project.static_scene_lookup = Some(empty_scene_lookup);
+        let mut runtime = Runtime::from_project_with_script_registry(
+            project,
+            crate::runtime_project::ProviderMode::Static,
+            Some(&REPLACEMENT_REGISTRY),
+        );
+        let id = runtime.nodes.insert(SceneNode::new(SceneNodeData::Node));
+        runtime
+            .scripts
+            .insert(id, Arc::new(ReattachingRemovalScript), Box::new(()));
+
+        assert!(runtime.remove_script_instance(id));
+
+        assert!(!REATTACH_SUCCEEDED.load(Ordering::Relaxed));
+        assert!(runtime.scripts.get_instance(id).is_none());
+        assert!(runtime.script_runtime.removing_scripts.is_empty());
+    }
 
     #[test]
     fn nested_active_script_pop_restores_parent_frame() {

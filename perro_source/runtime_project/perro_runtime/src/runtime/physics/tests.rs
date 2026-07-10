@@ -833,6 +833,38 @@ fn apply_force_3d_uses_world_space_vector() {
 }
 
 #[test]
+fn physics_api_rejects_nonfinite_forces_and_impulses() {
+    let mut runtime = Runtime::new();
+    let body_2d = NodeAPI::create::<RigidBody2D>(&mut runtime);
+    let body_3d = NodeAPI::create::<RigidBody3D>(&mut runtime);
+
+    assert!(!PhysicsAPI::apply_force_2d(
+        &mut runtime,
+        body_2d,
+        Vector2::new(f32::NAN, 0.0)
+    ));
+    assert!(!PhysicsAPI::apply_impulse_2d(
+        &mut runtime,
+        body_2d,
+        Vector2::new(0.0, f32::INFINITY)
+    ));
+    assert!(!PhysicsAPI::apply_force_3d(
+        &mut runtime,
+        body_3d,
+        Vector3::new(0.0, f32::NEG_INFINITY, 0.0)
+    ));
+    assert!(!PhysicsAPI::apply_impulse_3d(
+        &mut runtime,
+        body_3d,
+        Vector3::new(0.0, 0.0, f32::NAN)
+    ));
+    assert!(runtime.physics.pending_forces_2d.is_empty());
+    assert!(runtime.physics.pending_forces_3d.is_empty());
+    assert!(runtime.physics.pending_impulses_2d.is_empty());
+    assert!(runtime.physics.pending_impulses_3d.is_empty());
+}
+
+#[test]
 fn sleeping_rigidbody_2d_sync_settles_once_then_skips() {
     let mut runtime = Runtime::new();
     let body_id = NodeAPI::create::<RigidBody2D>(&mut runtime);

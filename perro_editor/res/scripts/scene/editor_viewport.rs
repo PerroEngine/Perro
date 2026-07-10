@@ -2070,11 +2070,9 @@ pub fn disable_preview_runtime_input<API: ScriptAPI + ?Sized>(
         });
         let _ = with_node_mut!(ctx.run, Button2D, id, |node| {
             node.input_enabled = false;
-            node.disabled = true;
         });
         let _ = with_node_mut!(ctx.run, ImageButton2D, id, |node| {
             node.input_enabled = false;
-            node.disabled = true;
         });
         let _ = with_node_mut!(ctx.run, Camera2D, id, |node| {
             node.active = false;

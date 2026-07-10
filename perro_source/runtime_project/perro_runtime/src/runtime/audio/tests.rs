@@ -645,6 +645,11 @@ fn reflection_loses_strength_per_bounce_and_stops_at_cutoff() {
     assert!(four_bounces > one_bounce);
     runtime.audio.config.energy_cutoff = 0.6;
     assert_eq!(runtime.bounce_energy(0.5, 4), 0.0);
+    assert_eq!(
+        bounded_audio_bounces(u32::MAX),
+        perro_project::MAX_AUDIO_PROPAGATION_BOUNCES
+    );
+    assert_eq!(runtime.bounce_energy(1.0, u32::MAX), 1.0);
 }
 
 #[test]

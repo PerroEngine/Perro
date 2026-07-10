@@ -1,5 +1,5 @@
-use super::ResourceStore;
-use perro_ids::TextureID;
+use super::{DecodedTextureRgba, ResourceStore};
+use perro_ids::{MaterialID, MeshID, TextureID};
 use perro_render_bridge::{Material3D, RuntimeMeshData, RuntimeMeshVertex, StandardMaterial3D};
 use perro_structs::UnitVector4;
 
@@ -221,6 +221,77 @@ fn duplicate_create_with_id_for_same_loading_texture_keeps_original_id() {
 }
 
 #[test]
+fn stale_generation_drop_keeps_reused_live_resources() {
+    let mut store = ResourceStore::new();
+
+    let old_texture = store.create_texture("__stale_texture_a__", false);
+    assert!(store.drop_texture(old_texture));
+    let texture = store.create_texture("__stale_texture_b__", false);
+    assert_eq!(texture.index(), old_texture.index());
+    assert!(store.set_decoded_texture_data(
+        texture,
+        DecodedTextureRgba {
+            rgba: vec![1, 2, 3, 4],
+            width: 1,
+            height: 1,
+        }
+    ));
+    assert!(!store.drop_texture(old_texture));
+    assert!(store.has_texture(texture));
+    assert_eq!(store.texture_source(texture), Some("__stale_texture_b__"));
+    assert!(store.decoded_texture_data(texture).is_some());
+    assert!(store.texture_meta_by.contains_key(&texture));
+
+    let old_mesh = store.create_mesh("__stale_mesh_a__", false);
+    assert!(store.drop_mesh(old_mesh));
+    let mesh = store.create_mesh("__stale_mesh_b__", false);
+    assert_eq!(mesh.index(), old_mesh.index());
+    assert!(store.set_runtime_mesh_data_by_id(mesh, simple_runtime_mesh(1.0)));
+    assert!(!store.drop_mesh(old_mesh));
+    assert!(store.has_mesh(mesh));
+    assert_eq!(store.mesh_source(mesh), Some("__stale_mesh_b__"));
+    assert!(store.runtime_mesh_data_by_id(mesh).is_some());
+    assert!(store.mesh_meta_by.contains_key(&mesh));
+
+    let old_material =
+        store.create_material(Material3D::default(), Some("__stale_material_a__"), false);
+    assert!(store.drop_material(old_material));
+    let material =
+        store.create_material(Material3D::default(), Some("__stale_material_b__"), false);
+    assert_eq!(material.index(), old_material.index());
+    assert!(!store.drop_material(old_material));
+    assert!(store.has_material(material));
+    assert!(store.material(material).is_some());
+    assert!(store.material_meta_by.contains_key(&material));
+}
+
+#[test]
+fn reserve_toggle_keeps_one_gc_candidate_and_one_age_step() {
+    let mut store = ResourceStore::new();
+    let texture = store.create_texture("__reserve_toggle_texture__", false);
+    store.mark_texture_used(texture);
+
+    for _ in 0..100 {
+        assert!(store.set_texture_reserved(texture, true));
+        assert!(store.set_texture_reserved(texture, false));
+    }
+
+    assert_eq!(
+        store
+            .texture_gc_candidates
+            .iter()
+            .filter(|candidate| **candidate == texture)
+            .count(),
+        1
+    );
+    store.reset_ref_counts();
+    let dropped = store.gc_unused_after_frames(60, 1, usize::MAX);
+    assert!(dropped.textures.is_empty());
+    assert!(store.has_texture(texture));
+    assert_eq!(store.texture_meta_by[&texture].zero_ref_frames, 1);
+}
+
+#[test]
 fn mark_used_count_tracks_multiple_live_users() {
     let mut store = ResourceStore::new();
     let texture = store.create_texture("__tmp_ref_count_texture__", false);
@@ -411,7 +482,11 @@ fn write_stream_texture_data_reuses_buffer_and_falls_back_by_source() {
 
     // first write establishes the resident by_id buffer.
     assert!(store.write_stream_texture_data(id, &[1, 2, 3, 4, 5, 6, 7, 8], 2, 1));
-    let ptr = store.decoded_texture_data(id).expect("decoded").rgba.as_ptr();
+    let ptr = store
+        .decoded_texture_data(id)
+        .expect("decoded")
+        .rgba
+        .as_ptr();
 
     // no by_source duplicate: lookup by source falls back to the by_id buffer.
     let by_source = store
@@ -429,4 +504,53 @@ fn write_stream_texture_data_reuses_buffer_and_falls_back_by_source() {
     assert!(store.write_stream_texture_data(id, &[9, 9, 9, 9, 9, 9, 9, 9], 1, 2));
     let decoded = store.decoded_texture_data(id).expect("decoded");
     assert_eq!((decoded.width, decoded.height), (1, 2));
+}
+
+#[test]
+fn decoded_texture_source_lookup_uses_canonical_id_buffer() {
+    let mut store = ResourceStore::new();
+    let source = "res://textures/canonical.png";
+    let id = store.create_texture(source, false);
+    assert!(store.set_decoded_texture_data(
+        id,
+        DecodedTextureRgba {
+            rgba: vec![1, 2, 3, 4, 5, 6, 7, 8],
+            width: 2,
+            height: 1,
+        }
+    ));
+
+    let by_id = store.decoded_texture_data(id).expect("by id");
+    let by_source = store
+        .decoded_texture_data_by_source(source)
+        .expect("by source");
+    assert!(std::ptr::eq(by_id, by_source));
+    assert_eq!(by_id.rgba.as_ptr(), by_source.rgba.as_ptr());
+}
+
+#[test]
+fn huge_explicit_resource_ids_fall_back_without_slot_growth() {
+    let mut store = ResourceStore::new();
+    let huge_texture = TextureID::from_parts(u32::MAX, 7);
+    let huge_mesh = MeshID::from_parts(u32::MAX, 7);
+    let huge_material = MaterialID::from_parts(u32::MAX, 7);
+
+    let texture = store.create_texture_with_id(huge_texture, "huge-texture", false);
+    let mesh = store.create_mesh_with_id(huge_mesh, "huge-mesh", false);
+    let material = store.create_material_with_id(
+        huge_material,
+        Material3D::default(),
+        Some("huge-material"),
+        false,
+    );
+
+    assert_ne!(texture, huge_texture);
+    assert_ne!(mesh, huge_mesh);
+    assert_ne!(material, huge_material);
+    assert_eq!(store.rejected_explicit_id_count(), 3);
+    assert_eq!(store.textures.generations.len(), 1);
+    assert_eq!(store.meshes.generations.len(), 1);
+    assert_eq!(store.materials.generations.len(), 1);
+    assert_eq!(store.texture_source_by_slot.len(), 1);
+    assert_eq!(store.mesh_source_by_slot.len(), 1);
 }

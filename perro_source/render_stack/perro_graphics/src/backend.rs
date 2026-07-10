@@ -17,7 +17,6 @@ use crate::{
 };
 use ahash::AHashMap;
 #[cfg(not(target_arch = "wasm32"))]
-use ahash::AHashSet;
 use perro_graphics_assets::{
     decode_image_rgba, decode_ptex, load_mesh3d_from_bytes, load_texture_rgba,
 };
@@ -225,7 +224,7 @@ struct AsyncMeshLoadJob {
 #[cfg(not(target_arch = "wasm32"))]
 struct AsyncTextureLoadResult {
     id: TextureID,
-    texture: Option<DecodedTextureRgba>,
+    texture: Result<DecodedTextureRgba, String>,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -368,7 +367,7 @@ pub struct PerroGraphics {
     #[cfg(not(target_arch = "wasm32"))]
     async_texture_load_rx: mpsc::Receiver<AsyncTextureLoadResult>,
     #[cfg(not(target_arch = "wasm32"))]
-    pending_async_texture_loads: AHashSet<TextureID>,
+    pending_async_texture_loads: AHashMap<TextureID, Vec<perro_render_bridge::RenderRequestID>>,
     #[cfg(not(target_arch = "wasm32"))]
     queued_async_texture_loads: Vec<AsyncTextureLoadJob>,
     viewport: (u32, u32),
@@ -588,7 +587,7 @@ impl PerroGraphics {
             .push(AsyncTextureLoadJob { id, source });
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(all(not(target_arch = "wasm32"), not(test)))]
     fn flush_async_texture_loads(&mut self) {
         if self.queued_async_texture_loads.is_empty() {
             return;
@@ -599,7 +598,8 @@ impl PerroGraphics {
         rayon::spawn(move || {
             for job in jobs {
                 let texture =
-                    Self::decode_texture_source(job.source.as_str(), static_texture_lookup);
+                    Self::decode_texture_source(job.source.as_str(), static_texture_lookup)
+                        .ok_or_else(|| format!("failed to decode texture source `{}`", job.source));
                 let _ = tx.send(AsyncTextureLoadResult {
                     id: job.id,
                     texture,
@@ -608,26 +608,79 @@ impl PerroGraphics {
         });
     }
 
+    #[cfg(all(not(target_arch = "wasm32"), test))]
+    fn flush_async_texture_loads(&mut self) {
+        let jobs = std::mem::take(&mut self.queued_async_texture_loads);
+        for job in jobs {
+            let texture =
+                Self::decode_texture_source(job.source.as_str(), self.static_texture_lookup)
+                    .ok_or_else(|| format!("failed to decode texture source `{}`", job.source));
+            let _ = self.async_texture_load_tx.send(AsyncTextureLoadResult {
+                id: job.id,
+                texture,
+            });
+        }
+    }
+
     #[cfg(target_arch = "wasm32")]
-    fn start_async_texture_load(&mut self, id: TextureID, source: String) {
-        if let Some(texture) =
-            Self::decode_texture_source(source.as_str(), self.static_texture_lookup)
-        {
-            let _ = self.resources.set_decoded_texture_data(id, texture);
-            self.events.push(RenderEvent::TextureLoaded { id });
+    fn start_async_texture_load(
+        &mut self,
+        request: perro_render_bridge::RenderRequestID,
+        id: TextureID,
+        source: String,
+    ) {
+        match Self::decode_texture_source(source.as_str(), self.static_texture_lookup) {
+            Some(texture) if self.resources.set_decoded_texture_data(id, texture) => {
+                self.events
+                    .push(RenderEvent::TextureCreated { request, id });
+                self.events.push(RenderEvent::TextureLoaded { id });
+            }
+            _ => {
+                self.resources.drop_texture(id);
+                self.events.push(RenderEvent::Failed {
+                    request,
+                    reason: format!("failed to decode texture source `{source}`"),
+                });
+            }
         }
     }
 
     #[cfg(not(target_arch = "wasm32"))]
     fn poll_async_texture_loads(&mut self) {
         while let Ok(result) = self.async_texture_load_rx.try_recv() {
-            self.pending_async_texture_loads.remove(&result.id);
-            if let Some(texture) = result.texture
-                && self.resources.set_decoded_texture_data(result.id, texture)
-            {
-                self.events
-                    .push(RenderEvent::TextureLoaded { id: result.id });
-                self.redraw_requested = true;
+            let Some(requests) = self.pending_async_texture_loads.remove(&result.id) else {
+                continue;
+            };
+            match result.texture {
+                Ok(texture) => {
+                    if self.resources.set_decoded_texture_data(result.id, texture) {
+                        for request in requests {
+                            self.events.push(RenderEvent::TextureCreated {
+                                request,
+                                id: result.id,
+                            });
+                        }
+                        self.events
+                            .push(RenderEvent::TextureLoaded { id: result.id });
+                        self.redraw_requested = true;
+                    } else {
+                        for request in requests {
+                            self.events.push(RenderEvent::Failed {
+                                request,
+                                reason: "texture dropped before async load completed".to_string(),
+                            });
+                        }
+                    }
+                }
+                Err(reason) => {
+                    self.resources.drop_texture(result.id);
+                    for request in requests {
+                        self.events.push(RenderEvent::Failed {
+                            request,
+                            reason: reason.clone(),
+                        });
+                    }
+                }
             }
         }
     }
@@ -666,7 +719,7 @@ impl PerroGraphics {
             #[cfg(not(target_arch = "wasm32"))]
             async_texture_load_rx,
             #[cfg(not(target_arch = "wasm32"))]
-            pending_async_texture_loads: AHashSet::new(),
+            pending_async_texture_loads: AHashMap::new(),
             #[cfg(not(target_arch = "wasm32"))]
             queued_async_texture_loads: Vec::new(),
             viewport: (0, 0),
@@ -930,15 +983,22 @@ impl PerroGraphics {
                         if self.resources.decoded_texture_data(id).is_none() {
                             #[cfg(not(target_arch = "wasm32"))]
                             {
-                                if self.pending_async_texture_loads.insert(id) {
+                                let waiters =
+                                    self.pending_async_texture_loads.entry(id).or_default();
+                                let start_load = waiters.is_empty();
+                                if !waiters.contains(&request) {
+                                    waiters.push(request);
+                                }
+                                if start_load {
                                     self.start_async_texture_load(id, source);
                                 }
                             }
                             #[cfg(target_arch = "wasm32")]
-                            self.start_async_texture_load(id, source);
+                            self.start_async_texture_load(request, id, source);
+                        } else {
+                            self.events
+                                .push(RenderEvent::TextureCreated { request, id });
                         }
-                        self.events
-                            .push(RenderEvent::TextureCreated { request, id });
                     }
                     ResourceCommand::CreateRuntimeTexture {
                         request,
@@ -1062,8 +1122,9 @@ impl PerroGraphics {
                         }
                         // keep resident CPU copy current in place (reuses buffer
                         // when same size; drops the redundant by_source dup).
-                        let has_texture =
-                            self.resources.write_stream_texture_data(id, &rgba, width, height);
+                        let has_texture = self
+                            .resources
+                            .write_stream_texture_data(id, &rgba, width, height);
                         if !has_texture {
                             continue;
                         }

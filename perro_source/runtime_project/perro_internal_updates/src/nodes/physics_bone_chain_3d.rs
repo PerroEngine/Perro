@@ -24,7 +24,7 @@ where
         stiffness: node.stiffness.clamp(0.0, 1.0),
         radius: node.radius.max(0.0),
         collisions: node.collisions,
-        iterations: node.iterations.max(1) as usize,
+        iterations: super::bounded_solver_iterations(node.iterations.max(1)),
     }) else {
         return;
     };

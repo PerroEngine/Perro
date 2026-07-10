@@ -165,12 +165,18 @@ enum PostInputKind {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 struct PostBindGroupKey {
     input_kind: PostInputKind,
-    external_input_view_id: usize,
-    depth_view_id: usize,
+    external_input_view_key: u64,
+    depth_view_key: u64,
     uniform_buffer_generation: u32,
     params_buffer_generation: u32,
     lut_2d_key: u64,
     lut_3d_key: u64,
+}
+
+#[derive(Clone, Copy)]
+struct PostViewKeys {
+    external_input: u64,
+    depth: u64,
 }
 
 #[derive(Clone, Copy, Default)]
@@ -184,6 +190,8 @@ pub struct PostProcessContext<'a> {
     pub(crate) queue: &'a wgpu::Queue,
     pub(crate) output_view: &'a wgpu::TextureView,
     pub(crate) camera: &'a Camera3DState,
+    pub(crate) external_input_view_key: u64,
+    pub(crate) depth_view_key: u64,
     pub(crate) static_shader_lookup: Option<StaticShaderLookup>,
     pub(crate) static_texture_lookup: Option<StaticTextureLookup>,
 }
@@ -521,6 +529,8 @@ impl PostProcessor {
             queue,
             output_view,
             camera,
+            external_input_view_key,
+            depth_view_key,
             static_shader_lookup,
             static_texture_lookup,
         } = ctx;
@@ -530,6 +540,10 @@ impl PostProcessor {
             depth_view,
             effects,
         } = chain_data;
+        let view_keys = PostViewKeys {
+            external_input: *external_input_view_key,
+            depth: *depth_view_key,
+        };
 
         if effects.is_empty() {
             return;
@@ -652,7 +666,7 @@ impl PostProcessor {
                     _ => PostInputKind::PingB,
                 };
                 let bind_group =
-                    self.merged_bind_group(device, input_pk, &current_input, depth_view);
+                    self.merged_bind_group(device, input_pk, &current_input, depth_view, view_keys);
                 {
                     let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                         label: Some("perro_post_merged_pass"),
@@ -791,6 +805,7 @@ impl PostProcessor {
                 },
                 &current_input,
                 depth_view,
+                view_keys,
             );
             let pipeline = match effect {
                 PostProcessEffect::Custom { shader_path, .. } => self
@@ -1246,17 +1261,18 @@ impl PostProcessor {
         input_kind: PostInputKind,
         input_view: &wgpu::TextureView,
         depth_view: &wgpu::TextureView,
+        view_keys: PostViewKeys,
     ) -> wgpu::BindGroup {
         let lut_2d_key = lut_hash_2d(effect);
         let lut_3d_key = lut_hash_3d(effect);
         let key = PostBindGroupKey {
             input_kind,
-            external_input_view_id: if input_kind == PostInputKind::External {
-                texture_view_id(input_view)
+            external_input_view_key: if input_kind == PostInputKind::External {
+                view_keys.external_input
             } else {
                 0
             },
-            depth_view_id: texture_view_id(depth_view),
+            depth_view_key: view_keys.depth,
             uniform_buffer_generation: self.uniform_buffer_generation,
             params_buffer_generation: self.params_buffer_generation,
             lut_2d_key,
@@ -1296,15 +1312,16 @@ impl PostProcessor {
         input_kind: PostInputKind,
         input_view: &wgpu::TextureView,
         depth_view: &wgpu::TextureView,
+        view_keys: PostViewKeys,
     ) -> wgpu::BindGroup {
         let key = PostBindGroupKey {
             input_kind,
-            external_input_view_id: if input_kind == PostInputKind::External {
-                texture_view_id(input_view)
+            external_input_view_key: if input_kind == PostInputKind::External {
+                view_keys.external_input
             } else {
                 0
             },
-            depth_view_id: texture_view_id(depth_view),
+            depth_view_key: view_keys.depth,
             uniform_buffer_generation: self.uniform_buffer_generation,
             params_buffer_generation: self.params_buffer_generation,
             // Distinct LUT keys so merged bind groups never collide with an
@@ -1337,11 +1354,6 @@ impl PostProcessor {
         self.lut_generation = next_generation(self.lut_generation);
         self.post_bind_groups.clear();
     }
-}
-
-#[inline]
-fn texture_view_id(view: &wgpu::TextureView) -> usize {
-    view as *const _ as usize
 }
 
 #[inline]
@@ -1951,8 +1963,8 @@ mod tests {
     fn post_bind_group_key_changes_on_generations_and_inputs() {
         let a = PostBindGroupKey {
             input_kind: PostInputKind::External,
-            external_input_view_id: 10,
-            depth_view_id: 20,
+            external_input_view_key: 10,
+            depth_view_key: 20,
             uniform_buffer_generation: 1,
             params_buffer_generation: 1,
             lut_2d_key: 0,
@@ -1964,12 +1976,22 @@ mod tests {
         };
         let c = PostBindGroupKey {
             input_kind: PostInputKind::PingA,
-            external_input_view_id: 0,
+            external_input_view_key: 0,
+            ..a
+        };
+        let d = PostBindGroupKey {
+            external_input_view_key: 11,
+            ..a
+        };
+        let e = PostBindGroupKey {
+            depth_view_key: 21,
             ..a
         };
 
         assert_ne!(a, b);
         assert_ne!(a, c);
+        assert_ne!(a, d);
+        assert_ne!(a, e);
     }
 
     #[test]

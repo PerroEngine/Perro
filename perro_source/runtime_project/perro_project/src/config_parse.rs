@@ -315,7 +315,10 @@ fn parse_rendering_ui(
     };
     let pixel_snapping = match table.get("pixel_snapping") {
         Some(value) => value.as_bool().ok_or_else(|| {
-            ProjectError::InvalidField("rendering.ui.pixel_snapping", "must be a boolean".to_string())
+            ProjectError::InvalidField(
+                "rendering.ui.pixel_snapping",
+                "must be a boolean".to_string(),
+            )
         })?,
         None => true,
     };
@@ -394,9 +397,10 @@ pub fn parse_routes_toml(contents: &str) -> Result<ProjectRoutesConfig, ProjectE
         .ok_or(ProjectError::MissingField("route"))?;
     let mut routes = Vec::with_capacity(route_entries.len());
     for entry in route_entries {
-        let table = entry
-            .as_table()
-            .ok_or(ProjectError::InvalidField("route", "must be table array".to_string()))?;
+        let table = entry.as_table().ok_or(ProjectError::InvalidField(
+            "route",
+            "must be table array".to_string(),
+        ))?;
         let href_raw = table
             .get("href")
             .and_then(Value::as_str)
@@ -414,6 +418,7 @@ pub fn parse_routes_toml(contents: &str) -> Result<ProjectRoutesConfig, ProjectE
             .filter(|value| !value.is_empty())
             .ok_or(ProjectError::MissingField("route.name"))?
             .to_string();
+        validate_route_href("route.href", href_raw)?;
         let href = normalize_route_href(href_raw);
         let title = parse_optional_route_str(table, "title")?;
         let description = parse_optional_route_str(table, "description")?;
@@ -474,9 +479,9 @@ fn parse_steam_input_mode(
     let Some(value) = table.get("input") else {
         return Ok(SteamInputMode::Off);
     };
-    let raw = value.as_str().ok_or_else(|| {
-        ProjectError::InvalidField("steam.input", "must be a string".to_string())
-    })?;
+    let raw = value
+        .as_str()
+        .ok_or_else(|| ProjectError::InvalidField("steam.input", "must be a string".to_string()))?;
     match raw {
         "off" => Ok(SteamInputMode::Off),
         "metadata" => Ok(SteamInputMode::Metadata),
@@ -537,6 +542,15 @@ fn parse_audio_propagation(
     path: &'static str,
 ) -> Result<AudioPropagationConfig, ProjectError> {
     cfg.max_bounces = parse_u32_table_field(table, "max_bounces", cfg.max_bounces, path)?;
+    if cfg.max_bounces > crate::MAX_AUDIO_PROPAGATION_BOUNCES {
+        return Err(ProjectError::InvalidField(
+            path,
+            format!(
+                "max_bounces must be <= {}",
+                crate::MAX_AUDIO_PROPAGATION_BOUNCES
+            ),
+        ));
+    }
     cfg.rays_per_tick = parse_u32_table_field(table, "rays_per_tick", cfg.rays_per_tick, path)?;
     cfg.max_ray_distance =
         parse_f32_table_field(table, "max_ray_distance", cfg.max_ray_distance, path)?;
@@ -579,12 +593,13 @@ fn parse_f32_table_field(
             format!("{key} must be finite number"),
         ));
     };
-    if raw.is_finite() && raw >= 0.0 {
-        Ok(raw as f32)
+    let parsed = raw as f32;
+    if raw.is_finite() && raw >= 0.0 && parsed.is_finite() {
+        Ok(parsed)
     } else {
         Err(ProjectError::InvalidField(
             path,
-            format!("{key} must be >= 0"),
+            format!("{key} must be finite and >= 0"),
         ))
     }
 }
@@ -644,8 +659,9 @@ fn parse_frame_rate_cap(
                 "must be positive number, \"unlimited\", or \"refresh_rate\"".to_string(),
             )
         })?;
-    if raw.is_finite() && raw > 0.0 {
-        Ok(FrameRateCap::Fps(raw as f32))
+    let parsed = raw as f32;
+    if raw.is_finite() && raw > 0.0 && parsed.is_finite() {
+        Ok(FrameRateCap::Fps(parsed))
     } else {
         Ok(FrameRateCap::Unlimited)
     }
@@ -661,16 +677,18 @@ fn parse_target_fixed_update(
         return Ok(Some(60.0));
     };
     if let Some(num) = value.as_float() {
-        if num <= 0.0 || !num.is_finite() {
+        let parsed = num as f32;
+        if num <= 0.0 || !num.is_finite() || !parsed.is_finite() {
             return Ok(None);
         }
-        return Ok(Some(num as f32));
+        return Ok(Some(parsed));
     }
     if let Some(num) = value.as_integer() {
         if num <= 0 {
             return Ok(None);
         }
-        return Ok(Some(num as f32));
+        let parsed = num as f32;
+        return Ok(parsed.is_finite().then_some(parsed));
     }
     Err(ProjectError::InvalidField(
         "runtime.target_fixed_update",
@@ -696,13 +714,14 @@ fn parse_physics_gravity(
             "must be a finite number".to_string(),
         ));
     };
-    if !num.is_finite() {
+    let parsed = num as f32;
+    if !num.is_finite() || !parsed.is_finite() {
         return Err(ProjectError::InvalidField(
             "physics.gravity",
             "must be a finite number".to_string(),
         ));
     }
-    Ok(num as f32)
+    Ok(parsed)
 }
 
 fn parse_physics_coef(
@@ -723,13 +742,14 @@ fn parse_physics_coef(
             "must be a finite positive number".to_string(),
         ));
     };
-    if !num.is_finite() || num <= 0.0 {
+    let parsed = num as f32;
+    if !num.is_finite() || num <= 0.0 || !parsed.is_finite() {
         return Err(ProjectError::InvalidField(
             "physics.coef",
             "must be a finite positive number".to_string(),
         ));
     }
-    Ok(num as f32)
+    Ok(parsed)
 }
 fn parse_occlusion_culling_with_default(
     table: &toml::map::Map<String, Value>,
@@ -938,7 +958,10 @@ fn parse_optional_table_str(
         return Ok(None);
     };
     let Some(raw) = value.as_str() else {
-        return Err(ProjectError::InvalidField(path, "must be a string".to_string()));
+        return Err(ProjectError::InvalidField(
+            path,
+            "must be a string".to_string(),
+        ));
     };
     let trimmed = raw.trim();
     if trimmed.is_empty() {
@@ -989,13 +1012,42 @@ fn parse_keywords_table_field(
 }
 
 fn validate_res_path(field: &'static str, path: &str) -> Result<(), ProjectError> {
-    if path.starts_with("res://") {
+    let Some(relative) = path.strip_prefix("res://") else {
+        return Err(ProjectError::InvalidField(
+            field,
+            "must start with `res://`".to_string(),
+        ));
+    };
+    if is_portable_relative_path(relative, false) {
         return Ok(());
     }
     Err(ProjectError::InvalidField(
         field,
-        "must start with `res://`".to_string(),
+        "must stay inside `res://` and use normal path components".to_string(),
     ))
+}
+
+fn validate_route_href(field: &'static str, href: &str) -> Result<(), ProjectError> {
+    let normalized = normalize_route_href(href);
+    let relative = normalized.strip_prefix('/').unwrap_or(&normalized);
+    if is_portable_relative_path(relative, true) {
+        return Ok(());
+    }
+    Err(ProjectError::InvalidField(
+        field,
+        "must use normal URL path components".to_string(),
+    ))
+}
+
+fn is_portable_relative_path(path: &str, allow_empty: bool) -> bool {
+    if path.is_empty() {
+        return allow_empty;
+    }
+    if path.contains(['\\', ':']) || path.chars().any(char::is_control) {
+        return false;
+    }
+    path.split('/')
+        .all(|component| !component.is_empty() && component != "." && component != "..")
 }
 
 pub fn normalize_route_href(path: &str) -> String {
@@ -1063,13 +1115,13 @@ fn virtual_canvas_from_aspect_ratio(raw: &str) -> Result<(u32, u32), ProjectErro
 
 fn parse_aspect_ratio(raw: &str) -> Result<(u32, u32), ProjectError> {
     let raw = raw.trim().to_ascii_lowercase();
-    let (w, h) = raw
-        .split_once(':')
-        .or_else(|| raw.split_once('x'))
-        .ok_or(ProjectError::InvalidField(
-            "graphics.aspect_ratio",
-            "expected format `WIDTH:HEIGHT`, for example `16:9`".to_string(),
-        ))?;
+    let (w, h) =
+        raw.split_once(':')
+            .or_else(|| raw.split_once('x'))
+            .ok_or(ProjectError::InvalidField(
+                "graphics.aspect_ratio",
+                "expected format `WIDTH:HEIGHT`, for example `16:9`".to_string(),
+            ))?;
 
     let width = w.parse::<u32>().map_err(|_| {
         ProjectError::InvalidField(

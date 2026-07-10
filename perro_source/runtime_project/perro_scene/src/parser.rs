@@ -11,6 +11,8 @@ use std::str::FromStr;
 
 type ParseResult<T> = Result<T, String>;
 
+const MAX_SCENE_VALUE_DEPTH: usize = 128;
+
 pub struct Parser<'a> {
     src: &'a str,
     lexer: Lexer<'a>,
@@ -124,6 +126,16 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_value(&mut self) -> ParseResult<SceneValue> {
+        self.parse_value_at_depth(0)
+    }
+
+    fn parse_value_at_depth(&mut self, depth: usize) -> ParseResult<SceneValue> {
+        if depth > MAX_SCENE_VALUE_DEPTH {
+            return Err(format!(
+                "Scene value nesting exceeds limit of {MAX_SCENE_VALUE_DEPTH}"
+            ));
+        }
+
         match &self.current {
             Token::Number(n) => {
                 let v = *n;
@@ -140,10 +152,12 @@ impl<'a> Parser<'a> {
             Token::Dollar => {
                 self.advance();
                 let name = self.expect_ident()?;
-                self.vars
+                let value = self
+                    .vars
                     .get(name)
-                    .cloned()
-                    .ok_or_else(|| format!("Unknown variable ${name}"))
+                    .ok_or_else(|| format!("Unknown variable ${name}"))?;
+                ensure_value_fits_depth(value, depth)?;
+                Ok(value.clone())
             }
 
             Token::Percent => {
@@ -275,7 +289,7 @@ impl<'a> Parser<'a> {
                         }
                     }
 
-                    let value = self.parse_value()?;
+                    let value = self.parse_value_at_depth(depth + 1)?;
                     entries.push((key, value));
 
                     match &self.current {
@@ -317,7 +331,7 @@ impl<'a> Parser<'a> {
                         break;
                     }
 
-                    let value = self.parse_value()?;
+                    let value = self.parse_value_at_depth(depth + 1)?;
                     items.push(value);
 
                     match &self.current {
@@ -441,6 +455,12 @@ impl<'a> Parser<'a> {
                     let val = self.parse_value()?;
                     fields.push((canonical_scene_field_name(key), val));
                 }
+
+                Token::Eof => {
+                    return Err(format!("Unterminated node type block `[{ty}]`"));
+                }
+
+                Token::Error(err) => return Err(err.to_string()),
 
                 _ => self.advance(),
             }
@@ -818,6 +838,27 @@ impl<'a> Parser<'a> {
     }
 }
 
+fn ensure_value_fits_depth(value: &SceneValue, start_depth: usize) -> ParseResult<()> {
+    let mut pending = vec![(value, start_depth)];
+    while let Some((value, depth)) = pending.pop() {
+        if depth > MAX_SCENE_VALUE_DEPTH {
+            return Err(format!(
+                "Scene value nesting exceeds limit of {MAX_SCENE_VALUE_DEPTH}"
+            ));
+        }
+        match value {
+            SceneValue::Object(fields) => {
+                pending.extend(fields.iter().map(|(_, value)| (value, depth + 1)));
+            }
+            SceneValue::Array(items) => {
+                pending.extend(items.iter().map(|value| (value, depth + 1)));
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
 fn custom_script_var_fields(fields: Vec<SceneObjectField>) -> Vec<SceneObjectField> {
     fields
         .into_iter()
@@ -925,7 +966,7 @@ fn euler_xyz_radians_to_quat_value(x: f32, y: f32, z: f32) -> SceneValue {
 
 #[cfg(test)]
 mod tests {
-    use super::Parser;
+    use super::{MAX_SCENE_VALUE_DEPTH, Parser};
     use crate::SceneValue;
 
     #[test]
@@ -951,6 +992,18 @@ mod tests {
             Err(err) => err,
         };
         assert!(err.contains("Expected"));
+    }
+
+    #[test]
+    fn try_parse_scene_rejects_unterminated_type_block() {
+        let err = Parser::new("$root = @main\n[main]\n[Node]\n")
+            .try_parse_scene()
+            .unwrap_err();
+
+        assert!(
+            err.contains("Unterminated node type block `[Node]`"),
+            "{err}"
+        );
     }
 
     #[test]
@@ -984,5 +1037,26 @@ mod tests {
             };
             assert_eq!(cols.len(), 3);
         }
+    }
+
+    #[test]
+    fn parser_rejects_value_over_depth_limit() {
+        let src = format!(
+            "{}0{}",
+            "[".repeat(MAX_SCENE_VALUE_DEPTH + 1),
+            "]".repeat(MAX_SCENE_VALUE_DEPTH + 1)
+        );
+        let err = Parser::new(&src).try_parse_value_literal().unwrap_err();
+        assert!(err.contains("nesting exceeds limit"), "{err}");
+    }
+
+    #[test]
+    fn parser_rejects_variable_expansion_over_depth_limit() {
+        let mut src = String::from("$v0 = 0\n");
+        for depth in 1..=MAX_SCENE_VALUE_DEPTH + 1 {
+            src.push_str(&format!("$v{depth} = [$v{}]\n", depth - 1));
+        }
+        let err = Parser::new(&src).try_parse_scene().unwrap_err();
+        assert!(err.contains("nesting exceeds limit"), "{err}");
     }
 }

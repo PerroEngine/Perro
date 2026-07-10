@@ -1,12 +1,6 @@
 //! Project image loading helpers for window icons and startup splash sizing.
 
 #[cfg(not(target_arch = "wasm32"))]
-use perro_asset_formats::ptex::{
-    FLAG_FORMAT_MASK as PTEX_FLAG_FORMAT_MASK, FLAG_FORMAT_R8 as PTEX_FLAG_FORMAT_R8,
-    FLAG_FORMAT_RGB8 as PTEX_FLAG_FORMAT_RGB8, FLAG_FORMAT_RGBA8 as PTEX_FLAG_FORMAT_RGBA8,
-    FLAG_PAYLOAD_RAW as PTEX_FLAG_PAYLOAD_RAW,
-};
-#[cfg(not(target_arch = "wasm32"))]
 use perro_asset_formats::ptex::{MAGIC as PTEX_MAGIC, VERSION as PTEX_VERSION};
 #[cfg(all(test, not(target_arch = "wasm32")))]
 use perro_graphics_assets::decode_image_rgba as decode_source_image_rgba;
@@ -16,8 +10,6 @@ use perro_graphics_assets::{
     decode_image_rgba_max_size as decode_source_image_rgba_max_size,
     decode_image_size as decode_source_image_size,
 };
-#[cfg(not(target_arch = "wasm32"))]
-use perro_io::decompress_zlib;
 #[cfg(not(target_arch = "wasm32"))]
 use std::{
     fs,
@@ -209,17 +201,11 @@ fn decode_image_logical_size(bytes: &[u8]) -> Option<(u32, u32)> {
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
 fn decode_image_rgba(bytes: &[u8]) -> Option<(Vec<u8>, u32, u32)> {
-    if let Some(decoded) = decode_ptex_rgba(bytes) {
-        return Some(decoded);
-    }
     decode_source_image_rgba(bytes)
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 fn decode_image_rgba_max_size(bytes: &[u8], max_dim: u32) -> Option<(Vec<u8>, u32, u32)> {
-    if let Some(decoded) = decode_ptex_rgba(bytes) {
-        return Some(decoded);
-    }
     decode_source_image_rgba_max_size(bytes, max_dim)
 }
 
@@ -238,70 +224,6 @@ fn decode_ptex_dimensions(bytes: &[u8]) -> Option<(u32, u32)> {
         return None;
     }
     Some((width, height))
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-fn decode_ptex_rgba(bytes: &[u8]) -> Option<(Vec<u8>, u32, u32)> {
-    if bytes.len() < 24 || &bytes[0..4] != PTEX_MAGIC {
-        return None;
-    }
-    let version = u32::from_le_bytes(bytes[4..8].try_into().ok()?);
-    if version != PTEX_VERSION {
-        return None;
-    }
-    let width = u32::from_le_bytes(bytes[8..12].try_into().ok()?);
-    let height = u32::from_le_bytes(bytes[12..16].try_into().ok()?);
-    if width == 0 || height == 0 {
-        return None;
-    }
-    let flags = u32::from_le_bytes(bytes[16..20].try_into().ok()?);
-    if flags & !(PTEX_FLAG_FORMAT_MASK | PTEX_FLAG_PAYLOAD_RAW) != 0 {
-        return None;
-    }
-    let raw_len = u32::from_le_bytes(bytes[20..24].try_into().ok()?);
-    let pixel_count = width.checked_mul(height)? as usize;
-    let expected_raw_len = match flags & PTEX_FLAG_FORMAT_MASK {
-        PTEX_FLAG_FORMAT_RGBA8 => pixel_count.checked_mul(4)?,
-        PTEX_FLAG_FORMAT_RGB8 => pixel_count.checked_mul(3)?,
-        PTEX_FLAG_FORMAT_R8 => pixel_count,
-        _ => return None,
-    };
-    if raw_len as usize != expected_raw_len {
-        return None;
-    }
-    let raw = decode_ptex_payload(flags, &bytes[24..])?;
-    if raw.len() != expected_raw_len {
-        return None;
-    }
-
-    let rgba = match flags & PTEX_FLAG_FORMAT_MASK {
-        PTEX_FLAG_FORMAT_RGBA8 => raw,
-        PTEX_FLAG_FORMAT_RGB8 => {
-            let mut out = Vec::with_capacity(pixel_count * 4);
-            for px in raw.chunks_exact(3) {
-                out.extend_from_slice(&[px[0], px[1], px[2], 255]);
-            }
-            out
-        }
-        PTEX_FLAG_FORMAT_R8 => {
-            let mut out = Vec::with_capacity(pixel_count * 4);
-            for &v in &raw {
-                out.extend_from_slice(&[v, v, v, 255]);
-            }
-            out
-        }
-        _ => return None,
-    };
-    Some((rgba, width, height))
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-fn decode_ptex_payload(flags: u32, payload: &[u8]) -> Option<Vec<u8>> {
-    if (flags & PTEX_FLAG_PAYLOAD_RAW) != 0 {
-        Some(payload.to_vec())
-    } else {
-        decompress_zlib(payload).ok()
-    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]

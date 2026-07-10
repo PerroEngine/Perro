@@ -33,6 +33,8 @@ pub mod pmesh {
     /// Vertex payload stores glTF `TEXCOORD_1` after UV0.
     pub const FLAG_HAS_UV1: u32 = 1 << 7;
     pub const FLAG_PAYLOAD_RAW: u32 = 1 << 31;
+    pub const MAX_RAW_BYTES: usize = 512 * 1024 * 1024;
+    pub const MAX_COMPRESSED_BYTES: usize = 256 * 1024 * 1024;
 }
 
 pub mod pskel {
@@ -61,6 +63,8 @@ pub mod ptex {
     pub const FLAG_FORMAT_RGB8: u32 = 1;
     pub const FLAG_FORMAT_R8: u32 = 2;
     pub const FLAG_PAYLOAD_RAW: u32 = 1 << 31;
+    pub const MAX_RAW_BYTES: usize = 256 * 1024 * 1024;
+    pub const MAX_COMPRESSED_BYTES: usize = 128 * 1024 * 1024;
 }
 
 pub mod ptset {

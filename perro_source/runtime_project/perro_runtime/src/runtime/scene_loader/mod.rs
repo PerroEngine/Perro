@@ -3,7 +3,7 @@ use perro_ids::NodeID;
 use perro_ids::ScriptMemberID;
 use perro_ids::parse_hashed_source_uri;
 use perro_ids::string_to_u64;
-use perro_io::{ProjectRoot, clear_dlc_mounts, set_project_root};
+use perro_io::{ProjectRoot, clear_dlc_mounts, try_set_project_root};
 #[cfg(not(target_arch = "wasm32"))]
 use perro_io::{
     data_local_dir, is_reserved_dlc_name, mount_dlc_archive, mount_dlc_disk, read_mounted_dlc_file,
@@ -15,6 +15,8 @@ use perro_scene::Scene;
 use perro_variant::Variant;
 #[cfg(not(target_arch = "wasm32"))]
 use std::fs;
+#[cfg(not(target_arch = "wasm32"))]
+use std::io::{self, Write};
 #[cfg(not(target_arch = "wasm32"))]
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -163,13 +165,30 @@ impl Runtime {
         let Some(scene_path) = self.route_scene_path(&next_href) else {
             return Err(format!("route `{next_href}` not found"));
         };
-        if let Some(root) = self.active_route_root.take() {
-            let _ = NodeAPI::remove_node(self, root);
-        }
         let root = self.load_scene_at_runtime(&scene_path)?;
+        if let Some(old_root) = self.active_route_root {
+            let _ = NodeAPI::remove_node(self, old_root);
+        }
         self.active_route_href = Some(next_href);
         self.active_route_root = Some(root);
         Ok(())
+    }
+
+    fn finish_scene_merge(
+        &mut self,
+        merged: merge::MergePreparedSceneResult,
+    ) -> Result<NodeID, String> {
+        let scene_root = merged.scene_root;
+        let ownership_root = merged.ownership_root;
+        if !merged.script_nodes.is_empty()
+            && let Err(err) = self.attach_scene_scripts(merged.script_nodes)
+        {
+            let _ = NodeAPI::remove_node(self, ownership_root);
+            return Err(err);
+        }
+        self.scene_ownership_roots
+            .insert(scene_root, ownership_root);
+        Ok(scene_root)
     }
 
     fn prepare_scene_with_project_styles(
@@ -256,8 +275,7 @@ impl Runtime {
             self.resolve_scene_by_path(import_path)
         })?;
         let merged = merge_prepared_scene(self, prepared)?;
-        self.attach_scene_scripts(merged.script_nodes)?;
-        Ok(merged.scene_root)
+        self.finish_scene_merge(merged)
     }
 
     pub(crate) fn load_scene_at_runtime(&mut self, path: &str) -> Result<NodeID, String> {
@@ -269,8 +287,7 @@ impl Runtime {
             self.resolve_scene_by_path(import_path)
         })?;
         let merged = merge_prepared_scene(self, prepared)?;
-        self.attach_scene_scripts(merged.script_nodes)?;
-        Ok(merged.scene_root)
+        self.finish_scene_merge(merged)
     }
 
     pub(crate) fn load_scene_at_runtime_hashed(
@@ -316,10 +333,10 @@ impl Runtime {
             }
         };
 
-        self.attach_scene_scripts(merged.script_nodes)?;
+        let scene_root = self.finish_scene_merge(merged)?;
         #[cfg(not(feature = "profile"))]
         let _ = path;
-        Ok(merged.scene_root)
+        Ok(scene_root)
     }
 
     pub(crate) fn load_boot_scene(&mut self) -> Result<(), String> {
@@ -367,22 +384,25 @@ impl Runtime {
 
         if self.provider_mode == ProviderMode::Static {
             if let Some(data) = perro_assets_bytes {
-                set_project_root(ProjectRoot::PerroAssets {
+                try_set_project_root(ProjectRoot::PerroAssets {
                     data,
                     name: project_name,
                     static_resource_lookups,
-                });
+                })
+                .map_err(|err| format!("failed to set project asset root: {err}"))?;
             } else {
-                set_project_root(ProjectRoot::Disk {
+                try_set_project_root(ProjectRoot::Disk {
                     root: project_root,
                     name: project_name,
-                });
+                })
+                .map_err(|err| format!("failed to set project asset root: {err}"))?;
             }
         } else {
-            set_project_root(ProjectRoot::Disk {
+            try_set_project_root(ProjectRoot::Disk {
                 root: project_root,
                 name: project_name,
-            });
+            })
+            .map_err(|err| format!("failed to set project asset root: {err}"))?;
         }
         self.reload_dlc_mounts()?;
         self.resource_api.initialize_localization();
@@ -394,6 +414,7 @@ impl Runtime {
         }
 
         self.nodes.clear();
+        self.scene_ownership_roots.clear();
         self.clear_physics();
         self.force_water_impacts_2d.clear();
         self.force_water_impacts_3d.clear();
@@ -537,9 +558,9 @@ impl Runtime {
                 }
             }
         }
-        self.attach_scene_scripts(merged.script_nodes)?;
+        let scene_root = self.finish_scene_merge(merged)?;
         self.active_route_href = boot_route_href;
-        self.active_route_root = Some(merged.scene_root);
+        self.active_route_root = Some(scene_root);
         #[cfg(not(feature = "profile"))]
         {
             let _ = mode_label;
@@ -688,13 +709,14 @@ impl Runtime {
                 let pack_rel = parse_manifest_string(&manifest_text, "pack_lib")
                     .unwrap_or_else(|| format!("pack/{}", runtime_pack_dylib_name()));
 
-                let extract_root = install_root.join(".runtime_cache").join(stem);
-                fs::create_dir_all(&extract_root).map_err(|err| {
-                    format!(
-                        "failed to create dlc runtime cache dir `{}`: {err}",
-                        extract_root.display()
-                    )
-                })?;
+                let extract_root =
+                    ensure_secure_cache_dir(&install_root, &Path::new(".runtime_cache").join(stem))
+                        .map_err(|err| {
+                            format!(
+                                "failed to create dlc runtime cache dir `{}`: {err}",
+                                install_root.join(".runtime_cache").join(stem).display()
+                            )
+                        })?;
 
                 let script_path =
                     extract_dlc_archive_file_to_cache(stem, &script_rel, &extract_root).map_err(
@@ -814,17 +836,163 @@ fn extract_dlc_archive_file_to_cache(
 ) -> Result<PathBuf, std::io::Error> {
     validate_asset_relative_path(virtual_path)?;
     let bytes = read_mounted_dlc_file(dlc_name, virtual_path)?;
+    write_dlc_cache_file(cache_root, virtual_path, &bytes)
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn write_dlc_cache_file(
+    cache_root: &Path,
+    virtual_path: &str,
+    bytes: &[u8],
+) -> io::Result<PathBuf> {
+    validate_asset_relative_path(virtual_path)?;
+    let relative = Path::new(virtual_path);
+    let parent = relative.parent().unwrap_or_else(|| Path::new(""));
+    let secure_parent = ensure_secure_cache_dir(cache_root, parent)?;
+    let canonical_root = cache_root.canonicalize()?;
     let mut target = cache_root.to_path_buf();
     for segment in virtual_path.split('/') {
         if !segment.is_empty() {
             target.push(segment);
         }
     }
-    if let Some(parent) = target.parent() {
-        fs::create_dir_all(parent)?;
+    if target.parent() != Some(secure_parent.as_path()) {
+        return Err(cache_permission_error(
+            "dlc cache target escapes cache root",
+        ));
     }
-    fs::write(&target, bytes)?;
+    reject_linked_cache_target(&target)?;
+
+    let mut file = open_cache_target_no_follow(&target)?;
+    let metadata = file.metadata()?;
+    if is_link_or_reparse(&metadata) || !metadata.is_file() {
+        return Err(cache_permission_error(
+            "dlc cache target is link, reparse point, or non-file",
+        ));
+    }
+    if !target.canonicalize()?.starts_with(&canonical_root) {
+        return Err(cache_permission_error(
+            "dlc cache target escapes cache root",
+        ));
+    }
+    file.set_len(0)?;
+    file.write_all(bytes)?;
     Ok(target)
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn ensure_secure_cache_dir(root: &Path, relative: &Path) -> io::Result<PathBuf> {
+    if relative
+        .components()
+        .any(|component| !matches!(component, std::path::Component::Normal(_)))
+        && !relative.as_os_str().is_empty()
+    {
+        return Err(cache_permission_error("invalid dlc cache path"));
+    }
+
+    let root_metadata = fs::symlink_metadata(root)?;
+    if is_link_or_reparse(&root_metadata) || !root_metadata.is_dir() {
+        return Err(cache_permission_error(
+            "dlc cache root is link, reparse point, or non-directory",
+        ));
+    }
+    let canonical_root = root.canonicalize()?;
+    let mut current = root.to_path_buf();
+    for component in relative.components() {
+        let std::path::Component::Normal(component) = component else {
+            return Err(cache_permission_error("invalid dlc cache path"));
+        };
+        current.push(component);
+        match fs::symlink_metadata(&current) {
+            Ok(metadata) => validate_cache_dir(&canonical_root, &current, &metadata)?,
+            Err(err) if err.kind() == io::ErrorKind::NotFound => {
+                match fs::create_dir(&current) {
+                    Ok(()) => {}
+                    Err(err) if err.kind() == io::ErrorKind::AlreadyExists => {}
+                    Err(err) => return Err(err),
+                }
+                let metadata = fs::symlink_metadata(&current)?;
+                validate_cache_dir(&canonical_root, &current, &metadata)?;
+            }
+            Err(err) => return Err(err),
+        }
+    }
+    Ok(current)
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn validate_cache_dir(
+    canonical_root: &Path,
+    path: &Path,
+    metadata: &fs::Metadata,
+) -> io::Result<()> {
+    if is_link_or_reparse(metadata) || !metadata.is_dir() {
+        return Err(cache_permission_error(
+            "dlc cache path contains link, reparse point, or non-directory",
+        ));
+    }
+    if !path.canonicalize()?.starts_with(canonical_root) {
+        return Err(cache_permission_error("dlc cache path escapes cache root"));
+    }
+    Ok(())
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn reject_linked_cache_target(path: &Path) -> io::Result<()> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) if is_link_or_reparse(&metadata) => Err(cache_permission_error(
+            "dlc cache target is link or reparse point",
+        )),
+        Ok(metadata) if !metadata.is_file() => {
+            Err(cache_permission_error("dlc cache target is not a file"))
+        }
+        Ok(_) => Ok(()),
+        Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(err) => Err(err),
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn open_cache_target_no_follow(path: &Path) -> io::Result<fs::File> {
+    let mut options = fs::OpenOptions::new();
+    options.write(true).create(true);
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        const O_NOFOLLOW: i32 = 0x2_0000;
+        options.custom_flags(O_NOFOLLOW);
+    }
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        const O_NOFOLLOW: i32 = 0x100;
+        options.custom_flags(O_NOFOLLOW);
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+        const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x20_0000;
+        options.custom_flags(FILE_FLAG_OPEN_REPARSE_POINT);
+    }
+    options.open(path)
+}
+
+#[cfg(windows)]
+fn is_link_or_reparse(metadata: &fs::Metadata) -> bool {
+    use std::os::windows::fs::MetadataExt;
+
+    const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
+    metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
+}
+
+#[cfg(all(not(target_arch = "wasm32"), not(windows)))]
+fn is_link_or_reparse(metadata: &fs::Metadata) -> bool {
+    metadata.file_type().is_symlink()
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn cache_permission_error(message: &'static str) -> io::Error {
+    io::Error::new(io::ErrorKind::PermissionDenied, message)
 }
 
 #[cfg(feature = "profile")]
@@ -844,12 +1012,40 @@ mod tests {
     use super::*;
     use crate::rs_ctx::RuntimeResourceApi;
     use crate::runtime_project::RuntimeProject;
-    use perro_nodes::NodeType;
+    use perro_nodes::{NodeType, SceneNode};
     use perro_project::LocalizationConfig;
     use perro_render_bridge::{RenderCommand, UiCommand};
     use perro_resource_api::sub_apis::{Locale, LocalizationAPI};
     use perro_scene::{Parser, Scene, SceneKey, SceneNodeData, SceneNodeEntry};
-    use std::{borrow::Cow, fs};
+    use std::{
+        borrow::Cow,
+        fs,
+        path::{Path, PathBuf},
+        sync::atomic::{AtomicU64, Ordering},
+    };
+
+    static NEXT_CACHE_TEMP: AtomicU64 = AtomicU64::new(0);
+
+    struct CacheTempDir(PathBuf);
+
+    impl CacheTempDir {
+        fn new(label: &str) -> Self {
+            let id = NEXT_CACHE_TEMP.fetch_add(1, Ordering::Relaxed);
+            let path = std::env::temp_dir().join(format!(
+                "perro-runtime-cache-{label}-{}-{id}",
+                std::process::id()
+            ));
+            let _ = fs::remove_dir_all(&path);
+            fs::create_dir_all(&path).unwrap();
+            Self(path)
+        }
+    }
+
+    impl Drop for CacheTempDir {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
 
     const EMPTY_FIELDS: &[perro_scene::SceneObjectField] = &[];
     const EMPTY_KEYS: &[SceneKey] = &[];
@@ -936,11 +1132,135 @@ mod tests {
         root: Some(SceneKey(0)),
         key_names: Cow::Borrowed(DOCS_KEY_NAMES),
     };
+    const BAD_SCRIPT_KEY_NAMES: &[Cow<'static, str>] = &[Cow::Borrowed("bad")];
+    const BAD_SCRIPT_NODES: &[SceneNodeEntry] = &[SceneNodeEntry {
+        data: HOST_DATA,
+        has_data_override: true,
+        key: SceneKey(0),
+        name: Some(Cow::Borrowed("bad")),
+        tags: Cow::Borrowed(EMPTY_TAGS),
+        children: Cow::Borrowed(EMPTY_KEYS),
+        parent: None,
+        script: Some(Cow::Borrowed("res://missing_script.rs")),
+        clear_script: false,
+        root_of: None,
+        script_vars: Cow::Borrowed(EMPTY_FIELDS),
+    }];
+    static BAD_SCRIPT_SCENE: Scene = Scene {
+        nodes: Cow::Borrowed(BAD_SCRIPT_NODES),
+        root: Some(SceneKey(0)),
+        key_names: Cow::Borrowed(BAD_SCRIPT_KEY_NAMES),
+    };
     static EMPTY_SCENE: Scene = Scene {
         nodes: Cow::Borrowed(&[]),
         root: None,
         key_names: Cow::Borrowed(EMPTY_KEY_NAMES),
     };
+
+    #[test]
+    fn dlc_cache_write_stays_under_cache_root() {
+        let temp = CacheTempDir::new("write");
+        let cache = temp.0.join("cache");
+        fs::create_dir(&cache).unwrap();
+
+        let target = write_dlc_cache_file(&cache, "scripts/lib.bin", b"one").unwrap();
+        write_dlc_cache_file(&cache, "scripts/lib.bin", b"two").unwrap();
+
+        assert_eq!(target, cache.join("scripts/lib.bin"));
+        assert_eq!(fs::read(target).unwrap(), b"two");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn dlc_cache_rejects_linked_dir() {
+        use std::os::unix::fs::symlink;
+
+        let temp = CacheTempDir::new("linked-dir");
+        let cache = temp.0.join("cache");
+        let outside = temp.0.join("outside");
+        fs::create_dir(&cache).unwrap();
+        fs::create_dir(&outside).unwrap();
+        symlink(&outside, cache.join("scripts")).unwrap();
+
+        assert!(write_dlc_cache_file(&cache, "scripts/lib.bin", b"bad").is_err());
+        assert!(!outside.join("lib.bin").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn dlc_cache_rejects_linked_target() {
+        use std::os::unix::fs::symlink;
+
+        let temp = CacheTempDir::new("linked-target");
+        let cache = temp.0.join("cache");
+        let outside = temp.0.join("outside.bin");
+        fs::create_dir(&cache).unwrap();
+        fs::write(&outside, b"safe").unwrap();
+        symlink(&outside, cache.join("lib.bin")).unwrap();
+
+        assert!(write_dlc_cache_file(&cache, "lib.bin", b"bad").is_err());
+        assert_eq!(fs::read(outside).unwrap(), b"safe");
+    }
+
+    #[cfg(windows)]
+    fn try_cache_symlink_dir(original: &Path, link: &Path) -> bool {
+        match std::os::windows::fs::symlink_dir(original, link) {
+            Ok(()) => true,
+            Err(err)
+                if err.kind() == io::ErrorKind::PermissionDenied
+                    || err.raw_os_error() == Some(1314) =>
+            {
+                false
+            }
+            Err(err) => panic!("symlink create failed: {err}"),
+        }
+    }
+
+    #[cfg(windows)]
+    fn try_cache_symlink_file(original: &Path, link: &Path) -> bool {
+        match std::os::windows::fs::symlink_file(original, link) {
+            Ok(()) => true,
+            Err(err)
+                if err.kind() == io::ErrorKind::PermissionDenied
+                    || err.raw_os_error() == Some(1314) =>
+            {
+                false
+            }
+            Err(err) => panic!("symlink create failed: {err}"),
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn dlc_cache_rejects_linked_dir() {
+        let temp = CacheTempDir::new("linked-dir");
+        let cache = temp.0.join("cache");
+        let outside = temp.0.join("outside");
+        fs::create_dir(&cache).unwrap();
+        fs::create_dir(&outside).unwrap();
+        if !try_cache_symlink_dir(&outside, &cache.join("scripts")) {
+            return;
+        }
+
+        assert!(write_dlc_cache_file(&cache, "scripts/lib.bin", b"bad").is_err());
+        assert!(!outside.join("lib.bin").exists());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn dlc_cache_rejects_linked_target() {
+        let temp = CacheTempDir::new("linked-target");
+        let cache = temp.0.join("cache");
+        let outside = temp.0.join("outside.bin");
+        fs::create_dir(&cache).unwrap();
+        fs::write(&outside, b"safe").unwrap();
+        if !try_cache_symlink_file(&outside, &cache.join("lib.bin")) {
+            return;
+        }
+
+        assert!(write_dlc_cache_file(&cache, "lib.bin", b"bad").is_err());
+        assert_eq!(fs::read(outside).unwrap(), b"safe");
+    }
 
     fn test_lookup(path_hash: u64) -> &'static Scene {
         if path_hash == perro_ids::string_to_u64("res://boot.scn") {
@@ -949,6 +1269,8 @@ mod tests {
             &HOME_SCENE
         } else if path_hash == 200 {
             &DOCS_SCENE
+        } else if path_hash == 300 {
+            &BAD_SCRIPT_SCENE
         } else {
             &EMPTY_SCENE
         }
@@ -1058,6 +1380,145 @@ mod tests {
                 .iter()
                 .any(|(_, node)| node.name.as_ref() == "copy")
         );
+    }
+
+    #[test]
+    fn failed_route_change_keeps_current_scene_and_route() {
+        let mut project = RuntimeProject::new("Route Test", ".");
+        project.routes = perro_project::ProjectRoutesConfig {
+            routes: vec![
+                perro_project::ProjectRoute {
+                    href: "/".to_string(),
+                    name: "home".to_string(),
+                    scene: "100".to_string(),
+                    title: None,
+                    description: None,
+                    keywords: Vec::new(),
+                },
+                perro_project::ProjectRoute {
+                    href: "/bad".to_string(),
+                    name: "bad".to_string(),
+                    scene: "300".to_string(),
+                    title: None,
+                    description: None,
+                    keywords: Vec::new(),
+                },
+            ],
+        };
+        project.static_scene_lookup = Some(test_lookup);
+        let mut runtime = Runtime::new();
+        runtime.project = Some(Arc::new(project));
+        runtime.provider_mode = ProviderMode::Static;
+
+        let home = runtime.load_scene_at_runtime("100").expect("load home");
+        runtime.active_route_root = Some(home);
+        runtime.active_route_href = Some("/".to_string());
+        let node_count = runtime.nodes.len();
+
+        let err = runtime.apply_route_change("/bad").unwrap_err();
+        assert!(
+            err.contains("missing_script") || err.contains("script hash"),
+            "{err}"
+        );
+        assert_eq!(runtime.active_route_href.as_deref(), Some("/"));
+        assert_eq!(runtime.active_route_root, Some(home));
+        assert!(runtime.nodes.get(home).is_some());
+        assert_eq!(runtime.nodes.len(), node_count);
+        assert!(
+            !runtime
+                .nodes
+                .iter()
+                .any(|(_, node)| node.name.as_ref() == "bad")
+        );
+    }
+
+    #[test]
+    fn merge_prevalidation_rejects_late_link_without_live_mutation() {
+        let scene =
+            Parser::new("$root = @root\n\n[root]\n[Node]\n[/Node]\n[/root]\n").parse_scene();
+        let mut prepared =
+            prepare_scene_with_loader_and_styles(&scene, &|_| unreachable!(), None).unwrap();
+        prepared.nodes[0].camera_stream_target = Some(9_999);
+
+        let mut runtime = Runtime::new();
+        let mut sentinel = SceneNode::new(perro_nodes::SceneNodeData::Node);
+        sentinel.name = Cow::Borrowed("sentinel");
+        let sentinel = runtime.nodes.insert(sentinel);
+        let node_count = runtime.nodes.len();
+        let update_count = runtime.internal_updates.internal_update_nodes.len();
+
+        let err = merge_prepared_scene(&mut runtime, prepared)
+            .err()
+            .expect("invalid link must fail");
+        assert!(err.contains("camera stream target"), "{err}");
+        assert_eq!(runtime.nodes.len(), node_count);
+        assert_eq!(
+            runtime.internal_updates.internal_update_nodes.len(),
+            update_count
+        );
+        assert_eq!(
+            runtime.nodes.get(sentinel).map(|node| node.name.as_ref()),
+            Some("sentinel")
+        );
+    }
+
+    #[test]
+    fn merge_rejects_parent_cycle_before_live_mutation() {
+        let scene = Parser::new(
+            "[first]\n[Node]\n[/Node]\n[/first]\n[second]\n[Node]\n[/Node]\n[/second]\n",
+        )
+        .parse_scene();
+        let mut prepared =
+            prepare_scene_with_loader_and_styles(&scene, &|_| unreachable!(), None).unwrap();
+        let first = prepared.nodes[0].key;
+        let second = prepared.nodes[1].key;
+        prepared.nodes[0].parent_key = Some(second);
+        prepared.nodes[1].parent_key = Some(first);
+
+        let mut runtime = Runtime::new();
+        let err = merge_prepared_scene(&mut runtime, prepared)
+            .err()
+            .expect("parent cycle must fail");
+        assert!(err.contains("parent cycle"), "{err}");
+        assert!(runtime.nodes.is_empty());
+    }
+
+    #[test]
+    fn merge_rejects_declared_root_with_parent_before_live_mutation() {
+        let scene = Parser::new(
+            "$root = @child\n\n[parent]\n[Node]\n[/Node]\n[/parent]\n[child]\nparent = parent\n[Node]\n[/Node]\n[/child]\n",
+        )
+        .parse_scene();
+        let prepared =
+            prepare_scene_with_loader_and_styles(&scene, &|_| unreachable!(), None).unwrap();
+
+        let mut runtime = Runtime::new();
+        let err = merge_prepared_scene(&mut runtime, prepared)
+            .err()
+            .expect("child root must fail");
+        assert!(err.contains("must be a top-level node"), "{err}");
+        assert!(runtime.nodes.is_empty());
+    }
+
+    #[test]
+    fn loaded_scene_root_removes_hidden_owner_and_sibling_roots() {
+        let scene = Parser::new(
+            "$root = @primary\n\n[primary]\n[Node]\n[/Node]\n[/primary]\n[sibling]\n[Node]\n[/Node]\n[/sibling]\n",
+        )
+        .parse_scene();
+        let mut runtime = Runtime::new();
+        runtime.project = Some(Arc::new(RuntimeProject::new("Scene Test", ".")));
+
+        let root = runtime
+            .load_scene_doc_at_runtime(scene)
+            .expect("load sibling scene");
+        assert_eq!(runtime.nodes.len(), 3);
+        assert_eq!(runtime.scene_ownership_roots.len(), 1);
+        assert!(NodeAPI::remove_node(&mut runtime, root));
+        assert!(runtime.nodes.is_empty());
+        assert!(runtime.scene_ownership_roots.is_empty());
+        assert!(runtime.nodes.named_ids("primary").is_empty());
+        assert!(runtime.nodes.named_ids("sibling").is_empty());
     }
 
     #[test]

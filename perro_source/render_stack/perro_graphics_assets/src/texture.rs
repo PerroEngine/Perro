@@ -1,18 +1,21 @@
 use perro_asset_formats::ptex::{
     FLAG_FORMAT_MASK as PTEX_FLAG_FORMAT_MASK, FLAG_FORMAT_R8 as PTEX_FLAG_FORMAT_R8,
     FLAG_FORMAT_RGB8 as PTEX_FLAG_FORMAT_RGB8, FLAG_FORMAT_RGBA8 as PTEX_FLAG_FORMAT_RGBA8,
-    FLAG_PAYLOAD_RAW as PTEX_FLAG_PAYLOAD_RAW, MAGIC as PTEX_MAGIC, VERSION as PTEX_VERSION,
+    FLAG_PAYLOAD_RAW as PTEX_FLAG_PAYLOAD_RAW, MAGIC as PTEX_MAGIC,
+    MAX_COMPRESSED_BYTES as PTEX_MAX_COMPRESSED_BYTES, MAX_RAW_BYTES as PTEX_MAX_RAW_BYTES,
+    VERSION as PTEX_VERSION,
 };
-use perro_io::{decompress_zlib, load_asset};
+use perro_io::{decompress_zlib_limited, load_asset};
 use std::{
     collections::{HashMap, hash_map::DefaultHasher},
     hash::{Hash, Hasher},
-    sync::{Mutex, OnceLock},
+    sync::{Arc, Mutex, OnceLock},
 };
 
 const SVG_RASTER_SCALE: u32 = 4;
 const SVG_MAX_RASTER_DIM: u32 = 8192;
 const SVG_CACHE_LIMIT: usize = 32;
+const SVG_RGBA_CACHE_MAX_BYTES: usize = 64 * 1024 * 1024;
 
 #[derive(Clone)]
 struct SvgSizeCacheEntry {
@@ -49,6 +52,9 @@ pub fn decode_image_rgba(bytes: &[u8]) -> Option<(Vec<u8>, u32, u32)> {
     if looks_like_svg(bytes) {
         return decode_svg_rgba(bytes);
     }
+    if bytes.starts_with(PTEX_MAGIC) {
+        return decode_ptex(bytes);
+    }
     let image = image::load_from_memory(bytes).ok()?;
     let rgba = image.to_rgba8();
     let (w, h) = rgba.dimensions();
@@ -59,7 +65,21 @@ pub fn decode_image_rgba_max_size(bytes: &[u8], max_dim: u32) -> Option<(Vec<u8>
     if looks_like_svg(bytes) {
         return decode_svg_rgba_max_size(bytes, max_dim);
     }
-    decode_image_rgba(bytes)
+    if bytes.starts_with(PTEX_MAGIC) {
+        let (rgba, width, height) = decode_ptex(bytes)?;
+        return resize_rgba_to_max(rgba, width, height, max_dim);
+    }
+    let image = image::load_from_memory(bytes).ok()?;
+    let (width, height) = (image.width().max(1), image.height().max(1));
+    let target = fit_size((width, height), max_dim.max(1));
+    let rgba = if target == (width, height) {
+        image.to_rgba8()
+    } else {
+        image
+            .resize_exact(target.0, target.1, image::imageops::FilterType::Lanczos3)
+            .to_rgba8()
+    };
+    Some((rgba.into_raw(), target.0, target.1))
 }
 
 pub fn decode_image_size(bytes: &[u8]) -> Option<(u32, u32)> {
@@ -105,7 +125,7 @@ fn decode_svg_rgba_sized(
     raster_size: (u32, u32),
 ) -> Option<(Vec<u8>, u32, u32)> {
     if let Some(rgba) = load_svg_rgba_cache_entry(cache_key, raster_size) {
-        return Some((rgba, raster_size.0, raster_size.1));
+        return Some((rgba.as_ref().to_vec(), raster_size.0, raster_size.1));
     }
     let options = resvg::usvg::Options::default();
     let tree = resvg::usvg::Tree::from_data(bytes, &options).ok()?;
@@ -129,8 +149,9 @@ fn decode_svg_rgba_sized(
         rgba.extend_from_slice(&[pixel.red(), pixel.green(), pixel.blue(), pixel.alpha()]);
     }
     let _ = logical_size;
-    store_svg_rgba_cache_entry(cache_key, raster_size, rgba.clone());
-    Some((rgba, width, height))
+    let rgba: Arc<[u8]> = rgba.into();
+    store_svg_rgba_cache_entry(cache_key, raster_size, Arc::clone(&rgba));
+    Some((rgba.as_ref().to_vec(), width, height))
 }
 
 fn svg_target_size(bytes: &[u8]) -> Option<(u32, u32)> {
@@ -191,19 +212,15 @@ fn store_svg_size_cache_entry(key: u64, entry: SvgSizeCacheEntry) {
     cache.insert(key, entry);
 }
 
-fn load_svg_rgba_cache_entry(key: u64, size: (u32, u32)) -> Option<Vec<u8>> {
-    svg_rgba_cache().lock().ok()?.get(&(key, size)).cloned()
+fn load_svg_rgba_cache_entry(key: u64, size: (u32, u32)) -> Option<Arc<[u8]>> {
+    svg_rgba_cache().lock().ok()?.get(&(key, size))
 }
 
-fn store_svg_rgba_cache_entry(key: u64, size: (u32, u32), rgba: Vec<u8>) {
+fn store_svg_rgba_cache_entry(key: u64, size: (u32, u32), rgba: Arc<[u8]>) {
     let Ok(mut cache) = svg_rgba_cache().lock() else {
         return;
     };
-    let cache_key = (key, size);
-    if !cache.contains_key(&cache_key) && cache.len() >= SVG_CACHE_LIMIT {
-        cache.clear();
-    }
-    cache.insert(cache_key, rgba);
+    cache.insert((key, size), rgba);
 }
 
 fn svg_size_cache() -> &'static Mutex<HashMap<u64, SvgSizeCacheEntry>> {
@@ -212,11 +229,74 @@ fn svg_size_cache() -> &'static Mutex<HashMap<u64, SvgSizeCacheEntry>> {
 }
 
 type SvgRgbaCacheKey = (u64, (u32, u32));
-type SvgRgbaCache = HashMap<SvgRgbaCacheKey, Vec<u8>>;
+
+struct SvgRgbaCacheEntry {
+    rgba: Arc<[u8]>,
+    last_used: u64,
+}
+
+struct SvgRgbaCache {
+    entries: HashMap<SvgRgbaCacheKey, SvgRgbaCacheEntry>,
+    bytes: usize,
+    clock: u64,
+    max_bytes: usize,
+}
+
+impl SvgRgbaCache {
+    fn new(max_bytes: usize) -> Self {
+        Self {
+            entries: HashMap::new(),
+            bytes: 0,
+            clock: 0,
+            max_bytes,
+        }
+    }
+
+    fn get(&mut self, key: &SvgRgbaCacheKey) -> Option<Arc<[u8]>> {
+        self.clock = self.clock.wrapping_add(1);
+        let entry = self.entries.get_mut(key)?;
+        entry.last_used = self.clock;
+        Some(Arc::clone(&entry.rgba))
+    }
+
+    fn insert(&mut self, key: SvgRgbaCacheKey, rgba: Arc<[u8]>) {
+        let item_bytes = rgba.len();
+        if item_bytes > self.max_bytes {
+            return;
+        }
+        if let Some(old) = self.entries.remove(&key) {
+            self.bytes = self.bytes.saturating_sub(old.rgba.len());
+        }
+        while self.entries.len() >= SVG_CACHE_LIMIT
+            || self.bytes.saturating_add(item_bytes) > self.max_bytes
+        {
+            let Some(oldest) = self
+                .entries
+                .iter()
+                .min_by_key(|(_, entry)| entry.last_used)
+                .map(|(key, _)| *key)
+            else {
+                break;
+            };
+            if let Some(old) = self.entries.remove(&oldest) {
+                self.bytes = self.bytes.saturating_sub(old.rgba.len());
+            }
+        }
+        self.clock = self.clock.wrapping_add(1);
+        self.bytes = self.bytes.saturating_add(item_bytes);
+        self.entries.insert(
+            key,
+            SvgRgbaCacheEntry {
+                rgba,
+                last_used: self.clock,
+            },
+        );
+    }
+}
 
 fn svg_rgba_cache() -> &'static Mutex<SvgRgbaCache> {
     static SVG_RGBA_CACHE: OnceLock<Mutex<SvgRgbaCache>> = OnceLock::new();
-    SVG_RGBA_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+    SVG_RGBA_CACHE.get_or_init(|| Mutex::new(SvgRgbaCache::new(SVG_RGBA_CACHE_MAX_BYTES)))
 }
 
 #[cfg(test)]
@@ -225,7 +305,8 @@ fn clear_svg_caches() {
         cache.clear();
     }
     if let Ok(mut cache) = svg_rgba_cache().lock() {
-        cache.clear();
+        cache.entries.clear();
+        cache.bytes = 0;
     }
 }
 
@@ -258,6 +339,26 @@ fn fit_size(size: (u32, u32), max_dim: u32) -> (u32, u32) {
         ((width as f64 * scale).round() as u32).max(1),
         ((height as f64 * scale).round() as u32).max(1),
     )
+}
+
+fn resize_rgba_to_max(
+    rgba: Vec<u8>,
+    width: u32,
+    height: u32,
+    max_dim: u32,
+) -> Option<(Vec<u8>, u32, u32)> {
+    let target = fit_size((width, height), max_dim.max(1));
+    if target == (width, height) {
+        return Some((rgba, width, height));
+    }
+    let source = image::RgbaImage::from_raw(width, height, rgba)?;
+    let resized = image::imageops::resize(
+        &source,
+        target.0,
+        target.1,
+        image::imageops::FilterType::Lanczos3,
+    );
+    Some((resized.into_raw(), target.0, target.1))
 }
 
 fn svg_start_tag(src: &str) -> Option<&str> {
@@ -402,7 +503,10 @@ pub fn decode_ptex(bytes: &[u8]) -> Option<(Vec<u8>, u32, u32)> {
     if raw_len as usize != expected_raw_len {
         return None;
     }
-    let raw = decode_texture_payload(flags, &bytes[24..])?;
+    if expected_raw_len > PTEX_MAX_RAW_BYTES {
+        return None;
+    }
+    let raw = decode_texture_payload(flags, &bytes[24..], expected_raw_len)?;
     if raw.len() != expected_raw_len {
         return None;
     }
@@ -428,11 +532,14 @@ pub fn decode_ptex(bytes: &[u8]) -> Option<(Vec<u8>, u32, u32)> {
     Some((rgba, width, height))
 }
 
-fn decode_texture_payload(flags: u32, payload: &[u8]) -> Option<Vec<u8>> {
+fn decode_texture_payload(flags: u32, payload: &[u8], expected_raw_len: usize) -> Option<Vec<u8>> {
     if (flags & PTEX_FLAG_PAYLOAD_RAW) != 0 {
-        Some(payload.to_vec())
+        (payload.len() == expected_raw_len).then(|| payload.to_vec())
     } else {
-        decompress_zlib(payload).ok()
+        if payload.len() > PTEX_MAX_COMPRESSED_BYTES {
+            return None;
+        }
+        decompress_zlib_limited(payload, expected_raw_len).ok()
     }
 }
 
@@ -462,10 +569,10 @@ fn parse_fragment_index(fragment: Option<&str>, key: &str) -> Option<u32> {
 #[cfg(test)]
 mod tests {
     use super::{
-        clear_svg_caches, decode_image_logical_size, decode_image_rgba, decode_image_rgba_max_size,
-        decode_image_size,
+        SvgRgbaCache, clear_svg_caches, decode_image_logical_size, decode_image_rgba,
+        decode_image_rgba_max_size, decode_image_size,
     };
-    use std::time::Instant;
+    use std::{io::Cursor, sync::Arc, time::Instant};
 
     #[test]
     fn decode_image_rgba_supports_svg_with_intrinsic_size() {
@@ -514,6 +621,63 @@ mod tests {
         let svg = br#"<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1000"><rect width="1200" height="1000" fill="red"/></svg>"#;
         let (_, width, height) = decode_image_rgba_max_size(svg, 256).expect("decode icon svg");
         assert_eq!((width, height), (256, 213));
+    }
+
+    #[test]
+    fn decode_image_rgba_max_size_downscales_raster_and_ptex() {
+        let raster = image::RgbaImage::from_pixel(8, 4, image::Rgba([255, 0, 0, 255]));
+        let mut png = Cursor::new(Vec::new());
+        image::DynamicImage::ImageRgba8(raster)
+            .write_to(&mut png, image::ImageFormat::Png)
+            .expect("encode png");
+        let (_, width, height) =
+            decode_image_rgba_max_size(png.get_ref(), 2).expect("decode resized png");
+        assert_eq!((width, height), (2, 1));
+
+        let mut ptex = Vec::new();
+        ptex.extend_from_slice(b"PTEX");
+        ptex.extend_from_slice(&1u32.to_le_bytes());
+        ptex.extend_from_slice(&8u32.to_le_bytes());
+        ptex.extend_from_slice(&4u32.to_le_bytes());
+        ptex.extend_from_slice(&(1u32 << 31).to_le_bytes());
+        ptex.extend_from_slice(&(8u32 * 4 * 4).to_le_bytes());
+        ptex.extend(std::iter::repeat_n(255, 8 * 4 * 4));
+        let (_, width, height) = decode_image_rgba_max_size(&ptex, 2).expect("decode resized ptex");
+        assert_eq!((width, height), (2, 1));
+    }
+
+    #[test]
+    fn ptex_rejects_inflate_beyond_declared_exact_size() {
+        let compressed = perro_io::compress_zlib_best(&vec![0u8; 4096]).expect("compress");
+        let mut ptex = Vec::new();
+        ptex.extend_from_slice(b"PTEX");
+        ptex.extend_from_slice(&1u32.to_le_bytes());
+        ptex.extend_from_slice(&1u32.to_le_bytes());
+        ptex.extend_from_slice(&1u32.to_le_bytes());
+        ptex.extend_from_slice(&0u32.to_le_bytes());
+        ptex.extend_from_slice(&4u32.to_le_bytes());
+        ptex.extend_from_slice(&compressed);
+
+        assert!(super::decode_ptex(&ptex).is_none());
+    }
+
+    #[test]
+    fn svg_rgba_cache_enforces_byte_lru_and_uses_arc_hits() {
+        let mut cache = SvgRgbaCache::new(10);
+        let first: Arc<[u8]> = vec![1; 6].into();
+        let second: Arc<[u8]> = vec![2; 6].into();
+        cache.insert((1, (1, 1)), Arc::clone(&first));
+        assert!(Arc::ptr_eq(
+            &cache.get(&(1, (1, 1))).expect("first hit"),
+            &first
+        ));
+        cache.insert((2, (1, 1)), second);
+
+        assert!(cache.bytes <= cache.max_bytes);
+        assert!(cache.get(&(1, (1, 1))).is_none());
+        assert!(cache.get(&(2, (1, 1))).is_some());
+        cache.insert((3, (1, 1)), vec![3; 11].into());
+        assert!(!cache.entries.contains_key(&(3, (1, 1))));
     }
 
     #[test]

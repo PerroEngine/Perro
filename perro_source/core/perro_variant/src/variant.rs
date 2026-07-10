@@ -989,8 +989,7 @@ macro_rules! impl_statefield_plain_id {
             fn from_variant(value: &Variant) -> Option<Self> {
                 value
                     .as_number()
-                    .and_then(|n| n.as_i64_lossy())
-                    .and_then(|n| u64::try_from(n).ok())
+                    .and_then(|n| n.as_u64_lossy())
                     .map(<$id_ty>::from_u64)
                     .or_else(|| value.as_str().and_then(|s| s.parse::<$id_ty>().ok()))
                     .or_else(|| value.as_id().map(IDs::as_u64).map(<$id_ty>::from_u64))
@@ -998,7 +997,7 @@ macro_rules! impl_statefield_plain_id {
 
             #[inline]
             fn to_variant(&self) -> Variant {
-                Variant::from(self.as_u64())
+                Variant::from(*self)
             }
         }
     };
@@ -2575,11 +2574,7 @@ impl DeriveVariant for Duration {
     #[inline]
     fn from_variant(value: &Variant) -> Option<Self> {
         if let Some(secs) = value.as_f64() {
-            return secs
-                .is_finite()
-                .then_some(secs)
-                .filter(|secs| *secs >= 0.0)
-                .map(Duration::from_secs_f64);
+            return Duration::try_from_secs_f64(secs).ok();
         }
         if let Some(secs) = value.as_u64() {
             return Some(Duration::from_secs(secs));
