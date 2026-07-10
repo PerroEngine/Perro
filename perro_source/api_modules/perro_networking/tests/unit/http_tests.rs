@@ -2,7 +2,11 @@ use std::{
     collections::BTreeMap,
     io::{Read, Write},
     net::{TcpListener, TcpStream},
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicUsize, Ordering},
+        mpsc,
+    },
     thread,
     time::Duration,
 };
@@ -11,7 +15,8 @@ use perro_ids::SignalID;
 use perro_variant::Variant;
 
 use crate::http::{
-    HttpClient, HttpConfig, HttpErrorKind, HttpEvent, HttpID, HttpProxy, HttpResponse, HttpTLSMode,
+    HttpClient, HttpConfig, HttpErrorKind, HttpEvent, HttpID, HttpProxy, HttpQueueConfig,
+    HttpResponse, HttpSubmitErrorKind, HttpTLSMode,
 };
 
 #[test]
@@ -213,6 +218,122 @@ fn empty_url_emits_one_terminal_event() {
 
     thread::sleep(Duration::from_millis(20));
     assert!(client.poll_all(8).is_empty());
+}
+
+#[test]
+#[cfg_attr(
+    not(feature = "network-tests"),
+    ignore = "requires local socket access"
+)]
+fn saturated_request_queue_rejects_without_block_and_keeps_one_terminal_per_id() {
+    let (started_tx, started_rx) = mpsc::sync_channel(0);
+    let (release_tx, release_rx) = mpsc::sync_channel(0);
+    let mut request_index = 0usize;
+    let server = TestServer::start_multi(2, move |_| {
+        if request_index == 0 {
+            started_tx.send(()).expect("signal first request");
+            release_rx.recv().expect("release first request");
+        }
+        request_index += 1;
+        response(200, &[], b"ok")
+    });
+    let queue = HttpQueueConfig::default()
+        .worker_count(1)
+        .request_capacity(1)
+        .event_capacity(1);
+    let mut client = HttpClient::with_config_and_queue(HttpConfig::default(), queue);
+
+    let first = client.get(server.url("/first"));
+    started_rx
+        .recv_timeout(Duration::from_secs(2))
+        .expect("first request start");
+    let second = client.get(server.url("/second"));
+    let rejected = client.get(server.url("/rejected"));
+    let direct_error = client
+        .try_request(crate::http::HttpRequest::get(server.url("/direct")))
+        .expect_err("direct backpressure");
+    assert_eq!(direct_error.kind, HttpSubmitErrorKind::QueueFull);
+
+    let HttpEvent::Failed(error) = wait_event(&mut client) else {
+        panic!("expected queue-full event");
+    };
+    assert_eq!(error.id, rejected);
+    assert_eq!(error.kind, HttpErrorKind::Send);
+    assert_eq!(client.rejected_requests(), 2);
+    release_tx.send(()).expect("release server");
+
+    let mut terminal_counts = BTreeMap::from([(rejected.0, 1usize)]);
+    for _ in 0..2 {
+        let id = http_event_id(&wait_event(&mut client));
+        *terminal_counts.entry(id.0).or_default() += 1;
+    }
+    server.join();
+
+    assert_eq!(terminal_counts.get(&first.0), Some(&1));
+    assert_eq!(terminal_counts.get(&second.0), Some(&1));
+    assert_eq!(terminal_counts.get(&rejected.0), Some(&1));
+    thread::sleep(Duration::from_millis(20));
+    assert!(client.poll_all(8).is_empty());
+}
+
+#[test]
+#[cfg_attr(
+    not(feature = "network-tests"),
+    ignore = "requires local socket access"
+)]
+fn http_worker_pool_runs_requests_concurrently_with_bounded_events() {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind server");
+    let addr = listener.local_addr().expect("server addr");
+    let active = Arc::new(AtomicUsize::new(0));
+    let peak = Arc::new(AtomicUsize::new(0));
+    let server_active = Arc::clone(&active);
+    let server_peak = Arc::clone(&peak);
+    let server = thread::spawn(move || {
+        let mut handlers = Vec::new();
+        for _ in 0..2 {
+            let (mut stream, _) = listener.accept().expect("accept request");
+            let active = Arc::clone(&server_active);
+            let peak = Arc::clone(&server_peak);
+            handlers.push(thread::spawn(move || {
+                let _ = read_request(&mut stream);
+                let current = active.fetch_add(1, Ordering::SeqCst) + 1;
+                peak.fetch_max(current, Ordering::SeqCst);
+                thread::sleep(Duration::from_millis(75));
+                stream
+                    .write_all(&response(200, &[], b"ok"))
+                    .expect("write response");
+                active.fetch_sub(1, Ordering::SeqCst);
+            }));
+        }
+        for handler in handlers {
+            handler.join().expect("join handler");
+        }
+    });
+
+    let queue = HttpQueueConfig::default()
+        .worker_count(2)
+        .request_capacity(2)
+        .event_capacity(1);
+    let mut client = HttpClient::with_config_and_queue(HttpConfig::default(), queue);
+    let first = client.get(format!("http://{addr}/first"));
+    let second = client.get(format!("http://{addr}/second"));
+    let mut ids = [
+        http_event_id(&wait_event(&mut client)),
+        http_event_id(&wait_event(&mut client)),
+    ];
+    ids.sort_by_key(|id| id.0);
+    server.join().expect("join server");
+
+    assert_eq!(ids, [first, second]);
+    assert!(peak.load(Ordering::SeqCst) >= 2);
+    assert_eq!(client.queue_config(), queue);
+}
+
+fn http_event_id(event: &HttpEvent) -> HttpID {
+    match event {
+        HttpEvent::Completed(response) => response.id,
+        HttpEvent::Failed(error) => error.id,
+    }
 }
 
 fn wait_event(client: &mut HttpClient) -> HttpEvent {
