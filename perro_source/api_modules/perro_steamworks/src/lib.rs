@@ -13,6 +13,7 @@ pub mod cloud;
 #[cfg(not(feature = "steamworks-runtime"))]
 mod disabled;
 pub mod error;
+mod event_queue;
 #[cfg(feature = "steamworks-runtime")]
 pub mod events;
 #[cfg(feature = "steamworks-runtime")]
@@ -97,7 +98,8 @@ pub use types::{
     LobbyDistance, LobbyID, LobbyInfo, LobbyJoinability, LobbyNearValueFilter,
     LobbyNumberComparison, LobbyNumberFilter, LobbySearch, LobbyStringFilter,
     LobbyStringFilterKind, LobbyType, OverlayDialog, RichPresenceKey, SocketID, SteamAvatar,
-    SteamAvatarSize, SteamEvent, SteamID, StoreOverlayAction, UserOverlayDialog, WorkshopFileID,
+    SteamAvatarSize, SteamEvent, SteamEventQueueStats, SteamID, StoreOverlayAction,
+    UserOverlayDialog, WorkshopFileID,
 };
 
 #[macro_export]

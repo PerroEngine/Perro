@@ -1,7 +1,8 @@
 use std::{
     collections::VecDeque,
     fmt,
-    sync::mpsc::{self, Receiver, Sender},
+    sync::mpsc::{self, Receiver, SyncSender, TrySendError},
+    sync::{Arc, Mutex},
     thread,
     time::Duration,
 };
@@ -15,6 +16,10 @@ pub type HttpHeaders = Vec<(String, String)>;
 
 const DEFAULT_TIMEOUT_MS: u64 = 10_000;
 const DEFAULT_MAX_RESPONSE_BYTES: usize = 1024 * 1024;
+const DEFAULT_HTTP_WORKERS: usize = 4;
+const DEFAULT_HTTP_REQUEST_CAPACITY: usize = 64;
+const DEFAULT_HTTP_EVENT_CAPACITY: usize = 64;
+const MAX_HTTP_WORKERS: usize = 32;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct HttpID(pub u32);
@@ -85,6 +90,48 @@ impl Default for HttpConfig {
             cookies_enabled: false,
             proxy: None,
             tls_mode: HttpTLSMode::DefaultRustls,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct HttpQueueConfig {
+    pub worker_count: usize,
+    pub request_capacity: usize,
+    pub event_capacity: usize,
+}
+
+impl HttpQueueConfig {
+    pub fn worker_count(mut self, worker_count: usize) -> Self {
+        self.worker_count = worker_count;
+        self
+    }
+
+    pub fn request_capacity(mut self, request_capacity: usize) -> Self {
+        self.request_capacity = request_capacity;
+        self
+    }
+
+    pub fn event_capacity(mut self, event_capacity: usize) -> Self {
+        self.event_capacity = event_capacity;
+        self
+    }
+
+    fn normalized(self) -> Self {
+        Self {
+            worker_count: self.worker_count.clamp(1, MAX_HTTP_WORKERS),
+            request_capacity: self.request_capacity.max(1),
+            event_capacity: self.event_capacity.max(1),
+        }
+    }
+}
+
+impl Default for HttpQueueConfig {
+    fn default() -> Self {
+        Self {
+            worker_count: DEFAULT_HTTP_WORKERS,
+            request_capacity: DEFAULT_HTTP_REQUEST_CAPACITY,
+            event_capacity: DEFAULT_HTTP_EVENT_CAPACITY,
         }
     }
 }
@@ -267,6 +314,50 @@ impl fmt::Display for HttpError {
 
 impl std::error::Error for HttpError {}
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HttpSubmitErrorKind {
+    InvalidRequest,
+    QueueFull,
+    QueueClosed,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct HttpSubmitError {
+    pub id: HttpID,
+    pub url: String,
+    pub kind: HttpSubmitErrorKind,
+    pub message: String,
+}
+
+impl HttpSubmitError {
+    fn new(id: HttpID, url: String, kind: HttpSubmitErrorKind, message: impl Into<String>) -> Self {
+        Self {
+            id,
+            url,
+            kind,
+            message: message.into(),
+        }
+    }
+
+    fn into_http_error(self) -> HttpError {
+        let kind = match self.kind {
+            HttpSubmitErrorKind::QueueClosed => HttpErrorKind::QueueClosed,
+            HttpSubmitErrorKind::InvalidRequest | HttpSubmitErrorKind::QueueFull => {
+                HttpErrorKind::Send
+            }
+        };
+        HttpError::new(self.id, self.url, kind, self.message)
+    }
+}
+
+impl fmt::Display for HttpSubmitError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:?} {}: {}", self.kind, self.url, self.message)
+    }
+}
+
+impl std::error::Error for HttpSubmitError {}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum HttpEvent {
     Completed(HttpResponse),
@@ -310,10 +401,12 @@ struct HttpWork {
 
 pub struct HttpClient {
     config: HttpConfig,
+    queue_config: HttpQueueConfig,
     next_id: u32,
-    tx: Sender<HttpWork>,
+    tx: SyncSender<HttpWork>,
     rx: Receiver<HttpEvent>,
     local_events: VecDeque<HttpEvent>,
+    rejected_requests: u64,
 }
 
 impl HttpClient {
@@ -322,41 +415,83 @@ impl HttpClient {
     }
 
     pub fn with_config(config: HttpConfig) -> Self {
-        let (work_tx, work_rx) = mpsc::channel::<HttpWork>();
-        let (event_tx, event_rx) = mpsc::channel::<HttpEvent>();
-        let worker_config = config.clone();
-        thread::spawn(move || http_worker(worker_config, work_rx, event_tx));
+        Self::with_config_and_queue(config, HttpQueueConfig::default())
+    }
+
+    pub fn with_config_and_queue(config: HttpConfig, queue_config: HttpQueueConfig) -> Self {
+        let queue_config = queue_config.normalized();
+        let (work_tx, work_rx) = mpsc::sync_channel::<HttpWork>(queue_config.request_capacity);
+        let (event_tx, event_rx) = mpsc::sync_channel::<HttpEvent>(queue_config.event_capacity);
+        let work_rx = Arc::new(Mutex::new(work_rx));
+        let shared_agent = build_agent(&config).ok();
+        for worker_index in 0..queue_config.worker_count {
+            let worker_config = config.clone();
+            let worker_rx = Arc::clone(&work_rx);
+            let worker_event_tx = event_tx.clone();
+            let worker_agent = shared_agent.clone();
+            thread::Builder::new()
+                .name(format!("perro-http-{worker_index}"))
+                .spawn(move || http_worker(worker_config, worker_rx, worker_event_tx, worker_agent))
+                .expect("failed to spawn HTTP worker");
+        }
+        drop(event_tx);
 
         Self {
             config,
+            queue_config,
             next_id: 0,
             tx: work_tx,
             rx: event_rx,
             local_events: VecDeque::new(),
+            rejected_requests: 0,
         }
     }
 
     pub fn request(&mut self, request: HttpRequest) -> HttpID {
+        match self.try_request(request) {
+            Ok(id) => id,
+            Err(error) => {
+                let id = error.id;
+                self.local_events
+                    .push_back(HttpEvent::Failed(error.into_http_error()));
+                id
+            }
+        }
+    }
+
+    pub fn try_request(&mut self, request: HttpRequest) -> Result<HttpID, HttpSubmitError> {
         let id = self.next_http_id();
         let url = request.url.clone();
         if url.is_empty() {
-            self.local_events
-                .push_back(HttpEvent::Failed(HttpError::new(
-                    id,
-                    url,
-                    HttpErrorKind::Send,
-                    "empty url",
-                )));
-        } else if let Err(err) = self.tx.send(HttpWork { id, request }) {
-            self.local_events
-                .push_back(HttpEvent::Failed(HttpError::new(
-                    id,
-                    err.0.request.url,
-                    HttpErrorKind::QueueClosed,
-                    "http worker queue closed",
-                )));
+            self.rejected_requests = self.rejected_requests.saturating_add(1);
+            return Err(HttpSubmitError::new(
+                id,
+                url,
+                HttpSubmitErrorKind::InvalidRequest,
+                "empty url",
+            ));
         }
-        id
+        match self.tx.try_send(HttpWork { id, request }) {
+            Ok(()) => Ok(id),
+            Err(TrySendError::Full(work)) => {
+                self.rejected_requests = self.rejected_requests.saturating_add(1);
+                Err(HttpSubmitError::new(
+                    id,
+                    work.request.url,
+                    HttpSubmitErrorKind::QueueFull,
+                    "http request queue full",
+                ))
+            }
+            Err(TrySendError::Disconnected(work)) => {
+                self.rejected_requests = self.rejected_requests.saturating_add(1);
+                Err(HttpSubmitError::new(
+                    id,
+                    work.request.url,
+                    HttpSubmitErrorKind::QueueClosed,
+                    "http worker queue closed",
+                ))
+            }
+        }
     }
 
     pub fn get(&mut self, url: impl Into<String>) -> HttpID {
@@ -409,6 +544,14 @@ impl HttpClient {
         &self.config
     }
 
+    pub fn queue_config(&self) -> HttpQueueConfig {
+        self.queue_config
+    }
+
+    pub fn rejected_requests(&self) -> u64 {
+        self.rejected_requests
+    }
+
     fn next_http_id(&mut self) -> HttpID {
         let id = HttpID(self.next_id);
         self.next_id = self.next_id.wrapping_add(1);
@@ -422,9 +565,22 @@ impl Default for HttpClient {
     }
 }
 
-fn http_worker(config: HttpConfig, work_rx: Receiver<HttpWork>, event_tx: Sender<HttpEvent>) {
-    let shared_agent = build_agent(&config).ok();
-    for work in work_rx {
+fn http_worker(
+    config: HttpConfig,
+    work_rx: Arc<Mutex<Receiver<HttpWork>>>,
+    event_tx: SyncSender<HttpEvent>,
+    shared_agent: Option<ureq::Agent>,
+) {
+    loop {
+        let work = {
+            let Ok(work_rx) = work_rx.lock() else {
+                break;
+            };
+            let Ok(work) = work_rx.recv() else {
+                break;
+            };
+            work
+        };
         let event = run_http_work(&config, shared_agent.as_ref(), work);
         if event_tx.send(event).is_err() {
             break;
