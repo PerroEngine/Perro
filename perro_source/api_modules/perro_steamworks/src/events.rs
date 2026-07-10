@@ -1,18 +1,18 @@
 use crate::{
     error::SteamError,
-    types::{LobbyID, SteamEvent},
+    event_queue::SteamEventQueue,
+    types::{LobbyID, SteamEvent, SteamEventQueueStats},
 };
-use std::collections::VecDeque;
 use std::sync::{Mutex, OnceLock};
 
-fn queue() -> &'static Mutex<VecDeque<SteamEvent>> {
-    static QUEUE: OnceLock<Mutex<VecDeque<SteamEvent>>> = OnceLock::new();
-    QUEUE.get_or_init(|| Mutex::new(VecDeque::new()))
+fn queue() -> &'static Mutex<SteamEventQueue> {
+    static QUEUE: OnceLock<Mutex<SteamEventQueue>> = OnceLock::new();
+    QUEUE.get_or_init(|| Mutex::new(SteamEventQueue::new()))
 }
 
 pub(crate) fn push(event: SteamEvent) {
     if let Ok(mut queue) = queue().lock() {
-        queue.push_back(event);
+        queue.push(event);
     }
 }
 
@@ -28,7 +28,7 @@ pub fn drain() -> Result<Vec<SteamEvent>, SteamError> {
     let _ = crate::app::run_callbacks();
     queue()
         .lock()
-        .map(|mut queue| queue.drain(..).collect())
+        .map(|mut queue| queue.drain())
         .map_err(|_| SteamError::NotReady)
 }
 
@@ -36,6 +36,13 @@ pub fn clear() -> Result<(), SteamError> {
     queue()
         .lock()
         .map(|mut queue| queue.clear())
+        .map_err(|_| SteamError::NotReady)
+}
+
+pub fn queue_stats() -> Result<SteamEventQueueStats, SteamError> {
+    queue()
+        .lock()
+        .map(|queue| queue.stats())
         .map_err(|_| SteamError::NotReady)
 }
 
