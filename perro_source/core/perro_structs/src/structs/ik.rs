@@ -1,5 +1,8 @@
 use perro_ids::NodeID;
 
+/// Hard per-frame work cap for IK and physics-bone solvers.
+pub const MAX_SKELETAL_SOLVER_ITERATIONS: u32 = 64;
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct IKTargetParams {
     pub skeleton: NodeID,

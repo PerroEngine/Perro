@@ -109,7 +109,8 @@ fn apply_ik_target_2d_fields(node: &mut IKTarget2D, fields: &[SceneObjectField])
             }
             Some(NodeField::IKTarget2D(IKTarget2DField::Iterations)) => {
                 if let Some(v) = as_i32(value) {
-                    node.params.iterations = v.max(0) as u32;
+                    node.params.iterations =
+                        (v.max(0) as u32).min(perro_structs::MAX_SKELETAL_SOLVER_ITERATIONS);
                 }
             }
             Some(NodeField::IKTarget2D(IKTarget2DField::Tolerance)) => {
@@ -190,7 +191,8 @@ fn apply_physics_bone_chain_2d_fields(node: &mut PhysicsBoneChain2D, fields: &[S
             }
             Some(NodeField::PhysicsBoneChain2D(PhysicsBoneChain2DField::Iterations)) => {
                 if let Some(v) = as_i32(value) {
-                    node.iterations = v.max(1) as u32;
+                    node.iterations =
+                        (v.max(1) as u32).min(perro_structs::MAX_SKELETAL_SOLVER_ITERATIONS);
                 }
             }
             _ => {}
@@ -285,4 +287,3 @@ fn apply_node_2d_fields(node: &mut Node2D, fields: &[SceneObjectField]) {
         }
     });
 }
-

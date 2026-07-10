@@ -34,6 +34,11 @@ const MAX_AUDIO_PORTAL_HOPS: usize = 32;
 const AUDIO_PORTAL_EPSILON: f32 = 0.01;
 const AUDIO_PORTAL_MISS_TOLERANCE: f32 = 0.25;
 
+#[inline]
+fn bounded_audio_bounces(value: u32) -> u32 {
+    value.min(perro_project::MAX_AUDIO_PROPAGATION_BOUNCES)
+}
+
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct AudioPropagationConfigRt {
     pub listener_max_distance: f32,
@@ -408,10 +413,10 @@ impl Runtime {
             propagation_tick_hz: cfg.propagation_tick_hz,
             energy_cutoff: cfg.energy_cutoff,
             debug_rays: cfg.debug_rays,
-            max_bounces_2d: cfg.propagation_2d.max_bounces,
+            max_bounces_2d: bounded_audio_bounces(cfg.propagation_2d.max_bounces),
             rays_per_tick_2d: cfg.propagation_2d.rays_per_tick,
             max_ray_distance_2d: cfg.propagation_2d.max_ray_distance,
-            max_bounces_3d: cfg.propagation_3d.max_bounces,
+            max_bounces_3d: bounded_audio_bounces(cfg.propagation_3d.max_bounces),
             rays_per_tick_3d: cfg.propagation_3d.rays_per_tick,
             max_ray_distance_3d: cfg.propagation_3d.max_ray_distance,
         };

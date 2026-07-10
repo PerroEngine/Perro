@@ -703,8 +703,11 @@ aspect_ratio = "16:9"
 "#,
     )
     .expect("write project");
-    fs::write(root.join("input_map.toml"), "[jump]\nkeys = [\"KeySpace\"]\n")
-        .expect("write input map");
+    fs::write(
+        root.join("input_map.toml"),
+        "[jump]\nkeys = [\"KeySpace\"]\n",
+    )
+    .expect("write input map");
 
     let project = load_project_toml(&root).expect("load project");
     assert!(project.input_map.action("jump").is_some());
@@ -732,11 +735,7 @@ fn unique_temp_dir(prefix: &str) -> PathBuf {
 }
 
 fn manifest_dep_has_path(manifest_src: &str, dep: &str) -> bool {
-    let value = toml::Value::Table(
-        manifest_src
-            .parse::<toml::Table>()
-            .expect("parse manifest"),
-    );
+    let value = toml::Value::Table(manifest_src.parse::<toml::Table>().expect("parse manifest"));
     value
         .get("dependencies")
         .and_then(toml::Value::as_table)
@@ -1114,4 +1113,26 @@ fn scaffold_project_release_strip_only_targets_project_package() {
     assert!(project_manifest.contains("strip = \"symbols\""));
 
     fs::remove_dir_all(&root).expect("cleanup");
+}
+
+#[test]
+fn parse_project_toml_rejects_unbound_audio_bounces() {
+    let toml = format!(
+        r#"
+[project]
+name = "Game"
+main_scene = "res://main.scn"
+icon = "res://icon.png"
+
+[graphics]
+aspect_ratio = "16:9"
+
+[audio.propagation_2d]
+max_bounces = {}
+"#,
+        MAX_AUDIO_PROPAGATION_BOUNCES + 1
+    );
+
+    let err = parse_project_toml(&toml).expect_err("bounce cap");
+    assert!(err.to_string().contains("max_bounces must be <="), "{err}");
 }

@@ -65,7 +65,7 @@ where
             CcdSolve {
                 end: bone_index as usize,
                 chain_length: chain_length as usize,
-                iterations: iterations as usize,
+                iterations: super::bounded_solver_iterations(iterations),
                 tolerance: tolerance.max(0.0),
                 weight: weight.clamp(0.0, 1.0),
                 match_rotation,
