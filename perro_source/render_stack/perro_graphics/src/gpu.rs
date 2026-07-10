@@ -418,6 +418,7 @@ pub struct Gpu {
     max_supported_sample_count: u32,
     msaa_color: Option<MsaaColorTarget>,
     post: PostProcessor,
+    post_view_generation: u64,
     accessibility: VisualAccessibilityProcessor,
     present: PresentProcessor,
     present_scene_bind_group: wgpu::BindGroup,
@@ -429,6 +430,7 @@ pub struct Gpu {
     point_particles_3d: Option<GpuPointParticles3D>,
     water: Option<GpuWater>,
     camera_stream_targets: AHashMap<NodeID, GpuCameraStreamTarget>,
+    next_camera_stream_post_view_key: u64,
     camera_stream_external_bindings: AHashMap<NodeID, [u32; 2]>,
     // Per-node resolution of the 3D material-texture slot last bound to a
     // camera-stream target, so the external upsert (view + bind group + retain
@@ -475,6 +477,7 @@ struct GpuCameraStreamTarget {
     post_input: wgpu::Texture,
     depth: wgpu::Texture,
     resolution: [u32; 2],
+    post_view_key: u64,
 }
 
 pub struct RenderFrame<'a> {
@@ -523,6 +526,12 @@ pub struct RenderFrame<'a> {
     pub static_texture_lookup: Option<StaticTextureLookup>,
     pub static_mesh_lookup: Option<StaticMeshLookup>,
     pub static_shader_lookup: Option<StaticShaderLookup>,
+}
+
+#[inline]
+fn next_nonzero_generation(current: u64) -> u64 {
+    let next = current.wrapping_add(1);
+    if next == 0 { 1 } else { next }
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -649,9 +658,8 @@ impl Gpu {
                 height,
                 rgba,
             );
-            camera_stream_3d.write_stream_material_texture_source(
-                queue, source, width, height, rgba,
-            );
+            camera_stream_3d
+                .write_stream_material_texture_source(queue, source, width, height, rgba);
         }
     }
 
@@ -666,6 +674,12 @@ impl Gpu {
             .get(&node)
             .is_none_or(|target| target.resolution != resolution);
         if recreate {
+            self.next_camera_stream_post_view_key =
+                next_nonzero_generation(self.next_camera_stream_post_view_key);
+            let post_view_key = self
+                .next_camera_stream_post_view_key
+                .wrapping_mul(8)
+                .wrapping_add(4);
             let texture = self.device.create_texture(&wgpu::TextureDescriptor {
                 label: Some("perro_camera_stream_target"),
                 size: wgpu::Extent3d {
@@ -718,6 +732,7 @@ impl Gpu {
                     post_input,
                     depth,
                     resolution,
+                    post_view_key,
                 },
             );
             self.camera_stream_external_bindings.remove(&node);
@@ -940,6 +955,7 @@ impl Gpu {
             max_supported_sample_count,
             msaa_color,
             post,
+            post_view_generation: 1,
             accessibility,
             present,
             present_scene_bind_group,
@@ -951,6 +967,7 @@ impl Gpu {
             point_particles_3d: Some(point_particles_3d),
             water,
             camera_stream_targets: AHashMap::new(),
+            next_camera_stream_post_view_key: 0,
             camera_stream_external_bindings: AHashMap::new(),
             camera_stream_3d_bindings: AHashMap::new(),
             camera_stream_2d: Some(camera_stream_2d),
@@ -1007,6 +1024,7 @@ impl Gpu {
             three_d.resize(&self.device, render_width, render_height);
         }
         self.post.resize(&self.device, render_width, render_height);
+        self.post_view_generation = next_nonzero_generation(self.post_view_generation);
         self.accessibility
             .resize(&self.device, render_width, render_height);
         self.present_scene_bind_group = self
@@ -1036,6 +1054,7 @@ impl Gpu {
             return;
         }
         self.sample_count = sample_count;
+        self.post_view_generation = next_nonzero_generation(self.post_view_generation);
         if let Some(two_d) = self.two_d.as_mut() {
             two_d.set_sample_count(&self.device, self.render_format, sample_count);
         }
@@ -1611,7 +1630,7 @@ impl Gpu {
         });
         for (node, stream) in camera_streams {
             let has_stream_post = PostProcessor::has_effects(stream.post_processing.as_ref());
-            let (target_view, post_input_view, post_depth_view) = {
+            let (target_view, post_input_view, post_depth_view, post_view_key) = {
                 let Some(target) = self.camera_stream_targets.get(node) else {
                     continue;
                 };
@@ -1629,6 +1648,7 @@ impl Gpu {
                             .depth
                             .create_view(&wgpu::TextureViewDescriptor::default())
                     }),
+                    target.post_view_key,
                 )
             };
             let Some(render_view) = (if has_stream_post {
@@ -1958,6 +1978,8 @@ impl Gpu {
                         queue: &self.queue,
                         output_view: &target_view,
                         camera: &camera,
+                        external_input_view_key: post_view_key,
+                        depth_view_key: post_view_key.wrapping_add(1),
                         static_shader_lookup,
                         static_texture_lookup,
                     };
@@ -2103,20 +2125,24 @@ impl Gpu {
             Intermediate,
         }
         let mut current_tex = FrameTex::Scene;
+        let post_view_generation = self.post_view_generation;
         let mut apply_post_chain = |effects: &[perro_structs::PostProcessEffect],
                                     current_tex: &mut FrameTex| {
             if effects.is_empty() {
                 return;
             }
-            let (input_view, output_view, next_tex) = match *current_tex {
-                FrameTex::Scene => (&scene_view, &intermediate_view, FrameTex::Intermediate),
-                FrameTex::Intermediate => (&intermediate_view, &scene_view, FrameTex::Scene),
+            let (input_view, output_view, next_tex, input_slot) = match *current_tex {
+                FrameTex::Scene => (&scene_view, &intermediate_view, FrameTex::Intermediate, 1),
+                FrameTex::Intermediate => (&intermediate_view, &scene_view, FrameTex::Scene, 2),
             };
+            let view_key_base = post_view_generation.wrapping_mul(8);
             let post_context = PostProcessContext {
                 device: &self.device,
                 queue: &self.queue,
                 output_view,
                 camera: &camera_3d,
+                external_input_view_key: view_key_base.wrapping_add(input_slot),
+                depth_view_key: view_key_base.wrapping_add(3),
                 static_shader_lookup,
                 static_texture_lookup,
             };

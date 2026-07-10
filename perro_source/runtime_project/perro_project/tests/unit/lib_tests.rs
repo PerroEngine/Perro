@@ -615,6 +615,49 @@ scene = "./bad.scn"
 }
 
 #[test]
+fn project_paths_reject_parent_and_platform_escape_components() {
+    for scene in [
+        "res://../outside.scn",
+        "res://dir\\outside.scn",
+        "res://C:/outside.scn",
+    ] {
+        let project = format!(
+            r#"[project]
+name = "Game"
+main_scene = {scene:?}
+icon = "res://icon.png"
+
+[graphics]
+aspect_ratio = "16:9"
+"#
+        );
+        let err = parse_project_toml(&project).expect_err("unsafe project path");
+        assert!(matches!(
+            err,
+            ProjectError::InvalidField("project.main_scene", _)
+        ));
+    }
+}
+
+#[test]
+fn parse_routes_toml_rejects_path_escape() {
+    for (href, scene) in [
+        ("/../outside", "res://main.scn"),
+        ("/dir\\outside", "res://main.scn"),
+        ("/safe", "res://../outside.scn"),
+    ] {
+        let routes = format!(
+            r#"[[route]]
+href = "{href}"
+name = "bad"
+scene = "{scene}"
+"#
+        );
+        assert!(parse_routes_toml(&routes).is_err());
+    }
+}
+
+#[test]
 fn normalize_route_href_trims_extra_bits() {
     assert_eq!(normalize_route_href("/"), "/");
     assert_eq!(normalize_route_href("/docs/"), "/docs");

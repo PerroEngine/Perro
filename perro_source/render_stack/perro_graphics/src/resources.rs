@@ -1196,7 +1196,10 @@ impl ResourceStore {
             }
             let updated = *meta;
             self.texture_meta_by.insert(id, updated);
-            if !reserved {
+            if reserved {
+                self.texture_gc_candidates
+                    .retain(|candidate| *candidate != id);
+            } else {
                 self.queue_texture_gc(id);
             }
             return true;
@@ -1214,7 +1217,9 @@ impl ResourceStore {
             }
             let updated = *meta;
             self.mesh_meta_by.insert(id, updated);
-            if !reserved {
+            if reserved {
+                self.mesh_gc_candidates.retain(|candidate| *candidate != id);
+            } else {
                 self.queue_mesh_gc(id);
             }
             return true;
@@ -1232,7 +1237,10 @@ impl ResourceStore {
             }
             let updated = *meta;
             self.material_meta_by.insert(id, updated);
-            if !reserved {
+            if reserved {
+                self.material_gc_candidates
+                    .retain(|candidate| *candidate != id);
+            } else {
                 self.queue_material_gc(id);
             }
             return true;
@@ -1245,7 +1253,9 @@ impl ResourceStore {
     }
 
     fn drop_texture_inner(&mut self, id: TextureID, log_manual: bool) -> bool {
-        let removed = self.textures.remove_parts(id.index(), id.generation());
+        if !self.textures.remove_parts(id.index(), id.generation()) {
+            return false;
+        }
         let source = self.texture_source_by.remove(&id).or_else(|| {
             self.texture_source_by_slot
                 .get(id.index().saturating_sub(1) as usize)
@@ -1263,11 +1273,9 @@ impl ResourceStore {
             self.clear_texture_source_slot_if(id.index(), &source);
         }
         self.decoded_texture_by_id.remove(&id);
-        if removed {
-            self.clear_texture_source_slot(id.index());
-        }
+        self.clear_texture_source_slot(id.index());
         self.clear_texture_meta(id);
-        removed
+        true
     }
 
     pub fn drop_mesh(&mut self, id: MeshID) -> bool {
@@ -1275,7 +1283,9 @@ impl ResourceStore {
     }
 
     fn drop_mesh_inner(&mut self, id: MeshID, log_manual: bool) -> bool {
-        let removed = self.meshes.remove_parts(id.index(), id.generation());
+        if !self.meshes.remove_parts(id.index(), id.generation()) {
+            return false;
+        }
         let source = self.mesh_source_by.remove(&id).or_else(|| {
             self.mesh_source_by_slot
                 .get(id.index().saturating_sub(1) as usize)
@@ -1294,11 +1304,9 @@ impl ResourceStore {
         }
         self.runtime_mesh_by_id.remove(&id);
         self.mesh_revision_by_id.remove(&id);
-        if removed {
-            self.clear_mesh_source_slot(id.index());
-        }
+        self.clear_mesh_source_slot(id.index());
         self.clear_mesh_meta(id);
-        removed
+        true
     }
 
     pub fn drop_material(&mut self, id: MaterialID) -> bool {
@@ -1306,7 +1314,9 @@ impl ResourceStore {
     }
 
     fn drop_material_inner(&mut self, id: MaterialID, log_manual: bool) -> bool {
-        let removed = self.materials.remove_parts(id.index(), id.generation());
+        if !self.materials.remove_parts(id.index(), id.generation()) {
+            return false;
+        }
         self.material_by.remove(&id);
         let source = self.material_source_by.remove(&id);
         if let Some(source) = source {
@@ -1325,7 +1335,7 @@ impl ResourceStore {
             self.material_by_source.remove(&source_hash);
         }
         self.clear_material_meta(id);
-        removed
+        true
     }
 
     fn log_resource_created(

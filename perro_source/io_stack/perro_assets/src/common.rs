@@ -50,9 +50,17 @@ pub fn read_header<R: Read>(reader: &mut R) -> io::Result<PerroAssetsHeader> {
         ));
     }
 
+    let version = read_u32(reader)?;
+    if version != perro_asset_formats::archive::VERSION {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("Unsupported PerroAssets version {version}"),
+        ));
+    }
+
     Ok(PerroAssetsHeader {
         magic,
-        version: read_u32(reader)?,
+        version,
         file_count: read_u32(reader)?,
         index_offset: read_u64(reader)?,
     })
@@ -77,6 +85,12 @@ pub fn read_index_entry<R: Read>(reader: &mut R) -> io::Result<(String, PerroAss
     let size = read_u64(reader)?;
     let original_size = read_u64(reader)?;
     let flags = read_u32(reader)?;
+    if flags & !FLAG_COMPRESSED != 0 {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("Unsupported PerroAssets entry flags {flags:#x}"),
+        ));
+    }
 
     Ok((
         path,
@@ -107,4 +121,36 @@ pub fn write_index_entry<W: Write>(
     writer.write_all(&meta.original_size.to_le_bytes())?;
     writer.write_all(&meta.flags.to_le_bytes())?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{PERRO_ASSETS_MAGIC, read_header, read_index_entry};
+    use std::io::{Cursor, ErrorKind};
+
+    #[test]
+    fn header_rejects_unknown_version() {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&PERRO_ASSETS_MAGIC);
+        bytes.extend_from_slice(&u32::MAX.to_le_bytes());
+        bytes.extend_from_slice(&0u32.to_le_bytes());
+        bytes.extend_from_slice(&20u64.to_le_bytes());
+
+        let err = read_header(&mut Cursor::new(bytes)).expect_err("unknown version");
+        assert_eq!(err.kind(), ErrorKind::InvalidData);
+    }
+
+    #[test]
+    fn index_rejects_unknown_flags() {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&1u16.to_le_bytes());
+        bytes.push(b'x');
+        bytes.extend_from_slice(&0u64.to_le_bytes());
+        bytes.extend_from_slice(&0u64.to_le_bytes());
+        bytes.extend_from_slice(&0u64.to_le_bytes());
+        bytes.extend_from_slice(&2u32.to_le_bytes());
+
+        let err = read_index_entry(&mut Cursor::new(bytes)).expect_err("unknown flags");
+        assert_eq!(err.kind(), ErrorKind::InvalidData);
+    }
 }

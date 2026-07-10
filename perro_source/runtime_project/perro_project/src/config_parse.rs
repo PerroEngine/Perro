@@ -418,6 +418,7 @@ pub fn parse_routes_toml(contents: &str) -> Result<ProjectRoutesConfig, ProjectE
             .filter(|value| !value.is_empty())
             .ok_or(ProjectError::MissingField("route.name"))?
             .to_string();
+        validate_route_href("route.href", href_raw)?;
         let href = normalize_route_href(href_raw);
         let title = parse_optional_route_str(table, "title")?;
         let description = parse_optional_route_str(table, "description")?;
@@ -1005,13 +1006,42 @@ fn parse_keywords_table_field(
 }
 
 fn validate_res_path(field: &'static str, path: &str) -> Result<(), ProjectError> {
-    if path.starts_with("res://") {
+    let Some(relative) = path.strip_prefix("res://") else {
+        return Err(ProjectError::InvalidField(
+            field,
+            "must start with `res://`".to_string(),
+        ));
+    };
+    if is_portable_relative_path(relative, false) {
         return Ok(());
     }
     Err(ProjectError::InvalidField(
         field,
-        "must start with `res://`".to_string(),
+        "must stay inside `res://` and use normal path components".to_string(),
     ))
+}
+
+fn validate_route_href(field: &'static str, href: &str) -> Result<(), ProjectError> {
+    let normalized = normalize_route_href(href);
+    let relative = normalized.strip_prefix('/').unwrap_or(&normalized);
+    if is_portable_relative_path(relative, true) {
+        return Ok(());
+    }
+    Err(ProjectError::InvalidField(
+        field,
+        "must use normal URL path components".to_string(),
+    ))
+}
+
+fn is_portable_relative_path(path: &str, allow_empty: bool) -> bool {
+    if path.is_empty() {
+        return allow_empty;
+    }
+    if path.contains(['\\', ':']) || path.chars().any(char::is_control) {
+        return false;
+    }
+    path.split('/')
+        .all(|component| !component.is_empty() && component != "." && component != "..")
 }
 
 pub fn normalize_route_href(path: &str) -> String {
