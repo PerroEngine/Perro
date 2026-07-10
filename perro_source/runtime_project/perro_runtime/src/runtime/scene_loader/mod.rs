@@ -1020,7 +1020,7 @@ mod tests {
     use std::{
         borrow::Cow,
         fs,
-        path::{Path, PathBuf},
+        path::PathBuf,
         sync::atomic::{AtomicU64, Ordering},
     };
 
