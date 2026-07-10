@@ -3,7 +3,7 @@ use perro_ids::NodeID;
 use perro_ids::ScriptMemberID;
 use perro_ids::parse_hashed_source_uri;
 use perro_ids::string_to_u64;
-use perro_io::{ProjectRoot, clear_dlc_mounts, set_project_root};
+use perro_io::{ProjectRoot, clear_dlc_mounts, try_set_project_root};
 #[cfg(not(target_arch = "wasm32"))]
 use perro_io::{
     data_local_dir, is_reserved_dlc_name, mount_dlc_archive, mount_dlc_disk, read_mounted_dlc_file,
@@ -384,22 +384,25 @@ impl Runtime {
 
         if self.provider_mode == ProviderMode::Static {
             if let Some(data) = perro_assets_bytes {
-                set_project_root(ProjectRoot::PerroAssets {
+                try_set_project_root(ProjectRoot::PerroAssets {
                     data,
                     name: project_name,
                     static_resource_lookups,
-                });
+                })
+                .map_err(|err| format!("failed to set project asset root: {err}"))?;
             } else {
-                set_project_root(ProjectRoot::Disk {
+                try_set_project_root(ProjectRoot::Disk {
                     root: project_root,
                     name: project_name,
-                });
+                })
+                .map_err(|err| format!("failed to set project asset root: {err}"))?;
             }
         } else {
-            set_project_root(ProjectRoot::Disk {
+            try_set_project_root(ProjectRoot::Disk {
                 root: project_root,
                 name: project_name,
-            });
+            })
+            .map_err(|err| format!("failed to set project asset root: {err}"))?;
         }
         self.reload_dlc_mounts()?;
         self.resource_api.initialize_localization();
