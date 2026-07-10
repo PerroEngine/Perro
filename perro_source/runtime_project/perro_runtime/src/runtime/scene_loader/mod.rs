@@ -165,13 +165,30 @@ impl Runtime {
         let Some(scene_path) = self.route_scene_path(&next_href) else {
             return Err(format!("route `{next_href}` not found"));
         };
-        if let Some(root) = self.active_route_root.take() {
-            let _ = NodeAPI::remove_node(self, root);
-        }
         let root = self.load_scene_at_runtime(&scene_path)?;
+        if let Some(old_root) = self.active_route_root {
+            let _ = NodeAPI::remove_node(self, old_root);
+        }
         self.active_route_href = Some(next_href);
         self.active_route_root = Some(root);
         Ok(())
+    }
+
+    fn finish_scene_merge(
+        &mut self,
+        merged: merge::MergePreparedSceneResult,
+    ) -> Result<NodeID, String> {
+        let scene_root = merged.scene_root;
+        let ownership_root = merged.ownership_root;
+        if !merged.script_nodes.is_empty()
+            && let Err(err) = self.attach_scene_scripts(merged.script_nodes)
+        {
+            let _ = NodeAPI::remove_node(self, ownership_root);
+            return Err(err);
+        }
+        self.scene_ownership_roots
+            .insert(scene_root, ownership_root);
+        Ok(scene_root)
     }
 
     fn prepare_scene_with_project_styles(
@@ -258,8 +275,7 @@ impl Runtime {
             self.resolve_scene_by_path(import_path)
         })?;
         let merged = merge_prepared_scene(self, prepared)?;
-        self.attach_scene_scripts(merged.script_nodes)?;
-        Ok(merged.scene_root)
+        self.finish_scene_merge(merged)
     }
 
     pub(crate) fn load_scene_at_runtime(&mut self, path: &str) -> Result<NodeID, String> {
@@ -271,8 +287,7 @@ impl Runtime {
             self.resolve_scene_by_path(import_path)
         })?;
         let merged = merge_prepared_scene(self, prepared)?;
-        self.attach_scene_scripts(merged.script_nodes)?;
-        Ok(merged.scene_root)
+        self.finish_scene_merge(merged)
     }
 
     pub(crate) fn load_scene_at_runtime_hashed(
@@ -318,10 +333,10 @@ impl Runtime {
             }
         };
 
-        self.attach_scene_scripts(merged.script_nodes)?;
+        let scene_root = self.finish_scene_merge(merged)?;
         #[cfg(not(feature = "profile"))]
         let _ = path;
-        Ok(merged.scene_root)
+        Ok(scene_root)
     }
 
     pub(crate) fn load_boot_scene(&mut self) -> Result<(), String> {
@@ -396,6 +411,7 @@ impl Runtime {
         }
 
         self.nodes.clear();
+        self.scene_ownership_roots.clear();
         self.clear_physics();
         self.force_water_impacts_2d.clear();
         self.force_water_impacts_3d.clear();
@@ -539,9 +555,9 @@ impl Runtime {
                 }
             }
         }
-        self.attach_scene_scripts(merged.script_nodes)?;
+        let scene_root = self.finish_scene_merge(merged)?;
         self.active_route_href = boot_route_href;
-        self.active_route_root = Some(merged.scene_root);
+        self.active_route_root = Some(scene_root);
         #[cfg(not(feature = "profile"))]
         {
             let _ = mode_label;
@@ -993,7 +1009,7 @@ mod tests {
     use super::*;
     use crate::rs_ctx::RuntimeResourceApi;
     use crate::runtime_project::RuntimeProject;
-    use perro_nodes::NodeType;
+    use perro_nodes::{NodeType, SceneNode};
     use perro_project::LocalizationConfig;
     use perro_render_bridge::{RenderCommand, UiCommand};
     use perro_resource_api::sub_apis::{Locale, LocalizationAPI};
@@ -1113,6 +1129,25 @@ mod tests {
         root: Some(SceneKey(0)),
         key_names: Cow::Borrowed(DOCS_KEY_NAMES),
     };
+    const BAD_SCRIPT_KEY_NAMES: &[Cow<'static, str>] = &[Cow::Borrowed("bad")];
+    const BAD_SCRIPT_NODES: &[SceneNodeEntry] = &[SceneNodeEntry {
+        data: HOST_DATA,
+        has_data_override: true,
+        key: SceneKey(0),
+        name: Some(Cow::Borrowed("bad")),
+        tags: Cow::Borrowed(EMPTY_TAGS),
+        children: Cow::Borrowed(EMPTY_KEYS),
+        parent: None,
+        script: Some(Cow::Borrowed("res://missing_script.rs")),
+        clear_script: false,
+        root_of: None,
+        script_vars: Cow::Borrowed(EMPTY_FIELDS),
+    }];
+    static BAD_SCRIPT_SCENE: Scene = Scene {
+        nodes: Cow::Borrowed(BAD_SCRIPT_NODES),
+        root: Some(SceneKey(0)),
+        key_names: Cow::Borrowed(BAD_SCRIPT_KEY_NAMES),
+    };
     static EMPTY_SCENE: Scene = Scene {
         nodes: Cow::Borrowed(&[]),
         root: None,
@@ -1231,6 +1266,8 @@ mod tests {
             &HOME_SCENE
         } else if path_hash == 200 {
             &DOCS_SCENE
+        } else if path_hash == 300 {
+            &BAD_SCRIPT_SCENE
         } else {
             &EMPTY_SCENE
         }
@@ -1340,6 +1377,145 @@ mod tests {
                 .iter()
                 .any(|(_, node)| node.name.as_ref() == "copy")
         );
+    }
+
+    #[test]
+    fn failed_route_change_keeps_current_scene_and_route() {
+        let mut project = RuntimeProject::new("Route Test", ".");
+        project.routes = perro_project::ProjectRoutesConfig {
+            routes: vec![
+                perro_project::ProjectRoute {
+                    href: "/".to_string(),
+                    name: "home".to_string(),
+                    scene: "100".to_string(),
+                    title: None,
+                    description: None,
+                    keywords: Vec::new(),
+                },
+                perro_project::ProjectRoute {
+                    href: "/bad".to_string(),
+                    name: "bad".to_string(),
+                    scene: "300".to_string(),
+                    title: None,
+                    description: None,
+                    keywords: Vec::new(),
+                },
+            ],
+        };
+        project.static_scene_lookup = Some(test_lookup);
+        let mut runtime = Runtime::new();
+        runtime.project = Some(Arc::new(project));
+        runtime.provider_mode = ProviderMode::Static;
+
+        let home = runtime.load_scene_at_runtime("100").expect("load home");
+        runtime.active_route_root = Some(home);
+        runtime.active_route_href = Some("/".to_string());
+        let node_count = runtime.nodes.len();
+
+        let err = runtime.apply_route_change("/bad").unwrap_err();
+        assert!(
+            err.contains("missing_script") || err.contains("script hash"),
+            "{err}"
+        );
+        assert_eq!(runtime.active_route_href.as_deref(), Some("/"));
+        assert_eq!(runtime.active_route_root, Some(home));
+        assert!(runtime.nodes.get(home).is_some());
+        assert_eq!(runtime.nodes.len(), node_count);
+        assert!(
+            !runtime
+                .nodes
+                .iter()
+                .any(|(_, node)| node.name.as_ref() == "bad")
+        );
+    }
+
+    #[test]
+    fn merge_prevalidation_rejects_late_link_without_live_mutation() {
+        let scene =
+            Parser::new("$root = @root\n\n[root]\n[Node]\n[/Node]\n[/root]\n").parse_scene();
+        let mut prepared =
+            prepare_scene_with_loader_and_styles(&scene, &|_| unreachable!(), None).unwrap();
+        prepared.nodes[0].camera_stream_target = Some(9_999);
+
+        let mut runtime = Runtime::new();
+        let mut sentinel = SceneNode::new(perro_nodes::SceneNodeData::Node);
+        sentinel.name = Cow::Borrowed("sentinel");
+        let sentinel = runtime.nodes.insert(sentinel);
+        let node_count = runtime.nodes.len();
+        let update_count = runtime.internal_updates.internal_update_nodes.len();
+
+        let err = merge_prepared_scene(&mut runtime, prepared)
+            .err()
+            .expect("invalid link must fail");
+        assert!(err.contains("camera stream target"), "{err}");
+        assert_eq!(runtime.nodes.len(), node_count);
+        assert_eq!(
+            runtime.internal_updates.internal_update_nodes.len(),
+            update_count
+        );
+        assert_eq!(
+            runtime.nodes.get(sentinel).map(|node| node.name.as_ref()),
+            Some("sentinel")
+        );
+    }
+
+    #[test]
+    fn merge_rejects_parent_cycle_before_live_mutation() {
+        let scene = Parser::new(
+            "[first]\n[Node]\n[/Node]\n[/first]\n[second]\n[Node]\n[/Node]\n[/second]\n",
+        )
+        .parse_scene();
+        let mut prepared =
+            prepare_scene_with_loader_and_styles(&scene, &|_| unreachable!(), None).unwrap();
+        let first = prepared.nodes[0].key;
+        let second = prepared.nodes[1].key;
+        prepared.nodes[0].parent_key = Some(second);
+        prepared.nodes[1].parent_key = Some(first);
+
+        let mut runtime = Runtime::new();
+        let err = merge_prepared_scene(&mut runtime, prepared)
+            .err()
+            .expect("parent cycle must fail");
+        assert!(err.contains("parent cycle"), "{err}");
+        assert!(runtime.nodes.is_empty());
+    }
+
+    #[test]
+    fn merge_rejects_declared_root_with_parent_before_live_mutation() {
+        let scene = Parser::new(
+            "$root = @child\n\n[parent]\n[Node]\n[/Node]\n[/parent]\n[child]\nparent = parent\n[Node]\n[/Node]\n[/child]\n",
+        )
+        .parse_scene();
+        let prepared =
+            prepare_scene_with_loader_and_styles(&scene, &|_| unreachable!(), None).unwrap();
+
+        let mut runtime = Runtime::new();
+        let err = merge_prepared_scene(&mut runtime, prepared)
+            .err()
+            .expect("child root must fail");
+        assert!(err.contains("must be a top-level node"), "{err}");
+        assert!(runtime.nodes.is_empty());
+    }
+
+    #[test]
+    fn loaded_scene_root_removes_hidden_owner_and_sibling_roots() {
+        let scene = Parser::new(
+            "$root = @primary\n\n[primary]\n[Node]\n[/Node]\n[/primary]\n[sibling]\n[Node]\n[/Node]\n[/sibling]\n",
+        )
+        .parse_scene();
+        let mut runtime = Runtime::new();
+        runtime.project = Some(Arc::new(RuntimeProject::new("Scene Test", ".")));
+
+        let root = runtime
+            .load_scene_doc_at_runtime(scene)
+            .expect("load sibling scene");
+        assert_eq!(runtime.nodes.len(), 3);
+        assert_eq!(runtime.scene_ownership_roots.len(), 1);
+        assert!(NodeAPI::remove_node(&mut runtime, root));
+        assert!(runtime.nodes.is_empty());
+        assert!(runtime.scene_ownership_roots.is_empty());
+        assert!(runtime.nodes.named_ids("primary").is_empty());
+        assert!(runtime.nodes.named_ids("sibling").is_empty());
     }
 
     #[test]

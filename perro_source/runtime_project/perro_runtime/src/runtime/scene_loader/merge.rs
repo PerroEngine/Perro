@@ -14,6 +14,7 @@ use std::{borrow::Cow, collections::BTreeMap};
 
 pub(super) struct MergePreparedSceneResult {
     pub(super) scene_root: NodeID,
+    pub(super) ownership_root: NodeID,
     pub(super) script_nodes: Vec<PendingScriptAttach>,
 }
 
@@ -77,6 +78,8 @@ pub(super) fn merge_prepared_scene(
     runtime: &mut Runtime,
     prepared: PreparedScene,
 ) -> Result<MergePreparedSceneResult, String> {
+    validate_prepared_scene(&prepared)?;
+
     let PreparedScene {
         root_key,
         nodes,
@@ -549,8 +552,109 @@ pub(super) fn merge_prepared_scene(
 
     Ok(MergePreparedSceneResult {
         scene_root: primary_root,
+        ownership_root: engine_root,
         script_nodes,
     })
+}
+
+fn validate_prepared_scene(prepared: &PreparedScene) -> Result<(), String> {
+    let mut parents = AHashMap::with_capacity(prepared.nodes.len());
+    for pending in &prepared.nodes {
+        if parents.insert(pending.key, pending.parent_key).is_some() {
+            return Err(format!("duplicate scene key `{}`", pending.key));
+        }
+    }
+
+    if prepared.nodes.is_empty() {
+        return Err("boot scene produced no top-level root nodes".to_string());
+    }
+
+    for pending in &prepared.nodes {
+        if let Some(parent) = pending.parent_key {
+            if parent == pending.key {
+                return Err(format!("scene parent cycle at node key `{}`", pending.key));
+            }
+            if !parents.contains_key(&parent) {
+                return Err(format!(
+                    "parent node key `{parent}` not found while linking child `{}`",
+                    pending.key
+                ));
+            }
+        }
+
+        for (label, target) in [
+            ("mesh skeleton", pending.mesh_skeleton_target),
+            (
+                "bone attachment skeleton",
+                pending.bone_attachment_skeleton_target,
+            ),
+            ("ik target skeleton", pending.ik_target_skeleton_target),
+            (
+                "physics bone chain skeleton",
+                pending.physics_bone_chain_skeleton_target,
+            ),
+            ("camera stream", pending.camera_stream_target),
+        ] {
+            if let Some(target) = target
+                && !parents.contains_key(&target)
+            {
+                return Err(format!("{label} target `{target}` not found"));
+            }
+        }
+        for link in &pending.joint_body_links {
+            if !parents.contains_key(&link.target_key) {
+                return Err(format!("joint body target `{}` not found", link.target_key));
+            }
+        }
+    }
+
+    if let Some(root) = prepared.root_key {
+        let parent = parents
+            .get(&root)
+            .ok_or_else(|| format!("scene root `{root}` not found in node list"))?;
+        if parent.is_some() {
+            return Err(format!("scene root `{root}` must be a top-level node"));
+        }
+    }
+
+    for pending in &prepared.scripts {
+        if !parents.contains_key(&pending.node_key) {
+            return Err(format!(
+                "script node key `{}` not found in node list",
+                pending.node_key
+            ));
+        }
+    }
+
+    let mut state: AHashMap<u32, u8> = AHashMap::with_capacity(parents.len());
+    for start in parents.keys().copied() {
+        if state.get(&start) == Some(&2) {
+            continue;
+        }
+        let mut path = Vec::new();
+        let mut cursor = start;
+        loop {
+            match state.get(&cursor).copied() {
+                Some(1) => return Err(format!("scene parent cycle at node key `{cursor}`")),
+                Some(2) => break,
+                _ => {}
+            }
+            state.insert(cursor, 1);
+            path.push(cursor);
+            let Some(parent) = parents.get(&cursor).copied().flatten() else {
+                break;
+            };
+            cursor = parent;
+        }
+        for key in path {
+            state.insert(key, 2);
+        }
+    }
+
+    if !parents.values().any(Option::is_none) {
+        return Err("boot scene produced no top-level root nodes".to_string());
+    }
+    Ok(())
 }
 
 fn scene_value_to_variant(
