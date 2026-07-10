@@ -40,12 +40,24 @@ struct WriteLock {
 
 impl WriteLock {
     fn acquire(path: &Path) -> std::io::Result<Self> {
+        Self::acquire_with_timeout(path, std::time::Duration::from_secs(10))
+    }
+
+    fn acquire_with_timeout(path: &Path, timeout: std::time::Duration) -> std::io::Result<Self> {
         let lock_path = path.with_extension("write-lock");
+        let started = std::time::Instant::now();
         loop {
             match fs::create_dir(&lock_path) {
                 Ok(()) => return Ok(Self { path: lock_path }),
                 Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {
-                    std::thread::sleep(std::time::Duration::from_millis(10));
+                    let elapsed = started.elapsed();
+                    if elapsed >= timeout {
+                        return Err(std::io::Error::new(
+                            std::io::ErrorKind::TimedOut,
+                            format!("timed out waiting for write lock `{}`", lock_path.display()),
+                        ));
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(10).min(timeout - elapsed));
                 }
                 Err(err) => return Err(err),
             }
@@ -56,6 +68,47 @@ impl WriteLock {
 impl Drop for WriteLock {
     fn drop(&mut self) {
         let _ = fs::remove_dir(&self.path);
+    }
+}
+
+#[cfg(test)]
+mod write_lock_tests {
+    use super::{WriteLock, default_project_build_rs};
+    use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn existing_write_lock_times_out() {
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock after epoch")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "perro_write_lock_timeout_{}_{}",
+            std::process::id(),
+            stamp
+        ));
+        std::fs::create_dir_all(&root).expect("temp root");
+        let target = root.join("generated.rs");
+        let lock = target.with_extension("write-lock");
+        std::fs::create_dir(&lock).expect("held lock");
+
+        let started = Instant::now();
+        let err = WriteLock::acquire_with_timeout(&target, Duration::from_millis(25))
+            .err()
+            .expect("timeout error");
+
+        assert_eq!(err.kind(), std::io::ErrorKind::TimedOut);
+        assert!(started.elapsed() < Duration::from_secs(1));
+        std::fs::remove_dir_all(root).expect("cleanup temp root");
+    }
+
+    #[test]
+    fn generated_build_script_contains_icon_path_guards() {
+        let script = default_project_build_rs();
+
+        assert!(script.contains("component == \".\" || component == \"..\""));
+        assert!(script.contains("source.starts_with(&res_root)"));
+        assert!(script.contains("resolve_res_icon_path(&project_root, &icon_res)?"));
     }
 }
 
@@ -532,17 +585,50 @@ fn embed_windows_icon() -> Result<(), String> {
             .unwrap_or("res://icon.png")
             .trim()
             .to_string();
-        if !icon.starts_with("res://") {
+        let Some(relative) = icon.strip_prefix("res://") else {
             return Err(format!("project.icon must start with `res://`, got `{icon}`"));
+        };
+        if relative.is_empty()
+            || relative.contains(['\\', ':'])
+            || relative.chars().any(char::is_control)
+            || relative
+                .split('/')
+                .any(|component| component.is_empty() || component == "." || component == "..")
+        {
+            return Err(format!(
+                "project.icon must stay inside `res://` and use normal path components, got `{icon}`"
+            ));
         }
         Ok(icon)
     }
 
-    fn resolve_res_icon_path(project_root: &Path, icon_res_path: &str) -> PathBuf {
+    fn resolve_res_icon_path(
+        project_root: &Path,
+        icon_res_path: &str,
+    ) -> Result<PathBuf, String> {
         let rel = icon_res_path
             .trim_start_matches("res://")
             .trim_start_matches('/');
-        project_root.join("res").join(rel)
+        let res_root = project_root
+            .join("res")
+            .canonicalize()
+            .map_err(|e| format!("failed to resolve project res root: {e}"))?;
+        let source = rel
+            .split('/')
+            .fold(res_root.clone(), |path, component| path.join(component));
+        if !source.exists() {
+            return Ok(source);
+        }
+        let source = source
+            .canonicalize()
+            .map_err(|e| format!("failed to resolve project icon `{}`: {e}", source.display()))?;
+        if !source.starts_with(&res_root) {
+            return Err(format!(
+                "project.icon escapes project res root: {}",
+                source.display()
+            ));
+        }
+        Ok(source)
     }
 
     fn builtin_icon_source_path(out_dir: &Path) -> Result<PathBuf, String> {
@@ -777,7 +863,7 @@ fn embed_windows_icon() -> Result<(), String> {
         .map_err(|e| format!("failed to resolve project root from manifest dir: {e}"))?;
     let project_toml = project_root.join("project.toml");
     let icon_res = load_icon_res_path(&project_toml)?;
-    let mut icon_source = resolve_res_icon_path(&project_root, &icon_res);
+    let mut icon_source = resolve_res_icon_path(&project_root, &icon_res)?;
     let out_dir = PathBuf::from(
         env::var("OUT_DIR").map_err(|e| format!("OUT_DIR missing: {e}"))?,
     );
