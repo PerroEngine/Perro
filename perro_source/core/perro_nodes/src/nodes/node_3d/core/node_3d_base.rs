@@ -4,6 +4,7 @@ use std::ops::{Deref, DerefMut};
 #[derive(Clone, Debug)]
 pub struct Node3D {
     pub transform: Transform3D,
+    pub top_level: bool,
     pub visible: bool,
     pub render_layers: BitMask,
     pub modulate: NodeModulate,
@@ -13,6 +14,7 @@ impl Node3D {
     pub const fn new() -> Self {
         Self {
             transform: Transform3D::IDENTITY,
+            top_level: false,
             visible: true,
             render_layers: BitMask::ALL,
             modulate: NodeModulate::WHITE,

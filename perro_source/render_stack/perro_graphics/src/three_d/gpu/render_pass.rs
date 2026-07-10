@@ -1160,6 +1160,19 @@ fn draw_shadow_batches<'a>(
     draw_multimesh_shadow_casters(gpu, shadow_pass, camera_index);
 }
 
+// True when a multimesh batch uses a custom material whose shader defines a
+// shade_vertex hook (or whose hook flag is unknown — conservative). The shared
+// depth-only pipelines can't run the hook, so such batches must not feed the
+// shadow map or the depth prepass.
+fn multimesh_batch_vertex_hooked(gpu: &Gpu3D, batch: &MultiMeshBatch) -> bool {
+    match &batch.material_kind {
+        MaterialPipelineKind::Custom(token) => {
+            gpu.custom_pipeline_vertex_hooks.get(token).copied() != Some(false)
+        }
+        _ => false,
+    }
+}
+
 // Draw shadow-casting multimesh batches into the current shadow layer. Uses the
 // per-layer shadow bind group (light scene uniform + identity index buffer), so
 // direct draws over the full instance set — the camera cull output is invalid
@@ -1180,6 +1193,12 @@ fn draw_multimesh_shadow_casters<'a>(
     let mut current_double_sided: Option<bool> = None;
     for batch in gpu.multimesh_batches.iter() {
         if !batch.casts_shadows || batch.mesh_blend {
+            continue;
+        }
+        // Same rule as rebuild_batch_views: a shade_vertex custom would cast
+        // an undisplaced (wrong) shadow through the shared depth-only
+        // pipeline, so it stays out; hook-free custom casts like standard.
+        if multimesh_batch_vertex_hooked(gpu, batch) {
             continue;
         }
         // Cull whole grass/prop fields outside the light view when bounds exist.
@@ -1298,6 +1317,12 @@ fn draw_multimesh_depth_prepass<'a>(gpu: &'a Gpu3D, pass: &mut wgpu::RenderPass<
     let mut current_double_sided: Option<bool> = None;
     for (batch_index, batch) in gpu.multimesh_batches.iter().enumerate() {
         if batch.mesh_blend {
+            continue;
+        }
+        // A shade_vertex custom would prime the unified depth buffer with
+        // undisplaced positions and hole out its own displaced main draw;
+        // its main pipeline (LessEqual + depth write) self-primes instead.
+        if multimesh_batch_vertex_hooked(gpu, batch) {
             continue;
         }
         if current_double_sided != Some(batch.double_sided) {

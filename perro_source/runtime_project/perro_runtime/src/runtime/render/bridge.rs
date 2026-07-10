@@ -40,6 +40,7 @@ fn is_ui_node_data(data: &SceneNodeData) -> bool {
         SceneNodeData::UiNode(_)
             | SceneNodeData::UiCameraStream(_)
             | SceneNodeData::UiPanel(_)
+            | SceneNodeData::UiProgressBar(_)
             | SceneNodeData::UiButton(_)
             | SceneNodeData::UiCheckbox(_)
             | SceneNodeData::UiColorPicker(_)
@@ -592,6 +593,7 @@ impl Runtime {
                         ty,
                         NodeType::UiCameraStream
                             | NodeType::UiPanel
+                            | NodeType::UiProgressBar
                             | NodeType::UiButton
                             | NodeType::UiDropdown
                             | NodeType::UiColorPicker

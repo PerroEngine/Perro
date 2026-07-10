@@ -50,6 +50,7 @@ pub(super) fn ui_root_from_data(data: &SceneNodeData) -> Option<&UiNode> {
         SceneNodeData::UiNode(root) => Some(root),
         SceneNodeData::UiCameraStream(node) => Some(&node.base),
         SceneNodeData::UiPanel(node) => Some(&node.base),
+        SceneNodeData::UiProgressBar(node) => Some(&node.base),
         SceneNodeData::UiShape(node) => Some(&node.base),
         SceneNodeData::UiButton(node) => Some(&node.base),
         SceneNodeData::UiDropdown(node) => Some(&node.button.base),
@@ -78,6 +79,7 @@ pub(super) fn ui_root_mut_from_data(data: &mut SceneNodeData) -> Option<&mut UiN
         SceneNodeData::UiNode(root) => Some(root),
         SceneNodeData::UiCameraStream(node) => Some(&mut node.base),
         SceneNodeData::UiPanel(node) => Some(&mut node.base),
+        SceneNodeData::UiProgressBar(node) => Some(&mut node.base),
         SceneNodeData::UiShape(node) => Some(&mut node.base),
         SceneNodeData::UiButton(node) => Some(&mut node.base),
         SceneNodeData::UiDropdown(node) => Some(&mut node.button.base),
@@ -594,6 +596,19 @@ pub(super) fn ui_command_from_node(
             &panel.style,
             modulate,
         )),
+        SceneNodeData::UiProgressBar(progress) => Some(UiCommand::UpsertProgressBar {
+            node,
+            rect,
+            clip_rect,
+            value: progress.value.clamp(0.0, 1.0),
+            background_fill: Runtime::color_modulate_rgba(
+                progress.background_style.fill.to_rgba(),
+                modulate,
+            ),
+            background_corner_radii: ui_corner_radii_state(progress.background_style.corner_radii),
+            fill: Runtime::color_modulate_rgba(progress.fill_style.fill.to_rgba(), modulate),
+            fill_corner_radii: ui_corner_radii_state(progress.fill_style.corner_radii),
+        }),
         SceneNodeData::UiShape(shape) => Some(UiCommand::UpsertShape {
             node,
             rect,
@@ -1007,6 +1022,7 @@ pub(super) fn ui_command_matches_node(
 ) -> bool {
     let node = match command {
         UiCommand::UpsertPanel { node, .. }
+        | UiCommand::UpsertProgressBar { node, .. }
         | UiCommand::UpsertShape { node, .. }
         | UiCommand::UpsertColorWheel { node, .. }
         | UiCommand::UpsertButton { node, .. }

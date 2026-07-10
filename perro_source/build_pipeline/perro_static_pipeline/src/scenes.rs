@@ -533,6 +533,7 @@ fn is_static_ui_node(node_type: &str) -> bool {
         node_type,
         "UiNode"
             | "UiPanel"
+            | "UiProgressBar"
             | "UiButton"
             | "UiDropdown"
             | "UiDropDown"

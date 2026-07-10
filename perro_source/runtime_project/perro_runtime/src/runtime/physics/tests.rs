@@ -724,6 +724,116 @@ fn downward_surface_entry_creates_water_splash() {
 }
 
 #[test]
+fn water_3d_entry_splash_rearms_only_after_clear_time() {
+    let mut surface = WaterSurfaceParams {
+        shape: WaterShape::rect(Vector2::new(16.0, 16.0)),
+        ..WaterSurfaceParams::default()
+    };
+    surface.physics.wake_strength = 2.0;
+    let water = RuntimeWater3D {
+        id: NodeID::from_parts(1, 0),
+        half: Vector2::new(8.0, 8.0),
+        transform: Mat4::IDENTITY,
+        inv_transform: Mat4::IDENTITY,
+        normal: Vector3::new(0.0, 1.0, 0.0),
+        min_x: -8.0,
+        max_x: 8.0,
+        surface,
+    };
+    let water_index = RuntimeWaterIndex3D::new(vec![water]);
+    let wet = RuntimeWaterBody3D {
+        id: NodeID::from_parts(93, 0),
+        pos: Vector3::new(0.0, -0.05, 0.0),
+        velocity: Vector3::new(0.0, -3.0, 0.0),
+        mass: 2.0,
+        density: 1.0,
+        float_radius: 0.5,
+        sleeping: false,
+        collision_layers: BitMask::ALL,
+        collision_mask: BitMask::NONE,
+    };
+    let dry = RuntimeWaterBody3D {
+        pos: Vector3::new(0.0, 2.0, 0.0),
+        ..wet
+    };
+    let mut states = AHashMap::new();
+
+    assert_eq!(
+        water_body_splashes_3d(&[wet], &water_index, &AHashMap::new(), 0.0, &mut states).len(),
+        1
+    );
+    assert!(
+        water_body_splashes_3d(&[wet], &water_index, &AHashMap::new(), 0.1, &mut states).is_empty()
+    );
+    assert!(
+        water_body_splashes_3d(&[dry], &water_index, &AHashMap::new(), 0.2, &mut states).is_empty()
+    );
+    assert!(
+        water_body_splashes_3d(&[wet], &water_index, &AHashMap::new(), 0.3, &mut states).is_empty()
+    );
+    let _ = water_body_splashes_3d(&[dry], &water_index, &AHashMap::new(), 0.4, &mut states);
+    assert_eq!(
+        water_body_splashes_3d(&[wet], &water_index, &AHashMap::new(), 0.8, &mut states).len(),
+        1
+    );
+}
+
+#[test]
+fn water_3d_hull_contact_does_not_rearm_at_center_crossing() {
+    let mut surface = WaterSurfaceParams {
+        shape: WaterShape::rect(Vector2::new(16.0, 16.0)),
+        ..WaterSurfaceParams::default()
+    };
+    surface.physics.wake_strength = 2.0;
+    let water = RuntimeWater3D {
+        id: NodeID::from_parts(1, 0),
+        half: Vector2::new(8.0, 8.0),
+        transform: Mat4::IDENTITY,
+        inv_transform: Mat4::IDENTITY,
+        normal: Vector3::new(0.0, 1.0, 0.0),
+        min_x: -8.0,
+        max_x: 8.0,
+        surface,
+    };
+    let water_index = RuntimeWaterIndex3D::new(vec![water]);
+    let body = RuntimeWaterBody3D {
+        id: NodeID::from_parts(94, 0),
+        pos: Vector3::new(0.0, -0.05, 0.0),
+        velocity: Vector3::new(0.0, -3.0, 0.0),
+        mass: 2.0,
+        density: 1.0,
+        float_radius: 0.5,
+        sleeping: false,
+        collision_layers: BitMask::ALL,
+        collision_mask: BitMask::NONE,
+    };
+    let mut states = AHashMap::new();
+    assert_eq!(
+        water_body_splashes_3d(&[body], &water_index, &AHashMap::new(), 0.0, &mut states).len(),
+        1
+    );
+
+    // Center clears the surface, but hull remains in contact: no re-arm.
+    let bob = RuntimeWaterBody3D {
+        pos: Vector3::new(0.0, 0.35, 0.0),
+        ..body
+    };
+    assert!(
+        water_body_splashes_3d(&[bob], &water_index, &AHashMap::new(), 0.5, &mut states).is_empty()
+    );
+    assert!(
+        water_body_splashes_3d(&[body], &water_index, &AHashMap::new(), 0.9, &mut states)
+            .is_empty()
+    );
+}
+
+#[test]
+fn buoyancy_filters_cell_velocity_spikes() {
+    assert!((water_relative_normal_velocity(0.0, 100.0) + 0.7).abs() < 0.001);
+    assert!((water_relative_normal_velocity(-1.0, 1.0) + 1.28).abs() < 0.001);
+}
+
+#[test]
 fn water_link_mask_blocks_2d_blend() {
     let mut a = WaterSurfaceParams::default();
     let mut b = WaterSurfaceParams::default();

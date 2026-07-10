@@ -236,6 +236,11 @@ fn apply_node_2d_fields(node: &mut Node2D, fields: &[SceneObjectField]) {
                     node.transform.rotation = v;
                 }
             }
+            SceneFieldName::Custom(name) if name == "top_level" => {
+                if let Some(v) = value.as_bool() {
+                    node.top_level = v;
+                }
+            }
             SceneFieldName::ZIndex => {
                 if let Some(v) = value.as_i32() {
                     node.z_index = v;

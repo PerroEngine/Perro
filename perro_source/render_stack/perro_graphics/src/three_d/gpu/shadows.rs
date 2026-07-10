@@ -382,7 +382,7 @@ fn build_ray_shadow_scenes(args: RayShadowSceneArgs<'_>) -> Option<RayShadowScen
     let (batch_focus_center, batch_focus_radius, has_batch_bounds) =
         compute_shadow_focus_bounds(camera, draw_batches, staged_instances);
     let cascade_splits = ray_cascade_splits(camera);
-    let mut full_corners = camera_frustum_slice_corners_world(
+    let full_corners = camera_frustum_slice_corners_world(
         camera,
         viewport_width,
         viewport_height,
@@ -403,8 +403,13 @@ fn build_ray_shadow_scenes(args: RayShadowSceneArgs<'_>) -> Option<RayShadowScen
     if has_batch_bounds {
         focus_center = batch_focus_center;
         focus_radius = batch_focus_radius.clamp(10.0, 600.0);
-        full_corners = stable_shadow_focus_points(focus_center, focus_radius);
     }
+    // Scene caster box. NOT unioned into the per-cascade XY fit (one huge
+    // caster would blow every cascade up to the whole scene and defeat the
+    // cascade split); it only clamps each cascade's XY window and extends its
+    // near range toward the light (see cascade_light_bounds).
+    let scene_corners = has_batch_bounds
+        .then(|| stable_shadow_focus_points(batch_focus_center, batch_focus_radius));
     if fallback_focus_center.is_finite() && fallback_focus_radius.is_finite() {
         focus_center = fallback_focus_center.lerp(focus_center, 0.20);
         focus_radius = (fallback_focus_radius.max(10.0)
@@ -422,7 +427,7 @@ fn build_ray_shadow_scenes(args: RayShadowSceneArgs<'_>) -> Option<RayShadowScen
     let mut matrices = [Mat4::IDENTITY; MAX_SHADOW_RAY_CASCADES];
     let mut texels = [0.0f32; MAX_SHADOW_RAY_CASCADES];
     for cascade in 0..MAX_SHADOW_RAY_CASCADES {
-        let mut corners = camera_frustum_slice_corners_world(
+        let corners = camera_frustum_slice_corners_world(
             camera,
             viewport_width,
             viewport_height,
@@ -433,9 +438,6 @@ fn build_ray_shadow_scenes(args: RayShadowSceneArgs<'_>) -> Option<RayShadowScen
             },
             cascade_splits[cascade],
         )?;
-        if has_batch_bounds {
-            corners.extend_from_slice(&full_corners);
-        }
         let center =
             corners.iter().copied().fold(Vec3::ZERO, |acc, p| acc + p) / (corners.len() as f32);
         let radius = corners
@@ -448,7 +450,8 @@ fn build_ray_shadow_scenes(args: RayShadowSceneArgs<'_>) -> Option<RayShadowScen
         let mut eye = center - dir * distance;
         let mut target = center;
         let mut view = Mat4::look_at_rh(eye, target, up);
-        let (mut ls_min, mut ls_max) = light_space_bounds(&corners, view)?;
+        let (mut ls_min, mut ls_max) =
+            cascade_light_bounds(&corners, scene_corners.as_deref(), view)?;
         let span_x = (ls_max.x - ls_min.x).max(2.0);
         let span_y = (ls_max.y - ls_min.y).max(2.0);
         let wupt_x = (span_x / SHADOW_MAP_SIZE as f32).max(1.0e-6);
@@ -460,7 +463,7 @@ fn build_ray_shadow_scenes(args: RayShadowSceneArgs<'_>) -> Option<RayShadowScen
         eye += center_delta;
         target += center_delta;
         view = Mat4::look_at_rh(eye, target, up);
-        (ls_min, ls_max) = light_space_bounds(&corners, view)?;
+        (ls_min, ls_max) = cascade_light_bounds(&corners, scene_corners.as_deref(), view)?;
         let xy_pad = ((ls_max.x - ls_min.x).max(ls_max.y - ls_min.y) * 0.08).max(1.0);
         ls_min.x -= xy_pad;
         ls_max.x += xy_pad;
@@ -469,7 +472,15 @@ fn build_ray_shadow_scenes(args: RayShadowSceneArgs<'_>) -> Option<RayShadowScen
         texels[cascade] =
             ((ls_max.x - ls_min.x).max(ls_max.y - ls_min.y) / SHADOW_MAP_SIZE as f32).max(1.0e-4);
         let z_pad = (radius * 0.65).max(12.0);
-        let near = (-ls_max.z - z_pad).max(0.1);
+        // With scene bounds, ls_max.z already reaches the caster closest to the
+        // light; the near plane must follow it even past the eye (negative near
+        // is valid for an orthographic projection) so off-frustum casters
+        // between the light and this slice still write depth.
+        let near = if scene_corners.is_some() {
+            -ls_max.z - z_pad
+        } else {
+            (-ls_max.z - z_pad).max(0.1)
+        };
         let far = (-ls_min.z + z_pad).max(near + 1.0);
         let light_view_proj =
             Mat4::orthographic_rh(ls_min.x, ls_max.x, ls_min.y, ls_max.y, near, far) * view;
@@ -667,6 +678,40 @@ pub(super) fn light_space_bounds(points_world: &[Vec3], light_view: Mat4) -> Opt
     } else {
         Some((min, max))
     }
+}
+
+// Light-space fit for one cascade: fit the camera slice corners, then use the
+// scene caster box (when present) two ways:
+// - Clamp (intersect) the XY window so the cascade never spends texels on
+//   area with no casters. A collapsed intersection falls back to the plain
+//   slice fit — that map holds no casters, so every sample falls through lit.
+// - Extend max z (toward the light) so casters outside the camera frustum but
+//   between the light and the slice still land in the depth map.
+fn cascade_light_bounds(
+    slice_corners: &[Vec3],
+    scene_corners: Option<&[Vec3]>,
+    light_view: Mat4,
+) -> Option<(Vec3, Vec3)> {
+    let (mut ls_min, mut ls_max) = light_space_bounds(slice_corners, light_view)?;
+    let Some(scene_corners) = scene_corners else {
+        return Some((ls_min, ls_max));
+    };
+    let Some((scene_min, scene_max)) = light_space_bounds(scene_corners, light_view) else {
+        return Some((ls_min, ls_max));
+    };
+    let clamped_min_x = ls_min.x.max(scene_min.x);
+    let clamped_max_x = ls_max.x.min(scene_max.x);
+    let clamped_min_y = ls_min.y.max(scene_min.y);
+    let clamped_max_y = ls_max.y.min(scene_max.y);
+    if clamped_max_x - clamped_min_x > 1.0e-3 && clamped_max_y - clamped_min_y > 1.0e-3 {
+        ls_min.x = clamped_min_x;
+        ls_max.x = clamped_max_x;
+        ls_min.y = clamped_min_y;
+        ls_max.y = clamped_max_y;
+    }
+    // Larger view-space z = closer to the light (look_at_rh looks down -Z).
+    ls_max.z = ls_max.z.max(scene_max.z);
+    Some((ls_min, ls_max))
 }
 
 pub(super) fn compute_shadow_focus_bounds(
@@ -909,6 +954,41 @@ mod tests {
         assert!(setup.uniform.ray_splits[2] < setup.uniform.ray_splits[3]);
         for matrix in setup.uniform.ray_light_view_proj {
             assert_ne!(matrix, [[0.0; 4]; 4]);
+        }
+    }
+
+    #[test]
+    fn huge_caster_bounds_keep_cascade_texels_tight_and_monotonic() {
+        // One scene-spanning caster (e.g. a 500-unit water plane) must not
+        // blow every cascade up to the whole scene: each cascade stays fit to
+        // its own camera slice, so cascade 0 keeps contact-shadow resolution.
+        let mut huge = caster_batch();
+        huge.local_radius = 500.0;
+        let batches = [huge];
+        let instances = [identity_instance()];
+        let setup = build_shadow_setup(ShadowSetupArgs {
+            camera: &camera(Quat::IDENTITY),
+            lighting: &lighting_with_ray([-0.5, -1.0, -0.2]),
+            draw_batches: &batches,
+            staged_instances: &instances,
+            fallback_focus_center: Vec3::ZERO,
+            fallback_focus_radius: 64.0,
+            viewport_width: 1280,
+            viewport_height: 720,
+            has_casters: true,
+        });
+        assert!(setup.ray_enabled);
+        assert!(
+            setup.uniform.ray_texel[0] < 0.1,
+            "cascade 0 texel {} must stay fine-grained",
+            setup.uniform.ray_texel[0]
+        );
+        for cascade in 1..MAX_SHADOW_RAY_CASCADES {
+            assert!(
+                setup.uniform.ray_texel[cascade] >= setup.uniform.ray_texel[cascade - 1],
+                "texels must grow with cascade distance: {:?}",
+                setup.uniform.ray_texel
+            );
         }
     }
 

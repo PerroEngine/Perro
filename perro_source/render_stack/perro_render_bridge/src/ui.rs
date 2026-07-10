@@ -92,6 +92,16 @@ pub struct UiCornerRadiiState {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum UiCommand {
+    UpsertProgressBar {
+        node: NodeID,
+        rect: UiRectState,
+        clip_rect: [f32; 4],
+        value: f32,
+        background_fill: [f32; 4],
+        background_corner_radii: UiCornerRadiiState,
+        fill: [f32; 4],
+        fill_corner_radii: UiCornerRadiiState,
+    },
     UpsertPanel {
         node: NodeID,
         rect: UiRectState,

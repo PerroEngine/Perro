@@ -362,6 +362,9 @@ fn push_base_fields(fields: &mut Vec<SceneNodeField>, node_type: NodeType) {
             NodeFieldType::F32,
         );
         push_default(fields, node_type, "Transform", "scale", NodeFieldType::Vec2);
+        let mut top_level = SceneNodeField::new("Transform", "top_level", NodeFieldType::Bool);
+        top_level.default = Some(SceneValue::Bool(false));
+        fields.push(top_level);
         push_default(
             fields,
             node_type,
@@ -399,6 +402,9 @@ fn push_base_fields(fields: &mut Vec<SceneNodeField>, node_type: NodeType) {
             NodeFieldType::Quat,
         );
         push_default(fields, node_type, "Transform", "scale", NodeFieldType::Vec3);
+        let mut top_level = SceneNodeField::new("Transform", "top_level", NodeFieldType::Bool);
+        top_level.default = Some(SceneValue::Bool(false));
+        fields.push(top_level);
         push_default(
             fields,
             node_type,
@@ -773,6 +779,7 @@ fn push_node_fields(fields: &mut Vec<SceneNodeField>, node_type: NodeType) {
         NodeType::UiAnimatedImage => animated_image_fields(fields, "Image"),
         NodeType::UiVideoPlayer => video_player_fields(fields, "Video", false, true),
         NodeType::UiPanel
+        | NodeType::UiProgressBar
         | NodeType::UiButton
         | NodeType::UiDropdown
         | NodeType::UiCheckbox
@@ -781,6 +788,35 @@ fn push_node_fields(fields: &mut Vec<SceneNodeField>, node_type: NodeType) {
         | NodeType::UiTextBlock => {
             asset_field(fields, "Style", "style", SceneAssetKind::UiStyle);
             ui_style_fields(fields, "Style", "");
+            if matches!(node_type, NodeType::UiProgressBar) {
+                fields.push(
+                    SceneNodeField::new("Progress", "value", NodeFieldType::F32)
+                        .with_default(SceneValue::F32(0.0)),
+                );
+                push(
+                    fields,
+                    "Background",
+                    "background_color",
+                    NodeFieldType::Color,
+                );
+                push(
+                    fields,
+                    "Background",
+                    "background_rounding",
+                    NodeFieldType::F32,
+                );
+                asset_field(
+                    fields,
+                    "Background",
+                    "background_style",
+                    SceneAssetKind::UiStyle,
+                );
+                ui_style_fields(fields, "Background", "background_");
+                push(fields, "Fill", "fill_color", NodeFieldType::Color);
+                push(fields, "Fill", "fill_rounding", NodeFieldType::F32);
+                asset_field(fields, "Fill", "fill_style", SceneAssetKind::UiStyle);
+                ui_style_fields(fields, "Fill", "fill_");
+            }
             if matches!(
                 node_type,
                 NodeType::UiButton | NodeType::UiDropdown | NodeType::UiCheckbox

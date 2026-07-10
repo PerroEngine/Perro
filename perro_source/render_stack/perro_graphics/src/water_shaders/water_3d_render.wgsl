@@ -502,6 +502,7 @@ struct WaterDepthInfo {
     thickness: f32,
     bed_world: vec3<f32>,
     hit: f32,
+    scene_depth: f32,
     scene_coord: vec2<i32>,
 }
 
@@ -559,6 +560,7 @@ fn water_depth_thickness(in: Water3DVertexOut, w: Water, refraction_offset: vec2
         info.thickness = w.size_depth_time.z;
         info.bed_world = in.world_pos - vec3<f32>(0.0, w.size_depth_time.z, 0.0);
         info.hit = 0.0;
+        info.scene_depth = scene_depth;
         info.scene_coord = coord;
         return info;
     }
@@ -567,8 +569,56 @@ fn water_depth_thickness(in: Water3DVertexOut, w: Water, refraction_offset: vec2
     info.thickness = max(view_scene - view_water, 0.0);
     info.bed_world = scene_world;
     info.hit = 1.0;
+    info.scene_depth = scene_depth;
     info.scene_coord = coord;
     return info;
+}
+
+// Approximate the angular blur caused by many small wave normals between the
+// surface and an immersed object. Depth weights stop bright background from
+// bleeding across the silhouette itself while the wide gather spreads light
+// across shadows cast onto the same submerged surface.
+fn water_transmission_tap(coord: vec2<i32>, center_depth: f32, dims: vec2<i32>) -> vec4<f32> {
+    let c = clamp(coord, vec2<i32>(0), dims - vec2<i32>(1));
+    let sample_depth = textureLoad(scene_depth_tex, c, 0);
+    let depth_delta = abs(sample_depth - center_depth);
+    let depth_span = 0.0008 + (1.0 - center_depth) * 0.004;
+    let depth_weight = 1.0 - smoothstep(depth_span, depth_span * 4.0, depth_delta);
+    return vec4<f32>(textureLoad(scene_color_tex, c, 0).rgb * depth_weight, depth_weight);
+}
+
+fn water_diffused_transmission(center: vec2<i32>, thickness: f32, scene_depth: f32, strength: f32) -> vec3<f32> {
+    let dims_u = textureDimensions(scene_color_tex);
+    let dims = vec2<i32>(i32(dims_u.x), i32(dims_u.y));
+    let c = clamp(center, vec2<i32>(0), dims - vec2<i32>(1));
+    let center_rgb = textureLoad(scene_color_tex, c, 0).rgb;
+    let scatter = clamp(strength, 0.0, 2.0)
+        * (0.18 + 0.82 * (1.0 - exp(-max(thickness, 0.0) * 0.32)));
+    if scatter <= 0.015 {
+        return center_rgb;
+    }
+    // Water depth grows the diffusion cone. Four wide taps soften shadows
+    // without paying for a full screen-space blur pass.
+    let radius = i32(round(clamp(2.0 + thickness * 1.15 + scatter * 2.0, 2.0, 16.0)));
+    let ox = vec2<i32>(radius, 0);
+    let oy = vec2<i32>(0, radius);
+    let a = water_transmission_tap(c + ox, scene_depth, dims);
+    let b = water_transmission_tap(c - ox, scene_depth, dims);
+    let d = water_transmission_tap(c + oy, scene_depth, dims);
+    let e = water_transmission_tap(c - oy, scene_depth, dims);
+    let weighted_rgb = center_rgb * 1.6 + a.rgb + b.rgb + d.rgb + e.rgb;
+    let weight = 1.6 + a.a + b.a + d.a + e.a;
+    let diffuse_rgb = weighted_rgb / max(weight, 0.001);
+    // Deep paths scatter more; open sky stays subtle so it does not turn flat.
+    let open_sky = select(0.0, 1.0, scene_depth >= 0.999999);
+    let blend = clamp(scatter * mix(0.52, 0.24, open_sky), 0.0, 0.72);
+    let blurred_rgb = mix(center_rgb, diffuse_rgb, blend);
+    // Participating media fills low-frequency occlusion. Keep lit pixels
+    // stable and lift only the dark side of the local irradiance range.
+    let center_luma = dot(center_rgb, vec3<f32>(0.2126, 0.7152, 0.0722));
+    let diffuse_luma = dot(diffuse_rgb, vec3<f32>(0.2126, 0.7152, 0.0722));
+    let shadow_fill = clamp((diffuse_luma - center_luma) * scatter * 0.85, 0.0, 0.45);
+    return blurred_rgb + max(diffuse_rgb - center_rgb, vec3<f32>(0.0)) * shadow_fill;
 }
 
 struct WaterVertexLocal {
@@ -834,7 +884,10 @@ fn fs_water_3d(in: Water3DVertexOut, @builtin(front_facing) front_facing: bool) 
     let sun_radiance = scene.ray_light.color_intensity.xyz * min(scene.ray_light.color_intensity.w, 6.0);
     let sun_up = clamp(sun_dir.y, 0.0, 1.0);
 
-    let fresnel = water_schlick_fresnel(dot(normal, view_dir), w.visual0.w) * w.visual0.y;
+    // Treat Fresnel as an energy split, not a blue surface tint.  Applying
+    // reflectivity twice made broad view angles read like opaque blue ground.
+    let dielectric_fresnel = water_schlick_fresnel(dot(normal, view_dir), w.visual0.w);
+    let fresnel = clamp(dielectric_fresnel * w.visual0.y, 0.0, 1.0);
     let auto_shallow_depth = max(max(w.size_depth_time.x, w.size_depth_time.y) * 0.25, 0.001);
     let shallow_depth = select(auto_shallow_depth, max(w.size_depth_time.w, 0.001), w.size_depth_time.w >= 0.0);
     let crest_t = clamp(
@@ -847,13 +900,38 @@ fn fs_water_3d(in: Water3DVertexOut, @builtin(front_facing) front_facing: bool) 
     let scene_thickness = max(depth_info.thickness, 0.0);
     let depth_t = clamp(1.0 - exp(-scene_thickness / max(shallow_depth, 0.001)), 0.0, 1.0);
 
-    let absorb_k = 0.85 / max(shallow_depth, 0.25);
+    // Beer-Lambert extinction: clear at short paths, colored only by depth.
+    // The old coefficient filled even modest depths with the shallow color.
+    let absorb_k = 0.42 / max(shallow_depth, 0.25);
     let absorption = exp(-scene_thickness * absorb_k * vec3<f32>(1.0, 0.40, 0.17));
-    let shallow_rgb = max(w.shallow_color.rgb, vec3<f32>(0.03, 0.20, 0.30));
-    let deep_rgb = max(w.deep_color.rgb, vec3<f32>(0.0, 0.028, 0.090));
-    let volume_rgb = mix(deep_rgb, shallow_rgb, absorption);
-    let refracted_scene = textureLoad(scene_color_tex, depth_info.scene_coord, 0).rgb;
-    let transmitted_rgb = refracted_scene * absorption + volume_rgb * (vec3<f32>(1.0) - absorption);
+    let shallow_rgb = max(w.shallow_color.rgb, vec3<f32>(0.0));
+    let deep_rgb = max(w.deep_color.rgb, vec3<f32>(0.0));
+    // Let participating media inherit illumination from Sky3D instead of
+    // behaving like self-lit blue material.  Keep user water colors as the
+    // absorption hue, not the sole radiance source.
+    let sky_scatter_rgb = max(w.sky_color_bias.rgb, vec3<f32>(0.0));
+    let volume_tint = mix(deep_rgb, shallow_rgb, absorption);
+    let sky_scatter_weight = clamp(w.visual2.z * (0.10 + 0.22 * (1.0 - absorption.g)), 0.0, 0.48);
+    let volume_rgb = mix(volume_tint, volume_tint * sky_scatter_rgb * 1.35, sky_scatter_weight);
+    let refracted_scene = water_diffused_transmission(
+        depth_info.scene_coord,
+        scene_thickness,
+        depth_info.scene_depth,
+        w.visual2.z,
+    );
+    // Out-scattered direct light returns as broad in-scatter. This prevents
+    // opaque-scene shadow maps from surviving unchanged below clear water.
+    let scatter_extinction = vec3<f32>(1.0) - absorption;
+    let water_irradiance = scene.ambient_color.rgb * scene.ambient_color.w
+        + sun_radiance * (0.10 + 0.18 * sun_up);
+    let in_scatter = water_irradiance
+        * mix(shallow_rgb, vec3<f32>(1.0), 0.22)
+        * scatter_extinction
+        * clamp(w.visual2.z, 0.0, 2.0)
+        * 0.34;
+    let transmitted_rgb = refracted_scene * absorption
+        + volume_rgb * scatter_extinction
+        + in_scatter;
 
     let forward_light = pow(max(dot(-view_dir, sun_dir), 0.0), 2.0);
     let sss = pow(max(crest_t, 0.0), 1.4)
@@ -864,24 +942,17 @@ fn fs_water_3d(in: Water3DVertexOut, @builtin(front_facing) front_facing: bool) 
     let water_rgb = transmitted_rgb + sss_rgb * sss;
 
     let rough_blend = clamp(w.visual0.z, 0.0, 1.0);
-    let reflection_weight = clamp(max(w.sky_color_bias.w, fresnel * 0.62) * w.visual0.y, 0.0, 1.0);
+    let reflection_weight = clamp(max(w.sky_color_bias.w * w.visual0.y, fresnel), 0.0, 1.0);
     let ssr = water_ssr(in.world_pos, normal, view_dir, rough_blend, reflection_weight);
     let reflection_source = mix(w.sky_color_bias.rgb, ssr.color, ssr.confidence);
     let reflected = mix(water_rgb, reflection_source, reflection_weight);
     let half_dir = normalize(view_dir + sun_dir);
     let spec = pow(max(dot(normal, half_dir), 0.0), mix(140.0, 34.0, rough_blend)) * w.visual0.y * 0.35;
-    let fresnel_tint = vec3<f32>(0.16, 0.26, 0.36) * fresnel * w.visual0.y;
     let ambient_strength = clamp(scene.ambient_color.w, 0.0, 4.0);
     let ambient_tint = mix(vec3<f32>(1.0), scene.ambient_color.xyz, clamp(ambient_strength * 0.42, 0.0, 1.0));
-    let shaded_base = mix(reflected, water_rgb, rough_blend * 0.48) * ambient_tint;
-    let scene_lit = water_scene_lighting(
-        max(shaded_base, vec3<f32>(0.0)),
-        normal,
-        view_dir,
-        in.world_pos,
-        mix(0.035, 0.64, rough_blend),
-        w.visual0.y,
-    );
+    // Water has no diffuse top-surface lobe. Keep transmitted scene radiance
+    // intact; ambient only colors light scattered by the water volume.
+    let shaded_base = reflected;
 
     var caustic = 0.0;
     // sun_up scales caustic to zero when sun at/below horizon; gate on it so
@@ -918,15 +989,18 @@ fn fs_water_3d(in: Water3DVertexOut, @builtin(front_facing) front_facing: bool) 
     if foam_total > 0.02 && top_surface_mask > 0.02 {
         // low-freq patch fields randomize where foam sits, how large the
         // patches are and how strongly each patch shows over time
-        let patch_field = water_fbm2(local * 0.16 + vec2<f32>(t * 0.03, -t * 0.02));
-        let patch_fade = water_fbm2(local * 0.11 + vec2<f32>(t * 0.10, t * 0.07));
-        let web = water_hex_ridged_fbm(local * foam_scale * 0.8 + wind * t * 0.30);
+        // Advect one coherent foam field.  Slow opacity drift avoids temporal
+        // noise making otherwise stable simulation foam blink in place.
+        let foam_drift = wind * t * 0.12;
+        let patch_field = water_fbm2(local * 0.16 - foam_drift * 0.16);
+        let patch_fade = water_fbm2(local * 0.11 - foam_drift * 0.11 + vec2<f32>(t * 0.012, -t * 0.009));
+        let web = water_hex_ridged_fbm(local * foam_scale * 0.8 - foam_drift * foam_scale * 0.8);
         let density = clamp(web * 0.74 + grain * 0.36, 0.0, 1.2);
         let energy = foam_total * (0.55 + patch_field * 0.75);
         let coverage = smoothstep(0.05, 0.85, energy);
         let cut = 1.02 - coverage * 0.88;
-        let opacity = 0.45 + 0.55 * smoothstep(0.30, 0.72, patch_fade);
-        foam_mask = smoothstep(cut, cut + 0.30, density)
+        let opacity = 0.52 + 0.48 * smoothstep(0.22, 0.80, patch_fade);
+        foam_mask = smoothstep(cut - 0.04, cut + 0.34, density)
             * min(energy * 1.6, 1.0)
             * opacity
             * top_surface_mask;
@@ -944,9 +1018,8 @@ fn fs_water_3d(in: Water3DVertexOut, @builtin(front_facing) front_facing: bool) 
     ) * (0.86 + foam_sparkle * 0.35);
 
     let scatter = (1.0 - depth_t) * w.visual2.z * (0.12 + 0.58 * forward_light) * max(dot(normal, sun_dir), 0.0);
-    let lit_water = mix(shaded_base, scene_lit, 0.58)
+    let lit_water = shaded_base
         + scatter * ambient_tint
-        + fresnel_tint
         + sun_radiance * caustic * vec3<f32>(0.55, 0.85, 1.0) * 0.30
         + spec * sun_radiance * (1.0 - foam_mask);
     let fog_t = clamp(view_dist / 900.0, 0.0, 1.0) * w.visual2.w * 0.34;
@@ -962,17 +1035,30 @@ fn fs_water_3d(in: Water3DVertexOut, @builtin(front_facing) front_facing: bool) 
     );
     let outline_mask = min(outline, 1.0) * clamp(w.coastline_foam_color.a, 0.0, 1.0) * 0.92;
     color = mix(color, outline_lit, outline_mask);
-    let water_veil = mix(0.42, 0.88, depth_t) * top_surface_mask;
-    var alpha = max(mix(w.shallow_color.a, w.deep_color.a, depth_t), water_veil) * (1.0 - clamp(w.visual0.x, 0.0, 1.0) * 0.64)
-        + fresnel * 0.10 * top_surface_mask;
+    // Coverage follows energy removed from transmission. This prevents color
+    // alpha from laying an opaque sheet over shallow water while deep water
+    // still closes naturally through absorption.
+    let transmission_luma = dot(absorption, vec3<f32>(0.2126, 0.7152, 0.0722));
+    let tint_density = mix(w.shallow_color.a, w.deep_color.a, depth_t);
+    let absorption_opacity = (1.0 - transmission_luma) * tint_density;
+    let optical_opacity = reflection_weight + (1.0 - reflection_weight) * absorption_opacity;
+    var alpha = optical_opacity * (1.0 - clamp(w.visual0.x, 0.0, 1.0)) * top_surface_mask;
     alpha = max(alpha, max(foam_mask * 0.92, outline_mask));
     let side_color = mix(w.deep_color.rgb, color, 0.28);
     let snell_window = water_snells_window(normal, view_dir, 1.333);
     let underside_mask = select(1.0, 0.0, front_facing) * top_surface_mask;
     let underside_color = mix(w.deep_color.rgb * 0.72, color, snell_window);
-    let final_color = mix(mix(color, underside_color, underside_mask), side_color, in.side_t);
+    // Top surface already composites captured scene color for refraction.
+    // Apply material transparency inside that composite; alpha-blending the
+    // captured scene over the same scene again weakens refraction and leaves
+    // a flat blue veil.
+    let transparent_top = mix(color, refracted_scene, clamp(w.visual0.x, 0.0, 1.0));
+    let final_color = mix(mix(transparent_top, underside_color, underside_mask), side_color, in.side_t);
     let underside_alpha = mix(max(alpha, 0.72), alpha, snell_window);
-    let final_alpha = mix(mix(alpha, underside_alpha, underside_mask), w.deep_color.a * 0.82, in.side_t);
+    // Surface pixel is a finished scene composite. Side walls remain regular
+    // translucent geometry.
+    let top_alpha = mix(1.0, underside_alpha, underside_mask);
+    let final_alpha = mix(top_alpha, w.deep_color.a * 0.82, in.side_t);
     // screen-space dither breaks 8-bit banding on the long depth gradients
     let dither = (water_hash(floor(in.clip_pos.xy) * 0.7311) - 0.5) * (2.0 / 255.0);
     return vec4<f32>(max(final_color + vec3<f32>(dither), vec3<f32>(0.0)), clamp(final_alpha + dither * 0.5, 0.0, 1.0));

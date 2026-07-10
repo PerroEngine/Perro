@@ -837,6 +837,61 @@ fn get_set_global_transform_3d_works_under_scaled_parent() {
 }
 
 #[test]
+fn top_level_nodes_skip_parent_transform_2d_and_3d() {
+    let mut runtime = Runtime::new();
+
+    let mut parent_2d = Node2D::new();
+    parent_2d.transform.position = Vector2::new(10.0, 20.0);
+    let parent_2d = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::Node2D(parent_2d)));
+    let mut child_2d = Node2D::new();
+    child_2d.transform.position = Vector2::new(1.0, 2.0);
+    child_2d.top_level = true;
+    let child_2d = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::Node2D(child_2d)));
+
+    runtime
+        .nodes
+        .get_mut(parent_2d)
+        .unwrap()
+        .add_child(child_2d);
+    runtime.nodes.get_mut(child_2d).unwrap().parent = parent_2d;
+    runtime.mark_transform_dirty_recursive(parent_2d);
+
+    assert_eq!(
+        runtime.get_global_transform_2d(child_2d).unwrap().position,
+        Vector2::new(1.0, 2.0)
+    );
+
+    let mut parent_3d = Node3D::new();
+    parent_3d.transform.position = Vector3::new(10.0, 20.0, 30.0);
+    let parent_3d = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::Node3D(parent_3d)));
+    let mut child_3d = Node3D::new();
+    child_3d.transform.position = Vector3::new(1.0, 2.0, 3.0);
+    child_3d.top_level = true;
+    let child_3d = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::Node3D(child_3d)));
+
+    runtime
+        .nodes
+        .get_mut(parent_3d)
+        .unwrap()
+        .add_child(child_3d);
+    runtime.nodes.get_mut(child_3d).unwrap().parent = parent_3d;
+    runtime.mark_transform_dirty_recursive(parent_3d);
+
+    assert_eq!(
+        runtime.get_global_transform_3d(child_3d).unwrap().position,
+        Vector3::new(1.0, 2.0, 3.0)
+    );
+}
+
+#[test]
 fn bone_attachment_3d_follows_skeleton_bone_global_transform() {
     let mut runtime = Runtime::new();
 

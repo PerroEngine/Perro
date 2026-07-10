@@ -425,6 +425,11 @@ fn apply_node_3d_fields(node: &mut Node3D, fields: &[SceneObjectField]) {
                     node.transform.rotation = v;
                 }
             }
+            SceneFieldName::Custom(name) if name == "top_level" => {
+                if let Some(v) = as_bool(value) {
+                    node.top_level = v;
+                }
+            }
             SceneFieldName::Visible => {
                 if let Some(v) = as_bool(value) {
                     node.visible = v;

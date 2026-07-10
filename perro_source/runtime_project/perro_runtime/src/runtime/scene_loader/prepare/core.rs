@@ -74,7 +74,7 @@ use perro_structs::{
 use perro_ui::{
     UiAnimatedImage, UiAnimatedImageFrameSet, UiNode, UiButton, UiCheckbox, UiColorPicker,
     UiDropdown, UiGrid, UiHLayout, UiImage, UiImageButton, UiImageScaleMode, UiLabel, UiLayout,
-    UiMouseFilter, UiNineSlice, UiPanel, UiScrollContainer, UiShape, UiShapeKind, UiTextAlign,
+    UiMouseFilter, UiNineSlice, UiPanel, UiProgressBar, UiScrollContainer, UiShape, UiShapeKind, UiTextAlign,
     UiTextBlock, UiTextBox, UiTreeList, UiTreeListItem, UiVLayout,
 };
 use rayon::prelude::*;
@@ -1931,6 +1931,10 @@ fn scene_node_data_from(
         NodeType::SpotLight3D => Ok(SceneNodeData::SpotLight3D(build_spot_light_3d(data))),
         NodeType::UiNode => Ok(SceneNodeData::UiNode(build_ui_node(data))),
         NodeType::UiPanel => Ok(SceneNodeData::UiPanel(Box::new(build_ui_panel(
+            data,
+            static_ui_style_lookup,
+        )))),
+        NodeType::UiProgressBar => Ok(SceneNodeData::UiProgressBar(Box::new(build_ui_progress_bar(
             data,
             static_ui_style_lookup,
         )))),

@@ -45,6 +45,63 @@ impl UiNodeBase for UiPanel {
     }
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct UiProgressBar {
+    pub base: UiNode,
+    pub value: f32,
+    pub background_style: UiStyle,
+    pub fill_style: UiStyle,
+}
+
+impl UiProgressBar {
+    pub fn new() -> Self {
+        let mut fill_style = UiStyle::panel();
+        fill_style.fill = Color::WHITE;
+        Self {
+            base: UiNode::new(),
+            value: 0.0,
+            background_style: UiStyle::panel(),
+            fill_style,
+        }
+    }
+
+    pub fn set_value(&mut self, value: f32) {
+        self.value = value.clamp(0.0, 1.0);
+    }
+
+    pub fn percent(&self) -> f32 {
+        self.value.clamp(0.0, 1.0) * 100.0
+    }
+}
+
+impl Default for UiProgressBar {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Deref for UiProgressBar {
+    type Target = UiNode;
+    fn deref(&self) -> &Self::Target {
+        &self.base
+    }
+}
+
+impl DerefMut for UiProgressBar {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.base
+    }
+}
+
+impl UiNodeBase for UiProgressBar {
+    fn ui_base(&self) -> &UiNode {
+        &self.base
+    }
+    fn ui_base_mut(&mut self) -> &mut UiNode {
+        &mut self.base
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum UiImageScaleMode {
     #[default]

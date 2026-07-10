@@ -38,6 +38,39 @@ fn build_ui_panel(
     node
 }
 
+fn build_ui_progress_bar(
+    data: &SceneDefNodeData,
+    static_ui_style_lookup: Option<StaticUiStyleLookup>,
+) -> UiProgressBar {
+    let mut node = UiProgressBar::new();
+    if let Some(base) = data.base_ref() {
+        apply_ui_root_data(&mut node.base, base);
+    }
+    apply_ui_root_fields(&mut node.base, &data.fields);
+    apply_ui_style_fields(&mut node.background_style, &data.fields, "background_");
+    apply_ui_style_object_fields(&mut node.background_style, &data.fields, "background_style", static_ui_style_lookup);
+    apply_ui_style_fields(&mut node.fill_style, &data.fields, "fill_");
+    apply_ui_style_object_fields(&mut node.fill_style, &data.fields, "fill_style", static_ui_style_lookup);
+    SceneFieldIterRef::new(&data.fields).for_each(|name, value| {
+        if matches!(name, "value" | "progress") && let Some(v) = as_f32(value) {
+            node.set_value(v);
+        }
+        if matches!(name, "background" | "background_color") && let Some(v) = as_scene_color(value) {
+            node.background_style.fill = v;
+        }
+        if matches!(name, "fill" | "fill_color" | "color_fill") && let Some(v) = as_scene_color(value) {
+            node.fill_style.fill = v;
+        }
+        if matches!(name, "background_rounding" | "background_radius") && let Some(v) = as_f32(value) {
+            node.background_style.set_corner_radius(v);
+        }
+        if matches!(name, "fill_rounding" | "fill_radius") && let Some(v) = as_f32(value) {
+            node.fill_style.set_corner_radius(v);
+        }
+    });
+    node
+}
+
 fn build_ui_button(
     data: &SceneDefNodeData,
     static_ui_style_lookup: Option<StaticUiStyleLookup>,

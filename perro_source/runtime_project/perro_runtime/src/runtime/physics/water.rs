@@ -8,6 +8,14 @@ pub(super) const WATER_WAVE_FOLLOW_DT: f32 = 1.0 / 60.0;
 pub(super) const WATER_BODY_SAMPLE_TTL: f32 = 0.20;
 pub(super) const WATER_QUERY_LOCAL_EPS: f32 = 0.35;
 pub(super) const WATER_QUERY_MAX_PER_WATER: usize = 128;
+pub(super) const WATER_ENTRY_REARM_TIME: f32 = 0.35;
+const WATER_SURFACE_VELOCITY_FOLLOW: f32 = 0.28;
+
+pub(super) fn water_relative_normal_velocity(body_velocity: f32, surface_velocity: f32) -> f32 {
+    // Readback velocity contains short cell-scale spikes. Let bodies follow the
+    // broad wave motion without feeding those spikes into the buoyancy spring.
+    body_velocity - surface_velocity.clamp(-2.5, 2.5) * WATER_SURFACE_VELOCITY_FOLLOW
+}
 
 pub(super) fn water_force_lod(
     near_distance: f32,
@@ -293,7 +301,10 @@ pub(super) fn water_forces_for_body_2d(
         let stiffness = blend.surface.physics.buoyancy.max(0.05) * 9.5;
         let damping_ratio = 0.9 + blend.surface.physics.drag.max(0.0) * 0.35;
         let damping = 2.0 * stiffness.sqrt() * damping_ratio;
-        let rel_vel = body.velocity.dot(blend.normal) - blend.sample.velocity.y;
+        let rel_vel = water_relative_normal_velocity(
+            body.velocity.dot(blend.normal),
+            blend.sample.velocity.y,
+        );
         let err = (submerged - target_submerged).clamp(-3.0, 3.0);
         let support = 9.81 * contact.min(1.0);
         let accel_y = support + stiffness * err - damping * rel_vel;
@@ -402,7 +413,10 @@ pub(super) fn water_forces_for_body_3d(
             let stiffness = blend.surface.physics.buoyancy.max(0.05) * 9.5;
             let damping_ratio = 0.9 + blend.surface.physics.drag.max(0.0) * 0.35;
             let damping = 2.0 * stiffness.sqrt() * damping_ratio;
-            let rel_vel = body.velocity.dot(blend.normal) - blend.sample.velocity.y;
+            let rel_vel = water_relative_normal_velocity(
+                body.velocity.dot(blend.normal),
+                blend.sample.velocity.y,
+            );
             let err = (submerged - target_submerged).clamp(-3.0, 3.0);
             let support = 9.81 * contact.min(1.0);
             let accel_y = support + stiffness * err - damping * rel_vel;
@@ -528,6 +542,7 @@ pub(super) fn water_body_splashes_3d(
         crate::runtime::WaterBodySampleCache,
     >,
     elapsed: f32,
+    entry_states: &mut AHashMap<NodeID, crate::runtime::WaterEntryState3D>,
 ) -> Vec<crate::runtime::ForceWaterImpact3D> {
     let mut impacts = Vec::new();
     let empty_samples = AHashMap::new();
@@ -535,7 +550,7 @@ pub(super) fn water_body_splashes_3d(
         if body.sleeping {
             continue;
         }
-        for sample in blended_water_samples_3d(WaterBlendQuery3D {
+        let samples = blended_water_samples_3d(WaterBlendQuery3D {
             point: body.pos,
             body_layers: body.collision_layers,
             body_mask: body.collision_mask,
@@ -545,14 +560,38 @@ pub(super) fn water_body_splashes_3d(
             body_id: body.id,
             point_id: 0,
             elapsed,
-        }) {
-            let target = water_target_submerged(body.density);
-            if sample.submerged <= 0.0 || sample.submerged > target * 2.25 {
+        });
+        // Track first hull contact, not center crossing. Center-based contact
+        // toggles while a floating body bobs and can re-arm fake entry foam.
+        let hull_radius = body.float_radius.max(0.0);
+        let touching = samples
+            .iter()
+            .any(|sample| sample.submerged + hull_radius > 0.0);
+        let state =
+            entry_states
+                .entry(body.id)
+                .or_insert_with(|| crate::runtime::WaterEntryState3D {
+                    touching: false,
+                    last_contact_time: elapsed - WATER_ENTRY_REARM_TIME,
+                });
+        let armed = !state.touching && elapsed - state.last_contact_time >= WATER_ENTRY_REARM_TIME;
+        if touching {
+            state.last_contact_time = elapsed;
+        }
+        state.touching = touching;
+        if !armed || !touching {
+            continue;
+        }
+        for sample in samples {
+            let hull_penetration = sample.submerged + hull_radius;
+            let target = (hull_radius * 2.0 * body.density.clamp(0.05, 0.95))
+                .max(water_target_submerged(body.density));
+            if hull_penetration <= 0.0 || hull_penetration > target * 1.35 {
                 continue;
             }
             // real drop-ins only: gentle bobbing must not spawn impact spikes
             let rel_down = sample.sample.velocity.y - body.velocity.dot(sample.normal);
-            if rel_down <= 1.1 {
+            if rel_down <= 1.25 {
                 continue;
             }
             let strength = perro_nodes::water_impact_strength(

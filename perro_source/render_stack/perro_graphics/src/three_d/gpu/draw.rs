@@ -1193,6 +1193,39 @@ pub(super) fn draws_semantically_unchanged(
     prev_revision == next_revision || (prev_revision != u64::MAX && prev == next)
 }
 
+// Depth-safety of one batch for the shared depth-only shaders (shadow depth +
+// depth prepass + mesh-blend depth). Built-in materials replicate exactly:
+// standard vertex transforms, plus the mode-1 base-texture cutout discard.
+// A custom material is replicated only when it has NO shade_vertex hook (the
+// hook's displacement never runs in the depth-only vertex stage) AND is fully
+// opaque (a custom fragment's alpha can diverge from the base-texture cutout
+// the shared mode-1 depth shaders apply). Tokens without a recorded hook flag
+// (pipeline not ensured yet) stay excluded, matching the old conservative
+// behavior.
+pub(super) fn batch_depth_safe(
+    batch: &DrawBatch,
+    custom_vertex_hooks: &AHashMap<u32, bool>,
+) -> bool {
+    match &batch.material_kind {
+        MaterialPipelineKind::Custom(token) => {
+            batch.alpha_mode == 0 && custom_vertex_hooks.get(token).copied() == Some(false)
+        }
+        _ => true,
+    }
+}
+
+// Shadow-caster gate for one rigid/skinned batch (membership in
+// shadow_batch_indices).
+pub(super) fn batch_casts_into_shadow_map(
+    batch: &DrawBatch,
+    custom_vertex_hooks: &AHashMap<u32, bool>,
+) -> bool {
+    batch_depth_safe(batch, custom_vertex_hooks)
+        && !batch.draw_on_top
+        && batch.casts_shadows
+        && batch.alpha_mode != 2
+}
+
 impl Gpu3D {
     pub(super) fn rebuild_batch_views(&mut self) {
         self.opaque_batch_indices.clear();
@@ -1219,13 +1252,12 @@ impl Gpu3D {
                 mesh_blend_depth_active = true;
             }
             // Opaque (0) and cutout (1) feed depth; the depth shaders discard
-            // below the cutoff for mode 1. Blend (2) stays out.
-            let derived_depth_safe = !batch.material_kind.uses_custom_shader();
-            if derived_depth_safe
-                && !batch.draw_on_top
-                && batch.casts_shadows
-                && batch.alpha_mode != 2
-            {
+            // below the cutoff for mode 1. Blend (2) stays out. Custom
+            // materials qualify only when hook-free and opaque (see
+            // batch_depth_safe); pipeline_for_batch's prepass_covered
+            // predicate mirrors the prepass condition below.
+            let derived_depth_safe = batch_depth_safe(batch, &self.custom_pipeline_vertex_hooks);
+            if batch_casts_into_shadow_map(batch, &self.custom_pipeline_vertex_hooks) {
                 self.shadow_batch_indices.push(index);
             }
             if derived_depth_safe
@@ -1333,6 +1365,91 @@ mod tests {
         for (a, e) in actual.iter().zip(expected) {
             assert!((a - e).abs() < 1.0e-5, "{actual:?} vs {expected:?}");
         }
+    }
+
+    fn shadow_test_batch(material_kind: MaterialPipelineKind, alpha_mode: u8) -> DrawBatch {
+        let state_key = draw_batch_state_key(
+            RenderPath3D::Rigid,
+            false,
+            false,
+            alpha_mode,
+            false,
+            &material_kind,
+        );
+        let material_texture_key = MaterialTextureKey::from_base(0);
+        DrawBatch {
+            state_key,
+            render_state: render_state_key(
+                state_key,
+                material_texture_key.state_hash(),
+                0,
+                0,
+                false,
+                alpha_mode,
+                false,
+            ),
+            mesh: perro_graphics_assets::MeshRange {
+                index_start: 0,
+                index_count: 3,
+                base_vertex: 0,
+            },
+            instance_start: 0,
+            instance_count: 1,
+            path: RenderPath3D::Rigid,
+            packed_lod: false,
+            double_sided: false,
+            material_kind,
+            alpha_mode,
+            draw_on_top: false,
+            base_color_texture_slot: 0,
+            material_texture_key,
+            local_center: [0.0, 0.0, 0.0],
+            local_radius: 2.0,
+            occlusion_query: None,
+            disable_hiz_occlusion: false,
+            casts_shadows: true,
+            receives_shadows: true,
+            mesh_blend: false,
+            mesh_blend_screen: false,
+            mesh_blend_params: 0,
+            mesh_blend_depth: false,
+            blend_layers: BitMask::ALL.bits(),
+            blend_mask: BitMask::NONE.bits(),
+            order_index: 0,
+        }
+    }
+
+    #[test]
+    fn custom_material_shadow_casting_follows_vertex_hook_and_alpha() {
+        let mut hooks = AHashMap::new();
+        hooks.insert(7u32, false); // hook-free custom shader
+        hooks.insert(9u32, true); // shader defines shade_vertex
+
+        // Built-ins cast in opaque and cutout modes, unchanged.
+        let standard = shadow_test_batch(MaterialPipelineKind::Standard, 0);
+        assert!(batch_casts_into_shadow_map(&standard, &hooks));
+        let standard_mask = shadow_test_batch(MaterialPipelineKind::Standard, 1);
+        assert!(batch_casts_into_shadow_map(&standard_mask, &hooks));
+
+        // (a) Opaque custom without a vertex hook now casts.
+        let custom_plain = shadow_test_batch(MaterialPipelineKind::Custom(7), 0);
+        assert!(batch_casts_into_shadow_map(&custom_plain, &hooks));
+        assert!(batch_depth_safe(&custom_plain, &hooks));
+
+        // (b) A shade_vertex custom stays out: the depth-only pass would
+        // render its undisplaced geometry.
+        let custom_hooked = shadow_test_batch(MaterialPipelineKind::Custom(9), 0);
+        assert!(!batch_casts_into_shadow_map(&custom_hooked, &hooks));
+        assert!(!batch_depth_safe(&custom_hooked, &hooks));
+
+        // (c) Mask-mode custom stays out: its fragment alpha can diverge from
+        // the base-texture cutout the shared depth shaders replicate.
+        let custom_mask = shadow_test_batch(MaterialPipelineKind::Custom(7), 1);
+        assert!(!batch_casts_into_shadow_map(&custom_mask, &hooks));
+
+        // Unknown token (pipeline never ensured): conservative, no cast.
+        let custom_unknown = shadow_test_batch(MaterialPipelineKind::Custom(42), 0);
+        assert!(!batch_casts_into_shadow_map(&custom_unknown, &hooks));
     }
 
     #[test]

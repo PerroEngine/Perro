@@ -4,6 +4,7 @@ use std::ops::{Deref, DerefMut};
 #[derive(Clone, Debug)]
 pub struct Node2D {
     pub transform: Transform2D,
+    pub top_level: bool,
     pub z_index: i32,
     pub visible: bool,
     pub render_layers: BitMask,
@@ -14,6 +15,7 @@ impl Node2D {
     pub const fn new() -> Self {
         Self {
             transform: Transform2D::IDENTITY,
+            top_level: false,
             visible: true,
             z_index: 0,
             render_layers: BitMask::ALL,

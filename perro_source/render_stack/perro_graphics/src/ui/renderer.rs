@@ -25,6 +25,17 @@ pub(crate) struct UiPanelDraw {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub(crate) struct UiProgressBarDraw {
+    pub(crate) rect: UiRectState,
+    pub(crate) clip_rect: [f32; 4],
+    pub(crate) value: f32,
+    pub(crate) background_fill: Color,
+    pub(crate) background_corner_radii: UiCornerRadiiState,
+    pub(crate) fill: Color,
+    pub(crate) fill_corner_radii: UiCornerRadiiState,
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) struct UiLabelDraw {
     pub(crate) rect: UiRectState,
     pub(crate) clip_rect: [f32; 4],
@@ -117,6 +128,7 @@ pub(crate) struct UiTextEditDraw {
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum UiDraw {
     Panel(UiPanelDraw),
+    ProgressBar(UiProgressBarDraw),
     Shape(UiShapeDraw),
     ColorWheel(UiColorWheelDraw),
     Button(UiButtonDraw),
@@ -150,6 +162,27 @@ impl UiRenderer {
 
     pub fn submit(&mut self, command: UiCommand) {
         match command {
+            UiCommand::UpsertProgressBar {
+                node,
+                rect,
+                clip_rect,
+                value,
+                background_fill,
+                background_corner_radii,
+                fill,
+                fill_corner_radii,
+            } => self.upsert(
+                node,
+                UiDraw::ProgressBar(UiProgressBarDraw {
+                    rect,
+                    clip_rect,
+                    value: value.clamp(0.0, 1.0),
+                    background_fill: background_fill.into(),
+                    background_corner_radii,
+                    fill: fill.into(),
+                    fill_corner_radii,
+                }),
+            ),
             UiCommand::UpsertPanel {
                 node,
                 rect,

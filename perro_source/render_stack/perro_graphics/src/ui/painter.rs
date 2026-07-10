@@ -1,6 +1,6 @@
 use super::renderer::{
     UiCheckboxDraw, UiColorWheelDraw, UiDraw, UiImageDraw, UiLabelDraw, UiNineSliceDraw,
-    UiPanelDraw, UiShapeDraw, UiTextEditDraw,
+    UiPanelDraw, UiProgressBarDraw, UiShapeDraw, UiTextEditDraw,
 };
 use ab_glyph::Font as _;
 use ahash::AHashMap;
@@ -19,6 +19,7 @@ use perro_render_bridge::{
     UiColorPickerMode, UiCornerRadiiState, UiDepthEffectState, UiFillKindState, UiImageScaleState,
     UiLinearGradientState, UiRectState, UiShapeKind, UiTextAlignState,
 };
+use perro_structs::Color;
 use std::sync::Arc;
 
 const UI_RASTER_SCALE: f32 = 3.0;
@@ -236,6 +237,9 @@ impl EpaintUiPainter {
         let is_text = matches!(draw, UiDraw::Label(_) | UiDraw::TextEdit(_));
         match draw {
             UiDraw::Panel(panel) => push_panel_shape(panel, viewport, &mut self.shapes),
+            UiDraw::ProgressBar(progress) => {
+                push_progress_bar_shapes(progress, viewport, &mut self.shapes)
+            }
             UiDraw::Shape(shape) => push_ui_shape(shape, viewport, &mut self.shapes),
             UiDraw::ColorWheel(wheel) => push_color_wheel_shape(wheel, viewport, &mut self.shapes),
             UiDraw::Button(button) => push_panel_shape(&button.panel, viewport, &mut self.shapes),
@@ -910,6 +914,7 @@ fn font_texture_size(fonts: &Fonts) -> [u32; 2] {
 fn ui_rect(draw: &UiDraw) -> UiRectState {
     match draw {
         UiDraw::Panel(panel) => panel.rect,
+        UiDraw::ProgressBar(progress) => progress.rect,
         UiDraw::Shape(shape) => shape.rect,
         UiDraw::ColorWheel(wheel) => wheel.rect,
         UiDraw::Button(button) => button.panel.rect,
@@ -1508,6 +1513,48 @@ fn push_panel_shape(panel: &UiPanelDraw, viewport: [f32; 2], out: &mut Vec<Clipp
     push_panel_stroke_shape(panel, rect, radii, clip_rect, out);
     push_inner_fill_effect(panel.inner_shadow, rect, radii, clip_rect, out);
     push_inner_stroke_effect(panel.inner_highlight, rect, radii, clip_rect, out);
+}
+
+fn push_progress_bar_shapes(
+    progress: &UiProgressBarDraw,
+    viewport: [f32; 2],
+    out: &mut Vec<ClippedShape>,
+) {
+    let panel = |rect, fill, corner_radii| UiPanelDraw {
+        rect,
+        clip_rect: progress.clip_rect,
+        fill,
+        fill_kind: UiFillKindState::Solid,
+        gradient: UiLinearGradientState::default(),
+        stroke: Color::TRANSPARENT,
+        stroke_width: 0.0,
+        corner_radii,
+        outer_shadow: UiDepthEffectState::default(),
+        inner_shadow: UiDepthEffectState::default(),
+        outer_highlight: UiDepthEffectState::default(),
+        inner_highlight: UiDepthEffectState::default(),
+    };
+    push_panel_shape(
+        &panel(
+            progress.rect,
+            progress.background_fill,
+            progress.background_corner_radii,
+        ),
+        viewport,
+        out,
+    );
+    let value = progress.value.clamp(0.0, 1.0);
+    if value <= 0.0 {
+        return;
+    }
+    let mut fill_rect = progress.rect;
+    fill_rect.size[0] *= value;
+    fill_rect.center[0] -= (progress.rect.size[0] - fill_rect.size[0]) * 0.5;
+    push_panel_shape(
+        &panel(fill_rect, progress.fill, progress.fill_corner_radii),
+        viewport,
+        out,
+    );
 }
 
 fn push_panel_fill_shape(

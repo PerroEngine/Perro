@@ -17,6 +17,9 @@ const WATER_FLAG_PAUSED: u32 = 1 << 1;
 const WATER_COASTLINE_INSET_METERS: f32 = 1.0;
 const WATER_CHUNK_QUADS: u32 = 128;
 const WATER_3D_MAX_RENDER_RESOLUTION: u32 = 256;
+// Keep silhouette tessellation dense; fragment normals alone cannot hide long
+// low-poly edges against the horizon. Far mesh stays >=57% per axis (~3x cut).
+const WATER_3D_RENDER_LOD_STRENGTH: f32 = 0.75;
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
@@ -2279,7 +2282,7 @@ fn water_lod_3d(water: &Water3DState, camera: [f32; 3]) -> WaterLodDecision {
         water.lod_min_resolution,
         water_lod_surface_distance([pos[0], pos[2]], [camera[0], camera[2]], radius),
         WATER_3D_MAX_RENDER_RESOLUTION,
-        4.0,
+        WATER_3D_RENDER_LOD_STRENGTH,
     );
     WaterLodDecision {
         grid: WaterGridResolution {
@@ -2841,6 +2844,12 @@ mod tests {
         assert!(WATER_3D_RENDER_WGSL.contains("water_ssr"));
         assert!(WATER_3D_RENDER_WGSL.contains("scene_color_tex"));
         assert!(WATER_3D_RENDER_WGSL.contains("transmitted_rgb"));
+        assert!(WATER_3D_RENDER_WGSL.contains("water_transmission_tap"));
+        assert!(WATER_3D_RENDER_WGSL.contains("depth_weight"));
+        assert!(WATER_3D_RENDER_WGSL.contains("in_scatter"));
+        assert!(WATER_3D_RENDER_WGSL.contains("transmission_luma"));
+        assert!(WATER_3D_RENDER_WGSL.contains("optical_opacity"));
+        assert!(!WATER_3D_RENDER_WGSL.contains("let fresnel_tint"));
         assert!(WATER_3D_RENDER_WGSL.contains("foam_mask"));
         assert!(WATER_3D_RENDER_WGSL.contains("caustic"));
         // render + compute + CPU idle wave models must stay in lockstep
@@ -2996,6 +3005,23 @@ mod tests {
         assert_eq!(culled.grid.render, [0, 0]);
         assert!(mid.ripple_blend < near.ripple_blend);
         assert_eq!(culled.ripple_blend, 0.0);
+    }
+
+    #[test]
+    fn water_lod_3d_keeps_far_surface_dense_enough_for_smooth_specular() {
+        let lod = water_lod_from_distance(
+            [256, 256],
+            [256, 128],
+            [100.0, 200.0, 400.0],
+            [16, 16],
+            400.0,
+            WATER_3D_MAX_RENDER_RESOLUTION,
+            WATER_3D_RENDER_LOD_STRENGTH,
+        );
+
+        assert_eq!(lod.grid.render, [146, 73]);
+        assert!(lod.grid.render[0] >= 256 / 2);
+        assert!(lod.grid.render[1] >= 128 / 2);
     }
 
     #[test]

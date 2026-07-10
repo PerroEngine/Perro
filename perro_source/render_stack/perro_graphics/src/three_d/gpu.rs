@@ -664,6 +664,11 @@ pub struct Gpu3D {
     custom_pipelines_rigid: AHashMap<u32, CustomPipeline>,
     custom_pipelines_multimesh: AHashMap<u32, CustomPipeline>,
     custom_pipeline_tokens: AHashMap<u64, u32>,
+    // Per custom-pipeline token: does the shader define a shade_vertex hook?
+    // The shared depth-only passes (shadow depth + depth prepass) cannot run
+    // the hook, so batch classification consults this to decide whether a
+    // custom batch is depth-safe (see batch_depth_safe in draw.rs).
+    custom_pipeline_vertex_hooks: AHashMap<u32, bool>,
     next_custom_pipeline_token: u32,
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,

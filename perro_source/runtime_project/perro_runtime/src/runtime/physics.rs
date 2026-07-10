@@ -1988,8 +1988,15 @@ impl Runtime {
             });
         }
         let elapsed = self.time.elapsed;
-        let splash_impacts =
-            water_body_splashes_3d(&bodies, &water_index, &self.water_body_samples, elapsed);
+        let splash_impacts = water_body_splashes_3d(
+            &bodies,
+            &water_index,
+            &self.water_body_samples,
+            elapsed,
+            &mut self.water_entry_states_3d,
+        );
+        self.water_entry_states_3d
+            .retain(|body, _| bodies.iter().any(|candidate| candidate.id == *body));
         self.register_water_queries_3d(&bodies, &water_index);
         self.record_water_contacts_3d(&bodies, &water_index, elapsed);
         let water_samples = &self.water_samples;

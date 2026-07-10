@@ -1308,11 +1308,16 @@ impl NodeAPI for Runtime {
     }
 
     fn set_global_transform_2d(&mut self, node_id: perro_ids::NodeID, global: Transform2D) -> bool {
-        let parent = match self.nodes.get(node_id) {
-            Some(node) => node.parent,
+        let (parent, top_level) = match self.nodes.get(node_id) {
+            Some(node) => {
+                match node.with_base_ref::<Node2D, _>(|base| (node.parent, base.top_level)) {
+                    Some(value) => value,
+                    None => return false,
+                }
+            }
             None => return false,
         };
-        let parent_global = if parent.is_nil() {
+        let parent_global = if top_level || parent.is_nil() {
             None
         } else {
             self.nodes
@@ -1342,11 +1347,16 @@ impl NodeAPI for Runtime {
     }
 
     fn set_global_transform_3d(&mut self, node_id: perro_ids::NodeID, global: Transform3D) -> bool {
-        let parent = match self.nodes.get(node_id) {
-            Some(node) => node.parent,
+        let (parent, top_level) = match self.nodes.get(node_id) {
+            Some(node) => {
+                match node.with_base_ref::<Node3D, _>(|base| (node.parent, base.top_level)) {
+                    Some(value) => value,
+                    None => return false,
+                }
+            }
             None => return false,
         };
-        let parent_global = if parent.is_nil() {
+        let parent_global = if top_level || parent.is_nil() {
             None
         } else {
             self.nodes

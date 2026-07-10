@@ -16,8 +16,8 @@ use perro_ids::{NodeID, NodeTag, TagID};
 use perro_structs::{Transform2D, Transform3D};
 use perro_ui::{
     UiAnimatedImage, UiButton, UiCheckbox, UiColorPicker, UiDropdown, UiGrid, UiHLayout, UiImage,
-    UiImageButton, UiLabel, UiLayout, UiNineSlice, UiNode, UiNodeBase, UiPanel, UiScrollContainer,
-    UiShape, UiTextBlock, UiTextBox, UiTreeList, UiVLayout,
+    UiImageButton, UiLabel, UiLayout, UiNineSlice, UiNode, UiNodeBase, UiPanel, UiProgressBar,
+    UiScrollContainer, UiShape, UiTextBlock, UiTextBox, UiTreeList, UiVLayout,
 };
 use std::borrow::Cow;
 
@@ -954,6 +954,7 @@ define_scene_nodes! {
         // visual
         UiCameraStream => (UiNode, UiCameraStream, Boxed, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         UiPanel => (UiNode, UiPanel, Boxed, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
+        UiProgressBar => (UiNode, UiProgressBar, Boxed, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         UiButton => (UiNode, UiButton, Boxed, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         UiDropdown => (UiNode, UiDropdown, Boxed, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         UiColorPicker => (UiNode, UiColorPicker, Boxed, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),

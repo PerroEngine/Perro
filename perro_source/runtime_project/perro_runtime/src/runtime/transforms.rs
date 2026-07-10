@@ -231,11 +231,9 @@ impl Runtime {
         let mut hops = 0usize;
 
         while hops < max_hops {
-            let Some(parent) = self
-                .nodes
-                .get(cursor)
-                .and_then(|node| node.with_base_ref::<Node2D, _>(|_| node.parent))
-            else {
+            let Some((parent, top_level)) = self.nodes.get(cursor).and_then(|node| {
+                node.with_base_ref::<Node2D, _>(|base| (node.parent, base.top_level))
+            }) else {
                 break;
             };
             let index = cursor.index() as usize;
@@ -248,6 +246,9 @@ impl Runtime {
             }
             chain.push(cursor);
 
+            if top_level {
+                break;
+            }
             if parent.is_nil() {
                 break;
             }
@@ -259,12 +260,15 @@ impl Runtime {
         }
 
         for chain_id in chain.iter().rev().copied() {
-            let Some((local, parent)) = self.nodes.get(chain_id).and_then(|node| {
-                node.with_base_ref::<Node2D, _>(|base| (base.transform, node.parent))
+            let Some((local, parent, top_level)) = self.nodes.get(chain_id).and_then(|node| {
+                node.with_base_ref::<Node2D, _>(|base| {
+                    (base.transform, node.parent, base.top_level)
+                })
             }) else {
                 continue;
             };
-            let parent_is_2d = !parent.is_nil()
+            let parent_is_2d = !top_level
+                && !parent.is_nil()
                 && self
                     .nodes
                     .get(parent)
@@ -324,11 +328,9 @@ impl Runtime {
         let mut hops = 0usize;
 
         while hops < max_hops {
-            let Some(parent) = self
-                .nodes
-                .get(cursor)
-                .and_then(|node| node.with_base_ref::<Node3D, _>(|_| node.parent))
-            else {
+            let Some((parent, top_level)) = self.nodes.get(cursor).and_then(|node| {
+                node.with_base_ref::<Node3D, _>(|base| (node.parent, base.top_level))
+            }) else {
                 break;
             };
             let index = cursor.index() as usize;
@@ -341,6 +343,9 @@ impl Runtime {
             }
             chain.push(cursor);
 
+            if top_level {
+                break;
+            }
             if parent.is_nil() {
                 break;
             }
@@ -352,12 +357,15 @@ impl Runtime {
         }
 
         for chain_id in chain.iter().rev().copied() {
-            let Some((local, parent)) = self.nodes.get(chain_id).and_then(|node| {
-                node.with_base_ref::<Node3D, _>(|base| (base.transform, node.parent))
+            let Some((local, parent, top_level)) = self.nodes.get(chain_id).and_then(|node| {
+                node.with_base_ref::<Node3D, _>(|base| {
+                    (base.transform, node.parent, base.top_level)
+                })
             }) else {
                 continue;
             };
-            let parent_is_3d = !parent.is_nil()
+            let parent_is_3d = !top_level
+                && !parent.is_nil()
                 && self
                     .nodes
                     .get(parent)

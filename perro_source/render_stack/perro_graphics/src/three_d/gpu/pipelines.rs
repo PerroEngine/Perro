@@ -56,6 +56,12 @@ impl Gpu3D {
             let src = std::str::from_utf8(&bytes).ok()?;
             Some(Cow::Owned(src.to_string()))
         })?;
+        // Record whether this shader defines a shade_vertex hook (same probe
+        // as build_material_shader composition). Depth-only passes consult
+        // this: a hook displaces geometry the shared depth shaders can't
+        // replicate, so hooked customs stay out of shadow/prepass batches.
+        self.custom_pipeline_vertex_hooks
+            .insert(token, src.contains("shade_vertex("));
         let wgsl = if path == RenderPath3D::MultiMesh {
             build_custom_multimesh_material_shader(src.as_ref(), lighting)
         } else if path == RenderPath3D::Rigid {
@@ -241,7 +247,7 @@ impl Gpu3D {
             && !batch.draw_on_top
             && batch.alpha_mode != 2
             && !batch.mesh_blend
-            && !batch.material_kind.uses_custom_shader();
+            && batch_depth_safe(batch, &self.custom_pipeline_vertex_hooks);
         // Alpha-blended batches must not write depth, or transparents drawn
         // first occlude transparents behind them; the *_blend pipelines are
         // the same state with depth write off.

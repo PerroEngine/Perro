@@ -200,6 +200,7 @@ fn cs_main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let shore = max(edge, max(coast.y, neighbor_shore * 0.92)) * (1.0 - coast.x * 0.40);
     let wake = coast.z * w.wave.w * 1.45;
     let prev_cell = cells[cell_idx];
+    let dt = clamp(w.wave_profile.z, 0.0, 0.050);
     let xl = x_cell - select(0u, 1u, x_cell > 0u);
     let xr = min(x_cell + 1u, width - 1u);
     let yd = y_cell - select(0u, 1u, y_cell > 0u);
@@ -215,7 +216,9 @@ fn cs_main(@builtin(global_invocation_id) gid: vec3<u32>) {
     // when this cell AND its neighborhood carry no wave energy
     let energy = abs(prev_cell.x) + abs(prev_cell.y) + abs(laplacian);
     if shore <= 0.0 && abs(wake) <= 0.0 && coast.w <= 0.0 && energy <= 0.0004 {
-        next_cells[cell_idx] = vec4<f32>(prev_cell.x * 0.985, prev_cell.y * 0.94, prev_cell.z * 0.965, 0.0);
+        // Foam outlives wave energy.  Keep its decay time independent of the
+        // idle shortcut so quiet patches do not vanish as cells fall asleep.
+        next_cells[cell_idx] = vec4<f32>(prev_cell.x * 0.985, prev_cell.y * 0.94, prev_cell.z * (1.0 - dt * 0.38), 0.0);
         return;
     }
     let edge_noise = (sin((local.x * 0.31 + local.y * 0.47) + phase * 7.0) + sin((local.x * -0.53 + local.y * 0.29) - phase * 4.3)) * 0.34 * w.model_z.w;
@@ -233,7 +236,6 @@ fn cs_main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let crash_energy = crash_wave * crash_wave * (0.72 + crash_wave * 0.28);
     let crash_up = shore * (1.18 + coast_push * 1.12 + coast_slide * 0.24) * crash_energy * w.model_y.w * w.wave.y * 2.30;
     let crash = (crash_up + max(reflected, 0.0) * 0.88) * (0.70 + spill * 0.68) + diffusion * w.wave.y * 1.08;
-    let dt = clamp(w.wave_profile.z, 0.0, 0.050);
     let shore_damp = 1.0 - shore * (0.72 + coast_push * 0.44 + coast_slide * 0.16) * w.coastline.w;
     let damping = clamp(w.wave.z * shore_damp, 0.0, 0.999);
     let step_t = clamp(dt * 60.0, 0.0, 1.0);
@@ -246,10 +248,30 @@ fn cs_main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let impact_foam = smoothstep(0.06, 0.84, abs(wake) + abs(crash)) * foam_strength * 0.62;
     let shore_foam = smoothstep(0.18, 1.20, crash + shore * 0.62) * (1.0 - smoothstep(1.42, 2.45, crash)) * w.coastline.x * foam_strength * 1.12;
     let foam_target = clamp(wave_foam + impact_foam + shore_foam + spill * max(abs(wake), shore) * 0.28, 0.0, 1.0);
-    // soft rise (~0.3s) + slow decay (~2s) so foam fades instead of popping
-    let foam_rise = clamp(step_t * 3.5, 0.0, 1.0);
-    let foam_decay = 1.0 - 0.055 * step_t;
-    let foam = clamp(max(prev_cell.z * foam_decay, mix(prev_cell.z, foam_target, foam_rise)), 0.0, 1.0);
+    // Carry foam across cells before its slow attack/decay.  This small
+    // neighbor exchange makes wake foam spread as one patch instead of a set
+    // of cells crossing the visibility threshold on different frames.
+    let neighbor_foam = (
+        water_prev_cell(w, xl, y_cell, width, height_cells).z
+        + water_prev_cell(w, xr, y_cell, width, height_cells).z
+        + water_prev_cell(w, x_cell, yd, width, height_cells).z
+        + water_prev_cell(w, x_cell, yu, width, height_cells).z
+    ) * 0.25;
+    let flow = w.flow_wind.xy;
+    let upstream_x = select(xr, xl, flow.x >= 0.0);
+    let upstream_y = select(yu, yd, flow.y >= 0.0);
+    let upstream_foam = select(
+        water_prev_cell(w, x_cell, upstream_y, width, height_cells).z,
+        water_prev_cell(w, upstream_x, y_cell, width, height_cells).z,
+        abs(flow.x) >= abs(flow.y),
+    );
+    let advect_mix = clamp(length(flow) * dt * 0.12, 0.0, 0.10);
+    let carried_foam = mix(mix(prev_cell.z, neighbor_foam, clamp(dt * 0.85, 0.0, 0.08)), upstream_foam, advect_mix);
+    // ~0.4s attack + ~1.8s half-life.  Use dt, not the normalized 60 Hz
+    // simulation step: step_t reaches 1 each normal frame and caused pops.
+    let foam_rise = clamp(dt * 2.6, 0.0, 0.13);
+    let foam_decay = 1.0 - dt * 0.38;
+    let foam = clamp(max(carried_foam * foam_decay, mix(carried_foam, foam_target, foam_rise)), 0.0, 1.0);
     let goal_height = wake * 0.55 + crash;
     let stiffness = mix(7.0, 16.0, clamp(w.wave.y / 2.0, 0.0, 1.0)) * (1.0 + shore * 0.35 + spill * 0.20);
     let wave_speed = mix(16.0, 34.0, clamp(w.wave.y / 2.0, 0.0, 1.0));

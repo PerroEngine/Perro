@@ -418,6 +418,7 @@ impl Runtime {
         self.clear_physics();
         self.force_water_impacts_2d.clear();
         self.force_water_impacts_3d.clear();
+        self.water_entry_states_3d.clear();
         self.pending_force_emitters_2d.clear();
         self.pending_force_emitters_3d.clear();
         self.scripts = Default::default();

@@ -1,6 +1,16 @@
 use super::*;
 
 #[test]
+fn progress_bar_clamps_value_and_reports_percent() {
+    let mut bar = UiProgressBar::new();
+    bar.set_value(1.5);
+    assert_eq!(bar.value, 1.0);
+    assert_eq!(bar.percent(), 100.0);
+    bar.set_value(-0.5);
+    assert_eq!(bar.value, 0.0);
+}
+
+#[test]
 fn percent_position_resolves_against_viewport() {
     let mut transform = UiTransform::new();
     transform.position = UiVector2::percent(50.0, 50.0);

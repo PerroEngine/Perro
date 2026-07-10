@@ -135,6 +135,12 @@ pub(crate) struct WaterBodyContact3D {
     pub(crate) foam_amount: f32,
 }
 
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct WaterEntryState3D {
+    pub(crate) touching: bool,
+    pub(crate) last_contact_time: f32,
+}
+
 /// Reusable scratch maps 4 scene resource-ref scan.
 ///
 /// Kept on runtime so the per-frame scan reuse allocs instead of building +
@@ -227,6 +233,9 @@ pub struct Runtime {
     pending_water_queries_3d: AHashMap<NodeID, Vec<PendingWaterQuery>>,
     water_contacts_2d: AHashMap<NodeID, Vec<WaterBodyContact2D>>,
     water_contacts_3d: AHashMap<NodeID, Vec<WaterBodyContact3D>>,
+    /// Entry splash gate. Bodies must stay clear of water before another
+    /// surface crossing counts as a foreign-body impact.
+    water_entry_states_3d: AHashMap<NodeID, WaterEntryState3D>,
     water_rigid_body_ids_2d_cache: Vec<NodeID>,
     water_rigid_body_ids_3d_cache: Vec<NodeID>,
     water_collision_body_ids_2d_cache: Vec<NodeID>,
@@ -507,6 +516,7 @@ impl Runtime {
             pending_water_queries_3d: AHashMap::new(),
             water_contacts_2d: AHashMap::new(),
             water_contacts_3d: AHashMap::new(),
+            water_entry_states_3d: AHashMap::new(),
             water_rigid_body_ids_2d_cache: Vec::new(),
             water_rigid_body_ids_3d_cache: Vec::new(),
             water_collision_body_ids_2d_cache: Vec::new(),
