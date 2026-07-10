@@ -5,9 +5,10 @@ use perro_asset_formats::pmesh::{
     FLAG_HAS_UV0 as PMESH_FLAG_HAS_UV0, FLAG_HAS_UV1 as PMESH_FLAG_HAS_UV1,
     FLAG_HAS_WEIGHTS as PMESH_FLAG_HAS_WEIGHTS, FLAG_PAYLOAD_RAW as PMESH_FLAG_PAYLOAD_RAW,
     FLAG_WEIGHTS_UNORM8 as PMESH_FLAG_WEIGHTS_UNORM8, MAGIC as PMESH_MAGIC,
+    MAX_COMPRESSED_BYTES as PMESH_MAX_COMPRESSED_BYTES, MAX_RAW_BYTES as PMESH_MAX_RAW_BYTES,
     VERSION as PMESH_VERSION, VERSION_V2 as PMESH_VERSION_V2,
 };
-use perro_io::{decompress_zlib, load_asset};
+use perro_io::{decompress_zlib_limited, load_asset};
 use perro_meshlets::{
     DEFAULT_LOD_TARGET_RATIOS, LodSurfaceRange, LodVertex, pack_meshlets_from_positions,
 };
@@ -646,10 +647,6 @@ pub fn decode_pmesh(bytes: &[u8]) -> Option<DecodedMesh> {
     let lod_count = u32::from_le_bytes(bytes[29..33].try_into().ok()?) as usize;
     let raw_len = u32::from_le_bytes(bytes[33..37].try_into().ok()?) as usize;
     let blend_shape_count = u32::from_le_bytes(bytes[37..41].try_into().ok()?) as usize;
-    let raw = decode_static_payload(flags, &bytes[header_len..])?;
-    if raw.len() != raw_len {
-        return None;
-    }
 
     let has_normal = (flags & PMESH_FLAG_HAS_NORMAL) != 0;
     let has_uv0 = (flags & PMESH_FLAG_HAS_UV0) != 0;
@@ -683,7 +680,11 @@ pub fn decode_pmesh(bytes: &[u8]) -> Option<DecodedMesh> {
         .checked_add(meshlet_bytes)?
         .checked_add(lod_bytes)?
         .checked_add(blend_shape_bytes)?;
-    if raw.len() < required {
+    if raw_len != required || required > PMESH_MAX_RAW_BYTES {
+        return None;
+    }
+    let raw = decode_static_payload(flags, &bytes[header_len..], required)?;
+    if raw.len() != required {
         return None;
     }
 
@@ -1035,11 +1036,14 @@ fn append_primitive_blend_shapes(
     }
 }
 
-fn decode_static_payload(flags: u32, payload: &[u8]) -> Option<Vec<u8>> {
+fn decode_static_payload(flags: u32, payload: &[u8], expected_raw_len: usize) -> Option<Vec<u8>> {
     if (flags & PMESH_FLAG_PAYLOAD_RAW) != 0 {
-        Some(payload.to_vec())
+        (payload.len() == expected_raw_len).then(|| payload.to_vec())
     } else {
-        decompress_zlib(payload).ok()
+        if payload.len() > PMESH_MAX_COMPRESSED_BYTES {
+            return None;
+        }
+        decompress_zlib_limited(payload, expected_raw_len).ok()
     }
 }
 
@@ -1072,4 +1076,45 @@ fn quantize_skin_weights(weights: [f32; 4]) -> UnitVector4 {
         bytes[max_idx] = fixed;
     }
     UnitVector4::from_u8(bytes)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::decode_pmesh;
+
+    #[test]
+    fn pmesh_rejects_tiny_declared_size_before_large_inflate() {
+        let compressed = perro_io::compress_zlib_best(&vec![0u8; 4096]).expect("compress");
+        let mut pmesh = Vec::new();
+        pmesh.extend_from_slice(b"PMESH");
+        pmesh.extend_from_slice(&1u32.to_le_bytes());
+        pmesh.extend_from_slice(&0u32.to_le_bytes());
+        pmesh.extend_from_slice(&1u32.to_le_bytes());
+        pmesh.extend_from_slice(&0u32.to_le_bytes());
+        pmesh.extend_from_slice(&0u32.to_le_bytes());
+        pmesh.extend_from_slice(&0u32.to_le_bytes());
+        pmesh.extend_from_slice(&0u32.to_le_bytes());
+        pmesh.extend_from_slice(&1u32.to_le_bytes());
+        pmesh.extend_from_slice(&0u32.to_le_bytes());
+        pmesh.extend_from_slice(&compressed);
+
+        assert!(decode_pmesh(&pmesh).is_none());
+    }
+
+    #[test]
+    fn pmesh_rejects_raw_size_over_hard_cap_before_payload_alloc() {
+        let mut pmesh = Vec::new();
+        pmesh.extend_from_slice(b"PMESH");
+        pmesh.extend_from_slice(&1u32.to_le_bytes());
+        pmesh.extend_from_slice(&0u32.to_le_bytes());
+        pmesh.extend_from_slice(&u32::MAX.to_le_bytes());
+        pmesh.extend_from_slice(&0u32.to_le_bytes());
+        pmesh.extend_from_slice(&0u32.to_le_bytes());
+        pmesh.extend_from_slice(&0u32.to_le_bytes());
+        pmesh.extend_from_slice(&0u32.to_le_bytes());
+        pmesh.extend_from_slice(&u32::MAX.to_le_bytes());
+        pmesh.extend_from_slice(&0u32.to_le_bytes());
+
+        assert!(decode_pmesh(&pmesh).is_none());
+    }
 }

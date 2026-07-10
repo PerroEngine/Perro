@@ -145,7 +145,7 @@ pub fn decode_pmesh_trimesh(bytes: &[u8], sx: f32, sy: f32, sz: f32) -> Option<T
     let raw_len = u32::from_le_bytes(bytes[29..33].try_into().ok()?) as usize;
     let payload_start = 33usize;
 
-    let raw = decode_pmesh_payload(flags, &bytes[payload_start..])?;
+    let raw = decode_pmesh_payload(flags, &bytes[payload_start..], raw_len)?;
     if raw.len() != raw_len {
         return None;
     }
@@ -205,7 +205,7 @@ pub fn decode_render_pmesh_trimesh(bytes: &[u8], sx: f32, sy: f32, sz: f32) -> O
     let meshlet_count = u32::from_le_bytes(bytes[25..29].try_into().ok()?) as usize;
     let lod_count = u32::from_le_bytes(bytes[29..33].try_into().ok()?) as usize;
     let raw_len = u32::from_le_bytes(bytes[33..37].try_into().ok()?) as usize;
-    let raw = decode_pmesh_payload(flags, &bytes[41..])?;
+    let raw = decode_pmesh_payload(flags, &bytes[41..], raw_len)?;
     if raw.len() != raw_len {
         return None;
     }
@@ -284,11 +284,21 @@ pub fn decode_render_pmesh_trimesh(bytes: &[u8], sx: f32, sy: f32, sz: f32) -> O
     Some((vertices, triangles))
 }
 
-pub fn decode_pmesh_payload(flags: u32, payload: &[u8]) -> Option<Vec<u8>> {
+pub fn decode_pmesh_payload(
+    flags: u32,
+    payload: &[u8],
+    expected_raw_len: usize,
+) -> Option<Vec<u8>> {
+    if expected_raw_len > perro_asset_formats::pmesh::MAX_RAW_BYTES {
+        return None;
+    }
     if (flags & PMESH_FLAG_PAYLOAD_RAW) != 0 {
-        Some(payload.to_vec())
+        (payload.len() == expected_raw_len).then(|| payload.to_vec())
     } else {
-        decompress_zlib(payload).ok()
+        if payload.len() > perro_asset_formats::pmesh::MAX_COMPRESSED_BYTES {
+            return None;
+        }
+        perro_io::decompress_zlib_limited(payload, expected_raw_len).ok()
     }
 }
 

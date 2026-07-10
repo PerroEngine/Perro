@@ -4,7 +4,7 @@ use perro_asset_formats::pmesh::{
     VERSION as PMESH_VERSION,
 };
 use perro_ids::{NodeID, parse_hashed_source_uri, string_to_u64};
-use perro_io::{decompress_zlib, load_asset};
+use perro_io::load_asset;
 use perro_nodes::{
     CollisionShape2D, CollisionShape3D, Shape2D, Shape3D, TileMap2D, Triangle2DKind,
 };
