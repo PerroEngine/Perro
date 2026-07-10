@@ -2,6 +2,8 @@ use ahash::AHashMap;
 use perro_ids::{MaterialID, MeshID, TextureID};
 use perro_render_bridge::{Material3D, Mesh3D};
 
+pub const MAX_EXPLICIT_RESOURCE_INDEX: u32 = 1_048_576;
+
 #[derive(Debug, Clone)]
 pub(crate) struct DecodedTextureRgba {
     pub rgba: Vec<u8>,
@@ -58,7 +60,7 @@ impl SlotArena {
 
     #[inline]
     fn occupy_parts(&mut self, index: u32, generation: u32) -> bool {
-        if index == 0 {
+        if index == 0 || index > MAX_EXPLICIT_RESOURCE_INDEX {
             return false;
         }
         let slot = index as usize - 1;
@@ -115,7 +117,6 @@ pub struct ResourceStore {
     texture_by_source: AHashMap<u64, TextureID>,
     texture_source_by: AHashMap<TextureID, String>,
     texture_source_by_slot: Vec<Option<String>>,
-    decoded_texture_by_source: AHashMap<u64, DecodedTextureRgba>,
     decoded_texture_by_id: AHashMap<TextureID, DecodedTextureRgba>,
     material_by: AHashMap<MaterialID, Material3D>,
     material_by_source: AHashMap<u64, MaterialID>,
@@ -132,6 +133,7 @@ pub struct ResourceStore {
     mesh_ref_ids: Vec<MeshID>,
     texture_ref_ids: Vec<TextureID>,
     material_ref_ids: Vec<MaterialID>,
+    rejected_explicit_ids: u64,
 }
 
 impl ResourceStore {
@@ -154,6 +156,20 @@ impl ResourceStore {
     #[inline]
     pub fn active_texture_count(&self) -> usize {
         self.texture_meta_by.len()
+    }
+
+    #[inline]
+    pub fn rejected_explicit_id_count(&self) -> u64 {
+        self.rejected_explicit_ids
+    }
+
+    #[inline]
+    fn reject_oversized_explicit_id(&mut self, index: u32) -> bool {
+        if index <= MAX_EXPLICIT_RESOURCE_INDEX {
+            return false;
+        }
+        self.rejected_explicit_ids = self.rejected_explicit_ids.saturating_add(1);
+        true
     }
 
     #[cfg(test)]
@@ -404,7 +420,6 @@ impl ResourceStore {
         let key = source_key(source);
         self.texture_by_source.remove(&key);
         self.texture_source_by.remove(&id);
-        self.decoded_texture_by_source.remove(&key);
         self.decoded_texture_by_id.remove(&id);
         self.clear_texture_meta(id);
         self.clear_texture_source_slot_if(id.index(), source);
@@ -467,7 +482,9 @@ impl ResourceStore {
             }
             self.purge_stale_mesh_source(source, existing);
         }
-        if !self.meshes.occupy_parts(id.index(), id.generation()) {
+        if self.reject_oversized_explicit_id(id.index())
+            || !self.meshes.occupy_parts(id.index(), id.generation())
+        {
             // Requested slot already occupied; allocate a fresh slot instead of
             // returning nil, so source->mesh mapping stays valid.
             return self.create_mesh(source, reserved);
@@ -540,7 +557,9 @@ impl ResourceStore {
             }
             self.purge_stale_texture_source(source, existing);
         }
-        if !self.textures.occupy_parts(id.index(), id.generation()) {
+        if self.reject_oversized_explicit_id(id.index())
+            || !self.textures.occupy_parts(id.index(), id.generation())
+        {
             return self.create_texture(source, reserved);
         }
         self.texture_by_source.insert(key, id);
@@ -626,7 +645,9 @@ impl ResourceStore {
             }
             self.purge_stale_material_source(source, existing);
         }
-        if !self.materials.occupy_parts(id.index(), id.generation()) {
+        if self.reject_oversized_explicit_id(id.index())
+            || !self.materials.occupy_parts(id.index(), id.generation())
+        {
             return self.create_material(material, source, reserved);
         }
         self.material_by.insert(id, material);
@@ -678,11 +699,7 @@ impl ResourceStore {
         if !self.has_texture(id) {
             return false;
         }
-        self.decoded_texture_by_id.insert(id, texture.clone());
-        if let Some(source) = self.texture_source(id).map(str::to_string) {
-            self.decoded_texture_by_source
-                .insert(source_key(&source), texture);
-        }
+        self.decoded_texture_by_id.insert(id, texture);
         true
     }
 
@@ -718,10 +735,6 @@ impl ResourceStore {
                     },
                 );
             }
-        }
-        // drop any stale by_source duplicate left from initial create/load.
-        if let Some(source) = self.texture_source_by.get(&id) {
-            self.decoded_texture_by_source.remove(&source_key(source));
         }
         true
     }
@@ -769,11 +782,6 @@ impl ResourceStore {
             texture.rgba[dst_start..dst_start + region_stride]
                 .copy_from_slice(&rgba[src_start..src_start + region_stride]);
         }
-        let updated = texture.clone();
-        if let Some(source) = self.texture_source_by.get(&id) {
-            self.decoded_texture_by_source
-                .insert(source_key(source), updated);
-        }
         true
     }
 
@@ -783,10 +791,6 @@ impl ResourceStore {
         source: &str,
     ) -> Option<&DecodedTextureRgba> {
         let key = source_key(source);
-        if let Some(decoded) = self.decoded_texture_by_source.get(&key) {
-            return Some(decoded);
-        }
-        // stream textures store only by_id (no by_source duplicate); fall back.
         let id = self.texture_by_source.get(&key).copied()?;
         self.decoded_texture_by_id.get(&id)
     }
@@ -1269,7 +1273,6 @@ impl ResourceStore {
             if self.texture_by_source.get(&key).copied() == Some(id) {
                 self.texture_by_source.remove(&key);
             }
-            self.decoded_texture_by_source.remove(&key);
             self.clear_texture_source_slot_if(id.index(), &source);
         }
         self.decoded_texture_by_id.remove(&id);
