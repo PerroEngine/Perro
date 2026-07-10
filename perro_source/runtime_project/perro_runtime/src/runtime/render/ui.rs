@@ -1185,8 +1185,15 @@ impl Runtime {
                 label.base.visible = false;
             }
         }
-        option_buttons.resize(option_count, NodeID::nil());
-        option_labels.resize(option_count, NodeID::nil());
+        // Keep the high-water allocation. Shrink only hides unused nodes, so
+        // later growth reuses the same arena slots, schedules, names, and
+        // parent-child links.
+        if option_buttons.len() < option_count {
+            option_buttons.resize(option_count, NodeID::nil());
+        }
+        if option_labels.len() < option_count {
+            option_labels.resize(option_count, NodeID::nil());
+        }
         for idx in 0..option_count {
             if !self.dropdown_internal_valid(option_buttons[idx], dropdown_id, "button") {
                 option_buttons[idx] = self.insert_dropdown_option_button(dropdown_id, idx);
@@ -1294,10 +1301,11 @@ impl Runtime {
             label.set_text(selected);
         }
         for (idx, button_id) in option_buttons.iter().copied().enumerate() {
+            let active = idx < labels.len();
             if let Some(node) = self.nodes.get_mut_untracked(button_id)
                 && let SceneNodeData::UiButton(button) = &mut node.data
             {
-                button.base.visible = open && base_visible;
+                button.base.visible = active && open && base_visible;
                 button.base.layout.size = UiVector2::new(
                     perro_ui::UiUnit::Percent(100.0),
                     perro_ui::UiUnit::Pixels(option_height),
@@ -1315,8 +1323,10 @@ impl Runtime {
                 .get_mut_untracked(option_labels.get(idx).copied().unwrap_or_default())
                 && let SceneNodeData::UiLabel(label) = &mut node.data
             {
-                label.base.visible = open && base_visible;
-                label.set_text(labels.get(idx).cloned().unwrap_or_default());
+                label.base.visible = active && open && base_visible;
+                if let Some(text) = labels.get(idx) {
+                    label.set_text(text.clone());
+                }
             }
         }
         self.mark_ui_dirty(

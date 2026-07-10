@@ -4190,6 +4190,144 @@ fn dropdown_options_match_button_width() {
 }
 
 #[test]
+fn dropdown_option_churn_reuses_internal_nodes() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(400, 300);
+
+    let mut dropdown = perro_ui::UiDropdown::new();
+    dropdown.layout.size = UiVector2::pixels(180.0, 32.0);
+    dropdown.open = true;
+    for idx in 0..4 {
+        dropdown.options.push(perro_ui::UiDropdownOption::new(
+            format!("Option {idx}"),
+            perro_variant::Variant::from(idx),
+        ));
+    }
+    let dropdown_id = insert_ui_node(&mut runtime, SceneNodeData::UiDropdown(Box::new(dropdown)));
+
+    runtime.extract_render_ui_commands();
+    let (buttons, labels) = runtime
+        .nodes
+        .get(dropdown_id)
+        .and_then(|node| match &node.data {
+            SceneNodeData::UiDropdown(dropdown) => Some((
+                dropdown.internal_option_buttons.clone(),
+                dropdown.internal_option_labels.clone(),
+            )),
+            _ => None,
+        })
+        .expect("dropdown internals");
+    let arena_len = runtime.nodes.len();
+    let slot_count = runtime.nodes.slot_count();
+    let update_schedule_len = runtime.internal_updates.internal_update_nodes.len();
+    let fixed_schedule_len = runtime.internal_updates.internal_fixed_update_nodes.len();
+    let dropdown_children = runtime.nodes.get(dropdown_id).unwrap().children.len();
+
+    for cycle in 0..16 {
+        if let Some(mut node) = runtime.nodes.get_mut(dropdown_id)
+            && let SceneNodeData::UiDropdown(dropdown) = &mut node.data
+        {
+            dropdown.options.truncate(1);
+            dropdown.options[0].label = format!("Small {cycle}").into();
+            dropdown.open = true;
+        }
+        runtime.sync_dropdown_internal_nodes(dropdown_id);
+
+        assert!(buttons.iter().copied().skip(1).all(|id| {
+            matches!(
+                runtime.nodes.get(id).map(|node| &node.data),
+                Some(SceneNodeData::UiButton(button)) if !button.base.visible
+            )
+        }));
+        assert!(labels.iter().copied().skip(1).all(|id| {
+            matches!(
+                runtime.nodes.get(id).map(|node| &node.data),
+                Some(SceneNodeData::UiLabel(label)) if !label.base.visible
+            )
+        }));
+        assert!(matches!(
+            runtime.nodes.get(labels[0]).map(|node| &node.data),
+            Some(SceneNodeData::UiLabel(label)) if label.text == format!("Small {cycle}")
+        ));
+
+        if let Some(mut node) = runtime.nodes.get_mut(dropdown_id)
+            && let SceneNodeData::UiDropdown(dropdown) = &mut node.data
+        {
+            dropdown.options.clear();
+            for idx in 0..4 {
+                dropdown.options.push(perro_ui::UiDropdownOption::new(
+                    format!("Cycle {cycle} option {idx}"),
+                    perro_variant::Variant::from(idx),
+                ));
+            }
+        }
+        runtime.sync_dropdown_internal_nodes(dropdown_id);
+
+        let (current_buttons, current_labels) = runtime
+            .nodes
+            .get(dropdown_id)
+            .and_then(|node| match &node.data {
+                SceneNodeData::UiDropdown(dropdown) => Some((
+                    &dropdown.internal_option_buttons,
+                    &dropdown.internal_option_labels,
+                )),
+                _ => None,
+            })
+            .expect("dropdown internals");
+        assert_eq!(current_buttons, &buttons);
+        assert_eq!(current_labels, &labels);
+        assert!(buttons.iter().all(|id| {
+            matches!(
+                runtime.nodes.get(*id).map(|node| &node.data),
+                Some(SceneNodeData::UiButton(button)) if button.base.visible
+            )
+        }));
+        for (idx, label_id) in labels.iter().copied().enumerate() {
+            assert!(matches!(
+                runtime.nodes.get(label_id).map(|node| &node.data),
+                Some(SceneNodeData::UiLabel(label))
+                    if label.base.visible && label.text == format!("Cycle {cycle} option {idx}")
+            ));
+        }
+
+        assert_eq!(runtime.nodes.len(), arena_len);
+        assert_eq!(runtime.nodes.slot_count(), slot_count);
+        assert_eq!(
+            runtime.internal_updates.internal_update_nodes.len(),
+            update_schedule_len
+        );
+        assert_eq!(
+            runtime.internal_updates.internal_fixed_update_nodes.len(),
+            fixed_schedule_len
+        );
+        assert_eq!(
+            runtime.nodes.get(dropdown_id).unwrap().children.len(),
+            dropdown_children
+        );
+        assert_eq!(
+            runtime
+                .nodes
+                .named_ids("__perro_dropdown_option_label")
+                .len(),
+            4
+        );
+        for idx in 0..4 {
+            assert_eq!(
+                runtime
+                    .nodes
+                    .named_ids(&format!("__perro_dropdown_option_{idx}"))
+                    .len(),
+                1
+            );
+            assert_eq!(
+                runtime.nodes.get(buttons[idx]).unwrap().children,
+                [labels[idx]]
+            );
+        }
+    }
+}
+
+#[test]
 fn dropdown_click_open_renders_options_after_frame_dirty_clear() {
     let mut runtime = Runtime::new();
     runtime.set_viewport_size(800, 600);
