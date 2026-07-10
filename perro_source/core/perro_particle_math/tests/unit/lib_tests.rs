@@ -15,7 +15,21 @@ fn compile_and_eval_works() {
 fn wgsl_emit_works() {
     let p = compile_expression("clamp(t,0.0,1.0)").expect("compile");
     let e = p.emit_wgsl_expr().expect("emit");
-    assert!(e.contains("clamp("));
+    assert!(e.contains("min(max("));
+}
+
+#[test]
+fn clamp_orders_reversed_bounds_for_cpu_and_wgsl() {
+    let p = compile_expression("clamp(t,1.0,0.0)").expect("compile");
+    let mut stack = Vec::new();
+
+    assert_eq!(p.eval(0.25, 1.0, &[], &mut stack), Some(0.25));
+    assert_eq!(p.eval(-1.0, 1.0, &[], &mut stack), Some(0.0));
+    assert_eq!(p.eval(2.0, 1.0, &[], &mut stack), Some(1.0));
+
+    let wgsl = p.emit_wgsl_expr().expect("emit");
+    assert!(wgsl.contains("min(1.0, 0.0)"));
+    assert!(wgsl.contains("max(1.0, 0.0)"));
 }
 
 #[test]

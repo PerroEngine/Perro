@@ -231,18 +231,24 @@ impl Color {
                     (a << 4) | a,
                 ]))
             }
-            6 => Some(Self::from_rgba_u8([
-                byte(&raw[0..2])?,
-                byte(&raw[2..4])?,
-                byte(&raw[4..6])?,
-                255,
-            ])),
-            8 => Some(Self::from_rgba_u8([
-                byte(&raw[0..2])?,
-                byte(&raw[2..4])?,
-                byte(&raw[4..6])?,
-                byte(&raw[6..8])?,
-            ])),
+            6 => {
+                let bytes = raw.as_bytes();
+                Some(Self::from_rgba_u8([
+                    byte_const(bytes[0], bytes[1])?,
+                    byte_const(bytes[2], bytes[3])?,
+                    byte_const(bytes[4], bytes[5])?,
+                    255,
+                ]))
+            }
+            8 => {
+                let bytes = raw.as_bytes();
+                Some(Self::from_rgba_u8([
+                    byte_const(bytes[0], bytes[1])?,
+                    byte_const(bytes[2], bytes[3])?,
+                    byte_const(bytes[4], bytes[5])?,
+                    byte_const(bytes[6], bytes[7])?,
+                ]))
+            }
             _ => None,
         }
     }
@@ -338,11 +344,6 @@ impl From<Color> for UnitVector4 {
 }
 
 #[inline]
-fn byte(hex: &str) -> Option<u8> {
-    u8::from_str_radix(hex, 16).ok()
-}
-
-#[inline]
 fn nibble(c: u8) -> Option<u8> {
     match c {
         b'0'..=b'9' => Some(c - b'0'),
@@ -394,6 +395,12 @@ mod tests {
     }
 
     #[test]
+    fn color_from_hex_rejects_multibyte_text_without_panicking() {
+        assert_eq!(Color::from_hex("1é234"), None);
+        assert_eq!(Color::from_hex("1é23456"), None);
+    }
+
+    #[test]
     fn with_alpha_overrides_only_alpha() {
         let base = Color::from_hex("#336699").unwrap();
         let faded = base.with_alpha(0.5);
@@ -429,7 +436,11 @@ mod tests {
     #[test]
     fn try_from_hex_const_matches_runtime_parser() {
         for hex in ["#336699CC", "#abc", "#ABCD", "112233", "#ffffff"] {
-            assert_eq!(Color::try_from_hex_const(hex), Color::from_hex(hex), "{hex}");
+            assert_eq!(
+                Color::try_from_hex_const(hex),
+                Color::from_hex(hex),
+                "{hex}"
+            );
         }
         assert_eq!(Color::try_from_hex_const("#zzz"), None);
         assert_eq!(Color::try_from_hex_const("12"), None);

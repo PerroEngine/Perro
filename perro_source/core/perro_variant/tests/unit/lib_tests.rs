@@ -803,6 +803,35 @@ fn test_derive_variant_more_std_qol_roundtrips() {
     let encoded = duration.to_variant();
     let decoded = <Duration as DeriveVariant>::from_variant(&encoded).expect("decode duration");
     assert_eq!(decoded, duration);
+
+    assert!(
+        <Duration as DeriveVariant>::from_variant(&Variant::from(f64::MAX)).is_none(),
+        "oversized finite duration must fail instead of panicking"
+    );
+}
+
+#[test]
+fn test_derive_variant_high_bit_ids_roundtrip() {
+    macro_rules! assert_roundtrip {
+        ($ty:ty) => {{
+            let id = <$ty>::from_u64(u64::MAX);
+            let encoded = id.to_variant();
+            assert_eq!(<$ty as DeriveVariant>::from_variant(&encoded), Some(id));
+            assert_eq!(
+                <$ty as DeriveVariant>::from_variant(&Variant::from(u64::MAX)),
+                Some(id)
+            );
+        }};
+    }
+
+    assert_roundtrip!(MaterialID);
+    assert_roundtrip!(MeshID);
+    assert_roundtrip!(AnimationID);
+    assert_roundtrip!(LightID);
+    assert_roundtrip!(SignalID);
+    assert_roundtrip!(AudioBusID);
+    assert_roundtrip!(TagID);
+    assert_roundtrip!(PreloadedSceneID);
 }
 
 #[test]

@@ -1736,7 +1736,7 @@ impl<const ROWS: usize, const COLS: usize> Div<f32> for Matrix<ROWS, COLS, f32> 
 impl<const ROWS: usize, const COLS: usize> DivAssign<f32> for Matrix<ROWS, COLS, f32> {
     #[inline]
     fn div_assign(&mut self, rhs: f32) {
-        simd_scale_assign(self.as_mut_slice(), rhs.recip());
+        scalar_div_assign_generic(self.as_mut_slice(), rhs);
     }
 }
 
@@ -3522,6 +3522,17 @@ mod tests {
                 [0.0, 0.0, 0.0, 4.0],
             ]
         );
+    }
+
+    #[test]
+    fn f32_matrix_division_matches_scalar_for_subnormal_divisor() {
+        let divisor = f32::from_bits(1);
+        let matrix = Matrix::<1, 3, f32>::new([[divisor, 1.0, -divisor]]);
+        let divided = matrix / divisor;
+
+        assert_eq!(divided[(0, 0)], divisor / divisor);
+        assert_eq!(divided[(0, 1)], 1.0 / divisor);
+        assert_eq!(divided[(0, 2)], -divisor / divisor);
     }
 
     #[test]
