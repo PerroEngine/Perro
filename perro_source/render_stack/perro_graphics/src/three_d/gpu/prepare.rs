@@ -384,8 +384,9 @@ impl Gpu3D {
                     );
                 }
             }
-            // Transforms shifted: overlap tests change, so refresh receiver lists.
-            self.rebuild_mesh_blend_receivers();
+            // Transforms shifted: overlap tests may change, so refresh receiver
+            // lists unless no blend-relevant batch actually moved this frame.
+            self.rebuild_mesh_blend_receivers_gated(true);
             let frustum_cull_active = self.should_run_frustum_cull();
             let hiz_active = self.should_run_hiz_occlusion(frustum_cull_active);
             if frustum_cull_active {

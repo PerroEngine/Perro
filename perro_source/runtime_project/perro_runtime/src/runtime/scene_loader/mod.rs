@@ -417,6 +417,7 @@ impl Runtime {
         self.render_3d.visible_now.clear();
         self.render_3d.prev_visible.clear();
         self.render_3d.mesh_sources.clear();
+        self.render_3d.clear_skeleton_mesh_index();
         self.render_3d.material_surface_sources.clear();
         self.render_3d.material_surface_overrides.clear();
         self.render_3d.particle_path_cache.clear();

@@ -210,7 +210,7 @@ fn bench_extract_moving_sprite2d_nodes(c: &mut Criterion) {
                         let mut commands = Vec::new();
                         runtime.drain_render_commands(&mut commands);
                         for (i, &id) in ids.iter().enumerate() {
-                            if let Some(node) = runtime.nodes.get_mut(id)
+                            if let Some(mut node) = runtime.nodes.get_mut(id)
                                 && let perro_nodes::SceneNodeData::Sprite2D(sprite) = &mut node.data
                             {
                                 sprite.transform.position.x += ((i % 3) as f32) * 0.25 + 0.1;
