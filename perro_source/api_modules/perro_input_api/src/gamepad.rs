@@ -283,7 +283,7 @@ macro_rules! gamepad_left_stick {
         let gp = $ipt.Gamepads();
         gp.get($index)
             .map(|gp| gp.left_stick())
-            .unwrap_or(perro_structs::Vector2::new(0.0, 0.0))
+            .unwrap_or($crate::__structs::Vector2::new(0.0, 0.0))
     }};
 }
 
@@ -298,7 +298,7 @@ macro_rules! gamepad_right_stick {
         let gp = $ipt.Gamepads();
         gp.get($index)
             .map(|gp| gp.right_stick())
-            .unwrap_or(perro_structs::Vector2::new(0.0, 0.0))
+            .unwrap_or($crate::__structs::Vector2::new(0.0, 0.0))
     }};
 }
 
@@ -313,7 +313,7 @@ macro_rules! gamepad_gyro {
         let gp = $ipt.Gamepads();
         gp.get($index)
             .map(|gp| gp.gyro())
-            .unwrap_or(perro_structs::Vector3::new(0.0, 0.0, 0.0))
+            .unwrap_or($crate::__structs::Vector3::new(0.0, 0.0, 0.0))
     }};
 }
 
@@ -328,6 +328,6 @@ macro_rules! gamepad_accel {
         let gp = $ipt.Gamepads();
         gp.get($index)
             .map(|gp| gp.accel())
-            .unwrap_or(perro_structs::Vector3::new(0.0, 0.0, 0.0))
+            .unwrap_or($crate::__structs::Vector3::new(0.0, 0.0, 0.0))
     }};
 }

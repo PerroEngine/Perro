@@ -409,7 +409,7 @@ macro_rules! joycon_stick {
         let jc = $ipt.JoyCons();
         jc.get($index)
             .map(|jc| jc.stick())
-            .unwrap_or(perro_structs::Vector2::new(0.0, 0.0))
+            .unwrap_or($crate::__structs::Vector2::new(0.0, 0.0))
     }};
 }
 
@@ -439,7 +439,7 @@ macro_rules! joycon_gyro {
         let jc = $ipt.JoyCons();
         jc.get($index)
             .map(|jc| jc.gyro())
-            .unwrap_or(perro_structs::Vector3::new(0.0, 0.0, 0.0))
+            .unwrap_or($crate::__structs::Vector3::new(0.0, 0.0, 0.0))
     }};
 }
 
@@ -454,7 +454,7 @@ macro_rules! joycon_accel {
         let jc = $ipt.JoyCons();
         jc.get($index)
             .map(|jc| jc.accel())
-            .unwrap_or(perro_structs::Vector3::new(0.0, 0.0, 0.0))
+            .unwrap_or($crate::__structs::Vector3::new(0.0, 0.0, 0.0))
     }};
 }
 
@@ -510,6 +510,6 @@ macro_rules! joycon_calibration_bias {
         let jc = $ipt.JoyCons();
         jc.get($index)
             .map(|jc| jc.calibration_bias())
-            .unwrap_or(perro_structs::Vector3::new(0.0, 0.0, 0.0))
+            .unwrap_or($crate::__structs::Vector3::new(0.0, 0.0, 0.0))
     }};
 }

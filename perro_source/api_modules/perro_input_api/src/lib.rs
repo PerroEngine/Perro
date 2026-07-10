@@ -29,6 +29,10 @@ pub use keycode::KeyCode;
 pub use mouse_button::MouseButton;
 use perro_structs::Vector2;
 pub use perro_structs::{SignedUnit, SignedUnitVector2};
+// macro expansions run in user script crates that only depend on perro_api,
+// so exported macros must reach structs via `$crate::__structs`, never bare `perro_structs`
+#[doc(hidden)]
+pub use perro_structs as __structs;
 pub use player::{PlayerBinding, PlayerModule, PlayerState};
 pub use snapshot::*;
 pub use state::*;
