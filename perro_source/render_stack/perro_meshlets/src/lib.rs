@@ -1,6 +1,7 @@
 use glam::{Vec2, Vec3A};
 use rayon::prelude::*;
 use std::collections::{HashMap, HashSet};
+use std::fmt::{Display, Formatter};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct LodVertex {
@@ -42,17 +43,81 @@ pub struct MeshletPack {
     pub meshlets: Vec<MeshletBounds>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MeshletBuildError {
+    TrianglesPerMeshletOverflow {
+        triangles_per_meshlet: usize,
+    },
+    SurfaceRangeOutOfBounds {
+        index_start: u32,
+        index_count: u32,
+        index_len: usize,
+    },
+    MeshletIndexRangeOverflow {
+        index_start: usize,
+        index_count: usize,
+    },
+}
+
+impl Display for MeshletBuildError {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::TrianglesPerMeshletOverflow {
+                triangles_per_meshlet,
+            } => write!(
+                formatter,
+                "triangles per meshlet {triangles_per_meshlet} exceeds addressable index range"
+            ),
+            Self::SurfaceRangeOutOfBounds {
+                index_start,
+                index_count,
+                index_len,
+            } => write!(
+                formatter,
+                "surface range {index_start}+{index_count} exceeds index length {index_len}"
+            ),
+            Self::MeshletIndexRangeOverflow {
+                index_start,
+                index_count,
+            } => write!(
+                formatter,
+                "meshlet index range {index_start}+{index_count} exceeds u32"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for MeshletBuildError {}
+
 pub fn pack_meshlets_from_positions(
     positions: &[[f32; 3]],
     indices: &[u32],
     triangles_per_meshlet: usize,
 ) -> MeshletPack {
-    let tri_len = (indices.len() / 3) * 3;
-    if tri_len == 0 || triangles_per_meshlet == 0 {
-        return MeshletPack {
+    try_pack_meshlets_from_positions(positions, indices, triangles_per_meshlet).unwrap_or_else(
+        |_| MeshletPack {
             packed_indices: indices.to_vec(),
             meshlets: Vec::new(),
-        };
+        },
+    )
+}
+
+pub fn try_pack_meshlets_from_positions(
+    positions: &[[f32; 3]],
+    indices: &[u32],
+    triangles_per_meshlet: usize,
+) -> Result<MeshletPack, MeshletBuildError> {
+    let chunk = triangles_per_meshlet.checked_mul(3).ok_or(
+        MeshletBuildError::TrianglesPerMeshletOverflow {
+            triangles_per_meshlet,
+        },
+    )?;
+    let tri_len = (indices.len() / 3) * 3;
+    if tri_len == 0 || triangles_per_meshlet == 0 {
+        return Ok(MeshletPack {
+            packed_indices: indices.to_vec(),
+            meshlets: Vec::new(),
+        });
     }
 
     let tri_count = tri_len / 3;
@@ -61,22 +126,22 @@ pub fn pack_meshlets_from_positions(
     for tri_i in 0..tri_count {
         let base = tri_i * 3;
         let Some(a) = positions.get(indices[base] as usize) else {
-            return MeshletPack {
+            return Ok(MeshletPack {
                 packed_indices: indices.to_vec(),
                 meshlets: Vec::new(),
-            };
+            });
         };
         let Some(b) = positions.get(indices[base + 1] as usize) else {
-            return MeshletPack {
+            return Ok(MeshletPack {
                 packed_indices: indices.to_vec(),
                 meshlets: Vec::new(),
-            };
+            });
         };
         let Some(c) = positions.get(indices[base + 2] as usize) else {
-            return MeshletPack {
+            return Ok(MeshletPack {
                 packed_indices: indices.to_vec(),
                 meshlets: Vec::new(),
-            };
+            });
         };
         let cx = (a[0] + b[0] + c[0]) * (1.0 / 3.0);
         let cy = (a[1] + b[1] + c[1]) * (1.0 / 3.0);
@@ -99,22 +164,22 @@ pub fn pack_meshlets_from_positions(
     for tri_i in 0..tri_count {
         let base = tri_i * 3;
         let Some(a) = positions.get(indices[base] as usize) else {
-            return MeshletPack {
+            return Ok(MeshletPack {
                 packed_indices: indices.to_vec(),
                 meshlets: Vec::new(),
-            };
+            });
         };
         let Some(b) = positions.get(indices[base + 1] as usize) else {
-            return MeshletPack {
+            return Ok(MeshletPack {
                 packed_indices: indices.to_vec(),
                 meshlets: Vec::new(),
-            };
+            });
         };
         let Some(c) = positions.get(indices[base + 2] as usize) else {
-            return MeshletPack {
+            return Ok(MeshletPack {
                 packed_indices: indices.to_vec(),
                 meshlets: Vec::new(),
-            };
+            });
         };
         let nx = (((a[0] + b[0] + c[0]) * (1.0 / 3.0) - cmin[0]) / span[0]).clamp(0.0, 1.0);
         let ny = (((a[1] + b[1] + c[1]) * (1.0 / 3.0) - cmin[1]) / span[1]).clamp(0.0, 1.0);
@@ -134,16 +199,16 @@ pub fn pack_meshlets_from_positions(
         packed_indices.extend_from_slice(&indices[tri_len..]);
     }
 
-    let chunk = triangles_per_meshlet * 3;
     let packed_tri_len = (packed_indices.len() / 3) * 3;
     let mut meshlets = Vec::with_capacity(packed_tri_len.div_ceil(chunk));
     let mut start = 0usize;
     while start < packed_tri_len {
-        let end = (start + chunk).min(packed_tri_len);
+        let end = start.saturating_add(chunk).min(packed_tri_len);
         if let Some((center, radius)) = meshlet_bounds(positions, &packed_indices[start..end]) {
+            let (index_start, index_count) = checked_meshlet_index_range(start, end)?;
             meshlets.push(MeshletBounds {
-                index_start: start as u32,
-                index_count: (end - start) as u32,
+                index_start,
+                index_count,
                 center,
                 radius,
             });
@@ -151,10 +216,25 @@ pub fn pack_meshlets_from_positions(
         start = end;
     }
 
-    MeshletPack {
+    Ok(MeshletPack {
         packed_indices,
         meshlets,
-    }
+    })
+}
+
+fn checked_meshlet_index_range(start: usize, end: usize) -> Result<(u32, u32), MeshletBuildError> {
+    let count = end.saturating_sub(start);
+    let index_start =
+        u32::try_from(start).map_err(|_| MeshletBuildError::MeshletIndexRangeOverflow {
+            index_start: start,
+            index_count: count,
+        })?;
+    let index_count =
+        u32::try_from(count).map_err(|_| MeshletBuildError::MeshletIndexRangeOverflow {
+            index_start: start,
+            index_count: count,
+        })?;
+    Ok((index_start, index_count))
 }
 
 pub fn build_lod_sets(
@@ -163,6 +243,23 @@ pub fn build_lod_sets(
     surface_ranges: &[LodSurfaceRange],
     target_ratios: &[f32],
 ) -> Vec<LodSet> {
+    try_build_lod_sets(vertices, indices, surface_ranges, target_ratios).unwrap_or_else(|_| {
+        vec![LodSet {
+            indices: indices.to_vec(),
+            surface_ranges: vec![LodSurfaceRange {
+                index_start: 0,
+                index_count: u32::try_from(indices.len()).unwrap_or(u32::MAX),
+            }],
+        }]
+    })
+}
+
+pub fn try_build_lod_sets(
+    vertices: &[LodVertex],
+    indices: &[u32],
+    surface_ranges: &[LodSurfaceRange],
+    target_ratios: &[f32],
+) -> Result<Vec<LodSet>, MeshletBuildError> {
     let base_surfaces = if surface_ranges.is_empty() {
         vec![LodSurfaceRange {
             index_start: 0,
@@ -171,12 +268,30 @@ pub fn build_lod_sets(
     } else {
         surface_ranges.to_vec()
     };
+    for range in &base_surfaces {
+        let start = range.index_start as usize;
+        let end = start.checked_add(range.index_count as usize).ok_or(
+            MeshletBuildError::SurfaceRangeOutOfBounds {
+                index_start: range.index_start,
+                index_count: range.index_count,
+                index_len: indices.len(),
+            },
+        )?;
+        if end > indices.len() {
+            return Err(MeshletBuildError::SurfaceRangeOutOfBounds {
+                index_start: range.index_start,
+                index_count: range.index_count,
+                index_len: indices.len(),
+            });
+        }
+    }
+
     let tri_count = indices.len() / 3;
     if tri_count == 0 || target_ratios.is_empty() {
-        return vec![LodSet {
+        return Ok(vec![LodSet {
             indices: indices.to_vec(),
             surface_ranges: base_surfaces,
-        }];
+        }]);
     }
 
     let ratios = target_ratios
@@ -191,9 +306,7 @@ pub fn build_lod_sets(
         .collect::<Vec<_>>();
     let build_surface = |range: &LodSurfaceRange| {
         let start = range.index_start as usize;
-        let end = start
-            .saturating_add(range.index_count as usize)
-            .min(indices.len());
+        let end = start + range.index_count as usize;
         build_surface_lods(vertices, &indices[start..end], &ratios)
     };
     let per_surface_lods = if base_surfaces.len() >= 4 && tri_count >= 512 {
@@ -242,7 +355,7 @@ pub fn build_lod_sets(
             surface_ranges: base_surfaces,
         });
     }
-    lods
+    Ok(lods)
 }
 
 fn build_surface_lods(
@@ -865,5 +978,52 @@ mod tests {
                 && tri.iter().any(|idx| *idx == 4 || *idx == 6)
         });
         assert!(!seam_mixed);
+    }
+
+    #[test]
+    fn try_lod_sets_rejects_surface_outside_indices() {
+        let vertices = vec![LodVertex {
+            position: [0.0; 3],
+            normal: [0.0, 0.0, 1.0],
+            uv: [0.0; 2],
+        }];
+        let indices = vec![0, 0, 0];
+        let surfaces = vec![LodSurfaceRange {
+            index_start: u32::MAX,
+            index_count: 3,
+        }];
+
+        assert!(matches!(
+            try_build_lod_sets(&vertices, &indices, &surfaces, &[1.0]),
+            Err(MeshletBuildError::SurfaceRangeOutOfBounds { .. })
+        ));
+        let fallback = build_lod_sets(&vertices, &indices, &surfaces, &[1.0]);
+        assert_eq!(fallback[0].indices, indices);
+        assert_eq!(fallback[0].surface_ranges[0].index_start, 0);
+    }
+
+    #[test]
+    fn try_meshlet_pack_rejects_chunk_overflow() {
+        let positions = [[0.0; 3]; 3];
+        let indices = [0, 1, 2];
+        assert!(matches!(
+            try_pack_meshlets_from_positions(&positions, &indices, usize::MAX),
+            Err(MeshletBuildError::TrianglesPerMeshletOverflow { .. })
+        ));
+        let fallback = pack_meshlets_from_positions(&positions, &indices, usize::MAX);
+        assert_eq!(fallback.packed_indices, indices);
+        assert!(fallback.meshlets.is_empty());
+    }
+
+    #[test]
+    fn meshlet_range_rejects_u32_overflow() {
+        assert!(matches!(
+            checked_meshlet_index_range(u32::MAX as usize + 1, u32::MAX as usize + 4),
+            Err(MeshletBuildError::MeshletIndexRangeOverflow { .. })
+        ));
+        assert!(matches!(
+            checked_meshlet_index_range(0, u32::MAX as usize + 1),
+            Err(MeshletBuildError::MeshletIndexRangeOverflow { .. })
+        ));
     }
 }

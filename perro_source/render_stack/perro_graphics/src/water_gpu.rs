@@ -108,8 +108,7 @@ pub struct GpuWater {
     water_2d_count: u32,
     render_3d_chunk_count: u32,
     readback_capacity: usize,
-    readback_mapped_bytes: u64,
-    readback_pending_rx: Option<mpsc::Receiver<Result<(), wgpu::BufferAsyncError>>>,
+    readback_pending: Option<PendingWaterReadback>,
     readback_nodes: Vec<NodeID>,
     readback_offsets: Vec<usize>,
     readback_samples: Vec<WaterSampleState>,
@@ -144,6 +143,14 @@ struct CachedCoastline {
 struct WaterReadbackQuery {
     query: WaterBodyQueryState,
     frac: [f32; 2],
+}
+
+struct PendingWaterReadback {
+    rx: mpsc::Receiver<Result<(), wgpu::BufferAsyncError>>,
+    mapped_bytes: u64,
+    nodes: Vec<NodeID>,
+    queries: Vec<WaterReadbackQuery>,
+    water_sample_count: usize,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -522,8 +529,7 @@ impl GpuWater {
             water_2d_count: 0,
             render_3d_chunk_count: 0,
             readback_capacity: 1,
-            readback_mapped_bytes: 0,
-            readback_pending_rx: None,
+            readback_pending: None,
             readback_nodes: Vec::new(),
             readback_offsets: Vec::new(),
             readback_samples: Vec::new(),
@@ -964,7 +970,7 @@ impl GpuWater {
 
     pub fn encode_readback(&mut self, encoder: &mut wgpu::CommandEncoder) {
         self.readback_copy_encoded = false;
-        if self.water_count == 0 || self.readback_pending_rx.is_some() {
+        if self.water_count == 0 || self.readback_pending.is_some() {
             return;
         }
         if self.readback_interval_seconds <= 0.0
@@ -1004,10 +1010,7 @@ impl GpuWater {
     }
 
     pub fn request_readback(&mut self) {
-        if self.water_count == 0
-            || self.readback_pending_rx.is_some()
-            || !self.readback_copy_encoded
-        {
+        if self.water_count == 0 || self.readback_pending.is_some() || !self.readback_copy_encoded {
             return;
         }
         if self.readback_offsets.is_empty() {
@@ -1023,8 +1026,13 @@ impl GpuWater {
         slice.map_async(wgpu::MapMode::Read, move |result| {
             let _ = tx.send(result);
         });
-        self.readback_pending_rx = Some(rx);
-        self.readback_mapped_bytes = byte_count;
+        self.readback_pending = Some(PendingWaterReadback {
+            rx,
+            mapped_bytes: byte_count,
+            nodes: self.readback_nodes.clone(),
+            queries: self.readback_queries.clone(),
+            water_sample_count: self.readback_water_sample_count,
+        });
         self.readback_copy_encoded = false;
     }
 
@@ -1163,7 +1171,7 @@ impl GpuWater {
     }
 
     fn ensure_readback_capacity(&mut self, device: &wgpu::Device, needed_samples: usize) {
-        if needed_samples <= self.readback_capacity {
+        if needed_samples <= self.readback_capacity || self.readback_pending.is_some() {
             return;
         }
         let mut cap = self.readback_capacity.max(64);
@@ -1172,68 +1180,82 @@ impl GpuWater {
         }
         self.readback_buffer = readback_buffer(device, cap);
         self.readback_capacity = cap;
-        self.readback_pending_rx = None;
     }
 
     fn poll_readback(&mut self, device: &wgpu::Device) {
-        let Some(rx) = self.readback_pending_rx.as_ref() else {
+        let Some(pending) = self.readback_pending.as_ref() else {
             return;
         };
         let _ = device.poll(wgpu::PollType::Poll);
-        match rx.try_recv() {
+        match pending.rx.try_recv() {
             Ok(Ok(())) => {
-                let slice = self.readback_buffer.slice(0..self.readback_mapped_bytes);
+                let pending = self
+                    .readback_pending
+                    .take()
+                    .expect("water readback pending after ready result");
+                let slice = self.readback_buffer.slice(0..pending.mapped_bytes);
                 let Ok(data) = slice.get_mapped_range() else {
                     self.readback_buffer.unmap();
-                    self.readback_pending_rx = None;
                     return;
                 };
                 let cells: &[[f32; 4]] = bytemuck::cast_slice(&data);
-                self.readback_samples.clear();
-                self.readback_body_samples.clear();
-                for (idx, node) in self
-                    .readback_nodes
-                    .iter()
-                    .take(self.readback_water_sample_count)
-                    .enumerate()
-                {
-                    let cell = cells.get(idx).copied().unwrap_or([0.0; 4]);
-                    self.readback_samples.push(WaterSampleState {
-                        node: *node,
-                        height: cell[0],
-                        velocity: [cell[1], 0.0],
-                        foam: cell[2],
-                    });
-                }
-                let mut query_base = self.readback_water_sample_count;
-                for sample in self.readback_queries.iter() {
-                    let c00 = cells.get(query_base).copied().unwrap_or([0.0; 4]);
-                    let c10 = cells.get(query_base + 1).copied().unwrap_or(c00);
-                    let c01 = cells.get(query_base + 2).copied().unwrap_or(c00);
-                    let c11 = cells.get(query_base + 3).copied().unwrap_or(c10);
-                    query_base += 4;
-                    let cell = water_lerp_cell(c00, c10, c01, c11, sample.frac);
-                    let query = sample.query;
-                    self.readback_body_samples.push(WaterBodySampleState {
-                        water: query.water,
-                        body: query.body,
-                        point: query.point,
-                        local: query.local,
-                        height: cell[0],
-                        velocity: [cell[1], 0.0],
-                        foam: cell[2],
-                    });
-                }
+                decode_water_readback(
+                    cells,
+                    &pending.nodes,
+                    pending.water_sample_count,
+                    &pending.queries,
+                    &mut self.readback_samples,
+                    &mut self.readback_body_samples,
+                );
                 drop(data);
                 self.readback_buffer.unmap();
-                self.readback_pending_rx = None;
             }
             Ok(Err(_)) | Err(mpsc::TryRecvError::Disconnected) => {
                 self.readback_buffer.unmap();
-                self.readback_pending_rx = None;
+                self.readback_pending = None;
             }
             Err(mpsc::TryRecvError::Empty) => {}
         }
+    }
+}
+
+fn decode_water_readback(
+    cells: &[[f32; 4]],
+    nodes: &[NodeID],
+    water_sample_count: usize,
+    queries: &[WaterReadbackQuery],
+    samples: &mut Vec<WaterSampleState>,
+    body_samples: &mut Vec<WaterBodySampleState>,
+) {
+    samples.clear();
+    body_samples.clear();
+    for (idx, node) in nodes.iter().take(water_sample_count).enumerate() {
+        let cell = cells.get(idx).copied().unwrap_or([0.0; 4]);
+        samples.push(WaterSampleState {
+            node: *node,
+            height: cell[0],
+            velocity: [cell[1], 0.0],
+            foam: cell[2],
+        });
+    }
+    let mut query_base = water_sample_count;
+    for sample in queries {
+        let c00 = cells.get(query_base).copied().unwrap_or([0.0; 4]);
+        let c10 = cells.get(query_base + 1).copied().unwrap_or(c00);
+        let c01 = cells.get(query_base + 2).copied().unwrap_or(c00);
+        let c11 = cells.get(query_base + 3).copied().unwrap_or(c10);
+        query_base += 4;
+        let cell = water_lerp_cell(c00, c10, c01, c11, sample.frac);
+        let query = sample.query;
+        body_samples.push(WaterBodySampleState {
+            water: query.water,
+            body: query.body,
+            point: query.point,
+            local: query.local,
+            height: cell[0],
+            velocity: [cell[1], 0.0],
+            foam: cell[2],
+        });
     }
 }
 
@@ -2926,6 +2948,45 @@ mod tests {
         raster_impacts_3d(&mut cells_3d, 8, 8, &water_3d);
         assert!(cells_3d.iter().any(|cell| cell[2] != 0.0 && cell[3] > 0.0));
         assert!(cells_3d.iter().any(|cell| cell[2] < 0.0));
+    }
+
+    #[test]
+    fn water_readback_decode_uses_submitted_metadata() {
+        let submitted_water = NodeID::from_parts(10, 1);
+        let submitted_body = NodeID::from_parts(20, 2);
+        let query = WaterReadbackQuery {
+            query: WaterBodyQueryState {
+                water: submitted_water,
+                body: submitted_body,
+                point: 3,
+                local: [0.25, 0.75],
+            },
+            frac: [0.5, 0.5],
+        };
+        let cells = [
+            [7.0, 2.0, 0.5, 0.0],
+            [1.0, 0.0, 0.0, 0.0],
+            [3.0, 0.0, 0.0, 0.0],
+            [5.0, 0.0, 0.0, 0.0],
+            [7.0, 0.0, 0.0, 0.0],
+        ];
+        let mut samples = Vec::new();
+        let mut body_samples = Vec::new();
+
+        decode_water_readback(
+            &cells,
+            &[submitted_water],
+            1,
+            &[query],
+            &mut samples,
+            &mut body_samples,
+        );
+
+        assert_eq!(samples[0].node, submitted_water);
+        assert_eq!(samples[0].height, 7.0);
+        assert_eq!(body_samples[0].water, submitted_water);
+        assert_eq!(body_samples[0].body, submitted_body);
+        assert_eq!(body_samples[0].height, 4.0);
     }
 }
 

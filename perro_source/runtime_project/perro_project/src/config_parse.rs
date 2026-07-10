@@ -315,7 +315,10 @@ fn parse_rendering_ui(
     };
     let pixel_snapping = match table.get("pixel_snapping") {
         Some(value) => value.as_bool().ok_or_else(|| {
-            ProjectError::InvalidField("rendering.ui.pixel_snapping", "must be a boolean".to_string())
+            ProjectError::InvalidField(
+                "rendering.ui.pixel_snapping",
+                "must be a boolean".to_string(),
+            )
         })?,
         None => true,
     };
@@ -394,9 +397,10 @@ pub fn parse_routes_toml(contents: &str) -> Result<ProjectRoutesConfig, ProjectE
         .ok_or(ProjectError::MissingField("route"))?;
     let mut routes = Vec::with_capacity(route_entries.len());
     for entry in route_entries {
-        let table = entry
-            .as_table()
-            .ok_or(ProjectError::InvalidField("route", "must be table array".to_string()))?;
+        let table = entry.as_table().ok_or(ProjectError::InvalidField(
+            "route",
+            "must be table array".to_string(),
+        ))?;
         let href_raw = table
             .get("href")
             .and_then(Value::as_str)
@@ -414,6 +418,7 @@ pub fn parse_routes_toml(contents: &str) -> Result<ProjectRoutesConfig, ProjectE
             .filter(|value| !value.is_empty())
             .ok_or(ProjectError::MissingField("route.name"))?
             .to_string();
+        validate_route_href("route.href", href_raw)?;
         let href = normalize_route_href(href_raw);
         let title = parse_optional_route_str(table, "title")?;
         let description = parse_optional_route_str(table, "description")?;
@@ -474,9 +479,9 @@ fn parse_steam_input_mode(
     let Some(value) = table.get("input") else {
         return Ok(SteamInputMode::Off);
     };
-    let raw = value.as_str().ok_or_else(|| {
-        ProjectError::InvalidField("steam.input", "must be a string".to_string())
-    })?;
+    let raw = value
+        .as_str()
+        .ok_or_else(|| ProjectError::InvalidField("steam.input", "must be a string".to_string()))?;
     match raw {
         "off" => Ok(SteamInputMode::Off),
         "metadata" => Ok(SteamInputMode::Metadata),
@@ -938,7 +943,10 @@ fn parse_optional_table_str(
         return Ok(None);
     };
     let Some(raw) = value.as_str() else {
-        return Err(ProjectError::InvalidField(path, "must be a string".to_string()));
+        return Err(ProjectError::InvalidField(
+            path,
+            "must be a string".to_string(),
+        ));
     };
     let trimmed = raw.trim();
     if trimmed.is_empty() {
@@ -989,13 +997,42 @@ fn parse_keywords_table_field(
 }
 
 fn validate_res_path(field: &'static str, path: &str) -> Result<(), ProjectError> {
-    if path.starts_with("res://") {
+    let Some(relative) = path.strip_prefix("res://") else {
+        return Err(ProjectError::InvalidField(
+            field,
+            "must start with `res://`".to_string(),
+        ));
+    };
+    if is_portable_relative_path(relative, false) {
         return Ok(());
     }
     Err(ProjectError::InvalidField(
         field,
-        "must start with `res://`".to_string(),
+        "must stay inside `res://` and use normal path components".to_string(),
     ))
+}
+
+fn validate_route_href(field: &'static str, href: &str) -> Result<(), ProjectError> {
+    let normalized = normalize_route_href(href);
+    let relative = normalized.strip_prefix('/').unwrap_or(&normalized);
+    if is_portable_relative_path(relative, true) {
+        return Ok(());
+    }
+    Err(ProjectError::InvalidField(
+        field,
+        "must use normal URL path components".to_string(),
+    ))
+}
+
+fn is_portable_relative_path(path: &str, allow_empty: bool) -> bool {
+    if path.is_empty() {
+        return allow_empty;
+    }
+    if path.contains(['\\', ':']) || path.chars().any(char::is_control) {
+        return false;
+    }
+    path.split('/')
+        .all(|component| !component.is_empty() && component != "." && component != "..")
 }
 
 pub fn normalize_route_href(path: &str) -> String {
@@ -1063,13 +1100,13 @@ fn virtual_canvas_from_aspect_ratio(raw: &str) -> Result<(u32, u32), ProjectErro
 
 fn parse_aspect_ratio(raw: &str) -> Result<(u32, u32), ProjectError> {
     let raw = raw.trim().to_ascii_lowercase();
-    let (w, h) = raw
-        .split_once(':')
-        .or_else(|| raw.split_once('x'))
-        .ok_or(ProjectError::InvalidField(
-            "graphics.aspect_ratio",
-            "expected format `WIDTH:HEIGHT`, for example `16:9`".to_string(),
-        ))?;
+    let (w, h) =
+        raw.split_once(':')
+            .or_else(|| raw.split_once('x'))
+            .ok_or(ProjectError::InvalidField(
+                "graphics.aspect_ratio",
+                "expected format `WIDTH:HEIGHT`, for example `16:9`".to_string(),
+            ))?;
 
     let width = w.parse::<u32>().map_err(|_| {
         ProjectError::InvalidField(
