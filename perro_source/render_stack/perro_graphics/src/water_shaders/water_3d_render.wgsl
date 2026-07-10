@@ -86,6 +86,8 @@ var<storage, read> render_chunks: array<WaterRenderChunk>;
 var<uniform> scene: Scene3D;
 @group(2) @binding(0)
 var scene_depth_tex: texture_depth_2d;
+@group(2) @binding(1)
+var scene_color_tex: texture_2d<f32>;
 
 struct Water3DVertexOut {
     @builtin(position) clip_pos: vec4<f32>,
@@ -368,6 +370,68 @@ fn water_scene_world_from_depth(coord: vec2<i32>, dims_u: vec2<u32>, depth: f32)
     return world_h.xyz / max(abs(world_h.w), 1.0e-5);
 }
 
+struct WaterSsrHit {
+    color: vec3<f32>,
+    confidence: f32,
+}
+
+// March the reflected view ray against the opaque scene depth captured before
+// water draws. This keeps nearby reflected geometry locked to the scene while
+// the configured sky color remains the off-screen / rough-surface fallback.
+fn water_ssr(world_pos: vec3<f32>, normal: vec3<f32>, view_dir: vec3<f32>, roughness: f32, reflection_weight: f32) -> WaterSsrHit {
+    var result: WaterSsrHit;
+    result.color = vec3<f32>(0.0);
+    result.confidence = 0.0;
+    // Rough or barely reflective water hides SSR detail. Skip its depth march.
+    if roughness >= 0.96 || reflection_weight <= 0.012 {
+        return result;
+    }
+    let dims_u = textureDimensions(scene_depth_tex);
+    let dims = vec2<i32>(i32(dims_u.x), i32(dims_u.y));
+    let ray_dir = normalize(reflect(-view_dir, normal));
+    var ray_pos = world_pos + normal * 0.06 + ray_dir * 0.10;
+    var travel = 0.10;
+    // Smooth reflections keep the full search. Rough reflections use a shorter
+    // ray because their confidence and final contribution are already low.
+    let step_limit = u32(round(mix(24.0, 10.0, clamp(roughness, 0.0, 0.96))));
+
+    for (var step = 0u; step < 24u; step = step + 1u) {
+        if step >= step_limit {
+            break;
+        }
+        let stride = 0.12 + f32(step) * 0.055;
+        ray_pos += ray_dir * stride;
+        travel += stride;
+        let clip = scene.view_proj * vec4<f32>(ray_pos, 1.0);
+        if clip.w <= 0.0001 {
+            break;
+        }
+        let ndc = clip.xyz / clip.w;
+        let uv = vec2<f32>(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5);
+        if any(uv <= vec2<f32>(0.002)) || any(uv >= vec2<f32>(0.998)) || ndc.z < 0.0 || ndc.z > 1.0 {
+            break;
+        }
+        let coord = clamp(vec2<i32>(floor(uv * vec2<f32>(dims_u))), vec2<i32>(0), dims - vec2<i32>(1));
+        let depth = textureLoad(scene_depth_tex, coord, 0);
+        if depth < 0.999999 {
+            let scene_world = water_scene_world_from_depth(coord, dims_u, depth);
+            let ray_distance = distance(ray_pos, scene.camera_pos.xyz);
+            let scene_distance = distance(scene_world, scene.camera_pos.xyz);
+            let thickness = 0.10 + stride * 1.35;
+            let crossing = ray_distance - scene_distance;
+            if crossing >= 0.0 && crossing <= thickness {
+                let edge = min(min(uv.x, uv.y), min(1.0 - uv.x, 1.0 - uv.y));
+                let edge_fade = smoothstep(0.0, 0.08, edge);
+                let distance_fade = 1.0 - smoothstep(8.0, 34.0, travel);
+                result.color = textureLoad(scene_color_tex, coord, 0).rgb;
+                result.confidence = edge_fade * distance_fade * (1.0 - roughness * 0.78);
+                return result;
+            }
+        }
+    }
+    return result;
+}
+
 fn water_light_brdf(base: vec3<f32>, n: vec3<f32>, v: vec3<f32>, l: vec3<f32>, radiance: vec3<f32>, roughness: f32, reflectivity: f32) -> vec3<f32> {
     let nl = max(dot(n, l), 0.0);
     if nl <= 0.0 {
@@ -438,9 +502,39 @@ struct WaterDepthInfo {
     thickness: f32,
     bed_world: vec3<f32>,
     hit: f32,
+    scene_coord: vec2<i32>,
 }
 
-fn water_depth_thickness(in: Water3DVertexOut, w: Water, normal: vec3<f32>) -> WaterDepthInfo {
+fn water_refraction_offset(
+    w: Water,
+    normal: vec3<f32>,
+    local: vec2<f32>,
+    cell: vec4<f32>,
+    crest: f32,
+    wind: vec2<f32>,
+    t: f32,
+) -> vec2<f32> {
+    // refraction_strength stays the base control. Wave slope supplies the
+    // large bend while sim velocity, flow and crests make it track motion.
+    let slope = clamp(length(normal.xz) / max(abs(normal.y), 0.18), 0.0, 2.4);
+    let wave_speed = clamp(abs(cell.y) / max(w.wave.y * max(w.wave.x, 0.25), 0.20), 0.0, 2.0);
+    let flow_speed = clamp(length(w.flow_wind.xy) * 0.22, 0.0, 1.25);
+    let crest_bend = smoothstep(0.08, 0.90, max(crest, 0.0));
+    let motion = clamp(slope * 1.15 + wave_speed * 0.42 + flow_speed * 0.24 + crest_bend * 0.34, 0.0, 2.8);
+
+    let flow_dir = normalize(select(wind, w.flow_wind.xy, length(w.flow_wind.xy) > 0.0001));
+    let cross_dir = vec2<f32>(-flow_dir.y, flow_dir.x);
+    let shimmer_phase = dot(local, flow_dir) * 7.1 - t * (1.8 + flow_speed * 1.4);
+    let shimmer = flow_dir * sin(shimmer_phase)
+        + cross_dir * sin(dot(local, cross_dir) * 11.3 + t * 2.7) * 0.55;
+    let shimmer_weight = (0.045 + slope * 0.075) * (0.35 + motion * 0.65);
+    let direction = normal.xz + shimmer * shimmer_weight;
+    // Cap the vector before pixel conversion so grazing normals never pull
+    // scene samples far outside the water silhouette.
+    return clamp(direction * (1.0 + motion), vec2<f32>(-3.2), vec2<f32>(3.2));
+}
+
+fn water_depth_thickness(in: Water3DVertexOut, w: Water, refraction_offset: vec2<f32>) -> WaterDepthInfo {
     let dims_u = textureDimensions(scene_depth_tex);
     let dims = vec2<i32>(i32(dims_u.x), i32(dims_u.y));
     let base_coord = clamp(vec2<i32>(floor(in.clip_pos.xy)), vec2<i32>(0), dims - vec2<i32>(1));
@@ -452,14 +546,20 @@ fn water_depth_thickness(in: Water3DVertexOut, w: Water, normal: vec3<f32>) -> W
         base_thickness = max(distance(base_world, scene.camera_pos.xyz) - view_water, 0.0);
     }
     let thickness_refraction = clamp(0.35 + smoothstep(0.08, max(w.size_depth_time.z * 0.45, 0.5), base_thickness) * 0.65, 0.0, 1.0);
-    let offset = vec2<i32>(round(normal.xz * clamp(w.visual2.y * 26.0 * thickness_refraction, 0.0, 48.0)));
+    let offset = vec2<i32>(round(refraction_offset * clamp(w.visual2.y * 26.0 * thickness_refraction, 0.0, 48.0)));
     let coord = clamp(base_coord + offset, vec2<i32>(0), dims - vec2<i32>(1));
-    let scene_depth = textureLoad(scene_depth_tex, coord, 0);
+    // Most calm/front-facing pixels round to no offset. Reuse the first depth
+    // fetch and avoid a duplicate texture load in that common path.
+    var scene_depth = base_depth;
+    if any(coord != base_coord) {
+        scene_depth = textureLoad(scene_depth_tex, coord, 0);
+    }
     var info: WaterDepthInfo;
     if scene_depth >= 0.999999 {
         info.thickness = w.size_depth_time.z;
         info.bed_world = in.world_pos - vec3<f32>(0.0, w.size_depth_time.z, 0.0);
         info.hit = 0.0;
+        info.scene_coord = coord;
         return info;
     }
     let scene_world = water_scene_world_from_depth(coord, dims_u, scene_depth);
@@ -467,6 +567,7 @@ fn water_depth_thickness(in: Water3DVertexOut, w: Water, normal: vec3<f32>) -> W
     info.thickness = max(view_scene - view_water, 0.0);
     info.bed_world = scene_world;
     info.hit = 1.0;
+    info.scene_coord = coord;
     return info;
 }
 
@@ -736,7 +837,13 @@ fn fs_water_3d(in: Water3DVertexOut, @builtin(front_facing) front_facing: bool) 
     let fresnel = water_schlick_fresnel(dot(normal, view_dir), w.visual0.w) * w.visual0.y;
     let auto_shallow_depth = max(max(w.size_depth_time.x, w.size_depth_time.y) * 0.25, 0.001);
     let shallow_depth = select(auto_shallow_depth, max(w.size_depth_time.w, 0.001), w.size_depth_time.w >= 0.0);
-    let depth_info = water_depth_thickness(in, w, normal);
+    let crest_t = clamp(
+        idle_h / max(w.wave.y * water_idle_amp(w), 0.001) + clamp(cell.x, 0.0, 1.0) * 0.35,
+        -0.5,
+        1.5,
+    );
+    let refraction_offset = water_refraction_offset(w, normal, local, cell, crest_t, wind, t);
+    let depth_info = water_depth_thickness(in, w, refraction_offset);
     let scene_thickness = max(depth_info.thickness, 0.0);
     let depth_t = clamp(1.0 - exp(-scene_thickness / max(shallow_depth, 0.001)), 0.0, 1.0);
 
@@ -745,22 +852,22 @@ fn fs_water_3d(in: Water3DVertexOut, @builtin(front_facing) front_facing: bool) 
     let shallow_rgb = max(w.shallow_color.rgb, vec3<f32>(0.03, 0.20, 0.30));
     let deep_rgb = max(w.deep_color.rgb, vec3<f32>(0.0, 0.028, 0.090));
     let volume_rgb = mix(deep_rgb, shallow_rgb, absorption);
+    let refracted_scene = textureLoad(scene_color_tex, depth_info.scene_coord, 0).rgb;
+    let transmitted_rgb = refracted_scene * absorption + volume_rgb * (vec3<f32>(1.0) - absorption);
 
     let forward_light = pow(max(dot(-view_dir, sun_dir), 0.0), 2.0);
-    let crest_t = clamp(
-        idle_h / max(w.wave.y * water_idle_amp(w), 0.001) + clamp(cell.x, 0.0, 1.0) * 0.35,
-        -0.5,
-        1.5,
-    );
     let sss = pow(max(crest_t, 0.0), 1.4)
         * clamp(w.visual2.z, 0.0, 2.0)
         * (0.30 + 0.70 * forward_light)
         * clamp(dot(normal, sun_dir) * 0.5 + 0.5, 0.0, 1.0);
     let sss_rgb = (shallow_rgb * 1.30 + vec3<f32>(0.0, 0.09, 0.07)) * sun_radiance * 0.5;
-    let water_rgb = volume_rgb + sss_rgb * sss;
+    let water_rgb = transmitted_rgb + sss_rgb * sss;
 
-    let reflected = mix(water_rgb, w.sky_color_bias.rgb, max(w.sky_color_bias.w, fresnel * 0.62));
     let rough_blend = clamp(w.visual0.z, 0.0, 1.0);
+    let reflection_weight = clamp(max(w.sky_color_bias.w, fresnel * 0.62) * w.visual0.y, 0.0, 1.0);
+    let ssr = water_ssr(in.world_pos, normal, view_dir, rough_blend, reflection_weight);
+    let reflection_source = mix(w.sky_color_bias.rgb, ssr.color, ssr.confidence);
+    let reflected = mix(water_rgb, reflection_source, reflection_weight);
     let half_dir = normalize(view_dir + sun_dir);
     let spec = pow(max(dot(normal, half_dir), 0.0), mix(140.0, 34.0, rough_blend)) * w.visual0.y * 0.35;
     let fresnel_tint = vec3<f32>(0.16, 0.26, 0.36) * fresnel * w.visual0.y;

@@ -1478,8 +1478,8 @@ impl Runtime {
     fn insert_color_picker_text_box(&mut self, popup_id: NodeID, name: &'static str) -> NodeID {
         let mut text_box = UiTextBox::new();
         text_box.inner.base.layout.z_index = 102;
-        text_box.inner.font_size = 15.0;
-        text_box.inner.text_size_ratio = 0.58;
+        text_box.inner.font_size = 14.0;
+        text_box.inner.text_size_ratio = 0.55;
         text_box.inner.padding = perro_ui::UiRect::symmetric(6.0, 3.0);
         self.insert_color_picker_internal_node(
             popup_id,
@@ -1522,13 +1522,20 @@ impl Runtime {
     }
 
     fn sync_color_picker_internal_nodes(&mut self, picker_id: NodeID) {
-        let Some((color, popup_open, popup_style, popup_size, ids)) =
+        let Some((color, popup_open, popup_style, popup_size, wheel_radius, visibility, ids)) =
             self.nodes.get(picker_id).and_then(|node| match &node.data {
                 SceneNodeData::UiColorPicker(picker) => Some((
                     picker.color,
                     picker.popup_open,
                     picker.popup_style.clone(),
                     picker.popup_size,
+                    picker.wheel_radius,
+                    (
+                        picker.show_selector,
+                        picker.show_rgba,
+                        picker.show_hsl,
+                        picker.show_hex,
+                    ),
                     (
                         picker.internal_swatch_button,
                         picker.internal_popup_panel,
@@ -1544,6 +1551,15 @@ impl Runtime {
         else {
             return;
         };
+        let layout = color_picker_layout(
+            popup_size,
+            wheel_radius,
+            visibility.0,
+            visibility.1,
+            visibility.2,
+            visibility.3,
+        );
+        let popup_size = layout.popup_size;
 
         if let Some(node) = self.nodes.get_mut_untracked(ids.0)
             && let SceneNodeData::UiButton(button) = &mut node.data
@@ -1567,27 +1583,33 @@ impl Runtime {
             panel.style = popup_style;
         }
         let rgba = color_to_rgba_components(color);
-        let hsv = color_to_hsv_components(color);
+        let hsl = color_to_hsl_components(color);
         let hex = color_to_hex_text(color);
         self.sync_color_picker_legacy_text_box(ids.2, false);
         self.sync_color_picker_legacy_text_box(ids.3, false);
         for (idx, text) in rgba.iter().enumerate() {
             self.sync_color_picker_component_box(
                 ids.4[idx],
-                popup_open,
-                ColorPickerComponentLayout::new(popup_size, 198.0, idx, rgba.len()),
+                popup_open && visibility.1,
+                ColorPickerComponentLayout::new(popup_size, layout.rgba_y, idx, rgba.len()),
                 text,
             );
         }
-        for (idx, text) in hsv.iter().enumerate() {
+        for (idx, text) in hsl.iter().enumerate() {
             self.sync_color_picker_component_box(
                 ids.5[idx],
-                popup_open,
-                ColorPickerComponentLayout::new(popup_size, 236.0, idx, hsv.len()),
+                popup_open && visibility.2,
+                ColorPickerComponentLayout::new(popup_size, layout.hsl_y, idx, hsl.len()),
                 text,
             );
         }
-        self.sync_color_picker_text_box(ids.6, popup_open, popup_size, 274.0, &hex);
+        self.sync_color_picker_text_box(
+            ids.6,
+            popup_open && visibility.3,
+            popup_size,
+            layout.hex_y,
+            &hex,
+        );
 
         self.mark_ui_dirty(
             picker_id,
@@ -1680,13 +1702,33 @@ impl Runtime {
                     id,
                     picker.popup_open,
                     picker.wheel_radius,
+                    picker.picker_mode,
+                    picker.color,
+                    picker.show_selector,
+                    picker.popup_size,
+                    picker.show_rgba,
+                    picker.show_hsl,
+                    picker.show_hex,
                     picker.internal_popup_panel,
                 ))
             })
             .collect::<Vec<_>>();
-        for (picker_id, popup_open, wheel_radius, popup_id) in pickers {
+        for (
+            picker_id,
+            popup_open,
+            wheel_radius,
+            picker_mode,
+            color,
+            show_selector,
+            popup_size,
+            show_rgba,
+            show_hsl,
+            show_hex,
+            popup_id,
+        ) in pickers
+        {
             let wheel_node = color_picker_wheel_render_node(picker_id);
-            if !popup_open {
+            if !popup_open || !show_selector {
                 self.queue_render_command(RenderCommand::Ui(UiCommand::RemoveNode {
                     node: wheel_node,
                 }));
@@ -1701,7 +1743,15 @@ impl Runtime {
             }) else {
                 continue;
             };
-            let rect = color_picker_wheel_rect(popup_rect, wheel_radius);
+            let layout = color_picker_layout(
+                popup_size,
+                wheel_radius,
+                show_selector,
+                show_rgba,
+                show_hsl,
+                show_hex,
+            );
+            let rect = color_picker_wheel_rect(popup_rect, wheel_radius, layout.selector_y);
             let rect_state = UiRectState {
                 center: [rect.center.x, rect.center.y],
                 size: [rect.size.x, rect.size.y],
@@ -1713,6 +1763,8 @@ impl Runtime {
                 node: wheel_node,
                 rect: rect_state,
                 clip_rect: self.ui_effective_clip_rect_screen(popup_id, computed, viewport),
+                mode: picker_mode,
+                selected: color.to_rgba(),
             }));
         }
     }

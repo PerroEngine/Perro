@@ -953,8 +953,21 @@ impl Runtime {
             }) else {
                 continue;
             };
-            let rect = color_picker_wheel_rect(popup_rect, picker.wheel_radius);
-            let Some(color) = color_picker_color_at_point(rect, picker.color.a(), point) else {
+            if !picker.show_selector {
+                continue;
+            }
+            let layout = color_picker_layout(
+                picker.popup_size,
+                picker.wheel_radius,
+                picker.show_selector,
+                picker.show_rgba,
+                picker.show_hsl,
+                picker.show_hex,
+            );
+            let rect = color_picker_wheel_rect(popup_rect, picker.wheel_radius, layout.selector_y);
+            let Some(color) =
+                color_picker_color_at_point(rect, picker.picker_mode, picker.color.a(), point)
+            else {
                 continue;
             };
             updates.push((node, color));
@@ -969,7 +982,6 @@ impl Runtime {
             let changed = picker.color != color;
             let signals = picker.color_changed_signals.clone();
             picker.color = color;
-            picker.popup_open = false;
             self.sync_color_picker_internal_nodes(node);
             if command_seen.insert(node) {
                 command_ids.push(node);
@@ -2174,17 +2186,40 @@ fn ui_button_like_hit_data(
 
 fn color_picker_color_at_point(
     wheel_rect: ComputedUiRect,
+    mode: perro_ui::UiColorPickerMode,
     alpha: f32,
     point: Vector2,
 ) -> Option<Color> {
     let delta = point - wheel_rect.center;
     let radius = wheel_rect.size.x.min(wheel_rect.size.y).abs() * 0.5;
+    if matches!(mode, perro_ui::UiColorPickerMode::Swatches) {
+        let min = wheel_rect.min();
+        let local_x = point.x - min.x;
+        let local_y = point.y - min.y;
+        if local_x < 0.0
+            || local_y < 0.0
+            || local_x >= wheel_rect.size.x
+            || local_y >= wheel_rect.size.y
+        {
+            return None;
+        }
+        let col = (local_x / (wheel_rect.size.x / 6.0)).floor() as usize;
+        let row_from_bottom = (local_y / (wheel_rect.size.y / 4.0)).floor() as usize;
+        let row = 3usize.saturating_sub(row_from_bottom.min(3));
+        let mut color = perro_ui::ui_color_picker_swatches()[row * 6 + col.min(5)];
+        color = color.with_alpha(alpha);
+        return Some(color);
+    }
     let distance = (delta.x * delta.x + delta.y * delta.y).sqrt();
     if distance > radius {
         return None;
     }
-    let hue = delta.y.atan2(delta.x).rem_euclid(std::f32::consts::TAU) / std::f32::consts::TAU;
-    let saturation = (distance / radius).clamp(0.0, 1.0);
+    let mut hue = delta.y.atan2(delta.x).rem_euclid(std::f32::consts::TAU) / std::f32::consts::TAU;
+    let mut saturation = (distance / radius).clamp(0.0, 1.0);
+    if matches!(mode, perro_ui::UiColorPickerMode::BlockWheel) {
+        hue = ((hue * 12.0).floor() + 0.5) / 12.0;
+        saturation = ((saturation * 4.0).floor() + 0.5).min(4.0) / 4.0;
+    }
     Some(hsv_color(hue, saturation, 1.0, alpha))
 }
 

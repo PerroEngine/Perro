@@ -1,3 +1,4 @@
+use super::water_flip_gpu::GpuWaterFlip;
 use bytemuck::{Pod, Zeroable};
 use glam::{Mat4, Vec3, Vec4};
 use perro_ids::NodeID;
@@ -79,6 +80,7 @@ const WATER_CHUNK_FLAG_DRAW_SIDES: u32 = 1 << 0;
 const WATER_CHUNK_FLAG_CIRCLE: u32 = 1 << 1;
 
 pub struct GpuWater {
+    flip_3d: GpuWaterFlip,
     compute_pipeline: wgpu::ComputePipeline,
     render_pipeline_2d: wgpu::RenderPipeline,
     render_pipeline_3d: wgpu::RenderPipeline,
@@ -90,6 +92,11 @@ pub struct GpuWater {
     render_bind_group_a: wgpu::BindGroup,
     render_bind_group_b: wgpu::BindGroup,
     depth_bind_group: wgpu::BindGroup,
+    scene_color_texture: wgpu::Texture,
+    scene_color_view: wgpu::TextureView,
+    scene_color_format: wgpu::TextureFormat,
+    scene_color_size: [u32; 2],
+    sample_count: u32,
     water_buffer: wgpu::Buffer,
     cell_buffer_a: wgpu::Buffer,
     cell_buffer_b: wgpu::Buffer,
@@ -287,7 +294,10 @@ impl GpuWater {
         camera_bgl: &wgpu::BindGroupLayout,
         camera_3d_bgl: &wgpu::BindGroupLayout,
         scene_depth_view: &wgpu::TextureView,
+        width: u32,
+        height: u32,
     ) -> Self {
+        let flip_3d = GpuWaterFlip::new(device, color_format, sample_count, camera_3d_bgl);
         let compute_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("perro_water_gpu_bgl"),
             entries: &[
@@ -400,16 +410,28 @@ impl GpuWater {
         });
         let depth_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("perro_water_depth_bgl"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Texture {
-                    sample_type: wgpu::TextureSampleType::Depth,
-                    view_dimension: wgpu::TextureViewDimension::D2,
-                    multisampled: false,
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Depth,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
                 },
-                count: None,
-            }],
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+            ],
         });
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("perro_water_gpu_shader"),
@@ -497,9 +519,17 @@ impl GpuWater {
             },
             "perro_water_render_bg_b",
         );
-        let depth_bind_group =
-            make_depth_bind_group(device, &depth_bgl, scene_depth_view, "perro_water_depth_bg");
+        let (scene_color_texture, scene_color_view) =
+            create_scene_color_texture(device, color_format, width, height);
+        let depth_bind_group = make_depth_bind_group(
+            device,
+            &depth_bgl,
+            scene_depth_view,
+            &scene_color_view,
+            "perro_water_depth_bg",
+        );
         Self {
+            flip_3d,
             compute_pipeline,
             render_pipeline_2d,
             render_pipeline_3d,
@@ -511,6 +541,11 @@ impl GpuWater {
             render_bind_group_a,
             render_bind_group_b,
             depth_bind_group,
+            scene_color_texture,
+            scene_color_view,
+            scene_color_format: color_format,
+            scene_color_size: [width.max(1), height.max(1)],
+            sample_count: sample_count.max(1),
             water_buffer,
             cell_buffer_a,
             cell_buffer_b,
@@ -558,8 +593,62 @@ impl GpuWater {
             device,
             &self.depth_bgl,
             scene_depth_view,
+            &self.scene_color_view,
             "perro_water_depth_bg",
         );
+    }
+
+    pub fn set_scene_color_size(
+        &mut self,
+        device: &wgpu::Device,
+        scene_depth_view: &wgpu::TextureView,
+        width: u32,
+        height: u32,
+    ) {
+        let size = [width.max(1), height.max(1)];
+        if self.scene_color_size == size {
+            return;
+        }
+        (self.scene_color_texture, self.scene_color_view) =
+            create_scene_color_texture(device, self.scene_color_format, size[0], size[1]);
+        self.scene_color_size = size;
+        self.set_scene_depth_view(device, scene_depth_view);
+    }
+
+    pub fn capture_scene_color(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        source_texture: &wgpu::Texture,
+        source_view: &wgpu::TextureView,
+    ) {
+        if self.sample_count == 1 {
+            encoder.copy_texture_to_texture(
+                source_texture.as_image_copy(),
+                self.scene_color_texture.as_image_copy(),
+                wgpu::Extent3d {
+                    width: self.scene_color_size[0],
+                    height: self.scene_color_size[1],
+                    depth_or_array_layers: 1,
+                },
+            );
+            return;
+        }
+        let _resolve_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("perro_water_scene_color_resolve"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: source_view,
+                resolve_target: Some(&self.scene_color_view),
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                },
+                depth_slice: None,
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
     }
 
     // Rebuild the render pipelines for a new MSAA sample count (and the scene
@@ -583,6 +672,7 @@ impl GpuWater {
         );
         self.render_pipeline_2d = render_pipeline_2d;
         self.render_pipeline_3d = render_pipeline_3d;
+        self.sample_count = sample_count.max(1);
     }
 
     pub fn prepare(
@@ -685,7 +775,9 @@ impl GpuWater {
             cell_needed = cell_needed.saturating_add(cells);
         }
         // Drop cached coastlines for waters no longer present this frame.
-        if !self.coastline_cache.is_empty() {
+        // Same node set keeps cache size equal to active water count. Only scan
+        // for stale entries after a removal/replacement makes it larger.
+        if self.coastline_cache.len() > needed {
             self.coastline_cache.retain(|node, _| {
                 waters_2d.iter().any(|(n, _)| n == node) || waters_3d.iter().any(|(n, _)| n == node)
             });
@@ -848,9 +940,12 @@ impl GpuWater {
             }
         }
         self.ensure_readback_capacity(device, self.readback_offsets.len());
+        self.flip_3d
+            .prepare(device, queue, waters_3d, ctx.delta_seconds);
     }
 
     pub fn clear_active(&mut self) {
+        self.flip_3d.clear_active();
         self.water_count = 0;
         self.water_2d_count = 0;
         self.active_cell_count = 0;
@@ -870,6 +965,7 @@ impl GpuWater {
     }
 
     pub fn encode(&self, encoder: &mut wgpu::CommandEncoder) {
+        self.flip_3d.encode(encoder);
         if self.water_count == 0 {
             return;
         }
@@ -931,41 +1027,42 @@ impl GpuWater {
         camera_bind_group: &wgpu::BindGroup,
         clear_depth: bool,
     ) {
-        if self.render_3d_chunk_count == 0 || self.max_3d_chunk_vertices == 0 {
-            return;
-        }
-        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("perro_water_3d_pass"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: target,
-                resolve_target: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Load,
-                    store: wgpu::StoreOp::Store,
-                },
-                depth_slice: None,
-            })],
-            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                view: depth,
-                depth_ops: Some(wgpu::Operations {
-                    load: if clear_depth {
-                        wgpu::LoadOp::Clear(1.0)
-                    } else {
-                        wgpu::LoadOp::Load
+        if self.render_3d_chunk_count > 0 && self.max_3d_chunk_vertices > 0 {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("perro_water_3d_pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: target,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
                     },
-                    store: wgpu::StoreOp::Store,
+                    depth_slice: None,
+                })],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: depth,
+                    depth_ops: Some(wgpu::Operations {
+                        load: if clear_depth {
+                            wgpu::LoadOp::Clear(1.0)
+                        } else {
+                            wgpu::LoadOp::Load
+                        },
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
                 }),
-                stencil_ops: None,
-            }),
-            timestamp_writes: None,
-            occlusion_query_set: None,
-            multiview_mask: None,
-        });
-        pass.set_pipeline(&self.render_pipeline_3d);
-        pass.set_bind_group(0, self.render_bind_group(), &[]);
-        pass.set_bind_group(1, camera_bind_group, &[]);
-        pass.set_bind_group(2, &self.depth_bind_group, &[]);
-        pass.draw(0..self.max_3d_chunk_vertices, 0..self.render_3d_chunk_count);
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            pass.set_pipeline(&self.render_pipeline_3d);
+            pass.set_bind_group(0, self.render_bind_group(), &[]);
+            pass.set_bind_group(1, camera_bind_group, &[]);
+            pass.set_bind_group(2, &self.depth_bind_group, &[]);
+            pass.draw(0..self.max_3d_chunk_vertices, 0..self.render_3d_chunk_count);
+        }
+        self.flip_3d
+            .render(encoder, target, depth, camera_bind_group);
     }
 
     pub fn encode_readback(&mut self, encoder: &mut wgpu::CommandEncoder) {
@@ -1395,16 +1492,49 @@ fn make_depth_bind_group(
     device: &wgpu::Device,
     layout: &wgpu::BindGroupLayout,
     scene_depth_view: &wgpu::TextureView,
+    scene_color_view: &wgpu::TextureView,
     label: &str,
 ) -> wgpu::BindGroup {
     device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: Some(label),
         layout,
-        entries: &[wgpu::BindGroupEntry {
-            binding: 0,
-            resource: wgpu::BindingResource::TextureView(scene_depth_view),
-        }],
+        entries: &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::TextureView(scene_depth_view),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: wgpu::BindingResource::TextureView(scene_color_view),
+            },
+        ],
     })
+}
+
+fn create_scene_color_texture(
+    device: &wgpu::Device,
+    format: wgpu::TextureFormat,
+    width: u32,
+    height: u32,
+) -> (wgpu::Texture, wgpu::TextureView) {
+    let texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("perro_water_scene_color"),
+        size: wgpu::Extent3d {
+            width: width.max(1),
+            height: height.max(1),
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format,
+        usage: wgpu::TextureUsages::COPY_DST
+            | wgpu::TextureUsages::TEXTURE_BINDING
+            | wgpu::TextureUsages::RENDER_ATTACHMENT,
+        view_formats: &[],
+    });
+    let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+    (texture, view)
 }
 
 fn build_render_chunks_3d(
@@ -2708,6 +2838,9 @@ mod tests {
         assert!(!WATER_3D_RENDER_WGSL.contains("outline_white"));
         assert!(WATER_3D_RENDER_WGSL.contains("water_idle_height"));
         assert!(WATER_3D_RENDER_WGSL.contains("water_depth_thickness"));
+        assert!(WATER_3D_RENDER_WGSL.contains("water_ssr"));
+        assert!(WATER_3D_RENDER_WGSL.contains("scene_color_tex"));
+        assert!(WATER_3D_RENDER_WGSL.contains("transmitted_rgb"));
         assert!(WATER_3D_RENDER_WGSL.contains("foam_mask"));
         assert!(WATER_3D_RENDER_WGSL.contains("caustic"));
         // render + compute + CPU idle wave models must stay in lockstep
@@ -3010,5 +3143,9 @@ mod wgsl_validation_tests {
         parse_and_validate(WATER_WGSL, "water compute");
         parse_and_validate(WATER_3D_RENDER_WGSL, "water 3d render");
         parse_and_validate(&water_render_wgsl(), "water render composed");
+        assert!(WATER_3D_RENDER_WGSL.contains("fn water_refraction_offset("));
+        assert!(WATER_3D_RENDER_WGSL.contains("let slope = clamp("));
+        assert!(WATER_3D_RENDER_WGSL.contains("let wave_speed = clamp(abs(cell.y)"));
+        assert!(WATER_3D_RENDER_WGSL.contains("return clamp(direction * (1.0 + motion)"));
     }
 }

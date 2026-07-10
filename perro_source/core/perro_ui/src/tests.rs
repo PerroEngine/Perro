@@ -221,6 +221,32 @@ fn ui_button_defaults_to_no_web_action() {
 }
 
 #[test]
+fn default_depth_effects_do_not_scale_past_widget_bounds() {
+    let panel = UiStyle::panel();
+    let button = UiStyle::button();
+
+    assert_eq!(panel.outer_shadow.size, 1.0);
+    assert_eq!(button.outer_shadow.size, 1.0);
+    assert!(panel.outer_shadow.falloff > button.outer_shadow.falloff);
+}
+
+#[test]
+fn color_picker_modes_accept_scene_names() {
+    assert_eq!(
+        UiColorPickerMode::parse("smooth_wheel"),
+        Some(UiColorPickerMode::SmoothWheel)
+    );
+    assert_eq!(
+        UiColorPickerMode::parse("blocky"),
+        Some(UiColorPickerMode::BlockWheel)
+    );
+    assert_eq!(
+        UiColorPickerMode::parse("swatches"),
+        Some(UiColorPickerMode::Swatches)
+    );
+}
+
+#[test]
 fn ui_image_button_defaults_to_image_click_target() {
     let button = UiImageButton::new();
 

@@ -23,7 +23,7 @@ mod shaders;
 use helpers::*;
 use shaders::*;
 
-const UI_SUPERSAMPLE_SCALE: u32 = 2;
+const UI_SUPERSAMPLE_SCALE: u32 = 3;
 const UI_SUPERSAMPLE_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
 const UI_HARFBUZZ_TEXTURE_ID: TextureId = TextureId::Managed(1);
 
@@ -266,7 +266,7 @@ impl GpuUi {
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
-                entry_point: Some("fs_main_gamma_framebuffer"),
+                entry_point: Some("fs_main_linear_framebuffer"),
                 targets: &[Some(wgpu::ColorTargetState {
                     format: UI_SUPERSAMPLE_FORMAT,
                     blend: Some(wgpu::BlendState {

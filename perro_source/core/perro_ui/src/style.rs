@@ -90,10 +90,22 @@ impl UiStyle {
             stroke: Color::new(0.22, 0.24, 0.28, 1.0),
             stroke_width: 1.0,
             corner_radii: UiCornerRadii::all(0.2),
-            outer_shadow: UiDepthEffect::none(),
+            outer_shadow: UiDepthEffect {
+                color: Color::new(0.0, 0.0, 0.0, 0.28),
+                distance: 2.0,
+                falloff: 4.0,
+                vector: Vector2::new(0.0, -1.0),
+                size: 1.0,
+            },
             inner_shadow: UiDepthEffect::none(),
             outer_highlight: UiDepthEffect::none(),
-            inner_highlight: UiDepthEffect::none(),
+            inner_highlight: UiDepthEffect {
+                color: Color::new(1.0, 1.0, 1.0, 0.035),
+                distance: 1.0,
+                falloff: 1.0,
+                vector: Vector2::new(0.0, 1.0),
+                size: 1.0,
+            },
         }
     }
 
@@ -105,10 +117,22 @@ impl UiStyle {
             stroke: Color::new(0.32, 0.35, 0.40, 1.0),
             stroke_width: 1.0,
             corner_radii: UiCornerRadii::all(0.2),
-            outer_shadow: UiDepthEffect::none(),
+            outer_shadow: UiDepthEffect {
+                color: Color::new(0.0, 0.0, 0.0, 0.22),
+                distance: 1.0,
+                falloff: 2.0,
+                vector: Vector2::new(0.0, -1.0),
+                size: 1.0,
+            },
             inner_shadow: UiDepthEffect::none(),
             outer_highlight: UiDepthEffect::none(),
-            inner_highlight: UiDepthEffect::none(),
+            inner_highlight: UiDepthEffect {
+                color: Color::new(1.0, 1.0, 1.0, 0.045),
+                distance: 1.0,
+                falloff: 1.0,
+                vector: Vector2::new(0.0, 1.0),
+                size: 1.0,
+            },
         }
     }
 

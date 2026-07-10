@@ -24,10 +24,10 @@ use perro_render_bridge::{
     Camera3DState, CameraProjectionState, CameraStreamDraw3DState, CameraStreamLighting3DState,
     CameraStreamSourceState, CameraStreamState, Decal3DState, Light2DState, PointParticles3DState,
     ShadowCaster2DState, Sprite2DCommand, Water2DState, Water3DState, WaterBodySampleState,
-    WaterSampleState,
+    WaterSampleState, WaterShapeState,
 };
-use perro_structs::TextureFilterMode;
 use perro_structs::VisualAccessibilitySettings;
+use perro_structs::{PostProcessEffect, TextureFilterMode};
 use std::sync::{Arc, mpsc};
 use std::time::Duration;
 #[cfg(not(target_arch = "wasm32"))]
@@ -38,6 +38,8 @@ use winit::window::Window;
 
 #[path = "gpu/present.rs"]
 mod present;
+#[path = "water_flip_gpu.rs"]
+mod water_flip_gpu;
 #[path = "water_gpu.rs"]
 mod water_gpu;
 
@@ -51,6 +53,61 @@ const CLEAR_R: f64 = 0.050876;
 const CLEAR_G: f64 = 0.063763;
 const CLEAR_B: f64 = 0.079339;
 const SMOOTH_SAMPLE_COUNT: u32 = 4;
+
+fn camera_underwater<'a>(
+    camera: &Camera3DState,
+    waters: &'a [(NodeID, Water3DState)],
+) -> Option<&'a Water3DState> {
+    let camera_world = Vec3::from_array(camera.position);
+    waters.iter().find_map(|(_, water)| {
+        let model = Mat4::from_cols_array_2d(&water.model);
+        let local = model.inverse().transform_point3(camera_world);
+        // Keep the exact surface in the above-water path to avoid post-effect
+        // flicker as wave/camera jitter crosses y=0.
+        if !local.is_finite() || local.y >= -0.02 || local.y < -water.depth.max(0.0) {
+            return None;
+        }
+        let inside = match water.shape {
+            WaterShapeState::Rect => {
+                local.x.abs() <= water.size[0].abs() * 0.5
+                    && local.z.abs() <= water.size[1].abs() * 0.5
+            }
+            WaterShapeState::Circle { radius } => {
+                local.x * local.x + local.z * local.z <= radius * radius
+            }
+            WaterShapeState::Cylinder {
+                radius,
+                half_height,
+            } => {
+                local.x * local.x + local.z * local.z <= radius * radius
+                    && local.y.abs() <= half_height.abs()
+            }
+        };
+        inside.then_some(water)
+    })
+}
+
+fn underwater_effects(water: &Water3DState) -> [PostProcessEffect; 3] {
+    let color = water.deep_color;
+    let tint = [color.r.to_f32(), color.g.to_f32(), color.b.to_f32()];
+    let scatter = water.scattering_strength.clamp(0.0, 2.0);
+    let fog = water.distance_fog_strength.clamp(0.0, 2.0);
+    [
+        PostProcessEffect::Warp {
+            waves: 34.0,
+            strength: (water.refraction_strength * 0.003).clamp(0.0005, 0.012),
+        },
+        PostProcessEffect::ColorFilter {
+            color: tint,
+            strength: (0.22 + scatter * 0.18 + fog * 0.12).clamp(0.2, 0.72),
+        },
+        PostProcessEffect::Vignette {
+            strength: (0.08 + fog * 0.12).clamp(0.08, 0.35),
+            radius: 0.82,
+            softness: 0.5,
+        },
+    ]
+}
 
 fn water_camera_view_proj(camera: &Camera3DState, width: u32, height: u32) -> Mat4 {
     let w = width.max(1) as f32;
@@ -411,6 +468,7 @@ pub struct Gpu {
     device: wgpu::Device,
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
+    surface_view_format: wgpu::TextureFormat,
     render_width: u32,
     render_height: u32,
     render_format: wgpu::TextureFormat,
@@ -692,7 +750,8 @@ impl Gpu {
                 dimension: wgpu::TextureDimension::D2,
                 format: self.render_format,
                 usage: wgpu::TextureUsages::RENDER_ATTACHMENT
-                    | wgpu::TextureUsages::TEXTURE_BINDING,
+                    | wgpu::TextureUsages::TEXTURE_BINDING
+                    | wgpu::TextureUsages::COPY_SRC,
                 view_formats: &[],
             });
             let post_input = self.device.create_texture(&wgpu::TextureDescriptor {
@@ -707,7 +766,8 @@ impl Gpu {
                 dimension: wgpu::TextureDimension::D2,
                 format: self.render_format,
                 usage: wgpu::TextureUsages::RENDER_ATTACHMENT
-                    | wgpu::TextureUsages::TEXTURE_BINDING,
+                    | wgpu::TextureUsages::TEXTURE_BINDING
+                    | wgpu::TextureUsages::COPY_SRC,
                 view_formats: &[],
             });
             let depth = self.device.create_texture(&wgpu::TextureDescriptor {
@@ -765,9 +825,10 @@ impl Gpu {
             | wgpu::CurrentSurfaceTexture::Validation => return false,
         };
 
-        let swap_view = frame
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
+        let swap_view = frame.texture.create_view(&wgpu::TextureViewDescriptor {
+            format: Some(self.surface_view_format),
+            ..Default::default()
+        });
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -859,7 +920,9 @@ impl Gpu {
             .copied()
             .find(|f| f.is_srgb())
             .unwrap_or(caps.formats[0]);
-        let render_format = linear_render_format(surface_format);
+        let surface_view_format =
+            srgb_surface_view_format(surface_format).unwrap_or(surface_format);
+        let render_format = linear_render_format(surface_view_format);
         let present_mode = choose_present_mode(&caps.present_modes, cfg.vsync_enabled);
         let max_frame_latency = choose_max_frame_latency(cfg.vsync_enabled);
         let alpha_mode = if caps.alpha_modes.contains(&wgpu::CompositeAlphaMode::Opaque) {
@@ -880,7 +943,10 @@ impl Gpu {
             height,
             present_mode,
             alpha_mode,
-            view_formats: vec![],
+            view_formats: (surface_view_format != surface_format)
+                .then_some(surface_view_format)
+                .into_iter()
+                .collect(),
             desired_maximum_frame_latency: max_frame_latency,
             // Auto keeps wgpu's pre-30 color-space behavior (sRGB / linear fp16).
             color_space: wgpu::SurfaceColorSpace::Auto,
@@ -897,8 +963,8 @@ impl Gpu {
             max_supported_sample_count,
         );
         let two_d = Gpu2D::new(&device, render_format, sample_count, cfg.texture_filter);
-        let late_overlay_2d = Gpu2D::new(&device, surface_format, 1, cfg.texture_filter);
-        let ui = Some(GpuUi::new(&device, surface_format, cfg.texture_filter));
+        let late_overlay_2d = Gpu2D::new(&device, surface_view_format, 1, cfg.texture_filter);
+        let ui = Some(GpuUi::new(&device, surface_view_format, cfg.texture_filter));
         let three_d = Gpu3D::new(
             &device,
             &queue,
@@ -925,6 +991,8 @@ impl Gpu {
             two_d.camera_bind_group_layout(),
             three_d.water_camera_bind_group_layout(),
             three_d.depth_prepass_view(),
+            render_width,
+            render_height,
         ));
         let msaa_color = create_msaa_color_target(
             &device,
@@ -948,6 +1016,7 @@ impl Gpu {
             device,
             queue,
             config,
+            surface_view_format,
             render_width,
             render_height,
             render_format,
@@ -1022,6 +1091,14 @@ impl Gpu {
         }
         if let Some(three_d) = self.three_d.as_mut() {
             three_d.resize(&self.device, render_width, render_height);
+        }
+        if let (Some(water), Some(three_d)) = (self.water.as_mut(), self.three_d.as_ref()) {
+            water.set_scene_color_size(
+                &self.device,
+                three_d.depth_prepass_view(),
+                render_width,
+                render_height,
+            );
         }
         self.post.resize(&self.device, render_width, render_height);
         self.post_view_generation = next_nonzero_generation(self.post_view_generation);
@@ -1161,7 +1238,9 @@ impl Gpu {
         // Keep window alive for the full surface lifetime.
         self.window_handle.id();
 
-        let post_requested = PostProcessor::has_effects(camera_3d.post_processing.as_ref())
+        let underwater_water = camera_underwater(&camera_3d, waters_3d.as_ref());
+        let post_requested = underwater_water.is_some()
+            || PostProcessor::has_effects(camera_3d.post_processing.as_ref())
             || PostProcessor::has_effects(post_processing_2d.as_ref())
             || PostProcessor::has_effects(post_processing_global.as_ref());
 
@@ -1259,7 +1338,7 @@ impl Gpu {
                 if self.ui.is_none() {
                     self.ui = Some(GpuUi::new(
                         &self.device,
-                        self.config.format,
+                        self.surface_view_format,
                         self.texture_filter,
                     ));
                 }
@@ -1346,10 +1425,11 @@ impl Gpu {
                     two_d.camera_bind_group_layout(),
                     three_d.water_camera_bind_group_layout(),
                     three_d.depth_prepass_view(),
+                    self.render_width,
+                    self.render_height,
                 ));
             }
-            if let (Some(water), Some(three_d)) = (self.water.as_mut(), self.three_d.as_ref()) {
-                water.set_scene_depth_view(&self.device, three_d.depth_prepass_view());
+            if let Some(water) = self.water.as_mut() {
                 let sky_color = sky_clear_color(lighting_3d)
                     .map(|color| [color.r as f32, color.g as f32, color.b as f32])
                     .unwrap_or([0.0, 0.0, 0.0]);
@@ -1513,7 +1593,7 @@ impl Gpu {
         }
         timing.prepare_3d = prepare_3d_start.elapsed();
 
-        let (camera_post_chain, camera_post_enabled) =
+        let (base_camera_post_chain, base_camera_post_enabled) =
             if PostProcessor::has_effects(camera_3d.post_processing.as_ref()) {
                 (camera_3d.post_processing.as_ref(), true)
             } else if PostProcessor::has_effects(post_processing_2d.as_ref()) {
@@ -1521,6 +1601,15 @@ impl Gpu {
             } else {
                 (camera_3d.post_processing.as_ref(), false)
             };
+        let mut underwater_post_chain = Vec::new();
+        let (camera_post_chain, camera_post_enabled) = if let Some(water) = underwater_water {
+            underwater_post_chain.reserve(base_camera_post_chain.len() + 3);
+            underwater_post_chain.extend_from_slice(base_camera_post_chain);
+            underwater_post_chain.extend(underwater_effects(water));
+            (underwater_post_chain.as_slice(), true)
+        } else {
+            (base_camera_post_chain, base_camera_post_enabled)
+        };
         let global_post_chain = post_processing_global.as_ref();
         let global_post_enabled = PostProcessor::has_effects(global_post_chain);
         let accessibility_enabled = self.accessibility.has_settings(accessibility);
@@ -1534,12 +1623,14 @@ impl Gpu {
             .is_some_and(|three_d| three_d.screen_blend_active());
         let msaa_direct_present = surface_sized_render
             && self.sample_count > 1
+            && waters_3d.is_empty()
             && !post_requested
             && !accessibility_enabled
             && !blend_screen_active
             && self.render_format == self.config.format;
         let direct_present = surface_sized_render
             && self.sample_count == 1
+            && waters_3d.is_empty()
             && !post_requested
             && !accessibility_enabled
             && !blend_screen_active
@@ -1573,9 +1664,10 @@ impl Gpu {
             };
             timing.acquire_surface = acquire_surface_start.elapsed();
             let acquire_view_start = Instant::now();
-            let view = acquired
-                .texture
-                .create_view(&wgpu::TextureViewDescriptor::default());
+            let view = acquired.texture.create_view(&wgpu::TextureViewDescriptor {
+                format: Some(self.surface_view_format),
+                ..Default::default()
+            });
             timing.acquire_view = acquire_view_start.elapsed();
             timing.acquire = acquire_start.elapsed();
             frame = Some(acquired);
@@ -1630,7 +1722,7 @@ impl Gpu {
         });
         for (node, stream) in camera_streams {
             let has_stream_post = PostProcessor::has_effects(stream.post_processing.as_ref());
-            let (target_view, post_input_view, post_depth_view, post_view_key) = {
+            let (target_view, post_input_view, post_depth_view, post_view_key, render_texture) = {
                 let Some(target) = self.camera_stream_targets.get(node) else {
                     continue;
                 };
@@ -1649,6 +1741,11 @@ impl Gpu {
                             .create_view(&wgpu::TextureViewDescriptor::default())
                     }),
                     target.post_view_key,
+                    if has_stream_post {
+                        target.post_input.clone()
+                    } else {
+                        target.texture.clone()
+                    },
                 )
             };
             let Some(render_view) = (if has_stream_post {
@@ -1776,16 +1873,11 @@ impl Gpu {
                                 stream_2d.camera_bind_group_layout(),
                                 stream_3d_ref.water_camera_bind_group_layout(),
                                 stream_3d_ref.depth_prepass_view(),
+                                stream.resolution[0].max(1),
+                                stream.resolution[1].max(1),
                             ));
                         }
-                        if let (Some(water), Some(stream_3d_ref)) = (
-                            self.camera_stream_water.as_mut(),
-                            self.camera_stream_3d.as_ref(),
-                        ) {
-                            water.set_scene_depth_view(
-                                &self.device,
-                                stream_3d_ref.depth_prepass_view(),
-                            );
+                        if let Some(water) = self.camera_stream_water.as_mut() {
                             water.prepare(
                                 &self.device,
                                 &self.queue,
@@ -1910,11 +2002,17 @@ impl Gpu {
                                 stream_2d_ref.camera_bind_group_layout(),
                                 stream_3d.water_camera_bind_group_layout(),
                                 stream_3d.depth_prepass_view(),
+                                width,
+                                height,
                             ));
                         }
                         if let Some(water) = self.camera_stream_water.as_mut() {
-                            water
-                                .set_scene_depth_view(&self.device, stream_3d.depth_prepass_view());
+                            water.set_scene_color_size(
+                                &self.device,
+                                stream_3d.depth_prepass_view(),
+                                width,
+                                height,
+                            );
                             let water_view_proj = water_camera_view_proj(camera, width, height);
                             water.prepare(
                                 &self.device,
@@ -1937,6 +2035,7 @@ impl Gpu {
                                 },
                             );
                             water.encode(&mut encoder);
+                            water.capture_scene_color(&mut encoder, &render_texture, render_view);
                             water.render_3d(
                                 &mut encoder,
                                 render_view,
@@ -2025,6 +2124,7 @@ impl Gpu {
                 let clear_water_depth = draws_3d.is_empty()
                     && point_particles_3d.is_empty()
                     && lighting_3d.sky.is_none();
+                water.capture_scene_color(&mut encoder, self.post.scene_texture(), color_view);
                 water.render_3d(
                     &mut encoder,
                     color_view,
@@ -2213,9 +2313,10 @@ impl Gpu {
             };
             timing.acquire_surface = acquire_surface_start.elapsed();
             let acquire_view_start = Instant::now();
-            let view = acquired
-                .texture
-                .create_view(&wgpu::TextureViewDescriptor::default());
+            let view = acquired.texture.create_view(&wgpu::TextureViewDescriptor {
+                format: Some(self.surface_view_format),
+                ..Default::default()
+            });
             timing.acquire_view = acquire_view_start.elapsed();
             timing.acquire = acquire_start.elapsed();
             self.present.apply(&mut encoder, final_bind_group, &view);
@@ -2230,7 +2331,7 @@ impl Gpu {
             if self.ui.is_none() {
                 self.ui = Some(GpuUi::new(
                     &self.device,
-                    self.config.format,
+                    self.surface_view_format,
                     self.texture_filter,
                 ));
             }
@@ -2259,7 +2360,7 @@ impl Gpu {
             if self.late_overlay_2d.is_none() {
                 self.late_overlay_2d = Some(Gpu2D::new(
                     &self.device,
-                    self.config.format,
+                    self.surface_view_format,
                     1,
                     self.texture_filter,
                 ));

@@ -251,6 +251,54 @@ impl UiNodeBase for UiCheckbox {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum UiColorPickerMode {
+    SmoothWheel,
+    BlockWheel,
+    Swatches,
+}
+
+impl UiColorPickerMode {
+    pub fn parse(value: &str) -> Option<Self> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "smooth" | "smooth_wheel" | "wheel" => Some(Self::SmoothWheel),
+            "block" | "blocky" | "block_wheel" => Some(Self::BlockWheel),
+            "swatch" | "swatches" | "palette" => Some(Self::Swatches),
+            _ => None,
+        }
+    }
+}
+
+pub fn ui_color_picker_swatches() -> [Color; 24] {
+    let rgb = |r, g, b| Color::from_rgba_u8([r, g, b, 255]);
+    [
+        rgb(248, 250, 252),
+        rgb(203, 213, 225),
+        rgb(100, 116, 139),
+        rgb(30, 41, 59),
+        rgb(15, 23, 42),
+        rgb(2, 6, 23),
+        rgb(239, 68, 68),
+        rgb(249, 115, 22),
+        rgb(245, 158, 11),
+        rgb(234, 179, 8),
+        rgb(132, 204, 22),
+        rgb(34, 197, 94),
+        rgb(16, 185, 129),
+        rgb(20, 184, 166),
+        rgb(6, 182, 212),
+        rgb(14, 165, 233),
+        rgb(59, 130, 246),
+        rgb(99, 102, 241),
+        rgb(139, 92, 246),
+        rgb(168, 85, 247),
+        rgb(217, 70, 239),
+        rgb(236, 72, 153),
+        rgb(244, 63, 94),
+        rgb(120, 53, 15),
+    ]
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct UiColorPicker {
     pub button: UiButton,
@@ -259,6 +307,11 @@ pub struct UiColorPicker {
     pub popup_style: UiStyle,
     pub popup_size: [f32; 2],
     pub wheel_radius: f32,
+    pub picker_mode: UiColorPickerMode,
+    pub show_selector: bool,
+    pub show_hex: bool,
+    pub show_rgba: bool,
+    pub show_hsl: bool,
     pub internal_swatch_button: NodeID,
     pub internal_popup_panel: NodeID,
     pub internal_rgba_box: NodeID,
@@ -280,8 +333,13 @@ impl UiColorPicker {
             color: Color::WHITE,
             popup_open: false,
             popup_style: UiStyle::panel(),
-            popup_size: [260.0, 340.0],
-            wheel_radius: 72.0,
+            popup_size: [360.0, 344.0],
+            wheel_radius: 88.0,
+            picker_mode: UiColorPickerMode::SmoothWheel,
+            show_selector: true,
+            show_hex: true,
+            show_rgba: true,
+            show_hsl: true,
             internal_swatch_button: NodeID::nil(),
             internal_popup_panel: NodeID::nil(),
             internal_rgba_box: NodeID::nil(),

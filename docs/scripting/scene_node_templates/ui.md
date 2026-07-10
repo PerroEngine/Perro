@@ -343,8 +343,13 @@ script = "res://path/to/script.rs"
         # Also takes every [UiButton] field.
         color = (1, 1, 1, 1)
         popup_open = false
-        popup_size = (260, 340)
-        wheel_radius = 72.0
+        popup_size = (360, 344)
+        wheel_radius = 88.0
+        picker_mode = "smooth_wheel" # smooth_wheel | block_wheel | swatches
+        show_selector = true
+        show_hex = true
+        show_rgba = true
+        show_hsl = true
         color_changed_signals = []
         popup_style = { fill = (0.11, 0.12, 0.14, 0.98) stroke = (0.22, 0.24, 0.28, 1.0) stroke_width = 1.0 radius = 0.12 }
         [UiNode]
@@ -370,6 +375,31 @@ script = "res://path/to/script.rs"
         [/UiNode]
     [/UiColorPicker]
 [/ui_color_picker]
+
+### `UiColorPicker` picker fields
+
+| Field | Default | Values / behavior |
+| --- | --- | --- |
+| `picker_mode` | `"smooth_wheel"` | `smooth_wheel` = continuous hue/saturation; `block_wheel` = 12 hue bands and 4 saturation bands; `swatches` = fixed 6-by-4 palette |
+| `show_selector` | `true` | Shows the wheel or swatch palette. When false, `picker_mode` has no visible effect. |
+| `show_rgba` | `true` | Shows editable `R`, `G`, `B`, and `A` fields in the `0.0..1.0` range. |
+| `show_hsl` | `true` | Shows editable hue in degrees and saturation/lightness in the `0.0..1.0` range. HSL edits preserve alpha. |
+| `show_hex` | `true` | Shows `#RRGGBBAA`. Accepts `#RGB`, `#RGBA`, `#RRGGBB`, and `#RRGGBBAA`; forms without alpha preserve current alpha. |
+| `popup_size` | `(360, 344)` | Minimum requested popup size. Width clamps to at least `340`; height grows to fit visible sections. |
+| `wheel_radius` | `88.0` | Selector radius. Values clamp to at least `8.0`. |
+
+Selector picks preserve current alpha. Wheel modes pick hue/saturation at full HSV value. RGBA, HSL, and hex fields refine the picked color.
+
+Scene parser aliases:
+
+- `picker_mode`: `wheel_type`, `selection_mode`
+- smooth wheel values: `smooth`, `wheel`
+- block wheel values: `block`, `blocky`
+- swatch values: `swatch`, `palette`
+- `show_selector`: `selector_visible`, `wheel_visible`
+- `show_rgba`: `rgba_visible`
+- `show_hsl`: `hsl_visible`
+- `show_hex`: `hex_visible`
 
 [ui_image_button]
 parent = @PARENTKEY

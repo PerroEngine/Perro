@@ -56,6 +56,8 @@ pub(crate) struct UiShapeDraw {
 pub(crate) struct UiColorWheelDraw {
     pub(crate) rect: UiRectState,
     pub(crate) clip_rect: [f32; 4],
+    pub(crate) mode: perro_render_bridge::UiColorPickerMode,
+    pub(crate) selected: Color,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -237,9 +239,16 @@ impl UiRenderer {
                 node,
                 rect,
                 clip_rect,
+                mode,
+                selected,
             } => self.upsert(
                 node,
-                UiDraw::ColorWheel(UiColorWheelDraw { rect, clip_rect }),
+                UiDraw::ColorWheel(UiColorWheelDraw {
+                    rect,
+                    clip_rect,
+                    mode,
+                    selected: selected.into(),
+                }),
             ),
             UiCommand::UpsertCheckbox {
                 node,

@@ -312,10 +312,25 @@ pub(super) fn linear_render_format(surface_format: wgpu::TextureFormat) -> wgpu:
     match surface_format {
         // Float target: HDR light accumulation headroom and no linear-in-8bit
         // banding in dark gradients; present encodes to the sRGB swapchain.
-        wgpu::TextureFormat::Rgba8UnormSrgb | wgpu::TextureFormat::Bgra8UnormSrgb => {
-            wgpu::TextureFormat::Rgba16Float
-        }
+        wgpu::TextureFormat::Rgba8Unorm
+        | wgpu::TextureFormat::Bgra8Unorm
+        | wgpu::TextureFormat::Rgba8UnormSrgb
+        | wgpu::TextureFormat::Bgra8UnormSrgb => wgpu::TextureFormat::Rgba16Float,
         _ => surface_format,
+    }
+}
+
+pub(super) const fn srgb_surface_view_format(
+    surface_format: wgpu::TextureFormat,
+) -> Option<wgpu::TextureFormat> {
+    match surface_format {
+        wgpu::TextureFormat::Rgba8Unorm | wgpu::TextureFormat::Rgba8UnormSrgb => {
+            Some(wgpu::TextureFormat::Rgba8UnormSrgb)
+        }
+        wgpu::TextureFormat::Bgra8Unorm | wgpu::TextureFormat::Bgra8UnormSrgb => {
+            Some(wgpu::TextureFormat::Bgra8UnormSrgb)
+        }
+        _ => None,
     }
 }
 
@@ -420,5 +435,17 @@ mod tests {
         let (width, height) = capped_render_size(8192, 8192, 8192);
         assert!(width as u64 * height as u64 <= MAX_FRAME_RENDER_PIXELS + 8192);
         assert_eq!(width, height);
+    }
+
+    #[test]
+    fn linear_8bit_surface_uses_srgb_view_and_float_render_target() {
+        assert_eq!(
+            srgb_surface_view_format(wgpu::TextureFormat::Bgra8Unorm),
+            Some(wgpu::TextureFormat::Bgra8UnormSrgb)
+        );
+        assert_eq!(
+            linear_render_format(wgpu::TextureFormat::Bgra8UnormSrgb),
+            wgpu::TextureFormat::Rgba16Float
+        );
     }
 }

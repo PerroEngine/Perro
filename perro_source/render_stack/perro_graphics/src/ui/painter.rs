@@ -16,12 +16,12 @@ use epaint::{
 };
 use perro_ids::NodeID;
 use perro_render_bridge::{
-    UiCornerRadiiState, UiDepthEffectState, UiFillKindState, UiImageScaleState,
+    UiColorPickerMode, UiCornerRadiiState, UiDepthEffectState, UiFillKindState, UiImageScaleState,
     UiLinearGradientState, UiRectState, UiShapeKind, UiTextAlignState,
 };
 use std::sync::Arc;
 
-const UI_RASTER_SCALE: f32 = 2.0;
+const UI_RASTER_SCALE: f32 = 3.0;
 const UI_FONT_ATLAS_SIZE: usize = 4096;
 const UI_HARFBUZZ_ATLAS_SIZE: usize = 4096;
 const UI_HARFBUZZ_TEXTURE_ID: TextureId = TextureId::Managed(1);
@@ -975,6 +975,8 @@ fn push_color_wheel_shape(
         rect.center(),
         rect.width().min(rect.height()) * 0.5,
         clip_rect,
+        wheel.mode,
+        wheel.selected,
         out,
     );
 }
@@ -1002,29 +1004,156 @@ fn push_color_wheel(
     center: epaint::Pos2,
     radius: f32,
     clip_rect: Rect,
+    mode: UiColorPickerMode,
+    selected: perro_structs::Color,
     out: &mut Vec<ClippedShape>,
 ) {
-    let steps = 48;
-    for idx in 0..steps {
-        let a0 = idx as f32 / steps as f32 * std::f32::consts::TAU;
-        let a1 = (idx + 1) as f32 / steps as f32 * std::f32::consts::TAU;
-        let p0 = center + vec2(a0.cos() * radius, a0.sin() * radius);
-        let p1 = center + vec2(a1.cos() * radius, a1.sin() * radius);
-        let color = hsv_color(idx as f32 / steps as f32, 1.0, 1.0);
-        out.push(ClippedShape {
-            clip_rect,
-            shape: Shape::convex_polygon(vec![center, p0, p1], color32(color), Stroke::NONE),
-        });
+    if matches!(mode, UiColorPickerMode::Swatches) {
+        push_color_swatches(center, radius, selected, clip_rect, out);
+        return;
     }
+    let steps = if matches!(mode, UiColorPickerMode::BlockWheel) {
+        12
+    } else {
+        96
+    };
+    let rings = if matches!(mode, UiColorPickerMode::BlockWheel) {
+        4
+    } else {
+        12
+    };
+    let mut mesh = Mesh::default();
+    for ring in 0..rings {
+        let inner = ring as f32 / rings as f32;
+        let outer = (ring + 1) as f32 / rings as f32;
+        for idx in 0..steps {
+            let h0 = idx as f32 / steps as f32;
+            let h1 = (idx + 1) as f32 / steps as f32;
+            let a0 = h0 * std::f32::consts::TAU;
+            let a1 = h1 * std::f32::consts::TAU;
+            let base = mesh.vertices.len() as u32;
+            for (angle, saturation) in [(a0, inner), (a1, inner), (a1, outer), (a0, outer)] {
+                let color = if matches!(mode, UiColorPickerMode::BlockWheel) {
+                    hsv_color(
+                        (idx as f32 + 0.5) / steps as f32,
+                        (ring as f32 + 0.5) / rings as f32,
+                        1.0,
+                    )
+                } else {
+                    hsv_color(angle / std::f32::consts::TAU, saturation, 1.0)
+                };
+                mesh.vertices.push(Vertex {
+                    pos: center + vec2(angle.cos(), -angle.sin()) * radius * saturation,
+                    uv: pos2(0.0, 0.0),
+                    color: color32(color),
+                });
+            }
+            mesh.indices
+                .extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+        }
+    }
+    out.push(ClippedShape {
+        clip_rect,
+        shape: Shape::Mesh(mesh.into()),
+    });
     out.push(ClippedShape {
         clip_rect,
         shape: Shape::Circle(CircleShape {
             center,
-            radius: radius * 0.42,
-            fill: Color32::from_white_alpha(210),
-            stroke: Stroke::new(1.0_f32, Color32::from_black_alpha(80)),
+            radius,
+            fill: Color32::TRANSPARENT,
+            stroke: Stroke::new(1.0, Color32::from_white_alpha(90)),
         }),
     });
+    let (hue, saturation, _) = rgb_to_hsv(selected);
+    let angle = hue * std::f32::consts::TAU;
+    let marker = center + vec2(angle.cos(), -angle.sin()) * radius * saturation;
+    push_color_marker(marker, clip_rect, out);
+}
+
+fn push_color_swatches(
+    center: epaint::Pos2,
+    radius: f32,
+    selected: perro_structs::Color,
+    clip_rect: Rect,
+    out: &mut Vec<ClippedShape>,
+) {
+    let bounds = Rect::from_center_size(center, vec2(radius * 2.0, radius * 2.0));
+    let swatches = perro_render_bridge::ui_color_picker_swatches();
+    let gap = 4.0;
+    let cell = vec2(
+        (bounds.width() - gap * 5.0) / 6.0,
+        (bounds.height() - gap * 3.0) / 4.0,
+    );
+    let mut best = (f32::INFINITY, bounds.center());
+    for (idx, color) in swatches.into_iter().enumerate() {
+        let col = (idx % 6) as f32;
+        let row = (idx / 6) as f32;
+        let min = bounds.min + vec2(col * (cell.x + gap), row * (cell.y + gap));
+        let rect = Rect::from_min_size(min, cell);
+        out.push(ClippedShape {
+            clip_rect,
+            shape: Shape::Rect(RectShape::new(
+                rect,
+                CornerRadius::same(4),
+                color32(color),
+                Stroke::new(1.0, Color32::from_black_alpha(80)),
+                StrokeKind::Inside,
+            )),
+        });
+        let distance = (color.r() - selected.r()).powi(2)
+            + (color.g() - selected.g()).powi(2)
+            + (color.b() - selected.b()).powi(2);
+        if distance < best.0 {
+            best = (distance, rect.center());
+        }
+    }
+    push_color_marker(best.1, clip_rect, out);
+}
+
+fn push_color_marker(pos: epaint::Pos2, clip_rect: Rect, out: &mut Vec<ClippedShape>) {
+    out.push(ClippedShape {
+        clip_rect,
+        shape: Shape::Circle(CircleShape {
+            center: pos,
+            radius: 7.0,
+            fill: Color32::TRANSPARENT,
+            stroke: Stroke::new(3.0, Color32::from_black_alpha(170)),
+        }),
+    });
+    out.push(ClippedShape {
+        clip_rect,
+        shape: Shape::Circle(CircleShape {
+            center: pos,
+            radius: 6.0,
+            fill: Color32::TRANSPARENT,
+            stroke: Stroke::new(2.0, Color32::WHITE),
+        }),
+    });
+}
+
+fn rgb_to_hsv(color: perro_structs::Color) -> (f32, f32, f32) {
+    let max = color.r().max(color.g()).max(color.b());
+    let min = color.r().min(color.g()).min(color.b());
+    let delta = max - min;
+    let hue = if delta <= f32::EPSILON {
+        0.0
+    } else if max == color.r() {
+        ((color.g() - color.b()) / delta).rem_euclid(6.0) / 6.0
+    } else if max == color.g() {
+        (((color.b() - color.r()) / delta) + 2.0) / 6.0
+    } else {
+        (((color.r() - color.g()) / delta) + 4.0) / 6.0
+    };
+    (
+        hue,
+        if max <= f32::EPSILON {
+            0.0
+        } else {
+            delta / max
+        },
+        max,
+    )
 }
 
 fn hsv_color(h: f32, s: f32, v: f32) -> perro_structs::Color {
@@ -1165,7 +1294,7 @@ fn add_rounded_rect_with_uv(
         color,
     });
 
-    for pos in rounded_rect_points(rect, radii, 6) {
+    for pos in rounded_rect_points(rect, radii, rounded_rect_segments(rect, radii)) {
         mesh.vertices.push(Vertex {
             pos,
             uv: rect_uv(rect, uv, pos),
@@ -1859,6 +1988,16 @@ fn radii_to_corner_radius(rect: Rect, radii: ResolvedCornerRadii) -> CornerRadiu
     }
 }
 
+fn rounded_rect_segments(rect: Rect, radii: ResolvedCornerRadii) -> usize {
+    let radius = radii
+        .tl
+        .max(radii.tr)
+        .max(radii.br)
+        .max(radii.bl)
+        .min(rect.width().min(rect.height()) * 0.5);
+    (radius * 0.45).ceil().clamp(6.0, 18.0) as usize
+}
+
 fn rounded_rect_points(
     rect: Rect,
     radii: ResolvedCornerRadii,
@@ -1933,7 +2072,7 @@ fn add_rounded_rect_gradient(
     radii: ResolvedCornerRadii,
     gradient: UiLinearGradientState,
 ) {
-    let points = rounded_rect_points(rect, radii, 6);
+    let points = rounded_rect_points(rect, radii, rounded_rect_segments(rect, radii));
     if points.len() < 3 {
         return;
     }

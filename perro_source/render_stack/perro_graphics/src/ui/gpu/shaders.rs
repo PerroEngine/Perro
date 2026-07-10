@@ -31,11 +31,6 @@ fn vs_main(in: VsIn) -> VsOut {
     return out;
 }
 
-@fragment
-fn fs_main_gamma_framebuffer(in: VsOut) -> @location(0) vec4<f32> {
-    return textureSample(font_tex, font_sampler, in.uv) * in.color;
-}
-
 fn linear_from_gamma_rgb(srgb: vec3<f32>) -> vec3<f32> {
     let cutoff = srgb < vec3<f32>(0.04045);
     let lower = srgb / vec3<f32>(12.92);
@@ -45,8 +40,9 @@ fn linear_from_gamma_rgb(srgb: vec3<f32>) -> vec3<f32> {
 
 @fragment
 fn fs_main_linear_framebuffer(in: VsOut) -> @location(0) vec4<f32> {
-    let gamma = textureSample(font_tex, font_sampler, in.uv) * in.color;
-    return vec4<f32>(linear_from_gamma_rgb(gamma.rgb), gamma.a);
+    let sample = textureSample(font_tex, font_sampler, in.uv);
+    let color = vec4<f32>(linear_from_gamma_rgb(in.color.rgb), in.color.a);
+    return sample * color;
 }
 "#;
 
@@ -79,20 +75,16 @@ fn vs_composite(@builtin(vertex_index) vertex_index: u32) -> VsOut {
 
 @fragment
 fn fs_composite_gamma_framebuffer(in: VsOut) -> @location(0) vec4<f32> {
-    return textureSample(composite_tex, composite_sampler, in.uv);
-}
-
-fn linear_from_gamma_rgb(srgb: vec3<f32>) -> vec3<f32> {
-    let cutoff = srgb < vec3<f32>(0.04045);
-    let lower = srgb / vec3<f32>(12.92);
-    let higher = pow((srgb + vec3<f32>(0.055)) / vec3<f32>(1.055), vec3<f32>(2.4));
-    return select(higher, lower, cutoff);
+    let linear = textureSample(composite_tex, composite_sampler, in.uv);
+    let cutoff = linear.rgb <= vec3<f32>(0.0031308);
+    let lower = linear.rgb * vec3<f32>(12.92);
+    let higher = vec3<f32>(1.055) * pow(linear.rgb, vec3<f32>(1.0 / 2.4)) - vec3<f32>(0.055);
+    return vec4<f32>(select(higher, lower, cutoff), linear.a);
 }
 
 @fragment
 fn fs_composite_linear_framebuffer(in: VsOut) -> @location(0) vec4<f32> {
-    let gamma = textureSample(composite_tex, composite_sampler, in.uv);
-    return vec4<f32>(linear_from_gamma_rgb(gamma.rgb), gamma.a);
+    return textureSample(composite_tex, composite_sampler, in.uv);
 }
 "#;
 

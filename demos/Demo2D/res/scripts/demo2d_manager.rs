@@ -96,6 +96,7 @@ struct DemoRuntimeState {
     fade_action: FadeAction,
     audio_timer: f32,
     audio_debug: bool,
+    light_time: f32,
 }
 
 impl Default for DemoRuntimeState {
@@ -110,6 +111,7 @@ impl Default for DemoRuntimeState {
             fade_action: FadeAction::None,
             audio_timer: 0.0,
             audio_debug: false,
+            light_time: 0.0,
         }
     }
 }
@@ -181,6 +183,10 @@ lifecycle!({
             if !paused {
                 self.update_audio_zone(ctx);
             }
+        }
+
+        if self.active_demo(ctx) == DemoKind::Lights && !paused {
+            self.update_light_zone(ctx);
         }
     }
 });
@@ -334,6 +340,11 @@ methods!({
         }
         if !info_overlay_root.is_nil() {
             reparent!(ctx.run, parent, info_overlay_root);
+        }
+        for name in ["demo_btn_water", "demo_btn_blend"] {
+            if let Some(node) = get_child!(ctx.run, main_menu_root, name) {
+                set_tree_visible!(ctx.run, node, false);
+            }
         }
         let fade_panel = if fade_root.is_nil() {
             NodeID::nil()
@@ -568,6 +579,13 @@ methods!({
             });
         let in_hub = active_demo == DemoKind::None;
         set_ui_tree_visible(ctx, menu, in_hub);
+        if in_hub {
+            for name in ["demo_btn_water", "demo_btn_blend"] {
+                if let Some(node) = get_child!(ctx.run, menu, name) {
+                    set_tree_visible!(ctx.run, node, false);
+                }
+            }
+        }
         set_ui_tree_visible(ctx, pause, paused);
         set_ui_tree_visible(ctx, profiling, true);
         set_ui_tree_visible(ctx, info, true);
@@ -579,6 +597,7 @@ methods!({
         with_state_mut!(ctx.run, Demo2DState, ctx.id, |state| {
             state.runtime.audio_timer = 0.0;
             state.runtime.audio_debug = false;
+            state.runtime.light_time = 0.0;
         });
         for node in query!(ctx.run, all(tags["demo2d_dynamic"]), in_subtree(ctx.id)) {
             let _ = remove_node!(ctx.run, node);
@@ -612,7 +631,7 @@ methods!({
         cols: i32,
         rows: i32,
         step: f32,
-        _name: &str,
+        name: &str,
     ) {
         let tex = texture_load!(ctx.res, SPRITE_SHEET);
         let logo = texture_load!(ctx.res, PERRO_LOGO);
@@ -643,6 +662,9 @@ methods!({
                             ]);
                             sprite.transform.scale = Vector2::new(0.55, 0.55);
                         }
+                        if name == "light_bg" {
+                            sprite.modulate.self_modulate = Color::new(0.16, 0.20, 0.28, 1.0);
+                        }
                         sprite.transform.position = Vector2::new(px, py);
                     }
                 );
@@ -658,12 +680,24 @@ methods!({
             ("hurt_grid", Vector2::new(220.0, 40.0), 2.8),
         ];
         for (name, offset, scale) in defs {
-            let Ok(node) = scene_load!(ctx.run, scene) else {
+            let Ok(root) = scene_load!(ctx.run, scene) else {
+                log_error!("[Demo2D] animated scene load fail anim={name}");
                 continue;
             };
-            reparent!(ctx.run, ctx.id, node);
-            tag_add!(ctx.run, node, tags!["demo2d_dynamic"]);
-            let _ = with_node_mut!(ctx.run, AnimatedSprite2D, node, |sprite| {
+            reparent!(ctx.run, ctx.id, root);
+            tag_add!(ctx.run, root, tags!["demo2d_dynamic"]);
+            let Some(sprite_id) = query!(
+                ctx.run,
+                all(node_type[AnimatedSprite2D]),
+                in_subtree(root)
+            )
+            .into_iter()
+            .next() else {
+                log_error!("[Demo2D] animated scene child miss anim={name}");
+                let _ = remove_node!(ctx.run, root);
+                continue;
+            };
+            let configured = with_node_mut!(ctx.run, AnimatedSprite2D, sprite_id, |sprite| {
                 sprite.current_animation = name.into();
                 sprite.current_frame = 0;
                 sprite.fps_scale = 1.0;
@@ -671,7 +705,12 @@ methods!({
                 sprite.looping = true;
                 sprite.transform.position = origin + offset;
                 sprite.transform.scale = Vector2::new(scale, scale);
-            });
+            })
+            .is_some();
+            if !configured {
+                log_error!("[Demo2D] animated scene setup fail anim={name}");
+                let _ = remove_node!(ctx.run, root);
+            }
         }
     }
 
@@ -690,7 +729,7 @@ methods!({
             let x = origin.x - 280.0 + i as f32 * 80.0;
             let y = origin.y + if i % 2 == 0 { 100.0 } else { -120.0 };
             let hue = i as f32 / 8.0;
-            let _ = spawn!(
+            let light = spawn!(
                 ctx.run,
                 PointLight2D,
                 "point_light",
@@ -700,10 +739,25 @@ methods!({
                     light.color = palette_rgb(hue);
                     light.intensity = 2.1;
                     light.range = 180.0;
+                    light.cast_shadows = true;
                     light.transform.position = Vector2::new(x, y);
                 }
             );
-            self.spawn_marker_sprite(ctx, disc, Vector2::new(x, y), 1.5);
+            if i == 0 {
+                tag_add!(ctx.run, light, tags!["demo2d_key_light"]);
+            }
+            let marker = self.spawn_marker_sprite(ctx, disc, Vector2::new(x, y), 1.5);
+            if i == 0 {
+                tag_add!(ctx.run, marker, tags!["demo2d_key_marker"]);
+            }
+        }
+
+        for (offset, size) in [
+            (Vector2::new(-180.0, 60.0), Vector2::new(150.0, 22.0)),
+            (Vector2::new(0.0, -40.0), Vector2::new(24.0, 170.0)),
+            (Vector2::new(180.0, 60.0), Vector2::new(150.0, 22.0)),
+        ] {
+            self.spawn_shadow_obstacle(ctx, origin + offset, size);
         }
 
         for i in 0..2 {
@@ -721,6 +775,7 @@ methods!({
                     };
                     light.intensity = 2.6;
                     light.range = 260.0;
+                    light.cast_shadows = true;
                     light.inner_angle_radians = 0.25;
                     light.outer_angle_radians = 0.75;
                     light.transform.position =
@@ -744,12 +799,86 @@ methods!({
                         Color::rgb(0.55, 1.0, 0.45)
                     };
                     light.intensity = 2.0;
+                    light.cast_shadows = true;
                     light.transform.position =
                         origin + Vector2::new(-250.0 + i as f32 * 500.0, -260.0);
                     light.transform.rotation = if i == 0 { 0.4 } else { -0.4 };
                 }
             );
         }
+    }
+
+    fn update_light_zone(&self, ctx: &mut ScriptContext<'_, API>) {
+        let dt = delta_time!(ctx.run).max(0.0);
+        let time = with_state_mut!(ctx.run, Demo2DState, ctx.id, |state| {
+            state.runtime.light_time += dt;
+            state.runtime.light_time
+        })
+        .unwrap_or(0.0);
+        let origin = Vector2::new(1450.0, 850.0);
+        let pos = origin
+            + Vector2::new(
+                -280.0 + time.cos() * 220.0,
+                20.0 + (time * 1.35).sin() * 150.0,
+            );
+        for light in query!(
+            ctx.run,
+            all(tags["demo2d_key_light"]),
+            in_subtree(ctx.id)
+        ) {
+            let _ = with_node_mut!(ctx.run, PointLight2D, light, |node| {
+                node.transform.position = pos;
+            });
+        }
+        for marker in query!(
+            ctx.run,
+            all(tags["demo2d_key_marker"]),
+            in_subtree(ctx.id)
+        ) {
+            let _ = with_node_mut!(ctx.run, Sprite2D, marker, |node| {
+                node.transform.position = pos;
+            });
+        }
+    }
+
+    fn spawn_shadow_obstacle(
+        &self,
+        ctx: &mut ScriptContext<'_, API>,
+        position: Vector2,
+        size: Vector2,
+    ) {
+        let tex = texture_load!(ctx.res, SPRITE_SHEET);
+        let sprite = spawn!(
+            ctx.run,
+            Sprite2D,
+            "shadow_obstacle",
+            tags!["demo2d_dynamic"],
+            ctx.id,
+            |node| {
+                node.texture = tex;
+                node.texture_region = Some([0.0, 0.0, 32.0, 32.0]);
+                node.transform.position = position;
+                node.transform.scale = Vector2::new(size.x / 32.0, size.y / 32.0);
+                node.z_index = 3;
+                node.modulate.self_modulate = Color::new(0.04, 0.06, 0.12, 1.0);
+            }
+        );
+        let shape = create_node!(
+            ctx.run,
+            CollisionShape2D,
+            "shadow_obstacle_shape",
+            tags!["demo2d_dynamic"],
+            ctx.id
+        );
+        let _ = with_node_mut!(ctx.run, CollisionShape2D, shape, |node| {
+            node.transform.position = position;
+            node.z_index = 3;
+            node.shape = Shape2D::Quad {
+                width: size.x,
+                height: size.y,
+            };
+        });
+        tag_add!(ctx.run, sprite, tags!["demo2d_shadow_visual"]);
     }
 
     fn spawn_water_zone(&self, ctx: &mut ScriptContext<'_, API>, origin: Vector2) {
@@ -1278,7 +1407,7 @@ methods!({
         let title = match active_demo {
             DemoKind::None => "Demo2D".to_string(),
             DemoKind::MeshMaterials => "Sprite Stress".to_string(),
-            DemoKind::Lights => "Lights".to_string(),
+            DemoKind::Lights => "Lighting + Shadows".to_string(),
             DemoKind::Water => "Water".to_string(),
             DemoKind::AnimatedSprites => "Animated Sprites".to_string(),
             DemoKind::Animations => "Animations".to_string(),
@@ -1301,7 +1430,7 @@ methods!({
         let body = match active_demo {
             DemoKind::None => "pick lane frm hub".to_string(),
             DemoKind::MeshMaterials => "sprites 256/1024/4096".to_string(),
-            DemoKind::Lights => "point 8 | spot 2 | ray 2".to_string(),
+            DemoKind::Lights => "point 8 | spot 2 | ray 2 | occluders 3 | orbit".to_string(),
             DemoKind::Water => "water 3 | floaters 48".to_string(),
             DemoKind::AnimatedSprites => format!("active animated sprites {}", active_anim_sprites),
             DemoKind::Animations => "transform clips | players 48".to_string(),

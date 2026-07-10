@@ -153,7 +153,15 @@ All inherit `UiNode` layout fields.
 `UiColorPicker`
 
 - `UiButton` plus a popup that edits a `color`.
-- Holds `color`, `popup_open`, `popup_style`, `popup_size`, `wheel_radius`.
+- Holds `color`, `popup_open`, `popup_style`, `popup_size`, and `wheel_radius`.
+- `picker_mode` selects `smooth_wheel`, `block_wheel`, or `swatches`.
+- `show_selector`, `show_hex`, `show_rgba`, and `show_hsl` control popup sections.
+- Popup height grows when needed, so large selectors never overlap value fields.
+- Defaults: `smooth_wheel`; all four popup sections visible; `popup_size = (360, 344)`; `wheel_radius = 88.0`.
+- `smooth_wheel` gives continuous hue/saturation. `block_wheel` snaps to 12 hue bands and 4 saturation bands. `swatches` gives a fixed 6-by-4 palette.
+- Selector picks preserve alpha. Wheel picks use full HSV value; RGBA, HSL, or hex fields can refine the result.
+- RGBA fields use `0.0..1.0`. HSL uses hue degrees plus `0.0..1.0` saturation/lightness and preserves alpha.
+- Hex shows `#RRGGBBAA`; edits accept `#RGB`, `#RGBA`, `#RRGGBB`, or `#RRGGBBAA`. Forms without alpha preserve current alpha.
 - Emits `color_changed_signals`.
 - Use it for editor swatches, theme pickers, and tint controls.
 

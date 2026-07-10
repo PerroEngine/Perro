@@ -18,8 +18,7 @@ Flow:
 Parity map:
 
 - `Mesh + Materials` -> static sprite atlas stress
-- `Lights` -> point/spot/ray 2D light overlap
-- `Water` -> 2D water + buoyancy pools
+- `Lights + Shadows` -> point/spot/ray lights + moving shadow casters
 - `Animations` -> animated sprites + `AnimationPlayer`
 - `Physics Bones` -> `Skeleton2D` + `PhysicsBoneChain2D`
 - `Physics Collisions` -> rigid-body stacks

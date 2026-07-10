@@ -35,6 +35,7 @@ const UI_ANCHOR_OPTIONS: &[&str] = &[
 ];
 const UI_TEXT_ALIGN_OPTIONS: &[&str] = &["start", "center", "end"];
 const UI_FILL_KIND_OPTIONS: &[&str] = &["solid", "linear"];
+const UI_COLOR_PICKER_MODE_OPTIONS: &[&str] = &["smooth_wheel", "block_wheel", "swatches"];
 const UI_SCROLL_DIRECTION_OPTIONS: &[&str] = &["vertical", "horizontal"];
 const UI_SCROLL_BAR_SIDE_OPTIONS: &[&str] = &["right", "left", "bottom", "top"];
 const PARTICLE_SIM_MODE_2D_OPTIONS: &[&str] = &["default", "cpu"];
@@ -799,8 +800,37 @@ fn push_node_fields(fields: &mut Vec<SceneNodeField>, node_type: NodeType) {
                 push(fields, "State", "checked", NodeFieldType::Bool);
             }
             if matches!(node_type, NodeType::UiColorPicker) {
-                push(fields, "State", "color", NodeFieldType::Color);
+                fields.push(
+                    SceneNodeField::new("State", "color", NodeFieldType::Color).with_default(
+                        SceneValue::Vec4 {
+                            x: 1.0,
+                            y: 1.0,
+                            z: 1.0,
+                            w: 1.0,
+                        },
+                    ),
+                );
                 push(fields, "State", "popup_open", NodeFieldType::Bool);
+                push(
+                    fields,
+                    "Picker",
+                    "picker_mode",
+                    NodeFieldType::enumeration(UI_COLOR_PICKER_MODE_OPTIONS),
+                );
+                for name in ["show_selector", "show_hex", "show_rgba", "show_hsl"] {
+                    fields.push(
+                        SceneNodeField::new("Picker", name, NodeFieldType::Bool)
+                            .with_default(SceneValue::Bool(true)),
+                    );
+                }
+                fields.push(
+                    SceneNodeField::new("Picker", "popup_size", NodeFieldType::Vec2)
+                        .with_default(SceneValue::Vec2 { x: 360.0, y: 344.0 }),
+                );
+                fields.push(
+                    SceneNodeField::new("Picker", "wheel_radius", NodeFieldType::F32)
+                        .with_default(SceneValue::F32(88.0)),
+                );
             }
             if matches!(node_type, NodeType::UiTextBox | NodeType::UiTextBlock) {
                 asset_field(fields, "Style", "focused_style", SceneAssetKind::UiStyle);

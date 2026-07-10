@@ -216,5 +216,22 @@ Static/rigid bodies keep owning solid collision and contact behavior.
 This keeps common authoring simple:
 
 - Add water node for visual water, sensor overlap, and float force.
+
+## GPU visual capture and benchmark
+
+Run a focused water case with a stable capture window:
+
+```powershell
+$env:PERRO_GPU_BENCH = "water_sim_1_64"
+$env:PERRO_GPU_BENCH_THROUGHPUT = "1"
+$env:PERRO_GPU_CAPTURE_MS = "5000"
+$env:PERRO_GPU_BENCH_CSV = "target/water-gpu-bench.csv"
+cargo bench -p perro_graphics --bench gpu_frame
+```
+
+`PERRO_GPU_CAPTURE_MS` keeps the final rendered frame visible for capture.
+`PERRO_GPU_BENCH_THROUGHPUT` queues frames like the uncapped runtime and waits for the GPU once after the sample batch. Without it, the benchmark waits after every frame for isolated latency measurements.
+`PERRO_GPU_BENCH_CSV` appends CPU, GPU-main, GPU-water, draw-call, and instance timing data.
+Use `water_sim`, `water_idle`, or another case substring to select the workload.
 - Add static collider nodes for solid banks, floor, rocks, docks, and islands.
 - Tune `buoyancy`, `drag`, and `flow` for feel without editing body shapes.

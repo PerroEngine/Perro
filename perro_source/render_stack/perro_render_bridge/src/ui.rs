@@ -1,5 +1,5 @@
 use super::*;
-pub use perro_ui::UiShapeKind;
+pub use perro_ui::{UiColorPickerMode, UiShapeKind, ui_color_picker_swatches};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct UiRectState {
@@ -136,6 +136,8 @@ pub enum UiCommand {
         node: NodeID,
         rect: UiRectState,
         clip_rect: [f32; 4],
+        mode: UiColorPickerMode,
+        selected: [f32; 4],
     },
     UpsertCheckbox {
         node: NodeID,

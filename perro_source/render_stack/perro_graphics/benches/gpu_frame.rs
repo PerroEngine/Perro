@@ -10,7 +10,11 @@ use perro_render_bridge::{
 };
 use perro_structs::{BitMask, PostProcessEffect, PostProcessSet};
 use std::env;
+use std::fs::{self, OpenOptions};
+use std::io::Write;
+use std::path::Path;
 use std::sync::Arc;
+use std::thread;
 use std::time::{Duration, Instant};
 use winit::application::ApplicationHandler;
 use winit::dpi::PhysicalSize;
@@ -112,6 +116,47 @@ impl TimingSum {
             self.draw_instances_3d / frames,
         );
     }
+
+    fn append_csv(&self, path: &Path, name: &str) {
+        if let Some(parent) = path
+            .parent()
+            .filter(|parent| !parent.as_os_str().is_empty())
+        {
+            fs::create_dir_all(parent).expect("create gpu bench csv directory");
+        }
+        let write_header = fs::metadata(path).map_or(true, |meta| meta.len() == 0);
+        let mut file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)
+            .expect("open gpu bench csv");
+        if write_header {
+            writeln!(
+                file,
+                "case,frames,total_us,wait_us,gpu_main_us,gpu_water_us,cpu_prepare_us,gpu_2d_us,gpu_3d_us,encode_us,submit_us,present_us,draw_calls_2d,draw_calls_3d,instances_3d"
+            )
+            .expect("write gpu bench csv header");
+        }
+        let frames = self.frames.max(1);
+        writeln!(
+            file,
+            "{name},{frames},{},{},{},{},{},{},{},{},{},{},{},{},{}",
+            Self::avg_us(self.total, frames),
+            Self::avg_us(self.wait_idle, frames),
+            Self::avg_us(self.gpu_main, frames),
+            Self::avg_us(self.gpu_water, frames),
+            Self::avg_us(self.prepare_cpu, frames),
+            Self::avg_us(self.gpu_prepare_2d, frames),
+            Self::avg_us(self.gpu_prepare_3d, frames),
+            Self::avg_us(self.encode, frames),
+            Self::avg_us(self.submit, frames),
+            Self::avg_us(self.present, frames),
+            self.draw_calls_2d / frames,
+            self.draw_calls_3d / frames,
+            self.draw_instances_3d / frames,
+        )
+        .expect("write gpu bench csv row");
+    }
 }
 
 struct BenchCase {
@@ -137,28 +182,56 @@ impl ApplicationHandler for GpuBenchApp {
         }
 
         let window = self.window.as_ref().expect("window").clone();
+        let csv_path = env::var_os("PERRO_GPU_BENCH_CSV");
+        let capture_ms = env::var("PERRO_GPU_CAPTURE_MS")
+            .ok()
+            .and_then(|value| value.parse::<u64>().ok())
+            .unwrap_or(0);
+        let throughput_mode = env::var_os("PERRO_GPU_BENCH_THROUGHPUT").is_some();
         for case in &self.cases {
             if let Ok(filter) = env::var("PERRO_GPU_BENCH")
                 && !case.name.contains(&filter)
             {
                 continue;
             }
+            window.set_title(&format!("perro gpu bench - {}", case.name));
             let mut graphics = (case.setup)(&window);
             for _ in 0..WARMUP_FRAMES {
                 (case.redraw)(&mut graphics);
                 let _ = graphics.draw_frame_timed();
             }
             let mut sum = TimingSum::default();
+            let batch_start = Instant::now();
             for _ in 0..SAMPLE_FRAMES {
                 (case.redraw)(&mut graphics);
                 if let Some(timing) = graphics.draw_frame_timed() {
                     sum.add(timing);
-                    let wait_start = Instant::now();
-                    graphics.wait_idle();
-                    sum.add_wait_idle(wait_start.elapsed());
+                    if !throughput_mode {
+                        let wait_start = Instant::now();
+                        graphics.wait_idle();
+                        sum.add_wait_idle(wait_start.elapsed());
+                    }
                 }
             }
+            if throughput_mode {
+                graphics.wait_idle();
+            }
+            let batch_elapsed = batch_start.elapsed();
             sum.print(case.name);
+            if throughput_mode {
+                let fps = sum.frames as f64 / batch_elapsed.as_secs_f64().max(f64::EPSILON);
+                println!(
+                    "{case:32} throughput={fps:>9.1}fps batch={:>8}us",
+                    batch_elapsed.as_micros(),
+                    case = case.name,
+                );
+            }
+            if let Some(path) = csv_path.as_deref() {
+                sum.append_csv(Path::new(path), case.name);
+            }
+            if capture_ms > 0 {
+                thread::sleep(Duration::from_millis(capture_ms));
+            }
         }
         event_loop.exit();
     }

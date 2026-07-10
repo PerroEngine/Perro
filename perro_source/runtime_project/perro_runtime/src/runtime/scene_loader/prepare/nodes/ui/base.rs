@@ -685,6 +685,31 @@ fn apply_ui_color_picker_fields(
                 node.wheel_radius = v.max(8.0);
             }
         }
+        "picker_mode" | "wheel_type" | "selection_mode" => {
+            if let Some(v) = as_str(value).and_then(perro_ui::UiColorPickerMode::parse) {
+                node.picker_mode = v;
+            }
+        }
+        "show_selector" | "selector_visible" | "wheel_visible" => {
+            if let Some(v) = as_bool(value) {
+                node.show_selector = v;
+            }
+        }
+        "show_hex" | "hex_visible" => {
+            if let Some(v) = as_bool(value) {
+                node.show_hex = v;
+            }
+        }
+        "show_rgba" | "rgba_visible" => {
+            if let Some(v) = as_bool(value) {
+                node.show_rgba = v;
+            }
+        }
+        "show_hsl" | "hsl_visible" => {
+            if let Some(v) = as_bool(value) {
+                node.show_hsl = v;
+            }
+        }
         "color_changed_signals" | "changed_signals" | "value_changed_signals" => {
             node.color_changed_signals = as_signal_ids(value);
         }
