@@ -219,10 +219,12 @@ fn repeat_same_size_write_reuses_texture_via_texels_updated() {
         event,
         RenderEvent::TextureLoaded { id } if *id == texture
     )));
-    assert!(!graphics.events.iter().any(|event| matches!(
-        event,
-        RenderEvent::TextureTexelsUpdated { .. }
-    )));
+    assert!(
+        !graphics
+            .events
+            .iter()
+            .any(|event| matches!(event, RenderEvent::TextureTexelsUpdated { .. }))
+    );
     assert_eq!(graphics.stream_texture_dims.get(&texture), Some(&[2, 1]));
     let buffer_ptr = graphics
         .resources
@@ -245,10 +247,12 @@ fn repeat_same_size_write_reuses_texture_via_texels_updated() {
         event,
         RenderEvent::TextureTexelsUpdated { id } if *id == texture
     )));
-    assert!(!graphics.events.iter().any(|event| matches!(
-        event,
-        RenderEvent::TextureLoaded { .. }
-    )));
+    assert!(
+        !graphics
+            .events
+            .iter()
+            .any(|event| matches!(event, RenderEvent::TextureLoaded { .. }))
+    );
     let decoded = graphics
         .resources
         .decoded_texture_data(texture)
@@ -1370,17 +1374,20 @@ fn retained_mesh_instances_count_mesh_refs_per_node() {
 #[test]
 fn stale_async_texture_result_after_drop_does_not_emit_loaded() {
     let mut graphics = PerroGraphics::new();
+    let request = perro_render_bridge::RenderRequestID::new(88_001);
     let id = graphics
         .resources
         .create_texture("__tmp_async_drop_texture__", false);
-    graphics.pending_async_texture_loads.insert(id);
+    graphics
+        .pending_async_texture_loads
+        .insert(id, vec![request]);
     assert!(graphics.resources.drop_texture(id));
 
     graphics
         .async_texture_load_tx
         .send(super::AsyncTextureLoadResult {
             id,
-            texture: Some(super::DecodedTextureRgba {
+            texture: Ok(super::DecodedTextureRgba {
                 rgba: vec![255, 255, 255, 255],
                 width: 1,
                 height: 1,
@@ -1397,6 +1404,57 @@ fn stale_async_texture_result_after_drop_does_not_emit_loaded() {
         .any(|event| matches!(event, perro_render_bridge::RenderEvent::TextureLoaded { id: got } if *got == id)));
     assert!(!graphics.resources.has_texture(id));
     assert!(graphics.resources.decoded_texture_data(id).is_none());
+    assert!(events.iter().any(|event| matches!(
+        event,
+        perro_render_bridge::RenderEvent::Failed { request: got, reason }
+            if *got == request && reason.contains("dropped")
+    )));
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[test]
+fn async_texture_decode_failure_notifies_all_waiters_once() {
+    let mut graphics = PerroGraphics::new();
+    let first = perro_render_bridge::RenderRequestID::new(88_101);
+    let second = perro_render_bridge::RenderRequestID::new(88_102);
+    let id = graphics
+        .resources
+        .create_texture("__tmp_async_fail_texture__", false);
+    graphics
+        .pending_async_texture_loads
+        .insert(id, vec![first, second]);
+    graphics
+        .async_texture_load_tx
+        .send(super::AsyncTextureLoadResult {
+            id,
+            texture: Err("decode failed".to_string()),
+        })
+        .unwrap();
+
+    graphics.draw_frame();
+
+    let mut events = Vec::new();
+    graphics.drain_events(&mut events);
+    for request in [first, second] {
+        assert_eq!(
+            events
+                .iter()
+                .filter(|event| matches!(
+                    event,
+                    perro_render_bridge::RenderEvent::Failed { request: got, reason }
+                        if *got == request && reason == "decode failed"
+                ))
+                .count(),
+            1
+        );
+    }
+    assert!(!events.iter().any(|event| matches!(
+        event,
+        perro_render_bridge::RenderEvent::TextureCreated { .. }
+            | perro_render_bridge::RenderEvent::TextureLoaded { .. }
+    )));
+    assert!(!graphics.resources.has_texture(id));
+    assert!(!graphics.pending_async_texture_loads.contains_key(&id));
 }
 
 #[test]

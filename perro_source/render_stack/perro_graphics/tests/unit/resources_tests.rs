@@ -1,5 +1,5 @@
 use super::{DecodedTextureRgba, ResourceStore};
-use perro_ids::TextureID;
+use perro_ids::{MaterialID, MeshID, TextureID};
 use perro_render_bridge::{Material3D, RuntimeMeshData, RuntimeMeshVertex, StandardMaterial3D};
 use perro_structs::UnitVector4;
 
@@ -504,4 +504,53 @@ fn write_stream_texture_data_reuses_buffer_and_falls_back_by_source() {
     assert!(store.write_stream_texture_data(id, &[9, 9, 9, 9, 9, 9, 9, 9], 1, 2));
     let decoded = store.decoded_texture_data(id).expect("decoded");
     assert_eq!((decoded.width, decoded.height), (1, 2));
+}
+
+#[test]
+fn decoded_texture_source_lookup_uses_canonical_id_buffer() {
+    let mut store = ResourceStore::new();
+    let source = "res://textures/canonical.png";
+    let id = store.create_texture(source, false);
+    assert!(store.set_decoded_texture_data(
+        id,
+        DecodedTextureRgba {
+            rgba: vec![1, 2, 3, 4, 5, 6, 7, 8],
+            width: 2,
+            height: 1,
+        }
+    ));
+
+    let by_id = store.decoded_texture_data(id).expect("by id");
+    let by_source = store
+        .decoded_texture_data_by_source(source)
+        .expect("by source");
+    assert!(std::ptr::eq(by_id, by_source));
+    assert_eq!(by_id.rgba.as_ptr(), by_source.rgba.as_ptr());
+}
+
+#[test]
+fn huge_explicit_resource_ids_fall_back_without_slot_growth() {
+    let mut store = ResourceStore::new();
+    let huge_texture = TextureID::from_parts(u32::MAX, 7);
+    let huge_mesh = MeshID::from_parts(u32::MAX, 7);
+    let huge_material = MaterialID::from_parts(u32::MAX, 7);
+
+    let texture = store.create_texture_with_id(huge_texture, "huge-texture", false);
+    let mesh = store.create_mesh_with_id(huge_mesh, "huge-mesh", false);
+    let material = store.create_material_with_id(
+        huge_material,
+        Material3D::default(),
+        Some("huge-material"),
+        false,
+    );
+
+    assert_ne!(texture, huge_texture);
+    assert_ne!(mesh, huge_mesh);
+    assert_ne!(material, huge_material);
+    assert_eq!(store.rejected_explicit_id_count(), 3);
+    assert_eq!(store.textures.generations.len(), 1);
+    assert_eq!(store.meshes.generations.len(), 1);
+    assert_eq!(store.materials.generations.len(), 1);
+    assert_eq!(store.texture_source_by_slot.len(), 1);
+    assert_eq!(store.mesh_source_by_slot.len(), 1);
 }
