@@ -58,19 +58,6 @@ fn mirror_matrix_3d(flip_x: bool, flip_y: bool, flip_z: bool) -> Mat4 {
     ))
 }
 
-fn modulated_mesh_surfaces(
-    mut surfaces: Vec<MeshSurfaceBinding>,
-    modulate: perro_structs::Color,
-) -> Vec<MeshSurfaceBinding> {
-    if modulate == perro_structs::Color::WHITE {
-        return surfaces;
-    }
-    for surface in &mut surfaces {
-        surface.modulate = Runtime::color_modulate(surface.modulate, modulate);
-    }
-    surfaces
-}
-
 #[path = "three_d/helpers.rs"]
 mod helpers;
 use helpers::*;
@@ -213,15 +200,83 @@ impl Runtime {
                 .get(*id)
                 .is_some_and(|node| matches!(node.data, SceneNodeData::Skeleton3D(_)))
         }));
+        // Keep the skeleton->mesh reverse index current for mesh instances that
+        // moved into the traversal this frame (adds + skeleton rebinds are dirty,
+        // so they appear here). Removals are handled in note_removed_node.
+        if self.render_3d.skeleton_mesh_index_built {
+            for id in traversal_ids.iter().copied() {
+                let skeleton = match self.nodes.get(id) {
+                    Some(node) => match &node.data {
+                        SceneNodeData::MeshInstance3D(mesh) => Some(mesh.skeleton),
+                        _ => None,
+                    },
+                    None => None,
+                };
+                if let Some(skeleton) = skeleton {
+                    self.render_3d.index_mesh_skeleton(id, skeleton);
+                }
+            }
+        }
         if !dirty_skeletons.is_empty() {
+            if self.render_3d.skeleton_mesh_index_built {
+                // Fast path: pull the (few) skinned meshes bound to each dirty
+                // skeleton from the reverse index. O(skinned) not O(all nodes).
+                let mesh_map = std::mem::take(&mut self.render_3d.skeleton_mesh_map);
+                for skeleton in dirty_skeletons.iter().copied() {
+                    if let Some(bucket) = mesh_map.get(&skeleton) {
+                        for &mesh_id in bucket {
+                            if self.nodes.get(mesh_id).is_some() && traversal_seen.insert(mesh_id) {
+                                traversal_ids.push(mesh_id);
+                            }
+                        }
+                    }
+                }
+                self.render_3d.skeleton_mesh_map = mesh_map;
+            } else {
+                // Fallback until the index is built: full arena scan, and build
+                // the index from the same pass so later frames take the fast path.
+                self.render_3d.skeleton_mesh_map.clear();
+                self.render_3d.mesh_skeleton_map.clear();
+                for (id, node) in self.nodes.iter() {
+                    let SceneNodeData::MeshInstance3D(mesh) = &node.data else {
+                        continue;
+                    };
+                    let skeleton = mesh.skeleton;
+                    if !skeleton.is_nil() {
+                        self.render_3d.mesh_skeleton_map.insert(id, skeleton);
+                        self.render_3d
+                            .skeleton_mesh_map
+                            .entry(skeleton)
+                            .or_default()
+                            .insert(id);
+                    }
+                    if dirty_skeletons.contains(&skeleton) && traversal_seen.insert(id) {
+                        traversal_ids.push(id);
+                    }
+                }
+                self.render_3d.skeleton_mesh_index_built = true;
+            }
+        } else if !self.render_3d.skeleton_mesh_index_built {
+            // No dirty skeletons this frame, but the index is not yet built (e.g.
+            // fresh scene). Build it from a single arena pass so the very first
+            // animating frame can use the fast path.
+            self.render_3d.skeleton_mesh_map.clear();
+            self.render_3d.mesh_skeleton_map.clear();
             for (id, node) in self.nodes.iter() {
                 let SceneNodeData::MeshInstance3D(mesh) = &node.data else {
                     continue;
                 };
-                if dirty_skeletons.contains(&mesh.skeleton) && traversal_seen.insert(id) {
-                    traversal_ids.push(id);
+                let skeleton = mesh.skeleton;
+                if !skeleton.is_nil() {
+                    self.render_3d.mesh_skeleton_map.insert(id, skeleton);
+                    self.render_3d
+                        .skeleton_mesh_map
+                        .entry(skeleton)
+                        .or_default()
+                        .insert(id);
                 }
             }
+            self.render_3d.skeleton_mesh_index_built = true;
         }
         dirty_skeletons.clear();
         self.render_3d.dirty_skeletons_scratch = dirty_skeletons;
@@ -237,6 +292,13 @@ impl Runtime {
         let mut dense_instance_pose_scratch =
             std::mem::take(&mut self.render_3d.dense_instance_pose_scratch);
         dense_instance_pose_scratch.clear();
+
+        // Loop-invariant: active camera + viewport are fixed for the whole
+        // traversal. Compute once instead of per Sprite3D/VideoPlayer3D/Label3D.
+        let overlay_camera = active_camera
+            .clone()
+            .unwrap_or_else(fallback_camera_3d_state);
+        let overlay_viewport = self.input.viewport_size();
 
         for node in traversal_ids.iter().copied() {
             visible_now.remove(&node);
@@ -781,10 +843,6 @@ impl Runtime {
                 visible_now.insert(node);
             }
 
-            let overlay_camera = active_camera
-                .clone()
-                .unwrap_or_else(fallback_camera_3d_state);
-            let overlay_viewport = self.input.viewport_size();
             let sprite_3d_data =
                 self.nodes
                     .get(node)
@@ -944,7 +1002,7 @@ impl Runtime {
             }
             type LocalMeshData = (
                 MeshID,
-                Vec<MeshSurfaceBinding>,
+                perro_structs::Color,
                 Option<NodeID>,
                 Option<bool>,
                 LODOptions3D,
@@ -1063,12 +1121,9 @@ impl Runtime {
                     self.nodes
                         .get(node)
                         .and_then(|scene_node| match &scene_node.data {
-                            SceneNodeData::MeshInstance3D(mesh) => Some((
+                            SceneNodeData::MeshInstance3D(_mesh) => Some((
                                 resolved_mesh,
-                                modulated_mesh_surfaces(
-                                    mesh.surfaces.clone(),
-                                    effective_self_modulate,
-                                ),
+                                effective_self_modulate,
                                 skeleton,
                                 meshlet_override,
                                 lod,
@@ -1081,10 +1136,7 @@ impl Runtime {
                             )),
                             SceneNodeData::MultiMeshInstance3D(mesh) => Some((
                                 resolved_mesh,
-                                modulated_mesh_surfaces(
-                                    mesh.surfaces.clone(),
-                                    effective_self_modulate,
-                                ),
+                                effective_self_modulate,
                                 skeleton,
                                 meshlet_override,
                                 lod,
@@ -1162,7 +1214,7 @@ impl Runtime {
             );
             if let Some((
                 mesh,
-                surfaces,
+                effective_self_modulate,
                 skeleton,
                 meshlet_override,
                 lod,
@@ -1175,7 +1227,7 @@ impl Runtime {
             )) = mesh_data
                 && effective_visible
                 && let Some((mesh, resolved_surfaces)) =
-                    self.resolve_render_mesh_assets(node, mesh, surfaces)
+                    self.resolve_mesh_surfaces_modulated(node, mesh, effective_self_modulate)
             {
                 let node_global = self
                     .get_render_global_transform_3d(node)
@@ -1750,8 +1802,21 @@ impl Runtime {
     pub(crate) fn resolve_render_mesh_assets(
         &mut self,
         node: NodeID,
-        mut mesh: MeshID,
+        mesh: MeshID,
         mut surfaces: Vec<MeshSurfaceBinding>,
+    ) -> Option<(MeshID, std::sync::Arc<[MeshSurfaceBinding3D]>)> {
+        self.resolve_render_mesh_assets_scratch(node, mesh, &mut surfaces)
+    }
+
+    // Resolve a mesh's surface materials into a render-bridge binding list using a
+    // caller-owned `surfaces` buffer. Taking `&mut Vec` lets the per-frame
+    // extraction path recycle one scratch allocation instead of cloning a fresh
+    // Vec per moving mesh (see resolve_mesh_surfaces_modulated).
+    fn resolve_render_mesh_assets_scratch(
+        &mut self,
+        node: NodeID,
+        mut mesh: MeshID,
+        surfaces: &mut Vec<MeshSurfaceBinding>,
     ) -> Option<(MeshID, std::sync::Arc<[MeshSurfaceBinding3D]>)> {
         mesh = self.resolve_render_mesh_id(node, mesh)?;
 
@@ -1875,21 +1940,21 @@ impl Runtime {
             && surfaces.iter().all(|surface| surface.overrides.is_empty())
             && let Some(retained) = self.render_3d.retained_mesh_draws.get(&node)
             && retained.mesh == mesh
-            && simple_surfaces_match(&surfaces, &retained.surfaces)
+            && simple_surfaces_match(surfaces.as_slice(), &retained.surfaces)
         {
             return Some((mesh, retained.surfaces.clone()));
         }
 
         let converted: Vec<MeshSurfaceBinding3D> = surfaces
-            .into_iter()
+            .iter()
             .map(|surface| MeshSurfaceBinding3D {
                 material: surface.material,
                 overrides: surface
                     .overrides
-                    .into_iter()
+                    .iter()
                     .map(|ovr| MaterialParamOverride3D {
-                        name: ovr.name,
-                        value: ovr.value,
+                        name: ovr.name.clone(),
+                        value: ovr.value.clone(),
                     })
                     .collect::<Vec<_>>()
                     .into(),
@@ -1897,6 +1962,38 @@ impl Runtime {
             })
             .collect();
         Some((mesh, std::sync::Arc::from(converted)))
+    }
+
+    // Build the modulated surface list for `node` into a recycled scratch buffer
+    // and resolve its materials. WHITE modulate skips the per-surface fold.
+    fn resolve_mesh_surfaces_modulated(
+        &mut self,
+        node: NodeID,
+        mesh: MeshID,
+        modulate: perro_structs::Color,
+    ) -> Option<(MeshID, std::sync::Arc<[MeshSurfaceBinding3D]>)> {
+        let mut surfaces = std::mem::take(&mut self.mesh_surface_scratch);
+        surfaces.clear();
+        if let Some(scene_node) = self.nodes.get(node) {
+            match &scene_node.data {
+                SceneNodeData::MeshInstance3D(mesh) => {
+                    surfaces.extend(mesh.surfaces.iter().cloned());
+                }
+                SceneNodeData::MultiMeshInstance3D(mesh) => {
+                    surfaces.extend(mesh.surfaces.iter().cloned());
+                }
+                _ => {}
+            }
+        }
+        if modulate != perro_structs::Color::WHITE {
+            for surface in &mut surfaces {
+                surface.modulate = Self::color_modulate(surface.modulate, modulate);
+            }
+        }
+        let result = self.resolve_render_mesh_assets_scratch(node, mesh, &mut surfaces);
+        surfaces.clear();
+        self.mesh_surface_scratch = surfaces;
+        result
     }
 
     pub(crate) fn mesh_draw_has_pending_asset(&self, node: NodeID) -> bool {

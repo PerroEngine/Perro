@@ -666,6 +666,13 @@ pub struct Render3DState {
     pub dense_instance_pose_cache: AHashMap<NodeID, DenseInstancePoseCache>,
     pub traversal_seen: AHashSet<NodeID>,
     pub dirty_skeletons_scratch: AHashSet<NodeID>,
+    // Reverse index skeleton NodeID -> mesh instances bound to it, so a dirty
+    // skeleton re-extracts its (few) skinned meshes without a full arena scan.
+    // mesh_skeleton_map is the inverse (mesh -> its indexed skeleton) used to
+    // reconcile rebinds. `built` gates the fast path; false => full-scan fallback.
+    pub skeleton_mesh_map: AHashMap<NodeID, AHashSet<NodeID>>,
+    pub mesh_skeleton_map: AHashMap<NodeID, NodeID>,
+    pub skeleton_mesh_index_built: bool,
     pub skeleton_cache_scratch: AHashMap<NodeID, SkeletonPalette>,
     pub skeleton_global_scratch: Vec<glam::Mat4>,
     pub skeleton_palette_scratch: Vec<[[f32; 4]; 3]>,
@@ -709,6 +716,9 @@ impl Render3DState {
             dense_instance_pose_cache: AHashMap::default(),
             traversal_seen: AHashSet::default(),
             dirty_skeletons_scratch: AHashSet::default(),
+            skeleton_mesh_map: AHashMap::default(),
+            mesh_skeleton_map: AHashMap::default(),
+            skeleton_mesh_index_built: false,
             skeleton_cache_scratch: AHashMap::default(),
             skeleton_global_scratch: Vec::new(),
             skeleton_palette_scratch: Vec::new(),
@@ -724,7 +734,45 @@ impl Render3DState {
         self.material_surface_overrides.remove(&node);
         self.text_decal_texture_cache.remove(&node);
         self.retained_mesh_draws.remove(&node);
+        // Drop from the skeleton reverse index: node may be a bound mesh instance
+        // and/or a skeleton whose bucket must go.
+        self.unindex_mesh_skeleton(node);
+        self.skeleton_mesh_map.remove(&node);
         self.removed_nodes.push(node);
+    }
+
+    // Reconcile a single mesh instance's skeleton binding in the reverse index.
+    // `skeleton` nil => unbound. No-op when the recorded binding already matches.
+    pub fn index_mesh_skeleton(&mut self, mesh: NodeID, skeleton: NodeID) {
+        let want = (!skeleton.is_nil()).then_some(skeleton);
+        if self.mesh_skeleton_map.get(&mesh).copied() == want {
+            return;
+        }
+        self.unindex_mesh_skeleton(mesh);
+        if let Some(skeleton) = want {
+            self.mesh_skeleton_map.insert(mesh, skeleton);
+            self.skeleton_mesh_map
+                .entry(skeleton)
+                .or_default()
+                .insert(mesh);
+        }
+    }
+
+    fn unindex_mesh_skeleton(&mut self, mesh: NodeID) {
+        if let Some(old) = self.mesh_skeleton_map.remove(&mesh)
+            && let Some(bucket) = self.skeleton_mesh_map.get_mut(&old)
+        {
+            bucket.remove(&mesh);
+            if bucket.is_empty() {
+                self.skeleton_mesh_map.remove(&old);
+            }
+        }
+    }
+
+    pub fn clear_skeleton_mesh_index(&mut self) {
+        self.skeleton_mesh_map.clear();
+        self.mesh_skeleton_map.clear();
+        self.skeleton_mesh_index_built = false;
     }
 
     pub fn request_full_scan_once(&mut self) {

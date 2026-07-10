@@ -185,6 +185,9 @@ pub struct Runtime {
 
     render_2d: Render2DState,
     render_3d: Render3DState,
+    /// reusable buffer 4 modulated mesh-surface resolve; avoid per-frame Vec alloc
+    /// per moving mesh (perro_nodes type; not storable in perro_runtime_render).
+    mesh_surface_scratch: Vec<perro_nodes::MeshSurfaceBinding>,
     render_ui: RenderUiState,
     locale_text: state::LocaleTextState,
     pub(crate) signal_runtime: SignalRuntimeState,
@@ -470,6 +473,7 @@ impl Runtime {
             internal_updates: InternalUpdateState::new(),
             render_2d: Render2DState::new(),
             render_3d: Render3DState::new(),
+            mesh_surface_scratch: Vec::new(),
             render_ui: RenderUiState::new(),
             locale_text: state::LocaleTextState::new(),
             signal_runtime: SignalRuntimeState::new(),
@@ -558,6 +562,52 @@ impl Runtime {
         self.render_3d
             .mesh_sources
             .insert(node_id, source.to_string());
+    }
+
+    /// Set a node's Node3D-base modulate directly (bench-only), so the
+    /// effective-modulate microbench can build a deep tinted hierarchy without a
+    /// scene load.
+    #[cfg(feature = "bench")]
+    pub fn bench_set_node3d_modulate(
+        &mut self,
+        id: NodeID,
+        modulate: perro_structs::NodeModulate,
+    ) {
+        if let Some(node) = self.nodes.get_mut(id) {
+            node.with_base_mut::<perro_nodes::Node3D, _>(|base| base.modulate = modulate);
+        }
+    }
+
+    /// Fold `effective_self_modulate` over `ids` and sum channels so the result
+    /// escapes optimization. Isolates the ancestor-walk cost (F1 microbench).
+    #[cfg(feature = "bench")]
+    pub fn bench_effective_self_modulate_sum(&self, ids: &[NodeID]) -> f32 {
+        let mut acc = 0.0f32;
+        for &id in ids {
+            let color = self.effective_self_modulate(id);
+            acc += color.r() + color.g() + color.b() + color.a();
+        }
+        acc
+    }
+
+    /// Bind a mesh instance to a skeleton (bench-only), mirroring the scene
+    /// loader's mesh->skeleton link so the skinned-extraction microbench can wire
+    /// a skeleton without a full scene load.
+    #[cfg(feature = "bench")]
+    pub fn bench_bind_mesh_skeleton(&mut self, mesh: NodeID, skeleton: NodeID) {
+        if let Some(node) = self.nodes.get_mut(mesh)
+            && let perro_nodes::SceneNodeData::MeshInstance3D(mesh_instance) = &mut node.data
+        {
+            mesh_instance.skeleton = skeleton;
+        }
+    }
+
+    /// Mark a skeleton node dirty (bench-only), simulating a per-frame bone-write
+    /// so repeated `extract_render_snapshot_commands` exercises the dirty-skeleton
+    /// scan (F2 microbench).
+    #[cfg(feature = "bench")]
+    pub fn bench_touch_node(&mut self, id: NodeID) {
+        self.dirty.mark_rerender(id);
     }
 
     #[cfg(feature = "bench")]
