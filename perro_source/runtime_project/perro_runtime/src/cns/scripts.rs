@@ -62,6 +62,11 @@ impl Runtime {
         script_mount: Option<&str>,
         scene_injected_vars: Vec<(ScriptMemberID, Variant)>,
     ) -> Result<(), String> {
+        if self.script_runtime.removing_scripts.contains(&node) {
+            return Err(format!(
+                "node `{node}` cannot attach script hash `{script_path_hash}` during script removal"
+            ));
+        }
         if node.is_nil() || self.nodes.get(node).is_none() {
             return Err(format!(
                 "node `{node}` not found for script hash `{script_path_hash}`"
