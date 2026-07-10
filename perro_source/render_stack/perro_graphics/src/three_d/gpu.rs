@@ -27,7 +27,7 @@ use crate::backend::{
     OcclusionCullingMode, StaticMeshLookup, StaticShaderLookup, StaticTextureLookup,
 };
 use crate::resources::ResourceStore;
-use ahash::AHashMap;
+use ahash::{AHashMap, AHashSet};
 use bytemuck::{Pod, Zeroable};
 use glam::{Mat4, Quat, Vec3, Vec4};
 use mesh_presets::build_builtin_mesh_buffer;
@@ -733,6 +733,9 @@ pub struct Gpu3D {
     staged_custom_params_values_scratch: Vec<f32>,
     material_fallback_texture: Option<CachedMaterialTexture>,
     material_textures: AHashMap<u32, CachedMaterialTexture>,
+    // texture slots (= texture index) backing stream sources (webcam/video):
+    // built single-level so per-frame base writes update in place.
+    stream_texture_slots: AHashSet<u32>,
     material_texture_bind_groups: AHashMap<MaterialTextureKey, wgpu::BindGroup>,
     custom_material_texture_slots: AHashMap<u64, u32>,
     next_custom_material_texture_slot: u32,

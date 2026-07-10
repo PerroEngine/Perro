@@ -1,9 +1,12 @@
 use crate::{
     backend::StaticTextureLookup,
     resources::ResourceStore,
-    texture_mips::{build_rgba_levels_for_filter, sampler_descriptor, write_rgba_mip_chain},
+    texture_mips::{
+        build_rgba_levels_for_filter, sampler_descriptor, write_rgba_mip_chain,
+        write_texture_base_level,
+    },
 };
-use ahash::AHashMap;
+use ahash::{AHashMap, AHashSet};
 use bytemuck::{Pod, Zeroable};
 use epaint::{ClippedPrimitive, ImageData, Primitive, TextureId, textures::TexturesDelta};
 use perro_ids::TextureID;
@@ -92,6 +95,9 @@ pub struct GpuUi {
     font_texture: Option<UiTextureGpu>,
     harfbuzz_font_texture: Option<UiTextureGpu>,
     image_textures: AHashMap<TextureID, UiTextureGpu>,
+    // stream texture ids (webcam/video): built single-level so per-frame base
+    // writes update in place instead of rebuilding the whole image texture.
+    stream_texture_ids: AHashSet<TextureID>,
     supersample_target: Option<UiSupersampleTarget>,
     meshes: Vec<UiMeshGpu>,
     vertex_buffer: Option<wgpu::Buffer>,
@@ -345,6 +351,7 @@ impl GpuUi {
             font_texture: None,
             harfbuzz_font_texture: None,
             image_textures: AHashMap::new(),
+            stream_texture_ids: AHashSet::new(),
             supersample_target: None,
             meshes: Vec::new(),
             vertex_buffer: None,
@@ -873,6 +880,37 @@ impl GpuUi {
         self.prepared_revision = u64::MAX;
     }
 
+    pub fn set_stream_texture(&mut self, texture: TextureID, is_stream: bool) {
+        if is_stream {
+            self.stream_texture_ids.insert(texture);
+        } else if self.stream_texture_ids.remove(&texture) {
+            self.image_textures.remove(&texture);
+        }
+    }
+
+    /// In-place base-level upload for a resident UI stream image texture. Returns
+    /// false when no matching-dimension cache exists so the caller can rebuild.
+    pub fn write_stream_texture(
+        &mut self,
+        queue: &wgpu::Queue,
+        texture: TextureID,
+        width: u32,
+        height: u32,
+        rgba: &[u8],
+    ) -> bool {
+        let Some(cached) = self.image_textures.get(&texture) else {
+            return false;
+        };
+        let Some(gpu_texture) = cached.texture.as_ref() else {
+            return false;
+        };
+        if cached.size != [width, height] {
+            return false;
+        }
+        write_texture_base_level(queue, gpu_texture, width, height, rgba);
+        true
+    }
+
     fn ensure_image_texture(
         &mut self,
         device: &wgpu::Device,
@@ -896,7 +934,13 @@ impl GpuUi {
         };
         let width = decoded.width;
         let height = decoded.height;
-        let mips = build_rgba_levels_for_filter(&decoded.rgba, width, height, self.texture_filter);
+        // stream textures skip mip chains: base level updates in place each frame.
+        let filter = if self.stream_texture_ids.contains(&texture_key) {
+            TextureFilterMode::Linear
+        } else {
+            self.texture_filter
+        };
+        let mips = build_rgba_levels_for_filter(&decoded.rgba, width, height, filter);
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("perro_ui_image_texture"),
             size: wgpu::Extent3d {

@@ -588,6 +588,73 @@ impl Gpu {
         }
     }
 
+    // mark/unmark a texture id as a stream (webcam/video) across every consumer
+    // cache, so rebuilds use a single-level (no-mip) texture that supports the
+    // per-frame in-place base upload.
+    pub fn set_stream_texture(&mut self, texture: perro_ids::TextureID, is_stream: bool) {
+        if let Some(two_d) = self.two_d.as_mut() {
+            two_d.set_stream_texture(texture, is_stream);
+        }
+        if let Some(late_overlay_2d) = self.late_overlay_2d.as_mut() {
+            late_overlay_2d.set_stream_texture(texture, is_stream);
+        }
+        if let Some(camera_stream_2d) = self.camera_stream_2d.as_mut() {
+            camera_stream_2d.set_stream_texture(texture, is_stream);
+        }
+        if let Some(ui) = self.ui.as_mut() {
+            ui.set_stream_texture(texture, is_stream);
+        }
+        if let Some(three_d) = self.three_d.as_mut() {
+            three_d.set_stream_texture(texture.index(), is_stream);
+        }
+        if let Some(camera_stream_3d) = self.camera_stream_3d.as_mut() {
+            camera_stream_3d.set_stream_texture(texture.index(), is_stream);
+        }
+    }
+
+    // in-place base-level upload of a stream frame into every resident cache; no
+    // texture/sampler/bind-group recreation, no mip regen. missing/resized caches
+    // no-op (they rebuild from decoded data on the next prepare). `source` keeps
+    // 3D custom-source material slots fresh (in-place write or invalidate).
+    pub fn write_stream_texture(
+        &mut self,
+        texture: perro_ids::TextureID,
+        source: Option<&str>,
+        width: u32,
+        height: u32,
+        rgba: &[u8],
+    ) {
+        let queue = &self.queue;
+        if let Some(two_d) = self.two_d.as_mut() {
+            two_d.write_stream_texture(queue, texture, width, height, rgba);
+        }
+        if let Some(late_overlay_2d) = self.late_overlay_2d.as_mut() {
+            late_overlay_2d.write_stream_texture(queue, texture, width, height, rgba);
+        }
+        if let Some(camera_stream_2d) = self.camera_stream_2d.as_mut() {
+            camera_stream_2d.write_stream_texture(queue, texture, width, height, rgba);
+        }
+        if let Some(ui) = self.ui.as_mut() {
+            ui.write_stream_texture(queue, texture, width, height, rgba);
+        }
+        if let Some(three_d) = self.three_d.as_mut() {
+            three_d.write_stream_material_texture(queue, texture.index(), width, height, rgba);
+            three_d.write_stream_material_texture_source(queue, source, width, height, rgba);
+        }
+        if let Some(camera_stream_3d) = self.camera_stream_3d.as_mut() {
+            camera_stream_3d.write_stream_material_texture(
+                queue,
+                texture.index(),
+                width,
+                height,
+                rgba,
+            );
+            camera_stream_3d.write_stream_material_texture_source(
+                queue, source, width, height, rgba,
+            );
+        }
+    }
+
     fn ensure_camera_stream_target(
         &mut self,
         node: NodeID,

@@ -95,7 +95,7 @@ fn write_texture_rgba_updates_resource_texture() {
         id: texture,
         width: 2,
         height: 1,
-        rgba: Arc::from([1, 2, 3, 4, 5, 6, 7, 8]),
+        rgba: vec![1u8, 2, 3, 4, 5, 6, 7, 8].into(),
     }));
     graphics.draw_frame();
 
@@ -208,7 +208,7 @@ fn webcam_camera_stream_does_not_overwrite_webcam_texture() {
         id: texture,
         width: 2,
         height: 1,
-        rgba: rgba.clone(),
+        rgba: rgba.clone().into(),
     }));
     graphics.submit(RenderCommand::ThreeD(Box::new(
         Command3D::UpsertCameraStream {

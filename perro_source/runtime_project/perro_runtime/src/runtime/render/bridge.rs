@@ -410,9 +410,14 @@ impl Runtime {
         // tick + never touches resource pending/loaded/retained state (its
         // handlers only write water sample caches), so exclude it: else the
         // O(all nodes) ref scan reruns every tick in any scene w/ water.
+        // stream texel updates (webcam/video, ~30/s) only change pixels of an
+        // already-referenced texture; refs never change, so exclude them too:
+        // else every frame reruns the O(all nodes) ref scan + full 2d/3d scan.
         if !matches!(
             event,
-            RenderEvent::WaterSamples { .. } | RenderEvent::WaterBodySamples { .. }
+            RenderEvent::WaterSamples { .. }
+                | RenderEvent::WaterBodySamples { .. }
+                | RenderEvent::TextureTexelsUpdated { .. }
         ) {
             self.scene_resource_refs_dirty = true;
         }
@@ -618,6 +623,30 @@ impl Runtime {
             return None;
         }
         let source = self.camera_stream_source_state(stream.camera)?;
+        // webcam sources render nothing from the scene: only source/output/
+        // resolution/post-processing matter. short-circuit before the O(all
+        // nodes) scratch fill + collectors (which return empty for webcam).
+        if let CameraStreamSourceState::Webcam { texture, .. } = &source {
+            let output_texture = *texture;
+            return Some(CameraStreamState {
+                source,
+                resolution: [
+                    stream.resolution.x.clamp(1, 8192),
+                    stream.resolution.y.clamp(1, 8192),
+                ],
+                aspect_ratio: stream.aspect_ratio.max(0.0),
+                post_processing: Arc::from(stream.post_processing.to_effects_vec()),
+                output_texture,
+                sprites_2d: Arc::from([]),
+                lights_2d: Arc::from([]),
+                point_particles_2d: Arc::from([]),
+                waters_2d: Arc::from([]),
+                draws_3d: Arc::from([]),
+                lighting_3d: CameraStreamLighting3DState::default(),
+                point_particles_3d: Arc::from([]),
+                waters_3d: Arc::from([]),
+            });
+        }
         // build node-id list once; collectors below share it via index access
         // instead of each re-collecting the whole arena.
         self.camera_stream_node_scratch.clear();

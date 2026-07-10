@@ -4,8 +4,10 @@ use super::shaders::{
 };
 use crate::backend::StaticTextureLookup;
 use crate::resources::ResourceStore;
-use crate::texture_mips::{build_rgba_levels_for_filter, sampler_descriptor, write_rgba_mip_chain};
-use ahash::AHashMap;
+use crate::texture_mips::{
+    build_rgba_levels_for_filter, sampler_descriptor, write_rgba_mip_chain, write_texture_base_level,
+};
+use ahash::{AHashMap, AHashSet};
 use bytemuck::{Pod, Zeroable};
 use perro_ids::{NodeID, TextureID};
 use perro_render_bridge::{
@@ -158,6 +160,9 @@ pub struct Gpu2D {
     stream_particle_eval_stack: Vec<f32>,
     sprite_batches: Vec<SpriteBatch>,
     sprite_textures: AHashMap<TextureID, CachedSpriteTexture>,
+    // ids of stream textures (webcam/video): built single-level (no mips) so
+    // per-frame in-place base writes stay correct + a Linear (non-mip) sampler.
+    stream_texture_ids: AHashSet<TextureID>,
     shadow_caster_instances: Vec<ShadowCaster2DGpu>,
     texture_filter: TextureFilterMode,
     last_camera: Option<Camera2DUniform>,
@@ -399,6 +404,7 @@ impl Gpu2D {
             stream_particle_eval_stack: Vec::new(),
             sprite_batches: Vec::new(),
             sprite_textures: AHashMap::new(),
+            stream_texture_ids: AHashSet::new(),
             texture_filter,
             last_camera: None,
             last_sprite_stage: None,
@@ -795,6 +801,38 @@ impl Gpu2D {
         self.sprite_textures.remove(&texture);
     }
 
+    pub fn set_stream_texture(&mut self, texture: TextureID, is_stream: bool) {
+        if is_stream {
+            self.stream_texture_ids.insert(texture);
+        } else if self.stream_texture_ids.remove(&texture) {
+            self.sprite_textures.remove(&texture);
+        }
+    }
+
+    /// In-place base-level upload for a resident stream sprite texture. Returns
+    /// false when no matching-dimension cache exists (first frame / resized /
+    /// unused here), so the caller falls back to the rebuild path.
+    pub fn write_stream_texture(
+        &mut self,
+        queue: &wgpu::Queue,
+        texture: TextureID,
+        width: u32,
+        height: u32,
+        rgba: &[u8],
+    ) -> bool {
+        let Some(cached) = self.sprite_textures.get(&texture) else {
+            return false;
+        };
+        let Some(gpu_texture) = cached._texture.as_ref() else {
+            return false;
+        };
+        if cached.width != width || cached.height != height {
+            return false;
+        }
+        write_texture_base_level(queue, gpu_texture, width, height, rgba);
+        true
+    }
+
     #[inline]
     pub fn sprite_batch_count(&self) -> u32 {
         self.sprite_perf.draw_batches
@@ -832,7 +870,13 @@ impl Gpu2D {
         };
         let width = decoded.width;
         let height = decoded.height;
-        let mips = build_rgba_levels_for_filter(&decoded.rgba, width, height, self.texture_filter);
+        // stream textures skip mip chains: base level updates in place each frame.
+        let filter = if self.stream_texture_ids.contains(&texture_key) {
+            TextureFilterMode::Linear
+        } else {
+            self.texture_filter
+        };
+        let mips = build_rgba_levels_for_filter(&decoded.rgba, width, height, filter);
 
         let gpu_texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("perro_sprite_texture"),
@@ -852,7 +896,7 @@ impl Gpu2D {
         let view = gpu_texture.create_view(&wgpu::TextureViewDescriptor::default());
         let sampler = device.create_sampler(&sampler_descriptor(
             "perro_sprite_sampler",
-            self.texture_filter,
+            filter,
             wgpu::AddressMode::ClampToEdge,
         ));
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {

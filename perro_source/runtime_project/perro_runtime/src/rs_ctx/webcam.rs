@@ -1,9 +1,5 @@
 use super::core::RuntimeResourceApi;
 use super::core::WebcamErrorMessage;
-#[cfg(all(
-    any(target_os = "windows", target_os = "linux", target_os = "macos"),
-    not(test)
-))]
 use super::core::WebcamFrameMessage;
 use perro_ids::{TextureID, WebcamID, string_to_u64};
 use perro_render_bridge::{RenderCommand, ResourceCommand};
@@ -26,14 +22,20 @@ fn webcam_log_enabled() -> bool {
 
 impl RuntimeResourceApi {
     pub(crate) fn poll_webcam_messages(&self) {
-        let mut frames = Vec::new();
+        // coalesce to the newest frame per webcam id: only the last frame is ever
+        // displayed, so drop stale queued frames instead of paying a full copy +
+        // GPU upload for each. webcams are few, so a linear scan is fine.
+        let mut latest: Vec<WebcamFrameMessage> = Vec::new();
         if let Ok(rx) = self.webcam_frame_rx.lock() {
-            while let Ok(frame) = rx.try_recv() {
-                frames.push(frame);
+            while let Ok(message) = rx.try_recv() {
+                match latest.iter_mut().find(|queued| queued.id == message.id) {
+                    Some(slot) => *slot = message,
+                    None => latest.push(message),
+                }
             }
         }
-        for frame in frames {
-            let _ = self.queue_webcam_frame(frame.id, frame.frame);
+        for message in latest {
+            let _ = self.queue_webcam_frame(message.id, message.frame);
         }
 
         let mut errors = Vec::new();
@@ -221,7 +223,9 @@ impl RuntimeResourceApi {
                 id: texture,
                 width: frame.width,
                 height: frame.height,
-                rgba: Arc::from(frame.rgba),
+                // move the decoded Vec straight into the command: no Vec->Arc->Vec
+                // round trip; the backend copies it once into the resident buffer.
+                rgba: frame.rgba.into(),
             }));
         true
     }
@@ -717,14 +721,22 @@ fn mirror_rgba_rows(width: u32, height: u32, rgba: &mut [u8]) {
     if width < 2 || height == 0 {
         return;
     }
+    let row_bytes = width * 4;
+    // swap whole 4-byte pixels from both ends instead of 4 per-channel swaps.
     for y in 0..height {
-        let row = y * width * 4;
-        for x in 0..(width / 2) {
-            let left = row + x * 4;
-            let right = row + (width - 1 - x) * 4;
-            for c in 0..4 {
-                rgba.swap(left + c, right + c);
-            }
+        let Some(row) = rgba.get_mut(y * row_bytes..(y + 1) * row_bytes) else {
+            break;
+        };
+        let (mut lo, mut hi) = (0usize, width - 1);
+        while lo < hi {
+            let l = lo * 4;
+            let h = hi * 4;
+            let mut pixel = [0u8; 4];
+            pixel.copy_from_slice(&row[l..l + 4]);
+            row.copy_within(h..h + 4, l);
+            row[h..h + 4].copy_from_slice(&pixel);
+            lo += 1;
+            hi -= 1;
         }
     }
 }

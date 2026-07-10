@@ -697,6 +697,9 @@ impl RuntimeResourceApi {
             RenderEvent::TextureLoaded { id } => {
                 state.texture_loaded_by_id.insert(*id);
             }
+            // texels changed on an already-loaded stream texture; load state
+            // + pending resolution unchanged.
+            RenderEvent::TextureTexelsUpdated { .. } => {}
             RenderEvent::MaterialLoaded { id } => {
                 if !state.material_load_pending_by_id.contains(id) {
                     state.material_write_pending_by_id.remove(id);

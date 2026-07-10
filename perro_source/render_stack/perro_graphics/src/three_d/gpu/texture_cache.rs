@@ -2,6 +2,7 @@
 
 use crate::texture_mips::{
     build_rgba_levels_for_filter_owned, sampler_descriptor, write_rgba_mip_chain,
+    write_texture_base_level,
 };
 use perro_structs::TextureFilterMode;
 
@@ -9,10 +10,34 @@ const MATERIAL_TEXTURE_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8U
 
 pub(super) struct CachedMaterialTexture {
     pub(super) source: String,
-    pub(super) _texture: Option<wgpu::Texture>,
+    pub(super) texture: Option<wgpu::Texture>,
     pub(super) view: wgpu::TextureView,
     pub(super) sampler: wgpu::Sampler,
     pub(super) bind_group: wgpu::BindGroup,
+    pub(super) width: u32,
+    pub(super) height: u32,
+}
+
+impl CachedMaterialTexture {
+    /// In-place base-level upload for a resident stream material texture (built
+    /// single-level). Returns false when dims mismatch / not CPU-owned / built
+    /// with mips (base-only write leaves stale mips; caller rebuilds instead).
+    pub(super) fn write_stream_base_level(
+        &self,
+        queue: &wgpu::Queue,
+        width: u32,
+        height: u32,
+        rgba: &[u8],
+    ) -> bool {
+        let Some(texture) = self.texture.as_ref() else {
+            return false;
+        };
+        if self.width != width || self.height != height || texture.mip_level_count() != 1 {
+            return false;
+        }
+        write_texture_base_level(queue, texture, width, height, rgba);
+        true
+    }
 }
 
 pub(super) struct CachedMaterialTextureInput {
@@ -59,10 +84,12 @@ pub(super) fn create_cached_material_texture(
     let bind_group = create_material_texture_bind_group(device, layout, &sampler, &view, &[]);
     CachedMaterialTexture {
         source: input.source,
-        _texture: Some(texture),
+        texture: Some(texture),
         view,
         sampler,
         bind_group,
+        width,
+        height,
     }
 }
 
@@ -85,10 +112,12 @@ pub(super) fn create_external_material_texture(
     let bind_group = create_material_texture_bind_group(device, layout, &sampler, view, &[]);
     CachedMaterialTexture {
         source,
-        _texture: None,
+        texture: None,
         view: view.clone(),
         sampler,
         bind_group,
+        width: 0,
+        height: 0,
     }
 }
 
