@@ -1266,7 +1266,7 @@ impl Runtime {
     pub(super) fn bounce_energy(&self, reflection: f32, max_bounces: u32) -> f32 {
         let mut energy = reflection.clamp(0.0, 1.0);
         let mut total = 0.0;
-        for _ in 0..max_bounces {
+        for _ in 0..bounded_audio_bounces(max_bounces) {
             if energy < self.audio.config.energy_cutoff {
                 break;
             }

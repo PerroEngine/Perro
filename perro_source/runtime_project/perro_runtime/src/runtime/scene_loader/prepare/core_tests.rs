@@ -99,10 +99,7 @@ mod tests {
                 assert_eq!(node.water.visual.fresnel_power, 4.5);
                 assert_eq!(node.water.visual.normal_strength, 1.4);
                 assert_eq!(node.water.visual.ripple_scale, 0.8);
-                assert_eq!(
-                    node.water.visual.foam_color,
-                    Color::new(0.7, 0.9, 1.0, 1.0)
-                );
+                assert_eq!(node.water.visual.foam_color, Color::new(0.7, 0.9, 1.0, 1.0));
                 assert_eq!(node.water.visual.foam_amount, 0.67);
                 assert_eq!(node.water.visual.crest_foam_threshold, 0.43);
                 assert_eq!(node.water.visual.caustic_strength, 0.21);
@@ -293,8 +290,14 @@ mod tests {
                 .expect("sprite")
         };
 
-        assert_eq!(sprite_color("sprite_tint"), Color::from_hex("#11223344").unwrap());
-        assert_eq!(sprite_color("sprite_color"), Color::from_hex("#55667788").unwrap());
+        assert_eq!(
+            sprite_color("sprite_tint"),
+            Color::from_hex("#11223344").unwrap()
+        );
+        assert_eq!(
+            sprite_color("sprite_color"),
+            Color::from_hex("#55667788").unwrap()
+        );
     }
 
     #[test]
@@ -476,7 +479,10 @@ mod tests {
                 assert_eq!(node.shaders.len(), 1);
                 assert_eq!(node.shaders[0].path.as_ref(), "res://shaders/sky.wgsl");
                 assert_eq!(node.shaders[0].params.len(), 2);
-                assert_eq!(node.shaders[0].params[0].value, CustomPostParamValue::F32(1.0));
+                assert_eq!(
+                    node.shaders[0].params[0].value,
+                    CustomPostParamValue::F32(1.0)
+                );
                 assert_eq!(
                     node.shaders[0].params[1].value,
                     CustomPostParamValue::Vec3([1.0, 2.0, 3.0])
@@ -726,14 +732,18 @@ mod tests {
             other => panic!("expected Node2D host node, got {other:?}"),
         }
 
-        assert!(prepared
-            .nodes
-            .iter()
-            .any(|pending| pending.key_name == "base_child"));
-        assert!(prepared
-            .nodes
-            .iter()
-            .any(|pending| pending.key_name == "local_child"));
+        assert!(
+            prepared
+                .nodes
+                .iter()
+                .any(|pending| pending.key_name == "base_child")
+        );
+        assert!(
+            prepared
+                .nodes
+                .iter()
+                .any(|pending| pending.key_name == "local_child")
+        );
     }
 
     #[test]
@@ -767,10 +777,12 @@ mod tests {
         })
         .expect("prepare scene");
 
-        assert!(!prepared
-            .scripts
-            .iter()
-            .any(|pending| pending.node_key_name == "host"));
+        assert!(
+            !prepared
+                .scripts
+                .iter()
+                .any(|pending| pending.node_key_name == "host")
+        );
     }
 
     #[test]
@@ -1212,10 +1224,7 @@ mod tests {
             SceneNodeData::UiButton(button) => {
                 assert_eq!(button.layout.size, perro_ui::UiVector2::ZERO);
                 assert_eq!(button.layout.min_size, Vector2::ZERO);
-                assert_eq!(
-                    button.layout.max_size,
-                    perro_ui::UiLayoutData::NO_MAX_SIZE
-                );
+                assert_eq!(button.layout.max_size, perro_ui::UiLayoutData::NO_MAX_SIZE);
             }
             other => panic!("expected UiButton node, got {other:?}"),
         }
@@ -1529,10 +1538,7 @@ mod tests {
             SceneNodeData::UiScrollContainer(scroller) => {
                 assert!(scroller.clip_children);
                 assert_eq!(scroller.scroll, Vector2::new(12.0, 34.0));
-                assert_eq!(
-                    scroller.scroll_dir,
-                    perro_ui::UiScrollDirection::Horizontal
-                );
+                assert_eq!(scroller.scroll_dir, perro_ui::UiScrollDirection::Horizontal);
                 assert_eq!(scroller.scroll_bar_side, perro_ui::UiScrollBarSide::Left);
                 assert_eq!(scroller.scroll_bar_padding, 9.0);
             }
@@ -1568,7 +1574,10 @@ mod tests {
 
         match &panel.node.data {
             SceneNodeData::UiPanel(panel) => {
-                assert_eq!(panel.transform.position, perro_ui::UiVector2::ratio(0.5, 0.5));
+                assert_eq!(
+                    panel.transform.position,
+                    perro_ui::UiVector2::ratio(0.5, 0.5)
+                );
                 assert_eq!(panel.transform.translation, Vector2::new(0.25, -0.5));
                 assert_eq!(panel.transform.self_translation, Vector2::new(1.0, 0.0));
             }
@@ -1592,12 +1601,19 @@ mod tests {
                 skeleton = @Rig
                 bone = 5
                 chain_length = 3
-                iterations = 12
+                iterations = 1000000
                 tolerance = 0.05
                 weight = 0.75
                 match_rotation = false
             [/IKTarget3D]
             [/HandTarget]
+
+            [HandTarget2D]
+            [IKTarget2D]
+                skeleton = @Rig
+                iterations = 1000000
+            [/IKTarget2D]
+            [/HandTarget2D]
             "#,
         )
         .parse_scene();
@@ -1615,7 +1631,10 @@ mod tests {
             SceneNodeData::IKTarget3D(ik) => {
                 assert_eq!(ik.params.bone_index, 5);
                 assert_eq!(ik.params.chain_length, 3);
-                assert_eq!(ik.params.iterations, 12);
+                assert_eq!(
+                    ik.params.iterations,
+                    perro_structs::MAX_SKELETAL_SOLVER_ITERATIONS
+                );
                 assert_eq!(ik.params.tolerance, 0.05);
                 assert_eq!(ik.params.weight, 0.75);
                 assert!(!ik.params.match_rotation);
@@ -1623,6 +1642,19 @@ mod tests {
             other => panic!("expected IKTarget3D node, got {other:?}"),
         }
         assert!(target.ik_target_skeleton_target.is_some());
+
+        let target_2d = prepared
+            .nodes
+            .iter()
+            .find(|pending| pending.key_name == "HandTarget2D")
+            .expect("2d ik target node");
+        match &target_2d.node.data {
+            SceneNodeData::IKTarget2D(ik) => assert_eq!(
+                ik.params.iterations,
+                perro_structs::MAX_SKELETAL_SOLVER_ITERATIONS
+            ),
+            other => panic!("expected IKTarget2D node, got {other:?}"),
+        }
     }
 
     #[test]
@@ -1640,7 +1672,7 @@ mod tests {
             [PhysicsBoneChain2D]
                 skeleton = @Rig
                 bone = 4
-                iters = 2
+                iters = 1000000
             [/PhysicsBoneChain2D]
             [/Tail2D]
 
@@ -1648,7 +1680,7 @@ mod tests {
             [PhysicsBoneChain3D]
                 skeleton = @Rig
                 bone = 5
-                iters = 4
+                iters = 1000000
             [/PhysicsBoneChain3D]
             [/Tail3D]
             "#,
@@ -1665,7 +1697,10 @@ mod tests {
             .find(|pending| pending.key_name == "Tail2D")
             .expect("2d physics chain");
         match &tail_2d.node.data {
-            SceneNodeData::PhysicsBoneChain2D(chain) => assert_eq!(chain.iterations, 2),
+            SceneNodeData::PhysicsBoneChain2D(chain) => assert_eq!(
+                chain.iterations,
+                perro_structs::MAX_SKELETAL_SOLVER_ITERATIONS
+            ),
             other => panic!("expected PhysicsBoneChain2D node, got {other:?}"),
         }
 
@@ -1675,7 +1710,10 @@ mod tests {
             .find(|pending| pending.key_name == "Tail3D")
             .expect("3d physics chain");
         match &tail_3d.node.data {
-            SceneNodeData::PhysicsBoneChain3D(chain) => assert_eq!(chain.iterations, 4),
+            SceneNodeData::PhysicsBoneChain3D(chain) => assert_eq!(
+                chain.iterations,
+                perro_structs::MAX_SKELETAL_SOLVER_ITERATIONS
+            ),
             other => panic!("expected PhysicsBoneChain3D node, got {other:?}"),
         }
     }
@@ -1684,7 +1722,7 @@ mod tests {
     fn scene_loader_rejects_bone_2d_node() {
         let err = std::panic::catch_unwind(|| {
             Parser::new(
-            r#"
+                r#"
             $root = @Rig2D
             [Rig2D]
             [Skeleton2D]
@@ -2100,16 +2138,21 @@ mod tests {
             .find(|pending| pending.key_name == "box")
             .expect("box node");
         assert_eq!(text_box.locale_text_bindings.len(), 2);
-        assert!(text_box
-            .locale_text_bindings
-            .iter()
-            .any(|binding| binding.key == "ui.entry"
-                && binding.field == crate::runtime::state::LocaleTextField::TextEditText));
-        assert!(text_box
-            .locale_text_bindings
-            .iter()
-            .any(|binding| binding.key == "ui.placeholder"
-                && binding.field == crate::runtime::state::LocaleTextField::TextEditPlaceholder));
+        assert!(
+            text_box
+                .locale_text_bindings
+                .iter()
+                .any(|binding| binding.key == "ui.entry"
+                    && binding.field == crate::runtime::state::LocaleTextField::TextEditText)
+        );
+        assert!(
+            text_box
+                .locale_text_bindings
+                .iter()
+                .any(|binding| binding.key == "ui.placeholder"
+                    && binding.field
+                        == crate::runtime::state::LocaleTextField::TextEditPlaceholder)
+        );
     }
 
     #[test]
@@ -2647,12 +2690,12 @@ mod tests {
             SceneNodeData::UiImageButton(button) => {
                 assert_eq!(button.layout.size, perro_ui::UiVector2::ratio(0.08, 0.12));
                 assert_eq!(button.scale_mode, perro_ui::UiImageScaleMode::Fit);
-                assert_eq!(button.tint, Color::new(0.06666667, 0.13333334, 0.2, 0.26666668));
-                assert_eq!(button.hover_tint, Color::WHITE);
                 assert_eq!(
-                    button.pressed_tint,
-                    Color::new(0.8, 0.8, 0.8, 1.0)
+                    button.tint,
+                    Color::new(0.06666667, 0.13333334, 0.2, 0.26666668)
                 );
+                assert_eq!(button.hover_tint, Color::WHITE);
+                assert_eq!(button.pressed_tint, Color::new(0.8, 0.8, 0.8, 1.0));
                 assert_eq!(button.texture_region, Some([1.0, 2.0, 16.0, 32.0]));
                 assert_eq!(
                     button.clicked_signals,
@@ -2694,10 +2737,7 @@ mod tests {
             SceneNodeData::UiShape(shape) => {
                 assert_eq!(shape.kind, perro_ui::UiShapeKind::Triangle);
                 assert_eq!(shape.fill, Color::new(0.2, 0.4, 0.6, 1.0));
-                assert_eq!(
-                    shape.stroke,
-                    Color::new(0.8, 0.8666667, 0.93333334, 1.0)
-                );
+                assert_eq!(shape.stroke, Color::new(0.8, 0.8666667, 0.93333334, 1.0));
                 assert_eq!(shape.stroke_width, 2.5);
             }
             other => panic!("expected UiShape node, got {other:?}"),
@@ -2748,9 +2788,18 @@ mod tests {
             SceneNodeData::Button2D(button) => {
                 assert_eq!(button.transform.position, Vector2::new(12.0, 34.0));
                 assert_eq!(button.size, Vector2::new(96.0, 40.0));
-                assert_eq!(button.style.fill, Color::new(0.06666667, 0.13333334, 0.2, 1.0));
-                assert_eq!(button.hover_style.fill, Color::new(0.26666668, 0.33333334, 0.4, 1.0));
-                assert_eq!(button.pressed_style.fill, Color::new(0.46666667, 0.53333336, 0.6, 1.0));
+                assert_eq!(
+                    button.style.fill,
+                    Color::new(0.06666667, 0.13333334, 0.2, 1.0)
+                );
+                assert_eq!(
+                    button.hover_style.fill,
+                    Color::new(0.26666668, 0.33333334, 0.4, 1.0)
+                );
+                assert_eq!(
+                    button.pressed_style.fill,
+                    Color::new(0.46666667, 0.53333336, 0.6, 1.0)
+                );
                 assert_eq!(
                     button.clicked_signals,
                     vec![SignalID::from_string("play_clicked")]

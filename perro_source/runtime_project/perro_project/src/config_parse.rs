@@ -315,7 +315,10 @@ fn parse_rendering_ui(
     };
     let pixel_snapping = match table.get("pixel_snapping") {
         Some(value) => value.as_bool().ok_or_else(|| {
-            ProjectError::InvalidField("rendering.ui.pixel_snapping", "must be a boolean".to_string())
+            ProjectError::InvalidField(
+                "rendering.ui.pixel_snapping",
+                "must be a boolean".to_string(),
+            )
         })?,
         None => true,
     };
@@ -394,9 +397,10 @@ pub fn parse_routes_toml(contents: &str) -> Result<ProjectRoutesConfig, ProjectE
         .ok_or(ProjectError::MissingField("route"))?;
     let mut routes = Vec::with_capacity(route_entries.len());
     for entry in route_entries {
-        let table = entry
-            .as_table()
-            .ok_or(ProjectError::InvalidField("route", "must be table array".to_string()))?;
+        let table = entry.as_table().ok_or(ProjectError::InvalidField(
+            "route",
+            "must be table array".to_string(),
+        ))?;
         let href_raw = table
             .get("href")
             .and_then(Value::as_str)
@@ -474,9 +478,9 @@ fn parse_steam_input_mode(
     let Some(value) = table.get("input") else {
         return Ok(SteamInputMode::Off);
     };
-    let raw = value.as_str().ok_or_else(|| {
-        ProjectError::InvalidField("steam.input", "must be a string".to_string())
-    })?;
+    let raw = value
+        .as_str()
+        .ok_or_else(|| ProjectError::InvalidField("steam.input", "must be a string".to_string()))?;
     match raw {
         "off" => Ok(SteamInputMode::Off),
         "metadata" => Ok(SteamInputMode::Metadata),
@@ -537,6 +541,15 @@ fn parse_audio_propagation(
     path: &'static str,
 ) -> Result<AudioPropagationConfig, ProjectError> {
     cfg.max_bounces = parse_u32_table_field(table, "max_bounces", cfg.max_bounces, path)?;
+    if cfg.max_bounces > crate::MAX_AUDIO_PROPAGATION_BOUNCES {
+        return Err(ProjectError::InvalidField(
+            path,
+            format!(
+                "max_bounces must be <= {}",
+                crate::MAX_AUDIO_PROPAGATION_BOUNCES
+            ),
+        ));
+    }
     cfg.rays_per_tick = parse_u32_table_field(table, "rays_per_tick", cfg.rays_per_tick, path)?;
     cfg.max_ray_distance =
         parse_f32_table_field(table, "max_ray_distance", cfg.max_ray_distance, path)?;
@@ -938,7 +951,10 @@ fn parse_optional_table_str(
         return Ok(None);
     };
     let Some(raw) = value.as_str() else {
-        return Err(ProjectError::InvalidField(path, "must be a string".to_string()));
+        return Err(ProjectError::InvalidField(
+            path,
+            "must be a string".to_string(),
+        ));
     };
     let trimmed = raw.trim();
     if trimmed.is_empty() {
@@ -1063,13 +1079,13 @@ fn virtual_canvas_from_aspect_ratio(raw: &str) -> Result<(u32, u32), ProjectErro
 
 fn parse_aspect_ratio(raw: &str) -> Result<(u32, u32), ProjectError> {
     let raw = raw.trim().to_ascii_lowercase();
-    let (w, h) = raw
-        .split_once(':')
-        .or_else(|| raw.split_once('x'))
-        .ok_or(ProjectError::InvalidField(
-            "graphics.aspect_ratio",
-            "expected format `WIDTH:HEIGHT`, for example `16:9`".to_string(),
-        ))?;
+    let (w, h) =
+        raw.split_once(':')
+            .or_else(|| raw.split_once('x'))
+            .ok_or(ProjectError::InvalidField(
+                "graphics.aspect_ratio",
+                "expected format `WIDTH:HEIGHT`, for example `16:9`".to_string(),
+            ))?;
 
     let width = w.parse::<u32>().map_err(|_| {
         ProjectError::InvalidField(

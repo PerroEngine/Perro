@@ -473,96 +473,94 @@ fn apply_node_3d_fields(node: &mut Node3D, fields: &[SceneObjectField]) {
 }
 
 fn apply_mesh_instance_3d_fields(node: &mut MeshInstance3D, fields: &[SceneObjectField]) {
-    SceneFieldIterRef::new(fields).for_each(|name, value| {
-        match name {
-            "surfaces" => {
-                if let SceneValue::Array(items) = value {
-                    node.surfaces = parse_surface_bindings(items.as_ref());
-                }
+    SceneFieldIterRef::new(fields).for_each(|name, value| match name {
+        "surfaces" => {
+            if let SceneValue::Array(items) = value {
+                node.surfaces = parse_surface_bindings(items.as_ref());
             }
-            "meshlets" | "use_meshlets" => {
-                if let Some(v) = as_bool(value) {
-                    node.meshlet_override = Some(v);
-                }
-            }
-            name if scene_key_in(name, FLIP_X_KEYS) => {
-                if let Some(v) = as_bool(value) {
-                    node.flip_x = v;
-                }
-            }
-            "flip_y" | "mirror_y" => {
-                if let Some(v) = as_bool(value) {
-                    node.flip_y = v;
-                }
-            }
-            "flip_z" | "mirror_z" => {
-                if let Some(v) = as_bool(value) {
-                    node.flip_z = v;
-                }
-            }
-            "min_lod" | "lod_min" => {
-                if let Some(v) = as_i32(value) {
-                    node.lod.min_lod = v.clamp(0, LODOptions::MAX as i32) as u8;
-                }
-            }
-            "max_lod" | "lod_max" => {
-                if let Some(v) = as_i32(value) {
-                    node.lod.max_lod = v.clamp(0, LODOptions::MAX as i32) as u8;
-                }
-            }
-            "cast_shadows" | "casts_shadows" => {
-                if let Some(v) = as_bool(value) {
-                    node.cast_shadows = v;
-                }
-            }
-            "receive_shadows" | "receives_shadows" => {
-                if let Some(v) = as_bool(value) {
-                    node.receive_shadows = v;
-                }
-            }
-            "blend" | "mesh_blend" | "blending" => {
-                apply_mesh_blend_fields(&mut node.blend, value);
-            }
-            "blend_shape_weights" | "shape_key_weights" | "morph_weights" => {
-                node.blend_shape_weights = parse_blend_shape_weights(value);
-            }
-            "blend_enabled" => {
-                if let Some(v) = as_bool(value) {
-                    node.blend.enabled = v;
-                }
-            }
-            "blend_normals" => {
-                if let Some(v) = as_bool(value) {
-                    node.blend.normal_blending = v;
-                }
-            }
-            "blend_screen" => {
-                if let Some(v) = as_bool(value) {
-                    node.blend.screen_blending = v;
-                }
-            }
-            "blend_layers" => {
-                if let Some(v) = as_bitmask(value) {
-                    node.blend.blend_layers = v;
-                }
-            }
-            "blend_mask" => {
-                if let Some(v) = as_bitmask(value) {
-                    node.blend.blend_mask = v;
-                }
-            }
-            "blend_distance" | "blend_size" => {
-                if let Some(v) = as_f32(value) {
-                    node.blend.distance = v.max(0.0);
-                }
-            }
-            "blend_min_distance" | "blend_min_size" => {
-                if let Some(v) = as_f32(value) {
-                    node.blend.min_distance = v.max(0.0);
-                }
-            }
-            _ => {}
         }
+        "meshlets" | "use_meshlets" => {
+            if let Some(v) = as_bool(value) {
+                node.meshlet_override = Some(v);
+            }
+        }
+        name if scene_key_in(name, FLIP_X_KEYS) => {
+            if let Some(v) = as_bool(value) {
+                node.flip_x = v;
+            }
+        }
+        "flip_y" | "mirror_y" => {
+            if let Some(v) = as_bool(value) {
+                node.flip_y = v;
+            }
+        }
+        "flip_z" | "mirror_z" => {
+            if let Some(v) = as_bool(value) {
+                node.flip_z = v;
+            }
+        }
+        "min_lod" | "lod_min" => {
+            if let Some(v) = as_i32(value) {
+                node.lod.min_lod = v.clamp(0, LODOptions::MAX as i32) as u8;
+            }
+        }
+        "max_lod" | "lod_max" => {
+            if let Some(v) = as_i32(value) {
+                node.lod.max_lod = v.clamp(0, LODOptions::MAX as i32) as u8;
+            }
+        }
+        "cast_shadows" | "casts_shadows" => {
+            if let Some(v) = as_bool(value) {
+                node.cast_shadows = v;
+            }
+        }
+        "receive_shadows" | "receives_shadows" => {
+            if let Some(v) = as_bool(value) {
+                node.receive_shadows = v;
+            }
+        }
+        "blend" | "mesh_blend" | "blending" => {
+            apply_mesh_blend_fields(&mut node.blend, value);
+        }
+        "blend_shape_weights" | "shape_key_weights" | "morph_weights" => {
+            node.blend_shape_weights = parse_blend_shape_weights(value);
+        }
+        "blend_enabled" => {
+            if let Some(v) = as_bool(value) {
+                node.blend.enabled = v;
+            }
+        }
+        "blend_normals" => {
+            if let Some(v) = as_bool(value) {
+                node.blend.normal_blending = v;
+            }
+        }
+        "blend_screen" => {
+            if let Some(v) = as_bool(value) {
+                node.blend.screen_blending = v;
+            }
+        }
+        "blend_layers" => {
+            if let Some(v) = as_bitmask(value) {
+                node.blend.blend_layers = v;
+            }
+        }
+        "blend_mask" => {
+            if let Some(v) = as_bitmask(value) {
+                node.blend.blend_mask = v;
+            }
+        }
+        "blend_distance" | "blend_size" => {
+            if let Some(v) = as_f32(value) {
+                node.blend.distance = v.max(0.0);
+            }
+        }
+        "blend_min_distance" | "blend_min_size" => {
+            if let Some(v) = as_f32(value) {
+                node.blend.min_distance = v.max(0.0);
+            }
+        }
+        _ => {}
     });
 }
 
@@ -570,118 +568,113 @@ fn apply_multi_mesh_instance_3d_fields(
     node: &mut MultiMeshInstance3D,
     fields: &[SceneObjectField],
 ) {
-    SceneFieldIterRef::new(fields).for_each(|name, value| {
-        match name {
-            "surfaces" => {
-                if let SceneValue::Array(items) = value {
-                    node.surfaces = parse_surface_bindings(items.as_ref());
-                }
+    SceneFieldIterRef::new(fields).for_each(|name, value| match name {
+        "surfaces" => {
+            if let SceneValue::Array(items) = value {
+                node.surfaces = parse_surface_bindings(items.as_ref());
             }
-            "instances" => {
-                if let SceneValue::Array(items) = value {
-                    node.instances = parse_instance_posrot(items.as_ref());
-                }
-            }
-            "instance_grid" | "grid_instances" => {
-                if let Some(instances) = parse_instance_grid(value) {
-                    node.instances = instances;
-                }
-            }
-            "instance_scale" => {
-                if let Some(v) = as_f32(value) {
-                    node.instance_scale = v.max(0.0001);
-                }
-            }
-            "blend_shape_weights" | "shape_key_weights" | "morph_weights" => {
-                node.blend_shape_weights = parse_blend_shape_weights(value);
-            }
-            "meshlets" | "use_meshlets" => {
-                if let Some(v) = as_bool(value) {
-                    node.meshlet_override = Some(v);
-                }
-            }
-            name if scene_key_in(name, FLIP_X_KEYS) => {
-                if let Some(v) = as_bool(value) {
-                    node.flip_x = v;
-                }
-            }
-            "flip_y" | "mirror_y" => {
-                if let Some(v) = as_bool(value) {
-                    node.flip_y = v;
-                }
-            }
-            "flip_z" | "mirror_z" => {
-                if let Some(v) = as_bool(value) {
-                    node.flip_z = v;
-                }
-            }
-            "min_lod" | "lod_min" => {
-                if let Some(v) = as_i32(value) {
-                    node.lod.min_lod = v.clamp(0, LODOptions::MAX as i32) as u8;
-                }
-            }
-            "max_lod" | "lod_max" => {
-                if let Some(v) = as_i32(value) {
-                    node.lod.max_lod = v.clamp(0, LODOptions::MAX as i32) as u8;
-                }
-            }
-            "cast_shadows" | "casts_shadows" => {
-                if let Some(v) = as_bool(value) {
-                    node.cast_shadows = v;
-                }
-            }
-            "receive_shadows" | "receives_shadows" => {
-                if let Some(v) = as_bool(value) {
-                    node.receive_shadows = v;
-                }
-            }
-            "blend" | "mesh_blend" | "blending" => {
-                apply_mesh_blend_fields(&mut node.blend, value);
-            }
-            "blend_enabled" => {
-                if let Some(v) = as_bool(value) {
-                    node.blend.enabled = v;
-                }
-            }
-            "blend_normals" => {
-                if let Some(v) = as_bool(value) {
-                    node.blend.normal_blending = v;
-                }
-            }
-            "blend_screen" => {
-                if let Some(v) = as_bool(value) {
-                    node.blend.screen_blending = v;
-                }
-            }
-            "blend_layers" => {
-                if let Some(v) = as_bitmask(value) {
-                    node.blend.blend_layers = v;
-                }
-            }
-            "blend_mask" => {
-                if let Some(v) = as_bitmask(value) {
-                    node.blend.blend_mask = v;
-                }
-            }
-            "blend_distance" | "blend_size" => {
-                if let Some(v) = as_f32(value) {
-                    node.blend.distance = v.max(0.0);
-                }
-            }
-            "blend_min_distance" | "blend_min_size" => {
-                if let Some(v) = as_f32(value) {
-                    node.blend.min_distance = v.max(0.0);
-                }
-            }
-            _ => {}
         }
+        "instances" => {
+            if let SceneValue::Array(items) = value {
+                node.instances = parse_instance_posrot(items.as_ref());
+            }
+        }
+        "instance_grid" | "grid_instances" => {
+            if let Some(instances) = parse_instance_grid(value) {
+                node.instances = instances;
+            }
+        }
+        "instance_scale" => {
+            if let Some(v) = as_f32(value) {
+                node.instance_scale = v.max(0.0001);
+            }
+        }
+        "blend_shape_weights" | "shape_key_weights" | "morph_weights" => {
+            node.blend_shape_weights = parse_blend_shape_weights(value);
+        }
+        "meshlets" | "use_meshlets" => {
+            if let Some(v) = as_bool(value) {
+                node.meshlet_override = Some(v);
+            }
+        }
+        name if scene_key_in(name, FLIP_X_KEYS) => {
+            if let Some(v) = as_bool(value) {
+                node.flip_x = v;
+            }
+        }
+        "flip_y" | "mirror_y" => {
+            if let Some(v) = as_bool(value) {
+                node.flip_y = v;
+            }
+        }
+        "flip_z" | "mirror_z" => {
+            if let Some(v) = as_bool(value) {
+                node.flip_z = v;
+            }
+        }
+        "min_lod" | "lod_min" => {
+            if let Some(v) = as_i32(value) {
+                node.lod.min_lod = v.clamp(0, LODOptions::MAX as i32) as u8;
+            }
+        }
+        "max_lod" | "lod_max" => {
+            if let Some(v) = as_i32(value) {
+                node.lod.max_lod = v.clamp(0, LODOptions::MAX as i32) as u8;
+            }
+        }
+        "cast_shadows" | "casts_shadows" => {
+            if let Some(v) = as_bool(value) {
+                node.cast_shadows = v;
+            }
+        }
+        "receive_shadows" | "receives_shadows" => {
+            if let Some(v) = as_bool(value) {
+                node.receive_shadows = v;
+            }
+        }
+        "blend" | "mesh_blend" | "blending" => {
+            apply_mesh_blend_fields(&mut node.blend, value);
+        }
+        "blend_enabled" => {
+            if let Some(v) = as_bool(value) {
+                node.blend.enabled = v;
+            }
+        }
+        "blend_normals" => {
+            if let Some(v) = as_bool(value) {
+                node.blend.normal_blending = v;
+            }
+        }
+        "blend_screen" => {
+            if let Some(v) = as_bool(value) {
+                node.blend.screen_blending = v;
+            }
+        }
+        "blend_layers" => {
+            if let Some(v) = as_bitmask(value) {
+                node.blend.blend_layers = v;
+            }
+        }
+        "blend_mask" => {
+            if let Some(v) = as_bitmask(value) {
+                node.blend.blend_mask = v;
+            }
+        }
+        "blend_distance" | "blend_size" => {
+            if let Some(v) = as_f32(value) {
+                node.blend.distance = v.max(0.0);
+            }
+        }
+        "blend_min_distance" | "blend_min_size" => {
+            if let Some(v) = as_f32(value) {
+                node.blend.min_distance = v.max(0.0);
+            }
+        }
+        _ => {}
     });
 }
 
-fn apply_mesh_blend_fields(
-    blend: &mut perro_nodes::MeshBlendOptions,
-    value: &SceneValue,
-) {
+fn apply_mesh_blend_fields(blend: &mut perro_nodes::MeshBlendOptions, value: &SceneValue) {
     match value {
         SceneValue::Bool(v) => {
             blend.enabled = *v;
@@ -770,7 +763,8 @@ fn apply_ik_target_3d_fields(node: &mut IKTarget3D, fields: &[SceneObjectField])
             }
             Some(NodeField::IKTarget3D(IKTarget3DField::Iterations)) => {
                 if let Some(v) = as_i32(value) {
-                    node.params.iterations = v.max(0) as u32;
+                    node.params.iterations =
+                        (v.max(0) as u32).min(perro_structs::MAX_SKELETAL_SOLVER_ITERATIONS);
                 }
             }
             Some(NodeField::IKTarget3D(IKTarget3DField::Tolerance)) => {
@@ -851,7 +845,8 @@ fn apply_physics_bone_chain_3d_fields(node: &mut PhysicsBoneChain3D, fields: &[S
             }
             Some(NodeField::PhysicsBoneChain3D(PhysicsBoneChain3DField::Iterations)) => {
                 if let Some(v) = as_i32(value) {
-                    node.iterations = v.max(1) as u32;
+                    node.iterations =
+                        (v.max(1) as u32).min(perro_structs::MAX_SKELETAL_SOLVER_ITERATIONS);
                 }
             }
             _ => {}
@@ -895,8 +890,8 @@ fn extract_material_source(data: &SceneDefNodeData) -> Option<String> {
     data.fields.iter().find_map(|(name, value)| {
         (resolve_node_field("MeshInstance3D", name)
             == Some(NodeField::MeshInstance3D(MeshInstance3DField::Material)))
-            .then(|| as_asset_source(value))
-            .flatten()
+        .then(|| as_asset_source(value))
+        .flatten()
     })
 }
 
@@ -1108,9 +1103,7 @@ fn parse_instance_posrot(items: &[SceneValue]) -> Vec<perro_nodes::MultiMeshInst
     out
 }
 
-fn parse_instance_grid(
-    value: &SceneValue,
-) -> Option<Vec<perro_nodes::MultiMeshInstancePose>> {
+fn parse_instance_grid(value: &SceneValue) -> Option<Vec<perro_nodes::MultiMeshInstancePose>> {
     let SceneValue::Object(entries) = value else {
         return None;
     };
@@ -1246,15 +1239,15 @@ fn extract_model_source(data: &SceneDefNodeData) -> Option<String> {
 }
 
 fn extract_skeleton_source(data: &SceneDefNodeData) -> Option<String> {
-    if !matches!(
-        data.node_type,
-        NodeType::Skeleton2D | NodeType::Skeleton3D
-    ) {
+    if !matches!(data.node_type, NodeType::Skeleton2D | NodeType::Skeleton3D) {
         return None;
     }
     data.fields.iter().find_map(|(name, value)| {
         let resolved = resolve_node_field(data.type_name(), name);
-        (resolved == Some(NodeField::Skeleton2D(perro_scene::Skeleton2DField::Skeleton))
+        (resolved
+            == Some(NodeField::Skeleton2D(
+                perro_scene::Skeleton2DField::Skeleton,
+            ))
             || resolved == Some(NodeField::Skeleton3D(Skeleton3DField::Skeleton)))
         .then(|| as_asset_source(value))
         .flatten()
@@ -1286,14 +1279,8 @@ fn extract_bone_attachment_skeleton_target(
     }
     for (name, value) in data.fields.iter() {
         let resolved = resolve_node_field(data.type_name(), name);
-        if resolved
-            == Some(NodeField::BoneAttachment2D(
-                BoneAttachment2DField::Skeleton,
-            ))
-            || resolved
-                == Some(NodeField::BoneAttachment3D(
-                    BoneAttachment3DField::Skeleton,
-                ))
+        if resolved == Some(NodeField::BoneAttachment2D(BoneAttachment2DField::Skeleton))
+            || resolved == Some(NodeField::BoneAttachment3D(BoneAttachment3DField::Skeleton))
         {
             return as_node_ref_source(value, &format!("{}.skeleton", data.type_name()));
         }
@@ -1302,10 +1289,7 @@ fn extract_bone_attachment_skeleton_target(
 }
 
 fn extract_ik_target_skeleton_target(data: &SceneDefNodeData) -> Result<Option<String>, String> {
-    if !matches!(
-        data.node_type,
-        NodeType::IKTarget2D | NodeType::IKTarget3D
-    ) {
+    if !matches!(data.node_type, NodeType::IKTarget2D | NodeType::IKTarget3D) {
         return Ok(None);
     }
     for (name, value) in data.fields.iter() {
@@ -1348,10 +1332,7 @@ fn extract_physics_bone_chain_skeleton_target(
 fn as_node_ref_source(value: &SceneValue, field: &str) -> Result<Option<String>, String> {
     match value {
         SceneValue::Key(v) => Ok(Some(v.to_string())),
-        SceneValue::Str(_) => {
-            Err(format!("{field} must be a node ref like @SkeletonNode"))
-        }
+        SceneValue::Str(_) => Err(format!("{field} must be a node ref like @SkeletonNode")),
         _ => Ok(None),
     }
 }
-
