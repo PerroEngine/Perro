@@ -81,7 +81,7 @@ let queue = value.into_type::<VecDeque<NodeID>>().unwrap_or_default();
 | string         | `as_str()`                                                                                                                                                                        |
 | bytes          | `as_bytes()`                                                                                                                                                                      |
 | any id enum    | `as_id()`                                                                                                                                                                         |
-| ids            | `as_node()`, `as_texture()`, `as_material()`, `as_mesh()`, `as_animation()`, `as_light()`, `as_signal()`, `as_audio_bus()`, `as_tag()`, `as_preloaded_scene()` |
+| ids            | `as_node()`, `as_node_or_nil()`, `as_texture()`, `as_material()`, `as_mesh()`, `as_animation()`, `as_light()`, `as_signal()`, `as_audio_bus()`, `as_tag()`, `as_preloaded_scene()` |
 | math           | `as_vec2()`, `as_vec3()`, `as_vec4()`, `as_ivec2()`, `as_ivec3()`, `as_ivec4()`, `as_uvec2()`, `as_uvec3()`, `as_uvec4()`, `as_unit_vec2()`, `as_unit_vec3()`, `as_unit_vec4()`, `as_matrix2()`, `as_matrix3()`, `as_matrix4()`, `as_matrix2x2()`, `as_matrix3x3()`, `as_matrix4x4()`, `matrix_shape()` |
 | transforms     | `as_transform2d()`, `as_transform3d()`                                                                                                                                            |
 | quaternions    | `as_quat()`                                                                                                                                                                       |

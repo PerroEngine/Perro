@@ -316,6 +316,8 @@ Common APIs:
 | Constructor | `pub const fn from_unit_vector4(v: UnitVector4) -> Self`          | Packed normalized bytes.                                            | `Color`         | Convert from compact normalized color.                               | Uses exact stored bytes.                           |
 | Constructor | `pub const fn from_unit_slice(v: UnitVector4) -> Self`       | Packed normalized bytes.                                            | `Color`         | Convert from APIs that name packed normalized data as a slice value. | Alias of `from_unit_vector4`.                          |
 | Parser      | `pub fn from_hex(hex: &str) -> Option<Self>`               | `"#RGB"`, `"#RGBA"`, `"#RRGGBB"`, `"#RRGGBBAA"`, with optional `#`. | `Option<Color>` | Parse author-facing color text.                                      | Returns `None` for bad length or bad hex digit.    |
+| Parser      | `pub const fn from_hex_const(hex: &str) -> Self`           | Same hex forms as `from_hex`.                                      | `Color`         | Compile-time hex behind the `color!` macro.                          | Panics (compile error in `const`) on malformed input. |
+| Builder     | `pub const fn with_alpha(self, a: f32) -> Self`            | `a`: normalized alpha.                                             | `Color`         | Override alpha on an existing color without a parse/alloc.           | Clamps `a` to `0.0..=1.0`; RGB kept. `const`.      |
 | Accessor    | `pub const fn r(self) -> f32` and `g/b/a`                  | none                                                                | `f32`           | Read one normalized channel.                                         | Converts stored byte to `0.0..=1.0`.               |
 | Accessor    | `pub const fn to_rgba(self) -> [f32; 4]`                   | none                                                                | `[f32; 4]`      | Feed APIs that expect float RGBA arrays.                             | Converts stored bytes to normalized floats.        |
 | Accessor    | `pub const fn to_rgb(self) -> [f32; 3]`                    | none                                                                | `[f32; 3]`      | Feed RGB-only APIs.                                                  | Drops alpha.                                       |
@@ -344,6 +346,16 @@ assert_eq!(clamped.to_rgba_u8(), [255, 128, 0, 255]);
 
 let rgba: [f32; 4] = accent.to_float_slice();
 let packed: UnitVector4 = accent.to_unit_slice();
+```
+
+Use the `color!` macro for compile-time-validated hex literals, and `with_alpha`
+to fade a base color without re-parsing each frame:
+
+```rust
+const PANEL_BG: Color = color!("#0B1018");
+
+// per-frame fade: no String alloc, no runtime parse
+node.style.fill = PANEL_BG.with_alpha(0.92 * t);
 ```
 
 ## Masks And Collision
