@@ -45,6 +45,8 @@ use std::{
     rc::Rc,
 };
 
+use perro_asset_formats::dlc::{DlcAssetAccess, DlcAssetFlags, DlcAssetKind};
+
 const PERRO_DIR: &str = ".perro";
 const PROJECT_DIR: &str = "project";
 const SRC_DIR: &str = "src";
@@ -62,6 +64,88 @@ pub struct StaticPipelineOverrides {
 
 thread_local! {
     static STATIC_PIPELINE_OVERRIDES: RefCell<Option<StaticPipelineOverrides>> = const { RefCell::new(None) };
+    static STATIC_ASSET_INVENTORY: RefCell<Option<Vec<StaticAssetInventoryRecord>>> = const { RefCell::new(None) };
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StaticAssetInventoryRecord {
+    pub kind: DlcAssetKind,
+    pub flags: DlcAssetFlags,
+    pub access: DlcAssetAccess,
+    pub path: String,
+}
+
+pub fn begin_static_asset_inventory() {
+    STATIC_ASSET_INVENTORY.with(|slot| {
+        *slot.borrow_mut() = Some(Vec::new());
+    });
+}
+
+pub fn take_static_asset_inventory() -> Result<Vec<StaticAssetInventoryRecord>, StaticPipelineError>
+{
+    let mut records =
+        STATIC_ASSET_INVENTORY.with(|slot| slot.borrow_mut().take().unwrap_or_default());
+    records.sort_by(|a, b| {
+        a.kind
+            .raw()
+            .cmp(&b.kind.raw())
+            .then_with(|| a.path.as_bytes().cmp(b.path.as_bytes()))
+    });
+    for pair in records.windows(2) {
+        if pair[0].kind == pair[1].kind
+            && pair[0].path == pair[1].path
+            && (pair[0].flags != pair[1].flags || pair[0].access != pair[1].access)
+        {
+            return Err(StaticPipelineError::SceneParse(format!(
+                "inconsistent DLC registry metadata for kind {} path `{}`",
+                pair[0].kind.raw(),
+                pair[0].path
+            )));
+        }
+    }
+    records.dedup_by(|a, b| a.kind == b.kind && a.path == b.path);
+
+    let mut by_key = HashMap::<(u32, u64), String>::new();
+    for record in &records {
+        let key = (record.kind.raw(), perro_ids::string_to_u64(&record.path));
+        if let Some(previous) = by_key.insert(key, record.path.clone())
+            && previous != record.path
+        {
+            return Err(StaticPipelineError::SceneParse(format!(
+                "DLC registry hash collision for kind {}: `{previous}` + `{}` => {}",
+                record.kind.raw(),
+                record.path,
+                key.1
+            )));
+        }
+    }
+    Ok(records)
+}
+
+pub(crate) fn record_static_assets<'a, I>(kind: DlcAssetKind, access: DlcAssetAccess, paths: I)
+where
+    I: IntoIterator<Item = (&'a str, bool)>,
+{
+    STATIC_ASSET_INVENTORY.with(|slot| {
+        let mut slot = slot.borrow_mut();
+        let Some(records) = slot.as_mut() else {
+            return;
+        };
+        records.extend(
+            paths
+                .into_iter()
+                .map(|(path, synthesized)| StaticAssetInventoryRecord {
+                    kind,
+                    flags: if synthesized {
+                        DlcAssetFlags::SYNTHESIZED
+                    } else {
+                        DlcAssetFlags::NONE
+                    },
+                    access,
+                    path: path.to_string(),
+                }),
+        );
+    });
 }
 
 fn current_overrides() -> Option<StaticPipelineOverrides> {
@@ -278,8 +362,9 @@ pub fn write_static_mod_rs(project_root: &Path) -> Result<(), StaticPipelineErro
 #[cfg(test)]
 mod tests {
     use super::{
-        StaticPipelineOverrides, current_overrides, push_static_pipeline_overrides,
-        set_static_pipeline_overrides,
+        StaticPipelineOverrides, begin_static_asset_inventory, current_overrides,
+        push_static_pipeline_overrides, record_static_assets, set_static_pipeline_overrides,
+        take_static_asset_inventory,
     };
     use perro_animation::{AnimationClip, AnimationTreeAsset};
     use perro_nodes::NodeType;
@@ -346,6 +431,39 @@ mod tests {
 
         assert!(result.is_err());
         assert!(current_overrides().is_none());
+    }
+
+    #[test]
+    fn static_inventory_sorts_by_kind_then_path_and_keeps_cross_kind_uri() {
+        use perro_asset_formats::dlc::{DlcAssetAccess, DlcAssetKind};
+
+        begin_static_asset_inventory();
+        record_static_assets(
+            DlcAssetKind::TEXTURE,
+            DlcAssetAccess::BYTES,
+            [
+                ("dlc://fixture/z.png", false),
+                ("dlc://fixture/a.png", false),
+            ],
+        );
+        record_static_assets(
+            DlcAssetKind::MESH,
+            DlcAssetAccess::BYTES,
+            [("dlc://fixture/a.png", true)],
+        );
+        record_static_assets(
+            DlcAssetKind::TEXTURE,
+            DlcAssetAccess::BYTES,
+            [("dlc://fixture/a.png", false)],
+        );
+
+        let records = take_static_asset_inventory().expect("canonical inventory");
+
+        assert_eq!(records.len(), 3);
+        assert_eq!(records[0].kind, DlcAssetKind::MESH);
+        assert_eq!(records[0].path, "dlc://fixture/a.png");
+        assert_eq!(records[1].path, "dlc://fixture/a.png");
+        assert_eq!(records[2].path, "dlc://fixture/z.png");
     }
 
     #[test]

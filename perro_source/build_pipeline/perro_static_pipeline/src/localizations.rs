@@ -1,4 +1,4 @@
-use crate::{StaticPipelineError, escape_rust_str, static_dir};
+use crate::{StaticPipelineError, asset_uri, escape_rust_str, static_dir};
 use perro_csv::CsvBuf;
 use perro_ids::string_to_u64;
 use perro_project::ProjectConfig;
@@ -296,6 +296,12 @@ pub fn generate_static_localizations(
     out.push_str("}\n");
 
     fs::write(static_dir.join("localizations.rs"), out)?;
+    let path = asset_uri(localization.source_csv.trim_start_matches("res/"));
+    crate::record_static_assets(
+        perro_asset_formats::dlc::DlcAssetKind::LOCALIZATION,
+        perro_asset_formats::dlc::DlcAssetAccess::ENGINE_LOCAL,
+        [(path.as_str(), false)],
+    );
     Ok(())
 }
 

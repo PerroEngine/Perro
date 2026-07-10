@@ -24,7 +24,7 @@ fn looped_audio() -> RuntimeAudio<'static> {
 fn wall_2d(runtime: &mut Runtime, pos: Vector2, width: f32, height: f32) -> NodeID {
     let wall = NodeAPI::create::<StaticBody2D>(runtime);
     // Nearly opaque wall so sealed rooms genuinely muffle.
-    if let Some(node) = runtime.nodes.get_mut(wall)
+    if let Some(mut node) = runtime.nodes.get_mut(wall)
         && let SceneNodeData::StaticBody2D(body) = &mut node.data
     {
         let mut audio = AudioInteraction::new();
@@ -35,7 +35,7 @@ fn wall_2d(runtime: &mut Runtime, pos: Vector2, width: f32, height: f32) -> Node
     }
     let shape = NodeAPI::create::<CollisionShape2D>(runtime);
     assert!(NodeAPI::reparent(runtime, wall, shape));
-    if let Some(node) = runtime.nodes.get_mut(shape)
+    if let Some(mut node) = runtime.nodes.get_mut(shape)
         && let SceneNodeData::CollisionShape2D(shape) = &mut node.data
     {
         shape.shape = perro_nodes::Shape2D::Quad { width, height };
@@ -298,7 +298,7 @@ fn attached_moving_emitter_recasts_audio_rays_from_new_position() {
     let wall = NodeAPI::create::<StaticBody2D>(&mut runtime);
     let shape = NodeAPI::create::<CollisionShape2D>(&mut runtime);
     assert!(NodeAPI::reparent(&mut runtime, wall, shape));
-    if let Some(node) = runtime.nodes.get_mut(shape)
+    if let Some(mut node) = runtime.nodes.get_mut(shape)
         && let SceneNodeData::CollisionShape2D(shape) = &mut node.data
     {
         shape.shape = perro_nodes::Shape2D::Quad {
@@ -371,7 +371,7 @@ fn thin_collider_transmits_more_than_thick_collider() {
     let wall = NodeAPI::create::<StaticBody2D>(&mut thin);
     let shape = NodeAPI::create::<CollisionShape2D>(&mut thin);
     assert!(NodeAPI::reparent(&mut thin, wall, shape));
-    if let Some(node) = thin.nodes.get_mut(shape)
+    if let Some(mut node) = thin.nodes.get_mut(shape)
         && let SceneNodeData::CollisionShape2D(shape) = &mut node.data
     {
         shape.shape = perro_nodes::Shape2D::Quad {
@@ -396,7 +396,7 @@ fn thin_collider_transmits_more_than_thick_collider() {
     let wall = NodeAPI::create::<StaticBody2D>(&mut thick);
     let shape = NodeAPI::create::<CollisionShape2D>(&mut thick);
     assert!(NodeAPI::reparent(&mut thick, wall, shape));
-    if let Some(node) = thick.nodes.get_mut(shape)
+    if let Some(mut node) = thick.nodes.get_mut(shape)
         && let SceneNodeData::CollisionShape2D(shape) = &mut node.data
     {
         shape.shape = perro_nodes::Shape2D::Quad {
@@ -473,7 +473,7 @@ fn audio_mask_ignores_masked_audio_layer() {
         .insert(SceneNode::new(SceneNodeData::AudioMask2D(
             AudioMask2D::default(),
         )));
-    if let Some(node) = runtime.nodes.get_mut(mask)
+    if let Some(mut node) = runtime.nodes.get_mut(mask)
         && let SceneNodeData::AudioMask2D(mask) = &mut node.data
     {
         mask.material.audio_mask = BitMask::with([2]);
@@ -509,7 +509,7 @@ fn audio_mask_3d_blocks_without_physical_collision() {
         )));
     let shape = NodeAPI::create::<CollisionShape3D>(&mut runtime);
     assert!(NodeAPI::reparent(&mut runtime, mask, shape));
-    if let Some(node) = runtime.nodes.get_mut(shape)
+    if let Some(mut node) = runtime.nodes.get_mut(shape)
         && let SceneNodeData::CollisionShape3D(shape) = &mut node.data
     {
         shape.shape = perro_nodes::Shape3D::Cube {
@@ -577,7 +577,7 @@ fn audio_debug_rays_color_direct_vs_wall_diffusion() {
     let mask = wall.nodes.insert(SceneNode::new(SceneNodeData::AudioMask3D(
         AudioMask3D::default(),
     )));
-    if let Some(node) = wall.nodes.get_mut(mask)
+    if let Some(mut node) = wall.nodes.get_mut(mask)
         && let SceneNodeData::AudioMask3D(mask) = &mut node.data
     {
         mask.material.transmission = 0.2;
@@ -586,7 +586,7 @@ fn audio_debug_rays_color_direct_vs_wall_diffusion() {
     }
     let shape = NodeAPI::create::<CollisionShape3D>(&mut wall);
     assert!(NodeAPI::reparent(&mut wall, mask, shape));
-    if let Some(node) = wall.nodes.get_mut(shape)
+    if let Some(mut node) = wall.nodes.get_mut(shape)
         && let SceneNodeData::CollisionShape3D(shape) = &mut node.data
     {
         shape.shape = perro_nodes::Shape3D::Cube {
@@ -651,7 +651,7 @@ fn reflection_loses_strength_per_bounce_and_stops_at_cutoff() {
 fn physics_body_reflects_spatial_audio_from_geometry() {
     let mut runtime = Runtime::new();
     let floor = NodeAPI::create::<StaticBody2D>(&mut runtime);
-    if let Some(node) = runtime.nodes.get_mut(floor)
+    if let Some(mut node) = runtime.nodes.get_mut(floor)
         && let SceneNodeData::StaticBody2D(body) = &mut node.data
     {
         let mut audio = AudioInteraction::new();
@@ -662,7 +662,7 @@ fn physics_body_reflects_spatial_audio_from_geometry() {
     }
     let shape = NodeAPI::create::<CollisionShape2D>(&mut runtime);
     assert!(NodeAPI::reparent(&mut runtime, floor, shape));
-    if let Some(node) = runtime.nodes.get_mut(shape)
+    if let Some(mut node) = runtime.nodes.get_mut(shape)
         && let SceneNodeData::CollisionShape2D(shape) = &mut node.data
     {
         shape.shape = perro_nodes::Shape2D::Quad {
@@ -699,7 +699,7 @@ fn bounce_audio_effect_zone_reflects_instead_of_pass_through() {
         .insert(SceneNode::new(SceneNodeData::AudioEffectZone2D(
             AudioEffectZone2D::default(),
         )));
-    if let Some(node) = runtime.nodes.get_mut(zone)
+    if let Some(mut node) = runtime.nodes.get_mut(zone)
         && let SceneNodeData::AudioEffectZone2D(zone) = &mut node.data
     {
         zone.bounce = true;
@@ -709,7 +709,7 @@ fn bounce_audio_effect_zone_reflects_instead_of_pass_through() {
     }
     let shape = NodeAPI::create::<CollisionShape2D>(&mut runtime);
     assert!(NodeAPI::reparent(&mut runtime, zone, shape));
-    if let Some(node) = runtime.nodes.get_mut(shape)
+    if let Some(mut node) = runtime.nodes.get_mut(shape)
         && let SceneNodeData::CollisionShape2D(shape) = &mut node.data
     {
         shape.shape = perro_nodes::Shape2D::Quad {
@@ -777,12 +777,12 @@ fn audio_portal_improves_corner_opening_path() {
         .insert(SceneNode::new(SceneNodeData::AudioPortal2D(
             AudioPortal2D::default(),
         )));
-    if let Some(node) = with_portal.nodes.get_mut(portal)
+    if let Some(mut node) = with_portal.nodes.get_mut(portal)
         && let SceneNodeData::AudioPortal2D(portal) = &mut node.data
     {
         portal.targets.push(portal_exit);
     }
-    if let Some(node) = with_portal.nodes.get_mut(portal_exit)
+    if let Some(mut node) = with_portal.nodes.get_mut(portal_exit)
         && let SceneNodeData::AudioPortal2D(exit) = &mut node.data
     {
         exit.targets.push(portal);
@@ -830,7 +830,7 @@ fn audio_portal_2d_transforms_exit_direction_with_rotation() {
         .insert(SceneNode::new(SceneNodeData::AudioPortal2D(
             AudioPortal2D::default(),
         )));
-    if let Some(node) = runtime.nodes.get_mut(portal)
+    if let Some(mut node) = runtime.nodes.get_mut(portal)
         && let SceneNodeData::AudioPortal2D(portal) = &mut node.data
     {
         portal.targets.push(portal_exit);
@@ -885,12 +885,12 @@ fn audio_portal_2d_chains_multiple_hops() {
         .insert(SceneNode::new(SceneNodeData::AudioPortal2D(
             AudioPortal2D::default(),
         )));
-    if let Some(node) = runtime.nodes.get_mut(portal_a)
+    if let Some(mut node) = runtime.nodes.get_mut(portal_a)
         && let SceneNodeData::AudioPortal2D(portal) = &mut node.data
     {
         portal.targets.push(portal_b);
     }
-    if let Some(node) = runtime.nodes.get_mut(portal_c)
+    if let Some(mut node) = runtime.nodes.get_mut(portal_c)
         && let SceneNodeData::AudioPortal2D(portal) = &mut node.data
     {
         portal.targets.push(portal_d);
@@ -947,12 +947,12 @@ fn audio_portal_skip_is_per_ray_branch() {
         .insert(SceneNode::new(SceneNodeData::AudioPortal2D(
             AudioPortal2D::default(),
         )));
-    if let Some(node) = runtime.nodes.get_mut(portal_a)
+    if let Some(mut node) = runtime.nodes.get_mut(portal_a)
         && let SceneNodeData::AudioPortal2D(portal) = &mut node.data
     {
         portal.targets.push(portal_b);
     }
-    if let Some(node) = runtime.nodes.get_mut(portal_b)
+    if let Some(mut node) = runtime.nodes.get_mut(portal_b)
         && let SceneNodeData::AudioPortal2D(portal) = &mut node.data
     {
         portal.targets.push(portal_c);
@@ -1047,7 +1047,7 @@ fn audio_portal_3d_transports_through_connected_exit() {
         .insert(SceneNode::new(SceneNodeData::AudioPortal3D(
             AudioPortal3D::default(),
         )));
-    if let Some(node) = with_portal.nodes.get_mut(portal)
+    if let Some(mut node) = with_portal.nodes.get_mut(portal)
         && let SceneNodeData::AudioPortal3D(portal) = &mut node.data
     {
         portal.targets.push(portal_exit);
@@ -1092,7 +1092,7 @@ fn audio_effect_zone_2d_mixes_effect_when_source_enters() {
         .insert(SceneNode::new(SceneNodeData::AudioEffectZone2D(
             AudioEffectZone2D::default(),
         )));
-    if let Some(node) = runtime.nodes.get_mut(zone)
+    if let Some(mut node) = runtime.nodes.get_mut(zone)
         && let SceneNodeData::AudioEffectZone2D(zone) = &mut node.data
     {
         zone.effects[0].reverb_send = 0.7;
@@ -1101,7 +1101,7 @@ fn audio_effect_zone_2d_mixes_effect_when_source_enters() {
     }
     let shape = NodeAPI::create::<CollisionShape2D>(&mut runtime);
     assert!(NodeAPI::reparent(&mut runtime, zone, shape));
-    if let Some(node) = runtime.nodes.get_mut(shape)
+    if let Some(mut node) = runtime.nodes.get_mut(shape)
         && let SceneNodeData::CollisionShape2D(shape) = &mut node.data
     {
         shape.shape = perro_nodes::Shape2D::Quad {
@@ -1135,7 +1135,7 @@ fn audio_effect_zone_ignores_masked_audio_layer() {
         .insert(SceneNode::new(SceneNodeData::AudioEffectZone2D(
             AudioEffectZone2D::default(),
         )));
-    if let Some(node) = runtime.nodes.get_mut(zone)
+    if let Some(mut node) = runtime.nodes.get_mut(zone)
         && let SceneNodeData::AudioEffectZone2D(zone) = &mut node.data
     {
         zone.audio_mask = BitMask::with([2]);
@@ -1145,7 +1145,7 @@ fn audio_effect_zone_ignores_masked_audio_layer() {
     }
     let shape = NodeAPI::create::<CollisionShape2D>(&mut runtime);
     assert!(NodeAPI::reparent(&mut runtime, zone, shape));
-    if let Some(node) = runtime.nodes.get_mut(shape)
+    if let Some(mut node) = runtime.nodes.get_mut(shape)
         && let SceneNodeData::CollisionShape2D(shape) = &mut node.data
     {
         shape.shape = perro_nodes::Shape2D::Quad {
@@ -1181,7 +1181,7 @@ fn audio_effect_zone_3d_mixes_effect_when_path_crosses() {
         .insert(SceneNode::new(SceneNodeData::AudioEffectZone3D(
             AudioEffectZone3D::default(),
         )));
-    if let Some(node) = runtime.nodes.get_mut(zone)
+    if let Some(mut node) = runtime.nodes.get_mut(zone)
         && let SceneNodeData::AudioEffectZone3D(zone) = &mut node.data
     {
         zone.effects[0].reverb_send = 0.6;
@@ -1190,7 +1190,7 @@ fn audio_effect_zone_3d_mixes_effect_when_path_crosses() {
     }
     let shape = NodeAPI::create::<CollisionShape3D>(&mut runtime);
     assert!(NodeAPI::reparent(&mut runtime, zone, shape));
-    if let Some(node) = runtime.nodes.get_mut(shape)
+    if let Some(mut node) = runtime.nodes.get_mut(shape)
         && let SceneNodeData::CollisionShape3D(shape) = &mut node.data
     {
         shape.shape = perro_nodes::Shape3D::Cube {

@@ -1,342 +1,395 @@
-# Perro Codebase Audit — 2026-07-09
+# Codebase Audit - 2026-07-09
 
-Future-agent handoff for bug fixes, API cleanup, docs, and verification.
+Sole bug + perf audit.
 
-## Snapshot
+Supersede 8 old audit docs.
+
+## Snap
 
-- Scope: all workspace areas; 853 Rust/Markdown/manifest files indexed.
-- Method: three parallel source audits, prior-audit reconciliation, unsafe/panic/docs scans, and workspace build.
-- Baseline command: `cargo check --workspace --all-targets`.
-- Baseline result: all engine/devtool crates reached `Checking` with no diagnostics on Windows x86_64; the final website target did not finish before handoff because parallel audit commands contended for the shared Cargo target lock. Re-run the command for a definitive full-workspace result.
-- Confidence: high for listed findings; this is a broad static audit, not proof that no other defects exist.
-- Prior work: read `docs/project/engine_audit_2026-07-06.md`, `docs/audit_spec_0707.md`, and `docs/audit_progress_0707.md` before changing old backlog items. Much of the 2026-07-07 audit already landed.
+- base: `c1b0e80e`
+- branch: `main`
+- scope: full Rust ws + old audit claims
+- dirty tree: 10 user src/demo fles b4 audit
+- act: kp all user chg
+- method: source scan + old claim recheck + compile/clippy/tests
+- limit: no GPU trace, fuzz run, cross-OS run, or full perf rebench
 
-## Working-tree guard
+## Gates
 
-The audit ran with existing uncommitted work, including webcam/video changes across runtime, graphics, nodes, resource API, demos, and `Cargo.lock`. These changes belong to the user. Do not reset or overwrite them. Re-run `git status --short` before every fix lane.
+- pass: `cargo fmt --all -- --check`
+- pass: `cargo check --workspace --all-targets`
+- pass: `cargo clippy --workspace --all-targets -- -D warnings`
+- pass: `cargo test -p perro_networking --features network-tests`
+- res: 26 net tests pass
+- pass: changed-crate lib tests
+- res: 757 asset/compiler/IO/modules/res/runtime/static tests pass
+- pass: ignored `generated_dlc_registry_pack_crate_compiles`
+- res: generated DLC pack build + registry source compile
+- note: GPU opts below still need trace/bench proof
 
-## Execution update — 2026-07-09
+## Fix Pass
 
-Work ran in isolated `codex/audit-*` worktrees. The combined branch is `codex/audit-integration` at `D:\Rust\Perro_codex_audit_integration`; main remains untouched because it contains user/external-agent work.
+Closed:
 
-Landed on the integration branch:
+- TCP partial tx, multi-frame rx, EOF, O(n) front drain, + 16 MiB tx backpressure
+- NavMesh invariant boundary + safe store/query guards
+- NavMesh O(T) edge build + heap A* + graph cache by ID/layer mask
+- ZIP link/reparse guards + entry/byte/total/ratio caps + partial-file cleanup
+- HTTP TLS provider mapping + empty-URL single terminal evt
+- `NodeArena` public tracked RAII mut guard + raw public bypass rm
+- DLC registry v1 inventory/API + stable sort/collision guard + navmesh kind 17
+- `ResPath` DLC dot-name grammar parity
 
-- DLC names/path containment: `dee0c040`.
-- DLC remount backing replacement: `92207b77`.
-- Scene lexer errors/iterative skipping: `c3d73ae4`.
-- `Transform3D::looking_at`: `83463cd5`.
-- Bounded/stale-recoverable script write locks: `6aed3d94`.
-- Scoped static-pipeline override guard: `731fde77`.
-- Tileset finite/positive geometry validation: `7e55f794`.
-- `MicClip` invariants: `dae2bae6`.
-- Runtime texture allocation budget: `cf40b948`.
-- Unsafe DLC callback boundary/length cap: `7be6345b`.
-- Docs map/link fixes: `7b045504`.
-- Published-tool package metadata: `c059a284`.
-- Fallible parser helpers: `66375b83`.
-- Collision-safe CSV string lookups: `c6590ba0`.
-- Strict shared generational-ID parser: `912a219a`.
-- Index-safe `NodeArena::edit` guard: `316f13c0`.
-- Typed audio enqueue results with compatibility shims: `7466460a`.
-- DLC static generation kept on override-owning thread: `95d27d72`.
-- Dynamic-script ABI v2 descriptor/fingerprint gate: `0ae60aaa`.
+Open:
 
-Integration gates so far:
+- dynamic script C ABI
+- generic DLC FILE inventory
+- renderer/CSV opts O2-O5
 
-- `cargo fmt --all -- --check`: pass.
-- Combined touched-crate tests: 440+ unit tests and 21 doc tests pass; expected slow tests remain ignored.
-- Touched-crate clippy with `-D warnings`: pass.
+ABI stop reason:
 
-Still blocked by design work:
+- opaque producer state conflict w/ host `with_state<T>` in lifecycle ctx
+- partial bridge break dynamic scripts or keep hidden Rust ABI
+- req: C-safe host ctx/state API + producer-side state route
+- act: rm draft; kp exact-build descriptor/fingerprint gate
 
-- Script trait-object calls are now gated by a versioned `#[repr(C)]` descriptor and exact build fingerprint before any dylib callback. A future fully stable ABI still needs an opaque handle, producer-owned destroy function, C-safe values, and unwind containment.
-- Generic DLC registry needs canonical path/hash/type inventory emitted by the static pipeline; source-extension scanning cannot represent synthesized GLTF mesh/skeleton keys correctly.
+## Sev
 
-## Severity map
+- P0: path escape/destructive risk
+- P1: data loss, panic, UB, dead conn, or wrong core res
+- P2: silent cfg/API fault, resource abuse, or stale state
+- P3: low-risk drift/maint debt
 
-- P0: filesystem escape or destructive-action risk; fix first.
-- P1: UB, wrong core results, silent data corruption, hangs, or stale state.
-- P2: hostile-input robustness, invariant/API traps, or material resource risk.
-- P3: ergonomics, docs, metadata, and maintainability.
+## Bugs
 
-## Findings
+### P1 - TCP frame path lose/corrupt data - CLOSED
 
-### P0 — DLC names permit path escape
+Proof:
 
-Evidence:
+- `perro_source/api_modules/perro_networking/src/tcp.rs:116-124` set stream nonblock
+- `tcp.rs:165-173` call `Write::write_all` on same nonblock stream
+- partial write + `WouldBlock` -> API ret err w/o unsent offset
+- caller retry whole frame -> dup prefix/payload risk
+- `tcp.rs:206-225` cap whole recv buf to `max_frame_bytes + 4`
+- 2 valid queued frames whose sum > cap -> false `FrameTooLarge`
+- `tcp.rs:209` EOF -> `Ok(())`; framed poll never emit disconnect
+- `world.rs:353-378` framed world keep dead conn on `Ok(None)`
+- `tcp.rs:301` front `drain` shift all queued bytes/frame
 
-- `perro_source/build_pipeline/perro_compiler/src/scripts.rs:7-13` rejects only the reserved name `self`.
-- `sync_dlc_scripts` joins the raw name below `dlcs` and `.perro/dlc` at `scripts.rs:23-32`.
-- `perro_source/build_pipeline/perro_compiler/src/dlc.rs:401-415` repeats raw joins.
-- `dlc.rs:451-454` recursively removes the computed staging path.
+Fx:
 
-Impact: a name such as `../target` can move reads/writes outside the DLC root and can direct recursive removal outside the intended staging directory.
+1. add tx queue + byte cursor
+2. flush until `WouldBlock`; keep unsent tail
+3. dcod complete buffered frm b4 socket rd
+4. cap declared frame len; add separate total queue cap
+5. track EOF; emit `TcpDisconnected`
+6. use read cursor/`BytesMut`/`VecDeque`; rm front memmove
 
-Fix:
+Tests:
 
-1. Add one validated `DlcName`/single-path-component type shared by compiler, CLI, IO, and project parsing.
-2. Reject empty, `.`, `..`, separators, prefixes, absolute paths, NUL, and platform-specific alternate separators.
-3. Resolve/canonicalize the nearest existing ancestor and prove the final path remains a descendant before write, move, or recursive remove.
-4. Add traversal tests for `/`, `\`, drive/UNC prefixes, encoded-looking text, and nested `..`.
+- force tiny socket send buf + multi-MiB frame
+- push 2 max-valid frames in 1 write
+- close peer w/ partial + empty recv buf
+- decode 10k queued tiny frames
 
-Acceptance: no public/compiler entry point can form an out-of-root DLC path; recursive removal receives only a checked descendant.
+### P1 - NavMesh safe API allow panic data - CLOSED
 
-### P1 — scene lexer hides malformed input and can recurse deeply
+Proof:
 
-Evidence:
+- `perro_source/api_modules/perro_resource_api/src/sub_apis/navmesh.rs:8-17` expose verts + tris
+- `navmesh.rs:107-112` accept any `NavMesh3D` in create/write trait
+- `perro_runtime/src/runtime/navmesh.rs:89-91` index verts w/o bounds chk
+- `runtime/navmesh.rs:247-251` repeat unchecked tri index use
+- safe script call can create tri `[u32::MAX, 0, 1]` -> path query panic
+- `navmesh.rs:93-96` accept `NaN`/`Inf`
+- nonfinite verts -> NaN snap/path dist + unstable order
 
-- `perro_source/runtime_project/perro_scene/src/lexer.rs:96-100` skips malformed numeric lexemes by recursively requesting another token.
-- `lexer.rs:113` recursively skips unknown characters.
-- `lexer.rs:70-84` accepts an unterminated quote as a normal string token.
-- Comment skipping at `lexer.rs:60-65` also recurses.
-- The fallible parser contract begins at `perro_source/runtime_project/perro_scene/src/parser.rs:761`.
+Fx:
 
-Impact: corrupt scenes and typos may parse successfully with data silently omitted. Long runs of comments or invalid bytes can overflow the call stack.
+1. add `NavMesh3D::try_new` + `validate`
+2. reject out-of-range/dup tri idx, nonfinite verts, degenerate XZ tris, empty layers
+3. validate create/write + parsed data at cache boundary
+4. keep query bounds-safe as defense
+5. make raw fields private or mark unchecked ctor unsafe
 
-Fix: make lexing iterative; emit a typed lexical error with byte span and line/column; propagate it through parser errors. Test malformed numbers, unknown chars, EOF strings, and very long comment/invalid runs.
+Tests:
 
-### P1 — `Transform3D::looking_at` uses view rotation
+- direct invalid create/write -> err
+- NaN/Inf text -> err
+- bad cache data -> failed path, no panic
 
-Evidence:
+### P1 - ZIP output can hit symlink target + no expansion cap - CLOSED
 
-- `perro_source/core/perro_structs/src/structs/structs_3d/transform_3d.rs:101-110` extracts rotation from `Mat4::look_at_rh`, a world-to-view matrix.
-- The crate already has the object-space `Quaternion::looking_at` contract at `.../quaternion.rs:232-270`.
+Proof:
 
-Impact: object orientation is inverted/transposed relative to the expected local `-Z` look direction.
+- `perro_source/io_stack/perro_io/src/zip.rs:87-96` canonicalize parent only
+- `zip.rs:83` `File::create(target)` follow final pre-made symlink
+- existing `out/file` symlink -> write outside `out`
+- `zip.rs:54-60` entry rd use unbound `read_to_end`
+- `zip.rs:63-86` extract use unbound `io::copy`
+- no entry count, per-entry size, total size, or ratio cap
 
-Fix: route `Transform3D::looking_at` through `Quaternion::looking_at(target - eye, up)` or invert the view rotation. Test that transformed local `-Z` points at `target - eye`, plus degenerate-up behavior.
+Fx:
 
-### P1 — script dynamic-library ABI exposes Rust trait objects as C ABI
+1. reject any symlink/reparse comp incl final target
+2. open new output w/ no-follow + create-new semantics where OS allow
+3. add opts: max entries, max entry bytes, max total bytes, max ratio
+4. bound in-mem entry rd too
+5. rm partial output on limit/error
 
-Evidence:
+Tests:
 
-- `perro_source/script_stack/perro_scripting/src/script_trait.rs:8-9` declares an `extern "C" fn() -> *mut dyn ScriptBehavior<API>` and suppresses `improper_ctypes`.
-- Generated registry exports the same trait-object function pointer in `perro_source/build_pipeline/perro_compiler/src/script_writer.rs:72-80,116-138`.
+- pre-made final symlink/reparse target
+- nested dir symlink
+- high-ratio zip bomb
+- many tiny entries + total cap
 
-Impact: Rust fat-pointer/vtable layout is not a stable C ABI. Host/plugin compiler or layout mismatch can cause UB.
+### P1 - dynamic script ABI still pass Rust trait obj thru C ABI - OPEN
 
-Fix: design a versioned `#[repr(C)]` ABI table with opaque handles and explicit construct/drop/call functions; include ABI/version/size handshake. Add an end-to-end test that builds and loads a generated dylib and rejects a mismatched ABI.
+Proof:
 
-### P1 — safe DLC callback registration can cause UB
+- `perro_source/script_stack/perro_scripting/src/script_trait.rs:72-74` use `extern "C" fn() -> *mut dyn ScriptBehavior`
+- `perro_runtime/src/cns/scripts.rs:222-299` load + cal ctor ptr frm dylib
+- v2 magic/version/build fingerprint reduce mismatch risk
+- trait fat ptr, vtable, Rust values, panic/unwind stay !stable C ABI
 
-Evidence:
+Risk:
 
-- `perro_source/io_stack/perro_io/src/asset_io.rs:170` exposes safe `register_dlc_static_binary_lookup`.
-- Callback type is unsafe at `asset_io.rs:16`.
-- `asset_io.rs:516-525` trusts foreign pointer and length and creates a slice.
+- exact-build gate help
+- compiler/layout/unwind drift still UB class
 
-Impact: a callback with an invalid pointer, lifetime, or length causes UB through later safe asset APIs.
+Fx:
 
-Fix: mark registration unsafe and document the full lifetime/validity/threading contract, or replace the ABI with a copy-into-buffer/owned-result contract. Add a maximum length before copying. Keep all unsafe conversion inside one audited boundary.
+1. use opaque handle
+2. add `#[repr(C)]` fn tbl: create/drop/lifecycle/state ops
+3. use C-safe byte/value args only
+4. wrap every boundary in panic containment
+5. keep version/size/fingerprint gate
 
-### P1 — disk remount leaves stale archive backing
+### P2 - HTTP TLS modes map to same native provider - CLOSED
 
-Evidence:
+Proof:
 
-- Disk mount updates `DLC_MOUNTS` at `perro_source/io_stack/perro_io/src/asset_io.rs:141`.
-- Archive mount inserts into its separate map at `asset_io.rs:161`.
-- `read_mounted_dlc_file` consults `DLC_ARCHIVES` directly at `asset_io.rs:117`.
+- `perro_source/api_modules/perro_networking/Cargo.toml:18` enable `native-tls`; !enable rustls
+- `perro_networking/src/http.rs:503-513` all 3 modes set `TlsProvider::NativeTls`
+- `DefaultRustls` + `PlatformVerifier` behave same
+- API cfg silently lie
 
-Impact: archive `X` -> disk `X` makes listing/path resolution report disk while reads can still return bytes from the old archive.
+Fx:
 
-Fix: every mount operation must atomically replace/remove all other backing variants for the name. Prefer one map keyed by name with a `Disk | Archive | Static` enum. Add every remount-order test.
+1. enable ureq rustls feat
+2. map `DefaultRustls` -> `TlsProvider::Rustls`
+3. define cert-root diff 4 `PlatformVerifier`
+4. cfg-gate unsupported providers or ret cfg err
 
-### P1 — generated script write lock can hang forever
+Tests:
 
-Evidence: `perro_source/build_pipeline/perro_compiler/src/script_writer.rs:174-189` loops while `.write-lock` exists, with no timeout, owner data, or stale recovery.
+- expose/test built provider + root mode
+- HTTPS smoke per TLS mode in CI
 
-Impact: crash or kill during generation leaves every later sync blocked forever.
+### P2 - empty HTTP req emit 2 fail events - CLOSED
 
-Fix: use an atomic lock file/dir containing PID, process-start identity, timestamp, and purpose; bound waits; reclaim only proven-stale locks; return a diagnostic error. Test orphan, live contention, timeout, and cleanup after panic/error.
+Proof:
 
-### P1 — generic DLC registry reports false negatives
+- `perro_networking/src/http.rs:339-359` send work b4 empty URL chk
+- local queue add fail aft send ok
+- worker also run empty URL req -> 2nd fail same `HttpID`
 
-Evidence:
+Fx:
 
-- `perro_source/build_pipeline/perro_compiler/src/dlc.rs:215-224` generates `registry_len = 0` and `registry_get = false`.
-- Generic lookup at `dlc.rs:195-213` covers only a subset and omits scene/material/particle/animation assets.
+1. validate b4 `tx.send`
+2. emit 1 local fail only
+3. add 1 req -> exactly 1 terminal evt invariant test
 
-Impact: discovery and generic lookup APIs claim assets are absent even when typed generated assets exist.
+### P2 - `NodeArena::get_mut` still bypass index repair - CLOSED
 
-Fix: generate complete typed registry entries for every supported asset kind, or remove/rename the generic exports and document a typed-only contract. Add pack-build -> dylib-load -> enumerate -> lookup E2E coverage.
+Prior audit state: partial.
 
-### P2 — DLC mount APIs bypass their own name validator
+Proof:
 
-Evidence:
+- `perro_runtime/src/cns/node_arena.rs:308-314` return raw `&mut SceneNode`
+- docs warn caller !chg name/tags/parent
+- safe fn cannot enforce warning
+- `edit` @ `node_arena.rs:321-336` repair path exists but raw path remain public
 
-- Validator at `perro_source/io_stack/perro_io/src/asset_io.rs:284-291` rejects empty/dot/slash forms.
-- Mount functions at `asset_io.rs:124,149` reject only `self` and do not call it.
+Fx:
 
-Impact: invalid/unreachable mounts and ambiguous names enter global state.
+1. make raw mutable lookup crate-private/unsafe
+2. use tracked guard for public mutable access
+3. split indexed fields frm free node payload
 
-Fix: use the shared `DlcName` type from the P0 fix in disk, archive, and static registration APIs.
+### P2 - DLC generic registry stay empty - CLOSED
 
-### P2 — tileset decoder accepts non-finite/invalid geometry
+Prior audit state: open + ABI design doc land.
 
-Evidence:
+Proof:
 
-- `perro_source/render_stack/perro_render_bridge/src/two_d.rs:479-498` uses `<= 0` checks, which NaN bypasses.
-- Shape values at `two_d.rs:554-585` lack finite/range validation.
+- `perro_source/build_pipeline/perro_compiler/src/dlc.rs:223-238` emit len `0` + get `false`
+- typed hash lookup work only for subset
+- discovery API report no assets in nonempty pack
+- `docs/project/dlc_registry_abi_v1.md` define target ABI; impl absent
 
-Impact: corrupt `.ptileset` bytes inject NaN/Inf or negative dimensions into render/physics state.
+Fx:
 
-Fix: require finite positive dimensions/radii, finite offsets/points, and format-specific upper bounds. Add crafted corrupt-binary tests.
+1. emit canonical `(kind, uri, hash, payload mode)` inventory in static pipeline
+2. implement v1 registry API tbl
+3. reject same-kind hash collision by full URI
+4. add build -> load -> enum -> find E2E test
 
-### P2 — `MicClip` public fields bypass invariants and serializers truncate
+### P3 - `ResPath` accept invalid DLC dot names - CLOSED
 
-Evidence:
+Proof:
 
-- `perro_source/audio_stack/perro_pawdio/src/mic.rs:16-20` exposes fields publicly.
-- Constructor clamps sample rate/channels at `mic.rs:23-28`, but struct literals bypass it.
-- `pack` narrows frame count to `u32` at `mic.rs:41`; WAV arithmetic/casts at `mic.rs:183-199` are unchecked.
+- `perro_resource_api/src/res_path.rs:483-494` allow `.` + `..` as DLC name
+- `perro_io/src/asset_io.rs:321-330` reject same names at resolve boundary
+- `ResPath::try_new("dlc://../file")` succeed but IO reject
 
-Impact: zero/invalid channel configs, partial frames, integer truncation, overflow, or malformed output.
+Fx:
 
-Fix: make fields private; add validated `try_new`; require samples divisible by channels; use checked conversions/multiplication; make pack/WAV encode fallible. Document sample format, interleaving, units, and limits.
+1. share 1 DLC name validator/type
+2. reject dot names in const + runtime paths
+3. add cross-crate grammar parity tests
 
-### P2 — texture commands can allocate 256 MiB CPU buffers each
+## Opts
 
-Evidence: `perro_source/render_stack/perro_graphics/src/backend.rs:995-1000,1404-1416` clamps dimensions to 8192 but allocates full RGBA backing.
+### O1 - prebuild nav graph + use heap A* - CLOSED
 
-Impact: one 8192² request allocates about 256 MiB; repeated external/camera texture commands can stall or OOM before GPU validation.
+Proof:
 
-Fix: validate against device dimensions and a byte budget with checked arithmetic; avoid CPU backing for external targets where possible; emit a typed failure event. Add boundary and repeated-request tests.
+- `perro_runtime/src/runtime/navmesh.rs:167-185` pair every tri per query -> O(T^2)
+- `navmesh.rs:198-230` open list use linear min + `contains`
+- `navmesh.rs:232-252` recalc centroids thru search
 
-### P2 — CSV hash-only name lookup treats hashes as identity
+Chg:
 
-Evidence:
+- build shared-edge map + adjacency + centroids once on load/write
+- cache by `NavMeshID` rev
+- use binary heap + closed bitset
+- target: load O(T), query O((V+E) log V)
 
-- Header lookup at `perro_source/core/perro_csv/src/lib.rs:120-124` compares only a 64-bit hash.
-- Primary-key lookup/maps at `perro_csv/src/lib.rs:132-140,226-233` also use hash identity.
-- Predicate paths at `perro_csv/src/lib.rs:768-800` verify hash plus text, showing the safer existing pattern.
+### O2 - cache camera stream extract
 
-Impact: a collision returns the wrong header or row.
+Proof:
 
-Fix: store collision buckets and compare original text. Make pre-hashed APIs accept a typed key containing hash plus source text, or clearly mark truly hash-only methods as trusted/unchecked. Add injected-hasher collision tests.
+- `perro_runtime/src/runtime/render/bridge.rs:623-625` rebuild full node ID list
+- `bridge.rs:697-1819` each 2D/3D collector rescan list
+- each stream extract mk fresh Vec/Arc slices
+- static stream still pay scan + alloc
 
-### P2 — `NodeArena::get_mut` makes index desync easy
+Chg:
 
-Evidence: `perro_source/runtime_project/perro_runtime/src/cns/node_arena.rs:14-22,213-219` documents that direct mutation of indexed fields such as name/tag/parent can desynchronize auxiliary indexes, while returning unrestricted mutable node access.
+- cache by stream/cam IDs + render mask + arena/render/resource revs
+- share main dense pose Arc
+- split cam uniform-only upd frm scene payload rebuild
+- add hit/miss + alloc counters
 
-Impact: an ordinary safe API call can leave lookup/query state incorrect.
+### O3 - top-k CSV sort
 
-Fix: hide indexed fields behind arena operations, or return an edit guard that snapshots keys and reindexes on drop/commit. Add mutation-through-public-API consistency tests.
+Proof:
 
-### P2 — global static-pipeline overrides leak/clobber state
+- `perro_source/core/perro_csv/src/lib.rs:729-736` full sort b4 `limit`
+- old bench show sort+limit hot; source path stay same
 
-Evidence:
+Chg:
 
-- `perro_source/build_pipeline/perro_static_pipeline/src/lib.rs:51-71` exposes thread-local ambient overrides.
-- `perro_source/build_pipeline/perro_compiler/src/dlc.rs:376-398` resets them only on the normal result path.
+- `limit << matches` -> heap/top-k or partial select + sort prefix
+- full sort only w/o limit
+- bench match counts + limit ratios
 
-Impact: nesting clobbers caller state; panic leaves stale configuration on a reused worker thread.
+### O4 - cut global shadow invalidation
 
-Fix: return a scoped RAII guard that restores the prior value, or pass an explicit `PipelineContext`. Test nesting, error, and unwind restoration.
+Proof:
 
-### P2 — parser ergonomics encourage process aborts
+- `perro_graphics/src/three_d/gpu/prepare.rs:550,1776` set 1 global caster dirty bit
+- `gpu/shadows.rs:60-83` global bit invalidate every shadow layer
+- 1 moving caster -> all ray/spot/point maps redraw
 
-Evidence: panic variants `parse_scene`, `parse_scene_doc`, and `parse_value_literal` live at `perro_source/runtime_project/perro_scene/src/parser.rs:757-789`; errors are strings rather than a typed error/span.
+Chg:
 
-Impact: editor/user-content mistakes can abort the host when callers choose the shortest-looking API.
+- track dirty caster bounds + render layers
+- map dirty caster -> hit light/frustum layers
+- keep global fallback 4 topology/material chg
 
-Fix: make fallible APIs canonical (`parse_* -> Result`), rename panic helpers to `*_or_panic`, deprecate ambiguous old names, and return typed errors with source spans.
+### O5 - rm duplicate multimesh cull work
 
-### P2 — ID parsers accept hyphens anywhere
+Proof:
 
-Evidence: `perro_source/core/perro_ids/src/ids.rs:218-244` removes every hyphen before parsing and duplicates logic for ID types.
+- `perro_graphics/src/three_d/gpu/render_pass.rs:221-240` frustum cull pass
+- `render_pass.rs:457-474` 2nd Hi-Z cull + counter clear
+- same frm can dispatch + clear/finalize 2x
 
-Impact: malformed inputs such as `1-2` are silently accepted; format docs and validation disagree.
+Chg:
 
-Fix: define exact accepted canonical/legacy formats, implement one shared parser plus `FromStr`, and reject misplaced separators.
+- measure prepass need vs Hi-Z main-pass need
+- reuse/refine 1 visible set when valid
+- expose cull dispatch + visible count + GPU time
 
-### P3 — audio command API erases failure cause
+### O6 - keep lower-prio opts profile-gated
 
-Evidence: `perro_source/audio_stack/perro_pawdio/src/controller.rs:236-275,308-370` maps `try_send(...).is_ok()` to `bool` for many commands.
+- CSV/source IDs + WGSL prelude dedup: land
+- 2D point-light rev gate: land
+- targeted material texture eviction: land
+- renderer perf counters: land
+- camera cache/shadow granularity/draw signature/dual cull: open
+- trimesh Arc share: bench proof only; impl open
+- schedule unregister: old 82-98ms microbench; rebench b4 chg
+- dup dep fam: transitive-heavy; `cargo tree -d --workspace` still broad
+- runtime/resource locks: batch only aft contention trace
+- matrix unchecked neighbor path: old bench anomaly; rebench current code b4 edit
 
-Impact: queue-full, disconnected, and success states collapse into one bit; “load succeeded” means only “enqueued.”
+## Old Audit Recheck
 
-Fix: return `Result<Enqueued, AudioCommandError>` and expose async load completion/events. Keep deprecated bool shims for compatibility.
+Closed + !carry:
 
-### P3 — public API docs have no enforced floor
+- DLC path escape + mount validator
+- disk/archive/static remount stale backing
+- lexer silent skip + recursion
+- `Transform3D::looking_at`
+- script write-lock stale hang
+- tileset finite geom
+- `MicClip` invariant/size checks
+- runtime texture alloc cap
+- static callback unsafe boundary + len cap
+- CSV hash collision
+- static pipeline override restore
+- strict ID parse
+- typed audio enqueue API
+- parser typed/fallible path
+- WGSL prelude triplication
+- hot string-key maps + scratch reuse sweep
+- test holes named in old spec audit
+- `NodeArena` raw public mut path
+- DLC registry false-empty stub
+- NavMesh invariant + query graph cost
+- TCP/HTTP/ZIP/ResPath items frm this pass
 
-Evidence:
+Carry:
 
-- No source crate enables `warn(missing_docs)`.
-- Examples of broad undocumented surfaces: `perro_pawdio/src/types.rs:5-258`, `controller.rs:16-553`, render bridge commands/state, scene lexer/parser tokens, and CSV query builders.
-- A scan found many crate roots without crate-level `//!` docs.
+- script stable ABI -> P1
+- generic DLC FILE inventory + dev loader parity
+- renderer open opts -> O2/O4/O5
+- CSV limit sort -> O3
 
-Fix lane:
+Do not carry:
 
-1. Start with facade/API crates: `perro_api`, `perro_runtime_api`, `perro_resource_api`, `perro_input_api`, `perro_nodes`, `perro_scene`, `perro_pawdio`.
-2. Add crate docs and examples before enabling `#![warn(missing_docs)]` per crate.
-3. Document units, ranges, finite rules, error/panic behavior, thread/queue semantics, URI grammar, and every unsafe contract.
-4. Promote to deny in CI only after the baseline reaches zero.
+- naming/coherence backlog -> API design, !bug/perf audit
+- feature gaps -> `docs/project/feature_matrix.md`
+- stale line nums/bench nums/commit tracker noise
+- landed items
 
-### P3 — package metadata is incomplete
+## Fix Order
 
-Evidence: representative published/user-facing manifests (`perro_scripting`, `perro_compiler`, `perro_cli`) contain only name/version/edition and omit common package metadata. Root has no `[workspace.package]` inheritance.
+1. design C-safe script ctx/state route
+2. close script ABI on new route
+3. expose archive emitted-member inventory -> add DLC FILE rows
+4. add dev registry parity + bad-fingerprint loader E2E
+5. profile O2-O5 b4 impl
 
-Fix: add workspace `edition`, `rust-version`, `license`, `repository`, `homepage`, authors/readme policy, and descriptions per crate. Validate intended publish sets with `cargo package` in CI.
+## Done Rule
 
-### P3 — docs and agent map drift
-
-Evidence:
-
-- Agent/project docs mention `playground/`, while samples live in `demos/`.
-- `README.md:12` contains `seperating`; nearby intro text has wording/encoding/case issues.
-- `docs/index.md:7` uses absolute `/book`, which fails in repository-local GitHub navigation.
-- Existing audit files contain mojibake (`â€”`, arrows); similar text appears in source docs such as `node_arena.rs`.
-
-Fix: update directory maps and links; normalize text to UTF-8; add markdown link and spelling checks with a small project dictionary.
-
-## Build order
-
-Keep each lane small and independently reversible.
-
-1. **Contain paths**: P0 `DlcName`, containment checks, mount validation, traversal tests.
-2. **Fix wrong results/state**: lexer, transform look-at, remount replacement, DLC registry.
-3. **Close UB boundaries**: script ABI design/migration, static callback contract.
-4. **Harden lifecycle/input**: write-lock recovery, tileset validation, `MicClip`, texture budgets, pipeline override guard.
-5. **Repair safe API invariants**: `NodeArena` edit guard, CSV collision-safe keys, fallible parser naming, strict ID parsing.
-6. **Improve ergonomics/docs**: typed audio errors, package metadata, rustdoc baseline, docs link/spell cleanup.
-
-Do not combine ABI migration, filesystem containment, and broad docs churn in one commit.
-
-## Per-lane workflow
-
-1. Reproduce with the smallest failing unit/integration test.
-2. Add the test first where practical.
-3. Fix one invariant at its owning type/boundary; remove duplicate validators.
-4. Run `cargo fmt --all -- --check`.
-5. Run scoped tests and clippy for touched crates.
-6. Run `cargo check --workspace --all-targets`.
-7. For cross-crate/ABI/path changes, run `cargo test --workspace` and `cargo clippy --workspace --all-targets -- -D warnings`.
-8. Update this file: mark the item done with commit ID, tests, and any compatibility follow-up.
-
-## Required focused tests
-
-- DLC: traversal/property cases; every remount order; generated pack enumerate/load; recursive-delete containment.
-- Scene: lexical error spans; invalid-number/quote/char cases; million-comment iterative stress.
-- Math: look-at forward-axis property over varied eye/target/up values.
-- ABI: build/load same version; reject wrong ABI/version/size; verify destructor path.
-- IO FFI: registration contract tests and maximum payload size.
-- Audio/media: malformed `MicClip`; checked size limits; queue full vs disconnect; texture byte budgets.
-- State/indexes: mutate every indexed node property and assert all lookup paths remain coherent.
-- CSV/IDs: forced hash collisions and strict textual-format properties.
-- Global/lock state: nested override, unwind restore, stale lock, live lock, timeout.
-
-## Audit follow-ups not promoted to bugs
-
-- Add decoder fuzz targets for scene/tileset/skeleton/mesh/audio/container formats.
-- Add a `cargo machete` CI gate after confirming deliberate target/feature-only dependencies.
-- Keep prior performance backlog profile-driven: source interning, lock map, Variant size, prepass depth, GPU-driven rendering, and frame overlap.
-- Split very large source files only while changing their behavior; avoid churn-only moves.
-
-## Completion definition
-
-- All P0/P1 items closed with regression tests.
-- All P2 items either closed or tracked in issues with owner and milestone.
-- Public safe APIs no longer rely on undocumented unsafe caller behavior.
-- Workspace check/test/clippy pass on supported desktop targets; target-specific CI covers wasm and at least one non-Windows desktop.
-- User-facing crates have crate docs, examples, package metadata, and an enforced missing-docs baseline.
-- This document records commit IDs and verification results for every closed item.
+- add fail test b4 each bug fx
+- run fmt + scoped test + clippy
+- run ws check/test 4 cross-crate chg
+- run Windows + Linux net/path CI
+- run GPU trace b4/aft renderer opt
+- upd this fle only; no new side audit

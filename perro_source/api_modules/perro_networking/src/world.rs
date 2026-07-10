@@ -360,10 +360,17 @@ impl NetworkWorld {
             let id = TcpConnectionId(i as u32);
             for _ in 0..max_per_socket {
                 match connection.poll_frame_event(max_frame_bytes) {
-                    Ok(Some(event)) => events.push(NetworkEvent {
-                        source: NetSource::TcpConnection(id),
-                        event,
-                    }),
+                    Ok(Some(event)) => {
+                        let disconnected = matches!(event, NetEvent::TcpDisconnected { .. });
+                        events.push(NetworkEvent {
+                            source: NetSource::TcpConnection(id),
+                            event,
+                        });
+                        if disconnected {
+                            self.tcp_connections[i] = None;
+                            break;
+                        }
+                    }
                     Ok(None) => break,
                     Err(err) => {
                         events.push(net_error_event(

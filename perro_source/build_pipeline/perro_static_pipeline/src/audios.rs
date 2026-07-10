@@ -127,6 +127,11 @@ pub fn generate_static_audios(project_root: &Path) -> Result<(), StaticPipelineE
     );
 
     fs::write(static_dir.join("audios.rs"), out)?;
+    crate::record_static_assets(
+        perro_asset_formats::dlc::DlcAssetKind::AUDIO,
+        perro_asset_formats::dlc::DlcAssetAccess::BYTES,
+        audios.iter().map(|(path, _)| (path.as_str(), false)),
+    );
     Ok(())
 }
 

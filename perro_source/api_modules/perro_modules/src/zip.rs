@@ -6,9 +6,16 @@ use std::{
 use perro_io::{ZipEntry, validate_virtual_asset_path};
 use perro_resource_api::ResPathSource;
 
+pub use perro_io::ZipLimits;
+
 pub fn list<P: ResPathSource>(path: P) -> io::Result<Vec<String>> {
     let path = readable_disk_path(path.as_res_path_str())?;
     perro_io::list_zip_file(path)
+}
+
+pub fn list_with_limits<P: ResPathSource>(path: P, limits: ZipLimits) -> io::Result<Vec<String>> {
+    let path = readable_disk_path(path.as_res_path_str())?;
+    perro_io::list_zip_file_with_limits(path, limits)
 }
 
 pub fn read_entry<P: ResPathSource>(path: P, name: &str) -> io::Result<Vec<u8>> {
@@ -16,10 +23,29 @@ pub fn read_entry<P: ResPathSource>(path: P, name: &str) -> io::Result<Vec<u8>> 
     perro_io::read_zip_file_entry(path, name)
 }
 
+pub fn read_entry_with_limits<P: ResPathSource>(
+    path: P,
+    name: &str,
+    limits: ZipLimits,
+) -> io::Result<Vec<u8>> {
+    let path = readable_disk_path(path.as_res_path_str())?;
+    perro_io::read_zip_file_entry_with_limits(path, name, limits)
+}
+
 pub fn extract_all<P: ResPathSource, O: ResPathSource>(path: P, output_dir: O) -> io::Result<()> {
     let path = readable_disk_path(path.as_res_path_str())?;
     let output_dir = writable_disk_path(output_dir.as_res_path_str())?;
     perro_io::extract_zip_file(path, output_dir)
+}
+
+pub fn extract_all_with_limits<P: ResPathSource, O: ResPathSource>(
+    path: P,
+    output_dir: O,
+    limits: ZipLimits,
+) -> io::Result<()> {
+    let path = readable_disk_path(path.as_res_path_str())?;
+    let output_dir = writable_disk_path(output_dir.as_res_path_str())?;
+    perro_io::extract_zip_file_with_limits(path, output_dir, limits)
 }
 
 pub fn write_files<P: ResPathSource>(path: P, files: &[(&str, &str)]) -> io::Result<()> {

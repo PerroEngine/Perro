@@ -1448,7 +1448,7 @@ impl Runtime {
             let Some(global) = self.get_global_transform_2d(id) else {
                 continue;
             };
-            let Some(node) = self.nodes.get_mut(id) else {
+            let Some(node) = self.nodes.get_mut_untracked(id) else {
                 continue;
             };
             let SceneNodeData::PhysicsForceEmitter2D(emitter) = &mut node.data else {
@@ -1492,7 +1492,7 @@ impl Runtime {
             let Some(global) = self.get_global_transform_3d(id) else {
                 continue;
             };
-            let Some(node) = self.nodes.get_mut(id) else {
+            let Some(node) = self.nodes.get_mut_untracked(id) else {
                 continue;
             };
             let SceneNodeData::PhysicsForceEmitter3D(emitter) = &mut node.data else {
@@ -2358,8 +2358,10 @@ impl Runtime {
         let mut changed = false;
         for pose in &staged {
             // 1 fat-slot touch: parent read + b4 capture + pose/vel write fused
-            let Some((parent, before_local, moved)) =
-                self.nodes.get_mut(pose.id).and_then(|scene_node| {
+            let Some((parent, before_local, moved)) = self
+                .nodes
+                .get_mut_untracked(pose.id)
+                .and_then(|scene_node| {
                     let parent = scene_node.parent;
                     let SceneNodeData::RigidBody2D(node) = &mut scene_node.data else {
                         return None;
@@ -2465,8 +2467,10 @@ impl Runtime {
         let mut changed = false;
         for pose in &staged {
             // 1 fat-slot touch: parent read + b4 capture + pose/vel write fused
-            let Some((parent, before_local, moved)) =
-                self.nodes.get_mut(pose.id).and_then(|scene_node| {
+            let Some((parent, before_local, moved)) = self
+                .nodes
+                .get_mut_untracked(pose.id)
+                .and_then(|scene_node| {
                     let parent = scene_node.parent;
                     let SceneNodeData::RigidBody3D(node) = &mut scene_node.data else {
                         return None;
@@ -2546,7 +2550,7 @@ impl Runtime {
     }
 
     fn set_body_handle_2d(&mut self, id: NodeID, handle: Option<u64>) {
-        if let Some(node) = self.nodes.get_mut(id) {
+        if let Some(node) = self.nodes.get_mut_untracked(id) {
             match &mut node.data {
                 SceneNodeData::StaticBody2D(body) => body.physics_handle = handle,
                 SceneNodeData::Area2D(body) => body.physics_handle = handle,
@@ -2558,7 +2562,7 @@ impl Runtime {
     }
 
     fn set_body_handle_3d(&mut self, id: NodeID, handle: Option<u64>) {
-        if let Some(node) = self.nodes.get_mut(id) {
+        if let Some(node) = self.nodes.get_mut_untracked(id) {
             match &mut node.data {
                 SceneNodeData::StaticBody3D(body) => body.physics_handle = handle,
                 SceneNodeData::Area3D(body) => body.physics_handle = handle,

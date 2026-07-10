@@ -1,6 +1,8 @@
 use super::core::RuntimeResourceApi;
 use perro_ids::{NavMeshID, string_to_u64};
 use perro_resource_api::sub_apis::{NavMesh3D, NavMeshAPI, parse_pnav_bytes};
+use perro_structs::BitMask;
+use std::sync::Arc;
 
 impl NavMeshAPI for RuntimeResourceApi {
     fn load_navmesh(&self, source: &str) -> NavMeshID {
@@ -41,7 +43,15 @@ impl NavMeshAPI for RuntimeResourceApi {
         let id = state.allocate_navmesh_id();
         state.navmesh_by_source.insert(source_hash, id);
         state.navmesh_source_by_id.insert(id, source.into_owned());
+        let navmesh = Arc::new(navmesh);
+        let graph = Arc::new(crate::runtime::navmesh::SearchGraph::new(
+            &navmesh,
+            BitMask::ALL,
+        ));
         state.navmesh_data_by_id.insert(id, navmesh);
+        state
+            .navmesh_graph_by_id_and_layers
+            .insert((id, BitMask::ALL.bits()), graph);
         state.navmesh_loaded_by_id.insert(id);
         id
     }
@@ -51,7 +61,7 @@ impl NavMeshAPI for RuntimeResourceApi {
     }
 
     fn create_navmesh_data(&self, data: NavMesh3D) -> NavMeshID {
-        if data.is_empty() {
+        if data.validate().is_err() {
             return NavMeshID::nil();
         }
         let mut state = self.state.lock().expect("resource api mutex poisoned");
@@ -59,7 +69,15 @@ impl NavMeshAPI for RuntimeResourceApi {
         let source = format!("runtime://navmesh/{}:{}", id.index(), id.generation());
         state.navmesh_by_source.insert(string_to_u64(&source), id);
         state.navmesh_source_by_id.insert(id, source);
+        let data = Arc::new(data);
+        let graph = Arc::new(crate::runtime::navmesh::SearchGraph::new(
+            &data,
+            BitMask::ALL,
+        ));
         state.navmesh_data_by_id.insert(id, data);
+        state
+            .navmesh_graph_by_id_and_layers
+            .insert((id, BitMask::ALL.bits()), graph);
         state.navmesh_loaded_by_id.insert(id);
         id
     }
@@ -76,18 +94,32 @@ impl NavMeshAPI for RuntimeResourceApi {
             return None;
         }
         let state = self.state.lock().expect("resource api mutex poisoned");
-        state.navmesh_data_by_id.get(&id).cloned()
+        state
+            .navmesh_data_by_id
+            .get(&id)
+            .map(|data| data.as_ref().clone())
     }
 
     fn write_navmesh_data(&self, id: NavMeshID, data: NavMesh3D) -> bool {
-        if id.is_nil() || data.is_empty() {
+        if id.is_nil() || data.validate().is_err() {
             return false;
         }
         let mut state = self.state.lock().expect("resource api mutex poisoned");
         if !state.has_navmesh_id(id) {
             return false;
         }
+        let data = Arc::new(data);
+        let graph = Arc::new(crate::runtime::navmesh::SearchGraph::new(
+            &data,
+            BitMask::ALL,
+        ));
         state.navmesh_data_by_id.insert(id, data);
+        state
+            .navmesh_graph_by_id_and_layers
+            .retain(|(existing, _), _| *existing != id);
+        state
+            .navmesh_graph_by_id_and_layers
+            .insert((id, BitMask::ALL.bits()), graph);
         state.navmesh_loaded_by_id.insert(id);
         true
     }
@@ -113,6 +145,9 @@ impl NavMeshAPI for RuntimeResourceApi {
             .retain(|_, existing| *existing != id);
         state.navmesh_source_by_id.remove(&id);
         state.navmesh_data_by_id.remove(&id);
+        state
+            .navmesh_graph_by_id_and_layers
+            .retain(|(existing, _), _| *existing != id);
         state.navmesh_loaded_by_id.remove(&id);
         true
     }
@@ -126,10 +161,53 @@ fn normalize_source_slashes(source: &str) -> std::borrow::Cow<'_, str> {
     }
 }
 
+impl RuntimeResourceApi {
+    pub(crate) fn navmesh_query_data(
+        &self,
+        id: NavMeshID,
+        layers: BitMask,
+    ) -> Option<(Arc<NavMesh3D>, Arc<crate::runtime::navmesh::SearchGraph>)> {
+        if id.is_nil() || layers.is_empty() {
+            return None;
+        }
+        let mut state = self.state.lock().expect("resource api mutex poisoned");
+        let data = state.navmesh_data_by_id.get(&id)?.clone();
+        let key = (id, layers.bits());
+        let graph = if let Some(graph) = state.navmesh_graph_by_id_and_layers.get(&key) {
+            graph.clone()
+        } else {
+            let graph = Arc::new(crate::runtime::navmesh::SearchGraph::new(&data, layers));
+            let cached_for_id = state
+                .navmesh_graph_by_id_and_layers
+                .keys()
+                .filter(|(existing, _)| *existing == id)
+                .count();
+            if cached_for_id >= 8
+                && let Some(stale_key) = state
+                    .navmesh_graph_by_id_and_layers
+                    .keys()
+                    .find(|(existing, bits)| *existing == id && *bits != BitMask::ALL.bits())
+                    .copied()
+            {
+                state.navmesh_graph_by_id_and_layers.remove(&stale_key);
+            }
+            state
+                .navmesh_graph_by_id_and_layers
+                .insert(key, graph.clone());
+            graph
+        };
+        Some((data, graph))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::RuntimeResourceApi;
-    use perro_resource_api::ResourceWindow;
+    use perro_resource_api::{
+        ResourceWindow,
+        sub_apis::{NavMesh3D, NavMeshTriangle3D},
+    };
+    use perro_structs::{BitMask, Vector3};
 
     #[test]
     fn navmesh_create_from_pnav_bytes_loads() {
@@ -151,5 +229,36 @@ tri 0 1 2 layers=1
                 .bits(),
             1
         );
+    }
+
+    #[test]
+    fn navmesh_create_and_write_reject_invalid_data() {
+        let api = RuntimeResourceApi::new(None, None, None, None, None, None, None, None);
+        let res = ResourceWindow::new(api.as_ref());
+        let invalid = NavMesh3D {
+            vertices: vec![Vector3::new(0.0, 0.0, 0.0)],
+            triangles: vec![NavMeshTriangle3D {
+                vertices: [0, 1, 2],
+                layers: BitMask::ALL,
+            }],
+        };
+        assert!(res.NavMeshes().create(invalid.clone()).is_nil());
+
+        let valid = NavMesh3D::try_new(
+            vec![
+                Vector3::new(0.0, 0.0, 0.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+            ],
+            vec![NavMeshTriangle3D {
+                vertices: [0, 1, 2],
+                layers: BitMask::ALL,
+            }],
+        )
+        .unwrap();
+        let id = res.NavMeshes().create(valid.clone());
+        assert!(!id.is_nil());
+        assert!(!res.NavMeshes().write(id, invalid));
+        assert_eq!(res.NavMeshes().get_data(id), Some(valid));
     }
 }

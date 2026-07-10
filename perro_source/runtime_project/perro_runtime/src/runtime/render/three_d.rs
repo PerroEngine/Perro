@@ -1432,7 +1432,7 @@ impl Runtime {
                 let profile = resolve_particle_profile(self, &emitter_profile).unwrap_or_default();
                 let lifetime_min = profile.lifetime_min.max(0.001);
                 let lifetime_max = profile.lifetime_max.max(lifetime_min);
-                if let Some(node_mut) = self.nodes.get_mut(node)
+                if let Some(node_mut) = self.nodes.get_mut_untracked(node)
                     && let SceneNodeData::ParticleEmitter3D(emitter_mut) = &mut node_mut.data
                 {
                     emitter_mut.internal_lifetime_max = lifetime_max;
@@ -1774,7 +1774,7 @@ impl Runtime {
                 match result {
                     crate::RuntimeRenderResult::Material(id) => {
                         surfaces[surface_index].material = Some(id);
-                        if let Some(node) = self.nodes.get_mut(node) {
+                        if let Some(node) = self.nodes.get_mut_untracked(node) {
                             match &mut node.data {
                                 SceneNodeData::MeshInstance3D(mesh_instance) => {
                                     mesh_instance.set_surface_material(surface_index, Some(id));
@@ -1815,7 +1815,7 @@ impl Runtime {
                 && !id.is_nil()
             {
                 surfaces[surface_index].material = Some(id);
-                if let Some(node) = self.nodes.get_mut(node) {
+                if let Some(node) = self.nodes.get_mut_untracked(node) {
                     match &mut node.data {
                         SceneNodeData::MeshInstance3D(mesh_instance) => {
                             mesh_instance.set_surface_material(surface_index, Some(id));
@@ -1836,7 +1836,7 @@ impl Runtime {
                     self.resource_api.default_material_id()
                 };
                 surfaces[surface_index].material = Some(id);
-                if let Some(node) = self.nodes.get_mut(node) {
+                if let Some(node) = self.nodes.get_mut_untracked(node) {
                     match &mut node.data {
                         SceneNodeData::MeshInstance3D(mesh_instance) => {
                             mesh_instance.set_surface_material(surface_index, Some(id));
@@ -1968,7 +1968,7 @@ impl Runtime {
         let canonical = self.resource_api.canonical_mesh_id(mesh);
         if canonical != mesh {
             mesh = canonical;
-            if let Some(node) = self.nodes.get_mut(node) {
+            if let Some(node) = self.nodes.get_mut_untracked(node) {
                 match &mut node.data {
                     SceneNodeData::MeshInstance3D(mesh_instance) => {
                         mesh_instance.mesh = mesh;
@@ -1993,7 +1993,7 @@ impl Runtime {
                 match result {
                     crate::RuntimeRenderResult::Mesh(id) => {
                         mesh = id;
-                        if let Some(node) = self.nodes.get_mut(node) {
+                        if let Some(node) = self.nodes.get_mut_untracked(node) {
                             match &mut node.data {
                                 SceneNodeData::MeshInstance3D(mesh_instance) => {
                                     mesh_instance.mesh = id;

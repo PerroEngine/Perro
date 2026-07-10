@@ -1,13 +1,13 @@
 #[cfg(test)]
 mod tests {
     use super::{
-        compile_scripts_with_profile, emit_static_steam_app_id_fn, emit_web_route_html_files,
-        generate_call_param_binding, generate_dlc_static_modules, generate_embedded_entry_files,
-        generate_perro_assets, generate_project_static_modules, module_name_from_rel,
-        module_short_name_from_rel, native_output_artifact_name, native_output_folder_name,
-        normalize_cargo_output_paths, reset_embedded_dir, sync_dlc_scripts, sync_scripts,
-        target_slug_from_triple, transpile_frontend_script, transpiled_exports_script_ctor,
-        write_scripts_lib, ProjectBuildOptions, ScriptMethodParam, ScriptsBuildProfile,
+        ProjectBuildOptions, ScriptMethodParam, ScriptsBuildProfile, compile_scripts_with_profile,
+        emit_static_steam_app_id_fn, emit_web_route_html_files, generate_call_param_binding,
+        generate_dlc_static_modules, generate_embedded_entry_files, generate_perro_assets,
+        generate_project_static_modules, module_name_from_rel, module_short_name_from_rel,
+        native_output_artifact_name, native_output_folder_name, normalize_cargo_output_paths,
+        reset_embedded_dir, sync_dlc_scripts, sync_scripts, target_slug_from_triple,
+        transpile_frontend_script, transpiled_exports_script_ctor, write_scripts_lib,
     };
     use perro_project::{
         ensure_project_layout, ensure_project_scaffold, ensure_project_toml,
@@ -72,6 +72,7 @@ mod tests {
             "Expansion",
             std::path::Path::new("dlc"),
             &pack_dir,
+            &[],
         )
         .expect("write pack source");
         let source = std::fs::read_to_string(pack_dir.join("src/lib.rs"))
@@ -953,24 +954,97 @@ lifecycle!({});
             "@fragment\nfn fs_main() -> @location(0) vec4<f32> { return vec4<f32>(1.0); }\n",
         )
         .expect("write shader");
+        std::fs::write(dlc_root.join("pass_through.bin"), b"raw").expect("write pass-through");
 
         perro_static_pipeline::set_static_pipeline_overrides(Some(
             perro_static_pipeline::StaticPipelineOverrides {
-                res_dir: dlc_root,
+                res_dir: dlc_root.clone(),
                 static_dir: static_dir.clone(),
                 embedded_dir,
                 asset_prefix: "dlc://fixture/".to_string(),
             },
         ));
+        perro_static_pipeline::begin_static_asset_inventory();
         let result = generate_dlc_static_modules(&root, false);
+        let inventory = perro_static_pipeline::take_static_asset_inventory()
+            .expect("take canonical DLC inventory");
         perro_static_pipeline::set_static_pipeline_overrides(None);
         result.expect("generate dlc static modules");
 
         let shaders =
             std::fs::read_to_string(static_dir.join("shaders.rs")).expect("read dlc shaders");
         assert!(shaders.contains("dlc://fixture/shaders/fixture.wgsl"));
+        assert_eq!(inventory.len(), 1);
+        assert_eq!(
+            inventory[0].kind,
+            perro_asset_formats::dlc::DlcAssetKind::SHADER
+        );
+        assert_eq!(inventory[0].path, "dlc://fixture/shaders/fixture.wgsl");
+        assert!(
+            inventory
+                .iter()
+                .all(|record| record.kind != perro_asset_formats::dlc::DlcAssetKind::FILE),
+            "pass-through files need archive emission inventory before FILE records are safe"
+        );
+
+        let pack_dir = root.join("pack");
+        super::write_dlc_pack_lib(&root, "fixture", &dlc_root, &pack_dir, &inventory)
+            .expect("write registry pack source");
+        let pack_source = std::fs::read_to_string(pack_dir.join("src/lib.rs"))
+            .expect("read registry pack source");
+        assert!(pack_source.contains("perro_dlc_pack_registry_api"));
+        assert!(pack_source.contains("DlcAssetKind::from_raw(12)"));
+        assert!(pack_source.contains("dlc://fixture/shaders/fixture.wgsl"));
+        assert!(pack_source.contains("registry_find_v1"));
+        assert!(pack_source.contains("registry_lookup_bytes_v1"));
+        assert!(!pack_source.contains("registry_len() -> usize {\n    0"));
         assert!(!root.join(".perro").join("project").exists());
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    #[ignore = "spawns nested cargo check for generated DLC pack"]
+    fn generated_dlc_registry_pack_crate_compiles() {
+        let root = unique_temp_dir("perro_compiler_dlc_registry_compile");
+        let dlc_root = root.join("dlcs").join("fixture");
+        let pack_dir = root.join("pack");
+        let static_dir = pack_dir.join("src/static");
+        let embedded_dir = pack_dir.join("embedded");
+        std::fs::create_dir_all(dlc_root.join("shaders")).expect("shader dir");
+        std::fs::write(
+            dlc_root.join("shaders/fixture.wgsl"),
+            "@fragment\nfn fs_main() -> @location(0) vec4<f32> { return vec4<f32>(1.0); }\n",
+        )
+        .expect("write shader");
+
+        let overrides = perro_static_pipeline::StaticPipelineOverrides {
+            res_dir: dlc_root.clone(),
+            static_dir,
+            embedded_dir: embedded_dir.clone(),
+            asset_prefix: "dlc://fixture/".to_string(),
+        };
+        let _guard = perro_static_pipeline::push_static_pipeline_overrides(overrides);
+        perro_static_pipeline::begin_static_asset_inventory();
+        generate_dlc_static_modules(&root, false).expect("generate static modules");
+        perro_static_pipeline::write_static_mod_rs(&root).expect("write static mod");
+        let inventory = perro_static_pipeline::take_static_asset_inventory()
+            .expect("take canonical inventory");
+        std::fs::create_dir_all(&embedded_dir).expect("embedded dir");
+        std::fs::write(embedded_dir.join("assets.perro"), b"").expect("assets archive fixture");
+        super::write_dlc_pack_manifest(&root, "pack_fixture", &pack_dir)
+            .expect("write pack manifest");
+        super::write_dlc_pack_lib(&root, "fixture", &dlc_root, &pack_dir, &inventory)
+            .expect("write pack source");
+
+        let status = std::process::Command::new("cargo")
+            .arg("check")
+            .arg("--quiet")
+            .env("CARGO_TARGET_DIR", root.join("target"))
+            .current_dir(&pack_dir)
+            .status()
+            .expect("run generated pack cargo check");
+        assert!(status.success(), "generated pack crate failed cargo check");
+        std::fs::remove_dir_all(root).expect("cleanup generated pack fixture");
     }
 
     #[test]

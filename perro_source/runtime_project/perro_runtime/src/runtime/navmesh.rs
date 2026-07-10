@@ -1,6 +1,8 @@
 use perro_resource_api::sub_apis::NavMesh3D;
 use perro_runtime_api::sub_apis::{NavMeshPath3D, NavMeshPathOptions, NavMeshPathStatus};
 use perro_structs::{BitMask, Vector3};
+use std::cmp::Ordering;
+use std::collections::{BinaryHeap, HashMap};
 
 #[derive(Clone, Copy)]
 struct ProjectedPoint {
@@ -9,22 +11,85 @@ struct ProjectedPoint {
     distance2: f32,
 }
 
+pub(crate) struct SearchGraph {
+    adjacency: Vec<Vec<usize>>,
+    centroids: Vec<Vector3>,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct OpenEntry {
+    triangle: usize,
+    estimated_cost: f32,
+}
+
+impl PartialEq for OpenEntry {
+    fn eq(&self, other: &Self) -> bool {
+        self.triangle == other.triangle
+            && self.estimated_cost.to_bits() == other.estimated_cost.to_bits()
+    }
+}
+
+impl Eq for OpenEntry {}
+
+impl PartialOrd for OpenEntry {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for OpenEntry {
+    fn cmp(&self, other: &Self) -> Ordering {
+        other
+            .estimated_cost
+            .total_cmp(&self.estimated_cost)
+            .then_with(|| other.triangle.cmp(&self.triangle))
+    }
+}
+
 pub(crate) fn project_point_3d(
     navmesh: &NavMesh3D,
     point: Vector3,
     max_distance: f32,
     layers: BitMask,
 ) -> Option<Vector3> {
+    if navmesh.validate().is_err() || !vector_is_finite(point) || max_distance.is_nan() {
+        return None;
+    }
     nearest_triangle_point(navmesh, point, max_distance, layers).map(|projected| projected.point)
 }
 
-pub(crate) fn find_path_3d(
+#[cfg(test)]
+fn find_path_3d(
     navmesh: &NavMesh3D,
     start: Vector3,
     end: Vector3,
     opts: NavMeshPathOptions,
 ) -> NavMeshPath3D {
-    if navmesh.is_empty() || opts.layers.is_empty() {
+    if navmesh.validate().is_err()
+        || opts.layers.is_empty()
+        || !vector_is_finite(start)
+        || !vector_is_finite(end)
+        || opts.max_snap_distance.is_nan()
+    {
+        return NavMeshPath3D::failed();
+    }
+    let graph = SearchGraph::new(navmesh, opts.layers);
+    find_path_3d_prepared(navmesh, &graph, start, end, opts)
+}
+
+pub(crate) fn find_path_3d_prepared(
+    navmesh: &NavMesh3D,
+    graph: &SearchGraph,
+    start: Vector3,
+    end: Vector3,
+    opts: NavMeshPathOptions,
+) -> NavMeshPath3D {
+    if navmesh.validate().is_err()
+        || opts.layers.is_empty()
+        || !vector_is_finite(start)
+        || !vector_is_finite(end)
+        || opts.max_snap_distance.is_nan()
+    {
         return NavMeshPath3D::failed();
     }
     let start = match nearest_triangle_point(navmesh, start, opts.max_snap_distance, opts.layers) {
@@ -39,14 +104,7 @@ pub(crate) fn find_path_3d(
         return path_from_points(vec![start.point, end.point], opts);
     }
 
-    let adjacency = build_adjacency(navmesh, opts.layers);
-    let Some(tri_path) = astar(
-        navmesh,
-        &adjacency,
-        start.triangle,
-        end.triangle,
-        opts.layers,
-    ) else {
+    let Some(tri_path) = astar(graph, start.triangle, end.triangle) else {
         return NavMeshPath3D::failed();
     };
     let mut points = Vec::with_capacity(tri_path.len() + 1);
@@ -165,70 +223,81 @@ fn distance2_xz(a: Vector3, b: Vector3) -> f32 {
     dx * dx + dz * dz
 }
 
-fn build_adjacency(navmesh: &NavMesh3D, layers: BitMask) -> Vec<Vec<usize>> {
-    let mut out = vec![Vec::new(); navmesh.triangles.len()];
-    for i in 0..navmesh.triangles.len() {
-        if !navmesh.triangles[i].layers.intersects(layers) {
-            continue;
-        }
-        for j in (i + 1)..navmesh.triangles.len() {
-            if !navmesh.triangles[j].layers.intersects(layers) {
-                continue;
-            }
-            if shared_vertex_count(navmesh.triangles[i].vertices, navmesh.triangles[j].vertices)
-                >= 2
-            {
-                out[i].push(j);
-                out[j].push(i);
-            }
-        }
-    }
-    out
+fn vector_is_finite(value: Vector3) -> bool {
+    value.x.is_finite() && value.y.is_finite() && value.z.is_finite()
 }
 
-fn astar(
-    navmesh: &NavMesh3D,
-    adjacency: &[Vec<usize>],
-    start: usize,
-    end: usize,
-    layers: BitMask,
-) -> Option<Vec<usize>> {
-    let mut open = vec![start];
-    let mut came_from = vec![usize::MAX; navmesh.triangles.len()];
-    let mut g_score = vec![f32::INFINITY; navmesh.triangles.len()];
-    let mut f_score = vec![f32::INFINITY; navmesh.triangles.len()];
-    g_score[start] = 0.0;
-    f_score[start] = centroid(navmesh, start).distance_to(centroid(navmesh, end));
+impl SearchGraph {
+    pub(crate) fn new(navmesh: &NavMesh3D, layers: BitMask) -> Self {
+        let mut adjacency = vec![Vec::new(); navmesh.triangles.len()];
+        let centroids = (0..navmesh.triangles.len())
+            .map(|triangle| centroid(navmesh, triangle))
+            .collect();
+        let mut edge_owner =
+            HashMap::<(u32, u32), usize>::with_capacity(navmesh.triangles.len().saturating_mul(3));
 
-    while !open.is_empty() {
-        let best_pos = open
-            .iter()
-            .enumerate()
-            .min_by(|(_, left), (_, right)| {
-                f_score[**left]
-                    .partial_cmp(&f_score[**right])
-                    .unwrap_or(std::cmp::Ordering::Equal)
-            })
-            .map(|(pos, _)| pos)
-            .unwrap();
-        let current = open.swap_remove(best_pos);
+        for (triangle_index, triangle) in navmesh.triangles.iter().enumerate() {
+            if !triangle.layers.intersects(layers) {
+                continue;
+            }
+            let [a, b, c] = triangle.vertices;
+            for (left, right) in [(a, b), (b, c), (c, a)] {
+                let edge = if left < right {
+                    (left, right)
+                } else {
+                    (right, left)
+                };
+                if let Some(&other) = edge_owner.get(&edge) {
+                    adjacency[triangle_index].push(other);
+                    adjacency[other].push(triangle_index);
+                } else {
+                    edge_owner.insert(edge, triangle_index);
+                }
+            }
+        }
+        Self {
+            adjacency,
+            centroids,
+        }
+    }
+}
+
+fn astar(graph: &SearchGraph, start: usize, end: usize) -> Option<Vec<usize>> {
+    let mut open = BinaryHeap::new();
+    let mut closed = vec![false; graph.adjacency.len()];
+    let mut came_from = vec![usize::MAX; graph.adjacency.len()];
+    let mut g_score = vec![f32::INFINITY; graph.adjacency.len()];
+    g_score[start] = 0.0;
+    open.push(OpenEntry {
+        triangle: start,
+        estimated_cost: graph.centroids[start].distance_to(graph.centroids[end]),
+    });
+
+    while let Some(OpenEntry {
+        triangle: current, ..
+    }) = open.pop()
+    {
+        if closed[current] {
+            continue;
+        }
         if current == end {
             return Some(reconstruct(came_from, current));
         }
-        for &next in &adjacency[current] {
-            if !navmesh.triangles[next].layers.intersects(layers) {
+        closed[current] = true;
+        for &next in &graph.adjacency[current] {
+            if closed[next] {
                 continue;
             }
             let tentative =
-                g_score[current] + centroid(navmesh, current).distance_to(centroid(navmesh, next));
+                g_score[current] + graph.centroids[current].distance_to(graph.centroids[next]);
             if tentative < g_score[next] {
                 came_from[next] = current;
                 g_score[next] = tentative;
-                f_score[next] =
-                    tentative + centroid(navmesh, next).distance_to(centroid(navmesh, end));
-                if !open.contains(&next) {
-                    open.push(next);
-                }
+                open.push(OpenEntry {
+                    triangle: next,
+                    estimated_cost: tentative
+                        + graph.centroids[next].distance_to(graph.centroids[end]),
+                });
             }
         }
     }
@@ -247,16 +316,14 @@ fn reconstruct(came_from: Vec<usize>, mut current: usize) -> Vec<usize> {
 
 fn centroid(navmesh: &NavMesh3D, triangle: usize) -> Vector3 {
     let tri = navmesh.triangles[triangle].vertices;
-    (navmesh.vertices[tri[0] as usize]
-        + navmesh.vertices[tri[1] as usize]
-        + navmesh.vertices[tri[2] as usize])
-        / 3.0
-}
-
-fn shared_vertex_count(a: [u32; 3], b: [u32; 3]) -> usize {
-    a.into_iter()
-        .filter(|left| b.into_iter().any(|right| *left == right))
-        .count()
+    let a = navmesh.vertices[tri[0] as usize];
+    let b = navmesh.vertices[tri[1] as usize];
+    let c = navmesh.vertices[tri[2] as usize];
+    Vector3::new(
+        ((f64::from(a.x) + f64::from(b.x) + f64::from(c.x)) / 3.0) as f32,
+        ((f64::from(a.y) + f64::from(b.y) + f64::from(c.y)) / 3.0) as f32,
+        ((f64::from(a.z) + f64::from(b.z) + f64::from(c.z)) / 3.0) as f32,
+    )
 }
 
 fn shared_edge_midpoint(navmesh: &NavMesh3D, a: usize, b: usize) -> Option<Vector3> {
@@ -381,6 +448,83 @@ mod tests {
             },
         );
         assert_eq!(path.status, NavMeshPathStatus::Failed);
+    }
+
+    #[test]
+    fn invalid_direct_data_never_panics() {
+        let invalid = NavMesh3D {
+            vertices: vec![Vector3::new(0.0, 0.0, 0.0)],
+            triangles: vec![tri([0, 1, 2], 1)],
+        };
+        let result = std::panic::catch_unwind(|| {
+            find_path_3d(
+                &invalid,
+                Vector3::new(0.0, 0.0, 0.0),
+                Vector3::new(1.0, 0.0, 1.0),
+                NavMeshPathOptions::default(),
+            )
+        });
+        assert_eq!(result.unwrap().status, NavMeshPathStatus::Failed);
+        assert_eq!(
+            project_point_3d(&invalid, Vector3::new(0.0, 0.0, 0.0), 1.0, BitMask::ALL,),
+            None
+        );
+    }
+
+    #[test]
+    fn non_finite_query_never_panics() {
+        let nav = single_tri();
+        let path = find_path_3d(
+            &nav,
+            Vector3::new(f32::NAN, 0.0, 0.0),
+            Vector3::new(0.1, 0.0, 0.1),
+            NavMeshPathOptions::default(),
+        );
+        assert_eq!(path.status, NavMeshPathStatus::Failed);
+        assert_eq!(
+            project_point_3d(
+                &nav,
+                Vector3::new(f32::INFINITY, 0.0, 0.0),
+                1.0,
+                BitMask::ALL,
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn large_corridor_returns_complete_path() {
+        const CELL_COUNT: usize = 2_000;
+        let mut vertices = Vec::with_capacity((CELL_COUNT + 1) * 2);
+        for x in 0..=CELL_COUNT {
+            vertices.push(Vector3::new(x as f32, 0.0, 0.0));
+            vertices.push(Vector3::new(x as f32, 0.0, 1.0));
+        }
+        let mut triangles = Vec::with_capacity(CELL_COUNT * 2);
+        for cell in 0..CELL_COUNT as u32 {
+            let bottom = cell * 2;
+            let top = bottom + 1;
+            let next_bottom = bottom + 2;
+            let next_top = bottom + 3;
+            triangles.push(tri([bottom, next_bottom, top], 1));
+            triangles.push(tri([next_bottom, next_top, top], 1));
+        }
+        let nav = NavMesh3D {
+            vertices,
+            triangles,
+        };
+        let path = find_path_3d(
+            &nav,
+            Vector3::new(0.1, 0.0, 0.1),
+            Vector3::new(CELL_COUNT as f32 - 0.1, 0.0, 0.9),
+            NavMeshPathOptions {
+                max_points: u32::MAX,
+                simplify: false,
+                ..Default::default()
+            },
+        );
+        assert_eq!(path.status, NavMeshPathStatus::Complete);
+        assert_eq!(path.points.len(), CELL_COUNT * 2 + 1);
     }
 
     fn single_tri() -> NavMesh3D {

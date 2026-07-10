@@ -66,6 +66,7 @@ Path ptr:
 | 14 | csv |
 | 15 | localization |
 | 16 | file |
+| 17 | navmesh |
 
 Use raw `u32` wrappers.
 
@@ -93,6 +94,7 @@ Initial byte kinds:
 - shader
 - audio
 - file
+- navmesh
 
 `ENGINE_LOCAL`:
 

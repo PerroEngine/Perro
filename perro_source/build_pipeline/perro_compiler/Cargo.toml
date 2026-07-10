@@ -11,6 +11,7 @@ readme.workspace = true
 
 [dependencies]
 perro_assets.workspace = true
+perro_asset_formats.workspace = true
 perro_ids.workspace = true
 perro_input_api.workspace = true
 perro_io.workspace = true
@@ -18,4 +19,5 @@ perro_project.workspace = true
 perro_scene.workspace = true
 perro_static_pipeline.workspace = true
 toml.workspace = true
+sha2 = "0.10"
 wasm-bindgen-cli-support = "=0.2.126"

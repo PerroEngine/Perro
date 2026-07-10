@@ -376,6 +376,12 @@ const fn validate_dlc_const(bytes: &[u8]) {
     if slash == 6 {
         panic!("dlc ResPath needs name");
     }
+    let name_len = slash - 6;
+    if (name_len == 1 && bytes[6] == b'.')
+        || (name_len == 2 && bytes[6] == b'.' && bytes[7] == b'.')
+    {
+        panic!("dlc ResPath name cannot be . or ..");
+    }
     let mut i = 6;
     while i < slash {
         let byte = bytes[i];
@@ -485,6 +491,9 @@ fn validate_dlc(rest: &str) -> Result<(), ResPathError> {
     if name.is_empty() {
         return Err(ResPathError::EmptyDlcName);
     }
+    if matches!(name, "." | "..") {
+        return Err(ResPathError::InvalidDlcName);
+    }
     if !name
         .bytes()
         .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-' | b'.'))
@@ -553,6 +562,35 @@ mod tests {
         assert_eq!(
             ResPath::try_new("user://save\\slot").unwrap_err(),
             ResPathError::InvalidSeparator
+        );
+    }
+
+    #[test]
+    fn dlc_dot_names_match_const_and_runtime_grammar() {
+        for name in [".", ".."] {
+            let path = format!("dlc://{name}/file.txt");
+            assert_eq!(
+                ResPath::try_new(&path).unwrap_err(),
+                ResPathError::InvalidDlcName
+            );
+            assert!(std::panic::catch_unwind(|| validate_const(&path)).is_err());
+        }
+
+        for path in ["dlc://v1.2/file.txt", "dlc://a.b/file.txt"] {
+            assert!(ResPath::try_new(path).is_ok());
+            validate_const(path);
+        }
+    }
+
+    #[test]
+    fn dlc_name_separator_and_control_errors_stay_distinct() {
+        assert_eq!(
+            ResPath::try_new("dlc://bad\\name/file.txt").unwrap_err(),
+            ResPathError::InvalidSeparator
+        );
+        assert_eq!(
+            ResPath::try_new("dlc://bad\nname/file.txt").unwrap_err(),
+            ResPathError::ControlCharacter
         );
     }
 

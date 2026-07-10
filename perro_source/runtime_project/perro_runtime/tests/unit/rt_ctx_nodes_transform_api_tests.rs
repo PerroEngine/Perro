@@ -770,10 +770,10 @@ fn get_set_global_transform_3d_works_under_scaled_parent() {
         .nodes
         .insert(SceneNode::new(SceneNodeData::Node3D(Node3D::new())));
 
-    if let Some(parent_node) = runtime.nodes.get_mut(parent_id) {
+    if let Some(mut parent_node) = runtime.nodes.get_mut(parent_id) {
         parent_node.add_child(child_id);
     }
-    if let Some(child_node) = runtime.nodes.get_mut(child_id) {
+    if let Some(mut child_node) = runtime.nodes.get_mut(child_id) {
         child_node.parent = parent_id;
     }
     runtime.mark_transform_dirty_recursive(parent_id);
@@ -909,10 +909,10 @@ fn bone_attachment_3d_child_follows_bone_global_transform() {
     let child_id = runtime
         .nodes
         .insert(SceneNode::new(SceneNodeData::Node3D(child)));
-    if let Some(attachment_node) = runtime.nodes.get_mut(attachment_id) {
+    if let Some(mut attachment_node) = runtime.nodes.get_mut(attachment_id) {
         attachment_node.add_child(child_id);
     }
-    if let Some(child_node) = runtime.nodes.get_mut(child_id) {
+    if let Some(mut child_node) = runtime.nodes.get_mut(child_id) {
         child_node.parent = attachment_id;
     }
     runtime.mark_transform_dirty_recursive(skeleton_id);
@@ -957,10 +957,10 @@ fn to_global_and_to_local_points_3d_roundtrip() {
         .nodes
         .insert(SceneNode::new(SceneNodeData::Node3D(child)));
 
-    if let Some(parent_node) = runtime.nodes.get_mut(parent_id) {
+    if let Some(mut parent_node) = runtime.nodes.get_mut(parent_id) {
         parent_node.add_child(child_id);
     }
-    if let Some(child_node) = runtime.nodes.get_mut(child_id) {
+    if let Some(mut child_node) = runtime.nodes.get_mut(child_id) {
         child_node.parent = parent_id;
     }
     runtime.mark_transform_dirty_recursive(parent_id);
@@ -995,10 +995,10 @@ fn get_set_global_transform_2d_and_point_conversion() {
         .nodes
         .insert(SceneNode::new(SceneNodeData::Node2D(Node2D::new())));
 
-    if let Some(parent_node) = runtime.nodes.get_mut(parent_id) {
+    if let Some(mut parent_node) = runtime.nodes.get_mut(parent_id) {
         parent_node.add_child(child_id);
     }
-    if let Some(child_node) = runtime.nodes.get_mut(child_id) {
+    if let Some(mut child_node) = runtime.nodes.get_mut(child_id) {
         child_node.parent = parent_id;
     }
     runtime.mark_transform_dirty_recursive(parent_id);
@@ -1047,10 +1047,10 @@ fn reparent_preserves_child_global_transform_3d() {
         .nodes
         .insert(SceneNode::new(SceneNodeData::Node3D(child)));
 
-    if let Some(parent) = runtime.nodes.get_mut(parent_a_id) {
+    if let Some(mut parent) = runtime.nodes.get_mut(parent_a_id) {
         parent.add_child(child_id);
     }
-    if let Some(child) = runtime.nodes.get_mut(child_id) {
+    if let Some(mut child) = runtime.nodes.get_mut(child_id) {
         child.parent = parent_a_id;
     }
     runtime.mark_transform_dirty_recursive(parent_a_id);
@@ -1116,10 +1116,10 @@ fn set_global_transform_under_zero_scale_parent_uses_safe_inverse_3d() {
         .nodes
         .insert(SceneNode::new(SceneNodeData::Node3D(Node3D::new())));
 
-    if let Some(parent) = runtime.nodes.get_mut(parent_id) {
+    if let Some(mut parent) = runtime.nodes.get_mut(parent_id) {
         parent.add_child(child_id);
     }
-    if let Some(child) = runtime.nodes.get_mut(child_id) {
+    if let Some(mut child) = runtime.nodes.get_mut(child_id) {
         child.parent = parent_id;
     }
     runtime.mark_transform_dirty_recursive(parent_id);
@@ -1156,14 +1156,14 @@ fn remove_node_removes_entire_subtree() {
         .nodes
         .insert(SceneNode::new(SceneNodeData::Node3D(Node3D::new())));
 
-    if let Some(root) = runtime.nodes.get_mut(root_id) {
+    if let Some(mut root) = runtime.nodes.get_mut(root_id) {
         root.add_child(child_id);
     }
-    if let Some(child) = runtime.nodes.get_mut(child_id) {
+    if let Some(mut child) = runtime.nodes.get_mut(child_id) {
         child.parent = root_id;
         child.add_child(grandchild_id);
     }
-    if let Some(grandchild) = runtime.nodes.get_mut(grandchild_id) {
+    if let Some(mut grandchild) = runtime.nodes.get_mut(grandchild_id) {
         grandchild.parent = child_id;
     }
 
@@ -1193,18 +1193,18 @@ fn remove_node_unlinks_root_from_live_parent() {
         .nodes
         .insert(SceneNode::new(SceneNodeData::Node3D(Node3D::new())));
 
-    if let Some(parent) = runtime.nodes.get_mut(live_parent) {
+    if let Some(mut parent) = runtime.nodes.get_mut(live_parent) {
         parent.add_child(sibling);
         parent.add_child(root_id);
     }
-    if let Some(node) = runtime.nodes.get_mut(sibling) {
+    if let Some(mut node) = runtime.nodes.get_mut(sibling) {
         node.parent = live_parent;
     }
-    if let Some(node) = runtime.nodes.get_mut(root_id) {
+    if let Some(mut node) = runtime.nodes.get_mut(root_id) {
         node.parent = live_parent;
         node.add_child(child_id);
     }
-    if let Some(node) = runtime.nodes.get_mut(child_id) {
+    if let Some(mut node) = runtime.nodes.get_mut(child_id) {
         node.parent = root_id;
     }
 
@@ -1238,14 +1238,14 @@ fn remove_node_unlinks_from_parent_outside_subtree() {
         .insert(SceneNode::new(SceneNodeData::Node3D(Node3D::new())));
 
     // `root_id` lists `inner` as a child (drives traversal into the subtree)...
-    if let Some(node) = runtime.nodes.get_mut(root_id) {
+    if let Some(mut node) = runtime.nodes.get_mut(root_id) {
         node.add_child(inner);
     }
     // ...but `inner.parent` points at the live outside node, which also lists it.
-    if let Some(node) = runtime.nodes.get_mut(inner) {
+    if let Some(mut node) = runtime.nodes.get_mut(inner) {
         node.parent = outside_parent;
     }
-    if let Some(node) = runtime.nodes.get_mut(outside_parent) {
+    if let Some(mut node) = runtime.nodes.get_mut(outside_parent) {
         node.add_child(inner);
     }
 

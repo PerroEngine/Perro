@@ -339,21 +339,21 @@ impl HttpClient {
     pub fn request(&mut self, request: HttpRequest) -> HttpID {
         let id = self.next_http_id();
         let url = request.url.clone();
-        if let Err(err) = self.tx.send(HttpWork { id, request }) {
-            self.local_events
-                .push_back(HttpEvent::Failed(HttpError::new(
-                    id,
-                    err.0.request.url,
-                    HttpErrorKind::QueueClosed,
-                    "http worker queue closed",
-                )));
-        } else if url.is_empty() {
+        if url.is_empty() {
             self.local_events
                 .push_back(HttpEvent::Failed(HttpError::new(
                     id,
                     url,
                     HttpErrorKind::Send,
                     "empty url",
+                )));
+        } else if let Err(err) = self.tx.send(HttpWork { id, request }) {
+            self.local_events
+                .push_back(HttpEvent::Failed(HttpError::new(
+                    id,
+                    err.0.request.url,
+                    HttpErrorKind::QueueClosed,
+                    "http worker queue closed",
                 )));
         }
         id
@@ -496,20 +496,21 @@ fn build_agent(config: &HttpConfig) -> Result<ureq::Agent, ureq::Error> {
     Ok(builder.build().new_agent())
 }
 
-fn tls_config(mode: &HttpTLSMode) -> ureq::tls::TlsConfig {
+pub(crate) fn tls_config(mode: &HttpTLSMode) -> ureq::tls::TlsConfig {
     use ureq::tls::{RootCerts, TlsConfig, TlsProvider};
 
     match mode {
         HttpTLSMode::DefaultRustls => TlsConfig::builder()
-            .provider(TlsProvider::NativeTls)
-            .root_certs(RootCerts::PlatformVerifier)
+            .provider(TlsProvider::Rustls)
+            .root_certs(RootCerts::WebPki)
             .build(),
         HttpTLSMode::PlatformVerifier => TlsConfig::builder()
-            .provider(TlsProvider::NativeTls)
+            .provider(TlsProvider::Rustls)
             .root_certs(RootCerts::PlatformVerifier)
             .build(),
         HttpTLSMode::NativeTls => TlsConfig::builder()
             .provider(TlsProvider::NativeTls)
+            .root_certs(RootCerts::PlatformVerifier)
             .build(),
     }
 }

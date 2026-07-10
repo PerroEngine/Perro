@@ -175,7 +175,9 @@ pub(super) struct RuntimeResourceState {
     pub(super) mesh_loaded_by_id: HashSet<MeshID>,
     pub(super) navmesh_by_source: HashMap<u64, NavMeshID>,
     pub(super) navmesh_source_by_id: HashMap<NavMeshID, String>,
-    pub(super) navmesh_data_by_id: HashMap<NavMeshID, NavMesh3D>,
+    pub(super) navmesh_data_by_id: HashMap<NavMeshID, Arc<NavMesh3D>>,
+    pub(super) navmesh_graph_by_id_and_layers:
+        HashMap<(NavMeshID, u32), Arc<crate::runtime::navmesh::SearchGraph>>,
     pub(super) navmesh_loaded_by_id: HashSet<NavMeshID>,
     pub(super) material_by_source: HashMap<u64, MaterialID>,
     pub(super) material_pending_by_source: HashMap<u64, RenderRequestID>,

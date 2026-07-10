@@ -128,6 +128,11 @@ pub fn generate_static_textures(project_root: &Path) -> Result<(), StaticPipelin
     );
 
     fs::write(static_dir.join("textures.rs"), out)?;
+    crate::record_static_assets(
+        perro_asset_formats::dlc::DlcAssetKind::TEXTURE,
+        perro_asset_formats::dlc::DlcAssetAccess::BYTES,
+        textures.iter().map(|(path, _)| (path.as_str(), false)),
+    );
     Ok(())
 }
 

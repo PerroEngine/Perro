@@ -180,7 +180,7 @@ impl Runtime {
             || self.input.is_key_down(KeyCode::ControlRight);
         let wheel = self.input.mouse_wheel();
         let repeat_key = self.text_edit_repeat_key(ctrl);
-        if let Some(scene_node) = self.nodes.get_mut(focused)
+        if let Some(scene_node) = self.nodes.get_mut_untracked(focused)
             && let Some(edit) = text_edit_mut(&mut scene_node.data)
         {
             let old_text = edit.text.to_string();
@@ -335,7 +335,7 @@ impl Runtime {
     ) -> bool {
         let max_scroll = self.scroll_container_max(node, computed);
         let delta = self.time.delta.max(0.0);
-        let Some(scene_node) = self.nodes.get_mut(node) else {
+        let Some(scene_node) = self.nodes.get_mut_untracked(node) else {
             return false;
         };
         let SceneNodeData::UiScrollContainer(scroller) = &mut scene_node.data else {
@@ -475,7 +475,7 @@ impl Runtime {
     ) -> Option<NodeID> {
         let (track, thumb, scroller_copy) = self.scrollbar_hit_rects(node, computed)?;
         let max_scroll = self.scroll_container_max(node, computed);
-        let Some(scene_node) = self.nodes.get_mut(node) else {
+        let Some(scene_node) = self.nodes.get_mut_untracked(node) else {
             self.render_ui.active_scrollbar = None;
             return None;
         };
@@ -610,7 +610,7 @@ impl Runtime {
             return;
         };
         let node_scale = computed_scales.get(&node).copied().unwrap_or(Vector2::ONE);
-        if let Some(scene_node) = self.nodes.get_mut(node)
+        if let Some(scene_node) = self.nodes.get_mut_untracked(node)
             && let Some(edit) = text_edit_mut(&mut scene_node.data)
         {
             let point = Vector2::new(
@@ -775,7 +775,7 @@ impl Runtime {
     }
 
     fn toggle_checkbox(&mut self, node: NodeID) {
-        let Some(scene_node) = self.nodes.get_mut(node) else {
+        let Some(scene_node) = self.nodes.get_mut_untracked(node) else {
             return;
         };
         let SceneNodeData::UiCheckbox(checkbox) = &mut scene_node.data else {
@@ -789,7 +789,7 @@ impl Runtime {
         let Some((tree_id, row_idx, toggle)) = self.tree_list_parent_for_internal(node) else {
             return;
         };
-        let Some(scene_node) = self.nodes.get_mut(tree_id) else {
+        let Some(scene_node) = self.nodes.get_mut_untracked(tree_id) else {
             return;
         };
         let SceneNodeData::UiTreeList(tree) = &mut scene_node.data else {
@@ -867,7 +867,7 @@ impl Runtime {
 
     fn process_dropdown_click(&mut self, node: NodeID) {
         if let Some((dropdown_id, option_idx)) = self.dropdown_parent_for_option(node) {
-            let Some(scene_node) = self.nodes.get_mut(dropdown_id) else {
+            let Some(scene_node) = self.nodes.get_mut_untracked(dropdown_id) else {
                 return;
             };
             let SceneNodeData::UiDropdown(dropdown) = &mut scene_node.data else {
@@ -892,7 +892,7 @@ impl Runtime {
             return;
         }
 
-        let Some(scene_node) = self.nodes.get_mut(node) else {
+        let Some(scene_node) = self.nodes.get_mut_untracked(node) else {
             return;
         };
         let SceneNodeData::UiDropdown(dropdown) = &mut scene_node.data else {
@@ -919,7 +919,7 @@ impl Runtime {
         let Some(parent) = self.color_picker_parent_for_swatch(node) else {
             return;
         };
-        let Some(scene_node) = self.nodes.get_mut(parent) else {
+        let Some(scene_node) = self.nodes.get_mut_untracked(parent) else {
             return;
         };
         let SceneNodeData::UiColorPicker(picker) = &mut scene_node.data else {
@@ -960,7 +960,7 @@ impl Runtime {
             updates.push((node, color));
         }
         for (node, color) in updates {
-            let Some(scene_node) = self.nodes.get_mut(node) else {
+            let Some(scene_node) = self.nodes.get_mut_untracked(node) else {
                 continue;
             };
             let SceneNodeData::UiColorPicker(picker) = &mut scene_node.data else {
@@ -1377,7 +1377,7 @@ impl Runtime {
         delta: f32,
     ) -> bool {
         let max_scroll = self.scroll_container_max(node, computed);
-        let Some(scene_node) = self.nodes.get_mut(node) else {
+        let Some(scene_node) = self.nodes.get_mut_untracked(node) else {
             return false;
         };
         let SceneNodeData::UiScrollContainer(scroller) = &mut scene_node.data else {
@@ -1413,7 +1413,7 @@ impl Runtime {
         computed: &AHashMap<NodeID, ComputedUiRect>,
     ) -> bool {
         let max_scroll = self.scroll_container_max(node, computed);
-        let Some(scene_node) = self.nodes.get_mut(node) else {
+        let Some(scene_node) = self.nodes.get_mut_untracked(node) else {
             return false;
         };
         let SceneNodeData::UiScrollContainer(scroller) = &mut scene_node.data else {

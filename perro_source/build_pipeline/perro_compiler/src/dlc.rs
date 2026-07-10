@@ -60,8 +60,14 @@ fn write_dlc_pack_manifest(
             .join("core")
             .join("perro_csv"),
     );
+    let perro_asset_formats_path = normalize_toml_path(
+        &engine_root
+            .join("perro_source")
+            .join("core")
+            .join("perro_asset_formats"),
+    );
     let manifest = format!(
-        "[workspace]\n\n[package]\nname = \"{crate_name}\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[lib]\ncrate-type = [\"cdylib\", \"rlib\"]\n\n[dependencies]\nperro_api = {{ path = \"{perro_api_path}\" }}\nperro_scene = {{ path = \"{perro_scene_path}\" }}\nperro_render_bridge = {{ path = \"{perro_render_bridge_path}\" }}\nperro_animation = {{ path = \"{perro_animation_path}\" }}\nperro_ids = {{ path = \"{perro_ids_path}\" }}\nperro_structs = {{ path = \"{perro_structs_path}\" }}\nperro_csv = {{ path = \"{perro_csv_path}\" }}\n"
+        "[workspace]\n\n[package]\nname = \"{crate_name}\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[lib]\ncrate-type = [\"cdylib\", \"rlib\"]\n\n[dependencies]\nperro_api = {{ path = \"{perro_api_path}\" }}\nperro_scene = {{ path = \"{perro_scene_path}\" }}\nperro_render_bridge = {{ path = \"{perro_render_bridge_path}\" }}\nperro_animation = {{ path = \"{perro_animation_path}\" }}\nperro_ids = {{ path = \"{perro_ids_path}\" }}\nperro_structs = {{ path = \"{perro_structs_path}\" }}\nperro_csv = {{ path = \"{perro_csv_path}\" }}\nperro_asset_formats = {{ path = \"{perro_asset_formats_path}\" }}\n"
     );
     let mut manifest = manifest;
     manifest.push_str(&build_patch_crates_io_block(&engine_root));
@@ -87,13 +93,17 @@ fn write_dlc_pack_lib(
     _dlc_name: &str,
     _dlc_root: &Path,
     pack_dir: &Path,
+    inventory: &[perro_static_pipeline::StaticAssetInventoryRecord],
 ) -> Result<(), CompilerError> {
+    validate_registry_kind_coverage(inventory)?;
+    let fingerprint = registry_fingerprint(inventory)?;
     let mut src = String::new();
     src.push_str("#[path = \"static/mod.rs\"]\n");
     src.push_str("pub mod static_assets;\n\n");
     src.push_str("use perro_animation::AnimationClip;\n");
     src.push_str("use perro_render_bridge::{Material3D, ParticleProfile3D};\n");
-    src.push_str("use perro_scene::Scene;\n\n");
+    src.push_str("use perro_scene::Scene;\n");
+    src.push_str("use perro_asset_formats::dlc::{DlcAssetAccess, DlcAssetFlags, DlcAssetKind, DlcRegistryApiV1, DlcRegistryEntryV1, REGISTRY_ABI_VERSION};\n\n");
     src.push_str("pub struct DlcPackEntry {\n");
     src.push_str("    pub hash: u64,\n");
     src.push_str("    pub path: &'static str,\n");
@@ -220,16 +230,7 @@ fn write_dlc_pack_lib(
     src.push_str(
         "#[unsafe(no_mangle)]\npub extern \"C\" fn perro_dlc_pack_has(path_hash: u64) -> bool {\n    perro_dlc_pack_lookup_typed(path_hash).is_some()\n}\n\n",
     );
-    src.push_str(
-        "#[unsafe(no_mangle)]\npub extern \"C\" fn perro_dlc_pack_registry_len() -> usize {\n    0\n}\n\n",
-    );
-    src.push_str(
-        "#[unsafe(no_mangle)]\npub extern \"C\" fn perro_dlc_pack_registry_get(index: usize, path_hash_out: *mut u64, path_out: *mut *const u8, path_len_out: *mut usize, data_out: *mut *const u8, data_len_out: *mut usize) -> bool {\n",
-    );
-    src.push_str(
-        "    if path_hash_out.is_null() || path_out.is_null() || path_len_out.is_null() || data_out.is_null() || data_len_out.is_null() {\n        return false;\n    }\n",
-    );
-    src.push_str("    let _ = index;\n    false\n}\n");
+    append_dlc_registry_source(&mut src, inventory, fingerprint);
 
     write_string_if_changed(&pack_dir.join("src").join("lib.rs"), &src)?;
     Ok(())
@@ -384,7 +385,7 @@ fn generate_dlc_static_assets(
     dlc_name: &str,
     dlc_root: &Path,
     pack_dir: &Path,
-) -> Result<(), CompilerError> {
+) -> Result<Vec<perro_static_pipeline::StaticAssetInventoryRecord>, CompilerError> {
     let static_root = pack_dir.join("src").join("static");
     let embedded_root = pack_dir.join("embedded");
     if static_root.exists() {
@@ -405,16 +406,26 @@ fn generate_dlc_static_assets(
     let _override_guard = perro_static_pipeline::push_static_pipeline_overrides(overrides);
     let cfg = load_project_toml(project_root)
         .map_err(|e| CompilerError::SceneParse(format!("failed to load project.toml: {e}")))?;
-    generate_dlc_static_modules(project_root, cfg.meshlets)?;
-    perro_static_pipeline::write_static_mod_rs(project_root)
-        .map_err(|e| CompilerError::SceneParse(e.to_string()))?;
-    build_perro_assets_archive(
-        &embedded_root.join("assets.perro"),
-        dlc_root,
-        project_root,
-        &[],
-    )?;
-    Ok(())
+    perro_static_pipeline::begin_static_asset_inventory();
+    let generation = (|| {
+        generate_dlc_static_modules(project_root, cfg.meshlets)?;
+        perro_static_pipeline::write_static_mod_rs(project_root)
+            .map_err(|e| CompilerError::SceneParse(e.to_string()))?;
+        build_perro_assets_archive(
+            &embedded_root.join("assets.perro"),
+            dlc_root,
+            project_root,
+            &[],
+        )?;
+        // Generic pass-through FILE entries stay absent until the archive builder
+        // returns its successful emitted-member inventory. Do not infer them by
+        // rescanning extensions here; that can claim entries the archive drops.
+        Ok::<(), CompilerError>(())
+    })();
+    let inventory = perro_static_pipeline::take_static_asset_inventory()
+        .map_err(|err| CompilerError::SceneParse(err.to_string()));
+    generation?;
+    inventory
 }
 
 pub fn compile_dlc_bundle(project_root: &Path, dlc_name: &str) -> Result<PathBuf, CompilerError> {
@@ -453,8 +464,8 @@ pub fn compile_dlc_bundle(project_root: &Path, dlc_name: &str) -> Result<PathBuf
 
     let pack_crate_name = format!("pack_{}", sanitize_crate_slug(dlc_name));
     write_dlc_pack_manifest(project_root, &pack_crate_name, &pack_dir)?;
-    generate_dlc_static_assets(project_root, dlc_name, &dlc_root, &pack_dir)?;
-    write_dlc_pack_lib(project_root, dlc_name, &dlc_root, &pack_dir)?;
+    let inventory = generate_dlc_static_assets(project_root, dlc_name, &dlc_root, &pack_dir)?;
+    write_dlc_pack_lib(project_root, dlc_name, &dlc_root, &pack_dir, &inventory)?;
     compile_dlc_package_crate(project_root, &pack_dir, false)?;
     let pack_dylib_name = runtime_pack_dylib_name();
     let built_pack_dylib = resolve_compiled_dylib(

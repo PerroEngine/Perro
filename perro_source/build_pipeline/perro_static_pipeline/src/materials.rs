@@ -34,7 +34,7 @@ pub fn generate_static_materials(project_root: &Path) -> Result<(), StaticPipeli
 
     let mut materials = material_paths
         .into_par_iter()
-        .map(|rel| -> io::Result<Vec<(String, MaterialLiteral)>> {
+        .map(|rel| -> io::Result<Vec<(String, MaterialLiteral, bool)>> {
             let res_path = asset_uri(&rel);
             let full_path = res_dir.join(&rel);
             let ext = Path::new(&rel)
@@ -50,7 +50,7 @@ pub fn generate_static_materials(project_root: &Path) -> Result<(), StaticPipeli
                             "material `{res_path}` must be an object with at least one valid field"
                         ))
                     })?;
-                    Ok(vec![(res_path, material)])
+                    Ok(vec![(res_path, material, false)])
                 }
                 source_ext::GLB | source_ext::GLTF => {
                     materials_from_gltf_file(&full_path, &res_path)
@@ -67,8 +67,8 @@ pub fn generate_static_materials(project_root: &Path) -> Result<(), StaticPipeli
 
     let mut unique_materials = Vec::<MaterialLiteral>::new();
     let mut unique_by_key = HashMap::<MaterialKey, usize>::new();
-    let mut material_refs = Vec::<(String, usize)>::with_capacity(materials.len());
-    for (path, material) in materials {
+    let mut material_refs = Vec::<(String, usize, bool)>::with_capacity(materials.len());
+    for (path, material, synthesized) in materials {
         let key = MaterialKey::from(&material);
         let index = if let Some(existing) = unique_by_key.get(&key).copied() {
             existing
@@ -78,11 +78,11 @@ pub fn generate_static_materials(project_root: &Path) -> Result<(), StaticPipeli
             unique_by_key.insert(key, idx);
             idx
         };
-        material_refs.push((path, index));
+        material_refs.push((path, index, synthesized));
     }
     ensure_unique_hashes(
         "material",
-        material_refs.iter().map(|(path, _)| path.as_str()),
+        material_refs.iter().map(|(path, _, _)| path.as_str()),
     )?;
 
     let mut out = String::new();
@@ -103,7 +103,7 @@ pub fn generate_static_materials(project_root: &Path) -> Result<(), StaticPipeli
     out.push_str(
         "static EMPTY_MATERIAL: Material3D = Material3D::Standard(StandardMaterial3D::const_default());\n\n",
     );
-    for (index, (path, _)) in material_refs.iter().enumerate() {
+    for (index, (path, _, _)) in material_refs.iter().enumerate() {
         write_hash_const(&mut out, &format!("MATERIAL_HASH_{index}"), path);
     }
     if !material_refs.is_empty() {
@@ -112,7 +112,7 @@ pub fn generate_static_materials(project_root: &Path) -> Result<(), StaticPipeli
     let lookup_entries = material_refs
         .iter()
         .enumerate()
-        .map(|(hash_index, (path, index))| {
+        .map(|(hash_index, (path, index, _))| {
             (
                 perro_ids::string_to_u64(path),
                 format!("MATERIAL_HASH_{hash_index}"),
@@ -131,6 +131,13 @@ pub fn generate_static_materials(project_root: &Path) -> Result<(), StaticPipeli
     );
 
     fs::write(static_dir.join("materials.rs"), out)?;
+    crate::record_static_assets(
+        perro_asset_formats::dlc::DlcAssetKind::MATERIAL,
+        perro_asset_formats::dlc::DlcAssetAccess::ENGINE_LOCAL,
+        material_refs
+            .iter()
+            .map(|(path, _, synthesized)| (path.as_str(), *synthesized)),
+    );
     Ok(())
 }
 
@@ -1338,14 +1345,14 @@ fn f32x4_to_code(value: [f32; 4]) -> String {
 fn materials_from_gltf_file(
     path: &Path,
     res_path: &str,
-) -> io::Result<Vec<(String, MaterialLiteral)>> {
+) -> io::Result<Vec<(String, MaterialLiteral, bool)>> {
     let (doc, _buffers, _images) = gltf::import(path).map_err(|err| {
         io::Error::other(format!(
             "failed to import model `{res_path}` for materials: {err}"
         ))
     })?;
 
-    let mut out = Vec::<(String, MaterialLiteral)>::new();
+    let mut out = Vec::<(String, MaterialLiteral, bool)>::new();
     for (index, material) in doc.materials().enumerate() {
         let pbr = material.pbr_metallic_roughness();
         let base_color = pbr.base_color_factor();
@@ -1395,12 +1402,14 @@ fn materials_from_gltf_file(
         out.push((
             format!("{res_path}:mat[{index}]"),
             MaterialLiteral::Standard(derived),
+            true,
         ));
     }
     if out.is_empty() {
         out.push((
             format!("{res_path}:mat[0]"),
             MaterialLiteral::Standard(StandardMaterial3D::default()),
+            true,
         ));
     }
     Ok(out)

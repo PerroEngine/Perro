@@ -105,6 +105,11 @@ pub fn generate_static_animations(project_root: &Path) -> Result<(), StaticPipel
     src.push('\n');
     src.push_str(&lookup);
     fs::write(static_dir.join("animations.rs"), src)?;
+    crate::record_static_assets(
+        perro_asset_formats::dlc::DlcAssetKind::ANIMATION,
+        perro_asset_formats::dlc::DlcAssetAccess::ENGINE_LOCAL,
+        parsed.iter().map(|item| (item.lookup_key.as_str(), false)),
+    );
     Ok(())
 }
 

@@ -871,7 +871,10 @@ fn index_script_source(file: &Path, text: &str, index: &mut ScriptDoctorIndex) {
             index
                 .state_field_owners
                 .insert(field.name.clone(), state_name.clone());
-            let defs = index.state_field_defs.entry(field.name.clone()).or_default();
+            let defs = index
+                .state_field_defs
+                .entry(field.name.clone())
+                .or_default();
             if !defs.contains(&field) {
                 defs.push(field.clone());
             }
@@ -2229,7 +2232,11 @@ mod tests {
             }
         "#;
         let mut index = ScriptDoctorIndex::default();
-        index_script_source(Path::new("res/scripts/golf_agent.rs"), golf_source, &mut index);
+        index_script_source(
+            Path::new("res/scripts/golf_agent.rs"),
+            golf_source,
+            &mut index,
+        );
         index_script_source(
             Path::new("res/scripts/volleyball_agent.rs"),
             volleyball_source,
@@ -2250,7 +2257,11 @@ mod tests {
             volleyball_source,
             &mut index,
         );
-        index_script_source(Path::new("res/scripts/golf_agent.rs"), golf_source, &mut index);
+        index_script_source(
+            Path::new("res/scripts/golf_agent.rs"),
+            golf_source,
+            &mut index,
+        );
         let mut report = ValidationReport::default();
 
         validate_script_member_calls(Path::new(""), &file, caller_source, &index, &mut report);

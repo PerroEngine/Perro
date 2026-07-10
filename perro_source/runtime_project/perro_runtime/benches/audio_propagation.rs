@@ -36,7 +36,7 @@ fn runtime_2d(walls: usize, sounds: usize) -> Runtime {
         let body = NodeAPI::create::<StaticBody2D>(&mut runtime);
         let shape = NodeAPI::create::<CollisionShape2D>(&mut runtime);
         assert!(NodeAPI::reparent(&mut runtime, body, shape));
-        if let Some(node) = runtime.nodes.get_mut(body)
+        if let Some(mut node) = runtime.nodes.get_mut(body)
             && let SceneNodeData::StaticBody2D(body) = &mut node.data
             && let Some(audio) = &mut body.audio_interaction
         {
@@ -78,7 +78,7 @@ fn runtime_3d(walls: usize, sounds: usize) -> Runtime {
         let body = NodeAPI::create::<StaticBody3D>(&mut runtime);
         let shape = NodeAPI::create::<CollisionShape3D>(&mut runtime);
         assert!(NodeAPI::reparent(&mut runtime, body, shape));
-        if let Some(node) = runtime.nodes.get_mut(body)
+        if let Some(mut node) = runtime.nodes.get_mut(body)
             && let SceneNodeData::StaticBody3D(body) = &mut node.data
             && let Some(audio) = &mut body.audio_interaction
         {

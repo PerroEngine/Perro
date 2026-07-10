@@ -166,7 +166,7 @@ pub(super) fn merge_prepared_scene(
         }
         if let Some(source) = animation_source {
             let animation = res.Animations().load(&source);
-            if let Some(node_data) = runtime.nodes.get_mut(node)
+            if let Some(mut node_data) = runtime.nodes.get_mut(node)
                 && let SceneNodeData::AnimationPlayer(player) = &mut node_data.data
             {
                 player.set_animation(animation);
@@ -174,7 +174,7 @@ pub(super) fn merge_prepared_scene(
         }
         if let Some(source) = animation_tree_source {
             let tree = res.AnimationTrees().load(&source);
-            if let Some(node_data) = runtime.nodes.get_mut(node)
+            if let Some(mut node_data) = runtime.nodes.get_mut(node)
                 && let SceneNodeData::AnimationTree(anim_tree) = &mut node_data.data
             {
                 anim_tree.set_tree(tree);
@@ -204,7 +204,7 @@ pub(super) fn merge_prepared_scene(
             if !pending_bindings.is_empty() {
                 animation_tree_animation_bindings.push((node, pending_bindings));
             }
-            if let Some(node_data) = runtime.nodes.get_mut(node)
+            if let Some(mut node_data) = runtime.nodes.get_mut(node)
                 && let SceneNodeData::AnimationTree(anim_tree) = &mut node_data.data
             {
                 anim_tree.animations = animations;
@@ -214,7 +214,7 @@ pub(super) fn merge_prepared_scene(
             runtime.render_2d.texture_sources.insert(node, source);
         }
         if decal_texture_sources.iter().any(Option::is_some)
-            && let Some(node_data) = runtime.nodes.get_mut(node)
+            && let Some(mut node_data) = runtime.nodes.get_mut(node)
             && let SceneNodeData::Decal3D(decal) = &mut node_data.data
         {
             let [albedo, normal, emission] = decal_texture_sources;
@@ -230,7 +230,7 @@ pub(super) fn merge_prepared_scene(
         }
         if let Some(source) = mesh_source {
             let mesh = res.Meshes().load(&source);
-            if let Some(node_data) = runtime.nodes.get_mut(node) {
+            if let Some(mut node_data) = runtime.nodes.get_mut(node) {
                 match &mut node_data.data {
                     SceneNodeData::MeshInstance3D(mesh_instance) => {
                         mesh_instance.mesh = mesh;
@@ -258,7 +258,7 @@ pub(super) fn merge_prepared_scene(
                             .map(|material| resource_api.shared_inline_material_id(material))
                     });
                 if let Some(material) = material
-                    && let Some(node_data) = runtime.nodes.get_mut(node)
+                    && let Some(mut node_data) = runtime.nodes.get_mut(node)
                 {
                     match &mut node_data.data {
                         SceneNodeData::MeshInstance3D(mesh_instance) => {
@@ -284,7 +284,7 @@ pub(super) fn merge_prepared_scene(
                 .insert(node, overrides);
         }
         if let Some(source) = skeleton_source
-            && let Some(node_data) = runtime.nodes.get_mut(node)
+            && let Some(mut node_data) = runtime.nodes.get_mut(node)
         {
             match &mut node_data.data {
                 SceneNodeData::Skeleton2D(skeleton) => {
@@ -355,7 +355,7 @@ pub(super) fn merge_prepared_scene(
     }
 
     for (parent, child) in edges {
-        if let Some(parent) = runtime.nodes.get_mut(parent) {
+        if let Some(mut parent) = runtime.nodes.get_mut(parent) {
             parent.add_child(child);
         }
     }
@@ -364,7 +364,7 @@ pub(super) fn merge_prepared_scene(
         let target = *key_to
             .get(&target_key)
             .ok_or_else(|| format!("mesh skeleton target `{target_key}` not found"))?;
-        if let Some(node_data) = runtime.nodes.get_mut(mesh_node)
+        if let Some(mut node_data) = runtime.nodes.get_mut(mesh_node)
             && let SceneNodeData::MeshInstance3D(mesh) = &mut node_data.data
         {
             mesh.skeleton = target;
@@ -375,7 +375,7 @@ pub(super) fn merge_prepared_scene(
         let target = *key_to
             .get(&target_key)
             .ok_or_else(|| format!("bone attachment skeleton target `{target_key}` not found"))?;
-        if let Some(node_data) = runtime.nodes.get_mut(attachment_node) {
+        if let Some(mut node_data) = runtime.nodes.get_mut(attachment_node) {
             match &mut node_data.data {
                 SceneNodeData::BoneAttachment2D(attachment) => attachment.skeleton = target,
                 SceneNodeData::BoneAttachment3D(attachment) => attachment.skeleton = target,
@@ -388,7 +388,7 @@ pub(super) fn merge_prepared_scene(
         let target = *key_to
             .get(&target_key)
             .ok_or_else(|| format!("ik target skeleton target `{target_key}` not found"))?;
-        if let Some(node_data) = runtime.nodes.get_mut(ik_target_node) {
+        if let Some(mut node_data) = runtime.nodes.get_mut(ik_target_node) {
             match &mut node_data.data {
                 SceneNodeData::IKTarget2D(ik_target) => ik_target.params.skeleton = target,
                 SceneNodeData::IKTarget3D(ik_target) => ik_target.params.skeleton = target,
@@ -401,7 +401,7 @@ pub(super) fn merge_prepared_scene(
         let target = *key_to.get(&target_key).ok_or_else(|| {
             format!("physics bone chain skeleton target `{target_key}` not found")
         })?;
-        if let Some(node_data) = runtime.nodes.get_mut(chain_node) {
+        if let Some(mut node_data) = runtime.nodes.get_mut(chain_node) {
             match &mut node_data.data {
                 SceneNodeData::PhysicsBoneChain2D(chain) => chain.skeleton = target,
                 SceneNodeData::PhysicsBoneChain3D(chain) => chain.skeleton = target,
@@ -414,7 +414,7 @@ pub(super) fn merge_prepared_scene(
         let target = *key_to
             .get(&target_key)
             .ok_or_else(|| format!("camera stream target `{target_key}` not found"))?;
-        if let Some(node_data) = runtime.nodes.get_mut(stream_node) {
+        if let Some(mut node_data) = runtime.nodes.get_mut(stream_node) {
             match &mut node_data.data {
                 SceneNodeData::CameraStream2D(stream) => stream.stream.camera = target,
                 SceneNodeData::CameraStream3D(stream) => stream.stream.camera = target,
@@ -428,13 +428,13 @@ pub(super) fn merge_prepared_scene(
         let target = *key_to
             .get(&target_key)
             .ok_or_else(|| format!("joint body target `{target_key}` not found"))?;
-        if let Some(node_data) = runtime.nodes.get_mut(joint_node) {
-            set_joint_body(node_data, field, target);
+        if let Some(mut node_data) = runtime.nodes.get_mut(joint_node) {
+            set_joint_body(&mut node_data, field, target);
         }
     }
 
     for (player_id, scene_bindings) in animation_player_bindings {
-        let Some(node_data) = runtime.nodes.get_mut(player_id) else {
+        let Some(mut node_data) = runtime.nodes.get_mut(player_id) else {
             continue;
         };
         let SceneNodeData::AnimationPlayer(player) = &mut node_data.data else {
@@ -454,7 +454,7 @@ pub(super) fn merge_prepared_scene(
     }
 
     for (tree_id, scene_bindings) in animation_tree_animation_bindings {
-        let Some(node_data) = runtime.nodes.get_mut(tree_id) else {
+        let Some(mut node_data) = runtime.nodes.get_mut(tree_id) else {
             continue;
         };
         let SceneNodeData::AnimationTree(tree) = &mut node_data.data else {
@@ -503,7 +503,7 @@ pub(super) fn merge_prepared_scene(
 
     for root in &attach_order {
         runtime.nodes.set_parent(*root, engine_root);
-        if let Some(engine_root_node) = runtime.nodes.get_mut(engine_root) {
+        if let Some(mut engine_root_node) = runtime.nodes.get_mut(engine_root) {
             engine_root_node.add_child(*root);
         }
     }

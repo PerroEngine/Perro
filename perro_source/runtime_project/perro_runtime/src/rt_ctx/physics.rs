@@ -31,7 +31,7 @@ impl PhysicsAPI for Runtime {
         if !scale.is_finite() {
             return false;
         }
-        let Some(node) = self.nodes.get_mut(body_id) else {
+        let Some(mut node) = self.nodes.get_mut(body_id) else {
             return false;
         };
         match &mut node.data {

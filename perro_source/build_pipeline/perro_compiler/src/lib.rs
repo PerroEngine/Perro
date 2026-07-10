@@ -17,6 +17,7 @@ use std::{
 include!("error.rs");
 include!("scripts.rs");
 include!("dlc.rs");
+include!("dlc_registry.rs");
 include!("static_modules.rs");
 include!("project_bundle.rs");
 include!("script_writer.rs");

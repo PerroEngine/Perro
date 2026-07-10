@@ -18,10 +18,9 @@ use std::ops::{Deref, DerefMut};
 /// [`Self::remove_node_tag`], [`Self::set_parent`]). Prefer [`Self::edit`] when
 /// one operation may change both indexed and ordinary fields.
 ///
-/// [`Self::get_mut`] and [`Self::iter_mut`] are untracked compatibility escape
-/// hatches. Writing `node.name`, `node.tags`, or `node.parent` through either
-/// bypasses the corresponding index or slot mirror. Use tracked accessors for
-/// arena-resident nodes; setting those fields before [`Self::insert`] is safe.
+/// [`Self::get_mut`] returns a tracked guard. Any name, tag, parent, or node
+/// type change repairs the matching index or slot mirror when the guard drops,
+/// including during unwinding.
 pub struct NodeArena {
     nodes: Vec<Option<SceneNode>>,
     generations: Vec<u32>,
@@ -43,8 +42,8 @@ pub struct NodeArena {
     mutation_revision: u64,
     /// bump on structural chg + physics-relevant mut access. Split frm
     /// mutation_revision so per-frame non-physics data mut (UI text, sprite
-    /// frames) not invalidate physics world sync gate. Raw `get_mut` bump both
-    /// (conservative); only `get_mut_non_physics` callers skip the physics bump
+    /// frames) not invalidate physics world sync gate. Tracked `get_mut` bump
+    /// both; only `get_mut_untracked_non_physics` skip physics bump.
     /// and must cal `mark_physics_change` when the node is physics-relevant.
     physics_revision: u64,
     /// bump ONLY on structural chg: insert / remove / clear / reparent. Data
@@ -54,9 +53,13 @@ pub struct NodeArena {
     structural_revision: u64,
 }
 
-/// Internal guard used by [`NodeArena::edit`] to restore indices on normal
-/// return and during unwinding.
-struct TrackedNodeMut<'a> {
+/// Tracked mutable node access from [`NodeArena::get_mut`].
+///
+/// Indexed fields and slot mirrors repair when this guard drops, including
+/// during unwinding. The arena stays exclusively borrowed for the guard's
+/// lifetime.
+#[must_use = "dropping the guard ends the tracked mutation"]
+pub struct NodeMut<'a> {
     arena: &'a mut NodeArena,
     id: NodeID,
     index: usize,
@@ -66,7 +69,7 @@ struct TrackedNodeMut<'a> {
     old_node_type: NodeType,
 }
 
-impl Deref for TrackedNodeMut<'_> {
+impl Deref for NodeMut<'_> {
     type Target = SceneNode;
 
     fn deref(&self) -> &Self::Target {
@@ -76,7 +79,7 @@ impl Deref for TrackedNodeMut<'_> {
     }
 }
 
-impl DerefMut for TrackedNodeMut<'_> {
+impl DerefMut for NodeMut<'_> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.arena.nodes[self.index]
             .as_mut()
@@ -84,7 +87,7 @@ impl DerefMut for TrackedNodeMut<'_> {
     }
 }
 
-impl Drop for TrackedNodeMut<'_> {
+impl Drop for NodeMut<'_> {
     fn drop(&mut self) {
         let (new_name, new_tags, new_parent, new_node_type) = {
             let node = self.arena.nodes[self.index]
@@ -198,14 +201,14 @@ impl NodeArena {
 
     /// Physics-facing revision: chg on structural changes + mutations that may
     /// touch physics-relevant node data. Non-physics data mutations routed
-    /// through [`Self::get_mut_non_physics`] do NOT move this revision.
+    /// through [`Self::get_mut_untracked_non_physics`] do NOT move this revision.
     #[inline]
     pub fn physics_revision(&self) -> u64 {
         self.physics_revision
     }
 
     /// Record a possible physics-relevant data change. Pairs with
-    /// [`Self::get_mut_non_physics`].
+    /// [`Self::get_mut_untracked_non_physics`].
     #[inline]
     pub fn mark_physics_change(&mut self) {
         self.physics_revision = self.physics_revision.wrapping_add(1);
@@ -295,21 +298,25 @@ impl NodeArena {
         self.nodes[index].as_ref()
     }
 
-    /// Get an untracked mutable node by id.
+    /// Get a tracked mutable node by id.
     ///
     /// Returns `None` for nil ids, stale generations, out-of-bounds slots, or
     /// empty slots.
     ///
-    /// # Index consistency
-    ///
-    /// Do not change `SceneNode::name`, its tags, or `SceneNode::parent`
-    /// through this reference. Such writes bypass the arena's name/tag indices
-    /// and parent mirror. Use [`Self::edit`] for mixed changes or the focused
-    /// tracked accessors for individual indexed fields.
-    pub fn get_mut(&mut self, id: NodeID) -> Option<&mut SceneNode> {
+    /// Name, tag, parent, and node type changes repair arena indices and slot
+    /// mirrors when the returned guard drops. Repair also runs during unwind.
+    pub fn get_mut(&mut self, id: NodeID) -> Option<NodeMut<'_>> {
         let index = self.valid_slot(id)?;
-        self.bump_mutation_revision();
-        self.nodes[index].as_mut()
+        let node = self.nodes[index].as_ref()?;
+        Some(NodeMut {
+            id,
+            index,
+            old_name: node.name.clone(),
+            old_tags: node.get_tag_ids(),
+            old_parent: node.parent,
+            old_node_type: node.node_type(),
+            arena: self,
+        })
     }
 
     /// Edit a node while keeping its name/tag indices and parent mirror in
@@ -319,27 +326,41 @@ impl NodeArena {
     /// repair and revision updates run when the callback returns or unwinds.
     /// Returns `None` without calling the callback when `id` is not live.
     pub fn edit<R>(&mut self, id: NodeID, edit: impl FnOnce(&mut SceneNode) -> R) -> Option<R> {
-        let index = self.valid_slot(id)?;
-        let node = self.nodes[index].as_ref()?;
-        let mut tracked = TrackedNodeMut {
-            id,
-            index,
-            old_name: node.name.clone(),
-            old_tags: node.get_tag_ids(),
-            old_parent: node.parent,
-            old_node_type: node.node_type(),
-            arena: self,
-        };
+        let mut tracked = self.get_mut(id)?;
         Some(edit(&mut tracked))
     }
 
-    /// Mutable lookup that bumps only the data revision. The caller MUST call
-    /// [`Self::mark_physics_change`] afterwards when the mutated node is a
-    /// physics-relevant type ([`perro_nodes::NodeType::is_physics`]); use plain
-    /// [`Self::get_mut`] when unsure.
-    pub fn get_mut_non_physics(&mut self, id: NodeID) -> Option<&mut SceneNode> {
+    /// Raw mutable hot path for typed node-data edits that cannot touch name,
+    /// tags, parent, or replace the data variant.
+    ///
+    /// # Invariant contract
+    ///
+    /// Caller must prove indexed fields + mirrored fields stay unchanged.
+    /// Prefer [`Self::get_mut`] outside profiled internal paths.
+    pub(crate) fn get_mut_untracked(&mut self, id: NodeID) -> Option<&mut SceneNode> {
+        let index = self.valid_slot(id)?;
+        self.bump_mutation_revision();
+        debug_assert_eq!(self.parents[index], self.nodes[index].as_ref()?.parent);
+        debug_assert_eq!(
+            self.node_types[index],
+            self.nodes[index].as_ref()?.node_type()
+        );
+        self.nodes[index].as_mut()
+    }
+
+    /// Raw non-physics variant of [`Self::get_mut_untracked`].
+    ///
+    /// # Invariant contract
+    ///
+    /// Caller must also prove the edit cannot affect physics state.
+    pub(crate) fn get_mut_untracked_non_physics(&mut self, id: NodeID) -> Option<&mut SceneNode> {
         let index = self.valid_slot(id)?;
         self.bump_data_revision_only();
+        debug_assert_eq!(self.parents[index], self.nodes[index].as_ref()?.parent);
+        debug_assert_eq!(
+            self.node_types[index],
+            self.nodes[index].as_ref()?.node_type()
+        );
         self.nodes[index].as_mut()
     }
 
@@ -532,23 +553,6 @@ impl NodeArena {
             .filter_map(|(index, node)| {
                 node.as_ref()
                     .map(|n| (NodeID::from_parts(index as u32, self.generations[index]), n))
-            })
-    }
-
-    /// Iterate mutably over all live nodes with their current ids.
-    ///
-    /// This is untracked mutable access: do not change node names, tags, or
-    /// parents through this iterator. Use [`Self::edit`] for those fields.
-    pub fn iter_mut(&mut self) -> impl Iterator<Item = (NodeID, &mut SceneNode)> {
-        self.bump_mutation_revision();
-        self.nodes
-            .iter_mut()
-            .zip(self.generations.iter())
-            .enumerate()
-            .skip(1)
-            .filter_map(|(index, (node, &generation))| {
-                node.as_mut()
-                    .map(|n| (NodeID::from_parts(index as u32, generation), n))
             })
     }
 

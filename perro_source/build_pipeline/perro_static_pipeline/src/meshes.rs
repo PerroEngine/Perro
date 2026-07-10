@@ -82,6 +82,7 @@ struct LodInput {
 struct MeshRef {
     lookup_key: String,
     embedded_rel_path: String,
+    synthesized: bool,
 }
 
 struct MeshAsset {
@@ -131,6 +132,7 @@ pub fn generate_static_meshes(
                         entry: MeshRef {
                             lookup_key: res_path,
                             embedded_rel_path: rel,
+                            synthesized: false,
                         },
                         bytes,
                     }])
@@ -231,6 +233,13 @@ pub fn generate_static_meshes(
     );
 
     fs::write(static_dir.join("meshes.rs"), out)?;
+    crate::record_static_assets(
+        perro_asset_formats::dlc::DlcAssetKind::MESH,
+        perro_asset_formats::dlc::DlcAssetAccess::BYTES,
+        mesh_refs
+            .iter()
+            .map(|item| (item.lookup_key.as_str(), item.synthesized)),
+    );
     Ok(())
 }
 
@@ -398,6 +407,7 @@ fn build_gltf_mesh_entries(
             MeshRef {
                 lookup_key: key_bracket,
                 embedded_rel_path,
+                synthesized: true,
             },
             pmesh,
         ));

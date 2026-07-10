@@ -1,5 +1,4 @@
 use crate::Runtime;
-use perro_resource_api::sub_apis::NavMeshAPI as ResourceNavMeshAPI;
 use perro_runtime_api::sub_apis::{NavMeshAPI, NavMeshPath3D, NavMeshPathOptions};
 use perro_structs::{BitMask, Vector3};
 
@@ -11,10 +10,10 @@ impl NavMeshAPI for Runtime {
         end: Vector3,
         opts: NavMeshPathOptions,
     ) -> NavMeshPath3D {
-        let Some(data) = self.resource_api.get_navmesh_data(navmesh) else {
+        let Some((data, graph)) = self.resource_api.navmesh_query_data(navmesh, opts.layers) else {
             return NavMeshPath3D::failed();
         };
-        crate::runtime::navmesh::find_path_3d(&data, start, end, opts)
+        crate::runtime::navmesh::find_path_3d_prepared(&data, &graph, start, end, opts)
     }
 
     fn navmesh_project_point_3d(
@@ -23,7 +22,9 @@ impl NavMeshAPI for Runtime {
         point: Vector3,
         max_distance: f32,
     ) -> Option<Vector3> {
-        let data = self.resource_api.get_navmesh_data(navmesh)?;
+        let (data, _) = self
+            .resource_api
+            .navmesh_query_data(navmesh, BitMask::ALL)?;
         crate::runtime::navmesh::project_point_3d(&data, point, max_distance, BitMask::ALL)
     }
 }

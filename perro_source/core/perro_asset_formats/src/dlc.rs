@@ -32,6 +32,7 @@ impl DlcAssetKind {
     pub const CSV: Self = Self(14);
     pub const LOCALIZATION: Self = Self(15);
     pub const FILE: Self = Self(16);
+    pub const NAVMESH: Self = Self(17);
 
     pub const fn from_raw(raw: u32) -> Self {
         Self(raw)
@@ -59,6 +60,7 @@ impl DlcAssetKind {
             Self::CSV => Some("csv"),
             Self::LOCALIZATION => Some("localization"),
             Self::FILE => Some("file"),
+            Self::NAVMESH => Some("navmesh"),
             _ => None,
         }
     }
@@ -210,6 +212,7 @@ mod tests {
             DlcAssetKind::CSV,
             DlcAssetKind::LOCALIZATION,
             DlcAssetKind::FILE,
+            DlcAssetKind::NAVMESH,
         ];
         for (index, kind) in kinds.into_iter().enumerate() {
             assert_eq!(kind.raw(), index as u32 + 1);

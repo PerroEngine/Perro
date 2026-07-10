@@ -69,7 +69,7 @@ fn ui_camera_stream_opens_referenced_webcam_node() {
     let mut runtime = Runtime::new();
     let webcam = NodeAPI::create::<Webcam>(&mut runtime);
     let stream = NodeAPI::create::<UiCameraStream>(&mut runtime);
-    if let Some(node) = runtime.nodes.get_mut(stream)
+    if let Some(mut node) = runtime.nodes.get_mut(stream)
         && let SceneNodeData::UiCameraStream(data) = &mut node.data
     {
         data.stream.camera = webcam;
@@ -96,12 +96,12 @@ fn camera_stream_3d_opens_referenced_webcam_node() {
     let camera = NodeAPI::create::<Camera3D>(&mut runtime);
     let webcam = NodeAPI::create::<Webcam>(&mut runtime);
     let stream = NodeAPI::create::<CameraStream3D>(&mut runtime);
-    if let Some(node) = runtime.nodes.get_mut(camera)
+    if let Some(mut node) = runtime.nodes.get_mut(camera)
         && let SceneNodeData::Camera3D(data) = &mut node.data
     {
         data.active = true;
     }
-    if let Some(node) = runtime.nodes.get_mut(stream)
+    if let Some(mut node) = runtime.nodes.get_mut(stream)
         && let SceneNodeData::CameraStream3D(data) = &mut node.data
     {
         data.stream.camera = webcam;
@@ -131,7 +131,7 @@ fn ui_camera_stream_refreshes_when_source_camera_moves() {
     let mut runtime = Runtime::new();
     let camera = NodeAPI::create::<Camera3D>(&mut runtime);
     let stream = NodeAPI::create::<UiCameraStream>(&mut runtime);
-    if let Some(node) = runtime.nodes.get_mut(stream)
+    if let Some(mut node) = runtime.nodes.get_mut(stream)
         && let SceneNodeData::UiCameraStream(data) = &mut node.data
     {
         data.stream.camera = camera;
@@ -141,7 +141,7 @@ fn ui_camera_stream_refreshes_when_source_camera_moves() {
     runtime.extract_render_ui_commands();
     runtime.drain_render_commands(&mut Vec::new());
 
-    if let Some(node) = runtime.nodes.get_mut(camera)
+    if let Some(mut node) = runtime.nodes.get_mut(camera)
         && let SceneNodeData::Camera3D(data) = &mut node.data
     {
         data.transform = Transform3D::new(
@@ -169,7 +169,7 @@ fn ui_camera_stream_3d_captures_sky_from_source_camera() {
     let camera = NodeAPI::create::<Camera3D>(&mut runtime);
     let _sky = NodeAPI::create::<Sky3D>(&mut runtime);
     let stream = NodeAPI::create::<UiCameraStream>(&mut runtime);
-    if let Some(node) = runtime.nodes.get_mut(stream)
+    if let Some(mut node) = runtime.nodes.get_mut(stream)
         && let SceneNodeData::UiCameraStream(data) = &mut node.data
     {
         data.stream.camera = camera;
@@ -195,7 +195,7 @@ fn ui_camera_stream_emits_image_corner_radius() {
     runtime.set_viewport_size(800, 600);
     let camera = NodeAPI::create::<Camera3D>(&mut runtime);
     let stream = NodeAPI::create::<UiCameraStream>(&mut runtime);
-    if let Some(node) = runtime.nodes.get_mut(stream)
+    if let Some(mut node) = runtime.nodes.get_mut(stream)
         && let SceneNodeData::UiCameraStream(data) = &mut node.data
     {
         data.layout.size = UiVector2::pixels(320.0, 180.0);
@@ -392,7 +392,7 @@ fn ui_image_keeps_retained_texture_while_replacement_texture_is_pending() {
         .resource_api
         .load_texture("res://textures/ui_tool_version_b.png");
     let pending_request = collect_resource_texture_request(&mut runtime, pending_texture);
-    if let Some(scene_node) = runtime.nodes.get_mut(node)
+    if let Some(mut scene_node) = runtime.nodes.get_mut(node)
         && let SceneNodeData::UiImage(image) = &mut scene_node.data
     {
         image.texture = pending_texture;
@@ -489,7 +489,7 @@ fn ui_bottom_anchor_places_rect_on_bottom_edge_without_position() {
     runtime.set_viewport_size(800, 600);
 
     let node = insert_panel(&mut runtime, [100.0, 50.0], Color::new(0.1, 0.2, 0.3, 1.0));
-    if let Some(scene_node) = runtime.nodes.get_mut(node)
+    if let Some(mut scene_node) = runtime.nodes.get_mut(node)
         && let SceneNodeData::UiPanel(panel) = &mut scene_node.data
     {
         panel.layout.anchor = UiAnchor::Bottom;
@@ -513,7 +513,7 @@ fn ui_translation_ratio_moves_after_anchor_by_parent_size() {
     runtime.set_viewport_size(800, 600);
 
     let node = insert_panel(&mut runtime, [100.0, 80.0], Color::new(0.1, 0.2, 0.3, 1.0));
-    if let Some(scene_node) = runtime.nodes.get_mut(node)
+    if let Some(mut scene_node) = runtime.nodes.get_mut(node)
         && let SceneNodeData::UiPanel(panel) = &mut scene_node.data
     {
         panel.transform.translation = Vector2::new(0.25, -0.5);
@@ -536,7 +536,7 @@ fn ui_self_translation_ratio_moves_after_anchor_by_own_size() {
     runtime.set_viewport_size(800, 600);
 
     let node = insert_panel(&mut runtime, [100.0, 80.0], Color::new(0.1, 0.2, 0.3, 1.0));
-    if let Some(scene_node) = runtime.nodes.get_mut(node)
+    if let Some(mut scene_node) = runtime.nodes.get_mut(node)
         && let SceneNodeData::UiPanel(panel) = &mut scene_node.data
     {
         panel.transform.self_translation = Vector2::new(0.25, -0.5);
@@ -559,7 +559,7 @@ fn ui_bottom_anchor_keeps_edge_placed_while_pivot_moves_origin() {
     runtime.set_viewport_size(800, 600);
 
     let node = insert_panel(&mut runtime, [100.0, 100.0], Color::new(0.1, 0.2, 0.3, 1.0));
-    if let Some(scene_node) = runtime.nodes.get_mut(node)
+    if let Some(mut scene_node) = runtime.nodes.get_mut(node)
         && let SceneNodeData::UiPanel(panel) = &mut scene_node.data
     {
         panel.layout.anchor = UiAnchor::Bottom;
@@ -593,7 +593,7 @@ fn ui_pivot_changes_render_pivot_without_changing_anchor_layout() {
     runtime.set_viewport_size(800, 600);
 
     let centered = insert_panel(&mut runtime, [100.0, 50.0], Color::new(0.1, 0.2, 0.3, 1.0));
-    if let Some(scene_node) = runtime.nodes.get_mut(centered)
+    if let Some(mut scene_node) = runtime.nodes.get_mut(centered)
         && let SceneNodeData::UiPanel(panel) = &mut scene_node.data
     {
         panel.layout.anchor = UiAnchor::Bottom;
@@ -601,7 +601,7 @@ fn ui_pivot_changes_render_pivot_without_changing_anchor_layout() {
     }
 
     let top_pivot = insert_panel(&mut runtime, [100.0, 50.0], Color::new(0.1, 0.2, 0.3, 1.0));
-    if let Some(scene_node) = runtime.nodes.get_mut(top_pivot)
+    if let Some(mut scene_node) = runtime.nodes.get_mut(top_pivot)
         && let SceneNodeData::UiPanel(panel) = &mut scene_node.data
     {
         panel.layout.anchor = UiAnchor::Bottom;
@@ -639,7 +639,7 @@ fn ui_center_and_right_anchor_translation_can_reach_same_parent_point() {
     runtime.set_viewport_size(800, 600);
 
     let center = insert_panel(&mut runtime, [200.0, 80.0], Color::new(0.1, 0.2, 0.3, 1.0));
-    if let Some(scene_node) = runtime.nodes.get_mut(center)
+    if let Some(mut scene_node) = runtime.nodes.get_mut(center)
         && let SceneNodeData::UiPanel(panel) = &mut scene_node.data
     {
         panel.layout.anchor = UiAnchor::Center;
@@ -647,7 +647,7 @@ fn ui_center_and_right_anchor_translation_can_reach_same_parent_point() {
     }
 
     let right = insert_panel(&mut runtime, [200.0, 80.0], Color::new(0.1, 0.2, 0.3, 1.0));
-    if let Some(scene_node) = runtime.nodes.get_mut(right)
+    if let Some(mut scene_node) = runtime.nodes.get_mut(right)
         && let SceneNodeData::UiPanel(panel) = &mut scene_node.data
     {
         panel.layout.anchor = UiAnchor::Right;
@@ -678,7 +678,7 @@ fn ui_center_and_top_anchor_translation_can_reach_same_parent_point() {
     runtime.set_viewport_size(800, 600);
 
     let center = insert_panel(&mut runtime, [100.0, 150.0], Color::new(0.1, 0.2, 0.3, 1.0));
-    if let Some(scene_node) = runtime.nodes.get_mut(center)
+    if let Some(mut scene_node) = runtime.nodes.get_mut(center)
         && let SceneNodeData::UiPanel(panel) = &mut scene_node.data
     {
         panel.layout.anchor = UiAnchor::Center;
@@ -686,7 +686,7 @@ fn ui_center_and_top_anchor_translation_can_reach_same_parent_point() {
     }
 
     let top = insert_panel(&mut runtime, [100.0, 150.0], Color::new(0.1, 0.2, 0.3, 1.0));
-    if let Some(scene_node) = runtime.nodes.get_mut(top)
+    if let Some(mut scene_node) = runtime.nodes.get_mut(top)
         && let SceneNodeData::UiPanel(panel) = &mut scene_node.data
     {
         panel.layout.anchor = UiAnchor::Top;
@@ -755,7 +755,7 @@ fn dirty_ui_node_emits_changed_upsert_only() {
     runtime.drain_render_commands(&mut commands);
     runtime.clear_dirty_flags();
 
-    if let Some(scene_node) = runtime.nodes.get_mut(node)
+    if let Some(mut scene_node) = runtime.nodes.get_mut(node)
         && let SceneNodeData::UiPanel(panel) = &mut scene_node.data
     {
         panel.style.fill = Color::new(0.8, 0.1, 0.1, 1.0);
@@ -1019,7 +1019,7 @@ fn runtime_created_root_ui_extracts_after_direct_setup_before_first_frame() {
     runtime.set_viewport_size(800, 600);
 
     let node = runtime.create::<UiPanel>();
-    if let Some(scene_node) = runtime.nodes.get_mut(node)
+    if let Some(mut scene_node) = runtime.nodes.get_mut(node)
         && let SceneNodeData::UiPanel(panel) = &mut scene_node.data
     {
         panel.layout.size = UiVector2::pixels(90.0, 45.0);
@@ -1164,7 +1164,7 @@ fn disabled_button_ignores_hover_and_pressed_mouse_state() {
     let mut runtime = Runtime::new();
     runtime.set_viewport_size(800, 600);
     let node = insert_button(&mut runtime, [120.0, 40.0]);
-    if let Some(scene_node) = runtime.nodes.get_mut(node)
+    if let Some(mut scene_node) = runtime.nodes.get_mut(node)
         && let SceneNodeData::UiButton(button) = &mut scene_node.data
     {
         button.disabled = true;
@@ -1203,7 +1203,7 @@ fn input_disabled_button_ignores_hover_and_pressed_mouse_state() {
     let mut runtime = Runtime::new();
     runtime.set_viewport_size(800, 600);
     let node = insert_button(&mut runtime, [120.0, 40.0]);
-    if let Some(scene_node) = runtime.nodes.get_mut(node)
+    if let Some(mut scene_node) = runtime.nodes.get_mut(node)
         && let SceneNodeData::UiButton(button) = &mut scene_node.data
     {
         button.input_enabled = false;
@@ -1253,7 +1253,7 @@ fn disabling_hovered_button_restores_neutral_visual_state() {
     runtime.drain_render_commands(&mut Vec::new());
     runtime.clear_dirty_flags();
 
-    if let Some(scene_node) = runtime.nodes.get_mut(node)
+    if let Some(mut scene_node) = runtime.nodes.get_mut(node)
         && let SceneNodeData::UiButton(button) = &mut scene_node.data
     {
         button.disabled = true;
@@ -1294,7 +1294,7 @@ fn input_disabling_hovered_button_restores_neutral_visual_state() {
     runtime.drain_render_commands(&mut Vec::new());
     runtime.clear_dirty_flags();
 
-    if let Some(scene_node) = runtime.nodes.get_mut(node)
+    if let Some(mut scene_node) = runtime.nodes.get_mut(node)
         && let SceneNodeData::UiButton(button) = &mut scene_node.data
     {
         button.input_enabled = false;
@@ -1324,7 +1324,7 @@ fn button_hover_requests_cursor_icon_and_unhover_restores_default() {
     let mut runtime = Runtime::new();
     runtime.set_viewport_size(800, 600);
     let node = insert_button(&mut runtime, [120.0, 40.0]);
-    if let Some(scene_node) = runtime.nodes.get_mut(node)
+    if let Some(mut scene_node) = runtime.nodes.get_mut(node)
         && let SceneNodeData::UiButton(button) = &mut scene_node.data
     {
         button.cursor_icon = perro_ui::CursorIcon::Grab;
@@ -1388,7 +1388,7 @@ fn button_hover_respects_rounded_visible_shape() {
     let mut runtime = Runtime::new();
     runtime.set_viewport_size(800, 600);
     let node = insert_button(&mut runtime, [120.0, 40.0]);
-    if let Some(scene_node) = runtime.nodes.get_mut(node)
+    if let Some(mut scene_node) = runtime.nodes.get_mut(node)
         && let SceneNodeData::UiButton(button) = &mut scene_node.data
     {
         button.style.set_corner_radius(1.0);
@@ -1624,17 +1624,17 @@ fn focus_nav_skips_hidden_disabled_and_input_disabled_controls() {
     let input_disabled = insert_text_box_at(&mut runtime, 0.0, -60.0);
     let active = insert_button_at(&mut runtime, [120.0, 40.0], 0.0, -180.0);
 
-    if let Some(scene_node) = runtime.nodes.get_mut(hidden)
+    if let Some(mut scene_node) = runtime.nodes.get_mut(hidden)
         && let SceneNodeData::UiButton(button) = &mut scene_node.data
     {
         button.visible = false;
     }
-    if let Some(scene_node) = runtime.nodes.get_mut(disabled)
+    if let Some(mut scene_node) = runtime.nodes.get_mut(disabled)
         && let SceneNodeData::UiButton(button) = &mut scene_node.data
     {
         button.disabled = true;
     }
-    if let Some(scene_node) = runtime.nodes.get_mut(input_disabled)
+    if let Some(mut scene_node) = runtime.nodes.get_mut(input_disabled)
         && let SceneNodeData::UiTextBox(text_box) = &mut scene_node.data
     {
         text_box.inner.base.input_enabled = false;
@@ -1874,7 +1874,7 @@ fn ui_input_mask_filters_player_nav_sources() {
     runtime.bind_player(0, PlayerBinding::Gamepad { index: 0 });
     runtime.bind_player(1, PlayerBinding::Gamepad { index: 1 });
     let button = insert_button_at(&mut runtime, [120.0, 40.0], 0.0, 0.0);
-    if let Some(scene_node) = runtime.nodes.get_mut(button)
+    if let Some(mut scene_node) = runtime.nodes.get_mut(button)
         && let SceneNodeData::UiButton(button) = &mut scene_node.data
     {
         button.input_mask.allow_players.push(0);
@@ -1901,7 +1901,7 @@ fn ui_input_mask_filters_device_directional_targets() {
     runtime.set_viewport_size(800, 600);
     let left = insert_button_at(&mut runtime, [120.0, 40.0], -160.0, 0.0);
     let right = insert_button_at(&mut runtime, [120.0, 40.0], 160.0, 0.0);
-    if let Some(scene_node) = runtime.nodes.get_mut(right)
+    if let Some(mut scene_node) = runtime.nodes.get_mut(right)
         && let SceneNodeData::UiButton(button) = &mut scene_node.data
     {
         button.input_mask.deny_gamepads.push(1);
@@ -1930,7 +1930,7 @@ fn ui_input_mask_filters_mouse_joycon_and_button_activation_sources() {
     let mut runtime = Runtime::new();
     runtime.set_viewport_size(800, 600);
     let button = insert_button_at(&mut runtime, [120.0, 40.0], 0.0, 0.0);
-    if let Some(scene_node) = runtime.nodes.get_mut(button)
+    if let Some(mut scene_node) = runtime.nodes.get_mut(button)
         && let SceneNodeData::UiButton(button) = &mut scene_node.data
     {
         button.input_mask.allow_joycons.push(1);
@@ -2144,7 +2144,7 @@ fn image_button_event_signals_include_named_and_custom_signals() {
 fn disabled_button_event_signals_empty() {
     let mut runtime = Runtime::new();
     let node = insert_button(&mut runtime, [120.0, 40.0]);
-    if let Some(scene_node) = runtime.nodes.get_mut(node)
+    if let Some(mut scene_node) = runtime.nodes.get_mut(node)
         && let SceneNodeData::UiButton(button) = &mut scene_node.data
     {
         button.disabled = true;
@@ -2169,7 +2169,7 @@ fn disabled_button_event_signals_empty() {
 fn input_disabled_button_event_signals_empty() {
     let mut runtime = Runtime::new();
     let node = insert_button(&mut runtime, [120.0, 40.0]);
-    if let Some(scene_node) = runtime.nodes.get_mut(node)
+    if let Some(mut scene_node) = runtime.nodes.get_mut(node)
         && let SceneNodeData::UiButton(button) = &mut scene_node.data
     {
         button.input_enabled = false;
@@ -2791,7 +2791,7 @@ fn ui_transform_dirty_updates_only_changed_branch() {
     runtime.drain_render_commands(&mut commands);
     runtime.clear_dirty_flags();
 
-    if let Some(scene_node) = runtime.nodes.get_mut(child)
+    if let Some(mut scene_node) = runtime.nodes.get_mut(child)
         && let SceneNodeData::UiPanel(panel) = &mut scene_node.data
     {
         panel.transform.translation.x = 24.0;
@@ -2836,7 +2836,7 @@ fn ui_layout_parent_dirty_updates_auto_layout_siblings() {
     runtime.extract_render_ui_commands();
     runtime.clear_dirty_flags();
 
-    if let Some(scene_node) = runtime.nodes.get_mut(child)
+    if let Some(mut scene_node) = runtime.nodes.get_mut(child)
         && let SceneNodeData::UiPanel(panel) = &mut scene_node.data
     {
         panel.layout.size = UiVector2::pixels(90.0, 40.0);
@@ -2920,7 +2920,7 @@ fn relative_min_max_scale_rebases_when_size_definition_changes() {
         .expect("before rect");
     assert_eq!(before.size, Vector2::new(1400.0, 900.0));
 
-    if let Some(scene_node) = runtime.nodes.get_mut(child_id)
+    if let Some(mut scene_node) = runtime.nodes.get_mut(child_id)
         && let SceneNodeData::UiPanel(panel) = &mut scene_node.data
     {
         panel.layout.size = UiVector2::ratio(0.75, 0.75);
@@ -2988,7 +2988,7 @@ fn min_size_ratio_rebases_when_size_ratio_changes() {
         .expect("panel rect before ratio change");
     assert_eq!(clamped_before.size, Vector2::new(500.0, 500.0));
 
-    if let Some(scene_node) = runtime.nodes.get_mut(panel_id)
+    if let Some(mut scene_node) = runtime.nodes.get_mut(panel_id)
         && let SceneNodeData::UiPanel(panel) = &mut scene_node.data
     {
         panel.layout.size = UiVector2::ratio(0.5, 0.5);
@@ -4103,7 +4103,7 @@ fn tree_list_rows_expand_down_from_top_and_hide_closed_children() {
                 && (shape.base.transform.rotation - std::f32::consts::FRAC_PI_2).abs() < 1.0e-6
     ));
 
-    if let Some(scene_node) = runtime.nodes.get_mut(tree_id)
+    if let Some(mut scene_node) = runtime.nodes.get_mut(tree_id)
         && let SceneNodeData::UiTreeList(tree) = &mut scene_node.data
     {
         tree.items[0].open = false;
@@ -4130,7 +4130,7 @@ fn tree_list_rows_expand_down_from_top_and_hide_closed_children() {
             .is_some_and(|node| ui_root_from_data(&node.data).is_some_and(|ui| !ui.visible))
     }));
 
-    if let Some(scene_node) = runtime.nodes.get_mut(tree_id)
+    if let Some(mut scene_node) = runtime.nodes.get_mut(tree_id)
         && let SceneNodeData::UiTreeList(tree) = &mut scene_node.data
     {
         tree.items[0].open = true;
@@ -4305,7 +4305,7 @@ fn click_mouse_and_extract(runtime: &mut Runtime, x: f32, y: f32) {
 }
 
 fn set_panel_visible(runtime: &mut Runtime, node: NodeID, visible: bool) {
-    if let Some(scene_node) = runtime.nodes.get_mut(node)
+    if let Some(mut scene_node) = runtime.nodes.get_mut(node)
         && let SceneNodeData::UiPanel(panel) = &mut scene_node.data
     {
         panel.visible = visible;

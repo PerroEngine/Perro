@@ -109,6 +109,11 @@ pub fn generate_static_particles(project_root: &Path) -> Result<(), StaticPipeli
     );
 
     fs::write(static_dir.join("particles.rs"), out)?;
+    crate::record_static_assets(
+        perro_asset_formats::dlc::DlcAssetKind::PARTICLE,
+        perro_asset_formats::dlc::DlcAssetAccess::ENGINE_LOCAL,
+        particle_refs.iter().map(|(path, _)| (path.as_str(), false)),
+    );
     Ok(())
 }
 

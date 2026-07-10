@@ -135,7 +135,7 @@ fn physics_2d_body_desc_carries_mass_and_density() {
     let shape_id = NodeAPI::create::<CollisionShape2D>(&mut runtime);
     assert!(NodeAPI::reparent(&mut runtime, body_id, shape_id));
 
-    if let Some(node) = runtime.nodes.get_mut(body_id)
+    if let Some(mut node) = runtime.nodes.get_mut(body_id)
         && let SceneNodeData::RigidBody2D(body) = &mut node.data
     {
         body.mass = 7.0;
@@ -160,7 +160,7 @@ fn physics_3d_body_desc_carries_mass_and_density() {
     let shape_id = NodeAPI::create::<CollisionShape3D>(&mut runtime);
     assert!(NodeAPI::reparent(&mut runtime, body_id, shape_id));
 
-    if let Some(node) = runtime.nodes.get_mut(body_id)
+    if let Some(mut node) = runtime.nodes.get_mut(body_id)
         && let SceneNodeData::RigidBody3D(body) = &mut node.data
     {
         body.mass = 9.0;
@@ -217,14 +217,14 @@ fn water_3d_buoyancy_uses_density() {
     let water_id = NodeAPI::create::<WaterBody3D>(&mut runtime);
     let body_id = NodeAPI::create::<RigidBody3D>(&mut runtime);
 
-    if let Some(node) = runtime.nodes.get_mut(water_id)
+    if let Some(mut node) = runtime.nodes.get_mut(water_id)
         && let SceneNodeData::WaterBody3D(water) = &mut node.data
     {
         water.water.physics.buoyancy = 2.0;
         water.water.physics.drag = 0.0;
     }
 
-    if let Some(node) = runtime.nodes.get_mut(body_id)
+    if let Some(mut node) = runtime.nodes.get_mut(body_id)
         && let SceneNodeData::RigidBody3D(body) = &mut node.data
     {
         body.transform.position.y = -1.5;
@@ -250,7 +250,7 @@ fn water_3d_buoyancy_recovers_body_below_depth() {
     let water_id = NodeAPI::create::<WaterBody3D>(&mut runtime);
     let body_id = NodeAPI::create::<RigidBody3D>(&mut runtime);
 
-    if let Some(node) = runtime.nodes.get_mut(water_id)
+    if let Some(mut node) = runtime.nodes.get_mut(water_id)
         && let SceneNodeData::WaterBody3D(water) = &mut node.data
     {
         water.water.shape = WaterShape::box_volume(Vector3::new(12.0, 4.0, 12.0));
@@ -259,7 +259,7 @@ fn water_3d_buoyancy_recovers_body_below_depth() {
         water.water.physics.drag = 0.0;
     }
 
-    if let Some(node) = runtime.nodes.get_mut(body_id)
+    if let Some(mut node) = runtime.nodes.get_mut(body_id)
         && let SceneNodeData::RigidBody3D(body) = &mut node.data
     {
         body.transform.position = Vector3::new(0.0, -6.0, 0.0);
@@ -284,7 +284,7 @@ fn rotated_2d_water_uses_local_top_for_buoyancy() {
     let water_id = NodeAPI::create::<WaterBody2D>(&mut runtime);
     let body_id = NodeAPI::create::<RigidBody2D>(&mut runtime);
 
-    if let Some(node) = runtime.nodes.get_mut(water_id)
+    if let Some(mut node) = runtime.nodes.get_mut(water_id)
         && let SceneNodeData::WaterBody2D(water) = &mut node.data
     {
         water.transform.rotation = std::f32::consts::FRAC_PI_2;
@@ -293,7 +293,7 @@ fn rotated_2d_water_uses_local_top_for_buoyancy() {
         water.water.physics.drag = 0.0;
     }
 
-    if let Some(node) = runtime.nodes.get_mut(body_id)
+    if let Some(mut node) = runtime.nodes.get_mut(body_id)
         && let SceneNodeData::RigidBody2D(body) = &mut node.data
     {
         body.transform.position = Vector2::new(4.0, 0.0);
@@ -319,7 +319,7 @@ fn rotated_3d_water_uses_local_top_for_buoyancy() {
     let water_id = NodeAPI::create::<WaterBody3D>(&mut runtime);
     let body_id = NodeAPI::create::<RigidBody3D>(&mut runtime);
 
-    if let Some(node) = runtime.nodes.get_mut(water_id)
+    if let Some(mut node) = runtime.nodes.get_mut(water_id)
         && let SceneNodeData::WaterBody3D(water) = &mut node.data
     {
         water.transform.rotation =
@@ -329,7 +329,7 @@ fn rotated_3d_water_uses_local_top_for_buoyancy() {
         water.water.physics.drag = 0.0;
     }
 
-    if let Some(node) = runtime.nodes.get_mut(body_id)
+    if let Some(mut node) = runtime.nodes.get_mut(body_id)
         && let SceneNodeData::RigidBody3D(body) = &mut node.data
     {
         body.transform.position = Vector3::new(2.0, 0.0, 0.0);
@@ -356,14 +356,14 @@ fn overlapping_2d_waters_blend_buoyancy_once() {
     let water_b = NodeAPI::create::<WaterBody2D>(&mut runtime);
     let body_id = NodeAPI::create::<RigidBody2D>(&mut runtime);
 
-    if let Some(node) = runtime.nodes.get_mut(water_a)
+    if let Some(mut node) = runtime.nodes.get_mut(water_a)
         && let SceneNodeData::WaterBody2D(water) = &mut node.data
     {
         water.water.shape = WaterShape::rect(Vector2::new(16.0, 16.0));
         water.water.physics.buoyancy = 2.0;
         water.water.physics.drag = 0.0;
     }
-    if let Some(node) = runtime.nodes.get_mut(water_b)
+    if let Some(mut node) = runtime.nodes.get_mut(water_b)
         && let SceneNodeData::WaterBody2D(water) = &mut node.data
     {
         water.transform.position.x = 4.0;
@@ -372,7 +372,7 @@ fn overlapping_2d_waters_blend_buoyancy_once() {
         water.water.physics.buoyancy = 2.0;
         water.water.physics.drag = 0.0;
     }
-    if let Some(node) = runtime.nodes.get_mut(body_id)
+    if let Some(mut node) = runtime.nodes.get_mut(body_id)
         && let SceneNodeData::RigidBody2D(body) = &mut node.data
     {
         body.transform.position = Vector2::new(2.0, -1.0);
@@ -399,7 +399,7 @@ fn overlapping_3d_waters_blend_buoyancy_once() {
     let water_b = NodeAPI::create::<WaterBody3D>(&mut runtime);
     let body_id = NodeAPI::create::<RigidBody3D>(&mut runtime);
 
-    if let Some(node) = runtime.nodes.get_mut(water_a)
+    if let Some(mut node) = runtime.nodes.get_mut(water_a)
         && let SceneNodeData::WaterBody3D(water) = &mut node.data
     {
         water.water.shape = WaterShape::box_volume(Vector3::new(16.0, 4.0, 16.0));
@@ -407,7 +407,7 @@ fn overlapping_3d_waters_blend_buoyancy_once() {
         water.water.physics.buoyancy = 2.0;
         water.water.physics.drag = 0.0;
     }
-    if let Some(node) = runtime.nodes.get_mut(water_b)
+    if let Some(mut node) = runtime.nodes.get_mut(water_b)
         && let SceneNodeData::WaterBody3D(water) = &mut node.data
     {
         water.transform.position.x = 4.0;
@@ -417,7 +417,7 @@ fn overlapping_3d_waters_blend_buoyancy_once() {
         water.water.physics.buoyancy = 2.0;
         water.water.physics.drag = 0.0;
     }
-    if let Some(node) = runtime.nodes.get_mut(body_id)
+    if let Some(mut node) = runtime.nodes.get_mut(body_id)
         && let SceneNodeData::RigidBody3D(body) = &mut node.data
     {
         body.transform.position = Vector3::new(2.0, -1.0, 0.0);
@@ -445,7 +445,7 @@ fn rigid_body_crossing_2d_link_boundary_keeps_water_force() {
     let body_id = NodeAPI::create::<RigidBody2D>(&mut runtime);
 
     for (id, x) in [(water_a, 0.0), (water_b, 14.0)] {
-        if let Some(node) = runtime.nodes.get_mut(id)
+        if let Some(mut node) = runtime.nodes.get_mut(id)
             && let SceneNodeData::WaterBody2D(water) = &mut node.data
         {
             water.transform.position.x = x;
@@ -454,7 +454,7 @@ fn rigid_body_crossing_2d_link_boundary_keeps_water_force() {
             water.water.physics.drag = 0.0;
         }
     }
-    if let Some(node) = runtime.nodes.get_mut(body_id)
+    if let Some(mut node) = runtime.nodes.get_mut(body_id)
         && let SceneNodeData::RigidBody2D(body) = &mut node.data
     {
         body.transform.position = Vector2::new(7.0, -1.0);
@@ -469,7 +469,7 @@ fn rigid_body_crossing_2d_link_boundary_keeps_water_force() {
         .map(|pending| pending.force.y)
         .sum();
     runtime.physics.pending_forces_2d.clear();
-    if let Some(node) = runtime.nodes.get_mut(body_id)
+    if let Some(mut node) = runtime.nodes.get_mut(body_id)
         && let SceneNodeData::RigidBody2D(body) = &mut node.data
     {
         body.transform.position.x = 14.0;
@@ -768,7 +768,7 @@ fn apply_force_2d_uses_world_space_vector() {
     let shape_id = NodeAPI::create::<CollisionShape2D>(&mut runtime);
     assert!(NodeAPI::reparent(&mut runtime, body_id, shape_id));
 
-    if let Some(node) = runtime.nodes.get_mut(body_id)
+    if let Some(mut node) = runtime.nodes.get_mut(body_id)
         && let SceneNodeData::RigidBody2D(body) = &mut node.data
     {
         body.gravity_scale = 0.0;
@@ -803,7 +803,7 @@ fn apply_force_3d_uses_world_space_vector() {
     let shape_id = NodeAPI::create::<CollisionShape3D>(&mut runtime);
     assert!(NodeAPI::reparent(&mut runtime, body_id, shape_id));
 
-    if let Some(node) = runtime.nodes.get_mut(body_id)
+    if let Some(mut node) = runtime.nodes.get_mut(body_id)
         && let SceneNodeData::RigidBody3D(body) = &mut node.data
     {
         body.gravity_scale = 0.0;
@@ -992,7 +992,7 @@ fn soa_writeback_multi_body_keeps_per_body_identity_2d() {
         let body_id = NodeAPI::create::<RigidBody2D>(&mut runtime);
         let shape_id = NodeAPI::create::<CollisionShape2D>(&mut runtime);
         assert!(NodeAPI::reparent(&mut runtime, body_id, shape_id));
-        if let Some(node) = runtime.nodes.get_mut(body_id)
+        if let Some(mut node) = runtime.nodes.get_mut(body_id)
             && let SceneNodeData::RigidBody2D(body) = &mut node.data
         {
             body.gravity_scale = 0.0;
@@ -1055,14 +1055,14 @@ fn force_emitter_2d_lift_queues_upward_force() {
     let emitter_id = NodeAPI::create::<perro_nodes::PhysicsForceEmitter2D>(&mut runtime);
     let body_id = NodeAPI::create::<RigidBody2D>(&mut runtime);
 
-    if let Some(node) = runtime.nodes.get_mut(emitter_id)
+    if let Some(mut node) = runtime.nodes.get_mut(emitter_id)
         && let SceneNodeData::PhysicsForceEmitter2D(emitter) = &mut node.data
     {
         emitter.profile = perro_nodes::PhysicsForceProfile::Lift;
         emitter.radius = 10.0;
         emitter.strength = 12.0;
     }
-    if let Some(node) = runtime.nodes.get_mut(body_id)
+    if let Some(mut node) = runtime.nodes.get_mut(body_id)
         && let SceneNodeData::RigidBody2D(body) = &mut node.data
     {
         body.transform.position = Vector2::new(0.0, 2.0);
@@ -1087,12 +1087,12 @@ fn force_emitter_near_water_creates_cavitation_impact() {
     let water_id = NodeAPI::create::<WaterBody2D>(&mut runtime);
     let emitter_id = NodeAPI::create::<perro_nodes::PhysicsForceEmitter2D>(&mut runtime);
 
-    if let Some(node) = runtime.nodes.get_mut(water_id)
+    if let Some(mut node) = runtime.nodes.get_mut(water_id)
         && let SceneNodeData::WaterBody2D(water) = &mut node.data
     {
         water.water.shape = WaterShape::rect(Vector2::new(16.0, 16.0));
     }
-    if let Some(node) = runtime.nodes.get_mut(emitter_id)
+    if let Some(mut node) = runtime.nodes.get_mut(emitter_id)
         && let SceneNodeData::PhysicsForceEmitter2D(emitter) = &mut node.data
     {
         emitter.profile = perro_nodes::PhysicsForceProfile::Explosion;
@@ -1117,12 +1117,12 @@ fn emitted_force_2d_affects_nearby_body_and_water() {
     let water_id = NodeAPI::create::<WaterBody2D>(&mut runtime);
     let body_id = NodeAPI::create::<RigidBody2D>(&mut runtime);
 
-    if let Some(node) = runtime.nodes.get_mut(water_id)
+    if let Some(mut node) = runtime.nodes.get_mut(water_id)
         && let SceneNodeData::WaterBody2D(water) = &mut node.data
     {
         water.water.shape = WaterShape::rect(Vector2::new(16.0, 16.0));
     }
-    if let Some(node) = runtime.nodes.get_mut(body_id)
+    if let Some(mut node) = runtime.nodes.get_mut(body_id)
         && let SceneNodeData::RigidBody2D(body) = &mut node.data
     {
         body.transform.position = Vector2::new(2.0, 0.0);
@@ -1162,7 +1162,7 @@ fn emitted_force_3d_affects_nearby_body_and_water() {
     let _water_id = NodeAPI::create::<WaterBody3D>(&mut runtime);
     let body_id = NodeAPI::create::<RigidBody3D>(&mut runtime);
 
-    if let Some(node) = runtime.nodes.get_mut(body_id)
+    if let Some(mut node) = runtime.nodes.get_mut(body_id)
         && let SceneNodeData::RigidBody3D(body) = &mut node.data
     {
         body.transform.position = Vector3::new(2.0, -1.0, 0.0);
@@ -1287,12 +1287,12 @@ fn physics_raycast_3d_filter_uses_collision_policy() {
     let mask_b = CollisionPolicy::new(CollisionPolicy::layer(4), CollisionPolicy::layer(3));
     assert!(!mask_a.can_collide(mask_b));
 
-    if let Some(node) = runtime.nodes.get_mut(body_a)
+    if let Some(mut node) = runtime.nodes.get_mut(body_a)
         && let SceneNodeData::StaticBody3D(body) = &mut node.data
     {
         body.set_collision_policy(mask_a);
     }
-    if let Some(node) = runtime.nodes.get_mut(body_b)
+    if let Some(mut node) = runtime.nodes.get_mut(body_b)
         && let SceneNodeData::StaticBody3D(body) = &mut node.data
     {
         body.set_collision_policy(mask_b);
@@ -1365,7 +1365,7 @@ fn physics_raycast_2d_filters_areas_and_nodes() {
     );
     assert!(hit.is_none());
 
-    if let Some(node) = runtime.nodes.get_mut(static_body)
+    if let Some(mut node) = runtime.nodes.get_mut(static_body)
         && let SceneNodeData::StaticBody2D(body) = &mut node.data
     {
         body.collision_layers = BitMask::from_bits(4);
@@ -1535,7 +1535,7 @@ fn physics_contacts_return_other_node_and_points() {
     let body_b = NodeAPI::create::<StaticBody2D>(&mut runtime);
     let shape_b = NodeAPI::create::<CollisionShape2D>(&mut runtime);
     assert!(NodeAPI::reparent(&mut runtime, body_b, shape_b));
-    if let Some(node) = runtime.nodes.get_mut(body_a)
+    if let Some(mut node) = runtime.nodes.get_mut(body_a)
         && let SceneNodeData::RigidBody2D(body) = &mut node.data
     {
         body.gravity_scale = 0.0;
@@ -1613,14 +1613,14 @@ fn physics_2d_layers_and_masks_filter_area_overlaps() {
     let area_shape = NodeAPI::create::<CollisionShape2D>(&mut runtime);
     assert!(NodeAPI::reparent(&mut runtime, area, area_shape));
 
-    if let Some(node) = runtime.nodes.get_mut(static_body)
+    if let Some(mut node) = runtime.nodes.get_mut(static_body)
         && let SceneNodeData::RigidBody2D(body) = &mut node.data
     {
         body.collision_layers = BitMask::from_bits(1);
         body.collision_mask = BitMask::from_bits(2);
         body.gravity_scale = 0.0;
     }
-    if let Some(node) = runtime.nodes.get_mut(area)
+    if let Some(mut node) = runtime.nodes.get_mut(area)
         && let SceneNodeData::Area2D(body) = &mut node.data
     {
         body.collision_layers = BitMask::from_bits(2);
@@ -1630,12 +1630,12 @@ fn physics_2d_layers_and_masks_filter_area_overlaps() {
     runtime.physics_fixed_step();
     assert!(runtime.physics.active_area_overlaps_2d.is_empty());
 
-    if let Some(node) = runtime.nodes.get_mut(area)
+    if let Some(mut node) = runtime.nodes.get_mut(area)
         && let SceneNodeData::Area2D(body) = &mut node.data
     {
         body.collision_mask = BitMask::NONE;
     }
-    if let Some(node) = runtime.nodes.get_mut(static_body)
+    if let Some(mut node) = runtime.nodes.get_mut(static_body)
         && let SceneNodeData::RigidBody2D(body) = &mut node.data
     {
         body.collision_mask = BitMask::NONE;
@@ -1665,14 +1665,14 @@ fn physics_3d_layers_and_masks_filter_area_overlaps() {
     let area_shape = NodeAPI::create::<CollisionShape3D>(&mut runtime);
     assert!(NodeAPI::reparent(&mut runtime, area, area_shape));
 
-    if let Some(node) = runtime.nodes.get_mut(static_body)
+    if let Some(mut node) = runtime.nodes.get_mut(static_body)
         && let SceneNodeData::RigidBody3D(body) = &mut node.data
     {
         body.collision_layers = BitMask::from_bits(1);
         body.collision_mask = BitMask::from_bits(4);
         body.gravity_scale = 0.0;
     }
-    if let Some(node) = runtime.nodes.get_mut(area)
+    if let Some(mut node) = runtime.nodes.get_mut(area)
         && let SceneNodeData::Area3D(body) = &mut node.data
     {
         body.collision_layers = BitMask::from_bits(4);
@@ -1682,12 +1682,12 @@ fn physics_3d_layers_and_masks_filter_area_overlaps() {
     runtime.physics_fixed_step();
     assert!(runtime.physics.active_area_overlaps_3d.is_empty());
 
-    if let Some(node) = runtime.nodes.get_mut(area)
+    if let Some(mut node) = runtime.nodes.get_mut(area)
         && let SceneNodeData::Area3D(body) = &mut node.data
     {
         body.collision_mask = BitMask::NONE;
     }
-    if let Some(node) = runtime.nodes.get_mut(static_body)
+    if let Some(mut node) = runtime.nodes.get_mut(static_body)
         && let SceneNodeData::RigidBody3D(body) = &mut node.data
     {
         body.collision_mask = BitMask::NONE;
@@ -1713,17 +1713,17 @@ fn physics_2d_fixed_joint_syncs_and_disables() {
     let body_b = NodeAPI::create::<RigidBody2D>(&mut runtime);
     let joint = NodeAPI::create::<FixedJoint2D>(&mut runtime);
 
-    if let Some(node) = runtime.nodes.get_mut(body_a)
+    if let Some(mut node) = runtime.nodes.get_mut(body_a)
         && let SceneNodeData::RigidBody2D(body) = &mut node.data
     {
         body.gravity_scale = 0.0;
     }
-    if let Some(node) = runtime.nodes.get_mut(body_b)
+    if let Some(mut node) = runtime.nodes.get_mut(body_b)
         && let SceneNodeData::RigidBody2D(body) = &mut node.data
     {
         body.gravity_scale = 0.0;
     }
-    if let Some(node) = runtime.nodes.get_mut(joint)
+    if let Some(mut node) = runtime.nodes.get_mut(joint)
         && let SceneNodeData::FixedJoint2D(joint_data) = &mut node.data
     {
         joint_data.body_a = body_a;
@@ -1739,7 +1739,7 @@ fn physics_2d_fixed_joint_syncs_and_disables() {
             .is_some_and(|world| world.joint_map.contains_key(&joint))
     );
 
-    if let Some(node) = runtime.nodes.get_mut(joint)
+    if let Some(mut node) = runtime.nodes.get_mut(joint)
         && let SceneNodeData::FixedJoint2D(joint_data) = &mut node.data
     {
         joint_data.enabled = false;
@@ -1787,17 +1787,17 @@ fn physics_3d_fixed_joint_syncs_and_disables() {
     let body_b = NodeAPI::create::<RigidBody3D>(&mut runtime);
     let joint = NodeAPI::create::<FixedJoint3D>(&mut runtime);
 
-    if let Some(node) = runtime.nodes.get_mut(body_a)
+    if let Some(mut node) = runtime.nodes.get_mut(body_a)
         && let SceneNodeData::RigidBody3D(body) = &mut node.data
     {
         body.gravity_scale = 0.0;
     }
-    if let Some(node) = runtime.nodes.get_mut(body_b)
+    if let Some(mut node) = runtime.nodes.get_mut(body_b)
         && let SceneNodeData::RigidBody3D(body) = &mut node.data
     {
         body.gravity_scale = 0.0;
     }
-    if let Some(node) = runtime.nodes.get_mut(joint)
+    if let Some(mut node) = runtime.nodes.get_mut(joint)
         && let SceneNodeData::FixedJoint3D(joint_data) = &mut node.data
     {
         joint_data.body_a = body_a;
@@ -1813,7 +1813,7 @@ fn physics_3d_fixed_joint_syncs_and_disables() {
             .is_some_and(|world| world.joint_map.contains_key(&joint))
     );
 
-    if let Some(node) = runtime.nodes.get_mut(joint)
+    if let Some(mut node) = runtime.nodes.get_mut(joint)
         && let SceneNodeData::FixedJoint3D(joint_data) = &mut node.data
     {
         joint_data.enabled = false;
@@ -1837,7 +1837,7 @@ fn character_body_3d_move_and_slide_stops_on_static_floor() {
     let floor_id = NodeAPI::create::<StaticBody3D>(&mut runtime);
     let floor_shape = NodeAPI::create::<CollisionShape3D>(&mut runtime);
     assert!(NodeAPI::reparent(&mut runtime, floor_id, floor_shape));
-    if let Some(node) = runtime.nodes.get_mut(floor_shape)
+    if let Some(mut node) = runtime.nodes.get_mut(floor_shape)
         && let SceneNodeData::CollisionShape3D(shape) = &mut node.data
     {
         shape.shape = Shape3D::Cube {
@@ -1905,7 +1905,7 @@ fn character_body_3d_move_and_slide_slides_along_floor() {
     let floor_id = NodeAPI::create::<StaticBody3D>(&mut runtime);
     let floor_shape = NodeAPI::create::<CollisionShape3D>(&mut runtime);
     assert!(NodeAPI::reparent(&mut runtime, floor_id, floor_shape));
-    if let Some(node) = runtime.nodes.get_mut(floor_shape)
+    if let Some(mut node) = runtime.nodes.get_mut(floor_shape)
         && let SceneNodeData::CollisionShape3D(shape) = &mut node.data
     {
         shape.shape = Shape3D::Cube {
@@ -1958,7 +1958,7 @@ fn character_body_3d_reports_contacts_on_static_floor() {
     let floor_id = NodeAPI::create::<StaticBody3D>(&mut runtime);
     let floor_shape = NodeAPI::create::<CollisionShape3D>(&mut runtime);
     assert!(NodeAPI::reparent(&mut runtime, floor_id, floor_shape));
-    if let Some(node) = runtime.nodes.get_mut(floor_shape)
+    if let Some(mut node) = runtime.nodes.get_mut(floor_shape)
         && let SceneNodeData::CollisionShape3D(shape) = &mut node.data
     {
         shape.shape = Shape3D::Cube {
@@ -2008,7 +2008,7 @@ fn character_body_3d_apply_gravity_falls_and_lands() {
     let floor_id = NodeAPI::create::<StaticBody3D>(&mut runtime);
     let floor_shape = NodeAPI::create::<CollisionShape3D>(&mut runtime);
     assert!(NodeAPI::reparent(&mut runtime, floor_id, floor_shape));
-    if let Some(node) = runtime.nodes.get_mut(floor_shape)
+    if let Some(mut node) = runtime.nodes.get_mut(floor_shape)
         && let SceneNodeData::CollisionShape3D(shape) = &mut node.data
     {
         shape.shape = Shape3D::Cube {
@@ -2098,7 +2098,7 @@ fn character_body_2d_move_and_slide_stops_on_static_floor() {
     let floor_id = NodeAPI::create::<StaticBody2D>(&mut runtime);
     let floor_shape = NodeAPI::create::<CollisionShape2D>(&mut runtime);
     assert!(NodeAPI::reparent(&mut runtime, floor_id, floor_shape));
-    if let Some(node) = runtime.nodes.get_mut(floor_shape)
+    if let Some(mut node) = runtime.nodes.get_mut(floor_shape)
         && let SceneNodeData::CollisionShape2D(shape) = &mut node.data
     {
         shape.shape = Shape2D::Quad {
@@ -2145,7 +2145,7 @@ fn char_over_floor_3d(runtime: &mut Runtime) -> (NodeID, NodeID) {
     let floor_id = NodeAPI::create::<StaticBody3D>(runtime);
     let floor_shape = NodeAPI::create::<CollisionShape3D>(runtime);
     assert!(NodeAPI::reparent(runtime, floor_id, floor_shape));
-    if let Some(node) = runtime.nodes.get_mut(floor_shape)
+    if let Some(mut node) = runtime.nodes.get_mut(floor_shape)
         && let SceneNodeData::CollisionShape3D(shape) = &mut node.data
     {
         shape.shape = Shape3D::Cube {
@@ -2272,7 +2272,7 @@ fn move_body_nested_char_pose_consistent_after_fast_path() {
     let floor_id = NodeAPI::create::<StaticBody3D>(&mut runtime);
     let floor_shape = NodeAPI::create::<CollisionShape3D>(&mut runtime);
     assert!(NodeAPI::reparent(&mut runtime, floor_id, floor_shape));
-    if let Some(node) = runtime.nodes.get_mut(floor_shape)
+    if let Some(mut node) = runtime.nodes.get_mut(floor_shape)
         && let SceneNodeData::CollisionShape3D(shape) = &mut node.data
     {
         shape.shape = Shape3D::Cube {

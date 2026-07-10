@@ -493,7 +493,7 @@ impl Runtime {
             visible_now.remove(&node);
             let effective_visible = self.is_effectively_visible_for_ui(node);
             if let Some(texture) = self.resolve_ui_image_texture(node)
-                && let Some(scene_node) = self.nodes.get_mut(node)
+                && let Some(scene_node) = self.nodes.get_mut_untracked(node)
             {
                 match &mut scene_node.data {
                     SceneNodeData::UiImage(image) => image.texture = texture,
@@ -808,7 +808,7 @@ impl Runtime {
             }
         }
 
-        if let Some(node) = self.nodes.get_mut(tree_id)
+        if let Some(node) = self.nodes.get_mut_untracked(tree_id)
             && let SceneNodeData::UiTreeList(tree) = &mut node.data
         {
             tree.internal_rows = rows;
@@ -820,7 +820,7 @@ impl Runtime {
     }
 
     fn hide_tree_list_internal_node(&mut self, id: NodeID) {
-        if let Some(node) = self.nodes.get_mut(id)
+        if let Some(node) = self.nodes.get_mut_untracked(id)
             && let Some(ui) = ui_root_mut_from_data(&mut node.data)
         {
             ui.visible = false;
@@ -979,7 +979,7 @@ impl Runtime {
             };
             let y = -((row_height + spacing) * visible_idx as f32);
             let x = indent * row.depth as f32;
-            if let Some(node) = self.nodes.get_mut(internal_rows[visible_idx])
+            if let Some(node) = self.nodes.get_mut_untracked(internal_rows[visible_idx])
                 && let SceneNodeData::UiButton(button) = &mut node.data
             {
                 button.base.visible = visible;
@@ -998,7 +998,7 @@ impl Runtime {
                 button.pressed_style = row_pressed_style.clone();
                 button.disabled = !item.selectable;
             }
-            if let Some(node) = self.nodes.get_mut(internal_toggles[visible_idx])
+            if let Some(node) = self.nodes.get_mut_untracked(internal_toggles[visible_idx])
                 && let SceneNodeData::UiShape(shape) = &mut node.data
             {
                 shape.base.visible = visible && row.has_children;
@@ -1012,7 +1012,7 @@ impl Runtime {
                     0.0
                 };
             }
-            if let Some(node) = self.nodes.get_mut(internal_icons[visible_idx])
+            if let Some(node) = self.nodes.get_mut_untracked(internal_icons[visible_idx])
                 && let SceneNodeData::UiImage(image) = &mut node.data
             {
                 image.base.visible = visible && !item.icon.is_nil();
@@ -1021,7 +1021,7 @@ impl Runtime {
                     UiVector2::pixels(x + toggle_size + icon_size * 0.5 + 3.0, 0.0);
                 image.texture = item.icon;
             }
-            if let Some(node) = self.nodes.get_mut(internal_labels[visible_idx])
+            if let Some(node) = self.nodes.get_mut_untracked(internal_labels[visible_idx])
                 && let SceneNodeData::UiLabel(label) = &mut node.data
             {
                 let icon_width = if item.icon.is_nil() {
@@ -1114,7 +1114,7 @@ impl Runtime {
         line_color: Color,
         vertical: bool,
     ) {
-        if let Some(node) = self.nodes.get_mut(id)
+        if let Some(node) = self.nodes.get_mut_untracked(id)
             && let SceneNodeData::UiPanel(panel) = &mut node.data
         {
             panel.base.visible = visible && line_width > 0.0;
@@ -1172,14 +1172,14 @@ impl Runtime {
             label_id = self.insert_dropdown_label(dropdown_id, "__perro_dropdown_label");
         }
         for id in option_buttons.iter().copied().skip(option_count) {
-            if let Some(node) = self.nodes.get_mut(id)
+            if let Some(node) = self.nodes.get_mut_untracked(id)
                 && let SceneNodeData::UiButton(button) = &mut node.data
             {
                 button.base.visible = false;
             }
         }
         for id in option_labels.iter().copied().skip(option_count) {
-            if let Some(node) = self.nodes.get_mut(id)
+            if let Some(node) = self.nodes.get_mut_untracked(id)
                 && let SceneNodeData::UiLabel(label) = &mut node.data
             {
                 label.base.visible = false;
@@ -1197,7 +1197,7 @@ impl Runtime {
             }
         }
 
-        if let Some(node) = self.nodes.get_mut(dropdown_id)
+        if let Some(node) = self.nodes.get_mut_untracked(dropdown_id)
             && let SceneNodeData::UiDropdown(dropdown) = &mut node.data
         {
             dropdown.internal_label = label_id;
@@ -1287,14 +1287,14 @@ impl Runtime {
             option_buttons,
             option_labels,
         ) = snapshot;
-        if let Some(node) = self.nodes.get_mut(label_id)
+        if let Some(node) = self.nodes.get_mut_untracked(label_id)
             && let SceneNodeData::UiLabel(label) = &mut node.data
         {
             label.base.visible = base_visible;
             label.set_text(selected);
         }
         for (idx, button_id) in option_buttons.iter().copied().enumerate() {
-            if let Some(node) = self.nodes.get_mut(button_id)
+            if let Some(node) = self.nodes.get_mut_untracked(button_id)
                 && let SceneNodeData::UiButton(button) = &mut node.data
             {
                 button.base.visible = open && base_visible;
@@ -1312,7 +1312,7 @@ impl Runtime {
             }
             if let Some(node) = self
                 .nodes
-                .get_mut(option_labels.get(idx).copied().unwrap_or_default())
+                .get_mut_untracked(option_labels.get(idx).copied().unwrap_or_default())
                 && let SceneNodeData::UiLabel(label) = &mut node.data
             {
                 label.base.visible = open && base_visible;
@@ -1410,7 +1410,7 @@ impl Runtime {
             ids.4 = self.insert_color_picker_text_box(ids.1, "__perro_color_hex");
         }
 
-        if let Some(node) = self.nodes.get_mut(picker_id)
+        if let Some(node) = self.nodes.get_mut_untracked(picker_id)
             && let SceneNodeData::UiColorPicker(picker) = &mut node.data
         {
             picker.internal_swatch_button = ids.0;
@@ -1488,10 +1488,10 @@ impl Runtime {
         node.set_name(name);
         node.parent = parent_id;
         let id = self.nodes.insert(node);
-        if let Some(inserted) = self.nodes.get_mut(id) {
+        if let Some(inserted) = self.nodes.get_mut_untracked(id) {
             inserted.id = id;
         }
-        if let Some(parent) = self.nodes.get_mut(parent_id)
+        if let Some(parent) = self.nodes.get_mut_untracked(parent_id)
             && !parent.children.contains(&id)
         {
             parent.children.push(id);
@@ -1535,7 +1535,7 @@ impl Runtime {
             return;
         };
 
-        if let Some(node) = self.nodes.get_mut(ids.0)
+        if let Some(node) = self.nodes.get_mut_untracked(ids.0)
             && let SceneNodeData::UiButton(button) = &mut node.data
         {
             button.base.visible = true;
@@ -1548,7 +1548,7 @@ impl Runtime {
                 color.a(),
             );
         }
-        if let Some(node) = self.nodes.get_mut(ids.1)
+        if let Some(node) = self.nodes.get_mut_untracked(ids.1)
             && let SceneNodeData::UiPanel(panel) = &mut node.data
         {
             panel.base.visible = popup_open;
@@ -1599,7 +1599,7 @@ impl Runtime {
     }
 
     fn sync_color_picker_legacy_text_box(&mut self, node_id: NodeID, visible: bool) {
-        if let Some(node) = self.nodes.get_mut(node_id)
+        if let Some(node) = self.nodes.get_mut_untracked(node_id)
             && let SceneNodeData::UiTextBox(text_box) = &mut node.data
         {
             text_box.inner.base.visible = visible;
@@ -1613,7 +1613,7 @@ impl Runtime {
         layout: ColorPickerComponentLayout,
         text: &str,
     ) {
-        if let Some(node) = self.nodes.get_mut(node_id)
+        if let Some(node) = self.nodes.get_mut_untracked(node_id)
             && let SceneNodeData::UiTextBox(text_box) = &mut node.data
         {
             let gap = 6.0;
@@ -1640,7 +1640,7 @@ impl Runtime {
         y_from_top: f32,
         text: &str,
     ) {
-        if let Some(node) = self.nodes.get_mut(node_id)
+        if let Some(node) = self.nodes.get_mut_untracked(node_id)
             && let SceneNodeData::UiTextBox(text_box) = &mut node.data
         {
             text_box.inner.base.visible = visible;
@@ -1750,7 +1750,7 @@ impl Runtime {
         let Some(color) = parse_color_picker_text(field, text, current) else {
             return;
         };
-        let Some(scene_node) = self.nodes.get_mut(picker_id) else {
+        let Some(scene_node) = self.nodes.get_mut_untracked(picker_id) else {
             return;
         };
         let SceneNodeData::UiColorPicker(picker) = &mut scene_node.data else {

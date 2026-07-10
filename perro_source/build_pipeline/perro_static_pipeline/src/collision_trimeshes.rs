@@ -117,6 +117,13 @@ pub fn generate_static_collision_trimeshes(project_root: &Path) -> Result<(), St
     );
 
     fs::write(static_root.join("collision_trimeshes.rs"), out)?;
+    crate::record_static_assets(
+        perro_asset_formats::dlc::DlcAssetKind::COLLISION_TRIMESH,
+        perro_asset_formats::dlc::DlcAssetAccess::BYTES,
+        sources
+            .iter()
+            .map(|path| (path.as_str(), path.contains(":mesh[") || path.contains('#'))),
+    );
     Ok(())
 }
 

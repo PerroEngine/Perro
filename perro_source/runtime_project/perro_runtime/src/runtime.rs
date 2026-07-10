@@ -690,7 +690,7 @@ impl Runtime {
         let mut changed_2d = Vec::new();
         for (node, source) in &self.pending_skeleton_sources_2d {
             if let Some(bones) = self.resource_api.cached_bones_2d(source)
-                && let Some(scene_node) = self.nodes.get_mut(*node)
+                && let Some(scene_node) = self.nodes.get_mut_untracked(*node)
                 && let perro_nodes::SceneNodeData::Skeleton2D(skeleton) = &mut scene_node.data
             {
                 skeleton.bones = bones;
@@ -705,7 +705,7 @@ impl Runtime {
         let mut changed_3d = Vec::new();
         for (node, source) in &self.pending_skeleton_sources_3d {
             if let Some(bones) = self.resource_api.cached_bones_3d(source)
-                && let Some(scene_node) = self.nodes.get_mut(*node)
+                && let Some(scene_node) = self.nodes.get_mut_untracked(*node)
                 && let perro_nodes::SceneNodeData::Skeleton3D(skeleton) = &mut scene_node.data
             {
                 skeleton.bones = bones;

@@ -102,6 +102,13 @@ pub fn generate_static_csvs(project_root: &Path) -> Result<(), StaticPipelineErr
     );
 
     fs::write(static_dir.join("csvs.rs"), out)?;
+    crate::record_static_assets(
+        perro_asset_formats::dlc::DlcAssetKind::CSV,
+        perro_asset_formats::dlc::DlcAssetAccess::ENGINE_LOCAL,
+        tables
+            .iter()
+            .map(|table| (table.asset_path.as_str(), false)),
+    );
     Ok(())
 }
 

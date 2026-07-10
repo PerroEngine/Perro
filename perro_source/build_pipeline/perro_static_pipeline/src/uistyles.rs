@@ -104,6 +104,11 @@ pub fn generate_static_ui_styles(project_root: &Path) -> Result<(), StaticPipeli
     );
 
     fs::write(static_dir.join("ui_styles.rs"), out)?;
+    crate::record_static_assets(
+        perro_asset_formats::dlc::DlcAssetKind::UI_STYLE,
+        perro_asset_formats::dlc::DlcAssetAccess::ENGINE_LOCAL,
+        style_refs.iter().map(|(path, _)| (path.as_str(), false)),
+    );
     Ok(())
 }
 

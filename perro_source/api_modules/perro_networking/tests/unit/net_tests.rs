@@ -1,13 +1,18 @@
-use std::{thread, time::Duration};
+use std::{
+    io::{Read, Write},
+    net::TcpStream,
+    thread,
+    time::Duration,
+};
 
 use perro_ids::SignalID;
 use perro_variant::Variant;
 
 use crate::{
-    NetEvent, NetHandshake, NetSource, NetworkWorld, TcpConnection, TcpHost, UdpEndpoint,
-    WEBSOCKET_HEARTBEAT_BYTES, WEBSOCKET_VARIANT_PROTOCOL, WebSocketAsyncConnection,
-    WebSocketAsyncHost, WebSocketConnectOptions, WebSocketConnection, WebSocketHost,
-    WebSocketHostOptions, decode_next_frame, encode_frame, heartbeat_ping,
+    MAX_TCP_PENDING_WRITE_BYTES, NetEvent, NetHandshake, NetSource, NetworkWorld, TcpConnection,
+    TcpHost, UdpEndpoint, WEBSOCKET_HEARTBEAT_BYTES, WEBSOCKET_VARIANT_PROTOCOL,
+    WebSocketAsyncConnection, WebSocketAsyncHost, WebSocketConnectOptions, WebSocketConnection,
+    WebSocketHost, WebSocketHostOptions, decode_next_frame, encode_frame, heartbeat_ping,
 };
 
 #[test]
@@ -87,6 +92,157 @@ fn frame_codec_roundtrips_and_leaves_partial_data() {
     );
     assert_eq!(decode_next_frame(&mut bytes, 32).unwrap(), None);
     assert_eq!(bytes, vec![0, 0]);
+}
+
+#[test]
+#[cfg_attr(
+    not(feature = "network-tests"),
+    ignore = "requires local socket access"
+)]
+fn tcp_frame_queue_accepts_multiple_valid_frames_and_reports_eof() {
+    let host = TcpHost::bind("127.0.0.1:0").unwrap();
+    let addr = host.local_addr();
+    let client = thread::spawn(move || {
+        let mut stream = TcpStream::connect(addr).unwrap();
+        let mut bytes = encode_frame(b"12345678").unwrap();
+        bytes.extend_from_slice(&encode_frame(b"abcdefgh").unwrap());
+        stream.write_all(&bytes).unwrap();
+    });
+    let mut server = wait_for(|| host.accept().unwrap());
+
+    let first = wait_for(|| server.poll_frame_event(8).unwrap());
+    let second = wait_for(|| server.poll_frame_event(8).unwrap());
+    let disconnected = wait_for(|| server.poll_frame_event(8).unwrap());
+
+    client.join().unwrap();
+    assert!(matches!(
+        first,
+        NetEvent::TcpFrame { ref bytes, .. } if bytes == b"12345678"
+    ));
+    assert!(matches!(
+        second,
+        NetEvent::TcpFrame { ref bytes, .. } if bytes == b"abcdefgh"
+    ));
+    assert!(matches!(disconnected, NetEvent::TcpDisconnected { .. }));
+    assert_eq!(server.poll_frame_event(8).unwrap(), None);
+}
+
+#[test]
+#[cfg_attr(
+    not(feature = "network-tests"),
+    ignore = "requires local socket access"
+)]
+fn tcp_frame_queue_decodes_many_tiny_frames() {
+    const FRAME_COUNT: usize = 10_000;
+
+    let host = TcpHost::bind("127.0.0.1:0").unwrap();
+    let addr = host.local_addr();
+    let client = thread::spawn(move || {
+        let mut stream = TcpStream::connect(addr).unwrap();
+        stream.write_all(&vec![0_u8; FRAME_COUNT * 4]).unwrap();
+    });
+    let mut server = wait_for(|| host.accept().unwrap());
+
+    for _ in 0..FRAME_COUNT {
+        assert_eq!(wait_for(|| server.poll_frame(0).unwrap()), Vec::<u8>::new());
+    }
+    assert!(matches!(
+        wait_for(|| server.poll_frame_event(0).unwrap()),
+        NetEvent::TcpDisconnected { .. }
+    ));
+    client.join().unwrap();
+}
+
+#[test]
+#[cfg_attr(
+    not(feature = "network-tests"),
+    ignore = "requires local socket access"
+)]
+fn tcp_frame_write_keeps_partial_nonblocking_send() {
+    let host = TcpHost::bind("127.0.0.1:0").unwrap();
+    let addr = host.local_addr();
+    let payload = vec![0x5a; 8 * 1024 * 1024];
+    let expected = payload.clone();
+    let reader = thread::spawn(move || {
+        let mut stream = TcpStream::connect(addr).unwrap();
+        thread::sleep(Duration::from_millis(20));
+        let mut header = [0_u8; 4];
+        stream.read_exact(&mut header).unwrap();
+        let len = u32::from_be_bytes(header) as usize;
+        let mut bytes = vec![0_u8; len];
+        stream.read_exact(&mut bytes).unwrap();
+        bytes
+    });
+    let mut writer = wait_for(|| host.accept().unwrap());
+
+    writer.write_frame(&payload).unwrap();
+    for _ in 0..2_000 {
+        writer.flush_pending().unwrap();
+        if writer.pending_write_bytes() == 0 {
+            break;
+        }
+        thread::sleep(Duration::from_millis(1));
+    }
+
+    assert_eq!(writer.pending_write_bytes(), 0);
+    assert_eq!(reader.join().unwrap(), expected);
+}
+
+#[test]
+#[cfg_attr(
+    not(feature = "network-tests"),
+    ignore = "requires local socket access"
+)]
+fn tcp_frame_write_applies_queue_backpressure() {
+    let host = TcpHost::bind("127.0.0.1:0").unwrap();
+    let addr = host.local_addr();
+    let _client = TcpStream::connect(addr).unwrap();
+    let mut writer = wait_for(|| host.accept().unwrap());
+    let payload = vec![0x5a; 8 * 1024 * 1024];
+
+    let err = loop {
+        if let Err(err) = writer.write_frame(&payload) {
+            break err;
+        }
+    };
+
+    assert!(err.to_string().contains("pending write queue exceeds max"));
+    assert!(writer.pending_write_bytes() <= MAX_TCP_PENDING_WRITE_BYTES);
+}
+
+#[test]
+#[cfg_attr(
+    not(feature = "network-tests"),
+    ignore = "requires local socket access"
+)]
+fn network_world_removes_framed_tcp_connection_after_eof() {
+    let mut world = NetworkWorld::new();
+    let host = world.bind_tcp_host("127.0.0.1:0").unwrap();
+    let addr = world.tcp_host_addr(host).unwrap();
+    let client = TcpStream::connect(addr).unwrap();
+
+    let id = wait_for(|| {
+        world
+            .poll_frame_events(8, 32)
+            .into_iter()
+            .find_map(|event| match (event.source, event.event) {
+                (NetSource::TcpConnection(id), NetEvent::TcpClientConnected { .. }) => Some(id),
+                _ => None,
+            })
+    });
+    drop(client);
+    wait_for(|| {
+        world
+            .poll_frame_events(8, 32)
+            .into_iter()
+            .any(|event| {
+                event.source == NetSource::TcpConnection(id)
+                    && matches!(event.event, NetEvent::TcpDisconnected { .. })
+            })
+            .then_some(())
+    });
+
+    assert!(world.tcp_send_frame(id, b"gone").is_err());
 }
 
 #[test]

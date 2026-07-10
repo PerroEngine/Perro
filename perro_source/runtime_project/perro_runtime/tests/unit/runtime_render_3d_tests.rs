@@ -78,7 +78,7 @@ fn linked_3d_water_mirrors_wake_across_overlap() {
     let water_a = NodeAPI::create::<WaterBody3D>(&mut runtime);
     let water_b = NodeAPI::create::<WaterBody3D>(&mut runtime);
     for (id, x) in [(water_a, 0.0), (water_b, 12.0)] {
-        if let Some(node) = runtime.nodes.get_mut(id)
+        if let Some(mut node) = runtime.nodes.get_mut(id)
             && let SceneNodeData::WaterBody3D(water) = &mut node.data
         {
             water.transform.position.x = x;
@@ -113,18 +113,18 @@ fn sprite_3d_and_label_3d_emit_projected_ui_commands() {
     let camera = NodeAPI::create::<Camera3D>(&mut runtime);
     let sprite = NodeAPI::create::<Sprite3D>(&mut runtime);
     let label = NodeAPI::create::<Label3D>(&mut runtime);
-    if let Some(node) = runtime.nodes.get_mut(camera)
+    if let Some(mut node) = runtime.nodes.get_mut(camera)
         && let SceneNodeData::Camera3D(data) = &mut node.data
     {
         data.active = true;
     }
-    if let Some(node) = runtime.nodes.get_mut(sprite)
+    if let Some(mut node) = runtime.nodes.get_mut(sprite)
         && let SceneNodeData::Sprite3D(data) = &mut node.data
     {
         data.texture = TextureID::from_parts(12, 0);
         data.transform.position = Vector3::new(0.0, 0.0, -5.0);
     }
-    if let Some(node) = runtime.nodes.get_mut(label)
+    if let Some(mut node) = runtime.nodes.get_mut(label)
         && let SceneNodeData::Label3D(data) = &mut node.data
     {
         data.text = "Name".into();
@@ -150,7 +150,7 @@ fn sprite_3d_and_label_3d_emit_projected_ui_commands() {
 fn text_decal_3d_rasterizes_text_and_emits_decal_state() {
     let mut runtime = Runtime::new();
     let text_decal = NodeAPI::create::<TextDecal3D>(&mut runtime);
-    if let Some(node) = runtime.nodes.get_mut(text_decal)
+    if let Some(mut node) = runtime.nodes.get_mut(text_decal)
         && let SceneNodeData::TextDecal3D(data) = &mut node.data
     {
         data.text = "Door".into();
@@ -197,7 +197,7 @@ fn sprite_3d_emits_after_async_texture_create_without_other_dirty_work() {
     runtime.set_viewport_size(800, 600);
     let camera = NodeAPI::create::<Camera3D>(&mut runtime);
     let sprite = NodeAPI::create::<Sprite3D>(&mut runtime);
-    if let Some(node) = runtime.nodes.get_mut(camera)
+    if let Some(mut node) = runtime.nodes.get_mut(camera)
         && let SceneNodeData::Camera3D(data) = &mut node.data
     {
         data.active = true;
@@ -207,7 +207,7 @@ fn sprite_3d_emits_after_async_texture_create_without_other_dirty_work() {
         .resource_api
         .load_texture("res://textures/floating_prompt.png");
     let request = collect_resource_texture_request(&mut runtime, texture);
-    if let Some(node) = runtime.nodes.get_mut(sprite)
+    if let Some(mut node) = runtime.nodes.get_mut(sprite)
         && let SceneNodeData::Sprite3D(data) = &mut node.data
     {
         data.texture = texture;
@@ -243,7 +243,7 @@ fn sprite_3d_and_label_3d_hide_when_mesh_blocks_center() {
     let mut runtime = Runtime::new();
     runtime.set_viewport_size(800, 600);
     let camera = NodeAPI::create::<Camera3D>(&mut runtime);
-    if let Some(node) = runtime.nodes.get_mut(camera)
+    if let Some(mut node) = runtime.nodes.get_mut(camera)
         && let SceneNodeData::Camera3D(data) = &mut node.data
     {
         data.active = true;
@@ -262,13 +262,13 @@ fn sprite_3d_and_label_3d_hide_when_mesh_blocks_center() {
 
     let sprite = NodeAPI::create::<Sprite3D>(&mut runtime);
     let label = NodeAPI::create::<Label3D>(&mut runtime);
-    if let Some(node) = runtime.nodes.get_mut(sprite)
+    if let Some(mut node) = runtime.nodes.get_mut(sprite)
         && let SceneNodeData::Sprite3D(data) = &mut node.data
     {
         data.texture = TextureID::from_parts(12, 0);
         data.transform.position = Vector3::new(0.0, 0.0, -5.0);
     }
-    if let Some(node) = runtime.nodes.get_mut(label)
+    if let Some(mut node) = runtime.nodes.get_mut(label)
         && let SceneNodeData::Label3D(data) = &mut node.data
     {
         data.text = "Hidden".into();
@@ -301,7 +301,7 @@ fn sprite_3d_hides_behind_mesh_with_orthographic_camera() {
     let mut runtime = Runtime::new();
     runtime.set_viewport_size(800, 600);
     let camera = NodeAPI::create::<Camera3D>(&mut runtime);
-    if let Some(node) = runtime.nodes.get_mut(camera)
+    if let Some(mut node) = runtime.nodes.get_mut(camera)
         && let SceneNodeData::Camera3D(data) = &mut node.data
     {
         data.active = true;
@@ -324,7 +324,7 @@ fn sprite_3d_hides_behind_mesh_with_orthographic_camera() {
         .insert(blocker, "__cube__".to_string());
 
     let sprite = NodeAPI::create::<Sprite3D>(&mut runtime);
-    if let Some(node) = runtime.nodes.get_mut(sprite)
+    if let Some(mut node) = runtime.nodes.get_mut(sprite)
         && let SceneNodeData::Sprite3D(data) = &mut node.data
     {
         data.texture = TextureID::from_parts(12, 0);
@@ -350,7 +350,7 @@ fn linked_3d_waters_both_collect_shared_coastline_shape() {
     let water_a = NodeAPI::create::<WaterBody3D>(&mut runtime);
     let water_b = NodeAPI::create::<WaterBody3D>(&mut runtime);
     for (id, x) in [(water_a, 0.0), (water_b, 12.0)] {
-        if let Some(node) = runtime.nodes.get_mut(id)
+        if let Some(mut node) = runtime.nodes.get_mut(id)
             && let SceneNodeData::WaterBody3D(water) = &mut node.data
         {
             water.transform.position.x = x;
@@ -361,7 +361,7 @@ fn linked_3d_waters_both_collect_shared_coastline_shape() {
     let body = NodeAPI::create::<StaticBody3D>(&mut runtime);
     let shape = NodeAPI::create::<CollisionShape3D>(&mut runtime);
     assert!(NodeAPI::reparent(&mut runtime, body, shape));
-    if let Some(node) = runtime.nodes.get_mut(shape)
+    if let Some(mut node) = runtime.nodes.get_mut(shape)
         && let SceneNodeData::CollisionShape3D(shape) = &mut node.data
     {
         shape.transform.position = Vector3::new(6.0, -1.0, 0.0);
@@ -388,7 +388,7 @@ fn water_3d_impacts_use_live_body_pos_not_stale_cached_sample() {
     let mut runtime = Runtime::new();
     let water = NodeAPI::create::<WaterBody3D>(&mut runtime);
     let body = NodeAPI::create::<RigidBody3D>(&mut runtime);
-    if let Some(node) = runtime.nodes.get_mut(body)
+    if let Some(mut node) = runtime.nodes.get_mut(body)
         && let SceneNodeData::RigidBody3D(rigid) = &mut node.data
     {
         rigid.transform.position = Vector3::new(1.5, -0.4, -0.75);
@@ -740,14 +740,14 @@ fn node_3d_effective_modulate_inherits_to_child() {
     let parent = NodeAPI::create::<Node3D>(&mut runtime);
     let child = NodeAPI::create::<MeshInstance3D>(&mut runtime);
 
-    if let Some(node) = runtime.nodes.get_mut(parent)
+    if let Some(mut node) = runtime.nodes.get_mut(parent)
         && let SceneNodeData::Node3D(data) = &mut node.data
     {
         data.modulate.children_modulate = Color::new(0.5, 1.0, 1.0, 1.0);
         data.modulate.self_modulate = Color::RED;
         node.add_child(child);
     }
-    if let Some(node) = runtime.nodes.get_mut(child)
+    if let Some(mut node) = runtime.nodes.get_mut(child)
         && let SceneNodeData::MeshInstance3D(data) = &mut node.data
     {
         data.modulate.self_modulate = Color::new(1.0, 0.25, 1.0, 1.0);
@@ -770,7 +770,7 @@ fn effective_modulate_combines_deep_chain_roles() {
     let leaf = NodeAPI::create::<MeshInstance3D>(&mut runtime);
     let sibling = NodeAPI::create::<MeshInstance3D>(&mut runtime);
 
-    if let Some(node) = runtime.nodes.get_mut(root)
+    if let Some(mut node) = runtime.nodes.get_mut(root)
         && let SceneNodeData::Node3D(data) = &mut node.data
     {
         data.modulate.modulate = Color::new(0.8, 1.0, 1.0, 1.0);
@@ -778,7 +778,7 @@ fn effective_modulate_combines_deep_chain_roles() {
         data.modulate.children_modulate = Color::new(1.0, 0.7, 1.0, 1.0);
         node.add_child(mid);
     }
-    if let Some(node) = runtime.nodes.get_mut(mid)
+    if let Some(mut node) = runtime.nodes.get_mut(mid)
         && let SceneNodeData::Node3D(data) = &mut node.data
     {
         data.modulate.modulate = Color::new(1.0, 0.9, 1.0, 1.0);
@@ -788,7 +788,7 @@ fn effective_modulate_combines_deep_chain_roles() {
         node.add_child(leaf);
         node.add_child(sibling);
     }
-    if let Some(node) = runtime.nodes.get_mut(leaf)
+    if let Some(mut node) = runtime.nodes.get_mut(leaf)
         && let SceneNodeData::MeshInstance3D(data) = &mut node.data
     {
         data.modulate.modulate = Color::new(1.0, 1.0, 0.5, 1.0);
@@ -796,7 +796,7 @@ fn effective_modulate_combines_deep_chain_roles() {
         data.modulate.children_modulate = Color::RED;
         node.parent = mid;
     }
-    if let Some(node) = runtime.nodes.get_mut(sibling)
+    if let Some(mut node) = runtime.nodes.get_mut(sibling)
         && let SceneNodeData::MeshInstance3D(data) = &mut node.data
     {
         data.modulate.self_modulate = Color::new(1.0, 0.5, 1.0, 1.0);
@@ -1209,7 +1209,7 @@ fn mesh_instance_keeps_retained_mesh_while_replacement_mesh_is_pending() {
             _ => None,
         })
         .expect("expected pending mesh create request");
-    if let Some(scene_node) = runtime.nodes.get_mut(node)
+    if let Some(mut scene_node) = runtime.nodes.get_mut(node)
         && let SceneNodeData::MeshInstance3D(mesh) = &mut scene_node.data
     {
         mesh.mesh = pending_mesh;
@@ -1297,7 +1297,7 @@ fn mesh_instance_keeps_retained_material_while_replacement_material_is_pending()
                 _ => None,
             })
             .expect("expected pending material create request");
-    if let Some(scene_node) = runtime.nodes.get_mut(node)
+    if let Some(mut scene_node) = runtime.nodes.get_mut(node)
         && let SceneNodeData::MeshInstance3D(mesh) = &mut scene_node.data
     {
         set_primary_material(mesh, pending_material);
@@ -1452,16 +1452,16 @@ fn mesh_under_invisible_parent_emits_remove_node() {
         .insert(SceneNode::new(SceneNodeData::MeshInstance3D(
             MeshInstance3D::new(),
         )));
-    if let Some(parent_node) = runtime.nodes.get_mut(parent) {
+    if let Some(mut parent_node) = runtime.nodes.get_mut(parent) {
         parent_node.add_child(child);
     }
-    if let Some(child_node) = runtime.nodes.get_mut(child) {
+    if let Some(mut child_node) = runtime.nodes.get_mut(child) {
         child_node.parent = parent;
     }
 
     let mesh = MeshID::from_parts(20, 0);
     let material = MaterialID::from_parts(21, 0);
-    if let Some(node) = runtime.nodes.get_mut(child)
+    if let Some(mut node) = runtime.nodes.get_mut(child)
         && let SceneNodeData::MeshInstance3D(mesh_instance) = &mut node.data
     {
         mesh_instance.mesh = mesh;
@@ -1476,7 +1476,7 @@ fn mesh_under_invisible_parent_emits_remove_node() {
             if matches!(command_3d.as_ref(), Command3D::Draw { node, .. } if *node == child)
     )));
 
-    if let Some(node) = runtime.nodes.get_mut(parent)
+    if let Some(mut node) = runtime.nodes.get_mut(parent)
         && let SceneNodeData::Node3D(parent_node) = &mut node.data
     {
         parent_node.visible = false;
@@ -1547,7 +1547,7 @@ fn unchanged_mesh_instance_emits_draw() {
         )));
     let mesh = MeshID::from_parts(30, 0);
     let material = MaterialID::from_parts(31, 0);
-    if let Some(scene_node) = runtime.nodes.get_mut(node)
+    if let Some(mut scene_node) = runtime.nodes.get_mut(node)
         && let SceneNodeData::MeshInstance3D(mesh_instance) = &mut scene_node.data
     {
         mesh_instance.mesh = mesh;
@@ -1731,7 +1731,7 @@ fn dirty_skeleton_refreshes_sibling_skinned_mesh_draw() {
     runtime.extract_render_3d_commands();
     let _ = collect_commands(&mut runtime);
 
-    if let Some(node) = runtime.nodes.get_mut(skeleton_id)
+    if let Some(mut node) = runtime.nodes.get_mut(skeleton_id)
         && let SceneNodeData::Skeleton3D(skeleton) = &mut node.data
     {
         skeleton.bones[0].pose.position.x = 3.0;
@@ -1885,7 +1885,7 @@ fn camera_3d_render_mask_filters_meshes() {
             if matches!(command_3d.as_ref(), Command3D::Draw { node, .. } if *node == mesh_node)
     )));
 
-    if let Some(node) = runtime.nodes.get_mut(camera_node)
+    if let Some(mut node) = runtime.nodes.get_mut(camera_node)
         && let SceneNodeData::Camera3D(camera) = &mut node.data
     {
         camera.render_mask = BitMask::with([1]);
@@ -1922,7 +1922,7 @@ fn camera_3d_move_does_not_rewalk_mesh_render_layers() {
     runtime.extract_render_3d_commands();
     let _ = collect_commands(&mut runtime);
 
-    if let Some(node) = runtime.nodes.get_mut(camera_node)
+    if let Some(mut node) = runtime.nodes.get_mut(camera_node)
         && let SceneNodeData::Camera3D(camera) = &mut node.data
     {
         camera.transform.position.x = 10.0;
@@ -2125,10 +2125,10 @@ fn mesh_under_parent_uses_global_transform() {
         .nodes
         .insert(SceneNode::new(SceneNodeData::MeshInstance3D(mesh)));
 
-    if let Some(parent_node) = runtime.nodes.get_mut(parent) {
+    if let Some(mut parent_node) = runtime.nodes.get_mut(parent) {
         parent_node.add_child(child);
     }
-    if let Some(child_node) = runtime.nodes.get_mut(child) {
+    if let Some(mut child_node) = runtime.nodes.get_mut(child) {
         child_node.parent = parent;
     }
     runtime.mark_transform_dirty_recursive(parent);
@@ -2238,10 +2238,10 @@ fn collision_shape_debug_rebuilds_when_parent_moves() {
         .nodes
         .insert(SceneNode::new(SceneNodeData::CollisionShape3D(collision)));
 
-    if let Some(parent_node) = runtime.nodes.get_mut(parent) {
+    if let Some(mut parent_node) = runtime.nodes.get_mut(parent) {
         parent_node.add_child(child);
     }
-    if let Some(child_node) = runtime.nodes.get_mut(child) {
+    if let Some(mut child_node) = runtime.nodes.get_mut(child) {
         child_node.parent = parent;
     }
     runtime.mark_transform_dirty_recursive(parent);
@@ -2259,7 +2259,7 @@ fn collision_shape_debug_rebuilds_when_parent_moves() {
         })
         .expect("expected collision debug line draw");
 
-    if let Some(node) = runtime.nodes.get_mut(parent)
+    if let Some(mut node) = runtime.nodes.get_mut(parent)
         && let SceneNodeData::Node3D(parent_node) = &mut node.data
     {
         parent_node.transform.position.x = 8.0;

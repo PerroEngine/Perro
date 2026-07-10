@@ -91,6 +91,11 @@ pub fn generate_static_navmeshes(project_root: &Path) -> Result<(), StaticPipeli
     );
 
     fs::write(static_dir.join("navmeshes.rs"), out)?;
+    crate::record_static_assets(
+        perro_asset_formats::dlc::DlcAssetKind::NAVMESH,
+        perro_asset_formats::dlc::DlcAssetAccess::BYTES,
+        navmeshes.iter().map(|(path, _)| (path.as_str(), false)),
+    );
     Ok(())
 }
 

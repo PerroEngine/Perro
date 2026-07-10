@@ -1,4 +1,10 @@
 use super::*;
+use std::collections::VecDeque;
+
+const MIN_FRAME_QUEUE_BYTES: usize = 1024 * 1024;
+const MAX_QUEUED_FRAMES: usize = 16;
+/// Max bytes accepted by buffered TCP writes while the socket cannot make progress.
+pub const MAX_TCP_PENDING_WRITE_BYTES: usize = 16 * 1024 * 1024;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NetHandshake {
@@ -95,7 +101,11 @@ impl NetHandshake {
 pub struct TcpConnection {
     stream: TcpStream,
     peer: SocketAddr,
-    frame_buf: Vec<u8>,
+    frame_buf: VecDeque<u8>,
+    tx_queue: VecDeque<Vec<u8>>,
+    tx_cursor: usize,
+    read_eof: bool,
+    disconnect_emitted: bool,
 }
 
 impl TcpConnection {
@@ -115,7 +125,11 @@ impl TcpConnection {
         Ok(Self {
             stream,
             peer,
-            frame_buf: Vec::new(),
+            frame_buf: VecDeque::new(),
+            tx_queue: VecDeque::new(),
+            tx_cursor: 0,
+            read_eof: false,
+            disconnect_emitted: false,
         })
     }
 
@@ -146,6 +160,7 @@ impl TcpConnection {
     }
 
     pub fn poll_event(&mut self, max_bytes: usize) -> NetResult<Option<NetEvent>> {
+        self.flush_pending()?;
         let Some(bytes) = self.read_available(max_bytes)? else {
             return Ok(None);
         };
@@ -157,20 +172,27 @@ impl TcpConnection {
     }
 
     pub fn write(&mut self, bytes: &[u8]) -> NetResult<usize> {
+        if !self.tx_queue.is_empty() {
+            self.enqueue_write(bytes.to_vec())?;
+            self.flush_pending()?;
+            return Ok(bytes.len());
+        }
         self.stream
             .write(bytes)
             .map_err(|err| NetError::from_io(NetErrorKind::Send, err))
     }
 
     pub fn write_all(&mut self, bytes: &[u8]) -> NetResult<()> {
-        self.stream
-            .write_all(bytes)
-            .map_err(|err| NetError::from_io(NetErrorKind::Send, err))
+        if !bytes.is_empty() {
+            self.enqueue_write(bytes.to_vec())?;
+        }
+        self.flush_pending().map(|_| ())
     }
 
     pub fn write_frame(&mut self, bytes: &[u8]) -> NetResult<()> {
         let frame = encode_frame(bytes)?;
-        self.write_all(&frame)
+        self.enqueue_write(frame)?;
+        self.flush_pending().map(|_| ())
     }
 
     pub fn write_handshake(&mut self, handshake: &NetHandshake) -> NetResult<()> {
@@ -178,15 +200,24 @@ impl TcpConnection {
     }
 
     pub fn poll_frame(&mut self, max_frame_bytes: usize) -> NetResult<Option<Vec<u8>>> {
+        self.flush_pending()?;
+        if let Some(frame) = decode_next_queued_frame(&mut self.frame_buf, max_frame_bytes)? {
+            return Ok(Some(frame));
+        }
         self.read_into_frame_buf(max_frame_bytes)?;
-        decode_next_frame(&mut self.frame_buf, max_frame_bytes)
+        decode_next_queued_frame(&mut self.frame_buf, max_frame_bytes)
     }
 
     pub fn poll_frame_event(&mut self, max_frame_bytes: usize) -> NetResult<Option<NetEvent>> {
+        let peer = self.peer_string();
         let Some(bytes) = self.poll_frame(max_frame_bytes)? else {
+            if self.read_eof && !self.disconnect_emitted {
+                self.frame_buf.clear();
+                self.disconnect_emitted = true;
+                return Ok(Some(NetEvent::TcpDisconnected { peer }));
+            }
             return Ok(None);
         };
-        let peer = self.peer_string();
         if is_heartbeat_ping(&bytes) {
             return Ok(Some(NetEvent::HeartbeatPing { peer }));
         }
@@ -204,16 +235,25 @@ impl TcpConnection {
     }
 
     fn read_into_frame_buf(&mut self, max_frame_bytes: usize) -> NetResult<()> {
+        if self.read_eof {
+            return Ok(());
+        }
+        validate_queued_frame_len(&self.frame_buf, max_frame_bytes)?;
+        let queue_limit = frame_queue_limit(max_frame_bytes);
         let mut tmp = [0_u8; 4096];
         loop {
             match self.stream.read(&mut tmp) {
-                Ok(0) => return Ok(()),
+                Ok(0) => {
+                    self.read_eof = true;
+                    return Ok(());
+                }
                 Ok(n) => {
-                    self.frame_buf.extend_from_slice(&tmp[..n]);
-                    if self.frame_buf.len() > max_frame_bytes.saturating_add(4) {
+                    self.frame_buf.extend(&tmp[..n]);
+                    validate_queued_frame_len(&self.frame_buf, max_frame_bytes)?;
+                    if self.frame_buf.len() > queue_limit {
                         return Err(NetError::new(
                             NetErrorKind::FrameTooLarge,
-                            "tcp frame buffer exceeds max",
+                            "tcp frame queue exceeds max",
                         ));
                     }
                     if n < tmp.len() {
@@ -224,6 +264,52 @@ impl TcpConnection {
                 Err(err) => return Err(NetError::from_io(NetErrorKind::Receive, err)),
             }
         }
+    }
+
+    /// Try to write all queued bytes without blocking.
+    ///
+    /// Returns `true` when the queue is empty.
+    pub fn flush_pending(&mut self) -> NetResult<bool> {
+        while let Some(bytes) = self.tx_queue.front() {
+            match self.stream.write(&bytes[self.tx_cursor..]) {
+                Ok(0) => {
+                    return Err(NetError::new(
+                        NetErrorKind::Send,
+                        "tcp stream wrote zero bytes",
+                    ));
+                }
+                Ok(n) => {
+                    self.tx_cursor += n;
+                    if self.tx_cursor == bytes.len() {
+                        self.tx_queue.pop_front();
+                        self.tx_cursor = 0;
+                    }
+                }
+                Err(err) if err.kind() == io::ErrorKind::WouldBlock => return Ok(false),
+                Err(err) => return Err(NetError::from_io(NetErrorKind::Send, err)),
+            }
+        }
+        Ok(true)
+    }
+
+    /// Bytes accepted by buffered writes but not yet sent to the socket.
+    pub fn pending_write_bytes(&self) -> usize {
+        self.tx_queue
+            .iter()
+            .map(Vec::len)
+            .sum::<usize>()
+            .saturating_sub(self.tx_cursor)
+    }
+
+    fn enqueue_write(&mut self, bytes: Vec<u8>) -> NetResult<()> {
+        if self.pending_write_bytes().saturating_add(bytes.len()) > MAX_TCP_PENDING_WRITE_BYTES {
+            return Err(NetError::new(
+                NetErrorKind::Send,
+                "tcp pending write queue exceeds max",
+            ));
+        }
+        self.tx_queue.push_back(bytes);
+        Ok(())
     }
 }
 
@@ -319,4 +405,43 @@ pub fn is_heartbeat_ping(bytes: &[u8]) -> bool {
 
 pub fn is_heartbeat_pong(bytes: &[u8]) -> bool {
     bytes == heartbeat_pong()
+}
+
+fn decode_next_queued_frame(
+    buffer: &mut VecDeque<u8>,
+    max_frame_bytes: usize,
+) -> NetResult<Option<Vec<u8>>> {
+    validate_queued_frame_len(buffer, max_frame_bytes)?;
+    if buffer.len() < 4 {
+        return Ok(None);
+    }
+    let len = queued_frame_len(buffer);
+    let frame_end = 4_usize.saturating_add(len);
+    if buffer.len() < frame_end {
+        return Ok(None);
+    }
+
+    buffer.drain(..4);
+    Ok(Some(buffer.drain(..len).collect()))
+}
+
+fn validate_queued_frame_len(buffer: &VecDeque<u8>, max_frame_bytes: usize) -> NetResult<()> {
+    if buffer.len() >= 4 && queued_frame_len(buffer) > max_frame_bytes {
+        return Err(NetError::new(
+            NetErrorKind::FrameTooLarge,
+            "tcp frame exceeds max",
+        ));
+    }
+    Ok(())
+}
+
+fn queued_frame_len(buffer: &VecDeque<u8>) -> usize {
+    u32::from_be_bytes([buffer[0], buffer[1], buffer[2], buffer[3]]) as usize
+}
+
+fn frame_queue_limit(max_frame_bytes: usize) -> usize {
+    max_frame_bytes
+        .saturating_add(4)
+        .saturating_mul(MAX_QUEUED_FRAMES)
+        .max(MIN_FRAME_QUEUE_BYTES)
 }

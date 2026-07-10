@@ -110,7 +110,7 @@ impl Runtime {
         let text = self
             .resource_api
             .localized_or_key_by_hash(&binding.key, binding.key_hash);
-        let Some(scene_node) = self.nodes.get_mut(binding.node) else {
+        let Some(scene_node) = self.nodes.get_mut_untracked(binding.node) else {
             return false;
         };
         match (&mut scene_node.data, binding.field) {

@@ -413,7 +413,7 @@ impl Runtime {
                 );
             }
             if let Some(parent_index) = spec.parent {
-                if let Some(parent_node) = self.nodes.get_mut(ids[parent_index]) {
+                if let Some(mut parent_node) = self.nodes.get_mut(ids[parent_index]) {
                     parent_node.children.push(id);
                 }
             } else if parent_id.is_nil() {
@@ -434,7 +434,7 @@ impl Runtime {
         if ids.is_empty() {
             return;
         }
-        if let Some(parent) = self.nodes.get_mut(parent_id) {
+        if let Some(mut parent) = self.nodes.get_mut(parent_id) {
             parent.children.reserve(ids.len());
             parent.children.extend(ids.iter().copied());
         }
@@ -517,7 +517,7 @@ impl Runtime {
                         let _ = <Self as NodeAPI>::tag_set(self, id, Some(scene.tags.clone()));
                     }
                     for patch in &scene.patches {
-                        let Some(node) = self.nodes.get_mut(id) else {
+                        let Some(mut node) = self.nodes.get_mut(id) else {
                             return Vec::new();
                         };
                         if !patch.apply(&mut node.data) {
@@ -639,7 +639,7 @@ impl NodeAPI for Runtime {
         ) = {
             // Non-physics types skip the physics-version bump (const-gated);
             // physics types mark the change after the mutation below.
-            let node = self.nodes.get_mut_non_physics(id)?;
+            let node = self.nodes.get_mut_untracked_non_physics(id)?;
 
             // Const-gated so the optimizer strips camera/UI capture for node
             // types that can never be those variants.
@@ -801,9 +801,9 @@ impl NodeAPI for Runtime {
             // time; keep the conservative full bump for physics nodes and skip
             // only for the rest.
             let node = if self.nodes.get(id)?.node_type().is_physics() {
-                self.nodes.get_mut(id)?
+                self.nodes.get_mut_untracked(id)?
             } else {
-                self.nodes.get_mut_non_physics(id)?
+                self.nodes.get_mut_untracked_non_physics(id)?
             };
             if !node.node_type().is_a(T::BASE_NODE_TYPE) {
                 return None;
@@ -980,7 +980,7 @@ impl NodeAPI for Runtime {
         };
 
         if !old_parent.is_nil()
-            && let Some(parent) = self.nodes.get_mut(old_parent)
+            && let Some(mut parent) = self.nodes.get_mut(old_parent)
         {
             parent.remove_child(child_id);
         }
@@ -990,7 +990,7 @@ impl NodeAPI for Runtime {
         }
 
         if !parent_id.is_nil() {
-            if let Some(parent) = self.nodes.get_mut(parent_id) {
+            if let Some(mut parent) = self.nodes.get_mut(parent_id) {
                 if !parent.get_children_ids().contains(&child_id) {
                     parent.add_child(child_id);
                 }
@@ -1016,7 +1016,7 @@ impl NodeAPI for Runtime {
                     }
                     None => global,
                 };
-                if let Some(child) = self.nodes.get_mut(child_id) {
+                if let Some(mut child) = self.nodes.get_mut(child_id) {
                     let _ = child.with_base_mut::<Node2D, _>(|node| {
                         node.transform = local;
                     });
@@ -1059,7 +1059,7 @@ impl NodeAPI for Runtime {
                     }
                     None => global,
                 };
-                if let Some(child) = self.nodes.get_mut(child_id) {
+                if let Some(mut child) = self.nodes.get_mut(child_id) {
                     let _ = child.with_base_mut::<Node3D, _>(|node| {
                         node.transform = local;
                     });
@@ -1157,7 +1157,7 @@ impl NodeAPI for Runtime {
             // correctly unlinked from that live parent.
             if !parent_id.is_nil()
                 && !visited.contains(&parent_id)
-                && let Some(parent) = self.nodes.get_mut(parent_id)
+                && let Some(mut parent) = self.nodes.get_mut(parent_id)
             {
                 parent.remove_child(current);
             }

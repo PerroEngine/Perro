@@ -182,6 +182,39 @@ fn proxy_and_tls_config_builds_or_fails_cleanly() {
         .tls_mode(HttpTLSMode::NativeTls);
 }
 
+#[test]
+fn tls_modes_select_distinct_provider_and_roots() {
+    use ureq::tls::{RootCerts, TlsProvider};
+
+    let rustls = crate::http::tls_config(&HttpTLSMode::DefaultRustls);
+    assert_eq!(rustls.provider(), TlsProvider::Rustls);
+    assert!(matches!(rustls.root_certs(), RootCerts::WebPki));
+
+    let platform = crate::http::tls_config(&HttpTLSMode::PlatformVerifier);
+    assert_eq!(platform.provider(), TlsProvider::Rustls);
+    assert!(matches!(platform.root_certs(), RootCerts::PlatformVerifier));
+
+    let native = crate::http::tls_config(&HttpTLSMode::NativeTls);
+    assert_eq!(native.provider(), TlsProvider::NativeTls);
+    assert!(matches!(native.root_certs(), RootCerts::PlatformVerifier));
+}
+
+#[test]
+fn empty_url_emits_one_terminal_event() {
+    let mut client = HttpClient::new();
+    let id = client.get("");
+
+    let event = wait_event(&mut client);
+    let HttpEvent::Failed(err) = event else {
+        panic!("expected failed event");
+    };
+    assert_eq!(err.id, id);
+    assert_eq!(err.kind, HttpErrorKind::Send);
+
+    thread::sleep(Duration::from_millis(20));
+    assert!(client.poll_all(8).is_empty());
+}
+
 fn wait_event(client: &mut HttpClient) -> HttpEvent {
     for _ in 0..200 {
         if let Some(event) = client.poll() {

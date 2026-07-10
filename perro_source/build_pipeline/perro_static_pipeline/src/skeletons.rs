@@ -30,6 +30,7 @@ use std::{
 struct SkeletonRef {
     lookup_key: String,
     embedded_rel_path: String,
+    synthesized: bool,
 }
 
 struct SkeletonAsset {
@@ -103,6 +104,7 @@ pub fn generate_static_skeletons(project_root: &Path) -> Result<(), StaticPipeli
                         entry: SkeletonRef {
                             lookup_key: res_path,
                             embedded_rel_path: rel,
+                            synthesized: false,
                         },
                         bytes: baked,
                     }])
@@ -124,6 +126,7 @@ pub fn generate_static_skeletons(project_root: &Path) -> Result<(), StaticPipeli
                         entry: SkeletonRef {
                             lookup_key: res_path,
                             embedded_rel_path: rel,
+                            synthesized: false,
                         },
                         bytes: baked,
                     }])
@@ -213,6 +216,13 @@ pub fn generate_static_skeletons(project_root: &Path) -> Result<(), StaticPipeli
     );
 
     fs::write(static_dir.join("skeletons.rs"), out)?;
+    crate::record_static_assets(
+        perro_asset_formats::dlc::DlcAssetKind::SKELETON,
+        perro_asset_formats::dlc::DlcAssetAccess::BYTES,
+        skeleton_refs
+            .iter()
+            .map(|item| (item.lookup_key.as_str(), item.synthesized)),
+    );
     Ok(())
 }
 
@@ -286,6 +296,7 @@ fn build_gltf_skeleton_entries(
             SkeletonRef {
                 lookup_key: key_bracket,
                 embedded_rel_path,
+                synthesized: true,
             },
             pskel,
         ));

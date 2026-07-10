@@ -435,6 +435,96 @@ fn node_arena_edit_repairs_indices_during_unwind() {
 }
 
 #[test]
+fn node_arena_get_mut_tracks_all_indexed_and_mirrored_fields() {
+    use perro_nodes::{Node2D, NodeType};
+
+    let mut arena = NodeArena::new();
+    let old_parent = arena.insert(SceneNode::new(SceneNodeData::Node3D(Node3D::new())));
+    let new_parent = arena.insert(SceneNode::new(SceneNodeData::Node3D(Node3D::new())));
+    let old_tag = perro_ids::NodeTag::borrowed("guard-old");
+    let new_tag = perro_ids::NodeTag::borrowed("guard-new");
+    let mut node = SceneNode::new(SceneNodeData::Node3D(Node3D::new()));
+    node.name = "guard-before".into();
+    node.set_tags(Some(vec![old_tag.clone()]));
+    node.parent = old_parent;
+    let id = arena.insert(node);
+    let structural_before = arena.structural_revision();
+
+    {
+        let mut node = arena.get_mut(id).expect("live node");
+        node.name = "guard-after".into();
+        node.set_tags(Some(vec![new_tag.clone()]));
+        node.parent = new_parent;
+        node.data = SceneNodeData::Node2D(Node2D::default());
+    }
+
+    assert!(arena.named_ids("guard-before").is_empty());
+    assert_eq!(arena.named_ids("guard-after"), &[id]);
+    assert!(arena.tag_index().get(&old_tag.id).is_none());
+    assert!(
+        arena
+            .tag_index()
+            .get(&new_tag.id)
+            .is_some_and(|ids| ids.contains(&id))
+    );
+    assert_eq!(arena.parent_slots()[id.index() as usize], new_parent);
+    assert_eq!(
+        arena.slot_node_type(id.index() as usize),
+        Some(NodeType::Node2D)
+    );
+    assert!(arena.structural_revision() > structural_before);
+    arena.validate_mirrors();
+}
+
+#[test]
+fn node_arena_get_mut_noop_and_stale_id_keep_indices_stable() {
+    let mut arena = NodeArena::new();
+    let mut node = SceneNode::new(SceneNodeData::Node3D(Node3D::new()));
+    node.name = "stable".into();
+    let id = arena.insert(node);
+    let structural_before = arena.structural_revision();
+    let mutation_before = arena.mutation_revision();
+
+    drop(arena.get_mut(id).expect("live node"));
+
+    assert_eq!(arena.named_ids("stable"), &[id]);
+    assert_eq!(arena.structural_revision(), structural_before);
+    assert!(arena.mutation_revision() > mutation_before);
+    let stale = id;
+    let _ = arena.remove(id);
+    let mutation_before = arena.mutation_revision();
+    assert!(arena.get_mut(stale).is_none());
+    assert_eq!(arena.mutation_revision(), mutation_before);
+}
+
+#[test]
+fn node_arena_get_mut_repairs_during_unwind() {
+    let mut arena = NodeArena::new();
+    let parent = arena.insert(SceneNode::new(SceneNodeData::Node3D(Node3D::new())));
+    let tag = perro_ids::NodeTag::borrowed("guard-unwind");
+    let id = arena.insert(SceneNode::new(SceneNodeData::Node3D(Node3D::new())));
+
+    let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let mut node = arena.get_mut(id).expect("live node");
+        node.name = "guard-panicked".into();
+        node.set_tags(Some(vec![tag.clone()]));
+        node.parent = parent;
+        panic!("test panic");
+    }));
+
+    assert!(panic.is_err());
+    assert_eq!(arena.named_ids("guard-panicked"), &[id]);
+    assert!(
+        arena
+            .tag_index()
+            .get(&tag.id)
+            .is_some_and(|ids| ids.contains(&id))
+    );
+    assert_eq!(arena.parent_slots()[id.index() as usize], parent);
+    arena.validate_mirrors();
+}
+
+#[test]
 fn script_update_schedules_toggle_at_runtime() {
     let mut runtime = Runtime::new();
     let update_count = Arc::new(AtomicUsize::new(0));
