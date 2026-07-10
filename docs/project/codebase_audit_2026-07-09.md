@@ -250,6 +250,8 @@ Main fix commits:
 - `2fa21744`, `19497763`: atomic asset root + audio startup handshake
 - `b555adea`, `793f7e8b`: keycode table + CLI flag schema
 - `e68ca563`: asset cache/resize/inflate bounds
+- `62ccb9eb`, `1414c6f6`: deterministic graphics bench texture fixtures
+- `8c87e453`: editor preview button API drift
 
 Profile-gated defer:
 
@@ -261,9 +263,16 @@ Profile-gated defer:
 
 Gate state:
 
-- scoped lane tests + clippy pass
+- pass: `cargo fmt --all -- --check`
+- pass: `cargo clippy --workspace --all-targets --all-features -- -D warnings`
+- pass: `cargo test --workspace --all-features`
+- pass: `cargo test --workspace --all-targets --all-features --no-run`
+- pass: `cargo test -p perro_compiler -- --ignored` -> 5/5
+- pass: `cargo test -p perro_networking --features network-tests` -> 28/28
 - website internal route + anchor graph: 13 pass
-- full workspace fmt/clippy/test pending final merge
+- pass: CLI help + editor + Demo2D + Demo3D + DemoUI checks
+- all-target exec: fx 4 stale async texture bench fixtures
+- all-target exec rerun: no fail b4 20m cap in real Criterion suites
 - all ledger IDs not listed above stay open
 
 ## Prior 2026-07-09 Audit
