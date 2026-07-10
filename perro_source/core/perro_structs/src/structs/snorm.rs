@@ -3,7 +3,7 @@ use bytemuck::{Pod, Zeroable};
 use std::fmt;
 
 #[repr(transparent)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Default, Pod, Zeroable)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Pod, Zeroable)]
 pub struct SignedUnit(pub u8);
 
 impl SignedUnit {
@@ -39,6 +39,13 @@ impl SignedUnit {
     }
 }
 
+impl Default for SignedUnit {
+    #[inline]
+    fn default() -> Self {
+        Self::ZERO
+    }
+}
+
 impl From<u8> for SignedUnit {
     #[inline]
     fn from(value: u8) -> Self {
@@ -61,10 +68,17 @@ impl From<SignedUnit> for f32 {
 }
 
 #[repr(C)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default, Pod, Zeroable)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Pod, Zeroable)]
 pub struct SignedUnitVector2 {
     pub x: SignedUnit,
     pub y: SignedUnit,
+}
+
+impl Default for SignedUnitVector2 {
+    #[inline]
+    fn default() -> Self {
+        Self::ZERO
+    }
 }
 
 impl fmt::Display for SignedUnitVector2 {
@@ -148,6 +162,12 @@ mod tests {
         assert_eq!(LOW.to_u8(), 0);
         assert_eq!(MID.to_u8(), 128);
         assert_eq!(HIGH.to_u8(), 255);
+    }
+
+    #[test]
+    fn signed_unit_defaults_use_packed_zero() {
+        assert_eq!(SignedUnit::default(), SignedUnit::ZERO);
+        assert_eq!(SignedUnitVector2::default(), SignedUnitVector2::ZERO);
     }
 
     #[test]

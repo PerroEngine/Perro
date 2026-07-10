@@ -248,7 +248,9 @@ pub fn eval_ops_particle(
                 let hi = stack.pop()?;
                 let lo = stack.pop()?;
                 let x = stack.pop()?;
-                stack.push(x.clamp(lo, hi));
+                let lower = lo.min(hi);
+                let upper = lo.max(hi);
+                stack.push(x.max(lower).min(upper));
             }
             Op::Hash => {
                 let a = stack.pop()?;
@@ -330,7 +332,7 @@ pub fn emit_wgsl_expr_ops(ops: &[Op]) -> Result<String, CompileError> {
                 let hi = stack.pop().ok_or(CompileError::InvalidProgram)?;
                 let lo = stack.pop().ok_or(CompileError::InvalidProgram)?;
                 let x = stack.pop().ok_or(CompileError::InvalidProgram)?;
-                stack.push(format!("clamp({x}, {lo}, {hi})"));
+                stack.push(format!("min(max({x}, min({lo}, {hi})), max({lo}, {hi}))"));
             }
             Op::Hash => {
                 let a = stack.pop().ok_or(CompileError::InvalidProgram)?;
