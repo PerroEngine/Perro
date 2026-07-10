@@ -1127,6 +1127,11 @@ impl NodeAPI for Runtime {
     }
 
     fn remove_node(&mut self, node_id: perro_ids::NodeID) -> bool {
+        let node_id = self
+            .scene_ownership_roots
+            .get(&node_id)
+            .copied()
+            .unwrap_or(node_id);
         if node_id.is_nil() || self.nodes.get(node_id).is_none() {
             return false;
         }
@@ -1184,6 +1189,9 @@ impl NodeAPI for Runtime {
             self.unregister_internal_node_schedules(current, ty);
             let _ = self.nodes.remove(current);
         }
+
+        self.scene_ownership_roots
+            .retain(|scene_root, owner| !visited.contains(scene_root) && !visited.contains(owner));
 
         stack.clear();
         postorder.clear();
