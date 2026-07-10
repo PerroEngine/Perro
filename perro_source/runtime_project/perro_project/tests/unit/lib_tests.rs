@@ -1179,3 +1179,57 @@ max_bounces = {}
     let err = parse_project_toml(&toml).expect_err("bounce cap");
     assert!(err.to_string().contains("max_bounces must be <="), "{err}");
 }
+
+#[test]
+fn parse_project_toml_rejects_f64_values_that_overflow_f32() {
+    let audio = r#"
+[project]
+name = "Game"
+main_scene = "res://main.scn"
+icon = "res://icon.png"
+
+[graphics]
+aspect_ratio = "16:9"
+
+[audio.propagation_2d]
+max_ray_distance = 1e300
+"#;
+    let err = parse_project_toml(audio).expect_err("f32 audio overflow");
+    assert!(err.to_string().contains("must be finite"), "{err}");
+
+    let physics = r#"
+[project]
+name = "Game"
+main_scene = "res://main.scn"
+icon = "res://icon.png"
+
+[graphics]
+aspect_ratio = "16:9"
+
+[physics]
+gravity = 1e300
+"#;
+    let err = parse_project_toml(physics).expect_err("f32 gravity overflow");
+    assert!(err.to_string().contains("must be a finite number"), "{err}");
+}
+
+#[test]
+fn parse_project_toml_disables_overflowed_runtime_rates() {
+    let toml = r#"
+[project]
+name = "Game"
+main_scene = "res://main.scn"
+icon = "res://icon.png"
+
+[graphics]
+aspect_ratio = "16:9"
+
+[runtime]
+frame_rate_cap = 1e300
+target_fixed_update = 1e300
+"#;
+
+    let cfg = parse_project_toml(toml).expect("overflowed rates disable");
+    assert_eq!(cfg.frame_rate_cap, FrameRateCap::Unlimited);
+    assert_eq!(cfg.target_fixed_update, None);
+}
