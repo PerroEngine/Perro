@@ -573,8 +573,18 @@ impl Runtime {
         id: NodeID,
         modulate: perro_structs::NodeModulate,
     ) {
-        if let Some(node) = self.nodes.get_mut(id) {
+        if let Some(mut node) = self.nodes.get_mut(id) {
             node.with_base_mut::<perro_nodes::Node3D, _>(|base| base.modulate = modulate);
+        }
+    }
+
+    /// Set a node's Node3D-base visibility (bench-only). The skinned-extraction
+    /// microbench hides the static meshes so the retained visible-set copy stays
+    /// O(1) and the measured cost isolates the dirty-skeleton scan (F2).
+    #[cfg(feature = "bench")]
+    pub fn bench_set_node3d_visible(&mut self, id: NodeID, visible: bool) {
+        if let Some(mut node) = self.nodes.get_mut(id) {
+            node.with_base_mut::<perro_nodes::Node3D, _>(|base| base.visible = visible);
         }
     }
 
@@ -595,7 +605,7 @@ impl Runtime {
     /// a skeleton without a full scene load.
     #[cfg(feature = "bench")]
     pub fn bench_bind_mesh_skeleton(&mut self, mesh: NodeID, skeleton: NodeID) {
-        if let Some(node) = self.nodes.get_mut(mesh)
+        if let Some(mut node) = self.nodes.get_mut(mesh)
             && let perro_nodes::SceneNodeData::MeshInstance3D(mesh_instance) = &mut node.data
         {
             mesh_instance.skeleton = skeleton;
