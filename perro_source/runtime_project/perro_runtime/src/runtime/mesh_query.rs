@@ -5,7 +5,7 @@
 
 use super::Runtime;
 use ahash::AHashMap;
-use glam::{Mat3, Mat4, Vec3};
+use glam::{Mat3, Mat4, Vec2, Vec3};
 use perro_asset_formats::pmesh::{
     FLAG_PAYLOAD_RAW as PMESH_FLAG_PAYLOAD_RAW, VERSION as PMESH_VERSION,
 };
@@ -36,6 +36,10 @@ struct QueryTri {
 
 struct QueryMeshData {
     vertices: Vec<Vec3>,
+    uv0: Vec<Vec2>,
+    paint_uv: Vec<Vec2>,
+    joints: Vec<[u16; 4]>,
+    weights: Vec<[f32; 4]>,
     triangles: Vec<QueryTri>,
     tri_accel: Vec<QueryTriAccel>,
     bvh_nodes: Vec<QueryBvhNode>,
@@ -186,6 +190,10 @@ impl Runtime {
         Some(MeshSurfaceHit3D {
             instance_index: best.instance_index,
             surface_index: best.surface_index,
+            triangle_index: best.triangle_index,
+            barycentric: best.barycentric.into(),
+            uv0: best.uv0.into(),
+            paint_uv: best.paint_uv.into(),
             material,
             global_point: best.global_point.into(),
             local_point: best.local_point.into(),
@@ -374,6 +382,10 @@ impl Runtime {
         Some(MeshSurfaceHit3D {
             instance_index: best.instance_index,
             surface_index: best.surface_index,
+            triangle_index: best.triangle_index,
+            barycentric: best.barycentric.into(),
+            uv0: best.uv0.into(),
+            paint_uv: best.paint_uv.into(),
             material,
             global_point: best.global_point.into(),
             local_point: best.local_point.into(),
@@ -438,6 +450,10 @@ impl Runtime {
                 Some(MeshSurfaceHit3D {
                     instance_index: best.instance_index,
                     surface_index: best.surface_index,
+                    triangle_index: best.triangle_index,
+                    barycentric: best.barycentric.into(),
+                    uv0: best.uv0.into(),
+                    paint_uv: best.paint_uv.into(),
                     material,
                     global_point: best.global_point.into(),
                     local_point: best.local_point.into(),
@@ -685,6 +701,7 @@ impl Runtime {
                 source: self.render_3d.mesh_sources.get(&node_id).cloned(),
                 surfaces: mesh.surfaces.clone(),
                 instance_local: vec![Mat4::IDENTITY],
+                skeleton: (!mesh.skeleton.is_nil()).then_some(mesh.skeleton),
             }),
             SceneNodeData::MultiMeshInstance3D(mesh) => {
                 let instance_local = if mesh.instances.is_empty() {
@@ -720,6 +737,7 @@ impl Runtime {
                     source: self.render_3d.mesh_sources.get(&node_id).cloned(),
                     surfaces: mesh.surfaces.clone(),
                     instance_local,
+                    skeleton: None,
                 })
             }
             _ => None,
@@ -828,14 +846,64 @@ impl Runtime {
     }
 
     fn load_query_node_mesh_data(&self, node: &QueryNodeData) -> Option<Arc<QueryMeshData>> {
-        if !node.mesh_id.is_nil()
+        let mesh = if !node.mesh_id.is_nil()
             && let Some(mesh) = self.load_query_mesh_data_by_id(node.mesh_id)
         {
+            mesh
+        } else {
+            node.source
+                .as_deref()
+                .and_then(|source| self.load_query_mesh_data(source))?
+        };
+        let Some(skeleton_id) = node.skeleton else {
             return Some(mesh);
+        };
+        self.skin_query_mesh(mesh.as_ref(), skeleton_id).map(Arc::new)
+    }
+
+    /// Build posed query geometry with the same joint palette contract as GPU
+    /// skinning. This correctness-first path rebuilds acceleration data once per
+    /// public query; node mutation revision still caches node lookup data.
+    fn skin_query_mesh(&self, mesh: &QueryMeshData, skeleton_id: NodeID) -> Option<QueryMeshData> {
+        const MAX_SKIN_QUERY_VERTICES: usize = 1_000_000;
+        if mesh.vertices.len() > MAX_SKIN_QUERY_VERTICES
+            || mesh.joints.len() != mesh.vertices.len()
+            || mesh.weights.len() != mesh.vertices.len()
+        {
+            return None;
         }
-        node.source
-            .as_deref()
-            .and_then(|source| self.load_query_mesh_data(source))
+        let skeleton = match &self.nodes.get(skeleton_id)?.data {
+            SceneNodeData::Skeleton3D(skeleton) => skeleton,
+            _ => return None,
+        };
+        if skeleton.bones.is_empty() {
+            return Some(clone_query_mesh(mesh));
+        }
+        let mut global = vec![Mat4::IDENTITY; skeleton.bones.len()];
+        for (index, bone) in skeleton.bones.iter().enumerate() {
+            let local = bone.pose.to_mat4();
+            global[index] = if bone.parent >= 0 && (bone.parent as usize) < global.len() {
+                global[bone.parent as usize] * local
+            } else {
+                local
+            };
+        }
+        let inv_bind = skeleton.inv_bind_mats();
+        let use_inv_bind_cache = inv_bind.len() == skeleton.bones.len();
+        let palette: Vec<Mat4> = skeleton
+            .bones
+            .iter()
+            .enumerate()
+            .map(|(index, bone)| {
+                global[index]
+                    * if use_inv_bind_cache {
+                        inv_bind[index].0
+                    } else {
+                        bone.inv_bind.to_mat4()
+                    }
+            })
+            .collect();
+        skin_query_mesh_with_palette(mesh, &palette)
     }
 
     fn load_query_mesh_data_by_id(&self, mesh_id: MeshID) -> Option<Arc<QueryMeshData>> {

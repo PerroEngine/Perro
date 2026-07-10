@@ -149,6 +149,7 @@ fn add_quad(mesh: &mut Mesh3D, positions: [[f32; 3]; 4], normal: [f32; 3]) {
             position,
             normal,
             uv: [0.0, 0.0],
+            paint_uv: [0.0, 0.0],
             joints: [0, 0, 0, 0],
             weights: UnitVector4::ZERO,
         });

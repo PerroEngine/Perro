@@ -561,6 +561,27 @@ impl CustomMaterialImage3D {
             source: source.into(),
         }
     }
+
+    /// Bind a mutable texture made by `TextureModule::create_from_rgba`.
+    #[inline]
+    pub fn named_texture(name: impl Into<Cow<'static, str>>, texture: TextureID) -> Self {
+        Self::named(name, runtime_texture_source(texture))
+    }
+
+    /// Bind a mutable texture made by `TextureModule::create_from_rgba`.
+    #[inline]
+    pub fn unnamed_texture(texture: TextureID) -> Self {
+        Self::unnamed(runtime_texture_source(texture))
+    }
+}
+
+#[inline]
+fn runtime_texture_source(texture: TextureID) -> Cow<'static, str> {
+    Cow::Owned(format!(
+        "runtime://texture/{}:{}",
+        texture.index(),
+        texture.generation()
+    ))
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -709,6 +730,8 @@ pub struct RuntimeMeshVertex {
     pub position: [f32; 3],
     pub normal: [f32; 3],
     pub uv: [f32; 2],
+    /// Paint UV set. Imported from glTF `TEXCOORD_1`; falls back to `uv`.
+    pub paint_uv: [f32; 2],
     pub joints: [u16; 4],
     pub weights: UnitVector4,
 }

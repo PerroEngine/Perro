@@ -2,9 +2,10 @@ use bytemuck::{Pod, Zeroable};
 use perro_asset_formats::pmesh::{
     FLAG_HAS_BLEND_SHAPE_NORMALS as PMESH_FLAG_HAS_BLEND_SHAPE_NORMALS,
     FLAG_HAS_JOINTS as PMESH_FLAG_HAS_JOINTS, FLAG_HAS_NORMAL as PMESH_FLAG_HAS_NORMAL,
-    FLAG_HAS_UV0 as PMESH_FLAG_HAS_UV0, FLAG_HAS_WEIGHTS as PMESH_FLAG_HAS_WEIGHTS,
-    FLAG_PAYLOAD_RAW as PMESH_FLAG_PAYLOAD_RAW, FLAG_WEIGHTS_UNORM8 as PMESH_FLAG_WEIGHTS_UNORM8,
-    MAGIC as PMESH_MAGIC, VERSION as PMESH_VERSION, VERSION_V2 as PMESH_VERSION_V2,
+    FLAG_HAS_UV0 as PMESH_FLAG_HAS_UV0, FLAG_HAS_UV1 as PMESH_FLAG_HAS_UV1,
+    FLAG_HAS_WEIGHTS as PMESH_FLAG_HAS_WEIGHTS, FLAG_PAYLOAD_RAW as PMESH_FLAG_PAYLOAD_RAW,
+    FLAG_WEIGHTS_UNORM8 as PMESH_FLAG_WEIGHTS_UNORM8, MAGIC as PMESH_MAGIC,
+    VERSION as PMESH_VERSION, VERSION_V2 as PMESH_VERSION_V2,
 };
 use perro_io::{decompress_zlib, load_asset};
 use perro_meshlets::{
@@ -27,6 +28,7 @@ pub struct MeshVertex {
     pub pos: [f32; 3],
     pub normal: [f32; 3],
     pub uv: [f32; 2],
+    pub paint_uv: [f32; 2],
     pub joints: [u16; 4],
     pub weights: UnitVector4,
 }
@@ -212,6 +214,7 @@ fn mesh3d_from_decoded(decoded: DecodedMesh) -> Mesh3D {
                 position: v.pos,
                 normal: v.normal,
                 uv: v.uv,
+                paint_uv: v.paint_uv,
                 joints: v.joints,
                 weights: v.weights,
             })
@@ -291,6 +294,7 @@ fn decode_runtime_mesh(mesh: &RuntimeMeshData) -> Option<DecodedMesh> {
             pos: v.position,
             normal: v.normal,
             uv: v.uv,
+            paint_uv: v.paint_uv,
             joints: v.joints,
             weights: v.weights,
         })
@@ -308,6 +312,12 @@ fn decode_runtime_mesh(mesh: &RuntimeMeshData) -> Option<DecodedMesh> {
         return None;
     }
     if vertices.iter().any(|v| !v.uv.iter().all(|c| c.is_finite())) {
+        return None;
+    }
+    if vertices
+        .iter()
+        .any(|v| !v.paint_uv.iter().all(|c| c.is_finite()))
+    {
         return None;
     }
     if mesh
@@ -559,6 +569,7 @@ struct MeshVertexKey {
     pos: [u32; 3],
     normal: [u32; 3],
     uv: [u32; 2],
+    paint_uv: [u32; 2],
     joints: [u16; 4],
     weights: [u8; 4],
 }
@@ -569,6 +580,7 @@ impl From<MeshVertex> for MeshVertexKey {
             pos: vertex.pos.map(f32::to_bits),
             normal: vertex.normal.map(f32::to_bits),
             uv: vertex.uv.map(f32::to_bits),
+            paint_uv: vertex.paint_uv.map(f32::to_bits),
             joints: vertex.joints,
             weights: vertex.weights.to_u8(),
         }
@@ -641,6 +653,7 @@ pub fn decode_pmesh(bytes: &[u8]) -> Option<DecodedMesh> {
 
     let has_normal = (flags & PMESH_FLAG_HAS_NORMAL) != 0;
     let has_uv0 = (flags & PMESH_FLAG_HAS_UV0) != 0;
+    let has_uv1 = (flags & PMESH_FLAG_HAS_UV1) != 0;
     let has_joints = (flags & PMESH_FLAG_HAS_JOINTS) != 0;
     let has_weights = (flags & PMESH_FLAG_HAS_WEIGHTS) != 0;
     let weights_unorm8 = (flags & PMESH_FLAG_WEIGHTS_UNORM8) != 0;
@@ -648,6 +661,7 @@ pub fn decode_pmesh(bytes: &[u8]) -> Option<DecodedMesh> {
     let vertex_stride = 12
         + if has_normal { 12 } else { 0 }
         + if has_uv0 { 8 } else { 0 }
+        + if has_uv1 { 8 } else { 0 }
         + if has_joints { 8 } else { 0 }
         + if has_weights {
             if weights_unorm8 { 4 } else { 16 }
@@ -704,6 +718,16 @@ pub fn decode_pmesh(bytes: &[u8]) -> Option<DecodedMesh> {
         } else {
             [0.0, 0.0]
         };
+        let paint_uv = if has_uv1 {
+            let out = [
+                f32::from_le_bytes(raw[cursor..cursor + 4].try_into().ok()?),
+                f32::from_le_bytes(raw[cursor + 4..cursor + 8].try_into().ok()?),
+            ];
+            cursor += 8;
+            out
+        } else {
+            uv
+        };
         let joints = if has_joints {
             let out = [
                 u16::from_le_bytes(raw[cursor..cursor + 2].try_into().ok()?),
@@ -736,6 +760,7 @@ pub fn decode_pmesh(bytes: &[u8]) -> Option<DecodedMesh> {
             pos,
             normal,
             uv,
+            paint_uv,
             joints,
             weights,
         });
@@ -873,6 +898,10 @@ pub fn decode_gltf_mesh(bytes: &[u8], mesh_index: usize) -> Option<DecodedMesh> 
             .read_tex_coords(0)
             .map(|iter| iter.into_f32().collect())
             .unwrap_or_default();
+        let paint_tex_coords: Vec<[f32; 2]> = reader
+            .read_tex_coords(1)
+            .map(|iter| iter.into_f32().collect())
+            .unwrap_or_default();
         let joints: Vec<[u16; 4]> = reader
             .read_joints(0)
             .map(|iter| iter.into_u16().collect())
@@ -925,6 +954,10 @@ pub fn decode_gltf_mesh(bytes: &[u8], mesh_index: usize) -> Option<DecodedMesh> 
                 pos: position,
                 normal: normals.get(i).copied().unwrap_or([0.0, 1.0, 0.0]),
                 uv: tex_coords.get(i).copied().unwrap_or([0.0, 0.0]),
+                paint_uv: paint_tex_coords
+                    .get(i)
+                    .copied()
+                    .unwrap_or_else(|| tex_coords.get(i).copied().unwrap_or([0.0, 0.0])),
                 joints: joint,
                 weights: quantize_skin_weights(weight),
             });

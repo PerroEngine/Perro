@@ -30,6 +30,8 @@ pub mod pmesh {
     pub const FLAG_INDEX_U16: u32 = 1 << 4;
     pub const FLAG_WEIGHTS_UNORM8: u32 = 1 << 5;
     pub const FLAG_HAS_BLEND_SHAPE_NORMALS: u32 = 1 << 6;
+    /// Vertex payload stores glTF `TEXCOORD_1` after UV0.
+    pub const FLAG_HAS_UV1: u32 = 1 << 7;
     pub const FLAG_PAYLOAD_RAW: u32 = 1 << 31;
 }
 

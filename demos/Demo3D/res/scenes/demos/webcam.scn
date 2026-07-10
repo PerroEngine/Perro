@@ -9,6 +9,10 @@ script = "res://scripts/webcam_demo_3d.rs"
 
 [DemoCamera]
 parent = @WebcamDemo3D
+script = "res://scripts/demo_freecam_3d.rs"
+script_vars = {
+    speed = 8.0
+}
     [Camera3D]
         active = true
         perspective_fov_y_degrees = 58.0

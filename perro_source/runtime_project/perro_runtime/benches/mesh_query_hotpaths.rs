@@ -81,6 +81,7 @@ fn grid_mesh(side: usize) -> Mesh3D {
         position: [x as f32, ((x * 17 + z * 31) % 11) as f32 * 0.03, z as f32],
         normal: [0.0, 1.0, 0.0],
         uv: [x as f32 / side as f32, z as f32 / side as f32],
+        paint_uv: [x as f32 / side as f32, z as f32 / side as f32],
         joints: [0; 4],
         weights: Default::default(),
     };

@@ -210,8 +210,8 @@ fn build_rigid_prelude(prelude: &str) -> String {
             "@location(13) @interpolate(flat) custom_params: vec2<u32>,",
         )
         .replace(
-            "return VertexInput(out_pos, vec4<f32>(normalize(out_normal), 0.0), v.joints, v.weights, v.uv);",
-            "return VertexInput(out_pos, vec4<f32>(normalize(out_normal), 0.0), v.uv);",
+            "return VertexInput(out_pos, vec4<f32>(normalize(out_normal), 0.0), v.joints, v.weights, v.uv, v.paint_uv);",
+            "return VertexInput(out_pos, vec4<f32>(normalize(out_normal), 0.0), v.uv, v.paint_uv);",
         )
         .replace(
             "var pos = blended.pos; var normal = blended.normal.xyz; if inst.skeleton_params.y > 0u { let rows = blend_skin_rows(inst.skeleton_params.x, blended.joints, blended.weights); let p_skin = vec4<f32>(pos, 1.0); let skinned_pos = vec3<f32>(dot(rows[0], p_skin), dot(rows[1], p_skin), dot(rows[2], p_skin)); normal = vec3<f32>(dot(rows[0].xyz, normal), dot(rows[1].xyz, normal), dot(rows[2].xyz, normal)); pos = skinned_pos; } let p = vec4<f32>(pos, 1.0);",
@@ -222,8 +222,8 @@ fn build_rigid_prelude(prelude: &str) -> String {
             "blended.normal.xyz, );",
         )
         .replace(
-            "out.custom_range = vec2<u32>(inst.skeleton_params.z, inst.skeleton_params.w); out.uv = blended.uv;",
-            "out.custom_range = inst.custom_params; out.uv = v.uv;",
+            "out.custom_range = vec2<u32>(inst.skeleton_params.z, inst.skeleton_params.w); out.uv = blended.uv; out.paint_uv = blended.paint_uv;",
+            "out.custom_range = inst.custom_params; out.uv = v.uv; out.paint_uv = v.paint_uv;",
         )
 }
 
@@ -271,8 +271,8 @@ fn build_packed_lod_rigid_prelude() -> String {
         )
         .replace("    var out_pos = v.pos;", "    var out_pos = v.pos.xyz;")
         .replace(
-            "    return VertexInput(out_pos, vec4<f32>(normalize(out_normal), 0.0), v.uv);",
-            "    return VertexInput(vec4<f32>(out_pos, 0.0), vec4<f32>(normalize(out_normal), 0.0), v.uv);",
+            "    return VertexInput(out_pos, vec4<f32>(normalize(out_normal), 0.0), v.uv, v.paint_uv);",
+            "    return VertexInput(vec4<f32>(out_pos, 0.0), vec4<f32>(normalize(out_normal), 0.0), v.uv, v.paint_uv);",
         )
         .replace(
             "    let blended = apply_blend_shapes(v, vertex_index, instance_index);",
@@ -709,6 +709,25 @@ mod tests {
                 naga::front::wgsl::parse_str(&wgsl).expect("3d material wgsl parses");
             }
         }
+    }
+
+    #[test]
+    fn packed_lod_material_wgsl_keeps_paint_uv() {
+        let prelude = build_packed_lod_rigid_prelude();
+        let wgsl = build_material_shader_with_prelude(&prelude, regular::MATERIAL_STANDARD_WGSL);
+        parse_and_validate(&wgsl, "packed lod paint uv");
+        assert!(wgsl.contains("@location(15) paint_uv"));
+        assert!(wgsl.contains("out.paint_uv = v.paint_uv"));
+    }
+
+    #[test]
+    fn unlit_material_samples_base_color_texture() {
+        assert!(
+            regular::MATERIAL_UNLIT_WGSL
+                .contains("textureSample(material_base_color_tex, material_sampler, in.uv)")
+        );
+        assert!(regular::MATERIAL_UNLIT_WGSL.contains("color.rgb * base_sample.rgb + emissive"));
+        assert!(regular::MATERIAL_UNLIT_WGSL.contains("color.a * base_sample.a"));
     }
 
     #[test]

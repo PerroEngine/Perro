@@ -104,6 +104,11 @@ pub(super) fn rigid_packed_lod_vertex_layout<'a>() -> wgpu::VertexBufferLayout<'
                 shader_location: 12,
                 format: wgpu::VertexFormat::Unorm16x2,
             },
+            wgpu::VertexAttribute {
+                offset: 16,
+                shader_location: 15,
+                format: wgpu::VertexFormat::Float32x2,
+            },
         ],
     }
 }
@@ -277,6 +282,11 @@ fn create_pipeline_rigid_with_depth_write(
                             shader_location: 12,
                             format: wgpu::VertexFormat::Float32x2,
                         },
+                        wgpu::VertexAttribute {
+                            offset: 28,
+                            shader_location: 15,
+                            format: wgpu::VertexFormat::Float32x2,
+                        },
                     ],
                 }),
                 Some(wgpu::VertexBufferLayout {
@@ -409,6 +419,11 @@ pub(super) fn create_pipeline_overlay_rigid(
                         wgpu::VertexAttribute {
                             offset: 20,
                             shader_location: 12,
+                            format: wgpu::VertexFormat::Float32x2,
+                        },
+                        wgpu::VertexAttribute {
+                            offset: 28,
+                            shader_location: 15,
                             format: wgpu::VertexFormat::Float32x2,
                         },
                     ],

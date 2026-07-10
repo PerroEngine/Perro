@@ -27,6 +27,11 @@ fn builtin_flat_mesh_double_sided(source: &str) -> bool {
     )
 }
 
+#[inline]
+fn prepare_fast_path_eligible(force_full_rebuild: bool, eligible: bool) -> bool {
+    !force_full_rebuild && eligible
+}
+
 impl Gpu3D {
     pub fn prepare(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, frame: Prepare3D<'_>) {
         let mut step_timing = Prepare3DStepTiming::default();
@@ -60,6 +65,7 @@ impl Gpu3D {
             lighting,
             draws,
             draws_revision,
+            force_full_rebuild,
             decals,
             decals_revision,
             width,
@@ -113,19 +119,29 @@ impl Gpu3D {
                 self.last_sky_time_seconds = -1.0;
             }
         }
-        let draws_unchanged = draws_semantically_unchanged(
-            self.last_draws_revision,
-            draws_revision,
-            &self.last_draws,
-            draws,
+        let draws_unchanged = prepare_fast_path_eligible(
+            force_full_rebuild,
+            draws_semantically_unchanged(
+                self.last_draws_revision,
+                draws_revision,
+                &self.last_draws,
+                draws,
+            ),
         );
         // Classify each draw pair: single-instance regular draws (model-only)
         // and dense multimeshes whose poses are unchanged (node_model-only) both
         // stay on the transform-only fast path. A multimesh present but unchanged
         // no longer forces a full rebuild.
         let mut transform_only_kinds = std::mem::take(&mut self.transform_only_kinds_scratch);
-        let transform_only_semantic = !draws_unchanged
-            && classify_transform_only_scene(&self.last_draws, draws, &mut transform_only_kinds);
+        let transform_only_semantic = prepare_fast_path_eligible(
+            force_full_rebuild,
+            !draws_unchanged
+                && classify_transform_only_scene(
+                    &self.last_draws,
+                    draws,
+                    &mut transform_only_kinds,
+                ),
+        );
         // Multimesh patch needs the param-range bookkeeping to line up with the
         // current draw list; otherwise fall back to a full rebuild.
         let stable_multimesh_ranges = !transform_only_semantic
@@ -2229,7 +2245,15 @@ impl Gpu3D {
 #[cfg(test)]
 mod tests {
     use super::builtin_flat_mesh_double_sided;
-    use super::{BleedOccluder, Vec3, bleed_segment_occluded, pack_local_bleed};
+    use super::{
+        BleedOccluder, Vec3, bleed_segment_occluded, pack_local_bleed, prepare_fast_path_eligible,
+    };
+
+    #[test]
+    fn resource_dirty_forces_full_prepare_path() {
+        assert!(!prepare_fast_path_eligible(true, true));
+        assert!(prepare_fast_path_eligible(false, true));
+    }
 
     #[test]
     fn local_bleed_pack_lanes_match_shader_layout() {

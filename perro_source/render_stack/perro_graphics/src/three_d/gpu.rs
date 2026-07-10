@@ -288,6 +288,7 @@ struct RigidMeshVertex {
     pos: [f32; 3],
     normal: [i16; 4],
     uv: [f32; 2],
+    paint_uv: [f32; 2],
 }
 
 #[repr(C)]
@@ -296,6 +297,7 @@ struct PackedRigidLodVertex {
     pos: [u16; 4],
     normal: [i8; 4],
     uv: [u16; 2],
+    paint_uv: [f32; 2],
 }
 
 #[repr(C)]
@@ -314,6 +316,7 @@ struct SkinnedMeshVertex {
     uv: [f32; 2],
     joints: [u16; 4],
     weights: perro_structs::UnitVector4,
+    paint_uv: [f32; 2],
 }
 
 #[repr(C)]
@@ -456,6 +459,7 @@ fn pack_rigid_mesh_vertex(v: &DecodedMeshVertex) -> RigidMeshVertex {
         pos: v.pos,
         normal: pack_normal_snorm16x4(v.normal),
         uv: v.uv,
+        paint_uv: v.paint_uv,
     }
 }
 
@@ -467,6 +471,7 @@ fn pack_skinned_mesh_vertex(v: &DecodedMeshVertex) -> SkinnedMeshVertex {
         uv: v.uv,
         joints: v.joints,
         weights: v.weights,
+        paint_uv: v.paint_uv,
     }
 }
 
@@ -1014,6 +1019,7 @@ pub struct Prepare3D<'a> {
     pub lighting: &'a Lighting3DState,
     pub draws: &'a [Draw3DInstance],
     pub draws_revision: u64,
+    pub force_full_rebuild: bool,
     pub decals: &'a [(perro_ids::NodeID, perro_render_bridge::Decal3DState)],
     pub decals_revision: u64,
     pub width: u32,
@@ -1287,10 +1293,10 @@ mod tests {
 
     #[test]
     fn packed_gpu_layouts_keep_expected_sizes() {
-        assert_eq!(std::mem::size_of::<RigidMeshVertex>(), 28);
-        assert_eq!(std::mem::size_of::<PackedRigidLodVertex>(), 16);
+        assert_eq!(std::mem::size_of::<RigidMeshVertex>(), 36);
+        assert_eq!(std::mem::size_of::<PackedRigidLodVertex>(), 24);
         assert_eq!(std::mem::size_of::<PackedLodParamGpu>(), 48);
-        assert_eq!(std::mem::size_of::<SkinnedMeshVertex>(), 40);
+        assert_eq!(std::mem::size_of::<SkinnedMeshVertex>(), 48);
         assert_eq!(std::mem::size_of::<MultiMeshInstanceGpu>(), 40);
         assert_eq!(std::mem::size_of::<MultiMeshDrawParamGpu>(), 80);
         assert_eq!(std::mem::size_of::<MaterialInstanceGpu>(), 20);
@@ -1316,6 +1322,8 @@ mod tests {
             36,
             "skinned weights attr offset"
         );
+        assert_eq!(std::mem::offset_of!(RigidMeshVertex, paint_uv), 28);
+        assert_eq!(std::mem::offset_of!(SkinnedMeshVertex, paint_uv), 40);
         assert_eq!(
             std::mem::offset_of!(MultiMeshInstanceGpu, scale),
             20,

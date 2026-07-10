@@ -1063,14 +1063,43 @@ impl PerroGraphics {
                                 height,
                             },
                         );
+                        let texture_source = self.resources.texture_source(id).map(str::to_owned);
                         if let Some(gpu) = self.gpu.as_mut() {
-                            gpu.invalidate_texture(id);
+                            gpu.invalidate_texture(id, texture_source.as_deref());
                         }
                         self.retained_draws_cache_revision = u64::MAX;
                         self.retained_decals_3d_cache_revision = u64::MAX;
                         self.retained_sprites_cache_revision = u64::MAX;
                         self.events.push(RenderEvent::TextureLoaded { id });
                         self.redraw_requested = true;
+                    }
+                    ResourceCommand::WriteTextureRgbaRegion {
+                        id,
+                        x,
+                        y,
+                        width,
+                        height,
+                        rgba,
+                    } => {
+                        if self.resources.write_decoded_texture_region(
+                            id,
+                            x,
+                            y,
+                            width,
+                            height,
+                            rgba.as_ref(),
+                        ) {
+                            let texture_source =
+                                self.resources.texture_source(id).map(str::to_owned);
+                            if let Some(gpu) = self.gpu.as_mut() {
+                                gpu.invalidate_texture(id, texture_source.as_deref());
+                            }
+                            self.retained_draws_cache_revision = u64::MAX;
+                            self.retained_decals_3d_cache_revision = u64::MAX;
+                            self.retained_sprites_cache_revision = u64::MAX;
+                            self.events.push(RenderEvent::TextureLoaded { id });
+                            self.redraw_requested = true;
+                        }
                     }
                     ResourceCommand::CreateMaterial {
                         request,

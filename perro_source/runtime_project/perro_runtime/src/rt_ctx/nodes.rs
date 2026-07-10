@@ -5,14 +5,14 @@
 
 use perro_ids::{IntoTagID, MaterialID, NodeID};
 use perro_nodes::{
-    Node2D, Node3D, NodeBaseDispatch, NodeType, NodeTypeDispatch, Renderable, SceneNode,
-    SceneNodeData, Spatial, UiNode,
+    CameraProjection, Node2D, Node3D, NodeBaseDispatch, NodeType, NodeTypeDispatch, Renderable,
+    SceneNode, SceneNodeData, Spatial, UiNode,
 };
 use perro_runtime_api::sub_apis::{
-    IntoNodeCreateBatch, IntoNodeTag, IntoNodeTags, MeshDataSurfaceHit3D, MeshDataSurfaceRegion3D,
-    MeshMaterialRegion3D, MeshSurfaceHit3D, MeshSurfaceRay3D, NodeAPI, NodeCollection,
-    NodeCollectionEntry, NodeCreateBatch, NodeQueryView, NodeScriptSpec, NodeScriptVar, NodeSpec,
-    QueryExpr, QueryScope, ScriptAPI,
+    CameraRay3D, IntoNodeCreateBatch, IntoNodeTag, IntoNodeTags, MeshDataSurfaceHit3D,
+    MeshDataSurfaceRegion3D, MeshMaterialRegion3D, MeshSurfaceHit3D, MeshSurfaceRay3D, NodeAPI,
+    NodeCollection, NodeCollectionEntry, NodeCreateBatch, NodeQueryView, NodeScriptSpec,
+    NodeScriptVar, NodeSpec, QueryExpr, QueryScope, ScriptAPI,
 };
 use perro_structs::{Transform2D, Transform3D, Vector2, Vector3};
 use rayon::prelude::*;
@@ -1390,6 +1390,77 @@ impl NodeAPI for Runtime {
             .inverse();
         let p = basis.transform_point3(global.into());
         Some(p.into())
+    }
+
+    fn camera_screen_ray_3d(
+        &mut self,
+        camera_id: NodeID,
+        pixel: Vector2,
+        viewport_size: Vector2,
+    ) -> Option<CameraRay3D> {
+        if !pixel.x.is_finite()
+            || !pixel.y.is_finite()
+            || !viewport_size.x.is_finite()
+            || !viewport_size.y.is_finite()
+            || viewport_size.x <= 0.0
+            || viewport_size.y <= 0.0
+        {
+            return None;
+        }
+        let projection = match &self.nodes.get(camera_id)?.data {
+            SceneNodeData::Camera3D(camera) => camera.projection.clone(),
+            _ => return None,
+        };
+        let transform = Runtime::get_global_transform_3d(self, camera_id)?;
+        let rotation: glam::Quat = transform.rotation.into();
+        if !rotation.is_finite() || rotation.length_squared() <= 1.0e-8 {
+            return None;
+        }
+        let rotation = rotation.normalize();
+        let x = pixel.x.mul_add(2.0 / viewport_size.x, -1.0);
+        let y = 1.0 - pixel.y * (2.0 / viewport_size.y);
+        let aspect = viewport_size.x / viewport_size.y;
+        let camera_position: glam::Vec3 = transform.position.into();
+        let (origin_local, direction_local, max_distance) = match projection {
+            CameraProjection::Perspective {
+                fov_y_degrees, far, ..
+            } => {
+                let half_y = (fov_y_degrees.to_radians() * 0.5).tan();
+                (
+                    glam::Vec3::ZERO,
+                    glam::Vec3::new(x * half_y * aspect, y * half_y, -1.0).normalize_or_zero(),
+                    far,
+                )
+            }
+            CameraProjection::Orthographic { size, near, far } => (
+                glam::Vec3::new(x * size * aspect * 0.5, y * size * 0.5, -near),
+                glam::Vec3::NEG_Z,
+                far - near,
+            ),
+            CameraProjection::Frustum {
+                left,
+                right,
+                bottom,
+                top,
+                near,
+                far,
+            } => {
+                let near_point = glam::Vec3::new(
+                    left + (x + 1.0) * 0.5 * (right - left),
+                    bottom + (y + 1.0) * 0.5 * (top - bottom),
+                    -near,
+                );
+                let direction = near_point.normalize_or_zero();
+                (glam::Vec3::ZERO, direction, far / (-direction.z))
+            }
+        };
+        let origin = camera_position + rotation * origin_local;
+        let direction = rotation * direction_local;
+        Some(CameraRay3D {
+            origin: origin.into(),
+            direction: direction.into(),
+            max_distance,
+        })
     }
 
     fn to_global_transform_2d(

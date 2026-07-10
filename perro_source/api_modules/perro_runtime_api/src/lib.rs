@@ -28,7 +28,7 @@ pub mod prelude {
 
     // Runtime domain APIs.
     pub use crate::sub_apis::{
-        AnimPlayerAPI, AnimPlayerModule, AttachedMidiTarget, CursorIcon, FrameRateCap,
+        AnimPlayerAPI, AnimPlayerModule, AttachedMidiTarget, CameraRay3D, CursorIcon, FrameRateCap,
         IntoImpulseDirection, IntoNodeCollection, IntoNodeCreateBatch, IntoNodeTag, IntoNodeTags,
         IntoPreloadedSceneID, IntoPreloadedSceneTarget, IntoSceneLoadSource, IntoScenePath,
         IntoScriptMemberID, MeshDataSurfaceHit3D, MeshDataSurfaceRegion3D, MeshMaterialRegion3D,

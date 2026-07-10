@@ -15,6 +15,7 @@ struct MeshVertexKey {
     pos: [u32; 3],
     normal: [u32; 3],
     uv: [u32; 2],
+    paint_uv: [u32; 2],
 }
 
 impl From<MeshVertex> for MeshVertexKey {
@@ -23,6 +24,7 @@ impl From<MeshVertex> for MeshVertexKey {
             pos: vertex.pos.map(f32::to_bits),
             normal: vertex.normal.map(f32::to_bits),
             uv: vertex.uv.map(f32::to_bits),
+            paint_uv: vertex.paint_uv.map(f32::to_bits),
         }
     }
 }
@@ -91,6 +93,7 @@ fn to_mesh_vertex(vertex: BuiltinMeshVertex) -> MeshVertex {
         pos: vertex.pos,
         normal: vertex.normal,
         uv: vertex.uv,
+        paint_uv: vertex.uv,
         joints: [0, 0, 0, 0],
         weights: [1.0, 0.0, 0.0, 0.0].into(),
     }

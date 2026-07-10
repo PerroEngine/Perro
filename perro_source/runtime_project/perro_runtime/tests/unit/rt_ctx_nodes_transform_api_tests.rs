@@ -4,8 +4,8 @@ use crate::{
 };
 use perro_ids::{NodeID, ScriptMemberID, TagID, tags};
 use perro_nodes::{
-    Bone3D, BoneAttachment3D, Camera2D, Node2D, Node3D, NodeType, SceneNode, SceneNodeData,
-    Skeleton3D, Sprite2D, UiButton, UiLabel, UiNode, UiPanel,
+    Bone3D, BoneAttachment3D, Camera2D, Camera3D, CameraProjection, Node2D, Node3D, NodeType,
+    SceneNode, SceneNodeData, Skeleton3D, Sprite2D, UiButton, UiLabel, UiNode, UiPanel,
 };
 use perro_runtime_api::node_collection;
 use perro_runtime_api::sub_apis::{
@@ -64,6 +64,42 @@ static STATIC_SCENE: Scene = Scene {
     root: Some(SceneKey(0)),
     key_names: Cow::Borrowed(SCENE_KEY_NAMES),
 };
+
+#[test]
+fn camera_screen_ray_supports_perspective_ortho_and_frustum() {
+    let mut runtime = Runtime::new();
+    let camera = NodeAPI::create::<Camera3D>(&mut runtime);
+    let viewport = Vector2::new(800.0, 400.0);
+    let center = Vector2::new(400.0, 200.0);
+
+    let perspective = NodeAPI::camera_screen_ray_3d(&mut runtime, camera, center, viewport)
+        .expect("perspective ray");
+    assert_eq!(perspective.origin, Vector3::ZERO);
+    assert!(
+        perspective
+            .direction
+            .distance_to(Vector3::new(0.0, 0.0, -1.0))
+            < 1e-5
+    );
+
+    runtime.with_node_mut::<Camera3D, _, _>(camera, |camera| {
+        camera.projection = CameraProjection::orthographic(4.0, 0.5, 20.0);
+    });
+    let ortho =
+        NodeAPI::camera_screen_ray_3d(&mut runtime, camera, Vector2::new(800.0, 0.0), viewport)
+            .expect("ortho ray");
+    assert!(ortho.origin.distance_to(Vector3::new(4.0, 2.0, -0.5)) < 1e-5);
+    assert!(ortho.direction.distance_to(Vector3::new(0.0, 0.0, -1.0)) < 1e-5);
+    assert!((ortho.max_distance - 19.5).abs() < 1e-5);
+
+    runtime.with_node_mut::<Camera3D, _, _>(camera, |camera| {
+        camera.projection = CameraProjection::frustum(-1.0, 2.0, -0.5, 1.5, 1.0, 50.0);
+    });
+    let frustum =
+        NodeAPI::camera_screen_ray_3d(&mut runtime, camera, center, viewport).expect("frustum ray");
+    let expected = Vector3::new(0.5, 0.5, -1.0).normalized();
+    assert!(frustum.direction.distance_to(expected) < 1e-5);
+}
 
 fn static_scene_lookup(_path_hash: u64) -> &'static Scene {
     &STATIC_SCENE

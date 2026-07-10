@@ -391,6 +391,17 @@ impl Gpu3D {
         self.evict_material_texture_bind_groups_for_slot(slot);
     }
 
+    pub fn invalidate_material_texture_source(&mut self, source: Option<&str>) {
+        let Some(source) = source else {
+            return;
+        };
+        let source_hash = perro_ids::parse_hashed_source_uri(source)
+            .unwrap_or_else(|| perro_ids::string_to_u64(source));
+        if let Some(slot) = self.custom_material_texture_slots.get(&source_hash).copied() {
+            self.invalidate_material_texture(slot);
+        }
+    }
+
     fn evict_material_texture_bind_groups_for_slot(&mut self, slot: u32) {
         self.material_texture_bind_groups
             .retain(|key, _| material_texture_key_survives_slot_evict(key, slot));
@@ -2250,6 +2261,7 @@ fn pack_packed_lod_vertex(vertex: &MeshVertex, param: &PackedLodParamGpu) -> Pac
             pack_unorm16_local(vertex.uv[0], param.uv_min_extent[0], param.uv_min_extent[2]),
             pack_unorm16_local(vertex.uv[1], param.uv_min_extent[1], param.uv_min_extent[3]),
         ],
+        paint_uv: vertex.paint_uv,
     }
 }
 

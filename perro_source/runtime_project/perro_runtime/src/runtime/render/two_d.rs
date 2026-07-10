@@ -10,12 +10,12 @@ use perro_nodes::{
 };
 use perro_particle_math::compile_expression;
 use perro_render_bridge::{
-    AmbientLight2DState, Camera2DState, CameraStreamCommand, Command2D, ParticlePath2D,
-    ParticleProfile2D, ParticleSimulationMode2D, PointLight2DState, PointParticles2DState,
-    RayLight2DState, Rect2DCommand, RenderCommand, ResourceCommand, ShadowCaster2DShapeState,
-    ShadowCaster2DState, SpotLight2DState, Sprite2DCommand, TileMap2DCommand, UiCommand,
-    UiRectState, UiTextAlignState, Water2DState, WaterBodyQueryState, WaterCoastlineShape2D,
-    WaterIdleModeState, WaterImpact2D, WaterLinkState, WaterShapeState,
+    AmbientLight2DState, Camera2DState, CameraStreamCommand, CameraStreamSourceState, Command2D,
+    ParticlePath2D, ParticleProfile2D, ParticleSimulationMode2D, PointLight2DState,
+    PointParticles2DState, RayLight2DState, Rect2DCommand, RenderCommand, ResourceCommand,
+    ShadowCaster2DShapeState, ShadowCaster2DState, SpotLight2DState, Sprite2DCommand,
+    TileMap2DCommand, UiCommand, UiRectState, UiTextAlignState, Water2DState, WaterBodyQueryState,
+    WaterCoastlineShape2D, WaterIdleModeState, WaterImpact2D, WaterLinkState, WaterShapeState,
 };
 use perro_runtime_render::{sprite_2d_texture_request, tilemap_2d_texture_request};
 use perro_structs::{BitMask, UVector2, Vector2};
@@ -355,6 +355,10 @@ impl Runtime {
                             Runtime::color_modulate(tint, self.effective_self_modulate(node));
                         let aspect =
                             camera_stream_aspect_ratio(stream.aspect_ratio, stream.resolution);
+                        let texture_resolution = match &stream_state.source {
+                            CameraStreamSourceState::Webcam { resolution, .. } => *resolution,
+                            _ => stream_state.resolution,
+                        };
                         let model = self
                             .get_render_global_transform_2d(node)
                             .unwrap_or(local_transform)
@@ -365,7 +369,7 @@ impl Runtime {
                             model,
                             tint,
                             uv_min: [0.0, 0.0],
-                            uv_max: [1.0, 1.0],
+                            uv_max: [texture_resolution[0] as f32, texture_resolution[1] as f32],
                             size: [aspect, 1.0],
                             z_index,
                         };
@@ -483,7 +487,7 @@ impl Runtime {
                     let modulate = self.effective_self_modulate(node);
                     let lifetime_min = profile.lifetime_min.max(0.001);
                     let lifetime_max = profile.lifetime_max.max(lifetime_min);
-                    if let Some(node_mut) = self.nodes.get_mut(node)
+                    if let Some(node_mut) = self.nodes.get_mut_untracked(node)
                         && let SceneNodeData::ParticleEmitter2D(emitter_mut) = &mut node_mut.data
                     {
                         emitter_mut.internal_lifetime_max = lifetime_max;
@@ -1003,7 +1007,7 @@ impl Runtime {
                 match result {
                     crate::RuntimeRenderResult::Texture(id) => {
                         texture = id;
-                        if let Some(node) = self.nodes.get_mut(node) {
+                        if let Some(node) = self.nodes.get_mut_untracked(node) {
                             match &mut node.data {
                                 SceneNodeData::Sprite2D(sprite) => sprite.texture = id,
                                 SceneNodeData::AnimatedSprite2D(sprite) => sprite.texture = id,

@@ -252,6 +252,11 @@ pub(crate) fn dev_command(args: &[String], cwd: &Path) -> Result<(), String> {
     })?;
     log_done("Scripts Built");
 
+    let launch_dir = prepare_dev_runner_launch_dir(&project_dir, "debug")
+        .map_err(|err| format!("failed to prepare dev runner launch directory: {err}"))?;
+    let scripts_path = stage_dev_runner_scripts(&project_dir, &launch_dir, "debug")
+        .map_err(|err| format!("failed to stage scripts dylib for dev runner: {err}"))?;
+
     let dev_runner_dir = project_dir.join(".perro").join("dev_runner");
     let target_dir = project_dir.join("target");
     log_step("Building Dev Runner");
@@ -299,7 +304,7 @@ pub(crate) fn dev_command(args: &[String], cwd: &Path) -> Result<(), String> {
     } else {
         target_dir.join(profile_dir).join("perro_dev_runner")
     };
-    let runner_path = prepare_dev_runner_launch_path(&project_dir, &runner_path, profile_dir)
+    let runner_path = prepare_dev_runner_launch_path(&launch_dir, &runner_path)
         .map_err(|err| format!("failed to prepare dev runner launch copy: {err}"))?;
     if project_cfg.steam.enabled {
         let launch_dir = runner_path.parent().ok_or_else(|| {
@@ -316,7 +321,8 @@ pub(crate) fn dev_command(args: &[String], cwd: &Path) -> Result<(), String> {
     run_cmd
         .arg("--path")
         .arg(project_dir.to_string_lossy().to_string())
-        .current_dir(&project_dir);
+        .current_dir(&project_dir)
+        .env("PERRO_SCRIPTS_DYLIB_PATH", scripts_path);
     if let Some(path) = &csv_profile_path {
         run_cmd.env("PERRO_PROFILE_CSV", path.to_string_lossy().to_string());
     }
@@ -350,19 +356,7 @@ fn install_dev_ctrl_c_handler() {
     }
 }
 
-fn prepare_dev_runner_launch_path(
-    project_dir: &Path,
-    runner_path: &Path,
-    profile_dir: &str,
-) -> io::Result<PathBuf> {
-    let runs_dir = project_dir.join(".perro").join("dev_runner").join("runs");
-    cleanup_old_dev_runner_launch_dirs(&runs_dir);
-    let stamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis();
-    let launch_dir = runs_dir.join(format!("{profile_dir}-{}-{stamp}", std::process::id()));
-    fs::create_dir_all(&launch_dir)?;
+fn prepare_dev_runner_launch_path(launch_dir: &Path, runner_path: &Path) -> io::Result<PathBuf> {
     let launch_path = launch_dir.join(
         runner_path
             .file_name()
@@ -372,16 +366,44 @@ fn prepare_dev_runner_launch_path(
     Ok(launch_path)
 }
 
-fn cleanup_old_dev_runner_launch_dirs(runs_dir: &Path) {
-    let Ok(entries) = fs::read_dir(runs_dir) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.is_dir() {
-            let _ = fs::remove_dir_all(path);
-        }
-    }
+fn prepare_dev_runner_launch_dir(project_dir: &Path, profile_dir: &str) -> io::Result<PathBuf> {
+    let runs_dir = project_dir.join(".perro").join("dev_runner").join("runs");
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    let launch_dir = runs_dir.join(format!("{profile_dir}-{}-{stamp}", std::process::id()));
+    fs::create_dir_all(&launch_dir)?;
+    Ok(launch_dir)
+}
+
+fn stage_dev_runner_scripts(
+    project_dir: &Path,
+    launch_dir: &Path,
+    profile_dir: &str,
+) -> io::Result<PathBuf> {
+    let source = project_dir
+        .join("target")
+        .join(profile_dir)
+        .join(scripts_dylib_name());
+    let target = launch_dir.join(scripts_dylib_name());
+    fs::copy(source, &target)?;
+    Ok(target)
+}
+
+#[cfg(target_os = "windows")]
+fn scripts_dylib_name() -> &'static str {
+    "scripts.dll"
+}
+
+#[cfg(target_os = "linux")]
+fn scripts_dylib_name() -> &'static str {
+    "libscripts.so"
+}
+
+#[cfg(target_os = "macos")]
+fn scripts_dylib_name() -> &'static str {
+    "libscripts.dylib"
 }
 
 pub(crate) fn copy_steam_runtime_library(

@@ -83,6 +83,64 @@ impl TextureAPI for RuntimeResourceApi {
         id
     }
 
+    fn write_texture_rgba(&self, id: TextureID, width: u32, height: u32, rgba: &[u8]) -> bool {
+        if id.is_nil()
+            || width == 0
+            || height == 0
+            || expected_rgba_len(width, height) != Some(rgba.len())
+        {
+            return false;
+        }
+        let mut state = self.state.lock().expect("resource api mutex poisoned");
+        if !texture_id_known(&state, id) {
+            return false;
+        }
+        state
+            .queued_commands
+            .push(RenderCommand::Resource(ResourceCommand::WriteTextureRgba {
+                id,
+                width,
+                height,
+                rgba: Arc::from(rgba),
+            }));
+        true
+    }
+
+    fn write_texture_rgba_region(
+        &self,
+        id: TextureID,
+        x: u32,
+        y: u32,
+        width: u32,
+        height: u32,
+        rgba: &[u8],
+    ) -> bool {
+        if id.is_nil()
+            || x.checked_add(width).is_none()
+            || y.checked_add(height).is_none()
+            || width == 0
+            || height == 0
+            || expected_rgba_len(width, height) != Some(rgba.len())
+        {
+            return false;
+        }
+        let mut state = self.state.lock().expect("resource api mutex poisoned");
+        if !texture_id_known(&state, id) {
+            return false;
+        }
+        state.queued_commands.push(RenderCommand::Resource(
+            ResourceCommand::WriteTextureRgbaRegion {
+                id,
+                x,
+                y,
+                width,
+                height,
+                rgba: Arc::from(rgba),
+            },
+        ));
+        true
+    }
+
     fn load_texture_hashed(&self, source_hash: u64, source: Option<&str>) -> TextureID {
         let mut state = self.state.lock().expect("resource api mutex poisoned");
         if let Some(id) = state.texture_by_source.get(&source_hash).copied() {
@@ -225,6 +283,15 @@ impl TextureAPI for RuntimeResourceApi {
             .and_then(|state| state.webcam_texture_by_id.get(&webcam).copied())
             .unwrap_or_else(TextureID::nil)
     }
+}
+
+fn texture_id_known(state: &super::state::RuntimeResourceState, id: TextureID) -> bool {
+    state.texture_loaded_by_id.contains(&id)
+        || state.texture_by_source.values().any(|known| *known == id)
+        || state
+            .texture_pending_id_by_request
+            .values()
+            .any(|pending| *pending == id)
 }
 
 impl RuntimeResourceApi {

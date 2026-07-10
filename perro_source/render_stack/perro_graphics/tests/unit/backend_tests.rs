@@ -115,6 +115,79 @@ fn write_texture_rgba_updates_resource_texture() {
 }
 
 #[test]
+fn write_texture_rgba_region_updates_only_dirty_rect() {
+    let mut graphics = PerroGraphics::new();
+    let texture = TextureID::from_parts(78, 0);
+    graphics.submit(RenderCommand::Resource(
+        ResourceCommand::CreateRuntimeTexture {
+            request: perro_render_bridge::RenderRequestID::new(3),
+            id: texture,
+            source: "runtime://texture/78:0".to_string(),
+            reserved: true,
+            width: 3,
+            height: 2,
+            rgba: Arc::from([0u8; 24]),
+        },
+    ));
+    graphics.submit(RenderCommand::Resource(
+        ResourceCommand::WriteTextureRgbaRegion {
+            id: texture,
+            x: 1,
+            y: 0,
+            width: 2,
+            height: 2,
+            rgba: Arc::from([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]),
+        },
+    ));
+    graphics.draw_frame();
+
+    let decoded = graphics
+        .resources
+        .decoded_texture_data(texture)
+        .expect("runtime texture");
+    assert_eq!(
+        decoded.rgba,
+        [
+            0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 0, 0, 0, 0, 9, 10, 11, 12, 13, 14, 15, 16,
+        ]
+    );
+}
+
+#[test]
+fn write_texture_rgba_region_rejects_out_of_bounds_rect() {
+    let mut graphics = PerroGraphics::new();
+    let texture = TextureID::from_parts(79, 0);
+    graphics.submit(RenderCommand::Resource(
+        ResourceCommand::CreateRuntimeTexture {
+            request: perro_render_bridge::RenderRequestID::new(4),
+            id: texture,
+            source: "runtime://texture/79:0".to_string(),
+            reserved: true,
+            width: 2,
+            height: 2,
+            rgba: Arc::from([0u8; 16]),
+        },
+    ));
+    graphics.submit(RenderCommand::Resource(
+        ResourceCommand::WriteTextureRgbaRegion {
+            id: texture,
+            x: 1,
+            y: 1,
+            width: 2,
+            height: 1,
+            rgba: Arc::from([255u8; 8]),
+        },
+    ));
+    graphics.draw_frame();
+
+    let decoded = graphics
+        .resources
+        .decoded_texture_data(texture)
+        .expect("runtime texture");
+    assert_eq!(decoded.rgba, [0u8; 16]);
+}
+
+#[test]
 fn webcam_camera_stream_does_not_overwrite_webcam_texture() {
     let mut graphics = PerroGraphics::new();
     let texture = TextureID::from_parts(91, 0);

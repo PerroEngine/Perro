@@ -691,6 +691,52 @@ impl ResourceStore {
         self.decoded_texture_by_id.get(&id)
     }
 
+    pub(crate) fn write_decoded_texture_region(
+        &mut self,
+        id: TextureID,
+        x: u32,
+        y: u32,
+        width: u32,
+        height: u32,
+        rgba: &[u8],
+    ) -> bool {
+        let Some(end_x) = x.checked_add(width) else {
+            return false;
+        };
+        let Some(end_y) = y.checked_add(height) else {
+            return false;
+        };
+        let Some(expected_len) = (width as usize)
+            .checked_mul(height as usize)
+            .and_then(|pixels| pixels.checked_mul(4))
+        else {
+            return false;
+        };
+        if width == 0 || height == 0 || rgba.len() != expected_len {
+            return false;
+        }
+        let Some(texture) = self.decoded_texture_by_id.get_mut(&id) else {
+            return false;
+        };
+        if end_x > texture.width || end_y > texture.height {
+            return false;
+        }
+        let texture_stride = texture.width as usize * 4;
+        let region_stride = width as usize * 4;
+        for row in 0..height as usize {
+            let dst_start = (y as usize + row) * texture_stride + x as usize * 4;
+            let src_start = row * region_stride;
+            texture.rgba[dst_start..dst_start + region_stride]
+                .copy_from_slice(&rgba[src_start..src_start + region_stride]);
+        }
+        let updated = texture.clone();
+        if let Some(source) = self.texture_source_by.get(&id) {
+            self.decoded_texture_by_source
+                .insert(source_key(source), updated);
+        }
+        true
+    }
+
     #[inline]
     pub(crate) fn decoded_texture_data_by_source(
         &self,

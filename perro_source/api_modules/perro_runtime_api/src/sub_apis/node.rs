@@ -647,6 +647,14 @@ pub struct MeshSurfaceHit3D {
     pub instance_index: u32,
     /// Surface index on the resolved mesh.
     pub surface_index: u32,
+    /// Triangle index in the decoded mesh query triangle list.
+    pub triangle_index: u32,
+    /// Triangle weights `(a, b, c)` at the hit.
+    pub barycentric: Vector3,
+    /// Interpolated primary texture coordinate.
+    pub uv0: Vector2,
+    /// Interpolated UV1, or UV0 when the mesh has no UV1.
+    pub paint_uv: Vector2,
     /// Material bound on the resolved surface.
     pub material: Option<MaterialID>,
     /// Nearest point on the surface in global space.
@@ -1327,6 +1335,17 @@ pub trait NodeAPI {
     /// Converts a point from global 3D space to node-local 3D space.
     fn to_local_point_3d(&mut self, node_id: NodeID, global: Vector3) -> Option<Vector3>;
 
+    /// Builds a global-space ray through a top-left-origin viewport pixel.
+    fn camera_screen_ray_3d(
+        &mut self,
+        camera_id: NodeID,
+        pixel: Vector2,
+        viewport_size: Vector2,
+    ) -> Option<CameraRay3D> {
+        let _ = (camera_id, pixel, viewport_size);
+        None
+    }
+
     /// Converts a local 2D transform (relative to `node_id`) into global space.
     fn to_global_transform_2d(
         &mut self,
@@ -1889,6 +1908,16 @@ impl<'rt, R: NodeAPI + ?Sized> NodeModule<'rt, R> {
 
     pub fn to_local_point_3d(&mut self, node_id: NodeID, global: Vector3) -> Option<Vector3> {
         self.rt.to_local_point_3d(node_id, global)
+    }
+
+    pub fn camera_screen_ray_3d(
+        &mut self,
+        camera_id: NodeID,
+        pixel: Vector2,
+        viewport_size: Vector2,
+    ) -> Option<CameraRay3D> {
+        self.rt
+            .camera_screen_ray_3d(camera_id, pixel, viewport_size)
     }
 
     pub fn to_global_transform_2d(
@@ -3487,6 +3516,13 @@ macro_rules! set_tags {
         $ctx.Nodes()
             .set_tags::<&'static [$crate::perro_ids::TagID]>($id, None)
     };
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct CameraRay3D {
+    pub origin: Vector3,
+    pub direction: Vector3,
+    pub max_distance: f32,
 }
 
 /// Sets or clears node tags, matching the `tag_*` macro family.

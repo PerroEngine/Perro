@@ -565,7 +565,7 @@ pub struct RenderGpuTiming {
 }
 
 impl Gpu {
-    pub fn invalidate_texture(&mut self, texture: perro_ids::TextureID) {
+    pub fn invalidate_texture(&mut self, texture: perro_ids::TextureID, source: Option<&str>) {
         if let Some(two_d) = self.two_d.as_mut() {
             two_d.invalidate_texture(texture);
         }
@@ -580,9 +580,11 @@ impl Gpu {
         }
         if let Some(three_d) = self.three_d.as_mut() {
             three_d.invalidate_material_texture(texture.index());
+            three_d.invalidate_material_texture_source(source);
         }
         if let Some(camera_stream_3d) = self.camera_stream_3d.as_mut() {
             camera_stream_3d.invalidate_material_texture(texture.index());
+            camera_stream_3d.invalidate_material_texture_source(source);
         }
     }
 
@@ -1359,6 +1361,7 @@ impl Gpu {
                         lighting: lighting_3d,
                         draws: draws_3d,
                         draws_revision: draws_3d_revision,
+                        force_full_rebuild: has(DIRTY_RESOURCES),
                         decals: decals_3d,
                         decals_revision: decals_3d_revision,
                         width: self.render_width,
@@ -1772,6 +1775,7 @@ impl Gpu {
                             lighting: &stream_lighting,
                             draws: &self.camera_stream_draws_scratch,
                             draws_revision: draws_3d_revision ^ node.as_u64(),
+                            force_full_rebuild: has(DIRTY_RESOURCES),
                             decals: &[],
                             decals_revision: 0,
                             width,

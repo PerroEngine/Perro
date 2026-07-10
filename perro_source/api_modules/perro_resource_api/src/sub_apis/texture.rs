@@ -11,6 +11,16 @@ pub trait TextureAPI {
     fn reserve_texture_id(&self, id: TextureID) -> bool;
     fn create_texture_from_bytes(&self, bytes: &[u8]) -> TextureID;
     fn create_texture_from_rgba(&self, width: u32, height: u32, rgba: &[u8]) -> TextureID;
+    fn write_texture_rgba(&self, id: TextureID, width: u32, height: u32, rgba: &[u8]) -> bool;
+    fn write_texture_rgba_region(
+        &self,
+        id: TextureID,
+        x: u32,
+        y: u32,
+        width: u32,
+        height: u32,
+        rgba: &[u8],
+    ) -> bool;
     fn load_texture(&self, source: &str) -> TextureID {
         self.load_texture_hashed(perro_ids::string_to_u64(source), Some(source))
     }
@@ -141,6 +151,25 @@ impl<'res, R: TextureAPI + ?Sized> TextureModule<'res, R> {
     }
 
     #[inline]
+    pub fn write_rgba(&self, id: TextureID, width: u32, height: u32, rgba: &[u8]) -> bool {
+        self.api.write_texture_rgba(id, width, height, rgba)
+    }
+
+    #[inline]
+    pub fn write_rgba_region(
+        &self,
+        id: TextureID,
+        x: u32,
+        y: u32,
+        width: u32,
+        height: u32,
+        rgba: &[u8],
+    ) -> bool {
+        self.api
+            .write_texture_rgba_region(id, x, y, width, height, rgba)
+    }
+
+    #[inline]
     pub fn is_loaded(&self, id: TextureID) -> bool {
         self.api.is_texture_loaded(id)
     }
@@ -196,6 +225,21 @@ macro_rules! texture_create_from_rgba {
 macro_rules! texture_create_from_bytes {
     ($res:expr, $bytes:expr) => {
         $res.Textures().create_from_bytes($bytes)
+    };
+}
+
+#[macro_export]
+macro_rules! texture_write_rgba {
+    ($res:expr, $id:expr, $width:expr, $height:expr, $rgba:expr) => {
+        $res.Textures().write_rgba($id, $width, $height, $rgba)
+    };
+}
+
+#[macro_export]
+macro_rules! texture_write_rgba_region {
+    ($res:expr, $id:expr, $x:expr, $y:expr, $width:expr, $height:expr, $rgba:expr) => {
+        $res.Textures()
+            .write_rgba_region($id, $x, $y, $width, $height, $rgba)
     };
 }
 

@@ -9,8 +9,8 @@ use perro_asset_formats::{
         EXTENSION as PMESH_EXTENSION,
         FLAG_HAS_BLEND_SHAPE_NORMALS as PMESH_FLAG_HAS_BLEND_SHAPE_NORMALS,
         FLAG_HAS_JOINTS as PMESH_FLAG_HAS_JOINTS, FLAG_HAS_NORMAL as PMESH_FLAG_HAS_NORMAL,
-        FLAG_HAS_UV0 as PMESH_FLAG_HAS_UV0, FLAG_HAS_WEIGHTS as PMESH_FLAG_HAS_WEIGHTS,
-        FLAG_PAYLOAD_RAW as PMESH_FLAG_PAYLOAD_RAW,
+        FLAG_HAS_UV0 as PMESH_FLAG_HAS_UV0, FLAG_HAS_UV1 as PMESH_FLAG_HAS_UV1,
+        FLAG_HAS_WEIGHTS as PMESH_FLAG_HAS_WEIGHTS, FLAG_PAYLOAD_RAW as PMESH_FLAG_PAYLOAD_RAW,
         FLAG_WEIGHTS_UNORM8 as PMESH_FLAG_WEIGHTS_UNORM8, MAGIC as PMESH_MAGIC,
         VERSION as PMESH_VERSION,
     },
@@ -33,6 +33,7 @@ struct PackedVertex {
     position: [f32; 3],
     normal: [f32; 3],
     uv: [f32; 2],
+    paint_uv: [f32; 2],
     joints: [u16; 4],
     weights: UnitVector4,
 }
@@ -264,6 +265,7 @@ fn build_gltf_mesh_entries(
         let mut blend_shapes = Vec::<PackedBlendShape>::new();
         let mut has_normals_any = false;
         let mut has_uv_any = false;
+        let mut has_uv1_any = false;
         let mut has_joints_any = false;
         let mut has_weights_any = false;
 
@@ -289,8 +291,15 @@ fn build_gltf_mesh_entries(
                 .read_tex_coords(0)
                 .map(|iter| iter.into_f32().collect())
                 .unwrap_or_default();
+            let paint_tex_coords: Vec<[f32; 2]> = reader
+                .read_tex_coords(1)
+                .map(|iter| iter.into_f32().collect())
+                .unwrap_or_default();
             if !tex_coords.is_empty() {
                 has_uv_any = true;
+            }
+            if !paint_tex_coords.is_empty() {
+                has_uv1_any = true;
             }
             let joints: Vec<[u16; 4]> = reader
                 .read_joints(0)
@@ -343,12 +352,14 @@ fn build_gltf_mesh_entries(
             for (index, position) in positions.iter().copied().enumerate() {
                 let normal = normals.get(index).copied().unwrap_or([0.0, 1.0, 0.0]);
                 let uv = tex_coords.get(index).copied().unwrap_or([0.0, 0.0]);
+                let paint_uv = paint_tex_coords.get(index).copied().unwrap_or(uv);
                 let joint = joints.get(index).copied().unwrap_or([0, 0, 0, 0]);
                 let weight = weights.get(index).copied().unwrap_or([1.0, 0.0, 0.0, 0.0]);
                 vertices.push(PackedVertex {
                     position,
                     normal,
                     uv,
+                    paint_uv,
                     joints: joint,
                     weights: quantize_skin_weights(weight),
                 });
@@ -396,6 +407,7 @@ fn build_gltf_mesh_entries(
             PackedMeshLayoutFlags {
                 has_normals: has_normals_any,
                 has_uv0: has_uv_any,
+                has_uv1: has_uv1_any,
                 has_joints: has_joints_any,
                 has_weights: has_weights_any,
             },
@@ -445,6 +457,7 @@ fn pack_static_mesh_indices(
 struct PackedMeshLayoutFlags {
     has_normals: bool,
     has_uv0: bool,
+    has_uv1: bool,
     has_joints: bool,
     has_weights: bool,
 }
@@ -610,6 +623,7 @@ struct PackedVertexKey {
     position: [u32; 3],
     normal: [u32; 3],
     uv: [u32; 2],
+    paint_uv: [u32; 2],
     joints: [u16; 4],
     weights: [u8; 4],
 }
@@ -620,6 +634,7 @@ impl From<PackedVertex> for PackedVertexKey {
             position: vertex.position.map(f32::to_bits),
             normal: vertex.normal.map(f32::to_bits),
             uv: vertex.uv.map(f32::to_bits),
+            paint_uv: vertex.paint_uv.map(f32::to_bits),
             joints: vertex.joints,
             weights: vertex.weights.to_u8(),
         }
@@ -638,6 +653,7 @@ fn encode_pmesh(
     let PackedMeshLayoutFlags {
         has_normals,
         has_uv0,
+        has_uv1,
         has_joints,
         has_weights,
     } = layout_flags;
@@ -648,6 +664,11 @@ fn encode_pmesh(
             0
         }
         + if has_uv0 {
+            2 * std::mem::size_of::<f32>()
+        } else {
+            0
+        }
+        + if has_uv1 {
             2 * std::mem::size_of::<f32>()
         } else {
             0
@@ -690,6 +711,10 @@ fn encode_pmesh(
         if has_uv0 {
             write_f32(&mut raw, vertex.uv[0]);
             write_f32(&mut raw, vertex.uv[1]);
+        }
+        if has_uv1 {
+            write_f32(&mut raw, vertex.paint_uv[0]);
+            write_f32(&mut raw, vertex.paint_uv[1]);
         }
         if has_joints {
             write_u16(&mut raw, vertex.joints[0]);
@@ -752,6 +777,9 @@ fn encode_pmesh(
     }
     if has_uv0 {
         flags |= PMESH_FLAG_HAS_UV0;
+    }
+    if has_uv1 {
+        flags |= PMESH_FLAG_HAS_UV1;
     }
     if has_joints {
         flags |= PMESH_FLAG_HAS_JOINTS;
@@ -1071,6 +1099,7 @@ mod tests {
                 position: [0.0, 0.0, 0.0],
                 normal: [0.0, 1.0, 0.0],
                 uv: [0.0, 0.0],
+                paint_uv: [0.0, 0.0],
                 joints: [0, 0, 0, 0],
                 weights: [1.0, 0.0, 0.0, 0.0].into(),
             },
@@ -1078,6 +1107,7 @@ mod tests {
                 position: [1.0, 0.0, 0.0],
                 normal: [0.0, 1.0, 0.0],
                 uv: [1.0, 0.0],
+                paint_uv: [1.0, 0.0],
                 joints: [0, 0, 0, 0],
                 weights: [1.0, 0.0, 0.0, 0.0].into(),
             },
@@ -1085,6 +1115,7 @@ mod tests {
                 position: [1.0, 1.0, 0.0],
                 normal: [0.0, 1.0, 0.0],
                 uv: [1.0, 1.0],
+                paint_uv: [1.0, 1.0],
                 joints: [0, 0, 0, 0],
                 weights: [1.0, 0.0, 0.0, 0.0].into(),
             },
@@ -1092,6 +1123,7 @@ mod tests {
                 position: [0.0, 1.0, 0.0],
                 normal: [0.0, 1.0, 0.0],
                 uv: [0.0, 1.0],
+                paint_uv: [0.0, 1.0],
                 joints: [0, 0, 0, 0],
                 weights: [1.0, 0.0, 0.0, 0.0].into(),
             },
@@ -1225,6 +1257,7 @@ mod tests {
             PackedMeshLayoutFlags {
                 has_normals: true,
                 has_uv0: true,
+                has_uv1: false,
                 has_joints: false,
                 has_weights: false,
             },
@@ -1238,6 +1271,34 @@ mod tests {
             u32::from_le_bytes(bytes[37..41].try_into().expect("shape count")),
             1
         );
+    }
+
+    #[test]
+    fn pmesh_keeps_dedicated_paint_uvs() {
+        let mut vertices = test_vertices();
+        vertices[0].paint_uv = [0.75, 0.25];
+        let bytes = encode_pmesh(
+            &vertices,
+            &[0, 1, 2],
+            &[PackedSurfaceRange {
+                index_start: 0,
+                index_count: 3,
+            }],
+            &[],
+            &[],
+            &[],
+            PackedMeshLayoutFlags {
+                has_normals: true,
+                has_uv0: true,
+                has_uv1: true,
+                has_joints: false,
+                has_weights: false,
+            },
+        )
+        .expect("paint uv encode");
+        let decoded = decode_pmesh(&bytes).expect("paint uv decode");
+        assert_eq!(decoded.vertices[0].paint_uv, [0.75, 0.25]);
+        assert_eq!(decoded.vertices[0].uv, [0.0, 0.0]);
     }
 
     #[test]
@@ -1344,6 +1405,7 @@ mod tests {
                 position: [10.0, 0.0, 0.0],
                 normal: [0.0, 1.0, 0.0],
                 uv: [0.1, 0.2],
+                paint_uv: [0.7, 0.8],
                 joints: [1, 2, 3, 4],
                 weights: [0.4, 0.3, 0.2, 0.1].into(),
             },
@@ -1351,6 +1413,7 @@ mod tests {
                 position: [11.0, 0.0, 0.0],
                 normal: [0.0, 0.0, 1.0],
                 uv: [0.3, 0.4],
+                paint_uv: [0.5, 0.6],
                 joints: [5, 6, 7, 8],
                 weights: [0.25, 0.25, 0.25, 0.25].into(),
             },
@@ -1358,6 +1421,7 @@ mod tests {
                 position: [12.0, 0.0, 0.0],
                 normal: [1.0, 0.0, 0.0],
                 uv: [0.5, 0.6],
+                paint_uv: [0.3, 0.4],
                 joints: [9, 10, 11, 12],
                 weights: [1.0, 0.0, 0.0, 0.0].into(),
             },
@@ -1388,6 +1452,7 @@ mod tests {
                     [0.0, 0.0, 1.0]
                 },
                 uv: if even { [0.2, 0.8] } else { [0.6, 0.4] },
+                paint_uv: if even { [0.8, 0.2] } else { [0.4, 0.6] },
                 joints: if even { [1, 1, 1, 1] } else { [2, 2, 2, 2] },
                 weights: if even {
                     [1.0, 0.0, 0.0, 0.0].into()
@@ -1409,6 +1474,7 @@ mod tests {
         let full_layout = PackedMeshLayoutFlags {
             has_normals: true,
             has_uv0: true,
+            has_uv1: true,
             has_joints: true,
             has_weights: true,
         };

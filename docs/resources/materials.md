@@ -246,7 +246,9 @@ See [Performance + Flexibility Philosophy](../project/performance_philosophy.md)
 - glTF mesh refs use `res://path/to/model.glb:mesh[index]`.
 - a single `.glb` can provide both mesh and material refs for the same scene node.
 - texture slots are material-local/glTF texture indices, not global texture IDs.
-- custom `images` bind up to 8 `res://` texture paths for `custom_image_sample(in, index, uv)`.
+- custom `images` bind up to 8 texture sources for `custom_image_sample(in, index, uv)`.
+- use `CustomMaterialImage3D::named_texture(name, id)` or `unnamed_texture(id)` to bind mutable textures from `create_from_rgba`.
+- `write_rgba` + `write_rgba_region` invalidate custom image bindings before the next draw.
 - custom materials use standard lighting by default; set `lighting = "raw"` for exact shader output.
 - custom material parameter order binds shader indices: `custom_f_param(in, 0u)` reads the first param.
 - custom param names are metadata for humans and tooling; order controls shader access.

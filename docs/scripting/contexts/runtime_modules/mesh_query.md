@@ -26,6 +26,20 @@
 
 This runtime module belongs to `ctx.run` and documents mesh query calls.
 
+`MeshSurfaceHit3D` includes `triangle_index`, `(a, b, c)` `barycentric`
+weights, interpolated `uv0`, and `paint_uv`. `paint_uv` reads glTF UV1 and
+falls back to UV0 for runtime meshes, built-ins, and PMESH assets.
+
+`MeshInstance3D` queries linked to `Skeleton3D` use current bone poses. Hit
+triangle IDs and UVs keep original mesh topology. Posed queries cap at
+1,000,000 vertices; larger posed meshes return no hit.
+
+Build pointer rays with
+`ctx.run.Nodes().camera_screen_ray_3d(camera_id, pixel, viewport_size)`.
+Pixels use a top-left origin. The result supports perspective, orthographic,
+and off-axis frustum cameras and passes directly to
+`instance_surface_on_global_ray`.
+
 ## Context
 
 - Script context path: `ctx.run`

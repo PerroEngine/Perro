@@ -281,6 +281,7 @@ struct VertexInput {
     @location(2) @interpolate(flat) joints: vec4<u32>,
     @location(3) weights: vec4<f32>,
     @location(12) uv: vec2<f32>,
+    @location(15) paint_uv: vec2<f32>,
 };
 
 struct InstanceInput {
@@ -316,6 +317,7 @@ struct VertexOutput {
     @location(6) @interpolate(flat) packed_material_params: u32,
     @location(7) @interpolate(flat) custom_range: vec2<u32>,
     @location(8) uv: vec2<f32>,
+    @location(9) paint_uv: vec2<f32>,
 };
 
 struct FragmentInput {
@@ -330,6 +332,7 @@ struct FragmentInput {
     @location(6) @interpolate(flat) packed_material_params: u32,
     @location(7) @interpolate(flat) custom_range: vec2<u32>,
     @location(8) uv: vec2<f32>,
+    @location(9) paint_uv: vec2<f32>,
 };
 
 fn custom_image_sample(in: FragmentInput, index: u32, uv: vec2<f32>) -> vec4<f32> {
@@ -572,7 +575,7 @@ fn apply_blend_shapes(v: VertexInput, vertex_index: u32, instance_index: u32) ->
         out_pos = out_pos + delta.position_delta.xyz * weight;
         out_normal = out_normal + delta.normal_delta.xyz * weight;
     }
-    return VertexInput(out_pos, vec4<f32>(normalize(out_normal), 0.0), v.joints, v.weights, v.uv);
+    return VertexInput(out_pos, vec4<f32>(normalize(out_normal), 0.0), v.joints, v.weights, v.uv, v.paint_uv);
 }
 
 fn perro_vs_main_base(v: VertexInput, inst: InstanceInput, vertex_index: u32, instance_index: u32) -> VertexOutput {
@@ -610,6 +613,7 @@ fn perro_vs_main_base(v: VertexInput, inst: InstanceInput, vertex_index: u32, in
     out.packed_material_params = inst.packed_material_params;
     out.custom_range = vec2<u32>(inst.skeleton_params.z, inst.skeleton_params.w);
     out.uv = blended.uv;
+    out.paint_uv = blended.paint_uv;
     return out;
 }
 

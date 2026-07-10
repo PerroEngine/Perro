@@ -277,6 +277,7 @@ See [TileMap2D](tilemap.md).
 - Shared-skeleton mesh reuse works when meshes follow the same rig contract: same joint order/indices and compatible weights.
 - Automatic retargeting between mismatched rigs is not implemented.
 - glTF morph targets import as blend shapes.
+- glTF `TEXCOORD_1` imports as dedicated paint UVs. Meshes without UV1 use UV0 as paint UV fallback.
 - `blend_shape_weights` stores indexed blend shape weights in Blender-style `0.0..1.0`.
 - Aliases: `shape_key_weights`, `morph_weights`.
 - Overflow weights are ignored. Missing weights act as `0.0`.

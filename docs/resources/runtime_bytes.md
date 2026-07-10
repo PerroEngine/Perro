@@ -38,6 +38,8 @@ Byte loading skips path IO and feeds bytes into the same runtime decode/cache pa
 | --- | --- | --- | --- |
 | texture image bytes | `ctx.res.Textures().create_from_bytes(bytes)` | `texture_create_from_bytes!(ctx.res, bytes)` | `TextureID` |
 | raw RGBA texture | `ctx.res.Textures().create_from_rgba(w, h, rgba)` | `texture_create_from_rgba!(ctx.res, w, h, rgba)` | `TextureID` |
+| replace mutable RGBA texture | `ctx.res.Textures().write_rgba(id, w, h, rgba)` | `texture_write_rgba!(ctx.res, id, w, h, rgba)` | `bool` |
+| update mutable RGBA region | `ctx.res.Textures().write_rgba_region(id, x, y, w, h, rgba)` | `texture_write_rgba_region!(ctx.res, id, x, y, w, h, rgba)` | `bool` |
 | mesh bytes | `ctx.res.Meshes().create_from_bytes(bytes)` | `mesh_create_from_bytes!(ctx.res, bytes)` | `MeshID` |
 | material bytes | `ctx.res.Materials().create_from_bytes(bytes)` | `material_create_from_bytes!(ctx.res, bytes)` | `MaterialID` |
 | animation bytes | `ctx.res.Animations().create_from_bytes(bytes)` | `animation_create_from_bytes!(ctx.res, bytes)` | `AnimationID` |
@@ -53,6 +55,8 @@ Byte loading skips path IO and feeds bytes into the same runtime decode/cache pa
 Texture bytes accept regular image formats supported by Perro image decode plus `PTEX`.
 Use `create_from_rgba` when bytes are already uncompressed RGBA8.
 `rgba.len()` must equal `width * height * 4`; invalid sizes return `TextureID::nil()`.
+
+Mutable writes require a known runtime texture. Region bytes use tight RGBA8 rows and must fit inside the current texture. Successful writes invalidate 2D, UI, and 3D material texture caches.
 
 Mesh bytes accept `PMESH` or glTF/GLB mesh index `0`.
 Invalid bytes return a `MeshID` request that fails in the render backend; `mesh_is_loaded!` stays false.

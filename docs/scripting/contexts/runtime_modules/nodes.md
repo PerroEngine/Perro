@@ -946,6 +946,16 @@ This runtime module belongs to `ctx.run` and documents nodes calls.
 | Use when | Use when converting points or transforms between local node space and world space. |
 | Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
 
+### `camera_screen_ray_3d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `pub fn camera_screen_ray_3d(&mut self, camera_id: NodeID, pixel: Vector2, viewport_size: Vector2) -> Option<CameraRay3D>` |
+| Returns | Global ray origin, normalized direction, and projection far limit. |
+| Coordinates | Top-left pixel origin; supports perspective, orthographic, and frustum cameras. |
+| Fails when | Camera ID/type or viewport size is invalid. |
+
 ### `mesh_instance_surface_at_global_point`
 
 | Field | Detail |

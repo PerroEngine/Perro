@@ -50,7 +50,7 @@ fn camera_stream_2d_emits_stream_and_sprite_commands() {
     let mut runtime = Runtime::new();
     let camera = NodeAPI::create::<Camera2D>(&mut runtime);
     let stream = NodeAPI::create::<CameraStream2D>(&mut runtime);
-    if let Some(node) = runtime.nodes.get_mut(stream)
+    if let Some(mut node) = runtime.nodes.get_mut(stream)
         && let SceneNodeData::CameraStream2D(data) = &mut node.data
     {
         data.stream.camera = camera;
@@ -68,7 +68,9 @@ fn camera_stream_2d_emits_stream_and_sprite_commands() {
     assert!(commands.iter().any(|command| matches!(
         command,
         RenderCommand::TwoD(Command2D::UpsertCameraStream { node, sprite, .. })
-            if *node == stream && sprite.texture == Runtime::camera_stream_texture_id(stream)
+            if *node == stream
+                && sprite.texture == Runtime::camera_stream_texture_id(stream)
+                && sprite.uv_max == [320.0, 180.0]
     )));
 }
 
@@ -77,14 +79,25 @@ fn webcam_config_change_reextracts_referencing_camera_stream() {
     let mut runtime = Runtime::new();
     let webcam = NodeAPI::create::<Webcam>(&mut runtime);
     let stream = NodeAPI::create::<CameraStream2D>(&mut runtime);
-    if let Some(node) = runtime.nodes.get_mut(stream)
+    if let Some(mut node) = runtime.nodes.get_mut(stream)
         && let SceneNodeData::CameraStream2D(data) = &mut node.data
     {
         data.stream.camera = webcam;
     }
+    if let Some(mut node) = runtime.nodes.get_mut(webcam)
+        && let SceneNodeData::Webcam(data) = &mut node.data
+    {
+        data.config.width = 640;
+        data.config.height = 480;
+    }
 
     runtime.extract_render_2d_commands();
-    runtime.drain_render_commands(&mut Vec::new());
+    let commands = collect_commands(&mut runtime);
+    assert!(commands.iter().any(|command| matches!(
+        command,
+        RenderCommand::TwoD(Command2D::UpsertCameraStream { node, sprite, .. })
+            if *node == stream && sprite.uv_max == [640.0, 480.0]
+    )));
     runtime.clear_dirty_flags();
 
     <Runtime as NodeAPI>::with_node_mut::<Webcam, _, _>(&mut runtime, webcam, |node| {
@@ -107,14 +120,14 @@ fn sprite_2d_uses_inherited_node_modulate() {
     let child = NodeAPI::create::<Sprite2D>(&mut runtime);
     let texture = TextureID::from_parts(401, 0);
 
-    if let Some(node) = runtime.nodes.get_mut(parent)
+    if let Some(mut node) = runtime.nodes.get_mut(parent)
         && let SceneNodeData::Node2D(data) = &mut node.data
     {
         data.modulate.children_modulate = Color::new(0.5, 1.0, 1.0, 1.0);
         data.modulate.self_modulate = Color::RED;
         node.add_child(child);
     }
-    if let Some(node) = runtime.nodes.get_mut(child)
+    if let Some(mut node) = runtime.nodes.get_mut(child)
         && let SceneNodeData::Sprite2D(data) = &mut node.data
     {
         data.texture = texture;
@@ -145,7 +158,7 @@ fn sprite_2d_uses_inherited_node_modulate() {
 fn point_light_2d_emits_cast_shadows_flag() {
     let mut runtime = Runtime::new();
     let light = NodeAPI::create::<PointLight2D>(&mut runtime);
-    if let Some(node) = runtime.nodes.get_mut(light)
+    if let Some(mut node) = runtime.nodes.get_mut(light)
         && let SceneNodeData::PointLight2D(data) = &mut node.data
     {
         data.cast_shadows = true;
@@ -166,7 +179,7 @@ fn point_light_2d_emits_cast_shadows_flag() {
 fn collision_shape_2d_emits_shadow_caster() {
     let mut runtime = Runtime::new();
     let caster = NodeAPI::create::<CollisionShape2D>(&mut runtime);
-    if let Some(node) = runtime.nodes.get_mut(caster)
+    if let Some(mut node) = runtime.nodes.get_mut(caster)
         && let SceneNodeData::CollisionShape2D(data) = &mut node.data
     {
         data.shape = Shape2D::Quad {
@@ -198,7 +211,7 @@ fn label_2d_emits_ui_label_with_world_rect() {
     let mut runtime = Runtime::new();
     runtime.set_viewport_size(800, 600);
     let label = NodeAPI::create::<Label2D>(&mut runtime);
-    if let Some(node) = runtime.nodes.get_mut(label)
+    if let Some(mut node) = runtime.nodes.get_mut(label)
         && let SceneNodeData::Label2D(data) = &mut node.data
     {
         data.text = "HP".into();
@@ -223,12 +236,12 @@ fn camera_stream_2d_uses_source_camera_render_mask() {
     let stream = NodeAPI::create::<CameraStream2D>(&mut runtime);
     let visible_sprite = NodeAPI::create::<Sprite2D>(&mut runtime);
     let masked_sprite = NodeAPI::create::<Sprite2D>(&mut runtime);
-    if let Some(node) = runtime.nodes.get_mut(camera)
+    if let Some(mut node) = runtime.nodes.get_mut(camera)
         && let SceneNodeData::Camera2D(data) = &mut node.data
     {
         data.render_mask = BitMask::with([2]);
     }
-    if let Some(node) = runtime.nodes.get_mut(stream)
+    if let Some(mut node) = runtime.nodes.get_mut(stream)
         && let SceneNodeData::CameraStream2D(data) = &mut node.data
     {
         data.stream.camera = camera;
@@ -237,7 +250,7 @@ fn camera_stream_2d_uses_source_camera_render_mask() {
         (visible_sprite, 1, TextureID::from_parts(100, 0)),
         (masked_sprite, 2, TextureID::from_parts(101, 0)),
     ] {
-        if let Some(node) = runtime.nodes.get_mut(node_id)
+        if let Some(mut node) = runtime.nodes.get_mut(node_id)
             && let SceneNodeData::Sprite2D(data) = &mut node.data
         {
             data.render_layers = BitMask::with([layer]);
@@ -271,7 +284,7 @@ fn disabled_camera_stream_2d_emits_remove_commands() {
     let mut runtime = Runtime::new();
     let camera = NodeAPI::create::<Camera2D>(&mut runtime);
     let stream = NodeAPI::create::<CameraStream2D>(&mut runtime);
-    if let Some(node) = runtime.nodes.get_mut(stream)
+    if let Some(mut node) = runtime.nodes.get_mut(stream)
         && let SceneNodeData::CameraStream2D(data) = &mut node.data
     {
         data.stream.camera = camera;
@@ -297,7 +310,7 @@ fn linked_2d_water_mirrors_wake_across_overlap() {
     let water_a = NodeAPI::create::<WaterBody2D>(&mut runtime);
     let water_b = NodeAPI::create::<WaterBody2D>(&mut runtime);
     for (id, x) in [(water_a, 0.0), (water_b, 12.0)] {
-        if let Some(node) = runtime.nodes.get_mut(id)
+        if let Some(mut node) = runtime.nodes.get_mut(id)
             && let SceneNodeData::WaterBody2D(water) = &mut node.data
         {
             water.transform.position.x = x;
@@ -330,7 +343,7 @@ fn linked_2d_waters_both_collect_shared_coastline_shape() {
     let water_a = NodeAPI::create::<WaterBody2D>(&mut runtime);
     let water_b = NodeAPI::create::<WaterBody2D>(&mut runtime);
     for (id, x) in [(water_a, 0.0), (water_b, 12.0)] {
-        if let Some(node) = runtime.nodes.get_mut(id)
+        if let Some(mut node) = runtime.nodes.get_mut(id)
             && let SceneNodeData::WaterBody2D(water) = &mut node.data
         {
             water.transform.position.x = x;
@@ -340,7 +353,7 @@ fn linked_2d_waters_both_collect_shared_coastline_shape() {
     let body = NodeAPI::create::<StaticBody2D>(&mut runtime);
     let shape = NodeAPI::create::<CollisionShape2D>(&mut runtime);
     assert!(NodeAPI::reparent(&mut runtime, body, shape));
-    if let Some(node) = runtime.nodes.get_mut(shape)
+    if let Some(mut node) = runtime.nodes.get_mut(shape)
         && let SceneNodeData::CollisionShape2D(shape) = &mut node.data
     {
         shape.transform.position = Vector2::new(6.0, 0.0);
@@ -368,7 +381,7 @@ fn water_2d_impacts_use_live_body_pos_not_stale_cached_sample() {
     let mut runtime = Runtime::new();
     let water = NodeAPI::create::<WaterBody2D>(&mut runtime);
     let body = NodeAPI::create::<RigidBody2D>(&mut runtime);
-    if let Some(node) = runtime.nodes.get_mut(body)
+    if let Some(mut node) = runtime.nodes.get_mut(body)
         && let SceneNodeData::RigidBody2D(rigid) = &mut node.data
     {
         rigid.transform.position = Vector2::new(1.25, -0.35);
@@ -656,6 +669,55 @@ fn texture_create_from_rgba_rejects_bad_len() {
 }
 
 #[test]
+fn texture_write_rgba_region_queues_region_command() {
+    let mut runtime = Runtime::new();
+    let texture =
+        TextureAPI::create_texture_from_rgba(runtime.resource_api.as_ref(), 4, 4, &[0u8; 64]);
+    let _ = collect_commands(&mut runtime);
+
+    assert!(TextureAPI::write_texture_rgba_region(
+        runtime.resource_api.as_ref(),
+        texture,
+        1,
+        2,
+        2,
+        1,
+        &[1u8; 8],
+    ));
+    let commands = collect_commands(&mut runtime);
+    assert!(matches!(
+        &commands[0],
+        RenderCommand::Resource(ResourceCommand::WriteTextureRgbaRegion {
+            id,
+            x: 1,
+            y: 2,
+            width: 2,
+            height: 1,
+            rgba,
+        }) if *id == texture && rgba.as_ref() == [1u8; 8]
+    ));
+}
+
+#[test]
+fn texture_write_rgba_region_rejects_bad_input() {
+    let mut runtime = Runtime::new();
+    let texture =
+        TextureAPI::create_texture_from_rgba(runtime.resource_api.as_ref(), 2, 2, &[0u8; 16]);
+    let _ = collect_commands(&mut runtime);
+
+    assert!(!TextureAPI::write_texture_rgba_region(
+        runtime.resource_api.as_ref(),
+        texture,
+        0,
+        0,
+        2,
+        1,
+        &[1u8; 4],
+    ));
+    assert!(collect_commands(&mut runtime).is_empty());
+}
+
+#[test]
 fn texture_create_from_bytes_queues_runtime_texture_bytes() {
     let mut runtime = Runtime::new();
     let bytes = b"not a texture";
@@ -784,7 +846,7 @@ fn sprite_keeps_retained_texture_while_replacement_texture_is_pending() {
             _ => None,
         })
         .expect("expected pending texture create request");
-    if let Some(scene_node) = runtime.nodes.get_mut(node)
+    if let Some(mut scene_node) = runtime.nodes.get_mut(node)
         && let SceneNodeData::Sprite2D(sprite) = &mut scene_node.data
     {
         sprite.texture = pending_texture;
@@ -942,10 +1004,10 @@ fn parent_modulate_change_reemits_child_sprite_with_effective_tint() {
     let child = NodeAPI::create::<Sprite2D>(&mut runtime);
     let texture = TextureID::from_parts(402, 0);
 
-    if let Some(node) = runtime.nodes.get_mut(parent) {
+    if let Some(mut node) = runtime.nodes.get_mut(parent) {
         node.add_child(child);
     }
-    if let Some(node) = runtime.nodes.get_mut(child)
+    if let Some(mut node) = runtime.nodes.get_mut(child)
         && let SceneNodeData::Sprite2D(sprite) = &mut node.data
     {
         sprite.texture = texture;
@@ -991,13 +1053,14 @@ fn sprite_becoming_invisible_emits_remove_node() {
         RenderCommand::TwoD(Command2D::UpsertSprite { node, .. }) if node == expected_node
     ));
 
-    let node = runtime
+    let mut node = runtime
         .nodes
         .get_mut(expected_node)
         .expect("sprite node must exist");
     if let SceneNodeData::Sprite2D(sprite) = &mut node.data {
         sprite.visible = false;
     }
+    drop(node);
     runtime.mark_needs_rerender(expected_node);
 
     runtime.extract_render_2d_commands();
@@ -1109,7 +1172,7 @@ fn active_camera_2d_emits_set_camera_command() {
 fn button_2d_emits_world_rect_command() {
     let mut runtime = Runtime::new();
     let button = NodeAPI::create::<Button2D>(&mut runtime);
-    if let Some(node) = runtime.nodes.get_mut(button)
+    if let Some(mut node) = runtime.nodes.get_mut(button)
         && let SceneNodeData::Button2D(data) = &mut node.data
     {
         data.size = Vector2::new(80.0, 32.0);
@@ -1131,7 +1194,7 @@ fn image_button_2d_emits_world_sprite_command_with_state_tint() {
     let mut runtime = Runtime::new();
     runtime.set_viewport_size(800, 600);
     let button = NodeAPI::create::<ImageButton2D>(&mut runtime);
-    if let Some(node) = runtime.nodes.get_mut(button)
+    if let Some(mut node) = runtime.nodes.get_mut(button)
         && let SceneNodeData::ImageButton2D(data) = &mut node.data
     {
         data.texture = TextureID::from_parts(44, 0);
@@ -1217,7 +1280,7 @@ fn image_button_2d_hover_uses_cursor_icon_override() {
     let mut runtime = Runtime::new();
     runtime.set_viewport_size(800, 600);
     let button = NodeAPI::create::<ImageButton2D>(&mut runtime);
-    if let Some(node) = runtime.nodes.get_mut(button)
+    if let Some(mut node) = runtime.nodes.get_mut(button)
         && let SceneNodeData::ImageButton2D(data) = &mut node.data
     {
         data.cursor_icon = perro_ui::CursorIcon::Grab;
@@ -1254,7 +1317,7 @@ fn image_button_2d_cursor_survives_full_render_extraction() {
 fn nine_slice_2d_emits_nine_sprite_tilemap() {
     let mut runtime = Runtime::new();
     let node = NodeAPI::create::<NineSlice2D>(&mut runtime);
-    if let Some(scene_node) = runtime.nodes.get_mut(node)
+    if let Some(mut scene_node) = runtime.nodes.get_mut(node)
         && let SceneNodeData::NineSlice2D(nine) = &mut scene_node.data
     {
         nine.texture = TextureID::from_parts(55, 0);
@@ -1340,7 +1403,7 @@ fn camera_2d_render_mask_filters_sprites() {
         RenderCommand::TwoD(Command2D::UpsertSprite { node, .. }) if *node == sprite_node
     )));
 
-    if let Some(node) = runtime.nodes.get_mut(sprite_node)
+    if let Some(mut node) = runtime.nodes.get_mut(sprite_node)
         && let SceneNodeData::Sprite2D(sprite) = &mut node.data
     {
         sprite.render_layers = BitMask::with([2]);
@@ -1375,7 +1438,7 @@ fn camera_2d_move_does_not_rewalk_sprite_render_layers() {
     runtime.extract_render_2d_commands();
     let _ = collect_commands(&mut runtime);
 
-    if let Some(node) = runtime.nodes.get_mut(camera_node)
+    if let Some(mut node) = runtime.nodes.get_mut(camera_node)
         && let SceneNodeData::Camera2D(camera) = &mut node.data
     {
         camera.transform.position.x = 10.0;
@@ -1472,10 +1535,10 @@ fn sprite_under_parent_uses_global_transform() {
         .nodes
         .insert(SceneNode::new(SceneNodeData::Sprite2D(sprite)));
 
-    if let Some(parent_node) = runtime.nodes.get_mut(parent) {
+    if let Some(mut parent_node) = runtime.nodes.get_mut(parent) {
         parent_node.add_child(child);
     }
-    if let Some(child_node) = runtime.nodes.get_mut(child) {
+    if let Some(mut child_node) = runtime.nodes.get_mut(child) {
         child_node.parent = parent;
     }
     runtime.mark_transform_dirty_recursive(parent);

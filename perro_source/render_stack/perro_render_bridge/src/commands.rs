@@ -62,6 +62,14 @@ pub enum ResourceCommand {
         height: u32,
         rgba: Arc<[u8]>,
     },
+    WriteTextureRgbaRegion {
+        id: TextureID,
+        x: u32,
+        y: u32,
+        width: u32,
+        height: u32,
+        rgba: Arc<[u8]>,
+    },
     CreateMaterial {
         request: RenderRequestID,
         id: MaterialID,

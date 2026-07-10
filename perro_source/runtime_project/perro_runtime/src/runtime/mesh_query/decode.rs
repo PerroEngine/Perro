@@ -6,6 +6,22 @@ pub(super) fn build_query_mesh_from_runtime_mesh(mesh: &Mesh3D) -> Option<QueryM
         .iter()
         .map(|vertex| Vec3::from_array(vertex.position))
         .collect();
+    let uv0: Vec<Vec2> = mesh
+        .vertices
+        .iter()
+        .map(|vertex| Vec2::from_array(vertex.uv))
+        .collect();
+    let paint_uv: Vec<Vec2> = mesh
+        .vertices
+        .iter()
+        .map(|vertex| Vec2::from_array(vertex.paint_uv))
+        .collect();
+    let joints = mesh.vertices.iter().map(|vertex| vertex.joints).collect();
+    let weights = mesh
+        .vertices
+        .iter()
+        .map(|vertex| vertex.weights.to_f32())
+        .collect();
     let mut triangles = Vec::new();
     for (surface_index, range) in mesh.surface_ranges.iter().enumerate() {
         let start = range.index_start as usize;
@@ -32,7 +48,7 @@ pub(super) fn build_query_mesh_from_runtime_mesh(mesh: &Mesh3D) -> Option<QueryM
             });
         }
     }
-    build_query_mesh_data(vertices, triangles)
+    build_query_mesh_data_with_skin(vertices, uv0, paint_uv, joints, weights, triangles)
 }
 
 pub(super) fn decode_gltf_query_mesh(bytes: &[u8], mesh_index: usize) -> Option<QueryMeshData> {
@@ -40,6 +56,10 @@ pub(super) fn decode_gltf_query_mesh(bytes: &[u8], mesh_index: usize) -> Option<
     let mesh = doc.meshes().nth(mesh_index)?;
 
     let mut vertices = Vec::new();
+    let mut uv0 = Vec::new();
+    let mut paint_uv = Vec::new();
+    let mut joints = Vec::new();
+    let mut weights = Vec::new();
     let mut triangles = Vec::new();
     for (surface_index, primitive) in mesh.primitives().enumerate() {
         let reader = primitive.reader(|buffer| buffers.get(buffer.index()).map(|d| d.0.as_slice()));
@@ -57,9 +77,29 @@ pub(super) fn decode_gltf_query_mesh(bytes: &[u8], mesh_index: usize) -> Option<
         }
 
         let base = vertices.len() as u32;
+        let local_uv0: Vec<[f32; 2]> = reader
+            .read_tex_coords(0)
+            .map(|values| values.into_f32().collect())
+            .unwrap_or_else(|| vec![[0.0; 2]; local_positions.len()]);
+        let local_paint_uv: Vec<[f32; 2]> = reader
+            .read_tex_coords(1)
+            .map(|values| values.into_f32().collect())
+            .unwrap_or_else(|| local_uv0.clone());
         for p in local_positions.iter().copied() {
             vertices.push(Vec3::new(p[0], p[1], p[2]));
         }
+        uv0.extend(local_uv0.into_iter().map(Vec2::from_array));
+        paint_uv.extend(local_paint_uv.into_iter().map(Vec2::from_array));
+        let local_joints: Vec<[u16; 4]> = reader
+            .read_joints(0)
+            .map(|values| values.into_u16().collect())
+            .unwrap_or_else(|| vec![[0; 4]; local_positions.len()]);
+        let local_weights: Vec<[f32; 4]> = reader
+            .read_weights(0)
+            .map(|values| values.into_f32().collect())
+            .unwrap_or_else(|| vec![[0.0; 4]; local_positions.len()]);
+        joints.extend(local_joints);
+        weights.extend(local_weights);
 
         if let Some(indices_reader) = reader.read_indices() {
             let mut flat =
@@ -108,7 +148,7 @@ pub(super) fn decode_gltf_query_mesh(bytes: &[u8], mesh_index: usize) -> Option<
         });
     }
 
-    build_query_mesh_data(vertices, triangles)
+    build_query_mesh_data_with_skin(vertices, uv0, paint_uv, joints, weights, triangles)
 }
 
 pub(super) fn split_source_fragment(source: &str) -> (&str, Option<&str>) {
@@ -179,12 +219,14 @@ pub(super) fn decode_pmesh_query(bytes: &[u8]) -> Option<QueryMeshData> {
 
     let has_normal = (flags & (1 << 0)) != 0;
     let has_uv0 = (flags & (1 << 1)) != 0;
+    let has_uv1 = (flags & perro_asset_formats::pmesh::FLAG_HAS_UV1) != 0;
     let has_joints = (flags & (1 << 2)) != 0;
     let has_weights = (flags & (1 << 3)) != 0;
     let weights_unorm8 = (flags & perro_asset_formats::pmesh::FLAG_WEIGHTS_UNORM8) != 0;
     let vertex_stride = 12
         + if has_normal { 12 } else { 0 }
         + if has_uv0 { 8 } else { 0 }
+        + if has_uv1 { 8 } else { 0 }
         + if has_joints { 8 } else { 0 }
         + if has_weights {
             if weights_unorm8 { 4 } else { 16 }
@@ -202,12 +244,63 @@ pub(super) fn decode_pmesh_query(bytes: &[u8]) -> Option<QueryMeshData> {
     }
 
     let mut vertices = Vec::with_capacity(vertex_count);
+    let mut uv0 = Vec::with_capacity(vertex_count);
+    let mut paint_uv = Vec::with_capacity(vertex_count);
+    let mut joints = Vec::with_capacity(vertex_count);
+    let mut weights = Vec::with_capacity(vertex_count);
     for i in 0..vertex_count {
         let off = i * vertex_stride;
         let x = f32::from_le_bytes(raw[off..off + 4].try_into().ok()?);
         let y = f32::from_le_bytes(raw[off + 4..off + 8].try_into().ok()?);
         let z = f32::from_le_bytes(raw[off + 8..off + 12].try_into().ok()?);
         vertices.push(Vec3::new(x, y, z));
+        let uv_off = off + 12 + if has_normal { 12 } else { 0 };
+        uv0.push(if has_uv0 {
+            Vec2::new(
+                f32::from_le_bytes(raw[uv_off..uv_off + 4].try_into().ok()?),
+                f32::from_le_bytes(raw[uv_off + 4..uv_off + 8].try_into().ok()?),
+            )
+        } else {
+            Vec2::ZERO
+        });
+        let paint_uv_off = uv_off + if has_uv0 { 8 } else { 0 };
+        paint_uv.push(if has_uv1 {
+            Vec2::new(
+                f32::from_le_bytes(raw[paint_uv_off..paint_uv_off + 4].try_into().ok()?),
+                f32::from_le_bytes(raw[paint_uv_off + 4..paint_uv_off + 8].try_into().ok()?),
+            )
+        } else {
+            *uv0.last()?
+        });
+        let joints_off = paint_uv_off + if has_uv1 { 8 } else { 0 };
+        joints.push(if has_joints {
+            [
+                u16::from_le_bytes(raw[joints_off..joints_off + 2].try_into().ok()?),
+                u16::from_le_bytes(raw[joints_off + 2..joints_off + 4].try_into().ok()?),
+                u16::from_le_bytes(raw[joints_off + 4..joints_off + 6].try_into().ok()?),
+                u16::from_le_bytes(raw[joints_off + 6..joints_off + 8].try_into().ok()?),
+            ]
+        } else {
+            [0; 4]
+        });
+        let weights_off = joints_off + if has_joints { 8 } else { 0 };
+        weights.push(if has_weights && weights_unorm8 {
+            [
+                raw[weights_off] as f32 / 255.0,
+                raw[weights_off + 1] as f32 / 255.0,
+                raw[weights_off + 2] as f32 / 255.0,
+                raw[weights_off + 3] as f32 / 255.0,
+            ]
+        } else if has_weights {
+            [
+                f32::from_le_bytes(raw[weights_off..weights_off + 4].try_into().ok()?),
+                f32::from_le_bytes(raw[weights_off + 4..weights_off + 8].try_into().ok()?),
+                f32::from_le_bytes(raw[weights_off + 8..weights_off + 12].try_into().ok()?),
+                f32::from_le_bytes(raw[weights_off + 12..weights_off + 16].try_into().ok()?),
+            ]
+        } else {
+            [0.0; 4]
+        });
     }
 
     let mut indices = Vec::with_capacity(index_count);
@@ -274,7 +367,7 @@ pub(super) fn decode_pmesh_query(bytes: &[u8]) -> Option<QueryMeshData> {
         }
     }
 
-    build_query_mesh_data(vertices, triangles)
+    build_query_mesh_data_with_skin(vertices, uv0, paint_uv, joints, weights, triangles)
 }
 
 pub(super) fn decode_pmesh_payload(flags: u32, payload: &[u8]) -> Option<Vec<u8>> {
@@ -370,4 +463,23 @@ pub(super) fn closest_point_on_triangle(p: Vec3, a: Vec3, b: Vec3, c: Vec3) -> V
     let v = vb * denom;
     let w = vc * denom;
     a + ab * v + ac * w
+}
+
+#[inline]
+pub(super) fn barycentric_on_triangle(p: Vec3, a: Vec3, b: Vec3, c: Vec3) -> Vec3 {
+    let v0 = b - a;
+    let v1 = c - a;
+    let v2 = p - a;
+    let d00 = v0.dot(v0);
+    let d01 = v0.dot(v1);
+    let d11 = v1.dot(v1);
+    let d20 = v2.dot(v0);
+    let d21 = v2.dot(v1);
+    let denom = d00 * d11 - d01 * d01;
+    if denom.abs() <= 1.0e-12 {
+        return Vec3::X;
+    }
+    let v = (d11 * d20 - d01 * d21) / denom;
+    let w = (d00 * d21 - d01 * d20) / denom;
+    Vec3::new(1.0 - v - w, v, w)
 }

@@ -902,7 +902,11 @@ mod tests {
         let raw = bytes.get(41..41 + raw_len)?;
         let has_normal = flags & 1 != 0;
         let has_uv0 = flags & 2 != 0;
-        let stride = 12 + if has_normal { 12 } else { 0 } + if has_uv0 { 8 } else { 0 };
+        let has_uv1 = flags & perro_asset_formats::pmesh::FLAG_HAS_UV1 != 0;
+        let stride = 12
+            + if has_normal { 12 } else { 0 }
+            + if has_uv0 { 8 } else { 0 }
+            + if has_uv1 { 8 } else { 0 };
         let vertex_bytes = vertex_count.checked_mul(stride)?;
         let index_bytes = index_count.checked_mul(4)?;
         let surface_bytes = surface_count.checked_mul(8)?;
@@ -922,14 +926,22 @@ mod tests {
                 [0.0, 1.0, 0.0]
             };
             let uv = if has_uv0 {
-                read_f32x2(raw, cursor)?
+                let value = read_f32x2(raw, cursor)?;
+                cursor += 8;
+                value
             } else {
                 [0.0, 0.0]
+            };
+            let paint_uv = if has_uv1 {
+                read_f32x2(raw, cursor)?
+            } else {
+                uv
             };
             vertices.push(RuntimeMeshVertex {
                 position,
                 normal,
                 uv,
+                paint_uv,
                 joints: [0, 0, 0, 0],
                 weights: perro_structs::UnitVector4::new([1.0, 0.0, 0.0, 0.0]),
             });

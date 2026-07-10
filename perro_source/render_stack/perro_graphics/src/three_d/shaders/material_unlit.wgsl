@@ -12,7 +12,11 @@ fn shade_material(in: FragmentInput) -> vec4<f32> {
     if material.double_sided && (in.is_front == material.mirrored_winding) {
         n = -n;
     }
-    var alpha = clamp(color.a, 0.0, 1.0);
+    var base_sample = vec4<f32>(1.0, 1.0, 1.0, 1.0);
+    if material.has_base_color_texture {
+        base_sample = textureSample(material_base_color_tex, material_sampler, in.uv);
+    }
+    var alpha = clamp(color.a * base_sample.a, 0.0, 1.0);
     if material.alpha_mode == 1u && alpha < material.alpha_cutoff {
         discard;
     }
@@ -24,6 +28,6 @@ fn shade_material(in: FragmentInput) -> vec4<f32> {
         return vec4<f32>(color.rgb, 1.0);
     }
 
-    let shaded = color.rgb + emissive;
+    let shaded = color.rgb * base_sample.rgb + emissive;
     return vec4<f32>(shaded, alpha);
 }

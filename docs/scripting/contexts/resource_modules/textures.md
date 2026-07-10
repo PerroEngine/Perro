@@ -43,6 +43,8 @@ Use runtime bytes when texture data is already in memory.
 | `ctx.res.Textures().create_from_bytes(bytes)` | `TextureID` | Decodes image bytes or `PTEX`. |
 | `texture_create_from_rgba!(ctx.res, w, h, rgba)` | `TextureID` | Macro form. |
 | `texture_create_from_bytes!(ctx.res, bytes)` | `TextureID` | Macro form. |
+| `ctx.res.Textures().write_rgba(id, w, h, rgba)` | `bool` | Replace mutable RGBA8 data. |
+| `ctx.res.Textures().write_rgba_region(id, x, y, w, h, rgba)` | `bool` | Update one tight RGBA8 subregion. |
 
 See [Runtime Bytes Resources](../../../resources/runtime_bytes.md).
 

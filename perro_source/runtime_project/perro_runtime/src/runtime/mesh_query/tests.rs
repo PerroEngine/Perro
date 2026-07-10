@@ -9,6 +9,7 @@ fn runtime_mesh_data_builds_query_surfaces() {
         position,
         normal: [0.0, 1.0, 0.0],
         uv: [0.0, 0.0],
+        paint_uv: [0.0, 0.0],
         joints: [0; 4],
         weights: UnitVector4::ZERO,
     };
@@ -41,11 +42,81 @@ fn runtime_mesh_data_builds_query_surfaces() {
 }
 
 #[test]
+fn runtime_mesh_ray_interpolates_uv_and_barycentric() {
+    let vertex = |position, uv| perro_render_bridge::RuntimeMeshVertex {
+        position,
+        normal: [0.0, 0.0, 1.0],
+        uv,
+        paint_uv: uv,
+        joints: [0; 4],
+        weights: UnitVector4::ZERO,
+    };
+    let mesh = Mesh3D {
+        vertices: vec![
+            vertex([0.0, 0.0, 0.0], [0.0, 0.0]),
+            vertex([1.0, 0.0, 0.0], [1.0, 0.0]),
+            vertex([0.0, 1.0, 0.0], [0.0, 1.0]),
+        ],
+        indices: vec![0, 1, 2],
+        surface_ranges: vec![],
+        blend_shapes: Vec::new(),
+    };
+    let query = build_query_mesh_from_runtime_mesh(&mesh).expect("query mesh");
+    let hit = query_ray_tri_local(&query, 0, Vec3::new(0.25, 0.5, 1.0), Vec3::NEG_Z, 2.0, None)
+        .flatten()
+        .expect("hit");
+
+    assert_eq!(hit.triangle_index, 0);
+    assert!(
+        hit.barycentric
+            .abs_diff_eq(Vec3::new(0.25, 0.25, 0.5), 1e-5)
+    );
+    assert!(hit.uv0.abs_diff_eq(Vec2::new(0.25, 0.5), 1e-5));
+    assert_eq!(hit.paint_uv, hit.uv0);
+}
+
+#[test]
+fn posed_skin_query_keeps_tri_and_uv_attrs() {
+    let mesh = build_query_mesh_data_with_skin(
+        vec![Vec3::ZERO, Vec3::X, Vec3::Y],
+        vec![Vec2::ZERO, Vec2::X, Vec2::Y],
+        vec![Vec2::new(0.1, 0.2), Vec2::new(0.8, 0.2), Vec2::new(0.1, 0.9)],
+        vec![[0, 0, 0, 0]; 3],
+        vec![[1.0, 0.0, 0.0, 0.0]; 3],
+        vec![QueryTri { a: 0, b: 1, c: 2, surface_index: 7 }],
+    )
+    .expect("bind query mesh");
+    let posed = skin_query_mesh_with_palette(
+        &mesh,
+        &[Mat4::from_translation(Vec3::new(0.0, 0.0, 2.0))],
+    )
+    .expect("posed query mesh");
+    let hit = query_ray_tri_local(
+        &posed,
+        0,
+        Vec3::new(0.25, 0.25, 4.0),
+        Vec3::NEG_Z,
+        4.0,
+        None,
+    )
+    .flatten()
+    .expect("posed hit");
+
+    assert_eq!(hit.surface_index, 7);
+    assert_eq!(hit.triangle_index, 0);
+    assert!(hit.local_point.abs_diff_eq(Vec3::new(0.25, 0.25, 2.0), 1e-5));
+    assert!(hit.barycentric.abs_diff_eq(Vec3::new(0.5, 0.25, 0.25), 1e-5));
+    assert!(hit.uv0.abs_diff_eq(Vec2::new(0.25, 0.25), 1e-5));
+    assert!(hit.paint_uv.abs_diff_eq(Vec2::new(0.275, 0.375), 1e-5));
+}
+
+#[test]
 fn batch_global_ray_query_preserves_order_and_surface_index() {
     let vertex = |position| perro_render_bridge::RuntimeMeshVertex {
         position,
         normal: [0.0, 1.0, 0.0],
         uv: [0.0, 0.0],
+        paint_uv: [0.0, 0.0],
         joints: [0; 4],
         weights: UnitVector4::ZERO,
     };

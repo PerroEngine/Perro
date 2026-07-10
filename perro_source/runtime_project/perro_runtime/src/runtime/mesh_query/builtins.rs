@@ -1,15 +1,21 @@
 //! Built-in primitive query meshes for runtime mesh ray/region tests.
 
 use super::{QueryMeshData, QueryTri, build_query_mesh_data};
-use glam::Vec3;
+use glam::{Vec2, Vec3};
 
 pub(super) fn decode_builtin_query_mesh(source: &str) -> Option<QueryMeshData> {
     let mesh = perro_builtin_meshes::build_builtin_mesh(source)?;
-    let vertices = mesh
+    let vertices: Vec<Vec3> = mesh
         .vertices
-        .into_iter()
+        .iter()
         .map(|vertex| Vec3::from(vertex.pos))
         .collect();
+    let uv0: Vec<Vec2> = mesh
+        .vertices
+        .iter()
+        .map(|vertex| Vec2::from(vertex.uv))
+        .collect();
+    let paint_uv = uv0.clone();
     let triangles = mesh
         .indices
         .chunks_exact(3)
@@ -20,7 +26,7 @@ pub(super) fn decode_builtin_query_mesh(source: &str) -> Option<QueryMeshData> {
             surface_index: 0,
         })
         .collect();
-    build_query_mesh_data(vertices, triangles)
+    build_query_mesh_data(vertices, uv0, paint_uv, triangles)
 }
 
 #[cfg(test)]

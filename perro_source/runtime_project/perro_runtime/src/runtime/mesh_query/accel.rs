@@ -25,6 +25,7 @@ pub(super) struct QueryNodeData {
     pub(super) source: Option<String>,
     pub(super) surfaces: Vec<MeshSurfaceBinding>,
     pub(super) instance_local: Vec<Mat4>,
+    pub(super) skeleton: Option<NodeID>,
 }
 
 /// Per-node cache entry for [`QueryNodeData`]. `instance_local` is the
@@ -48,11 +49,36 @@ pub(crate) type QueryNodeDataCache = AHashMap<NodeID, QueryNodeDataCacheEntry>;
 pub(super) struct QueryHitCandidate {
     pub(super) instance_index: u32,
     pub(super) surface_index: u32,
+    pub(super) triangle_index: u32,
+    pub(super) barycentric: Vec3,
+    pub(super) uv0: Vec2,
+    pub(super) paint_uv: Vec2,
     pub(super) global_point: Vec3,
     pub(super) local_point: Vec3,
     pub(super) global_normal: Vec3,
     pub(super) local_normal: Vec3,
     pub(super) metric: f32,
+}
+
+#[inline]
+fn hit_attrs(mesh: &QueryMeshData, tri_idx: usize, point: Vec3) -> Option<(Vec3, Vec2, Vec2)> {
+    let tri = *mesh.triangles.get(tri_idx)?;
+    let barycentric = barycentric_on_triangle(
+        point,
+        mesh.vertices[tri.a as usize],
+        mesh.vertices[tri.b as usize],
+        mesh.vertices[tri.c as usize],
+    );
+    let interpolate = |values: &[Vec2]| {
+        values[tri.a as usize] * barycentric.x
+            + values[tri.b as usize] * barycentric.y
+            + values[tri.c as usize] * barycentric.z
+    };
+    Some((
+        barycentric,
+        interpolate(&mesh.uv0),
+        interpolate(&mesh.paint_uv),
+    ))
 }
 
 #[derive(Clone, Copy)]
@@ -146,9 +172,14 @@ pub(super) fn query_point_tri_local(
     {
         return Some(best);
     }
+    let (barycentric, uv0, paint_uv) = hit_attrs(mesh, tri_idx, nearest_local)?;
     Some(Some(QueryHitCandidate {
         instance_index: 0,
         surface_index: tri.surface_index,
+        triangle_index: tri_idx as u32,
+        barycentric,
+        uv0,
+        paint_uv,
         global_point: nearest_local,
         local_point: nearest_local,
         global_normal: acc.normal,
@@ -186,9 +217,14 @@ pub(super) fn query_point_tri_global(
     }
     let nearest_global = global_from_mesh.transform_point3(nearest_local);
     let global_normal = (global_normal_basis * acc.normal).normalize_or_zero();
+    let (barycentric, uv0, paint_uv) = hit_attrs(mesh, tri_idx, nearest_local)?;
     Some(Some(QueryHitCandidate {
         instance_index,
         surface_index: tri.surface_index,
+        triangle_index: tri_idx as u32,
+        barycentric,
+        uv0,
+        paint_uv,
         global_point: nearest_global,
         local_point: nearest_local,
         global_normal,
@@ -317,9 +353,14 @@ pub(super) fn query_ray_tri_local(
         return Some(best);
     }
     let hit_local = ray_origin_local + ray_dir_local * t;
+    let (barycentric, uv0, paint_uv) = hit_attrs(mesh, tri_idx, hit_local)?;
     Some(Some(QueryHitCandidate {
         instance_index: 0,
         surface_index: tri.surface_index,
+        triangle_index: tri_idx as u32,
+        barycentric,
+        uv0,
+        paint_uv,
         global_point: hit_local,
         local_point: hit_local,
         global_normal: acc.normal,
@@ -374,9 +415,14 @@ pub(super) fn query_ray_tri_global(
         return Some(best);
     }
     let global_normal = (global_normal_basis * acc.normal).normalize_or_zero();
+    let (barycentric, uv0, paint_uv) = hit_attrs(mesh, tri_idx, hit_local)?;
     Some(Some(QueryHitCandidate {
         instance_index,
         surface_index: tri.surface_index,
+        triangle_index: tri_idx as u32,
+        barycentric,
+        uv0,
+        paint_uv,
         global_point: hit_global,
         local_point: hit_local,
         global_normal,
@@ -625,9 +671,83 @@ pub(super) fn ray_aabb_tmin(
 
 pub(super) fn build_query_mesh_data(
     vertices: Vec<Vec3>,
+    uv0: Vec<Vec2>,
+    paint_uv: Vec<Vec2>,
     triangles: Vec<QueryTri>,
 ) -> Option<QueryMeshData> {
-    if vertices.is_empty() || triangles.is_empty() {
+    let len = vertices.len();
+    build_query_mesh_data_with_skin(
+        vertices,
+        uv0,
+        paint_uv,
+        vec![[0; 4]; len],
+        vec![[0.0; 4]; len],
+        triangles,
+    )
+}
+
+pub(super) fn clone_query_mesh(mesh: &QueryMeshData) -> QueryMeshData {
+    build_query_mesh_data_with_skin(
+        mesh.vertices.clone(),
+        mesh.uv0.clone(),
+        mesh.paint_uv.clone(),
+        mesh.joints.clone(),
+        mesh.weights.clone(),
+        mesh.triangles.clone(),
+    )
+    .expect("valid cached query mesh")
+}
+
+pub(super) fn skin_query_mesh_with_palette(
+    mesh: &QueryMeshData,
+    palette: &[Mat4],
+) -> Option<QueryMeshData> {
+    let vertices = mesh
+        .vertices
+        .iter()
+        .enumerate()
+        .map(|(index, &position)| {
+            let joints = mesh.joints[index];
+            let weights = mesh.weights[index];
+            let mut posed = Vec3::ZERO;
+            let mut total = 0.0;
+            for lane in 0..4 {
+                let weight = weights[lane];
+                if weight > 0.0
+                    && let Some(matrix) = palette.get(joints[lane] as usize)
+                {
+                    posed += matrix.transform_point3(position) * weight;
+                    total += weight;
+                }
+            }
+            if total > 0.0 { posed } else { position }
+        })
+        .collect();
+    build_query_mesh_data_with_skin(
+        vertices,
+        mesh.uv0.clone(),
+        mesh.paint_uv.clone(),
+        mesh.joints.clone(),
+        mesh.weights.clone(),
+        mesh.triangles.clone(),
+    )
+}
+
+pub(super) fn build_query_mesh_data_with_skin(
+    vertices: Vec<Vec3>,
+    uv0: Vec<Vec2>,
+    paint_uv: Vec<Vec2>,
+    joints: Vec<[u16; 4]>,
+    weights: Vec<[f32; 4]>,
+    triangles: Vec<QueryTri>,
+) -> Option<QueryMeshData> {
+    if vertices.is_empty()
+        || triangles.is_empty()
+        || uv0.len() != vertices.len()
+        || paint_uv.len() != vertices.len()
+        || joints.len() != vertices.len()
+        || weights.len() != vertices.len()
+    {
         return None;
     }
     let mut tri_accel = Vec::with_capacity(triangles.len());
@@ -656,6 +776,10 @@ pub(super) fn build_query_mesh_data(
     );
     Some(QueryMeshData {
         vertices,
+        uv0,
+        paint_uv,
+        joints,
+        weights,
         triangles,
         tri_accel,
         bvh_nodes,

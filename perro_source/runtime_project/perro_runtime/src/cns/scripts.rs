@@ -11,7 +11,7 @@ use perro_scripting::{
 use perro_scripting::{ScriptBehavior, ScriptContext};
 use perro_variant::Variant;
 #[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
-use std::{fs, path::PathBuf};
+use std::{env, fs, path::PathBuf};
 use std::{path::Path, sync::Arc};
 
 impl Runtime {
@@ -379,6 +379,17 @@ mod script_abi_tests {
 
 #[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
 fn resolve_scripts_dylib_path(project_root: &Path) -> Result<PathBuf, String> {
+    if let Some(path) = env::var_os("PERRO_SCRIPTS_DYLIB_PATH") {
+        let path = PathBuf::from(path);
+        if path.is_file() {
+            return Ok(path);
+        }
+        return Err(format!(
+            "PERRO_SCRIPTS_DYLIB_PATH does not point to a scripts dylib: {}",
+            path.display()
+        ));
+    }
+
     let profiles = ["debug", "release"];
     let mut scanned = Vec::<String>::new();
     let mut candidates = Vec::<(std::time::SystemTime, PathBuf)>::new();

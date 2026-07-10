@@ -24,8 +24,8 @@ pub use perro_csv::{
 #[doc(hidden)]
 pub use perro_ids::string_to_u64 as __perro_string_to_u64;
 pub use perro_render_bridge::{
-    CustomMaterial3D, CustomMaterialLighting3D, CustomMaterialParam3D, CustomMaterialParamValue3D,
-    Material3D, Mesh3D, MeshSurfaceRange, RuntimeMeshVertex,
+    CustomMaterial3D, CustomMaterialImage3D, CustomMaterialLighting3D, CustomMaterialParam3D,
+    CustomMaterialParamValue3D, Material3D, Mesh3D, MeshSurfaceRange, RuntimeMeshVertex,
 };
 pub use perro_scene::{Scene, SceneDoc, SceneWrite};
 pub use res_path::{ResPath, ResPathBuf, ResPathError, ResPathKind, ResPathSource};
@@ -78,8 +78,9 @@ pub mod prelude {
         scene_count, scene_load_doc, scene_save_doc, skeleton_count, skeleton_load_bones,
         skeleton_load_bones_2d_from_bytes, skeleton_load_bones_3d_from_bytes, texture_count,
         texture_create_from_bytes, texture_create_from_rgba, texture_drop, texture_is_loaded,
-        texture_load, texture_reserve, video_release_node, video_update_node, webcam_default,
-        webcam_devices, webcam_frame_rgba, webcam_open, webcam_open_device, webcam_texture,
+        texture_load, texture_reserve, texture_write_rgba, texture_write_rgba_region,
+        video_release_node, video_update_node, webcam_default, webcam_devices, webcam_frame_rgba,
+        webcam_open, webcam_open_device, webcam_texture,
     };
 
     // Shared data types.
@@ -92,7 +93,7 @@ pub mod prelude {
         ScriptMemberID, SignalID, TagID, TextureID, WebcamID,
     };
     pub use perro_render_bridge::{
-        CustomMaterial3D, CustomMaterialLighting3D, CustomMaterialParam3D,
+        CustomMaterial3D, CustomMaterialImage3D, CustomMaterialLighting3D, CustomMaterialParam3D,
         CustomMaterialParamValue3D, Material3D, Mesh3D, MeshSurfaceRange, RuntimeMeshVertex,
     };
     pub use perro_scene::{Scene, SceneDoc, SceneWrite};
