@@ -2785,6 +2785,13 @@ impl Variant {
         }
     }
 
+    /// Node id if this holds one, else [`NodeID::nil`]. Convenience for the
+    /// common "read a node-ref var, default to nil" pattern.
+    #[inline]
+    pub fn as_node_or_nil(&self) -> NodeID {
+        self.as_node().unwrap_or(NodeID::nil())
+    }
+
     #[inline]
     pub fn as_texture(&self) -> Option<TextureID> {
         match *self {

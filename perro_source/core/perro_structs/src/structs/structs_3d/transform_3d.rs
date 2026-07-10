@@ -105,6 +105,24 @@ impl Transform3D {
             rotation: Quaternion::looking_at(target - eye, up),
         }
     }
+
+    /// Local forward axis in world space (`rotation * -Z`).
+    #[inline]
+    pub fn forward(&self) -> Vector3 {
+        self.rotation.rotate_vector3(Vector3::new(0.0, 0.0, -1.0))
+    }
+
+    /// Local right axis in world space (`rotation * +X`).
+    #[inline]
+    pub fn right(&self) -> Vector3 {
+        self.rotation.rotate_vector3(Vector3::new(1.0, 0.0, 0.0))
+    }
+
+    /// Local up axis in world space (`rotation * +Y`).
+    #[inline]
+    pub fn up(&self) -> Vector3 {
+        self.rotation.rotate_vector3(Vector3::new(0.0, 1.0, 0.0))
+    }
 }
 
 impl Default for Transform3D {
@@ -136,6 +154,26 @@ mod tests {
             assert_eq!(transform.position, eye);
             assert_eq!(transform.scale, Vector3::ONE);
         }
+    }
+
+    #[test]
+    fn basis_axes_match_rotation_of_unit_vectors() {
+        let target = Vector3::new(5.0, 0.0, 0.0);
+        let transform = Transform3D::looking_at(Vector3::ZERO, target, Vector3::new(0.0, 1.0, 0.0));
+
+        // Facing +X: forward points +X, right points +Z, up stays +Y.
+        assert!((transform.forward() - Vector3::new(1.0, 0.0, 0.0)).length() < 1.0e-5);
+        assert!((transform.right() - Vector3::new(0.0, 0.0, 1.0)).length() < 1.0e-5);
+        assert!((transform.up() - Vector3::new(0.0, 1.0, 0.0)).length() < 1.0e-5);
+    }
+
+    #[test]
+    fn identity_basis_uses_default_axes() {
+        let t = Transform3D::IDENTITY;
+
+        assert!((t.forward() - Vector3::new(0.0, 0.0, -1.0)).length() < 1.0e-6);
+        assert!((t.right() - Vector3::new(1.0, 0.0, 0.0)).length() < 1.0e-6);
+        assert!((t.up() - Vector3::new(0.0, 1.0, 0.0)).length() < 1.0e-6);
     }
 
     #[test]
