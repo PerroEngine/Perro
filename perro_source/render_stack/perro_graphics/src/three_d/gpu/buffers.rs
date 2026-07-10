@@ -429,7 +429,11 @@ impl Gpu3D {
         };
         let source_hash = perro_ids::parse_hashed_source_uri(source)
             .unwrap_or_else(|| perro_ids::string_to_u64(source));
-        if let Some(slot) = self.custom_material_texture_slots.get(&source_hash).copied() {
+        if let Some(slot) = self
+            .custom_material_texture_slots
+            .get(&source_hash)
+            .copied()
+        {
             self.invalidate_material_texture(slot);
         }
     }
@@ -450,7 +454,11 @@ impl Gpu3D {
         };
         let source_hash = perro_ids::parse_hashed_source_uri(source)
             .unwrap_or_else(|| perro_ids::string_to_u64(source));
-        let Some(slot) = self.custom_material_texture_slots.get(&source_hash).copied() else {
+        let Some(slot) = self
+            .custom_material_texture_slots
+            .get(&source_hash)
+            .copied()
+        else {
             return;
         };
         if !self.write_stream_material_texture(queue, slot, width, height, rgba) {

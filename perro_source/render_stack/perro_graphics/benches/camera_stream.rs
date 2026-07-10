@@ -283,11 +283,7 @@ fn setup_stream_3d(
     graphics
 }
 
-fn setup_stream_webcam(
-    window: &Arc<Window>,
-    resolution: u32,
-    sprite_count: u32,
-) -> PerroGraphics {
+fn setup_stream_webcam(window: &Arc<Window>, resolution: u32, sprite_count: u32) -> PerroGraphics {
     let mut graphics = base_graphics(window);
     let texture = TextureID::from_parts(900_001, 1);
     graphics.submit(RenderCommand::Resource(

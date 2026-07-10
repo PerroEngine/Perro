@@ -5,7 +5,8 @@ use super::shaders::{
 use crate::backend::StaticTextureLookup;
 use crate::resources::ResourceStore;
 use crate::texture_mips::{
-    build_rgba_levels_for_filter, sampler_descriptor, write_rgba_mip_chain, write_texture_base_level,
+    build_rgba_levels_for_filter, sampler_descriptor, write_rgba_mip_chain,
+    write_texture_base_level,
 };
 use ahash::{AHashMap, AHashSet};
 use bytemuck::{Pod, Zeroable};

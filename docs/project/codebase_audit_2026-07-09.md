@@ -219,11 +219,14 @@ Closed in integration:
 - P0: `RT-001`, `RT-002`, `RT-004`, `RT-016`, `RT-017`, `RT-018`, `RT-031`
 - P0: `PERF-01`, `PERF-02`, `PERF-03`, `PERF-16`, `DOC-01`
 - P0 gap: `GAP-01`, `GAP-02`, `GAP-03`
-- P1: `COR-01`, `COR-02`, `COR-03`, `COR-05`, `COR-06`, `COR-07`
-- P1: `RT-003`, `RT-005`, `RT-007`, `RT-012`, `RT-019`, `RT-020`, `RT-021`
-- P1: `PERF-04`, `PERF-05`, `DOC-02`, `API-01`, `GATE-02`, `GAP-04`, `GAP-05`
-- P2: `COR-13`, `COR-14`, `COR-16`, `PERF-29`, `PERF-32`, `DOC-03`, `DOC-04`, `DOC-06`
-- P3: `DOC-05`
+- P1: `COR-01`, `COR-02`, `COR-03`, `COR-04`, `COR-05`, `COR-06`, `COR-07`
+- P1: `RT-003`, `RT-005`, `RT-006`, `RT-007`, `RT-009`, `RT-012`, `RT-013`, `RT-015`
+- P1: `RT-019` thru `RT-026`, `RT-028`
+- P1: `PERF-04`, `PERF-05`, `PERF-07`, `PERF-08`, `PERF-09`, `PERF-12`, `PERF-13`, `PERF-14`
+- P1: `PERF-17`, `PERF-18`
+- P1: `DOC-02`, `API-01`, `GATE-02`, `GAP-04`, `GAP-05`
+- P2: `COR-13`, `COR-14`, `COR-16`, `PERF-29`, `PERF-32`, `DOC-03`, `DOC-04`, `DOC-06`, `API-02`
+- P3: `DOC-05`, `API-03`
 - opt: prior `O3` CSV top-k
 - review: removal reattach race + heading natural-suffix collision
 
@@ -240,12 +243,21 @@ Main fix commits:
 - `0d7c7b97`: dropdown high-water child reuse
 - `a414d1b5`, `99a3ed9b`: bounded Steam + HTTP queues
 - `a2ce60d1`: cfg/physics/arena boundary guards
+- `23ca0a6d`: full-width render request identity
+- `1596b589`: canonical texture data + async failure fanout + ID cap
+- `a2fe0162`: atomic scene merge/routes + ownership roots
+- `771d51d7`, `2456f9d9`: animation events/schedules/fingerprint/blend
+- `2fa21744`, `19497763`: atomic asset root + audio startup handshake
+- `b555adea`, `793f7e8b`: keycode table + CLI flag schema
+- `e68ca563`: asset cache/resize/inflate bounds
 
-In flight:
+Profile-gated defer:
 
-- scene atomicity/ownership: `RT-022` thru `RT-026`
-- animation/state: `COR-04`, `RT-009`, `RT-013`, `RT-015`, `RT-028`
-- render resources: `PERF-06` thru `PERF-09`
+- `PERF-06`: custom mesh GPU storage spans 5 coupled append lanes
+- req allocation records + coalescing free lists + full offset rebuild on compaction
+- req randomized churn validator + render parity + VRAM/fragmentation bench b4 land
+- `PERF-11`: JoyCon BLE connect/discover/write awaits lack timeout
+- req cancellable/time-bound BLE ops b4 worker `Drop` join; direct join can deadlock
 
 Gate state:
 

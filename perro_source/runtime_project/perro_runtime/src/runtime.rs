@@ -570,11 +570,7 @@ impl Runtime {
     /// effective-modulate microbench can build a deep tinted hierarchy without a
     /// scene load.
     #[cfg(feature = "bench")]
-    pub fn bench_set_node3d_modulate(
-        &mut self,
-        id: NodeID,
-        modulate: perro_structs::NodeModulate,
-    ) {
+    pub fn bench_set_node3d_modulate(&mut self, id: NodeID, modulate: perro_structs::NodeModulate) {
         if let Some(mut node) = self.nodes.get_mut(id) {
             node.with_base_mut::<perro_nodes::Node3D, _>(|base| base.modulate = modulate);
         }
