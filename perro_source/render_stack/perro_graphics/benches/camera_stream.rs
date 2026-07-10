@@ -457,12 +457,17 @@ fn surface(material: MaterialID) -> Arc<[MeshSurfaceBinding3D]> {
 }
 
 fn create_texture(graphics: &mut PerroGraphics) -> TextureID {
-    graphics.submit(RenderCommand::Resource(ResourceCommand::CreateTexture {
-        request: RenderRequestID::new(1),
-        id: TextureID::nil(),
-        source: "__bench_texture__".to_string(),
-        reserved: true,
-    }));
+    graphics.submit(RenderCommand::Resource(
+        ResourceCommand::CreateRuntimeTexture {
+            request: RenderRequestID::new(1),
+            id: TextureID::nil(),
+            source: "runtime://camera-stream-bench".to_string(),
+            reserved: true,
+            width: 1,
+            height: 1,
+            rgba: Arc::from([255, 255, 255, 255]),
+        },
+    ));
     graphics.draw_frame();
     let mut events = Vec::new();
     graphics.drain_events(&mut events);
