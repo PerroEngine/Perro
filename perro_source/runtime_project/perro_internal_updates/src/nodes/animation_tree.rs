@@ -129,6 +129,9 @@ where
                     playback_frame: 0.0,
                     boomerang_direction: 1.0,
                     paused: false,
+                    last_event_animation: AnimationID::nil(),
+                    last_event_frame: u32::MAX,
+                    pending_event_frames: Vec::new(),
                 })
                 .collect();
         }
@@ -142,12 +145,10 @@ where
 {
     let delta_seconds = delta_time!(ctx).max(0.0);
     let _ = with_node_mut!(ctx, SelfNodeType, id, |tree| {
-        if tree.paused {
-            return;
-        }
         for idx in 0..tree.internal.slots.len() {
             let entry = tree.animations.get(idx).cloned().unwrap_or_default();
             let slot = &mut tree.internal.slots[idx];
+            slot.pending_event_frames.clear();
             let animation = if res.Animations().is_loaded(entry.animation) {
                 slot.last_animation = entry.animation;
                 entry.animation
@@ -156,33 +157,63 @@ where
             } else {
                 AnimationID::nil()
             };
-            if slot.paused || entry.paused || animation.is_nil() {
+            if animation.is_nil() {
                 continue;
             }
             let Some(clip) = res.Animations().get(animation) else {
                 continue;
             };
             let frame_count = clip.frame_count();
+            let previous_playback_frame = slot.playback_frame;
+            let previous_direction = slot.boomerang_direction;
             if frame_count <= 1 {
                 slot.current_frame = 0;
                 slot.playback_frame = 0.0;
                 slot.boomerang_direction = 1.0;
-                continue;
+            } else if !(tree.paused || slot.paused || entry.paused) {
+                let delta_frames = delta_seconds * clip.fps.max(0.0) * tree.speed * entry.speed;
+                slot.playback_frame = super::animation_player::advance_playback_frame(
+                    slot.playback_frame,
+                    delta_frames,
+                    frame_count,
+                    entry.playback_type,
+                    &mut slot.boomerang_direction,
+                );
+                super::animation_player::crossed_animation_frames(
+                    previous_playback_frame,
+                    delta_frames,
+                    frame_count,
+                    entry.playback_type,
+                    previous_direction,
+                    &clip.frame_events,
+                    &mut slot.pending_event_frames,
+                );
+                slot.current_frame = super::animation_player::playback_frame_to_frame(
+                    slot.playback_frame,
+                    frame_count,
+                    entry.playback_type,
+                );
             }
-            slot.playback_frame = super::animation_player::advance_playback_frame(
-                slot.playback_frame,
-                delta_seconds * clip.fps.max(0.0) * tree.speed * entry.speed,
-                frame_count,
-                entry.playback_type,
-                &mut slot.boomerang_direction,
-            );
-            slot.current_frame = super::animation_player::playback_frame_to_frame(
-                slot.playback_frame,
-                frame_count,
-                entry.playback_type,
-            );
+            queue_current_slot_event_once(slot, animation, &clip.frame_events);
         }
     });
+}
+
+fn queue_current_slot_event_once(
+    slot: &mut AnimationTreeSlotPlayback,
+    animation: AnimationID,
+    events: &[perro_animation::AnimationFrameEvent],
+) {
+    let cursor_changed =
+        slot.last_event_animation != animation || slot.last_event_frame != slot.current_frame;
+    if cursor_changed
+        && slot.pending_event_frames.last().copied() != Some(slot.current_frame)
+        && super::animation_player::frame_has_event(events, slot.current_frame)
+    {
+        slot.pending_event_frames.push(slot.current_frame);
+    }
+    slot.last_event_animation = animation;
+    slot.last_event_frame = slot.current_frame;
 }
 
 fn eval_tree_pose<R>(
@@ -447,27 +478,42 @@ where
     RT: RuntimeAPI + ?Sized,
     R: ResourceAPI + ?Sized,
 {
-    let entries = with_node!(ctx, SelfNodeType, id, |tree| {
+    let entries = with_node_mut!(ctx, SelfNodeType, id, |tree| {
         tree.internal
             .slots
-            .iter()
+            .iter_mut()
             .enumerate()
             .filter_map(|(idx, slot)| {
-                tree.animations
-                    .get(idx)
-                    .cloned()
-                    .map(|animation| (animation, slot.current_frame))
+                if slot.pending_event_frames.is_empty() {
+                    return None;
+                }
+                tree.animations.get(idx).cloned().map(|animation| {
+                    (
+                        idx,
+                        animation,
+                        slot.last_event_animation,
+                        std::mem::take(&mut slot.pending_event_frames),
+                    )
+                })
             })
             .collect::<Vec<_>>()
-    });
-    for (animation, frame) in entries {
-        if !res.Animations().is_loaded(animation.animation) {
-            continue;
-        }
-        let Some(clip) = res.Animations().get(animation.animation) else {
+    })
+    .unwrap_or_default();
+    for (idx, animation, animation_id, mut frames) in entries {
+        let Some(clip) = res.Animations().get(animation_id) else {
             continue;
         };
-        super::animation_player::apply_frame_events(ctx, &clip, frame, &animation.bindings);
+        for frame in frames.iter().copied() {
+            super::animation_player::apply_frame_events(ctx, &clip, frame, &animation.bindings);
+        }
+        frames.clear();
+        let _ = with_node_mut!(ctx, SelfNodeType, id, |tree| {
+            if let Some(slot) = tree.internal.slots.get_mut(idx)
+                && slot.pending_event_frames.is_empty()
+            {
+                slot.pending_event_frames = frames;
+            }
+        });
     }
 }
 
@@ -574,5 +620,58 @@ fn add_value(a: &AnimationTrackValue, b: &AnimationTrackValue) -> AnimationTrack
             AnimationTrackValue::Transform3D(out)
         }
         _ => a.clone(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use perro_animation::{AnimationEvent, AnimationEventScope, AnimationFrameEvent};
+
+    fn event(frame: u32) -> AnimationFrameEvent {
+        AnimationFrameEvent {
+            frame,
+            scope: AnimationEventScope::Global,
+            event: AnimationEvent::EmitSignal {
+                name: Cow::Borrowed("test"),
+                params: Cow::Borrowed(&[]),
+            },
+        }
+    }
+
+    #[test]
+    fn paused_slot_queues_current_event_once() {
+        let animation = AnimationID::new(1);
+        let events = [event(2)];
+        let mut slot = AnimationTreeSlotPlayback {
+            current_frame: 2,
+            last_event_frame: u32::MAX,
+            ..Default::default()
+        };
+
+        queue_current_slot_event_once(&mut slot, animation, &events);
+        assert_eq!(slot.pending_event_frames, [2]);
+        slot.pending_event_frames.clear();
+        queue_current_slot_event_once(&mut slot, animation, &events);
+
+        assert!(slot.pending_event_frames.is_empty());
+    }
+
+    #[test]
+    fn changed_current_frame_queues_event_once() {
+        let animation = AnimationID::new(1);
+        let events = [event(1), event(3)];
+        let mut slot = AnimationTreeSlotPlayback {
+            current_frame: 1,
+            last_event_frame: u32::MAX,
+            ..Default::default()
+        };
+        queue_current_slot_event_once(&mut slot, animation, &events);
+        slot.pending_event_frames.clear();
+
+        slot.current_frame = 3;
+        queue_current_slot_event_once(&mut slot, animation, &events);
+
+        assert_eq!(slot.pending_event_frames, [3]);
     }
 }

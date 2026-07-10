@@ -7,6 +7,11 @@ use perro_runtime_api::RuntimeWindow;
 
 const NONE_POS: u32 = u32::MAX;
 
+fn snapshot_dispatch(live: &[NodeID], scratch: &mut Vec<NodeID>) {
+    scratch.clear();
+    scratch.extend_from_slice(live);
+}
+
 impl Runtime {
     // full rebuild of internal schedules frm live node set.
     // kp 4 hot-reload / scene swap: reset then re-register all nodes.
@@ -370,14 +375,17 @@ impl Runtime {
         // SAFETY: During callback dispatch, input is treated as immutable runtime state.
         // Engine invariant: only window/event ingestion mutates input, outside script callback execution.
         let ipt = unsafe { InputWindow::new(&*input_ptr) };
-        let count = self.internal_updates.internal_update_nodes.len();
-        for i in 0..count {
-            let id = self.internal_updates.internal_update_nodes[i];
+        let mut dispatch =
+            std::mem::take(&mut self.internal_updates.internal_update_dispatch_scratch);
+        snapshot_dispatch(&self.internal_updates.internal_update_nodes, &mut dispatch);
+        for id in dispatch.iter().copied() {
             if self.nodes.get(id).is_none() {
                 continue;
             }
             self.call_internal_update_node_with_context(id, &res, &ipt);
         }
+        dispatch.clear();
+        self.internal_updates.internal_update_dispatch_scratch = dispatch;
     }
 
     pub(crate) fn run_internal_fixed_update_schedule(&mut self) {
@@ -394,14 +402,20 @@ impl Runtime {
         // SAFETY: During callback dispatch, input is treated as immutable runtime state.
         // Engine invariant: only window/event ingestion mutates input, outside script callback execution.
         let ipt = unsafe { InputWindow::new(&*input_ptr) };
-        let count = self.internal_updates.internal_fixed_dispatch_nodes.len();
-        for i in 0..count {
-            let id = self.internal_updates.internal_fixed_dispatch_nodes[i];
+        let mut dispatch =
+            std::mem::take(&mut self.internal_updates.internal_fixed_dispatch_scratch);
+        snapshot_dispatch(
+            &self.internal_updates.internal_fixed_dispatch_nodes,
+            &mut dispatch,
+        );
+        for id in dispatch.iter().copied() {
             if self.nodes.get(id).is_none() {
                 continue;
             }
             self.call_internal_fixed_update_node_with_context(id, &res, &ipt);
         }
+        dispatch.clear();
+        self.internal_updates.internal_fixed_dispatch_scratch = dispatch;
     }
 
     fn call_internal_update_node_with_context(
@@ -428,5 +442,25 @@ impl Runtime {
         }
         let mut ctx = RuntimeWindow::new(self);
         perro_internal_updates::internal_fixed_update_node(&mut ctx, res, ipt, id);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dispatch_snapshot_keeps_order_when_live_schedule_shrinks() {
+        let first = NodeID::new(1);
+        let removed = NodeID::new(2);
+        let last = NodeID::new(3);
+        let mut live = vec![first, removed, last];
+        let mut snapshot = Vec::new();
+        snapshot_dispatch(&live, &mut snapshot);
+
+        live.swap_remove(1);
+
+        assert_eq!(snapshot, [first, removed, last]);
+        assert_eq!(live, [first, last]);
     }
 }

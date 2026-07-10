@@ -21,7 +21,8 @@ use perro_scene::{
     Camera3DField, Light3DField, MeshInstance3DField, Node2DField, Node3DField, NodeField,
     PointLight3DField, SpotLight3DField, Sprite2DField, resolve_node_field,
 };
-use std::collections::HashMap;
+use std::collections::{HashMap, hash_map::DefaultHasher};
+use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 type SelfNodeType = AnimationPlayer;
@@ -55,34 +56,39 @@ pub fn internal_update<RT, R, IP>(
     let Some(clip) = res.Animations().get(animation_id) else {
         return;
     };
-    if clip.object_tracks.is_empty() {
-        return;
-    }
-
     let delta_seconds = delta_time!(ctx).max(0.0);
     let Some(step) = step_animation_player(ctx, id, animation_id, &clip, delta_seconds) else {
         return;
     };
-    if !step.should_apply {
+    if !step.should_apply && step.event_frames.is_empty() {
         return;
     }
 
-    let mut applied_transforms = with_node_mut!(ctx, SelfNodeType, id, |player| {
-        std::mem::take(&mut player.internal.applied_transforms)
-    })
-    .unwrap_or_default();
-    apply_clip_frame(
-        ctx,
-        res,
-        &clip,
-        step.frame,
-        &step.bindings,
-        &mut applied_transforms,
-    );
+    let mut applied_transforms = Vec::new();
+    if step.should_apply {
+        applied_transforms = with_node_mut!(ctx, SelfNodeType, id, |player| {
+            std::mem::take(&mut player.internal.applied_transforms)
+        })
+        .unwrap_or_default();
+        apply_clip_frame(
+            ctx,
+            res,
+            &clip,
+            step.frame,
+            &step.bindings,
+            &mut applied_transforms,
+        );
+    }
+    for frame in step.event_frames.iter().copied() {
+        apply_frame_events(ctx, &clip, frame, &step.bindings);
+    }
     let _ = with_node_mut!(ctx, SelfNodeType, id, |player| {
-        player.internal.applied_transforms = applied_transforms;
+        if step.should_apply {
+            player.internal.applied_transforms = applied_transforms;
+        }
         // Hand the scratch bindings buffer back for reuse next frame.
         player.internal.bindings_scratch = step.bindings;
+        player.internal.event_frames_scratch = step.event_frames;
     });
 }
 
@@ -102,6 +108,17 @@ struct AnimationStep {
     frame: u32,
     bindings: Vec<AnimationObjectBinding>,
     should_apply: bool,
+    event_frames: Vec<u32>,
+}
+
+fn bindings_fingerprint(bindings: &[AnimationObjectBinding]) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    bindings.len().hash(&mut hasher);
+    for binding in bindings {
+        binding.object.hash(&mut hasher);
+        binding.node.hash(&mut hasher);
+    }
+    hasher.finish()
 }
 
 fn step_animation_player<RT>(
@@ -116,15 +133,29 @@ where
 {
     with_node_mut!(ctx, SelfNodeType, id, |player| {
         let previous_frame = player.current_frame;
+        let previous_playback_frame = player.internal.playback_frame;
+        let previous_boomerang_direction = player.internal.boomerang_direction;
         let frame_count = clip.frame_count();
+        let delta_frames = delta_seconds * clip.fps.max(0.0) * player.speed;
+        let mut event_frames = std::mem::take(&mut player.internal.event_frames_scratch);
+        event_frames.clear();
 
         if !player.paused {
             player.internal.playback_frame = advance_playback_frame(
                 player.internal.playback_frame,
-                delta_seconds * clip.fps.max(0.0) * player.speed,
+                delta_frames,
                 frame_count,
                 player.playback_type,
                 &mut player.internal.boomerang_direction,
+            );
+            crossed_animation_frames(
+                previous_playback_frame,
+                delta_frames,
+                frame_count,
+                player.playback_type,
+                previous_boomerang_direction,
+                &clip.frame_events,
+                &mut event_frames,
             );
             player.current_frame = playback_frame_to_frame(
                 player.internal.playback_frame,
@@ -138,19 +169,28 @@ where
         }
 
         let binding_revision = player.bindings_revision;
+        let binding_fingerprint = bindings_fingerprint(&player.bindings);
         let frame_changed = player.current_frame != previous_frame;
-        let binding_changed = binding_revision != player.internal.last_binding_revision;
+        let binding_changed = binding_revision != player.internal.last_binding_revision
+            || binding_fingerprint != player.internal.last_binding_fingerprint;
         let animation_changed = animation_id != player.internal.last_applied_animation;
         let frame_unapplied = player.current_frame != player.internal.last_applied_frame;
         let should_apply = animation_changed || frame_changed || binding_changed || frame_unapplied;
+
+        if (animation_changed || (player.paused && frame_unapplied))
+            && event_frames.last().copied() != Some(player.current_frame)
+        {
+            event_frames.push(player.current_frame);
+        }
 
         if should_apply {
             player.internal.last_applied_animation = animation_id;
             player.internal.last_applied_frame = player.current_frame;
             player.internal.last_binding_revision = binding_revision;
+            player.internal.last_binding_fingerprint = binding_fingerprint;
         }
 
-        let bindings = if should_apply {
+        let bindings = if should_apply || !event_frames.is_empty() {
             let mut scratch = std::mem::take(&mut player.internal.bindings_scratch);
             scratch.clear();
             scratch.extend_from_slice(&player.bindings);
@@ -163,6 +203,7 @@ where
             frame: player.current_frame,
             bindings,
             should_apply,
+            event_frames,
         }
     })
 }
@@ -196,8 +237,6 @@ fn apply_clip_frame<RT>(
     if has_bone_tracks {
         apply_bone_tracks_batched(ctx, clip, frame, bindings);
     }
-
-    apply_frame_events(ctx, clip, frame, bindings);
 }
 
 /// Apply every bone track of a skeleton under a single mutable borrow and a
@@ -271,7 +310,10 @@ fn apply_bone_tracks_batched<RT>(
 /// `apply_frame_events` when nothing fires on `frame`. Split out as its own
 /// function so it can be unit-tested without a `RuntimeWindow`.
 #[inline]
-fn frame_has_event(frame_events: &[perro_animation::AnimationFrameEvent], frame: u32) -> bool {
+pub(super) fn frame_has_event(
+    frame_events: &[perro_animation::AnimationFrameEvent],
+    frame: u32,
+) -> bool {
     frame_events.iter().any(|entry| entry.frame == frame)
 }
 
@@ -1385,6 +1427,84 @@ pub(super) fn advance_playback_frame(
     }
 }
 
+pub(super) fn crossed_animation_frames(
+    current_frame: f32,
+    delta_frames: f32,
+    frame_count: u32,
+    playback_type: AnimationPlaybackType,
+    boomerang_direction: f32,
+    events: &[perro_animation::AnimationFrameEvent],
+    out: &mut Vec<u32>,
+) {
+    if events.is_empty()
+        || frame_count <= 1
+        || !current_frame.is_finite()
+        || !delta_frames.is_finite()
+        || delta_frames == 0.0
+    {
+        return;
+    }
+
+    let last = frame_count.saturating_sub(1) as f64;
+    let (start, end, period, boomerang) = match playback_type {
+        AnimationPlaybackType::Once => {
+            let start = (current_frame as f64).clamp(0.0, last);
+            let end = (start + delta_frames as f64).clamp(0.0, last);
+            (start, end, 0_i64, false)
+        }
+        AnimationPlaybackType::Loop => {
+            let period = frame_count as f64;
+            let start = (current_frame as f64).rem_euclid(period);
+            (
+                start,
+                start + delta_frames as f64,
+                frame_count as i64,
+                false,
+            )
+        }
+        AnimationPlaybackType::Boomerang => {
+            let period = last * 2.0;
+            let frame = (current_frame as f64).clamp(0.0, last);
+            let start = if boomerang_direction.is_sign_negative() {
+                period - frame
+            } else {
+                frame
+            };
+            (start, start + delta_frames as f64, period as i64, true)
+        }
+    };
+
+    let mut push_boundary = |boundary: i64| {
+        let frame = if period == 0 {
+            boundary.clamp(0, last as i64) as u32
+        } else {
+            let phase = boundary.rem_euclid(period);
+            if boomerang && phase > last as i64 {
+                (period - phase) as u32
+            } else {
+                phase as u32
+            }
+        };
+        if frame_has_event(events, frame) {
+            out.push(frame);
+        }
+    };
+
+    if end > start {
+        let mut boundary = start.floor() as i64 + 1;
+        while boundary as f64 <= end {
+            push_boundary(boundary);
+            boundary += 1;
+        }
+    } else if end < start {
+        let mut boundary = start.ceil() as i64 - 1;
+        while boundary as f64 >= end {
+            push_boundary(boundary);
+            boundary -= 1;
+        }
+    }
+}
+
 fn advance_boomerang_frame(
     current_frame: f32,
     delta_frames: f32,
@@ -1652,6 +1772,73 @@ mod tests {
         assert!(frame_has_event(&events, 0));
         assert!(frame_has_event(&events, 15));
         assert!(!frame_has_event(&events, 1));
+    }
+
+    #[test]
+    fn loop_large_step_lists_crossed_event_frames_in_order() {
+        let events = (0..5).map(signal_event).collect::<Vec<_>>();
+        let mut crossed = Vec::new();
+
+        crossed_animation_frames(
+            0.25,
+            8.0,
+            5,
+            AnimationPlaybackType::Loop,
+            1.0,
+            &events,
+            &mut crossed,
+        );
+
+        assert_eq!(crossed, [1, 2, 3, 4, 0, 1, 2, 3]);
+    }
+
+    #[test]
+    fn reverse_loop_lists_crossed_event_frames_in_order() {
+        let events = (0..5).map(signal_event).collect::<Vec<_>>();
+        let mut crossed = Vec::new();
+
+        crossed_animation_frames(
+            3.75,
+            -5.0,
+            5,
+            AnimationPlaybackType::Loop,
+            1.0,
+            &events,
+            &mut crossed,
+        );
+
+        assert_eq!(crossed, [3, 2, 1, 0, 4]);
+    }
+
+    #[test]
+    fn boomerang_large_step_lists_turnaround_events_once() {
+        let events = (0..4).map(signal_event).collect::<Vec<_>>();
+        let mut crossed = Vec::new();
+
+        crossed_animation_frames(
+            0.0,
+            8.0,
+            4,
+            AnimationPlaybackType::Boomerang,
+            1.0,
+            &events,
+            &mut crossed,
+        );
+
+        assert_eq!(crossed, [1, 2, 3, 2, 1, 0, 1, 2]);
+    }
+
+    #[test]
+    fn binding_fingerprint_detects_public_vec_mutation() {
+        let mut bindings = vec![AnimationObjectBinding {
+            object: Cow::Borrowed("body"),
+            node: NodeID::new(1),
+        }];
+        let before = bindings_fingerprint(&bindings);
+
+        bindings[0].node = NodeID::new(2);
+
+        assert_ne!(before, bindings_fingerprint(&bindings));
     }
 
     #[test]

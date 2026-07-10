@@ -21,12 +21,15 @@ pub struct InternalAnimationData {
     pub last_applied_animation: AnimationID,
     pub last_applied_frame: u32,
     pub last_binding_revision: u64,
+    pub last_binding_fingerprint: u64,
     pub playback_frame: f32,
     pub boomerang_direction: f32,
     pub applied_transforms: Vec<AppliedAnimationTransform>,
     /// Scratch buffer reused to move bindings out of the node while it is
     /// borrowed, avoiding a per-frame `bindings.to_vec()` allocation.
     pub bindings_scratch: Vec<AnimationObjectBinding>,
+    /// Crossed event-frame scratch reused across updates.
+    pub event_frames_scratch: Vec<u32>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -72,10 +75,12 @@ impl AnimationPlayer {
                 last_applied_animation: AnimationID::nil(),
                 last_applied_frame: 0,
                 last_binding_revision: 0,
+                last_binding_fingerprint: 0,
                 playback_frame: 0.0,
                 boomerang_direction: 1.0,
                 applied_transforms: Vec::new(),
                 bindings_scratch: Vec::new(),
+                event_frames_scratch: Vec::new(),
             },
         }
     }

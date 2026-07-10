@@ -179,8 +179,10 @@ impl Default for PhysicsPose3D {
 
 pub(crate) struct InternalUpdateState {
     pub(crate) internal_update_nodes: Vec<NodeID>,
+    pub(crate) internal_update_dispatch_scratch: Vec<NodeID>,
     pub(crate) internal_fixed_update_nodes: Vec<NodeID>,
     pub(crate) internal_fixed_dispatch_nodes: Vec<NodeID>,
+    pub(crate) internal_fixed_dispatch_scratch: Vec<NodeID>,
     pub(crate) internal_update_pos: Vec<u32>,
     pub(crate) internal_fixed_update_pos: Vec<u32>,
     pub(crate) physics_body_nodes_2d: Vec<NodeID>,
@@ -197,8 +199,10 @@ impl InternalUpdateState {
     pub(crate) fn new() -> Self {
         Self {
             internal_update_nodes: Vec::new(),
+            internal_update_dispatch_scratch: Vec::new(),
             internal_fixed_update_nodes: Vec::new(),
             internal_fixed_dispatch_nodes: Vec::new(),
+            internal_fixed_dispatch_scratch: Vec::new(),
             internal_update_pos: Vec::new(),
             internal_fixed_update_pos: Vec::new(),
             physics_body_nodes_2d: Vec::new(),
