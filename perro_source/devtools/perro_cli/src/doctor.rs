@@ -417,9 +417,10 @@ fn is_reference_text_extension(ext: &std::ffi::OsStr) -> bool {
 struct ScriptDoctorIndex {
     state_types: HashSet<String>,
     state_fields: HashSet<String>,
-    state_field_types: HashMap<String, String>,
+    state_field_types: HashMap<String, HashSet<String>>,
     state_field_owners: HashMap<String, String>,
-    state_field_defs: HashMap<String, DoctorField>,
+    state_field_defs: HashMap<String, Vec<DoctorField>>,
+    script_state_field_defs: HashMap<PathBuf, HashMap<String, DoctorField>>,
     custom_type_fields: HashMap<String, Vec<DoctorField>>,
     methods: HashSet<String>,
     signal_emits: HashMap<String, Vec<SignalUse>>,
@@ -456,8 +457,8 @@ fn validate_script_warnings(
     }
 
     let mut index = ScriptDoctorIndex::default();
-    for (_, text) in &sources {
-        index_script_source(text, &mut index);
+    for (file, text) in &sources {
+        index_script_source(file, text, &mut index);
     }
 
     collect_resource_signal_emits(project_dir, &mut index)?;
@@ -589,6 +590,11 @@ fn validate_scene_doc_node_refs(
         .collect::<HashMap<_, _>>();
     for node in doc.scene.nodes.iter() {
         let node_name = doc.scene.key_name_or_id(node.key).to_string();
+        let script_defs = node
+            .script
+            .as_deref()
+            .and_then(|raw| resolve_script_virtual_ref_path(project_dir, file, raw))
+            .and_then(|path| index.script_state_field_defs.get(&path));
         let mut ctx = NodeRefValidationCtx {
             project_dir,
             file,
@@ -596,7 +602,13 @@ fn validate_scene_doc_node_refs(
             report,
         };
         validate_builtin_node_ref_fields(&mut ctx, &node_name, &node.data);
-        validate_script_var_node_ref_fields(&mut ctx, &node_name, node.script_vars.as_ref(), index);
+        validate_script_var_node_ref_fields(
+            &mut ctx,
+            &node_name,
+            node.script_vars.as_ref(),
+            script_defs,
+            index,
+        );
     }
 }
 
@@ -665,19 +677,54 @@ fn validate_script_var_node_ref_fields(
     ctx: &mut NodeRefValidationCtx<'_>,
     node_name: &str,
     fields: &[SceneObjectField],
+    script_defs: Option<&HashMap<String, DoctorField>>,
     index: &ScriptDoctorIndex,
 ) {
     for (name, value) in fields {
-        let Some(field) = index.state_field_defs.get(name.as_ref()) else {
+        let label = format!("{node_name}.script_vars.{}", name.as_ref());
+        // node w/ resolved script: validate against that script's own defs
+        if let Some(defs) = script_defs {
+            if let Some(field) = defs.get(name.as_ref()) {
+                validate_script_value_node_ref_hint(ctx, &label, value, field, index);
+            }
+            continue;
+        }
+        // no attached script resolved: several scripts may declare state
+        // fields with the same name but different types; stay quiet if any
+        // candidate def validates cleanly
+        let Some(candidates) = index.state_field_defs.get(name.as_ref()) else {
             continue;
         };
-        validate_script_value_node_ref_hint(
-            ctx,
-            &format!("{node_name}.script_vars.{}", name.as_ref()),
-            value,
-            field,
-            index,
-        );
+        let mut best_bad: Option<ValidationReport> = None;
+        let mut any_clean = false;
+        for field in candidates {
+            let mut scratch = ValidationReport::default();
+            let mut scratch_ctx = NodeRefValidationCtx {
+                project_dir: ctx.project_dir,
+                file: ctx.file,
+                node_types: ctx.node_types,
+                report: &mut scratch,
+            };
+            validate_script_value_node_ref_hint(&mut scratch_ctx, &label, value, field, index);
+            if scratch.warnings == 0 && scratch.errors == 0 {
+                any_clean = true;
+                break;
+            }
+            if best_bad
+                .as_ref()
+                .is_none_or(|bad| scratch.warnings < bad.warnings)
+            {
+                best_bad = Some(scratch);
+            }
+        }
+        if any_clean {
+            continue;
+        }
+        if let Some(bad) = best_bad {
+            ctx.report.warnings += bad.warnings;
+            ctx.report.errors += bad.errors;
+            ctx.report.messages.extend(bad.messages);
+        }
     }
 }
 
@@ -800,7 +847,7 @@ fn trim_virtual_ref_tail(raw: &str) -> &str {
     raw.trim_end_matches(['.', ':', '!', '?'])
 }
 
-fn index_script_source(text: &str, index: &mut ScriptDoctorIndex) {
+fn index_script_source(file: &Path, text: &str, index: &mut ScriptDoctorIndex) {
     for type_name in parse_struct_names(text) {
         let fields = parse_struct_fields(text, &type_name);
         if !fields.is_empty() {
@@ -818,12 +865,20 @@ fn index_script_source(text: &str, index: &mut ScriptDoctorIndex) {
         for field in parse_struct_fields(text, &state_name) {
             index
                 .state_field_types
-                .insert(field.name.clone(), field.ty.clone());
+                .entry(field.name.clone())
+                .or_default()
+                .insert(field.ty.clone());
             index
                 .state_field_owners
                 .insert(field.name.clone(), state_name.clone());
+            let defs = index.state_field_defs.entry(field.name.clone()).or_default();
+            if !defs.contains(&field) {
+                defs.push(field.clone());
+            }
             index
-                .state_field_defs
+                .script_state_field_defs
+                .entry(file.to_path_buf())
+                .or_default()
                 .insert(field.name.clone(), field.clone());
             index.state_fields.insert(field.name);
         }
@@ -1461,17 +1516,25 @@ fn known_var_member(index: &ScriptDoctorIndex, member: &str) -> bool {
     if !index.state_fields.contains(root) {
         return false;
     }
-    let Some(mut current_type) = index.state_field_types.get(root).cloned() else {
+    let Some(mut candidate_types) = index.state_field_types.get(root).cloned() else {
         return parts.next().is_none();
     };
+    // several scripts may declare state fields with the same name but
+    // different struct types; accept the member if any candidate resolves
     for part in parts {
-        let Some(fields) = index.custom_type_fields.get(&current_type) else {
+        let mut next_types = HashSet::new();
+        for current_type in &candidate_types {
+            let Some(fields) = index.custom_type_fields.get(current_type) else {
+                continue;
+            };
+            if let Some(field) = fields.iter().find(|field| field.name == part) {
+                next_types.insert(field.ty.clone());
+            }
+        }
+        if next_types.is_empty() {
             return false;
-        };
-        let Some(field) = fields.iter().find(|field| field.name == part) else {
-            return false;
-        };
-        current_type = field.ty.clone();
+        }
+        candidate_types = next_types;
     }
     true
 }
@@ -1972,6 +2035,7 @@ mod tests {
     fn script_index_reads_state_fields_and_methods_macro() {
         let mut index = ScriptDoctorIndex::default();
         index_script_source(
+            Path::new("res/scripts/main.rs"),
             r#"
             #[State]
             pub struct PlayerState {
@@ -2064,7 +2128,7 @@ mod tests {
             }
         "#;
         let mut index = ScriptDoctorIndex::default();
-        index_script_source(source, &mut index);
+        index_script_source(Path::new("res/scripts/main.rs"), source, &mut index);
         let mut report = ValidationReport::default();
 
         validate_script_member_calls(Path::new(""), &file, source, &index, &mut report);
@@ -2109,7 +2173,7 @@ mod tests {
             }
         "#;
         let mut index = ScriptDoctorIndex::default();
-        index_script_source(source, &mut index);
+        index_script_source(Path::new("res/scripts/main.rs"), source, &mut index);
         let mut report = ValidationReport::default();
 
         validate_script_member_calls(Path::new(""), &file, source, &index, &mut report);
@@ -2129,6 +2193,71 @@ mod tests {
                 .iter()
                 .all(|m| !m.contains("aim.axis.dir.yaw"))
         );
+    }
+
+    #[test]
+    fn script_member_checks_accept_shared_state_field_name_across_scripts() {
+        let file = PathBuf::from("res/scripts/golf_manager.rs");
+        let golf_source = r#"
+            pub struct GolfAgentConfigState {
+                pub club_index: i32,
+                pub right_handed: bool,
+                pub orbit_yaw_degrees: f32,
+            }
+
+            #[State]
+            pub struct GolfAgentState {
+                pub config: GolfAgentConfigState,
+            }
+        "#;
+        let volleyball_source = r#"
+            pub struct VolleyballConfigState {
+                pub serve_power: f32,
+            }
+
+            #[State]
+            pub struct VolleyballAgentState {
+                pub config: VolleyballConfigState,
+            }
+        "#;
+        let caller_source = r#"
+            fn run(ctx: &mut ScriptContext<'_, API>) {
+                let _ = get_var!(ctx.run, agent, var!("config.club_index"));
+                let _ = get_var!(ctx.run, agent, var!("config.right_handed"));
+                let _ = get_var!(ctx.run, agent, var!("config.serve_power"));
+                let _ = get_var!(ctx.run, agent, var!("config.missing_member"));
+            }
+        "#;
+        let mut index = ScriptDoctorIndex::default();
+        index_script_source(Path::new("res/scripts/golf_agent.rs"), golf_source, &mut index);
+        index_script_source(
+            Path::new("res/scripts/volleyball_agent.rs"),
+            volleyball_source,
+            &mut index,
+        );
+        let mut report = ValidationReport::default();
+
+        validate_script_member_calls(Path::new(""), &file, caller_source, &index, &mut report);
+
+        assert_eq!(report.errors, 0);
+        assert_eq!(report.warnings, 1);
+        assert!(report.messages[0].contains("config.missing_member"));
+
+        // same lookups stay valid when scripts index in the opposite order
+        let mut index = ScriptDoctorIndex::default();
+        index_script_source(
+            Path::new("res/scripts/volleyball_agent.rs"),
+            volleyball_source,
+            &mut index,
+        );
+        index_script_source(Path::new("res/scripts/golf_agent.rs"), golf_source, &mut index);
+        let mut report = ValidationReport::default();
+
+        validate_script_member_calls(Path::new(""), &file, caller_source, &index, &mut report);
+
+        assert_eq!(report.errors, 0);
+        assert_eq!(report.warnings, 1);
+        assert!(report.messages[0].contains("config.missing_member"));
     }
 
     #[test]
@@ -2289,6 +2418,86 @@ mod tests {
                 .messages
                 .iter()
                 .any(|msg| msg.contains("Stream.camera wants Node(Camera2D|Camera3D|Webcam)"))
+        );
+    }
+
+    #[test]
+    fn node_ref_hints_resolve_by_attached_script_for_shared_field_names() {
+        let project = temp_project();
+        fs::create_dir_all(project.join("res/scripts")).unwrap();
+        fs::write(
+            project.join("res/scripts/golf_agent.rs"),
+            r#"
+            use perro_api::prelude::*;
+
+            pub struct GolfConfig {
+                #[expose]
+                #[node_ref(Camera3D)]
+                pub orbit_camera: NodeID,
+            }
+
+            #[State]
+            pub struct GolfAgentState {
+                #[expose]
+                pub config: GolfConfig,
+            }
+            "#,
+        )
+        .unwrap();
+        fs::write(
+            project.join("res/scripts/volleyball_agent.rs"),
+            r#"
+            use perro_api::prelude::*;
+
+            pub struct VolleyballConfig {
+                #[expose]
+                pub serve_power: f32,
+            }
+
+            #[State]
+            pub struct VolleyballAgentState {
+                #[expose]
+                pub config: VolleyballConfig,
+            }
+            "#,
+        )
+        .unwrap();
+        fs::write(
+            project.join("res/main.scn"),
+            r#"
+            $root = @Golfer
+
+            [Golfer]
+            script = "res://scripts/golf_agent.rs"
+            script_vars = { config = { orbit_camera = @Cam } }
+            [Node3D/]
+            [/Golfer]
+
+            [BadGolfer]
+            script = "res://scripts/golf_agent.rs"
+            script_vars = { config = { orbit_camera = @Mesh } }
+            [Node3D/]
+            [/BadGolfer]
+
+            [Cam]
+            [Camera3D/]
+            [/Cam]
+
+            [Mesh]
+            [MeshInstance3D/]
+            [/Mesh]
+            "#,
+        )
+        .unwrap();
+
+        let mut report = ValidationReport::default();
+        validate_script_warnings(&project, &mut report).unwrap();
+
+        assert_eq!(report.errors, 0);
+        assert_eq!(report.warnings, 1, "messages: {:?}", report.messages);
+        assert!(
+            report.messages[0]
+                .contains("BadGolfer.script_vars.config.orbit_camera wants Node(Camera3D)")
         );
     }
 }
