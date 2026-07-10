@@ -22,6 +22,7 @@ const CAMERA_NODE_NAME: &str = "Camera";
 const TRANSITION_FADE_PANEL_NODE_NAME: &str = "transition_fade_panel";
 const FADE_IN_SECONDS: f32 = 0.20;
 const FADE_OUT_SECONDS: f32 = 0.22;
+const FADE_COLOR: Color = color!("#000000");
 
 #[derive(Variant, Clone, Copy, PartialEq, Eq, Default)]
 enum DemoKind {
@@ -351,29 +352,28 @@ methods!({
     }
 
     fn connect_ui_signals(&self, ctx: &mut ScriptContext<'_, API>) {
-        for (sig, func_name) in [
-            ("demo_mesh_click", "on_demo_mesh_click"),
-            ("demo_lights_click", "on_demo_lights_click"),
-            ("demo_water_click", "on_demo_water_click"),
-            ("demo_animations_click", "on_demo_animations_click"),
-            ("demo_physics_bones_click", "on_demo_physics_bones_click"),
-            (
-                "demo_physics_collisions_click",
-                "on_demo_physics_collisions_click",
-            ),
-            ("demo_sky_click", "on_demo_sky_click"),
-            ("demo_blend_click", "on_demo_blend_click"),
-            ("demo_multimesh_click", "on_demo_multimesh_click"),
-            ("demo_particles_click", "on_demo_particles_click"),
-            ("demo_audio_click", "on_demo_audio_click"),
-            ("demo_webcam_click", "on_demo_webcam_click"),
-            ("demo_fps_tester_click", "on_demo_fps_tester_click"),
-            ("pause_resume_click", "on_pause_resume_click"),
-            ("pause_restart_click", "on_pause_restart_click"),
-            ("pause_hub_click", "on_pause_hub_click"),
-        ] {
-            signal_connect!(ctx.run, ctx.id, signal!(sig), func!(func_name));
-        }
+        signal_connect_pairs!(
+            ctx.run,
+            ctx.id,
+            [
+                ("demo_mesh_click", "on_demo_mesh_click"),
+                ("demo_lights_click", "on_demo_lights_click"),
+                ("demo_water_click", "on_demo_water_click"),
+                ("demo_animations_click", "on_demo_animations_click"),
+                ("demo_physics_bones_click", "on_demo_physics_bones_click"),
+                ("demo_physics_collisions_click", "on_demo_physics_collisions_click"),
+                ("demo_sky_click", "on_demo_sky_click"),
+                ("demo_blend_click", "on_demo_blend_click"),
+                ("demo_multimesh_click", "on_demo_multimesh_click"),
+                ("demo_particles_click", "on_demo_particles_click"),
+                ("demo_audio_click", "on_demo_audio_click"),
+                ("demo_webcam_click", "on_demo_webcam_click"),
+                ("demo_fps_tester_click", "on_demo_fps_tester_click"),
+                ("pause_resume_click", "on_pause_resume_click"),
+                ("pause_restart_click", "on_pause_restart_click"),
+                ("pause_hub_click", "on_pause_hub_click"),
+            ]
+        );
     }
 
     fn activate_demo(&self, ctx: &mut ScriptContext<'_, API>, demo: DemoKind) {
@@ -496,17 +496,15 @@ methods!({
         });
         let clamped = if visible { alpha.clamp(0.0, 1.0) } else { 0.0 };
         let show = visible && clamped > 0.001;
-        let color = color_with_alpha("#000000", clamped);
+        let color = FADE_COLOR.with_alpha(clamped);
         for id in [root, panel] {
             if id.is_nil() {
                 continue;
             }
             let _ = with_node_mut!(ctx.run, UiPanel, id, |node| {
-                if let Some(color) = color {
-                    node.style.fill = color;
-                    node.style.stroke = color;
-                    node.style.stroke_width = 0.0;
-                }
+                node.style.fill = color;
+                node.style.stroke = color;
+                node.style.stroke_width = 0.0;
                 node.visible = show;
                 node.input_enabled = false;
             });
@@ -514,7 +512,7 @@ methods!({
     }
 
     fn jump_camera_to_demo(&self, ctx: &mut ScriptContext<'_, API>, demo: DemoKind) {
-        let camera = find_descendant_by_name(ctx, ctx.id, CAMERA_NODE_NAME);
+        let camera = find_node!(ctx.run, ctx.id, CAMERA_NODE_NAME).unwrap_or(NodeID::nil());
         if camera.is_nil() {
             return;
         }
@@ -622,28 +620,32 @@ methods!({
             for x in 0..cols {
                 let idx = ((y * cols + x) % 64) as f32;
                 let use_logo = (x + y * cols) % 17 == 0;
-                let node = create_node!(
+                let px = origin.x + x as f32 * step;
+                let py = origin.y - y as f32 * step;
+                let _ = spawn!(
                     ctx.run,
                     Sprite2D,
                     "static_sprite",
                     tags!["demo2d_dynamic"],
-                    ctx.id
-                );
-                let px = origin.x + x as f32 * step;
-                let py = origin.y - y as f32 * step;
-                let _ = with_node_mut!(ctx.run, Sprite2D, node, |sprite| {
-                    if use_logo {
-                        sprite.texture = logo;
-                        sprite.texture_region = Some([0.0, 0.0, 1197.96, 1018.47]);
-                        sprite.transform.scale = Vector2::new(0.026, 0.026);
-                    } else {
-                        sprite.texture = tex;
-                        sprite.texture_region =
-                            Some([32.0 * (idx % 8.0), 32.0 * (idx / 8.0).floor(), 32.0, 32.0]);
-                        sprite.transform.scale = Vector2::new(0.55, 0.55);
+                    ctx.id,
+                    |sprite| {
+                        if use_logo {
+                            sprite.texture = logo;
+                            sprite.texture_region = Some([0.0, 0.0, 1197.96, 1018.47]);
+                            sprite.transform.scale = Vector2::new(0.026, 0.026);
+                        } else {
+                            sprite.texture = tex;
+                            sprite.texture_region = Some([
+                                32.0 * (idx % 8.0),
+                                32.0 * (idx / 8.0).floor(),
+                                32.0,
+                                32.0,
+                            ]);
+                            sprite.transform.scale = Vector2::new(0.55, 0.55);
+                        }
+                        sprite.transform.position = Vector2::new(px, py);
                     }
-                    sprite.transform.position = Vector2::new(px, py);
-                });
+                );
             }
         }
     }
@@ -685,66 +687,68 @@ methods!({
 
         let disc = texture_load!(ctx.res, LIGHT_DISC);
         for i in 0..8 {
-            let node = create_node!(
+            let x = origin.x - 280.0 + i as f32 * 80.0;
+            let y = origin.y + if i % 2 == 0 { 100.0 } else { -120.0 };
+            let hue = i as f32 / 8.0;
+            let _ = spawn!(
                 ctx.run,
                 PointLight2D,
                 "point_light",
                 tags!["demo2d_dynamic"],
-                ctx.id
+                ctx.id,
+                |light| {
+                    light.color = palette_rgb(hue);
+                    light.intensity = 2.1;
+                    light.range = 180.0;
+                    light.transform.position = Vector2::new(x, y);
+                }
             );
-            let x = origin.x - 280.0 + i as f32 * 80.0;
-            let y = origin.y + if i % 2 == 0 { 100.0 } else { -120.0 };
-            let hue = i as f32 / 8.0;
-            let _ = with_node_mut!(ctx.run, PointLight2D, node, |light| {
-                light.color = palette_rgb(hue);
-                light.intensity = 2.1;
-                light.range = 180.0;
-                light.transform.position = Vector2::new(x, y);
-            });
             self.spawn_marker_sprite(ctx, disc, Vector2::new(x, y), 1.5);
         }
 
         for i in 0..2 {
-            let node = create_node!(
+            let _ = spawn!(
                 ctx.run,
                 SpotLight2D,
                 "spot_light",
                 tags!["demo2d_dynamic"],
-                ctx.id
+                ctx.id,
+                |light| {
+                    light.color = if i == 0 {
+                        Color::rgb(1.0, 0.9, 0.45)
+                    } else {
+                        Color::rgb(0.45, 0.95, 1.0)
+                    };
+                    light.intensity = 2.6;
+                    light.range = 260.0;
+                    light.inner_angle_radians = 0.25;
+                    light.outer_angle_radians = 0.75;
+                    light.transform.position =
+                        origin + Vector2::new(-100.0 + i as f32 * 220.0, 240.0);
+                    light.transform.rotation = if i == 0 { -1.2 } else { -1.9 };
+                }
             );
-            let _ = with_node_mut!(ctx.run, SpotLight2D, node, |light| {
-                light.color = if i == 0 {
-                    Color::rgb(1.0, 0.9, 0.45)
-                } else {
-                    Color::rgb(0.45, 0.95, 1.0)
-                };
-                light.intensity = 2.6;
-                light.range = 260.0;
-                light.inner_angle_radians = 0.25;
-                light.outer_angle_radians = 0.75;
-                light.transform.position = origin + Vector2::new(-100.0 + i as f32 * 220.0, 240.0);
-                light.transform.rotation = if i == 0 { -1.2 } else { -1.9 };
-            });
         }
 
         for i in 0..2 {
-            let node = create_node!(
+            let _ = spawn!(
                 ctx.run,
                 RayLight2D,
                 "ray_light",
                 tags!["demo2d_dynamic"],
-                ctx.id
+                ctx.id,
+                |light| {
+                    light.color = if i == 0 {
+                        Color::rgb(1.0, 0.35, 0.5)
+                    } else {
+                        Color::rgb(0.55, 1.0, 0.45)
+                    };
+                    light.intensity = 2.0;
+                    light.transform.position =
+                        origin + Vector2::new(-250.0 + i as f32 * 500.0, -260.0);
+                    light.transform.rotation = if i == 0 { 0.4 } else { -0.4 };
+                }
             );
-            let _ = with_node_mut!(ctx.run, RayLight2D, node, |light| {
-                light.color = if i == 0 {
-                    Color::rgb(1.0, 0.35, 0.5)
-                } else {
-                    Color::rgb(0.55, 1.0, 0.45)
-                };
-                light.intensity = 2.0;
-                light.transform.position = origin + Vector2::new(-250.0 + i as f32 * 500.0, -260.0);
-                light.transform.rotation = if i == 0 { 0.4 } else { -0.4 };
-            });
         }
     }
 
@@ -1342,48 +1346,13 @@ fn set_ui_tree_visible<API: ScriptAPI + ?Sized>(
     if root.is_nil() {
         return;
     }
-    let mut stack = vec![root];
-    while let Some(id) = stack.pop() {
-        let _ = with_base_node_mut!(ctx.run, UiNode, id, |node| {
-            node.visible = visible;
-        });
+    set_tree_visible!(ctx.run, root, visible);
+    for id in descendants!(ctx.run, root) {
         let _ = with_node_mut!(ctx.run, UiButton, id, |node| {
-            node.visible = visible;
             node.input_enabled = visible;
         });
-        if let Some(children) = get_node_children_ids!(ctx.run, id) {
-            for child in children {
-                if !child.is_nil() {
-                    stack.push(child);
-                }
-            }
-        }
     }
     let _ = force_rerender!(ctx.run, root);
-}
-
-fn find_descendant_by_name<API: ScriptAPI + ?Sized>(
-    ctx: &mut ScriptContext<'_, API>,
-    root: NodeID,
-    name: &str,
-) -> NodeID {
-    if root.is_nil() {
-        return NodeID::nil();
-    }
-    let mut stack = vec![root];
-    while let Some(id) = stack.pop() {
-        if let Some(hit) = get_child!(ctx.run, id, name) {
-            return hit;
-        }
-        if let Some(children) = get_node_children_ids!(ctx.run, id) {
-            for child in children {
-                if !child.is_nil() {
-                    stack.push(child);
-                }
-            }
-        }
-    }
-    NodeID::nil()
 }
 
 fn demo_anchor(demo: DemoKind) -> Vector2 {
@@ -1403,9 +1372,4 @@ fn demo_anchor(demo: DemoKind) -> Vector2 {
         DemoKind::Webcam => Vector2::new(0.0, 0.0),
         DemoKind::FpsTester => Vector2::new(0.0, 0.0),
     }
-}
-
-fn color_with_alpha(base: &str, alpha: f32) -> Option<Color> {
-    let byte = (alpha.clamp(0.0, 1.0) * 255.0).round() as u8;
-    Color::from_hex(&format!("{base}{byte:02X}"))
 }
