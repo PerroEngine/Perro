@@ -1090,6 +1090,31 @@ pub const fn __query_base_type_mask(base_types: &[NodeType]) -> QueryTypeMask {
     mask
 }
 
+/// Depth-first collection of `root` plus all descendants using a caller-supplied
+/// child lookup. Shared by [`NodeAPI::subtree_node_ids`]; broken out so the walk
+/// is unit-testable without a full runtime.
+///
+/// Returns an empty vec when `root` is nil. Nil children are skipped.
+pub fn collect_subtree_ids(
+    root: NodeID,
+    mut children_of: impl FnMut(NodeID) -> Vec<NodeID>,
+) -> Vec<NodeID> {
+    if root.is_nil() {
+        return Vec::new();
+    }
+    let mut out = Vec::new();
+    let mut stack = vec![root];
+    while let Some(id) = stack.pop() {
+        out.push(id);
+        for child in children_of(id) {
+            if !child.is_nil() {
+                stack.push(child);
+            }
+        }
+    }
+    out
+}
+
 pub trait NodeAPI {
     /// Creates a new node with default value of `T`.
     fn create<T>(&mut self) -> NodeID
@@ -1146,6 +1171,28 @@ pub trait NodeAPI {
     fn find_node_by_name<S>(&mut self, root: NodeID, name: S) -> Option<NodeID>
     where
         S: AsRef<str>;
+
+    /// Collects `root` followed by every descendant (depth-first, `root`
+    /// included). Empty when `root` is nil. Backs the `descendants!`,
+    /// `set_tree_visible!`, and `broadcast_var!` macros.
+    fn subtree_node_ids(&mut self, root: NodeID) -> Vec<NodeID> {
+        collect_subtree_ids(root, |id| self.get_children(id))
+    }
+
+    /// Sets `visible` on every `UiNode` in `root`'s subtree (including `root`).
+    /// Non-UI nodes are skipped. Returns the count of UI nodes updated.
+    fn set_subtree_visible(&mut self, root: NodeID, visible: bool) -> usize {
+        let mut updated = 0;
+        for id in self.subtree_node_ids(root) {
+            if self
+                .with_base_node_mut::<UiNode, _, _>(id, |node| node.visible = visible)
+                .is_some()
+            {
+                updated += 1;
+            }
+        }
+        updated
+    }
 
     /// Returns skeleton bone name by index.
     fn get_skeleton_bone_name(
@@ -1529,6 +1576,14 @@ impl<'rt, R: NodeAPI + ?Sized> NodeModule<'rt, R> {
         S: AsRef<str>,
     {
         self.rt.find_node_by_name(root, name)
+    }
+
+    pub fn subtree_node_ids(&mut self, root: NodeID) -> Vec<NodeID> {
+        self.rt.subtree_node_ids(root)
+    }
+
+    pub fn set_subtree_visible(&mut self, root: NodeID, visible: bool) -> usize {
+        self.rt.set_subtree_visible(root, visible)
     }
 
     pub fn get_skeleton_bone_name(
@@ -2157,6 +2212,135 @@ impl<'rt, R: NodeAPI + ?Sized> MeshQueryModule<'rt, R> {
 ///
 /// These macros expose typed node access via closure-scoped borrows.
 ///
+/// Finds a node by name inside `root`'s subtree (index-backed, includes `root`).
+/// Pass `NodeID::nil()` as `root` to search the whole scene.
+///
+/// Usage: `find_node!(ctx, root, "DemoCamera") -> Option<NodeID>`.
+///
+/// Arguments:
+/// - `ctx`: `&mut RuntimeWindow<_>`
+/// - `root`: subtree root `NodeID` (or `NodeID::nil()` for whole scene)
+/// - `name`: `&str`, `String`, or `Cow<str>`
+#[macro_export]
+macro_rules! find_node {
+    ($ctx:expr, $root:expr, $name:expr) => {
+        $ctx.Nodes().find_node_by_name($root, $name)
+    };
+}
+
+/// Collects `root` plus every descendant (depth-first, `root` included).
+/// Empty when `root` is nil.
+///
+/// Usage: `for id in descendants!(ctx, root) { ... }` returning `Vec<NodeID>`.
+#[macro_export]
+macro_rules! descendants {
+    ($ctx:expr, $root:expr) => {
+        $ctx.Nodes().subtree_node_ids($root)
+    };
+}
+
+/// Sets `visible` on every `UiNode` in `root`'s subtree (including `root`).
+/// The walk runs in one runtime borrow. Returns count of UI nodes updated.
+///
+/// Usage: `set_tree_visible!(ctx, menu_root, show_menu) -> usize`.
+#[macro_export]
+macro_rules! set_tree_visible {
+    ($ctx:expr, $root:expr, $visible:expr) => {
+        $ctx.Nodes().set_subtree_visible($root, $visible)
+    };
+}
+
+/// Sets one script var on every node in `root`'s subtree (including `root`).
+/// The `value` is cloned per node. Returns the number of nodes visited.
+///
+/// Usage: `broadcast_var!(ctx, root, var!("mouse_sensitivity"), variant!(s)) -> usize`.
+///
+/// Arguments:
+/// - `ctx`: `&mut RuntimeWindow<_>`
+/// - `root`: subtree root `NodeID`
+/// - `member`: `var!("...")`, `ScriptMemberID`, `&str`, `String`, or `Cow<str>`
+/// - `value`: `Variant`
+#[macro_export]
+macro_rules! broadcast_var {
+    ($ctx:expr, $root:expr, $member:expr, $value:expr) => {{
+        let __member = $crate::sub_apis::IntoScriptMemberID::into_script_member($member);
+        let __value = $value;
+        let mut __count = 0usize;
+        for __id in $ctx.Nodes().subtree_node_ids($root) {
+            $ctx.Scripts()
+                .set_var(__id, __member, ::core::clone::Clone::clone(&__value));
+            __count += 1;
+        }
+        __count
+    }};
+}
+
+/// Creates a node and configures it in one expression, returning its `NodeID`.
+/// Combines [`create_node!`] with [`with_node_mut!`]: the trailing closure
+/// receives `&mut ConcreteType`.
+///
+/// Usage:
+/// - `spawn!(ctx, Sprite2D, |s| { ... }) -> NodeID`
+/// - `spawn!(ctx, Sprite2D, name, |s| { ... }) -> NodeID`
+/// - `spawn!(ctx, Sprite2D, name, tags, |s| { ... }) -> NodeID`
+/// - `spawn!(ctx, Sprite2D, name, tags, parent, |s| { ... }) -> NodeID`
+#[macro_export]
+macro_rules! spawn {
+    ($ctx:expr, $node_ty:ty, $f:expr) => {{
+        let __id = $crate::create_node!($ctx, $node_ty);
+        let _ = $crate::with_node_mut!($ctx, $node_ty, __id, $f);
+        __id
+    }};
+    ($ctx:expr, $node_ty:ty, $name:expr, $f:expr) => {{
+        let __id = $crate::create_node!($ctx, $node_ty, $name);
+        let _ = $crate::with_node_mut!($ctx, $node_ty, __id, $f);
+        __id
+    }};
+    ($ctx:expr, $node_ty:ty, $name:expr, $tags:expr, $f:expr) => {{
+        let __id = $crate::create_node!($ctx, $node_ty, $name, $tags);
+        let _ = $crate::with_node_mut!($ctx, $node_ty, __id, $f);
+        __id
+    }};
+    ($ctx:expr, $node_ty:ty, $name:expr, $tags:expr, $parent:expr, $f:expr) => {{
+        let __id = $crate::create_node!($ctx, $node_ty, $name, $tags, $parent);
+        let _ = $crate::with_node_mut!($ctx, $node_ty, __id, $f);
+        __id
+    }};
+}
+
+/// Rotates a 3D spatial node to face a world-space point.
+///
+/// Usage:
+/// - `look_at_3d!(ctx, turret, target_pos) -> bool` (world `+Y` up)
+/// - `look_at_3d!(ctx, turret, target_pos, up) -> bool`
+///
+/// Returns `false` if the node has no 3D global transform.
+#[macro_export]
+macro_rules! look_at_3d {
+    ($ctx:expr, $node:expr, $target:expr) => {
+        $crate::look_at_3d!(
+            $ctx,
+            $node,
+            $target,
+            $crate::perro_structs::Vector3::new(0.0, 1.0, 0.0)
+        )
+    };
+    ($ctx:expr, $node:expr, $target:expr, $up:expr) => {{
+        let __node = $node;
+        let __target = $target;
+        match $ctx.Nodes().get_global_transform_3d(__node) {
+            Some(__t) => {
+                let __rot = $crate::perro_structs::Quaternion::looking_at(
+                    __target - __t.position,
+                    $up,
+                );
+                $ctx.Nodes().set_global_rot_3d(__node, __rot)
+            }
+            None => false,
+        }
+    }};
+}
+
 /// Exact-type mutable node access.
 /// Usage: `with_node_mut!(ctx, ConcreteType, node_id, |node| { ... }) -> Option<V>`.
 /// Internals:

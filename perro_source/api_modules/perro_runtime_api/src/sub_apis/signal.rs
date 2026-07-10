@@ -213,6 +213,55 @@ macro_rules! signal_connect_many {
     };
 }
 
+/// Connects a list of 1:1 `(signal, function)` name pairs.
+///
+/// Unlike [`signal_connect_many!`] (which forms a cartesian product), this wires
+/// each signal to exactly its paired handler. Pair elements are name strings.
+///
+/// Arguments:
+/// - `ctx`: `&mut RuntimeWindow<_>`
+/// - `script`: script `NodeID`
+/// - `[(signal, function), ...]`: name string pairs
+/// - `params` (optional): extra params appended after emitted params
+///
+/// Returns the number of new connections.
+///
+/// Usage:
+/// ```ignore
+/// signal_connect_pairs!(ctx.run, ctx.id, [
+///     ("demo_mesh_click",   "on_demo_mesh_click"),
+///     ("demo_lights_click", "on_demo_lights_click"),
+/// ]);
+/// ```
+#[macro_export]
+macro_rules! signal_connect_pairs {
+    ($ctx:expr, $script:expr, [ $( ($signal:expr, $function:expr) ),* $(,)? ]) => {{
+        let mut __connected = 0usize;
+        $(
+            __connected += $ctx.Signals().connect(
+                $script,
+                $crate::perro_ids::SignalID::from_string($signal),
+                $crate::perro_ids::ScriptMemberID::from_string($function),
+                &[],
+            ) as usize;
+        )*
+        __connected
+    }};
+    ($ctx:expr, $script:expr, [ $( ($signal:expr, $function:expr) ),* $(,)? ], $params:expr) => {{
+        let __params = $params;
+        let mut __connected = 0usize;
+        $(
+            __connected += $ctx.Signals().connect(
+                $script,
+                $crate::perro_ids::SignalID::from_string($signal),
+                $crate::perro_ids::ScriptMemberID::from_string($function),
+                __params,
+            ) as usize;
+        )*
+        __connected
+    }};
+}
+
 /// Disconnects a signal-function connection.
 ///
 /// Arguments:
