@@ -361,6 +361,9 @@ impl Runtime {
     }
 
     pub(crate) fn run_internal_update_schedule(&mut self) {
+        if self.internal_updates.internal_update_nodes.is_empty() {
+            return;
+        }
         let resource_api = self.resource_api.clone();
         let res = ResourceWindow::new(resource_api.as_ref());
         let input_ptr = std::ptr::addr_of!(self.input);
