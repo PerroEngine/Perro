@@ -164,7 +164,11 @@ impl Runtime {
         if node.is_nil() {
             return Color::WHITE;
         }
-        let mut chain = Vec::new();
+        // color_modulate is a component-wise multiply: commutative + associative,
+        // so the product does not depend on root->node ordering. Fold upward in a
+        // single pass with no buffer. node contributes its own self_modulate;
+        // strict ancestors contribute children_modulate. modulate applies to both.
+        let mut acc = Color::WHITE;
         let mut current = node;
         let mut hops = 0usize;
         let max_hops = self.nodes.len().saturating_add(1);
@@ -172,31 +176,22 @@ impl Runtime {
             let Some(scene_node) = self.nodes.get(current) else {
                 break;
             };
-            chain.push(current);
-            if scene_node.parent.is_nil() {
+            let parent = scene_node.parent;
+            if let Some(local) = self.local_node_modulate(current) {
+                let own = if current == node {
+                    local.self_modulate
+                } else {
+                    local.children_modulate
+                };
+                acc = Self::color_modulate(Self::color_modulate(acc, local.modulate), own);
+            }
+            if parent.is_nil() {
                 break;
             }
-            current = scene_node.parent;
+            current = parent;
             hops += 1;
         }
-
-        let mut inherited = Color::WHITE;
-        for id in chain.iter().rev().copied() {
-            let Some(local) = self.local_node_modulate(id) else {
-                continue;
-            };
-            if id == node {
-                return Self::color_modulate(
-                    Self::color_modulate(inherited, local.modulate),
-                    local.self_modulate,
-                );
-            }
-            inherited = Self::color_modulate(
-                Self::color_modulate(inherited, local.modulate),
-                local.children_modulate,
-            );
-        }
-        inherited
+        acc
     }
 
     fn local_node_modulate(&self, node: NodeID) -> Option<NodeModulate> {
