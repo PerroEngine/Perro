@@ -702,27 +702,9 @@ pub(super) fn skin_query_mesh_with_palette(
     mesh: &QueryMeshData,
     palette: &[Mat4],
 ) -> Option<QueryMeshData> {
-    let vertices = mesh
-        .vertices
-        .iter()
-        .enumerate()
-        .map(|(index, &position)| {
-            let joints = mesh.joints[index];
-            let weights = mesh.weights[index];
-            let mut posed = Vec3::ZERO;
-            let mut total = 0.0;
-            for lane in 0..4 {
-                let weight = weights[lane];
-                if weight > 0.0
-                    && let Some(matrix) = palette.get(joints[lane] as usize)
-                {
-                    posed += matrix.transform_point3(position) * weight;
-                    total += weight;
-                }
-            }
-            if total > 0.0 { posed } else { position }
-        })
-        .collect();
+    let vertices = (0..mesh.vertices.len())
+        .map(|index| skin_query_vertex_with_palette(mesh, index, palette))
+        .collect::<Option<Vec<_>>>()?;
     build_query_mesh_data_with_skin(
         vertices,
         mesh.uv0.clone(),
@@ -731,6 +713,28 @@ pub(super) fn skin_query_mesh_with_palette(
         mesh.weights.clone(),
         mesh.triangles.clone(),
     )
+}
+
+pub(super) fn skin_query_vertex_with_palette(
+    mesh: &QueryMeshData,
+    index: usize,
+    palette: &[Mat4],
+) -> Option<Vec3> {
+    let position = *mesh.vertices.get(index)?;
+    let joints = *mesh.joints.get(index)?;
+    let weights = *mesh.weights.get(index)?;
+    let mut posed = Vec3::ZERO;
+    let mut total = 0.0;
+    for lane in 0..4 {
+        let weight = weights[lane];
+        if weight > 0.0
+            && let Some(matrix) = palette.get(joints[lane] as usize)
+        {
+            posed += matrix.transform_point3(position) * weight;
+            total += weight;
+        }
+    }
+    Some(if total > 0.0 { posed } else { position })
 }
 
 pub(super) fn build_query_mesh_data_with_skin(

@@ -8,6 +8,7 @@
 | Context | [Context](#context) |
 | API Reference | [API Reference](#api-reference) |
 | `instance_surface_at_global_point` | [`instance_surface_at_global_point`](#instance_surface_at_global_point) |
+| `instance_surface_global_point` | [`instance_surface_global_point`](#instance_surface_global_point) |
 | `instance_surface_on_global_ray` | [`instance_surface_on_global_ray`](#instance_surface_on_global_ray) |
 | `instance_surfaces_on_global_rays` | [`instance_surfaces_on_global_rays`](#instance_surfaces_on_global_rays) |
 | `instance_material_regions` | [`instance_material_regions`](#instance_material_regions) |
@@ -15,6 +16,7 @@
 | `data_surface_on_local_ray` | [`data_surface_on_local_ray`](#data_surface_on_local_ray) |
 | `data_surface_regions` | [`data_surface_regions`](#data_surface_regions) |
 | `mesh_instance_surface_at_global_point_3d` | [`mesh_instance_surface_at_global_point_3d`](#mesh_instance_surface_at_global_point_3d) |
+| `mesh_instance_surface_global_point_3d` | [`mesh_instance_surface_global_point_3d`](#mesh_instance_surface_global_point_3d) |
 | `mesh_instance_surface_on_global_ray_3d` | [`mesh_instance_surface_on_global_ray_3d`](#mesh_instance_surface_on_global_ray_3d) |
 | `mesh_instance_surfaces_on_global_rays_3d` | [`mesh_instance_surfaces_on_global_rays_3d`](#mesh_instance_surfaces_on_global_rays_3d) |
 | `mesh_instance_material_regions_3d` | [`mesh_instance_material_regions_3d`](#mesh_instance_material_regions_3d) |
@@ -33,6 +35,12 @@ falls back to UV0 for runtime meshes, built-ins, and PMESH assets.
 `MeshInstance3D` queries linked to `Skeleton3D` use current bone poses. Hit
 triangle IDs and UVs keep original mesh topology. Posed queries cap at
 1,000,000 vertices; larger posed meshes return no hit.
+
+Resolve a saved hit without a second ray via
+`instance_surface_global_point(node_id, triangle_index, barycentric)`.
+It uses the same query triangle numbering and live skeleton pose. It rejects
+non-finite or non-unit barycentric values, non-`MeshInstance3D` nodes, and
+meshes over 1,000,000 vertices.
 
 Build pointer rays with
 `ctx.run.Nodes().camera_screen_ray_3d(camera_id, pixel, viewport_size)`.
@@ -58,6 +66,17 @@ and off-axis frustum cameras and passes directly to
 | Returns | `Option<MeshSurfaceHit3D>` |
 | Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
 | Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+
+### `instance_surface_global_point`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.MeshQuery()` |
+| Signature | `pub fn instance_surface_global_point(&mut self, node_id: NodeID, triangle_index: u32, barycentric: Vector3) -> Option<Vector3>` |
+| Params | Mesh instance node, query triangle index, and `(a, b, c)` barycentric weights. |
+| Returns | Posed global-space surface point. |
+| Use when | Reconstructing an authoritative point from a saved mesh hit. |
+| Fails when / edge behavior | Returns `None` for invalid nodes, triangle IDs, barycentric weights, mesh data, skeleton data, non-finite output, or meshes over 1,000,000 vertices. |
 
 ### `instance_surface_on_global_ray`
 
@@ -135,6 +154,17 @@ and off-axis frustum cameras and passes directly to
 | Returns | `same as backing method` |
 | Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
 | Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+
+### `mesh_instance_surface_global_point_3d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.MeshQuery()` |
+| Signature | `mesh_instance_surface_global_point_3d!(ctx.run, id, triangle_index, barycentric)` |
+| Params | Runtime context, mesh instance node, query triangle index, and `(a, b, c)` barycentric weights. |
+| Returns | `Option<Vector3>` posed global-space point. |
+| Use when | Reconstructing an exact saved surface hit under the live skeleton pose. |
+| Fails when / edge behavior | Same validation as `instance_surface_global_point`. |
 
 ### `mesh_instance_surface_on_global_ray_3d`
 

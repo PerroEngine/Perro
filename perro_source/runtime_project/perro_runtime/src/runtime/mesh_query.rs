@@ -68,6 +68,7 @@ const QUERY_INSTANCE_PAR_THRESHOLD: usize = 8;
 const QUERY_REGION_SURFACE_PAR_THRESHOLD: usize = 8;
 const QUERY_PAR_WORK_THRESHOLD: usize = 32768;
 const QUERY_LINEAR_TRI_THRESHOLD: usize = 32;
+const MAX_SKIN_QUERY_VERTICES: usize = 1_000_000;
 
 type QueryMeshCache = AHashMap<u64, Arc<QueryMeshData>>;
 
@@ -86,6 +87,53 @@ impl Runtime {
         global_point: Vector3,
     ) -> Option<MeshSurfaceHit3D> {
         self.query_mesh_surface_at_global_point_impl(node_id, global_point, true)
+    }
+
+    pub(crate) fn query_mesh_instance_surface_global_point(
+        &mut self,
+        node_id: NodeID,
+        triangle_index: u32,
+        barycentric: Vector3,
+    ) -> Option<Vector3> {
+        let is_mesh_instance = self
+            .nodes
+            .get(node_id)
+            .is_some_and(|node| matches!(&node.data, SceneNodeData::MeshInstance3D(_)));
+        if !is_mesh_instance {
+            return None;
+        }
+        let barycentric = validated_surface_barycentric(barycentric)?;
+        let node = self.query_node_mesh_data(node_id)?;
+        let mesh = self.load_query_node_base_mesh_data(&node)?;
+        if mesh.vertices.len() > MAX_SKIN_QUERY_VERTICES {
+            return None;
+        }
+        let triangle = *mesh.triangles.get(triangle_index as usize)?;
+        let palette = match node.skeleton {
+            Some(skeleton) => self.skin_query_palette(skeleton)?,
+            None => Vec::new(),
+        };
+        let vertex = |index: u32| {
+            if palette.is_empty() {
+                mesh.vertices.get(index as usize).copied()
+            } else {
+                skin_query_vertex_with_palette(mesh.as_ref(), index as usize, &palette)
+            }
+        };
+        let local = vertex(triangle.a)? * barycentric.x
+            + vertex(triangle.b)? * barycentric.y
+            + vertex(triangle.c)? * barycentric.z;
+        if !local.is_finite() {
+            return None;
+        }
+        let instance = node
+            .instance_local
+            .first()
+            .copied()
+            .unwrap_or(Mat4::IDENTITY);
+        let global_from_mesh = self.get_global_transform_3d(node_id)?.to_mat4() * instance;
+        let global = global_from_mesh.transform_point3(local);
+        global.is_finite().then_some(global.into())
     }
 
     pub(crate) fn query_mesh_data_surface_at_local_point(
@@ -844,7 +892,7 @@ impl Runtime {
         Some(mesh)
     }
 
-    fn load_query_node_mesh_data(&self, node: &QueryNodeData) -> Option<Arc<QueryMeshData>> {
+    fn load_query_node_base_mesh_data(&self, node: &QueryNodeData) -> Option<Arc<QueryMeshData>> {
         let mesh = if !node.mesh_id.is_nil()
             && let Some(mesh) = self.load_query_mesh_data_by_id(node.mesh_id)
         {
@@ -854,6 +902,11 @@ impl Runtime {
                 .as_deref()
                 .and_then(|source| self.load_query_mesh_data(source))?
         };
+        Some(mesh)
+    }
+
+    fn load_query_node_mesh_data(&self, node: &QueryNodeData) -> Option<Arc<QueryMeshData>> {
+        let mesh = self.load_query_node_base_mesh_data(node)?;
         let Some(skeleton_id) = node.skeleton else {
             return Some(mesh);
         };
@@ -865,19 +918,26 @@ impl Runtime {
     /// skinning. This correctness-first path rebuilds acceleration data once per
     /// public query; node mutation revision still caches node lookup data.
     fn skin_query_mesh(&self, mesh: &QueryMeshData, skeleton_id: NodeID) -> Option<QueryMeshData> {
-        const MAX_SKIN_QUERY_VERTICES: usize = 1_000_000;
         if mesh.vertices.len() > MAX_SKIN_QUERY_VERTICES
             || mesh.joints.len() != mesh.vertices.len()
             || mesh.weights.len() != mesh.vertices.len()
         {
             return None;
         }
+        let palette = self.skin_query_palette(skeleton_id)?;
+        if palette.is_empty() {
+            return Some(clone_query_mesh(mesh));
+        }
+        skin_query_mesh_with_palette(mesh, &palette)
+    }
+
+    fn skin_query_palette(&self, skeleton_id: NodeID) -> Option<Vec<Mat4>> {
         let skeleton = match &self.nodes.get(skeleton_id)?.data {
             SceneNodeData::Skeleton3D(skeleton) => skeleton,
             _ => return None,
         };
         if skeleton.bones.is_empty() {
-            return Some(clone_query_mesh(mesh));
+            return Some(Vec::new());
         }
         let mut global = vec![Mat4::IDENTITY; skeleton.bones.len()];
         for (index, bone) in skeleton.bones.iter().enumerate() {
@@ -890,20 +950,21 @@ impl Runtime {
         }
         let inv_bind = skeleton.inv_bind_mats();
         let use_inv_bind_cache = inv_bind.len() == skeleton.bones.len();
-        let palette: Vec<Mat4> = skeleton
-            .bones
-            .iter()
-            .enumerate()
-            .map(|(index, bone)| {
-                global[index]
-                    * if use_inv_bind_cache {
-                        inv_bind[index].0
-                    } else {
-                        bone.inv_bind.to_mat4()
-                    }
-            })
-            .collect();
-        skin_query_mesh_with_palette(mesh, &palette)
+        Some(
+            skeleton
+                .bones
+                .iter()
+                .enumerate()
+                .map(|(index, bone)| {
+                    global[index]
+                        * if use_inv_bind_cache {
+                            inv_bind[index].0
+                        } else {
+                            bone.inv_bind.to_mat4()
+                        }
+                })
+                .collect(),
+        )
     }
 
     fn load_query_mesh_data_by_id(&self, mesh_id: MeshID) -> Option<Arc<QueryMeshData>> {
@@ -935,6 +996,23 @@ impl Runtime {
             .mesh_source(mesh_id)
             .and_then(|source| self.load_query_mesh_data(source.as_str()))
     }
+}
+
+fn validated_surface_barycentric(value: Vector3) -> Option<Vec3> {
+    const EPSILON: f32 = 1.0e-4;
+    let value: Vec3 = value.into();
+    let sum = value.x + value.y + value.z;
+    if !value.is_finite()
+        || !sum.is_finite()
+        || value.min_element() < -EPSILON
+        || value.max_element() > 1.0 + EPSILON
+        || (sum - 1.0).abs() > EPSILON
+    {
+        return None;
+    }
+    let value = value.max(Vec3::ZERO);
+    let sum = value.x + value.y + value.z;
+    (sum > 0.0).then_some(value / sum)
 }
 
 fn query_global_ray_candidates_for_node_mesh(

@@ -1,6 +1,8 @@
 use super::core::RuntimeResourceApi;
 use perro_ids::{MeshID, string_to_u64};
-use perro_render_bridge::{Mesh3D, RenderCommand, ResourceCommand};
+use perro_render_bridge::{
+    Mesh3D, MeshSurfaceRange, RenderCommand, ResourceCommand, RuntimeMeshVertex,
+};
 use perro_resource_api::sub_apis::MeshAPI;
 use std::sync::Arc;
 
@@ -77,8 +79,19 @@ impl MeshAPI for RuntimeResourceApi {
     }
 
     fn get_mesh_data(&self, id: MeshID) -> Option<Mesh3D> {
-        let state = self.state.lock().expect("resource api mutex poisoned");
-        state.mesh_data_by_id.get(&id).cloned()
+        let source = {
+            let state = self.state.lock().expect("resource api mutex poisoned");
+            let canonical = state.mesh_id_alias.get(&id).copied().unwrap_or(id);
+            if let Some(data) = state.mesh_data_by_id.get(&canonical) {
+                return Some(data.clone());
+            }
+            state
+                .mesh_source_by_id
+                .get(&canonical)
+                .or_else(|| state.mesh_source_by_id.get(&id))
+                .cloned()
+        }?;
+        builtin_mesh_data(&source)
     }
 
     fn write_mesh_data(&self, id: MeshID, data: Mesh3D) -> bool {
@@ -376,13 +389,42 @@ fn normalize_source_slashes(source: &str) -> std::borrow::Cow<'_, str> {
     }
 }
 
+fn builtin_mesh_data(source: &str) -> Option<Mesh3D> {
+    let mesh = perro_builtin_meshes::build_builtin_mesh(source)?;
+    let vertices = mesh
+        .vertices
+        .into_iter()
+        .map(|vertex| RuntimeMeshVertex {
+            position: vertex.pos,
+            normal: vertex.normal,
+            uv: vertex.uv,
+            paint_uv: vertex.uv,
+            joints: [0, 0, 0, 0],
+            weights: [1.0, 0.0, 0.0, 0.0].into(),
+        })
+        .collect();
+    let indices: Vec<u32> = mesh.indices.into_iter().map(u32::from).collect();
+    let index_count = u32::try_from(indices.len()).ok()?;
+    Some(Mesh3D {
+        vertices,
+        indices,
+        surface_ranges: vec![MeshSurfaceRange {
+            index_start: 0,
+            index_count,
+        }],
+        blend_shapes: Vec::new(),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::RuntimeResourceApi;
-    use perro_render_bridge::{Material3D, Mesh3D, RenderCommand, RenderEvent, ResourceCommand};
+    use perro_render_bridge::{
+        Material3D, Mesh3D, RenderCommand, RenderEvent, ResourceCommand, RuntimeMeshVertex,
+    };
     use perro_resource_api::{
-        ResourceWindow, material_load, material_reserve, mesh_load, mesh_reserve, texture_load,
-        texture_reserve,
+        ResourceWindow, material_load, material_reserve, mesh_get_data, mesh_load, mesh_reserve,
+        texture_load, texture_reserve,
     };
 
     fn new_api() -> std::sync::Arc<RuntimeResourceApi> {
@@ -477,6 +519,104 @@ mod tests {
         let res = ResourceWindow::new(api.as_ref());
 
         assert!(res.Meshes().is_loaded(perro_ids::MeshID::nil()));
+    }
+
+    fn triangle_mesh() -> Mesh3D {
+        let vertex = |position| RuntimeMeshVertex {
+            position,
+            normal: [0.0, 0.0, 1.0],
+            uv: [0.25, 0.75],
+            paint_uv: [0.5, 0.5],
+            joints: [0, 0, 0, 0],
+            weights: [1.0, 0.0, 0.0, 0.0].into(),
+        };
+        Mesh3D {
+            vertices: vec![
+                vertex([0.0, 0.0, 0.0]),
+                vertex([1.0, 0.0, 0.0]),
+                vertex([0.0, 1.0, 0.0]),
+            ],
+            indices: vec![0, 1, 2],
+            surface_ranges: vec![perro_render_bridge::MeshSurfaceRange {
+                index_start: 0,
+                index_count: 3,
+            }],
+            blend_shapes: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn builtin_mesh_data_resolves_before_backend_ack() {
+        let api = new_api();
+        let res = ResourceWindow::new(api.as_ref());
+
+        for source in [
+            perro_builtin_meshes::CUBE_SOURCE,
+            perro_builtin_meshes::QUAD_SOURCE,
+        ] {
+            let id = res.Meshes().load(source);
+            let data = mesh_get_data!(res, id).expect("builtin mesh data");
+            let builtin = perro_builtin_meshes::build_builtin_mesh(source).expect("builtin");
+
+            assert_eq!(data.vertices.len(), builtin.vertices.len(), "{source}");
+            assert_eq!(data.indices.len(), builtin.indices.len(), "{source}");
+            assert_eq!(data.surface_ranges.len(), 1, "{source}");
+            assert_eq!(data.surface_ranges[0].index_start, 0, "{source}");
+            assert_eq!(
+                data.surface_ranges[0].index_count as usize,
+                data.indices.len(),
+                "{source}"
+            );
+            for (vertex, expected) in data.vertices.iter().zip(&builtin.vertices) {
+                assert_eq!(vertex.position, expected.pos, "{source}");
+                assert_eq!(vertex.normal, expected.normal, "{source}");
+                assert_eq!(vertex.uv, expected.uv, "{source}");
+                assert_eq!(vertex.paint_uv, expected.uv, "{source}");
+                assert_eq!(vertex.joints, [0, 0, 0, 0], "{source}");
+                assert_eq!(vertex.weights.to_u8(), [255, 0, 0, 0], "{source}");
+            }
+            assert_eq!(
+                data.indices,
+                builtin
+                    .indices
+                    .into_iter()
+                    .map(u32::from)
+                    .collect::<Vec<_>>(),
+                "{source}"
+            );
+        }
+    }
+
+    #[test]
+    fn mesh_get_data_keeps_runtime_and_source_backed_data() {
+        let api = new_api();
+        let res = ResourceWindow::new(api.as_ref());
+        let expected = triangle_mesh();
+
+        let runtime = res.Meshes().create(expected.clone());
+        assert_eq!(res.Meshes().get_data(runtime), Some(expected.clone()));
+
+        let loaded = res.Meshes().load("res://meshes/data.glb");
+        let request = {
+            let mut commands = Vec::new();
+            api.drain_commands(&mut commands);
+            commands
+                .into_iter()
+                .find_map(|command| match command {
+                    RenderCommand::Resource(ResourceCommand::CreateMesh {
+                        request, id, ..
+                    }) if id == loaded => Some(request),
+                    _ => None,
+                })
+                .expect("mesh load command")
+        };
+        api.apply_render_event(&RenderEvent::MeshCreated {
+            request,
+            id: loaded,
+            mesh: Some(expected.clone()),
+        });
+
+        assert_eq!(res.Meshes().get_data(loaded), Some(expected));
     }
 
     #[test]

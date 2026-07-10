@@ -161,7 +161,7 @@ lifecycle!({
 | Params | `&self, id: MeshID` |
 | Returns | `Option<Mesh3D>` |
 | Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Fails when / edge behavior | Built-in preset IDs return canonical CPU vertices, indices, one surface range, `uv`, and matching `paint_uv` immediately, including before renderer upload completes. Other IDs return `None` when CPU mesh data is unavailable, stale, or the target type does not match. |
 
 ### `write`
 
@@ -238,7 +238,7 @@ lifecycle!({
 | Params | `ctx.res, id` |
 | Returns | `same as backing method` |
 | Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Fails when / edge behavior | Same built-in preset behavior and CPU-data limits as `get_data`. |
 
 ### `mesh_write`
 

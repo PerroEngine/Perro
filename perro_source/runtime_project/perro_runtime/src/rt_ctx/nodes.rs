@@ -1540,6 +1540,15 @@ impl NodeAPI for Runtime {
         self.query_mesh_instance_surface_at_global_point(node_id, global_point)
     }
 
+    fn mesh_instance_surface_global_point(
+        &mut self,
+        node_id: perro_ids::NodeID,
+        triangle_index: u32,
+        barycentric: Vector3,
+    ) -> Option<Vector3> {
+        self.query_mesh_instance_surface_global_point(node_id, triangle_index, barycentric)
+    }
+
     fn mesh_instance_surface_on_global_ray(
         &mut self,
         node_id: perro_ids::NodeID,

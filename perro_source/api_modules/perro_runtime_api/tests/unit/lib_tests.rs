@@ -335,6 +335,15 @@ impl NodeAPI for DummyRuntime {
         None
     }
 
+    fn mesh_instance_surface_global_point(
+        &mut self,
+        _node_id: NodeID,
+        _triangle_index: u32,
+        _barycentric: perro_structs::Vector3,
+    ) -> Option<perro_structs::Vector3> {
+        None
+    }
+
     fn mesh_instance_surface_on_global_ray(
         &mut self,
         _node_id: NodeID,
@@ -1123,6 +1132,10 @@ fn script_macros_typecheck_and_forward() {
     );
     assert_eq!(
         mesh_instance_surface_at_global_point_3d!(&mut ctx, id, Vector3::new(0.0, 0.0, 0.0)),
+        None
+    );
+    assert_eq!(
+        mesh_instance_surface_global_point_3d!(&mut ctx, id, 0, Vector3::new(0.5, 0.25, 0.25)),
         None
     );
     assert_eq!(

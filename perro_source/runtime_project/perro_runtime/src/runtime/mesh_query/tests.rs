@@ -1,5 +1,10 @@
 use super::*;
-use perro_nodes::{MultiMeshInstance3D, MultiMeshInstanceTransform};
+use perro_nodes::{
+    MultiMeshInstance3D, MultiMeshInstanceTransform,
+    mesh_instance_3d::MeshInstance3D,
+    skeleton_3d::{Bone3D, Skeleton3D},
+};
+use perro_resource_api::sub_apis::MeshAPI;
 use perro_runtime_api::sub_apis::NodeAPI;
 use perro_structs::{Quaternion, Transform3D, UnitVector4};
 
@@ -121,6 +126,120 @@ fn posed_skin_query_keeps_tri_and_uv_attrs() {
     );
     assert!(hit.uv0.abs_diff_eq(Vec2::new(0.25, 0.25), 1e-5));
     assert!(hit.paint_uv.abs_diff_eq(Vec2::new(0.275, 0.375), 1e-5));
+}
+
+#[test]
+fn posed_surface_global_point_tracks_live_bone_pose_and_query_triangle_id() {
+    let mut runtime = Runtime::new();
+    let vertex = |position| perro_render_bridge::RuntimeMeshVertex {
+        position,
+        normal: [0.0, 0.0, 1.0],
+        uv: [0.0, 0.0],
+        paint_uv: [0.0, 0.0],
+        joints: [0; 4],
+        weights: UnitVector4::new([1.0, 0.0, 0.0, 0.0]),
+    };
+    let mesh_id = MeshAPI::create_mesh_data(
+        runtime.resource_api.as_ref(),
+        Mesh3D {
+            vertices: vec![
+                vertex([0.0, 0.0, 0.0]),
+                vertex([1.0, 0.0, 0.0]),
+                vertex([0.0, 1.0, 0.0]),
+                vertex([1.0, 1.0, 0.0]),
+            ],
+            indices: vec![0, 1, 2, 1, 3, 2],
+            surface_ranges: vec![
+                perro_render_bridge::MeshSurfaceRange {
+                    index_start: 0,
+                    index_count: 3,
+                },
+                perro_render_bridge::MeshSurfaceRange {
+                    index_start: 3,
+                    index_count: 3,
+                },
+            ],
+            blend_shapes: Vec::new(),
+        },
+    );
+    let mut skeleton = Skeleton3D::default();
+    skeleton.bones = vec![Bone3D {
+        pose: Transform3D::new(
+            Vector3::new(0.0, 0.0, 2.0),
+            Quaternion::IDENTITY,
+            Vector3::ONE,
+        ),
+        inv_bind: Transform3D::IDENTITY,
+        ..Bone3D::new()
+    }];
+    skeleton.refresh_inv_bind_cache();
+    let skeleton_id = runtime.create::<Skeleton3D>();
+    runtime.with_node_mut::<Skeleton3D, _, _>(skeleton_id, |node| *node = skeleton);
+    let mesh_node = runtime.create::<MeshInstance3D>();
+    runtime.with_node_mut::<MeshInstance3D, _, _>(mesh_node, |mesh| {
+        mesh.mesh = mesh_id;
+        mesh.skeleton = skeleton_id;
+    });
+
+    let point = NodeAPI::mesh_instance_surface_global_point(
+        &mut runtime,
+        mesh_node,
+        1,
+        Vector3::new(0.5, 0.25, 0.25),
+    )
+    .expect("posed point");
+    assert_eq!(point, Vector3::new(0.75, 0.5, 2.0));
+
+    runtime.with_node_mut::<Skeleton3D, _, _>(skeleton_id, |skeleton| {
+        skeleton.bones[0].pose.position.z = 4.0;
+    });
+    let moved = NodeAPI::mesh_instance_surface_global_point(
+        &mut runtime,
+        mesh_node,
+        1,
+        Vector3::new(0.5, 0.25, 0.25),
+    )
+    .expect("moved posed point");
+    assert_eq!(moved, Vector3::new(0.75, 0.5, 4.0));
+}
+
+#[test]
+fn surface_global_point_rejects_invalid_barycentric_and_non_mesh_instance() {
+    let mut runtime = Runtime::new();
+    let multi = build_multimesh_cube_node(&mut runtime, 1);
+    assert!(
+        NodeAPI::mesh_instance_surface_global_point(
+            &mut runtime,
+            multi,
+            0,
+            Vector3::new(0.5, 0.25, 0.25),
+        )
+        .is_none()
+    );
+    let mesh = runtime.create::<MeshInstance3D>();
+    runtime
+        .render_3d
+        .mesh_sources
+        .insert(mesh, "__cube__".to_string());
+    for barycentric in [
+        Vector3::new(0.5, 0.25, 0.1),
+        Vector3::new(-0.1, 0.55, 0.55),
+        Vector3::new(f32::NAN, 0.5, 0.5),
+    ] {
+        assert!(
+            NodeAPI::mesh_instance_surface_global_point(&mut runtime, mesh, 0, barycentric)
+                .is_none()
+        );
+    }
+    assert!(
+        NodeAPI::mesh_instance_surface_global_point(
+            &mut runtime,
+            mesh,
+            u32::MAX,
+            Vector3::new(0.5, 0.25, 0.25),
+        )
+        .is_none()
+    );
 }
 
 #[test]

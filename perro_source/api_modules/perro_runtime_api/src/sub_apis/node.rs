@@ -1433,6 +1433,17 @@ pub trait NodeAPI {
         global_point: Vector3,
     ) -> Option<MeshSurfaceHit3D>;
 
+    /// Resolves one mesh query triangle + barycentric coordinate to global space.
+    ///
+    /// `triangle_index` uses the same numbering returned by mesh surface hit queries.
+    /// Skinned `MeshInstance3D` nodes use the current skeleton pose.
+    fn mesh_instance_surface_global_point(
+        &mut self,
+        node_id: NodeID,
+        triangle_index: u32,
+        barycentric: Vector3,
+    ) -> Option<Vector3>;
+
     /// Finds the first mesh surface hit along a global-space ray for a 3D mesh node.
     ///
     /// `ray_direction` does not need to be normalized.
@@ -2016,6 +2027,16 @@ impl<'rt, R: NodeAPI + ?Sized> NodeModule<'rt, R> {
             .mesh_instance_surface_at_global_point(node_id, global_point)
     }
 
+    pub fn mesh_instance_surface_global_point(
+        &mut self,
+        node_id: NodeID,
+        triangle_index: u32,
+        barycentric: Vector3,
+    ) -> Option<Vector3> {
+        self.rt
+            .mesh_instance_surface_global_point(node_id, triangle_index, barycentric)
+    }
+
     pub fn mesh_instance_surface_on_global_ray(
         &mut self,
         node_id: NodeID,
@@ -2140,6 +2161,16 @@ impl<'rt, R: NodeAPI + ?Sized> MeshQueryModule<'rt, R> {
     ) -> Option<MeshSurfaceHit3D> {
         self.rt
             .mesh_instance_surface_at_global_point(node_id, global_point)
+    }
+
+    pub fn instance_surface_global_point(
+        &mut self,
+        node_id: NodeID,
+        triangle_index: u32,
+        barycentric: Vector3,
+    ) -> Option<Vector3> {
+        self.rt
+            .mesh_instance_surface_global_point(node_id, triangle_index, barycentric)
     }
 
     pub fn instance_surface_on_global_ray(
@@ -3603,6 +3634,17 @@ macro_rules! mesh_instance_surface_at_global_point_3d {
     ($ctx:expr, $id:expr, $point:expr) => {
         $ctx.MeshQuery()
             .instance_surface_at_global_point($id, $point)
+    };
+}
+
+/// Resolves a mesh query triangle + barycentric coordinate to global space.
+/// Usage:
+/// `mesh_instance_surface_global_point_3d!(ctx, node_id, triangle_index, barycentric) -> Option<Vector3>`.
+#[macro_export]
+macro_rules! mesh_instance_surface_global_point_3d {
+    ($ctx:expr, $id:expr, $triangle:expr, $barycentric:expr) => {
+        $ctx.MeshQuery()
+            .instance_surface_global_point($id, $triangle, $barycentric)
     };
 }
 
