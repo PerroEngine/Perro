@@ -188,6 +188,91 @@ fn write_texture_rgba_region_rejects_out_of_bounds_rect() {
 }
 
 #[test]
+fn repeat_same_size_write_reuses_texture_via_texels_updated() {
+    use perro_render_bridge::RenderEvent;
+
+    let mut graphics = PerroGraphics::new();
+    let texture = TextureID::from_parts(83, 0);
+
+    graphics.submit(RenderCommand::Resource(
+        ResourceCommand::CreateExternalTexture {
+            request: perro_render_bridge::RenderRequestID::new(1),
+            id: texture,
+            source: "webcam://reuse".to_string(),
+            reserved: true,
+            width: 2,
+            height: 1,
+        },
+    ));
+    graphics.draw_frame();
+    graphics.events.clear();
+
+    // first stream frame: full reload path (TextureLoaded, records dims).
+    graphics.submit(RenderCommand::Resource(ResourceCommand::WriteTextureRgba {
+        id: texture,
+        width: 2,
+        height: 1,
+        rgba: vec![1u8, 2, 3, 4, 5, 6, 7, 8].into(),
+    }));
+    graphics.draw_frame();
+    assert!(graphics.events.iter().any(|event| matches!(
+        event,
+        RenderEvent::TextureLoaded { id } if *id == texture
+    )));
+    assert!(!graphics.events.iter().any(|event| matches!(
+        event,
+        RenderEvent::TextureTexelsUpdated { .. }
+    )));
+    assert_eq!(graphics.stream_texture_dims.get(&texture), Some(&[2, 1]));
+    let buffer_ptr = graphics
+        .resources
+        .decoded_texture_data(texture)
+        .expect("decoded")
+        .rgba
+        .as_ptr();
+    graphics.events.clear();
+
+    // repeat same-size frame: in-place update (TextureTexelsUpdated, no reload,
+    // resident buffer reused = same allocation, GPU texture kept).
+    graphics.submit(RenderCommand::Resource(ResourceCommand::WriteTextureRgba {
+        id: texture,
+        width: 2,
+        height: 1,
+        rgba: vec![8u8, 7, 6, 5, 4, 3, 2, 1].into(),
+    }));
+    graphics.draw_frame();
+    assert!(graphics.events.iter().any(|event| matches!(
+        event,
+        RenderEvent::TextureTexelsUpdated { id } if *id == texture
+    )));
+    assert!(!graphics.events.iter().any(|event| matches!(
+        event,
+        RenderEvent::TextureLoaded { .. }
+    )));
+    let decoded = graphics
+        .resources
+        .decoded_texture_data(texture)
+        .expect("decoded");
+    assert_eq!(decoded.rgba, [8, 7, 6, 5, 4, 3, 2, 1]);
+    assert_eq!(decoded.rgba.as_ptr(), buffer_ptr, "resident buffer reused");
+    graphics.events.clear();
+
+    // resolution change (same byte length, different dims): reload path again.
+    graphics.submit(RenderCommand::Resource(ResourceCommand::WriteTextureRgba {
+        id: texture,
+        width: 1,
+        height: 2,
+        rgba: vec![9u8, 9, 9, 9, 9, 9, 9, 9].into(),
+    }));
+    graphics.draw_frame();
+    assert!(graphics.events.iter().any(|event| matches!(
+        event,
+        RenderEvent::TextureLoaded { id } if *id == texture
+    )));
+    assert_eq!(graphics.stream_texture_dims.get(&texture), Some(&[1, 2]));
+}
+
+#[test]
 fn webcam_camera_stream_does_not_overwrite_webcam_texture() {
     let mut graphics = PerroGraphics::new();
     let texture = TextureID::from_parts(91, 0);

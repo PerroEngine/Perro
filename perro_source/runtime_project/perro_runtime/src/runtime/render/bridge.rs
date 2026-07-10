@@ -2049,6 +2049,30 @@ mod tests {
     use std::sync::Arc;
 
     #[test]
+    fn texture_loaded_rescans_but_texels_updated_does_not() {
+        let mut runtime = Runtime::new();
+        let texture = perro_ids::TextureID::from_parts(5, 0);
+
+        // first load: full 2d + 3d scan + resource-ref recount.
+        runtime.render_2d.force_full_scan_once = false;
+        runtime.render_3d.force_full_scan_once = false;
+        runtime.scene_resource_refs_dirty = false;
+        runtime.apply_render_event(RenderEvent::TextureLoaded { id: texture });
+        assert!(runtime.render_2d.full_scan_pending());
+        assert!(runtime.render_3d.full_scan_pending());
+        assert!(runtime.scene_resource_refs_dirty);
+
+        // repeat texel write: no rescan, no ref recount.
+        runtime.render_2d.force_full_scan_once = false;
+        runtime.render_3d.force_full_scan_once = false;
+        runtime.scene_resource_refs_dirty = false;
+        runtime.apply_render_event(RenderEvent::TextureTexelsUpdated { id: texture });
+        assert!(!runtime.render_2d.full_scan_pending());
+        assert!(!runtime.render_3d.full_scan_pending());
+        assert!(!runtime.scene_resource_refs_dirty);
+    }
+
+    #[test]
     fn water_body_samples_derive_vertical_velocity_from_height_delta() {
         let mut runtime = Runtime::new();
         let water = NodeID::from_parts(10, 0);

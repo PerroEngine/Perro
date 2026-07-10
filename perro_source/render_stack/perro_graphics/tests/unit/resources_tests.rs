@@ -402,3 +402,31 @@ fn stale_source_entries_are_not_reused() {
     let material_next = store.create_material(Material3D::default(), Some(material_source), false);
     assert_ne!(material_next, material);
 }
+
+#[test]
+fn write_stream_texture_data_reuses_buffer_and_falls_back_by_source() {
+    let mut store = ResourceStore::new();
+    let source = "webcam://node/1";
+    let id = store.create_texture(source, true);
+
+    // first write establishes the resident by_id buffer.
+    assert!(store.write_stream_texture_data(id, &[1, 2, 3, 4, 5, 6, 7, 8], 2, 1));
+    let ptr = store.decoded_texture_data(id).expect("decoded").rgba.as_ptr();
+
+    // no by_source duplicate: lookup by source falls back to the by_id buffer.
+    let by_source = store
+        .decoded_texture_data_by_source(source)
+        .expect("by-source fallback");
+    assert_eq!(by_source.rgba, [1, 2, 3, 4, 5, 6, 7, 8]);
+
+    // same-size repeat copies in place: same allocation, updated bytes.
+    assert!(store.write_stream_texture_data(id, &[8, 7, 6, 5, 4, 3, 2, 1], 2, 1));
+    let decoded = store.decoded_texture_data(id).expect("decoded");
+    assert_eq!(decoded.rgba, [8, 7, 6, 5, 4, 3, 2, 1]);
+    assert_eq!(decoded.rgba.as_ptr(), ptr, "buffer reused, no realloc");
+
+    // resolution change reallocates to the new size.
+    assert!(store.write_stream_texture_data(id, &[9, 9, 9, 9, 9, 9, 9, 9], 1, 2));
+    let decoded = store.decoded_texture_data(id).expect("decoded");
+    assert_eq!((decoded.width, decoded.height), (1, 2));
+}
