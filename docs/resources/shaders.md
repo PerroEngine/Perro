@@ -2,12 +2,12 @@
 
 ## Page Map
 
-| Header    | Link                    |
-| --------- | ----------------------- |
-| Purpose   | [Purpose](#purpose)     |
-| Use Cases | [Use Cases](#use-cases) |
-| Example   | [Example](#example)     |
-| Reference | [Reference](#reference) |
+| Header             | Link                                                   |
+| ------------------ | ------------------------------------------------------ |
+| Custom 3D Material | [Custom 3D Material Shaders](#custom-3d-material-shaders) |
+| Custom Sky3D       | [Custom Sky3D Shaders](#custom-sky3d-shaders)          |
+| Limits             | [Current Limitations](#current-limitations)            |
+| Reference          | [Reference](#reference)                                |
 
 ## Reference
 

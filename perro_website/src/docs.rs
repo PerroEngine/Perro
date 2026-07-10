@@ -75,6 +75,12 @@ pub fn find_doc(collection: &str, slug: &str) -> Option<&'static DocPage> {
     docs()
         .iter()
         .find(|doc| doc.collection == collection && doc.slug == normalized)
+        .or_else(|| {
+            let index_slug = format!("{normalized}/index");
+            docs()
+                .iter()
+                .find(|doc| doc.collection == collection && doc.slug == index_slug)
+        })
 }
 
 pub fn docs_by_area() -> Vec<(&'static str, usize)> {
@@ -186,9 +192,10 @@ fn doc_matches(doc: &DocPage, needle: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{docs, markdown_html};
+    use super::{docs, find_doc, markdown_html};
+    use pulldown_cmark::{Event, Parser, Tag};
     use std::{
-        collections::BTreeSet,
+        collections::{BTreeMap, BTreeSet},
         fs,
         path::{Path, PathBuf},
     };
@@ -351,10 +358,64 @@ let _ = value;
     }
 
     #[test]
+    fn generated_headings_have_unique_html_ids() {
+        let mut failures = Vec::new();
+        for doc in docs() {
+            let mut seen = BTreeSet::new();
+            for heading in &doc.headings {
+                if !seen.insert(heading.id.as_str()) {
+                    failures.push(format!("{} repeats heading id `{}`", doc.slug, heading.id));
+                }
+                let marker = format!("id=\"{}\"", heading.id);
+                if !doc.html.contains(&marker) {
+                    failures.push(format!(
+                        "{} renders no id for heading `{}`",
+                        doc.slug, heading.id
+                    ));
+                }
+            }
+        }
+        assert!(failures.is_empty(), "{}", failures.join("\n"));
+    }
+
+    #[test]
+    fn generated_internal_links_resolve() {
+        let by_route = docs()
+            .iter()
+            .map(|doc| (doc.route_path.as_str(), doc))
+            .collect::<BTreeMap<_, _>>();
+        let mut failures = Vec::new();
+
+        for doc in docs() {
+            for event in Parser::new(&doc.markdown) {
+                let target = match event {
+                    Event::Start(Tag::Link { dest_url, .. })
+                    | Event::Start(Tag::Image { dest_url, .. }) => dest_url,
+                    _ => continue,
+                };
+                validate_internal_target(doc, target.as_ref(), &by_route, &mut failures);
+            }
+        }
+
+        assert!(failures.is_empty(), "{}", failures.join("\n"));
+    }
+
+    #[test]
     fn docs_index_does_not_include_book_pages() {
         let docs_pages = super::docs_pages();
         assert!(!docs_pages.is_empty());
         assert!(docs_pages.iter().all(|doc| doc.collection == "docs"));
+    }
+
+    #[test]
+    fn nested_indexes_and_demo_details_resolve() {
+        assert_eq!(
+            find_doc("docs", "networking")
+                .expect("networking index route")
+                .slug,
+            "networking/index"
+        );
+        assert!(find_doc("docs", "examples/demo3d/water").is_some());
     }
 
     #[test]
@@ -477,5 +538,49 @@ let _ = value;
             }
         }
         out
+    }
+
+    fn validate_internal_target(
+        source: &super::DocPage,
+        target: &str,
+        by_route: &BTreeMap<&str, &super::DocPage>,
+        failures: &mut Vec<String>,
+    ) {
+        if target.starts_with("http://")
+            || target.starts_with("https://")
+            || target.starts_with("mailto:")
+        {
+            return;
+        }
+        if target.contains("://") {
+            failures.push(format!("{} has malformed URL `{target}`", source.slug));
+            return;
+        }
+
+        let (path, fragment) = match target.split_once('#') {
+            Some(("", fragment)) => (source.route_path.as_str(), Some(fragment)),
+            Some((path, fragment)) => (path, Some(fragment)),
+            None => (target, None),
+        };
+        if !path.starts_with("/docs") && !path.starts_with("/book") {
+            return;
+        }
+        let Some(target_doc) = by_route.get(path).copied() else {
+            failures.push(format!("{} links to missing route `{path}`", source.slug));
+            return;
+        };
+        if let Some(fragment) = fragment {
+            if !fragment.is_empty()
+                && !target_doc
+                    .headings
+                    .iter()
+                    .any(|heading| heading.id == fragment)
+            {
+                failures.push(format!(
+                    "{} links to missing anchor `{path}#{fragment}`",
+                    source.slug
+                ));
+            }
+        }
     }
 }

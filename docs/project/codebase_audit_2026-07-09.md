@@ -166,6 +166,7 @@ Supersede old audit docs.
 | DOC-03 | P2 | `docs/index.md` | 8 anchor refs point to absent headers in HTTP/shaders/query/state -> use real headers |
 | DOC-04 | P2 | website docs tests | 9 tests pass while all internal links break -> validate every internal route + fragment |
 | DOC-05 | P3 | `agents.md`, `CLAUDE.md` | main doc map names missing `docs/perro_cli.md`; real path `docs/tools/perro_cli.md` -> chg path |
+| DOC-06 | P2 | `perro_website/build.rs`; `demos/Demo3D/docs` | website collects demo README only; its 12 detail links point to absent routes -> collect full demo doc set |
 | API-01 | P1 | networking HTTP `http.rs:316-469` | unbounded work/event channels + one serial worker -> bounded queue/pool + backpressure API |
 | API-02 | P2 | CLI `main.rs:152-166` + all commands | missing flag value consumes next flag; unknown flags ignored -> schema parser/validation |
 | API-03 | P3 | input `keycode.rs:205-229` | `from_name` formats up to 194 strings/call -> static name map/macro table |

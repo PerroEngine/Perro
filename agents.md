@@ -10,7 +10,7 @@ Main docs:
 
 - `README.md`
 - `docs/index.md`
-- `docs/perro_cli.md`
+- `docs/tools/perro_cli.md`
 
 ## Where Things Are
 

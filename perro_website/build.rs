@@ -4,6 +4,7 @@ use perro_compiler::{
 use pulldown_cmark::{Event, HeadingLevel, Parser, Tag, TagEnd};
 use serde::Serialize;
 use std::{
+    collections::HashMap,
     env, fs, io,
     path::{Path, PathBuf},
     time::SystemTime,
@@ -53,16 +54,14 @@ fn main() {
         &root.join("perro_book"),
         &mut docs,
     );
-    collect_demo_doc(
-        &root,
+    collect_demo_docs(
         "examples/demo2d",
-        &root.join("demos/Demo2D/docs/README.md"),
+        &root.join("demos/Demo2D/docs"),
         &mut docs,
     );
-    collect_demo_doc(
-        &root,
+    collect_demo_docs(
         "examples/demo3d",
-        &root.join("demos/Demo3D/docs/README.md"),
+        &root.join("demos/Demo3D/docs"),
         &mut docs,
     );
 
@@ -235,16 +234,47 @@ fn collect_markdown(collection: &str, root: &Path, dir: &Path, out: &mut Vec<Doc
     }
 }
 
-fn collect_demo_doc(root: &Path, slug: &str, path: &Path, out: &mut Vec<DocOut>) {
-    if path.exists() {
-        let _ = root;
-        push_doc("docs", path, slug.to_string(), out);
+fn collect_demo_docs(slug_prefix: &str, dir: &Path, out: &mut Vec<DocOut>) {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|ext| ext.to_str()) != Some("md") {
+            continue;
+        }
+        let stem = path
+            .file_stem()
+            .and_then(|stem| stem.to_str())
+            .unwrap_or("");
+        if stem.eq_ignore_ascii_case("README") {
+            push_doc_with_link_slug(
+                "docs",
+                &path,
+                slug_prefix.to_string(),
+                format!("{slug_prefix}/index"),
+                out,
+            );
+        } else if !stem.is_empty() {
+            let slug = format!("{slug_prefix}/{stem}");
+            push_doc("docs", &path, slug, out);
+        }
     }
 }
 
 fn push_doc(collection: &str, path: &Path, slug: String, out: &mut Vec<DocOut>) {
+    push_doc_with_link_slug(collection, path, slug.clone(), slug, out);
+}
+
+fn push_doc_with_link_slug(
+    collection: &str,
+    path: &Path,
+    slug: String,
+    link_slug: String,
+    out: &mut Vec<DocOut>,
+) {
     let raw_markdown = fs::read_to_string(path).unwrap();
-    let markdown = rewrite_markdown_links(collection, &slug, &raw_markdown);
+    let markdown = rewrite_markdown_links(collection, &link_slug, &raw_markdown);
     let title = first_title(&markdown).unwrap_or_else(|| title_from_slug(&slug));
     let area = if collection == "book" {
         "book".to_string()
@@ -275,8 +305,14 @@ fn push_doc(collection: &str, path: &Path, slug: String, out: &mut Vec<DocOut>) 
 fn route_path(collection: &str, slug: &str) -> String {
     match (collection, slug) {
         ("book", "index") => "/book".to_string(),
+        ("book", slug) if slug.ends_with("/index") => {
+            format!("/book/{}", slug.trim_end_matches("/index"))
+        }
         ("book", slug) => format!("/book/{slug}"),
         ("docs", "index") => "/docs".to_string(),
+        ("docs", slug) if slug.ends_with("/index") => {
+            format!("/docs/{}", slug.trim_end_matches("/index"))
+        }
         ("docs", slug) => format!("/docs/{slug}"),
         (_, slug) => format!("/docs/{slug}"),
     }
@@ -288,14 +324,14 @@ fn rewrite_markdown_links(collection: &str, slug: &str, markdown: &str) -> Strin
     while let Some(start) = rest.find("](") {
         let (before, tail) = rest.split_at(start + 2);
         out.push_str(before);
-        let Some(end) = tail[2..].find(')') else {
-            out.push_str(&tail[2..]);
+        let Some(end) = tail.find(')') else {
+            out.push_str(tail);
             return out;
         };
-        let target = &tail[2..2 + end];
+        let target = &tail[..end];
         out.push_str(&rewrite_link_target(collection, slug, target));
         out.push(')');
-        rest = &tail[3 + end..];
+        rest = &tail[end + 1..];
     }
     out.push_str(rest);
     out
@@ -304,8 +340,8 @@ fn rewrite_markdown_links(collection: &str, slug: &str, markdown: &str) -> Strin
 fn rewrite_link_target(collection: &str, slug: &str, target: &str) -> String {
     if target.starts_with("http://")
         || target.starts_with("https://")
+        || target.starts_with("mailto:")
         || target.starts_with('#')
-        || target.starts_with('/')
         || !target.contains(".md")
     {
         return target.to_string();
@@ -315,11 +351,45 @@ fn rewrite_link_target(collection: &str, slug: &str, target: &str) -> String {
         Some(idx) => (&target[..idx], &target[idx..]),
         None => (target, ""),
     };
-    let Some(stripped) = path_part.strip_suffix(".md") else {
+    let (next_collection, stripped, absolute) = if let Some(path) = path_part
+        .strip_prefix("/docs/")
+        .and_then(|path| path.strip_suffix(".md"))
+    {
+        ("docs", path, true)
+    } else if let Some(path) = path_part
+        .strip_prefix("/book/")
+        .and_then(|path| path.strip_suffix(".md"))
+    {
+        ("book", path, true)
+    } else if collection == "book" {
+        if let Some(path) = path_part
+            .strip_prefix("../docs/")
+            .and_then(|path| path.strip_suffix(".md"))
+        {
+            ("docs", path, true)
+        } else {
+            let Some(path) = path_part.strip_suffix(".md") else {
+                return target.to_string();
+            };
+            (collection, path, false)
+        }
+    } else if collection == "docs" {
+        if let Some(path) = path_part
+            .strip_prefix("../perro_book/")
+            .and_then(|path| path.strip_suffix(".md"))
+        {
+            ("book", path, true)
+        } else {
+            let Some(path) = path_part.strip_suffix(".md") else {
+                return target.to_string();
+            };
+            (collection, path, false)
+        }
+    } else {
         return target.to_string();
     };
 
-    let mut parts = if collection == "book" && stripped.starts_with("../") {
+    let mut parts = if absolute {
         Vec::new()
     } else {
         slug.split('/')
@@ -340,11 +410,6 @@ fn rewrite_link_target(collection: &str, slug: &str, target: &str) -> String {
         let _ = parts.pop();
     }
     let next_slug = parts.join("/");
-    let next_collection = if collection == "book" && stripped.starts_with("../") {
-        "docs"
-    } else {
-        collection
-    };
     let route = if next_slug.is_empty() {
         route_path(next_collection, "index")
     } else {
@@ -389,6 +454,7 @@ fn headings(markdown: &str) -> Vec<HeadingOut> {
     let mut out = Vec::new();
     let mut in_heading = None::<u8>;
     let mut text = String::new();
+    let mut seen = HashMap::new();
 
     for event in Parser::new(markdown) {
         match event {
@@ -399,7 +465,7 @@ fn headings(markdown: &str) -> Vec<HeadingOut> {
             Event::Text(t) | Event::Code(t) if in_heading.is_some() => text.push_str(&t),
             Event::End(TagEnd::Heading(_)) => {
                 if let Some(level) = in_heading.take() {
-                    let id = anchor_id(&text);
+                    let id = highlight::unique_anchor_id(&text, &mut seen);
                     out.push(HeadingOut {
                         level,
                         text: text.trim().to_string(),
@@ -502,18 +568,6 @@ fn level_num(level: HeadingLevel) -> u8 {
         HeadingLevel::H5 => 5,
         HeadingLevel::H6 => 6,
     }
-}
-
-fn anchor_id(text: &str) -> String {
-    let mut out = String::new();
-    for ch in text.chars() {
-        if ch.is_ascii_alphanumeric() {
-            out.push(ch.to_ascii_lowercase());
-        } else if (ch.is_whitespace() || ch == '-') && !out.ends_with('-') {
-            out.push('-');
-        }
-    }
-    out.trim_matches('-').to_string()
 }
 
 fn title_from_slug(slug: &str) -> String {

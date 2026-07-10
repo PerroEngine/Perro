@@ -12,11 +12,11 @@
 | `disconnect`             | [`disconnect`](#disconnect)                         |
 | `disconnect_many`        | [`disconnect_many`](#disconnect_many)               |
 | `emit`                   | [`emit`](#emit)                                     |
-| `signal_connect!`        | [`signal_connect!`](#signal_connect-1)              |
-| `signal_connect_pairs!`  | [`signal_connect_pairs!`](#signal_connect_pairs-1)  |
-| `signal_disconnect!`     | [`signal_disconnect!`](#signal_disconnect-1)        |
-| `signal_disconnect_many!` | [`signal_disconnect_many!`](#signal_disconnect_many-1) |
-| `signal_emit!`           | [`signal_emit!`](#signal_emit-1)                    |
+| `signal_connect!`        | [`signal_connect!`](#signal_connect)                 |
+| `signal_connect_pairs!`  | [`signal_connect_pairs!`](#signal_connect_pairs)     |
+| `signal_disconnect!`     | [`signal_disconnect!`](#signal_disconnect)           |
+| `signal_disconnect_many!` | [`signal_disconnect_many!`](#signal_disconnect_many) |
+| `signal_emit!`           | [`signal_emit!`](#signal_emit)                       |
 
 ## Overview
 
@@ -165,6 +165,17 @@ let _ = signal_disconnect_many!(
 | Returns                    | `same as backing method`                                                                                                                                                                                           |
 | Use when                   | Use when code must release, remove, stop, or disconnect existing engine state.                                                                                                                                     |
 | Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+
+### `signal_disconnect_many!`
+
+| Field                      | Detail                                                                            |
+| -------------------------- | --------------------------------------------------------------------------------- |
+| Access                     | `ctx.run.Signals()`                                                               |
+| Signature                  | `signal_disconnect_many!(ctx.run, script, signals, functions) -> usize`           |
+| Params                     | `ctx, script, signals, functions`                                                 |
+| Returns                    | `usize` removed connection count                                                  |
+| Use when                   | Remove many signal/function links with one call.                                  |
+| Fails when / edge behavior | Missing signal/script/function pairs do not increment the returned count.         |
 
 ### `signal_emit!`
 

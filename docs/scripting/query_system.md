@@ -2,12 +2,12 @@
 
 ## Page Map
 
-| Header    | Link                    |
-| --------- | ----------------------- |
-| Purpose   | [Purpose](#purpose)     |
-| Use Cases | [Use Cases](#use-cases) |
-| Example   | [Example](#example)     |
-| Reference | [Reference](#reference) |
+| Header        | Link                              |
+| ------------- | --------------------------------- |
+| Why Use Query | [Why Use Query](#why-use-query)   |
+| Use Cases     | [Use Cases](#use-cases)           |
+| Example       | [Example](#example)               |
+| Reference     | [Reference](#reference)           |
 
 ## Use Cases
 

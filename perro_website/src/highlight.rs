@@ -1,4 +1,5 @@
 use pulldown_cmark::{html, CodeBlockKind, CowStr, Event, Options, Parser, Tag, TagEnd};
+use std::collections::HashMap;
 
 pub fn markdown_html(markdown: &str) -> String {
     let mut options = Options::empty();
@@ -7,13 +8,57 @@ pub fn markdown_html(markdown: &str) -> String {
     options.insert(Options::ENABLE_STRIKETHROUGH);
 
     let parser = Parser::new_ext(markdown, options);
-    let events = highlight_code_blocks(parser);
+    let events = add_heading_ids(parser);
+    let events = highlight_code_blocks(events);
     let mut out = String::with_capacity(markdown.len());
     html::push_html(&mut out, events.into_iter());
     out
 }
 
-fn highlight_code_blocks<'a>(parser: Parser<'a>) -> Vec<Event<'a>> {
+fn add_heading_ids<'a>(events: impl IntoIterator<Item = Event<'a>>) -> Vec<Event<'a>> {
+    let mut out = Vec::new();
+    let mut heading = None::<(pulldown_cmark::HeadingLevel, Vec<Event<'a>>, String)>;
+    let mut seen = HashMap::<String, usize>::new();
+
+    for event in events {
+        match (&mut heading, event) {
+            (None, Event::Start(Tag::Heading { level, .. })) => {
+                heading = Some((level, Vec::new(), String::new()));
+            }
+            (Some((_, events, text)), event @ (Event::Text(_) | Event::Code(_))) => {
+                match &event {
+                    Event::Text(value) | Event::Code(value) => text.push_str(value),
+                    _ => unreachable!(),
+                }
+                events.push(event);
+            }
+            (Some((level, events, text)), Event::End(TagEnd::Heading(_))) => {
+                let id = unique_anchor_id(text, &mut seen);
+                let level = heading_level_num(*level);
+                out.push(Event::Html(CowStr::from(format!("<h{level} id=\"{id}\">"))));
+                out.append(events);
+                out.push(Event::Html(CowStr::from(format!("</h{level}>"))));
+                heading = None;
+            }
+            (Some((_, events, _)), event) => events.push(event),
+            (None, event) => out.push(event),
+        }
+    }
+
+    if let Some((level, mut events, _)) = heading {
+        out.push(Event::Start(Tag::Heading {
+            level,
+            id: None,
+            classes: Vec::new(),
+            attrs: Vec::new(),
+        }));
+        out.append(&mut events);
+    }
+
+    out
+}
+
+fn highlight_code_blocks<'a>(parser: impl IntoIterator<Item = Event<'a>>) -> Vec<Event<'a>> {
     let mut out = Vec::new();
     let mut code_block = None::<CodeBlock>;
 
@@ -37,6 +82,46 @@ fn highlight_code_blocks<'a>(parser: Parser<'a>) -> Vec<Event<'a>> {
     }
 
     out
+}
+
+pub fn anchor_id(text: &str) -> String {
+    let mut out = String::new();
+    for ch in text.chars() {
+        if ch.is_ascii_alphanumeric() || ch == '_' {
+            out.push(ch.to_ascii_lowercase());
+        } else if (ch.is_whitespace() || ch == '-') && !out.ends_with('-') {
+            out.push('-');
+        }
+    }
+    let out = out.trim_matches('-');
+    if out.is_empty() {
+        "section".to_string()
+    } else {
+        out.to_string()
+    }
+}
+
+pub fn unique_anchor_id(text: &str, seen: &mut HashMap<String, usize>) -> String {
+    let base = anchor_id(text);
+    let count = seen.entry(base.clone()).or_insert(0);
+    let id = if *count == 0 {
+        base
+    } else {
+        format!("{base}-{count}")
+    };
+    *count += 1;
+    id
+}
+
+fn heading_level_num(level: pulldown_cmark::HeadingLevel) -> u8 {
+    match level {
+        pulldown_cmark::HeadingLevel::H1 => 1,
+        pulldown_cmark::HeadingLevel::H2 => 2,
+        pulldown_cmark::HeadingLevel::H3 => 3,
+        pulldown_cmark::HeadingLevel::H4 => 4,
+        pulldown_cmark::HeadingLevel::H5 => 5,
+        pulldown_cmark::HeadingLevel::H6 => 6,
+    }
 }
 
 struct CodeBlock {
