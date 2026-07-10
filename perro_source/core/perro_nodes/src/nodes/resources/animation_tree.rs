@@ -24,6 +24,9 @@ pub struct AnimationTreeSlotPlayback {
     pub playback_frame: f32,
     pub boomerang_direction: f32,
     pub paused: bool,
+    pub last_event_animation: AnimationID,
+    pub last_event_frame: u32,
+    pub pending_event_frames: Vec<u32>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -79,6 +82,8 @@ impl AnimationTree {
             state.current_frame = 0;
             state.playback_frame = 0.0;
             state.boomerang_direction = 1.0;
+            state.last_event_animation = AnimationID::nil();
+            state.last_event_frame = u32::MAX;
         }
         true
     }
@@ -119,6 +124,8 @@ impl AnimationTree {
             state.current_frame = frame;
             state.playback_frame = frame as f32;
             state.boomerang_direction = 1.0;
+            state.last_event_animation = AnimationID::nil();
+            state.last_event_frame = u32::MAX;
             return true;
         }
         false
