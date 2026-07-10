@@ -5,7 +5,7 @@ $root = @editor_root
         anchor = "center"
         size_ratio = (1.0, 1.0)
         style = {
-            fill = "#23272D",
+            fill = "#171A1F",
             stroke = "#00000000",
             stroke_width = 0.0,
             radius = 0.0
@@ -30,11 +30,11 @@ parent = @root_stack
         size_ratio = (1.0, 0.034)
         h_align = "fill"
         v_align = "center"
-        spacing = 0.002
-        padding = (0.003, 0.004)
+        spacing = 0.003
+        padding = (0.006, 0.006)
         style = {
-            fill = "#2A2F36",
-            stroke = "#343A43",
+            fill = "#20252C",
+            stroke = "#3B4450",
             stroke_width = 1.0,
             radius = 0.006
         }
@@ -212,10 +212,10 @@ parent = @mode_3d_button
 [project_status]
 parent = @top_bar
     [UiLabel]
-        size_ratio = (0.72, 0.78)
+        size_ratio = (0.71, 0.78)
         text = "No project"
         text_size_ratio = 0.316
-        color = "#D7DBE0"
+        color = "#B0B8C3"
         h_align = "start"
         v_align = "center"
     [/UiLabel]
@@ -238,11 +238,11 @@ parent = @main_split
         size_ratio = (0.024, 1.0)
         h_align = "fill"
         v_align = "start"
-        spacing = 0.006
-        padding = (0.008, 0.012)
+        spacing = 0.008
+        padding = (0.012, 0.014)
         style = {
-            fill = "#23272D",
-            stroke = "#343A43",
+            fill = "#1D2229",
+            stroke = "#3B4450",
             stroke_width = 1.0,
             radius = 0.006
         }
@@ -313,8 +313,8 @@ parent = @main_split
         v_align = "fill"
         spacing = 0.003
         style = {
-            fill = "#2A2F36",
-            stroke = "#343A43",
+            fill = "#20252C",
+            stroke = "#3B4450",
             stroke_width = 1.0,
             radius = 0.006
         }
@@ -324,14 +324,14 @@ parent = @main_split
 [scene_tree_title]
 parent = @left_panel
     [UiLabel]
-        size_ratio = (1.0, 0.033)
+        size_ratio = (1.0, 0.042)
         text = "Scene"
-        text_size_ratio = 0.316
+        text_size_ratio = 0.345
         color = "#D7DBE0"
         h_align = "start"
         style = {
-            fill = "#2A2F36",
-            stroke = "#343A43",
+            fill = "#262C35",
+            stroke = "#3B4450",
             stroke_width = 1.0,
             radius = 0.006
         }
@@ -425,7 +425,7 @@ parent = @scene_action_row
 parent = @scene_duplicate_button
     [UiLabel]
         size_ratio = (1.0, 1.0)
-        text = "Dup"
+        text = "Clone"
         text_size_ratio = 0.316
         color = "#D7DBE0"
         input_enabled = false
@@ -509,7 +509,7 @@ parent = @scene_action_row
 parent = @scene_delete_button
     [UiLabel]
         size_ratio = (1.0, 1.0)
-        text = "Del"
+        text = "Delete"
         text_size_ratio = 0.316
         color = "#D7DBE0"
         input_enabled = false
@@ -727,7 +727,7 @@ parent = @scene_tools_row
 parent = @scene_collapse_all_button
     [UiLabel]
         size_ratio = (1.0, 1.0)
-        text = "Fold"
+        text = "Collapse"
         text_size_ratio = 0.316
         color = "#D7DBE0"
         input_enabled = false
@@ -783,7 +783,7 @@ parent = @scene_tools_row
 parent = @scene_select_parent_button
     [UiLabel]
         size_ratio = (1.0, 1.0)
-        text = "Par"
+        text = "Parent"
         text_size_ratio = 0.316
         color = "#D7DBE0"
         input_enabled = false
@@ -811,7 +811,7 @@ parent = @scene_tools_row
 parent = @scene_select_child_button
     [UiLabel]
         size_ratio = (1.0, 1.0)
-        text = "Kid"
+        text = "Child"
         text_size_ratio = 0.316
         color = "#D7DBE0"
         input_enabled = false
@@ -902,7 +902,7 @@ parent = @left_panel
 [scene_scroll]
 parent = @left_panel
     [UiScrollContainer]
-        size_ratio = (1.0, 0.312)
+        size_ratio = (1.0, 0.303)
     [/UiScrollContainer]
 [/scene_scroll]
 
@@ -925,14 +925,14 @@ parent = @scene_scroll
 [file_title]
 parent = @left_panel
     [UiLabel]
-        size_ratio = (1.0, 0.033)
-        text = "FileSystem"
-        text_size_ratio = 0.316
+        size_ratio = (1.0, 0.042)
+        text = "Project Files"
+        text_size_ratio = 0.345
         color = "#D7DBE0"
         h_align = "start"
         style = {
-            fill = "#2A2F36",
-            stroke = "#343A43",
+            fill = "#262C35",
+            stroke = "#3B4450",
             stroke_width = 1.0,
             radius = 0.006
         }
@@ -1054,7 +1054,7 @@ parent = @file_action_row
 parent = @file_new_mat_button
     [UiLabel]
         size_ratio = (1.0, 1.0)
-        text = "Mat"
+        text = "Material"
         text_size_ratio = 0.316
         color = "#D7DBE0"
         input_enabled = false
@@ -1082,7 +1082,7 @@ parent = @file_action_row
 parent = @file_new_folder_button
     [UiLabel]
         size_ratio = (1.0, 1.0)
-        text = "Dir"
+        text = "Folder"
         text_size_ratio = 0.316
         color = "#D7DBE0"
         input_enabled = false
@@ -1205,7 +1205,7 @@ parent = @file_tools_row
 parent = @file_collapse_all_button
     [UiLabel]
         size_ratio = (1.0, 1.0)
-        text = "Fold"
+        text = "Collapse"
         text_size_ratio = 0.316
         color = "#D7DBE0"
         input_enabled = false
@@ -1272,7 +1272,7 @@ parent = @file_ops_row
 parent = @file_duplicate_button
     [UiLabel]
         size_ratio = (1.0, 1.0)
-        text = "Dup"
+        text = "Clone"
         text_size_ratio = 0.316
         color = "#D7DBE0"
         input_enabled = false
@@ -1300,7 +1300,7 @@ parent = @file_ops_row
 parent = @file_delete_button
     [UiLabel]
         size_ratio = (1.0, 1.0)
-        text = "Del"
+        text = "Delete"
         text_size_ratio = 0.316
         color = "#D7DBE0"
         input_enabled = false
@@ -1363,7 +1363,7 @@ parent = @left_panel
 [file_scroll]
 parent = @left_panel
     [UiScrollContainer]
-        size_ratio = (1.0, 0.328)
+        size_ratio = (1.0, 0.319)
     [/UiScrollContainer]
 [/file_scroll]
 

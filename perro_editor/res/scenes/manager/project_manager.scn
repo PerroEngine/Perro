@@ -6,7 +6,7 @@ script = "res://scripts/editor/main.rs"
         anchor = "center"
         size_ratio = (1.0, 1.0)
         style = {
-            fill = "#1B1E22",
+            fill = "#171A1F",
             stroke = "#00000000",
             stroke_width = 0.0,
             radius = 0.0
@@ -18,16 +18,16 @@ script = "res://scripts/editor/main.rs"
 parent = @editor_root
     [UiVLayout]
         anchor = "center"
-        size_ratio = (0.58, 0.72)
+        size_ratio = (0.62, 0.76)
         h_align = "fill"
         v_align = "start"
-        spacing = 0.006
-        padding = (0.014, 0.012)
+        spacing = 0.008
+        padding = (0.02, 0.018)
         style = {
-            fill = "#23272D",
-            stroke = "#343A43",
+            fill = "#20252C",
+            stroke = "#3B4450",
             stroke_width = 1.0,
-            radius = 0.0
+            radius = 0.018
         }
     [/UiVLayout]
 [/project_manager]
@@ -35,19 +35,30 @@ parent = @editor_root
 [project_manager_title]
 parent = @project_manager
     [UiLabel]
-        size_ratio = (1.0, 0.06)
+        size_ratio = (1.0, 0.072)
         text = "Perro Project Manager"
-        text_size_ratio = 0.489
+        text_size_ratio = 0.46
         color = "#D7DBE0"
         h_align = "start"
         style = {
-            fill = "#23272D",
-            stroke = "#343A43",
+            fill = "#262C35",
+            stroke = "#4D84D1",
             stroke_width = 1.0,
-            radius = 0.0
+            radius = 0.018
         }
     [/UiLabel]
 [/project_manager_title]
+
+[project_manager_subtitle]
+parent = @project_manager
+    [UiLabel]
+        size_ratio = (1.0, 0.038)
+        text = "Open recent work or start a new game"
+        text_size_ratio = 0.345
+        color = "#8993A0"
+        h_align = "start"
+    [/UiLabel]
+[/project_manager_subtitle]
 
 [project_manager_recent_title]
 parent = @project_manager
@@ -55,7 +66,7 @@ parent = @project_manager
         size_ratio = (1.0, 0.04)
         text = "Recent Projects"
         text_size_ratio = 0.431
-        color = "#A7AFB9"
+        color = "#B0B8C3"
         h_align = "start"
     [/UiLabel]
 [/project_manager_recent_title]
@@ -66,13 +77,13 @@ parent = @project_manager
         size_ratio = (1.0, 0.058)
         click_signals = ["editor_recent_0"]
         style = {
-            fill = "#23272D",
-            stroke = "#00000000",
-            stroke_width = 0.0,
-            radius = 0.0
+            fill = "#262C35",
+            stroke = "#3B4450",
+            stroke_width = 1.0,
+            radius = 0.012
         }
-        hover = { style = { fill = "#323842", stroke = "#4A525D", stroke_width = 1.0, radius = 0.006 } }
-        pressed = { style = { fill = "#4D84D1", stroke = "#6BA0EA", stroke_width = 1.0, radius = 0.006 } }
+        hover = { style = { fill = "#353D48", stroke = "#566273", stroke_width = 1.0, radius = 0.012 } }
+        pressed = { style = { fill = "#29405F", stroke = "#6BA0EA", stroke_width = 1.0, radius = 0.012 } }
     [/UiButton]
 [/manager_recent_0]
 
@@ -95,13 +106,13 @@ parent = @project_manager
         size_ratio = (1.0, 0.058)
         click_signals = ["editor_recent_1"]
         style = {
-            fill = "#23272D",
-            stroke = "#00000000",
-            stroke_width = 0.0,
-            radius = 0.0
+            fill = "#262C35",
+            stroke = "#3B4450",
+            stroke_width = 1.0,
+            radius = 0.012
         }
-        hover = { style = { fill = "#323842", stroke = "#4A525D", stroke_width = 1.0, radius = 0.006 } }
-        pressed = { style = { fill = "#4D84D1", stroke = "#6BA0EA", stroke_width = 1.0, radius = 0.006 } }
+        hover = { style = { fill = "#353D48", stroke = "#566273", stroke_width = 1.0, radius = 0.012 } }
+        pressed = { style = { fill = "#29405F", stroke = "#6BA0EA", stroke_width = 1.0, radius = 0.012 } }
     [/UiButton]
 [/manager_recent_1]
 
@@ -124,13 +135,13 @@ parent = @project_manager
         size_ratio = (1.0, 0.058)
         click_signals = ["editor_recent_2"]
         style = {
-            fill = "#23272D",
-            stroke = "#00000000",
-            stroke_width = 0.0,
-            radius = 0.0
+            fill = "#262C35",
+            stroke = "#3B4450",
+            stroke_width = 1.0,
+            radius = 0.012
         }
-        hover = { style = { fill = "#323842", stroke = "#4A525D", stroke_width = 1.0, radius = 0.006 } }
-        pressed = { style = { fill = "#4D84D1", stroke = "#6BA0EA", stroke_width = 1.0, radius = 0.006 } }
+        hover = { style = { fill = "#353D48", stroke = "#566273", stroke_width = 1.0, radius = 0.012 } }
+        pressed = { style = { fill = "#29405F", stroke = "#6BA0EA", stroke_width = 1.0, radius = 0.012 } }
     [/UiButton]
 [/manager_recent_2]
 
@@ -153,13 +164,13 @@ parent = @project_manager
         size_ratio = (1.0, 0.058)
         click_signals = ["editor_recent_3"]
         style = {
-            fill = "#23272D",
-            stroke = "#00000000",
-            stroke_width = 0.0,
-            radius = 0.0
+            fill = "#262C35",
+            stroke = "#3B4450",
+            stroke_width = 1.0,
+            radius = 0.012
         }
-        hover = { style = { fill = "#323842", stroke = "#4A525D", stroke_width = 1.0, radius = 0.006 } }
-        pressed = { style = { fill = "#4D84D1", stroke = "#6BA0EA", stroke_width = 1.0, radius = 0.006 } }
+        hover = { style = { fill = "#353D48", stroke = "#566273", stroke_width = 1.0, radius = 0.012 } }
+        pressed = { style = { fill = "#29405F", stroke = "#6BA0EA", stroke_width = 1.0, radius = 0.012 } }
     [/UiButton]
 [/manager_recent_3]
 
@@ -182,13 +193,13 @@ parent = @project_manager
         size_ratio = (1.0, 0.058)
         click_signals = ["editor_recent_4"]
         style = {
-            fill = "#23272D",
-            stroke = "#00000000",
-            stroke_width = 0.0,
-            radius = 0.0
+            fill = "#262C35",
+            stroke = "#3B4450",
+            stroke_width = 1.0,
+            radius = 0.012
         }
-        hover = { style = { fill = "#323842", stroke = "#4A525D", stroke_width = 1.0, radius = 0.006 } }
-        pressed = { style = { fill = "#4D84D1", stroke = "#6BA0EA", stroke_width = 1.0, radius = 0.006 } }
+        hover = { style = { fill = "#353D48", stroke = "#566273", stroke_width = 1.0, radius = 0.012 } }
+        pressed = { style = { fill = "#29405F", stroke = "#6BA0EA", stroke_width = 1.0, radius = 0.012 } }
     [/UiButton]
 [/manager_recent_4]
 
@@ -211,7 +222,7 @@ parent = @project_manager
         size_ratio = (1.0, 0.04)
         text = "Create Project"
         text_size_ratio = 0.431
-        color = "#A7AFB9"
+        color = "#B0B8C3"
         h_align = "start"
     [/UiLabel]
 [/project_manager_create_title]
@@ -224,18 +235,18 @@ parent = @project_manager
         placeholder = "Project name"
         text_size_ratio = 0.431
         color = "#D7DBE0"
-        placeholder_color = "#A7AFB9"
+        placeholder_color = "#8993A0"
         style = {
-            fill = "#1B1E22",
-            stroke = "#343A43",
+            fill = "#1B1E24",
+            stroke = "#3B4450",
             stroke_width = 1.0,
-            radius = 0.004
+            radius = 0.012
         }
         focused_style = {
-            fill = "#1B1E22",
+            fill = "#1B1E24",
             stroke = "#6BA0EA",
             stroke_width = 1.0,
-            radius = 0.004
+            radius = 0.012
         }
     [/UiTextBox]
 [/create_name_box]
@@ -254,15 +265,15 @@ parent = @project_manager
 parent = @create_location_row
     [UiLabel]
         size_ratio = (0.66, 0.82)
-        text = "location: -"
+        text = "Location: not set"
         text_size_ratio = 0.374
-        color = "#A7AFB9"
+        color = "#B0B8C3"
         h_align = "start"
         style = {
-            fill = "#1B1E22",
-            stroke = "#343A43",
+            fill = "#1B1E24",
+            stroke = "#3B4450",
             stroke_width = 1.0,
-            radius = 0.004
+            radius = 0.012
         }
     [/UiLabel]
 [/create_location_label]
