@@ -149,7 +149,8 @@ Passes run in array order. Built-in Sky3D only provides day/evening/night gradie
 - `packed_pbr_params_1`: packed secondary params; standard currently uses it for future data, mesh blend uses it for blend params.
 - `packed_material_params`: packed alpha, side, and flags, decode with `decode_material_params`.
 - `custom_range`: `(offset, length)` for the custom params block.
-- `uv`: mesh UV.
+- `uv`: mesh UV0.
+- `paint_uv`: mesh UV1 for paint/mask atlases; falls back to UV0 when UV1 is missing.
 
 Decoded material flags:
 
