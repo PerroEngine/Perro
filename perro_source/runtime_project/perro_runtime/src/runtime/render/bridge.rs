@@ -2,7 +2,7 @@
 
 use super::Runtime;
 use crate::render_result::RuntimeRenderResult;
-use ahash::AHashMap;
+use ahash::{AHashMap, AHashSet};
 use glam::Mat4;
 use perro_ids::{MaterialID, MeshID, NodeID, TextureID};
 use perro_nodes::{CameraProjection, CameraStream, NodeType, Renderable, SceneNodeData, Spatial};
@@ -472,9 +472,13 @@ impl Runtime {
         }
 
         let mut stack = std::mem::take(&mut self.force_rerender_stack_scratch);
+        let mut seen = AHashSet::default();
         stack.clear();
         stack.push(root_id);
         while let Some(id) = stack.pop() {
+            if !seen.insert(id) {
+                continue;
+            }
             let Some(node) = self.nodes.get(id) else {
                 continue;
             };
@@ -2046,7 +2050,26 @@ fn camera_stream_projection_state(projection: &CameraProjection) -> CameraProjec
 #[cfg(test)]
 mod tests {
     use super::*;
+    use perro_nodes::{Node3D, SceneNode};
     use std::sync::Arc;
+
+    #[test]
+    fn force_rerender_visits_corrupt_child_cycle_once() {
+        let mut runtime = Runtime::new();
+        let a = runtime
+            .nodes
+            .insert(SceneNode::new(SceneNodeData::Node3D(Node3D::new())));
+        let b = runtime
+            .nodes
+            .insert(SceneNode::new(SceneNodeData::Node3D(Node3D::new())));
+        runtime.nodes.get_mut(a).unwrap().add_child(b);
+        runtime.nodes.get_mut(b).unwrap().add_child(a);
+        runtime.clear_dirty_flags();
+
+        runtime.force_rerender(a);
+
+        assert_eq!(runtime.dirty_node_count(), 2);
+    }
 
     #[test]
     fn texture_loaded_rescans_but_texels_updated_does_not() {

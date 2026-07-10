@@ -442,6 +442,12 @@ impl<'a> Parser<'a> {
                     fields.push((canonical_scene_field_name(key), val));
                 }
 
+                Token::Eof => {
+                    return Err(format!("Unterminated node type block `[{ty}]`"));
+                }
+
+                Token::Error(err) => return Err(err.to_string()),
+
                 _ => self.advance(),
             }
         }
@@ -951,6 +957,18 @@ mod tests {
             Err(err) => err,
         };
         assert!(err.contains("Expected"));
+    }
+
+    #[test]
+    fn try_parse_scene_rejects_unterminated_type_block() {
+        let err = Parser::new("$root = @main\n[main]\n[Node]\n")
+            .try_parse_scene()
+            .unwrap_err();
+
+        assert!(
+            err.contains("Unterminated node type block `[Node]`"),
+            "{err}"
+        );
     }
 
     #[test]

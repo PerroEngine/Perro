@@ -14,6 +14,29 @@ fn node_with_name_tags(name: &str, tags: &[&str]) -> SceneNode {
 }
 
 #[test]
+fn subtree_queries_visit_corrupt_child_cycle_once() {
+    let mut arena = NodeArena::new();
+    let a = arena.insert(node_with_name_tags("a", &[]));
+    let b = arena.insert(node_with_name_tags("b", &[]));
+    arena.get_mut(a).unwrap().add_child(b);
+    arena.get_mut(b).unwrap().add_child(a);
+
+    let all = NodeQueryView {
+        expr: &None,
+        scope: QueryScope::Subtree(a),
+    };
+    let rows = query_node_ids(&arena, all, None, None);
+    assert_eq!(rows, vec![a, b]);
+
+    let missing_expr = Some(QueryExpr::Name(vec!["missing".to_string()]));
+    let missing = NodeQueryView {
+        expr: &missing_expr,
+        scope: QueryScope::Subtree(a),
+    };
+    assert_eq!(query_first_node_id(&arena, missing, None, None), None);
+}
+
+#[test]
 fn slot_type_fast_path_matches_full_scan_over_churned_arena() {
     use perro_nodes::Sprite2D;
 
