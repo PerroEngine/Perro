@@ -90,6 +90,16 @@ harness = false
 required-features = ["bench"]
 
 [[bench]]
+name = "modulate_chain"
+harness = false
+required-features = ["bench"]
+
+[[bench]]
+name = "skinned_extraction"
+harness = false
+required-features = ["bench"]
+
+[[bench]]
 name = "runtime_core_hotpaths"
 harness = false
 required-features = ["bench"]
