@@ -101,7 +101,9 @@ impl TextureAPI for RuntimeResourceApi {
                 id,
                 width,
                 height,
-                rgba: Arc::from(rgba),
+                // owned copy of caller slice; backend moves it into the resident
+                // buffer path (StreamRgba::Owned, no Arc round trip).
+                rgba: rgba.to_vec().into(),
             }));
         true
     }

@@ -1,5 +1,46 @@
 use super::*;
 
+/// Per-frame stream frame bytes. `Owned` lets the webcam path move its decoded
+/// `Vec` straight into the command (no `Vec`->`Arc`->`Vec` round trip); `Shared`
+/// lets the video path pass its cached clip frame by cheap refcount.
+#[derive(Debug, Clone)]
+pub enum StreamRgba {
+    Owned(Vec<u8>),
+    Shared(Arc<[u8]>),
+}
+
+impl std::ops::Deref for StreamRgba {
+    type Target = [u8];
+    #[inline]
+    fn deref(&self) -> &[u8] {
+        match self {
+            StreamRgba::Owned(v) => v,
+            StreamRgba::Shared(a) => a,
+        }
+    }
+}
+
+impl AsRef<[u8]> for StreamRgba {
+    #[inline]
+    fn as_ref(&self) -> &[u8] {
+        self
+    }
+}
+
+impl From<Vec<u8>> for StreamRgba {
+    #[inline]
+    fn from(value: Vec<u8>) -> Self {
+        StreamRgba::Owned(value)
+    }
+}
+
+impl From<Arc<[u8]>> for StreamRgba {
+    #[inline]
+    fn from(value: Arc<[u8]>) -> Self {
+        StreamRgba::Shared(value)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum ResourceCommand {
     CreateMesh {
@@ -60,7 +101,7 @@ pub enum ResourceCommand {
         id: TextureID,
         width: u32,
         height: u32,
-        rgba: Arc<[u8]>,
+        rgba: StreamRgba,
     },
     WriteTextureRgbaRegion {
         id: TextureID,
@@ -322,6 +363,12 @@ pub enum RenderEvent {
         id: TextureID,
     },
     TextureLoaded {
+        id: TextureID,
+    },
+    // repeat texel write to an already-loaded stream texture. texels change but
+    // resource refs do not, so consumers must NOT trigger a full scene rescan or
+    // resource-ref recount (unlike TextureLoaded).
+    TextureTexelsUpdated {
         id: TextureID,
     },
     MaterialCreated {

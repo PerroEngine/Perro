@@ -686,6 +686,46 @@ impl ResourceStore {
         true
     }
 
+    /// Update a stream texture's resident CPU copy in place. Reuses the existing
+    /// `by_id` buffer via `copy_from_slice` when dims + len match (no realloc, no
+    /// clone). Stream textures skip the `by_source` duplicate entirely: per-frame
+    /// streams never dedup by source, and by-source lookups fall back to `by_id`.
+    pub(crate) fn write_stream_texture_data(
+        &mut self,
+        id: TextureID,
+        rgba: &[u8],
+        width: u32,
+        height: u32,
+    ) -> bool {
+        if !self.has_texture(id) {
+            return false;
+        }
+        match self.decoded_texture_by_id.get_mut(&id) {
+            Some(existing)
+                if existing.width == width
+                    && existing.height == height
+                    && existing.rgba.len() == rgba.len() =>
+            {
+                existing.rgba.copy_from_slice(rgba);
+            }
+            _ => {
+                self.decoded_texture_by_id.insert(
+                    id,
+                    DecodedTextureRgba {
+                        rgba: rgba.to_vec(),
+                        width,
+                        height,
+                    },
+                );
+            }
+        }
+        // drop any stale by_source duplicate left from initial create/load.
+        if let Some(source) = self.texture_source_by.get(&id) {
+            self.decoded_texture_by_source.remove(&source_key(source));
+        }
+        true
+    }
+
     #[inline]
     pub(crate) fn decoded_texture_data(&self, id: TextureID) -> Option<&DecodedTextureRgba> {
         self.decoded_texture_by_id.get(&id)
@@ -742,7 +782,13 @@ impl ResourceStore {
         &self,
         source: &str,
     ) -> Option<&DecodedTextureRgba> {
-        self.decoded_texture_by_source.get(&source_key(source))
+        let key = source_key(source);
+        if let Some(decoded) = self.decoded_texture_by_source.get(&key) {
+            return Some(decoded);
+        }
+        // stream textures store only by_id (no by_source duplicate); fall back.
+        let id = self.texture_by_source.get(&key).copied()?;
+        self.decoded_texture_by_id.get(&id)
     }
 
     #[inline]

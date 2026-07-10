@@ -318,7 +318,7 @@ impl Gpu3D {
                 width,
                 height,
                 source,
-                filter: self.texture_filter,
+                filter: self.material_texture_filter(slot),
             },
         );
         self.material_textures.insert(slot, cached);
@@ -363,11 +363,43 @@ impl Gpu3D {
                 width,
                 height,
                 source: source.to_string(),
-                filter: self.texture_filter,
+                filter: self.material_texture_filter(slot),
             },
         );
         self.material_textures.insert(slot, cached);
         self.evict_material_texture_bind_groups_for_slot(slot);
+    }
+
+    // stream slots skip mip chains: base level updates in place each frame.
+    fn material_texture_filter(&self, slot: u32) -> TextureFilterMode {
+        if self.stream_texture_slots.contains(&slot) {
+            TextureFilterMode::Linear
+        } else {
+            self.texture_filter
+        }
+    }
+
+    pub fn set_stream_texture(&mut self, slot: u32, is_stream: bool) {
+        if is_stream {
+            self.stream_texture_slots.insert(slot);
+        } else if self.stream_texture_slots.remove(&slot) {
+            self.invalidate_material_texture(slot);
+        }
+    }
+
+    /// In-place base-level upload for a resident stream material texture. Returns
+    /// false when no matching-dimension cache exists so the caller can rebuild.
+    pub fn write_stream_material_texture(
+        &mut self,
+        queue: &wgpu::Queue,
+        slot: u32,
+        width: u32,
+        height: u32,
+        rgba: &[u8],
+    ) -> bool {
+        self.material_textures
+            .get(&slot)
+            .is_some_and(|cached| cached.write_stream_base_level(queue, width, height, rgba))
     }
 
     pub fn upsert_external_material_texture(
@@ -398,6 +430,30 @@ impl Gpu3D {
         let source_hash = perro_ids::parse_hashed_source_uri(source)
             .unwrap_or_else(|| perro_ids::string_to_u64(source));
         if let Some(slot) = self.custom_material_texture_slots.get(&source_hash).copied() {
+            self.invalidate_material_texture(slot);
+        }
+    }
+
+    /// Stream texel update for a custom material image slot bound by source.
+    /// In-place base write when the resident texture matches (single-level +
+    /// dims); else invalidate so the next prepare rebuilds from decoded data.
+    pub fn write_stream_material_texture_source(
+        &mut self,
+        queue: &wgpu::Queue,
+        source: Option<&str>,
+        width: u32,
+        height: u32,
+        rgba: &[u8],
+    ) {
+        let Some(source) = source else {
+            return;
+        };
+        let source_hash = perro_ids::parse_hashed_source_uri(source)
+            .unwrap_or_else(|| perro_ids::string_to_u64(source));
+        let Some(slot) = self.custom_material_texture_slots.get(&source_hash).copied() else {
+            return;
+        };
+        if !self.write_stream_material_texture(queue, slot, width, height, rgba) {
             self.invalidate_material_texture(slot);
         }
     }

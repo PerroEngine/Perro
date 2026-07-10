@@ -401,6 +401,10 @@ pub struct PerroGraphics {
     retained_shadow_casters_cache: Vec<ShadowCaster2DState>,
     retained_shadow_casters_cache_revision: u64,
     camera_stream_targets: AHashMap<NodeID, [u32; 2]>,
+    // resolution of each resident stream (webcam/video) texture. a repeat write
+    // at the same resolution updates texels in place (no rescan, no GPU rebuild);
+    // a first write or resolution change falls back to the full reload path.
+    stream_texture_dims: AHashMap<TextureID, [u32; 2]>,
     retained_camera_streams: Vec<(NodeID, CameraStreamState)>,
     frame_rects_cache: Vec<RectInstanceGpu>,
     late_overlay_sprites_cache: Vec<Sprite2DCommand>,
@@ -695,6 +699,7 @@ impl PerroGraphics {
             retained_shadow_casters_cache: Vec::new(),
             retained_shadow_casters_cache_revision: u64::MAX,
             camera_stream_targets: AHashMap::new(),
+            stream_texture_dims: AHashMap::new(),
             retained_camera_streams: Vec::new(),
             frame_rects_cache: Vec::new(),
             late_overlay_sprites_cache: Vec::new(),
@@ -1055,22 +1060,43 @@ impl PerroGraphics {
                         if checked_runtime_texture_rgba_len(width, height) != Some(rgba.len()) {
                             continue;
                         }
-                        let _ = self.resources.set_decoded_texture_data(
-                            id,
-                            DecodedTextureRgba {
-                                rgba: rgba.to_vec(),
-                                width,
-                                height,
-                            },
-                        );
-                        let texture_source = self.resources.texture_source(id).map(str::to_owned);
-                        if let Some(gpu) = self.gpu.as_mut() {
-                            gpu.invalidate_texture(id, texture_source.as_deref());
+                        // keep resident CPU copy current in place (reuses buffer
+                        // when same size; drops the redundant by_source dup).
+                        let has_texture =
+                            self.resources.write_stream_texture_data(id, &rgba, width, height);
+                        if !has_texture {
+                            continue;
                         }
-                        self.retained_draws_cache_revision = u64::MAX;
-                        self.retained_decals_3d_cache_revision = u64::MAX;
-                        self.retained_sprites_cache_revision = u64::MAX;
-                        self.events.push(RenderEvent::TextureLoaded { id });
+                        let texture_source = self.resources.texture_source(id).map(str::to_owned);
+                        let same_size =
+                            self.stream_texture_dims.get(&id).copied() == Some([width, height]);
+                        if same_size {
+                            // repeat frame: update texels in place. no GPU rebuild,
+                            // no retained re-stage, no full scene rescan.
+                            if let Some(gpu) = self.gpu.as_mut() {
+                                gpu.write_stream_texture(
+                                    id,
+                                    texture_source.as_deref(),
+                                    width,
+                                    height,
+                                    &rgba,
+                                );
+                            }
+                            self.events.push(RenderEvent::TextureTexelsUpdated { id });
+                        } else {
+                            // first frame or resolution change: reload path. mark
+                            // as a stream so the rebuild is single-level, drop the
+                            // stale cache, and re-scan so pending refs resolve.
+                            self.stream_texture_dims.insert(id, [width, height]);
+                            if let Some(gpu) = self.gpu.as_mut() {
+                                gpu.set_stream_texture(id, true);
+                                gpu.invalidate_texture(id, texture_source.as_deref());
+                            }
+                            self.retained_draws_cache_revision = u64::MAX;
+                            self.retained_decals_3d_cache_revision = u64::MAX;
+                            self.retained_sprites_cache_revision = u64::MAX;
+                            self.events.push(RenderEvent::TextureLoaded { id });
+                        }
                         self.redraw_requested = true;
                     }
                     ResourceCommand::WriteTextureRgbaRegion {
@@ -1188,6 +1214,11 @@ impl PerroGraphics {
                         }
                     }
                     ResourceCommand::DropTexture { id } => {
+                        if self.stream_texture_dims.remove(&id).is_some()
+                            && let Some(gpu) = self.gpu.as_mut()
+                        {
+                            gpu.set_stream_texture(id, false);
+                        }
                         if self.resources.drop_texture(id) {
                             self.events.push(RenderEvent::TextureDropped { id });
                         }

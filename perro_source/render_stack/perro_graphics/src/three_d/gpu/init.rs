@@ -2326,6 +2326,7 @@ impl Gpu3D {
             staged_custom_params_values_scratch: Vec::new(),
             material_fallback_texture: None,
             material_textures: AHashMap::new(),
+            stream_texture_slots: AHashSet::new(),
             material_texture_bind_groups: AHashMap::new(),
             custom_material_texture_slots: AHashMap::new(),
             next_custom_material_texture_slot: CUSTOM_MATERIAL_TEXTURE_SLOT_BASE,

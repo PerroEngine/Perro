@@ -64,6 +64,7 @@ pub fn decode_render_request_node_from_event(event: &RenderEvent) -> Option<Node
         | RenderEvent::MaterialCreated { request, .. }
         | RenderEvent::Failed { request, .. } => *request,
         RenderEvent::TextureLoaded { .. }
+        | RenderEvent::TextureTexelsUpdated { .. }
         | RenderEvent::MaterialLoaded { .. }
         | RenderEvent::MeshDropped { .. }
         | RenderEvent::TextureDropped { .. }

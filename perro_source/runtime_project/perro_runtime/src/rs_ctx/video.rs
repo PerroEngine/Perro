@@ -165,7 +165,8 @@ impl RuntimeResourceApi {
                 id: texture,
                 width: width.max(1),
                 height: height.max(1),
-                rgba,
+                // cached clip frame stays shared (cheap refcount, no copy).
+                rgba: rgba.into(),
             }));
     }
 

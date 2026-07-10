@@ -167,6 +167,37 @@ pub(crate) fn write_rgba_mip_chain(
     }
 }
 
+/// Upload rgba into mip level 0 of an existing texture (no mip regen). Used by
+/// the stream-texture in-place path so per-frame webcam/video writes reuse the
+/// resident GPU texture + bind group instead of recreating them.
+pub(crate) fn write_texture_base_level(
+    queue: &wgpu::Queue,
+    texture: &wgpu::Texture,
+    width: u32,
+    height: u32,
+    rgba: &[u8],
+) {
+    queue.write_texture(
+        wgpu::TexelCopyTextureInfo {
+            texture,
+            mip_level: 0,
+            origin: wgpu::Origin3d::ZERO,
+            aspect: wgpu::TextureAspect::All,
+        },
+        rgba,
+        wgpu::TexelCopyBufferLayout {
+            offset: 0,
+            bytes_per_row: Some(4 * width),
+            rows_per_image: Some(height),
+        },
+        wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        },
+    );
+}
+
 pub(crate) fn sampler_descriptor(
     label: &'static str,
     filter: TextureFilterMode,

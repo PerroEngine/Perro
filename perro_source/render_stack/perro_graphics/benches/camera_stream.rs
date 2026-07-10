@@ -22,6 +22,12 @@ const HEIGHT: u32 = 720;
 const WARMUP_FRAMES: usize = 8;
 const SAMPLE_FRAMES: usize = 60;
 
+// webcam-style bench state: a bare `redraw` fn can't capture, so the displayed
+// stream texture id + resolution set during setup live here for each case.
+std::thread_local! {
+    static WEBCAM_STREAM: std::cell::Cell<(u64, u32, u32)> = const { std::cell::Cell::new((0, 0, 0)) };
+}
+
 #[derive(Default)]
 struct TimingSum {
     total: Duration,
@@ -183,6 +189,19 @@ fn main() {
                 setup: |w| setup_stream_3d(w, 1, 1024, 10_000),
                 redraw: redraw_3d,
             },
+            // webcam CPU-upload path: per-frame WriteTextureRgba to a displayed
+            // stream texture (exercises findings 1-3, not covered by the
+            // render-target stream cases above).
+            BenchCase {
+                name: "webcam_512_sprites1k",
+                setup: |w| setup_stream_webcam(w, 512, 1_000),
+                redraw: redraw_webcam,
+            },
+            BenchCase {
+                name: "webcam_1024_sprites10k",
+                setup: |w| setup_stream_webcam(w, 1024, 10_000),
+                redraw: redraw_webcam,
+            },
         ],
     };
     event_loop.run_app(&mut app).expect("run app");
@@ -262,6 +281,56 @@ fn setup_stream_3d(
     }
     let _ = graphics.draw_frame_timed();
     graphics
+}
+
+fn setup_stream_webcam(
+    window: &Arc<Window>,
+    resolution: u32,
+    sprite_count: u32,
+) -> PerroGraphics {
+    let mut graphics = base_graphics(window);
+    let texture = TextureID::from_parts(900_001, 1);
+    graphics.submit(RenderCommand::Resource(
+        ResourceCommand::CreateExternalTexture {
+            request: RenderRequestID::new(9),
+            id: texture,
+            source: "webcam://bench".to_string(),
+            reserved: true,
+            width: resolution,
+            height: resolution,
+        },
+    ));
+    for i in 0..sprite_count {
+        graphics.submit(RenderCommand::TwoD(Command2D::UpsertSprite {
+            node: NodeID::from_parts(600_000 + i, 0),
+            sprite: sprite_state(i, texture),
+        }));
+    }
+    // prime the first frame so the displayed sprite texture builds; subsequent
+    // redraws hit the persistent-texture in-place upload path.
+    graphics.submit(RenderCommand::Resource(ResourceCommand::WriteTextureRgba {
+        id: texture,
+        width: resolution,
+        height: resolution,
+        rgba: webcam_frame_bytes(resolution, resolution).into(),
+    }));
+    let _ = graphics.draw_frame_timed();
+    WEBCAM_STREAM.with(|state| state.set((texture.as_u64(), resolution, resolution)));
+    graphics
+}
+
+fn redraw_webcam(graphics: &mut PerroGraphics) {
+    let (raw, width, height) = WEBCAM_STREAM.with(|state| state.get());
+    graphics.submit(RenderCommand::Resource(ResourceCommand::WriteTextureRgba {
+        id: TextureID::from_u64(raw),
+        width,
+        height,
+        rgba: webcam_frame_bytes(width, height).into(),
+    }));
+}
+
+fn webcam_frame_bytes(width: u32, height: u32) -> Vec<u8> {
+    vec![0u8; width as usize * height as usize * 4]
 }
 
 fn redraw_2d(graphics: &mut PerroGraphics) {

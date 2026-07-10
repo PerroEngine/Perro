@@ -21,6 +21,10 @@ use std::{
 #[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
 use std::sync::atomic::AtomicBool;
 
+// bound the capture->runtime handoff; a couple frames across the few live
+// webcams. try_send drops past this so a lagging runtime never grows memory.
+pub(crate) const WEBCAM_FRAME_CHANNEL_CAP: usize = 8;
+
 pub(crate) struct WebcamFrameMessage {
     pub(crate) id: WebcamID,
     pub(crate) frame: perro_resource_api::sub_apis::WebcamFrame,
@@ -307,7 +311,7 @@ pub struct RuntimeResourceApi {
     pub(super) skeleton_3d_load_rx: Mutex<mpsc::Receiver<AsyncSkeleton3DLoadResult>>,
     pub(super) viewport_size: Mutex<(u32, u32)>,
     #[cfg_attr(test, allow(dead_code))]
-    pub(crate) webcam_frame_tx: mpsc::Sender<WebcamFrameMessage>,
+    pub(crate) webcam_frame_tx: mpsc::SyncSender<WebcamFrameMessage>,
     pub(crate) webcam_frame_rx: Mutex<mpsc::Receiver<WebcamFrameMessage>>,
     pub(crate) webcam_error_tx: mpsc::Sender<WebcamErrorMessage>,
     pub(crate) webcam_error_rx: Mutex<mpsc::Receiver<WebcamErrorMessage>>,
@@ -352,7 +356,10 @@ impl RuntimeResourceApi {
         let (animation_tree_load_tx, animation_tree_load_rx) = mpsc::channel();
         let (skeleton_2d_load_tx, skeleton_2d_load_rx) = mpsc::channel();
         let (skeleton_3d_load_tx, skeleton_3d_load_rx) = mpsc::channel();
-        let (webcam_frame_tx, webcam_frame_rx) = mpsc::channel();
+        // bounded latest-only handoff: capture thread drops stale frames when the
+        // runtime lags instead of growing memory + latency unboundedly. small cap
+        // holds a couple frames across the few live webcams; receiver coalesces.
+        let (webcam_frame_tx, webcam_frame_rx) = mpsc::sync_channel(WEBCAM_FRAME_CHANNEL_CAP);
         let (webcam_error_tx, webcam_error_rx) = mpsc::channel();
         let api = Arc::new(Self {
             state: Mutex::new(RuntimeResourceState::new()),
@@ -697,6 +704,9 @@ impl RuntimeResourceApi {
             RenderEvent::TextureLoaded { id } => {
                 state.texture_loaded_by_id.insert(*id);
             }
+            // texels changed on an already-loaded stream texture; load state
+            // + pending resolution unchanged.
+            RenderEvent::TextureTexelsUpdated { .. } => {}
             RenderEvent::MaterialLoaded { id } => {
                 if !state.material_load_pending_by_id.contains(id) {
                     state.material_write_pending_by_id.remove(id);
