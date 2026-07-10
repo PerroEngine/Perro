@@ -1396,25 +1396,30 @@ fn advance_boomerang_frame(
         return 0.0;
     }
 
-    let mut dir = if boomerang_direction.is_sign_negative() {
-        -1.0
-    } else {
-        1.0
-    };
     let last = frame_count.saturating_sub(1) as f32;
-    let mut next = current_frame + delta_frames * dir;
-
-    while next > last {
-        next = (2.0 * last) - next;
-        dir *= -1.0;
-    }
-    while next < 0.0 {
-        next = -next;
-        dir *= -1.0;
+    if !current_frame.is_finite() || !delta_frames.is_finite() {
+        *boomerang_direction = 1.0;
+        return if current_frame.is_finite() {
+            current_frame.clamp(0.0, last)
+        } else {
+            0.0
+        };
     }
 
-    *boomerang_direction = dir;
-    next
+    let period = last * 2.0;
+    let phase = if boomerang_direction.is_sign_negative() {
+        period - current_frame.clamp(0.0, last)
+    } else {
+        current_frame.clamp(0.0, last)
+    };
+    let phase = (phase + delta_frames).rem_euclid(period);
+    if phase < last {
+        *boomerang_direction = 1.0;
+        phase
+    } else {
+        *boomerang_direction = -1.0;
+        period - phase
+    }
 }
 
 pub(super) fn playback_frame_to_frame(
@@ -1675,6 +1680,34 @@ mod tests {
             sampled,
             vec![1, 2, 3, 4, 5, 4, 3, 2, 1, 0, 1, 2, 3, 4, 5, 4, 3, 2, 1, 0]
         );
+    }
+
+    #[test]
+    fn boomerang_large_step_matches_small_steps() {
+        let mut large_dir = 1.0;
+        let large = advance_boomerang_frame(0.0, 25.0, 6, &mut large_dir);
+
+        let mut small_dir = 1.0;
+        let mut small = 0.0;
+        for _ in 0..25 {
+            small = advance_boomerang_frame(small, 1.0, 6, &mut small_dir);
+        }
+
+        assert_eq!(large, small);
+        assert_eq!(large_dir, small_dir);
+        assert!((0.0..=5.0).contains(&large));
+    }
+
+    #[test]
+    fn boomerang_rejects_non_finite_state() {
+        let mut dir = -1.0;
+        let frame = advance_boomerang_frame(f32::INFINITY, 1.0, 6, &mut dir);
+        assert_eq!(frame, 0.0);
+        assert_eq!(dir, 1.0);
+
+        let frame = advance_boomerang_frame(3.0, f32::INFINITY, 6, &mut dir);
+        assert_eq!(frame, 3.0);
+        assert_eq!(dir, 1.0);
     }
 
     #[test]

@@ -212,13 +212,17 @@ impl Runtime {
             return 0;
         }
 
-        let mut queued = std::mem::take(&mut self.signal_runtime.queued_ui_signals);
+        let queued = std::mem::take(&mut self.signal_runtime.queued_ui_signals);
         let mut calls = 0usize;
         for (signal, params) in queued.iter() {
             calls += SignalAPI::signal_emit(self, *signal, params.as_ref());
         }
-        queued.clear();
-        self.signal_runtime.queued_ui_signals = queued;
+        // Signal handlers may queue more UI signals during dispatch. Keep them
+        // for the next flush instead of replacing the live queue with scratch.
+        crate::runtime::state::recycle_callback_queue(
+            queued,
+            &mut self.signal_runtime.queued_ui_signals,
+        );
         calls
     }
 }

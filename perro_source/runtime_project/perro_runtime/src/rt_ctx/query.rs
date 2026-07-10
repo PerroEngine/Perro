@@ -522,7 +522,11 @@ fn scan_subtree(
 ) -> Vec<NodeID> {
     let mut out = Vec::new();
     let mut stack = vec![root_id];
+    let mut seen = AHashSet::default();
     while let Some(id) = stack.pop() {
+        if !seen.insert(id) {
+            continue;
+        }
         let Some(node) = arena.get(id) else {
             continue;
         };
@@ -592,7 +596,11 @@ fn first_in_subtree(
     spatial: Option<&QuerySpatialIndex>,
 ) -> Option<NodeID> {
     let mut stack = vec![root_id];
+    let mut seen = AHashSet::default();
     while let Some(id) = stack.pop() {
+        if !seen.insert(id) {
+            continue;
+        }
         let Some(node) = arena.get(id) else {
             continue;
         };

@@ -944,8 +944,27 @@ impl NodeAPI for Runtime {
         if child_id.is_nil() {
             return false;
         }
+        if parent_id == child_id {
+            return false;
+        }
         if !parent_id.is_nil() && self.nodes.get(parent_id).is_none() {
             return false;
+        }
+
+        // Reject a parent inside the child's subtree. Bound the upward walk by
+        // the live-node count so an already-corrupt parent cycle also fails
+        // closed instead of hanging this API.
+        let mut ancestor = parent_id;
+        let mut remaining = self.nodes.len();
+        while !ancestor.is_nil() {
+            if ancestor == child_id || remaining == 0 {
+                return false;
+            }
+            let Some(node) = self.nodes.get(ancestor) else {
+                return false;
+            };
+            ancestor = node.get_parent();
+            remaining -= 1;
         }
 
         let old_parent = match self.nodes.get(child_id) {
