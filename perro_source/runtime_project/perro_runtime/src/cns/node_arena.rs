@@ -272,11 +272,16 @@ impl NodeArena {
             // No free slots, push to end
             let index = self.nodes.len();
             self.nodes.push(Some(node));
-            self.generations.push(0);
+            let generation = if let Some(generation) = self.generations.get(index).copied() {
+                generation
+            } else {
+                self.generations.push(0);
+                0
+            };
             self.node_types.push(node_type);
             self.parents.push(parent);
             self.active_len = self.active_len.saturating_add(1);
-            NodeID::from_parts(index as u32, 0)
+            NodeID::from_parts(index as u32, generation)
         };
         if !name.is_empty() {
             self.name_index.entry(name).or_default().push(id);
@@ -558,21 +563,19 @@ impl NodeArena {
 
     // ---- Whole-arena state ----
 
-    /// Clear all nodes and reset the arena to only the nil sentinel slot.
+    /// Clear all nodes while preserving generation history for stale IDs.
     pub fn clear(&mut self) {
         self.bump_structural_revision();
-        self.nodes.clear();
-        self.generations.clear();
-        self.node_types.clear();
-        self.parents.clear();
+        for index in 1..self.nodes.len() {
+            self.generations[index] = self.generations[index].wrapping_add(1);
+        }
+        self.nodes.truncate(1);
+        self.node_types.truncate(1);
+        self.parents.truncate(1);
         self.free_indices.clear();
         self.name_index.clear();
         self.tag_index.clear();
         self.active_len = 0;
-        self.nodes.push(None);
-        self.generations.push(0);
-        self.node_types.push(NodeType::Node);
-        self.parents.push(NodeID::nil());
     }
 
     /// Return the number of live nodes.

@@ -153,14 +153,13 @@ fn apply_pending_impulses_2d_parts(
         let Some(rb) = world.bodies.get_mut(state.handle) else {
             continue;
         };
-        let len_sq = impulse.impulse.x * impulse.impulse.x + impulse.impulse.y * impulse.impulse.y;
-        if len_sq <= 0.000_001 {
+        let x = impulse.impulse.x * coef;
+        let y = impulse.impulse.y * coef;
+        let len_sq = x * x + y * y;
+        if !len_sq.is_finite() || len_sq <= 0.000_001 {
             continue;
         }
-        rb.apply_impulse(
-            na2::Vector2::new(impulse.impulse.x * coef, impulse.impulse.y * coef),
-            true,
-        );
+        rb.apply_impulse(na2::Vector2::new(x, y), true);
         clamp_rb_speed_2d(rb, MAX_RIGID_SPEED_2D);
     }
     *pending = pending_taken;
@@ -188,14 +187,13 @@ fn apply_pending_forces_2d_parts(
         let Some(rb) = world.bodies.get_mut(state.handle) else {
             continue;
         };
-        let len_sq = force.force.x * force.force.x + force.force.y * force.force.y;
-        if len_sq <= 0.000_001 {
+        let x = force.force.x * dt * coef;
+        let y = force.force.y * dt * coef;
+        let len_sq = x * x + y * y;
+        if !len_sq.is_finite() || len_sq <= 0.000_001 {
             continue;
         }
-        rb.apply_impulse(
-            na2::Vector2::new(force.force.x * dt * coef, force.force.y * dt * coef),
-            true,
-        );
+        rb.apply_impulse(na2::Vector2::new(x, y), true);
         clamp_rb_speed_2d(rb, MAX_RIGID_SPEED_2D);
     }
     *pending = pending_taken;
@@ -221,20 +219,14 @@ fn apply_pending_impulses_3d_parts(
         let Some(rb) = world.bodies.get_mut(state.handle) else {
             continue;
         };
-        let len_sq = impulse.impulse.x * impulse.impulse.x
-            + impulse.impulse.y * impulse.impulse.y
-            + impulse.impulse.z * impulse.impulse.z;
-        if len_sq <= 0.000_001 {
+        let x = impulse.impulse.x * coef;
+        let y = impulse.impulse.y * coef;
+        let z = impulse.impulse.z * coef;
+        let len_sq = x * x + y * y + z * z;
+        if !len_sq.is_finite() || len_sq <= 0.000_001 {
             continue;
         }
-        rb.apply_impulse(
-            na3::Vector3::new(
-                impulse.impulse.x * coef,
-                impulse.impulse.y * coef,
-                impulse.impulse.z * coef,
-            ),
-            true,
-        );
+        rb.apply_impulse(na3::Vector3::new(x, y, z), true);
         clamp_rb_speed_3d(rb, MAX_RIGID_SPEED_3D);
     }
     *pending = pending_taken;
@@ -262,20 +254,14 @@ fn apply_pending_forces_3d_parts(
         let Some(rb) = world.bodies.get_mut(state.handle) else {
             continue;
         };
-        let len_sq = force.force.x * force.force.x
-            + force.force.y * force.force.y
-            + force.force.z * force.force.z;
-        if len_sq <= 0.000_001 {
+        let x = force.force.x * dt * coef;
+        let y = force.force.y * dt * coef;
+        let z = force.force.z * dt * coef;
+        let len_sq = x * x + y * y + z * z;
+        if !len_sq.is_finite() || len_sq <= 0.000_001 {
             continue;
         }
-        rb.apply_impulse(
-            na3::Vector3::new(
-                force.force.x * dt * coef,
-                force.force.y * dt * coef,
-                force.force.z * dt * coef,
-            ),
-            true,
-        );
+        rb.apply_impulse(na3::Vector3::new(x, y, z), true);
         clamp_rb_speed_3d(rb, MAX_RIGID_SPEED_3D);
     }
     *pending = pending_taken;
@@ -433,6 +419,33 @@ mod tests {
             system.queue_force_3d(id, Vector3::new(0.4, 0.1, -0.2));
             system.queue_impulse_3d(id, Vector3::new(0.02, 0.01, 0.03));
         }
+    }
+
+    #[test]
+    fn force_queue_and_step_reject_nonfinite_values() {
+        let mut system = mixed_system();
+        let id_2d = NodeID::new(2);
+        let id_3d = NodeID::new(11);
+
+        system.queue_force_2d(id_2d, Vector2::new(f32::NAN, 1.0));
+        system.queue_impulse_2d(id_2d, Vector2::new(1.0, f32::INFINITY));
+        system.queue_force_3d(id_3d, Vector3::new(1.0, f32::NAN, 1.0));
+        system.queue_impulse_3d(id_3d, Vector3::new(f32::NEG_INFINITY, 1.0, 1.0));
+        assert!(system.pending_forces_2d.is_empty());
+        assert!(system.pending_impulses_2d.is_empty());
+        assert!(system.pending_forces_3d.is_empty());
+        assert!(system.pending_impulses_3d.is_empty());
+
+        system.queue_force_2d(id_2d, Vector2::new(1.0, 1.0));
+        system.queue_force_3d(id_3d, Vector3::new(1.0, 1.0, 1.0));
+        system.apply_pending_forces_2d(f32::NAN, 1.0 / 60.0);
+        system.apply_pending_forces_3d(f32::NAN, 1.0 / 60.0);
+        let body_2d = system.world_2d.as_ref().unwrap();
+        let body_2d = body_2d.bodies.get(body_2d.body_map[&id_2d].handle).unwrap();
+        let body_3d = system.world_3d.as_ref().unwrap();
+        let body_3d = body_3d.bodies.get(body_3d.body_map[&id_3d].handle).unwrap();
+        assert!(body_2d.linvel().iter().all(|value| value.is_finite()));
+        assert!(body_3d.linvel().iter().all(|value| value.is_finite()));
     }
 
     fn pose_2d(system: &PhysicsSystem, id: NodeID) -> [f32; 2] {

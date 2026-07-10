@@ -593,12 +593,13 @@ fn parse_f32_table_field(
             format!("{key} must be finite number"),
         ));
     };
-    if raw.is_finite() && raw >= 0.0 {
-        Ok(raw as f32)
+    let parsed = raw as f32;
+    if raw.is_finite() && raw >= 0.0 && parsed.is_finite() {
+        Ok(parsed)
     } else {
         Err(ProjectError::InvalidField(
             path,
-            format!("{key} must be >= 0"),
+            format!("{key} must be finite and >= 0"),
         ))
     }
 }
@@ -658,8 +659,9 @@ fn parse_frame_rate_cap(
                 "must be positive number, \"unlimited\", or \"refresh_rate\"".to_string(),
             )
         })?;
-    if raw.is_finite() && raw > 0.0 {
-        Ok(FrameRateCap::Fps(raw as f32))
+    let parsed = raw as f32;
+    if raw.is_finite() && raw > 0.0 && parsed.is_finite() {
+        Ok(FrameRateCap::Fps(parsed))
     } else {
         Ok(FrameRateCap::Unlimited)
     }
@@ -675,16 +677,18 @@ fn parse_target_fixed_update(
         return Ok(Some(60.0));
     };
     if let Some(num) = value.as_float() {
-        if num <= 0.0 || !num.is_finite() {
+        let parsed = num as f32;
+        if num <= 0.0 || !num.is_finite() || !parsed.is_finite() {
             return Ok(None);
         }
-        return Ok(Some(num as f32));
+        return Ok(Some(parsed));
     }
     if let Some(num) = value.as_integer() {
         if num <= 0 {
             return Ok(None);
         }
-        return Ok(Some(num as f32));
+        let parsed = num as f32;
+        return Ok(parsed.is_finite().then_some(parsed));
     }
     Err(ProjectError::InvalidField(
         "runtime.target_fixed_update",
@@ -710,13 +714,14 @@ fn parse_physics_gravity(
             "must be a finite number".to_string(),
         ));
     };
-    if !num.is_finite() {
+    let parsed = num as f32;
+    if !num.is_finite() || !parsed.is_finite() {
         return Err(ProjectError::InvalidField(
             "physics.gravity",
             "must be a finite number".to_string(),
         ));
     }
-    Ok(num as f32)
+    Ok(parsed)
 }
 
 fn parse_physics_coef(
@@ -737,13 +742,14 @@ fn parse_physics_coef(
             "must be a finite positive number".to_string(),
         ));
     };
-    if !num.is_finite() || num <= 0.0 {
+    let parsed = num as f32;
+    if !num.is_finite() || num <= 0.0 || !parsed.is_finite() {
         return Err(ProjectError::InvalidField(
             "physics.coef",
             "must be a finite positive number".to_string(),
         ));
     }
-    Ok(num as f32)
+    Ok(parsed)
 }
 fn parse_occlusion_culling_with_default(
     table: &toml::map::Map<String, Value>,

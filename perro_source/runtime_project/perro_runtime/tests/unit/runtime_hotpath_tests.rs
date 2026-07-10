@@ -187,6 +187,20 @@ fn node_arena_len_tracks_active_nodes() {
 }
 
 #[test]
+fn node_arena_clear_never_revives_old_ids() {
+    let mut arena = NodeArena::new();
+    let stale = arena.insert(SceneNode::new(SceneNodeData::Node3D(Node3D::new())));
+
+    arena.clear();
+    let fresh = arena.insert(SceneNode::new(SceneNodeData::Node3D(Node3D::new())));
+
+    assert_eq!(fresh.index(), stale.index());
+    assert_ne!(fresh.generation(), stale.generation());
+    assert!(!arena.contains(stale));
+    assert!(arena.contains(fresh));
+}
+
+#[test]
 fn node_arena_name_index_tracks_insert_rename_remove() {
     let mut arena = NodeArena::new();
     let mut named = SceneNode::new(SceneNodeData::Node3D(Node3D::new()));

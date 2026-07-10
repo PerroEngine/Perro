@@ -138,23 +138,35 @@ impl PhysicsSystem {
     }
 
     pub fn queue_impulse_2d(&mut self, id: NodeID, impulse: Vector2) {
+        if !impulse.x.is_finite() || !impulse.y.is_finite() {
+            return;
+        }
         self.world_2d_idle_cached = false;
         self.pending_impulses_2d
             .push(PendingImpulse2D { id, impulse });
     }
 
     pub fn queue_force_2d(&mut self, id: NodeID, force: Vector2) {
+        if !force.x.is_finite() || !force.y.is_finite() {
+            return;
+        }
         self.world_2d_idle_cached = false;
         self.pending_forces_2d.push(PendingForce2D { id, force });
     }
 
     pub fn queue_impulse_3d(&mut self, id: NodeID, impulse: Vector3) {
+        if !impulse.x.is_finite() || !impulse.y.is_finite() || !impulse.z.is_finite() {
+            return;
+        }
         self.world_3d_idle_cached = false;
         self.pending_impulses_3d
             .push(PendingImpulse3D { id, impulse });
     }
 
     pub fn queue_force_3d(&mut self, id: NodeID, force: Vector3) {
+        if !force.x.is_finite() || !force.y.is_finite() || !force.z.is_finite() {
+            return;
+        }
         self.world_3d_idle_cached = false;
         self.pending_forces_3d.push(PendingForce3D { id, force });
     }
