@@ -222,8 +222,8 @@ impl Runtime {
                 // Fast path: pull the (few) skinned meshes bound to each dirty
                 // skeleton from the reverse index. O(skinned) not O(all nodes).
                 let mesh_map = std::mem::take(&mut self.render_3d.skeleton_mesh_map);
-                for skeleton in dirty_skeletons.iter().copied() {
-                    if let Some(bucket) = mesh_map.get(&skeleton) {
+                for skeleton in &dirty_skeletons {
+                    if let Some(bucket) = mesh_map.get(skeleton) {
                         for &mesh_id in bucket {
                             if self.nodes.get(mesh_id).is_some() && traversal_seen.insert(mesh_id) {
                                 traversal_ids.push(mesh_id);
