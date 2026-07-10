@@ -376,7 +376,7 @@ fn blend_poses(poses: &[Pose], weights: &[f32], mask: &AnimationTreeMask) -> Pos
             if !seen.insert(key) {
                 continue;
             }
-            let mut acc: Option<PoseTrack> = None;
+            let mut acc: Option<(PoseTrack, BlendWeights)> = None;
             for (idx, pose) in poses.iter().enumerate() {
                 let Some(track) = pose.tracks.get(key) else {
                     continue;
@@ -388,23 +388,147 @@ fn blend_poses(poses: &[Pose], weights: &[f32], mask: &AnimationTreeMask) -> Pos
                 if w <= 0.0 {
                     continue;
                 }
-                acc = Some(if let Some(mut prev) = acc {
-                    prev.value = add_value(&prev.value, &scale_value(&track.value, w));
-                    prev.transform2d_mask |= track.transform2d_mask;
-                    prev.transform3d_mask |= track.transform3d_mask;
-                    prev
+                acc = Some(if let Some((mut prev, mut blended_weights)) = acc {
+                    blend_track(&mut prev, &mut blended_weights, track, w);
+                    (prev, blended_weights)
                 } else {
-                    let mut first = track.clone();
-                    first.value = scale_value(&first.value, w);
-                    first
+                    (track.clone(), BlendWeights::new(track, w))
                 });
             }
-            if let Some(track) = acc {
+            if let Some((track, _)) = acc {
                 out.tracks.insert(key.clone(), track);
             }
         }
     }
     out
+}
+
+#[derive(Clone, Copy, Default)]
+struct BlendWeights {
+    value: f32,
+    position: f32,
+    rotation: f32,
+    scale: f32,
+}
+
+impl BlendWeights {
+    fn new(track: &PoseTrack, weight: f32) -> Self {
+        let transform_mask = if matches!(track.value, AnimationTrackValue::Transform2D(_)) {
+            track.transform2d_mask
+        } else {
+            track.transform3d_mask
+        };
+        Self {
+            value: weight,
+            position: if transform_mask & perro_animation::ANIMATION_TRANSFORM_MASK_POSITION != 0 {
+                weight
+            } else {
+                0.0
+            },
+            rotation: if transform_mask & perro_animation::ANIMATION_TRANSFORM_MASK_ROTATION != 0 {
+                weight
+            } else {
+                0.0
+            },
+            scale: if transform_mask & perro_animation::ANIMATION_TRANSFORM_MASK_SCALE != 0 {
+                weight
+            } else {
+                0.0
+            },
+        }
+    }
+}
+
+fn blend_track(out: &mut PoseTrack, weights: &mut BlendWeights, next: &PoseTrack, weight: f32) {
+    match (&mut out.value, &next.value) {
+        (AnimationTrackValue::Transform2D(a), AnimationTrackValue::Transform2D(b)) => {
+            blend_transform2d_channel(a, b, next.transform2d_mask, weights, weight);
+        }
+        (AnimationTrackValue::Transform3D(a), AnimationTrackValue::Transform3D(b)) => {
+            blend_transform3d_channel(a, b, next.transform3d_mask, weights, weight);
+        }
+        (a, b) => {
+            let total = weights.value + weight;
+            *a = blend_value(a, b, weight / total);
+            weights.value = total;
+        }
+    }
+    out.transform2d_mask |= next.transform2d_mask;
+    out.transform3d_mask |= next.transform3d_mask;
+}
+
+fn blend_transform2d_channel(
+    out: &mut perro_runtime_api::perro_structs::Transform2D,
+    next: &perro_runtime_api::perro_structs::Transform2D,
+    mask: u8,
+    weights: &mut BlendWeights,
+    weight: f32,
+) {
+    if mask & perro_animation::ANIMATION_TRANSFORM_MASK_POSITION != 0 {
+        let t = weight / (weights.position + weight);
+        out.position = out.position.lerped(next.position, t);
+        weights.position += weight;
+    }
+    if mask & perro_animation::ANIMATION_TRANSFORM_MASK_ROTATION != 0 {
+        let t = weight / (weights.rotation + weight);
+        out.rotation = lerp_angle(out.rotation, next.rotation, t);
+        weights.rotation += weight;
+    }
+    if mask & perro_animation::ANIMATION_TRANSFORM_MASK_SCALE != 0 {
+        let t = weight / (weights.scale + weight);
+        out.scale = out.scale.lerped(next.scale, t);
+        weights.scale += weight;
+    }
+}
+
+fn blend_transform3d_channel(
+    out: &mut perro_runtime_api::perro_structs::Transform3D,
+    next: &perro_runtime_api::perro_structs::Transform3D,
+    mask: u8,
+    weights: &mut BlendWeights,
+    weight: f32,
+) {
+    if mask & perro_animation::ANIMATION_TRANSFORM_MASK_POSITION != 0 {
+        let t = weight / (weights.position + weight);
+        out.position = out.position.lerped(next.position, t);
+        weights.position += weight;
+    }
+    if mask & perro_animation::ANIMATION_TRANSFORM_MASK_ROTATION != 0 {
+        let t = weight / (weights.rotation + weight);
+        out.rotation = out.rotation.slerped(next.rotation, t);
+        weights.rotation += weight;
+    }
+    if mask & perro_animation::ANIMATION_TRANSFORM_MASK_SCALE != 0 {
+        let t = weight / (weights.scale + weight);
+        out.scale = out.scale.lerped(next.scale, t);
+        weights.scale += weight;
+    }
+}
+
+fn lerp_angle(a: f32, b: f32, t: f32) -> f32 {
+    let delta =
+        (b - a + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU) - std::f32::consts::PI;
+    a + delta * t
+}
+
+fn blend_value(a: &AnimationTrackValue, b: &AnimationTrackValue, t: f32) -> AnimationTrackValue {
+    match (a, b) {
+        (AnimationTrackValue::F32(a), AnimationTrackValue::F32(b)) => {
+            AnimationTrackValue::F32(a + (b - a) * t)
+        }
+        (AnimationTrackValue::Vec2(a), AnimationTrackValue::Vec2(b)) => {
+            AnimationTrackValue::Vec2([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t])
+        }
+        (AnimationTrackValue::Vec3(a), AnimationTrackValue::Vec3(b)) => {
+            AnimationTrackValue::Vec3([
+                a[0] + (b[0] - a[0]) * t,
+                a[1] + (b[1] - a[1]) * t,
+                a[2] + (b[2] - a[2]) * t,
+            ])
+        }
+        _ if t >= 0.5 => b.clone(),
+        _ => a.clone(),
+    }
 }
 
 fn add_pose_delta(base: &mut Pose, pose: &Pose, weight: f32, mask: &AnimationTreeMask) {
@@ -673,5 +797,65 @@ mod tests {
         queue_current_slot_event_once(&mut slot, animation, &events);
 
         assert_eq!(slot.pending_event_frames, [3]);
+    }
+
+    #[test]
+    fn transform2d_blend_uses_short_rotation_arc_and_scale() {
+        let mut out = perro_runtime_api::perro_structs::Transform2D::new(
+            perro_runtime_api::perro_structs::Vector2::ZERO,
+            350.0_f32.to_radians(),
+            perro_runtime_api::perro_structs::Vector2::ONE,
+        );
+        let next = perro_runtime_api::perro_structs::Transform2D::new(
+            perro_runtime_api::perro_structs::Vector2::ZERO,
+            10.0_f32.to_radians(),
+            perro_runtime_api::perro_structs::Vector2::new(3.0, 5.0),
+        );
+        let mut weights = BlendWeights {
+            rotation: 1.0,
+            scale: 1.0,
+            ..Default::default()
+        };
+
+        blend_transform2d_channel(
+            &mut out,
+            &next,
+            perro_animation::ANIMATION_TRANSFORM_MASK_ROTATION
+                | perro_animation::ANIMATION_TRANSFORM_MASK_SCALE,
+            &mut weights,
+            1.0,
+        );
+
+        assert!(out.rotation.sin().abs() < 1e-5);
+        assert_eq!(
+            out.scale,
+            perro_runtime_api::perro_structs::Vector2::new(2.0, 3.0)
+        );
+    }
+
+    #[test]
+    fn transform3d_mask_does_not_dilute_only_authored_rotation() {
+        let mut out = perro_runtime_api::perro_structs::Transform3D::IDENTITY;
+        let next_rotation = perro_runtime_api::perro_structs::Quaternion::from_euler_xyz(
+            0.0,
+            0.0,
+            std::f32::consts::FRAC_PI_2,
+        );
+        let next = perro_runtime_api::perro_structs::Transform3D::new(
+            perro_runtime_api::perro_structs::Vector3::ZERO,
+            next_rotation,
+            perro_runtime_api::perro_structs::Vector3::ONE,
+        );
+        let mut weights = BlendWeights::default();
+
+        blend_transform3d_channel(
+            &mut out,
+            &next,
+            perro_animation::ANIMATION_TRANSFORM_MASK_ROTATION,
+            &mut weights,
+            1.0,
+        );
+
+        assert!(out.rotation.dot(next_rotation).abs() > 0.9999);
     }
 }
