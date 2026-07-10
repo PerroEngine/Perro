@@ -161,14 +161,20 @@ impl RuntimeResourceApi {
                         if config.mirror {
                             mirror_rgba_rows(width, height, &mut rgba);
                         }
-                        let _ = frame_tx.send(WebcamFrameMessage {
+                        // drop this frame when the runtime lags (channel full):
+                        // only the newest frame is ever displayed anyway.
+                        match frame_tx.try_send(WebcamFrameMessage {
                             id,
                             frame: WebcamFrame {
                                 width,
                                 height,
                                 rgba,
                             },
-                        });
+                        }) {
+                            Ok(()) => {}
+                            Err(std::sync::mpsc::TrySendError::Full(_)) => {}
+                            Err(std::sync::mpsc::TrySendError::Disconnected(_)) => break,
+                        }
                     }
                     Err(err) => {
                         if log_enabled {
