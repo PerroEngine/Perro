@@ -7,7 +7,8 @@ use crate::scripts_assets_editor_files_rs as editor_files;
 use crate::scripts_editor_main_rs::{
     EditorState, FILE_WATCH_INTERVAL_FRAMES, MAX_FILES, MAX_NODE_PICKER_ROWS, MAX_NODES,
     MAX_RECENT, MAX_TABS, RECENT_PROJECTS_PATH, cached_scene_doc, cached_scene_doc_shared,
-    cached_scene_node, set_state_scene_doc, set_state_scene_doc_loaded,
+    begin_ui_drag_doc, cached_scene_node, set_state_scene_doc, set_state_scene_doc_loaded,
+    take_ui_drag_doc, with_ui_drag_doc_mut,
 };
 use crate::scripts_scene_editor_animation_rs::*;
 use crate::scripts_scene_editor_gizmos_rs as editor_gizmos;
@@ -2101,7 +2102,7 @@ pub fn update_preview_pick<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, 
     {
         let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
             if let Some(key) = state.selected_key {
-                begin_ui_drag(state, key, handle, pointer);
+                begin_ui_drag(state, ctx.id.as_u64(), key, handle, pointer);
                 state.log = format!("resize node\n{handle}");
             }
         });
@@ -2113,7 +2114,7 @@ pub fn update_preview_pick<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, 
     {
         let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
             if let Some(key) = state.selected_key {
-                begin_ui_drag(state, key, "rotate", pointer);
+                begin_ui_drag(state, ctx.id.as_u64(), key, "rotate", pointer);
                 state.log = "rotate node".to_string();
             }
         });
@@ -2140,7 +2141,7 @@ pub fn update_ui_drag<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>)
     }
     if !mouse_down!(ctx.ipt, MouseButton::Left) {
         let active = with_state!(ctx.run, EditorState, ctx.id, |state| {
-            state.ui_drag_doc.is_some()
+            state.ui_drag_key.is_some()
         });
         if active {
             finish_ui_drag(ctx);
@@ -2187,21 +2188,27 @@ pub fn update_ui_drag<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>)
     }
 }
 
-fn begin_ui_drag(state: &mut EditorState, key: u32, mode: &str, pointer: ViewportPointer) {
+fn begin_ui_drag(
+    state: &mut EditorState,
+    owner: u64,
+    key: u32,
+    mode: &str,
+    pointer: ViewportPointer,
+) {
     state.ui_drag_key = Some(key);
     state.ui_drag_mode = mode.to_string();
     state.ui_drag_last_x = pointer.uv.x;
     state.ui_drag_last_y = pointer.uv.y;
-    state.ui_drag_doc = (!state.doc_text.is_empty()).then(|| cached_scene_doc(&state.doc_text));
+    begin_ui_drag_doc(owner, &state.doc_text);
     state.ui_drag_changed = false;
     state.ui_drag_needs_rebuild = false;
 }
 
 fn finish_ui_drag<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let doc = take_ui_drag_doc(ctx.id.as_u64());
     let (changed, needs_rebuild) = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
         let changed = state.ui_drag_changed;
         let needs_rebuild = state.ui_drag_needs_rebuild;
-        let doc = state.ui_drag_doc.take();
         state.ui_drag_key = None;
         state.ui_drag_mode.clear();
         state.ui_drag_changed = false;
@@ -2282,10 +2289,8 @@ pub fn move_doc_ui_node<API: ScriptAPI + ?Sized>(
     root_delta: Vector2,
     snap: bool,
 ) {
-    let update = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
-        let Some(doc) = state.ui_drag_doc.as_mut() else {
-            return None;
-        };
+    let update = with_ui_drag_doc_mut(ctx.id.as_u64(), |doc| {
+        with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
         let Some(parent_rect) = doc_ui_parent_rect(doc, key) else {
             return None;
         };
@@ -2325,7 +2330,9 @@ pub fn move_doc_ui_node<API: ScriptAPI + ?Sized>(
         {
             state.dirty_scene_paths.push(path);
         }
-        Some((value, doc_ui_rect(doc, key)))
+            Some((value, doc_ui_rect(doc, key)))
+        })
+        .flatten()
     })
     .flatten();
     let Some((value, rect)) = update else {
@@ -2346,10 +2353,8 @@ pub fn resize_doc_ui_node<API: ScriptAPI + ?Sized>(
     root_delta: Vector2,
     snap: bool,
 ) {
-    let update = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
-        let Some(doc) = state.ui_drag_doc.as_mut() else {
-            return None;
-        };
+    let update = with_ui_drag_doc_mut(ctx.id.as_u64(), |doc| {
+        with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
         let Some(parent_rect) = doc_ui_parent_rect(doc, key) else {
             return None;
         };
@@ -2436,11 +2441,13 @@ pub fn resize_doc_ui_node<API: ScriptAPI + ?Sized>(
         {
             state.dirty_scene_paths.push(path);
         }
-        Some((
-            size_value,
-            translation_value,
-            doc_ui_rect(doc, key),
-        ))
+            Some((
+                size_value,
+                translation_value,
+                doc_ui_rect(doc, key),
+            ))
+        })
+        .flatten()
     })
     .flatten();
     let Some((size_value, translation_value, rect)) = update else {
@@ -2471,10 +2478,8 @@ pub fn rotate_doc_ui_node<API: ScriptAPI + ?Sized>(
             Vector2::new(state.ui_drag_last_x, 1.0 - state.ui_drag_last_y),
         )
     });
-    let update = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
-        let Some(doc) = state.ui_drag_doc.as_mut() else {
-            return None;
-        };
+    let update = with_ui_drag_doc_mut(ctx.id.as_u64(), |doc| {
+        with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
         let Some(rect) = doc_ui_rect(doc, key) else {
             return None;
         };
@@ -2513,7 +2518,9 @@ pub fn rotate_doc_ui_node<API: ScriptAPI + ?Sized>(
         {
             state.dirty_scene_paths.push(path);
         }
-        Some((value, doc_ui_rect(doc, key)))
+            Some((value, doc_ui_rect(doc, key)))
+        })
+        .flatten()
     })
     .flatten();
     let Some((value, rect)) = update else {

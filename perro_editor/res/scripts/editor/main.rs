@@ -27,6 +27,7 @@ struct CachedSceneDoc {
 }
 
 static ACTIVE_SCENE_DOC_CACHE: OnceLock<Mutex<Vec<CachedSceneDoc>>> = OnceLock::new();
+static UI_DRAG_DOC_CACHE: OnceLock<Mutex<Vec<(u64, SceneDoc)>>> = OnceLock::new();
 
 const SCENE_DOC_CACHE_LIMIT: usize = MAX_SCENE_UNDO + 8;
 
@@ -199,6 +200,30 @@ pub fn clear_scene_doc_cache() {
     }
 }
 
+pub fn begin_ui_drag_doc(owner: u64, text: &str) {
+    let cache = UI_DRAG_DOC_CACHE.get_or_init(|| Mutex::new(Vec::new()));
+    if let Ok(mut guard) = cache.lock() {
+        guard.retain(|(id, _)| *id != owner);
+        if !text.is_empty() {
+            guard.push((owner, cached_scene_doc(text)));
+        }
+    }
+}
+
+pub fn with_ui_drag_doc_mut<T>(owner: u64, f: impl FnOnce(&mut SceneDoc) -> T) -> Option<T> {
+    let cache = UI_DRAG_DOC_CACHE.get_or_init(|| Mutex::new(Vec::new()));
+    let mut guard = cache.lock().ok()?;
+    let (_, doc) = guard.iter_mut().find(|(id, _)| *id == owner)?;
+    Some(f(doc))
+}
+
+pub fn take_ui_drag_doc(owner: u64) -> Option<SceneDoc> {
+    let cache = UI_DRAG_DOC_CACHE.get_or_init(|| Mutex::new(Vec::new()));
+    let mut guard = cache.lock().ok()?;
+    let idx = guard.iter().position(|(id, _)| *id == owner)?;
+    Some(guard.swap_remove(idx).1)
+}
+
 pub const MAX_FILES: usize = 12;
 pub const MAX_NODES: usize = 12;
 pub const MAX_TABS: usize = 4;
@@ -256,7 +281,6 @@ pub struct EditorState {
     pub ui_drag_mode: String,
     pub ui_drag_last_x: f32,
     pub ui_drag_last_y: f32,
-    pub ui_drag_doc: Option<SceneDoc>,
     pub ui_drag_changed: bool,
     pub ui_drag_needs_rebuild: bool,
     pub viewport_mode: String,
