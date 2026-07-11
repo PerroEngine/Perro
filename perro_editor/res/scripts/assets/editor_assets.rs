@@ -6,9 +6,10 @@ use crate::scripts_assets_editor_files_rs as editor_files;
 use crate::scripts_editor_main_rs::{
     EditorState, FILE_WATCH_INTERVAL_FRAMES, LIST_DOUBLE_CLICK_FRAMES, MAX_FILES,
     MAX_NODE_PICKER_ROWS, MAX_NODES, MAX_RECENT, MAX_TABS, RECENT_PROJECTS_PATH,
-    arm_or_confirm_destructive_action, cached_scene_doc, cached_scene_doc_shared,
-    cached_scene_node, cancel_destructive_confirmation_for_action, clear_destructive_confirmation,
-    clear_scene_doc_cache, set_state_scene_doc, set_state_scene_doc_loaded,
+    SceneSession, arm_or_confirm_destructive_action, cached_scene_doc, cached_scene_doc_shared,
+    cached_scene_node, cancel_destructive_confirmation_for_action, capture_active_scene_session,
+    clear_destructive_confirmation, clear_scene_doc_cache, restore_scene_session,
+    set_state_scene_doc, set_state_scene_doc_loaded,
 };
 use crate::scripts_scene_editor_animation_rs::*;
 use crate::scripts_scene_editor_gizmos_rs as editor_gizmos;
@@ -72,6 +73,7 @@ pub fn open_project<API: ScriptAPI + ?Sized>(
         state.file_expanded_paths.push("res://".to_string());
         state.scene_paths = scene_paths;
         state.open_paths.clear();
+        state.scene_sessions.clear();
         state.active_asset_path.clear();
         state.active_open = 0;
         state.doc_text.clear();
@@ -102,6 +104,7 @@ pub fn open_project<API: ScriptAPI + ?Sized>(
         state.activity_mode = "scene".to_string();
         state.sidebar_mode = "scene".to_string();
         state.anim_drawer_open = false;
+        state.bottom_dock_open = false;
         state.active_anim_path.clear();
         state.active_anim_player_key = None;
         state.active_glb_path.clear();
@@ -572,13 +575,22 @@ pub fn open_scene_path<API: ScriptAPI + ?Sized>(
         refresh_all(ctx);
         return;
     }
-    let blocked = with_state!(ctx.run, EditorState, ctx.id, |state| {
-        let active = state.open_paths.get(state.active_open);
-        active.is_some_and(|path| {
-            path != scene_path && state.dirty_scene_paths.iter().any(|dirty| dirty == path)
-        })
-    });
-    if blocked && !save_active_scene_to_disk(ctx, true) {
+    let restored = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        let idx = state.open_paths.iter().position(|path| path == scene_path)?;
+        capture_active_scene_session(state);
+        if !restore_scene_session(state, idx) {
+            return None;
+        }
+        state.active_asset_path = scene_path.to_string();
+        state.activity_mode = "scene".to_string();
+        state.sidebar_mode = "scene".to_string();
+        state.log = format!("switch scene\n{}", editor_files::rel_label(scene_path));
+        Some(())
+    })
+    .flatten()
+    .is_some();
+    if restored {
+        rebuild_preview(ctx);
         refresh_all(ctx);
         return;
     }
@@ -597,15 +609,14 @@ pub fn open_scene_path<API: ScriptAPI + ?Sized>(
     let first_key = doc.scene.nodes.first().map(|node| node.key.as_u32());
     let mode = editor_scene::root_viewport_mode(&doc);
     let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
-        if !state.open_paths.iter().any(|path| path == scene_path) {
-            state.open_paths.push(scene_path.to_string());
-        }
+        capture_active_scene_session(state);
+        state.open_paths.push(scene_path.to_string());
+        state.scene_sessions.push(SceneSession {
+            path: scene_path.to_string(),
+            ..SceneSession::default()
+        });
         state.active_asset_path = scene_path.to_string();
-        state.active_open = state
-            .open_paths
-            .iter()
-            .position(|path| path == scene_path)
-            .unwrap_or(0);
+        state.active_open = state.open_paths.len() - 1;
         state.activity_mode = "scene".to_string();
         state.sidebar_mode = "scene".to_string();
         set_state_scene_doc_loaded(state, &doc);
@@ -623,6 +634,7 @@ pub fn open_scene_path<API: ScriptAPI + ?Sized>(
         state.active_glb_path.clear();
         state.active_glb_summary.clear();
         state.log = format!("open scene\n{}", editor_files::rel_label(scene_path));
+        capture_active_scene_session(state);
     });
     rebuild_preview(ctx);
     refresh_all(ctx);
@@ -759,31 +771,66 @@ pub fn cycle_active_glb_ref<API: ScriptAPI + ?Sized>(
     refresh_all(ctx);
 }
 
+pub fn visible_tab_start(open_count: usize, active: usize) -> usize {
+    if open_count == 0 {
+        return 0;
+    }
+    (active.min(open_count - 1) / MAX_TABS) * MAX_TABS
+}
+
+pub fn visible_tab_index(open_count: usize, active: usize, slot: usize) -> Option<usize> {
+    if slot >= MAX_TABS {
+        return None;
+    }
+    let idx = visible_tab_start(open_count, active) + slot;
+    (idx < open_count).then_some(idx)
+}
+
+pub fn visible_tab_page_target(open_count: usize, active: usize, dir: isize) -> Option<usize> {
+    if open_count == 0 {
+        return None;
+    }
+    let start = visible_tab_start(open_count, active);
+    let page_count = open_count.div_ceil(MAX_TABS);
+    let page = start / MAX_TABS;
+    let next_page = wrap_index(page, page_count, dir);
+    let offset = active.min(open_count - 1).saturating_sub(start);
+    Some((next_page * MAX_TABS + offset).min(open_count - 1))
+}
+
+pub fn shift_visible_tab_page<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    dir: isize,
+) {
+    let idx = with_state!(ctx.run, EditorState, ctx.id, |state| {
+        visible_tab_page_target(state.open_paths.len(), state.active_open, dir)
+    });
+    if let Some(idx) = idx {
+        set_active_tab(ctx, idx);
+    }
+}
+
 pub fn set_active_tab<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, idx: usize) {
-    let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
-        clear_destructive_confirmation(state)
-    });
-    let needs_save = with_state!(ctx.run, EditorState, ctx.id, |state| {
-        state
-            .open_paths
-            .get(state.active_open)
-            .map(|path| {
-                idx != state.active_open
-                    && state.dirty_scene_paths.iter().any(|dirty| dirty == path)
-            })
-            .unwrap_or(false)
-    });
-    if needs_save && !save_active_scene_to_disk(ctx, true) {
+    let switched = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        clear_destructive_confirmation(state);
+        if idx == state.active_open || idx >= state.open_paths.len() {
+            return false;
+        }
+        capture_active_scene_session(state);
+        if !restore_scene_session(state, idx) {
+            return false;
+        }
+        state.active_asset_path = state.open_paths[idx].clone();
+        state.log = format!("switch tab\n{}", state.active_asset_path);
+        true
+    })
+    .unwrap_or(false);
+    if !switched {
         refresh_all(ctx);
         return;
     }
-    let path = with_state!(ctx.run, EditorState, ctx.id, |state| {
-        state.open_paths.get(idx).cloned()
-    });
-    let Some(path) = path else {
-        return;
-    };
-    open_scene_path(ctx, &path);
+    rebuild_preview(ctx);
+    refresh_all(ctx);
 }
 
 pub fn cycle_scene_tab<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, dir: isize) {
@@ -808,26 +855,25 @@ pub fn close_active_scene_tab<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'
 }
 
 pub fn close_all_scene_tabs<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
-    save_all_scenes(ctx);
-    let closed = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+    if !save_all_scenes(ctx) {
+        set_log(ctx, "close all blocked\nsave failed");
+        refresh_all(ctx);
+        return;
+    }
+    let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
         let closed = state.open_paths.len();
         state.open_paths.clear();
+        state.scene_sessions.clear();
         state.dirty_scene_paths.clear();
         state.active_open = 0;
         state.doc_text.clear();
         state.selected_key = None;
-        state.preview_scene_paths.clear();
-        state.preview_root = 0;
-        state.preview_node_ids.clear();
-        state.preview_node_keys.clear();
         state.dirty = false;
         state.log = format!("close all tabs\n{closed}");
         closed
     })
     .unwrap_or(0);
-    if closed > 0 {
-        clear_preview(ctx);
-    }
+    clear_preview(ctx);
     refresh_all(ctx);
 }
 
@@ -878,21 +924,22 @@ pub fn close_scene_tab<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>
         if idx >= state.open_paths.len() {
             return None;
         }
+        capture_active_scene_session(state);
         let target = state.open_paths.get(idx).cloned()?;
         if state.dirty_scene_paths.iter().any(|path| path == &target) {
             state.log = format!("close blocked\nsave first\n{target}");
             return None;
         }
+        let was_active = idx == state.active_open;
         let closed = state.open_paths.remove(idx);
+        if idx < state.scene_sessions.len() {
+            state.scene_sessions.remove(idx);
+        }
         state.dirty_scene_paths.retain(|path| path != &closed);
         if state.open_paths.is_empty() {
             state.active_open = 0;
             state.doc_text.clear();
             state.selected_key = None;
-            state.preview_scene_paths.clear();
-            state.preview_root = 0;
-            state.preview_node_ids.clear();
-            state.preview_node_keys.clear();
             state.dirty = false;
             state.log = format!("close tab\n{closed}");
             return Some(None);
@@ -903,12 +950,21 @@ pub fn close_scene_tab<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>
             state.active_open -= 1;
         }
         let next_path = state.open_paths.get(state.active_open).cloned();
+        if was_active {
+            restore_scene_session(state, state.active_open);
+            if let Some(path) = next_path.as_ref() {
+                state.active_asset_path.clone_from(path);
+            }
+        }
         state.log = format!("close tab\n{closed}");
         Some(next_path)
     })
     .flatten();
     match next {
-        Some(Some(path)) => open_scene_path(ctx, &path),
+        Some(Some(_)) => {
+            rebuild_preview(ctx);
+            refresh_all(ctx);
+        }
         Some(None) => {
             clear_preview(ctx);
             refresh_all(ctx);
@@ -1228,13 +1284,15 @@ pub fn delete_active_asset<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, 
     match result {
         Ok(()) => {
             let delete_state = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
-                let removed_active_open = state
-                    .open_paths
-                    .get(state.active_open)
-                    .is_some_and(|open| open == &path);
+                capture_active_scene_session(state);
+                let removed_idx = state.open_paths.iter().position(|open| open == &path);
+                let removed_active_open = removed_idx == Some(state.active_open);
                 state.open_paths.retain(|open| open != &path);
+                state.scene_sessions.retain(|session| session.path != path);
                 state.dirty_scene_paths.retain(|dirty| dirty != &path);
-                if state.active_open >= state.open_paths.len() {
+                if removed_idx.is_some_and(|idx| idx < state.active_open) {
+                    state.active_open -= 1;
+                } else if state.active_open >= state.open_paths.len() {
                     state.active_open = state.open_paths.len().saturating_sub(1);
                 }
                 if let Ok(paths) = scan_res_paths(Path::new(&state.project_root)) {
@@ -1261,21 +1319,19 @@ pub fn delete_active_asset<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, 
                 state.log = format!("delete asset\n{path}");
                 if removed_active_open {
                     if let Some(next) = state.open_paths.get(state.active_open).cloned() {
+                        restore_scene_session(state, state.active_open);
                         return (Some(next), true);
                     }
                     state.doc_text.clear();
                     state.selected_key = None;
-                    state.preview_scene_paths.clear();
-                    state.preview_root = 0;
-                    state.preview_node_ids.clear();
-                    state.preview_node_keys.clear();
                     state.dirty = false;
                 }
                 (None, removed_active_open)
             })
             .unwrap_or((None, false));
-            if let Some(next) = delete_state.0 {
-                open_scene_path(ctx, &next);
+            if delete_state.0.is_some() {
+                rebuild_preview(ctx);
+                refresh_all(ctx);
             } else if delete_state.1 {
                 clear_preview(ctx);
                 refresh_all(ctx);
@@ -1342,6 +1398,11 @@ pub fn rename_active_asset<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, 
                     for item in state.open_paths.iter_mut() {
                         if item == &source {
                             *item = target.clone();
+                        }
+                    }
+                    for session in state.scene_sessions.iter_mut() {
+                        if session.path == source {
+                            session.path.clone_from(&target);
                         }
                     }
                     for item in state.dirty_scene_paths.iter_mut() {
@@ -1988,4 +2049,29 @@ pub fn default_script_text() -> String {
 pub fn default_material_pmat() -> String {
     "type = \"standard\"\ncolor = (1.0, 1.0, 1.0, 1.0)\nroughness = 0.65\nmetallic = 0.0\n"
         .to_string()
+}
+
+#[cfg(test)]
+mod visible_tab_tests {
+    use super::*;
+
+    #[test]
+    fn visible_slots_follow_active_page() {
+        assert_eq!(visible_tab_index(0, 0, 0), None);
+        assert_eq!(visible_tab_index(4, 0, 3), Some(3));
+        assert_eq!(visible_tab_index(8, 0, 0), Some(0));
+        assert_eq!(visible_tab_index(8, 4, 0), Some(4));
+        assert_eq!(visible_tab_index(5, 99, 0), Some(4));
+        assert_eq!(visible_tab_index(5, 4, 1), None);
+        assert_eq!(visible_tab_index(8, 4, MAX_TABS), None);
+    }
+
+    #[test]
+    fn page_target_wraps_and_keeps_slot_when_possible() {
+        assert_eq!(visible_tab_page_target(0, 0, 1), None);
+        assert_eq!(visible_tab_page_target(8, 1, 1), Some(5));
+        assert_eq!(visible_tab_page_target(8, 5, 1), Some(1));
+        assert_eq!(visible_tab_page_target(5, 3, 1), Some(4));
+        assert_eq!(visible_tab_page_target(5, 4, -1), Some(0));
+    }
 }

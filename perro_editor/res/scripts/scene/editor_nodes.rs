@@ -7,7 +7,7 @@ use crate::scripts_assets_editor_files_rs as editor_files;
 use crate::scripts_editor_main_rs::{
     EditorState, FILE_WATCH_INTERVAL_FRAMES, LIST_DOUBLE_CLICK_FRAMES, MAX_FILES,
     MAX_NODE_PICKER_ROWS, MAX_NODES, MAX_RECENT, MAX_TABS, RECENT_PROJECTS_PATH, cached_scene_doc, cached_scene_doc_shared,
-    cached_scene_node, set_state_scene_doc,
+    cached_scene_node, capture_active_scene_session, set_state_scene_doc,
 };
 use crate::scripts_scene_editor_animation_rs::*;
 use crate::scripts_scene_editor_gizmos_rs as editor_gizmos;
@@ -449,11 +449,45 @@ pub fn set_sidebar_mode<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API
 pub fn set_anim_drawer<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, visible: bool) {
     let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
         state.anim_drawer_open = visible;
+        state.bottom_dock_open = visible;
         if visible {
             state.activity_mode = "scene".to_string();
         }
     });
     refresh_all(ctx);
+}
+
+pub fn toggle_bottom_dock<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    animation: bool,
+) {
+    let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        (state.bottom_dock_open, state.anim_drawer_open) = next_bottom_dock_state(
+            state.bottom_dock_open,
+            state.anim_drawer_open,
+            animation,
+        );
+        if state.bottom_dock_open {
+            state.activity_mode = "scene".to_string();
+        }
+    });
+    refresh_all(ctx);
+}
+
+pub fn next_bottom_dock_state(open: bool, current_animation: bool, target_animation: bool) -> (bool, bool) {
+    if open && current_animation == target_animation {
+        (false, current_animation)
+    } else {
+        (true, target_animation)
+    }
+}
+
+pub fn toggle_distraction_free<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        state.distraction_free = !state.distraction_free;
+    });
+    refresh_all(ctx);
+    apply_viewport_canvas(ctx);
 }
 
 pub fn open_selected_node_asset_ref<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
@@ -1401,12 +1435,18 @@ pub fn save_active_scene_to_disk<API: ScriptAPI + ?Sized>(
     ctx: &mut ScriptContext<'_, API>,
     quiet: bool,
 ) -> bool {
-    let save = with_state!(ctx.run, EditorState, ctx.id, |state| {
+    let save = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        capture_active_scene_session(state);
         let path = state.open_paths.get(state.active_open).cloned();
         let root = state.project_root.clone();
-        let doc_text = state.doc_text.clone();
+        let doc_text = state
+            .scene_sessions
+            .get(state.active_open)
+            .map(|session| session.doc_text.clone())
+            .unwrap_or_else(|| state.doc_text.clone());
         (root, path, doc_text)
-    });
+    })
+    .unwrap_or_default();
     let (root, Some(path), doc_text) = save else {
         if !quiet {
             set_log(ctx, "save fail\nno open scene");
@@ -1428,6 +1468,11 @@ pub fn save_active_scene_to_disk<API: ScriptAPI + ?Sized>(
             let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
                 state.dirty = false;
                 state.dirty_scene_paths.retain(|item| item != &path);
+                if let Some(session) = state.scene_sessions.get_mut(state.active_open) {
+                    session.dirty = false;
+                    session.doc_text.clone_from(&text);
+                }
+                state.doc_text.clone_from(&text);
                 state.project_file_sigs = editor_file_watch::scan_project(Path::new(&root));
                 if !quiet {
                     state.log = format!("save scene\n{path}");
@@ -1444,42 +1489,31 @@ pub fn save_active_scene_to_disk<API: ScriptAPI + ?Sized>(
     }
 }
 
-pub fn save_all_scenes<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
-    let (root, open_paths, active_open, active_doc_text, dirty_paths) =
-        with_state!(ctx.run, EditorState, ctx.id, |state| {
+pub fn save_all_scenes<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) -> bool {
+    let (root, sessions, dirty_paths) =
+        with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+            capture_active_scene_session(state);
             (
                 state.project_root.clone(),
-                state.open_paths.clone(),
-                state.active_open,
-                state.doc_text.clone(),
+                state.scene_sessions.clone(),
                 state.dirty_scene_paths.clone(),
             )
-        });
-    if open_paths.is_empty() || dirty_paths.is_empty() {
+        })
+        .unwrap_or_default();
+    if sessions.is_empty() || dirty_paths.is_empty() {
         set_log(ctx, "save all\nnothing dirty");
         refresh_all(ctx);
-        return;
+        return true;
     }
 
     let mut saved = Vec::new();
     let mut failed = Vec::new();
     for path in dirty_paths.iter() {
-        let Some(idx) = open_paths.iter().position(|open| open == path) else {
+        let Some(session) = sessions.iter().find(|session| &session.path == path) else {
+            failed.push(format!("{path}: missing editor session"));
             continue;
         };
-        let text = if idx == active_open {
-            active_doc_text.clone()
-        } else {
-            let abs = res_to_abs(&root, path);
-            match FileMod::load_string(&abs) {
-                Ok(text) => text,
-                Err(err) => {
-                    failed.push(format!("{path}: {err}"));
-                    continue;
-                }
-            }
-        };
-        let mut doc = SceneDoc::parse(&text);
+        let mut doc = SceneDoc::parse(&session.doc_text);
         doc.normalize_links();
         let abs = res_to_abs(&root, path);
         match FileMod::save_string(&abs, &doc.to_text()) {
@@ -1491,6 +1525,13 @@ pub fn save_all_scenes<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>
     let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
         for path in saved.iter() {
             state.dirty_scene_paths.retain(|item| item != path);
+            if let Some(session) = state
+                .scene_sessions
+                .iter_mut()
+                .find(|session| &session.path == path)
+            {
+                session.dirty = false;
+            }
         }
         state.dirty = state
             .open_paths
@@ -1510,6 +1551,7 @@ pub fn save_all_scenes<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>
     });
     rebuild_preview(ctx);
     refresh_all(ctx);
+    failed.is_empty()
 }
 
 pub fn delete_selected_node<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {

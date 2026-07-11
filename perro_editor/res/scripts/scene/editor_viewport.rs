@@ -7,8 +7,8 @@ use crate::scripts_assets_editor_files_rs as editor_files;
 use crate::scripts_editor_main_rs::{
     EditorState, FILE_WATCH_INTERVAL_FRAMES, MAX_FILES, MAX_NODE_PICKER_ROWS, MAX_NODES,
     MAX_RECENT, MAX_TABS, RECENT_PROJECTS_PATH, begin_ui_drag_doc, cached_scene_doc,
-    cached_scene_doc_shared, cached_scene_node, set_state_scene_doc, set_state_scene_doc_loaded,
-    take_ui_drag_doc, with_ui_drag_doc_mut,
+    cached_scene_doc_shared, cached_scene_node, capture_active_scene_session, set_state_scene_doc,
+    set_state_scene_doc_loaded, take_ui_drag_doc, with_ui_drag_doc_mut,
 };
 use crate::scripts_scene_editor_animation_rs::*;
 use crate::scripts_scene_editor_gizmos_rs as editor_gizmos;
@@ -92,12 +92,39 @@ pub struct ViewportRay3D {
     direction: Vector3,
 }
 
+pub fn set_viewport_tool<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, tool: &str) {
+    let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        state.viewport_tool = tool.to_string();
+        state.ui_drag_key = None;
+        state.ui_drag_mode.clear();
+    });
+    refresh_all(ctx);
+}
+
+pub fn toggle_viewport_space<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        state.viewport_local = !state.viewport_local;
+    });
+    refresh_all(ctx);
+}
+
+pub fn toggle_viewport_snap<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        state.viewport_snap = !state.viewport_snap;
+    });
+    refresh_all(ctx);
+}
+
+pub fn viewport_snap_active(state: &EditorState, shift: bool) -> bool {
+    state.viewport_snap ^ shift
+}
+
 pub fn handle_viewport_click<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
     let Some(pointer) = viewport_pointer(ctx) else {
         return;
     };
-    let mode = with_state!(ctx.run, EditorState, ctx.id, |state| {
-        state.viewport_mode.clone()
+    let (mode, tool) = with_state!(ctx.run, EditorState, ctx.id, |state| {
+        (state.viewport_mode.clone(), state.viewport_tool.clone())
     });
     match mode.as_str() {
         "UI" => {
@@ -119,6 +146,9 @@ pub fn handle_viewport_click<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_
         }
         "2D" => {
             if let Some(world) = stream_pointer_world_2d(ctx, pointer) {
+                if tool == "move" && place_selected_2d(ctx, world) {
+                    return;
+                }
                 set_log(
                     ctx,
                     &format!(
@@ -130,6 +160,12 @@ pub fn handle_viewport_click<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_
         }
         "3D" => {
             if let Some(ray) = stream_pointer_ray_3d(ctx, pointer) {
+                if tool == "move"
+                    && let Some(point) = ray_ground_point(ray)
+                    && place_selected_3d(ctx, point)
+                {
+                    return;
+                }
                 if let Some(key) = pick_preview_3d(ctx, ray) {
                     let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
                         state.selected_key = Some(key);
@@ -267,7 +303,8 @@ pub fn place_selected_2d<API: ScriptAPI + ?Sized>(
     ctx: &mut ScriptContext<'_, API>,
     world: Vector2,
 ) -> bool {
-    let snap = key_down!(ctx.ipt, KeyCode::ShiftLeft) || key_down!(ctx.ipt, KeyCode::ShiftRight);
+    let shift = key_down!(ctx.ipt, KeyCode::ShiftLeft) || key_down!(ctx.ipt, KeyCode::ShiftRight);
+    let snap = with_state!(ctx.run, EditorState, ctx.id, |state| viewport_snap_active(state, shift));
     let world = if snap { snap_vec2(world, 16.0) } else { world };
     let changed = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
         let Some(key) = state.selected_key else {
@@ -325,7 +362,8 @@ pub fn place_selected_3d<API: ScriptAPI + ?Sized>(
     ctx: &mut ScriptContext<'_, API>,
     point: Vector3,
 ) -> bool {
-    let snap = key_down!(ctx.ipt, KeyCode::ShiftLeft) || key_down!(ctx.ipt, KeyCode::ShiftRight);
+    let shift = key_down!(ctx.ipt, KeyCode::ShiftLeft) || key_down!(ctx.ipt, KeyCode::ShiftRight);
+    let snap = with_state!(ctx.run, EditorState, ctx.id, |state| viewport_snap_active(state, shift));
     let point = if snap { snap_vec3(point, 1.0) } else { point };
     let changed = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
         let Some(key) = state.selected_key else {
@@ -432,7 +470,8 @@ pub fn viewport_pointer<API: ScriptAPI + ?Sized>(
     let x = mouse.x;
     let y = mouse.y;
     let window_aspect = viewport.x / viewport.y.max(0.0001);
-    let rect = viewport_stream_rect_ratio(window_aspect);
+    let layout = with_state!(ctx.run, EditorState, ctx.id, editor_layout);
+    let rect = viewport_stream_rect_ratio(window_aspect, layout);
     let center_x = rect.0;
     let center_y = rect.1;
     let size_x = rect.2;
@@ -460,25 +499,24 @@ pub fn viewport_pointer<API: ScriptAPI + ?Sized>(
     Some(ViewportPointer { uv, ndc })
 }
 
-pub fn viewport_stream_rect_ratio(window_aspect: f32) -> (f32, f32, f32, f32) {
+pub fn viewport_stream_rect_ratio(
+    window_aspect: f32,
+    layout: EditorLayoutMetrics,
+) -> (f32, f32, f32, f32) {
     const TOP_BAR_H: f32 = 0.034;
     const ROOT_SPACING: f32 = 0.0;
     const MAIN_SPLIT_H: f32 = 0.944;
     const MAIN_PADDING: f32 = 0.0025;
     const MAIN_SPACING: f32 = 0.0025;
-    const ACTIVITY_W: f32 = 0.03;
-    const LEFT_W: f32 = 0.16;
-    const CENTER_W: f32 = 0.565;
-    const VIEWPORT_PANEL_H: f32 = 0.85;
     const SCENE_TABS_H: f32 = 0.042;
     const CENTER_STACK_SPACING: f32 = 0.004;
 
     let split_content_w = 1.0 - (MAIN_PADDING * 2.0) - (MAIN_SPACING * 3.0);
     let split_content_h = MAIN_SPLIT_H - (MAIN_PADDING * 2.0);
-    let activity_w = split_content_w * ACTIVITY_W;
-    let left_w = split_content_w * LEFT_W;
-    let center_w = split_content_w * CENTER_W;
-    let center_h = split_content_h * VIEWPORT_PANEL_H;
+    let activity_w = split_content_w * layout.activity_w;
+    let left_w = split_content_w * layout.left_w;
+    let center_w = split_content_w * layout.center_w;
+    let center_h = split_content_h * layout.viewport_h;
     let center_x =
         MAIN_PADDING + activity_w + MAIN_SPACING + left_w + MAIN_SPACING + (center_w * 0.5);
 
@@ -748,6 +786,7 @@ pub fn reload_scene_path<API: ScriptAPI + ?Sized>(
         state.dirty = false;
         state.dirty_scene_paths.retain(|path| path != scene_path);
         state.log = format!("reload scene\n{scene_path}");
+        capture_active_scene_session(state);
     });
     rebuild_preview(ctx);
     refresh_all(ctx);
@@ -787,8 +826,10 @@ pub fn rebuild_preview<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>
 }
 
 pub fn clear_preview<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
-    let root = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+    let (root, camera_2d, camera_3d) = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
         let root = state.preview_root;
+        let camera_2d = state.preview_camera_2d;
+        let camera_3d = state.preview_camera_3d;
         state.preview_root = 0;
         state.preview_camera_2d = 0;
         state.preview_camera_3d = 0;
@@ -796,13 +837,39 @@ pub fn clear_preview<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) 
         state.preview_node_keys.clear();
         state.preview_pick_node_ids.clear();
         state.preview_pick_node_keys.clear();
+        state.preview_scene_paths.clear();
         state.preview_selected_gizmo = 0;
         state.preview_selected_gizmo_key = None;
-        root
+        (root, camera_2d, camera_3d)
     })
-    .unwrap_or(0);
+    .unwrap_or((0, 0, 0));
+
+    // Hide every preview surface before removal. Render-node removal can land
+    // after the replacement preview in the same frame, so visibility is the
+    // hard boundary that prevents old UI, 2D, and 3D content from overlapping.
+    set_camera_stream_visible(ctx, "viewport_stream_2d", false);
+    set_camera_stream_visible(ctx, "viewport_stream_3d", false);
+    set_viewport_stream_camera(ctx, "viewport_stream_2d", NodeID::nil());
+    set_viewport_stream_camera(ctx, "viewport_stream_3d", NodeID::nil());
+    if camera_2d != 0 {
+        let _ = with_node_mut!(ctx.run, Camera2D, NodeID::from_u64(camera_2d), |node| {
+            node.active = false
+        });
+    }
+    if camera_3d != 0 {
+        let _ = with_node_mut!(ctx.run, Camera3D, NodeID::from_u64(camera_3d), |node| {
+            node.active = false
+        });
+    }
     if root != 0 {
-        let _ = ctx.run.Nodes().remove_node(NodeID::from_u64(root));
+        let root = NodeID::from_u64(root);
+        let _ = with_base_node_mut!(ctx.run, UiNode, root, |node| {
+            node.visible = false;
+            node.input_enabled = false;
+        });
+        let _ = with_base_node_mut!(ctx.run, Node2D, root, |node| node.visible = false);
+        let _ = with_base_node_mut!(ctx.run, Node3D, root, |node| node.visible = false);
+        let _ = ctx.run.Nodes().remove_node(root);
     }
 }
 
@@ -1318,7 +1385,11 @@ pub fn load_preview_scene<API: ScriptAPI + ?Sized>(
             return;
         }
     };
-    attach_preview_to_viewport(ctx, root);
+    if !attach_preview_to_viewport(ctx, root) {
+        let _ = ctx.run.Nodes().remove_node(root);
+        set_log(ctx, &format!("preview load fail\nmissing viewport panel\n{path}"));
+        return;
+    }
     disable_preview_runtime_input(ctx, root);
 
     let doc_text = with_state!(ctx.run, EditorState, ctx.id, |state| {
@@ -1993,9 +2064,9 @@ fn draw_collision_shape_2d<API: ScriptAPI + ?Sized>(
 pub fn attach_preview_to_viewport<API: ScriptAPI + ?Sized>(
     ctx: &mut ScriptContext<'_, API>,
     root: NodeID,
-) {
+) -> bool {
     let Some(panel) = find_named(ctx, "viewport_panel") else {
-        return;
+        return false;
     };
     if ctx
         .run
@@ -2004,7 +2075,11 @@ pub fn attach_preview_to_viewport<API: ScriptAPI + ?Sized>(
         .is_some()
     {
         let _ = ctx.run.Nodes().reparent(panel, root);
-        let canvas_size = ui_canvas_size_ratio(viewport_window_aspect(ctx), 1.0);
+        let canvas_size = ui_canvas_size_ratio(
+            viewport_window_aspect(ctx),
+            1.0,
+            with_state!(ctx.run, EditorState, ctx.id, editor_layout),
+        );
         let _ = with_base_node_mut!(ctx.run, UiNode, root, |node| {
             node.layout.anchor = UiAnchor::Center;
             node.layout.size = UiVector2::ratio(canvas_size.0, canvas_size.1);
@@ -2016,6 +2091,7 @@ pub fn attach_preview_to_viewport<API: ScriptAPI + ?Sized>(
             node.input_enabled = false;
         });
     }
+    true
 }
 
 pub fn preview_doc_order(doc: &SceneDoc) -> Vec<u32> {
@@ -2110,14 +2186,14 @@ pub fn update_preview_pick<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, 
     if !mouse_pressed!(ctx.ipt, MouseButton::Left) {
         return;
     }
-    let mode = with_state!(ctx.run, EditorState, ctx.id, |state| {
-        state.viewport_mode.clone()
+    let (mode, tool) = with_state!(ctx.run, EditorState, ctx.id, |state| {
+        (state.viewport_mode.clone(), state.viewport_tool.clone())
     });
     if mode != "UI" {
         return;
     }
     let pointer = viewport_pointer(ctx);
-    if let Some((handle, pointer)) =
+    if tool == "scale" && let Some((handle, pointer)) =
         pointer.and_then(|pointer| pick_resize_handle(ctx, pointer).map(|handle| (handle, pointer)))
     {
         let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
@@ -2129,7 +2205,7 @@ pub fn update_preview_pick<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, 
         refresh_all(ctx);
         return;
     }
-    if let Some(pointer) = pointer
+    if tool == "rotate" && let Some(pointer) = pointer
         && pick_rotation_zone(ctx, pointer).is_some()
     {
         let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
@@ -2149,7 +2225,14 @@ pub fn update_preview_pick<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, 
         state.selected_key = Some(key);
         state.ui_drag_key = None;
         state.ui_drag_mode.clear();
-        state.log = format!("select node\nkey={key}");
+        if tool == "move" {
+            if let Some(pointer) = pointer {
+                begin_ui_drag(state, ctx.id.as_u64(), key, "move", pointer);
+            }
+            state.log = format!("move node\nkey={key}");
+        } else {
+            state.log = format!("select node\nkey={key}");
+        }
     });
     refresh_all(ctx);
 }

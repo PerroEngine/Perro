@@ -6,7 +6,8 @@ use crate::scripts_assets_editor_file_watch_rs as editor_file_watch;
 use crate::scripts_assets_editor_files_rs as editor_files;
 use crate::scripts_editor_main_rs::{
     EditorState, FILE_WATCH_INTERVAL_FRAMES, MAX_FILES, MAX_INSPECTOR_PICKER_ROWS,
-    MAX_NODE_PICKER_ROWS, MAX_NODES, MAX_RECENT, MAX_TABS, RECENT_PROJECTS_PATH, cached_scene_doc,
+    MAX_NODE_PICKER_ROWS, MAX_NODES, MAX_OUTPUT_MESSAGES, MAX_RECENT, MAX_TABS,
+    RECENT_PROJECTS_PATH, cached_scene_doc,
     cached_scene_doc_shared, cached_scene_node,
 };
 use crate::scripts_scene_editor_animation_rs::*;
@@ -44,7 +45,176 @@ struct CachedFilteredFiles {
 static FILTERED_FILE_CACHE: OnceLock<Mutex<Option<CachedFilteredFiles>>> = OnceLock::new();
 static EDITOR_TREE_ICON_CACHE: OnceLock<Mutex<Vec<(String, TextureID)>>> = OnceLock::new();
 
+pub fn classify_editor_log(text: &str) -> &'static str {
+    let first = text.lines().next().unwrap_or_default().to_ascii_lowercase();
+    if first.contains("fail") || first.contains("error") || first.contains("blocked") {
+        "error"
+    } else if first.contains("warn") || first.contains("dirty") || first.contains("timeout") {
+        "warn"
+    } else {
+        "info"
+    }
+}
+
+pub fn capture_editor_output_state(state: &mut EditorState) {
+    if state.log.trim().is_empty() || state.log == state.output_seen_log {
+        return;
+    }
+    state.output_seen_log.clone_from(&state.log);
+    if state.output_messages.last() == Some(&state.log) {
+        if let Some(repeat) = state.output_repeats.last_mut() {
+            *repeat = repeat.saturating_add(1);
+        }
+        return;
+    }
+    state.output_levels.push(classify_editor_log(&state.log).to_string());
+    state.output_messages.push(state.log.clone());
+    state.output_repeats.push(1);
+    if state.output_messages.len() > MAX_OUTPUT_MESSAGES {
+        state.output_messages.remove(0);
+        state.output_levels.remove(0);
+        state.output_repeats.remove(0);
+    }
+}
+
+fn capture_editor_output<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let _ = with_state_mut!(ctx.run, EditorState, ctx.id, capture_editor_output_state);
+}
+
+pub fn filtered_editor_output(state: &EditorState) -> String {
+    let filter = state.output_filter.trim().to_ascii_lowercase();
+    let mut lines = state
+        .output_messages
+        .iter()
+        .zip(&state.output_levels)
+        .zip(&state.output_repeats)
+        .filter(|((text, level), _)| {
+            let visible = match level.as_str() {
+                "error" => !state.output_hide_error,
+                "warn" => !state.output_hide_warn,
+                _ => !state.output_hide_info,
+            };
+            visible && (filter.is_empty() || text.to_ascii_lowercase().contains(&filter))
+        })
+        .map(|((text, level), repeat)| {
+            let icon = match level.as_str() { "error" => "[x]", "warn" => "[!]", _ => "[i]" };
+            let text = text.replace('\n', "  ");
+            if *repeat > 1 { format!("{icon} {text}  x{repeat}") } else { format!("{icon} {text}") }
+        })
+        .collect::<Vec<_>>();
+    if lines.len() > 24 {
+        lines.drain(0..lines.len() - 24);
+    }
+    if lines.is_empty() { "No output".to_string() } else { lines.join("\n") }
+}
+
+pub fn clear_editor_output<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        state.output_messages.clear();
+        state.output_levels.clear();
+        state.output_repeats.clear();
+        state.output_seen_log.clone_from(&state.log);
+    });
+    refresh_all(ctx);
+}
+
+pub fn update_editor_output_filter<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let value = read_text_box(ctx, "output_filter_box").unwrap_or_default();
+    let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        state.output_filter = value;
+        state.focused_inspector_box = "output_filter_box".to_string();
+    });
+    refresh_all(ctx);
+}
+
+pub fn toggle_editor_output_level<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    level: &str,
+) {
+    let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| match level {
+        "error" => state.output_hide_error = !state.output_hide_error,
+        "warn" => state.output_hide_warn = !state.output_hide_warn,
+        _ => state.output_hide_info = !state.output_hide_info,
+    });
+    refresh_all(ctx);
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct EditorCommand {
+    pub id: &'static str,
+    pub label: &'static str,
+    pub hint: &'static str,
+}
+
+pub fn editor_commands(query: &str) -> Vec<EditorCommand> {
+    const COMMANDS: [EditorCommand; 12] = [
+        EditorCommand { id: "save", label: "Save Scene", hint: "Ctrl+S" },
+        EditorCommand { id: "save_all", label: "Save All Scenes", hint: "Ctrl+Shift+S" },
+        EditorCommand { id: "add", label: "Add Child Node", hint: "Ctrl+A" },
+        EditorCommand { id: "mode_ui", label: "Switch Viewport to UI", hint: "3" },
+        EditorCommand { id: "mode_2d", label: "Switch Viewport to 2D", hint: "1" },
+        EditorCommand { id: "mode_3d", label: "Switch Viewport to 3D", hint: "2" },
+        EditorCommand { id: "focus", label: "Toggle Distraction Free", hint: "Ctrl+Shift+F11" },
+        EditorCommand { id: "output", label: "Toggle Output", hint: "" },
+        EditorCommand { id: "inspect_open", label: "Inspector Expand All", hint: "" },
+        EditorCommand { id: "inspect_close", label: "Inspector Collapse All", hint: "" },
+        EditorCommand { id: "refresh", label: "Refresh Project Assets", hint: "Ctrl+R" },
+        EditorCommand { id: "frame", label: "Frame Selected", hint: "F" },
+    ];
+    let tokens = query.split_whitespace().map(str::to_ascii_lowercase).collect::<Vec<_>>();
+    COMMANDS
+        .into_iter()
+        .filter(|command| {
+            let haystack = format!("{} {} {}", command.label, command.hint, command.id).to_ascii_lowercase();
+            tokens.iter().all(|token| haystack.contains(token))
+        })
+        .collect()
+}
+
+pub fn set_command_palette<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, open: bool) {
+    let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        state.command_palette_open = open;
+        if !open { state.command_palette_filter.clear(); }
+    });
+    refresh_all(ctx);
+}
+
+pub fn update_command_palette_filter<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let value = read_text_box(ctx, "command_palette_filter_box").unwrap_or_default();
+    let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        state.command_palette_filter = value;
+        state.focused_inspector_box = "command_palette_filter_box".to_string();
+    });
+    refresh_all(ctx);
+}
+
+pub fn execute_command_palette_row<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    idx: usize,
+) {
+    let command = with_state!(ctx.run, EditorState, ctx.id, |state| {
+        editor_commands(&state.command_palette_filter).get(idx).copied()
+    });
+    set_command_palette(ctx, false);
+    match command.map(|item| item.id) {
+        Some("save") => { save_active_scene(ctx); }
+        Some("save_all") => { let _ = save_all_scenes(ctx); }
+        Some("add") => { open_add_node_popup(ctx); }
+        Some("mode_ui") => { set_mode(ctx, "UI"); }
+        Some("mode_2d") => { set_mode(ctx, "2D"); }
+        Some("mode_3d") => { set_mode(ctx, "3D"); }
+        Some("focus") => { toggle_distraction_free(ctx); }
+        Some("output") => { toggle_bottom_dock(ctx, false); }
+        Some("inspect_open") => { set_all_inspector_sections(ctx, false); }
+        Some("inspect_close") => { set_all_inspector_sections(ctx, true); }
+        Some("refresh") => { refresh_project_assets(ctx); }
+        Some("frame") => { frame_selected_node(ctx); }
+        _ => {}
+    }
+}
+
 pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    capture_editor_output(ctx);
     let view = with_state!(ctx.run, EditorState, ctx.id, EditorView::from_state);
     refresh_chrome_view(ctx, &view);
     refresh_manager_view(ctx, &view);
@@ -60,6 +230,7 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
 
 /// File panel + status only (folder expand/collapse, file-local ops).
 pub fn refresh_file_panel<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    capture_editor_output(ctx);
     let view = with_state!(ctx.run, EditorState, ctx.id, EditorView::from_state);
     refresh_files_view(ctx, &view);
     refresh_status_view(ctx, &view);
@@ -67,6 +238,7 @@ pub fn refresh_file_panel<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, A
 
 /// Scene tree pane + status only (node expand/collapse).
 pub fn refresh_scene_panel<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    capture_editor_output(ctx);
     let view = with_state!(ctx.run, EditorState, ctx.id, EditorView::from_state);
     refresh_scene_pane_view(ctx, &view);
     refresh_status_view(ctx, &view);
@@ -75,6 +247,7 @@ pub fn refresh_scene_panel<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, 
 /// Scene node selection: chrome (mode buttons/status), scene pane, inspector.
 /// Skips file tree/tabs/manager/picker rebuilds.
 pub fn refresh_selection_panels<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    capture_editor_output(ctx);
     let view = with_state!(ctx.run, EditorState, ctx.id, EditorView::from_state);
     refresh_chrome_view(ctx, &view);
     // Picker labels reference the selected node ("add child of X").
@@ -85,6 +258,7 @@ pub fn refresh_selection_panels<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext
 
 /// File/asset selection: chrome, file panel, inspector. Skips scene pane.
 pub fn refresh_asset_panels<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    capture_editor_output(ctx);
     let view = with_state!(ctx.run, EditorState, ctx.id, EditorView::from_state);
     refresh_chrome_view(ctx, &view);
     refresh_files_view(ctx, &view);
@@ -92,6 +266,12 @@ pub fn refresh_asset_panels<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_,
 }
 
 fn refresh_chrome_view<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, view: &EditorView) {
+    let layout = editor_layout_metrics(view.bottom_dock_open, view.distraction_free);
+    set_button_fill(
+        ctx,
+        "distraction_free_button",
+        if view.distraction_free { theme::ACCENT } else { theme::BG_WIDGET },
+    );
     set_label(
         ctx,
         "project_status",
@@ -99,8 +279,47 @@ fn refresh_chrome_view<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>
     );
     set_label(ctx, "status_bar", &view.status);
     set_label(ctx, "log_text", &view.log);
+    set_label(ctx, "bottom_log_label", &format!("Output  {}", view.output_count));
+    set_text_box(ctx, "output_filter_box", &view.output_filter);
+    for (name, visible) in [
+        ("output_info_button", view.output_info_visible),
+        ("output_warn_button", view.output_warn_visible),
+        ("output_error_button", view.output_error_visible),
+    ] {
+        set_button_fill(ctx, name, if visible { theme::ACCENT } else { theme::BG_WIDGET });
+    }
     apply_script_reload_popup(ctx, view.script_schema_reloading);
     set_label(ctx, "viewport_label", &view.viewport);
+    set_ui_display(ctx, "command_palette_scrim", view.command_palette_open);
+    set_ui_display(ctx, "command_palette_panel", view.command_palette_open);
+    set_text_box(ctx, "command_palette_filter_box", &view.command_palette_filter);
+    for idx in 0..8 {
+        let row = view.command_palette_rows.get(idx);
+        set_ui_display(ctx, &format!("command_palette_row_{idx}"), view.command_palette_open && row.is_some());
+        set_label(
+            ctx,
+            &format!("command_palette_row_{idx}_label"),
+            row.map(String::as_str).unwrap_or("-"),
+        );
+    }
+    let active_tool = if view.viewport_tool.is_empty() { "select" } else { &view.viewport_tool };
+    for tool in ["select", "move", "rotate", "scale"] {
+        set_button_fill(
+            ctx,
+            &format!("viewport_tool_{tool}_button"),
+            if active_tool == tool { theme::ACCENT } else { theme::BG_WIDGET },
+        );
+    }
+    set_button_fill(
+        ctx,
+        "viewport_snap_button",
+        if view.viewport_snap { theme::ACCENT } else { theme::BG_WIDGET },
+    );
+    set_label(
+        ctx,
+        "viewport_space_label",
+        if view.viewport_local { "Local" } else { "Global" },
+    );
     let glb_mode = view.activity_mode == "glb";
     set_button_fill(
         ctx,
@@ -153,34 +372,69 @@ fn refresh_chrome_view<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>
     set_button_fill(
         ctx,
         "bottom_log_button",
-        if view.anim_drawer_open {
+        if view.bottom_dock_open && view.anim_drawer_open {
             theme::BG_WIDGET
-        } else {
+        } else if view.bottom_dock_open {
             theme::ACCENT
+        } else {
+            theme::BG_WIDGET
         },
     );
     set_button_fill(
         ctx,
         "bottom_anim_button",
-        if view.anim_drawer_open {
+        if view.bottom_dock_open && view.anim_drawer_open {
             theme::ACCENT
         } else {
             theme::BG_WIDGET
         },
     );
     set_ui_display(ctx, "log_title", false);
-    set_ui_display(ctx, "log_text", !view.anim_drawer_open);
-    set_ui_display(ctx, "anim_drawer", view.anim_drawer_open);
+    set_ui_node_size(
+        ctx,
+        "viewport_panel",
+        (1.0, layout.viewport_h),
+    );
+    set_ui_node_size(
+        ctx,
+        "bottom_panel",
+        (1.0, if view.bottom_dock_open { 0.10 } else { 0.03 }),
+    );
+    set_ui_node_size(
+        ctx,
+        "bottom_tab_bar",
+        (1.0, if view.bottom_dock_open { 0.22 } else { 1.0 }),
+    );
+    set_ui_display(
+        ctx,
+        "log_text",
+        view.bottom_dock_open && !view.anim_drawer_open,
+    );
+    set_ui_display(
+        ctx,
+        "output_toolbar",
+        view.bottom_dock_open && !view.anim_drawer_open,
+    );
+    set_ui_display(
+        ctx,
+        "anim_drawer",
+        view.bottom_dock_open && view.anim_drawer_open,
+    );
     set_ui_display(ctx, "anim_create_button", view.anim_can_create);
     set_ui_display(ctx, "anim_add_track_button", view.anim_can_add_track);
     set_label(ctx, "anim_drawer_title", &view.anim_title);
     set_label(ctx, "anim_status_text", &view.anim_status);
     set_label(ctx, "anim_tracks_text", &view.anim_tracks);
-    set_ui_display(ctx, "left_panel", true);
-    set_ui_display(ctx, "inspector_panel", !glb_mode);
+    set_ui_node_size(ctx, "activity_bar", (layout.activity_w, 1.0));
+    set_ui_node_size(ctx, "left_panel", (layout.left_w, 1.0));
+    set_ui_node_size(ctx, "center_stack", (layout.center_w, 1.0));
+    set_ui_node_size(ctx, "inspector_panel", (layout.inspector_w, 1.0));
+    set_ui_display(ctx, "activity_bar", !view.distraction_free);
+    set_ui_display(ctx, "left_panel", !view.distraction_free);
+    set_ui_display(ctx, "inspector_panel", !glb_mode && !view.distraction_free);
     set_ui_display(ctx, "scene_tabs", !glb_mode);
     set_ui_display(ctx, "viewport_panel", !glb_mode);
-    set_ui_display(ctx, "bottom_panel", !glb_mode);
+    set_ui_display(ctx, "bottom_panel", !glb_mode && !view.distraction_free);
     set_ui_display(ctx, "glb_viewer_panel", glb_mode);
     set_label(ctx, "glb_viewer_title", &view.glb_title);
     set_label(ctx, "glb_viewer_summary", &view.glb_summary);
@@ -267,11 +521,25 @@ fn refresh_files_view<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>,
 }
 
 fn refresh_tabs_view<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, view: &EditorView) {
-    for idx in 0..MAX_TABS {
-        let has_tab = view.open_paths.get(idx).is_some();
-        let text = view
-            .open_paths
-            .get(idx)
+    let open_count = view.open_paths.len();
+    let start = visible_tab_start(open_count, view.active_open);
+    let show_page = open_count > MAX_TABS;
+    set_ui_display(ctx, "scene_tab_prev_button", show_page);
+    set_ui_display(ctx, "scene_tab_next_button", show_page);
+    set_ui_display(ctx, "scene_tab_page_label", show_page);
+    if show_page {
+        let end = (start + MAX_TABS).min(open_count);
+        set_label(
+            ctx,
+            "scene_tab_page_label",
+            &format!("{}-{} / {open_count}", start + 1, end),
+        );
+    }
+    for slot in 0..MAX_TABS {
+        let real_idx = visible_tab_index(open_count, view.active_open, slot);
+        let has_tab = real_idx.is_some();
+        let text = real_idx
+            .and_then(|idx| view.open_paths.get(idx))
             .map(|path| {
                 let mark = if view.dirty_scene_paths.iter().any(|dirty| dirty == path) {
                     "* "
@@ -283,27 +551,32 @@ fn refresh_tabs_view<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, 
             .unwrap_or_else(|| "-".to_string());
         set_label(
             ctx,
-            &format!("scene_tab_{idx}_label"),
+            &format!("scene_tab_{slot}_label"),
             &editor_view::short_path(&text, 24),
         );
-        set_ui_display(ctx, &format!("scene_tab_{idx}"), has_tab);
-        set_ui_display(ctx, &format!("scene_tab_close_{idx}"), has_tab);
-        let close_action = format!("scene_tab_close_{idx}");
+        set_ui_display(ctx, &format!("scene_tab_{slot}"), has_tab);
+        set_ui_display(ctx, &format!("scene_tab_close_{slot}"), has_tab);
+        let close_action = real_idx
+            .map(|idx| format!("scene_tab_close_{idx}"))
+            .unwrap_or_default();
         let close_label = if view.destructive_confirm_action == close_action
-            && view
-                .open_paths
-                .get(idx)
+            && real_idx
+                .and_then(|idx| view.open_paths.get(idx))
                 .is_some_and(|path| path == &view.destructive_confirm_target)
         {
             "save"
         } else {
             "x"
         };
-        set_label(ctx, &format!("scene_tab_close_{idx}_label"), close_label);
+        set_label(
+            ctx,
+            &format!("scene_tab_close_{slot}_label"),
+            close_label,
+        );
         set_button_fill(
             ctx,
-            &format!("scene_tab_{idx}"),
-            if idx == view.active_open {
+            &format!("scene_tab_{slot}"),
+            if real_idx == Some(view.active_open) {
                 theme::ACCENT
             } else {
                 theme::BG_WIDGET
@@ -327,6 +600,12 @@ fn refresh_inspector_view<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, A
         remove_legacy_transform_rows(ctx);
     }
     apply_inspector_dynamic_layout(ctx, &view.inspector);
+    set_text_box(ctx, "inspector_filter_box", &view.inspector_filter);
+    set_button_fill(
+        ctx,
+        "inspector_modified_button",
+        if view.inspector_modified_only { theme::ACCENT } else { theme::BG_WIDGET },
+    );
     set_label(ctx, "inspector_title", "Name");
     set_label(ctx, "inspector_name", "Type");
     set_ui_display(
@@ -827,8 +1106,71 @@ fn inspector_row_component_input_type(row: &InspectorValueRow) -> UiTextInputTyp
 }
 
 pub fn refresh_status<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
-    let view = with_state!(ctx.run, EditorState, ctx.id, EditorView::from_state);
-    refresh_status_view(ctx, &view);
+    capture_editor_output(ctx);
+    let (project_name, project_root, status, log, viewport, script_reloading) =
+        with_state!(ctx.run, EditorState, ctx.id, |state| {
+            (
+                if state.project_name.is_empty() {
+                    "No project".to_string()
+                } else {
+                    state.project_name.clone()
+                },
+                state.project_root.clone(),
+                editor_status_text(state),
+                filtered_editor_output(state),
+                format!("{} Viewport", state.viewport_mode),
+                state.script_schema_reload_frames > 0,
+            )
+        });
+    set_label(
+        ctx,
+        "project_status",
+        &format!("{project_name}  {project_root}"),
+    );
+    set_label(ctx, "status_bar", &status);
+    set_label(ctx, "log_text", &log);
+    set_label(ctx, "viewport_label", &viewport);
+    apply_script_reload_popup(ctx, script_reloading);
+}
+
+pub fn update_inspector_filter<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let value = read_text_box(ctx, "inspector_filter_box").unwrap_or_default();
+    let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        state.inspector_filter = value;
+        state.focused_inspector_box = "inspector_filter_box".to_string();
+    });
+    refresh_selection_panels(ctx);
+}
+
+pub fn toggle_inspector_modified_only<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        state.inspector_modified_only = !state.inspector_modified_only;
+    });
+    refresh_selection_panels(ctx);
+}
+
+pub fn set_all_inspector_sections<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    collapse: bool,
+) {
+    let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        state.inspector_collapsed_sections.clear();
+    });
+    if collapse {
+        let paths = with_state!(ctx.run, EditorState, ctx.id, |state| {
+            let Some(key) = state.selected_key else { return Vec::new() };
+            let Some(node) = cached_scene_node(&state.doc_text, key) else { return Vec::new() };
+            inspector_display_rows_for_node(state, &node)
+                .into_iter()
+                .filter(|row| row.source == "section")
+                .map(|row| row.path_key)
+                .collect::<Vec<_>>()
+        });
+        let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+            state.inspector_collapsed_sections = paths;
+        });
+    }
+    refresh_selection_panels(ctx);
 }
 
 pub fn apply_component_row<API: ScriptAPI + ?Sized>(
@@ -1175,11 +1517,24 @@ pub struct EditorView {
     viewport: String,
     status: String,
     log: String,
+    output_filter: String,
+    output_info_visible: bool,
+    output_warn_visible: bool,
+    output_error_visible: bool,
+    output_count: usize,
     viewport_mode: String,
+    viewport_tool: String,
+    viewport_local: bool,
+    viewport_snap: bool,
     activity_mode: String,
     sidebar_mode: String,
     scene_filter: String,
     anim_drawer_open: bool,
+    bottom_dock_open: bool,
+    distraction_free: bool,
+    command_palette_open: bool,
+    command_palette_filter: String,
+    command_palette_rows: Vec<String>,
     anim_title: String,
     anim_status: String,
     anim_tracks: String,
@@ -1199,6 +1554,8 @@ pub struct EditorView {
     script_schema_reloading: bool,
     destructive_confirm_action: String,
     destructive_confirm_target: String,
+    inspector_filter: String,
+    inspector_modified_only: bool,
 }
 
 pub struct InspectorViewData {
@@ -1467,12 +1824,29 @@ impl EditorView {
             glb_summary,
             viewport,
             status,
-            log: state.log.clone(),
+            log: filtered_editor_output(state),
+            output_filter: state.output_filter.clone(),
+            output_info_visible: !state.output_hide_info,
+            output_warn_visible: !state.output_hide_warn,
+            output_error_visible: !state.output_hide_error,
+            output_count: state.output_messages.len(),
             viewport_mode: state.viewport_mode.clone(),
+            viewport_tool: state.viewport_tool.clone(),
+            viewport_local: state.viewport_local,
+            viewport_snap: state.viewport_snap,
             activity_mode: state.activity_mode.clone(),
             sidebar_mode: state.sidebar_mode.clone(),
             scene_filter: state.scene_filter.clone(),
             anim_drawer_open: state.anim_drawer_open,
+            bottom_dock_open: state.bottom_dock_open,
+            distraction_free: state.distraction_free,
+            command_palette_open: state.command_palette_open,
+            command_palette_filter: state.command_palette_filter.clone(),
+            command_palette_rows: editor_commands(&state.command_palette_filter)
+                .into_iter()
+                .take(8)
+                .map(|item| if item.hint.is_empty() { item.label.to_string() } else { format!("{}    {}", item.label, item.hint) })
+                .collect(),
             anim_title,
             anim_status,
             anim_tracks,
@@ -1494,6 +1868,8 @@ impl EditorView {
             script_schema_reloading: state.script_schema_reload_frames > 0,
             destructive_confirm_action: state.destructive_confirm_action.clone(),
             destructive_confirm_target: state.destructive_confirm_target.clone(),
+            inspector_filter: state.inspector_filter.clone(),
+            inspector_modified_only: state.inspector_modified_only,
         }
     }
 }
@@ -4183,7 +4559,7 @@ pub fn apply_selected_ui_overlay<API: ScriptAPI + ?Sized>(
     let (canvas_w, canvas_h) = with_state!(ctx.run, EditorState, ctx.id, |state| {
         if state.viewport_mode == "UI" {
             let zoom = state.ui_canvas_zoom.max(0.25);
-            ui_canvas_size_ratio(window_aspect, zoom)
+            ui_canvas_size_ratio(window_aspect, zoom, editor_layout(state))
         } else {
             viewport_stream_size_ratio(window_aspect)
         }
@@ -4383,7 +4759,7 @@ pub fn set_panel_size<API: ScriptAPI + ?Sized>(
 }
 
 pub fn apply_viewport_canvas<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
-    let (mode, pan_x, pan_y, zoom) = with_state!(ctx.run, EditorState, ctx.id, |state| {
+    let (mode, pan_x, pan_y, zoom, layout) = with_state!(ctx.run, EditorState, ctx.id, |state| {
         if state.viewport_mode == "2D" {
             let zoom = state.cam2_zoom.max(0.05);
             (
@@ -4391,6 +4767,7 @@ pub fn apply_viewport_canvas<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_
                 -state.cam2_x * zoom / 960.0,
                 state.cam2_y * zoom / 540.0,
                 zoom,
+                editor_layout(state),
             )
         } else {
             (
@@ -4398,6 +4775,7 @@ pub fn apply_viewport_canvas<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_
                 0.0,
                 0.0,
                 state.ui_canvas_zoom.max(0.25),
+                editor_layout(state),
             )
         }
     });
@@ -4409,7 +4787,7 @@ pub fn apply_viewport_canvas<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_
 
     let window_aspect = viewport_window_aspect(ctx);
     let (canvas_w, canvas_h) = if mode == "UI" {
-        ui_canvas_size_ratio(window_aspect, zoom)
+        ui_canvas_size_ratio(window_aspect, zoom, layout)
     } else {
         (1.0, 1.0)
     };
@@ -4481,14 +4859,17 @@ pub fn apply_ui_preview_canvas_transform<API: ScriptAPI + ?Sized>(
     if mode != "UI" {
         return;
     }
-    let root = with_state!(ctx.run, EditorState, ctx.id, |state| {
-        (state.preview_root != 0).then(|| NodeID::from_u64(state.preview_root))
+    let (root, layout) = with_state!(ctx.run, EditorState, ctx.id, |state| {
+        (
+            (state.preview_root != 0).then(|| NodeID::from_u64(state.preview_root)),
+            editor_layout(state),
+        )
     });
     let Some(root) = root else {
         return;
     };
     let window_aspect = viewport_window_aspect(ctx);
-    let canvas_size = ui_canvas_size_ratio(window_aspect, 1.0);
+    let canvas_size = ui_canvas_size_ratio(window_aspect, 1.0, layout);
     let _ = with_base_node_mut!(ctx.run, UiNode, root, |node| {
         node.layout.anchor = UiAnchor::Center;
         node.layout.size = UiVector2::ratio(canvas_size.0, canvas_size.1);
@@ -4509,18 +4890,92 @@ pub fn viewport_stream_size_ratio(_window_aspect: f32) -> (f32, f32) {
     (0.99, 0.99)
 }
 
-pub fn ui_canvas_size_ratio(window_aspect: f32, zoom: f32) -> (f32, f32) {
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct EditorLayoutMetrics {
+    pub activity_w: f32,
+    pub left_w: f32,
+    pub center_w: f32,
+    pub inspector_w: f32,
+    pub viewport_h: f32,
+}
+
+pub fn modified_inspector_rows_for_node(
+    state: &EditorState,
+    node: &SceneNodeEntry,
+    rows: Vec<InspectorValueRow>,
+) -> Vec<InspectorValueRow> {
+    let view = InspectorOverrideView {
+        node: Some(node.clone()),
+        script_defaults: inspector_script_var_default_fields_for_node(state, node),
+        script_fields: inspector_script_var_fields_for_node(state, node),
+        scene_fields: inspector_scene_value_fields_for_node(node),
+        scene_defaults: inspector_scene_default_value_fields_for_type(node.data.node_type),
+    };
+    let mut keep = vec![false; rows.len()];
+    for (idx, row) in rows.iter().enumerate() {
+        if !inspector_row_has_override(&view, row) {
+            continue;
+        }
+        keep[idx] = true;
+        let mut depth = row.depth;
+        for parent in (0..idx).rev() {
+            if depth == 0 {
+                break;
+            }
+            if rows[parent].depth < depth {
+                keep[parent] = true;
+                depth = rows[parent].depth;
+            }
+        }
+    }
+    rows.into_iter()
+        .zip(keep)
+        .filter_map(|(row, keep)| keep.then_some(row))
+        .collect()
+}
+
+pub fn editor_layout_metrics(bottom_dock_open: bool, distraction_free: bool) -> EditorLayoutMetrics {
+    if distraction_free {
+        EditorLayoutMetrics {
+            activity_w: 0.0,
+            left_w: 0.0,
+            center_w: 0.99,
+            inspector_w: 0.0,
+            viewport_h: 0.95,
+        }
+    } else {
+        EditorLayoutMetrics {
+            activity_w: 0.03,
+            left_w: 0.16,
+            center_w: 0.565,
+            inspector_w: 0.222,
+            viewport_h: if bottom_dock_open { 0.85 } else { 0.92 },
+        }
+    }
+}
+
+pub fn editor_layout(state: &EditorState) -> EditorLayoutMetrics {
+    editor_layout_metrics(state.bottom_dock_open, state.distraction_free)
+}
+
+pub fn editor_viewport_panel_height(state: &EditorState) -> f32 {
+    editor_layout(state).viewport_h
+}
+
+pub fn ui_canvas_size_ratio(
+    window_aspect: f32,
+    zoom: f32,
+    layout: EditorLayoutMetrics,
+) -> (f32, f32) {
     const MAIN_PADDING: f32 = 0.0025;
     const MAIN_SPACING: f32 = 0.0025;
     const SPLIT_CONTENT_W: f32 = 1.0 - (MAIN_PADDING * 2.0) - (MAIN_SPACING * 3.0);
     const SPLIT_CONTENT_H: f32 = 0.944 - (0.003 * 2.0);
-    const CENTER_W: f32 = 0.565;
-    const VIEWPORT_PANEL_H: f32 = 0.85;
     const BASE_W: f32 = 0.98;
     const ASPECT: f32 = 16.0 / 9.0;
 
     let panel_aspect =
-        window_aspect * (SPLIT_CONTENT_W * CENTER_W) / (SPLIT_CONTENT_H * VIEWPORT_PANEL_H);
+        window_aspect * (SPLIT_CONTENT_W * layout.center_w) / (SPLIT_CONTENT_H * layout.viewport_h);
     let w = BASE_W * zoom.max(0.25);
     (w, w * panel_aspect / ASPECT)
 }

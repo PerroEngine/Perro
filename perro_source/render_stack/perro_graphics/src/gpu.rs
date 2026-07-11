@@ -1238,7 +1238,7 @@ impl Gpu {
         // Keep window alive for the full surface lifetime.
         self.window_handle.id();
 
-        let underwater_water = camera_underwater(&camera_3d, waters_3d.as_ref());
+        let underwater_water = camera_underwater(&camera_3d, waters_3d);
         let post_requested = underwater_water.is_some()
             || PostProcessor::has_effects(camera_3d.post_processing.as_ref())
             || PostProcessor::has_effects(post_processing_2d.as_ref())

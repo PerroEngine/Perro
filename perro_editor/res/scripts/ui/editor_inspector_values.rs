@@ -320,7 +320,14 @@ pub fn inspector_display_rows_for_node(
         &scene_fields,
     ));
     rows = add_inspector_section_counts(rows);
-    rows = apply_collapsed_inspector_sections(rows, &state.inspector_collapsed_sections);
+    if state.inspector_modified_only {
+        rows = modified_inspector_rows_for_node(state, node, rows);
+    }
+    rows = if state.inspector_filter.trim().is_empty() {
+        apply_collapsed_inspector_sections(rows, &state.inspector_collapsed_sections)
+    } else {
+        filter_inspector_rows(&rows, &state.inspector_filter)
+    };
     if let Ok(mut cache) = cache.lock() {
         *cache = Some(CachedInspectorRows {
             key: cache_key,
@@ -328,6 +335,51 @@ pub fn inspector_display_rows_for_node(
         });
     }
     rows
+}
+
+pub fn filter_inspector_rows(rows: &[InspectorValueRow], query: &str) -> Vec<InspectorValueRow> {
+    let tokens = query
+        .split_whitespace()
+        .map(str::to_ascii_lowercase)
+        .collect::<Vec<_>>();
+    if tokens.is_empty() {
+        return rows.to_vec();
+    }
+
+    let mut keep = vec![false; rows.len()];
+    for (idx, row) in rows.iter().enumerate() {
+        let haystack = format!("{} {} {}", row.name, row.kind, row.path_key).to_ascii_lowercase();
+        if !tokens.iter().all(|token| haystack.contains(token)) {
+            continue;
+        }
+        keep[idx] = true;
+
+        let mut depth = row.depth;
+        for parent in (0..idx).rev() {
+            if depth == 0 {
+                break;
+            }
+            if rows[parent].depth < depth {
+                keep[parent] = true;
+                depth = rows[parent].depth;
+            }
+        }
+
+        if row.source == "section" || row.expandable {
+            for child in idx + 1..rows.len() {
+                if rows[child].depth <= row.depth {
+                    break;
+                }
+                keep[child] = true;
+            }
+        }
+    }
+
+    rows.iter()
+        .zip(keep)
+        .filter(|(_, keep)| *keep)
+        .map(|(row, _)| row.clone())
+        .collect()
 }
 
 fn add_inspector_section_counts(mut rows: Vec<InspectorValueRow>) -> Vec<InspectorValueRow> {
@@ -377,11 +429,13 @@ fn apply_collapsed_inspector_sections(
 
 fn inspector_row_cache_key(state: &EditorState, node: &perro_api::scene::SceneNodeEntry) -> String {
     format!(
-        "{}\n{}\n{}\n{}\n{}",
+        "{}\n{}\n{}\n{}\n{}\n{}\n{}",
         node.key.as_u32(),
         state.inspector_expanded_paths.join("\n"),
         state.inspector_rotation_mode,
         state.inspector_collapsed_sections.join("\n"),
+        state.inspector_filter,
+        state.inspector_modified_only,
         state.doc_text
     )
 }

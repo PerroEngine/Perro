@@ -224,11 +224,15 @@ mod tests {
             "project.toml|12|1|0".to_string(),
             "res|0|1|1".to_string(),
             "res/scenes|0|1|1".to_string(),
-            "res/scenes/main.scn|12|1|0".to_string(),
+            "res/scenes/editor/main.scn|12|1|0".to_string(),
         ];
         assert_eq!(
             res_paths_from_sigs(&sigs),
-            vec!["res://", "res://scenes/", "res://scenes/main.scn"]
+            vec![
+                "res://",
+                "res://scenes/",
+                "res://scenes/editor/main.scn"
+            ]
         );
     }
 }

@@ -70,9 +70,6 @@ pub fn update_freecam<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>)
         Vector2::ZERO
     };
 
-    let stream_id = find_named(ctx, "viewport_stream_3d")
-        .map(NodeID::as_u64)
-        .unwrap_or(0);
     let mut label = String::new();
     let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
         let speed = if key_down!(ctx.ipt, KeyCode::ControlLeft) {
@@ -90,17 +87,7 @@ pub fn update_freecam<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>)
         state.cam_z += movement.z * speed * dt;
         state.cam_yaw -= mouse.x * 0.0025;
         state.cam_pitch = (state.cam_pitch + mouse.y * 0.0025).clamp(-1.4, 1.4);
-        label = format!(
-            "Viewport  mode={}  cam=({:.1}, {:.1}, {:.1}) yaw={:.2} pitch={:.2} stream={} cam_id={}\nkeys: WASD move  Space/Shift up/down  MMB look  F frame  click select",
-            state.viewport_mode,
-            state.cam_x,
-            state.cam_y,
-            state.cam_z,
-            state.cam_yaw,
-            state.cam_pitch,
-            stream_id,
-            state.preview_camera_3d
-        );
+        label = "3D Perspective".to_string();
     });
     apply_freecam(ctx);
     set_label(ctx, "viewport_label", &label);
@@ -118,7 +105,15 @@ pub fn update_editor_shortcuts<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<
     if key_pressed!(ctx.ipt, KeyCode::Enter) && commit_focused_inspector_box(ctx) {
         return;
     }
+    if ctrl && shift && !alt && key_pressed!(ctx.ipt, KeyCode::KeyP) {
+        set_command_palette(ctx, true);
+        return;
+    }
     if editor_text_box_has_focus(ctx) {
+        return;
+    }
+    if ctrl && shift && !alt && key_pressed!(ctx.ipt, KeyCode::F11) {
+        toggle_distraction_free(ctx);
         return;
     }
     let picker_open = with_state!(ctx.run, EditorState, ctx.id, |state| {
@@ -556,6 +551,9 @@ pub fn commit_focused_inspector_box<API: ScriptAPI + ?Sized>(
         name.as_str(),
         "scene_filter_box"
             | "file_filter_box"
+            | "inspector_filter_box"
+            | "output_filter_box"
+            | "command_palette_filter_box"
             | "add_node_search_box"
             | "inspector_pick_filter_box"
     ) {
@@ -614,7 +612,9 @@ pub fn commit_inspector_box<API: ScriptAPI + ?Sized>(
 
 pub fn handle_editor_escape<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
     let action = with_state!(ctx.run, EditorState, ctx.id, |state| {
-        if state.inspector_picker_open {
+        if state.command_palette_open {
+            "command_palette"
+        } else if state.inspector_picker_open {
             "inspector_picker"
         } else if state.add_node_popup_open {
             "picker"
@@ -634,6 +634,7 @@ pub fn handle_editor_escape<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_,
         state.focused_inspector_box.clear();
     });
     match action {
+        "command_palette" => set_command_palette(ctx, false),
         "inspector_picker" => set_inspector_picker(ctx, false),
         "picker" => set_add_node_popup(ctx, false),
         "anim" => set_anim_drawer(ctx, false),
@@ -1300,9 +1301,6 @@ pub fn update_freecam_2d<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, AP
     } else {
         0.0
     };
-    let stream_id = find_named(ctx, "viewport_stream_2d")
-        .map(NodeID::as_u64)
-        .unwrap_or(0);
     let mut label = String::new();
     let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
         if state.cam2_zoom <= 0.001 {
@@ -1318,15 +1316,7 @@ pub fn update_freecam_2d<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, AP
             let wheel_zoom = wheel * 0.12;
             state.cam2_zoom = (state.cam2_zoom * (1.0 + key_zoom + wheel_zoom)).clamp(0.05, 40.0);
         }
-        label = format!(
-            "Viewport  mode={}  cam=({:.1}, {:.1}) zoom={:.2} stream={} cam_id={}\nkeys: WASD pan  +/- zoom  F frame  click select",
-            state.viewport_mode,
-            state.cam2_x,
-            state.cam2_y,
-            state.cam2_zoom,
-            stream_id,
-            state.preview_camera_2d
-        );
+        label = format!("2D  {:.0}%", state.cam2_zoom * 100.0);
     });
     apply_freecam_2d(ctx);
     apply_viewport_canvas(ctx);
@@ -1352,10 +1342,7 @@ pub fn update_ui_canvas<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API
         if wheel.abs() > 0.001 {
             state.ui_canvas_zoom = (state.ui_canvas_zoom * (1.0 + wheel * 0.12)).clamp(0.25, 12.0);
         }
-        label = format!(
-            "Viewport  mode={}  screen canvas zoom={:.2}\nkeys: wheel/+/- zoom  0 reset  F frame  click pick  Shift+drag snap",
-            state.viewport_mode, state.ui_canvas_zoom
-        );
+        label = format!("UI Canvas  {:.0}%", state.ui_canvas_zoom * 100.0);
     });
     apply_viewport_canvas(ctx);
     set_label(ctx, "viewport_label", &label);

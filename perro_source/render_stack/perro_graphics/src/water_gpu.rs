@@ -290,6 +290,7 @@ fn create_water_render_pipelines(
 }
 
 impl GpuWater {
+    #[allow(clippy::too_many_arguments)] // GPU init inputs map 1:1 to renderer resources.
     pub fn new(
         device: &wgpu::Device,
         color_format: wgpu::TextureFormat,

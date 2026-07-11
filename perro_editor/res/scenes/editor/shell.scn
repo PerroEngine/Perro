@@ -212,7 +212,7 @@ parent = @mode_3d_button
 [project_status]
 parent = @top_bar
     [UiLabel]
-        size_ratio = (0.71, 0.9)
+        size_ratio = (0.59, 0.9)
         text = "No project"
         text_size_ratio = 0.316
         color = "#B0B8C3"
@@ -220,6 +220,52 @@ parent = @top_bar
         v_align = "center"
     [/UiLabel]
 [/project_status]
+
+[distraction_free_button]
+parent = @top_bar
+    [UiButton]
+        size_ratio = (0.052, 0.9)
+        click_signals = ["editor_distraction_free"]
+        style = { fill = "#2A2F36", stroke = "#4A525D", stroke_width = 1.0, radius = 0.045 }
+        hover = { style = { fill = "#323842", stroke = "#4A525D", stroke_width = 1.0, radius = 0.045 } }
+        pressed = { style = { fill = "#4D84D1", stroke = "#6BA0EA", stroke_width = 1.0, radius = 0.045 } }
+    [/UiButton]
+[/distraction_free_button]
+
+[distraction_free_label]
+parent = @distraction_free_button
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "Focus"
+        text_size_ratio = 0.34
+        color = "#D7DBE0"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/distraction_free_label]
+
+[command_palette_button]
+parent = @top_bar
+    [UiButton]
+        size_ratio = (0.058, 0.9)
+        click_signals = ["editor_command_palette"]
+        style = { fill = "#2A2F36", stroke = "#4A525D", stroke_width = 1.0, radius = 0.045 }
+        hover = { style = { fill = "#323842", stroke = "#4A525D", stroke_width = 1.0, radius = 0.045 } }
+        pressed = { style = { fill = "#4D84D1", stroke = "#6BA0EA", stroke_width = 1.0, radius = 0.045 } }
+    [/UiButton]
+[/command_palette_button]
+
+[command_palette_button_label]
+parent = @command_palette_button
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "Commands"
+        text_size_ratio = 0.29
+        color = "#D7DBE0"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/command_palette_button_label]
 
 [main_split]
 parent = @root_stack
@@ -1416,6 +1462,29 @@ parent = @center_stack
     [/UiHLayout]
 [/scene_tabs]
 
+[scene_tab_prev_button]
+parent = @scene_tabs
+    [UiButton]
+        size_ratio = (0.04, 0.86)
+        click_signals = ["editor_tab_prev"]
+        style = { fill = "#262C35", stroke = "#3B4450", stroke_width = 1.0, radius = 0.045 }
+        hover = { style = { fill = "#323842", stroke = "#4A525D", stroke_width = 1.0, radius = 0.045 } }
+        pressed = { style = { fill = "#4D84D1", stroke = "#6BA0EA", stroke_width = 1.0, radius = 0.045 } }
+    [/UiButton]
+[/scene_tab_prev_button]
+
+[scene_tab_prev_label]
+parent = @scene_tab_prev_button
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "<"
+        text_size_ratio = 0.345
+        color = "#B0B8C3"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/scene_tab_prev_label]
+
 [scene_tab_0]
 parent = @scene_tabs
     [UiButton]
@@ -1648,10 +1717,46 @@ parent = @scene_tab_close_3
     [/UiLabel]
 [/scene_tab_close_3_label]
 
+[scene_tab_page_label]
+parent = @scene_tabs
+    [UiLabel]
+        size_ratio = (0.11, 0.86)
+        text = "1-4 / 4"
+        text_size_ratio = 0.302
+        color = "#8993A0"
+        h_align = "center"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/scene_tab_page_label]
+
+[scene_tab_next_button]
+parent = @scene_tabs
+    [UiButton]
+        size_ratio = (0.04, 0.86)
+        click_signals = ["editor_tab_next"]
+        style = { fill = "#262C35", stroke = "#3B4450", stroke_width = 1.0, radius = 0.045 }
+        hover = { style = { fill = "#323842", stroke = "#4A525D", stroke_width = 1.0, radius = 0.045 } }
+        pressed = { style = { fill = "#4D84D1", stroke = "#6BA0EA", stroke_width = 1.0, radius = 0.045 } }
+    [/UiButton]
+[/scene_tab_next_button]
+
+[scene_tab_next_label]
+parent = @scene_tab_next_button
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = ">"
+        text_size_ratio = 0.345
+        color = "#B0B8C3"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/scene_tab_next_label]
+
 [viewport_panel]
 parent = @center_stack
     [UiPanel]
-        size_ratio = (1.0, 0.85)
+        size_ratio = (1.0, 0.92)
         style = {
             fill = "#1B1E22",
             stroke = "#343A43",
@@ -1660,6 +1765,167 @@ parent = @center_stack
         }
     [/UiPanel]
 [/viewport_panel]
+
+[viewport_toolbar]
+parent = @viewport_panel
+    [UiHLayout]
+        anchor = "tl"
+        size_ratio = (0.72, 0.05)
+        z_index = 50.0
+        h_align = "start"
+        v_align = "center"
+        spacing = 0.003
+        padding = (0.006, 0.004)
+        style = { fill = "#20252CEE", stroke = "#3B4450", stroke_width = 1.0, radius = 0.006 }
+    [/UiHLayout]
+[/viewport_toolbar]
+
+[viewport_tool_select_button]
+parent = @viewport_toolbar
+    [UiButton]
+        size_ratio = (0.13, 0.86)
+        click_signals = ["editor_viewport_tool_select"]
+        style = { fill = "#2A2F36", stroke = "#4A525D", stroke_width = 1.0, radius = 0.025 }
+        hover = { style = { fill = "#323842", stroke = "#4A525D", stroke_width = 1.0, radius = 0.025 } }
+    [/UiButton]
+[/viewport_tool_select_button]
+[viewport_tool_select_label]
+parent = @viewport_tool_select_button
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "Select"
+        text_size_ratio = 0.3
+        color = "#D7DBE0"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/viewport_tool_select_label]
+
+[viewport_tool_move_button]
+parent = @viewport_toolbar
+    [UiButton]
+        size_ratio = (0.12, 0.86)
+        click_signals = ["editor_viewport_tool_move"]
+        style = { fill = "#2A2F36", stroke = "#4A525D", stroke_width = 1.0, radius = 0.025 }
+        hover = { style = { fill = "#323842", stroke = "#4A525D", stroke_width = 1.0, radius = 0.025 } }
+    [/UiButton]
+[/viewport_tool_move_button]
+[viewport_tool_move_label]
+parent = @viewport_tool_move_button
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "Move"
+        text_size_ratio = 0.3
+        color = "#D7DBE0"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/viewport_tool_move_label]
+
+[viewport_tool_rotate_button]
+parent = @viewport_toolbar
+    [UiButton]
+        size_ratio = (0.13, 0.86)
+        click_signals = ["editor_viewport_tool_rotate"]
+        style = { fill = "#2A2F36", stroke = "#4A525D", stroke_width = 1.0, radius = 0.025 }
+        hover = { style = { fill = "#323842", stroke = "#4A525D", stroke_width = 1.0, radius = 0.025 } }
+    [/UiButton]
+[/viewport_tool_rotate_button]
+[viewport_tool_rotate_label]
+parent = @viewport_tool_rotate_button
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "Rotate"
+        text_size_ratio = 0.3
+        color = "#D7DBE0"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/viewport_tool_rotate_label]
+
+[viewport_tool_scale_button]
+parent = @viewport_toolbar
+    [UiButton]
+        size_ratio = (0.12, 0.86)
+        click_signals = ["editor_viewport_tool_scale"]
+        style = { fill = "#2A2F36", stroke = "#4A525D", stroke_width = 1.0, radius = 0.025 }
+        hover = { style = { fill = "#323842", stroke = "#4A525D", stroke_width = 1.0, radius = 0.025 } }
+    [/UiButton]
+[/viewport_tool_scale_button]
+[viewport_tool_scale_label]
+parent = @viewport_tool_scale_button
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "Scale"
+        text_size_ratio = 0.3
+        color = "#D7DBE0"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/viewport_tool_scale_label]
+
+[viewport_space_button]
+parent = @viewport_toolbar
+    [UiButton]
+        size_ratio = (0.14, 0.86)
+        click_signals = ["editor_viewport_space"]
+        style = { fill = "#262C35", stroke = "#4A525D", stroke_width = 1.0, radius = 0.025 }
+        hover = { style = { fill = "#323842", stroke = "#4A525D", stroke_width = 1.0, radius = 0.025 } }
+    [/UiButton]
+[/viewport_space_button]
+[viewport_space_label]
+parent = @viewport_space_button
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "Global"
+        text_size_ratio = 0.3
+        color = "#B0B8C3"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/viewport_space_label]
+
+[viewport_snap_button]
+parent = @viewport_toolbar
+    [UiButton]
+        size_ratio = (0.12, 0.86)
+        click_signals = ["editor_viewport_snap"]
+        style = { fill = "#262C35", stroke = "#4A525D", stroke_width = 1.0, radius = 0.025 }
+        hover = { style = { fill = "#323842", stroke = "#4A525D", stroke_width = 1.0, radius = 0.025 } }
+    [/UiButton]
+[/viewport_snap_button]
+[viewport_snap_label]
+parent = @viewport_snap_button
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "Snap"
+        text_size_ratio = 0.3
+        color = "#B0B8C3"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/viewport_snap_label]
+
+[viewport_frame_button]
+parent = @viewport_toolbar
+    [UiButton]
+        size_ratio = (0.12, 0.86)
+        click_signals = ["editor_viewport_frame"]
+        style = { fill = "#262C35", stroke = "#4A525D", stroke_width = 1.0, radius = 0.025 }
+        hover = { style = { fill = "#323842", stroke = "#4A525D", stroke_width = 1.0, radius = 0.025 } }
+    [/UiButton]
+[/viewport_frame_button]
+[viewport_frame_label]
+parent = @viewport_frame_button
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "F Frame"
+        text_size_ratio = 0.3
+        color = "#B0B8C3"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/viewport_frame_label]
 
 [viewport_grid]
 parent = @viewport_panel
@@ -2358,7 +2624,7 @@ parent = @glb_viewer_panel
 [bottom_panel]
 parent = @center_stack
     [UiVLayout]
-        size_ratio = (1.0, 0.1)
+        size_ratio = (1.0, 0.03)
         h_align = "fill"
         v_align = "fill"
         spacing = 0.004
@@ -2375,7 +2641,7 @@ parent = @center_stack
 [bottom_tab_bar]
 parent = @bottom_panel
     [UiHLayout]
-        size_ratio = (1.0, 0.22)
+        size_ratio = (1.0, 1.0)
         h_align = "start"
         v_align = "center"
         spacing = 0.004
@@ -2461,10 +2727,118 @@ parent = @bottom_panel
     [/UiLabel]
 [/log_title]
 
+[output_toolbar]
+parent = @bottom_panel
+    [UiHLayout]
+        visible = false
+        size_ratio = (1.0, 0.22)
+        h_align = "fill"
+        v_align = "center"
+        spacing = 0.004
+    [/UiHLayout]
+[/output_toolbar]
+
+[output_clear_button]
+parent = @output_toolbar
+    [UiButton]
+        size_ratio = (0.09, 0.88)
+        click_signals = ["editor_output_clear"]
+        style = { fill = "#2A2F36", stroke = "#4A525D", stroke_width = 1.0, radius = 0.025 }
+        hover = { style = { fill = "#323842", stroke = "#4A525D", stroke_width = 1.0, radius = 0.025 } }
+    [/UiButton]
+[/output_clear_button]
+[output_clear_label]
+parent = @output_clear_button
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "Clear"
+        text_size_ratio = 0.3
+        color = "#D7DBE0"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/output_clear_label]
+
+[output_filter_box]
+parent = @output_toolbar
+    [UiTextBox]
+        size_ratio = (0.47, 0.88)
+        text = ""
+        placeholder = "Filter output"
+        text_size_ratio = 0.3
+        color = "#D7DBE0"
+        placeholder_color = "#8993A0"
+        text_changed_signals = ["editor_output_filter"]
+        unfocused_signals = ["editor_output_filter"]
+        style = { fill = "#1D2229", stroke = "#3B4450", stroke_width = 1.0, radius = 0.025 }
+        focused_style = { fill = "#20252C", stroke = "#6BA0EA", stroke_width = 1.0, radius = 0.025 }
+    [/UiTextBox]
+[/output_filter_box]
+
+[output_info_button]
+parent = @output_toolbar
+    [UiButton]
+        size_ratio = (0.12, 0.88)
+        click_signals = ["editor_output_info"]
+        style = { fill = "#2A2F36", stroke = "#4A525D", stroke_width = 1.0, radius = 0.025 }
+    [/UiButton]
+[/output_info_button]
+[output_info_label]
+parent = @output_info_button
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "Info"
+        text_size_ratio = 0.3
+        color = "#B0B8C3"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/output_info_label]
+
+[output_warn_button]
+parent = @output_toolbar
+    [UiButton]
+        size_ratio = (0.12, 0.88)
+        click_signals = ["editor_output_warn"]
+        style = { fill = "#2A2F36", stroke = "#D98B3A", stroke_width = 1.0, radius = 0.025 }
+    [/UiButton]
+[/output_warn_button]
+[output_warn_label]
+parent = @output_warn_button
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "Warn"
+        text_size_ratio = 0.3
+        color = "#D98B3A"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/output_warn_label]
+
+[output_error_button]
+parent = @output_toolbar
+    [UiButton]
+        size_ratio = (0.12, 0.88)
+        click_signals = ["editor_output_error"]
+        style = { fill = "#2A2F36", stroke = "#D85C5C", stroke_width = 1.0, radius = 0.025 }
+    [/UiButton]
+[/output_error_button]
+[output_error_label]
+parent = @output_error_button
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "Error"
+        text_size_ratio = 0.3
+        color = "#D85C5C"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/output_error_label]
+
 [log_text]
 parent = @bottom_panel
     [UiLabel]
-        size_ratio = (1.0, 0.72)
+        size_ratio = (1.0, 0.50)
         text = "open project"
         text_size_ratio = 0.316
         color = "#A7AFB9"
@@ -2686,6 +3060,99 @@ parent = @inspector_content
         }
     [/UiLabel]
 [/inspector_title]
+
+[inspector_filter_box]
+parent = @inspector_content
+    [UiTextBox]
+        size_ratio = (0.95, 0.03)
+        text = ""
+        placeholder = "Filter properties"
+        text_size_ratio = 0.331
+        color = "#D7DBE0"
+        placeholder_color = "#8993A0"
+        text_changed_signals = ["editor_inspector_filter"]
+        unfocused_signals = ["editor_inspector_filter"]
+        style = { fill = "#1D2229", stroke = "#3B4450", stroke_width = 1.0, radius = 0.035 }
+        focused_style = { fill = "#20252C", stroke = "#6BA0EA", stroke_width = 1.0, radius = 0.035 }
+    [/UiTextBox]
+[/inspector_filter_box]
+
+[inspector_tools_row]
+parent = @inspector_content
+    [UiHLayout]
+        size_ratio = (0.95, 0.028)
+        h_align = "fill"
+        v_align = "center"
+        spacing = 0.003
+    [/UiHLayout]
+[/inspector_tools_row]
+
+[inspector_modified_button]
+parent = @inspector_tools_row
+    [UiButton]
+        size_ratio = (0.5, 0.9)
+        click_signals = ["editor_inspector_modified"]
+        style = { fill = "#2A2F36", stroke = "#4A525D", stroke_width = 1.0, radius = 0.035 }
+        hover = { style = { fill = "#323842", stroke = "#4A525D", stroke_width = 1.0, radius = 0.035 } }
+        pressed = { style = { fill = "#4D84D1", stroke = "#6BA0EA", stroke_width = 1.0, radius = 0.035 } }
+    [/UiButton]
+[/inspector_modified_button]
+
+[inspector_modified_label]
+parent = @inspector_modified_button
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "Modified"
+        text_size_ratio = 0.31
+        color = "#D7DBE0"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/inspector_modified_label]
+
+[inspector_expand_all_button]
+parent = @inspector_tools_row
+    [UiButton]
+        size_ratio = (0.25, 0.9)
+        click_signals = ["editor_inspector_expand_all"]
+        style = { fill = "#2A2F36", stroke = "#4A525D", stroke_width = 1.0, radius = 0.035 }
+        hover = { style = { fill = "#323842", stroke = "#4A525D", stroke_width = 1.0, radius = 0.035 } }
+    [/UiButton]
+[/inspector_expand_all_button]
+
+[inspector_expand_all_label]
+parent = @inspector_expand_all_button
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "Open"
+        text_size_ratio = 0.31
+        color = "#B0B8C3"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/inspector_expand_all_label]
+
+[inspector_collapse_all_button]
+parent = @inspector_tools_row
+    [UiButton]
+        size_ratio = (0.25, 0.9)
+        click_signals = ["editor_inspector_collapse_all"]
+        style = { fill = "#2A2F36", stroke = "#4A525D", stroke_width = 1.0, radius = 0.035 }
+        hover = { style = { fill = "#323842", stroke = "#4A525D", stroke_width = 1.0, radius = 0.035 } }
+    [/UiButton]
+[/inspector_collapse_all_button]
+
+[inspector_collapse_all_label]
+parent = @inspector_collapse_all_button
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "Close"
+        text_size_ratio = 0.31
+        color = "#B0B8C3"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/inspector_collapse_all_label]
 
 [inspector_name_box]
 parent = @inspector_content
@@ -4571,6 +5038,265 @@ parent = @root_stack
         }
     [/UiLabel]
 [/status_bar]
+
+[command_palette_scrim]
+parent = @editor_root
+    [UiButton]
+        anchor = "center"
+        size_ratio = (1.0, 1.0)
+        z_index = 100.0
+        visible = false
+        click_signals = ["editor_command_palette_close"]
+        style = { fill = "#080A0DB8", stroke = "#00000000", stroke_width = 0.0, radius = 0.0 }
+        hover = { style = { fill = "#080A0DB8", stroke = "#00000000", stroke_width = 0.0, radius = 0.0 } }
+    [/UiButton]
+[/command_palette_scrim]
+
+[command_palette_panel]
+parent = @editor_root
+    [UiVLayout]
+        anchor = "center"
+        size_ratio = (0.5, 0.56)
+        z_index = 110.0
+        visible = false
+        h_align = "fill"
+        v_align = "start"
+        spacing = 0.006
+        padding = (0.018, 0.018)
+        style = { fill = "#20252C", stroke = "#6BA0EA", stroke_width = 1.0, radius = 0.012 }
+    [/UiVLayout]
+[/command_palette_panel]
+
+[command_palette_header]
+parent = @command_palette_panel
+    [UiHLayout]
+        size_ratio = (1.0, 0.1)
+        h_align = "fill"
+        v_align = "center"
+        spacing = 0.006
+    [/UiHLayout]
+[/command_palette_header]
+[command_palette_title]
+parent = @command_palette_header
+    [UiLabel]
+        size_ratio = (0.86, 1.0)
+        text = "Command Palette"
+        text_size_ratio = 0.34
+        color = "#D7DBE0"
+        h_align = "start"
+    [/UiLabel]
+[/command_palette_title]
+[command_palette_close_button]
+parent = @command_palette_header
+    [UiButton]
+        size_ratio = (0.14, 0.8)
+        click_signals = ["editor_command_palette_close"]
+        style = { fill = "#2A2F36", stroke = "#4A525D", stroke_width = 1.0, radius = 0.035 }
+    [/UiButton]
+[/command_palette_close_button]
+[command_palette_close_label]
+parent = @command_palette_close_button
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "Esc"
+        text_size_ratio = 0.31
+        color = "#B0B8C3"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/command_palette_close_label]
+
+[command_palette_filter_box]
+parent = @command_palette_panel
+    [UiTextBox]
+        size_ratio = (1.0, 0.1)
+        text = ""
+        placeholder = "Type command name"
+        text_size_ratio = 0.32
+        color = "#D7DBE0"
+        placeholder_color = "#8993A0"
+        text_changed_signals = ["editor_command_palette_filter"]
+        unfocused_signals = ["editor_command_palette_filter"]
+        style = { fill = "#171A1F", stroke = "#4A525D", stroke_width = 1.0, radius = 0.035 }
+        focused_style = { fill = "#1D2229", stroke = "#6BA0EA", stroke_width = 1.0, radius = 0.035 }
+    [/UiTextBox]
+[/command_palette_filter_box]
+
+[command_palette_row_0]
+parent = @command_palette_panel
+    [UiButton]
+        size_ratio = (1.0, 0.085)
+        click_signals = ["editor_command_0"]
+        style = { fill = "#262C35", stroke = "#3B4450", stroke_width = 1.0, radius = 0.025 }
+        hover = { style = { fill = "#344963", stroke = "#6BA0EA", stroke_width = 1.0, radius = 0.025 } }
+    [/UiButton]
+[/command_palette_row_0]
+[command_palette_row_0_label]
+parent = @command_palette_row_0
+    [UiLabel]
+        size_ratio = (0.96, 1.0)
+        text = "Save Scene"
+        text_size_ratio = 0.3
+        color = "#D7DBE0"
+        h_align = "start"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/command_palette_row_0_label]
+
+[command_palette_row_1]
+parent = @command_palette_panel
+    [UiButton]
+        size_ratio = (1.0, 0.085)
+        click_signals = ["editor_command_1"]
+        style = { fill = "#262C35", stroke = "#3B4450", stroke_width = 1.0, radius = 0.025 }
+        hover = { style = { fill = "#344963", stroke = "#6BA0EA", stroke_width = 1.0, radius = 0.025 } }
+    [/UiButton]
+[/command_palette_row_1]
+[command_palette_row_1_label]
+parent = @command_palette_row_1
+    [UiLabel]
+        size_ratio = (0.96, 1.0)
+        text = "Save All Scenes"
+        text_size_ratio = 0.3
+        color = "#D7DBE0"
+        h_align = "start"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/command_palette_row_1_label]
+
+[command_palette_row_2]
+parent = @command_palette_panel
+    [UiButton]
+        size_ratio = (1.0, 0.085)
+        click_signals = ["editor_command_2"]
+        style = { fill = "#262C35", stroke = "#3B4450", stroke_width = 1.0, radius = 0.025 }
+        hover = { style = { fill = "#344963", stroke = "#6BA0EA", stroke_width = 1.0, radius = 0.025 } }
+    [/UiButton]
+[/command_palette_row_2]
+[command_palette_row_2_label]
+parent = @command_palette_row_2
+    [UiLabel]
+        size_ratio = (0.96, 1.0)
+        text = "Add Child Node"
+        text_size_ratio = 0.3
+        color = "#D7DBE0"
+        h_align = "start"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/command_palette_row_2_label]
+
+[command_palette_row_3]
+parent = @command_palette_panel
+    [UiButton]
+        size_ratio = (1.0, 0.085)
+        click_signals = ["editor_command_3"]
+        style = { fill = "#262C35", stroke = "#3B4450", stroke_width = 1.0, radius = 0.025 }
+        hover = { style = { fill = "#344963", stroke = "#6BA0EA", stroke_width = 1.0, radius = 0.025 } }
+    [/UiButton]
+[/command_palette_row_3]
+[command_palette_row_3_label]
+parent = @command_palette_row_3
+    [UiLabel]
+        size_ratio = (0.96, 1.0)
+        text = "Switch Viewport"
+        text_size_ratio = 0.3
+        color = "#D7DBE0"
+        h_align = "start"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/command_palette_row_3_label]
+
+[command_palette_row_4]
+parent = @command_palette_panel
+    [UiButton]
+        size_ratio = (1.0, 0.085)
+        click_signals = ["editor_command_4"]
+        style = { fill = "#262C35", stroke = "#3B4450", stroke_width = 1.0, radius = 0.025 }
+        hover = { style = { fill = "#344963", stroke = "#6BA0EA", stroke_width = 1.0, radius = 0.025 } }
+    [/UiButton]
+[/command_palette_row_4]
+[command_palette_row_4_label]
+parent = @command_palette_row_4
+    [UiLabel]
+        size_ratio = (0.96, 1.0)
+        text = "Switch Viewport"
+        text_size_ratio = 0.3
+        color = "#D7DBE0"
+        h_align = "start"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/command_palette_row_4_label]
+
+[command_palette_row_5]
+parent = @command_palette_panel
+    [UiButton]
+        size_ratio = (1.0, 0.085)
+        click_signals = ["editor_command_5"]
+        style = { fill = "#262C35", stroke = "#3B4450", stroke_width = 1.0, radius = 0.025 }
+        hover = { style = { fill = "#344963", stroke = "#6BA0EA", stroke_width = 1.0, radius = 0.025 } }
+    [/UiButton]
+[/command_palette_row_5]
+[command_palette_row_5_label]
+parent = @command_palette_row_5
+    [UiLabel]
+        size_ratio = (0.96, 1.0)
+        text = "Switch Viewport"
+        text_size_ratio = 0.3
+        color = "#D7DBE0"
+        h_align = "start"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/command_palette_row_5_label]
+
+[command_palette_row_6]
+parent = @command_palette_panel
+    [UiButton]
+        size_ratio = (1.0, 0.085)
+        click_signals = ["editor_command_6"]
+        style = { fill = "#262C35", stroke = "#3B4450", stroke_width = 1.0, radius = 0.025 }
+        hover = { style = { fill = "#344963", stroke = "#6BA0EA", stroke_width = 1.0, radius = 0.025 } }
+    [/UiButton]
+[/command_palette_row_6]
+[command_palette_row_6_label]
+parent = @command_palette_row_6
+    [UiLabel]
+        size_ratio = (0.96, 1.0)
+        text = "Toggle Distraction Free"
+        text_size_ratio = 0.3
+        color = "#D7DBE0"
+        h_align = "start"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/command_palette_row_6_label]
+
+[command_palette_row_7]
+parent = @command_palette_panel
+    [UiButton]
+        size_ratio = (1.0, 0.085)
+        click_signals = ["editor_command_7"]
+        style = { fill = "#262C35", stroke = "#3B4450", stroke_width = 1.0, radius = 0.025 }
+        hover = { style = { fill = "#344963", stroke = "#6BA0EA", stroke_width = 1.0, radius = 0.025 } }
+    [/UiButton]
+[/command_palette_row_7]
+[command_palette_row_7_label]
+parent = @command_palette_row_7
+    [UiLabel]
+        size_ratio = (0.96, 1.0)
+        text = "Toggle Output"
+        text_size_ratio = 0.3
+        color = "#D7DBE0"
+        h_align = "start"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/command_palette_row_7_label]
 
 [add_node_popup]
 parent = @editor_root
