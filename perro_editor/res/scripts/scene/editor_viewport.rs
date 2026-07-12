@@ -858,6 +858,9 @@ pub fn glb_viewer_doc_text(glb_path: &str, mesh_count: usize, has_rig: bool) -> 
         out.push_str("]\n");
     }
     out.push_str(
+        "\n[ViewerGround]\nparent = @ViewerRoot\n    [MeshInstance3D]\n        mesh = \"__plane__\"\n        cast_shadows = false\n        receive_shadows = true\n        material = {\n            type = \"standard\",\n            base_color_factor = (0.161, 0.173, 0.192, 1.0),\n            roughness_factor = 0.92,\n            metallic_factor = 0.0,\n            alpha_mode = \"OPAQUE\",\n            double_sided = true\n        }\n        [Node3D]\n            position = (0, -0.002, 0)\n            scale = (40, 1, 40)\n        [/Node3D]\n    [/MeshInstance3D]\n[/ViewerGround]\n",
+    );
+    out.push_str(
         "\n[ViewerKeyLight]\nparent = @ViewerRoot\n    [RayLight3D]\n        rotation_deg = (-42, 32, 0)\n        intensity = 1.15\n    [/RayLight3D]\n[/ViewerKeyLight]\n",
     );
     out.push_str(
@@ -958,6 +961,112 @@ pub fn rebuild_glb_preview<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, 
     });
     set_label(ctx, "asset_glb_play_label", "Play");
     apply_freecam(ctx);
+    apply_glb_mesh_isolation(ctx);
+}
+
+// Number of surface slots probed per mesh when computing stage bounds. glTF
+// primitives decode to contiguous surface indices starting at 0; probing a
+// small fixed range covers realistic meshes without needing a surface count
+// from the glb inspection API.
+const GLB_BOUNDS_SURFACE_PROBE: u32 = 8;
+
+// Reads local-space mesh bounds via the mesh query data-surface API (see
+// commit 8b918c01 "Add mesh query data access APIs") and merges them across
+// every mesh/surface in the glb. The viewer stage parents each mesh directly
+// under ViewerRoot with an identity transform, so mesh-local bounds already
+// equal stage-local bounds -- no per-instance transform math needed.
+fn glb_stage_bounds<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    glb_path: &str,
+    mesh_count: usize,
+) -> Option<(Vector3, Vector3)> {
+    let mut min = None::<Vector3>;
+    let mut max = None::<Vector3>;
+    for mesh_index in 0..mesh_count.max(1) {
+        let mesh_id = ctx.res.Meshes().load(format!("{glb_path}:mesh[{mesh_index}]"));
+        if mesh_id.is_nil() {
+            continue;
+        }
+        for surface_index in 0..GLB_BOUNDS_SURFACE_PROBE {
+            for region in ctx.run.MeshQuery().data_surface_regions(mesh_id, surface_index) {
+                min = Some(min.map_or(region.aabb_min_local, |value| {
+                    value.min(region.aabb_min_local)
+                }));
+                max = Some(max.map_or(region.aabb_max_local, |value| {
+                    value.max(region.aabb_max_local)
+                }));
+            }
+        }
+    }
+    min.zip(max)
+}
+
+// Fits the freecam distance (and re-centers it) to the glb stage bounds so
+// large or tiny models both land in view on open, instead of the fixed
+// reset_freecam default. Falls back to a mesh-count heuristic when bounds
+// data is unreachable (e.g. an undecodable mesh source). Called once from
+// open_gltf_path right after the stage builds -- not from rebuild_glb_preview
+// itself, so a Play/Stop rebuild does not snap the user's freecam back.
+pub fn auto_frame_glb_camera<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    glb_path: &str,
+    mesh_count: usize,
+) {
+    let (center, radius) = match glb_stage_bounds(ctx, glb_path, mesh_count) {
+        Some((min, max)) => {
+            let size = max - min;
+            let center = min + size * 0.5;
+            (center, (size.length() * 0.5).max(0.35))
+        }
+        None => (Vector3::ZERO, (1.5 + mesh_count as f32 * 0.35).min(12.0)),
+    };
+    const FOV_Y_DEGREES: f32 = 60.0;
+    let half_fov = (FOV_Y_DEGREES * 0.5).to_radians();
+    let distance = (radius / half_fov.tan() * 1.25).clamp(1.5, 400.0);
+    // Ratios pulled from reset_freecam's (x=0, y=3, z=8, pitch=-0.25) default
+    // so auto-framing keeps the same three-quarter look angle, just scaled.
+    let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        state.cam_x = center.x;
+        state.cam_y = center.y + distance * 0.351;
+        state.cam_z = center.z + distance * 0.936;
+        state.cam_yaw = 0.0;
+        state.cam_pitch = -0.25;
+    });
+    apply_freecam(ctx);
+}
+
+// Shows/hides glb viewer meshes per state.glb_viewer_isolate: only the mesh
+// at active_glb_mesh_index stays visible when isolating, all show otherwise.
+pub fn apply_glb_mesh_isolation<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let (mesh_ids, isolate, active_index) = with_state!(ctx.run, EditorState, ctx.id, |state| {
+        (
+            state.glb_viewer_mesh_ids.clone(),
+            state.glb_viewer_isolate,
+            state.active_glb_mesh_index,
+        )
+    });
+    for (index, mesh_id) in mesh_ids.iter().enumerate() {
+        if *mesh_id == 0 {
+            continue;
+        }
+        let visible = !isolate || index == active_index;
+        let _ = with_base_node_mut!(ctx.run, Node3D, NodeID::from_u64(*mesh_id), |node| {
+            node.visible = visible;
+        });
+    }
+}
+
+pub fn toggle_glb_viewer_isolate<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        state.glb_viewer_isolate = !state.glb_viewer_isolate;
+        state.log = if state.glb_viewer_isolate {
+            format!("glb isolate on\nmesh[{}]", state.active_glb_mesh_index)
+        } else {
+            "glb isolate off".to_string()
+        };
+    });
+    apply_glb_mesh_isolation(ctx);
+    refresh_all(ctx);
 }
 
 // Play/stop the glb's selected animation on the viewer rig. The clip is

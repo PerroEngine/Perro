@@ -4118,6 +4118,34 @@ parent = @asset_glb_play_button
     [/UiLabel]
 [/asset_glb_play_label]
 
+[asset_glb_isolate_button]
+parent = @asset_action_row
+    [UiButton]
+        size_ratio = (0.19, 0.86)
+        click_signals = ["editor_asset_glb_isolate"]
+        style = {
+            fill = "#2A2F36",
+            stroke = "#4A525D",
+            stroke_width = 1.0,
+            radius = 0.045
+        }
+        hover = { style = { fill = "#323842", stroke = "#4A525D", stroke_width = 1.0, radius = 0.045 } }
+        pressed = { style = { fill = "#4D84D1", stroke = "#6BA0EA", stroke_width = 1.0, radius = 0.045 } }
+    [/UiButton]
+[/asset_glb_isolate_button]
+
+[asset_glb_isolate_label]
+parent = @asset_glb_isolate_button
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "Isolate"
+        text_size_ratio = 0.28
+        color = "#D7DBE0"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/asset_glb_isolate_label]
+
 [inspector_pos]
 parent = @inspector_content
     [UiButton]

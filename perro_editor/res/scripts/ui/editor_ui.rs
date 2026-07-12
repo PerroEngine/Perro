@@ -671,6 +671,25 @@ fn refresh_inspector_view<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, A
         "asset_glb_mat_button",
         view.inspector.glb_asset_actions,
     );
+    set_ui_display(
+        ctx,
+        "asset_glb_play_button",
+        view.inspector.glb_asset_actions,
+    );
+    set_ui_display(
+        ctx,
+        "asset_glb_isolate_button",
+        view.inspector.glb_asset_actions,
+    );
+    set_button_fill(
+        ctx,
+        "asset_glb_isolate_button",
+        if view.inspector.glb_isolate_active {
+            theme::ACCENT
+        } else {
+            theme::BG_WIDGET
+        },
+    );
     let transform_closed =
         inspector_section_collapsed(&view.inspector.collapsed_sections, "transform");
     let vars_closed = false;
@@ -1515,15 +1534,20 @@ fn apply_inspector_dynamic_layout<API: ScriptAPI + ?Sized>(
     inspector: &InspectorViewData,
 ) {
     let asset_button_w = if inspector.glb_asset_actions {
-        0.25
+        0.19
     } else if inspector.asset_actions {
         0.50
     } else {
         1.0
     };
     set_button_size(ctx, "asset_use_button", (asset_button_w, 0.62));
-    for name in ["asset_glb_anim_button", "asset_glb_mat_button"] {
-        set_button_size(ctx, name, (0.25, 0.62));
+    for name in [
+        "asset_glb_anim_button",
+        "asset_glb_mat_button",
+        "asset_glb_play_button",
+        "asset_glb_isolate_button",
+    ] {
+        set_button_size(ctx, name, (0.19, 0.62));
     }
 }
 
@@ -1608,6 +1632,7 @@ pub struct InspectorViewData {
     asset_actions: bool,
     asset_use_action: bool,
     glb_asset_actions: bool,
+    glb_isolate_active: bool,
     pos_label: String,
     pos: Vec<String>,
     rotation_label: String,
@@ -1638,6 +1663,7 @@ impl Default for InspectorViewData {
             asset_actions: false,
             asset_use_action: false,
             glb_asset_actions: false,
+            glb_isolate_active: false,
             pos_label: "Transform".to_string(),
             pos: Vec::new(),
             rotation_label: "Rotation".to_string(),
@@ -1743,6 +1769,7 @@ impl InspectorViewData {
         self.asset_actions = !path.is_empty() && !path.ends_with('/') && !state.doc_text.is_empty();
         self.asset_use_action = self.asset_actions && kind != "scene";
         self.glb_asset_actions = self.asset_actions && is_gltf_path(path);
+        self.glb_isolate_active = self.glb_asset_actions && state.glb_viewer_isolate;
     }
 }
 
@@ -3073,32 +3100,21 @@ pub fn gltf_summary(
     animation_count: usize,
     skeleton_count: usize,
     texture_count: usize,
-    node_count: usize,
-    scene_count: usize,
     mesh_index: usize,
     mat_index: usize,
     anim_index: usize,
 ) -> String {
     format!(
-        "GLB  {}\nselected:\nmesh = {}\nmat = {}\nanim = {}\nmeshes: {}\n{}\nmaterials: {}\n{}\nanimations: {}\n{}\nskins: {}\ntextures: {}\nnodes: {} scenes: {}\nkeys: [] mesh  Shift+[] mat  Ctrl+Shift+[] anim\nconvert:\n- anim -> perro_cli import_anim {} --output res/animations/<clip>.panim --clip {}\n- mesh -> static pipeline emits {}:mesh[index] pmesh entries\n- mat -> static pipeline emits {}:mat[index] pmat refs",
+        "{}\n\nmeshes      {}  sel {}\nmaterials   {}  sel {}\nanimations  {}  sel {}\nskeletons   {}\ntextures    {}\n\n[ ] mesh   shift+[ ] mat   ctrl+shift+[ ] anim",
         editor_files::rel_label(path),
-        indexed_ref(path, "mesh", mesh_count, mesh_index),
-        indexed_ref(path, "mat", material_count, mat_index),
-        indexed_ref(path, "animation", animation_count, anim_index),
         mesh_count,
-        indexed_refs(path, "mesh", mesh_count),
+        indexed_ref(path, "mesh", mesh_count, mesh_index),
         material_count,
-        indexed_refs(path, "mat", material_count),
+        indexed_ref(path, "mat", material_count, mat_index),
         animation_count,
-        indexed_refs(path, "animation", animation_count),
+        indexed_ref(path, "animation", animation_count, anim_index),
         skeleton_count,
         texture_count,
-        node_count,
-        scene_count,
-        editor_files::rel_label(path),
-        anim_index,
-        path,
-        path
     )
 }
 
