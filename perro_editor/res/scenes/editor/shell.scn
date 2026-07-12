@@ -2861,7 +2861,7 @@ parent = @bottom_panel
 [anim_toolbar]
 parent = @anim_drawer
     [UiHLayout]
-        size_ratio = (1.0, 0.16)
+        size_ratio = (1.0, 0.14)
         h_align = "fill"
         v_align = "center"
         spacing = 0.004
@@ -3168,10 +3168,316 @@ parent = @anim_close_button
     [/UiLabel]
 [/anim_close_label]
 
+[anim_toolbar2]
+parent = @anim_drawer
+    [UiHLayout]
+        size_ratio = (1.0, 0.14)
+        h_align = "fill"
+        v_align = "center"
+        spacing = 0.004
+        style = {
+            fill = "#2A2F36",
+            stroke = "#343A43",
+            stroke_width = 1.0,
+            radius = 0.006
+        }
+    [/UiHLayout]
+[/anim_toolbar2]
+
+[anim_active_label]
+parent = @anim_toolbar2
+    [UiLabel]
+        size_ratio = (0.10, 1.0)
+        text = "Key: none"
+        text_size_ratio = 0.3
+        color = "#F0C96D"
+        h_align = "start"
+    [/UiLabel]
+[/anim_active_label]
+
+[anim_prev_key_button]
+parent = @anim_toolbar2
+    [UiButton]
+        size_ratio = (0.05, 0.78)
+        click_signals = ["editor_anim_prev_key"]
+        style = { fill = "#2A3039", stroke = "#4A525D", stroke_width = 1.0, radius = 0.045 }
+        hover = { style = { fill = "#353D48", stroke = "#4A525D", stroke_width = 1.0, radius = 0.045 } }
+        pressed = { style = { fill = "#4D84D1", stroke = "#6BA0EA", stroke_width = 1.0, radius = 0.045 } }
+    [/UiButton]
+[/anim_prev_key_button]
+[anim_prev_key_label]
+parent = @anim_prev_key_button
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "< Key"
+        text_size_ratio = 0.3
+        color = "#D7DBE0"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/anim_prev_key_label]
+
+[anim_next_key_button]
+parent = @anim_toolbar2
+    [UiButton]
+        size_ratio = (0.05, 0.78)
+        click_signals = ["editor_anim_next_key"]
+        style = { fill = "#2A3039", stroke = "#4A525D", stroke_width = 1.0, radius = 0.045 }
+        hover = { style = { fill = "#353D48", stroke = "#4A525D", stroke_width = 1.0, radius = 0.045 } }
+        pressed = { style = { fill = "#4D84D1", stroke = "#6BA0EA", stroke_width = 1.0, radius = 0.045 } }
+    [/UiButton]
+[/anim_next_key_button]
+[anim_next_key_label]
+parent = @anim_next_key_button
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "Key >"
+        text_size_ratio = 0.3
+        color = "#D7DBE0"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/anim_next_key_label]
+
+[anim_interp_button]
+parent = @anim_toolbar2
+    [UiButton]
+        size_ratio = (0.10, 0.78)
+        click_signals = ["editor_anim_interp"]
+        style = { fill = "#2A3039", stroke = "#4A525D", stroke_width = 1.0, radius = 0.045 }
+        hover = { style = { fill = "#353D48", stroke = "#4A525D", stroke_width = 1.0, radius = 0.045 } }
+        pressed = { style = { fill = "#4D84D1", stroke = "#6BA0EA", stroke_width = 1.0, radius = 0.045 } }
+    [/UiButton]
+[/anim_interp_button]
+[anim_interp_label]
+parent = @anim_interp_button
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "interp: —"
+        text_size_ratio = 0.28
+        color = "#D7DBE0"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/anim_interp_label]
+
+[anim_ease_button]
+parent = @anim_toolbar2
+    [UiButton]
+        size_ratio = (0.105, 0.78)
+        click_signals = ["editor_anim_ease"]
+        style = { fill = "#2A3039", stroke = "#4A525D", stroke_width = 1.0, radius = 0.045 }
+        hover = { style = { fill = "#353D48", stroke = "#4A525D", stroke_width = 1.0, radius = 0.045 } }
+        pressed = { style = { fill = "#4D84D1", stroke = "#6BA0EA", stroke_width = 1.0, radius = 0.045 } }
+    [/UiButton]
+[/anim_ease_button]
+[anim_ease_label]
+parent = @anim_ease_button
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "ease: —"
+        text_size_ratio = 0.28
+        color = "#D7DBE0"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/anim_ease_label]
+
+[anim_value_box]
+parent = @anim_toolbar2
+    [UiTextBox]
+        size_ratio = (0.15, 0.78)
+        text = ""
+        placeholder = "key value"
+        text_size_ratio = 0.28
+        color = "#D7DBE0"
+        placeholder_color = "#8993A0"
+        unfocused_signals = ["editor_anim_value"]
+        style = { fill = "#1D2229", stroke = "#3B4450", stroke_width = 1.0, radius = 0.025 }
+        focused_style = { fill = "#20252C", stroke = "#6BA0EA", stroke_width = 1.0, radius = 0.025 }
+    [/UiTextBox]
+[/anim_value_box]
+
+[anim_open_button]
+parent = @anim_toolbar2
+    [UiButton]
+        size_ratio = (0.065, 0.78)
+        click_signals = ["editor_anim_open"]
+        style = { fill = "#2A3039", stroke = "#4A525D", stroke_width = 1.0, radius = 0.045 }
+        hover = { style = { fill = "#353D48", stroke = "#4A525D", stroke_width = 1.0, radius = 0.045 } }
+        pressed = { style = { fill = "#4D84D1", stroke = "#6BA0EA", stroke_width = 1.0, radius = 0.045 } }
+    [/UiButton]
+[/anim_open_button]
+[anim_open_label]
+parent = @anim_open_button
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "Open"
+        text_size_ratio = 0.3
+        color = "#D7DBE0"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/anim_open_label]
+
+[anim_undo_button]
+parent = @anim_toolbar2
+    [UiButton]
+        size_ratio = (0.05, 0.78)
+        click_signals = ["editor_anim_undo"]
+        style = { fill = "#2A3039", stroke = "#4A525D", stroke_width = 1.0, radius = 0.045 }
+        hover = { style = { fill = "#353D48", stroke = "#4A525D", stroke_width = 1.0, radius = 0.045 } }
+        pressed = { style = { fill = "#4D84D1", stroke = "#6BA0EA", stroke_width = 1.0, radius = 0.045 } }
+    [/UiButton]
+[/anim_undo_button]
+[anim_undo_label]
+parent = @anim_undo_button
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "Undo"
+        text_size_ratio = 0.3
+        color = "#D7DBE0"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/anim_undo_label]
+
+[anim_redo_button]
+parent = @anim_toolbar2
+    [UiButton]
+        size_ratio = (0.05, 0.78)
+        click_signals = ["editor_anim_redo"]
+        style = { fill = "#2A3039", stroke = "#4A525D", stroke_width = 1.0, radius = 0.045 }
+        hover = { style = { fill = "#353D48", stroke = "#4A525D", stroke_width = 1.0, radius = 0.045 } }
+        pressed = { style = { fill = "#4D84D1", stroke = "#6BA0EA", stroke_width = 1.0, radius = 0.045 } }
+    [/UiButton]
+[/anim_redo_button]
+[anim_redo_label]
+parent = @anim_redo_button
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "Redo"
+        text_size_ratio = 0.3
+        color = "#D7DBE0"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/anim_redo_label]
+
+[anim_zoom_out_button]
+parent = @anim_toolbar2
+    [UiButton]
+        size_ratio = (0.035, 0.78)
+        click_signals = ["editor_anim_zoom_out"]
+        style = { fill = "#2A3039", stroke = "#4A525D", stroke_width = 1.0, radius = 0.045 }
+        hover = { style = { fill = "#353D48", stroke = "#4A525D", stroke_width = 1.0, radius = 0.045 } }
+        pressed = { style = { fill = "#4D84D1", stroke = "#6BA0EA", stroke_width = 1.0, radius = 0.045 } }
+    [/UiButton]
+[/anim_zoom_out_button]
+[anim_zoom_out_label]
+parent = @anim_zoom_out_button
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "-"
+        text_size_ratio = 0.4
+        color = "#D7DBE0"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/anim_zoom_out_label]
+
+[anim_zoom_in_button]
+parent = @anim_toolbar2
+    [UiButton]
+        size_ratio = (0.035, 0.78)
+        click_signals = ["editor_anim_zoom_in"]
+        style = { fill = "#2A3039", stroke = "#4A525D", stroke_width = 1.0, radius = 0.045 }
+        hover = { style = { fill = "#353D48", stroke = "#4A525D", stroke_width = 1.0, radius = 0.045 } }
+        pressed = { style = { fill = "#4D84D1", stroke = "#6BA0EA", stroke_width = 1.0, radius = 0.045 } }
+    [/UiButton]
+[/anim_zoom_in_button]
+[anim_zoom_in_label]
+parent = @anim_zoom_in_button
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "+"
+        text_size_ratio = 0.4
+        color = "#D7DBE0"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/anim_zoom_in_label]
+
+[anim_fit_button]
+parent = @anim_toolbar2
+    [UiButton]
+        size_ratio = (0.045, 0.78)
+        click_signals = ["editor_anim_fit"]
+        style = { fill = "#2A3039", stroke = "#4A525D", stroke_width = 1.0, radius = 0.045 }
+        hover = { style = { fill = "#353D48", stroke = "#4A525D", stroke_width = 1.0, radius = 0.045 } }
+        pressed = { style = { fill = "#4D84D1", stroke = "#6BA0EA", stroke_width = 1.0, radius = 0.045 } }
+    [/UiButton]
+[/anim_fit_button]
+[anim_fit_label]
+parent = @anim_fit_button
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "Fit"
+        text_size_ratio = 0.3
+        color = "#D7DBE0"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/anim_fit_label]
+
+[anim_track_up_button]
+parent = @anim_toolbar2
+    [UiButton]
+        size_ratio = (0.035, 0.78)
+        click_signals = ["editor_anim_track_up"]
+        style = { fill = "#2A3039", stroke = "#4A525D", stroke_width = 1.0, radius = 0.045 }
+        hover = { style = { fill = "#353D48", stroke = "#4A525D", stroke_width = 1.0, radius = 0.045 } }
+        pressed = { style = { fill = "#4D84D1", stroke = "#6BA0EA", stroke_width = 1.0, radius = 0.045 } }
+    [/UiButton]
+[/anim_track_up_button]
+[anim_track_up_label]
+parent = @anim_track_up_button
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "^"
+        text_size_ratio = 0.4
+        color = "#D7DBE0"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/anim_track_up_label]
+
+[anim_track_down_button]
+parent = @anim_toolbar2
+    [UiButton]
+        size_ratio = (0.035, 0.78)
+        click_signals = ["editor_anim_track_down"]
+        style = { fill = "#2A3039", stroke = "#4A525D", stroke_width = 1.0, radius = 0.045 }
+        hover = { style = { fill = "#353D48", stroke = "#4A525D", stroke_width = 1.0, radius = 0.045 } }
+        pressed = { style = { fill = "#4D84D1", stroke = "#6BA0EA", stroke_width = 1.0, radius = 0.045 } }
+    [/UiButton]
+[/anim_track_down_button]
+[anim_track_down_label]
+parent = @anim_track_down_button
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "v"
+        text_size_ratio = 0.4
+        color = "#D7DBE0"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/anim_track_down_label]
+
 [anim_body]
 parent = @anim_drawer
     [UiHLayout]
-        size_ratio = (1.0, 0.82)
+        size_ratio = (1.0, 0.68)
         h_align = "fill"
         v_align = "fill"
         spacing = 0.004

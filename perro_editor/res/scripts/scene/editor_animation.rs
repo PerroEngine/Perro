@@ -5,8 +5,8 @@ use crate::scripts_assets_editor_assets_rs::*;
 use crate::scripts_assets_editor_file_watch_rs as editor_file_watch;
 use crate::scripts_assets_editor_files_rs as editor_files;
 use crate::scripts_editor_main_rs::{
-    EditorState, FILE_WATCH_INTERVAL_FRAMES, MAX_ANIM_MARKERS, MAX_ANIM_TRACKS, MAX_FILES,
-    MAX_INSPECTOR_PICKER_ROWS, MAX_NODE_PICKER_ROWS, MAX_NODES, MAX_RECENT, MAX_TABS,
+    EditorState, FILE_WATCH_INTERVAL_FRAMES, MAX_ANIM_MARKERS, MAX_ANIM_TRACKS, MAX_ANIM_UNDO,
+    MAX_FILES, MAX_INSPECTOR_PICKER_ROWS, MAX_NODE_PICKER_ROWS, MAX_NODES, MAX_RECENT, MAX_TABS,
     RECENT_PROJECTS_PATH, cached_scene_doc, cached_scene_doc_shared, set_state_scene_doc,
 };
 use crate::scripts_scene_editor_gizmos_rs as editor_gizmos;
@@ -1415,10 +1415,95 @@ pub fn cached_anim_doc(state: &EditorState) -> panim::PanimDoc {
     panim::parse_panim(&state.anim_doc_text)
 }
 
+// Records every model mutation for undo. Pushes the pre-change text onto
+// the undo stack (capped), clears redo, then swaps in the new text. No-op
+// when serialization is byte-identical (nothing actually changed).
 fn touch_anim_doc(state: &mut EditorState, doc: &panim::PanimDoc) {
-    state.anim_doc_text = panim::serialize_panim(doc);
+    let next = panim::serialize_panim(doc);
+    if next == state.anim_doc_text {
+        return;
+    }
+    push_anim_undo(state);
+    state.anim_redo_stack.clear();
+    state.anim_doc_text = next;
     state.anim_dirty = true;
     state.anim_clip_dirty = true;
+}
+
+fn push_anim_undo(state: &mut EditorState) {
+    if state.anim_doc_text.is_empty() {
+        return;
+    }
+    if state
+        .anim_undo_stack
+        .last()
+        .is_some_and(|item| item == &state.anim_doc_text)
+    {
+        return;
+    }
+    state.anim_undo_stack.push(state.anim_doc_text.clone());
+    if state.anim_undo_stack.len() > MAX_ANIM_UNDO {
+        state.anim_undo_stack.remove(0);
+    }
+}
+
+fn clamp_anim_selected_track(state: &mut EditorState, count: usize) {
+    if count == 0 {
+        state.anim_selected_track = 0;
+        state.anim_track_scroll = 0;
+        return;
+    }
+    if state.anim_selected_track >= count {
+        state.anim_selected_track = count - 1;
+    }
+    let max_scroll = count.saturating_sub(MAX_ANIM_TRACKS);
+    if state.anim_track_scroll > max_scroll {
+        state.anim_track_scroll = max_scroll;
+    }
+}
+
+pub fn anim_undo<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let ok = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        let Some(prev) = state.anim_undo_stack.pop() else {
+            state.log = "anim undo\nempty".to_string();
+            return false;
+        };
+        if !state.anim_doc_text.is_empty() {
+            state.anim_redo_stack.push(state.anim_doc_text.clone());
+        }
+        state.anim_doc_text = prev;
+        state.anim_dirty = true;
+        state.anim_clip_dirty = true;
+        let count = cached_anim_doc(state).tracks.len();
+        clamp_anim_selected_track(state, count);
+        state.log = format!("anim undo\n{} left", state.anim_undo_stack.len());
+        true
+    })
+    .unwrap_or(false);
+    if ok {
+        refresh_all(ctx);
+    }
+}
+
+pub fn anim_redo<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let ok = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        let Some(next) = state.anim_redo_stack.pop() else {
+            state.log = "anim redo\nempty".to_string();
+            return false;
+        };
+        push_anim_undo(state);
+        state.anim_doc_text = next;
+        state.anim_dirty = true;
+        state.anim_clip_dirty = true;
+        let count = cached_anim_doc(state).tracks.len();
+        clamp_anim_selected_track(state, count);
+        state.log = format!("anim redo\n{} left", state.anim_redo_stack.len());
+        true
+    })
+    .unwrap_or(false);
+    if ok {
+        refresh_all(ctx);
+    }
 }
 
 // Loads .panim text into editor state and auto-binds the scene's
@@ -1894,16 +1979,220 @@ pub fn anim_total_frames(state: &EditorState) -> u32 {
     cached_anim_doc(state).total_frames().max(2)
 }
 
+// Resolved timeline view window (start, len) in frame units for `state`.
+pub fn resolve_anim_view(state: &EditorState) -> (f32, f32) {
+    panim::anim_view_window(state.anim_view_start, state.anim_view_len, anim_total_frames(state))
+}
+
+// Center of `frame` mapped to a [0,1] ratio across the visible window.
+fn anim_frame_to_ratio(frame: f32, start: f32, len: f32) -> f32 {
+    (frame + 0.5 - start) / len
+}
+
+// Keeps the playhead inside the zoomed window (no-op while fit-to-all).
+fn follow_anim_playhead(state: &mut EditorState) {
+    if state.anim_view_len <= 0.0 {
+        return;
+    }
+    let (start, len) = resolve_anim_view(state);
+    let total = anim_total_frames(state) as f32;
+    let mut next = start;
+    let playhead = state.anim_playhead;
+    if playhead < start {
+        next = playhead;
+    } else if playhead > start + len - 1.0 {
+        next = playhead - (len - 1.0);
+    }
+    state.anim_view_start = next.clamp(0.0, (total - len).max(0.0));
+}
+
 fn seek_anim_to_ratio<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, ratio: f32) {
     let frame = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
         let total = anim_total_frames(state);
-        let frame = (ratio * (total - 1) as f32).round().clamp(0.0, (total - 1) as f32);
+        let (start, len) = resolve_anim_view(state);
+        let frame = (ratio * len + start - 0.5)
+            .round()
+            .clamp(0.0, (total - 1) as f32);
         state.anim_playhead = frame;
         frame as u32
     })
     .unwrap_or(0);
     seek_anim_preview(ctx, frame);
     sync_anim_transport_widgets(ctx);
+}
+
+// Jumps the playhead to the previous/next key on the selected track.
+pub fn jump_anim_key<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, dir: i32) {
+    let target = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        let doc = cached_anim_doc(state);
+        let track = state.anim_selected_track;
+        let cur = state.anim_playhead.round().max(0.0) as u32;
+        let target = if dir < 0 {
+            doc.prev_key_frame(track, cur)
+        } else {
+            doc.next_key_frame(track, cur)
+        };
+        let Some(target) = target else {
+            state.log = if dir < 0 {
+                "no prev key".to_string()
+            } else {
+                "no next key".to_string()
+            };
+            return None;
+        };
+        state.anim_playhead = target as f32;
+        state.anim_playing = false;
+        follow_anim_playhead(state);
+        Some(target)
+    })
+    .flatten();
+    if let Some(frame) = target {
+        seek_anim_preview(ctx, frame);
+        refresh_all(ctx);
+    }
+}
+
+// (selected track, active key frame) within +/-2 frames of the playhead.
+fn anim_active_key(state: &EditorState) -> Option<(usize, u32)> {
+    let doc = cached_anim_doc(state);
+    let track = state.anim_selected_track;
+    let playhead = state.anim_playhead.round().max(0.0) as u32;
+    let frame = doc.active_key_frame(track, playhead, 2)?;
+    Some((track, frame))
+}
+
+pub fn cycle_anim_key_interp<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let changed = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        let Some((track, frame)) = anim_active_key(state) else {
+            state.log = "interp\nno key near playhead".to_string();
+            return false;
+        };
+        let mut doc = cached_anim_doc(state);
+        let current = doc.key_at(track, frame).and_then(|key| key.interp.clone());
+        let next = panim::cycle_key_interp(current.as_deref());
+        doc.set_key_interp(track, frame, next.clone());
+        touch_anim_doc(state, &doc);
+        state.log = format!("key {}", panim::interp_label(next.as_deref()));
+        true
+    })
+    .unwrap_or(false);
+    if changed {
+        refresh_all(ctx);
+    }
+}
+
+pub fn cycle_anim_key_ease<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let changed = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        let Some((track, frame)) = anim_active_key(state) else {
+            state.log = "ease\nno key near playhead".to_string();
+            return false;
+        };
+        let mut doc = cached_anim_doc(state);
+        let current = doc.key_at(track, frame).and_then(|key| key.ease.clone());
+        let next = panim::cycle_key_ease(current.as_deref());
+        doc.set_key_ease(track, frame, next.clone());
+        touch_anim_doc(state, &doc);
+        state.log = format!("key {}", panim::ease_label(next.as_deref()));
+        true
+    })
+    .unwrap_or(false);
+    if changed {
+        refresh_all(ctx);
+    }
+}
+
+pub fn edit_anim_key_value_box<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let Some(text) = read_text_box(ctx, "anim_value_box") else {
+        return;
+    };
+    let text = text.trim().to_string();
+    if text.is_empty() {
+        return;
+    }
+    let changed = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        let Some((track, frame)) = anim_active_key(state) else {
+            state.log = "value\nno key near playhead".to_string();
+            return false;
+        };
+        let mut doc = cached_anim_doc(state);
+        if doc.key_at(track, frame).map(|key| key.value.as_str()) == Some(text.as_str()) {
+            return false;
+        }
+        if !doc.set_key_value(track, frame, text.clone()) {
+            return false;
+        }
+        touch_anim_doc(state, &doc);
+        state.log = format!("key value\n{text}");
+        true
+    })
+    .unwrap_or(false);
+    if changed {
+        refresh_all(ctx);
+    }
+}
+
+pub fn toggle_anim_key_open<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let changed = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        let Some((track, frame)) = anim_active_key(state) else {
+            state.log = "open\nno key near playhead".to_string();
+            return false;
+        };
+        let mut doc = cached_anim_doc(state);
+        let Some(open) = doc.toggle_key_open(track, frame) else {
+            return false;
+        };
+        touch_anim_doc(state, &doc);
+        state.log = format!("open key\n{}", if open { "on" } else { "off" });
+        true
+    })
+    .unwrap_or(false);
+    if changed {
+        refresh_all(ctx);
+    }
+}
+
+// Zoom the timeline window by `factor` (<1 zoom in, >1 out), centered on the
+// playhead. Reaching or exceeding the full span snaps back to fit-all.
+pub fn zoom_anim_view<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, factor: f32) {
+    let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        let total = anim_total_frames(state) as f32;
+        let current = if state.anim_view_len <= 0.0 {
+            total
+        } else {
+            state.anim_view_len
+        };
+        let len = (current * factor).clamp(2.0, total);
+        if len >= total {
+            state.anim_view_len = 0.0;
+            state.anim_view_start = 0.0;
+            return;
+        }
+        let center = state.anim_playhead + 0.5;
+        state.anim_view_len = len;
+        state.anim_view_start = (center - len * 0.5).clamp(0.0, (total - len).max(0.0));
+    });
+    refresh_all(ctx);
+}
+
+pub fn fit_anim_view<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        state.anim_view_len = 0.0;
+        state.anim_view_start = 0.0;
+    });
+    refresh_all(ctx);
+}
+
+pub fn scroll_anim_tracks<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, dir: isize) {
+    let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        let count = cached_anim_doc(state).tracks.len();
+        let max_scroll = count.saturating_sub(MAX_ANIM_TRACKS);
+        if dir < 0 {
+            state.anim_track_scroll = state.anim_track_scroll.saturating_sub(1);
+        } else {
+            state.anim_track_scroll = (state.anim_track_scroll + 1).min(max_scroll);
+        }
+    });
+    refresh_all(ctx);
 }
 
 pub fn begin_anim_ruler_seek<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
@@ -2060,6 +2349,7 @@ pub fn seek_anim_frame_box<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, 
         let frame = frame.min(max);
         state.anim_playhead = frame as f32;
         state.anim_playing = false;
+        follow_anim_playhead(state);
         frame
     })
     .unwrap_or(0);
@@ -2324,6 +2614,7 @@ pub fn update_anim_editor<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, A
             }
         }
         state.anim_playhead = next;
+        follow_anim_playhead(state);
         next.round() as u32
     })
     .unwrap_or(0);
@@ -2337,6 +2628,10 @@ pub fn update_anim_editor<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, A
 
 const ANIM_MARKER_W: f32 = 0.011;
 const ANIM_PLAYHEAD_W: f32 = 0.0035;
+
+// Per-row track summary gathered for the drawer refresh:
+// (object, field, key_count, [(frame, open)], bound).
+type AnimTrackRow = (String, String, usize, Vec<(u32, bool)>, bool);
 
 fn style_anim_marker<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, id: NodeID, height: f32, z: i32) {
     let _ = with_node_mut!(ctx.run, UiPanel, id, |node| {
@@ -2401,15 +2696,19 @@ fn ensure_anim_marker_nodes<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_,
 
 // Lightweight transport sync used during scrub/playback (no full refresh).
 pub fn sync_anim_transport_widgets<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
-    let (playhead, total, playing, looping, playhead_id) =
+    let (playhead, total, playing, looping, playhead_id, view_start, view_len) =
         with_state!(ctx.run, EditorState, ctx.id, |state| {
             let total = anim_total_frames(state);
+            let (view_start, view_len) =
+                panim::anim_view_window(state.anim_view_start, state.anim_view_len, total);
             (
                 state.anim_playhead,
                 total,
                 state.anim_playing,
                 state.anim_loop,
                 state.anim_playhead_id,
+                view_start,
+                view_len,
             )
         });
     set_label(ctx, "anim_play_label", if playing { "Pause" } else { "Play" });
@@ -2421,10 +2720,15 @@ pub fn sync_anim_transport_widgets<API: ScriptAPI + ?Sized>(ctx: &mut ScriptCont
     set_text_box(ctx, "anim_frame_box", &format!("{}", playhead.round() as u32));
     set_label(ctx, "anim_len_label", &format!("/ {}", total - 1));
     if playhead_id != 0 {
-        let ratio = ((playhead + 0.5) / total as f32).clamp(0.0, 1.0) - ANIM_PLAYHEAD_W * 0.5;
+        let center = anim_frame_to_ratio(playhead, view_start, view_len);
         let _ = with_node_mut!(ctx.run, UiPanel, NodeID::from_u64(playhead_id), |node| {
-            node.base.visible = true;
-            node.base.transform.translation = Vector2::new(ratio.max(0.0), 0.0);
+            if !(-0.01..=1.01).contains(&center) {
+                node.base.visible = false;
+            } else {
+                node.base.visible = true;
+                let left = (center - ANIM_PLAYHEAD_W * 0.5).clamp(0.0, 1.0 - ANIM_PLAYHEAD_W);
+                node.base.transform.translation = Vector2::new(left, 0.0);
+            }
         });
     }
 }
@@ -2440,45 +2744,63 @@ pub fn refresh_anim_drawer_widgets<API: ScriptAPI + ?Sized>(ctx: &mut ScriptCont
     if !ensure_anim_marker_nodes(ctx) {
         return;
     }
-    let (tracks, total, name, fps, selected, scroll, dirty, path, marker_ids, bind_context) =
-        with_state!(ctx.run, EditorState, ctx.id, |state| {
-            let doc = cached_anim_doc(state);
-            let total = doc.total_frames().max(2);
-            let (bind_context, bound_objects) = anim_binding_context(state, &doc);
-            let tracks: Vec<(String, String, usize, Vec<(u32, bool)>, bool)> = doc
-                .tracks
-                .iter()
-                .map(|track| {
-                    let bound = bound_objects
+    let (
+        tracks,
+        total,
+        name,
+        fps,
+        selected,
+        scroll,
+        dirty,
+        path,
+        marker_ids,
+        bind_context,
+        view,
+        active_frame,
+    ) = with_state!(ctx.run, EditorState, ctx.id, |state| {
+        let doc = cached_anim_doc(state);
+        let total = doc.total_frames().max(2);
+        let (bind_context, bound_objects) = anim_binding_context(state, &doc);
+        let tracks: Vec<AnimTrackRow> = doc
+            .tracks
+            .iter()
+            .map(|track| {
+                let bound = bound_objects
+                    .iter()
+                    .find(|(object, _)| *object == track.object)
+                    .is_some_and(|(_, target)| target.is_some());
+                (
+                    track.object.clone(),
+                    track.field.clone(),
+                    track.keys.len(),
+                    track
+                        .keys
                         .iter()
-                        .find(|(object, _)| *object == track.object)
-                        .is_some_and(|(_, target)| target.is_some());
-                    (
-                        track.object.clone(),
-                        track.field.clone(),
-                        track.keys.len(),
-                        track
-                            .keys
-                            .iter()
-                            .map(|key| (key.frame, key.open))
-                            .collect(),
-                        bound,
-                    )
-                })
-                .collect();
-            (
-                tracks,
-                total,
-                doc.name.clone(),
-                doc.fps,
-                state.anim_selected_track,
-                state.anim_track_scroll,
-                state.anim_dirty,
-                state.active_anim_path.clone(),
-                state.anim_marker_ids.clone(),
-                bind_context,
-            )
-        });
+                        .map(|key| (key.frame, key.open))
+                        .collect(),
+                    bound,
+                )
+            })
+            .collect();
+        let view = panim::anim_view_window(state.anim_view_start, state.anim_view_len, total);
+        let playhead = state.anim_playhead.round().max(0.0) as u32;
+        let active_frame = doc.active_key_frame(state.anim_selected_track, playhead, 2);
+        (
+            tracks,
+            total,
+            doc.name.clone(),
+            doc.fps,
+            state.anim_selected_track,
+            state.anim_track_scroll,
+            state.anim_dirty,
+            state.active_anim_path.clone(),
+            state.anim_marker_ids.clone(),
+            bind_context,
+            view,
+            active_frame,
+        )
+    });
+    let (view_start, view_len) = view;
     let title = if path.is_empty() {
         "Animation".to_string()
     } else {
@@ -2504,8 +2826,10 @@ pub fn refresh_anim_drawer_widgets<API: ScriptAPI + ?Sized>(ctx: &mut ScriptCont
     let accent = Color::from_hex(theme::ACCENT);
     let key_color = Color::from_hex(theme::TEXT_DIM);
     let open_color = Color::from_hex(theme::TEXT_FAINT);
+    let active_color = Color::from_hex(theme::REVERT_TEXT);
     for row in 0..MAX_ANIM_TRACKS {
         let track = tracks.get(scroll + row);
+        let selected_row = track.is_some() && scroll + row == selected;
         let label = match track {
             Some((object, field, count, _, bound)) => {
                 if *bound {
@@ -2550,13 +2874,30 @@ pub fn refresh_anim_drawer_widgets<API: ScriptAPI + ?Sized>(ctx: &mut ScriptCont
             let _ = with_node_mut!(ctx.run, UiPanel, NodeID::from_u64(id), |node| {
                 match key {
                     Some((frame, open_key)) => {
+                        let center = anim_frame_to_ratio(frame as f32, view_start, view_len);
+                        if !(-0.02..=1.02).contains(&center) {
+                            // Outside the zoomed window: hide.
+                            node.base.visible = false;
+                            return;
+                        }
                         node.base.visible = true;
-                        let ratio = ((frame as f32 + 0.5) / total as f32).clamp(0.0, 1.0)
-                            - ANIM_MARKER_W * 0.5;
-                        node.base.transform.translation = Vector2::new(ratio.max(0.0), 0.0);
-                        let fill = if open_key {
+                        let is_active = selected_row && active_frame == Some(frame);
+                        // Active key: brighter fill, slightly larger, on top.
+                        let width = if is_active {
+                            ANIM_MARKER_W * 1.5
+                        } else {
+                            ANIM_MARKER_W
+                        };
+                        let height = if is_active { 0.62 } else { 0.46 };
+                        node.base.layout.size = UiVector2::ratio(width, height);
+                        node.base.layout.z_index = if is_active { 30 } else { 20 };
+                        let left = (center - width * 0.5).clamp(0.0, (1.0 - width).max(0.0));
+                        node.base.transform.translation = Vector2::new(left, 0.0);
+                        let fill = if is_active {
+                            active_color
+                        } else if open_key {
                             open_color
-                        } else if scroll + row == selected {
+                        } else if selected_row {
                             accent
                         } else {
                             key_color
@@ -2570,7 +2911,74 @@ pub fn refresh_anim_drawer_widgets<API: ScriptAPI + ?Sized>(ctx: &mut ScriptCont
             });
         }
     }
+    refresh_anim_key_controls(ctx);
     sync_anim_transport_widgets(ctx);
+}
+
+// Row-2 toolbar: active-key labels (interp/ease/value/open), undo/redo
+// availability, and track-scroll button visibility.
+fn refresh_anim_key_controls<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let (active, undo_len, redo_len, track_count, scroll) =
+        with_state!(ctx.run, EditorState, ctx.id, |state| {
+            let doc = cached_anim_doc(state);
+            let track = state.anim_selected_track;
+            let playhead = state.anim_playhead.round().max(0.0) as u32;
+            let active = doc.active_key_frame(track, playhead, 2).map(|frame| {
+                let key = doc.key_at(track, frame);
+                (
+                    frame,
+                    key.and_then(|k| k.interp.clone()),
+                    key.and_then(|k| k.ease.clone()),
+                    key.map(|k| k.value.clone()).unwrap_or_default(),
+                    key.map(|k| k.open).unwrap_or(false),
+                )
+            });
+            (
+                active,
+                state.anim_undo_stack.len(),
+                state.anim_redo_stack.len(),
+                doc.tracks.len(),
+                state.anim_track_scroll,
+            )
+        });
+    match &active {
+        Some((frame, interp, ease, value, open)) => {
+            set_label(ctx, "anim_active_label", &format!("Key @ {frame}"));
+            set_label(ctx, "anim_interp_label", panim::interp_label(interp.as_deref()));
+            set_label(ctx, "anim_ease_label", panim::ease_label(ease.as_deref()));
+            set_text_box(ctx, "anim_value_box", value);
+            set_button_fill(
+                ctx,
+                "anim_open_button",
+                if *open { theme::ACCENT } else { theme::BG_WIDGET },
+            );
+        }
+        None => {
+            set_label(ctx, "anim_active_label", "Key: none");
+            set_label(ctx, "anim_interp_label", "interp: —");
+            set_label(ctx, "anim_ease_label", "ease: —");
+            set_text_box(ctx, "anim_value_box", "");
+            set_button_fill(ctx, "anim_open_button", theme::BG_WIDGET);
+        }
+    }
+    set_button_fill(
+        ctx,
+        "anim_undo_button",
+        if undo_len > 0 { theme::BG_WIDGET } else { theme::STROKE_SOFT },
+    );
+    set_button_fill(
+        ctx,
+        "anim_redo_button",
+        if redo_len > 0 { theme::BG_WIDGET } else { theme::STROKE_SOFT },
+    );
+    // Track-scroll buttons only matter past the visible-row budget.
+    let scrollable = track_count > MAX_ANIM_TRACKS;
+    set_ui_display(ctx, "anim_track_up_button", scrollable && scroll > 0);
+    set_ui_display(
+        ctx,
+        "anim_track_down_button",
+        scrollable && scroll + MAX_ANIM_TRACKS < track_count,
+    );
 }
 
 pub fn parse_number_list(text: &str) -> Option<Vec<f32>> {
@@ -2584,4 +2992,67 @@ pub fn parse_number_list(text: &str) -> Option<Vec<f32>> {
         .collect::<Result<Vec<_>, _>>()
         .ok()?;
     (!values.is_empty() && values.len() <= 4).then_some(values)
+}
+
+#[cfg(test)]
+mod anim_undo_tests {
+    use super::*;
+
+    const SAMPLE: &str = "[Animation]\nname = \"Clip\"\nfps = 60\ndefault_interp = \"interpolate\"\ndefault_ease = \"linear\"\n[/Animation]\n\n[Objects]\nHero = Node3D\n[/Objects]\n\n[Frame0]\n@Hero {\n    position = (0, 0, 0)\n}\n[/Frame0]\n\n[Frame10]\n@Hero {\n    position = (3, 0, 0)\n}\n[/Frame10]\n";
+
+    fn state_with_sample() -> EditorState {
+        EditorState {
+            anim_doc_text: panim::serialize_panim(&panim::parse_panim(SAMPLE)),
+            ..EditorState::default()
+        }
+    }
+
+    #[test]
+    fn touch_pushes_prev_text_and_clears_redo() {
+        let mut state = state_with_sample();
+        state.anim_redo_stack.push("stale".to_string());
+        let before = state.anim_doc_text.clone();
+        let mut doc = panim::parse_panim(&state.anim_doc_text);
+        doc.set_key("Hero", "position", 5, "(1, 0, 0)".to_string());
+        touch_anim_doc(&mut state, &doc);
+        assert_eq!(state.anim_undo_stack, vec![before]);
+        assert!(state.anim_redo_stack.is_empty());
+        assert!(state.anim_dirty);
+        assert!(state.anim_clip_dirty);
+        assert_ne!(state.anim_doc_text, state.anim_undo_stack[0]);
+    }
+
+    #[test]
+    fn touch_no_change_skips_undo_push() {
+        let mut state = state_with_sample();
+        let doc = panim::parse_panim(&state.anim_doc_text);
+        touch_anim_doc(&mut state, &doc);
+        assert!(state.anim_undo_stack.is_empty());
+    }
+
+    #[test]
+    fn interp_ease_open_mutations_each_record_undo() {
+        let mut state = state_with_sample();
+        let mut doc = panim::parse_panim(&state.anim_doc_text);
+        doc.set_key_interp(0, 0, Some("step".to_string()));
+        touch_anim_doc(&mut state, &doc);
+        doc.set_key_ease(0, 0, Some("ease_in".to_string()));
+        touch_anim_doc(&mut state, &doc);
+        doc.toggle_key_open(0, 0);
+        touch_anim_doc(&mut state, &doc);
+        assert_eq!(state.anim_undo_stack.len(), 3);
+    }
+
+    #[test]
+    fn undo_stack_caps_at_limit() {
+        let mut state = EditorState::default();
+        for i in 0..(MAX_ANIM_UNDO + 20) {
+            state.anim_doc_text = format!("version-{i}");
+            push_anim_undo(&mut state);
+        }
+        assert_eq!(state.anim_undo_stack.len(), MAX_ANIM_UNDO);
+        // Oldest entries dropped; newest retained.
+        let last = format!("version-{}", MAX_ANIM_UNDO + 20 - 1);
+        assert_eq!(state.anim_undo_stack.last().unwrap(), &last);
+    }
 }
