@@ -4910,6 +4910,198 @@ parent = @inspector_content
     [/UiTextBox]
 [/inspector_vars_box]
 
+[inspector_bones_header]
+parent = @inspector_content
+    [UiLabel]
+        visible = false
+        size_ratio = (0.95, 0.03)
+        text = "Bones"
+        text_size_ratio = 0.316
+        color = "#D7DBE0"
+        h_align = "start"
+        style = {
+            fill = "#26303B",
+            stroke = "#343A43",
+            stroke_width = 1.0,
+            radius = 0.0
+        }
+    [/UiLabel]
+[/inspector_bones_header]
+
+[inspector_bone_rows]
+parent = @inspector_content
+    [UiTreeList]
+        visible = false
+        size_ratio = (0.95, 0.0)
+        v_size = "fit"
+        h_align = "fill"
+        v_align = "start"
+        v_spacing = 0.001
+        row_height = 22.0
+        indent = 12.0
+        padding = (0.01, 0.004)
+        selected_signals = ["editor_inspector_bone_selected"]
+    [/UiTreeList]
+[/inspector_bone_rows]
+
+[inspector_bone_pose_header]
+parent = @inspector_content
+    [UiLabel]
+        visible = false
+        size_ratio = (0.95, 0.026)
+        text = "Pose"
+        text_size_ratio = 0.302
+        color = "#A7AFB9"
+        h_align = "start"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/inspector_bone_pose_header]
+
+[inspector_bone_pos_row]
+parent = @inspector_content
+    [UiHLayout]
+        visible = false
+        size_ratio = (0.95, 0.026)
+        h_align = "start"
+        v_align = "center"
+        spacing = 0.006
+        padding = (0.0, 0.0)
+    [/UiHLayout]
+[/inspector_bone_pos_row]
+
+[inspector_bone_pos_caption]
+parent = @inspector_bone_pos_row
+    [UiLabel]
+        size_ratio = (0.3, 1.0)
+        text = "Position"
+        text_size_ratio = 0.34
+        color = "#A7AFB9"
+        h_align = "start"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/inspector_bone_pos_caption]
+
+[inspector_bone_pos_box]
+parent = @inspector_bone_pos_row
+    [UiTextBox]
+        size_ratio = (0.66, 1.0)
+        text = "-"
+        text_size_ratio = 0.58
+        focused_signals = ["editor_inspector_focus"]
+        unfocused_signals = ["editor_inspector_commit"]
+        style = {
+            fill = "#23272D",
+            stroke = "#343A43",
+            stroke_width = 1.0,
+            radius = 0.035
+        }
+        focused_style = {
+            fill = "#23272D",
+            stroke = "#6BA0EA",
+            stroke_width = 1.0,
+            radius = 0.035
+        }
+    [/UiTextBox]
+[/inspector_bone_pos_box]
+
+[inspector_bone_rot_row]
+parent = @inspector_content
+    [UiHLayout]
+        visible = false
+        size_ratio = (0.95, 0.026)
+        h_align = "start"
+        v_align = "center"
+        spacing = 0.006
+        padding = (0.0, 0.0)
+    [/UiHLayout]
+[/inspector_bone_rot_row]
+
+[inspector_bone_rot_caption]
+parent = @inspector_bone_rot_row
+    [UiLabel]
+        size_ratio = (0.3, 1.0)
+        text = "Rotation"
+        text_size_ratio = 0.34
+        color = "#A7AFB9"
+        h_align = "start"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/inspector_bone_rot_caption]
+
+[inspector_bone_rot_box]
+parent = @inspector_bone_rot_row
+    [UiTextBox]
+        size_ratio = (0.66, 1.0)
+        text = "-"
+        text_size_ratio = 0.58
+        focused_signals = ["editor_inspector_focus"]
+        unfocused_signals = ["editor_inspector_commit"]
+        style = {
+            fill = "#23272D",
+            stroke = "#343A43",
+            stroke_width = 1.0,
+            radius = 0.035
+        }
+        focused_style = {
+            fill = "#23272D",
+            stroke = "#6BA0EA",
+            stroke_width = 1.0,
+            radius = 0.035
+        }
+    [/UiTextBox]
+[/inspector_bone_rot_box]
+
+[inspector_bone_scale_row]
+parent = @inspector_content
+    [UiHLayout]
+        visible = false
+        size_ratio = (0.95, 0.026)
+        h_align = "start"
+        v_align = "center"
+        spacing = 0.006
+        padding = (0.0, 0.0)
+    [/UiHLayout]
+[/inspector_bone_scale_row]
+
+[inspector_bone_scale_caption]
+parent = @inspector_bone_scale_row
+    [UiLabel]
+        size_ratio = (0.3, 1.0)
+        text = "Scale"
+        text_size_ratio = 0.34
+        color = "#A7AFB9"
+        h_align = "start"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/inspector_bone_scale_caption]
+
+[inspector_bone_scale_box]
+parent = @inspector_bone_scale_row
+    [UiTextBox]
+        size_ratio = (0.66, 1.0)
+        text = "-"
+        text_size_ratio = 0.58
+        focused_signals = ["editor_inspector_focus"]
+        unfocused_signals = ["editor_inspector_commit"]
+        style = {
+            fill = "#23272D",
+            stroke = "#343A43",
+            stroke_width = 1.0,
+            radius = 0.035
+        }
+        focused_style = {
+            fill = "#23272D",
+            stroke = "#6BA0EA",
+            stroke_width = 1.0,
+            radius = 0.035
+        }
+    [/UiTextBox]
+[/inspector_bone_scale_box]
+
 [inspector_var_row_0]
 parent = @inspector_content
     [UiHLayout]

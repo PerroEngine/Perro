@@ -215,6 +215,7 @@ pub fn execute_command_palette_row<API: ScriptAPI + ?Sized>(
 
 pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
     capture_editor_output(ctx);
+    sync_selected_skeleton_bones(ctx);
     let view = with_state!(ctx.run, EditorState, ctx.id, EditorView::from_state);
     refresh_chrome_view(ctx, &view);
     refresh_manager_view(ctx, &view);
@@ -248,6 +249,7 @@ pub fn refresh_scene_panel<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, 
 /// Skips file tree/tabs/manager/picker rebuilds.
 pub fn refresh_selection_panels<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
     capture_editor_output(ctx);
+    sync_selected_skeleton_bones(ctx);
     let view = with_state!(ctx.run, EditorState, ctx.id, EditorView::from_state);
     refresh_chrome_view(ctx, &view);
     // Picker labels reference the selected node ("add child of X").
@@ -259,6 +261,7 @@ pub fn refresh_selection_panels<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext
 /// File/asset selection: chrome, file panel, inspector. Skips scene pane.
 pub fn refresh_asset_panels<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
     capture_editor_output(ctx);
+    sync_selected_skeleton_bones(ctx);
     let view = with_state!(ctx.run, EditorState, ctx.id, EditorView::from_state);
     refresh_chrome_view(ctx, &view);
     refresh_files_view(ctx, &view);
@@ -1053,6 +1056,7 @@ fn refresh_inspector_view<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, A
         );
     }
     hide_inspector_value_rows_from(ctx, view.inspector.script_vars.len());
+    refresh_bone_panel(ctx, view.inspector.node_actions);
     set_ui_display(ctx, "inspector_pick_popup", view.inspector_picker_open);
     set_label(ctx, "inspector_pick_title", &view.inspector_picker_title);
     set_text_box(
@@ -2502,13 +2506,34 @@ fn inspector_anim_field_picker_entries(state: &EditorState) -> Vec<InspectorPick
         return Vec::new();
     };
     let filter = state.inspector_picker_filter.to_ascii_lowercase();
-    crate::scripts_scene_editor_panim_rs::animatable_fields(node.data.type_name())
+    let mut entries: Vec<InspectorPickerEntry> = Vec::new();
+    // When a skeleton bone is selected, offer its pose sub-fields as bone-path
+    // tracks in addition to the node's flat animatable fields.
+    let is_skeleton = node.data.node_type.is_a(perro_scene::NodeType::Skeleton2D)
+        || node.data.node_type.is_a(perro_scene::NodeType::Skeleton3D);
+    if is_skeleton && !state.anim_selected_bone_name.is_empty() {
+        for sub in crate::scripts_scene_editor_panim_rs::BONE_TRACK_SUBFIELDS {
+            let field = crate::scripts_scene_editor_panim_rs::bone_track_field(
+                &state.anim_selected_bone_name,
+                sub,
+            );
+            entries.push(InspectorPickerEntry {
+                value: field.clone(),
+                label: field,
+            });
+        }
+    }
+    entries.extend(
+        crate::scripts_scene_editor_panim_rs::animatable_fields(node.data.type_name())
+            .into_iter()
+            .map(|field| InspectorPickerEntry {
+                value: field.to_string(),
+                label: field.to_string(),
+            }),
+    );
+    entries
         .into_iter()
-        .filter(|field| filter.is_empty() || field.contains(filter.as_str()))
-        .map(|field| InspectorPickerEntry {
-            value: field.to_string(),
-            label: field.to_string(),
-        })
+        .filter(|entry| filter.is_empty() || entry.label.to_ascii_lowercase().contains(filter.as_str()))
         .collect()
 }
 
@@ -5175,6 +5200,96 @@ pub fn set_scene_tree_list<API: ScriptAPI + ?Sized>(
         tree.selected_style.set_corner_radius(0.08);
         tree.selected_signals = vec![signal!("editor_scene_tree_selected")];
         tree.toggled_signals = vec![signal!("editor_scene_tree_toggled")];
+    });
+}
+
+// Renders the inspector "Bones" section: an indented tree of the selected
+// skeleton's live bones plus a pose editor for the selected bone. Data comes
+// from the per-refresh snapshot in EditorState (see
+// `sync_selected_skeleton_bones`).
+fn refresh_bone_panel<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    node_actions: bool,
+) {
+    let (names, depths, selected, is_2d, pos, rot, scale) =
+        with_state!(ctx.run, EditorState, ctx.id, |state| {
+            (
+                state.inspector_bone_names.clone(),
+                state.inspector_bone_depths.clone(),
+                state.anim_selected_bone,
+                state.inspector_bone_is_2d,
+                state.inspector_bone_pos.clone(),
+                state.inspector_bone_rot.clone(),
+                state.inspector_bone_scale.clone(),
+            )
+        });
+    let has_bones = node_actions && !names.is_empty();
+    set_ui_display(ctx, "inspector_bones_header", has_bones);
+    set_ui_display(ctx, "inspector_bone_rows", has_bones);
+    let has_pose = has_bones && selected.is_some();
+    set_ui_display(ctx, "inspector_bone_pose_header", has_pose);
+    set_ui_display(ctx, "inspector_bone_pos_row", has_pose);
+    set_ui_display(ctx, "inspector_bone_rot_row", has_pose);
+    set_ui_display(ctx, "inspector_bone_scale_row", has_pose);
+    if has_pose {
+        set_label(
+            ctx,
+            "inspector_bone_rot_caption",
+            if is_2d { "Rotation (rad)" } else { "Rotation" },
+        );
+        set_text_box(ctx, "inspector_bone_pos_box", &pos);
+        set_text_box(ctx, "inspector_bone_rot_box", &rot);
+        set_text_box(ctx, "inspector_bone_scale_box", &scale);
+    }
+    if !has_bones {
+        return;
+    }
+    let Some(list_id) = find_named(ctx, "inspector_bone_rows") else {
+        return;
+    };
+    let mut parents = Vec::<usize>::new();
+    let mut items = Vec::with_capacity(names.len());
+    for (idx, name) in names.iter().enumerate() {
+        let depth = depths.get(idx).copied().unwrap_or(0) as usize;
+        while parents.len() > depth {
+            parents.pop();
+        }
+        let mut item = UiTreeListItem::new(name.clone())
+            .with_id(format!("bone:{idx}"))
+            .with_value(variant!(idx as i32));
+        item.parent = parents.last().copied();
+        item.open = true;
+        item.selectable = true;
+        items.push(item);
+        parents.push(idx);
+    }
+    let selected_index = selected.filter(|idx| *idx < names.len());
+    let _ = with_node_mut!(ctx.run, UiTreeList, list_id, |tree| {
+        if tree.items != items {
+            tree.items = items;
+        }
+        if tree.selected_index != selected_index {
+            tree.selected_index = selected_index;
+        }
+        tree.indent = 12.0;
+        tree.row_height = 22.0;
+        tree.v_spacing = 0.0012;
+        tree.line_color = Color::from_hex("#3A414C").unwrap_or(tree.line_color);
+        tree.triangle_color = Color::from_hex("#7FA7E6").unwrap_or(tree.triangle_color);
+        tree.text_color = Color::from_hex(theme::TEXT).unwrap_or(tree.text_color);
+        tree.row_style.fill = Color::TRANSPARENT;
+        tree.row_style.stroke = Color::TRANSPARENT;
+        tree.row_hover_style.fill = Color::from_hex("#303741").unwrap_or(tree.row_hover_style.fill);
+        tree.row_hover_style.stroke =
+            Color::from_hex("#46515F").unwrap_or(tree.row_hover_style.stroke);
+        tree.row_hover_style.stroke_width = 1.0;
+        tree.row_hover_style.set_corner_radius(0.08);
+        tree.selected_style.fill = Color::from_hex("#27364D").unwrap_or(tree.selected_style.fill);
+        tree.selected_style.stroke =
+            Color::from_hex("#6BA0EA").unwrap_or(tree.selected_style.stroke);
+        tree.selected_style.stroke_width = 1.0;
+        tree.selected_style.set_corner_radius(0.08);
+        tree.selected_signals = vec![signal!("editor_inspector_bone_selected")];
     });
 }
 

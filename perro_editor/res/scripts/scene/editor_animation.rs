@@ -504,6 +504,351 @@ pub fn read_component_values<API: ScriptAPI + ?Sized>(
     (!values.is_empty()).then_some(values)
 }
 
+// ---------------------------------------------------------------------------
+// Skeleton bone editing.
+//
+// Bones live on the LIVE preview runtime node (not the scene doc): posing a
+// rig is animation data, not scene data. `sync_selected_skeleton_bones`
+// snapshots the selected skeleton's bones into `EditorState` each refresh so
+// the pure inspector view can render the tree + pose editor, and the pose
+// edit path writes straight back to the preview node.
+// ---------------------------------------------------------------------------
+
+// Clear the rendered bone lists. Keeps `anim_selected_bone_name` so selection
+// survives a transient empty read (preview mid-rebuild).
+fn clear_bone_display(state: &mut EditorState) {
+    state.inspector_bone_names.clear();
+    state.inspector_bone_depths.clear();
+    state.inspector_bone_pos.clear();
+    state.inspector_bone_rot.clear();
+    state.inspector_bone_scale.clear();
+    state.anim_selected_bone = None;
+}
+
+// Full reset: selected node is not a skeleton, so drop selection intent too.
+fn clear_bone_snapshot(state: &mut EditorState) {
+    clear_bone_display(state);
+    state.inspector_bone_is_2d = false;
+    state.anim_selected_bone_name.clear();
+}
+
+// Selected node's skeleton kind, if any: `(scene_key, is_2d)`.
+pub fn selected_skeleton_kind(state: &EditorState) -> Option<(u32, bool)> {
+    let key = state.selected_key?;
+    if state.doc_text.is_empty() {
+        return None;
+    }
+    let doc = cached_scene_doc_shared(&state.doc_text);
+    let node = doc.scene.nodes.iter().find(|node| node.key.as_u32() == key)?;
+    let node_type = node.data.node_type;
+    if node_type.is_a(perro_scene::NodeType::Skeleton2D) {
+        Some((key, true))
+    } else if node_type.is_a(perro_scene::NodeType::Skeleton3D) {
+        Some((key, false))
+    } else {
+        None
+    }
+}
+
+// Parent-chain depth per bone, for tree indentation.
+fn bone_chain_depths(parents: &[i32]) -> Vec<u32> {
+    let mut depths = vec![0u32; parents.len()];
+    for idx in 0..parents.len() {
+        let mut depth = 0u32;
+        let mut parent = parents[idx];
+        let mut guard = 0;
+        while parent >= 0 && (parent as usize) < parents.len() && guard <= parents.len() {
+            depth += 1;
+            parent = parents[parent as usize];
+            guard += 1;
+        }
+        depths[idx] = depth;
+    }
+    depths
+}
+
+// Pull the selected skeleton's live bones (names + parent chain) and the
+// selected bone's pose into `EditorState`. Reconciles the selected bone by
+// name so it survives structural bone reorders.
+pub fn sync_selected_skeleton_bones<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let Some((key, is_2d)) = with_state!(ctx.run, EditorState, ctx.id, selected_skeleton_kind)
+    else {
+        let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| clear_bone_snapshot(state));
+        return;
+    };
+    let Some(preview_id) = preview_node_for_key(ctx, key) else {
+        let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+            state.inspector_bone_is_2d = is_2d;
+            clear_bone_display(state);
+        });
+        return;
+    };
+    let bones: Vec<(String, i32)> = if is_2d {
+        with_node!(ctx.run, Skeleton2D, preview_id, |node| node
+            .bones
+            .iter()
+            .map(|bone| (bone.name.to_string(), bone.parent))
+            .collect::<Vec<_>>())
+    } else {
+        with_node!(ctx.run, Skeleton3D, preview_id, |node| node
+            .bones
+            .iter()
+            .map(|bone| (bone.name.to_string(), bone.parent))
+            .collect::<Vec<_>>())
+    };
+    if bones.is_empty() {
+        let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+            state.inspector_bone_is_2d = is_2d;
+            clear_bone_display(state);
+        });
+        return;
+    }
+    let names: Vec<String> = bones.iter().map(|(name, _)| name.clone()).collect();
+    let parents: Vec<i32> = bones.iter().map(|(_, parent)| *parent).collect();
+    let depths = bone_chain_depths(&parents);
+
+    // Reconcile the selected bone against the fresh name list.
+    let selected = with_state!(ctx.run, EditorState, ctx.id, |state| {
+        let current = state.anim_selected_bone;
+        let current_name = state.anim_selected_bone_name.clone();
+        if let Some(idx) = current
+            && names.get(idx).is_some_and(|name| *name == current_name)
+        {
+            return Some(idx);
+        }
+        if !current_name.is_empty()
+            && let Some(idx) = names.iter().position(|name| *name == current_name)
+        {
+            return Some(idx);
+        }
+        None
+    });
+
+    // Read the selected bone's live pose components as editable-box text.
+    let pose = selected.and_then(|idx| {
+        if is_2d {
+            with_node!(ctx.run, Skeleton2D, preview_id, |node| node
+                .bones
+                .get(idx)
+                .map(|bone| {
+                    (
+                        format!(
+                            "{}, {}",
+                            format_compact_f32(bone.pose.position.x),
+                            format_compact_f32(bone.pose.position.y)
+                        ),
+                        format_compact_f32(bone.pose.rotation),
+                        format!(
+                            "{}, {}",
+                            format_compact_f32(bone.pose.scale.x),
+                            format_compact_f32(bone.pose.scale.y)
+                        ),
+                    )
+                }))
+        } else {
+            with_node!(ctx.run, Skeleton3D, preview_id, |node| node
+                .bones
+                .get(idx)
+                .map(|bone| {
+                    (
+                        format!(
+                            "{}, {}, {}",
+                            format_compact_f32(bone.pose.position.x),
+                            format_compact_f32(bone.pose.position.y),
+                            format_compact_f32(bone.pose.position.z)
+                        ),
+                        format!(
+                            "{}, {}, {}, {}",
+                            format_compact_f32(bone.pose.rotation.x),
+                            format_compact_f32(bone.pose.rotation.y),
+                            format_compact_f32(bone.pose.rotation.z),
+                            format_compact_f32(bone.pose.rotation.w)
+                        ),
+                        format!(
+                            "{}, {}, {}",
+                            format_compact_f32(bone.pose.scale.x),
+                            format_compact_f32(bone.pose.scale.y),
+                            format_compact_f32(bone.pose.scale.z)
+                        ),
+                    )
+                }))
+        }
+    });
+
+    let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        state.inspector_bone_names = names;
+        state.inspector_bone_depths = depths;
+        state.inspector_bone_is_2d = is_2d;
+        match selected {
+            Some(idx) => {
+                state.anim_selected_bone = Some(idx);
+                state.anim_selected_bone_name = state
+                    .inspector_bone_names
+                    .get(idx)
+                    .cloned()
+                    .unwrap_or_default();
+            }
+            None => {
+                state.anim_selected_bone = None;
+                state.anim_selected_bone_name.clear();
+            }
+        }
+        if let Some((pos, rot, scale)) = pose {
+            state.inspector_bone_pos = pos;
+            state.inspector_bone_rot = rot;
+            state.inspector_bone_scale = scale;
+        } else {
+            state.inspector_bone_pos.clear();
+            state.inspector_bone_rot.clear();
+            state.inspector_bone_scale.clear();
+        }
+    });
+}
+
+// Select a bone by index (from the inspector bone tree).
+pub fn select_skeleton_bone<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    bone_index: usize,
+) {
+    let changed = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        let Some(name) = state.inspector_bone_names.get(bone_index).cloned() else {
+            return false;
+        };
+        state.anim_selected_bone = Some(bone_index);
+        state.anim_selected_bone_name = name;
+        state.focused_inspector_box.clear();
+        true
+    })
+    .unwrap_or(false);
+    if changed {
+        refresh_selection_panels(ctx);
+    }
+}
+
+// Write an edited pose component (position/rotation/scale) straight to the
+// live preview skeleton bone, then force a rerender so the skinning palette
+// rebuilds this frame (mirrors the AnimationPlayer's bone-write path).
+pub fn edit_selected_bone_pose<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    sub_field: &str,
+    text_box: &str,
+) {
+    let Some(values) = read_text_box(ctx, text_box).and_then(|text| parse_number_list(&text)) else {
+        set_log(ctx, "bone pose edit fail\nbad number list");
+        return;
+    };
+    let Some((bone, key, is_2d)) = with_state!(ctx.run, EditorState, ctx.id, |state| {
+        Some((state.anim_selected_bone?, state.selected_key?, state.inspector_bone_is_2d))
+    }) else {
+        return;
+    };
+    let Some(preview_id) = preview_node_for_key(ctx, key) else {
+        return;
+    };
+    let ok = if is_2d {
+        with_node_mut!(ctx.run, Skeleton2D, preview_id, |node| {
+            let Some(target) = node.bones.get_mut(bone) else {
+                return false;
+            };
+            match (sub_field, values.as_slice()) {
+                ("position", [x, y]) => {
+                    target.pose.position = Vector2::new(*x, *y);
+                    true
+                }
+                ("scale", [x, y]) => {
+                    target.pose.scale = Vector2::new(*x, *y);
+                    true
+                }
+                ("rotation", [r]) => {
+                    target.pose.rotation = *r;
+                    true
+                }
+                _ => false,
+            }
+        })
+        .unwrap_or(false)
+    } else {
+        with_node_mut!(ctx.run, Skeleton3D, preview_id, |node| {
+            let Some(target) = node.bones.get_mut(bone) else {
+                return false;
+            };
+            match (sub_field, values.as_slice()) {
+                ("position", [x, y, z]) => {
+                    target.pose.position = Vector3::new(*x, *y, *z);
+                    true
+                }
+                ("scale", [x, y, z]) => {
+                    target.pose.scale = Vector3::new(*x, *y, *z);
+                    true
+                }
+                ("rotation", [x, y, z, w]) => {
+                    target.pose.rotation = Quaternion::new(*x, *y, *z, *w);
+                    true
+                }
+                _ => false,
+            }
+        })
+        .unwrap_or(false)
+    };
+    if ok {
+        let _ = ctx.run.Nodes().force_rerender(preview_id);
+        refresh_selection_panels(ctx);
+    } else {
+        set_log(ctx, "bone pose edit fail\nwrong component count");
+    }
+}
+
+// Read a bone pose sub-field off the live preview skeleton and format it as
+// .panim value text. Used to capture bone-track keys (the pose authored via
+// the inspector), since bone poses are not scene-doc fields.
+pub fn preview_bone_pose_panim_value<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    key: u32,
+    is_2d: bool,
+    bone_name: &str,
+    sub_field: &str,
+) -> Option<String> {
+    let preview_id = preview_node_for_key(ctx, key)?;
+    if is_2d {
+        with_node!(ctx.run, Skeleton2D, preview_id, |node| node
+            .bones
+            .iter()
+            .find(|bone| bone.name.as_ref() == bone_name)
+            .and_then(|bone| match sub_field {
+                "position" => Some(format!(
+                    "({}, {})",
+                    bone.pose.position.x, bone.pose.position.y
+                )),
+                "scale" => Some(format!("({}, {})", bone.pose.scale.x, bone.pose.scale.y)),
+                "rotation" => Some(format!("{}", bone.pose.rotation)),
+                _ => None,
+            }))
+    } else {
+        with_node!(ctx.run, Skeleton3D, preview_id, |node| node
+            .bones
+            .iter()
+            .find(|bone| bone.name.as_ref() == bone_name)
+            .and_then(|bone| match sub_field {
+                "position" => Some(format!(
+                    "({}, {}, {})",
+                    bone.pose.position.x, bone.pose.position.y, bone.pose.position.z
+                )),
+                "scale" => Some(format!(
+                    "({}, {}, {})",
+                    bone.pose.scale.x, bone.pose.scale.y, bone.pose.scale.z
+                )),
+                "rotation" => Some(format!(
+                    "({}, {}, {}, {})",
+                    bone.pose.rotation.x,
+                    bone.pose.rotation.y,
+                    bone.pose.rotation.z,
+                    bone.pose.rotation.w
+                )),
+                _ => None,
+            }))
+    }
+}
+
 pub fn reset_selected_transform<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
     let changed = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
         let Some(key) = state.selected_key else {
@@ -2376,28 +2721,49 @@ pub fn edit_anim_fps_box<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, AP
     refresh_all(ctx);
 }
 
-// Inserts a key on the selected track at the playhead. The value comes
-// from the bound node's scene-doc field (the pose you authored in the
-// viewport), falling back to a sensible per-field default.
+// Inserts a key on the selected track at the playhead. Flat fields capture
+// the bound node's scene-doc value (the pose authored in the viewport);
+// bone-path fields (`bones["Name"].position`) capture the live preview
+// skeleton's current bone pose instead. Both fall back to a per-field default.
 pub fn insert_anim_key<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let Some((object, field, frame, object_type, clip)) =
+        with_state!(ctx.run, EditorState, ctx.id, |state| {
+            let doc = cached_anim_doc(state);
+            let track = doc.tracks.get(state.anim_selected_track).cloned()?;
+            let frame = state.anim_playhead.round().max(0.0) as u32;
+            let object_type = doc.object_type(&track.object).unwrap_or("Node3D").to_string();
+            Some((track.object, track.field, frame, object_type, doc))
+        })
+    else {
+        set_log(ctx, "key fail\nselect track");
+        return;
+    };
+    // Capture the key value before mutating state so bone-path fields can read
+    // the live preview node (unavailable inside a state borrow).
+    let value = if let Some((bone_name, sub_field)) = panim::parse_bone_field(&field) {
+        let is_2d = object_type.contains("2D");
+        with_state!(ctx.run, EditorState, ctx.id, |state| {
+            resolve_anim_object_keys(state, &clip)
+                .into_iter()
+                .find(|(name, _)| *name == object)
+                .map(|(_, key)| key)
+        })
+        .and_then(|key| preview_bone_pose_panim_value(ctx, key, is_2d, &bone_name, sub_field))
+    } else {
+        with_state!(ctx.run, EditorState, ctx.id, |state| {
+            anim_key_value_from_scene(state, &clip, &object, &field)
+        })
+    }
+    .unwrap_or_else(|| panim::default_field_value_text(&object_type, &field).to_string());
     let changed = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
         let mut doc = cached_anim_doc(state);
-        let Some(track) = doc.tracks.get(state.anim_selected_track).cloned() else {
+        if doc.track_index(&object, &field).is_none() {
             state.log = "key fail\nselect track".to_string();
             return false;
-        };
-        let frame = state.anim_playhead.round().max(0.0) as u32;
-        let object_type = doc
-            .object_type(&track.object)
-            .unwrap_or("Node3D")
-            .to_string();
-        let value = anim_key_value_from_scene(state, &doc, &track.object, &track.field)
-            .unwrap_or_else(|| {
-                panim::default_field_value_text(&object_type, &track.field).to_string()
-            });
-        doc.set_key(&track.object, &track.field, frame, value);
+        }
+        doc.set_key(&object, &field, frame, value.clone());
         touch_anim_doc(state, &doc);
-        state.log = format!("key {}\n{}.{} @ {frame}", doc.name, track.object, track.field);
+        state.log = format!("key {}\n{object}.{field} @ {frame}", doc.name);
         true
     })
     .unwrap_or(false);
@@ -2481,11 +2847,18 @@ pub fn open_anim_track_picker<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'
 // Adds (or reuses) the object for the selected node, keys `field` at
 // frame 0 with the node's current value, and writes the object binding
 // onto the attached AnimationPlayer — clips are always wired through a
-// player, matching the runtime's binding-only resolution.
+// player, matching the runtime's binding-only resolution. `field` may be a
+// bone path (`bones["Name"].position`); the initial key then captures the
+// live preview skeleton's current bone pose.
 pub fn add_anim_track_field<API: ScriptAPI + ?Sized>(
     ctx: &mut ScriptContext<'_, API>,
     field: &str,
 ) {
+    // Bone-path fields read the live preview pose before the state borrow.
+    let bone_initial = panim::parse_bone_field(field).and_then(|(bone_name, sub_field)| {
+        let (key, is_2d) = with_state!(ctx.run, EditorState, ctx.id, selected_skeleton_kind)?;
+        preview_bone_pose_panim_value(ctx, key, is_2d, &bone_name, sub_field)
+    });
     let changed = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
         if state.anim_doc_text.is_empty() {
             state.log = "track fail\nno clip open\nselect AnimationPlayer, press New .panim".to_string();
@@ -2536,9 +2909,9 @@ pub fn add_anim_track_field<API: ScriptAPI + ?Sized>(
             state.log = format!("track exists\n{object}.{field}");
             return false;
         }
-        let value = node_value
-            .as_ref()
-            .and_then(scene_value_to_panim_text)
+        let value = bone_initial
+            .clone()
+            .or_else(|| node_value.as_ref().and_then(scene_value_to_panim_text))
             .unwrap_or_else(|| panim::default_field_value_text(&node_type, field).to_string());
         clip.set_key(&object, field, 0, value);
         touch_anim_doc(state, &clip);
