@@ -2877,7 +2877,7 @@ parent = @anim_drawer
 [anim_drawer_title]
 parent = @anim_toolbar
     [UiLabel]
-        size_ratio = (0.155, 1.0)
+        size_ratio = (0.10, 1.0)
         text = "Animation"
         text_size_ratio = 0.33
         color = "#D7DBE0"
@@ -3058,10 +3058,32 @@ parent = @anim_add_track_button
     [/UiLabel]
 [/anim_add_track_label]
 
+[anim_bind_button]
+parent = @anim_toolbar
+    [UiButton]
+        size_ratio = (0.06, 0.78)
+        click_signals = ["editor_anim_bind"]
+        style = { fill = "#2A3039", stroke = "#6BA0EA", stroke_width = 1.0, radius = 0.045 }
+        hover = { style = { fill = "#2C3442", stroke = "#6BA0EA", stroke_width = 1.0, radius = 0.045 } }
+        pressed = { style = { fill = "#37425C", stroke = "#6BA0EA", stroke_width = 1.0, radius = 0.045 } }
+    [/UiButton]
+[/anim_bind_button]
+[anim_bind_label]
+parent = @anim_bind_button
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "Bind"
+        text_size_ratio = 0.3
+        color = "#D7DBE0"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/anim_bind_label]
+
 [anim_rest_button]
 parent = @anim_toolbar
     [UiButton]
-        size_ratio = (0.085, 0.78)
+        size_ratio = (0.075, 0.78)
         click_signals = ["editor_anim_rest"]
         style = { fill = "#2A3039", stroke = "#5EA868", stroke_width = 1.0, radius = 0.045 }
         hover = { style = { fill = "#2C3A2E", stroke = "#5EA868", stroke_width = 1.0, radius = 0.045 } }
@@ -3105,7 +3127,7 @@ parent = @anim_save_button
 [anim_create_button]
 parent = @anim_toolbar
     [UiButton]
-        size_ratio = (0.075, 0.78)
+        size_ratio = (0.065, 0.78)
         click_signals = ["editor_anim_create"]
         style = { fill = "#D98B3A", stroke = "#D98B3A", stroke_width = 1.0, radius = 0.045 }
         hover = { style = { fill = "#E59A4B", stroke = "#E59A4B", stroke_width = 1.0, radius = 0.045 } }

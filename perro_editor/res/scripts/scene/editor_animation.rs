@@ -1434,17 +1434,207 @@ pub fn load_anim_text_into_state(state: &mut EditorState, anim_path: &str, text:
     state.anim_ruler_drag = false;
     if state.active_anim_player_key.is_none() && !state.doc_text.is_empty() {
         let doc = cached_scene_doc_shared(&state.doc_text);
-        state.active_anim_player_key = doc
+        let references_clip = |node: &SceneNodeEntry| {
+            node.data.type_name() == "AnimationPlayer"
+                && doc_field_value(&node.data, "animation")
+                    .is_some_and(|value| scene_value_is_str(&value, anim_path))
+        };
+        // Prefer the selected AnimationPlayer when it references this clip,
+        // so editing previews on the instance the user is working with.
+        state.active_anim_player_key = state
+            .selected_key
+            .and_then(|key| {
+                doc.scene
+                    .nodes
+                    .iter()
+                    .find(|node| node.key.as_u32() == key && references_clip(node))
+            })
+            .or_else(|| doc.scene.nodes.iter().find(|node| references_clip(node)))
+            .map(|node| node.key.as_u32());
+    }
+}
+
+// Binding context for the dock UI: which player the preview runs through
+// and, per object, the scene-node name it resolves to (None = unbound).
+pub fn anim_binding_context(
+    state: &EditorState,
+    clip: &panim::PanimDoc,
+) -> (String, Vec<(String, Option<String>)>) {
+    if state.doc_text.is_empty() {
+        return (
+            "no scene open".to_string(),
+            clip.objects
+                .iter()
+                .map(|(object, _)| (object.clone(), None))
+                .collect(),
+        );
+    }
+    let doc = cached_scene_doc_shared(&state.doc_text);
+    let scene_names: Vec<String> = doc
+        .scene
+        .nodes
+        .iter()
+        .map(|node| doc.scene.key_name_or_id(node.key).to_string())
+        .collect();
+    let mut bindings: Vec<(String, String)> = Vec::new();
+    let mut player_name = None;
+    if let Some(player_key) = state.active_anim_player_key
+        && let Some(player) = doc
             .scene
             .nodes
             .iter()
-            .find(|node| {
-                node.data.type_name() == "AnimationPlayer"
-                    && doc_field_value(&node.data, "animation")
-                        .is_some_and(|value| scene_value_is_str(&value, anim_path))
-            })
-            .map(|node| node.key.as_u32());
+            .find(|node| node.key.as_u32() == player_key)
+    {
+        player_name = Some(doc.scene.key_name_or_id(player.key).to_string());
+        if let Some(SceneValue::Object(fields)) = doc_field_value(&player.data, "bindings") {
+            for (object, value) in fields.iter() {
+                if let SceneValue::Key(name) = value {
+                    bindings.push((object.as_ref().to_string(), name.as_ref().to_string()));
+                }
+            }
+        }
     }
+    let context = match &player_name {
+        Some(name) => format!("previewing via {name}"),
+        None => "previewing by node-name match".to_string(),
+    };
+    let per_object = clip
+        .objects
+        .iter()
+        .map(|(object, _)| {
+            let target = bindings
+                .iter()
+                .find(|(bound, _)| bound == object)
+                .map(|(_, name)| name.clone())
+                .unwrap_or_else(|| object.clone());
+            let resolved = scene_names.iter().any(|name| *name == target);
+            (object.clone(), resolved.then_some(target))
+        })
+        .collect();
+    (context, per_object)
+}
+
+// Opens the selected AnimationPlayer's clip in the dock when nothing is
+// loaded yet, so the Animation tab lands on the instance you selected.
+pub fn try_open_selected_player_clip<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let path = with_state!(ctx.run, EditorState, ctx.id, |state| {
+        if !state.anim_doc_text.is_empty() || state.doc_text.is_empty() {
+            return None;
+        }
+        let key = state.selected_key?;
+        let doc = cached_scene_doc_shared(&state.doc_text);
+        let node = doc
+            .scene
+            .nodes
+            .iter()
+            .find(|node| node.key.as_u32() == key)?;
+        if node.data.type_name() != "AnimationPlayer" {
+            return None;
+        }
+        let value = doc_field_value(&node.data, "animation")?;
+        let SceneValue::Str(path) = value else {
+            return None;
+        };
+        let path = path.to_string();
+        (!path.is_empty() && path != "-").then_some(path)
+    });
+    if let Some(path) = path {
+        open_animation_path(ctx, &path);
+    }
+}
+
+// Bind button: selected AnimationPlayer attaches the dock to it (and
+// points it at the open clip); any other node binds the selected track's
+// object to it on the active player.
+pub fn bind_anim_selection<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let changed = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        let Some(key) = state.selected_key else {
+            state.log = "bind fail\nselect scene node".to_string();
+            return false;
+        };
+        if state.doc_text.is_empty() || state.anim_doc_text.is_empty() {
+            state.log = "bind fail\nopen scene + animation".to_string();
+            return false;
+        }
+        let mut doc = cached_scene_doc(&state.doc_text);
+        let Some(node_index) = doc
+            .scene
+            .nodes
+            .iter()
+            .position(|node| node.key.as_u32() == key)
+        else {
+            return false;
+        };
+        if doc.scene.nodes[node_index].data.type_name() == "AnimationPlayer" {
+            state.active_anim_player_key = Some(key);
+            state.anim_clip_dirty = true;
+            let player_name = doc
+                .scene
+                .key_name_or_id(doc.scene.nodes[node_index].key)
+                .to_string();
+            let already_bound = doc_field_value(&doc.scene.nodes[node_index].data, "animation")
+                .is_some_and(|value| scene_value_is_str(&value, &state.active_anim_path));
+            if !already_bound && !state.active_anim_path.is_empty() {
+                set_scene_string(
+                    &mut doc.scene.nodes.to_mut()[node_index].data,
+                    "animation",
+                    state.active_anim_path.clone(),
+                );
+                set_state_scene_doc(state, &doc);
+                state.dirty = true;
+                if let Some(path) = state.open_paths.get(state.active_open).cloned()
+                    && !state.dirty_scene_paths.iter().any(|item| item == &path)
+                {
+                    state.dirty_scene_paths.push(path);
+                }
+            }
+            state.log = format!("attach player\n{player_name}");
+            return true;
+        }
+        let Some(player_key) = state.active_anim_player_key else {
+            state.log = "bind fail\nattach AnimationPlayer first\n(select player, press Bind)".to_string();
+            return false;
+        };
+        let clip = cached_anim_doc(state);
+        let Some(track) = clip.tracks.get(state.anim_selected_track) else {
+            state.log = "bind fail\nselect track".to_string();
+            return false;
+        };
+        let object = track.object.clone();
+        let node_name = doc
+            .scene
+            .key_name_or_id(doc.scene.nodes[node_index].key)
+            .to_string();
+        let Some(player_index) = doc
+            .scene
+            .nodes
+            .iter()
+            .position(|node| node.key.as_u32() == player_key)
+        else {
+            state.log = "bind fail\nmissing AnimationPlayer".to_string();
+            return false;
+        };
+        set_scene_binding(
+            &mut doc.scene.nodes.to_mut()[player_index].data,
+            &object,
+            &node_name,
+        );
+        set_state_scene_doc(state, &doc);
+        state.dirty = true;
+        state.anim_clip_dirty = true;
+        if let Some(path) = state.open_paths.get(state.active_open).cloned()
+            && !state.dirty_scene_paths.iter().any(|item| item == &path)
+        {
+            state.dirty_scene_paths.push(path);
+        }
+        state.log = format!("bind\n{object} -> {node_name}");
+        true
+    })
+    .unwrap_or(false);
+    if changed {
+        rebuild_preview(ctx);
+    }
+    refresh_all(ctx);
 }
 
 fn scene_value_is_str(value: &SceneValue, expected: &str) -> bool {
@@ -2187,14 +2377,19 @@ pub fn refresh_anim_drawer_widgets<API: ScriptAPI + ?Sized>(ctx: &mut ScriptCont
     if !ensure_anim_marker_nodes(ctx) {
         return;
     }
-    let (tracks, total, name, fps, selected, scroll, dirty, path, marker_ids) =
+    let (tracks, total, name, fps, selected, scroll, dirty, path, marker_ids, bind_context) =
         with_state!(ctx.run, EditorState, ctx.id, |state| {
             let doc = cached_anim_doc(state);
             let total = doc.total_frames().max(2);
-            let tracks: Vec<(String, String, usize, Vec<(u32, bool)>)> = doc
+            let (bind_context, bound_objects) = anim_binding_context(state, &doc);
+            let tracks: Vec<(String, String, usize, Vec<(u32, bool)>, bool)> = doc
                 .tracks
                 .iter()
                 .map(|track| {
+                    let bound = bound_objects
+                        .iter()
+                        .find(|(object, _)| *object == track.object)
+                        .is_some_and(|(_, target)| target.is_some());
                     (
                         track.object.clone(),
                         track.field.clone(),
@@ -2204,6 +2399,7 @@ pub fn refresh_anim_drawer_widgets<API: ScriptAPI + ?Sized>(ctx: &mut ScriptCont
                             .iter()
                             .map(|key| (key.frame, key.open))
                             .collect(),
+                        bound,
                     )
                 })
                 .collect();
@@ -2217,6 +2413,7 @@ pub fn refresh_anim_drawer_widgets<API: ScriptAPI + ?Sized>(ctx: &mut ScriptCont
                 state.anim_dirty,
                 state.active_anim_path.clone(),
                 state.anim_marker_ids.clone(),
+                bind_context,
             )
         });
     let title = if path.is_empty() {
@@ -2230,6 +2427,11 @@ pub fn refresh_anim_drawer_widgets<API: ScriptAPI + ?Sized>(ctx: &mut ScriptCont
         )
     };
     set_label(ctx, "anim_drawer_title", &title);
+    set_label(
+        ctx,
+        "anim_ruler_label",
+        &format!("{bind_context}  ·  drag to scrub"),
+    );
     set_text_box(ctx, "anim_fps_box", &format!("{fps}"));
     set_button_fill(
         ctx,
@@ -2242,10 +2444,26 @@ pub fn refresh_anim_drawer_widgets<API: ScriptAPI + ?Sized>(ctx: &mut ScriptCont
     for row in 0..MAX_ANIM_TRACKS {
         let track = tracks.get(scroll + row);
         let label = match track {
-            Some((object, field, count, _)) => format!("{object} . {field}  [{count}]"),
+            Some((object, field, count, _, bound)) => {
+                if *bound {
+                    format!("{object} . {field}  [{count}]")
+                } else {
+                    format!("{object} . {field}  · unbound")
+                }
+            }
             None => String::new(),
         };
         set_label(ctx, &format!("anim_track_label_{row}"), &label);
+        set_label_color(
+            ctx,
+            &format!("anim_track_label_{row}"),
+            match track {
+                Some((_, _, _, _, bound)) if !bound && scroll + row != selected => {
+                    theme::TEXT_FAINT
+                }
+                _ => theme::TEXT,
+            },
+        );
         set_button_fill(
             ctx,
             &format!("anim_track_row_{row}"),
@@ -2265,7 +2483,7 @@ pub fn refresh_anim_drawer_widgets<API: ScriptAPI + ?Sized>(ctx: &mut ScriptCont
             if id == 0 {
                 continue;
             }
-            let key = track.and_then(|(_, _, _, keys)| keys.get(slot).copied());
+            let key = track.and_then(|(_, _, _, keys, _)| keys.get(slot).copied());
             let _ = with_node_mut!(ctx.run, UiPanel, NodeID::from_u64(id), |node| {
                 match key {
                     Some((frame, open_key)) => {

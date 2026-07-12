@@ -468,7 +468,7 @@ pub fn toggle_bottom_dock<API: ScriptAPI + ?Sized>(
     ctx: &mut ScriptContext<'_, API>,
     animation: bool,
 ) {
-    let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+    let anim_opened = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
         (state.bottom_dock_open, state.anim_drawer_open) = next_bottom_dock_state(
             state.bottom_dock_open,
             state.anim_drawer_open,
@@ -477,7 +477,13 @@ pub fn toggle_bottom_dock<API: ScriptAPI + ?Sized>(
         if state.bottom_dock_open {
             state.activity_mode = "scene".to_string();
         }
-    });
+        state.bottom_dock_open && state.anim_drawer_open
+    })
+    .unwrap_or(false);
+    if anim_opened {
+        // Land on the selected AnimationPlayer's clip when the dock is empty.
+        crate::scripts_scene_editor_animation_rs::try_open_selected_player_clip(ctx);
+    }
     refresh_all(ctx);
 }
 
