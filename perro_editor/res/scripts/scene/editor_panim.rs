@@ -156,6 +156,127 @@ impl PanimDoc {
             .map(|key| key.frame)
             .min_by_key(|key_frame| key_frame.abs_diff(frame))
     }
+
+    // Frame of the "active" key: nearest key on `track` within `tol` frames
+    // of `frame`. None when the track has no key that close.
+    pub fn active_key_frame(&self, track: usize, frame: u32, tol: u32) -> Option<u32> {
+        self.key_near(track, frame)
+            .filter(|near| near.abs_diff(frame) <= tol)
+    }
+
+    // Greatest key frame strictly before `frame` on `track`.
+    pub fn prev_key_frame(&self, track: usize, frame: u32) -> Option<u32> {
+        let keys = &self.tracks.get(track)?.keys;
+        keys.iter().rev().map(|key| key.frame).find(|&f| f < frame)
+    }
+
+    // Smallest key frame strictly after `frame` on `track`.
+    pub fn next_key_frame(&self, track: usize, frame: u32) -> Option<u32> {
+        let keys = &self.tracks.get(track)?.keys;
+        keys.iter().map(|key| key.frame).find(|&f| f > frame)
+    }
+
+    pub fn key_at(&self, track: usize, frame: u32) -> Option<&PanimKey> {
+        let keys = &self.tracks.get(track)?.keys;
+        let pos = keys.binary_search_by_key(&frame, |key| key.frame).ok()?;
+        Some(&keys[pos])
+    }
+
+    pub fn set_key_value(&mut self, track: usize, frame: u32, value: String) -> bool {
+        let Some(track) = self.tracks.get_mut(track) else {
+            return false;
+        };
+        let Ok(pos) = track.keys.binary_search_by_key(&frame, |key| key.frame) else {
+            return false;
+        };
+        track.keys[pos].value = value;
+        true
+    }
+
+    pub fn set_key_interp(&mut self, track: usize, frame: u32, interp: Option<String>) -> bool {
+        let Some(track) = self.tracks.get_mut(track) else {
+            return false;
+        };
+        let Ok(pos) = track.keys.binary_search_by_key(&frame, |key| key.frame) else {
+            return false;
+        };
+        track.keys[pos].interp = interp;
+        true
+    }
+
+    pub fn set_key_ease(&mut self, track: usize, frame: u32, ease: Option<String>) -> bool {
+        let Some(track) = self.tracks.get_mut(track) else {
+            return false;
+        };
+        let Ok(pos) = track.keys.binary_search_by_key(&frame, |key| key.frame) else {
+            return false;
+        };
+        track.keys[pos].ease = ease;
+        true
+    }
+
+    // Flips the key's open flag; returns the new state, or None if missing.
+    pub fn toggle_key_open(&mut self, track: usize, frame: u32) -> Option<bool> {
+        let track = self.tracks.get_mut(track)?;
+        let pos = track.keys.binary_search_by_key(&frame, |key| key.frame).ok()?;
+        track.keys[pos].open = !track.keys[pos].open;
+        Some(track.keys[pos].open)
+    }
+}
+
+// Per-key interp cycle: default(None) -> step -> interpolate -> default.
+pub fn cycle_key_interp(current: Option<&str>) -> Option<String> {
+    match current {
+        None => Some("step".to_string()),
+        Some("step") => Some("interpolate".to_string()),
+        _ => None,
+    }
+}
+
+// Per-key ease cycle: default -> linear -> ease_in -> ease_out -> ease_in_out.
+pub fn cycle_key_ease(current: Option<&str>) -> Option<String> {
+    match current {
+        None => Some("linear".to_string()),
+        Some("linear") => Some("ease_in".to_string()),
+        Some("ease_in") => Some("ease_out".to_string()),
+        Some("ease_out") => Some("ease_in_out".to_string()),
+        _ => None,
+    }
+}
+
+// Short toolbar label for the active key's interp (None = clip default).
+pub fn interp_label(current: Option<&str>) -> &'static str {
+    match current {
+        None => "interp: def",
+        Some("step") => "interp: step",
+        Some("interpolate") | Some("lerp") => "interp: lerp",
+        Some("slerp") => "interp: slerp",
+        _ => "interp: ?",
+    }
+}
+
+// Short toolbar label for the active key's ease (None = clip default).
+pub fn ease_label(current: Option<&str>) -> &'static str {
+    match current {
+        None => "ease: def",
+        Some("linear") => "ease: linear",
+        Some("ease_in") => "ease: in",
+        Some("ease_out") => "ease: out",
+        Some("ease_in_out") => "ease: inout",
+        _ => "ease: ?",
+    }
+}
+
+// Resolved timeline view window in frame units. `view_len <= 0` means fit
+// all (start 0, len = total). Otherwise clamped so the window stays on-clip.
+pub fn anim_view_window(view_start: f32, view_len: f32, total: u32) -> (f32, f32) {
+    let total = total.max(2) as f32;
+    if view_len <= 0.0 {
+        return (0.0, total);
+    }
+    let len = view_len.clamp(2.0, total);
+    let start = view_start.clamp(0.0, (total - len).max(0.0));
+    (start, len)
 }
 
 pub fn parse_panim(text: &str) -> PanimDoc {
@@ -655,5 +776,81 @@ emit_signal = { name="footfall", params=[1] }
         // Hero still has an event, so removing its only track keeps the object.
         assert!(doc.remove_track("Hero", "position"));
         assert!(doc.object_type("Hero").is_some());
+    }
+
+    #[test]
+    fn active_prev_next_key_frames_scan_selected_track() {
+        let doc = parse_panim(SAMPLE);
+        let hero = doc.track_index("Hero", "position").unwrap();
+        // Keys at frames 0 and 10.
+        assert_eq!(doc.active_key_frame(hero, 1, 2), Some(0));
+        assert_eq!(doc.active_key_frame(hero, 9, 2), Some(10));
+        assert_eq!(doc.active_key_frame(hero, 5, 2), None);
+        assert_eq!(doc.prev_key_frame(hero, 10), Some(0));
+        assert_eq!(doc.prev_key_frame(hero, 0), None);
+        assert_eq!(doc.next_key_frame(hero, 0), Some(10));
+        assert_eq!(doc.next_key_frame(hero, 10), None);
+    }
+
+    #[test]
+    fn per_key_interp_ease_value_round_trip() {
+        let mut doc = parse_panim(SAMPLE);
+        let hero = doc.track_index("Hero", "position").unwrap();
+        assert!(doc.set_key_interp(hero, 10, Some("step".to_string())));
+        assert!(doc.set_key_ease(hero, 10, Some("ease_out".to_string())));
+        assert!(doc.set_key_value(hero, 10, "(9, 0, 0)".to_string()));
+        let key = doc.key_at(hero, 10).unwrap();
+        assert_eq!(key.interp.as_deref(), Some("step"));
+        assert_eq!(key.ease.as_deref(), Some("ease_out"));
+        assert_eq!(key.value, "(9, 0, 0)");
+        // Round-trips through serialize/parse unchanged.
+        let round = parse_panim(&serialize_panim(&doc));
+        assert_eq!(round, doc);
+        // Clearing back to default drops the control lines.
+        assert!(doc.set_key_interp(hero, 10, None));
+        assert!(doc.key_at(hero, 10).unwrap().interp.is_none());
+        assert_eq!(parse_panim(&serialize_panim(&doc)), doc);
+    }
+
+    #[test]
+    fn toggle_key_open_flips_and_round_trips() {
+        let mut doc = parse_panim(SAMPLE);
+        let hero = doc.track_index("Hero", "position").unwrap();
+        assert_eq!(doc.toggle_key_open(hero, 0), Some(true));
+        assert!(doc.key_at(hero, 0).unwrap().open);
+        // Open flag survives serialize/parse (track order is not guaranteed
+        // stable when the earliest frame's object changes, so re-resolve it).
+        let round = parse_panim(&serialize_panim(&doc));
+        let hero = round.track_index("Hero", "position").unwrap();
+        assert!(round.key_at(hero, 0).unwrap().open);
+        assert!(!round.key_at(hero, 10).unwrap().open);
+        // Flip back closes it.
+        let mut doc = round;
+        let hero = doc.track_index("Hero", "position").unwrap();
+        assert_eq!(doc.toggle_key_open(hero, 0), Some(false));
+        assert!(!doc.key_at(hero, 0).unwrap().open);
+    }
+
+    #[test]
+    fn interp_ease_cycles_wrap_through_default() {
+        assert_eq!(cycle_key_interp(None).as_deref(), Some("step"));
+        assert_eq!(cycle_key_interp(Some("step")).as_deref(), Some("interpolate"));
+        assert_eq!(cycle_key_interp(Some("interpolate")), None);
+        assert_eq!(cycle_key_ease(None).as_deref(), Some("linear"));
+        assert_eq!(cycle_key_ease(Some("linear")).as_deref(), Some("ease_in"));
+        assert_eq!(cycle_key_ease(Some("ease_in")).as_deref(), Some("ease_out"));
+        assert_eq!(cycle_key_ease(Some("ease_out")).as_deref(), Some("ease_in_out"));
+        assert_eq!(cycle_key_ease(Some("ease_in_out")), None);
+    }
+
+    #[test]
+    fn view_window_fits_all_or_clamps() {
+        // Fit-all (len<=0) spans the whole clip.
+        assert_eq!(anim_view_window(0.0, 0.0, 31), (0.0, 31.0));
+        // Zoomed window clamps to stay on-clip.
+        assert_eq!(anim_view_window(20.0, 10.0, 31), (20.0, 10.0));
+        assert_eq!(anim_view_window(28.0, 10.0, 31), (21.0, 10.0));
+        // Over-long window collapses to the full span.
+        assert_eq!(anim_view_window(5.0, 999.0, 31), (0.0, 31.0));
     }
 }
