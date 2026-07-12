@@ -792,10 +792,136 @@ pub fn edit_selected_bone_pose<API: ScriptAPI + ?Sized>(
     };
     if ok {
         let _ = ctx.run.Nodes().force_rerender(preview_id);
+        // Persist as a scene bone override (`bones = { Name = {...} }`) so the
+        // pose survives preview rebuilds and saves with the scene. The engine
+        // loader re-applies it after the rig's bones load.
+        write_scene_bone_override(ctx, key, sub_field, &values, is_2d);
         refresh_selection_panels(ctx);
     } else {
         set_log(ctx, "bone pose edit fail\nwrong component count");
     }
+}
+
+// Writes one pose component into the skeleton node's `bones` override field
+// in the scene doc (partial per-component override, engine-applied on load).
+fn write_scene_bone_override<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    node_key: u32,
+    sub_field: &str,
+    values: &[f32],
+    is_2d: bool,
+) {
+    let value = match (sub_field, values, is_2d) {
+        ("position" | "scale", [x, y], true) => SceneValue::Vec2 { x: *x, y: *y },
+        ("rotation", [r], true) => SceneValue::F32(*r),
+        ("position" | "scale", [x, y, z], false) => SceneValue::Vec3 {
+            x: *x,
+            y: *y,
+            z: *z,
+        },
+        ("rotation", [x, y, z, w], false) => SceneValue::Vec4 {
+            x: *x,
+            y: *y,
+            z: *z,
+            w: *w,
+        },
+        _ => return,
+    };
+    let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        let bone_name = state.anim_selected_bone_name.clone();
+        if bone_name.is_empty() || state.doc_text.is_empty() {
+            return;
+        }
+        let mut doc = cached_scene_doc(&state.doc_text);
+        let Some(node) = doc
+            .scene
+            .nodes
+            .to_mut()
+            .iter_mut()
+            .find(|node| node.key.as_u32() == node_key)
+        else {
+            return;
+        };
+        set_nested_object_field(&mut node.data, "bones", &bone_name, sub_field, value);
+        set_state_scene_doc(state, &doc);
+        state.dirty = true;
+        if let Some(path) = state.open_paths.get(state.active_open).cloned()
+            && !state.dirty_scene_paths.iter().any(|item| item == &path)
+        {
+            state.dirty_scene_paths.push(path);
+        }
+    });
+}
+
+// Sets `outer = { inner = { field = value } }` on a scene node's data,
+// creating the nesting levels as needed.
+fn set_nested_object_field(
+    data: &mut SceneNodeData,
+    outer: &str,
+    inner: &str,
+    field: &str,
+    value: SceneValue,
+) {
+    let set_inner = |bone_fields: &mut Vec<(SceneFieldName, SceneValue)>| {
+        if let Some((_, existing)) = bone_fields
+            .iter_mut()
+            .find(|(name, _)| name.as_ref() == field)
+        {
+            *existing = value.clone();
+        } else {
+            bone_fields.push((SceneFieldName::from_name(field.to_string()), value.clone()));
+        }
+    };
+    let set_bone = |outer_fields: &mut Vec<(SceneFieldName, SceneValue)>| {
+        if let Some((_, bone_value)) = outer_fields
+            .iter_mut()
+            .find(|(name, _)| name.as_ref() == inner)
+        {
+            if let SceneValue::Object(bone_fields) = bone_value {
+                set_inner(bone_fields.to_mut());
+                return;
+            }
+            *bone_value = SceneValue::Object(Cow::Owned(vec![(
+                SceneFieldName::from_name(field.to_string()),
+                value.clone(),
+            )]));
+        } else {
+            outer_fields.push((
+                SceneFieldName::from_name(inner.to_string()),
+                SceneValue::Object(Cow::Owned(vec![(
+                    SceneFieldName::from_name(field.to_string()),
+                    value.clone(),
+                )])),
+            ));
+        }
+    };
+    for (name, field_value) in data.fields.to_mut().iter_mut() {
+        if name.as_ref() == outer {
+            match field_value {
+                SceneValue::Object(outer_fields) => set_bone(outer_fields.to_mut()),
+                _ => {
+                    *field_value = SceneValue::Object(Cow::Owned(vec![(
+                        SceneFieldName::from_name(inner.to_string()),
+                        SceneValue::Object(Cow::Owned(vec![(
+                            SceneFieldName::from_name(field.to_string()),
+                            value.clone(),
+                        )])),
+                    )]));
+                }
+            }
+            return;
+        }
+    }
+    data.fields.to_mut().push((
+        SceneFieldName::from_name(outer.to_string()),
+        SceneValue::Object(Cow::Owned(vec![(
+            SceneFieldName::from_name(inner.to_string()),
+            SceneValue::Object(Cow::Owned(vec![(
+                SceneFieldName::from_name(field.to_string()),
+                value,
+            )])),
+        )])),
+    ));
 }
 
 // Read a bone pose sub-field off the live preview skeleton and format it as
