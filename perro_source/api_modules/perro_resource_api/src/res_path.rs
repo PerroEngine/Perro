@@ -67,10 +67,32 @@ impl ResPath {
     }
 
     pub fn intern(path: &str) -> Result<&'static Self, ResPathError> {
+        use std::collections::HashSet;
+        use std::sync::{OnceLock, RwLock};
         validate(path)?;
-        let path: &'static str = Box::leak(path.to_owned().into_boxed_str());
+        // Pool dedupes so repeated interns of the same path (e.g. a script
+        // converting the same Variant every frame) leak once, not per call.
+        static POOL: OnceLock<RwLock<HashSet<&'static str>>> = OnceLock::new();
+        let pool = POOL.get_or_init(Default::default);
+        if let Some(existing) = pool
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .get(path)
+        {
+            // SAFETY: pool only holds validated paths; entries are static.
+            return Ok(unsafe { Self::new_unchecked(existing) });
+        }
+        let mut pool = pool
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if let Some(existing) = pool.get(path) {
+            // SAFETY: pool only holds validated paths; entries are static.
+            return Ok(unsafe { Self::new_unchecked(existing) });
+        }
+        let leaked: &'static str = Box::leak(path.to_owned().into_boxed_str());
+        pool.insert(leaked);
         // SAFETY: validate rejects paths outside ResPath grammar and leaked str is static.
-        Ok(unsafe { Self::new_unchecked(path) })
+        Ok(unsafe { Self::new_unchecked(leaked) })
     }
 
     /// # Safety

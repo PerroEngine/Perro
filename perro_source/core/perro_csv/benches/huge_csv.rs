@@ -63,6 +63,13 @@ fn huge_csv_bench(c: &mut Criterion) {
         })
     });
 
+    c.bench_function("huge_csv_query_sort_all_rows", |b| {
+        b.iter(|| {
+            let result = CSVQuery::new(csv).order_by_num_desc("cost").run();
+            black_box(result.len())
+        })
+    });
+
     c.bench_function("huge_csv_query_filter_sort_limit", |b| {
         b.iter(|| {
             let result = CSVQuery::new(csv)

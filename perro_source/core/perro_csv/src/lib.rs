@@ -729,29 +729,59 @@ impl CSVQuery {
         if let Some(sort) = self.sort
             && sort.col != INVALID_COL
         {
-            if let Some(limit) = self.limit.filter(|limit| *limit < rows.len()) {
-                if limit == 0 {
-                    rows.clear();
-                } else {
-                    let _ =
-                        rows.select_nth_unstable_by(limit, |a, b| self.compare_rows(*a, *b, sort));
-                    rows.truncate(limit);
-                    rows.sort_unstable_by(|a, b| self.compare_rows(*a, *b, sort));
-                }
+            let limit = self.limit.filter(|limit| *limit < rows.len());
+            if limit == Some(0) {
+                rows.clear();
             } else {
-                rows.sort_unstable_by(|a, b| self.compare_rows(*a, *b, sort));
+                // Decorate once: fetch the cell (and parse it for numeric
+                // sorts) per row instead of per comparison.
+                let mut keyed: Vec<(usize, &str, f64)> = rows
+                    .iter()
+                    .map(|&row| {
+                        let cell = self.table.get(row, sort.col).unwrap_or("");
+                        let num = if sort.numeric {
+                            cell.parse::<f64>()
+                                .ok()
+                                .filter(|value| value.is_finite())
+                                .unwrap_or(f64::NAN)
+                        } else {
+                            f64::NAN
+                        };
+                        (row, cell, num)
+                    })
+                    .collect();
+                let cmp = |a: &(usize, &str, f64), b: &(usize, &str, f64)| {
+                    let ord = if sort.numeric {
+                        match (a.2.is_nan(), b.2.is_nan()) {
+                            (false, false) => a.2.total_cmp(&b.2),
+                            (false, true) => std::cmp::Ordering::Less,
+                            (true, false) => std::cmp::Ordering::Greater,
+                            (true, true) => a.1.cmp(b.1),
+                        }
+                    } else {
+                        a.1.cmp(b.1)
+                    };
+                    let ord = match sort.order {
+                        CsvOrder::Asc => ord,
+                        CsvOrder::Desc => ord.reverse(),
+                    };
+                    ord.then_with(|| a.0.cmp(&b.0))
+                };
+                if let Some(limit) = limit {
+                    let _ = keyed.select_nth_unstable_by(limit, cmp);
+                    keyed.truncate(limit);
+                }
+                keyed.sort_unstable_by(cmp);
+                rows.clear();
+                rows.extend(keyed.iter().map(|(row, _, _)| *row));
             }
         } else if let Some(limit) = self.limit {
             rows.truncate(limit);
         }
-        let select_cols = self
-            .select_cols
-            .clone()
-            .unwrap_or_else(|| (0..self.table.col_count()).collect());
         CSVQueryResult {
             table: self.table,
             rows,
-            select_cols,
+            select_cols: self.select_cols.clone(),
         }
     }
 
@@ -840,23 +870,6 @@ impl CSVQuery {
             };
         }
         matched
-    }
-
-    fn compare_rows(&self, a: usize, b: usize, sort: CsvSort) -> std::cmp::Ordering {
-        let row_a = a;
-        let row_b = b;
-        let a = self.table.get(a, sort.col).unwrap_or("");
-        let b = self.table.get(b, sort.col).unwrap_or("");
-        let ord = if sort.numeric {
-            compare_numeric_cells(a, b)
-        } else {
-            a.cmp(b)
-        };
-        let ord = match sort.order {
-            CsvOrder::Asc => ord,
-            CsvOrder::Desc => ord.reverse(),
-        };
-        ord.then_with(|| row_a.cmp(&row_b))
     }
 
     fn predicate_matches(&self, row_idx: usize, predicate: &CsvPredicate) -> bool {
@@ -955,17 +968,6 @@ impl CSVQuery {
     }
 }
 
-fn compare_numeric_cells(a: &str, b: &str) -> std::cmp::Ordering {
-    let a_number = a.parse::<f64>().ok().filter(|value| value.is_finite());
-    let b_number = b.parse::<f64>().ok().filter(|value| value.is_finite());
-    match (a_number, b_number) {
-        (Some(a), Some(b)) => a.total_cmp(&b),
-        (Some(_), None) => std::cmp::Ordering::Less,
-        (None, Some(_)) => std::cmp::Ordering::Greater,
-        (None, None) => a.cmp(b),
-    }
-}
-
 enum CandidateSeed<'a> {
     One(u64),
     Many(&'a [u64]),
@@ -994,7 +996,8 @@ fn compare_ord(ord: std::cmp::Ordering, op: CsvCompare) -> bool {
 pub struct CSVQueryResult {
     table: &'static Csv,
     rows: Vec<usize>,
-    select_cols: Vec<usize>,
+    /// `None` = all columns (identity), avoids materializing `0..col_count`.
+    select_cols: Option<Vec<usize>>,
 }
 
 impl CSVQueryResult {
@@ -1014,7 +1017,7 @@ impl CSVQueryResult {
         Some(CSVQueryRow {
             table: self.table,
             row,
-            select_cols: &self.select_cols,
+            select_cols: self.select_cols.as_deref(),
         })
     }
 
@@ -1046,7 +1049,8 @@ impl<'a> Iterator for CSVQueryRows<'a> {
 pub struct CSVQueryRow<'a> {
     table: &'static Csv,
     row: usize,
-    select_cols: &'a [usize],
+    /// `None` = all columns (identity).
+    select_cols: Option<&'a [usize]>,
 }
 
 impl CSVQueryRow<'_> {
@@ -1057,17 +1061,25 @@ impl CSVQueryRow<'_> {
 
     #[inline]
     pub fn len(&self) -> usize {
-        self.select_cols.len()
+        match self.select_cols {
+            Some(cols) => cols.len(),
+            None => self.table.col_count(),
+        }
     }
 
     #[inline]
     pub fn is_empty(&self) -> bool {
-        self.select_cols.is_empty()
+        self.len() == 0
     }
 
     #[inline]
     pub fn get(&self, selected_col: usize) -> Option<&'static str> {
-        let col = *self.select_cols.get(selected_col)?;
+        let col = match self.select_cols {
+            Some(cols) => *cols.get(selected_col)?,
+            // Cap at header count so ragged rows don't expose extra cells.
+            None if selected_col < self.table.col_count() => selected_col,
+            None => return None,
+        };
         self.table.get(self.row, col)
     }
 

@@ -306,6 +306,27 @@ impl SceneNodeField {
 }
 
 pub fn scene_node_fields(node_type: NodeType) -> Vec<SceneNodeField> {
+    cached_scene_node_fields(node_type).to_vec()
+}
+
+/// Schema per type is immutable after build; cache it so repeated lookups
+/// (doctor validates every field of every node) don't rebuild the Vec, and so
+/// the `Box::leak`ed style-prefix names leak once per type instead of per call.
+fn cached_scene_node_fields(node_type: NodeType) -> &'static [SceneNodeField] {
+    use std::collections::HashMap;
+    use std::sync::{Mutex, OnceLock};
+    static CACHE: OnceLock<Mutex<HashMap<NodeType, &'static [SceneNodeField]>>> = OnceLock::new();
+    let cache = CACHE.get_or_init(Default::default);
+    let mut map = cache.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    if let Some(slice) = map.get(&node_type) {
+        return slice;
+    }
+    let built: &'static [SceneNodeField] = Box::leak(build_scene_node_fields(node_type).into());
+    map.insert(node_type, built);
+    built
+}
+
+fn build_scene_node_fields(node_type: NodeType) -> Vec<SceneNodeField> {
     let mut fields = Vec::new();
     push_node_fields(&mut fields, node_type);
     push_base_fields(&mut fields, node_type);
@@ -322,27 +343,30 @@ pub fn scene_node_fields(node_type: NodeType) -> Vec<SceneNodeField> {
 }
 
 pub fn scene_default_fields(node_type: NodeType) -> Vec<SceneObjectField> {
-    scene_node_fields(node_type)
-        .into_iter()
+    cached_scene_node_fields(node_type)
+        .iter()
         .filter_map(|field| {
             field
                 .default
+                .clone()
                 .map(|value| (SceneFieldName::from_name(field.name.to_string()), value))
         })
         .collect()
 }
 
 pub fn scene_node_asset_fields(node_type: NodeType) -> Vec<SceneNodeField> {
-    scene_node_fields(node_type)
-        .into_iter()
+    cached_scene_node_fields(node_type)
+        .iter()
         .filter(|field| matches!(field.ty, NodeFieldType::Asset(_)))
+        .cloned()
         .collect()
 }
 
 pub fn scene_node_field(node_type: NodeType, name: &str) -> Option<SceneNodeField> {
-    scene_node_fields(node_type)
-        .into_iter()
+    cached_scene_node_fields(node_type)
+        .iter()
         .find(|field| field.name == name || field.aliases.contains(&name))
+        .cloned()
 }
 
 fn push_base_fields(fields: &mut Vec<SceneNodeField>, node_type: NodeType) {

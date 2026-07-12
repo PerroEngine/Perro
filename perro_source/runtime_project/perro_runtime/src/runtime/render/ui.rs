@@ -862,7 +862,7 @@ impl Runtime {
         button.pressed_style.fill = Color::new(0.12, 0.16, 0.24, 1.0);
         self.insert_color_picker_internal_node(
             tree_id,
-            Box::leak(format!("__perro_tree_list_row_{idx}").into_boxed_str()),
+            format!("__perro_tree_list_row_{idx}"),
             SceneNodeData::UiButton(Box::new(button)),
         )
     }
@@ -876,7 +876,7 @@ impl Runtime {
         shape.kind = perro_ui::UiShapeKind::Triangle;
         self.insert_color_picker_internal_node(
             row_id,
-            Box::leak(format!("__perro_tree_list_toggle_{idx}").into_boxed_str()),
+            format!("__perro_tree_list_toggle_{idx}"),
             SceneNodeData::UiShape(shape),
         )
     }
@@ -889,7 +889,7 @@ impl Runtime {
         image.base.mouse_filter = perro_ui::UiMouseFilter::Pass;
         self.insert_color_picker_internal_node(
             row_id,
-            Box::leak(format!("__perro_tree_list_icon_{idx}").into_boxed_str()),
+            format!("__perro_tree_list_icon_{idx}"),
             SceneNodeData::UiImage(Box::new(image)),
         )
     }
@@ -905,7 +905,7 @@ impl Runtime {
         label.text_size_ratio = 0.62;
         self.insert_color_picker_internal_node(
             row_id,
-            Box::leak(format!("__perro_tree_list_label_{idx}").into_boxed_str()),
+            format!("__perro_tree_list_label_{idx}"),
             SceneNodeData::UiLabel(Box::new(label)),
         )
     }
@@ -919,7 +919,7 @@ impl Runtime {
         panel.style.stroke_width = 0.0;
         self.insert_color_picker_internal_node(
             row_id,
-            Box::leak(format!("__perro_tree_list_line_{idx}_{line_idx}").into_boxed_str()),
+            format!("__perro_tree_list_line_{idx}_{line_idx}"),
             SceneNodeData::UiPanel(Box::new(panel)),
         )
     }
@@ -1240,7 +1240,7 @@ impl Runtime {
         button.base.clip_children = false;
         self.insert_color_picker_internal_node(
             dropdown_id,
-            Box::leak(format!("__perro_dropdown_option_{idx}").into_boxed_str()),
+            format!("__perro_dropdown_option_{idx}"),
             SceneNodeData::UiButton(Box::new(button)),
         )
     }
@@ -1498,7 +1498,7 @@ impl Runtime {
     fn insert_color_picker_internal_node(
         &mut self,
         parent_id: NodeID,
-        name: &'static str,
+        name: impl Into<std::borrow::Cow<'static, str>>,
         data: SceneNodeData,
     ) -> NodeID {
         let mut node = SceneNode::new(data);
