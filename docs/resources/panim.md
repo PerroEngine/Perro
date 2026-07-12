@@ -272,6 +272,9 @@ Semantics:
 Notes:
 
 - Bone tracks target `pose` transforms on `Skeleton2D.bones` and `Skeleton3D.bones`.
+- Bone `rotation` values are **rest-relative deltas**: playback composes
+  `rest * keyed` (3D) / `rest + keyed` (2D). Identity (`(0, 0, 0, 1)` / `0`)
+  keeps the rest rotation. Bone `position`/`scale` values are absolute.
 - `Skeleton2D` uses `Transform2D`; `rotation` is radians.
 - `Skeleton3D` uses `Transform3D`; `rotation` is quaternion or Euler vec3.
 - `position/rotation/scale` share one transform track per targeted bone.
