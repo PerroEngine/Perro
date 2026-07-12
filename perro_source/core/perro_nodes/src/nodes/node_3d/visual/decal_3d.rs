@@ -133,6 +133,10 @@ pub struct TextDecal3D {
     pub v_align: UiTextAlign,
     /// Max backing texture dimension before upload into the decal atlas.
     pub texture_resolution: u32,
+    /// Font outline thickness in texture pixels; 0 disables the outline.
+    pub outline_width: f32,
+    /// Outline tint, drawn under the glyph fill.
+    pub outline_color: Color,
     pub surface: DecalSurfaceSettings,
     pub distance_fade: DecalDistanceFade,
     /// Higher priority draws over lower when decals overlap.
@@ -153,6 +157,8 @@ impl TextDecal3D {
             h_align: UiTextAlign::Center,
             v_align: UiTextAlign::Center,
             texture_resolution: 512,
+            outline_width: 0.0,
+            outline_color: Color::BLACK,
             surface,
             distance_fade: DecalDistanceFade::new(),
             sort_priority: 0,

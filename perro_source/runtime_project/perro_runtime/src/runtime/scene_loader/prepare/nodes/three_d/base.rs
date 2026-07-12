@@ -299,6 +299,16 @@ fn apply_text_decal_3d_fields(node: &mut TextDecal3D, fields: &[SceneObjectField
                 node.texture_resolution = v.clamp(16, 4096);
             }
         }
+        "outline_width" | "outline_size" => {
+            if let Some(v) = as_f32(value) {
+                node.outline_width = v.clamp(0.0, 64.0);
+            }
+        }
+        "outline_color" => {
+            if let Some(v) = as_scene_color(value) {
+                node.outline_color = v;
+            }
+        }
         "albedo_mix" => {
             if let Some(v) = as_f32(value) {
                 node.surface.albedo_mix = v.clamp(0.0, 1.0);

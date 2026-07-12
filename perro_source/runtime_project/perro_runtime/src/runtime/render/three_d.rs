@@ -23,7 +23,7 @@ use perro_render_bridge::{
 };
 use perro_resource_api::sub_apis::{MaterialAPI, MeshAPI, TextureAPI};
 use perro_runtime_render::{TextDecalTextureCache, material_3d_request, mesh_3d_request};
-use perro_structs::{BitMask, Vector2, Vector3};
+use perro_structs::{BitMask, Color, Vector2, Vector3};
 use std::borrow::Cow;
 use std::sync::Arc;
 
@@ -47,6 +47,9 @@ struct TextDecalRasterParams<'a> {
     h_align: perro_ui::UiTextAlign,
     v_align: perro_ui::UiTextAlign,
     texture_resolution: u32,
+    color: Color,
+    outline_width: f32,
+    outline_color: Color,
 }
 
 #[inline]
@@ -772,6 +775,7 @@ impl Runtime {
                         decal.h_align,
                         decal.v_align,
                         decal.texture_resolution,
+                        (decal.outline_width, decal.outline_color),
                         decal.surface,
                         decal.distance_fade,
                         decal.sort_priority,
@@ -788,6 +792,7 @@ impl Runtime {
                 h_align,
                 v_align,
                 texture_resolution,
+                (outline_width, outline_color),
                 surface,
                 distance_fade,
                 sort_priority,
@@ -801,8 +806,17 @@ impl Runtime {
                     h_align,
                     v_align,
                     texture_resolution,
+                    color,
+                    outline_width,
+                    outline_color,
                 });
-                let modulate = Runtime::color_modulate(color, self.effective_self_modulate(node));
+                // Text and outline colors are baked into the raster (so the
+                // outline keeps its own tint); only the color's alpha and the
+                // node modulate scale the decal.
+                let modulate = Runtime::color_modulate(
+                    Color::new(1.0, 1.0, 1.0, color.a.to_u8() as f32 / 255.0),
+                    self.effective_self_modulate(node),
+                );
                 let global = self
                     .get_render_global_transform_3d(node)
                     .unwrap_or(local_transform);
@@ -1582,27 +1596,13 @@ impl Runtime {
     }
 
     fn text_decal_texture(&mut self, params: TextDecalRasterParams<'_>) -> perro_ids::TextureID {
-        let signature = text_decal_signature(
-            params.text,
-            params.size,
-            params.font_size,
-            params.h_align,
-            params.v_align,
-            params.texture_resolution,
-        );
+        let signature = text_decal_signature(&params);
         if let Some(cache) = self.render_3d.text_decal_texture_cache.get(&params.node)
             && cache.signature == signature
         {
             return cache.texture;
         }
-        let (rgba, width, height) = raster_text_decal(
-            params.text,
-            params.size,
-            params.font_size,
-            params.h_align,
-            params.v_align,
-            params.texture_resolution,
-        );
+        let (rgba, width, height) = raster_text_decal(&params);
         let texture =
             TextureAPI::create_texture_from_rgba(self.resource_api.as_ref(), width, height, &rgba);
         if let Some(old) = self
@@ -2699,26 +2699,35 @@ fn text_align_state_3d(align: perro_ui::UiTextAlign) -> UiTextAlignState {
     }
 }
 
-fn text_decal_signature(
-    text: &str,
-    size: Vector3,
-    font_size: f32,
-    h_align: perro_ui::UiTextAlign,
-    v_align: perro_ui::UiTextAlign,
-    texture_resolution: u32,
-) -> u64 {
-    let font_size = sanitize_text_decal_font_size(font_size);
+fn text_decal_signature(params: &TextDecalRasterParams<'_>) -> u64 {
+    let font_size = sanitize_text_decal_font_size(params.font_size);
     string_to_u64(&format!(
-        "text-decal|{}|{}|{}|{}|{}|{}|{}|{}",
-        text,
-        size.x.to_bits(),
-        size.y.to_bits(),
+        "text-decal|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
+        params.text,
+        params.size.x.to_bits(),
+        params.size.y.to_bits(),
         font_size.to_bits(),
-        text_decal_align_id(h_align),
-        text_decal_align_id(v_align),
-        texture_resolution,
-        1u8
+        text_decal_align_id(params.h_align),
+        text_decal_align_id(params.v_align),
+        params.texture_resolution,
+        params.color.r.to_u8(),
+        params.color.g.to_u8(),
+        params.color.b.to_u8(),
+        sanitize_outline_width(params.outline_width).to_bits(),
+        params.outline_color.r.to_u8(),
+        params.outline_color.g.to_u8(),
+        params.outline_color.b.to_u8(),
+        params.outline_color.a.to_u8(),
+        2u8
     ))
+}
+
+fn sanitize_outline_width(width: f32) -> f32 {
+    if width.is_finite() {
+        width.clamp(0.0, 64.0)
+    } else {
+        0.0
+    }
 }
 
 fn text_decal_align_id(align: perro_ui::UiTextAlign) -> u8 {
@@ -2737,27 +2746,20 @@ fn sanitize_text_decal_font_size(font_size: f32) -> f32 {
     }
 }
 
-fn raster_text_decal(
-    text: &str,
-    size: Vector3,
-    font_size: f32,
-    h_align: perro_ui::UiTextAlign,
-    v_align: perro_ui::UiTextAlign,
-    texture_resolution: u32,
-) -> (Vec<u8>, u32, u32) {
-    let resolution = texture_resolution.clamp(16, 4096);
-    let size_x = if size.x.is_finite() {
-        size.x.abs().max(0.001)
+fn raster_text_decal(params: &TextDecalRasterParams<'_>) -> (Vec<u8>, u32, u32) {
+    let resolution = params.texture_resolution.clamp(16, 4096);
+    let size_x = if params.size.x.is_finite() {
+        params.size.x.abs().max(0.001)
     } else {
         1.0
     };
-    let size_y = if size.y.is_finite() {
-        size.y.abs().max(0.001)
+    let size_y = if params.size.y.is_finite() {
+        params.size.y.abs().max(0.001)
     } else {
         1.0
     };
     let aspect = (size_x / size_y).clamp(0.0625, 16.0);
-    let font_size = sanitize_text_decal_font_size(font_size);
+    let font_size = sanitize_text_decal_font_size(params.font_size);
     let (width, height) = if aspect >= 1.0 {
         (
             resolution,
@@ -2769,27 +2771,139 @@ fn raster_text_decal(
             resolution,
         )
     };
-    let mut rgba = vec![0u8; width as usize * height as usize * 4];
-    if text.is_empty() {
+    let pixel_count = width as usize * height as usize;
+    // Rasterize glyph coverage into a single-channel mask, then compose
+    // colors afterwards. Keeping color out of the coverage pass lets the
+    // outline dilate the same mask, and lets transparent texels carry the
+    // fill/outline RGB so linear filtering never bleeds black fringes in.
+    let mut mask = vec![0u8; pixel_count];
+    if !params.text.is_empty() {
+        if let Some(font_data) = load_text_decal_font_data()
+            && let Ok(font) = ab_glyph::FontRef::try_from_slice(&font_data)
+        {
+            raster_text_decal_font(TextDecalFontRaster {
+                mask: &mut mask,
+                width,
+                height,
+                font: &font,
+                text: params.text,
+                font_size,
+                h_align: params.h_align,
+                v_align: params.v_align,
+            });
+        } else {
+            raster_text_decal_blocks(
+                &mut mask,
+                width,
+                height,
+                params.text,
+                params.h_align,
+                params.v_align,
+            );
+        }
+    }
+    let text_rgb = color_rgb8(params.color);
+    let outline_px = sanitize_outline_width(params.outline_width).round() as usize;
+    let outline_alpha = params.outline_color.a.to_u8() as f32 / 255.0;
+    let mut rgba = vec![0u8; pixel_count * 4];
+    if outline_px == 0 || outline_alpha <= 0.0 {
+        // No outline: every texel carries the fill RGB, alpha = coverage.
+        for (pixel, coverage) in mask.iter().enumerate() {
+            let idx = pixel * 4;
+            rgba[idx] = text_rgb[0];
+            rgba[idx + 1] = text_rgb[1];
+            rgba[idx + 2] = text_rgb[2];
+            rgba[idx + 3] = *coverage;
+        }
         return (rgba, width, height);
     }
-    if let Some(font_data) = load_text_decal_font_data()
-        && let Ok(font) = ab_glyph::FontRef::try_from_slice(&font_data)
-    {
-        raster_text_decal_font(TextDecalFontRaster {
-            rgba: &mut rgba,
-            width,
-            height,
-            font: &font,
-            text,
-            font_size,
-            h_align,
-            v_align,
-        });
-    } else {
-        raster_text_decal_blocks(&mut rgba, width, height, text, h_align, v_align);
+    let outline_rgb = color_rgb8(params.outline_color);
+    let dilated = dilate_mask(&mask, width as usize, height as usize, outline_px);
+    for pixel in 0..pixel_count {
+        let fill = mask[pixel] as f32 / 255.0;
+        let outline = (dilated[pixel] as f32 / 255.0) * outline_alpha;
+        // Fill layer over outline layer (straight alpha "over").
+        let alpha = fill + outline * (1.0 - fill);
+        let idx = pixel * 4;
+        if alpha <= 0.0 {
+            // Transparent texels take the outline RGB (it is always the
+            // outermost boundary) so filtering stays fringe-free.
+            rgba[idx] = outline_rgb[0];
+            rgba[idx + 1] = outline_rgb[1];
+            rgba[idx + 2] = outline_rgb[2];
+            continue;
+        }
+        let fill_weight = fill / alpha;
+        let outline_weight = 1.0 - fill_weight;
+        rgba[idx] = mix_channel(outline_rgb[0], text_rgb[0], fill_weight, outline_weight);
+        rgba[idx + 1] = mix_channel(outline_rgb[1], text_rgb[1], fill_weight, outline_weight);
+        rgba[idx + 2] = mix_channel(outline_rgb[2], text_rgb[2], fill_weight, outline_weight);
+        rgba[idx + 3] = (alpha * 255.0).round().clamp(0.0, 255.0) as u8;
     }
     (rgba, width, height)
+}
+
+#[inline]
+fn color_rgb8(color: Color) -> [u8; 3] {
+    [color.r.to_u8(), color.g.to_u8(), color.b.to_u8()]
+}
+
+#[inline]
+fn mix_channel(under: u8, over: u8, over_weight: f32, under_weight: f32) -> u8 {
+    (over as f32 * over_weight + under as f32 * under_weight)
+        .round()
+        .clamp(0.0, 255.0) as u8
+}
+
+// Grayscale dilation with a (2r+1)² box (Chebyshev disc), as two separable
+// sliding-window max passes — O(width × height) regardless of radius.
+fn dilate_mask(mask: &[u8], width: usize, height: usize, radius: usize) -> Vec<u8> {
+    if radius == 0 || mask.is_empty() {
+        return mask.to_vec();
+    }
+    let mut horizontal = vec![0u8; mask.len()];
+    for row in 0..height {
+        sliding_window_max(
+            &mask[row * width..(row + 1) * width],
+            radius,
+            &mut horizontal[row * width..(row + 1) * width],
+        );
+    }
+    let mut out = vec![0u8; mask.len()];
+    let mut column_in = vec![0u8; height];
+    let mut column_out = vec![0u8; height];
+    for col in 0..width {
+        for row in 0..height {
+            column_in[row] = horizontal[row * width + col];
+        }
+        sliding_window_max(&column_in, radius, &mut column_out);
+        for row in 0..height {
+            out[row * width + col] = column_out[row];
+        }
+    }
+    out
+}
+
+// out[i] = max(input[i-radius ..= i+radius]) via a monotonic index deque.
+fn sliding_window_max(input: &[u8], radius: usize, out: &mut [u8]) {
+    let mut deque: std::collections::VecDeque<usize> = std::collections::VecDeque::new();
+    for i in 0..input.len() + radius {
+        if i < input.len() {
+            while deque.back().is_some_and(|&back| input[back] <= input[i]) {
+                deque.pop_back();
+            }
+            deque.push_back(i);
+        }
+        if i >= radius {
+            let target = i - radius;
+            while deque.front().is_some_and(|&front| front + radius < target) {
+                deque.pop_front();
+            }
+            if let Some(&front) = deque.front() {
+                out[target] = input[front];
+            }
+        }
+    }
 }
 
 fn load_text_decal_font_data() -> Option<Vec<u8>> {
@@ -2814,7 +2928,7 @@ fn load_text_decal_font_data() -> Option<Vec<u8>> {
 }
 
 struct TextDecalFontRaster<'a, 'font> {
-    rgba: &'a mut [u8],
+    mask: &'a mut [u8],
     width: u32,
     height: u32,
     font: &'font ab_glyph::FontRef<'font>,
@@ -2874,12 +2988,9 @@ fn raster_text_decal_font(params: TextDecalFontRaster<'_, '_>) {
                     if px < 0 || py < 0 || px >= params.width as i32 || py >= params.height as i32 {
                         return;
                     }
-                    let idx = (py as usize * params.width as usize + px as usize) * 4;
+                    let idx = py as usize * params.width as usize + px as usize;
                     let alpha = (coverage * 255.0).round().clamp(0.0, 255.0) as u8;
-                    params.rgba[idx] = 255;
-                    params.rgba[idx + 1] = 255;
-                    params.rgba[idx + 2] = 255;
-                    params.rgba[idx + 3] = params.rgba[idx + 3].max(alpha);
+                    params.mask[idx] = params.mask[idx].max(alpha);
                 });
             }
             cursor_x += scaled.h_advance(glyph_id);
@@ -2889,7 +3000,7 @@ fn raster_text_decal_font(params: TextDecalFontRaster<'_, '_>) {
 }
 
 fn raster_text_decal_blocks(
-    rgba: &mut [u8],
+    mask: &mut [u8],
     width: u32,
     height: u32,
     text: &str,
@@ -2929,11 +3040,7 @@ fn raster_text_decal_blocks(
             let pad = (block / 6).max(1);
             for y in y0 + pad..(y0 + block).saturating_sub(pad).min(height as usize) {
                 for x in x0 + pad..(x0 + block).saturating_sub(pad).min(width as usize) {
-                    let idx = (y * width as usize + x) * 4;
-                    rgba[idx] = 255;
-                    rgba[idx + 1] = 255;
-                    rgba[idx + 2] = 255;
-                    rgba[idx + 3] = 255;
+                    mask[y * width as usize + x] = 255;
                 }
             }
         }

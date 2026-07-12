@@ -1086,6 +1086,8 @@ fn text_decal_fields(fields: &mut Vec<SceneNodeField>) {
         "texture_resolution",
         NodeFieldType::U32,
     );
+    push(fields, "Text Decal", "outline_width", NodeFieldType::F32);
+    push(fields, "Text Decal", "outline_color", NodeFieldType::Color);
     push(fields, "Decal", "albedo_mix", NodeFieldType::F32);
     push(fields, "Decal", "emission_energy", NodeFieldType::F32);
     push(fields, "Decal", "normal_fade", NodeFieldType::F32);

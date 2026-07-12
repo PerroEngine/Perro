@@ -2281,3 +2281,92 @@ fn collision_shape_debug_rebuilds_when_parent_moves() {
 
     assert_ne!(first_x, second_x);
 }
+
+#[test]
+fn sliding_window_max_covers_edges_and_plateaus() {
+    let input = [0u8, 10, 0, 0, 200, 0, 0, 0, 50];
+    let mut out = vec![0u8; input.len()];
+    super::sliding_window_max(&input, 2, &mut out);
+    assert_eq!(out, vec![10, 10, 200, 200, 200, 200, 200, 50, 50]);
+}
+
+#[test]
+fn dilate_mask_grows_square_neighborhood() {
+    let mut mask = vec![0u8; 25];
+    mask[12] = 255; // center of 5x5
+    let out = super::dilate_mask(&mask, 5, 5, 1);
+    let expected: Vec<u8> = (0..25)
+        .map(|i| {
+            let (x, y) = (i % 5, i / 5);
+            if (1..=3).contains(&x) && (1..=3).contains(&y) {
+                255
+            } else {
+                0
+            }
+        })
+        .collect();
+    assert_eq!(out, expected);
+}
+
+#[test]
+fn text_decal_raster_background_carries_fill_rgb() {
+    // Transparent texels must carry the fill color so linear filtering never
+    // blends toward black (the old dark-fringe artifact).
+    let params = super::TextDecalRasterParams {
+        node: perro_ids::NodeID::from_u64(1),
+        text: "",
+        size: Vector3::new(2.0, 0.5, 0.25),
+        font_size: 32.0,
+        h_align: perro_ui::UiTextAlign::Center,
+        v_align: perro_ui::UiTextAlign::Center,
+        texture_resolution: 64,
+        color: Color::new(1.0, 0.5, 0.0, 1.0),
+        outline_width: 0.0,
+        outline_color: Color::BLACK,
+    };
+    let (rgba, width, height) = super::raster_text_decal(&params);
+    assert!(width > 0 && height > 0);
+    for pixel in rgba.chunks_exact(4) {
+        assert_eq!(pixel[0], 255);
+        assert_eq!(pixel[1], 128);
+        assert_eq!(pixel[2], 0);
+        assert_eq!(pixel[3], 0);
+    }
+}
+
+#[test]
+fn text_decal_outline_grows_coverage_and_tints_border() {
+    let base = super::TextDecalRasterParams {
+        node: perro_ids::NodeID::from_u64(1),
+        text: "A",
+        size: Vector3::new(1.0, 1.0, 0.25),
+        font_size: 48.0,
+        h_align: perro_ui::UiTextAlign::Center,
+        v_align: perro_ui::UiTextAlign::Center,
+        texture_resolution: 64,
+        color: Color::WHITE,
+        outline_width: 0.0,
+        outline_color: Color::BLACK,
+    };
+    let (plain, _, _) = super::raster_text_decal(&base);
+    let outlined_params = super::TextDecalRasterParams {
+        outline_width: 4.0,
+        ..base
+    };
+    let (outlined, _, _) = super::raster_text_decal(&outlined_params);
+    let plain_coverage = plain.chunks_exact(4).filter(|px| px[3] > 0).count();
+    let outlined_coverage = outlined.chunks_exact(4).filter(|px| px[3] > 0).count();
+    assert!(plain_coverage > 0, "glyph raster produced no coverage");
+    assert!(
+        outlined_coverage > plain_coverage,
+        "outline must dilate coverage ({outlined_coverage} <= {plain_coverage})"
+    );
+    // Pure-outline texels (opaque in outlined, transparent in plain) take the
+    // outline color.
+    let border_black = plain
+        .chunks_exact(4)
+        .zip(outlined.chunks_exact(4))
+        .filter(|(p, o)| p[3] == 0 && o[3] == 255)
+        .all(|(_, o)| o[0] == 0 && o[1] == 0 && o[2] == 0);
+    assert!(border_black, "outline-only texels must use outline color");
+}
