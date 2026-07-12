@@ -109,6 +109,7 @@ pub fn open_project<API: ScriptAPI + ?Sized>(
         state.active_anim_player_key = None;
         state.active_glb_path.clear();
         state.active_glb_summary.clear();
+        state.glb_viewer_isolate = false;
         state.script_schema_reload_frames = 0;
         clear_destructive_confirmation(state);
         state.log = log;
@@ -685,8 +686,6 @@ pub fn open_gltf_path<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>,
         info.animation_count,
         info.skeleton_count,
         info.texture_count,
-        info.node_count,
-        info.scene_count,
         0,
         0,
         0,
@@ -703,6 +702,7 @@ pub fn open_gltf_path<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>,
         state.active_glb_mesh_index = 0;
         state.active_glb_mat_index = 0;
         state.active_glb_anim_index = 0;
+        state.glb_viewer_isolate = false;
         state.viewport_mode = "3D".to_string();
         reset_freecam(state);
         state.log = format!(
@@ -714,6 +714,7 @@ pub fn open_gltf_path<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>,
         );
     });
     rebuild_preview(ctx);
+    auto_frame_glb_camera(ctx, gltf_path, info.mesh_count);
     refresh_all(ctx);
 }
 
@@ -767,14 +768,15 @@ pub fn cycle_active_glb_ref<API: ScriptAPI + ?Sized>(
             info.animation_count,
             info.skeleton_count,
             info.texture_count,
-            info.node_count,
-            info.scene_count,
             state.active_glb_mesh_index,
             state.active_glb_mat_index,
             state.active_glb_anim_index,
         );
         state.log = format!("glb {kind}\n{path}:{kind}[{next}]");
     });
+    if kind == "mesh" {
+        apply_glb_mesh_isolation(ctx);
+    }
     refresh_all(ctx);
 }
 
