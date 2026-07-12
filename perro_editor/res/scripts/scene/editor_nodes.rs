@@ -311,6 +311,9 @@ pub fn set_scene_node_slot_open<API: ScriptAPI + ?Sized>(
 }
 
 pub fn set_activity_mode<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, mode: &str) {
+    let was_glb = with_state!(ctx.run, EditorState, ctx.id, |state| {
+        state.activity_mode == "glb"
+    });
     let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
         if mode == "scene" {
             state.activity_mode = "scene".to_string();
@@ -330,6 +333,10 @@ pub fn set_activity_mode<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, AP
             state.anim_drawer_open = true;
         }
     });
+    if was_glb && (mode == "scene" || mode == "files") {
+        // Leaving the glb viewer: restore the open scene's preview stage.
+        rebuild_preview(ctx);
+    }
     refresh_all(ctx);
 }
 

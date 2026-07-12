@@ -235,6 +235,8 @@ pub const RECENT_PROJECTS_PATH: &str = "user://recent_projects.json";
 pub const FILE_WATCH_INTERVAL_FRAMES: u32 = 30;
 pub const LIST_DOUBLE_CLICK_FRAMES: u32 = 18;
 pub const MAX_SCENE_UNDO: usize = 64;
+pub const MAX_ANIM_TRACKS: usize = 6;
+pub const MAX_ANIM_MARKERS: usize = 24;
 pub const DESTRUCTIVE_CONFIRM_TIMEOUT_FRAMES: u32 = 180;
 
 pub fn destructive_confirmation_matches(
@@ -509,6 +511,24 @@ pub struct EditorState {
     pub command_palette_filter: String,
     pub active_anim_path: String,
     pub active_anim_player_key: Option<u32>,
+    pub anim_doc_text: String,
+    pub anim_dirty: bool,
+    pub anim_selected_track: usize,
+    pub anim_track_scroll: usize,
+    pub anim_playhead: f32,
+    pub anim_playing: bool,
+    pub anim_loop: bool,
+    pub anim_preview_player: u64,
+    pub anim_preview_clip: u64,
+    pub anim_clip_dirty: bool,
+    pub anim_ruler_drag: bool,
+    pub anim_marker_ids: Vec<u64>,
+    pub anim_playhead_id: u64,
+    pub glb_viewer_mesh_ids: Vec<u64>,
+    pub glb_viewer_rig_id: u64,
+    pub glb_viewer_player: u64,
+    pub glb_viewer_clip: u64,
+    pub glb_viewer_playing: bool,
     pub active_glb_path: String,
     pub active_glb_summary: String,
     pub active_glb_mesh_index: usize,
@@ -568,6 +588,7 @@ lifecycle!({
         poll_project_diffs(ctx);
         tick_script_schema_reload(ctx);
         tick_destructive_confirmation(ctx);
+        update_anim_editor(ctx);
     }
 });
 
@@ -697,8 +718,19 @@ methods!({
             "file_delete_button" => delete_active_asset(ctx),
             "file_copy_path_button" => copy_active_asset_path(ctx),
             "anim_create_button" => create_animation_for_selected_player(ctx),
-            "anim_add_track_button" => add_track_for_selected_node(ctx),
-            "anim_close_button" => set_anim_drawer(ctx, false),
+            "anim_add_track_button" => open_anim_track_picker(ctx),
+            "anim_close_button" => close_anim_editor(ctx),
+            "anim_play_button" => toggle_anim_play(ctx),
+            "anim_stop_button" => stop_anim_playback(ctx),
+            "anim_loop_button" => toggle_anim_loop(ctx),
+            "anim_key_button" => insert_anim_key(ctx),
+            "anim_del_key_button" => delete_anim_key(ctx),
+            "anim_rest_button" => reset_anim_to_rest(ctx),
+            "anim_save_button" => save_anim_doc(ctx),
+            "anim_frame_box" => seek_anim_frame_box(ctx),
+            "anim_fps_box" => edit_anim_fps_box(ctx),
+            "anim_timeline_ruler" => begin_anim_ruler_seek(ctx),
+            "asset_glb_play_button" => toggle_glb_viewer_animation(ctx),
             "scene_duplicate_button" => duplicate_selected_node(ctx),
             "scene_copy_button" => copy_selected_node(ctx),
             "scene_paste_button" => paste_copied_node(ctx),
@@ -741,7 +773,11 @@ methods!({
                 }
             }
             _ => {
-                if let Some(idx) = suffix_index(&name, "command_palette_row_") {
+                if let Some(idx) = suffix_index(&name, "anim_track_row_") {
+                    select_anim_track(ctx, idx);
+                } else if let Some(idx) = suffix_index(&name, "anim_lane_") {
+                    click_anim_lane(ctx, idx);
+                } else if let Some(idx) = suffix_index(&name, "command_palette_row_") {
                     execute_command_palette_row(ctx, idx);
                 } else if let Some(idx) = suffix_index(&name, "manager_recent_") {
                     open_recent_project(ctx, idx);
@@ -1120,6 +1156,29 @@ fn connect_editor_signals<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, A
             signal!("editor_anim_create"),
             signal!("editor_anim_add_track"),
             signal!("editor_anim_close"),
+            signal!("editor_anim_play"),
+            signal!("editor_anim_stop"),
+            signal!("editor_anim_loop"),
+            signal!("editor_anim_key"),
+            signal!("editor_anim_del_key"),
+            signal!("editor_anim_rest"),
+            signal!("editor_anim_save"),
+            signal!("editor_anim_frame"),
+            signal!("editor_anim_fps"),
+            signal!("editor_anim_ruler"),
+            signal!("editor_anim_track_0"),
+            signal!("editor_anim_track_1"),
+            signal!("editor_anim_track_2"),
+            signal!("editor_anim_track_3"),
+            signal!("editor_anim_track_4"),
+            signal!("editor_anim_track_5"),
+            signal!("editor_anim_lane_0"),
+            signal!("editor_anim_lane_1"),
+            signal!("editor_anim_lane_2"),
+            signal!("editor_anim_lane_3"),
+            signal!("editor_anim_lane_4"),
+            signal!("editor_anim_lane_5"),
+            signal!("editor_asset_glb_play"),
             signal!("editor_inspector_duplicate"),
             signal!("editor_scene_copy"),
             signal!("editor_scene_paste"),

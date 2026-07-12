@@ -1,15 +1,17 @@
-use crate::scripts_app_editor_app_rs as editor_app;
+﻿use crate::scripts_app_editor_app_rs as editor_app;
 use crate::scripts_app_editor_manager_rs as editor_manager;
 use crate::scripts_app_editor_project_rs as editor_project;
 use crate::scripts_assets_editor_assets_rs::*;
 use crate::scripts_assets_editor_file_watch_rs as editor_file_watch;
 use crate::scripts_assets_editor_files_rs as editor_files;
 use crate::scripts_editor_main_rs::{
-    EditorState, FILE_WATCH_INTERVAL_FRAMES, MAX_FILES, MAX_INSPECTOR_PICKER_ROWS,
-    MAX_NODE_PICKER_ROWS, MAX_NODES, MAX_RECENT, MAX_TABS, RECENT_PROJECTS_PATH, cached_scene_doc, cached_scene_doc_shared,
-    set_state_scene_doc,
+    EditorState, FILE_WATCH_INTERVAL_FRAMES, MAX_ANIM_MARKERS, MAX_ANIM_TRACKS, MAX_FILES,
+    MAX_INSPECTOR_PICKER_ROWS, MAX_NODE_PICKER_ROWS, MAX_NODES, MAX_RECENT, MAX_TABS,
+    RECENT_PROJECTS_PATH, cached_scene_doc, cached_scene_doc_shared, set_state_scene_doc,
 };
 use crate::scripts_scene_editor_gizmos_rs as editor_gizmos;
+use crate::scripts_scene_editor_panim_rs as panim;
+use crate::scripts_ui_theme_rs as theme;
 use crate::scripts_scene_editor_nav_rs::*;
 use crate::scripts_scene_editor_nodes_rs::*;
 use crate::scripts_scene_editor_scene_deps_rs as editor_scene_deps;
@@ -95,6 +97,8 @@ pub fn create_animation_for_selected_player<API: ScriptAPI + ?Sized>(
                 if let Ok(paths) = scan_res_paths(Path::new(&state.project_root)) {
                     state.file_paths = paths;
                 }
+                state.bottom_dock_open = true;
+                load_anim_text_into_state(state, &anim_path, text.clone());
                 state.log = format!("create animation\n{}", editor_files::rel_label(&anim_path));
             });
             refresh_all(ctx);
@@ -1241,6 +1245,18 @@ pub fn choose_inspector_picker_row<API: ScriptAPI + ?Sized>(
     let Some((field, picker_kind, value)) = pick else {
         return;
     };
+    if picker_kind == "anim_field" {
+        let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+            state.inspector_picker_open = false;
+            state.inspector_picker_field.clear();
+            state.inspector_picker_kind.clear();
+            state.inspector_picker_offset = 0;
+            state.inspector_picker_filter.clear();
+        });
+        set_inspector_picker(ctx, false);
+        add_anim_track_field(ctx, &value);
+        return;
+    }
     let changed = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
         let Some(key) = state.selected_key else {
             return false;
@@ -1384,6 +1400,896 @@ pub fn parse_script_var_value(text: &str) -> Result<SceneValue, String> {
     }
     std::panic::catch_unwind(|| Parser::new(text).parse_value_literal())
         .map_err(|_| "bad scene value".to_string())
+}
+
+// ---------------------------------------------------------------------------
+// Animation editor dock: track model, live preview player, timeline widgets.
+// ---------------------------------------------------------------------------
+
+// Layout constants shared with shell.scn's anim drawer. Keep in sync.
+pub const ANIM_TRACK_COL_W: f32 = 0.20;
+pub const ANIM_TIMELINE_COL_W: f32 = 0.79;
+pub const ANIM_BODY_SPACING: f32 = 0.004;
+
+pub fn cached_anim_doc(state: &EditorState) -> panim::PanimDoc {
+    panim::parse_panim(&state.anim_doc_text)
+}
+
+fn touch_anim_doc(state: &mut EditorState, doc: &panim::PanimDoc) {
+    state.anim_doc_text = panim::serialize_panim(doc);
+    state.anim_dirty = true;
+    state.anim_clip_dirty = true;
+}
+
+// Loads .panim text into editor state and auto-binds the scene's
+// AnimationPlayer when one references this clip.
+pub fn load_anim_text_into_state(state: &mut EditorState, anim_path: &str, text: String) {
+    state.anim_doc_text = text;
+    state.anim_dirty = false;
+    state.anim_clip_dirty = true;
+    state.anim_selected_track = 0;
+    state.anim_track_scroll = 0;
+    state.anim_playhead = 0.0;
+    state.anim_playing = false;
+    state.anim_ruler_drag = false;
+    if state.active_anim_player_key.is_none() && !state.doc_text.is_empty() {
+        let doc = cached_scene_doc_shared(&state.doc_text);
+        state.active_anim_player_key = doc
+            .scene
+            .nodes
+            .iter()
+            .find(|node| {
+                node.data.type_name() == "AnimationPlayer"
+                    && doc_field_value(&node.data, "animation")
+                        .is_some_and(|value| scene_value_is_str(&value, anim_path))
+            })
+            .map(|node| node.key.as_u32());
+    }
+}
+
+fn scene_value_is_str(value: &SceneValue, expected: &str) -> bool {
+    match value {
+        SceneValue::Str(text) => text.as_ref() == expected,
+        _ => false,
+    }
+}
+
+// Field lookup that climbs the base-data chain like the runtime loader does.
+pub fn doc_field_value(data: &SceneNodeData, field: &str) -> Option<SceneValue> {
+    for (name, value) in data.fields.iter() {
+        if name.as_ref() == field {
+            return Some(value.clone());
+        }
+    }
+    match data.base.as_ref()? {
+        perro_scene::SceneNodeDataBase::Owned(base) => doc_field_value(base, field),
+        perro_scene::SceneNodeDataBase::Borrowed(_) => None,
+    }
+}
+
+pub fn scene_value_to_panim_text(value: &SceneValue) -> Option<String> {
+    match value {
+        SceneValue::Bool(v) => Some(v.to_string()),
+        SceneValue::F32(v) => Some(format!("{v}")),
+        SceneValue::I32(v) => Some(format!("{v}")),
+        SceneValue::Vec2 { x, y } => Some(format!("({x}, {y})")),
+        SceneValue::Vec3 { x, y, z } => Some(format!("({x}, {y}, {z})")),
+        SceneValue::Vec4 { x, y, z, w } => Some(format!("({x}, {y}, {z}, {w})")),
+        SceneValue::Str(text) => Some(format!("\"{}\"", text)),
+        _ => None,
+    }
+}
+
+// object -> scene doc key, via AnimationPlayer bindings when bound, else by
+// matching object name to a scene node name.
+pub fn resolve_anim_object_keys(state: &EditorState, clip: &panim::PanimDoc) -> Vec<(String, u32)> {
+    if state.doc_text.is_empty() {
+        return Vec::new();
+    }
+    let doc = cached_scene_doc_shared(&state.doc_text);
+    let mut name_to_key: Vec<(String, u32)> = doc
+        .scene
+        .nodes
+        .iter()
+        .map(|node| {
+            (
+                doc.scene.key_name_or_id(node.key).to_string(),
+                node.key.as_u32(),
+            )
+        })
+        .collect();
+    let mut bindings: Vec<(String, String)> = Vec::new();
+    if let Some(player_key) = state.active_anim_player_key
+        && let Some(player) = doc
+            .scene
+            .nodes
+            .iter()
+            .find(|node| node.key.as_u32() == player_key)
+        && let Some(SceneValue::Object(fields)) = doc_field_value(&player.data, "bindings")
+    {
+        for (object, value) in fields.iter() {
+            if let SceneValue::Key(name) = value {
+                bindings.push((object.as_ref().to_string(), name.as_ref().to_string()));
+            }
+        }
+    }
+    let mut out = Vec::new();
+    for (object, _) in &clip.objects {
+        let target_name = bindings
+            .iter()
+            .find(|(bound_object, _)| bound_object == object)
+            .map(|(_, name)| name.clone())
+            .unwrap_or_else(|| object.clone());
+        if let Some(pos) = name_to_key.iter().position(|(name, _)| *name == target_name) {
+            out.push((object.clone(), name_to_key[pos].1));
+        }
+        // Keep map stable for repeated objects.
+        name_to_key.sort_by(|a, b| a.0.cmp(&b.0));
+    }
+    out
+}
+
+fn node_exists<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, id: u64) -> bool {
+    id != 0 && get_node_name!(ctx.run, NodeID::from_u64(id)).is_some()
+}
+
+// Keeps the hidden preview AnimationPlayer in sync with the edited clip
+// text. Recreates the player after preview rebuilds and rebuilds the clip
+// whenever the text changed.
+pub fn ensure_anim_preview<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let request = with_state!(ctx.run, EditorState, ctx.id, |state| {
+        if !state.anim_drawer_open || state.anim_doc_text.is_empty() || state.preview_root == 0 {
+            return None;
+        }
+        Some((
+            state.preview_root,
+            state.anim_preview_player,
+            state.anim_clip_dirty,
+            state.anim_preview_clip,
+            state.anim_doc_text.clone(),
+            state.anim_playhead,
+        ))
+    });
+    let Some((root, player, clip_dirty, old_clip, text, playhead)) = request else {
+        return;
+    };
+    let player_alive = node_exists(ctx, player);
+    if player_alive && !clip_dirty {
+        return;
+    }
+    let player_id = if player_alive {
+        NodeID::from_u64(player)
+    } else {
+        create_node!(
+            ctx.run,
+            AnimationPlayer,
+            "__editor_anim_preview_player",
+            tags![],
+            NodeID::from_u64(root)
+        )
+    };
+    if old_clip != 0 {
+        let _ = ctx.res.Animations().drop(AnimationID::from_u64(old_clip));
+    }
+    let clip = ctx.res.Animations().create_from_bytes(text.as_bytes());
+    let _ = ctx.run.AnimPlayer().set_clip(player_id, clip);
+    let _ = ctx.run.AnimPlayer().clear_bindings(player_id);
+    let clip_doc = panim::parse_panim(&text);
+    let objects = with_state!(ctx.run, EditorState, ctx.id, |state| {
+        resolve_anim_object_keys(state, &clip_doc)
+    });
+    for (object, key) in objects {
+        if let Some(node) = preview_node_for_key(ctx, key) {
+            let _ = ctx.run.AnimPlayer().bind(player_id, &object, node);
+        }
+    }
+    let _ = ctx.run.AnimPlayer().pause(player_id, true);
+    let _ = ctx.run.AnimPlayer().seek_frame(player_id, playhead.max(0.0) as u32);
+    let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        state.anim_preview_player = player_id.as_u64();
+        state.anim_preview_clip = clip.as_u64();
+        state.anim_clip_dirty = false;
+    });
+}
+
+fn seek_anim_preview<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, frame: u32) {
+    let player = with_state!(ctx.run, EditorState, ctx.id, |state| {
+        state.anim_preview_player
+    });
+    if player != 0 {
+        let player = NodeID::from_u64(player);
+        let _ = ctx.run.AnimPlayer().pause(player, true);
+        let _ = ctx.run.AnimPlayer().seek_frame(player, frame);
+    }
+}
+
+// Window-space x span of the timeline column; mirrors the shell layout
+// constants (see viewport_stream_rect_ratio for the same derivation).
+pub fn anim_timeline_x_span<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+) -> Option<(f32, f32)> {
+    const MAIN_PADDING: f32 = 0.0025;
+    const MAIN_SPACING: f32 = 0.0025;
+    let layout = with_state!(ctx.run, EditorState, ctx.id, editor_layout);
+    let split_content_w = 1.0 - (MAIN_PADDING * 2.0) - (MAIN_SPACING * 3.0);
+    let activity_w = split_content_w * layout.activity_w;
+    let left_w = split_content_w * layout.left_w;
+    let center_w = split_content_w * layout.center_w;
+    let center_x0 = MAIN_PADDING + activity_w + MAIN_SPACING + left_w + MAIN_SPACING;
+    let inner_x0 = center_x0 + center_w * 0.006;
+    let inner_w = center_w * (1.0 - 0.012);
+    let timeline_x0 = inner_x0 + inner_w * (ANIM_TRACK_COL_W + ANIM_BODY_SPACING);
+    let timeline_w = inner_w * ANIM_TIMELINE_COL_W;
+    Some((timeline_x0, timeline_w))
+}
+
+fn anim_pointer_ratio<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) -> Option<f32> {
+    let mouse = mouse_position!(ctx.ipt);
+    let viewport = ctx.res.viewport_size();
+    if viewport.x <= 0.0 {
+        return None;
+    }
+    let (x0, w) = anim_timeline_x_span(ctx)?;
+    if w <= 0.0 {
+        return None;
+    }
+    Some(((mouse.x / viewport.x - x0) / w).clamp(0.0, 1.0))
+}
+
+pub fn anim_total_frames(state: &EditorState) -> u32 {
+    cached_anim_doc(state).total_frames().max(2)
+}
+
+fn seek_anim_to_ratio<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, ratio: f32) {
+    let frame = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        let total = anim_total_frames(state);
+        let frame = (ratio * (total - 1) as f32).round().clamp(0.0, (total - 1) as f32);
+        state.anim_playhead = frame;
+        frame as u32
+    })
+    .unwrap_or(0);
+    seek_anim_preview(ctx, frame);
+    sync_anim_transport_widgets(ctx);
+}
+
+pub fn begin_anim_ruler_seek<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        state.anim_ruler_drag = true;
+        state.anim_playing = false;
+    });
+    if let Some(ratio) = anim_pointer_ratio(ctx) {
+        seek_anim_to_ratio(ctx, ratio);
+    }
+}
+
+pub fn select_anim_track<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, idx: usize) {
+    let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        let track = state.anim_track_scroll + idx;
+        let count = cached_anim_doc(state).tracks.len();
+        if track < count {
+            state.anim_selected_track = track;
+        }
+    });
+    refresh_all(ctx);
+}
+
+pub fn click_anim_lane<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, idx: usize) {
+    let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        let track = state.anim_track_scroll + idx;
+        let count = cached_anim_doc(state).tracks.len();
+        if track < count {
+            state.anim_selected_track = track;
+        }
+        state.anim_ruler_drag = true;
+        state.anim_playing = false;
+    });
+    if let Some(ratio) = anim_pointer_ratio(ctx) {
+        seek_anim_to_ratio(ctx, ratio);
+    }
+    refresh_all(ctx);
+}
+
+pub fn toggle_anim_play<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        state.anim_playing = !state.anim_playing;
+        if state.anim_playing {
+            let total = anim_total_frames(state);
+            if state.anim_playhead >= (total - 1) as f32 {
+                state.anim_playhead = 0.0;
+            }
+        }
+    });
+    sync_anim_transport_widgets(ctx);
+}
+
+pub fn stop_anim_playback<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        state.anim_playing = false;
+        state.anim_playhead = 0.0;
+    });
+    seek_anim_preview(ctx, 0);
+    sync_anim_transport_widgets(ctx);
+}
+
+pub fn toggle_anim_loop<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        state.anim_loop = !state.anim_loop;
+    });
+    sync_anim_transport_widgets(ctx);
+}
+
+// Reset to rest: drop the preview player and restore the authored scene
+// pose so the live preview never overwrites the document state.
+pub fn reset_anim_to_rest<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let (player, clip) = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        let player = state.anim_preview_player;
+        let clip = state.anim_preview_clip;
+        state.anim_preview_player = 0;
+        state.anim_preview_clip = 0;
+        state.anim_clip_dirty = true;
+        state.anim_playing = false;
+        state.log = "reset to rest".to_string();
+        (player, clip)
+    })
+    .unwrap_or((0, 0));
+    if player != 0 && node_exists(ctx, player) {
+        let _ = ctx.run.Nodes().remove_node(NodeID::from_u64(player));
+    }
+    if clip != 0 {
+        let _ = ctx.res.Animations().drop(AnimationID::from_u64(clip));
+    }
+    rebuild_preview(ctx);
+    refresh_all(ctx);
+}
+
+pub fn save_anim_doc<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let request = with_state!(ctx.run, EditorState, ctx.id, |state| {
+        if state.active_anim_path.is_empty() || state.anim_doc_text.is_empty() {
+            return None;
+        }
+        Some((
+            res_to_abs(&state.project_root, &state.active_anim_path),
+            state.active_anim_path.clone(),
+            state.anim_doc_text.clone(),
+        ))
+    });
+    let Some((abs, path, text)) = request else {
+        set_log(ctx, "anim save fail\nno open animation");
+        return;
+    };
+    if let Some(parent) = Path::new(&abs).parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    match FileMod::save_string(&abs, &text) {
+        Ok(()) => {
+            let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+                state.anim_dirty = false;
+                state.project_file_sigs =
+                    editor_file_watch::scan_project(Path::new(&state.project_root));
+                state.log = format!("save animation\n{}", editor_files::rel_label(&path));
+            });
+            refresh_all(ctx);
+        }
+        Err(err) => set_log(ctx, &format!("anim save fail\n{path}\n{err}")),
+    }
+}
+
+pub fn close_anim_editor<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let (player, clip) = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        let out = (state.anim_preview_player, state.anim_preview_clip);
+        state.anim_preview_player = 0;
+        state.anim_preview_clip = 0;
+        state.anim_playing = false;
+        state.anim_ruler_drag = false;
+        out
+    })
+    .unwrap_or((0, 0));
+    if player != 0 && node_exists(ctx, player) {
+        let _ = ctx.run.Nodes().remove_node(NodeID::from_u64(player));
+    }
+    if clip != 0 {
+        let _ = ctx.res.Animations().drop(AnimationID::from_u64(clip));
+    }
+    rebuild_preview(ctx);
+    set_anim_drawer(ctx, false);
+}
+
+pub fn seek_anim_frame_box<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let Some(text) = read_text_box(ctx, "anim_frame_box") else {
+        return;
+    };
+    let Ok(frame) = text.trim().parse::<u32>() else {
+        return;
+    };
+    let frame = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        let max = anim_total_frames(state) - 1;
+        let frame = frame.min(max);
+        state.anim_playhead = frame as f32;
+        state.anim_playing = false;
+        frame
+    })
+    .unwrap_or(0);
+    seek_anim_preview(ctx, frame);
+    refresh_all(ctx);
+}
+
+pub fn edit_anim_fps_box<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let Some(text) = read_text_box(ctx, "anim_fps_box") else {
+        return;
+    };
+    let Ok(fps) = text.trim().parse::<f32>() else {
+        return;
+    };
+    if fps <= 0.0 || fps > 1000.0 {
+        return;
+    }
+    let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        let mut doc = cached_anim_doc(state);
+        doc.fps = fps;
+        touch_anim_doc(state, &doc);
+        state.log = format!("anim fps\n{fps}");
+    });
+    refresh_all(ctx);
+}
+
+// Inserts a key on the selected track at the playhead. The value comes
+// from the bound node's scene-doc field (the pose you authored in the
+// viewport), falling back to a sensible per-field default.
+pub fn insert_anim_key<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let changed = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        let mut doc = cached_anim_doc(state);
+        let Some(track) = doc.tracks.get(state.anim_selected_track).cloned() else {
+            state.log = "key fail\nselect track".to_string();
+            return false;
+        };
+        let frame = state.anim_playhead.round().max(0.0) as u32;
+        let object_type = doc
+            .object_type(&track.object)
+            .unwrap_or("Node3D")
+            .to_string();
+        let value = anim_key_value_from_scene(state, &doc, &track.object, &track.field)
+            .unwrap_or_else(|| {
+                panim::default_field_value_text(&object_type, &track.field).to_string()
+            });
+        doc.set_key(&track.object, &track.field, frame, value);
+        touch_anim_doc(state, &doc);
+        state.log = format!("key {}\n{}.{} @ {frame}", doc.name, track.object, track.field);
+        true
+    })
+    .unwrap_or(false);
+    if changed {
+        refresh_all(ctx);
+    }
+}
+
+fn anim_key_value_from_scene(
+    state: &EditorState,
+    clip: &panim::PanimDoc,
+    object: &str,
+    field: &str,
+) -> Option<String> {
+    let keys = resolve_anim_object_keys(state, clip);
+    let key = keys
+        .iter()
+        .find(|(name, _)| name == object)
+        .map(|(_, key)| *key)?;
+    let doc = cached_scene_doc_shared(&state.doc_text);
+    let node = doc.scene.nodes.iter().find(|node| node.key.as_u32() == key)?;
+    let value = doc_field_value(&node.data, field)?;
+    scene_value_to_panim_text(&value)
+}
+
+pub fn delete_anim_key<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let changed = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        let mut doc = cached_anim_doc(state);
+        let track_idx = state.anim_selected_track;
+        let Some(track) = doc.tracks.get(track_idx).cloned() else {
+            state.log = "del key fail\nselect track".to_string();
+            return false;
+        };
+        let playhead = state.anim_playhead.round().max(0.0) as u32;
+        let Some(frame) = doc.key_near(track_idx, playhead).filter(|frame| {
+            frame.abs_diff(playhead) <= 2
+        }) else {
+            state.log = "del key fail\nno key near playhead".to_string();
+            return false;
+        };
+        if track.keys.len() == 1 {
+            doc.remove_track(&track.object, &track.field);
+            if state.anim_selected_track >= doc.tracks.len() && state.anim_selected_track > 0 {
+                state.anim_selected_track -= 1;
+            }
+            state.log = format!("remove track\n{}.{}", track.object, track.field);
+        } else {
+            doc.remove_key(&track.object, &track.field, frame);
+            state.log = format!("del key\n{}.{} @ {frame}", track.object, track.field);
+        }
+        touch_anim_doc(state, &doc);
+        true
+    })
+    .unwrap_or(false);
+    if changed {
+        refresh_all(ctx);
+    }
+}
+
+// "+ Track" opens the field picker for the selected scene node.
+pub fn open_anim_track_picker<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let ok = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        if state.selected_key.is_none() {
+            state.log = "track fail\nselect scene node".to_string();
+            return false;
+        }
+        state.inspector_picker_open = true;
+        state.inspector_picker_field = "anim".to_string();
+        state.inspector_picker_kind = "anim_field".to_string();
+        state.inspector_picker_offset = 0;
+        state.inspector_picker_filter.clear();
+        true
+    })
+    .unwrap_or(false);
+    if ok {
+        set_inspector_picker(ctx, true);
+    }
+    refresh_all(ctx);
+}
+
+// Adds (or reuses) the object for the selected node and keys `field` at
+// frame 0 with the node's current value.
+pub fn add_anim_track_field<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    field: &str,
+) {
+    let needs_clip = with_state!(ctx.run, EditorState, ctx.id, |state| {
+        state.active_anim_path.is_empty() || state.anim_doc_text.is_empty()
+    });
+    if needs_clip {
+        create_animation_for_selected_player_or_default(ctx);
+    }
+    let changed = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        if state.anim_doc_text.is_empty() {
+            state.log = "track fail\nno open animation".to_string();
+            return false;
+        }
+        let Some(key) = state.selected_key else {
+            state.log = "track fail\nselect scene node".to_string();
+            return false;
+        };
+        let doc = cached_scene_doc_shared(&state.doc_text);
+        let Some(node) = doc.scene.nodes.iter().find(|node| node.key.as_u32() == key) else {
+            return false;
+        };
+        let node_name = doc.scene.key_name_or_id(node.key).to_string();
+        let node_type = node.data.type_name().to_string();
+        let mut clip = cached_anim_doc(state);
+        // Reuse an object already bound to this node, else add one named
+        // after the node (direct name match binds it).
+        let object = resolve_anim_object_keys(state, &clip)
+            .iter()
+            .find(|(_, bound_key)| *bound_key == key)
+            .map(|(object, _)| object.clone())
+            .unwrap_or_else(|| sanitize_panim_ident(&node_name));
+        clip.ensure_object(&object, &node_type);
+        if clip.track_index(&object, field).is_some() {
+            state.log = format!("track exists\n{object}.{field}");
+            return false;
+        }
+        let value = anim_key_value_from_scene(state, &clip, &object, field)
+            .or_else(|| {
+                let node_value = doc_field_value(&node.data, field)?;
+                scene_value_to_panim_text(&node_value)
+            })
+            .unwrap_or_else(|| panim::default_field_value_text(&node_type, field).to_string());
+        clip.set_key(&object, field, 0, value);
+        touch_anim_doc(state, &clip);
+        state.anim_selected_track = clip
+            .track_index(&object, field)
+            .unwrap_or(clip.tracks.len().saturating_sub(1));
+        state.log = format!("add track\n{object}.{field}");
+        true
+    })
+    .unwrap_or(false);
+    if changed {
+        refresh_all(ctx);
+    }
+}
+
+fn create_animation_for_selected_player_or_default<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+) {
+    // Prefer wiring an AnimationPlayer when one is selected; otherwise just
+    // create a standalone clip file next to the project animations.
+    let request = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        if !state.active_anim_path.is_empty() && !state.anim_doc_text.is_empty() {
+            return None;
+        }
+        let stem = state
+            .open_paths
+            .get(state.active_open)
+            .and_then(|path| Path::new(path).file_stem().and_then(|v| v.to_str()))
+            .map(sanitize_file_stem)
+            .filter(|stem| !stem.is_empty())
+            .unwrap_or_else(|| "clip".to_string());
+        let anim_path = unique_res_animation_path(&state.project_root, &stem);
+        let abs = res_to_abs(&state.project_root, &anim_path);
+        let text = format!(
+            "[Animation]\nname = \"{stem}\"\nfps = 60\ndefault_interp = \"interpolate\"\ndefault_ease = \"linear\"\n[/Animation]\n\n[Objects]\n[/Objects]\n"
+        );
+        state.active_anim_path = anim_path.clone();
+        load_anim_text_into_state(state, &anim_path, text.clone());
+        state.anim_dirty = true;
+        state.log = format!("new animation\n{}", editor_files::rel_label(&anim_path));
+        Some((abs, text))
+    })
+    .flatten();
+    if let Some((abs, text)) = request {
+        if let Some(parent) = Path::new(&abs).parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        let _ = FileMod::save_string(&abs, &text);
+    }
+}
+
+// Per-frame: ruler scrubbing and playback advance. Cheap when idle.
+pub fn update_anim_editor<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let (open, dragging, playing) = with_state!(ctx.run, EditorState, ctx.id, |state| {
+        (
+            state.anim_drawer_open && state.bottom_dock_open,
+            state.anim_ruler_drag,
+            state.anim_playing,
+        )
+    });
+    if !open {
+        return;
+    }
+    ensure_anim_preview(ctx);
+    if dragging {
+        if !mouse_down!(ctx.ipt, MouseButton::Left) {
+            let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+                state.anim_ruler_drag = false;
+            });
+        } else if let Some(ratio) = anim_pointer_ratio(ctx) {
+            seek_anim_to_ratio(ctx, ratio);
+        }
+        return;
+    }
+    if !playing {
+        return;
+    }
+    let dt = delta_time!(ctx.run);
+    let frame = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        let doc = cached_anim_doc(state);
+        let total = doc.total_frames().max(2);
+        let last = (total - 1) as f32;
+        let mut next = state.anim_playhead + dt * doc.fps.max(0.001);
+        if next > last {
+            if state.anim_loop {
+                next %= last.max(0.001);
+            } else {
+                next = last;
+                state.anim_playing = false;
+            }
+        }
+        state.anim_playhead = next;
+        next.round() as u32
+    })
+    .unwrap_or(0);
+    seek_anim_preview(ctx, frame);
+    sync_anim_transport_widgets(ctx);
+}
+
+// ---------------------------------------------------------------------------
+// Drawer widgets: key markers, playhead, transport labels.
+// ---------------------------------------------------------------------------
+
+const ANIM_MARKER_W: f32 = 0.011;
+const ANIM_PLAYHEAD_W: f32 = 0.0035;
+
+fn style_anim_marker<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, id: NodeID, height: f32, z: i32) {
+    let _ = with_node_mut!(ctx.run, UiPanel, id, |node| {
+        node.base.layout.anchor = UiAnchor::Left;
+        node.base.layout.size = UiVector2::ratio(ANIM_MARKER_W, height);
+        node.base.layout.z_index = z;
+        node.base.input_enabled = false;
+        node.base.mouse_filter = UiMouseFilter::Pass;
+        node.base.visible = false;
+        node.style.stroke_width = 0.0;
+        node.style.corner_radii = UiCornerRadii::all(0.35);
+    });
+}
+
+// Creates the runtime-only marker/playhead panels once per shell load.
+fn ensure_anim_marker_nodes<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) -> bool {
+    let playhead = with_state!(ctx.run, EditorState, ctx.id, |state| state.anim_playhead_id);
+    if node_exists(ctx, playhead) {
+        return true;
+    }
+    let Some(column) = find_named(ctx, "anim_timeline_col") else {
+        return false;
+    };
+    let playhead_id = create_node!(ctx.run, UiPanel, "__anim_playhead", tags![], column);
+    let _ = with_node_mut!(ctx.run, UiPanel, playhead_id, |node| {
+        node.base.layout.anchor = UiAnchor::Left;
+        node.base.layout.size = UiVector2::ratio(ANIM_PLAYHEAD_W, 1.0);
+        node.base.layout.z_index = 40;
+        node.base.input_enabled = false;
+        node.base.mouse_filter = UiMouseFilter::Pass;
+        node.style.stroke_width = 0.0;
+        node.style.corner_radii = UiCornerRadii::all(0.0);
+        if let Some(color) = Color::from_hex(theme::ACCENT_SOFT) {
+            node.style.fill = color;
+        }
+    });
+    let mut marker_ids = Vec::with_capacity(MAX_ANIM_TRACKS * MAX_ANIM_MARKERS);
+    for lane in 0..MAX_ANIM_TRACKS {
+        let lane_id = find_named(ctx, &format!("anim_lane_{lane}"));
+        for slot in 0..MAX_ANIM_MARKERS {
+            let Some(lane_id) = lane_id else {
+                marker_ids.push(0);
+                continue;
+            };
+            let marker = create_node!(
+                ctx.run,
+                UiPanel,
+                format!("__anim_key_{lane}_{slot}"),
+                tags![],
+                lane_id
+            );
+            style_anim_marker(ctx, marker, 0.46, 20);
+            marker_ids.push(marker.as_u64());
+        }
+    }
+    let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        state.anim_playhead_id = playhead_id.as_u64();
+        state.anim_marker_ids = marker_ids;
+    });
+    true
+}
+
+// Lightweight transport sync used during scrub/playback (no full refresh).
+pub fn sync_anim_transport_widgets<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let (playhead, total, playing, looping, playhead_id) =
+        with_state!(ctx.run, EditorState, ctx.id, |state| {
+            let total = anim_total_frames(state);
+            (
+                state.anim_playhead,
+                total,
+                state.anim_playing,
+                state.anim_loop,
+                state.anim_playhead_id,
+            )
+        });
+    set_label(ctx, "anim_play_label", if playing { "Pause" } else { "Play" });
+    set_button_fill(
+        ctx,
+        "anim_loop_button",
+        if looping { theme::ACCENT } else { theme::BG_WIDGET },
+    );
+    set_text_box(ctx, "anim_frame_box", &format!("{}", playhead.round() as u32));
+    set_label(ctx, "anim_len_label", &format!("/ {}", total - 1));
+    if playhead_id != 0 {
+        let ratio = ((playhead + 0.5) / total as f32).clamp(0.0, 1.0) - ANIM_PLAYHEAD_W * 0.5;
+        let _ = with_node_mut!(ctx.run, UiPanel, NodeID::from_u64(playhead_id), |node| {
+            node.base.visible = true;
+            node.base.transform.translation = Vector2::new(ratio.max(0.0), 0.0);
+        });
+    }
+}
+
+// Full drawer refresh: track rows, key markers, toolbar state.
+pub fn refresh_anim_drawer_widgets<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let open = with_state!(ctx.run, EditorState, ctx.id, |state| {
+        state.anim_drawer_open && state.bottom_dock_open
+    });
+    if !open {
+        return;
+    }
+    if !ensure_anim_marker_nodes(ctx) {
+        return;
+    }
+    let (tracks, total, name, fps, selected, scroll, dirty, path, marker_ids) =
+        with_state!(ctx.run, EditorState, ctx.id, |state| {
+            let doc = cached_anim_doc(state);
+            let total = doc.total_frames().max(2);
+            let tracks: Vec<(String, String, usize, Vec<(u32, bool)>)> = doc
+                .tracks
+                .iter()
+                .map(|track| {
+                    (
+                        track.object.clone(),
+                        track.field.clone(),
+                        track.keys.len(),
+                        track
+                            .keys
+                            .iter()
+                            .map(|key| (key.frame, key.open))
+                            .collect(),
+                    )
+                })
+                .collect();
+            (
+                tracks,
+                total,
+                doc.name.clone(),
+                doc.fps,
+                state.anim_selected_track,
+                state.anim_track_scroll,
+                state.anim_dirty,
+                state.active_anim_path.clone(),
+                state.anim_marker_ids.clone(),
+            )
+        });
+    let title = if path.is_empty() {
+        "Animation".to_string()
+    } else {
+        format!(
+            "{}{}  {}",
+            name,
+            if dirty { " *" } else { "" },
+            editor_files::rel_label(&path)
+        )
+    };
+    set_label(ctx, "anim_drawer_title", &title);
+    set_text_box(ctx, "anim_fps_box", &format!("{fps}"));
+    set_button_fill(
+        ctx,
+        "anim_save_button",
+        if dirty { theme::REVERT } else { theme::BG_WIDGET },
+    );
+    let accent = Color::from_hex(theme::ACCENT);
+    let key_color = Color::from_hex(theme::TEXT_DIM);
+    let open_color = Color::from_hex(theme::TEXT_FAINT);
+    for row in 0..MAX_ANIM_TRACKS {
+        let track = tracks.get(scroll + row);
+        let label = match track {
+            Some((object, field, count, _)) => format!("{object} . {field}  [{count}]"),
+            None => String::new(),
+        };
+        set_label(ctx, &format!("anim_track_label_{row}"), &label);
+        set_button_fill(
+            ctx,
+            &format!("anim_track_row_{row}"),
+            if track.is_some() && scroll + row == selected {
+                theme::ACCENT
+            } else if track.is_some() {
+                theme::BG_WIDGET
+            } else {
+                "#00000000"
+            },
+        );
+        for slot in 0..MAX_ANIM_MARKERS {
+            let id = marker_ids
+                .get(row * MAX_ANIM_MARKERS + slot)
+                .copied()
+                .unwrap_or(0);
+            if id == 0 {
+                continue;
+            }
+            let key = track.and_then(|(_, _, _, keys)| keys.get(slot).copied());
+            let _ = with_node_mut!(ctx.run, UiPanel, NodeID::from_u64(id), |node| {
+                match key {
+                    Some((frame, open_key)) => {
+                        node.base.visible = true;
+                        let ratio = ((frame as f32 + 0.5) / total as f32).clamp(0.0, 1.0)
+                            - ANIM_MARKER_W * 0.5;
+                        node.base.transform.translation = Vector2::new(ratio.max(0.0), 0.0);
+                        let fill = if open_key {
+                            open_color
+                        } else if scroll + row == selected {
+                            accent
+                        } else {
+                            key_color
+                        };
+                        if let Some(fill) = fill {
+                            node.style.fill = fill;
+                        }
+                    }
+                    None => node.base.visible = false,
+                }
+            });
+        }
+    }
+    sync_anim_transport_widgets(ctx);
 }
 
 pub fn parse_number_list(text: &str) -> Option<Vec<f32>> {

@@ -649,17 +649,21 @@ pub fn open_animation_path<API: ScriptAPI + ?Sized>(
     });
     let abs = res_to_abs(&root, anim_path);
     match FileMod::load_string(&abs) {
-        Ok(_) => {
+        Ok(text) => {
             let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
                 state.activity_mode = "scene".to_string();
                 state.anim_drawer_open = true;
+                state.bottom_dock_open = true;
                 state.active_anim_player_key = None;
                 state.active_anim_path = anim_path.to_string();
                 state.active_asset_path = anim_path.to_string();
                 state.active_glb_path.clear();
                 state.active_glb_summary.clear();
+                crate::scripts_scene_editor_animation_rs::load_anim_text_into_state(
+                    state, anim_path, text,
+                );
                 state.log = format!(
-                    "open animation data\n{}",
+                    "open animation\n{}",
                     editor_files::rel_label(anim_path)
                 );
             });
@@ -699,6 +703,8 @@ pub fn open_gltf_path<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>,
         state.active_glb_mesh_index = 0;
         state.active_glb_mat_index = 0;
         state.active_glb_anim_index = 0;
+        state.viewport_mode = "3D".to_string();
+        reset_freecam(state);
         state.log = format!(
             "open glb\n{}\nmesh={} mat={} anim={}",
             editor_files::rel_label(gltf_path),
@@ -707,6 +713,7 @@ pub fn open_gltf_path<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>,
             info.animation_count
         );
     });
+    rebuild_preview(ctx);
     refresh_all(ctx);
 }
 

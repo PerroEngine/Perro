@@ -393,17 +393,39 @@ fn refresh_chrome_view<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>
     set_ui_node_size(
         ctx,
         "viewport_panel",
-        (1.0, layout.viewport_h),
+        (
+            1.0,
+            if glb_mode { 0.70 } else { layout.viewport_h },
+        ),
     );
+    let anim_open = view.bottom_dock_open && view.anim_drawer_open;
     set_ui_node_size(
         ctx,
         "bottom_panel",
-        (1.0, if view.bottom_dock_open { 0.10 } else { 0.03 }),
+        (
+            1.0,
+            if anim_open {
+                0.34
+            } else if view.bottom_dock_open {
+                0.10
+            } else {
+                0.03
+            },
+        ),
     );
     set_ui_node_size(
         ctx,
         "bottom_tab_bar",
-        (1.0, if view.bottom_dock_open { 0.22 } else { 1.0 }),
+        (
+            1.0,
+            if anim_open {
+                0.075
+            } else if view.bottom_dock_open {
+                0.22
+            } else {
+                1.0
+            },
+        ),
     );
     set_ui_display(
         ctx,
@@ -421,10 +443,13 @@ fn refresh_chrome_view<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>
         view.bottom_dock_open && view.anim_drawer_open,
     );
     set_ui_display(ctx, "anim_create_button", view.anim_can_create);
-    set_ui_display(ctx, "anim_add_track_button", view.anim_can_add_track);
+    set_ui_display(
+        ctx,
+        "anim_add_track_button",
+        view.bottom_dock_open && view.anim_drawer_open,
+    );
     set_label(ctx, "anim_drawer_title", &view.anim_title);
-    set_label(ctx, "anim_status_text", &view.anim_status);
-    set_label(ctx, "anim_tracks_text", &view.anim_tracks);
+    crate::scripts_scene_editor_animation_rs::refresh_anim_drawer_widgets(ctx);
     set_ui_node_size(ctx, "activity_bar", (layout.activity_w, 1.0));
     set_ui_node_size(ctx, "left_panel", (layout.left_w, 1.0));
     set_ui_node_size(ctx, "center_stack", (layout.center_w, 1.0));
@@ -433,9 +458,18 @@ fn refresh_chrome_view<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>
     set_ui_display(ctx, "left_panel", !view.distraction_free);
     set_ui_display(ctx, "inspector_panel", !glb_mode && !view.distraction_free);
     set_ui_display(ctx, "scene_tabs", !glb_mode);
-    set_ui_display(ctx, "viewport_panel", !glb_mode);
+    // GLB mode keeps the 3D viewport visible: the model viewer renders the
+    // glb through the normal preview stream with the orbit camera.
+    set_ui_display(ctx, "viewport_panel", true);
     set_ui_display(ctx, "bottom_panel", !glb_mode && !view.distraction_free);
     set_ui_display(ctx, "glb_viewer_panel", glb_mode);
+    set_ui_display(ctx, "glb_viewer_body", false);
+    set_ui_node_size(ctx, "glb_viewer_body", (1.0, 0.0));
+    if glb_mode {
+        set_ui_node_size(ctx, "glb_viewer_panel", (1.0, 0.24));
+        set_ui_node_size(ctx, "glb_viewer_title", (1.0, 0.2));
+        set_ui_node_size(ctx, "glb_viewer_summary", (1.0, 0.74));
+    }
     set_label(ctx, "glb_viewer_title", &view.glb_title);
     set_label(ctx, "glb_viewer_summary", &view.glb_summary);
     set_ui_display(ctx, "scene_tree_title", !glb_mode);
@@ -2455,8 +2489,27 @@ pub fn inspector_picker_entries(state: &EditorState) -> Vec<InspectorPickerEntry
         "node" | "script_node" | "value_node" => inspector_node_picker_entries(state),
         "script_enum" | "value_enum" => inspector_enum_picker_entries(state),
         "asset" | "value_asset" => inspector_asset_picker_entries(state),
+        "anim_field" => inspector_anim_field_picker_entries(state),
         _ => Vec::new(),
     }
+}
+
+fn inspector_anim_field_picker_entries(state: &EditorState) -> Vec<InspectorPickerEntry> {
+    let Some(key) = state.selected_key else {
+        return Vec::new();
+    };
+    let Some(node) = cached_scene_node(&state.doc_text, key) else {
+        return Vec::new();
+    };
+    let filter = state.inspector_picker_filter.to_ascii_lowercase();
+    crate::scripts_scene_editor_panim_rs::animatable_fields(node.data.type_name())
+        .into_iter()
+        .filter(|field| filter.is_empty() || field.contains(filter.as_str()))
+        .map(|field| InspectorPickerEntry {
+            value: field.to_string(),
+            label: field.to_string(),
+        })
+        .collect()
 }
 
 pub fn inspector_picker_rows(state: &EditorState) -> Vec<String> {
@@ -2477,6 +2530,7 @@ pub fn inspector_picker_title(state: &EditorState) -> String {
         "script_node" | "value_node" => inspector_node_picker_title(state),
         "script_enum" | "value_enum" => "Pick Enum".to_string(),
         "value_asset" | "asset" => inspector_asset_picker_title(state),
+        "anim_field" => "Add Track\npick property".to_string(),
         _ => "Pick".to_string(),
     }
 }
@@ -4935,6 +4989,14 @@ pub fn modified_inspector_rows_for_node(
 }
 
 pub fn editor_layout_metrics(bottom_dock_open: bool, distraction_free: bool) -> EditorLayoutMetrics {
+    editor_layout_metrics_full(bottom_dock_open, false, distraction_free)
+}
+
+pub fn editor_layout_metrics_full(
+    bottom_dock_open: bool,
+    anim_drawer_open: bool,
+    distraction_free: bool,
+) -> EditorLayoutMetrics {
     if distraction_free {
         EditorLayoutMetrics {
             activity_w: 0.0,
@@ -4949,13 +5011,24 @@ pub fn editor_layout_metrics(bottom_dock_open: bool, distraction_free: bool) -> 
             left_w: 0.16,
             center_w: 0.565,
             inspector_w: 0.222,
-            viewport_h: if bottom_dock_open { 0.85 } else { 0.92 },
+            // The animation dock needs real height for its timeline.
+            viewport_h: if bottom_dock_open && anim_drawer_open {
+                0.61
+            } else if bottom_dock_open {
+                0.85
+            } else {
+                0.92
+            },
         }
     }
 }
 
 pub fn editor_layout(state: &EditorState) -> EditorLayoutMetrics {
-    editor_layout_metrics(state.bottom_dock_open, state.distraction_free)
+    editor_layout_metrics_full(
+        state.bottom_dock_open,
+        state.anim_drawer_open,
+        state.distraction_free,
+    )
 }
 
 pub fn editor_viewport_panel_height(state: &EditorState) -> f32 {

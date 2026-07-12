@@ -793,6 +793,13 @@ pub fn reload_scene_path<API: ScriptAPI + ?Sized>(
 }
 
 pub fn rebuild_preview<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let glb_mode = with_state!(ctx.run, EditorState, ctx.id, |state| {
+        state.activity_mode == "glb" && !state.active_glb_path.is_empty()
+    });
+    if glb_mode {
+        rebuild_glb_preview(ctx);
+        return;
+    }
     clear_preview(ctx);
     let (root, active, doc_text, serial) = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
         state.preview_serial = state.preview_serial.wrapping_add(1);
@@ -823,6 +830,198 @@ pub fn rebuild_preview<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>
         }
     });
     load_preview_scene(ctx, &active, &doc_text, serial);
+}
+
+// ---------------------------------------------------------------------------
+// GLB model viewer: synthesizes a small 3D stage around the glb's meshes
+// (skinned to its first skeleton when present) and shows it through the
+// normal 3D viewport stream with the orbit freecam.
+// ---------------------------------------------------------------------------
+
+pub fn glb_viewer_doc_text(glb_path: &str, mesh_count: usize, has_rig: bool) -> String {
+    let mut out = String::with_capacity(1024);
+    out.push_str("$root = @ViewerRoot\n\n[ViewerRoot]\n    [Node3D]\n        position = (0, 0, 0)\n    [/Node3D]\n[/ViewerRoot]\n");
+    if has_rig {
+        out.push_str(&format!(
+            "\n[ViewerRig]\nparent = @ViewerRoot\n    [Skeleton3D]\n        skeleton = \"{glb_path}:skeleton[0]\"\n    [/Skeleton3D]\n[/ViewerRig]\n"
+        ));
+    }
+    for mesh in 0..mesh_count.max(1) {
+        out.push_str(&format!(
+            "\n[ViewerMesh{mesh}]\nparent = @ViewerRoot\n    [MeshInstance3D]\n        mesh = \"{glb_path}:mesh[{mesh}]\"\n"
+        ));
+        if has_rig {
+            out.push_str("        skeleton = @ViewerRig\n");
+        }
+        out.push_str("    [/MeshInstance3D]\n[/ViewerMesh");
+        out.push_str(&mesh.to_string());
+        out.push_str("]\n");
+    }
+    out.push_str(
+        "\n[ViewerKeyLight]\nparent = @ViewerRoot\n    [RayLight3D]\n        rotation_deg = (-42, 32, 0)\n        intensity = 1.15\n    [/RayLight3D]\n[/ViewerKeyLight]\n",
+    );
+    out.push_str(
+        "\n[ViewerAmbient]\nparent = @ViewerRoot\n    [AmbientLight3D]\n        intensity = 0.4\n    [/AmbientLight3D]\n[/ViewerAmbient]\n",
+    );
+    out.push_str("\n[ViewerSky]\nparent = @ViewerRoot\n    [Sky3D]\n    [/Sky3D]\n[/ViewerSky]\n");
+    out
+}
+
+pub fn rebuild_glb_preview<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    clear_preview(ctx);
+    let request = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        state.preview_serial = state.preview_serial.wrapping_add(1);
+        state.glb_viewer_mesh_ids.clear();
+        state.glb_viewer_rig_id = 0;
+        state.glb_viewer_player = 0;
+        state.glb_viewer_playing = false;
+        if state.glb_viewer_clip != 0 {
+            // Old clip handle survives clear_preview; dropped below.
+            let clip = state.glb_viewer_clip;
+            state.glb_viewer_clip = 0;
+            return Some((
+                state.project_root.clone(),
+                state.active_glb_path.clone(),
+                state.preview_serial,
+                clip,
+            ));
+        }
+        Some((
+            state.project_root.clone(),
+            state.active_glb_path.clone(),
+            state.preview_serial,
+            0,
+        ))
+    })
+    .flatten();
+    let Some((project_root, glb_path, serial, old_clip)) = request else {
+        return;
+    };
+    if old_clip != 0 {
+        let _ = ctx.res.Animations().drop(AnimationID::from_u64(old_clip));
+    }
+    if project_root.is_empty() || glb_path.is_empty() {
+        return;
+    }
+    let Some(info) = ctx.res.Glbs().inspect(&glb_path) else {
+        set_log(ctx, &format!("glb preview fail\n{glb_path}"));
+        return;
+    };
+    let has_rig = info.skeleton_count > 0;
+    let text = glb_viewer_doc_text(&glb_path, info.mesh_count, has_rig);
+    let doc = SceneDoc::parse(&text);
+    let preview_doc = rewrite_project_res_paths(&doc, &project_root);
+    let root = match ctx.run.Scene().load_doc(preview_doc.into_scene()) {
+        Ok(root) => root,
+        Err(err) => {
+            set_log(ctx, &format!("glb preview fail\n{glb_path}\n{err}"));
+            return;
+        }
+    };
+    if !attach_preview_to_viewport(ctx, root) {
+        let _ = ctx.run.Nodes().remove_node(root);
+        set_log(ctx, &format!("glb preview fail\nmissing viewport\n{glb_path}"));
+        return;
+    }
+    disable_preview_runtime_input(ctx, root);
+    let camera = create_node!(
+        ctx.run,
+        Camera3D,
+        format!("__editor_glb_camera_{serial}"),
+        tags![],
+        root
+    );
+    let _ = with_node_mut!(ctx.run, Camera3D, camera, |node| {
+        node.active = false;
+    });
+    set_viewport_stream_camera(ctx, "viewport_stream_3d", camera);
+    set_camera_stream_visible(ctx, "viewport_stream_3d", true);
+    let node_count = doc.scene.nodes.len();
+    let ids = preview_runtime_order(ctx, root, node_count);
+    let rig_offset = usize::from(has_rig);
+    let rig_id = if has_rig {
+        ids.get(1).copied().map(|id| id.as_u64()).unwrap_or(0)
+    } else {
+        0
+    };
+    let mesh_ids: Vec<u64> = ids
+        .iter()
+        .skip(1 + rig_offset)
+        .take(info.mesh_count.max(1))
+        .map(|id| id.as_u64())
+        .collect();
+    let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        state.preview_root = root.as_u64();
+        state.preview_camera_3d = camera.as_u64();
+        state.glb_viewer_rig_id = rig_id;
+        state.glb_viewer_mesh_ids = mesh_ids;
+    });
+    set_label(ctx, "asset_glb_play_label", "Play");
+    apply_freecam(ctx);
+}
+
+// Play/stop the glb's selected animation on the viewer rig. The clip is
+// converted to .panim in memory and driven by a runtime AnimationPlayer.
+pub fn toggle_glb_viewer_animation<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let (playing, glb_path, anim_index, rig_id, preview_root) =
+        with_state!(ctx.run, EditorState, ctx.id, |state| {
+            (
+                state.glb_viewer_playing,
+                state.active_glb_path.clone(),
+                state.active_glb_anim_index,
+                state.glb_viewer_rig_id,
+                state.preview_root,
+            )
+        });
+    if glb_path.is_empty() || preview_root == 0 {
+        set_log(ctx, "glb anim fail\nopen glb first");
+        return;
+    }
+    if playing {
+        // Stop: rebuild the viewer stage so the rig returns to rest pose.
+        rebuild_glb_preview(ctx);
+        set_log(ctx, "glb anim stop");
+        refresh_all(ctx);
+        return;
+    }
+    if rig_id == 0 {
+        set_log(ctx, "glb anim fail\nno skeleton in glb");
+        return;
+    }
+    let text = match ctx
+        .res
+        .Glbs()
+        .animation_to_panim(&glb_path, 60.0, anim_index, "Rig")
+    {
+        Ok(text) => text,
+        Err(err) => {
+            set_log(ctx, &format!("glb anim fail\n{glb_path}\n{err}"));
+            return;
+        }
+    };
+    let clip = ctx.res.Animations().create_from_bytes(text.as_bytes());
+    let player = create_node!(
+        ctx.run,
+        AnimationPlayer,
+        "__editor_glb_anim_player",
+        tags![],
+        NodeID::from_u64(preview_root)
+    );
+    let _ = ctx.run.AnimPlayer().set_clip(player, clip);
+    let _ = ctx.run.AnimPlayer().clear_bindings(player);
+    let _ = ctx
+        .run
+        .AnimPlayer()
+        .bind(player, "Rig", NodeID::from_u64(rig_id));
+    let _ = ctx.run.AnimPlayer().play(player);
+    let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        state.glb_viewer_player = player.as_u64();
+        state.glb_viewer_clip = clip.as_u64();
+        state.glb_viewer_playing = true;
+        state.log = format!("glb anim play\nanimation[{anim_index}]");
+    });
+    set_label(ctx, "asset_glb_play_label", "Stop");
+    refresh_all(ctx);
 }
 
 pub fn clear_preview<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
