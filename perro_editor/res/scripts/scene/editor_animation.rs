@@ -1486,32 +1486,81 @@ pub fn anim_binding_context(
             .find(|node| node.key.as_u32() == player_key)
     {
         player_name = Some(doc.scene.key_name_or_id(player.key).to_string());
-        if let Some(SceneValue::Object(fields)) = doc_field_value(&player.data, "bindings") {
-            for (object, value) in fields.iter() {
-                if let SceneValue::Key(name) = value {
-                    bindings.push((object.as_ref().to_string(), name.as_ref().to_string()));
-                }
-            }
-        }
+        bindings = player_bindings(&player.data);
     }
     let context = match &player_name {
-        Some(name) => format!("previewing via {name}"),
-        None => "previewing by node-name match".to_string(),
+        Some(name) => format!("editing on {name}"),
+        None => "no AnimationPlayer — select one, press Bind".to_string(),
     };
     let per_object = clip
         .objects
         .iter()
         .map(|(object, _)| {
+            // Only explicit bindings count; unbound objects do nothing at
+            // runtime, so show them unbound here too.
             let target = bindings
                 .iter()
                 .find(|(bound, _)| bound == object)
-                .map(|(_, name)| name.clone())
-                .unwrap_or_else(|| object.clone());
-            let resolved = scene_names.iter().any(|name| *name == target);
-            (object.clone(), resolved.then_some(target))
+                .map(|(_, name)| name.clone());
+            let resolved = target
+                .as_ref()
+                .is_some_and(|name| scene_names.iter().any(|scene| scene == name));
+            (object.clone(), resolved.then(|| target.unwrap_or_default()))
         })
         .collect();
     (context, per_object)
+}
+
+// Dock follows AnimationPlayer selection in the scene tree: clips are
+// always edited THROUGH a player instance, so selecting one routes (or
+// loads) the dock onto it.
+pub fn follow_player_selection<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let (to_open, attached) = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        if !(state.anim_drawer_open && state.bottom_dock_open) || state.doc_text.is_empty() {
+            return (None, false);
+        }
+        let Some(key) = state.selected_key else {
+            return (None, false);
+        };
+        if state.active_anim_player_key == Some(key) {
+            return (None, false);
+        }
+        let doc = cached_scene_doc_shared(&state.doc_text);
+        let Some(node) = doc
+            .scene
+            .nodes
+            .iter()
+            .find(|node| node.key.as_u32() == key)
+        else {
+            return (None, false);
+        };
+        if node.data.type_name() != "AnimationPlayer" {
+            return (None, false);
+        }
+        let path = match doc_field_value(&node.data, "animation") {
+            Some(SceneValue::Str(path)) if !path.is_empty() && path.as_ref() != "-" => {
+                path.to_string()
+            }
+            _ => String::new(),
+        };
+        if !path.is_empty() && path != state.active_anim_path {
+            // Different clip on this player: load it (loader prefers the
+            // selected player as the preview route).
+            (Some(path), false)
+        } else {
+            // Same clip, or a player without one yet: reroute the preview.
+            state.active_anim_player_key = Some(key);
+            state.anim_clip_dirty = true;
+            state.log = format!("anim player\n{}", doc.scene.key_name_or_id(node.key));
+            (None, true)
+        }
+    })
+    .unwrap_or((None, false));
+    if let Some(path) = to_open {
+        open_animation_path(ctx, &path);
+    } else if attached {
+        refresh_all(ctx);
+    }
 }
 
 // Opens the selected AnimationPlayer's clip in the dock when nothing is
@@ -1670,14 +1719,41 @@ pub fn scene_value_to_panim_text(value: &SceneValue) -> Option<String> {
     }
 }
 
-// object -> scene doc key, via AnimationPlayer bindings when bound, else by
-// matching object name to a scene node name.
+// Reads the `bindings = { Object = NodeName }` map off a player node.
+fn player_bindings(data: &SceneNodeData) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    if let Some(SceneValue::Object(fields)) = doc_field_value(data, "bindings") {
+        for (object, value) in fields.iter() {
+            if let SceneValue::Key(name) = value {
+                out.push((object.as_ref().to_string(), name.as_ref().to_string()));
+            }
+        }
+    }
+    out
+}
+
+// object -> scene doc key, strictly through the attached AnimationPlayer's
+// bindings. The runtime resolves ONLY explicit bindings (scene_loader
+// merge), so the editor previews exactly the same way: no player attached
+// means nothing binds.
 pub fn resolve_anim_object_keys(state: &EditorState, clip: &panim::PanimDoc) -> Vec<(String, u32)> {
     if state.doc_text.is_empty() {
         return Vec::new();
     }
+    let Some(player_key) = state.active_anim_player_key else {
+        return Vec::new();
+    };
     let doc = cached_scene_doc_shared(&state.doc_text);
-    let mut name_to_key: Vec<(String, u32)> = doc
+    let Some(player) = doc
+        .scene
+        .nodes
+        .iter()
+        .find(|node| node.key.as_u32() == player_key)
+    else {
+        return Vec::new();
+    };
+    let bindings = player_bindings(&player.data);
+    let name_to_key: Vec<(String, u32)> = doc
         .scene
         .nodes
         .iter()
@@ -1688,33 +1764,18 @@ pub fn resolve_anim_object_keys(state: &EditorState, clip: &panim::PanimDoc) -> 
             )
         })
         .collect();
-    let mut bindings: Vec<(String, String)> = Vec::new();
-    if let Some(player_key) = state.active_anim_player_key
-        && let Some(player) = doc
-            .scene
-            .nodes
-            .iter()
-            .find(|node| node.key.as_u32() == player_key)
-        && let Some(SceneValue::Object(fields)) = doc_field_value(&player.data, "bindings")
-    {
-        for (object, value) in fields.iter() {
-            if let SceneValue::Key(name) = value {
-                bindings.push((object.as_ref().to_string(), name.as_ref().to_string()));
-            }
-        }
-    }
     let mut out = Vec::new();
     for (object, _) in &clip.objects {
-        let target_name = bindings
+        let Some(target_name) = bindings
             .iter()
             .find(|(bound_object, _)| bound_object == object)
             .map(|(_, name)| name.clone())
-            .unwrap_or_else(|| object.clone());
+        else {
+            continue;
+        };
         if let Some(pos) = name_to_key.iter().position(|(name, _)| *name == target_name) {
             out.push((object.clone(), name_to_key[pos].1));
         }
-        // Keep map stable for repeated objects.
-        name_to_key.sort_by(|a, b| a.0.cmp(&b.0));
     }
     out
 }
@@ -1731,6 +1792,9 @@ pub fn ensure_anim_preview<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, 
         if !state.anim_drawer_open || state.anim_doc_text.is_empty() || state.preview_root == 0 {
             return None;
         }
+        // No attached player means no bindings resolve (runtime parity), so
+        // there is nothing to preview.
+        state.active_anim_player_key?;
         Some((
             state.preview_root,
             state.anim_preview_player,
@@ -2124,99 +2188,98 @@ pub fn open_anim_track_picker<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'
     refresh_all(ctx);
 }
 
-// Adds (or reuses) the object for the selected node and keys `field` at
-// frame 0 with the node's current value.
+// Adds (or reuses) the object for the selected node, keys `field` at
+// frame 0 with the node's current value, and writes the object binding
+// onto the attached AnimationPlayer — clips are always wired through a
+// player, matching the runtime's binding-only resolution.
 pub fn add_anim_track_field<API: ScriptAPI + ?Sized>(
     ctx: &mut ScriptContext<'_, API>,
     field: &str,
 ) {
-    let needs_clip = with_state!(ctx.run, EditorState, ctx.id, |state| {
-        state.active_anim_path.is_empty() || state.anim_doc_text.is_empty()
-    });
-    if needs_clip {
-        create_animation_for_selected_player_or_default(ctx);
-    }
     let changed = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
         if state.anim_doc_text.is_empty() {
-            state.log = "track fail\nno open animation".to_string();
+            state.log = "track fail\nno clip open\nselect AnimationPlayer, press New .panim".to_string();
             return false;
         }
+        let Some(player_key) = state.active_anim_player_key else {
+            state.log = "track fail\nno AnimationPlayer attached\nselect player, press Bind".to_string();
+            return false;
+        };
         let Some(key) = state.selected_key else {
             state.log = "track fail\nselect scene node".to_string();
             return false;
         };
-        let doc = cached_scene_doc_shared(&state.doc_text);
+        let mut doc = cached_scene_doc(&state.doc_text);
         let Some(node) = doc.scene.nodes.iter().find(|node| node.key.as_u32() == key) else {
+            return false;
+        };
+        let Some(player_index) = doc
+            .scene
+            .nodes
+            .iter()
+            .position(|node| node.key.as_u32() == player_key)
+        else {
+            state.log = "track fail\nmissing AnimationPlayer".to_string();
             return false;
         };
         let node_name = doc.scene.key_name_or_id(node.key).to_string();
         let node_type = node.data.type_name().to_string();
+        let node_value = doc_field_value(&node.data, field);
         let mut clip = cached_anim_doc(state);
-        // Reuse an object already bound to this node, else add one named
-        // after the node (direct name match binds it).
-        let object = resolve_anim_object_keys(state, &clip)
-            .iter()
-            .find(|(_, bound_key)| *bound_key == key)
-            .map(|(object, _)| object.clone())
-            .unwrap_or_else(|| sanitize_panim_ident(&node_name));
+        // Reuse the object this player already binds to the node, else add
+        // one named after the node and bind it.
+        let existing = player_bindings(&doc.scene.nodes[player_index].data)
+            .into_iter()
+            .find(|(_, target)| *target == node_name)
+            .map(|(object, _)| object);
+        let object = existing.unwrap_or_else(|| {
+            let mut base = sanitize_panim_ident(&node_name);
+            let mut suffix = 1;
+            while clip.object_type(&base).is_some() {
+                base = format!("{}_{suffix}", sanitize_panim_ident(&node_name));
+                suffix += 1;
+            }
+            base
+        });
         clip.ensure_object(&object, &node_type);
         if clip.track_index(&object, field).is_some() {
             state.log = format!("track exists\n{object}.{field}");
             return false;
         }
-        let value = anim_key_value_from_scene(state, &clip, &object, field)
-            .or_else(|| {
-                let node_value = doc_field_value(&node.data, field)?;
-                scene_value_to_panim_text(&node_value)
-            })
+        let value = node_value
+            .as_ref()
+            .and_then(scene_value_to_panim_text)
             .unwrap_or_else(|| panim::default_field_value_text(&node_type, field).to_string());
         clip.set_key(&object, field, 0, value);
         touch_anim_doc(state, &clip);
         state.anim_selected_track = clip
             .track_index(&object, field)
             .unwrap_or(clip.tracks.len().saturating_sub(1));
-        state.log = format!("add track\n{object}.{field}");
+        // Bind the object on the player when not already pointing there.
+        let already_bound = player_bindings(&doc.scene.nodes[player_index].data)
+            .iter()
+            .any(|(bound_object, target)| *bound_object == object && *target == node_name);
+        if !already_bound {
+            set_scene_binding(
+                &mut doc.scene.nodes.to_mut()[player_index].data,
+                &object,
+                &node_name,
+            );
+            set_state_scene_doc(state, &doc);
+            state.dirty = true;
+            if let Some(path) = state.open_paths.get(state.active_open).cloned()
+                && !state.dirty_scene_paths.iter().any(|item| item == &path)
+            {
+                state.dirty_scene_paths.push(path);
+            }
+        }
+        state.log = format!("add track\n{object}.{field} -> {node_name}");
         true
     })
     .unwrap_or(false);
     if changed {
+        rebuild_preview(ctx);
         refresh_all(ctx);
-    }
-}
-
-fn create_animation_for_selected_player_or_default<API: ScriptAPI + ?Sized>(
-    ctx: &mut ScriptContext<'_, API>,
-) {
-    // Prefer wiring an AnimationPlayer when one is selected; otherwise just
-    // create a standalone clip file next to the project animations.
-    let request = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
-        if !state.active_anim_path.is_empty() && !state.anim_doc_text.is_empty() {
-            return None;
-        }
-        let stem = state
-            .open_paths
-            .get(state.active_open)
-            .and_then(|path| Path::new(path).file_stem().and_then(|v| v.to_str()))
-            .map(sanitize_file_stem)
-            .filter(|stem| !stem.is_empty())
-            .unwrap_or_else(|| "clip".to_string());
-        let anim_path = unique_res_animation_path(&state.project_root, &stem);
-        let abs = res_to_abs(&state.project_root, &anim_path);
-        let text = format!(
-            "[Animation]\nname = \"{stem}\"\nfps = 60\ndefault_interp = \"interpolate\"\ndefault_ease = \"linear\"\n[/Animation]\n\n[Objects]\n[/Objects]\n"
-        );
-        state.active_anim_path = anim_path.clone();
-        load_anim_text_into_state(state, &anim_path, text.clone());
-        state.anim_dirty = true;
-        state.log = format!("new animation\n{}", editor_files::rel_label(&anim_path));
-        Some((abs, text))
-    })
-    .flatten();
-    if let Some((abs, text)) = request {
-        if let Some(parent) = Path::new(&abs).parent() {
-            let _ = fs::create_dir_all(parent);
-        }
-        let _ = FileMod::save_string(&abs, &text);
     }
 }
 

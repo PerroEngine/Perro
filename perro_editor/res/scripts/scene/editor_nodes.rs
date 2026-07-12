@@ -159,6 +159,7 @@ pub fn click_scene_node_slot<API: ScriptAPI + ?Sized>(
     .unwrap_or(false);
 
     select_node_slot(ctx, idx);
+    crate::scripts_scene_editor_animation_rs::follow_player_selection(ctx);
 
     if !should_toggle {
         return;
