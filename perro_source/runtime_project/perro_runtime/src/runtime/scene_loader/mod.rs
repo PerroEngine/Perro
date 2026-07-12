@@ -24,7 +24,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 mod merge;
-mod prepare;
+pub(crate) mod prepare;
 
 use merge::merge_prepared_scene;
 use prepare::{load_runtime_scene_from_disk, prepare_scene_with_loader_and_styles};

@@ -251,8 +251,12 @@ pub struct Runtime {
     water_collision_body_ids_3d_cache_version: Option<u64>,
     water_ids_2d_cache_version: Option<u64>,
     water_ids_3d_cache_version: Option<u64>,
-    pending_skeleton_sources_2d: AHashMap<NodeID, String>,
-    pending_skeleton_sources_3d: AHashMap<NodeID, String>,
+    // Value = (asset source, scene-authored bone pose overrides applied
+    // after the async bone load lands).
+    pending_skeleton_sources_2d:
+        AHashMap<NodeID, (String, Vec<scene_loader::prepare::PendingBonePoseOverride>)>,
+    pending_skeleton_sources_3d:
+        AHashMap<NodeID, (String, Vec<scene_loader::prepare::PendingBonePoseOverride>)>,
     pub(crate) force_water_impacts_2d: Vec<ForceWaterImpact2D>,
     pub(crate) force_water_impacts_3d: Vec<ForceWaterImpact3D>,
     pub(crate) pending_force_emitters_2d: Vec<perro_nodes::PhysicsForceEmitter2D>,
@@ -756,12 +760,13 @@ impl Runtime {
     pub(crate) fn apply_loaded_skeleton_bones(&mut self) {
         self.resource_api.poll_skeleton_bone_loads();
         let mut changed_2d = Vec::new();
-        for (node, source) in &self.pending_skeleton_sources_2d {
+        for (node, (source, overrides)) in &self.pending_skeleton_sources_2d {
             if let Some(bones) = self.resource_api.cached_bones_2d(source)
                 && let Some(scene_node) = self.nodes.get_mut_untracked(*node)
                 && let perro_nodes::SceneNodeData::Skeleton2D(skeleton) = &mut scene_node.data
             {
                 skeleton.bones = bones;
+                scene_loader::prepare::apply_bone_pose_overrides_2d(skeleton, overrides);
                 changed_2d.push(*node);
             }
         }
@@ -771,13 +776,14 @@ impl Runtime {
         }
 
         let mut changed_3d = Vec::new();
-        for (node, source) in &self.pending_skeleton_sources_3d {
+        for (node, (source, overrides)) in &self.pending_skeleton_sources_3d {
             if let Some(bones) = self.resource_api.cached_bones_3d(source)
                 && let Some(scene_node) = self.nodes.get_mut_untracked(*node)
                 && let perro_nodes::SceneNodeData::Skeleton3D(skeleton) = &mut scene_node.data
             {
                 skeleton.bones = bones;
                 skeleton.refresh_inv_bind_cache();
+                scene_loader::prepare::apply_bone_pose_overrides_3d(skeleton, overrides);
                 changed_3d.push(*node);
             }
         }

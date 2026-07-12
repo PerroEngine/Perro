@@ -839,6 +839,36 @@ with_node_mut!(ctx.run, Skeleton3D, node_id, |skel| {
 });
 ```
 
+## Bone Pose Overrides
+
+`Skeleton2D` and `Skeleton3D` accept a `bones` field with per-bone pose
+overrides, keyed by bone name:
+
+```text
+[Rig]
+    [Skeleton3D]
+        skeleton = "res://models/rig.gltf:skeleton[0]"
+        bones = {
+            Spine = { position = (0, 1.5, 0), rotation = (0, 0, 0, 1), scale = (1, 1, 1) },
+            Head = { rotation_deg = (0, 30, 0) }
+        }
+    [/Skeleton3D]
+[/Rig]
+```
+
+Rules:
+
+- Overrides apply to the bone `pose` after the rig's bones load; `rest`
+  stays untouched.
+- Only authored components override; unlisted components keep the loaded
+  pose value.
+- `Skeleton3D` rotation accepts a quaternion `(x, y, z, w)` or Euler
+  radians `(x, y, z)`; `rotation_deg` accepts Euler degrees. `Skeleton2D`
+  rotation is radians (`rotation_deg` for degrees).
+- Bone names that do not exist in the loaded rig are ignored.
+- Animation tracks that target a bone overwrite its pose during playback;
+  bones without tracks keep their scene override.
+
 Swapping a mesh's skeleton at runtime (mesh must have vertex weights and match the skeleton rig contract):
 
 ```rust

@@ -626,6 +626,14 @@ fn push_node_fields(fields: &mut Vec<SceneNodeField>, node_type: NodeType) {
         NodeType::TextDecal3D => text_decal_fields(fields),
         NodeType::Skeleton2D | NodeType::Skeleton3D => {
             asset_field(fields, "Skeleton", "skeleton", SceneAssetKind::Skeleton);
+            // Per-bone pose overrides: bones = { Name = { position/rotation/
+            // rotation_deg/scale } }. Free-form object keyed by bone name.
+            push(
+                fields,
+                "Skeleton",
+                "bones",
+                NodeFieldType::object(Vec::new()),
+            );
         }
         NodeType::BoneAttachment2D | NodeType::BoneAttachment3D => {
             push(

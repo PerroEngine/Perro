@@ -1803,6 +1803,105 @@ mod tests {
     }
 
     #[test]
+    fn scene_loader_extracts_bone_pose_overrides() {
+        let scene = Parser::new(
+            r#"
+            $root = @Rig
+            [Rig]
+            [Skeleton3D]
+                skeleton = "res://rig.gltf:skeleton[0]"
+                bones = {
+                    Spine = { position = (0, 1.5, 0), rotation = (0, 0, 0, 1), scale = (1, 1, 1) },
+                    Head = { rotation_deg = (0, 90, 0) },
+                    Empty = { }
+                }
+            [/Skeleton3D]
+            [/Rig]
+
+            [Rig2D]
+            parent = @Rig
+            [Skeleton2D]
+                skeleton = "res://rig.pskel2d"
+                bones = {
+                    Arm = { position = (4, 5), rotation_deg = 90 }
+                }
+            [/Skeleton2D]
+            [/Rig2D]
+            "#,
+        )
+        .parse_scene();
+
+        let prepared =
+            prepare_scene_with_loader(&scene, &|path| Err(format!("unknown scene path `{path}`")))
+                .expect("prepare scene");
+
+        let rig = prepared
+            .nodes
+            .iter()
+            .find(|pending| pending.key_name == "Rig")
+            .expect("rig node");
+        assert_eq!(rig.bone_pose_overrides.len(), 2, "empty override dropped");
+        let spine = &rig.bone_pose_overrides[0];
+        assert_eq!(spine.bone, "Spine");
+        assert_eq!(spine.position_3d, Some(Vector3::new(0.0, 1.5, 0.0)));
+        assert_eq!(spine.rotation_3d, Some(Quaternion::new(0.0, 0.0, 0.0, 1.0)));
+        assert_eq!(spine.scale_3d, Some(Vector3::new(1.0, 1.0, 1.0)));
+        let head = &rig.bone_pose_overrides[1];
+        assert_eq!(head.bone, "Head");
+        assert!(head.position_3d.is_none());
+        let quat = head.rotation_3d.expect("rotation_deg converts to quat");
+        let expected = Quaternion::from_euler_xyz(0.0, 90f32.to_radians(), 0.0);
+        assert!((quat.x - expected.x).abs() < 1.0e-5);
+        assert!((quat.w - expected.w).abs() < 1.0e-5);
+
+        let rig_2d = prepared
+            .nodes
+            .iter()
+            .find(|pending| pending.key_name == "Rig2D")
+            .expect("rig2d node");
+        assert_eq!(rig_2d.bone_pose_overrides.len(), 1);
+        let arm = &rig_2d.bone_pose_overrides[0];
+        assert_eq!(arm.bone, "Arm");
+        assert_eq!(arm.position_2d, Some(Vector2::new(4.0, 5.0)));
+        let rot = arm.rotation_2d.expect("deg converts to radians");
+        assert!((rot - 90f32.to_radians()).abs() < 1.0e-5);
+    }
+
+    #[test]
+    fn bone_pose_overrides_apply_to_pose_only() {
+        let mut skeleton = Skeleton3D::default();
+        skeleton.bones = vec![
+            perro_nodes::skeleton_3d::Bone3D {
+                name: std::borrow::Cow::Borrowed("Spine"),
+                ..perro_nodes::skeleton_3d::Bone3D::new()
+            },
+            perro_nodes::skeleton_3d::Bone3D {
+                name: std::borrow::Cow::Borrowed("Head"),
+                ..perro_nodes::skeleton_3d::Bone3D::new()
+            },
+        ];
+        let overrides = vec![
+            PendingBonePoseOverride {
+                bone: "Spine".to_string(),
+                position_3d: Some(Vector3::new(1.0, 2.0, 3.0)),
+                ..PendingBonePoseOverride::default()
+            },
+            PendingBonePoseOverride {
+                bone: "Missing".to_string(),
+                position_3d: Some(Vector3::new(9.0, 9.0, 9.0)),
+                ..PendingBonePoseOverride::default()
+            },
+        ];
+
+        apply_bone_pose_overrides_3d(&mut skeleton, &overrides);
+
+        assert_eq!(skeleton.bones[0].pose.position, Vector3::new(1.0, 2.0, 3.0));
+        // Rest pose stays untouched; only the live pose overrides.
+        assert_eq!(skeleton.bones[0].rest.position, Vector3::ZERO);
+        assert_eq!(skeleton.bones[1].pose.position, Vector3::ZERO);
+    }
+
+    #[test]
     fn scene_loader_rejects_quoted_skeleton_node_refs() {
         let scene = Parser::new(
             r#"

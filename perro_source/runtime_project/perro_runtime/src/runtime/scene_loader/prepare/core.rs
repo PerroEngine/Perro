@@ -744,6 +744,7 @@ pub(super) struct PendingNode {
     pub(super) mesh_source: Option<String>,
     pub(super) material_surfaces: Vec<PendingSurfaceMaterial>,
     pub(super) skeleton_source: Option<String>,
+    pub(super) bone_pose_overrides: Vec<PendingBonePoseOverride>,
     pub(super) mesh_skeleton_target: Option<u32>,
     pub(super) bone_attachment_skeleton_target: Option<u32>,
     pub(super) ik_target_skeleton_target: Option<u32>,
@@ -752,6 +753,166 @@ pub(super) struct PendingNode {
     pub(super) joint_body_links: Vec<PendingJointBodyLink>,
     pub(super) animation_bindings: Vec<(String, u32)>,
     pub(super) locale_text_bindings: Vec<PendingLocaleTextBinding>,
+}
+
+/// Per-bone pose override authored on a Skeleton2D/Skeleton3D scene node:
+///
+/// ```text
+/// bones = {
+///     Spine = { position = (0, 1.2, 0), rotation = (0, 0, 0, 1) },
+///     Head = { rotation_deg = (0, 30, 0) }
+/// }
+/// ```
+///
+/// Only authored components override; the rest of the pose keeps the value
+/// loaded from the rig asset. Applied to `pose` (never `rest`) after the
+/// skeleton's bones load, so animation tracks can still take over animated
+/// bones while un-animated bones keep their scene override.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub(crate) struct PendingBonePoseOverride {
+    pub(crate) bone: String,
+    pub(crate) position_2d: Option<Vector2>,
+    pub(crate) rotation_2d: Option<f32>,
+    pub(crate) scale_2d: Option<Vector2>,
+    pub(crate) position_3d: Option<Vector3>,
+    pub(crate) rotation_3d: Option<Quaternion>,
+    pub(crate) scale_3d: Option<Vector3>,
+}
+
+pub(crate) fn apply_bone_pose_overrides_2d(
+    skeleton: &mut Skeleton2D,
+    overrides: &[PendingBonePoseOverride],
+) {
+    for entry in overrides {
+        let Some(bone) = skeleton
+            .bones
+            .iter_mut()
+            .find(|bone| bone.name.as_ref() == entry.bone)
+        else {
+            continue;
+        };
+        if let Some(position) = entry.position_2d {
+            bone.pose.position = position;
+        }
+        if let Some(rotation) = entry.rotation_2d {
+            bone.pose.rotation = rotation;
+        }
+        if let Some(scale) = entry.scale_2d {
+            bone.pose.scale = scale;
+        }
+    }
+}
+
+pub(crate) fn apply_bone_pose_overrides_3d(
+    skeleton: &mut Skeleton3D,
+    overrides: &[PendingBonePoseOverride],
+) {
+    for entry in overrides {
+        let Some(bone) = skeleton
+            .bones
+            .iter_mut()
+            .find(|bone| bone.name.as_ref() == entry.bone)
+        else {
+            continue;
+        };
+        if let Some(position) = entry.position_3d {
+            bone.pose.position = position;
+        }
+        if let Some(rotation) = entry.rotation_3d {
+            bone.pose.rotation = rotation;
+        }
+        if let Some(scale) = entry.scale_3d {
+            bone.pose.scale = scale;
+        }
+    }
+}
+
+fn extract_bone_pose_overrides(data: &SceneDefNodeData) -> Vec<PendingBonePoseOverride> {
+    let two_d = match data.node_type {
+        NodeType::Skeleton2D => true,
+        NodeType::Skeleton3D => false,
+        _ => return Vec::new(),
+    };
+    let Some(SceneValue::Object(bones)) = data
+        .fields
+        .iter()
+        .find(|(name, _)| name.as_ref() == "bones")
+        .map(|(_, value)| value)
+    else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for (bone_name, bone_value) in bones.iter() {
+        let SceneValue::Object(fields) = bone_value else {
+            continue;
+        };
+        let mut entry = PendingBonePoseOverride {
+            bone: bone_name.as_ref().to_string(),
+            ..PendingBonePoseOverride::default()
+        };
+        let mut rot_deg_3d: Option<Vector3> = None;
+        for (name, value) in fields.iter() {
+            match name.as_ref() {
+                "position" => {
+                    if two_d {
+                        entry.position_2d = as_vec2(value);
+                    } else {
+                        entry.position_3d = as_vec3(value);
+                    }
+                }
+                "rotation" => {
+                    if two_d {
+                        entry.rotation_2d = as_f32(value);
+                    } else {
+                        entry.rotation_3d = bone_as_quat(value);
+                    }
+                }
+                "rotation_deg" => {
+                    if two_d {
+                        entry.rotation_2d = as_f32(value).map(f32::to_radians);
+                    } else {
+                        rot_deg_3d = as_vec3(value);
+                    }
+                }
+                "scale" => {
+                    if two_d {
+                        entry.scale_2d = as_vec2(value);
+                    } else {
+                        entry.scale_3d = as_vec3(value);
+                    }
+                }
+                _ => {}
+            }
+        }
+        if entry.rotation_3d.is_none()
+            && let Some(deg) = rot_deg_3d
+        {
+            entry.rotation_3d = Some(Quaternion::from_euler_xyz(
+                deg.x.to_radians(),
+                deg.y.to_radians(),
+                deg.z.to_radians(),
+            ));
+        }
+        if entry.position_2d.is_some()
+            || entry.rotation_2d.is_some()
+            || entry.scale_2d.is_some()
+            || entry.position_3d.is_some()
+            || entry.rotation_3d.is_some()
+            || entry.scale_3d.is_some()
+        {
+            out.push(entry);
+        }
+    }
+    out
+}
+
+fn bone_as_quat(value: &SceneValue) -> Option<Quaternion> {
+    match value {
+        SceneValue::Vec4 { x, y, z, w } => Some(Quaternion::new(*x, *y, *z, *w)),
+        // Euler radians shorthand, mirroring Node3D rotation acceptance.
+        SceneValue::Vec3 { x, y, z } => Some(Quaternion::from_euler_xyz(*x, *y, *z)),
+        _ => None,
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1074,6 +1235,7 @@ fn ensure_default_ray_light_3d(prepared: &mut PreparedScene) {
         mesh_source: None,
         material_surfaces: Vec::new(),
         skeleton_source: None,
+        bone_pose_overrides: Vec::new(),
         mesh_skeleton_target: None,
         bone_attachment_skeleton_target: None,
         ik_target_skeleton_target: None,
@@ -1172,6 +1334,7 @@ fn prepare_node_no_root(
         mesh_source,
         material_surfaces,
         skeleton_source,
+        bone_pose_overrides: extract_bone_pose_overrides(&entry.data),
         mesh_skeleton_target: mesh_skeleton_target
             .and_then(|v| scene_key_by_name(scene, v.as_str()))
             .map(|target| target.as_u32()),
@@ -1311,6 +1474,7 @@ fn push_entry_prepared(
         mesh_source,
         material_surfaces,
         skeleton_source,
+        bone_pose_overrides: extract_bone_pose_overrides(&entry.data),
         mesh_skeleton_target: mesh_skeleton_target
             .and_then(|v| scene_key_by_name(scene, v.as_str()))
             .map(|target| remap_key(target, key_map)),

@@ -136,6 +136,7 @@ pub(super) fn merge_prepared_scene(
             mesh_source,
             material_surfaces,
             skeleton_source,
+            bone_pose_overrides,
             mesh_skeleton_target,
             bone_attachment_skeleton_target,
             ik_target_skeleton_target,
@@ -292,19 +293,21 @@ pub(super) fn merge_prepared_scene(
             match &mut node_data.data {
                 SceneNodeData::Skeleton2D(skeleton) => {
                     skeleton.bones = res.Skeletons().load_bones_2d(&source);
+                    super::prepare::apply_bone_pose_overrides_2d(skeleton, &bone_pose_overrides);
                     if resource_api.is_skeleton_2d_pending(&source) {
                         runtime
                             .pending_skeleton_sources_2d
-                            .insert(node, source.clone());
+                            .insert(node, (source.clone(), bone_pose_overrides.clone()));
                     }
                 }
                 SceneNodeData::Skeleton3D(skeleton) => {
                     skeleton.bones = res.Skeletons().load_bones_3d(&source);
                     skeleton.refresh_inv_bind_cache();
+                    super::prepare::apply_bone_pose_overrides_3d(skeleton, &bone_pose_overrides);
                     if resource_api.is_skeleton_3d_pending(&source) {
                         runtime
                             .pending_skeleton_sources_3d
-                            .insert(node, source.clone());
+                            .insert(node, (source.clone(), bone_pose_overrides.clone()));
                     }
                 }
                 _ => {}
