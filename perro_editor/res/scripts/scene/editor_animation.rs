@@ -927,6 +927,11 @@ fn set_nested_object_field(
 // Read a bone pose sub-field off the live preview skeleton and format it as
 // .panim value text. Used to capture bone-track keys (the pose authored via
 // the inspector), since bone poses are not scene-doc fields.
+//
+// Rotation is stored REST-RELATIVE: the runtime applies keyed bone rotation
+// as `rest * keyed` (3D) / `rest + keyed` (2D), so the captured value is the
+// delta from rest — playback then reproduces exactly the posed rotation.
+// Position and scale are applied absolutely and captured as-is.
 pub fn preview_bone_pose_panim_value<API: ScriptAPI + ?Sized>(
     ctx: &mut ScriptContext<'_, API>,
     key: u32,
@@ -946,7 +951,7 @@ pub fn preview_bone_pose_panim_value<API: ScriptAPI + ?Sized>(
                     bone.pose.position.x, bone.pose.position.y
                 )),
                 "scale" => Some(format!("({}, {})", bone.pose.scale.x, bone.pose.scale.y)),
-                "rotation" => Some(format!("{}", bone.pose.rotation)),
+                "rotation" => Some(format!("{}", bone.pose.rotation - bone.rest.rotation)),
                 _ => None,
             }))
     } else {
@@ -963,13 +968,14 @@ pub fn preview_bone_pose_panim_value<API: ScriptAPI + ?Sized>(
                     "({}, {}, {})",
                     bone.pose.scale.x, bone.pose.scale.y, bone.pose.scale.z
                 )),
-                "rotation" => Some(format!(
-                    "({}, {}, {}, {})",
-                    bone.pose.rotation.x,
-                    bone.pose.rotation.y,
-                    bone.pose.rotation.z,
-                    bone.pose.rotation.w
-                )),
+                "rotation" => {
+                    let delta = (bone.rest.rotation.inverse().mul_quat(bone.pose.rotation))
+                        .normalized();
+                    Some(format!(
+                        "({}, {}, {}, {})",
+                        delta.x, delta.y, delta.z, delta.w
+                    ))
+                }
                 _ => None,
             }))
     }
