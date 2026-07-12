@@ -377,6 +377,10 @@ pub fn serialize_panim(doc: &PanimDoc) -> String {
 // Default key value text when a field has no doc/scene value to copy.
 pub fn default_field_value_text(object_type: &str, field: &str) -> &'static str {
     let two_d = object_type.contains("2D");
+    // Bone pose sub-fields default like the matching transform component.
+    if let Some((_, sub_field)) = parse_bone_field(field) {
+        return default_field_value_text(object_type, sub_field);
+    }
     match field {
         "position" => {
             if two_d {
@@ -445,6 +449,27 @@ pub fn animatable_fields(node_type: &str) -> Vec<&'static str> {
         _ => {}
     }
     fields
+}
+
+// Bone pose sub-fields a skeleton track can key. Order matches the pose
+// editor rows in the inspector.
+pub const BONE_TRACK_SUBFIELDS: [&str; 3] = ["position", "rotation", "scale"];
+
+// Build a .panim track field path for a bone pose sub-field, e.g.
+// `bones["Spine"].position`. Field names stay opaque strings in the text
+// model, so this round-trips through parse/serialize unchanged.
+pub fn bone_track_field(bone_name: &str, sub_field: &str) -> String {
+    format!("bones[\"{bone_name}\"].{sub_field}")
+}
+
+// Split a bone track field path back into (bone_name, sub_field). Returns
+// None for plain (non-bone) fields so callers fall back to scene-doc capture.
+pub fn parse_bone_field(field: &str) -> Option<(String, &'static str)> {
+    let rest = field.strip_prefix("bones[\"")?;
+    let (name, tail) = rest.split_once("\"]")?;
+    let sub = tail.strip_prefix('.')?;
+    let sub = BONE_TRACK_SUBFIELDS.iter().copied().find(|item| *item == sub)?;
+    Some((name.to_string(), sub))
 }
 
 enum Section {
@@ -655,5 +680,69 @@ emit_signal = { name="footfall", params=[1] }
         // Hero still has an event, so removing its only track keeps the object.
         assert!(doc.remove_track("Hero", "position"));
         assert!(doc.object_type("Hero").is_some());
+    }
+
+    // Bone paths (`bones["Name"].position`) are opaque field strings to the
+    // text model, so parse/serialize must round-trip them unchanged and the
+    // `.interp`/`.ease` control suffixes must not false-match the bracket path.
+    #[test]
+    fn bone_path_fields_round_trip() {
+        let text = "[Animation]\nname = \"Rig\"\nfps = 30\n[/Animation]\n\n[Objects]\nHero = Skeleton3D\n[/Objects]\n\n[Frame0]\n@Hero {\n    bones[\"Spine\"].position = (0, 1, 0)\n    bones[\"Spine\"].rotation = (0, 0, 0, 1)\n    bones[\"Spine\"].scale = (1, 1, 1)\n}\n[/Frame0]\n";
+        let doc = parse_panim(text);
+        assert_eq!(doc.tracks.len(), 3);
+        let pos = doc.track_index("Hero", "bones[\"Spine\"].position").unwrap();
+        assert_eq!(doc.tracks[pos].keys[0].value, "(0, 1, 0)");
+        let rot = doc.track_index("Hero", "bones[\"Spine\"].rotation").unwrap();
+        assert_eq!(doc.tracks[rot].keys[0].value, "(0, 0, 0, 1)");
+        assert!(doc.track_index("Hero", "bones[\"Spine\"].scale").is_some());
+        assert_eq!(parse_panim(&serialize_panim(&doc)), doc);
+    }
+
+    #[test]
+    fn bone_path_interp_ease_controls_bind_to_bracket_field() {
+        let mut doc = parse_panim(
+            "[Animation]\nname = \"Rig\"\nfps = 30\n[/Animation]\n\n[Objects]\nHero = Skeleton2D\n[/Objects]\n\n[Frame0]\n@Hero {\n    bones[\"Arm\"].rotation.ease = \"ease_in\"\n    bones[\"Arm\"].rotation = 0.5\n}\n[/Frame0]\n",
+        );
+        let idx = doc.track_index("Hero", "bones[\"Arm\"].rotation").unwrap();
+        assert_eq!(doc.tracks[idx].keys[0].value, "0.5");
+        assert_eq!(doc.tracks[idx].keys[0].ease.as_deref(), Some("ease_in"));
+        // No stray track created from the `.ease` control line.
+        assert_eq!(doc.tracks.len(), 1);
+        doc.set_key("Hero", "bones[\"Arm\"].rotation", 10, "1.0".to_string());
+        assert_eq!(parse_panim(&serialize_panim(&doc)), doc);
+    }
+
+    #[test]
+    fn bone_track_field_round_trips_through_parse() {
+        for sub in BONE_TRACK_SUBFIELDS {
+            let field = bone_track_field("Spine.01", sub);
+            let (name, parsed_sub) = parse_bone_field(&field).unwrap();
+            assert_eq!(name, "Spine.01");
+            assert_eq!(parsed_sub, sub);
+        }
+        // Plain fields are not bone paths.
+        assert!(parse_bone_field("position").is_none());
+        assert!(parse_bone_field("bones[\"X\"].mesh").is_none());
+        assert!(parse_bone_field("bones[\"X\"].rotation.ease").is_none());
+    }
+
+    #[test]
+    fn bone_field_default_value_matches_component() {
+        assert_eq!(
+            default_field_value_text("Skeleton3D", "bones[\"H\"].position"),
+            "(0, 0, 0)"
+        );
+        assert_eq!(
+            default_field_value_text("Skeleton3D", "bones[\"H\"].rotation"),
+            "(0, 0, 0, 1)"
+        );
+        assert_eq!(
+            default_field_value_text("Skeleton2D", "bones[\"H\"].rotation"),
+            "0"
+        );
+        assert_eq!(
+            default_field_value_text("Skeleton2D", "bones[\"H\"].scale"),
+            "(1, 1)"
+        );
     }
 }

@@ -514,6 +514,17 @@ pub struct EditorState {
     pub anim_doc_text: String,
     pub anim_dirty: bool,
     pub anim_selected_track: usize,
+    // Skeleton bone editing (live preview node). `anim_selected_bone` is the
+    // bone index; the rest is a per-refresh snapshot of the selected
+    // skeleton's live bones so the pure inspector view can render them.
+    pub anim_selected_bone: Option<usize>,
+    pub anim_selected_bone_name: String,
+    pub inspector_bone_names: Vec<String>,
+    pub inspector_bone_depths: Vec<u32>,
+    pub inspector_bone_is_2d: bool,
+    pub inspector_bone_pos: String,
+    pub inspector_bone_rot: String,
+    pub inspector_bone_scale: String,
     pub anim_track_scroll: usize,
     pub anim_playhead: f32,
     pub anim_playing: bool,
@@ -763,6 +774,15 @@ methods!({
             }
             "inspector_rotation_box" => edit_selected_rotation(ctx),
             "inspector_scale_box" => edit_selected_transform(ctx, "scale", "inspector_scale_box"),
+            "inspector_bone_pos_box" => {
+                edit_selected_bone_pose(ctx, "position", "inspector_bone_pos_box")
+            }
+            "inspector_bone_rot_box" => {
+                edit_selected_bone_pose(ctx, "rotation", "inspector_bone_rot_box")
+            }
+            "inspector_bone_scale_box" => {
+                edit_selected_bone_pose(ctx, "scale", "inspector_bone_scale_box")
+            }
             "inspector_vars_box" => edit_selected_script_vars(ctx),
             "add_node_search_box" => {
                 if with_state!(ctx.run, EditorState, ctx.id, |state| state
@@ -885,6 +905,22 @@ methods!({
     ) {
         if idx >= 0 {
             set_scene_node_slot_open(ctx, idx as usize, open);
+        }
+    }
+
+    fn on_editor_bone_tree_selected(
+        &self,
+        ctx: &mut ScriptContext<'_, API>,
+        _tree: NodeID,
+        _idx: i32,
+        value: Variant,
+    ) {
+        // The item value carries the true bone index (tree row order differs
+        // from bone index once the hierarchy nests).
+        if let Some(bone) = value.as_i32()
+            && bone >= 0
+        {
+            select_skeleton_bone(ctx, bone as usize);
         }
     }
 
@@ -1303,6 +1339,12 @@ fn connect_editor_signals<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, A
         ctx.id,
         signal!("editor_scene_tree_toggled"),
         func!("on_editor_scene_tree_toggled")
+    );
+    let _ = signal_connect!(
+        ctx.run,
+        ctx.id,
+        signal!("editor_inspector_bone_selected"),
+        func!("on_editor_bone_tree_selected")
     );
     let _ = signal_connect!(
         ctx.run,
