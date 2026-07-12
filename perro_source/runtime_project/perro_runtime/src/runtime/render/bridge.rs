@@ -1887,16 +1887,21 @@ impl Runtime {
                 self.resource_api.as_ref(),
                 webcam,
             );
-            let resolution = self
-                .nodes
-                .get(camera_node)
-                .and_then(|node| match &node.data {
-                    SceneNodeData::Webcam(webcam) => {
-                        Some([webcam.config.width.max(1), webcam.config.height.max(1)])
-                    }
-                    _ => None,
-                })
-                .unwrap_or([1, 1]);
+            let resolution = perro_resource_api::sub_apis::WebcamAPI::webcam_resolution(
+                self.resource_api.as_ref(),
+                webcam,
+            )
+            .or_else(|| {
+                self.nodes
+                    .get(camera_node)
+                    .and_then(|node| match &node.data {
+                        SceneNodeData::Webcam(webcam) => {
+                            Some([webcam.config.width.max(1), webcam.config.height.max(1)])
+                        }
+                        _ => None,
+                    })
+            })
+            .unwrap_or([1, 1]);
             return Some(CameraStreamSourceState::Webcam {
                 texture,
                 resolution,

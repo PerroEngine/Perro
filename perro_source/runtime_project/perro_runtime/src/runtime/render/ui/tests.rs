@@ -6,7 +6,7 @@ use perro_nodes::{
     camera_3d::Camera3D,
 };
 use perro_render_bridge::{CameraStreamCommand, CameraStreamSourceState, RenderEvent, UiCommand};
-use perro_resource_api::sub_apis::{TextureAPI, WebcamAPI};
+use perro_resource_api::sub_apis::{TextureAPI, WebcamAPI, WebcamFrame};
 use perro_runtime_api::sub_apis::{NodeAPI, NodeSpec, SignalAPI};
 use perro_scripting::{ScriptBehavior, ScriptContext, ScriptFlags, ScriptLifecycle};
 use perro_structs::{Color, Quaternion, Transform3D, Vector3};
@@ -88,6 +88,45 @@ fn ui_camera_stream_opens_referenced_webcam_node() {
                 if !texture.is_nil() && *texture != stream_texture
         )
     }));
+}
+
+#[test]
+fn ui_camera_stream_uses_native_webcam_frame_aspect() {
+    let mut runtime = Runtime::new();
+    let webcam = NodeAPI::create::<Webcam>(&mut runtime);
+    let stream = NodeAPI::create::<UiCameraStream>(&mut runtime);
+    let config = if let Some(node) = runtime.nodes.get(webcam)
+        && let SceneNodeData::Webcam(data) = &node.data
+    {
+        data.config.clone()
+    } else {
+        panic!("expected webcam node");
+    };
+    let webcam_id = runtime.resource_api.ensure_webcam_node_slot(webcam, config);
+    assert!(runtime.resource_api.queue_webcam_frame(
+        webcam_id,
+        WebcamFrame {
+            width: 4,
+            height: 2,
+            rgba: vec![255; 4 * 2 * 4],
+        },
+    ));
+    if let Some(mut node) = runtime.nodes.get_mut(stream)
+        && let SceneNodeData::UiCameraStream(data) = &mut node.data
+    {
+        data.stream.camera = webcam;
+        data.stream.aspect_ratio = 0.0;
+    }
+
+    runtime.extract_render_ui_commands();
+    let mut commands = Vec::new();
+    runtime.drain_render_commands(&mut commands);
+
+    assert!(commands.iter().any(|command| matches!(
+        command,
+        RenderCommand::Ui(UiCommand::UpsertImage { node, aspect_ratio, .. })
+            if *node == stream && *aspect_ratio == 2.0
+    )));
 }
 
 #[test]

@@ -574,8 +574,7 @@ impl Gpu3D {
 mod tests {
     use super::*;
 
-    const TEST_CUSTOM_SHADER: &str =
-        "fn shade_material(in: FragmentInput) -> vec4<f32> {\n    return vec4<f32>(1.0, 1.0, 1.0, 1.0);\n}\n";
+    const TEST_CUSTOM_SHADER: &str = "fn shade_material(in: FragmentInput) -> vec4<f32> {\n    return vec4<f32>(1.0, 1.0, 1.0, 1.0);\n}\n";
 
     fn test_shader_lookup(_path_hash: u64) -> &'static str {
         TEST_CUSTOM_SHADER

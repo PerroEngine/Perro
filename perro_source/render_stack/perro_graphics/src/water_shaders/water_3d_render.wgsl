@@ -256,15 +256,20 @@ fn water_hash(p: vec2<f32>) -> f32 {
     return fract(sin(dot(p, vec2<f32>(127.1, 311.7))) * 43758.5453);
 }
 
+fn water_gradient(p: vec2<f32>) -> vec2<f32> {
+    let angle = water_hash(p) * 6.2831853;
+    return vec2<f32>(cos(angle), sin(angle));
+}
+
 fn water_noise(p: vec2<f32>) -> f32 {
     let i = floor(p);
     let f = fract(p);
     let u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
-    let a = water_hash(i);
-    let b = water_hash(i + vec2<f32>(1.0, 0.0));
-    let c = water_hash(i + vec2<f32>(0.0, 1.0));
-    let d = water_hash(i + vec2<f32>(1.0, 1.0));
-    return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+    let a = dot(water_gradient(i), f);
+    let b = dot(water_gradient(i + vec2<f32>(1.0, 0.0)), f - vec2<f32>(1.0, 0.0));
+    let c = dot(water_gradient(i + vec2<f32>(0.0, 1.0)), f - vec2<f32>(0.0, 1.0));
+    let d = dot(water_gradient(i + vec2<f32>(1.0, 1.0)), f - vec2<f32>(1.0, 1.0));
+    return clamp(0.5 + mix(mix(a, b, u.x), mix(c, d, u.x), u.y) * 0.82, 0.0, 1.0);
 }
 
 fn water_fbm(p: vec2<f32>) -> f32 {
@@ -309,7 +314,8 @@ fn water_hex_noise(p: vec2<f32>) -> f32 {
     let b = water_noise(rot_a + vec2<f32>(11.0, 7.0));
     let c = water_noise(rot_b + vec2<f32>(23.0, 17.0));
     let cell = water_noise(p * 0.19 + vec2<f32>(3.0, 5.0));
-    return mix((a + b + c) * 0.33333334, max(a, max(b, c)), 0.22 + cell * 0.18);
+    let mean = (a + b + c) * 0.33333334;
+    return clamp((mean - 0.5) * (1.04 + cell * 0.18) + 0.5, 0.0, 1.0);
 }
 
 fn water_hex_ridged_fbm(p: vec2<f32>) -> f32 {
@@ -325,6 +331,15 @@ fn water_hex_ridged_fbm(p: vec2<f32>) -> f32 {
         amp *= 0.52;
     }
     return sum / max(norm, 0.001);
+}
+
+fn water_warp_coord(p: vec2<f32>) -> vec2<f32> {
+    let warp_uv = p * 0.21;
+    let warp = vec2<f32>(
+        water_fbm2(warp_uv + vec2<f32>(31.0, 7.0)),
+        water_fbm2(warp_uv + vec2<f32>(5.0, 37.0)),
+    ) - vec2<f32>(0.5);
+    return p + warp * 1.7;
 }
 
 fn water_wind_dir(w: Water) -> vec2<f32> {
@@ -961,7 +976,7 @@ fn fs_water_3d(in: Water3DVertexOut, @builtin(front_facing) front_facing: bool) 
         && sun_up > 0.0 && scene_thickness < shallow_depth * 4.0 {
         let bed_xz = depth_info.bed_world.xz;
         let drift = wind * t * 0.42;
-        let c1 = water_hex_ridged_fbm(bed_xz * 0.55 + drift);
+        let c1 = water_hex_ridged_fbm(water_warp_coord(bed_xz * 0.55 + drift));
         let pattern = pow(clamp(c1 * 1.55 - 0.62, 0.0, 1.0), 1.9);
         let clarity = exp(-scene_thickness * 0.30);
         caustic = pattern * clarity * clamp(w.visual2.x, 0.0, 2.0) * sun_up * 1.6;
@@ -978,10 +993,10 @@ fn fs_water_3d(in: Water3DVertexOut, @builtin(front_facing) front_facing: bool) 
     let grain = water_fbm2(local * foam_scale * 2.7 - wind * t * 0.55 + vec2<f32>(9.0, 4.0));
     // coast.y ~1 right at the mass, falls off across foam_width: slice the
     // top of the band for a thin outline that follows the intersection shape
-    let outline = smoothstep(0.60, 0.86, coast.y + (grain - 0.5) * 0.22 * edge_noise)
+    let outline = smoothstep(0.76, 0.92, coast.y + (grain - 0.5) * 0.16 * edge_noise)
         * clamp(w.coastline.x, 0.0, 2.5)
         * top_surface_mask;
-    let wash_foam = coast.y * clamp(w.coastline.x, 0.0, 2.5) * 0.5;
+    let wash_foam = coast.y * coast.y * clamp(w.coastline.x, 0.0, 2.5) * 0.42;
     let body_foam = cell.z * max(foam_strength, 0.0) * 0.85;
     let foam_total = clamp(wash_foam + body_foam, 0.0, 1.6);
     var foam_mask = 0.0;
@@ -994,8 +1009,20 @@ fn fs_water_3d(in: Water3DVertexOut, @builtin(front_facing) front_facing: bool) 
         let foam_drift = wind * t * 0.12;
         let patch_field = water_fbm2(local * 0.16 - foam_drift * 0.16);
         let patch_fade = water_fbm2(local * 0.11 - foam_drift * 0.11 + vec2<f32>(t * 0.012, -t * 0.009));
-        let web = water_hex_ridged_fbm(local * foam_scale * 0.8 - foam_drift * foam_scale * 0.8);
-        let density = clamp(web * 0.74 + grain * 0.36, 0.0, 1.2);
+        let foam_uv = local * foam_scale * 0.8 - foam_drift * foam_scale * 0.8;
+        // Bend the strand field with broad, independent noise before sampling
+        // it. This removes the readable rotated-cell overlap left by straight
+        // octave transforms while keeping the pattern coherent in motion.
+        let warped_uv = water_warp_coord(foam_uv);
+        let web = water_hex_ridged_fbm(warped_uv);
+        // Fine crossed ridges split broad cells into irregular lace instead of
+        // stacking another full rotated web pass.
+        let lace_uv = vec2<f32>(
+            warped_uv.x * 1.37 - warped_uv.y * 0.71,
+            warped_uv.x * 0.63 + warped_uv.y * 1.43,
+        ) + vec2<f32>(19.0, 43.0);
+        let lace = 1.0 - abs(water_fbm2(lace_uv) * 2.0 - 1.0);
+        let density = clamp(web * 0.64 + grain * 0.22 + lace * 0.20, 0.0, 1.2);
         let energy = foam_total * (0.55 + patch_field * 0.75);
         let coverage = smoothstep(0.05, 0.85, energy);
         let cut = 1.02 - coverage * 0.88;

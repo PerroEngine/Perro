@@ -1,8 +1,8 @@
 use super::*;
 
 const DEFAULT_SHADOW_STRENGTH: f32 = 0.82;
-const DEFAULT_SHADOW_DEPTH_BIAS: f32 = 0.00018;
-const DEFAULT_SHADOW_NORMAL_BIAS: f32 = 0.045;
+const DEFAULT_SHADOW_DEPTH_BIAS: f32 = 0.00003;
+const DEFAULT_SHADOW_NORMAL_BIAS: f32 = 0.005;
 
 pub(super) struct ShadowSetup {
     pub(super) scenes: Vec<Scene3DUniform>,

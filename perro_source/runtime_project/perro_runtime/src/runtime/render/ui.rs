@@ -9,9 +9,9 @@ use perro_input_api::GamepadAxis;
 use perro_input_api::{GamepadButton, JoyConButton, KeyCode, MouseButton, PlayerBinding};
 use perro_nodes::{SceneNode, SceneNodeData};
 use perro_render_bridge::{
-    CameraStreamCommand, RenderCommand, ResourceCommand, UiCommand, UiCornerRadiiState,
-    UiDepthEffectState, UiFillKindState, UiImageScaleState, UiLinearGradientState, UiRectState,
-    UiTextAlignState,
+    CameraStreamCommand, CameraStreamSourceState, RenderCommand, ResourceCommand, UiCommand,
+    UiCornerRadiiState, UiDepthEffectState, UiFillKindState, UiImageScaleState,
+    UiLinearGradientState, UiRectState, UiTextAlignState,
 };
 use perro_runtime_render::{UiDirtyMask, UiExtractionOptions, ui_image_texture_request};
 use perro_structs::{Color, UVector2, Vector2};
@@ -553,9 +553,14 @@ impl Runtime {
                 _ => None,
             };
             let mut camera_stream_texture = None;
+            let mut camera_stream_resolution = None;
             if let Some(stream) = ui_stream {
                 if let Some(state) = self.camera_stream_state(node, &stream) {
                     camera_stream_texture = Some(state.output_texture);
+                    camera_stream_resolution = match &state.source {
+                        CameraStreamSourceState::Webcam { resolution, .. } => Some(*resolution),
+                        _ => Some(state.resolution),
+                    };
                     self.queue_render_command(RenderCommand::CameraStream(
                         CameraStreamCommand::Upsert {
                             node,
@@ -632,6 +637,7 @@ impl Runtime {
                             virtual_font_scale,
                             modulate: self.effective_self_modulate(node),
                             camera_stream_texture,
+                            camera_stream_resolution,
                         };
                         ui_command_matches_node(
                             command,
@@ -650,6 +656,7 @@ impl Runtime {
                     virtual_font_scale,
                     modulate: self.effective_self_modulate(node),
                     camera_stream_texture,
+                    camera_stream_resolution,
                 };
                 let Some(command) = ui_command_from_node(
                     &scene_node.data,

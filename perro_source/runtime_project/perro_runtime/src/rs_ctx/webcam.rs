@@ -216,6 +216,9 @@ impl RuntimeResourceApi {
                 .insert(id, "invalid webcam frame rgba len".to_string());
             return false;
         }
+        state
+            .webcam_resolution_by_id
+            .insert(id, [frame.width, frame.height]);
         if state
             .webcam_config_by_id
             .get(&id)
@@ -412,6 +415,15 @@ impl WebcamAPI for RuntimeResourceApi {
             .unwrap_or_else(TextureID::nil)
     }
 
+    fn webcam_resolution(&self, id: WebcamID) -> Option<[u32; 2]> {
+        self.state
+            .lock()
+            .ok()?
+            .webcam_resolution_by_id
+            .get(&id)
+            .copied()
+    }
+
     fn webcam_frame_rgba(&self, id: WebcamID) -> Option<WebcamFrame> {
         self.state.lock().ok()?.webcam_frame_by_id.get(&id).cloned()
     }
@@ -457,6 +469,7 @@ impl WebcamAPI for RuntimeResourceApi {
             .collect();
         state.webcam_node_by_node.retain(|_, webcam| *webcam != id);
         state.webcam_config_by_id.remove(&id);
+        state.webcam_resolution_by_id.remove(&id);
         state.webcam_frame_by_id.remove(&id);
         state.webcam_last_error_by_id.remove(&id);
         if let Some(texture) = state.webcam_texture_by_id.remove(&id) {
@@ -798,6 +811,7 @@ mod tests {
             },
         ));
         assert!(api.webcam_frame_rgba(no_cpu).is_none());
+        assert_eq!(api.webcam_resolution(no_cpu), Some([1, 1]));
 
         let with_cpu = api
             .webcam_open(WebcamConfig {

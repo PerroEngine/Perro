@@ -38,8 +38,8 @@ impl PointLight3D {
             range: 10.0,
             cast_shadows: true,
             shadow_strength: 0.82,
-            shadow_depth_bias: 0.00018,
-            shadow_normal_bias: 0.045,
+            shadow_depth_bias: 0.00003,
+            shadow_normal_bias: 0.005,
             active: true,
         }
     }

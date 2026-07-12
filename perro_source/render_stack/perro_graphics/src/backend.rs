@@ -16,7 +16,6 @@ use crate::{
     ui::renderer::UiRenderer,
 };
 use ahash::AHashMap;
-#[cfg(not(target_arch = "wasm32"))]
 use perro_graphics_assets::{
     decode_image_rgba, decode_ptex, load_mesh3d_from_bytes, load_texture_rgba,
 };
@@ -630,10 +629,18 @@ impl PerroGraphics {
         source: String,
     ) {
         match Self::decode_texture_source(source.as_str(), self.static_texture_lookup) {
-            Some(texture) if self.resources.set_decoded_texture_data(id, texture) => {
-                self.events
-                    .push(RenderEvent::TextureCreated { request, id });
-                self.events.push(RenderEvent::TextureLoaded { id });
+            Some(texture) => {
+                if self.resources.set_decoded_texture_data(id, texture) {
+                    self.events
+                        .push(RenderEvent::TextureCreated { request, id });
+                    self.events.push(RenderEvent::TextureLoaded { id });
+                } else {
+                    self.resources.drop_texture(id);
+                    self.events.push(RenderEvent::Failed {
+                        request,
+                        reason: format!("failed to decode texture source `{source}`"),
+                    });
+                }
             }
             _ => {
                 self.resources.drop_texture(id);

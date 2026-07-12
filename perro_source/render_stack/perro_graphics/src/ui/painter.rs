@@ -1258,14 +1258,25 @@ fn push_image_shape(image: &UiImageDraw, viewport: [f32; 2], out: &mut Vec<Clipp
     }
     let (min, max) = image.rect.screen_min_max(viewport);
     let outer = Rect::from_min_max(pos2(min[0], min[1]), pos2(max[0], max[1]));
-    let rect = resolve_image_rect(outer, image);
-    if rect.width() <= 0.0 || rect.height() <= 0.0 {
+    let resolved = resolve_image_rect(outer, image);
+    if resolved.width() <= 0.0 || resolved.height() <= 0.0 {
         return;
     }
-    let uv = Rect::from_min_max(
+    let source_uv = Rect::from_min_max(
         pos2(image.uv_min[0], image.uv_min[1]),
         pos2(image.uv_max[0], image.uv_max[1]),
     );
+    let (rect, uv) = if image.scale_mode == UiImageScaleState::Cover {
+        (
+            outer,
+            Rect::from_min_max(
+                rect_uv(resolved, source_uv, outer.min),
+                rect_uv(resolved, source_uv, outer.max),
+            ),
+        )
+    } else {
+        (resolved, source_uv)
+    };
     let mut mesh = Mesh::with_texture(TextureId::User(image.texture.as_u64()));
     let radii = resolve_rect_corner_radii(rect, image.corner_radii);
     if has_any_radius(radii) {
@@ -2380,6 +2391,56 @@ fn clamp_char_boundary(text: &str, mut index: usize) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cover_image_crops_to_own_bounds() {
+        let image = UiImageDraw {
+            rect: UiRectState {
+                center: [0.0, 0.0],
+                size: [200.0, 100.0],
+                pivot: [0.5, 0.5],
+                rotation_radians: 0.0,
+                z_index: 0,
+            },
+            clip_rect: [0.0, 0.0, 800.0, 600.0],
+            texture: perro_ids::TextureID::from_parts(1, 1),
+            tint: perro_structs::Color::WHITE,
+            uv_min: [0.0, 0.0],
+            uv_max: [1.0, 1.0],
+            scale_mode: UiImageScaleState::Cover,
+            h_align: UiTextAlignState::Center,
+            v_align: UiTextAlignState::Center,
+            aspect_ratio: 0.5,
+            corner_radii: UiCornerRadiiState::default(),
+        };
+        let mut shapes = Vec::new();
+
+        push_image_shape(&image, [800.0, 600.0], &mut shapes);
+
+        assert_eq!(shapes.len(), 1);
+        assert_eq!(
+            shapes[0].clip_rect,
+            Rect::from_min_max(pos2(0.0, 0.0), pos2(800.0, 600.0))
+        );
+        let Shape::Mesh(mesh) = &shapes[0].shape else {
+            panic!("expected image mesh");
+        };
+        assert!(mesh.vertices.iter().all(|vertex| {
+            (300.0..=500.0).contains(&vertex.pos.x) && (250.0..=350.0).contains(&vertex.pos.y)
+        }));
+        let min_v = mesh
+            .vertices
+            .iter()
+            .map(|vertex| vertex.uv.y)
+            .fold(f32::INFINITY, f32::min);
+        let max_v = mesh
+            .vertices
+            .iter()
+            .map(|vertex| vertex.uv.y)
+            .fold(f32::NEG_INFINITY, f32::max);
+        assert!((min_v - 0.375).abs() < 1.0e-6);
+        assert!((max_v - 0.625).abs() < 1.0e-6);
+    }
 
     #[test]
     fn panel_corner_radius_is_size_ratio() {

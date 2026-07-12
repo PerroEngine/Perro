@@ -1244,8 +1244,8 @@ fn light_fields(fields: &mut Vec<SceneNodeField>, node_type: NodeType) {
         NodeType::RayLight3D | NodeType::PointLight3D | NodeType::SpotLight3D
     ) {
         push_f32_default(fields, "Shadow", "shadow_strength", 0.82);
-        push_f32_default(fields, "Shadow", "shadow_depth_bias", 0.00018);
-        push_f32_default(fields, "Shadow", "shadow_normal_bias", 0.045);
+        push_f32_default(fields, "Shadow", "shadow_depth_bias", 0.00003);
+        push_f32_default(fields, "Shadow", "shadow_normal_bias", 0.005);
         push(
             fields,
             "Shadow",
@@ -1254,9 +1254,9 @@ fn light_fields(fields: &mut Vec<SceneNodeField>, node_type: NodeType) {
                 NodeFieldDef::new("strength", NodeFieldType::F32)
                     .with_default(SceneValue::F32(0.82)),
                 NodeFieldDef::new("depth_bias", NodeFieldType::F32)
-                    .with_default(SceneValue::F32(0.00018)),
+                    .with_default(SceneValue::F32(0.00003)),
                 NodeFieldDef::new("normal_bias", NodeFieldType::F32)
-                    .with_default(SceneValue::F32(0.045)),
+                    .with_default(SceneValue::F32(0.005)),
             ]),
         );
     }

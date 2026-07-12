@@ -32,6 +32,7 @@ pub trait WebcamAPI {
     fn webcam_open(&self, config: WebcamConfig) -> Result<WebcamID, String>;
     fn webcam_default(&self) -> Result<WebcamID, String>;
     fn webcam_texture(&self, id: WebcamID) -> TextureID;
+    fn webcam_resolution(&self, id: WebcamID) -> Option<[u32; 2]>;
     fn webcam_frame_rgba(&self, id: WebcamID) -> Option<WebcamFrame>;
     fn webcam_is_open(&self, id: WebcamID) -> bool;
     fn webcam_last_error(&self, id: WebcamID) -> Option<String>;
@@ -70,6 +71,11 @@ impl<'res, R: WebcamAPI + ?Sized> WebcamModule<'res, R> {
     #[inline]
     pub fn texture(&self, id: WebcamID) -> TextureID {
         self.api.webcam_texture(id)
+    }
+
+    #[inline]
+    pub fn resolution(&self, id: WebcamID) -> Option<[u32; 2]> {
+        self.api.webcam_resolution(id)
     }
 
     #[inline]

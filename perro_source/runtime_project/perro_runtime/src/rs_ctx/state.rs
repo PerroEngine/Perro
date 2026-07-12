@@ -158,6 +158,7 @@ pub(super) struct RuntimeResourceState {
     pub(super) webcam_default_id: Option<WebcamID>,
     pub(super) webcam_texture_by_id: HashMap<WebcamID, TextureID>,
     pub(super) webcam_config_by_id: HashMap<WebcamID, WebcamConfig>,
+    pub(super) webcam_resolution_by_id: HashMap<WebcamID, [u32; 2]>,
     pub(super) webcam_frame_by_id: HashMap<WebcamID, WebcamFrame>,
     pub(super) webcam_open_by_id: HashSet<WebcamID>,
     pub(super) webcam_last_error_by_id: HashMap<WebcamID, String>,

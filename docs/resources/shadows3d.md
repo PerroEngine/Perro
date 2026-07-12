@@ -34,7 +34,7 @@ Default: `0.82`.
 
 `shadow_depth_bias` offsets depth compare.
 
-Default: `0.00018`.
+Default: `0.00003`.
 
 Raise it to reduce acne.
 
@@ -42,7 +42,7 @@ Lower it when shadows detach from casters.
 
 `shadow_normal_bias` offsets along receiver normal.
 
-Default: `0.045`.
+Default: `0.005`.
 
 Raise it to reduce grazing-angle acne.
 
@@ -56,7 +56,7 @@ Aliases:
 Nested form:
 
 ```text
-shadow = { strength = 0.82 depth_bias = 0.00018 normal_bias = 0.045 }
+shadow = { strength = 0.82 depth_bias = 0.00003 normal_bias = 0.005 }
 ```
 
 ## Example
@@ -67,7 +67,7 @@ shadow = { strength = 0.82 depth_bias = 0.00018 normal_bias = 0.045 }
     color = (1, 0.96, 0.88)
     intensity = 2.0
     cast_shadows = true
-    shadow = { strength = 0.75 depth_bias = 0.00022 normal_bias = 0.055 }
+    shadow = { strength = 0.75 depth_bias = 0.00003 normal_bias = 0.005 }
 [/RayLight3D]
 [/sun]
 

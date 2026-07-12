@@ -35,6 +35,7 @@ pub(super) struct UiCommandCtx {
     pub(super) virtual_font_scale: f32,
     pub(super) modulate: Color,
     pub(super) camera_stream_texture: Option<TextureID>,
+    pub(super) camera_stream_resolution: Option<[u32; 2]>,
 }
 
 #[derive(Clone, Copy)]
@@ -586,6 +587,7 @@ pub(super) fn ui_command_from_node(
         virtual_font_scale,
         modulate,
         camera_stream_texture,
+        camera_stream_resolution,
     } = command_ctx;
     match data {
         SceneNodeData::UiPanel(panel) => Some(panel_command(
@@ -818,7 +820,9 @@ pub(super) fn ui_command_from_node(
                 v_align: UiTextAlignState::Center,
                 aspect_ratio: camera_stream_aspect_ratio(
                     stream.stream.aspect_ratio,
-                    stream.stream.resolution,
+                    camera_stream_resolution
+                        .map(|[width, height]| UVector2::new(width, height))
+                        .unwrap_or(stream.stream.resolution),
                 ),
                 corner_radii: ui_corner_radii_state(perro_ui::UiCornerRadii::all(
                     stream.corner_radius,
