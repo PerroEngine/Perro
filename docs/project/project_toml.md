@@ -165,6 +165,8 @@ Render surface uses native window resolution.
 
 WASM forces some graphics features off when platform lacks support.
 
+See [SSAO](../resources/ssao.md) for quality cost + render scope.
+
 ## Rendering UI
 
 | Field            | Type | Default | Note                         |

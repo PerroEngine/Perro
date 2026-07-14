@@ -178,6 +178,31 @@ aspect_ratio = "16:9"
 }
 
 #[test]
+fn parse_project_toml_accepts_all_ssao_qualities() {
+    for (raw, expected) in [
+        ("off", SsaoQuality::Off),
+        ("low", SsaoQuality::Low),
+        ("medium", SsaoQuality::Medium),
+        ("high", SsaoQuality::High),
+        ("ultra", SsaoQuality::Ultra),
+    ] {
+        let toml = format!(
+            r#"
+[project]
+name = "Game"
+main_scene = "res://main.scn"
+
+[graphics]
+aspect_ratio = "16:9"
+ssao = "{raw}"
+"#
+        );
+        let parsed = parse_project_toml(&toml).expect("parse ssao quality");
+        assert_eq!(parsed.ssao, expected, "{raw}");
+    }
+}
+
+#[test]
 fn parse_project_toml_rejects_bad_ssao() {
     let toml = r#"
 [project]

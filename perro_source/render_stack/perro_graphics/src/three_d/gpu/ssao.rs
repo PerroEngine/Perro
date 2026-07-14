@@ -7,6 +7,32 @@ const SSAO_BLUR_WGSL: &str =
 
 pub(super) const SSAO_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::R8Unorm;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct SsaoTargetSettings {
+    target_divisor: u32,
+    blur: bool,
+}
+
+impl SsaoTargetSettings {
+    const fn for_quality(quality: crate::SsaoQuality) -> Option<Self> {
+        match quality {
+            crate::SsaoQuality::Off => None,
+            crate::SsaoQuality::Low => Some(Self {
+                target_divisor: 2,
+                blur: false,
+            }),
+            crate::SsaoQuality::Medium | crate::SsaoQuality::High => Some(Self {
+                target_divisor: 2,
+                blur: true,
+            }),
+            crate::SsaoQuality::Ultra => Some(Self {
+                target_divisor: 1,
+                blur: true,
+            }),
+        }
+    }
+}
+
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
 pub(super) struct SsaoUniform {
@@ -26,11 +52,13 @@ pub(super) struct SsaoPass {
     _final_texture: Option<wgpu::Texture>,
     final_view: Option<wgpu::TextureView>,
     uniform: wgpu::Buffer,
+    sample_bind_group_layout: wgpu::BindGroupLayout,
+    blur_bind_group_layout: Option<wgpu::BindGroupLayout>,
     sample_bind_group: wgpu::BindGroup,
     blur_bind_group: Option<wgpu::BindGroup>,
     sample_pipeline: wgpu::RenderPipeline,
     blur_pipeline: Option<wgpu::RenderPipeline>,
-    target_divisor: u32,
+    settings: SsaoTargetSettings,
 }
 
 impl SsaoPass {
@@ -41,57 +69,74 @@ impl SsaoPass {
         depth_view: &wgpu::TextureView,
         quality: crate::SsaoQuality,
     ) -> Self {
-        let (target_divisor, blur_enabled) = match quality {
-            crate::SsaoQuality::Low => (2, false),
-            crate::SsaoQuality::Medium | crate::SsaoQuality::High => (2, true),
-            crate::SsaoQuality::Ultra => (1, true),
-            crate::SsaoQuality::Off => (2, false),
-        };
-        let sample_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("perro_ssao_sample_bgl"),
-            entries: &[
-                texture_entry(0, wgpu::TextureSampleType::Depth),
-                uniform_entry(1),
-            ],
+        let settings = SsaoTargetSettings::for_quality(quality)
+            .expect("SSAO pass must not be built for off quality");
+        let sample_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("perro_ssao_sample_bgl"),
+                entries: &[
+                    texture_entry(0, wgpu::TextureSampleType::Depth),
+                    uniform_entry(1),
+                ],
+            });
+        let blur_bind_group_layout = settings.blur.then(|| {
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("perro_ssao_blur_bgl"),
+                entries: &[
+                    texture_entry(0, wgpu::TextureSampleType::Float { filterable: false }),
+                    texture_entry(1, wgpu::TextureSampleType::Depth),
+                    uniform_entry(2),
+                ],
+            })
         });
-        let blur_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("perro_ssao_blur_bgl"),
-            entries: &[
-                texture_entry(0, wgpu::TextureSampleType::Float { filterable: false }),
-                texture_entry(1, wgpu::TextureSampleType::Depth),
-                uniform_entry(2),
-            ],
-        });
-        let sample_pipeline = create_pipeline(device, "perro_ssao", SSAO_WGSL, &sample_bgl);
-        let blur_pipeline = blur_enabled
-            .then(|| create_pipeline(device, "perro_ssao_blur", SSAO_BLUR_WGSL, &blur_bgl));
+        let sample_pipeline =
+            create_pipeline(device, "perro_ssao", SSAO_WGSL, &sample_bind_group_layout);
+        let blur_pipeline = blur_bind_group_layout
+            .as_ref()
+            .map(|layout| create_pipeline(device, "perro_ssao_blur", SSAO_BLUR_WGSL, layout));
         let uniform = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("perro_ssao_uniform"),
             contents: bytemuck::bytes_of(&SsaoUniform::zeroed()),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
-        let (raw_texture, raw_view) =
-            create_target(device, width, height, target_divisor, "perro_ssao_raw");
-        let final_target = blur_enabled
-            .then(|| create_target(device, width, height, target_divisor, "perro_ssao_final"));
+        let (raw_texture, raw_view) = create_target(
+            device,
+            width,
+            height,
+            settings.target_divisor,
+            "perro_ssao_raw",
+        );
+        let final_target = settings.blur.then(|| {
+            create_target(
+                device,
+                width,
+                height,
+                settings.target_divisor,
+                "perro_ssao_final",
+            )
+        });
         let (final_texture, final_view) = match final_target {
             Some((texture, view)) => (Some(texture), Some(view)),
             None => (None, None),
         };
-        let sample_bind_group = sample_bind_group(device, &sample_bgl, depth_view, &uniform);
-        let blur_bind_group = blur_enabled
-            .then(|| blur_bind_group(device, &blur_bgl, &raw_view, depth_view, &uniform));
+        let sample_bind_group =
+            sample_bind_group(device, &sample_bind_group_layout, depth_view, &uniform);
+        let blur_bind_group = blur_bind_group_layout
+            .as_ref()
+            .map(|layout| blur_bind_group(device, layout, &raw_view, depth_view, &uniform));
         Self {
             _raw_texture: raw_texture,
             raw_view,
             _final_texture: final_texture,
             final_view,
             uniform,
+            sample_bind_group_layout,
+            blur_bind_group_layout,
             sample_bind_group,
             blur_bind_group,
             sample_pipeline,
             blur_pipeline,
-            target_divisor,
+            settings,
         }
     }
 
@@ -103,8 +148,38 @@ impl SsaoPass {
         depth_view: &wgpu::TextureView,
         quality: crate::SsaoQuality,
     ) {
-        let rebuilt = Self::new(device, width, height, depth_view, quality);
-        *self = rebuilt;
+        let settings = SsaoTargetSettings::for_quality(quality)
+            .expect("SSAO pass must not resize for off quality");
+        debug_assert_eq!(self.settings, settings);
+        (self._raw_texture, self.raw_view) = create_target(
+            device,
+            width,
+            height,
+            self.settings.target_divisor,
+            "perro_ssao_raw",
+        );
+        let final_target = self.settings.blur.then(|| {
+            create_target(
+                device,
+                width,
+                height,
+                self.settings.target_divisor,
+                "perro_ssao_final",
+            )
+        });
+        (self._final_texture, self.final_view) = match final_target {
+            Some((texture, view)) => (Some(texture), Some(view)),
+            None => (None, None),
+        };
+        self.sample_bind_group = sample_bind_group(
+            device,
+            &self.sample_bind_group_layout,
+            depth_view,
+            &self.uniform,
+        );
+        self.blur_bind_group = self.blur_bind_group_layout.as_ref().map(|layout| {
+            blur_bind_group(device, layout, &self.raw_view, depth_view, &self.uniform)
+        });
     }
 
     pub(super) fn encode(
@@ -135,7 +210,7 @@ impl SsaoPass {
     }
 
     pub(super) const fn target_divisor(&self) -> u32 {
-        self.target_divisor
+        self.settings.target_divisor
     }
 }
 
@@ -172,11 +247,12 @@ fn create_target(
     divisor: u32,
     label: &str,
 ) -> (wgpu::Texture, wgpu::TextureView) {
+    let (width, height) = target_extent(width, height, divisor);
     let texture = device.create_texture(&wgpu::TextureDescriptor {
         label: Some(label),
         size: wgpu::Extent3d {
-            width: width.max(1).div_ceil(divisor.max(1)),
-            height: height.max(1).div_ceil(divisor.max(1)),
+            width,
+            height,
             depth_or_array_layers: 1,
         },
         mip_level_count: 1,
@@ -188,6 +264,14 @@ fn create_target(
     });
     let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
     (texture, view)
+}
+
+fn target_extent(width: u32, height: u32, divisor: u32) -> (u32, u32) {
+    let divisor = divisor.max(1);
+    (
+        width.max(1).div_ceil(divisor),
+        height.max(1).div_ceil(divisor),
+    )
 }
 
 fn sample_bind_group(
@@ -314,13 +398,62 @@ mod tests {
     use super::*;
 
     #[test]
+    fn quality_targets_scale_cost_and_off_skips_pass() {
+        assert!(SsaoTargetSettings::for_quality(crate::SsaoQuality::Off).is_none());
+        let low = SsaoTargetSettings::for_quality(crate::SsaoQuality::Low).unwrap();
+        let medium = SsaoTargetSettings::for_quality(crate::SsaoQuality::Medium).unwrap();
+        let high = SsaoTargetSettings::for_quality(crate::SsaoQuality::High).unwrap();
+        let ultra = SsaoTargetSettings::for_quality(crate::SsaoQuality::Ultra).unwrap();
+        assert_eq!(
+            low,
+            SsaoTargetSettings {
+                target_divisor: 2,
+                blur: false
+            }
+        );
+        assert_eq!(
+            medium,
+            SsaoTargetSettings {
+                target_divisor: 2,
+                blur: true
+            }
+        );
+        assert_eq!(high, medium);
+        assert_eq!(
+            ultra,
+            SsaoTargetSettings {
+                target_divisor: 1,
+                blur: true
+            }
+        );
+    }
+
+    #[test]
+    fn target_extent_handles_odd_and_zero_resize() {
+        assert_eq!(target_extent(1920, 1080, 2), (960, 540));
+        assert_eq!(target_extent(1919, 1079, 2), (960, 540));
+        assert_eq!(target_extent(0, 0, 2), (1, 1));
+        assert_eq!(target_extent(0, 0, 0), (1, 1));
+    }
+
+    #[test]
+    fn ssao_surface_scope_stays_ambient_only() {
+        let standard = include_str!("../shaders/prelude_3d.wgsl");
+        let multimesh = include_str!("../shaders/multimesh.wgsl");
+        let water = include_str!("../../water_shaders/water_3d_render.wgsl");
+        assert!(standard.matches("screen_space_ambient_occlusion(").count() >= 2);
+        assert!(multimesh.matches("multimesh_ssao(").count() >= 3);
+        assert!(!water.contains("ssao"));
+    }
+
+    #[test]
     fn ssao_wgsl_parse_and_validate() {
         for (label, source) in [("ssao", SSAO_WGSL), ("ssao blur", SSAO_BLUR_WGSL)] {
             let module =
                 naga::front::wgsl::parse_str(source).unwrap_or_else(|err| panic!("{label}: {err}"));
             naga::valid::Validator::new(
                 naga::valid::ValidationFlags::all(),
-                naga::valid::Capabilities::all(),
+                naga::valid::Capabilities::empty(),
             )
             .validate(&module)
             .unwrap_or_else(|err| panic!("{label}: {err}"));
