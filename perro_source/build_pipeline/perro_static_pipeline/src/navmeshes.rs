@@ -4,7 +4,7 @@ use crate::{
 };
 use perro_asset_formats::pnav;
 use perro_io::walkdir::collect_file_paths;
-use perro_resource_api::sub_apis::parse_pnav_bytes;
+use perro_resource_api::sub_apis::parse_pnav_resource_bytes;
 use std::{fmt::Write as _, fs, path::Path};
 
 pub fn generate_static_navmeshes(project_root: &Path) -> Result<(), StaticPipelineError> {
@@ -34,7 +34,7 @@ pub fn generate_static_navmeshes(project_root: &Path) -> Result<(), StaticPipeli
         let res_path = asset_uri(&rel);
         let full_path = res_dir.join(&rel);
         let bytes = fs::read(&full_path)?;
-        parse_pnav_bytes(&bytes).map_err(|err| {
+        parse_pnav_resource_bytes(&bytes).map_err(|err| {
             StaticPipelineError::SceneParse(format!("navmesh parse failed `{res_path}`: {err}"))
         })?;
 
@@ -139,7 +139,7 @@ mod tests {
         let embedded_dir = root.join("embedded");
         let static_dir = root.join("static");
         fs::create_dir_all(res_dir.join("nav")).expect("create nav dir");
-        let source = "pnav 1\nv 0 0 0\nv 1 0 0\nv 0 0 1\ntri 0 1 2 1\n";
+        let source = "pnav 1\nv 0 0 0\nv 1 0 0\nv 0 0 1\nv 4 0 0\nv 5 0 0\nv 4 0 1\ntri 0 1 2 area=2\ntri 3 4 5 area=3\nlink 0.2 0 0.2 4.2 0 0.2 cost=1.5\n";
         fs::write(res_dir.join("nav/level.pnav"), source).expect("write pnav");
 
         set_static_pipeline_overrides(Some(StaticPipelineOverrides {

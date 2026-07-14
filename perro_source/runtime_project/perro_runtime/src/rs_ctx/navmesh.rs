@@ -1,6 +1,8 @@
 use super::core::RuntimeResourceApi;
 use perro_ids::{NavMeshID, string_to_u64};
-use perro_resource_api::sub_apis::{NavMesh3D, NavMeshAPI, parse_pnav_bytes};
+use perro_resource_api::sub_apis::{
+    NavMesh3D, NavMeshAPI, NavMeshResource3D, parse_pnav_resource_bytes,
+};
 use perro_structs::BitMask;
 use std::sync::Arc;
 
@@ -37,7 +39,7 @@ impl NavMeshAPI for RuntimeResourceApi {
         let Ok(bytes) = perro_io::load_asset(source.as_ref()) else {
             return NavMeshID::nil();
         };
-        let Ok(navmesh) = parse_pnav_bytes(&bytes) else {
+        let Ok(navmesh) = parse_pnav_resource_bytes(&bytes) else {
             return NavMeshID::nil();
         };
         let id = state.allocate_navmesh_id();
@@ -61,6 +63,10 @@ impl NavMeshAPI for RuntimeResourceApi {
     }
 
     fn create_navmesh_data(&self, data: NavMesh3D) -> NavMeshID {
+        self.create_navmesh_resource_data(NavMeshResource3D::from_mesh(data))
+    }
+
+    fn create_navmesh_resource_data(&self, data: NavMeshResource3D) -> NavMeshID {
         if data.validate().is_err() {
             return NavMeshID::nil();
         }
@@ -83,13 +89,24 @@ impl NavMeshAPI for RuntimeResourceApi {
     }
 
     fn create_navmesh_from_bytes(&self, bytes: &[u8]) -> NavMeshID {
-        let Ok(navmesh) = parse_pnav_bytes(bytes) else {
+        let Ok(navmesh) = parse_pnav_resource_bytes(bytes) else {
             return NavMeshID::nil();
         };
-        self.create_navmesh_data(navmesh)
+        self.create_navmesh_resource_data(navmesh)
     }
 
     fn get_navmesh_data(&self, id: NavMeshID) -> Option<NavMesh3D> {
+        if id.is_nil() {
+            return None;
+        }
+        let state = self.state.lock().expect("resource api mutex poisoned");
+        state
+            .navmesh_data_by_id
+            .get(&id)
+            .map(|data| data.mesh.clone())
+    }
+
+    fn get_navmesh_resource_data(&self, id: NavMeshID) -> Option<NavMeshResource3D> {
         if id.is_nil() {
             return None;
         }
@@ -101,6 +118,10 @@ impl NavMeshAPI for RuntimeResourceApi {
     }
 
     fn write_navmesh_data(&self, id: NavMeshID, data: NavMesh3D) -> bool {
+        self.write_navmesh_resource_data(id, NavMeshResource3D::from_mesh(data))
+    }
+
+    fn write_navmesh_resource_data(&self, id: NavMeshID, data: NavMeshResource3D) -> bool {
         if id.is_nil() || data.validate().is_err() {
             return false;
         }
@@ -166,7 +187,10 @@ impl RuntimeResourceApi {
         &self,
         id: NavMeshID,
         layers: BitMask,
-    ) -> Option<(Arc<NavMesh3D>, Arc<crate::runtime::navmesh::SearchGraph>)> {
+    ) -> Option<(
+        Arc<NavMeshResource3D>,
+        Arc<crate::runtime::navmesh::SearchGraph>,
+    )> {
         if id.is_nil() || layers.is_empty() {
             return None;
         }
@@ -218,7 +242,8 @@ mod tests {
 v 0 0 0
 v 1 0 0
 v 0 0 1
-tri 0 1 2 layers=1
+tri 0 1 2 layers=1 area=3
+link 0.1 0 0.1 0.2 0 0.2 cost=2
 ",
         );
         assert!(!id.is_nil());
@@ -229,6 +254,10 @@ tri 0 1 2 layers=1
                 .bits(),
             1
         );
+        let resource = res.NavMeshes().get_resource(id).unwrap();
+        assert_eq!(resource.triangle_areas, vec![3]);
+        assert_eq!(resource.links.len(), 1);
+        assert_eq!(resource.links[0].cost, 2.0);
     }
 
     #[test]

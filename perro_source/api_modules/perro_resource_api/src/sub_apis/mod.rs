@@ -49,8 +49,9 @@ pub use material::{MaterialAPI, MaterialModule, MaterialReserveArg};
 pub use mesh::{MeshAPI, MeshModule, MeshReserveArg};
 pub use mic::{MicAPI, MicClip, MicDenoiseSettings, MicModule, MicSettings};
 pub use navmesh::{
-    NavMesh3D, NavMeshAPI, NavMeshModule, NavMeshTriangle3D, NavMeshValidationError,
-    parse_pnav_bytes, parse_pnav_text,
+    NavMesh3D, NavMeshAPI, NavMeshLink3D, NavMeshModule, NavMeshResource3D, NavMeshTriangle3D,
+    NavMeshValidationError, parse_pnav_bytes, parse_pnav_resource_bytes, parse_pnav_resource_text,
+    parse_pnav_text,
 };
 pub use perro_ids::{AudioBusID, SoundFontID};
 pub use post_processing::PostProcessingAPI;

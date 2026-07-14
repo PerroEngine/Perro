@@ -33,7 +33,8 @@ pub use audio::{
     RuntimeAudioAPI, RuntimeAudioModule, RuntimeMidiModule, SpatialAudioOptions, program,
 };
 pub use navmesh::{
-    NavMeshAPI, NavMeshModule, NavMeshPath3D, NavMeshPathOptions, NavMeshPathStatus,
+    NavMeshAPI, NavMeshAreaCost, NavMeshModule, NavMeshObstacle3D, NavMeshPath3D,
+    NavMeshPathOptions, NavMeshPathStatus, NavMeshQueryOptions,
 };
 
 // ---- Nodes + queries ----

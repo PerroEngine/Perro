@@ -46,11 +46,11 @@ pub mod prelude {
         MaterialReserveArg, MeshAPI, MeshModule, MeshReserveArg, MicAPI, MicClip,
         MicDenoiseSettings, MicModule, MicSettings, MidiChannel, MidiModule, MidiNoteHandle,
         MidiNoteOptions, MidiProgram, MidiSong, MidiSound, MidiSpatialPos, MidiSpatialPosition,
-        NavMesh3D, NavMeshTriangle3D, NavMeshValidationError, Note, PannedAudio, PostProcessingAPI,
-        SceneDocAPI, SceneDocModule, SkeletonAPI, SkeletonModule, SpatialAudioOptions, TextureAPI,
-        TextureModule, TextureReserveArg, VideoAPI, VideoModule, VideoUpdate,
-        VisualAccessibilityAPI, WebcamAPI, WebcamConfig, WebcamDevice, WebcamFrame, WebcamModule,
-        program,
+        NavMesh3D, NavMeshLink3D, NavMeshResource3D, NavMeshTriangle3D, NavMeshValidationError,
+        Note, PannedAudio, PostProcessingAPI, SceneDocAPI, SceneDocModule, SkeletonAPI,
+        SkeletonModule, SpatialAudioOptions, TextureAPI, TextureModule, TextureReserveArg,
+        VideoAPI, VideoModule, VideoUpdate, VisualAccessibilityAPI, WebcamAPI, WebcamConfig,
+        WebcamDevice, WebcamFrame, WebcamModule, program,
     };
 
     // Convenience macros.

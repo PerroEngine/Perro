@@ -53,7 +53,7 @@ impl NavMeshResource3D {
             .triangle_areas
             .iter()
             .enumerate()
-            .find(|(_, area)| !(1..=32).contains(area))
+            .find(|&(_, area)| !(1u8..=32).contains(area))
         {
             return Err(format!("navmesh triangle {triangle} area must be 1..=32"));
         }
@@ -259,7 +259,9 @@ pub fn parse_pnav_resource_text(text: &str) -> Result<NavMeshResource3D, String>
             }
             Some("link") => {
                 if parts.len() < 7 {
-                    return Err(format!("line {line_no}: link needs start x y z and end x y z"));
+                    return Err(format!(
+                        "line {line_no}: link needs start x y z and end x y z"
+                    ));
                 }
                 links.push(NavMeshLink3D {
                     start: Vector3::new(
@@ -372,10 +374,10 @@ fn parse_f32_option(
     default: f32,
     line_no: usize,
 ) -> Result<f32, String> {
-    let Some(raw) = parts
-        .iter()
-        .find_map(|part| part.strip_prefix(name).and_then(|rest| rest.strip_prefix('=')))
-    else {
+    let Some(raw) = parts.iter().find_map(|part| {
+        part.strip_prefix(name)
+            .and_then(|rest| rest.strip_prefix('='))
+    }) else {
         return Ok(default);
     };
     parse_f32(raw, line_no)
@@ -387,10 +389,10 @@ fn parse_bool_option(
     default: bool,
     line_no: usize,
 ) -> Result<bool, String> {
-    let Some(raw) = parts
-        .iter()
-        .find_map(|part| part.strip_prefix(name).and_then(|rest| rest.strip_prefix('=')))
-    else {
+    let Some(raw) = parts.iter().find_map(|part| {
+        part.strip_prefix(name)
+            .and_then(|rest| rest.strip_prefix('='))
+    }) else {
         return Ok(default);
     };
     match raw {
@@ -533,7 +535,10 @@ macro_rules! navmesh_create_from_bytes {
 
 #[cfg(test)]
 mod tests {
-    use super::{NavMesh3D, NavMeshTriangle3D, NavMeshValidationError, parse_pnav_text};
+    use super::{
+        NavMesh3D, NavMeshTriangle3D, NavMeshValidationError, parse_pnav_resource_text,
+        parse_pnav_text,
+    };
     use perro_structs::{BitMask, Vector3};
 
     #[test]
@@ -551,6 +556,46 @@ tri 0 1 2 layers=1,3
         assert_eq!(nav.vertices.len(), 3);
         assert_eq!(nav.triangles.len(), 1);
         assert_eq!(nav.triangles[0].layers.bits(), 0b101);
+    }
+
+    #[test]
+    fn parse_pnav_accepts_areas_and_links() {
+        let nav = parse_pnav_resource_text(
+            "pnav 1
+v 0 0 0
+v 1 0 0
+v 0 0 1
+v 4 0 0
+v 5 0 0
+v 4 0 1
+tri 0 1 2 layers=1 area=3
+tri 3 4 5 layers=1 area=7
+link 0.2 0 0.2 4.2 0 0.2 layers=1 cost=1.5 snap=0.5 bidirectional=false
+",
+        )
+        .unwrap();
+
+        assert_eq!(nav.triangle_areas, vec![3, 7]);
+        assert_eq!(nav.links.len(), 1);
+        assert!(!nav.links[0].bidirectional);
+        assert_eq!(nav.links[0].cost, 1.5);
+        assert_eq!(nav.links[0].snap_distance, 0.5);
+    }
+
+    #[test]
+    fn legacy_parser_keeps_geometry_from_extended_pnav() {
+        let nav = parse_pnav_text(
+            "pnav 1
+v 0 0 0
+v 1 0 0
+v 0 0 1
+tri 0 1 2 area=2
+link 0.1 0 0.1 0.2 0 0.2
+",
+        )
+        .unwrap();
+
+        assert_eq!(nav.triangles.len(), 1);
     }
 
     #[test]
@@ -582,6 +627,21 @@ tri 0 1 2
             let result = std::panic::catch_unwind(|| parse_pnav_text(&text));
             assert!(result.unwrap().unwrap_err().contains("1..=32"));
         }
+    }
+
+    #[test]
+    fn parse_pnav_rejects_bad_area_and_link_options() {
+        let base = "pnav 1\nv 0 0 0\nv 1 0 0\nv 0 0 1\n";
+        assert!(
+            parse_pnav_resource_text(&format!("{base}tri 0 1 2 area=0\n"))
+                .unwrap_err()
+                .contains("area must be 1..=32")
+        );
+        assert!(
+            parse_pnav_resource_text(&format!("{base}tri 0 1 2\nlink 0 0 0 1 0 1 cost=0\n"))
+                .unwrap_err()
+                .contains("cost must be finite and > 0")
+        );
     }
 
     #[test]

@@ -22,6 +22,37 @@ impl Default for NavMeshPathOptions {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct NavMeshAreaCost {
+    pub area: u8,
+    pub multiplier: f32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum NavMeshObstacle3D {
+    Circle { center: Vector3, radius: f32 },
+    Aabb { min: Vector3, max: Vector3 },
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct NavMeshQueryOptions {
+    pub path: NavMeshPathOptions,
+    pub area_costs: Vec<NavMeshAreaCost>,
+    pub obstacles: Vec<NavMeshObstacle3D>,
+    pub use_off_mesh_links: bool,
+}
+
+impl Default for NavMeshQueryOptions {
+    fn default() -> Self {
+        Self {
+            path: NavMeshPathOptions::default(),
+            area_costs: Vec::new(),
+            obstacles: Vec::new(),
+            use_off_mesh_links: true,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NavMeshPathStatus {
     Complete,
@@ -61,6 +92,16 @@ pub trait NavMeshAPI {
         point: Vector3,
         max_distance: f32,
     ) -> Option<Vector3>;
+
+    fn navmesh_find_path_query_3d(
+        &mut self,
+        navmesh: NavMeshID,
+        start: Vector3,
+        end: Vector3,
+        query: NavMeshQueryOptions,
+    ) -> NavMeshPath3D {
+        self.navmesh_find_path_3d(navmesh, start, end, query.path)
+    }
 }
 
 pub struct NavMeshModule<'rt, R: NavMeshAPI + ?Sized> {
@@ -81,6 +122,18 @@ impl<'rt, R: NavMeshAPI + ?Sized> NavMeshModule<'rt, R> {
         opts: NavMeshPathOptions,
     ) -> NavMeshPath3D {
         self.rt.navmesh_find_path_3d(navmesh, start, end, opts)
+    }
+
+    #[inline]
+    pub fn find_path_query_3d(
+        &mut self,
+        navmesh: NavMeshID,
+        start: Vector3,
+        end: Vector3,
+        query: NavMeshQueryOptions,
+    ) -> NavMeshPath3D {
+        self.rt
+            .navmesh_find_path_query_3d(navmesh, start, end, query)
     }
 
     #[inline]
