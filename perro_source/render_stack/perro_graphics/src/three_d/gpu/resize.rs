@@ -152,7 +152,7 @@ impl Gpu3D {
         let multimesh_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("perro_multimesh_pipeline_layout"),
-                bind_group_layouts: &[Some(&self.multimesh_bgl)],
+                bind_group_layouts: &[Some(&self.multimesh_bgl), Some(&self.material_texture_bgl)],
                 immediate_size: 0,
             });
         let multimesh_mask_pipeline_layout =
@@ -160,6 +160,7 @@ impl Gpu3D {
                 label: Some("perro_mesh_blend_mask_layout_multimesh"),
                 bind_group_layouts: &[
                     Some(&self.multimesh_bgl),
+                    Some(&self.material_texture_bgl),
                     Some(&self.mesh_blend_mask_id_bgl),
                 ],
                 immediate_size: 0,

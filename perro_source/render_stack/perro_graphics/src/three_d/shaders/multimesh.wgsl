@@ -33,6 +33,8 @@ struct Scene3D {
     ground_color: vec4<f32>,
     // Sky radiance at the horizon (premultiplied) for env reflections.
     sky_horizon_color: vec4<f32>,
+    // x = IBL intensity, y = max specular mip, zw = environment rotation sin/cos.
+    ibl_params: vec4<f32>,
     // Frame globals: x = time seconds (wraps hourly), y = delta seconds,
     // z = frame index, w = 0..1 phase over 60 seconds.
     time_params: vec4<f32>,
@@ -44,13 +46,16 @@ struct MultiMeshDrawParam {
     model_row_0: vec4<f32>,
     model_row_1: vec4<f32>,
     model_row_2: vec4<f32>,
+    custom_params: vec2<u32>,
     packed_color: u32,
+    packed_pbr_params_0: u32,
     packed_emissive: u32,
+    packed_material_params: u32,
     scale_bits: u32,
     packed_blend_params: u32,
-    custom_params: vec2<u32>,
     // Local color bleed tint (pack_local_bleed layout); 0 = none.
     packed_bleed: u32,
+    pad: array<u32, 3>,
 }
 
 @group(0) @binding(0)
@@ -136,7 +141,53 @@ var decal_textures: texture_2d_array<f32>;
 var decal_sampler: sampler;
 
 @group(1) @binding(0)
+var material_sampler: sampler;
+@group(1) @binding(1)
+var material_base_color_tex: texture_2d<f32>;
+@group(1) @binding(2)
+var custom_image_tex_0: texture_2d<f32>;
+@group(1) @binding(3)
+var custom_image_tex_1: texture_2d<f32>;
+@group(1) @binding(4)
+var custom_image_tex_2: texture_2d<f32>;
+@group(1) @binding(5)
+var custom_image_tex_3: texture_2d<f32>;
+@group(1) @binding(6)
+var custom_image_tex_4: texture_2d<f32>;
+@group(1) @binding(7)
+var custom_image_tex_5: texture_2d<f32>;
+@group(1) @binding(8)
+var custom_image_tex_6: texture_2d<f32>;
+@group(1) @binding(9)
+var custom_image_tex_7: texture_2d<f32>;
+
+@group(2) @binding(0)
 var<uniform> mesh_blend_mask_id: vec4<u32>;
+
+fn custom_image_sample_at(index: u32, uv: vec2<f32>) -> vec4<f32> {
+    if index == 0u {
+        return textureSample(custom_image_tex_0, material_sampler, uv);
+    }
+    if index == 1u {
+        return textureSample(custom_image_tex_1, material_sampler, uv);
+    }
+    if index == 2u {
+        return textureSample(custom_image_tex_2, material_sampler, uv);
+    }
+    if index == 3u {
+        return textureSample(custom_image_tex_3, material_sampler, uv);
+    }
+    if index == 4u {
+        return textureSample(custom_image_tex_4, material_sampler, uv);
+    }
+    if index == 5u {
+        return textureSample(custom_image_tex_5, material_sampler, uv);
+    }
+    if index == 6u {
+        return textureSample(custom_image_tex_6, material_sampler, uv);
+    }
+    return textureSample(custom_image_tex_7, material_sampler, uv);
+}
 
 struct DecalSurface {
     albedo: vec3<f32>,
@@ -216,6 +267,7 @@ const MESH_BLEND_MIN_PIXELS: f32 = 2.5;
 struct VertexInput {
     @location(0) pos: vec3<f32>,
     @location(1) normal: vec4<f32>,
+    @location(12) uv: vec2<f32>,
 };
 
 // Instance payload, fetched from storage (no longer a vertex buffer).
@@ -247,6 +299,10 @@ struct VertexOutput {
     @location(5) uv: vec2<f32>,
     @location(7) @interpolate(flat) packed_bleed: u32,
     @location(8) ambient_color: vec3<f32>,
+    @location(9) @interpolate(flat) packed_pbr_params_0: u32,
+    @location(10) @interpolate(flat) packed_material_params: u32,
+    @location(11) @interpolate(flat) packed_color: u32,
+    @location(12) @interpolate(flat) packed_emissive: u32,
 };
 
 struct FragmentInput {
@@ -259,6 +315,11 @@ struct FragmentInput {
     @location(5) uv: vec2<f32>,
     @location(7) @interpolate(flat) packed_bleed: u32,
     @location(8) ambient_color: vec3<f32>,
+    @location(9) @interpolate(flat) packed_pbr_params_0: u32,
+    @location(10) @interpolate(flat) packed_material_params: u32,
+    @location(11) @interpolate(flat) packed_color: u32,
+    @location(12) @interpolate(flat) packed_emissive: u32,
+    @builtin(front_facing) is_front: bool,
 };
 
 fn multimesh_ssao(frag_pos: vec2<f32>) -> f32 {
@@ -410,7 +471,7 @@ fn apply_blend_shapes(v: VertexInput, inst: InstanceInput, vertex_index: u32) ->
         out_pos = out_pos + delta.position_delta.xyz * weight;
         out_normal = out_normal + delta.normal_delta.xyz * weight;
     }
-    return VertexInput(out_pos, vec4<f32>(normalize(out_normal), 0.0));
+    return VertexInput(out_pos, vec4<f32>(normalize(out_normal), 0.0), v.uv);
 }
 
 fn custom_f_param(in: FragmentInput, index: u32) -> vec4<f32> {
@@ -489,6 +550,10 @@ fn custom_param_vertex(out: VertexOutput, index: u32) -> vec4<f32> {
     return custom_v_param(out, index);
 }
 
+fn custom_image_sample(in: FragmentInput, index: u32, uv: vec2<f32>) -> vec4<f32> {
+    return custom_image_sample_at(index, uv);
+}
+
 struct LocalBleed {
     color: vec3<f32>,
     strength: f32,
@@ -518,17 +583,107 @@ fn decode_local_bleed(packed: u32) -> LocalBleed {
     return LocalBleed(color, strength, oct_decode_dir(ox, oy));
 }
 
-fn perro_lit_standard(
+fn distribution_ggx(n: vec3<f32>, h: vec3<f32>, roughness: f32) -> f32 {
+    let a = roughness * roughness;
+    let a2 = a * a;
+    let n_dot_h = max(dot(n, h), 0.0);
+    let denom = n_dot_h * n_dot_h * (a2 - 1.0) + 1.0;
+    return a2 / max(3.14159265 * denom * denom, 1.0e-6);
+}
+
+fn geometry_schlick_ggx(n_dot_v: f32, roughness: f32) -> f32 {
+    let r = roughness + 1.0;
+    let k = (r * r) * 0.125;
+    return n_dot_v / max(n_dot_v * (1.0 - k) + k, 1.0e-6);
+}
+
+fn geometry_smith(n: vec3<f32>, v: vec3<f32>, l: vec3<f32>, roughness: f32) -> f32 {
+    return geometry_schlick_ggx(max(dot(n, v), 0.0), roughness)
+        * geometry_schlick_ggx(max(dot(n, l), 0.0), roughness);
+}
+
+fn fresnel_schlick(cos_theta: f32, f0: vec3<f32>) -> vec3<f32> {
+    let m = clamp(1.0 - cos_theta, 0.0, 1.0);
+    let m2 = m * m;
+    return f0 + (vec3<f32>(1.0) - f0) * m2 * m2 * m;
+}
+
+fn multimesh_brdf(
+    albedo: vec3<f32>,
+    n: vec3<f32>,
+    v: vec3<f32>,
+    l: vec3<f32>,
+    roughness: f32,
+    metallic: f32,
+    radiance: vec3<f32>,
+) -> vec3<f32> {
+    let hv = v + l;
+    let h = hv * inverseSqrt(max(dot(hv, hv), 1.0e-8));
+    let f0 = mix(vec3<f32>(0.04), albedo, vec3<f32>(metallic));
+    let f = fresnel_schlick(max(dot(h, v), 0.0), f0);
+    let numerator = distribution_ggx(n, h, roughness) * geometry_smith(n, v, l, roughness) * f;
+    let denominator = 4.0 * max(dot(n, v), 0.0) * max(dot(n, l), 0.0) + 1.0e-5;
+    let specular = numerator / denominator;
+    let diffuse = (vec3<f32>(1.0) - f) * (1.0 - metallic) * albedo / 3.14159265;
+    return (diffuse + specular) * radiance * max(dot(n, l), 0.0);
+}
+
+fn apply_multimesh_normal_map(
+    in: FragmentInput,
+    normal_ws: vec3<f32>,
+    scale: f32,
+) -> vec3<f32> {
+    let dpdx_ws = dpdx(in.world_pos);
+    let dpdy_ws = dpdy(in.world_pos);
+    let duvdx = dpdx(in.uv);
+    let duvdy = dpdy(in.uv);
+    let det = duvdx.x * duvdy.y - duvdx.y * duvdy.x;
+    if abs(det) <= 1.0e-8 {
+        return normal_ws;
+    }
+    let inv_det = 1.0 / det;
+    let tangent_raw = (dpdx_ws * duvdy.y - dpdy_ws * duvdx.y) * inv_det;
+    let bitangent_raw = (-dpdx_ws * duvdy.x + dpdy_ws * duvdx.x) * inv_det;
+    let tangent_ortho = tangent_raw - normal_ws * dot(normal_ws, tangent_raw);
+    let tangent_len_sq = dot(tangent_ortho, tangent_ortho);
+    if tangent_len_sq <= 1.0e-8 || dot(bitangent_raw, bitangent_raw) <= 1.0e-8 {
+        return normal_ws;
+    }
+    let tangent = tangent_ortho * inverseSqrt(tangent_len_sq);
+    let cross_nt = normalize(cross(normal_ws, tangent));
+    let handedness = select(-1.0, 1.0, dot(cross_nt, bitangent_raw) >= 0.0);
+    let bitangent = cross_nt * handedness;
+    var mapped = textureSample(custom_image_tex_1, material_sampler, in.uv).xyz * 2.0 - 1.0;
+    mapped = normalize(vec3<f32>(mapped.xy * scale, mapped.z));
+    return normalize(tangent * mapped.x + bitangent * mapped.y + normal_ws * mapped.z);
+}
+
+fn perro_lit_standard_with_ssao(
     in: FragmentInput,
     base: vec4<f32>,
     roughness: f32,
     metallic: f32,
     occlusion: f32,
     emissive: vec3<f32>,
+    surface_ssao: f32,
 ) -> vec4<f32> {
-    let _roughness = roughness;
-    let _metallic = metallic;
+    let flags = (in.packed_material_params >> 3u) & 0x1fffu;
+    let mirrored_winding = (flags & 0x20u) != 0u;
     var n = normalize(in.normal_ws);
+    if (flags & 0x2u) != 0u {
+        n = normalize(cross(dpdx(in.world_pos), dpdy(in.world_pos)));
+        if mirrored_winding {
+            n = -n;
+        }
+    }
+    let double_sided = ((in.packed_material_params >> 2u) & 0x1u) != 0u;
+    if double_sided && (in.is_front == mirrored_winding) {
+        n = -n;
+    }
+    if (flags & 0x400u) != 0u {
+        let normal_scale = unpack_unorm8(in.packed_pbr_params_0, 24u) * 4.0;
+        n = apply_multimesh_normal_map(in, n, normal_scale);
+    }
     var albedo = base.rgb;
     var decal_emissive = vec3<f32>(0.0);
     if scene_decals.count.x > 0u {
@@ -537,27 +692,108 @@ fn perro_lit_standard(
         n = decal_surface.normal;
         decal_emissive = decal_surface.emissive;
     }
+    let roughness_safe = clamp(roughness, 0.04, 1.0);
+    let metallic_safe = clamp(metallic, 0.0, 1.0);
+    let ao = clamp(occlusion, 0.0, 1.0) * surface_ssao;
+    let v = normalize(scene.camera_pos.xyz - in.world_pos);
     let hemi = clamp(n.y * 0.5 + 0.5, 0.0, 1.0);
-    let ambient =
-        mix(scene.ground_color.xyz, scene.ambient_color.xyz * scene.ambient_color.w, hemi)
-        * occlusion;
-    var ambient_lit = ambient;
-    // Local color bleed: per-draw tint via flat varying (custom fs path).
+    var ambient = mix(scene.ground_color.xyz, scene.ambient_color.xyz * scene.ambient_color.w, hemi);
     let bleed = decode_local_bleed(in.packed_bleed);
     let bleed_wrap = clamp(dot(n, bleed.dir) * 0.5 + 0.5, 0.0, 1.0);
-    ambient_lit += bleed.color * bleed.strength * 0.45 * (0.35 + 0.65 * bleed_wrap);
-    ambient_lit *= multimesh_ssao(in.frag_pos.xy);
-    var lit = vec3<f32>(0.0);
+    ambient += bleed.color * bleed.strength * 0.45 * (0.35 + 0.65 * bleed_wrap);
+    let f0 = mix(vec3<f32>(0.04), albedo, vec3<f32>(metallic_safe));
+    let ambient_fresnel = fresnel_schlick(max(dot(n, v), 0.0), f0);
+    let ambient_diffuse =
+        (vec3<f32>(1.0) - ambient_fresnel) * (1.0 - metallic_safe) * albedo * ambient * ao;
+    let ambient_specular = ambient_fresnel * ambient * (0.15 + 0.35 * (1.0 - roughness_safe)) * ao;
+    var direct = vec3<f32>(0.0);
     let ray_count = u32(scene.ambient_and_counts.x);
-    if ray_count > 0u {
-        let ray = scene.ray_lights[0];
+    for (var i = 0u; i < ray_count; i = i + 1u) {
+        let ray = scene.ray_lights[i];
         let ray_dir = ray.direction.xyz;
         let l = -ray_dir * inverseSqrt(max(dot(ray_dir, ray_dir), 1.0e-8));
-        let lambert = max(dot(n, l), 0.0);
-        lit += ray.color_intensity.xyz * ray.color_intensity.w * lambert;
+        let radiance = ray.color_intensity.xyz * ray.color_intensity.w;
+        direct += multimesh_brdf(albedo, n, v, l, roughness_safe, metallic_safe, radiance);
     }
-    let alpha = mesh_blend_alpha(in.frag_pos, in.world_pos, in.packed_blend_params) * base.a;
-    return vec4<f32>(albedo * (ambient_lit + lit) + emissive + decal_emissive, alpha);
+    let alpha_mode = in.packed_material_params & 0x3u;
+    var material_alpha = base.a;
+    if alpha_mode == 0u {
+        material_alpha = 1.0;
+    }
+    if alpha_mode == 1u {
+        let cutoff = unpack_unorm8(in.packed_material_params, 16u);
+        if material_alpha < cutoff {
+            discard;
+        }
+    }
+    let alpha = mesh_blend_alpha(in.frag_pos, in.world_pos, in.packed_blend_params)
+        * material_alpha;
+    return vec4<f32>(
+        ambient_diffuse + ambient_specular + direct + emissive + decal_emissive,
+        alpha,
+    );
+}
+
+fn perro_lit_standard(
+    in: FragmentInput,
+    base: vec4<f32>,
+    roughness: f32,
+    metallic: f32,
+    occlusion: f32,
+    emissive: vec3<f32>,
+) -> vec4<f32> {
+    return perro_lit_standard_with_ssao(
+        in,
+        base,
+        roughness,
+        metallic,
+        occlusion,
+        emissive,
+        multimesh_ssao(in.frag_pos.xy),
+    );
+}
+
+fn shade_standard_multimesh(in: FragmentInput) -> vec4<f32> {
+    let flags = (in.packed_material_params >> 3u) & 0x1fffu;
+    let color = unpack_rgba8(in.packed_color);
+    var base_sample = vec4<f32>(1.0);
+    if (flags & 0x4u) != 0u {
+        base_sample = textureSample(material_base_color_tex, material_sampler, in.uv);
+    }
+    var albedo = color.rgb * base_sample.rgb;
+    if (flags & 0x100u) != 0u {
+        let saturation = max(max(color.r, color.g), color.b) - min(min(color.r, color.g), color.b);
+        let tint_weight = 0.2 * clamp(saturation, 0.0, 1.0);
+        let texture_luma = dot(base_sample.rgb, vec3<f32>(0.2126, 0.7152, 0.0722));
+        albedo = mix(albedo, color.rgb * texture_luma, tint_weight);
+    }
+    var roughness = unpack_unorm8(in.packed_pbr_params_0, 0u);
+    var metallic = unpack_unorm8(in.packed_pbr_params_0, 8u);
+    var ao = 1.0;
+    let emissive = unpack_rgba8(in.packed_emissive);
+    var lit_emissive = emissive.xyz * (emissive.w * 16.0);
+    if (flags & 0x200u) != 0u {
+        let metallic_roughness = textureSample(custom_image_tex_0, material_sampler, in.uv);
+        roughness *= metallic_roughness.g;
+        metallic *= metallic_roughness.b;
+    }
+    if (flags & 0x800u) != 0u {
+        let sampled_ao = textureSample(custom_image_tex_2, material_sampler, in.uv).r;
+        let strength = unpack_unorm8(in.packed_pbr_params_0, 16u);
+        ao = mix(1.0, sampled_ao, strength);
+    }
+    if (flags & 0x1000u) != 0u {
+        lit_emissive *= textureSample(custom_image_tex_3, material_sampler, in.uv).rgb;
+    }
+    return perro_lit_standard_with_ssao(
+        in,
+        vec4<f32>(albedo, color.a * base_sample.a),
+        roughness,
+        metallic,
+        ao,
+        lit_emissive,
+        multimesh_ssao(in.frag_pos.xy),
+    );
 }
 
 
@@ -616,8 +852,12 @@ fn perro_multimesh_vs_main_base(v: VertexInput, inst: InstanceInput, vertex_inde
     out.world_pos = world.xyz;
     out.normal_ws = normal_ws;
     out.custom_range = draw.custom_params;
-    out.uv = vec2<f32>(0.0);
+    out.uv = blended.uv;
     out.packed_bleed = draw.packed_bleed;
+    out.packed_pbr_params_0 = draw.packed_pbr_params_0;
+    out.packed_material_params = draw.packed_material_params;
+    out.packed_color = draw.packed_color;
+    out.packed_emissive = draw.packed_emissive;
     return out;
 }
 
@@ -661,8 +901,7 @@ fn vs_main(
 
 @fragment
 fn fs_main(in: FragmentInput) -> @location(0) vec4<f32> {
-    let ao = multimesh_ssao(in.frag_pos.xy);
-    return vec4<f32>(in.lit_color + in.ambient_color * ao, mesh_blend_alpha(in.frag_pos, in.world_pos, in.packed_blend_params));
+    return shade_standard_multimesh(in);
 }
 
 // Depth-prepass entry: position only (opaque multimesh has no alpha cutout).

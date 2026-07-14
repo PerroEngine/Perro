@@ -39,6 +39,8 @@ struct Scene3D {
     ground_color: vec4<f32>,
     // Sky radiance at the horizon (premultiplied) for env reflections.
     sky_horizon_color: vec4<f32>,
+    // x = IBL intensity, y = max specular mip, zw = environment rotation sin/cos.
+    ibl_params: vec4<f32>,
     // Frame globals: x = time seconds (wraps hourly), y = delta seconds,
     // z = frame index, w = 0..1 phase over 60 seconds.
     time_params: vec4<f32>,
@@ -390,33 +392,48 @@ fn decode_material_params(packed: u32) -> DecodedMaterialParams {
     );
 }
 
-// Rebuild tangent frame from position + UV derivatives.  glTF normal maps
-// work without growing the vertex format or mesh bandwidth.
+fn fallback_tangent(normal_ws: vec3<f32>) -> vec3<f32> {
+    let axis = select(
+        vec3<f32>(1.0, 0.0, 0.0),
+        vec3<f32>(0.0, 1.0, 0.0),
+        abs(normal_ws.x) > 0.9,
+    );
+    return normalize(cross(axis, normal_ws));
+}
+
+// Rebuild tangent frame from position + UV derivatives. glTF normal maps
+// work without growing vertex format or mesh bandwidth. Degenerate UVs use
+// stable normal-derived tangent so mapped normals stay finite.
 fn apply_standard_normal_map(in: FragmentInput, normal_ws: vec3<f32>, scale: f32) -> vec3<f32> {
     let dp1 = dpdx(in.world_pos);
     let dp2 = dpdy(in.world_pos);
     let duv1 = dpdx(in.uv);
     let duv2 = dpdy(in.uv);
     let det = duv1.x * duv2.y - duv1.y * duv2.x;
-    if abs(det) < 1.0e-8 {
-        return normal_ws;
+    var tangent_raw = fallback_tangent(normal_ws);
+    var bitangent_raw = cross(normal_ws, tangent_raw);
+    if abs(det) >= 1.0e-8 {
+        let inv_det = 1.0 / det;
+        tangent_raw = (dp1 * duv2.y - dp2 * duv1.y) * inv_det;
+        bitangent_raw = (-dp1 * duv2.x + dp2 * duv1.x) * inv_det;
     }
-    let inv_det = 1.0 / det;
-    let tangent = normalize((dp1 * duv2.y - dp2 * duv1.y) * inv_det);
-    let bitangent = normalize((-dp1 * duv2.x + dp2 * duv1.x) * inv_det);
-    let sampled = material_data_from_srgb_sample(
-        textureSample(custom_image_tex_1, material_sampler, in.uv).xyz,
-    ) * 2.0 - 1.0;
+    let tangent_ortho = tangent_raw - normal_ws * dot(normal_ws, tangent_raw);
+    var tangent = fallback_tangent(normal_ws);
+    if dot(tangent_ortho, tangent_ortho) > 1.0e-8 {
+        tangent = normalize(tangent_ortho);
+    }
+    var handedness = 1.0;
+    if dot(tangent_raw, tangent_raw) > 1.0e-8 && dot(bitangent_raw, bitangent_raw) > 1.0e-8 {
+        handedness = select(
+            -1.0,
+            1.0,
+            dot(cross(tangent_raw, bitangent_raw), normal_ws) >= 0.0,
+        );
+    }
+    let bitangent = normalize(cross(normal_ws, tangent)) * handedness;
+    let sampled = textureSample(custom_image_tex_1, material_sampler, in.uv).xyz * 2.0 - 1.0;
     let mapped = normalize(vec3<f32>(sampled.xy * scale, sampled.z));
     return normalize(tangent * mapped.x + bitangent * mapped.y + normal_ws * mapped.z);
-}
-
-// Material cache uses one sRGB texture class.  Convert decoded samples back
-// to stored UNORM values for glTF data maps (MR, normal, and occlusion).
-fn material_data_from_srgb_sample(linear: vec3<f32>) -> vec3<f32> {
-    let lo = linear * 12.92;
-    let hi = 1.055 * pow(max(linear, vec3<f32>(0.0)), vec3<f32>(1.0 / 2.4)) - 0.055;
-    return select(hi, lo, linear <= vec3<f32>(0.0031308));
 }
 
 fn decode_mesh_blend_params(packed: u32) -> vec4<f32> {
