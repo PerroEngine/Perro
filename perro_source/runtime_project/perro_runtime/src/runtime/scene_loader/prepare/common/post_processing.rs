@@ -51,9 +51,7 @@ fn as_post_processing(value: &SceneValue) -> Option<PostProcessSet> {
     }
 }
 
-fn post_effect_from(
-    value: &SceneValue,
-) -> Option<(Option<Cow<'static, str>>, PostProcessEffect)> {
+fn post_effect_from(value: &SceneValue) -> Option<(Option<Cow<'static, str>>, PostProcessEffect)> {
     let SceneValue::Object(entries) = value else {
         return None;
     };
@@ -75,6 +73,12 @@ fn post_effect_from(
     let mut texture_path: Option<String> = None;
     let mut lut_size: Option<u32> = None;
     let mut exposure: Option<f32> = None;
+    let mut auto_exposure: Option<bool> = None;
+    let mut min_exposure: Option<f32> = None;
+    let mut max_exposure: Option<f32> = None;
+    let mut speed_up: Option<f32> = None;
+    let mut speed_down: Option<f32> = None;
+    let mut target_luminance: Option<f32> = None;
     let mut contrast: Option<f32> = None;
     let mut brightness: Option<f32> = None;
     let mut saturation: Option<f32> = None;
@@ -120,6 +124,12 @@ fn post_effect_from(
             "threshold" => threshold = as_f32(v),
             "amount" => amount = as_f32(v),
             "exposure" => exposure = as_f32(v),
+            "auto" | "auto_exposure" => auto_exposure = as_bool(v),
+            "min_exposure" => min_exposure = as_f32(v),
+            "max_exposure" => max_exposure = as_f32(v),
+            "speed_up" => speed_up = as_f32(v),
+            "speed_down" => speed_down = as_f32(v),
+            "target_luminance" | "key_value" => target_luminance = as_f32(v),
             "contrast" => contrast = as_f32(v),
             "brightness" => brightness = as_f32(v),
             "saturation" => saturation = as_f32(v),
@@ -237,6 +247,18 @@ fn post_effect_from(
                 amount: amount.or(strength).unwrap_or(1.0),
             },
         )),
+        "exposure" | "tonemap" | "tone_map" => Some((
+            name,
+            PostProcessEffect::Exposure {
+                exposure: exposure.unwrap_or(0.0),
+                auto_exposure: auto_exposure.unwrap_or(true),
+                min_exposure: min_exposure.unwrap_or(-8.0),
+                max_exposure: max_exposure.unwrap_or(8.0),
+                speed_up: speed_up.unwrap_or(3.0),
+                speed_down: speed_down.unwrap_or(1.0),
+                target_luminance: target_luminance.unwrap_or(0.18),
+            },
+        )),
         "color_grade" | "colorgrade" | "grade" | "grading" => Some((
             name,
             PostProcessEffect::ColorGrade {
@@ -296,9 +318,7 @@ fn as_post_params(value: &SceneValue) -> Option<Vec<CustomPostParam>> {
         SceneValue::Array(items) => {
             let mut out = Vec::new();
             for item in items.as_ref() {
-                out.push(CustomPostParam::unnamed(post_param_value(
-                    item,
-                )?));
+                out.push(CustomPostParam::unnamed(post_param_value(item)?));
             }
             Some(out)
         }
@@ -335,6 +355,3 @@ fn parse_param_key_index(key: &str) -> Option<usize> {
     }
     None
 }
-
-
-

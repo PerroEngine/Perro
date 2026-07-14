@@ -598,6 +598,25 @@ fn test_variant_as_post_process_set() {
 }
 
 #[test]
+fn test_exposure_effect_json_keeps_hdr_controls() {
+    let set = PostProcessSet::from_effects(vec![PostProcessEffect::Exposure {
+        exposure: -0.5,
+        auto_exposure: true,
+        min_exposure: -3.0,
+        max_exposure: 4.0,
+        speed_up: 5.0,
+        speed_down: 2.0,
+        target_luminance: 0.2,
+    }]);
+    let json = Variant::from(set).to_json_value();
+    let effect = &json.as_array().expect("post array")[0];
+
+    assert_eq!(effect["type"], "exposure");
+    assert_eq!(effect["auto_exposure"], true);
+    assert!((effect["target_luminance"].as_f64().expect("target number") - 0.2).abs() < 1.0e-6);
+}
+
+#[test]
 fn test_variant_as_visual_accessibility() {
     let settings =
         VisualAccessibilitySettings::new().with_color_blind(ColorBlindFilter::Protan, 0.7);

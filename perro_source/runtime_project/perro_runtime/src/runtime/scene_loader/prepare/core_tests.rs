@@ -2619,6 +2619,16 @@ mod tests {
                 active = true
                 post_processing = [
                     {
+                        type = "exposure",
+                        auto_exposure = true,
+                        exposure = -0.5,
+                        min_exposure = -3.0,
+                        max_exposure = 4.0,
+                        speed_up = 5.0,
+                        speed_down = 2.0,
+                        target_luminance = 0.2
+                    },
+                    {
                         type = "color_grade",
                         exposure = 0.25,
                         contrast = 1.1,
@@ -2654,8 +2664,26 @@ mod tests {
             panic!("expected Camera3D");
         };
         let effects = cam.post_processing.to_effects_vec();
-        assert_eq!(effects.len(), 3);
+        assert_eq!(effects.len(), 4);
         match &effects[0] {
+            PostProcessEffect::Exposure {
+                exposure,
+                auto_exposure,
+                min_exposure,
+                max_exposure,
+                speed_up,
+                speed_down,
+                target_luminance,
+            } => {
+                assert_eq!(*exposure, -0.5);
+                assert!(*auto_exposure);
+                assert_eq!((*min_exposure, *max_exposure), (-3.0, 4.0));
+                assert_eq!((*speed_up, *speed_down), (5.0, 2.0));
+                assert_eq!(*target_luminance, 0.2);
+            }
+            other => panic!("expected exposure, got {other:?}"),
+        }
+        match &effects[1] {
             PostProcessEffect::ColorGrade {
                 exposure,
                 gain,
@@ -2668,7 +2696,7 @@ mod tests {
             }
             other => panic!("expected color grade, got {other:?}"),
         }
-        match &effects[1] {
+        match &effects[2] {
             PostProcessEffect::Lut2D {
                 texture_path,
                 size,
@@ -2680,7 +2708,7 @@ mod tests {
             }
             other => panic!("expected lut2d, got {other:?}"),
         }
-        match &effects[2] {
+        match &effects[3] {
             PostProcessEffect::Lut3D {
                 texture_path,
                 size,

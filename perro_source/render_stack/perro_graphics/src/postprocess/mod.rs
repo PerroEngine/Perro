@@ -97,6 +97,10 @@ fn build_chain_steps_into(
     steps.reserve(effects.len().saturating_sub(steps.len()));
     let mut i = 0;
     while i < effects.len() {
+        if matches!(effects[i], PostProcessEffect::Exposure { .. }) {
+            i += 1;
+            continue;
+        }
         if is_mergeable_color_op(&effects[i]) {
             let start = i;
             while i < effects.len() && is_mergeable_color_op(&effects[i]) {
@@ -513,7 +517,9 @@ impl PostProcessor {
     }
 
     pub fn has_effects(effects: &[PostProcessEffect]) -> bool {
-        !effects.is_empty()
+        effects
+            .iter()
+            .any(|effect| !matches!(effect, PostProcessEffect::Exposure { .. }))
     }
 
     // Refactored apply_chain to reduce argument count and improve clarity
@@ -732,7 +738,7 @@ impl PostProcessor {
             if let PostProcessEffect::Bloom {
                 strength,
                 threshold,
-                ..
+                radius,
             } = effect
             {
                 self.run_bloom_effect(
@@ -743,6 +749,7 @@ impl PostProcessor {
                     subpass_base,
                     *strength,
                     *threshold,
+                    *radius,
                     &current_input,
                     depth_view,
                     &target_view,
@@ -1036,6 +1043,7 @@ impl PostProcessor {
         subpass_base: usize,
         strength: f32,
         threshold: f32,
+        radius: f32,
         input_view: &wgpu::TextureView,
         depth_view: &wgpu::TextureView,
         target_view: &wgpu::TextureView,
@@ -1069,7 +1077,7 @@ impl PostProcessor {
             ctx,
             subpass_base + 1,
             EFFECT_BLUR,
-            [1.0, 0.0, 0.0, 0.0],
+            [radius.max(0.0), 0.0, 0.0, 0.0],
             half,
             &view_a,
             &default_lut,
@@ -1084,7 +1092,7 @@ impl PostProcessor {
             ctx,
             subpass_base + 2,
             EFFECT_BLUR,
-            [1.0, 1.0, 0.0, 0.0],
+            [radius.max(0.0), 1.0, 0.0, 0.0],
             half,
             &view_b,
             &default_lut,
@@ -1787,6 +1795,16 @@ fn encode_effect_params(effect: &PostProcessEffect) -> EncodedEffectParams {
             params5: [0.0; 4],
             custom_params: Vec::new(),
         },
+        PostProcessEffect::Exposure { .. } => EncodedEffectParams {
+            effect_type: EFFECT_CUSTOM,
+            params0: [0.0; 4],
+            params1: [0.0; 4],
+            params2: [0.0; 4],
+            params3: [0.0; 4],
+            params4: [0.0; 4],
+            params5: [0.0; 4],
+            custom_params: Vec::new(),
+        },
         PostProcessEffect::Saturate { amount } => EncodedEffectParams {
             effect_type: EFFECT_SATURATE,
             params0: [*amount, 0.0, 0.0, 0.0],
@@ -1960,6 +1978,37 @@ mod tests {
     }
 
     #[test]
+    fn exposure_config_skips_post_chain_passes() {
+        let effects = [PostProcessEffect::Exposure {
+            exposure: 0.5,
+            auto_exposure: true,
+            min_exposure: -4.0,
+            max_exposure: 4.0,
+            speed_up: 3.0,
+            speed_down: 1.0,
+            target_luminance: 0.18,
+        }];
+        let mut steps = Vec::new();
+        let mut descriptors = Vec::new();
+
+        build_chain_steps_into(&effects, &mut steps, &mut descriptors);
+
+        assert!(steps.is_empty());
+        assert!(!PostProcessor::has_effects(&effects));
+    }
+
+    #[test]
+    fn bloom_params_keep_scene_threshold_and_radius() {
+        let encoded = encode_effect_params(&PostProcessEffect::Bloom {
+            strength: 0.7,
+            threshold: 2.0,
+            radius: 3.5,
+        });
+
+        assert_eq!(encoded.params0, [0.7, 2.0, 3.5, 0.0]);
+    }
+
+    #[test]
     fn post_bind_group_key_changes_on_generations_and_inputs() {
         let a = PostBindGroupKey {
             input_kind: PostInputKind::External,
@@ -2122,5 +2171,34 @@ mod tests {
         assert_eq!(descriptors.capacity(), descriptor_capacity);
         assert_eq!(steps.len(), step_count);
         assert_eq!(descriptors.len(), descriptor_count);
+    }
+
+    #[test]
+    fn exposure_cfg_stays_out_of_scene_referred_passes() {
+        let effects = [
+            PostProcessEffect::Exposure {
+                exposure: 0.0,
+                auto_exposure: true,
+                min_exposure: -8.0,
+                max_exposure: 8.0,
+                speed_up: 3.0,
+                speed_down: 1.0,
+                target_luminance: 0.18,
+            },
+            PostProcessEffect::Bloom {
+                strength: 0.7,
+                threshold: 1.25,
+                radius: 2.0,
+            },
+        ];
+        let mut steps = Vec::new();
+        let mut descriptors = Vec::new();
+
+        build_chain_steps_into(&effects, &mut steps, &mut descriptors);
+
+        assert_eq!(steps.len(), 1);
+        assert!(matches!(steps[0], ChainStep::Single(1)));
+        assert!(!PostProcessor::has_effects(&effects[..1]));
+        assert!(PostProcessor::has_effects(&effects));
     }
 }

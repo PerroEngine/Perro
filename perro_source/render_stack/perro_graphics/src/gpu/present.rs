@@ -155,14 +155,154 @@ pub(super) fn create_msaa_color_target(
     })
 }
 
-impl PresentProcessor {
-    pub(super) fn new(device: &wgpu::Device, output_format: wgpu::TextureFormat) -> Self {
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("perro_present_shader"),
-            source: wgpu::ShaderSource::Wgsl(
-                r#"
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(super) struct PresentExposureSettings {
+    pub exposure: f32,
+    pub auto_exposure: bool,
+    pub min_exposure: f32,
+    pub max_exposure: f32,
+    pub speed_up: f32,
+    pub speed_down: f32,
+    pub target_luminance: f32,
+}
+
+fn create_auto_exposure(
+    device: &wgpu::Device,
+) -> (Option<wgpu::BindGroupLayout>, Option<wgpu::ComputePipeline>) {
+    let auto_supported = device.limits().max_storage_buffers_per_shader_stage > 0
+        && device.limits().max_compute_invocations_per_workgroup >= 64;
+    let (exposure_bgl, exposure_pipeline) = if auto_supported {
+        let exposure_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("perro_exposure_bgl"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: wgpu::BufferSize::new(
+                            std::mem::size_of::<ExposureGpuConfig>() as u64,
+                        ),
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: false },
+                        has_dynamic_offset: false,
+                        min_binding_size: wgpu::BufferSize::new(16),
+                    },
+                    count: None,
+                },
+            ],
+        });
+        let exposure_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("perro_exposure_shader"),
+            source: wgpu::ShaderSource::Wgsl(EXPOSURE_WGSL.into()),
+        });
+        let exposure_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("perro_exposure_layout"),
+            bind_group_layouts: &[Some(&exposure_bgl)],
+            immediate_size: 0,
+        });
+        let exposure_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("perro_exposure_pipeline"),
+            layout: Some(&exposure_layout),
+            module: &exposure_shader,
+            entry_point: Some("cs_main"),
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+            cache: None,
+        });
+        (Some(exposure_bgl), Some(exposure_pipeline))
+    } else {
+        (None, None)
+    };
+    (exposure_bgl, exposure_pipeline)
+}
+
+impl Default for PresentExposureSettings {
+    fn default() -> Self {
+        Self {
+            exposure: 0.0,
+            auto_exposure: false,
+            min_exposure: -8.0,
+            max_exposure: 8.0,
+            speed_up: 3.0,
+            speed_down: 1.0,
+            target_luminance: 0.18,
+        }
+    }
+}
+
+impl PresentExposureSettings {
+    pub(super) fn apply_effects(&mut self, effects: &[PostProcessEffect]) {
+        for effect in effects {
+            if let PostProcessEffect::Exposure {
+                exposure,
+                auto_exposure,
+                min_exposure,
+                max_exposure,
+                speed_up,
+                speed_down,
+                target_luminance,
+            } = effect
+            {
+                *self = Self {
+                    exposure: finite_or(*exposure, 0.0),
+                    auto_exposure: *auto_exposure,
+                    min_exposure: finite_or(*min_exposure, -8.0),
+                    max_exposure: finite_or(*max_exposure, 8.0),
+                    speed_up: finite_or(*speed_up, 3.0).max(0.0),
+                    speed_down: finite_or(*speed_down, 1.0).max(0.0),
+                    target_luminance: finite_or(*target_luminance, 0.18).max(0.0001),
+                };
+                if self.min_exposure > self.max_exposure {
+                    std::mem::swap(&mut self.min_exposure, &mut self.max_exposure);
+                }
+            }
+        }
+    }
+}
+
+#[inline]
+fn finite_or(value: f32, fallback: f32) -> f32 {
+    if value.is_finite() { value } else { fallback }
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct ExposureGpuConfig {
+    dimensions: [u32; 2],
+    sample_stride: u32,
+    _pad0: u32,
+    delta_seconds: f32,
+    compensation: f32,
+    min_exposure: f32,
+    max_exposure: f32,
+    speed_up: f32,
+    speed_down: f32,
+    target_luminance: f32,
+    _pad1: f32,
+}
+
+const PRESENT_WGSL: &str = r#"
 @group(0) @binding(0) var input_tex: texture_2d<f32>;
 @group(0) @binding(1) var input_sampler: sampler;
+struct ExposureUniform { value: vec4<f32> };
+@group(0) @binding(2) var<uniform> exposure_state: ExposureUniform;
 
 struct VsOut {
     @builtin(position) pos: vec4<f32>,
@@ -182,14 +322,100 @@ fn vs_main(@builtin(vertex_index) vid: u32) -> VsOut {
     return out;
 }
 
+fn aces_filmic(x: vec3<f32>) -> vec3<f32> {
+    return clamp(
+        (x * (2.51 * x + vec3<f32>(0.03))) /
+            (x * (2.43 * x + vec3<f32>(0.59)) + vec3<f32>(0.14)),
+        vec3<f32>(0.0),
+        vec3<f32>(1.0),
+    );
+}
+
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
-    let c = textureSample(input_tex, input_sampler, in.uv);
-    return vec4<f32>(c.rgb, 1.0);
+    let scene = max(textureSample(input_tex, input_sampler, in.uv).rgb, vec3<f32>(0.0));
+    return vec4<f32>(aces_filmic(scene * exp2(exposure_state.value.x)), 1.0);
 }
-"#
-                .into(),
-            ),
+"#;
+
+const EXPOSURE_WGSL: &str = r#"
+struct ExposureConfig {
+    dimensions: vec2<u32>,
+    sample_stride: u32,
+    _pad0: u32,
+    delta_seconds: f32,
+    compensation: f32,
+    min_exposure: f32,
+    max_exposure: f32,
+    speed_up: f32,
+    speed_down: f32,
+    target_luminance: f32,
+    _pad1: f32,
+};
+
+struct ExposureState {
+    value: vec4<f32>,
+};
+
+@group(0) @binding(0) var scene_tex: texture_2d<f32>;
+@group(0) @binding(1) var<uniform> cfg: ExposureConfig;
+@group(0) @binding(2) var<storage, read_write> state: ExposureState;
+
+var<workgroup> log_luma_sum: array<f32, 64>;
+var<workgroup> sample_count: array<u32, 64>;
+
+@compute @workgroup_size(64)
+fn cs_main(@builtin(local_invocation_index) lane: u32) {
+    let stride = max(cfg.sample_stride, 1u);
+    let sample_width = (cfg.dimensions.x + stride - 1u) / stride;
+    let sample_height = (cfg.dimensions.y + stride - 1u) / stride;
+    let total = sample_width * sample_height;
+    var sum = 0.0;
+    var count = 0u;
+    var index = lane;
+    while index < total {
+        let sample_xy = vec2<u32>(index % sample_width, index / sample_width) * stride;
+        let xy = min(sample_xy, cfg.dimensions - vec2<u32>(1u));
+        let rgb = max(textureLoad(scene_tex, vec2<i32>(xy), 0).rgb, vec3<f32>(0.0));
+        let luma = max(dot(rgb, vec3<f32>(0.2126, 0.7152, 0.0722)), 0.000001);
+        sum += log2(luma);
+        count += 1u;
+        index += 64u;
+    }
+    log_luma_sum[lane] = sum;
+    sample_count[lane] = count;
+    workgroupBarrier();
+
+    var width = 32u;
+    while width > 0u {
+        if lane < width {
+            log_luma_sum[lane] += log_luma_sum[lane + width];
+            sample_count[lane] += sample_count[lane + width];
+        }
+        workgroupBarrier();
+        width /= 2u;
+    }
+
+    if lane == 0u {
+        let n = max(sample_count[0], 1u);
+        let avg_log_luma = log_luma_sum[0] / f32(n);
+        let target_exposure = clamp(
+            log2(max(cfg.target_luminance, 0.0001)) - avg_log_luma + cfg.compensation,
+            cfg.min_exposure,
+            cfg.max_exposure,
+        );
+        let speed = select(cfg.speed_down, cfg.speed_up, target_exposure > state.value.x);
+        let blend = 1.0 - exp(-max(speed, 0.0) * clamp(cfg.delta_seconds, 0.0, 1.0));
+        state.value.x = mix(state.value.x, target_exposure, blend);
+    }
+}
+"#;
+
+impl PresentProcessor {
+    pub(super) fn new(device: &wgpu::Device, output_format: wgpu::TextureFormat) -> Self {
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("perro_present_shader"),
+            source: wgpu::ShaderSource::Wgsl(PRESENT_WGSL.into()),
         });
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("perro_present_sampler"),
@@ -200,6 +426,28 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
             min_filter: wgpu::FilterMode::Linear,
             mipmap_filter: wgpu::MipmapFilterMode::Nearest,
             ..Default::default()
+        });
+        let exposure_config_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("perro_exposure_config"),
+            size: std::mem::size_of::<ExposureGpuConfig>() as u64,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let exposure_state_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("perro_exposure_state"),
+            size: 16,
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_SRC
+                | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let exposure_uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("perro_exposure_uniform"),
+            size: 16,
+            usage: wgpu::BufferUsages::UNIFORM
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
+            mapped_at_creation: false,
         });
         let bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("perro_present_bgl"),
@@ -218,6 +466,16 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
                     binding: 1,
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: wgpu::BufferSize::new(16),
+                    },
                     count: None,
                 },
             ],
@@ -252,10 +510,16 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
             multiview_mask: None,
             cache: None,
         });
+        let (exposure_bgl, exposure_pipeline) = create_auto_exposure(device);
         Self {
             sampler,
             bgl,
             pipeline,
+            exposure_bgl,
+            exposure_pipeline,
+            exposure_config_buffer,
+            exposure_state_buffer,
+            exposure_uniform_buffer,
         }
     }
 
@@ -263,8 +527,8 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         &self,
         device: &wgpu::Device,
         input_view: &wgpu::TextureView,
-    ) -> wgpu::BindGroup {
-        device.create_bind_group(&wgpu::BindGroupDescriptor {
+    ) -> PresentBindGroups {
+        let tonemap = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("perro_present_bg"),
             layout: &self.bgl,
             entries: &[
@@ -276,16 +540,88 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
                     binding: 1,
                     resource: wgpu::BindingResource::Sampler(&self.sampler),
                 },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: self.exposure_uniform_buffer.as_entire_binding(),
+                },
             ],
-        })
+        });
+        let exposure = self.exposure_bgl.as_ref().map(|layout| {
+            device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("perro_exposure_bg"),
+                layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(input_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: self.exposure_config_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: self.exposure_state_buffer.as_entire_binding(),
+                    },
+                ],
+            })
+        });
+        PresentBindGroups { tonemap, exposure }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn apply(
         &self,
+        queue: &wgpu::Queue,
         encoder: &mut wgpu::CommandEncoder,
-        bind_group: &wgpu::BindGroup,
+        bind_groups: &PresentBindGroups,
         output_view: &wgpu::TextureView,
+        dimensions: [u32; 2],
+        delta_seconds: f32,
+        settings: PresentExposureSettings,
     ) {
+        if settings.auto_exposure {
+            if let (Some(pipeline), Some(bind_group)) = (
+                self.exposure_pipeline.as_ref(),
+                bind_groups.exposure.as_ref(),
+            ) {
+                let pixels = u64::from(dimensions[0]) * u64::from(dimensions[1]);
+                let sample_stride = if pixels > 2_000_000 { 4 } else { 2 };
+                let config = ExposureGpuConfig {
+                    dimensions: [dimensions[0].max(1), dimensions[1].max(1)],
+                    sample_stride,
+                    _pad0: 0,
+                    delta_seconds: finite_or(delta_seconds, 0.0).max(0.0),
+                    compensation: settings.exposure,
+                    min_exposure: settings.min_exposure,
+                    max_exposure: settings.max_exposure,
+                    speed_up: settings.speed_up,
+                    speed_down: settings.speed_down,
+                    target_luminance: settings.target_luminance,
+                    _pad1: 0.0,
+                };
+                queue.write_buffer(&self.exposure_config_buffer, 0, bytemuck::bytes_of(&config));
+                let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                    label: Some("perro_exposure_pass"),
+                    timestamp_writes: None,
+                });
+                pass.set_pipeline(pipeline);
+                pass.set_bind_group(0, bind_group, &[]);
+                pass.dispatch_workgroups(1, 1, 1);
+                drop(pass);
+                encoder.copy_buffer_to_buffer(
+                    &self.exposure_state_buffer,
+                    0,
+                    &self.exposure_uniform_buffer,
+                    0,
+                    16,
+                );
+            } else {
+                write_manual_exposure(queue, self, settings.exposure);
+            }
+        } else {
+            write_manual_exposure(queue, self, settings.exposure);
+        }
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("perro_present_pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -303,19 +639,65 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
             multiview_mask: None,
         });
         pass.set_pipeline(&self.pipeline);
-        pass.set_bind_group(0, bind_group, &[]);
+        pass.set_bind_group(0, &bind_groups.tonemap, &[]);
         pass.draw(0..3, 0..1);
     }
 }
 
+fn write_manual_exposure(queue: &wgpu::Queue, present: &PresentProcessor, exposure: f32) {
+    let state = [finite_or(exposure, 0.0), 0.0, 0.0, 0.0];
+    queue.write_buffer(
+        &present.exposure_uniform_buffer,
+        0,
+        bytemuck::cast_slice(&state),
+    );
+    queue.write_buffer(
+        &present.exposure_state_buffer,
+        0,
+        bytemuck::cast_slice(&state),
+    );
+}
+
+#[allow(dead_code)]
 pub(super) fn linear_render_format(surface_format: wgpu::TextureFormat) -> wgpu::TextureFormat {
+    linear_render_format_with_hdr(surface_format, true)
+}
+
+pub(super) fn supported_linear_render_format(
+    adapter: &wgpu::Adapter,
+    surface_format: wgpu::TextureFormat,
+) -> wgpu::TextureFormat {
+    let required = wgpu::TextureUsages::RENDER_ATTACHMENT
+        | wgpu::TextureUsages::TEXTURE_BINDING
+        | wgpu::TextureUsages::COPY_SRC;
+    let hdr_supported = adapter
+        .get_texture_format_features(wgpu::TextureFormat::Rgba16Float)
+        .allowed_usages
+        .contains(required);
+    linear_render_format_with_hdr(surface_format, hdr_supported)
+}
+
+fn linear_render_format_with_hdr(
+    surface_format: wgpu::TextureFormat,
+    hdr_supported: bool,
+) -> wgpu::TextureFormat {
     match surface_format {
         // Float target: HDR light accumulation headroom and no linear-in-8bit
         // banding in dark gradients; present encodes to the sRGB swapchain.
         wgpu::TextureFormat::Rgba8Unorm
         | wgpu::TextureFormat::Bgra8Unorm
         | wgpu::TextureFormat::Rgba8UnormSrgb
-        | wgpu::TextureFormat::Bgra8UnormSrgb => wgpu::TextureFormat::Rgba16Float,
+        | wgpu::TextureFormat::Bgra8UnormSrgb
+            if hdr_supported =>
+        {
+            wgpu::TextureFormat::Rgba16Float
+        }
+        wgpu::TextureFormat::Rgba8Unorm | wgpu::TextureFormat::Rgba8UnormSrgb => {
+            wgpu::TextureFormat::Rgba8Unorm
+        }
+        wgpu::TextureFormat::Bgra8Unorm | wgpu::TextureFormat::Bgra8UnormSrgb => {
+            wgpu::TextureFormat::Bgra8Unorm
+        }
         _ => surface_format,
     }
 }
@@ -447,5 +829,51 @@ mod tests {
             linear_render_format(wgpu::TextureFormat::Bgra8UnormSrgb),
             wgpu::TextureFormat::Rgba16Float
         );
+    }
+
+    #[test]
+    fn exposure_effect_uses_last_cfg_and_sanitizes_ranges() {
+        let mut settings = PresentExposureSettings::default();
+        settings.apply_effects(&[
+            PostProcessEffect::Exposure {
+                exposure: 1.0,
+                auto_exposure: false,
+                min_exposure: -2.0,
+                max_exposure: 2.0,
+                speed_up: 1.0,
+                speed_down: 1.0,
+                target_luminance: 0.18,
+            },
+            PostProcessEffect::Exposure {
+                exposure: -0.5,
+                auto_exposure: true,
+                min_exposure: 4.0,
+                max_exposure: -3.0,
+                speed_up: -1.0,
+                speed_down: f32::NAN,
+                target_luminance: 0.0,
+            },
+        ]);
+
+        assert_eq!(settings.exposure, -0.5);
+        assert!(settings.auto_exposure);
+        assert_eq!((settings.min_exposure, settings.max_exposure), (-3.0, 4.0));
+        assert_eq!((settings.speed_up, settings.speed_down), (0.0, 1.0));
+        assert_eq!(settings.target_luminance, 0.0001);
+    }
+
+    #[test]
+    fn linear_8bit_fallback_stays_linear() {
+        assert_eq!(
+            linear_render_format_with_hdr(wgpu::TextureFormat::Bgra8UnormSrgb, false),
+            wgpu::TextureFormat::Bgra8Unorm
+        );
+    }
+
+    #[test]
+    fn hdr_present_shaders_parse() {
+        for source in [PRESENT_WGSL, EXPOSURE_WGSL] {
+            naga::front::wgsl::parse_str(source).expect("HDR present WGSL parses");
+        }
     }
 }

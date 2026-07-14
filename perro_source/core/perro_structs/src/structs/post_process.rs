@@ -38,6 +38,15 @@ pub enum PostProcessEffect {
         threshold: f32,
         radius: f32,
     },
+    Exposure {
+        exposure: f32,
+        auto_exposure: bool,
+        min_exposure: f32,
+        max_exposure: f32,
+        speed_up: f32,
+        speed_down: f32,
+        target_luminance: f32,
+    },
     Saturate {
         amount: f32,
     },

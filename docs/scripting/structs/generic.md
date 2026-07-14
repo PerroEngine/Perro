@@ -522,6 +522,7 @@ pub enum PostProcessEffect {
     ColorFilter { color: [f32; 3], strength: f32 },
     ReverseFilter { color: [f32; 3], strength: f32, softness: f32 },
     Bloom { strength: f32, threshold: f32, radius: f32 },
+    Exposure { exposure: f32, auto_exposure: bool, min_exposure: f32, max_exposure: f32, speed_up: f32, speed_down: f32, target_luminance: f32 },
     Saturate { amount: f32 },
     BlackWhite { amount: f32 },
     ColorGrade { exposure: f32, contrast: f32, brightness: f32, saturation: f32, gamma: f32, temperature: f32, tint: f32, hue_shift: f32, vibrance: f32, lift: [f32; 3], gain: [f32; 3], offset: [f32; 3] },

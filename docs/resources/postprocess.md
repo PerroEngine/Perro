@@ -38,12 +38,13 @@ Post-processing can be configured as:
 - **Global** using `ResourceWindow` post-processing methods/macros.
 
 Each chain is ordered: effects are applied in sequence (stacked) and run after 3D + particles + 2D.
+Scene effects and bloom stay in scene-referred linear light until the dedicated final tonemap.
 
 If multiple cameras are active, the post chain used is the active 3D camera if present, otherwise
 the active 2D camera.
 
-Visual accessibility settings are separate from post-processing and run as a global final pass after
-camera + global post-processing. See [Visual Accessibility](../scripting/contexts/resource_modules/visual_accessibility.md).
+Visual accessibility settings are separate from post-processing and run after camera + global
+post-processing, before final tonemap. See [Visual Accessibility](../scripting/contexts/resource_modules/visual_accessibility.md).
 
 ## Built-In Effects
 
@@ -63,6 +64,10 @@ camera + global post-processing. See [Visual Accessibility](../scripting/context
   Keeps colors close to `color` while others wash toward grayscale.
 - `bloom` (`strength`, `threshold`, `radius`)  
   Bright‑only blur added back into the image.
+- Bloom runs in scene-linear HDR before final tonemap. `threshold` may exceed `1.0`.
+- `exposure` (`exposure`, `auto_exposure`, `min_exposure`, `max_exposure`, `speed_up`,
+  `speed_down`, `target_luminance`)
+  Configures final ACES tonemap exposure. It does not add an ordered image pass.
 - `saturate` (`amount`)  
   0 = grayscale, 1 = original, >1 boosts saturation.
 - `black_white` (`amount`)  
@@ -102,6 +107,7 @@ post_processing = [
     { type = "crt", scanlines = 0.35, curvature = 0.15, chromatic = 1.0, vignette = 0.25 },
     { type = "color_filter", color = (1.0, 0.8, 0.6), strength = 0.8 },
     { type = "reverse_filter", color = (0.1, 0.8, 0.2), strength = 0.9, softness = 0.2 },
+    { type = "exposure", auto_exposure = true, exposure = 0.0, min_exposure = -4.0, max_exposure = 4.0, speed_up = 3.0, speed_down = 1.0, target_luminance = 0.18 },
     { type = "bloom", strength = 0.7, threshold = 0.75, radius = 1.5 },
     { type = "saturate", amount = 1.2 },
     { type = "black_white", amount = 1.0 },
@@ -253,6 +259,9 @@ with_node!(ctx.run, Camera3D, cam_id, |cam| {
 - `gain = (1.0, 1.0, 1.0)`: highlight gain per channel.
 - `offset = (0.0, 0.0, 0.0)`: final additive channel offset.
 
+Color grade runs in scene-linear HDR before final tonemap. Its `exposure` field remains a grade
+operation for API compatibility. Use `exposure` effect to control final manual or auto exposure.
+
 Scene example:
 
 ```toml
@@ -288,6 +297,63 @@ cam.post_processing.add(
         lift: [-0.01, -0.01, 0.0],
         gain: [1.04, 1.02, 0.98],
         offset: [0.0, 0.0, 0.0],
+    },
+);
+```
+
+## HDR, Tonemap, And Exposure
+
+Frame color stays in `Rgba16Float` through scene rendering, color grade, LUT, and bloom when the
+adapter supports required texture usages. Limited web adapters use a linear 8-bit fallback. Bloom
+extracts and composites scene-referred light before one dedicated final ACES pass converts the
+frame to the surface. Material shaders do not tonemap their own output.
+
+Without an `exposure` effect, final exposure stays fixed at `0.0` EV. Manual override:
+
+```toml
+post_processing = [
+    { type = "exposure", auto_exposure = false, exposure = 1.0 }
+]
+```
+
+Auto exposure uses average log luminance, EV clamps, and time-based adaptation:
+
+```toml
+post_processing = [
+    {
+        type = "exposure",
+        auto_exposure = true,
+        exposure = 0.0,
+        min_exposure = -4.0,
+        max_exposure = 4.0,
+        speed_up = 3.0,
+        speed_down = 1.0,
+        target_luminance = 0.18
+    },
+    { type = "bloom", strength = 0.7, threshold = 1.0, radius = 1.5 }
+]
+```
+
+- `exposure`: EV compensation in auto mode; fixed EV in manual mode.
+- `speed_up`: adaptation rate when exposure rises for a dark scene.
+- `speed_down`: adaptation rate when exposure falls for a bright scene.
+- `target_luminance`: scene key value; `0.18` is middle gray.
+- Camera config applies first; last global `exposure` entry overrides it.
+- Platforms without compute/storage support fall back to fixed `exposure` EV.
+
+Script config:
+
+```rust
+cam.post_processing.add(
+    "exposure",
+    PostProcessEffect::Exposure {
+        exposure: 0.0,
+        auto_exposure: true,
+        min_exposure: -4.0,
+        max_exposure: 4.0,
+        speed_up: 3.0,
+        speed_down: 1.0,
+        target_luminance: 0.18,
     },
 );
 ```

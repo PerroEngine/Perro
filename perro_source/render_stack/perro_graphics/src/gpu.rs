@@ -334,6 +334,16 @@ struct PresentProcessor {
     sampler: wgpu::Sampler,
     bgl: wgpu::BindGroupLayout,
     pipeline: wgpu::RenderPipeline,
+    exposure_bgl: Option<wgpu::BindGroupLayout>,
+    exposure_pipeline: Option<wgpu::ComputePipeline>,
+    exposure_config_buffer: wgpu::Buffer,
+    exposure_state_buffer: wgpu::Buffer,
+    exposure_uniform_buffer: wgpu::Buffer,
+}
+
+struct PresentBindGroups {
+    tonemap: wgpu::BindGroup,
+    exposure: Option<wgpu::BindGroup>,
 }
 
 struct GpuTimestampTimer {
@@ -479,8 +489,8 @@ pub struct Gpu {
     post_view_generation: u64,
     accessibility: VisualAccessibilityProcessor,
     present: PresentProcessor,
-    present_scene_bind_group: wgpu::BindGroup,
-    present_intermediate_bind_group: wgpu::BindGroup,
+    present_scene_bind_group: PresentBindGroups,
+    present_intermediate_bind_group: PresentBindGroups,
     two_d: Option<Gpu2D>,
     late_overlay_2d: Option<Gpu2D>,
     ui: Option<GpuUi>,
@@ -924,7 +934,7 @@ impl Gpu {
             .unwrap_or(caps.formats[0]);
         let surface_view_format =
             srgb_surface_view_format(surface_format).unwrap_or(surface_format);
-        let render_format = linear_render_format(surface_view_format);
+        let render_format = supported_linear_render_format(&adapter, surface_view_format);
         let present_mode = choose_present_mode(&caps.present_modes, cfg.vsync_enabled);
         let max_frame_latency = choose_max_frame_latency(cfg.vsync_enabled);
         let alpha_mode = if caps.alpha_modes.contains(&wgpu::CompositeAlphaMode::Opaque) {
@@ -1007,7 +1017,7 @@ impl Gpu {
         let post = PostProcessor::new(&device, &queue, render_format, render_width, render_height);
         let accessibility =
             VisualAccessibilityProcessor::new(&device, render_format, render_width, render_height);
-        let present = PresentProcessor::new(&device, surface_format);
+        let present = PresentProcessor::new(&device, surface_view_format);
         let present_scene_bind_group = present.create_bind_group(&device, post.scene_view());
         let present_intermediate_bind_group =
             present.create_bind_group(&device, accessibility.intermediate_view());
@@ -1618,29 +1628,19 @@ impl Gpu {
         };
         let global_post_chain = post_processing_global.as_ref();
         let global_post_enabled = PostProcessor::has_effects(global_post_chain);
+        let mut exposure_settings = PresentExposureSettings::default();
+        exposure_settings.apply_effects(camera_post_chain);
+        exposure_settings.apply_effects(global_post_chain);
         let accessibility_enabled = self.accessibility.has_settings(accessibility);
-        let surface_sized_render =
-            self.render_width == self.config.width && self.render_height == self.config.height;
         // The seam pass needs a sampleable offscreen scene texture, so it
         // forces the non-direct path while active.
         let blend_screen_active = self
             .three_d
             .as_ref()
             .is_some_and(|three_d| three_d.screen_blend_active());
-        let msaa_direct_present = surface_sized_render
-            && self.sample_count > 1
-            && waters_3d.is_empty()
-            && !post_requested
-            && !accessibility_enabled
-            && !blend_screen_active
-            && self.render_format == self.config.format;
-        let direct_present = surface_sized_render
-            && self.sample_count == 1
-            && waters_3d.is_empty()
-            && !post_requested
-            && !accessibility_enabled
-            && !blend_screen_active
-            && self.render_format == self.config.format;
+        // Final tonemap owns scene -> surface conversion.
+        let msaa_direct_present = false;
+        let direct_present = false;
         let depth_prepass_needed = !waters_3d.is_empty()
             || (camera_post_enabled && PostProcessor::uses_depth(camera_post_chain))
             || (global_post_enabled && PostProcessor::uses_depth(global_post_chain));
@@ -2341,7 +2341,15 @@ impl Gpu {
             });
             timing.acquire_view = acquire_view_start.elapsed();
             timing.acquire = acquire_start.elapsed();
-            self.present.apply(&mut encoder, final_bind_group, &view);
+            self.present.apply(
+                &self.queue,
+                &mut encoder,
+                final_bind_group,
+                &view,
+                [self.render_width, self.render_height],
+                frame_delta_seconds,
+                exposure_settings,
+            );
             swap_view = Some(view);
             frame = Some(acquired);
         }

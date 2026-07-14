@@ -557,16 +557,9 @@ fn perro_lit_standard(
         lit += ray.color_intensity.xyz * ray.color_intensity.w * lambert;
     }
     let alpha = mesh_blend_alpha(in.frag_pos, in.world_pos, in.packed_blend_params) * base.a;
-    return vec4<f32>(tonemap_aces(albedo * (ambient_lit + lit) + emissive + decal_emissive), alpha);
+    return vec4<f32>(albedo * (ambient_lit + lit) + emissive + decal_emissive, alpha);
 }
 
-// ACES filmic fit; matches the mesh material preludes.
-fn tonemap_aces(x: vec3<f32>) -> vec3<f32> {
-    // Exposure lift keeps LDR scenes from reading darker than authored.
-    let v = x * 1.5;
-    let mapped = (v * (2.51 * v + 0.03)) / (v * (2.43 * v + 0.59) + 0.14);
-    return clamp(mapped, vec3<f32>(0.0), vec3<f32>(1.0));
-}
 
 fn perro_multimesh_vs_main_base(v: VertexInput, inst: InstanceInput, vertex_index: u32) -> VertexOutput {
     let draw = multimesh_draws[inst.draw_id];
@@ -669,7 +662,7 @@ fn vs_main(
 @fragment
 fn fs_main(in: FragmentInput) -> @location(0) vec4<f32> {
     let ao = multimesh_ssao(in.frag_pos.xy);
-    return vec4<f32>(tonemap_aces(in.lit_color + in.ambient_color * ao), mesh_blend_alpha(in.frag_pos, in.world_pos, in.packed_blend_params));
+    return vec4<f32>(in.lit_color + in.ambient_color * ao, mesh_blend_alpha(in.frag_pos, in.world_pos, in.packed_blend_params));
 }
 
 // Depth-prepass entry: position only (opaque multimesh has no alpha cutout).

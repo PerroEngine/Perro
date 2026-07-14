@@ -1006,16 +1006,6 @@ fn specular_ambient_occlusion(n_dot_v: f32, ao: f32, roughness: f32) -> f32 {
     return clamp(pow(n_dot_v + ao, exponent) - 1.0 + ao, 0.0, 1.0);
 }
 
-// ACES filmic fit (Narkowicz). Applied at the end of lit materials so HDR
-// light sums roll off instead of clipping; UI/2D/unlit stay untouched.
-fn tonemap_aces(x: vec3<f32>) -> vec3<f32> {
-    // Exposure lift keeps LDR scenes from reading darker than authored;
-    // ACES at 1.0 exposure maps white to ~0.80.
-    let v = x * 1.5;
-    let mapped = (v * (2.51 * v + 0.03)) / (v * (2.43 * v + 0.59) + 0.14);
-    return clamp(mapped, vec3<f32>(0.0), vec3<f32>(1.0));
-}
-
 fn brdf_pbr(
     albedo: vec3<f32>,
     n: vec3<f32>,
@@ -1189,7 +1179,7 @@ fn perro_lit_standard(
     }
 
     let shaded = ambient_diffuse + ambient_specular + light_rgb + emissive + decal_emissive;
-    return vec4<f32>(tonemap_aces(shaded), alpha);
+    return vec4<f32>(shaded, alpha);
 }
 
 // ---- Frame globals for custom shaders ----------------------------------

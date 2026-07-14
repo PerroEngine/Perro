@@ -126,5 +126,5 @@ fn shade_material(in: FragmentInput) -> vec4<f32> {
     let rim = pow(1.0 - max(dot(n, v), 0.0), rim_power) * rim_strength;
 
     let shaded = albedo * light_rgb + emissive + decal_emissive + rim;
-    return vec4<f32>(tonemap_aces(shaded), alpha);
+    return vec4<f32>(shaded, alpha);
 }

@@ -3935,6 +3935,36 @@ fn post_process_effect_to_json(effect: &PostProcessEffect) -> JsonValue {
             map.insert("threshold".to_string(), float_to_json(*threshold as f64));
             map.insert("radius".to_string(), float_to_json(*radius as f64));
         }
+        PostProcessEffect::Exposure {
+            exposure,
+            auto_exposure,
+            min_exposure,
+            max_exposure,
+            speed_up,
+            speed_down,
+            target_luminance,
+        } => {
+            map.insert(
+                "type".to_string(),
+                JsonValue::String("exposure".to_string()),
+            );
+            map.insert("exposure".to_string(), float_to_json(*exposure as f64));
+            map.insert("auto_exposure".to_string(), JsonValue::Bool(*auto_exposure));
+            map.insert(
+                "min_exposure".to_string(),
+                float_to_json(*min_exposure as f64),
+            );
+            map.insert(
+                "max_exposure".to_string(),
+                float_to_json(*max_exposure as f64),
+            );
+            map.insert("speed_up".to_string(), float_to_json(*speed_up as f64));
+            map.insert("speed_down".to_string(), float_to_json(*speed_down as f64));
+            map.insert(
+                "target_luminance".to_string(),
+                float_to_json(*target_luminance as f64),
+            );
+        }
         PostProcessEffect::Saturate { amount } => {
             map.insert(
                 "type".to_string(),
