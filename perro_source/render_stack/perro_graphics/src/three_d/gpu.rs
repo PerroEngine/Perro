@@ -173,6 +173,8 @@ mod culling;
 mod decals;
 #[path = "gpu/draw.rs"]
 mod draw;
+#[path = "gpu/environment.rs"]
+mod environment;
 #[path = "gpu/init.rs"]
 mod init;
 #[path = "gpu/mesh_blend_screen.rs"]
@@ -268,6 +270,8 @@ struct Scene3DUniform {
     ground_color: [f32; 4],
     // Sky radiance at the horizon (premultiplied) for env reflections.
     sky_horizon_color: [f32; 4],
+    // [intensity, max specular mip, rotation sin, rotation cos].
+    ibl_params: [f32; 4],
     // Frame globals for custom shaders: [time (wraps hourly), delta seconds,
     // frame index, 0..1 phase over 60s]. Zeroed in the dedup copy; the live
     // values are patched every frame at SCENE_GLOBALS_OFFSET so time does not
@@ -632,6 +636,7 @@ pub struct Gpu3D {
     rigid_camera_bgl: wgpu::BindGroupLayout,
     multimesh_bgl: wgpu::BindGroupLayout,
     material_texture_bgl: wgpu::BindGroupLayout,
+    ibl_bgl: wgpu::BindGroupLayout,
     shadow_bgl: wgpu::BindGroupLayout,
     sky_bgl: wgpu::BindGroupLayout,
     material_pipeline_layout: wgpu::PipelineLayout,
@@ -791,6 +796,8 @@ pub struct Gpu3D {
     // built single-level so per-frame base writes update in place.
     stream_texture_slots: AHashSet<u32>,
     material_texture_bind_groups: AHashMap<MaterialTextureKey, wgpu::BindGroup>,
+    ibl_maps: environment::EnvironmentGpuMaps,
+    ibl_bind_group: wgpu::BindGroup,
     custom_material_texture_slots: AHashMap<u64, u32>,
     next_custom_material_texture_slot: u32,
     texture_filter: TextureFilterMode,

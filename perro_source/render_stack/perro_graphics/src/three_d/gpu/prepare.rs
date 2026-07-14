@@ -791,6 +791,17 @@ impl Gpu3D {
                 for entry in surface_entries.iter() {
                     let material = &entry.material;
                     let params = material.standard_params();
+                    self.ensure_standard_material_texture_slots(
+                        device,
+                        queue,
+                        resources,
+                        &params,
+                        mesh_source,
+                        static_texture_lookup,
+                    );
+                    let material_texture_key =
+                        self.custom_material_image_key(device, queue, resources, material);
+                    self.ensure_material_texture_bind_group(device, material_texture_key);
                     let material_kind = self.material_pipeline_kind(
                         device,
                         RenderPath3D::MultiMesh,
@@ -810,6 +821,49 @@ impl Gpu3D {
                         params.base_color_factor[3],
                     ]);
                     let packed_emissive = pack_emissive_hdr(params.emissive_factor);
+                    let mirrored_winding = draw_model.determinant() < 0.0;
+                    let mut material_flags = 0u32;
+                    if mirrored_winding {
+                        material_flags |= MATERIAL_FLAG_MIRRORED_WINDING;
+                    }
+                    if params.flat_shading {
+                        material_flags |= MATERIAL_FLAG_FLAT_SHADING;
+                    }
+                    if params.base_color_texture != MATERIAL_TEXTURE_NONE {
+                        material_flags |= MATERIAL_FLAG_HAS_BASE_COLOR_TEXTURE;
+                    }
+                    if entry.modulate_bias {
+                        material_flags |= MATERIAL_FLAG_MODULATE_BIAS;
+                    }
+                    if matches!(material, Material3D::Standard(_)) {
+                        if params.metallic_roughness_texture != MATERIAL_TEXTURE_NONE {
+                            material_flags |= MATERIAL_FLAG_HAS_METALLIC_ROUGHNESS_TEXTURE;
+                        }
+                        if params.normal_texture != MATERIAL_TEXTURE_NONE {
+                            material_flags |= MATERIAL_FLAG_HAS_NORMAL_TEXTURE;
+                        }
+                        if params.occlusion_texture != MATERIAL_TEXTURE_NONE {
+                            material_flags |= MATERIAL_FLAG_HAS_OCCLUSION_TEXTURE;
+                        }
+                        if params.emissive_texture != MATERIAL_TEXTURE_NONE {
+                            material_flags |= MATERIAL_FLAG_HAS_EMISSIVE_TEXTURE;
+                        }
+                    }
+                    if draw.receive_shadows && !matches!(material, Material3D::Unlit(_)) {
+                        material_flags |= MATERIAL_FLAG_RECEIVE_SHADOWS;
+                    }
+                    let packed_pbr_params_0 = pack_standard_pbr_params(
+                        params.roughness_factor,
+                        params.metallic_factor,
+                        params.occlusion_strength,
+                        params.normal_scale,
+                    );
+                    let packed_material_params = pack_material_params(
+                        params.alpha_mode,
+                        params.alpha_cutoff,
+                        params.double_sided || mirrored_winding,
+                        material_flags,
+                    );
                     let draw_param_index = self.staged_multimesh_draw_params.len() as u32;
                     self.staged_multimesh_draw_params
                         .push(MultiMeshDrawParamGpu {
@@ -831,15 +885,16 @@ impl Gpu3D {
                                 draw_model.z_axis.z,
                                 draw_model.w_axis.z,
                             ],
+                            custom_params: [custom_params.0, custom_params.1],
                             packed_color,
+                            packed_pbr_params_0,
                             packed_emissive,
+                            packed_material_params,
                             scale_bits: dense.instance_scale.max(0.0001).to_bits(),
                             packed_blend_params: resolved_blend.packed_params,
-                            custom_params: [custom_params.0, custom_params.1],
                             packed_bleed: 0,
-                            _pad: 0,
+                            _pad: [0; 3],
                         });
-                    let mirrored_winding = draw_model.determinant() < 0.0;
                     let instance_start = self.staged_multimesh_instances.len() as u32;
                     // Item 3: reuse packed geometry lanes when this exact pose Arc
                     // was packed on a prior build. Only quaternion pack + lane copy
@@ -919,6 +974,7 @@ impl Gpu3D {
                             blend_mask: draw.blend.blend_mask.bits(),
                             casts_shadows: draw.cast_shadows,
                             material_kind,
+                            material_texture_key,
                         });
                     }
                 }

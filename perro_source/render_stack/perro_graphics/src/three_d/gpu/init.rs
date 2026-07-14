@@ -192,6 +192,10 @@ impl Gpu3D {
         let shader_rigid_toon = create_toon_shader_module_rigid(device);
         let shader_multimesh = create_multimesh_shader_module(device);
         let sky_shader = create_sky_shader_module(device);
+        let ibl_bgl = environment::create_environment_bgl(device);
+        let ibl_maps = environment::create_environment_gpu_maps(device, queue);
+        let ibl_bind_group =
+            environment::create_environment_bind_group(device, &ibl_bgl, &ibl_maps);
         let camera_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("perro_camera3d_bgl"),
             entries: &[
@@ -2268,6 +2272,7 @@ impl Gpu3D {
             rigid_camera_bgl,
             multimesh_bgl,
             material_texture_bgl,
+            ibl_bgl,
             shadow_bgl,
             sky_bgl,
             material_pipeline_layout: pipeline_layout,
@@ -2403,6 +2408,8 @@ impl Gpu3D {
             material_textures: AHashMap::new(),
             stream_texture_slots: AHashSet::new(),
             material_texture_bind_groups: AHashMap::new(),
+            ibl_maps,
+            ibl_bind_group,
             custom_material_texture_slots: AHashMap::new(),
             next_custom_material_texture_slot: CUSTOM_MATERIAL_TEXTURE_SLOT_BASE,
             texture_filter,

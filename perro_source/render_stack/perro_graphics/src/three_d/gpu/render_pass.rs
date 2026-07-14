@@ -1273,17 +1273,26 @@ fn draw_multimesh_batches<'a>(gpu: &'a Gpu3D, pass: &mut wgpu::RenderPass<'a>) {
     let covered = gpu.unified_depth_active;
     let cull = gpu.multimesh_cull_active;
     pass.set_bind_group(0, &gpu.multimesh_bind_group, &[]);
+    let Some(fallback_material) = gpu.fallback_material_texture_bind_group() else {
+        return;
+    };
+    pass.set_bind_group(1, fallback_material, &[]);
     pass.set_vertex_buffer(0, gpu.rigid_vertex_buffer.slice(..));
     pass.set_index_buffer(gpu.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
     let mut current_state: Option<(bool, bool, &MaterialPipelineKind)> = None;
+    let mut current_texture_key: Option<MaterialTextureKey> = None;
     // Multimesh indirect records are laid out contiguously in batch order
     // (rebuild_multimesh_cull_inputs / compact_sorted_multimesh_batches), so
     // consecutive same-pipeline batches coalesce into one multi-draw call.
     let mut run = IndirectRunBuilder::new(cull && gpu.multi_draw_indirect_enabled);
     for (batch_index, batch) in gpu.multimesh_batches.iter().enumerate() {
         let state = (batch.double_sided, batch.mesh_blend, &batch.material_kind);
-        if current_state != Some(state) {
+        let state_change = current_state != Some(state);
+        let texture_change = current_texture_key != Some(batch.material_texture_key);
+        if state_change || texture_change {
             run.flush(&gpu.multimesh_indirect_buffer, pass);
+        }
+        if state_change {
             let pipeline = match &batch.material_kind {
                 MaterialPipelineKind::Custom(token) => {
                     gpu.custom_pipelines_multimesh.get(token).map(|pipeline| {
@@ -1317,6 +1326,15 @@ fn draw_multimesh_batches<'a>(gpu: &'a Gpu3D, pass: &mut wgpu::RenderPass<'a>) {
             });
             pass.set_pipeline(pipeline);
             current_state = Some(state);
+        }
+        if texture_change {
+            let Some(material_bind_group) =
+                gpu.material_texture_set_bind_group(batch.material_texture_key)
+            else {
+                continue;
+            };
+            pass.set_bind_group(1, material_bind_group, &[]);
+            current_texture_key = Some(batch.material_texture_key);
         }
         if run.push(&gpu.multimesh_indirect_buffer, pass, batch_index) {
             // absorbed into (or started) a run
