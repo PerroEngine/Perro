@@ -948,6 +948,7 @@ fn sky_command(_sky_variant: f32) -> RenderCommand {
                 scale: 1.0,
             },
             shaders: Arc::from([]),
+            environment: None,
         }),
     }))
 }

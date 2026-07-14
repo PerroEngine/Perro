@@ -204,6 +204,7 @@ fn sky_command(paused: bool) -> RenderCommand {
                 scale: 1.0,
             },
             shaders: Arc::from([]),
+            environment: None,
         }),
     }))
 }

@@ -213,6 +213,9 @@ fn apply_sky_3d_fields(node: &mut Sky3D, fields: &[SceneObjectField]) {
                     node.palette.horizon_colors = colors;
                 }
             }
+            Some(NodeField::Sky3D(Sky3DField::Environment)) => {
+                node.environment = as_sky_environment(value);
+            }
             Some(NodeField::Sky3D(Sky3DField::Palette)) => {
                 apply_sky_palette_fields(node, value);
             }
@@ -273,6 +276,33 @@ fn apply_sky_3d_fields(node: &mut Sky3D, fields: &[SceneObjectField]) {
             _ => {}
         }
     });
+}
+
+fn as_sky_environment(value: &SceneValue) -> Option<perro_nodes::SkyEnvironment> {
+    let SceneValue::Object(entries) = value else {
+        return None;
+    };
+    let mut source = None;
+    let mut intensity = 1.0;
+    let mut rotation_degrees = 0.0;
+    for (name, value) in entries.iter() {
+        match name.as_ref() {
+            "source" | "image" | "texture" => {
+                let value = as_str(value)?.trim();
+                if !value.is_empty() {
+                    source = Some(Cow::Owned(value.to_string()));
+                }
+            }
+            "intensity" | "energy" => intensity = as_f32(value)?.max(0.0),
+            "rotation_degrees" | "rotation" => rotation_degrees = as_f32(value)?,
+            _ => {}
+        }
+    }
+    Some(perro_nodes::SkyEnvironment {
+        source: source?,
+        intensity,
+        rotation_degrees,
+    })
 }
 
 fn apply_sky_palette_fields(node: &mut Sky3D, value: &SceneValue) {
@@ -484,5 +514,30 @@ fn as_color_array(value: &SceneValue) -> Option<Vec<[f32; 3]>> {
         None
     } else {
         Some(out)
+    }
+}
+
+#[cfg(test)]
+mod lights_tests {
+    use super::*;
+    use perro_scene::SceneFieldName;
+
+    #[test]
+    fn sky_environment_object_parses_and_clamps_intensity() {
+        let value = SceneValue::Object(Cow::Owned(vec![
+            (
+                SceneFieldName::Source,
+                SceneValue::Str(Cow::Borrowed("res://studio.png")),
+            ),
+            (SceneFieldName::Intensity, SceneValue::F32(-2.0)),
+            (
+                SceneFieldName::Custom(Cow::Borrowed("rotation_degrees")),
+                SceneValue::F32(45.0),
+            ),
+        ]));
+        let environment = as_sky_environment(&value).expect("valid environment");
+        assert_eq!(environment.source, "res://studio.png");
+        assert_eq!(environment.intensity, 0.0);
+        assert_eq!(environment.rotation_degrees, 45.0);
     }
 }

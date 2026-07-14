@@ -39,6 +39,26 @@ impl Default for SkyTime {
     }
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct SkyEnvironment {
+    /// Equirectangular image source (`res://`, hashed static source, or file path).
+    pub source: Cow<'static, str>,
+    /// Linear multiplier for diffuse and specular image-based light.
+    pub intensity: f32,
+    /// Y-axis environment rotation in degrees. Sky drawing stays procedural.
+    pub rotation_degrees: f32,
+}
+
+impl SkyEnvironment {
+    pub fn new(source: impl Into<Cow<'static, str>>) -> Self {
+        Self {
+            source: source.into(),
+            intensity: 1.0,
+            rotation_degrees: 0.0,
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct SkyPalette {
     pub day_colors: Vec<[f32; 3]>,
@@ -72,6 +92,7 @@ pub struct Sky3D {
     pub palette: SkyPalette,
     pub time: SkyTime,
     pub shaders: Vec<SkyShaderPass>,
+    pub environment: Option<SkyEnvironment>,
     pub render_layers: BitMask,
 }
 
@@ -91,6 +112,7 @@ impl Default for Sky3D {
             palette: SkyPalette::new(),
             time: SkyTime::new(),
             shaders: Vec::new(),
+            environment: None,
             render_layers: BitMask::ALL,
         }
     }

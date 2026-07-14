@@ -8,6 +8,7 @@
 | Scene Fields    | [Scene Fields](#scene-fields)       |
 | Color Model     | [Color Model](#color-model)         |
 | Custom Shaders  | [Custom Shaders](#custom-shaders)   |
+| Image Lighting  | [Image-Based Lighting](#image-based-lighting) |
 | Time In Shaders | [Time In Shaders](#time-in-shaders) |
 | Example         | [Example](#example)                 |
 | Shader Input    | [Shader Input](#shader-input)       |
@@ -46,6 +47,11 @@ It is a camera-relative skybox/dome.
     shaders = [
         { path = "res://shaders/sky.wgsl", params = [0.5, (1.0, 0.8, 0.6)] }
     ]
+    environment = {
+        source = "res://textures/studio.png"
+        intensity = 1.0
+        rotation_degrees = 0.0
+    }
     active = true
 [/Sky3D]
 ```
@@ -60,6 +66,7 @@ It is a camera-relative skybox/dome.
 | `time.paused`      | `bool`      | Stop automatic day clock.         |
 | `time.scale`       | `f32`       | Day clock speed.                  |
 | `shaders`          | array       | Ordered custom sky shader passes. |
+| `environment`      | object      | Optional equirectangular IBL image. |
 | `active`           | `bool`      | Use this sky when visible.        |
 | `render_layers`    | bit mask    | Camera layer filter.              |
 
@@ -82,6 +89,34 @@ The horizon/down half fades to `horizon_colors`.
 The base color becomes `in.color` for the first custom shader.
 
 Each custom shader receives the color from the previous pass.
+
+## Image-Based Lighting
+
+`environment` adds image light without replacing procedural `Sky3D` drawing.
+
+`source` accepts an equirectangular PNG, JPEG, WebP, or compiled PTEX image.
+
+Input color uses sRGB and converts to linear light before bake.
+
+Perro bakes deterministic CPU data when `source` changes:
+
+- 16 px diffuse irradiance cube
+- 64 px GGX specular cube with 7 roughness mips
+- 128 px split-sum BRDF LUT
+
+`intensity` scales diffuse and specular IBL.
+
+`rotation_degrees` rotates image light around world Y.
+
+Missing or invalid sources bind safe black GPU maps and keep procedural lighting active.
+
+No `environment` keeps procedural sky/ambient light behavior.
+
+Standard materials use IBL on single meshes and `MultiMeshInstance3D`.
+
+Rust API: `sky.environment = Some(SkyEnvironment::new("res://textures/studio.png"));`
+
+Current MVP reads LDR images only.
 
 ## Custom Shaders
 

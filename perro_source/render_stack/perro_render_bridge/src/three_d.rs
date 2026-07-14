@@ -264,6 +264,13 @@ pub struct SkyShaderPass3DState {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct EnvironmentMap3DState {
+    pub source: Cow<'static, str>,
+    pub intensity: f32,
+    pub rotation_degrees: f32,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct Sky3DState {
     pub day_colors: Arc<[[f32; 3]]>,
     pub evening_colors: Arc<[[f32; 3]]>,
@@ -271,6 +278,7 @@ pub struct Sky3DState {
     pub horizon_colors: Arc<[[f32; 3]]>,
     pub time: SkyTime3DState,
     pub shaders: Arc<[SkyShaderPass3DState]>,
+    pub environment: Option<EnvironmentMap3DState>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

@@ -2074,6 +2074,7 @@ fn sky_3d_state_matches_compares_all_fields() {
     sky.time.scale = 1.0;
     sky.shaders
         .push(perro_nodes::sky_3d::SkyShaderPass::new("shader_a"));
+    sky.environment = Some(perro_nodes::SkyEnvironment::new("res://studio.png"));
 
     let retained = super::Sky3DState {
         day_colors: Arc::from(sky.palette.day_colors.as_slice()),
@@ -2094,9 +2095,20 @@ fn sky_3d_state_matches_compares_all_fields() {
                 })
                 .collect::<Vec<_>>(),
         ),
+        environment: sky.environment.as_ref().map(|environment| {
+            perro_render_bridge::EnvironmentMap3DState {
+                source: environment.source.clone(),
+                intensity: environment.intensity,
+                rotation_degrees: environment.rotation_degrees,
+            }
+        }),
     };
 
     assert!(super::sky_3d_state_matches(&retained, &sky));
+
+    sky.environment.as_mut().unwrap().intensity = 2.0;
+    assert!(!super::sky_3d_state_matches(&retained, &sky));
+    sky.environment.as_mut().unwrap().intensity = 1.0;
 
     sky.time.time_of_day = 0.75;
     assert!(!super::sky_3d_state_matches(&retained, &sky));

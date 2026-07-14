@@ -1,3 +1,4 @@
+use super::environment::ENV_SPECULAR_MIP_COUNT;
 use super::*;
 
 pub(super) fn compute_view_proj_mat(camera: &Camera3DState, width: u32, height: u32) -> Mat4 {
@@ -271,6 +272,7 @@ pub(super) fn build_scene_uniform(
         },
         ground_color: [0.0; 4],
         sky_horizon_color: [0.0; 4],
+        ibl_params: environment_params(lighting),
         // Zeroed for the change gate; live values patched per frame.
         time_params: [0.0; 4],
         resolution: [0.0; 4],
@@ -448,6 +450,32 @@ pub(super) fn build_scene_uniform(
     scene.ambient_and_counts[2] = spot_count;
 
     scene
+}
+
+fn environment_params(lighting: &Lighting3DState) -> [f32; 4] {
+    let Some(environment) = lighting
+        .sky
+        .as_ref()
+        .and_then(|sky| sky.environment.as_ref())
+    else {
+        return [0.0, (ENV_SPECULAR_MIP_COUNT - 1) as f32, 0.0, 1.0];
+    };
+    let intensity = if environment.intensity.is_finite() {
+        environment.intensity.clamp(0.0, 16.0)
+    } else {
+        1.0
+    };
+    let rotation = if environment.rotation_degrees.is_finite() {
+        environment.rotation_degrees.to_radians()
+    } else {
+        0.0
+    };
+    [
+        intensity,
+        (ENV_SPECULAR_MIP_COUNT - 1) as f32,
+        rotation.sin(),
+        rotation.cos(),
+    ]
 }
 
 #[cfg(test)]
