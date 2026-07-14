@@ -599,7 +599,7 @@ impl Gpu3D {
                 };
                 pass.set_bind_group(1, fallback_material_bind_group, &[]);
                 pass.set_bind_group(2, &self.shadow_bind_group, &[]);
-                pass.set_bind_group(3, &self.mesh_blend_bind_group, &[]);
+                pass.set_bind_group(3, &self.ibl_bind_group, &[]);
             }
             let mut current_state_key = None;
             let mut current_texture_key = MaterialTextureKey::empty();
@@ -853,7 +853,7 @@ impl Gpu3D {
             };
             blend_pass.set_bind_group(1, material_bind_group, &[]);
             blend_pass.set_bind_group(2, &self.shadow_bind_group, &[]);
-            blend_pass.set_bind_group(3, &self.mesh_blend_bind_group, &[]);
+            blend_pass.set_bind_group(3, &self.ibl_bind_group, &[]);
             blend_pass.set_pipeline(self.pipeline_for_batch(source_batch));
             if source_batch.path == RenderPath3D::Rigid {
                 blend_pass.set_bind_group(0, &self.rigid_camera_bind_group, &[]);
@@ -1277,6 +1277,7 @@ fn draw_multimesh_batches<'a>(gpu: &'a Gpu3D, pass: &mut wgpu::RenderPass<'a>) {
         return;
     };
     pass.set_bind_group(1, fallback_material, &[]);
+    pass.set_bind_group(3, &gpu.ibl_bind_group, &[]);
     pass.set_vertex_buffer(0, gpu.rigid_vertex_buffer.slice(..));
     pass.set_index_buffer(gpu.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
     let mut current_state: Option<(bool, bool, &MaterialPipelineKind)> = None;

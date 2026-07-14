@@ -194,8 +194,6 @@ impl Gpu3D {
         let sky_shader = create_sky_shader_module(device);
         let ibl_bgl = environment::create_environment_bgl(device);
         let ibl_maps = environment::create_environment_gpu_maps(device, queue);
-        let ibl_bind_group =
-            environment::create_environment_bind_group(device, &ibl_bgl, &ibl_maps);
         let camera_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("perro_camera3d_bgl"),
             entries: &[
@@ -570,31 +568,6 @@ impl Gpu3D {
                     ty: wgpu::BindingType::Texture {
                         sample_type: wgpu::TextureSampleType::Depth,
                         view_dimension: wgpu::TextureViewDimension::D2Array,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-            ],
-        });
-        let mesh_blend_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("perro_mesh_blend_bgl"),
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Depth,
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
-                        view_dimension: wgpu::TextureViewDimension::D2,
                         multisampled: false,
                     },
                     count: None,
@@ -1022,7 +995,7 @@ impl Gpu3D {
                 Some(&camera_bgl),
                 Some(&material_texture_bgl),
                 Some(&shadow_bgl),
-                Some(&mesh_blend_bgl),
+                Some(&ibl_bgl),
             ],
             immediate_size: 0,
         });
@@ -1033,14 +1006,19 @@ impl Gpu3D {
                     Some(&rigid_camera_bgl),
                     Some(&material_texture_bgl),
                     Some(&shadow_bgl),
-                    Some(&mesh_blend_bgl),
+                    Some(&ibl_bgl),
                 ],
                 immediate_size: 0,
             });
         let multimesh_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("perro_multimesh_pipeline_layout"),
-                bind_group_layouts: &[Some(&multimesh_bgl), Some(&material_texture_bgl)],
+                bind_group_layouts: &[
+                    Some(&multimesh_bgl),
+                    Some(&material_texture_bgl),
+                    None,
+                    Some(&ibl_bgl),
+                ],
                 immediate_size: 0,
             });
         let depth_pipeline_layout =
@@ -1992,20 +1970,13 @@ impl Gpu3D {
             .as_ref()
             .map(ssao::SsaoPass::view)
             .unwrap_or(&ssao_fallback_view);
-        let mesh_blend_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("perro_mesh_blend_bg"),
-            layout: &mesh_blend_bgl,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&mesh_blend_depth_view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::TextureView(ssao_view),
-                },
-            ],
-        });
+        let ibl_bind_group = environment::create_environment_bind_group(
+            device,
+            &ibl_bgl,
+            &ibl_maps,
+            &mesh_blend_depth_view,
+            ssao_view,
+        );
         let (hiz_texture, hiz_mip_views, hiz_sample_view, hiz_mip_count, hiz_size) =
             create_hiz_texture(device, width, height);
 
@@ -2380,8 +2351,6 @@ impl Gpu3D {
             _point_shadow_map_view: point_shadow_map_view,
             point_shadow_layer_views,
             _shadow_map_sampler: shadow_map_sampler,
-            mesh_blend_bgl,
-            mesh_blend_bind_group,
             sky_buffer,
             sky_bind_group,
             _sky_noise_texture: sky_noise_texture,

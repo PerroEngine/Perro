@@ -522,4 +522,41 @@ mod tests {
         assert_eq!(scene.ambient_color[3], 0.0);
         assert_eq!(scene.ground_color, [0.0, 0.0, 0.0, 0.0]);
     }
+
+    #[test]
+    fn environment_params_detect_intensity_and_rotation_changes() {
+        let mut lighting = Lighting3DState {
+            sky: Some(perro_render_bridge::Sky3DState {
+                day_colors: Arc::from([]),
+                evening_colors: Arc::from([]),
+                night_colors: Arc::from([]),
+                horizon_colors: Arc::from([]),
+                time: perro_render_bridge::SkyTime3DState {
+                    time_of_day: 0.5,
+                    paused: true,
+                    scale: 1.0,
+                },
+                shaders: Arc::from([]),
+                environment: Some(perro_render_bridge::EnvironmentMap3DState {
+                    source: "res://studio.png".into(),
+                    intensity: 2.0,
+                    rotation_degrees: 90.0,
+                }),
+            }),
+            ..Default::default()
+        };
+        let first = environment_params(&lighting);
+        assert_eq!(first[0], 2.0);
+        assert!((first[2] - 1.0).abs() < 0.0001);
+        assert!(first[3].abs() < 0.0001);
+
+        let environment = lighting.sky.as_mut().unwrap().environment.as_mut().unwrap();
+        environment.intensity = 0.5;
+        environment.rotation_degrees = 180.0;
+        let second = environment_params(&lighting);
+        assert_ne!(first, second);
+        assert_eq!(second[0], 0.5);
+        assert!(second[2].abs() < 0.0001);
+        assert!((second[3] + 1.0).abs() < 0.0001);
+    }
 }

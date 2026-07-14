@@ -2110,6 +2110,14 @@ fn sky_3d_state_matches_compares_all_fields() {
     assert!(!super::sky_3d_state_matches(&retained, &sky));
     sky.environment.as_mut().unwrap().intensity = 1.0;
 
+    sky.environment.as_mut().unwrap().rotation_degrees = 90.0;
+    assert!(!super::sky_3d_state_matches(&retained, &sky));
+    sky.environment.as_mut().unwrap().rotation_degrees = 0.0;
+
+    sky.environment.as_mut().unwrap().source = "res://other.png".into();
+    assert!(!super::sky_3d_state_matches(&retained, &sky));
+    sky.environment.as_mut().unwrap().source = "res://studio.png".into();
+
     sky.time.time_of_day = 0.75;
     assert!(!super::sky_3d_state_matches(&retained, &sky));
     sky.time.time_of_day = 0.5;

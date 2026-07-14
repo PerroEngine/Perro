@@ -13,11 +13,11 @@ use perro_nodes::{
 use perro_particle_math::compile_expression;
 use perro_render_bridge::{
     AmbientLight3DState, Camera3DState, CameraProjectionState, CameraStream3DState,
-    CameraStreamCommand, Command3D, Decal3DState, DenseInstancePose3D, LODOptions3D, Material3D,
-    MaterialParamOverride3D, MeshBlendOptions3D, MeshSurfaceBinding3D, ParticlePath3D,
-    ParticleProfile3D, ParticleRenderMode3D, ParticleSimulationMode3D, PointLight3DState,
-    PointParticles3DState, RayLight3DState, RenderCommand, ResourceCommand, SkeletonPalette,
-    Sky3DState, SkyShaderPass3DState, SkyTime3DState, SpotLight3DState, UiCommand,
+    CameraStreamCommand, Command3D, Decal3DState, DenseInstancePose3D, EnvironmentMap3DState,
+    LODOptions3D, Material3D, MaterialParamOverride3D, MeshBlendOptions3D, MeshSurfaceBinding3D,
+    ParticlePath3D, ParticleProfile3D, ParticleRenderMode3D, ParticleSimulationMode3D,
+    PointLight3DState, PointParticles3DState, RayLight3DState, RenderCommand, ResourceCommand,
+    SkeletonPalette, Sky3DState, SkyShaderPass3DState, SkyTime3DState, SpotLight3DState, UiCommand,
     UiImageScaleState, UiRectState, UiTextAlignState, Water3DState, WaterBodyQueryState,
     WaterCoastlineShape3D, WaterIdleModeState, WaterImpact3D, WaterLinkState, WaterShapeState,
 };
@@ -369,6 +369,13 @@ impl Runtime {
                                 })
                                 .collect::<Vec<_>>(),
                         ),
+                        environment: sky.environment.as_ref().map(|environment| {
+                            EnvironmentMap3DState {
+                                source: environment.source.clone(),
+                                intensity: environment.intensity,
+                                rotation_degrees: environment.rotation_degrees,
+                            }
+                        }),
                     };
                     self.queue_render_command(RenderCommand::ThreeD(Box::new(Command3D::SetSky {
                         node,
@@ -3403,6 +3410,15 @@ fn sky_3d_state_matches(retained: &Sky3DState, sky: &perro_nodes::Sky3D) -> bool
                 retained_shader.path == shader.path
                     && retained_shader.params[..] == shader.params[..]
             })
+        && match (&retained.environment, &sky.environment) {
+            (Some(retained), Some(environment)) => {
+                retained.source == environment.source
+                    && retained.intensity == environment.intensity
+                    && retained.rotation_degrees == environment.rotation_degrees
+            }
+            (None, None) => true,
+            _ => false,
+        }
 }
 
 #[cfg(test)]

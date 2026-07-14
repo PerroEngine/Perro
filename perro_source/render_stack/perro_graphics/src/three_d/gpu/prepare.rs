@@ -80,6 +80,16 @@ impl Gpu3D {
         let force_full_rebuild = force_full_rebuild || compacted_mesh_storage;
         self.resize(device, width, height);
         self.ensure_material_fallback_texture(device, queue);
+        self.ensure_environment_map(
+            device,
+            queue,
+            lighting
+                .sky
+                .as_ref()
+                .and_then(|sky| sky.environment.as_ref()),
+            resources,
+            static_texture_lookup,
+        );
         self.prepare_decals(device, queue, resources, decals, decals_revision);
         self.frustum_cull_enabled = self.frustum_cull_supported;
         let (gpu_occlusion_enabled, cpu_occlusion_enabled) = occlusion_flags(self.occlusion_mode);
@@ -90,7 +100,10 @@ impl Gpu3D {
         // extraction below all reuse them instead of recomputing per consumer.
         let view_proj = compute_view_proj_mat(&camera, width, height);
         let inv_view_proj = view_proj.inverse();
-        let uniform = build_scene_uniform(&camera, lighting, view_proj, inv_view_proj);
+        let mut uniform = build_scene_uniform(&camera, lighting, view_proj, inv_view_proj);
+        if !self.ibl_maps.active() {
+            uniform.ibl_params[0] = 0.0;
+        }
         let sky_uniform = build_sky_uniform(&camera, lighting, inv_view_proj);
         self.sky_enabled = sky_uniform.is_some();
         if let Some(sky) = lighting.sky.as_ref() {

@@ -749,8 +749,6 @@ pub struct Gpu3D {
     _point_shadow_map_view: wgpu::TextureView,
     point_shadow_layer_views: Vec<wgpu::TextureView>,
     _shadow_map_sampler: wgpu::Sampler,
-    mesh_blend_bgl: wgpu::BindGroupLayout,
-    mesh_blend_bind_group: wgpu::BindGroup,
     // Screen-space mesh blend (seam pass) state.
     screen_blend_supported: bool,
     mesh_blend_screen_active: bool,

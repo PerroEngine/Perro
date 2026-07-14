@@ -10,11 +10,11 @@ use perro_render_bridge::{
     AmbientLight2DState, AmbientLight3DState, Camera2DState, Camera3DState, CameraProjectionState,
     CameraStreamCommand, CameraStreamDraw3DState, CameraStreamLighting3DState,
     CameraStreamSourceState, CameraStreamState, Command2D, Command3D, DenseInstancePose3D,
-    LODOptions3D, Light2DState, MeshBlendOptions3D, PointLight2DState, PointLight3DState,
-    PointParticles2DState, PointParticles3DState, RayLight2DState, RayLight3DState, RenderCommand,
-    RenderEvent, RenderRequestID, ResourceCommand, Sky3DState, SkyShaderPass3DState,
-    SkyTime3DState, SpotLight2DState, SpotLight3DState, Sprite2DCommand, Water2DState,
-    Water3DState,
+    EnvironmentMap3DState, LODOptions3D, Light2DState, MeshBlendOptions3D, PointLight2DState,
+    PointLight3DState, PointParticles2DState, PointParticles3DState, RayLight2DState,
+    RayLight3DState, RenderCommand, RenderEvent, RenderRequestID, ResourceCommand, Sky3DState,
+    SkyShaderPass3DState, SkyTime3DState, SpotLight2DState, SpotLight3DState, Sprite2DCommand,
+    Water2DState, Water3DState,
 };
 use perro_runtime_render::{decode_3d_mesh_request_node, decode_render_request_node_from_event};
 use perro_structs::{BitMask, Color};
@@ -1509,6 +1509,13 @@ impl Runtime {
                                     })
                                     .collect::<Vec<_>>(),
                             ),
+                            environment: sky.environment.as_ref().map(|environment| {
+                                EnvironmentMap3DState {
+                                    source: environment.source.clone(),
+                                    intensity: environment.intensity,
+                                    rotation_degrees: environment.rotation_degrees,
+                                }
+                            }),
                         }))
                     }
                     SceneNodeData::RayLight3D(light)

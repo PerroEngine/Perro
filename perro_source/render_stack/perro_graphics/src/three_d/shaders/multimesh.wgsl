@@ -163,6 +163,8 @@ var custom_image_tex_7: texture_2d<f32>;
 
 @group(2) @binding(0)
 var<uniform> mesh_blend_mask_id: vec4<u32>;
+@group(3) @binding(0)
+var<storage, read> environment_data: array<u32>;
 
 fn custom_image_sample_at(index: u32, uv: vec2<f32>) -> vec4<f32> {
     if index == 0u {
@@ -608,6 +610,159 @@ fn fresnel_schlick(cos_theta: f32, f0: vec3<f32>) -> vec3<f32> {
     return f0 + (vec3<f32>(1.0) - f0) * m2 * m2 * m;
 }
 
+fn fresnel_schlick_roughness(
+    cos_theta: f32,
+    f0: vec3<f32>,
+    roughness: f32,
+) -> vec3<f32> {
+    let m = clamp(1.0 - cos_theta, 0.0, 1.0);
+    let m2 = m * m;
+    return f0 + (max(vec3<f32>(1.0 - roughness), f0) - f0) * m2 * m2 * m;
+}
+
+fn rotate_environment_direction(dir: vec3<f32>) -> vec3<f32> {
+    let rotation_sin = scene.ibl_params.z;
+    let rotation_cos = scene.ibl_params.w;
+    return vec3<f32>(
+        rotation_cos * dir.x + rotation_sin * dir.z,
+        dir.y,
+        -rotation_sin * dir.x + rotation_cos * dir.z,
+    );
+}
+struct EnvironmentCubeCoord {
+    face: u32,
+    uv: vec2<f32>,
+}
+
+fn environment_cube_coord(dir: vec3<f32>) -> EnvironmentCubeCoord {
+    let absolute = abs(dir);
+    var face = 0u;
+    var uv = vec2<f32>(0.0);
+    if absolute.x >= absolute.y && absolute.x >= absolute.z {
+        let inv_axis = 1.0 / max(absolute.x, 1.0e-8);
+        if dir.x >= 0.0 {
+            face = 0u;
+            uv = vec2<f32>(-dir.z, -dir.y) * inv_axis;
+        } else {
+            face = 1u;
+            uv = vec2<f32>(dir.z, -dir.y) * inv_axis;
+        }
+    } else if absolute.y >= absolute.z {
+        let inv_axis = 1.0 / max(absolute.y, 1.0e-8);
+        if dir.y >= 0.0 {
+            face = 2u;
+            uv = vec2<f32>(dir.x, dir.z) * inv_axis;
+        } else {
+            face = 3u;
+            uv = vec2<f32>(dir.x, -dir.z) * inv_axis;
+        }
+    } else {
+        let inv_axis = 1.0 / max(absolute.z, 1.0e-8);
+        if dir.z >= 0.0 {
+            face = 4u;
+            uv = vec2<f32>(dir.x, -dir.y) * inv_axis;
+        } else {
+            face = 5u;
+            uv = vec2<f32>(-dir.x, -dir.y) * inv_axis;
+        }
+    }
+    return EnvironmentCubeCoord(face, uv * 0.5 + vec2<f32>(0.5));
+}
+
+fn environment_cube_texel(
+    base_word: u32,
+    size: u32,
+    face: u32,
+    xy: vec2<u32>,
+) -> vec3<f32> {
+    let texel = face * size * size + xy.y * size + xy.x;
+    let word = base_word + texel * 4u;
+    return vec3<f32>(
+        bitcast<f32>(environment_data[word]),
+        bitcast<f32>(environment_data[word + 1u]),
+        bitcast<f32>(environment_data[word + 2u]),
+    );
+}
+
+fn sample_environment_cube_level(base_word: u32, size: u32, dir: vec3<f32>) -> vec3<f32> {
+    let coord = environment_cube_coord(dir);
+    let edge = f32(size - 1u);
+    let position = clamp(coord.uv * f32(size) - vec2<f32>(0.5), vec2<f32>(0.0), vec2<f32>(edge));
+    let low = vec2<u32>(floor(position));
+    let high = min(low + vec2<u32>(1u), vec2<u32>(size - 1u));
+    let blend = fract(position);
+    let top = mix(
+        environment_cube_texel(base_word, size, coord.face, low),
+        environment_cube_texel(base_word, size, coord.face, vec2<u32>(high.x, low.y)),
+        blend.x,
+    );
+    let bottom = mix(
+        environment_cube_texel(base_word, size, coord.face, vec2<u32>(low.x, high.y)),
+        environment_cube_texel(base_word, size, coord.face, high),
+        blend.x,
+    );
+    return mix(top, bottom, blend.y);
+}
+
+fn environment_specular_level(mip: u32) -> vec2<u32> {
+    var base_word = 6144u;
+    var size = 64u;
+    var level = 0u;
+    loop {
+        if level >= mip {
+            break;
+        }
+        base_word += size * size * 24u;
+        size = max(size >> 1u, 1u);
+        level += 1u;
+    }
+    return vec2<u32>(base_word, size);
+}
+
+fn sample_environment_irradiance(dir: vec3<f32>) -> vec3<f32> {
+    return sample_environment_cube_level(0u, 16u, dir);
+}
+
+fn sample_environment_specular(dir: vec3<f32>, lod_in: f32) -> vec3<f32> {
+    let lod = clamp(lod_in, 0.0, 6.0);
+    let low_mip = u32(floor(lod));
+    let high_mip = min(low_mip + 1u, 6u);
+    let low_level = environment_specular_level(low_mip);
+    let high_level = environment_specular_level(high_mip);
+    return mix(
+        sample_environment_cube_level(low_level.x, low_level.y, dir),
+        sample_environment_cube_level(high_level.x, high_level.y, dir),
+        fract(lod),
+    );
+}
+
+fn environment_brdf_texel(x: u32, y: u32) -> vec2<f32> {
+    let word = 137208u + (y * 128u + x) * 2u;
+    return vec2<f32>(
+        bitcast<f32>(environment_data[word]),
+        bitcast<f32>(environment_data[word + 1u]),
+    );
+}
+
+fn sample_environment_brdf(uv: vec2<f32>) -> vec2<f32> {
+    let position = clamp(uv * 128.0 - vec2<f32>(0.5), vec2<f32>(0.0), vec2<f32>(127.0));
+    let low = vec2<u32>(floor(position));
+    let high = min(low + vec2<u32>(1u), vec2<u32>(127u));
+    let blend = fract(position);
+    let top = mix(
+        environment_brdf_texel(low.x, low.y),
+        environment_brdf_texel(high.x, low.y),
+        blend.x,
+    );
+    let bottom = mix(
+        environment_brdf_texel(low.x, high.y),
+        environment_brdf_texel(high.x, high.y),
+        blend.x,
+    );
+    return mix(top, bottom, blend.y);
+}
+
+
 fn multimesh_brdf(
     albedo: vec3<f32>,
     n: vec3<f32>,
@@ -702,10 +857,26 @@ fn perro_lit_standard_with_ssao(
     let bleed_wrap = clamp(dot(n, bleed.dir) * 0.5 + 0.5, 0.0, 1.0);
     ambient += bleed.color * bleed.strength * 0.45 * (0.35 + 0.65 * bleed_wrap);
     let f0 = mix(vec3<f32>(0.04), albedo, vec3<f32>(metallic_safe));
-    let ambient_fresnel = fresnel_schlick(max(dot(n, v), 0.0), f0);
-    let ambient_diffuse =
+    let n_dot_v = max(dot(n, v), 0.0);
+    let ambient_fresnel = fresnel_schlick_roughness(n_dot_v, f0, roughness_safe);
+    let ambient_kd = (vec3<f32>(1.0) - ambient_fresnel) * (1.0 - metallic_safe);
+    var ambient_diffuse =
         (vec3<f32>(1.0) - ambient_fresnel) * (1.0 - metallic_safe) * albedo * ambient * ao;
-    let ambient_specular = ambient_fresnel * ambient * (0.15 + 0.35 * (1.0 - roughness_safe)) * ao;
+    var ambient_specular =
+        ambient_fresnel * ambient * (0.15 + 0.35 * (1.0 - roughness_safe)) * ao;
+    if scene.ibl_params.x > 0.0 {
+        let intensity = scene.ibl_params.x;
+        let irradiance = sample_environment_irradiance(rotate_environment_direction(n));
+        ambient_diffuse = ambient_kd * albedo * irradiance * intensity * ao;
+        let reflection = reflect(-v, n);
+        let prefiltered = sample_environment_specular(
+            rotate_environment_direction(reflection),
+            roughness_safe * scene.ibl_params.y,
+        );
+        let brdf = sample_environment_brdf(vec2<f32>(n_dot_v, roughness_safe));
+        ambient_specular =
+            prefiltered * (ambient_fresnel * brdf.x + vec3<f32>(brdf.y)) * intensity * ao;
+    }
     var direct = vec3<f32>(0.0);
     let ray_count = u32(scene.ambient_and_counts.x);
     for (var i = 0u; i < ray_count; i = i + 1u) {

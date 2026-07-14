@@ -9,18 +9,13 @@ const ENV_SAMPLE_COUNT: u32 = 64;
 const BRDF_SAMPLE_COUNT: u32 = 128;
 
 pub(super) struct EnvironmentCubeGpu {
-    _irradiance_texture: wgpu::Texture,
-    pub irradiance_view: wgpu::TextureView,
-    _specular_texture: wgpu::Texture,
-    pub specular_view: wgpu::TextureView,
+    packed_buffer: wgpu::Buffer,
 }
 
 pub(super) struct EnvironmentGpuMaps {
     fallback: EnvironmentCubeGpu,
     active: Option<EnvironmentCubeGpu>,
-    _brdf_texture: wgpu::Texture,
-    pub brdf_view: wgpu::TextureView,
-    pub sampler: wgpu::Sampler,
+    brdf: BrdfLutBake,
     source: Option<String>,
 }
 
@@ -32,6 +27,18 @@ impl EnvironmentGpuMaps {
     pub(super) fn active(&self) -> bool {
         self.active.is_some()
     }
+}
+
+fn requested_environment_source(
+    environment: Option<&perro_render_bridge::EnvironmentMap3DState>,
+) -> Option<&str> {
+    environment
+        .map(|environment| environment.source.trim())
+        .filter(|source| !source.is_empty())
+}
+
+fn environment_source_changed(cached: Option<&str>, requested: Option<&str>) -> bool {
+    cached != requested
 }
 
 pub(super) struct CubeLevel {
@@ -58,8 +65,15 @@ struct LinearEquirect {
 
 pub(super) fn load_environment_rgba(
     source: &str,
+    resources: &ResourceStore,
     static_texture_lookup: Option<StaticTextureLookup>,
 ) -> Option<(Vec<u8>, u32, u32)> {
+    if let Some(decoded) = resources.decoded_texture_data_by_source(source) {
+        return Some((decoded.rgba.clone(), decoded.width, decoded.height));
+    }
+    if resources.has_texture_source(source) {
+        return None;
+    }
     if let Some(lookup) = static_texture_lookup {
         let hash = perro_ids::parse_hashed_source_uri(source)
             .unwrap_or_else(|| perro_ids::string_to_u64(source));
@@ -110,22 +124,34 @@ pub(super) fn create_environment_bgl(device: &wgpu::Device) -> wgpu::BindGroupLa
     device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: Some("perro_environment_bgl"),
         entries: &[
-            cube_texture_layout_entry(0),
-            cube_texture_layout_entry(1),
             wgpu::BindGroupLayoutEntry {
-                binding: 2,
+                binding: 0,
                 visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: true },
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 4,
+                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
                 ty: wgpu::BindingType::Texture {
-                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    sample_type: wgpu::TextureSampleType::Depth,
                     view_dimension: wgpu::TextureViewDimension::D2,
                     multisampled: false,
                 },
                 count: None,
             },
             wgpu::BindGroupLayoutEntry {
-                binding: 3,
+                binding: 5,
                 visibility: wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                ty: wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
                 count: None,
             },
         ],
@@ -136,25 +162,12 @@ pub(super) fn create_environment_gpu_maps(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
 ) -> EnvironmentGpuMaps {
-    let fallback = upload_environment_bake(device, queue, &black_environment_bake());
     let brdf = bake_brdf_lut();
-    let (brdf_texture, brdf_view) = upload_brdf_lut(device, queue, &brdf);
-    let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-        label: Some("perro_environment_sampler"),
-        address_mode_u: wgpu::AddressMode::ClampToEdge,
-        address_mode_v: wgpu::AddressMode::ClampToEdge,
-        address_mode_w: wgpu::AddressMode::ClampToEdge,
-        mag_filter: wgpu::FilterMode::Linear,
-        min_filter: wgpu::FilterMode::Linear,
-        mipmap_filter: wgpu::MipmapFilterMode::Linear,
-        ..Default::default()
-    });
+    let fallback = upload_environment_bake(device, queue, &black_environment_bake(), &brdf);
     EnvironmentGpuMaps {
         fallback,
         active: None,
-        _brdf_texture: brdf_texture,
-        brdf_view,
-        sampler,
+        brdf,
         source: None,
     }
 }
@@ -163,6 +176,8 @@ pub(super) fn create_environment_bind_group(
     device: &wgpu::Device,
     layout: &wgpu::BindGroupLayout,
     maps: &EnvironmentGpuMaps,
+    mesh_blend_depth_view: &wgpu::TextureView,
+    ssao_view: &wgpu::TextureView,
 ) -> wgpu::BindGroup {
     let cube = maps.cube();
     device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -171,19 +186,15 @@ pub(super) fn create_environment_bind_group(
         entries: &[
             wgpu::BindGroupEntry {
                 binding: 0,
-                resource: wgpu::BindingResource::TextureView(&cube.irradiance_view),
+                resource: cube.packed_buffer.as_entire_binding(),
             },
             wgpu::BindGroupEntry {
-                binding: 1,
-                resource: wgpu::BindingResource::TextureView(&cube.specular_view),
+                binding: 4,
+                resource: wgpu::BindingResource::TextureView(mesh_blend_depth_view),
             },
             wgpu::BindGroupEntry {
-                binding: 2,
-                resource: wgpu::BindingResource::TextureView(&maps.brdf_view),
-            },
-            wgpu::BindGroupEntry {
-                binding: 3,
-                resource: wgpu::BindingResource::Sampler(&maps.sampler),
+                binding: 5,
+                resource: wgpu::BindingResource::TextureView(ssao_view),
             },
         ],
     })
@@ -195,41 +206,52 @@ impl Gpu3D {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         environment: Option<&perro_render_bridge::EnvironmentMap3DState>,
+        resources: &ResourceStore,
         static_texture_lookup: Option<StaticTextureLookup>,
     ) {
-        let requested = environment
-            .map(|environment| environment.source.trim())
-            .filter(|source| !source.is_empty());
-        if self.ibl_maps.source.as_deref() == requested {
+        let requested = requested_environment_source(environment);
+        let pending = requested.is_some_and(|source| {
+            resources.has_texture_source(source)
+                && resources.decoded_texture_data_by_source(source).is_none()
+        });
+        if !environment_source_changed(self.ibl_maps.source.as_deref(), requested) && !pending {
             return;
         }
         self.ibl_maps.source = requested.map(str::to_owned);
         self.ibl_maps.active = requested.and_then(|source| {
-            let Some((rgba, width, height)) = load_environment_rgba(source, static_texture_lookup)
+            let Some((rgba, width, height)) =
+                load_environment_rgba(source, resources, static_texture_lookup)
             else {
-                eprintln!("[perro][ibl] load fail: {source}; use procedural fallback");
+                if !pending {
+                    eprintln!("[perro][ibl] load fail: {source}; use procedural fallback");
+                }
                 return None;
             };
             let Some(bake) = bake_environment(&rgba, width, height) else {
                 eprintln!("[perro][ibl] bake fail: {source}; use procedural fallback");
                 return None;
             };
-            Some(upload_environment_bake(device, queue, &bake))
+            Some(upload_environment_bake(
+                device,
+                queue,
+                &bake,
+                &self.ibl_maps.brdf,
+            ))
         });
-        self.ibl_bind_group = create_environment_bind_group(device, &self.ibl_bgl, &self.ibl_maps);
+        self.rebuild_environment_bind_group(device);
     }
-}
 
-fn cube_texture_layout_entry(binding: u32) -> wgpu::BindGroupLayoutEntry {
-    wgpu::BindGroupLayoutEntry {
-        binding,
-        visibility: wgpu::ShaderStages::FRAGMENT,
-        ty: wgpu::BindingType::Texture {
-            sample_type: wgpu::TextureSampleType::Float { filterable: true },
-            view_dimension: wgpu::TextureViewDimension::Cube,
-            multisampled: false,
-        },
-        count: None,
+    pub(super) fn rebuild_environment_bind_group(&mut self, device: &wgpu::Device) {
+        self.ibl_bind_group = create_environment_bind_group(
+            device,
+            &self.ibl_bgl,
+            &self.ibl_maps,
+            &self.mesh_blend_depth_view,
+            self.ssao_pass
+                .as_ref()
+                .map(ssao::SsaoPass::view)
+                .unwrap_or(&self.ssao_fallback_view),
+        );
     }
 }
 
@@ -250,140 +272,52 @@ fn upload_environment_bake(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     bake: &EnvironmentBake,
+    brdf: &BrdfLutBake,
 ) -> EnvironmentCubeGpu {
-    let irradiance_texture = create_cube_texture(
-        device,
-        "perro_environment_irradiance",
-        bake.irradiance.size,
-        1,
-    );
-    upload_cube_level(queue, &irradiance_texture, 0, &bake.irradiance);
-    let irradiance_view = irradiance_texture.create_view(&wgpu::TextureViewDescriptor {
-        label: Some("perro_environment_irradiance_view"),
-        dimension: Some(wgpu::TextureViewDimension::Cube),
-        ..Default::default()
-    });
-
-    let specular_texture = create_cube_texture(
-        device,
-        "perro_environment_specular",
-        ENV_SPECULAR_SIZE,
-        bake.specular.len() as u32,
-    );
-    for (mip, level) in bake.specular.iter().enumerate() {
-        upload_cube_level(queue, &specular_texture, mip as u32, level);
+    let cube_half_count = |level: &CubeLevel| level.size as usize * level.size as usize * 6 * 4;
+    let brdf_half_count = brdf.size as usize * brdf.size as usize * 2;
+    let half_count = cube_half_count(&bake.irradiance)
+        + bake.specular.iter().map(cube_half_count).sum::<usize>()
+        + brdf_half_count;
+    let mut words = Vec::with_capacity(half_count);
+    append_half_as_f32_bits(&mut words, &bake.irradiance.rgba16f);
+    for level in &bake.specular {
+        append_half_as_f32_bits(&mut words, &level.rgba16f);
     }
-    let specular_view = specular_texture.create_view(&wgpu::TextureViewDescriptor {
-        label: Some("perro_environment_specular_view"),
-        dimension: Some(wgpu::TextureViewDimension::Cube),
-        ..Default::default()
+    append_half_as_f32_bits(&mut words, &brdf.rg16f);
+    let packed_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("perro_environment_packed_buffer"),
+        size: (words.len() * std::mem::size_of::<u32>()) as u64,
+        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
     });
-    EnvironmentCubeGpu {
-        _irradiance_texture: irradiance_texture,
-        irradiance_view,
-        _specular_texture: specular_texture,
-        specular_view,
-    }
+    queue.write_buffer(&packed_buffer, 0, bytemuck::cast_slice(&words));
+    EnvironmentCubeGpu { packed_buffer }
 }
 
-fn create_cube_texture(
-    device: &wgpu::Device,
-    label: &'static str,
-    size: u32,
-    mip_level_count: u32,
-) -> wgpu::Texture {
-    device.create_texture(&wgpu::TextureDescriptor {
-        label: Some(label),
-        size: wgpu::Extent3d {
-            width: size,
-            height: size,
-            depth_or_array_layers: 6,
-        },
-        mip_level_count,
-        sample_count: 1,
-        dimension: wgpu::TextureDimension::D2,
-        format: wgpu::TextureFormat::Rgba16Float,
-        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-        view_formats: &[],
-    })
+fn append_half_as_f32_bits(words: &mut Vec<u32>, values: &[u16]) {
+    words.extend(values.iter().map(|value| f16_to_f32(*value).to_bits()));
 }
 
-fn upload_cube_level(
-    queue: &wgpu::Queue,
-    texture: &wgpu::Texture,
-    mip_level: u32,
-    level: &CubeLevel,
-) {
-    let face_values = (level.size * level.size * 4) as usize;
-    for face in 0..6 {
-        let start = face as usize * face_values;
-        let end = start + face_values;
-        queue.write_texture(
-            wgpu::TexelCopyTextureInfo {
-                texture,
-                mip_level,
-                origin: wgpu::Origin3d {
-                    x: 0,
-                    y: 0,
-                    z: face,
-                },
-                aspect: wgpu::TextureAspect::All,
-            },
-            bytemuck::cast_slice(&level.rgba16f[start..end]),
-            wgpu::TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(level.size * 8),
-                rows_per_image: Some(level.size),
-            },
-            wgpu::Extent3d {
-                width: level.size,
-                height: level.size,
-                depth_or_array_layers: 1,
-            },
-        );
-    }
-}
-
-fn upload_brdf_lut(
-    device: &wgpu::Device,
-    queue: &wgpu::Queue,
-    lut: &BrdfLutBake,
-) -> (wgpu::Texture, wgpu::TextureView) {
-    let texture = device.create_texture(&wgpu::TextureDescriptor {
-        label: Some("perro_environment_brdf_lut"),
-        size: wgpu::Extent3d {
-            width: lut.size,
-            height: lut.size,
-            depth_or_array_layers: 1,
-        },
-        mip_level_count: 1,
-        sample_count: 1,
-        dimension: wgpu::TextureDimension::D2,
-        format: wgpu::TextureFormat::Rg16Float,
-        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-        view_formats: &[],
-    });
-    queue.write_texture(
-        wgpu::TexelCopyTextureInfo {
-            texture: &texture,
-            mip_level: 0,
-            origin: wgpu::Origin3d::ZERO,
-            aspect: wgpu::TextureAspect::All,
-        },
-        bytemuck::cast_slice(&lut.rg16f),
-        wgpu::TexelCopyBufferLayout {
-            offset: 0,
-            bytes_per_row: Some(lut.size * 4),
-            rows_per_image: Some(lut.size),
-        },
-        wgpu::Extent3d {
-            width: lut.size,
-            height: lut.size,
-            depth_or_array_layers: 1,
-        },
-    );
-    let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-    (texture, view)
+fn f16_to_f32(value: u16) -> f32 {
+    let sign = ((value & 0x8000) as u32) << 16;
+    let exponent = ((value >> 10) & 0x1f) as u32;
+    let mantissa = (value & 0x03ff) as u32;
+    let bits = match exponent {
+        0 if mantissa == 0 => sign,
+        0 => {
+            let mut mantissa = mantissa;
+            let mut exponent = 113u32;
+            while mantissa & 0x0400 == 0 {
+                mantissa <<= 1;
+                exponent -= 1;
+            }
+            sign | (exponent << 23) | ((mantissa & 0x03ff) << 13)
+        }
+        31 => sign | 0x7f80_0000 | (mantissa << 13),
+        _ => sign | ((exponent + 112) << 23) | (mantissa << 13),
+    };
+    f32::from_bits(bits)
 }
 
 fn bake_cube_level(size: u32, mut sample: impl FnMut([f32; 3]) -> [f32; 3]) -> CubeLevel {
@@ -654,27 +588,6 @@ fn mix3(a: [f32; 3], b: [f32; 3], weight: f32) -> [f32; 3] {
 mod tests {
     use super::*;
 
-    fn f16_to_f32(value: u16) -> f32 {
-        let sign = ((value & 0x8000) as u32) << 16;
-        let exponent = ((value >> 10) & 0x1f) as u32;
-        let mantissa = (value & 0x03ff) as u32;
-        let bits = match exponent {
-            0 if mantissa == 0 => sign,
-            0 => {
-                let mut mantissa = mantissa;
-                let mut exponent = 113u32;
-                while mantissa & 0x0400 == 0 {
-                    mantissa <<= 1;
-                    exponent -= 1;
-                }
-                sign | (exponent << 23) | ((mantissa & 0x03ff) << 13)
-            }
-            31 => sign | 0x7f80_0000 | (mantissa << 13),
-            _ => sign | ((exponent + 112) << 23) | (mantissa << 13),
-        };
-        f32::from_bits(bits)
-    }
-
     #[test]
     fn constant_environment_filters_to_same_color() {
         let rgba = [128, 64, 32, 255].repeat(8);
@@ -717,5 +630,47 @@ mod tests {
         for value in [0.0, 1.0, 4.0] {
             assert!((f16_to_f32(f32_to_f16(value)) - value).abs() < 0.001);
         }
+    }
+
+    #[test]
+    fn environment_source_change_gate_trims_and_detects_changes() {
+        let mut environment = perro_render_bridge::EnvironmentMap3DState {
+            source: "  res://studio.png  ".into(),
+            intensity: 1.0,
+            rotation_degrees: 0.0,
+        };
+        let requested = requested_environment_source(Some(&environment));
+        assert_eq!(requested, Some("res://studio.png"));
+        assert!(!environment_source_changed(
+            Some("res://studio.png"),
+            requested
+        ));
+        assert!(environment_source_changed(Some("res://old.png"), requested));
+
+        environment.source = "   ".into();
+        assert_eq!(requested_environment_source(Some(&environment)), None);
+    }
+
+    #[test]
+    fn environment_load_uses_resource_data_and_missing_signals_fallback() {
+        let source = "res://environment-test.png";
+        let mut resources = ResourceStore::new();
+        let id = resources.create_texture(source, false);
+        assert!(load_environment_rgba(source, &resources, None).is_none());
+
+        let rgba = vec![16, 32, 64, 255, 128, 96, 48, 255];
+        assert!(resources.set_decoded_texture_data(
+            id,
+            crate::resources::DecodedTextureRgba {
+                rgba: rgba.clone(),
+                width: 2,
+                height: 1,
+            },
+        ));
+        assert_eq!(
+            load_environment_rgba(source, &resources, None),
+            Some((rgba, 2, 1))
+        );
+        assert!(load_environment_rgba("res://missing.png", &resources, None).is_none());
     }
 }

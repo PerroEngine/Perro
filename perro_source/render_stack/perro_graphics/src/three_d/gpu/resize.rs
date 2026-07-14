@@ -28,25 +28,7 @@ impl Gpu3D {
             create_depth_prepass_texture(device, width, height);
         self.mesh_blend_depth_texture = mesh_blend_depth_texture;
         self.mesh_blend_depth_view = mesh_blend_depth_view;
-        self.mesh_blend_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("perro_mesh_blend_bg"),
-            layout: &self.mesh_blend_bgl,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&self.mesh_blend_depth_view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::TextureView(
-                        self.ssao_pass
-                            .as_ref()
-                            .map(ssao::SsaoPass::view)
-                            .unwrap_or(&self.ssao_fallback_view),
-                    ),
-                },
-            ],
-        });
+        self.rebuild_environment_bind_group(device);
         let (mesh_blend_mask_texture, mesh_blend_mask_view) =
             mesh_blend_screen::create_mesh_blend_mask_texture(device, width, height);
         self._mesh_blend_mask_texture = mesh_blend_mask_texture;
@@ -122,7 +104,7 @@ impl Gpu3D {
                 Some(&self.camera_bgl),
                 Some(&self.material_texture_bgl),
                 Some(&self.shadow_bgl),
-                Some(&self.mesh_blend_bgl),
+                Some(&self.ibl_bgl),
             ],
             immediate_size: 0,
         });
@@ -139,7 +121,7 @@ impl Gpu3D {
                     Some(&self.rigid_camera_bgl),
                     Some(&self.material_texture_bgl),
                     Some(&self.shadow_bgl),
-                    Some(&self.mesh_blend_bgl),
+                    Some(&self.ibl_bgl),
                 ],
                 immediate_size: 0,
             });
@@ -152,7 +134,12 @@ impl Gpu3D {
         let multimesh_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("perro_multimesh_pipeline_layout"),
-                bind_group_layouts: &[Some(&self.multimesh_bgl), Some(&self.material_texture_bgl)],
+                bind_group_layouts: &[
+                    Some(&self.multimesh_bgl),
+                    Some(&self.material_texture_bgl),
+                    None,
+                    Some(&self.ibl_bgl),
+                ],
                 immediate_size: 0,
             });
         let multimesh_mask_pipeline_layout =
@@ -521,25 +508,7 @@ impl Gpu3D {
             create_depth_prepass_texture(device, width, height);
         self.mesh_blend_depth_texture = mesh_blend_depth_texture;
         self.mesh_blend_depth_view = mesh_blend_depth_view;
-        self.mesh_blend_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("perro_mesh_blend_bg"),
-            layout: &self.mesh_blend_bgl,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&self.mesh_blend_depth_view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::TextureView(
-                        self.ssao_pass
-                            .as_ref()
-                            .map(ssao::SsaoPass::view)
-                            .unwrap_or(&self.ssao_fallback_view),
-                    ),
-                },
-            ],
-        });
+        self.rebuild_environment_bind_group(device);
         let (mesh_blend_mask_texture, mesh_blend_mask_view) =
             mesh_blend_screen::create_mesh_blend_mask_texture(device, width, height);
         self._mesh_blend_mask_texture = mesh_blend_mask_texture;
