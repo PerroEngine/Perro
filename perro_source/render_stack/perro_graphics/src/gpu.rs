@@ -513,6 +513,7 @@ pub struct Gpu {
     dev_meshlets: bool,
     meshlet_debug_view: bool,
     occlusion_culling: OcclusionCullingMode,
+    ssao: crate::SsaoQuality,
     texture_filter: TextureFilterMode,
     indirect_first_instance_enabled: bool,
     multi_draw_indirect_enabled: bool,
@@ -527,6 +528,7 @@ pub struct GpuConfig {
     pub dev_meshlets: bool,
     pub meshlet_debug_view: bool,
     pub occlusion_culling: OcclusionCullingMode,
+    pub ssao: crate::SsaoQuality,
     pub texture_filter: TextureFilterMode,
 }
 
@@ -977,6 +979,7 @@ impl Gpu {
                 dev_meshlets: cfg.dev_meshlets,
                 meshlet_debug_view: cfg.meshlet_debug_view,
                 occlusion_culling: cfg.occlusion_culling,
+                ssao: cfg.ssao,
                 indirect_first_instance_enabled,
                 multi_draw_indirect_enabled,
                 texture_filter: cfg.texture_filter,
@@ -1058,6 +1061,7 @@ impl Gpu {
             dev_meshlets: cfg.dev_meshlets,
             meshlet_debug_view: cfg.meshlet_debug_view,
             occlusion_culling: cfg.occlusion_culling,
+            ssao: cfg.ssao,
             texture_filter: cfg.texture_filter,
             indirect_first_instance_enabled,
             multi_draw_indirect_enabled,
@@ -1405,6 +1409,7 @@ impl Gpu {
                         dev_meshlets: self.dev_meshlets,
                         meshlet_debug_view: self.meshlet_debug_view,
                         occlusion_culling: self.occlusion_culling,
+                        ssao: self.ssao,
                         indirect_first_instance_enabled: self.indirect_first_instance_enabled,
                         multi_draw_indirect_enabled: self.multi_draw_indirect_enabled,
                         texture_filter: self.texture_filter,
@@ -1477,6 +1482,7 @@ impl Gpu {
                         dev_meshlets: self.dev_meshlets,
                         meshlet_debug_view: self.meshlet_debug_view,
                         occlusion_culling: self.occlusion_culling,
+                        ssao: self.ssao,
                         indirect_first_instance_enabled: self.indirect_first_instance_enabled,
                         multi_draw_indirect_enabled: self.multi_draw_indirect_enabled,
                         texture_filter: self.texture_filter,
@@ -1852,6 +1858,7 @@ impl Gpu {
                                     dev_meshlets: self.dev_meshlets,
                                     meshlet_debug_view: self.meshlet_debug_view,
                                     occlusion_culling: self.occlusion_culling,
+                                    ssao: self.ssao,
                                     indirect_first_instance_enabled: self
                                         .indirect_first_instance_enabled,
                                     multi_draw_indirect_enabled: self.multi_draw_indirect_enabled,
@@ -1919,6 +1926,7 @@ impl Gpu {
                             dev_meshlets: self.dev_meshlets,
                             meshlet_debug_view: self.meshlet_debug_view,
                             occlusion_culling: self.occlusion_culling,
+                            ssao: self.ssao,
                             indirect_first_instance_enabled: self.indirect_first_instance_enabled,
                             multi_draw_indirect_enabled: self.multi_draw_indirect_enabled,
                             texture_filter: self.texture_filter,
@@ -1964,7 +1972,14 @@ impl Gpu {
                             static_shader_lookup,
                         },
                     );
-                    stream_3d.render_pass(&mut encoder, render_view, stream_clear_color, false);
+                    stream_3d.render_pass(
+                        &self.queue,
+                        &mut encoder,
+                        render_view,
+                        stream_clear_color,
+                        false,
+                        camera,
+                    );
                     if !stream.point_particles_3d.is_empty() {
                         if self.camera_stream_particles_3d.is_none() {
                             self.camera_stream_particles_3d = Some(GpuPointParticles3D::new(
@@ -2106,7 +2121,14 @@ impl Gpu {
         let clear_in_water_pass =
             self.three_d.is_none() && self.two_d.is_some() && !waters_2d.is_empty();
         if let Some(three_d) = self.three_d.as_mut() {
-            three_d.render_pass(&mut encoder, color_view, clear_color, depth_prepass_needed);
+            three_d.render_pass(
+                &self.queue,
+                &mut encoder,
+                color_view,
+                clear_color,
+                depth_prepass_needed,
+                &camera_3d,
+            );
             // Seam pass runs on the resolved offscreen scene texture, before
             // particles/water/2D draw on top.
             if blend_screen_active && !direct_present && self.sample_count == 1 {

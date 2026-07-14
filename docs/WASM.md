@@ -40,6 +40,10 @@ Req:
 
 - web build toolchain installed
 
+```powershell
+rustup target add wasm32-unknown-unknown
+```
+
 `perro` CLI create web bundle for you.
 
 ## Commands

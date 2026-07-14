@@ -10,6 +10,28 @@ pub enum OcclusionCulling {
     Off,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SsaoQuality {
+    Off,
+    Low,
+    #[default]
+    Medium,
+    High,
+    Ultra,
+}
+
+impl SsaoQuality {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Off => "off",
+            Self::Low => "low",
+            Self::Medium => "medium",
+            Self::High => "high",
+            Self::Ultra => "ultra",
+        }
+    }
+}
+
 impl OcclusionCulling {
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -189,6 +211,7 @@ pub struct StaticProjectConfig {
     pub physics_gravity: f32,
     pub physics_coef: f32,
     pub msaa: bool,
+    pub ssao: SsaoQuality,
     pub meshlets: bool,
     pub dev_meshlets: bool,
     pub release_meshlets: bool,
@@ -240,6 +263,7 @@ impl StaticProjectConfig {
             physics_gravity: -9.81,
             physics_coef: 1.0,
             msaa: true,
+            ssao: SsaoQuality::Medium,
             meshlets: false,
             dev_meshlets: false,
             release_meshlets: true,
@@ -292,6 +316,11 @@ impl StaticProjectConfig {
 
     pub const fn with_msaa(mut self, enabled: bool) -> Self {
         self.msaa = enabled;
+        self
+    }
+
+    pub const fn with_ssao(mut self, quality: SsaoQuality) -> Self {
+        self.ssao = quality;
         self
     }
 
@@ -406,6 +435,7 @@ impl StaticProjectConfig {
             physics_gravity: self.physics_gravity,
             physics_coef: self.physics_coef,
             msaa: self.msaa,
+            ssao: self.ssao,
             meshlets: self.meshlets,
             dev_meshlets: self.dev_meshlets,
             release_meshlets: self.release_meshlets,
@@ -468,6 +498,7 @@ pub struct ProjectConfig {
     pub physics_gravity: f32,
     pub physics_coef: f32,
     pub msaa: bool,
+    pub ssao: SsaoQuality,
     pub meshlets: bool,
     pub dev_meshlets: bool,
     pub release_meshlets: bool,
@@ -502,6 +533,7 @@ impl ProjectConfig {
             physics_gravity: -9.81,
             physics_coef: 1.0,
             msaa: true,
+            ssao: SsaoQuality::Medium,
             meshlets: false,
             dev_meshlets: false,
             release_meshlets: true,

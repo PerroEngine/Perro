@@ -565,6 +565,20 @@ pub(super) fn build_instance(
     if params.base_color_texture != MATERIAL_TEXTURE_NONE {
         material_flags |= MATERIAL_FLAG_HAS_BASE_COLOR_TEXTURE;
     }
+    if matches!(material, Material3D::Standard(_)) {
+        if params.metallic_roughness_texture != MATERIAL_TEXTURE_NONE {
+            material_flags |= MATERIAL_FLAG_HAS_METALLIC_ROUGHNESS_TEXTURE;
+        }
+        if params.normal_texture != MATERIAL_TEXTURE_NONE {
+            material_flags |= MATERIAL_FLAG_HAS_NORMAL_TEXTURE;
+        }
+        if params.occlusion_texture != MATERIAL_TEXTURE_NONE {
+            material_flags |= MATERIAL_FLAG_HAS_OCCLUSION_TEXTURE;
+        }
+        if params.emissive_texture != MATERIAL_TEXTURE_NONE {
+            material_flags |= MATERIAL_FLAG_HAS_EMISSIVE_TEXTURE;
+        }
+    }
     if receive_shadows && !matches!(material, Material3D::Unlit(_)) {
         material_flags |= MATERIAL_FLAG_RECEIVE_SHADOWS;
     }

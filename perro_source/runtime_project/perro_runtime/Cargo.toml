@@ -7,7 +7,6 @@ edition = "2024"
 gltf.workspace = true
 ahash = "0.8"
 glam = "0.31.0"
-image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "bmp", "tga", "ico"] }
 rayon = "1.10"
 ab_glyph = "0.2"
 fontdb = "0.23"
@@ -136,5 +135,10 @@ required-features = ["bench"]
 
 [[bench]]
 name = "csv_loading"
+harness = false
+required-features = ["bench"]
+
+[[bench]]
+name = "timer_hotpaths"
 harness = false
 required-features = ["bench"]

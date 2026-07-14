@@ -2,7 +2,7 @@ use crate::sub_apis::{
     AnimPlayerAPI, AnimPlayerModule, AnimTreeAPI, AnimTreeModule, MeshQueryModule, NavMeshAPI,
     NavMeshModule, NodeAPI, NodeModule, NodeQueryModule, PhysicsAPI, PhysicsModule,
     RuntimeAudioAPI, RuntimeAudioModule, SceneAPI, SceneModule, ScriptAPI, ScriptModule, SignalAPI,
-    SignalModule, TimeAPI, TimeModule, WindowAPI, WindowModule,
+    SignalModule, TimeAPI, TimeModule, TimerAPI, TimerModule, WindowAPI, WindowModule,
 };
 
 /// Full runtime contract required by [`RuntimeApiSurface`].
@@ -12,6 +12,7 @@ use crate::sub_apis::{
 /// window facade generic while preserving one borrow of the runtime.
 pub trait RuntimeAPI:
     TimeAPI
+    + TimerAPI
     + WindowAPI
     + NodeAPI
     + ScriptAPI
@@ -25,6 +26,7 @@ pub trait RuntimeAPI:
 }
 impl<T> RuntimeAPI for T where
     T: TimeAPI
+        + TimerAPI
         + WindowAPI
         + NodeAPI
         + ScriptAPI
@@ -64,6 +66,12 @@ impl<'rt, RT: RuntimeAPI + ?Sized> RuntimeApiSurface<'rt, RT> {
     #[inline]
     pub fn Time(&mut self) -> TimeModule<'_, RT> {
         TimeModule::new(self.rt)
+    }
+
+    /// Start, cancel, and inspect named one-shot timers.
+    #[inline]
+    pub fn Timers(&mut self) -> TimerModule<'_, RT> {
+        TimerModule::new(self.rt)
     }
 
     /// Queue window requests and read active refresh data.

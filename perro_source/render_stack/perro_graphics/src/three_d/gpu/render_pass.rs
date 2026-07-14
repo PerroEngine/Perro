@@ -50,10 +50,12 @@ impl IndirectRunBuilder {
 impl Gpu3D {
     pub fn render_pass(
         &mut self,
+        queue: &wgpu::Queue,
         encoder: &mut wgpu::CommandEncoder,
         color_view: &wgpu::TextureView,
         clear_color: wgpu::Color,
         depth_prepass_needed: bool,
+        camera: &Camera3DState,
     ) {
         self.perf_counters.pipeline_switches = 0;
         self.perf_counters.texture_bind_group_switches = 0;
@@ -66,7 +68,10 @@ impl Gpu3D {
         // Mesh blending forces the depth prepass: the mask pass depth-tests
         // against it and the seam pass reads it for world reconstruction.
         let depth_prepass_active = self.should_run_depth_prepass(
-            depth_prepass_needed || mesh_blend_depth_active || self.mesh_blend_screen_active,
+            depth_prepass_needed
+                || self.ssao_pass.is_some()
+                || mesh_blend_depth_active
+                || self.mesh_blend_screen_active,
             hiz_active,
         );
         // Unified depth: at 1 sample the prepass and main depth share the
@@ -341,6 +346,30 @@ impl Gpu3D {
                     },
                 );
             }
+        }
+        if let Some(ssao_pass) = self.ssao_pass.as_ref() {
+            let view_proj = compute_view_proj_mat(camera, self.depth_size.0, self.depth_size.1);
+            let (sample_count, radius_px, strength, depth_sigma) = match self.ssao_quality {
+                crate::SsaoQuality::Low => (4, 8.0, 1.4, 160.0),
+                crate::SsaoQuality::Medium => (8, 12.0, 2.0, 200.0),
+                crate::SsaoQuality::High => (12, 16.0, 2.3, 240.0),
+                crate::SsaoQuality::Ultra => (16, 20.0, 2.6, 280.0),
+                crate::SsaoQuality::Off => (0, 0.0, 0.0, 0.0),
+            };
+            ssao_pass.encode(
+                queue,
+                encoder,
+                ssao::SsaoUniform {
+                    inv_view_proj: view_proj.inverse().to_cols_array_2d(),
+                    full_size: [self.depth_size.0 as f32, self.depth_size.1 as f32],
+                    radius_px,
+                    strength,
+                    depth_sigma,
+                    sample_count,
+                    target_divisor: ssao_pass.target_divisor(),
+                    _pad: 0.0,
+                },
+            );
         }
         if depth_prepass_active {
             self.encode_mesh_blend_mask_pass(encoder, frustum_cull_active);

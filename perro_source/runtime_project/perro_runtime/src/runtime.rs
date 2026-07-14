@@ -36,6 +36,7 @@ mod render_ui;
 mod scene_loader;
 mod scheduling;
 pub(crate) mod state;
+mod timers;
 mod transforms;
 mod world_state;
 
@@ -52,6 +53,7 @@ use state::{
     Render3DState, RenderState, RenderUiState, ScriptRuntimeState, ScriptSchedules,
     SignalRuntimeState, TransformRuntimeState,
 };
+use timers::TimerRuntimeState;
 
 pub struct RuntimeScriptApi;
 impl ScriptAPI for RuntimeScriptApi {
@@ -158,6 +160,7 @@ pub(crate) struct SceneResourceRefsScratch {
 /// physics state, audio propagation, and retained render state in one owner.
 pub struct Runtime {
     pub time: Timing,
+    pub(crate) timer_runtime: TimerRuntimeState,
     provider_mode: ProviderMode,
     project: Option<Arc<RuntimeProject>>,
     pub(crate) active_route_href: Option<String>,
@@ -430,6 +433,39 @@ pub(crate) struct RuntimePhysicsStepTiming {
 }
 
 impl Runtime {
+    fn advance_timers(&mut self, delta_time: f32) {
+        use perro_runtime_api::sub_apis::SignalAPI;
+
+        let due = self.timer_runtime.advance(delta_time);
+        for signal in due.iter().copied() {
+            self.signal_emit(signal, &[]);
+        }
+        self.timer_runtime.reuse_due(due);
+    }
+
+    #[cfg(feature = "bench")]
+    pub fn bench_timer_start(
+        &mut self,
+        timer: perro_ids::TimerID,
+        finished: perro_ids::SignalID,
+        duration: Duration,
+    ) {
+        self.timer_runtime.start(timer, finished, duration);
+    }
+
+    #[cfg(feature = "bench")]
+    pub fn bench_timer_advance(&mut self, delta_time: f32) -> usize {
+        let due = self.timer_runtime.advance(delta_time);
+        let count = due.len();
+        self.timer_runtime.reuse_due(due);
+        count
+    }
+
+    #[cfg(feature = "bench")]
+    pub fn bench_timer_counts(&self) -> (usize, usize, usize) {
+        self.timer_runtime.counts()
+    }
+
     pub fn new() -> Self {
         Self {
             time: Timing {
@@ -461,6 +497,7 @@ impl Runtime {
                 skip_prepare_3d_indirect: 0,
                 skip_prepare_3d_cull_inputs: 0,
             },
+            timer_runtime: TimerRuntimeState::new(),
             provider_mode: ProviderMode::Dynamic,
             active_route_href: None,
             active_route_root: None,
@@ -864,6 +901,7 @@ impl Runtime {
     pub fn update(&mut self, delta_time: f32) {
         self.clear_startup_keyboard_mouse();
         self.time.delta = delta_time;
+        self.advance_timers(delta_time);
         self.flush_queued_ui_signals();
         self.process_pending_web_route_change();
         self.apply_loaded_skeleton_bones();
@@ -882,6 +920,7 @@ impl Runtime {
         let total_start = Instant::now();
         self.clear_startup_keyboard_mouse();
         self.time.delta = delta_time;
+        self.advance_timers(delta_time);
         self.flush_queued_ui_signals();
         self.process_pending_web_route_change();
         self.apply_loaded_skeleton_bones();

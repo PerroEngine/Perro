@@ -2586,8 +2586,6 @@ checksum = "e6506c6c10786659413faa717ceebcb8f70731c0a60cbae39795fdf114519c1a"
 dependencies = [
  "bytemuck",
  "byteorder-lite",
- "color_quant",
- "gif",
  "image-webp",
  "moxcms",
  "num-traits",
@@ -4317,6 +4315,7 @@ dependencies = [
  "perro_csv",
  "perro_ids",
  "perro_input_api",
+ "perro_jobs",
  "perro_modules",
  "perro_networking",
  "perro_nodes",
@@ -4341,7 +4340,6 @@ dependencies = [
  "getrandom 0.3.4",
  "gilrs",
  "hidapi",
- "image",
  "memory-stats",
  "perro_api",
  "perro_asset_formats",
@@ -4428,6 +4426,7 @@ name = "perro_dev_runner"
 version = "0.1.0"
 dependencies = [
  "perro_app",
+ "perro_headless",
  "perro_project",
 ]
 
@@ -4443,8 +4442,6 @@ dependencies = [
  "fontdb",
  "getrandom 0.3.4",
  "glam",
- "gltf",
- "image",
  "naga",
  "perro_asset_formats",
  "perro_builtin_meshes",
@@ -4452,7 +4449,6 @@ dependencies = [
  "perro_ids",
  "perro_io",
  "perro_macros",
- "perro_meshlets",
  "perro_particle_math",
  "perro_render_bridge",
  "perro_structs",
@@ -4479,6 +4475,17 @@ dependencies = [
  "perro_render_bridge",
  "perro_structs",
  "resvg",
+]
+
+[[package]]
+name = "perro_headless"
+version = "0.1.0"
+dependencies = [
+ "ctrlc",
+ "perro_input_api",
+ "perro_runtime",
+ "perro_scripting",
+ "perro_steamworks",
 ]
 
 [[package]]
@@ -4520,6 +4527,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "perro_jobs"
+version = "0.1.0"
+dependencies = [
+ "criterion",
+ "rayon",
+]
+
+[[package]]
 name = "perro_macros"
 version = "0.1.0"
 
@@ -4536,7 +4551,6 @@ dependencies = [
 name = "perro_modules"
 version = "0.1.0"
 dependencies = [
- "perro_ids",
  "perro_io",
  "perro_resource_api",
  "perro_variant",
@@ -4550,6 +4564,8 @@ version = "0.1.0"
 dependencies = [
  "perro_ids",
  "perro_io",
+ "perro_modules",
+ "perro_steamworks",
  "perro_variant",
  "serde_json",
  "time",
@@ -4651,7 +4667,6 @@ dependencies = [
  "fontdb",
  "glam",
  "gltf",
- "image",
  "libloading",
  "nokhwa",
  "perro_animation",
@@ -4717,7 +4732,6 @@ dependencies = [
 name = "perro_scene"
 version = "0.1.0"
 dependencies = [
- "perro_ids",
  "perro_nodes",
  "perro_structs",
  "perro_ui",
@@ -4752,7 +4766,6 @@ name = "perro_static_pipeline"
 version = "0.1.0"
 dependencies = [
  "csv",
- "glam",
  "gltf",
  "image",
  "perro_animation",
@@ -4826,7 +4839,6 @@ name = "perro_website"
 version = "0.1.0"
 dependencies = [
  "axum",
- "cfg-if 1.0.4",
  "leptos",
  "leptos_axum",
  "leptos_meta",
@@ -5666,7 +5678,7 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

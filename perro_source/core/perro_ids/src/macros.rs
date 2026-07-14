@@ -69,6 +69,13 @@ macro_rules! signal {
 }
 
 #[macro_export]
+macro_rules! timer {
+    ($name:expr) => {
+        $crate::TimerID::from_string($name)
+    };
+}
+
+#[macro_export]
 macro_rules! tag {
     ($name:expr) => {
         $crate::TagID::from_string($name)

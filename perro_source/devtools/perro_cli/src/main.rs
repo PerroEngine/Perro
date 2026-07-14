@@ -166,6 +166,7 @@ const BUILD: &[FlagSpec] = &[
     value("--target"),
     switch("--profile"),
     switch("--console"),
+    switch("--headless"),
 ];
 const DLC: &[FlagSpec] = &[value("--name"), value("--path")];
 const DEV: &[FlagSpec] = &[
@@ -178,6 +179,7 @@ const DEV: &[FlagSpec] = &[
     optional_value("--csv-profile"),
     value("--host"),
     value("--port"),
+    switch("--headless"),
 ];
 const BENCH: &[FlagSpec] = &[
     value("--path"),
@@ -279,13 +281,13 @@ fn print_usage() {
         "  perro_cli test [--path <project_dir>] [-- <cargo_test_args>]    # sync scripts + run cargo test for .perro/scripts"
     );
     eprintln!(
-        "  perro_cli build [--path <project_dir>] [--target native|web|android] [--profile] [--console]    # full static project bundle + build"
+        "  perro_cli build [--path <project_dir>] [--target native|web|android] [--profile] [--console] [--headless]    # full static project bundle + build"
     );
     eprintln!(
         "  perro_cli dlc --name <dlc_name> [--path <project_dir>] # build one runtime-loadable DLC package"
     );
     eprintln!(
-        "  perro_cli dev [--path <project_dir>] [--target native|web|android] [--timings] [--profile] [--ui-profile] [--release] [--csv-profile [csv_name]] [--host <addr>] [--port <num>]      # build scripts + run dev runner, web server, or android app"
+        "  perro_cli dev [--path <project_dir>] [--target native|web|android] [--headless] [--timings] [--profile] [--ui-profile] [--release] [--csv-profile [csv_name]] [--host <addr>] [--port <num>]      # build scripts + run dev runner, web server, or android app"
     );
     eprintln!(
         "  perro_cli bench [--path <project_dir>] [--script <hash>] [--method <name>] [--var <name>] [-- <criterion_args>]    # criterion bench scripts"

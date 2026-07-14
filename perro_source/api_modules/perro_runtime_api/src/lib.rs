@@ -43,7 +43,8 @@ pub mod prelude {
         PhysicsSlideResult2D, PhysicsSlideResult3D, PreloadedSceneTarget, ProfilingSnapshot,
         QueryBounds, QueryExpr, QueryScope, RuntimeMidiModule, SceneAPI, SceneLoadSource,
         SceneModule, ScriptAPI, ScriptModule, SignalAPI, SignalModule, SpatialAudioOptions,
-        TimeAPI, TimeModule, WindowAPI, WindowMode, WindowModule, WindowRequest, program,
+        TimeAPI, TimeModule, TimerAPI, TimerModule, WindowAPI, WindowMode, WindowModule,
+        WindowRequest, program,
     };
 
     // Convenience macros.
@@ -84,6 +85,7 @@ pub mod prelude {
         set_local_transform_3d, set_node_name, set_tree_visible, set_ui_rotation, set_var,
         signal_connect, signal_connect_many, signal_connect_pairs, signal_disconnect,
         signal_disconnect_many, signal_emit, simulation_time, spawn, tag_add, tag_remove, tag_set,
+        timer_cancel, timer_finished, timer_is_active, timer_remaining, timer_start, timer_started,
         to_global_point_2d, to_global_point_3d, to_global_transform_2d, to_global_transform_3d,
         to_local_point_2d, to_local_point_3d, to_local_transform_2d, to_local_transform_3d,
         window_get_active_refresh_rate, window_set_cursor_icon, window_set_frame_rate_cap,
@@ -94,9 +96,9 @@ pub mod prelude {
     // Common id and variant helpers.
     pub use perro_ids::prelude::{
         AnimationID, AudioBusID, LightID, MaterialID, MeshID, NavMeshID, NodeID, PreloadedSceneID,
-        ScriptMemberID, SignalID, TagID, TextureID,
+        ScriptMemberID, SignalID, TagID, TextureID, TimerID,
     };
-    pub use perro_ids::{func, method, sid, signal, smid, tag, tags, var};
+    pub use perro_ids::{func, method, sid, signal, smid, tag, tags, timer, var};
     pub use perro_nodes::prelude::*;
     pub use perro_variant::{VariantKind, params, variant};
 }

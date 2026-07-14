@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 perro_ids.workspace = true
 perro_input_api.workspace = true
+perro_jobs.workspace = true
 perro_project.workspace = true
 perro_resource_api.workspace = true
 perro_runtime_api.workspace = true
@@ -20,4 +21,4 @@ perro_networking.workspace = true
 perro_variant.workspace = true
 perro_csv.workspace = true
 [features]
-steamworks = ["dep:perro_steamworks", "perro_steamworks/steamworks-runtime"]
+steamworks = ["dep:perro_steamworks", "perro_steamworks/steamworks-runtime", "perro_networking/steamworks"]

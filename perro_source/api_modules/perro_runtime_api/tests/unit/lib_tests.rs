@@ -54,6 +54,29 @@ impl TimeAPI for DummyRuntime {
     }
 }
 
+impl TimerAPI for DummyRuntime {
+    fn timer_start(
+        &mut self,
+        _duration: std::time::Duration,
+        _timer: perro_ids::TimerID,
+        _started: perro_ids::SignalID,
+        _finished: perro_ids::SignalID,
+    ) {
+    }
+
+    fn timer_cancel(&mut self, _timer: perro_ids::TimerID) -> bool {
+        true
+    }
+
+    fn timer_is_active(&self, _timer: perro_ids::TimerID) -> bool {
+        false
+    }
+
+    fn timer_remaining(&self, _timer: perro_ids::TimerID) -> Option<std::time::Duration> {
+        None
+    }
+}
+
 impl WindowAPI for DummyRuntime {
     fn set_window_title(&mut self, title: impl Into<String>) {
         self.state = Box::new(title.into());
@@ -1229,6 +1252,20 @@ fn script_macros_typecheck_and_forward() {
     assert_eq!(member, method_member);
     assert_eq!(member, func_member);
     assert_eq!(signal_member, perro_ids::SignalID::from_string("on_test"));
+    timer_start!(&mut ctx, std::time::Duration::from_secs(1), "literal_wait");
+    let timer_name = String::from("dynamic_wait");
+    timer_start!(
+        &mut ctx,
+        std::time::Duration::from_millis(2),
+        timer_name.as_str()
+    );
+    assert!(!timer_is_active!(&mut ctx, timer_name.as_str()));
+    assert_eq!(timer_remaining!(&mut ctx, timer_name.as_str()), None);
+    assert!(timer_cancel!(&mut ctx, timer_name.as_str()));
+    assert_eq!(
+        timer_finished!(timer_name.as_str()),
+        perro_ids::SignalID::from_string("dynamic_wait_finished")
+    );
     let _value = get_var!(&mut ctx, id, member);
     set_var!(&mut ctx, id, member, variant!(perro_variant::Variant::Null));
     set_var!(&mut ctx, id, member, variant!(77_i32));

@@ -4,6 +4,7 @@ use super::core::WebcamFrameMessage;
 use perro_ids::{TextureID, WebcamID, string_to_u64};
 use perro_render_bridge::{RenderCommand, ResourceCommand};
 use perro_resource_api::sub_apis::{WebcamAPI, WebcamConfig, WebcamDevice, WebcamFrame};
+#[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos", test))]
 use std::sync::Arc;
 
 fn clamp_size(width: u32, height: u32) -> (u32, u32) {
@@ -733,7 +734,10 @@ fn parse_windows_pnp_webcam_line(line: &str) -> Option<WebcamDevice> {
     })
 }
 
-#[cfg_attr(test, allow(dead_code))]
+#[cfg(all(
+    any(target_os = "windows", target_os = "linux", target_os = "macos"),
+    not(test)
+))]
 fn mirror_rgba_rows(width: u32, height: u32, rgba: &mut [u8]) {
     let width = width as usize;
     let height = height as usize;

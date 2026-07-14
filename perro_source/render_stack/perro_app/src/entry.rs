@@ -2,11 +2,20 @@ use crate::App;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::winit_runner::image_helpers::{preload_project_images, spawn_preload_project_images};
 use crate::winit_runner::{AppExitError, AppExitResult, WinitRunner};
-use perro_graphics::{GraphicsBackend, OcclusionCullingMode, PerroGraphics};
+use perro_graphics::{
+    GraphicsBackend, OcclusionCullingMode, PerroGraphics, SsaoQuality as GraphicsSsaoQuality,
+};
 pub use perro_runtime::{FrameRateCap, OcclusionCulling, ParticleSimDefault};
-use perro_runtime::{ProjectLoadError, ProviderMode, Runtime, RuntimeProject};
+use perro_runtime::{ProjectLoadError, ProviderMode, Runtime, RuntimeProject, WindowRequest};
 use perro_scripting::ScriptConstructor;
 use std::path::Path;
+#[cfg(not(target_arch = "wasm32"))]
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
+#[cfg(not(target_arch = "wasm32"))]
+use std::time::{Duration, Instant};
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::JsValue;
 #[cfg(target_os = "android")]
@@ -144,6 +153,7 @@ fn graphics_from_project_config(
     PerroGraphics::new()
         .with_vsync(config.vsync)
         .with_msaa(effective_msaa(config.msaa))
+        .with_ssao(graphics_ssao(config.ssao))
         .with_meshlets_enabled(config.meshlets)
         .with_dev_meshlets(!release_mode && config.dev_meshlets)
         .with_meshlet_debug_view(config.meshlet_debug_view)
@@ -173,6 +183,16 @@ fn effective_msaa(enabled: bool) -> bool {
 #[cfg(target_arch = "wasm32")]
 fn effective_msaa(_: bool) -> bool {
     false
+}
+
+fn graphics_ssao(quality: perro_runtime::SsaoQuality) -> GraphicsSsaoQuality {
+    match quality {
+        perro_runtime::SsaoQuality::Off => GraphicsSsaoQuality::Off,
+        perro_runtime::SsaoQuality::Low => GraphicsSsaoQuality::Low,
+        perro_runtime::SsaoQuality::Medium => GraphicsSsaoQuality::Medium,
+        perro_runtime::SsaoQuality::High => GraphicsSsaoQuality::High,
+        perro_runtime::SsaoQuality::Ultra => GraphicsSsaoQuality::Ultra,
+    }
 }
 
 #[cfg(test)]
@@ -238,6 +258,55 @@ pub fn run_dev_project_from_path(
     WinitRunner::new()
         .run_with_timestep_and_preload(app, &window_title, fixed, Some(preloaded_images))
         .map_err(RunProjectError::from)
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn run_headless_dev_project_from_path(
+    project_root: &Path,
+    default_name: &str,
+) -> Result<(), RunProjectError> {
+    let project = RuntimeProject::from_project_dir_with_default_name(project_root, default_name)?;
+    run_headless_runtime(create_dev_runtime(project));
+    Ok(())
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn run_headless_runtime(mut runtime: Runtime) {
+    let running = Arc::new(AtomicBool::new(true));
+    let signal = Arc::clone(&running);
+    let _ = ctrlc::set_handler(move || signal.store(false, Ordering::SeqCst));
+    let fixed_step = runtime
+        .project()
+        .and_then(|project| project.config.target_fixed_update)
+        .filter(|fps| *fps > 0.0)
+        .map(|fps| 1.0 / fps)
+        .unwrap_or(1.0 / 60.0);
+    let step = Duration::from_secs_f32(fixed_step);
+    let mut last = Instant::now();
+    let mut accumulator = Duration::ZERO;
+    let mut requests = Vec::new();
+    while running.load(Ordering::SeqCst) {
+        let frame_start = Instant::now();
+        let delta = frame_start.duration_since(last);
+        last = frame_start;
+        accumulator += delta.min(Duration::from_millis(250));
+        runtime.update(delta.as_secs_f32());
+        while accumulator >= step {
+            runtime.fixed_update(fixed_step);
+            accumulator -= step;
+        }
+        runtime.drain_window_requests(&mut requests);
+        if requests
+            .iter()
+            .any(|request| matches!(request, WindowRequest::CloseApp))
+        {
+            break;
+        }
+        requests.clear();
+        if let Some(rest) = step.checked_sub(frame_start.elapsed()) {
+            std::thread::sleep(rest);
+        }
+    }
 }
 
 pub fn run_static_project_from_path(
@@ -307,6 +376,7 @@ pub struct StaticEmbeddedInputMapConfig<'a> {
 pub struct StaticEmbeddedGraphicsConfig {
     pub vsync: bool,
     pub msaa: bool,
+    pub ssao: perro_runtime::SsaoQuality,
     pub meshlets: bool,
     pub dev_meshlets: bool,
     pub release_meshlets: bool,
@@ -380,6 +450,7 @@ pub fn run_static_embedded_project(
     .with_physics_gravity(input.runtime.physics_gravity)
     .with_physics_coef(input.runtime.physics_coef)
     .with_msaa(input.graphics.msaa)
+    .with_ssao(input.graphics.ssao)
     .with_meshlets(input.graphics.meshlets)
     .with_dev_meshlets(input.graphics.dev_meshlets)
     .with_release_meshlets(input.graphics.release_meshlets)
@@ -443,6 +514,58 @@ pub fn run_static_embedded_project(
         .map_err(RunProjectError::from)
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+pub fn run_static_embedded_project_headless(input: StaticEmbeddedProject<'_>) {
+    let mut static_config = perro_runtime::StaticProjectConfig::new(
+        input.project.project_name,
+        input.project.main_scene_hash,
+        input.project.icon_hash,
+        input.project.startup_splash_hash,
+        input.project.virtual_width,
+        input.project.virtual_height,
+    )
+    .with_target_fixed_update(input.runtime.target_fixed_update)
+    .with_frame_rate_cap(input.runtime.frame_rate_cap)
+    .with_physics_gravity(input.runtime.physics_gravity)
+    .with_physics_coef(input.runtime.physics_coef)
+    .with_particle_sim_default(input.graphics.particle_sim_default)
+    .with_metadata(
+        input.metadata.description,
+        input.metadata.company,
+        input.metadata.version,
+        input.metadata.copyright,
+        input.metadata.trademark,
+    );
+    static_config = static_config.with_localization(input.localization.default_locale);
+    static_config = static_config
+        .with_steam(input.steam.enabled, input.steam.app_id.map(|f| f()))
+        .with_steam_input_mode(input.steam.input_mode);
+    let project =
+        RuntimeProject::from_static(static_config, input.project.project_root.to_path_buf())
+            .with_routes(static_embedded_routes(&input.routes))
+            .with_input_map(static_embedded_input_map(&input.input))
+            .with_static_scene_lookup(input.assets.scene_lookup)
+            .with_static_localization_lookup(input.assets.localization_lookup)
+            .with_static_material_lookup(input.assets.material_lookup)
+            .with_static_ui_style_lookup(input.assets.ui_style_lookup)
+            .with_static_tileset_lookup(input.assets.tileset_lookup)
+            .with_static_particle_lookup(input.assets.particle_lookup)
+            .with_static_animation_lookup(input.assets.animation_lookup)
+            .with_static_animation_tree_lookup(input.assets.animation_tree_lookup)
+            .with_static_csv_lookup(input.assets.csv_lookup)
+            .with_static_collision_trimesh_lookup(input.assets.collision_trimesh_lookup)
+            .with_static_navmesh_lookup(input.assets.navmesh_lookup)
+            .with_static_skeleton_lookup(input.assets.skeleton_lookup)
+            .with_static_audio_lookup(input.assets.audio_lookup)
+            .with_perro_assets_bytes(input.assets.perro_assets);
+    let runtime = Runtime::from_project_with_script_registry(
+        project,
+        ProviderMode::Static,
+        input.assets.static_script_registry,
+    );
+    run_headless_runtime(runtime);
+}
+
 #[cfg(target_os = "android")]
 pub fn run_static_embedded_project_android(
     android_app: AndroidApp,
@@ -463,6 +586,7 @@ pub fn run_static_embedded_project_android(
     .with_physics_gravity(input.runtime.physics_gravity)
     .with_physics_coef(input.runtime.physics_coef)
     .with_msaa(input.graphics.msaa)
+    .with_ssao(input.graphics.ssao)
     .with_meshlets(input.graphics.meshlets)
     .with_dev_meshlets(input.graphics.dev_meshlets)
     .with_release_meshlets(input.graphics.release_meshlets)
@@ -554,6 +678,7 @@ pub fn run_static_embedded_project_web(input: StaticEmbeddedProject<'_>) -> Resu
         .with_physics_gravity(input.runtime.physics_gravity)
         .with_physics_coef(input.runtime.physics_coef)
         .with_msaa(input.graphics.msaa)
+        .with_ssao(input.graphics.ssao)
         .with_meshlets(input.graphics.meshlets)
         .with_dev_meshlets(input.graphics.dev_meshlets)
         .with_release_meshlets(input.graphics.release_meshlets)

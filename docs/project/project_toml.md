@@ -49,6 +49,7 @@ keywords = ["game", "perro"]
 aspect_ratio = "16:9"
 vsync = false
 msaa = true
+ssao = "medium"
 meshlets = false
 dev_meshlets = false
 release_meshlets = true
@@ -140,6 +141,7 @@ Empty string = none.
 | `aspect_ratio`         | string | `"16:9"`          | `"WIDTH:HEIGHT"`             |
 | `vsync`                | bool   | `false`           | `true` / `false`             |
 | `msaa`                 | bool   | `true`            | `true` / `false`             |
+| `ssao`                 | string | `"medium"`        | `"off"`, `"low"`, `"medium"`, `"high"`, `"ultra"` |
 | `meshlets`             | bool   | `false`           | master meshlet switch        |
 | `dev_meshlets`         | bool   | `false`           | dev meshlet draw             |
 | `release_meshlets`     | bool   | `true`            | export meshlet bake          |

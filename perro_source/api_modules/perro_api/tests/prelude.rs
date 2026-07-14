@@ -1,6 +1,14 @@
 use perro_api::prelude::*;
 
 #[test]
+fn prelude_exports_jobs() {
+    let job: Job<u32> = spawn(|| 40 + 2);
+    assert_eq!(job.take(), Ok(42));
+    assert_eq!(join(|| 20, || 22), (20, 22));
+    assert_eq!(par_map(vec![1, 2], |value| value * 2), vec![2, 4]);
+}
+
+#[test]
 fn prelude_exports_bitmask_type_and_macro() {
     const EMPTY: BitMask = bitmask!([]);
     const LAYERS: BitMask = bitmask!([1, 3]);

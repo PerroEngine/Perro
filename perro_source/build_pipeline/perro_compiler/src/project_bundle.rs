@@ -7,6 +7,7 @@ pub struct ProjectBuildOptions {
     pub web_output_dir: WebOutputDir,
     pub android_sdk_root: Option<&'static str>,
     pub android_ndk_root: Option<&'static str>,
+    pub headless: bool,
 }
 
 impl ProjectBuildOptions {
@@ -19,6 +20,7 @@ impl ProjectBuildOptions {
             web_output_dir: WebOutputDir::Build,
             android_sdk_root: None,
             android_ndk_root: None,
+            headless: false,
         }
     }
 
@@ -29,6 +31,11 @@ impl ProjectBuildOptions {
 
     pub fn with_release(mut self, release: bool) -> Self {
         self.release = release;
+        self
+    }
+
+    pub fn with_headless(mut self, headless: bool) -> Self {
+        self.headless = headless;
         self
     }
 
@@ -75,7 +82,7 @@ pub fn compile_project_bundle(
     generate_project_static_modules(project_root, &cfg)?;
     perro_static_pipeline::write_static_mod_rs(project_root)
         .map_err(|err| CompilerError::SceneParse(format!("static mod generation failed: {err}")))?;
-    generate_embedded_entry_files(project_root)?;
+    generate_embedded_entry_files_with_options(project_root, options)?;
     generate_perro_assets(project_root)?;
     build_project_crate(
         project_root,
@@ -139,7 +146,7 @@ fn build_project_crate(
     if options.release {
         cmd.arg("--release");
     }
-    if options.target == ProjectBuildTarget::Native && !options.console {
+    if options.target == ProjectBuildTarget::Native && !options.console && !options.headless {
         cmd.env(
             "RUSTFLAGS",
             append_rustflag(env::var_os("RUSTFLAGS"), "--cfg perro_no_console"),
@@ -155,11 +162,23 @@ fn build_project_crate(
             .env("NDK_HOME", ndk_root);
     }
     let mut features = Vec::new();
+    if options.headless {
+        cmd.arg("--no-default-features");
+        features.push("headless");
+    }
     if options.profile {
-        features.push("profile");
+        features.push(if options.headless {
+            "headless_profile"
+        } else {
+            "profile"
+        });
     }
     if steam_enabled {
-        features.push("steamworks");
+        features.push(if options.headless {
+            "headless_steamworks"
+        } else {
+            "steamworks"
+        });
     }
     if !features.is_empty() {
         cmd.arg("--features").arg(features.join(","));
@@ -637,7 +656,15 @@ fn ensure_project_dependency_line(
     Ok(())
 }
 
+#[cfg(test)]
 fn generate_embedded_entry_files(project_root: &Path) -> Result<(), CompilerError> {
+    generate_embedded_entry_files_with_options(project_root, ProjectBuildOptions::new(false, false))
+}
+
+fn generate_embedded_entry_files_with_options(
+    project_root: &Path,
+    options: ProjectBuildOptions,
+) -> Result<(), CompilerError> {
     let cfg = load_project_toml(project_root)
         .map_err(|e| CompilerError::SceneParse(format!("failed to load project.toml: {e}")))?;
     let routes = perro_project::load_routes_toml(project_root, &cfg)
@@ -666,9 +693,10 @@ fn generate_embedded_entry_files(project_root: &Path) -> Result<(), CompilerErro
     ensure_project_dependency_line(project_root, "perro_structs", "perro_structs = \"0.1.0\"")?;
     perro_project::ensure_source_overrides(project_root)?;
 
-    let embedded_block = format!(
+    let native_entry = "run_static_embedded_project";
+    let mut embedded_block = format!(
         "let root = project_root();\n\
-perro_app::entry::run_static_embedded_project(perro_app::entry::StaticEmbeddedProject {{\n\
+perro_app::entry::{native_entry}(perro_app::entry::StaticEmbeddedProject {{\n\
   project: perro_app::entry::StaticEmbeddedProjectInfo {{\n\
         project_root: &root,\n\
         project_name: \"{name}\",\n\
@@ -687,6 +715,7 @@ perro_app::entry::run_static_embedded_project(perro_app::entry::StaticEmbeddedPr
   graphics: perro_app::entry::StaticEmbeddedGraphicsConfig {{\n\
         vsync: {vsync},\n\
         msaa: {msaa},\n\
+        ssao: {ssao},\n\
         meshlets: {meshlets},\n\
         dev_meshlets: {dev_meshlets},\n\
         release_meshlets: {release_meshlets},\n\
@@ -748,6 +777,7 @@ perro_app::entry::run_static_embedded_project(perro_app::entry::StaticEmbeddedPr
         input_map_block = emit_static_input_map_block(&cfg.input_map),
         vsync = cfg.vsync,
         msaa = cfg.msaa,
+        ssao = emit_ssao_expr(cfg.ssao),
         meshlets = cfg.meshlets,
         dev_meshlets = cfg.dev_meshlets,
         release_meshlets = cfg.release_meshlets,
@@ -774,6 +804,9 @@ perro_app::entry::run_static_embedded_project(perro_app::entry::StaticEmbeddedPr
         steam_app_id = emit_optional_steam_app_id_fn(cfg.steam.app_id),
         steam_input_mode = emit_steam_input_mode(cfg.steam.input_mode),
     );
+    if options.headless {
+        embedded_block = embedded_block.replace("perro_app::entry", "perro_headless");
+    }
     let embedded_block = indent_block(&embedded_block, 2);
     let embedded_web_block = format!(
         "let root = project_root();\n\
@@ -796,6 +829,7 @@ perro_app::entry::run_static_embedded_project_web(perro_app::entry::StaticEmbedd
   graphics: perro_app::entry::StaticEmbeddedGraphicsConfig {{\n\
         vsync: {vsync},\n\
         msaa: {msaa},\n\
+        ssao: {ssao},\n\
         meshlets: {meshlets},\n\
         dev_meshlets: {dev_meshlets},\n\
         release_meshlets: {release_meshlets},\n\
@@ -856,6 +890,7 @@ perro_app::entry::run_static_embedded_project_web(perro_app::entry::StaticEmbedd
         input_map_block = emit_static_input_map_block(&cfg.input_map),
         vsync = cfg.vsync,
         msaa = cfg.msaa,
+        ssao = emit_ssao_expr(cfg.ssao),
         meshlets = cfg.meshlets,
         dev_meshlets = cfg.dev_meshlets,
         release_meshlets = cfg.release_meshlets,
@@ -903,6 +938,7 @@ perro_app::entry::run_static_embedded_project_android(app, perro_app::entry::Sta
   graphics: perro_app::entry::StaticEmbeddedGraphicsConfig {{\n\
         vsync: {vsync},\n\
         msaa: {msaa},\n\
+        ssao: {ssao},\n\
         meshlets: {meshlets},\n\
         dev_meshlets: {dev_meshlets},\n\
         release_meshlets: {release_meshlets},\n\
@@ -964,6 +1000,7 @@ perro_app::entry::run_static_embedded_project_android(app, perro_app::entry::Sta
         input_map_block = emit_static_input_map_block(&cfg.input_map),
         vsync = cfg.vsync,
         msaa = cfg.msaa,
+        ssao = emit_ssao_expr(cfg.ssao),
         meshlets = cfg.meshlets,
         dev_meshlets = cfg.dev_meshlets,
         release_meshlets = cfg.release_meshlets,
@@ -1951,6 +1988,16 @@ fn emit_occlusion_culling_expr(mode: perro_project::OcclusionCulling) -> &'stati
         perro_project::OcclusionCulling::Cpu => "perro_app::entry::OcclusionCulling::Cpu",
         perro_project::OcclusionCulling::Gpu => "perro_app::entry::OcclusionCulling::Gpu",
         perro_project::OcclusionCulling::Off => "perro_app::entry::OcclusionCulling::Off",
+    }
+}
+
+fn emit_ssao_expr(quality: perro_project::SsaoQuality) -> &'static str {
+    match quality {
+        perro_project::SsaoQuality::Off => "perro_runtime::SsaoQuality::Off",
+        perro_project::SsaoQuality::Low => "perro_runtime::SsaoQuality::Low",
+        perro_project::SsaoQuality::Medium => "perro_runtime::SsaoQuality::Medium",
+        perro_project::SsaoQuality::High => "perro_runtime::SsaoQuality::High",
+        perro_project::SsaoQuality::Ultra => "perro_runtime::SsaoQuality::Ultra",
     }
 }
 

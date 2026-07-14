@@ -73,6 +73,10 @@ struct DecodedMaterialParams {
     normal_blend: bool,
     mirrored_winding: bool,
     receive_shadows: bool,
+    has_metallic_roughness_texture: bool,
+    has_normal_texture: bool,
+    has_occlusion_texture: bool,
+    has_emissive_texture: bool,
 }
 
 @group(0) @binding(0)
@@ -143,6 +147,8 @@ var spot_shadow_map_tex: texture_depth_2d_array;
 var point_shadow_map_tex: texture_depth_2d_array;
 @group(3) @binding(0)
 var mesh_blend_depth_tex: texture_depth_2d;
+@group(3) @binding(1)
+var ssao_tex: texture_2d<f32>;
 
 fn custom_image_sample_at(index: u32, uv: vec2<f32>) -> vec4<f32> {
     if index == 0u {
@@ -377,7 +383,40 @@ fn decode_material_params(packed: u32) -> DecodedMaterialParams {
         (flags & 0x10u) != 0u,
         (flags & 0x20u) != 0u,
         (flags & 0x40u) != 0u,
+        (flags & 0x200u) != 0u,
+        (flags & 0x400u) != 0u,
+        (flags & 0x800u) != 0u,
+        (flags & 0x1000u) != 0u,
     );
+}
+
+// Rebuild tangent frame from position + UV derivatives.  glTF normal maps
+// work without growing the vertex format or mesh bandwidth.
+fn apply_standard_normal_map(in: FragmentInput, normal_ws: vec3<f32>, scale: f32) -> vec3<f32> {
+    let dp1 = dpdx(in.world_pos);
+    let dp2 = dpdy(in.world_pos);
+    let duv1 = dpdx(in.uv);
+    let duv2 = dpdy(in.uv);
+    let det = duv1.x * duv2.y - duv1.y * duv2.x;
+    if abs(det) < 1.0e-8 {
+        return normal_ws;
+    }
+    let inv_det = 1.0 / det;
+    let tangent = normalize((dp1 * duv2.y - dp2 * duv1.y) * inv_det);
+    let bitangent = normalize((-dp1 * duv2.x + dp2 * duv1.x) * inv_det);
+    let sampled = material_data_from_srgb_sample(
+        textureSample(custom_image_tex_1, material_sampler, in.uv).xyz,
+    ) * 2.0 - 1.0;
+    let mapped = normalize(vec3<f32>(sampled.xy * scale, sampled.z));
+    return normalize(tangent * mapped.x + bitangent * mapped.y + normal_ws * mapped.z);
+}
+
+// Material cache uses one sRGB texture class.  Convert decoded samples back
+// to stored UNORM values for glTF data maps (MR, normal, and occlusion).
+fn material_data_from_srgb_sample(linear: vec3<f32>) -> vec3<f32> {
+    let lo = linear * 12.92;
+    let hi = 1.055 * pow(max(linear, vec3<f32>(0.0)), vec3<f32>(1.0 / 2.4)) - 0.055;
+    return select(hi, lo, linear <= vec3<f32>(0.0031308));
 }
 
 fn decode_mesh_blend_params(packed: u32) -> vec4<f32> {
@@ -931,6 +970,42 @@ fn sky_env_color(dir: vec3<f32>) -> vec3<f32> {
     return mix(scene.ground_color.xyz, above, smoothstep(-0.15, 0.05, up));
 }
 
+// Cheap screen-space cavity term.  Signed normal curvature darkens concave
+// areas only, so broad convex silhouettes stay clean.  This costs derivatives
+// and ALU only: no AO target, kernel texture, blur pass, or extra bandwidth.
+fn cavity_ambient_occlusion(world_pos: vec3<f32>, normal_ws: vec3<f32>) -> f32 {
+    let px = dpdx(world_pos);
+    let py = dpdy(world_pos);
+    let nx = dpdx(normal_ws);
+    let ny = dpdy(normal_ws);
+    let footprint_sq = dot(px, px) + dot(py, py);
+    let signed_curvature = (dot(nx, px) + dot(ny, py)) / max(footprint_sq, 1.0e-6);
+    let cavity = clamp(-signed_curvature * 0.08, 0.0, 0.35);
+    return 1.0 - cavity;
+}
+
+fn screen_space_ambient_occlusion(frag_pos: vec4<f32>) -> f32 {
+    let dims_u = textureDimensions(ssao_tex);
+    let dims = vec2<i32>(dims_u);
+    let uv = frag_pos.xy * scene.resolution.zw;
+    let coord = clamp(vec2<i32>(uv * vec2<f32>(dims_u)), vec2<i32>(0), dims - vec2<i32>(1));
+    return textureLoad(ssao_tex, coord, 0).r;
+}
+
+// Color-aware GTAO approximation: occluded bounce light keeps albedo tint
+// instead of crushing every cavity toward gray-black.
+fn multi_bounce_ambient_occlusion(ao: f32, albedo: vec3<f32>) -> vec3<f32> {
+    let a = 2.0404 * albedo - vec3<f32>(0.3324);
+    let b = -4.7951 * albedo + vec3<f32>(0.6417);
+    let c = 2.7552 * albedo + vec3<f32>(0.6903);
+    return max(vec3<f32>(ao), ((a * ao + b) * ao + c) * ao);
+}
+
+fn specular_ambient_occlusion(n_dot_v: f32, ao: f32, roughness: f32) -> f32 {
+    let exponent = exp2(-16.0 * roughness - 1.0);
+    return clamp(pow(n_dot_v + ao, exponent) - 1.0 + ao, 0.0, 1.0);
+}
+
 // ACES filmic fit (Narkowicz). Applied at the end of lit materials so HDR
 // light sums roll off instead of clipping; UI/2D/unlit stay untouched.
 fn tonemap_aces(x: vec3<f32>) -> vec3<f32> {
@@ -989,6 +1064,10 @@ fn perro_lit_standard(
     if material.double_sided && (in.is_front == material.mirrored_winding) {
         n = -n;
     }
+    if material.has_normal_texture {
+        let packed_pbr = decode_standard_pbr_params(in.packed_pbr_params_0, in.packed_pbr_params_1);
+        n = apply_standard_normal_map(in, n, packed_pbr.w);
+    }
     let mesh_fade = mesh_blend_fade(in, material);
     n = apply_mesh_normal_blend(material, n, in.world_pos, mesh_fade);
     var decal_emissive = vec3<f32>(0.0);
@@ -1001,7 +1080,9 @@ fn perro_lit_standard(
     let v = normalize(scene.camera_pos.xyz - in.world_pos);
     let roughness = clamp(roughness_in, 0.04, 1.0);
     let metallic = clamp(metallic_in, 0.0, 1.0);
-    let ao = clamp(ao_in, 0.0, 1.0);
+    let ao = clamp(ao_in, 0.0, 1.0)
+        * cavity_ambient_occlusion(in.world_pos, n)
+        * screen_space_ambient_occlusion(in.frag_pos);
     let alpha = perro_material_alpha_with_fade(in, base_color.a, mesh_fade);
     if material.meshlet_debug_view {
         return vec4<f32>(albedo, 1.0);
@@ -1072,7 +1153,8 @@ fn perro_lit_standard(
     // Hemisphere ambient: sky radiance from above, ground bounce from below.
     let hemi = clamp(n.y * 0.5 + 0.5, 0.0, 1.0);
     let ambient_radiance =
-        mix(scene.ground_color.xyz, scene.ambient_color.xyz * scene.ambient_color.w, hemi) * ao;
+        mix(scene.ground_color.xyz, scene.ambient_color.xyz * scene.ambient_color.w, hemi);
+    let diffuse_ao = multi_bounce_ambient_occlusion(ao, albedo);
     // Local color bleed: nearby-batch albedo/emissive staged per instance,
     // with the dominant source direction for wrap + reflection weighting.
     var bleed = LocalBleed(vec3<f32>(0.0), 0.0, vec3<f32>(0.0, 1.0, 0.0));
@@ -1082,7 +1164,7 @@ fn perro_lit_standard(
     let bleed_wrap = clamp(dot(n, bleed.dir) * 0.5 + 0.5, 0.0, 1.0);
     let bleed_diffuse = bleed.color * bleed.strength * (0.35 + 0.65 * bleed_wrap);
     let ambient_diffuse =
-        k_d_ambient * albedo * (ambient_radiance + bleed_diffuse * 0.45 * ao);
+        k_d_ambient * albedo * (ambient_radiance + bleed_diffuse * 0.45) * diffuse_ao;
     // Env reflection: procedural sky sampled along the reflection direction;
     // smooth surfaces pick up bleed strongest when reflecting toward it.
     // At roughness >= 0.95 the specular env contribution is negligible, so skip
@@ -1101,8 +1183,9 @@ fn perro_lit_standard(
             );
         }
         let spec_tint = mix(vec3<f32>(1.0), albedo, metallic);
+        let spec_ao = specular_ambient_occlusion(max(dot(n, v), 0.0), ao, roughness);
         ambient_specular =
-            k_s_ambient * env_spec * spec_tint * (0.25 + 0.75 * (1.0 - roughness)) * ao;
+            k_s_ambient * env_spec * spec_tint * (0.25 + 0.75 * (1.0 - roughness)) * spec_ao;
     }
 
     let shaded = ambient_diffuse + ambient_specular + light_rgb + emissive + decal_emissive;

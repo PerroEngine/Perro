@@ -310,7 +310,7 @@ pub struct RuntimeResourceApi {
     pub(super) skeleton_3d_load_tx: mpsc::Sender<AsyncSkeleton3DLoadResult>,
     pub(super) skeleton_3d_load_rx: Mutex<mpsc::Receiver<AsyncSkeleton3DLoadResult>>,
     pub(super) viewport_size: Mutex<(u32, u32)>,
-    #[cfg_attr(test, allow(dead_code))]
+    #[cfg_attr(any(test, target_arch = "wasm32"), allow(dead_code))]
     pub(crate) webcam_frame_tx: mpsc::SyncSender<WebcamFrameMessage>,
     pub(crate) webcam_frame_rx: Mutex<mpsc::Receiver<WebcamFrameMessage>>,
     pub(crate) webcam_error_tx: mpsc::Sender<WebcamErrorMessage>,

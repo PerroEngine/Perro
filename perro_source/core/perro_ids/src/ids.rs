@@ -264,6 +264,10 @@ define_generational!(
     "Signal ID - hash of signal name (or generational). Used for connect/emit."
 );
 define_generational!(
+    TimerID,
+    "Timer ID - deterministic hash of a named runtime timer."
+);
+define_generational!(
     AudioBusID,
     "Bus ID - deterministic ID from bus name. Used for audio routing."
 );
@@ -299,6 +303,32 @@ impl SignalID {
     /// Deterministic ID from signal name. Uses hash; generation 0.
     pub const fn from_string(s: &str) -> Self {
         Self::from_u64(string_to_u64(s))
+    }
+
+    pub const fn as_timer(self) -> TimerID {
+        TimerID::from_u64(self.as_u64())
+    }
+}
+
+impl TimerID {
+    pub const fn from_string(s: &str) -> Self {
+        Self::from_u64(string_to_u64(s))
+    }
+
+    pub const fn as_signal(self) -> SignalID {
+        SignalID::from_u64(self.as_u64())
+    }
+}
+
+impl From<SignalID> for TimerID {
+    fn from(value: SignalID) -> Self {
+        value.as_timer()
+    }
+}
+
+impl From<TimerID> for SignalID {
+    fn from(value: TimerID) -> Self {
+        value.as_signal()
     }
 }
 

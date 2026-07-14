@@ -4,10 +4,16 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-perro_app.workspace = true
+perro_app = { workspace = true, optional = true }
 perro_project.workspace = true
+perro_headless = { workspace = true, optional = true }
 [features]
+default = ["app"]
+app = ["dep:perro_app"]
 timings = ["perro_app/fps"]
+headless = ["dep:perro_headless"]
+headless_profile = ["perro_headless/profile"]
+headless_steamworks = ["perro_headless/steamworks"]
 profile = ["perro_app/profile"]
 ui_profile = ["perro_app/ui_profile"]
 mem_profile = ["perro_app/mem_profile"]

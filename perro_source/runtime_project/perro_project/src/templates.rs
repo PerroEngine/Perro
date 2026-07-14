@@ -481,7 +481,8 @@ name = "main"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-perro_app = "0.1.0"
+perro_app = {{ version = "0.1.0", optional = true }}
+perro_headless = {{ version = "0.1.0", optional = true }}
 perro_api = "0.1.0"
 perro_scene = "0.1.0"
 perro_render_bridge = "0.1.0"
@@ -491,7 +492,12 @@ perro_input_api = "0.1.0"
 scripts = {{ path = "../scripts" }}
 
 [features]
+default = ["app"]
+app = ["dep:perro_app"]
 profile = ["perro_app/profile"]
+headless = ["dep:perro_headless"]
+headless_profile = ["perro_headless/profile"]
+headless_steamworks = ["perro_headless/steamworks", "perro_api/steamworks", "perro_runtime/steamworks", "scripts/steamworks"]
 steamworks = ["perro_app/steamworks", "perro_api/steamworks", "perro_runtime/steamworks", "scripts/steamworks"]
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
@@ -965,11 +971,17 @@ edition = "2024"
 build = "build.rs"
 
 [dependencies]
-perro_app = "0.1.0"
+perro_app = { version = "0.1.0", optional = true }
+perro_headless = { version = "0.1.0", optional = true }
 perro_project = "0.1.0"
 
 [features]
+default = ["app"]
+app = ["dep:perro_app"]
 timings = ["perro_app/fps"]
+headless = ["dep:perro_headless"]
+headless_profile = ["perro_headless/profile"]
+headless_steamworks = ["perro_headless/steamworks"]
 profile = ["perro_app/profile"]
 ui_profile = ["perro_app/ui_profile"]
 mem_profile = ["perro_app/mem_profile"]
@@ -1028,7 +1040,8 @@ debug = true
 }
 
 fn default_dev_runner_main_rs() -> String {
-    r#"use perro_app::{entry, winit_runner::AppExitKind};
+    r#"#[cfg(not(feature = "headless"))]
+use perro_app::{entry, winit_runner::AppExitKind};
 use perro_project::resolve_local_path;
 use std::{env, path::PathBuf, process};
 
@@ -1053,8 +1066,20 @@ fn main() {
         parse_flag_value(&args, "--name").unwrap_or_else(|| "Perro Project".to_string());
 
     eprintln!("perro dev runner: start {}", root.to_string_lossy());
+    #[cfg(feature = "headless")]
+    {
+        if let Err(err) = perro_headless::run_dev_project_from_path(&root, &fallback_name) {
+            eprintln!("perro exit error at `{}`: {err}", root.to_string_lossy());
+            process::exit(1);
+        }
+        println!("perro exit: headless stop");
+        return;
+    }
+
+    #[cfg(not(feature = "headless"))]
     let run_result = entry::run_dev_project_from_path(&root, &fallback_name);
 
+    #[cfg(not(feature = "headless"))]
     match run_result {
         Ok(result) => match result.kind {
             AppExitKind::WindowClose => println!("perro exit: window close"),
@@ -1162,6 +1187,7 @@ fn project_root() -> std::path::PathBuf {
           graphics: perro_app::entry::StaticEmbeddedGraphicsConfig {
               vsync: false,
               msaa: true,
+              ssao: perro_runtime::SsaoQuality::Medium,
               meshlets: false,
               dev_meshlets: false,
               release_meshlets: true,

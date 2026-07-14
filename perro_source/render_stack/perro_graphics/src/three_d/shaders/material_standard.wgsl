@@ -18,11 +18,28 @@ fn shade_material(in: FragmentInput) -> vec4<f32> {
         let tex_luma = dot(base_sample.rgb, vec3<f32>(0.2126, 0.7152, 0.0722));
         albedo = mix(albedo, color.rgb * tex_luma, k);
     }
-    let roughness = clamp(pbr.x, 0.04, 1.0);
-    let metallic = clamp(pbr.y, 0.0, 1.0);
-    let ao = clamp(pbr.z, 0.0, 1.0);
+    var roughness = clamp(pbr.x, 0.04, 1.0);
+    var metallic = clamp(pbr.y, 0.0, 1.0);
+    var ao = 1.0;
+    var lit_emissive = emissive;
+    if material.has_metallic_roughness_texture {
+        let mr = material_data_from_srgb_sample(
+            textureSample(custom_image_tex_0, material_sampler, in.uv).rgb,
+        );
+        roughness = clamp(roughness * mr.g, 0.04, 1.0);
+        metallic = clamp(metallic * mr.b, 0.0, 1.0);
+    }
+    if material.has_occlusion_texture {
+        let sampled_ao = material_data_from_srgb_sample(
+            textureSample(custom_image_tex_2, material_sampler, in.uv).rgb,
+        ).r;
+        ao = mix(1.0, sampled_ao, clamp(pbr.z, 0.0, 1.0));
+    }
+    if material.has_emissive_texture {
+        lit_emissive *= textureSample(custom_image_tex_3, material_sampler, in.uv).rgb;
+    }
     if material.meshlet_debug_view {
         return vec4<f32>(color.rgb, 1.0);
     }
-    return perro_lit_standard(in, vec4<f32>(albedo, color.a * base_sample.a), roughness, metallic, ao, emissive);
+    return perro_lit_standard(in, vec4<f32>(albedo, color.a * base_sample.a), roughness, metallic, ao, lit_emissive);
 }

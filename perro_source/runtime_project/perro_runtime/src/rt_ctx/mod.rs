@@ -8,4 +8,5 @@ pub mod scene;
 pub mod scripts;
 pub mod signals;
 pub mod time;
+pub mod timers;
 pub mod window;

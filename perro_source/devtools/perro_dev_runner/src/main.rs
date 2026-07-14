@@ -1,3 +1,4 @@
+#[cfg(not(feature = "headless"))]
 use perro_app::{entry, winit_runner::AppExitKind};
 use perro_project::resolve_local_path;
 use std::{env, path::PathBuf, process};
@@ -23,8 +24,19 @@ fn main() {
         parse_flag_value(&args, "--name").unwrap_or_else(|| "Perro Project".to_string());
 
     eprintln!("perro dev runner: start {}", root.to_string_lossy());
+    #[cfg(feature = "headless")]
+    {
+        if let Err(err) = perro_headless::run_dev_project_from_path(&root, &fallback_name) {
+            eprintln!("perro exit error at `{}`: {err}", root.to_string_lossy());
+            process::exit(1);
+        }
+        println!("perro exit: headless stop");
+    }
+
+    #[cfg(not(feature = "headless"))]
     let run_result = entry::run_dev_project_from_path(&root, &fallback_name);
 
+    #[cfg(not(feature = "headless"))]
     match run_result {
         Ok(result) => match result.kind {
             AppExitKind::WindowClose => println!("perro exit: window close"),

@@ -76,6 +76,8 @@ impl Gpu3D {
         } = frame;
         self.custom_mesh_ranges
             .retain(|mesh_id, _| resources.has_mesh(*mesh_id));
+        let compacted_mesh_storage = self.compact_custom_mesh_storage_if_needed(device);
+        let force_full_rebuild = force_full_rebuild || compacted_mesh_storage;
         self.resize(device, width, height);
         self.ensure_material_fallback_texture(device, queue);
         self.prepare_decals(device, queue, resources, decals, decals_revision);
@@ -1084,6 +1086,21 @@ impl Gpu3D {
                             mesh_source,
                             static_texture_lookup,
                         );
+                        for slot in [
+                            standard_params.metallic_roughness_texture,
+                            standard_params.normal_texture,
+                            standard_params.occlusion_texture,
+                            standard_params.emissive_texture,
+                        ] {
+                            self.ensure_material_texture_slot(
+                                device,
+                                queue,
+                                resources,
+                                slot,
+                                mesh_source,
+                                static_texture_lookup,
+                            );
+                        }
                         let material_texture_key =
                             self.custom_material_image_key(device, queue, resources, material);
                         self.ensure_material_texture_bind_group(device, material_texture_key);
@@ -1212,6 +1229,21 @@ impl Gpu3D {
                     mesh_source,
                     static_texture_lookup,
                 );
+                for slot in [
+                    standard_params.metallic_roughness_texture,
+                    standard_params.normal_texture,
+                    standard_params.occlusion_texture,
+                    standard_params.emissive_texture,
+                ] {
+                    self.ensure_material_texture_slot(
+                        device,
+                        queue,
+                        resources,
+                        slot,
+                        mesh_source,
+                        static_texture_lookup,
+                    );
+                }
                 let material_texture_key =
                     self.custom_material_image_key(device, queue, resources, material);
                 self.ensure_material_texture_bind_group(device, material_texture_key);

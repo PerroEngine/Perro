@@ -1,0 +1,15 @@
+[package]
+name = "perro_headless"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+perro_runtime.workspace = true
+perro_input_api.workspace = true
+perro_scripting.workspace = true
+perro_steamworks = { workspace = true, optional = true, features = ["steamworks-runtime"] }
+ctrlc = "3.4"
+
+[features]
+profile = ["perro_runtime/profile"]
+steamworks = ["perro_runtime/steamworks", "dep:perro_steamworks"]

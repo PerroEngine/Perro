@@ -889,7 +889,7 @@ pub(super) fn water_global_point_3d(transform: Mat4, point: Vector3) -> Vector3 
     transform.transform_point3(point.into()).into()
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
+#[cfg(test)]
 pub(crate) fn water_physics_sample_for_body(
     surface: &perro_nodes::WaterSurfaceParams,
     local: Vector2,

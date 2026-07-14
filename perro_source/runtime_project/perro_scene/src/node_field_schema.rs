@@ -317,7 +317,9 @@ fn cached_scene_node_fields(node_type: NodeType) -> &'static [SceneNodeField] {
     use std::sync::{Mutex, OnceLock};
     static CACHE: OnceLock<Mutex<HashMap<NodeType, &'static [SceneNodeField]>>> = OnceLock::new();
     let cache = CACHE.get_or_init(Default::default);
-    let mut map = cache.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut map = cache
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     if let Some(slice) = map.get(&node_type) {
         return slice;
     }

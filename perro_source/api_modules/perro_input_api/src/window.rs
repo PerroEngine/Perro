@@ -216,6 +216,42 @@ impl<'ipt, IP: InputAPI + ?Sized> ActionModule<'ipt, IP> {
     pub fn released_hash(&self, name_hash: u64) -> bool {
         self.ipt.action_released_hash(name_hash)
     }
+
+    /// Queue a live rebind for the named action.
+    #[inline]
+    pub fn start_rebind(&self, name: &str) {
+        self.start_rebind_hash(action_hash(name));
+    }
+
+    /// Queue a live rebind for the hashed action.
+    #[inline]
+    pub fn start_rebind_hash(&self, action_hash: u64) {
+        if let Some(buffer) = self.ipt.command_buffer() {
+            buffer
+                .borrow_mut()
+                .push(InputCommand::StartRebind { action_hash });
+        }
+    }
+
+    /// Queue cancellation of an active live rebind.
+    #[inline]
+    pub fn cancel_rebind(&self) {
+        if let Some(buffer) = self.ipt.command_buffer() {
+            buffer.borrow_mut().push(InputCommand::CancelRebind);
+        }
+    }
+
+    /// Return `true` while live rebind waits for a button press.
+    #[inline]
+    pub fn is_rebinding(&self) -> bool {
+        self.ipt.is_rebinding()
+    }
+
+    /// Return the last completed live rebind for developer-owned persistence.
+    #[inline]
+    pub fn rebind_result(&self) -> Option<&'ipt RebindResult> {
+        self.ipt.rebind_result()
+    }
 }
 
 /// Compact keyboard key query module.

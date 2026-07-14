@@ -17,7 +17,6 @@ perro_input_api.workspace = true
 perro_runtime_api.workspace = true
 perro_ui.workspace = true
 perro_web.workspace = true
-image = { version = "0.25.9", default-features = false, features = ["png", "jpeg", "gif", "bmp", "tga", "webp", "ico"] }
 futures-util = "0.3.31"
 uuid = "1.18.1"
 perro_io.workspace = true

@@ -17,6 +17,7 @@ mod scene;
 mod script;
 mod signal;
 mod time;
+mod timer;
 mod window;
 
 // ---- Animation ----
@@ -69,4 +70,5 @@ pub use signal::{SignalAPI, SignalModule};
 // ---- Frame/window ----
 
 pub use time::{ProfilingSnapshot, TimeAPI, TimeModule};
+pub use timer::{TimerAPI, TimerModule, timer_signal_ids};
 pub use window::{CursorIcon, FrameRateCap, WindowAPI, WindowMode, WindowModule, WindowRequest};

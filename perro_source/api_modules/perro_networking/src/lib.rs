@@ -4,4 +4,7 @@ mod native;
 mod web_stub;
 
 #[cfg(not(target_arch = "wasm32"))]
+pub mod multiplayer;
+
+#[cfg(not(target_arch = "wasm32"))]
 pub use native::*;

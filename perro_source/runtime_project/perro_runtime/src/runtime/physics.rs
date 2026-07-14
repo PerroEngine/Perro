@@ -416,7 +416,6 @@ impl Runtime {
         self.physics.update_query_pipeline_3d();
     }
 
-    #[allow(dead_code)]
     pub(crate) fn prepared_audio_raycast_2d(
         &self,
         origin: Vector2,
@@ -428,7 +427,6 @@ impl Runtime {
             .prepared_audio_raycast_2d(origin, direction, max_distance, filter)
     }
 
-    #[allow(dead_code)]
     pub(crate) fn prepared_audio_raycast_3d(
         &self,
         origin: Vector3,

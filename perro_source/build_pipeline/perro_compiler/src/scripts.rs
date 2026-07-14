@@ -83,6 +83,7 @@ pub fn compile_scripts_with_profile(
         .map_err(|e| CompilerError::SceneParse(format!("failed to load project.toml: {e}")))?;
     let copied = sync_scripts(project_root)?;
     let scripts_crate = project_root.join(".perro").join("scripts");
+    force_scripts_rebuild(&scripts_crate)?;
     let target_dir = project_root.join("target");
 
     let mut cmd = Command::new("cargo");
@@ -133,6 +134,7 @@ fn compile_all_dlc_scripts_with_profile(
         write_dlc_scripts_manifest(project_root, &crate_name, &scripts_crate)?;
         write_string_if_changed(&scripts_src.join("lib.rs"), &default_scripts_lib_rs())?;
         let _ = sync_dlc_scripts(project_root, dlc_name)?;
+        force_scripts_rebuild(&scripts_crate)?;
         compile_scripts_crate(project_root, &scripts_crate, profile, steam_enabled)?;
         let dylib = resolve_compiled_dylib(
             project_root,
@@ -141,6 +143,13 @@ fn compile_all_dlc_scripts_with_profile(
         )?;
         fs::copy(dylib, scripts_crate.join(scripts_dylib_name()))?;
     }
+    Ok(())
+}
+
+fn force_scripts_rebuild(scripts_crate: &Path) -> Result<(), CompilerError> {
+    let lib_path = scripts_crate.join("src").join("lib.rs");
+    let source = fs::read(&lib_path)?;
+    fs::write(lib_path, source)?;
     Ok(())
 }
 
@@ -473,6 +482,7 @@ fn build_patch_crates_io_block(engine_root: &Path) -> String {
             "perro_source/api_modules/perro_networking",
         ),
         ("perro_input_api", "perro_source/api_modules/perro_input_api"),
+        ("perro_jobs", "perro_source/api_modules/perro_jobs"),
         ("perro_web", "perro_source/api_modules/perro_web"),
         (
             "perro_render_bridge",

@@ -25,6 +25,7 @@
 | `frame_time` | [`frame_time`](#frame_time) |
 | `fps` | [`fps`](#fps) |
 | `profiling` | [`profiling`](#profiling) |
+| Named timers | [Named Timers](#named-timers) |
 
 ## Overview
 
@@ -46,6 +47,49 @@ lifecycle!({
         let _ = (dt, fps_now);
     }
 });
+```
+
+## Named Timers
+
+Use named timers for one-shot delays without script state vars or per-frame countdown code.
+
+```rust
+lifecycle!({
+    fn on_all_init(&self, ctx: &mut ScriptContext<'_, API>) {
+        signal_connect!(ctx.run, ctx.id, timer_finished!("wait"), func!("on_wait"));
+        timer_start!(ctx.run, Duration::from_secs(2), "wait");
+    }
+});
+
+methods!({
+    fn on_wait(&self, _ctx: &mut ScriptContext<'_, API>) {
+        // Runs automatically after two seconds.
+    }
+});
+```
+
+`timer_start!(ctx.run, duration, "name")` emits `name_started` immediately.
+
+It emits `name_finished` when game-frame time reaches the deadline.
+
+Use `timer_started!("name")` and `timer_finished!("name")` to connect without spelling signal names twice.
+
+Starting the same name again resets its deadline. Code from any script may reset it with a new duration.
+
+Use `timer_cancel!`, `timer_is_active!`, and `timer_remaining!` for optional control. Remaining time returns `Option<Duration>`. `Duration::ZERO` finishes immediately.
+
+The runtime stores one active timer per name in a central deadline heap. Frames inspect only expired deadlines instead of decrementing every timer.
+
+Literal names, `_started` / `_finished` suffixes, and all ID hashes resolve at compile time. Timer starts and queries allocate no strings.
+
+Timer registry keys use `TimerID`. Use `timer!("name")` for direct module calls.
+
+String expressions and variables work too. Dynamic starts hash the name at runtime and build two temporary suffixed strings; dynamic cancel, active, and remaining queries only hash the supplied name.
+
+```rust
+let timer_name = format!("player_{}_wait", ctx.id.index());
+timer_start!(ctx.run, Duration::from_millis(250), timer_name.as_str());
+let left = timer_remaining!(ctx.run, timer_name.as_str());
 ```
 
 ## API Reference

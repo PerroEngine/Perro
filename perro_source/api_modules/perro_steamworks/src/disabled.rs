@@ -156,13 +156,6 @@ pub mod events {
         QUEUE.get_or_init(|| Mutex::new(SteamEventQueue::new()))
     }
 
-    #[allow(dead_code)]
-    pub(crate) fn push(event: SteamEvent) {
-        if let Ok(mut queue) = queue().lock() {
-            queue.push(event);
-        }
-    }
-
     pub fn poll_one() -> Result<Option<SteamEvent>, SteamError> {
         queue()
             .lock()

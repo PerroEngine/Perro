@@ -104,6 +104,37 @@ macro_rules! action_released {
 }
 
 #[macro_export]
+/// Start native live rebinding for an action name.
+macro_rules! action_start_rebind {
+    ($ipt:expr, $action:literal) => {{
+        const __PERRO_ACTION_HASH: u64 = $crate::action_hash($action);
+        $ipt.Actions().start_rebind_hash(__PERRO_ACTION_HASH)
+    }};
+    ($ipt:expr, $action:expr) => {
+        $ipt.Actions()
+            .start_rebind_hash($crate::action_hash($action))
+    };
+}
+
+#[macro_export]
+/// Cancel active native live rebinding.
+macro_rules! action_cancel_rebind {
+    ($ipt:expr) => {{ $ipt.Actions().cancel_rebind() }};
+}
+
+#[macro_export]
+/// Check whether native live rebinding waits for input.
+macro_rules! action_is_rebinding {
+    ($ipt:expr) => {{ $ipt.Actions().is_rebinding() }};
+}
+
+#[macro_export]
+/// Read the last completed native live rebind.
+macro_rules! action_rebind_result {
+    ($ipt:expr) => {{ $ipt.Actions().rebind_result() }};
+}
+
+#[macro_export]
 /// Signature:
 /// - `mouse_down!(&InputWindow<_>, MouseButton) -> bool`
 ///

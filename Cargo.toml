@@ -12,6 +12,7 @@ members = [
     "perro_source/core/perro_csv",
 
     "perro_source/runtime_project/perro_runtime",
+    "perro_source/runtime_project/perro_headless",
     "perro_source/runtime_project/perro_physics",
     "perro_source/runtime_project/perro_runtime_render",
     "perro_source/runtime_project/perro_internal_updates",
@@ -21,6 +22,7 @@ members = [
     "perro_source/api_modules/perro_modules",
     "perro_source/api_modules/perro_networking",
     "perro_source/api_modules/perro_input_api",
+    "perro_source/api_modules/perro_jobs",
     "perro_source/api_modules/perro_api",
     "perro_source/api_modules/perro_resource_api",
     "perro_source/api_modules/perro_runtime_api",
@@ -65,6 +67,7 @@ default-members = [
     "perro_source/core/perro_csv",
 
     "perro_source/runtime_project/perro_runtime",
+    "perro_source/runtime_project/perro_headless",
     "perro_source/runtime_project/perro_physics",
     "perro_source/runtime_project/perro_runtime_render",
     "perro_source/runtime_project/perro_internal_updates",
@@ -74,6 +77,7 @@ default-members = [
     "perro_source/api_modules/perro_modules",
     "perro_source/api_modules/perro_networking",
     "perro_source/api_modules/perro_input_api",
+    "perro_source/api_modules/perro_jobs",
     "perro_source/api_modules/perro_api",
     "perro_source/api_modules/perro_resource_api",
     "perro_source/api_modules/perro_runtime_api",
@@ -114,6 +118,7 @@ readme = "README.md"
 [workspace.dependencies]
 perro_api = { version = "0.1.0", path = "perro_source/api_modules/perro_api" }
 perro_input_api = { version = "0.1.0", path = "perro_source/api_modules/perro_input_api" }
+perro_jobs = { version = "0.1.0", path = "perro_source/api_modules/perro_jobs" }
 perro_modules = { version = "0.1.0", path = "perro_source/api_modules/perro_modules" }
 perro_networking = { version = "0.1.0", path = "perro_source/api_modules/perro_networking" }
 perro_resource_api = { version = "0.1.0", path = "perro_source/api_modules/perro_resource_api" }
@@ -138,6 +143,7 @@ perro_dev_runner = { version = "0.1.0", path = "perro_source/devtools/perro_dev_
 perro_assets = { version = "0.1.0", path = "perro_source/io_stack/perro_assets" }
 perro_io = { version = "0.1.0", path = "perro_source/io_stack/perro_io" }
 perro_app = { version = "0.1.0", path = "perro_source/render_stack/perro_app" }
+perro_headless = { version = "0.1.0", path = "perro_source/runtime_project/perro_headless" }
 perro_graphics = { version = "0.1.0", path = "perro_source/render_stack/perro_graphics" }
 perro_graphics_assets = { version = "0.1.0", path = "perro_source/render_stack/perro_graphics_assets" }
 perro_macros = { version = "0.1.0", path = "perro_source/render_stack/perro_macros" }

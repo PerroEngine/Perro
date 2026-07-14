@@ -99,9 +99,11 @@ pub(crate) fn enqueue_callback(callback: steamworks::CallbackResult) {
                 name: "ticket_for_webapi_response",
             });
         }
-        steamworks::CallbackResult::ValidateAuthTicketResponse(_) => {
-            push(SteamEvent::Callback {
-                name: "validate_auth_ticket_response",
+        steamworks::CallbackResult::ValidateAuthTicketResponse(response) => {
+            push(SteamEvent::ServerAuthValidated {
+                user: response.steam_id.into(),
+                owner: response.owner_steam_id.into(),
+                error: response.response.err().map(|err| err.to_string()),
             });
         }
         steamworks::CallbackResult::SteamServersConnected(_) => {

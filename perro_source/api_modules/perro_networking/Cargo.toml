@@ -5,10 +5,13 @@ edition = "2024"
 
 [features]
 network-tests = []
+steamworks = ["dep:perro_steamworks", "perro_steamworks/steamworks-runtime"]
 
 [dependencies]
 perro_ids.workspace = true
 perro_io.workspace = true
+perro_modules.workspace = true
+perro_steamworks = { workspace = true, optional = true }
 perro_variant.workspace = true
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]

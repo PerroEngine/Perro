@@ -19,6 +19,8 @@ pub mod events;
 #[cfg(feature = "steamworks-runtime")]
 pub mod friends;
 #[cfg(feature = "steamworks-runtime")]
+pub mod game_server;
+#[cfg(feature = "steamworks-runtime")]
 pub mod input;
 #[cfg(feature = "steamworks-runtime")]
 pub mod leaderboards;
@@ -76,6 +78,13 @@ pub mod runtime {
 
     pub fn run_callbacks() -> Result<(), SteamError> {
         crate::app::run_callbacks()
+    }
+
+    #[cfg(feature = "steamworks-runtime")]
+    pub fn init_game_server(
+        config: crate::game_server::GameServerConfig,
+    ) -> Result<(), SteamError> {
+        crate::game_server::init(config)
     }
 }
 

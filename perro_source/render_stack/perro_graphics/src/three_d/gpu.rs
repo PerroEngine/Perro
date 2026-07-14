@@ -150,6 +150,8 @@ mod resize;
 mod shadows;
 #[path = "gpu/sky.rs"]
 mod sky;
+#[path = "gpu/ssao.rs"]
+mod ssao;
 #[path = "gpu/targets.rs"]
 mod targets;
 
@@ -198,6 +200,10 @@ const MATERIAL_FLAG_RECEIVE_SHADOWS: u32 = 1u32 << 6;
 // Surface carries a chromatic modulate: the standard shader re-applies the
 // hue bias against the base color texture sample (0x100 in WGSL).
 const MATERIAL_FLAG_MODULATE_BIAS: u32 = 1u32 << 8;
+const MATERIAL_FLAG_HAS_METALLIC_ROUGHNESS_TEXTURE: u32 = 1u32 << 9;
+const MATERIAL_FLAG_HAS_NORMAL_TEXTURE: u32 = 1u32 << 10;
+const MATERIAL_FLAG_HAS_OCCLUSION_TEXTURE: u32 = 1u32 << 11;
+const MATERIAL_FLAG_HAS_EMISSIVE_TEXTURE: u32 = 1u32 << 12;
 const CUSTOM_PARAM_KIND_SCALAR: u32 = 0;
 const CUSTOM_PARAM_KIND_VEC2: u32 = 1;
 const CUSTOM_PARAM_KIND_VEC3: u32 = 2;
@@ -951,6 +957,10 @@ pub struct Gpu3D {
     depth_view: wgpu::TextureView,
     depth_prepass_texture: wgpu::Texture,
     depth_prepass_view: wgpu::TextureView,
+    ssao_pass: Option<ssao::SsaoPass>,
+    _ssao_fallback_texture: wgpu::Texture,
+    ssao_fallback_view: wgpu::TextureView,
+    ssao_quality: crate::SsaoQuality,
     mesh_blend_depth_texture: wgpu::Texture,
     mesh_blend_depth_view: wgpu::TextureView,
     depth_size: (u32, u32),
@@ -1061,6 +1071,7 @@ pub struct Gpu3DConfig {
     pub dev_meshlets: bool,
     pub meshlet_debug_view: bool,
     pub occlusion_culling: OcclusionCullingMode,
+    pub ssao: crate::SsaoQuality,
     pub indirect_first_instance_enabled: bool,
     pub multi_draw_indirect_enabled: bool,
     pub texture_filter: TextureFilterMode,

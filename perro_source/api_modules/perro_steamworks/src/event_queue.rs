@@ -18,6 +18,7 @@ impl SteamEventQueue {
         }
     }
 
+    #[cfg(any(feature = "steamworks-runtime", test))]
     pub(crate) fn push(&mut self, event: SteamEvent) {
         if let Some(index) = self
             .events
@@ -60,6 +61,7 @@ impl SteamEventQueue {
     }
 }
 
+#[cfg(any(feature = "steamworks-runtime", test))]
 fn is_coalescible(event: &SteamEvent) -> bool {
     matches!(
         event,
@@ -70,6 +72,7 @@ fn is_coalescible(event: &SteamEvent) -> bool {
     )
 }
 
+#[cfg(any(feature = "steamworks-runtime", test))]
 fn coalesces(queued: &SteamEvent, incoming: &SteamEvent) -> bool {
     match (queued, incoming) {
         (

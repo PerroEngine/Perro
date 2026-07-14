@@ -4,7 +4,6 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-perro_ids.workspace = true
 perro_nodes.workspace = true
 perro_structs.workspace = true
 perro_ui.workspace = true

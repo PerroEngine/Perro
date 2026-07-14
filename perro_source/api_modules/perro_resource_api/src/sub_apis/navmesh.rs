@@ -17,6 +17,66 @@ pub struct NavMesh3D {
     pub triangles: Vec<NavMeshTriangle3D>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct NavMeshLink3D {
+    pub start: Vector3,
+    pub end: Vector3,
+    pub bidirectional: bool,
+    pub layers: BitMask,
+    pub cost: f32,
+    pub snap_distance: f32,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct NavMeshResource3D {
+    pub mesh: NavMesh3D,
+    pub triangle_areas: Vec<u8>,
+    pub links: Vec<NavMeshLink3D>,
+}
+
+impl NavMeshResource3D {
+    pub fn from_mesh(mesh: NavMesh3D) -> Self {
+        let triangle_areas = vec![1; mesh.triangles.len()];
+        Self {
+            mesh,
+            triangle_areas,
+            links: Vec::new(),
+        }
+    }
+
+    pub fn validate(&self) -> Result<(), String> {
+        self.mesh.validate().map_err(|err| err.to_string())?;
+        if self.triangle_areas.len() != self.mesh.triangles.len() {
+            return Err("navmesh triangle area count does not match triangle count".to_string());
+        }
+        if let Some((triangle, _)) = self
+            .triangle_areas
+            .iter()
+            .enumerate()
+            .find(|(_, area)| !(1..=32).contains(area))
+        {
+            return Err(format!("navmesh triangle {triangle} area must be 1..=32"));
+        }
+        for (link, data) in self.links.iter().enumerate() {
+            if !vector_is_finite(data.start) || !vector_is_finite(data.end) {
+                return Err(format!("navmesh link {link} endpoint is not finite"));
+            }
+            if data.layers.is_empty() {
+                return Err(format!("navmesh link {link} has empty layers"));
+            }
+            if !data.cost.is_finite() || data.cost <= 0.0 {
+                return Err(format!("navmesh link {link} cost must be finite and > 0"));
+            }
+            if !data.snap_distance.is_finite() || data.snap_distance < 0.0 {
+                return Err(format!(
+                    "navmesh link {link} snap distance must be finite and >= 0"
+                ));
+            }
+        }
+        Ok(())
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum NavMeshValidationError {
     EmptyVertices,
@@ -141,7 +201,13 @@ impl NavMesh3D {
 }
 
 pub fn parse_pnav_text(text: &str) -> Result<NavMesh3D, String> {
+    parse_pnav_resource_text(text).map(|resource| resource.mesh)
+}
+
+pub fn parse_pnav_resource_text(text: &str) -> Result<NavMeshResource3D, String> {
     let mut navmesh = NavMesh3D::default();
+    let mut triangle_areas = Vec::new();
+    let mut links = Vec::new();
     let mut saw_header = false;
 
     for (line_index, raw_line) in text.lines().enumerate() {
@@ -189,19 +255,55 @@ pub fn parse_pnav_text(text: &str) -> Result<NavMesh3D, String> {
                     vertices: tri,
                     layers: parse_layers(&parts[4..], line_no)?,
                 });
+                triangle_areas.push(parse_area(&parts[4..], line_no)?);
+            }
+            Some("link") => {
+                if parts.len() < 7 {
+                    return Err(format!("line {line_no}: link needs start x y z and end x y z"));
+                }
+                links.push(NavMeshLink3D {
+                    start: Vector3::new(
+                        parse_f32(parts[1], line_no)?,
+                        parse_f32(parts[2], line_no)?,
+                        parse_f32(parts[3], line_no)?,
+                    ),
+                    end: Vector3::new(
+                        parse_f32(parts[4], line_no)?,
+                        parse_f32(parts[5], line_no)?,
+                        parse_f32(parts[6], line_no)?,
+                    ),
+                    bidirectional: parse_bool_option(&parts[7..], "bidirectional", true, line_no)?,
+                    layers: parse_layers(&parts[7..], line_no)?,
+                    cost: parse_f32_option(&parts[7..], "cost", 1.0, line_no)?,
+                    snap_distance: parse_f32_option(&parts[7..], "snap", 1.0, line_no)?,
+                });
             }
             Some(kind) => return Err(format!("line {line_no}: unknown pnav record {kind}")),
             None => {}
         }
     }
 
-    navmesh.validate().map_err(|err| err.to_string())?;
-    Ok(navmesh)
+    let resource = NavMeshResource3D {
+        mesh: navmesh,
+        triangle_areas,
+        links,
+    };
+    resource.validate()?;
+    Ok(resource)
 }
 
 pub fn parse_pnav_bytes(bytes: &[u8]) -> Result<NavMesh3D, String> {
     let text = std::str::from_utf8(bytes).map_err(|err| err.to_string())?;
     parse_pnav_text(text)
+}
+
+pub fn parse_pnav_resource_bytes(bytes: &[u8]) -> Result<NavMeshResource3D, String> {
+    let text = std::str::from_utf8(bytes).map_err(|err| err.to_string())?;
+    parse_pnav_resource_text(text)
+}
+
+fn vector_is_finite(value: Vector3) -> bool {
+    value.x.is_finite() && value.y.is_finite() && value.z.is_finite()
 }
 
 fn parse_f32(raw: &str, line_no: usize) -> Result<f32, String> {
@@ -251,6 +353,53 @@ fn parse_layers(parts: &[&str], line_no: usize) -> Result<BitMask, String> {
     BitMask::try_layer(layer).ok_or_else(|| format!("line {line_no}: layer must be 1..=32"))
 }
 
+fn parse_area(parts: &[&str], line_no: usize) -> Result<u8, String> {
+    let Some(raw) = parts.iter().find_map(|part| part.strip_prefix("area=")) else {
+        return Ok(1);
+    };
+    let area = raw
+        .parse::<u8>()
+        .map_err(|_| format!("line {line_no}: invalid area {raw}"))?;
+    if !(1..=32).contains(&area) {
+        return Err(format!("line {line_no}: area must be 1..=32"));
+    }
+    Ok(area)
+}
+
+fn parse_f32_option(
+    parts: &[&str],
+    name: &str,
+    default: f32,
+    line_no: usize,
+) -> Result<f32, String> {
+    let Some(raw) = parts
+        .iter()
+        .find_map(|part| part.strip_prefix(name).and_then(|rest| rest.strip_prefix('=')))
+    else {
+        return Ok(default);
+    };
+    parse_f32(raw, line_no)
+}
+
+fn parse_bool_option(
+    parts: &[&str],
+    name: &str,
+    default: bool,
+    line_no: usize,
+) -> Result<bool, String> {
+    let Some(raw) = parts
+        .iter()
+        .find_map(|part| part.strip_prefix(name).and_then(|rest| rest.strip_prefix('=')))
+    else {
+        return Ok(default);
+    };
+    match raw {
+        "true" | "1" | "yes" => Ok(true),
+        "false" | "0" | "no" => Ok(false),
+        _ => Err(format!("line {line_no}: invalid boolean {raw}")),
+    }
+}
+
 pub trait NavMeshAPI {
     fn load_navmesh_hashed(&self, source_hash: u64, source: Option<&str>) -> NavMeshID;
     fn reserve_navmesh_hashed(&self, source_hash: u64, source: Option<&str>) -> NavMeshID;
@@ -260,6 +409,18 @@ pub trait NavMeshAPI {
     fn write_navmesh_data(&self, id: NavMeshID, data: NavMesh3D) -> bool;
     fn is_navmesh_loaded(&self, id: NavMeshID) -> bool;
     fn drop_navmesh(&self, id: NavMeshID) -> bool;
+
+    fn create_navmesh_resource_data(&self, data: NavMeshResource3D) -> NavMeshID {
+        self.create_navmesh_data(data.mesh)
+    }
+
+    fn get_navmesh_resource_data(&self, id: NavMeshID) -> Option<NavMeshResource3D> {
+        self.get_navmesh_data(id).map(NavMeshResource3D::from_mesh)
+    }
+
+    fn write_navmesh_resource_data(&self, id: NavMeshID, data: NavMeshResource3D) -> bool {
+        self.write_navmesh_data(id, data.mesh)
+    }
 
     fn load_navmesh(&self, source: &str) -> NavMeshID {
         self.load_navmesh_hashed(perro_ids::string_to_u64(source), Some(source))
@@ -305,6 +466,11 @@ impl<'res, R: NavMeshAPI + ?Sized> NavMeshModule<'res, R> {
     }
 
     #[inline]
+    pub fn create_resource(&self, data: NavMeshResource3D) -> NavMeshID {
+        self.api.create_navmesh_resource_data(data)
+    }
+
+    #[inline]
     pub fn create_from_bytes(&self, bytes: &[u8]) -> NavMeshID {
         self.api.create_navmesh_from_bytes(bytes)
     }
@@ -315,8 +481,18 @@ impl<'res, R: NavMeshAPI + ?Sized> NavMeshModule<'res, R> {
     }
 
     #[inline]
+    pub fn get_resource(&self, id: NavMeshID) -> Option<NavMeshResource3D> {
+        self.api.get_navmesh_resource_data(id)
+    }
+
+    #[inline]
     pub fn write(&self, id: NavMeshID, data: NavMesh3D) -> bool {
         self.api.write_navmesh_data(id, data)
+    }
+
+    #[inline]
+    pub fn write_resource(&self, id: NavMeshID, data: NavMeshResource3D) -> bool {
+        self.api.write_navmesh_resource_data(id, data)
     }
 
     #[inline]

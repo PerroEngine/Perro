@@ -15,6 +15,15 @@ impl Gpu3D {
             create_depth_prepass_texture(device, width, height);
         self.depth_prepass_texture = depth_prepass_texture;
         self.depth_prepass_view = depth_prepass_view;
+        if let Some(ssao_pass) = self.ssao_pass.as_mut() {
+            ssao_pass.resize(
+                device,
+                width,
+                height,
+                &self.depth_prepass_view,
+                self.ssao_quality,
+            );
+        }
         let (mesh_blend_depth_texture, mesh_blend_depth_view) =
             create_depth_prepass_texture(device, width, height);
         self.mesh_blend_depth_texture = mesh_blend_depth_texture;
@@ -22,10 +31,21 @@ impl Gpu3D {
         self.mesh_blend_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("perro_mesh_blend_bg"),
             layout: &self.mesh_blend_bgl,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: wgpu::BindingResource::TextureView(&self.mesh_blend_depth_view),
-            }],
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&self.mesh_blend_depth_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(
+                        self.ssao_pass
+                            .as_ref()
+                            .map(ssao::SsaoPass::view)
+                            .unwrap_or(&self.ssao_fallback_view),
+                    ),
+                },
+            ],
         });
         let (mesh_blend_mask_texture, mesh_blend_mask_view) =
             mesh_blend_screen::create_mesh_blend_mask_texture(device, width, height);
@@ -487,6 +507,15 @@ impl Gpu3D {
             create_depth_prepass_texture(device, width, height);
         self.depth_prepass_texture = depth_prepass_texture;
         self.depth_prepass_view = depth_prepass_view;
+        if let Some(ssao_pass) = self.ssao_pass.as_mut() {
+            ssao_pass.resize(
+                device,
+                width,
+                height,
+                &self.depth_prepass_view,
+                self.ssao_quality,
+            );
+        }
         let (mesh_blend_depth_texture, mesh_blend_depth_view) =
             create_depth_prepass_texture(device, width, height);
         self.mesh_blend_depth_texture = mesh_blend_depth_texture;
@@ -494,10 +523,21 @@ impl Gpu3D {
         self.mesh_blend_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("perro_mesh_blend_bg"),
             layout: &self.mesh_blend_bgl,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: wgpu::BindingResource::TextureView(&self.mesh_blend_depth_view),
-            }],
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&self.mesh_blend_depth_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(
+                        self.ssao_pass
+                            .as_ref()
+                            .map(ssao::SsaoPass::view)
+                            .unwrap_or(&self.ssao_fallback_view),
+                    ),
+                },
+            ],
         });
         let (mesh_blend_mask_texture, mesh_blend_mask_view) =
             mesh_blend_screen::create_mesh_blend_mask_texture(device, width, height);
@@ -624,6 +664,7 @@ mod tests {
                     dev_meshlets: false,
                     meshlet_debug_view: false,
                     occlusion_culling: OcclusionCullingMode::Off,
+                    ssao: crate::SsaoQuality::Off,
                     indirect_first_instance_enabled: false,
                     multi_draw_indirect_enabled: false,
                     texture_filter: TextureFilterMode::Linear,

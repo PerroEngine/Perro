@@ -6,7 +6,6 @@ build = "build.rs"
 
 [dependencies]
 serde_json = "1.0.149"
-perro_ids.workspace = true
 perro_variant.workspace = true
 perro_io.workspace = true
 perro_resource_api.workspace = true

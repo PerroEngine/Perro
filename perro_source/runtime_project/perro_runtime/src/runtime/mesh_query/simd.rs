@@ -140,7 +140,6 @@ fn scalar_ray_aabb_tmin(origin: Vec3, dir: Vec3, min: Vec3, max: Vec3, max_t: f3
 }
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-#[allow(dead_code)]
 mod x86 {
     use glam::Vec3;
 
@@ -220,7 +219,6 @@ mod x86 {
 }
 
 #[cfg(target_arch = "aarch64")]
-#[allow(dead_code)]
 mod aarch64 {
     use glam::Vec3;
     use std::arch::aarch64::{
@@ -290,7 +288,6 @@ mod aarch64 {
 }
 
 #[cfg(all(target_arch = "wasm32", target_feature = "simd128"))]
-#[allow(dead_code)]
 mod wasm32 {
     use glam::Vec3;
     use std::arch::wasm32::{

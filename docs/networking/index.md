@@ -6,6 +6,7 @@ Low-level crate: `perro_networking`.
 
 Topics:
 
+- [Multiplayer: LAN + Steam](multiplayer.md)
 - [HTTP](http.md)
 - [TCP](tcp.md)
 - [UDP](udp.md)

@@ -2,6 +2,7 @@ pub mod builtin_assets;
 pub use perro_csv as csv;
 pub use perro_ids as ids;
 pub use perro_input_api as input;
+pub use perro_jobs as jobs;
 pub use perro_modules as modules;
 pub use perro_networking as networking;
 pub use perro_nodes as nodes;
@@ -21,6 +22,7 @@ pub mod steam {
     pub use perro_steamworks::cloud;
     pub use perro_steamworks::events;
     pub use perro_steamworks::friends;
+    pub use perro_steamworks::game_server;
     pub use perro_steamworks::input;
     pub use perro_steamworks::leaderboards;
     pub use perro_steamworks::lobbies;
@@ -64,6 +66,7 @@ pub mod prelude {
     };
     pub use perro_ids::prelude::*;
     pub use perro_input_api::prelude::*;
+    pub use perro_jobs::{Job, JobError, join, par_map, spawn};
     pub use perro_modules::log::*;
     pub use perro_modules::prelude::*;
     pub use perro_networking::*;

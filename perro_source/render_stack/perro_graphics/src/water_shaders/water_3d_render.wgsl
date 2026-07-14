@@ -957,7 +957,13 @@ fn fs_water_3d(in: Water3DVertexOut, @builtin(front_facing) front_facing: bool) 
     let water_rgb = transmitted_rgb + sss_rgb * sss;
 
     let rough_blend = clamp(w.visual0.z, 0.0, 1.0);
-    let reflection_weight = clamp(max(w.sky_color_bias.w * w.visual0.y, fresnel), 0.0, 1.0);
+    // Use measured scene thickness as the main transmission/reflection split.
+    // Shallow water keeps the refracted opaque scene visible. Deep water fades
+    // toward the reflected scene/sky while Fresnel still protects grazing
+    // reflections at every depth.
+    let depth_reflection = smoothstep(0.18, 0.82, depth_t);
+    let deep_reflection = clamp(max(w.visual0.y, w.sky_color_bias.w * w.visual0.y), 0.0, 1.0);
+    let reflection_weight = mix(fresnel, max(fresnel, deep_reflection), depth_reflection);
     let ssr = water_ssr(in.world_pos, normal, view_dir, rough_blend, reflection_weight);
     let reflection_source = mix(w.sky_color_bias.rgb, ssr.color, ssr.confidence);
     let reflected = mix(water_rgb, reflection_source, reflection_weight);

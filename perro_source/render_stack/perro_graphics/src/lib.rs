@@ -9,8 +9,8 @@ pub mod ui;
 mod visual_accessibility;
 
 pub use backend::{
-    DrawFrameTiming, GraphicsBackend, OcclusionCullingMode, PerroGraphics, StaticMeshLookup,
-    StaticShaderLookup, StaticTextureLookup,
+    DrawFrameTiming, GraphicsBackend, OcclusionCullingMode, PerroGraphics, SsaoQuality,
+    StaticMeshLookup, StaticShaderLookup, StaticTextureLookup,
 };
 pub use resources::{ResourceGcDrops, ResourceStore};
 

@@ -28,6 +28,7 @@ aspect_ratio = "16:9"
 vsync = false
 
 msaa = true
+ssao = "medium"
 
 meshlets = false
 dev_meshlets = false
@@ -177,6 +178,7 @@ pub fn parse_project_toml(contents: &str) -> Result<ProjectConfig, ProjectError>
     let physics_gravity = parse_physics_gravity(physics_table)?;
     let physics_coef = parse_physics_coef(physics_table)?;
     let msaa = parse_bool_with_default(graphics_table, "msaa", true)?;
+    let ssao = parse_ssao_with_default(graphics_table, "ssao", SsaoQuality::Medium)?;
     let meshlets = parse_bool_with_default(graphics_table, "meshlets", false)?;
     let dev_meshlets = parse_bool_with_default(graphics_table, "dev_meshlets", false)?;
     let release_meshlets = parse_bool_with_default(graphics_table, "release_meshlets", true)?;
@@ -221,6 +223,7 @@ pub fn parse_project_toml(contents: &str) -> Result<ProjectConfig, ProjectError>
         physics_gravity,
         physics_coef,
         msaa,
+        ssao,
         meshlets,
         dev_meshlets,
         release_meshlets,
@@ -751,6 +754,30 @@ fn parse_physics_coef(
     }
     Ok(parsed)
 }
+fn parse_ssao_with_default(
+    table: &toml::map::Map<String, Value>,
+    key: &'static str,
+    default: SsaoQuality,
+) -> Result<SsaoQuality, ProjectError> {
+    let Some(value) = table.get(key) else {
+        return Ok(default);
+    };
+    let value = value.as_str().ok_or_else(|| {
+        ProjectError::InvalidField("graphics.ssao", "must be a string".to_string())
+    })?;
+    match value {
+        "off" => Ok(SsaoQuality::Off),
+        "low" => Ok(SsaoQuality::Low),
+        "medium" => Ok(SsaoQuality::Medium),
+        "high" => Ok(SsaoQuality::High),
+        "ultra" => Ok(SsaoQuality::Ultra),
+        _ => Err(ProjectError::InvalidField(
+            "graphics.ssao",
+            "must be one of: off, low, medium, high, ultra".to_string(),
+        )),
+    }
+}
+
 fn parse_occlusion_culling_with_default(
     table: &toml::map::Map<String, Value>,
     key: &'static str,

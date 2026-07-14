@@ -343,6 +343,16 @@ fn upsert_camera_stream_state(
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum SsaoQuality {
+    Off,
+    Low,
+    #[default]
+    Medium,
+    High,
+    Ultra,
+}
+
 pub struct PerroGraphics {
     frame: FrameState,
     resources: ResourceStore,
@@ -381,6 +391,7 @@ pub struct PerroGraphics {
     dev_meshlets: bool,
     meshlet_debug_view: bool,
     occlusion_culling: OcclusionCullingMode,
+    ssao: SsaoQuality,
     texture_filter: TextureFilterMode,
     retained_draws_cache_revision: u64,
     retained_draw_instances_cache: u32,
@@ -741,6 +752,7 @@ impl PerroGraphics {
             dev_meshlets: false,
             meshlet_debug_view: false,
             occlusion_culling: OcclusionCullingMode::Gpu,
+            ssao: SsaoQuality::Medium,
             texture_filter: TextureFilterMode::LinearMipmap,
             retained_draws_cache_revision: u64::MAX,
             retained_draw_instances_cache: 0,
@@ -802,6 +814,11 @@ impl PerroGraphics {
 
     pub fn with_msaa_samples(mut self, samples: u32) -> Self {
         self.set_smoothing_samples(samples);
+        self
+    }
+
+    pub fn with_ssao(mut self, quality: SsaoQuality) -> Self {
+        self.ssao = quality;
         self
     }
 
@@ -1696,6 +1713,7 @@ impl GraphicsBackend for PerroGraphics {
                     dev_meshlets: self.dev_meshlets,
                     meshlet_debug_view: self.meshlet_debug_view,
                     occlusion_culling: self.occlusion_culling,
+                    ssao: self.ssao,
                     texture_filter: self.texture_filter,
                 };
                 wasm_bindgen_futures::spawn_local(async move {
@@ -1717,6 +1735,7 @@ impl GraphicsBackend for PerroGraphics {
                     dev_meshlets: self.dev_meshlets,
                     meshlet_debug_view: self.meshlet_debug_view,
                     occlusion_culling: self.occlusion_culling,
+                    ssao: self.ssao,
                     texture_filter: self.texture_filter,
                 };
                 let mut gpu = Gpu::new(window, cfg);

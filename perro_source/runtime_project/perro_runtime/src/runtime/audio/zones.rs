@@ -566,7 +566,7 @@ impl Runtime {
         true
     }
 
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(super) fn play_runtime_audio_2d(
         &mut self,
         audio: RuntimeAudio<'_>,
@@ -583,7 +583,7 @@ impl Runtime {
         )
     }
 
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(super) fn play_runtime_audio_3d(
         &mut self,
         audio: RuntimeAudio<'_>,

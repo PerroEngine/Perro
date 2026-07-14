@@ -1,0 +1,19 @@
+[package]
+name = "perro_jobs"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Small parallel job API for Perro scripts and modules"
+
+[dependencies]
+rayon = "1.10"
+
+[dev-dependencies]
+criterion = "0.5"
+
+[[bench]]
+name = "jobs"
+harness = false

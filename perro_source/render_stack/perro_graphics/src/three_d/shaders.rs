@@ -358,11 +358,11 @@ pub fn build_custom_multimesh_material_shader(
     }
     if apply_standard_lighting {
         out.push_str(
-            "\n@fragment\nfn fs_main(in: FragmentInput, @builtin(position) frag_pos: vec4<f32>) -> @location(0) vec4<f32> {\n    var frag = in;\n    frag.frag_pos = frag_pos;\n    let base = shade_material(frag);\n    return perro_lit_standard(frag, base, 0.5, 0.0, 1.0, vec3<f32>(0.0));\n}\n",
+            "\n@fragment\nfn fs_main(in: FragmentInput) -> @location(0) vec4<f32> {\n    let base = shade_material(in);\n    return perro_lit_standard(in, base, 0.5, 0.0, 1.0, vec3<f32>(0.0));\n}\n",
         );
     } else {
         out.push_str(
-            "\n@fragment\nfn fs_main(in: FragmentInput, @builtin(position) frag_pos: vec4<f32>) -> @location(0) vec4<f32> {\n    var frag = in;\n    frag.frag_pos = frag_pos;\n    return shade_material(frag);\n}\n",
+            "\n@fragment\nfn fs_main(in: FragmentInput) -> @location(0) vec4<f32> {\n    return shade_material(in);\n}\n",
         );
     }
     out
@@ -873,7 +873,7 @@ fn shade_material(in: FragmentInput) -> vec4<f32> {
             perro_render_bridge::CustomMaterialLighting3D::Raw,
         );
         assert!(wgsl.contains("return shade_vertex(perro_multimesh_vs_main_base"));
-        assert!(wgsl.contains("return shade_material(frag);"));
+        assert!(wgsl.contains("return shade_material(in);"));
         parse_and_validate(&wgsl, "custom multimesh material wgsl validates");
     }
 
@@ -906,7 +906,7 @@ fn shade_material(in: FragmentInput) -> vec4<f32> {
         assert!(single.contains("return shade_vertex(perro_vs_main_base"));
         assert!(multi.contains("return shade_vertex(perro_multimesh_vs_main_base"));
         assert!(single.contains("return shade_material(in);"));
-        assert!(multi.contains("return shade_material(frag);"));
+        assert!(multi.contains("return shade_material(in);"));
         assert!(single.contains("fn custom_f_param"));
         assert!(multi.contains("fn custom_f_param"));
         assert!(single.contains("fn custom_v_param"));

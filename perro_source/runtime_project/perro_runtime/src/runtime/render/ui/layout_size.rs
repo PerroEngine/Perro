@@ -89,6 +89,16 @@ impl Runtime {
                         baseline.size_def = layout.size;
                         baseline.h_mode = layout.h_size;
                         baseline.v_mode = layout.v_size;
+                    } else {
+                        // Dynamically loaded UI can get its first layout pass before its
+                        // parent has a computed rect. Do not let that placeholder-sized
+                        // pass permanently lock ratio-based min/max clamps near zero.
+                        if baseline.size.x <= 1.0 && size.x > baseline.size.x {
+                            baseline.size.x = size.x;
+                        }
+                        if baseline.size.y <= 1.0 && size.y > baseline.size.y {
+                            baseline.size.y = size.y;
+                        }
                     }
                 })
                 .or_insert_with(|| super::super::state::UiSizeClampBaseline {

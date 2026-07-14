@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 #[macro_export]
 macro_rules! emit_net_event {
     ($ctx:expr, $event:expr) => {{

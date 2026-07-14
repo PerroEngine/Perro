@@ -557,6 +557,7 @@ pub struct EditorState {
     pub inspector_modified_only: bool,
     pub inspector_layout_applied: bool,
     pub inspector_selected_key: Option<u32>,
+    pub inspector_selected_path: String,
     pub script_schema_reload_frames: u32,
     pub destructive_confirm_action: String,
     pub destructive_confirm_target: String,
@@ -1108,6 +1109,12 @@ mod destructive_confirmation_tests {
         assert!(focus_sum <= 1.0);
         assert!(focus.center_w > normal.center_w);
         assert!(focus.viewport_h > normal.viewport_h);
+    }
+
+    #[test]
+    fn res_path_rewrite_keeps_glb_selector_outside_file_path() {
+        let path = res_to_abs("C:/game", "res://models/hero.glb:mesh[2]");
+        assert_eq!(path, "C:/game/res/models/hero.glb:mesh[2]");
     }
 
     #[test]

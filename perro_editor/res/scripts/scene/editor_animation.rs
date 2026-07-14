@@ -573,7 +573,7 @@ fn bone_chain_depths(parents: &[i32]) -> Vec<u32> {
 pub fn sync_selected_skeleton_bones<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
     let Some((key, is_2d)) = with_state!(ctx.run, EditorState, ctx.id, selected_skeleton_kind)
     else {
-        let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| clear_bone_snapshot(state));
+        let _ = with_state_mut!(ctx.run, EditorState, ctx.id, clear_bone_snapshot);
         return;
     };
     let Some(preview_id) = preview_node_for_key(ctx, key) else {

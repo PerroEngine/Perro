@@ -1931,7 +1931,7 @@ parent = @viewport_frame_button
 parent = @viewport_panel
     [UiGrid]
         anchor = "center"
-        size_ratio = (0.99, 0.99)
+        size_ratio = (1.0, 1.0)
         columns = 6.0
         h_spacing = 0.006
         v_spacing = 0.002
@@ -1981,12 +1981,12 @@ parent = @viewport_grid
 parent = @viewport_panel
     [UiCameraStream]
         anchor = "center"
-        size_ratio = (0.99, 0.99)
+        size_ratio = (1.0, 1.0)
         z_index = 2.0
         camera = @editor_camera_2d
         resolution = (960.0, 540.0)
         aspect_mode = "fit"
-        radius = 0.03
+        radius = 0.0
         visible = false
     [/UiCameraStream]
 [/viewport_stream_2d]
@@ -1995,12 +1995,12 @@ parent = @viewport_panel
 parent = @viewport_panel
     [UiCameraStream]
         anchor = "center"
-        size_ratio = (0.99, 0.99)
+        size_ratio = (1.0, 1.0)
         z_index = 2.0
         camera = @editor_camera_3d
         resolution = (960.0, 540.0)
         aspect_mode = "fit"
-        radius = 0.03
+        radius = 0.0
         visible = false
     [/UiCameraStream]
 [/viewport_stream_3d]
@@ -2009,7 +2009,7 @@ parent = @viewport_panel
 parent = @viewport_panel
     [UiPanel]
         anchor = "center"
-        size_ratio = (0.99, 0.99)
+        size_ratio = (1.0, 1.0)
         z_index = 4.0
         visible = false
         input_enabled = false
@@ -2326,7 +2326,7 @@ parent = @viewport_canvas_overlay
 parent = @viewport_panel
     [UiButton]
         anchor = "center"
-        size_ratio = (0.99, 0.99)
+        size_ratio = (1.0, 1.0)
         z_index = 20.0
         click_signals = ["editor_viewport_click"]
         style = {

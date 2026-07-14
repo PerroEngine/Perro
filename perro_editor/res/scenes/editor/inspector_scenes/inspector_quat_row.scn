@@ -314,9 +314,9 @@ parent = @inspector_value_euler_button
 [inspector_value_quat_mode]
 parent = @inspector_value_row
     [UiDropdown]
-        anchor = "right"
-        size_ratio = (0.115, 0.64)
-        translation_ratio = (-0.018, 0.0)
+        anchor = "bottom"
+        size_ratio = (0.3, 0.32)
+        translation_ratio = (0.0, -0.02)
         z_index = 8.0
         visible = false
         selected_signals = ["editor_inspector_var_7"]

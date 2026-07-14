@@ -202,6 +202,10 @@ pub(crate) fn dlc_command(args: &[String], cwd: &Path) -> Result<(), String> {
 
 pub(crate) fn dev_command(args: &[String], cwd: &Path) -> Result<(), String> {
     let target = parse_cli_target(args)?;
+    let headless = args.iter().any(|a| a == "--headless");
+    if headless && target != CliTarget::Native {
+        return Err("`--headless` only supports `--target native`".to_string());
+    }
     if target == CliTarget::Web {
         return dev_web_command(args, cwd);
     }
@@ -215,10 +219,15 @@ pub(crate) fn dev_command(args: &[String], cwd: &Path) -> Result<(), String> {
     let csv_profile_name = parse_optional_flag_value(args, "--csv-profile")
         .map(|raw| PathBuf::from(raw.unwrap_or_else(|| "profiling.csv".to_string())));
     let profile = profile_requested || csv_profile_name.is_some();
+    if headless && (timings || ui_profile) {
+        return Err("`--timings` + `--ui-profile` do not support `--headless`".to_string());
+    }
     let project_dir = parse_flag_value(args, "--path")
         .map(|p| resolve_local_path(&p, cwd))
         .unwrap_or_else(|| cwd.to_path_buf());
     let project_dir = project_dir.canonicalize().unwrap_or(project_dir);
+    ensure_source_overrides(&project_dir)
+        .map_err(|err| format!("failed to sync generated project crates: {err}"))?;
     let project_cfg = load_project_toml(&project_dir)
         .map_err(|err| format!("failed to load project.toml: {err}"))?;
     let profiling_dir = ensure_profiling_output_dir(&project_dir)?;
@@ -243,42 +252,42 @@ pub(crate) fn dev_command(args: &[String], cwd: &Path) -> Result<(), String> {
     update_workspace_vscode_linked_projects(&workspace_root(), &project_dir)?;
     update_project_vscode_linked_projects(&project_dir)?;
 
-    log_step("Building Scripts");
-    compile_scripts_with_profile(&project_dir, ScriptsBuildProfile::Debug).map_err(|err| {
-        format!(
-            "scripts pipeline failed for {}: {err}",
-            project_dir.display()
-        )
-    })?;
-    log_done("Scripts Built");
-
-    let launch_dir = prepare_dev_runner_launch_dir(&project_dir, "debug")
-        .map_err(|err| format!("failed to prepare dev runner launch directory: {err}"))?;
-    let scripts_path = stage_dev_runner_scripts(&project_dir, &launch_dir, "debug")
-        .map_err(|err| format!("failed to stage scripts dylib for dev runner: {err}"))?;
-
     let dev_runner_dir = project_dir.join(".perro").join("dev_runner");
     let target_dir = project_dir.join("target");
     log_step("Building Dev Runner");
 
     let mut build_cmd = Command::new("cargo");
     build_cmd.arg("build").env("CARGO_TARGET_DIR", &target_dir);
+    if headless {
+        build_cmd.arg("--no-default-features");
+    }
     if release {
         build_cmd.arg("--release");
     }
     build_cmd.current_dir(&dev_runner_dir);
     let mut features = Vec::new();
+    if headless {
+        features.push("headless");
+    }
     if timings {
         features.push("timings");
     }
     if profile {
-        features.push("profile");
+        features.push(if headless {
+            "headless_profile"
+        } else {
+            "profile"
+        });
     }
     if ui_profile {
         features.push("ui_profile");
     }
     if project_cfg.steam.enabled {
-        features.push("steamworks");
+        features.push(if headless {
+            "headless_steamworks"
+        } else {
+            "steamworks"
+        });
     }
     if !features.is_empty() {
         build_cmd.arg("--features").arg(features.join(","));
@@ -297,6 +306,21 @@ pub(crate) fn dev_command(args: &[String], cwd: &Path) -> Result<(), String> {
         ));
     }
     log_done("Dev Runner Built");
+
+    // Build scripts after the runner so both use the runner's final engine build identity.
+    log_step("Building Scripts");
+    compile_scripts_with_profile(&project_dir, ScriptsBuildProfile::Debug).map_err(|err| {
+        format!(
+            "scripts pipeline failed for {}: {err}",
+            project_dir.display()
+        )
+    })?;
+    log_done("Scripts Built");
+
+    let launch_dir = prepare_dev_runner_launch_dir(&project_dir, "debug")
+        .map_err(|err| format!("failed to prepare dev runner launch directory: {err}"))?;
+    let scripts_path = stage_dev_runner_scripts(&project_dir, &launch_dir, "debug")
+        .map_err(|err| format!("failed to stage scripts dylib for dev runner: {err}"))?;
 
     let profile_dir = if release { "release" } else { "debug" };
     let runner_path = if cfg!(target_os = "windows") {
@@ -323,6 +347,9 @@ pub(crate) fn dev_command(args: &[String], cwd: &Path) -> Result<(), String> {
         .arg(project_dir.to_string_lossy().to_string())
         .current_dir(&project_dir)
         .env("PERRO_SCRIPTS_DYLIB_PATH", scripts_path);
+    if headless {
+        run_cmd.arg("--headless");
+    }
     if let Some(path) = &csv_profile_path {
         run_cmd.env("PERRO_PROFILE_CSV", path.to_string_lossy().to_string());
     }
@@ -786,6 +813,10 @@ fn indent(out: &mut String, depth: usize) {
 
 pub(crate) fn project_command(args: &[String], cwd: &Path) -> Result<(), String> {
     let target = parse_cli_target(args)?;
+    let headless = args.iter().any(|a| a == "--headless");
+    if headless && target != CliTarget::Native {
+        return Err("`--headless` only supports `--target native`".to_string());
+    }
     if target == CliTarget::Web {
         return build_web_command(args, cwd);
     }
@@ -801,16 +832,19 @@ pub(crate) fn project_command(args: &[String], cwd: &Path) -> Result<(), String>
     update_workspace_vscode_linked_projects(&workspace_root(), &project_dir)?;
     update_project_vscode_linked_projects(&project_dir)?;
     log_step("Building Project Bundle");
-    compile_project_bundle(&project_dir, ProjectBuildOptions::new(profile, console))
-        .map(|_| {
-            log_done("Project Bundle Built");
-        })
-        .map_err(|err| {
-            format!(
-                "project pipeline failed for {}: {err}",
-                project_dir.display()
-            )
-        })
+    compile_project_bundle(
+        &project_dir,
+        ProjectBuildOptions::new(profile, console).with_headless(headless),
+    )
+    .map(|_| {
+        log_done("Project Bundle Built");
+    })
+    .map_err(|err| {
+        format!(
+            "project pipeline failed for {}: {err}",
+            project_dir.display()
+        )
+    })
 }
 
 fn parse_cli_target(args: &[String]) -> Result<CliTarget, String> {

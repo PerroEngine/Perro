@@ -134,6 +134,7 @@ icon = "res://icon.png"
 aspect_ratio = "16:9"
 vsync = true
 msaa = false
+ssao = "high"
 meshlets = true
 dev_meshlets = true
 release_meshlets = false
@@ -146,6 +147,7 @@ texture_filter = "nearest"
     let parsed = parse_project_toml(toml).expect("failed to parse project.toml");
     assert!(parsed.vsync);
     assert!(!parsed.msaa);
+    assert_eq!(parsed.ssao, SsaoQuality::High);
     assert!(parsed.meshlets);
     assert!(parsed.dev_meshlets);
     assert!(!parsed.release_meshlets);
@@ -159,6 +161,35 @@ texture_filter = "nearest"
     assert_eq!(parsed.physics_gravity, -9.81);
     assert_eq!(parsed.physics_coef, 1.0);
     assert!(parsed.localization.is_none());
+}
+
+#[test]
+fn parse_project_toml_ssao_defaults_medium() {
+    let toml = r#"
+[project]
+name = "Game"
+main_scene = "res://main.scn"
+
+[graphics]
+aspect_ratio = "16:9"
+"#;
+    let parsed = parse_project_toml(toml).expect("parse default ssao");
+    assert_eq!(parsed.ssao, SsaoQuality::Medium);
+}
+
+#[test]
+fn parse_project_toml_rejects_bad_ssao() {
+    let toml = r#"
+[project]
+name = "Game"
+main_scene = "res://main.scn"
+
+[graphics]
+aspect_ratio = "16:9"
+ssao = "max"
+"#;
+    let err = parse_project_toml(toml).expect_err("reject bad ssao");
+    assert!(err.to_string().contains("graphics.ssao"));
 }
 
 #[test]

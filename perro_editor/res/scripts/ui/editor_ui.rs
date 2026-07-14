@@ -250,6 +250,7 @@ pub fn refresh_scene_panel<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, 
 pub fn refresh_selection_panels<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
     capture_editor_output(ctx);
     sync_selected_skeleton_bones(ctx);
+    reset_inspector_for_selection(ctx);
     let view = with_state!(ctx.run, EditorState, ctx.id, EditorView::from_state);
     refresh_chrome_view(ctx, &view);
     // Picker labels reference the selected node ("add child of X").
@@ -781,21 +782,6 @@ fn refresh_inspector_view<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, A
     let row_base_heights = inspector_row_base_heights(&view.inspector.script_vars);
     let row_subtree_heights =
         inspector_row_subtree_heights(&view.inspector.script_vars, &row_base_heights);
-    let selected_key_changed = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
-        if state.inspector_selected_key == state.selected_key {
-            false
-        } else {
-            state.inspector_selected_key = state.selected_key;
-            state.focused_inspector_box.clear();
-            state.inspector_picker_open = false;
-            state.inspector_expanded_paths.clear();
-            true
-        }
-    })
-    .unwrap_or(false);
-    if selected_key_changed {
-        clear_inspector_value_rows(ctx);
-    }
     let override_view = inspector_override_view(ctx);
     for idx in 0..view.inspector.script_vars.len() {
         let row = view.inspector.script_vars.get(idx);
@@ -1329,12 +1315,12 @@ fn ensure_inspector_node_chain<API: ScriptAPI + ?Sized>(
     }
     set_ui_node_size(ctx, "inspector_node_chain", (1.0, 1.0));
     set_hlayout_h_align(ctx, "inspector_node_chain", UiHorizontalAlign::Center);
-    for idx in 0..3 {
+    for idx in 0..4 {
         let has_chip = parts.get(idx).is_some();
         let has_sep = parts.get(idx + 1).is_some();
         set_ui_display(ctx, &format!("inspector_chain_chip_{idx}"), has_chip);
         set_ui_display(ctx, &format!("inspector_chain_label_{idx}"), has_chip);
-        if idx < 2 {
+        if idx < 3 {
             set_ui_display(ctx, &format!("inspector_chain_sep_{idx}"), has_sep);
         }
         let Some(label) = parts.get(idx) else {
@@ -1358,7 +1344,7 @@ fn ensure_inspector_node_chain<API: ScriptAPI + ?Sized>(
             &format!("inspector_chain_label_{idx}"),
             if idx + 1 == parts.len() { 0.38 } else { 0.40 },
         );
-        if idx < 2 {
+        if idx < 3 {
             set_ui_node_size(ctx, &format!("inspector_chain_sep_{idx}"), (0.030, 0.96));
         }
     }
@@ -1369,16 +1355,19 @@ fn inspector_chain_chip_colors(
     idx: usize,
 ) -> (&'static str, &'static str, &'static str) {
     let label = parts.get(idx).map(String::as_str).unwrap_or_default();
-    let family = parts.get(1).map(String::as_str).unwrap_or_default();
-    if label == "Node" {
+    let is_3d = parts.iter().any(|part| part == "Node3D");
+    let is_2d = parts.iter().any(|part| part == "Node2D");
+    if label == "Script" {
+        ("#29243A", "#A98BEA", "#C5AFF2")
+    } else if label == "Node" {
         ("#23272D", "#F2F4F7", "#F2F4F7")
     } else if label == "Node3D" {
         ("#2F261F", "#E59A4E", "#F0B36A")
-    } else if family == "Node3D" {
+    } else if is_3d {
         ("#33291C", "#D9852E", "#E8A24A")
     } else if label == "Node2D" {
         ("#1F2A36", "#5DA2FF", "#8EC0FF")
-    } else if family == "Node2D" {
+    } else if is_2d {
         ("#1C2C38", "#3E8DD6", "#72B5EA")
     } else {
         ("#23272D", theme::TEXT_DIM, theme::TEXT)
@@ -1710,7 +1699,7 @@ impl InspectorViewData {
         view.name_edit = doc.scene.key_name_or_id(node.key).to_string();
         view.kind = node.data.node_type.name().to_string();
         view.parent = String::new();
-        view.node_chain = node_chain_parts(node.data.node_type);
+        view.node_chain = node_chain_parts(node.data.node_type, node.script.is_some());
         view.node_actions = true;
         view.transform_fields = transform_fields;
         view.pos = scene_value_components(&node.data, "position");
@@ -2335,6 +2324,8 @@ fn inspector_row_base_heights(rows: &[InspectorValueRow]) -> Vec<f32> {
                 (0.029 * rows as f32).max(0.043)
             } else if row.kind == "Color" {
                 0.041
+            } else if row.kind == "Quat" {
+                0.052
             } else if !row.components.is_empty() {
                 0.039
             } else if row.source == "section" {
@@ -2366,7 +2357,7 @@ fn apply_inspector_value_row_text_layout<API: ScriptAPI + ?Sized>(
         (0.13, 0.13)
     } else if row.kind.starts_with("Matrix(") {
         (0.23, 0.23)
-    } else if !row.components.is_empty() || row.kind == "Color" {
+    } else if row.kind == "Quat" || !row.components.is_empty() || row.kind == "Color" {
         (0.27, 0.32)
     } else {
         (0.42, 0.31)
@@ -2374,6 +2365,18 @@ fn apply_inspector_value_row_text_layout<API: ScriptAPI + ?Sized>(
     let name_label = format!("inspector_var_{idx}_name");
     set_label_text_ratio(ctx, &name_label, name_text_ratio);
     set_label_size_ratio(ctx, &name_label, (name_ratio, 1.0));
+    if row.kind == "Quat" {
+        set_ui_node_size(
+            ctx,
+            &format!("inspector_var_{idx}_components"),
+            (0.68, 1.0),
+        );
+        set_ui_node_size(
+            ctx,
+            &format!("inspector_var_{idx}_quat_mode"),
+            (0.30, 0.32),
+        );
+    }
     if row.source == "section" {
         // Categories stay centered like Godot; nested section headers hug
         // the left edge next to their disclosure marker.
@@ -2827,18 +2830,15 @@ pub fn node_hierarchy_text(node_type: perro_scene::NodeType) -> String {
     format!("Node > {name}")
 }
 
-pub fn node_chain_parts(node_type: perro_scene::NodeType) -> Vec<String> {
-    let name = node_type.name();
-    let mut out = vec!["Node".to_string()];
-    if node_type.is_a(perro_scene::NodeType::UiNode) && name != "UiNode" {
-        out.push("UiNode".to_string());
-    } else if node_type.is_a(perro_scene::NodeType::Node3D) && name != "Node3D" {
-        out.push("Node3D".to_string());
-    } else if node_type.is_a(perro_scene::NodeType::Node2D) && name != "Node2D" {
-        out.push("Node2D".to_string());
+pub fn node_chain_parts(node_type: perro_scene::NodeType, has_script: bool) -> Vec<String> {
+    let mut out = Vec::new();
+    if has_script {
+        out.push("Script".to_string());
     }
-    if out.last().is_none_or(|last| last != name) {
-        out.push(name.to_string());
+    let mut cursor = Some(node_type);
+    while let Some(ty) = cursor {
+        out.push(ty.name().to_string());
+        cursor = ty.parent_type();
     }
     out
 }
@@ -4049,11 +4049,19 @@ pub fn abs_to_res(root: &Path, path: &Path) -> Option<String> {
 
 pub fn res_to_abs(root: &str, res_path: &str) -> String {
     let rel = res_path.trim_start_matches("res://");
-    Path::new(root)
+    let (file, selector) = rel
+        .split_once(':')
+        .map_or((rel, ""), |(file, selector)| (file, selector));
+    let mut abs = Path::new(root)
         .join("res")
-        .join(rel)
+        .join(file)
         .to_string_lossy()
-        .to_string()
+        .replace('\\', "/");
+    if !selector.is_empty() {
+        abs.push(':');
+        abs.push_str(selector);
+    }
+    abs
 }
 
 pub fn is_gltf_path(path: &str) -> bool {
@@ -4982,7 +4990,33 @@ pub fn viewport_window_aspect<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'
 }
 
 pub fn viewport_stream_size_ratio(_window_aspect: f32) -> (f32, f32) {
-    (0.99, 0.99)
+    (1.0, 1.0)
+}
+
+fn reset_inspector_for_selection<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let changed = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        let selected_path = state
+            .open_paths
+            .get(state.active_open)
+            .cloned()
+            .unwrap_or_else(|| state.active_asset_path.clone());
+        if state.inspector_selected_key == state.selected_key
+            && state.inspector_selected_path == selected_path
+        {
+            return false;
+        }
+        state.inspector_selected_key = state.selected_key;
+        state.inspector_selected_path = selected_path;
+        state.focused_inspector_box.clear();
+        state.inspector_picker_open = false;
+        state.inspector_expanded_paths.clear();
+        state.inspector_collapsed_sections.clear();
+        true
+    })
+    .unwrap_or(false);
+    if changed {
+        clear_inspector_value_rows(ctx);
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]

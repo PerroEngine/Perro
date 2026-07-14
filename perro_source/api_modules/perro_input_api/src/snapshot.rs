@@ -17,6 +17,8 @@ pub struct InputSnapshot {
     action_down: Vec<u64>,
     action_pressed: Vec<u64>,
     action_released: Vec<u64>,
+    rebind_action: Option<u64>,
+    rebind_result: Option<RebindResult>,
     commands: RefCell<Vec<InputCommand>>,
     pending_mouse_mode: Option<MouseMode>,
     pending_gamepad_rumble: Vec<GamepadRumbleRequest>,
@@ -39,6 +41,8 @@ impl InputSnapshot {
             action_down: Vec::new(),
             action_pressed: Vec::new(),
             action_released: Vec::new(),
+            rebind_action: None,
+            rebind_result: None,
             commands: RefCell::new(Vec::new()),
             pending_mouse_mode: None,
             pending_gamepad_rumble: Vec::new(),
@@ -86,6 +90,9 @@ impl InputSnapshot {
     #[inline]
     pub fn set_key_state(&mut self, key: KeyCode, is_down: bool) {
         self.keyboard.set_key_state(key, is_down);
+        if self.keyboard.is_key_pressed(key) {
+            self.capture_rebind(InputBinding::Key(key));
+        }
         self.refresh_key_actions(key);
     }
 
@@ -125,6 +132,9 @@ impl InputSnapshot {
     #[inline]
     pub fn set_mouse_button_state(&mut self, button: MouseButton, is_down: bool) {
         self.mouse.set_button_state(button, is_down);
+        if self.mouse.is_button_pressed(button) {
+            self.capture_rebind(InputBinding::Mouse(button));
+        }
         self.refresh_mouse_actions(button);
     }
 
@@ -280,6 +290,16 @@ impl InputSnapshot {
                 InputCommand::BindPlayer { index, binding } => {
                     self.bind_player(index, binding);
                 }
+                InputCommand::StartRebind { action_hash } => {
+                    self.rebind_result = None;
+                    self.rebind_action = self
+                        .input_map
+                        .action_by_hash(action_hash)
+                        .map(|_| action_hash);
+                }
+                InputCommand::CancelRebind => {
+                    self.rebind_action = None;
+                }
                 InputCommand::RequestJoyConCalibration { index } => {
                     let state = self.joycon_mut(index);
                     state.set_calibration_requested(true);
@@ -310,6 +330,9 @@ impl InputSnapshot {
     #[inline]
     pub fn set_gamepad_button_state(&mut self, index: usize, button: GamepadButton, is_down: bool) {
         self.gamepad_mut(index).set_button_state(button, is_down);
+        if self.gamepads[index].is_button_pressed(button) {
+            self.capture_rebind(InputBinding::Gamepad(button));
+        }
         self.refresh_gamepad_actions(button);
     }
 
@@ -338,6 +361,9 @@ impl InputSnapshot {
     pub fn set_joycon_button_state(&mut self, index: usize, button: JoyConButton, is_down: bool) {
         let state = self.joycon_mut(index);
         state.set_button_state(button, is_down);
+        if self.joycons[index].is_button_pressed(button) {
+            self.capture_rebind(InputBinding::JoyCon(button));
+        }
         self.refresh_joycon_actions(button);
     }
 
@@ -498,6 +524,18 @@ impl InputSnapshot {
 
     // ---- Action queries ----
 
+    /// Return `true` while the next button press waits to bind an action.
+    #[inline]
+    pub fn is_rebinding(&self) -> bool {
+        self.rebind_action.is_some()
+    }
+
+    /// Return the last completed live rebind.
+    #[inline]
+    pub fn rebind_result(&self) -> Option<&RebindResult> {
+        self.rebind_result.as_ref()
+    }
+
     /// Return `true` while any binding for the hashed action is held.
     #[inline]
     pub fn is_action_down_hash(&self, name_hash: u64) -> bool {
@@ -523,6 +561,23 @@ impl InputSnapshot {
     }
 
     // ---- Action cache maintenance ----
+
+    fn capture_rebind(&mut self, binding: InputBinding) {
+        let Some(action_hash) = self.rebind_action.take() else {
+            return;
+        };
+        let Some(action) = self.input_map.action_by_hash(action_hash) else {
+            return;
+        };
+        let action = action.name.clone();
+        self.input_map.set_bindings_hash(action_hash, vec![binding]);
+        self.rebind_result = Some(RebindResult {
+            action,
+            action_hash,
+            binding,
+        });
+        self.refresh_all_action_states();
+    }
 
     fn resize_action_bits(&mut self) {
         let words = self.input_map.action_count().div_ceil(64);
@@ -660,6 +715,14 @@ impl Default for InputSnapshot {
     }
 }
 
+/// Data produced when live rebinding captures a button press.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RebindResult {
+    pub action: String,
+    pub action_hash: u64,
+    pub binding: InputBinding,
+}
+
 /// Input command queued by scripts and applied by the input backend.
 #[derive(Clone, Debug)]
 pub enum InputCommand {
@@ -668,6 +731,10 @@ pub enum InputCommand {
         index: usize,
         binding: PlayerBinding,
     },
+    /// Listen for the next button press and replace an action's bindings.
+    StartRebind { action_hash: u64 },
+    /// Stop an active live rebind.
+    CancelRebind,
     /// Request Joy-Con calibration for a slot.
     RequestJoyConCalibration { index: usize },
     /// Request mouse mode change.
@@ -706,6 +773,14 @@ pub trait InputAPI {
     fn players(&self) -> &[PlayerState];
     /// Return input-map actions.
     fn input_map(&self) -> &InputMap;
+    /// Return `true` while a live rebind waits for input.
+    fn is_rebinding(&self) -> bool {
+        false
+    }
+    /// Return the last completed live rebind.
+    fn rebind_result(&self) -> Option<&RebindResult> {
+        None
+    }
 
     /// Return `true` while any binding for the hashed action is held.
     fn action_down_hash(&self, name_hash: u64) -> bool {
@@ -776,6 +851,16 @@ impl InputAPI for InputSnapshot {
     #[inline]
     fn input_map(&self) -> &InputMap {
         self.input_map()
+    }
+
+    #[inline]
+    fn is_rebinding(&self) -> bool {
+        self.is_rebinding()
+    }
+
+    #[inline]
+    fn rebind_result(&self) -> Option<&RebindResult> {
+        self.rebind_result()
     }
 
     #[inline]

@@ -615,6 +615,11 @@ pub struct LobbyInfo {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SteamEvent {
+    ServerAuthValidated {
+        user: SteamID,
+        owner: SteamID,
+        error: Option<String>,
+    },
     LobbyList {
         lobbies: Vec<LobbyID>,
     },

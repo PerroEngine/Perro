@@ -16,6 +16,7 @@ pub(super) struct ShadowMultimeshBgArgs<'a> {
     pub(super) decal_buffer: &'a wgpu::Buffer,
     pub(super) decal_texture_view: &'a wgpu::TextureView,
     pub(super) decal_sampler: &'a wgpu::Sampler,
+    pub(super) ssao_view: &'a wgpu::TextureView,
 }
 
 // One multimesh draw bind group per shadow layer: identical to multimesh_bgl
@@ -83,6 +84,10 @@ pub(super) fn build_shadow_multimesh_bind_groups(
                     wgpu::BindGroupEntry {
                         binding: 12,
                         resource: wgpu::BindingResource::Sampler(args.decal_sampler),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 13,
+                        resource: wgpu::BindingResource::TextureView(args.ssao_view),
                     },
                 ],
             })
@@ -178,7 +183,14 @@ impl Gpu3D {
         resources: &ResourceStore,
         material: &Material3D,
     ) -> MaterialTextureKey {
-        let mut key = MaterialTextureKey::from_base(material.standard_params().base_color_texture);
+        let params = material.standard_params();
+        let mut key = MaterialTextureKey::from_base(params.base_color_texture);
+        if matches!(material, Material3D::Standard(_)) {
+            key.slots[1] = params.metallic_roughness_texture;
+            key.slots[2] = params.normal_texture;
+            key.slots[3] = params.occlusion_texture;
+            key.slots[4] = params.emissive_texture;
+        }
         let Material3D::Custom(custom) = material else {
             return key;
         };
@@ -913,6 +925,15 @@ impl Gpu3D {
                     binding: 12,
                     resource: wgpu::BindingResource::Sampler(&self.decal_sampler),
                 },
+                wgpu::BindGroupEntry {
+                    binding: 13,
+                    resource: wgpu::BindingResource::TextureView(
+                        self.ssao_pass
+                            .as_ref()
+                            .map(ssao::SsaoPass::view)
+                            .unwrap_or(&self.ssao_fallback_view),
+                    ),
+                },
             ],
         });
         self.shadow_multimesh_bind_groups =
@@ -932,6 +953,11 @@ impl Gpu3D {
                 decal_buffer: &self.decal_buffer,
                 decal_texture_view: &self.decal_texture_view,
                 decal_sampler: &self.decal_sampler,
+                ssao_view: self
+                    .ssao_pass
+                    .as_ref()
+                    .map(ssao::SsaoPass::view)
+                    .unwrap_or(&self.ssao_fallback_view),
             });
         self.rebuild_multimesh_cull_bind_group(device);
         self.camera_bind_group_generation = self.camera_bind_group_generation.wrapping_add(1);
@@ -986,6 +1012,11 @@ impl Gpu3D {
                     decal_buffer: &self.decal_buffer,
                     decal_texture_view: &self.decal_texture_view,
                     decal_sampler: &self.decal_sampler,
+                    ssao_view: self
+                        .ssao_pass
+                        .as_ref()
+                        .map(ssao::SsaoPass::view)
+                        .unwrap_or(&self.ssao_fallback_view),
                 });
         }
         // Reuse the cull identity staging (identical values); rebuild if short.
@@ -2101,22 +2132,38 @@ impl Gpu3D {
         needed_indices: usize,
     ) {
         let mut grew = false;
+        let max_buffer_size = device.limits().max_buffer_size as usize;
+        let max_vertex_capacity = max_buffer_size
+            / std::mem::size_of::<SkinnedMeshVertex>().max(std::mem::size_of::<RigidMeshVertex>());
+        let max_index_capacity = max_buffer_size / std::mem::size_of::<u32>();
 
         if needed_vertices > self.vertex_capacity {
-            let mut cap = self.vertex_capacity.max(1);
-            while cap < needed_vertices {
-                cap *= 2;
-            }
+            let cap = bounded_growth_capacity(
+                self.vertex_capacity,
+                needed_vertices,
+                max_vertex_capacity,
+            )
+            .unwrap_or_else(|| {
+                panic!(
+                    "mesh vertex data needs {needed_vertices} vertices; device limit is {max_vertex_capacity}"
+                )
+            });
             self.vertex_capacity = cap;
             self.rigid_vertex_capacity = cap;
             grew = true;
         }
 
         if needed_indices > self.index_capacity {
-            let mut cap = self.index_capacity.max(1);
-            while cap < needed_indices {
-                cap *= 2;
-            }
+            let cap = bounded_growth_capacity(
+                self.index_capacity,
+                needed_indices,
+                max_index_capacity,
+            )
+            .unwrap_or_else(|| {
+                panic!(
+                    "mesh index data needs {needed_indices} indices; device limit is {max_index_capacity}"
+                )
+            });
             self.index_capacity = cap;
             grew = true;
         }
@@ -2188,6 +2235,39 @@ impl Gpu3D {
                 queue.submit([encoder.finish()]);
             }
         }
+    }
+
+    /// Drop append-only custom mesh revisions before the shared vertex arena
+    /// reaches the device's single-buffer limit. Built-in meshes always occupy
+    /// the prefix; every live custom mesh is resolved again by the forced full
+    /// prepare that follows this reset.
+    pub(super) fn compact_custom_mesh_storage_if_needed(&mut self, device: &wgpu::Device) -> bool {
+        let max_vertices = device.limits().max_buffer_size as usize
+            / std::mem::size_of::<SkinnedMeshVertex>().max(std::mem::size_of::<RigidMeshVertex>());
+        if self.mesh_vertices.len() < max_vertices.saturating_mul(3) / 4 {
+            return false;
+        }
+
+        let builtin_index_len = self
+            .builtin_mesh_ranges
+            .values()
+            .map(|range| range.index_start as usize + range.index_count as usize)
+            .max()
+            .unwrap_or(0);
+        let builtin_vertex_len = self.mesh_indices[..builtin_index_len]
+            .iter()
+            .copied()
+            .max()
+            .map_or(0, |index| index as usize + 1);
+
+        self.mesh_vertices.truncate(builtin_vertex_len);
+        self.rigid_mesh_vertices.truncate(builtin_vertex_len);
+        self.mesh_indices.truncate(builtin_index_len);
+        self.packed_lod_vertices.clear();
+        self.packed_lod_indices.clear();
+        self.blend_shape_deltas.clear();
+        self.custom_mesh_ranges.clear();
+        true
     }
 
     pub(super) fn ensure_packed_lod_buffer_capacity(
@@ -2266,6 +2346,17 @@ impl Gpu3D {
     }
 }
 
+fn bounded_growth_capacity(current: usize, needed: usize, max: usize) -> Option<usize> {
+    if needed > max {
+        return None;
+    }
+    let mut capacity = current.max(1).min(max);
+    while capacity < needed {
+        capacity = capacity.saturating_mul(2).min(max);
+    }
+    Some(capacity)
+}
+
 fn packed_lod_param(
     vertices: &[MeshVertex],
     uploaded_indices: &[u32],
@@ -2333,8 +2424,20 @@ fn pack_packed_lod_vertex(vertex: &MeshVertex, param: &PackedLodParamGpu) -> Pac
 mod tests {
     use super::{
         CUSTOM_MATERIAL_TEXTURE_SLOT_BASE, MATERIAL_TEXTURE_NONE, MaterialTextureKey,
-        material_texture_key_survives_slot_evict,
+        bounded_growth_capacity, material_texture_key_survives_slot_evict,
     };
+
+    #[test]
+    fn buffer_growth_stops_at_device_limit() {
+        assert_eq!(
+            bounded_growth_capacity(2_139_648, 4_000_000, 4_194_304),
+            Some(4_194_304)
+        );
+        assert_eq!(
+            bounded_growth_capacity(2_139_648, 4_194_305, 4_194_304),
+            None
+        );
+    }
 
     #[test]
     fn material_texture_slot_evict_targets_matching_keys() {

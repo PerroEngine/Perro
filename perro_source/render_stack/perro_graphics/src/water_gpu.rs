@@ -2850,6 +2850,8 @@ mod tests {
         assert!(WATER_3D_RENDER_WGSL.contains("in_scatter"));
         assert!(WATER_3D_RENDER_WGSL.contains("transmission_luma"));
         assert!(WATER_3D_RENDER_WGSL.contains("optical_opacity"));
+        assert!(WATER_3D_RENDER_WGSL.contains("let depth_reflection = smoothstep"));
+        assert!(WATER_3D_RENDER_WGSL.contains("let reflection_weight = mix(fresnel"));
         assert!(!WATER_3D_RENDER_WGSL.contains("let fresnel_tint"));
         assert!(WATER_3D_RENDER_WGSL.contains("foam_mask"));
         assert!(WATER_3D_RENDER_WGSL.contains("caustic"));

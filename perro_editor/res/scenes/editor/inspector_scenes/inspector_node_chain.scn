@@ -111,3 +111,41 @@ parent = @inspector_chain_chip_2
         mouse_filter = "pass"
     [/UiLabel]
 [/inspector_chain_label_2]
+
+[inspector_chain_sep_2]
+parent = @inspector_node_chain
+    [UiLabel]
+        size_ratio = (0.03, 0.96)
+        text = ">"
+        text_size_ratio = 0.42
+        color = "#6BA0EA"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/inspector_chain_sep_2]
+
+[inspector_chain_chip_3]
+parent = @inspector_node_chain
+    [UiPanel]
+        size_ratio = (0.16, 0.96)
+        style = {
+            fill = "#23272D",
+            stroke = "#F2F4F7",
+            stroke_width = 1.0,
+            radius = 0.5
+        }
+    [/UiPanel]
+[/inspector_chain_chip_3]
+
+[inspector_chain_label_3]
+parent = @inspector_chain_chip_3
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "Node"
+        text_size_ratio = 0.4
+        color = "#F2F4F7"
+        h_align = "center"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/inspector_chain_label_3]

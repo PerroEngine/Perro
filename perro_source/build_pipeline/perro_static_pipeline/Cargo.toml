@@ -24,4 +24,3 @@ perro_runtime.workspace = true
 perro_ui.workspace = true
 perro_csv.workspace = true
 csv = "1.4"
-glam = "0.31.0"

@@ -70,6 +70,9 @@ pub fn init_from_config_with_input(
 }
 
 pub fn run_callbacks() -> Result<(), SteamError> {
+    if crate::game_server::is_ready_internal() {
+        return crate::game_server::run_callbacks();
+    }
     let client = {
         let mut state = state().lock().map_err(|_| SteamError::NotReady)?;
         ensure_client_from_process_env(&mut state)?;

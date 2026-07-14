@@ -1,4 +1,7 @@
-use crate::{action_down, action_pressed, action_released, mouse_mode, mouse_set_mode};
+use crate::{
+    action_cancel_rebind, action_down, action_is_rebinding, action_pressed, action_rebind_result,
+    action_released, action_start_rebind, mouse_mode, mouse_set_mode,
+};
 
 use super::{
     GamepadButton, InputAction, InputBinding, InputMap, InputSnapshot, InputWindow, JoyConButton,
@@ -109,4 +112,81 @@ fn clear_keyboard_mouse_state_releases_stale_inputs() {
     assert_eq!(ctx.Mouse().wheel().x, 0.0);
     assert_eq!(ctx.Mouse().wheel().y, 0.0);
     assert_eq!(input.mouse_mode(), MouseMode::Captured);
+}
+
+#[test]
+fn live_rebind_replaces_action_and_reports_result() {
+    let mut input = InputSnapshot::new();
+    input.set_input_map(InputMap::from_actions(vec![InputAction::new(
+        "jump",
+        vec![InputBinding::Key(KeyCode::Space)],
+    )]));
+
+    InputWindow::new(&input).Actions().start_rebind("jump");
+    input.apply_queued_commands();
+    assert!(InputWindow::new(&input).Actions().is_rebinding());
+
+    input.set_mouse_button_state(MouseButton::Right, true);
+
+    let window = InputWindow::new(&input);
+    let actions = window.Actions();
+    assert!(!actions.is_rebinding());
+    assert_eq!(
+        actions.rebind_result().map(|result| result.binding),
+        Some(InputBinding::Mouse(MouseButton::Right))
+    );
+    assert_eq!(
+        input.input_map().action("jump").unwrap().bindings,
+        vec![InputBinding::Mouse(MouseButton::Right)]
+    );
+    assert!(actions.down("jump"));
+}
+
+#[test]
+fn live_rebind_cancel_keeps_bindings() {
+    let mut input = InputSnapshot::new();
+    input.set_input_map(InputMap::from_actions(vec![InputAction::new(
+        "jump",
+        vec![InputBinding::Key(KeyCode::Space)],
+    )]));
+
+    let window = InputWindow::new(&input);
+    let actions = window.Actions();
+    actions.start_rebind("jump");
+    actions.cancel_rebind();
+    input.apply_queued_commands();
+    input.set_key_state(KeyCode::Enter, true);
+
+    assert_eq!(
+        input.input_map().action("jump").unwrap().bindings,
+        vec![InputBinding::Key(KeyCode::Space)]
+    );
+    assert!(input.rebind_result().is_none());
+}
+
+#[test]
+fn live_rebind_macros_queue_query_and_report() {
+    let mut input = InputSnapshot::new();
+    input.set_input_map(InputMap::from_actions(vec![InputAction::new(
+        "jump",
+        vec![InputBinding::Key(KeyCode::Space)],
+    )]));
+
+    let window = InputWindow::new(&input);
+    action_start_rebind!(&window, "jump");
+    input.apply_queued_commands();
+    let window = InputWindow::new(&input);
+    assert!(action_is_rebinding!(&window));
+
+    input.set_key_state(KeyCode::Enter, true);
+    let window = InputWindow::new(&input);
+    assert_eq!(
+        action_rebind_result!(&window).map(|result| result.binding),
+        Some(InputBinding::Key(KeyCode::Enter))
+    );
+
+    action_start_rebind!(&window, "jump");
+    action_cancel_rebind!(&window);
+    input.apply_queued_commands();
+    assert!(!action_is_rebinding!(InputWindow::new(&input)));
 }

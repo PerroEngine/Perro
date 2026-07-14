@@ -214,6 +214,9 @@ fn ensure_project_manifest_deps(path: &Path) -> std::io::Result<()> {
     let mut changed = ensure_existing_local_perro_deps(deps_table, &manifest_dir, &engine_root);
     changed |= ensure_local_perro_dep(deps_table, &manifest_dir, &engine_root, "perro_api");
     changed |= ensure_local_perro_dep(deps_table, &manifest_dir, &engine_root, "perro_runtime");
+    changed |= ensure_local_perro_dep(deps_table, &manifest_dir, &engine_root, "perro_headless");
+    changed |= set_dep_optional(deps_table, "perro_app");
+    changed |= set_dep_optional(deps_table, "perro_headless");
 
     if !changed {
         return Ok(());
@@ -245,6 +248,25 @@ fn ensure_project_manifest_features(path: &Path) -> std::io::Result<()> {
     };
 
     let mut changed = false;
+
+    changed |= ensure_feature_values(features_table, "default", &["app"]);
+    changed |= ensure_feature_values(features_table, "app", &["dep:perro_app"]);
+    changed |= ensure_feature_values(features_table, "headless", &["dep:perro_headless"]);
+    changed |= ensure_feature_values(
+        features_table,
+        "headless_profile",
+        &["perro_headless/profile"],
+    );
+    changed |= ensure_feature_values(
+        features_table,
+        "headless_steamworks",
+        &[
+            "perro_headless/steamworks",
+            "perro_api/steamworks",
+            "perro_runtime/steamworks",
+            "scripts/steamworks",
+        ],
+    );
 
     if !features_table.contains_key("profile") {
         features_table.insert(
@@ -335,12 +357,7 @@ fn ensure_project_manifest_icon_build_support(path: &Path) -> std::io::Result<()
     }
     let manifest_dir = manifest_dir_for(path);
     let engine_root = engine_root_dir();
-    changed |= ensure_local_perro_dep(
-        build_deps_table,
-        &manifest_dir,
-        &engine_root,
-        "perro_api",
-    );
+    changed |= ensure_local_perro_dep(build_deps_table, &manifest_dir, &engine_root, "perro_api");
     if build_deps_table.get("toml").and_then(Value::as_str) != Some("0.8.23") {
         build_deps_table.insert("toml".to_string(), Value::String("0.8.23".to_string()));
         changed = true;
@@ -482,7 +499,10 @@ fn ensure_project_manifest_web_support(path: &Path) -> std::io::Result<()> {
     }
     if !deps_table.contains_key("getrandom_js") {
         let mut spec = toml::value::Table::new();
-        spec.insert("package".to_string(), Value::String("getrandom".to_string()));
+        spec.insert(
+            "package".to_string(),
+            Value::String("getrandom".to_string()),
+        );
         spec.insert("version".to_string(), Value::String("0.2.17".to_string()));
         spec.insert(
             "features".to_string(),
@@ -689,7 +709,10 @@ fn ensure_dev_runner_manifest_deps(path: &Path) -> std::io::Result<()> {
     let engine_root = engine_root_dir();
     let mut changed = ensure_existing_local_perro_deps(deps_table, &manifest_dir, &engine_root);
     changed |= ensure_local_perro_dep(deps_table, &manifest_dir, &engine_root, "perro_app");
+    changed |= ensure_local_perro_dep(deps_table, &manifest_dir, &engine_root, "perro_headless");
     changed |= ensure_local_perro_dep(deps_table, &manifest_dir, &engine_root, "perro_project");
+    changed |= set_dep_optional(deps_table, "perro_app");
+    changed |= set_dep_optional(deps_table, "perro_headless");
 
     if !changed {
         return Ok(());
@@ -721,6 +744,20 @@ fn ensure_dev_runner_manifest_features(path: &Path) -> std::io::Result<()> {
     };
 
     let mut changed = false;
+
+    changed |= ensure_feature_values(features_table, "default", &["app"]);
+    changed |= ensure_feature_values(features_table, "app", &["dep:perro_app"]);
+    changed |= ensure_feature_values(features_table, "headless", &["dep:perro_headless"]);
+    changed |= ensure_feature_values(
+        features_table,
+        "headless_profile",
+        &["perro_headless/profile"],
+    );
+    changed |= ensure_feature_values(
+        features_table,
+        "headless_steamworks",
+        &["perro_headless/steamworks"],
+    );
 
     if !features_table.contains_key("timings") {
         features_table.insert(
@@ -928,9 +965,18 @@ fn ensure_local_perro_dep(
     engine_root: &Path,
     crate_name: &str,
 ) -> bool {
-    let Some(spec) = local_perro_dep_spec(manifest_dir, engine_root, crate_name) else {
+    let Some(mut spec) = local_perro_dep_spec(manifest_dir, engine_root, crate_name) else {
         return false;
     };
+    if deps_table
+        .get(crate_name)
+        .and_then(Value::as_table)
+        .and_then(|table| table.get("optional"))
+        == Some(&Value::Boolean(true))
+        && let Value::Table(table) = &mut spec
+    {
+        table.insert("optional".to_string(), Value::Boolean(true));
+    }
     if deps_table.get(crate_name) == Some(&spec) {
         return false;
     }
@@ -938,7 +984,22 @@ fn ensure_local_perro_dep(
     true
 }
 
-fn local_perro_dep_spec(manifest_dir: &Path, engine_root: &Path, crate_name: &str) -> Option<Value> {
+fn set_dep_optional(deps: &mut toml::map::Map<String, Value>, name: &str) -> bool {
+    let Some(Value::Table(spec)) = deps.get_mut(name) else {
+        return false;
+    };
+    if spec.get("optional") == Some(&Value::Boolean(true)) {
+        return false;
+    }
+    spec.insert("optional".to_string(), Value::Boolean(true));
+    true
+}
+
+fn local_perro_dep_spec(
+    manifest_dir: &Path,
+    engine_root: &Path,
+    crate_name: &str,
+) -> Option<Value> {
     let rel_crate_path = crate_workspace_rel_path(crate_name)?;
     let mut spec = toml::value::Table::new();
     spec.insert(
@@ -1143,6 +1204,7 @@ fn crate_workspace_rel_path(crate_name: &str) -> Option<&'static str> {
         "perro_particle_math" => Some("perro_source/core/perro_particle_math"),
         "perro_csv" => Some("perro_source/core/perro_csv"),
         "perro_runtime" => Some("perro_source/runtime_project/perro_runtime"),
+        "perro_headless" => Some("perro_source/runtime_project/perro_headless"),
         "perro_internal_updates" => Some("perro_source/runtime_project/perro_internal_updates"),
         "perro_scene" => Some("perro_source/runtime_project/perro_scene"),
         "perro_runtime_api" => Some("perro_source/api_modules/perro_runtime_api"),

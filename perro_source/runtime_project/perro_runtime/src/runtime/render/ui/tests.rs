@@ -3049,6 +3049,40 @@ fn min_size_ratio_rebases_when_size_ratio_changes() {
 }
 
 #[test]
+fn size_ratio_clamp_rebases_after_zero_size_first_pass() {
+    let mut runtime = Runtime::new();
+
+    let mut panel = UiPanel::new();
+    panel.layout.size = UiVector2::ratio(0.5, 0.5);
+    panel.layout.min_size_scale = Vector2::new(0.8, 0.8);
+    panel.layout.max_size_scale = Vector2::new(1.2, 1.2);
+    let panel_id = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(Box::new(panel)));
+
+    runtime.extract_render_ui_commands();
+    assert_eq!(
+        runtime
+            .render_ui
+            .computed_rects
+            .get(&panel_id)
+            .unwrap()
+            .size,
+        Vector2::new(0.5, 0.5)
+    );
+
+    runtime.set_viewport_size(1000, 800);
+    runtime.extract_render_ui_commands();
+    assert_eq!(
+        runtime
+            .render_ui
+            .computed_rects
+            .get(&panel_id)
+            .unwrap()
+            .size,
+        Vector2::new(500.0, 400.0)
+    );
+}
+
+#[test]
 fn label_fill_mode_uses_parent_space_without_auto_layout_parent() {
     let mut runtime = Runtime::new();
     runtime.set_viewport_size(800, 600);

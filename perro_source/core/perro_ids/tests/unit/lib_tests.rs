@@ -136,6 +136,17 @@ fn signal_id_from_string_deterministic() {
 }
 
 #[test]
+fn timer_id_hash_and_signal_conversions() {
+    let timer = TimerID::from_string("wait");
+    let signal = SignalID::from_string("wait");
+    assert_eq!(timer!("wait"), timer);
+    assert_eq!(timer.as_signal(), signal);
+    assert_eq!(signal.as_timer(), timer);
+    assert_eq!(SignalID::from(timer), signal);
+    assert_eq!(TimerID::from(signal), timer);
+}
+
+#[test]
 fn tag_id_from_string_deterministic() {
     let a = TagID::from_string("enemy");
     let b = TagID::from_string("enemy");

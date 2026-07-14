@@ -43,8 +43,8 @@ Build and run:
 ```powershell
 perro check [--path <project_dir>]
 perro test [--path <project_dir>] [-- <cargo_test_args>]
-perro dev [--path <project_dir>] [--target native|web|android] [--timings] [--profile] [--ui-profile] [--release] [--csv-profile [csv_name]] [--host <addr>] [--port <num>]
-perro build [--path <project_dir>] [--target native|web|android] [--profile] [--console]
+perro dev [--path <project_dir>] [--target native|web|android] [--headless] [--timings] [--profile] [--ui-profile] [--release] [--csv-profile [csv_name]] [--host <addr>] [--port <num>]
+perro build [--path <project_dir>] [--target native|web|android] [--headless] [--profile] [--console]
 perro dlc --name <dlc_name> [--path <project_dir>]
 ```
 
@@ -161,7 +161,7 @@ perro test --path D:\GameProjects\MyGame -- player_state_tests
 Command:
 
 ```powershell
-perro dev --path <project_dir> [--target native|web|android] [--timings] [--profile] [--ui-profile] [--release] [--csv-profile [csv_name]] [--host <addr>] [--port <num>]
+perro dev --path <project_dir> [--target native|web|android] [--headless] [--timings] [--profile] [--ui-profile] [--release] [--csv-profile [csv_name]] [--host <addr>] [--port <num>]
 ```
 
 What it does:
@@ -204,8 +204,30 @@ See [Performance + Flexibility Philosophy](../project/performance_philosophy.md)
 Command:
 
 ```powershell
-perro build --path <project_dir> [--target native|web|android] [--profile] [--console]
+perro build --path <project_dir> [--target native|web|android] [--headless] [--profile] [--console]
 ```
+
+`--headless` use native `perro_headless` feature path.
+
+- rm `perro_app`, `perro_graphics`, `winit` frm final dep graph
+- kp scripts, scenes, timers, net, CPU physics + water physics
+- force CPU particle cfg
+- skip window, input device, GPU + rndr loop
+- sync new + old `.perro/project` + `.perro/dev_runner` manifests
+
+Steam-enabled headless builds use Steam GameServer API, not Steam client login.
+
+- anonymous login default
+- `PERRO_STEAM_GSLT` -> token login
+- `PERRO_STEAM_GAME_PORT` -> game port; default `27015`
+- `PERRO_STEAM_QUERY_PORT` -> query port; default `27016`
+- `PERRO_STEAM_SERVER_IP` -> bind IPv4; default `0.0.0.0`
+- `PERRO_STEAM_SERVER_NAME` -> browser name
+- `PERRO_STEAM_MAX_PLAYERS` -> browser cap; default `64`
+- `PERRO_STEAM_LISTED=0` -> disable browser listing
+- `PERRO_STEAM_SECURE=0` -> auth w/o VAC-secure mode
+
+Server scripts use `steam::game_server` for ticket auth, player stats, and server-set achievements.
 
 What it does:
 
@@ -227,7 +249,7 @@ Flags:
 Web target notes:
 
 - `--console` is not supported with `perro build --target web`.
-- web build uses `wasm32-unknown-unknown` + `wasm-bindgen --target web`.
+- web build uses stable `wasm32-unknown-unknown` + `wasm-bindgen --target web`.
 - web output includes `index.html`, `boot.js`, `app.js`, and `app_bg.wasm`.
 - see [WASM / Web Target](../WASM.md)
 

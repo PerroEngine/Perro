@@ -59,6 +59,8 @@ var<uniform> scene: Scene3D;
 var<storage, read> multimesh_draws: array<MultiMeshDrawParam>;
 @group(0) @binding(2)
 var mesh_blend_depth_tex: texture_depth_2d;
+@group(0) @binding(13)
+var ssao_tex: texture_2d<f32>;
 @group(0) @binding(3)
 var<storage, read> blend_shape_deltas: array<BlendShapeDelta>;
 @group(0) @binding(4)
@@ -243,20 +245,29 @@ struct VertexOutput {
     @location(3) normal_ws: vec3<f32>,
     @location(4) @interpolate(flat) custom_range: vec2<u32>,
     @location(5) uv: vec2<f32>,
-    @location(6) frag_pos: vec4<f32>,
     @location(7) @interpolate(flat) packed_bleed: u32,
+    @location(8) ambient_color: vec3<f32>,
 };
 
 struct FragmentInput {
+    @builtin(position) frag_pos: vec4<f32>,
     @location(0) lit_color: vec3<f32>,
     @location(1) @interpolate(flat) packed_blend_params: u32,
     @location(2) world_pos: vec3<f32>,
     @location(3) normal_ws: vec3<f32>,
     @location(4) @interpolate(flat) custom_range: vec2<u32>,
     @location(5) uv: vec2<f32>,
-    @location(6) frag_pos: vec4<f32>,
     @location(7) @interpolate(flat) packed_bleed: u32,
+    @location(8) ambient_color: vec3<f32>,
 };
+
+fn multimesh_ssao(frag_pos: vec2<f32>) -> f32 {
+    let dims_u = textureDimensions(ssao_tex);
+    let dims = vec2<i32>(dims_u);
+    let uv = frag_pos * scene.resolution.zw;
+    let coord = clamp(vec2<i32>(uv * vec2<f32>(dims_u)), vec2<i32>(0), dims - vec2<i32>(1));
+    return textureLoad(ssao_tex, coord, 0).r;
+}
 
 fn unpack_rgba8(v: u32) -> vec4<f32> {
     let r = f32(v & 255u) * (1.0 / 255.0);
@@ -530,11 +541,13 @@ fn perro_lit_standard(
     let ambient =
         mix(scene.ground_color.xyz, scene.ambient_color.xyz * scene.ambient_color.w, hemi)
         * occlusion;
-    var lit = ambient;
+    var ambient_lit = ambient;
     // Local color bleed: per-draw tint via flat varying (custom fs path).
     let bleed = decode_local_bleed(in.packed_bleed);
     let bleed_wrap = clamp(dot(n, bleed.dir) * 0.5 + 0.5, 0.0, 1.0);
-    lit += bleed.color * bleed.strength * 0.45 * (0.35 + 0.65 * bleed_wrap);
+    ambient_lit += bleed.color * bleed.strength * 0.45 * (0.35 + 0.65 * bleed_wrap);
+    ambient_lit *= multimesh_ssao(in.frag_pos.xy);
+    var lit = vec3<f32>(0.0);
     let ray_count = u32(scene.ambient_and_counts.x);
     if ray_count > 0u {
         let ray = scene.ray_lights[0];
@@ -544,7 +557,7 @@ fn perro_lit_standard(
         lit += ray.color_intensity.xyz * ray.color_intensity.w * lambert;
     }
     let alpha = mesh_blend_alpha(in.frag_pos, in.world_pos, in.packed_blend_params) * base.a;
-    return vec4<f32>(tonemap_aces(albedo * lit + emissive + decal_emissive), alpha);
+    return vec4<f32>(tonemap_aces(albedo * (ambient_lit + lit) + emissive + decal_emissive), alpha);
 }
 
 // ACES filmic fit; matches the mesh material preludes.
@@ -588,11 +601,12 @@ fn perro_multimesh_vs_main_base(v: VertexInput, inst: InstanceInput, vertex_inde
     let hemi = clamp(n.y * 0.5 + 0.5, 0.0, 1.0);
     let ambient =
         mix(scene.ground_color.xyz, scene.ambient_color.xyz * scene.ambient_color.w, hemi);
-    var lit = ambient;
+    var ambient_lit = ambient;
+    var lit = vec3<f32>(0.0);
     // Local color bleed: one tint per multimesh draw, vertex-lit.
     let bleed = decode_local_bleed(draw.packed_bleed);
     let bleed_wrap = clamp(dot(n, bleed.dir) * 0.5 + 0.5, 0.0, 1.0);
-    lit += bleed.color * bleed.strength * 0.45 * (0.35 + 0.65 * bleed_wrap);
+    ambient_lit += bleed.color * bleed.strength * 0.45 * (0.35 + 0.65 * bleed_wrap);
     let ray_count = u32(scene.ambient_and_counts.x);
     if ray_count > 0u {
         let ray = scene.ray_lights[0];
@@ -604,12 +618,12 @@ fn perro_multimesh_vs_main_base(v: VertexInput, inst: InstanceInput, vertex_inde
     var out: VertexOutput;
     out.clip_pos = scene.view_proj * world;
     out.lit_color = base.rgb * lit + emissive;
+    out.ambient_color = base.rgb * ambient_lit;
     out.packed_blend_params = draw.packed_blend_params;
     out.world_pos = world.xyz;
     out.normal_ws = normal_ws;
     out.custom_range = draw.custom_params;
     out.uv = vec2<f32>(0.0);
-    out.frag_pos = out.clip_pos;
     out.packed_bleed = draw.packed_bleed;
     return out;
 }
@@ -653,8 +667,9 @@ fn vs_main(
 }
 
 @fragment
-fn fs_main(in: FragmentInput, @builtin(position) frag_pos: vec4<f32>) -> @location(0) vec4<f32> {
-    return vec4<f32>(tonemap_aces(in.lit_color), mesh_blend_alpha(frag_pos, in.world_pos, in.packed_blend_params));
+fn fs_main(in: FragmentInput) -> @location(0) vec4<f32> {
+    let ao = multimesh_ssao(in.frag_pos.xy);
+    return vec4<f32>(tonemap_aces(in.lit_color + in.ambient_color * ao), mesh_blend_alpha(in.frag_pos, in.world_pos, in.packed_blend_params));
 }
 
 // Depth-prepass entry: position only (opaque multimesh has no alpha cutout).

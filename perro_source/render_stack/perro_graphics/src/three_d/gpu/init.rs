@@ -173,6 +173,7 @@ impl Gpu3D {
             dev_meshlets,
             meshlet_debug_view,
             occlusion_culling,
+            ssao,
             indirect_first_instance_enabled,
             multi_draw_indirect_enabled,
             texture_filter,
@@ -480,6 +481,16 @@ impl Gpu3D {
                 decal_buffer_layout_entry(10),
                 decal_texture_layout_entry(11),
                 decal_sampler_layout_entry(12),
+                wgpu::BindGroupLayoutEntry {
+                    binding: 13,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
             ],
         });
         let material_texture_bgl = {
@@ -563,16 +574,28 @@ impl Gpu3D {
         });
         let mesh_blend_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("perro_mesh_blend_bgl"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
-                ty: wgpu::BindingType::Texture {
-                    sample_type: wgpu::TextureSampleType::Depth,
-                    view_dimension: wgpu::TextureViewDimension::D2,
-                    multisampled: false,
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Depth,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
                 },
-                count: None,
-            }],
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+            ],
         });
         let sky_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("perro_sky3d_bgl"),
@@ -1843,6 +1866,29 @@ impl Gpu3D {
         let (depth_texture, depth_view) = create_depth_texture(device, width, height, sample_count);
         let (depth_prepass_texture, depth_prepass_view) =
             create_depth_prepass_texture(device, width, height);
+        let ssao_fallback_texture = device.create_texture_with_data(
+            queue,
+            &wgpu::TextureDescriptor {
+                label: Some("perro_ssao_fallback"),
+                size: wgpu::Extent3d {
+                    width: 1,
+                    height: 1,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: ssao::SSAO_FORMAT,
+                usage: wgpu::TextureUsages::TEXTURE_BINDING,
+                view_formats: &[],
+            },
+            wgpu::util::TextureDataOrder::LayerMajor,
+            &[255],
+        );
+        let ssao_fallback_view =
+            ssao_fallback_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let ssao_pass = (ssao != crate::SsaoQuality::Off)
+            .then(|| ssao::SsaoPass::new(device, width, height, &depth_prepass_view, ssao));
         let (mesh_blend_depth_texture, mesh_blend_depth_view) =
             create_depth_prepass_texture(device, width, height);
         let multimesh_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -1901,6 +1947,15 @@ impl Gpu3D {
                     binding: 12,
                     resource: wgpu::BindingResource::Sampler(&decal_sampler),
                 },
+                wgpu::BindGroupEntry {
+                    binding: 13,
+                    resource: wgpu::BindingResource::TextureView(
+                        ssao_pass
+                            .as_ref()
+                            .map(ssao::SsaoPass::view)
+                            .unwrap_or(&ssao_fallback_view),
+                    ),
+                },
             ],
         });
         let shadow_multimesh_bind_groups =
@@ -1920,14 +1975,28 @@ impl Gpu3D {
                 decal_buffer: &decal_buffer,
                 decal_texture_view: &decal_texture_view,
                 decal_sampler: &decal_sampler,
+                ssao_view: ssao_pass
+                    .as_ref()
+                    .map(ssao::SsaoPass::view)
+                    .unwrap_or(&ssao_fallback_view),
             });
+        let ssao_view = ssao_pass
+            .as_ref()
+            .map(ssao::SsaoPass::view)
+            .unwrap_or(&ssao_fallback_view);
         let mesh_blend_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("perro_mesh_blend_bg"),
             layout: &mesh_blend_bgl,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: wgpu::BindingResource::TextureView(&mesh_blend_depth_view),
-            }],
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&mesh_blend_depth_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(ssao_view),
+                },
+            ],
         });
         let (hiz_texture, hiz_mip_views, hiz_sample_view, hiz_mip_count, hiz_size) =
             create_hiz_texture(device, width, height);
@@ -2482,6 +2551,10 @@ impl Gpu3D {
             depth_view,
             depth_prepass_texture,
             depth_prepass_view,
+            ssao_pass,
+            _ssao_fallback_texture: ssao_fallback_texture,
+            ssao_fallback_view,
+            ssao_quality: ssao,
             mesh_blend_depth_texture,
             mesh_blend_depth_view,
             depth_size: (width.max(1), height.max(1)),

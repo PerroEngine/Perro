@@ -1115,6 +1115,21 @@ lifecycle!({});
     }
 
     #[test]
+    fn generated_scripts_manifest_binds_perro_jobs_patch() {
+        let root = unique_temp_dir("perro_compiler_jobs_manifest");
+        let scripts_crate = root.join(".perro").join("scripts");
+        super::write_dlc_scripts_manifest(&root, "jobs_fixture", &scripts_crate)
+            .expect("write scripts manifest");
+
+        let manifest = std::fs::read_to_string(scripts_crate.join("Cargo.toml"))
+            .expect("read scripts manifest");
+        assert!(manifest.contains("perro_api = { path ="));
+        assert!(manifest.contains("perro_jobs = { path ="));
+
+        std::fs::remove_dir_all(root).expect("cleanup jobs manifest fixture");
+    }
+
+    #[test]
     fn web_route_emit_writes_multi_page_html_with_keywords_and_icon() {
         let root = unique_temp_dir("perro_web_route_emit");
         std::fs::create_dir_all(root.join("res").join("routes")).expect("routes dir");
@@ -1954,6 +1969,12 @@ parent = $root
     checked = true
 [/UiCheckbox]
 [/ui_checkbox]
+
+[ui_progress_bar]
+parent = $root
+[UiProgressBar]
+[/UiProgressBar]
+[/ui_progress_bar]
 
 [ui_dropdown]
 parent = $root

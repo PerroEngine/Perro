@@ -34,6 +34,7 @@ The docs give exact macro/API paths and edge behavior.
 | Convert dynamic values | [Variant](variant.md) |
 | Read input | [Input API](contexts/input_api.md) |
 | Load/use resources | [Resource API](contexts/resource_api.md) |
+| Run CPU work in parallel | [Parallel Jobs](jobs.md) |
 
 ## Use Cases
 
@@ -45,6 +46,7 @@ Prefer:
 - `ctx.res` for resource/data access
 - `ctx.ipt` for input state
 - `with_state!` / `with_state_mut!` for this script's typed state
+- `jobs::spawn` / `jobs::join` / `jobs::par_map` for CPU work
 - `get_var!` / `set_var!` / `call_method!` for dynamic cross-script access
 
 ## Example
@@ -96,6 +98,7 @@ Script dependencies:
 See:
 
 - [Project Script Modules](project_modules.md)
+- [Parallel Jobs](jobs.md)
 - [Script Contexts](contexts/README.md)
 - [Script Utility Modules](modules.md)
 - [Struct Types](structs/index.md)

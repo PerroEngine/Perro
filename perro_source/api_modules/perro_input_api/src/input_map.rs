@@ -78,6 +78,21 @@ impl InputMap {
         self.actions.len()
     }
 
+    /// Replace every binding for an action and rebuild lookup indexes.
+    pub fn set_bindings(&mut self, name: &str, bindings: Vec<InputBinding>) -> bool {
+        self.set_bindings_hash(action_hash(name), bindings)
+    }
+
+    /// Replace every binding for a hashed action and rebuild lookup indexes.
+    pub fn set_bindings_hash(&mut self, name_hash: u64, bindings: Vec<InputBinding>) -> bool {
+        let Some(index) = self.action_index(name_hash) else {
+            return false;
+        };
+        self.actions[index].bindings = bindings;
+        self.rebuild_indexes();
+        true
+    }
+
     #[inline]
     pub fn actions_for_key(&self, key: KeyCode) -> &[usize] {
         &self.key_actions[key.as_index()]
@@ -186,6 +201,18 @@ impl InputMap {
     }
 
     fn rebuild_indexes(&mut self) {
+        for actions in &mut self.key_actions {
+            actions.clear();
+        }
+        for actions in &mut self.mouse_actions {
+            actions.clear();
+        }
+        for actions in &mut self.gamepad_actions {
+            actions.clear();
+        }
+        for actions in &mut self.joycon_actions {
+            actions.clear();
+        }
         self.action_slots = self
             .actions
             .iter()

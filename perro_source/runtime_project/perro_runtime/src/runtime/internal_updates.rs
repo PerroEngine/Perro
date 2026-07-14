@@ -13,25 +13,6 @@ fn snapshot_dispatch(live: &[NodeID], scratch: &mut Vec<NodeID>) {
 }
 
 impl Runtime {
-    // full rebuild of internal schedules frm live node set.
-    // kp 4 hot-reload / scene swap: reset then re-register all nodes.
-    // wire-by: hot-reload land. incremental `register_internal_node_schedules` = normal path.
-    #[allow(dead_code)]
-    pub(crate) fn rebuild_internal_node_schedules(&mut self) {
-        self.internal_updates.internal_update_nodes.clear();
-        self.internal_updates.internal_fixed_update_nodes.clear();
-        self.internal_updates.internal_fixed_dispatch_nodes.clear();
-        self.internal_updates.internal_update_pos.clear();
-        self.internal_updates.internal_fixed_update_pos.clear();
-        let mut pairs = Vec::new();
-        for (id, node) in self.nodes.iter() {
-            pairs.push((id, node.node_type()));
-        }
-        for (id, ty) in pairs {
-            self.register_internal_node_schedules(id, ty);
-        }
-    }
-
     pub(crate) fn register_internal_node_schedules(&mut self, id: NodeID, ty: NodeType) {
         // node add ? shape/body chg -> physics query world stale
         self.invalidate_physics_query_sync();
