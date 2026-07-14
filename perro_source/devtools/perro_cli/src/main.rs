@@ -159,6 +159,7 @@ const IMPORT_ANIM: &[FlagSpec] = &[
     value("--skeleton"),
     value("--retarget-map"),
     value("--retarget"),
+    value("--target-rig"),
 ];
 const INSTALL: &[FlagSpec] = &[value("--profile")];
 const BUILD: &[FlagSpec] = &[
@@ -326,7 +327,7 @@ fn print_usage() {
         "  perro_cli new_panimtree --name <tree_name> [--path <project_dir>] [--res <res_subdir>] [--dlc <dlc_name>]"
     );
     eprintln!(
-        "  perro_cli import_anim <model.glb|model.gltf> --output <clip.panim> [--clip <name|index>] [--fps <fps>] [--skeleton <object_name>]"
+        "  perro_cli import_anim <model.glb|model.gltf> --output <clip.panim> [--clip <name|index>] [--fps <fps>] [--skeleton <object_name>] [--retarget-map <map.pretarget>] [--target-rig <rig.glb|rig.gltf>]"
     );
 }
 

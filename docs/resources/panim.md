@@ -281,6 +281,40 @@ Notes:
 - Track controls are supported on bone channels, for example:
   `bones[0].position.interp = "step"` and `bones[0].position.ease = "ease_in"`.
 
+## Retarget Bake
+
+Place `walk.pretarget` beside `walk.panim` to retarget during static builds.
+
+The generated static clip contains the target rig tracks.
+
+The source `.panim` stays unchanged.
+
+```ini
+source = Rig
+target = HeroRig
+keep_unmapped = false
+translation = root_only
+root_bone = hips
+
+bone hips => Hips
+bone arm_l => Arm.L
+
+source_rest arm_l = (0.2, 1.4, 0) | (0, 0, 0, 1) | (1, 1, 1)
+target_rest Arm.L = (0.25, 1.5, 0) | (0, 0, 0.7071068, 0.7071068) | (1, 1, 1)
+```
+
+Rules:
+
+- Exact names need no `bone` row when `keep_unmapped = true`.
+- Alias rows use `bone source => target`.
+- Rest rows use local `position | rotation quaternion | scale`.
+- Scale may be omitted; `(1, 1, 1)` is used.
+- `translation = all` keeps old map behavior.
+- `translation = root_only` needs `root_bone`.
+- `translation = none` removes all bone position channels.
+- Source + target rest rows align position and scale deltas.
+- Rotation keys remain rest-relative pose deltas.
+
 ## Events
 
 Global event in frame:

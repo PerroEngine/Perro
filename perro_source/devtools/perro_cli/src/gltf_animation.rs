@@ -1,10 +1,12 @@
 use crate::{parse_flag_value, resolve_local_path};
 use perro_animation::{
     ANIMATION_TRANSFORM_MASK_POSITION, ANIMATION_TRANSFORM_MASK_ROTATION,
-    ANIMATION_TRANSFORM_MASK_SCALE, AnimationBoneSelector, AnimationClip, AnimationKeyMode,
-    AnimationTrackValue,
+    ANIMATION_TRANSFORM_MASK_SCALE, AnimationBoneRestPose, AnimationBoneSelector, AnimationClip,
+    AnimationKeyMode, AnimationTrackValue,
 };
 use perro_scene::{Node2DField, Node3DField, NodeField, Skeleton2DField, Skeleton3DField};
+use perro_structs::{Quaternion, Transform3D, Vector3};
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fmt::Write as _;
 use std::path::Path;
@@ -18,6 +20,11 @@ struct TrackTarget {
 #[derive(Default)]
 struct FrameBlock {
     tracks: BTreeMap<TrackTarget, String>,
+}
+
+struct ConvertedAnimation {
+    panim: String,
+    source_rest: Vec<AnimationBoneRestPose>,
 }
 
 pub(crate) fn gltf_to_panim_command(args: &[String], cwd: &Path) -> Result<(), String> {
@@ -51,25 +58,35 @@ pub(crate) fn gltf_to_panim_command(args: &[String], cwd: &Path) -> Result<(), S
         .map(|name| sanitize_ident(&name))
         .unwrap_or_else(|| "Rig".to_string());
 
-    let mut panim = convert_gltf_animation_to_panim(
+    let converted = convert_gltf_animation_to_panim(
         &input_path,
         fps,
         clip_selector.as_deref(),
         &skeleton_object,
     )?;
+    let mut panim = converted.panim;
     if let Some(raw_map) =
         parse_flag_value(args, "--retarget-map").or_else(|| parse_flag_value(args, "--retarget"))
     {
         let map_path = resolve_local_path(&raw_map, cwd);
         let map_text = std::fs::read_to_string(&map_path)
             .map_err(|err| format!("failed to read {}: {err}", map_path.display()))?;
-        let map = perro_animation::parse_pretarget(&map_text)?;
+        let mut profile = perro_animation::parse_pretarget_profile(&map_text)?;
+        merge_rest_poses(&mut profile.source_rest, converted.source_rest);
+        if let Some(raw_target_rig) = parse_flag_value(args, "--target-rig") {
+            let target_rig_path = resolve_local_path(&raw_target_rig, cwd);
+            let target_rest = read_gltf_joint_rest_poses(&target_rig_path)?;
+            merge_rest_poses(&mut profile.target_rest, target_rest);
+        }
         let clip = perro_animation::parse_panim(&panim)?;
-        let (retargeted, report) = perro_animation::retarget_skeleton3d_clip(&clip, &map);
-        if report.remapped_tracks == 0 && report.kept_unmapped_tracks == 0 {
+        let (retargeted, report) =
+            perro_animation::retarget_skeleton3d_clip_with_profile(&clip, &profile);
+        if report.map.remapped_tracks == 0 && report.map.kept_unmapped_tracks == 0 {
             return Err("retarget map matched no Skeleton3D bone tracks".to_string());
         }
         panim = render_clip_to_panim(&retargeted)?;
+    } else if parse_flag_value(args, "--target-rig").is_some() {
+        return Err("--target-rig needs --retarget-map".to_string());
     }
 
     if let Some(parent) = output_path.parent() {
@@ -87,7 +104,7 @@ fn convert_gltf_animation_to_panim(
     fps: f32,
     clip_selector: Option<&str>,
     skeleton_object: &str,
-) -> Result<String, String> {
+) -> Result<ConvertedAnimation, String> {
     let (doc, buffers, _images) = gltf::import(input_path)
         .map_err(|err| format!("failed to import glTF `{}`: {err}", input_path.display()))?;
     let animation = select_animation(&doc, clip_selector)?;
@@ -98,6 +115,8 @@ fn convert_gltf_animation_to_panim(
         .unwrap_or_else(|| format!("Animation{}", animation.index()));
 
     let joint_nodes = collect_joint_nodes(&doc);
+    let source_rest_by_node = collect_joint_rest_transforms(&doc, &joint_nodes);
+    let source_rest = collect_joint_rest_poses(&doc, &joint_nodes, &source_rest_by_node);
     let node_names = doc
         .nodes()
         .map(|node| {
@@ -176,9 +195,13 @@ fn convert_gltf_animation_to_panim(
             gltf::animation::util::ReadOutputs::Rotations(values) => {
                 let values = values.into_f32().collect::<Vec<_>>();
                 for (index, time) in inputs.iter().copied().enumerate() {
-                    let Some(value) = values.get(index * value_step + value_offset).copied() else {
+                    let Some(mut value) = values.get(index * value_step + value_offset).copied()
+                    else {
                         continue;
                     };
+                    if let Some(rest) = source_rest_by_node.get(&node_index) {
+                        value = rotation_to_pose_delta(rest.rotation, value);
+                    }
                     insert_track(&mut frames, time, fps, &object, &prop, quat_value(value));
                 }
             }
@@ -201,7 +224,10 @@ fn convert_gltf_animation_to_panim(
         ));
     }
 
-    render_panim(&animation_name, fps, &objects, &frames)
+    Ok(ConvertedAnimation {
+        panim: render_panim(&animation_name, fps, &objects, &frames)?,
+        source_rest,
+    })
 }
 
 fn select_animation<'a>(
@@ -228,6 +254,89 @@ fn collect_joint_nodes(doc: &gltf::Document) -> HashSet<usize> {
         }
     }
     joints
+}
+
+fn read_gltf_joint_rest_poses(path: &Path) -> Result<Vec<AnimationBoneRestPose>, String> {
+    let gltf = gltf::Gltf::open(path)
+        .map_err(|err| format!("failed to read target rig `{}`: {err}", path.display()))?;
+    let joints = collect_joint_nodes(&gltf.document);
+    let transforms = collect_joint_rest_transforms(&gltf.document, &joints);
+    Ok(collect_joint_rest_poses(
+        &gltf.document,
+        &joints,
+        &transforms,
+    ))
+}
+
+fn collect_joint_rest_transforms(
+    doc: &gltf::Document,
+    joint_nodes: &HashSet<usize>,
+) -> HashMap<usize, Transform3D> {
+    doc.nodes()
+        .filter(|node| joint_nodes.contains(&node.index()))
+        .map(|node| {
+            let index = node.index();
+            let (position, rotation, scale) = node.transform().decomposed();
+            (
+                index,
+                Transform3D::new(
+                    Vector3::from(position),
+                    Quaternion::from(rotation),
+                    Vector3::from(scale),
+                ),
+            )
+        })
+        .collect()
+}
+
+fn collect_joint_rest_poses(
+    doc: &gltf::Document,
+    joint_nodes: &HashSet<usize>,
+    transforms: &HashMap<usize, Transform3D>,
+) -> Vec<AnimationBoneRestPose> {
+    let mut poses = BTreeMap::<String, Transform3D>::new();
+    for node in doc.nodes() {
+        if !joint_nodes.contains(&node.index()) {
+            continue;
+        }
+        let name = node
+            .name()
+            .map(ToString::to_string)
+            .unwrap_or_else(|| format!("Node{}", node.index()));
+        if let Some(transform) = transforms.get(&node.index()) {
+            poses.insert(name, *transform);
+        }
+    }
+    poses
+        .into_iter()
+        .map(|(bone, transform)| AnimationBoneRestPose {
+            bone: Cow::Owned(bone),
+            transform,
+        })
+        .collect()
+}
+
+fn rotation_to_pose_delta(rest: Quaternion, animated: [f32; 4]) -> [f32; 4] {
+    let animated = Quaternion::from(animated).normalized();
+    let delta = (rest.inverse() * animated).normalized();
+    delta.into()
+}
+
+fn merge_rest_poses(
+    poses: &mut Cow<'static, [AnimationBoneRestPose]>,
+    fallback: Vec<AnimationBoneRestPose>,
+) {
+    let mut merged = poses.to_vec();
+    let mut names = merged
+        .iter()
+        .map(|pose| pose.bone.to_string())
+        .collect::<HashSet<_>>();
+    merged.extend(
+        fallback
+            .into_iter()
+            .filter(|pose| names.insert(pose.bone.to_string())),
+    );
+    *poses = Cow::Owned(merged);
 }
 
 fn target_property_name(target: &gltf::animation::Target) -> &'static str {
@@ -527,4 +636,21 @@ fn fmt_f32(value: f32) -> String {
 
 fn escape_str(raw: &str) -> String {
     raw.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::rotation_to_pose_delta;
+    use perro_structs::Quaternion;
+
+    #[test]
+    fn gltf_joint_rotation_converts_absolute_rest_to_identity_pose_delta() {
+        let rest = Quaternion::new(0.0, 0.0, 0.70710677, 0.70710677).normalized();
+        let delta = rotation_to_pose_delta(rest, rest.into());
+
+        assert!(delta[0].abs() < 1.0e-5);
+        assert!(delta[1].abs() < 1.0e-5);
+        assert!(delta[2].abs() < 1.0e-5);
+        assert!((delta[3].abs() - 1.0).abs() < 1.0e-5);
+    }
 }

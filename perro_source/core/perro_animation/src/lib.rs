@@ -6,8 +6,10 @@ mod retarget;
 pub use anim_tree::*;
 pub use panim::parse_panim;
 pub use retarget::{
-    AnimationBoneRetarget, AnimationRetargetMap, AnimationRetargetReport, parse_pretarget,
-    retarget_skeleton3d_clip,
+    AnimationBoneRestPose, AnimationBoneRetarget, AnimationRetargetMap, AnimationRetargetProfile,
+    AnimationRetargetReport, AnimationRetargetSolveReport, AnimationTranslationPolicy,
+    parse_pretarget, parse_pretarget_profile, retarget_skeleton3d_clip,
+    retarget_skeleton3d_clip_with_profile,
 };
 
 #[derive(Clone, Debug, Default)]

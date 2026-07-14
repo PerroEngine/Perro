@@ -44,7 +44,22 @@ pub fn generate_static_animations(project_root: &Path) -> Result<(), StaticPipel
         .map(|rel| -> io::Result<ParsedAnimation> {
             let source = res_dir.join(rel);
             let text = fs::read_to_string(&source)?;
-            let clip = perro_animation::parse_panim(&text).map_err(io::Error::other)?;
+            let mut clip = perro_animation::parse_panim(&text).map_err(io::Error::other)?;
+            let retarget_path = source.with_extension("pretarget");
+            if retarget_path.exists() {
+                let retarget_text = fs::read_to_string(&retarget_path)?;
+                let profile = perro_animation::parse_pretarget_profile(&retarget_text)
+                    .map_err(io::Error::other)?;
+                let (retargeted, report) =
+                    perro_animation::retarget_skeleton3d_clip_with_profile(&clip, &profile);
+                if report.map.remapped_tracks == 0 && report.map.kept_unmapped_tracks == 0 {
+                    return Err(io::Error::other(format!(
+                        "{} matched no Skeleton3D bone tracks",
+                        retarget_path.display()
+                    )));
+                }
+                clip = retargeted;
+            }
             let clip = optimize_animation_clip(clip);
             Ok(ParsedAnimation {
                 lookup_key: asset_uri(rel),
@@ -995,5 +1010,51 @@ fps = 24
         assert!(!generated_src.contains("node_type: Cow::Borrowed(\"Node3D\")"));
         assert!(!generated_src.contains("parse_panim"));
         assert!(!generated_src.contains("include_str!"));
+    }
+
+    #[test]
+    fn static_animation_pipeline_bakes_pretarget_sidecar() {
+        let root = unique_temp_dir("animation_retarget");
+        let source_abs = root.join("res/animations/wave.panim");
+        std::fs::create_dir_all(source_abs.parent().expect("source parent"))
+            .expect("create source parent");
+        std::fs::write(
+            &source_abs,
+            r#"
+[Objects]
+Rig = Skeleton3D
+[/Objects]
+
+[Frame0]
+@Rig {
+    bones["arm"].position = (3, 4, 5)
+    bones["arm"].rotation = (0, 0, 0, 1)
+}
+[/Frame0]
+"#,
+        )
+        .expect("write source panim");
+        std::fs::write(
+            source_abs.with_extension("pretarget"),
+            r#"
+source = Rig
+target = HeroRig
+translation = root_only
+root_bone = hips
+bone arm => Arm.L
+source_rest arm = (0, 0, 0) | (0, 0, 0, 1) | (1, 1, 1)
+target_rest Arm.L = (1, 2, 3) | (0, 0, 0.70710677, 0.70710677) | (1, 1, 1)
+"#,
+        )
+        .expect("write retarget map");
+
+        generate_static_animations(&root).expect("generate retargeted static animation");
+
+        let generated =
+            std::fs::read_to_string(root.join(".perro/project/src/static/animations.rs"))
+                .expect("read static animation source");
+        assert!(generated.contains("name: Cow::Borrowed(\"HeroRig\")"));
+        assert!(generated.contains("Name(Cow::Borrowed(\"Arm.L\"))"));
+        assert!(generated.contains("transform3d_mask: 2"));
     }
 }

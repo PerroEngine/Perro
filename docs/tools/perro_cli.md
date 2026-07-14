@@ -57,7 +57,7 @@ perro new_script --name <script_name> [--path <project_dir>] [--res <res_subdir>
 perro new_scene --name <scene_name> [--path <project_dir>] [--res <res_subdir>] [--dlc <dlc_name>] [--template 2D|3D] [--no-open]
 perro new_animation --name <animation_name> [--path <project_dir>] [--res <res_subdir>] [--dlc <dlc_name>] [--no-open]
 perro new_panimtree --name <tree_name> [--path <project_dir>] [--res <res_subdir>] [--dlc <dlc_name>] [--no-open]
-perro import_anim <model.glb|model.gltf> --output <clip.panim> [--clip <name|index>] [--fps <fps>] [--skeleton <object_name>]
+perro import_anim <model.glb|model.gltf> --output <clip.panim> [--clip <name|index>] [--fps <fps>] [--skeleton <object_name>] [--retarget-map <map.pretarget>] [--target-rig <model.glb|model.gltf>]
 ```
 
 Health and maintenance:
@@ -486,7 +486,7 @@ perro new_panimtree --name HeroMove --no-open
 Command:
 
 ```powershell
-perro import_anim <model.glb|model.gltf> --output <clip.panim> [--clip <name|index>] [--fps <fps>] [--skeleton <object_name>]
+perro import_anim <model.glb|model.gltf> --output <clip.panim> [--clip <name|index>] [--fps <fps>] [--skeleton <object_name>] [--retarget-map <map.pretarget>] [--target-rig <model.glb|model.gltf>]
 ```
 
 `gltf_to_panim` and `glb_to_panim` are aliases.
@@ -498,6 +498,7 @@ What it does:
 3. Converts translation, rotation, and scale channels into `.panim` keyframes.
 4. Writes node tracks as `Node3D` objects.
 5. Writes skin joint tracks as `Skeleton3D` bone tracks on `--skeleton` object.
+6. With `--retarget-map`, bakes bone aliases, rest-pose alignment, and translation policy.
 
 Notes:
 
@@ -506,6 +507,9 @@ Notes:
 - `--skeleton` defaults to `Rig`.
 - Scene or script bindings still map `.panim` object names to actual scene nodes.
 - Bone names come from glTF node names, for example `bone["Spine"].rotation`.
+- Joint rotations convert from glTF local rotations to Perro rest-relative pose deltas.
+- `--target-rig` reads target joint rest poses and needs `--retarget-map`.
+- Inline rest poses in the map override glTF rest poses.
 - Morph target weights are ignored.
 
 Examples:
@@ -513,7 +517,35 @@ Examples:
 ```powershell
 perro import_anim res/models/hero.glb --output res/animations/idle.panim --clip Idle
 perro import_anim res/models/hero.glb --output res/animations/run.panim --clip 1 --fps 30 --skeleton HeroRig
+perro import_anim res/models/mocap.glb --output res/animations/run.panim --retarget-map res/animations/humanoid.pretarget --target-rig res/models/hero.glb
 ```
+
+Retarget map:
+
+```ini
+source = Rig
+target = HeroRig
+keep_unmapped = false
+translation = root_only
+root_bone = mixamorig:Hips
+
+bone mixamorig:Hips => Hips
+bone mixamorig:LeftArm => upper_arm.L
+
+# position | rotation quaternion | scale
+source_rest mixamorig:Hips = (0, 0.9, 0) | (0, 0, 0, 1) | (1, 1, 1)
+target_rest Hips = (0, 1.02, 0) | (0, 0, 0, 1) | (1, 1, 1)
+```
+
+`translation` values:
+
+- `all`: keep all bone translation tracks; default for old maps.
+- `root_only`: keep only `root_bone` translation tracks.
+- `none`: remove all bone translation tracks.
+
+Rest solve maps source-rest position/scale to target-rest position/scale.
+
+Rotation keys stay rest-relative deltas, matching `Skeleton3D` playback.
 
 ## Health And Maintenance
 

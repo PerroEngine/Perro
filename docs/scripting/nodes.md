@@ -276,7 +276,7 @@ See [TileMap2D](tilemap.md).
 - Scene authoring: `skeleton = @NodeName` uses the **scene node key** and is resolved to a `NodeID` at load time.
 - Skinning only works if the mesh has proper vertex weights (`JOINTS_0/WEIGHTS_0`).
 - Shared-skeleton mesh reuse works when meshes follow the same rig contract: same joint order/indices and compatible weights.
-- Automatic retargeting between mismatched rigs is not implemented.
+- Mismatched rigs can use `.pretarget` alias/rest maps during glTF import or static `.panim` bake.
 - glTF morph targets import as blend shapes.
 - glTF `TEXCOORD_1` imports as dedicated paint UVs. Meshes without UV1 use UV0 as paint UV fallback.
 - `blend_shape_weights` stores indexed blend shape weights in Blender-style `0.0..1.0`.
@@ -948,7 +948,7 @@ Notes:
 
 - Bone index comes from imported skeleton order.
 - Meshes can share one skeleton when their `JOINTS_0/WEIGHTS_0` indices are authored for that same skeleton order.
-- This is shared-rig reuse, not automatic retargeting. Perro does not currently remap bone names or solve rest-pose differences for mismatched rigs.
+- Shared-rig reuse needs no bake. Mismatched rigs use `.pretarget` maps to remap names and align rest poses before playback.
 - `bone = -1` or missing `skeleton` disables attachment update.
 - If index is out of range, attachment keeps its current transform.
 - Child nodes render/use physics from attachment transform like any other parented node.
