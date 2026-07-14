@@ -23,16 +23,12 @@ fn shade_material(in: FragmentInput) -> vec4<f32> {
     var ao = 1.0;
     var lit_emissive = emissive;
     if material.has_metallic_roughness_texture {
-        let mr = material_data_from_srgb_sample(
-            textureSample(custom_image_tex_0, material_sampler, in.uv).rgb,
-        );
+        let mr = textureSample(custom_image_tex_0, material_sampler, in.uv).rgb;
         roughness = clamp(roughness * mr.g, 0.04, 1.0);
         metallic = clamp(metallic * mr.b, 0.0, 1.0);
     }
     if material.has_occlusion_texture {
-        let sampled_ao = material_data_from_srgb_sample(
-            textureSample(custom_image_tex_2, material_sampler, in.uv).rgb,
-        ).r;
+        let sampled_ao = textureSample(custom_image_tex_2, material_sampler, in.uv).r;
         ao = mix(1.0, sampled_ao, clamp(pbr.z, 0.0, 1.0));
     }
     if material.has_emissive_texture {

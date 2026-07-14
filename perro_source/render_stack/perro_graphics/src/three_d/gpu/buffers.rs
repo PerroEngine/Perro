@@ -106,7 +106,13 @@ struct AppendPackedLodDataArgs<'a> {
 }
 
 fn material_texture_key_uses_slot(key: &MaterialTextureKey, slot: u32) -> bool {
-    slot != MATERIAL_TEXTURE_NONE && key.slots.contains(&slot)
+    let source_slot = material_texture_source_slot(slot);
+    source_slot != MATERIAL_TEXTURE_NONE
+        && key
+            .slots
+            .iter()
+            .copied()
+            .any(|key_slot| material_texture_source_slot(key_slot) == source_slot)
 }
 
 fn material_texture_key_survives_slot_evict(key: &MaterialTextureKey, slot: u32) -> bool {
@@ -139,9 +145,7 @@ impl Gpu3D {
     }
 
     pub(super) fn fallback_material_texture_bind_group(&self) -> Option<&wgpu::BindGroup> {
-        self.material_fallback_texture
-            .as_ref()
-            .map(|cached| &cached.bind_group)
+        self.material_fallback_bind_group.as_ref()
     }
 
     pub(super) fn material_texture_set_bind_group(
@@ -158,10 +162,10 @@ impl Gpu3D {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
     ) {
-        if self.material_fallback_texture.is_some() {
+        if self.material_fallback_bind_group.is_some() {
             return;
         }
-        let cached = create_cached_material_texture(
+        let white = create_cached_material_texture(
             device,
             queue,
             &self.material_texture_bgl,
@@ -171,9 +175,41 @@ impl Gpu3D {
                 height: 1,
                 source: "__fallback__".to_string(),
                 filter: self.texture_filter,
+                color_space: MaterialTextureColorSpace::Srgb,
             },
         );
-        self.material_fallback_texture = Some(cached);
+        let neutral_normal = create_cached_material_texture(
+            device,
+            queue,
+            &self.material_texture_bgl,
+            CachedMaterialTextureInput {
+                rgba: vec![128u8, 128, 255, 255],
+                width: 1,
+                height: 1,
+                source: "__normal_fallback__".to_string(),
+                filter: self.texture_filter,
+                color_space: MaterialTextureColorSpace::Linear,
+            },
+        );
+        let custom_views = (0..CUSTOM_MATERIAL_IMAGE_COUNT)
+            .map(|index| {
+                if index == 1 {
+                    &neutral_normal.view
+                } else {
+                    &white.view
+                }
+            })
+            .collect::<Vec<_>>();
+        let bind_group = create_material_texture_bind_group(
+            device,
+            &self.material_texture_bgl,
+            &white.sampler,
+            &white.view,
+            &custom_views,
+        );
+        self.material_fallback_texture = Some(white);
+        self.material_normal_fallback_texture = Some(neutral_normal);
+        self.material_fallback_bind_group = Some(bind_group);
     }
 
     pub(super) fn custom_material_image_key(
@@ -184,13 +220,11 @@ impl Gpu3D {
         material: &Material3D,
     ) -> MaterialTextureKey {
         let params = material.standard_params();
-        let mut key = MaterialTextureKey::from_base(params.base_color_texture);
-        if matches!(material, Material3D::Standard(_)) {
-            key.slots[1] = params.metallic_roughness_texture;
-            key.slots[2] = params.normal_texture;
-            key.slots[3] = params.occlusion_texture;
-            key.slots[4] = params.emissive_texture;
-        }
+        let mut key = if matches!(material, Material3D::Standard(_)) {
+            MaterialTextureKey::from_standard(&params)
+        } else {
+            MaterialTextureKey::from_base(params.base_color_texture)
+        };
         let Material3D::Custom(custom) = material else {
             return key;
         };
@@ -242,6 +276,9 @@ impl Gpu3D {
         let Some(fallback) = self.material_fallback_texture.as_ref() else {
             return;
         };
+        let Some(normal_fallback) = self.material_normal_fallback_texture.as_ref() else {
+            return;
+        };
         let base_cached = self.material_textures.get(&key.slots[0]);
         let base_view = base_cached
             .map(|cached| &cached.view)
@@ -250,12 +287,18 @@ impl Gpu3D {
             .map(|cached| &cached.sampler)
             .unwrap_or(&fallback.sampler);
         let mut custom_views = Vec::with_capacity(CUSTOM_MATERIAL_IMAGE_COUNT);
-        for slot in key.slots.iter().skip(1) {
+        for (index, slot) in key.slots.iter().skip(1).enumerate() {
             let view = self
                 .material_textures
                 .get(slot)
                 .map(|cached| &cached.view)
-                .unwrap_or(&fallback.view);
+                .unwrap_or_else(|| {
+                    if key.standard && index == 1 {
+                        &normal_fallback.view
+                    } else {
+                        &fallback.view
+                    }
+                });
             custom_views.push(view);
         }
         let bind_group = create_material_texture_bind_group(
@@ -281,12 +324,14 @@ impl Gpu3D {
             return;
         }
         self.ensure_material_fallback_texture(device, queue);
+        let source_slot = material_texture_source_slot(slot);
 
         // glTF material texture indices are model-local, not global texture IDs.
         // Prefer glTF-local texture source when mesh source is glTF/glb.
-        let gltf_source = gltf_texture_source_from_mesh_source(mesh_source, slot);
-        let global_source = resources.texture_source_by_index(slot).or_else(|| {
-            slot.checked_add(1)
+        let gltf_source = gltf_texture_source_from_mesh_source(mesh_source, source_slot);
+        let global_source = resources.texture_source_by_index(source_slot).or_else(|| {
+            source_slot
+                .checked_add(1)
                 .and_then(|next| resources.texture_source_by_index(next))
         });
         let source = if gltf_source.is_some() {
@@ -330,11 +375,38 @@ impl Gpu3D {
                 width,
                 height,
                 source,
-                filter: self.material_texture_filter(slot),
+                filter: self.material_texture_filter(source_slot),
+                color_space: if material_texture_is_linear(slot) {
+                    MaterialTextureColorSpace::Linear
+                } else {
+                    MaterialTextureColorSpace::Srgb
+                },
             },
         );
         self.material_textures.insert(slot, cached);
         self.evict_material_texture_bind_groups_for_slot(slot);
+    }
+
+    pub(super) fn ensure_standard_material_texture_slots(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        resources: &ResourceStore,
+        material: &StandardMaterial3D,
+        mesh_source: &str,
+        static_texture_lookup: Option<StaticTextureLookup>,
+    ) {
+        let key = MaterialTextureKey::from_standard(material);
+        for slot in key.slots.iter().take(5).copied() {
+            self.ensure_material_texture_slot(
+                device,
+                queue,
+                resources,
+                slot,
+                mesh_source,
+                static_texture_lookup,
+            );
+        }
     }
 
     fn ensure_material_texture_source(
@@ -376,6 +448,7 @@ impl Gpu3D {
                 height,
                 source: source.to_string(),
                 filter: self.material_texture_filter(slot),
+                color_space: MaterialTextureColorSpace::Srgb,
             },
         );
         self.material_textures.insert(slot, cached);
@@ -432,6 +505,8 @@ impl Gpu3D {
 
     pub fn invalidate_material_texture(&mut self, slot: u32) {
         self.material_textures.remove(&slot);
+        self.material_textures
+            .remove(&linear_material_texture_slot(slot));
         self.evict_material_texture_bind_groups_for_slot(slot);
     }
 
@@ -2424,8 +2499,10 @@ fn pack_packed_lod_vertex(vertex: &MeshVertex, param: &PackedLodParamGpu) -> Pac
 mod tests {
     use super::{
         CUSTOM_MATERIAL_TEXTURE_SLOT_BASE, MATERIAL_TEXTURE_NONE, MaterialTextureKey,
-        bounded_growth_capacity, material_texture_key_survives_slot_evict,
+        bounded_growth_capacity, linear_material_texture_slot, material_texture_is_linear,
+        material_texture_key_survives_slot_evict, material_texture_source_slot,
     };
+    use perro_render_bridge::StandardMaterial3D;
 
     #[test]
     fn buffer_growth_stops_at_device_limit() {
@@ -2455,6 +2532,7 @@ mod tests {
                 MATERIAL_TEXTURE_NONE,
                 MATERIAL_TEXTURE_NONE,
             ],
+            standard: false,
         };
         let unaffected = MaterialTextureKey {
             slots: [
@@ -2468,9 +2546,36 @@ mod tests {
                 MATERIAL_TEXTURE_NONE,
                 MATERIAL_TEXTURE_NONE,
             ],
+            standard: false,
         };
 
         assert!(!material_texture_key_survives_slot_evict(&affected, slot));
         assert!(material_texture_key_survives_slot_evict(&unaffected, slot));
+    }
+
+    #[test]
+    fn standard_texture_key_marks_only_gltf_data_maps_linear() {
+        let material = StandardMaterial3D {
+            base_color_texture: 10,
+            metallic_roughness_texture: 11,
+            normal_texture: 12,
+            occlusion_texture: 13,
+            emissive_texture: 14,
+            ..Default::default()
+        };
+        let key = MaterialTextureKey::from_standard(&material);
+
+        assert!(key.standard);
+        assert_eq!(key.slots[0], 10);
+        assert_eq!(key.slots[1], linear_material_texture_slot(11));
+        assert_eq!(key.slots[2], linear_material_texture_slot(12));
+        assert_eq!(key.slots[3], linear_material_texture_slot(13));
+        assert_eq!(key.slots[4], 14);
+        assert!(!material_texture_is_linear(key.slots[0]));
+        assert!(material_texture_is_linear(key.slots[1]));
+        assert!(material_texture_is_linear(key.slots[2]));
+        assert!(material_texture_is_linear(key.slots[3]));
+        assert!(!material_texture_is_linear(key.slots[4]));
+        assert_eq!(material_texture_source_slot(key.slots[2]), 12);
     }
 }

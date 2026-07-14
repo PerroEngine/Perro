@@ -1002,7 +1002,7 @@ pub(super) fn draw_batches_sorted(batches: &[DrawBatch]) -> bool {
 #[inline]
 pub(super) fn multimesh_batch_sort_key(
     batch: &MultiMeshBatch,
-) -> (bool, bool, bool, bool, u8, u32, u32, u32) {
+) -> (bool, bool, bool, bool, u8, u32, u64, u32, u32) {
     let custom_token = match batch.material_kind {
         MaterialPipelineKind::Custom(token) => token,
         _ => 0,
@@ -1014,6 +1014,7 @@ pub(super) fn multimesh_batch_sort_key(
         batch.double_sided,
         material_pipeline_kind_rank(&batch.material_kind),
         custom_token,
+        batch.material_texture_key.state_hash(),
         batch.mesh.index_start,
         batch.draw_param_index,
     )
@@ -1507,6 +1508,41 @@ mod tests {
         let built = build_instance(glam::Mat4::IDENTITY.to_cols_array_2d(), &material, args);
         let flags = (built.rigid_meta.material.packed_material_params >> 3) & 0x1fff;
         assert_ne!(flags & MATERIAL_FLAG_MODULATE_BIAS, 0);
+    }
+
+    #[test]
+    fn standard_texture_slots_set_all_gpu_sample_flags() {
+        let material = Material3D::Standard(perro_render_bridge::StandardMaterial3D {
+            base_color_texture: 1,
+            metallic_roughness_texture: 2,
+            normal_texture: 3,
+            occlusion_texture: 4,
+            emissive_texture: 5,
+            ..Default::default()
+        });
+        let built = build_instance(
+            glam::Mat4::IDENTITY.to_cols_array_2d(),
+            &material,
+            BuildInstanceArgs {
+                debug_view: false,
+                debug_color: [1.0; 4],
+                mesh_blend: ResolvedMeshBlend::default(),
+                skeleton_start: 0,
+                skeleton_count: 0,
+                custom_params_offset: 0,
+                custom_params_len: 0,
+                packed_lod_param_id: 0,
+                receive_shadows: true,
+                modulate_bias: false,
+            },
+        );
+        let flags = (built.rigid_meta.material.packed_material_params >> 3) & 0x1fff;
+        let texture_flags = MATERIAL_FLAG_HAS_BASE_COLOR_TEXTURE
+            | MATERIAL_FLAG_HAS_METALLIC_ROUGHNESS_TEXTURE
+            | MATERIAL_FLAG_HAS_NORMAL_TEXTURE
+            | MATERIAL_FLAG_HAS_OCCLUSION_TEXTURE
+            | MATERIAL_FLAG_HAS_EMISSIVE_TEXTURE;
+        assert_eq!(flags & texture_flags, texture_flags);
     }
 
     #[test]

@@ -108,6 +108,15 @@ Comments:
 - `occlusion_texture` (alias: `occlusionTexture`) int
 - `emissive_texture` (alias: `emissiveTexture`) int
 
+Standard textures use glTF metallic-roughness rules:
+
+- base color and emissive textures are sampled as sRGB color
+- metallic-roughness textures are linear data: G = roughness, B = metallic, R is ignored
+- occlusion textures are linear data: R = ambient occlusion; `occlusion_strength` blends from 1 to R
+- normal textures are linear tangent-space normals; `normal_scale` scales X/Y before normalization
+- all slots use UV0; the same sampling path applies to meshes and multimeshes
+- missing slots bind neutral white data; missing normal slots bind a flat `(+Z)` normal
+
 Custom materials also accept `images`:
 
 ```txt

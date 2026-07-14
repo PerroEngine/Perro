@@ -1,7 +1,7 @@
 use super::mesh_blend_screen::MESH_BLEND_MASK_FORMAT;
 use super::*;
 
-const MULTIMESH_MESH_VERTEX_ATTRIBUTES: [wgpu::VertexAttribute; 2] = [
+const MULTIMESH_MESH_VERTEX_ATTRIBUTES: [wgpu::VertexAttribute; 3] = [
     wgpu::VertexAttribute {
         offset: 0,
         shader_location: 0,
@@ -11,6 +11,11 @@ const MULTIMESH_MESH_VERTEX_ATTRIBUTES: [wgpu::VertexAttribute; 2] = [
         offset: 12,
         shader_location: 1,
         format: wgpu::VertexFormat::Snorm16x4,
+    },
+    wgpu::VertexAttribute {
+        offset: 20,
+        shader_location: 12,
+        format: wgpu::VertexFormat::Float32x2,
     },
 ];
 

@@ -6,13 +6,27 @@ use crate::texture_mips::{
 };
 use perro_structs::TextureFilterMode;
 
-const MATERIAL_TEXTURE_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum MaterialTextureColorSpace {
+    Srgb,
+    Linear,
+}
+
+impl MaterialTextureColorSpace {
+    fn format(self) -> wgpu::TextureFormat {
+        match self {
+            Self::Srgb => wgpu::TextureFormat::Rgba8UnormSrgb,
+            Self::Linear => wgpu::TextureFormat::Rgba8Unorm,
+        }
+    }
+}
 
 pub(super) struct CachedMaterialTexture {
     pub(super) source: String,
     pub(super) texture: Option<wgpu::Texture>,
     pub(super) view: wgpu::TextureView,
     pub(super) sampler: wgpu::Sampler,
+    #[allow(dead_code)]
     pub(super) bind_group: wgpu::BindGroup,
     pub(super) width: u32,
     pub(super) height: u32,
@@ -46,6 +60,7 @@ pub(super) struct CachedMaterialTextureInput {
     pub(super) height: u32,
     pub(super) source: String,
     pub(super) filter: TextureFilterMode,
+    pub(super) color_space: MaterialTextureColorSpace,
 }
 
 pub(super) fn create_cached_material_texture(
@@ -67,7 +82,7 @@ pub(super) fn create_cached_material_texture(
         mip_level_count: mips.len() as u32,
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
-        format: MATERIAL_TEXTURE_FORMAT,
+        format: input.color_space.format(),
         usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
         view_formats: &[],
     });

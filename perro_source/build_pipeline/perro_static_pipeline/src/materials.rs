@@ -1419,7 +1419,7 @@ fn materials_from_gltf_file(
 mod tests {
     use super::{
         CustomImageLiteral, CustomMaterialLiteral, CustomParamLiteral, MaterialLiteral,
-        load_pmat_literal, material_literal_to_code,
+        load_pmat_literal, material_literal_to_code, materials_from_gltf_file,
     };
     use perro_render_bridge::{
         CustomMaterial3D, CustomMaterialImage3D, CustomMaterialLighting3D, CustomMaterialParam3D,
@@ -1427,6 +1427,29 @@ mod tests {
         UnlitMaterial3D,
     };
     use std::borrow::Cow;
+
+    const GLTF_STANDARD_TEXTURE_FIXTURE: &str = r#"{
+        "asset": { "version": "2.0" },
+        "images": [{
+            "uri": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+        }],
+        "textures": [
+            { "source": 0 }, { "source": 0 }, { "source": 0 },
+            { "source": 0 }, { "source": 0 }
+        ],
+        "materials": [{
+            "pbrMetallicRoughness": {
+                "metallicFactor": 0.6,
+                "roughnessFactor": 0.7,
+                "baseColorTexture": { "index": 0 },
+                "metallicRoughnessTexture": { "index": 1 }
+            },
+            "normalTexture": { "index": 2, "scale": 0.8 },
+            "occlusionTexture": { "index": 3, "strength": 0.9 },
+            "emissiveTexture": { "index": 4 },
+            "emissiveFactor": [0.2, 0.3, 0.4]
+        }]
+    }"#;
 
     #[test]
     fn material_codegen_uses_default_ctor_for_default_standard() {
@@ -1436,6 +1459,36 @@ mod tests {
             code,
             "Material3D::Standard(StandardMaterial3D::const_default())"
         );
+    }
+
+    #[test]
+    fn static_gltf_material_import_keeps_pbr_texture_slots_and_factors() {
+        let path = std::env::temp_dir().join(format!(
+            "perro_pbr_material_{}_{}.gltf",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("clock after epoch")
+                .as_nanos()
+        ));
+        std::fs::write(&path, GLTF_STANDARD_TEXTURE_FIXTURE).expect("write glTF fixture");
+        let materials = materials_from_gltf_file(&path, "res://fixture.gltf")
+            .expect("static glTF material imports");
+        let _ = std::fs::remove_file(&path);
+        let MaterialLiteral::Standard(standard) = &materials[0].1 else {
+            panic!("expected standard material");
+        };
+
+        assert_eq!(standard.base_color_texture, 0);
+        assert_eq!(standard.metallic_roughness_texture, 1);
+        assert_eq!(standard.normal_texture, 2);
+        assert_eq!(standard.occlusion_texture, 3);
+        assert_eq!(standard.emissive_texture, 4);
+        assert_eq!(standard.metallic_factor, 0.6);
+        assert_eq!(standard.roughness_factor, 0.7);
+        assert_eq!(standard.normal_scale, 0.8);
+        assert_eq!(standard.occlusion_strength, 0.9);
+        assert_eq!(standard.emissive_factor, [0.2, 0.3, 0.4]);
     }
 
     #[test]

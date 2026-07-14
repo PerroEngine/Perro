@@ -731,6 +731,37 @@ mod tests {
     }
 
     #[test]
+    fn standard_material_uses_gltf_texture_channels_and_tangent_frame() {
+        let wgsl = regular::MATERIAL_STANDARD_WGSL;
+        assert!(wgsl.contains("roughness * mr.g"));
+        assert!(wgsl.contains("metallic * mr.b"));
+        assert!(wgsl.contains("textureSample(custom_image_tex_2, material_sampler, in.uv).r"));
+        assert!(wgsl.contains("lit_emissive *= textureSample(custom_image_tex_3"));
+
+        let prelude = regular::prelude_rigid_wgsl();
+        assert!(prelude.contains("fn fallback_tangent"));
+        assert!(prelude.contains("var handedness = 1.0"));
+        assert!(prelude.contains("cross(tangent_raw, bitangent_raw)"));
+        assert!(prelude.contains("sampled.xy * scale"));
+    }
+
+    #[test]
+    fn multimesh_standard_material_keeps_texture_parity() {
+        let wgsl = regular::MULTIMESH_WGSL;
+        assert!(wgsl.contains("@location(12) uv: vec2<f32>"));
+        assert!(wgsl.contains("roughness *= metallic_roughness.g"));
+        assert!(wgsl.contains("metallic *= metallic_roughness.b"));
+        assert!(wgsl.contains("fn apply_multimesh_normal_map"));
+        assert!(wgsl.contains("let sampled_ao = textureSample(custom_image_tex_2"));
+        assert!(wgsl.contains("lit_emissive *= textureSample(custom_image_tex_3"));
+        assert!(wgsl.contains("return shade_standard_multimesh(in)"));
+        parse_and_validate(
+            &sanitize_reserved_meta_identifier(wgsl),
+            "multimesh standard texture parity",
+        );
+    }
+
+    #[test]
     fn custom_material_standard_lighting_wrapper_wgsl_parses() {
         let material = "fn shade_material(in: FragmentInput) -> vec4<f32> { return vec4<f32>(in.normal_ws * 0.5 + vec3<f32>(0.5), 1.0); }";
         for prelude in [

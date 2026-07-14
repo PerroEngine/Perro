@@ -60,16 +60,19 @@ type MeshVertex = DecodedMeshVertex;
 const CUSTOM_MATERIAL_IMAGE_COUNT: usize = 8;
 const MATERIAL_TEXTURE_SET_SIZE: usize = 1 + CUSTOM_MATERIAL_IMAGE_COUNT;
 const CUSTOM_MATERIAL_TEXTURE_SLOT_BASE: u32 = 0x8000_0000;
+const MATERIAL_TEXTURE_LINEAR_FLAG: u32 = 0x4000_0000;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 struct MaterialTextureKey {
     slots: [u32; MATERIAL_TEXTURE_SET_SIZE],
+    standard: bool,
 }
 
 impl MaterialTextureKey {
     const fn empty() -> Self {
         Self {
             slots: [MATERIAL_TEXTURE_NONE; MATERIAL_TEXTURE_SET_SIZE],
+            standard: false,
         }
     }
 
@@ -79,14 +82,49 @@ impl MaterialTextureKey {
         key
     }
 
+    fn from_standard(material: &StandardMaterial3D) -> Self {
+        let mut key = Self::from_base(material.base_color_texture);
+        key.standard = true;
+        key.slots[1] = linear_material_texture_slot(material.metallic_roughness_texture);
+        key.slots[2] = linear_material_texture_slot(material.normal_texture);
+        key.slots[3] = linear_material_texture_slot(material.occlusion_texture);
+        key.slots[4] = material.emissive_texture;
+        key
+    }
+
     fn state_hash(self) -> u64 {
         let mut hash = 0xcbf2_9ce4_8422_2325u64;
         for slot in self.slots {
             hash ^= slot as u64;
             hash = hash.wrapping_mul(0x1000_0000_01b3);
         }
+        hash ^= self.standard as u64;
+        hash = hash.wrapping_mul(0x1000_0000_01b3);
         hash
     }
+}
+
+#[inline]
+const fn linear_material_texture_slot(slot: u32) -> u32 {
+    if slot == MATERIAL_TEXTURE_NONE {
+        slot
+    } else {
+        slot | MATERIAL_TEXTURE_LINEAR_FLAG
+    }
+}
+
+#[inline]
+const fn material_texture_source_slot(slot: u32) -> u32 {
+    if slot == MATERIAL_TEXTURE_NONE {
+        slot
+    } else {
+        slot & !MATERIAL_TEXTURE_LINEAR_FLAG
+    }
+}
+
+#[inline]
+const fn material_texture_is_linear(slot: u32) -> bool {
+    slot != MATERIAL_TEXTURE_NONE && (slot & MATERIAL_TEXTURE_LINEAR_FLAG) != 0
 }
 
 // Pose-pack cache entry: pinned source Arc + its packed geometry lanes.
@@ -118,8 +156,9 @@ use skinned_path::{
     create_pipeline_skinned, create_pipeline_skinned_blend, create_shadow_depth_pipeline_skinned,
 };
 use texture_cache::{
-    CachedMaterialTexture, CachedMaterialTextureInput, create_cached_material_texture,
-    create_external_material_texture, create_material_texture_bind_group,
+    CachedMaterialTexture, CachedMaterialTextureInput, MaterialTextureColorSpace,
+    create_cached_material_texture, create_external_material_texture,
+    create_material_texture_bind_group,
 };
 
 #[path = "gpu/asset_bridge.rs"]
@@ -387,14 +426,16 @@ struct MultiMeshDrawParamGpu {
     model_row_0: [f32; 4],
     model_row_1: [f32; 4],
     model_row_2: [f32; 4],
+    custom_params: [u32; 2],
     packed_color: u32,
+    packed_pbr_params_0: u32,
     packed_emissive: u32,
+    packed_material_params: u32,
     scale_bits: u32,
     packed_blend_params: u32,
-    custom_params: [u32; 2],
     // Local color bleed tint (pack_local_bleed layout); 0 = none.
     packed_bleed: u32,
-    _pad: u32,
+    _pad: [u32; 3],
 }
 
 #[repr(C)]
@@ -743,6 +784,8 @@ pub struct Gpu3D {
     staged_custom_params_meta_scratch: Vec<u32>,
     staged_custom_params_values_scratch: Vec<f32>,
     material_fallback_texture: Option<CachedMaterialTexture>,
+    material_normal_fallback_texture: Option<CachedMaterialTexture>,
+    material_fallback_bind_group: Option<wgpu::BindGroup>,
     material_textures: AHashMap<u32, CachedMaterialTexture>,
     // texture slots (= texture index) backing stream sources (webcam/video):
     // built single-level so per-frame base writes update in place.
@@ -1209,6 +1252,7 @@ struct MultiMeshBatch {
     blend_mask: u32,
     casts_shadows: bool,
     material_kind: MaterialPipelineKind,
+    material_texture_key: MaterialTextureKey,
 }
 
 #[derive(Clone, Copy)]
@@ -1321,7 +1365,7 @@ mod tests {
         assert_eq!(std::mem::size_of::<PackedLodParamGpu>(), 48);
         assert_eq!(std::mem::size_of::<SkinnedMeshVertex>(), 48);
         assert_eq!(std::mem::size_of::<MultiMeshInstanceGpu>(), 40);
-        assert_eq!(std::mem::size_of::<MultiMeshDrawParamGpu>(), 80);
+        assert_eq!(std::mem::size_of::<MultiMeshDrawParamGpu>(), 96);
         assert_eq!(std::mem::size_of::<MaterialInstanceGpu>(), 20);
         assert_eq!(std::mem::size_of::<RigidInstanceMetaGpu>(), 32);
         assert_eq!(std::mem::size_of::<SkinnedInstanceMetaGpu>(), 36);

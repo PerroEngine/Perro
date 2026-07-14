@@ -716,6 +716,57 @@ fn as_custom_images(value: &SceneValue) -> Option<Vec<CustomMaterialImage3D>> {
 mod tests {
     use super::*;
 
+    const GLB_STANDARD_TEXTURE_JSON: &str = r#"{
+        "asset": { "version": "2.0" },
+        "buffers": [{ "byteLength": 68 }],
+        "bufferViews": [{ "buffer": 0, "byteOffset": 0, "byteLength": 68 }],
+        "images": [{ "bufferView": 0, "mimeType": "image/png" }],
+        "textures": [
+            { "source": 0 }, { "source": 0 }, { "source": 0 },
+            { "source": 0 }, { "source": 0 }
+        ],
+        "materials": [{
+            "pbrMetallicRoughness": {
+                "baseColorFactor": [0.1, 0.2, 0.3, 0.4],
+                "metallicFactor": 0.6,
+                "roughnessFactor": 0.7,
+                "baseColorTexture": { "index": 0 },
+                "metallicRoughnessTexture": { "index": 1 }
+            },
+            "normalTexture": { "index": 2, "scale": 0.8 },
+            "occlusionTexture": { "index": 3, "strength": 0.9 },
+            "emissiveTexture": { "index": 4 },
+            "emissiveFactor": [0.2, 0.3, 0.4],
+            "alphaMode": "MASK",
+            "alphaCutoff": 0.25,
+            "doubleSided": true
+        }]
+    }"#;
+
+    fn standard_texture_glb_fixture() -> Vec<u8> {
+        const PNG: &[u8] = &[
+            137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 1, 0, 0, 0, 1,
+            8, 4, 0, 0, 0, 181, 28, 12, 2, 0, 0, 0, 11, 73, 68, 65, 84, 120, 218, 99, 100, 248, 15,
+            0, 1, 5, 1, 1, 39, 24, 227, 102, 0, 0, 0, 0, 73, 69, 78, 68, 174, 66, 96, 130,
+        ];
+        let mut json = GLB_STANDARD_TEXTURE_JSON.as_bytes().to_vec();
+        while !json.len().is_multiple_of(4) {
+            json.push(b' ');
+        }
+        let total_len = 12 + 8 + json.len() + 8 + PNG.len();
+        let mut glb = Vec::with_capacity(total_len);
+        glb.extend_from_slice(b"glTF");
+        glb.extend_from_slice(&2u32.to_le_bytes());
+        glb.extend_from_slice(&(total_len as u32).to_le_bytes());
+        glb.extend_from_slice(&(json.len() as u32).to_le_bytes());
+        glb.extend_from_slice(&0x4E4F_534Au32.to_le_bytes());
+        glb.extend_from_slice(&json);
+        glb.extend_from_slice(&(PNG.len() as u32).to_le_bytes());
+        glb.extend_from_slice(&0x004E_4942u32.to_le_bytes());
+        glb.extend_from_slice(PNG);
+        glb
+    }
+
     fn material_from_text(text: &str) -> Material3D {
         let value = Parser::new(text).parse_value_literal();
         let SceneValue::Object(entries) = value else {
@@ -736,6 +787,30 @@ mod tests {
             panic!("expected custom material");
         };
         assert_eq!(custom.lighting, CustomMaterialLighting3D::Standard);
+    }
+
+    #[test]
+    fn gltf_standard_material_import_keeps_pbr_texture_slots_and_factors() {
+        let glb = standard_texture_glb_fixture();
+        gltf::import_slice(&glb).expect("glTF fixture imports from bytes");
+        let material = load_gltf_material_from_bytes(&glb, None).expect("glTF material imports");
+        let Material3D::Standard(standard) = material else {
+            panic!("expected standard material");
+        };
+
+        assert_eq!(standard.base_color_texture, 0);
+        assert_eq!(standard.metallic_roughness_texture, 1);
+        assert_eq!(standard.normal_texture, 2);
+        assert_eq!(standard.occlusion_texture, 3);
+        assert_eq!(standard.emissive_texture, 4);
+        assert_eq!(standard.metallic_factor, 0.6);
+        assert_eq!(standard.roughness_factor, 0.7);
+        assert_eq!(standard.normal_scale, 0.8);
+        assert_eq!(standard.occlusion_strength, 0.9);
+        assert_eq!(standard.emissive_factor, [0.2, 0.3, 0.4]);
+        assert_eq!(standard.alpha_mode, 1);
+        assert_eq!(standard.alpha_cutoff, 0.25);
+        assert!(standard.double_sided);
     }
 
     #[test]

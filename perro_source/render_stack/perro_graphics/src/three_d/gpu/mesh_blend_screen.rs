@@ -675,6 +675,9 @@ impl Gpu3D {
             let batch = &self.multimesh_batches[batch_index];
             if current_multimesh_double_sided.is_none() {
                 pass.set_bind_group(0, &self.multimesh_bind_group, &[]);
+                if let Some(fallback) = self.fallback_material_texture_bind_group() {
+                    pass.set_bind_group(1, fallback, &[]);
+                }
                 pass.set_vertex_buffer(0, self.rigid_vertex_buffer.slice(..));
                 pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
             }
@@ -688,7 +691,7 @@ impl Gpu3D {
                 current_multimesh_double_sided = Some(batch.double_sided);
             }
             pass.set_bind_group(
-                1,
+                2,
                 &self.mesh_blend_mask_id_bind_group,
                 &[(slot as u32) * MASK_ID_STRIDE as u32],
             );

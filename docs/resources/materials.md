@@ -230,6 +230,11 @@ if let Some(mut mat_data) = material_get_data!(res, mat_id) {
 `get_data` returns a copied value.
 `write` replaces the full material data for that id.
 
+Imported glTF standard materials keep the source texture channel layout. Metallic-roughness
+uses green for roughness and blue for metallic. Occlusion uses red. Normal maps use tangent
+space with `normal_scale` applied to X/Y. Emissive texture color multiplies
+`emissive_factor`. These rules match on regular mesh and dense multimesh draws.
+
 ## Static Builds
 
 Static builds bake supported material sources into generated lookup data.

@@ -418,6 +418,7 @@ impl Gpu3D {
             && base.blend_mask == next.blend_mask
             && base.casts_shadows == next.casts_shadows
             && base.material_kind == next.material_kind
+            && base.material_texture_key == next.material_texture_key
     }
 
     #[inline]
@@ -675,6 +676,7 @@ mod tests {
             blend_mask: BitMask::NONE.bits(),
             casts_shadows: true,
             material_kind: MaterialPipelineKind::Standard,
+            material_texture_key: MaterialTextureKey::empty(),
         }
     }
 

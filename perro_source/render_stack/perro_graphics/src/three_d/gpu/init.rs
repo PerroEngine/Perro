@@ -1036,7 +1036,7 @@ impl Gpu3D {
         let multimesh_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("perro_multimesh_pipeline_layout"),
-                bind_group_layouts: &[Some(&multimesh_bgl)],
+                bind_group_layouts: &[Some(&multimesh_bgl), Some(&material_texture_bgl)],
                 immediate_size: 0,
             });
         let depth_pipeline_layout =
@@ -1395,7 +1395,11 @@ impl Gpu3D {
         let mask_pipeline_layout_multimesh =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("perro_mesh_blend_mask_layout_multimesh"),
-                bind_group_layouts: &[Some(&multimesh_bgl), Some(&mesh_blend_mask_id_bgl)],
+                bind_group_layouts: &[
+                    Some(&multimesh_bgl),
+                    Some(&material_texture_bgl),
+                    Some(&mesh_blend_mask_id_bgl),
+                ],
                 immediate_size: 0,
             });
         let mask_pipeline_layout_rigid =
@@ -2394,6 +2398,8 @@ impl Gpu3D {
             staged_custom_params_meta_scratch: Vec::new(),
             staged_custom_params_values_scratch: Vec::new(),
             material_fallback_texture: None,
+            material_normal_fallback_texture: None,
+            material_fallback_bind_group: None,
             material_textures: AHashMap::new(),
             stream_texture_slots: AHashSet::new(),
             material_texture_bind_groups: AHashMap::new(),
