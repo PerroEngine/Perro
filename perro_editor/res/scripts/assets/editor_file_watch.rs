@@ -219,6 +219,22 @@ mod tests {
     }
 
     #[test]
+    fn changed_paths_reports_add_remove_and_stable_order() {
+        let before = vec![
+            "res/old.scn|12|1|0".to_string(),
+            "project.toml|20|1|0".to_string(),
+        ];
+        let after = vec![
+            "res/new.scn|12|2|0".to_string(),
+            "project.toml|20|1|0".to_string(),
+        ];
+        assert_eq!(
+            changed_paths(&before, &after),
+            vec!["res/new.scn", "res/old.scn"]
+        );
+    }
+
+    #[test]
     fn res_paths_reuse_scan_output() {
         let sigs = vec![
             "project.toml|12|1|0".to_string(),
@@ -228,11 +244,27 @@ mod tests {
         ];
         assert_eq!(
             res_paths_from_sigs(&sigs),
-            vec![
-                "res://",
-                "res://scenes/",
-                "res://scenes/editor/main.scn"
-            ]
+            vec!["res://", "res://scenes/", "res://scenes/editor/main.scn"]
+        );
+    }
+
+    #[test]
+    fn scene_path_conversion_stays_inside_project_res() {
+        let root = std::env::temp_dir().join("perro_editor_watch_test");
+        let scene = root.join("res/scenes/main.scn");
+        let script = root.join("res/live.rs");
+        let outside = root.with_file_name("outside").join("main.scn");
+        assert_eq!(
+            abs_scene_to_res(&root, scene.to_string_lossy().as_ref()),
+            Some("res://scenes/main.scn".to_string())
+        );
+        assert_eq!(
+            abs_scene_to_res(&root, script.to_string_lossy().as_ref()),
+            None
+        );
+        assert_eq!(
+            abs_scene_to_res(&root, outside.to_string_lossy().as_ref()),
+            None
         );
     }
 }

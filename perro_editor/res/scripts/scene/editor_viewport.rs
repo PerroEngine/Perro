@@ -304,7 +304,9 @@ pub fn place_selected_2d<API: ScriptAPI + ?Sized>(
     world: Vector2,
 ) -> bool {
     let shift = key_down!(ctx.ipt, KeyCode::ShiftLeft) || key_down!(ctx.ipt, KeyCode::ShiftRight);
-    let snap = with_state!(ctx.run, EditorState, ctx.id, |state| viewport_snap_active(state, shift));
+    let snap = with_state!(ctx.run, EditorState, ctx.id, |state| viewport_snap_active(
+        state, shift
+    ));
     let world = if snap { snap_vec2(world, 16.0) } else { world };
     let changed = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
         let Some(key) = state.selected_key else {
@@ -363,7 +365,9 @@ pub fn place_selected_3d<API: ScriptAPI + ?Sized>(
     point: Vector3,
 ) -> bool {
     let shift = key_down!(ctx.ipt, KeyCode::ShiftLeft) || key_down!(ctx.ipt, KeyCode::ShiftRight);
-    let snap = with_state!(ctx.run, EditorState, ctx.id, |state| viewport_snap_active(state, shift));
+    let snap = with_state!(ctx.run, EditorState, ctx.id, |state| viewport_snap_active(
+        state, shift
+    ));
     let point = if snap { snap_vec3(point, 1.0) } else { point };
     let changed = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
         let Some(key) = state.selected_key else {
@@ -616,10 +620,7 @@ pub fn poll_project_diffs<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, A
         let root = PathBuf::from(&state.project_root);
         let Some(scan) = editor_file_watch::take_project_scan(root.as_path()) else {
             if state.file_watch_frame % FILE_WATCH_INTERVAL_FRAMES == 0 {
-                editor_file_watch::request_project_scan(
-                    root,
-                    state.project_file_sigs.clone(),
-                );
+                editor_file_watch::request_project_scan(root, state.project_file_sigs.clone());
             }
             return None;
         };
@@ -702,32 +703,27 @@ pub fn poll_project_diffs<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, A
 
     let reload = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
         let active = state.open_paths.get(state.active_open).cloned();
-        let affects_preview = changed_scenes
-            .iter()
-            .any(|path| state.preview_scene_paths.iter().any(|item| item == path));
-        let affects_open = active
-            .as_ref()
-            .is_some_and(|path| changed_scenes.iter().any(|item| item == path));
-
-        if (affects_preview || affects_open) && state.dirty {
-            for path in changed_scenes.iter() {
-                if !state.dirty_scene_paths.iter().any(|item| item == path) {
-                    state.dirty_scene_paths.push(path.clone());
-                }
+        match project_scene_change(
+            &changed_scenes,
+            active.as_deref(),
+            state.dirty,
+            &state.preview_scene_paths,
+            &state.dirty_scene_paths,
+        ) {
+            ProjectSceneChange::Conflict(paths) => {
+                state.log = format!("external change pending\n{}", paths.join("\n"));
+                None
             }
-            state.log = "external change pending".to_string();
-            return None;
+            ProjectSceneChange::ReloadActive(path) => Some(path),
+            ProjectSceneChange::ReloadPreview => {
+                state.log = format!("reload preview deps\n{}", changed_scenes.join("\n"));
+                Some(String::new())
+            }
+            ProjectSceneChange::Notice => {
+                state.log = format!("project file change\n{}", changed_scenes.join("\n"));
+                None
+            }
         }
-
-        if affects_open {
-            return active;
-        }
-        if affects_preview {
-            state.log = format!("reload preview deps\n{}", changed_scenes.join("\n"));
-            return Some(String::new());
-        }
-        state.log = format!("project file change\n{}", changed_scenes.join("\n"));
-        None
     })
     .flatten();
 
@@ -746,6 +742,121 @@ pub fn poll_project_diffs<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, A
                 refresh_status(ctx);
             }
         }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum ProjectSceneChange {
+    Conflict(Vec<String>),
+    ReloadActive(String),
+    ReloadPreview,
+    Notice,
+}
+
+fn project_scene_change(
+    changed: &[String],
+    active: Option<&str>,
+    active_dirty: bool,
+    preview: &[String],
+    dirty: &[String],
+) -> ProjectSceneChange {
+    let conflicts = changed
+        .iter()
+        .filter(|path| {
+            dirty.iter().any(|item| item == *path)
+                || (active_dirty && active == Some(path.as_str()))
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    if !conflicts.is_empty() {
+        return ProjectSceneChange::Conflict(conflicts);
+    }
+    if let Some(path) = active
+        && changed.iter().any(|item| item == path)
+    {
+        return ProjectSceneChange::ReloadActive(path.to_string());
+    }
+    if changed
+        .iter()
+        .any(|path| preview.iter().any(|item| item == path))
+    {
+        return ProjectSceneChange::ReloadPreview;
+    }
+    ProjectSceneChange::Notice
+}
+
+#[cfg(test)]
+mod project_scene_change_tests {
+    use super::*;
+
+    fn paths(values: &[&str]) -> Vec<String> {
+        values.iter().map(|value| (*value).to_string()).collect()
+    }
+
+    #[test]
+    fn dirty_changed_tab_blocks_reload_even_when_inactive() {
+        assert_eq!(
+            project_scene_change(
+                &paths(&["res://dirty.scn"]),
+                Some("res://active.scn"),
+                false,
+                &paths(&["res://dirty.scn"]),
+                &paths(&["res://dirty.scn"]),
+            ),
+            ProjectSceneChange::Conflict(paths(&["res://dirty.scn"]))
+        );
+    }
+
+    #[test]
+    fn active_dirty_flag_blocks_reload_when_path_list_lags() {
+        assert_eq!(
+            project_scene_change(
+                &paths(&["res://active.scn"]),
+                Some("res://active.scn"),
+                true,
+                &[],
+                &[],
+            ),
+            ProjectSceneChange::Conflict(paths(&["res://active.scn"]))
+        );
+    }
+
+    #[test]
+    fn clean_active_and_preview_changes_reload_right_target() {
+        assert_eq!(
+            project_scene_change(
+                &paths(&["res://active.scn"]),
+                Some("res://active.scn"),
+                false,
+                &[],
+                &[],
+            ),
+            ProjectSceneChange::ReloadActive("res://active.scn".to_string())
+        );
+        assert_eq!(
+            project_scene_change(
+                &paths(&["res://dep.scn"]),
+                Some("res://active.scn"),
+                true,
+                &paths(&["res://dep.scn"]),
+                &paths(&["res://active.scn"]),
+            ),
+            ProjectSceneChange::ReloadPreview
+        );
+    }
+
+    #[test]
+    fn unrelated_scene_change_only_posts_notice() {
+        assert_eq!(
+            project_scene_change(
+                &paths(&["res://other.scn"]),
+                Some("res://active.scn"),
+                false,
+                &paths(&["res://dep.scn"]),
+                &[],
+            ),
+            ProjectSceneChange::Notice
+        );
     }
 }
 
@@ -923,7 +1034,10 @@ pub fn rebuild_glb_preview<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, 
     };
     if !attach_preview_to_viewport(ctx, root) {
         let _ = ctx.run.Nodes().remove_node(root);
-        set_log(ctx, &format!("glb preview fail\nmissing viewport\n{glb_path}"));
+        set_log(
+            ctx,
+            &format!("glb preview fail\nmissing viewport\n{glb_path}"),
+        );
         return;
     }
     disable_preview_runtime_input(ctx, root);
@@ -983,12 +1097,19 @@ fn glb_stage_bounds<API: ScriptAPI + ?Sized>(
     let mut min = None::<Vector3>;
     let mut max = None::<Vector3>;
     for mesh_index in 0..mesh_count.max(1) {
-        let mesh_id = ctx.res.Meshes().load(format!("{glb_path}:mesh[{mesh_index}]"));
+        let mesh_id = ctx
+            .res
+            .Meshes()
+            .load(format!("{glb_path}:mesh[{mesh_index}]"));
         if mesh_id.is_nil() {
             continue;
         }
         for surface_index in 0..GLB_BOUNDS_SURFACE_PROBE {
-            for region in ctx.run.MeshQuery().data_surface_regions(mesh_id, surface_index) {
+            for region in ctx
+                .run
+                .MeshQuery()
+                .data_surface_regions(mesh_id, surface_index)
+            {
                 min = Some(min.map_or(region.aabb_min_local, |value| {
                     value.min(region.aabb_min_local)
                 }));
@@ -1695,7 +1816,10 @@ pub fn load_preview_scene<API: ScriptAPI + ?Sized>(
     };
     if !attach_preview_to_viewport(ctx, root) {
         let _ = ctx.run.Nodes().remove_node(root);
-        set_log(ctx, &format!("preview load fail\nmissing viewport panel\n{path}"));
+        set_log(
+            ctx,
+            &format!("preview load fail\nmissing viewport panel\n{path}"),
+        );
         return;
     }
     disable_preview_runtime_input(ctx, root);
@@ -2501,8 +2625,9 @@ pub fn update_preview_pick<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, 
         return;
     }
     let pointer = viewport_pointer(ctx);
-    if tool == "scale" && let Some((handle, pointer)) =
-        pointer.and_then(|pointer| pick_resize_handle(ctx, pointer).map(|handle| (handle, pointer)))
+    if tool == "scale"
+        && let Some((handle, pointer)) = pointer
+            .and_then(|pointer| pick_resize_handle(ctx, pointer).map(|handle| (handle, pointer)))
     {
         let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
             if let Some(key) = state.selected_key {
@@ -2513,7 +2638,8 @@ pub fn update_preview_pick<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, 
         refresh_all(ctx);
         return;
     }
-    if tool == "rotate" && let Some(pointer) = pointer
+    if tool == "rotate"
+        && let Some(pointer) = pointer
         && pick_rotation_zone(ctx, pointer).is_some()
     {
         let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {

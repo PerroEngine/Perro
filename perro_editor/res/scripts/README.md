@@ -1,5 +1,7 @@
 # Perro Editor Scripts
 
+User workflow: [Perro Editor](../../../docs/tools/perro_editor.md).
+
 - `editor/`: root editor script bound by scenes.
 - `app/`: project boot, manager, project helpers.
 - `assets/`: file tree, asset scan, file watch.

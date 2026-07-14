@@ -136,12 +136,12 @@ Status keys:
 | Web export          | done   | `perro_cli build --target web`, WASM docs, and `perro_website` demo hosting exist.                                                        |
 | Demo hubs           | done   | `demos/Demo3D` has a hub, pause flow, feature scenes, docs, and web bundle. `demos/Demo2D` has matching hub/pause flow and stress zones. |
 | Demo2D parity       | done | Demo2D covers sprite, light, water, animation, physics, skeletal, dense batch, particle, and positional-audio stress zones. |
-| Perro editor        | in dev | `perro_editor` project exists with manager/editor scenes, asset browser/watch scripts, scene nav, viewport, gizmos, inspector, and animation editor scripts. Release polish and full docs still needed. |
+| Perro editor        | in dev | Core authoring milestone includes project manager, responsive shell, scene tabs, asset browser/watch, 2D/3D/UI viewport tools, inspector, animation and GLB workflows, undo/redo, destructive-action confirmation, external-change guards, tests, CI, and an [editor guide](../tools/perro_editor.md). Play/build launch and richer import tooling remain follow-up work. |
 
 ## Planned Work Packets
 
 1. Navmesh static bake + Demo3D lane.
 2. Automatic retargeting.
 3. 2D shadow polish.
-4. Perro editor release polish and docs.
+4. Perro editor play/build launch and richer import tooling.
 5. Joint polish: optional limits/motors/springs if needed.
