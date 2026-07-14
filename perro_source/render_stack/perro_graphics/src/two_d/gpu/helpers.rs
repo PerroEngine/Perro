@@ -75,6 +75,8 @@ pub(super) fn light_2d_gpu(light: Light2DState) -> Option<Light2DGpu> {
         outer_cos,
         kind,
         cast_shadows,
+        shadow_softness,
+        shadow_samples,
     ) = match light {
         Light2DState::Ambient(light) => (
             [0.0, 0.0],
@@ -87,6 +89,8 @@ pub(super) fn light_2d_gpu(light: Light2DState) -> Option<Light2DGpu> {
             -1.0,
             0,
             false,
+            0.0,
+            1,
         ),
         Light2DState::Ray(light) => (
             [0.0, 0.0],
@@ -99,6 +103,8 @@ pub(super) fn light_2d_gpu(light: Light2DState) -> Option<Light2DGpu> {
             -1.0,
             1,
             light.cast_shadows,
+            light.shadow_softness,
+            light.shadow_samples,
         ),
         Light2DState::Point(light) => (
             light.position,
@@ -111,6 +117,8 @@ pub(super) fn light_2d_gpu(light: Light2DState) -> Option<Light2DGpu> {
             -1.0,
             2,
             light.cast_shadows,
+            light.shadow_softness,
+            light.shadow_samples,
         ),
         Light2DState::Spot(light) => (
             light.position,
@@ -123,6 +131,8 @@ pub(super) fn light_2d_gpu(light: Light2DState) -> Option<Light2DGpu> {
             light.outer_angle_radians.cos(),
             3,
             light.cast_shadows,
+            light.shadow_softness,
+            light.shadow_samples,
         ),
     };
     if !(range.is_finite()
@@ -137,6 +147,11 @@ pub(super) fn light_2d_gpu(light: Light2DState) -> Option<Light2DGpu> {
     {
         return None;
     }
+    let shadow_softness = if shadow_softness.is_finite() {
+        shadow_softness.clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
     Some(Light2DGpu {
         position,
         range,
@@ -148,7 +163,8 @@ pub(super) fn light_2d_gpu(light: Light2DState) -> Option<Light2DGpu> {
         outer_cos,
         kind,
         shadow_flags: u32::from(cast_shadows),
-        pad: [0; 2],
+        shadow_softness,
+        shadow_samples: shadow_samples.clamp(1, 16),
     })
 }
 
@@ -161,16 +177,34 @@ pub(super) fn shadow_caster_2d_gpu(caster: ShadowCaster2DState) -> Option<Shadow
     {
         return None;
     }
+    if let ShadowCaster2DShapeState::TrianglePoints(points) = caster.shape
+        && !points.iter().flatten().all(|value| value.is_finite())
+    {
+        return None;
+    }
     let (sin_r, cos_r) = caster.rotation_radians.sin_cos();
-    let shape = match caster.shape {
-        ShadowCaster2DShapeState::Quad => 0,
-        ShadowCaster2DShapeState::Circle => 1,
-        ShadowCaster2DShapeState::Triangle => 2,
+    let axis_x = [cos_r, sin_r];
+    let axis_y = [-sin_r, cos_r];
+    let (center, axis_x, axis_y, shape) = match caster.shape {
+        ShadowCaster2DShapeState::Quad => (caster.center, axis_x, axis_y, 0),
+        ShadowCaster2DShapeState::Circle => (caster.center, axis_x, axis_y, 1),
+        ShadowCaster2DShapeState::Triangle => {
+            let hx = caster.half_extents[0];
+            let hy = caster.half_extents[1];
+            let point = |x: f32, y: f32| {
+                [
+                    caster.center[0] + axis_x[0] * x + axis_y[0] * y,
+                    caster.center[1] + axis_x[1] * x + axis_y[1] * y,
+                ]
+            };
+            (point(-hx, -hy), point(hx, -hy), point(0.0, hy), 2)
+        }
+        ShadowCaster2DShapeState::TrianglePoints(points) => (points[0], points[1], points[2], 2),
     };
     Some(ShadowCaster2DGpu {
-        center: caster.center,
-        axis_x: [cos_r, sin_r],
-        axis_y: [-sin_r, cos_r],
+        center,
+        axis_x,
+        axis_y,
         half_extents: caster.half_extents,
         shape,
         z_index: caster.z_index,
@@ -467,6 +501,16 @@ pub(super) fn create_point_light_pipeline(
                         wgpu::VertexAttribute {
                             offset: 52,
                             shader_location: 10,
+                            format: wgpu::VertexFormat::Uint32,
+                        },
+                        wgpu::VertexAttribute {
+                            offset: 56,
+                            shader_location: 11,
+                            format: wgpu::VertexFormat::Float32,
+                        },
+                        wgpu::VertexAttribute {
+                            offset: 60,
+                            shader_location: 12,
                             format: wgpu::VertexFormat::Uint32,
                         },
                     ],

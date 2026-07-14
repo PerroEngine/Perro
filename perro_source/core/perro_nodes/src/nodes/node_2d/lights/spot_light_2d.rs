@@ -11,6 +11,8 @@ pub struct SpotLight2D {
     pub inner_angle_radians: f32,
     pub outer_angle_radians: f32,
     pub cast_shadows: bool,
+    pub shadow_softness: f32,
+    pub shadow_samples: u32,
     pub active: bool,
 }
 
@@ -24,6 +26,8 @@ impl SpotLight2D {
             inner_angle_radians: 20.0_f32.to_radians(),
             outer_angle_radians: 30.0_f32.to_radians(),
             cast_shadows: false,
+            shadow_softness: 0.0,
+            shadow_samples: 8,
             active: true,
         }
     }

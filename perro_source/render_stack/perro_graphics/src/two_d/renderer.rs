@@ -10,7 +10,6 @@ use perro_render_bridge::{
 };
 use perro_structs::{DrawShape2D, UnitVector4};
 use std::ops::Range;
-use std::sync::Arc;
 
 #[derive(Debug, Clone, Copy)]
 struct SpritePacket {
@@ -83,7 +82,7 @@ pub struct Renderer2D {
     rect_structure_dirty: bool,
     retained_sprites: Vec<SpritePacket>,
     node_to_sprite_index: AHashMap<NodeID, usize>,
-    retained_tilemaps: AHashMap<NodeID, Arc<[Sprite2DCommand]>>,
+    retained_tilemaps: AHashMap<NodeID, TileMap2DCommand>,
     retained_point_particles: AHashMap<NodeID, PointParticles2DState>,
     retained_waters: AHashMap<NodeID, Water2DState>,
     retained_waters_revision: u64,
@@ -233,9 +232,21 @@ impl Renderer2D {
     }
 
     pub fn upsert_tilemap(&mut self, node: NodeID, tilemap: TileMap2DCommand) {
-        if self.retained_tilemaps.get(&node) != Some(&tilemap.sprites) {
-            self.retained_tilemaps.insert(node, tilemap.sprites);
+        let sprites_changed = self
+            .retained_tilemaps
+            .get(&node)
+            .is_none_or(|old| old.sprites != tilemap.sprites);
+        let casters_changed = self
+            .retained_tilemaps
+            .get(&node)
+            .is_none_or(|old| old.shadow_casters != tilemap.shadow_casters);
+        self.retained_tilemaps.insert(node, tilemap);
+        if sprites_changed {
             self.retained_sprites_revision = self.retained_sprites_revision.wrapping_add(1);
+        }
+        if casters_changed {
+            self.retained_shadow_casters_revision =
+                self.retained_shadow_casters_revision.wrapping_add(1);
         }
     }
 
@@ -253,8 +264,12 @@ impl Renderer2D {
             self.retained_shadow_casters_revision =
                 self.retained_shadow_casters_revision.wrapping_add(1);
         }
-        if self.retained_tilemaps.remove(&node).is_some() {
+        if let Some(tilemap) = self.retained_tilemaps.remove(&node) {
             self.retained_sprites_revision = self.retained_sprites_revision.wrapping_add(1);
+            if !tilemap.shadow_casters.is_empty() {
+                self.retained_shadow_casters_revision =
+                    self.retained_shadow_casters_revision.wrapping_add(1);
+            }
         }
         self.remove_retained_sprite(node);
     }
@@ -491,7 +506,7 @@ impl Renderer2D {
             + self
                 .retained_tilemaps
                 .values()
-                .map(|sprites| sprites.len())
+                .map(|tilemap| tilemap.sprites.len())
                 .sum::<usize>()
             + self.frame_sprites.len()
     }
@@ -503,7 +518,7 @@ impl Renderer2D {
             .chain(
                 self.retained_tilemaps
                     .values()
-                    .flat_map(|sprites| sprites.iter().copied()),
+                    .flat_map(|tilemap| tilemap.sprites.iter().copied()),
             )
             .chain(self.frame_sprites.iter().copied())
     }
@@ -513,7 +528,11 @@ impl Renderer2D {
     }
 
     pub fn shadow_casters(&self) -> impl Iterator<Item = ShadowCaster2DState> + '_ {
-        self.retained_shadow_casters.values().copied()
+        self.retained_shadow_casters.values().copied().chain(
+            self.retained_tilemaps
+                .values()
+                .flat_map(|tilemap| tilemap.shadow_casters.iter().copied()),
+        )
     }
 
     pub fn retained_waters(&self) -> impl Iterator<Item = (NodeID, Water2DState)> + '_ {

@@ -1037,6 +1037,17 @@ fn push_f32_default(
     fields.push(field);
 }
 
+fn push_u32_default(
+    fields: &mut Vec<SceneNodeField>,
+    section: &'static str,
+    name: &'static str,
+    value: u32,
+) {
+    let mut field = SceneNodeField::new(section, name, NodeFieldType::U32);
+    field.default = Some(SceneValue::I32(value.min(i32::MAX as u32) as i32));
+    fields.push(field);
+}
+
 fn asset_field(
     fields: &mut Vec<SceneNodeField>,
     section: &'static str,
@@ -1275,6 +1286,13 @@ fn light_fields(fields: &mut Vec<SceneNodeField>, node_type: NodeType) {
     push(fields, "Light", "color", NodeFieldType::Color);
     push(fields, "Light", "intensity", NodeFieldType::F32);
     push(fields, "Light", "cast_shadows", NodeFieldType::Bool);
+    if matches!(
+        node_type,
+        NodeType::RayLight2D | NodeType::PointLight2D | NodeType::SpotLight2D
+    ) {
+        push_f32_default(fields, "Shadow", "shadow_softness", 0.0);
+        push_u32_default(fields, "Shadow", "shadow_samples", 8);
+    }
     if matches!(
         node_type,
         NodeType::RayLight3D | NodeType::PointLight3D | NodeType::SpotLight3D

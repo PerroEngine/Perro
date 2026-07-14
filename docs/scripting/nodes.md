@@ -148,8 +148,9 @@ Rendering and resource loading are handled by the runtime and `ResourceWindow`.
 - Uses `color`, `intensity`, `cast_shadows`, and `active`.
 - `PointLight2D` and `SpotLight2D` use `range`.
 - `SpotLight2D` uses `inner_angle_radians` and `outer_angle_radians`.
-- `cast_shadows = true` uses hard shadows from visible `CollisionShape2D` casters.
-- Soft shadows and sprite-alpha silhouettes are future work.
+- `shadow_softness` (`0..1`) and `shadow_samples` (`1..16`) add soft penumbra.
+- Visible collision shapes and enabled tilemap collision tiles cast shadows.
+- See [2D Shadows](../resources/shadows2d.md).
 
 `Skeleton2D`
 

@@ -69,6 +69,10 @@ It draws atlas tiles from a `.ptileset` and can emit static 2D colliders.
 - `collision_layers`: generated collider tagged layers.
 - `collision_mask`: generated collider ignored layers.
 
+Collision tiles also cast 2D light shadows when `collision_enabled = true`.
+Auto rectangles share the collision bake merge; explicit shapes keep their
+circle, triangle, or convex polygon silhouette. See [2D Shadows](../resources/shadows2d.md).
+
 ## Collision Bake
 
 Collision comes from the tileset.

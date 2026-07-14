@@ -168,6 +168,8 @@ fn point_light_2d_command(i: u32) -> RenderCommand {
             range: 128.0,
             z_index: i as i32,
             cast_shadows: false,
+            shadow_softness: 0.0,
+            shadow_samples: 8,
         },
     })
 }

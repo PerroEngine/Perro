@@ -78,6 +78,7 @@ fn apply_ambient_light_2d_fields(node: &mut AmbientLight2D, fields: &[SceneObjec
                     node.cast_shadows = v;
                 }
             }
+            Light2DField::ShadowSoftness | Light2DField::ShadowSamples => {}
             Light2DField::Active => {
                 if let Some(v) = value.as_bool() {
                     node.active = v;
@@ -108,6 +109,16 @@ fn apply_ray_light_2d_fields(node: &mut RayLight2D, fields: &[SceneObjectField])
             Light2DField::CastShadows => {
                 if let Some(v) = value.as_bool() {
                     node.cast_shadows = v;
+                }
+            }
+            Light2DField::ShadowSoftness => {
+                if let Some(v) = as_f32(value).filter(|v| v.is_finite()) {
+                    node.shadow_softness = v.clamp(0.0, 1.0);
+                }
+            }
+            Light2DField::ShadowSamples => {
+                if let Some(v) = as_u32(value) {
+                    node.shadow_samples = v.clamp(1, 16);
                 }
             }
             Light2DField::Active => {
@@ -151,6 +162,16 @@ fn apply_point_light_2d_fields(node: &mut PointLight2D, fields: &[SceneObjectFie
             Some(NodeField::Light2D(Light2DField::CastShadows)) => {
                 if let Some(v) = value.as_bool() {
                     node.cast_shadows = v;
+                }
+            }
+            Some(NodeField::Light2D(Light2DField::ShadowSoftness)) => {
+                if let Some(v) = as_f32(value).filter(|v| v.is_finite()) {
+                    node.shadow_softness = v.clamp(0.0, 1.0);
+                }
+            }
+            Some(NodeField::Light2D(Light2DField::ShadowSamples)) => {
+                if let Some(v) = as_u32(value) {
+                    node.shadow_samples = v.clamp(1, 16);
                 }
             }
             Some(NodeField::Light2D(Light2DField::Active)) => {
@@ -199,6 +220,16 @@ fn apply_spot_light_2d_fields(node: &mut SpotLight2D, fields: &[SceneObjectField
             Some(NodeField::Light2D(Light2DField::CastShadows)) => {
                 if let Some(v) = value.as_bool() {
                     node.cast_shadows = v;
+                }
+            }
+            Some(NodeField::Light2D(Light2DField::ShadowSoftness)) => {
+                if let Some(v) = as_f32(value).filter(|v| v.is_finite()) {
+                    node.shadow_softness = v.clamp(0.0, 1.0);
+                }
+            }
+            Some(NodeField::Light2D(Light2DField::ShadowSamples)) => {
+                if let Some(v) = as_u32(value) {
+                    node.shadow_samples = v.clamp(1, 16);
                 }
             }
             Some(NodeField::Light2D(Light2DField::Active)) => {

@@ -3,9 +3,10 @@ use crate::resources::ResourceStore;
 use perro_ids::{NodeID, TextureID};
 use perro_render_bridge::{
     DrawShape2DCommand, Light2DState, PointLight2DState, Rect2DCommand, ShadowCaster2DShapeState,
-    ShadowCaster2DState, Sprite2DCommand,
+    ShadowCaster2DState, Sprite2DCommand, TileMap2DCommand,
 };
 use perro_structs::{Color, DrawShape2D, Vector2};
+use std::sync::Arc;
 
 #[test]
 fn texture_upsert_requires_existing_resource() {
@@ -204,6 +205,8 @@ fn point_light_is_retained_and_removed_by_node() {
         range: 128.0,
         z_index: 3,
         cast_shadows: true,
+        shadow_softness: 0.5,
+        shadow_samples: 12,
     };
 
     renderer.set_point_light(node, light);
@@ -238,6 +241,34 @@ fn shadow_caster_is_retained_and_removed_by_node() {
 
     renderer.remove_node(node);
 
+    assert_eq!(renderer.shadow_casters().count(), 0);
+}
+
+#[test]
+fn tilemap_shadow_casters_share_retained_shadow_path() {
+    let mut renderer = Renderer2D::new();
+    let node = NodeID::from_parts(11, 0);
+    let caster = ShadowCaster2DState {
+        center: [8.0, -8.0],
+        half_extents: [8.0, 8.0],
+        rotation_radians: 0.0,
+        shape: ShadowCaster2DShapeState::Quad,
+        z_index: 1,
+    };
+    let revision = renderer.retained_shadow_casters_revision();
+
+    renderer.upsert_tilemap(
+        node,
+        TileMap2DCommand {
+            texture: TextureID::from_parts(12, 0),
+            sprites: Arc::from([]),
+            shadow_casters: Arc::from([caster]),
+        },
+    );
+
+    assert!(renderer.shadow_casters().any(|stored| stored == caster));
+    assert_ne!(renderer.retained_shadow_casters_revision(), revision);
+    renderer.remove_node(node);
     assert_eq!(renderer.shadow_casters().count(), 0);
 }
 

@@ -66,7 +66,8 @@ struct Light2DGpu {
     outer_cos: f32,
     kind: u32,
     shadow_flags: u32,
-    pad: [u32; 2],
+    shadow_softness: f32,
+    shadow_samples: u32,
 }
 
 #[repr(C)]
@@ -1034,6 +1035,9 @@ fn point_light_stage_key(lights: &[Light2DState]) -> PointLightStageKey {
                 hash = hash_f32_slice(hash, &light.color);
                 hash = hash_f32(hash, light.intensity);
                 hash = hash_mix(hash, light.z_index as u32 as u64);
+                hash = hash_mix(hash, u64::from(light.cast_shadows));
+                hash = hash_f32(hash, light.shadow_softness);
+                hash = hash_mix(hash, light.shadow_samples as u64);
             }
             Light2DState::Point(light) => {
                 hash = hash_mix(hash, 2);
@@ -1042,6 +1046,9 @@ fn point_light_stage_key(lights: &[Light2DState]) -> PointLightStageKey {
                 hash = hash_f32(hash, light.intensity);
                 hash = hash_f32(hash, light.range);
                 hash = hash_mix(hash, light.z_index as u32 as u64);
+                hash = hash_mix(hash, u64::from(light.cast_shadows));
+                hash = hash_f32(hash, light.shadow_softness);
+                hash = hash_mix(hash, light.shadow_samples as u64);
             }
             Light2DState::Spot(light) => {
                 hash = hash_mix(hash, 3);
@@ -1053,6 +1060,9 @@ fn point_light_stage_key(lights: &[Light2DState]) -> PointLightStageKey {
                 hash = hash_f32(hash, light.inner_angle_radians);
                 hash = hash_f32(hash, light.outer_angle_radians);
                 hash = hash_mix(hash, light.z_index as u32 as u64);
+                hash = hash_mix(hash, u64::from(light.cast_shadows));
+                hash = hash_f32(hash, light.shadow_softness);
+                hash = hash_mix(hash, light.shadow_samples as u64);
             }
         }
     }
@@ -1258,6 +1268,8 @@ mod tests {
             range: 128.0,
             z_index: 4,
             cast_shadows: false,
+            shadow_softness: 0.0,
+            shadow_samples: 8,
         })];
         let same = [Light2DState::Point(PointLight2DState {
             position: [10.0, 20.0],
@@ -1266,6 +1278,8 @@ mod tests {
             range: 128.0,
             z_index: 4,
             cast_shadows: false,
+            shadow_softness: 0.0,
+            shadow_samples: 8,
         })];
         let moved = [Light2DState::Point(PointLight2DState {
             position: [11.0, 20.0],
@@ -1283,6 +1297,8 @@ mod tests {
                 range: 64.0,
                 z_index: 0,
                 cast_shadows: false,
+                shadow_softness: 0.0,
+                shadow_samples: 8,
             }),
         ];
 
@@ -1301,6 +1317,8 @@ mod tests {
             range: 100.0,
             z_index: 3,
             cast_shadows: false,
+            shadow_softness: 0.0,
+            shadow_samples: 8,
         })];
         let moved = vec![Light2DState::Point(PointLight2DState {
             position: [11.0, 20.0],

@@ -183,13 +183,16 @@ pub struct PointLight2DState {
     pub range: f32,
     pub z_index: i32,
     pub cast_shadows: bool,
+    pub shadow_softness: f32,
+    pub shadow_samples: u32,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ShadowCaster2DShapeState {
     Quad,
     Circle,
     Triangle,
+    TrianglePoints([[f32; 2]; 3]),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -368,6 +371,8 @@ pub struct RayLight2DState {
     pub intensity: f32,
     pub z_index: i32,
     pub cast_shadows: bool,
+    pub shadow_softness: f32,
+    pub shadow_samples: u32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -381,6 +386,8 @@ pub struct SpotLight2DState {
     pub outer_angle_radians: f32,
     pub z_index: i32,
     pub cast_shadows: bool,
+    pub shadow_softness: f32,
+    pub shadow_samples: u32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -395,6 +402,7 @@ pub enum Light2DState {
 pub struct TileMap2DCommand {
     pub texture: TextureID,
     pub sprites: Arc<[Sprite2DCommand]>,
+    pub shadow_casters: Arc<[ShadowCaster2DState]>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

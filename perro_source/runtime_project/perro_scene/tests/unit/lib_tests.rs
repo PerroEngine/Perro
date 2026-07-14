@@ -41,6 +41,22 @@ fn parse_basic_scene() {
 }
 
 #[test]
+fn light_2d_shadow_softness_fields_resolve_with_defaults() {
+    assert_eq!(
+        resolve_node_field("PointLight2D", "shadow_softness"),
+        Some(NodeField::Light2D(Light2DField::ShadowSoftness))
+    );
+    assert_eq!(
+        resolve_node_field("RayLight2D", "shadow_samples"),
+        Some(NodeField::Light2D(Light2DField::ShadowSamples))
+    );
+    let softness = scene_node_field(NodeType::SpotLight2D, "shadow_softness").expect("softness");
+    let samples = scene_node_field(NodeType::SpotLight2D, "shadow_samples").expect("samples");
+    assert_eq!(softness.default, Some(SceneValue::F32(0.0)));
+    assert_eq!(samples.default, Some(SceneValue::I32(8)));
+}
+
+#[test]
 fn parse_ui_node_type_block() {
     let src = r#"
     [ui]

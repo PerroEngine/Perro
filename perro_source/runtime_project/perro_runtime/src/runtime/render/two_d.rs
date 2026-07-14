@@ -9,6 +9,7 @@ use perro_nodes::{
     SceneNodeData, Shape2D, particle_emitter_2d::ParticleEmitterSimMode2D, water_impact_strength,
 };
 use perro_particle_math::compile_expression;
+use perro_physics::{ShapeKind2D, tilemap_shape_descs_2d, triangle_points_2d};
 use perro_render_bridge::{
     AmbientLight2DState, Camera2DState, CameraStreamCommand, CameraStreamSourceState, Command2D,
     ParticlePath2D, ParticleProfile2D, ParticleSimulationMode2D, PointLight2DState,
@@ -442,6 +443,7 @@ impl Runtime {
                     tilemap: TileMap2DCommand {
                         texture,
                         sprites: Arc::from(sprites),
+                        shadow_casters: Arc::from([]),
                     },
                 }));
                 visible_now.insert(node);
@@ -679,11 +681,21 @@ impl Runtime {
                         light.color,
                         light.intensity,
                         light.cast_shadows,
+                        light.shadow_softness,
+                        light.shadow_samples,
                     ))
                 }
                 _ => None,
             });
-            if let Some((local_transform, z_index, color, intensity, cast_shadows)) = ray_light_data
+            if let Some((
+                local_transform,
+                z_index,
+                color,
+                intensity,
+                cast_shadows,
+                shadow_softness,
+                shadow_samples,
+            )) = ray_light_data
             {
                 if intensity > 0.0 {
                     let color =
@@ -699,6 +711,8 @@ impl Runtime {
                             intensity: intensity.max(0.0),
                             z_index,
                             cast_shadows,
+                            shadow_softness: shadow_softness_2d(shadow_softness),
+                            shadow_samples: shadow_samples.clamp(1, 16),
                         },
                     }));
                     visible_now.insert(node);
@@ -719,6 +733,8 @@ impl Runtime {
                     light.intensity,
                     light.range,
                     light.cast_shadows,
+                    light.shadow_softness,
+                    light.shadow_samples,
                 )),
                 _ => None,
             });
@@ -730,6 +746,8 @@ impl Runtime {
                 intensity,
                 range,
                 cast_shadows,
+                shadow_softness,
+                shadow_samples,
             )) = point_light_data
             {
                 if visible && intensity > 0.0 && range > 0.0 {
@@ -747,6 +765,8 @@ impl Runtime {
                             range,
                             z_index,
                             cast_shadows,
+                            shadow_softness: shadow_softness_2d(shadow_softness),
+                            shadow_samples: shadow_samples.clamp(1, 16),
                         },
                     }));
                     visible_now.insert(node);
@@ -771,6 +791,8 @@ impl Runtime {
                         light.inner_angle_radians,
                         light.outer_angle_radians,
                         light.cast_shadows,
+                        light.shadow_softness,
+                        light.shadow_samples,
                     ))
                 }
                 _ => None,
@@ -784,6 +806,8 @@ impl Runtime {
                 inner_angle_radians,
                 outer_angle_radians,
                 cast_shadows,
+                shadow_softness,
+                shadow_samples,
             )) = spot_light_data
             {
                 if intensity > 0.0 && range > 0.0 {
@@ -804,6 +828,8 @@ impl Runtime {
                             outer_angle_radians: outer_angle_radians.max(inner_angle_radians),
                             z_index,
                             cast_shadows,
+                            shadow_softness: shadow_softness_2d(shadow_softness),
+                            shadow_samples: shadow_samples.clamp(1, 16),
                         },
                     }));
                     visible_now.insert(node);
@@ -848,53 +874,42 @@ impl Runtime {
                     effective_visible
                         && tilemap.visible
                         && render_mask_matches(camera_render_mask, tilemap.render_layers),
-                    tilemap.tileset.clone(),
-                    tilemap.width,
-                    tilemap.height,
-                    tilemap.empty_tile,
-                    tilemap.tiles.clone(),
-                    tilemap.transform,
-                    tilemap.z_index,
+                    tilemap.clone(),
                 )),
                 _ => None,
             });
-            if let Some((
-                visible,
-                tileset_source,
-                width,
-                height,
-                empty_tile,
-                tiles,
-                local_transform,
-                z_index,
-            )) = tilemap_data
-            {
+            if let Some((visible, tilemap)) = tilemap_data {
                 if visible {
-                    if let Some(tileset) = resolve_tileset_2d(self, &tileset_source)
+                    if let Some(tileset) = resolve_tileset_2d(self, &tilemap.tileset)
                         && let Some(texture) =
                             self.resolve_tilemap_texture(node, tileset.texture.as_ref())
                     {
-                        let global = self
+                        let global_transform = self
                             .get_render_global_transform_2d(node)
-                            .unwrap_or(local_transform)
-                            .to_mat3()
-                            .to_cols_array_2d();
+                            .unwrap_or(tilemap.transform);
+                        let global = global_transform.to_mat3().to_cols_array_2d();
                         let sprites = build_tilemap_sprites(TilemapSpriteBuild {
                             texture,
                             base_model: global,
-                            z_index,
-                            width,
-                            height,
-                            empty_tile,
+                            z_index: tilemap.z_index,
+                            width: tilemap.width,
+                            height: tilemap.height,
+                            empty_tile: tilemap.empty_tile,
                             tint: self.effective_self_modulate(node),
-                            tiles: &tiles,
+                            tiles: &tilemap.tiles,
                             tileset: &tileset,
                         });
+                        let shadow_casters = if tilemap.collision_enabled {
+                            build_tilemap_shadow_casters(&tilemap, global_transform, &tileset)
+                        } else {
+                            Vec::new()
+                        };
                         self.queue_render_command(RenderCommand::TwoD(Command2D::UpsertTileMap {
                             node,
                             tilemap: TileMap2DCommand {
                                 texture,
                                 sprites: Arc::from(sprites),
+                                shadow_casters: Arc::from(shadow_casters),
                             },
                         }));
                         visible_now.insert(node);
@@ -1834,6 +1849,16 @@ fn shadow_caster_2d_state(
     z_index: i32,
     shape: Shape2D,
 ) -> Option<ShadowCaster2DState> {
+    if let Shape2D::Triangle {
+        kind,
+        width,
+        height,
+    } = shape
+    {
+        let local = triangle_points_2d(kind, width, height)?;
+        let points = local.map(|point| transform_point_2d(transform, [point.x, point.y]));
+        return triangle_shadow_caster(points, z_index);
+    }
     let (half_extents, shape) = match shape {
         Shape2D::Quad { width, height } => (
             [
@@ -1849,13 +1874,7 @@ fn shadow_caster_2d_state(
                 ShadowCaster2DShapeState::Circle,
             )
         }
-        Shape2D::Triangle { width, height, .. } => (
-            [
-                width.abs() * transform.scale.x.abs() * 0.5,
-                height.abs() * transform.scale.y.abs() * 0.5,
-            ],
-            ShadowCaster2DShapeState::Triangle,
-        ),
+        Shape2D::Triangle { .. } => unreachable!(),
     };
     (half_extents[0].is_finite()
         && half_extents[1].is_finite()
@@ -1868,6 +1887,145 @@ fn shadow_caster_2d_state(
             shape,
             z_index,
         })
+}
+
+pub(crate) fn build_tilemap_shadow_casters(
+    tilemap: &perro_nodes::TileMap2D,
+    global: perro_structs::Transform2D,
+    tileset: &ParsedTileset2D,
+) -> Vec<ShadowCaster2DState> {
+    let descs = tilemap_shape_descs_2d(
+        tilemap,
+        BitMask::ALL,
+        BitMask::NONE,
+        0.0,
+        0.0,
+        0.0,
+        Some(tileset),
+    );
+    let mut out = Vec::with_capacity(descs.len());
+    for desc in descs {
+        match desc.shape {
+            ShapeKind2D::Primitive(shape) => {
+                let world = compose_transform_2d(global, desc.local);
+                if let Some(caster) = shadow_caster_2d_state(world, tilemap.z_index, shape) {
+                    out.push(caster);
+                }
+            }
+            ShapeKind2D::Polygon(points) => {
+                let hull = convex_hull_2d(points);
+                if hull.len() < 3 {
+                    continue;
+                }
+                let local = compose_transform_2d(global, desc.local);
+                let first = transform_point_2d(local, [hull[0].x, hull[0].y]);
+                for pair in hull[1..].windows(2) {
+                    let points = [
+                        first,
+                        transform_point_2d(local, [pair[0].x, pair[0].y]),
+                        transform_point_2d(local, [pair[1].x, pair[1].y]),
+                    ];
+                    if let Some(caster) = triangle_shadow_caster(points, tilemap.z_index) {
+                        out.push(caster);
+                    }
+                }
+            }
+        }
+    }
+    out
+}
+
+fn triangle_shadow_caster(points: [[f32; 2]; 3], z_index: i32) -> Option<ShadowCaster2DState> {
+    if !points.iter().flatten().all(|v| v.is_finite()) {
+        return None;
+    }
+    let min = [
+        points
+            .iter()
+            .map(|point| point[0])
+            .fold(f32::INFINITY, f32::min),
+        points
+            .iter()
+            .map(|point| point[1])
+            .fold(f32::INFINITY, f32::min),
+    ];
+    let max = [
+        points
+            .iter()
+            .map(|point| point[0])
+            .fold(f32::NEG_INFINITY, f32::max),
+        points
+            .iter()
+            .map(|point| point[1])
+            .fold(f32::NEG_INFINITY, f32::max),
+    ];
+    let half_extents = [(max[0] - min[0]) * 0.5, (max[1] - min[1]) * 0.5];
+    (half_extents[0] > 0.0 && half_extents[1] > 0.0).then_some(ShadowCaster2DState {
+        center: [(min[0] + max[0]) * 0.5, (min[1] + max[1]) * 0.5],
+        half_extents,
+        rotation_radians: 0.0,
+        shape: ShadowCaster2DShapeState::TrianglePoints(points),
+        z_index,
+    })
+}
+
+fn compose_transform_2d(
+    parent: perro_structs::Transform2D,
+    local: perro_structs::Transform2D,
+) -> perro_structs::Transform2D {
+    perro_structs::Transform2D::new(
+        Vector2::from(transform_point_2d(
+            parent,
+            [local.position.x, local.position.y],
+        )),
+        parent.rotation + local.rotation,
+        Vector2::new(
+            parent.scale.x * local.scale.x,
+            parent.scale.y * local.scale.y,
+        ),
+    )
+}
+
+fn transform_point_2d(transform: perro_structs::Transform2D, point: [f32; 2]) -> [f32; 2] {
+    let (sin_r, cos_r) = transform.rotation.sin_cos();
+    let x = point[0] * transform.scale.x;
+    let y = point[1] * transform.scale.y;
+    [
+        transform.position.x + x * cos_r - y * sin_r,
+        transform.position.y + x * sin_r + y * cos_r,
+    ]
+}
+
+fn convex_hull_2d(mut points: Vec<Vector2>) -> Vec<Vector2> {
+    points.retain(|point| point.x.is_finite() && point.y.is_finite());
+    points.sort_unstable_by(|a, b| a.x.total_cmp(&b.x).then(a.y.total_cmp(&b.y)));
+    points.dedup_by(|a, b| a.x == b.x && a.y == b.y);
+    if points.len() <= 2 {
+        return points;
+    }
+    let mut hull = Vec::with_capacity(points.len() * 2);
+    for point in points.iter().copied() {
+        while hull.len() >= 2 && cross_2d(hull[hull.len() - 2], hull[hull.len() - 1], point) <= 0.0
+        {
+            hull.pop();
+        }
+        hull.push(point);
+    }
+    let lower_len = hull.len();
+    for point in points.iter().rev().skip(1).copied() {
+        while hull.len() > lower_len
+            && cross_2d(hull[hull.len() - 2], hull[hull.len() - 1], point) <= 0.0
+        {
+            hull.pop();
+        }
+        hull.push(point);
+    }
+    hull.pop();
+    hull
+}
+
+fn cross_2d(a: Vector2, b: Vector2, c: Vector2) -> f32 {
+    (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x)
 }
 
 fn camera_stream_aspect_ratio(aspect_ratio: f32, resolution: UVector2) -> f32 {
@@ -2115,6 +2273,14 @@ fn mul_mat3(a: [[f32; 3]; 3], b: [[f32; 3]; 3]) -> [[f32; 3]; 3] {
 
 pub(crate) fn direction_from_rotation_2d(rotation: f32) -> [f32; 2] {
     [rotation.sin(), -rotation.cos()]
+}
+
+pub(crate) fn shadow_softness_2d(softness: f32) -> f32 {
+    if softness.is_finite() {
+        softness.clamp(0.0, 1.0)
+    } else {
+        0.0
+    }
 }
 
 pub(crate) fn derived_particle_budget(spawn_rate: f32, lifetime_max: f32) -> u32 {

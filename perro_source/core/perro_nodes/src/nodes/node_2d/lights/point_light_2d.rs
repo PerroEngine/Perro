@@ -9,6 +9,8 @@ pub struct PointLight2D {
     pub intensity: f32,
     pub range: f32,
     pub cast_shadows: bool,
+    pub shadow_softness: f32,
+    pub shadow_samples: u32,
     pub active: bool,
 }
 
@@ -20,6 +22,8 @@ impl PointLight2D {
             intensity: 1.0,
             range: 256.0,
             cast_shadows: false,
+            shadow_softness: 0.0,
+            shadow_samples: 8,
             active: true,
         }
     }

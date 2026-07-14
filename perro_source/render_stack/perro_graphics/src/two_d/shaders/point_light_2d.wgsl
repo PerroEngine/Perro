@@ -35,6 +35,8 @@ struct InstanceInput {
     @location(8) outer_cos: f32,
     @location(9) @interpolate(flat) kind: u32,
     @location(10) @interpolate(flat) shadow_flags: u32,
+    @location(11) shadow_softness: f32,
+    @location(12) @interpolate(flat) shadow_samples: u32,
 };
 
 struct VertexOutput {
@@ -49,6 +51,9 @@ struct VertexOutput {
     @location(7) @interpolate(flat) shadow_flags: u32,
     @location(8) world_pos: vec2<f32>,
     @location(9) light_pos: vec2<f32>,
+    @location(10) range: f32,
+    @location(11) shadow_softness: f32,
+    @location(12) @interpolate(flat) shadow_samples: u32,
 };
 
 @vertex
@@ -76,6 +81,9 @@ fn vs_main(v: VertexInput, inst: InstanceInput) -> VertexOutput {
     out.outer_cos = inst.outer_cos;
     out.kind = inst.kind;
     out.shadow_flags = inst.shadow_flags;
+    out.range = inst.range;
+    out.shadow_softness = inst.shadow_softness;
+    out.shadow_samples = inst.shadow_samples;
     return out;
 }
 
@@ -131,15 +139,44 @@ fn segment_hits_circle(a: vec2<f32>, b: vec2<f32>, caster: ShadowCaster2D) -> bo
     return (t0 >= 0.0 && t0 <= 1.0) || (t1 >= 0.0 && t1 <= 1.0);
 }
 
-fn shadowed(in: VertexOutput) -> bool {
-    if in.shadow_flags == 0u {
+fn cross_2d(a: vec2<f32>, b: vec2<f32>) -> f32 {
+    return a.x * b.y - a.y * b.x;
+}
+
+fn point_in_triangle(point: vec2<f32>, a: vec2<f32>, b: vec2<f32>, c: vec2<f32>) -> bool {
+    let ab = cross_2d(b - a, point - a);
+    let bc = cross_2d(c - b, point - b);
+    let ca = cross_2d(a - c, point - c);
+    let has_neg = ab < -0.00001 || bc < -0.00001 || ca < -0.00001;
+    let has_pos = ab > 0.00001 || bc > 0.00001 || ca > 0.00001;
+    return !(has_neg && has_pos);
+}
+
+fn segments_cross(a: vec2<f32>, b: vec2<f32>, c: vec2<f32>, d: vec2<f32>) -> bool {
+    let ab = b - a;
+    let cd = d - c;
+    let denom = cross_2d(ab, cd);
+    if abs(denom) < 0.00001 {
         return false;
     }
-    var a = in.light_pos;
-    let b = in.world_pos;
-    if in.kind == 1u {
-        a = b - normalize(in.direction) * 12000.0;
-    }
+    let ac = c - a;
+    let t = cross_2d(ac, cd) / denom;
+    let u = cross_2d(ac, ab) / denom;
+    return t >= 0.0 && t <= 1.0 && u >= 0.0 && u <= 1.0;
+}
+
+fn segment_hits_triangle(a: vec2<f32>, b: vec2<f32>, caster: ShadowCaster2D) -> bool {
+    let p0 = caster.center;
+    let p1 = caster.axis_x;
+    let p2 = caster.axis_y;
+    return point_in_triangle(a, p0, p1, p2)
+        || point_in_triangle(b, p0, p1, p2)
+        || segments_cross(a, b, p0, p1)
+        || segments_cross(a, b, p1, p2)
+        || segments_cross(a, b, p2, p0);
+}
+
+fn segment_blocked(a: vec2<f32>, b: vec2<f32>) -> bool {
     let count = min(arrayLength(&shadow_casters), 128u);
     for (var i = 0u; i < count; i = i + 1u) {
         let caster = shadow_casters[i];
@@ -150,6 +187,10 @@ fn shadowed(in: VertexOutput) -> bool {
             if segment_hits_circle(a, b, caster) {
                 return true;
             }
+        } else if caster.shape == 2u {
+            if segment_hits_triangle(a, b, caster) {
+                return true;
+            }
         } else if segment_hits_box(a, b, caster) {
             return true;
         }
@@ -157,13 +198,55 @@ fn shadowed(in: VertexOutput) -> bool {
     return false;
 }
 
+fn rotate_2d(v: vec2<f32>, angle: f32) -> vec2<f32> {
+    let s = sin(angle);
+    let c = cos(angle);
+    return vec2<f32>(v.x * c - v.y * s, v.x * s + v.y * c);
+}
+
+fn disk_sample(index: u32, count: u32) -> vec2<f32> {
+    let fi = f32(index);
+    let radius = sqrt((fi + 0.5) / f32(count));
+    let angle = fi * 2.39996323;
+    return vec2<f32>(cos(angle), sin(angle)) * radius;
+}
+
+fn shadow_visibility(in: VertexOutput) -> f32 {
+    if in.shadow_flags == 0u {
+        return 1.0;
+    }
+    let softness = clamp(in.shadow_softness, 0.0, 1.0);
+    let sample_count = clamp(in.shadow_samples, 1u, 16u);
+    if softness <= 0.00001 || sample_count == 1u {
+        var origin = in.light_pos;
+        if in.kind == 1u {
+            origin = in.world_pos - normalize(in.direction) * 12000.0;
+        }
+        return select(1.0, 0.0, segment_blocked(origin, in.world_pos));
+    }
+
+    var lit = 0u;
+    for (var i = 0u; i < sample_count; i = i + 1u) {
+        var origin = in.light_pos;
+        if in.kind == 1u {
+            let t = ((f32(i) + 0.5) / f32(sample_count)) * 2.0 - 1.0;
+            let direction = rotate_2d(normalize(in.direction), t * softness * 0.034906585);
+            origin = in.world_pos - direction * 12000.0;
+        } else {
+            origin = origin + disk_sample(i, sample_count) * in.range * softness * 0.05;
+        }
+        if !segment_blocked(origin, in.world_pos) {
+            lit = lit + 1u;
+        }
+    }
+    return f32(lit) / f32(sample_count);
+}
+
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     if in.kind < 2u {
-        if shadowed(in) {
-            return vec4<f32>(0.0, 0.0, 0.0, 1.0);
-        }
-        return vec4<f32>(in.color * in.intensity, 1.0);
+        let visibility = shadow_visibility(in);
+        return vec4<f32>(in.color * in.intensity * visibility, 1.0);
     }
 
     let d = length(in.local_pos) * 2.0;
@@ -171,20 +254,24 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         discard;
     }
     let falloff = (1.0 - d) * (1.0 - d);
+    let visibility = shadow_visibility(in);
+    if visibility <= 0.0 {
+        discard;
+    }
     if in.kind == 3u {
         let to_px = normalize(in.local_pos);
         let c = dot(to_px, normalize(in.direction));
         if c < in.outer_cos {
             discard;
         }
-        if shadowed(in) {
-            discard;
-        }
         let cone = smoothstep(in.outer_cos, in.inner_cos, c);
-        return vec4<f32>(in.color * in.intensity * falloff * cone, falloff * cone);
+        return vec4<f32>(
+            in.color * in.intensity * falloff * cone * visibility,
+            falloff * cone * visibility,
+        );
     }
-    if shadowed(in) {
-        discard;
-    }
-    return vec4<f32>(in.color * in.intensity * falloff, falloff);
+    return vec4<f32>(
+        in.color * in.intensity * falloff * visibility,
+        falloff * visibility,
+    );
 }

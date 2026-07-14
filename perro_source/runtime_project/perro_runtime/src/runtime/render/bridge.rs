@@ -23,8 +23,8 @@ use std::sync::Arc;
 use crate::runtime::render_2d::{
     TilemapSpriteBuild, build_tilemap_sprites, derived_particle_budget, direction_from_rotation_2d,
     resolve_particle_profile_2d, resolve_particle_sim_mode_2d, resolve_tileset_2d,
-    water_idle_mode_state as water_idle_mode_state_2d, water_render_size as water_render_size_2d,
-    water_shape_state as water_shape_state_2d,
+    shadow_softness_2d, water_idle_mode_state as water_idle_mode_state_2d,
+    water_render_size as water_render_size_2d, water_shape_state as water_shape_state_2d,
 };
 use crate::runtime::render_3d::{
     derived_particle_budget_3d, resolve_particle_profile as resolve_particle_profile_3d,
@@ -868,6 +868,8 @@ impl Runtime {
                 intensity: f32,
                 z_index: i32,
                 cast_shadows: bool,
+                shadow_softness: f32,
+                shadow_samples: u32,
             },
             Point {
                 transform: perro_structs::Transform2D,
@@ -876,6 +878,8 @@ impl Runtime {
                 range: f32,
                 z_index: i32,
                 cast_shadows: bool,
+                shadow_softness: f32,
+                shadow_samples: u32,
             },
             Spot {
                 transform: perro_structs::Transform2D,
@@ -886,6 +890,8 @@ impl Runtime {
                 outer_angle_radians: f32,
                 z_index: i32,
                 cast_shadows: bool,
+                shadow_softness: f32,
+                shadow_samples: u32,
             },
         }
         let mut out = Vec::new();
@@ -921,6 +927,8 @@ impl Runtime {
                             intensity: light.intensity,
                             z_index: light.z_index,
                             cast_shadows: light.cast_shadows,
+                            shadow_softness: light.shadow_softness,
+                            shadow_samples: light.shadow_samples,
                         })
                     }
                     SceneNodeData::PointLight2D(light)
@@ -937,6 +945,8 @@ impl Runtime {
                             range: light.range,
                             z_index: light.z_index,
                             cast_shadows: light.cast_shadows,
+                            shadow_softness: light.shadow_softness,
+                            shadow_samples: light.shadow_samples,
                         })
                     }
                     SceneNodeData::SpotLight2D(light)
@@ -955,6 +965,8 @@ impl Runtime {
                             outer_angle_radians: light.outer_angle_radians,
                             z_index: light.z_index,
                             cast_shadows: light.cast_shadows,
+                            shadow_softness: light.shadow_softness,
+                            shadow_samples: light.shadow_samples,
                         })
                     }
                     _ => None,
@@ -972,6 +984,8 @@ impl Runtime {
                     intensity,
                     z_index,
                     cast_shadows,
+                    shadow_softness,
+                    shadow_samples,
                 }) => {
                     let global = self
                         .get_render_global_transform_2d(node)
@@ -982,6 +996,8 @@ impl Runtime {
                         intensity: intensity.max(0.0),
                         z_index,
                         cast_shadows,
+                        shadow_softness: shadow_softness_2d(shadow_softness),
+                        shadow_samples: shadow_samples.clamp(1, 16),
                     }));
                 }
                 Some(StreamLight2DData::Point {
@@ -991,6 +1007,8 @@ impl Runtime {
                     range,
                     z_index,
                     cast_shadows,
+                    shadow_softness,
+                    shadow_samples,
                 }) => {
                     let global = self
                         .get_render_global_transform_2d(node)
@@ -1002,6 +1020,8 @@ impl Runtime {
                         range: range.max(0.001),
                         z_index,
                         cast_shadows,
+                        shadow_softness: shadow_softness_2d(shadow_softness),
+                        shadow_samples: shadow_samples.clamp(1, 16),
                     }));
                 }
                 Some(StreamLight2DData::Spot {
@@ -1013,6 +1033,8 @@ impl Runtime {
                     outer_angle_radians,
                     z_index,
                     cast_shadows,
+                    shadow_softness,
+                    shadow_samples,
                 }) => {
                     let global = self
                         .get_render_global_transform_2d(node)
@@ -1027,6 +1049,8 @@ impl Runtime {
                         outer_angle_radians: outer_angle_radians.max(inner_angle_radians),
                         z_index,
                         cast_shadows,
+                        shadow_softness: shadow_softness_2d(shadow_softness),
+                        shadow_samples: shadow_samples.clamp(1, 16),
                     }));
                 }
                 None => {}

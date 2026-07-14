@@ -4,7 +4,7 @@ use perro_input_api::MouseButton;
 use perro_nodes::{
     AmbientLight2D, Button2D, CameraStream2D, CollisionShape2D, ImageButton2D, Label2D,
     NineSlice2D, PointLight2D, RayLight2D, SceneNode, SceneNodeData, Shape2D, SpotLight2D,
-    StaticBody2D, WaterBody2D, Webcam,
+    StaticBody2D, TileMap2D, WaterBody2D, Webcam,
     camera_2d::Camera2D,
     node_2d::Node2D,
     particle_emitter_2d::ParticleEmitter2D,
@@ -163,6 +163,8 @@ fn point_light_2d_emits_cast_shadows_flag() {
     {
         data.cast_shadows = true;
         data.range = 64.0;
+        data.shadow_softness = 0.65;
+        data.shadow_samples = 12;
     }
 
     runtime.extract_render_2d_commands();
@@ -171,7 +173,10 @@ fn point_light_2d_emits_cast_shadows_flag() {
     assert!(commands.iter().any(|command| matches!(
         command,
         RenderCommand::TwoD(Command2D::SetPointLight { node, light: state })
-            if *node == light && state.cast_shadows
+            if *node == light
+                && state.cast_shadows
+                && state.shadow_softness == 0.65
+                && state.shadow_samples == 12
     )));
 }
 
@@ -666,6 +671,50 @@ fn texture_create_from_rgba_rejects_bad_len() {
 
     assert!(texture.is_nil());
     assert!(collect_commands(&mut runtime).is_empty());
+}
+
+#[test]
+fn tilemap_collision_shapes_build_shadow_casters() {
+    let tileset = perro_render_bridge::parse_ptileset_source(
+        r#"
+        texture = "res://tiles/world.png"
+        tile_size = (16, 16)
+        columns = 2
+        rows = 1
+        tiles = [
+            { id = 1 atlas = (0, 0) collision = true },
+            { id = 2 atlas = (1, 0) collision = true collision_shape = { polygon = { points = [(-7, -6), (7, -6), (7, 6), (-7, 6)] } } },
+        ]
+        "#,
+    )
+    .expect("tileset parses");
+
+    let mut auto = TileMap2D::new();
+    auto.width = 2;
+    auto.height = 1;
+    auto.tiles = vec![1, 1];
+    auto.collision_enabled = true;
+    let merged =
+        super::build_tilemap_shadow_casters(&auto, perro_structs::Transform2D::IDENTITY, &tileset);
+    assert_eq!(merged.len(), 1);
+    assert_eq!(merged[0].center, [16.0, -8.0]);
+    assert_eq!(merged[0].half_extents, [16.0, 8.0]);
+
+    let mut polygon = TileMap2D::new();
+    polygon.width = 1;
+    polygon.height = 1;
+    polygon.tiles = vec![2];
+    polygon.collision_enabled = true;
+    let polygon_casters = super::build_tilemap_shadow_casters(
+        &polygon,
+        perro_structs::Transform2D::IDENTITY,
+        &tileset,
+    );
+    assert_eq!(polygon_casters.len(), 2);
+    assert!(polygon_casters.iter().all(|caster| matches!(
+        caster.shape,
+        perro_render_bridge::ShadowCaster2DShapeState::TrianglePoints(_)
+    )));
 }
 
 #[test]
