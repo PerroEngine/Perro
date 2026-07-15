@@ -716,7 +716,7 @@ All UI nodes can have children.
 `UiButton` draws an interactive styled box and emits default named signals plus extra configured signals.
 `UiImage` draws a texture region with tint and scale mode.
 `UiImageButton` draws an interactive texture region and emits default named signals plus extra configured signals.
-`UiNineSlice` draws a scalable texture panel with fixed corners and stretched edges/center.
+`UiNineSlice` draws a scalable texture panel with fixed corners and tiled edges/center.
 `UiAnimatedImage` draws sprite-sheet animation in UI space.
 `UiViewport` renders an isolated local 3D subtree plus optional 2D descendants inside its UI bounds without a camera node.
 `UiLabel` draws text.

@@ -722,6 +722,7 @@ impl Runtime {
                         SceneNodeData::UiDropdown(dropdown) => Some(dropdown.cursor_icon),
                         SceneNodeData::UiCheckbox(checkbox) => Some(checkbox.cursor_icon),
                         SceneNodeData::UiImageButton(button) => Some(button.cursor_icon),
+                        SceneNodeData::UiNineSliceButton(button) => Some(button.cursor_icon),
                         _ => None,
                     })
             })
@@ -766,6 +767,7 @@ impl Runtime {
             SceneNodeData::UiDropdown(dropdown) => dropdown.web.as_ref(),
             SceneNodeData::UiCheckbox(checkbox) => checkbox.web.as_ref(),
             SceneNodeData::UiImageButton(button) => button.web.as_ref(),
+            SceneNodeData::UiNineSliceButton(button) => button.web.as_ref(),
             _ => None,
         };
         let Some(web) = web else {
@@ -1171,6 +1173,9 @@ impl Runtime {
                     ),
                     SceneNodeData::UiImageButton(button) => computed_rect_from_state(
                         &image_button_rect_state(button, base_rect, state, z),
+                    ),
+                    SceneNodeData::UiNineSliceButton(button) => computed_rect_from_state(
+                        &nine_slice_button_rect_state(button, base_rect, state, z),
                     ),
                     _ => base_rect,
                 }
@@ -1680,6 +1685,15 @@ impl Runtime {
                     return None;
                 }
             }
+            SceneNodeData::UiNineSliceButton(button) => {
+                if button.disabled
+                    || !button.input_enabled
+                    || !button.visible
+                    || !self.ui_input_mask_accepts(&button.input_mask, source)
+                {
+                    return None;
+                }
+            }
             data => {
                 let edit = text_edit_ref(data)?;
                 if !edit.base.visible
@@ -1992,6 +2006,11 @@ impl Runtime {
                     SceneNodeData::UiImageButton(button) if !image_button_inactive(button) => {
                         Some(node)
                     }
+                    SceneNodeData::UiNineSliceButton(button)
+                        if !nine_slice_button_inactive(button) =>
+                    {
+                        Some(node)
+                    }
                     _ => None,
                 })
         });
@@ -2023,6 +2042,10 @@ impl Runtime {
             }
             SceneNodeData::UiImageButton(button) => {
                 !image_button_inactive(button)
+                    && self.ui_input_mask_accepts(&button.input_mask, source)
+            }
+            SceneNodeData::UiNineSliceButton(button) => {
+                !nine_slice_button_inactive(button)
                     && self.ui_input_mask_accepts(&button.input_mask, source)
             }
             data => text_edit_ref(data)
@@ -2118,6 +2141,7 @@ fn ui_button_like_inactive(data: &SceneNodeData) -> Option<bool> {
         SceneNodeData::UiDropdown(dropdown) => Some(button_inactive(&dropdown.button)),
         SceneNodeData::UiCheckbox(checkbox) => Some(checkbox_inactive(checkbox)),
         SceneNodeData::UiImageButton(button) => Some(image_button_inactive(button)),
+        SceneNodeData::UiNineSliceButton(button) => Some(nine_slice_button_inactive(button)),
         _ => None,
     }
 }
@@ -2136,6 +2160,8 @@ fn ui_button_like_custom_event_signals<'a>(
             .then_some(button_custom_event_signals(&checkbox.button, event)),
         SceneNodeData::UiImageButton(button) => (!image_button_inactive(button))
             .then_some(image_button_custom_event_signals(button, event)),
+        SceneNodeData::UiNineSliceButton(button) => (!nine_slice_button_inactive(button))
+            .then_some(nine_slice_button_custom_event_signals(button, event)),
         _ => None,
     }
 }
@@ -2174,6 +2200,13 @@ fn ui_button_like_hit_data(
             corner_radius: checkbox_style(checkbox, state).corner_radius(),
         }),
         SceneNodeData::UiImageButton(button) => Some(UiButtonLikeHitData {
+            disabled: button.disabled,
+            input_enabled: button.input_enabled,
+            mouse_filter: button.mouse_filter,
+            input_mask: &button.input_mask,
+            corner_radius: 0.0,
+        }),
+        SceneNodeData::UiNineSliceButton(button) => Some(UiButtonLikeHitData {
             disabled: button.disabled,
             input_enabled: button.input_enabled,
             mouse_filter: button.mouse_filter,

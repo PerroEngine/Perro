@@ -1645,7 +1645,7 @@ fn render_scene_entry_html(
                 ))
             }
         }
-        "UiImage" | "UiImageButton" | "UiNineSlice" | "UiAnimatedImage" | "NineSlice2D" => {
+        "UiImage" | "UiImageButton" | "UiNineSliceButton" | "UiNineSlice" | "UiAnimatedImage" | "NineSlice2D" | "NineSliceButton2D" => {
             if let Some(texture) = extract_ui_image_source(&entry.data) {
                 let copied = copy_res_asset_into_web_output(project_root, output_dir, &texture)?;
                 let src = relative_output_href(html_path, &copied);

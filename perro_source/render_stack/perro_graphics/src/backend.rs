@@ -17,7 +17,7 @@ use crate::{
 };
 use ahash::AHashMap;
 use perro_graphics_assets::{
-    decode_image_rgba, decode_ptex, load_mesh3d_from_bytes, load_texture_rgba,
+    SVG_RASTER_SCALE, decode_image_rgba, decode_ptex, load_mesh3d_from_bytes, load_texture_rgba,
 };
 use perro_ids::{MaterialID, MeshID, NodeID, TextureID};
 use perro_render_bridge::{
@@ -2108,6 +2108,29 @@ impl PerroGraphics {
         self.late_overlay_shadow_casters_cache
             .extend(self.late_overlay_2d.shadow_casters());
         let ui_image_textures: Vec<_> = self.renderer_ui.image_textures().collect();
+        let ui_texture_sizes = ui_image_textures
+            .iter()
+            .filter_map(|texture| {
+                self.resources.decoded_texture_data(*texture).map(|data| {
+                    let mut size = [data.width, data.height];
+                    let source = self.resources.texture_source(*texture).unwrap_or_default();
+                    if source.eq_ignore_ascii_case("__perro_builtin_logo_svg__")
+                        || source
+                            .split('#')
+                            .next()
+                            .is_some_and(|path| path.to_ascii_lowercase().ends_with(".svg"))
+                    {
+                        size = [
+                            (size[0] / SVG_RASTER_SCALE).max(1),
+                            (size[1] / SVG_RASTER_SCALE).max(1),
+                        ];
+                    }
+                    (*texture, size)
+                })
+            })
+            .collect();
+        self.renderer_ui
+            .set_nine_slice_texture_sizes(&ui_texture_sizes);
         let ui_paint = self
             .renderer_ui
             .prepare_paint([self.viewport.0 as f32, self.viewport.1 as f32]);

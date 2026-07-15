@@ -103,6 +103,7 @@ pub(crate) struct UiNineSliceDraw {
     pub(crate) uv_min: [f32; 2],
     pub(crate) uv_max: [f32; 2],
     pub(crate) margins: [f32; 4],
+    pub(crate) texture_size: [u32; 2],
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -393,6 +394,7 @@ impl UiRenderer {
                     uv_min,
                     uv_max,
                     margins,
+                    texture_size: [0, 0],
                 }),
             ),
             UiCommand::UpsertTextEdit {
@@ -469,6 +471,23 @@ impl UiRenderer {
                     self.bump_revision();
                 }
             }
+        }
+    }
+
+    pub(crate) fn set_nine_slice_texture_sizes(&mut self, sizes: &AHashMap<TextureID, [u32; 2]>) {
+        let mut changed = false;
+        for draw in self.nodes.values_mut() {
+            let UiDraw::NineSlice(image) = draw else {
+                continue;
+            };
+            let size = sizes.get(&image.texture).copied().unwrap_or([0, 0]);
+            if image.texture_size != size {
+                image.texture_size = size;
+                changed = true;
+            }
+        }
+        if changed {
+            self.revision = self.revision.wrapping_add(1);
         }
     }
 

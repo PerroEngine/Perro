@@ -61,6 +61,7 @@ pub(super) fn ui_root_from_data(data: &SceneNodeData) -> Option<&UiNode> {
         SceneNodeData::UiImage(node) => Some(&node.base),
         SceneNodeData::UiVideoPlayer(node) => Some(&node.base),
         SceneNodeData::UiImageButton(node) => Some(&node.base),
+        SceneNodeData::UiNineSliceButton(node) => Some(&node.base),
         SceneNodeData::UiNineSlice(node) => Some(&node.base),
         SceneNodeData::UiAnimatedImage(node) => Some(&node.base),
         SceneNodeData::UiLabel(node) => Some(&node.base),
@@ -91,6 +92,7 @@ pub(super) fn ui_root_mut_from_data(data: &mut SceneNodeData) -> Option<&mut UiN
         SceneNodeData::UiImage(node) => Some(&mut node.base),
         SceneNodeData::UiVideoPlayer(node) => Some(&mut node.base),
         SceneNodeData::UiImageButton(node) => Some(&mut node.base),
+        SceneNodeData::UiNineSliceButton(node) => Some(&mut node.base),
         SceneNodeData::UiNineSlice(node) => Some(&mut node.base),
         SceneNodeData::UiAnimatedImage(node) => Some(&mut node.base),
         SceneNodeData::UiLabel(node) => Some(&mut node.base),
@@ -746,6 +748,25 @@ pub(super) fn ui_command_from_node(
                 corner_radii: UiCornerRadiiState::default(),
             })
         }
+        SceneNodeData::UiNineSliceButton(image) => {
+            if image.texture.is_nil() {
+                return None;
+            }
+            let (uv_min, uv_max, _) = ui_image_region_uv(image.texture_region, 0.0);
+            Some(UiCommand::UpsertNineSlice {
+                node,
+                rect,
+                clip_rect,
+                texture: image.texture,
+                tint: Runtime::color_modulate(
+                    nine_slice_button_tint(image, button_state),
+                    modulate,
+                ),
+                uv_min,
+                uv_max,
+                margins: image.margins,
+            })
+        }
         SceneNodeData::UiNineSlice(image) => {
             if image.texture.is_nil() {
                 return None;
@@ -916,6 +937,14 @@ pub(super) fn ui_rect_state_from_node(
                 effective_z,
             ));
         }
+        SceneNodeData::UiNineSliceButton(button) => {
+            return Some(nine_slice_button_rect_state(
+                button,
+                rect,
+                button_state,
+                effective_z,
+            ));
+        }
         _ => {}
     }
     let ui = ui_root_from_data(data)?;
@@ -950,6 +979,38 @@ pub(super) fn image_button_rect_state(
                 base_rect.size
             }
         }
+    };
+    let center = if state == UiButtonVisualState::Neutral {
+        base_rect.center
+    } else {
+        base_rect.center + ui.transform.translation
+    };
+    UiRectState {
+        center: [center.x, center.y],
+        size: [size.x, size.y],
+        pivot: ui_pivot_state(&ui.transform),
+        rotation_radians: ui.transform.rotation,
+        z_index: effective_z,
+    }
+}
+
+pub(super) fn nine_slice_button_rect_state(
+    button: &perro_ui::UiNineSliceButton,
+    base_rect: ComputedUiRect,
+    state: UiButtonVisualState,
+    effective_z: i32,
+) -> UiRectState {
+    let ui = nine_slice_button_state_base(button, state).unwrap_or(&button.base);
+    let state_has_size_override = match state {
+        UiButtonVisualState::Hover => button.hover_size_override,
+        UiButtonVisualState::Pressed => button.pressed_size_override,
+        UiButtonVisualState::Neutral => false,
+    };
+    let size = if state_has_size_override {
+        ui.transform
+            .scale_size(ui.layout.size.resolve(base_rect.size))
+    } else {
+        base_rect.size
     };
     let center = if state == UiButtonVisualState::Neutral {
         base_rect.center
@@ -1157,6 +1218,20 @@ pub(super) fn image_button_tint(
     }
 }
 
+pub(super) fn nine_slice_button_tint(
+    button: &perro_ui::UiNineSliceButton,
+    state: UiButtonVisualState,
+) -> Color {
+    if nine_slice_button_inactive(button) {
+        return button.tint;
+    }
+    match state {
+        UiButtonVisualState::Neutral => button.tint,
+        UiButtonVisualState::Hover => button.hover_tint,
+        UiButtonVisualState::Pressed => button.pressed_tint,
+    }
+}
+
 pub(super) fn image_button_state_base(
     button: &perro_ui::UiImageButton,
     state: UiButtonVisualState,
@@ -1171,7 +1246,25 @@ pub(super) fn image_button_state_base(
     }
 }
 
+pub(super) fn nine_slice_button_state_base(
+    button: &perro_ui::UiNineSliceButton,
+    state: UiButtonVisualState,
+) -> Option<&perro_ui::UiNode> {
+    if nine_slice_button_inactive(button) {
+        return None;
+    }
+    match state {
+        UiButtonVisualState::Neutral => None,
+        UiButtonVisualState::Hover => button.hover_base.as_ref(),
+        UiButtonVisualState::Pressed => button.pressed_base.as_ref(),
+    }
+}
+
 pub(super) fn image_button_inactive(button: &perro_ui::UiImageButton) -> bool {
+    button.disabled || !button.input_enabled
+}
+
+pub(super) fn nine_slice_button_inactive(button: &perro_ui::UiNineSliceButton) -> bool {
     button.disabled || !button.input_enabled
 }
 
@@ -1191,6 +1284,20 @@ pub(super) fn button_custom_event_signals<'a>(
 
 pub(super) fn image_button_custom_event_signals<'a>(
     button: &'a perro_ui::UiImageButton,
+    event: &str,
+) -> &'a [SignalID] {
+    match event {
+        "hover_enter" => &button.hover_signals,
+        "hover_exit" => &button.hover_exit_signals,
+        "pressed" => &button.pressed_signals,
+        "released" => &button.released_signals,
+        "click" => &button.clicked_signals,
+        _ => &[],
+    }
+}
+
+pub(super) fn nine_slice_button_custom_event_signals<'a>(
+    button: &'a perro_ui::UiNineSliceButton,
     event: &str,
 ) -> &'a [SignalID] {
     match event {

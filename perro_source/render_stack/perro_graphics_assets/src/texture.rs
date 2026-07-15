@@ -12,7 +12,7 @@ use std::{
     sync::{Arc, Mutex, OnceLock},
 };
 
-const SVG_RASTER_SCALE: u32 = 4;
+pub const SVG_RASTER_SCALE: u32 = 4;
 const SVG_MAX_RASTER_DIM: u32 = 8192;
 const SVG_CACHE_LIMIT: usize = 32;
 const SVG_RGBA_CACHE_MAX_BYTES: usize = 64 * 1024 * 1024;

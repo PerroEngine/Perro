@@ -528,12 +528,14 @@ fn ui_nine_slice_emits_nine_slice_command() {
         RenderCommand::Ui(UiCommand::UpsertNineSlice {
             node: n,
             texture,
+            rect,
             uv_min,
             uv_max,
             margins,
             ..
         }) if *n == node
             && *texture == TextureID::from_parts(64, 0)
+            && rect.size == [120.0, 40.0]
             && *uv_min == [1.0, 2.0]
             && *uv_max == [31.0, 22.0]
             && *margins == [5.0, 6.0, 7.0, 8.0]
@@ -4393,6 +4395,160 @@ fn dropdown_options_match_button_width() {
 
     assert_eq!(button_width, 180.0);
     assert_eq!(option_width, button_width);
+}
+
+#[test]
+fn ui_nine_slice_button_emits_resized_nine_slice_with_hover_tint() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+
+    let mut button = perro_ui::UiNineSliceButton::new();
+    button.texture = TextureID::from_parts(65, 0);
+    button.layout.size = UiVector2::pixels(140.0, 52.0);
+    button.margins = [6.0, 7.0, 8.0, 9.0];
+    button.hover_tint = Color::new(0.3, 0.5, 0.7, 1.0);
+    let node = insert_ui_node(
+        &mut runtime,
+        SceneNodeData::UiNineSliceButton(Box::new(button)),
+    );
+
+    runtime.extract_render_ui_commands();
+    runtime.drain_render_commands(&mut Vec::new());
+    runtime.clear_dirty_flags();
+    runtime.begin_input_frame();
+    runtime.set_mouse_position(400.0, 300.0);
+    runtime.extract_render_ui_commands();
+    let mut commands = Vec::new();
+    runtime.drain_render_commands(&mut commands);
+
+    assert!(commands.iter().any(|cmd| matches!(
+        cmd,
+        RenderCommand::Ui(UiCommand::UpsertNineSlice {
+            node: n,
+            rect,
+            tint,
+            margins,
+            ..
+        }) if *n == node
+            && rect.size == [140.0, 52.0]
+            && *tint == Color::new(0.3, 0.5, 0.7, 1.0)
+            && *margins == [6.0, 7.0, 8.0, 9.0]
+    )));
+}
+
+#[test]
+fn dropdown_popup_uses_custom_size_direction_and_style() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(400, 300);
+
+    let mut dropdown = perro_ui::UiDropdown::new();
+    dropdown.layout.size = UiVector2::pixels(180.0, 32.0);
+    dropdown.open = true;
+    dropdown.popup_size = [240.0, 80.0];
+    dropdown.popup_direction = perro_ui::UiDropdownDirection::Up;
+    dropdown.popup_style.fill = Color::new(0.3, 0.2, 0.1, 1.0);
+    dropdown.options.push(perro_ui::UiDropdownOption::new(
+        "One",
+        perro_variant::Variant::from(1_i32),
+    ));
+    let dropdown_id = insert_ui_node(&mut runtime, SceneNodeData::UiDropdown(Box::new(dropdown)));
+
+    runtime.extract_render_ui_commands();
+    let popup_id = runtime
+        .nodes
+        .get(dropdown_id)
+        .and_then(|node| match &node.data {
+            SceneNodeData::UiDropdown(dropdown) => Some(dropdown.internal_popup_panel),
+            _ => None,
+        })
+        .expect("dropdown popup");
+    let popup = runtime.render_ui.computed_rects[&popup_id];
+    let dropdown_rect = runtime.render_ui.computed_rects[&dropdown_id];
+
+    assert_eq!(runtime.nodes.get(popup_id).unwrap().parent, dropdown_id);
+    assert_eq!(popup.size, Vector2::new(240.0, 80.0));
+    assert_eq!(popup.max().y, dropdown_rect.min().y);
+    assert!(matches!(
+        &runtime.nodes.get(popup_id).unwrap().data,
+        SceneNodeData::UiPanel(panel) if panel.style.fill == Color::new(0.3, 0.2, 0.1, 1.0)
+    ));
+}
+
+#[test]
+fn dropdown_popup_directions_touch_control_edge() {
+    for direction in [
+        perro_ui::UiDropdownDirection::Down,
+        perro_ui::UiDropdownDirection::Up,
+        perro_ui::UiDropdownDirection::Left,
+        perro_ui::UiDropdownDirection::Right,
+    ] {
+        let mut runtime = Runtime::new();
+        runtime.set_viewport_size(400, 300);
+
+        let mut dropdown = perro_ui::UiDropdown::new();
+        dropdown.layout.size = UiVector2::pixels(180.0, 32.0);
+        dropdown.open = true;
+        dropdown.popup_size = [240.0, 80.0];
+        dropdown.popup_direction = direction;
+        dropdown.options.push(perro_ui::UiDropdownOption::new(
+            "One",
+            perro_variant::Variant::from(1_i32),
+        ));
+        let dropdown_id =
+            insert_ui_node(&mut runtime, SceneNodeData::UiDropdown(Box::new(dropdown)));
+
+        runtime.extract_render_ui_commands();
+        let popup_id = runtime
+            .nodes
+            .get(dropdown_id)
+            .and_then(|node| match &node.data {
+                SceneNodeData::UiDropdown(dropdown) => Some(dropdown.internal_popup_panel),
+                _ => None,
+            })
+            .expect("dropdown popup");
+        let popup = runtime.render_ui.computed_rects[&popup_id];
+        let control = runtime.render_ui.computed_rects[&dropdown_id];
+
+        match direction {
+            perro_ui::UiDropdownDirection::Down => assert_eq!(popup.min().y, control.max().y),
+            perro_ui::UiDropdownDirection::Up => assert_eq!(popup.max().y, control.min().y),
+            perro_ui::UiDropdownDirection::Left => assert_eq!(popup.max().x, control.min().x),
+            perro_ui::UiDropdownDirection::Right => assert_eq!(popup.min().x, control.max().x),
+        }
+    }
+}
+
+#[test]
+fn dropdown_extend_animation_grows_popup() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(400, 300);
+    runtime.time.delta = 0.1;
+
+    let mut dropdown = perro_ui::UiDropdown::new();
+    dropdown.layout.size = UiVector2::pixels(180.0, 32.0);
+    dropdown.open = true;
+    dropdown.open_animation = perro_ui::UiDropdownOpenAnimation::Extend;
+    dropdown.open_animation_duration = 0.2;
+    dropdown.popup_size = [180.0, 80.0];
+    dropdown.options.push(perro_ui::UiDropdownOption::new(
+        "One",
+        perro_variant::Variant::from(1_i32),
+    ));
+    let dropdown_id = insert_ui_node(&mut runtime, SceneNodeData::UiDropdown(Box::new(dropdown)));
+
+    runtime.extract_render_ui_commands();
+    let popup_id = runtime
+        .nodes
+        .get(dropdown_id)
+        .and_then(|node| match &node.data {
+            SceneNodeData::UiDropdown(dropdown) => Some(dropdown.internal_popup_panel),
+            _ => None,
+        })
+        .expect("dropdown popup");
+    assert_eq!(runtime.render_ui.computed_rects[&popup_id].size.y, 40.0);
+
+    runtime.extract_render_ui_commands();
+    assert_eq!(runtime.render_ui.computed_rects[&popup_id].size.y, 80.0);
 }
 
 #[test]

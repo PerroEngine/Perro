@@ -6,7 +6,7 @@
 - [Config](#config)
 - [Render Path](#render-path)
 - [Surface Scope](#surface-scope)
-- [Resize + Fallback](#resize--fallback)
+- [Resize + Fallback](#resize-fallback)
 
 ## Purpose
 

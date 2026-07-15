@@ -50,6 +50,7 @@ fn is_ui_node_data(data: &SceneNodeData) -> bool {
             | SceneNodeData::UiImage(_)
             | SceneNodeData::UiVideoPlayer(_)
             | SceneNodeData::UiImageButton(_)
+            | SceneNodeData::UiNineSliceButton(_)
             | SceneNodeData::UiNineSlice(_)
             | SceneNodeData::UiAnimatedImage(_)
             | SceneNodeData::UiLabel(_)
@@ -165,6 +166,15 @@ impl Runtime {
                         add_ref(textures, button.texture, node_id);
                     }
                 }
+                SceneNodeData::NineSliceButton2D(button)
+                    if !self.render_2d.retained_sprites.contains_key(&node_id) =>
+                {
+                    if !button.texture.is_nil()
+                        && !self.resource_api.is_texture_id_pending(button.texture)
+                    {
+                        add_ref(textures, button.texture, node_id);
+                    }
+                }
                 SceneNodeData::NineSlice2D(nine)
                     if !self.render_2d.retained_sprites.contains_key(&node_id) =>
                 {
@@ -202,6 +212,15 @@ impl Runtime {
                     }
                 }
                 SceneNodeData::UiImageButton(button)
+                    if !self.render_ui.retained_commands.contains_key(&node_id) =>
+                {
+                    if !button.texture.is_nil()
+                        && !self.resource_api.is_texture_id_pending(button.texture)
+                    {
+                        add_ref(textures, button.texture, node_id);
+                    }
+                }
+                SceneNodeData::UiNineSliceButton(button)
                     if !self.render_ui.retained_commands.contains_key(&node_id) =>
                 {
                     if !button.texture.is_nil()
@@ -606,6 +625,7 @@ impl Runtime {
                             | NodeType::UiCheckbox
                             | NodeType::UiImage
                             | NodeType::UiImageButton
+                            | NodeType::UiNineSliceButton
                             | NodeType::UiNineSlice
                             | NodeType::UiAnimatedImage
                             | NodeType::UiLabel

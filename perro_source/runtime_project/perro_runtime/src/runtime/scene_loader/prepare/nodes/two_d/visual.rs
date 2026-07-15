@@ -49,6 +49,16 @@ fn build_image_button_2d(data: &SceneDefNodeData) -> ImageButton2D {
     node
 }
 
+fn build_nine_slice_button_2d(data: &SceneDefNodeData) -> NineSliceButton2D {
+    let mut node = NineSliceButton2D::default();
+    if let Some(base) = data.base_ref() {
+        apply_node_2d_data(&mut node, base);
+    }
+    apply_node_2d_fields(&mut node, &data.fields);
+    apply_nine_slice_button_2d_fields(&mut node, &data.fields);
+    node
+}
+
 fn build_nine_slice_2d(data: &SceneDefNodeData) -> NineSlice2D {
     let mut node = NineSlice2D::new();
     if let Some(base) = data.base_ref() {
@@ -503,6 +513,62 @@ fn parse_animated_sprite(value: &SceneValue) -> Option<AnimatedSprite> {
     }
     animation.frame_count = animation.frame_count.max(1);
     Some(animation)
+}
+
+fn apply_nine_slice_button_2d_fields(node: &mut NineSliceButton2D, fields: &[SceneObjectField]) {
+    SceneFieldIterRef::new(fields).for_each(|name, value| match name {
+        "size" => {
+            if let Some((x, y)) = value.as_vec2() {
+                node.size = Vector2::new(x.max(0.0), y.max(0.0));
+            }
+        }
+        name if scene_key_in(name, TEXTURE_REGION_KEYS) => {
+            if let Some((x, y, w, h)) = value.as_vec4() && w > 0.0 && h > 0.0 {
+                node.texture_region = Some([x, y, w, h]);
+            }
+        }
+        "margins" | "slice" | "slices" => {
+            if let Some(v) = as_margins_4(value) {
+                node.margins = v;
+            }
+        }
+        name if scene_key_in(name, COLOR_MODULATE_KEYS) => {
+            if let Some(v) = as_scene_color(value) {
+                node.tint = v;
+            }
+        }
+        _ => {}
+    });
+    apply_button_2d_common(
+        Button2DCommonFields {
+            input_mask: &mut node.input_mask,
+            mouse_filter: &mut node.mouse_filter,
+            cursor_icon: &mut node.cursor_icon,
+            input_enabled: &mut node.input_enabled,
+            clicked_signals: &mut node.clicked_signals,
+            hover_signals: &mut node.hover_signals,
+            hover_exit_signals: &mut node.hover_exit_signals,
+            pressed_signals: &mut node.pressed_signals,
+            released_signals: &mut node.released_signals,
+            web: &mut node.web,
+        },
+        fields,
+    );
+    node.hover_tint = node.tint;
+    node.pressed_tint = node.tint;
+    SceneFieldIterRef::new(fields).for_each(|name, value| match name {
+        "hover_tint" | "hover_color" | "hover_modulate" => {
+            if let Some(v) = as_scene_color(value) {
+                node.hover_tint = v;
+            }
+        }
+        "pressed_tint" | "pressed_color" | "pressed_modulate" => {
+            if let Some(v) = as_scene_color(value) {
+                node.pressed_tint = v;
+            }
+        }
+        _ => {}
+    });
 }
 
 fn apply_video_player_2d_fields(node: &mut VideoPlayer2D, fields: &[SceneObjectField]) {

@@ -492,6 +492,31 @@ pub(super) fn ui_payload_fingerprint(data: &SceneNodeData) -> UiPayloadFingerpri
                 group_b: 0,
             }
         }
+        SceneNodeData::UiNineSliceButton(node) => {
+            let mut a = new_hasher();
+            a.write_u64(node.texture.as_u64());
+            match node.texture_region {
+                Some(region) => {
+                    a.write_u8(1);
+                    for value in region {
+                        feed_f32(&mut a, value);
+                    }
+                }
+                None => a.write_u8(0),
+            }
+            for margin in node.margins {
+                feed_f32(&mut a, margin);
+            }
+            feed_color(&mut a, node.tint);
+            feed_color(&mut a, node.hover_tint);
+            feed_color(&mut a, node.pressed_tint);
+            a.write_u8(node.disabled as u8);
+            UiPayloadFingerprint {
+                tag: TAG_IMAGE_BUTTON,
+                group_a: a.finish(),
+                group_b: 0,
+            }
+        }
         SceneNodeData::UiLabel(node) => {
             // Group A -> TEXT|LAYOUT_SELF|LAYOUT_PARENT|COMMANDS.
             let mut a = new_hasher();
@@ -762,6 +787,7 @@ pub(super) fn ui_base_from_data(data: &SceneNodeData) -> Option<&UiNode> {
         SceneNodeData::UiImage(node) => Some(&node.base),
         SceneNodeData::UiVideoPlayer(node) => Some(&node.base),
         SceneNodeData::UiImageButton(node) => Some(&node.base),
+        SceneNodeData::UiNineSliceButton(node) => Some(&node.base),
         SceneNodeData::UiNineSlice(node) => Some(&node.base),
         SceneNodeData::UiAnimatedImage(node) => Some(&node.base),
         SceneNodeData::UiLabel(node) => Some(&node.base),

@@ -666,6 +666,12 @@ fn push_node_fields(fields: &mut Vec<SceneNodeField>, node_type: NodeType) {
             texture_field(fields, "Image", "texture");
             push(fields, "Image", "texture_region", NodeFieldType::Vec4);
         }
+        NodeType::NineSliceButton2D => {
+            button_2d_fields(fields, "Nine Slice Button");
+            texture_field(fields, "Nine Slice", "texture");
+            push(fields, "Nine Slice", "texture_region", NodeFieldType::Vec4);
+            push(fields, "Nine Slice", "margins", NodeFieldType::Vec4);
+        }
         NodeType::NineSlice2D => {
             texture_field(fields, "Nine Slice", "texture");
             push(fields, "Nine Slice", "texture_region", NodeFieldType::Vec4);
@@ -886,10 +892,16 @@ fn push_node_fields(fields: &mut Vec<SceneNodeField>, node_type: NodeType) {
             push(fields, "Animation", "paused", NodeFieldType::Bool);
         }
         NodeType::Sky3D => sky_fields(fields),
-        NodeType::UiImage | NodeType::UiImageButton | NodeType::UiNineSlice => {
+        NodeType::UiImage
+        | NodeType::UiImageButton
+        | NodeType::UiNineSliceButton
+        | NodeType::UiNineSlice => {
             texture_field(fields, "Image", "texture");
             push(fields, "Image", "texture_region", NodeFieldType::Vec4);
-            if matches!(node_type, NodeType::UiNineSlice) {
+            if matches!(
+                node_type,
+                NodeType::UiNineSliceButton | NodeType::UiNineSlice
+            ) {
                 push(fields, "Image", "margins", NodeFieldType::Vec4);
             }
         }
@@ -948,6 +960,16 @@ fn push_node_fields(fields: &mut Vec<SceneNodeField>, node_type: NodeType) {
             if matches!(node_type, NodeType::UiDropdown) {
                 push(fields, "State", "selected_index", NodeFieldType::I32);
                 push(fields, "State", "open", NodeFieldType::Bool);
+                push(fields, "Popup", "popup_size", NodeFieldType::Vec2);
+                push(fields, "Popup", "popup_offset", NodeFieldType::Vec2);
+                push(fields, "Popup", "popup_direction", NodeFieldType::String);
+                push(fields, "Popup", "open_animation", NodeFieldType::String);
+                push(
+                    fields,
+                    "Popup",
+                    "open_animation_duration",
+                    NodeFieldType::F32,
+                );
             }
             if matches!(node_type, NodeType::UiCheckbox) {
                 push(fields, "State", "checked", NodeFieldType::Bool);

@@ -36,12 +36,14 @@ fn extract_texture_source(data: &SceneDefNodeData) -> Option<String> {
         NodeType::Sprite2D => NodeField::Sprite2D(Sprite2DField::Texture),
         NodeType::Sprite3D => NodeField::Sprite3D(Sprite2DField::Texture),
         NodeType::ImageButton2D => NodeField::ImageButton2D(Button2DField::Texture),
+        NodeType::NineSliceButton2D => NodeField::NineSliceButton2D(Button2DField::Texture),
         NodeType::NineSlice2D => NodeField::NineSlice2D(Button2DField::Texture),
         NodeType::AnimatedSprite2D => {
             NodeField::AnimatedSprite2D(AnimatedSprite2DField::Texture)
         }
         NodeType::UiImage => NodeField::UiImage(UiImageField::Texture),
         NodeType::UiImageButton => NodeField::UiImageButton(UiImageField::Texture),
+        NodeType::UiNineSliceButton => NodeField::UiNineSliceButton(UiImageField::Texture),
         NodeType::UiNineSlice => NodeField::UiNineSlice(UiImageField::Texture),
         NodeType::UiAnimatedImage => NodeField::UiAnimatedImage(UiAnimatedImageField::Texture),
         _ => return None,

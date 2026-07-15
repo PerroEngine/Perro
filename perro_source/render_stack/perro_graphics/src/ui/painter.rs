@@ -1193,17 +1193,46 @@ fn push_nine_slice_shapes(
         return;
     }
     let [l, t, r, b] = clamp_nine_margins(image.margins, outer.width(), outer.height());
-    let [u0, v0] = image.uv_min;
-    let [u3, v3] = image.uv_max;
+    let texture_size = [image.texture_size[0] as f32, image.texture_size[1] as f32];
+    let pixel_region = image
+        .uv_min
+        .iter()
+        .chain(image.uv_max.iter())
+        .any(|v| *v > 1.0);
+    let ([u0, v0], [u3, v3]) = if pixel_region && texture_size[0] > 0.0 && texture_size[1] > 0.0 {
+        (
+            [
+                image.uv_min[0] / texture_size[0],
+                image.uv_min[1] / texture_size[1],
+            ],
+            [
+                image.uv_max[0] / texture_size[0],
+                image.uv_max[1] / texture_size[1],
+            ],
+        )
+    } else {
+        (image.uv_min, image.uv_max)
+    };
     let uw = (u3 - u0).max(0.0);
     let vh = (v3 - v0).max(0.0);
     if uw <= 0.0 || vh <= 0.0 {
         return;
     }
-    let ul = l.min(uw);
-    let ur = r.min((uw - ul).max(0.0));
-    let vt = t.min(vh);
-    let vb = b.min((vh - vt).max(0.0));
+    let (ul, ur, vt, vb) = if texture_size[0] > 0.0 && texture_size[1] > 0.0 {
+        let ul = (l / texture_size[0]).min(uw);
+        let ur = (r / texture_size[0]).min((uw - ul).max(0.0));
+        let vt = (t / texture_size[1]).min(vh);
+        let vb = (b / texture_size[1]).min((vh - vt).max(0.0));
+        (ul, ur, vt, vb)
+    } else {
+        // Keep the full image visible while texture data is still pending.
+        (
+            uw * l / outer.width(),
+            uw * r / outer.width(),
+            vh * t / outer.height(),
+            vh * b / outer.height(),
+        )
+    };
     let xs = [
         outer.left(),
         outer.left() + l,
@@ -1225,9 +1254,16 @@ fn push_nine_slice_shapes(
             {
                 continue;
             }
-            mesh.add_rect_with_uv(
+            add_tiled_nine_slice_patch(
+                &mut mesh,
                 Rect::from_min_max(pos2(xs[x], ys[y]), pos2(xs[x + 1], ys[y + 1])),
                 Rect::from_min_max(pos2(us[x], vs[y]), pos2(us[x + 1], vs[y + 1])),
+                [
+                    (us[x + 1] - us[x]) * texture_size[0],
+                    (vs[y + 1] - vs[y]) * texture_size[1],
+                ],
+                x == 1,
+                y == 1,
                 color32(image.tint),
             );
         }
@@ -1236,6 +1272,64 @@ fn push_nine_slice_shapes(
         clip_rect: clip_rect_from_state(image.clip_rect, viewport),
         shape: Shape::Mesh(mesh.into()),
     });
+}
+
+fn add_tiled_nine_slice_patch(
+    mesh: &mut Mesh,
+    rect: Rect,
+    uv: Rect,
+    source_size: [f32; 2],
+    tile_x: bool,
+    tile_y: bool,
+    color: Color32,
+) {
+    let x_count = if tile_x && source_size[0] > 0.0 {
+        (rect.width() / source_size[0]).ceil().clamp(1.0, 256.0) as usize
+    } else {
+        1
+    };
+    let y_count = if tile_y && source_size[1] > 0.0 {
+        (rect.height() / source_size[1]).ceil().clamp(1.0, 256.0) as usize
+    } else {
+        1
+    };
+    for y in 0..y_count {
+        let top = rect.top() + y as f32 * source_size[1];
+        let bottom = if y + 1 == y_count {
+            rect.bottom()
+        } else {
+            (top + source_size[1]).min(rect.bottom())
+        };
+        let v_fraction = if tile_y {
+            ((bottom - top) / source_size[1]).clamp(0.0, 1.0)
+        } else {
+            1.0
+        };
+        for x in 0..x_count {
+            let left = rect.left() + x as f32 * source_size[0];
+            let right = if x + 1 == x_count {
+                rect.right()
+            } else {
+                (left + source_size[0]).min(rect.right())
+            };
+            let u_fraction = if tile_x {
+                ((right - left) / source_size[0]).clamp(0.0, 1.0)
+            } else {
+                1.0
+            };
+            mesh.add_rect_with_uv(
+                Rect::from_min_max(pos2(left, top), pos2(right, bottom)),
+                Rect::from_min_max(
+                    uv.min,
+                    pos2(
+                        uv.min.x + uv.width() * u_fraction,
+                        uv.min.y + uv.height() * v_fraction,
+                    ),
+                ),
+                color,
+            );
+        }
+    }
 }
 
 fn clamp_nine_margins(margins: [f32; 4], w: f32, h: f32) -> [f32; 4] {
@@ -2391,6 +2485,58 @@ fn clamp_char_boundary(text: &str, mut index: usize) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn nine_slice_maps_pixel_margins_into_full_uv_region() {
+        let image = UiNineSliceDraw {
+            rect: UiRectState {
+                center: [100.0, 50.0],
+                size: [200.0, 100.0],
+                pivot: [0.5, 0.5],
+                rotation_radians: 0.0,
+                z_index: 0,
+            },
+            clip_rect: [0.0, 0.0, 800.0, 600.0],
+            texture: perro_ids::TextureID::from_parts(1, 1),
+            tint: perro_structs::Color::WHITE,
+            uv_min: [0.0, 0.0],
+            uv_max: [1.0, 1.0],
+            margins: [10.0, 10.0, 10.0, 10.0],
+            texture_size: [250, 125],
+        };
+        let mut shapes = Vec::new();
+
+        push_nine_slice_shapes(&image, [800.0, 600.0], &mut shapes);
+
+        let Shape::Mesh(mesh) = &shapes[0].shape else {
+            panic!("expected nine-slice mesh");
+        };
+        assert_eq!(mesh.vertices.len(), 36);
+        assert!(
+            mesh.vertices
+                .iter()
+                .any(|vertex| vertex.uv == pos2(0.04, 0.08))
+        );
+        assert!(
+            mesh.vertices
+                .iter()
+                .any(|vertex| vertex.uv == pos2(0.96, 0.92))
+        );
+        assert!(
+            mesh.vertices
+                .iter()
+                .any(|vertex| vertex.uv == pos2(1.0, 1.0))
+        );
+
+        let mut tiled = image.clone();
+        tiled.rect.size = [600.0, 300.0];
+        let mut tiled_shapes = Vec::new();
+        push_nine_slice_shapes(&tiled, [800.0, 600.0], &mut tiled_shapes);
+        let Shape::Mesh(tiled_mesh) = &tiled_shapes[0].shape else {
+            panic!("expected tiled nine-slice mesh");
+        };
+        assert_eq!(tiled_mesh.vertices.len(), 100);
+    }
 
     #[test]
     fn cover_image_crops_to_own_bounds() {

@@ -3,8 +3,8 @@ use perro_ids::TextureID;
 use perro_input_api::MouseButton;
 use perro_nodes::{
     AmbientLight2D, Button2D, CameraStream2D, CollisionShape2D, ImageButton2D, Label2D,
-    NineSlice2D, PointLight2D, RayLight2D, SceneNode, SceneNodeData, Shape2D, SpotLight2D,
-    StaticBody2D, TileMap2D, WaterBody2D, Webcam,
+    NineSlice2D, NineSliceButton2D, PointLight2D, RayLight2D, SceneNode, SceneNodeData, Shape2D,
+    SpotLight2D, StaticBody2D, TileMap2D, WaterBody2D, Webcam,
     camera_2d::Camera2D,
     node_2d::Node2D,
     particle_emitter_2d::ParticleEmitter2D,
@@ -1393,6 +1393,43 @@ fn nine_slice_2d_emits_nine_sprite_tilemap() {
         sprites
             .iter()
             .all(|sprite| sprite.texture == TextureID::from_parts(55, 0))
+    );
+}
+
+#[test]
+fn nine_slice_button_2d_emits_nine_sprite_tilemap_with_hover_tint() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+    let node = NodeAPI::create::<NineSliceButton2D>(&mut runtime);
+    if let Some(mut scene_node) = runtime.nodes.get_mut(node)
+        && let SceneNodeData::NineSliceButton2D(button) = &mut scene_node.data
+    {
+        button.texture = TextureID::from_parts(56, 0);
+        button.size = Vector2::new(100.0, 60.0);
+        button.margins = [10.0, 8.0, 12.0, 6.0];
+        button.hover_tint = perro_structs::Color::new(0.2, 0.4, 0.6, 1.0);
+    }
+
+    runtime.begin_input_frame();
+    runtime.set_mouse_position(400.0, 300.0);
+    runtime.extract_render_2d_commands();
+    let commands = collect_commands(&mut runtime);
+
+    let sprites = commands
+        .iter()
+        .find_map(|command| match command {
+            RenderCommand::TwoD(Command2D::UpsertTileMap { node: n, tilemap }) if *n == node => {
+                Some(tilemap.sprites.as_ref())
+            }
+            _ => None,
+        })
+        .expect("nine slice button tilemap");
+    assert_eq!(sprites.len(), 9);
+    assert!(sprites.iter().any(|sprite| sprite.size == [78.0, 46.0]));
+    assert!(
+        sprites
+            .iter()
+            .all(|sprite| sprite.tint == perro_structs::Color::new(0.2, 0.4, 0.6, 1.0))
     );
 }
 

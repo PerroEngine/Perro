@@ -72,7 +72,10 @@ impl Runtime {
 
         self.unregister_physics_body(id);
 
-        if matches!(ty, NodeType::Button2D | NodeType::ImageButton2D) {
+        if matches!(
+            ty,
+            NodeType::Button2D | NodeType::ImageButton2D | NodeType::NineSliceButton2D
+        ) {
             self.unregister_button_2d(id);
         }
 
@@ -250,7 +253,10 @@ impl Runtime {
     }
 
     fn register_button_2d(&mut self, id: NodeID, ty: NodeType) {
-        if !matches!(ty, NodeType::Button2D | NodeType::ImageButton2D) {
+        if !matches!(
+            ty,
+            NodeType::Button2D | NodeType::ImageButton2D | NodeType::NineSliceButton2D
+        ) {
             return;
         }
         let slot = id.index() as usize;

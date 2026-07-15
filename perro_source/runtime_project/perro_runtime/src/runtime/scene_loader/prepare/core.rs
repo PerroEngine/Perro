@@ -14,7 +14,7 @@ use perro_nodes::{
     AudioPortal2D, AudioPortal3D, BallJoint3D, Button2D, CameraStream, CameraStream2D,
     CameraStream3D, CharacterBody2D, CharacterBody3D, CollisionShape2D, CollisionShape3D,
     Decal3D, DistanceJoint2D, FixedJoint2D,
-    FixedJoint3D, HingeJoint3D, ImageButton2D, Label2D, Label3D, NineSlice2D, NodeType, PhysicsForceEmitter2D,
+    FixedJoint3D, HingeJoint3D, ImageButton2D, Label2D, Label3D, NineSlice2D, NineSliceButton2D, NodeType, PhysicsForceEmitter2D,
     PhysicsForceEmitter3D, PhysicsForceProfile, PinJoint2D, PointLight2D, RayLight2D,
     RigidBody2D, RigidBody3D, SceneNode, SceneNodeData, Shape2D, Shape3D, SpotLight2D,
     StaticBody2D, StaticBody3D, TextDecal3D, Triangle2DKind, UiCameraStream, UiVideoPlayer,
@@ -75,7 +75,7 @@ use perro_structs::{
 use perro_ui::{
     UiAnimatedImage, UiAnimatedImageFrameSet, UiNode, UiButton, UiCheckbox, UiColorPicker,
     UiDropdown, UiGrid, UiHLayout, UiImage, UiImageButton, UiImageScaleMode, UiLabel, UiLayout,
-    UiMouseFilter, UiNineSlice, UiPanel, UiProgressBar, UiScrollContainer, UiShape, UiShapeKind, UiTextAlign,
+    UiMouseFilter, UiNineSlice, UiNineSliceButton, UiPanel, UiProgressBar, UiScrollContainer, UiShape, UiShapeKind, UiTextAlign,
     UiTextBlock, UiTextBox, UiTreeList, UiTreeListItem, UiVLayout,
 };
 use rayon::prelude::*;
@@ -2043,6 +2043,7 @@ fn scene_node_data_from(
         }
         NodeType::Button2D => Ok(SceneNodeData::Button2D(Box::new(build_button_2d(data)))),
         NodeType::ImageButton2D => Ok(SceneNodeData::ImageButton2D(Box::new(build_image_button_2d(data)))),
+        NodeType::NineSliceButton2D => Ok(SceneNodeData::NineSliceButton2D(Box::new(build_nine_slice_button_2d(data)))),
         NodeType::Sprite2D => Ok(SceneNodeData::Sprite2D(build_sprite_2d(data))),
         NodeType::VideoPlayer2D => Ok(SceneNodeData::VideoPlayer2D(build_video_player_2d(data))),
         NodeType::Label2D => Ok(SceneNodeData::Label2D(build_label_2d(data))),
@@ -2176,6 +2177,7 @@ fn scene_node_data_from(
         NodeType::UiImage => Ok(SceneNodeData::UiImage(Box::new(build_ui_image(data)))),
         NodeType::UiVideoPlayer => Ok(SceneNodeData::UiVideoPlayer(Box::new(build_ui_video_player(data)))),
         NodeType::UiImageButton => Ok(SceneNodeData::UiImageButton(Box::new(build_ui_image_button(data)))),
+        NodeType::UiNineSliceButton => Ok(SceneNodeData::UiNineSliceButton(Box::new(build_ui_nine_slice_button(data)))),
         NodeType::UiNineSlice => Ok(SceneNodeData::UiNineSlice(Box::new(build_ui_nine_slice(data)))),
         NodeType::UiAnimatedImage => Ok(SceneNodeData::UiAnimatedImage(Box::new(build_ui_animated_image(
             data,

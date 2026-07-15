@@ -147,6 +147,40 @@ fn sprite_3d_and_label_3d_emit_projected_ui_commands() {
 }
 
 #[test]
+fn label_3d_stays_visible_when_rotated_edge_crosses_camera_plane() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+    let camera = NodeAPI::create::<Camera3D>(&mut runtime);
+    let label = NodeAPI::create::<Label3D>(&mut runtime);
+    if let Some(mut node) = runtime.nodes.get_mut(camera)
+        && let SceneNodeData::Camera3D(data) = &mut node.data
+    {
+        data.active = true;
+        data.projection = CameraProjection::Perspective {
+            fov_y_degrees: 60.0,
+            near: 0.1,
+            far: 100.0,
+        };
+    }
+    if let Some(mut node) = runtime.nodes.get_mut(label)
+        && let SceneNodeData::Label3D(data) = &mut node.data
+    {
+        data.text = "Near".into();
+        data.size.x = 2.0;
+        data.transform.position = Vector3::new(0.0, 0.0, -0.2);
+        data.transform.rotation = Quaternion::from_euler_xyz(0.0, 1.2, 0.0);
+    }
+
+    runtime.extract_render_3d_commands();
+    let commands = collect_commands(&mut runtime);
+
+    assert!(commands.iter().any(|command| matches!(
+        command,
+        RenderCommand::Ui(UiCommand::UpsertLabel { node, .. }) if *node == label
+    )));
+}
+
+#[test]
 fn text_decal_3d_rasterizes_text_and_emits_decal_state() {
     let mut runtime = Runtime::new();
     let text_decal = NodeAPI::create::<TextDecal3D>(&mut runtime);

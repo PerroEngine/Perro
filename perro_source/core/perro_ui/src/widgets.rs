@@ -221,6 +221,57 @@ pub struct UiImageButton {
     pub disabled: bool,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct UiNineSliceButton {
+    pub base: UiNode,
+    pub texture: TextureID,
+    pub texture_region: Option<[f32; 4]>,
+    pub margins: [f32; 4],
+    pub tint: Color,
+    pub hover_tint: Color,
+    pub pressed_tint: Color,
+    pub input_mask: UiInputMask,
+    pub cursor_icon: CursorIcon,
+    pub hover_base: Option<UiNode>,
+    pub pressed_base: Option<UiNode>,
+    pub hover_size_override: bool,
+    pub pressed_size_override: bool,
+    pub hover_signals: Vec<SignalID>,
+    pub hover_exit_signals: Vec<SignalID>,
+    pub pressed_signals: Vec<SignalID>,
+    pub released_signals: Vec<SignalID>,
+    pub clicked_signals: Vec<SignalID>,
+    pub web: Option<UiButtonWebAction>,
+    pub disabled: bool,
+}
+
+impl UiNineSliceButton {
+    pub const fn new() -> Self {
+        Self {
+            base: UiNode::new(),
+            texture: TextureID::nil(),
+            texture_region: None,
+            margins: [8.0, 8.0, 8.0, 8.0],
+            tint: Color::WHITE,
+            hover_tint: Color::WHITE,
+            pressed_tint: Color::WHITE,
+            input_mask: UiInputMask::new(),
+            cursor_icon: CursorIcon::Pointer,
+            hover_base: None,
+            pressed_base: None,
+            hover_size_override: false,
+            pressed_size_override: false,
+            hover_signals: Vec::new(),
+            hover_exit_signals: Vec::new(),
+            pressed_signals: Vec::new(),
+            released_signals: Vec::new(),
+            clicked_signals: Vec::new(),
+            web: None,
+            disabled: false,
+        }
+    }
+}
+
 impl UiImageButton {
     pub const fn new() -> Self {
         Self {
@@ -454,6 +505,22 @@ impl UiDropdownOption {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum UiDropdownDirection {
+    #[default]
+    Down,
+    Up,
+    Left,
+    Right,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum UiDropdownOpenAnimation {
+    #[default]
+    Pop,
+    Extend,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct UiDropdown {
     pub button: UiButton,
@@ -465,9 +532,21 @@ pub struct UiDropdown {
     pub option_hover_style: UiStyle,
     pub option_pressed_style: UiStyle,
     pub option_height: f32,
+    /// Pixel size for popup. Zero axes use button width and option-list height.
+    pub popup_size: [f32; 2],
+    /// Pixel offset from direction-based popup placement.
+    pub popup_offset: [f32; 2],
+    pub popup_direction: UiDropdownDirection,
+    pub open_animation: UiDropdownOpenAnimation,
+    pub open_animation_duration: f32,
     pub internal_label: NodeID,
+    pub internal_popup_panel: NodeID,
     pub internal_option_buttons: Vec<NodeID>,
     pub internal_option_labels: Vec<NodeID>,
+    #[doc(hidden)]
+    pub open_animation_progress: f32,
+    #[doc(hidden)]
+    pub was_open: bool,
     pub selected_signals: Vec<SignalID>,
 }
 
@@ -491,9 +570,17 @@ impl UiDropdown {
                 ..UiStyle::button()
             },
             option_height: 28.0,
+            popup_size: [0.0, 0.0],
+            popup_offset: [0.0, 0.0],
+            popup_direction: UiDropdownDirection::Down,
+            open_animation: UiDropdownOpenAnimation::Pop,
+            open_animation_duration: 0.18,
             internal_label: NodeID::nil(),
+            internal_popup_panel: NodeID::nil(),
             internal_option_buttons: Vec::new(),
             internal_option_labels: Vec::new(),
+            open_animation_progress: 0.0,
+            was_open: false,
             selected_signals: Vec::new(),
         }
     }
@@ -598,6 +685,36 @@ impl UiNodeBase for UiShape {
 impl Default for UiImageButton {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl Default for UiNineSliceButton {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Deref for UiNineSliceButton {
+    type Target = UiNode;
+
+    fn deref(&self) -> &Self::Target {
+        &self.base
+    }
+}
+
+impl DerefMut for UiNineSliceButton {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.base
+    }
+}
+
+impl UiNodeBase for UiNineSliceButton {
+    fn ui_base(&self) -> &UiNode {
+        &self.base
+    }
+
+    fn ui_base_mut(&mut self) -> &mut UiNode {
+        &mut self.base
     }
 }
 

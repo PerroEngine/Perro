@@ -196,6 +196,16 @@ fn build_ui_image_button(data: &SceneDefNodeData) -> UiImageButton {
     node
 }
 
+fn build_ui_nine_slice_button(data: &SceneDefNodeData) -> UiNineSliceButton {
+    let mut node = UiNineSliceButton::new();
+    if let Some(base) = data.base_ref() {
+        apply_ui_root_data(&mut node.base, base);
+    }
+    apply_ui_root_fields(&mut node.base, &data.fields);
+    apply_ui_nine_slice_button_fields(&mut node, &data.fields);
+    node
+}
+
 fn build_ui_nine_slice(data: &SceneDefNodeData) -> UiNineSlice {
     let mut node = UiNineSlice::new();
     if let Some(base) = data.base_ref() {
@@ -895,6 +905,39 @@ fn apply_ui_dropdown_fields(
                 node.option_height = v.max(8.0);
             }
         }
+        "popup_size" => {
+            if let Some(v) = as_vec2(value) {
+                node.popup_size = [v.x.max(0.0), v.y.max(0.0)];
+            }
+        }
+        "popup_offset" => {
+            if let Some(v) = as_vec2(value) {
+                node.popup_offset = [v.x, v.y];
+            }
+        }
+        "popup_direction" | "direction" => {
+            if let Some(v) = as_str(value) {
+                node.popup_direction = match v {
+                    "up" => perro_ui::UiDropdownDirection::Up,
+                    "left" => perro_ui::UiDropdownDirection::Left,
+                    "right" => perro_ui::UiDropdownDirection::Right,
+                    _ => perro_ui::UiDropdownDirection::Down,
+                };
+            }
+        }
+        "open_animation" | "popup_animation" => {
+            if let Some(v) = as_str(value) {
+                node.open_animation = match v {
+                    "extend" | "expand" => perro_ui::UiDropdownOpenAnimation::Extend,
+                    _ => perro_ui::UiDropdownOpenAnimation::Pop,
+                };
+            }
+        }
+        "open_animation_duration" | "popup_animation_duration" => {
+            if let Some(v) = as_f32(value) {
+                node.open_animation_duration = v.max(0.0);
+            }
+        }
         "selected_signals" | "changed_signals" | "value_changed_signals" => {
             node.selected_signals = as_signal_ids(value);
         }
@@ -1330,6 +1373,97 @@ fn apply_ui_nine_slice_fields(node: &mut UiNineSlice, fields: &[SceneObjectField
             }
         }
         _ => {}
+    });
+}
+
+fn apply_ui_nine_slice_button_fields(node: &mut UiNineSliceButton, fields: &[SceneObjectField]) {
+    apply_ui_input_mask_fields(&mut node.input_mask, fields);
+    SceneFieldIterRef::new(fields).for_each(|name, value| match name {
+        "disabled" => {
+            if let Some(v) = as_bool(value) {
+                node.disabled = v;
+            }
+        }
+        name if scene_key_in(name, HOVER_ENTER_SIGNAL_KEYS) => node.hover_signals = as_signal_ids(value),
+        name if scene_key_in(name, HOVER_EXIT_SIGNAL_KEYS) => node.hover_exit_signals = as_signal_ids(value),
+        "pressed_signals" | "press_signals" => node.pressed_signals = as_signal_ids(value),
+        "released_signals" | "release_signals" => node.released_signals = as_signal_ids(value),
+        "clicked_signals" | "click_signals" => node.clicked_signals = as_signal_ids(value),
+        "web" => node.web = parse_ui_button_web_action(value),
+        "cursor_icon" | "hover_cursor_icon" => {
+            if let Some(v) = as_cursor_icon(value) {
+                node.cursor_icon = v;
+            }
+        }
+        name if scene_key_in(name, COLOR_MODULATE_KEYS) => {
+            if let Some(v) = as_scene_color(value) {
+                node.tint = v;
+            }
+        }
+        name if scene_key_in(name, TEXTURE_REGION_KEYS) => {
+            if let Some((x, y, w, h)) = value.as_vec4() && w > 0.0 && h > 0.0 {
+                node.texture_region = Some([x, y, w, h]);
+            }
+        }
+        "margins" | "slice" | "slices" => {
+            if let Some(v) = as_margins_4(value) {
+                node.margins = v;
+            }
+        }
+        _ => {}
+    });
+    node.hover_tint = node.tint;
+    node.pressed_tint = node.tint;
+    SceneFieldIterRef::new(fields).for_each(|name, value| match name {
+        "hover_tint" | "hover_color" | "hover_modulate" => {
+            if let Some(v) = as_scene_color(value) {
+                node.hover_tint = v;
+            }
+        }
+        "pressed_tint" | "pressed_color" | "pressed_modulate" => {
+            if let Some(v) = as_scene_color(value) {
+                node.pressed_tint = v;
+            }
+        }
+        _ => {}
+    });
+    apply_ui_nine_slice_button_state_fields(node, fields, "hover");
+    apply_ui_nine_slice_button_state_fields(node, fields, "pressed");
+}
+
+fn apply_ui_nine_slice_button_state_fields(
+    node: &mut UiNineSliceButton,
+    fields: &[SceneObjectField],
+    state_name: &str,
+) {
+    SceneFieldIterRef::new(fields).for_each(|name, value| {
+        if name != state_name {
+            return;
+        }
+        let SceneValue::Object(entries) = value else {
+            return;
+        };
+        let mut base = node.base.clone();
+        let size_override = ui_state_has_explicit_size_override(entries.as_ref());
+        apply_ui_root_fields(&mut base, entries.as_ref());
+        let tint = ui_state_tint(entries.as_ref());
+        match state_name {
+            "hover" => {
+                if let Some(tint) = tint {
+                    node.hover_tint = tint;
+                }
+                node.hover_base = Some(base);
+                node.hover_size_override = size_override;
+            }
+            "pressed" => {
+                if let Some(tint) = tint {
+                    node.pressed_tint = tint;
+                }
+                node.pressed_base = Some(base);
+                node.pressed_size_override = size_override;
+            }
+            _ => {}
+        }
     });
 }
 

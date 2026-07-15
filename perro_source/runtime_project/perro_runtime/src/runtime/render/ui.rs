@@ -16,9 +16,10 @@ use perro_render_bridge::{
 use perro_runtime_render::{UiDirtyMask, UiExtractionOptions, ui_image_texture_request};
 use perro_structs::{Color, UVector2, Vector2};
 use perro_ui::{
-    ComputedUiRect, UiAnchor, UiButton, UiFontSizing, UiHorizontalAlign, UiImageScaleMode,
-    UiLayoutData, UiLayoutMode, UiLayoutSpacingMode, UiNode, UiPanel, UiSizeMode, UiStyle,
-    UiTextBox, UiTextEdit, UiTransform, UiVector2, UiVerticalAlign,
+    ComputedUiRect, UiAnchor, UiButton, UiDropdownDirection, UiDropdownOpenAnimation, UiFontSizing,
+    UiHorizontalAlign, UiImageScaleMode, UiLayoutData, UiLayoutMode, UiLayoutSpacingMode, UiNode,
+    UiPanel, UiSizeMode, UiStyle, UiTextBox, UiTextEdit, UiTransform, UiUnit, UiVector2,
+    UiVerticalAlign,
 };
 use perro_variant::Variant;
 use std::borrow::Cow;
@@ -135,6 +136,13 @@ impl Runtime {
                 buttons.push(node);
                 focusables.push(node);
             }
+            SceneNodeData::UiNineSliceButton(button) => {
+                if !button.visible || button.disabled || !button.input_enabled {
+                    return;
+                }
+                buttons.push(node);
+                focusables.push(node);
+            }
             SceneNodeData::UiNineSlice(_) => {}
             data => {
                 let Some(edit) = text_edit_ref(data) else {
@@ -172,6 +180,7 @@ impl Runtime {
             .and_then(|scene_node| match &scene_node.data {
                 SceneNodeData::UiImage(image) => Some(image.texture),
                 SceneNodeData::UiImageButton(image) => Some(image.texture),
+                SceneNodeData::UiNineSliceButton(image) => Some(image.texture),
                 SceneNodeData::UiNineSlice(image) => Some(image.texture),
                 SceneNodeData::UiAnimatedImage(image) => Some(image.texture),
                 SceneNodeData::UiVideoPlayer(video) => Some(video.video.texture),
@@ -227,6 +236,10 @@ impl Runtime {
                     !image.texture.is_nil()
                         && self.resource_api.is_texture_id_pending(image.texture)
                 }
+                SceneNodeData::UiNineSliceButton(image) => {
+                    !image.texture.is_nil()
+                        && self.resource_api.is_texture_id_pending(image.texture)
+                }
                 SceneNodeData::UiNineSlice(image) => {
                     !image.texture.is_nil()
                         && self.resource_api.is_texture_id_pending(image.texture)
@@ -257,6 +270,7 @@ impl Runtime {
         self.refresh_locale_text_bindings();
         self.render_ui.pointer_screen_point = None;
         let total_start = timing.as_ref().map(|_| Instant::now());
+        let dropdown_animation_changed = self.update_dropdown_open_animations();
         let bootstrap_scan = self.render_ui.prev_visible.is_empty()
             && self.render_ui.retained_commands.is_empty()
             && self.render_ui.computed_rects.is_empty();
@@ -273,6 +287,7 @@ impl Runtime {
             || input_changed
             || scroll_input_changed
             || text_input_changed
+            || dropdown_animation_changed
             || self.has_active_scroll_container_animation();
         if !has_extraction_work {
             if let (Some(timing), Some(total_start)) = (timing, total_start) {
@@ -500,6 +515,7 @@ impl Runtime {
                 match &mut scene_node.data {
                     SceneNodeData::UiImage(image) => image.texture = texture,
                     SceneNodeData::UiImageButton(image) => image.texture = texture,
+                    SceneNodeData::UiNineSliceButton(image) => image.texture = texture,
                     SceneNodeData::UiNineSlice(image) => image.texture = texture,
                     SceneNodeData::UiAnimatedImage(image) => image.texture = texture,
                     _ => {}
@@ -1162,6 +1178,53 @@ impl Runtime {
         }
     }
 
+    fn update_dropdown_open_animations(&mut self) -> bool {
+        let dt = self.time.delta.max(0.0);
+        let ids = self
+            .nodes
+            .iter()
+            .filter_map(|(id, node)| {
+                matches!(node.data, SceneNodeData::UiDropdown(_)).then_some(id)
+            })
+            .collect::<Vec<_>>();
+        let mut changed = false;
+        for id in ids {
+            let mut node_changed = false;
+            if let Some(node) = self.nodes.get_mut_untracked(id)
+                && let SceneNodeData::UiDropdown(dropdown) = &mut node.data
+            {
+                if dropdown.open != dropdown.was_open {
+                    dropdown.was_open = dropdown.open;
+                    dropdown.open_animation_progress = if dropdown.open
+                        && matches!(dropdown.open_animation, UiDropdownOpenAnimation::Pop)
+                    {
+                        1.0
+                    } else {
+                        0.0
+                    };
+                    node_changed = true;
+                }
+                if dropdown.open
+                    && matches!(dropdown.open_animation, UiDropdownOpenAnimation::Extend)
+                    && dropdown.open_animation_progress < 1.0
+                {
+                    let duration = dropdown.open_animation_duration;
+                    dropdown.open_animation_progress = if duration <= 0.0 {
+                        1.0
+                    } else {
+                        (dropdown.open_animation_progress + dt / duration).min(1.0)
+                    };
+                    node_changed = true;
+                }
+            }
+            if node_changed {
+                changed = true;
+                self.mark_ui_dirty(id, Self::UI_DIRTY_LAYOUT_SELF | Self::UI_DIRTY_COMMANDS);
+            }
+        }
+        changed
+    }
+
     fn ensure_dropdown_internal_nodes(&mut self) {
         // Same gating as tree lists: only re-sync dropdowns whose node is
         // dirty this frame. Engine-side open/select paths call
@@ -1183,12 +1246,13 @@ impl Runtime {
     }
 
     fn ensure_dropdown_internal_nodes_for(&mut self, dropdown_id: NodeID) {
-        let Some((label_id, mut option_buttons, mut option_labels, option_count)) = self
+        let Some((label_id, popup_id, mut option_buttons, mut option_labels, option_count)) = self
             .nodes
             .get(dropdown_id)
             .and_then(|node| match &node.data {
                 SceneNodeData::UiDropdown(dropdown) => Some((
                     dropdown.internal_label,
+                    dropdown.internal_popup_panel,
                     dropdown.internal_option_buttons.clone(),
                     dropdown.internal_option_labels.clone(),
                     dropdown.options.len(),
@@ -1200,8 +1264,12 @@ impl Runtime {
         };
 
         let mut label_id = label_id;
+        let mut popup_id = popup_id;
         if !self.dropdown_internal_valid(label_id, dropdown_id, "label") {
             label_id = self.insert_dropdown_label(dropdown_id, "__perro_dropdown_label");
+        }
+        if !self.dropdown_internal_valid(popup_id, dropdown_id, "panel") {
+            popup_id = self.insert_dropdown_popup_panel(dropdown_id);
         }
         for id in option_buttons.iter().copied().skip(option_count) {
             if let Some(node) = self.nodes.get_mut_untracked(id)
@@ -1227,8 +1295,8 @@ impl Runtime {
             option_labels.resize(option_count, NodeID::nil());
         }
         for idx in 0..option_count {
-            if !self.dropdown_internal_valid(option_buttons[idx], dropdown_id, "button") {
-                option_buttons[idx] = self.insert_dropdown_option_button(dropdown_id, idx);
+            if !self.dropdown_internal_valid(option_buttons[idx], popup_id, "button") {
+                option_buttons[idx] = self.insert_dropdown_option_button(popup_id, idx);
             }
             if !self.dropdown_internal_valid(option_labels[idx], option_buttons[idx], "label") {
                 option_labels[idx] = self
@@ -1240,6 +1308,7 @@ impl Runtime {
             && let SceneNodeData::UiDropdown(dropdown) = &mut node.data
         {
             dropdown.internal_label = label_id;
+            dropdown.internal_popup_panel = popup_id;
             dropdown.internal_option_buttons = option_buttons;
             dropdown.internal_option_labels = option_labels;
         }
@@ -1254,17 +1323,29 @@ impl Runtime {
                 && match kind {
                     "button" => matches!(node.data, SceneNodeData::UiButton(_)),
                     "label" => matches!(node.data, SceneNodeData::UiLabel(_)),
+                    "panel" => matches!(node.data, SceneNodeData::UiPanel(_)),
                     _ => false,
                 }
         })
     }
 
-    fn insert_dropdown_option_button(&mut self, dropdown_id: NodeID, idx: usize) -> NodeID {
+    fn insert_dropdown_popup_panel(&mut self, dropdown_id: NodeID) -> NodeID {
+        let mut panel = UiPanel::new();
+        panel.base.layout.z_index = 100;
+        panel.base.clip_children = true;
+        self.insert_color_picker_internal_node(
+            dropdown_id,
+            "__perro_dropdown_popup",
+            SceneNodeData::UiPanel(Box::new(panel)),
+        )
+    }
+
+    fn insert_dropdown_option_button(&mut self, popup_id: NodeID, idx: usize) -> NodeID {
         let mut button = UiButton::new();
         button.base.layout.z_index = 100;
         button.base.clip_children = false;
         self.insert_color_picker_internal_node(
-            dropdown_id,
+            popup_id,
             format!("__perro_dropdown_option_{idx}"),
             SceneNodeData::UiButton(Box::new(button)),
         )
@@ -1296,15 +1377,22 @@ impl Runtime {
                     dropdown.open,
                     dropdown.button.base.visible,
                     dropdown.option_height,
+                    dropdown.popup_size,
+                    dropdown.popup_offset,
+                    dropdown.popup_direction,
+                    dropdown.open_animation,
+                    dropdown.open_animation_progress,
                     dropdown.option_style.clone(),
                     dropdown.option_hover_style.clone(),
                     dropdown.option_pressed_style.clone(),
+                    dropdown.popup_style.clone(),
                     dropdown
                         .options
                         .iter()
                         .map(|option| option.label.to_string())
                         .collect::<Vec<_>>(),
                     dropdown.internal_label,
+                    dropdown.internal_popup_panel,
                     dropdown.internal_option_buttons.clone(),
                     dropdown.internal_option_labels.clone(),
                 )),
@@ -1318,11 +1406,18 @@ impl Runtime {
             open,
             base_visible,
             option_height,
+            popup_size,
+            popup_offset,
+            popup_direction,
+            open_animation,
+            open_animation_progress,
             option_style,
             option_hover_style,
             option_pressed_style,
+            popup_style,
             labels,
             label_id,
+            popup_id,
             option_buttons,
             option_labels,
         ) = snapshot;
@@ -1331,6 +1426,83 @@ impl Runtime {
         {
             label.base.visible = base_visible;
             label.set_text(selected);
+        }
+        let full_popup_height = if popup_size[1] > 0.0 {
+            popup_size[1]
+        } else {
+            option_height * labels.len() as f32
+        };
+        let progress = if matches!(open_animation, UiDropdownOpenAnimation::Extend) {
+            open_animation_progress
+        } else {
+            1.0
+        };
+        let mut popup_width = if popup_size[0] > 0.0 {
+            UiUnit::Pixels(popup_size[0])
+        } else {
+            UiUnit::Percent(100.0)
+        };
+        if matches!(
+            popup_direction,
+            UiDropdownDirection::Left | UiDropdownDirection::Right
+        ) && matches!(open_animation, UiDropdownOpenAnimation::Extend)
+        {
+            popup_width = match popup_width {
+                UiUnit::Pixels(value) => UiUnit::Pixels(value * progress),
+                UiUnit::Percent(value) => UiUnit::Percent(value * progress),
+            };
+        }
+        let popup_height = if matches!(
+            popup_direction,
+            UiDropdownDirection::Left | UiDropdownDirection::Right
+        ) {
+            full_popup_height
+        } else {
+            full_popup_height * progress
+        };
+        if let Some(node) = self.nodes.get_mut_untracked(popup_id)
+            && let SceneNodeData::UiPanel(panel) = &mut node.data
+        {
+            panel.base.visible = open && base_visible;
+            panel.base.clip_children = true;
+            panel.base.layout.size = UiVector2::new(popup_width, UiUnit::Pixels(popup_height));
+            panel.base.layout.z_index = 100;
+            panel.style = popup_style;
+            panel.base.transform.translation = Vector2::ZERO;
+            match popup_direction {
+                UiDropdownDirection::Down => {
+                    panel.base.layout.anchor = UiAnchor::Top;
+                    panel.base.transform.position =
+                        UiVector2::pixels(popup_offset[0], popup_height + popup_offset[1]);
+                }
+                UiDropdownDirection::Up => {
+                    panel.base.layout.anchor = UiAnchor::Bottom;
+                    panel.base.transform.position =
+                        UiVector2::pixels(popup_offset[0], -popup_height + popup_offset[1]);
+                }
+                UiDropdownDirection::Left => {
+                    panel.base.layout.anchor = UiAnchor::Left;
+                    panel.base.transform.position = UiVector2::new(
+                        match popup_width {
+                            UiUnit::Pixels(value) => UiUnit::Pixels(-value),
+                            UiUnit::Percent(value) => UiUnit::Percent(50.0 - value),
+                        },
+                        UiUnit::Pixels(popup_offset[1]),
+                    );
+                    panel.base.transform.translation.x = popup_offset[0];
+                }
+                UiDropdownDirection::Right => {
+                    panel.base.layout.anchor = UiAnchor::Right;
+                    panel.base.transform.position = UiVector2::new(
+                        match popup_width {
+                            UiUnit::Pixels(value) => UiUnit::Pixels(value),
+                            UiUnit::Percent(value) => UiUnit::Percent(50.0 + value),
+                        },
+                        UiUnit::Pixels(popup_offset[1]),
+                    );
+                    panel.base.transform.translation.x = popup_offset[0];
+                }
+            }
         }
         for (idx, button_id) in option_buttons.iter().copied().enumerate() {
             let active = idx < labels.len();
@@ -1342,10 +1514,24 @@ impl Runtime {
                     perro_ui::UiUnit::Percent(100.0),
                     perro_ui::UiUnit::Pixels(option_height),
                 );
-                button.base.transform.position =
-                    UiVector2::pixels(0.0, option_height * (idx + 1) as f32);
-                button.base.layout.anchor = UiAnchor::Top;
-                button.base.layout.z_index = 100 + idx as i32;
+                match popup_direction {
+                    UiDropdownDirection::Down => {
+                        button.base.transform.position =
+                            UiVector2::pixels(0.0, option_height * idx as f32);
+                        button.base.layout.anchor = UiAnchor::Bottom;
+                    }
+                    UiDropdownDirection::Up => {
+                        button.base.transform.position =
+                            UiVector2::pixels(0.0, -option_height * idx as f32);
+                        button.base.layout.anchor = UiAnchor::Top;
+                    }
+                    UiDropdownDirection::Left | UiDropdownDirection::Right => {
+                        button.base.transform.position =
+                            UiVector2::pixels(0.0, -option_height * idx as f32);
+                        button.base.layout.anchor = UiAnchor::Top;
+                    }
+                }
+                button.base.layout.z_index = 1 + idx as i32;
                 button.style = option_style.clone();
                 button.hover_style = option_hover_style.clone();
                 button.pressed_style = option_pressed_style.clone();

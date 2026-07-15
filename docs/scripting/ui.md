@@ -189,6 +189,9 @@ Use `UiViewport` for a UI-owned local preview scene.
 
 - `UiButton` that opens an option-list popup.
 - Holds `options` (`label` / `value`), `selected_index`, `open`, `popup_style`, `option_style`, `option_height`.
+- `popup_size = (width, height)` resizes list. `0` axis use button width or option-list height.
+- `popup_offset` moves list. `popup_direction` = `down`, `up`, `left`, or `right`.
+- `open_animation` = `pop` or `extend`. `open_animation_duration` uses sec.
 - Emits `selected_signals` on choice.
 - Use it for enum pickers, quality settings, and menu selects.
 

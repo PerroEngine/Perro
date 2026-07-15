@@ -98,6 +98,29 @@ pub struct ImageButton2D {
     pub label: Cow<'static, str>,
 }
 
+#[derive(Clone, Debug)]
+pub struct NineSliceButton2D {
+    pub base: Node2D,
+    pub size: Vector2,
+    pub texture: TextureID,
+    pub texture_region: Option<[f32; 4]>,
+    pub margins: [f32; 4],
+    pub tint: Color,
+    pub hover_tint: Color,
+    pub pressed_tint: Color,
+    pub input_mask: UiInputMask,
+    pub mouse_filter: UiMouseFilter,
+    pub cursor_icon: CursorIcon,
+    pub input_enabled: bool,
+    pub clicked_signals: Vec<SignalID>,
+    pub hover_signals: Vec<SignalID>,
+    pub hover_exit_signals: Vec<SignalID>,
+    pub pressed_signals: Vec<SignalID>,
+    pub released_signals: Vec<SignalID>,
+    pub web: Option<UiButtonWebAction>,
+    pub label: Cow<'static, str>,
+}
+
 impl ImageButton2D {
     #[deprecated(note = "use ImageButton2D::default()")]
     pub fn new() -> Self {
@@ -130,6 +153,32 @@ impl Default for ImageButton2D {
     }
 }
 
+impl Default for NineSliceButton2D {
+    fn default() -> Self {
+        Self {
+            base: Node2D::new(),
+            size: Vector2::new(128.0, 48.0),
+            texture: TextureID::nil(),
+            texture_region: None,
+            margins: [8.0, 8.0, 8.0, 8.0],
+            tint: Color::WHITE,
+            hover_tint: Color::new(1.0, 1.0, 1.0, 0.9),
+            pressed_tint: Color::new(0.8, 0.8, 0.8, 1.0),
+            input_mask: UiInputMask::default(),
+            mouse_filter: UiMouseFilter::Stop,
+            cursor_icon: CursorIcon::Pointer,
+            input_enabled: true,
+            clicked_signals: Vec::new(),
+            hover_signals: Vec::new(),
+            hover_exit_signals: Vec::new(),
+            pressed_signals: Vec::new(),
+            released_signals: Vec::new(),
+            web: None,
+            label: Cow::Borrowed(""),
+        }
+    }
+}
+
 impl Deref for ImageButton2D {
     type Target = Node2D;
 
@@ -139,6 +188,20 @@ impl Deref for ImageButton2D {
 }
 
 impl DerefMut for ImageButton2D {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.base
+    }
+}
+
+impl Deref for NineSliceButton2D {
+    type Target = Node2D;
+
+    fn deref(&self) -> &Self::Target {
+        &self.base
+    }
+}
+
+impl DerefMut for NineSliceButton2D {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.base
     }

@@ -25,7 +25,7 @@ use perro_resource_api::sub_apis::{MaterialAPI, MeshAPI, TextureAPI};
 use perro_runtime_render::{TextDecalTextureCache, material_3d_request, mesh_3d_request};
 use perro_structs::{BitMask, Color, Vector2, Vector3};
 use std::borrow::Cow;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 const PARTICLE_PATH_CACHE_MAX: usize = 256;
 
@@ -2916,25 +2916,30 @@ fn sliding_window_max(input: &[u8], radius: usize, out: &mut [u8]) {
     }
 }
 
-fn load_text_decal_font_data() -> Option<Vec<u8>> {
-    let mut db = fontdb::Database::new();
-    db.load_system_fonts();
-    let query = fontdb::Query {
-        families: &[
-            fontdb::Family::SansSerif,
-            fontdb::Family::Name("Arial"),
-            fontdb::Family::Name("DejaVu Sans"),
-            fontdb::Family::Name("Noto Sans"),
-        ],
-        ..fontdb::Query::default()
-    };
-    let id = db.query(&query)?;
-    let face = db.face(id)?;
-    match &face.source {
-        fontdb::Source::Binary(data) => Some(data.as_ref().as_ref().to_vec()),
-        fontdb::Source::File(path) => std::fs::read(path).ok(),
-        fontdb::Source::SharedFile(path, _) => std::fs::read(path).ok(),
-    }
+fn load_text_decal_font_data() -> Option<&'static [u8]> {
+    static FONT_DATA: OnceLock<Option<Vec<u8>>> = OnceLock::new();
+    FONT_DATA
+        .get_or_init(|| {
+            let mut db = fontdb::Database::new();
+            db.load_system_fonts();
+            let query = fontdb::Query {
+                families: &[
+                    fontdb::Family::SansSerif,
+                    fontdb::Family::Name("Arial"),
+                    fontdb::Family::Name("DejaVu Sans"),
+                    fontdb::Family::Name("Noto Sans"),
+                ],
+                ..fontdb::Query::default()
+            };
+            let id = db.query(&query)?;
+            let face = db.face(id)?;
+            match &face.source {
+                fontdb::Source::Binary(data) => Some(data.as_ref().as_ref().to_vec()),
+                fontdb::Source::File(path) => std::fs::read(path).ok(),
+                fontdb::Source::SharedFile(path, _) => std::fs::read(path).ok(),
+            }
+        })
+        .as_deref()
 }
 
 struct TextDecalFontRaster<'a, 'font> {
@@ -3111,13 +3116,11 @@ fn world_rect_3d(
     let right = rotation * Vec3::X * (size.x * transform.scale.x.abs() * 0.5);
     let up = rotation * Vec3::Y * (size.y * transform.scale.y.abs() * 0.5);
     let center_screen = project_world_to_ui(center, view_proj, viewport)?;
-    let right_screen = project_world_to_ui(center + right, view_proj, viewport)?;
-    let up_screen = project_world_to_ui(center + up, view_proj, viewport)?;
-    let width = ((right_screen[0] - center_screen[0]).hypot(right_screen[1] - center_screen[1])
-        * 2.0)
-        .max(0.001);
-    let height =
-        ((up_screen[0] - center_screen[0]).hypot(up_screen[1] - center_screen[1]) * 2.0).max(0.001);
+    // Use projection derivatives at the center. Projecting full corners makes
+    // labels vanish when a large or steeply rotated corner crosses the near
+    // plane even though the label center remains visible.
+    let width = projected_axis_size_3d(center, right, view_proj, viewport)?.max(0.001);
+    let height = projected_axis_size_3d(center, up, view_proj, viewport)?.max(0.001);
     Some(UiRectState {
         center: center_screen,
         size: [width, height],
@@ -3125,6 +3128,24 @@ fn world_rect_3d(
         rotation_radians: 0.0,
         z_index: 0,
     })
+}
+
+fn projected_axis_size_3d(
+    center: Vec3,
+    half_axis: Vec3,
+    view_proj: Mat4,
+    viewport: Vector2,
+) -> Option<f32> {
+    let clip = view_proj * center.extend(1.0);
+    let delta = view_proj * half_axis.extend(0.0);
+    if !clip.is_finite() || !delta.is_finite() || clip.w <= 1.0e-6 {
+        return None;
+    }
+    let inv_w_sq = 1.0 / (clip.w * clip.w);
+    let dx = (delta.x * clip.w - clip.x * delta.w) * inv_w_sq * viewport.x.max(1.0);
+    let dy = (delta.y * clip.w - clip.y * delta.w) * inv_w_sq * viewport.y.max(1.0);
+    let size = dx.hypot(dy);
+    size.is_finite().then_some(size)
 }
 
 fn project_world_to_ui(world: Vec3, view_proj: Mat4, viewport: Vector2) -> Option<[f32; 2]> {

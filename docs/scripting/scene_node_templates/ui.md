@@ -308,6 +308,11 @@ script = "res://path/to/script.rs"
         selected_index = 0
         open = false
         option_height = 28.0
+        popup_size = (0, 0) # 0 = button width / option-list height
+        popup_offset = (0, 0)
+        popup_direction = "down" # down | up | left | right
+        open_animation = "pop" # pop | extend
+        open_animation_duration = 0.18
         selected_signals = []
         style = { fill = (0.18, 0.20, 0.24, 1.0) stroke = (0.32, 0.35, 0.40, 1.0) stroke_width = 1.0 radius = 0.2 }
         popup_style = { fill = (0.11, 0.12, 0.14, 0.98) stroke = (0.22, 0.24, 0.28, 1.0) stroke_width = 1.0 radius = 0.12 }

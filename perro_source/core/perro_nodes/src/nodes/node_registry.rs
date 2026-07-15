@@ -5,19 +5,19 @@ use crate::{
     Button2D, Camera2D, Camera3D, CameraStream2D, CameraStream3D, CharacterBody2D, CharacterBody3D,
     CollisionShape2D, CollisionShape3D, Decal3D, DistanceJoint2D, FixedJoint2D, FixedJoint3D,
     HingeJoint3D, IKTarget2D, IKTarget3D, ImageButton2D, Label2D, Label3D, MeshInstance3D,
-    MultiMeshInstance3D, NineSlice2D, Node2D, Node3D, ParticleEmitter2D, ParticleEmitter3D,
-    PhysicsBoneChain2D, PhysicsBoneChain3D, PhysicsForceEmitter2D, PhysicsForceEmitter3D,
-    PinJoint2D, PointLight2D, PointLight3D, RayLight2D, RayLight3D, RigidBody2D, RigidBody3D,
-    Skeleton2D, Skeleton3D, Sky3D, SpotLight2D, SpotLight3D, Sprite2D, Sprite3D, StaticBody2D,
-    StaticBody3D, TextDecal3D, TileMap2D, UiCameraStream, UiVideoPlayer, UiViewport, VideoPlayer2D,
-    VideoPlayer3D, WaterBody2D, WaterBody3D, Webcam,
+    MultiMeshInstance3D, NineSlice2D, NineSliceButton2D, Node2D, Node3D, ParticleEmitter2D,
+    ParticleEmitter3D, PhysicsBoneChain2D, PhysicsBoneChain3D, PhysicsForceEmitter2D,
+    PhysicsForceEmitter3D, PinJoint2D, PointLight2D, PointLight3D, RayLight2D, RayLight3D,
+    RigidBody2D, RigidBody3D, Skeleton2D, Skeleton3D, Sky3D, SpotLight2D, SpotLight3D, Sprite2D,
+    Sprite3D, StaticBody2D, StaticBody3D, TextDecal3D, TileMap2D, UiCameraStream, UiVideoPlayer,
+    UiViewport, VideoPlayer2D, VideoPlayer3D, WaterBody2D, WaterBody3D, Webcam,
 };
 use perro_ids::{NodeID, NodeTag, TagID};
 use perro_structs::{Transform2D, Transform3D};
 use perro_ui::{
     UiAnimatedImage, UiButton, UiCheckbox, UiColorPicker, UiDropdown, UiGrid, UiHLayout, UiImage,
-    UiImageButton, UiLabel, UiLayout, UiNineSlice, UiNode, UiNodeBase, UiPanel, UiProgressBar,
-    UiScrollContainer, UiShape, UiTextBlock, UiTextBox, UiTreeList, UiVLayout,
+    UiImageButton, UiLabel, UiLayout, UiNineSlice, UiNineSliceButton, UiNode, UiNodeBase, UiPanel,
+    UiProgressBar, UiScrollContainer, UiShape, UiTextBlock, UiTextBox, UiTreeList, UiVLayout,
 };
 use std::borrow::Cow;
 
@@ -860,6 +860,7 @@ define_scene_nodes! {
         CameraStream2D => (Node2D, CameraStream2D, Inline, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         Button2D => (Node2D, Button2D, Boxed, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         ImageButton2D => (Node2D, ImageButton2D, Boxed, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
+        NineSliceButton2D => (Node2D, NineSliceButton2D, Boxed, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         Sprite2D => (Node2D, Sprite2D, Inline, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         VideoPlayer2D => (Node2D, VideoPlayer2D, Inline, Renderable::True, InternalUpdate::True, InternalFixedUpdate::False),
         Label2D => (Node2D, Label2D, Inline, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
@@ -964,6 +965,7 @@ define_scene_nodes! {
         UiImage => (UiNode, UiImage, Boxed, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         UiVideoPlayer => (UiNode, UiVideoPlayer, Boxed, Renderable::True, InternalUpdate::True, InternalFixedUpdate::False),
         UiImageButton => (UiNode, UiImageButton, Boxed, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
+        UiNineSliceButton => (UiNode, UiNineSliceButton, Boxed, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         UiNineSlice => (UiNode, UiNineSlice, Boxed, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         UiAnimatedImage => (UiNode, UiAnimatedImage, Boxed, Renderable::True, InternalUpdate::True, InternalFixedUpdate::False),
         UiLabel => (UiNode, UiLabel, Boxed, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),

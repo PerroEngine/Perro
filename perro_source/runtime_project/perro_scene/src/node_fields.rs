@@ -18,6 +18,7 @@ pub enum NodeField {
     Webcam(WebcamField),
     Button2D(Button2DField),
     ImageButton2D(Button2DField),
+    NineSliceButton2D(Button2DField),
     NineSlice2D(Button2DField),
     Sprite2D(Sprite2DField),
     Sprite3D(Sprite2DField),
@@ -71,6 +72,7 @@ pub enum NodeField {
     UiNode(UiNodeField),
     UiImage(UiImageField),
     UiImageButton(UiImageField),
+    UiNineSliceButton(UiImageField),
     UiNineSlice(UiImageField),
     UiAnimatedImage(UiAnimatedImageField),
 }
@@ -1160,6 +1162,14 @@ fn resolve_scene_node_field_for_type(
             }
             _ => None,
         },
+        NodeType::NineSliceButton2D => match field {
+            SceneFieldName::Size => Some(NodeField::NineSliceButton2D(Button2DField::Size)),
+            SceneFieldName::Texture => Some(NodeField::NineSliceButton2D(Button2DField::Texture)),
+            SceneFieldName::TextureRegion => {
+                Some(NodeField::NineSliceButton2D(Button2DField::TextureRegion))
+            }
+            _ => None,
+        },
         NodeType::NineSlice2D => match field {
             SceneFieldName::Size => Some(NodeField::NineSlice2D(Button2DField::Size)),
             SceneFieldName::Texture => Some(NodeField::NineSlice2D(Button2DField::Texture)),
@@ -1498,12 +1508,17 @@ fn resolve_scene_node_field_for_type(
                 .map(HingeJoint3DField::Common)
                 .map(NodeField::HingeJoint3D),
         },
-        NodeType::UiImage | NodeType::UiImageButton | NodeType::UiNineSlice => match field {
+        NodeType::UiImage
+        | NodeType::UiImageButton
+        | NodeType::UiNineSliceButton
+        | NodeType::UiNineSlice => match field {
             SceneFieldName::Texture
             | SceneFieldName::Image
             | SceneFieldName::Source
             | SceneFieldName::Src => Some(if matches!(node_type, NodeType::UiImageButton) {
                 NodeField::UiImageButton(UiImageField::Texture)
+            } else if matches!(node_type, NodeType::UiNineSliceButton) {
+                NodeField::UiNineSliceButton(UiImageField::Texture)
             } else if matches!(node_type, NodeType::UiNineSlice) {
                 NodeField::UiNineSlice(UiImageField::Texture)
             } else {
@@ -1512,6 +1527,8 @@ fn resolve_scene_node_field_for_type(
             SceneFieldName::TextureRegion => {
                 Some(if matches!(node_type, NodeType::UiImageButton) {
                     NodeField::UiImageButton(UiImageField::TextureRegion)
+                } else if matches!(node_type, NodeType::UiNineSliceButton) {
+                    NodeField::UiNineSliceButton(UiImageField::TextureRegion)
                 } else if matches!(node_type, NodeType::UiNineSlice) {
                     NodeField::UiNineSlice(UiImageField::TextureRegion)
                 } else {
@@ -1643,6 +1660,14 @@ fn resolve_node_field_for_type(node_type: NodeType, field: &str) -> Option<NodeF
             "texture" => Some(NodeField::ImageButton2D(Button2DField::Texture)),
             "texture_region" | "region" | "atlas_region" => {
                 Some(NodeField::ImageButton2D(Button2DField::TextureRegion))
+            }
+            _ => None,
+        },
+        NodeType::NineSliceButton2D => match field {
+            "size" => Some(NodeField::NineSliceButton2D(Button2DField::Size)),
+            "texture" => Some(NodeField::NineSliceButton2D(Button2DField::Texture)),
+            "texture_region" | "region" | "atlas_region" => {
+                Some(NodeField::NineSliceButton2D(Button2DField::TextureRegion))
             }
             _ => None,
         },
@@ -2141,10 +2166,15 @@ fn resolve_node_field_for_type(node_type: NodeType, field: &str) -> Option<NodeF
                 .map(HingeJoint3DField::Common)
                 .map(NodeField::HingeJoint3D),
         },
-        NodeType::UiImage | NodeType::UiImageButton | NodeType::UiNineSlice => match field {
+        NodeType::UiImage
+        | NodeType::UiImageButton
+        | NodeType::UiNineSliceButton
+        | NodeType::UiNineSlice => match field {
             "texture" | "image" | "source" | "src" => {
                 Some(if matches!(node_type, NodeType::UiImageButton) {
                     NodeField::UiImageButton(UiImageField::Texture)
+                } else if matches!(node_type, NodeType::UiNineSliceButton) {
+                    NodeField::UiNineSliceButton(UiImageField::Texture)
                 } else if matches!(node_type, NodeType::UiNineSlice) {
                     NodeField::UiNineSlice(UiImageField::Texture)
                 } else {
@@ -2154,6 +2184,8 @@ fn resolve_node_field_for_type(node_type: NodeType, field: &str) -> Option<NodeF
             "texture_region" | "region" | "atlas_region" => {
                 Some(if matches!(node_type, NodeType::UiImageButton) {
                     NodeField::UiImageButton(UiImageField::TextureRegion)
+                } else if matches!(node_type, NodeType::UiNineSliceButton) {
+                    NodeField::UiNineSliceButton(UiImageField::TextureRegion)
                 } else if matches!(node_type, NodeType::UiNineSlice) {
                     NodeField::UiNineSlice(UiImageField::TextureRegion)
                 } else {

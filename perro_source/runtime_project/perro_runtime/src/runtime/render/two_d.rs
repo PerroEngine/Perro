@@ -424,6 +424,25 @@ impl Runtime {
                             nine.tint,
                             nine.z_index,
                         )),
+                        SceneNodeData::NineSliceButton2D(button) => Some((
+                            effective_visible
+                                && button.visible
+                                && render_mask_matches(camera_render_mask, button.render_layers),
+                            button.texture,
+                            button.texture_region,
+                            button.transform,
+                            button.size,
+                            button.margins,
+                            nine_slice_button_2d_tint(
+                                button,
+                                self.render_ui
+                                    .button_states
+                                    .get(&node)
+                                    .copied()
+                                    .unwrap_or_default(),
+                            ),
+                            button.z_index,
+                        )),
                         _ => None,
                     });
             if let Some((visible, texture, region, local_transform, size, margins, tint, z_index)) =
@@ -1031,6 +1050,7 @@ impl Runtime {
                                 SceneNodeData::Sprite2D(sprite) => sprite.texture = id,
                                 SceneNodeData::AnimatedSprite2D(sprite) => sprite.texture = id,
                                 SceneNodeData::ImageButton2D(button) => button.texture = id,
+                                SceneNodeData::NineSliceButton2D(button) => button.texture = id,
                                 SceneNodeData::NineSlice2D(nine) => nine.texture = id,
                                 SceneNodeData::Sprite3D(sprite) => sprite.texture = id,
                                 _ => {}
@@ -1236,6 +1256,7 @@ impl Runtime {
         let web = match &scene_node.data {
             SceneNodeData::Button2D(button) => button.web.as_ref(),
             SceneNodeData::ImageButton2D(button) => button.web.as_ref(),
+            SceneNodeData::NineSliceButton2D(button) => button.web.as_ref(),
             _ => None,
         };
         if let Some(web) = web {
@@ -1284,6 +1305,10 @@ impl Runtime {
                 SceneNodeData::ImageButton2D(button) => {
                     self.render_2d.retained_sprites.contains_key(&node)
                         && !button.texture.is_nil()
+                        && self.resource_api.is_texture_id_pending(button.texture)
+                }
+                SceneNodeData::NineSliceButton2D(button) => {
+                    !button.texture.is_nil()
                         && self.resource_api.is_texture_id_pending(button.texture)
                 }
                 SceneNodeData::TileMap2D(_) => {
@@ -1737,10 +1762,25 @@ fn image_button_2d_tint(
     }
 }
 
+fn nine_slice_button_2d_tint(
+    button: &perro_nodes::NineSliceButton2D,
+    state: UiButtonVisualState,
+) -> perro_structs::Color {
+    if !button.input_enabled {
+        return button.tint;
+    }
+    match state {
+        UiButtonVisualState::Neutral => button.tint,
+        UiButtonVisualState::Hover => button.hover_tint,
+        UiButtonVisualState::Pressed => button.pressed_tint,
+    }
+}
+
 fn button_2d_inactive_from_data(data: &SceneNodeData) -> Option<bool> {
     match data {
         SceneNodeData::Button2D(button) => Some(!button.input_enabled),
         SceneNodeData::ImageButton2D(button) => Some(!button.input_enabled),
+        SceneNodeData::NineSliceButton2D(button) => Some(!button.input_enabled),
         _ => None,
     }
 }
@@ -1749,6 +1789,7 @@ fn button_2d_cursor_icon(data: &SceneNodeData) -> Option<perro_ui::CursorIcon> {
     match data {
         SceneNodeData::Button2D(button) => Some(button.cursor_icon),
         SceneNodeData::ImageButton2D(button) => Some(button.cursor_icon),
+        SceneNodeData::NineSliceButton2D(button) => Some(button.cursor_icon),
         _ => None,
     }
 }
@@ -1783,6 +1824,15 @@ fn button_2d_hit_data(data: &SceneNodeData) -> Option<Button2DHitData<'_>> {
             mouse_filter: button.mouse_filter,
             input_mask: &button.input_mask,
         }),
+        SceneNodeData::NineSliceButton2D(button) => Some(Button2DHitData {
+            visible: button.visible,
+            size: button.size,
+            z_index: button.z_index,
+            render_layers: button.render_layers,
+            input_enabled: button.input_enabled,
+            mouse_filter: button.mouse_filter,
+            input_mask: &button.input_mask,
+        }),
         _ => None,
     }
 }
@@ -1801,6 +1851,14 @@ fn button_2d_custom_event_signals<'a>(
             _ => &[],
         }),
         SceneNodeData::ImageButton2D(button) => Some(match event {
+            "hover_enter" => &button.hover_signals,
+            "hover_exit" => &button.hover_exit_signals,
+            "pressed" => &button.pressed_signals,
+            "released" => &button.released_signals,
+            "click" => &button.clicked_signals,
+            _ => &[],
+        }),
+        SceneNodeData::NineSliceButton2D(button) => Some(match event {
             "hover_enter" => &button.hover_signals,
             "hover_exit" => &button.hover_exit_signals,
             "pressed" => &button.pressed_signals,
