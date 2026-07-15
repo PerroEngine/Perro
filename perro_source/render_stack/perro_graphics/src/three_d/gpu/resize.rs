@@ -487,6 +487,7 @@ impl Gpu3D {
         self.active_sky_pipeline_key = None;
         self.material_pipeline_layout = pipeline_layout;
         self.rigid_material_pipeline_layout = rigid_pipeline_layout;
+        self.multimesh_pipeline_layout = multimesh_pipeline_layout;
         self.color_format = color_format;
         let (depth_texture, depth_view) = create_depth_texture(device, width, height, sample_count);
         self.depth_texture = depth_texture;

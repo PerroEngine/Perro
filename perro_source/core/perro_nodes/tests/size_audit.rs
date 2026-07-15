@@ -100,6 +100,7 @@ fn print_scene_node_sizes() {
         // ui
         UiNode,
         UiCameraStream,
+        UiViewport,
         UiPanel,
         UiButton,
         UiDropdown,

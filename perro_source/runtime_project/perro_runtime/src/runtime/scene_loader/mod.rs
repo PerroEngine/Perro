@@ -40,6 +40,58 @@ pub fn bench_prepare_scene(scene: &Scene) -> Result<(usize, usize), String> {
 }
 
 #[cfg(feature = "bench")]
+pub struct BenchPreparedScene(prepare::PreparedScene);
+
+#[cfg(feature = "bench")]
+pub struct BenchSceneSpawner(Runtime);
+
+#[cfg(feature = "bench")]
+impl BenchSceneSpawner {
+    pub fn new() -> Self {
+        Self(Runtime::new())
+    }
+
+    pub fn spawn(&mut self, scene: &BenchPreparedScene) -> Result<usize, String> {
+        let _ = merge_prepared_scene(&mut self.0, scene.0.clone())?;
+        Ok(self.0.nodes.len())
+    }
+
+    pub fn spawn_uncompiled(&mut self, scene: &Scene) -> Result<usize, String> {
+        let prepared = prepare_scene_with_loader_and_styles(
+            scene,
+            &|path| Err(format!("bench scene import unsupported: {path}")),
+            None,
+        )?;
+        let _ = merge_prepared_scene(&mut self.0, prepared)?;
+        Ok(self.0.nodes.len())
+    }
+}
+
+#[cfg(feature = "bench")]
+impl Default for BenchSceneSpawner {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(feature = "bench")]
+pub fn bench_compile_scene(scene: &Scene) -> Result<BenchPreparedScene, String> {
+    prepare_scene_with_loader_and_styles(
+        scene,
+        &|path| Err(format!("bench scene import unsupported: {path}")),
+        None,
+    )
+    .map(BenchPreparedScene)
+}
+
+#[cfg(feature = "bench")]
+pub fn bench_merge_compiled_scene(scene: &BenchPreparedScene) -> Result<usize, String> {
+    let mut runtime = Runtime::new();
+    let _ = merge_prepared_scene(&mut runtime, scene.0.clone())?;
+    Ok(runtime.nodes.len())
+}
+
+#[cfg(feature = "bench")]
 pub fn bench_prepare_and_merge_scene(scene: &Scene) -> Result<usize, String> {
     let prepared = prepare_scene_with_loader_and_styles(
         scene,
@@ -202,6 +254,25 @@ impl Runtime {
         prepare_scene_with_loader_and_styles(scene, load_scene, static_ui_style_lookup)
     }
 
+    fn get_or_prepare_scene_cached(
+        &self,
+        path: &str,
+        scene: &Scene,
+    ) -> Result<Arc<prepare::PreparedScene>, String> {
+        if let Some(prepared) = self.prepared_scene_cache.borrow().get(path).cloned() {
+            return Ok(prepared);
+        }
+        let prepared = Arc::new(
+            self.prepare_scene_with_project_styles(scene, &|import_path| {
+                self.resolve_scene_by_path(import_path)
+            })?,
+        );
+        self.prepared_scene_cache
+            .borrow_mut()
+            .insert(path.to_string(), prepared.clone());
+        Ok(prepared)
+    }
+
     pub(crate) fn preload_scene_at_runtime(
         &mut self,
         path: &str,
@@ -224,7 +295,9 @@ impl Runtime {
         }
         let id = PreloadedSceneID::from_u64(next);
         self.next_preloaded_scene_id = next.saturating_add(1);
+        let prepared = self.get_or_prepare_scene_cached(path, scene.as_ref())?;
         self.preloaded_scenes.insert(id, scene);
+        self.preloaded_prepared_scenes.insert(id, prepared);
         self.preloaded_scene_paths.insert(path_hash, id);
         self.preloaded_scene_reverse_paths
             .insert(id, path.to_string());
@@ -236,10 +309,12 @@ impl Runtime {
             return false;
         }
         let removed = self.preloaded_scenes.remove(&id).is_some();
+        self.preloaded_prepared_scenes.remove(&id);
         if let Some(path) = self.preloaded_scene_reverse_paths.remove(&id) {
             self.preloaded_scene_paths
                 .remove(&Self::source_hash(path.as_str()));
             let _ = self.scene_cache.borrow_mut().remove(path.as_str());
+            let _ = self.prepared_scene_cache.borrow_mut().remove(path.as_str());
         }
         removed
     }
@@ -256,9 +331,11 @@ impl Runtime {
         let mut removed = false;
         if let Some(id) = self.preloaded_scene_paths.remove(&path_hash) {
             removed |= self.preloaded_scenes.remove(&id).is_some();
+            self.preloaded_prepared_scenes.remove(&id);
             self.preloaded_scene_reverse_paths.remove(&id);
         }
         removed |= self.scene_cache.borrow_mut().remove(path).is_some();
+        self.prepared_scene_cache.borrow_mut().remove(path);
         removed
     }
 
@@ -266,15 +343,12 @@ impl Runtime {
         &mut self,
         id: PreloadedSceneID,
     ) -> Result<NodeID, String> {
-        let scene = self
-            .preloaded_scenes
+        let prepared = self
+            .preloaded_prepared_scenes
             .get(&id)
             .cloned()
             .ok_or_else(|| format!("preloaded scene id `{}` is not valid", id.as_u64()))?;
-        let prepared = self.prepare_scene_with_project_styles(scene.as_ref(), &|import_path| {
-            self.resolve_scene_by_path(import_path)
-        })?;
-        let merged = merge_prepared_scene(self, prepared)?;
+        let merged = merge_prepared_scene(self, prepared.as_ref().clone())?;
         self.finish_scene_merge(merged)
     }
 
@@ -301,34 +375,24 @@ impl Runtime {
         let merged = match self.provider_mode {
             ProviderMode::Dynamic => {
                 let runtime_scene = self.get_or_load_dynamic_scene_cached(path)?;
-                let prepared = self
-                    .prepare_scene_with_project_styles(runtime_scene.as_ref(), &|import_path| {
-                        self.resolve_scene_by_path(import_path)
-                    })?;
-                merge_prepared_scene(self, prepared)?
+                let prepared = self.get_or_prepare_scene_cached(path, runtime_scene.as_ref())?;
+                merge_prepared_scene(self, prepared.as_ref().clone())?
             }
             ProviderMode::Static => {
                 if path.starts_with("dlc://") {
                     let runtime_scene = self.get_or_load_dynamic_scene_cached(path)?;
-                    let prepared = self.prepare_scene_with_project_styles(
-                        runtime_scene.as_ref(),
-                        &|import_path| self.resolve_scene_by_path(import_path),
-                    )?;
-                    merge_prepared_scene(self, prepared)?
+                    let prepared =
+                        self.get_or_prepare_scene_cached(path, runtime_scene.as_ref())?;
+                    merge_prepared_scene(self, prepared.as_ref().clone())?
                 } else if let Some(lookup) = static_lookup {
                     let scene = lookup(path_hash);
-                    let prepared = self
-                        .prepare_scene_with_project_styles(scene, &|import_path| {
-                            self.resolve_scene_by_path(import_path)
-                        })?;
-                    merge_prepared_scene(self, prepared)?
+                    let prepared = self.get_or_prepare_scene_cached(path, scene)?;
+                    merge_prepared_scene(self, prepared.as_ref().clone())?
                 } else {
                     let runtime_scene = self.get_or_load_dynamic_scene_cached(path)?;
-                    let prepared = self.prepare_scene_with_project_styles(
-                        runtime_scene.as_ref(),
-                        &|import_path| self.resolve_scene_by_path(import_path),
-                    )?;
-                    merge_prepared_scene(self, prepared)?
+                    let prepared =
+                        self.get_or_prepare_scene_cached(path, runtime_scene.as_ref())?;
+                    merge_prepared_scene(self, prepared.as_ref().clone())?
                 }
             }
         };
@@ -1520,6 +1584,32 @@ mod tests {
         assert!(runtime.scene_ownership_roots.is_empty());
         assert!(runtime.nodes.named_ids("primary").is_empty());
         assert!(runtime.nodes.named_ids("sibling").is_empty());
+    }
+
+    #[test]
+    fn preload_compiles_once_and_spawns_distinct_instances() {
+        let scene =
+            Parser::new("$root = @root\n\n[root]\n[Node]\n[/Node]\n[/root]\n").parse_scene();
+        let path = "res://cached_spawn.scn";
+        let mut runtime = Runtime::new();
+        runtime.project = Some(Arc::new(RuntimeProject::new("Scene Test", ".")));
+        runtime
+            .scene_cache
+            .borrow_mut()
+            .insert(path.to_string(), Arc::new(scene));
+
+        let id = runtime.preload_scene_at_runtime(path).unwrap();
+        assert_eq!(runtime.prepared_scene_cache.borrow().len(), 1);
+        assert_eq!(runtime.preloaded_prepared_scenes.len(), 1);
+
+        let first = runtime.load_preloaded_scene_at_runtime(id).unwrap();
+        let second = runtime.load_preloaded_scene_at_runtime(id).unwrap();
+        assert_ne!(first, second);
+        assert_eq!(runtime.prepared_scene_cache.borrow().len(), 1);
+
+        assert!(runtime.free_preloaded_scene_at_runtime(id));
+        assert!(runtime.preloaded_prepared_scenes.is_empty());
+        assert!(runtime.prepared_scene_cache.borrow().is_empty());
     }
 
     #[test]

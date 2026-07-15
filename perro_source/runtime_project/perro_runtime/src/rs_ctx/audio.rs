@@ -145,6 +145,33 @@ impl AudioAPI for RuntimeResourceApi {
         )
     }
 
+    fn play_audio_stream_clip(
+        &self,
+        stream_id: &str,
+        bus_id: Option<AudioBusID>,
+        clip: &MicClip,
+        volume: f32,
+        pan: perro_resource_api::sub_apis::AudioPan,
+    ) -> bool {
+        let Ok(guard) = self.bark.lock() else {
+            return false;
+        };
+        let Some(player) = guard.as_ref() else {
+            return false;
+        };
+        player.play_stream_clip(
+            stream_id,
+            clip.clone(),
+            bus_id,
+            volume,
+            perro_pawdio::AudioPan {
+                x: pan.x,
+                y: pan.y,
+                z: pan.z,
+            },
+        )
+    }
+
     fn play_audio_2d(&self, bus_id: Option<AudioBusID>, audio: Audio2D<'_>) -> bool {
         let Ok(mut queue) = self.spatial_audio_queue.lock() else {
             return false;

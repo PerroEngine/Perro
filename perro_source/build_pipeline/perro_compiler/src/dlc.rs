@@ -399,7 +399,7 @@ fn generate_dlc_static_assets(
 
     let overrides = perro_static_pipeline::StaticPipelineOverrides {
         res_dir: dlc_root.to_path_buf(),
-        static_dir: static_root.clone(),
+        static_dir: static_root,
         embedded_dir: embedded_root.clone(),
         asset_prefix: format!("dlc://{dlc_name}/"),
     };

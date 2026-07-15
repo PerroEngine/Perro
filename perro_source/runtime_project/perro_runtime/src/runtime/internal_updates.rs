@@ -360,7 +360,7 @@ impl Runtime {
             std::mem::take(&mut self.internal_updates.internal_update_dispatch_scratch);
         snapshot_dispatch(&self.internal_updates.internal_update_nodes, &mut dispatch);
         for id in dispatch.iter().copied() {
-            if self.nodes.get(id).is_none() {
+            if self.nodes.get(id).is_none() || self.is_suspended_by_ui_viewport(id) {
                 continue;
             }
             self.call_internal_update_node_with_context(id, &res, &ipt);
@@ -390,7 +390,7 @@ impl Runtime {
             &mut dispatch,
         );
         for id in dispatch.iter().copied() {
-            if self.nodes.get(id).is_none() {
+            if self.nodes.get(id).is_none() || self.is_suspended_by_ui_viewport(id) {
                 continue;
             }
             self.call_internal_fixed_update_node_with_context(id, &res, &ipt);

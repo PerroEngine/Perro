@@ -257,7 +257,6 @@ impl NodeArena {
     pub fn insert(&mut self, node: SceneNode) -> NodeID {
         self.bump_structural_revision();
         let name = node.name.clone();
-        let tags = node.get_tag_ids();
         let node_type = node.node_type();
         let parent = node.parent;
         // Reuse a previously freed slot in O(1).
@@ -286,7 +285,15 @@ impl NodeArena {
         if !name.is_empty() {
             self.name_index.entry(name).or_default().push(id);
         }
-        for tag in tags {
+        // Read tags from the stored node. Building a temporary Vec<TagID> here
+        // made every tagged insert allocate once before the real index update.
+        let index = id.index() as usize;
+        for tag_index in 0..self.nodes[index].as_ref().map_or(0, |node| node.tags.len()) {
+            let tag = self.nodes[index]
+                .as_ref()
+                .expect("inserted slot stays live")
+                .tags[tag_index]
+                .id;
             self.tag_index.entry(tag).or_default().insert(id);
         }
         id
@@ -529,6 +536,38 @@ impl NodeArena {
         node.parent = parent;
         self.parents[index] = parent;
         self.bump_structural_revision();
+        true
+    }
+
+    /// Append one child without paying the tracked-edit snapshot cost.
+    #[inline]
+    pub(crate) fn push_child(&mut self, id: NodeID, child: NodeID) -> bool {
+        let Some(index) = self.valid_slot(id) else {
+            return false;
+        };
+        let Some(node) = self.nodes[index].as_mut() else {
+            return false;
+        };
+        node.children.push(child);
+        self.bump_data_revision_only();
+        true
+    }
+
+    /// Append children without cloning name/tags for a tracked edit guard.
+    #[inline]
+    pub(crate) fn extend_children(&mut self, id: NodeID, children: &[NodeID]) -> bool {
+        if children.is_empty() {
+            return self.contains(id);
+        }
+        let Some(index) = self.valid_slot(id) else {
+            return false;
+        };
+        let Some(node) = self.nodes[index].as_mut() else {
+            return false;
+        };
+        node.children.reserve(children.len());
+        node.children.extend_from_slice(children);
+        self.bump_data_revision_only();
         true
     }
 

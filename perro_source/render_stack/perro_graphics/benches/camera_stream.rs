@@ -348,6 +348,8 @@ fn camera_stream_2d_state(
 ) -> CameraStreamState {
     CameraStreamState {
         source: CameraStreamSourceState::TwoD(Camera2DState::default()),
+        overlay_camera_2d: None,
+        clear_color: None,
         resolution: [resolution, resolution],
         aspect_ratio: 1.0,
         post_processing: Arc::from([]),
@@ -370,6 +372,8 @@ fn camera_stream_3d_state(
 ) -> CameraStreamState {
     CameraStreamState {
         source: CameraStreamSourceState::ThreeD(Camera3DState::default()),
+        overlay_camera_2d: None,
+        clear_color: None,
         resolution: [resolution, resolution],
         aspect_ratio: 1.0,
         post_processing: Arc::from([]),

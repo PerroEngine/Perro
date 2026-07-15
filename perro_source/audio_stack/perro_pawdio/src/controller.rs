@@ -157,6 +157,15 @@ impl AudioController {
                         } => {
                             let _ = player.play_clip(&source, clip, bus_id, volume, pan);
                         }
+                        AudioCommand::PlayStreamClip {
+                            source,
+                            clip,
+                            bus_id,
+                            volume,
+                            pan,
+                        } => {
+                            let _ = player.play_stream_clip(&source, clip, bus_id, volume, pan);
+                        }
                         AudioCommand::Stop { source } => {
                             let _ = player.stop_source(&source);
                         }
@@ -328,6 +337,38 @@ impl AudioController {
     ) -> AudioEnqueueResult {
         let source = self.intern_source(source);
         self.enqueue(AudioCommand::PlayClip {
+            source,
+            clip,
+            bus_id,
+            volume,
+            pan,
+        })
+    }
+
+    /// Queue a clip after prior chunks from the same stream.
+    pub fn play_stream_clip(
+        &self,
+        source: &str,
+        clip: MicClip,
+        bus_id: Option<AudioBusID>,
+        volume: f32,
+        pan: crate::types::AudioPan,
+    ) -> bool {
+        self.enqueue_play_stream_clip(source, clip, bus_id, volume, pan)
+            .is_ok()
+    }
+
+    /// Enqueue a streamed clip; chunks with the same source play in order.
+    pub fn enqueue_play_stream_clip(
+        &self,
+        source: &str,
+        clip: MicClip,
+        bus_id: Option<AudioBusID>,
+        volume: f32,
+        pan: crate::types::AudioPan,
+    ) -> AudioEnqueueResult {
+        let source = self.intern_source(source);
+        self.enqueue(AudioCommand::PlayStreamClip {
             source,
             clip,
             bus_id,

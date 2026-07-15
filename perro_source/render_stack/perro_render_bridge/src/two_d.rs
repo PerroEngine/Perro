@@ -123,6 +123,9 @@ pub enum CameraStreamSourceState {
 #[derive(Debug, Clone, PartialEq)]
 pub struct CameraStreamState {
     pub source: CameraStreamSourceState,
+    /// Optional 2D pass composited over a 3D source.
+    pub overlay_camera_2d: Option<Camera2DState>,
+    pub clear_color: Option<Color>,
     pub resolution: [u32; 2],
     pub aspect_ratio: f32,
     pub post_processing: Arc<[PostProcessEffect]>,

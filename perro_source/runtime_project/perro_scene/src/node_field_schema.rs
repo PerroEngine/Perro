@@ -541,6 +541,89 @@ fn push_node_fields(fields: &mut Vec<SceneNodeField>, node_type: NodeType) {
             );
             push(fields, "Camera", "active", NodeFieldType::Bool);
         }
+        NodeType::UiViewport => {
+            push(fields, "Viewport", "resolution", NodeFieldType::Vec2);
+            push(fields, "Viewport", "aspect_ratio", NodeFieldType::F32);
+            push(
+                fields,
+                "Viewport",
+                "aspect_mode",
+                NodeFieldType::enumeration(CAMERA_STREAM_ASPECT_MODE_OPTIONS),
+            );
+            push(fields, "Viewport", "view_position", NodeFieldType::Vec3);
+            push(fields, "Viewport", "view_rotation", NodeFieldType::Quat);
+            push(
+                fields,
+                "Viewport 2D",
+                "view_2d_position",
+                NodeFieldType::Vec2,
+            );
+            push(
+                fields,
+                "Viewport 2D",
+                "view_2d_rotation",
+                NodeFieldType::F32,
+            );
+            push(fields, "Viewport 2D", "view_2d_zoom", NodeFieldType::F32);
+            push(
+                fields,
+                "Viewport Camera",
+                "projection",
+                NodeFieldType::enum_submenu(CAMERA_PROJECTION_SUBMENUS),
+            );
+            push(
+                fields,
+                "Viewport Camera",
+                "perspective_fov_y_degrees",
+                NodeFieldType::F32,
+            );
+            push(
+                fields,
+                "Viewport Camera",
+                "perspective_near",
+                NodeFieldType::F32,
+            );
+            push(
+                fields,
+                "Viewport Camera",
+                "perspective_far",
+                NodeFieldType::F32,
+            );
+            push(
+                fields,
+                "Viewport Camera",
+                "orthographic_size",
+                NodeFieldType::F32,
+            );
+            push(
+                fields,
+                "Viewport Camera",
+                "orthographic_near",
+                NodeFieldType::F32,
+            );
+            push(
+                fields,
+                "Viewport Camera",
+                "orthographic_far",
+                NodeFieldType::F32,
+            );
+            push(
+                fields,
+                "Viewport",
+                "post_processing",
+                NodeFieldType::object(Vec::new()),
+            );
+            push(fields, "Viewport", "tint", NodeFieldType::Color);
+            push(fields, "Viewport", "background", NodeFieldType::Color);
+            push(fields, "Viewport", "corner_radius", NodeFieldType::F32);
+            push(fields, "Viewport", "enabled", NodeFieldType::Bool);
+            push(
+                fields,
+                "Viewport",
+                "suspend_when_hidden",
+                NodeFieldType::Bool,
+            );
+        }
         NodeType::CameraStream2D | NodeType::CameraStream3D | NodeType::UiCameraStream => {
             push(
                 fields,
@@ -1525,6 +1608,12 @@ fn joint_fields(fields: &mut Vec<SceneNodeField>, node_type: NodeType) {
 
 fn sky_fields(fields: &mut Vec<SceneNodeField>) {
     push(fields, "Sky", "palette", NodeFieldType::object(Vec::new()));
+    push(
+        fields,
+        "Sky",
+        "environment",
+        NodeFieldType::object(Vec::new()),
+    );
     push(fields, "Sky", "time_of_day", NodeFieldType::F32);
     push(fields, "Sky", "time_paused", NodeFieldType::Bool);
     push(fields, "Sky", "time_scale", NodeFieldType::F32);
@@ -1574,6 +1663,17 @@ mod tests {
                 "perspective_far"
             ],
         );
+    }
+
+    #[test]
+    fn ui_viewport_schema_owns_view_without_camera_ref() {
+        let fields = scene_node_fields(NodeType::UiViewport);
+        assert!(fields.iter().any(|field| field.name == "view_position"));
+        assert!(fields.iter().any(|field| field.name == "view_rotation"));
+        assert!(fields.iter().any(|field| field.name == "view_2d_position"));
+        assert!(fields.iter().any(|field| field.name == "projection"));
+        assert!(fields.iter().any(|field| field.name == "resolution"));
+        assert!(!fields.iter().any(|field| field.name == "camera"));
     }
 
     #[test]

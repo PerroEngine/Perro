@@ -1,5 +1,9 @@
-use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
-use perro_runtime::{bench_prepare_and_merge_scene, bench_prepare_scene};
+use criterion::{
+    BatchSize, BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main,
+};
+use perro_runtime::{
+    BenchSceneSpawner, bench_compile_scene, bench_prepare_and_merge_scene, bench_prepare_scene,
+};
 use perro_scene::{Parser, Scene};
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::fs;
@@ -222,11 +226,72 @@ fn bench_static_prepare_merge(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_compiled_spawn(c: &mut Criterion) {
+    let node_counts = [1_usize, 16, 32, 64, 512, 2048];
+    let mut group = c.benchmark_group("scene_compiled_spawn");
+    group.warm_up_time(Duration::from_millis(100));
+    group.measurement_time(Duration::from_secs(1));
+    group.sample_size(20);
+
+    for nodes in node_counts {
+        let src = bench_scene_source(nodes);
+        let scene = parse_scene(&src);
+        let compiled = bench_compile_scene(&scene).expect("compile scene template");
+        let mut spawner = BenchSceneSpawner::new();
+        let (node_count, allocs) = sample_allocs(|| spawner.spawn(black_box(&compiled)).unwrap());
+        assert_eq!(node_count, nodes + 1);
+        eprintln!(
+            "scene_compiled_spawn nodes={nodes} allocs/op={} alloc_bytes/op={}",
+            allocs.allocs, allocs.bytes
+        );
+
+        group.throughput(Throughput::Elements(nodes as u64));
+        group.bench_with_input(
+            BenchmarkId::from_parameter(nodes),
+            &compiled,
+            |b, compiled| {
+                b.iter_batched(
+                    BenchSceneSpawner::new,
+                    |mut spawner| black_box(spawner.spawn(black_box(compiled)).unwrap()),
+                    BatchSize::LargeInput,
+                )
+            },
+        );
+    }
+
+    group.finish();
+}
+
+fn bench_uncached_spawn(c: &mut Criterion) {
+    let node_counts = [1_usize, 16, 32, 64, 512, 2048];
+    let mut group = c.benchmark_group("scene_uncached_spawn");
+    group.warm_up_time(Duration::from_millis(100));
+    group.measurement_time(Duration::from_secs(1));
+    group.sample_size(20);
+
+    for nodes in node_counts {
+        let src = bench_scene_source(nodes);
+        let scene = parse_scene(&src);
+        group.throughput(Throughput::Elements(nodes as u64));
+        group.bench_with_input(BenchmarkId::from_parameter(nodes), &scene, |b, scene| {
+            b.iter_batched(
+                BenchSceneSpawner::new,
+                |mut spawner| black_box(spawner.spawn_uncompiled(black_box(scene)).unwrap()),
+                BatchSize::LargeInput,
+            )
+        });
+    }
+
+    group.finish();
+}
+
 fn bench_scene_loading(c: &mut Criterion) {
     bench_dynamic_fs_read_parse_prepare(c);
     bench_dynamic_parse_prepare(c);
     bench_static_prepare(c);
     bench_static_prepare_merge(c);
+    bench_compiled_spawn(c);
+    bench_uncached_spawn(c);
 }
 
 criterion_group!(benches, bench_scene_loading);

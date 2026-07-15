@@ -5,7 +5,9 @@ use crate::render_result::RuntimeRenderResult;
 use ahash::{AHashMap, AHashSet};
 use glam::Mat4;
 use perro_ids::{MaterialID, MeshID, NodeID, TextureID};
-use perro_nodes::{CameraProjection, CameraStream, NodeType, Renderable, SceneNodeData, Spatial};
+use perro_nodes::{
+    CameraProjection, CameraStream, NodeType, Renderable, SceneNodeData, Spatial, UiViewport,
+};
 use perro_render_bridge::{
     AmbientLight2DState, AmbientLight3DState, Camera2DState, Camera3DState, CameraProjectionState,
     CameraStreamCommand, CameraStreamDraw3DState, CameraStreamLighting3DState,
@@ -39,6 +41,7 @@ fn is_ui_node_data(data: &SceneNodeData) -> bool {
         data,
         SceneNodeData::UiNode(_)
             | SceneNodeData::UiCameraStream(_)
+            | SceneNodeData::UiViewport(_)
             | SceneNodeData::UiPanel(_)
             | SceneNodeData::UiProgressBar(_)
             | SceneNodeData::UiButton(_)
@@ -566,6 +569,7 @@ impl Runtime {
             NodeType::CameraStream2D
                 | NodeType::CameraStream3D
                 | NodeType::UiCameraStream
+                | NodeType::UiViewport
                 | NodeType::Webcam
         ) {
             self.queue_render_command(RenderCommand::CameraStream(
@@ -592,6 +596,7 @@ impl Runtime {
                     if matches!(
                         ty,
                         NodeType::UiCameraStream
+                            | NodeType::UiViewport
                             | NodeType::UiPanel
                             | NodeType::UiProgressBar
                             | NodeType::UiButton
@@ -636,6 +641,8 @@ impl Runtime {
             let output_texture = *texture;
             return Some(CameraStreamState {
                 source,
+                overlay_camera_2d: None,
+                clear_color: None,
                 resolution: [
                     stream.resolution.x.clamp(1, 8192),
                     stream.resolution.y.clamp(1, 8192),
@@ -711,6 +718,8 @@ impl Runtime {
         };
         Some(CameraStreamState {
             source,
+            overlay_camera_2d: None,
+            clear_color: None,
             resolution: [
                 stream.resolution.x.clamp(1, 8192),
                 stream.resolution.y.clamp(1, 8192),
@@ -726,6 +735,96 @@ impl Runtime {
             lighting_3d,
             point_particles_3d,
             waters_3d,
+        })
+    }
+
+    pub(crate) fn ui_viewport_state(
+        &mut self,
+        viewport_node: NodeID,
+        viewport: &UiViewport,
+        ui_size: [f32; 2],
+    ) -> Option<CameraStreamState> {
+        if !viewport.enabled {
+            return None;
+        }
+
+        self.camera_stream_node_scratch.clear();
+        if let Some(root) = self.nodes.get(viewport_node) {
+            self.camera_stream_node_scratch
+                .extend(root.children.iter().copied());
+        }
+        let mut cursor = 0usize;
+        while cursor < self.camera_stream_node_scratch.len() {
+            let node = self.camera_stream_node_scratch[cursor];
+            cursor += 1;
+            let Some(scene_node) = self.nodes.get(node) else {
+                continue;
+            };
+            if matches!(scene_node.data, SceneNodeData::UiViewport(_)) {
+                continue;
+            }
+            self.camera_stream_node_scratch
+                .extend(scene_node.children.iter().copied());
+        }
+
+        let render_mask = BitMask::NONE;
+        let source = CameraStreamSourceState::ThreeD(Camera3DState {
+            position: [
+                viewport.view_position.x,
+                viewport.view_position.y,
+                viewport.view_position.z,
+            ],
+            rotation: [
+                viewport.view_rotation.x,
+                viewport.view_rotation.y,
+                viewport.view_rotation.z,
+                viewport.view_rotation.w,
+            ],
+            projection: camera_stream_projection_state(&viewport.projection),
+            render_mask,
+            post_processing: Arc::from([]),
+            audio_options: perro_structs::AudioListenerOptions::new(),
+        });
+        let overlay_camera_2d = Some(Camera2DState {
+            position: [viewport.view_2d_position.x, viewport.view_2d_position.y],
+            rotation_radians: viewport.view_2d_rotation,
+            zoom: viewport.view_2d_zoom.max(0.001),
+            render_mask,
+            post_processing: Arc::from([]),
+            audio_options: perro_structs::AudioListenerOptions::new(),
+        });
+
+        let resolution = [
+            if viewport.resolution.x == 0 {
+                ui_size[0].round().clamp(1.0, 8192.0) as u32
+            } else {
+                viewport.resolution.x.clamp(1, 8192)
+            },
+            if viewport.resolution.y == 0 {
+                ui_size[1].round().clamp(1.0, 8192.0) as u32
+            } else {
+                viewport.resolution.y.clamp(1, 8192)
+            },
+        ];
+
+        Some(CameraStreamState {
+            source,
+            overlay_camera_2d,
+            clear_color: Some(viewport.background),
+            resolution,
+            aspect_ratio: viewport.aspect_ratio.max(0.0),
+            post_processing: Arc::from(viewport.post_processing.to_effects_vec()),
+            output_texture: Self::camera_stream_texture_id(viewport_node),
+            sprites_2d: self.collect_camera_stream_sprites_2d(render_mask, viewport_node),
+            lights_2d: self.collect_camera_stream_lights_2d(render_mask, viewport_node),
+            point_particles_2d: self
+                .collect_camera_stream_point_particles_2d(render_mask, viewport_node),
+            waters_2d: self.collect_camera_stream_waters_2d(render_mask, viewport_node),
+            draws_3d: self.collect_camera_stream_draws_3d(render_mask, viewport_node),
+            lighting_3d: self.collect_camera_stream_lighting_3d(render_mask, viewport_node),
+            point_particles_3d: self
+                .collect_camera_stream_point_particles_3d(render_mask, viewport_node),
+            waters_3d: self.collect_camera_stream_waters_3d(render_mask, viewport_node),
         })
     }
 

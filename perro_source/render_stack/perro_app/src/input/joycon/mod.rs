@@ -451,7 +451,7 @@ mod backend {
 
             let stop = Arc::new(AtomicBool::new(false));
             let stop_thread = Arc::clone(&stop);
-            let serial_thread = serial.clone();
+            let serial_thread = serial;
 
             thread::spawn(move || {
                 let Ok(api) = HidApi::new() else {

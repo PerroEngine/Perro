@@ -2,10 +2,12 @@ use super::*;
 use crate::RuntimeScriptApi;
 use perro_ids::ScriptMemberID;
 use perro_nodes::{
-    CameraStream3D, Node3D, SceneNode, SceneNodeData, Sky3D, UiCameraStream, Webcam,
-    camera_3d::Camera3D,
+    AmbientLight2D, AmbientLight3D, CameraStream3D, Node3D, SceneNode, SceneNodeData, Sky3D,
+    UiCameraStream, UiViewport, Webcam, camera_3d::Camera3D,
 };
-use perro_render_bridge::{CameraStreamCommand, CameraStreamSourceState, RenderEvent, UiCommand};
+use perro_render_bridge::{
+    CameraStreamCommand, CameraStreamSourceState, Command3D, Light2DState, RenderEvent, UiCommand,
+};
 use perro_resource_api::sub_apis::{TextureAPI, WebcamAPI, WebcamFrame};
 use perro_runtime_api::sub_apis::{NodeAPI, NodeSpec, SignalAPI};
 use perro_scripting::{ScriptBehavior, ScriptContext, ScriptFlags, ScriptLifecycle};
@@ -251,6 +253,137 @@ fn ui_camera_stream_emits_image_corner_radius() {
         command,
         RenderCommand::Ui(UiCommand::UpsertImage { node, corner_radii, .. })
             if *node == stream && corner_radii.tl == 0.25 && corner_radii.tr == 0.25
+    )));
+}
+
+#[test]
+fn ui_viewport_renders_only_local_spatial_descendants() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+    let viewport = NodeAPI::create::<UiViewport>(&mut runtime);
+    let local_light = NodeAPI::create::<AmbientLight3D>(&mut runtime);
+    let world_light = NodeAPI::create::<AmbientLight3D>(&mut runtime);
+    let local_light_2d = NodeAPI::create::<AmbientLight2D>(&mut runtime);
+    let _world_light_2d = NodeAPI::create::<AmbientLight2D>(&mut runtime);
+    assert!(runtime.reparent(viewport, local_light));
+    assert!(runtime.reparent(viewport, local_light_2d));
+    if let Some(mut node) = runtime.nodes.get_mut(local_light)
+        && let SceneNodeData::AmbientLight3D(data) = &mut node.data
+    {
+        data.intensity = 2.0;
+    }
+    if let Some(mut node) = runtime.nodes.get_mut(world_light)
+        && let SceneNodeData::AmbientLight3D(data) = &mut node.data
+    {
+        data.intensity = 4.0;
+    }
+    if let Some(mut node) = runtime.nodes.get_mut(local_light_2d)
+        && let SceneNodeData::AmbientLight2D(data) = &mut node.data
+    {
+        data.intensity = 3.0;
+    }
+    if let Some(mut node) = runtime.nodes.get_mut(viewport)
+        && let SceneNodeData::UiViewport(data) = &mut node.data
+    {
+        data.layout.size = UiVector2::pixels(320.0, 180.0);
+    }
+
+    runtime.extract_render_ui_commands();
+    let mut commands = Vec::new();
+    runtime.drain_render_commands(&mut commands);
+
+    let state = commands.iter().find_map(|command| match command {
+        RenderCommand::CameraStream(CameraStreamCommand::Upsert { node, state })
+            if *node == viewport =>
+        {
+            Some(state.as_ref())
+        }
+        _ => None,
+    });
+    let state = state.expect("viewport stream state");
+    assert_eq!(state.resolution, [320, 180]);
+    assert!(matches!(
+        &state.source,
+        CameraStreamSourceState::ThreeD(camera) if camera.position == [0.0, 0.0, 5.0]
+    ));
+    assert_eq!(
+        state
+            .lighting_3d
+            .ambient_light
+            .expect("local ambient light")
+            .intensity,
+        2.0
+    );
+    assert_eq!(state.lights_2d.len(), 1);
+    assert!(matches!(
+        state.lights_2d[0],
+        Light2DState::Ambient(light) if light.intensity == 3.0
+    ));
+    assert!(state.overlay_camera_2d.is_some());
+    assert!(commands.iter().any(|command| matches!(
+        command,
+        RenderCommand::Ui(UiCommand::UpsertImage { node, .. }) if *node == viewport
+    )));
+
+    runtime.extract_render_3d_commands();
+    commands.clear();
+    runtime.drain_render_commands(&mut commands);
+    assert!(!commands.iter().any(|command| matches!(
+        command,
+        RenderCommand::ThreeD(command)
+            if matches!(command.as_ref(), Command3D::SetAmbientLight { node, .. } if *node == local_light)
+    )));
+    assert!(commands.iter().any(|command| matches!(
+        command,
+        RenderCommand::ThreeD(command)
+            if matches!(command.as_ref(), Command3D::SetAmbientLight { node, .. } if *node == world_light)
+    )));
+
+    if let Some(mut node) = runtime.nodes.get_mut(viewport)
+        && let SceneNodeData::UiViewport(data) = &mut node.data
+    {
+        data.visible = false;
+    }
+    assert!(runtime.is_suspended_by_ui_viewport(local_light));
+    if let Some(mut node) = runtime.nodes.get_mut(viewport)
+        && let SceneNodeData::UiViewport(data) = &mut node.data
+    {
+        data.suspend_when_hidden = false;
+    }
+    assert!(!runtime.is_suspended_by_ui_viewport(local_light));
+}
+
+#[test]
+fn ui_viewport_tracks_scaled_parent_rect() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+
+    let mut parent = UiPanel::new();
+    parent.layout.size = UiVector2::pixels(400.0, 200.0);
+    parent.transform.scale = Vector2::new(0.5, 0.5);
+    let parent = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(Box::new(parent)));
+
+    let viewport = NodeAPI::create::<UiViewport>(&mut runtime);
+    if let Some(mut node) = runtime.nodes.get_mut(viewport)
+        && let SceneNodeData::UiViewport(data) = &mut node.data
+    {
+        data.layout.size = UiVector2::ratio(1.0, 1.0);
+    }
+    assert!(runtime.reparent(parent, viewport));
+
+    runtime.extract_render_ui_commands();
+    let mut commands = Vec::new();
+    runtime.drain_render_commands(&mut commands);
+
+    assert!(commands.iter().any(|command| matches!(
+        command,
+        RenderCommand::CameraStream(CameraStreamCommand::Upsert { node, state })
+            if *node == viewport && state.resolution == [200, 100]
+    )));
+    assert!(commands.iter().any(|command| matches!(
+        command,
+        RenderCommand::Ui(UiCommand::UpsertImage { node, rect, aspect_ratio, .. })
+            if *node == viewport && rect.size == [200.0, 100.0] && *aspect_ratio == 2.0
     )));
 }
 

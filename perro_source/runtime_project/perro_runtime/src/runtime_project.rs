@@ -70,7 +70,7 @@ impl RuntimeProject {
         let name = name.into();
         let config = perro_project::ProjectConfig::default_for_name(name.clone());
         Self {
-            name: name.clone(),
+            name,
             root: root.into(),
             routes: perro_project::default_routes_config(&config),
             config,

@@ -71,6 +71,7 @@ UiNode
 - UiNineSlice
 - UiAnimatedImage
 - UiCameraStream
+- UiViewport
 - UiVideoPlayer
 - UiLabel
 - UiButton
@@ -123,6 +124,47 @@ All inherit `UiNode` layout fields.
 - Emits default `<node_name>_<event>` signals plus extra event signal lists.
 
 `UiImage`
+
+`UiViewport`
+
+- Owns an isolated local render scope inside its computed UI rect.
+- Renders `Node3D` descendants with its built-in view; no `Camera3D` child is required.
+- Defaults to a view at `(0, 0, 5)` looking toward local `(0, 0, 0)`.
+- Composites `Node2D` descendants over the local 3D pass.
+- Keeps spatial descendants out of the main world render pass.
+- Clips the final image to the viewport's UI clip rect and optional corner radius.
+- Uses the computed UI rect as render resolution unless `resolution` overrides it.
+- Suspends descendant script/internal updates and disables local physics bodies/joints while hidden by default.
+- Uses `resolution`, `aspect_mode`, `view_position`, `view_rotation`, `background`, and camera projection fields.
+
+```text
+[preview]
+[UiViewport]
+    size = (320, 180)
+    resolution = (640, 360)
+    view_position = (0, 0, 5)
+    background = "#00000000"
+    corner_radius = 0.08
+[/UiViewport]
+[/preview]
+
+[model]
+parent = @preview
+[MeshInstance3D]
+    mesh = "res://models/item.pmesh"
+[/MeshInstance3D]
+[/model]
+
+[light]
+parent = @preview
+[RayLight3D]
+    rotation = (-0.35, 0.25, 0, 0.9)
+[/RayLight3D]
+[/light]
+```
+
+Use `UiCameraStream` for a view into the existing world.
+Use `UiViewport` for a UI-owned local preview scene.
 
 - Drawn image node.
 - Holds `texture`, `texture_region`, `tint`, `scale_mode`, alignment, and `aspect_ratio`.

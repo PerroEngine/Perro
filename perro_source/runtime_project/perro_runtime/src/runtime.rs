@@ -44,6 +44,7 @@ use audio::AudioPropagationState;
 pub(crate) use scene_loader::PendingScriptAttach;
 #[cfg(feature = "bench")]
 pub use scene_loader::{
+    BenchPreparedScene, BenchSceneSpawner, bench_compile_scene, bench_merge_compiled_scene,
     bench_prepare_and_merge_scene, bench_prepare_merge_extract_scene, bench_prepare_scene,
 };
 pub(crate) use state::CollisionDebugState;
@@ -167,7 +168,11 @@ pub struct Runtime {
     pub(crate) active_route_root: Option<NodeID>,
     pub(crate) scene_ownership_roots: AHashMap<NodeID, NodeID>,
     pub(crate) scene_cache: RefCell<AHashMap<String, Arc<Scene>>>,
+    pub(crate) prepared_scene_cache:
+        RefCell<AHashMap<String, Arc<scene_loader::prepare::PreparedScene>>>,
     pub(crate) preloaded_scenes: AHashMap<PreloadedSceneID, Arc<Scene>>,
+    pub(crate) preloaded_prepared_scenes:
+        AHashMap<PreloadedSceneID, Arc<scene_loader::prepare::PreparedScene>>,
     pub(crate) preloaded_scene_paths: AHashMap<u64, PreloadedSceneID>,
     pub(crate) preloaded_scene_reverse_paths: AHashMap<PreloadedSceneID, String>,
     pub(crate) next_preloaded_scene_id: u64,
@@ -503,7 +508,9 @@ impl Runtime {
             active_route_root: None,
             scene_ownership_roots: AHashMap::new(),
             scene_cache: RefCell::new(AHashMap::new()),
+            prepared_scene_cache: RefCell::new(AHashMap::new()),
             preloaded_scenes: AHashMap::new(),
+            preloaded_prepared_scenes: AHashMap::new(),
             preloaded_scene_paths: AHashMap::new(),
             preloaded_scene_reverse_paths: AHashMap::new(),
             next_preloaded_scene_id: 1,

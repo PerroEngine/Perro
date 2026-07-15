@@ -8,6 +8,7 @@ network-tests = []
 steamworks = ["dep:perro_steamworks", "perro_steamworks/steamworks-runtime"]
 
 [dependencies]
+get_if_addrs = "0.5.3"
 perro_ids.workspace = true
 perro_io.workspace = true
 perro_modules.workspace = true

@@ -421,6 +421,65 @@ impl BarkPlayer {
         Ok(())
     }
 
+    /// Append a microphone packet to its named stream instead of starting it
+    /// immediately. This preserves packet order and prevents arrival bursts
+    /// from overlapping audio and changing its apparent pitch.
+    pub fn play_stream_clip(
+        &self,
+        source: &str,
+        clip: MicClip,
+        bus_id: Option<AudioBusID>,
+        volume: f32,
+        pan: AudioPan,
+    ) -> Result<(), String> {
+        let pan = pan.clamped();
+        let requested_volume = volume.max(0.0);
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| "audio mutex poisoned".to_string())?;
+        let now = Instant::now();
+        Self::prune_finished_playbacks_locked(&mut state, now);
+
+        let master_volume = state.master_volume.max(0.0);
+        let (bus_volume, bus_speed, bus_paused) = match bus_id.and_then(|id| state.buses.get(&id)) {
+            Some(bus_state) => (
+                bus_state.volume.max(0.0),
+                bus_state.speed.max(0.01),
+                bus_state.paused,
+            ),
+            None => (1.0, 1.0, false),
+        };
+        if let Some(playback) = state
+            .playbacks
+            .iter_mut()
+            .find(|playback| playback.source.as_ref() == source && playback.bus_id == bus_id)
+        {
+            let samples = clip.samples_f32();
+            let source_buffer = SamplesBuffer::new(clip.channels(), clip.sample_rate(), samples);
+            playback
+                .sink
+                .append(DspSource::new(source_buffer, Arc::clone(&playback.dsp)));
+            playback.base_volume = requested_volume;
+            playback.pan = pan;
+            playback
+                .sink
+                .set_emitter_position(Self::pan_emitter_position(pan));
+            playback.sink.set_speed(bus_speed);
+            playback
+                .sink
+                .set_volume(requested_volume * master_volume * bus_volume);
+            if bus_paused {
+                playback.sink.pause();
+            } else {
+                playback.sink.play();
+            }
+            return Ok(());
+        }
+        drop(state);
+        self.play_clip(source, clip, bus_id, volume, pan)
+    }
+
     pub fn source_length_seconds(&self, source: &str) -> Option<f32> {
         let Ok(mut state) = self.state.lock() else {
             return None;

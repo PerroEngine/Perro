@@ -18,6 +18,7 @@ use perro_nodes::{
     PhysicsForceEmitter3D, PhysicsForceProfile, PinJoint2D, PointLight2D, RayLight2D,
     RigidBody2D, RigidBody3D, SceneNode, SceneNodeData, Shape2D, Shape3D, SpotLight2D,
     StaticBody2D, StaticBody3D, TextDecal3D, Triangle2DKind, UiCameraStream, UiVideoPlayer,
+    UiViewport,
     VideoPlayer, VideoPlayer2D, VideoPlayer3D, WaterBody2D, WaterBody3D, Webcam,
     WaterIdleMode, WaterShape, WaterSkyBias, WaterSurfaceParams,
     ambient_light_3d::AmbientLight3D,
@@ -715,12 +716,28 @@ fn as_vec3_array(value: &SceneValue) -> Option<Vec<Vector3>> {
     Some(out)
 }
 
-pub(super) struct PreparedScene {
+pub(crate) struct PreparedScene {
     pub(super) root_key: Option<u32>,
     pub(super) nodes: Vec<PendingNode>,
     pub(super) scripts: Vec<PendingScript>,
 }
 
+impl Clone for PreparedScene {
+    fn clone(&self) -> Self {
+        let keep_key_names = !self.scripts.is_empty();
+        Self {
+            root_key: self.root_key,
+            nodes: self
+                .nodes
+                .iter()
+                .map(|node| node.clone_for_spawn(keep_key_names))
+                .collect(),
+            scripts: self.scripts.clone(),
+        }
+    }
+}
+
+#[derive(Clone)]
 pub(super) struct PendingScript {
     pub(super) node_key: u32,
     #[cfg(test)]
@@ -753,6 +770,38 @@ pub(super) struct PendingNode {
     pub(super) joint_body_links: Vec<PendingJointBodyLink>,
     pub(super) animation_bindings: Vec<(String, u32)>,
     pub(super) locale_text_bindings: Vec<PendingLocaleTextBinding>,
+}
+
+impl PendingNode {
+    fn clone_for_spawn(&self, keep_key_name: bool) -> Self {
+        Self {
+            key: self.key,
+            key_name: if keep_key_name {
+                self.key_name.clone()
+            } else {
+                String::new()
+            },
+            parent_key: self.parent_key,
+            node: self.node.clone(),
+            animation_source: self.animation_source.clone(),
+            animation_tree_source: self.animation_tree_source.clone(),
+            animation_tree_animations: self.animation_tree_animations.clone(),
+            texture_source: self.texture_source.clone(),
+            decal_texture_sources: self.decal_texture_sources.clone(),
+            mesh_source: self.mesh_source.clone(),
+            material_surfaces: self.material_surfaces.clone(),
+            skeleton_source: self.skeleton_source.clone(),
+            bone_pose_overrides: self.bone_pose_overrides.clone(),
+            mesh_skeleton_target: self.mesh_skeleton_target,
+            bone_attachment_skeleton_target: self.bone_attachment_skeleton_target,
+            ik_target_skeleton_target: self.ik_target_skeleton_target,
+            physics_bone_chain_skeleton_target: self.physics_bone_chain_skeleton_target,
+            camera_stream_target: self.camera_stream_target,
+            joint_body_links: self.joint_body_links.clone(),
+            animation_bindings: self.animation_bindings.clone(),
+            locale_text_bindings: self.locale_text_bindings.clone(),
+        }
+    }
 }
 
 /// Per-bone pose override authored on a Skeleton2D/Skeleton3D scene node:
@@ -921,6 +970,7 @@ pub(super) enum PendingJointBodyField {
     BodyB,
 }
 
+#[derive(Clone)]
 pub(super) struct PendingJointBodyLink {
     pub(super) field: PendingJointBodyField,
     pub(super) target_key: u32,
@@ -933,6 +983,7 @@ pub(super) struct PendingLocaleTextBinding {
     pub(super) key_hash: u64,
 }
 
+#[derive(Clone)]
 pub(super) struct PendingAnimationTreeAnimation {
     pub(super) source: String,
     pub(super) bindings: Vec<(String, u32)>,
@@ -941,6 +992,7 @@ pub(super) struct PendingAnimationTreeAnimation {
     pub(super) playback_type: perro_nodes::AnimationPlaybackType,
 }
 
+#[derive(Clone)]
 pub(super) struct PendingSurfaceMaterial {
     pub(super) source: Option<String>,
     pub(super) inline: Option<Material3D>,
@@ -2120,6 +2172,7 @@ fn scene_node_data_from(
             static_ui_style_lookup,
         )))),
         NodeType::UiCameraStream => Ok(SceneNodeData::UiCameraStream(Box::new(build_ui_camera_stream(data)))),
+        NodeType::UiViewport => Ok(SceneNodeData::UiViewport(Box::new(build_ui_viewport(data)))),
         NodeType::UiImage => Ok(SceneNodeData::UiImage(Box::new(build_ui_image(data)))),
         NodeType::UiVideoPlayer => Ok(SceneNodeData::UiVideoPlayer(Box::new(build_ui_video_player(data)))),
         NodeType::UiImageButton => Ok(SceneNodeData::UiImageButton(Box::new(build_ui_image_button(data)))),

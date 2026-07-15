@@ -16,12 +16,16 @@ fn color(v: [f32; 4]) -> Color {
 }
 
 fn rect_command(i: u32) -> RenderCommand {
+    rect_command_offset(i, 0.0)
+}
+
+fn rect_command_offset(i: u32, offset: f32) -> RenderCommand {
     let x = (i % 256) as f32 * 4.0;
     let y = (i / 256) as f32 * 4.0;
     RenderCommand::TwoD(Command2D::UpsertRect {
         node: NodeID::from_parts(i + 1, 0),
         rect: perro_render_bridge::Rect2DCommand {
-            center: [x, y],
+            center: [x + offset, y],
             size: [3.0, 3.0],
             color: color([0.2, 0.7, 1.0, 1.0]),
             z_index: i as i32,
@@ -329,6 +333,32 @@ fn bench_2d_rect_prepare(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_2d_rect_sparse_updates(c: &mut Criterion) {
+    const RETAINED: u32 = 100_000;
+    const UPDATED: u32 = 10_000;
+    let mut graphics = PerroGraphics::new();
+    graphics.submit_many((0..RETAINED).map(rect_command));
+    graphics.draw_frame();
+    let mut offset = 0.0;
+
+    c.bench_function("graphics_2d_rect_sparse_updates/10000_of_100000", |b| {
+        b.iter_batched(
+            || {
+                offset = if offset == 0.0 { 0.5 } else { 0.0 };
+                (0..UPDATED)
+                    .map(|i| rect_command_offset(i * 2, offset))
+                    .collect::<Vec<_>>()
+            },
+            |commands| {
+                graphics.submit_many(commands);
+                let timing = graphics.draw_frame_timed().expect("timing");
+                black_box(timing.prepare_cpu);
+            },
+            BatchSize::LargeInput,
+        );
+    });
+}
+
 fn bench_2d_sprite_prepare(c: &mut Criterion) {
     let mut group = c.benchmark_group("graphics_2d_sprite_prepare_same_z");
     for count in [1_000u32, 10_000, 100_000] {
@@ -571,6 +601,7 @@ fn bench_water_idle_prepare(c: &mut Criterion) {
 criterion_group!(
     benches,
     bench_2d_rect_prepare,
+    bench_2d_rect_sparse_updates,
     bench_2d_sprite_prepare,
     bench_2d_sprite_prepare_unique_z,
     bench_3d_draw_prepare,

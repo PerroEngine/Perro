@@ -697,6 +697,7 @@ UI nodes inherit from `UiNode` in the node registry:
 - `UiImageButton`
 - `UiNineSlice`
 - `UiAnimatedImage`
+- `UiViewport`
 - `UiLabel`
 - `UiTextBox`
 - `UiTextBlock`
@@ -717,6 +718,7 @@ All UI nodes can have children.
 `UiImageButton` draws an interactive texture region and emits default named signals plus extra configured signals.
 `UiNineSlice` draws a scalable texture panel with fixed corners and stretched edges/center.
 `UiAnimatedImage` draws sprite-sheet animation in UI space.
+`UiViewport` renders an isolated local 3D subtree plus optional 2D descendants inside its UI bounds without a camera node.
 `UiLabel` draws text.
 Use `Label2D` or `Label3D` for world-space text that still uses `UiLabel` text, alignment, and locale binding fields.
 `UiTextBox` edits one line of text.

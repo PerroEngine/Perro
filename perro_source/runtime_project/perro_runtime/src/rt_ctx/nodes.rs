@@ -413,9 +413,7 @@ impl Runtime {
                 );
             }
             if let Some(parent_index) = spec.parent {
-                if let Some(mut parent_node) = self.nodes.get_mut(ids[parent_index]) {
-                    parent_node.children.push(id);
-                }
+                self.nodes.push_child(ids[parent_index], id);
             } else if parent_id.is_nil() {
                 self.mark_transform_dirty_recursive(id);
             } else {
@@ -434,10 +432,7 @@ impl Runtime {
         if ids.is_empty() {
             return;
         }
-        if let Some(mut parent) = self.nodes.get_mut(parent_id) {
-            parent.children.reserve(ids.len());
-            parent.children.extend(ids.iter().copied());
-        }
+        self.nodes.extend_children(parent_id, ids);
         self.mark_transform_dirty_recursive(parent_id);
         let parent_ui_ancestor = self.closest_ui_ancestor(parent_id);
         for &id in ids {
@@ -711,6 +706,9 @@ impl NodeAPI for Runtime {
         if T::NODE_TYPE.is_physics() {
             self.nodes.mark_physics_change();
         }
+        if T::NODE_TYPE == NodeType::UiViewport {
+            self.invalidate_physics_query_sync();
+        }
         if matches!(T::RENDERABLE, Renderable::True) {
             self.mark_needs_rerender(id);
         }
@@ -784,6 +782,7 @@ impl NodeAPI for Runtime {
         if id.is_nil() {
             return None;
         }
+        let concrete_type = self.nodes.get(id)?.node_type();
 
         let (
             value,
@@ -850,6 +849,9 @@ impl NodeAPI for Runtime {
         };
 
         self.mark_needs_rerender(id);
+        if concrete_type == NodeType::UiViewport {
+            self.invalidate_physics_query_sync();
+        }
         if vis_2d_changed || vis_3d_changed {
             self.force_rerender(id);
         }

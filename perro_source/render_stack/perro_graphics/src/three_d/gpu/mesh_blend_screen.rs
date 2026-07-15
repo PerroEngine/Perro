@@ -678,6 +678,7 @@ impl Gpu3D {
                 if let Some(fallback) = self.fallback_material_texture_bind_group() {
                     pass.set_bind_group(1, fallback, &[]);
                 }
+                pass.set_bind_group(3, &self.ibl_bind_group, &[]);
                 pass.set_vertex_buffer(0, self.rigid_vertex_buffer.slice(..));
                 pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
             }

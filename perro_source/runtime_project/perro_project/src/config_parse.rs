@@ -400,7 +400,7 @@ pub fn parse_routes_toml(contents: &str) -> Result<ProjectRoutesConfig, ProjectE
         .ok_or(ProjectError::MissingField("route"))?;
     let mut routes = Vec::with_capacity(route_entries.len());
     for entry in route_entries {
-        let table = entry.as_table().ok_or(ProjectError::InvalidField(
+        let table = entry.as_table().ok_or_else(|| ProjectError::InvalidField(
             "route",
             "must be table array".to_string(),
         ))?;
@@ -1145,7 +1145,7 @@ fn parse_aspect_ratio(raw: &str) -> Result<(u32, u32), ProjectError> {
     let (w, h) =
         raw.split_once(':')
             .or_else(|| raw.split_once('x'))
-            .ok_or(ProjectError::InvalidField(
+            .ok_or_else(|| ProjectError::InvalidField(
                 "graphics.aspect_ratio",
                 "expected format `WIDTH:HEIGHT`, for example `16:9`".to_string(),
             ))?;

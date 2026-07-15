@@ -20,7 +20,8 @@ pub use state::NetEvent;
 use crate::multiplayer::state::{NetworkState, Session};
 use crate::multiplayer::steam_transport::{SteamLobbyEvent, SteamTransport};
 use crate::multiplayer::transport::{ActiveTransport, NetTransport};
-use std::net::{SocketAddr, UdpSocket};
+use get_if_addrs::{IfAddr, get_if_addrs};
+use std::net::{Ipv4Addr, SocketAddr, UdpSocket};
 use std::sync::{LazyLock, Mutex};
 use std::time::Instant;
 
@@ -521,10 +522,46 @@ fn start_lan_discovery() {
         return;
     }
     let packet = crate::multiplayer::lan_transport::LAN_DISCOVER;
-    let _ = socket.send_to(packet, LAN_BROADCAST_ADDR);
-    let _ = socket.send_to(packet, LAN_LOOPBACK_ADDR);
+    // `255.255.255.255` may only leave the default adapter on Windows. Add
+    // each adapter's directed broadcast too, so virtual LANs (Hamachi, etc.)
+    // receive discovery even when they are not the default route.
+    for target in lan_discovery_targets() {
+        let _ = socket.send_to(packet, target);
+    }
     let mut state = lock_state();
     state.lan_discovery = Some(crate::multiplayer::state::LanDiscovery { socket, age: 0.0 });
+}
+
+fn lan_discovery_targets() -> Vec<SocketAddr> {
+    let mut targets = vec![
+        LAN_BROADCAST_ADDR
+            .parse()
+            .expect("valid LAN broadcast address"),
+        LAN_LOOPBACK_ADDR
+            .parse()
+            .expect("valid LAN loopback address"),
+    ];
+    if let Ok(interfaces) = get_if_addrs() {
+        for interface in interfaces {
+            let IfAddr::V4(address) = interface.addr else {
+                continue;
+            };
+            if address.ip.is_loopback() {
+                continue;
+            }
+            let broadcast = address
+                .broadcast
+                .unwrap_or_else(|| directed_broadcast(address.ip, address.netmask));
+            targets.push(SocketAddr::from((broadcast, LAN_HOST_PORT)));
+        }
+    }
+    targets.sort_unstable();
+    targets.dedup();
+    targets
+}
+
+fn directed_broadcast(ip: Ipv4Addr, netmask: Ipv4Addr) -> Ipv4Addr {
+    Ipv4Addr::from(u32::from(ip) | !u32::from(netmask))
 }
 
 fn poll_lan_discovery() {
@@ -633,6 +670,17 @@ mod tests {
                 crate::multiplayer::lan_transport::LAN_JOIN_TOKEN,
                 crate::multiplayer::lan_transport::LAN_JOIN_TOKEN,
             )]
+        );
+    }
+
+    #[test]
+    fn directed_broadcast_uses_the_adapter_subnet() {
+        assert_eq!(
+            directed_broadcast(
+                Ipv4Addr::new(25, 12, 34, 56),
+                Ipv4Addr::new(255, 255, 255, 0),
+            ),
+            Ipv4Addr::new(25, 12, 34, 255)
         );
     }
 

@@ -400,22 +400,19 @@ fn intersect_candidate_vectors<'a>(
     let Some(seed) = candidates.next() else {
         return Vec::new();
     };
-    let rest = candidates.collect::<Vec<_>>();
-    if rest.is_empty() {
-        return seed.clone();
-    }
-
     let bit_words = slot_count.max(1).div_ceil(64);
-    let rest_marks = rest
-        .iter()
+    let rest_marks = candidates
         .map(|candidate| {
             let mut marks = vec![0u64; bit_words];
-            for &id in candidate.iter() {
+            for &id in candidate {
                 mark_id(id, &mut marks);
             }
             marks
         })
         .collect::<Vec<_>>();
+    if rest_marks.is_empty() {
+        return seed.clone();
+    }
 
     let mut out = Vec::with_capacity(seed.len());
     'outer: for &id in seed {

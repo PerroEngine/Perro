@@ -545,7 +545,7 @@ impl Variant {
     where
         T: DeriveVariant,
     {
-        T::from_variant(self).ok_or(VariantParseError {
+        T::from_variant(self).ok_or_else(|| VariantParseError {
             target: std::any::type_name::<T>(),
             actual: self.kind_name(),
         })
@@ -579,7 +579,7 @@ impl Variant {
         T: DeriveVariant,
     {
         let actual = self.kind_name();
-        T::from_owned_variant(self).ok_or(VariantParseError {
+        T::from_owned_variant(self).ok_or_else(|| VariantParseError {
             target: std::any::type_name::<T>(),
             actual,
         })

@@ -405,9 +405,7 @@ fn emit_value_with_consts(
         SceneValue::UVec4 { x, y, z, w } => {
             format!("SceneValue::UVec4 {{ x: {x}, y: {y}, z: {z}, w: {w} }}")
         }
-        SceneValue::Str(s) => {
-            emit_static_scene_value_str(node_type, field_name, s.as_ref()).to_string()
-        }
+        SceneValue::Str(s) => emit_static_scene_value_str(node_type, field_name, s.as_ref()),
         SceneValue::Hashed(v) => format!("SceneValue::Hashed({v}u64)"),
         SceneValue::Key(s) => {
             format!(

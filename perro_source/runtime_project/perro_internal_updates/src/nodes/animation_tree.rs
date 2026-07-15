@@ -273,7 +273,7 @@ where
             mask,
         } => {
             let base_pose = eval_node(tree, res, nodes, base.as_ref(), visiting)?;
-            let mut out = base_pose.clone();
+            let mut out = base_pose;
             for (idx, input) in inputs.iter().enumerate() {
                 if let Some(pose) = eval_node(tree, res, nodes, input.as_ref(), visiting) {
                     let weight = runtime_weight(tree, key, input.as_ref(), weights, idx);

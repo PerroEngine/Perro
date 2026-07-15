@@ -77,6 +77,7 @@ impl Runtime {
             SceneNodeData::AudioEffectZone3D(node) => node.visible,
             SceneNodeData::AudioPortal3D(node) => node.visible,
             SceneNodeData::UiNode(node) => node.visible,
+            SceneNodeData::UiViewport(node) => node.visible,
             SceneNodeData::UiCameraStream(node) => node.visible,
             SceneNodeData::UiPanel(node) => node.visible,
             SceneNodeData::UiProgressBar(node) => node.visible,
@@ -126,6 +127,39 @@ impl Runtime {
             hops += 1;
         }
         false
+    }
+
+    pub(crate) fn ui_viewport_ancestor(&self, node: NodeID) -> Option<NodeID> {
+        let mut current = self.nodes.get(node)?.parent;
+        let mut hops = 0usize;
+        let max_hops = self.nodes.len().saturating_add(1);
+        while !current.is_nil() && hops < max_hops {
+            let scene_node = self.nodes.get(current)?;
+            if matches!(scene_node.data, SceneNodeData::UiViewport(_)) {
+                return Some(current);
+            }
+            current = scene_node.parent;
+            hops += 1;
+        }
+        None
+    }
+
+    pub(crate) fn is_under_ui_viewport(&self, node: NodeID) -> bool {
+        self.ui_viewport_ancestor(node).is_some()
+    }
+
+    pub(crate) fn is_suspended_by_ui_viewport(&self, node: NodeID) -> bool {
+        let Some(viewport_id) = self.ui_viewport_ancestor(node) else {
+            return false;
+        };
+        self.nodes.get(viewport_id).is_some_and(|viewport_node| {
+            matches!(
+                &viewport_node.data,
+                SceneNodeData::UiViewport(viewport)
+                    if viewport.suspend_when_hidden
+                        && (!viewport.enabled || !self.is_effectively_visible(viewport_id))
+            )
+        })
     }
 
     pub(crate) fn color_modulate(a: Color, b: Color) -> Color {

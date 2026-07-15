@@ -125,6 +125,7 @@ Status keys:
 | UI nine-slice node     | done   | `UiNineSlice` renders scalable texture panels in UI space with fixed corners, stretched edges/center, texture regions, margins, and tint.                                                        |
 | UI animated image node | done   | `UiAnimatedImage` renders sprite-sheet animations in UI space with `UiImage` scale/alignment behavior.                                                                                             |
 | UI camera stream       | done   | `UiCameraStream` renders 2D or 3D camera output inside UI layout, with aspect mode, tint, corner radius, and stream texture reuse.                                                                  |
+| UI local viewport      | done   | `UiViewport` renders UI-owned `Node3D` descendants plus a local `Node2D` overlay inside its clipped UI rect, with an embedded view and no world camera node.                                      |
 | UI style resources     | done   | Inline `style = { ... }` blocks and `res://path/to/style.uistyle` load for normal/hover/pressed/focused state styles, mirroring material resource flow. See [`.uistyle`](../resources/uistyle.md). |
 
 ## Tooling And Demos

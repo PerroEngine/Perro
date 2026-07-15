@@ -5,7 +5,8 @@ use crate::runtime::render_2d::{
 use perro_nodes::{
     Area2D, Area3D, CharacterBody2D, CharacterBody3D, CollisionShape2D, CollisionShape3D,
     FixedJoint2D, FixedJoint3D, MeshInstance3D, RigidBody2D, RigidBody3D, Sprite2D, StaticBody2D,
-    StaticBody3D, WaterBody2D, WaterBody3D, WaterIdleMode, WaterShape, WaterSurfaceParams,
+    StaticBody3D, UiViewport, WaterBody2D, WaterBody3D, WaterIdleMode, WaterShape,
+    WaterSurfaceParams,
 };
 use perro_runtime_api::sub_apis::PhysicsAPI;
 use perro_structs::CollisionPolicy;
@@ -39,6 +40,27 @@ fn physics_interp_2d_uses_prev_curr_alpha_and_keeps_scale() {
     assert!(approx(render.position.x, 5.0));
     assert!(approx(render.rotation, std::f32::consts::FRAC_PI_2));
     assert_eq!(render.scale, curr.scale);
+}
+
+#[test]
+fn hidden_ui_viewport_disables_local_physics_body() {
+    let mut runtime = Runtime::new();
+    let viewport = NodeAPI::create::<UiViewport>(&mut runtime);
+    let body = NodeAPI::create::<RigidBody3D>(&mut runtime);
+    assert!(runtime.reparent(viewport, body));
+
+    let descs = runtime.collect_body_descs_3d();
+    assert!(descs.iter().any(|desc| desc.id == body && desc.enabled));
+    runtime.physics_body_descs_3d = descs;
+
+    if let Some(mut node) = runtime.nodes.get_mut(viewport)
+        && let SceneNodeData::UiViewport(viewport) = &mut node.data
+    {
+        viewport.visible = false;
+    }
+    let descs = runtime.collect_body_descs_3d();
+    assert!(descs.iter().any(|desc| desc.id == body && !desc.enabled));
+    runtime.physics_body_descs_3d = descs;
 }
 
 #[test]

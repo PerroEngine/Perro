@@ -370,8 +370,10 @@ impl Runtime {
         let mut command_ids = plan.command_ids;
         let mut command_seen = plan.command_seen;
         for (node, scene_node) in self.nodes.iter() {
-            if matches!(scene_node.data, SceneNodeData::UiCameraStream(_))
-                && command_seen.insert(node)
+            if matches!(
+                scene_node.data,
+                SceneNodeData::UiCameraStream(_) | SceneNodeData::UiViewport(_)
+            ) && command_seen.insert(node)
             {
                 command_ids.push(node);
             }
@@ -537,7 +539,10 @@ impl Runtime {
                 continue;
             };
             if !effective_visible {
-                if matches!(scene_node.data, SceneNodeData::UiCameraStream(_)) {
+                if matches!(
+                    scene_node.data,
+                    SceneNodeData::UiCameraStream(_) | SceneNodeData::UiViewport(_)
+                ) {
                     self.queue_render_command(RenderCommand::CameraStream(
                         CameraStreamCommand::RemoveNode { node },
                     ));
@@ -552,6 +557,10 @@ impl Runtime {
                 SceneNodeData::UiCameraStream(stream_node) => Some(stream_node.stream.clone()),
                 _ => None,
             };
+            let ui_viewport = match &scene_node.data {
+                SceneNodeData::UiViewport(viewport) => Some((**viewport).clone()),
+                _ => None,
+            };
             let mut camera_stream_texture = None;
             let mut camera_stream_resolution = None;
             if let Some(stream) = ui_stream {
@@ -561,6 +570,22 @@ impl Runtime {
                         CameraStreamSourceState::Webcam { resolution, .. } => Some(*resolution),
                         _ => Some(state.resolution),
                     };
+                    self.queue_render_command(RenderCommand::CameraStream(
+                        CameraStreamCommand::Upsert {
+                            node,
+                            state: Box::new(state),
+                        },
+                    ));
+                } else {
+                    self.queue_render_command(RenderCommand::CameraStream(
+                        CameraStreamCommand::RemoveNode { node },
+                    ));
+                }
+            }
+            if let Some(viewport) = ui_viewport {
+                if let Some(state) = self.ui_viewport_state(node, &viewport, rect_state.size) {
+                    camera_stream_texture = Some(state.output_texture);
+                    camera_stream_resolution = Some(state.resolution);
                     self.queue_render_command(RenderCommand::CameraStream(
                         CameraStreamCommand::Upsert {
                             node,

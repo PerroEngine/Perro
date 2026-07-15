@@ -141,6 +141,7 @@ pub(crate) struct DspSource<S> {
     input: S,
     control: Arc<DspControl>,
     channels: usize,
+    sample_rate: usize,
     channel_index: usize,
     params: DspParams,
     param_counter: u32,
@@ -151,9 +152,9 @@ pub(crate) struct DspSource<S> {
     eq_low_state: Vec<f32>,
     eq_high_prev_in: Vec<f32>,
     eq_high_prev_out: Vec<f32>,
-    echo: DelayLine,
-    reverb_a: DelayLine,
-    reverb_b: DelayLine,
+    echo: Option<DelayLine>,
+    reverb_a: Option<DelayLine>,
+    reverb_b: Option<DelayLine>,
 }
 
 impl<S> DspSource<S>
@@ -163,10 +164,12 @@ where
     pub(crate) fn new(input: S, control: Arc<DspControl>) -> Self {
         let channels = input.channels().max(1) as usize;
         let sample_rate = input.sample_rate().max(1) as usize;
+        let initially_wet = dsp_uses_delay_lines(control.snapshot());
         Self {
             input,
             control,
             channels,
+            sample_rate,
             channel_index: 0,
             params: DspParams::dry(),
             param_counter: 0,
@@ -175,9 +178,12 @@ where
             eq_low_state: vec![0.0; channels],
             eq_high_prev_in: vec![0.0; channels],
             eq_high_prev_out: vec![0.0; channels],
-            echo: DelayLine::new(delay_len(sample_rate, channels, 0.18), 0.32),
-            reverb_a: DelayLine::new(delay_len(sample_rate, channels, 0.047), 0.62),
-            reverb_b: DelayLine::new(delay_len(sample_rate, channels, 0.071), 0.54),
+            echo: initially_wet
+                .then(|| DelayLine::new(delay_len(sample_rate, channels, 0.18), 0.32)),
+            reverb_a: initially_wet
+                .then(|| DelayLine::new(delay_len(sample_rate, channels, 0.047), 0.62)),
+            reverb_b: initially_wet
+                .then(|| DelayLine::new(delay_len(sample_rate, channels, 0.071), 0.54)),
         }
     }
 }
@@ -217,16 +223,25 @@ where
         // delay-line read/writes entirely.
         if echo_wet > 0.001 || reverb_wet > 0.001 {
             if !self.wet_active {
+                self.ensure_wet_delay_lines();
                 // Dry->wet edge: buffers hold stale audio from the skipped dry
                 // stretch; clear so re-engaging does not burst old signal.
-                self.echo.clear();
-                self.reverb_a.clear();
-                self.reverb_b.clear();
+                self.echo.as_mut().unwrap().clear();
+                self.reverb_a.as_mut().unwrap().clear();
+                self.reverb_b.as_mut().unwrap().clear();
                 self.wet_active = true;
             }
-            let echo_sample = self.echo.process(ch, sample, echo_wet);
-            let reverb_sample = (self.reverb_a.process(ch, sample, reverb_wet)
-                + self.reverb_b.process(ch, sample, reverb_wet))
+            let echo_sample = self.echo.as_mut().unwrap().process(ch, sample, echo_wet);
+            let reverb_sample = (self
+                .reverb_a
+                .as_mut()
+                .unwrap()
+                .process(ch, sample, reverb_wet)
+                + self
+                    .reverb_b
+                    .as_mut()
+                    .unwrap()
+                    .process(ch, sample, reverb_wet))
                 * 0.5;
             sample = sample * (1.0 - (echo_wet + reverb_wet * 0.5).min(0.45))
                 + echo_sample * echo_wet * 0.45
@@ -272,6 +287,17 @@ impl<S> DspSource<S>
 where
     S: Source<Item = f32>,
 {
+    fn ensure_wet_delay_lines(&mut self) {
+        let sample_rate = self.sample_rate;
+        let channels = self.channels;
+        self.echo
+            .get_or_insert_with(|| DelayLine::new(delay_len(sample_rate, channels, 0.18), 0.32));
+        self.reverb_a
+            .get_or_insert_with(|| DelayLine::new(delay_len(sample_rate, channels, 0.047), 0.62));
+        self.reverb_b
+            .get_or_insert_with(|| DelayLine::new(delay_len(sample_rate, channels, 0.071), 0.54));
+    }
+
     fn apply_low_pass(&mut self, ch: usize, sample: f32, amount: f32) -> f32 {
         if amount <= 0.001 {
             self.low_state[ch] = sample;
@@ -301,6 +327,12 @@ fn eq_is_dry(eq: AudioEq) -> bool {
     (eq.low_gain - 1.0).abs() <= 1e-3
         && (eq.mid_gain - 1.0).abs() <= 1e-3
         && (eq.high_gain - 1.0).abs() <= 1e-3
+}
+
+fn dsp_uses_delay_lines(params: DspParams) -> bool {
+    let echo_wet = params.echo.max(params.reflection * 0.35);
+    let reverb_wet = params.reverb_send.max(params.reflection * 0.25);
+    echo_wet > 0.001 || reverb_wet > 0.001
 }
 
 fn apply_compression(sample: f32, compression: AudioCompression) -> f32 {
@@ -418,5 +450,25 @@ mod tests {
             },
         );
         assert!(sample < 0.7);
+    }
+
+    #[test]
+    fn delay_lines_allocate_only_for_wet_sources() {
+        let source = || TestSource {
+            samples: vec![0.25].into_iter(),
+            channels: 2,
+            rate: 48_000,
+        };
+        let mut dry = DspSource::new(source(), DspControl::new(DspParams::dry()));
+        assert!(dry.echo.is_none() && dry.reverb_a.is_none() && dry.reverb_b.is_none());
+        assert_eq!(dry.next(), Some(0.25));
+        assert!(dry.echo.is_none() && dry.reverb_a.is_none() && dry.reverb_b.is_none());
+
+        let mut wet_params = DspParams::dry();
+        wet_params.reverb_send = 0.5;
+        let mut wet = DspSource::new(source(), DspControl::new(wet_params));
+        assert!(wet.echo.is_some() && wet.reverb_a.is_some() && wet.reverb_b.is_some());
+        assert_eq!(wet.next(), Some(0.1875));
+        assert!(wet.echo.is_some() && wet.reverb_a.is_some() && wet.reverb_b.is_some());
     }
 }

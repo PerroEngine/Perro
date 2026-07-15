@@ -1,4 +1,4 @@
-use super::{RectInstanceGpu, Renderer2D};
+use super::{RectInstanceGpu, Renderer2D, coalesce_ranges};
 use crate::resources::ResourceStore;
 use perro_ids::{NodeID, TextureID};
 use perro_render_bridge::{
@@ -7,6 +7,15 @@ use perro_render_bridge::{
 };
 use perro_structs::{Color, DrawShape2D, Vector2};
 use std::sync::Arc;
+
+#[test]
+fn coalesce_ranges_sorts_and_merges_without_gaps() {
+    assert_eq!(
+        coalesce_ranges(vec![8..10, 2..4, 3..7, 12..13, 10..12]),
+        vec![2..7, 8..13]
+    );
+    assert!(coalesce_ranges(Vec::new()).is_empty());
+}
 
 #[test]
 fn texture_upsert_requires_existing_resource() {

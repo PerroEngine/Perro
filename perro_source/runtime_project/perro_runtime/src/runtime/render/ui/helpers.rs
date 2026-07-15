@@ -50,6 +50,7 @@ pub(super) fn ui_root_from_data(data: &SceneNodeData) -> Option<&UiNode> {
     match data {
         SceneNodeData::UiNode(root) => Some(root),
         SceneNodeData::UiCameraStream(node) => Some(&node.base),
+        SceneNodeData::UiViewport(node) => Some(&node.base),
         SceneNodeData::UiPanel(node) => Some(&node.base),
         SceneNodeData::UiProgressBar(node) => Some(&node.base),
         SceneNodeData::UiShape(node) => Some(&node.base),
@@ -79,6 +80,7 @@ pub(super) fn ui_root_mut_from_data(data: &mut SceneNodeData) -> Option<&mut UiN
     match data {
         SceneNodeData::UiNode(root) => Some(root),
         SceneNodeData::UiCameraStream(node) => Some(&mut node.base),
+        SceneNodeData::UiViewport(node) => Some(&mut node.base),
         SceneNodeData::UiPanel(node) => Some(&mut node.base),
         SceneNodeData::UiProgressBar(node) => Some(&mut node.base),
         SceneNodeData::UiShape(node) => Some(&mut node.base),
@@ -826,6 +828,33 @@ pub(super) fn ui_command_from_node(
                 ),
                 corner_radii: ui_corner_radii_state(perro_ui::UiCornerRadii::all(
                     stream.corner_radius,
+                )),
+            })
+        }
+        SceneNodeData::UiViewport(viewport) => {
+            if !viewport.enabled {
+                return None;
+            }
+            Some(UiCommand::UpsertImage {
+                node,
+                rect,
+                clip_rect,
+                texture: camera_stream_texture
+                    .unwrap_or_else(|| Runtime::camera_stream_texture_id(node)),
+                tint: Runtime::color_modulate(viewport.tint, modulate),
+                uv_min: [0.0, 0.0],
+                uv_max: [1.0, 1.0],
+                scale_mode: ui_image_scale_state(viewport.aspect_mode),
+                h_align: UiTextAlignState::Center,
+                v_align: UiTextAlignState::Center,
+                aspect_ratio: camera_stream_aspect_ratio(
+                    viewport.aspect_ratio,
+                    camera_stream_resolution
+                        .map(|[width, height]| UVector2::new(width, height))
+                        .unwrap_or(viewport.resolution),
+                ),
+                corner_radii: ui_corner_radii_state(perro_ui::UiCornerRadii::all(
+                    viewport.corner_radius,
                 )),
             })
         }

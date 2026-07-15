@@ -298,14 +298,13 @@ impl Runtime {
 
         // Loop-invariant: active camera + viewport are fixed for the whole
         // traversal. Compute once instead of per Sprite3D/VideoPlayer3D/Label3D.
-        let overlay_camera = active_camera
-            .clone()
-            .unwrap_or_else(fallback_camera_3d_state);
+        let overlay_camera = active_camera.unwrap_or_else(fallback_camera_3d_state);
         let overlay_viewport = self.input.viewport_size();
 
         for node in traversal_ids.iter().copied() {
             visible_now.remove(&node);
-            let effective_visible = self.is_effectively_visible(node);
+            let effective_visible =
+                self.is_effectively_visible(node) && !self.is_under_ui_viewport(node);
             let ambient_light_data = self.nodes.get(node).and_then(|node| match &node.data {
                 SceneNodeData::AmbientLight3D(light)
                     if light.active
@@ -1680,7 +1679,8 @@ impl Runtime {
             .collect();
         for candidate in candidates {
             let Some((visible, layers)) = self.nodes.get(candidate).and_then(|scene_node| {
-                let visible = self.is_effectively_visible(candidate);
+                let visible =
+                    self.is_effectively_visible(candidate) && !self.is_under_ui_viewport(candidate);
                 match &scene_node.data {
                     SceneNodeData::MeshInstance3D(mesh) => Some((visible, mesh.render_layers)),
                     SceneNodeData::MultiMeshInstance3D(mesh) => Some((visible, mesh.render_layers)),
@@ -1708,7 +1708,10 @@ impl Runtime {
             let SceneNodeData::Camera3D(camera) = &scene_node.data else {
                 continue;
             };
-            if !camera.active || !self.is_effectively_visible(node) {
+            if !camera.active
+                || !self.is_effectively_visible(node)
+                || self.is_under_ui_viewport(node)
+            {
                 continue;
             }
             let order = self

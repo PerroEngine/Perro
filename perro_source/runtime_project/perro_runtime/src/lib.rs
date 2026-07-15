@@ -24,11 +24,12 @@ pub use perro_project::{bootstrap_project, create_new_project};
 pub use perro_runtime_api::sub_apis::{WindowMode, WindowRequest};
 pub use render_result::RuntimeRenderResult;
 pub use rs_ctx::RuntimeResourceApi;
-pub use runtime::{Runtime, RuntimeFixedUpdateTiming, RuntimeScriptApi, RuntimeUpdateTiming};
 #[cfg(feature = "bench")]
 pub use runtime::{
+    BenchPreparedScene, BenchSceneSpawner, bench_compile_scene, bench_merge_compiled_scene,
     bench_prepare_and_merge_scene, bench_prepare_merge_extract_scene, bench_prepare_scene,
 };
+pub use runtime::{Runtime, RuntimeFixedUpdateTiming, RuntimeScriptApi, RuntimeUpdateTiming};
 pub use runtime_project::{
     AudioConfig, AudioPropagationConfig, FrameRateCap, LocalizationConfig, OcclusionCulling,
     ParticleSimDefault, ProjectLoadError, ProjectMetadata, ProjectRoute, ProjectRoutesConfig,

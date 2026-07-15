@@ -57,7 +57,7 @@ fn sync_scripts_from_source(
                 registrable.push(rel_norm.clone());
             }
             write_string_if_changed(&dst, &transformed)?;
-            generated_rel_paths.insert(generated_rel.clone());
+            generated_rel_paths.insert(generated_rel);
             copied.push(rel_norm);
             Ok(())
         })?;

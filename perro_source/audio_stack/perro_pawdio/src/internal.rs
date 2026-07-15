@@ -399,6 +399,13 @@ pub(crate) enum AudioCommand {
         volume: f32,
         pan: AudioPan,
     },
+    PlayStreamClip {
+        source: Arc<str>,
+        clip: MicClip,
+        bus_id: Option<AudioBusID>,
+        volume: f32,
+        pan: AudioPan,
+    },
     Stop {
         source: Arc<str>,
     },

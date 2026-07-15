@@ -45,7 +45,7 @@ pub enum ProjectRoot {
 
 struct ProjectAssetState {
     root: Option<ProjectRoot>,
-    archive: Option<PerroAssetsArchive>,
+    archive: Option<Arc<PerroAssetsArchive>>,
 }
 
 static PROJECT_ASSET_STATE: RwLock<ProjectAssetState> = RwLock::new(ProjectAssetState {
@@ -115,7 +115,9 @@ pub fn get_project_root() -> ProjectRoot {
 /// Parse and atomically install a project root and its archive backing.
 pub fn try_set_project_root(root: ProjectRoot) -> io::Result<()> {
     let archive = match &root {
-        ProjectRoot::PerroAssets { data, .. } => Some(PerroAssetsArchive::open_from_bytes(data)?),
+        ProjectRoot::PerroAssets { data, .. } => {
+            Some(Arc::new(PerroAssetsArchive::open_from_bytes(data)?))
+        }
         ProjectRoot::Disk { .. } => None,
     };
 
@@ -155,7 +157,8 @@ pub fn mounted_dlc_names() -> Vec<String> {
 pub fn read_mounted_dlc_file(name: &str, virtual_path: &str) -> io::Result<Vec<u8>> {
     validate_asset_relative_path(virtual_path)?;
     let key = name.to_ascii_lowercase();
-    if let Some(archive) = DLC_ARCHIVES.read().unwrap().get(&key) {
+    let archive = DLC_ARCHIVES.read().unwrap().get(&key).cloned();
+    if let Some(archive) = archive {
         archive.read_file(virtual_path)
     } else {
         Err(io::Error::new(
@@ -443,7 +446,8 @@ pub fn load_asset(path: &str) -> io::Result<Vec<u8>> {
         ResolvedPath::Disk(pb) => fs::read(pb),
         ResolvedPath::WebUserStorage(key) => load_web_user_asset(&key),
         ResolvedPath::PerroAssets(virtual_path) => {
-            if let Some(archive) = PROJECT_ASSET_STATE.read().unwrap().archive.as_ref() {
+            let archive = PROJECT_ASSET_STATE.read().unwrap().archive.clone();
+            if let Some(archive) = archive {
                 archive.read_file(&virtual_path)
             } else {
                 Err(io::Error::other("PerroAssets archive not loaded"))
@@ -452,7 +456,8 @@ pub fn load_asset(path: &str) -> io::Result<Vec<u8>> {
         ResolvedPath::StaticBinary(path) => load_static_binary(&path),
         ResolvedPath::DlcStaticBinary { dlc, path } => load_dlc_static_binary(&dlc, &path),
         ResolvedPath::DlcPerroAssets { dlc, virtual_path } => {
-            if let Some(archive) = DLC_ARCHIVES.read().unwrap().get(&dlc) {
+            let archive = DLC_ARCHIVES.read().unwrap().get(&dlc).cloned();
+            if let Some(archive) = archive {
                 archive.read_file(&virtual_path)
             } else {
                 Err(io::Error::new(
@@ -477,7 +482,8 @@ pub fn stream_asset(path: &str) -> io::Result<Box<dyn ReadSeek>> {
             Ok(Box::new(std::io::Cursor::new(bytes)))
         }
         ResolvedPath::PerroAssets(virtual_path) => {
-            if let Some(archive) = PROJECT_ASSET_STATE.read().unwrap().archive.as_ref() {
+            let archive = PROJECT_ASSET_STATE.read().unwrap().archive.clone();
+            if let Some(archive) = archive {
                 let file: PerroAssetsFile = archive.stream_file(&virtual_path)?;
                 Ok(Box::new(file))
             } else {
@@ -489,7 +495,8 @@ pub fn stream_asset(path: &str) -> io::Result<Box<dyn ReadSeek>> {
             Err(io::Error::other("Cannot stream static binary"))
         }
         ResolvedPath::DlcPerroAssets { dlc, virtual_path } => {
-            if let Some(archive) = DLC_ARCHIVES.read().unwrap().get(&dlc) {
+            let archive = DLC_ARCHIVES.read().unwrap().get(&dlc).cloned();
+            if let Some(archive) = archive {
                 let file: PerroAssetsFile = archive.stream_file(&virtual_path)?;
                 Ok(Box::new(file))
             } else {

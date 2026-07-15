@@ -822,61 +822,25 @@ impl Gpu3D {
                         static_shader_lookup,
                     );
                     let custom_params = self.stage_custom_params(material);
-                    let base_linear = crate::srgb_to_linear_rgb([
-                        params.base_color_factor[0],
-                        params.base_color_factor[1],
-                        params.base_color_factor[2],
-                    ]);
-                    let packed_color = pack_unorm4x8([
-                        base_linear[0],
-                        base_linear[1],
-                        base_linear[2],
-                        params.base_color_factor[3],
-                    ]);
-                    let packed_emissive = pack_emissive_hdr(params.emissive_factor);
                     let mirrored_winding = draw_model.determinant() < 0.0;
-                    let mut material_flags = 0u32;
-                    if mirrored_winding {
-                        material_flags |= MATERIAL_FLAG_MIRRORED_WINDING;
-                    }
-                    if params.flat_shading {
-                        material_flags |= MATERIAL_FLAG_FLAT_SHADING;
-                    }
-                    if params.base_color_texture != MATERIAL_TEXTURE_NONE {
-                        material_flags |= MATERIAL_FLAG_HAS_BASE_COLOR_TEXTURE;
-                    }
-                    if entry.modulate_bias {
-                        material_flags |= MATERIAL_FLAG_MODULATE_BIAS;
-                    }
-                    if matches!(material, Material3D::Standard(_)) {
-                        if params.metallic_roughness_texture != MATERIAL_TEXTURE_NONE {
-                            material_flags |= MATERIAL_FLAG_HAS_METALLIC_ROUGHNESS_TEXTURE;
-                        }
-                        if params.normal_texture != MATERIAL_TEXTURE_NONE {
-                            material_flags |= MATERIAL_FLAG_HAS_NORMAL_TEXTURE;
-                        }
-                        if params.occlusion_texture != MATERIAL_TEXTURE_NONE {
-                            material_flags |= MATERIAL_FLAG_HAS_OCCLUSION_TEXTURE;
-                        }
-                        if params.emissive_texture != MATERIAL_TEXTURE_NONE {
-                            material_flags |= MATERIAL_FLAG_HAS_EMISSIVE_TEXTURE;
-                        }
-                    }
-                    if draw.receive_shadows && !matches!(material, Material3D::Unlit(_)) {
-                        material_flags |= MATERIAL_FLAG_RECEIVE_SHADOWS;
-                    }
-                    let packed_pbr_params_0 = pack_standard_pbr_params(
-                        params.roughness_factor,
-                        params.metallic_factor,
-                        params.occlusion_strength,
-                        params.normal_scale,
-                    );
-                    let packed_material_params = pack_material_params(
-                        params.alpha_mode,
-                        params.alpha_cutoff,
-                        params.double_sided || mirrored_winding,
-                        material_flags,
-                    );
+                    let packed_material = build_instance(
+                        dense.node_model,
+                        material,
+                        BuildInstanceArgs {
+                            debug_view: false,
+                            debug_color: [1.0; 4],
+                            mesh_blend: resolved_blend,
+                            skeleton_start: 0,
+                            skeleton_count: 0,
+                            custom_params_offset: custom_params.0,
+                            custom_params_len: custom_params.1,
+                            packed_lod_param_id: 0,
+                            receive_shadows: draw.receive_shadows,
+                            modulate_bias: entry.modulate_bias,
+                        },
+                    )
+                    .rigid_meta
+                    .material;
                     let draw_param_index = self.staged_multimesh_draw_params.len() as u32;
                     self.staged_multimesh_draw_params
                         .push(MultiMeshDrawParamGpu {
@@ -899,10 +863,10 @@ impl Gpu3D {
                                 draw_model.w_axis.z,
                             ],
                             custom_params: [custom_params.0, custom_params.1],
-                            packed_color,
-                            packed_pbr_params_0,
-                            packed_emissive,
-                            packed_material_params,
+                            packed_color: packed_material.packed_color,
+                            packed_pbr_params_0: packed_material.packed_pbr_params_0,
+                            packed_emissive: packed_material.packed_emissive,
+                            packed_material_params: packed_material.packed_material_params,
                             scale_bits: dense.instance_scale.max(0.0001).to_bits(),
                             packed_blend_params: resolved_blend.packed_params,
                             packed_bleed: 0,
@@ -1147,29 +1111,14 @@ impl Gpu3D {
                     for entry in surface_entries.iter() {
                         let material = &entry.material;
                         let standard_params = material.standard_params();
-                        self.ensure_material_texture_slot(
+                        self.ensure_standard_material_texture_slots(
                             device,
                             queue,
                             resources,
-                            standard_params.base_color_texture,
+                            &standard_params,
                             mesh_source,
                             static_texture_lookup,
                         );
-                        for slot in [
-                            standard_params.metallic_roughness_texture,
-                            standard_params.normal_texture,
-                            standard_params.occlusion_texture,
-                            standard_params.emissive_texture,
-                        ] {
-                            self.ensure_material_texture_slot(
-                                device,
-                                queue,
-                                resources,
-                                slot,
-                                mesh_source,
-                                static_texture_lookup,
-                            );
-                        }
                         let material_texture_key =
                             self.custom_material_image_key(device, queue, resources, material);
                         self.ensure_material_texture_bind_group(device, material_texture_key);
@@ -1290,29 +1239,14 @@ impl Gpu3D {
             } else {
                 let material = &surface_entries[0].material;
                 let standard_params = material.standard_params();
-                self.ensure_material_texture_slot(
+                self.ensure_standard_material_texture_slots(
                     device,
                     queue,
                     resources,
-                    standard_params.base_color_texture,
+                    &standard_params,
                     mesh_source,
                     static_texture_lookup,
                 );
-                for slot in [
-                    standard_params.metallic_roughness_texture,
-                    standard_params.normal_texture,
-                    standard_params.occlusion_texture,
-                    standard_params.emissive_texture,
-                ] {
-                    self.ensure_material_texture_slot(
-                        device,
-                        queue,
-                        resources,
-                        slot,
-                        mesh_source,
-                        static_texture_lookup,
-                    );
-                }
                 let material_texture_key =
                     self.custom_material_image_key(device, queue, resources, material);
                 self.ensure_material_texture_bind_group(device, material_texture_key);

@@ -127,7 +127,8 @@ impl Runtime {
 
         for node in traversal_ids.iter().copied() {
             visible_now.remove(&node);
-            let effective_visible = self.is_effectively_visible(node);
+            let effective_visible =
+                self.is_effectively_visible(node) && !self.is_under_ui_viewport(node);
             let sprite_data = self
                 .nodes
                 .get(node)
@@ -939,7 +940,10 @@ impl Runtime {
             let SceneNodeData::Camera2D(camera) = &scene_node.data else {
                 continue;
             };
-            if !camera.active || !self.is_effectively_visible(node) {
+            if !camera.active
+                || !self.is_effectively_visible(node)
+                || self.is_under_ui_viewport(node)
+            {
                 continue;
             }
             found = Some((
@@ -1093,7 +1097,11 @@ impl Runtime {
             let Some(inactive) = button_2d_inactive_from_data(&scene_node.data) else {
                 continue;
             };
-            let next = if inactive || !self.is_effectively_visible(node) || Some(node) != hovered {
+            let next = if inactive
+                || !self.is_effectively_visible(node)
+                || self.is_under_ui_viewport(node)
+                || Some(node) != hovered
+            {
                 UiButtonVisualState::Neutral
             } else if mouse_down {
                 UiButtonVisualState::Pressed
@@ -1148,6 +1156,7 @@ impl Runtime {
                 || !input_enabled
                 || !input_accepted
                 || !self.is_effectively_visible(node)
+                || self.is_under_ui_viewport(node)
                 || !render_mask_matches(camera_render_mask, render_layers)
                 || !matches!(
                     mouse_filter,

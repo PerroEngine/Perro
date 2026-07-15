@@ -9,7 +9,7 @@ use crate::{
     PhysicsBoneChain2D, PhysicsBoneChain3D, PhysicsForceEmitter2D, PhysicsForceEmitter3D,
     PinJoint2D, PointLight2D, PointLight3D, RayLight2D, RayLight3D, RigidBody2D, RigidBody3D,
     Skeleton2D, Skeleton3D, Sky3D, SpotLight2D, SpotLight3D, Sprite2D, Sprite3D, StaticBody2D,
-    StaticBody3D, TextDecal3D, TileMap2D, UiCameraStream, UiVideoPlayer, VideoPlayer2D,
+    StaticBody3D, TextDecal3D, TileMap2D, UiCameraStream, UiVideoPlayer, UiViewport, VideoPlayer2D,
     VideoPlayer3D, WaterBody2D, WaterBody3D, Webcam,
 };
 use perro_ids::{NodeID, NodeTag, TagID};
@@ -953,6 +953,7 @@ define_scene_nodes! {
 
         // visual
         UiCameraStream => (UiNode, UiCameraStream, Boxed, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
+        UiViewport => (UiNode, UiViewport, Boxed, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         UiPanel => (UiNode, UiPanel, Boxed, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         UiProgressBar => (UiNode, UiProgressBar, Boxed, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         UiButton => (UiNode, UiButton, Boxed, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),

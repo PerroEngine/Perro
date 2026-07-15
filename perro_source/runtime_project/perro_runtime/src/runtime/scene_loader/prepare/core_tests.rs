@@ -4,7 +4,7 @@ mod tests {
     use perro_ids::SignalID;
     use perro_nodes::SceneNodeData;
     use perro_scene::Parser;
-    use perro_structs::{BitMask, Color, CustomPostParamValue, Vector2, Vector3};
+    use perro_structs::{BitMask, Color, CustomPostParamValue, UVector2, Vector2, Vector3};
 
     #[test]
     fn water_body_scene_fields_parse() {
@@ -3168,5 +3168,52 @@ mod tests {
             }
             other => panic!("expected StaticBody2D node, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn ui_viewport_scene_fields_parse_without_camera_ref() {
+        let scene = Parser::new(
+            r#"
+            $root = @preview
+            [preview]
+            [UiViewport]
+                resolution = (640, 360)
+                view_position = (1, 2, 5)
+                view_rotation = (0, 0, 0, 1)
+                projection = "orthographic"
+                orthographic_size = 4
+                view_2d_position = (8, 9)
+                view_2d_zoom = 2
+                background = (0.1, 0.2, 0.3, 0.4)
+                corner_radius = 0.2
+                suspend_when_hidden = false
+            [/UiViewport]
+            [/preview]
+            "#,
+        )
+        .parse_scene();
+
+        let prepared =
+            prepare_scene_with_loader(&scene, &|path| Err(format!("unknown scene path `{path}`")))
+                .expect("prepare scene");
+        let viewport = prepared
+            .nodes
+            .iter()
+            .find(|pending| pending.key_name == "preview")
+            .expect("viewport node");
+        let SceneNodeData::UiViewport(viewport) = &viewport.node.data else {
+            panic!("expected UiViewport node");
+        };
+        assert_eq!(viewport.resolution, UVector2::new(640, 360));
+        assert_eq!(viewport.view_position, Vector3::new(1.0, 2.0, 5.0));
+        assert_eq!(viewport.view_2d_position, Vector2::new(8.0, 9.0));
+        assert_eq!(viewport.view_2d_zoom, 2.0);
+        assert_eq!(viewport.background, Color::new(0.1, 0.2, 0.3, 0.4));
+        assert_eq!(viewport.corner_radius, 0.2);
+        assert!(!viewport.suspend_when_hidden);
+        assert!(matches!(
+            viewport.projection,
+            CameraProjection::Orthographic { size, .. } if size == 4.0
+        ));
     }
 }

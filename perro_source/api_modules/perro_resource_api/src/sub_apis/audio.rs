@@ -25,6 +25,14 @@ pub trait AudioAPI {
         volume: f32,
         pan: AudioPan,
     ) -> bool;
+    fn play_audio_stream_clip(
+        &self,
+        stream_id: &str,
+        bus_id: Option<AudioBusID>,
+        clip: &MicClip,
+        volume: f32,
+        pan: AudioPan,
+    ) -> bool;
     fn play_audio_2d(&self, bus_id: Option<AudioBusID>, audio: Audio2D<'_>) -> bool;
     fn play_audio_3d(&self, bus_id: Option<AudioBusID>, audio: Audio3D<'_>) -> bool;
     fn stop_audio(&self, bus_id: Option<AudioBusID>, audio: Audio<'_>, pan: AudioPan) -> bool;
@@ -489,6 +497,19 @@ impl<'res, R: AudioAPI + ?Sized> AudioModule<'res, R> {
             .play_audio_clip(Some(bus_id), clip, volume, AudioPan::CENTER)
     }
 
+    /// Queue a microphone packet after earlier packets from `stream_id`.
+    #[inline]
+    pub fn play_stream_clip_bus_volume(
+        &self,
+        bus_id: AudioBusID,
+        stream_id: &str,
+        clip: &MicClip,
+        volume: f32,
+    ) -> bool {
+        self.api
+            .play_audio_stream_clip(stream_id, Some(bus_id), clip, volume, AudioPan::CENTER)
+    }
+
     #[inline]
     pub fn two_d(&self) -> Audio2DModule<'res, R> {
         Audio2DModule { api: self.api }
@@ -769,6 +790,14 @@ macro_rules! audio_play_clip {
 }
 
 #[macro_export]
+macro_rules! audio_play_stream_clip {
+    ($res:expr, $bus_id:expr, $stream_id:expr, $clip:expr, $volume:expr) => {
+        $res.Audio()
+            .play_stream_clip_bus_volume($bus_id, $stream_id, $clip, $volume)
+    };
+}
+
+#[macro_export]
 macro_rules! audio_stop {
     ($res:expr, $bus_id:expr, $audio:expr) => {
         $res.Audio().stop_audio($bus_id, $audio)
@@ -985,6 +1014,17 @@ mod tests {
             true
         }
 
+        fn play_audio_stream_clip(
+            &self,
+            _stream_id: &str,
+            _bus_id: Option<AudioBusID>,
+            _clip: &MicClip,
+            _volume: f32,
+            _pan: AudioPan,
+        ) -> bool {
+            true
+        }
+
         fn play_audio_2d(&self, _bus_id: Option<AudioBusID>, _audio: Audio2D<'_>) -> bool {
             true
         }
@@ -1139,6 +1179,9 @@ mod tests {
             AudioClip::new(&clip).with_volume(0.5)
         ));
         assert!(crate::audio_play_clip!(res, bus, &clip, 0.5));
+        assert!(crate::audio_play_stream_clip!(
+            res, bus, "voice/2", &clip, 0.5
+        ));
     }
 
     #[test]

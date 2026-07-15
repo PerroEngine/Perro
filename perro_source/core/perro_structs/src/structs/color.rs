@@ -206,7 +206,8 @@ impl Color {
     }
 
     pub fn from_hex(hex: &str) -> Option<Self> {
-        let raw = hex.trim().strip_prefix('#').unwrap_or(hex.trim());
+        let trimmed = hex.trim();
+        let raw = trimmed.strip_prefix('#').unwrap_or(trimmed);
         match raw.len() {
             3 => {
                 let r = nibble(raw.as_bytes()[0])?;

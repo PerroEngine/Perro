@@ -265,6 +265,8 @@ impl Runtime {
     fn can_skip_physics_fixed_step_pre_sync(&self) -> bool {
         self.schedules.fixed_slots_empty()
             && !self.has_physics_joint_nodes()
+            && self.physics_synced_node_revision_2d == Some(self.nodes.physics_revision())
+            && self.physics_synced_node_revision_3d == Some(self.nodes.physics_revision())
             && (self.internal_updates.physics_body_nodes_2d.is_empty()
                 || self.physics.world_2d.is_some())
             && (self.internal_updates.physics_body_nodes_3d.is_empty()
@@ -902,6 +904,7 @@ impl Runtime {
         }
         for i in 0..node_count {
             let id = self.internal_updates.physics_body_nodes_2d[i];
+            let suspended = self.is_suspended_by_ui_viewport(id);
             let (kind, enabled, rigid, material, groups) = {
                 let Some(node) = self.nodes.get(id) else {
                     continue;
@@ -964,6 +967,11 @@ impl Runtime {
                     _ => continue,
                 }
             };
+            let enabled = enabled && !suspended;
+            let rigid = rigid.map(|mut rigid| {
+                rigid.enabled = enabled;
+                rigid
+            });
             let Some(global) = self.get_global_transform_2d(id) else {
                 continue;
             };
@@ -1093,6 +1101,7 @@ impl Runtime {
         }
         for i in 0..node_count {
             let id = self.internal_updates.physics_body_nodes_3d[i];
+            let suspended = self.is_suspended_by_ui_viewport(id);
             let (kind, enabled, rigid, material, groups) = {
                 let Some(node) = self.nodes.get(id) else {
                     continue;
@@ -1147,6 +1156,11 @@ impl Runtime {
                     _ => continue,
                 }
             };
+            let enabled = enabled && !suspended;
+            let rigid = rigid.map(|mut rigid| {
+                rigid.enabled = enabled;
+                rigid
+            });
 
             let Some(global) = self.get_global_transform_3d(id) else {
                 continue;
@@ -1250,6 +1264,7 @@ impl Runtime {
         }
         for i in 0..self.internal_updates.physics_joint_nodes_2d.len() {
             let id = self.internal_updates.physics_joint_nodes_2d[i];
+            let suspended = self.is_suspended_by_ui_viewport(id);
             let Some(node) = self.nodes.get(id) else {
                 continue;
             };
@@ -1287,6 +1302,7 @@ impl Runtime {
                     ),
                     _ => continue,
                 };
+            let enabled = enabled && !suspended;
             let signature = joint_signature_2d(
                 body_a,
                 body_b,
@@ -1320,6 +1336,7 @@ impl Runtime {
         }
         for i in 0..self.internal_updates.physics_joint_nodes_3d.len() {
             let id = self.internal_updates.physics_joint_nodes_3d[i];
+            let suspended = self.is_suspended_by_ui_viewport(id);
             let Some(node) = self.nodes.get(id) else {
                 continue;
             };
@@ -1354,6 +1371,7 @@ impl Runtime {
                     ),
                     _ => continue,
                 };
+            let enabled = enabled && !suspended;
             let signature = joint_signature_3d(
                 body_a,
                 body_b,

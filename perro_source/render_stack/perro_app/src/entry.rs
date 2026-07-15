@@ -23,6 +23,19 @@ pub use winit::platform::android::activity::AndroidApp;
 
 type StaticScriptRegistry = &'static [(u64, ScriptConstructor<perro_runtime::RuntimeScriptApi>)];
 
+#[cfg(target_os = "windows")]
+fn clear_steam_fossilize_application_filter(steam_enabled: bool) {
+    if steam_enabled && std::env::var_os("FOSSILIZE_APPLICATION_INFO_FILTER_PATH").is_some() {
+        // Steam's Windows Fossilize layer may ship a filter newer than the loaded layer.
+        // A parse failure already falls back to unfiltered recording, so skip only the filter.
+        // SAFETY: Windows synchronizes process-environment access.
+        unsafe { std::env::remove_var("FOSSILIZE_APPLICATION_INFO_FILTER_PATH") };
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn clear_steam_fossilize_application_filter(_steam_enabled: bool) {}
+
 #[derive(Debug)]
 pub enum RunProjectError {
     Load(ProjectLoadError),
@@ -235,12 +248,13 @@ pub fn run_dev_project_from_path(
     project_root: &Path,
     default_name: &str,
 ) -> Result<AppExitResult, RunProjectError> {
-    let _ = perro_web::init_router();
     eprintln!(
         "perro dev runner: load project {}",
         project_root.to_string_lossy()
     );
     let project = RuntimeProject::from_project_dir_with_default_name(project_root, default_name)?;
+    clear_steam_fossilize_application_filter(project.config.steam.enabled);
+    let _ = perro_web::init_router();
     let preload = spawn_preload_project_images(project.clone());
     eprintln!("perro dev runner: init graphics");
     let window_title = project.config.name.clone();
@@ -313,8 +327,9 @@ pub fn run_static_project_from_path(
     project_root: &Path,
     default_name: &str,
 ) -> Result<AppExitResult, RunProjectError> {
-    let _ = perro_web::init_router();
     let project = RuntimeProject::from_project_dir_with_default_name(project_root, default_name)?;
+    clear_steam_fossilize_application_filter(project.config.steam.enabled);
+    let _ = perro_web::init_router();
     let window_title = project.config.name.clone();
     let graphics = graphics_from_project_config(&project.config, true);
     let app = create_static_app(graphics, project);
@@ -435,6 +450,7 @@ pub struct StaticEmbeddedAssetsConfig {
 pub fn run_static_embedded_project(
     input: StaticEmbeddedProject<'_>,
 ) -> Result<AppExitResult, RunProjectError> {
+    clear_steam_fossilize_application_filter(input.steam.enabled);
     let _ = perro_web::init_router();
     let mut static_config = perro_runtime::StaticProjectConfig::new(
         input.project.project_name,

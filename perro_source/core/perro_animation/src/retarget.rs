@@ -507,7 +507,7 @@ fn parse_f32_list<const N: usize>(
         .trim()
         .strip_prefix('(')
         .and_then(|value| value.strip_suffix(')'))
-        .unwrap_or(value.trim());
+        .unwrap_or_else(|| value.trim());
     let values = value
         .split(',')
         .map(|part| {

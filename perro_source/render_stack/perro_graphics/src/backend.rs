@@ -2220,7 +2220,7 @@ impl PerroGraphics {
                 camera_streams: &self.retained_camera_streams,
                 camera_2d,
                 camera_2d_position: camera_2d_state.position,
-                post_processing_2d: camera_2d_state.post_processing.clone(),
+                post_processing_2d: camera_2d_state.post_processing,
                 post_processing_global: self.global_post_processing_cache.clone(),
                 accessibility: self.accessibility,
                 rects_2d: &self.frame_rects_cache,

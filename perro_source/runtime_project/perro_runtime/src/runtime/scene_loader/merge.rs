@@ -361,9 +361,7 @@ pub(super) fn merge_prepared_scene(
     }
 
     for (parent, child) in edges {
-        if let Some(mut parent) = runtime.nodes.get_mut(parent) {
-            parent.add_child(child);
-        }
+        runtime.nodes.push_child(parent, child);
     }
 
     for (mesh_node, target_key) in mesh_skeleton_links {
@@ -509,10 +507,8 @@ pub(super) fn merge_prepared_scene(
 
     for root in &attach_order {
         runtime.nodes.set_parent(*root, engine_root);
-        if let Some(mut engine_root_node) = runtime.nodes.get_mut(engine_root) {
-            engine_root_node.add_child(*root);
-        }
     }
+    runtime.nodes.extend_children(engine_root, &attach_order);
 
     // Force initial frame extraction for freshly merged scene content, even with no scripts.
     runtime.mark_transform_dirty_recursive(engine_root);
