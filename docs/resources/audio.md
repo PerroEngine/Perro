@@ -757,13 +757,9 @@ propagation_tick_hz = 20
 energy_cutoff = 0.02
 debug_rays = false
 
-[audio.propagation_2d]
+# Ray propagation. Plain key sets 2D + 3D; `_2d` / `_3d` suffix tunes one path.
 max_bounces = 4
-rays_per_tick = 64
 max_ray_distance = 500.0
-
-[audio.propagation_3d]
-max_bounces = 4
-rays_per_tick = 128
-max_ray_distance = 500.0
+rays_per_tick_2d = 64
+rays_per_tick_3d = 128
 ```

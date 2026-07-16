@@ -6,48 +6,35 @@ main_scene = "res://main.scn"
 icon = "res://icon.png"
 startup_splash = "res://icon.png"
 
-# Optional export metadata.
+# Optional identity/export info.
 # Used for Windows executable version info + engine detection strings.
 #
-# [metadata]
+# version = "0.1.0"
 # description = "{name}"
 # company = "Studio Name"
-# version = "0.1.0"
 # copyright = "Copyright (c) 2026 Studio Name"
 # trademark = ""
 
-# Optional web metadata.
-#
-# [web]
-# title = "{name}"
-# description = "{name}"
-# keywords = ["rust", "game engine"]
-
 [graphics]
-aspect_ratio = "16:9"
+aspect_ratio = "16:9"            # "WIDTH:HEIGHT" game shape
 vsync = false
-
 msaa = true
-ssao = "medium"
+ssao = "medium"                  # off | low | medium | high | ultra
+occlusion_culling = "gpu"        # cpu | gpu | off
+particle_sim_default = "gpu"     # cpu | hybrid | gpu
+texture_filter = "linear_mipmap" # nearest | linear | linear_mipmap | anisotropic
+default_font = "default"         # default | system://Name | res://path.ttf
 
 meshlets = false
 dev_meshlets = false
 release_meshlets = true
 meshlet_debug_view = false
 
-occlusion_culling = "gpu"
-
-particle_sim_default = "gpu"
-texture_filter = "linear_mipmap"
-
-[rendering]
-default_font = "default"
-
-[rendering.ui]
+[ui]
 pixel_snapping = true
 
 [runtime]
-frame_rate_cap = "unlimited"
+frame_rate_cap = "unlimited"     # fps number | "unlimited" | "refresh_rate"
 target_fixed_update = 60
 
 [physics]
@@ -60,15 +47,11 @@ propagation_tick_hz = 20
 energy_cutoff = 0.02
 debug_rays = false
 
-[audio.propagation_2d]
+# Ray propagation. Plain key sets 2D + 3D; `_2d` / `_3d` suffix tunes one path.
 max_bounces = 4
-rays_per_tick = 64
 max_ray_distance = 500.0
-
-[audio.propagation_3d]
-max_bounces = 4
-rays_per_tick = 128
-max_ray_distance = 500.0
+rays_per_tick_2d = 64
+rays_per_tick_3d = 128
 
 # Optional localization table.
 # Put localization.csv, locale.csv, or translations.csv next to project.toml.
@@ -82,6 +65,12 @@ max_ray_distance = 500.0
 # enabled = false
 # app_id = 480
 # input = "off" # off | metadata | actions
+
+# Optional web export metadata.
+# [web]
+# title = "{name}"
+# description = "{name}"
+# keywords = ["rust", "game engine"]
 "#
     )
 }
@@ -119,6 +108,20 @@ pub fn load_routes_toml(
     parse_routes_toml(&routes_toml)
 }
 
+const KNOWN_PROJECT_TOML_TABLES: &[&str] = &[
+    "project",
+    "metadata",
+    "web",
+    "graphics",
+    "rendering",
+    "ui",
+    "runtime",
+    "physics",
+    "audio",
+    "localization",
+    "steam",
+];
+
 pub fn parse_project_toml(contents: &str) -> Result<ProjectConfig, ProjectError> {
     let value = parse_toml_document_value(contents)?;
     let project_table = value
@@ -126,10 +129,19 @@ pub fn parse_project_toml(contents: &str) -> Result<ProjectConfig, ProjectError>
         .and_then(Value::as_table)
         .ok_or(ProjectError::MissingField("project"))?;
 
+    if let Some(root) = value.as_table() {
+        for key in root.keys() {
+            if !KNOWN_PROJECT_TOML_TABLES.contains(&key.as_str()) {
+                eprintln!("perro: project.toml: unknown table `[{key}]` ignored");
+            }
+        }
+    }
+
+    let empty_table = toml::map::Map::new();
     let graphics_table = value
         .get("graphics")
         .and_then(Value::as_table)
-        .ok_or(ProjectError::MissingField("graphics"))?;
+        .unwrap_or(&empty_table);
     let runtime_table = value.get("runtime").and_then(Value::as_table);
     let physics_table = value.get("physics").and_then(Value::as_table);
     let localization_table = value.get("localization").and_then(Value::as_table);
@@ -138,6 +150,7 @@ pub fn parse_project_toml(contents: &str) -> Result<ProjectConfig, ProjectError>
     let audio_table = value.get("audio").and_then(Value::as_table);
     let web_table = value.get("web").and_then(Value::as_table);
     let rendering_table = value.get("rendering").and_then(Value::as_table);
+    let ui_table = value.get("ui").and_then(Value::as_table);
 
     let name = project_table
         .get("name")
@@ -202,11 +215,12 @@ pub fn parse_project_toml(contents: &str) -> Result<ProjectConfig, ProjectError>
         perro_structs::TextureFilterMode::LinearMipmap,
     )?;
     let localization = parse_localization(localization_table)?;
-    let metadata = parse_metadata(metadata_table)?;
+    let mut metadata = parse_metadata(metadata_table)?;
+    apply_project_identity(project_table, &mut metadata)?;
     let steam = parse_steam(steam_table)?;
     let audio = parse_audio(audio_table)?;
     let web = parse_web(web_table)?;
-    let rendering = parse_rendering(rendering_table)?;
+    let rendering = parse_rendering(graphics_table, rendering_table, ui_table)?;
 
     Ok(ProjectConfig {
         name,
@@ -303,44 +317,96 @@ pub fn parse_input_map_toml(contents: &str) -> Result<perro_input_api::InputMap,
     Ok(perro_input_api::InputMap::from_actions(actions))
 }
 
+fn apply_project_identity(
+    table: &toml::map::Map<String, Value>,
+    metadata: &mut ProjectMetadata,
+) -> Result<(), ProjectError> {
+    if let Some(v) = parse_optional_table_str(table, "description", "project.description")? {
+        metadata.description = Some(v);
+    }
+    if let Some(v) = parse_optional_table_str(table, "company", "project.company")? {
+        metadata.company = Some(v);
+    }
+    if let Some(v) = parse_optional_table_str(table, "version", "project.version")? {
+        metadata.version = Some(v);
+    }
+    if let Some(v) = parse_optional_table_str(table, "copyright", "project.copyright")? {
+        metadata.copyright = Some(v);
+    }
+    if let Some(v) = parse_optional_table_str(table, "trademark", "project.trademark")? {
+        metadata.trademark = Some(v);
+    }
+    Ok(())
+}
+
 fn parse_rendering(
-    table: Option<&toml::map::Map<String, Value>>,
+    graphics_table: &toml::map::Map<String, Value>,
+    rendering_table: Option<&toml::map::Map<String, Value>>,
+    ui_table: Option<&toml::map::Map<String, Value>>,
 ) -> Result<RenderingConfig, ProjectError> {
-    let Some(table) = table else {
-        return Ok(RenderingConfig::default());
-    };
-    let ui = parse_rendering_ui(table.get("ui").and_then(Value::as_table))?;
-    let default_font = match table.get("default_font") {
-        Some(value) => value.as_str().ok_or_else(|| {
-            ProjectError::InvalidField("rendering.default_font", "must be a string".to_string())
-        })?.to_string(),
-        None => "default".to_string(),
-    };
+    // Pixel snapping: legacy [rendering.ui], overridden by [ui].
+    let legacy_ui_table = rendering_table
+        .and_then(|table| table.get("ui"))
+        .and_then(Value::as_table);
+    let mut pixel_snapping = true;
+    if let Some(table) = legacy_ui_table {
+        pixel_snapping = parse_optional_table_bool(
+            table,
+            "pixel_snapping",
+            "rendering.ui.pixel_snapping",
+        )?
+        .unwrap_or(pixel_snapping);
+    }
+    if let Some(table) = ui_table {
+        pixel_snapping = parse_optional_table_bool(table, "pixel_snapping", "ui.pixel_snapping")?
+            .unwrap_or(pixel_snapping);
+    }
+
+    // Default font: legacy [rendering], overridden by [graphics].
+    let mut default_font = "default".to_string();
+    let mut font_path = "rendering.default_font";
+    if let Some(table) = rendering_table
+        && let Some(value) = table.get("default_font")
+    {
+        default_font = value
+            .as_str()
+            .ok_or_else(|| {
+                ProjectError::InvalidField(font_path, "must be a string".to_string())
+            })?
+            .to_string();
+    }
+    if let Some(value) = graphics_table.get("default_font") {
+        font_path = "graphics.default_font";
+        default_font = value
+            .as_str()
+            .ok_or_else(|| {
+                ProjectError::InvalidField(font_path, "must be a string".to_string())
+            })?
+            .to_string();
+    }
     if perro_ui::UiFont::parse(&default_font).is_none() {
         return Err(ProjectError::InvalidField(
-            "rendering.default_font",
+            font_path,
             "must be `default`, `system://Name`, or `res://path`".to_string(),
         ));
     }
-    Ok(RenderingConfig { ui, default_font })
+    Ok(RenderingConfig {
+        ui: RenderUiConfig { pixel_snapping },
+        default_font,
+    })
 }
 
-fn parse_rendering_ui(
-    table: Option<&toml::map::Map<String, Value>>,
-) -> Result<RenderUiConfig, ProjectError> {
-    let Some(table) = table else {
-        return Ok(RenderUiConfig::default());
+fn parse_optional_table_bool(
+    table: &toml::map::Map<String, Value>,
+    key: &str,
+    path: &'static str,
+) -> Result<Option<bool>, ProjectError> {
+    let Some(value) = table.get(key) else {
+        return Ok(None);
     };
-    let pixel_snapping = match table.get("pixel_snapping") {
-        Some(value) => value.as_bool().ok_or_else(|| {
-            ProjectError::InvalidField(
-                "rendering.ui.pixel_snapping",
-                "must be a boolean".to_string(),
-            )
-        })?,
-        None => true,
-    };
-    Ok(RenderUiConfig { pixel_snapping })
+    value.as_bool().map(Some).ok_or_else(|| {
+        ProjectError::InvalidField(path, "must be a boolean".to_string())
+    })
 }
 
 fn parse_input_map_binding_list(
@@ -543,6 +609,7 @@ fn parse_audio(table: Option<&toml::map::Map<String, Value>>) -> Result<AudioCon
         })
         .transpose()?
         .unwrap_or(cfg.debug_rays);
+    // Legacy [audio.propagation_2d] / [audio.propagation_3d] tables.
     if let Some(two_d) = table.get("propagation_2d").and_then(Value::as_table) {
         cfg.propagation_2d =
             parse_audio_propagation(two_d, cfg.propagation_2d, "audio.propagation_2d")?;
@@ -551,15 +618,90 @@ fn parse_audio(table: Option<&toml::map::Map<String, Value>>) -> Result<AudioCon
         cfg.propagation_3d =
             parse_audio_propagation(three_d, cfg.propagation_3d, "audio.propagation_3d")?;
     }
+    // Flat propagation keys in [audio]: plain key sets both paths, `_2d` / `_3d`
+    // suffix overrides one. Flat keys win over legacy subtables.
+    apply_flat_audio_propagation(table, &mut cfg)?;
+    validate_audio_bounces(&cfg.propagation_2d, "audio.max_bounces_2d")?;
+    validate_audio_bounces(&cfg.propagation_3d, "audio.max_bounces_3d")?;
     Ok(cfg)
 }
 
-fn parse_audio_propagation(
+fn apply_flat_audio_propagation(
     table: &toml::map::Map<String, Value>,
-    mut cfg: AudioPropagationConfig,
+    cfg: &mut AudioConfig,
+) -> Result<(), ProjectError> {
+    cfg.propagation_2d.max_bounces =
+        parse_u32_table_field(table, "max_bounces", cfg.propagation_2d.max_bounces, "audio")?;
+    cfg.propagation_3d.max_bounces =
+        parse_u32_table_field(table, "max_bounces", cfg.propagation_3d.max_bounces, "audio")?;
+    cfg.propagation_2d.rays_per_tick = parse_u32_table_field(
+        table,
+        "rays_per_tick",
+        cfg.propagation_2d.rays_per_tick,
+        "audio",
+    )?;
+    cfg.propagation_3d.rays_per_tick = parse_u32_table_field(
+        table,
+        "rays_per_tick",
+        cfg.propagation_3d.rays_per_tick,
+        "audio",
+    )?;
+    cfg.propagation_2d.max_ray_distance = parse_f32_table_field(
+        table,
+        "max_ray_distance",
+        cfg.propagation_2d.max_ray_distance,
+        "audio",
+    )?;
+    cfg.propagation_3d.max_ray_distance = parse_f32_table_field(
+        table,
+        "max_ray_distance",
+        cfg.propagation_3d.max_ray_distance,
+        "audio",
+    )?;
+
+    cfg.propagation_2d.max_bounces = parse_u32_table_field(
+        table,
+        "max_bounces_2d",
+        cfg.propagation_2d.max_bounces,
+        "audio",
+    )?;
+    cfg.propagation_3d.max_bounces = parse_u32_table_field(
+        table,
+        "max_bounces_3d",
+        cfg.propagation_3d.max_bounces,
+        "audio",
+    )?;
+    cfg.propagation_2d.rays_per_tick = parse_u32_table_field(
+        table,
+        "rays_per_tick_2d",
+        cfg.propagation_2d.rays_per_tick,
+        "audio",
+    )?;
+    cfg.propagation_3d.rays_per_tick = parse_u32_table_field(
+        table,
+        "rays_per_tick_3d",
+        cfg.propagation_3d.rays_per_tick,
+        "audio",
+    )?;
+    cfg.propagation_2d.max_ray_distance = parse_f32_table_field(
+        table,
+        "max_ray_distance_2d",
+        cfg.propagation_2d.max_ray_distance,
+        "audio",
+    )?;
+    cfg.propagation_3d.max_ray_distance = parse_f32_table_field(
+        table,
+        "max_ray_distance_3d",
+        cfg.propagation_3d.max_ray_distance,
+        "audio",
+    )?;
+    Ok(())
+}
+
+fn validate_audio_bounces(
+    cfg: &AudioPropagationConfig,
     path: &'static str,
-) -> Result<AudioPropagationConfig, ProjectError> {
-    cfg.max_bounces = parse_u32_table_field(table, "max_bounces", cfg.max_bounces, path)?;
+) -> Result<(), ProjectError> {
     if cfg.max_bounces > crate::MAX_AUDIO_PROPAGATION_BOUNCES {
         return Err(ProjectError::InvalidField(
             path,
@@ -569,6 +711,15 @@ fn parse_audio_propagation(
             ),
         ));
     }
+    Ok(())
+}
+
+fn parse_audio_propagation(
+    table: &toml::map::Map<String, Value>,
+    mut cfg: AudioPropagationConfig,
+    path: &'static str,
+) -> Result<AudioPropagationConfig, ProjectError> {
+    cfg.max_bounces = parse_u32_table_field(table, "max_bounces", cfg.max_bounces, path)?;
     cfg.rays_per_tick = parse_u32_table_field(table, "rays_per_tick", cfg.rays_per_tick, path)?;
     cfg.max_ray_distance =
         parse_f32_table_field(table, "max_ray_distance", cfg.max_ray_distance, path)?;

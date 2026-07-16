@@ -1307,3 +1307,279 @@ target_fixed_update = 1e300
     assert_eq!(cfg.frame_rate_cap, FrameRateCap::Unlimited);
     assert_eq!(cfg.target_fixed_update, None);
 }
+
+#[test]
+fn default_project_toml_template_parses() {
+    let toml = default_project_toml("Template Game");
+    let cfg = parse_project_toml(&toml).expect("default template parses");
+    assert_eq!(cfg.name, "Template Game");
+    assert!(cfg.rendering.ui.pixel_snapping);
+    assert_eq!(cfg.rendering.default_font, "default");
+    assert_eq!(cfg.particle_sim_default, ParticleSimDefault::GpuCompute);
+    assert_eq!(cfg.audio.propagation_2d.rays_per_tick, 64);
+    assert_eq!(cfg.audio.propagation_3d.rays_per_tick, 128);
+    assert_eq!(cfg.audio.propagation_2d.max_bounces, 4);
+    assert_eq!(cfg.audio.propagation_3d.max_bounces, 4);
+}
+
+#[test]
+fn parse_project_toml_allows_missing_graphics_table() {
+    let toml = r#"
+[project]
+name = "Game"
+main_scene = "res://main.scn"
+"#;
+    let cfg = parse_project_toml(toml).expect("graphics table optional");
+    assert_eq!(cfg.virtual_width, 1920);
+    assert_eq!(cfg.virtual_height, 1080);
+    assert!(!cfg.vsync);
+    assert!(cfg.msaa);
+    assert_eq!(cfg.ssao, SsaoQuality::Medium);
+}
+
+#[test]
+fn parse_project_toml_reads_ui_table() {
+    let toml = r#"
+[project]
+name = "Game"
+main_scene = "res://main.scn"
+
+[ui]
+pixel_snapping = false
+"#;
+    let cfg = parse_project_toml(toml).expect("flat ui table");
+    assert!(!cfg.rendering.ui.pixel_snapping);
+}
+
+#[test]
+fn parse_project_toml_ui_table_overrides_legacy_rendering_ui() {
+    let toml = r#"
+[project]
+name = "Game"
+main_scene = "res://main.scn"
+
+[rendering.ui]
+pixel_snapping = true
+
+[ui]
+pixel_snapping = false
+"#;
+    let cfg = parse_project_toml(toml).expect("ui precedence");
+    assert!(!cfg.rendering.ui.pixel_snapping);
+}
+
+#[test]
+fn parse_project_toml_reads_graphics_default_font() {
+    let toml = r#"
+[project]
+name = "Game"
+main_scene = "res://main.scn"
+
+[graphics]
+default_font = "res://fonts/Game.ttf"
+"#;
+    let cfg = parse_project_toml(toml).expect("graphics font");
+    assert_eq!(cfg.rendering.default_font, "res://fonts/Game.ttf");
+}
+
+#[test]
+fn parse_project_toml_graphics_font_overrides_legacy_rendering_font() {
+    let toml = r#"
+[project]
+name = "Game"
+main_scene = "res://main.scn"
+
+[graphics]
+default_font = "res://fonts/New.ttf"
+
+[rendering]
+default_font = "res://fonts/Old.ttf"
+"#;
+    let cfg = parse_project_toml(toml).expect("font precedence");
+    assert_eq!(cfg.rendering.default_font, "res://fonts/New.ttf");
+}
+
+#[test]
+fn parse_project_toml_rejects_bad_graphics_font() {
+    let toml = r#"
+[project]
+name = "Game"
+main_scene = "res://main.scn"
+
+[graphics]
+default_font = "not-a-font"
+"#;
+    let err = parse_project_toml(toml).expect_err("bad font");
+    assert!(err.to_string().contains("graphics.default_font"), "{err}");
+}
+
+#[test]
+fn parse_project_toml_reads_flat_audio_propagation() {
+    let toml = r#"
+[project]
+name = "Game"
+main_scene = "res://main.scn"
+
+[audio]
+max_bounces = 6
+max_ray_distance = 250.0
+rays_per_tick = 32
+rays_per_tick_3d = 96
+"#;
+    let cfg = parse_project_toml(toml).expect("flat audio keys");
+    assert_eq!(cfg.audio.propagation_2d.max_bounces, 6);
+    assert_eq!(cfg.audio.propagation_3d.max_bounces, 6);
+    assert_eq!(cfg.audio.propagation_2d.max_ray_distance, 250.0);
+    assert_eq!(cfg.audio.propagation_3d.max_ray_distance, 250.0);
+    assert_eq!(cfg.audio.propagation_2d.rays_per_tick, 32);
+    assert_eq!(cfg.audio.propagation_3d.rays_per_tick, 96);
+}
+
+#[test]
+fn parse_project_toml_flat_audio_keys_override_legacy_subtables() {
+    let toml = r#"
+[project]
+name = "Game"
+main_scene = "res://main.scn"
+
+[audio]
+max_bounces_2d = 8
+
+[audio.propagation_2d]
+max_bounces = 2
+rays_per_tick = 16
+"#;
+    let cfg = parse_project_toml(toml).expect("flat over legacy");
+    assert_eq!(cfg.audio.propagation_2d.max_bounces, 8);
+    assert_eq!(cfg.audio.propagation_2d.rays_per_tick, 16);
+}
+
+#[test]
+fn parse_project_toml_rejects_unbound_flat_audio_bounces() {
+    let toml = format!(
+        r#"
+[project]
+name = "Game"
+main_scene = "res://main.scn"
+
+[audio]
+max_bounces = {}
+"#,
+        MAX_AUDIO_PROPAGATION_BOUNCES + 1
+    );
+    let err = parse_project_toml(&toml).expect_err("flat bounce cap");
+    assert!(err.to_string().contains("max_bounces must be <="), "{err}");
+}
+
+#[test]
+fn parse_project_toml_full_legacy_layout_parses() {
+    let toml = r#"
+[project]
+name = "Bozosort"
+main_scene = "res://main.scn"
+icon = "res://icon.png"
+startup_splash = "res://icon.png"
+
+[metadata]
+description = "Bozosort"
+company = "DeFranco Studios Inc"
+version = "0.1.0"
+copyright = "Copyright (c) 2026 DeFranco Studios"
+
+[graphics]
+aspect_ratio = "16:9"
+vsync = false
+msaa = true
+meshlets = false
+dev_meshlets = false
+release_meshlets = true
+meshlet_debug_view = false
+occlusion_culling = "gpu"
+particle_sim_default = "gpu"
+texture_filter = "linear_mipmap"
+
+[rendering.ui]
+pixel_snapping = true
+
+[rendering]
+default_font = "res://font/SpicySale.otf"
+
+[runtime]
+frame_rate_cap = "unlimited"
+target_fixed_update = 60
+
+[physics]
+gravity = -9.3195
+coef = 1.0
+
+[audio]
+listener_max_distance = 500.0
+propagation_tick_hz = 20
+energy_cutoff = 0.02
+debug_rays = false
+
+[audio.propagation_2d]
+max_bounces = 4
+rays_per_tick = 64
+max_ray_distance = 500.0
+
+[audio.propagation_3d]
+max_bounces = 4
+rays_per_tick = 128
+max_ray_distance = 500.0
+
+[localization]
+default_locale = "en"
+
+[steam]
+enabled = true
+app_id = 480
+"#;
+    let cfg = parse_project_toml(toml).expect("legacy layout parses");
+    assert_eq!(cfg.name, "Bozosort");
+    assert_eq!(cfg.metadata.company.as_deref(), Some("DeFranco Studios Inc"));
+    assert_eq!(cfg.rendering.default_font, "res://font/SpicySale.otf");
+    assert!(cfg.rendering.ui.pixel_snapping);
+    assert_eq!(cfg.physics_gravity, -9.3195);
+    assert_eq!(cfg.audio.propagation_2d.rays_per_tick, 64);
+    assert_eq!(cfg.audio.propagation_3d.rays_per_tick, 128);
+    assert!(cfg.steam.enabled);
+    assert_eq!(cfg.steam.app_id, Some(480));
+}
+
+#[test]
+fn parse_project_toml_reads_project_identity_fields() {
+    let toml = r#"
+[project]
+name = "Game"
+main_scene = "res://main.scn"
+version = "1.2.3"
+company = "DeFranco Studios"
+description = "A game"
+copyright = "(c) 2026"
+trademark = "TM"
+"#;
+    let cfg = parse_project_toml(toml).expect("project identity");
+    assert_eq!(cfg.metadata.version.as_deref(), Some("1.2.3"));
+    assert_eq!(cfg.metadata.company.as_deref(), Some("DeFranco Studios"));
+    assert_eq!(cfg.metadata.description.as_deref(), Some("A game"));
+    assert_eq!(cfg.metadata.copyright.as_deref(), Some("(c) 2026"));
+    assert_eq!(cfg.metadata.trademark.as_deref(), Some("TM"));
+}
+
+#[test]
+fn parse_project_toml_project_identity_overrides_legacy_metadata() {
+    let toml = r#"
+[project]
+name = "Game"
+main_scene = "res://main.scn"
+version = "2.0.0"
+
+[metadata]
+version = "1.0.0"
+company = "Legacy Studio"
+"#;
+    let cfg = parse_project_toml(toml).expect("identity precedence");
+    assert_eq!(cfg.metadata.version.as_deref(), Some("2.0.0"));
+    assert_eq!(cfg.metadata.company.as_deref(), Some("Legacy Studio"));
+}
