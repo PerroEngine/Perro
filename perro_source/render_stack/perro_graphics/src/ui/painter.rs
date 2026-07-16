@@ -280,6 +280,7 @@ impl EpaintUiPainter {
             AlphaFromCoverage::default(),
             self.font_definitions.clone(),
         );
+        self.harfbuzz_atlas.invalidate_runs();
         self.paint_revision = u64::MAX;
     }
 
@@ -523,7 +524,7 @@ impl UiPainter for EpaintUiPainter {
 
 #[derive(Clone, Debug)]
 struct UiFontSource {
-    key: String,
+    key: Arc<str>,
     data: Arc<FontData>,
 }
 
@@ -552,14 +553,23 @@ struct HarfBuzzGlyphAlloc {
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 struct HarfBuzzGlyphKey {
-    font_key: String,
+    font_key: Arc<str>,
     glyph_id: u32,
     font_size_bits: u32,
 }
 
+/// Shaped runs are size-independent (advances are per-em); cache them by
+/// family + text so unchanged labels skip re-parsing rustybuzz faces and
+/// re-shaping on every UI rebuild. Misses (no font shapes the text) cache
+/// too, so unshapeable labels don't retry the whole fallback list per frame.
+const HARFBUZZ_RUN_CACHE_LIMIT: usize = 1024;
+
+type HarfBuzzShapedRun = Option<(UiFontSource, Arc<HarfBuzzGlyphRun>)>;
+
 struct HarfBuzzAtlas {
     atlas: TextureAtlas,
     glyphs: AHashMap<HarfBuzzGlyphKey, HarfBuzzGlyphAlloc>,
+    runs: AHashMap<FontFamily, AHashMap<String, HarfBuzzShapedRun>>,
 }
 
 impl HarfBuzzAtlas {
@@ -570,11 +580,37 @@ impl HarfBuzzAtlas {
                 AlphaFromCoverage::default(),
             ),
             glyphs: AHashMap::new(),
+            runs: AHashMap::new(),
         }
     }
 
     fn take_delta(&mut self) -> Option<epaint::ImageDelta> {
         self.atlas.take_delta()
+    }
+
+    /// Font set changed (resource font registered): cached runs may resolve
+    /// to a different face now.
+    fn invalidate_runs(&mut self) {
+        self.runs.clear();
+    }
+
+    fn shape_cached(
+        &mut self,
+        definitions: &FontDefinitions,
+        family: FontFamily,
+        text: &str,
+    ) -> HarfBuzzShapedRun {
+        let by_text = self.runs.entry(family.clone()).or_default();
+        if let Some(cached) = by_text.get(text) {
+            return cached.clone();
+        }
+        let shaped = shape_text_with_font_fallbacks(definitions, family, text)
+            .map(|(font, run)| (font, Arc::new(run)));
+        if by_text.len() >= HARFBUZZ_RUN_CACHE_LIMIT {
+            by_text.clear();
+        }
+        by_text.insert(text.to_string(), shaped.clone());
+        shaped
     }
 
     fn glyph(
@@ -599,14 +635,16 @@ impl HarfBuzzAtlas {
 
 fn default_ui_font_definitions() -> FontDefinitions {
     let mut definitions = FontDefinitions::default();
-    append_system_font_fallbacks(&mut definitions);
-    append_selectable_system_fonts(&mut definitions);
+    // One system scan shared by the script-fallback and selectable passes;
+    // scanning font directories twice doubled startup cost for nothing.
+    let mut db = fontdb::Database::new();
+    db.load_system_fonts();
+    append_system_font_fallbacks(&mut definitions, &mut db);
+    append_selectable_system_fonts(&mut definitions, &mut db);
     definitions
 }
 
-fn append_selectable_system_fonts(definitions: &mut FontDefinitions) {
-    let mut db = fontdb::Database::new();
-    db.load_system_fonts();
+fn append_selectable_system_fonts(definitions: &mut FontDefinitions, db: &mut fontdb::Database) {
     let serif_family = ui_font_family(
         &UiFont::System(UiSystemFont::Serif),
         FontFamily::Proportional,
@@ -617,8 +655,7 @@ fn append_selectable_system_fonts(definitions: &mut FontDefinitions) {
         ..Default::default()
     };
     if let Some(id) = db.query(&serif_query)
-        && let Some((source, index)) = db.face_source(id)
-        && let Some(data) = font_data_from_source(source, index)
+        && let Some(data) = shared_font_data(db, id)
     {
         definitions
             .font_data
@@ -644,22 +681,30 @@ fn append_selectable_system_fonts(definitions: &mut FontDefinitions) {
         let family = ui_font_family(&UiFont::System(font), FontFamily::Proportional);
         append_default_family_fallbacks(definitions, family.clone(), FontFamily::Proportional);
         if let Some(name) = font.family_name() {
-            let key = format!("perro-select-{name}");
             let query = fontdb::Query {
                 families: &[fontdb::Family::Name(name)],
                 ..Default::default()
             };
-            if let Some(id) = db.query(&query)
-                && let Some((source, index)) = db.face_source(id)
-                && let Some(data) = font_data_from_source(source, index)
-            {
+            let Some(id) = db.query(&query) else {
+                continue;
+            };
+            let Some(index) = db.face(id).map(|face| face.index) else {
+                continue;
+            };
+            // Same key scheme as the script-fallback pass so a face both
+            // passes want (Segoe UI, Arial, ...) registers once.
+            let key = format!("{UI_SYSTEM_FONT_PREFIX}-{name}-{index}");
+            if !definitions.font_data.contains_key(&key) {
+                let Some(data) = shared_font_data(db, id) else {
+                    continue;
+                };
                 definitions.font_data.insert(key.clone(), Arc::new(data));
-                definitions
-                    .families
-                    .entry(family)
-                    .or_default()
-                    .insert(0, key);
             }
+            definitions
+                .families
+                .entry(family)
+                .or_default()
+                .insert(0, key);
         }
     }
 }
@@ -669,10 +714,42 @@ fn ui_font_family(font: &UiFont, default: FontFamily) -> FontFamily {
         UiFont::Default => default,
         UiFont::Resource(path) => resource_font_family(path),
         UiFont::System(UiSystemFont::SansSerif) => FontFamily::Proportional,
-        UiFont::System(UiSystemFont::Serif) => FontFamily::Name(Arc::from("perro-system-serif")),
         UiFont::System(UiSystemFont::Monospace) => FontFamily::Monospace,
-        UiFont::System(font) => FontFamily::Name(Arc::from(format!("perro-select-{font:?}"))),
+        UiFont::System(font) => system_font_family(*font),
     }
+}
+
+/// Cached per-variant families: this runs per text shape per rebuild, and
+/// building `FontFamily::Name` fresh costs a format! + Arc allocation.
+fn system_font_family(font: UiSystemFont) -> FontFamily {
+    use std::sync::OnceLock;
+    static FAMILIES: OnceLock<AHashMap<UiSystemFont, FontFamily>> = OnceLock::new();
+    let families = FAMILIES.get_or_init(|| {
+        let mut map = AHashMap::new();
+        map.insert(
+            UiSystemFont::Serif,
+            FontFamily::Name(Arc::from("perro-system-serif")),
+        );
+        for font in [
+            UiSystemFont::Arial,
+            UiSystemFont::Calibri,
+            UiSystemFont::Cambria,
+            UiSystemFont::Consolas,
+            UiSystemFont::CourierNew,
+            UiSystemFont::Georgia,
+            UiSystemFont::Helvetica,
+            UiSystemFont::SegoeUi,
+            UiSystemFont::TimesNewRoman,
+            UiSystemFont::Verdana,
+        ] {
+            map.insert(font, FontFamily::Name(Arc::from(format!("perro-select-{font:?}"))));
+        }
+        map
+    });
+    families
+        .get(&font)
+        .cloned()
+        .unwrap_or(FontFamily::Proportional)
 }
 
 fn resource_font_family(path: &str) -> FontFamily {
@@ -690,10 +767,7 @@ fn selected_text_family(text: &str, font: &UiFont, default: FontFamily) -> FontF
     }
 }
 
-fn append_system_font_fallbacks(definitions: &mut FontDefinitions) {
-    let mut db = fontdb::Database::new();
-    db.load_system_fonts();
-
+fn append_system_font_fallbacks(definitions: &mut FontDefinitions, db: &mut fontdb::Database) {
     let script_families = [
         (
             named_font_family(UI_CYRILLIC_FONT_FAMILY),
@@ -747,7 +821,7 @@ fn append_system_font_fallbacks(definitions: &mut FontDefinitions) {
 
     for (font_family, source_families) in &script_families {
         for &name in *source_families {
-            append_system_font_family(definitions, &db, name, font_family.clone());
+            append_system_font_family(definitions, db, name, font_family.clone());
         }
     }
 
@@ -764,7 +838,7 @@ fn named_font_family(name: &'static str) -> FontFamily {
 
 fn append_system_font_family(
     definitions: &mut FontDefinitions,
-    db: &fontdb::Database,
+    db: &mut fontdb::Database,
     family_name: &str,
     target_family: FontFamily,
 ) {
@@ -775,14 +849,14 @@ fn append_system_font_family(
     let Some(id) = db.query(&query) else {
         return;
     };
-    let Some((source, index)) = db.face_source(id) else {
-        return;
-    };
-    let Some(font_data) = font_data_from_source(source, index) else {
+    let Some(index) = db.face(id).map(|face| face.index) else {
         return;
     };
     let font_key = format!("{UI_SYSTEM_FONT_PREFIX}-{family_name}-{index}");
     if !definitions.font_data.contains_key(&font_key) {
+        let Some(font_data) = shared_font_data(db, id) else {
+            return;
+        };
         definitions
             .font_data
             .insert(font_key.clone(), Arc::new(font_data));
@@ -790,14 +864,23 @@ fn append_system_font_family(
     append_font_fallback(definitions, target_family, &font_key);
 }
 
-fn font_data_from_source(source: fontdb::Source, index: u32) -> Option<FontData> {
-    let font = match source {
-        fontdb::Source::Binary(data) => data.as_ref().as_ref().to_vec(),
-        fontdb::Source::File(path) => std::fs::read(path).ok()?,
-        fontdb::Source::SharedFile(_, data) => data.as_ref().as_ref().to_vec(),
-    };
+/// Memory-map a system face instead of copying the file onto the heap.
+/// System fonts (CJK families especially) total tens of MB; mapping defers
+/// all I/O to on-demand page faults and keeps the bytes file-backed and
+/// evictable instead of resident for the app's lifetime.
+fn shared_font_data(db: &mut fontdb::Database, id: fontdb::ID) -> Option<FontData> {
+    // SAFETY: the mapping is leaked below and never unmapped, so the slice
+    // stays valid for the process lifetime. A font file changing on disk
+    // mid-run could corrupt the mapping; every desktop text stack accepts
+    // this same trade for system fonts.
+    let (data, index) = unsafe { db.make_shared_face_data(id) }?;
+    let slice: &[u8] = (*data).as_ref();
+    let slice: &'static [u8] =
+        unsafe { std::slice::from_raw_parts(slice.as_ptr(), slice.len()) };
+    // Fonts register once and live until exit; leaking the Arc is the bound.
+    std::mem::forget(data);
     Some(FontData {
-        font: std::borrow::Cow::Owned(font),
+        font: std::borrow::Cow::Borrowed(slice),
         index,
         tweak: Default::default(),
     })
@@ -963,7 +1046,7 @@ fn font_sources_for_family(definitions: &FontDefinitions, family: FontFamily) ->
         .flatten()
         .filter_map(|key| {
             definitions.font_data.get(key).map(|data| UiFontSource {
-                key: key.clone(),
+                key: Arc::from(key.as_str()),
                 data: data.clone(),
             })
         })
@@ -1713,7 +1796,7 @@ fn push_harfbuzz_text_shape(
         return false;
     }
     let family = selected_text_family(text, font, FontFamily::Proportional);
-    let Some((font, run)) = shape_text_with_font_fallbacks(definitions, family, text) else {
+    let Some((font, run)) = harfbuzz_atlas.shape_cached(definitions, family, text) else {
         return false;
     };
     let (min, max) = rect.screen_min_max(viewport);
@@ -1745,7 +1828,7 @@ fn push_harfbuzz_text_shape(
     };
     let mut mesh = Mesh::with_texture(UI_HARFBUZZ_TEXTURE_ID);
     let color = color32(color);
-    for glyph in run.glyphs {
+    for glyph in run.glyphs.iter().copied() {
         let Some(alloc) = harfbuzz_atlas.glyph(&font, glyph.glyph_id, font_size) else {
             cursor += glyph.x_advance * font_size;
             continue;
@@ -2363,11 +2446,14 @@ fn push_projected_label_triangle(
     triangle: [ProjectedLabelVertex; 3],
     viewport: [f32; 2],
 ) {
+    if triangle
+        .iter()
+        .any(|vertex| vertex.clip[3].abs() <= 1.0e-6)
+    {
+        return;
+    }
     let base = mesh.vertices.len() as u32;
     for vertex in triangle {
-        if vertex.clip[3].abs() <= 1.0e-6 {
-            return;
-        }
         let ndc_x = vertex.clip[0] / vertex.clip[3];
         let ndc_y = vertex.clip[1] / vertex.clip[3];
         mesh.vertices.push(Vertex {
@@ -2640,51 +2726,48 @@ fn push_text_shape(input: TextShapeInput<'_>, fonts: &mut Fonts, out: &mut Vec<C
         font_size,
         selected_text_family(text, font, FontFamily::Proportional),
     );
-    // Keep whole words whole. Shrink a word that cannot fit instead of
-    // splitting it across rows or letting it escape the label's world size.
-    let longest_word_width = text
-        .split_whitespace()
-        .map(|word| {
-            let word_job = LayoutJob::simple(
-                word.to_string(),
-                font_id.clone(),
-                color32(color),
-                f32::INFINITY,
-            );
-            fonts
-                .with_pixels_per_point(UI_RASTER_SCALE)
-                .layout_job(word_job)
-                .size()
-                .x
-        })
-        .fold(0.0_f32, f32::max);
-    if longest_word_width > wrap_width {
-        font_size *= wrap_width / longest_word_width;
-        font_id.size = font_size.max(0.001);
-    }
-    let mut job = LayoutJob::simple(text.to_string(), font_id, color32(color), wrap_width);
-    job.halign = match h_align {
+    let paragraph_align = match h_align {
         UiTextAlignState::Start => Align::LEFT,
         UiTextAlignState::Center => Align::Center,
         UiTextAlignState::End => Align::RIGHT,
     };
-    let paragraph_align = job.halign;
-    let mut galley = fonts.with_pixels_per_point(UI_RASTER_SCALE).layout_job(job);
+    let layout = |fonts: &mut Fonts, font_id: FontId| {
+        let mut job = LayoutJob::simple(text.to_string(), font_id, color32(color), wrap_width);
+        job.halign = paragraph_align;
+        fonts.with_pixels_per_point(UI_RASTER_SCALE).layout_job(job)
+    };
+    let mut galley = layout(fonts, font_id.clone());
+    // Keep whole words whole. Shrink a word that cannot fit instead of
+    // splitting it across rows or letting it escape the label's world size.
+    // A single row that fits proves no word overflowed, so the common case
+    // (short label, no wrap) skips the per-word measuring entirely.
+    if galley.rows.len() > 1 || galley.size().x > wrap_width {
+        let longest_word_width = text
+            .split_whitespace()
+            .map(|word| {
+                let word_job = LayoutJob::simple(
+                    word.to_string(),
+                    font_id.clone(),
+                    color32(color),
+                    f32::INFINITY,
+                );
+                fonts
+                    .with_pixels_per_point(UI_RASTER_SCALE)
+                    .layout_job(word_job)
+                    .size()
+                    .x
+            })
+            .fold(0.0_f32, f32::max);
+        if longest_word_width > wrap_width {
+            font_size *= wrap_width / longest_word_width;
+            font_id.size = font_size.max(0.001);
+            galley = layout(fonts, font_id.clone());
+        }
+    }
     if fit_content && galley.size().y > rect.size[1] {
         font_size *= (rect.size[1] / galley.size().y).clamp(0.001, 1.0);
-        let mut fit_job = LayoutJob::simple(
-            text.to_string(),
-            FontId::new(
-                font_size,
-                selected_text_family(text, font, FontFamily::Proportional),
-            ),
-            color32(color),
-            wrap_width,
-        );
-        fit_job.halign = paragraph_align;
-        galley = fonts
-            .with_pixels_per_point(UI_RASTER_SCALE)
-            .layout_job(fit_job);
+        font_id.size = font_size;
+        galley = layout(fonts, font_id);
     }
     let text_size = galley.size();
     let x = match h_align {

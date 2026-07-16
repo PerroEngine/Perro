@@ -153,6 +153,9 @@ pub struct UiRenderer {
     painter: EpaintUiPainter,
     static_font_lookup: Option<crate::StaticFontLookup>,
     default_font: perro_ui::UiFont,
+    // Path hashes already handed to the painter; labels re-submit every
+    // change, so gate here keeps registration off the per-frame path.
+    registered_resource_fonts: ahash::AHashSet<u64>,
 }
 
 impl Default for UiRenderer {
@@ -169,6 +172,7 @@ impl UiRenderer {
             painter: EpaintUiPainter::new(),
             static_font_lookup: None,
             default_font: perro_ui::UiFont::Default,
+            registered_resource_fonts: ahash::AHashSet::new(),
         }
     }
 
@@ -190,8 +194,11 @@ impl UiRenderer {
                 font: perro_ui::UiFont::Resource(path),
                 ..
             } => {
-                self.painter
-                    .register_resource_font(path, self.static_font_lookup);
+                let hash = perro_ids::string_to_u64(path);
+                if self.registered_resource_fonts.insert(hash) {
+                    self.painter
+                        .register_resource_font(path, self.static_font_lookup);
+                }
             }
             _ => {}
         }
