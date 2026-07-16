@@ -6,31 +6,37 @@
 | --- | --- |
 | Purpose | [Purpose](#purpose) |
 | Use Cases | [Use Cases](#use-cases) |
-| Example | [Example](#example) |
+| Practical Example | [Practical Example](#practical-example) |
 | Reference | [Reference](#reference) |
 
 ## Purpose
 
-Use `Script Utility Modules` when this feature, type group, file format, or workflow appears in game code or assets.
+Script utility modules are the "batteries" a game needs beyond nodes and the runtime API: reading and writing save files, converting data to and from JSON, deterministic random and hashing, gameplay math, logging, and networking. They live under `perro_api::modules` (plus `perro_api::networking`) and are available in any script or shared project module without adding a dependency.
 
 ## Use Cases
 
-Use the types, APIs, file formats, and workflows in this doc when the feature matches the game system you are building. Prefer `ctx.run` for runtime state, `ctx.res` for resource/data access, and `ctx.ipt` for input state.
+- Persist a save game or settings file to disk (or browser storage on web): `modules::file::save_string` / `load_string` with a `user://` path, serialized through `modules::json::stringify` / `parse`.
+- Deterministic procedural generation so one seed always builds the same dungeon, loot table, or enemy wave: `modules::random::hash_str`, `rand_range_i32`, `SeededRng`, and the `*_stream` helpers.
+- Smooth camera follow, AI turning, and value easing without hand-rolling the math: `modules::math::smooth_damp`, `damp`, `approach`, `lerp_angle_deg`, `wrap_angle_deg`.
+- Online features — a leaderboard fetch or a lobby socket: `perro_api::networking` `HttpClient` / `NetworkWorld`, polled in `on_update` and bridged to signals with `emit_http_event!` / `emit_net_event!`.
+- Debug output while iterating on game logic: `log_info!`, `log_warn!`, `log_error!`.
 
-## Example
+## Practical Example
+
+Roll three loot ids deterministically from the run seed and write them to a per-user save file as JSON, so a reloaded run drops the same items.
 
 ```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let dt = delta_time!(ctx.run);
-        let _ = dt;
-    }
-});
+use perro_api::{modules::{file, json, random::SeededRng}, prelude::*};
+
+fn save_run_loot(run_seed: u32) -> std::io::Result<()> {
+    let mut rng = SeededRng::new(run_seed);
+    let loot: Vec<i32> = (0..3).map(|_| rng.next_range_i32(0, 20)).collect();
+    let payload = json::stringify(&loot.to_variant()).unwrap_or_default();
+    file::save_string("user://runs/last_loot.json", &payload)
+}
 ```
 
 ## Reference
-
-# Script Utility Modules
 
 Perro exposes utility modules through `perro_api::modules`.
 

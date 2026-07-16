@@ -11,21 +11,79 @@
 
 ## Purpose
 
-Use ``.panimtree` Format` when this feature, type group, file format, or workflow appears in game code or assets.
+`.panimtree` is an animation graph that mixes several `.panim` clips into one final pose. It solves the problem of blending walk/run/idle by speed, or layering an aim pose on top of locomotion, without hand-writing transition and cross-fade code every frame. The graph owns the fixed shape (slot names, `Blend`/`Add`/`Invert` nodes, default weights, masks, required `Output`); the scene `AnimationTree` node owns the runtime clips and bindings and lets scripts push live weights.
 
 ## Use Cases
 
-Use the types, APIs, file formats, and workflows in this doc when the feature matches the game system you are building. Prefer `ctx.run` for runtime state, `ctx.res` for resource/data access, and `ctx.ipt` for input state.
+- Speed-based locomotion blend: feed `Idle`, `Walk`, and `Run` slots into one `[Blend]` and drive it with `anim_tree_set_weight!` from the character's current speed.
+- Upper-body aim layer: stack an `[Add]` node with `base = @MoveBlend` and `inputs = [@Aim]`, masked to `bones = [Spine, Chest]`, so aiming only bends the torso.
+- Directional strafe blends: mix `StrafeLeft`/`StrafeRight` clips by input axis without snapping between them.
+- Recoil and breathing overlays: additive layers with per-input `weights` scale a recoil kick or idle breath onto the moving base pose.
+- Subtractive cleanup: run a pose through `[Invert]` then `[Add]` to remove an already-baked additive contribution.
+- Per-slot playback control at runtime: `anim_tree_play_slot!`, `anim_tree_set_slot_speed!`, and `anim_tree_set_slot_playback!` retime a single slot without touching the rest.
 
 ## Example
 
+Author `res://animations/player.panimtree`:
+
+```ini
+[AnimationTree]
+name = "PlayerLocomotion"
+[/AnimationTree]
+
+[AnimationSlots]
+Idle
+Run
+Aim
+[/AnimationSlots]
+
+[MoveBlend]
+    [Blend]
+        inputs = [@Idle, @Run]
+        weights = [1.0, 0.0]
+    [/Blend]
+[/MoveBlend]
+
+[AimAdd]
+    [Add]
+        base = @MoveBlend
+        inputs = [@Aim]
+        weights = [0.75]
+        mask = { objects = [Hero], bones = [Spine, Chest] }
+    [/Add]
+[/AimAdd]
+
+[Output]
+    input = @AimAdd
+[/Output]
+```
+
+Wire it into a scene `AnimationTree` (slot order matches `[AnimationSlots]`, and each
+clip's `Hero` object binds to the `@PlayerRoot` scene node):
+
+```ini
+[PlayerRoot]
+    [Node3D/]
+[/PlayerRoot]
+
+[HeroAnimTree]
+    [AnimationTree]
+        tree = "res://animations/player.panimtree"
+        animations = [
+            { animation = "res://animations/idle.panim", bindings = { Hero = @PlayerRoot }, playback = loop },
+            { animation = "res://animations/run.panim", bindings = { Hero = @PlayerRoot }, playback = loop },
+            { animation = "res://animations/aim.panim", bindings = { Hero = @PlayerRoot }, playback = boomerang },
+        ]
+    [/AnimationTree]
+[/HeroAnimTree]
+```
+
+Blend run in as the character accelerates:
+
 ```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let dt = delta_time!(ctx.run);
-        let _ = dt;
-    }
-});
+let run_weight = (speed / max_speed).clamp(0.0, 1.0);
+let _ = anim_tree_set_weight!(ctx, tree, "MoveBlend", "Idle", 1.0 - run_weight);
+let _ = anim_tree_set_weight!(ctx, tree, "MoveBlend", "Run", run_weight);
 ```
 
 ## Reference

@@ -6,26 +6,56 @@
 | --- | --- |
 | Purpose | [Purpose](#purpose) |
 | Use Cases | [Use Cases](#use-cases) |
-| Example | [Example](#example) |
+| Practical Example | [Practical Example](#practical-example) |
 | Reference | [Reference](#reference) |
 
 ## Purpose
 
-Use `BitMask` when this feature, type group, file format, or workflow appears in game code or assets.
+`BitMask` is the shared 32-bit layer mask that decides what interacts with what. It answers gameplay questions like "which cameras can see this prop", "which bodies this bullet is allowed to hit", and "does this wall block that sound". Instead of ad-hoc booleans, you tag objects with layers and filter them with masks, so systems stay data-driven and cheap to test.
 
 ## Use Cases
 
-Use the types, APIs, file formats, and workflows in this doc when the feature matches the game system you are building. Prefer `ctx.run` for runtime state, `ctx.res` for resource/data access, and `ctx.ipt` for input state.
+- Separate player, enemy, world, and projectile collision so hits only register between the right groups: set `collision_layers` / `collision_mask` on bodies (scene `only(...)` / `without(...)`, or `BitMask::with` / `bitmask!` in code).
+- Hide a whole layer from one camera (editor gizmos, a minimap-only prop set, first-person arms): add the layer to the camera `render_mask` while renderables keep their `render_layers`.
+- Restrict a hitscan weapon to solid geometry so shots ignore triggers and allies: build a `PhysicsQueryFilter` with `layers` / `mask` and pass it to `physics_raycast_3d!` / `physics_shape_cast_3d!`.
+- Let a wall occlude only some spatial sources: tag emitters with `audio_layer` and give the mask geometry an `audio_mask`.
+- Fade a decal or snow shell against just the meshes it should cover: set `blend_layers` / `blend_mask` on the inserted mesh (see the Mesh Blend section below).
 
-## Example
+## Practical Example
+
+A shooter where enemy fire passes through friendly units. Player bodies live on layer `1`, enemies on layer `2`, and an enemy raycast weapon only tests the world and the player.
+
+Scene bodies:
+
+```text
+[Player]
+    [CharacterBody3D]
+        collision_layers = only(1)
+        [Node3D/]
+    [/CharacterBody3D]
+[/Player]
+
+[Grunt]
+    [CharacterBody3D]
+        collision_layers = only(2)
+        [Node3D/]
+    [/CharacterBody3D]
+[/Grunt]
+```
+
+Enemy weapon script — the raycast filter accepts the world (layer `32`) and the player (layer `1`) but never other enemies:
 
 ```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let dt = delta_time!(ctx.run);
-        let _ = dt;
+use perro_api::prelude::*;
+
+const HITTABLE: BitMask = BitMask::with([1, 32]);
+
+fn fire<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, from: Vector3, dir: Vector3) {
+    let filter = PhysicsQueryFilter { layers: HITTABLE, ..Default::default() };
+    if let Some(hit) = physics_raycast_3d!(ctx.run, from, dir, 100.0, filter) {
+        let _ = hit;
     }
-});
+}
 ```
 
 ## Reference

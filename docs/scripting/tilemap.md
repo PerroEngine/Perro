@@ -6,31 +6,49 @@
 | --- | --- |
 | Purpose | [Purpose](#purpose) |
 | Use Cases | [Use Cases](#use-cases) |
-| Example | [Example](#example) |
+| Practical Example | [Practical Example](#practical-example) |
 | Reference | [Reference](#reference) |
 
 ## Purpose
 
-Use `TileMap2D` when this feature, type group, file format, or workflow appears in game code or assets.
+`TileMap2D` builds a 2D level out of a grid of atlas tiles from a `.ptileset` instead of thousands of hand-placed sprites. Solid tiles can bake into static colliders and cast 2D light shadows, so one node gives you the level's visuals, collision, and shadow casters at once. It suits both hand-authored stages and grids generated at runtime.
 
 ## Use Cases
 
-Use the types, APIs, file formats, and workflows in this doc when the feature matches the game system you are building. Prefer `ctx.run` for runtime state, `ctx.res` for resource/data access, and `ctx.ipt` for input state.
+- Hand-authored platformer or top-down stages: set `tileset` and the row-major `tiles` grid in the scene, with `collision_enabled = true` so solid tiles become static colliders and shadow casters.
+- Procedurally generated dungeon floors, caves, or terrain: write `width`, `height`, and the `tiles` array on the node at runtime with `with_node_mut!(ctx.run, TileMap2D, id, ...)`; the runtime only re-bakes collision when tile content changes.
+- Sloped, spiked, or rounded tiles beyond box collision: give the tile an explicit `collision_shape` (`rect`, `circle`, `triangle`, or convex `polygon`) in the tileset; auto tiles merge into larger rect colliders.
+- Filter what the level collides with: `collision_layers` / `collision_mask` on the tilemap (see [BitMask](bitmask.md)).
 
-## Example
+## Practical Example
+
+Generate a walled room at load time by writing the tile grid directly on the node. Tile id `1` is a solid wall (collision) and id `0` is open floor.
 
 ```rust
+use perro_api::prelude::*;
+
 lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let dt = delta_time!(ctx.run);
-        let _ = dt;
+    fn on_init(&self, ctx: &mut ScriptContext<'_, API>) {
+        let (w, h) = (16u32, 12u32);
+        let mut tiles = vec![0i32; (w * h) as usize];
+        for y in 0..h {
+            for x in 0..w {
+                let edge = x == 0 || y == 0 || x == w - 1 || y == h - 1;
+                tiles[(y * w + x) as usize] = if edge { 1 } else { 0 };
+            }
+        }
+
+        let _ = with_node_mut!(ctx.run, TileMap2D, ctx.id, |map| {
+            map.width = w;
+            map.height = h;
+            map.tiles = tiles;
+            map.collision_enabled = true;
+        });
     }
 });
 ```
 
 ## Reference
-
-# TileMap2D
 
 `TileMap2D` is the runtime 2D tile map node.
 It draws atlas tiles from a `.ptileset` and can emit static 2D colliders.

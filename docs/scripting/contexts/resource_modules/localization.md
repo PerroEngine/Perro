@@ -4,11 +4,13 @@
 
 | Header | Link |
 | --- | --- |
-| Overview | [Overview](#overview) |
+| Purpose | [Purpose](#purpose) |
+| Use Cases | [Use Cases](#use-cases) |
 | Context | [Context](#context) |
 | CSV Format | [CSV Format](#csv-format) |
 | Locale Codes | [Locale Codes](#locale-codes) |
 | Set Locale | [Set Locale](#set-locale) |
+| Practical Example | [Practical Example](#practical-example) |
 | API Reference | [API Reference](#api-reference) |
 | `set_locale` | [`set_locale`](#set_locale) |
 | `locale` | [`locale`](#locale) |
@@ -21,14 +23,23 @@
 | `locale` | [`locale`](#locale) |
 | `locale_in` | [`locale_in`](#locale_in) |
 
-## Overview
+## Purpose
 
-This resource module belongs to `ctx.res` and documents localization calls.
+`ctx.res.Localization()` selects the active language and looks up translated strings by key, so every piece of on-screen text can ship in many languages from one spreadsheet. Translations come from a `localization.csv` next to `project.toml`, keyed by an id with one column per locale. Set the locale once from an options menu, then read strings by key wherever the UI needs text.
+
+## Use Cases
+
+- Language selection menu: apply the player's choice with `locale_set!(ctx.res, "es")`; the call returns `false` if that column does not exist.
+- Menu and HUD labels: resolve visible text by key with `locale!(ctx.res, "menu.start")`, which falls back to the key itself if the string is missing.
+- Comparing languages side by side: read a specific locale's string with `locale_in!(ctx.res, Locale::ES, "menu.start")` without changing the active locale.
+- Region and script variants: use custom tags such as `pt-br` or `zh-hant` via `Locale::Custom(...)`.
+- Reacting to a language change: re-read labels after `set_locale` so open menus refresh immediately.
 
 ## Context
 
 - Script context path: `ctx.res`
-- Module access: `ctx.res.Localization()`
+- Module access: `ctx.res.Localization()` (locale shortcuts also exist directly on `ctx.res`)
+- Locale type: `perro_resource_api::sub_apis::Locale`.
 - Lifecycle examples stay inside `lifecycle!` because script hooks get `API` from the macro expansion.
 
 ## CSV Format
@@ -297,11 +308,11 @@ ctx.res.Localization().set_locale(Locale::Custom("pt-br"));
 ```
 
 ```rust
-locale_set!(ctx.res.res, "es");
+locale_set!(ctx.res, "es");
 ```
 
 ```rust
-locale_set!(ctx.res.res, "pt-br");
+locale_set!(ctx.res, "pt-br");
 ```
 
 `locale_set!` turns built-in string literals like `"es"` into `Locale::ES`.
@@ -310,9 +321,31 @@ Unknown string literals become `Locale::Custom(...)`.
 
 `set_locale` returns `true` when the locale exists.
 
-Use `locale!(ctx.res.res, "menu.start")` to read active text.
+Use `locale!(ctx.res, "menu.start")` to read active text.
 
-Use `locale_in!(ctx.res.res, Locale::ES, "menu.start")` to read a specific locale.
+Use `locale_in!(ctx.res, Locale::ES, "menu.start")` to read a specific locale.
+
+## Practical Example
+
+Switch language when the menu commits a choice, then read a localized label.
+
+```rust
+lifecycle!({
+    fn on_all_init(&self, ctx: &mut ScriptContext<'_, API>) {
+        signal_connect!(ctx.run, ctx.id, signal!("language_picked"), func!("apply_language"));
+    }
+});
+
+methods!({
+    fn apply_language(&self, ctx: &mut ScriptContext<'_, API>) {
+        let ok = locale_set!(ctx.res, "es");
+        if ok {
+            let start = locale!(ctx.res, "menu.start");
+            let _ = start; // assign to the Start button label
+        }
+    }
+});
+```
 
 ## API Reference
 
@@ -322,10 +355,10 @@ Use `locale_in!(ctx.res.res, Locale::ES, "menu.start")` to read a specific local
 | --- | --- |
 | Access | `ctx.res.Localization()` |
 | Signature | `pub fn set_locale<L: IntoLocale>(&self, locale: L) -> bool` |
-| Params | `&self, locale: Locale` |
+| Params | `locale: L` (a `Locale` or a `&'static str` code) |
 | Returns | `bool` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Changing the active language, for example from an options menu. |
+| Fails when / edge behavior | Returns `false` when the requested locale has no column in the localization table. |
 
 ### `locale`
 
@@ -333,10 +366,10 @@ Use `locale_in!(ctx.res.res, Locale::ES, "menu.start")` to read a specific local
 | --- | --- |
 | Access | `ctx.res.Localization()` |
 | Signature | `pub fn locale(&self) -> Locale` |
-| Params | `&self` |
+| Params | none |
 | Returns | `Locale` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Reading the currently active locale. |
+| Fails when / edge behavior | Always returns the active locale. |
 
 ### `get`
 
@@ -344,10 +377,10 @@ Use `locale_in!(ctx.res.res, Locale::ES, "menu.start")` to read a specific local
 | --- | --- |
 | Access | `ctx.res.Localization()` |
 | Signature | `pub fn get<S: AsRef<str>>(&self, key: S) -> Option<&'static str>` |
-| Params | `&self, key: S` |
+| Params | `key: S` |
 | Returns | `Option<&'static str>` |
-| Use when | Use when script code needs this exact engine read or write. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Looking up a translated string in the active locale by key. |
+| Fails when / edge behavior | Returns `None` when the key is missing; the `locale!` macro falls back to the key text instead. |
 
 ### `get_by_hash`
 
@@ -355,10 +388,10 @@ Use `locale_in!(ctx.res.res, Locale::ES, "menu.start")` to read a specific local
 | --- | --- |
 | Access | `ctx.res.Localization()` |
 | Signature | `pub fn get_by_hash(&self, key_hash: u64) -> Option<&'static str>` |
-| Params | `&self, key_hash: u64` |
+| Params | `key_hash: u64` |
 | Returns | `Option<&'static str>` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | A precomputed key hash is available; the `locale!` literal path uses this. |
+| Fails when / edge behavior | Returns `None` when no string is registered for the hash. |
 
 ### `get_for_locale`
 
@@ -366,10 +399,10 @@ Use `locale_in!(ctx.res.res, Locale::ES, "menu.start")` to read a specific local
 | --- | --- |
 | Access | `ctx.res.Localization()` |
 | Signature | `pub fn get_for_locale<S: AsRef<str>>(&self, locale: Locale, key: S) -> Option<&'static str>` |
-| Params | `&self, locale: Locale, key: S` |
+| Params | `locale: Locale, key: S` |
 | Returns | `Option<&'static str>` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Reading a string in a specific locale without changing the active one. |
+| Fails when / edge behavior | Returns `None` when the key or locale column is missing. |
 
 ### `get_for_locale_by_hash`
 
@@ -377,52 +410,52 @@ Use `locale_in!(ctx.res.res, Locale::ES, "menu.start")` to read a specific local
 | --- | --- |
 | Access | `ctx.res.Localization()` |
 | Signature | `pub fn get_for_locale_by_hash(&self, locale: Locale, key_hash: u64) -> Option<&'static str>` |
-| Params | `&self, locale: Locale, key_hash: u64` |
+| Params | `locale: Locale, key_hash: u64` |
 | Returns | `Option<&'static str>` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | The `locale_in!` literal path uses a precomputed key hash. |
+| Fails when / edge behavior | Returns `None` when the key or locale column is missing. |
 
 ### `locale_set`
 
 | Field | Detail |
 | --- | --- |
 | Access | `ctx.res.Localization()` |
-| Signature | `locale_set!(ctx.res.res, locale)` |
+| Signature | `locale_set!(ctx.res, locale)` |
 | Params | `ctx.res, locale` |
-| Returns | `same as backing method` |
-| Use when | Use when setting locale by enum or string literal. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Returns | `bool` |
+| Use when | Macro form of `set_locale`. A string literal like `"es"` maps to the built-in variant; an unknown literal becomes `Locale::Custom(...)`. |
+| Fails when / edge behavior | Returns `false` when the locale has no column in the table. |
 
 ### `locale_get_current`
 
 | Field | Detail |
 | --- | --- |
 | Access | `ctx.res.Localization()` |
-| Signature | `locale_get_current!(ctx.res.res)` |
+| Signature | `locale_get_current!(ctx.res)` |
 | Params | `ctx.res` |
-| Returns | `same as backing method` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Returns | `Locale` |
+| Use when | Macro form of `locale`. |
+| Fails when / edge behavior | Always returns the active locale. |
 
 ### `locale`
 
 | Field | Detail |
 | --- | --- |
 | Access | `ctx.res.Localization()` |
-| Signature | `locale!(ctx.res.res, key)` |
+| Signature | `locale!(ctx.res, key)` |
 | Params | `ctx.res, key` |
-| Returns | `same as backing method` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Returns | `&'static str` |
+| Use when | Reading active-locale text. A literal key hashes at compile time. |
+| Fails when / edge behavior | Falls back to the key text when the string is missing. |
 
 ### `locale_in`
 
 | Field | Detail |
 | --- | --- |
 | Access | `ctx.res.Localization()` |
-| Signature | `locale_in!(ctx.res.res, locale, key)` |
+| Signature | `locale_in!(ctx.res, locale, key)` |
 | Params | `ctx.res, locale, key` |
-| Returns | `same as backing method` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Returns | `&'static str` |
+| Use when | Reading text from a specific locale. A literal key hashes at compile time. |
+| Fails when / edge behavior | Falls back to the key text when the string is missing. |
 

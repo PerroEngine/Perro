@@ -11,21 +11,52 @@
 
 ## Purpose
 
-Use ``.pmat` Format` when this feature, type group, file format, or workflow appears in game code or assets.
+`.pmat` is a text material profile for `MeshInstance3D` surfaces. It picks a shading preset (`standard` PBR, `unlit`, `toon`, or `custom`) and sets the factors and texture slots that give a surface its look. Author one `.pmat` per material and reuse it across meshes, or point a `custom` material at a WGSL shader when you need effects the presets do not cover.
 
 ## Use Cases
 
-Use the types, APIs, file formats, and workflows in this doc when the feature matches the game system you are building. Prefer `ctx.run` for runtime state, `ctx.res` for resource/data access, and `ctx.ipt` for input state.
+- Physically based props: a `standard` material with `base_color_factor`, `metallic_factor`, and `roughness_factor` for crates, metal, stone.
+- Glowing UI holograms and skyboxes: an `unlit` material so lighting never darkens `base_color_factor`/`emissive_factor`.
+- Stylized/cel-shaded characters: a `toon` material with `band_count`, `rim_strength`, and `outline_width`.
+- Portals, force fields, dissolves: a `custom` material with `shader_path` plus `params` and up to eight `images` sampled via `custom_image_sample`.
+- Cutout foliage and glass: `alpha_mode = "MASK"` with `alpha_cutoff`, or `alpha_mode = "BLEND"`, plus `double_sided = true`.
+- Imported model materials: reference a glTF sub-asset like `res://models/crate.glb:mat[0]` instead of a `.pmat` file.
 
 ## Example
 
+Author `res://materials/crate.pmat` (`type` must be the first non-empty line):
+
+```txt
+type = "standard"
+
+base_color_factor = (0.55, 0.38, 0.20, 1.0)
+metallic_factor = 0.0
+roughness_factor = 0.8
+alpha_mode = "OPAQUE"
+double_sided = false
+```
+
+Assign it to a mesh surface in a scene:
+
+```scn
+[Crate]
+    [MeshInstance3D]
+        mesh = "res://models/crate.glb:mesh[0]"
+        material = "res://materials/crate.pmat"
+    [/MeshInstance3D]
+[/Crate]
+```
+
+Load or mutate it from a script:
+
 ```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let dt = delta_time!(ctx.run);
-        let _ = dt;
+let mat = material_load!(res, "res://materials/crate.pmat");
+if let Some(mut data) = material_get_data!(res, mat) {
+    if let Material3D::Standard(params) = &mut data {
+        params.roughness_factor = 0.3;
     }
-});
+    let _ = material_write!(res, mat, data);
+}
 ```
 
 ## Reference

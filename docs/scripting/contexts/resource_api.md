@@ -4,13 +4,28 @@
 
 | Header | Link |
 | --- | --- |
+| Purpose | [Purpose](#purpose) |
+| Use Cases | [Use Cases](#use-cases) |
 | Resource Window | [Resource Window](#resource-window) |
 | Resource Modules | [Resource Modules](#resource-modules) |
-| Example | [Example](#example) |
+| Global Visual State | [Global Visual State](#global-visual-state) |
+| Practical Example | [Practical Example](#practical-example) |
+
+## Purpose
+
+`ctx.res` is how a script loads and creates the assets a game is built from: textures, meshes, materials, audio, animations, spreadsheets, scene documents, and live capture from the mic or webcam. Render-facing loads return a stable ID immediately and never block the frame; decode and GPU upload finish in the background, and the renderer starts using the ID the moment its data is ready. This lets gameplay code ask for an asset the instant it is needed without stalling to disk.
+
+## Use Cases
+
+- Stream in level assets on demand as the player advances, with `texture_load!`, `mesh_load!`, and `material_load!` returning IDs the same frame.
+- Build assets at runtime that never existed on disk, such as a procedurally generated tilemap texture via `ctx.res.Textures().create_from_rgba(...)` or a mesh from `ctx.res.Meshes().create(...)`.
+- Drive game data from spreadsheets, reading loot tables and dialogue with `ctx.res.Csv()` and localized menu text with `ctx.res.Localization()`.
+- Wire up voice chat and camera effects from live capture through `ctx.res.Mic()` and `ctx.res.Webcams()`.
+- Apply screen-wide look changes such as a damage vignette or colorblind filter through the global post-processing and visual accessibility calls on `ctx.res`.
 
 ## Resource Window
 
-Use `ctx.res` for resources and renderer-facing resource commands. Render resource loads return stable IDs immediately. Decode and upload can finish later without blocking the frame; renderer uses the ID once data is ready.
+Use `ctx.res` for resources and renderer-facing resource commands. Render resource loads return stable IDs immediately. Decode and upload can finish later without blocking the frame; the renderer uses the ID once data is ready.
 
 For lifetime rules, auto load, auto drop, and ref-count behavior, see [Resource Management](../../resources/resource_management.md).
 
@@ -34,12 +49,33 @@ For lifetime rules, auto load, auto drop, and ref-count behavior, see [Resource 
 | Visual Accessibility | [visual_accessibility](resource_modules/visual_accessibility.md) | `ctx.res` |
 | Webcams | [webcam](resource_modules/webcam.md) | `ctx.res.Webcams()` |
 
-## Example
+## Global Visual State
+
+A few whole-screen controls live directly on `ctx.res` rather than in a module, because they affect the final composited frame instead of a single asset.
+
+| Call | Signature | Purpose |
+| --- | --- | --- |
+| Post-processing set | `ctx.res.set_global_post_processing(set)` | Replace the full global effect stack. |
+| Post-processing add | `ctx.res.add_global_post_processing(effect)` | Append one effect. |
+| Colorblind filter | `ctx.res.enable_colorblind_filter(mode, strength)` | Enable an accessibility simulation pass. |
+| Viewport size | `ctx.res.viewport_size() -> Vector2` | Read the active viewport size in pixels. |
+| Locale shortcuts | `ctx.res.set_locale(...)`, `ctx.res.locale(key)` | Direct locale access without `Localization()`. |
+
+See [Post Processing](resource_modules/post_processing.md) and [Visual Accessibility](resource_modules/visual_accessibility.md) for the full effect and filter reference.
+
+## Practical Example
 
 ```rust
 lifecycle!({
     fn on_init(&self, ctx: &mut ScriptContext<'_, API>) {
         let texture = texture_load!(ctx.res, "res://textures/player.png");
+        self.hold(ctx, texture);
+    }
+});
+
+methods!({
+    fn hold(&self, ctx: &mut ScriptContext<'_, API>, texture: TextureID) {
+        // The renderer starts using `texture` once its async decode finishes.
         let ready = texture_is_loaded!(ctx.res, texture);
         let _ = ready;
     }

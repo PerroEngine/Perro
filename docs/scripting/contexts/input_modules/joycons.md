@@ -4,8 +4,11 @@
 
 | Header | Link |
 | --- | --- |
-| Overview | [Overview](#overview) |
+| Purpose | [Purpose](#purpose) |
+| Use Cases | [Use Cases](#use-cases) |
+| Provenance | [Provenance](#provenance) |
 | Context | [Context](#context) |
+| Practical Example | [Practical Example](#practical-example) |
 | API Reference | [API Reference](#api-reference) |
 | `all` | [`all`](#all) |
 | `get` | [`get`](#get) |
@@ -13,10 +16,31 @@
 | `set_indicator` | [`set_indicator`](#set_indicator) |
 | `set_indicator_slot` | [`set_indicator_slot`](#set_indicator_slot) |
 | `ensure_calibration` | [`ensure_calibration`](#ensure_calibration) |
+| Macros | [Macros](#macros) |
 
-## Overview
+## Purpose
 
-This input module belongs to `ctx.ipt` and documents joycons calls.
+The Joy-Con module exposes each connected Joy-Con as its own slot with buttons,
+a stick, gyro/accel motion, HD rumble, a player LED indicator, and (on Joy-Con 2)
+a mouse sensor. Because each Joy-Con is a self-contained controller, a single
+pair can serve one player held sideways per hand, which makes Joy-Cons a natural
+fit for pick-up-and-play local multiplayer. Stick drift is handled through an
+opt-in calibration flow the game triggers and persists.
+
+## Use Cases
+
+- Two-player-from-one-pair co-op: give each player one Joy-Con and read it by
+  slot with `joycon_get!(ctx.ipt, 0)` / `joycon_get!(ctx.ipt, 1)`.
+- Motion aiming and steering: read tilt from `joycon_gyro!(ctx.ipt, 0)` and
+  shake gestures from `joycon_accel!`.
+- HD rumble feedback: pulse on hit with `joycon_set_rumble!(ctx.ipt, 0, 0.5, 0.5)`.
+- Player-color LEDs: light the indicator for a player slot with
+  `joycon_set_indicator!(ctx.ipt, 0, 1)` so players know which controller is theirs.
+- Joy-Con 2 pointer input: read the mouse-style sensor with
+  `joycon_mouse_sensor!(ctx.ipt, 0)` for cursor or aim deltas.
+- Drift calibration: detect a controller that needs it with
+  `joycon_needs_calibration!` and start it once with
+  `joycon_ensure_calibration!(ctx.ipt, 0)`, then save the result.
 
 ## Provenance
 
@@ -42,7 +66,31 @@ Nintendo Switch or Switch 2 game builds will use a separate private implementati
 
 - Script context path: `ctx.ipt`
 - Module access: `ctx.ipt.JoyCons()`
+- `JoyConButton` maps per side (for example `Top` = Up on the left Joy-Con, X on the right); `JoyConSide` tells you left or right.
 - Lifecycle examples stay inside `lifecycle!` because script hooks get `API` from the macro expansion.
+
+## Practical Example
+
+```rust
+lifecycle!({
+    fn on_init(&self, ctx: &mut ScriptContext<'_, API>) {
+        // Light player 1's LED and calibrate if needed.
+        joycon_set_indicator!(ctx.ipt, 0, 1);
+        joycon_ensure_calibration!(ctx.ipt, 0);
+    }
+
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        // Single Joy-Con held sideways: stick for movement, motion for aim.
+        let move_dir = joycon_stick!(ctx.ipt, 0);
+        let tilt = joycon_gyro!(ctx.ipt, 0);
+
+        if joycon_pressed!(ctx.ipt, 0, JoyConButton::Bottom) {
+            joycon_set_rumble!(ctx.ipt, 0, 0.5, 0.5);
+        }
+        let _ = (move_dir, tilt);
+    }
+});
+```
 
 ## API Reference
 
@@ -54,8 +102,8 @@ Nintendo Switch or Switch 2 game builds will use a separate private implementati
 | Signature | `pub fn all(&self) -> &'ipt [JoyConState]` |
 | Params | `&self` |
 | Returns | `&'ipt [JoyConState]` |
-| Use when | Use when script code needs this exact engine read or write. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Enumerate connected Joy-Cons; each entry is one controller. |
+| Edge behavior | May be empty when none are connected. |
 
 ### `get`
 
@@ -65,8 +113,8 @@ Nintendo Switch or Switch 2 game builds will use a separate private implementati
 | Signature | `pub fn get(&self, index: usize) -> Option<&'ipt JoyConState>` |
 | Params | `&self, index: usize` |
 | Returns | `Option<&'ipt JoyConState>` |
-| Use when | Use when script code needs this exact engine read or write. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Read one Joy-Con's buttons, stick, motion, and side by slot. |
+| Edge behavior | Returns `None` when the slot is empty. |
 
 ### `set_rumble`
 
@@ -76,8 +124,8 @@ Nintendo Switch or Switch 2 game builds will use a separate private implementati
 | Signature | `pub fn set_rumble(&self, index: usize, low_frequency: f32, high_frequency: f32)` |
 | Params | `&self, index: usize, low_frequency: f32, high_frequency: f32` |
 | Returns | `()` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | HD rumble feedback; set both to `0.0` to stop. |
+| Edge behavior | Queues a command when a command buffer exists; missing slots are ignored. |
 
 ### `set_indicator`
 
@@ -87,8 +135,8 @@ Nintendo Switch or Switch 2 game builds will use a separate private implementati
 | Signature | `pub fn set_indicator(&self, index: usize, indicator: u8)` |
 | Params | `&self, index: usize, indicator: u8` |
 | Returns | `()` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Set the player LED by slot number or raw lamp bit pattern. |
+| Edge behavior | Ignored when the value is not a valid slot or lamp pattern; otherwise queued. |
 
 ### `set_indicator_slot`
 
@@ -98,8 +146,8 @@ Nintendo Switch or Switch 2 game builds will use a separate private implementati
 | Signature | `pub fn set_indicator_slot(&self, index: usize, slot: u8)` |
 | Params | `&self, index: usize, slot: u8` |
 | Returns | `()` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Set the player LED by zero-based slot only. |
+| Edge behavior | Ignored when the slot is out of range; otherwise queued. |
 
 ### `ensure_calibration`
 
@@ -109,215 +157,33 @@ Nintendo Switch or Switch 2 game builds will use a separate private implementati
 | Signature | `pub fn ensure_calibration(&self, index: usize) -> bool` |
 | Params | `&self, index: usize` |
 | Returns | `bool` |
-| Use when | Use when script code wants Perro to queue calibration only if the indexed Joy-Con needs it. |
-| Fails when / edge behavior | Missing slots return `false`. Backend maps index to the connected serial and stores calibration in the global Perro calibration folder. |
+| Use when | Queue calibration only if the indexed Joy-Con currently needs it. |
+| Edge behavior | Returns `false` for missing slots. Backend maps index to the connected serial and stores calibration in the global Perro calibration folder. |
 
-### `joycon_accel`
+## Macros
 
-| Field | Detail |
-| --- | --- |
-| Access | `ctx.ipt` |
-| Signature | `joycon_accel!(ctx.ipt, 0)` |
-| Params | `ctx.ipt, 0` |
-| Returns | `Vector3` |
-| Use when | Use when code needs current input device data without storing platform input state itself. |
-| Fails when / edge behavior | Missing device slots return `None`, `false`, or a zero vector depending on the macro return type. Command macros queue work when an input command buffer exists. |
+Read macros return the documented empty value (zero vector, `false`, `None`, or
+zeroed sensor data) for missing slots; command macros queue work when an input
+command buffer exists.
 
-### `joycon_calibrated`
-
-| Field | Detail |
-| --- | --- |
-| Access | `ctx.ipt` |
-| Signature | `joycon_calibrated!(ctx.ipt, 0)` |
-| Params | `ctx.ipt, 0` |
-| Returns | `bool` |
-| Use when | Use when code needs current input device data without storing platform input state itself. |
-| Fails when / edge behavior | Missing device slots return `None`, `false`, or a zero vector depending on the macro return type. Command macros queue work when an input command buffer exists. |
-
-### `joycon_calibrating`
-
-| Field | Detail |
-| --- | --- |
-| Access | `ctx.ipt` |
-| Signature | `joycon_calibrating!(ctx.ipt, 0)` |
-| Params | `ctx.ipt, 0` |
-| Returns | `bool` |
-| Use when | Use when code needs current input device data without storing platform input state itself. |
-| Fails when / edge behavior | Missing device slots return `None`, `false`, or a zero vector depending on the macro return type. Command macros queue work when an input command buffer exists. |
-
-### `joycon_calibration_bias`
-
-| Field | Detail |
-| --- | --- |
-| Access | `ctx.ipt` |
-| Signature | `joycon_calibration_bias!(ctx.ipt, 0)` |
-| Params | `ctx.ipt, 0` |
-| Returns | `Vector3` |
-| Use when | Use when code needs current input device data without storing platform input state itself. |
-| Fails when / edge behavior | Missing device slots return `None`, `false`, or a zero vector depending on the macro return type. Command macros queue work when an input command buffer exists. |
-
-### `joycon_connected`
-
-| Field | Detail |
-| --- | --- |
-| Access | `ctx.ipt` |
-| Signature | `joycon_connected!(ctx.ipt, 0)` |
-| Params | `ctx.ipt, 0` |
-| Returns | `bool` |
-| Use when | Use when code needs current input device data without storing platform input state itself. |
-| Fails when / edge behavior | Missing device slots return `None`, `false`, or a zero vector depending on the macro return type. Command macros queue work when an input command buffer exists. |
-
-### `joycon_down`
-
-| Field | Detail |
-| --- | --- |
-| Access | `ctx.ipt` |
-| Signature | `joycon_down!(ctx.ipt, 0, JoyConButton::Top)` |
-| Params | `ctx.ipt, 0, JoyConButton::Top` |
-| Returns | `bool` |
-| Use when | Use when gameplay needs held input state, such as movement, aim, charge, or drag. |
-| Fails when / edge behavior | Missing device slots return `None`, `false`, or a zero vector depending on the macro return type. Command macros queue work when an input command buffer exists. |
-
-### `joycon_get`
-
-| Field | Detail |
-| --- | --- |
-| Access | `ctx.ipt` |
-| Signature | `joycon_get!(ctx.ipt, 0)` |
-| Params | `ctx.ipt, 0` |
-| Returns | `Option` |
-| Use when | Use when code needs current input device data without storing platform input state itself. |
-| Fails when / edge behavior | Missing device slots return `None`, `false`, or a zero vector depending on the macro return type. Command macros queue work when an input command buffer exists. |
-
-### `joycon_gyro`
-
-| Field | Detail |
-| --- | --- |
-| Access | `ctx.ipt` |
-| Signature | `joycon_gyro!(ctx.ipt, 0)` |
-| Params | `ctx.ipt, 0` |
-| Returns | `Vector3` |
-| Use when | Use when code needs current input device data without storing platform input state itself. |
-| Fails when / edge behavior | Missing device slots return `None`, `false`, or a zero vector depending on the macro return type. Command macros queue work when an input command buffer exists. |
-
-### `joycon_list`
-
-| Field | Detail |
-| --- | --- |
-| Access | `ctx.ipt` |
-| Signature | `joycon_list!(ctx.ipt)` |
-| Params | `ctx.ipt` |
-| Returns | `slice` |
-| Use when | Use when code needs current input device data without storing platform input state itself. |
-| Fails when / edge behavior | Missing device slots return `None`, `false`, or a zero vector depending on the macro return type. Command macros queue work when an input command buffer exists. |
-
-### `joycon_needs_calibration`
-
-| Field | Detail |
-| --- | --- |
-| Access | `ctx.ipt` |
-| Signature | `joycon_needs_calibration!(ctx.ipt, 0)` |
-| Params | `ctx.ipt, 0` |
-| Returns | `bool` |
-| Use when | Use when code needs current input device data without storing platform input state itself. |
-| Fails when / edge behavior | Missing device slots return `None`, `false`, or a zero vector depending on the macro return type. Command macros queue work when an input command buffer exists. |
-
-### `joycon_ensure_calibration`
-
-| Field | Detail |
-| --- | --- |
-| Access | `ctx.ipt` |
-| Signature | `joycon_ensure_calibration!(ctx.ipt, 0)` |
-| Params | `ctx.ipt, 0` |
-| Returns | `bool` |
-| Use when | Use when code wants Perro to queue calibration only if the indexed Joy-Con needs it. |
-| Fails when / edge behavior | Missing device slots return `false`. Backend maps index to serial and stores calibration for all Perro projects. |
-
-### `joycon_pressed`
-
-| Field | Detail |
-| --- | --- |
-| Access | `ctx.ipt` |
-| Signature | `joycon_pressed!(ctx.ipt, 0, JoyConButton::Top)` |
-| Params | `ctx.ipt, 0, JoyConButton::Top` |
-| Returns | `bool` |
-| Use when | Use when gameplay needs a one-frame input edge, such as jump, confirm, cancel, or release. |
-| Fails when / edge behavior | Missing device slots return `None`, `false`, or a zero vector depending on the macro return type. Command macros queue work when an input command buffer exists. |
-
-### `joycon_released`
-
-| Field | Detail |
-| --- | --- |
-| Access | `ctx.ipt` |
-| Signature | `joycon_released!(ctx.ipt, 0, JoyConButton::Top)` |
-| Params | `ctx.ipt, 0, JoyConButton::Top` |
-| Returns | `bool` |
-| Use when | Use when gameplay needs a one-frame input edge, such as jump, confirm, cancel, or release. |
-| Fails when / edge behavior | Missing device slots return `None`, `false`, or a zero vector depending on the macro return type. Command macros queue work when an input command buffer exists. |
-
-### `joycon_request_calibration`
-
-| Field | Detail |
-| --- | --- |
-| Access | `ctx.ipt` |
-| Signature | `joycon_request_calibration!(ctx.ipt, 0)` |
-| Params | `ctx.ipt, 0` |
-| Returns | `()` |
-| Use when | Use when code must queue an input device, cursor, rumble, indicator, or calibration command. |
-| Fails when / edge behavior | Missing device slots return `None`, `false`, or a zero vector depending on the macro return type. Command macros queue work when an input command buffer exists. |
-
-### `joycon_set_indicator`
-
-| Field | Detail |
-| --- | --- |
-| Access | `ctx.ipt` |
-| Signature | `joycon_set_indicator!(ctx.ipt, 0, 1)` |
-| Params | `ctx.ipt, 0, 1` |
-| Returns | `()` |
-| Use when | Use when code must queue an input device, cursor, rumble, indicator, or calibration command. |
-| Fails when / edge behavior | Missing device slots return `None`, `false`, or a zero vector depending on the macro return type. Command macros queue work when an input command buffer exists. |
-
-### `joycon_set_rumble`
-
-| Field | Detail |
-| --- | --- |
-| Access | `ctx.ipt` |
-| Signature | `joycon_set_rumble!(ctx.ipt, 0, 0.5, 0.5)` |
-| Params | `ctx.ipt, 0, 0.5, 0.5` |
-| Returns | `()` |
-| Use when | Use when code must queue an input device, cursor, rumble, indicator, or calibration command. |
-| Fails when / edge behavior | Missing device slots return `None`, `false`, or a zero vector depending on the macro return type. Command macros queue work when an input command buffer exists. |
-
-### `joycon_side`
-
-| Field | Detail |
-| --- | --- |
-| Access | `ctx.ipt` |
-| Signature | `joycon_side!(ctx.ipt, 0)` |
-| Params | `ctx.ipt, 0` |
-| Returns | `Option<JoyConSide>` |
-| Use when | Use when code needs current input device data without storing platform input state itself. |
-| Fails when / edge behavior | Missing device slots return `None`, `false`, or a zero vector depending on the macro return type. Command macros queue work when an input command buffer exists. |
-
-### `joycon_stick`
-
-| Field | Detail |
-| --- | --- |
-| Access | `ctx.ipt` |
-| Signature | `joycon_stick!(ctx.ipt, 0)` |
-| Params | `ctx.ipt, 0` |
-| Returns | `Vector2` |
-| Use when | Use when code needs current input device data without storing platform input state itself. |
-| Fails when / edge behavior | Missing device slots return `None`, `false`, or a zero vector depending on the macro return type. Command macros queue work when an input command buffer exists. |
-
-### `joycon_mouse_sensor`
-
-| Field | Detail |
-| --- | --- |
-| Access | `ctx.ipt` |
-| Signature | `joycon_mouse_sensor!(ctx.ipt, 0)` |
-| Params | `ctx.ipt, 0` |
-| Returns | `JoyConMouseSensor` |
-| Use when | Use when code needs Joy-Con 2 mouse sensor delta, extra axis, and distance data. |
-| Fails when / edge behavior | Missing device slots return zeroed sensor data. Joy-Con 1 slots also stay zero. |
-
+| Macro | Signature | Returns |
+| --- | --- | --- |
+| `joycon_list!` | `joycon_list!(ctx.ipt)` | `&[JoyConState]` |
+| `joycon_get!` | `joycon_get!(ctx.ipt, 0)` | `Option<&JoyConState>` |
+| `joycon_side!` | `joycon_side!(ctx.ipt, 0)` | `Option<JoyConSide>` |
+| `joycon_down!` | `joycon_down!(ctx.ipt, 0, JoyConButton::Top)` | `bool` |
+| `joycon_pressed!` | `joycon_pressed!(ctx.ipt, 0, JoyConButton::Top)` | `bool` |
+| `joycon_released!` | `joycon_released!(ctx.ipt, 0, JoyConButton::Top)` | `bool` |
+| `joycon_stick!` | `joycon_stick!(ctx.ipt, 0)` | `Vector2` |
+| `joycon_gyro!` | `joycon_gyro!(ctx.ipt, 0)` | `Vector3` |
+| `joycon_accel!` | `joycon_accel!(ctx.ipt, 0)` | `Vector3` |
+| `joycon_mouse_sensor!` | `joycon_mouse_sensor!(ctx.ipt, 0)` | `JoyConMouseSensor` (delta, extra axis, distance; zeroed on Joy-Con 1) |
+| `joycon_connected!` | `joycon_connected!(ctx.ipt, 0)` | `bool` |
+| `joycon_calibrated!` | `joycon_calibrated!(ctx.ipt, 0)` | `bool` |
+| `joycon_calibrating!` | `joycon_calibrating!(ctx.ipt, 0)` | `bool` |
+| `joycon_needs_calibration!` | `joycon_needs_calibration!(ctx.ipt, 0)` | `bool` |
+| `joycon_calibration_bias!` | `joycon_calibration_bias!(ctx.ipt, 0)` | `Vector3` |
+| `joycon_request_calibration!` | `joycon_request_calibration!(ctx.ipt, 0)` | `()` (always queues a calibration request) |
+| `joycon_ensure_calibration!` | `joycon_ensure_calibration!(ctx.ipt, 0)` | `bool` (queues calibration only if needed; stores result for all Perro projects) |
+| `joycon_set_rumble!` | `joycon_set_rumble!(ctx.ipt, 0, 0.5, 0.5)` | `()` |
+| `joycon_set_indicator!` | `joycon_set_indicator!(ctx.ipt, 0, 1)` | `()` |

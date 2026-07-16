@@ -4,8 +4,10 @@
 
 | Header | Link |
 | --- | --- |
-| Overview | [Overview](#overview) |
+| Purpose | [Purpose](#purpose) |
+| Use Cases | [Use Cases](#use-cases) |
 | Context | [Context](#context) |
+| Practical Example | [Practical Example](#practical-example) |
 | API Reference | [API Reference](#api-reference) |
 | `down` | [`down`](#down) |
 | `pressed` | [`pressed`](#pressed) |
@@ -21,25 +23,57 @@
 | `capture` | [`capture`](#capture) |
 | `confine` | [`confine`](#confine) |
 | `confine_hidden` | [`confine_hidden`](#confine_hidden) |
+| Macros | [Macros](#macros) |
 
-## Overview
+## Purpose
 
-This input module belongs to `ctx.ipt` and documents mouse calls.
+The mouse module reports button edges, motion delta, wheel, cursor position, and
+viewport size, and it queues cursor-mode changes. The key distinction is
+position versus delta: `position` gives an absolute normalized point for UI and
+world picking, while `delta` gives raw relative motion for camera look, which
+keeps working even when the cursor is captured and cannot move on screen.
+
+## Use Cases
+
+- Click to shoot / select: fire on the press edge with
+  `mouse_pressed!(ctx.ipt, MouseButton::Left)`.
+- First-person / orbit camera look: capture the cursor with
+  `mouse_set_mode!(ctx.ipt, MouseMode::Captured)` and rotate from
+  `mouse_delta!(ctx.ipt)`.
+- Drag to pan or rotate: hold-detect with `mouse_down!(ctx.ipt,
+  MouseButton::Right)` and accumulate `mouse_delta!`.
+- Scroll to zoom: read `mouse_wheel!(ctx.ipt).y` and adjust camera distance.
+- Cursor-space UI and world picking: convert `mouse_position!(ctx.ipt)`
+  (normalized viewport) against `viewport_size!(ctx.ipt)`.
+- Menu vs. gameplay cursor: `mouse_show!(ctx.ipt)` in menus,
+  `mouse_hide!` / `mouse_confine!(ctx.ipt)` during play.
 
 ## Context
 
 - Script context path: `ctx.ipt`
 - Module access: `ctx.ipt.Mouse()`
+- `MouseButton` is the mouse-button enum (`Left`, `Right`, `Middle`, extras).
+- `MouseMode` is the cursor-mode enum (`Visible`, `Hidden`, `Captured`, `Confined`, `ConfinedHidden`).
 - Lifecycle examples stay inside `lifecycle!` because script hooks get `API` from the macro expansion.
 
 ## Practical Example
 
 ```rust
 lifecycle!({
+    fn on_init(&self, ctx: &mut ScriptContext<'_, API>) {
+        // Enter mouselook: hide + lock the cursor for camera control.
+        mouse_set_mode!(ctx.ipt, MouseMode::Captured);
+    }
+
     fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let pos = mouse_position!(ctx.ipt);
-        let clicked = mouse_pressed!(ctx.ipt, MouseButton::Left);
-        let _ = (pos, clicked);
+        // Relative motion keeps flowing while the cursor is captured.
+        let look = mouse_delta!(ctx.ipt);
+        let zoom = mouse_wheel!(ctx.ipt).y;
+
+        if mouse_pressed!(ctx.ipt, MouseButton::Left) {
+            // fire / select at mouse_position!(ctx.ipt)
+        }
+        let _ = (look, zoom);
     }
 });
 ```
@@ -54,8 +88,8 @@ lifecycle!({
 | Signature | `pub fn down(&self, button: MouseButton) -> bool` |
 | Params | `&self, button: MouseButton` |
 | Returns | `bool` |
-| Use when | Use when code branches on current state or a one-frame state edge. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | A control must respond while the button is held, such as drag or aim. |
+| Edge behavior | `true` every frame the button is held. |
 
 ### `pressed`
 
@@ -65,8 +99,8 @@ lifecycle!({
 | Signature | `pub fn pressed(&self, button: MouseButton) -> bool` |
 | Params | `&self, button: MouseButton` |
 | Returns | `bool` |
-| Use when | Use when code branches on current state or a one-frame state edge. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Fire once on click, such as shoot or select. |
+| Edge behavior | `true` only on the down-edge frame. |
 
 ### `released`
 
@@ -76,8 +110,8 @@ lifecycle!({
 | Signature | `pub fn released(&self, button: MouseButton) -> bool` |
 | Params | `&self, button: MouseButton` |
 | Returns | `bool` |
-| Use when | Use when code must release, remove, stop, or disconnect existing engine state. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Fire on release, such as ending a drag or a charged action. |
+| Edge behavior | `true` only on the up-edge frame. |
 
 ### `delta`
 
@@ -87,8 +121,8 @@ lifecycle!({
 | Signature | `pub fn delta(&self) -> Vector2` |
 | Params | `&self` |
 | Returns | `Vector2` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Camera look and relative motion; works while the cursor is captured. |
+| Edge behavior | Accumulated pixel movement for the frame; zero when the mouse did not move. |
 
 ### `wheel`
 
@@ -98,8 +132,8 @@ lifecycle!({
 | Signature | `pub fn wheel(&self) -> Vector2` |
 | Params | `&self` |
 | Returns | `Vector2` |
-| Use when | Use when script code needs this exact engine read or write. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Zoom, weapon cycling, or list scroll; read the `y` component. |
+| Edge behavior | Accumulated wheel movement for the frame; zero when no scroll occurred. |
 
 ### `position`
 
@@ -109,8 +143,8 @@ lifecycle!({
 | Signature | `pub fn position(&self) -> Vector2` |
 | Params | `&self` |
 | Returns | `Vector2` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | UI hit-testing and world picking. |
+| Edge behavior | Normalized viewport position clamped to `0..1`, with bottom-left as `(0, 0)`. |
 
 ### `viewport_size`
 
@@ -120,8 +154,8 @@ lifecycle!({
 | Signature | `pub fn viewport_size(&self) -> Vector2` |
 | Params | `&self` |
 | Returns | `Vector2` |
-| Use when | Use when script code needs this exact engine read or write. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Convert normalized `position` back to pixels, or compute aspect. |
+| Edge behavior | Pixel size of the current viewport; defaults to a `1x1` fallback before the first size event. |
 
 ### `mode`
 
@@ -131,8 +165,8 @@ lifecycle!({
 | Signature | `pub fn mode(&self) -> MouseMode` |
 | Params | `&self` |
 | Returns | `MouseMode` |
-| Use when | Use when script code needs this exact engine read or write. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Branch on the current cursor mode. |
+| Edge behavior | Reflects the last applied mode from the snapshot. |
 
 ### `set_mode`
 
@@ -142,8 +176,8 @@ lifecycle!({
 | Signature | `pub fn set_mode(&self, mode: MouseMode)` |
 | Params | `&self, mode: MouseMode` |
 | Returns | `()` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Switch cursor behavior, such as entering or leaving mouselook. |
+| Edge behavior | Queues a command; applies on the next input frame when a command buffer exists. |
 
 ### `show`
 
@@ -153,8 +187,8 @@ lifecycle!({
 | Signature | `pub fn show(&self)` |
 | Params | `&self` |
 | Returns | `()` |
-| Use when | Use when script code needs this exact engine read or write. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Show a normal cursor, such as in menus. Queues `MouseMode::Visible`. |
+| Edge behavior | Queued command; applies on the next input frame. |
 
 ### `hide`
 
@@ -164,8 +198,8 @@ lifecycle!({
 | Signature | `pub fn hide(&self)` |
 | Params | `&self` |
 | Returns | `()` |
-| Use when | Use when script code needs this exact engine read or write. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Hide the cursor without locking it. Queues `MouseMode::Hidden`. |
+| Edge behavior | Queued command; applies on the next input frame. |
 
 ### `capture`
 
@@ -175,8 +209,8 @@ lifecycle!({
 | Signature | `pub fn capture(&self)` |
 | Params | `&self` |
 | Returns | `()` |
-| Use when | Use when script code needs this exact engine read or write. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Lock and hide the cursor for mouselook. Queues `MouseMode::Captured`. |
+| Edge behavior | Queued command; `delta` keeps reporting motion while captured. |
 
 ### `confine`
 
@@ -186,8 +220,8 @@ lifecycle!({
 | Signature | `pub fn confine(&self)` |
 | Params | `&self` |
 | Returns | `()` |
-| Use when | Use when script code needs this exact engine read or write. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Keep a visible cursor inside the window. Queues `MouseMode::Confined`. |
+| Edge behavior | Queued command; applies on the next input frame. |
 
 ### `confine_hidden`
 
@@ -197,127 +231,28 @@ lifecycle!({
 | Signature | `pub fn confine_hidden(&self)` |
 | Params | `&self` |
 | Returns | `()` |
-| Use when | Use when script code needs this exact engine read or write. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Keep a hidden cursor inside the window. Queues `MouseMode::ConfinedHidden`. |
+| Edge behavior | Queued command; applies on the next input frame. |
 
-### `mouse_capture`
+## Macros
 
-| Field | Detail |
-| --- | --- |
-| Access | `ctx.ipt` |
-| Signature | `mouse_capture!(ctx.ipt)` |
-| Params | `ctx.ipt` |
-| Returns | `()` |
-| Use when | Use when code must queue an input device, cursor, rumble, indicator, or calibration command. |
-| Fails when / edge behavior | Missing device slots return `None`, `false`, or a zero vector depending on the macro return type. Command macros queue work when an input command buffer exists. |
+Macro forms expand to the methods above. Read macros return the documented empty
+value (a zero vector, `false`, or the current mode) when device data is missing;
+command macros queue work when an input command buffer exists.
 
-### `mouse_confine`
-
-| Field | Detail |
-| --- | --- |
-| Access | `ctx.ipt` |
-| Signature | `mouse_confine!(ctx.ipt)` |
-| Params | `ctx.ipt` |
-| Returns | `()` |
-| Use when | Use when code must queue an input device, cursor, rumble, indicator, or calibration command. |
-| Fails when / edge behavior | Missing device slots return `None`, `false`, or a zero vector depending on the macro return type. Command macros queue work when an input command buffer exists. |
-
-### `mouse_confine_hidden`
-
-| Field | Detail |
-| --- | --- |
-| Access | `ctx.ipt` |
-| Signature | `mouse_confine_hidden!(ctx.ipt)` |
-| Params | `ctx.ipt` |
-| Returns | `()` |
-| Use when | Use when code must queue an input device, cursor, rumble, indicator, or calibration command. |
-| Fails when / edge behavior | Missing device slots return `None`, `false`, or a zero vector depending on the macro return type. Command macros queue work when an input command buffer exists. |
-
-### `mouse_delta`
-
-| Field | Detail |
-| --- | --- |
-| Access | `ctx.ipt` |
-| Signature | `mouse_delta!(ctx.ipt)` |
-| Params | `ctx.ipt` |
-| Returns | `Vector2` |
-| Use when | Use when code needs current input device data without storing platform input state itself. |
-| Fails when / edge behavior | Missing device slots return `None`, `false`, or a zero vector depending on the macro return type. Command macros queue work when an input command buffer exists. |
-
-### `mouse_down`
-
-| Field | Detail |
-| --- | --- |
-| Access | `ctx.ipt` |
-| Signature | `mouse_down!(ctx.ipt, MouseButton::Left)` |
-| Params | `ctx.ipt, MouseButton::Left` |
-| Returns | `bool` |
-| Use when | Use when gameplay needs held input state, such as movement, aim, charge, or drag. |
-| Fails when / edge behavior | Missing device slots return `None`, `false`, or a zero vector depending on the macro return type. Command macros queue work when an input command buffer exists. |
-
-### `mouse_hide`
-
-| Field | Detail |
-| --- | --- |
-| Access | `ctx.ipt` |
-| Signature | `mouse_hide!(ctx.ipt)` |
-| Params | `ctx.ipt` |
-| Returns | `()` |
-| Use when | Use when code must queue an input device, cursor, rumble, indicator, or calibration command. |
-| Fails when / edge behavior | Missing device slots return `None`, `false`, or a zero vector depending on the macro return type. Command macros queue work when an input command buffer exists. |
-
-### `mouse_mode`
-
-| Field | Detail |
-| --- | --- |
-| Access | `ctx.ipt` |
-| Signature | `mouse_mode!(ctx.ipt)` |
-| Params | `ctx.ipt` |
-| Returns | `MouseMode` |
-| Use when | Use when code needs current input device data without storing platform input state itself. |
-| Fails when / edge behavior | Missing device slots return `None`, `false`, or a zero vector depending on the macro return type. Command macros queue work when an input command buffer exists. |
-
-### `mouse_released`
-
-| Field | Detail |
-| --- | --- |
-| Access | `ctx.ipt` |
-| Signature | `mouse_released!(ctx.ipt, MouseButton::Left)` |
-| Params | `ctx.ipt, MouseButton::Left` |
-| Returns | `bool` |
-| Use when | Use when gameplay needs a one-frame input edge, such as jump, confirm, cancel, or release. |
-| Fails when / edge behavior | Missing device slots return `None`, `false`, or a zero vector depending on the macro return type. Command macros queue work when an input command buffer exists. |
-
-### `mouse_set_mode`
-
-| Field | Detail |
-| --- | --- |
-| Access | `ctx.ipt` |
-| Signature | `mouse_set_mode!(ctx.ipt, MouseMode::Captured)` |
-| Params | `ctx.ipt, MouseMode::Captured` |
-| Returns | `MouseMode` |
-| Use when | Use when code must queue an input device, cursor, rumble, indicator, or calibration command. |
-| Fails when / edge behavior | Missing device slots return `None`, `false`, or a zero vector depending on the macro return type. Command macros queue work when an input command buffer exists. |
-
-### `mouse_show`
-
-| Field | Detail |
-| --- | --- |
-| Access | `ctx.ipt` |
-| Signature | `mouse_show!(ctx.ipt)` |
-| Params | `ctx.ipt` |
-| Returns | `()` |
-| Use when | Use when code must queue an input device, cursor, rumble, indicator, or calibration command. |
-| Fails when / edge behavior | Missing device slots return `None`, `false`, or a zero vector depending on the macro return type. Command macros queue work when an input command buffer exists. |
-
-### `mouse_wheel`
-
-| Field | Detail |
-| --- | --- |
-| Access | `ctx.ipt` |
-| Signature | `mouse_wheel!(ctx.ipt)` |
-| Params | `ctx.ipt` |
-| Returns | `Vector2` |
-| Use when | Use when code needs current input device data without storing platform input state itself. |
-| Fails when / edge behavior | Missing device slots return `None`, `false`, or a zero vector depending on the macro return type. Command macros queue work when an input command buffer exists. |
-
+| Macro | Signature | Returns |
+| --- | --- | --- |
+| `mouse_down!` | `mouse_down!(ctx.ipt, MouseButton::Left)` | `bool` |
+| `mouse_pressed!` | `mouse_pressed!(ctx.ipt, MouseButton::Left)` | `bool` |
+| `mouse_released!` | `mouse_released!(ctx.ipt, MouseButton::Left)` | `bool` |
+| `mouse_delta!` | `mouse_delta!(ctx.ipt)` | `Vector2` |
+| `mouse_wheel!` | `mouse_wheel!(ctx.ipt)` | `Vector2` |
+| `mouse_position!` | `mouse_position!(ctx.ipt)` | `Vector2` |
+| `viewport_size!` | `viewport_size!(ctx.ipt)` | `Vector2` |
+| `mouse_mode!` | `mouse_mode!(ctx.ipt)` | `MouseMode` |
+| `mouse_set_mode!` | `mouse_set_mode!(ctx.ipt, MouseMode::Captured)` | `()` |
+| `mouse_show!` | `mouse_show!(ctx.ipt)` | `()` |
+| `mouse_hide!` | `mouse_hide!(ctx.ipt)` | `()` |
+| `mouse_capture!` | `mouse_capture!(ctx.ipt)` | `()` |
+| `mouse_confine!` | `mouse_confine!(ctx.ipt)` | `()` |
+| `mouse_confine_hidden!` | `mouse_confine_hidden!(ctx.ipt)` | `()` |

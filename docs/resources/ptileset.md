@@ -11,21 +11,45 @@
 
 ## Purpose
 
-Use ``.ptileset` Format` when this feature, type group, file format, or workflow appears in game code or assets.
+`.ptileset` describes a 2D tile atlas and each tile's collision for `TileMap2D`. It maps a numeric tile `id` to a cell in the atlas grid and, per tile, says whether that tile blocks movement and what collision shape it uses. This is what turns a painted tile grid into a playable level: ground you walk on, walls you bump into, and slopes with custom silhouettes.
 
 ## Use Cases
 
-Use the types, APIs, file formats, and workflows in this doc when the feature matches the game system you are building. Prefer `ctx.run` for runtime state, `ctx.res` for resource/data access, and `ctx.ipt` for input state.
+- Solid platformer ground and walls: tiles with `collision = true` and no `collision_shape`, so adjacent full-tile colliders merge into large rectangle chunks at bake time.
+- Sloped or angled terrain: `collision_shape = { polygon = { points = [...] } }` or `triangle` for ramps a rectangle cannot express.
+- Half-height ledges: `collision_shape = { rect = { size = (16, 8) offset = (0, -4) } }` for a collider that fills only part of the tile.
+- Decorative, walk-through tiles: leave `collision` at its default `false` for background art and detail layers.
+- Shared atlas across a level: one `texture` plus `tile_size`, `columns`, and `rows` referenced by every `TileMap2D` that draws from it.
+- Shadow-casting tiles: tiles with `collision = true` also cast 2D shadows when the tilemap enables collision (see [2D Shadows](shadows2d.md)).
 
 ## Example
 
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let dt = delta_time!(ctx.run);
-        let _ = dt;
-    }
-});
+Author `res://tiles/world.ptileset`:
+
+```text
+texture = "res://tiles/world.png"
+tile_size = (16, 16)
+columns = 8
+rows = 8
+
+tiles = [
+    { id = 0 atlas = (0, 0) },
+    { id = 1 atlas = (1, 0) collision = true },
+    { id = 2 atlas = (2, 0) collision = true collision_shape = "auto" },
+    { id = 3 atlas = (3, 0) collision = true collision_shape = { rect = { size = (16, 8) offset = (0, -4) } } },
+    { id = 4 atlas = (4, 0) collision = true collision_shape = { polygon = { points = [(0, 0), (16, 0), (8, 16)] } } },
+]
+```
+
+Reference it from a `TileMap2D` node (tile `id` values index this set):
+
+```text
+[Level]
+    [TileMap2D]
+        tileset = "res://tiles/world.ptileset"
+        collision_enabled = true
+    [/TileMap2D]
+[/Level]
 ```
 
 ## Reference

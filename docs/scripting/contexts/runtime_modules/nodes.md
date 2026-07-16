@@ -4,8 +4,10 @@
 
 | Header | Link |
 | --- | --- |
-| Overview | [Overview](#overview) |
+| Purpose | [Purpose](#purpose) |
+| Use Cases | [Use Cases](#use-cases) |
 | Context | [Context](#context) |
+| Practical Example | [Practical Example](#practical-example) |
 | API Reference | [API Reference](#api-reference) |
 | `create` | [`create`](#create) |
 | `create_nodes` | [`create_nodes`](#create_nodes) |
@@ -159,15 +161,78 @@
 | `tag_add` | [`tag_add`](#tag_add) |
 | `tag_remove` | [`tag_remove`](#tag_remove) |
 
-## Overview
+## Purpose
 
-This runtime module belongs to `ctx.run` and documents nodes calls.
+The nodes module is the workhorse for touching the scene graph at runtime. It
+creates and destroys nodes, moves/rotates/scales them (in 2D or 3D, in local or
+global space), walks and edits the parent/child hierarchy, sets names and tags,
+and reads or writes a node's typed fields through `with_node` / `with_node_mut`.
+Almost any gameplay that repositions a character, spawns a projectile, picks up
+an item, or aims a turret goes through here.
+
+Transform helpers come in matched pairs — `get_*` / `set_*`, `local` / `global`,
+`2d` / `3d` — plus `to_global_*` / `to_local_*` for converting points and
+transforms between a node's space and the world.
+
+## Use Cases
+
+- Move a character or camera frame-by-frame: read `get_global_pos_3d!(ctx.run, id)`, offset it, and write it back with `set_global_pos_3d!(ctx.run, id, pos)`.
+- Aim a turret or make an NPC face the player: `look_at_3d!(ctx.run, turret, get_global_pos_3d!(ctx.run, player))`.
+- Spawn a projectile, pickup, or effect at runtime: `spawn!(ctx.run, Node3D, "Bullet", tags!["bullet"], parent, |node| { /* configure */ })`.
+- Pick an item up into the player's hand: `reparent!(ctx.run, hand_node, item_node)`, then zero its local position.
+- Group nodes for queries: `tag_add!(ctx.run, id, tags!["enemy"])` so [node queries](node_query.md) can find them later.
+- Read or edit a node's typed fields (camera FOV, sprite frame, light color): `with_node_mut!(ctx.run, Camera3D, id, |cam| { /* ... */ })`.
+- Convert spaces (muzzle offset to world, world hit to local): `to_global_point_3d!(ctx.run, weapon, muzzle_local)`.
+- Destroy a node on death or despawn: `remove_node!(ctx.run, id)`.
 
 ## Context
 
 - Script context path: `ctx.run`
 - Module access: `ctx.run.Nodes()`
 - Lifecycle examples stay inside `lifecycle!` because script hooks get `API` from the macro expansion.
+
+## Practical Example
+
+A simple homing turret: each frame, find the player, rotate the turret to face
+it, and fire a bullet on a cooldown by spawning a node just in front of the
+muzzle.
+
+```rust
+#[State]
+struct TurretState {
+    #[default = 0.0]
+    pub cooldown: f32,
+}
+
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let Some(player) = query_first!(ctx.run, any(name["Player"], tags["player"])) else {
+            return;
+        };
+        let target = get_global_pos_3d!(ctx.run, player);
+        look_at_3d!(ctx.run, ctx.id, target);
+
+        let dt = delta_time!(ctx.run);
+        let ready = with_state_mut!(ctx.run, TurretState, ctx.id, |s| {
+            s.cooldown = (s.cooldown - dt).max(0.0);
+            if s.cooldown == 0.0 {
+                s.cooldown = 0.5;
+                true
+            } else {
+                false
+            }
+        });
+
+        if ready == Some(true) {
+            let muzzle = get_global_pos_3d!(ctx.run, ctx.id);
+            let _bullet = spawn!(ctx.run, Node3D, "Bullet", tags!["bullet"], ctx.id, |node| {
+                let _ = node; // set velocity, mesh, lifetime, etc.
+            });
+            set_global_pos_3d!(ctx.run, _bullet, muzzle);
+        }
+    }
+});
+```
 
 ## API Reference
 

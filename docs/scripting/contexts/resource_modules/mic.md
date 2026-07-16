@@ -4,12 +4,27 @@
 
 | Header        | Link                            |
 | ------------- | ------------------------------- |
+| Purpose       | [Purpose](#purpose)             |
+| Use Cases     | [Use Cases](#use-cases)         |
 | Overview      | [Overview](#overview)           |
 | Context       | [Context](#context)             |
-| Example       | [Example](#example)             |
+| Practical Example | [Practical Example](#practical-example) |
 | Send Bytes    | [Send Bytes](#send-bytes)       |
 | API Reference | [API Reference](#api-reference) |
 | Macros        | [Macros](#macros)               |
+
+## Purpose
+
+`ctx.res.Mic()` captures live microphone audio and hands your script either a rolling `MicClip` or drained packet-ready bytes. The engine owns capture, denoise, and the compact `PMIC` byte codec; your game owns transport, recipients, and playback. Use it for proximity voice chat, voice recording, and any feature that turns the player's mic into gameplay.
+
+## Use Cases
+
+- Push-to-talk voice chat: `mic_start_stream!` while the key is held, drain packets with `mic_get_bytes!`, and send them over your own transport.
+- Playing received voice: decode a peer's packet with `mic_unpack!` and hand the clip to the audio bus with `audio_play_clip!`.
+- Voice memos / clip recording: `mic_start!`, then `mic_stop!` to take the full buffer, and `mic_save_wav!` to store it.
+- Noise-gated voice: capture with `MicDenoiseSettings::voice()` or clean an existing clip with `MicClip::denoised`.
+- Voice-driven mechanics: read the rolling buffer with `mic_clip!` to measure loudness for a "shout to scare enemies" or lip-sync feature.
+- Bandwidth-friendly networking: pack a clip with `mic_pack!` to the smallest `PMIC` codec before sending.
 
 ## Overview
 
@@ -55,7 +70,9 @@ Proximity chat split:
 - Wasm backend: unsupported, returns an error or empty clip
 - Audio output: use `ctx.res.Audio()` with `MicClip`
 
-## Example
+## Practical Example
+
+Hold `R` to record and stream mic bytes, press `T` to stop and play the clip back. The stop handler is split into a `methods!` helper.
 
 ```rust
 lifecycle!({
@@ -72,13 +89,19 @@ lifecycle!({
         }
 
         if key_pressed!(ctx.ipt, KeyCode::KeyT) {
-            if let Some(clip) = mic_stop!(ctx.res) {
-                let _ = audio_play!(ctx.res, &clip);
-                let bytes = mic_pack!(ctx.res, &clip);
-                let copy = mic_unpack!(ctx.res, &bytes).ok();
-                let _ = copy;
-                let _ = mic_save_wav!(ctx.res, "user://recordings/last.wav", &clip);
-            }
+            self.finish_recording(ctx);
+        }
+    }
+});
+
+methods!({
+    fn finish_recording(&self, ctx: &mut ScriptContext<'_, API>) {
+        if let Some(clip) = mic_stop!(ctx.res) {
+            let _ = audio_play!(ctx.res, &clip);
+            let bytes = mic_pack!(ctx.res, &clip);
+            let copy = mic_unpack!(ctx.res, &bytes).ok();
+            let _ = copy;
+            let _ = mic_save_wav!(ctx.res, "user://recordings/last.wav", &clip);
         }
     }
 });

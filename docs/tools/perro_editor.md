@@ -1,5 +1,33 @@
 # Perro Editor
 
+## Page Map
+
+| Header | Link |
+| --- | --- |
+| Purpose | [Purpose](#purpose) |
+| Use Cases | [Use Cases](#use-cases) |
+| Status | [Status](#status) |
+| Start | [Start](#start) |
+| Shell | [Shell](#shell) |
+| Workflow | [Workflow](#workflow) |
+| Main Shortcuts | [Main Shortcuts](#main-shortcuts) |
+| Safety | [Safety](#safety) |
+| Animation And GLB | [Animation And GLB](#animation-and-glb) |
+| Release Gate | [Release Gate](#release-gate) |
+
+## Purpose
+
+The Perro editor is a visual authoring tool — itself a Perro project in `perro_editor` — for building and previewing scenes without hand-writing `.scn` text. It gives you a node tree, 2D/3D/UI viewports, an inspector for node fields and script vars, animation editing, GLB inspection, undo/redo, file watching, and multi-scene tabs. Lay out and tweak scenes visually here, then run and ship them with the CLI. It is an in-development milestone: play/build launch and a full import pipeline are still follow-up work.
+
+## Use Cases
+
+- **Open or create a project visually.** Launch `cargo run -p perro_cli -- dev --path perro_editor`, then pick a folder with `project.toml` or create one in the project manager.
+- **Author a scene without editing text.** Add or select nodes in the Scene panel, edit fields in the Inspector, and save with `Ctrl+S` (or `Ctrl+Shift+S` for all dirty scenes).
+- **Preview 2D, 3D, and UI in place.** Switch viewports with `1` / `2` / `3` and frame the selection with `F`.
+- **Edit animations with live preview.** Select an `AnimationPlayer` to open the animation dock for clip selection, playhead control, key insert/delete, and interpolation changes.
+- **Inspect an imported model.** Open a `.glb` or `.gltf` to switch to the 3D model viewer with mesh, material, animation, skeleton, and texture summaries.
+- **Run the editor's own release gate.** `check`, `clippy`, and `test` through `perro_cli --path perro_editor` before landing editor changes.
+
 ## Status
 
 The editor is an in-development Perro project in `perro_editor`.

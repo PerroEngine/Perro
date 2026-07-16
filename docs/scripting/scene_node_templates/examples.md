@@ -6,29 +6,21 @@
 | --- | --- |
 | Purpose | [Purpose](#purpose) |
 | Use Cases | [Use Cases](#use-cases) |
-| Example | [Example](#example) |
 | Reference | [Reference](#reference) |
 
 ## Purpose
 
-Use this page when editing `.scn` scene files.
-
-Use [Node Collections](../node_collections.md) for runtime Rust-built node trees.
+Worked, copy-ready `.scn` fragments for setups that wire several nodes together: scene roots and parenting, live camera and webcam streams, per-placement script vars, animation bindings, render-layer filtering, and matching 2D/3D physics bodies. Reach for these when a single node template is not enough and you want a known-good arrangement to adapt. For node trees a script builds at runtime, use [Node Collections](../node_collections.md).
 
 ## Use Cases
 
-Use the types, APIs, file formats, and workflows in this doc when the feature matches the game system you are building. Prefer `ctx.run` for runtime state, `ctx.res` for resource/data access, and `ctx.ipt` for input state.
-
-## Example
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let dt = delta_time!(ctx.run);
-        let _ = dt;
-    }
-});
-```
+- Understand scene parenting and the root key: [Parent And Root](#parent-and-root) (`parent = $root`, `parent = @Key`).
+- Feed a live in-world camera view onto a surface (CCTV monitor, portal, rear-view mirror): `CameraStream2D` / `CameraStream3D`, see [Security Camera Stream](#security-camera-stream).
+- Show a webcam feed as a texture: [Webcam Stream](#webcam-stream).
+- Override per-placement script values from the scene: `script_vars`, see [Script Vars](#script-vars).
+- Bind animation clips and players to a node: [Animation Bindings](#animation-bindings).
+- Control what each camera sees: `render_layers` / `render_mask`, see [Render Layers](#render-layers).
+- Match equivalent 2D and 3D physics body setups: [Physics Parity Templates](#physics-parity-templates).
 
 ## Reference
 

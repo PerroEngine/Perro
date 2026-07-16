@@ -4,13 +4,28 @@
 
 | Header | Link |
 | --- | --- |
+| Purpose | [Purpose](#purpose) |
+| Use Cases | [Use Cases](#use-cases) |
 | Overview | [Overview](#overview) |
 | Context | [Context](#context) |
 | Device Selection | [Device Selection](#device-selection) |
+| Practical Example | [Practical Example](#practical-example) |
 | Examples | [Examples](#examples) |
 | Webcam Node | [Webcam Node](#webcam-node) |
 | API Reference | [API Reference](#api-reference) |
 | Macros | [Macros](#macros) |
+
+## Purpose
+
+`ctx.res.Webcams()` opens a live camera and exposes it as a `TextureID` you can render, plus optional CPU RGBA frames for image processing. The module owns native capture and hides the backend, so scripts get a device list, an open/close lifecycle, and per-frame pixels without touching platform APIs. Use it for in-game video feeds, player avatars, and camera-driven mechanics.
+
+## Use Cases
+
+- Security-camera monitors: open a camera with `webcam_default!` or `webcam_open!` and bind `webcam_texture!` to a `UiCameraStream` or in-world screen.
+- Player avatar / video chat: show the local feed with the live texture, mirrored via `WebcamConfig.mirror`.
+- Camera-driven gameplay: enable `cpu_frames` and read `webcam_frame_rgba!` to detect motion or brightness for a "wave to interact" mechanic.
+- Device picker UI: list cameras with `webcam_devices!` and open a chosen one with `webcam_open_device!`.
+- Graceful fallback: check `is_open` and `last_error` so the game can show a placeholder when no camera is available (Wasm/Android return backend-unavailable errors).
 
 ## Overview
 
@@ -60,6 +75,28 @@ Use `WebcamDevice::config()` or `open_device` to avoid manual slot mapping.
 | `name` | `String` | Human device name. |
 | `description` | `String` | Backend description. |
 | `extra` | `String` | Backend-specific stable ID or extra metadata. |
+
+## Practical Example
+
+Open the default camera at init and bind its live texture in a `methods!` helper.
+
+```rust
+lifecycle!({
+    fn on_init(&self, ctx: &mut ScriptContext<'_, API>) {
+        if let Ok(webcam) = webcam_default!(ctx.res) {
+            self.bind_feed(ctx, webcam);
+        }
+    }
+});
+
+methods!({
+    fn bind_feed(&self, ctx: &mut ScriptContext<'_, API>, webcam: WebcamID) {
+        let texture = webcam_texture!(ctx.res, webcam);
+        // Assign `texture` to a sprite, UI image, or CameraStream node.
+        let _ = texture;
+    }
+});
+```
 
 ## Examples
 

@@ -6,33 +6,27 @@
 | --- | --- |
 | Purpose | [Purpose](#purpose) |
 | Use Cases | [Use Cases](#use-cases) |
-| Example | [Example](#example) |
-| Reference | [Reference](#reference) |
+| Status Keys | [Status Keys](#status-keys) |
+| Core Runtime | [Core Runtime](#core-runtime) |
+| 2D | [2D](#2d) |
+| 3D | [3D](#3d) |
+| UI | [UI](#ui) |
+| Tooling And Demos | [Tooling And Demos](#tooling-and-demos) |
+| Planned Work Packets | [Planned Work Packets](#planned-work-packets) |
 
 ## Purpose
 
-Use `Feature Matrix` when this feature, type group, file format, or workflow appears in game code or assets.
+This page is the single source of truth for what Perro can actually do today, so you can tell before you start whether a system your game needs is shippable, half-built, or not written yet. Each row pairs an engine capability with a status and concrete notes, grouped into Core Runtime, 2D, 3D, UI, and Tooling. Most rows link to the deep-dive doc for that capability. Use it to scope a game, judge whether a feature is production-ready, and track what is coming next.
 
 ## Use Cases
 
-Use the types, APIs, file formats, and workflows in this doc when the feature matches the game system you are building. Prefer `ctx.run` for runtime state, `ctx.res` for resource/data access, and `ctx.ipt` for input state.
+- **Scope a new game before building.** Scan the status column to confirm the systems you need are `done`, not `partial` or `planned`.
+- **Judge whether a feature is production-ready.** A `done` row is usable and documented; `in dev` and `partial` rows spell out the missing pieces in the Notes column.
+- **Jump to the reference doc for a capability.** Rows link out to module docs such as [Physics Module](../scripting/contexts/runtime_modules/physics.md), [Materials Guide](../resources/materials.md), and [Water Bodies](../scripting/water.md).
+- **Check platform and target limits.** For example, Steamworks is native-only, and web export status sits under [Tooling And Demos](#tooling-and-demos).
+- **Track the roadmap.** [Planned Work Packets](#planned-work-packets) lists the next features in progress.
 
-## Example
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let dt = delta_time!(ctx.run);
-        let _ = dt;
-    }
-});
-```
-
-## Reference
-
-# Feature Matrix
-
-This page tracks current Perro capability in plain terms.
+## Status Keys
 
 Last audited: 2026-07-08 from workspace code, docs, demos, and node registry.
 
@@ -106,7 +100,7 @@ Status keys:
 | Blend shapes               | done     | glTF morph targets import as blend shapes. `MeshInstance3D` and `MultiMeshInstance3D` expose `blend_shape_weights`, including per-instance overrides for multimesh.                                                                                                                                                                                                                                                    |
 | Automatic retargeting      | done     | `.pretarget` maps support exact names, aliases, local rest-pose alignment, and `all`/`root_only`/`none` translation policy. `perro_cli import_anim --retarget-map <map> --target-rig <rig.glb>` reads source/target glTF rest poses. Static builds bake sibling `.panim` + `.pretarget` files.                                                                                                                |
 | LOD                        | done     | Automatic mesh LOD works for dynamic/dev loads and static `.pmesh` v2 builds. Mesh nodes can clamp automatic LOD quality with `min_lod`/`max_lod` (`0` least detail, `5` most detail).                                                                                                                                                                                                                                 |
-| Decals                     | done     | `Decal3D` and `TextDecal3D` project albedo/normal/emission onto lit geometry before lighting. Standard, toon, and multimesh surfaces receive decals; unlit materials ignore them. Demo3D includes decal docs, textures, and a working scene.                                                                                                                                                                           |
+| Decals                     | done     | `Decal3D` projects albedo/normal/emission onto lit geometry before lighting. Standard, toon, and multimesh surfaces receive decals; unlit materials ignore them. Demo3D includes decal docs, textures, and a working scene.                                                                                                                                                                                               |
 | Navmesh                    | partial  | `NavMeshID`, [`.pnav`](../resources/pnav.md) text assets, static embedding, resource APIs, and [runtime path queries](../scripting/contexts/runtime_modules/navmesh.md) exist for static 3D triangle navmeshes. Runtime supports snap-to-mesh, layer masks, shared-edge A*, funnel/string-pull smoothing, area costs, authored one-way/two-way off-mesh links, and conservative per-query circle/AABB obstacles. Mesh/scene auto-bake, binary `.pnav`, `NavMesh3D` scene node, and Demo3D lane remain planned. |
 
 ## UI

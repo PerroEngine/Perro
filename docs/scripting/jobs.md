@@ -5,6 +5,7 @@
 | Header | Link |
 | --- | --- |
 | Purpose | [Purpose](#purpose) |
+| Use Cases | [Use Cases](#use-cases) |
 | Import | [Import](#import) |
 | API | [API](#api) |
 | How It Works | [How It Works](#how-it-works) |
@@ -33,6 +34,14 @@ Good uses:
 Do not use jobs for small getters, a few arithmetic operations, or direct engine mutation.
 
 No project dependency is needed. Perro exposes jobs through `perro_api` whenever `perro check`, `perro dev`, or `perro build` regenerates the script crate.
+
+## Use Cases
+
+- Pathfinding for a large crowd off the main thread (200 agents recomputing routes at once): snapshot positions with `query!` + `get_global_pos_3d!`, `jobs::spawn` the search, poll with `Job::try_take`, then apply results on the script thread.
+- Bulk AI scoring and target selection each planning tick: `jobs::par_map` over an owned `Vec` of candidate data, preserving input order.
+- Procedural generation without a frame hitch (chunk terrain, dungeon layout, mesh building): `jobs::spawn` returning the generated data, stored in `#[State]` and consumed in a later frame.
+- Two independent heavy results needed before a function returns (build a nav grid and score choices together): `jobs::join`.
+- Bulk data transforms (parsing, compressing, or decompressing a save blob or level payload): `jobs::par_map` or `jobs::spawn` on owned bytes.
 
 ## Import
 

@@ -1,5 +1,29 @@
 # Static Release Build Profile
 
+## Page Map
+
+| Header | Link |
+| --- | --- |
+| Purpose | [Purpose](#purpose) |
+| Use Cases | [Use Cases](#use-cases) |
+| Scope | [Scope](#scope) |
+| Current profile | [Current profile](#current-profile) |
+| Separate dynamic paths | [Separate dynamic paths](#separate-dynamic-paths) |
+| Measure change | [Measure change](#measure-change) |
+| Guard | [Guard](#guard) |
+
+## Purpose
+
+When you run `perro build`, Perro generates an isolated `.perro/project` crate and links your static script code into the final native, web, or Android artifact. This page documents the `[profile.release]` that crate uses — `opt-level = 3`, fat LTO, one codegen unit, `panic = abort`, stripped root symbols — and why each key is set that way. It also explains how the release profile differs from the separate dev and DLC dylib build paths, and how to measure a profile change before adopting it. Read it before touching release build settings or weighing build-time cost against runtime and binary-size wins.
+
+## Use Cases
+
+- **See what optimizations ship in a release build.** The [Current profile](#current-profile) table lists every `[profile.release]` key (`opt-level`, `lto`, `codegen-units`, `panic`, `debug`, `strip`, `incremental`) with the reason for each.
+- **Avoid breaking the release profile.** The `scaffold_project_release_strip_only_targets_project_package` guard test checks the emitted keys; update it alongside any policy change.
+- **Keep dev and DLC builds fast without copying their overrides.** Dev script dylibs use incremental + 64 codegen units + no LTO; DLC dylibs use O3 + fat LTO + one codegen unit; neither belongs in the static project build.
+- **A/B test a profile tweak safely.** Set separate `CARGO_TARGET_DIR` values and `CARGO_PROFILE_RELEASE_*` env vars, then compare build time, artifact size, boot time, and frame time.
+- **Decide whether a change is worth it.** Keep a profile change only when it shows a measured runtime or size win worth the added build-time cost.
+
 ## Scope
 
 `perro build` creates an isolated `.perro/project` crate.

@@ -11,21 +11,57 @@
 
 ## Purpose
 
-Use ``.ppart` Format` when this feature, type group, file format, or workflow appears in game code or assets.
+`.ppart` is the per-particle profile that `ParticleEmitter3D` and `ParticleEmitter2D` read. It defines a particle's lifetime, speed, size, color fade, force, and spin, plus an optional motion preset and per-axis `x`/`y`/`z` math expressions. Because the profile is pure behavior with no spawn timing, one file can drive many emitters, and emitters feed it different `params[i]` values to get distinct looks from the same math.
 
 ## Use Cases
 
-Use the types, APIs, file formats, and workflows in this doc when the feature matches the game system you are building. Prefer `ctx.run` for runtime state, `ctx.res` for resource/data access, and `ctx.ipt` for input state.
+- Rising flame: `preset = spiral` for swirl plus `force = (0, 2.5, 0)` and a `color_start` to `color_end` fade from bright orange to transparent smoke.
+- Orbiting shield motes: `preset = orbit_y` with `preset_param_a` = angular velocity and `preset_param_b` = radius.
+- Drifting dust or fog: `preset = noise_drift` with `preset_param_a` = amplitude and `preset_param_b` = frequency for soft wandering.
+- Ground scatter: `preset = flat_disk` with `preset_param_a` = radius, randomized by `size_min`/`size_max`.
+- Instance-tunable effects: expressions read `params[0]` (from the emitter's `params`) so the same file gives a taller or wider effect per emitter.
+- Deterministic per-particle variation: `rand`, `rand2`, `hash(id)`, and `ring_u` place and jitter particles without CPU-side randomness.
 
 ## Example
 
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let dt = delta_time!(ctx.run);
-        let _ = dt;
-    }
-});
+Create `res://particles/fire_spiral.ppart`:
+
+```txt
+preset = spiral
+preset_param_a = 10.0
+preset_param_b = 0.35
+lifetime_min = 0.45
+lifetime_max = 1.1
+speed_min = 1.0
+speed_max = 2.8
+spread_radians = 0.55
+size = 7.0
+size_min = 0.5
+size_max = 1.4
+force = (0.0, 2.5, 0.0)
+color_start = (1.0, 0.45, 0.08, 1.0)
+color_end = (0.25, 0.02, 0.0, 0.0)
+emissive = (1.0, 0.25, 0.05)
+spin = 8.0
+x = sin(life * 12.0 + rand * tau) * 0.08
+y = t * params[0]
+z = cos(life * 12.0 + rand * tau) * 0.08
+```
+
+Use it from a scene, with `params[0]` acting as extra upward drift so each emitter reuses the profile at a different flame height:
+
+```scn
+[ParticleEmitter3D]
+    active = true
+    looping = true
+    prewarm = true
+    spawn_rate = 180.0
+    seed = 41
+    sim_mode = "gpu"
+    render_mode = "billboard"
+    profile = "res://particles/fire_spiral.ppart"
+    params = (1.8, 0.0, 0.0, 0.0)
+[/ParticleEmitter3D]
 ```
 
 ## Reference

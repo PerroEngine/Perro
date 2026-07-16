@@ -11,21 +11,69 @@
 
 ## Purpose
 
-Use ``.panim` Format` when this feature, type group, file format, or workflow appears in game code or assets.
+`.panim` is a keyframe animation clip authored as text. It solves the problem of moving nodes, bones, and cameras over time without hardcoding transforms in `on_update`: you write "at frame N this object has these field values" and the runtime interpolates between them. Clips also carry frame-timed gameplay hooks (`emit_signal`, `call_method`, `set_var`), so a hit frame or a footstep fires exactly when the pose reaches it.
 
 ## Use Cases
 
-Use the types, APIs, file formats, and workflows in this doc when the feature matches the game system you are building. Prefer `ctx.run` for runtime state, `ctx.res` for resource/data access, and `ctx.ipt` for input state.
+- Looping character locomotion: keyframe `@Hero { position, rotation, scale }` across `[FrameN]` blocks and play the clip through an `AnimationPlayer` with `playback = loop`.
+- Skeletal attack swing: drive `Skeleton3D` with rest-relative bone tracks like `bones["Spine"].rotation` and `bone[3].rotation_deg`.
+- Cutscene camera move: animate a `Camera3D` `position` plus `perspective_fovy_degrees` with `default_ease = "ease_in_out"` for a smooth dolly.
+- Frame-timed combat and VFX hooks: fire `emit_signal = { name = "hit", params = [1] }` on the contact frame and `call_method = { name = "spawn_trail" }` on a follow-up frame.
+- Blend-friendly additive layers: mark aim/recoil poses with open keyframes `[FrameN?]` so the segment interpolates from the live runtime value instead of snapping to an authored one.
+- Modded or downloaded clips: build an `AnimationID` at runtime from raw bytes with `animation_create_from_bytes!`.
 
 ## Example
 
+Author `res://animations/door_open.panim`:
+
+```ini
+[Animation]
+name = "DoorOpen"
+fps = 30
+default_ease = "ease_out"
+[/Animation]
+
+[Objects]
+Door = Node3D
+[/Objects]
+
+[Frame0]
+@Door {
+    rotation_deg = (0, 0, 0)
+}
+[/Frame0]
+
+[Frame20]
+@Door {
+    rotation_deg = (0, 95, 0)
+}
+emit_signal = { name = "door_opened", params = [] }
+[/Frame20]
+```
+
+Bind it to a scene node through an `AnimationPlayer`:
+
+```ini
+[Door]
+    [Node3D/]
+[/Door]
+
+[DoorAnim]
+    [AnimationPlayer]
+        animation = "res://animations/door_open.panim"
+        bindings = { Door = @Door }
+        playback = once
+    [/AnimationPlayer]
+[/DoorAnim]
+```
+
+Load and play it from a script:
+
 ```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let dt = delta_time!(ctx.run);
-        let _ = dt;
-    }
-});
+let clip = animation_load!(res, "res://animations/door_open.panim");
+let _ = anim_player_set_clip!(ctx, player, clip);
+let _ = anim_player_bind!(ctx, player, "Door", door_node);
+let _ = anim_player_play!(ctx, player);
 ```
 
 ## Reference

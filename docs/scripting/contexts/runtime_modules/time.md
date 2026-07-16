@@ -4,8 +4,11 @@
 
 | Header | Link |
 | --- | --- |
-| Overview | [Overview](#overview) |
+| Purpose | [Purpose](#purpose) |
+| Use Cases | [Use Cases](#use-cases) |
 | Context | [Context](#context) |
+| Practical Example | [Practical Example](#practical-example) |
+| Named Timers | [Named Timers](#named-timers) |
 | API Reference | [API Reference](#api-reference) |
 | `get_delta` | [`get_delta`](#get_delta) |
 | `get_fixed_delta` | [`get_fixed_delta`](#get_fixed_delta) |
@@ -25,11 +28,24 @@
 | `frame_time` | [`frame_time`](#frame_time) |
 | `fps` | [`fps`](#fps) |
 | `profiling` | [`profiling`](#profiling) |
-| Named timers | [Named Timers](#named-timers) |
 
-## Overview
+## Purpose
 
-This runtime module belongs to `ctx.run` and documents time calls.
+The time module gives scripts the frame clock the whole game runs on. Movement,
+cooldowns, timers, and animations all need to know how much wall-clock time has
+passed since the last frame so behaviour stays identical at 30 or 240 FPS.
+It also exposes elapsed clocks for HUD timers and a per-frame profiling snapshot
+for performance overlays, plus named one-shot timers that fire a signal after a
+delay without any per-frame countdown bookkeeping.
+
+## Use Cases
+
+- Frame-rate-independent movement: scale a speed by `delta_time!(ctx.run)` so a body travels the same distance per second regardless of FPS.
+- Spike-proof stepping: after a stall or window drag, clamp the jump with `delta_time_capped!(ctx.run, 0.1)` or `delta_time_clamped!(ctx.run, min, max)` so nothing tunnels through walls.
+- Deterministic gameplay in fixed steps: read `fixed_delta_time!(ctx.run)` inside `on_fixed_update` for stable physics-tick logic.
+- Survival-mode / speedrun HUD clock: display total run time from `elapsed_time!(ctx.run)`.
+- Ability cooldowns and staged delays: start `timer_start!(ctx.run, Duration::from_secs(2), "dash_cd")` and react to `timer_finished!("dash_cd")` instead of counting down a state field each frame.
+- Performance overlay: read `fps!(ctx.run)` and `profiling!(ctx.run)` to show FPS, frame time, and draw-call counts.
 
 ## Context
 
@@ -39,12 +55,32 @@ This runtime module belongs to `ctx.run` and documents time calls.
 
 ## Practical Example
 
+A dash ability: read a spike-safe delta each frame to advance a cooldown, then
+move the body frame-rate-independently while the dash is active.
+
 ```rust
+#[State]
+struct DashState {
+    #[default = 0.0]
+    pub cooldown: f32,
+    #[default = 0.0]
+    pub dash_left: f32,
+}
+
 lifecycle!({
     fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let dt = delta_time!(ctx.run);
-        let fps_now = fps!(ctx.run);
-        let _ = (dt, fps_now);
+        // Clamp the delta so a hitch cannot teleport the player.
+        let dt = delta_time_capped!(ctx.run, 0.1);
+
+        with_state_mut!(ctx.run, DashState, ctx.id, |state| {
+            state.cooldown = (state.cooldown - dt).max(0.0);
+            if state.dash_left > 0.0 {
+                state.dash_left -= dt;
+                let mut pos = get_global_pos_3d!(ctx.run, ctx.id);
+                pos.z -= 20.0 * dt; // 20 units/second forward
+                set_global_pos_3d!(ctx.run, ctx.id, pos);
+            }
+        });
     }
 });
 ```

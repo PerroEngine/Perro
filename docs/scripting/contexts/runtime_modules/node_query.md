@@ -4,8 +4,11 @@
 
 | Header | Link |
 | --- | --- |
-| Overview | [Overview](#overview) |
+| Purpose | [Purpose](#purpose) |
+| Use Cases | [Use Cases](#use-cases) |
+| Choosing a Macro | [Choosing a Macro](#choosing-a-macro) |
 | Context | [Context](#context) |
+| Practical Example | [Practical Example](#practical-example) |
 | API Reference | [API Reference](#api-reference) |
 | `query` | [`query`](#query) |
 | `query_iter` | [`query_iter`](#query_iter) |
@@ -18,24 +21,56 @@
 | `query_map` | [`query_map`](#query_map) |
 | `query_first` | [`query_first`](#query_first) |
 
-## Overview
+## Purpose
 
-This runtime module belongs to `ctx.run` and documents node query calls.
-Use it when game code needs dynamic node groups by tag, name, type, subtree, render layer, or spatial bounds (`within[origin, size]`).
+Node queries let gameplay code operate on *groups* of nodes chosen by a filter
+instead of holding hard-coded references. Any system that acts on "all enemies",
+"every pickup in this room", or "the player" needs this: it finds nodes by tag,
+name, type, subtree, render layer, or spatial bounds (`within[origin, size]`),
+and returns their `NodeID`s. The filter runs against the live scene, so the set
+reflects whatever exists this frame.
 
-Prefer macros for script code:
+## Use Cases
 
-- `query!` when full `Vec<NodeID>` is useful.
-- `query_iter!` when iterator adapters make code cleaner.
+- Alert every living enemy when the player is spotted: `query_each!(ctx.run, all(tags["enemy"], not(tags["dead"])), |id| { call_method!(ctx.run, id, method!("alert"), params![]); })`.
+- Grab the player or a singleton manager: `query_first!(ctx.run, any(name["Player"], tags["primary_target"]))`.
+- Count remaining objectives for the HUD: `query!(ctx.run, all(tags["objective"], not(tags["complete"]))).len()`.
+- Pull enemy positions for the minimap or AI: `query_map!(ctx.run, all(tags["enemy"], base_type[Node3D]), |id| get_global_pos_3d!(ctx.run, id))`.
+- Scope to one room: add `in_subtree(ctx.id)` so a filter only matches descendants of the current node.
+- Collect only what is nearby: use the spatial `within[origin, size]` predicate to gather pickups or threats around a point without scanning the whole scene.
+
+## Choosing a Macro
+
+- `query!` when the full `Vec<NodeID>` is useful (loops, counts, storage).
+- `query_iter!` when iterator adapters (`take`, `filter`, `collect`) make code cleaner.
 - `query_each!` when you only need a side effect per node.
-- `query_map!` when you want derived values in a `Vec`.
+- `query_map!` when every match maps to one derived value.
 - `query_first!` when one node is enough.
+- `query_builder!` / `query_expr!` when a filter is shared across systems or built up conditionally.
 
 ## Context
 
 - Script context path: `ctx.run`
 - Module access: `ctx.run.NodeQuery()`
 - Lifecycle examples stay inside `lifecycle!` because script hooks get `API` from the macro expansion.
+
+## Practical Example
+
+A patrol alarm: every frame, gather the living guards inside this manager's
+subtree and, when the alarm is raised, tell each one to chase.
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let alarm = get_var!(ctx.run, ctx.id, var!("alarm_raised"));
+        if alarm.as_bool() == Some(true) {
+            query_each!(ctx.run, all(tags["guard"], not(tags["down"])), in_subtree(ctx.id), |id| {
+                call_method!(ctx.run, id, method!("chase_player"), params![]);
+            });
+        }
+    }
+});
+```
 
 ## API Reference
 

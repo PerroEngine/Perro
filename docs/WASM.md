@@ -2,37 +2,50 @@
 
 ## Page Map
 
-| Header    | Link                    |
-| --------- | ----------------------- |
-| Purpose   | [Purpose](#purpose)     |
+| Header | Link |
+| --- | --- |
+| Purpose | [Purpose](#purpose) |
 | Use Cases | [Use Cases](#use-cases) |
-| Example   | [Example](#example)     |
-| Reference | [Reference](#reference) |
+| End-to-End Example | [End-to-End Example](#end-to-end-example) |
+| Toolchain | [Toolchain](#toolchain) |
+| Commands | [Commands](#commands) |
+| Rust Web API | [Rust Web API](#rust-web-api) |
+| routes.toml | [`routes.toml`](#routestoml) |
+| Deploy Note | [Deploy Note](#deploy-note) |
+| Support Matrix | [Support Matrix](#support-matrix) |
+| Web Save Data | [Web Save Data](#web-save-data) |
+| Troubleshoot | [Troubleshoot](#troubleshoot) |
 
 ## Purpose
 
-Use `WASM / Web Target` when this feature, type group, file format, or workflow appears in game code or assets.
+The web target compiles your game to WebAssembly and emits a plain static bundle — `index.html`, `boot.js`, `app.js`, `app_bg.wasm`, and an `assets/` folder — that you can drop on any static host. Use it to ship a browser playable for an itch.io jam, host a demo on Cloudflare Pages, or embed a game on your own site. Rendering runs on WebGPU through a browser canvas runner, and `user://` saves map automatically to browser `localStorage`. The `perro` CLI builds the bundle for you; you do not hand-write any wasm glue.
 
 ## Use Cases
 
-Use the types, APIs, file formats, and workflows in this doc when the feature matches the game system you are building. Prefer `ctx.run` for runtime state, `ctx.res` for resource/data access, and `ctx.ipt` for input state.
+- **Ship a jam game to itch.io.** `perro build --target web` writes `.output/web/`; zip the folder contents (with `index.html` at the zip root) and upload as an HTML game. A single `/` route is the safe fit for itch's iframe embed.
+- **Iterate in the browser without redeploying.** `perro dev --target web --host 127.0.0.1 --port 8000` builds a dev bundle, starts a built-in static server, and opens your browser.
+- **Check release-like frame time in the browser.** `perro dev --target web --release` serves the release web bundle instead of the debug one.
+- **Multi-page web build with real URLs.** Add a `routes.toml` mapping each `href` to a `scene`, then deploy `.output/web/` to a host that serves route folders, such as Cloudflare Pages.
+- **Navigate between scenes from a UI button on the web.** Give a `UiButton` a `web = { href = "/docs" }` block; the button pushes the browser route on web and is parsed-but-ignored on native.
+- **Persist player saves in the browser.** Write to `user://save/slot1.json`; on web it lands in `localStorage`, base64-encoded so binary saves survive.
 
-## Example
+## End-to-End Example
 
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let dt = delta_time!(ctx.run);
-        let _ = dt;
-    }
-});
+```powershell
+# One-time: install the web build toolchain.
+rustup target add wasm32-unknown-unknown
+
+# Iterate locally: build a dev bundle, serve it, and open the browser.
+perro dev --path D:\GameProjects\MyGame --target web
+
+# Cook the release web bundle into .output/web/.
+perro build --path D:\GameProjects\MyGame --target web
+
+# itch.io: zip the CONTENTS of .output/web/ (not the folder itself),
+# confirm index.html sits at the zip root, then upload as an HTML game.
 ```
 
-## Reference
-
-# WASM / Web Target
-
-Perro web target create browser-ready web bundle + use browser canvas runner.
+See [itch.io](#itchio) and [Cloudflare Pages](#cloudflare-pages) below for host-specific deploy notes.
 
 ## Toolchain
 

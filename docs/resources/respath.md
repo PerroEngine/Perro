@@ -11,21 +11,45 @@
 
 ## Purpose
 
-Use `ResPath` when this feature, type group, file format, or workflow appears in game code or assets.
+`ResPath` is Perro's validated virtual resource path type. Game assets are addressed by scheme (`res://` for bundled content, `dlc://` for mounted packs, `user://` for save data) instead of raw OS paths, so the same code loads correctly on desktop and web. Any resource call or scene field that names an asset expects a `ResPath`, and the type rejects malformed paths (bad scheme, backslashes, `.`/`..` segments) at compile time for literals or as a `Result` for dynamic strings.
 
 ## Use Cases
 
-Use the types, APIs, file formats, and workflows in this doc when the feature matches the game system you are building. Prefer `ctx.run` for runtime state, `ctx.res` for resource/data access, and `ctx.ipt` for input state.
+- Load a bundled asset: `res_path!("res://textures/player.png")` passed to `texture_load!` or `mesh_load!`.
+- Reference a DLC or mod-pack asset by mount name: `ResPathBuf::try_new(format!("dlc://{pack}/textures/player.png"))`.
+- Read and write save data: `user://save.dat` paths, which map to `localStorage` on web builds.
+- Store a swappable asset path in state: `#[default = res_path!(...)] texture_path: &'static ResPath`, or `ResPathBuf` when the path changes at runtime.
+- Catch typos early: `res_path!` / `res_path_buf!` fail the build on an invalid literal; use `try_new` when a path is computed at runtime.
+- Persist a path through `Variant`: `ResPathBuf` and `&'static ResPath` implement `DeriveVariant`, and `parse::<ResPathBuf>()` revalidates on read.
 
 ## Example
 
+Store a validated path in state, then load the texture it points at:
+
 ```rust
+use perro_api::prelude::*;
+
+#[State]
+pub struct PlayerState {
+    #[default = res_path!("res://textures/player.png")]
+    texture_path: &'static ResPath,
+}
+
 lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let dt = delta_time!(ctx.run);
-        let _ = dt;
+    fn on_ready(&self, ctx: &mut ScriptContext<'_, API>) {
+        let texture = texture_load!(ctx.res, self.texture_path);
+        let _ = texture;
     }
 });
+```
+
+Build an owned path for a mounted DLC pack chosen at runtime:
+
+```rust
+use perro_api::prelude::*;
+
+let path = ResPathBuf::try_new(format!("dlc://{pack}/textures/player.png"))?;
+let texture = texture_load!(ctx.res, &path);
 ```
 
 ## Reference

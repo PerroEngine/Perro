@@ -1,5 +1,31 @@
 # Physics Nodes
 
+## Page Map
+
+| Header | Link |
+| --- | --- |
+| Purpose | [Purpose](#purpose) |
+| Use Cases | [Use Cases](#use-cases) |
+| 2D Body Shape | [2D Body Shape](#2d-body-shape) |
+| 3D Body Shape | [3D Body Shape](#3d-body-shape) |
+| Rigid Body Gravity Scale | [Rigid Body Gravity Scale](#rigid-body-gravity-scale) |
+| Character Body | [Character Body](#character-body) |
+| Player Movement | [Player Movement](#player-movement) |
+| Notes | [Notes](#notes) |
+
+## Purpose
+
+Perro splits physics into two node kinds: body/area nodes carry the behavior (`StaticBody`, `RigidBody`, `CharacterBody`, `Area`), and `CollisionShape` nodes carry the geometry. This page shows how to wire the two together in scenes and drive them from scripts, so you get dynamic props, script-controlled characters, trigger volumes, and world queries. Bodies and shapes exist in both 2D and 3D variants.
+
+## Use Cases
+
+- A prop that reacts to gravity, forces, and collisions (a rolling boulder, a stack of crates): `RigidBody3D` / `RigidBody2D` with a child `CollisionShape`, driven by `apply_force!` / `apply_impulse!` and tuned with `gravity_scale`.
+- A script-controlled player or NPC that never tunnels through walls: `CharacterBody3D` / `CharacterBody2D` moved with `physics_move_and_slide_3d!` (slides along walls) or `physics_move_body_3d!` (collide and stop).
+- Jumping and custom gravity: keep `y_vel` in `#[State]`, ground-check with `physics_contacts_3d!`, or let `physics_apply_gravity_3d!` handle falling for you.
+- Trigger volumes — pickups, damage zones, checkpoints: `Area2D` / `Area3D` with a child shape, reacting to their overlap signals.
+- Immovable level geometry (floors, walls, platforms): `StaticBody2D` / `StaticBody3D` with a `CollisionShape`.
+- World queries for AI and weapons — line of sight, ground checks, projectile arcs: `physics_raycast_3d!`, `physics_shape_cast_3d!`, `physics_predict_body_3d!`.
+
 Physics bodies and shapes are separate scene nodes.
 `StaticBody2D`, `RigidBody2D`, `CharacterBody2D`, `Area2D`, `StaticBody3D`, `RigidBody3D`, `CharacterBody3D`, and `Area3D` hold body/area behavior.
 `CollisionShape2D` and `CollisionShape3D` hold geometry.

@@ -4,8 +4,11 @@
 
 | Header | Link |
 | --- | --- |
-| Overview | [Overview](#overview) |
+| Purpose | [Purpose](#purpose) |
+| Use Cases | [Use Cases](#use-cases) |
 | Context | [Context](#context) |
+| Hit Data and Rays | [Hit Data and Rays](#hit-data-and-rays) |
+| Practical Example | [Practical Example](#practical-example) |
 | API Reference | [API Reference](#api-reference) |
 | `instance_surface_at_global_point` | [`instance_surface_at_global_point`](#instance_surface_at_global_point) |
 | `instance_surface_global_point` | [`instance_surface_global_point`](#instance_surface_global_point) |
@@ -24,9 +27,26 @@
 | `mesh_data_surface_on_local_ray_3d` | [`mesh_data_surface_on_local_ray_3d`](#mesh_data_surface_on_local_ray_3d) |
 | `mesh_data_surface_regions_3d` | [`mesh_data_surface_regions_3d`](#mesh_data_surface_regions_3d) |
 
-## Overview
+## Purpose
 
-This runtime module belongs to `ctx.run` and documents mesh query calls.
+Mesh queries answer "exactly where on this model did a ray or point land?" at
+triangle precision. Where physics raycasts hit collision shapes, mesh queries
+hit the rendered geometry itself, returning the triangle, barycentric weights,
+interpolated UVs, and surface point. That is what you need to place a bullet hole
+on a wall, let a player click a specific panel of a control console, or sample
+which texel of a paintable surface was struck. Queries against a skinned
+`MeshInstance3D` use the live skeleton pose, so hits track an animated character.
+
+## Use Cases
+
+- Click-to-place / click-to-select on a 3D model: build a pointer ray with `ctx.run.Nodes().camera_screen_ray_3d(camera_id, pixel, viewport_size)` and hit the mesh via `instance_surface_on_global_ray`.
+- Stick a decal or bullet hole precisely on a surface: use the returned hit point (and `paint_uv`) to spawn the decal exactly where the ray landed.
+- Damage zones / paintable surfaces: read the hit's `paint_uv` or `instance_material_regions` to know which material or texel was struck.
+- Animated hitboxes: raycast a posed skeletal character so hits follow the current animation instead of the rest pose.
+- Reconstruct a stored hit under the current pose: save `triangle_index` + `barycentric`, later resolve the authoritative point with `instance_surface_global_point`.
+- Tool / procedural sampling: query raw mesh data in local space with `data_surface_on_local_ray` or `data_surface_at_local_point`.
+
+## Hit Data and Rays
 
 `MeshSurfaceHit3D` includes `triangle_index`, `(a, b, c)` `barycentric`
 weights, interpolated `uv0`, and `paint_uv`. `paint_uv` reads glTF UV1 and
@@ -53,6 +73,48 @@ and off-axis frustum cameras and passes directly to
 - Script context path: `ctx.run`
 - Module access: `ctx.run.MeshQuery()`
 - Lifecycle examples stay inside `lifecycle!` because script hooks get `API` from the macro expansion.
+
+## Practical Example
+
+Click-to-inspect: cast a ray from the camera through the mouse pixel, hit the
+rendered mesh, and read back the exact surface point where the player clicked.
+
+```rust
+#[State]
+struct PickState {
+    #[default = NodeID::nil()]
+    pub camera: NodeID,
+    #[default = NodeID::nil()]
+    pub mesh: NodeID,
+}
+
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let camera = with_state!(ctx.run, PickState, ctx.id, |s| s.camera);
+        let target = with_state!(ctx.run, PickState, ctx.id, |s| s.mesh);
+        let pixel = mouse_position!(ctx.ipt);
+        let viewport = viewport_size!(ctx.ipt);
+
+        if let Some(ray) = ctx.run.Nodes().camera_screen_ray_3d(camera, pixel, viewport) {
+            let hit = ctx.run.MeshQuery().instance_surface_on_global_ray(
+                target,
+                ray.origin,
+                ray.direction,
+                ray.max_distance,
+            );
+            if let Some(hit) = hit {
+                // hit.triangle_index / hit.paint_uv identify what was struck;
+                // resolve the world point to place a decal there.
+                let _ = ctx.run.MeshQuery().instance_surface_global_point(
+                    target,
+                    hit.triangle_index,
+                    hit.barycentric,
+                );
+            }
+        }
+    }
+});
+```
 
 ## API Reference
 

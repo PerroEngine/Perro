@@ -6,33 +6,55 @@
 | --- | --- |
 | Purpose | [Purpose](#purpose) |
 | Use Cases | [Use Cases](#use-cases) |
-| Example | [Example](#example) |
-| Reference | [Reference](#reference) |
+| Practical Example | [Practical Example](#practical-example) |
+| Core Idea | [Core Idea](#core-idea) |
+| Authoring Layout | [Authoring Layout](#authoring-layout) |
+| Path Rules | [Path Rules](#path-rules) |
+| Build + Export | [Build + Export](#build-export) |
+| Runtime Mount | [Runtime Mount](#runtime-mount) |
+| Auto Scan + Rescan | [Auto-Scan--Rescan](#auto-scan-rescan) |
 
 ## Purpose
 
-Use `DLC Guide` when this feature, type group, file format, or workflow appears in game code or assets.
+DLC lets you ship extra content, such as scenes, scripts, materials, and meshes,
+after launch without rebuilding the base game. Each pack is authored inside the
+project, exported to a single `.dlc` file, and mounted at startup under its own
+`dlc://<name>/` path space. Base content stays in `res://`; DLC content lives
+beside it and can reference across boundaries, so add-ons integrate with the
+shipped game instead of replacing it.
 
 ## Use Cases
 
-Use the types, APIs, file formats, and workflows in this doc when the feature matches the game system you are building. Prefer `ctx.run` for runtime state, `ctx.res` for resource/data access, and `ctx.ipt` for input state.
+- Cosmetic pack shipped after launch: a `dlc://skins/` pack of materials and
+  meshes that the base game references from `res://`.
+- Expansion campaign: new levels and scripts under `dlc://episode2/scenes/`,
+  loaded when the player owns the pack.
+- Free content drop: a small `.dlc` dropped into the install's `dlc` folder and
+  mounted automatically on the next launch.
+- Self-contained add-on: DLC-authored content uses `dlc://self/...` so it keeps
+  working regardless of the pack's final name.
+- Cross-pack content: one pack referencing another with `dlc://OtherName/...`.
 
-## Example
+## Practical Example
+
+DLC mounts automatically at startup, so game code just references `dlc://` paths
+like any other resource:
 
 ```rust
 lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let dt = delta_time!(ctx.run);
-        let _ = dt;
+    fn on_shop_open(&self, ctx: &mut ScriptContext<'_, API>) {
+        // Load a scene shipped in the "cosmetics" DLC, if it is installed.
+        match scene_load!(ctx.run, "dlc://cosmetics/scenes/shop.scn") {
+            Ok(_node) => { /* shop opened */ }
+            Err(_err) => { /* pack not installed; show base UI */ }
+        }
     }
 });
 ```
 
-## Reference
-
-# DLC Guide
-
-This document explains how Perro DLC works in authoring, export, and runtime mount flow.
+If a referenced path is missing at runtime (the pack is not installed), the
+load fails with a normal resource/script load error, which you handle like any
+other missing asset.
 
 ## Core Idea
 
@@ -43,7 +65,7 @@ This document explains how Perro DLC works in authoring, export, and runtime mou
 
 ## Authoring Layout
 
-Inside project root:
+Inside the project root:
 
 ```text
 project/
@@ -66,16 +88,16 @@ perro new_dlc --name NAME
 Reserved names:
 
 - `self` is reserved for `dlc://self/...` path resolution.
-- You cannot create/build/mount DLC named `self` (case-insensitive).
+- You cannot create, build, or mount a DLC named `self` (case-insensitive).
 
-Creates:
+`new_dlc` creates:
 
 - `dlcs/NAME/scenes/main.scn`
 - `dlcs/NAME/scripts/script.rs`
 - `dlcs/NAME/materials/`
 - `dlcs/NAME/meshes/`
 
-You can also create files inside DLC with `--dlc`:
+Create files inside a DLC with `--dlc`:
 
 ```powershell
 perro new_script --name Foo --dlc NAME --res /scripts
@@ -88,7 +110,7 @@ perro new_animation --name Idle --dlc NAME --res /animations
 - Base content: `ResPath::new("res://...")`
 - DLC content: `ResPath::new("dlc://NAME/...")`
 - User data: `ResPath::new("user://...")`
-- Inside DLC-authored content, `ResPath::new("dlc://self/...")` resolves to current DLC mount.
+- Inside DLC-authored content, `ResPath::new("dlc://self/...")` resolves to the current DLC mount.
 
 See [ResPath](../resources/respath.md).
 
@@ -99,7 +121,8 @@ Reference behavior:
 - DLC -> same DLC: allowed (`dlc://self/...` or `dlc://NAME/...`).
 - DLC -> other DLC: allowed (`dlc://OtherName/...`).
 
-If referenced path is missing at runtime, lookup/load fails with normal resource/script load error.
+If a referenced path is missing at runtime, lookup/load fails with a normal
+resource/script load error.
 
 ## Build + Export
 
@@ -112,12 +135,12 @@ perro dlc --name NAME
 Pipeline:
 
 1. Reads `project/dlcs/NAME/`.
-2. Generates DLC scripts crate:
+2. Generates the DLC scripts crate:
    - `.perro/dlc/NAME/scripts/`
-3. Generates DLC pack crate:
+3. Generates the DLC pack crate:
    - `.perro/dlc/NAME/pack/`
 4. Builds both runtime-loadable modules.
-5. Packs manifest + modules + DLC resources into:
+5. Packs the manifest, modules, and DLC resources into:
    - `.output/dlc/NAME.dlc`
 6. Compresses the final `.dlc` when it reduces file size.
 7. Removes the temporary `.dlc.staging` folder after a successful pack.
@@ -130,7 +153,7 @@ Important split:
 
 ## Runtime Mount
 
-On startup, runtime mounts DLC automatically.
+On startup, the runtime mounts DLC automatically.
 
 Dev source mount:
 
@@ -140,22 +163,22 @@ Dev source mount:
 
 Release installed mount:
 
-- Scans install directory:
+- Scans the install directory:
   - `LocalAppData/<ProjectName>/dlc/*.dlc`
-- Loads manifest + scripts module + pack module from each `.dlc`.
+- Loads the manifest, scripts module, and pack module from each `.dlc`.
 - Decompresses compressed `.dlc` packs in memory during mount.
 - Mounts each as `dlc://NAME/...`.
 
-`user://` data path uses:
+The `user://` data path uses:
 
 - `LocalAppData/<ProjectName>/data`
 
-So DLC install dir is sibling path:
+So the DLC install directory is a sibling path:
 
 - `LocalAppData/<ProjectName>/dlc`
 
-## Auto Scan + Rescan
+## Auto-Scan + Rescan
 
-- Startup auto-scan is built-in.
-- Manual runtime rescan helper API is not exposed yet.
-- A future helper (for example `scan_dlc()`) can be added to trigger remount without restart.
+- Startup auto-scan is built in.
+- A manual runtime rescan helper API is not exposed yet.
+- A future helper (for example `scan_dlc()`) can be added to trigger a remount without restart.

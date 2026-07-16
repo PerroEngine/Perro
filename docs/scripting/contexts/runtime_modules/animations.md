@@ -4,8 +4,10 @@
 
 | Header | Link |
 | --- | --- |
-| Overview | [Overview](#overview) |
+| Purpose | [Purpose](#purpose) |
+| Use Cases | [Use Cases](#use-cases) |
 | Context | [Context](#context) |
+| Practical Example | [Practical Example](#practical-example) |
 | API Reference | [API Reference](#api-reference) |
 | `set_clip` | [`set_clip`](#set_clip) |
 | `play` | [`play`](#play) |
@@ -40,15 +42,72 @@
 | `anim_tree_set_weight` | [`anim_tree_set_weight`](#anim_tree_set_weight) |
 | `anim_tree_pause` | [`anim_tree_pause`](#anim_tree_pause) |
 
-## Overview
+## Purpose
 
-This runtime module belongs to `ctx.run` and documents animations calls.
+This module drives animation playback from gameplay code. It covers two node
+types. An `AnimationPlayer` plays a single clip and is the tool for one-shot
+actions and simple looped states: trigger a jump, an attack swing, a door
+opening. An `AnimationTree` blends and sequences multiple clips through named
+slots and blend nodes, which is how you crossfade walk into run by speed or run
+a locomotion state machine. Both let scripts start, pause, retime, and scrub
+animation in response to input and game events.
+
+Clips are `AnimationID` resources loaded through `ctx.res.Animations()`; this
+module is the runtime side that plays them on a node.
+
+## Use Cases
+
+- One-shot action (jump, attack, hit reaction): point the player at a clip with `anim_player_set_clip!(ctx.run, player, jump_clip)` then `anim_player_play!(ctx.run, player)`.
+- Enrage or slow-motion: rescale playback with `anim_player_set_speed!(ctx.run, player, 1.5)` or an `AnimationTree` slot speed.
+- Speed-based locomotion blend: drive a blend node's inputs with `anim_tree_set_weight!(ctx.run, tree, "locomotion", "run", weight)` so the character eases from walk to run.
+- Locomotion state machine: switch the active clip in a slot with `anim_tree_set_clip!` / `anim_tree_play_slot!` when the movement state changes.
+- Hitstop / pause menu: freeze a character mid-motion with `anim_player_pause!(ctx.run, player, true)` or `anim_tree_pause!`, then resume.
+- Cutscene poses and scrubbing: jump to an exact frame with `anim_player_seek_frame!(ctx.run, player, frame)`.
+- Retarget a track to another node (shared animation, swapped prop): `anim_player_bind!(ctx.run, player, ["Weapon": weapon_node])`.
 
 ## Context
 
 - Script context path: `ctx.run`
 - Module access: `ctx.run.AnimPlayer() / ctx.run.AnimTree()`
 - Lifecycle examples stay inside `lifecycle!` because script hooks get `API` from the macro expansion.
+
+## Practical Example
+
+Load a jump clip once, cache the `AnimationPlayer` child, then trigger the clip
+when a jump-input handler fires.
+
+```rust
+#[State]
+struct HeroAnim {
+    #[default = AnimationID::nil()]
+    pub jump: AnimationID,
+    #[default = NodeID::nil()]
+    pub player: NodeID,
+}
+
+lifecycle!({
+    fn on_init(&self, ctx: &mut ScriptContext<'_, API>) {
+        let jump = animation_load!(ctx.res, "res://anim/hero_jump.panim");
+        let player = query_first!(ctx.run, all(node_type[AnimationPlayer]), in_subtree(ctx.id))
+            .unwrap_or(NodeID::nil());
+        with_state_mut!(ctx.run, HeroAnim, ctx.id, |s| {
+            s.jump = jump;
+            s.player = player;
+        });
+    }
+});
+
+methods!({
+    // Wired to the jump input action.
+    fn on_jump(&self, ctx: &mut ScriptContext<'_, API>) {
+        let (player, jump) = with_state!(ctx.run, HeroAnim, ctx.id, |s| (s.player, s.jump));
+        if !player.is_nil() {
+            anim_player_set_clip!(ctx.run, player, jump);
+            anim_player_play!(ctx.run, player);
+        }
+    }
+});
+```
 
 ## API Reference
 

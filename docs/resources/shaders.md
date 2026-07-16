@@ -4,10 +4,25 @@
 
 | Header             | Link                                                   |
 | ------------------ | ------------------------------------------------------ |
+| Purpose            | [Purpose](#purpose)                                    |
+| Use Cases          | [Use Cases](#use-cases)                                |
 | Custom 3D Material | [Custom 3D Material Shaders](#custom-3d-material-shaders) |
 | Custom Sky3D       | [Custom Sky3D Shaders](#custom-sky3d-shaders)          |
 | Limits             | [Current Limitations](#current-limitations)            |
 | Reference          | [Reference](#reference)                                |
+
+## Purpose
+
+Perro uses WGSL (`.wgsl`) for GPU shaders. Custom materials and `Sky3D` passes reference a shader by path; you implement one entry function and the engine injects the scene structs, lighting, vertex wiring, and bind groups around it. Reach for a shader when you need surface or sky effects the built-in presets cannot express, such as dissolves, force fields, animated water, or procedural skies.
+
+## Use Cases
+
+- Animated surfaces: a custom material `shade_material(in)` driven by `perro_time()` / `perro_time_phase()` for pulsing, scrolling, or shimmering looks.
+- Force fields, portals, and dissolves: sample `.pmat` `images` with `custom_image_sample(in, index, uv)` and read tunables with `custom_f_param(in, index)`.
+- Custom-lit props: return base color and let standard lighting wrap it, or call `perro_lit_standard(...)` to supply your own roughness, metallic, ao, and emissive.
+- Raw glows and holograms: set `lighting = "raw"` to bypass standard lighting and return exact color.
+- Vertex deformation: a `shade_vertex(out)` hook to bend, wave, or wobble geometry in the vertex stage.
+- Procedural skies: a `sky_shader(in)` pass adding clouds, stars, sun, or horizon bands over the built-in day/evening/night gradient.
 
 ## Reference
 

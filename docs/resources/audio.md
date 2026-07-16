@@ -11,21 +11,57 @@
 
 ## Purpose
 
-Use `Audio` when this feature, type group, file format, or workflow appears in game code or assets.
+Perro audio plays music and sound effects, with optional spatialization that models distance falloff, occlusion, reflection, portals, and effect zones. It handles simple centered one-shots, positional 2D/3D sounds, loops that follow a moving node, buses for grouped mixing, and a full MIDI layer using a built-in synth or `.sf2` soundfonts. Reach for it for anything from a UI click to a doppler engine loop tracking a car across a level.
 
 ## Use Cases
 
-Use the types, APIs, file formats, and workflows in this doc when the feature matches the game system you are building. Prefer `ctx.run` for runtime state, `ctx.res` for resource/data access, and `ctx.ipt` for input state.
+- UI and feedback one-shots: `audio_play!(ctx.res, Audio::new("res://ui/click.wav"))` plays centered with no spatial work.
+- Positional impacts and pickups: `Audio2D::new` / `Audio3D::new` with a `range`, routed to a bus via `audio_play!(ctx.res, audio_bus!("sfx"), sound)`.
+- Loops that follow a node: `ctx.run.Audio().play_attached_bus(...)` with `SpatialAudioOptions` so an engine or torch loop moves with its owner.
+- Grouped mixer control: buses (`audio_bus!("music")`, `audio_bus!("sfx")`) carry volume, speed, and pause so a pause menu can duck effects while music continues.
+- Directional emitters: `AudioDirection::Directional` or `Bidirectional` for a car horn, PA speaker, or one-way soundscape.
+- Interactive and procedural music: MIDI via `midi_play!`, `midi_start!` / `midi_release!` for held notes, using `MidiSound::BuiltIn` or a loaded `.sf2` (`midi_load_soundfont!`).
+- Environmental acoustics: audio-material fields on physics bodies plus `AudioPortal2D`/`AudioPortal3D` and camera `audio_options` for occlusion and reverb.
 
 ## Example
 
+Play a positional 3D impact on the `"sfx"` bus at a world point:
+
 ```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let dt = delta_time!(ctx.run);
-        let _ = dt;
-    }
-});
+let hit = Audio3D::new(
+    "res://audio/impact.wav",
+    Vector3::new(0.0, 1.0, -4.0),
+    80.0,
+);
+
+let _ = audio_play!(ctx.res, audio_bus!("sfx"), hit);
+```
+
+Attach a looping engine sound to a moving vehicle node so it tracks position and applies falloff:
+
+```rust
+let audio = RuntimeAudio {
+    source: "res://audio/engine_loop.ogg",
+    looped: true,
+    volume: 0.8,
+    effects: AudioEffects {
+        low_pass: 0.05,
+        reverb_send: 0.1,
+        ..AudioEffects::new()
+    },
+    from_start: 0.0,
+    from_end: 0.0,
+};
+
+let spatial = SpatialAudioOptions {
+    range: 80.0,
+    audio_layer: BitMask::ALL,
+    enable_propagation: true,
+    direction_2d: AudioDirection::Omni,
+    direction_3d: AudioDirection::Omni,
+};
+
+let _ = ctx.run.Audio().play_attached_bus(audio_bus!("ambience"), audio, vehicle_node, spatial);
 ```
 
 ## Reference

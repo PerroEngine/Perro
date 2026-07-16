@@ -13,19 +13,41 @@
 
 ## Purpose
 
-Use `Steamworks` when this feature, type group, file format, or workflow appears in game code or assets.
+Steamworks connects a Perro game to the Steam platform: achievements, stats,
+leaderboards, cloud saves, friends and lobbies, rich presence, Workshop, and P2P
+networking. Perro owns the plumbing (init, per-frame callback pump, and flushing
+dirty stats/achievements), so scripts only call game actions through macros and
+drain queued events. Most calls return `Result`, and when Steam is disabled they
+return `SteamError::Disabled`, so the same code runs in non-Steam builds.
 
 ## Use Cases
 
-Use the types, APIs, file formats, and workflows in this doc when the feature matches the game system you are building. Prefer `ctx.run` for runtime state, `ctx.res` for resource/data access, and `ctx.ipt` for input state.
+- Milestone achievements and stats: unlock with `steam_ach_unlock!("ACH_WIN")`
+  and track progress via `steam_stat_set_i32!` / `steam_stat_get_i32!`.
+- Friends matchmaking: create a `LobbyType::FriendsOnly` lobby with
+  `steam_lobby_create!`, then handle `LobbyCreated` / `LobbyJoined` from
+  `steam_events!`.
+- Cross-device saves: write and read progress with `steam_cloud_write!` /
+  `steam_cloud_read!`.
+- Competitive leaderboards: find or create a board and upload best scores with
+  `steam_leaderboard_create!` / `steam_leaderboard_upload!`.
+- Player-made content: subscribe to and download Workshop items with
+  `steam_workshop_subscribe!` / `steam_workshop_download!`.
+- Presence and invites: set status with `steam_rich_presence_set!` and react to
+  `RichPresenceJoinRequested`.
+- Friend avatars in UI: turn `steam_friend_avatar_large!` RGBA bytes into a
+  runtime texture with `texture_create_from_rgba!`.
 
 ## Example
 
 ```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let dt = delta_time!(ctx.run);
-        let _ = dt;
+methods!({
+    // Called from a game signal when the player wins their first match.
+    fn on_first_win(&self, _ctx: &mut ScriptContext<'_, API>, _from: NodeID) {
+        // Unlock an achievement and bump a stat; the engine flushes both.
+        let _ = steam_ach_unlock!("ACH_FIRST_WIN");
+        let wins = steam_stat_get_i32!("wins").unwrap_or(0);
+        let _ = steam_stat_set_i32!("wins", wins + 1);
     }
 });
 ```

@@ -4,22 +4,67 @@
 
 | Header | Link |
 | --- | --- |
-| Overview | [Overview](#overview) |
+| Purpose | [Purpose](#purpose) |
+| Use Cases | [Use Cases](#use-cases) |
 | Context | [Context](#context) |
+| Practical Example | [Practical Example](#practical-example) |
 | API Reference | [API Reference](#api-reference) |
 | `all` | [`all`](#all) |
 | `get` | [`get`](#get) |
 | `set_rumble` | [`set_rumble`](#set_rumble) |
+| Macros | [Macros](#macros) |
 
-## Overview
+## Purpose
 
-This input module belongs to `ctx.ipt` and documents gamepads calls.
+The gamepads module exposes every connected controller by slot index. Each
+`GamepadState` carries buttons (with held/pressed/released edges), two analog
+sticks, and gyro/accel motion; the module also queues rumble. Slots are stable
+indices, so you can support hot-plugged pads and multiple controllers by reading
+slot `0`, `1`, and up.
+
+## Use Cases
+
+- Twin-stick movement and aim: move with `gamepad_left_stick!(ctx.ipt, 0)` and
+  aim with `gamepad_right_stick!(ctx.ipt, 0)`.
+- Jump / confirm on the face button: fire once with
+  `gamepad_pressed!(ctx.ipt, 0, GamepadButton::Bottom)`.
+- Rumble on impact: pulse both motors with
+  `gamepad_set_rumble!(ctx.ipt, 0, 0.7, 0.7)`, then stop with `0.0, 0.0`.
+- Motion control: read `gamepad_gyro!(ctx.ipt, 0)` for tilt-steering or
+  gyro-aim, and `gamepad_accel!` for shake gestures.
+- Local multiplayer: iterate `gamepad_list!(ctx.ipt)` (or `all()`) to detect how
+  many pads are connected and assign each to a player slot.
 
 ## Context
 
 - Script context path: `ctx.ipt`
 - Module access: `ctx.ipt.Gamepads()`
+- `GamepadButton` is the button enum (face `Bottom`/`Right`/`Left`/`Top`, d-pad, `Start`/`Select`/`Home`/`Capture`, `L1`/`R1`/`L2`/`R2`/`L3`/`R3`).
 - Lifecycle examples stay inside `lifecycle!` because script hooks get `API` from the macro expansion.
+
+## Practical Example
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        // Move with the left stick.
+        let move_dir = gamepad_left_stick!(ctx.ipt, 0);
+
+        // Jump on the A/cross button press edge.
+        if gamepad_pressed!(ctx.ipt, 0, GamepadButton::Bottom) {
+            // start jump
+        }
+
+        // Rumble while the right trigger is held.
+        if gamepad_down!(ctx.ipt, 0, GamepadButton::R2) {
+            gamepad_set_rumble!(ctx.ipt, 0, 0.6, 0.6);
+        } else {
+            gamepad_set_rumble!(ctx.ipt, 0, 0.0, 0.0);
+        }
+        let _ = move_dir;
+    }
+});
+```
 
 ## API Reference
 
@@ -31,8 +76,8 @@ This input module belongs to `ctx.ipt` and documents gamepads calls.
 | Signature | `pub fn all(&self) -> &'ipt [GamepadState]` |
 | Params | `&self` |
 | Returns | `&'ipt [GamepadState]` |
-| Use when | Use when script code needs this exact engine read or write. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Enumerate connected pads, such as counting players or scanning all sticks. |
+| Edge behavior | Slice covers the current device slots; may be empty when no pad is connected. |
 
 ### `get`
 
@@ -42,8 +87,8 @@ This input module belongs to `ctx.ipt` and documents gamepads calls.
 | Signature | `pub fn get(&self, index: usize) -> Option<&'ipt GamepadState>` |
 | Params | `&self, index: usize` |
 | Returns | `Option<&'ipt GamepadState>` |
-| Use when | Use when script code needs this exact engine read or write. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Read one pad's buttons, sticks, gyro, and accel by slot. |
+| Edge behavior | Returns `None` when the slot is empty. |
 
 ### `set_rumble`
 
@@ -53,116 +98,23 @@ This input module belongs to `ctx.ipt` and documents gamepads calls.
 | Signature | `pub fn set_rumble(&self, index: usize, low_frequency: f32, high_frequency: f32)` |
 | Params | `&self, index: usize, low_frequency: f32, high_frequency: f32` |
 | Returns | `()` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Add force feedback; set both to `0.0` to stop. |
+| Edge behavior | Queues a rumble command when an input command buffer exists; missing slots are ignored. |
 
-### `gamepad_accel`
+## Macros
 
-| Field | Detail |
-| --- | --- |
-| Access | `ctx.ipt` |
-| Signature | `gamepad_accel!(ctx.ipt, 0)` |
-| Params | `ctx.ipt, 0` |
-| Returns | `Vector3` |
-| Use when | Use when code needs current input device data without storing platform input state itself. |
-| Fails when / edge behavior | Missing device slots return `None`, `false`, or a zero vector depending on the macro return type. Command macros queue work when an input command buffer exists. |
+Read macros return the documented empty value (zero vector, `false`, or `None`)
+for missing slots; command macros queue work when an input command buffer exists.
 
-### `gamepad_down`
-
-| Field | Detail |
-| --- | --- |
-| Access | `ctx.ipt` |
-| Signature | `gamepad_down!(ctx.ipt, 0, GamepadButton::Bottom)` |
-| Params | `ctx.ipt, 0, GamepadButton::Bottom` |
-| Returns | `bool` |
-| Use when | Use when gameplay needs held input state, such as movement, aim, charge, or drag. |
-| Fails when / edge behavior | Missing device slots return `None`, `false`, or a zero vector depending on the macro return type. Command macros queue work when an input command buffer exists. |
-
-### `gamepad_get`
-
-| Field | Detail |
-| --- | --- |
-| Access | `ctx.ipt` |
-| Signature | `gamepad_get!(ctx.ipt, 0)` |
-| Params | `ctx.ipt, 0` |
-| Returns | `Option` |
-| Use when | Use when code needs current input device data without storing platform input state itself. |
-| Fails when / edge behavior | Missing device slots return `None`, `false`, or a zero vector depending on the macro return type. Command macros queue work when an input command buffer exists. |
-
-### `gamepad_gyro`
-
-| Field | Detail |
-| --- | --- |
-| Access | `ctx.ipt` |
-| Signature | `gamepad_gyro!(ctx.ipt, 0)` |
-| Params | `ctx.ipt, 0` |
-| Returns | `Vector3` |
-| Use when | Use when code needs current input device data without storing platform input state itself. |
-| Fails when / edge behavior | Missing device slots return `None`, `false`, or a zero vector depending on the macro return type. Command macros queue work when an input command buffer exists. |
-
-### `gamepad_left_stick`
-
-| Field | Detail |
-| --- | --- |
-| Access | `ctx.ipt` |
-| Signature | `gamepad_left_stick!(ctx.ipt, 0)` |
-| Params | `ctx.ipt, 0` |
-| Returns | `Vector2` |
-| Use when | Use when code needs current input device data without storing platform input state itself. |
-| Fails when / edge behavior | Missing device slots return `None`, `false`, or a zero vector depending on the macro return type. Command macros queue work when an input command buffer exists. |
-
-### `gamepad_list`
-
-| Field | Detail |
-| --- | --- |
-| Access | `ctx.ipt` |
-| Signature | `gamepad_list!(ctx.ipt)` |
-| Params | `ctx.ipt` |
-| Returns | `slice` |
-| Use when | Use when code needs current input device data without storing platform input state itself. |
-| Fails when / edge behavior | Missing device slots return `None`, `false`, or a zero vector depending on the macro return type. Command macros queue work when an input command buffer exists. |
-
-### `gamepad_pressed`
-
-| Field | Detail |
-| --- | --- |
-| Access | `ctx.ipt` |
-| Signature | `gamepad_pressed!(ctx.ipt, 0, GamepadButton::Bottom)` |
-| Params | `ctx.ipt, 0, GamepadButton::Bottom` |
-| Returns | `bool` |
-| Use when | Use when gameplay needs a one-frame input edge, such as jump, confirm, cancel, or release. |
-| Fails when / edge behavior | Missing device slots return `None`, `false`, or a zero vector depending on the macro return type. Command macros queue work when an input command buffer exists. |
-
-### `gamepad_released`
-
-| Field | Detail |
-| --- | --- |
-| Access | `ctx.ipt` |
-| Signature | `gamepad_released!(ctx.ipt, 0, GamepadButton::Bottom)` |
-| Params | `ctx.ipt, 0, GamepadButton::Bottom` |
-| Returns | `bool` |
-| Use when | Use when gameplay needs a one-frame input edge, such as jump, confirm, cancel, or release. |
-| Fails when / edge behavior | Missing device slots return `None`, `false`, or a zero vector depending on the macro return type. Command macros queue work when an input command buffer exists. |
-
-### `gamepad_right_stick`
-
-| Field | Detail |
-| --- | --- |
-| Access | `ctx.ipt` |
-| Signature | `gamepad_right_stick!(ctx.ipt, 0)` |
-| Params | `ctx.ipt, 0` |
-| Returns | `Vector2` |
-| Use when | Use when code needs current input device data without storing platform input state itself. |
-| Fails when / edge behavior | Missing device slots return `None`, `false`, or a zero vector depending on the macro return type. Command macros queue work when an input command buffer exists. |
-
-### `gamepad_set_rumble`
-
-| Field | Detail |
-| --- | --- |
-| Access | `ctx.ipt` |
-| Signature | `gamepad_set_rumble!(ctx.ipt, 0, 0.5, 0.5)` |
-| Params | `ctx.ipt, 0, 0.5, 0.5` |
-| Returns | `()` |
-| Use when | Use when code must queue an input device, cursor, rumble, indicator, or calibration command. |
-| Fails when / edge behavior | Missing device slots return `None`, `false`, or a zero vector depending on the macro return type. Command macros queue work when an input command buffer exists. |
-
+| Macro | Signature | Returns |
+| --- | --- | --- |
+| `gamepad_list!` | `gamepad_list!(ctx.ipt)` | `&[GamepadState]` |
+| `gamepad_get!` | `gamepad_get!(ctx.ipt, 0)` | `Option<&GamepadState>` |
+| `gamepad_down!` | `gamepad_down!(ctx.ipt, 0, GamepadButton::Bottom)` | `bool` |
+| `gamepad_pressed!` | `gamepad_pressed!(ctx.ipt, 0, GamepadButton::Bottom)` | `bool` |
+| `gamepad_released!` | `gamepad_released!(ctx.ipt, 0, GamepadButton::Bottom)` | `bool` |
+| `gamepad_left_stick!` | `gamepad_left_stick!(ctx.ipt, 0)` | `Vector2` |
+| `gamepad_right_stick!` | `gamepad_right_stick!(ctx.ipt, 0)` | `Vector2` |
+| `gamepad_gyro!` | `gamepad_gyro!(ctx.ipt, 0)` | `Vector3` |
+| `gamepad_accel!` | `gamepad_accel!(ctx.ipt, 0)` | `Vector3` |
+| `gamepad_set_rumble!` | `gamepad_set_rumble!(ctx.ipt, 0, 0.5, 0.5)` | `()` |

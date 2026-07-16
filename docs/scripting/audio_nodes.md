@@ -1,5 +1,26 @@
 # Audio Nodes
 
+## Page Map
+
+| Header | Link |
+| --- | --- |
+| Purpose | [Purpose](#purpose) |
+| Use Cases | [Use Cases](#use-cases) |
+| 2D Effect Zone | [2D Effect Zone](#2d-effect-zone) |
+| 3D Audio Mask | [3D Audio Mask](#3d-audio-mask) |
+| Notes | [Notes](#notes) |
+
+## Purpose
+
+Audio geometry nodes shape how spatial sound travels through a scene. `AudioMask` blocks or muffles sound, `AudioEffectZone` applies reverb, echo, and dampening inside a volume, and `AudioPortal` lets sound leak between otherwise blocked spaces. Like physics bodies, each audio node pairs with a child `CollisionShape` that defines its volume, in both 2D and 3D.
+
+## Use Cases
+
+- Muffle sound behind a wall or floor so covered players hear less: `AudioMask2D` / `AudioMask3D` with a child shape; `audio_mask` selects which emitted `audio_layer` sources it affects.
+- Add room reverb, echo, or dampening inside a cave, hall, or tunnel: `AudioEffectZone2D` / `AudioEffectZone3D` with `effects = [{ reverb_send, echo, dampening }]`.
+- Let sound pass through a doorway or window in an otherwise blocked wall: `AudioPortal2D` / `AudioPortal3D`.
+- Restrict which emitters a zone or mask touches by layer: emitted `audio_layer` versus listener/geometry `audio_mask` (see [BitMask](bitmask.md)).
+
 Audio geometry nodes and collision shapes are separate scene nodes.
 `AudioMask2D`, `AudioEffectZone2D`, `AudioPortal2D`, `AudioMask3D`, `AudioEffectZone3D`, and `AudioPortal3D` hold audio behavior.
 `CollisionShape2D` and `CollisionShape3D` hold the volume/portal/mask shape.

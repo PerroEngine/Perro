@@ -4,9 +4,11 @@
 
 | Header | Link |
 | --- | --- |
-| Overview | [Overview](#overview) |
+| Purpose | [Purpose](#purpose) |
+| Use Cases | [Use Cases](#use-cases) |
 | Context | [Context](#context) |
 | Runtime Bytes | [Runtime Bytes](#runtime-bytes) |
+| Practical Example | [Practical Example](#practical-example) |
 | API Reference | [API Reference](#api-reference) |
 | `load` | [`load`](#load) |
 | `load_hashed` | [`load_hashed`](#load_hashed) |
@@ -21,16 +23,25 @@
 | `texture_drop` | [`texture_drop`](#texture_drop) |
 | `texture_is_loaded` | [`texture_is_loaded`](#texture_is_loaded) |
 
-## Overview
+## Purpose
 
-This resource module belongs to `ctx.res` and documents textures calls.
-Texture loads return a `TextureID` immediately and do not block the frame.
-Renderer uses the texture once async decode/upload completes.
+`ctx.res.Textures()` turns an image path or raw pixels into a `TextureID` that sprites, UI, materials, and decals can reference. A load returns the ID the same frame and never blocks; the async decode and GPU upload finish in the background, and the renderer starts drawing the texture once it is ready. Use it to stream art on demand, build textures at runtime, and update dynamic images pixel by pixel.
+
+## Use Cases
+
+- Swapping a sprite or UI image on the fly: `texture_load!(ctx.res, "res://ui/icon.png")` and assign the returned `TextureID`.
+- Procedural art: paint an RGBA8 buffer and upload it with `create_from_rgba`, for example a generated minimap or noise texture.
+- Dynamic textures that change over time: `write_rgba` to replace the whole image, or `write_rgba_region` to patch just the dirty rectangle (a paintable canvas, a fog-of-war overlay).
+- Decoding downloaded or embedded images: `create_from_bytes` for PNG/JPEG bytes or engine `PTEX` data.
+- Preloading during a loading screen: `texture_reserve!` to pin textures so they stay resident, and `texture_is_loaded!` to poll when the async upload finishes.
+- Freeing memory: `texture_drop!` to release a texture the game no longer shows.
 
 ## Context
 
 - Script context path: `ctx.res`
 - Module access: `ctx.res.Textures()`
+- Texture loads return a `TextureID` immediately and do not block the frame; the renderer uses the texture once async decode/upload completes.
+- Webcam and camera-stream textures resolve through this module too; see [Webcam](webcam.md).
 - Lifecycle examples stay inside `lifecycle!` because script hooks get `API` from the macro expansion.
 
 ## Runtime Bytes
@@ -50,12 +61,23 @@ See [Runtime Bytes Resources](../../../resources/runtime_bytes.md).
 
 ## Practical Example
 
+Build a solid-color runtime texture at init, then repaint one region each frame.
+
 ```rust
 lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let texture = texture_load!(ctx.res, "res://textures/player.png");
-        // assign texture now; renderer uses it once ready
-        let _ = texture;
+    fn on_init(&self, ctx: &mut ScriptContext<'_, API>) {
+        let pixels = vec![0u8; 64 * 64 * 4];
+        let canvas = texture_create_from_rgba!(ctx.res, 64, 64, &pixels);
+        self.paint(ctx, canvas);
+    }
+});
+
+methods!({
+    fn paint(&self, ctx: &mut ScriptContext<'_, API>, canvas: TextureID) {
+        // Overwrite a 4x4 red patch at (0, 0).
+        let patch = vec![255u8, 0, 0, 255].repeat(4 * 4);
+        let ok = texture_write_rgba_region!(ctx.res, canvas, 0, 0, 4, 4, &patch);
+        let _ = ok;
     }
 });
 ```
@@ -68,10 +90,10 @@ lifecycle!({
 | --- | --- |
 | Access | `ctx.res.Textures()` |
 | Signature | `pub fn load<S: ResPathSource>(&self, source: S) -> TextureID` |
-| Params | `&self, source: S` |
+| Params | `source: S` |
 | Returns | `TextureID` |
-| Use when | Use when code needs an ID now; renderer can use it once async load finishes. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Getting an ID now; the renderer uses it once the async load finishes. |
+| Fails when / edge behavior | Returns a nil `TextureID` when the path is empty; a missing file resolves to nil after the async load fails. |
 
 ### `load_hashed`
 
@@ -79,21 +101,21 @@ lifecycle!({
 | --- | --- |
 | Access | `ctx.res.Textures()` |
 | Signature | `pub fn load_hashed(&self, source_hash: u64) -> TextureID` |
-| Params | `&self, source_hash: u64` |
+| Params | `source_hash: u64` |
 | Returns | `TextureID` |
-| Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | A precomputed path hash is available and the source string is not needed. |
+| Fails when / edge behavior | Returns a nil `TextureID` when no texture is registered for the hash. |
 
 ### `load_hashed_with_source`
 
 | Field | Detail |
 | --- | --- |
 | Access | `ctx.res.Textures()` |
-| Signature | `pub fn load_hashed_with_source<S: ResPathSource>( &self, source_hash: u64, source: S, ) -> TextureID` |
-| Params | `&self, source_hash: u64, source: S,` |
+| Signature | `pub fn load_hashed_with_source<S: ResPathSource>(&self, source_hash: u64, source: S) -> TextureID` |
+| Params | `source_hash: u64, source: S` |
 | Returns | `TextureID` |
-| Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | The `texture_load!` literal path builds a compile-time hash and passes the source for first-load resolution. |
+| Fails when / edge behavior | Returns a nil `TextureID` when the file is missing. |
 
 ### `reserve`
 
@@ -101,10 +123,10 @@ lifecycle!({
 | --- | --- |
 | Access | `ctx.res.Textures()` |
 | Signature | `pub fn reserve<A: TextureReserveArg>(&self, arg: A) -> TextureID` |
-| Params | `&self, source_or_id` |
+| Params | `arg: A` (a path source, or an existing `TextureID` to promote) |
 | Returns | `TextureID` |
-| Use when | Use when code needs an ID or prepared asset before gameplay uses it, or when an existing `TextureID` should be promoted to reserved. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Pinning a texture so it stays resident, for example preloading during a loading screen. |
+| Fails when / edge behavior | Promoting an unknown `TextureID` returns a nil `TextureID`. |
 
 ### `reserve_hashed`
 
@@ -112,21 +134,21 @@ lifecycle!({
 | --- | --- |
 | Access | `ctx.res.Textures()` |
 | Signature | `pub fn reserve_hashed(&self, source_hash: u64) -> TextureID` |
-| Params | `&self, source_hash: u64` |
+| Params | `source_hash: u64` |
 | Returns | `TextureID` |
-| Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Reserving by a precomputed path hash. |
+| Fails when / edge behavior | Returns a nil `TextureID` when no texture is registered for the hash. |
 
 ### `reserve_hashed_with_source`
 
 | Field | Detail |
 | --- | --- |
 | Access | `ctx.res.Textures()` |
-| Signature | `pub fn reserve_hashed_with_source<S: ResPathSource>( &self, source_hash: u64, source: S, ) -> TextureID` |
-| Params | `&self, source_hash: u64, source: S,` |
+| Signature | `pub fn reserve_hashed_with_source<S: ResPathSource>(&self, source_hash: u64, source: S) -> TextureID` |
+| Params | `source_hash: u64, source: S` |
 | Returns | `TextureID` |
-| Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | The `texture_reserve!` literal path builds a compile-time hash and passes the source. |
+| Fails when / edge behavior | Returns a nil `TextureID` when the file is missing. |
 
 ### `drop`
 
@@ -134,10 +156,10 @@ lifecycle!({
 | --- | --- |
 | Access | `ctx.res.Textures()` |
 | Signature | `pub fn drop(&self, id: TextureID) -> bool` |
-| Params | `&self, id: TextureID` |
+| Params | `id: TextureID` |
 | Returns | `bool` |
-| Use when | Use when code must release, remove, stop, or disconnect existing engine state. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Releasing a texture the game no longer draws. |
+| Fails when / edge behavior | Returns `false` when the ID is unknown or already dropped. |
 
 ### `is_loaded`
 
@@ -145,21 +167,21 @@ lifecycle!({
 | --- | --- |
 | Access | `ctx.res.Textures()` |
 | Signature | `pub fn is_loaded(&self, id: TextureID) -> bool` |
-| Params | `&self, id: TextureID` |
+| Params | `id: TextureID` |
 | Returns | `bool` |
-| Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Polling whether the async decode/upload has finished before relying on the texture. |
+| Fails when / edge behavior | Returns `false` while the upload is pending or when the ID is unknown. |
 
 ### `texture_load`
 
 | Field | Detail |
 | --- | --- |
 | Access | `ctx.res.Textures()` |
-| Signature | `texture_load!(ctx.res.res, source)` |
+| Signature | `texture_load!(ctx.res, source)` |
 | Params | `ctx.res, source` |
-| Returns | `resource/runtime ID or `Result` as shown by backing method` |
-| Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Returns | `TextureID` |
+| Use when | Macro form of `load`. A literal path hashes at compile time; an expression path calls `load`. |
+| Fails when / edge behavior | Returns a nil `TextureID` when the file is missing. |
 
 ### `texture_reserve`
 
@@ -167,30 +189,29 @@ lifecycle!({
 | --- | --- |
 | Access | `ctx.res.Textures()` |
 | Signature | `texture_reserve!(ctx.res, source_or_id)` |
-| Params | `ctx.res, source` |
-| Returns | `resource/runtime ID or `Result` as shown by backing method` |
-| Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Params | `ctx.res, source_or_id` |
+| Returns | `TextureID` |
+| Use when | Macro form of `reserve`. |
+| Fails when / edge behavior | Promoting an unknown `TextureID` returns a nil `TextureID`. |
 
 ### `texture_drop`
 
 | Field | Detail |
 | --- | --- |
 | Access | `ctx.res.Textures()` |
-| Signature | `texture_drop!(ctx.res.res, id)` |
+| Signature | `texture_drop!(ctx.res, id)` |
 | Params | `ctx.res, id` |
-| Returns | `bool or () as shown by backing method` |
-| Use when | Use when code must release, remove, stop, or disconnect existing engine state. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Returns | `bool` |
+| Use when | Macro form of `drop`. |
+| Fails when / edge behavior | Returns `false` when the ID is unknown or already dropped. |
 
 ### `texture_is_loaded`
 
 | Field | Detail |
 | --- | --- |
 | Access | `ctx.res.Textures()` |
-| Signature | `texture_is_loaded!(ctx.res.res, id)` |
+| Signature | `texture_is_loaded!(ctx.res, id)` |
 | Params | `ctx.res, id` |
-| Returns | `bool or () as shown by backing method` |
-| Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
-
+| Returns | `bool` |
+| Use when | Macro form of `is_loaded`. |
+| Fails when / edge behavior | Returns `false` while the upload is pending or when the ID is unknown. |

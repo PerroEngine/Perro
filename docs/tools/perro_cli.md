@@ -6,35 +6,49 @@
 | --- | --- |
 | Purpose | [Purpose](#purpose) |
 | Use Cases | [Use Cases](#use-cases) |
-| Example | [Example](#example) |
-| Reference | [Reference](#reference) |
+| End-to-End Example | [End-to-End Example](#end-to-end-example) |
+| Quick Map | [Quick Map](#quick-map) |
+| Project Placement | [Project Placement](#project-placement) |
+| Build And Run | [Build And Run](#build-and-run) |
+| New Projects And Templates | [New Projects And Templates](#new-projects-and-templates) |
+| Health And Maintenance | [Health And Maintenance](#health-and-maintenance) |
+| Profiling | [Profiling](#profiling) |
+| Install | [Install](#install) |
 
 ## Purpose
 
-Use `Perro CLI` when this feature, type group, file format, or workflow appears in game code or assets.
+`perro` is the one command you run at every stage of a project: create it, compile scripts, run a live dev loop, cook a release build, package DLC, import animations, and profile hot code. `perro dev` loads assets straight from disk for fast edit-run cycles, while `perro build` bakes assets through the static pipeline for release. The CLI wraps all compiler and setup glue, so your project folder stays plain files with no import database to babysit.
+
+Commands use `perro`, assuming you ran `perro_cli install` and reloaded your shell profile, or installed from crates.io when available. `--path` defaults to the current working directory when omitted.
 
 ## Use Cases
 
-Use the types, APIs, file formats, and workflows in this doc when the feature matches the game system you are building. Prefer `ctx.run` for runtime state, `ctx.res` for resource/data access, and `ctx.ipt` for input state.
+- **Start a new game.** `perro new --name MyGame` scaffolds `project.toml`, `input_map.toml`, `deps.toml`, a `res/main.scn`, and the `.perro` crates.
+- **Fast edit-run loop.** `perro dev` compiles scripts, builds a project-local dev runner, and runs the game reading assets live from disk, so scene and script edits show up quickly.
+- **Add content without hand-writing boilerplate.** `perro new_script`, `perro new_scene`, `perro new_animation`, and `perro new_panimtree` drop templated files into `res/` (or a DLC) and rebuild.
+- **Cook a shippable build.** `perro build` bakes supported assets and links a release executable into `.output/`; `perro build --target web` and `perro build --target android` export browser and Android bundles.
+- **Package optional or paid content.** `perro dlc --name <name>` builds one runtime-loadable `.output/dlc/<name>.dlc` from `dlcs/<name>/`.
+- **Import animation and keep the project healthy.** `perro import_anim` converts glTF/GLB clips to `.panim`; `perro doctor`, `clippy`, `format`, and `test` check refs and script quality; `perro bench`, `perro flamegraph`, and `perro mem-profile` profile hot paths.
 
-## Example
+## End-to-End Example
 
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let dt = delta_time!(ctx.run);
-        let _ = dt;
-    }
-});
+```powershell
+# 1. Install the `perro` shell command, then open a new shell.
+perro_cli install
+
+# 2. Scaffold a new project next to your other games.
+perro new --path D:\GameProjects --name MyGame
+
+# 3. Add a behavior script and a 3D scene.
+perro new_script --path D:\GameProjects\MyGame --name PlayerController --res /scripts
+perro new_scene  --path D:\GameProjects\MyGame --name Main --template 3D --res /scenes
+
+# 4. Run the live dev loop with timing overlays while you edit.
+perro dev --path D:\GameProjects\MyGame --timings
+
+# 5. Cook the release executable into .output/.
+perro build --path D:\GameProjects\MyGame
 ```
-
-## Reference
-
-# Perro CLI
-
-This document covers Perro CLI in command-first style. Commands use `perro`, assuming you ran `perro_cli install` and reloaded your shell profile, or installed from crates.io when available.
-
-`--path` defaults to the current working directory when omitted.
 
 ## Quick Map
 
@@ -175,6 +189,7 @@ What it does:
 Flags:
 
 - `--target native|web|android`: selects native runner, browser wasm bundle, or Android app target. Default `native`.
+- `--headless`: runs the native `perro_headless` dev path with no window, input, or GPU render loop. Native only; rejected with `--target web` or `--target android`, and cannot combine with `--timings` or `--ui-profile`.
 - `--timings`: prints lightweight native timing averages: sim, gfx, delta, fps.
 - `--profile`: enables profiling feature for the selected dev target.
 - `--ui-profile`: enables native dev runner `ui_profile` feature.
@@ -182,6 +197,11 @@ Flags:
 - `--csv-profile [csv_name]`: writes native dev profile metrics CSV under `.output/profiling/`.
 - `--host <addr>`: web target only. Static server bind host. Default `127.0.0.1`.
 - `--port <num>`: web target only. Static server bind port. Default `8000`.
+
+Android target notes:
+
+- `--timings`, `--ui-profile`, and `--csv-profile` are not supported with `perro dev --target android` yet.
+- Android dev builds require an installed Android SDK/NDK and a running emulator or device.
 
 Web target notes:
 
@@ -252,6 +272,11 @@ Web target notes:
 - web build uses stable `wasm32-unknown-unknown` + `wasm-bindgen --target web`.
 - web output includes `index.html`, `boot.js`, `app.js`, and `app_bg.wasm`.
 - see [WASM / Web Target](../WASM.md)
+
+Android target notes:
+
+- `--console` is not supported with `perro build --target android`.
+- Android builds require an installed Android SDK/NDK; the CLI resolves them from `ANDROID_SDK_ROOT`/`ANDROID_HOME` and `ANDROID_NDK_ROOT`/`ANDROID_NDK_HOME`/`NDK_HOME` or the default platform location.
 
 Use this to build the final executable into `<project>/.output/`.
 The static pipeline packs all `res` assets.

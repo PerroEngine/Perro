@@ -2,27 +2,35 @@
 
 ## Page Map
 
-- [Purpose](#purpose)
-- [Full Example](#full-example)
-- [Tables](#tables)
-- [Graphics](#graphics)
-- [Rendering UI](#rendering-ui)
-- [Texture Filter](#texture-filter)
-- [Runtime](#runtime)
-- [Physics](#physics)
-- [Audio](#audio)
-- [Localization](#localization)
-- [Steam](#steam)
-- [Web](#web)
-- [Rules](#rules)
+| Header | Link |
+| --- | --- |
+| Purpose | [Purpose](#purpose) |
+| Use Cases | [Use Cases](#use-cases) |
+| Full Example | [Full Example](#full-example) |
+| Tables | [Tables](#tables) |
+| Graphics | [Graphics](#graphics) |
+| Rendering UI | [Rendering UI](#rendering-ui) |
+| Texture Filter | [Texture Filter](#texture-filter) |
+| Runtime | [Runtime](#runtime) |
+| Physics | [Physics](#physics) |
+| Audio | [Audio](#audio) |
+| Localization | [Localization](#localization) |
+| Steam | [Steam](#steam) |
+| Web | [Web](#web) |
+| Rules | [Rules](#rules) |
 
 ## Purpose
 
-`project.toml` sets project metadata + runtime defaults.
+`project.toml` lives at the project root and declares your game's identity plus its runtime defaults. Both `perro dev` and `perro build` read it, so one file drives the boot scene, window shape, render quality, frame pacing, physics, audio, localization, Steam, and web metadata. Only `[project]` and `[graphics]` are required; every other table falls back to built-in defaults. Invalid enum strings or out-of-range numbers fail the parse hard, so a typo surfaces at load instead of silently changing behavior.
 
-Put file at project root.
+## Use Cases
 
-Dev + export both read it.
+- **Pick the boot scene and app identity.** `[project]` sets `main_scene`, plus `name`, `icon`, and `startup_splash`.
+- **Lock the game's shape for any window size.** `[graphics] aspect_ratio = "16:9"` derives the virtual canvas the runtime renders into.
+- **Trade render quality against cost.** `[graphics]` tunes `msaa`, `ssao`, `occlusion_culling`, `texture_filter`, `particle_sim_default`, and the meshlet switches.
+- **Control frame pacing and the fixed step.** `[runtime] frame_rate_cap` caps or uncaps FPS, and `target_fixed_update` sets the fixed-update rate.
+- **Set world physics defaults.** `[physics] gravity` and `coef` seed the physics world.
+- **Ship to Steam or the web with correct metadata.** `[steam]` enables Steamworks with `app_id`/`input`, `[web]` sets page `title`/`description`/`keywords`, and `[metadata]` fills Windows executable version info.
 
 ## Full Example
 
@@ -57,6 +65,9 @@ meshlet_debug_view = false
 occlusion_culling = "gpu"
 particle_sim_default = "gpu"
 texture_filter = "linear_mipmap"
+
+[rendering]
+default_font = "default"
 
 [rendering.ui]
 pixel_snapping = true
@@ -100,6 +111,7 @@ input = "off"
 | ------------------------ | ---- | ----------------------------------- |
 | `[project]`              | yes  | name + entry assets                 |
 | `[graphics]`             | yes  | render defaults                     |
+| `[rendering]`            | no   | shared text render defaults         |
 | `[rendering.ui]`         | no   | UI render defaults                  |
 | `[runtime]`              | no   | frame timing                        |
 | `[physics]`              | no   | world physics defaults              |
@@ -110,6 +122,12 @@ input = "off"
 | `[web]`                  | no   | web page metadata                   |
 | `[localization]`         | no   | locale default + sibling csv enable |
 | `[steam]`                | no   | Steamworks cfg                      |
+
+## `[rendering]`
+
+| Field | Type | Default | Note |
+| --- | --- | --- | --- |
+| `default_font` | string | `"default"` | Font for UI, 2D text, 3D labels, and text decals when node `font` stays default. Accepts `system://Name` or `res://path.ttf`. Node font overrides this value. Missing fonts use the built-in fallback chain. |
 
 ## `[project]`
 

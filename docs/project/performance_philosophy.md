@@ -6,31 +6,25 @@
 | --- | --- |
 | Purpose | [Purpose](#purpose) |
 | Use Cases | [Use Cases](#use-cases) |
-| Example | [Example](#example) |
-| Reference | [Reference](#reference) |
+| Dev Path | [Dev Path](#dev-path) |
+| Static Export Path | [Static Export Path](#static-export-path) |
+| Dev vs Release Load Path | [Dev vs Release Load Path](#dev-vs-release-load-path) |
+| Perf Target | [Perf Target](#perf-target) |
+| Bench Snapshot | [Bench Snapshot](#bench-snapshot) |
 
 ## Purpose
 
-Use `Performance + Flexibility Philosophy` when this feature, type group, file format, or workflow appears in game code or assets.
+Perro's core trade: you author plain files under `res/` during development, with no proprietary import database and no manual reimport step, and the compiler pipeline reshapes supported assets into a fast static form only at `perro build` time. This page explains why dev loads assets dynamically from disk (flexible, edit-run fast) while release loads pre-baked data (near-imperceptible load cost), and it shows the measured gap between the two paths. Read it when you care about load times, when you are deciding whether to profile with `perro dev` or `perro build`, or when you want to know where asset cost actually goes.
 
 ## Use Cases
 
-Use the types, APIs, file formats, and workflows in this doc when the feature matches the game system you are building. Prefer `ctx.run` for runtime state, `ctx.res` for resource/data access, and `ctx.ipt` for input state.
+- **Understand why dev is flexible but slower to load.** `perro dev` parses or bakes assets on demand straight from `res/`, trading load speed for zero import friction.
+- **Get real load numbers for shipping.** `perro build` bakes scenes, textures, meshes, materials, and more into static Rust data plus compact binary payloads.
+- **Pick the right command to profile with.** Use `perro dev` for edit-run iteration and `perro build` for release-like asset-loading numbers.
+- **Know which assets get the fast path.** Supported types bake into generated lookup data; everything else is packed generically into `assets.perro`.
+- **Reproduce the benchmark snapshot.** Run the `cargo bench` commands under [Bench Snapshot](#bench-snapshot) on your own machine.
 
-## Example
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let dt = delta_time!(ctx.run);
-        let _ = dt;
-    }
-});
-```
-
-## Reference
-
-# Performance + Flexibility Philosophy
+## Overview
 
 Perro tries to keep one trade honest:
 performance + simplicity without sacrificing either.

@@ -11,14 +11,16 @@
 
 ## Purpose
 
-Use `.uistyle` files to store one reusable UI style and share it across panels, buttons, and text fields instead of repeating inline `style = { ... }` blocks.
+`.uistyle` stores one reusable UI style, including `fill`, `stroke`, corner radii, gradients, shadows, and highlights, in a single file that many nodes share. It solves the problem of repeating the same inline `style = { ... }` block on every panel and button and then keeping them all in sync. Point a node's `style` (or a button's `hover`/`pressed`, or a text edit's `focused_style`) at the file, and restyle the whole game by editing one place.
 
 ## Use Cases
 
-- Shared panel/button look across many scenes.
-- Themed HUD, menu, and dialog styling from one file.
-- Swap a whole style by pointing `style` at a different resource.
-- Feed button `hover`/`pressed` and text-edit `focused_style` states from separate files.
+- One dark-fantasy button style reused across every menu: `fill`, `stroke`, and `corner_radii` in a shared `res://ui/button.uistyle`.
+- Themed HUD and dialog panels: gradient fills via `fill_kind = "linear"` and a `gradient = { start_color, end_color, vector }` block.
+- Depth and polish on cards: `outer_shadow` / `inner_shadow` plus `outer_highlight` / `inner_highlight`.
+- Button state feedback: `hover = { style = "..." }` and `pressed = { style = "..." }` pointing at separate style files.
+- Focused input fields: `focused_style = "res://ui/input_focus.uistyle"` on a text edit.
+- Reskin without touching scenes: repoint a node's `style` at a different `.uistyle` to swap the whole look.
 
 ## Example
 

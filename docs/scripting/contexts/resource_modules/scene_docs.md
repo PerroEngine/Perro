@@ -5,6 +5,7 @@
 | Header            | Link                                 |
 | ----------------- | ------------------------------------ |
 | Purpose           | [Purpose](#purpose)                  |
+| Use Cases         | [Use Cases](#use-cases)              |
 | Context           | [Context](#context)                  |
 | Data Types        | [Data Types](#data-types)            |
 | API Reference     | [API Reference](#api-reference)      |
@@ -26,6 +27,14 @@ This module is for parsing, inspecting, generating, and writing scene files. It 
 Use this page when building an editor feature, scene conversion tool, debug exporter, project migration script, or custom authoring flow that needs the scene file format as data.
 
 Do not treat this as the normal gameplay scene-load API. For runtime scene instancing, use [Scenes Module](../runtime_modules/scenes.md).
+
+## Use Cases
+
+- Custom level editor: load a `.scn` with `scene_load_doc!`, edit `doc.scene_mut()`, and write it back with `scene_save_doc!`.
+- Scene conversion or migration tools: parse many `.scn` files, transform them, and re-serialize with `save` after `normalize_links()`.
+- Debug exporter: dump a live document to `.scn` source text with `write(&doc).to_text()` without touching asset storage.
+- Duplicating and templating levels: `load` a base scene, tweak it, then `save` to a new path as a variant.
+- Inspecting authored data: read scene vars and node structure from `SceneDoc` for validation or reporting.
 
 ## Context
 
@@ -266,6 +275,12 @@ This shows the intended shape: load `.scn` text into a document, operate on docu
 ```rust
 lifecycle!({
     fn on_init(&self, ctx: &mut ScriptContext<'_, API>) {
+        self.export_copy(ctx);
+    }
+});
+
+methods!({
+    fn export_copy(&self, ctx: &mut ScriptContext<'_, API>) {
         let Ok(mut doc) = scene_load_doc!(ctx.res, "res://levels/arena.scn") else {
             return;
         };

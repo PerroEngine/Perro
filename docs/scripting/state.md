@@ -5,12 +5,14 @@
 | Header        | Link                            |
 | ------------- | ------------------------------- |
 | Purpose       | [Purpose](#purpose)             |
+| Use Cases     | [Use Cases](#use-cases)         |
 | State Struct  | [State Struct](#state-struct)   |
 | Editor Expose | [Editor Expose](#editor-expose) |
 | Node Ref Hints | [Node Ref Hints](#node-ref-hints) |
 | Defaults      | [Defaults](#defaults)           |
 | Runtime Vars  | [Runtime Vars](#runtime-vars)   |
 | Custom Types  | [Custom Types](#custom-types)   |
+| Practical Example | [Practical Example](#practical-example) |
 
 ## Purpose
 
@@ -27,6 +29,14 @@ Source path:
 - `perro_source/script_stack/perro_scripting/src/script_trait.rs`
 - `perro_source/script_stack/perro_scripting_macros/src/lib.rs`
 - `perro_source/build_pipeline/perro_compiler/src/script_codegen.rs`
+
+## Use Cases
+
+- Persist a player's coins, health, ammo, or cooldown timers per node across frames: `#[State]` fields read and mutated with `with_state!` / `with_state_mut!`.
+- Tune gameplay values in the editor without recompiling (move speed, jump height, spawn rate): `#[expose]` fields overridden by scene `script_vars`.
+- Wire scene node references from the inspector (a camera, an aim target, a spawn point): `NodeID` fields annotated with `#[node_ref(...)]` so the picker filters by type.
+- Let another script read or set a value dynamically (a boss reacting to the player's `phase`, a HUD reading `coins`): `get_var!` / `set_var!`, which work without `#[expose]`.
+- Hold richer runtime state (a `Job` handle, a `VecDeque` of waypoints, a custom struct): any field type works locally; derive `Variant` when the value crosses a script-var boundary.
 
 ## State Struct
 
@@ -211,3 +221,39 @@ pub struct SpinnerState {
 This also applies to custom typed params/returns used in `methods!`.
 
 See [Variant](variant.md) for accessors, `parse::<T>()`, and `into_parse::<T>()`.
+
+## Practical Example
+
+A coin wallet whose count survives every frame and can be read by a separate HUD script.
+
+Wallet script (`res/scripts/wallet.rs`):
+
+```rust
+use perro_api::prelude::*;
+
+#[State]
+pub struct WalletState {
+    #[default(0)]
+    #[expose]
+    pub coins: i32,
+}
+
+methods!({
+    fn add_coins(&self, ctx: &mut ScriptContext<'_, API>, amount: i32) {
+        with_state_mut!(ctx.run, WalletState, ctx.id, |s| s.coins += amount);
+    }
+});
+```
+
+HUD script reads the value dynamically by node id — no `#[expose]` needed for `get_var!`:
+
+```rust
+let coins = get_var!(ctx.run, wallet_id, var!("coins")).as_i32().unwrap_or(0);
+```
+
+The starting balance can be set per placement in the scene, since `coins` is exposed:
+
+```text
+script = "res://scripts/wallet.rs"
+script_vars = { coins = 50 }
+```

@@ -4,9 +4,11 @@
 
 | Header | Link |
 | --- | --- |
-| Overview | [Overview](#overview) |
+| Purpose | [Purpose](#purpose) |
+| Use Cases | [Use Cases](#use-cases) |
 | Context | [Context](#context) |
 | Runtime Bytes | [Runtime Bytes](#runtime-bytes) |
+| Practical Example | [Practical Example](#practical-example) |
 | API Reference | [API Reference](#api-reference) |
 | `load` | [`load`](#load) |
 | `load_hashed` | [`load_hashed`](#load_hashed) |
@@ -27,16 +29,25 @@
 | `mesh_write` | [`mesh_write`](#mesh_write) |
 | `mesh_is_loaded` | [`mesh_is_loaded`](#mesh_is_loaded) |
 
-## Overview
+## Purpose
 
-This resource module belongs to `ctx.res` and documents meshes calls.
-Mesh loads return a `MeshID` immediately and do not block the frame.
-Renderer uses the mesh once async decode/upload completes.
+`ctx.res.Meshes()` turns a model path or `Mesh3D` geometry into a `MeshID` that 3D nodes render. Loads return the ID the same frame and never block; the async decode and GPU upload finish in the background. Beyond loading, the module can build meshes from CPU vertex data, read a mesh's geometry back, and overwrite it, which is what procedural geometry and runtime mesh editing need.
+
+## Use Cases
+
+- Streaming level geometry: `mesh_load!(ctx.res, "res://meshes/pillar.glb")` and assign the `MeshID` to a mesh node.
+- Procedural geometry: build a `Mesh3D` (terrain patch, generated wall) and register it with `mesh_create!`.
+- Runtime mesh editing: `mesh_get_data!` to read CPU vertices, deform them, then `mesh_write!` the modified `Mesh3D` back into the same ID.
+- Deforming built-in primitives: `get_data` returns canonical CPU geometry for engine preset meshes immediately, so a script can start from a cube or sphere and reshape it.
+- Decoding downloaded models: `create_from_bytes` for engine `PMESH` or glTF/GLB mesh index 0.
+- Preloading and memory control: `mesh_reserve!` to pin a mesh, `mesh_is_loaded!` to poll readiness, `mesh_drop!` to free it.
 
 ## Context
 
 - Script context path: `ctx.res`
 - Module access: `ctx.res.Meshes()`
+- Mesh loads return a `MeshID` immediately and do not block the frame; the renderer uses the mesh once async decode/upload completes.
+- Geometry type: `perro_render_bridge::Mesh3D`.
 - Lifecycle examples stay inside `lifecycle!` because script hooks get `API` from the macro expansion.
 
 ## Runtime Bytes
@@ -52,12 +63,24 @@ See [Runtime Bytes Resources](../../../resources/runtime_bytes.md).
 
 ## Practical Example
 
+Load a mesh at init and, once the upload lands, read its geometry back for a helper.
+
 ```rust
 lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+    fn on_init(&self, ctx: &mut ScriptContext<'_, API>) {
         let mesh = mesh_load!(ctx.res, "res://meshes/player.glb");
-        let ready = mesh_is_loaded!(ctx.res, mesh);
-        let _ = ready;
+        self.inspect(ctx, mesh);
+    }
+});
+
+methods!({
+    fn inspect(&self, ctx: &mut ScriptContext<'_, API>, mesh: MeshID) {
+        if mesh_is_loaded!(ctx.res, mesh) {
+            if let Some(data) = mesh_get_data!(ctx.res, mesh) {
+                // Deform `data` and push it back with mesh_write! if needed.
+                let _ = data;
+            }
+        }
     }
 });
 ```
@@ -70,10 +93,10 @@ lifecycle!({
 | --- | --- |
 | Access | `ctx.res.Meshes()` |
 | Signature | `pub fn load<S: ResPathSource>(&self, source: S) -> MeshID` |
-| Params | `&self, source: S` |
+| Params | `source: S` |
 | Returns | `MeshID` |
-| Use when | Use when code needs an ID now; renderer can use it once async load finishes. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Getting an ID now; the renderer uses it once the async load finishes. |
+| Fails when / edge behavior | Returns a nil `MeshID` when the path is empty; a missing file resolves to nil after the async load fails. |
 
 ### `load_hashed`
 
@@ -81,10 +104,10 @@ lifecycle!({
 | --- | --- |
 | Access | `ctx.res.Meshes()` |
 | Signature | `pub fn load_hashed(&self, source_hash: u64) -> MeshID` |
-| Params | `&self, source_hash: u64` |
+| Params | `source_hash: u64` |
 | Returns | `MeshID` |
-| Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | A precomputed path hash is available and the source string is not needed. |
+| Fails when / edge behavior | Returns a nil `MeshID` when no mesh is registered for the hash. |
 
 ### `load_hashed_with_source`
 
@@ -92,10 +115,10 @@ lifecycle!({
 | --- | --- |
 | Access | `ctx.res.Meshes()` |
 | Signature | `pub fn load_hashed_with_source<S: ResPathSource>(&self, source_hash: u64, source: S) -> MeshID` |
-| Params | `&self, source_hash: u64, source: S` |
+| Params | `source_hash: u64, source: S` |
 | Returns | `MeshID` |
-| Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | The `mesh_load!` literal path builds a compile-time hash and passes the source for first-load resolution. |
+| Fails when / edge behavior | Returns a nil `MeshID` when the file is missing. |
 
 ### `reserve`
 
@@ -103,10 +126,10 @@ lifecycle!({
 | --- | --- |
 | Access | `ctx.res.Meshes()` |
 | Signature | `pub fn reserve<A: MeshReserveArg>(&self, arg: A) -> MeshID` |
-| Params | `&self, source_or_id` |
+| Params | `arg: A` (a path source, or an existing `MeshID` to promote) |
 | Returns | `MeshID` |
-| Use when | Use when code needs an ID or prepared asset before gameplay uses it, or when an existing `MeshID` should be promoted to reserved. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Pinning a mesh so it stays resident, for example preloading during a loading screen. |
+| Fails when / edge behavior | Promoting an unknown `MeshID` returns a nil `MeshID`. |
 
 ### `reserve_hashed`
 
@@ -114,21 +137,21 @@ lifecycle!({
 | --- | --- |
 | Access | `ctx.res.Meshes()` |
 | Signature | `pub fn reserve_hashed(&self, source_hash: u64) -> MeshID` |
-| Params | `&self, source_hash: u64` |
+| Params | `source_hash: u64` |
 | Returns | `MeshID` |
-| Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Reserving by a precomputed path hash. |
+| Fails when / edge behavior | Returns a nil `MeshID` when no mesh is registered for the hash. |
 
 ### `reserve_hashed_with_source`
 
 | Field | Detail |
 | --- | --- |
 | Access | `ctx.res.Meshes()` |
-| Signature | `pub fn reserve_hashed_with_source<S: ResPathSource>( &self, source_hash: u64, source: S, ) -> MeshID` |
-| Params | `&self, source_hash: u64, source: S,` |
+| Signature | `pub fn reserve_hashed_with_source<S: ResPathSource>(&self, source_hash: u64, source: S) -> MeshID` |
+| Params | `source_hash: u64, source: S` |
 | Returns | `MeshID` |
-| Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | The `mesh_reserve!` literal path builds a compile-time hash and passes the source. |
+| Fails when / edge behavior | Returns a nil `MeshID` when the file is missing. |
 
 ### `drop`
 
@@ -136,10 +159,10 @@ lifecycle!({
 | --- | --- |
 | Access | `ctx.res.Meshes()` |
 | Signature | `pub fn drop(&self, id: MeshID) -> bool` |
-| Params | `&self, id: MeshID` |
+| Params | `id: MeshID` |
 | Returns | `bool` |
-| Use when | Use when code must release, remove, stop, or disconnect existing engine state. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Releasing a mesh the game no longer renders. |
+| Fails when / edge behavior | Returns `false` when the ID is unknown or already dropped. |
 
 ### `create`
 
@@ -147,10 +170,10 @@ lifecycle!({
 | --- | --- |
 | Access | `ctx.res.Meshes()` |
 | Signature | `pub fn create(&self, data: Mesh3D) -> MeshID` |
-| Params | `&self, data: Mesh3D` |
+| Params | `data: Mesh3D` |
 | Returns | `MeshID` |
-| Use when | Use when gameplay needs a new runtime/resource object built from typed data. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Registering procedural geometry built in code. |
+| Fails when / edge behavior | Returns a nil `MeshID` when the mesh data is invalid. |
 
 ### `get_data`
 
@@ -158,9 +181,9 @@ lifecycle!({
 | --- | --- |
 | Access | `ctx.res.Meshes()` |
 | Signature | `pub fn get_data(&self, id: MeshID) -> Option<Mesh3D>` |
-| Params | `&self, id: MeshID` |
+| Params | `id: MeshID` |
 | Returns | `Option<Mesh3D>` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
+| Use when | Reading a mesh's CPU geometry to inspect or deform it. |
 | Fails when / edge behavior | Built-in preset IDs return canonical CPU vertices, indices, one surface range, `uv`, and matching `paint_uv` immediately, including before renderer upload completes. Other IDs return `None` when CPU mesh data is unavailable, stale, or the target type does not match. |
 
 ### `write`
@@ -169,10 +192,10 @@ lifecycle!({
 | --- | --- |
 | Access | `ctx.res.Meshes()` |
 | Signature | `pub fn write(&self, id: MeshID, data: Mesh3D) -> bool` |
-| Params | `&self, id: MeshID, data: Mesh3D` |
+| Params | `id: MeshID, data: Mesh3D` |
 | Returns | `bool` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Overwriting an existing mesh's geometry, for example after deforming it. |
+| Fails when / edge behavior | Returns `false` when the ID is unknown or the data is invalid. |
 
 ### `is_loaded`
 
@@ -180,21 +203,21 @@ lifecycle!({
 | --- | --- |
 | Access | `ctx.res.Meshes()` |
 | Signature | `pub fn is_loaded(&self, id: MeshID) -> bool` |
-| Params | `&self, id: MeshID` |
+| Params | `id: MeshID` |
 | Returns | `bool` |
-| Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Polling whether the async decode/upload has finished. |
+| Fails when / edge behavior | Returns `false` while the upload is pending or when the ID is unknown. |
 
 ### `mesh_load`
 
 | Field | Detail |
 | --- | --- |
 | Access | `ctx.res.Meshes()` |
-| Signature | `mesh_load!(ctx.res.res, source)` |
+| Signature | `mesh_load!(ctx.res, source)` |
 | Params | `ctx.res, source` |
-| Returns | `resource/runtime ID or `Result` as shown by backing method` |
-| Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Returns | `MeshID` |
+| Use when | Macro form of `load`. A literal path hashes at compile time; an expression path calls `load`. |
+| Fails when / edge behavior | Returns a nil `MeshID` when the file is missing. |
 
 ### `mesh_reserve`
 
@@ -202,42 +225,42 @@ lifecycle!({
 | --- | --- |
 | Access | `ctx.res.Meshes()` |
 | Signature | `mesh_reserve!(ctx.res, source_or_id)` |
-| Params | `ctx.res, source` |
-| Returns | `resource/runtime ID or `Result` as shown by backing method` |
-| Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Params | `ctx.res, source_or_id` |
+| Returns | `MeshID` |
+| Use when | Macro form of `reserve`. |
+| Fails when / edge behavior | Promoting an unknown `MeshID` returns a nil `MeshID`. |
 
 ### `mesh_drop`
 
 | Field | Detail |
 | --- | --- |
 | Access | `ctx.res.Meshes()` |
-| Signature | `mesh_drop!(ctx.res.res, id)` |
+| Signature | `mesh_drop!(ctx.res, id)` |
 | Params | `ctx.res, id` |
-| Returns | `bool or () as shown by backing method` |
-| Use when | Use when code must release, remove, stop, or disconnect existing engine state. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Returns | `bool` |
+| Use when | Macro form of `drop`. |
+| Fails when / edge behavior | Returns `false` when the ID is unknown or already dropped. |
 
 ### `mesh_create`
 
 | Field | Detail |
 | --- | --- |
 | Access | `ctx.res.Meshes()` |
-| Signature | `mesh_create!(ctx.res.res, data)` |
+| Signature | `mesh_create!(ctx.res, data)` |
 | Params | `ctx.res, data` |
-| Returns | `resource/runtime ID or `Result` as shown by backing method` |
-| Use when | Use when gameplay needs a new runtime/resource object built from typed data. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Returns | `MeshID` |
+| Use when | Macro form of `create`. |
+| Fails when / edge behavior | Returns a nil `MeshID` when the mesh data is invalid. |
 
 ### `mesh_get_data`
 
 | Field | Detail |
 | --- | --- |
 | Access | `ctx.res.Meshes()` |
-| Signature | `mesh_get_data!(ctx.res.res, id)` |
+| Signature | `mesh_get_data!(ctx.res, id)` |
 | Params | `ctx.res, id` |
-| Returns | `same as backing method` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
+| Returns | `Option<Mesh3D>` |
+| Use when | Macro form of `get_data`. |
 | Fails when / edge behavior | Same built-in preset behavior and CPU-data limits as `get_data`. |
 
 ### `mesh_write`
@@ -245,20 +268,19 @@ lifecycle!({
 | Field | Detail |
 | --- | --- |
 | Access | `ctx.res.Meshes()` |
-| Signature | `mesh_write!(ctx.res.res, id, data)` |
+| Signature | `mesh_write!(ctx.res, id, data)` |
 | Params | `ctx.res, id, data` |
-| Returns | `bool or () as shown by backing method` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Returns | `bool` |
+| Use when | Macro form of `write`. |
+| Fails when / edge behavior | Returns `false` when the ID is unknown or the data is invalid. |
 
 ### `mesh_is_loaded`
 
 | Field | Detail |
 | --- | --- |
 | Access | `ctx.res.Meshes()` |
-| Signature | `mesh_is_loaded!(ctx.res.res, id)` |
+| Signature | `mesh_is_loaded!(ctx.res, id)` |
 | Params | `ctx.res, id` |
-| Returns | `bool or () as shown by backing method` |
-| Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
-
+| Returns | `bool` |
+| Use when | Macro form of `is_loaded`. |
+| Fails when / edge behavior | Returns `false` while the upload is pending or when the ID is unknown. |

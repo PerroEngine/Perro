@@ -4,8 +4,10 @@
 
 | Header                   | Link                                                |
 | ------------------------ | --------------------------------------------------- |
-| Overview                 | [Overview](#overview)                               |
+| Purpose                  | [Purpose](#purpose)                                 |
+| Use Cases                | [Use Cases](#use-cases)                             |
 | Context                  | [Context](#context)                                 |
+| Practical Example        | [Practical Example](#practical-example)             |
 | API Reference            | [API Reference](#api-reference)                     |
 | `connect`                | [`connect`](#connect)                               |
 | `connect_many`           | [`connect_many`](#connect_many)                     |
@@ -18,9 +20,23 @@
 | `signal_disconnect_many!` | [`signal_disconnect_many!`](#signal_disconnect_many) |
 | `signal_emit!`           | [`signal_emit!`](#signal_emit)                       |
 
-## Overview
+## Purpose
 
-This runtime module belongs to `ctx.run` and documents signals calls.
+Signals are Perro's decoupled event bus. A script emits a named signal and any
+connected handler runs, without the emitter knowing or caring who is listening.
+This keeps gameplay systems independent: the boss does not call the music system
+directly, it just emits `boss_defeated` and whoever cares reacts. Handlers are
+ordinary script methods (`func!` / `method!`) connected by name, and emitted
+`Variant` params flow through to them.
+
+## Use Cases
+
+- Boss health threshold triggers phase two: when HP crosses 50%, `signal_emit!(ctx.run, signal!("boss_phase_two"), params![])`; the arena script connected a handler in `on_all_init` with `signal_connect!`.
+- One event, many reactions: a collected coin should bump the score, refresh the HUD, and play a sound — connect all three with `connect_many` (which forms the signal x function product) or list them explicitly.
+- Wire a screen of UI buttons to their handlers at once: `signal_connect_pairs!(ctx.run, ctx.id, [("play_click", "on_play"), ("quit_click", "on_quit")])` connects each signal to exactly its paired function.
+- React to timer and animation events: connect to `timer_finished!("spawn_wave")` or an animation event signal to run logic at the right beat.
+- Broadcast world state: emit `player_died` so checkpoints, enemies, and UI all respond from their own scripts.
+- Tear down listeners when a menu or level closes: `signal_disconnect_many!(ctx.run, ctx.id, signals, functions)`.
 
 ## Context
 
@@ -30,10 +46,38 @@ This runtime module belongs to `ctx.run` and documents signals calls.
 
 ## Practical Example
 
+A boss script emits a phase-change signal once its health drops past a
+threshold. Connect the handler once in `on_all_init`, then emit from update
+logic; the emitter never needs a reference to the arena systems that react.
+
 ```rust
+#[State]
+struct BossState {
+    #[default = 100.0]
+    pub health: f32,
+    #[default = false]
+    pub phase_two: bool,
+}
+
 lifecycle!({
+    fn on_all_init(&self, ctx: &mut ScriptContext<'_, API>) {
+        signal_connect!(ctx.run, ctx.id, signal!("boss_phase_two"), func!("on_phase_two"));
+    }
+
     fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        signal_emit!(ctx.run, signal!("player_spawned"), params![ctx.id]);
+        with_state_mut!(ctx.run, BossState, ctx.id, |state| {
+            if !state.phase_two && state.health <= 50.0 {
+                state.phase_two = true;
+                signal_emit!(ctx.run, signal!("boss_phase_two"), params![]);
+            }
+        });
+    }
+});
+
+methods!({
+    fn on_phase_two(&self, ctx: &mut ScriptContext<'_, API>) {
+        // Enrage. Re-broadcast so the music and arena hazards react too.
+        signal_emit!(ctx.run, signal!("music_set_intensity"), params![variant!(1.0_f32)]);
     }
 });
 ```

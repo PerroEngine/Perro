@@ -5,6 +5,7 @@
 | Header        | Link                            |
 | ------------- | ------------------------------- |
 | Purpose       | [Purpose](#purpose)             |
+| Use Cases     | [Use Cases](#use-cases)         |
 | Dynamic Calls | [Dynamic Calls](#dynamic-calls) |
 | Accessors     | [Accessors](#accessors)         |
 | Supported Types | [Supported Types](#supported-types) |
@@ -16,6 +17,14 @@
 `Variant` is the dynamic value type used by script vars, method params, method returns, signals, JSON/network helpers, and scene injected values.
 
 Use it when value type is only known at runtime.
+
+## Use Cases
+
+- Read a value whose type is only known at runtime — a script var, a signal parameter, a scene-injected field: decode with an `as_*` accessor or `parse::<T>()`.
+- Pass gameplay data through dynamic calls — `call_method!` params or a `set_var!` value: build it with `variant!` or `params![...]`.
+- Save/load and networking: convert game data to and from JSON with `modules::json`, which round-trips through `Variant`.
+- Keep custom structs or enums in `#[State]` or send them across scripts: `#[derive(Variant)]`, then recover them with `parse::<T>()` / `into_parse::<T>()`.
+- Handle a value of unknown shape safely: branch on `get_kind()` first, then use the exact `as_*` accessor for the stored subtype.
 
 ## Dynamic Calls
 

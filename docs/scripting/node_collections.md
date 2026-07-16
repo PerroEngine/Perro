@@ -1,14 +1,37 @@
 # Node Collections
 
+## Page Map
+
+| Header | Link |
+| --- | --- |
+| Purpose | [Purpose](#purpose) |
+| Use Cases | [Use Cases](#use-cases) |
+| Shape | [Shape](#shape) |
+| Create | [Create](#create) |
+| Flat Batch | [Flat Batch](#flat-batch) |
+| Tree | [Tree](#tree) |
+| Multiple Trees | [Multiple Trees](#multiple-trees) |
+| Child Collections | [Child Collections](#child-collections) |
+| Top-Level Collections | [Top-Level Collections](#top-level-collections) |
+| Scene Refs | [Scene Refs](#scene-refs) |
+| Scene Children | [Scene Children](#scene-children) |
+| Scene And Collections | [Scene And Collections](#scene-and-collections) |
+| Multi Scene Tree | [Multi Scene Tree](#multi-scene-tree) |
+| Cross Domain | [Cross Domain](#cross-domain) |
+| Real Node Data | [Real Node Data](#real-node-data) |
+| Return Order | [Return Order](#return-order) |
+
 ## Purpose
 
-`NodeCollection` is an in-code scene tree.
+A `NodeCollection` is an in-code scene tree: you describe nodes as Rust data with `node_collection!` and spawn them live with `create_nodes!`. It is how a script builds things that were never placed in a `.scn` file — enemy waves, projectiles, generated UI, spawned prefabs, and debug overlays. Collections nest, splice into one another, and can embed `.scn` scenes, so a single spawn call can create a whole subtree. Use `.scn` files for editor-authored scenes and node collections for anything a script generates.
 
-Use it to build live runtime nodes from Rust data.
+## Use Cases
 
-Use `.scn` files for asset/editor scenes.
-
-Use `node_collection!` for script-built prefabs, UI chunks, spawn packs, debug trees, and generated scene parts.
+- Spawn an enemy wave or a burst of pickups at runtime: build a flat `node_collection![ ... ]` and instantiate it with `create_nodes!(ctx.run, wave, parent_id)`.
+- Fire a projectile or one-shot effect as a small prefab: a `node_collection!` subtree with a `script = ...` entry, spawned on each shot.
+- Generate UI on the fly (a scoreboard row per player, an inventory grid): a nested `node_collection!` of `Ui*` nodes parented under a panel.
+- Compose a spawn from an authored scene plus extra nodes: mix `scene = "res://..."` entries and `collection = ...` splices inside one collection.
+- Build runtime-only debug or tool overlays: parent the collection under `NodeID::nil()` to keep it a root, or under `ctx.id` to scope it to the caller.
 
 ## Shape
 

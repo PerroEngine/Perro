@@ -6,25 +6,41 @@
 | ------------- | ------------------------------- |
 | Purpose       | [Purpose](#purpose)             |
 | Use Cases     | [Use Cases](#use-cases)         |
-| Example       | [Example](#example)             |
+| Practical Example | [Practical Example](#practical-example) |
 | Reference     | [Reference](#reference)         |
 | 3D Mesh Flips | [3D Mesh Flips](#3d-mesh-flips) |
 
 ## Purpose
 
-Use `Node Types` when this feature, type group, file format, or workflow appears in game code or assets.
+Nodes are the building blocks of every Perro scene — data-only objects that the runtime renders and simulates. This page catalogs the built-in node types (2D, 3D, UI, resource, and skeletal) and the fields each one exposes, so you know what to place in a scene, what a script can read and write, and how rendering, physics, and resources hang off them.
 
 ## Use Cases
 
-Use the types, APIs, file formats, and workflows in this doc when the feature matches the game system you are building. Prefer `ctx.run` for runtime state, `ctx.res` for resource/data access, and `ctx.ipt` for input state.
+- Move, rotate, or hide game objects from a script: read and write `Node2D` / `Node3D` transforms with `get_local_pos_3d!` / `set_local_pos_3d!`, and edit other fields through `with_node_mut!`.
+- Show art and text: `Sprite2D` / `Sprite3D`, `AnimatedSprite2D`, `Label2D` / `Label3D`, `MeshInstance3D`, `MultiMeshInstance3D`, and `Decal3D`.
+- Control what a camera sees and how it looks: `Camera2D` / `Camera3D` with `render_mask`, post-processing, and modulate tints.
+- Drive skeletal characters: `Skeleton3D` / `Skeleton2D`, bones, `BoneAttachment*`, and blend shapes for morph/facial animation.
+- Fade or tint an object and its children: the `modulate` / `self_modulate` / `children_modulate` RGBA multipliers.
+- Inspect a node's identity and relationships at runtime: `get_node_type!`, `get_node_name!`, `get_node_tags!`, `get_node_children_ids!`.
 
-## Example
+## Practical Example
+
+A side-scroller sprite that walks right and faces the direction it moves. It edits the `Sprite2D` node's `flip_x` field through `with_node_mut!`.
 
 ```rust
+use perro_api::prelude::*;
+
 lifecycle!({
     fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
         let dt = delta_time!(ctx.run);
-        let _ = dt;
+        let vx = 60.0 * dt;
+
+        if let Some(pos) = get_local_pos_2d!(ctx.run, ctx.id) {
+            set_local_pos_2d!(ctx.run, ctx.id, pos + Vector2::new(vx, 0.0));
+            let _ = with_node_mut!(ctx.run, Sprite2D, ctx.id, |sprite| {
+                sprite.flip_x = vx < 0.0;
+            });
+        }
     }
 });
 ```
@@ -79,6 +95,7 @@ Rendering and resource loading are handled by the runtime and `ResourceWindow`.
 - Uses `Node2D` position, rotation, scale, z index, visibility, render layers, and modulation.
 - `size` is in 2D world units before camera projection.
 - Uses `text`, `color`, `font_size`, `h_align`, and `v_align` like `UiLabel`.
+- Uses `font = "res://fonts/Game.ttf"` or `font = "system://Segoe UI"`; missing fonts fall back.
 - Supports `%loc:` scene text markers and runtime locale text binding like `UiLabel`.
 - Use it for nameplates, speech text, signs, and diegetic UI.
 
@@ -327,7 +344,11 @@ See [TileMap2D](tilemap.md).
 - Uses `Node3D` position, rotation, scale, visibility, render layers, and modulation.
 - `size` is world-space width/height before camera projection.
 - Uses `text`, `color`, `font_size`, `h_align`, and `v_align` like `UiLabel`.
-- Text wrapping uses the authored `size` aspect and `font_size`, so camera angle/distance does not change line breaks.
+- `lock_orientation = false` keeps text camera-facing. Set it to `true` for a fixed world sign: glyph and backdrop meshes project through all four transformed corners without rasterizing the whole label; `backface_cull` defaults to `true` and hides the rear face.
+- `backdrop_color` defaults transparent. Set it plus `size` to make a filled sign behind the text.
+- `padding = (left, top, right, bottom)` uses the UI ratio convention and insets text inside the sign.
+- `corner_radii = (tl, tr, br, bl)` uses the UI `0.0..1.0` ratio convention. Default `0` gives hard square corners.
+- Text wrapping uses the padded authored `size` aspect and `font_size`, so camera angle/distance does not change line breaks.
 - Supports `%loc:` scene text markers and runtime locale text binding like `UiLabel`.
 - Use it for nameplates, signs, speech text, and world HUD labels.
 
@@ -367,16 +388,6 @@ See [TileMap2D](tilemap.md).
 - `distance_fade_begin`/`distance_fade_length` fade by camera distance; begin `0` disables.
 - Higher `sort_priority` blends over lower when decals overlap.
 - Affects standard and toon materials plus multimesh instances; unlit materials ignore decals.
-
-`TextDecal3D`
-
-- Projected text decal: rasterizes `text` into a runtime texture, then paints it through the Decal3D path.
-- Uses Node3D transform; projects along local -Z.
-- `size` is `(width, height, depth)` of the projection box.
-- `color` tints the text; alpha controls opacity.
-- `font_size`, `h_align`, `v_align`, and `texture_resolution` control the backing texture.
-- `emission_energy > 0` reuses the text mask as an emissive decal.
-- Use it for wall text, signs, floor labels, and labels that must stick to geometry.
 
 `ParticleEmitter2D`
 

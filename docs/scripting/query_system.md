@@ -4,10 +4,15 @@
 
 | Header        | Link                              |
 | ------------- | --------------------------------- |
+| Purpose       | [Purpose](#purpose)               |
 | Why Use Query | [Why Use Query](#why-use-query)   |
 | Use Cases     | [Use Cases](#use-cases)           |
 | Example       | [Example](#example)               |
 | Reference     | [Reference](#reference)           |
+
+## Purpose
+
+The query system finds sets of nodes by runtime state — tag, name, concrete type, base type, render layer, or spatial region — instead of hardcoding scene paths. Reach for it whenever gameplay needs "all the X" or "the X near Y" rather than a fixed reference: every awake enemy, unclaimed pickups in a room, or the current boss. Queries return `NodeID` handles; you then act through the normal node and script APIs.
 
 ## Use Cases
 

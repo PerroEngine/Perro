@@ -38,16 +38,15 @@ The docs give exact macro/API paths and edge behavior.
 
 ## Use Cases
 
-Use scripting docs when game code runs from a Perro script file under `res/**/*.rs`.
+These docs cover the game logic you write in Perro script files under `res/**/*.rs`:
 
-Prefer:
+- Player and enemy controllers: read input each frame in `on_update` (`ctx.ipt`), move with the physics macros, and keep velocity and timers in `#[State]`.
+- Per-node gameplay data (health, ammo, cooldowns, coins): store it in `#[State]`, read/write it with `with_state!` / `with_state_mut!`, and expose it to other systems with `get_var!` / `set_var!`.
+- Cross-object coordination (a switch opening a door, an enemy alerting its squad): call behavior with `call_method!` or broadcast with signals.
+- Dynamic groups instead of fixed refs (every awake enemy, pickups in a room): `query!` and its helpers.
+- Heavy CPU work off the frame path (pathfinding, procedural generation, bulk scoring): `jobs::spawn` / `jobs::join` / `jobs::par_map`.
 
-- `ctx.run` for runtime state, nodes, scenes, scripts, signals, time, and window calls
-- `ctx.res` for resource/data access
-- `ctx.ipt` for input state
-- `with_state!` / `with_state_mut!` for this script's typed state
-- `jobs::spawn` / `jobs::join` / `jobs::par_map` for CPU work
-- `get_var!` / `set_var!` / `call_method!` for dynamic cross-script access
+Choose a context by role: `ctx.run` for runtime state, nodes, scenes, scripts, signals, time, and window calls; `ctx.res` for resources and data; `ctx.ipt` for input.
 
 ## Example
 

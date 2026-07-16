@@ -5,6 +5,7 @@
 | Header          | Link                                |
 | --------------- | ----------------------------------- |
 | Purpose         | [Purpose](#purpose)                 |
+| Use Cases       | [Use Cases](#use-cases)             |
 | Scene Fields    | [Scene Fields](#scene-fields)       |
 | Color Model     | [Color Model](#color-model)         |
 | Custom Shaders  | [Custom Shaders](#custom-shaders)   |
@@ -15,9 +16,16 @@
 
 ## Purpose
 
-`Sky3D` draws the 3D sky.
+`Sky3D` draws the 3D sky as a camera-relative skybox/dome behind the rest of the scene. It sets a level's backdrop and time-of-day mood by blending day, evening, and night color gradients on an animatable clock, and it can supply image-based ambient lighting from an equirectangular map. Layer custom WGSL passes on top when you need clouds, stars, a sun, a moon, or a tinted horizon band.
 
-It is a camera-relative skybox/dome.
+## Use Cases
+
+- Day/night cycle: blend `day_colors`, `evening_colors`, and `night_colors` by `time.time_of_day`, advanced automatically with `time.scale` or frozen with `time.paused`.
+- Grounded horizon haze: `horizon_colors` fades the lower dome into a fog/gray band.
+- Image-based lighting for PBR props: `environment = { source, intensity, rotation_degrees }` bakes irradiance and specular so `standard` materials pick up scene ambient light.
+- Procedural clouds, stars, or sun: ordered `shaders = [{ path, params }]` custom passes run after the base gradient.
+- Animated sky detail: read `in.time_seconds` inside a `sky_shader` for drifting clouds or twinkling stars.
+- Per-camera sky selection: `active` and `render_layers` decide which camera sees this sky.
 
 ## Scene Fields
 

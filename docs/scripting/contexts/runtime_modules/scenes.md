@@ -4,8 +4,10 @@
 
 | Header | Link |
 | --- | --- |
-| Overview | [Overview](#overview) |
+| Purpose | [Purpose](#purpose) |
+| Use Cases | [Use Cases](#use-cases) |
 | Context | [Context](#context) |
+| Practical Example | [Practical Example](#practical-example) |
 | API Reference | [API Reference](#api-reference) |
 | `load` | [`load`](#load) |
 | `load_hashed` | [`load_hashed`](#load_hashed) |
@@ -20,15 +22,63 @@
 | `scene_free_preloaded` | [`scene_free_preloaded`](#scene_free_preloaded) |
 | `scene_drop_preloaded` | [`scene_drop_preloaded`](#scene_drop_preloaded) |
 
-## Overview
+## Purpose
 
-This runtime module belongs to `ctx.run` and documents scenes calls.
+The scenes module instances and swaps `.pscene` files while the game runs. This
+is how you move from a menu into gameplay, transition between levels, and spawn
+prefab instances such as enemy waves or destructible props. Loading returns the
+`NodeID` of the new subtree's root, so gameplay code can immediately parent,
+position, or configure what it just spawned. Preloading warms a scene off the
+hot path so the actual swap does not hitch mid-action.
+
+## Use Cases
+
+- Level transition when the player reaches an exit: `scene_load!(ctx.run, "res://levels/level2.pscene")` returns the new root `NodeID`.
+- Seamless streaming: `scene_preload!(ctx.run, "res://levels/boss.pscene")` during a calm corridor, then instance the warmed copy with `ctx.run.Scene().load_preloaded(id)` at the boss door.
+- Spawn a prefab instance (enemy squad, pickup, particle burst): `scene_load!` a small scene and reparent its root under a spawn-point node.
+- Main-menu "Play": load the first gameplay scene from the button handler.
+- Reclaim memory once an area is behind the player: `scene_free_preloaded!(ctx.run, "res://levels/boss.pscene")` or `scene_drop_preloaded!`.
 
 ## Context
 
 - Script context path: `ctx.run`
 - Module access: `ctx.run.Scene()`
 - Lifecycle examples stay inside `lifecycle!` because script hooks get `API` from the macro expansion.
+
+## Practical Example
+
+Preload the next level at startup, then swap to it when a door-trigger signal
+fires. `scene_load!` and `load_preloaded` return `Result<NodeID, String>`, so
+handle the error case.
+
+```rust
+#[State]
+struct DoorState {
+    #[default = NodeID::nil()]
+    pub next_area: NodeID,
+}
+
+lifecycle!({
+    fn on_init(&self, ctx: &mut ScriptContext<'_, API>) {
+        // Warm the next level so the transition does not stutter.
+        let _ = scene_preload!(ctx.run, "res://levels/level2.pscene");
+    }
+});
+
+methods!({
+    // Connected to the exit trigger's "body_entered" signal.
+    fn on_exit_reached(&self, ctx: &mut ScriptContext<'_, API>) {
+        match scene_load!(ctx.run, "res://levels/level2.pscene") {
+            Ok(root) => {
+                with_state_mut!(ctx.run, DoorState, ctx.id, |state| state.next_area = root);
+            }
+            Err(err) => {
+                let _ = err; // log or fall back to a safe scene
+            }
+        }
+    }
+});
+```
 
 ## API Reference
 

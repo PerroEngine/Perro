@@ -2,29 +2,27 @@
 
 ## Page Map
 
-- [Purpose](#purpose)
-- [Use Cases](#use-cases)
-- [Fields](#fields)
-- [Example](#example)
-- [Cost](#cost)
-- [Limits](#limits)
+| Header | Link |
+| --- | --- |
+| Purpose | [Purpose](#purpose) |
+| Use Cases | [Use Cases](#use-cases) |
+| Fields | [Fields](#fields) |
+| Example | [Example](#example) |
+| Cost | [Cost](#cost) |
+| Limits | [Limits](#limits) |
 
 ## Purpose
 
-3D shadows use `RayLight3D`, `PointLight3D`, and `SpotLight3D`.
-
-Meshes cast with `cast_shadows = true`.
-
-Meshes receive with `receive_shadows = true`.
-
-Lights cast with `cast_shadows = true`.
+3D shadows let lights be occluded by meshes so a scene gains depth and readable form instead of flat lighting. `RayLight3D`, `PointLight3D`, and `SpotLight3D` each cast when `cast_shadows = true`; a mesh casts when its own `cast_shadows = true` and catches shadows when `receive_shadows = true`. Tune `shadow_strength`, `shadow_depth_bias`, and `shadow_normal_bias` to balance shadow darkness against artifacts.
 
 ## Use Cases
 
-- outdoor sun shadows from `RayLight3D`
-- local lamp shadows from `PointLight3D`
-- cone shadows from `SpotLight3D`
-- bias tuning for acne or detached shadows
+- Outdoor sun or moon: one `RayLight3D` with `cast_shadows = true` casting cascaded shadows across a broad scene.
+- Local lamps and torches: `PointLight3D` shadows (six layers per light, so keep them scarce).
+- Flashlights and stage lights: `SpotLight3D` cone shadows (one layer per shadowed light).
+- Fixing shadow acne: raise `shadow_depth_bias`, or raise `shadow_normal_bias` for grazing-angle acne.
+- Reattaching floating shadows: lower `shadow_depth_bias` / `shadow_normal_bias` when contact edges detach from casters.
+- Per-mesh control: toggle `cast_shadows` and `receive_shadows` so, for example, a glowing emitter lights the scene without shadowing itself.
 
 ## Fields
 

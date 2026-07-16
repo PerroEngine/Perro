@@ -11,21 +11,64 @@
 
 ## Purpose
 
-Use ``.pskel2d` / `.pskel3d` Formats` when this feature, type group, file format, or workflow appears in game code or assets.
+`.pskel2d` and `.pskel3d` store bone rest data as text so you can hand-author or tool-generate a rig without a full glTF export. Each bone has a parent index and a local rest transform; the file loads straight into `Skeleton2D.bones` or `Skeleton3D.bones`. Use these when you want a lightweight, diff-friendly rig for cutout characters, limbs, ropes, or props that `.panim` bone tracks and IK targets then pose.
 
 ## Use Cases
 
-Use the types, APIs, file formats, and workflows in this doc when the feature matches the game system you are building. Prefer `ctx.run` for runtime state, `ctx.res` for resource/data access, and `ctx.ipt` for input state.
+- 2D cutout character: a `Hip -> Spine -> UpperArm -> LowerArm -> Hand` chain with `parent` indices and `rest_pos`, loaded into `Skeleton2D` for paper-doll animation.
+- Foot/hand IK: point an `IKTarget2D` at the skeleton with `bone = 4` and `chain_length = 3` so the last three bones reach a target.
+- Simple 3D limb or tail rig: a `Hip -> Spine -> Head` chain in `.pskel3d` with quaternion `rest_rot` (or `rest_rot_deg` Euler) driven by `.panim` bone tracks.
+- Tool-exported rigs: generate `.pskel*` text from an editor, then bake to binary `PSKEL` v1 in static builds by rerunning the static compiler.
+- Runtime-generated bones: build a `Vec<Bone2D>`/`Vec<Bone3D>` from bytes with `skeleton_load_bones_2d_from_bytes!` / `skeleton_load_bones_3d_from_bytes!` for procedural or modded rigs.
 
 ## Example
 
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let dt = delta_time!(ctx.run);
-        let _ = dt;
-    }
-});
+Author `res://rigs/arm.pskel2d` (bones in file order, `-1` = root):
+
+```text
+[bone "Hip"]
+    parent = -1
+    rest_pos = (0, 0)
+[/bone]
+
+[bone "Spine"]
+    parent = 0
+    rest_pos = (0, 24)
+[/bone]
+
+[bone "UpperArm"]
+    parent = 1
+    rest_pos = (18, 8)
+[/bone]
+
+[bone "LowerArm"]
+    parent = 2
+    rest_pos = (24, 0)
+[/bone]
+
+[bone "Hand"]
+    parent = 3
+    rest_pos = (18, 0)
+[/bone]
+```
+
+Load it into a `Skeleton2D` and attach a 3-bone IK chain to the hand:
+
+```text
+[Rig2D]
+    [Skeleton2D]
+        skeleton = "res://rigs/arm.pskel2d"
+    [/Skeleton2D]
+[/Rig2D]
+
+[HandTarget]
+parent = @Rig2D
+    [IKTarget2D]
+        skeleton = @Rig2D
+        bone = 4
+        chain_length = 3
+    [/IKTarget2D]
+[/HandTarget]
 ```
 
 ## Reference

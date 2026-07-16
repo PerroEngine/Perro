@@ -11,21 +11,52 @@
 
 ## Purpose
 
-Use `Materials Guide` when this feature, type group, file format, or workflow appears in game code or assets.
+This guide covers the whole material workflow: author a `.pmat` (or use a glTF material), get a `MaterialID` in scripts, assign it on `MeshInstance3D`/`MultiMeshInstance3D`, and mutate or generate materials at runtime. Materials decide how surfaces react to light, so this is where you set a prop's color, metalness, roughness, transparency, or hook in a custom shader. It also explains glTF sub-asset addressing so one `.glb` can supply both mesh and material without unpacking.
 
 ## Use Cases
 
-Use the types, APIs, file formats, and workflows in this doc when the feature matches the game system you are building. Prefer `ctx.run` for runtime state, `ctx.res` for resource/data access, and `ctx.ipt` for input state.
+- Skinned character with distinct body parts: `surfaces = [...]` on `MeshInstance3D`, one `.pmat` per surface (body, eyes) plus per-surface `overrides` like `roughness` or `shade_flat`.
+- Shared material across many props: `material_load!`/`material_reserve!` returns one `MaterialID` reused by every instance through the source cache.
+- Damage or team-color flash: `material_get_data!` then `material_write!` to swap `base_color_factor` at runtime.
+- Procedural or downloaded surfaces: `material_create!` for a transient `Material3D::Standard`, or `material_create_from_bytes!` for in-memory `.pmat`/glTF bytes.
+- Pull a material out of an imported model: `res://models/robot.glb:mat[0]` on the `material` field, no separate file.
+- Custom look with live textures: a `custom` material binding `create_from_rgba` textures via `CustomMaterialImage3D::named_texture`, read in-shader with `custom_image_sample`.
 
 ## Example
 
+Author `res://materials/crate.pmat`:
+
+```txt
+type = "standard"
+
+base_color_factor = (0.8, 0.2, 0.2, 1.0)
+metallic_factor = 0.1
+roughness_factor = 0.7
+alpha_mode = "OPAQUE"
+double_sided = false
+```
+
+Assign it to a mesh surface in a scene:
+
+```scn
+[Crate]
+    [MeshInstance3D]
+        mesh = "res://models/crate.glb:mesh[0]"
+        material = "res://materials/crate.pmat"
+    [/MeshInstance3D]
+[/Crate]
+```
+
+Load it, then dim its roughness at runtime:
+
 ```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let dt = delta_time!(ctx.run);
-        let _ = dt;
+let mat = material_load!(res, "res://materials/crate.pmat");
+if let Some(mut mat_data) = material_get_data!(res, mat) {
+    if let Material3D::Standard(params) = &mut mat_data {
+        params.roughness_factor = 0.2;
     }
-});
+    let _ = material_write!(res, mat, mat_data);
+}
 ```
 
 ## Reference

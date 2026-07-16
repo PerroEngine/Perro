@@ -11,22 +11,43 @@
 
 ## Purpose
 
-Use `Animation` when this feature, type group, file format, or workflow appears in game code or assets.
+Perro animation has two resource files and two scene nodes that together let you play authored motion instead of scripting transforms by hand. Use a single `.panim` clip through an `AnimationPlayer` for one-off motion (a door, a chest, a taunt), or mix many clips through a `.panimtree` graph and an `AnimationTree` node when a character needs speed blends and aim layers. This page is the map that tells you which of the four pieces to reach for.
 
 ## Use Cases
 
-Use the types, APIs, file formats, and workflows in this doc when the feature matches the game system you are building. Prefer `ctx.run` for runtime state, `ctx.res` for resource/data access, and `ctx.ipt` for input state.
+- One-shot prop or UI motion: `AnimationPlayer` with a single `.panim` and `playback = once` for a door swing or reward popup.
+- Looping ambient motion: `AnimationPlayer` with `playback = loop` for a spinning fan or bobbing pickup.
+- Full character locomotion: `AnimationTree` + `.panimtree` blending `Idle`/`Run`/`Aim` slots, driven live with `anim_tree_set_weight!`.
+- Rebinding one clip to different rigs: reuse the same `.panim` object name (`@Hero`) but point `bindings` at a different scene node per slot entry.
+- Scripted playback control: `anim_player_play!`, `anim_player_seek_frame!`, and `anim_tree_play_slot!` start, scrub, and retime clips from gameplay code.
 
 ## Example
 
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let dt = delta_time!(ctx.run);
-        let _ = dt;
-    }
-});
+A single looping clip driven by an `AnimationPlayer`:
+
+```ini
+[PlayerRoot]
+    [Node3D/]
+[/PlayerRoot]
+
+[IdlePlayer]
+    [AnimationPlayer]
+        animation = "res://animations/idle.panim"
+        bindings = { Hero = @PlayerRoot }
+        playback = loop
+    [/AnimationPlayer]
+[/IdlePlayer]
 ```
+
+```rust
+let clip = animation_load!(res, "res://animations/idle.panim");
+let _ = anim_player_set_clip!(ctx, player, clip);
+let _ = anim_player_bind!(ctx, player, "Hero", hero);
+let _ = anim_player_seek_frame!(ctx, player, 0);
+let _ = anim_player_play!(ctx, player);
+```
+
+For the multi-clip blend path, see the `AnimationTree` section below and [`.panimtree` Format](panimtree.md).
 
 ## Reference
 

@@ -4,8 +4,10 @@
 
 | Header | Link |
 | --- | --- |
-| Overview | [Overview](#overview) |
+| Purpose | [Purpose](#purpose) |
+| Use Cases | [Use Cases](#use-cases) |
 | Context | [Context](#context) |
+| Practical Example | [Practical Example](#practical-example) |
 | API Reference | [API Reference](#api-reference) |
 | `apply_force_2d` | [`apply_force_2d`](#apply_force_2d) |
 | `get_gravity` | [`get_gravity`](#get_gravity) |
@@ -76,15 +78,69 @@
 | `physics_pause` | [`physics_pause`](#physics_pause) |
 | `physics_is_paused` | [`physics_is_paused`](#physics_is_paused) |
 
-## Overview
+## Purpose
 
-This runtime module belongs to `ctx.run` and documents physics calls.
+The physics module is how gameplay both drives and interrogates the physics
+world. On the driving side it moves character bodies (`move_and_slide`,
+`apply_gravity`) and pushes rigid bodies with forces and impulses. On the query
+side it casts rays and shapes for line-of-sight, ground checks, and hit-scan
+weapons, and reports contacts. It also carries trajectory solvers for aiming
+lobbed projectiles and global/per-body gravity controls. Both 2D and 3D
+variants exist for every core operation.
+
+Character-body helpers keep you out of the raw solver: `move_and_slide` sweeps a
+motion vector and slides along walls, while `apply_gravity` integrates fall
+speed and reports grounding — you supply intent, the engine handles the sweep.
+
+## Use Cases
+
+- Platformer / character controller: slide along walls with `physics_move_and_slide_3d!(ctx.run, body, motion)` and fall with grounding via `physics_apply_gravity_3d!(ctx.run, body, dt)`.
+- Hit-scan weapon or AI line-of-sight: `ctx.run.Physics().raycast_3d(origin, dir, max_distance)` returns the first `PhysicsRayHit3D`.
+- Knockback, jump impulse, explosion push: `apply_impulse!(ctx.run, body, impulse)` for an instant kick, `apply_force!` for sustained force (both dispatch to 2D or 3D by the vector type).
+- Ground / ledge / wall probe: a short raycast or `shape_cast_3d` in the desired direction.
+- Aim a grenade or basketball arc: `ctx.run.Physics().solve_launch_velocity_3d(...)` (or `solve_velocity_to_target_3d`) computes the throw velocity; `predict_body_3d` previews the path.
+- Floaty jumps or a low-gravity zone: `ctx.run.Physics().set_body_gravity_scale(body, 0.5)`.
+- Pause the simulation for a menu or cutscene: `physics_pause!(ctx.run, true)`.
+- React to collisions: read `physics_contacts_3d!(ctx.run, body)` and respond (damage, bounce, stick).
 
 ## Context
 
 - Script context path: `ctx.run`
 - Module access: `ctx.run.Physics()`
 - Lifecycle examples stay inside `lifecycle!` because script hooks get `API` from the macro expansion.
+
+## Practical Example
+
+A side-scroller character controller: read held movement input, slide the body
+horizontally, and let engine gravity handle falling and landing. `on_jump` fires
+an upward impulse when the jump action is pressed.
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        // Clamp so a frame spike cannot fling the body through a wall.
+        let dt = delta_time_capped!(ctx.run, 0.1);
+
+        let mut motion = Vector3::ZERO;
+        if action_down!(ctx.ipt, "move_right") {
+            motion.x += 6.0 * dt;
+        }
+        if action_down!(ctx.ipt, "move_left") {
+            motion.x -= 6.0 * dt;
+        }
+
+        // Slide along walls instead of stopping dead on contact.
+        physics_move_and_slide_3d!(ctx.run, ctx.id, motion);
+
+        // Engine gravity + ground detection, run separately from the slide.
+        let _ = physics_apply_gravity_3d!(ctx.run, ctx.id, dt);
+
+        if action_pressed!(ctx.ipt, "jump") {
+            apply_impulse!(ctx.run, ctx.id, Vector3::new(0.0, 8.0, 0.0));
+        }
+    }
+});
+```
 
 ## API Reference
 

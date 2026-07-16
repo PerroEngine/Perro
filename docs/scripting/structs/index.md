@@ -25,19 +25,14 @@ This section replaces the old math-only page because the exported structs are no
 
 ## Use Cases
 
-Struct docs describe public shape for values that appear in APIs, node fields, resources, renderer data, physics data, audio data, and accessibility data.
+- Move and place 2D nodes: `Vector2` and `Transform2D`.
+- Aim, orbit, and rotate in 3D: `Vector3`, `Quaternion`, and `Transform3D`.
+- Address grids and chunks with integer coordinates: `IVector2` / `IVector3` (signed) and `UVector2` / `UVector3` (unsigned).
+- Color and tint UI, sprites, and lights: `Color`.
+- Filter collisions, rendering, and audio by layer: `BitMask`.
+- Pass packed math or shader data: `Matrix<ROWS, COLS, T>` for row-major values, `Matrix2` / `Matrix3` / `Matrix4` for fast glam-backed operations.
 
-Some structs are common script-facing values. Some are mostly internal or built-in owned values. They still get docs because they can appear in public types, serialized data, node/resource state, return values, or nested structs.
-
-Use `Vector2`/`Transform2D` for 2D node movement.
-
-Use `IVector2`/`IVector3` for signed grid/chunk coordinates.
-
-Use `Vector3`/`Quaternion`/`Transform3D` for 3D placement and aiming.
-
-Use `Matrix<2, 2>`/`Matrix<3, 3>`/`Matrix<4, 4>` for row-major math data and `Matrix2`/`Matrix3`/`Matrix4` for glam-backed fast operations.
-
-Use generic structs for shared data that is not tied to one spatial dimension.
+Some of these are everyday script-facing values; others are mostly built-in owned data. They are all documented because they can appear in public types, serialized data, node/resource state, return values, or nested structs.
 
 ## Examples
 

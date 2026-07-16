@@ -4,8 +4,10 @@
 
 | Header | Link |
 | --- | --- |
-| Overview | [Overview](#overview) |
+| Purpose | [Purpose](#purpose) |
+| Use Cases | [Use Cases](#use-cases) |
 | Context | [Context](#context) |
+| Practical Example | [Practical Example](#practical-example) |
 | API Reference | [API Reference](#api-reference) |
 | `set_title` | [`set_title`](#set_title) |
 | `set_size` | [`set_size`](#set_size) |
@@ -26,9 +28,21 @@
 | `window_get_active_refresh_rate` | [`window_get_active_refresh_rate`](#window_get_active_refresh_rate) |
 | `close_app` | [`close_app`](#close_app-1) |
 
-## Overview
+## Purpose
 
-This runtime module belongs to `ctx.run` and documents window calls.
+The window module is how a game applies its display and performance settings at
+runtime. This is the code behind a video-options menu: resolution, windowed vs.
+fullscreen, frame-rate caps, and the window title bar. It also owns the "quit to
+desktop" request that a pause menu needs.
+
+## Use Cases
+
+- Apply video settings from an options menu: switch display mode with `window_set_mode!(ctx.run, WindowMode::BorderlessFullscreen)` (or `set_windowed` / `set_borderless_fullscreen`) and resolution with `window_set_size!(ctx.run, 1920, 1080)`.
+- Cap FPS to save battery or reduce heat/coil whine: `window_set_frame_rate_limit!(ctx.run, 60.0)`.
+- Sync frame rate to the monitor: `ctx.run.Window().set_refresh_rate_cap()`, reading the panel rate back with `window_get_active_refresh_rate!(ctx.run)`.
+- Uncap for a benchmark or stress scene: `ctx.run.Window().set_unlimited_frame_rate()`.
+- Show the current level or save-slot name in the title bar: `window_set_title!(ctx.run, "Perro - Level 3")`.
+- Quit to desktop from a pause menu button: `close_app!(ctx.run)` queues an app-close request for the app layer.
 
 ## Context
 
@@ -38,12 +52,22 @@ This runtime module belongs to `ctx.run` and documents window calls.
 
 ## Practical Example
 
+Apply saved video settings once at startup, then let a pause-menu handler quit
+the game.
+
 ```rust
 lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        window_set_title!(ctx.run, "Perro");
+    fn on_init(&self, ctx: &mut ScriptContext<'_, API>) {
+        window_set_title!(ctx.run, "Perro - Main Menu");
+        ctx.run.Window().set_borderless_fullscreen();
         window_set_frame_rate_limit!(ctx.run, 144.0);
-        // close_app!(ctx.run);
+    }
+});
+
+methods!({
+    // Wired to a "Quit" button's pressed signal.
+    fn on_quit_pressed(&self, ctx: &mut ScriptContext<'_, API>) {
+        close_app!(ctx.run);
     }
 });
 ```

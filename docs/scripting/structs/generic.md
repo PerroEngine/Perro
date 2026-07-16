@@ -4,6 +4,8 @@
 
 | Header                | Link                                            |
 | --------------------- | ----------------------------------------------- |
+| Purpose               | [Purpose](#purpose)                             |
+| Use Cases             | [Use Cases](#use-cases)                         |
 | Struct Table          | [Struct Table](#struct-table)                   |
 | Variant Support       | [Variant Support](#variant-support)             |
 | Matrix Structs        | [Matrix Structs](#matrix-structs)               |
@@ -31,6 +33,18 @@
 | `ConstParamValue`                                                          | enum: `F32`, `I32`, `Bool`, `Vec2`, `Vec3`, `Vec4`.                 | Shader/material/post-process constant values.           |
 | `IKTargetParams`, `IKTargetSolver`                                         | IK target fields plus solver enum.                                  | Built-in skeletal IK node config.                       |
 | `Unit`, `UnitVector2`, `UnitVector3`, `UnitVector4`                        | Values clamped to `0.0..=1.0`; scalar and vector components store as `u8`. | Unit controls + packed color/weight data.              |
+
+## Purpose
+
+Generic structs are the shared, dimension-independent value types that appear across rendering, physics, audio, accessibility, and math: color, layer masks, matrices, audio material data, post-process stacks, and packed unit values. They show up as node fields, resource data, and API parameters, so each is documented even when it is mostly a built-in owned value rather than something you construct every frame.
+
+## Use Cases
+
+- Tint and color UI, sprites, and lights: `Color`, built with `Color::from_hex(...)` or from rgba components.
+- Filter what interacts across collision, render, and audio systems: `BitMask` and `CollisionPolicy` layers/masks (see [BitMask](../bitmask.md)).
+- Drive a post-process look — bloom, tonemap, color grade: `PostProcessSet` / `PostProcessEntry` applied with `post_processing_add!` / `post_processing_remove!` / `post_processing_clear!`.
+- Support colorblind players and other display needs: `VisualAccessibilitySettings` / `ColorBlindFilter` toggled with `enable_colorblind_filter!` / `disable_colorblind_filter!`.
+- Pass packed math or shader constants: `Matrix<ROWS, COLS, T>`, the glam-backed `Matrix2` / `Matrix3` / `Matrix4`, and `ConstParamValue`.
 
 ## Variant Support
 

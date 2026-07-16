@@ -6,31 +6,56 @@
 | --- | --- |
 | Purpose | [Purpose](#purpose) |
 | Use Cases | [Use Cases](#use-cases) |
-| Example | [Example](#example) |
+| Practical Example | [Practical Example](#practical-example) |
 | Reference | [Reference](#reference) |
 
 ## Purpose
 
-Use `Water Bodies` when this feature, type group, file format, or workflow appears in game code or assets.
+`WaterBody2D` and `WaterBody3D` add a simulated water surface that renders, runs a GPU height simulation, pushes buoyancy on rigid bodies, and reports enter/exit overlaps like an area. One node covers the look of the water, the float physics, and the "is the player in the water" question for pools, rivers, lakes, and ocean patches.
 
 ## Use Cases
 
-Use the types, APIs, file formats, and workflows in this doc when the feature matches the game system you are building. Prefer `ctx.run` for runtime state, `ctx.res` for resource/data access, and `ctx.ipt` for input state.
+- Floating and drifting props (barrels, boats, debris): drop a `WaterBody3D` and tune `buoyancy`, `drag`, and `flow`; each `RigidBody3D`'s `density` sets how high it rides.
+- Swim state, drowning damage, or muffled audio when a character is submerged: connect the water's `Entered` / `Occupied` / `Exited` signals (named `<WaterNodeName>_Entered`, etc., like `Area2D`/`Area3D`) with `signal_connect!`.
+- Rivers that carry objects downstream: `idle_mode = "river"` with a non-zero `flow`.
+- Splashes from blasts and abilities: a `PhysicsForceEmitter3D` / `PhysicsForceEmitter2D` with `affect_water = true` turns its force events into wakes.
+- Natural shorelines and banks: static collision shapes that pass the water mask cut coastline holes and damp waves against the edge.
 
-## Example
+## Practical Example
 
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let dt = delta_time!(ctx.run);
-        let _ = dt;
-    }
-});
+A lake with a wooden crate that floats. The `WaterBody3D` supplies the surface and buoyancy; the crate is an ordinary `RigidBody3D` whose `density` controls buoyancy.
+
+```text
+[Lake]
+    [WaterBody3D]
+        shape = { type="cube", size=(64, 8, 64) }
+        idle_mode = "chop"
+        buoyancy = 1.5
+        drag = 0.35
+        [Node3D/]
+    [/WaterBody3D]
+[/Lake]
+
+[Crate]
+    [RigidBody3D]
+        density = 0.6
+        [Node3D]
+            position = (0, 6, 0)
+        [/Node3D]
+    [/RigidBody3D]
+[/Crate]
+
+[CrateShape]
+parent = @Crate
+    [CollisionShape3D]
+        shape = { type = cube, size = (1, 1, 1) }
+    [/CollisionShape3D]
+[/CrateShape]
 ```
 
-## Reference
+The crate drops, sinks until buoyancy balances gravity, then bobs with the surface. Lower `density` floats higher; raise it above the water's effective density and the crate sinks.
 
-# Water Bodies
+## Reference
 
 `WaterBody2D` and `WaterBody3D` define simulated water surfaces.
 

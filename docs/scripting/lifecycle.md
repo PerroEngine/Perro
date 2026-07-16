@@ -4,10 +4,24 @@
 
 | Header | Link |
 | --- | --- |
+| Purpose | [Purpose](#purpose) |
+| Use Cases | [Use Cases](#use-cases) |
 | Why `lifecycle!` Exists | [Why `lifecycle!` Exists](#why-lifecycle-exists) |
 | Hook Signatures | [Hook Signatures](#hook-signatures) |
 | Hooks | [Hooks](#hooks) |
 | Examples | [Examples](#examples) |
+
+## Purpose
+
+Lifecycle hooks are the engine-called entry points of a script: setup, per-frame logic, fixed-step simulation, and cleanup. Instead of registering callbacks by hand, you declare `on_init`, `on_update`, and friends inside `lifecycle!`, and the engine runs each one at the right moment for the node the script is attached to. This is where almost all gameplay code starts.
+
+## Use Cases
+
+- One-time setup for a node — cache child ids, load its texture, seed `#[State]`: `on_init`.
+- Setup that needs other nodes or scripts to exist first — link to a game manager, resolve sibling refs: `on_all_init`.
+- Per-frame gameplay — read input, move the player, update animation and HUD: `on_update`, scaling motion by `delta_time!`.
+- Frame-rate-independent simulation — custom projectile or rope physics that must be deterministic: `on_fixed_update` with `fixed_delta_time!`.
+- Cleanup before a node leaves the scene — stop its sounds, disconnect signals, release references: `on_removal`.
 
 ## Why `lifecycle!` Exists
 

@@ -4,11 +4,37 @@
 
 | Header | Link |
 | --- | --- |
+| Purpose | [Purpose](#purpose) |
+| Use Cases | [Use Cases](#use-cases) |
 | Abstraction | [Abstraction](#abstraction) |
 | LAN | [LAN](#lan) |
 | Steam | [Steam](#steam) |
 | Frame Loop | [Frame Loop](#frame-loop) |
 | Limits | [Limits](#limits) |
+
+## Purpose
+
+The `multiplayer` layer runs a session over LAN or Steam behind one API, so game
+code never branches on the transport. It owns session setup, player slots,
+heartbeats, and disconnects, while your game keeps full control of the message
+format: payloads are opaque bytes you encode and decode yourself. Pick a backend
+once at host/join time; everything after that (`poll`, `send`, `drain_events`) is
+identical.
+
+## Use Cases
+
+- Backend-agnostic co-op/versus: write the session once, then ship LAN and Steam
+  builds by choosing `NetworkBackend::Lan` or `NetworkBackend::Steam` at host time.
+- LAN party: host on the local network with `host_lan()`, discover games with
+  `refresh_lobbies(NetworkBackend::Lan, ...)`, and join a found or typed address.
+- Steam friends lobby: host a `LobbyPrivacy::Friends` lobby and let friends join
+  through the Steam lobby list and invites.
+- Host-authoritative sync: the host broadcasts snapshots with `send(bytes, true)`
+  and reads each client's input from `NetEvent::Payload { from_slot, .. }`.
+- Slot lifecycle handling: react to `SlotAssigned`, `PeerReady`, `PeerLeft`, and
+  `Disconnected` to spawn, seat, and remove players.
+- Privacy-respecting LAN: gate LAN access behind a saved `LanConsent` choice
+  prompted once per game.
 
 ## Abstraction
 

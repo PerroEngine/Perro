@@ -4,12 +4,25 @@
 
 | Header                   | Link                                                  |
 | ------------------------ | ----------------------------------------------------- |
+| Purpose                  | [Purpose](#purpose)                                   |
+| Use Cases                | [Use Cases](#use-cases)                               |
 | Why `methods!` Exists    | [Why `methods!` Exists](#why-methods-exists)          |
 | Method Shape             | [Method Shape](#method-shape)                         |
 | Direct Calls             | [Direct Calls](#direct-calls)                         |
 | Runtime Dispatch         | [Runtime Dispatch](#runtime-dispatch)                 |
 | Typed Params And Returns | [Typed Params And Returns](#typed-params-and-returns) |
 | Variant Decode           | [Variant Decode](#variant-decode)                     |
+
+## Purpose
+
+`methods!` gives a script named behavior methods you can call directly from its own lifecycle hooks or dynamically from other scripts. It is how a node gets an API — `apply_damage`, `toggle`, `interact` — so gameplay reads as method calls instead of scattered flag-poking. Direct calls stay ordinary typed Rust; cross-script calls go through `call_method!` and `Variant`.
+
+## Use Cases
+
+- Give a node a callable action its own logic invokes (an enemy's `apply_damage`, a door's `toggle`): declare it in `methods!` and call `self.apply_damage(ctx, amount)`.
+- Trigger behavior on another node without knowing its concrete script type (a switch opening whatever it targets): `call_method!(ctx.run, target, method!("open"), params![])`.
+- Pass structured gameplay data across a call (a `HitInfo`, an item id, a damage amount): typed params and returns that derive `Variant`.
+- Get a result back the caller acts on (did the hit connect, how much ammo is left): decode the returned `Variant` with `as_bool()`, `as_i32()`, or `parse::<T>()`.
 
 ## Why `methods!` Exists
 

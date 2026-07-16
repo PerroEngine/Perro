@@ -2,19 +2,26 @@
 
 ## Page Map
 
-- [Purpose](#purpose)
-- [Config](#config)
-- [Render Path](#render-path)
-- [Surface Scope](#surface-scope)
-- [Resize + Fallback](#resize-fallback)
+| Header | Link |
+| --- | --- |
+| Purpose | [Purpose](#purpose) |
+| Use Cases | [Use Cases](#use-cases) |
+| Config | [Config](#config) |
+| Render Path | [Render Path](#render-path) |
+| Surface Scope | [Surface Scope](#surface-scope) |
+| Resize + Fallback | [Resize + Fallback](#resize-fallback) |
 
 ## Purpose
 
-SSAO adds short-range ambient shadow from visible scene depth.
+SSAO (screen-space ambient occlusion) darkens contact areas such as corners, crevices, and where objects meet the ground, using the scene depth buffer. It only dims ambient light, so direct lights and emissive surfaces stay unchanged and the effect reads as subtle grounding rather than a color shift. It adds depth and weight to a scene without any extra authored geometry.
 
-It affects ambient light only.
+## Use Cases
 
-Direct lights + emissive output stay unchanged.
+- Grounding props and characters: a soft contact darkening where a crate or a foot meets the floor, reconstructed from the opaque depth prepass.
+- Readable interiors: wall junctions and corners gain shading so rooms do not look flat.
+- Scalable quality: pick `ssao = "off" | "low" | "medium" | "high" | "ultra"` in `project.toml` to trade cost for resolution and sample count.
+- Low-end GPU targets: `"off"` binds a white fallback so ambient light stays unchanged.
+- Consistent across draw types: standard meshes and custom multimesh standard-lit surfaces both sample the result, while unlit and emissive terms are left alone.
 
 ## Config
 

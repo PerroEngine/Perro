@@ -11,19 +11,49 @@
 
 ## Purpose
 
-Use `Post Processing` when this feature, type group, file format, or workflow appears in game code or assets.
+Post-processing runs an ordered chain of full-screen effects after the scene renders, letting you restyle and react to the frame without touching individual materials. Configure it per camera on `Camera2D`/`Camera3D` or globally through `ResourceWindow`. Because effects are named and addressable, gameplay can turn them on, off, or animate their strength, which is how you build hit-flashes, low-health tunnel vision, and cinematic color grades.
 
 ## Use Cases
 
-Use the types, APIs, file formats, and workflows in this doc when the feature matches the game system you are building. Prefer `ctx.run` for runtime state, `ctx.res` for resource/data access, and `ctx.ipt` for input state.
+- Low-health feedback: a `vignette` that tightens plus `saturate` toward grayscale as HP drops, driven by mutating the named effects with `post_processing.get_mut(...)`.
+- Hit flash / damage tint: a `color_filter` whose `strength` you ramp for a frame or two on impact.
+- Retro or dream looks: `crt` scanlines, `pixelate`, or `warp` for flashbacks and CRT screens.
+- Cinematic grade: `color_grade` (`contrast`, `temperature`, `vibrance`, `lift`/`gain`) plus a film `lut3d` for a consistent mood.
+- HDR glow and auto-exposure: `bloom` on bright emitters with an `exposure` effect (`auto_exposure = true`) so dark caves brighten and sunlit exteriors settle.
+- Custom screen effects: a `custom` WGSL pass implementing `post_process(uv, color, depth)`, e.g. depth-based fog or edge outlines.
 
 ## Example
 
+Add a bloom + vignette chain to a 3D camera in a scene:
+
+```
+[MainCamera]
+    [Camera3D]
+        active = true
+        post_processing = [
+            { type = "bloom", strength = 0.7, threshold = 0.75, radius = 1.5 },
+            { type = "vignette", strength = 0.6, radius = 0.55, softness = 0.25 }
+        ]
+    [/Camera3D]
+[/MainCamera]
+```
+
+Add a named damage-tint effect from a script and pulse it on a hit:
+
 ```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let dt = delta_time!(ctx.run);
-        let _ = dt;
+with_node_mut!(ctx.run, Camera3D, cam_id, |cam| {
+    cam.post_processing.add(
+        "damage",
+        PostProcessEffect::ColorFilter { color: [1.0, 0.2, 0.2], strength: 0.0 },
+    );
+});
+
+// On taking damage, raise the strength for a brief flash:
+with_node_mut!(ctx.run, Camera3D, cam_id, |cam| {
+    if let Some(PostProcessEffect::ColorFilter { strength, .. }) =
+        cam.post_processing.get_mut("damage")
+    {
+        *strength = 0.6;
     }
 });
 ```

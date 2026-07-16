@@ -6,35 +6,65 @@
 | --- | --- |
 | Purpose | [Purpose](#purpose) |
 | Use Cases | [Use Cases](#use-cases) |
-| Example | [Example](#example) |
+| Practical Example | [Practical Example](#practical-example) |
 | Reference | [Reference](#reference) |
+| Endpoint | [Endpoint](#endpoint) |
+| NetworkWorld | [NetworkWorld](#networkworld) |
 
 ## Purpose
 
-Use `UDP` when this feature, type group, file format, or workflow appears in game code or assets.
+UDP sends small, connectionless datagrams with no delivery or ordering
+guarantees. That is exactly what you want for fast-changing state where a lost
+packet is stale a frame later anyway: the next update supersedes it, so
+retransmitting would only add latency. Use it for real-time position and input
+sync, and keep each packet small.
 
 ## Use Cases
 
-Use the types, APIs, file formats, and workflows in this doc when the feature matches the game system you are building. Prefer `ctx.run` for runtime state, `ctx.res` for resource/data access, and `ctx.ipt` for input state.
+- Fast position sync: broadcast player transforms every frame where a dropped
+  packet is fine because the next one replaces it.
+- Client input datagrams: send a compact input snapshot per tick with `send_to`.
+- Unreliable world snapshots: a host sends state to all peers via a
+  `NetworkWorld` UDP endpoint, dropping stragglers instead of stalling.
+- Discovery / heartbeat pings: cheap fire-and-forget probes on a known port.
+- Latency-first custom netcode: build your own reliability layer only over the
+  packets that actually need it, leaving the rest lossy.
 
-## Example
+## Practical Example
 
 ```rust
+use std::cell::RefCell;
+
+thread_local! {
+    static NET: RefCell<Option<NetworkWorld>> = RefCell::new(None);
+}
+
 lifecycle!({
+    fn on_init(&self, _ctx: &mut ScriptContext<'_, API>) {
+        let mut world = NetworkWorld::new();
+        if world.bind_udp("127.0.0.1:7777").is_ok() {
+            NET.with(|net| *net.borrow_mut() = Some(world));
+        }
+    }
+
     fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let dt = delta_time!(ctx.run);
-        let _ = dt;
+        NET.with(|net| {
+            let mut net = net.borrow_mut();
+            let Some(world) = net.as_mut() else { return; };
+            // Drain up to 16 packets per socket, 1200 bytes each.
+            for net_event in world.poll_events(16, 1200) {
+                if matches!(net_event.event, NetEvent::UdpPacket { .. }) {
+                    emit_net_event!(ctx.run, net_event.event);
+                }
+            }
+        });
     }
 });
 ```
 
 ## Reference
 
-# UDP
-
-UDP lives in `perro_api::networking`.
-
-Use for small unreliable packets.
+UDP lives in `perro_api::networking`. Use it for small unreliable packets.
 
 ## Endpoint
 
@@ -45,7 +75,7 @@ let b = UdpEndpoint::bind("127.0.0.1:0")?;
 a.send_to(b"ping", b.local_addr())?;
 ```
 
-Poll:
+Receive with `recv_from`, which returns `None` when no packet is waiting:
 
 ```rust
 if let Some(packet) = b.recv_from(1200)? {
@@ -53,7 +83,11 @@ if let Some(packet) = b.recv_from(1200)? {
 }
 ```
 
+`max_bytes` bounds the read buffer; datagrams larger than it are truncated.
+
 ## NetworkWorld
+
+`NetworkWorld` manages endpoints behind id handles and polls them together:
 
 ```rust
 let mut world = NetworkWorld::new();
@@ -65,3 +99,7 @@ for event in world.poll_events(16, 1200) {
     }
 }
 ```
+
+`poll_events(max_per_socket, max_bytes)` returns `NetworkEvent` values; read the
+transport event from `event.event`. Send with `world.udp_send_to(endpoint,
+bytes, addr)`.
