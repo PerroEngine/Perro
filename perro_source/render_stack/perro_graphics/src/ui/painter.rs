@@ -156,8 +156,15 @@ pub(crate) trait UiPainter {
 
 /// Per-node cached tessellation output. Reused across rebuilds when the node's
 /// own draw data + viewport are unchanged, so only mutated nodes re-tessellate.
-/// Text nodes (Label/TextEdit) are never cached because they depend on the
-/// shared font atlas pass, which resets each rebuild.
+/// Text nodes cache too: their glyph UVs stay valid for as long as the font
+/// atlas keeps its size, and the whole cache drops whenever
+/// `font_image_size()` differs from the size the cache was built against
+/// (growth doubles the height; epaint's fill>0.8 recreation resets it, so
+/// either event changes the size).
+///
+/// For a world-projected label (`projected_quad`) the cache keeps the
+/// UNPROJECTED tessellation with the quad stripped from `draw`; a camera move
+/// then only re-runs the cheap projection instead of re-layout + re-tessellate.
 ///
 /// Primitives are shared behind `Arc` so reusing an unchanged node is a
 /// refcount bump instead of a deep clone of its vertex/index meshes.
@@ -171,11 +178,44 @@ struct CachedNode {
 /// every node first, then tessellated together once the font atlas is final.
 enum NodeTess {
     Cached,
+    /// Cached unprojected label tessellation; only the projection quad
+    /// changed (or matched), so phase three re-projects a copy.
+    CachedProjected { quad: [[f32; 4]; 4] },
     Staged {
         shapes: Vec<ClippedShape>,
         rotations: Vec<(f32, epaint::Pos2)>,
-        is_text: bool,
     },
+}
+
+/// Draw key used for projected-label cache entries: identical content with
+/// the quad stripped, so camera motion alone still hits the cache.
+fn strip_projected_quad(draw: &UiDraw) -> Option<UiDraw> {
+    if let UiDraw::Label(label) = draw
+        && label.projected_quad.is_some()
+    {
+        let mut stripped = label.clone();
+        stripped.projected_quad = None;
+        Some(UiDraw::Label(stripped))
+    } else {
+        None
+    }
+}
+
+fn deep_clone_primitives(primitives: &[Arc<ClippedPrimitive>]) -> Vec<ClippedPrimitive> {
+    primitives
+        .iter()
+        .map(|primitive| ClippedPrimitive {
+            clip_rect: primitive.clip_rect,
+            primitive: primitive.primitive.clone(),
+        })
+        .collect()
+}
+
+fn retain_nonempty_meshes(primitives: &mut Vec<ClippedPrimitive>) {
+    primitives.retain(|primitive| match &primitive.primitive {
+        Primitive::Mesh(mesh) => !mesh.vertices.is_empty() && !mesh.indices.is_empty(),
+        Primitive::Callback(_) => false,
+    });
 }
 
 pub(crate) struct EpaintUiPainter {
@@ -195,6 +235,10 @@ pub(crate) struct EpaintUiPainter {
     // content-only edit skips the re-sort.
     ordered_nodes: Vec<NodeID>,
     order_signature: Vec<(NodeID, i32)>,
+    // Font-atlas size the node cache was tessellated against; any size change
+    // (growth or epaint's fill-triggered recreation) invalidates every cached
+    // primitive's glyph UVs.
+    node_cache_atlas_size: [usize; 2],
     textures_delta: TexturesDelta,
     last_viewport: [f32; 2],
     paint_revision: u64,
@@ -224,6 +268,7 @@ impl EpaintUiPainter {
             node_cache: AHashMap::new(),
             ordered_nodes: Vec::new(),
             order_signature: Vec::new(),
+            node_cache_atlas_size: [0, 0],
             textures_delta: TexturesDelta::default(),
             last_viewport: [0.0, 0.0],
             paint_revision: u64::MAX,
@@ -285,11 +330,8 @@ impl EpaintUiPainter {
     }
 
     /// Push a single node's shapes plus their per-shape rotation entries.
-    /// Returns true if the node's tessellation touches the shared font atlas
-    /// (text), which forbids caching it across rebuilds.
-    fn push_node_shapes(&mut self, draw: &UiDraw, viewport: [f32; 2]) -> bool {
+    fn push_node_shapes(&mut self, draw: &UiDraw, viewport: [f32; 2]) {
         let shape_start = self.shapes.len();
-        let is_text = matches!(draw, UiDraw::Label(_) | UiDraw::TextEdit(_));
         match draw {
             UiDraw::Panel(panel) => push_panel_shape(panel, viewport, &mut self.shapes),
             UiDraw::ProgressBar(progress) => {
@@ -321,7 +363,6 @@ impl EpaintUiPainter {
         let origin = screen_pivot(rect, viewport);
         self.shape_rotations
             .extend((shape_start..self.shapes.len()).map(|_| (rotation, origin)));
-        is_text
     }
 
     /// True when the cached sorted order is still valid: same node set and same
@@ -375,7 +416,7 @@ impl EpaintUiPainter {
         }
 
         // Reuse per-node cached primitives whose draw data + viewport are
-        // unchanged; only re-tessellate mutated (or text) nodes.
+        // unchanged; only re-tessellate mutated nodes.
         //
         // Two phases: stage every node's shapes first (text layout allocates
         // glyphs into the shared font atlas as it goes), then tessellate once
@@ -385,26 +426,39 @@ impl EpaintUiPainter {
         // wrong texels for a frame.
         let ordered_nodes = std::mem::take(&mut self.ordered_nodes);
         let atlas_size_before = self.fonts.font_image_size();
+        // begin_pass may have recreated the atlas (fill > threshold), and past
+        // rebuilds may have grown it: cached glyph UVs are only valid against
+        // the exact size they were tessellated for.
+        if atlas_size_before != self.node_cache_atlas_size {
+            self.node_cache.clear();
+        }
         let mut staged: Vec<(NodeID, NodeTess)> = Vec::with_capacity(ordered_nodes.len());
         for node in &ordered_nodes {
             let Some(draw) = nodes.get(node) else {
                 continue;
             };
-            let cache_hit = self
-                .node_cache
-                .get(node)
-                .is_some_and(|cached| cached.viewport == viewport && &cached.draw == draw);
-            if cache_hit {
-                staged.push((*node, NodeTess::Cached));
-                continue;
+            if let Some(cached) = self.node_cache.get(node)
+                && cached.viewport == viewport
+            {
+                if cached.draw == *draw {
+                    staged.push((*node, NodeTess::Cached));
+                    continue;
+                }
+                if let Some(stripped) = strip_projected_quad(draw)
+                    && cached.draw == stripped
+                    && let UiDraw::Label(label) = draw
+                    && let Some(quad) = label.projected_quad
+                {
+                    staged.push((*node, NodeTess::CachedProjected { quad }));
+                    continue;
+                }
             }
-            let is_text = self.push_node_shapes(draw, viewport);
+            self.push_node_shapes(draw, viewport);
             staged.push((
                 *node,
                 NodeTess::Staged {
                     shapes: std::mem::take(&mut self.shapes),
                     rotations: std::mem::take(&mut self.shape_rotations),
-                    is_text,
                 },
             ));
         }
@@ -413,17 +467,16 @@ impl EpaintUiPainter {
         if self.fonts.font_image_size() != atlas_size_before {
             self.node_cache.clear();
             for (node, entry) in &mut staged {
-                if !matches!(entry, NodeTess::Cached) {
+                if matches!(entry, NodeTess::Staged { .. }) {
                     continue;
                 }
                 let Some(draw) = nodes.get(node) else {
                     continue;
                 };
-                let is_text = self.push_node_shapes(draw, viewport);
+                self.push_node_shapes(draw, viewport);
                 *entry = NodeTess::Staged {
                     shapes: std::mem::take(&mut self.shapes),
                     rotations: std::mem::take(&mut self.shape_rotations),
-                    is_text,
                 };
             }
         }
@@ -440,34 +493,62 @@ impl EpaintUiPainter {
                         self.primitives.extend(cached.primitives.iter().cloned());
                     }
                 }
-                NodeTess::Staged {
-                    shapes,
-                    rotations,
-                    is_text,
-                } => {
+                NodeTess::CachedProjected { quad } => {
+                    let Some(cached) = self.node_cache.get(&node) else {
+                        continue;
+                    };
+                    let Some(UiDraw::Label(label)) = nodes.get(&node) else {
+                        continue;
+                    };
+                    // Projection mutates vertices, so the frame gets a deep
+                    // copy; the cached unprojected meshes stay pristine.
+                    let mut frame = deep_clone_primitives(&cached.primitives);
+                    project_label_primitives(&mut frame, label.rect, quad, viewport);
+                    retain_nonempty_meshes(&mut frame);
+                    self.primitives.extend(frame.into_iter().map(Arc::new));
+                }
+                NodeTess::Staged { shapes, rotations } => {
                     let mut tessellated = tessellator.tessellate_shapes(shapes);
                     rotate_primitives(&mut tessellated, &rotations);
-                    if let Some(UiDraw::Label(label)) = nodes.get(&node)
-                        && let Some(quad) = label.projected_quad
-                    {
-                        project_label_primitives(&mut tessellated, label.rect, quad, viewport);
-                    }
-                    tessellated.retain(|primitive| match &primitive.primitive {
-                        Primitive::Mesh(mesh) => {
-                            !mesh.vertices.is_empty() && !mesh.indices.is_empty()
+                    let projected_label = match nodes.get(&node) {
+                        Some(UiDraw::Label(label)) => {
+                            label.projected_quad.map(|quad| (label.rect, quad))
                         }
-                        Primitive::Callback(_) => false,
-                    });
+                        _ => None,
+                    };
+                    if let Some((rect, quad)) = projected_label {
+                        retain_nonempty_meshes(&mut tessellated);
+                        // Cache the unprojected tessellation (quad stripped
+                        // from the key) so camera motion re-projects instead
+                        // of re-tessellating.
+                        let unprojected: Vec<Arc<ClippedPrimitive>> =
+                            tessellated.into_iter().map(Arc::new).collect();
+                        let mut frame = deep_clone_primitives(&unprojected);
+                        project_label_primitives(&mut frame, rect, quad, viewport);
+                        retain_nonempty_meshes(&mut frame);
+                        self.primitives.extend(frame.into_iter().map(Arc::new));
+                        if let Some(draw) = nodes.get(&node)
+                            && let Some(stripped) = strip_projected_quad(draw)
+                        {
+                            self.node_cache.insert(
+                                node,
+                                CachedNode {
+                                    draw: stripped,
+                                    viewport,
+                                    primitives: unprojected,
+                                },
+                            );
+                        }
+                        continue;
+                    }
+                    retain_nonempty_meshes(&mut tessellated);
                     // Wrap each primitive in an Arc so the shared copy stored in
                     // the cache and the copy handed to the frame refer to the
                     // same heap mesh; downstream reuse is a refcount bump.
                     let node_primitives: Vec<Arc<ClippedPrimitive>> =
                         tessellated.into_iter().map(Arc::new).collect();
                     self.primitives.extend(node_primitives.iter().cloned());
-                    if is_text {
-                        // Text depends on the shared atlas pass; do not cache it.
-                        self.node_cache.remove(&node);
-                    } else if let Some(draw) = nodes.get(&node) {
+                    if let Some(draw) = nodes.get(&node) {
                         self.node_cache.insert(
                             node,
                             CachedNode {
@@ -481,6 +562,7 @@ impl EpaintUiPainter {
             }
         }
         self.ordered_nodes = ordered_nodes;
+        self.node_cache_atlas_size = self.fonts.font_image_size();
         // Evict cache entries for nodes no longer present.
         if self.node_cache.len() > nodes.len() {
             self.node_cache.retain(|node, _| nodes.contains_key(node));

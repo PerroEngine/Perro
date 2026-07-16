@@ -667,6 +667,150 @@ mod tests {
         }
     }
 
+    fn projected_label_command(quad: [[f32; 4]; 4]) -> UiCommand {
+        UiCommand::UpsertLabel {
+            node: NodeID::from_parts(7, 0),
+            rect: UiRectState {
+                center: [0.0, 0.0],
+                size: [200.0, 60.0],
+                pivot: [0.5, 0.5],
+                rotation_radians: 0.0,
+                z_index: 0,
+            },
+            clip_rect: [0.0, 0.0, 800.0, 600.0],
+            text: Cow::Borrowed("Run"),
+            color: Color::WHITE,
+            font_size: 18.0,
+            font: perro_ui::UiFont::Default,
+            wrap_width: None,
+            h_align: UiTextAlignState::Center,
+            v_align: UiTextAlignState::Center,
+            backdrop_color: Color::TRANSPARENT,
+            corner_radii: UiCornerRadiiState::default(),
+            padding: [0.0; 4],
+            projected_quad: Some(quad),
+            fit_content: true,
+        }
+    }
+
+    fn collect_mesh_vertices(paint: &super::UiPaintFrame<'_>) -> Vec<[f32; 4]> {
+        let mut out = Vec::new();
+        for primitive in paint.primitives {
+            if let epaint::Primitive::Mesh(mesh) = &primitive.primitive {
+                for vertex in &mesh.vertices {
+                    out.push([vertex.pos.x, vertex.pos.y, vertex.uv.x, vertex.uv.y]);
+                }
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn projected_label_camera_move_reprojects_cache_identically_to_fresh() {
+        let quad_a = [
+            [-0.2, 0.1, -2.0, 1.0],
+            [0.225, 0.15, 0.0, 1.0],
+            [0.175, -0.125, 0.0, 1.0],
+            [-0.15, -0.1, 0.0, 1.0],
+        ];
+        let quad_b = [
+            [-0.3, 0.2, 0.0, 1.0],
+            [0.3, 0.2, 0.0, 1.0],
+            [0.25, -0.2, 0.0, 1.0],
+            [-0.25, -0.2, 0.0, 1.0],
+        ];
+
+        // Warm renderer: paint quad A first so quad B goes through the
+        // cached-unprojected reprojection path.
+        let mut warm = UiRenderer::new();
+        warm.submit(projected_label_command(quad_a));
+        warm.prepare_paint([800.0, 600.0]);
+        warm.submit(projected_label_command(quad_b));
+        let warm_paint = warm.prepare_paint([800.0, 600.0]);
+        let warm_vertices = collect_mesh_vertices(&warm_paint);
+
+        // Fresh renderer tessellates quad B from scratch.
+        let mut fresh = UiRenderer::new();
+        fresh.submit(projected_label_command(quad_b));
+        let fresh_paint = fresh.prepare_paint([800.0, 600.0]);
+        let fresh_vertices = collect_mesh_vertices(&fresh_paint);
+
+        assert!(!warm_vertices.is_empty());
+        assert_eq!(warm_vertices, fresh_vertices);
+    }
+
+    #[test]
+    fn unchanged_label_reuses_cached_primitives_across_rebuilds() {
+        let mut renderer = UiRenderer::new();
+        renderer.submit(UiCommand::UpsertLabel {
+            node: NodeID::from_parts(8, 0),
+            rect: UiRectState {
+                center: [0.0, 0.0],
+                size: [200.0, 60.0],
+                pivot: [0.5, 0.5],
+                rotation_radians: 0.0,
+                z_index: 0,
+            },
+            clip_rect: [0.0, 0.0, 800.0, 600.0],
+            text: Cow::Borrowed("Score"),
+            color: Color::WHITE,
+            font_size: 18.0,
+            font: perro_ui::UiFont::Default,
+            wrap_width: None,
+            h_align: UiTextAlignState::Center,
+            v_align: UiTextAlignState::Center,
+            backdrop_color: Color::TRANSPARENT,
+            corner_radii: UiCornerRadiiState::default(),
+            padding: [0.0; 4],
+            projected_quad: None,
+            fit_content: false,
+        });
+        let first_ptrs: Vec<*const epaint::ClippedPrimitive> = renderer
+            .prepare_paint([800.0, 600.0])
+            .primitives
+            .iter()
+            .map(std::sync::Arc::as_ptr)
+            .collect();
+        assert!(!first_ptrs.is_empty());
+
+        // Mutate an unrelated node; the label's tessellation must be reused
+        // (same Arc allocations), not rebuilt.
+        renderer.submit(UiCommand::UpsertPanel {
+            node: NodeID::from_parts(9, 0),
+            rect: UiRectState {
+                center: [100.0, 100.0],
+                size: [50.0, 50.0],
+                pivot: [0.5, 0.5],
+                rotation_radians: 0.0,
+                z_index: 1,
+            },
+            clip_rect: [0.0, 0.0, 800.0, 600.0],
+            fill: [0.5, 0.1, 0.1, 1.0],
+            fill_kind: UiFillKindState::Solid,
+            gradient: UiLinearGradientState::none(),
+            stroke: [0.0, 0.0, 0.0, 0.0],
+            stroke_width: 0.0,
+            corner_radii: UiCornerRadiiState::default(),
+            outer_shadow: UiDepthEffectState::none(),
+            inner_shadow: UiDepthEffectState::none(),
+            outer_highlight: UiDepthEffectState::none(),
+            inner_highlight: UiDepthEffectState::none(),
+        });
+        let second_ptrs: Vec<*const epaint::ClippedPrimitive> = renderer
+            .prepare_paint([800.0, 600.0])
+            .primitives
+            .iter()
+            .map(std::sync::Arc::as_ptr)
+            .collect();
+
+        assert!(
+            first_ptrs
+                .iter()
+                .any(|ptr| second_ptrs.contains(ptr)),
+            "label primitives were re-tessellated instead of reused from cache"
+        );
+    }
+
     #[test]
     fn panel_rotation_changes_mesh_bounds() {
         let mut renderer = UiRenderer::new();
