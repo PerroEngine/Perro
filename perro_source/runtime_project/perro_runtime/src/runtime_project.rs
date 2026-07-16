@@ -257,6 +257,11 @@ impl RuntimeProject {
         self
     }
 
+    pub fn with_static_font_lookup(mut self, lookup: StaticBytesLookup) -> Self {
+        self.static_resource_lookups.font_lookup = Some(lookup);
+        self
+    }
+
     pub fn with_static_shader_lookup(mut self, lookup: StaticShaderLookup) -> Self {
         self.static_resource_lookups.shader_lookup = Some(lookup);
         self

@@ -171,6 +171,7 @@ fn graphics_from_project_config(
         .with_dev_meshlets(!release_mode && config.dev_meshlets)
         .with_meshlet_debug_view(config.meshlet_debug_view)
         .with_texture_filter(config.texture_filter)
+        .with_ui_default_font(&config.rendering.default_font)
         .with_occlusion_culling(match occlusion_culling {
             OcclusionCulling::Cpu => OcclusionCullingMode::Cpu,
             OcclusionCulling::Gpu => OcclusionCullingMode::Gpu,
@@ -399,6 +400,7 @@ pub struct StaticEmbeddedGraphicsConfig {
     pub occlusion_culling: OcclusionCulling,
     pub particle_sim_default: ParticleSimDefault,
     pub ui_pixel_snapping: bool,
+    pub default_font: &'static str,
 }
 
 pub struct StaticEmbeddedRuntimeConfig {
@@ -442,6 +444,7 @@ pub struct StaticEmbeddedAssetsConfig {
     pub navmesh_lookup: perro_runtime::StaticBytesLookup,
     pub skeleton_lookup: perro_runtime::StaticSkeletonLookup,
     pub texture_lookup: perro_graphics::StaticTextureLookup,
+    pub font_lookup: perro_graphics::StaticFontLookup,
     pub shader_lookup: perro_graphics::StaticShaderLookup,
     pub audio_lookup: perro_runtime::StaticAudioLookup,
     pub static_script_registry: Option<StaticScriptRegistry>,
@@ -474,6 +477,7 @@ pub fn run_static_embedded_project(
     .with_occlusion_culling(input.graphics.occlusion_culling)
     .with_particle_sim_default(input.graphics.particle_sim_default)
     .with_ui_pixel_snapping(input.graphics.ui_pixel_snapping)
+    .with_ui_default_font(input.graphics.default_font)
     .with_metadata(
         input.metadata.description,
         input.metadata.company,
@@ -506,6 +510,7 @@ pub fn run_static_embedded_project(
         .with_static_skeleton_lookup(input.assets.skeleton_lookup)
         .with_static_audio_lookup(input.assets.audio_lookup)
         .with_static_texture_lookup(input.assets.texture_lookup)
+        .with_static_font_lookup(input.assets.font_lookup)
         .with_static_shader_lookup(input.assets.shader_lookup)
         .with_static_icon_lookup(input.assets.texture_lookup)
         .with_perro_assets_bytes(input.assets.perro_assets);
@@ -514,6 +519,7 @@ pub fn run_static_embedded_project(
     let graphics = graphics_from_project_config(&project.config, true)
         .with_static_mesh_lookup(input.assets.mesh_lookup)
         .with_static_texture_lookup(input.assets.texture_lookup)
+        .with_static_font_lookup(input.assets.font_lookup)
         .with_static_shader_lookup(input.assets.shader_lookup);
     let runtime = Runtime::from_project_with_script_registry(
         project,
@@ -610,6 +616,7 @@ pub fn run_static_embedded_project_android(
     .with_occlusion_culling(input.graphics.occlusion_culling)
     .with_particle_sim_default(input.graphics.particle_sim_default)
     .with_ui_pixel_snapping(input.graphics.ui_pixel_snapping)
+    .with_ui_default_font(input.graphics.default_font)
     .with_metadata(
         input.metadata.description,
         input.metadata.company,
@@ -642,6 +649,7 @@ pub fn run_static_embedded_project_android(
         .with_static_skeleton_lookup(input.assets.skeleton_lookup)
         .with_static_audio_lookup(input.assets.audio_lookup)
         .with_static_texture_lookup(input.assets.texture_lookup)
+        .with_static_font_lookup(input.assets.font_lookup)
         .with_static_shader_lookup(input.assets.shader_lookup)
         .with_static_icon_lookup(input.assets.texture_lookup)
         .with_perro_assets_bytes(input.assets.perro_assets);
@@ -650,6 +658,7 @@ pub fn run_static_embedded_project_android(
     let graphics = graphics_from_project_config(&project.config, true)
         .with_static_mesh_lookup(input.assets.mesh_lookup)
         .with_static_texture_lookup(input.assets.texture_lookup)
+        .with_static_font_lookup(input.assets.font_lookup)
         .with_static_shader_lookup(input.assets.shader_lookup);
     let runtime = Runtime::from_project_with_script_registry(
         project,
@@ -702,6 +711,7 @@ pub fn run_static_embedded_project_web(input: StaticEmbeddedProject<'_>) -> Resu
         .with_occlusion_culling(input.graphics.occlusion_culling)
         .with_particle_sim_default(input.graphics.particle_sim_default)
         .with_ui_pixel_snapping(input.graphics.ui_pixel_snapping)
+        .with_ui_default_font(input.graphics.default_font)
         .with_metadata(
             input.metadata.description,
             input.metadata.company,
@@ -734,6 +744,7 @@ pub fn run_static_embedded_project_web(input: StaticEmbeddedProject<'_>) -> Resu
             .with_static_skeleton_lookup(input.assets.skeleton_lookup)
             .with_static_audio_lookup(input.assets.audio_lookup)
             .with_static_texture_lookup(input.assets.texture_lookup)
+            .with_static_font_lookup(input.assets.font_lookup)
             .with_static_shader_lookup(input.assets.shader_lookup)
             .with_static_icon_lookup(input.assets.texture_lookup)
             .with_perro_assets_bytes(input.assets.perro_assets);
@@ -742,6 +753,7 @@ pub fn run_static_embedded_project_web(input: StaticEmbeddedProject<'_>) -> Resu
         let graphics = graphics_from_project_config(&project.config, true)
             .with_static_mesh_lookup(input.assets.mesh_lookup)
             .with_static_texture_lookup(input.assets.texture_lookup)
+            .with_static_font_lookup(input.assets.font_lookup)
             .with_static_shader_lookup(input.assets.shader_lookup);
         let runtime = Runtime::from_project_with_script_registry(
             project,

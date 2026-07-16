@@ -86,6 +86,10 @@ fn generate_project_static_modules(
                 scope.spawn(|| perro_static_pipeline::generate_static_textures(project_root)),
             ),
             (
+                "font",
+                scope.spawn(|| perro_static_pipeline::generate_static_fonts(project_root)),
+            ),
+            (
                 "shader",
                 scope.spawn(|| perro_static_pipeline::generate_static_shaders(project_root)),
             ),
@@ -171,6 +175,10 @@ fn generate_dlc_static_modules(
     generate!(
         "texture",
         perro_static_pipeline::generate_static_textures(project_root)
+    );
+    generate!(
+        "font",
+        perro_static_pipeline::generate_static_fonts(project_root)
     );
     generate!(
         "shader",

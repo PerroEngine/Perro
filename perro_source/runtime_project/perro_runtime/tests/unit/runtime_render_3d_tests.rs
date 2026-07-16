@@ -5,7 +5,7 @@ use perro_animation::{
 use perro_ids::{MaterialID, MeshID, TextureID};
 use perro_nodes::{
     AnimationPlayer, CameraProjection, CollisionShape3D, Label3D, SceneNode, SceneNodeData,
-    StaticBody3D, TextDecal3D, WaterBody3D,
+    StaticBody3D, WaterBody3D,
     ambient_light_3d::AmbientLight3D,
     camera_3d::Camera3D,
     mesh_instance_3d::MeshInstance3D,
@@ -129,6 +129,9 @@ fn sprite_3d_and_label_3d_emit_projected_ui_commands() {
     {
         data.text = "Name".into();
         data.transform.position = Vector3::new(0.0, 1.0, -5.0);
+        data.backdrop_color = perro_structs::Color::new(0.1, 0.2, 0.3, 1.0);
+        data.corner_radii = perro_ui::UiCornerRadii::all(0.25);
+        data.padding = perro_ui::UiRect::new(0.1, 0.2, 0.1, 0.2);
     }
 
     runtime.extract_render_3d_commands();
@@ -141,8 +144,23 @@ fn sprite_3d_and_label_3d_emit_projected_ui_commands() {
     )));
     assert!(commands.iter().any(|command| matches!(
         command,
-        RenderCommand::Ui(UiCommand::UpsertLabel { node, text, wrap_width, .. })
-            if *node == label && text.as_ref() == "Name" && *wrap_width == Some(80.0)
+        RenderCommand::Ui(UiCommand::UpsertLabel {
+            node,
+            text,
+            wrap_width,
+            font_size,
+            rect,
+            backdrop_color,
+            corner_radii,
+            padding,
+            ..
+        }) if *node == label
+            && text.as_ref() == "Name"
+            && wrap_width.is_some_and(|width| width > 0.0 && width < rect.size[0])
+            && *font_size <= rect.size[1]
+            && *backdrop_color == perro_structs::Color::new(0.1, 0.2, 0.3, 1.0)
+            && corner_radii.tl == 0.25
+            && *padding == [0.1, 0.2, 0.1, 0.2]
     )));
 }
 
@@ -181,47 +199,141 @@ fn label_3d_stays_visible_when_rotated_edge_crosses_camera_plane() {
 }
 
 #[test]
-fn text_decal_3d_rasterizes_text_and_emits_decal_state() {
+fn label_3d_lock_orientation_projects_transform_rotation() {
     let mut runtime = Runtime::new();
-    let text_decal = NodeAPI::create::<TextDecal3D>(&mut runtime);
-    if let Some(mut node) = runtime.nodes.get_mut(text_decal)
-        && let SceneNodeData::TextDecal3D(data) = &mut node.data
+    runtime.set_viewport_size(800, 600);
+    let camera = NodeAPI::create::<Camera3D>(&mut runtime);
+    let label = NodeAPI::create::<Label3D>(&mut runtime);
+    if let Some(mut node) = runtime.nodes.get_mut(camera)
+        && let SceneNodeData::Camera3D(data) = &mut node.data
     {
-        data.text = "Door".into();
-        data.transform.position = Vector3::new(0.0, 0.0, -2.0);
-        data.surface.emission_energy = 0.5;
+        data.active = true;
+    }
+    if let Some(mut node) = runtime.nodes.get_mut(label)
+        && let SceneNodeData::Label3D(data) = &mut node.data
+    {
+        data.text = "Turned".into();
+        data.lock_orientation = true;
+        data.transform.position = Vector3::new(0.0, 0.0, -5.0);
+        data.transform.rotation = Quaternion::from_euler_xyz(0.0, 0.0, 0.5);
     }
 
     runtime.extract_render_3d_commands();
     let commands = collect_commands(&mut runtime);
-    let texture = commands
-        .iter()
-        .find_map(|command| match command {
-            RenderCommand::Resource(ResourceCommand::CreateRuntimeTexture {
-                id,
-                width,
-                height,
-                ..
-            }) => {
-                assert!(*width > 0);
-                assert!(*height > 0);
-                Some(*id)
-            }
-            _ => None,
-        })
-        .expect("expected text decal runtime texture");
 
     assert!(commands.iter().any(|command| matches!(
         command,
-        RenderCommand::ThreeD(command)
-            if matches!(
-                command.as_ref(),
-                Command3D::SetDecal { node, decal }
-                    if *node == text_decal
-                        && decal.albedo_texture == texture
-                        && decal.emission_texture == texture
-                        && decal.modulate == Color::WHITE
-            )
+        RenderCommand::Ui(UiCommand::UpsertLabel { node, rect, projected_quad: Some(quad), .. })
+            if *node == label
+                && rect.rotation_radians == 0.0
+                && (quad[1][1] - quad[0][1]).abs() > 0.001
+                && quad.iter().all(|corner| corner[3] > 0.0)
+    )));
+}
+
+#[test]
+fn label_3d_billboard_ignores_world_rotation() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+    let camera = NodeAPI::create::<Camera3D>(&mut runtime);
+    let label = NodeAPI::create::<Label3D>(&mut runtime);
+    if let Some(mut node) = runtime.nodes.get_mut(camera)
+        && let SceneNodeData::Camera3D(data) = &mut node.data
+    {
+        data.active = true;
+    }
+    if let Some(mut node) = runtime.nodes.get_mut(label)
+        && let SceneNodeData::Label3D(data) = &mut node.data
+    {
+        data.text = "Billboard".into();
+        data.transform.position = Vector3::new(0.0, 0.0, -5.0);
+        data.transform.rotation = Quaternion::from_euler_xyz(0.7, 1.1, 0.9);
+    }
+
+    runtime.extract_render_3d_commands();
+    let commands = collect_commands(&mut runtime);
+
+    assert!(commands.iter().any(|command| matches!(
+        command,
+        RenderCommand::Ui(UiCommand::UpsertLabel { node, rect, .. })
+            if *node == label && rect.rotation_radians == 0.0 && rect.size[0] > rect.size[1]
+    )));
+}
+
+#[test]
+fn label_3d_locked_plane_collapses_edge_on() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+    let camera = NodeAPI::create::<Camera3D>(&mut runtime);
+    let label = NodeAPI::create::<Label3D>(&mut runtime);
+    if let Some(mut node) = runtime.nodes.get_mut(camera)
+        && let SceneNodeData::Camera3D(data) = &mut node.data
+    {
+        data.active = true;
+    }
+    if let Some(mut node) = runtime.nodes.get_mut(label)
+        && let SceneNodeData::Label3D(data) = &mut node.data
+    {
+        data.text = "Edge".into();
+        data.lock_orientation = true;
+        data.backface_cull = false;
+        data.transform.position = Vector3::new(0.0, 0.0, -5.0);
+        data.transform.rotation = Quaternion::from_euler_xyz(0.0, std::f32::consts::FRAC_PI_2, 0.0);
+    }
+
+    runtime.extract_render_3d_commands();
+    let commands = collect_commands(&mut runtime);
+
+    assert!(commands.iter().any(|command| matches!(
+        command,
+        RenderCommand::Ui(UiCommand::UpsertLabel { node, projected_quad: Some(quad), .. })
+            if *node == label
+                && ((quad[1][0] / quad[1][3]) - (quad[0][0] / quad[0][3])).abs() <= 0.0001
+    )));
+}
+
+#[test]
+fn label_3d_locked_layout_size_ignores_projected_rect_size() {
+    let rect = perro_render_bridge::UiRectState {
+        center: [0.0, 0.0],
+        size: [1800.0, 900.0],
+        pivot: [0.5, 0.5],
+        rotation_radians: 1.0,
+        z_index: 0,
+    };
+    let layout =
+        super::label_3d_stable_layout_rect(rect, perro_structs::Vector2::new(2.0, 0.5), 20.0);
+
+    assert_eq!(layout.size, [80.0, 20.0]);
+    assert_eq!(layout.rotation_radians, 0.0);
+}
+
+#[test]
+fn label_3d_backface_cull_hides_locked_label_facing_away() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+    let camera = NodeAPI::create::<Camera3D>(&mut runtime);
+    let label = NodeAPI::create::<Label3D>(&mut runtime);
+    if let Some(mut node) = runtime.nodes.get_mut(camera)
+        && let SceneNodeData::Camera3D(data) = &mut node.data
+    {
+        data.active = true;
+    }
+    if let Some(mut node) = runtime.nodes.get_mut(label)
+        && let SceneNodeData::Label3D(data) = &mut node.data
+    {
+        data.text = "Back".into();
+        data.lock_orientation = true;
+        data.transform.position = Vector3::new(0.0, 0.0, -5.0);
+        data.transform.rotation = Quaternion::from_euler_xyz(0.0, std::f32::consts::PI, 0.0);
+    }
+
+    runtime.extract_render_3d_commands();
+    let commands = collect_commands(&mut runtime);
+
+    assert!(!commands.iter().any(|command| matches!(
+        command,
+        RenderCommand::Ui(UiCommand::UpsertLabel { node, .. }) if *node == label
     )));
 }
 
@@ -2334,93 +2446,4 @@ fn collision_shape_debug_rebuilds_when_parent_moves() {
         .expect("expected collision debug line draw after move");
 
     assert_ne!(first_x, second_x);
-}
-
-#[test]
-fn sliding_window_max_covers_edges_and_plateaus() {
-    let input = [0u8, 10, 0, 0, 200, 0, 0, 0, 50];
-    let mut out = vec![0u8; input.len()];
-    super::sliding_window_max(&input, 2, &mut out);
-    assert_eq!(out, vec![10, 10, 200, 200, 200, 200, 200, 50, 50]);
-}
-
-#[test]
-fn dilate_mask_grows_square_neighborhood() {
-    let mut mask = vec![0u8; 25];
-    mask[12] = 255; // center of 5x5
-    let out = super::dilate_mask(&mask, 5, 5, 1);
-    let expected: Vec<u8> = (0..25)
-        .map(|i| {
-            let (x, y) = (i % 5, i / 5);
-            if (1..=3).contains(&x) && (1..=3).contains(&y) {
-                255
-            } else {
-                0
-            }
-        })
-        .collect();
-    assert_eq!(out, expected);
-}
-
-#[test]
-fn text_decal_raster_background_carries_fill_rgb() {
-    // Transparent texels must carry the fill color so linear filtering never
-    // blends toward black (the old dark-fringe artifact).
-    let params = super::TextDecalRasterParams {
-        node: perro_ids::NodeID::from_u64(1),
-        text: "",
-        size: Vector3::new(2.0, 0.5, 0.25),
-        font_size: 32.0,
-        h_align: perro_ui::UiTextAlign::Center,
-        v_align: perro_ui::UiTextAlign::Center,
-        texture_resolution: 64,
-        color: Color::new(1.0, 0.5, 0.0, 1.0),
-        outline_width: 0.0,
-        outline_color: Color::BLACK,
-    };
-    let (rgba, width, height) = super::raster_text_decal(&params);
-    assert!(width > 0 && height > 0);
-    for pixel in rgba.chunks_exact(4) {
-        assert_eq!(pixel[0], 255);
-        assert_eq!(pixel[1], 128);
-        assert_eq!(pixel[2], 0);
-        assert_eq!(pixel[3], 0);
-    }
-}
-
-#[test]
-fn text_decal_outline_grows_coverage_and_tints_border() {
-    let base = super::TextDecalRasterParams {
-        node: perro_ids::NodeID::from_u64(1),
-        text: "A",
-        size: Vector3::new(1.0, 1.0, 0.25),
-        font_size: 48.0,
-        h_align: perro_ui::UiTextAlign::Center,
-        v_align: perro_ui::UiTextAlign::Center,
-        texture_resolution: 64,
-        color: Color::WHITE,
-        outline_width: 0.0,
-        outline_color: Color::BLACK,
-    };
-    let (plain, _, _) = super::raster_text_decal(&base);
-    let outlined_params = super::TextDecalRasterParams {
-        outline_width: 4.0,
-        ..base
-    };
-    let (outlined, _, _) = super::raster_text_decal(&outlined_params);
-    let plain_coverage = plain.chunks_exact(4).filter(|px| px[3] > 0).count();
-    let outlined_coverage = outlined.chunks_exact(4).filter(|px| px[3] > 0).count();
-    assert!(plain_coverage > 0, "glyph raster produced no coverage");
-    assert!(
-        outlined_coverage > plain_coverage,
-        "outline must dilate coverage ({outlined_coverage} <= {plain_coverage})"
-    );
-    // Pure-outline texels (opaque in outlined, transparent in plain) take the
-    // outline color.
-    let border_black = plain
-        .chunks_exact(4)
-        .zip(outlined.chunks_exact(4))
-        .filter(|(p, o)| p[3] == 0 && o[3] == 255)
-        .all(|(_, o)| o[0] == 0 && o[1] == 0 && o[2] == 0);
-    assert!(border_black, "outline-only texels must use outline color");
 }

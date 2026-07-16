@@ -244,6 +244,7 @@ impl Runtime {
                         label.text.clone(),
                         label.color,
                         label.font_size,
+                        label.font.clone(),
                         label.h_align,
                         label.v_align,
                         label.z_index,
@@ -258,6 +259,7 @@ impl Runtime {
                 text,
                 color,
                 font_size,
+                font,
                 h_align,
                 v_align,
                 z_index,
@@ -282,9 +284,15 @@ impl Runtime {
                         text,
                         color: Runtime::color_modulate(color, modulate),
                         font_size: (font_size * transform.scale.y.abs()).max(0.001),
+                        font,
                         wrap_width: None,
                         h_align: text_align_state_2d(h_align),
                         v_align: text_align_state_2d(v_align),
+                        backdrop_color: perro_structs::Color::TRANSPARENT,
+                        corner_radii: Default::default(),
+                        padding: [0.0; 4],
+                        projected_quad: None,
+                        fit_content: false,
                     }));
                     visible_now.insert(node);
                 } else {

@@ -257,6 +257,24 @@ pixel_snapping = true
 }
 
 #[test]
+fn parse_project_toml_reads_global_default_font() {
+    let toml = r#"
+[project]
+name = "Game"
+main_scene = "res://main.scn"
+icon = "res://icon.png"
+
+[graphics]
+aspect_ratio = "16:9"
+
+[rendering]
+default_font = "res://fonts/Game.ttf"
+"#;
+    let parsed = parse_project_toml(toml).expect("global font");
+    assert_eq!(parsed.rendering.default_font, "res://fonts/Game.ttf");
+}
+
+#[test]
 fn parse_project_toml_reads_physics_config() {
     let toml = r#"
 [project]

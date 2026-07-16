@@ -1,6 +1,6 @@
 use crate::node_2d::Node2D;
 use perro_structs::{Color, Vector2};
-use perro_ui::UiTextAlign;
+use perro_ui::{UiFont, UiTextAlign};
 use std::{
     borrow::Cow,
     ops::{Deref, DerefMut},
@@ -13,6 +13,7 @@ pub struct Label2D {
     pub text: Cow<'static, str>,
     pub color: Color,
     pub font_size: f32,
+    pub font: UiFont,
     pub h_align: UiTextAlign,
     pub v_align: UiTextAlign,
 }
@@ -25,6 +26,7 @@ impl Label2D {
             text: Cow::Borrowed(""),
             color: Color::WHITE,
             font_size: 20.0,
+            font: UiFont::Default,
             h_align: UiTextAlign::Center,
             v_align: UiTextAlign::Center,
         }

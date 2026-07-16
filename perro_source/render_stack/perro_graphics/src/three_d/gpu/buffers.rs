@@ -168,7 +168,6 @@ impl Gpu3D {
         let white = create_cached_material_texture(
             device,
             queue,
-            &self.material_texture_bgl,
             CachedMaterialTextureInput {
                 rgba: vec![255u8, 255, 255, 255],
                 width: 1,
@@ -181,7 +180,6 @@ impl Gpu3D {
         let neutral_normal = create_cached_material_texture(
             device,
             queue,
-            &self.material_texture_bgl,
             CachedMaterialTextureInput {
                 rgba: vec![128u8, 128, 255, 255],
                 width: 1,
@@ -369,7 +367,6 @@ impl Gpu3D {
         let cached = create_cached_material_texture(
             device,
             queue,
-            &self.material_texture_bgl,
             CachedMaterialTextureInput {
                 rgba,
                 width,
@@ -441,7 +438,6 @@ impl Gpu3D {
         let cached = create_cached_material_texture(
             device,
             queue,
-            &self.material_texture_bgl,
             CachedMaterialTextureInput {
                 rgba,
                 width,
@@ -498,7 +494,7 @@ impl Gpu3D {
             return;
         }
         let cached =
-            create_external_material_texture(device, &self.material_texture_bgl, view, source);
+            create_external_material_texture(device, view, source);
         self.material_textures.insert(slot, cached);
         self.evict_material_texture_bind_groups_for_slot(slot);
     }

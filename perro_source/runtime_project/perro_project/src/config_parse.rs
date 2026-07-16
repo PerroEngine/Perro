@@ -40,6 +40,9 @@ occlusion_culling = "gpu"
 particle_sim_default = "gpu"
 texture_filter = "linear_mipmap"
 
+[rendering]
+default_font = "default"
+
 [rendering.ui]
 pixel_snapping = true
 
@@ -307,7 +310,19 @@ fn parse_rendering(
         return Ok(RenderingConfig::default());
     };
     let ui = parse_rendering_ui(table.get("ui").and_then(Value::as_table))?;
-    Ok(RenderingConfig { ui })
+    let default_font = match table.get("default_font") {
+        Some(value) => value.as_str().ok_or_else(|| {
+            ProjectError::InvalidField("rendering.default_font", "must be a string".to_string())
+        })?.to_string(),
+        None => "default".to_string(),
+    };
+    if perro_ui::UiFont::parse(&default_font).is_none() {
+        return Err(ProjectError::InvalidField(
+            "rendering.default_font",
+            "must be `default`, `system://Name`, or `res://path`".to_string(),
+        ));
+    }
+    Ok(RenderingConfig { ui, default_font })
 }
 
 fn parse_rendering_ui(

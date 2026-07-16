@@ -8,8 +8,6 @@ gltf.workspace = true
 ahash = "0.8"
 glam = "0.31.0"
 rayon = "1.10"
-ab_glyph = "0.2"
-fontdb = "0.23"
 y4m = "0.8"
 
 perro_ids.workspace = true

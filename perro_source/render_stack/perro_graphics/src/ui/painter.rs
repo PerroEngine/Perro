@@ -20,6 +20,7 @@ use perro_render_bridge::{
     UiLinearGradientState, UiRectState, UiShapeKind, UiTextAlignState,
 };
 use perro_structs::Color;
+use perro_ui::{UiFont, UiSystemFont};
 use std::sync::Arc;
 
 const UI_RASTER_SCALE: f32 = 3.0;
@@ -229,6 +230,59 @@ impl EpaintUiPainter {
         }
     }
 
+    pub(crate) fn register_resource_font(
+        &mut self,
+        path: &str,
+        lookup: Option<crate::StaticFontLookup>,
+    ) {
+        let family = resource_font_family(path);
+        if self.font_definitions.families.contains_key(&family) {
+            return;
+        }
+        append_default_family_fallbacks(
+            &mut self.font_definitions,
+            family.clone(),
+            FontFamily::Proportional,
+        );
+        let hash = perro_ids::parse_hashed_source_uri(path)
+            .unwrap_or_else(|| perro_ids::string_to_u64(path));
+        let static_bytes = lookup
+            .map(|lookup| lookup(hash))
+            .filter(|bytes| !bytes.is_empty());
+        let owned;
+        let bytes = if let Some(bytes) = static_bytes {
+            owned = perro_io::asset_io::decode_static_font(bytes).unwrap_or_default();
+            owned.as_slice()
+        } else {
+            let Ok(bytes) = perro_io::asset_io::load_asset(path) else {
+                self.fonts = Fonts::new(
+                    UI_FONT_ATLAS_SIZE,
+                    AlphaFromCoverage::default(),
+                    self.font_definitions.clone(),
+                );
+                self.paint_revision = u64::MAX;
+                return;
+            };
+            owned = bytes;
+            &owned
+        };
+        let key = format!("perro-resource-{hash}");
+        self.font_definitions
+            .font_data
+            .insert(key.clone(), Arc::new(FontData::from_owned(bytes.to_vec())));
+        self.font_definitions
+            .families
+            .entry(family)
+            .or_default()
+            .insert(0, key);
+        self.fonts = Fonts::new(
+            UI_FONT_ATLAS_SIZE,
+            AlphaFromCoverage::default(),
+            self.font_definitions.clone(),
+        );
+        self.paint_revision = u64::MAX;
+    }
+
     /// Push a single node's shapes plus their per-shape rotation entries.
     /// Returns true if the node's tessellation touches the shared font atlas
     /// (text), which forbids caching it across rebuilds.
@@ -392,6 +446,11 @@ impl EpaintUiPainter {
                 } => {
                     let mut tessellated = tessellator.tessellate_shapes(shapes);
                     rotate_primitives(&mut tessellated, &rotations);
+                    if let Some(UiDraw::Label(label)) = nodes.get(&node)
+                        && let Some(quad) = label.projected_quad
+                    {
+                        project_label_primitives(&mut tessellated, label.rect, quad, viewport);
+                    }
                     tessellated.retain(|primitive| match &primitive.primitive {
                         Primitive::Mesh(mesh) => {
                             !mesh.vertices.is_empty() && !mesh.indices.is_empty()
@@ -541,7 +600,94 @@ impl HarfBuzzAtlas {
 fn default_ui_font_definitions() -> FontDefinitions {
     let mut definitions = FontDefinitions::default();
     append_system_font_fallbacks(&mut definitions);
+    append_selectable_system_fonts(&mut definitions);
     definitions
+}
+
+fn append_selectable_system_fonts(definitions: &mut FontDefinitions) {
+    let mut db = fontdb::Database::new();
+    db.load_system_fonts();
+    let serif_family = ui_font_family(
+        &UiFont::System(UiSystemFont::Serif),
+        FontFamily::Proportional,
+    );
+    append_default_family_fallbacks(definitions, serif_family.clone(), FontFamily::Proportional);
+    let serif_query = fontdb::Query {
+        families: &[fontdb::Family::Serif],
+        ..Default::default()
+    };
+    if let Some(id) = db.query(&serif_query)
+        && let Some((source, index)) = db.face_source(id)
+        && let Some(data) = font_data_from_source(source, index)
+    {
+        definitions
+            .font_data
+            .insert("perro-select-serif".into(), Arc::new(data));
+        definitions
+            .families
+            .entry(serif_family)
+            .or_default()
+            .insert(0, "perro-select-serif".into());
+    }
+    for font in [
+        UiSystemFont::Arial,
+        UiSystemFont::Calibri,
+        UiSystemFont::Cambria,
+        UiSystemFont::Consolas,
+        UiSystemFont::CourierNew,
+        UiSystemFont::Georgia,
+        UiSystemFont::Helvetica,
+        UiSystemFont::SegoeUi,
+        UiSystemFont::TimesNewRoman,
+        UiSystemFont::Verdana,
+    ] {
+        let family = ui_font_family(&UiFont::System(font), FontFamily::Proportional);
+        append_default_family_fallbacks(definitions, family.clone(), FontFamily::Proportional);
+        if let Some(name) = font.family_name() {
+            let key = format!("perro-select-{name}");
+            let query = fontdb::Query {
+                families: &[fontdb::Family::Name(name)],
+                ..Default::default()
+            };
+            if let Some(id) = db.query(&query)
+                && let Some((source, index)) = db.face_source(id)
+                && let Some(data) = font_data_from_source(source, index)
+            {
+                definitions.font_data.insert(key.clone(), Arc::new(data));
+                definitions
+                    .families
+                    .entry(family)
+                    .or_default()
+                    .insert(0, key);
+            }
+        }
+    }
+}
+
+fn ui_font_family(font: &UiFont, default: FontFamily) -> FontFamily {
+    match font {
+        UiFont::Default => default,
+        UiFont::Resource(path) => resource_font_family(path),
+        UiFont::System(UiSystemFont::SansSerif) => FontFamily::Proportional,
+        UiFont::System(UiSystemFont::Serif) => FontFamily::Name(Arc::from("perro-system-serif")),
+        UiFont::System(UiSystemFont::Monospace) => FontFamily::Monospace,
+        UiFont::System(font) => FontFamily::Name(Arc::from(format!("perro-select-{font:?}"))),
+    }
+}
+
+fn resource_font_family(path: &str) -> FontFamily {
+    FontFamily::Name(Arc::from(format!(
+        "perro-resource-family-{}",
+        perro_ids::string_to_u64(path)
+    )))
+}
+
+fn selected_text_family(text: &str, font: &UiFont, default: FontFamily) -> FontFamily {
+    if matches!(font, UiFont::Default) {
+        text_font_family(text, default)
+    } else {
+        ui_font_family(font, default)
+    }
 }
 
 fn append_system_font_fallbacks(definitions: &mut FontDefinitions) {
@@ -1468,18 +1614,39 @@ fn push_label_shape(
     fonts: &mut Fonts,
     out: &mut Vec<ClippedShape>,
 ) {
+    push_panel_shape(
+        &UiPanelDraw {
+            rect: label.rect,
+            clip_rect: label.clip_rect,
+            fill: label.backdrop_color,
+            fill_kind: UiFillKindState::Solid,
+            gradient: UiLinearGradientState::none(),
+            stroke: Color::TRANSPARENT,
+            stroke_width: 0.0,
+            corner_radii: label.corner_radii,
+            outer_shadow: UiDepthEffectState::none(),
+            inner_shadow: UiDepthEffectState::none(),
+            outer_highlight: UiDepthEffectState::none(),
+            inner_highlight: UiDepthEffectState::none(),
+        },
+        viewport,
+        out,
+    );
+    let text_rect = label_text_rect(label.rect, label.padding);
     if needs_harfbuzz(label.text.as_ref())
         && push_harfbuzz_text_shape(
             TextShapeInput {
-                rect: label.rect,
+                rect: text_rect,
                 viewport,
                 clip_rect: clip_rect_from_state(label.clip_rect, viewport),
                 text: label.text.as_ref(),
                 font_size: label.font_size,
+                font: &label.font,
                 wrap_width: label.wrap_width,
                 color: label.color,
                 h_align: label.h_align,
                 v_align: label.v_align,
+                fit_content: label.fit_content,
             },
             definitions,
             harfbuzz_atlas,
@@ -1490,19 +1657,32 @@ fn push_label_shape(
     }
     push_text_shape(
         TextShapeInput {
-            rect: label.rect,
+            rect: text_rect,
             viewport,
             clip_rect: clip_rect_from_state(label.clip_rect, viewport),
             text: label.text.as_ref(),
             font_size: label.font_size,
+            font: &label.font,
             wrap_width: label.wrap_width,
             color: label.color,
             h_align: label.h_align,
             v_align: label.v_align,
+            fit_content: label.fit_content,
         },
         fonts,
         out,
     );
+}
+
+fn label_text_rect(mut rect: UiRectState, padding: [f32; 4]) -> UiRectState {
+    let [left, top, right, bottom] = padding.map(|value| value.max(0.0));
+    let width = rect.size[0];
+    let height = rect.size[1];
+    rect.center[0] += (left - right) * width * 0.5;
+    rect.center[1] += (bottom - top) * height * 0.5;
+    rect.size[0] = (width * (1.0 - left - right)).max(0.001);
+    rect.size[1] = (height * (1.0 - top - bottom)).max(0.001);
+    rect
 }
 
 fn push_harfbuzz_text_shape(
@@ -1516,11 +1696,13 @@ fn push_harfbuzz_text_shape(
         viewport,
         clip_rect,
         text,
-        font_size,
+        mut font_size,
+        font,
         wrap_width: _,
         color,
         h_align,
         v_align,
+        fit_content,
     } = input;
     if text.is_empty()
         || !valid_rect(rect)
@@ -1530,17 +1712,24 @@ fn push_harfbuzz_text_shape(
     {
         return false;
     }
-    let family = text_font_family(text, FontFamily::Proportional);
+    let family = selected_text_family(text, font, FontFamily::Proportional);
     let Some((font, run)) = shape_text_with_font_fallbacks(definitions, family, text) else {
         return false;
     };
     let (min, max) = rect.screen_min_max(viewport);
-    let line_width = run
+    let mut line_width = run
         .glyphs
         .iter()
         .map(|glyph| glyph.x_advance * font_size)
         .sum::<f32>()
         .max(0.0);
+    if fit_content {
+        let scale = (rect.size[0] / line_width.max(0.001))
+            .min(rect.size[1] / font_size.max(0.001))
+            .min(1.0);
+        font_size *= scale;
+        line_width *= scale;
+    }
     let line_height = font_size;
     let mut cursor = match h_align {
         UiTextAlignState::Start => min[0],
@@ -1917,7 +2106,7 @@ fn push_text_edit_shapes(
         f32::INFINITY
     };
     let edit_galley = if edit.focused {
-        let family = text_font_family(edit.text.as_ref(), FontFamily::Monospace);
+        let family = selected_text_family(edit.text.as_ref(), &edit.font, FontFamily::Monospace);
         Some(fonts.with_pixels_per_point(UI_RASTER_SCALE).layout(
             edit.text.to_string(),
             FontId::new(edit.font_size, family),
@@ -1934,7 +2123,7 @@ fn push_text_edit_shapes(
         push_selection_shapes(edit, galley, clip_rect, draw_pos, out);
     }
     if !body.is_empty() && valid_color(color) {
-        let family = text_font_family(body, FontFamily::Monospace);
+        let family = selected_text_family(body, &edit.font, FontFamily::Monospace);
         let galley = fonts.with_pixels_per_point(UI_RASTER_SCALE).layout(
             body.to_string(),
             FontId::new(edit.font_size, family),
@@ -2078,6 +2267,119 @@ fn rotate_primitives(primitives: &mut [ClippedPrimitive], rotations: &[(f32, epa
             mesh.rotate(rot, origin);
         }
     }
+}
+
+fn project_label_primitives(
+    primitives: &mut [ClippedPrimitive],
+    source: UiRectState,
+    quad: [[f32; 4]; 4],
+    viewport: [f32; 2],
+) {
+    let (min, max) = source.screen_min_max(viewport);
+    let width = (max[0] - min[0]).max(0.001);
+    let height = (max[1] - min[1]).max(0.001);
+    for primitive in primitives {
+        primitive.clip_rect = Rect::EVERYTHING;
+        if let Primitive::Mesh(mesh) = &mut primitive.primitive {
+            let old = std::mem::replace(mesh, Mesh::with_texture(mesh.texture_id));
+            for triangle in old.indices.chunks_exact(3) {
+                let mut polygon = Vec::with_capacity(4);
+                for &index in triangle {
+                    let vertex = old.vertices[index as usize];
+                    let u = ((vertex.pos.x - min[0]) / width).clamp(0.0, 1.0);
+                    let v = ((vertex.pos.y - min[1]) / height).clamp(0.0, 1.0);
+                    polygon.push(ProjectedLabelVertex {
+                        clip: bilerp_clip_quad(quad, u, v),
+                        uv: vertex.uv,
+                        color: vertex.color,
+                    });
+                }
+                clip_label_polygon_near(&mut polygon);
+                for index in 1..polygon.len().saturating_sub(1) {
+                    push_projected_label_triangle(
+                        mesh,
+                        [polygon[0], polygon[index], polygon[index + 1]],
+                        viewport,
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+struct ProjectedLabelVertex {
+    clip: [f32; 4],
+    uv: epaint::Pos2,
+    color: Color32,
+}
+
+fn bilerp_clip_quad(quad: [[f32; 4]; 4], u: f32, v: f32) -> [f32; 4] {
+    std::array::from_fn(|axis| {
+        let top = quad[0][axis] + (quad[1][axis] - quad[0][axis]) * u;
+        let bottom = quad[3][axis] + (quad[2][axis] - quad[3][axis]) * u;
+        top + (bottom - top) * v
+    })
+}
+
+fn clip_label_polygon_near(polygon: &mut Vec<ProjectedLabelVertex>) {
+    let input = std::mem::take(polygon);
+    if input.is_empty() {
+        return;
+    }
+    let mut previous = *input.last().unwrap();
+    let mut previous_distance = previous.clip[2] + previous.clip[3];
+    for current in input {
+        let current_distance = current.clip[2] + current.clip[3];
+        let previous_inside = previous_distance >= 1.0e-5;
+        let current_inside = current_distance >= 1.0e-5;
+        if previous_inside != current_inside {
+            let t = ((1.0e-5 - previous_distance) / (current_distance - previous_distance))
+                .clamp(0.0, 1.0);
+            polygon.push(lerp_projected_label_vertex(previous, current, t));
+        }
+        if current_inside {
+            polygon.push(current);
+        }
+        previous = current;
+        previous_distance = current_distance;
+    }
+}
+
+fn lerp_projected_label_vertex(
+    a: ProjectedLabelVertex,
+    b: ProjectedLabelVertex,
+    t: f32,
+) -> ProjectedLabelVertex {
+    ProjectedLabelVertex {
+        clip: std::array::from_fn(|i| a.clip[i] + (b.clip[i] - a.clip[i]) * t),
+        uv: a.uv + (b.uv - a.uv) * t,
+        color: a.color,
+    }
+}
+
+fn push_projected_label_triangle(
+    mesh: &mut Mesh,
+    triangle: [ProjectedLabelVertex; 3],
+    viewport: [f32; 2],
+) {
+    let base = mesh.vertices.len() as u32;
+    for vertex in triangle {
+        if vertex.clip[3].abs() <= 1.0e-6 {
+            return;
+        }
+        let ndc_x = vertex.clip[0] / vertex.clip[3];
+        let ndc_y = vertex.clip[1] / vertex.clip[3];
+        mesh.vertices.push(Vertex {
+            pos: pos2(
+                (ndc_x * 0.5 + 0.5) * viewport[0],
+                (0.5 - ndc_y * 0.5) * viewport[1],
+            ),
+            uv: vertex.uv,
+            color: vertex.color,
+        });
+    }
+    mesh.indices.extend_from_slice(&[base, base + 1, base + 2]);
 }
 
 fn screen_center(rect: UiRectState, viewport: [f32; 2]) -> epaint::Pos2 {
@@ -2298,10 +2600,12 @@ struct TextShapeInput<'a> {
     clip_rect: Rect,
     text: &'a str,
     font_size: f32,
+    font: &'a UiFont,
     wrap_width: Option<f32>,
     color: perro_structs::Color,
     h_align: UiTextAlignState,
     v_align: UiTextAlignState,
+    fit_content: bool,
 }
 
 fn push_text_shape(input: TextShapeInput<'_>, fonts: &mut Fonts, out: &mut Vec<ClippedShape>) {
@@ -2310,11 +2614,13 @@ fn push_text_shape(input: TextShapeInput<'_>, fonts: &mut Fonts, out: &mut Vec<C
         viewport,
         clip_rect,
         text,
-        font_size,
+        mut font_size,
+        font,
         wrap_width,
         color,
         h_align,
         v_align,
+        fit_content,
     } = input;
     if text.is_empty()
         || !valid_rect(rect)
@@ -2330,18 +2636,56 @@ fn push_text_shape(input: TextShapeInput<'_>, fonts: &mut Fonts, out: &mut Vec<C
         .filter(|width| width.is_finite() && *width > 0.0)
         .unwrap_or(rect.size[0])
         .max(1.0);
-    let mut job = LayoutJob::simple(
-        text.to_string(),
-        FontId::new(font_size, text_font_family(text, FontFamily::Proportional)),
-        color32(color),
-        wrap_width,
+    let mut font_id = FontId::new(
+        font_size,
+        selected_text_family(text, font, FontFamily::Proportional),
     );
+    // Keep whole words whole. Shrink a word that cannot fit instead of
+    // splitting it across rows or letting it escape the label's world size.
+    let longest_word_width = text
+        .split_whitespace()
+        .map(|word| {
+            let word_job = LayoutJob::simple(
+                word.to_string(),
+                font_id.clone(),
+                color32(color),
+                f32::INFINITY,
+            );
+            fonts
+                .with_pixels_per_point(UI_RASTER_SCALE)
+                .layout_job(word_job)
+                .size()
+                .x
+        })
+        .fold(0.0_f32, f32::max);
+    if longest_word_width > wrap_width {
+        font_size *= wrap_width / longest_word_width;
+        font_id.size = font_size.max(0.001);
+    }
+    let mut job = LayoutJob::simple(text.to_string(), font_id, color32(color), wrap_width);
     job.halign = match h_align {
         UiTextAlignState::Start => Align::LEFT,
         UiTextAlignState::Center => Align::Center,
         UiTextAlignState::End => Align::RIGHT,
     };
-    let galley = fonts.with_pixels_per_point(UI_RASTER_SCALE).layout_job(job);
+    let paragraph_align = job.halign;
+    let mut galley = fonts.with_pixels_per_point(UI_RASTER_SCALE).layout_job(job);
+    if fit_content && galley.size().y > rect.size[1] {
+        font_size *= (rect.size[1] / galley.size().y).clamp(0.001, 1.0);
+        let mut fit_job = LayoutJob::simple(
+            text.to_string(),
+            FontId::new(
+                font_size,
+                selected_text_family(text, font, FontFamily::Proportional),
+            ),
+            color32(color),
+            wrap_width,
+        );
+        fit_job.halign = paragraph_align;
+        galley = fonts
+            .with_pixels_per_point(UI_RASTER_SCALE)
+            .layout_job(fit_job);
+    }
     let text_size = galley.size();
     let x = match h_align {
         UiTextAlignState::Start => min[0],
@@ -2727,10 +3071,12 @@ mod tests {
                 clip_rect: Rect::from_min_max(pos2(0.0, 0.0), pos2(800.0, 600.0)),
                 text: "alpha beta gamma delta epsilon",
                 font_size: 24.0,
+                font: &UiFont::Default,
                 wrap_width: None,
                 color: perro_structs::Color::WHITE,
                 h_align: UiTextAlignState::Start,
                 v_align: UiTextAlignState::Start,
+                fit_content: false,
             },
             &mut fonts,
             &mut shapes,
@@ -2773,10 +3119,12 @@ mod tests {
                     clip_rect: Rect::from_min_max(pos2(0.0, 0.0), pos2(800.0, 600.0)),
                     text: "seed\nfood",
                     font_size: 16.0,
+                    font: &UiFont::Default,
                     wrap_width: None,
                     color: perro_structs::Color::WHITE,
                     h_align,
                     v_align: UiTextAlignState::Start,
+                    fit_content: false,
                 },
                 &mut fonts,
                 &mut shapes,
@@ -2809,10 +3157,12 @@ mod tests {
                 clip_rect: Rect::from_min_max(pos2(0.0, 0.0), pos2(800.0, 600.0)),
                 text: "Perro",
                 font_size: 24.0,
+                font: &UiFont::Default,
                 wrap_width: None,
                 color: perro_structs::Color::WHITE,
                 h_align: UiTextAlignState::Center,
                 v_align: UiTextAlignState::Center,
+                fit_content: false,
             },
             &definitions,
             &mut atlas,

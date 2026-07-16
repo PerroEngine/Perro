@@ -195,6 +195,11 @@ fn apply_label_2d_fields(node: &mut Label2D, fields: &[SceneObjectField]) {
                 node.font_size = v.max(0.001);
             }
         }
+        "font" => {
+            if let Some(v) = as_str(value).and_then(perro_ui::UiFont::parse) {
+                node.font = v;
+            }
+        }
         "h_align" | "text_h_align" => {
             if let Some(v) = as_ui_text_align(value) {
                 node.h_align = v;

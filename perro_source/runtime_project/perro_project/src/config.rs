@@ -159,7 +159,7 @@ pub struct ProjectWebConfig {
     pub keywords: Vec<String>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RenderUiConfig {
     pub pixel_snapping: bool,
 }
@@ -172,9 +172,16 @@ impl Default for RenderUiConfig {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RenderingConfig {
     pub ui: RenderUiConfig,
+    pub default_font: String,
+}
+
+impl Default for RenderingConfig {
+    fn default() -> Self {
+        Self { ui: RenderUiConfig::default(), default_font: "default".to_string() }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -220,6 +227,7 @@ pub struct StaticProjectConfig {
     pub particle_sim_default: ParticleSimDefault,
     pub texture_filter: perro_structs::TextureFilterMode,
     pub rendering_ui_pixel_snapping: bool,
+    pub rendering_default_font: &'static str,
     pub audio_listener_max_distance: f32,
     pub audio_propagation_tick_hz: f32,
     pub audio_energy_cutoff: f32,
@@ -272,6 +280,7 @@ impl StaticProjectConfig {
             particle_sim_default: ParticleSimDefault::Cpu,
             texture_filter: perro_structs::TextureFilterMode::LinearMipmap,
             rendering_ui_pixel_snapping: true,
+            rendering_default_font: "default",
             audio_listener_max_distance: 500.0,
             audio_propagation_tick_hz: 20.0,
             audio_energy_cutoff: 0.02,
@@ -364,6 +373,11 @@ impl StaticProjectConfig {
         self
     }
 
+    pub const fn with_ui_default_font(mut self, font: &'static str) -> Self {
+        self.rendering_default_font = font;
+        self
+    }
+
     pub const fn with_audio_config(mut self, config: AudioConfig) -> Self {
         self.audio_listener_max_distance = config.listener_max_distance;
         self.audio_propagation_tick_hz = config.propagation_tick_hz;
@@ -447,6 +461,7 @@ impl StaticProjectConfig {
                 ui: RenderUiConfig {
                     pixel_snapping: self.rendering_ui_pixel_snapping,
                 },
+                default_font: self.rendering_default_font.to_string(),
             },
             audio: AudioConfig {
                 listener_max_distance: self.audio_listener_max_distance,

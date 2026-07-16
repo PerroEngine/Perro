@@ -26,8 +26,6 @@ pub(super) struct CachedMaterialTexture {
     pub(super) texture: Option<wgpu::Texture>,
     pub(super) view: wgpu::TextureView,
     pub(super) sampler: wgpu::Sampler,
-    #[allow(dead_code)]
-    pub(super) bind_group: wgpu::BindGroup,
     pub(super) width: u32,
     pub(super) height: u32,
 }
@@ -66,7 +64,6 @@ pub(super) struct CachedMaterialTextureInput {
 pub(super) fn create_cached_material_texture(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
-    layout: &wgpu::BindGroupLayout,
     input: CachedMaterialTextureInput,
 ) -> CachedMaterialTexture {
     let width = input.width.max(1);
@@ -96,13 +93,11 @@ pub(super) fn create_cached_material_texture(
         input.filter,
         wgpu::AddressMode::Repeat,
     ));
-    let bind_group = create_material_texture_bind_group(device, layout, &sampler, &view, &[]);
     CachedMaterialTexture {
         source: input.source,
         texture: Some(texture),
         view,
         sampler,
-        bind_group,
         width,
         height,
     }
@@ -110,7 +105,6 @@ pub(super) fn create_cached_material_texture(
 
 pub(super) fn create_external_material_texture(
     device: &wgpu::Device,
-    layout: &wgpu::BindGroupLayout,
     view: &wgpu::TextureView,
     source: String,
 ) -> CachedMaterialTexture {
@@ -124,13 +118,11 @@ pub(super) fn create_external_material_texture(
         mipmap_filter: wgpu::MipmapFilterMode::Nearest,
         ..Default::default()
     });
-    let bind_group = create_material_texture_bind_group(device, layout, &sampler, view, &[]);
     CachedMaterialTexture {
         source,
         texture: None,
         view: view.clone(),
         sampler,
-        bind_group,
         width: 0,
         height: 0,
     }

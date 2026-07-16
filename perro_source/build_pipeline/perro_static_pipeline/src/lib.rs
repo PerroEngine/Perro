@@ -4,6 +4,7 @@ mod audios;
 mod collision_trimeshes;
 mod csvs;
 mod error;
+mod fonts;
 mod localizations;
 mod materials;
 mod meshes;
@@ -22,6 +23,7 @@ pub use audios::generate_static_audios;
 pub use collision_trimeshes::generate_static_collision_trimeshes;
 pub use csvs::generate_static_csvs;
 pub use error::StaticPipelineError;
+pub use fonts::generate_static_fonts;
 pub use localizations::generate_empty_localizations;
 pub use localizations::generate_static_localizations;
 pub use materials::generate_static_materials;
@@ -354,7 +356,7 @@ pub fn write_static_mod_rs(project_root: &Path) -> Result<(), StaticPipelineErro
     fs::create_dir_all(&static_dir)?;
     fs::write(
         static_dir.join("mod.rs"),
-        "#![allow(unused_imports)]\n\npub mod scenes;\npub mod materials;\npub mod ui_styles;\npub mod tilesets;\npub mod particles;\npub mod animations;\npub mod animation_trees;\npub mod meshes;\npub mod collision_trimeshes;\npub mod navmeshes;\npub mod skeletons;\npub mod textures;\npub mod shaders;\npub mod audios;\npub mod csvs;\npub mod localizations;\n",
+        "#![allow(unused_imports)]\n\npub mod scenes;\npub mod materials;\npub mod ui_styles;\npub mod tilesets;\npub mod particles;\npub mod animations;\npub mod animation_trees;\npub mod meshes;\npub mod collision_trimeshes;\npub mod navmeshes;\npub mod skeletons;\npub mod textures;\npub mod fonts;\npub mod shaders;\npub mod audios;\npub mod csvs;\npub mod localizations;\n",
     )?;
     Ok(())
 }

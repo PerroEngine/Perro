@@ -22,6 +22,7 @@ perro_render_bridge.workspace = true
 perro_particle_math.workspace = true
 perro_io.workspace = true
 perro_structs.workspace = true
+perro_ui.workspace = true
 perro_macros.workspace = true
 
 [target.'cfg(target_os = "windows")'.dependencies]

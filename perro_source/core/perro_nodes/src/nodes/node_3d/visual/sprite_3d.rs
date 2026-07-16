@@ -1,7 +1,7 @@
 use crate::node_3d::Node3D;
 use perro_ids::TextureID;
 use perro_structs::{Color, Vector2};
-use perro_ui::UiTextAlign;
+use perro_ui::{UiCornerRadii, UiRect, UiTextAlign};
 use std::{
     borrow::Cow,
     ops::{Deref, DerefMut},
@@ -54,9 +54,15 @@ impl DerefMut for Sprite3D {
 pub struct Label3D {
     pub base: Node3D,
     pub size: Vector2,
+    pub lock_orientation: bool,
+    pub backface_cull: bool,
+    pub backdrop_color: Color,
+    pub corner_radii: UiCornerRadii,
+    pub padding: UiRect,
     pub text: Cow<'static, str>,
     pub color: Color,
     pub font_size: f32,
+    pub font: perro_ui::UiFont,
     pub h_align: UiTextAlign,
     pub v_align: UiTextAlign,
 }
@@ -66,9 +72,15 @@ impl Label3D {
         Self {
             base: Node3D::new(),
             size: Vector2::new(1.0, 0.25),
+            lock_orientation: false,
+            backface_cull: true,
+            backdrop_color: Color::TRANSPARENT,
+            corner_radii: UiCornerRadii::zero(),
+            padding: UiRect::ZERO,
             text: Cow::Borrowed(""),
             color: Color::WHITE,
             font_size: 20.0,
+            font: perro_ui::UiFont::Default,
             h_align: UiTextAlign::Center,
             v_align: UiTextAlign::Center,
         }

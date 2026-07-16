@@ -42,9 +42,15 @@ pub(crate) struct UiLabelDraw {
     pub(crate) text: Cow<'static, str>,
     pub(crate) color: Color,
     pub(crate) font_size: f32,
+    pub(crate) font: perro_ui::UiFont,
     pub(crate) wrap_width: Option<f32>,
     pub(crate) h_align: UiTextAlignState,
     pub(crate) v_align: UiTextAlignState,
+    pub(crate) backdrop_color: Color,
+    pub(crate) corner_radii: UiCornerRadiiState,
+    pub(crate) padding: [f32; 4],
+    pub(crate) projected_quad: Option<[[f32; 4]; 4]>,
+    pub(crate) fit_content: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -116,6 +122,7 @@ pub(crate) struct UiTextEditDraw {
     pub(crate) selection_color: Color,
     pub(crate) caret_color: Color,
     pub(crate) font_size: f32,
+    pub(crate) font: perro_ui::UiFont,
     pub(crate) h_align: UiTextAlignState,
     pub(crate) v_align: UiTextAlignState,
     pub(crate) padding: [f32; 4],
@@ -144,6 +151,8 @@ pub struct UiRenderer {
     nodes: AHashMap<NodeID, UiDraw>,
     revision: u64,
     painter: EpaintUiPainter,
+    static_font_lookup: Option<crate::StaticFontLookup>,
+    default_font: perro_ui::UiFont,
 }
 
 impl Default for UiRenderer {
@@ -158,10 +167,34 @@ impl UiRenderer {
             nodes: AHashMap::new(),
             revision: 0,
             painter: EpaintUiPainter::new(),
+            static_font_lookup: None,
+            default_font: perro_ui::UiFont::Default,
         }
     }
 
-    pub fn submit(&mut self, command: UiCommand) {
+    pub fn submit(&mut self, mut command: UiCommand) {
+        match &mut command {
+            UiCommand::UpsertLabel { font, .. } | UiCommand::UpsertTextEdit { font, .. }
+                if matches!(font, perro_ui::UiFont::Default) =>
+            {
+                *font = self.default_font.clone();
+            }
+            _ => {}
+        }
+        match &command {
+            UiCommand::UpsertLabel {
+                font: perro_ui::UiFont::Resource(path),
+                ..
+            }
+            | UiCommand::UpsertTextEdit {
+                font: perro_ui::UiFont::Resource(path),
+                ..
+            } => {
+                self.painter
+                    .register_resource_font(path, self.static_font_lookup);
+            }
+            _ => {}
+        }
         match command {
             UiCommand::UpsertProgressBar {
                 node,
@@ -330,9 +363,15 @@ impl UiRenderer {
                 text,
                 color,
                 font_size,
+                font,
                 wrap_width,
                 h_align,
                 v_align,
+                backdrop_color,
+                corner_radii,
+                padding,
+                projected_quad,
+                fit_content,
             } => self.upsert(
                 node,
                 UiDraw::Label(UiLabelDraw {
@@ -341,9 +380,15 @@ impl UiRenderer {
                     text,
                     color,
                     font_size,
+                    font,
                     wrap_width,
                     h_align,
                     v_align,
+                    backdrop_color,
+                    corner_radii,
+                    padding,
+                    projected_quad,
+                    fit_content,
                 }),
             ),
             UiCommand::UpsertImage {
@@ -418,6 +463,7 @@ impl UiRenderer {
                 selection_color,
                 caret_color,
                 font_size,
+                font,
                 h_align,
                 v_align,
                 padding,
@@ -450,6 +496,7 @@ impl UiRenderer {
                     selection_color,
                     caret_color,
                     font_size,
+                    font,
                     h_align,
                     v_align,
                     padding,
@@ -472,6 +519,14 @@ impl UiRenderer {
                 }
             }
         }
+    }
+
+    pub(crate) fn set_static_font_lookup(&mut self, lookup: crate::StaticFontLookup) {
+        self.static_font_lookup = Some(lookup);
+    }
+
+    pub(crate) fn set_default_font(&mut self, font: perro_ui::UiFont) {
+        self.default_font = font;
     }
 
     pub(crate) fn set_nine_slice_texture_sizes(&mut self, sizes: &AHashMap<TextureID, [u32; 2]>) {
@@ -575,15 +630,34 @@ mod tests {
             text: Cow::Borrowed("Run"),
             color: Color::WHITE,
             font_size: 18.0,
+            font: perro_ui::UiFont::Default,
             wrap_width: None,
             h_align: UiTextAlignState::Center,
             v_align: UiTextAlignState::Center,
+            backdrop_color: Color::TRANSPARENT,
+            corner_radii: UiCornerRadiiState::default(),
+            padding: [0.0; 4],
+            projected_quad: Some([
+                [-0.2, 0.1, -2.0, 1.0],
+                [0.225, 0.15, 0.0, 1.0],
+                [0.175, -0.125, 0.0, 1.0],
+                [-0.15, -0.1, 0.0, 1.0],
+            ]),
+            fit_content: true,
         });
 
         let paint = renderer.prepare_paint([800.0, 600.0]);
 
         assert!(!paint.primitives.is_empty());
         assert!(!paint.textures_delta.set.is_empty());
+        for primitive in paint.primitives {
+            if let epaint::Primitive::Mesh(mesh) = &primitive.primitive {
+                assert!(mesh.vertices.iter().all(|vertex| {
+                    (320.0..=490.0).contains(&vertex.pos.x)
+                        && (270.0..=325.0).contains(&vertex.pos.y)
+                }));
+            }
+        }
     }
 
     #[test]

@@ -65,7 +65,6 @@ impl Runtime {
             SceneNodeData::ParticleEmitter3D(node) => node.visible,
             SceneNodeData::WaterBody3D(node) => node.base.visible,
             SceneNodeData::Decal3D(node) => node.base.visible,
-            SceneNodeData::TextDecal3D(node) => node.base.visible,
             SceneNodeData::Sprite3D(node) => node.visible,
             SceneNodeData::VideoPlayer3D(node) => node.visible,
             SceneNodeData::Label3D(node) => node.visible,

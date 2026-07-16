@@ -42,6 +42,7 @@ use web_time::Instant;
 use winit::window::Window;
 
 pub type StaticTextureLookup = fn(path_hash: u64) -> &'static [u8];
+pub type StaticFontLookup = fn(path_hash: u64) -> &'static [u8];
 pub type StaticMeshLookup = fn(path_hash: u64) -> &'static [u8];
 pub type StaticShaderLookup = fn(path_hash: u64) -> &'static str;
 const GC_INTERVAL_FRAMES: u32 = 60;
@@ -385,6 +386,7 @@ pub struct PerroGraphics {
     smoothing_samples: u32,
     smoothing_quality_samples: u32,
     static_texture_lookup: Option<StaticTextureLookup>,
+    static_font_lookup: Option<StaticFontLookup>,
     static_mesh_lookup: Option<StaticMeshLookup>,
     static_shader_lookup: Option<StaticShaderLookup>,
     meshlets_enabled: bool,
@@ -746,6 +748,7 @@ impl PerroGraphics {
             smoothing_samples: 4,
             smoothing_quality_samples: 4,
             static_texture_lookup: None,
+            static_font_lookup: None,
             static_mesh_lookup: None,
             static_shader_lookup: None,
             meshlets_enabled: false,
@@ -824,6 +827,18 @@ impl PerroGraphics {
 
     pub fn with_static_texture_lookup(mut self, lookup: StaticTextureLookup) -> Self {
         self.static_texture_lookup = Some(lookup);
+        self
+    }
+
+    pub fn with_static_font_lookup(mut self, lookup: StaticFontLookup) -> Self {
+        self.static_font_lookup = Some(lookup);
+        self.renderer_ui.set_static_font_lookup(lookup);
+        self
+    }
+
+    pub fn with_ui_default_font(mut self, font: &str) -> Self {
+        self.renderer_ui
+            .set_default_font(perro_ui::UiFont::parse(font).unwrap_or_default());
         self
     }
 

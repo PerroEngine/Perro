@@ -1775,13 +1775,6 @@ parent = $root
 [/Decal3D]
 [/decal_3d]
 
-[text_decal_3d]
-parent = $root
-[TextDecal3D]
-    text = "Label"
-[/TextDecal3D]
-[/text_decal_3d]
-
 [sky_3d]
 parent = $root
 [Sky3D]

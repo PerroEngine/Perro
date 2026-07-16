@@ -4487,6 +4487,7 @@ dependencies = [
  "perro_particle_math",
  "perro_render_bridge",
  "perro_structs",
+ "perro_ui",
  "pollster",
  "rayon",
  "rustybuzz",
@@ -4663,6 +4664,7 @@ version = "0.1.0"
 dependencies = [
  "perro_input_api",
  "perro_structs",
+ "perro_ui",
  "toml 0.9.12+spec-1.1.0",
 ]
 
@@ -4696,11 +4698,9 @@ dependencies = [
 name = "perro_runtime"
 version = "0.1.0"
 dependencies = [
- "ab_glyph",
  "ahash",
  "arboard",
  "criterion",
- "fontdb",
  "glam",
  "gltf",
  "libloading",

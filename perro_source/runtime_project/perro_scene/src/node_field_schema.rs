@@ -714,7 +714,6 @@ fn push_node_fields(fields: &mut Vec<SceneNodeField>, node_type: NodeType) {
         NodeType::VideoPlayer3D => video_player_fields(fields, "Video", true, false),
         NodeType::Label3D => label_world_fields(fields, "Label"),
         NodeType::Decal3D => decal_fields(fields),
-        NodeType::TextDecal3D => text_decal_fields(fields),
         NodeType::Skeleton2D | NodeType::Skeleton3D => {
             asset_field(fields, "Skeleton", "skeleton", SceneAssetKind::Skeleton);
             // Per-bone pose overrides: bones = { Name = { position/rotation/
@@ -1012,6 +1011,7 @@ fn push_node_fields(fields: &mut Vec<SceneNodeField>, node_type: NodeType) {
                 ui_style_fields(fields, "Focus", "focused_");
                 push(fields, "Text", "text", NodeFieldType::String);
                 push(fields, "Text", "placeholder", NodeFieldType::String);
+                push(fields, "Text", "font", NodeFieldType::String);
             }
         }
         NodeType::UiLabel => {
@@ -1021,6 +1021,7 @@ fn push_node_fields(fields: &mut Vec<SceneNodeField>, node_type: NodeType) {
             );
             push(fields, "Text", "color", NodeFieldType::Color);
             push(fields, "Text", "text_size_ratio", NodeFieldType::F32);
+            push(fields, "Text", "font", NodeFieldType::String);
             push(
                 fields,
                 "Text",
@@ -1181,40 +1182,6 @@ fn decal_fields(fields: &mut Vec<SceneNodeField>) {
     push(fields, "Decal", "active", NodeFieldType::Bool);
 }
 
-fn text_decal_fields(fields: &mut Vec<SceneNodeField>) {
-    push(fields, "Text Decal", "text", NodeFieldType::String);
-    push(fields, "Text Decal", "size", NodeFieldType::Vec3);
-    push(fields, "Text Decal", "color", NodeFieldType::Color);
-    push(fields, "Text Decal", "font_size", NodeFieldType::F32);
-    push(
-        fields,
-        "Text Decal",
-        "h_align",
-        NodeFieldType::enumeration(UI_TEXT_ALIGN_OPTIONS),
-    );
-    push(
-        fields,
-        "Text Decal",
-        "v_align",
-        NodeFieldType::enumeration(UI_TEXT_ALIGN_OPTIONS),
-    );
-    push(
-        fields,
-        "Text Decal",
-        "texture_resolution",
-        NodeFieldType::U32,
-    );
-    push(fields, "Text Decal", "outline_width", NodeFieldType::F32);
-    push(fields, "Text Decal", "outline_color", NodeFieldType::Color);
-    push(fields, "Decal", "albedo_mix", NodeFieldType::F32);
-    push(fields, "Decal", "emission_energy", NodeFieldType::F32);
-    push(fields, "Decal", "normal_fade", NodeFieldType::F32);
-    push(fields, "Decal", "distance_fade_begin", NodeFieldType::F32);
-    push(fields, "Decal", "distance_fade_length", NodeFieldType::F32);
-    push(fields, "Decal", "sort_priority", NodeFieldType::I32);
-    push(fields, "Decal", "active", NodeFieldType::Bool);
-}
-
 fn sprite_fields(fields: &mut Vec<SceneNodeField>, section: &'static str) {
     texture_field(fields, section, "texture");
     push(fields, section, "texture_region", NodeFieldType::Vec4);
@@ -1231,8 +1198,14 @@ fn sprite_world_fields(fields: &mut Vec<SceneNodeField>, section: &'static str) 
 fn label_world_fields(fields: &mut Vec<SceneNodeField>, section: &'static str) {
     push(fields, section, "text", NodeFieldType::String);
     push(fields, section, "size", NodeFieldType::Vec2);
+    push(fields, section, "lock_orientation", NodeFieldType::Bool);
+    push(fields, section, "backface_cull", NodeFieldType::Bool);
+    push(fields, section, "backdrop_color", NodeFieldType::Color);
+    push(fields, section, "corner_radii", NodeFieldType::Vec4);
+    push(fields, section, "padding", NodeFieldType::Vec4);
     push(fields, section, "color", NodeFieldType::Color);
     push(fields, section, "font_size", NodeFieldType::F32);
+    push(fields, section, "font", NodeFieldType::String);
     push(
         fields,
         section,

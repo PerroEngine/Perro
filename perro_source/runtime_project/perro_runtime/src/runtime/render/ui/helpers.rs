@@ -702,9 +702,15 @@ pub(super) fn ui_command_from_node(
                     };
                 resolve_font_size(base, node_scale, virtual_font_scale, label.font_sizing)
             },
+            font: label.font.clone(),
             wrap_width: None,
             h_align: text_align_state(label.h_align),
             v_align: text_align_state(label.v_align),
+            backdrop_color: Color::TRANSPARENT,
+            corner_radii: UiCornerRadiiState::default(),
+            padding: [0.0; 4],
+            projected_quad: None,
+            fit_content: false,
         }),
         SceneNodeData::UiImage(image) => {
             if image.texture.is_nil() {

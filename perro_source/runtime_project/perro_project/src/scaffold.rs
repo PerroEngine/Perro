@@ -162,6 +162,10 @@ pub fn ensure_build_crates_scaffold(root: &Path, project_name: &str) -> std::io:
         &default_static_textures_rs(),
     )?;
     write_if_missing(
+        project_static_src.join("fonts.rs"),
+        &default_static_fonts_rs(),
+    )?;
+    write_if_missing(
         project_static_src.join("shaders.rs"),
         &default_static_shaders_rs(),
     )?;

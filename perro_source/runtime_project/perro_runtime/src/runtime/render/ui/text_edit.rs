@@ -95,6 +95,7 @@ pub(in crate::runtime::render_ui) fn text_edit_command(ctx: TextEditCommandCtx<'
         selection_color: Runtime::color_modulate(edit.selection_color, modulate),
         caret_color: Runtime::color_modulate(edit.caret_color, modulate),
         font_size: text_edit_effective_font_size(edit, rect.size, scale, virtual_font_scale),
+        font: edit.font.clone(),
         h_align: text_align_state(edit.h_align),
         v_align: text_align_state(edit.v_align),
         padding: scaled_text_edit_padding(edit, scale),

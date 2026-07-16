@@ -3,12 +3,14 @@ use perro_structs::{Color, Vector2};
 use std::borrow::Cow;
 use std::ops::{Deref, DerefMut};
 
+mod font;
 mod layout;
 mod style;
 mod tree;
 mod units;
 mod widgets;
 
+pub use font::*;
 pub use layout::*;
 pub use style::*;
 pub use tree::*;

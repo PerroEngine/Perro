@@ -1,11 +1,7 @@
 use crate::node_3d::Node3D;
 use perro_ids::TextureID;
 use perro_structs::{Color, Vector3};
-use perro_ui::UiTextAlign;
-use std::{
-    borrow::Cow,
-    ops::{Deref, DerefMut},
-};
+use std::ops::{Deref, DerefMut};
 
 impl Deref for Decal3D {
     type Target = Node3D;
@@ -114,75 +110,5 @@ impl Decal3D {
 impl Default for Decal3D {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-/// Text projected as a lit decal. The runtime rasterizes `text` into an
-/// albedo texture, then submits it through the Decal3D projection path.
-#[derive(Clone, Debug)]
-pub struct TextDecal3D {
-    pub base: Node3D,
-    /// Box extents in local units (x = width, y = height, z = projection depth).
-    pub size: Vector3,
-    pub text: Cow<'static, str>,
-    /// Text tint; alpha scales overall decal opacity.
-    pub color: Color,
-    /// Pixel size used when rasterizing the backing texture.
-    pub font_size: f32,
-    pub h_align: UiTextAlign,
-    pub v_align: UiTextAlign,
-    /// Max backing texture dimension before upload into the decal atlas.
-    pub texture_resolution: u32,
-    /// Font outline thickness in texture pixels; 0 disables the outline.
-    pub outline_width: f32,
-    /// Outline tint, drawn under the glyph fill.
-    pub outline_color: Color,
-    pub surface: DecalSurfaceSettings,
-    pub distance_fade: DecalDistanceFade,
-    /// Higher priority draws over lower when decals overlap.
-    pub sort_priority: i32,
-    pub active: bool,
-}
-
-impl TextDecal3D {
-    pub const fn new() -> Self {
-        let mut surface = DecalSurfaceSettings::new();
-        surface.emission_energy = 0.0;
-        Self {
-            base: Node3D::new(),
-            size: Vector3::new(2.0, 0.5, 0.25),
-            text: Cow::Borrowed(""),
-            color: Color::WHITE,
-            font_size: 64.0,
-            h_align: UiTextAlign::Center,
-            v_align: UiTextAlign::Center,
-            texture_resolution: 512,
-            outline_width: 0.0,
-            outline_color: Color::BLACK,
-            surface,
-            distance_fade: DecalDistanceFade::new(),
-            sort_priority: 0,
-            active: true,
-        }
-    }
-}
-
-impl Default for TextDecal3D {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl Deref for TextDecal3D {
-    type Target = Node3D;
-
-    fn deref(&self) -> &Self::Target {
-        &self.base
-    }
-}
-
-impl DerefMut for TextDecal3D {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.base
     }
 }

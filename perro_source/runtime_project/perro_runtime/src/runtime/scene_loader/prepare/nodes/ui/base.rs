@@ -1285,6 +1285,11 @@ fn apply_ui_label_fields(node: &mut UiLabel, fields: &[SceneObjectField]) {
         // Absolute text size unsupported.
         // Use `text_size_ratio`.
         "font_size" => {}
+        "font" => {
+            if let Some(v) = as_str(value).and_then(perro_ui::UiFont::parse) {
+                node.font = v;
+            }
+        }
         "text_size_ratio" | "font_size_ratio" => {
             if let Some(v) = as_f32(value) {
                 node.text_size_ratio = v;
@@ -1715,6 +1720,11 @@ fn apply_ui_text_edit_fields(
         // Absolute text size unsupported.
         // Use `text_size_ratio`.
         "font_size" => {}
+        "font" => {
+            if let Some(v) = as_str(value).and_then(perro_ui::UiFont::parse) {
+                node.font = v;
+            }
+        }
         "text_size_ratio" | "font_size_ratio" => {
             if let Some(v) = as_f32(value) {
                 node.text_size_ratio = v;

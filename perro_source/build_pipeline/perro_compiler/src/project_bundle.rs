@@ -661,6 +661,31 @@ fn generate_embedded_entry_files(project_root: &Path) -> Result<(), CompilerErro
     generate_embedded_entry_files_with_options(project_root, ProjectBuildOptions::new(false, false))
 }
 
+// Shared `assets:` block for the generated entry source. Every field of
+// `perro_app::entry::StaticEmbeddedAssetsConfig` must appear here exactly
+// once; all three entry targets (native/web/android) splice this same block.
+const STATIC_EMBEDDED_ASSETS_BLOCK: &str = "  assets: perro_app::entry::StaticEmbeddedAssetsConfig {\n\
+        perro_assets: PERRO_ASSETS,\n\
+        scene_lookup: static_assets::scenes::lookup_scene,\n\
+        localization_lookup: static_assets::localizations::lookup_localized_string,\n\
+        material_lookup: static_assets::materials::lookup_material,\n\
+        ui_style_lookup: static_assets::ui_styles::lookup_ui_style,\n\
+        tileset_lookup: static_assets::tilesets::lookup_tileset,\n\
+        particle_lookup: static_assets::particles::lookup_particle,\n\
+        animation_lookup: static_assets::animations::lookup_animation,\n\
+        animation_tree_lookup: static_assets::animation_trees::lookup_animation_tree,\n\
+        csv_lookup: static_assets::csvs::lookup_csv,\n\
+        mesh_lookup: static_assets::meshes::lookup_mesh,\n\
+        collision_trimesh_lookup: static_assets::collision_trimeshes::lookup_collision_trimesh,\n\
+        navmesh_lookup: static_assets::navmeshes::lookup_navmesh,\n\
+        skeleton_lookup: static_assets::skeletons::lookup_skeleton,\n\
+        texture_lookup: static_assets::textures::lookup_texture,\n\
+        font_lookup: static_assets::fonts::lookup_font,\n\
+        shader_lookup: static_assets::shaders::lookup_shader,\n\
+        audio_lookup: static_assets::audios::lookup_audio,\n\
+        static_script_registry: Some(scripts::SCRIPT_REGISTRY),\n\
+  },\n";
+
 fn generate_embedded_entry_files_with_options(
     project_root: &Path,
     options: ProjectBuildOptions,
@@ -723,6 +748,7 @@ perro_app::entry::{native_entry}(perro_app::entry::StaticEmbeddedProject {{\n\
         occlusion_culling: {occlusion_culling},\n\
         particle_sim_default: {particle_sim_default},\n\
         ui_pixel_snapping: {ui_pixel_snapping},\n\
+        default_font: \"{default_font}\",\n\
   }},\n\
   runtime: perro_app::entry::StaticEmbeddedRuntimeConfig {{\n\
         target_fixed_update: {target_fixed_update},\n\
@@ -745,26 +771,7 @@ perro_app::entry::{native_entry}(perro_app::entry::StaticEmbeddedProject {{\n\
         app_id: {steam_app_id},\n\
         input_mode: {steam_input_mode},\n\
   }},\n\
-  assets: perro_app::entry::StaticEmbeddedAssetsConfig {{\n\
-        perro_assets: PERRO_ASSETS,\n\
-        scene_lookup: static_assets::scenes::lookup_scene,\n\
-        localization_lookup: static_assets::localizations::lookup_localized_string,\n\
-        material_lookup: static_assets::materials::lookup_material,\n\
-        ui_style_lookup: static_assets::ui_styles::lookup_ui_style,\n\
-        tileset_lookup: static_assets::tilesets::lookup_tileset,\n\
-        particle_lookup: static_assets::particles::lookup_particle,\n\
-        animation_lookup: static_assets::animations::lookup_animation,\n\
-        animation_tree_lookup: static_assets::animation_trees::lookup_animation_tree,\n\
-        csv_lookup: static_assets::csvs::lookup_csv,\n\
-        mesh_lookup: static_assets::meshes::lookup_mesh,\n\
-        collision_trimesh_lookup: static_assets::collision_trimeshes::lookup_collision_trimesh,\n\
-        navmesh_lookup: static_assets::navmeshes::lookup_navmesh,\n\
-        skeleton_lookup: static_assets::skeletons::lookup_skeleton,\n\
-        texture_lookup: static_assets::textures::lookup_texture,\n\
-        shader_lookup: static_assets::shaders::lookup_shader,\n\
-        audio_lookup: static_assets::audios::lookup_audio,\n\
-        static_script_registry: Some(scripts::SCRIPT_REGISTRY),\n\
-  }},\n\
+{assets_block}\
 }})\n\
 .expect(\"failed to run embedded static project\");",
         name = escape_str(&cfg.name),
@@ -775,6 +782,7 @@ perro_app::entry::{native_entry}(perro_app::entry::StaticEmbeddedProject {{\n\
         h = cfg.virtual_height,
         routes_block = emit_static_routes_block(&routes),
         input_map_block = emit_static_input_map_block(&cfg.input_map),
+        assets_block = STATIC_EMBEDDED_ASSETS_BLOCK,
         vsync = cfg.vsync,
         msaa = cfg.msaa,
         ssao = emit_ssao_expr(cfg.ssao),
@@ -785,6 +793,7 @@ perro_app::entry::{native_entry}(perro_app::entry::StaticEmbeddedProject {{\n\
         occlusion_culling = emit_occlusion_culling_expr(cfg.occlusion_culling),
         particle_sim_default = emit_particle_sim_default_expr(cfg.particle_sim_default),
         ui_pixel_snapping = cfg.rendering.ui.pixel_snapping,
+        default_font = escape_str(&cfg.rendering.default_font),
         target_fixed_update = emit_optional_f32(cfg.target_fixed_update),
         frame_rate_cap = emit_frame_rate_cap_expr(cfg.frame_rate_cap),
         physics_gravity = emit_f32(cfg.physics_gravity),
@@ -837,6 +846,7 @@ perro_app::entry::run_static_embedded_project_web(perro_app::entry::StaticEmbedd
         occlusion_culling: {occlusion_culling},\n\
         particle_sim_default: {particle_sim_default},\n\
         ui_pixel_snapping: {ui_pixel_snapping},\n\
+        default_font: \"{default_font}\",\n\
   }},\n\
   runtime: perro_app::entry::StaticEmbeddedRuntimeConfig {{\n\
         target_fixed_update: {target_fixed_update},\n\
@@ -859,26 +869,7 @@ perro_app::entry::run_static_embedded_project_web(perro_app::entry::StaticEmbedd
         app_id: {steam_app_id},\n\
         input_mode: {steam_input_mode},\n\
   }},\n\
-  assets: perro_app::entry::StaticEmbeddedAssetsConfig {{\n\
-        perro_assets: PERRO_ASSETS,\n\
-        scene_lookup: static_assets::scenes::lookup_scene,\n\
-        localization_lookup: static_assets::localizations::lookup_localized_string,\n\
-        material_lookup: static_assets::materials::lookup_material,\n\
-        ui_style_lookup: static_assets::ui_styles::lookup_ui_style,\n\
-        tileset_lookup: static_assets::tilesets::lookup_tileset,\n\
-        particle_lookup: static_assets::particles::lookup_particle,\n\
-        animation_lookup: static_assets::animations::lookup_animation,\n\
-        animation_tree_lookup: static_assets::animation_trees::lookup_animation_tree,\n\
-        csv_lookup: static_assets::csvs::lookup_csv,\n\
-        mesh_lookup: static_assets::meshes::lookup_mesh,\n\
-        collision_trimesh_lookup: static_assets::collision_trimeshes::lookup_collision_trimesh,\n\
-        navmesh_lookup: static_assets::navmeshes::lookup_navmesh,\n\
-        skeleton_lookup: static_assets::skeletons::lookup_skeleton,\n\
-        texture_lookup: static_assets::textures::lookup_texture,\n\
-        shader_lookup: static_assets::shaders::lookup_shader,\n\
-        audio_lookup: static_assets::audios::lookup_audio,\n\
-        static_script_registry: Some(scripts::SCRIPT_REGISTRY),\n\
-  }},\n\
+{assets_block}\
 }})",
         name = escape_str(&cfg.name),
         main_scene_hash = perro_ids::string_to_u64(&cfg.main_scene),
@@ -888,6 +879,7 @@ perro_app::entry::run_static_embedded_project_web(perro_app::entry::StaticEmbedd
         h = cfg.virtual_height,
         routes_block = emit_static_routes_block(&routes),
         input_map_block = emit_static_input_map_block(&cfg.input_map),
+        assets_block = STATIC_EMBEDDED_ASSETS_BLOCK,
         vsync = cfg.vsync,
         msaa = cfg.msaa,
         ssao = emit_ssao_expr(cfg.ssao),
@@ -898,6 +890,7 @@ perro_app::entry::run_static_embedded_project_web(perro_app::entry::StaticEmbedd
         occlusion_culling = emit_occlusion_culling_expr(cfg.occlusion_culling),
         particle_sim_default = emit_particle_sim_default_expr(cfg.particle_sim_default),
         ui_pixel_snapping = cfg.rendering.ui.pixel_snapping,
+        default_font = escape_str(&cfg.rendering.default_font),
         target_fixed_update = emit_optional_f32(cfg.target_fixed_update),
         frame_rate_cap = emit_frame_rate_cap_expr(cfg.frame_rate_cap),
         physics_gravity = emit_f32(cfg.physics_gravity),
@@ -946,6 +939,7 @@ perro_app::entry::run_static_embedded_project_android(app, perro_app::entry::Sta
         occlusion_culling: {occlusion_culling},\n\
         particle_sim_default: {particle_sim_default},\n\
         ui_pixel_snapping: {ui_pixel_snapping},\n\
+        default_font: \"{default_font}\",\n\
   }},\n\
   runtime: perro_app::entry::StaticEmbeddedRuntimeConfig {{\n\
         target_fixed_update: {target_fixed_update},\n\
@@ -968,26 +962,7 @@ perro_app::entry::run_static_embedded_project_android(app, perro_app::entry::Sta
         app_id: {steam_app_id},\n\
         input_mode: {steam_input_mode},\n\
   }},\n\
-  assets: perro_app::entry::StaticEmbeddedAssetsConfig {{\n\
-        perro_assets: PERRO_ASSETS,\n\
-        scene_lookup: static_assets::scenes::lookup_scene,\n\
-        localization_lookup: static_assets::localizations::lookup_localized_string,\n\
-        material_lookup: static_assets::materials::lookup_material,\n\
-        ui_style_lookup: static_assets::ui_styles::lookup_ui_style,\n\
-        tileset_lookup: static_assets::tilesets::lookup_tileset,\n\
-        particle_lookup: static_assets::particles::lookup_particle,\n\
-        animation_lookup: static_assets::animations::lookup_animation,\n\
-        animation_tree_lookup: static_assets::animation_trees::lookup_animation_tree,\n\
-        csv_lookup: static_assets::csvs::lookup_csv,\n\
-        mesh_lookup: static_assets::meshes::lookup_mesh,\n\
-        collision_trimesh_lookup: static_assets::collision_trimeshes::lookup_collision_trimesh,\n\
-        navmesh_lookup: static_assets::navmeshes::lookup_navmesh,\n\
-        skeleton_lookup: static_assets::skeletons::lookup_skeleton,\n\
-        texture_lookup: static_assets::textures::lookup_texture,\n\
-        shader_lookup: static_assets::shaders::lookup_shader,\n\
-        audio_lookup: static_assets::audios::lookup_audio,\n\
-        static_script_registry: Some(scripts::SCRIPT_REGISTRY),\n\
-  }},\n\
+{assets_block}\
 }})\n\
 .expect(\"failed to run embedded static project on android\");",
         name = escape_str(&cfg.name),
@@ -998,6 +973,7 @@ perro_app::entry::run_static_embedded_project_android(app, perro_app::entry::Sta
         h = cfg.virtual_height,
         routes_block = emit_static_routes_block(&routes),
         input_map_block = emit_static_input_map_block(&cfg.input_map),
+        assets_block = STATIC_EMBEDDED_ASSETS_BLOCK,
         vsync = cfg.vsync,
         msaa = cfg.msaa,
         ssao = emit_ssao_expr(cfg.ssao),
@@ -1008,6 +984,7 @@ perro_app::entry::run_static_embedded_project_android(app, perro_app::entry::Sta
         occlusion_culling = emit_occlusion_culling_expr(cfg.occlusion_culling),
         particle_sim_default = emit_particle_sim_default_expr(cfg.particle_sim_default),
         ui_pixel_snapping = cfg.rendering.ui.pixel_snapping,
+        default_font = escape_str(&cfg.rendering.default_font),
         target_fixed_update = emit_optional_f32(cfg.target_fixed_update),
         frame_rate_cap = emit_frame_rate_cap_expr(cfg.frame_rate_cap),
         physics_gravity = emit_f32(cfg.physics_gravity),

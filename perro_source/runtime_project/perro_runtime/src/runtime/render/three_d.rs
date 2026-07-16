@@ -21,11 +21,11 @@ use perro_render_bridge::{
     UiImageScaleState, UiRectState, UiTextAlignState, Water3DState, WaterBodyQueryState,
     WaterCoastlineShape3D, WaterIdleModeState, WaterImpact3D, WaterLinkState, WaterShapeState,
 };
-use perro_resource_api::sub_apis::{MaterialAPI, MeshAPI, TextureAPI};
-use perro_runtime_render::{TextDecalTextureCache, material_3d_request, mesh_3d_request};
-use perro_structs::{BitMask, Color, Vector2, Vector3};
+use perro_resource_api::sub_apis::{MaterialAPI, MeshAPI};
+use perro_runtime_render::{material_3d_request, mesh_3d_request};
+use perro_structs::{BitMask, Vector2, Vector3};
 use std::borrow::Cow;
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 
 const PARTICLE_PATH_CACHE_MAX: usize = 256;
 
@@ -38,19 +38,6 @@ type Camera3DPick = (
     perro_structs::PostProcessSet,
     perro_structs::AudioListenerOptions,
 );
-
-struct TextDecalRasterParams<'a> {
-    node: NodeID,
-    text: &'a str,
-    size: Vector3,
-    font_size: f32,
-    h_align: perro_ui::UiTextAlign,
-    v_align: perro_ui::UiTextAlign,
-    texture_resolution: u32,
-    color: Color,
-    outline_width: f32,
-    outline_color: Color,
-}
 
 #[inline]
 fn mirror_matrix_3d(flip_x: bool, flip_y: bool, flip_z: bool) -> Mat4 {
@@ -765,104 +752,6 @@ impl Runtime {
                 visible_now.insert(node);
             }
 
-            let text_decal_data = self.nodes.get(node).and_then(|node| match &node.data {
-                SceneNodeData::TextDecal3D(decal)
-                    if decal.active
-                        && decal.visible
-                        && effective_visible
-                        && render_mask_matches(camera_render_mask, decal.render_layers) =>
-                {
-                    Some((
-                        decal.transform,
-                        decal.size,
-                        decal.text.clone(),
-                        decal.color,
-                        decal.font_size,
-                        decal.h_align,
-                        decal.v_align,
-                        decal.texture_resolution,
-                        (decal.outline_width, decal.outline_color),
-                        decal.surface,
-                        decal.distance_fade,
-                        decal.sort_priority,
-                    ))
-                }
-                _ => None,
-            });
-            if let Some((
-                local_transform,
-                size,
-                text,
-                color,
-                font_size,
-                h_align,
-                v_align,
-                texture_resolution,
-                (outline_width, outline_color),
-                surface,
-                distance_fade,
-                sort_priority,
-            )) = text_decal_data
-            {
-                let albedo_texture = self.text_decal_texture(TextDecalRasterParams {
-                    node,
-                    text: text.as_ref(),
-                    size,
-                    font_size,
-                    h_align,
-                    v_align,
-                    texture_resolution,
-                    color,
-                    outline_width,
-                    outline_color,
-                });
-                // Text and outline colors are baked into the raster (so the
-                // outline keeps its own tint); only the color's alpha and the
-                // node modulate scale the decal.
-                let modulate = Runtime::color_modulate(
-                    Color::new(1.0, 1.0, 1.0, color.a.to_u8() as f32 / 255.0),
-                    self.effective_self_modulate(node),
-                );
-                let global = self
-                    .get_render_global_transform_3d(node)
-                    .unwrap_or(local_transform);
-                let emission_texture = if surface.emission_energy > 0.0 {
-                    albedo_texture
-                } else {
-                    perro_ids::TextureID::nil()
-                };
-                let decal = Decal3DState {
-                    position: global.position,
-                    rotation: global.rotation,
-                    size: Vector3::new(
-                        (size.x * global.scale.x).max(0.001),
-                        (size.y * global.scale.y).max(0.001),
-                        (size.z * global.scale.z).max(0.001),
-                    ),
-                    albedo_texture,
-                    normal_texture: perro_ids::TextureID::nil(),
-                    emission_texture,
-                    modulate,
-                    albedo_mix: surface.albedo_mix.clamp(0.0, 1.0),
-                    emission_energy: surface.emission_energy.max(0.0),
-                    normal_strength: surface.normal_strength.max(0.0),
-                    normal_fade: surface.normal_fade.clamp(0.0, 1.0),
-                    distance_fade_begin: distance_fade.begin.max(0.0),
-                    distance_fade_length: distance_fade.length.max(0.001),
-                    sort_priority,
-                };
-                if self.render_3d.retained_decals.get(&node).copied() != Some(decal) {
-                    self.render_3d.retained_decals.insert(node, decal);
-                    self.queue_render_command(RenderCommand::ThreeD(Box::new(
-                        Command3D::SetDecal {
-                            node,
-                            decal: Box::new(decal),
-                        },
-                    )));
-                }
-                visible_now.insert(node);
-            }
-
             let sprite_3d_data =
                 self.nodes
                     .get(node)
@@ -958,9 +847,15 @@ impl Runtime {
                                 && render_mask_matches(camera_render_mask, label.render_layers),
                             label.transform,
                             label.size,
+                            label.lock_orientation,
+                            label.backface_cull,
+                            label.backdrop_color,
+                            label.corner_radii,
+                            label.padding,
                             label.text.clone(),
                             label.color,
                             label.font_size,
+                            label.font.clone(),
                             label.h_align,
                             label.v_align,
                             self.effective_self_modulate(node),
@@ -971,9 +866,15 @@ impl Runtime {
                 visible,
                 local_transform,
                 size,
+                lock_orientation,
+                backface_cull,
+                backdrop_color,
+                corner_radii,
+                padding,
                 text,
                 color,
                 font_size,
+                font,
                 h_align,
                 v_align,
                 modulate,
@@ -983,6 +884,15 @@ impl Runtime {
                     let transform = self
                         .get_render_global_transform_3d(node)
                         .unwrap_or(local_transform);
+                    if lock_orientation
+                        && backface_cull
+                        && !world_rect_front_facing_3d(transform, &overlay_camera)
+                    {
+                        self.queue_render_command(RenderCommand::Ui(UiCommand::RemoveNode {
+                            node,
+                        }));
+                        continue;
+                    }
                     let occluded = self.world_overlay_point_occluded_3d(
                         node,
                         transform.position,
@@ -992,19 +902,56 @@ impl Runtime {
                         self.queue_render_command(RenderCommand::Ui(UiCommand::RemoveNode {
                             node,
                         }));
-                    } else if let Some(rect) =
-                        world_rect_3d(transform, size, &overlay_camera, overlay_viewport)
-                    {
+                    } else if let Some(rect) = label_world_rect_3d(
+                        transform,
+                        size,
+                        lock_orientation,
+                        &overlay_camera,
+                        overlay_viewport,
+                    ) {
+                        let rect = if lock_orientation {
+                            label_3d_stable_layout_rect(rect, size, font_size)
+                        } else {
+                            rect
+                        };
+                        let content_size = label_3d_content_size(rect.size, padding);
+                        let projected_quad = lock_orientation
+                            .then(|| {
+                                label_projected_quad_3d(
+                                    transform,
+                                    size,
+                                    &overlay_camera,
+                                    overlay_viewport,
+                                )
+                            })
+                            .flatten();
+                        if lock_orientation && projected_quad.is_none() {
+                            self.queue_render_command(RenderCommand::Ui(UiCommand::RemoveNode {
+                                node,
+                            }));
+                            continue;
+                        }
                         self.queue_render_command(RenderCommand::Ui(UiCommand::UpsertLabel {
                             node,
                             rect,
                             clip_rect: viewport_clip_3d(overlay_viewport),
                             text,
                             color: Runtime::color_modulate(color, modulate),
-                            font_size: font_size.max(0.001),
-                            wrap_width: label_3d_wrap_width(size, font_size),
+                            font_size: font_size.max(0.001).min(content_size[1]),
+                            font,
+                            wrap_width: Some(content_size[0]),
                             h_align: text_align_state_3d(h_align),
                             v_align: text_align_state_3d(v_align),
+                            backdrop_color: Runtime::color_modulate(backdrop_color, modulate),
+                            corner_radii: perro_render_bridge::UiCornerRadiiState {
+                                tl: corner_radii.tl,
+                                tr: corner_radii.tr,
+                                br: corner_radii.br,
+                                bl: corner_radii.bl,
+                            },
+                            padding: [padding.left, padding.top, padding.right, padding.bottom],
+                            projected_quad,
+                            fit_content: true,
                         }));
                         visible_now.insert(node);
                     }
@@ -1582,9 +1529,6 @@ impl Runtime {
         self.render_3d.mesh_sources.remove(&node);
         self.render_3d.material_surface_sources.remove(&node);
         self.render_3d.material_surface_overrides.remove(&node);
-        if let Some(cache) = self.render_3d.text_decal_texture_cache.remove(&node) {
-            TextureAPI::drop_texture(self.resource_api.as_ref(), cache.texture);
-        }
         if let Some(prev) = self.render_3d.collision_debug_state.remove(&node) {
             Self::queue_remove_collision_debug_nodes(self, node, 0, prev.edge_count);
         }
@@ -1599,26 +1543,6 @@ impl Runtime {
             node,
         })));
         self.queue_render_command(RenderCommand::Ui(UiCommand::RemoveNode { node }));
-    }
-
-    fn text_decal_texture(&mut self, params: TextDecalRasterParams<'_>) -> perro_ids::TextureID {
-        let signature = text_decal_signature(&params);
-        if let Some(cache) = self.render_3d.text_decal_texture_cache.get(&params.node)
-            && cache.signature == signature
-        {
-            return cache.texture;
-        }
-        let (rgba, width, height) = raster_text_decal(&params);
-        let texture =
-            TextureAPI::create_texture_from_rgba(self.resource_api.as_ref(), width, height, &rgba);
-        if let Some(old) = self
-            .render_3d
-            .text_decal_texture_cache
-            .insert(params.node, TextDecalTextureCache { signature, texture })
-        {
-            TextureAPI::drop_texture(self.resource_api.as_ref(), old.texture);
-        }
-        texture
     }
 
     fn world_overlay_point_occluded_3d(
@@ -2709,366 +2633,23 @@ fn text_align_state_3d(align: perro_ui::UiTextAlign) -> UiTextAlignState {
     }
 }
 
-fn text_decal_signature(params: &TextDecalRasterParams<'_>) -> u64 {
-    let font_size = sanitize_text_decal_font_size(params.font_size);
-    string_to_u64(&format!(
-        "text-decal|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
-        params.text,
-        params.size.x.to_bits(),
-        params.size.y.to_bits(),
-        font_size.to_bits(),
-        text_decal_align_id(params.h_align),
-        text_decal_align_id(params.v_align),
-        params.texture_resolution,
-        params.color.r.to_u8(),
-        params.color.g.to_u8(),
-        params.color.b.to_u8(),
-        sanitize_outline_width(params.outline_width).to_bits(),
-        params.outline_color.r.to_u8(),
-        params.outline_color.g.to_u8(),
-        params.outline_color.b.to_u8(),
-        params.outline_color.a.to_u8(),
-        2u8
-    ))
+fn label_3d_content_size(rect_size: [f32; 2], padding: perro_ui::UiRect) -> [f32; 2] {
+    [
+        (rect_size[0] * (1.0 - padding.left.max(0.0) - padding.right.max(0.0))).max(0.001),
+        (rect_size[1] * (1.0 - padding.top.max(0.0) - padding.bottom.max(0.0))).max(0.001),
+    ]
 }
 
-fn sanitize_outline_width(width: f32) -> f32 {
-    if width.is_finite() {
-        width.clamp(0.0, 64.0)
-    } else {
-        0.0
-    }
-}
-
-fn text_decal_align_id(align: perro_ui::UiTextAlign) -> u8 {
-    match align {
-        perro_ui::UiTextAlign::Start => 0,
-        perro_ui::UiTextAlign::Center => 1,
-        perro_ui::UiTextAlign::End => 2,
-    }
-}
-
-fn sanitize_text_decal_font_size(font_size: f32) -> f32 {
-    if font_size.is_finite() {
-        font_size.max(1.0)
-    } else {
-        1.0
-    }
-}
-
-fn raster_text_decal(params: &TextDecalRasterParams<'_>) -> (Vec<u8>, u32, u32) {
-    let resolution = params.texture_resolution.clamp(16, 4096);
-    let size_x = if params.size.x.is_finite() {
-        params.size.x.abs().max(0.001)
-    } else {
-        1.0
-    };
-    let size_y = if params.size.y.is_finite() {
-        params.size.y.abs().max(0.001)
-    } else {
-        1.0
-    };
-    let aspect = (size_x / size_y).clamp(0.0625, 16.0);
-    let font_size = sanitize_text_decal_font_size(params.font_size);
-    let (width, height) = if aspect >= 1.0 {
-        (
-            resolution,
-            ((resolution as f32) / aspect).round().max(1.0) as u32,
-        )
-    } else {
-        (
-            ((resolution as f32) * aspect).round().max(1.0) as u32,
-            resolution,
-        )
-    };
-    let pixel_count = width as usize * height as usize;
-    // Rasterize glyph coverage into a single-channel mask, then compose
-    // colors afterwards. Keeping color out of the coverage pass lets the
-    // outline dilate the same mask, and lets transparent texels carry the
-    // fill/outline RGB so linear filtering never bleeds black fringes in.
-    let mut mask = vec![0u8; pixel_count];
-    if !params.text.is_empty() {
-        if let Some(font_data) = load_text_decal_font_data()
-            && let Ok(font) = ab_glyph::FontRef::try_from_slice(&font_data)
-        {
-            raster_text_decal_font(TextDecalFontRaster {
-                mask: &mut mask,
-                width,
-                height,
-                font: &font,
-                text: params.text,
-                font_size,
-                h_align: params.h_align,
-                v_align: params.v_align,
-            });
-        } else {
-            raster_text_decal_blocks(
-                &mut mask,
-                width,
-                height,
-                params.text,
-                params.h_align,
-                params.v_align,
-            );
-        }
-    }
-    let text_rgb = color_rgb8(params.color);
-    let outline_px = sanitize_outline_width(params.outline_width).round() as usize;
-    let outline_alpha = params.outline_color.a.to_u8() as f32 / 255.0;
-    let mut rgba = vec![0u8; pixel_count * 4];
-    if outline_px == 0 || outline_alpha <= 0.0 {
-        // No outline: every texel carries the fill RGB, alpha = coverage.
-        for (pixel, coverage) in mask.iter().enumerate() {
-            let idx = pixel * 4;
-            rgba[idx] = text_rgb[0];
-            rgba[idx + 1] = text_rgb[1];
-            rgba[idx + 2] = text_rgb[2];
-            rgba[idx + 3] = *coverage;
-        }
-        return (rgba, width, height);
-    }
-    let outline_rgb = color_rgb8(params.outline_color);
-    let dilated = dilate_mask(&mask, width as usize, height as usize, outline_px);
-    for pixel in 0..pixel_count {
-        let fill = mask[pixel] as f32 / 255.0;
-        let outline = (dilated[pixel] as f32 / 255.0) * outline_alpha;
-        // Fill layer over outline layer (straight alpha "over").
-        let alpha = fill + outline * (1.0 - fill);
-        let idx = pixel * 4;
-        if alpha <= 0.0 {
-            // Transparent texels take the outline RGB (it is always the
-            // outermost boundary) so filtering stays fringe-free.
-            rgba[idx] = outline_rgb[0];
-            rgba[idx + 1] = outline_rgb[1];
-            rgba[idx + 2] = outline_rgb[2];
-            continue;
-        }
-        let fill_weight = fill / alpha;
-        let outline_weight = 1.0 - fill_weight;
-        rgba[idx] = mix_channel(outline_rgb[0], text_rgb[0], fill_weight, outline_weight);
-        rgba[idx + 1] = mix_channel(outline_rgb[1], text_rgb[1], fill_weight, outline_weight);
-        rgba[idx + 2] = mix_channel(outline_rgb[2], text_rgb[2], fill_weight, outline_weight);
-        rgba[idx + 3] = (alpha * 255.0).round().clamp(0.0, 255.0) as u8;
-    }
-    (rgba, width, height)
-}
-
-#[inline]
-fn color_rgb8(color: Color) -> [u8; 3] {
-    [color.r.to_u8(), color.g.to_u8(), color.b.to_u8()]
-}
-
-#[inline]
-fn mix_channel(under: u8, over: u8, over_weight: f32, under_weight: f32) -> u8 {
-    (over as f32 * over_weight + under as f32 * under_weight)
-        .round()
-        .clamp(0.0, 255.0) as u8
-}
-
-// Grayscale dilation with a (2r+1)² box (Chebyshev disc), as two separable
-// sliding-window max passes — O(width × height) regardless of radius.
-fn dilate_mask(mask: &[u8], width: usize, height: usize, radius: usize) -> Vec<u8> {
-    if radius == 0 || mask.is_empty() {
-        return mask.to_vec();
-    }
-    let mut horizontal = vec![0u8; mask.len()];
-    for row in 0..height {
-        sliding_window_max(
-            &mask[row * width..(row + 1) * width],
-            radius,
-            &mut horizontal[row * width..(row + 1) * width],
-        );
-    }
-    let mut out = vec![0u8; mask.len()];
-    let mut column_in = vec![0u8; height];
-    let mut column_out = vec![0u8; height];
-    for col in 0..width {
-        for row in 0..height {
-            column_in[row] = horizontal[row * width + col];
-        }
-        sliding_window_max(&column_in, radius, &mut column_out);
-        for row in 0..height {
-            out[row * width + col] = column_out[row];
-        }
-    }
-    out
-}
-
-// out[i] = max(input[i-radius ..= i+radius]) via a monotonic index deque.
-fn sliding_window_max(input: &[u8], radius: usize, out: &mut [u8]) {
-    let mut deque: std::collections::VecDeque<usize> = std::collections::VecDeque::new();
-    for i in 0..input.len() + radius {
-        if i < input.len() {
-            while deque.back().is_some_and(|&back| input[back] <= input[i]) {
-                deque.pop_back();
-            }
-            deque.push_back(i);
-        }
-        if i >= radius {
-            let target = i - radius;
-            while deque.front().is_some_and(|&front| front + radius < target) {
-                deque.pop_front();
-            }
-            if let Some(&front) = deque.front() {
-                out[target] = input[front];
-            }
-        }
-    }
-}
-
-fn load_text_decal_font_data() -> Option<&'static [u8]> {
-    static FONT_DATA: OnceLock<Option<Vec<u8>>> = OnceLock::new();
-    FONT_DATA
-        .get_or_init(|| {
-            let mut db = fontdb::Database::new();
-            db.load_system_fonts();
-            let query = fontdb::Query {
-                families: &[
-                    fontdb::Family::SansSerif,
-                    fontdb::Family::Name("Arial"),
-                    fontdb::Family::Name("DejaVu Sans"),
-                    fontdb::Family::Name("Noto Sans"),
-                ],
-                ..fontdb::Query::default()
-            };
-            let id = db.query(&query)?;
-            let face = db.face(id)?;
-            match &face.source {
-                fontdb::Source::Binary(data) => Some(data.as_ref().as_ref().to_vec()),
-                fontdb::Source::File(path) => std::fs::read(path).ok(),
-                fontdb::Source::SharedFile(path, _) => std::fs::read(path).ok(),
-            }
-        })
-        .as_deref()
-}
-
-struct TextDecalFontRaster<'a, 'font> {
-    mask: &'a mut [u8],
-    width: u32,
-    height: u32,
-    font: &'font ab_glyph::FontRef<'font>,
-    text: &'a str,
+fn label_3d_stable_layout_rect(
+    mut rect: UiRectState,
+    size: Vector2,
     font_size: f32,
-    h_align: perro_ui::UiTextAlign,
-    v_align: perro_ui::UiTextAlign,
-}
-
-fn raster_text_decal_font(params: TextDecalFontRaster<'_, '_>) {
-    use ab_glyph::{Font, ScaleFont};
-
-    let scale = ab_glyph::PxScale::from(
-        params
-            .font_size
-            .clamp(1.0, params.height.max(params.width) as f32),
-    );
-    let scaled = params.font.as_scaled(scale);
-    let line_height = scaled.height().max(params.font_size.max(1.0));
-    let lines: Vec<&str> = params.text.lines().collect();
-    let total_height = line_height * lines.len().max(1) as f32;
-    let start_y = match params.v_align {
-        perro_ui::UiTextAlign::Start => 0.0,
-        perro_ui::UiTextAlign::Center => (params.height as f32 - total_height).max(0.0) * 0.5,
-        perro_ui::UiTextAlign::End => (params.height as f32 - total_height).max(0.0),
-    };
-    for (line_index, line) in lines.iter().enumerate() {
-        let mut line_width = 0.0;
-        let mut prev = None;
-        for ch in line.chars() {
-            let glyph_id = scaled.glyph_id(ch);
-            if let Some(prev_id) = prev {
-                line_width += scaled.kern(prev_id, glyph_id);
-            }
-            line_width += scaled.h_advance(glyph_id);
-            prev = Some(glyph_id);
-        }
-        let mut cursor_x = match params.h_align {
-            perro_ui::UiTextAlign::Start => 0.0,
-            perro_ui::UiTextAlign::Center => (params.width as f32 - line_width).max(0.0) * 0.5,
-            perro_ui::UiTextAlign::End => (params.width as f32 - line_width).max(0.0),
-        };
-        let baseline = start_y + scaled.ascent() + line_index as f32 * line_height;
-        let mut prev = None;
-        for ch in line.chars() {
-            let glyph_id = scaled.glyph_id(ch);
-            if let Some(prev_id) = prev {
-                cursor_x += scaled.kern(prev_id, glyph_id);
-            }
-            let glyph =
-                glyph_id.with_scale_and_position(scale, ab_glyph::point(cursor_x, baseline));
-            if let Some(outlined) = params.font.outline_glyph(glyph) {
-                let bounds = outlined.px_bounds();
-                outlined.draw(|x, y, coverage| {
-                    let px = x as i32 + bounds.min.x.floor() as i32;
-                    let py = y as i32 + bounds.min.y.floor() as i32;
-                    if px < 0 || py < 0 || px >= params.width as i32 || py >= params.height as i32 {
-                        return;
-                    }
-                    let idx = py as usize * params.width as usize + px as usize;
-                    let alpha = (coverage * 255.0).round().clamp(0.0, 255.0) as u8;
-                    params.mask[idx] = params.mask[idx].max(alpha);
-                });
-            }
-            cursor_x += scaled.h_advance(glyph_id);
-            prev = Some(glyph_id);
-        }
-    }
-}
-
-fn raster_text_decal_blocks(
-    mask: &mut [u8],
-    width: u32,
-    height: u32,
-    text: &str,
-    h_align: perro_ui::UiTextAlign,
-    v_align: perro_ui::UiTextAlign,
-) {
-    let lines: Vec<&str> = text.lines().collect();
-    let cols = lines
-        .iter()
-        .map(|line| line.chars().count())
-        .max()
-        .unwrap_or(1)
-        .max(1);
-    let rows = lines.len().max(1);
-    let cell_w = (width as usize / cols.max(1)).max(1);
-    let cell_h = (height as usize / rows.max(1)).max(1);
-    let block = cell_w.min(cell_h).max(1);
-    let total_h = rows * block;
-    let start_y = match v_align {
-        perro_ui::UiTextAlign::Start => 0,
-        perro_ui::UiTextAlign::Center => (height as usize).saturating_sub(total_h) / 2,
-        perro_ui::UiTextAlign::End => (height as usize).saturating_sub(total_h),
-    };
-    for (row, line) in lines.iter().enumerate() {
-        let line_w = line.chars().count() * block;
-        let start_x = match h_align {
-            perro_ui::UiTextAlign::Start => 0,
-            perro_ui::UiTextAlign::Center => (width as usize).saturating_sub(line_w) / 2,
-            perro_ui::UiTextAlign::End => (width as usize).saturating_sub(line_w),
-        };
-        for (col, ch) in line.chars().enumerate() {
-            if ch.is_whitespace() {
-                continue;
-            }
-            let x0 = start_x + col * block;
-            let y0 = start_y + row * block;
-            let pad = (block / 6).max(1);
-            for y in y0 + pad..(y0 + block).saturating_sub(pad).min(height as usize) {
-                for x in x0 + pad..(x0 + block).saturating_sub(pad).min(width as usize) {
-                    mask[y * width as usize + x] = 255;
-                }
-            }
-        }
-    }
-}
-
-fn label_3d_wrap_width(size: Vector2, font_size: f32) -> Option<f32> {
-    if !size.x.is_finite() || !size.y.is_finite() || !font_size.is_finite() {
-        return None;
-    }
-    let height = size.y.abs().max(0.001);
-    let aspect = (size.x.abs() / height).max(1.0);
-    Some((aspect * font_size.max(1.0)).max(1.0))
+) -> UiRectState {
+    let height = font_size.max(1.0);
+    let aspect = (size.x.abs() / size.y.abs().max(0.001)).max(0.001);
+    rect.size = [(height * aspect).max(1.0), height];
+    rect.rotation_radians = 0.0;
+    rect
 }
 
 fn sprite_3d_uv(
@@ -3130,6 +2711,58 @@ fn world_rect_3d(
     })
 }
 
+fn label_world_rect_3d(
+    mut transform: perro_structs::Transform3D,
+    size: Vector2,
+    lock_orientation: bool,
+    camera: &Camera3DState,
+    viewport: Vector2,
+) -> Option<UiRectState> {
+    if !lock_orientation {
+        transform.rotation = perro_structs::Quaternion::new(
+            camera.rotation[0],
+            camera.rotation[1],
+            camera.rotation[2],
+            camera.rotation[3],
+        );
+    }
+    let rect = world_rect_3d(transform, size, camera, viewport)?;
+    Some(rect)
+}
+
+fn label_projected_quad_3d(
+    transform: perro_structs::Transform3D,
+    size: Vector2,
+    camera: &Camera3DState,
+    viewport: Vector2,
+) -> Option<[[f32; 4]; 4]> {
+    let rotation = Quat::from_xyzw(
+        transform.rotation.x,
+        transform.rotation.y,
+        transform.rotation.z,
+        transform.rotation.w,
+    );
+    let rotation = if rotation.is_finite() && rotation.length_squared() > 1.0e-6 {
+        rotation.normalize()
+    } else {
+        Quat::IDENTITY
+    };
+    let center = Vec3::from(transform.position);
+    let right = rotation * Vec3::X * (size.x * transform.scale.x.abs() * 0.5);
+    let up = rotation * Vec3::Y * (size.y * transform.scale.y.abs() * 0.5);
+    let view_proj = camera_view_proj_3d(camera, viewport);
+    let project = |point: Vec3| {
+        let clip = view_proj * point.extend(1.0);
+        clip.is_finite().then_some([clip.x, clip.y, clip.z, clip.w])
+    };
+    Some([
+        project(center - right + up)?,
+        project(center + right + up)?,
+        project(center + right - up)?,
+        project(center - right - up)?,
+    ])
+}
+
 fn projected_axis_size_3d(
     center: Vec3,
     half_axis: Vec3,
@@ -3146,6 +2779,26 @@ fn projected_axis_size_3d(
     let dy = (delta.y * clip.w - clip.y * delta.w) * inv_w_sq * viewport.y.max(1.0);
     let size = dx.hypot(dy);
     size.is_finite().then_some(size)
+}
+
+fn world_rect_front_facing_3d(
+    transform: perro_structs::Transform3D,
+    camera: &Camera3DState,
+) -> bool {
+    let rotation = Quat::from_xyzw(
+        transform.rotation.x,
+        transform.rotation.y,
+        transform.rotation.z,
+        transform.rotation.w,
+    );
+    let rotation = if rotation.is_finite() && rotation.length_squared() > 1.0e-6 {
+        rotation.normalize()
+    } else {
+        Quat::IDENTITY
+    };
+    let normal = rotation * Vec3::Z;
+    let to_camera = Vec3::from(camera.position) - Vec3::from(transform.position);
+    normal.dot(to_camera) > 0.0
 }
 
 fn project_world_to_ui(world: Vec3, view_proj: Mat4, viewport: Vector2) -> Option<[f32; 2]> {

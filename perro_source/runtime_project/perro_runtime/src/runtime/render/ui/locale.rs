@@ -135,13 +135,6 @@ impl Runtime {
                 label.text = Cow::Borrowed(text);
                 true
             }
-            (SceneNodeData::TextDecal3D(label), LocaleTextField::LabelText) => {
-                if label.text.as_ref() == text {
-                    return false;
-                }
-                label.text = Cow::Borrowed(text);
-                true
-            }
             (SceneNodeData::UiTextBox(text_box), LocaleTextField::TextEditText) => {
                 if text_box.inner.text.as_ref() == text {
                     return false;
@@ -181,10 +174,9 @@ impl Runtime {
 
 fn default_locale_text_field(data: &SceneNodeData) -> Option<LocaleTextField> {
     match data {
-        SceneNodeData::UiLabel(_)
-        | SceneNodeData::Label2D(_)
-        | SceneNodeData::Label3D(_)
-        | SceneNodeData::TextDecal3D(_) => Some(LocaleTextField::LabelText),
+        SceneNodeData::UiLabel(_) | SceneNodeData::Label2D(_) | SceneNodeData::Label3D(_) => {
+            Some(LocaleTextField::LabelText)
+        }
         SceneNodeData::UiTextBox(_) | SceneNodeData::UiTextBlock(_) => {
             Some(LocaleTextField::TextEditText)
         }
@@ -198,7 +190,6 @@ fn locale_text_field_supported(data: &SceneNodeData, field: LocaleTextField) -> 
         (SceneNodeData::UiLabel(_), LocaleTextField::LabelText)
             | (SceneNodeData::Label2D(_), LocaleTextField::LabelText)
             | (SceneNodeData::Label3D(_), LocaleTextField::LabelText)
-            | (SceneNodeData::TextDecal3D(_), LocaleTextField::LabelText)
             | (SceneNodeData::UiTextBox(_), LocaleTextField::TextEditText)
             | (SceneNodeData::UiTextBlock(_), LocaleTextField::TextEditText)
             | (

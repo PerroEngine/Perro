@@ -6,4 +6,5 @@ edition = "2024"
 [dependencies]
 perro_input_api.workspace = true
 perro_structs.workspace = true
+perro_ui.workspace = true
 toml.workspace = true

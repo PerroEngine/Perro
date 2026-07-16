@@ -17,6 +17,7 @@ pub type DlcStaticBinaryLookup = unsafe extern "C" fn(u64, *mut *const u8, *mut 
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct StaticResourceLookups {
+    pub font_lookup: Option<StaticBytesLookup>,
     pub texture_lookup: Option<StaticBytesLookup>,
     pub mesh_lookup: Option<StaticBytesLookup>,
     pub collision_trimesh_lookup: Option<StaticBytesLookup>,
@@ -588,7 +589,28 @@ fn load_dlc_static_binary(dlc: &str, path: &str) -> io::Result<Vec<u8>> {
     // SAFETY: Successful lookup guarantees ptr is non-null and len bytes remain valid
     // for the duration of this call; copy immediately into an owned Vec.
     let bytes = unsafe { std::slice::from_raw_parts(ptr, len) };
+    if Path::new(path)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| matches!(ext.to_ascii_lowercase().as_str(), "ttf" | "otf" | "ttc"))
+    {
+        return decode_static_font(bytes);
+    }
     Ok(bytes.to_vec())
+}
+
+pub fn decode_static_font(bytes: &[u8]) -> io::Result<Vec<u8>> {
+    if !bytes.starts_with(b"PFONT") {
+        return Ok(bytes.to_vec());
+    }
+    let raw_len = u32::from_le_bytes(
+        bytes
+            .get(5..9)
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "short PFONT"))?
+            .try_into()
+            .unwrap(),
+    ) as usize;
+    crate::decompress_zlib_limited(&bytes[9..], raw_len)
 }
 
 fn load_static_binary(path: &str) -> io::Result<Vec<u8>> {
@@ -610,6 +632,7 @@ fn load_static_resource_binary(lookups: StaticResourceLookups, path: &str) -> io
         .unwrap_or_default();
 
     let bytes = match ext.as_str() {
+        "ttf" | "otf" | "ttc" => lookups.font_lookup.map(|lookup| lookup(hash)),
         "png" | "jpg" | "jpeg" | "bmp" | "gif" | "ico" | "tga" | "webp" | "rgba" => {
             lookups.texture_lookup.map(|lookup| lookup(hash))
         }
@@ -640,6 +663,9 @@ fn load_static_resource_binary(lookups: StaticResourceLookups, path: &str) -> io
             io::ErrorKind::NotFound,
             format!("static resource not found: {path}"),
         ));
+    }
+    if matches!(ext.as_str(), "ttf" | "otf" | "ttc") {
+        return decode_static_font(bytes);
     }
     Ok(bytes.to_vec())
 }
@@ -674,12 +700,26 @@ fn is_static_binary_path(path: &str) -> bool {
             | "mid"
             | "midi"
             | "sf2"
+            | "ttf"
+            | "otf"
+            | "ttc"
     )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn static_font_decode_handles_raw_and_pfont() {
+        let raw = b"font bytes font bytes font bytes";
+        assert_eq!(decode_static_font(raw).unwrap(), raw);
+        let compressed = crate::compress_zlib_best(raw).unwrap();
+        let mut packed = b"PFONT".to_vec();
+        packed.extend_from_slice(&(raw.len() as u32).to_le_bytes());
+        packed.extend_from_slice(&compressed);
+        assert_eq!(decode_static_font(&packed).unwrap(), raw);
+    }
 
     static EMPTY_ARCHIVE: &[u8] = &[
         b'P', b'R', b'A', b'1', 1, 0, 0, 0, 0, 0, 0, 0, 20, 0, 0, 0, 0, 0, 0, 0,

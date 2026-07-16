@@ -2267,6 +2267,11 @@ mod tests {
             [label_3d]
             [Label3D]
                 text = %loc: "ui.name"
+                lock_orientation = true
+                backface_cull = false
+                backdrop_color = (0.1, 0.2, 0.3, 1.0)
+                corner_radii = (0.1, 0.2, 0.3, 0.4)
+                padding = (0.05, 0.1, 0.05, 0.1)
             [/Label3D]
             [/label_3d]
             "#,
@@ -2297,7 +2302,14 @@ mod tests {
         assert_eq!(label_3d.locale_text_bindings.len(), 1);
         assert_eq!(label_3d.locale_text_bindings[0].key, "ui.name");
         match &label_3d.node.data {
-            SceneNodeData::Label3D(label) => assert_eq!(label.text.as_ref(), "ui.name"),
+            SceneNodeData::Label3D(label) => {
+                assert_eq!(label.text.as_ref(), "ui.name");
+                assert!(label.lock_orientation);
+                assert!(!label.backface_cull);
+                assert_eq!(label.backdrop_color, perro_structs::Color::new(0.1, 0.2, 0.3, 1.0));
+                assert_eq!(label.corner_radii.tl, 0.1);
+                assert_eq!(label.padding.top, 0.1);
+            }
             other => panic!("expected Label3D node, got {other:?}"),
         }
     }

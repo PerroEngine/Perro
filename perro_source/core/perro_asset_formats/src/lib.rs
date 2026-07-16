@@ -99,6 +99,7 @@ pub mod source_ext {
     pub const AUDIO: &[&str] = &["mp3", "wav", "ogg", "flac", "aac", "m4a"];
     pub const MIDI: &[&str] = &["mid", "midi"];
     pub const SOUNDFONT: &[&str] = &["sf2"];
+    pub const FONT: &[&str] = &["ttf", "otf", "ttc"];
     pub const MODEL: &[&str] = &[GLB, GLTF];
     pub const MESH_INPUT: &[&str] = &[crate::pmesh::EXTENSION, GLB, GLTF];
     pub const SKELETON_INPUT: &[&str] = &[
