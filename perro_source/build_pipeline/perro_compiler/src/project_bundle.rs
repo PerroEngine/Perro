@@ -126,6 +126,7 @@ fn sweep_unknown_embedded_entries(project_root: &Path) -> Result<(), CompilerErr
         "csvs",
         "localizations",
         "assets.perro",
+        "assets.perro.stat",
     ];
     let embedded_dir = project_root.join(".perro").join("project").join("embedded");
     fs::create_dir_all(&embedded_dir)?;

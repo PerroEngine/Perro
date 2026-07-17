@@ -1,14 +1,15 @@
 use rayon::prelude::*;
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     fs,
     io::{self, Cursor, Seek, SeekFrom, Write},
-    path::Path,
+    path::{Path, PathBuf},
+    time::UNIX_EPOCH,
 };
 
 use super::common::{
     FLAG_COMPRESSED, PERRO_ASSETS_COMPRESSED_MAGIC, PERRO_ASSETS_MAGIC, PerroAssetsEntryMeta,
-    PerroAssetsHeader, write_header, write_index_entry,
+    PerroAssetsHeader, read_header, read_index_entry, write_header, write_index_entry,
 };
 use crate::compression::compress_zlib_best;
 use crate::walkdir::collect_file_paths;
@@ -45,6 +46,95 @@ struct ProcessedFile {
     data: Vec<u8>,
     flags: u32,
     original_size: u64,
+    // (len, mtime nanos) recorded in the stat sidecar; None skips recording
+    // (unreadable stat, or the file changed between stat and read).
+    stat: Option<(u64, u128)>,
+}
+
+/// Stat sidecar version; bump alongside any change to what a cached entry
+/// means (compression codec, entry layout) so stale sidecars self-invalidate.
+const ASSETS_STAT_VERSION: u32 = 1;
+
+fn stat_manifest_header() -> String {
+    format!(
+        "perro-assets-stat v{ASSETS_STAT_VERSION} archive-v{}",
+        archive::VERSION
+    )
+}
+
+/// `<output>.stat` sidecar recording each packed source's (len, mtime), which
+/// lets the next build reuse already-compressed bytes out of the previous
+/// archive instead of re-reading + re-deflating the whole res tree.
+fn stat_sidecar_path(output: &Path) -> PathBuf {
+    let mut name = output.file_name().unwrap_or_default().to_os_string();
+    name.push(".stat");
+    output.with_file_name(name)
+}
+
+fn file_stat(path: &Path) -> Option<(u64, u128)> {
+    let meta = fs::metadata(path).ok()?;
+    let mtime = meta
+        .modified()
+        .ok()?
+        .duration_since(UNIX_EPOCH)
+        .ok()?
+        .as_nanos();
+    Some((meta.len(), mtime))
+}
+
+/// Previous archive + its stat sidecar, loaded for compressed-byte reuse.
+struct ReusedArchive {
+    stats: HashMap<String, (u64, u128)>,
+    index: HashMap<String, PerroAssetsEntryMeta>,
+    bytes: Vec<u8>,
+}
+
+impl ReusedArchive {
+    fn entry_slice(&self, meta: &PerroAssetsEntryMeta) -> Option<&[u8]> {
+        let start = usize::try_from(meta.offset).ok()?;
+        let size = usize::try_from(meta.size).ok()?;
+        self.bytes.get(start..start.checked_add(size)?)
+    }
+}
+
+fn load_reuse_archive(output: &Path, stat_path: &Path) -> Option<ReusedArchive> {
+    let text = fs::read_to_string(stat_path).ok()?;
+    let mut lines = text.lines();
+    if lines.next()? != stat_manifest_header() {
+        return None;
+    }
+    let mut stats = HashMap::new();
+    for line in lines {
+        let mut parts = line.splitn(3, '\t');
+        let len = parts.next()?.parse().ok()?;
+        let mtime = parts.next()?.parse().ok()?;
+        stats.insert(parts.next()?.to_string(), (len, mtime));
+    }
+    let bytes = fs::read(output).ok()?;
+    let mut cursor = Cursor::new(bytes.as_slice());
+    let header = read_header(&mut cursor).ok()?;
+    cursor.seek(SeekFrom::Start(header.index_offset)).ok()?;
+    let mut index = HashMap::with_capacity(header.file_count as usize);
+    for _ in 0..header.file_count {
+        let (path, meta) = read_index_entry(&mut cursor).ok()?;
+        index.insert(path, meta);
+    }
+    Some(ReusedArchive {
+        stats,
+        index,
+        bytes,
+    })
+}
+
+fn write_stat_manifest(path: &Path, files: &[ProcessedFile]) -> io::Result<()> {
+    let mut out = stat_manifest_header();
+    out.push('\n');
+    for file in files {
+        if let Some((len, mtime)) = file.stat {
+            out.push_str(&format!("{len}\t{mtime}\t{}\n", file.rel_path));
+        }
+    }
+    write_output_if_changed(path, out.as_bytes())
 }
 
 /// Write only when bytes differ; unchanged archives keep their mtime so
@@ -60,7 +150,11 @@ fn write_output_if_changed(path: &Path, bytes: &[u8]) -> io::Result<()> {
     fs::write(path, bytes)
 }
 
-/// Build a `.perro` archive
+/// Build a `.perro` archive.
+///
+/// Incremental: a `<output>.stat` sidecar records each source's (len, mtime);
+/// sources whose stat is unchanged reuse their compressed bytes from the
+/// previous archive instead of being re-read and re-deflated.
 pub fn build_perro_assets_archive(
     output: &Path,
     res_dir: &Path,
@@ -77,11 +171,33 @@ pub fn build_perro_assets_archive(
         .collect::<Vec<_>>();
     rel_paths.sort();
 
+    let stat_path = stat_sidecar_path(output);
+    let reuse = load_reuse_archive(output, &stat_path);
+
     let processed_files = rel_paths
         .into_par_iter()
         .map(|rel_path| -> io::Result<ProcessedFile> {
             let full_path = res_dir.join(&rel_path);
+            let stat = file_stat(&full_path);
+            // Unchanged stat: lift the already-compressed bytes straight out
+            // of the previous archive.
+            if let (Some(reuse), Some(stat)) = (reuse.as_ref(), stat)
+                && reuse.stats.get(&rel_path) == Some(&stat)
+                && let Some(meta) = reuse.index.get(&format!("res/{rel_path}"))
+                && let Some(data) = reuse.entry_slice(meta)
+            {
+                return Ok(ProcessedFile {
+                    rel_path,
+                    data: data.to_vec(),
+                    flags: meta.flags,
+                    original_size: meta.original_size,
+                    stat: Some(stat),
+                });
+            }
             let mut data = fs::read(&full_path)?;
+            // A length mismatch means the file changed between stat and read;
+            // drop the stat so the next build re-encodes instead of reusing.
+            let stat = stat.filter(|(len, _)| *len == data.len() as u64);
             let original_size = data.len() as u64;
             let mut flags = 0;
             if original_size > 0 {
@@ -97,6 +213,7 @@ pub fn build_perro_assets_archive(
                 data,
                 flags,
                 original_size,
+                stat,
             })
         })
         .collect::<io::Result<Vec<_>>>()?;
@@ -111,25 +228,17 @@ pub fn build_perro_assets_archive(
     write_header(&mut archive, &header)?;
 
     let mut entries = Vec::new();
-    for processed in processed_files {
-        let ProcessedFile {
-            rel_path,
-            data,
-            flags,
-            original_size,
-        } = processed;
-
+    for processed in &processed_files {
         let offset = archive.stream_position()?;
-        archive.write_all(&data)?;
-        let size = data.len() as u64;
+        archive.write_all(&processed.data)?;
 
         entries.push(PerroAssetsEntry {
-            path: format!("res/{rel_path}"),
+            path: format!("res/{}", processed.rel_path),
             meta: PerroAssetsEntryMeta {
                 offset,
-                size,
-                original_size,
-                flags,
+                size: processed.data.len() as u64,
+                original_size: processed.original_size,
+                flags: processed.flags,
             },
         });
     }
@@ -150,7 +259,8 @@ pub fn build_perro_assets_archive(
     };
     write_header(&mut archive, &header)?;
 
-    write_output_if_changed(output, &archive.into_inner())
+    write_output_if_changed(output, &archive.into_inner())?;
+    write_stat_manifest(&stat_path, &processed_files)
 }
 
 /// Build a generic `.perro` archive from explicit `(virtual_path, source_file)` entries.

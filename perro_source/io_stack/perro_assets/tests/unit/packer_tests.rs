@@ -1,8 +1,9 @@
-use super::{build_compressed_perro_archive_from_entries, should_skip};
+use super::{build_compressed_perro_archive_from_entries, build_perro_assets_archive, should_skip};
 use crate::archive::PerroAssetsArchive;
 use crate::common::PERRO_ASSETS_COMPRESSED_MAGIC;
 use std::collections::HashSet;
 use std::fs;
+use std::time::Duration;
 
 #[test]
 fn pmat_is_skipped_as_compiled_resource() {
@@ -52,6 +53,51 @@ fn compressed_archive_roundtrips() {
         archive.read_file("res/payload.bin").unwrap(),
         vec![b'x'; 4096]
     );
+
+    let _ = fs::remove_dir_all(&root);
+}
+
+fn set_source_mtime(path: &std::path::Path, mtime: std::time::SystemTime) {
+    fs::OpenOptions::new()
+        .write(true)
+        .open(path)
+        .unwrap()
+        .set_times(fs::FileTimes::new().set_modified(mtime))
+        .unwrap();
+}
+
+#[test]
+fn assets_archive_reuses_prev_compressed_bytes_on_stat_match() {
+    let root = std::env::temp_dir().join(format!("perro_assets_incr_{}", std::process::id()));
+    let _ = fs::remove_dir_all(&root);
+    let res_dir = root.join("res");
+    fs::create_dir_all(&res_dir).unwrap();
+    let source = res_dir.join("data.txt");
+    let output = root.join("assets.perro");
+    fs::write(&source, vec![b'a'; 512]).unwrap();
+
+    build_perro_assets_archive(&output, &res_dir, &root, &[]).unwrap();
+    let first = fs::read(&output).unwrap();
+    let mtime = fs::metadata(&source).unwrap().modified().unwrap();
+
+    // Same len + restored mtime: the builder must serve the previous
+    // archive's compressed bytes (stale 'a' payload proves no re-encode).
+    fs::write(&source, vec![b'b'; 512]).unwrap();
+    set_source_mtime(&source, mtime);
+    build_perro_assets_archive(&output, &res_dir, &root, &[]).unwrap();
+    assert_eq!(fs::read(&output).unwrap(), first, "stat hit must reuse");
+
+    // mtime moved: rebuild re-encodes and picks up the new bytes.
+    set_source_mtime(&source, mtime + Duration::from_secs(5));
+    build_perro_assets_archive(&output, &res_dir, &root, &[]).unwrap();
+    let archive = PerroAssetsArchive::open_from_file(&output).unwrap();
+    assert_eq!(archive.read_file("res/data.txt").unwrap(), vec![b'b'; 512]);
+
+    // Corrupt sidecar: falls back to a full rebuild, output stays valid.
+    fs::write(root.join("assets.perro.stat"), "garbage").unwrap();
+    build_perro_assets_archive(&output, &res_dir, &root, &[]).unwrap();
+    let archive = PerroAssetsArchive::open_from_file(&output).unwrap();
+    assert_eq!(archive.read_file("res/data.txt").unwrap(), vec![b'b'; 512]);
 
     let _ = fs::remove_dir_all(&root);
 }
