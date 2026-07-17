@@ -1,11 +1,32 @@
 mod regular {
     use std::sync::LazyLock;
 
-    pub const PRELUDE_WGSL: &str = perro_macros::include_str_stripped!("shaders/prelude_3d.wgsl");
+    // Fns shared verbatim by the rigid/skinned prelude and multimesh paths
+    // live once in shared_3d.wgsl and get concatenated ahead of each base
+    // file here (WGSL module-scope declarations are order-independent).
+    const SHARED_3D_WGSL: &str = perro_macros::include_str_stripped!("shaders/shared_3d.wgsl");
+    const PRELUDE_BASE_WGSL: &str =
+        perro_macros::include_str_stripped!("shaders/prelude_3d.wgsl");
+    static PRELUDE_WGSL_FULL: LazyLock<String> =
+        LazyLock::new(|| format!("{SHARED_3D_WGSL}\n{PRELUDE_BASE_WGSL}"));
+    const MULTIMESH_BASE_WGSL: &str =
+        perro_macros::include_str_stripped!("shaders/multimesh.wgsl");
+    static MULTIMESH_WGSL_FULL: LazyLock<String> =
+        LazyLock::new(|| format!("{SHARED_3D_WGSL}\n{MULTIMESH_BASE_WGSL}"));
     static PRELUDE_RIGID_WGSL: LazyLock<String> =
-        LazyLock::new(|| super::build_rigid_prelude(PRELUDE_WGSL));
+        LazyLock::new(|| super::build_rigid_prelude(prelude_wgsl()));
     static PRELUDE_SKINNED_WGSL: LazyLock<String> =
-        LazyLock::new(|| super::build_skinned_prelude(PRELUDE_WGSL));
+        LazyLock::new(|| super::build_skinned_prelude(prelude_wgsl()));
+
+    #[inline]
+    pub fn prelude_wgsl() -> &'static str {
+        PRELUDE_WGSL_FULL.as_str()
+    }
+
+    #[inline]
+    pub fn multimesh_wgsl() -> &'static str {
+        MULTIMESH_WGSL_FULL.as_str()
+    }
     pub const MATERIAL_STANDARD_WGSL: &str =
         perro_macros::include_str_stripped!("shaders/material_standard.wgsl");
     pub const MATERIAL_UNLIT_WGSL: &str =
@@ -18,7 +39,6 @@ mod regular {
         perro_macros::include_str_stripped!("shaders/depth_prepass_rigid.wgsl");
     pub const DEPTH_PREPASS_SKINNED_WGSL: &str =
         perro_macros::include_str_stripped!("shaders/depth_prepass_skinned.wgsl");
-    pub const MULTIMESH_WGSL: &str = perro_macros::include_str_stripped!("shaders/multimesh.wgsl");
     pub const MESH_BLEND_SCREEN_WGSL: &str =
         perro_macros::include_str_stripped!("shaders/mesh_blend_screen.wgsl");
     pub const SKY3D_WGSL: &str = perro_macros::include_str_stripped!("shaders/sky3d.wgsl");
@@ -187,13 +207,13 @@ pub fn create_toon_shader_module(device: &wgpu::Device) -> wgpu::ShaderModule {
 
 #[inline]
 pub fn build_material_shader(material_wgsl: &str) -> String {
-    build_material_shader_with_prelude(regular::PRELUDE_WGSL, material_wgsl)
+    build_material_shader_with_prelude(regular::prelude_wgsl(), material_wgsl)
 }
 
 fn build_rigid_prelude(prelude: &str) -> String {
     prelude
         .replace(
-            "@group(0) @binding(1) var<storage, read> skeletons: array<SkeletonBone>; struct SkeletonBone { row_0: vec4<f32>, row_1: vec4<f32>, row_2: vec4<f32>, } fn blend_skin_rows(base: u32, joints: vec4<u32>, weights: vec4<f32>) -> mat3x4<f32> { let b0 = skeletons[base + joints.x]; let b1 = skeletons[base + joints.y]; let b2 = skeletons[base + joints.z]; let b3 = skeletons[base + joints.w]; return mat3x4<f32>( b0.row_0 * weights.x + b1.row_0 * weights.y + b2.row_0 * weights.z + b3.row_0 * weights.w, b0.row_1 * weights.x + b1.row_1 * weights.y + b2.row_1 * weights.z + b3.row_1 * weights.w, b0.row_2 * weights.x + b1.row_2 * weights.y + b2.row_2 * weights.z + b3.row_2 * weights.w, ); } ",
+            "@group(0) @binding(1) var<storage, read> skeletons: array<SkeletonBone>; struct SkeletonBone { row_0: vec4<f32>, row_1: vec4<f32>, row_2: vec4<f32>, } fn perro_blend_skin_rows(base: u32, joints: vec4<u32>, weights: vec4<f32>) -> mat3x4<f32> { let b0 = skeletons[base + joints.x]; let b1 = skeletons[base + joints.y]; let b2 = skeletons[base + joints.z]; let b3 = skeletons[base + joints.w]; return mat3x4<f32>( b0.row_0 * weights.x + b1.row_0 * weights.y + b2.row_0 * weights.z + b3.row_0 * weights.w, b0.row_1 * weights.x + b1.row_1 * weights.y + b2.row_1 * weights.z + b3.row_1 * weights.w, b0.row_2 * weights.x + b1.row_2 * weights.y + b2.row_2 * weights.z + b3.row_2 * weights.w, ); } ",
             "",
         )
         .replace("@group(0) @binding(2)", "@group(0) @binding(1)")
@@ -214,7 +234,7 @@ fn build_rigid_prelude(prelude: &str) -> String {
             "return VertexInput(out_pos, vec4<f32>(normalize(out_normal), 0.0), v.uv, v.paint_uv);",
         )
         .replace(
-            "var pos = blended.pos; var normal = blended.normal.xyz; if inst.skeleton_params.y > 0u { let rows = blend_skin_rows(inst.skeleton_params.x, blended.joints, blended.weights); let p_skin = vec4<f32>(pos, 1.0); let skinned_pos = vec3<f32>(dot(rows[0], p_skin), dot(rows[1], p_skin), dot(rows[2], p_skin)); normal = vec3<f32>(dot(rows[0].xyz, normal), dot(rows[1].xyz, normal), dot(rows[2].xyz, normal)); pos = skinned_pos; } let p = vec4<f32>(pos, 1.0);",
+            "var pos = blended.pos; var normal = blended.normal.xyz; if inst.skeleton_params.y > 0u { let rows = perro_blend_skin_rows(inst.skeleton_params.x, blended.joints, blended.weights); let p_skin = vec4<f32>(pos, 1.0); let skinned_pos = vec3<f32>(dot(rows[0], p_skin), dot(rows[1], p_skin), dot(rows[2], p_skin)); normal = vec3<f32>(dot(rows[0].xyz, normal), dot(rows[1].xyz, normal), dot(rows[2].xyz, normal)); pos = skinned_pos; } let p = vec4<f32>(pos, 1.0);",
             "let p = vec4<f32>(blended.pos, 1.0);",
         )
         .replace(
@@ -229,8 +249,8 @@ fn build_rigid_prelude(prelude: &str) -> String {
 
 fn build_skinned_prelude(prelude: &str) -> String {
     prelude.replace(
-        "var pos = blended.pos; var normal = blended.normal.xyz; if inst.skeleton_params.y > 0u { let rows = blend_skin_rows(inst.skeleton_params.x, blended.joints, blended.weights); let p_skin = vec4<f32>(pos, 1.0); let skinned_pos = vec3<f32>(dot(rows[0], p_skin), dot(rows[1], p_skin), dot(rows[2], p_skin)); normal = vec3<f32>(dot(rows[0].xyz, normal), dot(rows[1].xyz, normal), dot(rows[2].xyz, normal)); pos = skinned_pos; }",
-        "let rows = blend_skin_rows(inst.skeleton_params.x, blended.joints, blended.weights); let p_skin = vec4<f32>(blended.pos, 1.0); let pos = vec3<f32>(dot(rows[0], p_skin), dot(rows[1], p_skin), dot(rows[2], p_skin)); let normal = vec3<f32>( dot(rows[0].xyz, blended.normal.xyz), dot(rows[1].xyz, blended.normal.xyz), dot(rows[2].xyz, blended.normal.xyz), );",
+        "var pos = blended.pos; var normal = blended.normal.xyz; if inst.skeleton_params.y > 0u { let rows = perro_blend_skin_rows(inst.skeleton_params.x, blended.joints, blended.weights); let p_skin = vec4<f32>(pos, 1.0); let skinned_pos = vec3<f32>(dot(rows[0], p_skin), dot(rows[1], p_skin), dot(rows[2], p_skin)); normal = vec3<f32>(dot(rows[0].xyz, normal), dot(rows[1].xyz, normal), dot(rows[2].xyz, normal)); pos = skinned_pos; }",
+        "let rows = perro_blend_skin_rows(inst.skeleton_params.x, blended.joints, blended.weights); let p_skin = vec4<f32>(blended.pos, 1.0); let pos = vec3<f32>(dot(rows[0], p_skin), dot(rows[1], p_skin), dot(rows[2], p_skin)); let normal = vec3<f32>( dot(rows[0].xyz, blended.normal.xyz), dot(rows[1].xyz, blended.normal.xyz), dot(rows[2].xyz, blended.normal.xyz), );",
     )
 }
 
@@ -275,8 +295,8 @@ fn build_packed_lod_rigid_prelude() -> String {
             "    return VertexInput(vec4<f32>(out_pos, 0.0), vec4<f32>(normalize(out_normal), 0.0), v.uv, v.paint_uv);",
         )
         .replace(
-            "    let blended = apply_blend_shapes(v, vertex_index, instance_index);",
-            "    let packed_lod = packed_lod_params[inst.packed_lod_param_id];\n    var decoded_v = v;\n    decoded_v.pos = vec4<f32>(packed_lod.pos_min.xyz + v.pos.xyz * packed_lod.pos_extent.xyz, 0.0);\n    decoded_v.uv = packed_lod.uv_min_extent.xy + v.uv * packed_lod.uv_min_extent.zw;\n    let blended = apply_blend_shapes(decoded_v, vertex_index, instance_index);",
+            "    let blended = perro_apply_blend_shapes(v, vertex_index, instance_index);",
+            "    let packed_lod = packed_lod_params[inst.packed_lod_param_id];\n    var decoded_v = v;\n    decoded_v.pos = vec4<f32>(packed_lod.pos_min.xyz + v.pos.xyz * packed_lod.pos_extent.xyz, 0.0);\n    decoded_v.uv = packed_lod.uv_min_extent.xy + v.uv * packed_lod.uv_min_extent.zw;\n    let blended = perro_apply_blend_shapes(decoded_v, vertex_index, instance_index);",
         )
         .replace(
             "    let p = vec4<f32>(blended.pos, 1.0);",
@@ -332,7 +352,7 @@ pub fn build_custom_multimesh_material_shader(
     material_wgsl: &str,
     lighting: perro_render_bridge::CustomMaterialLighting3D,
 ) -> String {
-    let base = sanitize_reserved_meta_identifier(regular::MULTIMESH_WGSL);
+    let base = sanitize_reserved_meta_identifier(regular::multimesh_wgsl());
     let split_at = base
         .find("@vertex\nfn vs_main")
         .or_else(|| base.find("@vertex\r\nfn vs_main"))
@@ -349,11 +369,11 @@ pub fn build_custom_multimesh_material_shader(
     out.push_str(material_wgsl);
     if has_custom_vertex {
         out.push_str(
-            "\n@vertex\nfn vs_main(v: VertexInput, @builtin(vertex_index) vertex_index: u32, @builtin(instance_index) instance_index: u32) -> VertexOutput {\n    let inst = fetch_instance(instance_index);\n    return shade_vertex(perro_multimesh_vs_main_base(v, inst, vertex_index));\n}\n",
+            "\n@vertex\nfn vs_main(v: VertexInput, @builtin(vertex_index) vertex_index: u32, @builtin(instance_index) instance_index: u32) -> VertexOutput {\n    let inst = perro_fetch_instance(instance_index);\n    return shade_vertex(perro_multimesh_vs_main_base(v, inst, vertex_index));\n}\n",
         );
     } else {
         out.push_str(
-            "\n@vertex\nfn vs_main(v: VertexInput, @builtin(vertex_index) vertex_index: u32, @builtin(instance_index) instance_index: u32) -> VertexOutput {\n    let inst = fetch_instance(instance_index);\n    return perro_multimesh_vs_main_base(v, inst, vertex_index);\n}\n",
+            "\n@vertex\nfn vs_main(v: VertexInput, @builtin(vertex_index) vertex_index: u32, @builtin(instance_index) instance_index: u32) -> VertexOutput {\n    let inst = perro_fetch_instance(instance_index);\n    return perro_multimesh_vs_main_base(v, inst, vertex_index);\n}\n",
         );
     }
     if apply_standard_lighting {
@@ -509,7 +529,7 @@ pub fn create_multimesh_shader_module(device: &wgpu::Device) -> wgpu::ShaderModu
     device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("perro_multimesh"),
         source: wgpu::ShaderSource::Wgsl(
-            sanitize_reserved_meta_identifier(regular::MULTIMESH_WGSL).into(),
+            sanitize_reserved_meta_identifier(regular::multimesh_wgsl()).into(),
         ),
     })
 }
@@ -696,7 +716,7 @@ mod tests {
     #[test]
     fn three_d_material_wgsl_parses() {
         for prelude in [
-            regular::PRELUDE_WGSL,
+            regular::prelude_wgsl(),
             regular::prelude_rigid_wgsl(),
             regular::prelude_skinned_wgsl(),
         ] {
@@ -739,7 +759,7 @@ mod tests {
         assert!(wgsl.contains("lit_emissive *= textureSample(custom_image_tex_3"));
 
         let prelude = regular::prelude_rigid_wgsl();
-        assert!(prelude.contains("fn fallback_tangent"));
+        assert!(prelude.contains("fn perro_fallback_tangent"));
         assert!(prelude.contains("var handedness = 1.0"));
         assert!(prelude.contains("cross(tangent_raw, bitangent_raw)"));
         assert!(prelude.contains("sampled.xy * scale"));
@@ -747,11 +767,11 @@ mod tests {
 
     #[test]
     fn multimesh_standard_material_keeps_texture_parity() {
-        let wgsl = regular::MULTIMESH_WGSL;
+        let wgsl = regular::multimesh_wgsl();
         assert!(wgsl.contains("@location(12) uv: vec2<f32>"));
         assert!(wgsl.contains("roughness *= metallic_roughness.g"));
         assert!(wgsl.contains("metallic *= metallic_roughness.b"));
-        assert!(wgsl.contains("fn apply_multimesh_normal_map"));
+        assert!(wgsl.contains("fn perro_apply_multimesh_normal_map"));
         assert!(wgsl.contains("let sampled_ao = textureSample(custom_image_tex_2"));
         assert!(wgsl.contains("lit_emissive *= textureSample(custom_image_tex_3"));
         assert!(wgsl.contains("return shade_standard_multimesh(in)"));
@@ -867,7 +887,7 @@ fn shade_material(in: FragmentInput) -> vec4<f32> {
 }
 "#;
         for (prelude_name, prelude) in [
-            ("default", regular::PRELUDE_WGSL),
+            ("default", regular::prelude_wgsl()),
             ("rigid", regular::prelude_rigid_wgsl()),
             ("skinned", regular::prelude_skinned_wgsl()),
         ] {
@@ -962,7 +982,7 @@ fn shade_material(in: FragmentInput) -> vec4<f32> {
         let vertex_entry = "fn vs_main(v: VertexInput, inst: InstanceInput, @builtin(vertex_index) vertex_index: u32, @builtin(instance_index) instance_index: u32) -> VertexOutput";
         let fragment_entry = "fn fs_main(in: FragmentInput) -> @location(0) vec4<f32>";
         for prelude in [
-            regular::PRELUDE_WGSL,
+            regular::prelude_wgsl(),
             regular::prelude_rigid_wgsl(),
             regular::prelude_skinned_wgsl(),
         ] {
@@ -997,7 +1017,7 @@ fn shade_material(in: FragmentInput) -> vec4<f32> {
 "#;
         let vertex_entry = "fn vs_main(v: VertexInput, inst: InstanceInput, @builtin(vertex_index) vertex_index: u32, @builtin(instance_index) instance_index: u32) -> VertexOutput";
         for prelude in [
-            regular::PRELUDE_WGSL,
+            regular::prelude_wgsl(),
             regular::prelude_rigid_wgsl(),
             regular::prelude_skinned_wgsl(),
         ] {
@@ -1302,7 +1322,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
     #[test]
     fn multimesh_wgsl_parses() {
-        let wgsl = sanitize_reserved_meta_identifier(regular::MULTIMESH_WGSL);
+        let wgsl = sanitize_reserved_meta_identifier(regular::multimesh_wgsl());
         naga::front::wgsl::parse_str(&wgsl).expect("multimesh wgsl parses");
     }
 

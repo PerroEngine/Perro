@@ -96,7 +96,7 @@ struct SkeletonBone {
 
 // Weight-blend the 4 bone palettes into 3 affine rows (returned as the columns
 // of a mat3x4 container).
-fn blend_skin_rows(base: u32, joints: vec4<u32>, weights: vec4<f32>) -> mat3x4<f32> {
+fn perro_blend_skin_rows(base: u32, joints: vec4<u32>, weights: vec4<f32>) -> mat3x4<f32> {
     let b0 = skeletons[base + joints.x];
     let b1 = skeletons[base + joints.y];
     let b2 = skeletons[base + joints.z];
@@ -154,31 +154,6 @@ var ssao_tex: texture_2d<f32>;
 @group(3) @binding(0)
 var<storage, read> environment_data: array<u32>;
 
-fn custom_image_sample_at(index: u32, uv: vec2<f32>) -> vec4<f32> {
-    if index == 0u {
-        return textureSample(custom_image_tex_0, material_sampler, uv);
-    }
-    if index == 1u {
-        return textureSample(custom_image_tex_1, material_sampler, uv);
-    }
-    if index == 2u {
-        return textureSample(custom_image_tex_2, material_sampler, uv);
-    }
-    if index == 3u {
-        return textureSample(custom_image_tex_3, material_sampler, uv);
-    }
-    if index == 4u {
-        return textureSample(custom_image_tex_4, material_sampler, uv);
-    }
-    if index == 5u {
-        return textureSample(custom_image_tex_5, material_sampler, uv);
-    }
-    if index == 6u {
-        return textureSample(custom_image_tex_6, material_sampler, uv);
-    }
-    return textureSample(custom_image_tex_7, material_sampler, uv);
-}
-
 // ---- Decals -------------------------------------------------------------
 // Projected box decals patched into the lit path before lighting: albedo
 // and normal are modified in place, emission is added on top. Records are
@@ -218,70 +193,6 @@ struct DecalSurface {
 
 // Decal layers hold raw sRGB bytes behind a linear view; color layers decode
 // here, normal layers read raw.
-fn decal_srgb_to_linear(c: vec3<f32>) -> vec3<f32> {
-    return pow(max(c, vec3<f32>(0.0)), vec3<f32>(2.2));
-}
-
-fn perro_apply_decals(world_pos: vec3<f32>, albedo_in: vec3<f32>, normal_in: vec3<f32>) -> DecalSurface {
-    var out: DecalSurface;
-    out.albedo = albedo_in;
-    out.normal = normal_in;
-    out.emissive = vec3<f32>(0.0);
-    // Derivatives before any branch (uniform control flow); per-decal uv
-    // gradients are linear transforms of these, keeping textureSampleGrad
-    // valid inside the non-uniform loop body.
-    let dpx = dpdx(world_pos);
-    let dpy = dpdy(world_pos);
-    let count = scene_decals.count.x;
-    for (var i = 0u; i < count; i = i + 1u) {
-        let d = scene_decals.decals[i];
-        let p = vec4<f32>(world_pos, 1.0);
-        let local = vec3<f32>(dot(d.inv_row_0, p), dot(d.inv_row_1, p), dot(d.inv_row_2, p));
-        if any(abs(local) > vec3<f32>(0.5)) {
-            continue;
-        }
-        // Rows of the inverse are the decal axes scaled by 1/size; the decal
-        // projects along its -Z, so +Z is the receiving direction.
-        let axis = normalize(d.inv_row_2.xyz);
-        let facing = dot(normal_in, axis);
-        let fade_t = d.params0.w;
-        let angle_fade = clamp((facing - fade_t) / max(1.0 - fade_t, 0.001), 0.0, 1.0);
-        var opacity = d.tint.a * angle_fade;
-        if d.params1.y > 0.0 {
-            let dist = distance(scene.camera_pos.xyz, world_pos);
-            opacity *= clamp(1.0 - (dist - d.params1.y) * d.params1.z, 0.0, 1.0);
-        }
-        if opacity <= 0.001 {
-            continue;
-        }
-        let uv = vec2<f32>(local.x + 0.5, 0.5 - local.y);
-        let g0 = vec2<f32>(dot(d.inv_row_0.xyz, dpx), -dot(d.inv_row_1.xyz, dpx));
-        let g1 = vec2<f32>(dot(d.inv_row_0.xyz, dpy), -dot(d.inv_row_1.xyz, dpy));
-        var albedo_alpha = opacity;
-        if d.params0.x >= 0.0 {
-            let s = textureSampleGrad(decal_textures, decal_sampler, uv, i32(d.params0.x), g0, g1);
-            albedo_alpha = s.a * opacity;
-            out.albedo = mix(out.albedo, decal_srgb_to_linear(s.rgb) * d.tint.rgb, albedo_alpha * d.params1.x);
-        } else {
-            out.albedo = mix(out.albedo, d.tint.rgb, opacity * d.params1.x);
-        }
-        if d.params0.y >= 0.0 && d.emission.w > 0.0 {
-            let ns = textureSampleGrad(decal_textures, decal_sampler, uv, i32(d.params0.y), g0, g1);
-            let nt = ns.xyz * 2.0 - vec3<f32>(1.0);
-            let t_axis = normalize(d.inv_row_0.xyz);
-            let b_axis = normalize(d.inv_row_1.xyz);
-            // The v axis is flipped in uv space, so the bitangent negates.
-            let mapped = normalize(t_axis * nt.x - b_axis * nt.y + out.normal * max(nt.z, 0.35));
-            out.normal = normalize(mix(out.normal, mapped, albedo_alpha * min(d.emission.w, 1.0)));
-        }
-        if d.params0.z >= 0.0 {
-            let es = textureSampleGrad(decal_textures, decal_sampler, uv, i32(d.params0.z), g0, g1);
-            out.emissive += decal_srgb_to_linear(es.rgb) * d.emission.rgb * es.a * opacity;
-        }
-    }
-    return out;
-}
-
 // Seam width floor in pixels so distant blends never collapse to a hard line.
 const MESH_BLEND_MIN_PIXELS: f32 = 2.5;
 
@@ -345,39 +256,31 @@ struct FragmentInput {
     @location(9) paint_uv: vec2<f32>,
 };
 
-fn custom_image_sample(in: FragmentInput, index: u32, uv: vec2<f32>) -> vec4<f32> {
-    return custom_image_sample_at(index, uv);
-}
-
-fn unpack_byte(packed: u32, shift: u32) -> u32 {
-    return (packed >> shift) & 0xffu;
-}
-
-fn unpack_unorm8(packed: u32, shift: u32) -> f32 {
-    return f32(unpack_byte(packed, shift)) * INV_255;
+fn perro_unpack_unorm8(packed: u32, shift: u32) -> f32 {
+    return f32(perro_unpack_byte(packed, shift)) * INV_255;
 }
 
 fn unpack_rgba8(packed: u32) -> vec4<f32> {
     return vec4<f32>(
-        unpack_unorm8(packed, 0u),
-        unpack_unorm8(packed, 8u),
-        unpack_unorm8(packed, 16u),
-        unpack_unorm8(packed, 24u),
+        perro_unpack_unorm8(packed, 0u),
+        perro_unpack_unorm8(packed, 8u),
+        perro_unpack_unorm8(packed, 16u),
+        perro_unpack_unorm8(packed, 24u),
     );
 }
 
 // rgb lanes hold the normalized color, w holds max-component / 16 (see
 // pack_emissive_hdr on the CPU side).
-fn unpack_emissive_hdr(packed: u32) -> vec3<f32> {
+fn perro_unpack_emissive_hdr(packed: u32) -> vec3<f32> {
     let e = unpack_rgba8(packed);
     return e.xyz * (e.w * 16.0);
 }
 
-fn decode_material_params(packed: u32) -> DecodedMaterialParams {
+fn perro_decode_material_params(packed: u32) -> DecodedMaterialParams {
     let flags = (packed >> 3u) & 0x1fffu;
     return DecodedMaterialParams(
         packed & 0x3u,
-        unpack_unorm8(packed, 16u),
+        perro_unpack_unorm8(packed, 16u),
         ((packed >> 2u) & 0x1u) != 0u,
         flags,
         (flags & 0x1u) != 0u,
@@ -394,7 +297,7 @@ fn decode_material_params(packed: u32) -> DecodedMaterialParams {
     );
 }
 
-fn fallback_tangent(normal_ws: vec3<f32>) -> vec3<f32> {
+fn perro_fallback_tangent(normal_ws: vec3<f32>) -> vec3<f32> {
     let axis = select(
         vec3<f32>(1.0, 0.0, 0.0),
         vec3<f32>(0.0, 1.0, 0.0),
@@ -406,13 +309,13 @@ fn fallback_tangent(normal_ws: vec3<f32>) -> vec3<f32> {
 // Rebuild tangent frame from position + UV derivatives. glTF normal maps
 // work without growing vertex format or mesh bandwidth. Degenerate UVs use
 // stable normal-derived tangent so mapped normals stay finite.
-fn apply_standard_normal_map(in: FragmentInput, normal_ws: vec3<f32>, scale: f32) -> vec3<f32> {
+fn perro_apply_standard_normal_map(in: FragmentInput, normal_ws: vec3<f32>, scale: f32) -> vec3<f32> {
     let dp1 = dpdx(in.world_pos);
     let dp2 = dpdy(in.world_pos);
     let duv1 = dpdx(in.uv);
     let duv2 = dpdy(in.uv);
     let det = duv1.x * duv2.y - duv1.y * duv2.x;
-    var tangent_raw = fallback_tangent(normal_ws);
+    var tangent_raw = perro_fallback_tangent(normal_ws);
     var bitangent_raw = cross(normal_ws, tangent_raw);
     if abs(det) >= 1.0e-8 {
         let inv_det = 1.0 / det;
@@ -420,7 +323,7 @@ fn apply_standard_normal_map(in: FragmentInput, normal_ws: vec3<f32>, scale: f32
         bitangent_raw = (-dp1 * duv2.x + dp2 * duv1.x) * inv_det;
     }
     let tangent_ortho = tangent_raw - normal_ws * dot(normal_ws, tangent_raw);
-    var tangent = fallback_tangent(normal_ws);
+    var tangent = perro_fallback_tangent(normal_ws);
     if dot(tangent_ortho, tangent_ortho) > 1.0e-8 {
         tangent = normalize(tangent_ortho);
     }
@@ -438,39 +341,7 @@ fn apply_standard_normal_map(in: FragmentInput, normal_ws: vec3<f32>, scale: f32
     return normalize(tangent * mapped.x + bitangent * mapped.y + normal_ws * mapped.z);
 }
 
-fn decode_mesh_blend_params(packed: u32) -> vec4<f32> {
-    return vec4<f32>(
-        unpack_unorm8(packed, 0u) * 16.0,
-        unpack_unorm8(packed, 8u) * 16.0,
-        unpack_unorm8(packed, 16u),
-        unpack_unorm8(packed, 24u) * 64.0,
-    );
-}
-
-fn mesh_blend_hash(p: vec2<f32>) -> f32 {
-    return fract(sin(dot(p, vec2<f32>(12.9898, 78.233))) * 43758.5453);
-}
-
-fn mesh_blend_noise(p: vec2<f32>) -> f32 {
-    let cell = floor(p);
-    let local = fract(p);
-    let curve = local * local * (3.0 - 2.0 * local);
-    let a = mesh_blend_hash(cell);
-    let b = mesh_blend_hash(cell + vec2<f32>(1.0, 0.0));
-    let c = mesh_blend_hash(cell + vec2<f32>(0.0, 1.0));
-    let d = mesh_blend_hash(cell + vec2<f32>(1.0, 1.0));
-    return mix(mix(a, b, curve.x), mix(c, d, curve.x), curve.y);
-}
-
-fn mesh_blend_world_from_depth(coord: vec2<i32>, dims_u: vec2<u32>, depth: f32) -> vec3<f32> {
-    let uv = (vec2<f32>(coord) + vec2<f32>(0.5)) / vec2<f32>(dims_u);
-    let ndc_xy = vec2<f32>(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0);
-    let ndc = vec4<f32>(ndc_xy, depth, 1.0);
-    let world_h = scene.inv_view_proj * ndc;
-    return world_h.xyz / max(abs(world_h.w), 1.0e-5);
-}
-
-fn mesh_blend_fade(in: FragmentInput, material: DecodedMaterialParams) -> f32 {
+fn perro_mesh_blend_fade(in: FragmentInput, material: DecodedMaterialParams) -> f32 {
     if !material.mesh_blend {
         return 1.0;
     }
@@ -484,9 +355,9 @@ fn mesh_blend_fade(in: FragmentInput, material: DecodedMaterialParams) -> f32 {
     if receiver_depth >= 0.999999 {
         return 1.0;
     }
-    let params = decode_mesh_blend_params(in.packed_pbr_params_1);
+    let params = perro_decode_mesh_blend_params(in.packed_pbr_params_1);
     let view_dist = distance(in.world_pos, scene.camera_pos.xyz);
-    let receiver_world = mesh_blend_world_from_depth(coord, dims_u, receiver_depth);
+    let receiver_world = perro_mesh_blend_world_from_depth(coord, dims_u, receiver_depth);
     let receiver_dist = distance(receiver_world, scene.camera_pos.xyz);
     let raw_depth_delta = receiver_dist - view_dist;
     if raw_depth_delta <= 0.0 {
@@ -504,7 +375,7 @@ fn mesh_blend_fade(in: FragmentInput, material: DecodedMaterialParams) -> f32 {
         let tile = max(params.w * 0.05, 0.05);
         let p = (receiver_world.xz
             + vec2<f32>(receiver_world.y * 0.53, receiver_world.y * 0.29)) / tile;
-        let soft_noise = smoothstep(0.1, 0.9, mesh_blend_noise(p));
+        let soft_noise = smoothstep(0.1, 0.9, perro_mesh_blend_noise(p));
         noise = (soft_noise - 0.5) * params.z * max_width;
     }
     let depth_delta = max(raw_depth_delta + noise, 0.0);
@@ -515,8 +386,8 @@ fn mesh_blend_fade(in: FragmentInput, material: DecodedMaterialParams) -> f32 {
     return fade * fade * (3.0 - 2.0 * fade);
 }
 
-fn apply_mesh_blend_alpha(in: FragmentInput, material: DecodedMaterialParams, alpha: f32) -> f32 {
-    return alpha * mesh_blend_fade(in, material);
+fn perro_apply_mesh_blend_alpha(in: FragmentInput, material: DecodedMaterialParams, alpha: f32) -> f32 {
+    return alpha * perro_mesh_blend_fade(in, material);
 }
 
 // Alpha cutoff/opaque handling without the mesh-blend fade; callers that
@@ -533,19 +404,19 @@ fn perro_material_alpha_base(material: DecodedMaterialParams, alpha: f32) -> f32
 }
 
 fn perro_material_alpha(in: FragmentInput, alpha: f32) -> f32 {
-    let material = decode_material_params(in.packed_material_params);
+    let material = perro_decode_material_params(in.packed_material_params);
     let out_alpha = perro_material_alpha_base(material, alpha);
-    return apply_mesh_blend_alpha(in, material, out_alpha);
+    return perro_apply_mesh_blend_alpha(in, material, out_alpha);
 }
 
 // Variant for callers that already computed the mesh-blend fade, avoiding a
-// second mesh_blend_fade (textureLoad + reconstruct + derivatives).
+// second perro_mesh_blend_fade (textureLoad + reconstruct + derivatives).
 fn perro_material_alpha_with_fade(in: FragmentInput, alpha: f32, mesh_fade: f32) -> f32 {
-    let material = decode_material_params(in.packed_material_params);
+    let material = perro_decode_material_params(in.packed_material_params);
     return perro_material_alpha_base(material, alpha) * mesh_fade;
 }
 
-fn apply_mesh_normal_blend(
+fn perro_apply_mesh_normal_blend(
     material: DecodedMaterialParams,
     normal_ws: vec3<f32>,
     world_pos: vec3<f32>,
@@ -574,48 +445,23 @@ fn apply_mesh_normal_blend(
 fn decode_standard_pbr_params(packed_0: u32, packed_1: u32) -> vec4<f32> {
     let _future = packed_1;
     return vec4<f32>(
-        unpack_unorm8(packed_0, 0u),
-        unpack_unorm8(packed_0, 8u),
-        unpack_unorm8(packed_0, 16u),
-        unpack_unorm8(packed_0, 24u) * 4.0,
+        perro_unpack_unorm8(packed_0, 0u),
+        perro_unpack_unorm8(packed_0, 8u),
+        perro_unpack_unorm8(packed_0, 16u),
+        perro_unpack_unorm8(packed_0, 24u) * 4.0,
     );
 }
 
 fn decode_toon_params(packed_0: u32, packed_1: u32) -> vec3<f32> {
     let _future = packed_1;
     return vec3<f32>(
-        max(1.0, f32(unpack_byte(packed_0, 0u))),
-        unpack_unorm8(packed_0, 8u) * 4.0,
-        unpack_unorm8(packed_0, 16u) * 4.0,
+        max(1.0, f32(perro_unpack_byte(packed_0, 0u))),
+        perro_unpack_unorm8(packed_0, 8u) * 4.0,
+        perro_unpack_unorm8(packed_0, 16u) * 4.0,
     );
 }
 
-fn transform_normal_ws(
-    row_0: vec3<f32>,
-    row_1: vec3<f32>,
-    row_2: vec3<f32>,
-    normal: vec3<f32>,
-) -> vec3<f32> {
-    let cof_0 = cross(row_1, row_2);
-    let cof_1 = cross(row_2, row_0);
-    let cof_2 = cross(row_0, row_1);
-    let det = dot(row_0, cof_0);
-    if abs(det) <= 1.0e-8 {
-        return normalize(vec3<f32>(
-            dot(row_0, normal),
-            dot(row_1, normal),
-            dot(row_2, normal),
-        ));
-    }
-    let det_sign = select(-1.0, 1.0, det >= 0.0);
-    return normalize(vec3<f32>(
-        dot(cof_0, normal),
-        dot(cof_1, normal),
-        dot(cof_2, normal),
-    ) * det_sign);
-}
-
-fn apply_blend_shapes(v: VertexInput, vertex_index: u32, instance_index: u32) -> VertexInput {
+fn perro_apply_blend_shapes(v: VertexInput, vertex_index: u32, instance_index: u32) -> VertexInput {
     let blend_meta = blend_shape_instances[instance_index];
     let weight_count = min(blend_meta.weight_range.y, blend_meta.shape_range.y);
     if weight_count == 0u || blend_meta.shape_range.w == 0u || vertex_index < blend_meta.shape_range.z {
@@ -637,11 +483,11 @@ fn apply_blend_shapes(v: VertexInput, vertex_index: u32, instance_index: u32) ->
 }
 
 fn perro_vs_main_base(v: VertexInput, inst: InstanceInput, vertex_index: u32, instance_index: u32) -> VertexOutput {
-    let blended = apply_blend_shapes(v, vertex_index, instance_index);
+    let blended = perro_apply_blend_shapes(v, vertex_index, instance_index);
     var pos = blended.pos;
     var normal = blended.normal.xyz;
     if inst.skeleton_params.y > 0u {
-        let rows = blend_skin_rows(inst.skeleton_params.x, blended.joints, blended.weights);
+        let rows = perro_blend_skin_rows(inst.skeleton_params.x, blended.joints, blended.weights);
         let p_skin = vec4<f32>(pos, 1.0);
         let skinned_pos = vec3<f32>(dot(rows[0], p_skin), dot(rows[1], p_skin), dot(rows[2], p_skin));
         normal = vec3<f32>(dot(rows[0].xyz, normal), dot(rows[1].xyz, normal), dot(rows[2].xyz, normal));
@@ -654,7 +500,7 @@ fn perro_vs_main_base(v: VertexInput, inst: InstanceInput, vertex_index: u32, in
         dot(inst.model_row_2, p),
         1.0,
     );
-    let normal_ws = transform_normal_ws(
+    let normal_ws = perro_transform_normal_ws(
         inst.model_row_0.xyz,
         inst.model_row_1.xyz,
         inst.model_row_2.xyz,
@@ -675,91 +521,15 @@ fn perro_vs_main_base(v: VertexInput, inst: InstanceInput, vertex_index: u32, in
     return out;
 }
 
-fn custom_f_param(in: FragmentInput, index: u32) -> vec4<f32> {
-    if index >= in.custom_range.y {
-        return vec4<f32>(0.0);
-    }
-    let packed_meta = custom_params_meta[in.custom_range.x + index];
-    let kind = packed_meta & 0x3u;
-    let value_offset = packed_meta >> 2u;
-    if kind == 0u {
-        return vec4<f32>(custom_params_values[value_offset], 0.0, 0.0, 0.0);
-    }
-    if kind == 1u {
-        return vec4<f32>(
-            custom_params_values[value_offset],
-            custom_params_values[value_offset + 1u],
-            0.0,
-            0.0,
-        );
-    }
-    if kind == 2u {
-        return vec4<f32>(
-            custom_params_values[value_offset],
-            custom_params_values[value_offset + 1u],
-            custom_params_values[value_offset + 2u],
-            0.0,
-        );
-    }
-    return vec4<f32>(
-        custom_params_values[value_offset],
-        custom_params_values[value_offset + 1u],
-        custom_params_values[value_offset + 2u],
-        custom_params_values[value_offset + 3u],
-    );
-}
-
-fn custom_v_param(out: VertexOutput, index: u32) -> vec4<f32> {
-    if index >= out.custom_range.y {
-        return vec4<f32>(0.0);
-    }
-    let packed_meta = custom_params_meta[out.custom_range.x + index];
-    let kind = packed_meta & 0x3u;
-    let value_offset = packed_meta >> 2u;
-    if kind == 0u {
-        return vec4<f32>(custom_params_values[value_offset], 0.0, 0.0, 0.0);
-    }
-    if kind == 1u {
-        return vec4<f32>(
-            custom_params_values[value_offset],
-            custom_params_values[value_offset + 1u],
-            0.0,
-            0.0,
-        );
-    }
-    if kind == 2u {
-        return vec4<f32>(
-            custom_params_values[value_offset],
-            custom_params_values[value_offset + 1u],
-            custom_params_values[value_offset + 2u],
-            0.0,
-        );
-    }
-    return vec4<f32>(
-        custom_params_values[value_offset],
-        custom_params_values[value_offset + 1u],
-        custom_params_values[value_offset + 2u],
-        custom_params_values[value_offset + 3u],
-    );
-}
-
-fn custom_param(in: FragmentInput, index: u32) -> vec4<f32> {
-    return custom_f_param(in, index);
-}
-
-fn custom_param_vertex(out: VertexOutput, index: u32) -> vec4<f32> {
-    return custom_v_param(out, index);
-}
-
-fn shadow_factor(world_pos: vec3<f32>, normal_ws: vec3<f32>, light_dir_to_light: vec3<f32>) -> f32 {
-    return ray_shadow_factor(world_pos, normal_ws, light_dir_to_light);
+fn perro_shadow_factor(world_pos: vec3<f32>, normal_ws: vec3<f32>, light_dir_to_light: vec3<f32>) -> f32 {
+    return perro_ray_shadow_factor(world_pos, normal_ws, light_dir_to_light);
 }
 
 // Returns -1.0 when the position falls outside this cascade's map so the
 // caller can fall through to the next cascade.
 // normal_dir / bias_dir must already be normalized (caller hoists the two
 // normalize() calls out of the per-cascade loop).
-fn sample_ray_shadow_array(light_view_proj: mat4x4<f32>, world_pos: vec3<f32>, normal_dir: vec3<f32>, bias_dir: vec3<f32>, layer: u32) -> f32 {
+fn perro_sample_ray_shadow_array(light_view_proj: mat4x4<f32>, world_pos: vec3<f32>, normal_dir: vec3<f32>, bias_dir: vec3<f32>, layer: u32) -> f32 {
     let texel_world = max(shadow.ray_texel[layer], 1.0e-4);
     // Keep receiver bias below one shadow texel and below the light's world-space
     // limit. The depth compare and shadow raster pass already carry depth bias;
@@ -795,7 +565,7 @@ fn sample_ray_shadow_array(light_view_proj: mat4x4<f32>, world_pos: vec3<f32>, n
 
 // normal_dir must already be normalized (perro_lit_standard normalizes once;
 // re-normalizing per shadowed light wastes ALU).
-fn sample_shadow_array(light_view_proj: mat4x4<f32>, world_pos: vec3<f32>, normal_dir: vec3<f32>, bias_dir: vec3<f32>, layer: u32, is_point: bool) -> f32 {
+fn perro_sample_shadow_array(light_view_proj: mat4x4<f32>, world_pos: vec3<f32>, normal_dir: vec3<f32>, bias_dir: vec3<f32>, layer: u32, is_point: bool) -> f32 {
     let sample_pos = world_pos + normal_dir * shadow.params0.w + normalize(bias_dir) * shadow.params0.w * 0.25;
     let light_clip = light_view_proj * vec4<f32>(sample_pos, 1.0);
     if abs(light_clip.w) <= 1.0e-6 {
@@ -835,7 +605,7 @@ fn sample_shadow_array(light_view_proj: mat4x4<f32>, world_pos: vec3<f32>, norma
     return sum / 9.0;
 }
 
-fn ray_shadow_factor(world_pos: vec3<f32>, normal_ws: vec3<f32>, light_dir_to_light: vec3<f32>) -> f32 {
+fn perro_ray_shadow_factor(world_pos: vec3<f32>, normal_ws: vec3<f32>, light_dir_to_light: vec3<f32>) -> f32 {
     if shadow.params0.x < 0.5 || shadow.ray_params.x < 0.5 {
         return 1.0;
     }
@@ -851,7 +621,7 @@ fn ray_shadow_factor(world_pos: vec3<f32>, normal_ws: vec3<f32>, light_dir_to_li
     let bias_dir = normalize(light_dir_to_light);
     var visibility = 1.0;
     for (var cascade = 0u; cascade < cascade_count; cascade = cascade + 1u) {
-        let sampled = sample_ray_shadow_array(shadow.ray_light_view_proj[cascade], world_pos, normal_dir, bias_dir, cascade);
+        let sampled = perro_sample_ray_shadow_array(shadow.ray_light_view_proj[cascade], world_pos, normal_dir, bias_dir, cascade);
         if sampled >= 0.0 {
             visibility = sampled;
             break;
@@ -861,7 +631,7 @@ fn ray_shadow_factor(world_pos: vec3<f32>, normal_ws: vec3<f32>, light_dir_to_li
     return mix(1.0, visibility, strength);
 }
 
-fn spot_shadow_factor(world_pos: vec3<f32>, normal_ws: vec3<f32>, light_index: u32) -> f32 {
+fn perro_spot_shadow_factor(world_pos: vec3<f32>, normal_ws: vec3<f32>, light_index: u32) -> f32 {
     if shadow.params0.x < 0.5 || light_index >= MAX_SPOT_LIGHTS {
         return 1.0;
     }
@@ -872,11 +642,11 @@ fn spot_shadow_factor(world_pos: vec3<f32>, normal_ws: vec3<f32>, light_index: u
     let i = u32(slot_f + 0.5);
     let params = shadow.spot_params[i];
     let light = scene.spot_lights[light_index];
-    let visibility = sample_shadow_array(shadow.spot_light_view_proj[i], world_pos, normal_ws, light.position_range.xyz - world_pos, u32(params.z + 0.5), false);
+    let visibility = perro_sample_shadow_array(shadow.spot_light_view_proj[i], world_pos, normal_ws, light.position_range.xyz - world_pos, u32(params.z + 0.5), false);
     return mix(1.0, visibility, clamp(shadow.params0.y, 0.0, 1.0));
 }
 
-fn point_shadow_face(to_light: vec3<f32>) -> u32 {
+fn perro_point_shadow_face(to_light: vec3<f32>) -> u32 {
     let v = -to_light;
     let a = abs(v);
     if a.x >= a.y && a.x >= a.z {
@@ -888,7 +658,7 @@ fn point_shadow_face(to_light: vec3<f32>) -> u32 {
     return select(5u, 4u, v.z >= 0.0);
 }
 
-fn point_shadow_factor(world_pos: vec3<f32>, normal_ws: vec3<f32>, light_index: u32, to_light: vec3<f32>) -> f32 {
+fn perro_point_shadow_factor(world_pos: vec3<f32>, normal_ws: vec3<f32>, light_index: u32, to_light: vec3<f32>) -> f32 {
     if shadow.params0.x < 0.5 || light_index >= MAX_POINT_LIGHTS {
         return 1.0;
     }
@@ -898,22 +668,22 @@ fn point_shadow_factor(world_pos: vec3<f32>, normal_ws: vec3<f32>, light_index: 
     }
     let i = u32(slot_f + 0.5);
     let params = shadow.point_params[i];
-    let face = point_shadow_face(to_light);
+    let face = perro_point_shadow_face(to_light);
     let layer = u32(params.z + 0.5) + face;
     let matrix_index = u32(params.z + 0.5) + face;
-    let visibility = sample_shadow_array(shadow.point_light_view_proj[matrix_index], world_pos, normal_ws, to_light, layer, true);
+    let visibility = perro_sample_shadow_array(shadow.point_light_view_proj[matrix_index], world_pos, normal_ws, to_light, layer, true);
     return mix(1.0, visibility, clamp(shadow.params0.y, 0.0, 1.0));
 }
 
 // Windowed inverse-square falloff: smooth fade to zero at range instead of a
 // hard circle at the range cutoff.
-fn range_attenuation(dist_sq: f32, range_sq: f32) -> f32 {
+fn perro_range_attenuation(dist_sq: f32, range_sq: f32) -> f32 {
     let ratio = clamp(dist_sq / max(range_sq, 1.0e-8), 0.0, 1.0);
     let window = 1.0 - ratio * ratio;
     return (window * window) / (dist_sq + 1.0e-2);
 }
 
-fn distribution_ggx(n: vec3<f32>, h: vec3<f32>, roughness: f32) -> f32 {
+fn perro_distribution_ggx(n: vec3<f32>, h: vec3<f32>, roughness: f32) -> f32 {
     let a = roughness * roughness;
     let a2 = a * a;
     let n_dot_h = max(dot(n, h), 0.0);
@@ -922,34 +692,34 @@ fn distribution_ggx(n: vec3<f32>, h: vec3<f32>, roughness: f32) -> f32 {
     return a2 / max(3.14159265 * denom * denom, 1.0e-5);
 }
 
-fn geometry_schlick_ggx(n_dot_v: f32, roughness: f32) -> f32 {
+fn perro_geometry_schlick_ggx(n_dot_v: f32, roughness: f32) -> f32 {
     let r = roughness + 1.0;
     let k = (r * r) / 8.0;
     return n_dot_v / max(n_dot_v * (1.0 - k) + k, 1.0e-5);
 }
 
-fn geometry_smith(n: vec3<f32>, v: vec3<f32>, l: vec3<f32>, roughness: f32) -> f32 {
+fn perro_geometry_smith(n: vec3<f32>, v: vec3<f32>, l: vec3<f32>, roughness: f32) -> f32 {
     let n_dot_v = max(dot(n, v), 0.0);
     let n_dot_l = max(dot(n, l), 0.0);
-    let ggx2 = geometry_schlick_ggx(n_dot_v, roughness);
-    let ggx1 = geometry_schlick_ggx(n_dot_l, roughness);
+    let ggx2 = perro_geometry_schlick_ggx(n_dot_v, roughness);
+    let ggx1 = perro_geometry_schlick_ggx(n_dot_l, roughness);
     return ggx1 * ggx2;
 }
 
-fn pow5(x: f32) -> f32 {
+fn perro_pow5(x: f32) -> f32 {
     let x2 = x * x;
     return x2 * x2 * x;
 }
 
-fn fresnel_schlick(cos_theta: f32, f0: vec3<f32>) -> vec3<f32> {
+fn perro_fresnel_schlick(cos_theta: f32, f0: vec3<f32>) -> vec3<f32> {
     let m = 1.0 - cos_theta;
-    return f0 + (vec3<f32>(1.0) - f0) * pow5(m);
+    return f0 + (vec3<f32>(1.0) - f0) * perro_pow5(m);
 }
 
-fn fresnel_schlick_roughness(cos_theta: f32, f0: vec3<f32>, roughness: f32) -> vec3<f32> {
+fn perro_fresnel_schlick_roughness(cos_theta: f32, f0: vec3<f32>, roughness: f32) -> vec3<f32> {
     let one_minus_roughness = vec3<f32>(1.0 - roughness);
     let m = 1.0 - cos_theta;
-    return f0 + (max(one_minus_roughness, f0) - f0) * pow5(m);
+    return f0 + (max(one_minus_roughness, f0) - f0) * perro_pow5(m);
 }
 
 struct LocalBleed {
@@ -958,184 +728,25 @@ struct LocalBleed {
     dir: vec3<f32>,
 }
 
-fn oct_decode_dir(x: f32, y: f32) -> vec3<f32> {
-    var v = vec3<f32>(x, y, 1.0 - abs(x) - abs(y));
-    if v.z < 0.0 {
-        let old_x = v.x;
-        v.x = (1.0 - abs(v.y)) * select(-1.0, 1.0, old_x >= 0.0);
-        v.y = (1.0 - abs(old_x)) * select(-1.0, 1.0, v.y >= 0.0);
-    }
-    return normalize(v);
-}
-
 // Layout matches pack_local_bleed on the CPU: r5 g5 b5 strength5 oct_x6 oct_y6.
-fn decode_local_bleed(packed: u32) -> LocalBleed {
-    let color = vec3<f32>(
-        f32(packed & 0x1fu) / 31.0,
-        f32((packed >> 5u) & 0x1fu) / 31.0,
-        f32((packed >> 10u) & 0x1fu) / 31.0,
-    );
-    let strength = f32((packed >> 15u) & 0x1fu) / 31.0;
-    let ox = f32((packed >> 20u) & 0x3fu) / 63.0 * 2.0 - 1.0;
-    let oy = f32((packed >> 26u) & 0x3fu) / 63.0 * 2.0 - 1.0;
-    return LocalBleed(color, strength, oct_decode_dir(ox, oy));
-}
-
 // Procedural sky environment lookup: ground below, horizon band, zenith above.
-fn sky_env_color(dir: vec3<f32>) -> vec3<f32> {
+fn perro_sky_env_color(dir: vec3<f32>) -> vec3<f32> {
     let up = clamp(dir.y, -1.0, 1.0);
     let zenith = scene.ambient_color.xyz * scene.ambient_color.w;
     let above = mix(scene.sky_horizon_color.xyz, zenith, clamp(up, 0.0, 1.0));
     return mix(scene.ground_color.xyz, above, smoothstep(-0.15, 0.05, up));
 }
 
-fn rotate_environment_direction(dir: vec3<f32>) -> vec3<f32> {
-    let rotation_sin = scene.ibl_params.z;
-    let rotation_cos = scene.ibl_params.w;
-    return vec3<f32>(
-        rotation_cos * dir.x + rotation_sin * dir.z,
-        dir.y,
-        -rotation_sin * dir.x + rotation_cos * dir.z,
-    );
-}
 struct EnvironmentCubeCoord {
     face: u32,
     uv: vec2<f32>,
-}
-
-fn environment_cube_coord(dir: vec3<f32>) -> EnvironmentCubeCoord {
-    let absolute = abs(dir);
-    var face = 0u;
-    var uv = vec2<f32>(0.0);
-    if absolute.x >= absolute.y && absolute.x >= absolute.z {
-        let inv_axis = 1.0 / max(absolute.x, 1.0e-8);
-        if dir.x >= 0.0 {
-            face = 0u;
-            uv = vec2<f32>(-dir.z, -dir.y) * inv_axis;
-        } else {
-            face = 1u;
-            uv = vec2<f32>(dir.z, -dir.y) * inv_axis;
-        }
-    } else if absolute.y >= absolute.z {
-        let inv_axis = 1.0 / max(absolute.y, 1.0e-8);
-        if dir.y >= 0.0 {
-            face = 2u;
-            uv = vec2<f32>(dir.x, dir.z) * inv_axis;
-        } else {
-            face = 3u;
-            uv = vec2<f32>(dir.x, -dir.z) * inv_axis;
-        }
-    } else {
-        let inv_axis = 1.0 / max(absolute.z, 1.0e-8);
-        if dir.z >= 0.0 {
-            face = 4u;
-            uv = vec2<f32>(dir.x, -dir.y) * inv_axis;
-        } else {
-            face = 5u;
-            uv = vec2<f32>(-dir.x, -dir.y) * inv_axis;
-        }
-    }
-    return EnvironmentCubeCoord(face, uv * 0.5 + vec2<f32>(0.5));
-}
-
-fn environment_cube_texel(
-    base_word: u32,
-    size: u32,
-    face: u32,
-    xy: vec2<u32>,
-) -> vec3<f32> {
-    let texel = face * size * size + xy.y * size + xy.x;
-    let word = base_word + texel * 4u;
-    return vec3<f32>(
-        bitcast<f32>(environment_data[word]),
-        bitcast<f32>(environment_data[word + 1u]),
-        bitcast<f32>(environment_data[word + 2u]),
-    );
-}
-
-fn sample_environment_cube_level(base_word: u32, size: u32, dir: vec3<f32>) -> vec3<f32> {
-    let coord = environment_cube_coord(dir);
-    let edge = f32(size - 1u);
-    let position = clamp(coord.uv * f32(size) - vec2<f32>(0.5), vec2<f32>(0.0), vec2<f32>(edge));
-    let low = vec2<u32>(floor(position));
-    let high = min(low + vec2<u32>(1u), vec2<u32>(size - 1u));
-    let blend = fract(position);
-    let top = mix(
-        environment_cube_texel(base_word, size, coord.face, low),
-        environment_cube_texel(base_word, size, coord.face, vec2<u32>(high.x, low.y)),
-        blend.x,
-    );
-    let bottom = mix(
-        environment_cube_texel(base_word, size, coord.face, vec2<u32>(low.x, high.y)),
-        environment_cube_texel(base_word, size, coord.face, high),
-        blend.x,
-    );
-    return mix(top, bottom, blend.y);
-}
-
-fn environment_specular_level(mip: u32) -> vec2<u32> {
-    var base_word = 6144u;
-    var size = 64u;
-    var level = 0u;
-    loop {
-        if level >= mip {
-            break;
-        }
-        base_word += size * size * 24u;
-        size = max(size >> 1u, 1u);
-        level += 1u;
-    }
-    return vec2<u32>(base_word, size);
-}
-
-fn sample_environment_irradiance(dir: vec3<f32>) -> vec3<f32> {
-    return sample_environment_cube_level(0u, 16u, dir);
-}
-
-fn sample_environment_specular(dir: vec3<f32>, lod_in: f32) -> vec3<f32> {
-    let lod = clamp(lod_in, 0.0, 6.0);
-    let low_mip = u32(floor(lod));
-    let high_mip = min(low_mip + 1u, 6u);
-    let low_level = environment_specular_level(low_mip);
-    let high_level = environment_specular_level(high_mip);
-    return mix(
-        sample_environment_cube_level(low_level.x, low_level.y, dir),
-        sample_environment_cube_level(high_level.x, high_level.y, dir),
-        fract(lod),
-    );
-}
-
-fn environment_brdf_texel(x: u32, y: u32) -> vec2<f32> {
-    let word = 137208u + (y * 128u + x) * 2u;
-    return vec2<f32>(
-        bitcast<f32>(environment_data[word]),
-        bitcast<f32>(environment_data[word + 1u]),
-    );
-}
-
-fn sample_environment_brdf(uv: vec2<f32>) -> vec2<f32> {
-    let position = clamp(uv * 128.0 - vec2<f32>(0.5), vec2<f32>(0.0), vec2<f32>(127.0));
-    let low = vec2<u32>(floor(position));
-    let high = min(low + vec2<u32>(1u), vec2<u32>(127u));
-    let blend = fract(position);
-    let top = mix(
-        environment_brdf_texel(low.x, low.y),
-        environment_brdf_texel(high.x, low.y),
-        blend.x,
-    );
-    let bottom = mix(
-        environment_brdf_texel(low.x, high.y),
-        environment_brdf_texel(high.x, high.y),
-        blend.x,
-    );
-    return mix(top, bottom, blend.y);
 }
 
 
 // Cheap screen-space cavity term.  Signed normal curvature darkens concave
 // areas only, so broad convex silhouettes stay clean.  This costs derivatives
 // and ALU only: no AO target, kernel texture, blur pass, or extra bandwidth.
-fn cavity_ambient_occlusion(world_pos: vec3<f32>, normal_ws: vec3<f32>) -> f32 {
+fn perro_cavity_ambient_occlusion(world_pos: vec3<f32>, normal_ws: vec3<f32>) -> f32 {
     let px = dpdx(world_pos);
     let py = dpdy(world_pos);
     let nx = dpdx(normal_ws);
@@ -1146,7 +757,7 @@ fn cavity_ambient_occlusion(world_pos: vec3<f32>, normal_ws: vec3<f32>) -> f32 {
     return 1.0 - cavity;
 }
 
-fn screen_space_ambient_occlusion(frag_pos: vec4<f32>) -> f32 {
+fn perro_screen_space_ambient_occlusion(frag_pos: vec4<f32>) -> f32 {
     let dims_u = textureDimensions(ssao_tex);
     let dims = vec2<i32>(dims_u);
     let uv = frag_pos.xy * scene.resolution.zw;
@@ -1156,19 +767,19 @@ fn screen_space_ambient_occlusion(frag_pos: vec4<f32>) -> f32 {
 
 // Color-aware GTAO approximation: occluded bounce light keeps albedo tint
 // instead of crushing every cavity toward gray-black.
-fn multi_bounce_ambient_occlusion(ao: f32, albedo: vec3<f32>) -> vec3<f32> {
+fn perro_multi_bounce_ambient_occlusion(ao: f32, albedo: vec3<f32>) -> vec3<f32> {
     let a = 2.0404 * albedo - vec3<f32>(0.3324);
     let b = -4.7951 * albedo + vec3<f32>(0.6417);
     let c = 2.7552 * albedo + vec3<f32>(0.6903);
     return max(vec3<f32>(ao), ((a * ao + b) * ao + c) * ao);
 }
 
-fn specular_ambient_occlusion(n_dot_v: f32, ao: f32, roughness: f32) -> f32 {
+fn perro_specular_ambient_occlusion(n_dot_v: f32, ao: f32, roughness: f32) -> f32 {
     let exponent = exp2(-16.0 * roughness - 1.0);
     return clamp(pow(n_dot_v + ao, exponent) - 1.0 + ao, 0.0, 1.0);
 }
 
-fn brdf_pbr(
+fn perro_brdf_pbr(
     albedo: vec3<f32>,
     n: vec3<f32>,
     v: vec3<f32>,
@@ -1180,10 +791,10 @@ fn brdf_pbr(
     let hv = v + l;
     // v == -l at grazing opposition makes normalize(0) NaN.
     let h = hv * inverseSqrt(max(dot(hv, hv), 1.0e-8));
-    let ndf = distribution_ggx(n, h, roughness);
-    let g = geometry_smith(n, v, l, roughness);
+    let ndf = perro_distribution_ggx(n, h, roughness);
+    let g = perro_geometry_smith(n, v, l, roughness);
     let f0 = mix(vec3<f32>(0.04), albedo, vec3<f32>(metallic));
-    let f = fresnel_schlick(max(dot(h, v), 0.0), f0);
+    let f = perro_fresnel_schlick(max(dot(h, v), 0.0), f0);
 
     let numerator = ndf * g * f;
     let denom = 4.0 * max(dot(n, v), 0.0) * max(dot(n, l), 0.0) + 1.0e-5;
@@ -1204,7 +815,7 @@ fn perro_lit_standard(
     ao_in: f32,
     emissive: vec3<f32>,
 ) -> vec4<f32> {
-    let material = decode_material_params(in.packed_material_params);
+    let material = perro_decode_material_params(in.packed_material_params);
     var albedo = base_color.rgb;
     var n = normalize(in.normal_ws);
     if material.flat_shading {
@@ -1218,10 +829,10 @@ fn perro_lit_standard(
     }
     if material.has_normal_texture {
         let packed_pbr = decode_standard_pbr_params(in.packed_pbr_params_0, in.packed_pbr_params_1);
-        n = apply_standard_normal_map(in, n, packed_pbr.w);
+        n = perro_apply_standard_normal_map(in, n, packed_pbr.w);
     }
-    let mesh_fade = mesh_blend_fade(in, material);
-    n = apply_mesh_normal_blend(material, n, in.world_pos, mesh_fade);
+    let mesh_fade = perro_mesh_blend_fade(in, material);
+    n = perro_apply_mesh_normal_blend(material, n, in.world_pos, mesh_fade);
     var decal_emissive = vec3<f32>(0.0);
     if scene_decals.count.x > 0u {
         let decal_surface = perro_apply_decals(in.world_pos, albedo, n);
@@ -1233,8 +844,8 @@ fn perro_lit_standard(
     let roughness = clamp(roughness_in, 0.04, 1.0);
     let metallic = clamp(metallic_in, 0.0, 1.0);
     let ao = clamp(ao_in, 0.0, 1.0)
-        * cavity_ambient_occlusion(in.world_pos, n)
-        * screen_space_ambient_occlusion(in.frag_pos);
+        * perro_cavity_ambient_occlusion(in.world_pos, n)
+        * perro_screen_space_ambient_occlusion(in.frag_pos);
     let alpha = perro_material_alpha_with_fade(in, base_color.a, mesh_fade);
     if material.meshlet_debug_view {
         return vec4<f32>(albedo, 1.0);
@@ -1249,9 +860,9 @@ fn perro_lit_standard(
         let l = -ray_dir * inverseSqrt(max(dot(ray_dir, ray_dir), 1.0e-8));
         var radiance = ray.color_intensity.xyz * ray.color_intensity.w;
         if i == 0u && material.receive_shadows {
-            radiance *= shadow_factor(in.world_pos, n, l);
+            radiance *= perro_shadow_factor(in.world_pos, n, l);
         }
-        light_rgb += brdf_pbr(albedo, n, v, l, roughness, metallic, radiance);
+        light_rgb += perro_brdf_pbr(albedo, n, v, l, roughness, metallic, radiance);
     }
 
     let point_count = u32(scene.ambient_and_counts.y);
@@ -1264,13 +875,13 @@ fn perro_lit_standard(
             let inv_dist = inverseSqrt(max(dist_sq, 1.0e-8));
             let l = to_light * inv_dist;
             let radiance = light.color_intensity.xyz * light.color_intensity.w;
-            let attenuation = range_attenuation(dist_sq, range_sq);
+            let attenuation = perro_range_attenuation(dist_sq, range_sq);
             // if-branch, not select: select evaluates the PCF arm unconditionally.
             var shadow_vis = 1.0;
             if material.receive_shadows {
-                shadow_vis = point_shadow_factor(in.world_pos, n, i, to_light);
+                shadow_vis = perro_point_shadow_factor(in.world_pos, n, i, to_light);
             }
-            light_rgb += brdf_pbr(albedo, n, v, l, roughness, metallic, radiance * attenuation * shadow_vis);
+            light_rgb += perro_brdf_pbr(albedo, n, v, l, roughness, metallic, radiance * attenuation * shadow_vis);
         }
     }
 
@@ -1289,31 +900,31 @@ fn perro_lit_standard(
             let inner_cos = light.inner_cos_pad.x;
             let t = clamp((cos_theta - outer_cos) / max(inner_cos - outer_cos, 0.0001), 0.0, 1.0);
             let radiance = light.color_intensity.xyz * light.color_intensity.w * t;
-            let attenuation = range_attenuation(dist_sq, range_sq);
+            let attenuation = perro_range_attenuation(dist_sq, range_sq);
             // if-branch, not select: select evaluates the PCF arm unconditionally.
             var shadow_vis = 1.0;
             if material.receive_shadows {
-                shadow_vis = spot_shadow_factor(in.world_pos, n, i);
+                shadow_vis = perro_spot_shadow_factor(in.world_pos, n, i);
             }
-            light_rgb += brdf_pbr(albedo, n, v, l, roughness, metallic, radiance * attenuation * shadow_vis);
+            light_rgb += perro_brdf_pbr(albedo, n, v, l, roughness, metallic, radiance * attenuation * shadow_vis);
         }
     }
 
     let n_dot_v = max(dot(n, v), 0.0);
     let f0_ambient = mix(vec3<f32>(0.04), albedo, vec3<f32>(metallic));
-    let f_ambient = fresnel_schlick_roughness(n_dot_v, f0_ambient, roughness);
+    let f_ambient = perro_fresnel_schlick_roughness(n_dot_v, f0_ambient, roughness);
     let k_s_ambient = f_ambient;
     let k_d_ambient = (vec3<f32>(1.0) - k_s_ambient) * (1.0 - metallic);
     // Hemisphere ambient: sky radiance from above, ground bounce from below.
     let hemi = clamp(n.y * 0.5 + 0.5, 0.0, 1.0);
     let ambient_radiance =
         mix(scene.ground_color.xyz, scene.ambient_color.xyz * scene.ambient_color.w, hemi);
-    let diffuse_ao = multi_bounce_ambient_occlusion(ao, albedo);
+    let diffuse_ao = perro_multi_bounce_ambient_occlusion(ao, albedo);
     // Local color bleed: nearby-batch albedo/emissive staged per instance,
     // with the dominant source direction for wrap + reflection weighting.
     var bleed = LocalBleed(vec3<f32>(0.0), 0.0, vec3<f32>(0.0, 1.0, 0.0));
     if (material.material_flags & 0x80u) != 0u {
-        bleed = decode_local_bleed(in.packed_pbr_params_1);
+        bleed = perro_decode_local_bleed(in.packed_pbr_params_1);
     }
     let bleed_wrap = clamp(dot(n, bleed.dir) * 0.5 + 0.5, 0.0, 1.0);
     let bleed_diffuse = bleed.color * bleed.strength * (0.35 + 0.65 * bleed_wrap);
@@ -1326,12 +937,12 @@ fn perro_lit_standard(
     var ambient_specular = vec3<f32>(0.0);
     if scene.ibl_params.x > 0.0 {
         let intensity = scene.ibl_params.x;
-        let irradiance = sample_environment_irradiance(rotate_environment_direction(n));
+        let irradiance = perro_sample_environment_irradiance(perro_rotate_environment_direction(n));
         ambient_diffuse =
             k_d_ambient * albedo * (irradiance * intensity + bleed_diffuse * 0.45) * diffuse_ao;
         let refl = reflect(-v, n);
-        var env_spec = sample_environment_specular(
-            rotate_environment_direction(refl),
+        var env_spec = perro_sample_environment_specular(
+            perro_rotate_environment_direction(refl),
             roughness * scene.ibl_params.y,
         );
         if bleed.strength > 0.0 {
@@ -1342,15 +953,15 @@ fn perro_lit_standard(
                 bleed.strength * (1.0 - roughness) * 0.6 * bleed_align,
             );
         }
-        let brdf = sample_environment_brdf(vec2<f32>(n_dot_v, roughness));
-        let spec_ao = specular_ambient_occlusion(n_dot_v, ao, roughness);
+        let brdf = perro_sample_environment_brdf(vec2<f32>(n_dot_v, roughness));
+        let spec_ao = perro_specular_ambient_occlusion(n_dot_v, ao, roughness);
         ambient_specular = env_spec
             * (f_ambient * brdf.x + vec3<f32>(brdf.y))
             * intensity
             * spec_ao;
     } else if roughness < 0.95 {
         let refl = reflect(-v, n);
-        var env_spec = sky_env_color(refl);
+        var env_spec = perro_sky_env_color(refl);
         // Bleed tinting only matters when there is bleed present.
         if bleed.strength > 0.0 {
             let bleed_align = 0.3 + 0.7 * pow(max(dot(refl, bleed.dir), 0.0), 2.0);
@@ -1361,7 +972,7 @@ fn perro_lit_standard(
             );
         }
         let spec_tint = mix(vec3<f32>(1.0), albedo, metallic);
-        let spec_ao = specular_ambient_occlusion(n_dot_v, ao, roughness);
+        let spec_ao = perro_specular_ambient_occlusion(n_dot_v, ao, roughness);
         ambient_specular =
             k_s_ambient * env_spec * spec_tint * (0.25 + 0.75 * (1.0 - roughness)) * spec_ao;
     }
@@ -1372,14 +983,8 @@ fn perro_lit_standard(
 
 // ---- Frame globals for custom shaders ----------------------------------
 // Seconds since app start; wraps every hour to stay f32-precise.
-fn perro_time() -> f32 { return scene.time_params.x; }
 // Seconds covered by the previous frame.
-fn perro_delta_time() -> f32 { return scene.time_params.y; }
 // Frames rendered since app start (wraps with f32 precision).
-fn perro_frame_index() -> f32 { return scene.time_params.z; }
 // 0..1 sawtooth over 60 seconds; precision-safe looping animation driver.
-fn perro_time_phase() -> f32 { return scene.time_params.w; }
 // Viewport size in pixels.
-fn perro_resolution() -> vec2<f32> { return scene.resolution.xy; }
-// 1 / viewport size.
-fn perro_inv_resolution() -> vec2<f32> { return scene.resolution.zw; }
+// 1 / viewport size.

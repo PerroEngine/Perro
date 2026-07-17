@@ -4,9 +4,9 @@ fn lambert(n: vec3<f32>, l: vec3<f32>) -> f32 {
 
 fn shade_material(in: FragmentInput) -> vec4<f32> {
     let color = unpack_rgba8(in.packed_color);
-    let emissive = unpack_emissive_hdr(in.packed_emissive);
+    let emissive = perro_unpack_emissive_hdr(in.packed_emissive);
     let toon = decode_toon_params(in.packed_pbr_params_0, in.packed_pbr_params_1);
-    let material = decode_material_params(in.packed_material_params);
+    let material = perro_decode_material_params(in.packed_material_params);
     var albedo = color.rgb;
     var n = normalize(in.normal_ws);
     if material.flat_shading {
@@ -18,8 +18,8 @@ fn shade_material(in: FragmentInput) -> vec4<f32> {
     if material.double_sided && (in.is_front == material.mirrored_winding) {
         n = -n;
     }
-    let mesh_fade = mesh_blend_fade(in, material);
-    n = apply_mesh_normal_blend(material, n, in.world_pos, mesh_fade);
+    let mesh_fade = perro_mesh_blend_fade(in, material);
+    n = perro_apply_mesh_normal_blend(material, n, in.world_pos, mesh_fade);
     var decal_emissive = vec3<f32>(0.0);
     if scene_decals.count.x > 0u {
         let decal_surface = perro_apply_decals(in.world_pos, albedo, n);
@@ -48,7 +48,7 @@ fn shade_material(in: FragmentInput) -> vec4<f32> {
     light_rgb += ambient;
     // Local color bleed folded into the banded light term.
     if (material.material_flags & 0x80u) != 0u {
-        let bleed = decode_local_bleed(in.packed_pbr_params_1);
+        let bleed = perro_decode_local_bleed(in.packed_pbr_params_1);
         let wrap = clamp(dot(n, bleed.dir) * 0.5 + 0.5, 0.0, 1.0);
         light_rgb += bleed.color * bleed.strength * 0.4 * (0.35 + 0.65 * wrap);
     }
@@ -60,7 +60,7 @@ fn shade_material(in: FragmentInput) -> vec4<f32> {
         let l = -ray_dir * inverseSqrt(max(dot(ray_dir, ray_dir), 1.0e-8));
         var radiance = ray.color_intensity.xyz * ray.color_intensity.w;
         if i == 0u && material.receive_shadows {
-            radiance *= shadow_factor(in.world_pos, n, l);
+            radiance *= perro_shadow_factor(in.world_pos, n, l);
         }
         light_rgb += radiance * lambert(n, l);
     }
@@ -75,11 +75,11 @@ fn shade_material(in: FragmentInput) -> vec4<f32> {
             let inv_dist = inverseSqrt(max(dist_sq, 1.0e-8));
             let l = to_light * inv_dist;
             let radiance = light.color_intensity.xyz * light.color_intensity.w;
-            let attenuation = range_attenuation(dist_sq, range_sq);
+            let attenuation = perro_range_attenuation(dist_sq, range_sq);
             // if-branch, not select: select evaluates the PCF arm unconditionally.
             var shadow_vis = 1.0;
             if material.receive_shadows {
-                shadow_vis = point_shadow_factor(in.world_pos, n, i, to_light);
+                shadow_vis = perro_point_shadow_factor(in.world_pos, n, i, to_light);
             }
             light_rgb += radiance * attenuation * shadow_vis * lambert(n, l);
         }
@@ -100,11 +100,11 @@ fn shade_material(in: FragmentInput) -> vec4<f32> {
             let inner_cos = light.inner_cos_pad.x;
             let t = clamp((cos_theta - outer_cos) / max(inner_cos - outer_cos, 0.0001), 0.0, 1.0);
             let radiance = light.color_intensity.xyz * light.color_intensity.w * t;
-            let attenuation = range_attenuation(dist_sq, range_sq);
+            let attenuation = perro_range_attenuation(dist_sq, range_sq);
             // if-branch, not select: select evaluates the PCF arm unconditionally.
             var shadow_vis = 1.0;
             if material.receive_shadows {
-                shadow_vis = spot_shadow_factor(in.world_pos, n, i);
+                shadow_vis = perro_spot_shadow_factor(in.world_pos, n, i);
             }
             light_rgb += radiance * attenuation * shadow_vis * lambert(n, l);
         }

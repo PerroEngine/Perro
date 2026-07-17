@@ -86,7 +86,7 @@ var<storage, read> multimesh_instances: array<MultiMeshInstanceStorage>;
 
 // Matches the packed CPU layout (40 bytes): position f32x3, rotation snorm16x4
 // (2 words), scale f32x3, draw_id, blend_meta_id. WGSL has no i16, so the
-// rotation lanes are stored as raw u32 words and unpacked in fetch_instance.
+// rotation lanes are stored as raw u32 words and unpacked in perro_fetch_instance.
 struct MultiMeshInstanceStorage {
     px: f32,
     py: f32,
@@ -100,7 +100,7 @@ struct MultiMeshInstanceStorage {
     blend_meta_id: u32,
 };
 
-fn unpack_snorm16_pair(word: u32) -> vec2<f32> {
+fn perro_unpack_snorm16_pair(word: u32) -> vec2<f32> {
     let lo = i32(word << 16u) >> 16u;
     let hi = i32(word) >> 16u;
     return vec2<f32>(
@@ -166,31 +166,6 @@ var<uniform> mesh_blend_mask_id: vec4<u32>;
 @group(3) @binding(0)
 var<storage, read> environment_data: array<u32>;
 
-fn custom_image_sample_at(index: u32, uv: vec2<f32>) -> vec4<f32> {
-    if index == 0u {
-        return textureSample(custom_image_tex_0, material_sampler, uv);
-    }
-    if index == 1u {
-        return textureSample(custom_image_tex_1, material_sampler, uv);
-    }
-    if index == 2u {
-        return textureSample(custom_image_tex_2, material_sampler, uv);
-    }
-    if index == 3u {
-        return textureSample(custom_image_tex_3, material_sampler, uv);
-    }
-    if index == 4u {
-        return textureSample(custom_image_tex_4, material_sampler, uv);
-    }
-    if index == 5u {
-        return textureSample(custom_image_tex_5, material_sampler, uv);
-    }
-    if index == 6u {
-        return textureSample(custom_image_tex_6, material_sampler, uv);
-    }
-    return textureSample(custom_image_tex_7, material_sampler, uv);
-}
-
 struct DecalSurface {
     albedo: vec3<f32>,
     normal: vec3<f32>,
@@ -199,70 +174,6 @@ struct DecalSurface {
 
 // Decal layers hold raw sRGB bytes behind a linear view; color layers decode
 // here, normal layers read raw.
-fn decal_srgb_to_linear(c: vec3<f32>) -> vec3<f32> {
-    return pow(max(c, vec3<f32>(0.0)), vec3<f32>(2.2));
-}
-
-fn perro_apply_decals(world_pos: vec3<f32>, albedo_in: vec3<f32>, normal_in: vec3<f32>) -> DecalSurface {
-    var out: DecalSurface;
-    out.albedo = albedo_in;
-    out.normal = normal_in;
-    out.emissive = vec3<f32>(0.0);
-    // Derivatives before any branch (uniform control flow); per-decal uv
-    // gradients are linear transforms of these, keeping textureSampleGrad
-    // valid inside the non-uniform loop body.
-    let dpx = dpdx(world_pos);
-    let dpy = dpdy(world_pos);
-    let count = scene_decals.count.x;
-    for (var i = 0u; i < count; i = i + 1u) {
-        let d = scene_decals.decals[i];
-        let p = vec4<f32>(world_pos, 1.0);
-        let local = vec3<f32>(dot(d.inv_row_0, p), dot(d.inv_row_1, p), dot(d.inv_row_2, p));
-        if any(abs(local) > vec3<f32>(0.5)) {
-            continue;
-        }
-        // Rows of the inverse are the decal axes scaled by 1/size; the decal
-        // projects along its -Z, so +Z is the receiving direction.
-        let axis = normalize(d.inv_row_2.xyz);
-        let facing = dot(normal_in, axis);
-        let fade_t = d.params0.w;
-        let angle_fade = clamp((facing - fade_t) / max(1.0 - fade_t, 0.001), 0.0, 1.0);
-        var opacity = d.tint.a * angle_fade;
-        if d.params1.y > 0.0 {
-            let dist = distance(scene.camera_pos.xyz, world_pos);
-            opacity *= clamp(1.0 - (dist - d.params1.y) * d.params1.z, 0.0, 1.0);
-        }
-        if opacity <= 0.001 {
-            continue;
-        }
-        let uv = vec2<f32>(local.x + 0.5, 0.5 - local.y);
-        let g0 = vec2<f32>(dot(d.inv_row_0.xyz, dpx), -dot(d.inv_row_1.xyz, dpx));
-        let g1 = vec2<f32>(dot(d.inv_row_0.xyz, dpy), -dot(d.inv_row_1.xyz, dpy));
-        var albedo_alpha = opacity;
-        if d.params0.x >= 0.0 {
-            let s = textureSampleGrad(decal_textures, decal_sampler, uv, i32(d.params0.x), g0, g1);
-            albedo_alpha = s.a * opacity;
-            out.albedo = mix(out.albedo, decal_srgb_to_linear(s.rgb) * d.tint.rgb, albedo_alpha * d.params1.x);
-        } else {
-            out.albedo = mix(out.albedo, d.tint.rgb, opacity * d.params1.x);
-        }
-        if d.params0.y >= 0.0 && d.emission.w > 0.0 {
-            let ns = textureSampleGrad(decal_textures, decal_sampler, uv, i32(d.params0.y), g0, g1);
-            let nt = ns.xyz * 2.0 - vec3<f32>(1.0);
-            let t_axis = normalize(d.inv_row_0.xyz);
-            let b_axis = normalize(d.inv_row_1.xyz);
-            // The v axis is flipped in uv space, so the bitangent negates.
-            let mapped = normalize(t_axis * nt.x - b_axis * nt.y + out.normal * max(nt.z, 0.35));
-            out.normal = normalize(mix(out.normal, mapped, albedo_alpha * min(d.emission.w, 1.0)));
-        }
-        if d.params0.z >= 0.0 {
-            let es = textureSampleGrad(decal_textures, decal_sampler, uv, i32(d.params0.z), g0, g1);
-            out.emissive += decal_srgb_to_linear(es.rgb) * d.emission.rgb * es.a * opacity;
-        }
-    }
-    return out;
-}
-
 // Seam width floor in pixels so distant blends never collapse to a hard line.
 const MESH_BLEND_MIN_PIXELS: f32 = 2.5;
 
@@ -324,7 +235,7 @@ struct FragmentInput {
     @builtin(front_facing) is_front: bool,
 };
 
-fn multimesh_ssao(frag_pos: vec2<f32>) -> f32 {
+fn perro_multimesh_ssao(frag_pos: vec2<f32>) -> f32 {
     let dims_u = textureDimensions(ssao_tex);
     let dims = vec2<i32>(dims_u);
     let uv = frag_pos * scene.resolution.zw;
@@ -340,47 +251,11 @@ fn unpack_rgba8(v: u32) -> vec4<f32> {
     return vec4<f32>(r, g, b, a);
 }
 
-fn unpack_byte(packed: u32, shift: u32) -> u32 {
-    return (packed >> shift) & 0xffu;
+fn perro_unpack_unorm8(packed: u32, shift: u32) -> f32 {
+    return f32(perro_unpack_byte(packed, shift)) * (1.0 / 255.0);
 }
 
-fn unpack_unorm8(packed: u32, shift: u32) -> f32 {
-    return f32(unpack_byte(packed, shift)) * (1.0 / 255.0);
-}
-
-fn decode_mesh_blend_params(packed: u32) -> vec4<f32> {
-    return vec4<f32>(
-        unpack_unorm8(packed, 0u) * 16.0,
-        unpack_unorm8(packed, 8u) * 16.0,
-        unpack_unorm8(packed, 16u),
-        unpack_unorm8(packed, 24u) * 64.0,
-    );
-}
-
-fn mesh_blend_hash(p: vec2<f32>) -> f32 {
-    return fract(sin(dot(p, vec2<f32>(12.9898, 78.233))) * 43758.5453);
-}
-
-fn mesh_blend_noise(p: vec2<f32>) -> f32 {
-    let cell = floor(p);
-    let local = fract(p);
-    let curve = local * local * (3.0 - 2.0 * local);
-    let a = mesh_blend_hash(cell);
-    let b = mesh_blend_hash(cell + vec2<f32>(1.0, 0.0));
-    let c = mesh_blend_hash(cell + vec2<f32>(0.0, 1.0));
-    let d = mesh_blend_hash(cell + vec2<f32>(1.0, 1.0));
-    return mix(mix(a, b, curve.x), mix(c, d, curve.x), curve.y);
-}
-
-fn mesh_blend_world_from_depth(coord: vec2<i32>, dims_u: vec2<u32>, depth: f32) -> vec3<f32> {
-    let uv = (vec2<f32>(coord) + vec2<f32>(0.5)) / vec2<f32>(dims_u);
-    let ndc_xy = vec2<f32>(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0);
-    let ndc = vec4<f32>(ndc_xy, depth, 1.0);
-    let world_h = scene.inv_view_proj * ndc;
-    return world_h.xyz / max(abs(world_h.w), 1.0e-5);
-}
-
-fn mesh_blend_alpha(frag_pos: vec4<f32>, world_pos: vec3<f32>, packed: u32) -> f32 {
+fn perro_mesh_blend_alpha(frag_pos: vec4<f32>, world_pos: vec3<f32>, packed: u32) -> f32 {
     if packed == 0u {
         return 1.0;
     }
@@ -394,9 +269,9 @@ fn mesh_blend_alpha(frag_pos: vec4<f32>, world_pos: vec3<f32>, packed: u32) -> f
     if receiver_depth >= 0.999999 {
         return 1.0;
     }
-    let params = decode_mesh_blend_params(packed);
+    let params = perro_decode_mesh_blend_params(packed);
     let view_dist = distance(world_pos, scene.camera_pos.xyz);
-    let receiver_world = mesh_blend_world_from_depth(coord, dims_u, receiver_depth);
+    let receiver_world = perro_mesh_blend_world_from_depth(coord, dims_u, receiver_depth);
     let receiver_dist = distance(receiver_world, scene.camera_pos.xyz);
     let raw_depth_delta = receiver_dist - view_dist;
     if raw_depth_delta <= 0.0 {
@@ -414,7 +289,7 @@ fn mesh_blend_alpha(frag_pos: vec4<f32>, world_pos: vec3<f32>, packed: u32) -> f
         let tile = max(params.w * 0.05, 0.05);
         let p = (receiver_world.xz
             + vec2<f32>(receiver_world.y * 0.53, receiver_world.y * 0.29)) / tile;
-        let soft_noise = smoothstep(0.1, 0.9, mesh_blend_noise(p));
+        let soft_noise = smoothstep(0.1, 0.9, perro_mesh_blend_noise(p));
         noise = (soft_noise - 0.5) * params.z * max_width;
     }
     let depth_delta = max(raw_depth_delta + noise, 0.0);
@@ -425,37 +300,12 @@ fn mesh_blend_alpha(frag_pos: vec4<f32>, world_pos: vec3<f32>, packed: u32) -> f
     return fade * fade * (3.0 - 2.0 * fade);
 }
 
-fn rotate_vec_by_quat(v: vec3<f32>, q: vec4<f32>) -> vec3<f32> {
+fn perro_rotate_vec_by_quat(v: vec3<f32>, q: vec4<f32>) -> vec3<f32> {
     let t = 2.0 * cross(q.xyz, v);
     return v + q.w * t + cross(q.xyz, t);
 }
 
-fn transform_normal_ws(
-    row_0: vec3<f32>,
-    row_1: vec3<f32>,
-    row_2: vec3<f32>,
-    normal: vec3<f32>,
-) -> vec3<f32> {
-    let cof_0 = cross(row_1, row_2);
-    let cof_1 = cross(row_2, row_0);
-    let cof_2 = cross(row_0, row_1);
-    let det = dot(row_0, cof_0);
-    if abs(det) <= 1.0e-8 {
-        return normalize(vec3<f32>(
-            dot(row_0, normal),
-            dot(row_1, normal),
-            dot(row_2, normal),
-        ));
-    }
-    let det_sign = select(-1.0, 1.0, det >= 0.0);
-    return normalize(vec3<f32>(
-        dot(cof_0, normal),
-        dot(cof_1, normal),
-        dot(cof_2, normal),
-    ) * det_sign);
-}
-
-fn apply_blend_shapes(v: VertexInput, inst: InstanceInput, vertex_index: u32) -> VertexInput {
+fn perro_apply_blend_shapes(v: VertexInput, inst: InstanceInput, vertex_index: u32) -> VertexInput {
     let blend_meta = blend_shape_instances[inst.blend_meta_id];
     let weight_count = min(blend_meta.weight_range.y, blend_meta.shape_range.y);
     if weight_count == 0u || blend_meta.shape_range.w == 0u || vertex_index < blend_meta.shape_range.z {
@@ -476,116 +326,14 @@ fn apply_blend_shapes(v: VertexInput, inst: InstanceInput, vertex_index: u32) ->
     return VertexInput(out_pos, vec4<f32>(normalize(out_normal), 0.0), v.uv);
 }
 
-fn custom_f_param(in: FragmentInput, index: u32) -> vec4<f32> {
-    if index >= in.custom_range.y {
-        return vec4<f32>(0.0);
-    }
-    let packed_meta = custom_params_meta[in.custom_range.x + index];
-    let kind = packed_meta & 0x3u;
-    let value_offset = packed_meta >> 2u;
-    if kind == 0u {
-        return vec4<f32>(custom_params_values[value_offset], 0.0, 0.0, 0.0);
-    }
-    if kind == 1u {
-        return vec4<f32>(
-            custom_params_values[value_offset],
-            custom_params_values[value_offset + 1u],
-            0.0,
-            0.0,
-        );
-    }
-    if kind == 2u {
-        return vec4<f32>(
-            custom_params_values[value_offset],
-            custom_params_values[value_offset + 1u],
-            custom_params_values[value_offset + 2u],
-            0.0,
-        );
-    }
-    return vec4<f32>(
-        custom_params_values[value_offset],
-        custom_params_values[value_offset + 1u],
-        custom_params_values[value_offset + 2u],
-        custom_params_values[value_offset + 3u],
-    );
-}
-
-fn custom_v_param(out: VertexOutput, index: u32) -> vec4<f32> {
-    if index >= out.custom_range.y {
-        return vec4<f32>(0.0);
-    }
-    let packed_meta = custom_params_meta[out.custom_range.x + index];
-    let kind = packed_meta & 0x3u;
-    let value_offset = packed_meta >> 2u;
-    if kind == 0u {
-        return vec4<f32>(custom_params_values[value_offset], 0.0, 0.0, 0.0);
-    }
-    if kind == 1u {
-        return vec4<f32>(
-            custom_params_values[value_offset],
-            custom_params_values[value_offset + 1u],
-            0.0,
-            0.0,
-        );
-    }
-    if kind == 2u {
-        return vec4<f32>(
-            custom_params_values[value_offset],
-            custom_params_values[value_offset + 1u],
-            custom_params_values[value_offset + 2u],
-            0.0,
-        );
-    }
-    return vec4<f32>(
-        custom_params_values[value_offset],
-        custom_params_values[value_offset + 1u],
-        custom_params_values[value_offset + 2u],
-        custom_params_values[value_offset + 3u],
-    );
-}
-
-fn custom_param(in: FragmentInput, index: u32) -> vec4<f32> {
-    return custom_f_param(in, index);
-}
-
-fn custom_param_vertex(out: VertexOutput, index: u32) -> vec4<f32> {
-    return custom_v_param(out, index);
-}
-
-fn custom_image_sample(in: FragmentInput, index: u32, uv: vec2<f32>) -> vec4<f32> {
-    return custom_image_sample_at(index, uv);
-}
-
 struct LocalBleed {
     color: vec3<f32>,
     strength: f32,
     dir: vec3<f32>,
 }
 
-fn oct_decode_dir(x: f32, y: f32) -> vec3<f32> {
-    var v = vec3<f32>(x, y, 1.0 - abs(x) - abs(y));
-    if v.z < 0.0 {
-        let old_x = v.x;
-        v.x = (1.0 - abs(v.y)) * select(-1.0, 1.0, old_x >= 0.0);
-        v.y = (1.0 - abs(old_x)) * select(-1.0, 1.0, v.y >= 0.0);
-    }
-    return normalize(v);
-}
-
 // Layout matches pack_local_bleed on the CPU: r5 g5 b5 strength5 oct_x6 oct_y6.
-fn decode_local_bleed(packed: u32) -> LocalBleed {
-    let color = vec3<f32>(
-        f32(packed & 0x1fu) / 31.0,
-        f32((packed >> 5u) & 0x1fu) / 31.0,
-        f32((packed >> 10u) & 0x1fu) / 31.0,
-    );
-    let strength = f32((packed >> 15u) & 0x1fu) / 31.0;
-    let ox = f32((packed >> 20u) & 0x3fu) / 63.0 * 2.0 - 1.0;
-    let oy = f32((packed >> 26u) & 0x3fu) / 63.0 * 2.0 - 1.0;
-    return LocalBleed(color, strength, oct_decode_dir(ox, oy));
-}
-
-fn distribution_ggx(n: vec3<f32>, h: vec3<f32>, roughness: f32) -> f32 {
+fn perro_distribution_ggx(n: vec3<f32>, h: vec3<f32>, roughness: f32) -> f32 {
     let a = roughness * roughness;
     let a2 = a * a;
     let n_dot_h = max(dot(n, h), 0.0);
@@ -593,24 +341,24 @@ fn distribution_ggx(n: vec3<f32>, h: vec3<f32>, roughness: f32) -> f32 {
     return a2 / max(3.14159265 * denom * denom, 1.0e-6);
 }
 
-fn geometry_schlick_ggx(n_dot_v: f32, roughness: f32) -> f32 {
+fn perro_geometry_schlick_ggx(n_dot_v: f32, roughness: f32) -> f32 {
     let r = roughness + 1.0;
     let k = (r * r) * 0.125;
     return n_dot_v / max(n_dot_v * (1.0 - k) + k, 1.0e-6);
 }
 
-fn geometry_smith(n: vec3<f32>, v: vec3<f32>, l: vec3<f32>, roughness: f32) -> f32 {
-    return geometry_schlick_ggx(max(dot(n, v), 0.0), roughness)
-        * geometry_schlick_ggx(max(dot(n, l), 0.0), roughness);
+fn perro_geometry_smith(n: vec3<f32>, v: vec3<f32>, l: vec3<f32>, roughness: f32) -> f32 {
+    return perro_geometry_schlick_ggx(max(dot(n, v), 0.0), roughness)
+        * perro_geometry_schlick_ggx(max(dot(n, l), 0.0), roughness);
 }
 
-fn fresnel_schlick(cos_theta: f32, f0: vec3<f32>) -> vec3<f32> {
+fn perro_fresnel_schlick(cos_theta: f32, f0: vec3<f32>) -> vec3<f32> {
     let m = clamp(1.0 - cos_theta, 0.0, 1.0);
     let m2 = m * m;
     return f0 + (vec3<f32>(1.0) - f0) * m2 * m2 * m;
 }
 
-fn fresnel_schlick_roughness(
+fn perro_fresnel_schlick_roughness(
     cos_theta: f32,
     f0: vec3<f32>,
     roughness: f32,
@@ -620,150 +368,13 @@ fn fresnel_schlick_roughness(
     return f0 + (max(vec3<f32>(1.0 - roughness), f0) - f0) * m2 * m2 * m;
 }
 
-fn rotate_environment_direction(dir: vec3<f32>) -> vec3<f32> {
-    let rotation_sin = scene.ibl_params.z;
-    let rotation_cos = scene.ibl_params.w;
-    return vec3<f32>(
-        rotation_cos * dir.x + rotation_sin * dir.z,
-        dir.y,
-        -rotation_sin * dir.x + rotation_cos * dir.z,
-    );
-}
 struct EnvironmentCubeCoord {
     face: u32,
     uv: vec2<f32>,
 }
 
-fn environment_cube_coord(dir: vec3<f32>) -> EnvironmentCubeCoord {
-    let absolute = abs(dir);
-    var face = 0u;
-    var uv = vec2<f32>(0.0);
-    if absolute.x >= absolute.y && absolute.x >= absolute.z {
-        let inv_axis = 1.0 / max(absolute.x, 1.0e-8);
-        if dir.x >= 0.0 {
-            face = 0u;
-            uv = vec2<f32>(-dir.z, -dir.y) * inv_axis;
-        } else {
-            face = 1u;
-            uv = vec2<f32>(dir.z, -dir.y) * inv_axis;
-        }
-    } else if absolute.y >= absolute.z {
-        let inv_axis = 1.0 / max(absolute.y, 1.0e-8);
-        if dir.y >= 0.0 {
-            face = 2u;
-            uv = vec2<f32>(dir.x, dir.z) * inv_axis;
-        } else {
-            face = 3u;
-            uv = vec2<f32>(dir.x, -dir.z) * inv_axis;
-        }
-    } else {
-        let inv_axis = 1.0 / max(absolute.z, 1.0e-8);
-        if dir.z >= 0.0 {
-            face = 4u;
-            uv = vec2<f32>(dir.x, -dir.y) * inv_axis;
-        } else {
-            face = 5u;
-            uv = vec2<f32>(-dir.x, -dir.y) * inv_axis;
-        }
-    }
-    return EnvironmentCubeCoord(face, uv * 0.5 + vec2<f32>(0.5));
-}
 
-fn environment_cube_texel(
-    base_word: u32,
-    size: u32,
-    face: u32,
-    xy: vec2<u32>,
-) -> vec3<f32> {
-    let texel = face * size * size + xy.y * size + xy.x;
-    let word = base_word + texel * 4u;
-    return vec3<f32>(
-        bitcast<f32>(environment_data[word]),
-        bitcast<f32>(environment_data[word + 1u]),
-        bitcast<f32>(environment_data[word + 2u]),
-    );
-}
-
-fn sample_environment_cube_level(base_word: u32, size: u32, dir: vec3<f32>) -> vec3<f32> {
-    let coord = environment_cube_coord(dir);
-    let edge = f32(size - 1u);
-    let position = clamp(coord.uv * f32(size) - vec2<f32>(0.5), vec2<f32>(0.0), vec2<f32>(edge));
-    let low = vec2<u32>(floor(position));
-    let high = min(low + vec2<u32>(1u), vec2<u32>(size - 1u));
-    let blend = fract(position);
-    let top = mix(
-        environment_cube_texel(base_word, size, coord.face, low),
-        environment_cube_texel(base_word, size, coord.face, vec2<u32>(high.x, low.y)),
-        blend.x,
-    );
-    let bottom = mix(
-        environment_cube_texel(base_word, size, coord.face, vec2<u32>(low.x, high.y)),
-        environment_cube_texel(base_word, size, coord.face, high),
-        blend.x,
-    );
-    return mix(top, bottom, blend.y);
-}
-
-fn environment_specular_level(mip: u32) -> vec2<u32> {
-    var base_word = 6144u;
-    var size = 64u;
-    var level = 0u;
-    loop {
-        if level >= mip {
-            break;
-        }
-        base_word += size * size * 24u;
-        size = max(size >> 1u, 1u);
-        level += 1u;
-    }
-    return vec2<u32>(base_word, size);
-}
-
-fn sample_environment_irradiance(dir: vec3<f32>) -> vec3<f32> {
-    return sample_environment_cube_level(0u, 16u, dir);
-}
-
-fn sample_environment_specular(dir: vec3<f32>, lod_in: f32) -> vec3<f32> {
-    let lod = clamp(lod_in, 0.0, 6.0);
-    let low_mip = u32(floor(lod));
-    let high_mip = min(low_mip + 1u, 6u);
-    let low_level = environment_specular_level(low_mip);
-    let high_level = environment_specular_level(high_mip);
-    return mix(
-        sample_environment_cube_level(low_level.x, low_level.y, dir),
-        sample_environment_cube_level(high_level.x, high_level.y, dir),
-        fract(lod),
-    );
-}
-
-fn environment_brdf_texel(x: u32, y: u32) -> vec2<f32> {
-    let word = 137208u + (y * 128u + x) * 2u;
-    return vec2<f32>(
-        bitcast<f32>(environment_data[word]),
-        bitcast<f32>(environment_data[word + 1u]),
-    );
-}
-
-fn sample_environment_brdf(uv: vec2<f32>) -> vec2<f32> {
-    let position = clamp(uv * 128.0 - vec2<f32>(0.5), vec2<f32>(0.0), vec2<f32>(127.0));
-    let low = vec2<u32>(floor(position));
-    let high = min(low + vec2<u32>(1u), vec2<u32>(127u));
-    let blend = fract(position);
-    let top = mix(
-        environment_brdf_texel(low.x, low.y),
-        environment_brdf_texel(high.x, low.y),
-        blend.x,
-    );
-    let bottom = mix(
-        environment_brdf_texel(low.x, high.y),
-        environment_brdf_texel(high.x, high.y),
-        blend.x,
-    );
-    return mix(top, bottom, blend.y);
-}
-
-
-fn multimesh_brdf(
+fn perro_multimesh_brdf(
     albedo: vec3<f32>,
     n: vec3<f32>,
     v: vec3<f32>,
@@ -775,15 +386,15 @@ fn multimesh_brdf(
     let hv = v + l;
     let h = hv * inverseSqrt(max(dot(hv, hv), 1.0e-8));
     let f0 = mix(vec3<f32>(0.04), albedo, vec3<f32>(metallic));
-    let f = fresnel_schlick(max(dot(h, v), 0.0), f0);
-    let numerator = distribution_ggx(n, h, roughness) * geometry_smith(n, v, l, roughness) * f;
+    let f = perro_fresnel_schlick(max(dot(h, v), 0.0), f0);
+    let numerator = perro_distribution_ggx(n, h, roughness) * perro_geometry_smith(n, v, l, roughness) * f;
     let denominator = 4.0 * max(dot(n, v), 0.0) * max(dot(n, l), 0.0) + 1.0e-5;
     let specular = numerator / denominator;
     let diffuse = (vec3<f32>(1.0) - f) * (1.0 - metallic) * albedo / 3.14159265;
     return (diffuse + specular) * radiance * max(dot(n, l), 0.0);
 }
 
-fn apply_multimesh_normal_map(
+fn perro_apply_multimesh_normal_map(
     in: FragmentInput,
     normal_ws: vec3<f32>,
     scale: f32,
@@ -836,8 +447,8 @@ fn perro_lit_standard_with_ssao(
         n = -n;
     }
     if (flags & 0x400u) != 0u {
-        let normal_scale = unpack_unorm8(in.packed_pbr_params_0, 24u) * 4.0;
-        n = apply_multimesh_normal_map(in, n, normal_scale);
+        let normal_scale = perro_unpack_unorm8(in.packed_pbr_params_0, 24u) * 4.0;
+        n = perro_apply_multimesh_normal_map(in, n, normal_scale);
     }
     var albedo = base.rgb;
     var decal_emissive = vec3<f32>(0.0);
@@ -853,12 +464,12 @@ fn perro_lit_standard_with_ssao(
     let v = normalize(scene.camera_pos.xyz - in.world_pos);
     let hemi = clamp(n.y * 0.5 + 0.5, 0.0, 1.0);
     var ambient = mix(scene.ground_color.xyz, scene.ambient_color.xyz * scene.ambient_color.w, hemi);
-    let bleed = decode_local_bleed(in.packed_bleed);
+    let bleed = perro_decode_local_bleed(in.packed_bleed);
     let bleed_wrap = clamp(dot(n, bleed.dir) * 0.5 + 0.5, 0.0, 1.0);
     ambient += bleed.color * bleed.strength * 0.45 * (0.35 + 0.65 * bleed_wrap);
     let f0 = mix(vec3<f32>(0.04), albedo, vec3<f32>(metallic_safe));
     let n_dot_v = max(dot(n, v), 0.0);
-    let ambient_fresnel = fresnel_schlick_roughness(n_dot_v, f0, roughness_safe);
+    let ambient_fresnel = perro_fresnel_schlick_roughness(n_dot_v, f0, roughness_safe);
     let ambient_kd = (vec3<f32>(1.0) - ambient_fresnel) * (1.0 - metallic_safe);
     var ambient_diffuse =
         (vec3<f32>(1.0) - ambient_fresnel) * (1.0 - metallic_safe) * albedo * ambient * ao;
@@ -866,14 +477,14 @@ fn perro_lit_standard_with_ssao(
         ambient_fresnel * ambient * (0.15 + 0.35 * (1.0 - roughness_safe)) * ao;
     if scene.ibl_params.x > 0.0 {
         let intensity = scene.ibl_params.x;
-        let irradiance = sample_environment_irradiance(rotate_environment_direction(n));
+        let irradiance = perro_sample_environment_irradiance(perro_rotate_environment_direction(n));
         ambient_diffuse = ambient_kd * albedo * irradiance * intensity * ao;
         let reflection = reflect(-v, n);
-        let prefiltered = sample_environment_specular(
-            rotate_environment_direction(reflection),
+        let prefiltered = perro_sample_environment_specular(
+            perro_rotate_environment_direction(reflection),
             roughness_safe * scene.ibl_params.y,
         );
-        let brdf = sample_environment_brdf(vec2<f32>(n_dot_v, roughness_safe));
+        let brdf = perro_sample_environment_brdf(vec2<f32>(n_dot_v, roughness_safe));
         ambient_specular =
             prefiltered * (ambient_fresnel * brdf.x + vec3<f32>(brdf.y)) * intensity * ao;
     }
@@ -884,7 +495,7 @@ fn perro_lit_standard_with_ssao(
         let ray_dir = ray.direction.xyz;
         let l = -ray_dir * inverseSqrt(max(dot(ray_dir, ray_dir), 1.0e-8));
         let radiance = ray.color_intensity.xyz * ray.color_intensity.w;
-        direct += multimesh_brdf(albedo, n, v, l, roughness_safe, metallic_safe, radiance);
+        direct += perro_multimesh_brdf(albedo, n, v, l, roughness_safe, metallic_safe, radiance);
     }
     let alpha_mode = in.packed_material_params & 0x3u;
     var material_alpha = base.a;
@@ -892,12 +503,12 @@ fn perro_lit_standard_with_ssao(
         material_alpha = 1.0;
     }
     if alpha_mode == 1u {
-        let cutoff = unpack_unorm8(in.packed_material_params, 16u);
+        let cutoff = perro_unpack_unorm8(in.packed_material_params, 16u);
         if material_alpha < cutoff {
             discard;
         }
     }
-    let alpha = mesh_blend_alpha(in.frag_pos, in.world_pos, in.packed_blend_params)
+    let alpha = perro_mesh_blend_alpha(in.frag_pos, in.world_pos, in.packed_blend_params)
         * material_alpha;
     return vec4<f32>(
         ambient_diffuse + ambient_specular + direct + emissive + decal_emissive,
@@ -920,7 +531,7 @@ fn perro_lit_standard(
         metallic,
         occlusion,
         emissive,
-        multimesh_ssao(in.frag_pos.xy),
+        perro_multimesh_ssao(in.frag_pos.xy),
     );
 }
 
@@ -938,8 +549,8 @@ fn shade_standard_multimesh(in: FragmentInput) -> vec4<f32> {
         let texture_luma = dot(base_sample.rgb, vec3<f32>(0.2126, 0.7152, 0.0722));
         albedo = mix(albedo, color.rgb * texture_luma, tint_weight);
     }
-    var roughness = unpack_unorm8(in.packed_pbr_params_0, 0u);
-    var metallic = unpack_unorm8(in.packed_pbr_params_0, 8u);
+    var roughness = perro_unpack_unorm8(in.packed_pbr_params_0, 0u);
+    var metallic = perro_unpack_unorm8(in.packed_pbr_params_0, 8u);
     var ao = 1.0;
     let emissive = unpack_rgba8(in.packed_emissive);
     var lit_emissive = emissive.xyz * (emissive.w * 16.0);
@@ -950,7 +561,7 @@ fn shade_standard_multimesh(in: FragmentInput) -> vec4<f32> {
     }
     if (flags & 0x800u) != 0u {
         let sampled_ao = textureSample(custom_image_tex_2, material_sampler, in.uv).r;
-        let strength = unpack_unorm8(in.packed_pbr_params_0, 16u);
+        let strength = perro_unpack_unorm8(in.packed_pbr_params_0, 16u);
         ao = mix(1.0, sampled_ao, strength);
     }
     if (flags & 0x1000u) != 0u {
@@ -963,7 +574,7 @@ fn shade_standard_multimesh(in: FragmentInput) -> vec4<f32> {
         metallic,
         ao,
         lit_emissive,
-        multimesh_ssao(in.frag_pos.xy),
+        perro_multimesh_ssao(in.frag_pos.xy),
     );
 }
 
@@ -972,11 +583,11 @@ fn perro_multimesh_vs_main_base(v: VertexInput, inst: InstanceInput, vertex_inde
     let draw = multimesh_draws[inst.draw_id];
     let scale = bitcast<f32>(draw.scale_bits);
     let rot = normalize(inst.rotation);
-    let blended = apply_blend_shapes(v, inst, vertex_index);
-    let local_pos = rotate_vec_by_quat(blended.pos * (inst.scale * scale), rot) + inst.position;
+    let blended = perro_apply_blend_shapes(v, inst, vertex_index);
+    let local_pos = perro_rotate_vec_by_quat(blended.pos * (inst.scale * scale), rot) + inst.position;
     // Inverse-transpose of a diagonal scale: divide, so non-uniform instance
     // scale does not skew the normal.
-    let local_nrm = rotate_vec_by_quat(
+    let local_nrm = perro_rotate_vec_by_quat(
         normalize(blended.normal.xyz / max(inst.scale, vec3<f32>(1.0e-6))),
         rot,
     );
@@ -987,7 +598,7 @@ fn perro_multimesh_vs_main_base(v: VertexInput, inst: InstanceInput, vertex_inde
         dot(draw.model_row_2, p),
         1.0,
     );
-    let normal_ws = transform_normal_ws(
+    let normal_ws = perro_transform_normal_ws(
         draw.model_row_0.xyz,
         draw.model_row_1.xyz,
         draw.model_row_2.xyz,
@@ -1004,7 +615,7 @@ fn perro_multimesh_vs_main_base(v: VertexInput, inst: InstanceInput, vertex_inde
     var ambient_lit = ambient;
     var lit = vec3<f32>(0.0);
     // Local color bleed: one tint per multimesh draw, vertex-lit.
-    let bleed = decode_local_bleed(draw.packed_bleed);
+    let bleed = perro_decode_local_bleed(draw.packed_bleed);
     let bleed_wrap = clamp(dot(n, bleed.dir) * 0.5 + 0.5, 0.0, 1.0);
     ambient_lit += bleed.color * bleed.strength * 0.45 * (0.35 + 0.65 * bleed_wrap);
     let ray_count = u32(scene.ambient_and_counts.x);
@@ -1032,11 +643,11 @@ fn perro_multimesh_vs_main_base(v: VertexInput, inst: InstanceInput, vertex_inde
     return out;
 }
 
-fn fetch_instance(instance_index: u32) -> InstanceInput {
+fn perro_fetch_instance(instance_index: u32) -> InstanceInput {
     let src = visible_indices[instance_index];
     let raw = multimesh_instances[src];
-    let rot_xy = unpack_snorm16_pair(raw.rot_xy);
-    let rot_zw = unpack_snorm16_pair(raw.rot_zw);
+    let rot_xy = perro_unpack_snorm16_pair(raw.rot_xy);
+    let rot_zw = perro_unpack_snorm16_pair(raw.rot_zw);
     return InstanceInput(
         vec3<f32>(raw.px, raw.py, raw.pz),
         vec4<f32>(rot_xy.x, rot_xy.y, rot_zw.x, rot_zw.y),
@@ -1048,25 +659,18 @@ fn fetch_instance(instance_index: u32) -> InstanceInput {
 
 // ---- Frame globals for custom shaders ----------------------------------
 // Seconds since app start; wraps every hour to stay f32-precise.
-fn perro_time() -> f32 { return scene.time_params.x; }
 // Seconds covered by the previous frame.
-fn perro_delta_time() -> f32 { return scene.time_params.y; }
 // Frames rendered since app start (wraps with f32 precision).
-fn perro_frame_index() -> f32 { return scene.time_params.z; }
 // 0..1 sawtooth over 60 seconds; precision-safe looping animation driver.
-fn perro_time_phase() -> f32 { return scene.time_params.w; }
 // Viewport size in pixels.
-fn perro_resolution() -> vec2<f32> { return scene.resolution.xy; }
 // 1 / viewport size.
-fn perro_inv_resolution() -> vec2<f32> { return scene.resolution.zw; }
-
 @vertex
 fn vs_main(
     v: VertexInput,
     @builtin(vertex_index) vertex_index: u32,
     @builtin(instance_index) instance_index: u32,
 ) -> VertexOutput {
-    let inst = fetch_instance(instance_index);
+    let inst = perro_fetch_instance(instance_index);
     return perro_multimesh_vs_main_base(v, inst, vertex_index);
 }
 
@@ -1086,12 +690,12 @@ fn vs_depth(
     @builtin(vertex_index) vertex_index: u32,
     @builtin(instance_index) instance_index: u32,
 ) -> DepthOnlyOutput {
-    let inst = fetch_instance(instance_index);
+    let inst = perro_fetch_instance(instance_index);
     let draw = multimesh_draws[inst.draw_id];
     let scale = bitcast<f32>(draw.scale_bits);
     let rot = normalize(inst.rotation);
-    let blended = apply_blend_shapes(v, inst, vertex_index);
-    let local_pos = rotate_vec_by_quat(blended.pos * (inst.scale * scale), rot) + inst.position;
+    let blended = perro_apply_blend_shapes(v, inst, vertex_index);
+    let local_pos = perro_rotate_vec_by_quat(blended.pos * (inst.scale * scale), rot) + inst.position;
     let p = vec4<f32>(local_pos, 1.0);
     let world = vec4<f32>(
         dot(draw.model_row_0, p),

@@ -1,7 +1,7 @@
 fn shade_material(in: FragmentInput) -> vec4<f32> {
     let color = unpack_rgba8(in.packed_color);
-    let emissive = unpack_emissive_hdr(in.packed_emissive);
-    let material = decode_material_params(in.packed_material_params);
+    let emissive = perro_unpack_emissive_hdr(in.packed_emissive);
+    let material = perro_decode_material_params(in.packed_material_params);
     var n = normalize(in.normal_ws);
     if material.flat_shading {
         n = normalize(cross(dpdx(in.world_pos), dpdy(in.world_pos)));
@@ -23,7 +23,7 @@ fn shade_material(in: FragmentInput) -> vec4<f32> {
     if material.alpha_mode == 0u {
         alpha = 1.0;
     }
-    alpha = apply_mesh_blend_alpha(in, material, alpha);
+    alpha = perro_apply_mesh_blend_alpha(in, material, alpha);
     if material.meshlet_debug_view {
         return vec4<f32>(color.rgb, 1.0);
     }

@@ -71,7 +71,7 @@ fn custom_f_param(in: SkyFragment, index: u32) -> vec4<f32> {
     return custom_param(in, index);
 }
 
-fn gradient3(colors: array<vec4<f32>, 3>, t: f32) -> vec3<f32> {
+fn perro_gradient3(colors: array<vec4<f32>, 3>, t: f32) -> vec3<f32> {
     let u = clamp(t, 0.0, 1.0);
     if (u < 0.5) {
         return mix(colors[0].rgb, colors[1].rgb, u * 2.0);
@@ -92,15 +92,15 @@ fn vs_main(@builtin(vertex_index) vi: u32) -> VsOut {
     return out;
 }
 
-fn sky_base_color(ray: vec3<f32>) -> vec4<f32> {
+fn perro_sky_base_color(ray: vec3<f32>) -> vec4<f32> {
     let top_t = clamp(pow(max(ray.y, 0.0), 0.45), 0.0, 1.0);
     let lower_t = clamp((-ray.y) / 0.65, 0.0, 1.0);
     let horizon_weight = smoothstep(0.0, 0.18, -ray.y);
 
-    let day_col = gradient3(sky.day_colors, top_t);
-    let evening_col = gradient3(sky.evening_colors, top_t);
-    let night_col = gradient3(sky.night_colors, top_t);
-    let horizon_col = gradient3(sky.horizon_colors, lower_t);
+    let day_col = perro_gradient3(sky.day_colors, top_t);
+    let evening_col = perro_gradient3(sky.evening_colors, top_t);
+    let night_col = perro_gradient3(sky.night_colors, top_t);
+    let horizon_col = perro_gradient3(sky.horizon_colors, lower_t);
 
     let day_weight = sky.params0.y;
     let evening_weight = sky.params0.z;
@@ -133,7 +133,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         sky.params0.z,
         sky.params0.w,
         horizon_weight,
-        sky_base_color(ray),
+        perro_sky_base_color(ray),
         vec4<f32>(0.0),
         vec4<f32>(0.0),
         vec4<f32>(0.0),
