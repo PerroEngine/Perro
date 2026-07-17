@@ -1,18 +1,18 @@
 import init from './app.js';
 
-const boot = document.getElementById('boot');
-const staticPage = document.getElementById('perro-static-page');
-const shellCache = new Map();
-const parser = new DOMParser();
-const setBoot = (text, kind = 'info') => {
+pub(super) const boot = document.getElementById('boot');
+pub(super) const staticPage = document.getElementById('perro-static-page');
+pub(super) const shellCache = new Map();
+pub(super) const parser = new DOMParser();
+pub(super) const setBoot = (text, kind = 'info') => {
 if (!boot) return;
 boot.textContent = text;
 boot.dataset.kind = kind;
 };
 
-const appReady = () => document.body.dataset.perroApp === 'ready';
+pub(super) const appReady = () => document.body.dataset.perroApp === 'ready';
 
-const splitHref = (href) => {
+pub(super) const splitHref = (href) => {
 const url = new URL(href, window.location.href);
 let path = url.pathname || '/';
 if (path.length > '/index.html'.length && path.endsWith('/index.html')) {
@@ -31,7 +31,7 @@ documentHref: path === '/' ? '/index.html' : `${path}/index.html`,
 };
 };
 
-const syncHead = (doc) => {
+pub(super) const syncHead = (doc) => {
 if (doc.title) {
 document.title = doc.title;
 }
@@ -53,7 +53,7 @@ currentIcon.setAttribute('href', nextIcon.getAttribute('href') || '');
 }
 };
 
-const fetchShellDoc = async (href) => {
+pub(super) const fetchShellDoc = async (href) => {
 const parts = splitHref(href);
 let pending = shellCache.get(parts.path);
 if (!pending) {
@@ -69,7 +69,7 @@ const text = await pending;
 return { parts, doc: parser.parseFromString(text, 'text/html') };
 };
 
-const applyShellDoc = (doc) => {
+pub(super) const applyShellDoc = (doc) => {
 if (!staticPage) return;
 const nextStatic = doc.getElementById('perro-static-page');
 if (!nextStatic) return;
@@ -77,7 +77,7 @@ staticPage.innerHTML = nextStatic.innerHTML;
 syncHead(doc);
 };
 
-const navShell = async (href, pushHistory) => {
+pub(super) const navShell = async (href, pushHistory) => {
 if (appReady()) return;
 const { parts, doc } = await fetchShellDoc(href);
 applyShellDoc(doc);
@@ -86,14 +86,14 @@ window.history.pushState(null, '', parts.historyHref);
 }
 };
 
-const hideBoot = () => {
+pub(super) const hideBoot = () => {
 if (!boot) return;
 boot.dataset.state = 'done';
 document.body.dataset.perroApp = 'ready';
 window.setTimeout(() => boot.remove(), 400);
 };
 
-const obs = new MutationObserver(() => {
+pub(super) const obs = new MutationObserver(() => {
 if (document.querySelector('canvas')) {
 hideBoot();
 obs.disconnect();
@@ -120,7 +120,7 @@ window.location.href = url.href;
 });
 });
 
-const prefetchShell = (target) => {
+pub(super) const prefetchShell = (target) => {
 if (appReady()) return;
 const anchor = target instanceof Element
 ? target.closest('#perro-static-page a[href]')

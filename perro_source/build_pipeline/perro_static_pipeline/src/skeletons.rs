@@ -106,69 +106,71 @@ pub fn generate_static_skeletons(project_root: &Path) -> Result<(), StaticPipeli
 
     let processed = misses
         .into_par_iter()
-        .map(|(rel, len, mtime)| -> io::Result<(String, u64, u128, Vec<SkeletonAsset>)> {
-            let res_path = asset_uri(&rel);
-            let full_path = res_dir.join(&rel);
-            let ext = Path::new(&rel)
-                .extension()
-                .and_then(|e| e.to_str())
-                .map(|s| s.to_ascii_lowercase())
-                .unwrap_or_default();
-            let assets = match ext.as_str() {
-                PSKEL_EXTENSION | PSKEL_EXTENSION_3D => {
-                    let bytes = fs::read(&full_path)?;
-                    let baked = if bytes.starts_with(PSKEL_MAGIC) {
-                        bytes
-                    } else {
-                        let text = std::str::from_utf8(&bytes).map_err(|err| {
-                            io::Error::other(format!(
-                                "pskel `{res_path}` is not valid UTF-8: {err}"
-                            ))
-                        })?;
-                        let bones = parse_pskel_text(text).map_err(io::Error::other)?;
-                        encode_pskel_tightest(&bones)?
-                    };
-                    vec![SkeletonAsset {
-                        entry: SkeletonRef {
-                            lookup_key: res_path,
-                            embedded_rel_path: rel.clone(),
-                            synthesized: false,
-                        },
-                        bytes: baked,
-                    }]
-                }
-                PSKEL_EXTENSION_2D => {
-                    let bytes = fs::read(&full_path)?;
-                    let baked = if bytes.starts_with(PSKEL_MAGIC) {
-                        bytes
-                    } else {
-                        let text = std::str::from_utf8(&bytes).map_err(|err| {
-                            io::Error::other(format!(
-                                "pskel2d `{res_path}` is not valid UTF-8: {err}"
-                            ))
-                        })?;
-                        let bones = parse_pskel2d_text(text).map_err(io::Error::other)?;
-                        encode_pskel2d(&bones)?
-                    };
-                    vec![SkeletonAsset {
-                        entry: SkeletonRef {
-                            lookup_key: res_path,
-                            embedded_rel_path: rel.clone(),
-                            synthesized: false,
-                        },
-                        bytes: baked,
-                    }]
-                }
-                source_ext::GLB | source_ext::GLTF => {
-                    build_gltf_skeleton_entries(&full_path, &res_path, &rel)?
-                        .into_iter()
-                        .map(|(entry, bytes)| SkeletonAsset { entry, bytes })
-                        .collect()
-                }
-                _ => Vec::new(),
-            };
-            Ok((rel, len, mtime, assets))
-        })
+        .map(
+            |(rel, len, mtime)| -> io::Result<(String, u64, u128, Vec<SkeletonAsset>)> {
+                let res_path = asset_uri(&rel);
+                let full_path = res_dir.join(&rel);
+                let ext = Path::new(&rel)
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .map(|s| s.to_ascii_lowercase())
+                    .unwrap_or_default();
+                let assets = match ext.as_str() {
+                    PSKEL_EXTENSION | PSKEL_EXTENSION_3D => {
+                        let bytes = fs::read(&full_path)?;
+                        let baked = if bytes.starts_with(PSKEL_MAGIC) {
+                            bytes
+                        } else {
+                            let text = std::str::from_utf8(&bytes).map_err(|err| {
+                                io::Error::other(format!(
+                                    "pskel `{res_path}` is not valid UTF-8: {err}"
+                                ))
+                            })?;
+                            let bones = parse_pskel_text(text).map_err(io::Error::other)?;
+                            encode_pskel_tightest(&bones)?
+                        };
+                        vec![SkeletonAsset {
+                            entry: SkeletonRef {
+                                lookup_key: res_path,
+                                embedded_rel_path: rel.clone(),
+                                synthesized: false,
+                            },
+                            bytes: baked,
+                        }]
+                    }
+                    PSKEL_EXTENSION_2D => {
+                        let bytes = fs::read(&full_path)?;
+                        let baked = if bytes.starts_with(PSKEL_MAGIC) {
+                            bytes
+                        } else {
+                            let text = std::str::from_utf8(&bytes).map_err(|err| {
+                                io::Error::other(format!(
+                                    "pskel2d `{res_path}` is not valid UTF-8: {err}"
+                                ))
+                            })?;
+                            let bones = parse_pskel2d_text(text).map_err(io::Error::other)?;
+                            encode_pskel2d(&bones)?
+                        };
+                        vec![SkeletonAsset {
+                            entry: SkeletonRef {
+                                lookup_key: res_path,
+                                embedded_rel_path: rel.clone(),
+                                synthesized: false,
+                            },
+                            bytes: baked,
+                        }]
+                    }
+                    source_ext::GLB | source_ext::GLTF => {
+                        build_gltf_skeleton_entries(&full_path, &res_path, &rel)?
+                            .into_iter()
+                            .map(|(entry, bytes)| SkeletonAsset { entry, bytes })
+                            .collect()
+                    }
+                    _ => Vec::new(),
+                };
+                Ok((rel, len, mtime, assets))
+            },
+        )
         .collect::<io::Result<Vec<_>>>()?;
 
     let mut skeleton_refs = cached_refs;

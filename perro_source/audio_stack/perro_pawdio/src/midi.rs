@@ -665,12 +665,9 @@ impl Source for BuiltInMidiMixerSource {
 
 fn program_wave(program: MidiProgram) -> WaveKind {
     match program.0 {
-        16..=23 => WaveKind::Square,
-        24..=39 => WaveKind::Saw,
+        16..=23 | 80..=87 => WaveKind::Square,
+        24..=39 | 56..=79 => WaveKind::Saw,
         40..=55 => WaveKind::Triangle,
-        56..=79 => WaveKind::Saw,
-        80..=87 => WaveKind::Square,
-        88..=103 => WaveKind::Sine,
         112..=127 => WaveKind::Noise,
         _ => WaveKind::Sine,
     }

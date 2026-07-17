@@ -67,36 +67,31 @@ pub fn generate_static_textures(project_root: &Path) -> Result<(), StaticPipelin
 
     let encoded = misses
         .into_par_iter()
-        .map(
-            |(rel, res_path, full_path, len, mtime)| -> io::Result<_> {
-                let file_bytes = fs::read(&full_path)?;
-                let (raw_rgba, width, height) =
-                    decode_image_rgba(&file_bytes).ok_or_else(|| {
-                        io::Error::other(format!("failed to decode image `{res_path}`"))
-                    })?;
-                let (mut flags, packed_raw) = pack_texture_payload(&raw_rgba);
-                let compressed = compress_zlib_best(&packed_raw)?;
-                let payload = if compressed.len() < packed_raw.len() {
-                    compressed
-                } else {
-                    flags |= PTEX_FLAG_PAYLOAD_RAW;
-                    packed_raw.clone()
-                };
+        .map(|(rel, res_path, full_path, len, mtime)| -> io::Result<_> {
+            let file_bytes = fs::read(&full_path)?;
+            let (raw_rgba, width, height) = decode_image_rgba(&file_bytes)
+                .ok_or_else(|| io::Error::other(format!("failed to decode image `{res_path}`")))?;
+            let (mut flags, packed_raw) = pack_texture_payload(&raw_rgba);
+            let compressed = compress_zlib_best(&packed_raw)?;
+            let payload = if compressed.len() < packed_raw.len() {
+                compressed
+            } else {
+                flags |= PTEX_FLAG_PAYLOAD_RAW;
+                packed_raw.clone()
+            };
 
-                let mut ptex = Vec::with_capacity(24 + payload.len());
-                ptex.extend_from_slice(PTEX_MAGIC);
-                ptex.extend_from_slice(&PTEX_VERSION.to_le_bytes());
-                ptex.extend_from_slice(&width.to_le_bytes());
-                ptex.extend_from_slice(&height.to_le_bytes());
-                ptex.extend_from_slice(
-                    &((flags & PTEX_FLAG_FORMAT_MASK) | (flags & PTEX_FLAG_PAYLOAD_RAW))
-                        .to_le_bytes(),
-                );
-                ptex.extend_from_slice(&(packed_raw.len() as u32).to_le_bytes());
-                ptex.extend_from_slice(&payload);
-                Ok((rel, res_path, len, mtime, ptex))
-            },
-        )
+            let mut ptex = Vec::with_capacity(24 + payload.len());
+            ptex.extend_from_slice(PTEX_MAGIC);
+            ptex.extend_from_slice(&PTEX_VERSION.to_le_bytes());
+            ptex.extend_from_slice(&width.to_le_bytes());
+            ptex.extend_from_slice(&height.to_le_bytes());
+            ptex.extend_from_slice(
+                &((flags & PTEX_FLAG_FORMAT_MASK) | (flags & PTEX_FLAG_PAYLOAD_RAW)).to_le_bytes(),
+            );
+            ptex.extend_from_slice(&(packed_raw.len() as u32).to_le_bytes());
+            ptex.extend_from_slice(&payload);
+            Ok((rel, res_path, len, mtime, ptex))
+        })
         .collect::<io::Result<Vec<_>>>()?;
 
     for (rel, res_path, len, mtime, ptex) in encoded {

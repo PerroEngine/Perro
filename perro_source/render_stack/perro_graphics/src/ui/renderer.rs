@@ -804,9 +804,7 @@ mod tests {
             .collect();
 
         assert!(
-            first_ptrs
-                .iter()
-                .any(|ptr| second_ptrs.contains(ptr)),
+            first_ptrs.iter().any(|ptr| second_ptrs.contains(ptr)),
             "label primitives were re-tessellated instead of reused from cache"
         );
     }

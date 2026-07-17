@@ -72,10 +72,12 @@ pub struct ParticleEvalInput<'a> {
 }
 
 impl Program {
+    #[must_use]
     pub fn new(ops: Vec<Op>) -> Self {
         Self { ops }
     }
 
+    #[must_use]
     pub fn ops(&self) -> &[Op] {
         &self.ops
     }
@@ -130,135 +132,85 @@ pub fn eval_ops_particle(
     input: &ParticleEvalInput<'_>,
     stack: &mut Vec<f32>,
 ) -> Option<f32> {
-    let t = input.t;
-    let life = input.life;
-    let lifetime = input.lifetime;
-    let spawn_time = input.spawn_time;
-    let emitter_time = input.emitter_time;
-    let speed = input.speed;
-    let particle_id = input.particle_id;
-    let dir = input.dir;
-    let vel = input.vel;
-    let rand = input.rand;
-    let seed = input.seed;
-    let ring_u = input.ring_u;
-    let index01 = input.index01;
-    let emitter_pos = input.emitter_pos;
-    let prev_pos = input.prev_pos;
-    let params = input.params;
     stack.clear();
     for op in ops {
         match *op {
             Op::Const(v) => stack.push(v),
-            Op::T => stack.push(t),
-            Op::Life => stack.push(life),
-            Op::Lifetime => stack.push(lifetime),
-            Op::AgeLeft => stack.push((lifetime - life).max(0.0)),
-            Op::Age01 => stack.push(t),
-            Op::SpawnTime => stack.push(spawn_time),
-            Op::EmitterTime => stack.push(emitter_time),
-            Op::Speed => stack.push(speed),
-            Op::Id => stack.push(particle_id),
-            Op::DirX => stack.push(dir[0]),
-            Op::DirY => stack.push(dir[1]),
-            Op::DirZ => stack.push(dir[2]),
-            Op::VelX => stack.push(vel[0]),
-            Op::VelY => stack.push(vel[1]),
-            Op::VelZ => stack.push(vel[2]),
-            Op::Rand => stack.push(rand[0]),
-            Op::Rand2 => stack.push(rand[1]),
-            Op::Rand3 => stack.push(rand[2]),
-            Op::Seed => stack.push(seed),
-            Op::RingU => stack.push(ring_u),
-            Op::Index01 => stack.push(index01),
-            Op::EmitterX => stack.push(emitter_pos[0]),
-            Op::EmitterY => stack.push(emitter_pos[1]),
-            Op::EmitterZ => stack.push(emitter_pos[2]),
-            Op::PrevX => stack.push(prev_pos[0]),
-            Op::PrevY => stack.push(prev_pos[1]),
-            Op::PrevZ => stack.push(prev_pos[2]),
+            Op::T | Op::Age01 => stack.push(input.t),
+            Op::Life => stack.push(input.life),
+            Op::Lifetime => stack.push(input.lifetime),
+            Op::AgeLeft => stack.push((input.lifetime - input.life).max(0.0)),
+            Op::SpawnTime => stack.push(input.spawn_time),
+            Op::EmitterTime => stack.push(input.emitter_time),
+            Op::Speed => stack.push(input.speed),
+            Op::Id => stack.push(input.particle_id),
+            Op::DirX => stack.push(input.dir[0]),
+            Op::DirY => stack.push(input.dir[1]),
+            Op::DirZ => stack.push(input.dir[2]),
+            Op::VelX => stack.push(input.vel[0]),
+            Op::VelY => stack.push(input.vel[1]),
+            Op::VelZ => stack.push(input.vel[2]),
+            Op::Rand => stack.push(input.rand[0]),
+            Op::Rand2 => stack.push(input.rand[1]),
+            Op::Rand3 => stack.push(input.rand[2]),
+            Op::Seed => stack.push(input.seed),
+            Op::RingU => stack.push(input.ring_u),
+            Op::Index01 => stack.push(input.index01),
+            Op::EmitterX => stack.push(input.emitter_pos[0]),
+            Op::EmitterY => stack.push(input.emitter_pos[1]),
+            Op::EmitterZ => stack.push(input.emitter_pos[2]),
+            Op::PrevX => stack.push(input.prev_pos[0]),
+            Op::PrevY => stack.push(input.prev_pos[1]),
+            Op::PrevZ => stack.push(input.prev_pos[2]),
             Op::Param => {
                 let idx = stack.pop()?.floor() as isize;
-                if idx < 0 {
-                    stack.push(0.0);
-                } else {
-                    stack.push(*params.get(idx as usize).unwrap_or(&0.0));
-                }
+                let value = usize::try_from(idx)
+                    .ok()
+                    .and_then(|idx| input.params.get(idx))
+                    .copied()
+                    .unwrap_or_default();
+                stack.push(value);
             }
-            Op::Add => {
-                let b = stack.pop()?;
-                let a = stack.pop()?;
-                stack.push(a + b);
-            }
-            Op::Sub => {
-                let b = stack.pop()?;
-                let a = stack.pop()?;
-                stack.push(a - b);
-            }
-            Op::Mul => {
-                let b = stack.pop()?;
-                let a = stack.pop()?;
-                stack.push(a * b);
-            }
-            Op::Div => {
-                let b = stack.pop()?;
-                let a = stack.pop()?;
-                stack.push(a / b);
-            }
-            Op::Pow => {
-                let b = stack.pop()?;
-                let a = stack.pop()?;
-                stack.push(a.powf(b));
-            }
-            Op::Neg => {
-                let a = stack.pop()?;
-                stack.push(-a);
-            }
-            Op::Sin => {
-                let a = stack.pop()?;
-                stack.push(a.sin());
-            }
-            Op::Cos => {
-                let a = stack.pop()?;
-                stack.push(a.cos());
-            }
-            Op::Tan => {
-                let a = stack.pop()?;
-                stack.push(a.tan());
-            }
-            Op::Abs => {
-                let a = stack.pop()?;
-                stack.push(a.abs());
-            }
-            Op::Sqrt => {
-                let a = stack.pop()?;
-                stack.push(a.max(0.0).sqrt());
-            }
-            Op::Min => {
-                let b = stack.pop()?;
-                let a = stack.pop()?;
-                stack.push(a.min(b));
-            }
-            Op::Max => {
-                let b = stack.pop()?;
-                let a = stack.pop()?;
-                stack.push(a.max(b));
-            }
+            Op::Add => eval_binary(stack, |a, b| a + b)?,
+            Op::Sub => eval_binary(stack, |a, b| a - b)?,
+            Op::Mul => eval_binary(stack, |a, b| a * b)?,
+            Op::Div => eval_binary(stack, |a, b| a / b)?,
+            Op::Pow => eval_binary(stack, f32::powf)?,
+            Op::Neg => eval_unary(stack, |value| -value)?,
+            Op::Sin => eval_unary(stack, f32::sin)?,
+            Op::Cos => eval_unary(stack, f32::cos)?,
+            Op::Tan => eval_unary(stack, f32::tan)?,
+            Op::Abs => eval_unary(stack, f32::abs)?,
+            Op::Sqrt => eval_unary(stack, |value| value.max(0.0).sqrt())?,
+            Op::Min => eval_binary(stack, f32::min)?,
+            Op::Max => eval_binary(stack, f32::max)?,
             Op::Clamp => {
                 let hi = stack.pop()?;
                 let lo = stack.pop()?;
                 let x = stack.pop()?;
                 let lower = lo.min(hi);
                 let upper = lo.max(hi);
-                stack.push(x.max(lower).min(upper));
+                stack.push(x.clamp(lower, upper));
             }
-            Op::Hash => {
-                let a = stack.pop()?;
-                stack.push(hash01f(a));
-            }
+            Op::Hash => eval_unary(stack, hash01f)?,
         }
     }
     if stack.len() == 1 { stack.pop() } else { None }
+}
+
+#[inline]
+fn eval_unary(stack: &mut Vec<f32>, op: impl FnOnce(f32) -> f32) -> Option<()> {
+    let value = stack.pop()?;
+    stack.push(op(value));
+    Some(())
+}
+
+#[inline]
+fn eval_binary(stack: &mut Vec<f32>, op: impl FnOnce(f32, f32) -> f32) -> Option<()> {
+    let rhs = stack.pop()?;
+    let lhs = stack.pop()?;
+    stack.push(op(lhs, rhs));
+    Some(())
 }
 
 pub fn emit_wgsl_expr_ops(ops: &[Op]) -> Result<String, CompileError> {
@@ -408,7 +360,7 @@ struct Compiler<'a> {
     ops: Vec<Op>,
 }
 
-impl<'a> Compiler<'a> {
+impl Compiler<'_> {
     fn skip_ws(&mut self) {
         while self.i < self.s.len() && self.s[self.i].is_ascii_whitespace() {
             self.i += 1;

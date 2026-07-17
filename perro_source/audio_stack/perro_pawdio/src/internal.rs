@@ -206,6 +206,27 @@ impl OwnedAudioPlaybackRequest {
             from_end: value.from_end,
         }
     }
+
+    pub(crate) fn as_request(&self) -> AudioPlaybackRequest<'_> {
+        AudioPlaybackRequest {
+            id: self.id,
+            source: &self.source,
+            bus_id: self.bus_id,
+            looped: self.looped,
+            volume: self.volume,
+            speed: self.speed,
+            pan: self.pan,
+            low_pass: self.low_pass,
+            reverb_send: self.reverb_send,
+            echo: self.echo,
+            reflection: self.reflection,
+            occlusion: self.occlusion,
+            eq: self.eq,
+            compression: self.compression,
+            from_start: self.from_start,
+            from_end: self.from_end,
+        }
+    }
 }
 
 #[derive(Clone)]

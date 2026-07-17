@@ -1,4 +1,4 @@
-use crossbeam_channel::{self, Sender, TrySendError};
+use crossbeam_channel::{self, Receiver, Sender, TrySendError};
 use perro_ids::AudioBusID;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
@@ -56,8 +56,154 @@ pub struct AudioSourceHandle {
 }
 
 impl AudioSourceHandle {
+    #[must_use]
     pub fn as_str(&self) -> &str {
         &self.source
+    }
+}
+
+fn run_audio_worker<F>(
+    static_audio_lookup: Option<fn(u64) -> &'static [u8]>,
+    player_factory: F,
+    commands: &Receiver<AudioCommand>,
+    startup: &Sender<Result<(), String>>,
+    loaded: &Mutex<AudioLoadedState>,
+) where
+    F: FnOnce(Option<fn(u64) -> &'static [u8]>) -> Result<BarkPlayer, String>,
+{
+    let player = match player_factory(static_audio_lookup) {
+        Ok(player) => player,
+        Err(err) => {
+            let _ = startup.send(Err(err));
+            return;
+        }
+    };
+    if startup.send(Ok(())).is_err() {
+        return;
+    }
+
+    while let Ok(command) = commands.recv() {
+        process_audio_command(&player, command, loaded);
+    }
+}
+
+fn set_source_loaded(loaded: &Mutex<AudioLoadedState>, source: &Arc<str>, value: bool) {
+    let Ok(mut loaded) = loaded.lock() else {
+        return;
+    };
+    if value {
+        loaded.sources.insert(Arc::clone(source));
+    } else {
+        loaded.sources.remove(source);
+    }
+}
+
+fn set_soundfont_loaded(loaded: &Mutex<AudioLoadedState>, id: perro_ids::SoundFontID, value: bool) {
+    let Ok(mut loaded) = loaded.lock() else {
+        return;
+    };
+    if value {
+        loaded.soundfonts.insert(id);
+    } else {
+        loaded.soundfonts.remove(&id);
+    }
+}
+
+fn process_audio_command(
+    player: &BarkPlayer,
+    command: AudioCommand,
+    loaded: &Mutex<AudioLoadedState>,
+) {
+    match command {
+        AudioCommand::Load { source, reserved } => {
+            let success = player.load_source(&source, reserved).is_ok();
+            set_source_loaded(loaded, &source, success);
+        }
+        AudioCommand::LoadBytes {
+            source,
+            bytes,
+            reserved,
+        } => {
+            let success = player.load_source_bytes(&source, bytes, reserved).is_ok();
+            set_source_loaded(loaded, &source, success);
+        }
+        AudioCommand::DropAsset { source } => {
+            let _ = player.drop_source_asset(&source);
+            set_source_loaded(loaded, &source, false);
+        }
+        AudioCommand::Play { request } => {
+            let _ = player.play_source(request.as_request());
+        }
+        AudioCommand::PlayClip {
+            source,
+            clip,
+            bus_id,
+            volume,
+            pan,
+        } => {
+            let _ = player.play_clip(&source, clip, bus_id, volume, pan);
+        }
+        AudioCommand::PlayStreamClip {
+            source,
+            clip,
+            bus_id,
+            volume,
+            pan,
+        } => {
+            let _ = player.play_stream_clip(&source, clip, bus_id, volume, pan);
+        }
+        AudioCommand::Stop { source } => {
+            let _ = player.stop_source(&source);
+        }
+        AudioCommand::StopMatch { request } => {
+            let _ = player.stop_match(request.as_request());
+        }
+        AudioCommand::StopPlayback { id } => {
+            let _ = player.stop_playback(id);
+        }
+        AudioCommand::UpdateSpatial { id, params } => {
+            let _ = player.update_spatial(id, params);
+        }
+        AudioCommand::StopAll => player.stop_all(),
+        AudioCommand::SetMasterVolume { volume } => player.set_master_volume(volume),
+        AudioCommand::SetBusVolume { bus_id, volume } => player.set_bus_volume(bus_id, volume),
+        AudioCommand::SetBusSpeed { bus_id, speed } => player.set_bus_speed(bus_id, speed),
+        AudioCommand::PauseBus { bus_id } => player.pause_bus(bus_id),
+        AudioCommand::ResumeBus { bus_id } => player.resume_bus(bus_id),
+        AudioCommand::StopBus { bus_id } => {
+            let _ = player.stop_bus(bus_id);
+        }
+        AudioCommand::SourceLength { source, reply } => {
+            let _ = reply.send(player.source_length_seconds(&source));
+        }
+        AudioCommand::LoadSoundFont { id, source } => {
+            let success = player.load_soundfont(id, &source).is_ok();
+            set_soundfont_loaded(loaded, id, success);
+        }
+        AudioCommand::LoadSoundFontBytes { id, source, bytes } => {
+            let success = player.load_soundfont_bytes(id, &source, bytes).is_ok();
+            set_soundfont_loaded(loaded, id, success);
+        }
+        AudioCommand::LoadMidiFile { source } => {
+            let _ = player.load_midi_file(&source);
+        }
+        AudioCommand::MidiNote { request } => {
+            let _ = player.play_midi_note(request.as_request());
+        }
+        AudioCommand::MidiNoteSpatial { request } => {
+            let _ = player.play_midi_note_spatial(request.as_request());
+        }
+        AudioCommand::MidiNotes { requests } => {
+            for request in requests {
+                let _ = player.play_midi_note(request.as_request());
+            }
+        }
+        AudioCommand::MidiFile { request } => {
+            let _ = player.play_midi_file(request.as_request());
+        }
+        AudioCommand::MidiRelease { id } => {
+            let _ = player.release_midi(id);
+        }
     }
 }
 
@@ -87,172 +233,13 @@ impl AudioController {
         std::thread::Builder::new()
             .name("perro_pawdio_audio".to_string())
             .spawn(move || {
-                let player = match player_factory(static_audio_lookup) {
-                    Ok(player) => player,
-                    Err(err) => {
-                        let _ = startup_tx.send(Err(err));
-                        return;
-                    }
-                };
-                if startup_tx.send(Ok(())).is_err() {
-                    return;
-                }
-
-                while let Ok(cmd) = rx.recv() {
-                    match cmd {
-                        AudioCommand::Load { source, reserved } => {
-                            if player.load_source(&source, reserved).is_ok() {
-                                if let Ok(mut loaded) = loaded_for_thread.lock() {
-                                    loaded.sources.insert(Arc::clone(&source));
-                                }
-                            } else if let Ok(mut loaded) = loaded_for_thread.lock() {
-                                loaded.sources.remove(&source);
-                            }
-                        }
-                        AudioCommand::LoadBytes {
-                            source,
-                            bytes,
-                            reserved,
-                        } => {
-                            if player.load_source_bytes(&source, bytes, reserved).is_ok() {
-                                if let Ok(mut loaded) = loaded_for_thread.lock() {
-                                    loaded.sources.insert(Arc::clone(&source));
-                                }
-                            } else if let Ok(mut loaded) = loaded_for_thread.lock() {
-                                loaded.sources.remove(&source);
-                            }
-                        }
-                        AudioCommand::DropAsset { source } => {
-                            let _ = player.drop_source_asset(&source);
-                            if let Ok(mut loaded) = loaded_for_thread.lock() {
-                                loaded.sources.remove(&source);
-                            }
-                        }
-                        AudioCommand::Play { request } => {
-                            let _ = player.play_source(AudioPlaybackRequest {
-                                id: request.id,
-                                source: request.source.as_ref(),
-                                bus_id: request.bus_id,
-                                looped: request.looped,
-                                volume: request.volume,
-                                speed: request.speed,
-                                pan: request.pan,
-                                low_pass: request.low_pass,
-                                reverb_send: request.reverb_send,
-                                echo: request.echo,
-                                reflection: request.reflection,
-                                occlusion: request.occlusion,
-                                eq: request.eq,
-                                compression: request.compression,
-                                from_start: request.from_start,
-                                from_end: request.from_end,
-                            });
-                        }
-                        AudioCommand::PlayClip {
-                            source,
-                            clip,
-                            bus_id,
-                            volume,
-                            pan,
-                        } => {
-                            let _ = player.play_clip(&source, clip, bus_id, volume, pan);
-                        }
-                        AudioCommand::PlayStreamClip {
-                            source,
-                            clip,
-                            bus_id,
-                            volume,
-                            pan,
-                        } => {
-                            let _ = player.play_stream_clip(&source, clip, bus_id, volume, pan);
-                        }
-                        AudioCommand::Stop { source } => {
-                            let _ = player.stop_source(&source);
-                        }
-                        AudioCommand::StopMatch { request } => {
-                            let _ = player.stop_match(AudioPlaybackRequest {
-                                id: request.id,
-                                source: request.source.as_ref(),
-                                bus_id: request.bus_id,
-                                looped: request.looped,
-                                volume: request.volume,
-                                speed: request.speed,
-                                pan: request.pan,
-                                low_pass: request.low_pass,
-                                reverb_send: request.reverb_send,
-                                echo: request.echo,
-                                reflection: request.reflection,
-                                occlusion: request.occlusion,
-                                eq: request.eq,
-                                compression: request.compression,
-                                from_start: request.from_start,
-                                from_end: request.from_end,
-                            });
-                        }
-                        AudioCommand::StopPlayback { id } => {
-                            let _ = player.stop_playback(id);
-                        }
-                        AudioCommand::UpdateSpatial { id, params } => {
-                            let _ = player.update_spatial(id, params);
-                        }
-                        AudioCommand::StopAll => player.stop_all(),
-                        AudioCommand::SetMasterVolume { volume } => {
-                            player.set_master_volume(volume)
-                        }
-                        AudioCommand::SetBusVolume { bus_id, volume } => {
-                            player.set_bus_volume(bus_id, volume)
-                        }
-                        AudioCommand::SetBusSpeed { bus_id, speed } => {
-                            player.set_bus_speed(bus_id, speed)
-                        }
-                        AudioCommand::PauseBus { bus_id } => player.pause_bus(bus_id),
-                        AudioCommand::ResumeBus { bus_id } => player.resume_bus(bus_id),
-                        AudioCommand::StopBus { bus_id } => {
-                            let _ = player.stop_bus(bus_id);
-                        }
-                        AudioCommand::SourceLength { source, reply } => {
-                            let _ = reply.send(player.source_length_seconds(&source));
-                        }
-                        AudioCommand::LoadSoundFont { id, source } => {
-                            if player.load_soundfont(id, &source).is_ok() {
-                                if let Ok(mut loaded) = loaded_for_thread.lock() {
-                                    loaded.soundfonts.insert(id);
-                                }
-                            } else if let Ok(mut loaded) = loaded_for_thread.lock() {
-                                loaded.soundfonts.remove(&id);
-                            }
-                        }
-                        AudioCommand::LoadSoundFontBytes { id, source, bytes } => {
-                            if player.load_soundfont_bytes(id, &source, bytes).is_ok() {
-                                if let Ok(mut loaded) = loaded_for_thread.lock() {
-                                    loaded.soundfonts.insert(id);
-                                }
-                            } else if let Ok(mut loaded) = loaded_for_thread.lock() {
-                                loaded.soundfonts.remove(&id);
-                            }
-                        }
-                        AudioCommand::LoadMidiFile { source } => {
-                            let _ = player.load_midi_file(&source);
-                        }
-                        AudioCommand::MidiNote { request } => {
-                            let _ = player.play_midi_note(request.as_request());
-                        }
-                        AudioCommand::MidiNoteSpatial { request } => {
-                            let _ = player.play_midi_note_spatial(request.as_request());
-                        }
-                        AudioCommand::MidiNotes { requests } => {
-                            for request in requests {
-                                let _ = player.play_midi_note(request.as_request());
-                            }
-                        }
-                        AudioCommand::MidiFile { request } => {
-                            let _ = player.play_midi_file(request.as_request());
-                        }
-                        AudioCommand::MidiRelease { id } => {
-                            let _ = player.release_midi(id);
-                        }
-                    }
-                }
+                run_audio_worker(
+                    static_audio_lookup,
+                    player_factory,
+                    &rx,
+                    &startup_tx,
+                    &loaded_for_thread,
+                );
             })
             .map_err(|err| format!("failed to spawn audio thread: {err}"))?;
         startup_rx
@@ -504,8 +491,7 @@ impl AudioController {
         let source = self.intern_source(source);
         self.loaded
             .lock()
-            .map(|loaded| loaded.sources.contains(&source))
-            .unwrap_or(false)
+            .is_ok_and(|loaded| loaded.sources.contains(&source))
     }
 
     pub fn reserve_source(&self, source: &str) -> bool {
@@ -709,8 +695,7 @@ impl AudioController {
     pub fn is_soundfont_loaded(&self, id: perro_ids::SoundFontID) -> bool {
         self.loaded
             .lock()
-            .map(|loaded| loaded.soundfonts.contains(&id))
-            .unwrap_or(false)
+            .is_ok_and(|loaded| loaded.soundfonts.contains(&id))
     }
 
     pub fn load_midi_file(&self, source: &str) -> bool {

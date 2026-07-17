@@ -317,16 +317,18 @@ fn read_archive_entries(
     sorted.sort_by(|a, b| a.0.cmp(&b.0));
     sorted
         .into_par_iter()
-        .map(|(virtual_path, source_path)| -> io::Result<ReadArchiveEntry> {
-            let raw = fs::read(&source_path)?;
-            let compressed = compress_zlib_best(&raw)?;
-            let compressed = (compressed.len() < raw.len()).then_some(compressed);
-            Ok(ReadArchiveEntry {
-                virtual_path,
-                raw,
-                compressed,
-            })
-        })
+        .map(
+            |(virtual_path, source_path)| -> io::Result<ReadArchiveEntry> {
+                let raw = fs::read(&source_path)?;
+                let compressed = compress_zlib_best(&raw)?;
+                let compressed = (compressed.len() < raw.len()).then_some(compressed);
+                Ok(ReadArchiveEntry {
+                    virtual_path,
+                    raw,
+                    compressed,
+                })
+            },
+        )
         .collect()
 }
 

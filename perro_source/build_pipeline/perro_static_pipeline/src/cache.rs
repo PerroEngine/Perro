@@ -120,14 +120,8 @@ impl SourceCache {
     /// blob files (via [`write_if_changed`]).
     pub fn store(&mut self, rel: &str, len: u64, mtime: u128, source: CachedSource) {
         self.current_files.extend(source.files.iter().cloned());
-        self.fresh.push((
-            rel.to_string(),
-            ManifestEntry {
-                len,
-                mtime,
-                source,
-            },
-        ));
+        self.fresh
+            .push((rel.to_string(), ManifestEntry { len, mtime, source }));
     }
 
     /// Delete files in the dir that no current source produced, then persist

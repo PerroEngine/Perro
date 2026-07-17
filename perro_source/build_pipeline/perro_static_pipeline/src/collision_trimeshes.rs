@@ -42,8 +42,8 @@ pub fn generate_static_collision_trimeshes(project_root: &Path) -> Result<(), St
         let rel_out = format!("{hash}.{PMESH_EXTENSION}");
         let (path, _fragment) = split_source_fragment(source);
         let cacheable = !path.to_ascii_lowercase().ends_with(".gltf");
-        let stat = strip_asset_prefix(path)
-            .and_then(|src_rel| source_stat(&res_root.join(src_rel)));
+        let stat =
+            strip_asset_prefix(path).and_then(|src_rel| source_stat(&res_root.join(src_rel)));
         if cacheable
             && let Some((len, mtime)) = stat
             && cache.lookup(source, len, mtime).is_some()
