@@ -1,8 +1,8 @@
 //! Static render mesh import, LOD build, meshlet packing, and PMESH v1 encode.
 
 use crate::{
-    StaticPipelineError, asset_uri, embedded_dir, ensure_unique_hashes, res_dir, static_dir,
-    write_hash_const, write_static_lookup_fn,
+    CachedSource, SourceCache, StaticPipelineError, asset_uri, embedded_dir, ensure_unique_hashes,
+    res_dir, source_stat, static_dir, write_hash_const, write_if_changed, write_static_lookup_fn,
 };
 use perro_asset_formats::{
     pmesh::{
@@ -116,9 +116,40 @@ pub fn generate_static_meshes(
     }
     mesh_paths.sort();
 
-    let processed = mesh_paths
+    // Meshlet baking changes the encoded bytes, so it is part of the cache
+    // context. `.gltf` sources can reference external buffer files whose
+    // changes a single-file stat would miss, so they bypass the cache.
+    let mut cache = SourceCache::open(
+        &embedded_meshes_dir,
+        &format!("meshes meshlets={bake_meshlets}"),
+    );
+    let mut mesh_refs = Vec::<MeshRef>::new();
+    let mut misses = Vec::<(String, u64, u128)>::new();
+    for rel in mesh_paths {
+        let cacheable = !rel.to_ascii_lowercase().ends_with(source_ext::GLTF);
+        let stat = source_stat(&res_dir.join(&rel));
+        if cacheable
+            && let Some((len, mtime)) = stat
+            && let Some(hit) = cache.lookup(&rel, len, mtime)
+        {
+            for row in &hit.rows {
+                if let [lookup_key, embedded_rel_path, synthesized] = row.as_slice() {
+                    mesh_refs.push(MeshRef {
+                        lookup_key: lookup_key.clone(),
+                        embedded_rel_path: embedded_rel_path.clone(),
+                        synthesized: synthesized == "1",
+                    });
+                }
+            }
+            continue;
+        }
+        let (len, mtime) = stat.unwrap_or((0, 0));
+        misses.push((rel, len, mtime));
+    }
+
+    let processed = misses
         .into_par_iter()
-        .map(|rel| -> io::Result<Vec<MeshAsset>> {
+        .map(|(rel, len, mtime)| -> io::Result<_> {
             let res_path = asset_uri(&rel);
             let full_path = res_dir.join(&rel);
             let ext = Path::new(&rel)
@@ -126,45 +157,56 @@ pub fn generate_static_meshes(
                 .and_then(|e| e.to_str())
                 .map(|s| s.to_ascii_lowercase())
                 .unwrap_or_default();
-            match ext.as_str() {
+            let assets = match ext.as_str() {
                 PMESH_EXTENSION => {
                     let bytes = fs::read(&full_path)?;
-                    Ok(vec![MeshAsset {
+                    vec![MeshAsset {
                         entry: MeshRef {
                             lookup_key: res_path,
-                            embedded_rel_path: rel,
+                            embedded_rel_path: rel.clone(),
                             synthesized: false,
                         },
                         bytes,
-                    }])
+                    }]
                 }
                 source_ext::GLB | source_ext::GLTF => {
-                    build_gltf_mesh_entries(&full_path, &res_path, &rel, bake_meshlets).map(
-                        |entries| {
-                            entries
-                                .into_iter()
-                                .map(|(entry, bytes)| MeshAsset { entry, bytes })
-                                .collect()
-                        },
-                    )
+                    build_gltf_mesh_entries(&full_path, &res_path, &rel, bake_meshlets)?
+                        .into_iter()
+                        .map(|(entry, bytes)| MeshAsset { entry, bytes })
+                        .collect()
                 }
-                _ => Ok(Vec::new()),
-            }
+                _ => Vec::new(),
+            };
+            Ok((rel, len, mtime, assets))
         })
         .collect::<io::Result<Vec<_>>>()?;
 
-    let mut mesh_assets = processed.into_iter().flatten().collect::<Vec<_>>();
-    mesh_assets.sort_by(|a, b| a.entry.embedded_rel_path.cmp(&b.entry.embedded_rel_path));
-
-    let mut mesh_refs = Vec::<MeshRef>::with_capacity(mesh_assets.len());
-    for asset in mesh_assets {
-        let output_path = embedded_meshes_dir.join(&asset.entry.embedded_rel_path);
-        if let Some(parent) = output_path.parent() {
-            fs::create_dir_all(parent)?;
+    for (rel, len, mtime, mut assets) in processed {
+        assets.sort_by(|a, b| a.entry.embedded_rel_path.cmp(&b.entry.embedded_rel_path));
+        let mut record = CachedSource::default();
+        for asset in assets {
+            let output_path = embedded_meshes_dir.join(&asset.entry.embedded_rel_path);
+            if let Some(parent) = output_path.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            write_if_changed(&output_path, &asset.bytes)?;
+            record.rows.push(vec![
+                asset.entry.lookup_key.clone(),
+                asset.entry.embedded_rel_path.clone(),
+                if asset.entry.synthesized { "1" } else { "0" }.to_string(),
+            ]);
+            record.files.push(asset.entry.embedded_rel_path.clone());
+            mesh_refs.push(asset.entry);
         }
-        fs::write(&output_path, asset.bytes)?;
-        mesh_refs.push(asset.entry);
+        let cacheable = !rel.to_ascii_lowercase().ends_with(source_ext::GLTF);
+        if cacheable {
+            cache.store(&rel, len, mtime, record);
+        } else {
+            // Keep gltf outputs alive through pruning without a stat key.
+            cache.store(&rel, 0, u128::MAX, record);
+        }
     }
+    cache.finish()?;
 
     mesh_refs.sort_by(|a, b| a.lookup_key.cmp(&b.lookup_key));
     mesh_refs.dedup_by(|a, b| a.lookup_key == b.lookup_key);
@@ -233,7 +275,7 @@ pub fn generate_static_meshes(
         &lookup_entries,
     );
 
-    fs::write(static_dir.join("meshes.rs"), out)?;
+    write_if_changed(&static_dir.join("meshes.rs"), out.as_bytes())?;
     crate::record_static_assets(
         perro_asset_formats::dlc::DlcAssetKind::MESH,
         perro_asset_formats::dlc::DlcAssetAccess::BYTES,

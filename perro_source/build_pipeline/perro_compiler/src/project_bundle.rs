@@ -77,7 +77,7 @@ pub fn compile_project_bundle(
     perro_project::ensure_build_crates_scaffold(project_root, &cfg.name)?;
     ensure_source_overrides(project_root)?;
     sync_android_project_manifest(project_root, &cfg, options)?;
-    reset_embedded_dir(project_root)?;
+    sweep_unknown_embedded_entries(project_root)?;
     let _ = sync_scripts(project_root)?;
     generate_project_static_modules(project_root, &cfg)?;
     perro_static_pipeline::write_static_mod_rs(project_root)
@@ -102,12 +102,48 @@ fn generate_perro_assets(project_root: &Path) -> Result<(), CompilerError> {
     Ok(())
 }
 
-fn reset_embedded_dir(project_root: &Path) -> Result<(), CompilerError> {
+// Generators own incremental cleanup inside their kind dirs (unchanged
+// outputs keep their mtimes so cargo skips recompiling the project crate).
+// This sweep only removes top-level entries no generator claims, e.g.
+// leftovers from an older engine layout.
+fn sweep_unknown_embedded_entries(project_root: &Path) -> Result<(), CompilerError> {
+    const KNOWN: &[&str] = &[
+        "scenes",
+        "materials",
+        "ui_styles",
+        "tilesets",
+        "particles",
+        "animations",
+        "animation_trees",
+        "meshes",
+        "collision_trimeshes",
+        "navmeshes",
+        "skeletons",
+        "textures",
+        "fonts",
+        "shaders",
+        "audios",
+        "csvs",
+        "localizations",
+        "assets.perro",
+    ];
     let embedded_dir = project_root.join(".perro").join("project").join("embedded");
-    if embedded_dir.exists() {
-        fs::remove_dir_all(&embedded_dir)?;
-    }
     fs::create_dir_all(&embedded_dir)?;
+    for entry in fs::read_dir(&embedded_dir)? {
+        let entry = entry?;
+        let name = entry.file_name();
+        let known = name
+            .to_str()
+            .is_some_and(|name| KNOWN.contains(&name));
+        if known {
+            continue;
+        }
+        if entry.file_type()?.is_dir() {
+            fs::remove_dir_all(entry.path())?;
+        } else {
+            fs::remove_file(entry.path())?;
+        }
+    }
     Ok(())
 }
 

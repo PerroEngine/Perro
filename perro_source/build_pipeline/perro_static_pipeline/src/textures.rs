@@ -1,6 +1,6 @@
 use crate::{
-    StaticPipelineError, asset_uri, embedded_dir, ensure_unique_hashes, res_dir, static_dir,
-    write_hash_const, write_static_lookup_fn,
+    CachedSource, SourceCache, StaticPipelineError, asset_uri, embedded_dir, ensure_unique_hashes,
+    res_dir, source_stat, static_dir, write_hash_const, write_if_changed, write_static_lookup_fn,
 };
 use perro_asset_formats::{
     ptex::{
@@ -27,7 +27,7 @@ pub fn generate_static_textures(project_root: &Path) -> Result<(), StaticPipelin
     fs::create_dir_all(&static_dir)?;
     fs::create_dir_all(&embedded_textures_dir)?;
 
-    let mut texture_inputs = Vec::<(String, PathBuf)>::new();
+    let mut texture_inputs = Vec::<(String, String, PathBuf)>::new();
     if res_dir.exists() {
         texture_inputs = collect_file_paths(&res_dir, &res_dir)?
             .into_iter()
@@ -38,50 +38,87 @@ pub fn generate_static_textures(project_root: &Path) -> Result<(), StaticPipelin
                     .and_then(|e| e.to_str())
                     .is_some_and(|ext| source_ext::contains(source_ext::IMAGE, ext))
             })
-            .map(|rel| (asset_uri(&rel), res_dir.join(rel)))
+            .map(|rel| {
+                let full = res_dir.join(&rel);
+                (rel.clone(), asset_uri(&rel), full)
+            })
             .collect();
     }
-    let mut encoded = texture_inputs
-        .into_par_iter()
-        .map(|(res_path, full_path)| -> io::Result<(String, Vec<u8>)> {
-            let file_bytes = fs::read(&full_path)?;
-            let (raw_rgba, width, height) = decode_image_rgba(&file_bytes)
-                .ok_or_else(|| io::Error::other(format!("failed to decode image `{res_path}`")))?;
-            let (mut flags, packed_raw) = pack_texture_payload(&raw_rgba);
-            let compressed = compress_zlib_best(&packed_raw)?;
-            let payload = if compressed.len() < packed_raw.len() {
-                compressed
-            } else {
-                flags |= PTEX_FLAG_PAYLOAD_RAW;
-                packed_raw.clone()
-            };
+    texture_inputs.sort_by(|a, b| a.1.cmp(&b.1));
+    texture_inputs.dedup_by(|a, b| a.1 == b.1);
 
-            let mut ptex = Vec::with_capacity(24 + payload.len());
-            ptex.extend_from_slice(PTEX_MAGIC);
-            ptex.extend_from_slice(&PTEX_VERSION.to_le_bytes());
-            ptex.extend_from_slice(&width.to_le_bytes());
-            ptex.extend_from_slice(&height.to_le_bytes());
-            ptex.extend_from_slice(
-                &((flags & PTEX_FLAG_FORMAT_MASK) | (flags & PTEX_FLAG_PAYLOAD_RAW)).to_le_bytes(),
-            );
-            ptex.extend_from_slice(&(packed_raw.len() as u32).to_le_bytes());
-            ptex.extend_from_slice(&payload);
-            Ok((res_path, ptex))
-        })
-        .collect::<io::Result<Vec<_>>>()?;
-    encoded.sort_by(|a, b| a.0.cmp(&b.0));
-    encoded.dedup_by(|a, b| a.0 == b.0);
-
-    let mut textures = Vec::<(String, String)>::with_capacity(encoded.len());
-    for (index, (res_path, ptex)) in encoded.into_iter().enumerate() {
-        let rel_ptex = format!("texture_{index}.{PTEX_EXTENSION}");
-        let output_path = embedded_textures_dir.join(&rel_ptex);
-        if let Some(parent) = output_path.parent() {
-            fs::create_dir_all(parent)?;
+    // Split cache hits from sources that need a real decode + compress pass.
+    let mut cache = SourceCache::open(&embedded_textures_dir, "textures");
+    let mut textures = Vec::<(String, String)>::with_capacity(texture_inputs.len());
+    let mut misses = Vec::<(String, String, PathBuf, u64, u128)>::new();
+    for (rel, res_path, full_path) in texture_inputs {
+        let stat = source_stat(&full_path);
+        if let Some((len, mtime)) = stat
+            && let Some(hit) = cache.lookup(&rel, len, mtime)
+            && let Some(row) = hit.rows.first()
+            && row.len() == 2
+        {
+            textures.push((row[0].clone(), row[1].clone()));
+            continue;
         }
-        fs::write(&output_path, ptex)?;
+        let (len, mtime) = stat.unwrap_or((0, 0));
+        misses.push((rel, res_path, full_path, len, mtime));
+    }
+
+    let encoded = misses
+        .into_par_iter()
+        .map(
+            |(rel, res_path, full_path, len, mtime)| -> io::Result<_> {
+                let file_bytes = fs::read(&full_path)?;
+                let (raw_rgba, width, height) =
+                    decode_image_rgba(&file_bytes).ok_or_else(|| {
+                        io::Error::other(format!("failed to decode image `{res_path}`"))
+                    })?;
+                let (mut flags, packed_raw) = pack_texture_payload(&raw_rgba);
+                let compressed = compress_zlib_best(&packed_raw)?;
+                let payload = if compressed.len() < packed_raw.len() {
+                    compressed
+                } else {
+                    flags |= PTEX_FLAG_PAYLOAD_RAW;
+                    packed_raw.clone()
+                };
+
+                let mut ptex = Vec::with_capacity(24 + payload.len());
+                ptex.extend_from_slice(PTEX_MAGIC);
+                ptex.extend_from_slice(&PTEX_VERSION.to_le_bytes());
+                ptex.extend_from_slice(&width.to_le_bytes());
+                ptex.extend_from_slice(&height.to_le_bytes());
+                ptex.extend_from_slice(
+                    &((flags & PTEX_FLAG_FORMAT_MASK) | (flags & PTEX_FLAG_PAYLOAD_RAW))
+                        .to_le_bytes(),
+                );
+                ptex.extend_from_slice(&(packed_raw.len() as u32).to_le_bytes());
+                ptex.extend_from_slice(&payload);
+                Ok((rel, res_path, len, mtime, ptex))
+            },
+        )
+        .collect::<io::Result<Vec<_>>>()?;
+
+    for (rel, res_path, len, mtime, ptex) in encoded {
+        // Path-hash names stay stable when other textures come and go, so an
+        // added asset does not rename (and re-fingerprint) every blob.
+        let rel_ptex = format!(
+            "texture_{:016x}.{PTEX_EXTENSION}",
+            perro_ids::string_to_u64(&res_path)
+        );
+        write_if_changed(&embedded_textures_dir.join(&rel_ptex), &ptex)?;
+        cache.store(
+            &rel,
+            len,
+            mtime,
+            CachedSource {
+                rows: vec![vec![res_path.clone(), rel_ptex.clone()]],
+                files: vec![rel_ptex.clone()],
+            },
+        );
         textures.push((res_path, rel_ptex));
     }
+    cache.finish()?;
 
     textures.sort_by(|a, b| a.0.cmp(&b.0));
     ensure_unique_hashes("texture", textures.iter().map(|(path, _)| path.as_str()))?;
@@ -127,7 +164,7 @@ pub fn generate_static_textures(project_root: &Path) -> Result<(), StaticPipelin
         &lookup_entries,
     );
 
-    fs::write(static_dir.join("textures.rs"), out)?;
+    write_if_changed(&static_dir.join("textures.rs"), out.as_bytes())?;
     crate::record_static_assets(
         perro_asset_formats::dlc::DlcAssetKind::TEXTURE,
         perro_asset_formats::dlc::DlcAssetAccess::BYTES,
@@ -208,12 +245,16 @@ mod tests {
         .expect("write svg");
 
         generate_static_textures(&root).expect("generate textures");
+        let ptex_name = format!(
+            "texture_{:016x}.ptex",
+            perro_ids::string_to_u64("res://icon.svg")
+        );
         let ptex = fs::read(
             root.join(".perro")
                 .join("project")
                 .join("embedded")
                 .join("textures")
-                .join("texture_0.ptex"),
+                .join(ptex_name),
         )
         .expect("read ptex");
         let (rgba, width, height) = decode_ptex(&ptex).expect("decode ptex");

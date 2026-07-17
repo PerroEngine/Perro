@@ -1,11 +1,11 @@
 use crate::{
-    StaticPipelineError, asset_uri, embedded_dir, ensure_unique_hashes, res_dir, static_dir,
-    write_hash_const, write_static_lookup_fn,
+    StaticPipelineError, asset_uri, embedded_dir, ensure_unique_hashes, prune_embedded_dir,
+    res_dir, static_dir, write_hash_const, write_if_changed, write_static_lookup_fn,
 };
 use perro_asset_formats::pnav;
 use perro_io::walkdir::collect_file_paths;
 use perro_resource_api::sub_apis::parse_pnav_resource_bytes;
-use std::{fmt::Write as _, fs, path::Path};
+use std::{collections::HashSet, fmt::Write as _, fs, path::Path};
 
 pub fn generate_static_navmeshes(project_root: &Path) -> Result<(), StaticPipelineError> {
     let res_dir = res_dir(project_root);
@@ -42,9 +42,16 @@ pub fn generate_static_navmeshes(project_root: &Path) -> Result<(), StaticPipeli
         if let Some(parent) = output_path.parent() {
             fs::create_dir_all(parent)?;
         }
-        fs::write(&output_path, bytes)?;
+        write_if_changed(&output_path, &bytes)?;
         navmeshes.push((res_path, rel));
     }
+    prune_embedded_dir(
+        &embedded_navmeshes_dir,
+        &navmeshes
+            .iter()
+            .map(|(_, rel)| rel.clone())
+            .collect::<HashSet<_>>(),
+    )?;
 
     navmeshes.sort_by(|a, b| a.0.cmp(&b.0));
     ensure_unique_hashes("navmesh", navmeshes.iter().map(|(path, _)| path.as_str()))?;
@@ -90,7 +97,7 @@ pub fn generate_static_navmeshes(project_root: &Path) -> Result<(), StaticPipeli
         &lookup_entries,
     );
 
-    fs::write(static_dir.join("navmeshes.rs"), out)?;
+    write_if_changed(&static_dir.join("navmeshes.rs"), out.as_bytes())?;
     crate::record_static_assets(
         perro_asset_formats::dlc::DlcAssetKind::NAVMESH,
         perro_asset_formats::dlc::DlcAssetAccess::BYTES,

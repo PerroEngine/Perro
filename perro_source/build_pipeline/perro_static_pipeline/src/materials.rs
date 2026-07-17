@@ -130,7 +130,7 @@ pub fn generate_static_materials(project_root: &Path) -> Result<(), StaticPipeli
         &lookup_entries,
     );
 
-    fs::write(static_dir.join("materials.rs"), out)?;
+    crate::write_if_changed(&static_dir.join("materials.rs"), out.as_bytes())?;
     crate::record_static_assets(
         perro_asset_formats::dlc::DlcAssetKind::MATERIAL,
         perro_asset_formats::dlc::DlcAssetAccess::ENGINE_LOCAL,

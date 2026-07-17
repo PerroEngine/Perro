@@ -1,10 +1,10 @@
 use crate::{
-    StaticPipelineError, asset_uri, embedded_dir, ensure_unique_hashes, res_dir, static_dir,
-    write_hash_const, write_static_lookup_fn,
+    StaticPipelineError, asset_uri, embedded_dir, ensure_unique_hashes, prune_embedded_dir,
+    res_dir, static_dir, write_hash_const, write_if_changed, write_static_lookup_fn,
 };
 use perro_asset_formats::source_ext;
 use perro_io::walkdir::collect_file_paths;
-use std::{fmt::Write as _, fs, path::Path};
+use std::{collections::HashSet, fmt::Write as _, fs, path::Path};
 
 pub fn generate_static_shaders(project_root: &Path) -> Result<(), StaticPipelineError> {
     let res_dir = res_dir(project_root);
@@ -38,9 +38,16 @@ pub fn generate_static_shaders(project_root: &Path) -> Result<(), StaticPipeline
         if let Some(parent) = output_path.parent() {
             fs::create_dir_all(parent)?;
         }
-        fs::write(&output_path, source)?;
+        write_if_changed(&output_path, source.as_bytes())?;
         shaders.push((res_path, rel));
     }
+    prune_embedded_dir(
+        &embedded_shaders_dir,
+        &shaders
+            .iter()
+            .map(|(_, rel)| rel.clone())
+            .collect::<HashSet<_>>(),
+    )?;
 
     shaders.sort_by(|a, b| a.0.cmp(&b.0));
     ensure_unique_hashes("shader", shaders.iter().map(|(path, _)| path.as_str()))?;
@@ -86,7 +93,7 @@ pub fn generate_static_shaders(project_root: &Path) -> Result<(), StaticPipeline
         &lookup_entries,
     );
 
-    fs::write(static_dir.join("shaders.rs"), out)?;
+    write_if_changed(&static_dir.join("shaders.rs"), out.as_bytes())?;
     crate::record_static_assets(
         perro_asset_formats::dlc::DlcAssetKind::SHADER,
         perro_asset_formats::dlc::DlcAssetAccess::BYTES,

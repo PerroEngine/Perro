@@ -1,6 +1,6 @@
 use crate::{
-    StaticPipelineError, asset_uri, embedded_dir, ensure_unique_hashes, res_dir, static_dir,
-    write_hash_const, write_static_lookup_fn,
+    CachedSource, SourceCache, StaticPipelineError, asset_uri, embedded_dir, ensure_unique_hashes,
+    res_dir, source_stat, static_dir, write_hash_const, write_if_changed, write_static_lookup_fn,
 };
 use perro_asset_formats::{
     pskel::{
@@ -76,9 +76,37 @@ pub fn generate_static_skeletons(project_root: &Path) -> Result<(), StaticPipeli
     }
     skeleton_paths.sort();
 
-    let processed = skeleton_paths
+    // `.gltf` sources can reference external buffers a single-file stat would
+    // miss, so they bypass the cache; everything else skips re-encoding when
+    // the source stat matches.
+    let mut cache = SourceCache::open(&embedded_skeletons_dir, "skeletons");
+    let mut cached_refs = Vec::<SkeletonRef>::new();
+    let mut misses = Vec::<(String, u64, u128)>::new();
+    for rel in skeleton_paths {
+        let cacheable = !rel.to_ascii_lowercase().ends_with(source_ext::GLTF);
+        let stat = source_stat(&res_dir.join(&rel));
+        if cacheable
+            && let Some((len, mtime)) = stat
+            && let Some(hit) = cache.lookup(&rel, len, mtime)
+        {
+            for row in &hit.rows {
+                if let [lookup_key, embedded_rel_path, synthesized] = row.as_slice() {
+                    cached_refs.push(SkeletonRef {
+                        lookup_key: lookup_key.clone(),
+                        embedded_rel_path: embedded_rel_path.clone(),
+                        synthesized: synthesized == "1",
+                    });
+                }
+            }
+            continue;
+        }
+        let (len, mtime) = stat.unwrap_or((0, 0));
+        misses.push((rel, len, mtime));
+    }
+
+    let processed = misses
         .into_par_iter()
-        .map(|rel| -> io::Result<Vec<SkeletonAsset>> {
+        .map(|(rel, len, mtime)| -> io::Result<(String, u64, u128, Vec<SkeletonAsset>)> {
             let res_path = asset_uri(&rel);
             let full_path = res_dir.join(&rel);
             let ext = Path::new(&rel)
@@ -86,7 +114,7 @@ pub fn generate_static_skeletons(project_root: &Path) -> Result<(), StaticPipeli
                 .and_then(|e| e.to_str())
                 .map(|s| s.to_ascii_lowercase())
                 .unwrap_or_default();
-            match ext.as_str() {
+            let assets = match ext.as_str() {
                 PSKEL_EXTENSION | PSKEL_EXTENSION_3D => {
                     let bytes = fs::read(&full_path)?;
                     let baked = if bytes.starts_with(PSKEL_MAGIC) {
@@ -100,14 +128,14 @@ pub fn generate_static_skeletons(project_root: &Path) -> Result<(), StaticPipeli
                         let bones = parse_pskel_text(text).map_err(io::Error::other)?;
                         encode_pskel_tightest(&bones)?
                     };
-                    Ok(vec![SkeletonAsset {
+                    vec![SkeletonAsset {
                         entry: SkeletonRef {
                             lookup_key: res_path,
-                            embedded_rel_path: rel,
+                            embedded_rel_path: rel.clone(),
                             synthesized: false,
                         },
                         bytes: baked,
-                    }])
+                    }]
                 }
                 PSKEL_EXTENSION_2D => {
                     let bytes = fs::read(&full_path)?;
@@ -122,40 +150,52 @@ pub fn generate_static_skeletons(project_root: &Path) -> Result<(), StaticPipeli
                         let bones = parse_pskel2d_text(text).map_err(io::Error::other)?;
                         encode_pskel2d(&bones)?
                     };
-                    Ok(vec![SkeletonAsset {
+                    vec![SkeletonAsset {
                         entry: SkeletonRef {
                             lookup_key: res_path,
-                            embedded_rel_path: rel,
+                            embedded_rel_path: rel.clone(),
                             synthesized: false,
                         },
                         bytes: baked,
-                    }])
+                    }]
                 }
                 source_ext::GLB | source_ext::GLTF => {
-                    build_gltf_skeleton_entries(&full_path, &res_path, &rel).map(|entries| {
-                        entries
-                            .into_iter()
-                            .map(|(entry, bytes)| SkeletonAsset { entry, bytes })
-                            .collect()
-                    })
+                    build_gltf_skeleton_entries(&full_path, &res_path, &rel)?
+                        .into_iter()
+                        .map(|(entry, bytes)| SkeletonAsset { entry, bytes })
+                        .collect()
                 }
-                _ => Ok(Vec::new()),
-            }
+                _ => Vec::new(),
+            };
+            Ok((rel, len, mtime, assets))
         })
         .collect::<io::Result<Vec<_>>>()?;
 
-    let mut skeleton_assets = processed.into_iter().flatten().collect::<Vec<_>>();
-    skeleton_assets.sort_by(|a, b| a.entry.embedded_rel_path.cmp(&b.entry.embedded_rel_path));
-
-    let mut skeleton_refs = Vec::<SkeletonRef>::with_capacity(skeleton_assets.len());
-    for asset in skeleton_assets {
-        let output_path = embedded_skeletons_dir.join(&asset.entry.embedded_rel_path);
-        if let Some(parent) = output_path.parent() {
-            fs::create_dir_all(parent)?;
+    let mut skeleton_refs = cached_refs;
+    for (rel, len, mtime, mut assets) in processed {
+        assets.sort_by(|a, b| a.entry.embedded_rel_path.cmp(&b.entry.embedded_rel_path));
+        let mut record = CachedSource::default();
+        for asset in assets {
+            let output_path = embedded_skeletons_dir.join(&asset.entry.embedded_rel_path);
+            if let Some(parent) = output_path.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            write_if_changed(&output_path, &asset.bytes)?;
+            record.rows.push(vec![
+                asset.entry.lookup_key.clone(),
+                asset.entry.embedded_rel_path.clone(),
+                if asset.entry.synthesized { "1" } else { "0" }.to_string(),
+            ]);
+            record.files.push(asset.entry.embedded_rel_path.clone());
+            skeleton_refs.push(asset.entry);
         }
-        fs::write(&output_path, asset.bytes)?;
-        skeleton_refs.push(asset.entry);
+        if rel.to_ascii_lowercase().ends_with(source_ext::GLTF) {
+            cache.store(&rel, 0, u128::MAX, record);
+        } else {
+            cache.store(&rel, len, mtime, record);
+        }
     }
+    cache.finish()?;
 
     skeleton_refs.sort_by(|a, b| a.lookup_key.cmp(&b.lookup_key));
     skeleton_refs.dedup_by(|a, b| a.lookup_key == b.lookup_key);
@@ -215,7 +255,7 @@ pub fn generate_static_skeletons(project_root: &Path) -> Result<(), StaticPipeli
         &lookup_entries,
     );
 
-    fs::write(static_dir.join("skeletons.rs"), out)?;
+    write_if_changed(&static_dir.join("skeletons.rs"), out.as_bytes())?;
     crate::record_static_assets(
         perro_asset_formats::dlc::DlcAssetKind::SKELETON,
         perro_asset_formats::dlc::DlcAssetAccess::BYTES,

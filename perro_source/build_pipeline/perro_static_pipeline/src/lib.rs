@@ -1,6 +1,7 @@
 mod animation_trees;
 mod animations;
 mod audios;
+mod cache;
 mod collision_trimeshes;
 mod csvs;
 mod error;
@@ -16,6 +17,10 @@ mod skeletons;
 mod textures;
 mod tilesets;
 mod uistyles;
+
+pub(crate) use cache::{
+    CachedSource, SourceCache, prune_embedded_dir, source_stat, write_if_changed,
+};
 
 pub use animation_trees::generate_static_animation_trees;
 pub use animations::generate_static_animations;
@@ -354,9 +359,9 @@ pub(crate) fn escape_rust_str(input: &str) -> String {
 pub fn write_static_mod_rs(project_root: &Path) -> Result<(), StaticPipelineError> {
     let static_dir = static_dir(project_root);
     fs::create_dir_all(&static_dir)?;
-    fs::write(
-        static_dir.join("mod.rs"),
-        "#![allow(unused_imports)]\n\npub mod scenes;\npub mod materials;\npub mod ui_styles;\npub mod tilesets;\npub mod particles;\npub mod animations;\npub mod animation_trees;\npub mod meshes;\npub mod collision_trimeshes;\npub mod navmeshes;\npub mod skeletons;\npub mod textures;\npub mod fonts;\npub mod shaders;\npub mod audios;\npub mod csvs;\npub mod localizations;\n",
+    write_if_changed(
+        &static_dir.join("mod.rs"),
+        b"#![allow(unused_imports)]\n\npub mod scenes;\npub mod materials;\npub mod ui_styles;\npub mod tilesets;\npub mod particles;\npub mod animations;\npub mod animation_trees;\npub mod meshes;\npub mod collision_trimeshes;\npub mod navmeshes;\npub mod skeletons;\npub mod textures;\npub mod fonts;\npub mod shaders;\npub mod audios;\npub mod csvs;\npub mod localizations;\n",
     )?;
     Ok(())
 }

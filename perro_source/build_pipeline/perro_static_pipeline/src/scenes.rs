@@ -118,7 +118,7 @@ use std::borrow::Cow;\n\n\
 {lookup}",
         shared_consts = shared_consts
     );
-    fs::write(static_dir.join("scenes.rs"), scenes_src)?;
+    crate::write_if_changed(&static_dir.join("scenes.rs"), scenes_src.as_bytes())?;
     crate::record_static_assets(
         perro_asset_formats::dlc::DlcAssetKind::SCENE,
         perro_asset_formats::dlc::DlcAssetAccess::ENGINE_LOCAL,

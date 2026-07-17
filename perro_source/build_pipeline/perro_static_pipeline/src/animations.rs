@@ -119,7 +119,7 @@ pub fn generate_static_animations(project_root: &Path) -> Result<(), StaticPipel
 
     src.push('\n');
     src.push_str(&lookup);
-    fs::write(static_dir.join("animations.rs"), src)?;
+    crate::write_if_changed(&static_dir.join("animations.rs"), src.as_bytes())?;
     crate::record_static_assets(
         perro_asset_formats::dlc::DlcAssetKind::ANIMATION,
         perro_asset_formats::dlc::DlcAssetAccess::ENGINE_LOCAL,

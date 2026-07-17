@@ -86,7 +86,7 @@ pub fn generate_static_animation_trees(project_root: &Path) -> Result<(), Static
         &lookup_entries,
     );
     src.push_str(&lookup);
-    fs::write(static_dir.join("animation_trees.rs"), src)?;
+    crate::write_if_changed(&static_dir.join("animation_trees.rs"), src.as_bytes())?;
     crate::record_static_assets(
         perro_asset_formats::dlc::DlcAssetKind::ANIMATION_TREE,
         perro_asset_formats::dlc::DlcAssetAccess::ENGINE_LOCAL,

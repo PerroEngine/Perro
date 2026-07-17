@@ -103,7 +103,7 @@ pub fn generate_static_ui_styles(project_root: &Path) -> Result<(), StaticPipeli
         &lookup_entries,
     );
 
-    fs::write(static_dir.join("ui_styles.rs"), out)?;
+    crate::write_if_changed(&static_dir.join("ui_styles.rs"), out.as_bytes())?;
     crate::record_static_assets(
         perro_asset_formats::dlc::DlcAssetKind::UI_STYLE,
         perro_asset_formats::dlc::DlcAssetAccess::ENGINE_LOCAL,

@@ -1,6 +1,6 @@
 use crate::{
-    StaticPipelineError, asset_uri, embedded_dir, ensure_unique_hashes, res_dir, static_dir,
-    write_hash_const, write_static_lookup_fn,
+    CachedSource, SourceCache, StaticPipelineError, asset_uri, embedded_dir, ensure_unique_hashes,
+    res_dir, source_stat, static_dir, write_hash_const, write_if_changed, write_static_lookup_fn,
 };
 use perro_asset_formats::{
     pawdio::{
@@ -42,46 +42,74 @@ pub fn generate_static_audios(project_root: &Path) -> Result<(), StaticPipelineE
     }
     audio_paths.sort();
 
-    let mut encoded = audio_paths
+    let mut cache = SourceCache::open(&embedded_audios_dir, "audios");
+    let mut audios = Vec::<(String, String)>::with_capacity(audio_paths.len());
+    let mut misses = Vec::<(String, u64, u128)>::new();
+    for rel in audio_paths {
+        let stat = source_stat(&res_dir.join(&rel));
+        if let Some((len, mtime)) = stat
+            && let Some(hit) = cache.lookup(&rel, len, mtime)
+            && let Some(row) = hit.rows.first()
+            && row.len() == 2
+        {
+            audios.push((row[0].clone(), row[1].clone()));
+            continue;
+        }
+        let (len, mtime) = stat.unwrap_or((0, 0));
+        misses.push((rel, len, mtime));
+    }
+
+    let encoded = misses
         .into_par_iter()
-        .map(|rel| -> io::Result<(String, String, Vec<u8>)> {
-            let res_path = asset_uri(&rel);
-            let full_path = res_dir.join(&rel);
-            let raw = fs::read(&full_path)?;
-            let ext = Path::new(&rel)
-                .extension()
-                .and_then(|e| e.to_str())
-                .unwrap_or_default();
-            if source_ext::contains(source_ext::AUDIO, ext) {
-                let (flags, payload) = select_pawdio_payload(&raw)?;
+        .map(
+            |(rel, len, mtime)| -> io::Result<(String, u64, u128, String, String, Vec<u8>)> {
+                let res_path = asset_uri(&rel);
+                let full_path = res_dir.join(&rel);
+                let raw = fs::read(&full_path)?;
+                let ext = Path::new(&rel)
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .unwrap_or_default();
+                if source_ext::contains(source_ext::AUDIO, ext) {
+                    let (flags, payload) = select_pawdio_payload(&raw)?;
 
-                let mut pawdio = Vec::with_capacity(18 + payload.len());
-                pawdio.extend_from_slice(PAWDIO_MAGIC);
-                pawdio.extend_from_slice(&PAWDIO_VERSION.to_le_bytes());
-                pawdio.extend_from_slice(&flags.to_le_bytes());
-                pawdio.extend_from_slice(&(raw.len() as u32).to_le_bytes());
-                pawdio.extend_from_slice(&payload);
+                    let mut pawdio = Vec::with_capacity(18 + payload.len());
+                    pawdio.extend_from_slice(PAWDIO_MAGIC);
+                    pawdio.extend_from_slice(&PAWDIO_VERSION.to_le_bytes());
+                    pawdio.extend_from_slice(&flags.to_le_bytes());
+                    pawdio.extend_from_slice(&(raw.len() as u32).to_le_bytes());
+                    pawdio.extend_from_slice(&payload);
 
-                let mut rel_pawdio = PathBuf::from(&rel);
-                rel_pawdio.set_extension(PAWDIO_EXTENSION);
-                let rel_pawdio = rel_pawdio.to_string_lossy().replace('\\', "/");
-                Ok((res_path, rel_pawdio, pawdio))
-            } else {
-                Ok((res_path, rel, raw))
-            }
-        })
+                    let mut rel_pawdio = PathBuf::from(&rel);
+                    rel_pawdio.set_extension(PAWDIO_EXTENSION);
+                    let rel_pawdio = rel_pawdio.to_string_lossy().replace('\\', "/");
+                    Ok((rel, len, mtime, res_path, rel_pawdio, pawdio))
+                } else {
+                    let rel_out = rel.clone();
+                    Ok((rel, len, mtime, res_path, rel_out, raw))
+                }
+            },
+        )
         .collect::<io::Result<Vec<_>>>()?;
-    encoded.sort_by(|a, b| a.0.cmp(&b.0));
 
-    let mut audios = Vec::<(String, String)>::with_capacity(encoded.len());
-    for (res_path, rel_pawdio, pawdio) in encoded {
+    for (rel, len, mtime, res_path, rel_pawdio, pawdio) in encoded {
         let output_path = embedded_audios_dir.join(&rel_pawdio);
         if let Some(parent) = output_path.parent() {
             fs::create_dir_all(parent)?;
         }
-        fs::write(&output_path, pawdio)?;
+        write_if_changed(&output_path, &pawdio)?;
+        cache.store(
+            &rel,
+            len,
+            mtime,
+            CachedSource {
+                rows: vec![vec![res_path.clone(), rel_pawdio.clone()]],
+                files: vec![rel_pawdio.clone()],
+            },
+        );
         audios.push((res_path, rel_pawdio));
     }
+    cache.finish()?;
     audios.sort_by(|a, b| a.0.cmp(&b.0));
     ensure_unique_hashes("audio", audios.iter().map(|(path, _)| path.as_str()))?;
 
@@ -126,7 +154,7 @@ pub fn generate_static_audios(project_root: &Path) -> Result<(), StaticPipelineE
         &lookup_entries,
     );
 
-    fs::write(static_dir.join("audios.rs"), out)?;
+    write_if_changed(&static_dir.join("audios.rs"), out.as_bytes())?;
     crate::record_static_assets(
         perro_asset_formats::dlc::DlcAssetKind::AUDIO,
         perro_asset_formats::dlc::DlcAssetAccess::BYTES,

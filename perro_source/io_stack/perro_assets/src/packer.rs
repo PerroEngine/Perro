@@ -2,7 +2,6 @@ use rayon::prelude::*;
 use std::{
     collections::HashSet,
     fs,
-    fs::File,
     io::{self, Cursor, Seek, SeekFrom, Write},
     path::Path,
 };
@@ -48,6 +47,19 @@ struct ProcessedFile {
     original_size: u64,
 }
 
+/// Write only when bytes differ; unchanged archives keep their mtime so
+/// `include_bytes!` consumers are not re-fingerprinted by cargo.
+fn write_output_if_changed(path: &Path, bytes: &[u8]) -> io::Result<()> {
+    if let Ok(meta) = fs::metadata(path)
+        && meta.len() == bytes.len() as u64
+        && let Ok(existing) = fs::read(path)
+        && existing == bytes
+    {
+        return Ok(());
+    }
+    fs::write(path, bytes)
+}
+
 /// Build a `.perro` archive
 pub fn build_perro_assets_archive(
     output: &Path,
@@ -55,38 +67,7 @@ pub fn build_perro_assets_archive(
     _project_root: &Path,
     extra_skip_rel_paths: &[String],
 ) -> io::Result<()> {
-    let mut file = File::create(output)?;
     let extra_skip_set: HashSet<&str> = extra_skip_rel_paths.iter().map(String::as_str).collect();
-
-    // Write placeholder header
-    let header = PerroAssetsHeader {
-        magic: PERRO_ASSETS_MAGIC,
-        version: archive::VERSION,
-        file_count: 0,
-        index_offset: 0,
-    };
-    write_header(&mut file, &header)?;
-
-    let mut entries = Vec::new();
-
-    // Helper to process data (compress if beneficial)
-    let process_data =
-        |mut data: Vec<u8>, should_compress: bool| -> io::Result<(Vec<u8>, u32, u64)> {
-            let original_data_len = data.len() as u64;
-            let mut flags = 0;
-
-            if should_compress && original_data_len > 0 {
-                let compressed = compress_zlib_best(&data)?;
-
-                // Only use compressed data if it's actually smaller
-                if compressed.len() < data.len() {
-                    data = compressed;
-                    flags |= FLAG_COMPRESSED;
-                }
-            }
-
-            Ok((data, flags, original_data_len))
-        };
 
     // Collect file paths and process file bytes/compression in parallel.
     let mut rel_paths = collect_file_paths(res_dir, res_dir)?
@@ -100,17 +81,36 @@ pub fn build_perro_assets_archive(
         .into_par_iter()
         .map(|rel_path| -> io::Result<ProcessedFile> {
             let full_path = res_dir.join(&rel_path);
-            let data = fs::read(&full_path)?;
-            let (processed_data, flags, original_size) = process_data(data, true)?;
+            let mut data = fs::read(&full_path)?;
+            let original_size = data.len() as u64;
+            let mut flags = 0;
+            if original_size > 0 {
+                let compressed = compress_zlib_best(&data)?;
+                // Only use compressed data if it's actually smaller
+                if compressed.len() < data.len() {
+                    data = compressed;
+                    flags |= FLAG_COMPRESSED;
+                }
+            }
             Ok(ProcessedFile {
                 rel_path,
-                data: processed_data,
+                data,
                 flags,
                 original_size,
             })
         })
         .collect::<io::Result<Vec<_>>>()?;
 
+    let mut archive = Cursor::new(Vec::<u8>::new());
+    let header = PerroAssetsHeader {
+        magic: PERRO_ASSETS_MAGIC,
+        version: archive::VERSION,
+        file_count: 0,
+        index_offset: 0,
+    };
+    write_header(&mut archive, &header)?;
+
+    let mut entries = Vec::new();
     for processed in processed_files {
         let ProcessedFile {
             rel_path,
@@ -119,8 +119,8 @@ pub fn build_perro_assets_archive(
             original_size,
         } = processed;
 
-        let offset = file.stream_position()?;
-        file.write_all(&data)?;
+        let offset = archive.stream_position()?;
+        archive.write_all(&data)?;
         let size = data.len() as u64;
 
         entries.push(PerroAssetsEntry {
@@ -135,22 +135,22 @@ pub fn build_perro_assets_archive(
     }
 
     // Write index
-    let index_offset = file.stream_position()?;
+    let index_offset = archive.stream_position()?;
     for e in &entries {
-        write_index_entry(&mut file, &e.path, &e.meta)?;
+        write_index_entry(&mut archive, &e.path, &e.meta)?;
     }
 
     // Rewrite header with correct counts
-    file.seek(SeekFrom::Start(0))?;
+    archive.seek(SeekFrom::Start(0))?;
     let header = PerroAssetsHeader {
         magic: PERRO_ASSETS_MAGIC,
         version: archive::VERSION,
         file_count: entries.len() as u32,
         index_offset,
     };
-    write_header(&mut file, &header)?;
+    write_header(&mut archive, &header)?;
 
-    Ok(())
+    write_output_if_changed(output, &archive.into_inner())
 }
 
 /// Build a generic `.perro` archive from explicit `(virtual_path, source_file)` entries.
@@ -158,31 +158,66 @@ pub fn build_perro_archive_from_entries(
     output: &Path,
     entries: &[(String, std::path::PathBuf)],
 ) -> io::Result<()> {
-    let mut file = File::create(output)?;
-    write_perro_archive_from_entries(&mut file, entries, true)
+    let read = read_archive_entries(entries)?;
+    let mut archive = Cursor::new(Vec::<u8>::new());
+    write_perro_archive_from_bytes(&mut archive, &read, true)?;
+    write_output_if_changed(output, &archive.into_inner())
 }
 
 /// Build a generic `.perro` archive, then wrap the full archive in zlib when smaller.
+///
+/// Sources are read and compressed once; the two candidates are a per-entry
+/// compressed archive and a whole-archive zlib wrap (which can win on
+/// cross-file redundancy). A fully raw archive can never beat the per-entry
+/// candidate — entries only stay compressed when smaller — so it is not built.
 pub fn build_compressed_perro_archive_from_entries(
     output: &Path,
     entries: &[(String, std::path::PathBuf)],
 ) -> io::Result<()> {
+    let read = read_archive_entries(entries)?;
+
     let mut raw = Cursor::new(Vec::<u8>::new());
-    write_perro_archive_from_entries(&mut raw, entries, false)?;
-    let raw = raw.into_inner();
-    let raw_wrapped = wrap_compressed_archive(&raw)?;
+    write_perro_archive_from_bytes(&mut raw, &read, false)?;
+    let raw_wrapped = wrap_compressed_archive(&raw.into_inner())?;
 
     let mut entry_compressed = Cursor::new(Vec::<u8>::new());
-    write_perro_archive_from_entries(&mut entry_compressed, entries, true)?;
+    write_perro_archive_from_bytes(&mut entry_compressed, &read, true)?;
     let entry_compressed = entry_compressed.into_inner();
 
-    let best = [raw, raw_wrapped, entry_compressed]
-        .into_iter()
-        .min_by_key(Vec::len)
-        .unwrap();
+    let best = if raw_wrapped.len() < entry_compressed.len() {
+        raw_wrapped
+    } else {
+        entry_compressed
+    };
+    write_output_if_changed(output, &best)
+}
 
-    fs::write(output, best)?;
-    Ok(())
+struct ReadArchiveEntry {
+    virtual_path: String,
+    raw: Vec<u8>,
+    // Present only when zlib actually shrank the payload.
+    compressed: Option<Vec<u8>>,
+}
+
+/// Read and per-entry-compress every source exactly once, sorted by path.
+fn read_archive_entries(
+    entries: &[(String, std::path::PathBuf)],
+) -> io::Result<Vec<ReadArchiveEntry>> {
+    let mut sorted = entries.to_vec();
+    sorted.sort_by(|a, b| a.0.cmp(&b.0));
+    sorted
+        .into_par_iter()
+        .map(|(virtual_path, source_path)| -> io::Result<ReadArchiveEntry> {
+            let raw = fs::read(&source_path)?;
+            let compressed = compress_zlib_best(&raw)?;
+            let compressed = (compressed.len() < raw.len()).then_some(compressed);
+            Ok(ReadArchiveEntry {
+                virtual_path,
+                raw,
+                compressed,
+            })
+        })
+        .collect()
 }
 
 fn wrap_compressed_archive(raw: &[u8]) -> io::Result<Vec<u8>> {
@@ -195,9 +230,9 @@ fn wrap_compressed_archive(raw: &[u8]) -> io::Result<Vec<u8>> {
     Ok(out)
 }
 
-fn write_perro_archive_from_entries<W: Write + Seek>(
+fn write_perro_archive_from_bytes<W: Write + Seek>(
     writer: &mut W,
-    entries: &[(String, std::path::PathBuf)],
+    entries: &[ReadArchiveEntry],
     compress_entries: bool,
 ) -> io::Result<()> {
     let header = PerroAssetsHeader {
@@ -208,39 +243,20 @@ fn write_perro_archive_from_entries<W: Write + Seek>(
     };
     write_header(writer, &header)?;
 
-    let mut sorted = entries.to_vec();
-    sorted.sort_by(|a, b| a.0.cmp(&b.0));
-
-    let processed = sorted
-        .into_par_iter()
-        .map(
-            |(virtual_path, source_path)| -> io::Result<(String, Vec<u8>, u32, u64)> {
-                let data = fs::read(&source_path)?;
-                let original_size = data.len() as u64;
-                let compressed = if compress_entries {
-                    compress_zlib_best(&data)?
-                } else {
-                    Vec::new()
-                };
-                if compress_entries && compressed.len() < data.len() {
-                    Ok((virtual_path, compressed, FLAG_COMPRESSED, original_size))
-                } else {
-                    Ok((virtual_path, data, 0, original_size))
-                }
-            },
-        )
-        .collect::<io::Result<Vec<_>>>()?;
-
-    let mut index_entries = Vec::<PerroAssetsEntry>::with_capacity(processed.len());
-    for (virtual_path, data, flags, original_size) in processed {
+    let mut index_entries = Vec::<PerroAssetsEntry>::with_capacity(entries.len());
+    for entry in entries {
+        let (data, flags) = match (&entry.compressed, compress_entries) {
+            (Some(compressed), true) => (compressed.as_slice(), FLAG_COMPRESSED),
+            _ => (entry.raw.as_slice(), 0),
+        };
         let offset = writer.stream_position()?;
-        writer.write_all(&data)?;
+        writer.write_all(data)?;
         index_entries.push(PerroAssetsEntry {
-            path: virtual_path,
+            path: entry.virtual_path.clone(),
             meta: PerroAssetsEntryMeta {
                 offset,
                 size: data.len() as u64,
-                original_size,
+                original_size: entry.raw.len() as u64,
                 flags,
             },
         });
