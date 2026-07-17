@@ -23,7 +23,7 @@ fn should_skip(path: &str, extra_skip_rel_paths: &HashSet<&str>) -> bool {
     extra_skip_rel_paths.contains(path)
         || ext.as_deref().is_some_and(|ext| {
             ext.eq_ignore_ascii_case(source_ext::RUST_SCRIPT)
-                || source_ext::contains(source_ext::SCENE_FUR, ext)
+                || ext.eq_ignore_ascii_case(source_ext::SCENE)
                 || source_ext::contains(source_ext::IMAGE, ext)
                 || source_ext::contains(source_ext::MODEL, ext)
                 || source_ext::contains(source_ext::STATIC_RESOURCE, ext)

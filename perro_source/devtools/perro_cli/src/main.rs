@@ -168,6 +168,7 @@ const BUILD: &[FlagSpec] = &[
     switch("--profile"),
     switch("--console"),
     switch("--headless"),
+    switch("--fresh"),
 ];
 const DLC: &[FlagSpec] = &[value("--name"), value("--path")];
 const DEV: &[FlagSpec] = &[
@@ -282,7 +283,7 @@ fn print_usage() {
         "  perro_cli test [--path <project_dir>] [-- <cargo_test_args>]    # sync scripts + run cargo test for .perro/scripts"
     );
     eprintln!(
-        "  perro_cli build [--path <project_dir>] [--target native|web|android] [--profile] [--console] [--headless]    # full static project bundle + build"
+        "  perro_cli build [--path <project_dir>] [--target native|web|android] [--profile] [--console] [--headless] [--fresh]    # full static project bundle + build (--fresh drops pipeline caches)"
     );
     eprintln!(
         "  perro_cli dlc --name <dlc_name> [--path <project_dir>] # build one runtime-loadable DLC package"

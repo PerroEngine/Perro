@@ -645,7 +645,7 @@ fn collect_format_asset_files_recursive(dir: &Path, out: &mut Vec<PathBuf>) -> R
 fn is_format_asset_extension(ext: &str) -> bool {
     matches!(
         ext.to_ascii_lowercase().as_str(),
-        "scn" | "fur" | "pmat" | "ppart" | "uistyle"
+        "scn" | "pmat" | "ppart" | "uistyle"
     )
 }
 
@@ -658,7 +658,7 @@ fn format_asset_file(path: &Path, dedup: bool) -> Result<(), String> {
         .unwrap_or_default()
         .to_ascii_lowercase();
     let formatted = match ext.as_str() {
-        "scn" | "fur" => catch_unwind_silent(|| {
+        "scn" => catch_unwind_silent(|| {
             Parser::new(&src)
                 .parse_scene_doc()
                 .to_text_with_dedup(dedup)
@@ -825,6 +825,7 @@ pub(crate) fn project_command(args: &[String], cwd: &Path) -> Result<(), String>
     }
     let profile = args.iter().any(|a| a == "--profile");
     let console = args.iter().any(|a| a == "--console");
+    let fresh = args.iter().any(|a| a == "--fresh");
     let project_dir = parse_flag_value(args, "--path")
         .map(|p| resolve_local_path(&p, cwd))
         .unwrap_or_else(|| cwd.to_path_buf());
@@ -834,7 +835,9 @@ pub(crate) fn project_command(args: &[String], cwd: &Path) -> Result<(), String>
     log_step("Building Project Bundle");
     compile_project_bundle(
         &project_dir,
-        ProjectBuildOptions::new(profile, console).with_headless(headless),
+        ProjectBuildOptions::new(profile, console)
+            .with_headless(headless)
+            .with_fresh(fresh),
     )
     .map(|_| {
         log_done("Project Bundle Built");
@@ -877,7 +880,8 @@ fn build_web_command(args: &[String], cwd: &Path) -> Result<(), String> {
         &project_dir,
         ProjectBuildOptions::new(profile, false)
             .with_target(ProjectBuildTarget::Web)
-            .with_web_output_dir(WebOutputDir::Build),
+            .with_web_output_dir(WebOutputDir::Build)
+            .with_fresh(args.iter().any(|a| a == "--fresh")),
     )
     .map(|_| {
         log_done("Web Project Bundle Built");
@@ -909,6 +913,7 @@ fn build_android_command(args: &[String], cwd: &Path) -> Result<(), String> {
         &project_dir,
         ProjectBuildOptions::new(profile, false)
             .with_target(ProjectBuildTarget::Android)
+            .with_fresh(args.iter().any(|a| a == "--fresh"))
             .with_android_sdk_root(Some(leak_string(
                 android.sdk_root.to_string_lossy().to_string(),
             )))

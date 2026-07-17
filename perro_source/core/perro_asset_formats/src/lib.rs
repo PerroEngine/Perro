@@ -83,7 +83,6 @@ pub mod source_ext {
 
     pub const RUST_SCRIPT: &str = "rs";
     pub const SCENE: &str = "scn";
-    pub const FUR: &str = "fur";
     pub const UI_STYLE: &str = "uistyle";
     pub const MATERIAL: &str = "pmat";
     pub const PARTICLE: &str = "ppart";
@@ -123,7 +122,6 @@ pub mod source_ext {
         ANIMATION_TREE,
         UI_STYLE,
     ];
-    pub const SCENE_FUR: &[&str] = &[SCENE, FUR];
     pub const SHADER: &[&str] = &[SHADER_WGSL];
 
     pub fn contains(exts: &[&str], ext: &str) -> bool {

@@ -8,6 +8,9 @@ pub struct ProjectBuildOptions {
     pub android_sdk_root: Option<&'static str>,
     pub android_ndk_root: Option<&'static str>,
     pub headless: bool,
+    /// Discard every incremental pipeline cache (embedded blobs, manifests,
+    /// archive stat sidecar) and re-encode all assets from source.
+    pub fresh: bool,
 }
 
 impl ProjectBuildOptions {
@@ -21,7 +24,13 @@ impl ProjectBuildOptions {
             android_sdk_root: None,
             android_ndk_root: None,
             headless: false,
+            fresh: false,
         }
+    }
+
+    pub fn with_fresh(mut self, fresh: bool) -> Self {
+        self.fresh = fresh;
+        self
     }
 
     pub fn with_target(mut self, target: ProjectBuildTarget) -> Self {
@@ -77,6 +86,9 @@ pub fn compile_project_bundle(
     perro_project::ensure_build_crates_scaffold(project_root, &cfg.name)?;
     ensure_source_overrides(project_root)?;
     sync_android_project_manifest(project_root, &cfg, options)?;
+    if options.fresh {
+        reset_embedded_dir(project_root)?;
+    }
     sweep_unknown_embedded_entries(project_root)?;
     let _ = sync_scripts(project_root)?;
     generate_project_static_modules(project_root, &cfg)?;
@@ -99,6 +111,16 @@ fn generate_perro_assets(project_root: &Path) -> Result<(), CompilerError> {
     let output = embedded_dir.join("assets.perro");
     let res_dir = project_root.join("res");
     build_perro_assets_archive(&output, &res_dir, project_root, &[])?;
+    Ok(())
+}
+
+/// `--fresh` escape hatch: wipe the embedded dir wholesale so every manifest,
+/// blob, and stat sidecar is gone and the pipeline re-encodes from source.
+fn reset_embedded_dir(project_root: &Path) -> Result<(), CompilerError> {
+    let embedded_dir = project_root.join(".perro").join("project").join("embedded");
+    if embedded_dir.exists() {
+        fs::remove_dir_all(&embedded_dir)?;
+    }
     Ok(())
 }
 
