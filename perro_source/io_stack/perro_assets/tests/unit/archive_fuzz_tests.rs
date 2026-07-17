@@ -121,7 +121,10 @@ fn archive_survives_mutation_sweep() {
     let archive = crate::archive::PerroAssetsArchive::open_from_owned_bytes(valid.clone())
         .expect("baseline must open");
     assert_eq!(archive.read_file("res/raw.txt").unwrap(), b"hello archive");
-    assert_eq!(archive.read_file("res/packed.bin").unwrap(), vec![0x5Au8; 64]);
+    assert_eq!(
+        archive.read_file("res/packed.bin").unwrap(),
+        vec![0x5Au8; 64]
+    );
     mutation_sweep(&valid, check_archive);
 }
 

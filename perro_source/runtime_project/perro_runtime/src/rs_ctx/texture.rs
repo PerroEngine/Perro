@@ -324,9 +324,7 @@ impl super::state::RuntimeResourceState {
             let pending_id = self.texture_pending_id_by_request.remove(&request);
             if self.texture_drop_pending.remove(&source_hash) {
                 self.queued_commands
-                    .push(RenderCommand::Resource(ResourceCommand::DropTexture {
-                        id,
-                    }));
+                    .push(RenderCommand::Resource(ResourceCommand::DropTexture { id }));
                 self.texture_by_source.remove(&source_hash);
                 if let Some(pending_id) = pending_id {
                     let _ = self.free_texture_id(pending_id);

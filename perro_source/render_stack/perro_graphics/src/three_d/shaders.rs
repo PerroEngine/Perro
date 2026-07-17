@@ -5,12 +5,10 @@ mod regular {
     // live once in shared_3d.wgsl and get concatenated ahead of each base
     // file here (WGSL module-scope declarations are order-independent).
     const SHARED_3D_WGSL: &str = perro_macros::include_str_stripped!("shaders/shared_3d.wgsl");
-    const PRELUDE_BASE_WGSL: &str =
-        perro_macros::include_str_stripped!("shaders/prelude_3d.wgsl");
+    const PRELUDE_BASE_WGSL: &str = perro_macros::include_str_stripped!("shaders/prelude_3d.wgsl");
     static PRELUDE_WGSL_FULL: LazyLock<String> =
         LazyLock::new(|| format!("{SHARED_3D_WGSL}\n{PRELUDE_BASE_WGSL}"));
-    const MULTIMESH_BASE_WGSL: &str =
-        perro_macros::include_str_stripped!("shaders/multimesh.wgsl");
+    const MULTIMESH_BASE_WGSL: &str = perro_macros::include_str_stripped!("shaders/multimesh.wgsl");
     static MULTIMESH_WGSL_FULL: LazyLock<String> =
         LazyLock::new(|| format!("{SHARED_3D_WGSL}\n{MULTIMESH_BASE_WGSL}"));
     static PRELUDE_RIGID_WGSL: LazyLock<String> =

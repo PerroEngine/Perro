@@ -21,7 +21,10 @@ fn variant_stride_stays_small() {
     println!("Matrix2      = {}", size_of::<Matrix2>());
     println!("Transform2D  = {}", size_of::<Transform2D>());
     println!("Quaternion   = {}", size_of::<Quaternion>());
-    println!("VisualAcc    = {}", size_of::<VisualAccessibilitySettings>());
+    println!(
+        "VisualAcc    = {}",
+        size_of::<VisualAccessibilitySettings>()
+    );
     println!("Vec<Variant> = {}", size_of::<Vec<Variant>>());
     println!(
         "BTreeMap     = {}",

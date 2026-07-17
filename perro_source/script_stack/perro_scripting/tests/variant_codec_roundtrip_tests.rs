@@ -520,7 +520,11 @@ fn named_enum_variant_encodes_positional_fields() {
     let encoded = <BotState as DeriveVariant>::to_variant(&value);
     let arr = encoded.as_array().expect("named variant encodes as array");
     assert_eq!(arr[0].as_u16(), Some(2));
-    assert_eq!(arr[1].as_f32(), Some(0.5), "fields follow declaration order");
+    assert_eq!(
+        arr[1].as_f32(),
+        Some(0.5),
+        "fields follow declaration order"
+    );
     assert_eq!(encoded.parse::<BotState>(), Ok(value));
 }
 
