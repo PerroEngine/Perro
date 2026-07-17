@@ -302,6 +302,130 @@ impl RuntimeResourceApi {
     }
 }
 
+// Material arms of the render-event stream; called from
+// `RuntimeResourceApi::apply_render_event` under the state lock.
+impl super::state::RuntimeResourceState {
+    pub(super) fn apply_material_loaded(&mut self, id: MaterialID) {
+        if !self.material_load_pending_by_id.contains(&id) {
+            self.material_write_pending_by_id.remove(&id);
+            self.material_loaded_by_id.insert(id);
+            if super::core::asset_ready_log_enabled() {
+                eprintln!("[perro][asset-ready] material loaded id={id:?}");
+            }
+        } else if super::core::asset_ready_log_enabled() {
+            eprintln!("[perro][asset-ready] material backend ack before source task id={id:?}");
+        }
+    }
+
+    pub(super) fn apply_material_created(
+        &mut self,
+        request: perro_render_bridge::RenderRequestID,
+        id: MaterialID,
+    ) {
+        let _ = self.occupy_material_id(id);
+        let pending_id = self.material_pending_id_by_request.remove(&request);
+        if let Some(source) = self.material_pending_source_by_request.remove(&request) {
+            let source_hash = perro_ids::string_to_u64(&source);
+            self.material_pending_by_source.remove(&source_hash);
+            if self.material_drop_pending.remove(&source_hash) {
+                self.queued_commands
+                    .push(RenderCommand::Resource(ResourceCommand::DropMaterial {
+                        id,
+                    }));
+                self.material_by_source.remove(&source_hash);
+                if let Some(pending_id) = pending_id {
+                    let _ = self.free_material_id(pending_id);
+                }
+            } else {
+                self.material_by_source.insert(source_hash, id);
+                if self.material_reserve_pending.remove(&source_hash) {
+                    self.queued_commands.push(RenderCommand::Resource(
+                        ResourceCommand::SetMaterialReserved { id, reserved: true },
+                    ));
+                }
+            }
+        }
+        if let Some(pending_id) = pending_id
+            && pending_id != id
+        {
+            if self.material_load_pending_by_id.remove(&pending_id) {
+                self.material_load_pending_by_id.insert(id);
+            }
+            if self.material_write_pending_by_id.remove(&pending_id) {
+                self.material_write_pending_by_id.insert(id);
+            }
+            if let Some(data) = self.material_data_by_id.remove(&pending_id) {
+                self.material_data_by_id.insert(id, data);
+                if self.material_loaded_by_id.remove(&pending_id) {
+                    self.material_loaded_by_id.insert(id);
+                }
+            }
+            let _ = self.free_material_id(pending_id);
+        }
+        if !self.material_load_pending_by_id.contains(&id)
+            && self.material_data_by_id.contains_key(&id)
+        {
+            self.material_loaded_by_id.insert(id);
+            if super::core::asset_ready_log_enabled() {
+                eprintln!("[perro][asset-ready] material created ready id={id:?}");
+            }
+        } else if super::core::asset_ready_log_enabled() {
+            eprintln!(
+                "[perro][asset-ready] material created wait id={id:?} source_pending={} has_data={}",
+                self.material_load_pending_by_id.contains(&id),
+                self.material_data_by_id.contains_key(&id)
+            );
+        }
+    }
+
+    pub(super) fn apply_material_dropped(&mut self, id: MaterialID) {
+        self.material_data_by_id.remove(&id);
+        self.material_loaded_by_id.remove(&id);
+        self.material_load_pending_by_id.remove(&id);
+        self.material_write_pending_by_id.remove(&id);
+        if self.default_material_id == Some(id) {
+            self.default_material_id = None;
+        }
+        self.shared_material_by_data
+            .retain(|(_, shared_id)| *shared_id != id);
+        let source = self
+            .material_by_source
+            .iter()
+            .find_map(|(source_hash, existing)| (*existing == id).then_some(*source_hash));
+        if let Some(source_hash) = source {
+            self.material_by_source.remove(&source_hash);
+            self.material_pending_by_source.remove(&source_hash);
+            self.material_reserve_pending.remove(&source_hash);
+            self.material_drop_pending.remove(&source_hash);
+        }
+        let _ = self.free_material_id(id);
+    }
+
+    pub(super) fn apply_material_failed(&mut self, request: perro_render_bridge::RenderRequestID) {
+        if let Some(source) = self.material_pending_source_by_request.remove(&request) {
+            let source_hash = perro_ids::string_to_u64(&source);
+            self.material_pending_by_source.remove(&source_hash);
+            if let Some(pending_id) = self.material_pending_id_by_request.remove(&request) {
+                let _ = self.free_material_id(pending_id);
+                self.material_data_by_id.remove(&pending_id);
+                self.material_loaded_by_id.remove(&pending_id);
+                self.material_load_pending_by_id.remove(&pending_id);
+                self.material_write_pending_by_id.remove(&pending_id);
+            }
+            self.material_by_source.remove(&source_hash);
+            self.material_reserve_pending.remove(&source_hash);
+            self.material_drop_pending.remove(&source_hash);
+        }
+        if let Some(pending_id) = self.material_pending_id_by_request.remove(&request) {
+            let _ = self.free_material_id(pending_id);
+            self.material_data_by_id.remove(&pending_id);
+            self.material_loaded_by_id.remove(&pending_id);
+            self.material_load_pending_by_id.remove(&pending_id);
+            self.material_write_pending_by_id.remove(&pending_id);
+        }
+    }
+}
+
 #[cfg(test)]
 fn normalized_static_material_lookup_alias(source: &str) -> Option<String> {
     let (path, fragment) = split_source_fragment(source);

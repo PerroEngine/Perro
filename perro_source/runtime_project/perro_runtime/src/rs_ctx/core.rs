@@ -6,7 +6,7 @@ use crate::runtime_project::{
 #[cfg(all(not(target_arch = "wasm32"), not(test)))]
 use perro_animation::{AnimationClip, AnimationTreeAsset};
 use perro_ids::{NodeID, TextureID, WebcamID};
-use perro_ids::{SoundFontID, string_to_u64};
+use perro_ids::SoundFontID;
 use perro_pawdio::{AudioController, MicRecorder, MidiChannel, MidiProgram, MidiSound, Note};
 use perro_project::LocalizationConfig;
 #[cfg(not(target_arch = "wasm32"))]
@@ -63,14 +63,14 @@ struct AsyncMaterialLoadResult {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn asset_ready_log_enabled() -> bool {
+pub(super) fn asset_ready_log_enabled() -> bool {
     std::env::var("PERRO_ASSET_READY_LOG")
         .ok()
         .is_some_and(|raw| matches!(raw.as_str(), "1" | "true" | "yes" | "on"))
 }
 
 #[cfg(target_arch = "wasm32")]
-fn asset_ready_log_enabled() -> bool {
+pub(super) fn asset_ready_log_enabled() -> bool {
     false
 }
 
@@ -280,6 +280,16 @@ pub(crate) struct QueuedSpatialMidi {
     pub pos: QueuedSpatialAudioPos,
 }
 
+/// Listener pose + options behind ONE mutex: writers set both together, and
+/// audio solve reads them as a pair — a single lock keeps the pair coherent
+/// (no torn read between separate listener/options locks) and halves the
+/// per-solve lock traffic.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct AudioListenerSlot<L> {
+    pub(crate) listener: Option<L>,
+    pub(crate) options: perro_structs::AudioListenerOptions,
+}
+
 pub struct RuntimeResourceApi {
     pub(super) state: Mutex<RuntimeResourceState>,
     pub(super) localization: std::sync::RwLock<RuntimeLocalizationState>,
@@ -288,10 +298,8 @@ pub struct RuntimeResourceApi {
     pub(crate) spatial_audio_queue: Mutex<Vec<QueuedSpatialAudio>>,
     pub(crate) spatial_midi_queue: Mutex<Vec<QueuedSpatialMidi>>,
     pub(crate) next_spatial_midi_id: std::sync::atomic::AtomicU64,
-    pub(crate) audio_listener_2d: Mutex<Option<perro_pawdio::AudioListener2D>>,
-    pub(crate) audio_listener_3d: Mutex<Option<perro_pawdio::AudioListener3D>>,
-    pub(crate) audio_listener_options_2d: Mutex<perro_structs::AudioListenerOptions>,
-    pub(crate) audio_listener_options_3d: Mutex<perro_structs::AudioListenerOptions>,
+    pub(crate) audio_listener_2d: Mutex<AudioListenerSlot<perro_pawdio::AudioListener2D>>,
+    pub(crate) audio_listener_3d: Mutex<AudioListenerSlot<perro_pawdio::AudioListener3D>>,
     pub(super) static_material_lookup: Option<StaticMaterialLookup>,
     pub(super) static_skeleton_lookup: Option<StaticSkeletonLookup>,
     pub(super) static_animation_lookup: Option<StaticAnimationLookup>,
@@ -309,7 +317,9 @@ pub struct RuntimeResourceApi {
     pub(super) skeleton_2d_load_rx: Mutex<mpsc::Receiver<AsyncSkeleton2DLoadResult>>,
     pub(super) skeleton_3d_load_tx: mpsc::Sender<AsyncSkeleton3DLoadResult>,
     pub(super) skeleton_3d_load_rx: Mutex<mpsc::Receiver<AsyncSkeleton3DLoadResult>>,
-    pub(super) viewport_size: Mutex<(u32, u32)>,
+    // width in the high 32 bits, height in the low 32: one relaxed atomic
+    // instead of a mutex for a value written once per resize.
+    pub(super) viewport_size: std::sync::atomic::AtomicU64,
     #[cfg_attr(any(test, target_arch = "wasm32"), allow(dead_code))]
     pub(crate) webcam_frame_tx: mpsc::SyncSender<WebcamFrameMessage>,
     pub(crate) webcam_frame_rx: Mutex<mpsc::Receiver<WebcamFrameMessage>>,
@@ -371,10 +381,8 @@ impl RuntimeResourceApi {
             spatial_audio_queue: Mutex::new(Vec::new()),
             spatial_midi_queue: Mutex::new(Vec::new()),
             next_spatial_midi_id: std::sync::atomic::AtomicU64::new(1),
-            audio_listener_2d: Mutex::new(None),
-            audio_listener_3d: Mutex::new(None),
-            audio_listener_options_2d: Mutex::new(perro_structs::AudioListenerOptions::new()),
-            audio_listener_options_3d: Mutex::new(perro_structs::AudioListenerOptions::new()),
+            audio_listener_2d: Mutex::new(AudioListenerSlot::default()),
+            audio_listener_3d: Mutex::new(AudioListenerSlot::default()),
             static_material_lookup,
             static_skeleton_lookup,
             static_animation_lookup,
@@ -392,7 +400,7 @@ impl RuntimeResourceApi {
             skeleton_2d_load_rx: Mutex::new(skeleton_2d_load_rx),
             skeleton_3d_load_tx,
             skeleton_3d_load_rx: Mutex::new(skeleton_3d_load_rx),
-            viewport_size: Mutex::new((1, 1)),
+            viewport_size: std::sync::atomic::AtomicU64::new((1u64 << 32) | 1),
             webcam_frame_tx,
             webcam_frame_rx: Mutex::new(webcam_frame_rx),
             webcam_error_tx,
@@ -419,11 +427,16 @@ impl RuntimeResourceApi {
     }
 
     pub(crate) fn set_viewport_size(&self, width: u32, height: u32) {
-        let mut viewport = self
+        let packed = ((width.max(1) as u64) << 32) | height.max(1) as u64;
+        self.viewport_size
+            .store(packed, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    pub(crate) fn viewport_size(&self) -> (u32, u32) {
+        let packed = self
             .viewport_size
-            .lock()
-            .expect("resource api viewport mutex poisoned");
-        *viewport = (width.max(1), height.max(1));
+            .load(std::sync::atomic::Ordering::Relaxed);
+        ((packed >> 32) as u32, packed as u32)
     }
 
     pub(crate) fn set_audio_listener_2d(
@@ -432,19 +445,15 @@ impl RuntimeResourceApi {
         rotation_radians: f32,
         options: perro_structs::AudioListenerOptions,
     ) {
-        let mut listener = self
+        let mut slot = self
             .audio_listener_2d
             .lock()
             .expect("resource api audio 2d listener mutex poisoned");
-        *listener = Some(perro_pawdio::AudioListener2D {
+        slot.listener = Some(perro_pawdio::AudioListener2D {
             position,
             rotation_radians,
         });
-        let mut listener_options = self
-            .audio_listener_options_2d
-            .lock()
-            .expect("resource api audio 2d listener options mutex poisoned");
-        *listener_options = options;
+        slot.options = options;
     }
 
     pub(crate) fn set_audio_listener_3d(
@@ -453,16 +462,12 @@ impl RuntimeResourceApi {
         rotation: [f32; 4],
         options: perro_structs::AudioListenerOptions,
     ) {
-        let mut listener = self
+        let mut slot = self
             .audio_listener_3d
             .lock()
             .expect("resource api audio 3d listener mutex poisoned");
-        *listener = Some(perro_pawdio::AudioListener3D { position, rotation });
-        let mut listener_options = self
-            .audio_listener_options_3d
-            .lock()
-            .expect("resource api audio 3d listener options mutex poisoned");
-        *listener_options = options;
+        slot.listener = Some(perro_pawdio::AudioListener3D { position, rotation });
+        slot.options = options;
     }
 
     pub(crate) fn drain_commands(&self, out: &mut Vec<RenderCommand>) {
@@ -671,35 +676,14 @@ impl RuntimeResourceApi {
     #[cfg(any(target_arch = "wasm32", test))]
     pub(crate) fn poll_async_animation_tree_loads(&self) {}
 
+    // Per-domain event logic lives with its domain (texture.rs / mesh.rs /
+    // material.rs as RuntimeResourceState methods); this stays the single
+    // lock + dispatch point so every event applies under one state guard.
     pub(crate) fn apply_render_event(&self, event: &RenderEvent) {
         let mut state = self.state.lock().expect("resource api mutex poisoned");
         match event {
             RenderEvent::TextureCreated { request, id } => {
-                let _ = state.occupy_texture_id(*id);
-                if let Some(source) = state.texture_pending_source_by_request.remove(request) {
-                    let source_hash = string_to_u64(&source);
-                    state.texture_pending_by_source.remove(&source_hash);
-                    let pending_id = state.texture_pending_id_by_request.remove(request);
-                    if state.texture_drop_pending.remove(&source_hash) {
-                        state.queued_commands.push(RenderCommand::Resource(
-                            perro_render_bridge::ResourceCommand::DropTexture { id: *id },
-                        ));
-                        state.texture_by_source.remove(&source_hash);
-                        if let Some(pending_id) = pending_id {
-                            let _ = state.free_texture_id(pending_id);
-                        }
-                    } else {
-                        state.texture_by_source.insert(source_hash, *id);
-                        if state.texture_reserve_pending.remove(&source_hash) {
-                            state.queued_commands.push(RenderCommand::Resource(
-                                perro_render_bridge::ResourceCommand::SetTextureReserved {
-                                    id: *id,
-                                    reserved: true,
-                                },
-                            ));
-                        }
-                    }
-                }
+                state.apply_texture_created(*request, *id);
             }
             RenderEvent::TextureLoaded { id } => {
                 state.texture_loaded_by_id.insert(*id);
@@ -708,241 +692,27 @@ impl RuntimeResourceApi {
             // + pending resolution unchanged.
             RenderEvent::TextureTexelsUpdated { .. } => {}
             RenderEvent::MaterialLoaded { id } => {
-                if !state.material_load_pending_by_id.contains(id) {
-                    state.material_write_pending_by_id.remove(id);
-                    state.material_loaded_by_id.insert(*id);
-                    if asset_ready_log_enabled() {
-                        eprintln!("[perro][asset-ready] material loaded id={id:?}");
-                    }
-                } else if asset_ready_log_enabled() {
-                    eprintln!(
-                        "[perro][asset-ready] material backend ack before source task id={id:?}"
-                    );
-                }
+                state.apply_material_loaded(*id);
             }
             RenderEvent::MeshCreated { request, id, mesh } => {
-                if asset_ready_log_enabled() {
-                    eprintln!(
-                        "[perro][asset-ready] mesh created id={id:?} request={request:?} has_data={}",
-                        mesh.is_some()
-                    );
-                }
-                if id.is_nil() {
-                    if let Some(source) = state.mesh_pending_source_by_request.remove(request) {
-                        let source_hash = string_to_u64(&source);
-                        state.mesh_pending_by_source.remove(&source_hash);
-                        if let Some(pending_id) = state.mesh_pending_id_by_request.remove(request) {
-                            let _ = state.free_mesh_id(pending_id);
-                            state.mesh_source_by_id.remove(&pending_id);
-                        }
-                        state.mesh_by_source.remove(&source_hash);
-                        state.mesh_reserve_pending.remove(&source_hash);
-                        state.mesh_drop_pending.remove(&source_hash);
-                    }
-                    return;
-                }
-                let _ = state.occupy_mesh_id(*id);
-                state.mesh_loaded_by_id.insert(*id);
-                if let Some(mesh) = mesh {
-                    state.mesh_data_by_id.insert(*id, mesh.clone());
-                }
-                if let Some(source) = state.mesh_pending_source_by_request.remove(request) {
-                    let source_hash = string_to_u64(&source);
-                    state.mesh_pending_by_source.remove(&source_hash);
-                    let pending_id = state.mesh_pending_id_by_request.remove(request);
-                    if let Some(pending_id) = pending_id
-                        && pending_id != *id
-                    {
-                        // Backend resolved this request to an existing mesh id.
-                        // Free the temporary pending slot to avoid mesh-id leaks/churn.
-                        let _ = state.free_mesh_id(pending_id);
-                        state.mesh_id_alias.insert(pending_id, *id);
-                        state.mesh_source_by_id.remove(&pending_id);
-                        state.mesh_loaded_by_id.remove(&pending_id);
-                    }
-                    if state.mesh_drop_pending.remove(&source_hash) {
-                        state.queued_commands.push(RenderCommand::Resource(
-                            perro_render_bridge::ResourceCommand::DropMesh { id: *id },
-                        ));
-                        state.mesh_by_source.remove(&source_hash);
-                        state.mesh_source_by_id.remove(id);
-                        state.mesh_loaded_by_id.remove(id);
-                        if let Some(pending_id) = pending_id {
-                            let _ = state.free_mesh_id(pending_id);
-                        }
-                    } else {
-                        state.mesh_by_source.insert(source_hash, *id);
-                        state.mesh_source_by_id.insert(*id, source);
-                        if state.mesh_reserve_pending.remove(&source_hash) {
-                            state.queued_commands.push(RenderCommand::Resource(
-                                perro_render_bridge::ResourceCommand::SetMeshReserved {
-                                    id: *id,
-                                    reserved: true,
-                                },
-                            ));
-                        }
-                    }
-                }
+                state.apply_mesh_created(*request, *id, mesh.as_ref());
             }
             RenderEvent::MaterialCreated { request, id } => {
-                let _ = state.occupy_material_id(*id);
-                let pending_id = state.material_pending_id_by_request.remove(request);
-                if let Some(source) = state.material_pending_source_by_request.remove(request) {
-                    let source_hash = string_to_u64(&source);
-                    state.material_pending_by_source.remove(&source_hash);
-                    if state.material_drop_pending.remove(&source_hash) {
-                        state.queued_commands.push(RenderCommand::Resource(
-                            perro_render_bridge::ResourceCommand::DropMaterial { id: *id },
-                        ));
-                        state.material_by_source.remove(&source_hash);
-                        if let Some(pending_id) = pending_id {
-                            let _ = state.free_material_id(pending_id);
-                        }
-                    } else {
-                        state.material_by_source.insert(source_hash, *id);
-                        if state.material_reserve_pending.remove(&source_hash) {
-                            state.queued_commands.push(RenderCommand::Resource(
-                                perro_render_bridge::ResourceCommand::SetMaterialReserved {
-                                    id: *id,
-                                    reserved: true,
-                                },
-                            ));
-                        }
-                    }
-                }
-                if let Some(pending_id) = pending_id
-                    && pending_id != *id
-                {
-                    if state.material_load_pending_by_id.remove(&pending_id) {
-                        state.material_load_pending_by_id.insert(*id);
-                    }
-                    if state.material_write_pending_by_id.remove(&pending_id) {
-                        state.material_write_pending_by_id.insert(*id);
-                    }
-                    if let Some(data) = state.material_data_by_id.remove(&pending_id) {
-                        state.material_data_by_id.insert(*id, data);
-                        if state.material_loaded_by_id.remove(&pending_id) {
-                            state.material_loaded_by_id.insert(*id);
-                        }
-                    }
-                    let _ = state.free_material_id(pending_id);
-                }
-                if !state.material_load_pending_by_id.contains(id)
-                    && state.material_data_by_id.contains_key(id)
-                {
-                    state.material_loaded_by_id.insert(*id);
-                    if asset_ready_log_enabled() {
-                        eprintln!("[perro][asset-ready] material created ready id={id:?}");
-                    }
-                } else if asset_ready_log_enabled() {
-                    eprintln!(
-                        "[perro][asset-ready] material created wait id={id:?} source_pending={} has_data={}",
-                        state.material_load_pending_by_id.contains(id),
-                        state.material_data_by_id.contains_key(id)
-                    );
-                }
+                state.apply_material_created(*request, *id);
             }
             RenderEvent::TextureDropped { id } => {
-                state.texture_loaded_by_id.remove(id);
-                let source = state
-                    .texture_by_source
-                    .iter()
-                    .find_map(|(source_hash, existing)| (*existing == *id).then_some(*source_hash));
-                if let Some(source_hash) = source {
-                    state.texture_by_source.remove(&source_hash);
-                    state.texture_pending_by_source.remove(&source_hash);
-                    state.texture_reserve_pending.remove(&source_hash);
-                    state.texture_drop_pending.remove(&source_hash);
-                }
-                let _ = state.free_texture_id(*id);
+                state.apply_texture_dropped(*id);
             }
             RenderEvent::MeshDropped { id } => {
-                state.mesh_data_by_id.remove(id);
-                state.mesh_revision_by_id.remove(id);
-                state.mesh_source_by_id.remove(id);
-                state.mesh_loaded_by_id.remove(id);
-                state
-                    .mesh_id_alias
-                    .retain(|from, to| *from != *id && *to != *id);
-                let source = state
-                    .mesh_by_source
-                    .iter()
-                    .find_map(|(source_hash, existing)| (*existing == *id).then_some(*source_hash));
-                if let Some(source_hash) = source {
-                    state.mesh_by_source.remove(&source_hash);
-                    state.mesh_pending_by_source.remove(&source_hash);
-                    state.mesh_reserve_pending.remove(&source_hash);
-                    state.mesh_drop_pending.remove(&source_hash);
-                }
-                let _ = state.free_mesh_id(*id);
+                state.apply_mesh_dropped(*id);
             }
             RenderEvent::MaterialDropped { id } => {
-                state.material_data_by_id.remove(id);
-                state.material_loaded_by_id.remove(id);
-                state.material_load_pending_by_id.remove(id);
-                state.material_write_pending_by_id.remove(id);
-                if state.default_material_id == Some(*id) {
-                    state.default_material_id = None;
-                }
-                state
-                    .shared_material_by_data
-                    .retain(|(_, shared_id)| *shared_id != *id);
-                let source = state
-                    .material_by_source
-                    .iter()
-                    .find_map(|(source_hash, existing)| (*existing == *id).then_some(*source_hash));
-                if let Some(source_hash) = source {
-                    state.material_by_source.remove(&source_hash);
-                    state.material_pending_by_source.remove(&source_hash);
-                    state.material_reserve_pending.remove(&source_hash);
-                    state.material_drop_pending.remove(&source_hash);
-                }
-                let _ = state.free_material_id(*id);
+                state.apply_material_dropped(*id);
             }
             RenderEvent::Failed { request, .. } => {
-                if let Some(source) = state.texture_pending_source_by_request.remove(request) {
-                    let source_hash = string_to_u64(&source);
-                    state.texture_pending_by_source.remove(&source_hash);
-                    if let Some(pending_id) = state.texture_pending_id_by_request.remove(request) {
-                        let _ = state.free_texture_id(pending_id);
-                    }
-                    state.texture_by_source.remove(&source_hash);
-                    state.texture_reserve_pending.remove(&source_hash);
-                    state.texture_drop_pending.remove(&source_hash);
-                }
-                if let Some(source) = state.mesh_pending_source_by_request.remove(request) {
-                    let source_hash = string_to_u64(&source);
-                    state.mesh_pending_by_source.remove(&source_hash);
-                    if let Some(pending_id) = state.mesh_pending_id_by_request.remove(request) {
-                        let _ = state.free_mesh_id(pending_id);
-                        state.mesh_data_by_id.remove(&pending_id);
-                        state.mesh_source_by_id.remove(&pending_id);
-                    }
-                    state.mesh_by_source.remove(&source_hash);
-                    state.mesh_reserve_pending.remove(&source_hash);
-                    state.mesh_drop_pending.remove(&source_hash);
-                }
-                if let Some(source) = state.material_pending_source_by_request.remove(request) {
-                    let source_hash = string_to_u64(&source);
-                    state.material_pending_by_source.remove(&source_hash);
-                    if let Some(pending_id) = state.material_pending_id_by_request.remove(request) {
-                        let _ = state.free_material_id(pending_id);
-                        state.material_data_by_id.remove(&pending_id);
-                        state.material_loaded_by_id.remove(&pending_id);
-                        state.material_load_pending_by_id.remove(&pending_id);
-                        state.material_write_pending_by_id.remove(&pending_id);
-                    }
-                    state.material_by_source.remove(&source_hash);
-                    state.material_reserve_pending.remove(&source_hash);
-                    state.material_drop_pending.remove(&source_hash);
-                }
-                if let Some(pending_id) = state.material_pending_id_by_request.remove(request) {
-                    let _ = state.free_material_id(pending_id);
-                    state.material_data_by_id.remove(&pending_id);
-                    state.material_loaded_by_id.remove(&pending_id);
-                    state.material_load_pending_by_id.remove(&pending_id);
-                    state.material_write_pending_by_id.remove(&pending_id);
-                }
+                state.apply_texture_failed(*request);
+                state.apply_mesh_failed(*request);
+                state.apply_material_failed(*request);
             }
             RenderEvent::WaterSamples { .. } | RenderEvent::WaterBodySamples { .. } => {}
         }

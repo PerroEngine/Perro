@@ -479,14 +479,14 @@ impl Runtime {
             .audio_listener_2d
             .lock()
             .ok()
-            .and_then(|guard| *guard)
+            .and_then(|slot| slot.listener)
             .unwrap_or_default();
         let listener_3d = self
             .resource_api
             .audio_listener_3d
             .lock()
             .ok()
-            .and_then(|guard| *guard)
+            .and_then(|slot| slot.listener)
             .unwrap_or_default();
         for (index, sound) in sounds.iter_mut().enumerate() {
             sound.elapsed_since_prop += dt;
@@ -576,17 +576,17 @@ impl Runtime {
         self.audio.scratch_ray_outputs = ray_outputs;
         let listener_options_2d = self
             .resource_api
-            .audio_listener_options_2d
+            .audio_listener_2d
             .lock()
             .ok()
-            .map(|guard| guard.clone())
+            .map(|slot| slot.options.clone())
             .unwrap_or_default();
         let listener_options_3d = self
             .resource_api
-            .audio_listener_options_3d
+            .audio_listener_3d
             .lock()
             .ok()
-            .map(|guard| guard.clone())
+            .map(|slot| slot.options.clone())
             .unwrap_or_default();
         for (index, sound) in sounds.iter_mut().enumerate() {
             if sound.elapsed_since_prop < tick {

@@ -5,10 +5,7 @@ use perro_structs::Vector2;
 impl ViewportAPI for RuntimeResourceApi {
     #[inline]
     fn viewport_size(&self) -> Vector2 {
-        let (width, height) = *self
-            .viewport_size
-            .lock()
-            .expect("resource api viewport mutex poisoned");
+        let (width, height) = RuntimeResourceApi::viewport_size(self);
         Vector2::new(width as f32, height as f32)
     }
 }

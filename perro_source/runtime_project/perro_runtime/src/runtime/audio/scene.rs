@@ -171,19 +171,12 @@ impl Runtime {
         dt: f32,
         tick: f32,
     ) {
-        let listener = self
+        let (listener, listener_options) = self
             .resource_api
             .audio_listener_2d
             .lock()
             .ok()
-            .and_then(|guard| *guard)
-            .unwrap_or_default();
-        let listener_options = self
-            .resource_api
-            .audio_listener_options_2d
-            .lock()
-            .ok()
-            .map(|guard| guard.clone())
+            .map(|slot| (slot.listener.unwrap_or_default(), slot.options.clone()))
             .unwrap_or_default();
         let listener_pos = Vector2::new(listener.position[0], listener.position[1]);
         self.audio.scratch_ray_inputs.clear();
@@ -246,19 +239,12 @@ impl Runtime {
         dt: f32,
         tick: f32,
     ) {
-        let listener = self
+        let (listener, listener_options) = self
             .resource_api
             .audio_listener_3d
             .lock()
             .ok()
-            .and_then(|guard| *guard)
-            .unwrap_or_default();
-        let listener_options = self
-            .resource_api
-            .audio_listener_options_3d
-            .lock()
-            .ok()
-            .map(|guard| guard.clone())
+            .map(|slot| (slot.listener.unwrap_or_default(), slot.options.clone()))
             .unwrap_or_default();
         let listener_pos = Vector3::new(
             listener.position[0],

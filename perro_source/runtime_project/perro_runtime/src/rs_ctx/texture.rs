@@ -308,3 +308,65 @@ impl RuntimeResourceApi {
             .any(|pending| *pending == texture)
     }
 }
+
+// Texture arms of the render-event stream; called from
+// `RuntimeResourceApi::apply_render_event` under the state lock.
+impl super::state::RuntimeResourceState {
+    pub(super) fn apply_texture_created(
+        &mut self,
+        request: perro_render_bridge::RenderRequestID,
+        id: TextureID,
+    ) {
+        let _ = self.occupy_texture_id(id);
+        if let Some(source) = self.texture_pending_source_by_request.remove(&request) {
+            let source_hash = string_to_u64(&source);
+            self.texture_pending_by_source.remove(&source_hash);
+            let pending_id = self.texture_pending_id_by_request.remove(&request);
+            if self.texture_drop_pending.remove(&source_hash) {
+                self.queued_commands
+                    .push(RenderCommand::Resource(ResourceCommand::DropTexture {
+                        id,
+                    }));
+                self.texture_by_source.remove(&source_hash);
+                if let Some(pending_id) = pending_id {
+                    let _ = self.free_texture_id(pending_id);
+                }
+            } else {
+                self.texture_by_source.insert(source_hash, id);
+                if self.texture_reserve_pending.remove(&source_hash) {
+                    self.queued_commands.push(RenderCommand::Resource(
+                        ResourceCommand::SetTextureReserved { id, reserved: true },
+                    ));
+                }
+            }
+        }
+    }
+
+    pub(super) fn apply_texture_dropped(&mut self, id: TextureID) {
+        self.texture_loaded_by_id.remove(&id);
+        let source = self
+            .texture_by_source
+            .iter()
+            .find_map(|(source_hash, existing)| (*existing == id).then_some(*source_hash));
+        if let Some(source_hash) = source {
+            self.texture_by_source.remove(&source_hash);
+            self.texture_pending_by_source.remove(&source_hash);
+            self.texture_reserve_pending.remove(&source_hash);
+            self.texture_drop_pending.remove(&source_hash);
+        }
+        let _ = self.free_texture_id(id);
+    }
+
+    pub(super) fn apply_texture_failed(&mut self, request: perro_render_bridge::RenderRequestID) {
+        if let Some(source) = self.texture_pending_source_by_request.remove(&request) {
+            let source_hash = string_to_u64(&source);
+            self.texture_pending_by_source.remove(&source_hash);
+            if let Some(pending_id) = self.texture_pending_id_by_request.remove(&request) {
+                let _ = self.free_texture_id(pending_id);
+            }
+            self.texture_by_source.remove(&source_hash);
+            self.texture_reserve_pending.remove(&source_hash);
+            self.texture_drop_pending.remove(&source_hash);
+        }
+    }
+}

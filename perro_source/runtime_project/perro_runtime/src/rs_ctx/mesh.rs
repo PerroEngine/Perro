@@ -416,6 +416,111 @@ fn builtin_mesh_data(source: &str) -> Option<Mesh3D> {
     })
 }
 
+// Mesh arms of the render-event stream; called from
+// `RuntimeResourceApi::apply_render_event` under the state lock.
+impl super::state::RuntimeResourceState {
+    pub(super) fn apply_mesh_created(
+        &mut self,
+        request: perro_render_bridge::RenderRequestID,
+        id: MeshID,
+        mesh: Option<&Mesh3D>,
+    ) {
+        if super::core::asset_ready_log_enabled() {
+            eprintln!(
+                "[perro][asset-ready] mesh created id={id:?} request={request:?} has_data={}",
+                mesh.is_some()
+            );
+        }
+        if id.is_nil() {
+            if let Some(source) = self.mesh_pending_source_by_request.remove(&request) {
+                let source_hash = string_to_u64(&source);
+                self.mesh_pending_by_source.remove(&source_hash);
+                if let Some(pending_id) = self.mesh_pending_id_by_request.remove(&request) {
+                    let _ = self.free_mesh_id(pending_id);
+                    self.mesh_source_by_id.remove(&pending_id);
+                }
+                self.mesh_by_source.remove(&source_hash);
+                self.mesh_reserve_pending.remove(&source_hash);
+                self.mesh_drop_pending.remove(&source_hash);
+            }
+            return;
+        }
+        let _ = self.occupy_mesh_id(id);
+        self.mesh_loaded_by_id.insert(id);
+        if let Some(mesh) = mesh {
+            self.mesh_data_by_id.insert(id, mesh.clone());
+        }
+        if let Some(source) = self.mesh_pending_source_by_request.remove(&request) {
+            let source_hash = string_to_u64(&source);
+            self.mesh_pending_by_source.remove(&source_hash);
+            let pending_id = self.mesh_pending_id_by_request.remove(&request);
+            if let Some(pending_id) = pending_id
+                && pending_id != id
+            {
+                // Backend resolved this request to an existing mesh id.
+                // Free the temporary pending slot to avoid mesh-id leaks/churn.
+                let _ = self.free_mesh_id(pending_id);
+                self.mesh_id_alias.insert(pending_id, id);
+                self.mesh_source_by_id.remove(&pending_id);
+                self.mesh_loaded_by_id.remove(&pending_id);
+            }
+            if self.mesh_drop_pending.remove(&source_hash) {
+                self.queued_commands
+                    .push(RenderCommand::Resource(ResourceCommand::DropMesh { id }));
+                self.mesh_by_source.remove(&source_hash);
+                self.mesh_source_by_id.remove(&id);
+                self.mesh_loaded_by_id.remove(&id);
+                if let Some(pending_id) = pending_id {
+                    let _ = self.free_mesh_id(pending_id);
+                }
+            } else {
+                self.mesh_by_source.insert(source_hash, id);
+                self.mesh_source_by_id.insert(id, source);
+                if self.mesh_reserve_pending.remove(&source_hash) {
+                    self.queued_commands.push(RenderCommand::Resource(
+                        ResourceCommand::SetMeshReserved { id, reserved: true },
+                    ));
+                }
+            }
+        }
+    }
+
+    pub(super) fn apply_mesh_dropped(&mut self, id: MeshID) {
+        self.mesh_data_by_id.remove(&id);
+        self.mesh_revision_by_id.remove(&id);
+        self.mesh_source_by_id.remove(&id);
+        self.mesh_loaded_by_id.remove(&id);
+        self.mesh_id_alias
+            .retain(|from, to| *from != id && *to != id);
+        let source = self
+            .mesh_by_source
+            .iter()
+            .find_map(|(source_hash, existing)| (*existing == id).then_some(*source_hash));
+        if let Some(source_hash) = source {
+            self.mesh_by_source.remove(&source_hash);
+            self.mesh_pending_by_source.remove(&source_hash);
+            self.mesh_reserve_pending.remove(&source_hash);
+            self.mesh_drop_pending.remove(&source_hash);
+        }
+        let _ = self.free_mesh_id(id);
+    }
+
+    pub(super) fn apply_mesh_failed(&mut self, request: perro_render_bridge::RenderRequestID) {
+        if let Some(source) = self.mesh_pending_source_by_request.remove(&request) {
+            let source_hash = string_to_u64(&source);
+            self.mesh_pending_by_source.remove(&source_hash);
+            if let Some(pending_id) = self.mesh_pending_id_by_request.remove(&request) {
+                let _ = self.free_mesh_id(pending_id);
+                self.mesh_data_by_id.remove(&pending_id);
+                self.mesh_source_by_id.remove(&pending_id);
+            }
+            self.mesh_by_source.remove(&source_hash);
+            self.mesh_reserve_pending.remove(&source_hash);
+            self.mesh_drop_pending.remove(&source_hash);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::RuntimeResourceApi;
