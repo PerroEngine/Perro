@@ -291,7 +291,7 @@ fn complex_nested_struct_and_enum_roundtrip_variant_codec() {
 }
 
 #[test]
-fn enum_encoding_shape_contains_variant_tag_and_data() {
+fn enum_encoding_shape_is_compact_tag_array() {
     let value = BotState::Charging(
         0.42,
         Vec3Like {
@@ -301,10 +301,49 @@ fn enum_encoding_shape_contains_variant_tag_and_data() {
         },
     );
     let encoded = <BotState as DeriveVariant>::to_variant(&value);
-    let obj = encoded.as_object().expect("enum encodes as object");
+    let arr = encoded.as_array().expect("fielded enum encodes as array");
+    assert_eq!(arr[0].as_u16(), Some(1), "slot 0 carries the tag");
+    assert_eq!(arr.len(), 3, "tag + one slot per field");
 
-    assert_eq!(obj.get("__variant").and_then(|v| v.as_u16()), Some(1));
-    assert!(obj.get("__data").is_some());
+    // Unit variants collapse to the bare tag: no container at all.
+    let unit = <BotState as DeriveVariant>::to_variant(&BotState::Idle);
+    assert_eq!(unit.as_u16(), Some(0));
+}
+
+#[test]
+fn enum_decodes_legacy_variant_data_object_form() {
+    // Shape emitted by pre-compact engine versions and scene tooling.
+    let mut obj = BTreeMap::<Arc<str>, VariantValue>::new();
+    obj.insert(Arc::from("__variant"), VariantValue::from(1u16));
+    obj.insert(
+        Arc::from("__data"),
+        VariantValue::Array(vec![
+            VariantValue::from(0.42f32),
+            <Vec3Like as DeriveVariant>::to_variant(&Vec3Like {
+                x: 0.0,
+                y: 0.0,
+                z: -1.0,
+            }),
+        ]),
+    );
+    let legacy = VariantValue::Object(obj);
+
+    let expected = BotState::Charging(
+        0.42,
+        Vec3Like {
+            x: 0.0,
+            y: 0.0,
+            z: -1.0,
+        },
+    );
+    assert_eq!(legacy.parse::<BotState>(), Ok(expected.clone()));
+    assert_eq!(legacy.into_parse::<BotState>(), Ok(expected));
+
+    // Legacy unit form: object with only a tag.
+    let mut obj = BTreeMap::<Arc<str>, VariantValue>::new();
+    obj.insert(Arc::from("__variant"), VariantValue::from(0u16));
+    let legacy_unit = VariantValue::Object(obj);
+    assert_eq!(legacy_unit.parse::<BotState>(), Ok(BotState::Idle));
 }
 
 #[test]
@@ -460,12 +499,29 @@ fn compact_enum_u16_tag_roundtrip_and_shape() {
         },
     );
     let encoded = <CompactBotState as DeriveVariant>::to_variant(&value);
-    let obj = encoded.as_object().expect("enum object");
-    assert_eq!(obj.get("__variant").and_then(|v| v.as_u16()), Some(1));
-    assert!(obj.get("__data").and_then(|v| v.as_array()).is_some());
+    let arr = encoded.as_array().expect("enum array");
+    assert_eq!(arr[0].as_u16(), Some(1));
+    assert_eq!(arr.len(), 3);
     let decoded =
         <CompactBotState as DeriveVariant>::from_variant(&encoded).expect("decode compact enum");
     assert_eq!(decoded, value);
+}
+
+#[test]
+fn named_enum_variant_encodes_positional_fields() {
+    let value = BotState::Fired {
+        power: 0.5,
+        direction: Vec3Like {
+            x: 1.0,
+            y: 2.0,
+            z: 3.0,
+        },
+    };
+    let encoded = <BotState as DeriveVariant>::to_variant(&value);
+    let arr = encoded.as_array().expect("named variant encodes as array");
+    assert_eq!(arr[0].as_u16(), Some(2));
+    assert_eq!(arr[1].as_f32(), Some(0.5), "fields follow declaration order");
+    assert_eq!(encoded.parse::<BotState>(), Ok(value));
 }
 
 #[test]

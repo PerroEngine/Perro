@@ -39,6 +39,13 @@ where
     }
 }
 
+/// Interned `Result` tag; clone is one atomic increment, no allocation.
+fn result_tag(ok: bool) -> Arc<str> {
+    static OK: std::sync::LazyLock<Arc<str>> = std::sync::LazyLock::new(|| Arc::from("Ok"));
+    static ERR: std::sync::LazyLock<Arc<str>> = std::sync::LazyLock::new(|| Arc::from("Err"));
+    Arc::clone(if ok { &OK } else { &ERR })
+}
+
 impl<T, E> DeriveVariant for Result<T, E>
 where
     T: DeriveVariant,
@@ -46,9 +53,17 @@ where
 {
     #[inline]
     fn from_variant(value: &Variant) -> Option<Self> {
-        let obj = value.as_object()?;
-        let tag = obj.get("__variant")?.as_str()?;
-        let data = obj.get("__data")?;
+        // Compact form: `["Ok"|"Err", payload]`.
+        let (tag, data) = if let Some(arr) = value.as_array() {
+            if arr.len() != 2 {
+                return None;
+            }
+            (arr[0].as_str()?, &arr[1])
+        } else {
+            // Legacy `{__variant, __data}` object form.
+            let obj = value.as_object()?;
+            (obj.get("__variant")?.as_str()?, obj.get("__data")?)
+        };
         match tag {
             "Ok" => T::from_variant(data).map(Ok),
             "Err" => E::from_variant(data).map(Err),
@@ -58,15 +73,27 @@ where
 
     #[inline]
     fn from_owned_variant(value: Variant) -> Option<Self> {
-        let mut obj = match value {
-            Variant::Object(obj) => obj,
+        let (tag, data) = match value {
+            Variant::Array(arr) => {
+                if arr.len() != 2 {
+                    return None;
+                }
+                let mut it = arr.into_iter();
+                let tag = match it.next()? {
+                    Variant::String(tag) => tag,
+                    _ => return None,
+                };
+                (tag, it.next()?)
+            }
+            Variant::Object(mut obj) => {
+                let tag = match obj.remove("__variant")? {
+                    Variant::String(tag) => tag,
+                    _ => return None,
+                };
+                (tag, obj.remove("__data")?)
+            }
             _ => return None,
         };
-        let tag = match obj.remove("__variant")? {
-            Variant::String(tag) => tag,
-            _ => return None,
-        };
-        let data = obj.remove("__data")?;
         match tag.as_ref() {
             "Ok" => T::from_owned_variant(data).map(Ok),
             "Err" => E::from_owned_variant(data).map(Err),
@@ -76,34 +103,20 @@ where
 
     #[inline]
     fn to_variant(&self) -> Variant {
-        let mut obj = BTreeMap::new();
-        match self {
-            Ok(value) => {
-                obj.insert(Arc::from("__variant"), Variant::String(Arc::from("Ok")));
-                obj.insert(Arc::from("__data"), value.to_variant());
-            }
-            Err(err) => {
-                obj.insert(Arc::from("__variant"), Variant::String(Arc::from("Err")));
-                obj.insert(Arc::from("__data"), err.to_variant());
-            }
-        }
-        Variant::Object(obj)
+        let (ok, data) = match self {
+            Ok(value) => (true, value.to_variant()),
+            Err(err) => (false, err.to_variant()),
+        };
+        Variant::Array(vec![Variant::String(result_tag(ok)), data])
     }
 
     #[inline]
     fn into_variant(self) -> Variant {
-        let mut obj = BTreeMap::new();
-        match self {
-            Ok(value) => {
-                obj.insert(Arc::from("__variant"), Variant::String(Arc::from("Ok")));
-                obj.insert(Arc::from("__data"), value.into_variant());
-            }
-            Err(err) => {
-                obj.insert(Arc::from("__variant"), Variant::String(Arc::from("Err")));
-                obj.insert(Arc::from("__data"), err.into_variant());
-            }
-        }
-        Variant::Object(obj)
+        let (ok, data) = match self {
+            Ok(value) => (true, value.into_variant()),
+            Err(err) => (false, err.into_variant()),
+        };
+        Variant::Array(vec![Variant::String(result_tag(ok)), data])
     }
 }
 

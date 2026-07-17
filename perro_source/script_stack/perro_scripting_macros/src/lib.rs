@@ -529,16 +529,21 @@ fn derive_state_field_enum(
     if options.struct_mode == StructMode::Array {
         // Struct-only option. Keep permissive to avoid errors on shared attrs.
     }
+    // Legacy `{__variant, __data}` object arms: parse-only, kept so values
+    // encoded by older engine versions (and scene-authored objects) decode.
     let mut from_arms = Vec::new();
     let mut from_owned_arms = Vec::new();
     let mut from_unit_string_arms = Vec::new();
     let mut from_owned_unit_string_arms = Vec::new();
+    // Compact form is what to/into emit now: unit -> bare tag,
+    // fielded -> Array[tag, fields...] (named fields positional).
+    let mut unit_number_arms = Vec::new();
+    let mut compact_from_arms = Vec::new();
+    let mut compact_from_owned_arms = Vec::new();
     let mut to_arms = Vec::new();
     let mut into_arms = Vec::new();
     let mut codec_hints = Vec::new();
     let mut unit_tag = 0u16;
-    let variant_key = shared_arc_str("__variant");
-    let data_key = shared_arc_str("__data");
     let mut default_variant = None;
 
     for variant in variants {
@@ -562,6 +567,29 @@ fn derive_state_field_enum(
                 from_owned_unit_string_arms.push(quote! {
                     #variant_name => Some(Self::#variant_ident),
                 });
+                unit_number_arms.push(quote! {
+                    #numeric_tag => Some(Self::#variant_ident),
+                });
+                let tag_pat = match options.enum_tag_mode {
+                    EnumTagMode::String => quote! { #variant_name },
+                    EnumTagMode::U16 => quote! { #numeric_tag },
+                };
+                compact_from_arms.push(quote! {
+                    #tag_pat => {
+                        if data.len() != 1usize {
+                            return None;
+                        }
+                        Some(Self::#variant_ident)
+                    }
+                });
+                compact_from_owned_arms.push(quote! {
+                    #tag_pat => {
+                        if _len != 1usize {
+                            return None;
+                        }
+                        Some(Self::#variant_ident)
+                    }
+                });
                 match options.enum_tag_mode {
                     EnumTagMode::String => {
                         from_arms.push(quote! {
@@ -571,20 +599,12 @@ fn derive_state_field_enum(
                             #variant_name => Some(Self::#variant_ident),
                         });
                         to_arms.push(quote! {
-                            Self::#variant_ident => {
-                                out.insert(
-                                    #variant_key,
-                                    ::perro_api::variant::Variant::String(#variant_name_arc),
-                                );
-                            }
+                            Self::#variant_ident =>
+                                ::perro_api::variant::Variant::String(#variant_name_arc),
                         });
                         into_arms.push(quote! {
-                            Self::#variant_ident => {
-                                out.insert(
-                                    #variant_key,
-                                    ::perro_api::variant::Variant::String(#variant_name_arc),
-                                );
-                            }
+                            Self::#variant_ident =>
+                                ::perro_api::variant::Variant::String(#variant_name_arc),
                         });
                     }
                     EnumTagMode::U16 => {
@@ -595,20 +615,12 @@ fn derive_state_field_enum(
                             #numeric_tag => Some(Self::#variant_ident),
                         });
                         to_arms.push(quote! {
-                            Self::#variant_ident => {
-                                out.insert(
-                                    #variant_key,
-                                    ::perro_api::variant::Variant::from(#numeric_tag),
-                                );
-                            }
+                            Self::#variant_ident =>
+                                ::perro_api::variant::Variant::from(#numeric_tag),
                         });
                         into_arms.push(quote! {
-                            Self::#variant_ident => {
-                                out.insert(
-                                    #variant_key,
-                                    ::perro_api::variant::Variant::from(#numeric_tag),
-                                );
-                            }
+                            Self::#variant_ident =>
+                                ::perro_api::variant::Variant::from(#numeric_tag),
                         });
                     }
                 }
@@ -616,10 +628,12 @@ fn derive_state_field_enum(
             Fields::Unnamed(fields) => {
                 let mut from_values = Vec::new();
                 let mut from_owned_values = Vec::new();
+                let mut compact_from_values = Vec::new();
                 let mut to_values = Vec::new();
                 let mut into_values = Vec::new();
                 let mut bindings = Vec::new();
                 let expected_len = fields.unnamed.len();
+                let compact_len = expected_len + 1;
 
                 for (idx, field) in fields.unnamed.into_iter().enumerate() {
                     let field_ty = field.ty;
@@ -631,11 +645,15 @@ fn derive_state_field_enum(
                         proc_macro2::Span::call_site(),
                     );
                     let index = syn::Index::from(idx);
+                    let compact_index = syn::Index::from(idx + 1);
                     from_values.push(quote! {
                         <#field_ty as ::perro_api::variant::DeriveVariant>::from_variant(data.get(#index)?)?
                     });
                     from_owned_values.push(quote! {
                         <#field_ty as ::perro_api::variant::DeriveVariant>::from_owned_variant(data.next()?)?
+                    });
+                    compact_from_values.push(quote! {
+                        <#field_ty as ::perro_api::variant::DeriveVariant>::from_variant(data.get(#compact_index)?)?
                     });
                     to_values.push(quote! {
                         ::perro_api::variant::DeriveVariant::to_variant(#binding)
@@ -648,34 +666,42 @@ fn derive_state_field_enum(
 
                 let numeric_tag = unit_tag;
                 unit_tag = unit_tag.wrapping_add(1);
+                let (tag_pat, tag_expr) = match options.enum_tag_mode {
+                    EnumTagMode::String => (
+                        quote! { #variant_name },
+                        quote! { ::perro_api::variant::Variant::String(#variant_name_arc) },
+                    ),
+                    EnumTagMode::U16 => (
+                        quote! { #numeric_tag },
+                        quote! { ::perro_api::variant::Variant::from(#numeric_tag) },
+                    ),
+                };
+                to_arms.push(quote! {
+                    Self::#variant_ident( #( #bindings ),* ) =>
+                        ::perro_api::variant::Variant::Array(vec![#tag_expr, #(#to_values),*]),
+                });
+                into_arms.push(quote! {
+                    Self::#variant_ident( #( #bindings ),* ) =>
+                        ::perro_api::variant::Variant::Array(vec![#tag_expr, #(#into_values),*]),
+                });
+                compact_from_arms.push(quote! {
+                    #tag_pat => {
+                        if data.len() != #compact_len {
+                            return None;
+                        }
+                        Some(Self::#variant_ident( #(#compact_from_values),* ))
+                    }
+                });
+                compact_from_owned_arms.push(quote! {
+                    #tag_pat => {
+                        if _len != #compact_len {
+                            return None;
+                        }
+                        Some(Self::#variant_ident( #(#from_owned_values),* ))
+                    }
+                });
                 match options.enum_tag_mode {
                     EnumTagMode::String => {
-                        to_arms.push(quote! {
-                            Self::#variant_ident( #( #bindings ),* ) => {
-                                out.insert(
-                                    #variant_key,
-                                    ::perro_api::variant::Variant::String(#variant_name_arc),
-                                );
-                                let data = vec![#(#to_values),*];
-                                out.insert(
-                                    #data_key,
-                                    ::perro_api::variant::Variant::Array(data),
-                                );
-                            }
-                        });
-                        into_arms.push(quote! {
-                            Self::#variant_ident( #( #bindings ),* ) => {
-                                out.insert(
-                                    #variant_key,
-                                    ::perro_api::variant::Variant::String(#variant_name_arc),
-                                );
-                                let data = vec![#(#into_values),*];
-                                out.insert(
-                                    #data_key,
-                                    ::perro_api::variant::Variant::Array(data),
-                                );
-                            }
-                        });
                         from_arms.push(quote! {
                             #variant_name => {
                                 let data = obj.get("__data")?.as_array()?;
@@ -700,32 +726,6 @@ fn derive_state_field_enum(
                         });
                     }
                     EnumTagMode::U16 => {
-                        to_arms.push(quote! {
-                            Self::#variant_ident( #( #bindings ),* ) => {
-                                out.insert(
-                                    #variant_key,
-                                    ::perro_api::variant::Variant::from(#numeric_tag),
-                                );
-                                let data = vec![#(#to_values),*];
-                                out.insert(
-                                    #data_key,
-                                    ::perro_api::variant::Variant::Array(data),
-                                );
-                            }
-                        });
-                        into_arms.push(quote! {
-                            Self::#variant_ident( #( #bindings ),* ) => {
-                                out.insert(
-                                    #variant_key,
-                                    ::perro_api::variant::Variant::from(#numeric_tag),
-                                );
-                                let data = vec![#(#into_values),*];
-                                out.insert(
-                                    #data_key,
-                                    ::perro_api::variant::Variant::Array(data),
-                                );
-                            }
-                        });
                         from_arms.push(quote! {
                             #numeric_tag => {
                                 let data = obj.get("__data")?.as_array()?;
@@ -754,9 +754,12 @@ fn derive_state_field_enum(
             Fields::Named(fields) => {
                 let mut from_fields = Vec::new();
                 let mut from_owned_fields = Vec::new();
-                let mut to_fields = Vec::new();
-                let mut into_fields = Vec::new();
+                let mut compact_from_fields = Vec::new();
+                let mut compact_from_owned_fields = Vec::new();
+                let mut to_values = Vec::new();
+                let mut into_values = Vec::new();
                 let mut bindings = Vec::new();
+                let mut field_count = 0usize;
 
                 for field in fields.named {
                     let Some(field_ident) = field.ident else {
@@ -767,60 +770,74 @@ fn derive_state_field_enum(
                         __perro_hint_use_derive_variant::<#field_ty>();
                     });
                     let key = field_ident.to_string();
-                    let key_arc = shared_arc_str(&key);
+                    let compact_index = syn::Index::from(field_count + 1);
+                    field_count += 1;
                     from_fields.push(quote! {
                         #field_ident: <#field_ty as ::perro_api::variant::DeriveVariant>::from_variant(data.get(#key)?)?
                     });
                     from_owned_fields.push(quote! {
                         #field_ident: <#field_ty as ::perro_api::variant::DeriveVariant>::from_owned_variant(data.remove(#key)?)?
                     });
-                    to_fields.push(quote! {
-                        data.insert(
-                            #key_arc,
-                            ::perro_api::variant::DeriveVariant::to_variant(#field_ident),
-                        );
+                    // Compact form stores named fields positionally in
+                    // declaration order, same stability class as the u16 tag.
+                    compact_from_fields.push(quote! {
+                        #field_ident: <#field_ty as ::perro_api::variant::DeriveVariant>::from_variant(data.get(#compact_index)?)?
                     });
-                    into_fields.push(quote! {
-                        data.insert(
-                            #key_arc,
-                            ::perro_api::variant::DeriveVariant::into_variant(#field_ident),
-                        );
+                    compact_from_owned_fields.push(quote! {
+                        #field_ident: <#field_ty as ::perro_api::variant::DeriveVariant>::from_owned_variant(data.next()?)?
+                    });
+                    to_values.push(quote! {
+                        ::perro_api::variant::DeriveVariant::to_variant(#field_ident)
+                    });
+                    into_values.push(quote! {
+                        ::perro_api::variant::DeriveVariant::into_variant(#field_ident)
                     });
                     bindings.push(field_ident);
                 }
 
+                let compact_len = field_count + 1;
                 let numeric_tag = unit_tag;
                 unit_tag = unit_tag.wrapping_add(1);
+                let (tag_pat, tag_expr) = match options.enum_tag_mode {
+                    EnumTagMode::String => (
+                        quote! { #variant_name },
+                        quote! { ::perro_api::variant::Variant::String(#variant_name_arc) },
+                    ),
+                    EnumTagMode::U16 => (
+                        quote! { #numeric_tag },
+                        quote! { ::perro_api::variant::Variant::from(#numeric_tag) },
+                    ),
+                };
+                to_arms.push(quote! {
+                    Self::#variant_ident { #( #bindings ),* } =>
+                        ::perro_api::variant::Variant::Array(vec![#tag_expr, #(#to_values),*]),
+                });
+                into_arms.push(quote! {
+                    Self::#variant_ident { #( #bindings ),* } =>
+                        ::perro_api::variant::Variant::Array(vec![#tag_expr, #(#into_values),*]),
+                });
+                compact_from_arms.push(quote! {
+                    #tag_pat => {
+                        if data.len() != #compact_len {
+                            return None;
+                        }
+                        Some(Self::#variant_ident {
+                            #(#compact_from_fields),*
+                        })
+                    }
+                });
+                compact_from_owned_arms.push(quote! {
+                    #tag_pat => {
+                        if _len != #compact_len {
+                            return None;
+                        }
+                        Some(Self::#variant_ident {
+                            #(#compact_from_owned_fields),*
+                        })
+                    }
+                });
                 match options.enum_tag_mode {
                     EnumTagMode::String => {
-                        to_arms.push(quote! {
-                            Self::#variant_ident { #( #bindings ),* } => {
-                                out.insert(
-                                    #variant_key,
-                                    ::perro_api::variant::Variant::String(#variant_name_arc),
-                                );
-                                let mut data = ::std::collections::BTreeMap::<::std::sync::Arc<str>, ::perro_api::variant::Variant>::new();
-                                #(#to_fields)*
-                                out.insert(
-                                    #data_key,
-                                    ::perro_api::variant::Variant::Object(data),
-                                );
-                            }
-                        });
-                        into_arms.push(quote! {
-                            Self::#variant_ident { #( #bindings ),* } => {
-                                out.insert(
-                                    #variant_key,
-                                    ::perro_api::variant::Variant::String(#variant_name_arc),
-                                );
-                                let mut data = ::std::collections::BTreeMap::<::std::sync::Arc<str>, ::perro_api::variant::Variant>::new();
-                                #(#into_fields)*
-                                out.insert(
-                                    #data_key,
-                                    ::perro_api::variant::Variant::Object(data),
-                                );
-                            }
-                        });
                         from_arms.push(quote! {
                             #variant_name => {
                                 let data = obj.get("__data")?.as_object()?;
@@ -842,34 +859,6 @@ fn derive_state_field_enum(
                         });
                     }
                     EnumTagMode::U16 => {
-                        to_arms.push(quote! {
-                            Self::#variant_ident { #( #bindings ),* } => {
-                                out.insert(
-                                    #variant_key,
-                                    ::perro_api::variant::Variant::from(#numeric_tag),
-                                );
-                                let mut data = ::std::collections::BTreeMap::<::std::sync::Arc<str>, ::perro_api::variant::Variant>::new();
-                                #(#to_fields)*
-                                out.insert(
-                                    #data_key,
-                                    ::perro_api::variant::Variant::Object(data),
-                                );
-                            }
-                        });
-                        into_arms.push(quote! {
-                            Self::#variant_ident { #( #bindings ),* } => {
-                                out.insert(
-                                    #variant_key,
-                                    ::perro_api::variant::Variant::from(#numeric_tag),
-                                );
-                                let mut data = ::std::collections::BTreeMap::<::std::sync::Arc<str>, ::perro_api::variant::Variant>::new();
-                                #(#into_fields)*
-                                out.insert(
-                                    #data_key,
-                                    ::perro_api::variant::Variant::Object(data),
-                                );
-                            }
-                        });
                         from_arms.push(quote! {
                             #numeric_tag => {
                                 let data = obj.get("__data")?.as_object()?;
@@ -931,6 +920,38 @@ fn derive_state_field_enum(
             let tag = tag_value.as_u16()?;
         },
     };
+    let compact_tag_read = match options.enum_tag_mode {
+        EnumTagMode::String => quote! {
+            let tag = data.first()?.as_str()?;
+        },
+        EnumTagMode::U16 => quote! {
+            let tag = data.first()?.as_u16()?;
+        },
+    };
+    let compact_tag_owned_read = match options.enum_tag_mode {
+        EnumTagMode::String => quote! {
+            let tag = match data.next()? {
+                ::perro_api::variant::Variant::String(tag) => tag,
+                _ => return None,
+            };
+            let tag = tag.as_ref();
+        },
+        EnumTagMode::U16 => quote! {
+            let tag = data.next()?.as_u16()?;
+        },
+    };
+    // Bare-number tag decodes a unit variant (the compact emit for units).
+    let bare_number_unit = match options.enum_tag_mode {
+        EnumTagMode::String => None,
+        EnumTagMode::U16 => Some(quote! {
+            if let Some(tag) = value.as_u16() {
+                return match tag {
+                    #(#unit_number_arms)*
+                    _ => None,
+                };
+            }
+        }),
+    };
 
     let expanded = quote! {
         impl #impl_generics ::perro_api::variant::DeriveVariant for #ident #ty_generics #where_clause {
@@ -941,6 +962,14 @@ fn derive_state_field_enum(
                 if let Some(tag) = value.as_str() {
                     return match tag {
                         #(#from_unit_string_arms)*
+                        _ => None,
+                    };
+                }
+                #bare_number_unit
+                if let Some(data) = value.as_array() {
+                    #compact_tag_read
+                    return match tag {
+                        #(#compact_from_arms)*
                         _ => None,
                     };
                 }
@@ -962,7 +991,17 @@ fn derive_state_field_enum(
                         _ => None,
                     };
                 }
+                #bare_number_unit
                 let mut obj = match value {
+                    ::perro_api::variant::Variant::Array(data) => {
+                        let _len = data.len();
+                        let mut data = data.into_iter();
+                        #compact_tag_owned_read
+                        return match tag {
+                            #(#compact_from_owned_arms)*
+                            _ => None,
+                        };
+                    }
                     ::perro_api::variant::Variant::Object(obj) => obj,
                     _ => return None,
                 };
@@ -974,19 +1013,15 @@ fn derive_state_field_enum(
             }
 
             fn to_variant(&self) -> ::perro_api::variant::Variant {
-                let mut out = ::std::collections::BTreeMap::<::std::sync::Arc<str>, ::perro_api::variant::Variant>::new();
                 match self {
-                    #(#to_arms),*
+                    #(#to_arms)*
                 }
-                ::perro_api::variant::Variant::Object(out)
             }
 
             fn into_variant(self) -> ::perro_api::variant::Variant {
-                let mut out = ::std::collections::BTreeMap::<::std::sync::Arc<str>, ::perro_api::variant::Variant>::new();
                 match self {
-                    #(#into_arms),*
+                    #(#into_arms)*
                 }
-                ::perro_api::variant::Variant::Object(out)
             }
         }
 

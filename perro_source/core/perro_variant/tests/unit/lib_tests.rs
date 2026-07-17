@@ -861,9 +861,9 @@ fn test_derive_variant_rust_std_qol_roundtrips() {
 
     let ok: Result<i32, String> = Ok(7);
     let encoded = ok.to_variant();
-    let obj = encoded.as_object().expect("result encodes as object");
-    assert_eq!(obj.get("__variant").and_then(Variant::as_str), Some("Ok"));
-    assert_eq!(obj.get("__data").and_then(Variant::as_i32), Some(7));
+    let arr = encoded.as_array().expect("result encodes as [tag, data]");
+    assert_eq!(arr[0].as_str(), Some("Ok"));
+    assert_eq!(arr[1].as_i32(), Some(7));
     assert_eq!(
         <Result<i32, String> as DeriveVariant>::from_variant(&encoded),
         Some(Ok(7))
@@ -871,12 +871,26 @@ fn test_derive_variant_rust_std_qol_roundtrips() {
 
     let err: Result<i32, String> = Err("bad".to_string());
     let encoded = err.into_variant();
-    let obj = encoded.as_object().expect("result encodes as object");
-    assert_eq!(obj.get("__variant").and_then(Variant::as_str), Some("Err"));
-    assert_eq!(obj.get("__data").and_then(Variant::as_str), Some("bad"));
+    let arr = encoded.as_array().expect("result encodes as [tag, data]");
+    assert_eq!(arr[0].as_str(), Some("Err"));
+    assert_eq!(arr[1].as_str(), Some("bad"));
     assert_eq!(
         <Result<i32, String> as DeriveVariant>::from_owned_variant(encoded),
         Some(Err("bad".to_string()))
+    );
+
+    // Legacy object-form Result still decodes.
+    let mut legacy = std::collections::BTreeMap::<std::sync::Arc<str>, Variant>::new();
+    legacy.insert("__variant".into(), Variant::from("Ok"));
+    legacy.insert("__data".into(), Variant::from(7_i32));
+    let legacy = Variant::Object(legacy);
+    assert_eq!(
+        <Result<i32, String> as DeriveVariant>::from_variant(&legacy),
+        Some(Ok(7))
+    );
+    assert_eq!(
+        <Result<i32, String> as DeriveVariant>::from_owned_variant(legacy),
+        Some(Ok(7))
     );
 
     let ch = 'x';
