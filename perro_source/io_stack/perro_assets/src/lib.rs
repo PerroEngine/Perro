@@ -5,3 +5,7 @@ pub mod packer;
 pub mod walkdir;
 
 pub use packer::*;
+
+#[cfg(test)]
+#[path = "../tests/unit/archive_fuzz_tests.rs"]
+mod archive_fuzz_tests;

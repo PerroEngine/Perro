@@ -128,6 +128,10 @@ pub fn normalized_static_mesh_lookup_alias(source: &str) -> Option<String> {
     }
 }
 
+#[cfg(test)]
+#[path = "../../tests/unit/trimesh_fuzz_tests.rs"]
+mod trimesh_fuzz_tests;
+
 pub fn decode_pmesh_trimesh(bytes: &[u8], sx: f32, sy: f32, sz: f32) -> Option<TriMeshData> {
     if bytes.len() < 33 || &bytes[0..5] != b"PMESH" {
         return None;

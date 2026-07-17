@@ -200,6 +200,10 @@ impl NavMesh3D {
     }
 }
 
+#[cfg(test)]
+#[path = "../../tests/unit/pnav_fuzz_tests.rs"]
+mod pnav_fuzz_tests;
+
 pub fn parse_pnav_text(text: &str) -> Result<NavMesh3D, String> {
     parse_pnav_resource_text(text).map(|resource| resource.mesh)
 }

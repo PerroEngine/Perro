@@ -1,6 +1,10 @@
 mod mesh;
 mod texture;
 
+#[cfg(test)]
+#[path = "../tests/unit/decoder_fuzz_tests.rs"]
+mod decoder_fuzz_tests;
+
 pub use mesh::{
     DecodedLod, DecodedMesh, DecodedMeshlet, MeshRange, MeshVertex, StaticMeshBytesLookup,
     decode_gltf_mesh, decode_pmesh, load_mesh_from_source, load_mesh_from_source_no_dynamic_lods,
