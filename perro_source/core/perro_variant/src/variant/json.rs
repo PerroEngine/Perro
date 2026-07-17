@@ -217,17 +217,17 @@ pub(super) fn number_to_json_value(number: Number) -> JsonValue {
         Number::I16(v) => JsonValue::Number(JsonNumber::from(v)),
         Number::I32(v) => JsonValue::Number(JsonNumber::from(v)),
         Number::I64(v) => JsonValue::Number(JsonNumber::from(v)),
-        Number::I128(v) => match i64::try_from(v) {
+        Number::I128(v) => match i64::try_from(v.get()) {
             Ok(v) => JsonValue::Number(JsonNumber::from(v)),
-            Err(_) => JsonValue::String(v.to_string()),
+            Err(_) => JsonValue::String(v.get().to_string()),
         },
         Number::U8(v) => JsonValue::Number(JsonNumber::from(v)),
         Number::U16(v) => JsonValue::Number(JsonNumber::from(v)),
         Number::U32(v) => JsonValue::Number(JsonNumber::from(v)),
         Number::U64(v) => JsonValue::Number(JsonNumber::from(v)),
-        Number::U128(v) => match u64::try_from(v) {
+        Number::U128(v) => match u64::try_from(v.get()) {
             Ok(v) => JsonValue::Number(JsonNumber::from(v)),
-            Err(_) => JsonValue::String(v.to_string()),
+            Err(_) => JsonValue::String(v.get().to_string()),
         },
         Number::F32(v) => float_to_json(v as f64),
         Number::F64(v) => float_to_json(v),
@@ -725,12 +725,12 @@ pub(super) fn variant_to_u32(value: &Variant) -> Option<u32> {
         Number::I16(v) => u32::try_from(v).ok(),
         Number::I32(v) => u32::try_from(v).ok(),
         Number::I64(v) => u32::try_from(v).ok(),
-        Number::I128(v) => u32::try_from(v).ok(),
+        Number::I128(v) => u32::try_from(v.get()).ok(),
         Number::U8(v) => Some(v as u32),
         Number::U16(v) => Some(v as u32),
         Number::U32(v) => Some(v),
         Number::U64(v) => u32::try_from(v).ok(),
-        Number::U128(v) => u32::try_from(v).ok(),
+        Number::U128(v) => u32::try_from(v.get()).ok(),
         Number::F32(_) | Number::F64(_) => None,
     }
 }

@@ -46,8 +46,14 @@ fn test_number_as_i64_lossy() {
     assert_eq!(Number::U32(1000).as_i64_lossy(), Some(1000i64));
 
     // Out of range values
-    assert_eq!(Number::U128(u128::MAX).as_i64_lossy(), None);
-    assert_eq!(Number::I128(i128::MAX).as_i64_lossy(), None);
+    assert_eq!(
+        Number::U128(crate::PackedU128::new(u128::MAX)).as_i64_lossy(),
+        None
+    );
+    assert_eq!(
+        Number::I128(crate::PackedI128::new(i128::MAX)).as_i64_lossy(),
+        None
+    );
 
     // Floats return None
     assert_eq!(Number::F32(3.5).as_i64_lossy(), None);

@@ -500,7 +500,7 @@ impl DeriveVariant for PostProcessSet {
     #[inline]
     fn from_owned_variant(value: Variant) -> Option<Self> {
         match value {
-            Variant::EngineStruct(EngineStruct::PostProcessSet(v)) => Some(v),
+            Variant::EngineStruct(EngineStruct::PostProcessSet(v)) => Some(*v),
             _ => None,
         }
     }

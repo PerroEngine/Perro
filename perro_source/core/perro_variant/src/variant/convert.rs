@@ -44,7 +44,7 @@ impl From<i64> for Variant {
 impl From<i128> for Variant {
     #[inline]
     fn from(v: i128) -> Self {
-        Variant::Number(Number::I128(v))
+        Variant::Number(Number::I128(PackedI128::new(v)))
     }
 }
 
@@ -76,7 +76,7 @@ impl From<u64> for Variant {
 impl From<u128> for Variant {
     #[inline]
     fn from(v: u128) -> Self {
-        Variant::Number(Number::U128(v))
+        Variant::Number(Number::U128(PackedU128::new(v)))
     }
 }
 
@@ -307,13 +307,13 @@ impl From<Matrix2> for Variant {
 impl From<Matrix3> for Variant {
     #[inline]
     fn from(v: Matrix3) -> Self {
-        Variant::EngineStruct(EngineStruct::Matrix3(v))
+        Variant::EngineStruct(EngineStruct::Matrix3(Box::new(v)))
     }
 }
 impl From<Matrix4> for Variant {
     #[inline]
     fn from(v: Matrix4) -> Self {
-        Variant::EngineStruct(EngineStruct::Matrix4(v))
+        Variant::EngineStruct(EngineStruct::Matrix4(Box::new(v)))
     }
 }
 impl From<Matrix<2, 2, f32>> for Variant {
@@ -337,13 +337,13 @@ impl From<Matrix<4, 4, f32>> for Variant {
 impl From<Transform2D> for Variant {
     #[inline]
     fn from(v: Transform2D) -> Self {
-        Variant::EngineStruct(EngineStruct::Transform2D(v))
+        Variant::EngineStruct(EngineStruct::Transform2D(Box::new(v)))
     }
 }
 impl From<Transform3D> for Variant {
     #[inline]
     fn from(v: Transform3D) -> Self {
-        Variant::EngineStruct(EngineStruct::Transform3D(v))
+        Variant::EngineStruct(EngineStruct::Transform3D(Box::new(v)))
     }
 }
 impl From<Quaternion> for Variant {
@@ -355,7 +355,7 @@ impl From<Quaternion> for Variant {
 impl From<PostProcessSet> for Variant {
     #[inline]
     fn from(v: PostProcessSet) -> Self {
-        Variant::EngineStruct(EngineStruct::PostProcessSet(v))
+        Variant::EngineStruct(EngineStruct::PostProcessSet(Box::new(v)))
     }
 }
 impl From<VisualAccessibilitySettings> for Variant {

@@ -80,7 +80,7 @@ impl Variant {
     #[inline]
     pub fn as_i128(&self) -> Option<i128> {
         match *self {
-            Variant::Number(Number::I128(v)) => Some(v),
+            Variant::Number(Number::I128(v)) => Some(v.get()),
             _ => None,
         }
     }
@@ -120,7 +120,7 @@ impl Variant {
     #[inline]
     pub fn as_u128(&self) -> Option<u128> {
         match *self {
-            Variant::Number(Number::U128(v)) => Some(v),
+            Variant::Number(Number::U128(v)) => Some(v.get()),
             _ => None,
         }
     }
@@ -359,7 +359,7 @@ impl Variant {
     #[inline]
     pub fn as_matrix3(&self) -> Option<Matrix3> {
         match self {
-            Variant::EngineStruct(EngineStruct::Matrix3(v)) => Some(*v),
+            Variant::EngineStruct(EngineStruct::Matrix3(v)) => Some(**v),
             _ => None,
         }
     }
@@ -367,7 +367,7 @@ impl Variant {
     #[inline]
     pub fn as_matrix4(&self) -> Option<Matrix4> {
         match self {
-            Variant::EngineStruct(EngineStruct::Matrix4(v)) => Some(*v),
+            Variant::EngineStruct(EngineStruct::Matrix4(v)) => Some(**v),
             _ => None,
         }
     }
@@ -431,7 +431,7 @@ impl Variant {
     #[inline]
     pub fn as_transform2(&self) -> Option<Transform2D> {
         match self {
-            Variant::EngineStruct(EngineStruct::Transform2D(t)) => Some(*t),
+            Variant::EngineStruct(EngineStruct::Transform2D(t)) => Some(**t),
             _ => None,
         }
     }
@@ -439,7 +439,7 @@ impl Variant {
     #[inline]
     pub fn as_transform3(&self) -> Option<Transform3D> {
         match self {
-            Variant::EngineStruct(EngineStruct::Transform3D(t)) => Some(*t),
+            Variant::EngineStruct(EngineStruct::Transform3D(t)) => Some(**t),
             _ => None,
         }
     }
@@ -465,7 +465,7 @@ impl Variant {
     #[inline]
     pub fn as_post_process_set(&self) -> Option<&PostProcessSet> {
         match self {
-            Variant::EngineStruct(EngineStruct::PostProcessSet(v)) => Some(v),
+            Variant::EngineStruct(EngineStruct::PostProcessSet(v)) => Some(v.as_ref()),
             _ => None,
         }
     }

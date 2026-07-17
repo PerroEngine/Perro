@@ -739,7 +739,7 @@ fn generate_call_param_binding(index: usize, param: &ScriptMethodParam) -> Optio
             "let {name} = match {param_ref} {{ Some(Variant::Number(perro_api::variant::Number::I64(v))) => *v, Some(_) => return Variant::Null, None => 0_i64 }};"
         ),
         "i128" => format!(
-            "let {name} = match {param_ref} {{ Some(Variant::Number(perro_api::variant::Number::I128(v))) => *v, Some(_) => return Variant::Null, None => 0_i128 }};"
+            "let {name} = match {param_ref} {{ Some(Variant::Number(perro_api::variant::Number::I128(v))) => v.get(), Some(_) => return Variant::Null, None => 0_i128 }};"
         ),
         "isize" => format!(
             "let {name} = match {param_ref} {{ Some(Variant::Number(perro_api::variant::Number::I64(v))) => match isize::try_from(*v) {{ Ok(v) => v, Err(_) => return Variant::Null }}, Some(_) => return Variant::Null, None => 0_isize }};"
@@ -757,7 +757,7 @@ fn generate_call_param_binding(index: usize, param: &ScriptMethodParam) -> Optio
             "let {name} = match {param_ref} {{ Some(Variant::Number(perro_api::variant::Number::U64(v))) => *v, Some(_) => return Variant::Null, None => 0_u64 }};"
         ),
         "u128" => format!(
-            "let {name} = match {param_ref} {{ Some(Variant::Number(perro_api::variant::Number::U128(v))) => *v, Some(_) => return Variant::Null, None => 0_u128 }};"
+            "let {name} = match {param_ref} {{ Some(Variant::Number(perro_api::variant::Number::U128(v))) => v.get(), Some(_) => return Variant::Null, None => 0_u128 }};"
         ),
         "usize" => format!(
             "let {name} = match {param_ref} {{ Some(Variant::Number(perro_api::variant::Number::U64(v))) => match usize::try_from(*v) {{ Ok(v) => v, Err(_) => return Variant::Null }}, Some(_) => return Variant::Null, None => 0_usize }};"

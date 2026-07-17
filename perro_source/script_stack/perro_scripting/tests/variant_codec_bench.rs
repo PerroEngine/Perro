@@ -1,6 +1,6 @@
-//! Timing probes for the `#[derive(Variant)]` codec hot path.
+﻿//! Timing probes for the `#[derive(Variant)]` codec hot path.
 //!
-//! Not asserted-on numbers — run release for signal:
+//! Not asserted-on numbers; run release for signal:
 //! `cargo test -p perro_scripting --release --test variant_codec_bench -- --nocapture`
 
 extern crate self as perro_api;
@@ -100,3 +100,4 @@ fn bench_enum_codec() {
         black_box(black_box(&array).clone());
     });
 }
+

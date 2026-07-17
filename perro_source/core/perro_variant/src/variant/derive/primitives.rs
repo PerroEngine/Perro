@@ -187,13 +187,13 @@ impl_statefield_signed!(i8, Number::I8(v) => v);
 impl_statefield_signed!(i16, Number::I16(v) => v);
 impl_statefield_signed!(i32, Number::I32(v) => v);
 impl_statefield_signed!(i64, Number::I64(v) => v);
-impl_statefield_signed!(i128, Number::I128(v) => v);
+impl_statefield_signed!(i128, Number::I128(v) => v.get());
 
 impl_statefield_unsigned!(u8, Number::U8(v) => v);
 impl_statefield_unsigned!(u16, Number::U16(v) => v);
 impl_statefield_unsigned!(u32, Number::U32(v) => v);
 impl_statefield_unsigned!(u64, Number::U64(v) => v);
-impl_statefield_unsigned!(u128, Number::U128(v) => v);
+impl_statefield_unsigned!(u128, Number::U128(v) => v.get());
 
 macro_rules! impl_nonzero_derive_variant {
     ($nonzero:ty, $inner:ty) => {
