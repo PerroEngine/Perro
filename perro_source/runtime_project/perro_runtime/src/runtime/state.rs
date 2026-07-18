@@ -353,7 +353,8 @@ pub(crate) struct DirtyState {
 pub(crate) use perro_runtime_render::{
     CollisionDebugState, DenseInstancePoseCache, LocaleTextBinding, LocaleTextField,
     LocaleTextState, Render2DState, Render3DState, RenderState, RenderUiState,
-    RetainedMeshDrawState, RetainedMeshInstanceState, UiButtonVisualState, UiSizeClampBaseline,
+    RetainedMeshDrawState, RetainedMeshInstanceState, UiButtonMotion, UiButtonVisualState,
+    UiSizeClampBaseline,
 };
 impl DirtyState {
     pub(crate) const FLAG_RERENDER: u16 = 1 << 0;

@@ -140,6 +140,7 @@ const UI_KOREAN_FONT_FAMILIES: &[&str] = &[
 
 pub struct UiPaintFrame<'a> {
     pub primitives: &'a [Arc<ClippedPrimitive>],
+    pub primitive_depths: &'a [Option<Arc<[f32]>>],
     pub textures_delta: &'a TexturesDelta,
     pub texture_size: [u32; 2],
     pub revision: u64,
@@ -227,6 +228,7 @@ pub(crate) struct EpaintUiPainter {
     shapes: Vec<ClippedShape>,
     shape_rotations: Vec<(f32, epaint::Pos2)>,
     primitives: Vec<Arc<ClippedPrimitive>>,
+    primitive_depths: Vec<Option<Arc<[f32]>>>,
     // Previous generation of `primitives`, kept alive for one rebuild so fresh
     // tessellations cannot reuse a freed Arc address while the GPU's
     // pointer-identity mesh signature still references it (ABA guard).
@@ -266,6 +268,7 @@ impl EpaintUiPainter {
             shapes: Vec::new(),
             shape_rotations: Vec::new(),
             primitives: Vec::new(),
+            primitive_depths: Vec::new(),
             prev_primitives: Vec::new(),
             node_cache: AHashMap::new(),
             ordered_nodes: Vec::new(),
@@ -396,6 +399,7 @@ impl EpaintUiPainter {
         // while the prior signature is still the comparison baseline.
         std::mem::swap(&mut self.prev_primitives, &mut self.primitives);
         self.primitives.clear();
+        self.primitive_depths.clear();
 
         // Only re-sort when the structure (id set / z-order) changed. A pure
         // content edit (e.g. color, text) leaves the order signature intact.
@@ -493,6 +497,8 @@ impl EpaintUiPainter {
                 NodeTess::Cached => {
                     if let Some(cached) = self.node_cache.get(&node) {
                         self.primitives.extend(cached.primitives.iter().cloned());
+                        self.primitive_depths
+                            .extend((0..cached.primitives.len()).map(|_| None));
                     }
                 }
                 NodeTess::CachedProjected { quad } => {
@@ -505,9 +511,13 @@ impl EpaintUiPainter {
                     // Projection mutates vertices, so the frame gets a deep
                     // copy; the cached unprojected meshes stay pristine.
                     let mut frame = deep_clone_primitives(&cached.primitives);
-                    project_label_primitives(&mut frame, label.rect, quad, viewport);
                     retain_nonempty_meshes(&mut frame);
-                    self.primitives.extend(frame.into_iter().map(Arc::new));
+                    let depths = project_label_primitives(&mut frame, label.rect, quad, viewport);
+                    for (primitive, depths) in frame.into_iter().zip(depths) {
+                        self.primitives.push(Arc::new(primitive));
+                        self.primitive_depths
+                            .push(label.depth_test.then(|| Arc::<[f32]>::from(depths)));
+                    }
                 }
                 NodeTess::Staged { shapes, rotations } => {
                     let mut tessellated = tessellator.tessellate_shapes(shapes);
@@ -526,9 +536,17 @@ impl EpaintUiPainter {
                         let unprojected: Vec<Arc<ClippedPrimitive>> =
                             tessellated.into_iter().map(Arc::new).collect();
                         let mut frame = deep_clone_primitives(&unprojected);
-                        project_label_primitives(&mut frame, rect, quad, viewport);
                         retain_nonempty_meshes(&mut frame);
-                        self.primitives.extend(frame.into_iter().map(Arc::new));
+                        let depths = project_label_primitives(&mut frame, rect, quad, viewport);
+                        let depth_test = matches!(
+                            nodes.get(&node),
+                            Some(UiDraw::Label(label)) if label.depth_test
+                        );
+                        for (primitive, depths) in frame.into_iter().zip(depths) {
+                            self.primitives.push(Arc::new(primitive));
+                            self.primitive_depths
+                                .push(depth_test.then(|| Arc::<[f32]>::from(depths)));
+                        }
                         if let Some(draw) = nodes.get(&node)
                             && let Some(stripped) = strip_projected_quad(draw)
                         {
@@ -550,6 +568,8 @@ impl EpaintUiPainter {
                     let node_primitives: Vec<Arc<ClippedPrimitive>> =
                         tessellated.into_iter().map(Arc::new).collect();
                     self.primitives.extend(node_primitives.iter().cloned());
+                    self.primitive_depths
+                        .extend((0..node_primitives.len()).map(|_| None));
                     if let Some(draw) = nodes.get(&node) {
                         self.node_cache.insert(
                             node,
@@ -599,6 +619,7 @@ impl UiPainter for EpaintUiPainter {
         }
         UiPaintFrame {
             primitives: &self.primitives,
+            primitive_depths: &self.primitive_depths,
             textures_delta: &self.textures_delta,
             texture_size: font_texture_size(&self.fonts),
             revision: self.paint_revision,

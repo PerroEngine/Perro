@@ -182,6 +182,7 @@ pub enum UiCommand {
         corner_radii: UiCornerRadiiState,
         padding: [f32; 4],
         projected_quad: Option<[[f32; 4]; 4]>,
+        depth_test: bool,
         fit_content: bool,
     },
     UpsertImage {

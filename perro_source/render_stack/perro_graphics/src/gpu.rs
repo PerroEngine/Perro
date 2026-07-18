@@ -586,6 +586,7 @@ pub struct RenderFrame<'a> {
     pub late_overlay_point_lights_2d_revision: u64,
     pub late_overlay_shadow_casters_2d: &'a [ShadowCaster2DState],
     pub ui_primitives: &'a [Arc<ClippedPrimitive>],
+    pub ui_primitive_depths: &'a [Option<Arc<[f32]>>],
     pub ui_textures_delta: &'a TexturesDelta,
     pub ui_texture_size: [u32; 2],
     pub ui_revision: u64,

@@ -433,6 +433,7 @@ impl PerroGraphics {
                     .late_overlay_point_lights_cache_revision,
                 late_overlay_shadow_casters_2d: &self.late_overlay_shadow_casters_cache,
                 ui_primitives: ui_paint.primitives,
+                ui_primitive_depths: ui_paint.primitive_depths,
                 ui_textures_delta: ui_paint.textures_delta,
                 ui_texture_size: ui_paint.texture_size,
                 ui_revision: ui_paint.revision,

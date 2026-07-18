@@ -7,17 +7,20 @@ struct UiUniform {
 @group(0) @binding(0) var<uniform> ui: UiUniform;
 @group(1) @binding(0) var font_tex: texture_2d<f32>;
 @group(1) @binding(1) var font_sampler: sampler;
+@group(2) @binding(0) var scene_depth: texture_depth_2d;
 
 struct VsIn {
     @location(0) pos: vec2<f32>,
     @location(1) uv: vec2<f32>,
-    @location(2) color: vec4<f32>,
+    @location(2) depth_test: vec2<f32>,
+    @location(3) color: vec4<f32>,
 };
 
 struct VsOut {
     @builtin(position) pos: vec4<f32>,
     @location(0) uv: vec2<f32>,
     @location(1) color: vec4<f32>,
+    @location(2) depth_test: vec2<f32>,
 };
 
 @vertex
@@ -28,6 +31,7 @@ fn vs_main(in: VsIn) -> VsOut {
     out.pos = vec4<f32>(x, y, 0.0, 1.0);
     out.uv = in.uv;
     out.color = in.color;
+    out.depth_test = in.depth_test;
     return out;
 }
 
@@ -40,6 +44,15 @@ fn linear_from_gamma_rgb(srgb: vec3<f32>) -> vec3<f32> {
 
 @fragment
 fn fs_main_linear_framebuffer(in: VsOut) -> @location(0) vec4<f32> {
+    if in.depth_test.y > 0.5 {
+        let size = textureDimensions(scene_depth);
+        let uv = clamp(in.pos.xy / ui.screen_size, vec2<f32>(0.0), vec2<f32>(0.999999));
+        let pixel = vec2<i32>(uv * vec2<f32>(size));
+        let surface_depth = textureLoad(scene_depth, pixel, 0);
+        if in.depth_test.x > surface_depth + 0.00001 {
+            discard;
+        }
+    }
     let sample = textureSample(font_tex, font_sampler, in.uv);
     let color = vec4<f32>(linear_from_gamma_rgb(in.color.rgb), in.color.a);
     return sample * color;

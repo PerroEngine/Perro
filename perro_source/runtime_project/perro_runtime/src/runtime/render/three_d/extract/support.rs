@@ -28,6 +28,7 @@ impl Runtime {
         node: NodeID,
         point: Vector3,
         camera: &Camera3DState,
+        candidates: &[NodeID],
     ) -> bool {
         let camera_position = Vec3::from_array(camera.position);
         let target = Vec3::new(point.x, point.y, point.z);
@@ -65,21 +66,10 @@ impl Runtime {
             return false;
         }
 
-        let candidates: Vec<NodeID> = self
-            .nodes
-            .iter()
-            .filter_map(|(candidate, scene_node)| {
-                if candidate == node {
-                    return None;
-                }
-                matches!(
-                    scene_node.data,
-                    SceneNodeData::MeshInstance3D(_) | SceneNodeData::MultiMeshInstance3D(_)
-                )
-                .then_some(candidate)
-            })
-            .collect();
-        for candidate in candidates {
+        for &candidate in candidates {
+            if candidate == node {
+                continue;
+            }
             let Some((visible, layers)) = self.nodes.get(candidate).and_then(|scene_node| {
                 let visible =
                     self.is_effectively_visible(candidate) && !self.is_under_ui_viewport(candidate);

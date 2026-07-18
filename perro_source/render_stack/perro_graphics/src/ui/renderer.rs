@@ -50,6 +50,7 @@ pub(crate) struct UiLabelDraw {
     pub(crate) corner_radii: UiCornerRadiiState,
     pub(crate) padding: [f32; 4],
     pub(crate) projected_quad: Option<[[f32; 4]; 4]>,
+    pub(crate) depth_test: bool,
     pub(crate) fit_content: bool,
 }
 
@@ -378,6 +379,7 @@ impl UiRenderer {
                 corner_radii,
                 padding,
                 projected_quad,
+                depth_test,
                 fit_content,
             } => self.upsert(
                 node,
@@ -395,6 +397,7 @@ impl UiRenderer {
                     corner_radii,
                     padding,
                     projected_quad,
+                    depth_test,
                     fit_content,
                 }),
             ),
@@ -650,6 +653,7 @@ mod tests {
                 [0.175, -0.125, 0.0, 1.0],
                 [-0.15, -0.1, 0.0, 1.0],
             ]),
+            depth_test: true,
             fit_content: true,
         });
 
@@ -657,8 +661,13 @@ mod tests {
 
         assert!(!paint.primitives.is_empty());
         assert!(!paint.textures_delta.set.is_empty());
-        for primitive in paint.primitives {
+        assert_eq!(paint.primitives.len(), paint.primitive_depths.len());
+        assert!(paint.primitive_depths.iter().any(Option::is_some));
+        for (primitive, depths) in paint.primitives.iter().zip(paint.primitive_depths) {
             if let epaint::Primitive::Mesh(mesh) = &primitive.primitive {
+                let depths = depths.as_deref().expect("projected label depths");
+                assert_eq!(depths.len(), mesh.vertices.len());
+                assert!(depths.iter().all(|depth| (0.0..=1.0).contains(depth)));
                 assert!(mesh.vertices.iter().all(|vertex| {
                     (320.0..=490.0).contains(&vertex.pos.x)
                         && (270.0..=325.0).contains(&vertex.pos.y)
@@ -689,6 +698,7 @@ mod tests {
             corner_radii: UiCornerRadiiState::default(),
             padding: [0.0; 4],
             projected_quad: Some(quad),
+            depth_test: true,
             fit_content: true,
         }
     }
@@ -763,6 +773,7 @@ mod tests {
             corner_radii: UiCornerRadiiState::default(),
             padding: [0.0; 4],
             projected_quad: None,
+            depth_test: false,
             fit_content: false,
         });
         let first_ptrs: Vec<*const epaint::ClippedPrimitive> = renderer

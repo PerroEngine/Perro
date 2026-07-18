@@ -249,6 +249,7 @@ impl Runtime {
             || scroll_input_changed
             || text_input_changed
             || dropdown_animation_changed
+            || !self.render_ui.button_motions.is_empty()
             || self.has_active_scroll_container_animation();
         if !has_extraction_work {
             if let (Some(timing), Some(total_start)) = (timing, total_start) {
@@ -394,6 +395,7 @@ impl Runtime {
             self.render_ui.computed_scales.remove(&node);
             self.render_ui.retained_rects.remove(&node);
             self.render_ui.button_states.remove(&node);
+            self.render_ui.button_motions.remove(&node);
             self.render_ui.interactive_scan_seen.remove(&node);
             self.render_ui.visible_buttons.retain(|id| *id != node);
             self.render_ui.visible_text_edits.retain(|id| *id != node);
@@ -504,7 +506,20 @@ impl Runtime {
             }
             let effective_z = self.ui_effective_z(node);
             let rect_state = if let Some(rect) = computed.get(&node).copied() {
-                ui_rect_state_from_node(&scene_node.data, rect, state, effective_z)
+                let target = ui_rect_state_from_node(&scene_node.data, rect, state, effective_z);
+                if let (Some(target), Some(motion)) =
+                    (target, self.render_ui.button_motions.get(&node).copied())
+                {
+                    Some(animated_button_rect_state(
+                        &scene_node.data,
+                        rect,
+                        effective_z,
+                        target,
+                        motion,
+                    ))
+                } else {
+                    target
+                }
             } else {
                 self.render_ui.retained_rects.get(&node).copied()
             };

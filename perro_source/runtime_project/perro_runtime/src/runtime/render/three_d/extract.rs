@@ -234,6 +234,18 @@ impl Runtime {
         // traversal. Compute once instead of per Sprite3D/VideoPlayer3D/Label3D.
         let overlay_camera = active_camera.unwrap_or_else(fallback_camera_3d_state);
         let overlay_viewport = self.input.viewport_size();
+        // Reuse one compact blocker list for all world overlays. Building it
+        // per overlay made Label3D spawn bursts scan + allocate for the full
+        // node arena once per label.
+        let mut overlay_occluders = std::mem::take(&mut self.render_3d.overlay_occluders_scratch);
+        overlay_occluders.clear();
+        overlay_occluders.extend(self.nodes.iter().filter_map(|(candidate, scene_node)| {
+            matches!(
+                scene_node.data,
+                SceneNodeData::MeshInstance3D(_) | SceneNodeData::MultiMeshInstance3D(_)
+            )
+            .then_some(candidate)
+        }));
 
         for node in traversal_ids.iter().copied() {
             visible_now.remove(&node);
@@ -754,6 +766,7 @@ impl Runtime {
                         node,
                         transform.position,
                         &overlay_camera,
+                        &overlay_occluders,
                     );
                     if occluded {
                         self.queue_render_command(RenderCommand::Ui(UiCommand::RemoveNode {
@@ -796,6 +809,7 @@ impl Runtime {
                             label.size,
                             label.lock_orientation,
                             label.backface_cull,
+                            label.visible_through_objects,
                             label.backdrop_color,
                             label.corner_radii,
                             label.padding,
@@ -815,6 +829,7 @@ impl Runtime {
                 size,
                 lock_orientation,
                 backface_cull,
+                visible_through_objects,
                 backdrop_color,
                 corner_radii,
                 padding,
@@ -840,16 +855,7 @@ impl Runtime {
                         }));
                         continue;
                     }
-                    let occluded = self.world_overlay_point_occluded_3d(
-                        node,
-                        transform.position,
-                        &overlay_camera,
-                    );
-                    if occluded {
-                        self.queue_render_command(RenderCommand::Ui(UiCommand::RemoveNode {
-                            node,
-                        }));
-                    } else {
+                    {
                         // Both label kinds ride the projected-quad path with a
                         // canonical (camera-independent) layout rect, so the
                         // painter re-projects its cached tessellation instead
@@ -895,6 +901,7 @@ impl Runtime {
                             },
                             padding: [padding.left, padding.top, padding.right, padding.bottom],
                             projected_quad: Some(projected_quad),
+                            depth_test: !visible_through_objects,
                             fit_content: true,
                         }));
                         visible_now.insert(node);
@@ -1455,6 +1462,7 @@ impl Runtime {
         }
         traversal_seen.clear();
         self.render_3d.traversal_seen = traversal_seen;
+        self.render_3d.overlay_occluders_scratch = overlay_occluders;
         self.render_3d
             .finish_visible_pass(traversal_ids, visible_now);
         skeleton_cache.clear();

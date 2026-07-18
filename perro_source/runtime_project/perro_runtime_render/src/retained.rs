@@ -362,6 +362,7 @@ pub struct RenderUiState {
     pub retained_commands: AHashMap<NodeID, UiCommand>,
     pub retained_rects: AHashMap<NodeID, UiRectState>,
     pub button_states: AHashMap<NodeID, UiButtonVisualState>,
+    pub button_motions: AHashMap<NodeID, UiButtonMotion>,
     pub interactive_scan_seen: AHashSet<NodeID>,
     pub visible_buttons: Vec<NodeID>,
     pub visible_text_edits: Vec<NodeID>,
@@ -440,6 +441,7 @@ impl RenderUiState {
             retained_commands: AHashMap::default(),
             retained_rects: AHashMap::default(),
             button_states: AHashMap::default(),
+            button_motions: AHashMap::default(),
             interactive_scan_seen: AHashSet::default(),
             visible_buttons: Vec::new(),
             visible_text_edits: Vec::new(),
@@ -644,6 +646,14 @@ pub enum UiButtonVisualState {
     Pressed,
 }
 
+#[derive(Clone, Copy, Debug)]
+pub struct UiButtonMotion {
+    pub hover: f32,
+    pub press: f32,
+    pub wiggle_time: f32,
+    pub wiggle_sign: f32,
+}
+
 #[derive(Clone, Copy)]
 pub struct UiSizeClampBaseline {
     pub size: Vector2,
@@ -694,6 +704,7 @@ pub struct Render3DState {
     pub skeleton_global_scratch: Vec<glam::Mat4>,
     pub skeleton_palette_scratch: Vec<[[f32; 4]; 3]>,
     pub dense_instance_pose_scratch: Vec<DenseInstancePose3D>,
+    pub overlay_occluders_scratch: Vec<NodeID>,
     pub removed_nodes: Vec<NodeID>,
     pub force_full_scan_once: bool,
 }
@@ -739,6 +750,7 @@ impl Render3DState {
             skeleton_global_scratch: Vec::new(),
             skeleton_palette_scratch: Vec::new(),
             dense_instance_pose_scratch: Vec::new(),
+            overlay_occluders_scratch: Vec::new(),
             removed_nodes: Vec::new(),
             force_full_scan_once: false,
         }

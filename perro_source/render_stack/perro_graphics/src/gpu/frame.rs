@@ -52,6 +52,7 @@ impl Gpu {
             static_mesh_lookup,
             static_shader_lookup,
             ui_primitives,
+            ui_primitive_depths,
             ui_textures_delta,
             ui_texture_size,
             ui_revision,
@@ -451,7 +452,8 @@ impl Gpu {
         let direct_present = false;
         let depth_prepass_needed = !waters_3d.is_empty()
             || (camera_post_enabled && PostProcessor::uses_depth(camera_post_chain))
-            || (global_post_enabled && PostProcessor::uses_depth(global_post_chain));
+            || (global_post_enabled && PostProcessor::uses_depth(global_post_chain))
+            || ui_primitive_depths.iter().any(Option::is_some);
         let mut frame = None;
         let mut swap_view = None;
         if direct_present || msaa_direct_present {
@@ -1290,13 +1292,22 @@ impl Gpu {
                         resources,
                         viewport,
                         primitives: ui_primitives,
+                        primitive_depths: ui_primitive_depths,
                         textures_delta: ui_textures_delta,
                         texture_size: ui_texture_size,
                         revision: ui_revision,
                         static_texture_lookup,
                     },
                 );
-                ui.render_pass(&self.device, &mut encoder, output_view, viewport);
+                ui.render_pass(
+                    &self.device,
+                    &mut encoder,
+                    output_view,
+                    viewport,
+                    self.three_d
+                        .as_ref()
+                        .map(|three_d| three_d.depth_prepass_view()),
+                );
             }
         }
         if late_overlay_upload_2d.draw_count > 0

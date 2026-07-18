@@ -710,6 +710,7 @@ pub(super) fn ui_command_from_node(
             corner_radii: UiCornerRadiiState::default(),
             padding: [0.0; 4],
             projected_quad: None,
+            depth_test: false,
             fit_content: false,
         }),
         SceneNodeData::UiImage(image) => {
@@ -1067,6 +1068,43 @@ pub(super) fn button_rect_state(
         rotation_radians: ui.transform.rotation,
         z_index: effective_z,
     }
+}
+
+pub(super) fn animated_button_rect_state(
+    data: &SceneNodeData,
+    base_rect: ComputedUiRect,
+    effective_z: i32,
+    fallback: UiRectState,
+    motion: UiButtonMotion,
+) -> UiRectState {
+    let Some(neutral) =
+        ui_rect_state_from_node(data, base_rect, UiButtonVisualState::Neutral, effective_z)
+    else {
+        return fallback;
+    };
+    let hover = ui_rect_state_from_node(data, base_rect, UiButtonVisualState::Hover, effective_z)
+        .unwrap_or(neutral);
+    let pressed =
+        ui_rect_state_from_node(data, base_rect, UiButtonVisualState::Pressed, effective_z)
+            .unwrap_or(hover);
+    let mut out = neutral;
+    for axis in 0..2 {
+        out.center[axis] += (hover.center[axis] - neutral.center[axis]) * motion.hover
+            + (pressed.center[axis] - hover.center[axis]) * motion.press;
+        out.size[axis] += (hover.size[axis] - neutral.size[axis]) * motion.hover
+            + (pressed.size[axis] - hover.size[axis]) * motion.press;
+        out.pivot[axis] += (hover.pivot[axis] - neutral.pivot[axis]) * motion.hover
+            + (pressed.pivot[axis] - hover.pivot[axis]) * motion.press;
+    }
+    out.rotation_radians += (hover.rotation_radians - neutral.rotation_radians) * motion.hover
+        + (pressed.rotation_radians - hover.rotation_radians) * motion.press;
+    if motion.wiggle_time < 0.14 {
+        let phase = motion.wiggle_time / 0.14;
+        let decay = (1.0 - phase) * (1.0 - phase);
+        out.rotation_radians +=
+            motion.wiggle_sign * (phase * std::f32::consts::TAU * 2.0).sin() * decay * 0.018;
+    }
+    out
 }
 
 pub(super) fn computed_rect_from_state(rect: &UiRectState) -> ComputedUiRect {

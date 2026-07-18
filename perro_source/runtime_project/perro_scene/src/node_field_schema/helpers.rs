@@ -95,6 +95,12 @@ pub(super) fn label_world_fields(fields: &mut Vec<SceneNodeField>, section: &'st
     push(fields, section, "size", NodeFieldType::Vec2);
     push(fields, section, "lock_orientation", NodeFieldType::Bool);
     push(fields, section, "backface_cull", NodeFieldType::Bool);
+    push(
+        fields,
+        section,
+        "visible_through_objects",
+        NodeFieldType::Bool,
+    );
     push(fields, section, "backdrop_color", NodeFieldType::Color);
     push(fields, section, "corner_radii", NodeFieldType::Vec4);
     push(fields, section, "padding", NodeFieldType::Vec4);

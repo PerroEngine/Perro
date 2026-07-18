@@ -345,6 +345,7 @@ See [TileMap2D](tilemap.md).
 - `size` is world-space width/height before camera projection.
 - Uses `text`, `color`, `font_size`, `h_align`, and `v_align` like `UiLabel`.
 - `lock_orientation = false` keeps text camera-facing. Set it to `true` for a fixed world sign: glyph and backdrop meshes project through all four transformed corners without rasterizing the whole label; `backface_cull` defaults to `true` and hides the rear face.
+- `visible_through_objects = false` is the default and depth-tests each label pixel against scene geometry. Set it to `true` for an always-visible marker or nameplate.
 - `backdrop_color` defaults transparent. Set it plus `size` to make a filled sign behind the text.
 - `padding = (left, top, right, bottom)` uses the UI ratio convention and insets text inside the sign.
 - `corner_radii = (tl, tr, br, bl)` uses the UI `0.0..1.0` ratio convention. Default `0` gives hard square corners.

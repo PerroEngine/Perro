@@ -1,6 +1,6 @@
 //! Runtime UI layout, retained command extraction, and text input handling.
 
-use super::state::{DirtyState, UiButtonVisualState};
+use super::state::{DirtyState, UiButtonMotion, UiButtonVisualState};
 use super::{Runtime, RuntimeUiTiming};
 use ahash::AHashMap;
 use perro_ids::{NodeID, SignalID, TextureID};

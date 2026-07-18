@@ -125,9 +125,12 @@ mod layout {
         runtime.clear_dirty_flags();
 
         runtime.set_mouse_position(400.0, 300.0);
-        runtime.extract_render_ui_commands();
         commands.clear();
-        runtime.drain_render_commands(&mut commands);
+        runtime.time.delta = 0.05;
+        for _ in 0..12 {
+            runtime.extract_render_ui_commands();
+            runtime.drain_render_commands(&mut commands);
+        }
 
         assert!(commands.iter().any(|cmd| matches!(
             cmd,

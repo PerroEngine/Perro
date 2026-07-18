@@ -247,6 +247,7 @@ impl Runtime {
                         corner_radii: Default::default(),
                         padding: [0.0; 4],
                         projected_quad: None,
+                        depth_test: false,
                         fit_content: false,
                     }));
                     visible_now.insert(node);

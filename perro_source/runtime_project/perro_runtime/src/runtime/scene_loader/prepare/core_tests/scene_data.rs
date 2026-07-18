@@ -16,6 +16,7 @@ mod scene_data {
                 text = %loc: "ui.name"
                 lock_orientation = true
                 backface_cull = false
+                visible_through_objects = true
                 backdrop_color = (0.1, 0.2, 0.3, 1.0)
                 corner_radii = (0.1, 0.2, 0.3, 0.4)
                 padding = (0.05, 0.1, 0.05, 0.1)
@@ -53,6 +54,7 @@ mod scene_data {
                 assert_eq!(label.text.as_ref(), "ui.name");
                 assert!(label.lock_orientation);
                 assert!(!label.backface_cull);
+                assert!(label.visible_through_objects);
                 assert_eq!(label.backdrop_color, perro_structs::Color::new(0.1, 0.2, 0.3, 1.0));
                 assert_eq!(label.corner_radii.tl, 0.1);
                 assert_eq!(label.padding.top, 0.1);

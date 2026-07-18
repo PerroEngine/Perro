@@ -180,6 +180,11 @@ fn apply_label_3d_fields(node: &mut Label3D, fields: &[SceneObjectField]) {
                 node.backface_cull = v;
             }
         }
+        "visible_through_objects" => {
+            if let Some(v) = as_bool(value) {
+                node.visible_through_objects = v;
+            }
+        }
         "backdrop_color" | "background_color" => {
             if let Some(v) = as_scene_color(value) {
                 node.backdrop_color = v;

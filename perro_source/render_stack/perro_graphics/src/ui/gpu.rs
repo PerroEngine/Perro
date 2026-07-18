@@ -32,6 +32,7 @@ const UI_HARFBUZZ_TEXTURE_ID: TextureId = TextureId::Managed(1);
 struct UiVertexGpu {
     pos: [f32; 2],
     uv: [f32; 2],
+    depth_test: [f32; 2],
     color: [u8; 4],
 }
 
@@ -90,6 +91,9 @@ pub struct GpuUi {
     uniform_bind_group: wgpu::BindGroup,
     texture_bind_group_layout: wgpu::BindGroupLayout,
     composite_bind_group_layout: wgpu::BindGroupLayout,
+    scene_depth_bind_group_layout: wgpu::BindGroupLayout,
+    _dummy_depth_texture: wgpu::Texture,
+    dummy_depth_view: wgpu::TextureView,
     sampler: wgpu::Sampler,
     texture_filter: TextureFilterMode,
     font_texture: Option<UiTextureGpu>,
@@ -116,6 +120,7 @@ pub struct UiPrepareInput<'a> {
     pub resources: &'a ResourceStore,
     pub viewport: [u32; 2],
     pub primitives: &'a [Arc<ClippedPrimitive>],
+    pub primitive_depths: &'a [Option<Arc<[f32]>>],
     pub textures_delta: &'a TexturesDelta,
     pub texture_size: [u32; 2],
     pub revision: u64,
@@ -216,6 +221,36 @@ impl GpuUi {
                     },
                 ],
             });
+        let scene_depth_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("perro_ui_scene_depth_bgl"),
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Depth,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                }],
+            });
+        let dummy_depth_texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("perro_ui_dummy_scene_depth"),
+            size: wgpu::Extent3d {
+                width: 1,
+                height: 1,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Depth32Float,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
+        let dummy_depth_view =
+            dummy_depth_texture.create_view(&wgpu::TextureViewDescriptor::default());
         let sampler = device.create_sampler(&sampler_descriptor(
             "perro_ui_sampler",
             texture_filter,
@@ -226,6 +261,7 @@ impl GpuUi {
             bind_group_layouts: &[
                 Some(&uniform_bind_group_layout),
                 Some(&texture_bind_group_layout),
+                Some(&scene_depth_bind_group_layout),
             ],
             immediate_size: 0,
         });
@@ -256,9 +292,14 @@ impl GpuUi {
                             shader_location: 1,
                         },
                         wgpu::VertexAttribute {
-                            format: wgpu::VertexFormat::Unorm8x4,
+                            format: wgpu::VertexFormat::Float32x2,
                             offset: 16,
                             shader_location: 2,
+                        },
+                        wgpu::VertexAttribute {
+                            format: wgpu::VertexFormat::Unorm8x4,
+                            offset: 24,
+                            shader_location: 3,
                         },
                     ],
                 })],
@@ -346,6 +387,9 @@ impl GpuUi {
             uniform_bind_group,
             texture_bind_group_layout,
             composite_bind_group_layout,
+            scene_depth_bind_group_layout,
+            _dummy_depth_texture: dummy_depth_texture,
+            dummy_depth_view,
             sampler,
             texture_filter,
             font_texture: None,
@@ -377,6 +421,7 @@ impl GpuUi {
             resources,
             viewport,
             primitives,
+            primitive_depths,
             textures_delta,
             texture_size,
             revision,
@@ -431,7 +476,7 @@ impl GpuUi {
         self.vertices.reserve(mesh_totals.vertex_count);
         self.indices.reserve(mesh_totals.index_count);
         self.perf_counters = UiPerfCounters::default();
-        for primitive in primitives {
+        for (primitive_index, primitive) in primitives.iter().enumerate() {
             let Primitive::Mesh(mesh) = &primitive.primitive else {
                 continue;
             };
@@ -461,15 +506,25 @@ impl GpuUi {
                     .iter()
                     .map(|index| index.saturating_add(vertex_offset)),
             );
+            let depths = primitive_depths
+                .get(primitive_index)
+                .and_then(Option::as_deref)
+                .filter(|depths| depths.len() == mesh.vertices.len());
             self.vertices
-                .extend(mesh.vertices.iter().map(|vertex| UiVertexGpu {
-                    pos: [
-                        vertex.pos.x * render_scale[0],
-                        vertex.pos.y * render_scale[1],
-                    ],
-                    uv: [vertex.uv.x, vertex.uv.y],
-                    color: vertex.color.to_array(),
-                }));
+                .extend(
+                    mesh.vertices
+                        .iter()
+                        .enumerate()
+                        .map(|(index, vertex)| UiVertexGpu {
+                            pos: [
+                                vertex.pos.x * render_scale[0],
+                                vertex.pos.y * render_scale[1],
+                            ],
+                            uv: [vertex.uv.x, vertex.uv.y],
+                            depth_test: depths.map_or([0.0, 0.0], |depths| [depths[index], 1.0]),
+                            color: vertex.color.to_array(),
+                        }),
+                );
             let index_count = mesh.indices.len().min(u32::MAX as usize) as u32;
             push_ui_mesh(
                 &mut self.meshes,
@@ -492,6 +547,7 @@ impl GpuUi {
         encoder: &mut wgpu::CommandEncoder,
         output_view: &wgpu::TextureView,
         viewport: [u32; 2],
+        scene_depth_view: Option<&wgpu::TextureView>,
     ) {
         if self.meshes.is_empty() {
             return;
@@ -507,6 +563,16 @@ impl GpuUi {
         let Some(target) = self.supersample_target.as_ref() else {
             return;
         };
+        let scene_depth_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("perro_ui_scene_depth_bg"),
+            layout: &self.scene_depth_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::TextureView(
+                    scene_depth_view.unwrap_or(&self.dummy_depth_view),
+                ),
+            }],
+        });
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("perro_ui_pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -525,6 +591,7 @@ impl GpuUi {
         });
         pass.set_pipeline(&self.pipeline);
         pass.set_bind_group(0, &self.uniform_bind_group, &[]);
+        pass.set_bind_group(2, &scene_depth_bind_group, &[]);
         pass.set_vertex_buffer(0, vertex_buffer.slice(..));
         pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint32);
         for mesh in &self.meshes {

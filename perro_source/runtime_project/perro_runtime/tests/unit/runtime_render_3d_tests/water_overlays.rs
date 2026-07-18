@@ -369,7 +369,7 @@ mod water_overlays {
     }
 
     #[test]
-    fn sprite_3d_and_label_3d_hide_when_mesh_blocks_center() {
+    fn label_3d_uses_scene_depth_unless_visible_through_objects() {
         let mut runtime = Runtime::new();
         runtime.set_viewport_size(800, 600);
         let camera = NodeAPI::create::<Camera3D>(&mut runtime);
@@ -412,17 +412,40 @@ mod water_overlays {
             command,
             RenderCommand::Ui(UiCommand::RemoveNode { node }) if *node == sprite
         )));
-        assert!(commands.iter().any(|command| matches!(
-            command,
-            RenderCommand::Ui(UiCommand::RemoveNode { node }) if *node == label
-        )));
         assert!(!commands.iter().any(|command| matches!(
             command,
             RenderCommand::Ui(UiCommand::UpsertImage { node, .. }) if *node == sprite
         )));
-        assert!(!commands.iter().any(|command| matches!(
+        assert!(commands.iter().any(|command| matches!(
             command,
-            RenderCommand::Ui(UiCommand::UpsertLabel { node, .. }) if *node == label
+            RenderCommand::Ui(UiCommand::UpsertLabel { node, depth_test: true, .. })
+                if *node == label
+        )));
+
+        if let Some(mut node) = runtime.nodes.get_mut(label)
+            && let SceneNodeData::Label3D(data) = &mut node.data
+        {
+            data.visible_through_objects = true;
+        }
+        runtime.extract_render_3d_commands();
+        let commands = collect_commands(&mut runtime);
+        assert!(commands.iter().any(|command| matches!(
+            command,
+            RenderCommand::Ui(UiCommand::UpsertLabel { node, depth_test: false, .. })
+                if *node == label
+        )));
+
+        if let Some(mut node) = runtime.nodes.get_mut(label)
+            && let SceneNodeData::Label3D(data) = &mut node.data
+        {
+            data.visible_through_objects = false;
+        }
+        runtime.extract_render_3d_commands();
+        let commands = collect_commands(&mut runtime);
+        assert!(commands.iter().any(|command| matches!(
+            command,
+            RenderCommand::Ui(UiCommand::UpsertLabel { node, depth_test: true, .. })
+                if *node == label
         )));
     }
 

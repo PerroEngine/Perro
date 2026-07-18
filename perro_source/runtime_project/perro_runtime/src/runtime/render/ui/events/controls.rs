@@ -25,6 +25,8 @@ impl Runtime {
         }
         let mut next_states = std::mem::take(&mut self.render_ui.button_states);
         next_states.retain(|node, _| self.nodes.get(*node).is_some());
+        let mut motions = std::mem::take(&mut self.render_ui.button_motions);
+        motions.retain(|node, _| self.nodes.get(*node).is_some());
         let mut events = Vec::new();
         if self
             .render_ui
@@ -65,12 +67,63 @@ impl Runtime {
             if !inactive {
                 collect_button_events(node, prev, next, &mut events);
             }
-            if prev != next && command_seen.insert(node) {
+            let hover_target = if next == UiButtonVisualState::Neutral {
+                0.0
+            } else {
+                1.0
+            };
+            let press_target = if next == UiButtonVisualState::Pressed {
+                1.0
+            } else {
+                0.0
+            };
+            let needs_motion = prev != next || motions.contains_key(&node);
+            if needs_motion {
+                let motion = motions.entry(node).or_insert(UiButtonMotion {
+                    hover: if prev == UiButtonVisualState::Neutral {
+                        0.0
+                    } else {
+                        1.0
+                    },
+                    press: if prev == UiButtonVisualState::Pressed {
+                        1.0
+                    } else {
+                        0.0
+                    },
+                    wiggle_time: 1.0,
+                    wiggle_sign: 1.0,
+                });
+                if prev != next
+                    && (prev == UiButtonVisualState::Neutral
+                        || next == UiButtonVisualState::Neutral)
+                {
+                    motion.wiggle_time = 0.0;
+                    motion.wiggle_sign = if next == UiButtonVisualState::Neutral {
+                        -1.0
+                    } else {
+                        1.0
+                    };
+                }
+                let dt = self.time.delta.clamp(0.0, 0.05);
+                let hover_alpha = 1.0 - (-dt * 22.0).exp();
+                let press_alpha = 1.0 - (-dt * 38.0).exp();
+                motion.hover += (hover_target - motion.hover) * hover_alpha;
+                motion.press += (press_target - motion.press) * press_alpha;
+                motion.wiggle_time += dt;
+                let settled = (motion.hover - hover_target).abs() < 0.001
+                    && (motion.press - press_target).abs() < 0.001
+                    && motion.wiggle_time >= 0.14;
+                if settled {
+                    motions.remove(&node);
+                }
+            }
+            if needs_motion && command_seen.insert(node) {
                 command_ids.push(node);
             }
         }
 
         self.render_ui.button_states = next_states;
+        self.render_ui.button_motions = motions;
         let text_hovered = self.hovered_text_edit(computed, UiInputSource::Kbm, pointer_point);
         let scrollbar_hovered = self.render_ui.active_scrollbar.is_some()
             || self.hit_scrollbar(pointer_point, computed).is_some();

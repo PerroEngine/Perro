@@ -21,12 +21,14 @@ pub(super) fn project_label_primitives(
     source: UiRectState,
     quad: [[f32; 4]; 4],
     viewport: [f32; 2],
-) {
+) -> Vec<Vec<f32>> {
     let (min, max) = source.screen_min_max(viewport);
     let width = (max[0] - min[0]).max(0.001);
     let height = (max[1] - min[1]).max(0.001);
+    let mut primitive_depths = Vec::with_capacity(primitives.len());
     for primitive in primitives {
         primitive.clip_rect = Rect::EVERYTHING;
+        let mut depths = Vec::new();
         if let Primitive::Mesh(mesh) = &mut primitive.primitive {
             let old = std::mem::replace(mesh, Mesh::with_texture(mesh.texture_id));
             for triangle in old.indices.chunks_exact(3) {
@@ -47,11 +49,14 @@ pub(super) fn project_label_primitives(
                         mesh,
                         [polygon[0], polygon[index], polygon[index + 1]],
                         viewport,
+                        &mut depths,
                     );
                 }
             }
         }
+        primitive_depths.push(depths);
     }
+    primitive_depths
 }
 
 #[derive(Clone, Copy)]
@@ -109,6 +114,7 @@ pub(super) fn push_projected_label_triangle(
     mesh: &mut Mesh,
     triangle: [ProjectedLabelVertex; 3],
     viewport: [f32; 2],
+    depths: &mut Vec<f32>,
 ) {
     if triangle.iter().any(|vertex| vertex.clip[3].abs() <= 1.0e-6) {
         return;
@@ -117,6 +123,7 @@ pub(super) fn push_projected_label_triangle(
     for vertex in triangle {
         let ndc_x = vertex.clip[0] / vertex.clip[3];
         let ndc_y = vertex.clip[1] / vertex.clip[3];
+        depths.push((vertex.clip[2] / vertex.clip[3]).clamp(0.0, 1.0));
         mesh.vertices.push(Vertex {
             pos: pos2(
                 (ndc_x * 0.5 + 0.5) * viewport[0],
