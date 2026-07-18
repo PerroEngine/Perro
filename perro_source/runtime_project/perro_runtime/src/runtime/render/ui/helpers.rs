@@ -691,7 +691,7 @@ pub(super) fn ui_command_from_node(
             node,
             rect,
             clip_rect,
-            text: Cow::Owned(label.text.to_string()),
+            text: std::sync::Arc::from(label.text.as_ref()),
             color: Runtime::color_modulate(label.color, modulate),
             font_size: {
                 let (base, node_scale) =

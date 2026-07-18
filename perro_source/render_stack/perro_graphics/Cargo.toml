@@ -83,3 +83,7 @@ harness = false
 [[bench]]
 name = "camera_stream"
 harness = false
+
+[[bench]]
+name = "label3d_ui"
+harness = false

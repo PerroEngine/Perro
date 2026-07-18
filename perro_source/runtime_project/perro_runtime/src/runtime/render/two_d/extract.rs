@@ -236,7 +236,7 @@ impl Runtime {
                         node,
                         rect,
                         clip_rect: viewport_clip(self.input.viewport_size()),
-                        text,
+                        text: std::sync::Arc::from(text.as_ref()),
                         color: Runtime::color_modulate(color, modulate),
                         font_size: (font_size * transform.scale.y.abs()).max(0.001),
                         font,

@@ -271,13 +271,8 @@ pub(crate) fn push_lobby_join(target: LobbyID, result: Result<steamworks::LobbyI
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_lock;
     use crate::types::SteamID;
-    use std::sync::{Mutex, OnceLock};
-
-    fn test_lock() -> std::sync::MutexGuard<'static, ()> {
-        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-        LOCK.get_or_init(|| Mutex::new(())).lock().unwrap()
-    }
 
     #[test]
     fn queue_drains_in_order() {

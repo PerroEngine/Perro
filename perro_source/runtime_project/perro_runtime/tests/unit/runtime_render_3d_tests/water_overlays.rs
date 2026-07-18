@@ -421,6 +421,15 @@ mod water_overlays {
             RenderCommand::Ui(UiCommand::UpsertLabel { node, depth_test: true, .. })
                 if *node == label
         )));
+        let first_text = commands
+            .iter()
+            .find_map(|command| match command {
+                RenderCommand::Ui(UiCommand::UpsertLabel { node, text, .. }) if *node == label => {
+                    Some(std::sync::Arc::clone(text))
+                }
+                _ => None,
+            })
+            .expect("label command text");
 
         if let Some(mut node) = runtime.nodes.get_mut(label)
             && let SceneNodeData::Label3D(data) = &mut node.data
@@ -434,6 +443,16 @@ mod water_overlays {
             RenderCommand::Ui(UiCommand::UpsertLabel { node, depth_test: false, .. })
                 if *node == label
         )));
+        let second_text = commands
+            .iter()
+            .find_map(|command| match command {
+                RenderCommand::Ui(UiCommand::UpsertLabel { node, text, .. }) if *node == label => {
+                    Some(std::sync::Arc::clone(text))
+                }
+                _ => None,
+            })
+            .expect("label command text");
+        assert!(std::sync::Arc::ptr_eq(&first_text, &second_text));
 
         if let Some(mut node) = runtime.nodes.get_mut(label)
             && let SceneNodeData::Label3D(data) = &mut node.data

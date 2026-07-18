@@ -53,6 +53,14 @@ pub mod workshop;
 #[cfg(not(feature = "steamworks-runtime"))]
 use disabled::app;
 
+#[cfg(test)]
+fn test_lock() -> std::sync::MutexGuard<'static, ()> {
+    static LOCK: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
+    LOCK.get_or_init(|| std::sync::Mutex::new(()))
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
 #[cfg(not(feature = "steamworks-runtime"))]
 pub use disabled::{
     account, achievements, apps, auth, cloud, events, friends, input, leaderboards, lobbies,
@@ -412,12 +420,6 @@ pub mod prelude {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::{Mutex, OnceLock};
-
-    fn test_lock() -> std::sync::MutexGuard<'static, ()> {
-        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-        LOCK.get_or_init(|| Mutex::new(())).lock().unwrap()
-    }
 
     #[test]
     fn disabled_init_noop() {

@@ -26,10 +26,30 @@ pub(super) fn project_label_primitives(
     let width = (max[0] - min[0]).max(0.001);
     let height = (max[1] - min[1]).max(0.001);
     let mut primitive_depths = Vec::with_capacity(primitives.len());
+    let fully_inside_near = quad
+        .iter()
+        .all(|clip| clip[2] + clip[3] >= 1.0e-5 && clip[3].abs() > 1.0e-6);
     for primitive in primitives {
         primitive.clip_rect = Rect::EVERYTHING;
         let mut depths = Vec::new();
         if let Primitive::Mesh(mesh) = &mut primitive.primitive {
+            if fully_inside_near {
+                depths.reserve(mesh.vertices.len());
+                for vertex in &mut mesh.vertices {
+                    let u = ((vertex.pos.x - min[0]) / width).clamp(0.0, 1.0);
+                    let v = ((vertex.pos.y - min[1]) / height).clamp(0.0, 1.0);
+                    let clip = bilerp_clip_quad(quad, u, v);
+                    let ndc_x = clip[0] / clip[3];
+                    let ndc_y = clip[1] / clip[3];
+                    vertex.pos = pos2(
+                        (ndc_x * 0.5 + 0.5) * viewport[0],
+                        (0.5 - ndc_y * 0.5) * viewport[1],
+                    );
+                    depths.push((clip[2] / clip[3]).clamp(0.0, 1.0));
+                }
+                primitive_depths.push(depths);
+                continue;
+            }
             let old = std::mem::replace(mesh, Mesh::with_texture(mesh.texture_id));
             for triangle in old.indices.chunks_exact(3) {
                 let mut polygon = Vec::with_capacity(4);

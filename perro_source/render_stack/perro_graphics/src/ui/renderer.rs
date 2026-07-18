@@ -6,7 +6,7 @@ use perro_render_bridge::{
     UiLinearGradientState, UiRectState, UiShapeKind, UiTextAlignState,
 };
 use perro_structs::Color;
-use std::borrow::Cow;
+use std::{borrow::Cow, sync::Arc};
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct UiPanelDraw {
@@ -39,7 +39,7 @@ pub(crate) struct UiProgressBarDraw {
 pub(crate) struct UiLabelDraw {
     pub(crate) rect: UiRectState,
     pub(crate) clip_rect: [f32; 4],
-    pub(crate) text: Cow<'static, str>,
+    pub(crate) text: Arc<str>,
     pub(crate) color: Color,
     pub(crate) font_size: f32,
     pub(crate) font: perro_ui::UiFont,
@@ -637,7 +637,7 @@ mod tests {
                 z_index: 0,
             },
             clip_rect: [0.0, 0.0, 800.0, 600.0],
-            text: Cow::Borrowed("Run"),
+            text: Arc::from("Run"),
             color: Color::WHITE,
             font_size: 18.0,
             font: perro_ui::UiFont::Default,
@@ -687,7 +687,7 @@ mod tests {
                 z_index: 0,
             },
             clip_rect: [0.0, 0.0, 800.0, 600.0],
-            text: Cow::Borrowed("Run"),
+            text: Arc::from("Run"),
             color: Color::WHITE,
             font_size: 18.0,
             font: perro_ui::UiFont::Default,
@@ -762,7 +762,7 @@ mod tests {
                 z_index: 0,
             },
             clip_rect: [0.0, 0.0, 800.0, 600.0],
-            text: Cow::Borrowed("Score"),
+            text: Arc::from("Score"),
             color: Color::WHITE,
             font_size: 18.0,
             font: perro_ui::UiFont::Default,

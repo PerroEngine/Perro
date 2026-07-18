@@ -171,7 +171,7 @@ pub enum UiCommand {
         node: NodeID,
         rect: UiRectState,
         clip_rect: [f32; 4],
-        text: Cow<'static, str>,
+        text: Arc<str>,
         color: Color,
         font_size: f32,
         font: perro_ui::UiFont,

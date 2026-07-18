@@ -4,7 +4,7 @@ use super::Runtime;
 use crate::runtime::state::{LocaleTextBinding, LocaleTextField};
 use perro_ids::{NodeID, string_to_u64};
 use perro_nodes::SceneNodeData;
-use std::borrow::Cow;
+use std::{borrow::Cow, sync::Arc};
 
 impl Runtime {
     pub(crate) fn add_locale_text_binding(
@@ -132,7 +132,7 @@ impl Runtime {
                 if label.text.as_ref() == text {
                     return false;
                 }
-                label.text = Cow::Borrowed(text);
+                label.text = Arc::from(text);
                 true
             }
             (SceneNodeData::UiTextBox(text_box), LocaleTextField::TextEditText) => {

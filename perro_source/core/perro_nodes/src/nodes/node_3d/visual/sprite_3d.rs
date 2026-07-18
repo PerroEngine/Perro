@@ -3,8 +3,8 @@ use perro_ids::TextureID;
 use perro_structs::{Color, Vector2};
 use perro_ui::{UiCornerRadii, UiRect, UiTextAlign};
 use std::{
-    borrow::Cow,
     ops::{Deref, DerefMut},
+    sync::Arc,
 };
 
 #[derive(Clone, Debug)]
@@ -60,7 +60,7 @@ pub struct Label3D {
     pub backdrop_color: Color,
     pub corner_radii: UiCornerRadii,
     pub padding: UiRect,
-    pub text: Cow<'static, str>,
+    pub text: Arc<str>,
     pub color: Color,
     pub font_size: f32,
     pub font: perro_ui::UiFont,
@@ -69,7 +69,7 @@ pub struct Label3D {
 }
 
 impl Label3D {
-    pub const fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             base: Node3D::new(),
             size: Vector2::new(1.0, 0.25),
@@ -79,7 +79,7 @@ impl Label3D {
             backdrop_color: Color::TRANSPARENT,
             corner_radii: UiCornerRadii::zero(),
             padding: UiRect::ZERO,
-            text: Cow::Borrowed(""),
+            text: Arc::from(""),
             color: Color::WHITE,
             font_size: 20.0,
             font: perro_ui::UiFont::Default,
