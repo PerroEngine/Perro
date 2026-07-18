@@ -849,35 +849,32 @@ impl Runtime {
                         self.queue_render_command(RenderCommand::Ui(UiCommand::RemoveNode {
                             node,
                         }));
-                    } else if let Some(rect) = label_world_rect_3d(
-                        transform,
-                        size,
-                        lock_orientation,
-                        &overlay_camera,
-                        overlay_viewport,
-                    ) {
-                        let rect = if lock_orientation {
-                            label_3d_stable_layout_rect(rect, size, font_size)
+                    } else {
+                        // Both label kinds ride the projected-quad path with a
+                        // canonical (camera-independent) layout rect, so the
+                        // painter re-projects its cached tessellation instead
+                        // of re-shaping text every frame; billboards get a
+                        // camera-facing quad, and the quad path's near-plane
+                        // clipping replaces the old rect projection (which
+                        // could blow up for labels closer than the near plane).
+                        let quad_transform = if lock_orientation {
+                            transform
                         } else {
-                            rect
+                            label_billboard_transform_3d(transform, &overlay_camera)
                         };
-                        let content_size = label_3d_content_size(rect.size, padding);
-                        let projected_quad = lock_orientation
-                            .then(|| {
-                                label_projected_quad_3d(
-                                    transform,
-                                    size,
-                                    &overlay_camera,
-                                    overlay_viewport,
-                                )
-                            })
-                            .flatten();
-                        if lock_orientation && projected_quad.is_none() {
+                        let Some(projected_quad) = label_projected_quad_3d(
+                            quad_transform,
+                            size,
+                            &overlay_camera,
+                            overlay_viewport,
+                        ) else {
                             self.queue_render_command(RenderCommand::Ui(UiCommand::RemoveNode {
                                 node,
                             }));
                             continue;
-                        }
+                        };
+                        let rect = label_3d_canonical_layout_rect(size, font_size);
+                        let content_size = label_3d_content_size(rect.size, padding);
                         self.queue_render_command(RenderCommand::Ui(UiCommand::UpsertLabel {
                             node,
                             rect,
@@ -897,7 +894,7 @@ impl Runtime {
                                 bl: corner_radii.bl,
                             },
                             padding: [padding.left, padding.top, padding.right, padding.bottom],
-                            projected_quad,
+                            projected_quad: Some(projected_quad),
                             fit_content: true,
                         }));
                         visible_now.insert(node);

@@ -222,23 +222,74 @@ mod water_overlays {
     }
 
     #[test]
-    fn label_3d_locked_layout_size_ignores_projected_rect_size() {
-        let rect = perro_render_bridge::UiRectState {
-            center: [0.0, 0.0],
-            size: [1800.0, 900.0],
-            pivot: [0.5, 0.5],
-            rotation_radians: 1.0,
-            z_index: 0,
-        };
-        let layout =
-            super::super::label_3d_stable_layout_rect(
-                rect,
-                perro_structs::Vector2::new(2.0, 0.5),
-                20.0,
-            );
+    fn label_3d_canonical_layout_rect_is_camera_independent() {
+        let layout = super::super::label_3d_canonical_layout_rect(
+            perro_structs::Vector2::new(2.0, 0.5),
+            20.0,
+        );
 
         assert_eq!(layout.size, [80.0, 20.0]);
         assert_eq!(layout.rotation_radians, 0.0);
+        assert_eq!(layout.center, [0.0, 0.0]);
+    }
+
+    // Perf contract: camera motion must change ONLY the projected quad. The
+    // painter's per-node cache keys on the quad-stripped draw, so if rect or
+    // font_size ever pick up camera-dependent values again, every 3D label
+    // goes back to re-shaping + re-tessellating text every frame.
+    #[test]
+    fn label_3d_draw_stays_stable_across_camera_motion() {
+        let mut runtime = Runtime::new();
+        runtime.set_viewport_size(800, 600);
+        let camera = NodeAPI::create::<Camera3D>(&mut runtime);
+        let label = NodeAPI::create::<Label3D>(&mut runtime);
+        if let Some(mut node) = runtime.nodes.get_mut(camera)
+            && let SceneNodeData::Camera3D(data) = &mut node.data
+        {
+            data.active = true;
+        }
+        if let Some(mut node) = runtime.nodes.get_mut(label)
+            && let SceneNodeData::Label3D(data) = &mut node.data
+        {
+            data.text = "Stable".into();
+            data.transform.position = Vector3::new(0.0, 0.0, -5.0);
+        }
+
+        let grab_label = |commands: &[RenderCommand]| {
+            commands.iter().find_map(|command| match command {
+                RenderCommand::Ui(UiCommand::UpsertLabel {
+                    node,
+                    rect,
+                    font_size,
+                    wrap_width,
+                    projected_quad,
+                    ..
+                }) if *node == label => {
+                    Some((*rect, *font_size, *wrap_width, *projected_quad))
+                }
+                _ => None,
+            })
+        };
+
+        runtime.extract_render_3d_commands();
+        let first = grab_label(&collect_commands(&mut runtime)).expect("label emitted");
+
+        if let Some(mut node) = runtime.nodes.get_mut(camera)
+            && let SceneNodeData::Camera3D(data) = &mut node.data
+        {
+            data.transform.position = Vector3::new(1.5, 0.75, 2.0);
+        }
+        runtime.mark_transform_dirty_recursive(camera);
+        runtime.extract_render_3d_commands();
+        let second = grab_label(&collect_commands(&mut runtime)).expect("label emitted");
+
+        assert_eq!(first.0, second.0, "layout rect must not track the camera");
+        assert_eq!(first.1, second.1, "font size must not track the camera");
+        assert_eq!(first.2, second.2, "wrap width must not track the camera");
+        assert_ne!(
+            first.3, second.3,
+            "projected quad must track the camera (otherwise the label is stuck)"
+        );
     }
 
     #[test]

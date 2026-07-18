@@ -154,16 +154,39 @@ fn label_3d_content_size(rect_size: [f32; 2], padding: perro_ui::UiRect) -> [f32
     ]
 }
 
-fn label_3d_stable_layout_rect(
-    mut rect: UiRectState,
-    size: Vector2,
-    font_size: f32,
-) -> UiRectState {
+// Canonical layout space for every Label3D: center pinned at the origin and
+// size derived only from (label size aspect, font_size). The painter projects
+// the tessellation onto the world quad by normalizing against this same rect,
+// so the center value never affects output — pinning it (instead of passing
+// the projected screen center) keeps the draw byte-stable across camera and
+// label motion, which is what lets the painter's per-node cache reuse the
+// tessellation every frame instead of re-shaping + re-tessellating.
+fn label_3d_canonical_layout_rect(size: Vector2, font_size: f32) -> UiRectState {
     let height = font_size.max(1.0);
     let aspect = (size.x.abs() / size.y.abs().max(0.001)).max(0.001);
-    rect.size = [(height * aspect).max(1.0), height];
-    rect.rotation_radians = 0.0;
-    rect
+    UiRectState {
+        center: [0.0, 0.0],
+        size: [(height * aspect).max(1.0), height],
+        pivot: [0.5, 0.5],
+        rotation_radians: 0.0,
+        z_index: 0,
+    }
+}
+
+// Billboard orientation for a non-locked Label3D: camera rotation, so the
+// quad is parallel to the image plane (all four corners share one view depth
+// -> projects to an exact screen-aligned rectangle, like the old rect path).
+fn label_billboard_transform_3d(
+    mut transform: perro_structs::Transform3D,
+    camera: &Camera3DState,
+) -> perro_structs::Transform3D {
+    transform.rotation = perro_structs::Quaternion::new(
+        camera.rotation[0],
+        camera.rotation[1],
+        camera.rotation[2],
+        camera.rotation[3],
+    );
+    transform
 }
 
 fn sprite_3d_uv(
@@ -223,25 +246,6 @@ fn world_rect_3d(
         rotation_radians: 0.0,
         z_index: 0,
     })
-}
-
-fn label_world_rect_3d(
-    mut transform: perro_structs::Transform3D,
-    size: Vector2,
-    lock_orientation: bool,
-    camera: &Camera3DState,
-    viewport: Vector2,
-) -> Option<UiRectState> {
-    if !lock_orientation {
-        transform.rotation = perro_structs::Quaternion::new(
-            camera.rotation[0],
-            camera.rotation[1],
-            camera.rotation[2],
-            camera.rotation[3],
-        );
-    }
-    let rect = world_rect_3d(transform, size, camera, viewport)?;
-    Some(rect)
 }
 
 fn label_projected_quad_3d(
@@ -321,7 +325,10 @@ fn project_world_to_ui(world: Vec3, view_proj: Mat4, viewport: Vector2) -> Optio
         return None;
     }
     let ndc = clip.truncate() / clip.w;
-    if ndc.z < -1.0 || ndc.z > 1.0 {
+    // wgpu clip convention: depth 0..1. A point between the camera and the
+    // near plane lands at ndc.z < 0 with a tiny positive w — without this
+    // bound it passes and its projected rect explodes across the screen.
+    if ndc.z < 0.0 || ndc.z > 1.0 {
         return None;
     }
     Some([
