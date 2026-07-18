@@ -1,12 +1,8 @@
-fn build_camera_3d(data: &SceneDefNodeData) -> Camera3D {
-    let mut node = Camera3D::default();
-    if let Some(base) = data.base_ref() {
-        apply_node_3d_data(&mut node, base);
-    }
-    apply_node_3d_fields(&mut node, &data.fields);
-    apply_camera_3d_fields(&mut node, &data.fields);
-    apply_audio_listener_options_data(&mut node.audio_options, &data.fields);
-    node
+define_scene_node_builder! {
+    fn build_camera_3d -> Camera3D = Camera3D::default();
+    base node_3d;
+    apply [apply_camera_3d_fields];
+    custom |node, fields| { apply_audio_listener_options_data(&mut node.audio_options, fields); }
 }
 
 fn apply_camera_3d_fields(node: &mut Camera3D, fields: &[SceneObjectField]) {

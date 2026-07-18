@@ -1,43 +1,31 @@
-fn build_ray_light_3d(data: &SceneDefNodeData) -> RayLight3D {
-    let mut node = RayLight3D::new();
-    if let Some(base) = data.base_ref() {
-        apply_node_3d_data(&mut node, base);
-    }
-    apply_node_3d_fields(&mut node, &data.fields);
-    apply_ray_light_3d_fields(&mut node, &data.fields);
-    node
+define_scene_node_builder! {
+    fn build_ray_light_3d -> RayLight3D = RayLight3D::new();
+    base node_3d;
+    apply [apply_ray_light_3d_fields];
 }
 
-fn build_ambient_light_3d(data: &SceneDefNodeData) -> AmbientLight3D {
-    let mut node = AmbientLight3D::new();
-    apply_ambient_light_3d_fields(&mut node, &data.fields);
-    node
+define_scene_node_builder! {
+    fn build_ambient_light_3d -> AmbientLight3D = AmbientLight3D::new();
+    base none;
+    apply [apply_ambient_light_3d_fields];
 }
 
-fn build_point_light_3d(data: &SceneDefNodeData) -> PointLight3D {
-    let mut node = PointLight3D::new();
-    if let Some(base) = data.base_ref() {
-        apply_node_3d_data(&mut node, base);
-    }
-    apply_node_3d_fields(&mut node, &data.fields);
-    apply_point_light_3d_fields(&mut node, &data.fields);
-    node
+define_scene_node_builder! {
+    fn build_point_light_3d -> PointLight3D = PointLight3D::new();
+    base node_3d;
+    apply [apply_point_light_3d_fields];
 }
 
-fn build_sky_3d(data: &SceneDefNodeData) -> Sky3D {
-    let mut node = Sky3D::default();
-    apply_sky_3d_fields(&mut node, &data.fields);
-    node
+define_scene_node_builder! {
+    fn build_sky_3d -> Sky3D = Sky3D::default();
+    base none;
+    apply [apply_sky_3d_fields];
 }
 
-fn build_spot_light_3d(data: &SceneDefNodeData) -> SpotLight3D {
-    let mut node = SpotLight3D::new();
-    if let Some(base) = data.base_ref() {
-        apply_node_3d_data(&mut node, base);
-    }
-    apply_node_3d_fields(&mut node, &data.fields);
-    apply_spot_light_3d_fields(&mut node, &data.fields);
-    node
+define_scene_node_builder! {
+    fn build_spot_light_3d -> SpotLight3D = SpotLight3D::new();
+    base node_3d;
+    apply [apply_spot_light_3d_fields];
 }
 
 fn apply_ray_light_3d_fields(node: &mut RayLight3D, fields: &[SceneObjectField]) {

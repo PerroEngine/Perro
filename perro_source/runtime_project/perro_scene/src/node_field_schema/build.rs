@@ -163,8 +163,22 @@ pub(super) fn push_base_fields(fields: &mut Vec<SceneNodeField>, node_type: Node
     }
 }
 
-pub(super) fn push_node_fields(fields: &mut Vec<SceneNodeField>, node_type: NodeType) {
-    match node_type {
+macro_rules! define_scene_node_specs {
+    ($fields:ident, $node_type:ident; $($specs:tt)*) => {
+        pub(super) fn push_node_fields(
+            $fields: &mut Vec<SceneNodeField>,
+            $node_type: NodeType,
+        ) {
+            match $node_type {
+                $($specs)*
+            }
+        }
+    };
+}
+
+// Authored `.scn` half of the node registry. Keep each node's schema here;
+// shared field groups live in helpers and use `scene_node_fields!`.
+define_scene_node_specs! { fields, node_type;
         NodeType::Camera2D => {
             push(fields, "Camera", "zoom", NodeFieldType::F32);
             push(fields, "Camera", "render_mask", NodeFieldType::BitMask);
@@ -754,29 +768,13 @@ pub(super) fn push_node_fields(fields: &mut Vec<SceneNodeField>, node_type: Node
             }
         }
         NodeType::AudioMask2D | NodeType::AudioMask3D => {
-            push(fields, "Audio", "active", NodeFieldType::Bool);
+            crate::audio_mask_fields::push_schema(fields);
         }
         NodeType::AudioEffectZone2D | NodeType::AudioEffectZone3D => {
-            push(fields, "Audio", "active", NodeFieldType::Bool);
-            push(fields, "Audio", "audio_mask", NodeFieldType::BitMask);
-            push(fields, "Audio", "bounce", NodeFieldType::Bool);
-            push(
-                fields,
-                "Audio",
-                "effects",
-                NodeFieldType::array(NodeFieldType::String),
-            );
+            crate::audio_effect_zone_fields::push_schema(fields);
         }
         NodeType::AudioPortal2D | NodeType::AudioPortal3D => {
-            push(fields, "Audio", "active", NodeFieldType::Bool);
-            push(fields, "Audio", "strength", NodeFieldType::F32);
-            push(
-                fields,
-                "Audio",
-                "targets",
-                NodeFieldType::array(NodeFieldType::NodeRef(NodeRefHint::any())),
-            );
+            crate::audio_portal_fields::push_schema(fields);
         }
-        _ => {}
-    }
+    _ => {}
 }

@@ -446,174 +446,129 @@ pub(super) fn joint_body_fields_for(ty: NodeType) -> Option<(NodeField, NodeFiel
     }
 }
 
-pub(super) fn scene_node_data_from(
-    data: &SceneDefNodeData,
-    static_ui_style_lookup: Option<StaticUiStyleLookup>,
-) -> Result<SceneNodeData, String> {
-    match data.node_type {
-        NodeType::Node => Ok(SceneNodeData::Node),
-        NodeType::Webcam => Ok(SceneNodeData::Webcam(build_webcam(data))),
-        NodeType::Node2D => Ok(SceneNodeData::Node2D(build_node_2d(data))),
-        NodeType::CameraStream2D => {
-            Ok(SceneNodeData::CameraStream2D(build_camera_stream_2d(data)))
+macro_rules! define_runtime_scene_node_specs {
+    (
+        plain { $($plain_ty:ident => $plain_builder:ident),* $(,)? }
+        styled { $($styled_ty:ident => $styled_builder:ident),* $(,)? }
+    ) => {
+        pub(super) fn scene_node_data_from(
+            data: &SceneDefNodeData,
+            static_ui_style_lookup: Option<StaticUiStyleLookup>,
+        ) -> Result<SceneNodeData, String> {
+            Ok(match data.node_type {
+                NodeType::Node => SceneNodeData::Node,
+                $(NodeType::$plain_ty => $plain_builder(data).into(),)*
+                $(NodeType::$styled_ty => {
+                    $styled_builder(data, static_ui_style_lookup).into()
+                },)*
+            })
         }
-        NodeType::Button2D => Ok(SceneNodeData::Button2D(Box::new(build_button_2d(data)))),
-        NodeType::ImageButton2D => Ok(SceneNodeData::ImageButton2D(Box::new(build_image_button_2d(data)))),
-        NodeType::NineSliceButton2D => Ok(SceneNodeData::NineSliceButton2D(Box::new(build_nine_slice_button_2d(data)))),
-        NodeType::Sprite2D => Ok(SceneNodeData::Sprite2D(build_sprite_2d(data))),
-        NodeType::VideoPlayer2D => Ok(SceneNodeData::VideoPlayer2D(build_video_player_2d(data))),
-        NodeType::Label2D => Ok(SceneNodeData::Label2D(build_label_2d(data))),
-        NodeType::NineSlice2D => Ok(SceneNodeData::NineSlice2D(build_nine_slice_2d(data))),
-        NodeType::AnimatedSprite2D => Ok(SceneNodeData::AnimatedSprite2D(build_animated_sprite_2d(
-            data,
-        ))),
-        NodeType::ParticleEmitter2D => Ok(SceneNodeData::ParticleEmitter2D(build_particle_emitter_2d(
-            data,
-        ))),
-        NodeType::AmbientLight2D => Ok(SceneNodeData::AmbientLight2D(build_ambient_light_2d(data))),
-        NodeType::RayLight2D => Ok(SceneNodeData::RayLight2D(build_ray_light_2d(data))),
-        NodeType::PointLight2D => Ok(SceneNodeData::PointLight2D(build_point_light_2d(data))),
-        NodeType::SpotLight2D => Ok(SceneNodeData::SpotLight2D(build_spot_light_2d(data))),
-        NodeType::TileMap2D => Ok(SceneNodeData::TileMap2D(build_tilemap_2d(data))),
-        NodeType::WaterBody2D => Ok(SceneNodeData::WaterBody2D(Box::new(build_water_body_2d(data)))),
-        NodeType::Skeleton2D => Ok(SceneNodeData::Skeleton2D(build_skeleton_2d(data))),
-        NodeType::BoneAttachment2D => Ok(SceneNodeData::BoneAttachment2D(build_bone_attachment_2d(
-            data,
-        ))),
-        NodeType::IKTarget2D => Ok(SceneNodeData::IKTarget2D(build_ik_target_2d(data))),
-        NodeType::PhysicsBoneChain2D => Ok(SceneNodeData::PhysicsBoneChain2D(
-            Box::new(build_physics_bone_chain_2d(data)),
-        )),
-        NodeType::BoneCollider2D => Ok(SceneNodeData::BoneCollider2D(build_bone_collider_2d(data))),
-        NodeType::Camera2D => Ok(SceneNodeData::Camera2D(build_camera_2d(data))),
-        NodeType::CollisionShape2D => Ok(SceneNodeData::CollisionShape2D(build_collision_shape_2d(
-            data,
-        ))),
-        NodeType::StaticBody2D => Ok(SceneNodeData::StaticBody2D(build_static_body_2d(data))),
-        NodeType::Area2D => Ok(SceneNodeData::Area2D(build_area_2d(data))),
-        NodeType::RigidBody2D => Ok(SceneNodeData::RigidBody2D(build_rigid_body_2d(data))),
-        NodeType::CharacterBody2D => Ok(SceneNodeData::CharacterBody2D(build_character_body_2d(
-            data,
-        ))),
-        NodeType::PhysicsForceEmitter2D => Ok(SceneNodeData::PhysicsForceEmitter2D(
-            build_physics_force_emitter_2d(data),
-        )),
-        NodeType::PinJoint2D => Ok(SceneNodeData::PinJoint2D(build_pin_joint_2d(data))),
-        NodeType::DistanceJoint2D => Ok(SceneNodeData::DistanceJoint2D(build_distance_joint_2d(
-            data,
-        ))),
-        NodeType::FixedJoint2D => Ok(SceneNodeData::FixedJoint2D(build_fixed_joint_2d(data))),
-        NodeType::AudioMask2D => Ok(SceneNodeData::AudioMask2D(build_audio_mask_2d(data))),
-        NodeType::AudioEffectZone2D => Ok(SceneNodeData::AudioEffectZone2D(
-            build_audio_effect_zone_2d(data),
-        )),
-        NodeType::AudioPortal2D => Ok(SceneNodeData::AudioPortal2D(build_audio_portal_2d(data))),
-        NodeType::Node3D => Ok(SceneNodeData::Node3D(build_node_3d(data))),
-        NodeType::CameraStream3D => {
-            Ok(SceneNodeData::CameraStream3D(build_camera_stream_3d(data)))
-        }
-        NodeType::MeshInstance3D => Ok(SceneNodeData::MeshInstance3D(build_mesh_instance_3d(data))),
-        NodeType::MultiMeshInstance3D => Ok(SceneNodeData::MultiMeshInstance3D(
-            build_multi_mesh_instance_3d(data),
-        )),
-        NodeType::Sprite3D => Ok(SceneNodeData::Sprite3D(build_sprite_3d(data))),
-        NodeType::VideoPlayer3D => Ok(SceneNodeData::VideoPlayer3D(build_video_player_3d(data))),
-        NodeType::Label3D => Ok(SceneNodeData::Label3D(build_label_3d(data))),
-        NodeType::CollisionShape3D => Ok(SceneNodeData::CollisionShape3D(build_collision_shape_3d(
-            data,
-        ))),
-        NodeType::StaticBody3D => Ok(SceneNodeData::StaticBody3D(build_static_body_3d(data))),
-        NodeType::Area3D => Ok(SceneNodeData::Area3D(build_area_3d(data))),
-        NodeType::RigidBody3D => Ok(SceneNodeData::RigidBody3D(build_rigid_body_3d(data))),
-        NodeType::CharacterBody3D => Ok(SceneNodeData::CharacterBody3D(build_character_body_3d(
-            data,
-        ))),
-        NodeType::PhysicsForceEmitter3D => Ok(SceneNodeData::PhysicsForceEmitter3D(
-            build_physics_force_emitter_3d(data),
-        )),
-        NodeType::BallJoint3D => Ok(SceneNodeData::BallJoint3D(build_ball_joint_3d(data))),
-        NodeType::HingeJoint3D => Ok(SceneNodeData::HingeJoint3D(build_hinge_joint_3d(data))),
-        NodeType::FixedJoint3D => Ok(SceneNodeData::FixedJoint3D(build_fixed_joint_3d(data))),
-        NodeType::AudioMask3D => Ok(SceneNodeData::AudioMask3D(build_audio_mask_3d(data))),
-        NodeType::AudioEffectZone3D => Ok(SceneNodeData::AudioEffectZone3D(
-            build_audio_effect_zone_3d(data),
-        )),
-        NodeType::AudioPortal3D => Ok(SceneNodeData::AudioPortal3D(build_audio_portal_3d(data))),
-        NodeType::Skeleton3D => Ok(SceneNodeData::Skeleton3D(build_skeleton_3d(data))),
-        NodeType::BoneAttachment3D => Ok(SceneNodeData::BoneAttachment3D(build_bone_attachment_3d(
-            data,
-        ))),
-        NodeType::IKTarget3D => Ok(SceneNodeData::IKTarget3D(build_ik_target_3d(data))),
-        NodeType::PhysicsBoneChain3D => Ok(SceneNodeData::PhysicsBoneChain3D(
-            Box::new(build_physics_bone_chain_3d(data)),
-        )),
-        NodeType::BoneCollider3D => Ok(SceneNodeData::BoneCollider3D(build_bone_collider_3d(data))),
-        NodeType::Camera3D => Ok(SceneNodeData::Camera3D(build_camera_3d(data))),
-        NodeType::ParticleEmitter3D => Ok(SceneNodeData::ParticleEmitter3D(build_particle_emitter_3d(
-            data,
-        ))),
-        NodeType::WaterBody3D => Ok(SceneNodeData::WaterBody3D(Box::new(build_water_body_3d(data)))),
-        NodeType::Decal3D => Ok(SceneNodeData::Decal3D(build_decal_3d(data))),
-        NodeType::AnimationPlayer => Ok(SceneNodeData::AnimationPlayer(build_animation_player(data))),
-        NodeType::AnimationTree => Ok(SceneNodeData::AnimationTree(build_animation_tree(data))),
-        NodeType::AmbientLight3D => Ok(SceneNodeData::AmbientLight3D(build_ambient_light_3d(data))),
-        NodeType::Sky3D => Ok(SceneNodeData::Sky3D(build_sky_3d(data))),
-        NodeType::RayLight3D => Ok(SceneNodeData::RayLight3D(build_ray_light_3d(data))),
-        NodeType::PointLight3D => Ok(SceneNodeData::PointLight3D(build_point_light_3d(data))),
-        NodeType::SpotLight3D => Ok(SceneNodeData::SpotLight3D(build_spot_light_3d(data))),
-        NodeType::UiNode => Ok(SceneNodeData::UiNode(build_ui_node(data))),
-        NodeType::UiPanel => Ok(SceneNodeData::UiPanel(Box::new(build_ui_panel(
-            data,
-            static_ui_style_lookup,
-        )))),
-        NodeType::UiProgressBar => Ok(SceneNodeData::UiProgressBar(Box::new(build_ui_progress_bar(
-            data,
-            static_ui_style_lookup,
-        )))),
-        NodeType::UiButton => Ok(SceneNodeData::UiButton(Box::new(build_ui_button(
-            data,
-            static_ui_style_lookup,
-        )))),
-        NodeType::UiDropdown => Ok(SceneNodeData::UiDropdown(Box::new(build_ui_dropdown(
-            data,
-            static_ui_style_lookup,
-        )))),
-        NodeType::UiShape => Ok(SceneNodeData::UiShape(build_ui_shape(data))),
-        NodeType::UiCheckbox => Ok(SceneNodeData::UiCheckbox(Box::new(build_ui_checkbox(
-            data,
-            static_ui_style_lookup,
-        )))),
-        NodeType::UiColorPicker => Ok(SceneNodeData::UiColorPicker(Box::new(build_ui_color_picker(
-            data,
-            static_ui_style_lookup,
-        )))),
-        NodeType::UiCameraStream => Ok(SceneNodeData::UiCameraStream(Box::new(build_ui_camera_stream(data)))),
-        NodeType::UiViewport => Ok(SceneNodeData::UiViewport(Box::new(build_ui_viewport(data)))),
-        NodeType::UiImage => Ok(SceneNodeData::UiImage(Box::new(build_ui_image(data)))),
-        NodeType::UiVideoPlayer => Ok(SceneNodeData::UiVideoPlayer(Box::new(build_ui_video_player(data)))),
-        NodeType::UiImageButton => Ok(SceneNodeData::UiImageButton(Box::new(build_ui_image_button(data)))),
-        NodeType::UiNineSliceButton => Ok(SceneNodeData::UiNineSliceButton(Box::new(build_ui_nine_slice_button(data)))),
-        NodeType::UiNineSlice => Ok(SceneNodeData::UiNineSlice(Box::new(build_ui_nine_slice(data)))),
-        NodeType::UiAnimatedImage => Ok(SceneNodeData::UiAnimatedImage(Box::new(build_ui_animated_image(
-            data,
-        )))),
-        NodeType::UiLabel => Ok(SceneNodeData::UiLabel(Box::new(build_ui_label(data)))),
-        NodeType::UiTextBox => Ok(SceneNodeData::UiTextBox(Box::new(build_ui_text_box(
-            data,
-            static_ui_style_lookup,
-        )))),
-        NodeType::UiTextBlock => Ok(SceneNodeData::UiTextBlock(Box::new(build_ui_text_block(
-            data,
-            static_ui_style_lookup,
-        )))),
-        NodeType::UiScrollContainer => Ok(SceneNodeData::UiScrollContainer(
-            Box::new(build_ui_scroll_container(data)),
-        )),
-        NodeType::UiLayout => Ok(SceneNodeData::UiLayout(build_ui_layout(data))),
-        NodeType::UiHLayout => Ok(SceneNodeData::UiHLayout(build_ui_hlayout(data))),
-        NodeType::UiVLayout => Ok(SceneNodeData::UiVLayout(build_ui_vlayout(data))),
-        NodeType::UiGrid => Ok(SceneNodeData::UiGrid(build_ui_grid(data))),
-        NodeType::UiTreeList => Ok(SceneNodeData::UiTreeList(Box::new(build_ui_tree_list(data)))),
+    };
+}
+
+// Runtime half of scene-node specs. Constructors stay beside node-family
+// field hooks; this list only binds a NodeType to its constructor. `Into`
+// uses the core node registry, including its Inline/Boxed storage choice.
+define_runtime_scene_node_specs! {
+    plain {
+        Webcam => build_webcam,
+        Node2D => build_node_2d,
+        CameraStream2D => build_camera_stream_2d,
+        Button2D => build_button_2d,
+        ImageButton2D => build_image_button_2d,
+        NineSliceButton2D => build_nine_slice_button_2d,
+        Sprite2D => build_sprite_2d,
+        VideoPlayer2D => build_video_player_2d,
+        Label2D => build_label_2d,
+        NineSlice2D => build_nine_slice_2d,
+        AnimatedSprite2D => build_animated_sprite_2d,
+        ParticleEmitter2D => build_particle_emitter_2d,
+        AmbientLight2D => build_ambient_light_2d,
+        RayLight2D => build_ray_light_2d,
+        PointLight2D => build_point_light_2d,
+        SpotLight2D => build_spot_light_2d,
+        TileMap2D => build_tilemap_2d,
+        WaterBody2D => build_water_body_2d,
+        Skeleton2D => build_skeleton_2d,
+        BoneAttachment2D => build_bone_attachment_2d,
+        IKTarget2D => build_ik_target_2d,
+        PhysicsBoneChain2D => build_physics_bone_chain_2d,
+        BoneCollider2D => build_bone_collider_2d,
+        Camera2D => build_camera_2d,
+        CollisionShape2D => build_collision_shape_2d,
+        StaticBody2D => build_static_body_2d,
+        Area2D => build_area_2d,
+        RigidBody2D => build_rigid_body_2d,
+        CharacterBody2D => build_character_body_2d,
+        PhysicsForceEmitter2D => build_physics_force_emitter_2d,
+        PinJoint2D => build_pin_joint_2d,
+        DistanceJoint2D => build_distance_joint_2d,
+        FixedJoint2D => build_fixed_joint_2d,
+        AudioMask2D => build_audio_mask_2d,
+        AudioEffectZone2D => build_audio_effect_zone_2d,
+        AudioPortal2D => build_audio_portal_2d,
+        Node3D => build_node_3d,
+        CameraStream3D => build_camera_stream_3d,
+        MeshInstance3D => build_mesh_instance_3d,
+        MultiMeshInstance3D => build_multi_mesh_instance_3d,
+        Sprite3D => build_sprite_3d,
+        VideoPlayer3D => build_video_player_3d,
+        Label3D => build_label_3d,
+        CollisionShape3D => build_collision_shape_3d,
+        StaticBody3D => build_static_body_3d,
+        Area3D => build_area_3d,
+        RigidBody3D => build_rigid_body_3d,
+        CharacterBody3D => build_character_body_3d,
+        PhysicsForceEmitter3D => build_physics_force_emitter_3d,
+        BallJoint3D => build_ball_joint_3d,
+        HingeJoint3D => build_hinge_joint_3d,
+        FixedJoint3D => build_fixed_joint_3d,
+        AudioMask3D => build_audio_mask_3d,
+        AudioEffectZone3D => build_audio_effect_zone_3d,
+        AudioPortal3D => build_audio_portal_3d,
+        Skeleton3D => build_skeleton_3d,
+        BoneAttachment3D => build_bone_attachment_3d,
+        IKTarget3D => build_ik_target_3d,
+        PhysicsBoneChain3D => build_physics_bone_chain_3d,
+        BoneCollider3D => build_bone_collider_3d,
+        Camera3D => build_camera_3d,
+        ParticleEmitter3D => build_particle_emitter_3d,
+        WaterBody3D => build_water_body_3d,
+        Decal3D => build_decal_3d,
+        AnimationPlayer => build_animation_player,
+        AnimationTree => build_animation_tree,
+        AmbientLight3D => build_ambient_light_3d,
+        Sky3D => build_sky_3d,
+        RayLight3D => build_ray_light_3d,
+        PointLight3D => build_point_light_3d,
+        SpotLight3D => build_spot_light_3d,
+        UiNode => build_ui_node,
+        UiShape => build_ui_shape,
+        UiCameraStream => build_ui_camera_stream,
+        UiViewport => build_ui_viewport,
+        UiImage => build_ui_image,
+        UiVideoPlayer => build_ui_video_player,
+        UiImageButton => build_ui_image_button,
+        UiNineSliceButton => build_ui_nine_slice_button,
+        UiNineSlice => build_ui_nine_slice,
+        UiAnimatedImage => build_ui_animated_image,
+        UiLabel => build_ui_label,
+        UiScrollContainer => build_ui_scroll_container,
+        UiLayout => build_ui_layout,
+        UiHLayout => build_ui_hlayout,
+        UiVLayout => build_ui_vlayout,
+        UiGrid => build_ui_grid,
+        UiTreeList => build_ui_tree_list,
+    }
+    styled {
+        UiPanel => build_ui_panel,
+        UiProgressBar => build_ui_progress_bar,
+        UiButton => build_ui_button,
+        UiDropdown => build_ui_dropdown,
+        UiCheckbox => build_ui_checkbox,
+        UiColorPicker => build_ui_color_picker,
+        UiTextBox => build_ui_text_box,
+        UiTextBlock => build_ui_text_block,
     }
 }
 

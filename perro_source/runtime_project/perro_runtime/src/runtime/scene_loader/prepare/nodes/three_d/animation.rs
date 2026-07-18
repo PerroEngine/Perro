@@ -1,12 +1,17 @@
-fn build_animation_player(data: &SceneDefNodeData) -> AnimationPlayer {
-    let mut node = AnimationPlayer::new();
-    apply_animation_player_fields(&mut node, &data.fields);
-    node
+define_scene_node_builder! {
+    fn build_animation_player -> AnimationPlayer = AnimationPlayer::new();
+    base none;
+    apply [apply_animation_player_fields];
 }
 
-fn build_animation_tree(data: &SceneDefNodeData) -> AnimationTree {
-    let mut node = AnimationTree::new();
-    SceneFieldIterRef::new(&data.fields).for_each(|name, value| {
+define_scene_node_builder! {
+    fn build_animation_tree -> AnimationTree = AnimationTree::new();
+    base none;
+    apply [apply_animation_tree_fields];
+}
+
+fn apply_animation_tree_fields(node: &mut AnimationTree, fields: &[SceneObjectField]) {
+    SceneFieldIterRef::new(fields).for_each(|name, value| {
         match resolve_node_field("AnimationTree", name) {
             Some(NodeField::AnimationTree(AnimationTreeField::Speed)) => {
                 if let Some(v) = as_f32(value) {
@@ -21,7 +26,6 @@ fn build_animation_tree(data: &SceneDefNodeData) -> AnimationTree {
             _ => {}
         }
     });
-    node
 }
 
 fn apply_animation_player_fields(node: &mut AnimationPlayer, fields: &[SceneObjectField]) {

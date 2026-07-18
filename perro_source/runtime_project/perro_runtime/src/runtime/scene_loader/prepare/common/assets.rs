@@ -32,24 +32,16 @@ fn extract_decal_texture_sources(data: &SceneDefNodeData) -> [Option<String>; 3]
 }
 
 fn extract_texture_source(data: &SceneDefNodeData) -> Option<String> {
-    let texture_field = match data.node_type {
-        NodeType::Sprite2D => NodeField::Sprite2D(Sprite2DField::Texture),
-        NodeType::Sprite3D => NodeField::Sprite3D(Sprite2DField::Texture),
-        NodeType::ImageButton2D => NodeField::ImageButton2D(Button2DField::Texture),
-        NodeType::NineSliceButton2D => NodeField::NineSliceButton2D(Button2DField::Texture),
-        NodeType::NineSlice2D => NodeField::NineSlice2D(Button2DField::Texture),
-        NodeType::AnimatedSprite2D => {
-            NodeField::AnimatedSprite2D(AnimatedSprite2DField::Texture)
-        }
-        NodeType::UiImage => NodeField::UiImage(UiImageField::Texture),
-        NodeType::UiImageButton => NodeField::UiImageButton(UiImageField::Texture),
-        NodeType::UiNineSliceButton => NodeField::UiNineSliceButton(UiImageField::Texture),
-        NodeType::UiNineSlice => NodeField::UiNineSlice(UiImageField::Texture),
-        NodeType::UiAnimatedImage => NodeField::UiAnimatedImage(UiAnimatedImageField::Texture),
-        _ => return None,
-    };
+    let texture_field = scene_node_field(data.node_type, "texture")?;
+    if !matches!(
+        texture_field.ty,
+        NodeFieldType::Asset(SceneAssetKind::Texture)
+    ) {
+        return None;
+    }
     data.fields.iter().find_map(|(name, value)| {
-        (resolve_scene_node_field(data.type_name(), name) == Some(texture_field))
+        (name.as_ref() == texture_field.name
+            || texture_field.aliases.contains(&name.as_ref()))
             .then(|| as_asset_source(value))
             .flatten()
     })

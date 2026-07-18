@@ -24,40 +24,28 @@ fn as_light_color(value: &SceneValue) -> Option<Color> {
     }
 }
 
-fn build_ambient_light_2d(data: &SceneDefNodeData) -> AmbientLight2D {
-    let mut node = AmbientLight2D::new();
-    apply_ambient_light_2d_fields(&mut node, &data.fields);
-    node
+define_scene_node_builder! {
+    fn build_ambient_light_2d -> AmbientLight2D = AmbientLight2D::new();
+    base none;
+    apply [apply_ambient_light_2d_fields];
 }
 
-fn build_ray_light_2d(data: &SceneDefNodeData) -> RayLight2D {
-    let mut node = RayLight2D::new();
-    if let Some(base) = data.base_ref() {
-        apply_node_2d_data(&mut node, base);
-    }
-    apply_node_2d_fields(&mut node, &data.fields);
-    apply_ray_light_2d_fields(&mut node, &data.fields);
-    node
+define_scene_node_builder! {
+    fn build_ray_light_2d -> RayLight2D = RayLight2D::new();
+    base node_2d;
+    apply [apply_ray_light_2d_fields];
 }
 
-fn build_point_light_2d(data: &SceneDefNodeData) -> PointLight2D {
-    let mut node = PointLight2D::new();
-    if let Some(base) = data.base_ref() {
-        apply_node_2d_data(&mut node, base);
-    }
-    apply_node_2d_fields(&mut node, &data.fields);
-    apply_point_light_2d_fields(&mut node, &data.fields);
-    node
+define_scene_node_builder! {
+    fn build_point_light_2d -> PointLight2D = PointLight2D::new();
+    base node_2d;
+    apply [apply_point_light_2d_fields];
 }
 
-fn build_spot_light_2d(data: &SceneDefNodeData) -> SpotLight2D {
-    let mut node = SpotLight2D::new();
-    if let Some(base) = data.base_ref() {
-        apply_node_2d_data(&mut node, base);
-    }
-    apply_node_2d_fields(&mut node, &data.fields);
-    apply_spot_light_2d_fields(&mut node, &data.fields);
-    node
+define_scene_node_builder! {
+    fn build_spot_light_2d -> SpotLight2D = SpotLight2D::new();
+    base node_2d;
+    apply [apply_spot_light_2d_fields];
 }
 
 fn apply_ambient_light_2d_fields(node: &mut AmbientLight2D, fields: &[SceneObjectField]) {

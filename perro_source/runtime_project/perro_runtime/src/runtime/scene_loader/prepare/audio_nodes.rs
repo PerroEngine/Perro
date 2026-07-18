@@ -1,203 +1,119 @@
 use super::*;
 
-pub(super) fn build_audio_mask_2d(data: &SceneDefNodeData) -> AudioMask2D {
-    let mut node = AudioMask2D::default();
-    apply_node_2d_data(&mut node.base, data);
-    apply_audio_mask_2d_data(&mut node, data);
-    node
+define_scene_node_builder! {
+    pub(super) fn build_audio_mask_2d -> AudioMask2D = AudioMask2D::default();
+    base embedded_node_2d;
+    data_apply [apply_audio_mask_2d_data];
+    apply [];
 }
 
-pub(super) fn build_audio_effect_zone_2d(data: &SceneDefNodeData) -> AudioEffectZone2D {
-    let mut node = AudioEffectZone2D::default();
-    apply_node_2d_data(&mut node.base, data);
-    apply_audio_effect_zone_2d_data(&mut node, data);
-    node
+define_scene_node_builder! {
+    pub(super) fn build_audio_effect_zone_2d -> AudioEffectZone2D = AudioEffectZone2D::default();
+    base embedded_node_2d;
+    data_apply [apply_audio_effect_zone_2d_data];
+    apply [];
 }
 
-pub(super) fn build_audio_portal_2d(data: &SceneDefNodeData) -> AudioPortal2D {
-    let mut node = AudioPortal2D::default();
-    apply_node_2d_data(&mut node.base, data);
-    apply_audio_portal_2d_data(&mut node, data);
-    node
+define_scene_node_builder! {
+    pub(super) fn build_audio_portal_2d -> AudioPortal2D = AudioPortal2D::default();
+    base embedded_node_2d;
+    data_apply [apply_audio_portal_2d_data];
+    apply [];
 }
 
-pub(super) fn build_audio_mask_3d(data: &SceneDefNodeData) -> AudioMask3D {
-    let mut node = AudioMask3D::default();
-    apply_node_3d_data(&mut node.base, data);
-    apply_audio_mask_3d_data(&mut node, data);
-    node
+define_scene_node_builder! {
+    pub(super) fn build_audio_mask_3d -> AudioMask3D = AudioMask3D::default();
+    base embedded_node_3d;
+    data_apply [apply_audio_mask_3d_data];
+    apply [];
 }
 
-pub(super) fn build_audio_effect_zone_3d(data: &SceneDefNodeData) -> AudioEffectZone3D {
-    let mut node = AudioEffectZone3D::default();
-    apply_node_3d_data(&mut node.base, data);
-    apply_audio_effect_zone_3d_data(&mut node, data);
-    node
+define_scene_node_builder! {
+    pub(super) fn build_audio_effect_zone_3d -> AudioEffectZone3D = AudioEffectZone3D::default();
+    base embedded_node_3d;
+    data_apply [apply_audio_effect_zone_3d_data];
+    apply [];
 }
 
-pub(super) fn build_audio_portal_3d(data: &SceneDefNodeData) -> AudioPortal3D {
-    let mut node = AudioPortal3D::default();
-    apply_node_3d_data(&mut node.base, data);
-    apply_audio_portal_3d_data(&mut node, data);
-    node
+define_scene_node_builder! {
+    pub(super) fn build_audio_portal_3d -> AudioPortal3D = AudioPortal3D::default();
+    base embedded_node_3d;
+    data_apply [apply_audio_portal_3d_data];
+    apply [];
 }
 
 pub(super) fn apply_audio_portal_2d_data(node: &mut AudioPortal2D, data: &SceneDefNodeData) {
-    for (name, value) in flatten_scene_node_fields(data) {
-        match name.as_ref() {
-            "active" | "enabled" => {
-                if let Some(v) = as_bool(&value) {
-                    node.active = v;
-                }
-            }
-            "strength" => {
-                if let Some(v) = as_f32(&value) {
-                    node.strength = v;
-                }
-            }
-            "targets" | "connections" | "connected" => {
-                node.targets = as_node_ids(&value);
-            }
-            _ => {}
-        }
-    }
+    apply_scene_fields!(data, {
+        audio_portal_fields::ACTIVE => |value| { node.active = value; },
+        audio_portal_fields::STRENGTH => |value| { node.strength = value; },
+        audio_portal_fields::TARGETS => |value| { node.targets = as_node_ids(&value); },
+    });
 }
 
 pub(super) fn apply_audio_portal_3d_data(node: &mut AudioPortal3D, data: &SceneDefNodeData) {
-    for (name, value) in flatten_scene_node_fields(data) {
-        match name.as_ref() {
-            "active" | "enabled" => {
-                if let Some(v) = as_bool(&value) {
-                    node.active = v;
-                }
-            }
-            "strength" => {
-                if let Some(v) = as_f32(&value) {
-                    node.strength = v;
-                }
-            }
-            "targets" | "connections" | "connected" => {
-                node.targets = as_node_ids(&value);
-            }
-            _ => {}
-        }
-    }
+    apply_scene_fields!(data, {
+        audio_portal_fields::ACTIVE => |value| { node.active = value; },
+        audio_portal_fields::STRENGTH => |value| { node.strength = value; },
+        audio_portal_fields::TARGETS => |value| { node.targets = as_node_ids(&value); },
+    });
 }
 
 pub(super) fn apply_audio_mask_2d_data(node: &mut AudioMask2D, data: &SceneDefNodeData) {
-    for (name, value) in flatten_scene_node_fields(data) {
-        match name.as_ref() {
-            "active" | "enabled" => {
-                if let Some(v) = as_bool(&value) {
-                    node.active = v;
-                }
-            }
-            _ => {}
-        }
-    }
+    apply_scene_fields!(data, {
+        audio_mask_fields::ACTIVE => |value| { node.active = value; },
+    });
 }
 
 pub(super) fn apply_audio_mask_3d_data(node: &mut AudioMask3D, data: &SceneDefNodeData) {
-    for (name, value) in flatten_scene_node_fields(data) {
-        match name.as_ref() {
-            "active" | "enabled" => {
-                if let Some(v) = as_bool(&value) {
-                    node.active = v;
-                }
-            }
-            _ => {}
-        }
-    }
+    apply_scene_fields!(data, {
+        audio_mask_fields::ACTIVE => |value| { node.active = value; },
+    });
 }
 
 pub(super) fn apply_audio_effect_zone_2d_data(
     node: &mut AudioEffectZone2D,
     data: &SceneDefNodeData,
 ) {
-    for (name, value) in flatten_scene_node_fields(data) {
-        match name.as_ref() {
-            "active" | "enabled" => {
-                if let Some(v) = as_bool(&value) {
-                    node.active = v;
-                }
-            }
-            "audio_mask" | "audio_masks" | "mask" | "masks" => {
-                if let Some(v) = as_bitmask(&value) {
-                    node.audio_mask = v;
-                }
-            }
-            "bounce" => {
-                if let Some(v) = as_bool(&value) {
-                    node.bounce = v;
-                }
-            }
-            "reverb" | "reverb_send" | "reverbSend" => {
-                if let Some(v) = as_f32(&value) {
-                    first_audio_effect_zone_effect_mut(&mut node.effects).reverb_send = v;
-                }
-            }
-            "echo" => {
-                if let Some(v) = as_f32(&value) {
-                    first_audio_effect_zone_effect_mut(&mut node.effects).echo = v;
-                }
-            }
-            "dampening" | "damping" | "low_pass" | "lowPass" => {
-                if let Some(v) = as_f32(&value) {
-                    first_audio_effect_zone_effect_mut(&mut node.effects).dampening = v;
-                }
-            }
-            "effect" => node.effects = vec![audio_effect_zone_effect_from_value(&value)],
-            "effects" | "effect_chain" | "effectChain" => {
-                node.effects = audio_effect_zone_effects_from_value(&value);
-            }
-            _ => {}
-        }
-    }
+    apply_scene_fields!(data, {
+        audio_effect_zone_fields::ACTIVE => |value| { node.active = value; },
+        audio_effect_zone_fields::AUDIO_MASK => |value| { node.audio_mask = value; },
+        audio_effect_zone_fields::BOUNCE => |value| { node.bounce = value; },
+        audio_effect_zone_fields::REVERB => |value| {
+            first_audio_effect_zone_effect_mut(&mut node.effects).reverb_send = value;
+        },
+        audio_effect_zone_fields::ECHO => |value| {
+            first_audio_effect_zone_effect_mut(&mut node.effects).echo = value;
+        },
+        audio_effect_zone_fields::DAMPENING => |value| {
+            first_audio_effect_zone_effect_mut(&mut node.effects).dampening = value;
+        },
+        audio_effect_zone_fields::EFFECTS => |value| {
+            node.effects = audio_effect_zone_effects_from_value(&value);
+        },
+    });
 }
 
 pub(super) fn apply_audio_effect_zone_3d_data(
     node: &mut AudioEffectZone3D,
     data: &SceneDefNodeData,
 ) {
-    for (name, value) in flatten_scene_node_fields(data) {
-        match name.as_ref() {
-            "active" | "enabled" => {
-                if let Some(v) = as_bool(&value) {
-                    node.active = v;
-                }
-            }
-            "audio_mask" | "audio_masks" | "mask" | "masks" => {
-                if let Some(v) = as_bitmask(&value) {
-                    node.audio_mask = v;
-                }
-            }
-            "bounce" => {
-                if let Some(v) = as_bool(&value) {
-                    node.bounce = v;
-                }
-            }
-            "reverb" | "reverb_send" | "reverbSend" => {
-                if let Some(v) = as_f32(&value) {
-                    first_audio_effect_zone_effect_mut(&mut node.effects).reverb_send = v;
-                }
-            }
-            "echo" => {
-                if let Some(v) = as_f32(&value) {
-                    first_audio_effect_zone_effect_mut(&mut node.effects).echo = v;
-                }
-            }
-            "dampening" | "damping" | "low_pass" | "lowPass" => {
-                if let Some(v) = as_f32(&value) {
-                    first_audio_effect_zone_effect_mut(&mut node.effects).dampening = v;
-                }
-            }
-            "effect" => node.effects = vec![audio_effect_zone_effect_from_value(&value)],
-            "effects" | "effect_chain" | "effectChain" => {
-                node.effects = audio_effect_zone_effects_from_value(&value);
-            }
-            _ => {}
-        }
-    }
+    apply_scene_fields!(data, {
+        audio_effect_zone_fields::ACTIVE => |value| { node.active = value; },
+        audio_effect_zone_fields::AUDIO_MASK => |value| { node.audio_mask = value; },
+        audio_effect_zone_fields::BOUNCE => |value| { node.bounce = value; },
+        audio_effect_zone_fields::REVERB => |value| {
+            first_audio_effect_zone_effect_mut(&mut node.effects).reverb_send = value;
+        },
+        audio_effect_zone_fields::ECHO => |value| {
+            first_audio_effect_zone_effect_mut(&mut node.effects).echo = value;
+        },
+        audio_effect_zone_fields::DAMPENING => |value| {
+            first_audio_effect_zone_effect_mut(&mut node.effects).dampening = value;
+        },
+        audio_effect_zone_fields::EFFECTS => |value| {
+            node.effects = audio_effect_zone_effects_from_value(&value);
+        },
+    });
 }
 
 pub(super) fn apply_audio_listener_options_data(

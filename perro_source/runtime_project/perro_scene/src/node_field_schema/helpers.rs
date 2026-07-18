@@ -63,50 +63,53 @@ pub(super) fn texture_field(
 }
 
 pub(super) fn decal_fields(fields: &mut Vec<SceneNodeField>) {
-    push(fields, "Decal", "size", NodeFieldType::Vec3);
-    texture_field(fields, "Decal", "albedo_texture");
-    texture_field(fields, "Decal", "normal_texture");
-    texture_field(fields, "Decal", "emission_texture");
-    push(fields, "Decal", "albedo_mix", NodeFieldType::F32);
-    push(fields, "Decal", "emission_energy", NodeFieldType::F32);
-    push(fields, "Decal", "normal_strength", NodeFieldType::F32);
-    push(fields, "Decal", "normal_fade", NodeFieldType::F32);
-    push(fields, "Decal", "distance_fade_begin", NodeFieldType::F32);
-    push(fields, "Decal", "distance_fade_length", NodeFieldType::F32);
-    push(fields, "Decal", "sort_priority", NodeFieldType::I32);
-    push(fields, "Decal", "active", NodeFieldType::Bool);
+    crate::scene_node_fields!(fields, "Decal", {
+        size: Vec3;
+        albedo_texture: Asset(Texture);
+        normal_texture: Asset(Texture);
+        emission_texture: Asset(Texture);
+        albedo_mix: f32;
+        emission_energy: f32;
+        normal_strength: f32;
+        normal_fade: f32;
+        distance_fade_begin: f32;
+        distance_fade_length: f32;
+        sort_priority: i32;
+        active: bool;
+    });
 }
 
 pub(super) fn sprite_fields(fields: &mut Vec<SceneNodeField>, section: &'static str) {
-    texture_field(fields, section, "texture");
-    push(fields, section, "texture_region", NodeFieldType::Vec4);
-    push(fields, section, "flip_x", NodeFieldType::Bool);
-    push(fields, section, "flip_y", NodeFieldType::Bool);
+    crate::scene_node_fields!(fields, section, {
+        texture: Asset(Texture);
+        texture_region: Option<Vec4>;
+        flip_x: bool;
+        flip_y: bool;
+    });
 }
 
 pub(super) fn sprite_world_fields(fields: &mut Vec<SceneNodeField>, section: &'static str) {
     sprite_fields(fields, section);
-    push(fields, section, "size", NodeFieldType::Vec2);
-    push(fields, section, "modulate", NodeFieldType::Color);
+    crate::scene_node_fields!(fields, section, {
+        size: Vec2;
+        modulate: Color;
+    });
 }
 
 pub(super) fn label_world_fields(fields: &mut Vec<SceneNodeField>, section: &'static str) {
-    push(fields, section, "text", NodeFieldType::String);
-    push(fields, section, "size", NodeFieldType::Vec2);
-    push(fields, section, "lock_orientation", NodeFieldType::Bool);
-    push(fields, section, "backface_cull", NodeFieldType::Bool);
-    push(
-        fields,
-        section,
-        "visible_through_objects",
-        NodeFieldType::Bool,
-    );
-    push(fields, section, "backdrop_color", NodeFieldType::Color);
-    push(fields, section, "corner_radii", NodeFieldType::Vec4);
-    push(fields, section, "padding", NodeFieldType::Vec4);
-    push(fields, section, "color", NodeFieldType::Color);
-    push(fields, section, "font_size", NodeFieldType::F32);
-    push(fields, section, "font", NodeFieldType::String);
+    crate::scene_node_fields!(fields, section, {
+        text: String;
+        size: Vec2;
+        lock_orientation: bool;
+        backface_cull: bool;
+        visible_through_objects: bool;
+        backdrop_color: Color;
+        corner_radii: Vec4;
+        padding: Vec4;
+        color: Color;
+        font_size: f32;
+        font: String;
+    });
     push(
         fields,
         section,
@@ -122,24 +125,23 @@ pub(super) fn label_world_fields(fields: &mut Vec<SceneNodeField>, section: &'st
 }
 
 pub(super) fn button_2d_fields(fields: &mut Vec<SceneNodeField>, section: &'static str) {
-    push(fields, section, "size", NodeFieldType::Vec2);
-    push(fields, section, "input_enabled", NodeFieldType::Bool);
+    crate::scene_node_fields!(fields, section, {
+        size: Vec2;
+        input_enabled: bool;
+    });
 }
 
 pub(super) fn animated_image_fields(fields: &mut Vec<SceneNodeField>, section: &'static str) {
-    texture_field(fields, section, "texture");
-    push(
-        fields,
-        section,
-        "animations",
-        NodeFieldType::array(NodeFieldType::String),
-    );
-    push(fields, section, "texture_region", NodeFieldType::Vec4);
-    push(fields, section, "current_animation", NodeFieldType::String);
-    push(fields, section, "current_frame", NodeFieldType::U32);
-    push(fields, section, "fps_scale", NodeFieldType::F32);
-    push(fields, section, "playing", NodeFieldType::Bool);
-    push(fields, section, "looping", NodeFieldType::Bool);
+    crate::scene_node_fields!(fields, section, {
+        texture: Asset(Texture);
+        animations: Vec<String>;
+        texture_region: Option<Vec4>;
+        current_animation: String;
+        current_frame: u32;
+        fps_scale: f32;
+        playing: bool;
+        looping: bool;
+    });
 }
 
 pub(super) fn video_player_fields(
@@ -148,27 +150,35 @@ pub(super) fn video_player_fields(
     world_size: bool,
     ui_image: bool,
 ) {
-    push(fields, section, "source", NodeFieldType::String);
-    push(fields, section, "playing", NodeFieldType::Bool);
-    push(fields, section, "looping", NodeFieldType::Bool);
-    push(fields, section, "fps_scale", NodeFieldType::F32);
-    push(fields, section, "volume", NodeFieldType::F32);
+    crate::scene_node_fields!(fields, section, {
+        source: String;
+        playing: bool;
+        looping: bool;
+        fps_scale: f32;
+        volume: f32;
+    });
     if world_size {
-        push(fields, section, "size", NodeFieldType::Vec2);
-        push(fields, section, "tint", NodeFieldType::Color);
-        push(fields, section, "flip_x", NodeFieldType::Bool);
-        push(fields, section, "flip_y", NodeFieldType::Bool);
+        crate::scene_node_fields!(fields, section, {
+            size: Vec2;
+            tint: Color;
+            flip_x: bool;
+            flip_y: bool;
+        });
     }
     if ui_image {
-        push(fields, section, "tint", NodeFieldType::Color);
+        crate::scene_node_fields!(fields, section, {
+            tint: Color;
+        });
         push(
             fields,
             section,
             "scale_mode",
             NodeFieldType::enumeration(CAMERA_STREAM_ASPECT_MODE_OPTIONS),
         );
-        push(fields, section, "aspect_ratio", NodeFieldType::F32);
-        push(fields, section, "corner_radius", NodeFieldType::F32);
+        crate::scene_node_fields!(fields, section, {
+            aspect_ratio: f32;
+            corner_radius: f32;
+        });
     }
 }
 

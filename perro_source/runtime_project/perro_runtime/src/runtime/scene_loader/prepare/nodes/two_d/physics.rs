@@ -1,41 +1,25 @@
-fn build_collision_shape_2d(data: &SceneDefNodeData) -> CollisionShape2D {
-    let mut node = CollisionShape2D::default();
-    if let Some(base) = data.base_ref() {
-        apply_node_2d_data(&mut node, base);
-    }
-    apply_node_2d_fields(&mut node, &data.fields);
-    apply_collision_shape_2d_fields(&mut node, &data.fields);
-    node
+define_scene_node_builder! {
+    fn build_collision_shape_2d -> CollisionShape2D = CollisionShape2D::default();
+    base node_2d;
+    apply [apply_collision_shape_2d_fields];
 }
 
-fn build_static_body_2d(data: &SceneDefNodeData) -> StaticBody2D {
-    let mut node = StaticBody2D::default();
-    if let Some(base) = data.base_ref() {
-        apply_node_2d_data(&mut node, base);
-    }
-    apply_node_2d_fields(&mut node, &data.fields);
-    apply_static_body_2d_fields(&mut node, &data.fields);
-    node
+define_scene_node_builder! {
+    fn build_static_body_2d -> StaticBody2D = StaticBody2D::default();
+    base node_2d;
+    apply [apply_static_body_2d_fields];
 }
 
-fn build_rigid_body_2d(data: &SceneDefNodeData) -> RigidBody2D {
-    let mut node = RigidBody2D::default();
-    if let Some(base) = data.base_ref() {
-        apply_node_2d_data(&mut node, base);
-    }
-    apply_node_2d_fields(&mut node, &data.fields);
-    apply_rigid_body_2d_fields(&mut node, &data.fields);
-    node
+define_scene_node_builder! {
+    fn build_rigid_body_2d -> RigidBody2D = RigidBody2D::default();
+    base node_2d;
+    apply [apply_rigid_body_2d_fields];
 }
 
-fn build_character_body_2d(data: &SceneDefNodeData) -> CharacterBody2D {
-    let mut node = CharacterBody2D::default();
-    if let Some(base) = data.base_ref() {
-        apply_node_2d_data(&mut node, base);
-    }
-    apply_node_2d_fields(&mut node, &data.fields);
-    apply_character_body_2d_fields(&mut node, &data.fields);
-    node
+define_scene_node_builder! {
+    fn build_character_body_2d -> CharacterBody2D = CharacterBody2D::default();
+    base node_2d;
+    apply [apply_character_body_2d_fields];
 }
 
 fn apply_character_body_2d_fields(node: &mut CharacterBody2D, fields: &[SceneObjectField]) {
@@ -76,24 +60,16 @@ fn apply_character_body_2d_fields(node: &mut CharacterBody2D, fields: &[SceneObj
     });
 }
 
-fn build_physics_force_emitter_2d(data: &SceneDefNodeData) -> PhysicsForceEmitter2D {
-    let mut node = PhysicsForceEmitter2D::default();
-    if let Some(base) = data.base_ref() {
-        apply_node_2d_data(&mut node, base);
-    }
-    apply_node_2d_fields(&mut node, &data.fields);
-    apply_physics_force_emitter_2d_fields(&mut node, &data.fields);
-    node
+define_scene_node_builder! {
+    fn build_physics_force_emitter_2d -> PhysicsForceEmitter2D = PhysicsForceEmitter2D::default();
+    base node_2d;
+    apply [apply_physics_force_emitter_2d_fields];
 }
 
-fn build_area_2d(data: &SceneDefNodeData) -> Area2D {
-    let mut node = Area2D::default();
-    if let Some(base) = data.base_ref() {
-        apply_node_2d_data(&mut node, base);
-    }
-    apply_node_2d_fields(&mut node, &data.fields);
-    apply_area_2d_fields(&mut node, &data.fields);
-    node
+define_scene_node_builder! {
+    fn build_area_2d -> Area2D = Area2D::default();
+    base node_2d;
+    apply [apply_area_2d_fields];
 }
 
 fn apply_physics_force_emitter_2d_fields(
@@ -167,34 +143,22 @@ fn apply_physics_force_emitter_2d_fields(
     });
 }
 
-fn build_pin_joint_2d(data: &SceneDefNodeData) -> PinJoint2D {
-    let mut node = PinJoint2D::default();
-    if let Some(base) = data.base_ref() {
-        apply_node_2d_data(&mut node, base);
-    }
-    apply_node_2d_fields(&mut node, &data.fields);
-    apply_pin_joint_2d_fields(&mut node, &data.fields);
-    node
+define_scene_node_builder! {
+    fn build_pin_joint_2d -> PinJoint2D = PinJoint2D::default();
+    base node_2d;
+    apply [apply_pin_joint_2d_fields];
 }
 
-fn build_distance_joint_2d(data: &SceneDefNodeData) -> DistanceJoint2D {
-    let mut node = DistanceJoint2D::default();
-    if let Some(base) = data.base_ref() {
-        apply_node_2d_data(&mut node, base);
-    }
-    apply_node_2d_fields(&mut node, &data.fields);
-    apply_distance_joint_2d_fields(&mut node, &data.fields);
-    node
+define_scene_node_builder! {
+    fn build_distance_joint_2d -> DistanceJoint2D = DistanceJoint2D::default();
+    base node_2d;
+    apply [apply_distance_joint_2d_fields];
 }
 
-fn build_fixed_joint_2d(data: &SceneDefNodeData) -> FixedJoint2D {
-    let mut node = FixedJoint2D::default();
-    if let Some(base) = data.base_ref() {
-        apply_node_2d_data(&mut node, base);
-    }
-    apply_node_2d_fields(&mut node, &data.fields);
-    apply_fixed_joint_2d_fields(&mut node, &data.fields);
-    node
+define_scene_node_builder! {
+    fn build_fixed_joint_2d -> FixedJoint2D = FixedJoint2D::default();
+    base node_2d;
+    apply [apply_fixed_joint_2d_fields];
 }
 
 fn apply_collision_shape_2d_fields(node: &mut CollisionShape2D, fields: &[SceneObjectField]) {

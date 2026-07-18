@@ -1,102 +1,67 @@
-fn build_sprite_2d(data: &SceneDefNodeData) -> Sprite2D {
-    let mut node = Sprite2D::new();
-    if let Some(base) = data.base_ref() {
-        apply_node_2d_data(&mut node, base);
-    }
-    apply_node_2d_fields(&mut node, &data.fields);
-    apply_sprite_2d_fields(&mut node, &data.fields);
-    node
+define_scene_node_builder! {
+    fn build_sprite_2d -> Sprite2D = Sprite2D::new();
+    base node_2d;
+    apply [apply_sprite_2d_fields];
 }
 
-fn build_video_player_2d(data: &SceneDefNodeData) -> VideoPlayer2D {
-    let mut node = VideoPlayer2D::new();
-    if let Some(base) = data.base_ref() {
-        apply_node_2d_data(&mut node, base);
-    }
-    apply_node_2d_fields(&mut node, &data.fields);
-    apply_video_player_fields(&mut node.video, &data.fields);
-    apply_video_player_2d_fields(&mut node, &data.fields);
-    node
+define_scene_node_builder! {
+    fn build_video_player_2d -> VideoPlayer2D = VideoPlayer2D::new();
+    base node_2d;
+    apply [apply_video_player_2d_all_fields];
 }
 
-fn build_label_2d(data: &SceneDefNodeData) -> Label2D {
-    let mut node = Label2D::new();
-    if let Some(base) = data.base_ref() {
-        apply_node_2d_data(&mut node, base);
-    }
-    apply_node_2d_fields(&mut node, &data.fields);
-    apply_label_2d_fields(&mut node, &data.fields);
-    node
+fn apply_video_player_2d_all_fields(node: &mut VideoPlayer2D, fields: &[SceneObjectField]) {
+    apply_video_player_fields(&mut node.video, fields);
+    apply_video_player_2d_fields(node, fields);
 }
 
-fn build_button_2d(data: &SceneDefNodeData) -> Button2D {
-    let mut node = Button2D::default();
-    if let Some(base) = data.base_ref() {
-        apply_node_2d_data(&mut node, base);
-    }
-    apply_node_2d_fields(&mut node, &data.fields);
-    apply_button_2d_fields(&mut node, &data.fields);
-    node
+define_scene_node_builder! {
+    fn build_label_2d -> Label2D = Label2D::new();
+    base node_2d;
+    apply [apply_label_2d_fields];
 }
 
-fn build_image_button_2d(data: &SceneDefNodeData) -> ImageButton2D {
-    let mut node = ImageButton2D::default();
-    if let Some(base) = data.base_ref() {
-        apply_node_2d_data(&mut node, base);
-    }
-    apply_node_2d_fields(&mut node, &data.fields);
-    apply_image_button_2d_fields(&mut node, &data.fields);
-    node
+define_scene_node_builder! {
+    fn build_button_2d -> Button2D = Button2D::default();
+    base node_2d;
+    apply [apply_button_2d_fields];
 }
 
-fn build_nine_slice_button_2d(data: &SceneDefNodeData) -> NineSliceButton2D {
-    let mut node = NineSliceButton2D::default();
-    if let Some(base) = data.base_ref() {
-        apply_node_2d_data(&mut node, base);
-    }
-    apply_node_2d_fields(&mut node, &data.fields);
-    apply_nine_slice_button_2d_fields(&mut node, &data.fields);
-    node
+define_scene_node_builder! {
+    fn build_image_button_2d -> ImageButton2D = ImageButton2D::default();
+    base node_2d;
+    apply [apply_image_button_2d_fields];
 }
 
-fn build_nine_slice_2d(data: &SceneDefNodeData) -> NineSlice2D {
-    let mut node = NineSlice2D::new();
-    if let Some(base) = data.base_ref() {
-        apply_node_2d_data(&mut node, base);
-    }
-    apply_node_2d_fields(&mut node, &data.fields);
-    apply_nine_slice_2d_fields(&mut node, &data.fields);
-    node
+define_scene_node_builder! {
+    fn build_nine_slice_button_2d -> NineSliceButton2D = NineSliceButton2D::default();
+    base node_2d;
+    apply [apply_nine_slice_button_2d_fields];
 }
 
-fn build_animated_sprite_2d(data: &SceneDefNodeData) -> AnimatedSprite2D {
-    let mut node = AnimatedSprite2D::new();
-    if let Some(base) = data.base_ref() {
-        apply_node_2d_data(&mut node, base);
-    }
-    apply_node_2d_fields(&mut node, &data.fields);
-    apply_animated_sprite_2d_fields(&mut node, &data.fields);
-    node
+define_scene_node_builder! {
+    fn build_nine_slice_2d -> NineSlice2D = NineSlice2D::new();
+    base node_2d;
+    apply [apply_nine_slice_2d_fields];
 }
 
-fn build_water_body_2d(data: &SceneDefNodeData) -> WaterBody2D {
-    let mut node = WaterBody2D::new();
-    if let Some(base) = data.base_ref() {
-        apply_node_2d_data(&mut node, base);
-    }
-    apply_node_2d_fields(&mut node, &data.fields);
-    apply_water_body_fields(&mut node.water, "WaterBody2D", &data.fields);
-    node
+define_scene_node_builder! {
+    fn build_animated_sprite_2d -> AnimatedSprite2D = AnimatedSprite2D::new();
+    base node_2d;
+    apply [apply_animated_sprite_2d_fields];
 }
 
-fn build_tilemap_2d(data: &SceneDefNodeData) -> TileMap2D {
-    let mut node = TileMap2D::new();
-    if let Some(base) = data.base_ref() {
-        apply_node_2d_data(&mut node, base);
-    }
-    apply_node_2d_fields(&mut node, &data.fields);
-    apply_tilemap_2d_fields(&mut node, &data.fields);
-    node
+define_scene_node_builder! {
+    fn build_water_body_2d -> WaterBody2D = WaterBody2D::new();
+    base node_2d;
+    apply [];
+    custom |node, fields| { apply_water_body_fields(&mut node.water, "WaterBody2D", fields); }
+}
+
+define_scene_node_builder! {
+    fn build_tilemap_2d -> TileMap2D = TileMap2D::new();
+    base node_2d;
+    apply [apply_tilemap_2d_fields];
 }
 
 fn apply_tilemap_2d_fields(node: &mut TileMap2D, fields: &[SceneObjectField]) {

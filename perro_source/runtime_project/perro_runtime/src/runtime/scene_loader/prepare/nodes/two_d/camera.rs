@@ -1,12 +1,8 @@
-fn build_camera_2d(data: &SceneDefNodeData) -> Camera2D {
-    let mut node = Camera2D::default();
-    if let Some(base) = data.base_ref() {
-        apply_node_2d_data(&mut node, base);
-    }
-    apply_node_2d_fields(&mut node, &data.fields);
-    apply_camera_2d_fields(&mut node, &data.fields);
-    apply_audio_listener_options_data(&mut node.audio_options, &data.fields);
-    node
+define_scene_node_builder! {
+    fn build_camera_2d -> Camera2D = Camera2D::default();
+    base node_2d;
+    apply [apply_camera_2d_fields];
+    custom |node, fields| { apply_audio_listener_options_data(&mut node.audio_options, fields); }
 }
 
 fn apply_camera_2d_fields(node: &mut Camera2D, fields: &[SceneObjectField]) {

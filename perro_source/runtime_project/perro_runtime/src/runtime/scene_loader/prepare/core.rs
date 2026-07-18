@@ -3,9 +3,6 @@
 // Builds pending runtime nodes from scene docs and delegates node-family
 // construction to `nodes/*` plus shared prepare helpers.
 
-mod audio_nodes;
-use audio_nodes::*;
-
 use crate::{material_schema, runtime_project::StaticUiStyleLookup};
 use perro_ids::{NodeID, string_to_u64};
 use perro_io::load_asset;
@@ -55,18 +52,21 @@ use perro_render_bridge::Material3D;
 use perro_scene::{
     AnimatedSprite2DField, AnimationPlayerField, AnimationTreeField, Area2DField, Area3DField,
     BoneAttachment2DField, BoneAttachment3DField, BoneCollider2DField, BoneCollider3DField,
-    Button2DField, Camera2DField, Camera3DField, CharacterBodyField, CollisionShape2DField,
+    Camera2DField, Camera3DField, CharacterBodyField, CollisionShape2DField,
     CollisionShape3DField,
     DistanceJoint2DField, HingeJoint3DField, IKTarget2DField, IKTarget3DField, Joint2DField,
     Joint3DField, Light2DField, Light3DField, MeshInstance3DField, NodeField, Parser,
     ParticleEmitter2DField, ParticleEmitter3DField, PhysicsBoneChain2DField,
     PhysicsBoneChain3DField, PhysicsForceEmitterField, PointLight2DField, PointLight3DField,
-    RayLight2DField, RayLight3DField, RigidBody2DField, RigidBody3DField, Scene, SceneFieldIterRef,
-    SceneFieldName, SceneKey, SceneNodeData as SceneDefNodeData,
+    NodeFieldType, RayLight2DField, RayLight3DField, RigidBody2DField, RigidBody3DField, Scene,
+    SceneAssetKind, SceneFieldIterRef, SceneFieldName, SceneKey,
+    SceneFieldKey,
+    SceneNodeData as SceneDefNodeData,
     SceneNodeEntry as SceneDefNodeEntry, SceneObjectField, SceneValue, Skeleton3DField, Sky3DField,
-    SpotLight2DField, SpotLight3DField, Sprite2DField, StaticBody2DField, StaticBody3DField,
-    TileMap2DField, UiAnimatedImageField, UiImageField, WaterBodyField, resolve_node_field,
-    resolve_scene_node_field,
+    SpotLight2DField, SpotLight3DField, StaticBody2DField, StaticBody3DField, TileMap2DField,
+    UiAnimatedImageField, WaterBodyField, resolve_node_field,
+    audio_effect_zone_fields, audio_mask_fields, audio_portal_fields, resolve_scene_node_field,
+    scene_node_field,
 };
 use perro_structs::{
     BitMask, Color, CustomPostParam, CustomPostParamValue, IKTargetSolver, PostProcessEffect,
@@ -86,6 +86,157 @@ use std::sync::Arc;
 use std::time::Duration;
 #[cfg(feature = "profile")]
 use std::time::Instant;
+
+/// Generate common scene-definition -> runtime-node constructors.
+///
+/// Node-specific decode stays in small apply hooks. The macro owns ctor,
+/// inherited-data order, base-field application, and return plumbing.
+macro_rules! define_scene_node_builder {
+    (
+        $vis:vis fn $name:ident -> $ty:ty = $init:expr;
+        base $base:ident;
+        $(data_apply [$($data_apply:ident),* $(,)?];)?
+        apply [$($apply:ident),* $(,)?];
+        $(custom |$node:ident, $fields:ident| $custom:block)?
+    ) => {
+        $vis fn $name(data: &SceneDefNodeData) -> $ty {
+            let mut node = $init;
+            define_scene_node_builder!(@base $base, node, data);
+            $($($data_apply(&mut node, data);)*)?
+            $($apply(&mut node, &data.fields);)*
+            $(
+                let $node = &mut node;
+                let $fields = data.fields.as_ref();
+                $custom
+            )?
+            node
+        }
+    };
+
+    (@base none, $node:ident, $data:ident) => {};
+    (@base node_2d, $node:ident, $data:ident) => {
+        if let Some(base) = $data.base_ref() {
+            apply_node_2d_data(&mut $node, base);
+        }
+        apply_node_2d_fields(&mut $node, &$data.fields);
+    };
+    (@base node_3d, $node:ident, $data:ident) => {
+        if let Some(base) = $data.base_ref() {
+            apply_node_3d_data(&mut $node, base);
+        }
+        apply_node_3d_fields(&mut $node, &$data.fields);
+    };
+    (@base embedded_node_2d, $node:ident, $data:ident) => {
+        apply_node_2d_data(&mut $node.base, $data);
+    };
+    (@base embedded_node_3d, $node:ident, $data:ident) => {
+        apply_node_3d_data(&mut $node.base, $data);
+    };
+    (@base ui, $node:ident, $data:ident) => {
+        if let Some(base) = $data.base_ref() {
+            apply_ui_node_data(&mut $node, base);
+        }
+        apply_ui_node_fields(&mut $node, &$data.fields);
+    };
+}
+
+trait DecodeSceneFieldValue: Sized {
+    fn decode_scene_field_value(value: &SceneValue) -> Option<Self>;
+}
+
+impl DecodeSceneFieldValue for bool {
+    fn decode_scene_field_value(value: &SceneValue) -> Option<Self> {
+        as_bool(value)
+    }
+}
+
+impl DecodeSceneFieldValue for f32 {
+    fn decode_scene_field_value(value: &SceneValue) -> Option<Self> {
+        as_f32(value)
+    }
+}
+
+impl DecodeSceneFieldValue for i32 {
+    fn decode_scene_field_value(value: &SceneValue) -> Option<Self> {
+        as_i32(value)
+    }
+}
+
+impl DecodeSceneFieldValue for u32 {
+    fn decode_scene_field_value(value: &SceneValue) -> Option<Self> {
+        as_u32(value)
+    }
+}
+
+impl DecodeSceneFieldValue for Vector2 {
+    fn decode_scene_field_value(value: &SceneValue) -> Option<Self> {
+        as_vec2(value)
+    }
+}
+
+impl DecodeSceneFieldValue for Vector3 {
+    fn decode_scene_field_value(value: &SceneValue) -> Option<Self> {
+        as_vec3(value)
+    }
+}
+
+impl DecodeSceneFieldValue for Quaternion {
+    fn decode_scene_field_value(value: &SceneValue) -> Option<Self> {
+        as_quat(value)
+    }
+}
+
+impl DecodeSceneFieldValue for Color {
+    fn decode_scene_field_value(value: &SceneValue) -> Option<Self> {
+        as_scene_color(value)
+    }
+}
+
+impl DecodeSceneFieldValue for String {
+    fn decode_scene_field_value(value: &SceneValue) -> Option<Self> {
+        as_str(value).map(str::to_owned)
+    }
+}
+
+impl DecodeSceneFieldValue for BitMask {
+    fn decode_scene_field_value(value: &SceneValue) -> Option<Self> {
+        as_bitmask(value)
+    }
+}
+
+impl DecodeSceneFieldValue for SceneValue {
+    fn decode_scene_field_value(value: &SceneValue) -> Option<Self> {
+        Some(value.clone())
+    }
+}
+
+fn decode_scene_field<T: DecodeSceneFieldValue>(
+    _key: SceneFieldKey<T>,
+    value: &SceneValue,
+) -> Option<T> {
+    T::decode_scene_field_value(value)
+}
+
+/// Apply typed scene fields. Keys own names, aliases, and decode types.
+macro_rules! apply_scene_fields {
+    ($data:expr, { $($key:path => |$value:ident| $body:block),* $(,)? }) => {{
+        for (name, raw_value) in flatten_scene_node_fields($data) {
+            let mut matched = false;
+            $(
+                if !matched && $key.matches(name.as_ref()) {
+                    matched = true;
+                    if let Some($value) = decode_scene_field($key, &raw_value) {
+                        $body
+                    }
+                }
+            )*
+            let _ = matched;
+        }
+    }};
+}
+
+mod audio_nodes;
+use audio_nodes::*;
 
 #[cfg(feature = "profile")]
 pub(super) struct RuntimeSceneLoadStats {

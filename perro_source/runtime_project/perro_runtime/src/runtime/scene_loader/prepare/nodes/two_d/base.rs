@@ -1,17 +1,19 @@
-fn build_node_2d(data: &SceneDefNodeData) -> Node2D {
-    let mut node = Node2D::new();
-    apply_node_2d_data(&mut node, data);
-    node
+define_scene_node_builder! {
+    fn build_node_2d -> Node2D = Node2D::new();
+    base none;
+    data_apply [apply_node_2d_data];
+    apply [];
 }
 
-fn build_camera_stream_2d(data: &SceneDefNodeData) -> CameraStream2D {
-    let mut node = CameraStream2D::default();
-    if let Some(base) = data.base_ref() {
-        apply_node_2d_data(&mut node, base);
-    }
-    apply_node_2d_fields(&mut node, &data.fields);
-    apply_camera_stream_fields(&mut node.stream, &data.fields);
-    SceneFieldIterRef::new(&data.fields).for_each(|name, value| match name {
+define_scene_node_builder! {
+    fn build_camera_stream_2d -> CameraStream2D = CameraStream2D::default();
+    base node_2d;
+    apply [apply_camera_stream_2d_fields];
+}
+
+fn apply_camera_stream_2d_fields(node: &mut CameraStream2D, fields: &[SceneObjectField]) {
+    apply_camera_stream_fields(&mut node.stream, fields);
+    SceneFieldIterRef::new(fields).for_each(|name, value| match name {
         name if scene_key_in(name, COLOR_MODULATE_KEYS) => {
             if let Some(v) = as_scene_color(value) {
                 node.tint = v;
@@ -19,57 +21,36 @@ fn build_camera_stream_2d(data: &SceneDefNodeData) -> CameraStream2D {
         }
         _ => {}
     });
-    node
 }
 
-fn build_skeleton_2d(data: &SceneDefNodeData) -> Skeleton2D {
-    let mut node = Skeleton2D::default();
-    if let Some(base) = data.base_ref() {
-        apply_node_2d_data(&mut node, base);
-    }
-    apply_node_2d_fields(&mut node, &data.fields);
-    apply_skeleton_2d_fields(&mut node, &data.fields);
-    node
+define_scene_node_builder! {
+    fn build_skeleton_2d -> Skeleton2D = Skeleton2D::default();
+    base node_2d;
+    apply [apply_skeleton_2d_fields];
 }
 
-fn build_bone_attachment_2d(data: &SceneDefNodeData) -> BoneAttachment2D {
-    let mut node = BoneAttachment2D::new();
-    if let Some(base) = data.base_ref() {
-        apply_node_2d_data(&mut node, base);
-    }
-    apply_node_2d_fields(&mut node, &data.fields);
-    apply_bone_attachment_2d_fields(&mut node, &data.fields);
-    node
+define_scene_node_builder! {
+    fn build_bone_attachment_2d -> BoneAttachment2D = BoneAttachment2D::new();
+    base node_2d;
+    apply [apply_bone_attachment_2d_fields];
 }
 
-fn build_ik_target_2d(data: &SceneDefNodeData) -> IKTarget2D {
-    let mut node = IKTarget2D::new();
-    if let Some(base) = data.base_ref() {
-        apply_node_2d_data(&mut node, base);
-    }
-    apply_node_2d_fields(&mut node, &data.fields);
-    apply_ik_target_2d_fields(&mut node, &data.fields);
-    node
+define_scene_node_builder! {
+    fn build_ik_target_2d -> IKTarget2D = IKTarget2D::new();
+    base node_2d;
+    apply [apply_ik_target_2d_fields];
 }
 
-fn build_physics_bone_chain_2d(data: &SceneDefNodeData) -> PhysicsBoneChain2D {
-    let mut node = PhysicsBoneChain2D::new();
-    if let Some(base) = data.base_ref() {
-        apply_node_2d_data(&mut node, base);
-    }
-    apply_node_2d_fields(&mut node, &data.fields);
-    apply_physics_bone_chain_2d_fields(&mut node, &data.fields);
-    node
+define_scene_node_builder! {
+    fn build_physics_bone_chain_2d -> PhysicsBoneChain2D = PhysicsBoneChain2D::new();
+    base node_2d;
+    apply [apply_physics_bone_chain_2d_fields];
 }
 
-fn build_bone_collider_2d(data: &SceneDefNodeData) -> BoneCollider2D {
-    let mut node = BoneCollider2D::new();
-    if let Some(base) = data.base_ref() {
-        apply_node_2d_data(&mut node, base);
-    }
-    apply_node_2d_fields(&mut node, &data.fields);
-    apply_bone_collider_2d_fields(&mut node, &data.fields);
-    node
+define_scene_node_builder! {
+    fn build_bone_collider_2d -> BoneCollider2D = BoneCollider2D::new();
+    base node_2d;
+    apply [apply_bone_collider_2d_fields];
 }
 
 fn apply_node_2d_data(target: &mut Node2D, data: &SceneDefNodeData) {

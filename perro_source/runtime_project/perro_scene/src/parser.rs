@@ -1,7 +1,7 @@
 // parser.rs - Parse into scene types
 use crate::{
-    Lexer, Scene, SceneFieldName, SceneKey, SceneNodeData, SceneNodeDataBase, SceneNodeEntry,
-    SceneObjectField, SceneValue, SceneValueKey, Token,
+    Lexer, NodeFieldType, Scene, SceneFieldName, SceneKey, SceneNodeData, SceneNodeDataBase,
+    SceneNodeEntry, SceneObjectField, SceneValue, SceneValueKey, Token, scene_node_spec,
 };
 use perro_nodes::NodeType;
 use perro_structs::Quaternion;
@@ -466,7 +466,6 @@ impl<'a> Parser<'a> {
             }
         }
 
-        normalize_node_fields_for_type(&ty, &mut fields);
         scene_node_data_from_parts(&ty, Cow::Owned(fields), base)
     }
 
@@ -919,10 +918,11 @@ fn canonical_node_type(name: &str) -> Option<NodeType> {
 
 fn scene_node_data_from_parts(
     ty: &str,
-    fields: Cow<'static, [SceneObjectField]>,
+    mut fields: Cow<'static, [SceneObjectField]>,
     base: Option<SceneNodeDataBase>,
 ) -> ParseResult<SceneNodeData> {
     if let Some(node_type) = canonical_node_type(ty) {
+        normalize_node_fields_from_spec(node_type, fields.to_mut());
         Ok(SceneNodeData::new(node_type, fields, base))
     } else {
         Err(format!("unsupported scene node type `{ty}`"))
@@ -933,19 +933,16 @@ fn canonical_scene_field_name(name: &str) -> SceneFieldName {
     SceneFieldName::from_borrowed(name).unwrap_or_else(|| SceneFieldName::from(name.to_string()))
 }
 
-fn normalize_node_fields_for_type(ty: &str, fields: &mut [SceneObjectField]) {
-    let Ok(node_type) = NodeType::from_str(ty) else {
-        return;
-    };
-    let is_2d = node_type.is_a(NodeType::Node2D) || node_type.is_a(NodeType::UiNode);
-    let is_3d = node_type.is_a(NodeType::Node3D);
-    if !is_2d && !is_3d {
-        return;
-    }
-
+fn normalize_node_fields_from_spec(node_type: NodeType, fields: &mut [SceneObjectField]) {
+    let spec = scene_node_spec(node_type);
     for (name, value) in fields.iter_mut() {
-        if name.as_ref() == "rotation"
-            && is_3d
+        let Some(field) = spec.field(name.as_ref()) else {
+            continue;
+        };
+        if name.as_ref() != field.name {
+            *name = SceneFieldName::from(field.name);
+        }
+        if matches!(field.ty, NodeFieldType::Quat)
             && let SceneValue::Vec3 { x, y, z } = value.clone()
         {
             *value = euler_xyz_radians_to_quat_value(x, y, z);

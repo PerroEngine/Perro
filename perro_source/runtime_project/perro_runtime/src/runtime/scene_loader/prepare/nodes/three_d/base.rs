@@ -1,17 +1,19 @@
-fn build_node_3d(data: &SceneDefNodeData) -> Node3D {
-    let mut node = Node3D::new();
-    apply_node_3d_data(&mut node, data);
-    node
+define_scene_node_builder! {
+    fn build_node_3d -> Node3D = Node3D::new();
+    base none;
+    data_apply [apply_node_3d_data];
+    apply [];
 }
 
-fn build_camera_stream_3d(data: &SceneDefNodeData) -> CameraStream3D {
-    let mut node = CameraStream3D::default();
-    if let Some(base) = data.base_ref() {
-        apply_node_3d_data(&mut node, base);
-    }
-    apply_node_3d_fields(&mut node, &data.fields);
-    apply_camera_stream_fields(&mut node.stream, &data.fields);
-    SceneFieldIterRef::new(&data.fields).for_each(|name, value| match name {
+define_scene_node_builder! {
+    fn build_camera_stream_3d -> CameraStream3D = CameraStream3D::default();
+    base node_3d;
+    apply [apply_camera_stream_3d_fields];
+}
+
+fn apply_camera_stream_3d_fields(node: &mut CameraStream3D, fields: &[SceneObjectField]) {
+    apply_camera_stream_fields(&mut node.stream, fields);
+    SceneFieldIterRef::new(fields).for_each(|name, value| match name {
         "size" => {
             if let Some(v) = as_vec2(value) {
                 node.size = [v.x.max(0.001), v.y.max(0.001)];
@@ -24,78 +26,54 @@ fn build_camera_stream_3d(data: &SceneDefNodeData) -> CameraStream3D {
         }
         _ => {}
     });
-    node
 }
 
-fn build_mesh_instance_3d(data: &SceneDefNodeData) -> MeshInstance3D {
-    let mut node = MeshInstance3D::new();
-    if let Some(base) = data.base_ref() {
-        apply_node_3d_data(&mut node, base);
-    }
-    apply_node_3d_fields(&mut node, &data.fields);
-    apply_mesh_instance_3d_fields(&mut node, &data.fields);
-    node
+define_scene_node_builder! {
+    fn build_mesh_instance_3d -> MeshInstance3D = MeshInstance3D::new();
+    base node_3d;
+    apply [apply_mesh_instance_3d_fields];
 }
 
-fn build_multi_mesh_instance_3d(data: &SceneDefNodeData) -> MultiMeshInstance3D {
-    let mut node = MultiMeshInstance3D::new();
-    if let Some(base) = data.base_ref() {
-        apply_node_3d_data(&mut node, base);
-    }
-    apply_node_3d_fields(&mut node, &data.fields);
-    apply_multi_mesh_instance_3d_fields(&mut node, &data.fields);
-    node
+define_scene_node_builder! {
+    fn build_multi_mesh_instance_3d -> MultiMeshInstance3D = MultiMeshInstance3D::new();
+    base node_3d;
+    apply [apply_multi_mesh_instance_3d_fields];
 }
 
-fn build_water_body_3d(data: &SceneDefNodeData) -> WaterBody3D {
-    let mut node = WaterBody3D::new();
-    if let Some(base) = data.base_ref() {
-        apply_node_3d_data(&mut node, base);
-    }
-    apply_node_3d_fields(&mut node, &data.fields);
-    apply_water_body_fields(&mut node.water, "WaterBody3D", &data.fields);
-    node
+define_scene_node_builder! {
+    fn build_water_body_3d -> WaterBody3D = WaterBody3D::new();
+    base node_3d;
+    apply [];
+    custom |node, fields| { apply_water_body_fields(&mut node.water, "WaterBody3D", fields); }
 }
 
-fn build_decal_3d(data: &SceneDefNodeData) -> Decal3D {
-    let mut node = Decal3D::new();
-    if let Some(base) = data.base_ref() {
-        apply_node_3d_data(&mut node, base);
-    }
-    apply_node_3d_fields(&mut node, &data.fields);
-    apply_decal_3d_fields(&mut node, &data.fields);
-    node
+define_scene_node_builder! {
+    fn build_decal_3d -> Decal3D = Decal3D::new();
+    base node_3d;
+    apply [apply_decal_3d_fields];
 }
 
-fn build_sprite_3d(data: &SceneDefNodeData) -> Sprite3D {
-    let mut node = Sprite3D::new();
-    if let Some(base) = data.base_ref() {
-        apply_node_3d_data(&mut node, base);
-    }
-    apply_node_3d_fields(&mut node, &data.fields);
-    apply_sprite_3d_fields(&mut node, &data.fields);
-    node
+define_scene_node_builder! {
+    fn build_sprite_3d -> Sprite3D = Sprite3D::new();
+    base node_3d;
+    apply [apply_sprite_3d_fields];
 }
 
-fn build_video_player_3d(data: &SceneDefNodeData) -> VideoPlayer3D {
-    let mut node = VideoPlayer3D::new();
-    if let Some(base) = data.base_ref() {
-        apply_node_3d_data(&mut node, base);
-    }
-    apply_node_3d_fields(&mut node, &data.fields);
-    apply_video_player_fields(&mut node.video, &data.fields);
-    apply_video_player_3d_fields(&mut node, &data.fields);
-    node
+define_scene_node_builder! {
+    fn build_video_player_3d -> VideoPlayer3D = VideoPlayer3D::new();
+    base node_3d;
+    apply [apply_video_player_3d_all_fields];
 }
 
-fn build_label_3d(data: &SceneDefNodeData) -> Label3D {
-    let mut node = Label3D::new();
-    if let Some(base) = data.base_ref() {
-        apply_node_3d_data(&mut node, base);
-    }
-    apply_node_3d_fields(&mut node, &data.fields);
-    apply_label_3d_fields(&mut node, &data.fields);
-    node
+fn apply_video_player_3d_all_fields(node: &mut VideoPlayer3D, fields: &[SceneObjectField]) {
+    apply_video_player_fields(&mut node.video, fields);
+    apply_video_player_3d_fields(node, fields);
+}
+
+define_scene_node_builder! {
+    fn build_label_3d -> Label3D = Label3D::new();
+    base node_3d;
+    apply [apply_label_3d_fields];
 }
 
 fn apply_sprite_3d_fields(node: &mut Sprite3D, fields: &[SceneObjectField]) {
@@ -287,54 +265,34 @@ fn apply_decal_3d_fields(node: &mut Decal3D, fields: &[SceneObjectField]) {
     });
 }
 
-fn build_skeleton_3d(data: &SceneDefNodeData) -> Skeleton3D {
-    let mut node = Skeleton3D::default();
-    if let Some(base) = data.base_ref() {
-        apply_node_3d_data(&mut node, base);
-    }
-    apply_node_3d_fields(&mut node, &data.fields);
-    apply_skeleton_3d_fields(&mut node, &data.fields);
-    node
+define_scene_node_builder! {
+    fn build_skeleton_3d -> Skeleton3D = Skeleton3D::default();
+    base node_3d;
+    apply [apply_skeleton_3d_fields];
 }
 
-fn build_bone_attachment_3d(data: &SceneDefNodeData) -> BoneAttachment3D {
-    let mut node = BoneAttachment3D::new();
-    if let Some(base) = data.base_ref() {
-        apply_node_3d_data(&mut node, base);
-    }
-    apply_node_3d_fields(&mut node, &data.fields);
-    apply_bone_attachment_3d_fields(&mut node, &data.fields);
-    node
+define_scene_node_builder! {
+    fn build_bone_attachment_3d -> BoneAttachment3D = BoneAttachment3D::new();
+    base node_3d;
+    apply [apply_bone_attachment_3d_fields];
 }
 
-fn build_ik_target_3d(data: &SceneDefNodeData) -> IKTarget3D {
-    let mut node = IKTarget3D::new();
-    if let Some(base) = data.base_ref() {
-        apply_node_3d_data(&mut node, base);
-    }
-    apply_node_3d_fields(&mut node, &data.fields);
-    apply_ik_target_3d_fields(&mut node, &data.fields);
-    node
+define_scene_node_builder! {
+    fn build_ik_target_3d -> IKTarget3D = IKTarget3D::new();
+    base node_3d;
+    apply [apply_ik_target_3d_fields];
 }
 
-fn build_physics_bone_chain_3d(data: &SceneDefNodeData) -> PhysicsBoneChain3D {
-    let mut node = PhysicsBoneChain3D::new();
-    if let Some(base) = data.base_ref() {
-        apply_node_3d_data(&mut node, base);
-    }
-    apply_node_3d_fields(&mut node, &data.fields);
-    apply_physics_bone_chain_3d_fields(&mut node, &data.fields);
-    node
+define_scene_node_builder! {
+    fn build_physics_bone_chain_3d -> PhysicsBoneChain3D = PhysicsBoneChain3D::new();
+    base node_3d;
+    apply [apply_physics_bone_chain_3d_fields];
 }
 
-fn build_bone_collider_3d(data: &SceneDefNodeData) -> BoneCollider3D {
-    let mut node = BoneCollider3D::new();
-    if let Some(base) = data.base_ref() {
-        apply_node_3d_data(&mut node, base);
-    }
-    apply_node_3d_fields(&mut node, &data.fields);
-    apply_bone_collider_3d_fields(&mut node, &data.fields);
-    node
+define_scene_node_builder! {
+    fn build_bone_collider_3d -> BoneCollider3D = BoneCollider3D::new();
+    base node_3d;
+    apply [apply_bone_collider_3d_fields];
 }
 
 fn apply_node_3d_data(target: &mut Node3D, data: &SceneDefNodeData) {

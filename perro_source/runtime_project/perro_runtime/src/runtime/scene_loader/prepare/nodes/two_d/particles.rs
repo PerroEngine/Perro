@@ -1,11 +1,7 @@
-fn build_particle_emitter_2d(data: &SceneDefNodeData) -> ParticleEmitter2D {
-    let mut node = ParticleEmitter2D::default();
-    if let Some(base) = data.base_ref() {
-        apply_node_2d_data(&mut node, base);
-    }
-    apply_node_2d_fields(&mut node, &data.fields);
-    apply_particle_emitter_2d_fields(&mut node, &data.fields);
-    node
+define_scene_node_builder! {
+    fn build_particle_emitter_2d -> ParticleEmitter2D = ParticleEmitter2D::default();
+    base node_2d;
+    apply [apply_particle_emitter_2d_fields];
 }
 
 fn apply_particle_emitter_2d_fields(node: &mut ParticleEmitter2D, fields: &[SceneObjectField]) {

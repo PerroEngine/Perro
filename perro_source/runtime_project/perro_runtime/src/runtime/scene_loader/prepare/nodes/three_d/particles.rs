@@ -1,11 +1,7 @@
-fn build_particle_emitter_3d(data: &SceneDefNodeData) -> ParticleEmitter3D {
-    let mut node = ParticleEmitter3D::default();
-    if let Some(base) = data.base_ref() {
-        apply_node_3d_data(&mut node, base);
-    }
-    apply_node_3d_fields(&mut node, &data.fields);
-    apply_particle_emitter_3d_fields(&mut node, &data.fields);
-    node
+define_scene_node_builder! {
+    fn build_particle_emitter_3d -> ParticleEmitter3D = ParticleEmitter3D::default();
+    base node_3d;
+    apply [apply_particle_emitter_3d_fields];
 }
 
 fn apply_particle_emitter_3d_fields(node: &mut ParticleEmitter3D, fields: &[SceneObjectField]) {
