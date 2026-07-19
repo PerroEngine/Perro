@@ -474,13 +474,11 @@ fn value_row_instance_name(name: &str, idx: usize) -> Option<String> {
                 .and_then(|value| value.strip_suffix("_box"))
             {
                 format!("inspector_var_{idx}_{component}_box")
-            } else if let Some(component) = name
-                .strip_prefix("inspector_value_")
-                .and_then(|value| value.strip_suffix("_label"))
-            {
-                format!("inspector_var_{idx}_{component}_label")
             } else {
-                return None;
+                let component = name
+                    .strip_prefix("inspector_value_")
+                    .and_then(|value| value.strip_suffix("_label"))?;
+                format!("inspector_var_{idx}_{component}_label")
             }
         }
     };
