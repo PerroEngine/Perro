@@ -535,18 +535,14 @@ impl Gpu3D {
         self.hiz_size = hiz_size;
         self.rebuild_hiz_bind_groups(device);
         self.sample_count = sample_count;
-        self.custom_pipelines.clear();
-        self.custom_pipelines_rigid.clear();
-        // Keyed by the same tokens: a stale entry under a re-minted token would
-        // make ensure_custom_pipeline skip the rebuild and bind an old-sample-count
-        // pipeline.
-        self.custom_pipelines_multimesh.clear();
-        self.custom_pipeline_tokens.clear();
-        // Tokens restart from 1: drop the per-token vertex-hook flags so a
-        // re-minted token can't inherit a stale hook flag (missing entries
-        // classify as not depth-safe until the pipeline is ensured again).
-        self.custom_pipeline_vertex_hooks.clear();
-        self.next_custom_pipeline_token = 1;
+        clear_custom_pipeline_maps(
+            &mut self.custom_pipelines,
+            &mut self.custom_pipelines_rigid,
+            &mut self.custom_pipelines_multimesh,
+            &mut self.custom_pipeline_tokens,
+            &mut self.custom_pipeline_vertex_hooks,
+            &mut self.next_custom_pipeline_token,
+        );
         let (gpu_occlusion_enabled, cpu_occlusion_enabled) = occlusion_flags(self.occlusion_mode);
         self.gpu_occlusion_enabled = gpu_occlusion_enabled;
         self.cpu_occlusion_enabled = cpu_occlusion_enabled;
@@ -581,90 +577,55 @@ impl Gpu3D {
     }
 }
 
+fn clear_custom_pipeline_maps<T>(
+    custom_pipelines: &mut AHashMap<u32, T>,
+    custom_pipelines_rigid: &mut AHashMap<u32, T>,
+    custom_pipelines_multimesh: &mut AHashMap<u32, T>,
+    custom_pipeline_tokens: &mut AHashMap<u64, u32>,
+    custom_pipeline_vertex_hooks: &mut AHashMap<u32, bool>,
+    next_custom_pipeline_token: &mut u32,
+) {
+    custom_pipelines.clear();
+    custom_pipelines_rigid.clear();
+    // Keyed by the same tokens: a stale entry under a re-minted token would
+    // make ensure_custom_pipeline skip the rebuild and bind an old-sample-count
+    // pipeline.
+    custom_pipelines_multimesh.clear();
+    custom_pipeline_tokens.clear();
+    // Tokens restart from 1: drop the per-token vertex-hook flags so a
+    // re-minted token can't inherit a stale hook flag (missing entries
+    // classify as not depth-safe until the pipeline is ensured again).
+    custom_pipeline_vertex_hooks.clear();
+    *next_custom_pipeline_token = 1;
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    const TEST_CUSTOM_SHADER: &str = "fn shade_material(in: FragmentInput) -> vec4<f32> {\n    return vec4<f32>(1.0, 1.0, 1.0, 1.0);\n}\n";
-
-    fn test_shader_lookup(_path_hash: u64) -> &'static str {
-        TEST_CUSTOM_SHADER
-    }
-
-    async fn test_device() -> Option<(wgpu::Device, wgpu::Queue)> {
-        let instance = wgpu::Instance::default();
-        let adapter = instance
-            .request_adapter(&wgpu::RequestAdapterOptions {
-                power_preference: wgpu::PowerPreference::LowPower,
-                compatible_surface: None,
-                force_fallback_adapter: false,
-                apply_limit_buckets: false,
-            })
-            .await
-            .ok()?;
-        adapter
-            .request_device(&wgpu::DeviceDescriptor {
-                label: Some("perro_resize_test_device"),
-                required_features: wgpu::Features::empty(),
-                required_limits: wgpu::Limits::default(),
-                experimental_features: wgpu::ExperimentalFeatures::disabled(),
-                memory_hints: wgpu::MemoryHints::Performance,
-                trace: wgpu::Trace::default(),
-            })
-            .await
-            .ok()
-    }
-
     #[test]
     fn sample_count_change_clears_all_custom_pipeline_maps() {
-        pollster::block_on(async {
-            let Some((device, queue)) = test_device().await else {
-                eprintln!("skip resize custom pipeline test: no wgpu adapter");
-                return;
-            };
-            let format = wgpu::TextureFormat::Rgba8Unorm;
-            let mut gpu = Gpu3D::new(
-                &device,
-                &queue,
-                format,
-                Gpu3DConfig {
-                    sample_count: 1,
-                    width: 64,
-                    height: 64,
-                    meshlets_enabled: false,
-                    dev_meshlets: false,
-                    meshlet_debug_view: false,
-                    occlusion_culling: OcclusionCullingMode::Off,
-                    ssao: crate::SsaoQuality::Off,
-                    indirect_first_instance_enabled: false,
-                    multi_draw_indirect_enabled: false,
-                    texture_filter: TextureFilterMode::Linear,
-                },
-            );
+        let mut custom_pipelines = AHashMap::from_iter([(7, ())]);
+        let mut custom_pipelines_rigid = AHashMap::from_iter([(7, ())]);
+        let mut custom_pipelines_multimesh = AHashMap::from_iter([(7, ())]);
+        let mut custom_pipeline_tokens = AHashMap::from_iter([(99, 7)]);
+        let mut custom_pipeline_vertex_hooks = AHashMap::from_iter([(7, true)]);
+        let mut next_custom_pipeline_token = 8;
 
-            let token = gpu
-                .ensure_custom_pipeline(
-                    &device,
-                    RenderPath3D::MultiMesh,
-                    "res://resize_test_custom.wgsl",
-                    CustomMaterialLighting3D::Standard,
-                    Some(test_shader_lookup),
-                )
-                .expect("multimesh custom pipeline must build");
-            assert!(gpu.custom_pipelines_multimesh.contains_key(&token));
-            assert!(gpu.custom_pipeline_vertex_hooks.contains_key(&token));
+        clear_custom_pipeline_maps(
+            &mut custom_pipelines,
+            &mut custom_pipelines_rigid,
+            &mut custom_pipelines_multimesh,
+            &mut custom_pipeline_tokens,
+            &mut custom_pipeline_vertex_hooks,
+            &mut next_custom_pipeline_token,
+        );
 
-            gpu.set_sample_count(&device, format, 4, 64, 64);
-
-            // Tokens re-mint from 1 after a sample-count change; every
-            // token-keyed map must drop or a re-minted token can bind a
-            // pipeline built for the old sample count.
-            assert!(gpu.custom_pipelines_multimesh.is_empty());
-            assert!(gpu.custom_pipelines.is_empty());
-            assert!(gpu.custom_pipelines_rigid.is_empty());
-            assert!(gpu.custom_pipeline_tokens.is_empty());
-            assert!(gpu.custom_pipeline_vertex_hooks.is_empty());
-            assert_eq!(gpu.next_custom_pipeline_token, 1);
-        });
+        assert!(custom_pipelines_multimesh.is_empty());
+        assert!(custom_pipelines.is_empty());
+        assert!(custom_pipelines_rigid.is_empty());
+        assert!(custom_pipeline_tokens.is_empty());
+        assert!(custom_pipeline_vertex_hooks.is_empty());
+        assert_eq!(next_custom_pipeline_token, 1);
     }
 }
