@@ -1003,8 +1003,8 @@ mod scene_data {
             .iter()
             .find(|pending| pending.key_name == "preview")
             .expect("viewport node");
-        let SceneNodeData::UiViewport(viewport) = &viewport.node.data else {
-            panic!("expected UiViewport node");
+        let SceneNodeData::UiSubView(viewport) = &viewport.node.data else {
+            panic!("expected UiSubView node");
         };
         assert_eq!(viewport.resolution, UVector2::new(640, 360));
         assert_eq!(viewport.view_position, Vector3::new(1.0, 2.0, 5.0));
@@ -1017,6 +1017,69 @@ mod scene_data {
             viewport.projection,
             CameraProjection::Orthographic { size, .. } if size == 4.0
         ));
+    }
+
+    #[test]
+    fn sub_view_2d_and_3d_scene_fields_parse() {
+        let scene = Parser::new(
+            r#"
+            $root = @root
+            [root]
+            [Node]
+            [/Node]
+            [/root]
+
+            [two]
+            parent = @root
+            [SubView2D]
+                size = (32, 18)
+                resolution = (320, 180)
+                view_position = (1, 2, 6)
+                background = (0, 0, 0, 0)
+            [/SubView2D]
+            [/two]
+
+            [three]
+            parent = @root
+            [SubView3D]
+                size = (4, 3)
+                resolution = (400, 300)
+                view_2d_position = (7, 9)
+                background = (0, 0, 0, 0)
+            [/SubView3D]
+            [/three]
+            "#,
+        )
+        .parse_scene();
+
+        let prepared =
+            prepare_scene_with_loader(&scene, &|path| Err(format!("unknown scene path `{path}`")))
+                .expect("prepare scene");
+        let two = prepared
+            .nodes
+            .iter()
+            .find(|pending| pending.key_name == "two")
+            .expect("SubView2D node");
+        let SceneNodeData::SubView2D(two) = &two.node.data else {
+            panic!("expected SubView2D node");
+        };
+        assert_eq!(two.size, Vector2::new(32.0, 18.0));
+        assert_eq!(two.sub_view.resolution, UVector2::new(320, 180));
+        assert_eq!(two.sub_view.view_position, Vector3::new(1.0, 2.0, 6.0));
+        assert_eq!(two.sub_view.background, Color::TRANSPARENT);
+
+        let three = prepared
+            .nodes
+            .iter()
+            .find(|pending| pending.key_name == "three")
+            .expect("SubView3D node");
+        let SceneNodeData::SubView3D(three) = &three.node.data else {
+            panic!("expected SubView3D node");
+        };
+        assert_eq!(three.size, Vector2::new(4.0, 3.0));
+        assert_eq!(three.sub_view.resolution, UVector2::new(400, 300));
+        assert_eq!(three.sub_view.view_2d_position, Vector2::new(7.0, 9.0));
+        assert_eq!(three.sub_view.background, Color::TRANSPARENT);
     }
 
 }

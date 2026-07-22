@@ -123,6 +123,9 @@ pub enum CameraStreamSourceState {
 #[derive(Debug, Clone, PartialEq)]
 pub struct CameraStreamState {
     pub source: CameraStreamSourceState,
+    /// Convert scene-linear output for direct UI composition. World-space
+    /// hosts leave this false and use the main final present conversion.
+    pub tone_map_output: bool,
     /// Optional 2D pass composited over a 3D source.
     pub overlay_camera_2d: Option<Camera2DState>,
     /// Clear uncovered pixels to transparent and omit the visual Sky3D pass.

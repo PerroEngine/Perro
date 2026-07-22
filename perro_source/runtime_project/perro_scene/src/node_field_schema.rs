@@ -377,14 +377,20 @@ mod tests {
     }
 
     #[test]
-    fn ui_viewport_schema_owns_view_without_camera_ref() {
-        let fields = scene_node_fields(NodeType::UiViewport);
-        assert!(fields.iter().any(|field| field.name == "view_position"));
-        assert!(fields.iter().any(|field| field.name == "view_rotation"));
-        assert!(fields.iter().any(|field| field.name == "view_2d_position"));
-        assert!(fields.iter().any(|field| field.name == "projection"));
-        assert!(fields.iter().any(|field| field.name == "resolution"));
-        assert!(!fields.iter().any(|field| field.name == "camera"));
+    fn sub_view_schemas_own_mixed_views_without_camera_ref() {
+        for node_type in [
+            NodeType::UiSubView,
+            NodeType::SubView2D,
+            NodeType::SubView3D,
+        ] {
+            let fields = scene_node_fields(node_type);
+            assert!(fields.iter().any(|field| field.name == "view_position"));
+            assert!(fields.iter().any(|field| field.name == "view_rotation"));
+            assert!(fields.iter().any(|field| field.name == "view_2d_position"));
+            assert!(fields.iter().any(|field| field.name == "projection"));
+            assert!(fields.iter().any(|field| field.name == "resolution"));
+            assert!(!fields.iter().any(|field| field.name == "camera"));
+        }
     }
 
     #[test]

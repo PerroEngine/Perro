@@ -303,6 +303,7 @@ fn webcam_camera_stream_does_not_overwrite_webcam_texture() {
         Command3D::UpsertCameraStream {
             node,
             stream: Box::new(CameraStreamState {
+                tone_map_output: false,
                 source: CameraStreamSourceState::Webcam {
                     texture,
                     resolution: [2, 1],

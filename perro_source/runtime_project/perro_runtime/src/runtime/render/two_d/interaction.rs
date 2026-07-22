@@ -27,7 +27,7 @@ impl Runtime {
             };
             let next = if inactive
                 || !self.is_effectively_visible(node)
-                || self.is_under_ui_viewport(node)
+                || self.is_under_sub_view(node)
                 || Some(node) != hovered
             {
                 UiButtonVisualState::Neutral
@@ -84,7 +84,7 @@ impl Runtime {
                 || !input_enabled
                 || !input_accepted
                 || !self.is_effectively_visible(node)
-                || self.is_under_ui_viewport(node)
+                || self.is_under_sub_view(node)
                 || !render_mask_matches(camera_render_mask, render_layers)
                 || !matches!(
                     mouse_filter,

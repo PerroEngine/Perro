@@ -5,7 +5,7 @@ use crate::runtime::render_2d::{
 use perro_nodes::{
     Area2D, Area3D, CharacterBody2D, CharacterBody3D, CollisionShape2D, CollisionShape3D,
     FixedJoint2D, FixedJoint3D, MeshInstance3D, RigidBody2D, RigidBody3D, Sprite2D, StaticBody2D,
-    StaticBody3D, UiViewport, WaterBody2D, WaterBody3D, WaterIdleMode, WaterShape,
+    StaticBody3D, UiSubView, WaterBody2D, WaterBody3D, WaterIdleMode, WaterShape,
     WaterSurfaceParams,
 };
 use perro_runtime_api::sub_apis::PhysicsAPI;

@@ -6,7 +6,7 @@ use ahash::{AHashMap, AHashSet};
 use glam::Mat4;
 use perro_ids::{MaterialID, MeshID, NodeID, TextureID};
 use perro_nodes::{
-    CameraProjection, CameraStream, NodeType, Renderable, SceneNodeData, Spatial, UiViewport,
+    CameraProjection, CameraStream, NodeType, Renderable, SceneNodeData, Spatial, SubView,
 };
 use perro_render_bridge::{
     AmbientLight2DState, AmbientLight3DState, Camera2DState, Camera3DState, CameraProjectionState,
@@ -41,7 +41,7 @@ fn is_ui_node_data(data: &SceneNodeData) -> bool {
         data,
         SceneNodeData::UiNode(_)
             | SceneNodeData::UiCameraStream(_)
-            | SceneNodeData::UiViewport(_)
+            | SceneNodeData::UiSubView(_)
             | SceneNodeData::UiPanel(_)
             | SceneNodeData::UiProgressBar(_)
             | SceneNodeData::UiButton(_)
@@ -165,6 +165,65 @@ fn camera_stream_projection_state(projection: &CameraProjection) -> CameraProjec
             near: *near,
             far: *far,
         },
+    }
+}
+
+impl Runtime {
+    fn is_sub_view_node(&self, node: NodeID) -> bool {
+        self.nodes.get(node).is_some_and(|node| {
+            matches!(
+                node.data,
+                SceneNodeData::UiSubView(_)
+                    | SceneNodeData::SubView2D(_)
+                    | SceneNodeData::SubView3D(_)
+            )
+        })
+    }
+
+    fn stream_skips_isolated_child(&self, node: NodeID, stream_node: NodeID) -> bool {
+        !self.is_sub_view_node(stream_node) && self.is_under_sub_view(node)
+    }
+
+    fn stream_render_transform_2d(
+        &mut self,
+        node: NodeID,
+        stream_node: NodeID,
+    ) -> Option<perro_structs::Transform2D> {
+        let child = self.get_render_global_transform_2d(node)?;
+        let localize = self
+            .nodes
+            .get(stream_node)
+            .is_some_and(|root| matches!(root.data, SceneNodeData::SubView2D(_)));
+        if !localize {
+            return Some(child);
+        }
+        let root = self.get_render_global_transform_2d(stream_node)?;
+        let local = root.to_mat3().inverse() * child.to_mat3();
+        local
+            .is_finite()
+            .then(|| perro_structs::Transform2D::from_mat3(local))
+            .or(Some(child))
+    }
+
+    fn stream_render_transform_3d(
+        &mut self,
+        node: NodeID,
+        stream_node: NodeID,
+    ) -> Option<perro_structs::Transform3D> {
+        let child = self.get_render_global_transform_3d(node)?;
+        let localize = self
+            .nodes
+            .get(stream_node)
+            .is_some_and(|root| matches!(root.data, SceneNodeData::SubView3D(_)));
+        if !localize {
+            return Some(child);
+        }
+        let root = self.get_render_global_transform_3d(stream_node)?;
+        let local = root.to_mat4().inverse() * child.to_mat4();
+        local
+            .is_finite()
+            .then(|| perro_structs::Transform3D::from_mat4(local))
+            .or(Some(child))
     }
 }
 

@@ -773,6 +773,7 @@ pub(super) fn classify_ui_base_change(before: &UiNode, after: &UiNode) -> u16 {
 pub(super) fn ui_base_from_data(data: &SceneNodeData) -> Option<&UiNode> {
     match data {
         SceneNodeData::UiNode(root) => Some(root),
+        SceneNodeData::UiSubView(node) => Some(&node.base),
         SceneNodeData::UiPanel(node) => Some(&node.base),
         SceneNodeData::UiButton(node) => Some(&node.base),
         SceneNodeData::UiDropdown(node) => Some(&node.button.base),

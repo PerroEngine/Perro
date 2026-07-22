@@ -22,7 +22,7 @@ impl Runtime {
         // Clamp the explicit z lane before packing the hierarchy depth. If the
         // combined value clamps afterward, a large parent z makes parent and
         // child both i32::MAX and the renderer falls back to node-id order.
-        // Keep the depth lane so descendants, including UiViewport images,
+        // Keep the depth lane so descendants, including UiSubView images,
         // always draw above their parent at the same saturated z.
         let min_z = i32::MIN as i64 / DEPTH_STRIDE;
         let max_z = (i32::MAX as i64 - (DEPTH_STRIDE - 1)) / DEPTH_STRIDE;

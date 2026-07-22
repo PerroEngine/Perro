@@ -31,6 +31,7 @@ impl Runtime {
             SceneNodeData::BoneCollider2D(node) => node.visible,
             SceneNodeData::Camera2D(node) => node.visible,
             SceneNodeData::CameraStream2D(node) => node.visible,
+            SceneNodeData::SubView2D(node) => node.visible,
             SceneNodeData::CollisionShape2D(node) => node.visible,
             SceneNodeData::StaticBody2D(node) => node.visible,
             SceneNodeData::Area2D(node) => node.visible,
@@ -57,6 +58,7 @@ impl Runtime {
             SceneNodeData::FixedJoint3D(node) => node.visible,
             SceneNodeData::Camera3D(node) => node.visible,
             SceneNodeData::CameraStream3D(node) => node.visible,
+            SceneNodeData::SubView3D(node) => node.visible,
             SceneNodeData::AmbientLight3D(node) => node.visible,
             SceneNodeData::Sky3D(node) => node.visible,
             SceneNodeData::RayLight3D(node) => node.visible,
@@ -77,7 +79,7 @@ impl Runtime {
             SceneNodeData::AudioEffectZone3D(node) => node.visible,
             SceneNodeData::AudioPortal3D(node) => node.visible,
             SceneNodeData::UiNode(node) => node.visible,
-            SceneNodeData::UiViewport(node) => node.visible,
+            SceneNodeData::UiSubView(node) => node.visible,
             SceneNodeData::UiCameraStream(node) => node.visible,
             SceneNodeData::UiPanel(node) => node.visible,
             SceneNodeData::UiProgressBar(node) => node.visible,
@@ -130,13 +132,18 @@ impl Runtime {
         false
     }
 
-    pub(crate) fn ui_viewport_ancestor(&self, node: NodeID) -> Option<NodeID> {
+    pub(crate) fn sub_view_ancestor(&self, node: NodeID) -> Option<NodeID> {
         let mut current = self.nodes.get(node)?.parent;
         let mut hops = 0usize;
         let max_hops = self.nodes.len().saturating_add(1);
         while !current.is_nil() && hops < max_hops {
             let scene_node = self.nodes.get(current)?;
-            if matches!(scene_node.data, SceneNodeData::UiViewport(_)) {
+            if matches!(
+                scene_node.data,
+                SceneNodeData::UiSubView(_)
+                    | SceneNodeData::SubView2D(_)
+                    | SceneNodeData::SubView3D(_)
+            ) {
                 return Some(current);
             }
             current = scene_node.parent;
@@ -145,20 +152,32 @@ impl Runtime {
         None
     }
 
-    pub(crate) fn is_under_ui_viewport(&self, node: NodeID) -> bool {
-        self.ui_viewport_ancestor(node).is_some()
+    pub(crate) fn is_under_sub_view(&self, node: NodeID) -> bool {
+        self.sub_view_ancestor(node).is_some()
     }
 
-    pub(crate) fn is_suspended_by_ui_viewport(&self, node: NodeID) -> bool {
-        let Some(viewport_id) = self.ui_viewport_ancestor(node) else {
+    pub(crate) fn is_suspended_by_sub_view(&self, node: NodeID) -> bool {
+        let Some(viewport_id) = self.sub_view_ancestor(node) else {
             return false;
         };
         self.nodes.get(viewport_id).is_some_and(|viewport_node| {
             matches!(
                 &viewport_node.data,
-                SceneNodeData::UiViewport(viewport)
+                SceneNodeData::UiSubView(viewport)
                     if viewport.suspend_when_hidden
                         && (!viewport.enabled || !self.is_effectively_visible(viewport_id))
+            ) || matches!(
+                &viewport_node.data,
+                SceneNodeData::SubView2D(viewport)
+                    if viewport.sub_view.suspend_when_hidden
+                        && (!viewport.sub_view.enabled
+                            || !self.is_effectively_visible(viewport_id))
+            ) || matches!(
+                &viewport_node.data,
+                SceneNodeData::SubView3D(viewport)
+                    if viewport.sub_view.suspend_when_hidden
+                        && (!viewport.sub_view.enabled
+                            || !self.is_effectively_visible(viewport_id))
             )
         })
     }

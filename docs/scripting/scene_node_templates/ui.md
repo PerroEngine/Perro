@@ -605,6 +605,41 @@ script = "res://path/to/script.rs"
     [/UiCameraStream]
 [/ui_camera_stream]
 
+[ui_sub_view]
+parent = @PARENTKEY
+script = "res://path/to/script.rs"
+    [UiSubView]
+        resolution = (0, 0)
+        aspect_ratio = 0.0
+        aspect_mode = "fit"
+        view_position = (0, 0, 5)
+        view_rotation = (0, 0, 0, 1)
+        projection = "perspective"
+        perspective_fov_y_degrees = 60
+        view_2d_position = (0, 0)
+        view_2d_rotation = 0.0
+        view_2d_zoom = 1.0
+        background = "#00000000"
+        tint = (1, 1, 1, 1)
+        corner_radius = 0.0
+        enabled = true
+        suspend_when_hidden = true
+        post_processing = []
+        [UiNode]
+            visible = true
+            input_enabled = true
+            mouse_filter = "stop"
+            clip_children = false
+            anchor = "center"
+            size_ratio = (0.25, 0.25)
+            pivot_ratio = (0.5, 0.5)
+            scale = (1, 1)
+            rotation = 0.0
+            z_index = 0
+        [/UiNode]
+    [/UiSubView]
+[/ui_sub_view]
+
 [ui_text_box]
 parent = @PARENTKEY
 script = "res://path/to/script.rs"

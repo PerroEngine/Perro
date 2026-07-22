@@ -238,8 +238,8 @@ pub(super) fn build_ui_camera_stream(data: &SceneDefNodeData) -> UiCameraStream 
     node
 }
 
-pub(super) fn build_ui_viewport(data: &SceneDefNodeData) -> UiViewport {
-    let mut node = UiViewport::default();
+pub(super) fn build_ui_sub_view(data: &SceneDefNodeData) -> UiSubView {
+    let mut node = UiSubView::default();
     if let Some(base) = data.base_ref() {
         apply_ui_root_data(&mut node.base, base);
     }
@@ -258,19 +258,19 @@ pub(super) fn build_ui_viewport(data: &SceneDefNodeData) -> UiViewport {
         "resolution" => {
             if let Some(v) = as_vec2(value) {
                 node.resolution = UVector2::new(
-                    (v.x.max(1.0) as u32).clamp(1, 8192),
-                    (v.y.max(1.0) as u32).clamp(1, 8192),
+                    (v.x.max(0.0) as u32).min(8192),
+                    (v.y.max(0.0) as u32).min(8192),
                 );
             }
         }
         "width" => {
             if let Some(v) = as_u32(value) {
-                node.resolution.x = v.clamp(1, 8192);
+                node.resolution.x = v.min(8192);
             }
         }
         "height" => {
             if let Some(v) = as_u32(value) {
-                node.resolution.y = v.clamp(1, 8192);
+                node.resolution.y = v.min(8192);
             }
         }
         "aspect_ratio" | "ratio" => {

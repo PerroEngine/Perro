@@ -250,7 +250,7 @@ impl Runtime {
         for node in traversal_ids.iter().copied() {
             visible_now.remove(&node);
             let effective_visible =
-                self.is_effectively_visible(node) && !self.is_under_ui_viewport(node);
+                self.is_effectively_visible(node) && !self.is_under_sub_view(node);
             let ambient_light_data = self.nodes.get(node).and_then(|node| match &node.data {
                 SceneNodeData::AmbientLight3D(light)
                     if light.active
@@ -365,6 +365,61 @@ impl Runtime {
                                 node,
                                 stream: Box::new(stream_state),
                                 quad: CameraStream3DState { model, size, tint },
+                            },
+                        )));
+                        visible_now.insert(node);
+                    } else {
+                        self.queue_render_command(RenderCommand::CameraStream(
+                            CameraStreamCommand::RemoveNode { node },
+                        ));
+                        self.remove_retained_render_3d_node(node);
+                    }
+                } else {
+                    self.queue_render_command(RenderCommand::CameraStream(
+                        CameraStreamCommand::RemoveNode { node },
+                    ));
+                    self.remove_retained_render_3d_node(node);
+                }
+            }
+
+            let sub_view_data = self.nodes.get(node).and_then(|node| match &node.data {
+                SceneNodeData::SubView3D(view) => Some((
+                    effective_visible
+                        && view.visible
+                        && view.sub_view.enabled
+                        && render_mask_matches(camera_render_mask, view.render_layers),
+                    view.sub_view.clone(),
+                    view.transform,
+                    view.size,
+                    view.tint,
+                )),
+                _ => None,
+            });
+            if let Some((visible, view, local_transform, size, tint)) = sub_view_data {
+                if visible {
+                    if let Some(stream_state) = self.sub_view_state(node, &view, None) {
+                        let tint =
+                            Runtime::color_modulate(tint, self.effective_self_modulate(node));
+                        let model = self
+                            .get_render_global_transform_3d(node)
+                            .unwrap_or(local_transform)
+                            .to_mat4()
+                            .to_cols_array_2d();
+                        self.queue_render_command(RenderCommand::CameraStream(
+                            CameraStreamCommand::Upsert {
+                                node,
+                                state: Box::new(stream_state.clone()),
+                            },
+                        ));
+                        self.queue_render_command(RenderCommand::ThreeD(Box::new(
+                            Command3D::UpsertCameraStream {
+                                node,
+                                stream: Box::new(stream_state),
+                                quad: CameraStream3DState {
+                                    model,
+                                    size: [size.x.max(0.001), size.y.max(0.001)],
+                                    tint,
+                                },
                             },
                         )));
                         visible_now.insert(node);

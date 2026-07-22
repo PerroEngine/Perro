@@ -11,6 +11,116 @@ define_scene_node_builder! {
     apply [apply_camera_stream_2d_fields];
 }
 
+define_scene_node_builder! {
+    fn build_sub_view_2d -> SubView2D = SubView2D::default();
+    base node_2d;
+    apply [apply_sub_view_2d_fields];
+}
+
+fn apply_sub_view_2d_fields(node: &mut SubView2D, fields: &[SceneObjectField]) {
+    apply_sub_view_fields(&mut node.sub_view, fields);
+    SceneFieldIterRef::new(fields).for_each(|name, value| match name {
+        "size" => {
+            if let Some(v) = as_vec2(value) {
+                node.size = Vector2::new(v.x.max(0.001), v.y.max(0.001));
+            }
+        }
+        name if scene_key_in(name, COLOR_MODULATE_KEYS) => {
+            if let Some(v) = as_scene_color(value) {
+                node.tint = v;
+            }
+        }
+        _ => {}
+    });
+}
+
+fn apply_sub_view_fields(node: &mut SubView, fields: &[SceneObjectField]) {
+    let mut camera = Camera3D {
+        projection: node.projection.clone(),
+        post_processing: node.post_processing.clone(),
+        ..Default::default()
+    };
+    apply_camera_3d_fields(&mut camera, fields);
+    node.projection = camera.projection;
+    node.post_processing = camera.post_processing;
+
+    SceneFieldIterRef::new(fields).for_each(|name, value| match name {
+        "resolution" => {
+            if let Some(v) = as_vec2(value) {
+                node.resolution = UVector2::new(
+                    (v.x.max(1.0) as u32).clamp(1, 8192),
+                    (v.y.max(1.0) as u32).clamp(1, 8192),
+                );
+            }
+        }
+        "width" => {
+            if let Some(v) = as_u32(value) {
+                node.resolution.x = v.clamp(1, 8192);
+            }
+        }
+        "height" => {
+            if let Some(v) = as_u32(value) {
+                node.resolution.y = v.clamp(1, 8192);
+            }
+        }
+        "aspect_ratio" | "ratio" => {
+            if let Some(v) = as_f32(value) {
+                node.aspect_ratio = v.max(0.0);
+            }
+        }
+        "aspect_mode" | "scale_mode" | "image_scale" => {
+            if let Some(v) = as_str(value) {
+                node.aspect_mode = match v {
+                    "stretch" | "fill" => UiImageScaleMode::Stretch,
+                    "cover" | "crop" => UiImageScaleMode::Cover,
+                    _ => UiImageScaleMode::Fit,
+                };
+            }
+        }
+        "view_position" | "camera_position" => {
+            if let Some(v) = as_vec3(value) {
+                node.view_position = v;
+            }
+        }
+        "view_rotation" | "camera_rotation" => {
+            if let Some(v) = as_quat(value) {
+                node.view_rotation = v;
+            }
+        }
+        "view_2d_position" => {
+            if let Some(v) = as_vec2(value) {
+                node.view_2d_position = v;
+            }
+        }
+        "view_2d_rotation" => {
+            if let Some(v) = as_f32(value) {
+                node.view_2d_rotation = v;
+            }
+        }
+        "view_2d_zoom" => {
+            if let Some(v) = as_f32(value) {
+                node.view_2d_zoom = v.max(0.001);
+            }
+        }
+        "background" | "clear_color" => {
+            if let Some(v) = as_scene_color(value) {
+                node.background = v;
+            }
+        }
+        "enabled" | "active" => {
+            if let Some(v) = as_bool(value) {
+                node.enabled = v;
+            }
+        }
+        "suspend_when_hidden" => {
+            if let Some(v) = as_bool(value) {
+                node.suspend_when_hidden = v;
+            }
+        }
+        _ => {}
+    });
+}
+
 fn apply_camera_stream_2d_fields(node: &mut CameraStream2D, fields: &[SceneObjectField]) {
     apply_camera_stream_fields(&mut node.stream, fields);
     SceneFieldIterRef::new(fields).for_each(|name, value| match name {

@@ -227,85 +227,89 @@ define_scene_node_specs! { fields, node_type;
             );
             push(fields, "Camera", "active", NodeFieldType::Bool);
         }
-        NodeType::UiViewport => {
-            push(fields, "Viewport", "resolution", NodeFieldType::Vec2);
-            push(fields, "Viewport", "aspect_ratio", NodeFieldType::F32);
+        NodeType::UiSubView | NodeType::SubView2D | NodeType::SubView3D => {
+            push(fields, "Sub View", "resolution", NodeFieldType::Vec2);
+            push(fields, "Sub View", "aspect_ratio", NodeFieldType::F32);
             push(
                 fields,
-                "Viewport",
+                "Sub View",
                 "aspect_mode",
                 NodeFieldType::enumeration(CAMERA_STREAM_ASPECT_MODE_OPTIONS),
             );
-            push(fields, "Viewport", "view_position", NodeFieldType::Vec3);
-            push(fields, "Viewport", "view_rotation", NodeFieldType::Quat);
+            push(fields, "3D View", "view_position", NodeFieldType::Vec3);
+            push(fields, "3D View", "view_rotation", NodeFieldType::Quat);
             push(
                 fields,
-                "Viewport 2D",
+                "2D View",
                 "view_2d_position",
                 NodeFieldType::Vec2,
             );
             push(
                 fields,
-                "Viewport 2D",
+                "2D View",
                 "view_2d_rotation",
                 NodeFieldType::F32,
             );
-            push(fields, "Viewport 2D", "view_2d_zoom", NodeFieldType::F32);
+            push(fields, "2D View", "view_2d_zoom", NodeFieldType::F32);
             push(
                 fields,
-                "Viewport Camera",
+                "3D View",
                 "projection",
                 NodeFieldType::enum_submenu(CAMERA_PROJECTION_SUBMENUS),
             );
             push(
                 fields,
-                "Viewport Camera",
+                "3D View",
                 "perspective_fov_y_degrees",
                 NodeFieldType::F32,
             );
             push(
                 fields,
-                "Viewport Camera",
+                "3D View",
                 "perspective_near",
                 NodeFieldType::F32,
             );
             push(
                 fields,
-                "Viewport Camera",
+                "3D View",
                 "perspective_far",
                 NodeFieldType::F32,
             );
             push(
                 fields,
-                "Viewport Camera",
+                "3D View",
                 "orthographic_size",
                 NodeFieldType::F32,
             );
             push(
                 fields,
-                "Viewport Camera",
+                "3D View",
                 "orthographic_near",
                 NodeFieldType::F32,
             );
             push(
                 fields,
-                "Viewport Camera",
+                "3D View",
                 "orthographic_far",
                 NodeFieldType::F32,
             );
             push(
                 fields,
-                "Viewport",
+                "Sub View",
                 "post_processing",
                 NodeFieldType::object(Vec::new()),
             );
-            push(fields, "Viewport", "tint", NodeFieldType::Color);
-            push(fields, "Viewport", "background", NodeFieldType::Color);
-            push(fields, "Viewport", "corner_radius", NodeFieldType::F32);
-            push(fields, "Viewport", "enabled", NodeFieldType::Bool);
+            push(fields, "Sub View", "tint", NodeFieldType::Color);
+            push(fields, "Sub View", "background", NodeFieldType::Color);
+            if matches!(node_type, NodeType::UiSubView) {
+                push(fields, "Sub View", "corner_radius", NodeFieldType::F32);
+            } else {
+                push(fields, "Sub View", "size", NodeFieldType::Vec2);
+            }
+            push(fields, "Sub View", "enabled", NodeFieldType::Bool);
             push(
                 fields,
-                "Viewport",
+                "Sub View",
                 "suspend_when_hidden",
                 NodeFieldType::Bool,
             );

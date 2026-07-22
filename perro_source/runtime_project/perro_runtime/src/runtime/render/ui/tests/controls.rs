@@ -177,9 +177,9 @@ mod controls {
         let mut runtime = Runtime::new();
         runtime.set_viewport_size(800, 600);
 
-        let mut viewport = UiViewport::default();
+        let mut viewport = UiSubView::default();
         viewport.layout.size = UiVector2::pixels(90.0, 45.0);
-        let viewport = insert_ui_node(&mut runtime, SceneNodeData::UiViewport(Box::new(viewport)));
+        let viewport = insert_ui_node(&mut runtime, SceneNodeData::UiSubView(Box::new(viewport)));
 
         let mut panel = UiPanel::new();
         panel.layout.size = UiVector2::pixels(120.0, 60.0);

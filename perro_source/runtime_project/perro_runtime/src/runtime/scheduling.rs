@@ -18,7 +18,7 @@ impl Runtime {
         let mut i = 0;
         while i < self.schedules.update_slots.len() {
             let (instance_index, id) = self.schedules.update_slots[i];
-            if !self.is_suspended_by_ui_viewport(id) {
+            if !self.is_suspended_by_sub_view(id) {
                 self.call_update_script_scheduled_with_context(instance_index, id, &res, &ipt);
             }
             i += 1;
@@ -38,7 +38,7 @@ impl Runtime {
         let mut i = 0;
         while i < self.schedules.fixed_slots.len() {
             let (instance_index, id) = self.schedules.fixed_slots[i];
-            if !self.is_suspended_by_ui_viewport(id) {
+            if !self.is_suspended_by_sub_view(id) {
                 self.call_fixed_update_script_scheduled_with_context(
                     instance_index,
                     id,
@@ -106,7 +106,7 @@ impl Runtime {
         let mut i = 0;
         while i < self.schedules.update_slots.len() {
             let (instance_index, id) = self.schedules.update_slots[i];
-            if self.is_suspended_by_ui_viewport(id) {
+            if self.is_suspended_by_sub_view(id) {
                 i += 1;
                 continue;
             }

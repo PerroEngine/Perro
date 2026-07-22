@@ -15,7 +15,10 @@ impl Runtime {
             std::mem::take(&mut self.render_3d.skeleton_palette_scratch);
         for idx in 0..self.camera_stream_node_scratch.len() {
             let node = self.camera_stream_node_scratch[idx];
-            if node == stream_node || !self.is_effectively_visible(node) {
+            if node == stream_node
+                || !self.is_effectively_visible(node)
+                || self.stream_skips_isolated_child(node, stream_node)
+            {
                 continue;
             }
             let Some((mesh, surfaces, _skeleton, meshlet_override, lod, blend, instance_kind)) =
@@ -119,7 +122,7 @@ impl Runtime {
                 continue;
             };
             let model = self
-                .get_render_global_transform_3d(node)
+                .stream_render_transform_3d(node, stream_node)
                 .unwrap_or(perro_structs::Transform3D::IDENTITY)
                 .to_mat4()
                 .to_cols_array_2d();
@@ -218,7 +221,10 @@ impl Runtime {
         // &mut self transform lookups in the match dispatch stay borrow-clean.
         for scan_index in 0..self.camera_stream_node_scratch.len() {
             let node = self.camera_stream_node_scratch[scan_index];
-            if node == stream_node || !self.is_effectively_visible(node) {
+            if node == stream_node
+                || !self.is_effectively_visible(node)
+                || self.stream_skips_isolated_child(node, stream_node)
+            {
                 continue;
             }
             let data = self
@@ -349,7 +355,7 @@ impl Runtime {
                     shadow_normal_bias,
                 }) => {
                     let global = self
-                        .get_render_global_transform_3d(node)
+                        .stream_render_transform_3d(node, stream_node)
                         .unwrap_or(transform);
                     ray_lights.push((
                         node,
@@ -375,7 +381,7 @@ impl Runtime {
                     shadow_normal_bias,
                 }) => {
                     let global = self
-                        .get_render_global_transform_3d(node)
+                        .stream_render_transform_3d(node, stream_node)
                         .unwrap_or(transform);
                     point_lights.push((
                         node,
@@ -404,7 +410,7 @@ impl Runtime {
                     shadow_normal_bias,
                 }) => {
                     let global = self
-                        .get_render_global_transform_3d(node)
+                        .stream_render_transform_3d(node, stream_node)
                         .unwrap_or(transform);
                     spot_lights.push((
                         node,
@@ -453,7 +459,10 @@ impl Runtime {
         let mut out = Vec::new();
         for idx in 0..self.camera_stream_node_scratch.len() {
             let node = self.camera_stream_node_scratch[idx];
-            if node == stream_node || !self.is_effectively_visible(node) {
+            if node == stream_node
+                || !self.is_effectively_visible(node)
+                || self.stream_skips_isolated_child(node, stream_node)
+            {
                 continue;
             }
             let data = self
@@ -504,7 +513,7 @@ impl Runtime {
                 .map(|project| project.config.particle_sim_default)
                 .unwrap_or(perro_project::ParticleSimDefault::Cpu);
             let model = self
-                .get_render_global_transform_3d(node)
+                .stream_render_transform_3d(node, stream_node)
                 .unwrap_or(transform)
                 .to_mat4()
                 .to_cols_array_2d();
@@ -550,7 +559,10 @@ impl Runtime {
         let mut out = Vec::new();
         for idx in 0..self.camera_stream_node_scratch.len() {
             let node = self.camera_stream_node_scratch[idx];
-            if node == stream_node || !self.is_effectively_visible(node) {
+            if node == stream_node
+                || !self.is_effectively_visible(node)
+                || self.stream_skips_isolated_child(node, stream_node)
+            {
                 continue;
             }
             let data = self
@@ -568,7 +580,7 @@ impl Runtime {
             let Some((local_transform, water)) = data else {
                 continue;
             };
-            let water_global = self.get_render_global_transform_3d(node);
+            let water_global = self.stream_render_transform_3d(node, stream_node);
             let model = water_global
                 .unwrap_or(local_transform)
                 .to_mat4()

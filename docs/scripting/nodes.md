@@ -169,6 +169,15 @@ Rendering and resource loading are handled by the runtime and `ResourceWindow`.
 - Tone-maps camera-rendered HDR once and preserves premultiplied alpha edges.
 - Applies source-camera post-processing before stream post-processing.
 
+`SubView2D`
+
+- Owns an isolated mixed 2D/3D descendant scope.
+- Draws that scope onto a 2D quad through implicit 2D and 3D views.
+- Use it for a 3D model that behaves like one 2D game object.
+- Host transform and render layers affect the output quad, not local child camera space.
+- Defaults to a transparent clear and premultiplied HDR output.
+- Uses `size`, `resolution`, `view_*`, `view_2d_*`, `projection`, `background`, `tint`, and `post_processing`.
+
 2D lights:
 
 - `AmbientLight2D`
@@ -382,6 +391,15 @@ See [TileMap2D](tilemap.md).
 - Omits the visual `Sky3D` background while retaining sky lighting and environment effects.
 - Tone-maps camera-rendered HDR once and preserves premultiplied alpha edges.
 - Applies source-camera post-processing before stream post-processing.
+
+`SubView3D`
+
+- Owns an isolated mixed 2D/3D descendant scope.
+- Draws that scope onto a 3D quad through implicit 2D and 3D views.
+- Use it for a local 2D panel, effect, or miniature scene embedded in 3D.
+- Host transform and render layers affect the output quad, not local child camera space.
+- Defaults to a transparent clear and premultiplied HDR output.
+- Uses `size`, `resolution`, `view_*`, `view_2d_*`, `projection`, `background`, `tint`, and `post_processing`.
 
 `ParticleEmitter3D`
 
@@ -731,7 +749,7 @@ UI nodes inherit from `UiNode` in the node registry:
 - `UiImageButton`
 - `UiNineSlice`
 - `UiAnimatedImage`
-- `UiViewport`
+- `UiSubView`
 - `UiLabel`
 - `UiTextBox`
 - `UiTextBlock`
@@ -752,7 +770,11 @@ All UI nodes can have children.
 `UiImageButton` draws an interactive texture region and emits default named signals plus extra configured signals.
 `UiNineSlice` draws a scalable texture panel with fixed corners and tiled edges/center.
 `UiAnimatedImage` draws sprite-sheet animation in UI space.
-`UiViewport` renders an isolated local 3D subtree plus optional 2D descendants inside its UI bounds without a camera node.
+`UiSubView` renders isolated local 2D and 3D descendants inside its UI bounds with implicit views and no camera node.
+`SubView2D` renders the same mixed child scope onto a 2D world quad.
+`SubView3D` renders the same mixed child scope onto a 3D world quad.
+The suffix names the output host space, not the allowed child dimension.
+Legacy `UiViewport` scene names remain a load alias for `UiSubView`.
 `UiLabel` draws text.
 Use `Label2D` or `Label3D` for world-space text that still uses `UiLabel` text, alignment, and locale binding fields.
 `UiTextBox` edits one line of text.

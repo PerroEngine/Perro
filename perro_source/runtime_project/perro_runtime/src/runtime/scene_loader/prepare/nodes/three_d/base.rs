@@ -11,6 +11,29 @@ define_scene_node_builder! {
     apply [apply_camera_stream_3d_fields];
 }
 
+define_scene_node_builder! {
+    fn build_sub_view_3d -> SubView3D = SubView3D::default();
+    base node_3d;
+    apply [apply_sub_view_3d_fields];
+}
+
+fn apply_sub_view_3d_fields(node: &mut SubView3D, fields: &[SceneObjectField]) {
+    apply_sub_view_fields(&mut node.sub_view, fields);
+    SceneFieldIterRef::new(fields).for_each(|name, value| match name {
+        "size" => {
+            if let Some(v) = as_vec2(value) {
+                node.size = Vector2::new(v.x.max(0.001), v.y.max(0.001));
+            }
+        }
+        name if scene_key_in(name, COLOR_MODULATE_KEYS) => {
+            if let Some(v) = as_scene_color(value) {
+                node.tint = v;
+            }
+        }
+        _ => {}
+    });
+}
+
 fn apply_camera_stream_3d_fields(node: &mut CameraStream3D, fields: &[SceneObjectField]) {
     apply_camera_stream_fields(&mut node.stream, fields);
     SceneFieldIterRef::new(fields).for_each(|name, value| match name {

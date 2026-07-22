@@ -29,6 +29,10 @@ impl Runtime {
             };
             return Some(CameraStreamState {
                 source,
+                tone_map_output: matches!(
+                    self.nodes.get(stream_node).map(|node| &node.data),
+                    Some(SceneNodeData::UiCameraStream(_))
+                ),
                 overlay_camera_2d: None,
                 transparent_background: true,
                 clear_color: None,
@@ -107,6 +111,10 @@ impl Runtime {
         };
         Some(CameraStreamState {
             source,
+            tone_map_output: matches!(
+                self.nodes.get(stream_node).map(|node| &node.data),
+                Some(SceneNodeData::UiCameraStream(_))
+            ),
             overlay_camera_2d: None,
             transparent_background: true,
             clear_color: None,
@@ -128,18 +136,18 @@ impl Runtime {
         })
     }
 
-    pub(crate) fn ui_viewport_state(
+    pub(crate) fn sub_view_state(
         &mut self,
-        viewport_node: NodeID,
-        viewport: &UiViewport,
-        ui_size: [f32; 2],
+        view_node: NodeID,
+        view: &SubView,
+        auto_size: Option<[f32; 2]>,
     ) -> Option<CameraStreamState> {
-        if !viewport.enabled {
+        if !view.enabled {
             return None;
         }
 
         self.camera_stream_node_scratch.clear();
-        if let Some(children) = self.nodes.children(viewport_node) {
+        if let Some(children) = self.nodes.children(view_node) {
             self.camera_stream_node_scratch
                 .extend(children.iter().copied());
         }
@@ -150,7 +158,12 @@ impl Runtime {
             let Some(scene_node) = self.nodes.get(node) else {
                 continue;
             };
-            if matches!(scene_node.data, SceneNodeData::UiViewport(_)) {
+            if matches!(
+                scene_node.data,
+                SceneNodeData::UiSubView(_)
+                    | SceneNodeData::SubView2D(_)
+                    | SceneNodeData::SubView3D(_)
+            ) {
                 continue;
             }
             if let Some(children) = self.nodes.children(node) {
@@ -162,25 +175,25 @@ impl Runtime {
         let render_mask = BitMask::NONE;
         let source = CameraStreamSourceState::ThreeD(Camera3DState {
             position: [
-                viewport.view_position.x,
-                viewport.view_position.y,
-                viewport.view_position.z,
+                view.view_position.x,
+                view.view_position.y,
+                view.view_position.z,
             ],
             rotation: [
-                viewport.view_rotation.x,
-                viewport.view_rotation.y,
-                viewport.view_rotation.z,
-                viewport.view_rotation.w,
+                view.view_rotation.x,
+                view.view_rotation.y,
+                view.view_rotation.z,
+                view.view_rotation.w,
             ],
-            projection: camera_stream_projection_state(&viewport.projection),
+            projection: camera_stream_projection_state(&view.projection),
             render_mask,
             post_processing: Arc::from([]),
             audio_options: perro_structs::AudioListenerOptions::new(),
         });
         let overlay_camera_2d = Some(Camera2DState {
-            position: [viewport.view_2d_position.x, viewport.view_2d_position.y],
-            rotation_radians: viewport.view_2d_rotation,
-            zoom: viewport.view_2d_zoom.max(0.001),
+            position: [view.view_2d_position.x, view.view_2d_position.y],
+            rotation_radians: view.view_2d_rotation,
+            zoom: view.view_2d_zoom.max(0.001),
             render_mask,
             post_processing: Arc::from([]),
             audio_options: perro_structs::AudioListenerOptions::new(),
@@ -188,41 +201,45 @@ impl Runtime {
 
         const AUTO_RESOLUTION_SCALE: f32 = 2.0;
         let resolution = [
-            if viewport.resolution.x == 0 {
-                (ui_size[0] * AUTO_RESOLUTION_SCALE)
+            if view.resolution.x == 0 {
+                (auto_size.unwrap_or([1.0, 1.0])[0] * AUTO_RESOLUTION_SCALE)
                     .round()
                     .clamp(1.0, 8192.0) as u32
             } else {
-                viewport.resolution.x.clamp(1, 8192)
+                view.resolution.x.clamp(1, 8192)
             },
-            if viewport.resolution.y == 0 {
-                (ui_size[1] * AUTO_RESOLUTION_SCALE)
+            if view.resolution.y == 0 {
+                (auto_size.unwrap_or([1.0, 1.0])[1] * AUTO_RESOLUTION_SCALE)
                     .round()
                     .clamp(1.0, 8192.0) as u32
             } else {
-                viewport.resolution.y.clamp(1, 8192)
+                view.resolution.y.clamp(1, 8192)
             },
         ];
 
         Some(CameraStreamState {
             source,
+            tone_map_output: matches!(
+                self.nodes.get(view_node).map(|node| &node.data),
+                Some(SceneNodeData::UiSubView(_))
+            ),
             overlay_camera_2d,
-            transparent_background: viewport.background.a() < 1.0,
-            clear_color: Some(viewport.background),
+            transparent_background: view.background.a() < 1.0,
+            clear_color: Some(view.background),
             resolution,
-            aspect_ratio: viewport.aspect_ratio.max(0.0),
-            post_processing: Arc::from(viewport.post_processing.to_effects_vec()),
-            output_texture: Self::camera_stream_texture_id(viewport_node),
-            sprites_2d: self.collect_camera_stream_sprites_2d(render_mask, viewport_node),
-            lights_2d: self.collect_camera_stream_lights_2d(render_mask, viewport_node),
+            aspect_ratio: view.aspect_ratio.max(0.0),
+            post_processing: Arc::from(view.post_processing.to_effects_vec()),
+            output_texture: Self::camera_stream_texture_id(view_node),
+            sprites_2d: self.collect_camera_stream_sprites_2d(render_mask, view_node),
+            lights_2d: self.collect_camera_stream_lights_2d(render_mask, view_node),
             point_particles_2d: self
-                .collect_camera_stream_point_particles_2d(render_mask, viewport_node),
-            waters_2d: self.collect_camera_stream_waters_2d(render_mask, viewport_node),
-            draws_3d: self.collect_camera_stream_draws_3d(render_mask, viewport_node),
-            lighting_3d: self.collect_camera_stream_lighting_3d(render_mask, viewport_node),
+                .collect_camera_stream_point_particles_2d(render_mask, view_node),
+            waters_2d: self.collect_camera_stream_waters_2d(render_mask, view_node),
+            draws_3d: self.collect_camera_stream_draws_3d(render_mask, view_node),
+            lighting_3d: self.collect_camera_stream_lighting_3d(render_mask, view_node),
             point_particles_3d: self
-                .collect_camera_stream_point_particles_3d(render_mask, viewport_node),
-            waters_3d: self.collect_camera_stream_waters_3d(render_mask, viewport_node),
+                .collect_camera_stream_point_particles_3d(render_mask, view_node),
+            waters_3d: self.collect_camera_stream_waters_3d(render_mask, view_node),
         })
     }
 

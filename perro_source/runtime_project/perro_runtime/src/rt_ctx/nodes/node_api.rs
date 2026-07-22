@@ -138,7 +138,7 @@ impl NodeAPI for Runtime {
         if T::NODE_TYPE.is_physics() {
             self.nodes.mark_physics_change();
         }
-        if T::NODE_TYPE == NodeType::UiViewport {
+        if T::NODE_TYPE == NodeType::UiSubView {
             self.invalidate_physics_query_sync();
         }
         if matches!(T::RENDERABLE, Renderable::True) {
@@ -281,7 +281,7 @@ impl NodeAPI for Runtime {
         };
 
         self.mark_needs_rerender(id);
-        if concrete_type == NodeType::UiViewport {
+        if concrete_type == NodeType::UiSubView {
             self.invalidate_physics_query_sync();
         }
         if vis_2d_changed || vis_3d_changed {

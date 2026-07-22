@@ -50,7 +50,7 @@ pub(super) fn ui_root_from_data(data: &SceneNodeData) -> Option<&UiNode> {
     match data {
         SceneNodeData::UiNode(root) => Some(root),
         SceneNodeData::UiCameraStream(node) => Some(&node.base),
-        SceneNodeData::UiViewport(node) => Some(&node.base),
+        SceneNodeData::UiSubView(node) => Some(&node.base),
         SceneNodeData::UiPanel(node) => Some(&node.base),
         SceneNodeData::UiProgressBar(node) => Some(&node.base),
         SceneNodeData::UiShape(node) => Some(&node.base),
@@ -81,7 +81,7 @@ pub(super) fn ui_root_mut_from_data(data: &mut SceneNodeData) -> Option<&mut UiN
     match data {
         SceneNodeData::UiNode(root) => Some(root),
         SceneNodeData::UiCameraStream(node) => Some(&mut node.base),
-        SceneNodeData::UiViewport(node) => Some(&mut node.base),
+        SceneNodeData::UiSubView(node) => Some(&mut node.base),
         SceneNodeData::UiPanel(node) => Some(&mut node.base),
         SceneNodeData::UiProgressBar(node) => Some(&mut node.base),
         SceneNodeData::UiShape(node) => Some(&mut node.base),
@@ -859,7 +859,7 @@ pub(super) fn ui_command_from_node(
                 )),
             })
         }
-        SceneNodeData::UiViewport(viewport) => {
+        SceneNodeData::UiSubView(viewport) => {
             if !viewport.enabled {
                 return None;
             }

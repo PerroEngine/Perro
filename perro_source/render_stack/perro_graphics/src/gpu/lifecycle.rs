@@ -243,6 +243,7 @@ impl Gpu {
         let accessibility =
             VisualAccessibilityProcessor::new(&device, render_format, render_width, render_height);
         let present = PresentProcessor::new(&device, surface_view_format);
+        let camera_stream_tonemap = CameraStreamTonemap::new(&device, render_format);
         let present_scene_bind_group = present.create_bind_group(&device, post.scene_view());
         let present_intermediate_bind_group =
             present.create_bind_group(&device, accessibility.intermediate_view());
@@ -284,6 +285,7 @@ impl Gpu {
             camera_stream_particles_3d: None,
             camera_stream_water: None,
             camera_stream_post: None,
+            camera_stream_tonemap,
             camera_stream_draws_scratch: Vec::new(),
             last_prepare_particles_revision: u64::MAX,
             last_prepare_water_2d_revision: u64::MAX,

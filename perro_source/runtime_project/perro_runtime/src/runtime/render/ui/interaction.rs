@@ -349,7 +349,7 @@ impl Runtime {
         for (node, scene_node) in self.nodes.iter() {
             if matches!(
                 scene_node.data,
-                SceneNodeData::UiCameraStream(_) | SceneNodeData::UiViewport(_)
+                SceneNodeData::UiCameraStream(_) | SceneNodeData::UiSubView(_)
             ) && command_seen.insert(node)
             {
                 command_ids.push(node);
@@ -533,7 +533,7 @@ impl Runtime {
             if !effective_visible {
                 if matches!(
                     scene_node.data,
-                    SceneNodeData::UiCameraStream(_) | SceneNodeData::UiViewport(_)
+                    SceneNodeData::UiCameraStream(_) | SceneNodeData::UiSubView(_)
                 ) {
                     self.queue_render_command(RenderCommand::CameraStream(
                         CameraStreamCommand::RemoveNode { node },
@@ -549,8 +549,8 @@ impl Runtime {
                 SceneNodeData::UiCameraStream(stream_node) => Some(stream_node.stream.clone()),
                 _ => None,
             };
-            let ui_viewport = match &scene_node.data {
-                SceneNodeData::UiViewport(viewport) => Some((**viewport).clone()),
+            let ui_sub_view = match &scene_node.data {
+                SceneNodeData::UiSubView(view) => Some((**view).clone()),
                 _ => None,
             };
             let mut camera_stream_texture = None;
@@ -574,8 +574,12 @@ impl Runtime {
                     ));
                 }
             }
-            if let Some(viewport) = ui_viewport {
-                if let Some(state) = self.ui_viewport_state(node, &viewport, rect_state.size) {
+            if let Some(viewport) = ui_sub_view {
+                if let Some(state) = self.sub_view_state(
+                    node,
+                    &perro_nodes::SubView::from(&viewport),
+                    Some(rect_state.size),
+                ) {
                     camera_stream_texture = Some(state.output_texture);
                     camera_stream_resolution = Some(state.resolution);
                     self.queue_render_command(RenderCommand::CameraStream(

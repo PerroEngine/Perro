@@ -75,7 +75,7 @@ UiNode
 - UiNineSlice
 - UiAnimatedImage
 - UiCameraStream
-- UiViewport
+- UiSubView
 - UiVideoPlayer
 - UiLabel
 - UiButton
@@ -129,12 +129,12 @@ All inherit `UiNode` layout fields.
 
 `UiImage`
 
-`UiViewport`
+`UiSubView`
 
-- Owns an isolated local render scope inside its computed UI rect.
-- Renders `Node3D` descendants with its built-in view; no `Camera3D` child is required.
+- Owns an isolated mixed 2D/3D child render scope inside its computed UI rect.
+- Renders `Node3D` descendants with its implicit 3D view; no `Camera3D` child is required.
 - Defaults to a view at `(0, 0, 5)` looking toward local `(0, 0, 0)`.
-- Composites `Node2D` descendants over the local 3D pass.
+- Composites `Node2D` descendants over the local 3D pass with its implicit 2D view.
 - Keeps spatial descendants out of the main world render pass.
 - Clips the final image to the viewport's UI clip rect and optional corner radius.
 - Uses 2x the computed UI rect as render resolution for edge AA unless `resolution` overrides it.
@@ -146,13 +146,13 @@ All inherit `UiNode` layout fields.
 
 ```text
 [preview]
-[UiViewport]
+[UiSubView]
     size = (320, 180)
     resolution = (640, 360)
     view_position = (0, 0, 5)
     background = "#00000000"
     corner_radius = 0.08
-[/UiViewport]
+[/UiSubView]
 [/preview]
 
 [model]
@@ -171,7 +171,8 @@ parent = @preview
 ```
 
 Use `UiCameraStream` for a view into the existing world.
-Use `UiViewport` for a UI-owned local preview scene.
+Use `UiSubView` for a UI-owned isolated child scene.
+Legacy `[UiViewport]` scene blocks load as `UiSubView`.
 
 - Drawn image node.
 - Holds `texture`, `texture_region`, `tint`, `scale_mode`, alignment, and `aspect_ratio`.

@@ -13,7 +13,7 @@ impl Runtime {
         }
         for i in 0..node_count {
             let id = self.internal_updates.physics_body_nodes_2d[i];
-            let suspended = self.is_suspended_by_ui_viewport(id);
+            let suspended = self.is_suspended_by_sub_view(id);
             let (kind, enabled, rigid, material, groups) = {
                 let Some(node) = self.nodes.get(id) else {
                     continue;
@@ -211,7 +211,7 @@ impl Runtime {
         }
         for i in 0..node_count {
             let id = self.internal_updates.physics_body_nodes_3d[i];
-            let suspended = self.is_suspended_by_ui_viewport(id);
+            let suspended = self.is_suspended_by_sub_view(id);
             let (kind, enabled, rigid, material, groups) = {
                 let Some(node) = self.nodes.get(id) else {
                     continue;
@@ -375,7 +375,7 @@ impl Runtime {
         }
         for i in 0..self.internal_updates.physics_joint_nodes_2d.len() {
             let id = self.internal_updates.physics_joint_nodes_2d[i];
-            let suspended = self.is_suspended_by_ui_viewport(id);
+            let suspended = self.is_suspended_by_sub_view(id);
             let Some(node) = self.nodes.get(id) else {
                 continue;
             };
@@ -447,7 +447,7 @@ impl Runtime {
         }
         for i in 0..self.internal_updates.physics_joint_nodes_3d.len() {
             let id = self.internal_updates.physics_joint_nodes_3d[i];
-            let suspended = self.is_suspended_by_ui_viewport(id);
+            let suspended = self.is_suspended_by_sub_view(id);
             let Some(node) = self.nodes.get(id) else {
                 continue;
             };

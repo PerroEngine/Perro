@@ -353,6 +353,25 @@ impl Runtime {
         ) {
             self.request_full_2d_scan_once();
             self.request_full_3d_scan_once();
+            // SubView owns a retained camera-stream snapshot. Resource
+            // completion must rebuild that snapshot too; a global 3D scan does
+            // not revisit UI-local mesh descendants.
+            let viewport_nodes = self
+                .nodes
+                .iter()
+                .filter_map(|(node, node_ref)| {
+                    matches!(
+                        node_ref.data,
+                        SceneNodeData::UiSubView(_)
+                            | SceneNodeData::SubView2D(_)
+                            | SceneNodeData::SubView3D(_)
+                    )
+                    .then_some(node)
+                })
+                .collect::<Vec<_>>();
+            for node in viewport_nodes {
+                self.mark_ui_dirty(node, Self::UI_DIRTY_COMMANDS);
+            }
         }
         // resource lifecycle events resolve pending resources / invalidate
         // retained draws, which arena mutation_revision can't see. force
@@ -407,6 +426,16 @@ impl Runtime {
 
     pub fn mark_needs_rerender(&mut self, id: NodeID) {
         self.dirty.mark_rerender(id);
+        if let Some(view) = self.sub_view_ancestor(id) {
+            self.dirty.mark_rerender(view);
+            if self
+                .nodes
+                .get(view)
+                .is_some_and(|node| matches!(node.data, SceneNodeData::UiSubView(_)))
+            {
+                self.mark_ui_dirty(view, Self::UI_DIRTY_COMMANDS);
+            }
+        }
     }
 
     pub(crate) fn request_full_3d_scan_once(&mut self) {
@@ -452,6 +481,16 @@ impl Runtime {
         }
         stack.clear();
         self.force_rerender_stack_scratch = stack;
+        if let Some(view) = self.sub_view_ancestor(root_id) {
+            self.dirty.mark_rerender(view);
+            if self
+                .nodes
+                .get(view)
+                .is_some_and(|node| matches!(node.data, SceneNodeData::UiSubView(_)))
+            {
+                self.mark_ui_dirty(view, Self::UI_DIRTY_COMMANDS);
+            }
+        }
     }
 
     pub(crate) fn mark_ui_dirty(&mut self, id: NodeID, flags: u16) {
@@ -518,7 +557,9 @@ impl Runtime {
             NodeType::CameraStream2D
                 | NodeType::CameraStream3D
                 | NodeType::UiCameraStream
-                | NodeType::UiViewport
+                | NodeType::SubView2D
+                | NodeType::SubView3D
+                | NodeType::UiSubView
                 | NodeType::Webcam
         ) {
             self.queue_render_command(RenderCommand::CameraStream(
@@ -545,7 +586,7 @@ impl Runtime {
                     if matches!(
                         ty,
                         NodeType::UiCameraStream
-                            | NodeType::UiViewport
+                            | NodeType::UiSubView
                             | NodeType::UiPanel
                             | NodeType::UiProgressBar
                             | NodeType::UiButton

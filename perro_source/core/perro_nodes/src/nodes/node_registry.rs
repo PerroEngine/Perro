@@ -9,8 +9,8 @@ use crate::{
     ParticleEmitter3D, PhysicsBoneChain2D, PhysicsBoneChain3D, PhysicsForceEmitter2D,
     PhysicsForceEmitter3D, PinJoint2D, PointLight2D, PointLight3D, RayLight2D, RayLight3D,
     RigidBody2D, RigidBody3D, Skeleton2D, Skeleton3D, Sky3D, SpotLight2D, SpotLight3D, Sprite2D,
-    Sprite3D, StaticBody2D, StaticBody3D, TileMap2D, UiCameraStream, UiVideoPlayer, UiViewport,
-    VideoPlayer2D, VideoPlayer3D, WaterBody2D, WaterBody3D, Webcam,
+    Sprite3D, StaticBody2D, StaticBody3D, SubView2D, SubView3D, TileMap2D, UiCameraStream,
+    UiSubView, UiVideoPlayer, VideoPlayer2D, VideoPlayer3D, WaterBody2D, WaterBody3D, Webcam,
 };
 use perro_ids::{NodeID, NodeTag, TagID};
 use perro_structs::{Transform2D, Transform3D};
@@ -482,6 +482,7 @@ macro_rules! define_scene_nodes {
 
             fn from_str(s: &str) -> Result<Self, Self::Err> {
                 match s {
+                    "UiViewport" => Ok(NodeType::UiSubView),
                     $(stringify!($base_variant) => Ok(NodeType::$base_variant),)*
                     $(stringify!($variant_2d) => Ok(NodeType::$variant_2d),)*
                     $(stringify!($variant_3d) => Ok(NodeType::$variant_3d),)*
@@ -855,6 +856,7 @@ define_scene_nodes! {
         Camera2D => (Node2D, Camera2D, Inline, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
 
         // visual
+        SubView2D => (Node2D, SubView2D, Boxed, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         CameraStream2D => (Node2D, CameraStream2D, Inline, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         Button2D => (Node2D, Button2D, Boxed, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         ImageButton2D => (Node2D, ImageButton2D, Boxed, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
@@ -905,6 +907,7 @@ define_scene_nodes! {
         Camera3D => (Node3D, Camera3D, Inline, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
 
         // visual
+        SubView3D => (Node3D, SubView3D, Boxed, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         CameraStream3D => (Node3D, CameraStream3D, Inline, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         MeshInstance3D => (Node3D, MeshInstance3D, Inline, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         MultiMeshInstance3D => (Node3D, MultiMeshInstance3D, Boxed, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
@@ -951,7 +954,7 @@ define_scene_nodes! {
 
         // visual
         UiCameraStream => (UiNode, UiCameraStream, Boxed, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
-        UiViewport => (UiNode, UiViewport, Boxed, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
+        UiSubView => (UiNode, UiSubView, Boxed, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         UiPanel => (UiNode, UiPanel, Boxed, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         UiProgressBar => (UiNode, UiProgressBar, Boxed, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         UiButton => (UiNode, UiButton, Boxed, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),

@@ -9,7 +9,10 @@ impl Runtime {
         let mut out = Vec::new();
         for idx in 0..self.camera_stream_node_scratch.len() {
             let node = self.camera_stream_node_scratch[idx];
-            if node == stream_node || !self.is_effectively_visible(node) {
+            if node == stream_node
+                || !self.is_effectively_visible(node)
+                || self.stream_skips_isolated_child(node, stream_node)
+            {
                 continue;
             }
             let Some((texture, region, transform, z_index)) =
@@ -84,7 +87,7 @@ impl Runtime {
                         self.resolve_tilemap_texture(node, tileset.texture.as_ref())
                 {
                     let base_model = self
-                        .get_render_global_transform_2d(node)
+                        .stream_render_transform_2d(node, stream_node)
                         .unwrap_or(local_transform)
                         .to_mat3()
                         .to_cols_array_2d();
@@ -107,7 +110,7 @@ impl Runtime {
             };
             let (uv_min, uv_max, size) = stream_sprite_region_uv(region);
             let model = self
-                .get_render_global_transform_2d(node)
+                .stream_render_transform_2d(node, stream_node)
                 .unwrap_or(transform)
                 .to_mat3()
                 .to_cols_array_2d();
@@ -169,7 +172,10 @@ impl Runtime {
         let mut out = Vec::new();
         for idx in 0..self.camera_stream_node_scratch.len() {
             let node = self.camera_stream_node_scratch[idx];
-            if node == stream_node || !self.is_effectively_visible(node) {
+            if node == stream_node
+                || !self.is_effectively_visible(node)
+                || self.stream_skips_isolated_child(node, stream_node)
+            {
                 continue;
             }
             let data = self
@@ -260,7 +266,7 @@ impl Runtime {
                     shadow_samples,
                 }) => {
                     let global = self
-                        .get_render_global_transform_2d(node)
+                        .stream_render_transform_2d(node, stream_node)
                         .unwrap_or(transform);
                     out.push(Light2DState::Ray(RayLight2DState {
                         direction: direction_from_rotation_2d(global.rotation),
@@ -283,7 +289,7 @@ impl Runtime {
                     shadow_samples,
                 }) => {
                     let global = self
-                        .get_render_global_transform_2d(node)
+                        .stream_render_transform_2d(node, stream_node)
                         .unwrap_or(transform);
                     out.push(Light2DState::Point(PointLight2DState {
                         position: [global.position.x, global.position.y],
@@ -309,7 +315,7 @@ impl Runtime {
                     shadow_samples,
                 }) => {
                     let global = self
-                        .get_render_global_transform_2d(node)
+                        .stream_render_transform_2d(node, stream_node)
                         .unwrap_or(transform);
                     out.push(Light2DState::Spot(SpotLight2DState {
                         position: [global.position.x, global.position.y],
@@ -339,7 +345,10 @@ impl Runtime {
         let mut out = Vec::new();
         for idx in 0..self.camera_stream_node_scratch.len() {
             let node = self.camera_stream_node_scratch[idx];
-            if node == stream_node || !self.is_effectively_visible(node) {
+            if node == stream_node
+                || !self.is_effectively_visible(node)
+                || self.stream_skips_isolated_child(node, stream_node)
+            {
                 continue;
             }
             let data = self
@@ -386,7 +395,7 @@ impl Runtime {
             let lifetime_min = profile.lifetime_min.max(0.001);
             let lifetime_max = profile.lifetime_max.max(lifetime_min);
             let model = self
-                .get_render_global_transform_2d(node)
+                .stream_render_transform_2d(node, stream_node)
                 .unwrap_or(transform)
                 .to_mat3()
                 .to_cols_array_2d();
@@ -431,7 +440,10 @@ impl Runtime {
         let mut out = Vec::new();
         for idx in 0..self.camera_stream_node_scratch.len() {
             let node = self.camera_stream_node_scratch[idx];
-            if node == stream_node || !self.is_effectively_visible(node) {
+            if node == stream_node
+                || !self.is_effectively_visible(node)
+                || self.stream_skips_isolated_child(node, stream_node)
+            {
                 continue;
             }
             let data = self
@@ -449,7 +461,7 @@ impl Runtime {
             let Some((local_transform, z_index, water)) = data else {
                 continue;
             };
-            let water_global = self.get_render_global_transform_2d(node);
+            let water_global = self.stream_render_transform_2d(node, stream_node);
             let model = water_global
                 .unwrap_or(local_transform)
                 .to_mat3()

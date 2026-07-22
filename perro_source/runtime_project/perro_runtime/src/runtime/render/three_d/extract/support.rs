@@ -72,7 +72,7 @@ impl Runtime {
             }
             let Some((visible, layers)) = self.nodes.get(candidate).and_then(|scene_node| {
                 let visible =
-                    self.is_effectively_visible(candidate) && !self.is_under_ui_viewport(candidate);
+                    self.is_effectively_visible(candidate) && !self.is_under_sub_view(candidate);
                 match &scene_node.data {
                     SceneNodeData::MeshInstance3D(mesh) => Some((visible, mesh.render_layers)),
                     SceneNodeData::MultiMeshInstance3D(mesh) => Some((visible, mesh.render_layers)),
@@ -100,9 +100,7 @@ impl Runtime {
             let SceneNodeData::Camera3D(camera) = &scene_node.data else {
                 continue;
             };
-            if !camera.active
-                || !self.is_effectively_visible(node)
-                || self.is_under_ui_viewport(node)
+            if !camera.active || !self.is_effectively_visible(node) || self.is_under_sub_view(node)
             {
                 continue;
             }

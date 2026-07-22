@@ -27,7 +27,7 @@ mod interpolation {
     #[test]
     fn hidden_ui_viewport_disables_local_physics_body() {
         let mut runtime = Runtime::new();
-        let viewport = NodeAPI::create::<UiViewport>(&mut runtime);
+        let viewport = NodeAPI::create::<UiSubView>(&mut runtime);
         let body = NodeAPI::create::<RigidBody3D>(&mut runtime);
         assert!(runtime.reparent(viewport, body));
 
@@ -36,7 +36,7 @@ mod interpolation {
         runtime.physics_body_descs_3d = descs;
 
         if let Some(mut node) = runtime.nodes.get_mut(viewport)
-            && let SceneNodeData::UiViewport(viewport) = &mut node.data
+            && let SceneNodeData::UiSubView(viewport) = &mut node.data
         {
             viewport.visible = false;
         }

@@ -83,7 +83,7 @@ impl Runtime {
         for node in traversal_ids.iter().copied() {
             visible_now.remove(&node);
             let effective_visible =
-                self.is_effectively_visible(node) && !self.is_under_ui_viewport(node);
+                self.is_effectively_visible(node) && !self.is_under_sub_view(node);
             let sprite_data = self
                 .nodes
                 .get(node)
@@ -526,6 +526,73 @@ impl Runtime {
                 }
             }
 
+            let sub_view_data = self.nodes.get(node).and_then(|node| match &node.data {
+                SceneNodeData::SubView2D(view) => Some((
+                    effective_visible
+                        && view.visible
+                        && view.sub_view.enabled
+                        && render_mask_matches(camera_render_mask, view.render_layers),
+                    view.sub_view.clone(),
+                    view.transform,
+                    view.size,
+                    view.z_index,
+                    view.tint,
+                )),
+                _ => None,
+            });
+            if let Some((visible, view, local_transform, size, z_index, tint)) = sub_view_data {
+                if visible {
+                    if let Some(stream_state) = self.sub_view_state(node, &view, None) {
+                        let tint =
+                            Runtime::color_modulate(tint, self.effective_self_modulate(node));
+                        let texture_resolution = stream_state.resolution;
+                        let model = self
+                            .get_render_global_transform_2d(node)
+                            .unwrap_or(local_transform)
+                            .to_mat3()
+                            .to_cols_array_2d();
+                        let sprite = Sprite2DCommand {
+                            texture: stream_state.output_texture,
+                            model,
+                            tint,
+                            uv_min: [0.0, 0.0],
+                            uv_max: [texture_resolution[0] as f32, texture_resolution[1] as f32],
+                            size: [size.x.max(0.001), size.y.max(0.001)],
+                            z_index,
+                        };
+                        self.queue_render_command(RenderCommand::CameraStream(
+                            CameraStreamCommand::Upsert {
+                                node,
+                                state: Box::new(stream_state.clone()),
+                            },
+                        ));
+                        self.queue_render_command(RenderCommand::TwoD(
+                            Command2D::UpsertCameraStream {
+                                node,
+                                stream: Box::new(stream_state),
+                                sprite,
+                            },
+                        ));
+                        self.render_2d.retained_sprites.insert(node, sprite);
+                        visible_now.insert(node);
+                    } else {
+                        self.queue_render_command(RenderCommand::CameraStream(
+                            CameraStreamCommand::RemoveNode { node },
+                        ));
+                        self.queue_render_command(RenderCommand::TwoD(Command2D::RemoveNode {
+                            node,
+                        }));
+                        self.render_2d.retained_sprites.remove(&node);
+                    }
+                } else {
+                    self.queue_render_command(RenderCommand::CameraStream(
+                        CameraStreamCommand::RemoveNode { node },
+                    ));
+                    self.queue_render_command(RenderCommand::TwoD(Command2D::RemoveNode { node }));
+                    self.render_2d.retained_sprites.remove(&node);
+                }
+            }
+
             let water_data = self.nodes.get(node).and_then(|node| match &node.data {
                 SceneNodeData::WaterBody2D(water) => Some((
                     effective_visible
@@ -923,9 +990,7 @@ impl Runtime {
             let SceneNodeData::Camera2D(camera) = &scene_node.data else {
                 continue;
             };
-            if !camera.active
-                || !self.is_effectively_visible(node)
-                || self.is_under_ui_viewport(node)
+            if !camera.active || !self.is_effectively_visible(node) || self.is_under_sub_view(node)
             {
                 continue;
             }

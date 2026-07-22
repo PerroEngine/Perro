@@ -36,6 +36,8 @@ use std::time::Instant;
 use web_time::Instant;
 use winit::window::Window;
 
+#[path = "gpu/camera_stream_tonemap.rs"]
+mod camera_stream_tonemap;
 #[path = "gpu/present.rs"]
 mod present;
 #[path = "water_flip_gpu.rs"]
@@ -43,6 +45,7 @@ mod water_flip_gpu;
 #[path = "water_gpu.rs"]
 mod water_gpu;
 
+use camera_stream_tonemap::CameraStreamTonemap;
 pub(crate) use present::capped_render_size;
 use present::*;
 use water_gpu::{GpuWater, WaterPrepareContext};
@@ -530,6 +533,7 @@ pub struct Gpu {
     camera_stream_particles_3d: Option<GpuPointParticles3D>,
     camera_stream_water: Option<GpuWater>,
     camera_stream_post: Option<PostProcessor>,
+    camera_stream_tonemap: CameraStreamTonemap,
     camera_stream_draws_scratch: Vec<Draw3DInstance>,
     last_prepare_particles_revision: u64,
     last_prepare_water_2d_revision: u64,
@@ -567,6 +571,7 @@ pub struct GpuConfig {
 struct GpuCameraStreamTarget {
     texture: wgpu::Texture,
     post_input: wgpu::Texture,
+    tonemap_input: wgpu::Texture,
     depth: wgpu::Texture,
     resolution: [u32; 2],
     post_view_key: u64,

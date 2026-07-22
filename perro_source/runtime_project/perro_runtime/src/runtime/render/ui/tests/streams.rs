@@ -2,6 +2,83 @@ mod streams {
     use super::*;
 
     #[test]
+    fn sub_view_2d_renders_local_3d_children() {
+        let mut runtime = Runtime::new();
+        let view = NodeAPI::create::<SubView2D>(&mut runtime);
+        let mesh = NodeAPI::create::<MeshInstance3D>(&mut runtime);
+        assert!(runtime.reparent(view, mesh));
+
+        if let Some(mut node) = runtime.nodes.get_mut(view)
+            && let SceneNodeData::SubView2D(view) = &mut node.data
+        {
+            view.transform = Transform2D::new(Vector2::new(40.0, 50.0), 0.0, Vector2::ONE);
+            view.size = Vector2::new(32.0, 18.0);
+        }
+        if let Some(mut node) = runtime.nodes.get_mut(mesh)
+            && let SceneNodeData::MeshInstance3D(mesh) = &mut node.data
+        {
+            mesh.transform.position = Vector3::new(2.0, 3.0, 4.0);
+            mesh.mesh = perro_ids::MeshID::from_parts(31, 0);
+            mesh.set_surface_material(0, Some(perro_ids::MaterialID::from_parts(32, 0)));
+        }
+
+        runtime.extract_render_2d_commands();
+        let mut commands = Vec::new();
+        runtime.drain_render_commands(&mut commands);
+        let state = commands.iter().find_map(|command| match command {
+            RenderCommand::CameraStream(CameraStreamCommand::Upsert { node, state })
+                if *node == view => Some(state.as_ref()),
+            _ => None,
+        }).expect("SubView2D stream state");
+        assert!(!state.tone_map_output);
+        let model = state.draws_3d.iter().find_map(|draw| match draw {
+            perro_render_bridge::CameraStreamDraw3DState::Draw { node, model, .. }
+                if *node == mesh => Some(model),
+            _ => None,
+        }).expect("local 3D mesh draw");
+        assert_eq!(model[3][0..3], [2.0, 3.0, 4.0]);
+        assert!(commands.iter().any(|command| matches!(
+            command,
+            RenderCommand::TwoD(Command2D::UpsertCameraStream { node, .. }) if *node == view
+        )));
+    }
+
+    #[test]
+    fn sub_view_3d_renders_local_2d_children() {
+        let mut runtime = Runtime::new();
+        let view = NodeAPI::create::<SubView3D>(&mut runtime);
+        let particles = NodeAPI::create::<ParticleEmitter2D>(&mut runtime);
+        assert!(runtime.reparent(view, particles));
+
+        if let Some(mut node) = runtime.nodes.get_mut(particles)
+            && let SceneNodeData::ParticleEmitter2D(particles) = &mut node.data
+        {
+            particles.transform.position = Vector2::new(7.0, 9.0);
+        }
+
+        runtime.extract_render_3d_commands();
+        let mut commands = Vec::new();
+        runtime.drain_render_commands(&mut commands);
+        let state = commands.iter().find_map(|command| match command {
+            RenderCommand::CameraStream(CameraStreamCommand::Upsert { node, state })
+                if *node == view => Some(state.as_ref()),
+            _ => None,
+        }).expect("SubView3D stream state");
+        assert!(!state.tone_map_output);
+        let (_, particles_state) = state
+            .point_particles_2d
+            .iter()
+            .find(|(node, _)| *node == particles)
+            .expect("local 2D particle draw");
+        assert_eq!(particles_state.model[2][0..2], [7.0, 9.0]);
+        assert!(commands.iter().any(|command| matches!(
+            command,
+            RenderCommand::ThreeD(command)
+                if matches!(command.as_ref(), Command3D::UpsertCameraStream { node, .. } if *node == view)
+        )));
+    }
+
+    #[test]
     fn webcam_node_does_not_open_without_stream_or_api_use() {
         let mut runtime = Runtime::new();
         let _webcam = NodeAPI::create::<Webcam>(&mut runtime);
@@ -245,7 +322,7 @@ mod streams {
     fn ui_viewport_renders_only_local_spatial_descendants() {
         let mut runtime = Runtime::new();
         runtime.set_viewport_size(800, 600);
-        let viewport = NodeAPI::create::<UiViewport>(&mut runtime);
+        let viewport = NodeAPI::create::<UiSubView>(&mut runtime);
         let local_light = NodeAPI::create::<AmbientLight3D>(&mut runtime);
         let local_mesh = NodeAPI::create::<MeshInstance3D>(&mut runtime);
         let world_light = NodeAPI::create::<AmbientLight3D>(&mut runtime);
@@ -276,7 +353,7 @@ mod streams {
             data.intensity = 3.0;
         }
         if let Some(mut node) = runtime.nodes.get_mut(viewport)
-            && let SceneNodeData::UiViewport(data) = &mut node.data
+            && let SceneNodeData::UiSubView(data) = &mut node.data
         {
             data.layout.size = UiVector2::pixels(320.0, 180.0);
         }
@@ -296,6 +373,7 @@ mod streams {
             _ => None,
         });
         let state = state.expect("viewport stream state");
+        assert!(state.tone_map_output);
         assert_eq!(state.resolution, [640, 360]);
         assert!(state.transparent_background);
         assert!(matches!(
@@ -341,17 +419,68 @@ mod streams {
         )));
 
         if let Some(mut node) = runtime.nodes.get_mut(viewport)
-            && let SceneNodeData::UiViewport(data) = &mut node.data
+            && let SceneNodeData::UiSubView(data) = &mut node.data
         {
             data.visible = false;
         }
-        assert!(runtime.is_suspended_by_ui_viewport(local_light));
+        assert!(runtime.is_suspended_by_sub_view(local_light));
         if let Some(mut node) = runtime.nodes.get_mut(viewport)
-            && let SceneNodeData::UiViewport(data) = &mut node.data
+            && let SceneNodeData::UiSubView(data) = &mut node.data
         {
             data.suspend_when_hidden = false;
         }
-        assert!(!runtime.is_suspended_by_ui_viewport(local_light));
+        assert!(!runtime.is_suspended_by_sub_view(local_light));
+    }
+
+    #[test]
+    fn ui_viewport_rebuilds_draws_after_mesh_resource_event() {
+        let mut runtime = Runtime::new();
+        runtime.set_viewport_size(800, 600);
+        let viewport = NodeAPI::create::<UiSubView>(&mut runtime);
+        let local_mesh = NodeAPI::create::<MeshInstance3D>(&mut runtime);
+        assert!(runtime.reparent(viewport, local_mesh));
+
+        runtime.extract_render_ui_commands();
+        let mut commands = Vec::new();
+        runtime.drain_render_commands(&mut commands);
+        let first = commands.iter().find_map(|command| match command {
+            RenderCommand::CameraStream(CameraStreamCommand::Upsert { node, state })
+                if *node == viewport =>
+            {
+                Some(state.as_ref())
+            }
+            _ => None,
+        });
+        assert!(first.is_some_and(|state| state.draws_3d.is_empty()));
+
+        runtime.clear_dirty_flags();
+        let mesh = perro_ids::MeshID::from_parts(17, 0);
+        if let Some(node) = runtime.nodes.get_mut_untracked_non_physics(local_mesh)
+            && let SceneNodeData::MeshInstance3D(data) = &mut node.data
+        {
+            data.mesh = mesh;
+            data.set_surface_material(0, Some(perro_ids::MaterialID::from_parts(19, 0)));
+        }
+        runtime.clear_dirty_flags();
+        runtime.apply_render_event(RenderEvent::MeshCreated {
+            request: perro_render_bridge::RenderRequestID::new(71),
+            id: mesh,
+            mesh: None,
+        });
+
+        runtime.extract_render_ui_commands();
+        commands.clear();
+        runtime.drain_render_commands(&mut commands);
+        assert!(commands.iter().any(|command| matches!(
+            command,
+            RenderCommand::CameraStream(CameraStreamCommand::Upsert { node, state })
+                if *node == viewport
+                    && state.draws_3d.iter().any(|draw| matches!(
+                        draw,
+                        perro_render_bridge::CameraStreamDraw3DState::Draw { node, .. }
+                            if *node == local_mesh
+                    ))
+        )));
     }
 
     #[test]
@@ -364,9 +493,9 @@ mod streams {
         parent.transform.scale = Vector2::new(0.5, 0.5);
         let parent = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(Box::new(parent)));
 
-        let viewport = NodeAPI::create::<UiViewport>(&mut runtime);
+        let viewport = NodeAPI::create::<UiSubView>(&mut runtime);
         if let Some(mut node) = runtime.nodes.get_mut(viewport)
-            && let SceneNodeData::UiViewport(data) = &mut node.data
+            && let SceneNodeData::UiSubView(data) = &mut node.data
         {
             data.layout.size = UiVector2::ratio(1.0, 1.0);
         }
@@ -392,9 +521,9 @@ mod streams {
     fn ui_viewport_opaque_background_keeps_local_sky_path() {
         let mut runtime = Runtime::new();
         runtime.set_viewport_size(800, 600);
-        let viewport = NodeAPI::create::<UiViewport>(&mut runtime);
+        let viewport = NodeAPI::create::<UiSubView>(&mut runtime);
         if let Some(mut node) = runtime.nodes.get_mut(viewport)
-            && let SceneNodeData::UiViewport(data) = &mut node.data
+            && let SceneNodeData::UiSubView(data) = &mut node.data
         {
             data.layout.size = UiVector2::pixels(100.0, 50.0);
             data.background = Color::BLACK;
