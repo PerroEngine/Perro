@@ -107,6 +107,9 @@ default-members = [
 
 resolver = "3"
 
+[workspace.lints.clippy]
+unwrap_used = "deny"
+
 [workspace.package]
 edition = "2024"
 rust-version = "1.85.0"

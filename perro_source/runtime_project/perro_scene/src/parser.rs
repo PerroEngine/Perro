@@ -995,7 +995,7 @@ mod tests {
     fn try_parse_scene_rejects_unterminated_type_block() {
         let err = Parser::new("$root = @main\n[main]\n[Node]\n")
             .try_parse_scene()
-            .unwrap_err();
+            .expect_err("invalid test input must fail");
 
         assert!(
             err.contains("Unterminated node type block `[Node]`"),
@@ -1005,19 +1005,25 @@ mod tests {
 
     #[test]
     fn try_parse_scene_doc_returns_parse_error() {
-        let err = Parser::new("$speed =").try_parse_scene_doc().unwrap_err();
+        let err = Parser::new("$speed =")
+            .try_parse_scene_doc()
+            .expect_err("invalid test input must fail");
         assert!(err.contains("Invalid value token"), "{err}");
     }
 
     #[test]
     fn try_parse_value_literal_returns_parse_error() {
-        let err = Parser::new("[1, 2").try_parse_value_literal().unwrap_err();
+        let err = Parser::new("[1, 2")
+            .try_parse_value_literal()
+            .expect_err("invalid test input must fail");
         assert!(err.contains("Expected"), "{err}");
     }
 
     #[test]
     fn try_parse_value_literal_rejects_trailing_input() {
-        let err = Parser::new("1 2").try_parse_value_literal().unwrap_err();
+        let err = Parser::new("1 2")
+            .try_parse_value_literal()
+            .expect_err("invalid test input must fail");
         assert!(err.contains("Expected end of value"), "{err}");
     }
 
@@ -1043,7 +1049,9 @@ mod tests {
             "[".repeat(MAX_SCENE_VALUE_DEPTH + 1),
             "]".repeat(MAX_SCENE_VALUE_DEPTH + 1)
         );
-        let err = Parser::new(&src).try_parse_value_literal().unwrap_err();
+        let err = Parser::new(&src)
+            .try_parse_value_literal()
+            .expect_err("invalid test input must fail");
         assert!(err.contains("nesting exceeds limit"), "{err}");
     }
 
@@ -1053,7 +1061,9 @@ mod tests {
         for depth in 1..=MAX_SCENE_VALUE_DEPTH + 1 {
             src.push_str(&format!("$v{depth} = [$v{}]\n", depth - 1));
         }
-        let err = Parser::new(&src).try_parse_scene().unwrap_err();
+        let err = Parser::new(&src)
+            .try_parse_scene()
+            .expect_err("invalid test input must fail");
         assert!(err.contains("nesting exceeds limit"), "{err}");
     }
 }

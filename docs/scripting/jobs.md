@@ -131,7 +131,7 @@ lifecycle!({
 
         let busy = with_state!(ctx.run, EnemyPlannerState, ctx.id, |state| {
             state.pending.is_some()
-        });
+        }).unwrap_or_default();
         if busy {
             return;
         }

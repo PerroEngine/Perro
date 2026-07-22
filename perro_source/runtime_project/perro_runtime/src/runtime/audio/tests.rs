@@ -999,7 +999,10 @@ fn audio_portal_skip_is_per_ray_branch() {
         .iter()
         .filter_map(|sound| sound.last_result.and_then(|result| result.perceived_2d))
         .collect();
-    perceived.sort_by(|a, b| a.x.partial_cmp(&b.x).unwrap());
+    perceived.sort_by(|a, b| {
+        a.x.partial_cmp(&b.x)
+            .expect("test or bench setup must succeed")
+    });
     assert_eq!(
         perceived,
         vec![Vector2::new(1.0, 0.0), Vector2::new(3.0, 0.0)]

@@ -171,7 +171,7 @@ fn ui_refs<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, script: No
         grid_c: state.grid_c,
         nested_panel: state.nested_panel,
         nested_grid: state.nested_grid,
-    })
+    }).unwrap_or_default()
 }
 
 fn set_ui_size<API: ScriptAPI + ?Sized>(

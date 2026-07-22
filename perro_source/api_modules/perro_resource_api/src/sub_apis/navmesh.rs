@@ -555,7 +555,7 @@ v 0 0 1
 tri 0 1 2 layers=1,3
 ",
         )
-        .unwrap();
+        .expect("test setup must succeed");
 
         assert_eq!(nav.vertices.len(), 3);
         assert_eq!(nav.triangles.len(), 1);
@@ -577,7 +577,7 @@ tri 3 4 5 layers=1 area=7
 link 0.2 0 0.2 4.2 0 0.2 layers=1 cost=1.5 snap=0.5 bidirectional=false
 ",
         )
-        .unwrap();
+        .expect("test setup must succeed");
 
         assert_eq!(nav.triangle_areas, vec![3, 7]);
         assert_eq!(nav.links.len(), 1);
@@ -597,7 +597,7 @@ tri 0 1 2 area=2
 link 0.1 0 0.1 0.2 0 0.2
 ",
         )
-        .unwrap();
+        .expect("test setup must succeed");
 
         assert_eq!(nav.triangles.len(), 1);
     }
@@ -611,7 +611,7 @@ v 1 0 0
 tri 0 1 2
 ",
         )
-        .unwrap_err();
+        .expect_err("test call must fail");
 
         assert!(err.contains("out of range"));
     }
@@ -620,7 +620,11 @@ tri 0 1 2
     fn parse_pnav_rejects_non_finite_vertices() {
         for value in ["NaN", "inf", "-inf"] {
             let text = format!("pnav 1\nv {value} 0 0\nv 1 0 0\nv 0 0 1\ntri 0 1 2\n");
-            assert!(parse_pnav_text(&text).unwrap_err().contains("non-finite"));
+            assert!(
+                parse_pnav_text(&text)
+                    .expect_err("test call must fail")
+                    .contains("non-finite")
+            );
         }
     }
 
@@ -629,7 +633,12 @@ tri 0 1 2
         for layers in ["0", "33", "1,0", "1,33"] {
             let text = format!("pnav 1\nv 0 0 0\nv 1 0 0\nv 0 0 1\ntri 0 1 2 layers={layers}\n");
             let result = std::panic::catch_unwind(|| parse_pnav_text(&text));
-            assert!(result.unwrap().unwrap_err().contains("1..=32"));
+            assert!(
+                result
+                    .expect("test setup must succeed")
+                    .expect_err("test call must fail")
+                    .contains("1..=32")
+            );
         }
     }
 
@@ -638,12 +647,12 @@ tri 0 1 2
         let base = "pnav 1\nv 0 0 0\nv 1 0 0\nv 0 0 1\n";
         assert!(
             parse_pnav_resource_text(&format!("{base}tri 0 1 2 area=0\n"))
-                .unwrap_err()
+                .expect_err("test call must fail")
                 .contains("area must be 1..=32")
         );
         assert!(
             parse_pnav_resource_text(&format!("{base}tri 0 1 2\nlink 0 0 0 1 0 1 cost=0\n"))
-                .unwrap_err()
+                .expect_err("test call must fail")
                 .contains("cost must be finite and > 0")
         );
     }

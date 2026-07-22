@@ -241,7 +241,7 @@ mod water_lighting {
                 _ => None,
             })
             .expect("ray light");
-        assert_eq!(ray.color, Color::from_hex("#336699").unwrap());
+        assert_eq!(ray.color, Color::from_hex("#336699").expect("test or bench setup must succeed"));
     }
 
     #[test]
@@ -287,11 +287,11 @@ mod water_lighting {
 
         assert_eq!(
             sprite_color("sprite_tint"),
-            Color::from_hex("#11223344").unwrap()
+            Color::from_hex("#11223344").expect("test or bench setup must succeed")
         );
         assert_eq!(
             sprite_color("sprite_color"),
-            Color::from_hex("#55667788").unwrap()
+            Color::from_hex("#55667788").expect("test or bench setup must succeed")
         );
     }
 

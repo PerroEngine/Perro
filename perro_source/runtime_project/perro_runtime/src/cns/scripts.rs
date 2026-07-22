@@ -422,7 +422,8 @@ mod script_abi_tests {
     fn rejects_wrong_magic() {
         let mut descriptor = ScriptAbiDescriptor::v2();
         descriptor.header.magic = *b"NOTPERRO";
-        let err = validate_script_abi_header(&descriptor.header).unwrap_err();
+        let err = validate_script_abi_header(&descriptor.header)
+            .expect_err("invalid test input must fail");
         assert!(err.contains("invalid magic"));
     }
 
@@ -430,7 +431,8 @@ mod script_abi_tests {
     fn rejects_short_descriptor_before_full_read() {
         let mut descriptor = ScriptAbiDescriptor::v2();
         descriptor.header.descriptor_size = (std::mem::size_of::<ScriptAbiDescriptor>() - 1) as u32;
-        let err = validate_script_abi_header(&descriptor.header).unwrap_err();
+        let err = validate_script_abi_header(&descriptor.header)
+            .expect_err("invalid test input must fail");
         assert!(err.contains("too small"));
     }
 }

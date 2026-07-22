@@ -269,7 +269,7 @@ let bloom_strength = with_node!(ctx.run, Camera3D, cam_id, |cam| {
             PostProcessEffect::Bloom { strength, .. } => Some(*strength),
             _ => None,
         })
-});
+}).unwrap_or_default();
 ```
 
 Enumerate names:
@@ -281,7 +281,7 @@ with_node!(ctx.run, Camera3D, cam_id, |cam| {
             log::info!("post fx: {name}");
         }
     }
-});
+}).unwrap_or_default();
 ```
 
 Read entries:
@@ -292,7 +292,7 @@ with_node!(ctx.run, Camera3D, cam_id, |cam| {
         let name = entry.name.as_deref().unwrap_or("<unnamed>");
         log::info!("post fx: {name}");
     }
-});
+}).unwrap_or_default();
 ```
 
 ## Color Grade

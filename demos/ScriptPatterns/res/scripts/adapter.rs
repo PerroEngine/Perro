@@ -16,7 +16,7 @@ methods!({
         member: String,
         amount: i32,
     ) -> i32 {
-        let target = with_state!(ctx.run, DynamicAdapter, ctx.id, |state| state.target);
+        let target = with_state!(ctx.run, DynamicAdapter, ctx.id, |state| state.target).unwrap_or_default();
         if target.is_nil() {
             return 0;
         }

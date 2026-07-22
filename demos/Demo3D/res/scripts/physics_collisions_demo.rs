@@ -106,7 +106,7 @@ methods!({
                     state.right_ball,
                     state.drop_ball,
                 )
-            });
+            }).unwrap_or_default();
 
         reset_body(
             ctx,
@@ -142,7 +142,7 @@ methods!({
                     state.area_idle_material,
                     state.area_active_material,
                 )
-            });
+            }).unwrap_or_default();
         if mesh.is_nil() {
             return;
         }
@@ -160,13 +160,13 @@ methods!({
 
     fn push_overlay(&self, ctx: &mut ScriptContext<'_, API>) {
         let overlay = with_state!(ctx.run, PhysicsCollisionsDemoState, ctx.id, |state| state
-            .overlay);
+            .overlay).unwrap_or_default();
         if overlay.is_nil() {
             return;
         }
         let rigid = query!(ctx.run, all(node_type[RigidBody3D]), in_subtree(ctx.id)).len();
         let active = with_state!(ctx.run, PhysicsCollisionsDemoState, ctx.id, |state| state
-            .area_active);
+            .area_active).unwrap_or_default();
         let body = format!(
             "rigid bodies {}\nsignal area {}",
             rigid,

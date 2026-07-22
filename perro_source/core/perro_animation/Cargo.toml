@@ -3,6 +3,9 @@ name = "perro_animation"
 version = "0.1.0"
 edition = "2024"
 
+[lints]
+workspace = true
+
 [dependencies]
 perro_structs = { path = "../perro_structs" }
 perro_scene = { path = "../../runtime_project/perro_scene" }

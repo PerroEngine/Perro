@@ -25,7 +25,7 @@ impl CacheTempDir {
             std::process::id()
         ));
         let _ = fs::remove_dir_all(&path);
-        fs::create_dir_all(&path).unwrap();
+        fs::create_dir_all(&path).expect("test or bench setup must succeed");
         Self(path)
     }
 }
@@ -150,13 +150,18 @@ static EMPTY_SCENE: Scene = Scene {
 fn dlc_cache_write_stays_under_cache_root() {
     let temp = CacheTempDir::new("write");
     let cache = temp.0.join("cache");
-    fs::create_dir(&cache).unwrap();
+    fs::create_dir(&cache).expect("test or bench setup must succeed");
 
-    let target = write_dlc_cache_file(&cache, "scripts/lib.bin", b"one").unwrap();
-    write_dlc_cache_file(&cache, "scripts/lib.bin", b"two").unwrap();
+    let target = write_dlc_cache_file(&cache, "scripts/lib.bin", b"one")
+        .expect("test or bench setup must succeed");
+    write_dlc_cache_file(&cache, "scripts/lib.bin", b"two")
+        .expect("test or bench setup must succeed");
 
     assert_eq!(target, cache.join("scripts/lib.bin"));
-    assert_eq!(fs::read(target).unwrap(), b"two");
+    assert_eq!(
+        fs::read(target).expect("test or bench setup must succeed"),
+        b"two"
+    );
 }
 
 #[cfg(unix)]
@@ -167,9 +172,9 @@ fn dlc_cache_rejects_linked_dir() {
     let temp = CacheTempDir::new("linked-dir");
     let cache = temp.0.join("cache");
     let outside = temp.0.join("outside");
-    fs::create_dir(&cache).unwrap();
-    fs::create_dir(&outside).unwrap();
-    symlink(&outside, cache.join("scripts")).unwrap();
+    fs::create_dir(&cache).expect("test or bench setup must succeed");
+    fs::create_dir(&outside).expect("test or bench setup must succeed");
+    symlink(&outside, cache.join("scripts")).expect("test or bench setup must succeed");
 
     assert!(write_dlc_cache_file(&cache, "scripts/lib.bin", b"bad").is_err());
     assert!(!outside.join("lib.bin").exists());
@@ -183,12 +188,15 @@ fn dlc_cache_rejects_linked_target() {
     let temp = CacheTempDir::new("linked-target");
     let cache = temp.0.join("cache");
     let outside = temp.0.join("outside.bin");
-    fs::create_dir(&cache).unwrap();
-    fs::write(&outside, b"safe").unwrap();
-    symlink(&outside, cache.join("lib.bin")).unwrap();
+    fs::create_dir(&cache).expect("test or bench setup must succeed");
+    fs::write(&outside, b"safe").expect("test or bench setup must succeed");
+    symlink(&outside, cache.join("lib.bin")).expect("test or bench setup must succeed");
 
     assert!(write_dlc_cache_file(&cache, "lib.bin", b"bad").is_err());
-    assert_eq!(fs::read(outside).unwrap(), b"safe");
+    assert_eq!(
+        fs::read(outside).expect("test or bench setup must succeed"),
+        b"safe"
+    );
 }
 
 #[cfg(windows)]
@@ -225,8 +233,8 @@ fn dlc_cache_rejects_linked_dir() {
     let temp = CacheTempDir::new("linked-dir");
     let cache = temp.0.join("cache");
     let outside = temp.0.join("outside");
-    fs::create_dir(&cache).unwrap();
-    fs::create_dir(&outside).unwrap();
+    fs::create_dir(&cache).expect("test or bench setup must succeed");
+    fs::create_dir(&outside).expect("test or bench setup must succeed");
     if !try_cache_symlink_dir(&outside, &cache.join("scripts")) {
         return;
     }
@@ -241,14 +249,17 @@ fn dlc_cache_rejects_linked_target() {
     let temp = CacheTempDir::new("linked-target");
     let cache = temp.0.join("cache");
     let outside = temp.0.join("outside.bin");
-    fs::create_dir(&cache).unwrap();
-    fs::write(&outside, b"safe").unwrap();
+    fs::create_dir(&cache).expect("test or bench setup must succeed");
+    fs::write(&outside, b"safe").expect("test or bench setup must succeed");
     if !try_cache_symlink_file(&outside, &cache.join("lib.bin")) {
         return;
     }
 
     assert!(write_dlc_cache_file(&cache, "lib.bin", b"bad").is_err());
-    assert_eq!(fs::read(outside).unwrap(), b"safe");
+    assert_eq!(
+        fs::read(outside).expect("test or bench setup must succeed"),
+        b"safe"
+    );
 }
 
 fn test_lookup(path_hash: u64) -> &'static Scene {
@@ -313,7 +324,7 @@ fn typed_preloaded_scene_load_reports_invalid_handle() {
     let mut runtime = Runtime::new();
     let err = runtime
         .scene_load_preloaded_typed(PreloadedSceneID::from_u64(99))
-        .unwrap_err();
+        .expect_err("invalid test input must fail");
 
     assert_eq!(
         err,
@@ -404,7 +415,9 @@ fn failed_route_change_keeps_current_scene_and_route() {
     runtime.active_route_href = Some("/".to_string());
     let node_count = runtime.nodes.len();
 
-    let err = runtime.apply_route_change("/bad").unwrap_err();
+    let err = runtime
+        .apply_route_change("/bad")
+        .expect_err("invalid test input must fail");
     assert!(
         err.contains("missing_script") || err.contains("script hash"),
         "{err}"
@@ -424,8 +437,8 @@ fn failed_route_change_keeps_current_scene_and_route() {
 #[test]
 fn merge_prevalidation_rejects_late_link_without_live_mutation() {
     let scene = Parser::new("$root = @root\n\n[root]\n[Node]\n[/Node]\n[/root]\n").parse_scene();
-    let mut prepared =
-        prepare_scene_with_loader_and_styles(&scene, &|_| unreachable!(), None).unwrap();
+    let mut prepared = prepare_scene_with_loader_and_styles(&scene, &|_| unreachable!(), None)
+        .expect("test or bench setup must succeed");
     prepared.nodes[0].camera_stream_target = Some(9_999);
 
     let mut runtime = Runtime::new();
@@ -455,8 +468,8 @@ fn merge_rejects_parent_cycle_before_live_mutation() {
     let scene =
         Parser::new("[first]\n[Node]\n[/Node]\n[/first]\n[second]\n[Node]\n[/Node]\n[/second]\n")
             .parse_scene();
-    let mut prepared =
-        prepare_scene_with_loader_and_styles(&scene, &|_| unreachable!(), None).unwrap();
+    let mut prepared = prepare_scene_with_loader_and_styles(&scene, &|_| unreachable!(), None)
+        .expect("test or bench setup must succeed");
     let first = prepared.nodes[0].key;
     let second = prepared.nodes[1].key;
     prepared.nodes[0].parent_key = Some(second);
@@ -476,7 +489,8 @@ fn merge_rejects_declared_root_with_parent_before_live_mutation() {
             "$root = @child\n\n[parent]\n[Node]\n[/Node]\n[/parent]\n[child]\nparent = parent\n[Node]\n[/Node]\n[/child]\n",
         )
         .parse_scene();
-    let prepared = prepare_scene_with_loader_and_styles(&scene, &|_| unreachable!(), None).unwrap();
+    let prepared = prepare_scene_with_loader_and_styles(&scene, &|_| unreachable!(), None)
+        .expect("test or bench setup must succeed");
 
     let mut runtime = Runtime::new();
     let err = merge_prepared_scene(&mut runtime, prepared)
@@ -518,12 +532,18 @@ fn preload_compiles_once_and_spawns_distinct_instances() {
         .borrow_mut()
         .insert(path.to_string(), Arc::new(scene));
 
-    let id = runtime.preload_scene_at_runtime(path).unwrap();
+    let id = runtime
+        .preload_scene_at_runtime(path)
+        .expect("test or bench setup must succeed");
     assert_eq!(runtime.prepared_scene_cache.borrow().len(), 1);
     assert_eq!(runtime.preloaded_prepared_scenes.len(), 1);
 
-    let first = runtime.load_preloaded_scene_at_runtime(id).unwrap();
-    let second = runtime.load_preloaded_scene_at_runtime(id).unwrap();
+    let first = runtime
+        .load_preloaded_scene_at_runtime(id)
+        .expect("test or bench setup must succeed");
+    let second = runtime
+        .load_preloaded_scene_at_runtime(id)
+        .expect("test or bench setup must succeed");
     assert_ne!(first, second);
     assert_eq!(runtime.prepared_scene_cache.borrow().len(), 1);
 
@@ -538,10 +558,12 @@ fn scene_load_updates_tag_index_during_merge() {
         "$root = @root\n\n[root]\ntags = [\"scene_loaded\"]\n[Node]\n[/Node]\n[/root]\n",
     )
     .parse_scene();
-    let prepared = prepare_scene_with_loader_and_styles(&scene, &|_| unreachable!(), None).unwrap();
+    let prepared = prepare_scene_with_loader_and_styles(&scene, &|_| unreachable!(), None)
+        .expect("test or bench setup must succeed");
     let mut runtime = Runtime::new();
 
-    let merged = merge_prepared_scene(&mut runtime, prepared).unwrap();
+    let merged =
+        merge_prepared_scene(&mut runtime, prepared).expect("test or bench setup must succeed");
     let tag = perro_ids::TagID::from_string("scene_loaded");
 
     assert!(
@@ -626,19 +648,21 @@ fn runtime_scene_load_marks_ui_dirty_for_same_frame_extract() {
 fn static_boot_root_of_loads_dlc_scene_from_mount() {
     // load_boot_scene writes the process-global project root; serialize
     // with every other test that touches it.
-    let _project_root_guard = crate::rs_ctx::PROJECT_ROOT_TEST_LOCK.lock().unwrap();
+    let _project_root_guard = crate::rs_ctx::PROJECT_ROOT_TEST_LOCK
+        .lock()
+        .expect("test or bench setup must succeed");
     let test_root = std::env::temp_dir().join(format!(
         "perro_runtime_static_dlc_scene_{}",
         std::process::id()
     ));
     let _ = fs::remove_dir_all(&test_root);
     let dlc_scene_dir = test_root.join("dlcs").join("test").join("scenes");
-    fs::create_dir_all(&dlc_scene_dir).unwrap();
+    fs::create_dir_all(&dlc_scene_dir).expect("test or bench setup must succeed");
     fs::write(
         dlc_scene_dir.join("main.scn"),
         "$root = @main\n\n[main]\n[Node]\n[/Node]\n[/main]\n",
     )
-    .unwrap();
+    .expect("test or bench setup must succeed");
 
     let mut project = RuntimeProject::new("Static Dlc Test", &test_root);
     project.config.main_scene = "res://boot.scn".to_string();

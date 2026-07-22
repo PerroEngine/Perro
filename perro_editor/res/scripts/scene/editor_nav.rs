@@ -29,7 +29,7 @@ use std::str::FromStr;
 pub fn update_freecam<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
     let mode = with_state!(ctx.run, EditorState, ctx.id, |state| {
         state.viewport_mode.clone()
-    });
+    }).unwrap_or_default();
     if mode == "2D" {
         update_freecam_2d(ctx);
         return;
@@ -118,7 +118,7 @@ pub fn update_editor_shortcuts<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<
     }
     let picker_open = with_state!(ctx.run, EditorState, ctx.id, |state| {
         state.add_node_popup_open
-    });
+    }).unwrap_or_default();
     if !picker_open
         && ctrl
         && !alt
@@ -297,7 +297,7 @@ pub fn update_editor_shortcuts<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<
     }
     if ctrl && key_pressed!(ctx.ipt, KeyCode::KeyO) {
         if with_state!(ctx.run, EditorState, ctx.id, |state| state.sidebar_mode
-            == "files")
+            == "files").unwrap_or_default()
         {
             open_active_file(ctx);
         } else {
@@ -335,7 +335,7 @@ pub fn update_editor_shortcuts<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<
     }
     if ctrl && shift && key_pressed!(ctx.ipt, KeyCode::KeyC) {
         if with_state!(ctx.run, EditorState, ctx.id, |state| state.sidebar_mode
-            == "files")
+            == "files").unwrap_or_default()
         {
             copy_active_asset_path(ctx);
         } else {
@@ -389,7 +389,7 @@ pub fn update_editor_shortcuts<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<
     }
     if !ctrl && !alt && !shift && key_pressed!(ctx.ipt, KeyCode::ArrowLeft) {
         if with_state!(ctx.run, EditorState, ctx.id, |state| state.sidebar_mode
-            == "files")
+            == "files").unwrap_or_default()
         {
             collapse_selected_file(ctx);
         } else {
@@ -399,7 +399,7 @@ pub fn update_editor_shortcuts<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<
     }
     if !ctrl && !alt && !shift && key_pressed!(ctx.ipt, KeyCode::ArrowRight) {
         if with_state!(ctx.run, EditorState, ctx.id, |state| state.sidebar_mode
-            == "files")
+            == "files").unwrap_or_default()
         {
             expand_selected_file(ctx);
         } else {
@@ -446,7 +446,7 @@ pub fn update_editor_shortcuts<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<
     if ctrl && key_pressed!(ctx.ipt, KeyCode::Enter) {
         if with_state!(ctx.run, EditorState, ctx.id, |state| {
             state.active_asset_path.ends_with(".scn")
-        }) {
+        }).unwrap_or_default() {
             make_node_from_active_asset(ctx);
         } else {
             use_active_asset_on_selected_node(ctx);
@@ -495,7 +495,7 @@ pub fn update_editor_shortcuts<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<
     }
     if ctrl && key_pressed!(ctx.ipt, KeyCode::KeyD) {
         if with_state!(ctx.run, EditorState, ctx.id, |state| state.sidebar_mode
-            == "files")
+            == "files").unwrap_or_default()
         {
             duplicate_active_asset(ctx);
         } else {
@@ -505,7 +505,7 @@ pub fn update_editor_shortcuts<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<
     }
     if key_pressed!(ctx.ipt, KeyCode::Delete) {
         if with_state!(ctx.run, EditorState, ctx.id, |state| state.sidebar_mode
-            == "files")
+            == "files").unwrap_or_default()
         {
             delete_active_asset(ctx);
         } else {
@@ -535,7 +535,7 @@ pub fn editor_text_box_has_focus<API: ScriptAPI + ?Sized>(
 ) -> bool {
     with_state!(ctx.run, EditorState, ctx.id, |state| {
         !state.focused_inspector_box.is_empty()
-    })
+    }).unwrap_or_default()
 }
 
 pub fn commit_focused_inspector_box<API: ScriptAPI + ?Sized>(
@@ -543,7 +543,7 @@ pub fn commit_focused_inspector_box<API: ScriptAPI + ?Sized>(
 ) -> bool {
     let name = with_state!(ctx.run, EditorState, ctx.id, |state| {
         (!state.focused_inspector_box.is_empty()).then(|| state.focused_inspector_box.clone())
-    });
+    }).unwrap_or_default();
     let Some(name) = name else {
         return false;
     };
@@ -629,7 +629,7 @@ pub fn handle_editor_escape<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_,
         } else {
             "none"
         }
-    });
+    }).unwrap_or_default();
     let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
         state.focused_inspector_box.clear();
     });
@@ -663,7 +663,7 @@ pub fn handle_editor_escape<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_,
 pub fn cycle_sidebar_panel<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
     let mode = with_state!(ctx.run, EditorState, ctx.id, |state| {
         state.sidebar_mode.clone()
-    });
+    }).unwrap_or_default();
     if mode == "files" {
         set_activity_mode(ctx, "scene");
     } else {
@@ -725,7 +725,7 @@ pub fn add_camera_for_active_view<API: ScriptAPI + ?Sized>(ctx: &mut ScriptConte
         } else {
             "Camera2D"
         }
-    });
+    }).unwrap_or_default();
     add_node(ctx, node_type);
 }
 
@@ -757,7 +757,7 @@ pub fn select_sidebar_delta<API: ScriptAPI + ?Sized>(
 ) {
     let mode = with_state!(ctx.run, EditorState, ctx.id, |state| {
         state.sidebar_mode.clone()
-    });
+    }).unwrap_or_default();
     if mode == "files" {
         select_file_delta(ctx, delta);
     } else {
@@ -768,7 +768,7 @@ pub fn select_sidebar_delta<API: ScriptAPI + ?Sized>(
 pub fn select_sidebar_edge<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, last: bool) {
     let mode = with_state!(ctx.run, EditorState, ctx.id, |state| {
         state.sidebar_mode.clone()
-    });
+    }).unwrap_or_default();
     if mode == "files" {
         select_file_edge(ctx, last);
     } else {
@@ -779,7 +779,7 @@ pub fn select_sidebar_edge<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, 
 pub fn nav_sidebar_parent<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
     let mode = with_state!(ctx.run, EditorState, ctx.id, |state| {
         state.sidebar_mode.clone()
-    });
+    }).unwrap_or_default();
     if mode == "files" {
         nav_file_scope_parent(ctx);
     } else {
@@ -1191,7 +1191,7 @@ pub fn open_active_file<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API
             .iter()
             .position(|path| path == &state.active_asset_path)
             .or(Some(0))
-    });
+    }).unwrap_or_default();
     if let Some(idx) = idx {
         open_file_slot(ctx, idx);
     }
@@ -1200,7 +1200,7 @@ pub fn open_active_file<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API
 pub fn open_sidebar_selection<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
     let mode = with_state!(ctx.run, EditorState, ctx.id, |state| {
         state.sidebar_mode.clone()
-    });
+    }).unwrap_or_default();
     if mode == "files" {
         open_active_file(ctx);
         return;
@@ -1217,7 +1217,7 @@ pub fn open_sidebar_selection<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'
             .iter()
             .find(|node| node.key.as_u32() == key)?;
         selected_node_asset_ref_path(node)
-    })
+    }).unwrap_or_default()
     .is_some();
     if has_ref {
         open_selected_node_asset_ref(ctx);
@@ -1326,7 +1326,7 @@ pub fn update_freecam_2d<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, AP
 pub fn update_ui_canvas<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
     let mode = with_state!(ctx.run, EditorState, ctx.id, |state| {
         state.viewport_mode.clone()
-    });
+    }).unwrap_or_default();
     if mode != "UI" {
         return;
     }
@@ -1365,7 +1365,7 @@ pub fn reset_freecam_2d(state: &mut EditorState) {
 pub fn apply_freecam<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
     let camera = with_state!(ctx.run, EditorState, ctx.id, |state| {
         (state.preview_camera_3d != 0).then(|| NodeID::from_u64(state.preview_camera_3d))
-    })
+    }).unwrap_or_default()
     .or_else(|| find_named(ctx, "editor_camera_3d"));
     let Some(camera) = camera else {
         return;
@@ -1375,7 +1375,7 @@ pub fn apply_freecam<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) 
             Vector3::new(state.cam_x, state.cam_y, state.cam_z),
             Quaternion::from_euler_xyz(state.cam_pitch, state.cam_yaw, 0.0),
         )
-    });
+    }).unwrap_or_default();
     let _ = with_node_mut!(ctx.run, Camera3D, camera, |node| {
         node.active = false;
     });
@@ -1388,14 +1388,14 @@ pub fn apply_freecam<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) 
 pub fn apply_freecam_2d<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
     let camera = with_state!(ctx.run, EditorState, ctx.id, |state| {
         (state.preview_camera_2d != 0).then(|| NodeID::from_u64(state.preview_camera_2d))
-    })
+    }).unwrap_or_default()
     .or_else(|| find_named(ctx, "editor_camera_2d"));
     let Some(camera) = camera else {
         return;
     };
     let (pos, zoom) = with_state!(ctx.run, EditorState, ctx.id, |state| {
         (Vector2::new(state.cam2_x, state.cam2_y), state.cam2_zoom)
-    });
+    }).unwrap_or_default();
     let _ = with_node_mut!(ctx.run, Camera2D, camera, |node| {
         node.active = false;
         node.zoom = zoom;

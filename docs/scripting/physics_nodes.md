@@ -198,7 +198,7 @@ lifecycle!({
         if ctx.ipt.Actions().down("move_left")    { dir.x -= 1.0; }
         if ctx.ipt.Actions().down("move_right")   { dir.x += 1.0; }
 
-        let speed = with_state!(ctx.run, PlayerState, ctx.id, |s| s.speed);
+        let speed = with_state!(ctx.run, PlayerState, ctx.id, |s| s.speed).unwrap_or_default();
         physics_move_and_slide_3d!(ctx.run, ctx.id, dir.normalized() * speed * dt);
         physics_apply_gravity_3d!(ctx.run, ctx.id, dt);
     }
@@ -238,7 +238,7 @@ lifecycle!({
         let (speed, gravity, mut y_vel) = with_state!(
             ctx.run, PlayerState, ctx.id,
             |s| (s.speed, s.gravity, s.y_vel)
-        );
+        ).unwrap_or_default();
         y_vel += gravity * dt;
 
         let motion = dir.normalized() * speed * dt + Vector3::new(0.0, y_vel * dt, 0.0);
@@ -290,7 +290,7 @@ lifecycle!({
         let (speed, jump_v, gravity, mut y_vel) = with_state!(
             ctx.run, PlayerState, ctx.id,
             |s| (s.speed, s.jump, s.gravity, s.y_vel)
-        );
+        ).unwrap_or_default();
 
         // grounded if any contact pushes up
         let grounded = physics_contacts_3d!(ctx.run, ctx.id)

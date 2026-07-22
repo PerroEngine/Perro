@@ -8,6 +8,9 @@ repository.workspace = true
 homepage.workspace = true
 description = "Small parallel job API for Perro scripts and modules"
 
+[lints]
+workspace = true
+
 [dependencies]
 rayon = "1.10"
 

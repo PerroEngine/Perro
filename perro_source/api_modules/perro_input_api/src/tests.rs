@@ -136,7 +136,11 @@ fn live_rebind_replaces_action_and_reports_result() {
         Some(InputBinding::Mouse(MouseButton::Right))
     );
     assert_eq!(
-        input.input_map().action("jump").unwrap().bindings,
+        input
+            .input_map()
+            .action("jump")
+            .expect("test setup must succeed")
+            .bindings,
         vec![InputBinding::Mouse(MouseButton::Right)]
     );
     assert!(actions.down("jump"));
@@ -158,7 +162,11 @@ fn live_rebind_cancel_keeps_bindings() {
     input.set_key_state(KeyCode::Enter, true);
 
     assert_eq!(
-        input.input_map().action("jump").unwrap().bindings,
+        input
+            .input_map()
+            .action("jump")
+            .expect("test setup must succeed")
+            .bindings,
         vec![InputBinding::Key(KeyCode::Space)]
     );
     assert!(input.rebind_result().is_none());

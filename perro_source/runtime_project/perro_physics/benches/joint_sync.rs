@@ -93,7 +93,14 @@ fn bench_joint_sync(c: &mut Criterion) {
     c.bench_function("physics_joint_sync_2d_1024_hot", |b| {
         b.iter(|| {
             system_2d.sync_joints_2d(black_box(&joints_2d));
-            black_box(system_2d.world_2d.as_ref().unwrap().joint_map.len())
+            black_box(
+                system_2d
+                    .world_2d
+                    .as_ref()
+                    .expect("test or bench setup must succeed")
+                    .joint_map
+                    .len(),
+            )
         });
     });
 
@@ -108,7 +115,14 @@ fn bench_joint_sync(c: &mut Criterion) {
     c.bench_function("physics_joint_sync_3d_1024_hot", |b| {
         b.iter(|| {
             system_3d.sync_joints_3d(black_box(&joints_3d));
-            black_box(system_3d.world_3d.as_ref().unwrap().joint_map.len())
+            black_box(
+                system_3d
+                    .world_3d
+                    .as_ref()
+                    .expect("test or bench setup must succeed")
+                    .joint_map
+                    .len(),
+            )
         });
     });
 }

@@ -254,19 +254,23 @@ mod tests {
         let start = Instant::now();
         let end = start + Duration::from_millis(2);
         pacer.update_deadline(start, end, false);
-        let first = pacer.deadline().unwrap();
+        let first = pacer.deadline().expect("required value must be present");
         assert_eq!(first, start + Duration::from_millis(10));
         // Fast frame: next deadline chains from the previous one.
         let start2 = first;
         let end2 = first + Duration::from_millis(1);
         pacer.update_deadline(start2, end2, false);
-        assert_eq!(pacer.deadline().unwrap(), first + Duration::from_millis(10));
+        assert_eq!(
+            pacer.deadline().expect("required value must be present"),
+            first + Duration::from_millis(10)
+        );
         // Overrun past the chained deadline: re-anchor from frame start.
-        let start3 = pacer.deadline().unwrap() + Duration::from_millis(50);
+        let start3 =
+            pacer.deadline().expect("required value must be present") + Duration::from_millis(50);
         let end3 = start3 + Duration::from_millis(1);
         pacer.update_deadline(start3, end3, false);
         assert_eq!(
-            pacer.deadline().unwrap(),
+            pacer.deadline().expect("required value must be present"),
             start3 + Duration::from_millis(10)
         );
     }

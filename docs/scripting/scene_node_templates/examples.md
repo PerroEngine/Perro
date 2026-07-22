@@ -180,7 +180,7 @@ lifecycle!({
             // scene script_vars already applied here
             let _speed = state.speed;
             let _target = state.target;
-        });
+        }).unwrap_or_default();
     }
 });
 ```

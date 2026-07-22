@@ -194,7 +194,7 @@ pub fn execute_command_palette_row<API: ScriptAPI + ?Sized>(
 ) {
     let command = with_state!(ctx.run, EditorState, ctx.id, |state| {
         editor_commands(&state.command_palette_filter).get(idx).copied()
-    });
+    }).unwrap_or_default();
     set_command_palette(ctx, false);
     match command.map(|item| item.id) {
         Some("save") => { save_active_scene(ctx); }
@@ -216,7 +216,7 @@ pub fn execute_command_palette_row<API: ScriptAPI + ?Sized>(
 pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
     capture_editor_output(ctx);
     sync_selected_skeleton_bones(ctx);
-    let view = with_state!(ctx.run, EditorState, ctx.id, EditorView::from_state);
+    let view = with_state!(ctx.run, EditorState, ctx.id, EditorView::from_state).unwrap_or_default();
     refresh_chrome_view(ctx, &view);
     refresh_manager_view(ctx, &view);
     refresh_node_picker_view(ctx, &view);
@@ -232,7 +232,7 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
 /// File panel + status only (folder expand/collapse, file-local ops).
 pub fn refresh_file_panel<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
     capture_editor_output(ctx);
-    let view = with_state!(ctx.run, EditorState, ctx.id, EditorView::from_state);
+    let view = with_state!(ctx.run, EditorState, ctx.id, EditorView::from_state).unwrap_or_default();
     refresh_files_view(ctx, &view);
     refresh_status_view(ctx, &view);
 }
@@ -240,7 +240,7 @@ pub fn refresh_file_panel<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, A
 /// Scene tree pane + status only (node expand/collapse).
 pub fn refresh_scene_panel<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
     capture_editor_output(ctx);
-    let view = with_state!(ctx.run, EditorState, ctx.id, EditorView::from_state);
+    let view = with_state!(ctx.run, EditorState, ctx.id, EditorView::from_state).unwrap_or_default();
     refresh_scene_pane_view(ctx, &view);
     refresh_status_view(ctx, &view);
 }
@@ -251,7 +251,7 @@ pub fn refresh_selection_panels<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext
     capture_editor_output(ctx);
     sync_selected_skeleton_bones(ctx);
     reset_inspector_for_selection(ctx);
-    let view = with_state!(ctx.run, EditorState, ctx.id, EditorView::from_state);
+    let view = with_state!(ctx.run, EditorState, ctx.id, EditorView::from_state).unwrap_or_default();
     refresh_chrome_view(ctx, &view);
     // Picker labels reference the selected node ("add child of X").
     refresh_node_picker_view(ctx, &view);
@@ -263,7 +263,7 @@ pub fn refresh_selection_panels<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext
 pub fn refresh_asset_panels<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
     capture_editor_output(ctx);
     sync_selected_skeleton_bones(ctx);
-    let view = with_state!(ctx.run, EditorState, ctx.id, EditorView::from_state);
+    let view = with_state!(ctx.run, EditorState, ctx.id, EditorView::from_state).unwrap_or_default();
     refresh_chrome_view(ctx, &view);
     refresh_files_view(ctx, &view);
     refresh_inspector_view(ctx, &view);
@@ -1164,7 +1164,7 @@ pub fn refresh_status<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>)
                 format!("{} Viewport", state.viewport_mode),
                 state.script_schema_reload_frames > 0,
             )
-        });
+        }).unwrap_or_default();
     set_label(
         ctx,
         "project_status",
@@ -1208,7 +1208,7 @@ pub fn set_all_inspector_sections<API: ScriptAPI + ?Sized>(
                 .filter(|row| row.source == "section")
                 .map(|row| row.path_key)
                 .collect::<Vec<_>>()
-        });
+        }).unwrap_or_default();
         let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
             state.inspector_collapsed_sections = paths;
         });
@@ -2221,7 +2221,7 @@ fn inspector_override_view<API: ScriptAPI + ?Sized>(
             scene_defaults: inspector_scene_default_value_fields_for_type(node_ref.data.node_type),
             node,
         }
-    })
+    }).unwrap_or_default()
 }
 
 fn inspector_row_has_override(view: &InspectorOverrideView, row: &InspectorValueRow) -> bool {
@@ -4159,7 +4159,7 @@ pub fn tick_script_schema_reload<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContex
     if changed {
         let visible = with_state!(ctx.run, EditorState, ctx.id, |state| {
             state.script_schema_reload_frames > 0
-        });
+        }).unwrap_or_default();
         apply_script_reload_popup(ctx, visible);
     }
 }
@@ -4233,7 +4233,7 @@ pub fn set_text_box<API: ScriptAPI + ?Sized>(
 ) {
     let focused = with_state!(ctx.run, EditorState, ctx.id, |state| {
         state.focused_inspector_box == name
-    });
+    }).unwrap_or_default();
     if focused {
         return;
     }
@@ -4254,7 +4254,7 @@ pub fn read_text_box<API: ScriptAPI + ?Sized>(
     let id = find_named(ctx, name)?;
     Some(with_node!(ctx.run, UiTextBox, id, |node| node
         .text
-        .to_string()))
+        .to_string()).unwrap_or_default())
 }
 
 pub fn set_text_box_interactive<API: ScriptAPI + ?Sized>(
@@ -4355,7 +4355,7 @@ pub fn read_color_picker_value<API: ScriptAPI + ?Sized>(
     name: &str,
 ) -> Option<String> {
     let id = find_named(ctx, name)?;
-    let [r, g, b, a] = with_node!(ctx.run, UiColorPicker, id, |node| node.color.to_rgba());
+    let [r, g, b, a] = with_node!(ctx.run, UiColorPicker, id, |node| node.color.to_rgba()).unwrap_or_default();
     Some(format!(
         "({}, {}, {}, {})",
         format_compact_f32(r),
@@ -4666,7 +4666,7 @@ pub fn apply_selected_ui_overlay<API: ScriptAPI + ?Sized>(
         } else {
             viewport_stream_size_ratio(window_aspect)
         }
-    });
+    }).unwrap_or_default();
     if let Some(id) = find_named(ctx, "selected_outline") {
         let _ = with_node_mut!(ctx.run, UiPanel, id, |node| {
             node.layout.anchor = UiAnchor::Center;
@@ -4881,7 +4881,7 @@ pub fn apply_viewport_canvas<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_
                 editor_layout(state),
             )
         }
-    });
+    }).unwrap_or_default();
     let show = mode == "UI" || mode == "2D";
     set_panel_display(ctx, "viewport_canvas_overlay", show);
     if !show {
@@ -4967,7 +4967,7 @@ pub fn apply_ui_preview_canvas_transform<API: ScriptAPI + ?Sized>(
             (state.preview_root != 0).then(|| NodeID::from_u64(state.preview_root)),
             editor_layout(state),
         )
-    });
+    }).unwrap_or_default();
     let Some(root) = root else {
         return;
     };
@@ -5272,7 +5272,7 @@ fn refresh_bone_panel<API: ScriptAPI + ?Sized>(
                 state.inspector_bone_rot.clone(),
                 state.inspector_bone_scale.clone(),
             )
-        });
+        }).unwrap_or_default();
     let has_bones = node_actions && !names.is_empty();
     set_ui_display(ctx, "inspector_bones_header", has_bones);
     set_ui_display(ctx, "inspector_bone_rows", has_bones);
@@ -5526,7 +5526,7 @@ pub fn read_checkbox_checked<API: ScriptAPI + ?Sized>(
     name: &str,
 ) -> Option<bool> {
     let id = find_named(ctx, name)?;
-    Some(with_node!(ctx.run, UiCheckbox, id, |node| node.checked))
+    Some(with_node!(ctx.run, UiCheckbox, id, |node| node.checked).unwrap_or_default())
 }
 
 pub fn set_dropdown_options<API: ScriptAPI + ?Sized>(
@@ -5571,7 +5571,7 @@ pub fn read_dropdown_value<API: ScriptAPI + ?Sized>(
             .get(node.selected_index)
             .and_then(|option| option.value.as_str())
             .map(str::to_string)
-    })
+    }).unwrap_or_default()
 }
 
 pub fn set_add_node_popup<API: ScriptAPI + ?Sized>(

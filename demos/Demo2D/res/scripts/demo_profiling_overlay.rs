@@ -45,19 +45,19 @@ lifecycle!({
         if key_pressed!(ctx.ipt, KeyCode::F6) {
             let next = with_state!(ctx.run, DemoProfilingOverlayState, ctx.id, |state| {
                 (state.cap_index + 1).rem_euclid(CAP_COUNT)
-            });
+            }).unwrap_or_default();
             self.apply_cap(ctx, next);
         }
         if key_pressed!(ctx.ipt, KeyCode::F7) {
             let next = with_state!(ctx.run, DemoProfilingOverlayState, ctx.id, |state| {
                 (state.cap_index - 1).rem_euclid(CAP_COUNT)
-            });
+            }).unwrap_or_default();
             self.apply_cap(ctx, next);
         }
         if key_pressed!(ctx.ipt, KeyCode::F8) {
             let next = with_state!(ctx.run, DemoProfilingOverlayState, ctx.id, |state| {
                 (state.cap_index + 1).rem_euclid(CAP_COUNT)
-            });
+            }).unwrap_or_default();
             self.apply_cap(ctx, next);
         }
 
@@ -155,7 +155,7 @@ methods!({
                     state.cap_index,
                     state.script_fps,
                 )
-            });
+            }).unwrap_or_default();
 
         set_label_text(ctx, fps_label, format!("FPS {:.1}", fps));
         set_label_text(ctx, cpu_label, format!("CPU {} us", cpu_us));

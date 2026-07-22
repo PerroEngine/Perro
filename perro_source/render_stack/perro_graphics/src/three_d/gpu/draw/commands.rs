@@ -872,7 +872,8 @@ mod tests {
             instance_at([10.0, 0.0, 0.0]),
         ];
         let batch = bounds_batch(0, 3, 1.0);
-        let (center, radius) = batch_merged_world_sphere(&batch, &transforms).unwrap();
+        let (center, radius) =
+            batch_merged_world_sphere(&batch, &transforms).expect("required value must be present");
         for inst in &transforms {
             let world = Vec3::new(
                 inst.model_row_0[3],

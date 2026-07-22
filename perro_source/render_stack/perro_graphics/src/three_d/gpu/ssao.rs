@@ -400,10 +400,14 @@ mod tests {
     #[test]
     fn quality_targets_scale_cost_and_off_skips_pass() {
         assert!(SsaoTargetSettings::for_quality(crate::SsaoQuality::Off).is_none());
-        let low = SsaoTargetSettings::for_quality(crate::SsaoQuality::Low).unwrap();
-        let medium = SsaoTargetSettings::for_quality(crate::SsaoQuality::Medium).unwrap();
-        let high = SsaoTargetSettings::for_quality(crate::SsaoQuality::High).unwrap();
-        let ultra = SsaoTargetSettings::for_quality(crate::SsaoQuality::Ultra).unwrap();
+        let low = SsaoTargetSettings::for_quality(crate::SsaoQuality::Low)
+            .expect("required value must be present");
+        let medium = SsaoTargetSettings::for_quality(crate::SsaoQuality::Medium)
+            .expect("required value must be present");
+        let high = SsaoTargetSettings::for_quality(crate::SsaoQuality::High)
+            .expect("required value must be present");
+        let ultra = SsaoTargetSettings::for_quality(crate::SsaoQuality::Ultra)
+            .expect("required value must be present");
         assert_eq!(
             low,
             SsaoTargetSettings {

@@ -27,7 +27,7 @@ Rig = Skeleton3D
 [/Frame8]
 "#,
     )
-    .unwrap();
+    .expect("test setup must succeed");
     let map = parse_pretarget(
         r#"
 source_object = Rig
@@ -35,7 +35,7 @@ target_object = HeroRig
 bone upper_arm_l => Arm.L
 "#,
     )
-    .unwrap();
+    .expect("test setup must succeed");
 
     let (retargeted, report) = retarget_skeleton3d_clip(&clip, &map);
 
@@ -53,7 +53,7 @@ bone upper_arm_l => Arm.L
         .find(|track| track.object == "HeroRig")
         .expect("retargeted track");
     assert!(matches!(
-        &track.bone_target.as_ref().unwrap().selector,
+        &track.bone_target.as_ref().expect("test setup must succeed").selector,
         AnimationBoneSelector::Name(name) if name.as_ref() == "Arm.L"
     ));
     assert!(matches!(
@@ -78,7 +78,7 @@ Rig = Skeleton3D
 [/Frame0]
 "#,
     )
-    .unwrap();
+    .expect("test setup must succeed");
     let map = parse_pretarget(
         r#"
 source = Rig
@@ -87,7 +87,7 @@ keep_unmapped = false
 bone Spine => spine_01
 "#,
     )
-    .unwrap();
+    .expect("test setup must succeed");
 
     let (retargeted, report) = retarget_skeleton3d_clip(&clip, &map);
 
@@ -95,7 +95,7 @@ bone Spine => spine_01
     assert_eq!(report.dropped_tracks, 1);
     assert_eq!(retargeted.object_tracks.len(), 1);
     assert!(matches!(
-        &retargeted.object_tracks[0].bone_target.as_ref().unwrap().selector,
+        &retargeted.object_tracks[0].bone_target.as_ref().expect("test setup must succeed").selector,
         AnimationBoneSelector::Name(name) if name.as_ref() == "spine_01"
     ));
 }
@@ -119,7 +119,7 @@ Camera = Camera3D
 [/Frame0]
 "#,
     )
-    .unwrap();
+    .expect("test setup must succeed");
     let map = AnimationRetargetMap {
         source_object: "Rig".into(),
         target_object: "TargetRig".into(),
@@ -146,7 +146,7 @@ Camera = Camera3D
 
 #[test]
 fn parse_pretarget_rejects_missing_target() {
-    let err = parse_pretarget("source = Rig").unwrap_err();
+    let err = parse_pretarget("source = Rig").expect_err("test call must fail");
     assert!(err.contains("target_object"));
 }
 
@@ -165,8 +165,9 @@ Rig = Skeleton3D
 [/Frame0]
 "#,
     )
-    .unwrap();
-    let map = parse_pretarget("source=Rig\ntarget=TargetRig\nbone Spine=>spine_01\n").unwrap();
+    .expect("test setup must succeed");
+    let map = parse_pretarget("source=Rig\ntarget=TargetRig\nbone Spine=>spine_01\n")
+        .expect("test setup must succeed");
 
     let (retargeted, _) = retarget_skeleton3d_clip(&clip, &map);
 
@@ -193,7 +194,7 @@ Rig = Skeleton3D
 [/Frame0]
 "#,
     )
-    .unwrap();
+    .expect("test setup must succeed");
     let profile = parse_pretarget_profile(
         r#"
 source = Rig
@@ -203,7 +204,7 @@ source_rest arm = (1, 0, 0) | (0, 0, 0.70710677, 0.70710677) | (2, 4, 2)
 target_rest Arm.L = (5, 6, 7) | (0, 0, 0.70710677, 0.70710677) | (3, 4, 5)
 "#,
     )
-    .unwrap();
+    .expect("test setup must succeed");
 
     let (retargeted, report) = retarget_skeleton3d_clip_with_profile(&clip, &profile);
 
@@ -238,7 +239,7 @@ Rig = Skeleton3D
 [/Frame0]
 "#,
     )
-    .unwrap();
+    .expect("test setup must succeed");
     let profile = parse_pretarget_profile(
         r#"
 source = Rig
@@ -249,14 +250,14 @@ bone hips => Hips
 bone spine => Spine
 "#,
     )
-    .unwrap();
+    .expect("test setup must succeed");
 
     let (retargeted, report) = retarget_skeleton3d_clip_with_profile(&clip, &profile);
 
     assert_eq!(report.translation_dropped_tracks, 1);
     assert_eq!(retargeted.object_tracks.len(), 1);
     assert!(matches!(
-        &retargeted.object_tracks[0].bone_target.as_ref().unwrap().selector,
+        &retargeted.object_tracks[0].bone_target.as_ref().expect("test setup must succeed").selector,
         AnimationBoneSelector::Name(name) if name.as_ref() == "Hips"
     ));
     assert_eq!(
@@ -281,7 +282,7 @@ Rig = Skeleton3D
 [/Frame0]
 "#,
     )
-    .unwrap();
+    .expect("test setup must succeed");
     let profile = parse_pretarget_profile(
         r#"
 source = Rig
@@ -292,7 +293,7 @@ bone arm => Arm.L
 target_rest Arm.L = (1, 2, 3) | (0, 0, 0, 1)
 "#,
     )
-    .unwrap();
+    .expect("test setup must succeed");
 
     let (retargeted, report) = retarget_skeleton3d_clip_with_profile(&clip, &profile);
 
@@ -308,17 +309,20 @@ target_rest Arm.L = (1, 2, 3) | (0, 0, 0, 1)
 #[test]
 fn old_pretarget_format_keeps_legacy_translation_default() {
     let source = "source=Rig\ntarget=HeroRig\nkeep_unmapped=false\nbone arm=>Arm.L\n";
-    let profile = parse_pretarget_profile(source).unwrap();
+    let profile = parse_pretarget_profile(source).expect("test setup must succeed");
 
     assert_eq!(profile.translation_policy, AnimationTranslationPolicy::All);
     assert!(profile.source_rest.is_empty());
     assert!(profile.target_rest.is_empty());
-    assert_eq!(parse_pretarget(source).unwrap(), profile.map);
+    assert_eq!(
+        parse_pretarget(source).expect("test setup must succeed"),
+        profile.map
+    );
 }
 
 #[test]
 fn root_only_policy_needs_root_bone() {
-    let err =
-        parse_pretarget_profile("source=Rig\ntarget=HeroRig\ntranslation=root_only\n").unwrap_err();
+    let err = parse_pretarget_profile("source=Rig\ntarget=HeroRig\ntranslation=root_only\n")
+        .expect_err("test call must fail");
     assert!(err.contains("root_bone"));
 }

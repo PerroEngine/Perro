@@ -513,7 +513,16 @@ pub fn compile_dlc_bundle(project_root: &Path, dlc_name: &str) -> Result<PathBuf
         if path.is_dir() {
             return Ok(());
         }
-        let rel = path.strip_prefix(&dlc_root).unwrap();
+        let rel = path.strip_prefix(&dlc_root).map_err(|err| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!(
+                    "DLC path {} escaped root {}: {err}",
+                    path.display(),
+                    dlc_root.display()
+                ),
+            )
+        })?;
         let rel_norm = rel.to_string_lossy().replace('\\', "/");
         if rel_norm.ends_with(".rs") {
             return Ok(());

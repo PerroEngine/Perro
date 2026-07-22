@@ -31,11 +31,7 @@ impl<'rt, R: NodeAPI + ?Sized> NodeModule<'rt, R> {
         self.rt.with_node_mut::<T, V, F>(id, f)
     }
 
-    pub fn with_node<T, V: Clone + Default>(
-        &mut self,
-        node_id: NodeID,
-        f: impl FnOnce(&T) -> V,
-    ) -> V
+    pub fn with_node<T, V>(&mut self, node_id: NodeID, f: impl FnOnce(&T) -> V) -> Option<V>
     where
         T: NodeTypeDispatch,
     {

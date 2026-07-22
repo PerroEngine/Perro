@@ -1125,8 +1125,10 @@ impl Gpu {
                         &mut encoder,
                         input_view,
                         &target_view,
-                        self.hdr_status,
-                        exposure_settings.exposure,
+                        CameraStreamTonemapSettings {
+                            hdr_status: self.hdr_status,
+                            exposure: exposure_settings.exposure,
+                        },
                     );
                 }
             }

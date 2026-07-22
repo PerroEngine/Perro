@@ -3,6 +3,9 @@ name = "perro_runtime"
 version = "0.1.0"
 edition = "2024"
 
+[lints]
+workspace = true
+
 [dependencies]
 gltf.workspace = true
 ahash = "0.8"

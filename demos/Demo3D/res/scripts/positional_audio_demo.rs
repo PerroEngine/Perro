@@ -30,7 +30,7 @@ lifecycle!({
                 vec![state.speaker_a, state.speaker_b, state.speaker_c],
                 state.audio_wall,
             )
-        });
+        }).unwrap_or_default();
         with_state_mut!(ctx.run, PositionalAudioDemoState, ctx.id, |state| {
             state.overlay = NodeID::nil();
             state.speakers = speakers;
@@ -101,7 +101,7 @@ methods!({
     fn play_chord(&self, ctx: &mut ScriptContext<'_, API>) {
         let speakers = with_state!(ctx.run, PositionalAudioDemoState, ctx.id, |state| {
             state.speakers.clone()
-        });
+        }).unwrap_or_default();
         let spatial = SpatialAudioOptions {
             range: 38.0,
             audio_layer: BitMask::ALL,
@@ -136,10 +136,10 @@ methods!({
 
     fn sync_label(&self, ctx: &mut ScriptContext<'_, API>) {
         let debug = with_state!(ctx.run, PositionalAudioDemoState, ctx.id, |state| state
-            .debug_rays);
+            .debug_rays).unwrap_or_default();
         let label = with_state!(ctx.run, PositionalAudioDemoState, ctx.id, |state| {
             state.debug_label
-        });
+        }).unwrap_or_default();
         if label.is_nil() {
             return;
         }
@@ -157,7 +157,7 @@ methods!({
         let (overlay, debug, speakers) =
             with_state!(ctx.run, PositionalAudioDemoState, ctx.id, |state| {
                 (state.overlay, state.debug_rays, state.speakers.clone())
-            });
+            }).unwrap_or_default();
         if overlay.is_nil() {
             return;
         }

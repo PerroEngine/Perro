@@ -331,7 +331,7 @@ mod tests {
                 std::process::id(),
                 id
             ));
-            fs::create_dir_all(&path).unwrap();
+            fs::create_dir_all(&path).expect("required value must be present");
             Self(path)
         }
     }
@@ -343,15 +343,19 @@ mod tests {
     }
 
     fn make_zip(path: &Path, entries: &[(&str, &[u8])]) {
-        let file = fs::File::create(path).unwrap();
+        let file = fs::File::create(path).expect("required value must be present");
         let mut writer = zip::ZipWriter::new(file);
         let options = zip::write::SimpleFileOptions::default()
             .compression_method(zip::CompressionMethod::Deflated);
         for (name, data) in entries {
-            writer.start_file(*name, options).unwrap();
-            writer.write_all(data).unwrap();
+            writer
+                .start_file(*name, options)
+                .expect("required value must be present");
+            writer
+                .write_all(data)
+                .expect("required value must be present");
         }
-        writer.finish().unwrap();
+        writer.finish().expect("required value must be present");
     }
 
     #[test]
@@ -365,7 +369,8 @@ mod tests {
             ..ZipLimits::default()
         };
 
-        let err = read_zip_file_entry_with_limits(&archive, "zeros.bin", limits).unwrap_err();
+        let err = read_zip_file_entry_with_limits(&archive, "zeros.bin", limits)
+            .expect_err("operation must fail in this test");
 
         assert_eq!(err.kind(), io::ErrorKind::InvalidData);
         assert!(err.to_string().contains("compression ratio"));
@@ -388,7 +393,8 @@ mod tests {
             ..ZipLimits::default()
         };
 
-        let err = extract_zip_file_with_limits(&archive, temp.0.join("out"), limits).unwrap_err();
+        let err = extract_zip_file_with_limits(&archive, temp.0.join("out"), limits)
+            .expect_err("operation must fail in this test");
 
         assert_eq!(err.kind(), io::ErrorKind::InvalidData);
         assert!(err.to_string().contains("entry count"));
@@ -405,10 +411,14 @@ mod tests {
             ..ZipLimits::default()
         };
 
-        let err = extract_zip_file_with_limits(&archive, &output, limits).unwrap_err();
+        let err = extract_zip_file_with_limits(&archive, &output, limits)
+            .expect_err("operation must fail in this test");
 
         assert_eq!(err.kind(), io::ErrorKind::InvalidData);
-        assert_eq!(fs::read(output.join("one.bin")).unwrap(), b"1234");
+        assert_eq!(
+            fs::read(output.join("one.bin")).expect("required value must be present"),
+            b"1234"
+        );
         assert!(!output.join("two.bin").exists());
     }
 
@@ -421,13 +431,16 @@ mod tests {
         let archive = temp.0.join("data.zip");
         make_zip(&archive, &[("file.txt", b"bad")]);
         let output = temp.0.join("out");
-        fs::create_dir(&output).unwrap();
+        fs::create_dir(&output).expect("required value must be present");
         let outside = temp.0.join("outside.txt");
-        fs::write(&outside, b"safe").unwrap();
-        symlink(&outside, output.join("file.txt")).unwrap();
+        fs::write(&outside, b"safe").expect("required value must be present");
+        symlink(&outside, output.join("file.txt")).expect("required value must be present");
 
         assert!(extract_zip_file(&archive, &output).is_err());
-        assert_eq!(fs::read(outside).unwrap(), b"safe");
+        assert_eq!(
+            fs::read(outside).expect("required value must be present"),
+            b"safe"
+        );
     }
 
     #[cfg(unix)]
@@ -440,9 +453,9 @@ mod tests {
         make_zip(&archive, &[("nested/file.txt", b"bad")]);
         let output = temp.0.join("out");
         let outside = temp.0.join("outside");
-        fs::create_dir(&output).unwrap();
-        fs::create_dir(&outside).unwrap();
-        symlink(&outside, output.join("nested")).unwrap();
+        fs::create_dir(&output).expect("required value must be present");
+        fs::create_dir(&outside).expect("required value must be present");
+        symlink(&outside, output.join("nested")).expect("required value must be present");
 
         assert!(extract_zip_file(&archive, &output).is_err());
         assert!(!outside.join("file.txt").exists());
@@ -469,15 +482,18 @@ mod tests {
         let archive = temp.0.join("data.zip");
         make_zip(&archive, &[("file.txt", b"bad")]);
         let output = temp.0.join("out");
-        fs::create_dir(&output).unwrap();
+        fs::create_dir(&output).expect("required value must be present");
         let outside = temp.0.join("outside.txt");
-        fs::write(&outside, b"safe").unwrap();
+        fs::write(&outside, b"safe").expect("required value must be present");
         if !try_symlink_file(&outside, &output.join("file.txt")) {
             return;
         }
 
         assert!(extract_zip_file(&archive, &output).is_err());
-        assert_eq!(fs::read(outside).unwrap(), b"safe");
+        assert_eq!(
+            fs::read(outside).expect("required value must be present"),
+            b"safe"
+        );
     }
 
     #[cfg(windows)]
@@ -488,8 +504,8 @@ mod tests {
         make_zip(&archive, &[("nested/file.txt", b"bad")]);
         let output = temp.0.join("out");
         let outside = temp.0.join("outside");
-        fs::create_dir(&output).unwrap();
-        fs::create_dir(&outside).unwrap();
+        fs::create_dir(&output).expect("required value must be present");
+        fs::create_dir(&outside).expect("required value must be present");
         match std::os::windows::fs::symlink_dir(&outside, output.join("nested")) {
             Ok(()) => {}
             Err(err)

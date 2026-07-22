@@ -57,7 +57,7 @@ methods!({
         let (camera, projectiles, radius, speed) =
             with_state!(ctx.run, PhysicsBonesDemoState, ctx.id, |state| {
                 (state.camera, state.projectiles, state.radius, state.speed)
-            });
+            }).unwrap_or_default();
         if camera.is_nil() || projectiles.is_nil() {
             return;
         }
@@ -93,7 +93,7 @@ methods!({
         let (overlay, radius, projectiles) =
             with_state!(ctx.run, PhysicsBonesDemoState, ctx.id, |state| {
                 (state.overlay, state.radius, state.projectiles)
-            });
+            }).unwrap_or_default();
         if overlay.is_nil() {
             return;
         }

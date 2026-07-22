@@ -195,7 +195,14 @@ fn reserving_existing_texture_resets_zero_ref_ttl() {
 
     let reserved = store.create_texture(source, true);
     assert_eq!(reserved, id);
-    assert_eq!(store.texture_meta_by.get(&id).unwrap().zero_ref_frames, 0);
+    assert_eq!(
+        store
+            .texture_meta_by
+            .get(&id)
+            .expect("test setup/result must succeed")
+            .zero_ref_frames,
+        0
+    );
 
     for _ in 0..(ResourceStore::DEFAULT_ZERO_REF_TTL_FRAMES * 2) {
         store.reset_ref_counts();
@@ -306,15 +313,57 @@ fn mark_used_count_tracks_multiple_live_users() {
     store.mark_mesh_used_count(mesh, 2);
     store.mark_material_used_count(material, 4);
 
-    assert_eq!(store.texture_meta_by.get(&texture).unwrap().ref_count, 3);
-    assert_eq!(store.mesh_meta_by.get(&mesh).unwrap().ref_count, 2);
-    assert_eq!(store.material_meta_by.get(&material).unwrap().ref_count, 4);
+    assert_eq!(
+        store
+            .texture_meta_by
+            .get(&texture)
+            .expect("test setup/result must succeed")
+            .ref_count,
+        3
+    );
+    assert_eq!(
+        store
+            .mesh_meta_by
+            .get(&mesh)
+            .expect("test setup/result must succeed")
+            .ref_count,
+        2
+    );
+    assert_eq!(
+        store
+            .material_meta_by
+            .get(&material)
+            .expect("test setup/result must succeed")
+            .ref_count,
+        4
+    );
 
     store.reset_ref_counts();
 
-    assert_eq!(store.texture_meta_by.get(&texture).unwrap().ref_count, 0);
-    assert_eq!(store.mesh_meta_by.get(&mesh).unwrap().ref_count, 0);
-    assert_eq!(store.material_meta_by.get(&material).unwrap().ref_count, 0);
+    assert_eq!(
+        store
+            .texture_meta_by
+            .get(&texture)
+            .expect("test setup/result must succeed")
+            .ref_count,
+        0
+    );
+    assert_eq!(
+        store
+            .mesh_meta_by
+            .get(&mesh)
+            .expect("test setup/result must succeed")
+            .ref_count,
+        0
+    );
+    assert_eq!(
+        store
+            .material_meta_by
+            .get(&material)
+            .expect("test setup/result must succeed")
+            .ref_count,
+        0
+    );
 }
 
 #[test]

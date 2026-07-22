@@ -129,6 +129,7 @@ Rendering and resource loading are handled by the runtime and `ResourceWindow`.
 
 - Scalable world-space texture panel.
 - Uses `texture`, `texture_region`, `size`, `margins`, and `tint`.
+- Zero default `margins` auto-split the texture or region into equal thirds and scale all nine parts to fit.
 - Keeps corners fixed while stretching edges and center.
 - Use it as a frame, speech bubble, health bar, or child/background near `Button2D` nodes.
 
@@ -768,7 +769,8 @@ All UI nodes can have children.
 `UiButton` draws an interactive styled box and emits default named signals plus extra configured signals.
 `UiImage` draws a texture region with tint and scale mode.
 `UiImageButton` draws an interactive texture region and emits default named signals plus extra configured signals.
-`UiNineSlice` draws a scalable texture panel with fixed corners and tiled edges/center.
+`UiNineSlice` auto-splits its texture into thirds with fixed corners and tiled edges/center.
+Custom nonzero margins override the split.
 `UiAnimatedImage` draws sprite-sheet animation in UI space.
 `UiSubView` renders isolated local 2D and 3D descendants inside its UI bounds with implicit views and no camera node.
 `SubView2D` renders the same mixed child scope onto a 2D world quad.

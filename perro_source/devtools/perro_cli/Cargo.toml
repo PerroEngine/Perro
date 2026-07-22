@@ -9,6 +9,9 @@ repository.workspace = true
 homepage.workspace = true
 readme.workspace = true
 
+[lints]
+workspace = true
+
 [dependencies]
 perro_compiler.workspace = true
 perro_project.workspace = true

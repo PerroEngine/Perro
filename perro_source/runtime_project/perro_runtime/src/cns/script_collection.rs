@@ -240,8 +240,14 @@ impl ScriptCollection {
         self.instances.swap(i, last);
         self.ids.swap(i, last);
 
-        let removed = self.instances.pop().unwrap();
-        let removed_node = self.ids.pop().unwrap();
+        let removed = self
+            .instances
+            .pop()
+            .expect("located script index guarantees non-empty instances");
+        let removed_node = self
+            .ids
+            .pop()
+            .expect("script instance and node id arrays stay aligned");
         debug_assert!(removed_node == id);
 
         if i != last {
@@ -626,8 +632,8 @@ mod unsafe_state_cast_tests {
         assert_eq!(fast.as_deref(), safe.as_deref());
         assert_eq!(safe_type, fast_type);
 
-        safe.unwrap().value += 1;
-        fast.unwrap().value += 1;
+        safe.expect("test or bench setup must succeed").value += 1;
+        fast.expect("test or bench setup must succeed").value += 1;
 
         assert_eq!(
             fast_state.as_ref().downcast_ref::<TestState>(),
@@ -707,7 +713,7 @@ mod scheduled_instance_tests {
             .behavior
             .get_var(instance.state.as_ref(), ScriptMemberID(0))
             .as_i64()
-            .unwrap()
+            .expect("test or bench setup must succeed")
     }
 
     // (a) A script removed mid-frame is skipped by a stale scheduler snapshot key.
@@ -718,7 +724,9 @@ mod scheduled_instance_tests {
         insert_marker(&mut coll, id, 11, ScriptFlags::HAS_UPDATE);
 
         // Snapshot key captured while scheduled.
-        let index = coll.instance_index_for_id(id).unwrap();
+        let index = coll
+            .instance_index_for_id(id)
+            .expect("test or bench setup must succeed");
         assert!(
             coll.scheduled_instance(index, id, ScheduleKind::Update)
                 .is_some()
@@ -744,7 +752,9 @@ mod scheduled_instance_tests {
             22,
             ScriptFlags::HAS_UPDATE | ScriptFlags::HAS_FIXED_UPDATE,
         );
-        let index = coll.instance_index_for_id(id).unwrap();
+        let index = coll
+            .instance_index_for_id(id)
+            .expect("test or bench setup must succeed");
 
         assert!(
             coll.scheduled_instance(index, id, ScheduleKind::Update)
@@ -779,8 +789,12 @@ mod scheduled_instance_tests {
         insert_marker(&mut coll, a, 100, ScriptFlags::HAS_UPDATE);
         insert_marker(&mut coll, b, 200, ScriptFlags::HAS_UPDATE);
 
-        let index_a = coll.instance_index_for_id(a).unwrap();
-        let index_b = coll.instance_index_for_id(b).unwrap();
+        let index_a = coll
+            .instance_index_for_id(a)
+            .expect("test or bench setup must succeed");
+        let index_b = coll
+            .instance_index_for_id(b)
+            .expect("test or bench setup must succeed");
         assert_eq!(index_a, 0);
         assert_eq!(index_b, 1);
 
@@ -796,7 +810,9 @@ mod scheduled_instance_tests {
         // `b` is now at index 0; the revalidated lookup returns the moved
         // instance with its own marker, and its update schedule membership moved
         // with it.
-        let moved_index = coll.instance_index_for_id(b).unwrap();
+        let moved_index = coll
+            .instance_index_for_id(b)
+            .expect("test or bench setup must succeed");
         assert_eq!(moved_index, 0);
         let moved = coll
             .scheduled_instance(moved_index, b, ScheduleKind::Update)

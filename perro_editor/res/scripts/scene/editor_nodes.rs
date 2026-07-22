@@ -98,7 +98,7 @@ pub fn select_node_slot<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API
             .get(idx)
             .copied()
         }
-    });
+    }).unwrap_or_default();
     if let Some(key) = key {
         let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
             state.selected_key = Some(key);
@@ -139,13 +139,13 @@ pub fn click_scene_node_slot<API: ScriptAPI + ?Sized>(
             .get(idx)
             .copied()
         }
-    }) else {
+    }).unwrap_or_default() else {
         return;
     };
 
     let was_selected = with_state!(ctx.run, EditorState, ctx.id, |state| {
         state.selected_key == Some(key)
-    });
+    }).unwrap_or_default();
     let should_toggle = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
         let frame = state.file_watch_frame;
         let should_toggle = state
@@ -172,7 +172,7 @@ pub fn click_scene_node_slot<API: ScriptAPI + ?Sized>(
             let doc = cached_scene_doc_shared(&state.doc_text);
             scene_child_count(&doc, key) > 0
         }
-    });
+    }).unwrap_or_default();
     if !has_children {
         return;
     }
@@ -216,7 +216,7 @@ pub fn toggle_scene_node_slot<API: ScriptAPI + ?Sized>(
             .get(idx)
             .copied()
         }
-    }) else {
+    }).unwrap_or_default() else {
         return;
     };
     let has_children = with_state!(ctx.run, EditorState, ctx.id, |state| {
@@ -226,7 +226,7 @@ pub fn toggle_scene_node_slot<API: ScriptAPI + ?Sized>(
             let doc = cached_scene_doc_shared(&state.doc_text);
             scene_child_count(&doc, key) > 0
         }
-    });
+    }).unwrap_or_default();
     if !has_children {
         return;
     }
@@ -270,7 +270,7 @@ pub fn set_scene_node_slot_open<API: ScriptAPI + ?Sized>(
             .get(idx)
             .copied()
         }
-    }) else {
+    }).unwrap_or_default() else {
         return;
     };
     let has_children = with_state!(ctx.run, EditorState, ctx.id, |state| {
@@ -280,7 +280,7 @@ pub fn set_scene_node_slot_open<API: ScriptAPI + ?Sized>(
             let doc = cached_scene_doc_shared(&state.doc_text);
             scene_child_count(&doc, key) > 0
         }
-    });
+    }).unwrap_or_default();
     if !has_children {
         return;
     }
@@ -314,7 +314,7 @@ pub fn set_scene_node_slot_open<API: ScriptAPI + ?Sized>(
 pub fn set_activity_mode<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, mode: &str) {
     let was_glb = with_state!(ctx.run, EditorState, ctx.id, |state| {
         state.activity_mode == "glb"
-    });
+    }).unwrap_or_default();
     let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
         if mode == "scene" {
             state.activity_mode = "scene".to_string();
@@ -532,7 +532,7 @@ pub fn open_selected_node_asset_ref<API: ScriptAPI + ?Sized>(ctx: &mut ScriptCon
             .map(|idx| (idx + 1) % refs.len())
             .unwrap_or(0);
         refs.get(next_idx).cloned()
-    });
+    }).unwrap_or_default();
     let Some(path) = path else {
         set_log(ctx, "open ref fail\nno asset ref");
         return;
@@ -1050,7 +1050,7 @@ pub fn add_node_from_picker<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_,
                 .get(state.node_picker_offset + row)
                 .copied()
         })
-    });
+    }).unwrap_or_default();
     if let Some(node_type) = node_type {
         add_node(ctx, node_type.name());
     }

@@ -159,7 +159,7 @@ lifecycle!({
         self.update_fade(ctx);
         let (paused, fade_active) = with_state!(ctx.run, Demo2DState, ctx.id, |state| {
             (state.runtime.paused, state.runtime.fade_active)
-        });
+        }).unwrap_or_default();
         if fade_active {
             return;
         }
@@ -196,7 +196,7 @@ methods!({
     fn on_audio_chord_timer(&self, ctx: &mut ScriptContext<'_, API>) {
         let play = with_state!(ctx.run, Demo2DState, ctx.id, |state| {
             state.runtime.active_demo == DemoKind::AudioGap && !state.runtime.paused
-        });
+        }).unwrap_or_default();
         if play {
             self.play_audio_chord(ctx);
         }
@@ -520,7 +520,7 @@ methods!({
     fn apply_transition_fade(&self, ctx: &mut ScriptContext<'_, API>, alpha: f32, visible: bool) {
         let (root, panel) = with_state!(ctx.run, Demo2DState, ctx.id, |state| {
             (state.ui.fade_root, state.ui.fade_panel)
-        });
+        }).unwrap_or_default();
         let clamped = if visible { alpha.clamp(0.0, 1.0) } else { 0.0 };
         let show = visible && clamped > 0.001;
         let color = FADE_COLOR.with_alpha(clamped);
@@ -539,7 +539,7 @@ methods!({
     }
 
     fn jump_camera_to_demo(&self, ctx: &mut ScriptContext<'_, API>, demo: DemoKind) {
-        let camera = with_state!(ctx.run, Demo2DState, ctx.id, |state| state.camera);
+        let camera = with_state!(ctx.run, Demo2DState, ctx.id, |state| state.camera).unwrap_or_default();
         if camera.is_nil() {
             return;
         }
@@ -553,7 +553,7 @@ methods!({
     fn apply_fade_action(&self, ctx: &mut ScriptContext<'_, API>) {
         let (action, demo) = with_state!(ctx.run, Demo2DState, ctx.id, |state| {
             (state.runtime.fade_action, state.runtime.queued_demo)
-        });
+        }).unwrap_or_default();
         match action {
             FadeAction::None => {}
             FadeAction::ActivateDemo | FadeAction::RestartDemo => {
@@ -592,7 +592,7 @@ methods!({
                     state.runtime.active_demo,
                     state.runtime.paused,
                 )
-            });
+            }).unwrap_or_default();
         let in_hub = active_demo == DemoKind::None;
         set_ui_tree_visible(ctx, menu, in_hub);
         if in_hub {
@@ -1371,13 +1371,13 @@ methods!({
     }
 
     fn assets(&self, ctx: &mut ScriptContext<'_, API>) -> DemoAssets {
-        with_state!(ctx.run, Demo2DState, ctx.id, |state| state.assets)
+        with_state!(ctx.run, Demo2DState, ctx.id, |state| state.assets).unwrap_or_default()
     }
 
     fn active_demo(&self, ctx: &mut ScriptContext<'_, API>) -> DemoKind {
         with_state!(ctx.run, Demo2DState, ctx.id, |state| state
             .runtime
-            .active_demo)
+            .active_demo).unwrap_or_default()
     }
 
     fn sync_info_overlay(&self, ctx: &mut ScriptContext<'_, API>) {
@@ -1388,7 +1388,7 @@ methods!({
                     state.runtime.active_demo,
                     state.runtime.audio_debug,
                 )
-            });
+            }).unwrap_or_default();
         if overlay.is_nil() {
             return;
         }
@@ -1451,7 +1451,7 @@ fn scene_ui_parent<API: ScriptAPI + ?Sized>(
     ctx: &mut ScriptContext<'_, API>,
     manager: NodeID,
 ) -> NodeID {
-    let ui_root = with_state!(ctx.run, Demo2DState, manager, |state| state.demo_ui_root);
+    let ui_root = with_state!(ctx.run, Demo2DState, manager, |state| state.demo_ui_root).unwrap_or_default();
     if !ui_root.is_nil() {
         return ui_root;
     }

@@ -21,10 +21,9 @@ handled.
 ## Failure Behavior
 
 A stored ID can become stale after node removal. Check nil where applicable.
-Typed reads return the closure output's `Default` value on a missing, stale, or
-wrong-type target; typed mutable access returns `None`. A query can return no
-targets; empty is a normal result. Optional features should quietly skip absent
-targets.
+Typed reads and writes return `None` on a missing, stale, or wrong-type target.
+A query can return no targets; empty is a normal result. Optional features
+should quietly skip absent targets.
 
 ## Performance
 

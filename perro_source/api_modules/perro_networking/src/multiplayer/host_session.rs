@@ -302,7 +302,11 @@ mod tests {
     fn local_payload_uses_same_host_path_as_steam() {
         let mut session = HostSession::new();
         let mut transport = MockTransport::default();
-        let peer = PeerId::Lan("127.0.0.1:49152".parse::<SocketAddr>().unwrap());
+        let peer = PeerId::Lan(
+            "127.0.0.1:49152"
+                .parse::<SocketAddr>()
+                .expect("test setup must succeed"),
+        );
         let game_bytes = vec![1, 2, 3];
 
         let events = session.handle_transport_events(

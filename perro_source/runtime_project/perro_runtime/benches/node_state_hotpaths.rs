@@ -208,7 +208,8 @@ fn bench_node_api(c: &mut Criterion) {
                     for &id in &ids {
                         sum += NodeAPI::with_node::<Node3D, _>(&mut runtime, id, |node| {
                             node.transform.position.x
-                        });
+                        })
+                        .unwrap_or_default();
                     }
                     black_box(sum)
                 })
@@ -330,11 +331,14 @@ fn bench_script_state(c: &mut Criterion) {
                 b.iter(|| {
                     let mut sum = 0u64;
                     for &id in &ids {
-                        sum = sum.wrapping_add(ScriptAPI::with_state::<BenchScriptState, _, _>(
-                            &mut runtime,
-                            id,
-                            |state| state.frame,
-                        ));
+                        sum = sum.wrapping_add(
+                            ScriptAPI::with_state::<BenchScriptState, _, _>(
+                                &mut runtime,
+                                id,
+                                |state| state.frame,
+                            )
+                            .unwrap_or_default(),
+                        );
                     }
                     black_box(sum)
                 })
@@ -387,12 +391,14 @@ fn bench_script_state(c: &mut Criterion) {
                     let owner = ids[0];
                     let _ = bench_with_active_script(&mut runtime, owner, |runtime| {
                         for _ in 0..ids.len() {
-                            sum =
-                                sum.wrapping_add(ScriptAPI::with_state::<BenchScriptState, _, _>(
+                            sum = sum.wrapping_add(
+                                ScriptAPI::with_state::<BenchScriptState, _, _>(
                                     runtime,
                                     owner,
                                     |state| state.frame,
-                                ));
+                                )
+                                .unwrap_or_default(),
+                            );
                         }
                     });
                     black_box(sum)
@@ -450,12 +456,14 @@ fn bench_script_state(c: &mut Criterion) {
                     let mut sum = 0u64;
                     let _ = bench_with_active_script(&mut runtime, owner, |runtime| {
                         for &id in &targets {
-                            sum =
-                                sum.wrapping_add(ScriptAPI::with_state::<BenchScriptState, _, _>(
+                            sum = sum.wrapping_add(
+                                ScriptAPI::with_state::<BenchScriptState, _, _>(
                                     runtime,
                                     id,
                                     |state| state.frame,
-                                ));
+                                )
+                                .unwrap_or_default(),
+                            );
                         }
                     });
                     black_box(sum)

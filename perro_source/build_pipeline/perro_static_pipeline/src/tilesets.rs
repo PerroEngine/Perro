@@ -142,17 +142,17 @@ mod tests {
     fn static_tilesets_generates_lookup() {
         let stamp = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
-            .unwrap()
+            .expect("required value must be present")
             .as_nanos();
         let root = std::env::temp_dir().join(format!("perro_tilesets_{stamp}"));
         let res = root.join("res");
         let static_dir = root.join("static");
-        fs::create_dir_all(res.join("tiles")).unwrap();
+        fs::create_dir_all(res.join("tiles")).expect("required value must be present");
         fs::write(
             res.join("tiles/world.ptileset"),
             "texture = \"res://tiles/world.png\"\ntile_size = (16, 16)\ncolumns = 1\nrows = 1\n",
         )
-        .unwrap();
+        .expect("required value must be present");
 
         set_static_pipeline_overrides(Some(StaticPipelineOverrides {
             res_dir: res,
@@ -160,28 +160,36 @@ mod tests {
             embedded_dir: root.join("embedded"),
             asset_prefix: "res://".to_string(),
         }));
-        generate_static_tilesets(&root).unwrap();
+        generate_static_tilesets(&root).expect("required value must be present");
         set_static_pipeline_overrides(None);
 
-        let out = fs::read_to_string(static_dir.join("tilesets.rs")).unwrap();
+        let out = fs::read_to_string(static_dir.join("tilesets.rs"))
+            .expect("required value must be present");
         assert!(out.contains("lookup_tileset"));
         assert!(out.contains("include_bytes!"));
         assert!(out.contains("world.ptileset.ptset"));
         assert!(
             static_dir
                 .parent()
-                .unwrap()
+                .expect("required value must be present")
                 .join("embedded/tilesets/tiles/world.ptileset.ptset")
                 .exists()
         );
         let bytes = fs::read(
             static_dir
                 .parent()
-                .unwrap()
+                .expect("required value must be present")
                 .join("embedded/tilesets/tiles/world.ptileset.ptset"),
         )
-        .unwrap();
+        .expect("required value must be present");
         assert_eq!(&bytes[0..5], b"PTSET");
-        assert_eq!(u32::from_le_bytes(bytes[5..9].try_into().unwrap()), 1);
+        assert_eq!(
+            u32::from_le_bytes(
+                bytes[5..9]
+                    .try_into()
+                    .expect("required value must be present")
+            ),
+            1
+        );
     }
 }

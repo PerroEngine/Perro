@@ -222,26 +222,25 @@ where
         // All-dry: the wet mix collapses to a passthrough, so skip the three
         // delay-line read/writes entirely.
         if echo_wet > 0.001 || reverb_wet > 0.001 {
+            self.ensure_wet_delay_lines();
+            let (Some(echo), Some(reverb_a), Some(reverb_b)) = (
+                self.echo.as_mut(),
+                self.reverb_a.as_mut(),
+                self.reverb_b.as_mut(),
+            ) else {
+                return Some(sample);
+            };
             if !self.wet_active {
-                self.ensure_wet_delay_lines();
                 // Dry->wet edge: buffers hold stale audio from the skipped dry
                 // stretch; clear so re-engaging does not burst old signal.
-                self.echo.as_mut().unwrap().clear();
-                self.reverb_a.as_mut().unwrap().clear();
-                self.reverb_b.as_mut().unwrap().clear();
+                echo.clear();
+                reverb_a.clear();
+                reverb_b.clear();
                 self.wet_active = true;
             }
-            let echo_sample = self.echo.as_mut().unwrap().process(ch, sample, echo_wet);
-            let reverb_sample = (self
-                .reverb_a
-                .as_mut()
-                .unwrap()
-                .process(ch, sample, reverb_wet)
-                + self
-                    .reverb_b
-                    .as_mut()
-                    .unwrap()
-                    .process(ch, sample, reverb_wet))
+            let echo_sample = echo.process(ch, sample, echo_wet);
+            let reverb_sample = (reverb_a.process(ch, sample, reverb_wet)
+                + reverb_b.process(ch, sample, reverb_wet))
                 * 0.5;
             sample = sample * (1.0 - (echo_wet + reverb_wet * 0.5).min(0.45))
                 + echo_sample * echo_wet * 0.45

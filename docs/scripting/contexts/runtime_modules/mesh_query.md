@@ -90,8 +90,8 @@ struct PickState {
 
 lifecycle!({
     fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let camera = with_state!(ctx.run, PickState, ctx.id, |s| s.camera);
-        let target = with_state!(ctx.run, PickState, ctx.id, |s| s.mesh);
+        let camera = with_state!(ctx.run, PickState, ctx.id, |s| s.camera).unwrap_or_default();
+        let target = with_state!(ctx.run, PickState, ctx.id, |s| s.mesh).unwrap_or_default();
         let pixel = mouse_position!(ctx.ipt);
         let viewport = viewport_size!(ctx.ipt);
 

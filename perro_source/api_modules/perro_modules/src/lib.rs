@@ -9,6 +9,7 @@ pub mod prelude {
     pub use crate::file as FileMod;
     pub use crate::json as JSONMod;
     pub use crate::log as LogMod;
+    pub use crate::log::{OptionWarnExt, ResultWarnExt};
     pub use crate::math as MathMod;
     pub use crate::math::{
         angle_diff_deg, angle_diff_rad, approach, clamp01, damp, deg_to_rad, ilerp, islerp,

@@ -276,7 +276,7 @@ fn ui_nine_slice_defaults_to_texture_panel_parts() {
 
     assert!(node.texture.is_nil());
     assert_eq!(node.texture_region, None);
-    assert_eq!(node.margins, [8.0, 8.0, 8.0, 8.0]);
+    assert_eq!(node.margins, [0.0, 0.0, 0.0, 0.0]);
     assert_eq!(node.tint, Color::WHITE);
 }
 
@@ -285,7 +285,7 @@ fn ui_nine_slice_button_defaults_to_pointer_cursor() {
     let node = UiNineSliceButton::new();
 
     assert!(node.texture.is_nil());
-    assert_eq!(node.margins, [8.0, 8.0, 8.0, 8.0]);
+    assert_eq!(node.margins, [0.0, 0.0, 0.0, 0.0]);
     assert_eq!(node.cursor_icon, CursorIcon::Pointer);
 }
 

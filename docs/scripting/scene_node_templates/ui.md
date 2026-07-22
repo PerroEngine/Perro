@@ -445,7 +445,6 @@ script = "res://path/to/script.rs"
     [UiNineSlice]
         texture = "res://ui/panel.png"
         texture_region = (0, 0, 64, 64)
-        margins = (8, 8, 8, 8)
         tint = (1, 1, 1, 1)
         [UiNode]
             visible = true

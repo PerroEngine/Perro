@@ -1,5 +1,10 @@
 use std::borrow::Cow;
 
+pub(super) struct CameraStreamTonemapSettings {
+    pub(super) hdr_status: perro_structs::HdrStatus,
+    pub(super) exposure: f32,
+}
+
 const CAMERA_STREAM_TONEMAP_WGSL: &str = r#"
 @group(0) @binding(0) var input_tex: texture_2d<f32>;
 struct ToneMapConfig { value: vec4<f32> };
@@ -134,9 +139,12 @@ impl CameraStreamTonemap {
         encoder: &mut wgpu::CommandEncoder,
         input_view: &wgpu::TextureView,
         output_view: &wgpu::TextureView,
-        hdr_status: perro_structs::HdrStatus,
-        exposure: f32,
+        settings: CameraStreamTonemapSettings,
     ) {
+        let CameraStreamTonemapSettings {
+            hdr_status,
+            exposure,
+        } = settings;
         let config = [
             if exposure.is_finite() { exposure } else { 0.0 },
             if hdr_status.active { 1.0 } else { 0.0 },
@@ -190,13 +198,14 @@ mod tests {
 
     #[test]
     fn shader_validates() {
-        let module = naga::front::wgsl::parse_str(CAMERA_STREAM_TONEMAP_WGSL).unwrap();
+        let module = naga::front::wgsl::parse_str(CAMERA_STREAM_TONEMAP_WGSL)
+            .expect("required value must be present");
         naga::valid::Validator::new(
             naga::valid::ValidationFlags::all(),
             naga::valid::Capabilities::empty(),
         )
         .validate(&module)
-        .unwrap();
+        .expect("required value must be present");
     }
 
     #[test]

@@ -3,6 +3,9 @@ name = "perro_graphics"
 version = "0.1.0"
 edition = "2024"
 
+[lints]
+workspace = true
+
 [dependencies]
 bytemuck = { version = "1.24.0", features = ["derive"] }
 pollster = "0.4.0"

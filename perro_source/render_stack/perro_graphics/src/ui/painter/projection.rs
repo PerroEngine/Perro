@@ -99,7 +99,9 @@ pub(super) fn clip_label_polygon_near(polygon: &mut Vec<ProjectedLabelVertex>) {
     if input.is_empty() {
         return;
     }
-    let mut previous = *input.last().unwrap();
+    let Some(mut previous) = input.last().copied() else {
+        return;
+    };
     let mut previous_distance = previous.clip[2] + previous.clip[3];
     for current in input {
         let current_distance = current.clip[2] + current.clip[3];

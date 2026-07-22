@@ -51,7 +51,7 @@ pub struct RifleState {
 
 methods!({
     fn hit(&self, ctx: &mut ScriptContext<'_, API>, distance: f32) -> f32 {
-        let base = with_state!(ctx.run, RifleState, ctx.id, |s| s.base_damage);
+        let base = with_state!(ctx.run, RifleState, ctx.id, |s| s.base_damage).unwrap_or_default();
         falloff_damage(base, distance, 60.0)
     }
 });

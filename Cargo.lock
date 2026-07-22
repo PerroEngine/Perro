@@ -4550,6 +4550,7 @@ dependencies = [
  "perro_animation",
  "perro_ids",
  "perro_input_api",
+ "perro_modules",
  "perro_nodes",
  "perro_resource_api",
  "perro_runtime_api",

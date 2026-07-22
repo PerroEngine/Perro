@@ -619,7 +619,7 @@ methods!({
             .and_then(|slot| {
                 with_state!(ctx.run, EditorState, ctx.id, |state| {
                     visible_tab_index(state.open_paths.len(), state.active_open, slot)
-                })
+                }).unwrap_or_default()
             })
             .map(|idx| format!("scene_tab_close_{idx}"))
             .unwrap_or_else(|| name.clone());
@@ -653,7 +653,7 @@ methods!({
             "manager_close_button" => {
                 let has_editor = with_state!(ctx.run, EditorState, ctx.id, |state| {
                     state.editor_shell_root != 0
-                });
+                }).unwrap_or_default();
                 if has_editor {
                     set_project_manager(ctx, false);
                 }
@@ -665,7 +665,7 @@ methods!({
             "add_node_sibling_button" => open_add_node_sibling_popup(ctx),
             "add_node_cancel_button" => {
                 if with_state!(ctx.run, EditorState, ctx.id, |state| state
-                    .inspector_picker_open)
+                    .inspector_picker_open).unwrap_or_default()
                 {
                     set_inspector_picker(ctx, false);
                 } else {
@@ -678,7 +678,7 @@ methods!({
             "inspector_pick_filter_box" => update_inspector_picker_filter(ctx),
             "add_node_prev_button" => {
                 if with_state!(ctx.run, EditorState, ctx.id, |state| state
-                    .inspector_picker_open)
+                    .inspector_picker_open).unwrap_or_default()
                 {
                     shift_inspector_picker(ctx, -1);
                 } else {
@@ -687,7 +687,7 @@ methods!({
             }
             "add_node_next_button" => {
                 if with_state!(ctx.run, EditorState, ctx.id, |state| state
-                    .inspector_picker_open)
+                    .inspector_picker_open).unwrap_or_default()
                 {
                     shift_inspector_picker(ctx, 1);
                 } else {
@@ -807,7 +807,7 @@ methods!({
             "inspector_vars_box" => edit_selected_script_vars(ctx),
             "add_node_search_box" => {
                 if with_state!(ctx.run, EditorState, ctx.id, |state| state
-                    .inspector_picker_open)
+                    .inspector_picker_open).unwrap_or_default()
                 {
                     update_inspector_picker_filter_from(ctx, "add_node_search_box");
                 } else {
@@ -825,7 +825,7 @@ methods!({
                     open_recent_project(ctx, idx);
                 } else if let Some(idx) = suffix_index(&name, "add_node_type_") {
                     if with_state!(ctx.run, EditorState, ctx.id, |state| state
-                        .inspector_picker_open)
+                        .inspector_picker_open).unwrap_or_default()
                     {
                         choose_inspector_picker_row(ctx, idx);
                     } else {
@@ -876,14 +876,14 @@ methods!({
                 } else if let Some(slot) = suffix_index(&name, "scene_tab_close_") {
                     let idx = with_state!(ctx.run, EditorState, ctx.id, |state| {
                         visible_tab_index(state.open_paths.len(), state.active_open, slot)
-                    });
+                    }).unwrap_or_default();
                     if let Some(idx) = idx {
                         close_scene_tab(ctx, idx);
                     }
                 } else if let Some(slot) = suffix_index(&name, "scene_tab_") {
                     let idx = with_state!(ctx.run, EditorState, ctx.id, |state| {
                         visible_tab_index(state.open_paths.len(), state.active_open, slot)
-                    });
+                    }).unwrap_or_default();
                     if let Some(idx) = idx {
                         set_active_tab(ctx, idx);
                     }
@@ -976,7 +976,7 @@ methods!({
         });
         let Some(path) = with_state!(ctx.run, EditorState, ctx.id, |state| {
             filtered_file_paths(state).get(idx as usize).cloned()
-        }) else {
+        }).unwrap_or_default() else {
             return;
         };
         let changed = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {

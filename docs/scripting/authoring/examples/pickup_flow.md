@@ -39,7 +39,7 @@ methods!({
     fn collect(&self, ctx: &mut ScriptContext<'_, API>) -> bool {
         let (player, item_id) = with_state!(ctx.run, PickupState, ctx.id, |state| {
             (state.player, state.item_id.clone())
-        });
+        }).unwrap_or_default();
         let Some(player) = player else {
             return false;
         };

@@ -46,7 +46,7 @@ impl NineSlice2D {
             size: perro_structs::Vector2::new(128.0, 48.0),
             texture: TextureID::nil(),
             texture_region: None,
-            margins: [8.0, 8.0, 8.0, 8.0],
+            margins: [0.0, 0.0, 0.0, 0.0],
             tint: perro_structs::Color::WHITE,
         }
     }

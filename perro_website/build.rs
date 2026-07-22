@@ -34,42 +34,46 @@ struct HeadingOut {
     id: String,
 }
 
-fn main() {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("cargo:rerun-if-changed=../docs");
     println!("cargo:rerun-if-changed=../perro_book");
     println!("cargo:rerun-if-changed=../README.md");
 
-    let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
-    let root = manifest_dir.parent().unwrap().to_path_buf();
-    build_and_sync_demo(&root, "Demo2D", "demo2d").expect("sync Demo2D web bundle");
-    build_and_sync_demo(&root, "Demo3D", "demo3d").expect("sync Demo3D web bundle");
+    let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR")?);
+    let root = manifest_dir
+        .parent()
+        .ok_or("website manifest must have workspace parent")?
+        .to_path_buf();
+    build_and_sync_demo(&root, "Demo2D", "demo2d")?;
+    build_and_sync_demo(&root, "Demo3D", "demo3d")?;
 
     let mut docs = Vec::new();
 
-    collect_markdown("docs", &root.join("docs"), &root.join("docs"), &mut docs);
+    collect_markdown("docs", &root.join("docs"), &root.join("docs"), &mut docs)?;
     collect_markdown(
         "book",
         &root.join("perro_book"),
         &root.join("perro_book"),
         &mut docs,
-    );
+    )?;
     collect_demo_docs(
         "examples/demo2d",
         &root.join("demos/Demo2D/docs"),
         &mut docs,
-    );
+    )?;
     collect_demo_docs(
         "examples/demo3d",
         &root.join("demos/Demo3D/docs"),
         &mut docs,
-    );
+    )?;
 
     docs.sort_by(|a, b| a.slug.cmp(&b.slug));
 
-    let json = serde_json::to_string(&docs).unwrap();
+    let json = serde_json::to_string(&docs)?;
     let out = format!("pub const DOCS_JSON: &str = {json:?};\n");
-    let out_path = PathBuf::from(env::var("OUT_DIR").unwrap()).join("generated_docs.rs");
-    fs::write(out_path, out).unwrap();
+    let out_path = PathBuf::from(env::var("OUT_DIR")?).join("generated_docs.rs");
+    fs::write(out_path, out)?;
+    Ok(())
 }
 
 fn build_and_sync_demo(root: &Path, project_name: &str, public_name: &str) -> io::Result<()> {
@@ -206,7 +210,10 @@ fn sync_dir(src: &Path, dst: &Path) -> io::Result<()> {
 fn copy_dir(src: &Path, dst: &Path) -> io::Result<()> {
     for entry in fs::read_dir(src)? {
         let src_path = entry?.path();
-        let dst_path = dst.join(src_path.file_name().unwrap());
+        let file_name = src_path
+            .file_name()
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "source has no file name"))?;
+        let dst_path = dst.join(file_name);
         if src_path.is_dir() {
             fs::create_dir_all(&dst_path)?;
             copy_dir(&src_path, &dst_path)?;
@@ -217,25 +224,33 @@ fn copy_dir(src: &Path, dst: &Path) -> io::Result<()> {
     Ok(())
 }
 
-fn collect_markdown(collection: &str, root: &Path, dir: &Path, out: &mut Vec<DocOut>) {
-    for entry in fs::read_dir(dir).unwrap() {
-        let path = entry.unwrap().path();
+fn collect_markdown(
+    collection: &str,
+    root: &Path,
+    dir: &Path,
+    out: &mut Vec<DocOut>,
+) -> io::Result<()> {
+    for entry in fs::read_dir(dir)? {
+        let path = entry?.path();
         if path.is_dir() {
-            collect_markdown(collection, root, &path, out);
+            collect_markdown(collection, root, &path, out)?;
             continue;
         }
         if path.extension().and_then(|s| s.to_str()) != Some("md") {
             continue;
         }
-        let rel = path.strip_prefix(root).unwrap();
+        let rel = path
+            .strip_prefix(root)
+            .map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err))?;
         let slug = slug_from_rel(rel);
-        push_doc(collection, &path, slug, out);
+        push_doc(collection, &path, slug, out)?;
     }
+    Ok(())
 }
 
-fn collect_demo_docs(slug_prefix: &str, dir: &Path, out: &mut Vec<DocOut>) {
+fn collect_demo_docs(slug_prefix: &str, dir: &Path, out: &mut Vec<DocOut>) -> io::Result<()> {
     let Ok(entries) = fs::read_dir(dir) else {
-        return;
+        return Ok(());
     };
     for entry in entries.flatten() {
         let path = entry.path();
@@ -253,16 +268,17 @@ fn collect_demo_docs(slug_prefix: &str, dir: &Path, out: &mut Vec<DocOut>) {
                 slug_prefix.to_string(),
                 format!("{slug_prefix}/index"),
                 out,
-            );
+            )?;
         } else if !stem.is_empty() {
             let slug = format!("{slug_prefix}/{stem}");
-            push_doc("docs", &path, slug, out);
+            push_doc("docs", &path, slug, out)?;
         }
     }
+    Ok(())
 }
 
-fn push_doc(collection: &str, path: &Path, slug: String, out: &mut Vec<DocOut>) {
-    push_doc_with_link_slug(collection, path, slug.clone(), slug, out);
+fn push_doc(collection: &str, path: &Path, slug: String, out: &mut Vec<DocOut>) -> io::Result<()> {
+    push_doc_with_link_slug(collection, path, slug.clone(), slug, out)
 }
 
 fn push_doc_with_link_slug(
@@ -271,8 +287,8 @@ fn push_doc_with_link_slug(
     slug: String,
     link_slug: String,
     out: &mut Vec<DocOut>,
-) {
-    let raw_markdown = fs::read_to_string(path).unwrap();
+) -> io::Result<()> {
+    let raw_markdown = fs::read_to_string(path)?;
     let markdown = rewrite_markdown_links(collection, &link_slug, &raw_markdown);
     let title = first_title(&markdown).unwrap_or_else(|| title_from_slug(&slug));
     let area = if collection == "book" {
@@ -299,6 +315,7 @@ fn push_doc_with_link_slug(
         html,
         search_text,
     });
+    Ok(())
 }
 
 fn route_path(collection: &str, slug: &str) -> String {

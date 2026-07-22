@@ -3,6 +3,9 @@ name = "perro_meshlets"
 version = "0.1.0"
 edition = "2024"
 
+[lints]
+workspace = true
+
 [dependencies]
 glam = "0.31.0"
 rayon = "1.10"

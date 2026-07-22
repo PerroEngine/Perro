@@ -1104,7 +1104,7 @@ mod layout {
                 .render_ui
                 .computed_rects
                 .get(&panel_id)
-                .unwrap()
+                .expect("test or bench setup must succeed")
                 .size,
             Vector2::new(0.5, 0.5)
         );
@@ -1116,7 +1116,7 @@ mod layout {
                 .render_ui
                 .computed_rects
                 .get(&panel_id)
-                .unwrap()
+                .expect("test or bench setup must succeed")
                 .size,
             Vector2::new(500.0, 400.0)
         );

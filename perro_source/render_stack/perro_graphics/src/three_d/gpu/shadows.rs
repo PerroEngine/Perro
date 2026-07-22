@@ -1036,7 +1036,7 @@ mod tests {
         });
         lighting.spot_lights[1] = Some(SpotLight3DState {
             cast_shadows: false,
-            ..lighting.spot_lights[0].unwrap()
+            ..lighting.spot_lights[0].expect("required value must be present")
         });
         lighting.point_lights[0] = Some(PointLight3DState {
             position: [2.0, 3.0, 4.0],

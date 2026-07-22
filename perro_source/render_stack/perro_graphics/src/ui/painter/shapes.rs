@@ -281,7 +281,14 @@ pub(super) fn push_nine_slice_shapes(
     if outer.width() <= 0.0 || outer.height() <= 0.0 {
         return;
     }
-    let [l, t, r, b] = clamp_nine_margins(image.margins, outer.width(), outer.height());
+    let auto = image.margins.iter().all(|margin| *margin == 0.0);
+    let margins = if auto {
+        let cell = outer.width().min(outer.height()) / 3.0;
+        [cell; 4]
+    } else {
+        image.margins
+    };
+    let [l, t, r, b] = clamp_nine_margins(margins, outer.width(), outer.height());
     let texture_size = [image.texture_size[0] as f32, image.texture_size[1] as f32];
     let pixel_region = image
         .uv_min
@@ -307,7 +314,9 @@ pub(super) fn push_nine_slice_shapes(
     if uw <= 0.0 || vh <= 0.0 {
         return;
     }
-    let (ul, ur, vt, vb) = if texture_size[0] > 0.0 && texture_size[1] > 0.0 {
+    let (ul, ur, vt, vb) = if auto {
+        (uw / 3.0, uw / 3.0, vh / 3.0, vh / 3.0)
+    } else if texture_size[0] > 0.0 && texture_size[1] > 0.0 {
         let ul = (l / texture_size[0]).min(uw);
         let ur = (r / texture_size[0]).min((uw - ul).max(0.0));
         let vt = (t / texture_size[1]).min(vh);
@@ -347,10 +356,14 @@ pub(super) fn push_nine_slice_shapes(
                 &mut mesh,
                 Rect::from_min_max(pos2(xs[x], ys[y]), pos2(xs[x + 1], ys[y + 1])),
                 Rect::from_min_max(pos2(us[x], vs[y]), pos2(us[x + 1], vs[y + 1])),
-                [
-                    (us[x + 1] - us[x]) * texture_size[0],
-                    (vs[y + 1] - vs[y]) * texture_size[1],
-                ],
+                if auto {
+                    [l, t]
+                } else {
+                    [
+                        (us[x + 1] - us[x]) * texture_size[0],
+                        (vs[y + 1] - vs[y]) * texture_size[1],
+                    ]
+                },
                 x == 1,
                 y == 1,
                 color32(image.tint),

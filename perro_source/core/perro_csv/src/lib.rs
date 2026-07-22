@@ -1159,7 +1159,8 @@ mod tests {
 
     #[test]
     fn parses_and_finds_primary_row() {
-        let csv = parse_csv_static(b"id,name\nsword,Sword\npotion,Potion\n").unwrap();
+        let csv = parse_csv_static(b"id,name\nsword,Sword\npotion,Potion\n")
+            .expect("test setup must succeed");
         assert_eq!(csv.row_count(), 2);
         assert_eq!(csv.get_by_header(0, "name"), Some("Sword"));
         assert_eq!(
@@ -1177,7 +1178,7 @@ mod tests {
               potion,Potion,consumable,0,common\n\
               bow,Bow,weapon,8,common\n",
         )
-        .unwrap();
+        .expect("test setup must succeed");
 
         let result = CSVQuery::new(csv)
             .where_eq("kind", "weapon")
@@ -1191,21 +1192,27 @@ mod tests {
         assert_eq!(result.len(), 2);
         let rows: Vec<_> = result
             .iter()
-            .map(|row| (row.get(0).unwrap(), row.get(1).unwrap()))
+            .map(|row| {
+                (
+                    row.get(0).expect("test setup must succeed"),
+                    row.get(1).expect("test setup must succeed"),
+                )
+            })
             .collect();
         assert_eq!(rows, vec![("axe", "14"), ("sword", "10")]);
     }
 
     #[test]
     fn numeric_sort_has_total_deterministic_order() {
-        let csv = parse_csv_static(b"id,value\na,bad\nb,2\nc,NaN\nd,1\ne,1\n").unwrap();
+        let csv = parse_csv_static(b"id,value\na,bad\nb,2\nc,NaN\nd,1\ne,1\n")
+            .expect("test setup must succeed");
 
         let asc: Vec<_> = csv
             .query()
             .order_by_num_asc("value")
             .run()
             .iter()
-            .map(|row| row.get_header("id").unwrap())
+            .map(|row| row.get_header("id").expect("test setup must succeed"))
             .collect();
         assert_eq!(asc, vec!["d", "e", "b", "c", "a"]);
 
@@ -1214,7 +1221,7 @@ mod tests {
             .order_by_num_desc("value")
             .run()
             .iter()
-            .map(|row| row.get_header("id").unwrap())
+            .map(|row| row.get_header("id").expect("test setup must succeed"))
             .collect();
         assert_eq!(desc, vec!["a", "c", "b", "d", "e"]);
     }
@@ -1224,10 +1231,10 @@ mod tests {
         let mut csv = CsvBuf::new(["id", "value"]);
         for value in (1..=100).rev() {
             csv.push_row([value.to_string(), value.to_string()])
-                .unwrap();
+                .expect("test setup must succeed");
         }
-        let bytes = csv.to_bytes().unwrap();
-        let csv = parse_csv_static(&bytes).unwrap();
+        let bytes = csv.to_bytes().expect("test setup must succeed");
+        let csv = parse_csv_static(&bytes).expect("test setup must succeed");
 
         let ids: Vec<_> = csv
             .query()
@@ -1235,7 +1242,7 @@ mod tests {
             .limit(5)
             .run()
             .iter()
-            .map(|row| row.get_header("id").unwrap())
+            .map(|row| row.get_header("id").expect("test setup must succeed"))
             .collect();
         assert_eq!(ids, vec!["1", "2", "3", "4", "5"]);
     }
@@ -1253,7 +1260,7 @@ mod tests {
               potion,Small Potion,consumable,0\n\
               scroll,Fire Scroll,magic,3\n",
         )
-        .unwrap();
+        .expect("test setup must succeed");
 
         let result = csv
             .query()
@@ -1264,7 +1271,7 @@ mod tests {
 
         let ids: Vec<_> = result
             .iter()
-            .map(|row| row.get_header("id").unwrap())
+            .map(|row| row.get_header("id").expect("test setup must succeed"))
             .collect();
         assert_eq!(ids, vec!["scroll", "sword"]);
     }
@@ -1277,7 +1284,7 @@ mod tests {
               potion,Small Potion,consumable,0\n\
               bow,Oak Bow,weapon,8\n",
         )
-        .unwrap();
+        .expect("test setup must succeed");
 
         let ids: Vec<_> = csv
             .query()
@@ -1286,7 +1293,7 @@ mod tests {
             .order_by_asc("id")
             .run()
             .iter()
-            .map(|row| row.get_header("id").unwrap())
+            .map(|row| row.get_header("id").expect("test setup must succeed"))
             .collect();
 
         assert_eq!(ids, vec!["bow", "potion", "sword"]);
@@ -1307,7 +1314,7 @@ mod tests {
             .where_eq("id", "potion")
             .run()
             .iter()
-            .map(|row| row.get_header("id").unwrap())
+            .map(|row| row.get_header("id").expect("test setup must succeed"))
             .collect();
         assert_eq!(eq_ids, vec!["potion"]);
 
@@ -1316,7 +1323,7 @@ mod tests {
             .where_ne("id", "potion")
             .run()
             .iter()
-            .map(|row| row.get_header("id").unwrap())
+            .map(|row| row.get_header("id").expect("test setup must succeed"))
             .collect();
         assert_eq!(ne_ids, vec!["sword"]);
 
@@ -1325,7 +1332,7 @@ mod tests {
             .where_in("id", &["potion"])
             .run()
             .iter()
-            .map(|row| row.get_header("id").unwrap())
+            .map(|row| row.get_header("id").expect("test setup must succeed"))
             .collect();
         assert_eq!(in_ids, vec!["potion"]);
     }
@@ -1378,28 +1385,33 @@ mod tests {
     #[test]
     fn csv_buf_builds_edits_and_writes() {
         let mut csv = CsvBuf::new(["id", "name", "note"]);
-        csv.push_row(["sword", "Sword", "plain"]).unwrap();
-        csv.push_row(["potion", "Potion", "has,comma"]).unwrap();
-        csv.set_by_header(0, "note", "sharp").unwrap();
+        csv.push_row(["sword", "Sword", "plain"])
+            .expect("test setup must succeed");
+        csv.push_row(["potion", "Potion", "has,comma"])
+            .expect("test setup must succeed");
+        csv.set_by_header(0, "note", "sharp")
+            .expect("test setup must succeed");
 
         assert_eq!(csv.row_count(), 2);
         assert_eq!(csv.get_by_header(1, "note"), Some("has,comma"));
 
-        let text = csv.to_text().unwrap();
+        let text = csv.to_text().expect("test setup must succeed");
         assert!(text.contains("id,name,note"));
         assert!(text.contains("potion,Potion,\"has,comma\""));
 
-        let parsed = CsvBuf::from_bytes(text.as_bytes()).unwrap();
+        let parsed = CsvBuf::from_bytes(text.as_bytes()).expect("test setup must succeed");
         assert_eq!(parsed, csv);
     }
 
     #[test]
     fn csv_promotes_to_buf() {
-        let csv = parse_csv_static(b"id,name\nsword,Sword\npotion,Potion\n").unwrap();
+        let csv = parse_csv_static(b"id,name\nsword,Sword\npotion,Potion\n")
+            .expect("test setup must succeed");
         let mut buf = csv.to_buf();
 
         assert_eq!(buf.get_by_header(0, "name"), Some("Sword"));
-        buf.set_by_header(1, "name", "Big Potion").unwrap();
+        buf.set_by_header(1, "name", "Big Potion")
+            .expect("test setup must succeed");
         assert_eq!(buf.get_by_header(1, "name"), Some("Big Potion"));
 
         let from_ref = CsvBuf::from(csv);

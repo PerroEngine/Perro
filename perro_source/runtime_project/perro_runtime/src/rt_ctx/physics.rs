@@ -424,15 +424,15 @@ mod tests {
         PhysicsAPI::set_gravity(&mut runtime, -10.0);
         PhysicsAPI::set_coefficient(&mut runtime, 2.0);
 
-        let predicted =
-            PhysicsAPI::predict_body_2d(&mut runtime, id, 2.0, Vector2::new(1.0, 0.0)).unwrap();
+        let predicted = PhysicsAPI::predict_body_2d(&mut runtime, id, 2.0, Vector2::new(1.0, 0.0))
+            .expect("test or bench setup must succeed");
         assert_eq!(predicted.position, Vector2::new(12.0, -7.0));
         assert_eq!(predicted.rotation, 4.25);
         assert_eq!(predicted.velocity, Vector2::new(5.0, -15.0));
         assert_eq!(predicted.angular_velocity, 2.0);
         assert_eq!(
             NodeAPI::get_global_transform_2d(&mut runtime, id)
-                .unwrap()
+                .expect("test or bench setup must succeed")
                 .position,
             Vector2::new(2.0, 3.0)
         );
@@ -452,7 +452,7 @@ mod tests {
 
         let predicted =
             PhysicsAPI::predict_body_3d(&mut runtime, id, 1.5, Vector3::new(1.0, 0.0, -1.0))
-                .unwrap();
+                .expect("test or bench setup must succeed");
         assert_eq!(predicted.position, Vector3::new(5.5, -4.75, 7.5));
         assert_eq!(predicted.velocity, Vector3::new(3.0, -12.0, 3.0));
         assert_eq!(
@@ -466,7 +466,7 @@ mod tests {
         assert!((rotated_x.y - std::f32::consts::FRAC_1_SQRT_2).abs() < 1.0e-5);
         assert_eq!(
             NodeAPI::get_global_transform_3d(&mut runtime, id)
-                .unwrap()
+                .expect("test or bench setup must succeed")
                 .position,
             Vector3::new(1.0, 2.0, 3.0)
         );

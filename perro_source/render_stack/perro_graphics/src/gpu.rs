@@ -45,7 +45,7 @@ mod water_flip_gpu;
 #[path = "water_gpu.rs"]
 mod water_gpu;
 
-use camera_stream_tonemap::CameraStreamTonemap;
+use camera_stream_tonemap::{CameraStreamTonemap, CameraStreamTonemapSettings};
 pub(crate) use present::capped_render_size;
 use present::*;
 use water_gpu::{GpuWater, WaterPrepareContext};

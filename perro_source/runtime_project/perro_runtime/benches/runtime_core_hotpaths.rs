@@ -27,7 +27,10 @@ fn bench_child_topology_scan(c: &mut Criterion) {
         let id = arena.insert(SceneNode::new(SceneNodeData::Node3D(Node3D::new())));
         if index > 0 {
             let parent = ids[(index - 1) / 4];
-            arena.get_mut(parent).unwrap().add_child(id);
+            arena
+                .get_mut(parent)
+                .expect("test or bench setup must succeed")
+                .add_child(id);
         }
         ids.push(id);
     }
@@ -38,7 +41,11 @@ fn bench_child_topology_scan(c: &mut Criterion) {
         b.iter(|| {
             let mut edges = 0usize;
             for &id in black_box(&ids) {
-                edges += arena.get(id).unwrap().children_slice().len();
+                edges += arena
+                    .get(id)
+                    .expect("test or bench setup must succeed")
+                    .children_slice()
+                    .len();
             }
             black_box(edges)
         })
@@ -47,7 +54,10 @@ fn bench_child_topology_scan(c: &mut Criterion) {
         b.iter(|| {
             let mut edges = 0usize;
             for &id in black_box(&ids) {
-                edges += arena.children(id).unwrap().len();
+                edges += arena
+                    .children(id)
+                    .expect("test or bench setup must succeed")
+                    .len();
             }
             black_box(edges)
         })

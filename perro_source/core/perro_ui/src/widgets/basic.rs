@@ -152,7 +152,7 @@ impl UiNineSlice {
             base: UiNode::new(),
             texture: TextureID::nil(),
             texture_region: None,
-            margins: [8.0, 8.0, 8.0, 8.0],
+            margins: [0.0, 0.0, 0.0, 0.0],
             tint: Color::WHITE,
         }
     }
@@ -251,7 +251,7 @@ impl UiNineSliceButton {
             base: UiNode::new(),
             texture: TextureID::nil(),
             texture_region: None,
-            margins: [8.0, 8.0, 8.0, 8.0],
+            margins: [0.0, 0.0, 0.0, 0.0],
             tint: Color::WHITE,
             hover_tint: Color::WHITE,
             pressed_tint: Color::WHITE,

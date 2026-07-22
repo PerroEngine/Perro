@@ -50,31 +50,38 @@ fn scene_asset_ids_decode_paths_but_runtime_decode_stays_strict() {
     let path = Variant::from("res://ok.asset");
     let mut resolver = TestSceneResolver;
     assert_eq!(
-        path.parse_scene::<TextureID>(&mut resolver).unwrap(),
+        path.parse_scene::<TextureID>(&mut resolver)
+            .expect("test setup must succeed"),
         TextureID::from_u64(1)
     );
     assert_eq!(
-        path.parse_scene::<MaterialID>(&mut resolver).unwrap(),
+        path.parse_scene::<MaterialID>(&mut resolver)
+            .expect("test setup must succeed"),
         MaterialID::from_u64(2)
     );
     assert_eq!(
-        path.parse_scene::<MeshID>(&mut resolver).unwrap(),
+        path.parse_scene::<MeshID>(&mut resolver)
+            .expect("test setup must succeed"),
         MeshID::from_u64(3)
     );
     assert_eq!(
-        path.parse_scene::<AnimationID>(&mut resolver).unwrap(),
+        path.parse_scene::<AnimationID>(&mut resolver)
+            .expect("test setup must succeed"),
         AnimationID::from_u64(4)
     );
     assert_eq!(
-        path.parse_scene::<AnimationTreeID>(&mut resolver).unwrap(),
+        path.parse_scene::<AnimationTreeID>(&mut resolver)
+            .expect("test setup must succeed"),
         AnimationTreeID::from_u64(5)
     );
     assert_eq!(
-        path.parse_scene::<NavMeshID>(&mut resolver).unwrap(),
+        path.parse_scene::<NavMeshID>(&mut resolver)
+            .expect("test setup must succeed"),
         NavMeshID::from_u64(6)
     );
     assert_eq!(
-        path.parse_scene::<SoundFontID>(&mut resolver).unwrap(),
+        path.parse_scene::<SoundFontID>(&mut resolver)
+            .expect("test setup must succeed"),
         SoundFontID::from_u64(7)
     );
     assert!(path.parse::<TextureID>().is_err());
@@ -116,7 +123,7 @@ fn scene_decode_recurses_through_nested_containers() {
     let mut resolver = TestSceneResolver;
     let decoded = value
         .parse_scene::<BTreeMap<String, Vec<(TextureID, Option<MaterialID>)>>>(&mut resolver)
-        .unwrap();
+        .expect("test setup must succeed");
     assert_eq!(decoded["group"][0], (TextureID::from_u64(1), None));
 }
 
@@ -130,7 +137,10 @@ fn added_asset_id_variants_round_trip_and_emit_json_number() {
         (Variant::from(nav), 12),
         (Variant::from(font), 13),
     ] {
-        assert_eq!(variant.as_id().unwrap().as_u64(), raw);
+        assert_eq!(
+            variant.as_id().expect("test setup must succeed").as_u64(),
+            raw
+        );
         assert_eq!(variant.to_json_value(), serde_json::json!(raw));
     }
     assert_eq!(
@@ -214,14 +224,14 @@ fn test_variant_bytes() {
 fn test_variant_object() {
     let v = Variant::object();
     assert!(v.as_object().is_some());
-    assert_eq!(v.as_object().unwrap().len(), 0);
+    assert_eq!(v.as_object().expect("test setup must succeed").len(), 0);
 }
 
 #[test]
 fn test_variant_array() {
     let v = Variant::array();
     assert!(v.as_array().is_some());
-    assert_eq!(v.as_array().unwrap().len(), 0);
+    assert_eq!(v.as_array().expect("test setup must succeed").len(), 0);
 }
 
 #[test]
@@ -242,15 +252,21 @@ fn test_variant_parse_helper() {
 
 #[test]
 fn test_variant_shared_cell_parse_helper() {
-    let arc = Variant::from(7_i32).parse::<Arc<i32>>().unwrap();
+    let arc = Variant::from(7_i32)
+        .parse::<Arc<i32>>()
+        .expect("test setup must succeed");
     assert_eq!(*arc, 7);
     assert_eq!(Variant::from(Arc::clone(&arc)), Variant::from(7_i32));
 
-    let rc = Variant::from("name").parse::<Rc<String>>().unwrap();
+    let rc = Variant::from("name")
+        .parse::<Rc<String>>()
+        .expect("test setup must succeed");
     assert_eq!(rc.as_str(), "name");
     assert_eq!(Variant::from(Rc::clone(&rc)), Variant::from("name"));
 
-    let cell = Variant::from(true).parse::<RefCell<bool>>().unwrap();
+    let cell = Variant::from(true)
+        .parse::<RefCell<bool>>()
+        .expect("test setup must succeed");
     assert!(*cell.borrow());
     assert_eq!(Variant::from(cell), Variant::from(true));
 }
@@ -450,14 +466,17 @@ fn test_variant_as_unit_vec4() {
     let vec = UnitVector4::new([1.0, 0.5, -1.0, 2.0]);
     let v = Variant::from(vec);
     assert_eq!(v.as_unit_vec4(), Some(vec));
-    assert_eq!(v.as_unit_vec4().unwrap().to_u8(), [255, 128, 0, 255]);
+    assert_eq!(
+        v.as_unit_vec4().expect("test setup must succeed").to_u8(),
+        [255, 128, 0, 255]
+    );
 }
 
 #[test]
 fn test_unit_vec4_parse_and_json() {
     let from_vec = Variant::from(Vector4::new(1.0, 0.5, -1.0, 2.0))
         .parse::<UnitVector4>()
-        .unwrap();
+        .expect("test setup must succeed");
     assert_eq!(from_vec.to_u8(), [255, 128, 0, 255]);
 
     let from_array = Variant::Array(vec![
@@ -467,12 +486,12 @@ fn test_unit_vec4_parse_and_json() {
         Variant::from(2.0_f32),
     ])
     .parse::<UnitVector4>()
-    .unwrap();
+    .expect("test setup must succeed");
     assert_eq!(from_array.to_u8(), [255, 128, 0, 255]);
 
     let json = Variant::from(from_array).to_json_value();
     assert_eq!(json["x"].as_f64(), Some(1.0));
-    assert!(json["y"].as_f64().unwrap() > 0.5);
+    assert!(json["y"].as_f64().expect("test setup must succeed") > 0.5);
     assert_eq!(json["z"].as_f64(), Some(0.0));
     assert_eq!(json["w"].as_f64(), Some(1.0));
 }
@@ -484,9 +503,21 @@ fn test_matrix_variant_accessors_parse_and_json() {
     let variant = Variant::from(matrix);
 
     assert_eq!(variant.as_matrix3x3(), Some(matrix));
-    assert_eq!(variant.as_matrix3().unwrap().to_rows(), rows);
+    assert_eq!(
+        variant
+            .as_matrix3()
+            .expect("test setup must succeed")
+            .to_rows(),
+        rows
+    );
     assert_eq!(variant.parse::<Matrix<3, 3>>(), Ok(matrix));
-    assert_eq!(variant.parse::<Matrix3>().unwrap().to_rows(), rows);
+    assert_eq!(
+        variant
+            .parse::<Matrix3>()
+            .expect("test setup must succeed")
+            .to_rows(),
+        rows
+    );
 
     let json = variant.to_json_value();
     assert_eq!(json[0][1].as_f64(), Some(2.0));
@@ -769,7 +800,7 @@ fn test_variant_as_array_mut() {
         arr.push(Variant::Bool(false));
     }
 
-    assert_eq!(v.as_array().unwrap().len(), 2);
+    assert_eq!(v.as_array().expect("test setup must succeed").len(), 2);
 }
 
 #[test]
@@ -780,7 +811,7 @@ fn test_variant_as_object_mut() {
         obj.insert(Arc::from("key"), Variant::Bool(true));
     }
 
-    assert_eq!(v.as_object().unwrap().len(), 1);
+    assert_eq!(v.as_object().expect("test setup must succeed").len(), 1);
 }
 
 // -------------------- From Implementations --------------------
@@ -855,7 +886,7 @@ fn test_from_bytes_types() {
 #[test]
 fn test_from_vec_variant() {
     let v: Variant = vec![Variant::Bool(true), Variant::Bool(false)].into();
-    assert_eq!(v.as_array().unwrap().len(), 2);
+    assert_eq!(v.as_array().expect("test setup must succeed").len(), 2);
 }
 
 #[test]
@@ -1128,7 +1159,7 @@ fn test_from_btreemap() {
     map.insert(Arc::from("key2"), Variant::Bool(false));
 
     let v: Variant = map.into();
-    assert_eq!(v.as_object().unwrap().len(), 2);
+    assert_eq!(v.as_object().expect("test setup must succeed").len(), 2);
 }
 
 // -------------------- Integration Tests --------------------
@@ -1163,7 +1194,7 @@ fn test_variant_array_operations() {
     arr.push(Variant::from(4i32));
 
     let v = Variant::Array(arr);
-    assert_eq!(v.as_array().unwrap().len(), 4);
+    assert_eq!(v.as_array().expect("test setup must succeed").len(), 4);
 }
 
 #[test]

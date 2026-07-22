@@ -222,7 +222,7 @@ Legacy `[UiViewport]` scene blocks load as `UiSubView`.
 
 - Scalable image panel.
 - Holds `texture`, `texture_region`, `margins`, and `tint`.
-- Keeps corners fixed, stretches edges, and stretches center.
+- Keeps corners fixed and tiles edges and center.
 - Use it as a child/background for UI containers and buttons.
 
 `UiAnimatedImage`
@@ -756,16 +756,15 @@ Nine-slice example:
 [UiNineSlice]
     texture = "res://ui/panel.png"
     texture_region = (0, 0, 64, 64)
-    margins = (8, 8, 8, 8)
     size_ratio = (0.45, 0.30)
     tint = "#FFFFFFFF"
 [/UiNineSlice]
 [/dialog_panel]
 ```
 
-`margins` are left, top, right, bottom pixels inside the source texture or region.
-Corners keep their source size.
-Edges and center stretch to fill the resolved UI rect.
+Default zero `margins` split the full texture or region into equal thirds.
+Corners stay fixed while edges and center tile to fit the resolved UI rect.
+Set nonzero `margins` as left, top, right, bottom source pixels for custom fixed corners.
 
 Old flat button color fields still work:
 

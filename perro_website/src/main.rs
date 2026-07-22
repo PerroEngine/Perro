@@ -1,6 +1,6 @@
 #[cfg(feature = "ssr")]
 #[tokio::main]
-async fn main() {
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
     use axum::{routing::get, Router};
     use leptos::config::get_configuration;
     use leptos_axum::{generate_route_list, LeptosRoutes};
@@ -9,7 +9,7 @@ async fn main() {
 
     tracing_subscriber::fmt().with_env_filter("info").init();
 
-    let conf = get_configuration(Some("perro_website/Cargo.toml")).unwrap();
+    let conf = get_configuration(Some("perro_website/Cargo.toml"))?;
     let leptos_options = conf.leptos_options;
     let addr = leptos_options.site_addr;
     let routes = generate_route_list(App);
@@ -30,11 +30,10 @@ async fn main() {
         .fallback_service(ServeDir::new(site_root))
         .with_state(leptos_options);
 
-    let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
+    let listener = tokio::net::TcpListener::bind(&addr).await?;
     tracing::info!("perro_website @ http://{addr}");
-    axum::serve(listener, app.into_make_service())
-        .await
-        .unwrap();
+    axum::serve(listener, app.into_make_service()).await?;
+    Ok(())
 }
 
 #[cfg(feature = "ssr")]

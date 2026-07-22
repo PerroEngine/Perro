@@ -37,7 +37,7 @@ lifecycle!({
     }
 
     fn on_removal(&self, ctx: &mut ScriptContext<'_, API>) {
-        let name = with_state!(ctx.run, DashState, ctx.id, |state| state.timer_name.clone());
+        let name = with_state!(ctx.run, DashState, ctx.id, |state| state.timer_name.clone()).unwrap_or_default();
         timer_cancel!(ctx.run, name.as_str());
     }
 });

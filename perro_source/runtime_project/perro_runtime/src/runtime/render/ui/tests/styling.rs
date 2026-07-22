@@ -1252,11 +1252,11 @@ mod styling {
         let popup = runtime.render_ui.computed_rects[&popup_id];
         let dropdown_rect = runtime.render_ui.computed_rects[&dropdown_id];
 
-        assert_eq!(runtime.nodes.get(popup_id).unwrap().parent, dropdown_id);
+        assert_eq!(runtime.nodes.get(popup_id).expect("test or bench setup must succeed").parent, dropdown_id);
         assert_eq!(popup.size, Vector2::new(240.0, 80.0));
         assert_eq!(popup.max().y, dropdown_rect.min().y);
         assert!(matches!(
-            &runtime.nodes.get(popup_id).unwrap().data,
+            &runtime.nodes.get(popup_id).expect("test or bench setup must succeed").data,
             SceneNodeData::UiPanel(panel) if panel.style.fill == Color::new(0.3, 0.2, 0.1, 1.0)
         ));
     }
@@ -1372,7 +1372,7 @@ mod styling {
         let slot_count = runtime.nodes.slot_count();
         let update_schedule_len = runtime.internal_updates.internal_update_nodes.len();
         let fixed_schedule_len = runtime.internal_updates.internal_fixed_update_nodes.len();
-        let dropdown_children = runtime.nodes.get(dropdown_id).unwrap().children.len();
+        let dropdown_children = runtime.nodes.get(dropdown_id).expect("test or bench setup must succeed").children.len();
 
         for cycle in 0..16 {
             if let Some(mut node) = runtime.nodes.get_mut(dropdown_id)
@@ -1452,7 +1452,7 @@ mod styling {
                 fixed_schedule_len
             );
             assert_eq!(
-                runtime.nodes.get(dropdown_id).unwrap().children.len(),
+                runtime.nodes.get(dropdown_id).expect("test or bench setup must succeed").children.len(),
                 dropdown_children
             );
             assert_eq!(
@@ -1471,7 +1471,7 @@ mod styling {
                     1
                 );
                 assert_eq!(
-                    runtime.nodes.get(buttons[idx]).unwrap().children,
+                    runtime.nodes.get(buttons[idx]).expect("test or bench setup must succeed").children,
                     [labels[idx]]
                 );
             }

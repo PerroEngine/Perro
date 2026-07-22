@@ -53,7 +53,7 @@ lifecycle!({
                 state.white_spot,
                 state.gold_spot,
             ]
-        });
+        }).unwrap_or_default();
 
         for (i, id) in ids.into_iter().enumerate() {
             if id.is_nil() {
@@ -78,7 +78,7 @@ methods!({
     }
 
     fn push_overlay(&self, ctx: &mut ScriptContext<'_, API>) {
-        let overlay = with_state!(ctx.run, LightsDemoState, ctx.id, |state| state.overlay);
+        let overlay = with_state!(ctx.run, LightsDemoState, ctx.id, |state| state.overlay).unwrap_or_default();
         if overlay.is_nil() {
             return;
         }

@@ -9,20 +9,20 @@ fn temp_project() -> PathBuf {
     static COUNTER: AtomicU64 = AtomicU64::new(0);
     let stamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap()
+        .expect("test setup/result must succeed")
         .as_nanos();
     let seq = COUNTER.fetch_add(1, Ordering::Relaxed);
     let pid = std::process::id();
     let dir = std::env::temp_dir().join(format!("perro_cli_doctor_test_{stamp}_{pid}_{seq}"));
-    fs::create_dir_all(&dir).unwrap();
+    fs::create_dir_all(&dir).expect("test setup/result must succeed");
     dir
 }
 
 #[test]
 fn script_ref_missing_warns_and_existing_ref_stays_clean() {
     let project = temp_project();
-    fs::create_dir_all(project.join("res/scripts")).unwrap();
-    fs::write(project.join("res/existing.png"), b"x").unwrap();
+    fs::create_dir_all(project.join("res/scripts")).expect("test setup/result must succeed");
+    fs::write(project.join("res/existing.png"), b"x").expect("test setup/result must succeed");
     let source = project.join("res/scripts/main.rs");
     fs::write(
         &source,
@@ -31,10 +31,10 @@ fn script_ref_missing_warns_and_existing_ref_stays_clean() {
             const MISSING: &str = "res://missing.png";
             "#,
     )
-    .unwrap();
+    .expect("test setup/result must succeed");
 
     let mut report = ValidationReport::default();
-    validate_script_warnings(&project, &mut report).unwrap();
+    validate_script_warnings(&project, &mut report).expect("test setup/result must succeed");
 
     assert_eq!(report.errors, 0);
     assert_eq!(report.warnings, 1);
@@ -47,7 +47,7 @@ fn script_ref_missing_warns_and_existing_ref_stays_clean() {
 #[test]
 fn doctor_ignores_scene_refs_in_comments() {
     let project = temp_project();
-    fs::create_dir_all(project.join("res")).unwrap();
+    fs::create_dir_all(project.join("res")).expect("test setup/result must succeed");
     fs::write(
         project.join("res/main.scn"),
         r##"
@@ -56,13 +56,13 @@ fn doctor_ignores_scene_refs_in_comments() {
             color = "#ffeeaa"
             "##,
     )
-    .unwrap();
+    .expect("test setup/result must succeed");
 
     let mut report = ValidationReport::default();
     let mut files = Vec::new();
-    collect_reference_text_files(&project, &mut files).unwrap();
+    collect_reference_text_files(&project, &mut files).expect("test setup/result must succeed");
     for file in files {
-        let text = fs::read_to_string(&file).unwrap();
+        let text = fs::read_to_string(&file).expect("test setup/result must succeed");
         for text_ref in extract_virtual_refs(&text) {
             validate_virtual_ref(
                 &project,
@@ -81,7 +81,7 @@ fn doctor_ignores_scene_refs_in_comments() {
 #[test]
 fn doctor_ignores_script_refs_and_macros_in_comments() {
     let project = temp_project();
-    fs::create_dir_all(project.join("res/scripts")).unwrap();
+    fs::create_dir_all(project.join("res/scripts")).expect("test setup/result must succeed");
     fs::write(
         project.join("res/scripts/main.rs"),
         r#"
@@ -100,10 +100,10 @@ fn doctor_ignores_script_refs_and_macros_in_comments() {
             }
             "#,
     )
-    .unwrap();
+    .expect("test setup/result must succeed");
 
     let mut report = ValidationReport::default();
-    validate_script_warnings(&project, &mut report).unwrap();
+    validate_script_warnings(&project, &mut report).expect("test setup/result must succeed");
 
     assert_eq!(report.errors, 0);
     assert_eq!(report.warnings, 0);
@@ -112,17 +112,20 @@ fn doctor_ignores_script_refs_and_macros_in_comments() {
 #[test]
 fn script_ref_dlc_self_resolves_from_source_dlc_root() {
     let project = temp_project();
-    fs::create_dir_all(project.join("dlcs/cosmetic/scripts")).unwrap();
-    fs::create_dir_all(project.join("dlcs/cosmetic/textures")).unwrap();
-    fs::write(project.join("dlcs/cosmetic/textures/hat.png"), b"x").unwrap();
+    fs::create_dir_all(project.join("dlcs/cosmetic/scripts"))
+        .expect("test setup/result must succeed");
+    fs::create_dir_all(project.join("dlcs/cosmetic/textures"))
+        .expect("test setup/result must succeed");
+    fs::write(project.join("dlcs/cosmetic/textures/hat.png"), b"x")
+        .expect("test setup/result must succeed");
     fs::write(
         project.join("dlcs/cosmetic/scripts/main.rs"),
         r#"const HAT: &str = "dlc://self/textures/hat.png";"#,
     )
-    .unwrap();
+    .expect("test setup/result must succeed");
 
     let mut report = ValidationReport::default();
-    validate_script_warnings(&project, &mut report).unwrap();
+    validate_script_warnings(&project, &mut report).expect("test setup/result must succeed");
 
     assert_eq!(report.errors, 0);
     assert_eq!(report.warnings, 0);
@@ -447,15 +450,15 @@ fn resource_signal_fields_count_as_emits() {
 #[test]
 fn resource_signal_emit_warns_without_scripts() {
     let project = temp_project();
-    fs::create_dir_all(project.join("res")).unwrap();
+    fs::create_dir_all(project.join("res")).expect("test setup/result must succeed");
     fs::write(
         project.join("res/ui.scn"),
         r#"clicked_signals = ["play_clicked"]"#,
     )
-    .unwrap();
+    .expect("test setup/result must succeed");
 
     let mut report = ValidationReport::default();
-    validate_script_warnings(&project, &mut report).unwrap();
+    validate_script_warnings(&project, &mut report).expect("test setup/result must succeed");
 
     assert_eq!(report.errors, 0);
     assert_eq!(report.warnings, 1);
@@ -466,7 +469,7 @@ fn resource_signal_emit_warns_without_scripts() {
 #[test]
 fn node_ref_type_hints_warn_for_script_vars_and_builtin_fields() {
     let project = temp_project();
-    fs::create_dir_all(project.join("res/scripts")).unwrap();
+    fs::create_dir_all(project.join("res/scripts")).expect("test setup/result must succeed");
     fs::write(
         project.join("res/scripts/player.rs"),
         r#"
@@ -480,7 +483,7 @@ fn node_ref_type_hints_warn_for_script_vars_and_builtin_fields() {
             }
             "#,
     )
-    .unwrap();
+    .expect("test setup/result must succeed");
     fs::write(
         project.join("res/main.scn"),
         r#"
@@ -503,10 +506,10 @@ fn node_ref_type_hints_warn_for_script_vars_and_builtin_fields() {
             [/Mesh]
             "#,
     )
-    .unwrap();
+    .expect("test setup/result must succeed");
 
     let mut report = ValidationReport::default();
-    validate_script_warnings(&project, &mut report).unwrap();
+    validate_script_warnings(&project, &mut report).expect("test setup/result must succeed");
 
     assert_eq!(report.errors, 0);
     assert_eq!(report.warnings, 2);
@@ -527,7 +530,7 @@ fn node_ref_type_hints_warn_for_script_vars_and_builtin_fields() {
 #[test]
 fn node_ref_hints_resolve_by_attached_script_for_shared_field_names() {
     let project = temp_project();
-    fs::create_dir_all(project.join("res/scripts")).unwrap();
+    fs::create_dir_all(project.join("res/scripts")).expect("test setup/result must succeed");
     fs::write(
         project.join("res/scripts/golf_agent.rs"),
         r#"
@@ -546,7 +549,7 @@ fn node_ref_hints_resolve_by_attached_script_for_shared_field_names() {
             }
             "#,
     )
-    .unwrap();
+    .expect("test setup/result must succeed");
     fs::write(
         project.join("res/scripts/volleyball_agent.rs"),
         r#"
@@ -564,7 +567,7 @@ fn node_ref_hints_resolve_by_attached_script_for_shared_field_names() {
             }
             "#,
     )
-    .unwrap();
+    .expect("test setup/result must succeed");
     fs::write(
         project.join("res/main.scn"),
         r#"
@@ -591,10 +594,10 @@ fn node_ref_hints_resolve_by_attached_script_for_shared_field_names() {
             [/Mesh]
             "#,
     )
-    .unwrap();
+    .expect("test setup/result must succeed");
 
     let mut report = ValidationReport::default();
-    validate_script_warnings(&project, &mut report).unwrap();
+    validate_script_warnings(&project, &mut report).expect("test setup/result must succeed");
 
     assert_eq!(report.errors, 0);
     assert_eq!(report.warnings, 1, "messages: {:?}", report.messages);

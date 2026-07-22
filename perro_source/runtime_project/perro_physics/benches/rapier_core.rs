@@ -219,7 +219,14 @@ fn bench_rapier_step_2d(c: &mut Criterion) {
                 system.apply_pending_forces_2d(1.0, DT);
                 system.apply_pending_impulses_2d(1.0);
                 system.step_world_2d(-9.81, DT);
-                black_box(system.world_2d.as_ref().unwrap().bodies.len())
+                black_box(
+                    system
+                        .world_2d
+                        .as_ref()
+                        .expect("test or bench setup must succeed")
+                        .bodies
+                        .len(),
+                )
             },
             BatchSize::LargeInput,
         )
@@ -238,7 +245,14 @@ fn bench_rapier_step_3d(c: &mut Criterion) {
                 system.apply_pending_forces_3d(1.0, DT);
                 system.apply_pending_impulses_3d(1.0);
                 system.step_world_3d(-9.81, DT);
-                black_box(system.world_3d.as_ref().unwrap().bodies.len())
+                black_box(
+                    system
+                        .world_3d
+                        .as_ref()
+                        .expect("test or bench setup must succeed")
+                        .bodies
+                        .len(),
+                )
             },
             BatchSize::LargeInput,
         )
@@ -265,8 +279,18 @@ fn bench_rapier_mixed_step(c: &mut Criterion) {
                 system_2d.step_world_2d(-9.81, DT);
                 system_3d.step_world_3d(-9.81, DT);
                 black_box(
-                    system_2d.world_2d.as_ref().unwrap().bodies.len()
-                        + system_3d.world_3d.as_ref().unwrap().bodies.len(),
+                    system_2d
+                        .world_2d
+                        .as_ref()
+                        .expect("test or bench setup must succeed")
+                        .bodies
+                        .len()
+                        + system_3d
+                            .world_3d
+                            .as_ref()
+                            .expect("test or bench setup must succeed")
+                            .bodies
+                            .len(),
                 )
             },
             BatchSize::LargeInput,
@@ -291,8 +315,18 @@ fn bench_rapier_mixed_step(c: &mut Criterion) {
                 system.apply_pending_forces_and_impulses_parallel(1.0, DT);
                 system.step_worlds_parallel(-9.81, DT);
                 black_box(
-                    system.world_2d.as_ref().unwrap().bodies.len()
-                        + system.world_3d.as_ref().unwrap().bodies.len(),
+                    system
+                        .world_2d
+                        .as_ref()
+                        .expect("test or bench setup must succeed")
+                        .bodies
+                        .len()
+                        + system
+                            .world_3d
+                            .as_ref()
+                            .expect("test or bench setup must succeed")
+                            .bodies
+                            .len(),
                 )
             },
             BatchSize::LargeInput,
@@ -353,8 +387,18 @@ fn bench_mixed_joint_sync(c: &mut Criterion) {
                 system.sync_joints_2d(&joints_2d);
                 system.sync_joints_3d(&joints_3d);
                 black_box(
-                    system.world_2d.as_ref().unwrap().joint_map.len()
-                        + system.world_3d.as_ref().unwrap().joint_map.len(),
+                    system
+                        .world_2d
+                        .as_ref()
+                        .expect("test or bench setup must succeed")
+                        .joint_map
+                        .len()
+                        + system
+                            .world_3d
+                            .as_ref()
+                            .expect("test or bench setup must succeed")
+                            .joint_map
+                            .len(),
                 )
             },
             BatchSize::LargeInput,
@@ -366,8 +410,18 @@ fn bench_mixed_joint_sync(c: &mut Criterion) {
             |mut system| {
                 system.sync_joints_parallel(&joints_2d, &joints_3d);
                 black_box(
-                    system.world_2d.as_ref().unwrap().joint_map.len()
-                        + system.world_3d.as_ref().unwrap().joint_map.len(),
+                    system
+                        .world_2d
+                        .as_ref()
+                        .expect("test or bench setup must succeed")
+                        .joint_map
+                        .len()
+                        + system
+                            .world_3d
+                            .as_ref()
+                            .expect("test or bench setup must succeed")
+                            .joint_map
+                            .len(),
                 )
             },
             BatchSize::LargeInput,
@@ -393,7 +447,14 @@ fn bench_resting_body_resync_skip(c: &mut Criterion) {
                     body.sync_signature = epoch;
                 }
                 system.sync_world_2d(&bodies, |_, _| {});
-                black_box(system.world_2d.as_ref().unwrap().bodies.len())
+                black_box(
+                    system
+                        .world_2d
+                        .as_ref()
+                        .expect("test or bench setup must succeed")
+                        .bodies
+                        .len(),
+                )
             },
             BatchSize::LargeInput,
         )
@@ -407,7 +468,14 @@ fn bench_resting_body_resync_skip(c: &mut Criterion) {
             },
             |(mut system, bodies)| {
                 system.sync_world_2d(&bodies, |_, _| {});
-                black_box(system.world_2d.as_ref().unwrap().bodies.len())
+                black_box(
+                    system
+                        .world_2d
+                        .as_ref()
+                        .expect("test or bench setup must succeed")
+                        .bodies
+                        .len(),
+                )
             },
             BatchSize::LargeInput,
         )
@@ -425,7 +493,14 @@ fn bench_resting_body_resync_skip(c: &mut Criterion) {
                     body.sync_signature = epoch;
                 }
                 system.sync_world_3d(&bodies, asset_context(), |_, _| {});
-                black_box(system.world_3d.as_ref().unwrap().bodies.len())
+                black_box(
+                    system
+                        .world_3d
+                        .as_ref()
+                        .expect("test or bench setup must succeed")
+                        .bodies
+                        .len(),
+                )
             },
             BatchSize::LargeInput,
         )
@@ -439,7 +514,14 @@ fn bench_resting_body_resync_skip(c: &mut Criterion) {
             },
             |(mut system, bodies)| {
                 system.sync_world_3d(&bodies, asset_context(), |_, _| {});
-                black_box(system.world_3d.as_ref().unwrap().bodies.len())
+                black_box(
+                    system
+                        .world_3d
+                        .as_ref()
+                        .expect("test or bench setup must succeed")
+                        .bodies
+                        .len(),
+                )
             },
             BatchSize::LargeInput,
         )

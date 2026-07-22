@@ -336,6 +336,7 @@ impl Runtime {
                             tint,
                             uv_min: [0.0, 0.0],
                             uv_max: [texture_resolution[0] as f32, texture_resolution[1] as f32],
+                            uv_normalized: false,
                             size: [aspect, 1.0],
                             z_index,
                         };
@@ -557,6 +558,7 @@ impl Runtime {
                             tint,
                             uv_min: [0.0, 0.0],
                             uv_max: [texture_resolution[0] as f32, texture_resolution[1] as f32],
+                            uv_normalized: false,
                             size: [size.x.max(0.001), size.y.max(0.001)],
                             z_index,
                         };
@@ -1045,6 +1047,7 @@ impl Runtime {
             tint: emit.tint,
             uv_min,
             uv_max,
+            uv_normalized: false,
             size: emit.size_override.unwrap_or(region_size),
             z_index: emit.z_index,
         };

@@ -3,6 +3,9 @@ name = "perro_internal_updates"
 version = "0.1.0"
 edition = "2024"
 
+[lints]
+workspace = true
+
 [dependencies]
 perro_ids.workspace = true
 perro_nodes.workspace = true
@@ -11,4 +14,5 @@ perro_resource_api.workspace = true
 perro_input_api.workspace = true
 perro_animation.workspace = true
 perro_scene.workspace = true
+perro_modules.workspace = true
 glam = "0.31.0"

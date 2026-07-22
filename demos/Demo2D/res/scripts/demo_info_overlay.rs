@@ -17,7 +17,7 @@ methods!({
         let (title_label, body_label) =
             with_state!(ctx.run, DemoInfoOverlayState, ctx.id, |state| {
                 (state.title_label, state.body_label)
-            });
+            }).unwrap_or_default();
         set_label_text(ctx, title_label, title);
         set_label_text(ctx, body_label, body);
     }

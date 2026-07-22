@@ -3834,7 +3834,7 @@ pub fn edit_selected_script_var_path<API: ScriptAPI + ?Sized>(
             .iter()
             .find(|node| node.key.as_u32() == key)?;
         Some(inspector_visible_rows_for_node(state, node))
-    });
+    }).unwrap_or_default();
     let Some(rows) = rows else {
         return;
     };
@@ -3895,7 +3895,7 @@ pub fn edit_selected_script_var_path<API: ScriptAPI + ?Sized>(
         }
         let euler = with_state!(ctx.run, EditorState, ctx.id, |state| {
             state.inspector_rotation_mode == "euler"
-        });
+        }).unwrap_or_default();
         if euler {
             let [x, y, z] = values.as_slice() else {
                 set_log(ctx, "script var parse fail\nbad euler component count");
@@ -4015,7 +4015,7 @@ pub fn edit_selected_script_var_path<API: ScriptAPI + ?Sized>(
             let member = script_member_path_for_row(&fields, &row.path)?;
             let variant = scene_value_to_preview_variant(&value_for_preview, &doc, state);
             Some((key, member, variant))
-        })
+        }).unwrap_or_default()
     } else {
         None
     };
@@ -4235,7 +4235,7 @@ pub fn mutate_selected_inspector_array<API: ScriptAPI + ?Sized>(
         inspector_visible_rows_for_node(state, node)
             .get(idx)
             .cloned()
-    });
+    }).unwrap_or_default();
     let Some(row) = row else {
         return;
     };
@@ -4328,7 +4328,7 @@ pub fn reset_selected_inspector_value<API: ScriptAPI + ?Sized>(
         inspector_visible_rows_for_node(state, node)
             .get(idx)
             .cloned()
-    });
+    }).unwrap_or_default();
     let Some(row) = row else {
         return;
     };
@@ -4481,7 +4481,7 @@ fn current_inspector_bitmask<API: ScriptAPI + ?Sized>(
             return None;
         }
         Some(scene_value_bitmask_from_text(&row.value))
-    })
+    }).unwrap_or_default()
 }
 
 fn write_selected_inspector_bitmask<API: ScriptAPI + ?Sized>(
@@ -4500,7 +4500,7 @@ fn write_selected_inspector_bitmask<API: ScriptAPI + ?Sized>(
         inspector_visible_rows_for_node(state, node)
             .get(idx)
             .cloned()
-    });
+    }).unwrap_or_default();
     let Some(row) = row else {
         return;
     };

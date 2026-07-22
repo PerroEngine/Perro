@@ -13,7 +13,11 @@ fn cpu_work(mut value: u64) -> u64 {
 
 fn bench_spawn(c: &mut Criterion) {
     c.bench_function("perro_jobs/spawn_take", |bench| {
-        bench.iter(|| spawn(|| cpu_work(black_box(7))).take().unwrap())
+        bench.iter(|| {
+            spawn(|| cpu_work(black_box(7)))
+                .take()
+                .expect("test setup must succeed")
+        })
     });
 }
 

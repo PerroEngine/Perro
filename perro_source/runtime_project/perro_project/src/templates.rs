@@ -304,11 +304,11 @@ lifecycle!({
         &self,
         ctx: &mut ScriptContext<'_, API>,
     ) {
-        // with_state! gives read-only state access and returns data from the closure.
+        // with_state! gives read-only state access and returns optional closure data.
         // with_state_mut! gives mutable state access; it can mutate and optionally return data.
         let count = with_state!(ctx.run, ExampleState, ctx.id, |state| {
             state.count
-        });
+        }).unwrap_or_default();
         log_info!(count);
     }
 
@@ -329,15 +329,15 @@ lifecycle!({
         // Regular Rust method calls are for internal methods.
         self.bump_count(ctx);
 
-        // with_node! gives read-only typed node access and returns data from the closure.
+        // with_node! gives read-only typed node access and returns optional closure data.
         // with_node_mut! gives mutable typed node access; it can mutate and optionally return data.
         // Here we mutate the attached node via `self`.
         with_node_mut!(ctx.run, SelfNodeType, ctx.id, |node| {
             node.position.x += dt * SPEED;
-        });
+        }).unwrap_or_default();
 
         // Pull refs out of state before the next runtime call.
-        let target = with_state!(ctx.run, ExampleState, ctx.id, |state| state.target);
+        let target = with_state!(ctx.run, ExampleState, ctx.id, |state| state.target).unwrap_or_default();
         if let Some(target) = target {
             with_node_mut!(ctx.run, Node2D, target, |node| {
                 node.position.y += dt * SPEED;
@@ -363,9 +363,9 @@ lifecycle!({
             log_info!(remote_count);
         }
         // For local/internal behavior and local state, prefer direct methods plus
-        // with_state!/with_state_mut! (for example self.bump_count(...)).
+        // with_state!/with_state_mut! (for example self.bump_count(...)).unwrap_or_default().
         // Read-only helpers (`with_state!`, `with_node!`) are for non-mutable access.
-        // Mutable helpers (`with_state_mut!`, `with_node_mut!`) can mutate and
+        // Mutable helpers (`with_state_mut!`, `with_node_mut!`).unwrap_or_default() can mutate and
         // can return a value if you need one; ignoring the return is also fine.
         // That is simpler and more performant than call_method!/get_var!/set_var!.
 

@@ -81,7 +81,7 @@ methods!({
                     state.script_fps_label,
                     state.script_fps,
                 )
-            });
+            }).unwrap_or_default();
 
         set_label_text(ctx, fps_label, format!("FPS {:.1}", fps));
         set_label_text(ctx, cpu_label, format!("CPU {} us", cpu_us));

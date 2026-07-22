@@ -191,11 +191,14 @@ mod tests {
         let module = SceneDocModule::new(&api);
 
         assert_eq!(
-            api.scene_load_doc_typed("res://missing.scn").unwrap_err(),
+            api.scene_load_doc_typed("res://missing.scn")
+                .expect_err("test call must fail"),
             LoadError::Legacy("load res://missing.scn".to_owned())
         );
         assert_eq!(
-            module.load_typed("res://missing.scn").unwrap_err(),
+            module
+                .load_typed("res://missing.scn")
+                .expect_err("test call must fail"),
             LoadError::Legacy("load res://missing.scn".to_owned())
         );
 
@@ -210,11 +213,13 @@ mod tests {
 
         assert_eq!(
             api.scene_save_doc_typed("user://slot.scn", &doc)
-                .unwrap_err(),
+                .expect_err("test call must fail"),
             LoadError::Legacy("save user://slot.scn".to_owned())
         );
         assert_eq!(
-            module.save_typed("user://slot.scn", &doc).unwrap_err(),
+            module
+                .save_typed("user://slot.scn", &doc)
+                .expect_err("test call must fail"),
             LoadError::Legacy("save user://slot.scn".to_owned())
         );
     }

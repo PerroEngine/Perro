@@ -238,14 +238,26 @@ mod tests {
     #[test]
     fn write_if_changed_preserves_mtime_for_identical_bytes() {
         let dir = std::env::temp_dir().join(format!("perro_wic_{}", std::process::id()));
-        fs::create_dir_all(&dir).unwrap();
+        fs::create_dir_all(&dir).expect("required value must be present");
         let path = dir.join("out.rs");
-        write_if_changed(&path, b"hello").unwrap();
-        let first = fs::metadata(&path).unwrap().modified().unwrap();
-        write_if_changed(&path, b"hello").unwrap();
-        assert_eq!(first, fs::metadata(&path).unwrap().modified().unwrap());
-        write_if_changed(&path, b"hello2").unwrap();
-        assert_eq!(fs::read(&path).unwrap(), b"hello2");
+        write_if_changed(&path, b"hello").expect("required value must be present");
+        let first = fs::metadata(&path)
+            .expect("required value must be present")
+            .modified()
+            .expect("required value must be present");
+        write_if_changed(&path, b"hello").expect("required value must be present");
+        assert_eq!(
+            first,
+            fs::metadata(&path)
+                .expect("required value must be present")
+                .modified()
+                .expect("required value must be present")
+        );
+        write_if_changed(&path, b"hello2").expect("required value must be present");
+        assert_eq!(
+            fs::read(&path).expect("required value must be present"),
+            b"hello2"
+        );
         let _ = fs::remove_dir_all(&dir);
     }
 
@@ -253,9 +265,9 @@ mod tests {
     fn source_cache_round_trips_and_prunes_stale_files() {
         let dir = std::env::temp_dir().join(format!("perro_cache_{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(dir.join("sub")).unwrap();
-        fs::write(dir.join("kept.bin"), b"kept").unwrap();
-        fs::write(dir.join("sub/stale.bin"), b"stale").unwrap();
+        fs::create_dir_all(dir.join("sub")).expect("required value must be present");
+        fs::write(dir.join("kept.bin"), b"kept").expect("required value must be present");
+        fs::write(dir.join("sub/stale.bin"), b"stale").expect("required value must be present");
 
         let mut cache = SourceCache::open(&dir, "test");
         assert!(cache.lookup("a.png", 10, 20).is_none());
@@ -268,7 +280,7 @@ mod tests {
                 files: vec!["kept.bin".into()],
             },
         );
-        cache.finish().unwrap();
+        cache.finish().expect("required value must be present");
 
         assert!(dir.join("kept.bin").is_file());
         assert!(!dir.join("sub").exists(), "stale subdir should be pruned");

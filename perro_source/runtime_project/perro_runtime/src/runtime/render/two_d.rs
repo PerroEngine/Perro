@@ -685,6 +685,7 @@ pub(crate) fn build_tilemap_sprites(build: TilemapSpriteBuild<'_>) -> Vec<Sprite
             tint: build.tint,
             uv_min: [atlas_x, atlas_y],
             uv_max: [atlas_x + tw, atlas_y + th],
+            uv_normalized: false,
             size: [tw, th],
             z_index: build.z_index,
         });
@@ -1031,16 +1032,34 @@ fn build_nine_slice_sprites(
     tint: perro_structs::Color,
     z_index: i32,
 ) -> Vec<Sprite2DCommand> {
-    let ([u0, v0], [u3, v3], region_size) = sprite_region_uv(region);
+    let auto = margins.iter().all(|margin| *margin == 0.0);
+    let ([u0, v0], [u3, v3], region_size) = if auto && region.is_none() {
+        ([0.0, 0.0], [1.0, 1.0], [1.0, 1.0])
+    } else {
+        sprite_region_uv(region)
+    };
     let w = size.x.max(0.0);
     let h = size.y.max(0.0);
+    let margins = if auto {
+        [w / 3.0, h / 3.0, w / 3.0, h / 3.0]
+    } else {
+        margins
+    };
     let [l, t, r, b] = clamp_nine_margins(margins, w, h);
     let uv_w = (u3 - u0).max(region_size[0]);
     let uv_h = (v3 - v0).max(region_size[1]);
-    let ul = l.min(uv_w);
-    let ur = r.min((uv_w - ul).max(0.0));
-    let vt = t.min(uv_h);
-    let vb = b.min((uv_h - vt).max(0.0));
+    let (ul, ur, vt, vb) = if auto {
+        (uv_w / 3.0, uv_w / 3.0, uv_h / 3.0, uv_h / 3.0)
+    } else {
+        let ul = l.min(uv_w);
+        let vt = t.min(uv_h);
+        (
+            ul,
+            r.min((uv_w - ul).max(0.0)),
+            vt,
+            b.min((uv_h - vt).max(0.0)),
+        )
+    };
     let xs = [-w * 0.5, -w * 0.5 + l, w * 0.5 - r, w * 0.5];
     let ys = [-h * 0.5, -h * 0.5 + b, h * 0.5 - t, h * 0.5];
     let us = [u0, u0 + ul, u3 - ur, u3];
@@ -1061,6 +1080,7 @@ fn build_nine_slice_sprites(
                 tint,
                 uv_min: [us[x], vs[y]],
                 uv_max: [us[x + 1], vs[y + 1]],
+                uv_normalized: auto && region.is_none(),
                 size: [sw, sh],
                 z_index,
             });

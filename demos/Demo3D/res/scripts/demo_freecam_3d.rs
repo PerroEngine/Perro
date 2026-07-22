@@ -17,7 +17,7 @@ lifecycle!({
     fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
         let input_enabled = with_state!(ctx.run, DemoFreecam3DState, ctx.id, |state| {
             state.input_enabled
-        });
+        }).unwrap_or_default();
 
         if !input_enabled {
             return;
@@ -25,7 +25,7 @@ lifecycle!({
 
         let dt = delta_time!(ctx.run).clamp(0.0, MAX_MOVE_DT);
 
-        let speed = with_state!(ctx.run, DemoFreecam3DState, ctx.id, |state| { state.speed });
+        let speed = with_state!(ctx.run, DemoFreecam3DState, ctx.id, |state| { state.speed }).unwrap_or_default();
 
         let mut move_dir = Vector3::ZERO;
 

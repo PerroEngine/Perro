@@ -418,6 +418,7 @@ impl Renderer2D {
                         tint,
                         uv_min,
                         uv_max,
+                        uv_normalized: false,
                         size: resolved_size,
                         z_index: 900,
                     });

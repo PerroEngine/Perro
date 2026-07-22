@@ -611,12 +611,18 @@ mod tests {
         )
         .expect("style");
 
-        assert_eq!(style.fill, Color::from_hex("#222222DD").unwrap());
-        assert_eq!(style.stroke, Color::from_hex("#555555FF").unwrap());
+        assert_eq!(
+            style.fill,
+            Color::from_hex("#222222DD").expect("required value must be present")
+        );
+        assert_eq!(
+            style.stroke,
+            Color::from_hex("#555555FF").expect("required value must be present")
+        );
         assert_eq!(style.corner_radius(), 0.2);
         assert_eq!(
             style.outer_shadow.color,
-            Color::from_hex("#00000066").unwrap()
+            Color::from_hex("#00000066").expect("required value must be present")
         );
         assert_eq!(style.outer_shadow.distance, 10.0);
     }

@@ -3,6 +3,9 @@ name = "perro_graphics_assets"
 version = "0.1.0"
 edition = "2024"
 
+[lints]
+workspace = true
+
 [dependencies]
 bytemuck = { version = "1.24.0", features = ["derive"] }
 gltf.workspace = true

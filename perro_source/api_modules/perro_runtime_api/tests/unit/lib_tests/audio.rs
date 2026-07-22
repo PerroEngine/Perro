@@ -92,7 +92,7 @@ mod audio {
         let target = Vector2::new(12.0, 3.0);
         let time = 1.5;
 
-        let velocity = physics_solve_velocity_to_target_2d!(&mut ctx, origin, target, time).unwrap();
+        let velocity = physics_solve_velocity_to_target_2d!(&mut ctx, origin, target, time).expect("test setup must succeed");
         let hit = simulate_2d(origin, velocity, Vector2::ZERO, -9.81, time);
 
         assert_vec2_close(hit, target, 1.0e-4);
@@ -108,7 +108,7 @@ mod audio {
         let time = 1.25;
 
         let velocity =
-            physics_solve_velocity_to_target_3d!(&mut ctx, origin, target, time, drift).unwrap();
+            physics_solve_velocity_to_target_3d!(&mut ctx, origin, target, time, drift).expect("test setup must succeed");
         let hit = simulate_3d(origin, velocity, drift, -9.81, time);
 
         assert_vec3_close(hit, target, 1.0e-4);
@@ -122,7 +122,7 @@ mod audio {
         let target = Vector2::new(10.0, 0.0);
         let speed = 12.0;
 
-        let solution = physics_solve_launch_velocity_2d!(&mut ctx, origin, target, speed, 5.0).unwrap();
+        let solution = physics_solve_launch_velocity_2d!(&mut ctx, origin, target, speed, 5.0).expect("test setup must succeed");
         let low_time = 10.0 / solution.low.x;
         let high_time = 10.0 / solution.high.x;
         let low_hit = simulate_2d(origin, solution.low, Vector2::ZERO, -9.81, low_time);
@@ -198,7 +198,7 @@ mod audio {
 
         let velocity =
             physics_solve_velocity_to_target_2d!(&mut ctx, Vector2::ZERO, Vector2::new(10.0, 0.0), 1.0)
-                .unwrap();
+                .expect("test setup must succeed");
 
         assert_vec2_close(velocity, Vector2::new(10.0, 5.0), 1.0e-6);
     }

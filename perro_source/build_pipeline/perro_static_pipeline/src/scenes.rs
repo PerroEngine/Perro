@@ -665,7 +665,10 @@ mod tests {
     fn static_node_type_supports_registry_nodes() {
         for node_type in NodeType::ALL {
             let node = node_type.as_str();
-            assert_eq!(emit_static_node_type(node).unwrap(), *node_type);
+            assert_eq!(
+                emit_static_node_type(node).expect("required value must be present"),
+                *node_type
+            );
         }
     }
 
@@ -678,7 +681,10 @@ mod tests {
         ];
 
         for (alias, emitted) in aliases {
-            assert_eq!(emit_static_node_type(alias).unwrap(), emitted);
+            assert_eq!(
+                emit_static_node_type(alias).expect("required value must be present"),
+                emitted
+            );
         }
     }
 
@@ -776,7 +782,8 @@ mod tests {
         )
         .parse_scene();
 
-        let emitted = emit_static_scene_const("res://main.scn", &scene).unwrap();
+        let emitted = emit_static_scene_const("res://main.scn", &scene)
+            .expect("required value must be present");
 
         assert!(
             emitted

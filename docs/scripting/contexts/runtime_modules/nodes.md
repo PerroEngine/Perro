@@ -214,7 +214,7 @@ lifecycle!({
     }
 
     fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let Some(target_id) = with_state!(ctx.run, TurretState, ctx.id, |s| s.target) else {
+        let Some(target_id) = with_state!(ctx.run, TurretState, ctx.id, |s| s.target).unwrap_or_default() else {
             return;
         };
         let Some(target) = get_global_pos_3d!(ctx.run, target_id) else {
@@ -277,11 +277,11 @@ methods!({
 | Field | Detail |
 | --- | --- |
 | Access | `ctx.run.Nodes()` |
-| Signature | `pub fn with_node<T, V: Clone + Default>( &mut self, node_id: NodeID, f: impl FnOnce(&T) -> V, ) -> V where T: NodeTypeDispatch,` |
+| Signature | `pub fn with_node<T, V>( &mut self, node_id: NodeID, f: impl FnOnce(&T) -> V, ) -> Option<V> where T: NodeTypeDispatch,` |
 | Params | `&mut self, node_id: NodeID, f: impl FnOnce(&T) -> V,` |
-| Returns | `V, ) -> V where T: NodeTypeDispatch,` |
+| Returns | `Option<V>` |
 | Use when | Use `with_node` to with node on the scene graph; guard stale IDs and concrete/base type mismatches. |
-| Fails when / edge behavior | Uses `with_node`'s documented return type as its failure channel; no extra wrapper fallback or coercion is added. |
+| Fails when / edge behavior | Returns `None` when the node id is missing or the concrete node type is not `T`. |
 
 ### `with_base_node`
 
@@ -1125,9 +1125,9 @@ methods!({
 | Access | `ctx.run.Nodes()` |
 | Signature | `with_node!(ctx.run, node_ty, id, f)` |
 | Params | `ctx, node_ty, id, f` |
-| Returns | `same as backing method` |
+| Returns | `Option<V>` with the closure result |
 | Use when | Use `with_node` to with node on the scene graph; guard stale IDs and concrete/base type mismatches. |
-| Fails when / edge behavior | Uses the backing `with_node` return and failure behavior unchanged; the wrapper adds no coercion or fallback. |
+| Fails when / edge behavior | Returns `None` for a missing ID or wrong concrete type. |
 
 ### `with_base_node`
 

@@ -37,7 +37,7 @@ pub fn internal_update<RT, R, IP>(
     R: ResourceAPI + ?Sized,
     IP: InputAPI + ?Sized,
 {
-    let animation_id = with_node!(ctx, SelfNodeType, id, |player| {
+    let Some(animation_id) = with_node!(ctx, SelfNodeType, id, |player| {
         if res.Animations().is_loaded(player.animation) {
             player.animation
         } else if res
@@ -48,7 +48,13 @@ pub fn internal_update<RT, R, IP>(
         } else {
             AnimationID::nil()
         }
-    });
+    })
+    .warn_none_once(format_args!(
+        "animation update skip: node={} expect=AnimationPlayer missing",
+        id.as_u64()
+    )) else {
+        return;
+    };
     if animation_id.is_nil() {
         return;
     }
@@ -66,10 +72,16 @@ pub fn internal_update<RT, R, IP>(
 
     let mut applied_transforms = Vec::new();
     if step.should_apply {
-        applied_transforms = with_node_mut!(ctx, SelfNodeType, id, |player| {
+        let Some(previous_transforms) = with_node_mut!(ctx, SelfNodeType, id, |player| {
             std::mem::take(&mut player.internal.applied_transforms)
         })
-        .unwrap_or_default();
+        .warn_none_once(format_args!(
+            "animation apply skip: node={} expect=AnimationPlayer missing",
+            id.as_u64()
+        )) else {
+            return;
+        };
+        applied_transforms = previous_transforms;
         apply_clip_frame(
             ctx,
             res,

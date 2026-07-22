@@ -52,7 +52,7 @@ struct PlayerState {
 ## `#[expose]` Only Organizes The Inspector
 
 `#[expose]` controls editor inspector layout. It does not gate runtime access
-or scene injection. Any state field may receive a scene `script_vars` value.
+or scene injection. Any state field may receive a scene `script_vars` value if the .scn file is edited manually.
 
 ```text
 script_vars = {
@@ -83,7 +83,7 @@ Use `Option<NodeID>` when a scene ref may be absent. A referenced node may also
 be removed later. Skip absent targets without a panic or required log.
 
 ```rust
-let camera = with_state!(ctx.run, PlayerState, ctx.id, |state| state.camera);
+let camera = with_state!(ctx.run, PlayerState, ctx.id, |state| state.camera).unwrap_or_default();
 
 if let Some(camera) = camera {
     with_node_mut!(ctx.run, Camera3D, camera, |node| {

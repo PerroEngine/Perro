@@ -47,7 +47,7 @@ lifecycle!({
     fn on_init(&self, ctx: &mut ScriptContext<'_, API>) {
         let texture_path = with_state!(ctx.run, PlayerState, ctx.id, |state| {
             state.texture_path.clone()
-        });
+        }).unwrap_or_default();
         let texture = texture_load!(ctx.res, &texture_path);
         let _ = texture;
     }

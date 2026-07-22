@@ -3,6 +3,9 @@ name = "perro_csv"
 version = "0.1.0"
 edition = "2024"
 
+[lints]
+workspace = true
+
 [dependencies]
 csv = "1.4"
 perro_ids.workspace = true

@@ -84,7 +84,8 @@ fn bench_midi(c: &mut Criterion) {
             || {
                 let (tx, rx) = crossbeam_channel::unbounded();
                 let mut source = BuiltInMidiMixerSource::new(rx);
-                tx.send(MidiMixerControl::Note(mixer_note(0))).unwrap();
+                tx.send(MidiMixerControl::Note(mixer_note(0)))
+                    .expect("test setup/result must succeed");
                 black_box(source.next());
                 source
             },
@@ -110,7 +111,8 @@ fn bench_midi(c: &mut Criterion) {
                         let (tx, rx) = crossbeam_channel::unbounded();
                         let mut source = BuiltInMidiMixerSource::new(rx);
                         for id in 0..voices as u64 {
-                            tx.send(MidiMixerControl::Note(mixer_note(id))).unwrap();
+                            tx.send(MidiMixerControl::Note(mixer_note(id)))
+                                .expect("test setup/result must succeed");
                         }
                         black_box(source.next());
                         source
@@ -162,7 +164,8 @@ fn bench_midi(c: &mut Criterion) {
             |(tx, rx)| {
                 let mut source = BuiltInMidiMixerSource::new(rx);
                 for id in 0..1024u64 {
-                    tx.send(MidiMixerControl::Note(mixer_note(id))).unwrap();
+                    tx.send(MidiMixerControl::Note(mixer_note(id)))
+                        .expect("test setup/result must succeed");
                 }
                 black_box(source.next())
             },
@@ -224,11 +227,15 @@ fn bench_midi(c: &mut Criterion) {
     }
 
     c.bench_function("pawdio_midi_file_parse_4096_events", |b| {
-        b.iter(|| parse_built_in_midi_file(black_box(bench_midi_bytes())).unwrap());
+        b.iter(|| {
+            parse_built_in_midi_file(black_box(bench_midi_bytes()))
+                .expect("test setup/result must succeed")
+        });
     });
 
     c.bench_function("pawdio_midi_file_cached_source_create_4096_events", |b| {
-        let data = parse_built_in_midi_file(bench_midi_bytes()).unwrap();
+        let data =
+            parse_built_in_midi_file(bench_midi_bytes()).expect("test setup/result must succeed");
         b.iter_batched(
             crossbeam_channel::unbounded,
             |(_tx, rx)| {

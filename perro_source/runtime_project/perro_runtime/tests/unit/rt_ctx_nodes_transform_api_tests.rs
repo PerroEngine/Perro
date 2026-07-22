@@ -224,10 +224,13 @@ fn create_nodes_accepts_recursive_node_collection() {
     );
     assert_eq!(runtime.get_node_name(ids[2]).as_deref(), Some("title"));
 
-    assert!(runtime.with_node::<UiPanel, _>(ids[1], |panel| panel.base.clip_children));
+    assert_eq!(
+        runtime.with_node::<UiPanel, _>(ids[1], |panel| panel.base.clip_children),
+        Some(true)
+    );
     assert_eq!(
         runtime.with_node::<UiLabel, _>(ids[2], |label| { (label.text.clone(), label.font_size) }),
-        ("Paused".into(), 32.0)
+        Some(("Paused".into(), 32.0))
     );
 }
 
@@ -316,7 +319,7 @@ fn create_nodes_accepts_multi_root_mixed_collection() {
     assert_eq!(runtime.get_node_name(ids[5]).as_deref(), Some("muzzle"));
     assert_eq!(
         runtime.with_node::<Node2D, _>(ids[3], |node| node.transform.position),
-        Vector2::new(5.0, 7.0)
+        Some(Vector2::new(5.0, 7.0))
     );
 }
 
@@ -417,7 +420,9 @@ fn create_nodes_accepts_collections_inside_collections() {
 fn create_nodes_accepts_scene_refs_inside_collections() {
     // from_project boots the scene, which writes the process-global project
     // root; serialize with every other test that touches it.
-    let _project_root_guard = crate::rs_ctx::PROJECT_ROOT_TEST_LOCK.lock().unwrap();
+    let _project_root_guard = crate::rs_ctx::PROJECT_ROOT_TEST_LOCK
+        .lock()
+        .expect("test or bench setup must succeed");
     let mut project = RuntimeProject::new("Scene Collection Test", ".");
     project.static_scene_lookup = Some(static_scene_lookup);
     let mut runtime = Runtime::from_project(project, ProviderMode::Static);
@@ -551,7 +556,9 @@ fn create_nodes_collection_root_marker_controls_splice_parent_refs() {
 fn create_nodes_applies_scene_patch_list_to_loaded_root() {
     // from_project boots the scene, which writes the process-global project
     // root; serialize with every other test that touches it.
-    let _project_root_guard = crate::rs_ctx::PROJECT_ROOT_TEST_LOCK.lock().unwrap();
+    let _project_root_guard = crate::rs_ctx::PROJECT_ROOT_TEST_LOCK
+        .lock()
+        .expect("test or bench setup must succeed");
     let mut project = RuntimeProject::new("Scene Patch List Test", ".");
     project.static_scene_lookup = Some(static_scene_lookup);
     let mut runtime = Runtime::from_project(project, ProviderMode::Static);
@@ -576,14 +583,14 @@ fn create_nodes_applies_scene_patch_list_to_loaded_root() {
     assert_eq!(ids.len(), 1);
     assert_eq!(
         runtime.with_node::<Node3D, _>(ids[0], |node| (node.transform, node.visible)),
-        (
+        Some((
             Transform3D {
                 position: Vector3::new(3.0, 4.0, 5.0),
                 rotation: Quaternion::IDENTITY,
                 scale: Vector3::new(2.0, 2.0, 2.0),
             },
             false,
-        )
+        ))
     );
 }
 
@@ -855,13 +862,20 @@ fn top_level_nodes_skip_parent_transform_2d_and_3d() {
     runtime
         .nodes
         .get_mut(parent_2d)
-        .unwrap()
+        .expect("test or bench setup must succeed")
         .add_child(child_2d);
-    runtime.nodes.get_mut(child_2d).unwrap().parent = parent_2d;
+    runtime
+        .nodes
+        .get_mut(child_2d)
+        .expect("test or bench setup must succeed")
+        .parent = parent_2d;
     runtime.mark_transform_dirty_recursive(parent_2d);
 
     assert_eq!(
-        runtime.get_global_transform_2d(child_2d).unwrap().position,
+        runtime
+            .get_global_transform_2d(child_2d)
+            .expect("test or bench setup must succeed")
+            .position,
         Vector2::new(1.0, 2.0)
     );
 
@@ -880,13 +894,20 @@ fn top_level_nodes_skip_parent_transform_2d_and_3d() {
     runtime
         .nodes
         .get_mut(parent_3d)
-        .unwrap()
+        .expect("test or bench setup must succeed")
         .add_child(child_3d);
-    runtime.nodes.get_mut(child_3d).unwrap().parent = parent_3d;
+    runtime
+        .nodes
+        .get_mut(child_3d)
+        .expect("test or bench setup must succeed")
+        .parent = parent_3d;
     runtime.mark_transform_dirty_recursive(parent_3d);
 
     assert_eq!(
-        runtime.get_global_transform_3d(child_3d).unwrap().position,
+        runtime
+            .get_global_transform_3d(child_3d)
+            .expect("test or bench setup must succeed")
+            .position,
         Vector3::new(1.0, 2.0, 3.0)
     );
 }
@@ -931,7 +952,11 @@ fn bone_attachment_3d_follows_skeleton_bone_global_transform() {
         .insert(SceneNode::new(SceneNodeData::Skeleton3D(skeleton)));
     runtime.register_internal_node_schedules(
         skeleton_id,
-        runtime.nodes.get(skeleton_id).unwrap().node_type(),
+        runtime
+            .nodes
+            .get(skeleton_id)
+            .expect("test or bench setup must succeed")
+            .node_type(),
     );
 
     let mut attachment = BoneAttachment3D::new();
@@ -942,7 +967,11 @@ fn bone_attachment_3d_follows_skeleton_bone_global_transform() {
         .insert(SceneNode::new(SceneNodeData::BoneAttachment3D(attachment)));
     runtime.register_internal_node_schedules(
         attachment_id,
-        runtime.nodes.get(attachment_id).unwrap().node_type(),
+        runtime
+            .nodes
+            .get(attachment_id)
+            .expect("test or bench setup must succeed")
+            .node_type(),
     );
     runtime.mark_transform_dirty_recursive(skeleton_id);
     runtime.mark_transform_dirty_recursive(attachment_id);
@@ -981,7 +1010,11 @@ fn bone_attachment_3d_child_follows_bone_global_transform() {
         .insert(SceneNode::new(SceneNodeData::Skeleton3D(skeleton)));
     runtime.register_internal_node_schedules(
         skeleton_id,
-        runtime.nodes.get(skeleton_id).unwrap().node_type(),
+        runtime
+            .nodes
+            .get(skeleton_id)
+            .expect("test or bench setup must succeed")
+            .node_type(),
     );
 
     let mut attachment = BoneAttachment3D::new();
@@ -992,7 +1025,11 @@ fn bone_attachment_3d_child_follows_bone_global_transform() {
         .insert(SceneNode::new(SceneNodeData::BoneAttachment3D(attachment)));
     runtime.register_internal_node_schedules(
         attachment_id,
-        runtime.nodes.get(attachment_id).unwrap().node_type(),
+        runtime
+            .nodes
+            .get(attachment_id)
+            .expect("test or bench setup must succeed")
+            .node_type(),
     );
 
     let mut child = Node3D::new();

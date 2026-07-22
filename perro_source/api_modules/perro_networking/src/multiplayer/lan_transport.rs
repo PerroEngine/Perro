@@ -194,13 +194,15 @@ mod tests {
     #[test]
     fn host_drain_emits_connect_and_packet_for_new_sender() {
         let socket = bound_socket();
-        let host_addr = socket.local_addr().unwrap();
+        let host_addr = socket.local_addr().expect("test setup must succeed");
         let sender = bound_socket();
-        let sender_addr = sender.local_addr().unwrap();
+        let sender_addr = sender.local_addr().expect("test setup must succeed");
         let mut transport = LanTransport::new_host();
         transport.socket = Some(socket);
 
-        sender.send_to(b"hello", host_addr).unwrap();
+        sender
+            .send_to(b"hello", host_addr)
+            .expect("test setup must succeed");
 
         let events = drain_until(&mut transport, |events| {
             events
@@ -221,16 +223,20 @@ mod tests {
     #[test]
     fn discovery_gets_reply_without_packet_event() {
         let socket = bound_socket();
-        let host_addr = socket.local_addr().unwrap();
+        let host_addr = socket.local_addr().expect("test setup must succeed");
         let sender = bound_socket();
-        sender.set_nonblocking(false).unwrap();
+        sender
+            .set_nonblocking(false)
+            .expect("test setup must succeed");
         sender
             .set_read_timeout(Some(Duration::from_millis(200)))
-            .unwrap();
+            .expect("test setup must succeed");
         let mut transport = LanTransport::new_host();
         transport.socket = Some(socket);
 
-        sender.send_to(LAN_DISCOVER, host_addr).unwrap();
+        sender
+            .send_to(LAN_DISCOVER, host_addr)
+            .expect("test setup must succeed");
 
         let mut events = Vec::new();
         let mut got_reply = false;
@@ -263,8 +269,10 @@ mod tests {
     }
 
     fn bound_socket() -> UdpSocket {
-        let socket = UdpSocket::bind("127.0.0.1:0").unwrap();
-        socket.set_nonblocking(true).unwrap();
+        let socket = UdpSocket::bind("127.0.0.1:0").expect("test setup must succeed");
+        socket
+            .set_nonblocking(true)
+            .expect("test setup must succeed");
         socket
     }
 

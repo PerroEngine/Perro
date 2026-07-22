@@ -360,7 +360,7 @@ impl Runtime {
 }
 
 impl ScriptAPI for Runtime {
-    fn with_state<T: 'static, V: Default, F>(&mut self, script_id: NodeID, f: F) -> V
+    fn with_state<T: 'static, V, F>(&mut self, script_id: NodeID, f: F) -> Option<V>
     where
         F: FnOnce(&T) -> V,
     {
@@ -369,10 +369,9 @@ impl ScriptAPI for Runtime {
         {
             return self
                 .scripts
-                .with_state_scheduled(instance_index, script_id, f)
-                .unwrap_or_default();
+                .with_state_scheduled(instance_index, script_id, f);
         }
-        self.scripts.with_state(script_id, f).unwrap_or_default()
+        self.scripts.with_state(script_id, f)
     }
 
     fn with_state_mut<T: 'static, V, F>(&mut self, script_id: NodeID, f: F) -> Option<V>
@@ -800,19 +799,19 @@ mod active_script_stack_tests {
                         ctx.run
                             .Scripts()
                             .with_state::<ChainState, _, _>(self.b, |state| state.value),
-                        10
+                        Some(10)
                     );
                     assert_eq!(
                         ctx.run
                             .Scripts()
                             .with_state::<ChainState, _, _>(self.c, |state| state.value),
-                        50
+                        Some(50)
                     );
                     assert_eq!(
                         ctx.run
                             .Scripts()
                             .with_state::<ChainState, _, _>(self.d, |state| state.value),
-                        100
+                        Some(100)
                     );
                 }
                 (ChainRole::B, GO) => {
@@ -820,7 +819,7 @@ mod active_script_stack_tests {
                         ctx.run
                             .Scripts()
                             .with_state::<ChainState, _, _>(self.a, |state| state.value),
-                        1
+                        Some(1)
                     );
                     ctx.run
                         .Scripts()
@@ -835,13 +834,13 @@ mod active_script_stack_tests {
                         ctx.run
                             .Scripts()
                             .with_state::<ChainState, _, _>(self.b, |state| state.value),
-                        10
+                        Some(10)
                     );
                     assert_eq!(
                         ctx.run
                             .Scripts()
                             .with_state::<ChainState, _, _>(self.d, |state| state.value),
-                        100
+                        Some(100)
                     );
                     ctx.run
                         .Scripts()
@@ -854,7 +853,7 @@ mod active_script_stack_tests {
                         ctx.run
                             .Scripts()
                             .with_state::<ChainState, _, _>(self.b, |state| state.value),
-                        10
+                        Some(10)
                     );
                     ctx.run
                         .Scripts()

@@ -36,7 +36,7 @@ methods!({
             RuntimeInspectorState,
             ctx.id,
             |state| state.target
-        ) else {
+        ).unwrap_or_default() else {
             return;
         };
 

@@ -168,7 +168,7 @@ mod tests {
                 "perro-assets-walk-{label}-{}-{serial}",
                 std::process::id()
             ));
-            fs::create_dir_all(&path).unwrap();
+            fs::create_dir_all(&path).expect("required value must be present");
             Self(path)
         }
     }
@@ -194,12 +194,12 @@ mod tests {
     fn walk_rejects_link_outside_root() {
         let root = TempDir::new("outside-root");
         let outside = TempDir::new("outside-target");
-        fs::write(outside.0.join("secret.txt"), b"secret").unwrap();
+        fs::write(outside.0.join("secret.txt"), b"secret").expect("required value must be present");
         if symlink_dir(&outside.0, &root.0.join("outside")).is_err() {
             return;
         }
 
-        let err = walk_dir(&root.0, &mut |_| Ok(())).unwrap_err();
+        let err = walk_dir(&root.0, &mut |_| Ok(())).expect_err("operation must fail in this test");
         assert_eq!(err.kind(), io::ErrorKind::InvalidInput);
     }
 
@@ -207,12 +207,12 @@ mod tests {
     fn walk_rejects_link_loop() {
         let root = TempDir::new("loop");
         let child = root.0.join("child");
-        fs::create_dir(&child).unwrap();
+        fs::create_dir(&child).expect("required value must be present");
         if symlink_dir(&root.0, &child.join("loop")).is_err() {
             return;
         }
 
-        let err = walk_dir(&root.0, &mut |_| Ok(())).unwrap_err();
+        let err = walk_dir(&root.0, &mut |_| Ok(())).expect_err("operation must fail in this test");
         assert_eq!(err.kind(), io::ErrorKind::InvalidInput);
     }
 
@@ -220,9 +220,10 @@ mod tests {
     fn collect_rejects_base_outside_walk_root() {
         let root = TempDir::new("base-root");
         let other = TempDir::new("base-other");
-        fs::write(root.0.join("asset.bin"), b"asset").unwrap();
+        fs::write(root.0.join("asset.bin"), b"asset").expect("required value must be present");
 
-        let err = collect_file_paths(&root.0, &other.0).unwrap_err();
+        let err =
+            collect_file_paths(&root.0, &other.0).expect_err("operation must fail in this test");
         assert_eq!(err.kind(), io::ErrorKind::PermissionDenied);
     }
 }

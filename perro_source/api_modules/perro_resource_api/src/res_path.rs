@@ -562,27 +562,27 @@ mod tests {
     #[test]
     fn rejects_invalid_paths() {
         assert_eq!(
-            ResPath::try_new("textures/player.png").unwrap_err(),
+            ResPath::try_new("textures/player.png").expect_err("test call must fail"),
             ResPathError::MissingScheme
         );
         assert_eq!(
-            ResPath::try_new("http://site/file").unwrap_err(),
+            ResPath::try_new("http://site/file").expect_err("test call must fail"),
             ResPathError::UnknownScheme
         );
         assert_eq!(
-            ResPath::try_new("res://").unwrap_err(),
+            ResPath::try_new("res://").expect_err("test call must fail"),
             ResPathError::EmptyPath
         );
         assert_eq!(
-            ResPath::try_new("dlc://bad name/file").unwrap_err(),
+            ResPath::try_new("dlc://bad name/file").expect_err("test call must fail"),
             ResPathError::InvalidDlcName
         );
         assert_eq!(
-            ResPath::try_new("res://../secret").unwrap_err(),
+            ResPath::try_new("res://../secret").expect_err("test call must fail"),
             ResPathError::Traversal
         );
         assert_eq!(
-            ResPath::try_new("user://save\\slot").unwrap_err(),
+            ResPath::try_new("user://save\\slot").expect_err("test call must fail"),
             ResPathError::InvalidSeparator
         );
     }
@@ -592,7 +592,7 @@ mod tests {
         for name in [".", ".."] {
             let path = format!("dlc://{name}/file.txt");
             assert_eq!(
-                ResPath::try_new(&path).unwrap_err(),
+                ResPath::try_new(&path).expect_err("test call must fail"),
                 ResPathError::InvalidDlcName
             );
             assert!(std::panic::catch_unwind(|| validate_const(&path)).is_err());
@@ -607,18 +607,19 @@ mod tests {
     #[test]
     fn dlc_name_separator_and_control_errors_stay_distinct() {
         assert_eq!(
-            ResPath::try_new("dlc://bad\\name/file.txt").unwrap_err(),
+            ResPath::try_new("dlc://bad\\name/file.txt").expect_err("test call must fail"),
             ResPathError::InvalidSeparator
         );
         assert_eq!(
-            ResPath::try_new("dlc://bad\nname/file.txt").unwrap_err(),
+            ResPath::try_new("dlc://bad\nname/file.txt").expect_err("test call must fail"),
             ResPathError::ControlCharacter
         );
     }
 
     #[test]
     fn owned_path_derefs_to_borrowed_path() {
-        let owned = ResPathBuf::try_new(String::from("res://audio/theme.ogg")).unwrap();
+        let owned = ResPathBuf::try_new(String::from("res://audio/theme.ogg"))
+            .expect("test setup must succeed");
         let borrowed: &ResPath = &owned;
         assert_eq!(borrowed.as_str(), "res://audio/theme.ogg");
 
@@ -658,10 +659,12 @@ mod tests {
     fn static_res_path_round_trip_uses_interned_string() {
         let path = ResPath::new("res://textures/player.png");
         let variant = path.into_variant();
-        let parsed = <&'static ResPath>::from_variant(&variant).unwrap();
+        let parsed = <&'static ResPath>::from_variant(&variant).expect("test setup must succeed");
         assert_eq!(parsed.as_str(), "res://textures/player.png");
         assert_eq!(
-            <&'static ResPath>::from_variant(&variant).unwrap().as_str(),
+            <&'static ResPath>::from_variant(&variant)
+                .expect("test setup must succeed")
+                .as_str(),
             parsed.as_str()
         );
     }

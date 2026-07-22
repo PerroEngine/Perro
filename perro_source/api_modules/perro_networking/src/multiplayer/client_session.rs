@@ -393,6 +393,10 @@ mod tests {
     }
 
     fn local_peer() -> PeerId {
-        PeerId::Lan("127.0.0.1:7777".parse::<SocketAddr>().unwrap())
+        PeerId::Lan(
+            "127.0.0.1:7777"
+                .parse::<SocketAddr>()
+                .expect("test setup must succeed"),
+        )
     }
 }

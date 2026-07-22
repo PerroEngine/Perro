@@ -350,7 +350,9 @@ fn bench_matrix4_pack(c: &mut Criterion) {
         bench.iter(|| {
             let mut offset = 0;
             for &matrix in black_box(&matrices) {
-                offset += matrix.write_packed(&mut packed[offset..]).unwrap();
+                offset += matrix
+                    .write_packed(&mut packed[offset..])
+                    .expect("test setup must succeed");
             }
             black_box((offset, packed.as_ptr()))
         })
@@ -371,7 +373,9 @@ fn bench_matrix_sizes_pack(c: &mut Criterion) {
         bench.iter(|| {
             let mut offset = 0;
             for &matrix in black_box(&m2) {
-                offset += matrix.write_packed(&mut packed2[offset..]).unwrap();
+                offset += matrix
+                    .write_packed(&mut packed2[offset..])
+                    .expect("test setup must succeed");
             }
             black_box((offset, packed2.as_ptr()))
         })
@@ -381,7 +385,9 @@ fn bench_matrix_sizes_pack(c: &mut Criterion) {
         bench.iter(|| {
             let mut offset = 0;
             for &matrix in black_box(&m3) {
-                offset += matrix.write_packed(&mut packed3[offset..]).unwrap();
+                offset += matrix
+                    .write_packed(&mut packed3[offset..])
+                    .expect("test setup must succeed");
             }
             black_box((offset, packed3.as_ptr()))
         })
@@ -391,7 +397,9 @@ fn bench_matrix_sizes_pack(c: &mut Criterion) {
         bench.iter(|| {
             let mut offset = 0;
             for &matrix in black_box(&rect) {
-                offset += matrix.write_packed(&mut packed_rect[offset..]).unwrap();
+                offset += matrix
+                    .write_packed(&mut packed_rect[offset..])
+                    .expect("test setup must succeed");
             }
             black_box((offset, packed_rect.as_ptr()))
         })
@@ -484,7 +492,9 @@ fn bench_matrix_huge_pack(c: &mut Criterion) {
         bench.iter(|| {
             let mut offset = 0;
             for &matrix in black_box(&square) {
-                offset += matrix.write_packed(&mut packed_square[offset..]).unwrap();
+                offset += matrix
+                    .write_packed(&mut packed_square[offset..])
+                    .expect("test setup must succeed");
             }
             black_box((offset, packed_square.as_ptr()))
         })
@@ -494,7 +504,9 @@ fn bench_matrix_huge_pack(c: &mut Criterion) {
         bench.iter(|| {
             let mut offset = 0;
             for &matrix in black_box(&rect_wide) {
-                offset += matrix.write_packed(&mut packed_wide[offset..]).unwrap();
+                offset += matrix
+                    .write_packed(&mut packed_wide[offset..])
+                    .expect("test setup must succeed");
             }
             black_box((offset, packed_wide.as_ptr()))
         })
@@ -504,7 +516,9 @@ fn bench_matrix_huge_pack(c: &mut Criterion) {
         bench.iter(|| {
             let mut offset = 0;
             for &matrix in black_box(&rect_tall) {
-                offset += matrix.write_packed(&mut packed_tall[offset..]).unwrap();
+                offset += matrix
+                    .write_packed(&mut packed_tall[offset..])
+                    .expect("test setup must succeed");
             }
             black_box((offset, packed_tall.as_ptr()))
         })
@@ -571,7 +585,7 @@ fn bench_matrix_huge_parallel_pack(c: &mut Criterion) {
                 .par_chunks_mut(Matrix::<20, 20>::packed_len())
                 .zip(black_box(&square))
                 .for_each(|(chunk, &matrix)| {
-                    matrix.write_packed(chunk).unwrap();
+                    matrix.write_packed(chunk).expect("test setup must succeed");
                 });
             black_box(packed_square.as_ptr())
         })
@@ -583,7 +597,7 @@ fn bench_matrix_huge_parallel_pack(c: &mut Criterion) {
                 .par_chunks_mut(Matrix::<25, 15>::packed_len())
                 .zip(black_box(&rect_wide))
                 .for_each(|(chunk, &matrix)| {
-                    matrix.write_packed(chunk).unwrap();
+                    matrix.write_packed(chunk).expect("test setup must succeed");
                 });
             black_box(packed_wide.as_ptr())
         })
@@ -595,7 +609,7 @@ fn bench_matrix_huge_parallel_pack(c: &mut Criterion) {
                 .par_chunks_mut(Matrix::<15, 25>::packed_len())
                 .zip(black_box(&rect_tall))
                 .for_each(|(chunk, &matrix)| {
-                    matrix.write_packed(chunk).unwrap();
+                    matrix.write_packed(chunk).expect("test setup must succeed");
                 });
             black_box(packed_tall.as_ptr())
         })

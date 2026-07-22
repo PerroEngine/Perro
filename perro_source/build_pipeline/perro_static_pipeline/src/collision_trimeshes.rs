@@ -895,7 +895,14 @@ mod tests {
         let bytes = encode_collision_pmesh(&vertices, &triangles).expect("encode collision pmesh");
 
         assert_eq!(&bytes[0..5], b"PMESH");
-        assert_eq!(u32::from_le_bytes(bytes[5..9].try_into().unwrap()), 1);
+        assert_eq!(
+            u32::from_le_bytes(
+                bytes[5..9]
+                    .try_into()
+                    .expect("required value must be present")
+            ),
+            1
+        );
         let decoded = decode_pmesh_trimesh(&bytes).expect("decode collision pmesh");
         assert_eq!(decoded.0.len(), 3);
         assert_eq!(decoded.1, triangles);

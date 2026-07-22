@@ -28,14 +28,14 @@ a `NodeID`.
 ## Edit Known Node Types
 
 Use `with_node!` for typed reads and `with_node_mut!` for typed writes.
-`SelfNodeType` is an optional Rust alias, not an engine rule.
+`SelfNodeType` is an optional Rust alias for when you know the script is always attached to that node type and you don't want to think about the type after you've written the alias.
 
 ```rust
 type SelfNodeType = CharacterBody3D;
 
 let speed = with_node!(ctx.run, SelfNodeType, ctx.id, |node| {
     node.velocity.length()
-});
+}).unwrap_or_default();
 
 with_node_mut!(ctx.run, Camera3D, camera_id, |camera| {
     camera.fov = 70.0;
@@ -59,7 +59,7 @@ Use `with_state!` and `with_state_mut!` for your own state or another script
 whose Rust state type is known.
 
 ```rust
-let health = with_state!(ctx.run, PlayerState, player_id, |state| state.health);
+let health = with_state!(ctx.run, PlayerState, player_id, |state| state.health).unwrap_or_default();
 
 let alive = with_state_mut!(ctx.run, PlayerState, player_id, |state| {
     state.health = (state.health - 10).max(0);
@@ -67,16 +67,37 @@ let alive = with_state_mut!(ctx.run, PlayerState, player_id, |state| {
 }).unwrap_or(false);
 ```
 
-This path avoids dynamic member lookup and `Variant` conversion.
+This path avoids dynamic member lookup and `Variant` conversion, and it just makes sense when you know the id of the node you're calling has that definitive state.
 
 ## Failure, Borrow, And Performance
 
-Typed read access returns the closure output's `Default` value when the ID is
-absent, removed, or has the wrong concrete type. Typed mutable access returns
-`None` in those cases. Choose a read output whose default is a safe neutral
-result, or use a mutable/optional path when absence must stay distinct. Copy
-only the result needed by the next call. Never invoke another `ctx.run` API
-inside a typed state/node closure.
+Typed read and mutable access return `None` when the ID is absent, removed, or
+has the wrong concrete type. Use `unwrap_or_default()` only when a neutral
+fallback is valid. Keep the `Option` when absence must stay distinct. Copy only
+the result needed by the next call. Never invoke another `ctx.run` API inside a
+typed state/node closure.
+
+Use `warn_none` when a missing value must be visible but the feature can skip
+work and keep the game alive. Use `warn_none_once` in update loops so one bad
+reference does not print every frame. Both helpers return the original
+`Option`, so normal `let Some`, `?`, and fallback flow still works.
+
+```rust
+let Some(speed) = with_node!(ctx.run, CharacterBody3D, body_id, |body| {
+    body.velocity.length()
+})
+.warn_none_once(format_args!(
+    "movement skip: node={} expect=CharacterBody3D missing",
+    body_id.as_u64()
+)) else {
+    return;
+};
+```
+
+Use `warn_err` and `warn_err_once` for `Result`. They append the source error to
+the supplied operation context. Include the failed operation, target ID/path,
+expected type, and chosen fallback in warning text. Do not warn inside the base
+lookup API because absence may be expected by another caller.
 
 ## Related
 

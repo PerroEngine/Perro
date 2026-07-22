@@ -120,6 +120,7 @@ impl Runtime {
                 tint: self.effective_self_modulate(node),
                 uv_min,
                 uv_max,
+                uv_normalized: false,
                 size,
                 z_index,
             });

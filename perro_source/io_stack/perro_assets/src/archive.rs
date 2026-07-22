@@ -166,7 +166,7 @@ fn decode_archive_container(data: Vec<u8>) -> io::Result<Vec<u8>> {
         ));
     }
 
-    let version = u32::from_le_bytes(data[4..8].try_into().unwrap());
+    let version = u32::from_le_bytes([data[4], data[5], data[6], data[7]]);
     if version != perro_asset_formats::archive::VERSION {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
@@ -174,8 +174,9 @@ fn decode_archive_container(data: Vec<u8>) -> io::Result<Vec<u8>> {
         ));
     }
 
-    let original_size =
-        checked_decompressed_size(u64::from_le_bytes(data[8..16].try_into().unwrap()))?;
+    let original_size = checked_decompressed_size(u64::from_le_bytes([
+        data[8], data[9], data[10], data[11], data[12], data[13], data[14], data[15],
+    ]))?;
     let mut out = decompress_zlib_limited(&data[16..], original_size)?;
     if out.len() != original_size {
         return Err(io::Error::new(
@@ -282,15 +283,22 @@ mod tests {
 
     #[test]
     fn checked_seek_rejects_wraparound() {
-        assert_eq!(checked_seek(10, 5).unwrap(), 15);
-        assert_eq!(checked_seek(10, -5).unwrap(), 5);
+        assert_eq!(
+            checked_seek(10, 5).expect("required value must be present"),
+            15
+        );
+        assert_eq!(
+            checked_seek(10, -5).expect("required value must be present"),
+            5
+        );
         assert!(checked_seek(10, -11).is_err());
         assert!(checked_seek(u64::MAX, 1).is_err());
     }
 
     #[test]
     fn embedded_archive_borrows_static_bytes_without_copy() {
-        let archive = PerroAssetsArchive::open_from_bytes(EMPTY_ARCHIVE).unwrap();
+        let archive = PerroAssetsArchive::open_from_bytes(EMPTY_ARCHIVE)
+            .expect("required value must be present");
         let ArchiveBytes::Static(data) = archive.data else {
             panic!("embedded archive copied bytes");
         };

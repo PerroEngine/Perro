@@ -607,8 +607,20 @@ mod tests {
     fn specular_bake_has_full_roughness_mip_chain() {
         let bake = black_environment_bake();
         assert_eq!(bake.specular.len(), ENV_SPECULAR_MIP_COUNT as usize);
-        assert_eq!(bake.specular.first().unwrap().size, ENV_SPECULAR_SIZE);
-        assert_eq!(bake.specular.last().unwrap().size, 1);
+        assert_eq!(
+            bake.specular
+                .first()
+                .expect("required value must be present")
+                .size,
+            ENV_SPECULAR_SIZE
+        );
+        assert_eq!(
+            bake.specular
+                .last()
+                .expect("required value must be present")
+                .size,
+            1
+        );
     }
 
     #[test]

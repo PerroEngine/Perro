@@ -15,7 +15,7 @@ lifecycle!({
         let (text, first_slot) = webcam_device_report(ctx);
         let (webcam_id, label_id) = with_state!(ctx.run, WebcamDemo3DState, ctx.id, |state| {
             (state.webcam, state.device_label)
-        });
+        }).unwrap_or_default();
         if let Some(slot) = first_slot.as_deref().filter(|_| !webcam_id.is_nil()) {
             with_node_mut!(ctx.run, Webcam, webcam_id, |webcam| {
                 webcam.config.device = slot.to_string().into();

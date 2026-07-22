@@ -693,6 +693,39 @@ mod tests {
     }
 
     #[test]
+    fn nine_slice_auto_splits_into_tiled_thirds() {
+        let image = UiNineSliceDraw {
+            rect: UiRectState {
+                center: [150.0, 75.0],
+                size: [300.0, 150.0],
+                pivot: [0.5, 0.5],
+                rotation_radians: 0.0,
+                z_index: 0,
+            },
+            clip_rect: [0.0, 0.0, 800.0, 600.0],
+            texture: perro_ids::TextureID::from_parts(1, 1),
+            tint: perro_structs::Color::WHITE,
+            uv_min: [0.0, 0.0],
+            uv_max: [1.0, 1.0],
+            margins: [0.0; 4],
+            texture_size: [90, 90],
+        };
+        let mut shapes = Vec::new();
+
+        push_nine_slice_shapes(&image, [800.0, 600.0], &mut shapes);
+
+        let Shape::Mesh(mesh) = &shapes[0].shape else {
+            panic!("expected nine-slice mesh");
+        };
+        assert!(mesh.vertices.len() > 36);
+        assert!(
+            mesh.vertices
+                .iter()
+                .any(|vertex| vertex.uv == pos2(1.0 / 3.0, 1.0 / 3.0))
+        );
+    }
+
+    #[test]
     fn cover_image_crops_to_own_bounds() {
         let image = UiImageDraw {
             rect: UiRectState {
@@ -994,9 +1027,9 @@ mod tests {
         let font = font_sources_for_family(&definitions, FontFamily::Proportional)
             .into_iter()
             .next()
-            .unwrap();
+            .expect("required value must be present");
 
-        let run = shape_text_with_harfbuzz(&font, "Perro").unwrap();
+        let run = shape_text_with_harfbuzz(&font, "Perro").expect("required value must be present");
 
         assert!(!run.glyphs.is_empty());
         assert!(run.glyphs.iter().all(|glyph| glyph.glyph_id > 0));
@@ -1006,8 +1039,14 @@ mod tests {
     fn font_definitions_keep_default_fonts() {
         let fonts = default_ui_font_definitions();
 
-        let proportional = fonts.families.get(&FontFamily::Proportional).unwrap();
-        let monospace = fonts.families.get(&FontFamily::Monospace).unwrap();
+        let proportional = fonts
+            .families
+            .get(&FontFamily::Proportional)
+            .expect("required value must be present");
+        let monospace = fonts
+            .families
+            .get(&FontFamily::Monospace)
+            .expect("required value must be present");
 
         assert!(proportional.iter().any(|name| name == "Ubuntu-Light"));
         assert!(monospace.iter().any(|name| name == "Hack"));
@@ -1023,7 +1062,7 @@ mod tests {
         let count = fonts
             .families
             .get(&FontFamily::Proportional)
-            .unwrap()
+            .expect("required value must be present")
             .iter()
             .filter(|name| name.as_str() == "perro-test-font")
             .count();

@@ -386,7 +386,7 @@ lifecycle!({
 
         let (mode, fade_active) = with_state!(ctx.run, DemoManagerState, ctx.id, |state| {
             (state.runtime.mode, state.runtime.fade_active)
-        });
+        }).unwrap_or_default();
 
         if fade_active {
             self.apply_mode_io(ctx);
@@ -495,7 +495,7 @@ methods!({
             scene_ui_parent(ctx, ctx.id),
             with_state!(ctx.run, DemoManagerState, ctx.id, |state| state
                 .scenes
-                .main_menu),
+                .main_menu).unwrap_or_default(),
         );
         if parent.is_nil() || scene.is_nil() {
             return;
@@ -538,7 +538,7 @@ methods!({
             scene_ui_parent(ctx, ctx.id),
             with_state!(ctx.run, DemoManagerState, ctx.id, |state| state
                 .scenes
-                .pause_menu),
+                .pause_menu).unwrap_or_default(),
         );
         if parent.is_nil() || scene.is_nil() {
             return;
@@ -580,7 +580,7 @@ methods!({
     fn load_fade_scene(&self, ctx: &mut ScriptContext<'_, API>) {
         let (parent, scene) = (
             scene_ui_parent(ctx, ctx.id),
-            with_state!(ctx.run, DemoManagerState, ctx.id, |state| state.scenes.fade),
+            with_state!(ctx.run, DemoManagerState, ctx.id, |state| state.scenes.fade).unwrap_or_default(),
         );
         if parent.is_nil() || scene.is_nil() {
             return;
@@ -607,7 +607,7 @@ methods!({
             scene_ui_parent(ctx, ctx.id),
             with_state!(ctx.run, DemoManagerState, ctx.id, |state| state
                 .scenes
-                .profiling_overlay),
+                .profiling_overlay).unwrap_or_default(),
         );
         if parent.is_nil() || scene.is_nil() {
             return;
@@ -632,7 +632,7 @@ methods!({
             scene_ui_parent(ctx, ctx.id),
             with_state!(ctx.run, DemoManagerState, ctx.id, |state| state
                 .scenes
-                .info_overlay),
+                .info_overlay).unwrap_or_default(),
         );
         if parent.is_nil() || scene.is_nil() {
             return;
@@ -658,7 +658,7 @@ methods!({
         }
         let fade_active = with_state!(ctx.run, DemoManagerState, ctx.id, |state| {
             state.runtime.fade_active
-        });
+        }).unwrap_or_default();
         if fade_active {
             return;
         }
@@ -673,7 +673,7 @@ methods!({
     fn queue_restart_demo(&self, ctx: &mut ScriptContext<'_, API>) {
         let active_demo = with_state!(ctx.run, DemoManagerState, ctx.id, |state| {
             state.runtime.active_demo
-        });
+        }).unwrap_or_default();
         if active_demo == DemoKind::None {
             self.resume_demo(ctx);
             return;
@@ -760,14 +760,14 @@ methods!({
 
         let (alpha, active) = with_state!(ctx.run, DemoManagerState, ctx.id, |state| {
             (state.runtime.fade_alpha, state.runtime.fade_active)
-        });
+        }).unwrap_or_default();
         self.apply_transition_fade(ctx, alpha, active);
     }
 
     fn execute_fade_action(&self, ctx: &mut ScriptContext<'_, API>) {
         let (action, demo) = with_state!(ctx.run, DemoManagerState, ctx.id, |state| {
             (state.runtime.fade_action, state.runtime.queued_demo)
-        });
+        }).unwrap_or_default();
 
         match action {
             FadeAction::None => {}
@@ -836,7 +836,7 @@ methods!({
         self.apply_demo_pause(ctx, false);
         let root = with_state!(ctx.run, DemoManagerState, ctx.id, |state| {
             state.refs.active_demo_root
-        });
+        }).unwrap_or_default();
         if !root.is_nil() {
             remove_node!(ctx.run, root);
         }
@@ -861,7 +861,7 @@ methods!({
     fn resume_demo(&self, ctx: &mut ScriptContext<'_, API>) {
         let active_demo = with_state!(ctx.run, DemoManagerState, ctx.id, |state| {
             state.runtime.active_demo
-        });
+        }).unwrap_or_default();
         let has_demo = active_demo != DemoKind::None;
         self.apply_demo_pause(ctx, false);
         with_state_mut!(ctx.run, DemoManagerState, ctx.id, |state| {
@@ -882,7 +882,7 @@ methods!({
     fn apply_demo_pause(&self, ctx: &mut ScriptContext<'_, API>, paused: bool) {
         let (root, already_applied) = with_state!(ctx.run, DemoManagerState, ctx.id, |state| {
             (state.refs.active_demo_root, state.runtime.pause_applied)
-        });
+        }).unwrap_or_default();
 
         if paused {
             if already_applied || root.is_nil() {
@@ -949,7 +949,7 @@ methods!({
                     state.paused_anim_trees.clone(),
                     state.paused_scripts.clone(),
                 )
-            });
+            }).unwrap_or_default();
 
         for saved in scripts {
             if saved.update {
@@ -1050,7 +1050,7 @@ methods!({
                 state.refs.info_overlay_root,
                 state.runtime.pause_alpha,
             )
-        });
+        }).unwrap_or_default();
         let show_hub_menu = mode == DemoMode::Hub
             && !matches!(fade_action, FadeAction::LoadDemo | FadeAction::RestartDemo);
         set_tree_visible!(ctx.run, menu_root, show_hub_menu);
@@ -1073,7 +1073,7 @@ methods!({
                     state.runtime.active_demo,
                     state.refs.active_demo_root,
                 )
-            });
+            }).unwrap_or_default();
         if overlay.is_nil() {
             return;
         }
@@ -1089,7 +1089,7 @@ methods!({
     fn apply_info_overlay_to_active_demo(&self, ctx: &mut ScriptContext<'_, API>) {
         let (root, overlay) = with_state!(ctx.run, DemoManagerState, ctx.id, |state| {
             (state.refs.active_demo_root, state.refs.info_overlay_root)
-        });
+        }).unwrap_or_default();
         if root.is_nil() {
             return;
         }
@@ -1111,7 +1111,7 @@ methods!({
                     state.refs.pause_buttons.clone(),
                     state.runtime.pause_alpha,
                 )
-            });
+            }).unwrap_or_default();
 
         let hub_visible = mode == DemoMode::Hub
             && !matches!(fade_action, FadeAction::LoadDemo | FadeAction::RestartDemo);
@@ -1173,7 +1173,7 @@ methods!({
     fn sync_mouse_sensitivity_label(&self, ctx: &mut ScriptContext<'_, API>) {
         let (label, sensitivity) = with_state!(ctx.run, DemoManagerState, ctx.id, |state| {
             (state.refs.pause_sens_label, state.runtime.mouse_sensitivity)
-        });
+        }).unwrap_or_default();
         if label.is_nil() {
             return;
         }
@@ -1192,7 +1192,7 @@ methods!({
                     .mouse_sensitivity
                     .clamp(MIN_MOUSE_SENSITIVITY, MAX_MOUSE_SENSITIVITY),
             )
-        });
+        }).unwrap_or_default();
         if root.is_nil() {
             return;
         }
@@ -1212,7 +1212,7 @@ methods!({
     ) {
         let root = with_state!(ctx.run, DemoManagerState, ctx.id, |state| {
             state.refs.active_demo_root
-        });
+        }).unwrap_or_default();
         if root.is_nil() {
             return;
         }
@@ -1229,7 +1229,7 @@ methods!({
                     .freecam_speed
                     .clamp(MIN_FREECAM_SPEED, MAX_FREECAM_SPEED),
             )
-        });
+        }).unwrap_or_default();
         if root.is_nil() {
             return;
         }
@@ -1247,7 +1247,7 @@ methods!({
     fn apply_transition_fade(&self, ctx: &mut ScriptContext<'_, API>, alpha: f32, visible: bool) {
         let (root, panel) = with_state!(ctx.run, DemoManagerState, ctx.id, |state| {
             (state.refs.fade_root, state.refs.fade_panel)
-        });
+        }).unwrap_or_default();
         let clamped = if visible { alpha.clamp(0.0, 1.0) } else { 0.0 };
         let show = visible && clamped > 0.001;
         let color = FADE_COLOR.with_alpha(clamped);
@@ -1277,7 +1277,7 @@ methods!({
                     state.refs.pause_buttons.clone(),
                     state.refs.pause_sens_label,
                 )
-            });
+            }).unwrap_or_default();
         if root.is_nil() {
             return;
         }
@@ -1332,7 +1332,7 @@ fn scene_ui_parent<API: ScriptAPI + ?Sized>(
     manager: NodeID,
 ) -> NodeID {
     let ui_root = with_state!(ctx.run, DemoManagerState, manager, |state| state
-        .demo_ui_root);
+        .demo_ui_root).unwrap_or_default();
     if !ui_root.is_nil() {
         return ui_root;
     }

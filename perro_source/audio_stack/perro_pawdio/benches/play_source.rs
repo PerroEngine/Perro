@@ -130,7 +130,9 @@ fn bench_play(c: &mut Criterion) {
             let mut elapsed = Duration::ZERO;
             for id in 0..iters {
                 let start = Instant::now();
-                player.play_source(request(id, 0.0)).unwrap();
+                player
+                    .play_source(request(id, 0.0))
+                    .expect("test setup/result must succeed");
                 elapsed += start.elapsed();
                 player.stop_source(SOURCE);
             }
@@ -143,7 +145,9 @@ fn bench_play(c: &mut Criterion) {
             let mut elapsed = Duration::ZERO;
             for id in 0..iters {
                 let start = Instant::now();
-                player.play_source(request(id, 0.005)).unwrap();
+                player
+                    .play_source(request(id, 0.005))
+                    .expect("test setup/result must succeed");
                 elapsed += start.elapsed();
                 player.stop_source(SOURCE);
             }
@@ -157,7 +161,9 @@ fn bench_play(c: &mut Criterion) {
             for id in 0..iters {
                 player.drop_source_asset(SOURCE);
                 let start = Instant::now();
-                player.play_source(request(id, 0.0)).unwrap();
+                player
+                    .play_source(request(id, 0.0))
+                    .expect("test setup/result must succeed");
                 elapsed += start.elapsed();
                 player.stop_source(SOURCE);
             }
@@ -186,7 +192,7 @@ fn bench_play(c: &mut Criterion) {
                         let start = Instant::now();
                         player
                             .play_source(request_for(id, sources[idx], Some(bus), 0.0))
-                            .unwrap();
+                            .expect("test setup/result must succeed");
                         elapsed += start.elapsed();
                     }
                     elapsed
@@ -227,11 +233,15 @@ fn bench_play(c: &mut Criterion) {
             for id in 0..iters {
                 let idx = id as usize % 64;
                 let audio = Audio2D::new(sources[idx], [idx as f32 * 0.1, 2.0], 32.0);
-                let mut req = audio.to_playback(listener_2d).unwrap();
+                let mut req = audio
+                    .to_playback(listener_2d)
+                    .expect("test setup/result must succeed");
                 req.id = id;
                 req.bus_id = Some(AudioBusID::from_u64((idx % 16) as u64 + 1));
                 let start = Instant::now();
-                player.play_source(req).unwrap();
+                player
+                    .play_source(req)
+                    .expect("test setup/result must succeed");
                 elapsed += start.elapsed();
             }
             elapsed
@@ -245,11 +255,15 @@ fn bench_play(c: &mut Criterion) {
             for id in 0..iters {
                 let idx = id as usize % 64;
                 let audio = Audio3D::new(sources[idx], [idx as f32 * 0.1, 2.0, -8.0], 32.0);
-                let mut req = audio.to_playback(listener_3d).unwrap();
+                let mut req = audio
+                    .to_playback(listener_3d)
+                    .expect("test setup/result must succeed");
                 req.id = id;
                 req.bus_id = Some(AudioBusID::from_u64((idx % 16) as u64 + 1));
                 let start = Instant::now();
-                player.play_source(req).unwrap();
+                player
+                    .play_source(req)
+                    .expect("test setup/result must succeed");
                 elapsed += start.elapsed();
             }
             elapsed
@@ -260,7 +274,9 @@ fn bench_play(c: &mut Criterion) {
     let mut update_req = request(UPDATE_BENCH_ID, 0.0);
     update_req.looped = true;
     update_req.volume = 0.0;
-    player.play_source(update_req).unwrap();
+    player
+        .play_source(update_req)
+        .expect("test setup/result must succeed");
 
     c.bench_function("pawdio_update_spatial_direct_full_dsp", |b| {
         b.iter_custom(|iters| {
@@ -320,7 +336,9 @@ fn bench_play(c: &mut Criterion) {
             for id in 0..iters {
                 let idx = id as usize % 64;
                 let audio = Audio3D::new(SOURCE, [idx as f32 * 0.1, 2.0, -8.0], 32.0);
-                let req = audio.to_playback(listener_3d).unwrap();
+                let req = audio
+                    .to_playback(listener_3d)
+                    .expect("test setup/result must succeed");
                 let start = Instant::now();
                 assert!(controller.play_spatial_source(req).is_some());
                 elapsed += start.elapsed();
@@ -339,7 +357,9 @@ fn bench_play(c: &mut Criterion) {
             for id in 0..iters {
                 let idx = id as usize % 64;
                 let audio = Audio3D::new(SOURCE, [idx as f32 * 0.1, 2.0, -8.0], 32.0);
-                let req = audio.to_playback(listener_3d).unwrap();
+                let req = audio
+                    .to_playback(listener_3d)
+                    .expect("test setup/result must succeed");
                 let start = Instant::now();
                 assert!(
                     controller

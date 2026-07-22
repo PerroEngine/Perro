@@ -180,6 +180,7 @@ pub struct Sprite2DCommand {
     pub tint: Color,
     pub uv_min: [f32; 2],
     pub uv_max: [f32; 2],
+    pub uv_normalized: bool,
     pub size: [f32; 2],
     pub z_index: i32,
 }
@@ -924,6 +925,7 @@ impl Default for Sprite2DCommand {
             tint: Color::WHITE,
             uv_min: [0.0, 0.0],
             uv_max: [0.0, 0.0],
+            uv_normalized: false,
             size: [0.0, 0.0],
             z_index: 0,
         }

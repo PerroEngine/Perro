@@ -65,7 +65,10 @@ fn repeated_equal_draw_upsert_keep_revision_stable() {
     assert_eq!(renderer.draw_revision(), first_revision);
     assert_eq!(renderer.retained_draw_count(), 1);
     assert_eq!(
-        renderer.retained_draw(node).unwrap().kind,
+        renderer
+            .retained_draw(node)
+            .expect("test setup/result must succeed")
+            .kind,
         Draw3DKind::Mesh(mesh)
     );
 }
@@ -152,7 +155,9 @@ fn camera_stream_quad_retains_texture_draw() {
     );
     let _ = renderer.prepare_frame(&resources);
 
-    let retained = renderer.retained_draw(node).unwrap();
+    let retained = renderer
+        .retained_draw(node)
+        .expect("test setup/result must succeed");
     assert_eq!(
         retained.kind,
         Draw3DKind::CameraStreamQuad {

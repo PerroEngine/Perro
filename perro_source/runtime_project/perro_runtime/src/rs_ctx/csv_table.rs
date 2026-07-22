@@ -97,7 +97,9 @@ mod tests {
 
     #[test]
     fn csv_loads_dev_table_and_caches() {
-        let _project_root_guard = crate::rs_ctx::PROJECT_ROOT_TEST_LOCK.lock().unwrap();
+        let _project_root_guard = crate::rs_ctx::PROJECT_ROOT_TEST_LOCK
+            .lock()
+            .expect("test or bench setup must succeed");
         let _root = setup_csv_project();
         let api = RuntimeResourceApi::new(None, None, None, None, None, None, None, None);
 
@@ -147,17 +149,22 @@ mod tests {
 
     #[test]
     fn csv_saves_buf_to_disk() {
-        let _project_root_guard = crate::rs_ctx::PROJECT_ROOT_TEST_LOCK.lock().unwrap();
+        let _project_root_guard = crate::rs_ctx::PROJECT_ROOT_TEST_LOCK
+            .lock()
+            .expect("test or bench setup must succeed");
         let root = setup_csv_project();
         let api = RuntimeResourceApi::new(None, None, None, None, None, None, None, None);
         let mut csv = perro_csv::CsvBuf::new(["id", "name", "power"]);
-        csv.push_row(["axe", "Axe", "14"]).unwrap();
-        csv.push_row(["bow", "Bow", "8"]).unwrap();
+        csv.push_row(["axe", "Axe", "14"])
+            .expect("test or bench setup must succeed");
+        csv.push_row(["bow", "Bow", "8"])
+            .expect("test or bench setup must succeed");
 
         api.save_csv_source("res://data/generated.csv", &csv)
-            .unwrap();
+            .expect("test or bench setup must succeed");
 
-        let saved = std::fs::read_to_string(root.join("res/data/generated.csv")).unwrap();
+        let saved = std::fs::read_to_string(root.join("res/data/generated.csv"))
+            .expect("test or bench setup must succeed");
         assert!(saved.contains("id,name,power"));
         assert!(saved.contains("axe,Axe,14"));
     }

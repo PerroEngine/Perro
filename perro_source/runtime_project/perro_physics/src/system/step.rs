@@ -440,25 +440,55 @@ mod tests {
         system.queue_force_3d(id_3d, Vector3::new(1.0, 1.0, 1.0));
         system.apply_pending_forces_2d(f32::NAN, 1.0 / 60.0);
         system.apply_pending_forces_3d(f32::NAN, 1.0 / 60.0);
-        let body_2d = system.world_2d.as_ref().unwrap();
-        let body_2d = body_2d.bodies.get(body_2d.body_map[&id_2d].handle).unwrap();
-        let body_3d = system.world_3d.as_ref().unwrap();
-        let body_3d = body_3d.bodies.get(body_3d.body_map[&id_3d].handle).unwrap();
+        let body_2d = system
+            .world_2d
+            .as_ref()
+            .expect("test or bench setup must succeed");
+        let body_2d = body_2d
+            .bodies
+            .get(body_2d.body_map[&id_2d].handle)
+            .expect("test or bench setup must succeed");
+        let body_3d = system
+            .world_3d
+            .as_ref()
+            .expect("test or bench setup must succeed");
+        let body_3d = body_3d
+            .bodies
+            .get(body_3d.body_map[&id_3d].handle)
+            .expect("test or bench setup must succeed");
         assert!(body_2d.linvel().iter().all(|value| value.is_finite()));
         assert!(body_3d.linvel().iter().all(|value| value.is_finite()));
     }
 
     fn pose_2d(system: &PhysicsSystem, id: NodeID) -> [f32; 2] {
-        let world = system.world_2d.as_ref().unwrap();
-        let state = world.body_map.get(&id).unwrap();
-        let body = world.bodies.get(state.handle).unwrap();
+        let world = system
+            .world_2d
+            .as_ref()
+            .expect("test or bench setup must succeed");
+        let state = world
+            .body_map
+            .get(&id)
+            .expect("test or bench setup must succeed");
+        let body = world
+            .bodies
+            .get(state.handle)
+            .expect("test or bench setup must succeed");
         [body.translation().x, body.translation().y]
     }
 
     fn pose_3d(system: &PhysicsSystem, id: NodeID) -> [f32; 3] {
-        let world = system.world_3d.as_ref().unwrap();
-        let state = world.body_map.get(&id).unwrap();
-        let body = world.bodies.get(state.handle).unwrap();
+        let world = system
+            .world_3d
+            .as_ref()
+            .expect("test or bench setup must succeed");
+        let state = world
+            .body_map
+            .get(&id)
+            .expect("test or bench setup must succeed");
+        let body = world
+            .bodies
+            .get(state.handle)
+            .expect("test or bench setup must succeed");
         [
             body.translation().x,
             body.translation().y,

@@ -48,7 +48,7 @@ lifecycle!({});
 
 methods!({
     fn activate(&self, ctx: &mut ScriptContext<'_, API>) -> bool {
-        let Some(door) = with_state!(ctx.run, SwitchState, ctx.id, |state| state.door)
+        let Some(door) = with_state!(ctx.run, SwitchState, ctx.id, |state| state.door).unwrap_or_default()
         else {
             return false;
         };

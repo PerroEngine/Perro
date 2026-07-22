@@ -34,7 +34,14 @@ fn tileset_binary_roundtrip_keeps_collision_shapes() {
 
     let bytes = encode_tileset_2d_binary(&tileset);
     assert_eq!(&bytes[0..5], b"PTSET");
-    assert_eq!(u32::from_le_bytes(bytes[5..9].try_into().unwrap()), 1);
+    assert_eq!(
+        u32::from_le_bytes(
+            bytes[5..9]
+                .try_into()
+                .expect("test setup/result must succeed")
+        ),
+        1
+    );
     let decoded = decode_tileset_2d_binary(&bytes).expect("tileset decodes");
 
     assert_eq!(decoded, tileset);

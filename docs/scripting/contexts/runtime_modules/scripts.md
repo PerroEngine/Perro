@@ -78,7 +78,7 @@ struct HazardState {
 
 lifecycle!({
     fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let target = with_state!(ctx.run, HazardState, ctx.id, |state| state.target);
+        let target = with_state!(ctx.run, HazardState, ctx.id, |state| state.target).unwrap_or_default();
 
         if let Some(player) = target {
             let survived = call_method!(
@@ -113,11 +113,11 @@ See [Variant](../../variant.md).
 | Field | Detail |
 | --- | --- |
 | Access | `ctx.run.Scripts()` |
-| Signature | `pub fn with_state<T: 'static, V: Default, F>(&mut self, script_id: NodeID, f: F) -> V where F: FnOnce(&T) -> V,` |
-| Params | `&mut self, script_id: NodeID, f: F) -> V where F: FnOnce(&T` |
-| Returns | `V where F: FnOnce(&T) -> V,` |
+| Signature | `pub fn with_state<T: 'static, V, F>(&mut self, script_id: NodeID, f: F) -> Option<V> where F: FnOnce(&T) -> V,` |
+| Params | `&mut self, script_id: NodeID, f: F` |
+| Returns | `Option<V>` |
 | Use when | Read typed state on this script or another known script type without dynamic `Variant` conversion. |
-| Fails when / edge behavior | Returns `V::default()` when the script id is missing or the stored state type is not `T`. |
+| Fails when / edge behavior | Returns `None` when the script id is missing or the stored state type is not `T`. |
 
 ### `with_state_mut`
 
@@ -236,9 +236,9 @@ See [Variant](../../variant.md).
 | Access | `ctx.run.Scripts()` |
 | Signature | `with_state!(ctx.run, state_ty, id, f)` |
 | Params | `ctx, state_ty, id, f` |
-| Returns | `same as backing method` |
+| Returns | `Option<V>` with the closure result |
 | Use when | Use `with_state` to with state for runtime script composition; prefer typed state access when the concrete state type is known. |
-| Fails when / edge behavior | Uses the backing `with_state` return and failure behavior unchanged; the wrapper adds no coercion or fallback. |
+| Fails when / edge behavior | Returns `None` for a missing ID or wrong state type. |
 
 ### `with_state_mut`
 

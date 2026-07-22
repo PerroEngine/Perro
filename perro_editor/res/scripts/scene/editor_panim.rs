@@ -753,7 +753,9 @@ emit_signal = { name="footfall", params=[1] }
         assert_eq!(doc.fps, 60.0);
         assert_eq!(doc.objects.len(), 2);
         assert_eq!(doc.tracks.len(), 2);
-        let hero = &doc.tracks[doc.track_index("Hero", "position").unwrap()];
+        let hero = &doc.tracks[doc
+            .track_index("Hero", "position")
+            .expect("sample must contain Hero position track")];
         assert_eq!(hero.keys.len(), 2);
         assert_eq!(hero.keys[0].value, "(0, 0, 0)");
         assert_eq!(hero.keys[0].ease.as_deref(), Some("ease_in"));
@@ -774,7 +776,9 @@ emit_signal = { name="footfall", params=[1] }
     fn set_and_remove_key_keep_sorted_order() {
         let mut doc = parse_panim(SAMPLE);
         doc.set_key("Hero", "position", 5, "(1, 0, 0)".to_string());
-        let idx = doc.track_index("Hero", "position").unwrap();
+        let idx = doc
+            .track_index("Hero", "position")
+            .expect("sample must contain Hero position track");
         let frames: Vec<u32> = doc.tracks[idx].keys.iter().map(|k| k.frame).collect();
         assert_eq!(frames, vec![0, 5, 10]);
         assert!(doc.remove_key("Hero", "position", 5));
@@ -787,7 +791,9 @@ emit_signal = { name="footfall", params=[1] }
     fn open_frames_round_trip() {
         let text = "[Animation]\nname = \"A\"\nfps = 30\n[/Animation]\n\n[Objects]\nHand = Node2D\n[/Objects]\n\n[Frame0?]\n@Hand {\n    rotation = 0\n}\n[/Frame0]\n\n[Frame20]\n@Hand {\n    rotation = 1.5\n}\n[/Frame20]\n";
         let doc = parse_panim(text);
-        let idx = doc.track_index("Hand", "rotation").unwrap();
+        let idx = doc
+            .track_index("Hand", "rotation")
+            .expect("sample must contain Hand rotation track");
         assert!(doc.tracks[idx].keys[0].open);
         assert!(!doc.tracks[idx].keys[1].open);
         assert_eq!(parse_panim(&serialize_panim(&doc)), doc);
@@ -806,7 +812,9 @@ emit_signal = { name="footfall", params=[1] }
     #[test]
     fn active_prev_next_key_frames_scan_selected_track() {
         let doc = parse_panim(SAMPLE);
-        let hero = doc.track_index("Hero", "position").unwrap();
+        let hero = doc
+            .track_index("Hero", "position")
+            .expect("sample must contain Hero position track");
         // Keys at frames 0 and 10.
         assert_eq!(doc.active_key_frame(hero, 1, 2), Some(0));
         assert_eq!(doc.active_key_frame(hero, 9, 2), Some(10));
@@ -820,11 +828,13 @@ emit_signal = { name="footfall", params=[1] }
     #[test]
     fn per_key_interp_ease_value_round_trip() {
         let mut doc = parse_panim(SAMPLE);
-        let hero = doc.track_index("Hero", "position").unwrap();
+        let hero = doc
+            .track_index("Hero", "position")
+            .expect("sample must contain Hero position track");
         assert!(doc.set_key_interp(hero, 10, Some("step".to_string())));
         assert!(doc.set_key_ease(hero, 10, Some("ease_out".to_string())));
         assert!(doc.set_key_value(hero, 10, "(9, 0, 0)".to_string()));
-        let key = doc.key_at(hero, 10).unwrap();
+        let key = doc.key_at(hero, 10).expect("sample must contain frame 10 key");
         assert_eq!(key.interp.as_deref(), Some("step"));
         assert_eq!(key.ease.as_deref(), Some("ease_out"));
         assert_eq!(key.value, "(9, 0, 0)");
@@ -833,7 +843,12 @@ emit_signal = { name="footfall", params=[1] }
         assert_eq!(round, doc);
         // Clearing back to default drops the control lines.
         assert!(doc.set_key_interp(hero, 10, None));
-        assert!(doc.key_at(hero, 10).unwrap().interp.is_none());
+        assert!(
+            doc.key_at(hero, 10)
+                .expect("sample must contain frame 10 key")
+                .interp
+                .is_none()
+        );
         assert_eq!(parse_panim(&serialize_panim(&doc)), doc);
     }
 
@@ -845,9 +860,13 @@ emit_signal = { name="footfall", params=[1] }
         let text = "[Animation]\nname = \"Rig\"\nfps = 30\n[/Animation]\n\n[Objects]\nHero = Skeleton3D\n[/Objects]\n\n[Frame0]\n@Hero {\n    bones[\"Spine\"].position = (0, 1, 0)\n    bones[\"Spine\"].rotation = (0, 0, 0, 1)\n    bones[\"Spine\"].scale = (1, 1, 1)\n}\n[/Frame0]\n";
         let doc = parse_panim(text);
         assert_eq!(doc.tracks.len(), 3);
-        let pos = doc.track_index("Hero", "bones[\"Spine\"].position").unwrap();
+        let pos = doc
+            .track_index("Hero", "bones[\"Spine\"].position")
+            .expect("sample must contain Spine position track");
         assert_eq!(doc.tracks[pos].keys[0].value, "(0, 1, 0)");
-        let rot = doc.track_index("Hero", "bones[\"Spine\"].rotation").unwrap();
+        let rot = doc
+            .track_index("Hero", "bones[\"Spine\"].rotation")
+            .expect("sample must contain Spine rotation track");
         assert_eq!(doc.tracks[rot].keys[0].value, "(0, 0, 0, 1)");
         assert!(doc.track_index("Hero", "bones[\"Spine\"].scale").is_some());
         assert_eq!(parse_panim(&serialize_panim(&doc)), doc);
@@ -856,20 +875,26 @@ emit_signal = { name="footfall", params=[1] }
     #[test]
     fn toggle_key_open_flips_and_round_trips() {
         let mut doc = parse_panim(SAMPLE);
-        let hero = doc.track_index("Hero", "position").unwrap();
+        let hero = doc
+            .track_index("Hero", "position")
+            .expect("sample must contain Hero position track");
         assert_eq!(doc.toggle_key_open(hero, 0), Some(true));
-        assert!(doc.key_at(hero, 0).unwrap().open);
+        assert!(doc.key_at(hero, 0).expect("sample must contain frame 0 key").open);
         // Open flag survives serialize/parse (track order is not guaranteed
         // stable when the earliest frame's object changes, so re-resolve it).
         let round = parse_panim(&serialize_panim(&doc));
-        let hero = round.track_index("Hero", "position").unwrap();
-        assert!(round.key_at(hero, 0).unwrap().open);
-        assert!(!round.key_at(hero, 10).unwrap().open);
+        let hero = round
+            .track_index("Hero", "position")
+            .expect("round trip must contain Hero position track");
+        assert!(round.key_at(hero, 0).expect("round trip must contain frame 0 key").open);
+        assert!(!round.key_at(hero, 10).expect("round trip must contain frame 10 key").open);
         // Flip back closes it.
         let mut doc = round;
-        let hero = doc.track_index("Hero", "position").unwrap();
+        let hero = doc
+            .track_index("Hero", "position")
+            .expect("round trip must contain Hero position track");
         assert_eq!(doc.toggle_key_open(hero, 0), Some(false));
-        assert!(!doc.key_at(hero, 0).unwrap().open);
+        assert!(!doc.key_at(hero, 0).expect("round trip must contain frame 0 key").open);
     }
 
     #[test]
@@ -900,7 +925,9 @@ emit_signal = { name="footfall", params=[1] }
         let mut doc = parse_panim(
             "[Animation]\nname = \"Rig\"\nfps = 30\n[/Animation]\n\n[Objects]\nHero = Skeleton2D\n[/Objects]\n\n[Frame0]\n@Hero {\n    bones[\"Arm\"].rotation.ease = \"ease_in\"\n    bones[\"Arm\"].rotation = 0.5\n}\n[/Frame0]\n",
         );
-        let idx = doc.track_index("Hero", "bones[\"Arm\"].rotation").unwrap();
+        let idx = doc
+            .track_index("Hero", "bones[\"Arm\"].rotation")
+            .expect("sample must contain Arm rotation track");
         assert_eq!(doc.tracks[idx].keys[0].value, "0.5");
         assert_eq!(doc.tracks[idx].keys[0].ease.as_deref(), Some("ease_in"));
         // No stray track created from the `.ease` control line.
@@ -913,7 +940,8 @@ emit_signal = { name="footfall", params=[1] }
     fn bone_track_field_round_trips_through_parse() {
         for sub in BONE_TRACK_SUBFIELDS {
             let field = bone_track_field("Spine.01", sub);
-            let (name, parsed_sub) = parse_bone_field(&field).unwrap();
+            let (name, parsed_sub) =
+                parse_bone_field(&field).expect("generated bone field must parse");
             assert_eq!(name, "Spine.01");
             assert_eq!(parsed_sub, sub);
         }

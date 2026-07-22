@@ -19,7 +19,7 @@ methods!({
         ctx: &mut ScriptContext<'_, API>,
         texture: TextureID,
     ) -> bool {
-        let icon = with_state!(ctx.run, PatternPlayer, ctx.id, |state| state.icon);
+        let icon = with_state!(ctx.run, PatternPlayer, ctx.id, |state| state.icon).unwrap_or_default();
         if icon.is_nil() || texture.is_nil() {
             return false;
         }

@@ -550,7 +550,13 @@ mod tests {
         assert!((first[2] - 1.0).abs() < 0.0001);
         assert!(first[3].abs() < 0.0001);
 
-        let environment = lighting.sky.as_mut().unwrap().environment.as_mut().unwrap();
+        let environment = lighting
+            .sky
+            .as_mut()
+            .expect("required value must be present")
+            .environment
+            .as_mut()
+            .expect("required value must be present");
         environment.intensity = 0.5;
         environment.rotation_degrees = 180.0;
         let second = environment_params(&lighting);

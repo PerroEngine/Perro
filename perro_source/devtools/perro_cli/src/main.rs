@@ -402,7 +402,8 @@ mod cli_arg_tests {
     fn required_flag_value_does_not_consume_next_flag() {
         let args = args(&["perro", "dev", "--path", "--release"]);
 
-        let err = validate_command_args("dev", &args).unwrap_err();
+        let err =
+            validate_command_args("dev", &args).expect_err("operation must fail in this test");
 
         assert_eq!(err, "missing value for flag `--path` in `dev`");
         assert_eq!(parse_flag_value(&args, "--path"), None);
@@ -412,7 +413,8 @@ mod cli_arg_tests {
     fn unknown_flag_reports_command_and_valid_schema() {
         let args = args(&["perro", "clean", "--pth", "project"]);
 
-        let err = validate_command_args("clean", &args).unwrap_err();
+        let err =
+            validate_command_args("clean", &args).expect_err("operation must fail in this test");
 
         assert!(err.contains("unknown flag `--pth` for `clean`"));
         assert!(err.contains("valid flags: --path"));

@@ -597,6 +597,7 @@ fn sprite_texture_upsert_is_accepted_after_texture_creation() {
             tint: Color::WHITE,
             uv_min: [0.0, 0.0],
             uv_max: [0.0, 0.0],
+            uv_normalized: false,
             size: [0.0, 0.0],
             z_index: 2,
         },
@@ -611,6 +612,7 @@ fn sprite_texture_upsert_is_accepted_after_texture_creation() {
             tint: Color::WHITE,
             uv_min: [0.0, 0.0],
             uv_max: [0.0, 0.0],
+            uv_normalized: false,
             size: [0.0, 0.0],
             z_index: 2,
         })
@@ -1231,6 +1233,7 @@ fn rejected_sprite_texture_does_not_update_retained_binding() {
             tint: Color::WHITE,
             uv_min: [0.0, 0.0],
             uv_max: [0.0, 0.0],
+            uv_normalized: false,
             size: [0.0, 0.0],
             z_index: 0,
         },
@@ -1273,6 +1276,7 @@ fn rejected_sprite_texture_swap_keeps_previous_texture_binding() {
             tint: Color::WHITE,
             uv_min: [0.0, 0.0],
             uv_max: [0.0, 0.0],
+            uv_normalized: false,
             size: [0.0, 0.0],
             z_index: 1,
         },
@@ -1289,6 +1293,7 @@ fn rejected_sprite_texture_swap_keeps_previous_texture_binding() {
             tint: Color::WHITE,
             uv_min: [0.0, 0.0],
             uv_max: [0.0, 0.0],
+            uv_normalized: false,
             size: [0.0, 0.0],
             z_index: 7,
         },
@@ -1303,6 +1308,7 @@ fn rejected_sprite_texture_swap_keeps_previous_texture_binding() {
             tint: Color::WHITE,
             uv_min: [0.0, 0.0],
             uv_max: [0.0, 0.0],
+            uv_normalized: false,
             size: [0.0, 0.0],
             z_index: 7,
         })
@@ -1327,6 +1333,7 @@ fn retained_sprite_instances_count_texture_refs_per_node() {
                 tint: Color::WHITE,
                 uv_min: [0.0, 0.0],
                 uv_max: [1.0, 1.0],
+                uv_normalized: false,
                 size: [16.0, 16.0],
                 z_index: 0,
             },
@@ -1397,7 +1404,7 @@ fn stale_async_texture_result_after_drop_does_not_emit_loaded() {
                 height: 1,
             }),
         })
-        .unwrap();
+        .expect("test setup/result must succeed");
 
     graphics.draw_frame();
 
@@ -1433,7 +1440,7 @@ fn async_texture_decode_failure_notifies_all_waiters_once() {
             id,
             texture: Err("decode failed".to_string()),
         })
-        .unwrap();
+        .expect("test setup/result must succeed");
 
     graphics.draw_frame();
 

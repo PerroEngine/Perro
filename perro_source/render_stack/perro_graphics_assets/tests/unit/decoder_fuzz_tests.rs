@@ -63,7 +63,10 @@ fn ptex_bytes(payload: &[u8], flags: u32, raw_len: u32) -> Vec<u8> {
 fn check_ptex(bytes: &[u8]) {
     if let Some((rgba, width, height)) = decode_ptex(bytes) {
         assert!(width > 0 && height > 0);
-        let pixel_bytes = (width as u64).checked_mul(height as u64).unwrap() * 4;
+        let pixel_bytes = (width as u64)
+            .checked_mul(height as u64)
+            .expect("test setup/result must succeed")
+            * 4;
         assert!(pixel_bytes <= PTEX_MAX_RAW_BYTES as u64 * 4);
         assert_eq!(rgba.len() as u64, pixel_bytes);
     }

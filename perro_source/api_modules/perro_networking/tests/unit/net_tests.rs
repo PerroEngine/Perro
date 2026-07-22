@@ -39,12 +39,13 @@ fn net_event_maps_to_signal_name_id_and_params() {
     ignore = "requires local socket access"
 )]
 fn udp_endpoint_sends_loopback_packet() {
-    let a = UdpEndpoint::bind("127.0.0.1:0").unwrap();
-    let b = UdpEndpoint::bind("127.0.0.1:0").unwrap();
+    let a = UdpEndpoint::bind("127.0.0.1:0").expect("test setup must succeed");
+    let b = UdpEndpoint::bind("127.0.0.1:0").expect("test setup must succeed");
 
-    a.send_to(b"ping", b.local_addr()).unwrap();
+    a.send_to(b"ping", b.local_addr())
+        .expect("test setup must succeed");
 
-    let packet = wait_for(|| b.recv_from(32).unwrap());
+    let packet = wait_for(|| b.recv_from(32).expect("test setup must succeed"));
     assert_eq!(packet.bytes, b"ping");
     assert_eq!(packet.peer, a.local_addr().to_string());
 }
@@ -55,18 +56,18 @@ fn udp_endpoint_sends_loopback_packet() {
     ignore = "requires local socket access"
 )]
 fn tcp_host_accepts_and_reads_loopback_data() {
-    let host = TcpHost::bind("127.0.0.1:0").unwrap();
+    let host = TcpHost::bind("127.0.0.1:0").expect("test setup must succeed");
     let addr = host.local_addr();
 
     let client = thread::spawn(move || {
-        let mut client = TcpConnection::connect(addr).unwrap();
-        client.write(b"hello").unwrap();
+        let mut client = TcpConnection::connect(addr).expect("test setup must succeed");
+        client.write(b"hello").expect("test setup must succeed");
     });
 
-    let mut server = wait_for(|| host.accept().unwrap());
-    let event = wait_for(|| server.poll_event(32).unwrap());
+    let mut server = wait_for(|| host.accept().expect("test setup must succeed"));
+    let event = wait_for(|| server.poll_event(32).expect("test setup must succeed"));
 
-    client.join().unwrap();
+    client.join().expect("test setup must succeed");
     assert_eq!(
         event,
         NetEvent::TcpData {
@@ -78,19 +79,22 @@ fn tcp_host_accepts_and_reads_loopback_data() {
 
 #[test]
 fn frame_codec_roundtrips_and_leaves_partial_data() {
-    let mut bytes = encode_frame(b"one").unwrap();
-    bytes.extend_from_slice(&encode_frame(b"two").unwrap());
+    let mut bytes = encode_frame(b"one").expect("test setup must succeed");
+    bytes.extend_from_slice(&encode_frame(b"two").expect("test setup must succeed"));
     bytes.extend_from_slice(&[0, 0]);
 
     assert_eq!(
-        decode_next_frame(&mut bytes, 32).unwrap(),
+        decode_next_frame(&mut bytes, 32).expect("test setup must succeed"),
         Some(b"one".to_vec())
     );
     assert_eq!(
-        decode_next_frame(&mut bytes, 32).unwrap(),
+        decode_next_frame(&mut bytes, 32).expect("test setup must succeed"),
         Some(b"two".to_vec())
     );
-    assert_eq!(decode_next_frame(&mut bytes, 32).unwrap(), None);
+    assert_eq!(
+        decode_next_frame(&mut bytes, 32).expect("test setup must succeed"),
+        None
+    );
     assert_eq!(bytes, vec![0, 0]);
 }
 
@@ -100,21 +104,21 @@ fn frame_codec_roundtrips_and_leaves_partial_data() {
     ignore = "requires local socket access"
 )]
 fn tcp_frame_queue_accepts_multiple_valid_frames_and_reports_eof() {
-    let host = TcpHost::bind("127.0.0.1:0").unwrap();
+    let host = TcpHost::bind("127.0.0.1:0").expect("test setup must succeed");
     let addr = host.local_addr();
     let client = thread::spawn(move || {
-        let mut stream = TcpStream::connect(addr).unwrap();
-        let mut bytes = encode_frame(b"12345678").unwrap();
-        bytes.extend_from_slice(&encode_frame(b"abcdefgh").unwrap());
-        stream.write_all(&bytes).unwrap();
+        let mut stream = TcpStream::connect(addr).expect("test setup must succeed");
+        let mut bytes = encode_frame(b"12345678").expect("test setup must succeed");
+        bytes.extend_from_slice(&encode_frame(b"abcdefgh").expect("test setup must succeed"));
+        stream.write_all(&bytes).expect("test setup must succeed");
     });
-    let mut server = wait_for(|| host.accept().unwrap());
+    let mut server = wait_for(|| host.accept().expect("test setup must succeed"));
 
-    let first = wait_for(|| server.poll_frame_event(8).unwrap());
-    let second = wait_for(|| server.poll_frame_event(8).unwrap());
-    let disconnected = wait_for(|| server.poll_frame_event(8).unwrap());
+    let first = wait_for(|| server.poll_frame_event(8).expect("test setup must succeed"));
+    let second = wait_for(|| server.poll_frame_event(8).expect("test setup must succeed"));
+    let disconnected = wait_for(|| server.poll_frame_event(8).expect("test setup must succeed"));
 
-    client.join().unwrap();
+    client.join().expect("test setup must succeed");
     assert!(matches!(
         first,
         NetEvent::TcpFrame { ref bytes, .. } if bytes == b"12345678"
@@ -124,7 +128,10 @@ fn tcp_frame_queue_accepts_multiple_valid_frames_and_reports_eof() {
         NetEvent::TcpFrame { ref bytes, .. } if bytes == b"abcdefgh"
     ));
     assert!(matches!(disconnected, NetEvent::TcpDisconnected { .. }));
-    assert_eq!(server.poll_frame_event(8).unwrap(), None);
+    assert_eq!(
+        server.poll_frame_event(8).expect("test setup must succeed"),
+        None
+    );
 }
 
 #[test]
@@ -135,22 +142,27 @@ fn tcp_frame_queue_accepts_multiple_valid_frames_and_reports_eof() {
 fn tcp_frame_queue_decodes_many_tiny_frames() {
     const FRAME_COUNT: usize = 10_000;
 
-    let host = TcpHost::bind("127.0.0.1:0").unwrap();
+    let host = TcpHost::bind("127.0.0.1:0").expect("test setup must succeed");
     let addr = host.local_addr();
     let client = thread::spawn(move || {
-        let mut stream = TcpStream::connect(addr).unwrap();
-        stream.write_all(&vec![0_u8; FRAME_COUNT * 4]).unwrap();
+        let mut stream = TcpStream::connect(addr).expect("test setup must succeed");
+        stream
+            .write_all(&vec![0_u8; FRAME_COUNT * 4])
+            .expect("test setup must succeed");
     });
-    let mut server = wait_for(|| host.accept().unwrap());
+    let mut server = wait_for(|| host.accept().expect("test setup must succeed"));
 
     for _ in 0..FRAME_COUNT {
-        assert_eq!(wait_for(|| server.poll_frame(0).unwrap()), Vec::<u8>::new());
+        assert_eq!(
+            wait_for(|| server.poll_frame(0).expect("test setup must succeed")),
+            Vec::<u8>::new()
+        );
     }
     assert!(matches!(
-        wait_for(|| server.poll_frame_event(0).unwrap()),
+        wait_for(|| server.poll_frame_event(0).expect("test setup must succeed")),
         NetEvent::TcpDisconnected { .. }
     ));
-    client.join().unwrap();
+    client.join().expect("test setup must succeed");
 }
 
 #[test]
@@ -159,25 +171,31 @@ fn tcp_frame_queue_decodes_many_tiny_frames() {
     ignore = "requires local socket access"
 )]
 fn tcp_frame_write_keeps_partial_nonblocking_send() {
-    let host = TcpHost::bind("127.0.0.1:0").unwrap();
+    let host = TcpHost::bind("127.0.0.1:0").expect("test setup must succeed");
     let addr = host.local_addr();
     let payload = vec![0x5a; 8 * 1024 * 1024];
     let expected = payload.clone();
     let reader = thread::spawn(move || {
-        let mut stream = TcpStream::connect(addr).unwrap();
+        let mut stream = TcpStream::connect(addr).expect("test setup must succeed");
         thread::sleep(Duration::from_millis(20));
         let mut header = [0_u8; 4];
-        stream.read_exact(&mut header).unwrap();
+        stream
+            .read_exact(&mut header)
+            .expect("test setup must succeed");
         let len = u32::from_be_bytes(header) as usize;
         let mut bytes = vec![0_u8; len];
-        stream.read_exact(&mut bytes).unwrap();
+        stream
+            .read_exact(&mut bytes)
+            .expect("test setup must succeed");
         bytes
     });
-    let mut writer = wait_for(|| host.accept().unwrap());
+    let mut writer = wait_for(|| host.accept().expect("test setup must succeed"));
 
-    writer.write_frame(&payload).unwrap();
+    writer
+        .write_frame(&payload)
+        .expect("test setup must succeed");
     for _ in 0..2_000 {
-        writer.flush_pending().unwrap();
+        writer.flush_pending().expect("test setup must succeed");
         if writer.pending_write_bytes() == 0 {
             break;
         }
@@ -185,7 +203,7 @@ fn tcp_frame_write_keeps_partial_nonblocking_send() {
     }
 
     assert_eq!(writer.pending_write_bytes(), 0);
-    assert_eq!(reader.join().unwrap(), expected);
+    assert_eq!(reader.join().expect("test setup must succeed"), expected);
 }
 
 #[test]
@@ -194,10 +212,10 @@ fn tcp_frame_write_keeps_partial_nonblocking_send() {
     ignore = "requires local socket access"
 )]
 fn tcp_frame_write_applies_queue_backpressure() {
-    let host = TcpHost::bind("127.0.0.1:0").unwrap();
+    let host = TcpHost::bind("127.0.0.1:0").expect("test setup must succeed");
     let addr = host.local_addr();
-    let _client = TcpStream::connect(addr).unwrap();
-    let mut writer = wait_for(|| host.accept().unwrap());
+    let _client = TcpStream::connect(addr).expect("test setup must succeed");
+    let mut writer = wait_for(|| host.accept().expect("test setup must succeed"));
     let payload = vec![0x5a; 8 * 1024 * 1024];
 
     let err = loop {
@@ -217,9 +235,11 @@ fn tcp_frame_write_applies_queue_backpressure() {
 )]
 fn network_world_removes_framed_tcp_connection_after_eof() {
     let mut world = NetworkWorld::new();
-    let host = world.bind_tcp_host("127.0.0.1:0").unwrap();
-    let addr = world.tcp_host_addr(host).unwrap();
-    let client = TcpStream::connect(addr).unwrap();
+    let host = world
+        .bind_tcp_host("127.0.0.1:0")
+        .expect("test setup must succeed");
+    let addr = world.tcp_host_addr(host).expect("test setup must succeed");
+    let client = TcpStream::connect(addr).expect("test setup must succeed");
 
     let id = wait_for(|| {
         world
@@ -248,10 +268,13 @@ fn network_world_removes_framed_tcp_connection_after_eof() {
 #[test]
 fn handshake_roundtrips_and_validates() {
     let handshake = NetHandshake::new("perro_game", "match", 7);
-    let decoded = NetHandshake::decode(&handshake.encode().unwrap()).unwrap();
+    let decoded = NetHandshake::decode(&handshake.encode().expect("test setup must succeed"))
+        .expect("test setup must succeed");
 
     assert_eq!(decoded, handshake);
-    decoded.validate(&handshake).unwrap();
+    decoded
+        .validate(&handshake)
+        .expect("test setup must succeed");
     assert!(
         decoded
             .validate(&NetHandshake::new("other", "match", 7))
@@ -265,20 +288,32 @@ fn handshake_roundtrips_and_validates() {
     ignore = "requires local socket access"
 )]
 fn tcp_frame_event_reads_loopback_frame_and_heartbeat() {
-    let host = TcpHost::bind("127.0.0.1:0").unwrap();
+    let host = TcpHost::bind("127.0.0.1:0").expect("test setup must succeed");
     let addr = host.local_addr();
 
     let client = thread::spawn(move || {
-        let mut client = TcpConnection::connect(addr).unwrap();
-        client.write_frame(b"hello").unwrap();
-        client.write_frame(heartbeat_ping()).unwrap();
+        let mut client = TcpConnection::connect(addr).expect("test setup must succeed");
+        client
+            .write_frame(b"hello")
+            .expect("test setup must succeed");
+        client
+            .write_frame(heartbeat_ping())
+            .expect("test setup must succeed");
     });
 
-    let mut server = wait_for(|| host.accept().unwrap());
-    let frame = wait_for(|| server.poll_frame_event(32).unwrap());
-    let heartbeat = wait_for(|| server.poll_frame_event(32).unwrap());
+    let mut server = wait_for(|| host.accept().expect("test setup must succeed"));
+    let frame = wait_for(|| {
+        server
+            .poll_frame_event(32)
+            .expect("test setup must succeed")
+    });
+    let heartbeat = wait_for(|| {
+        server
+            .poll_frame_event(32)
+            .expect("test setup must succeed")
+    });
 
-    client.join().unwrap();
+    client.join().expect("test setup must succeed");
     assert_eq!(
         frame,
         NetEvent::TcpFrame {
@@ -301,17 +336,25 @@ fn tcp_frame_event_reads_loopback_frame_and_heartbeat() {
 )]
 fn network_world_accepts_tcp_and_polls_udp() {
     let mut world = NetworkWorld::new();
-    let host = world.bind_tcp_host("127.0.0.1:0").unwrap();
-    let addr = world.tcp_host_addr(host).unwrap();
-    let udp_a = world.bind_udp("127.0.0.1:0").unwrap();
-    let udp_b = world.bind_udp("127.0.0.1:0").unwrap();
-    let udp_b_addr = world.udp_addr(udp_b).unwrap();
+    let host = world
+        .bind_tcp_host("127.0.0.1:0")
+        .expect("test setup must succeed");
+    let addr = world.tcp_host_addr(host).expect("test setup must succeed");
+    let udp_a = world
+        .bind_udp("127.0.0.1:0")
+        .expect("test setup must succeed");
+    let udp_b = world
+        .bind_udp("127.0.0.1:0")
+        .expect("test setup must succeed");
+    let udp_b_addr = world.udp_addr(udp_b).expect("test setup must succeed");
 
     let client = thread::spawn(move || {
-        let mut client = TcpConnection::connect(addr).unwrap();
-        client.write(b"world").unwrap();
+        let mut client = TcpConnection::connect(addr).expect("test setup must succeed");
+        client.write(b"world").expect("test setup must succeed");
     });
-    world.udp_send_to(udp_a, b"ping", udp_b_addr).unwrap();
+    world
+        .udp_send_to(udp_a, b"ping", udp_b_addr)
+        .expect("test setup must succeed");
 
     let mut seen_tcp = false;
     let mut seen_udp = false;
@@ -333,7 +376,7 @@ fn network_world_accepts_tcp_and_polls_udp() {
         (seen_tcp && seen_udp).then_some(())
     });
 
-    client.join().unwrap();
+    client.join().expect("test setup must succeed");
     assert!(seen_tcp_source);
     assert!(seen_tcp);
     assert!(seen_udp);
@@ -345,20 +388,22 @@ fn network_world_accepts_tcp_and_polls_udp() {
     ignore = "requires local socket access"
 )]
 fn websocket_host_accepts_loopback_text_and_binary() {
-    let host = WebSocketHost::bind("127.0.0.1:0").unwrap();
+    let host = WebSocketHost::bind("127.0.0.1:0").expect("test setup must succeed");
     let url = format!("ws://{}", host.local_addr());
 
     let client = thread::spawn(move || {
-        let mut client = WebSocketConnection::connect(url).unwrap();
-        client.send_text("hello").unwrap();
-        client.send_binary(b"bytes".to_vec()).unwrap();
+        let mut client = WebSocketConnection::connect(url).expect("test setup must succeed");
+        client.send_text("hello").expect("test setup must succeed");
+        client
+            .send_binary(b"bytes".to_vec())
+            .expect("test setup must succeed");
     });
 
-    let mut server = wait_for(|| host.accept().unwrap());
-    let text = wait_for(|| server.poll_event(64).unwrap());
-    let binary = wait_for(|| server.poll_event(64).unwrap());
+    let mut server = wait_for(|| host.accept().expect("test setup must succeed"));
+    let text = wait_for(|| server.poll_event(64).expect("test setup must succeed"));
+    let binary = wait_for(|| server.poll_event(64).expect("test setup must succeed"));
 
-    client.join().unwrap();
+    client.join().expect("test setup must succeed");
     assert_eq!(
         text,
         NetEvent::WebSocketText {
@@ -381,28 +426,40 @@ fn websocket_host_accepts_loopback_text_and_binary() {
     ignore = "requires local socket access"
 )]
 fn websocket_variant_sends_json_text_and_polls_variant_event() {
-    let host = WebSocketHost::bind("127.0.0.1:0").unwrap();
+    let host = WebSocketHost::bind("127.0.0.1:0").expect("test setup must succeed");
     let url = format!("ws://{}", host.local_addr());
 
     let client = thread::spawn(move || {
-        let mut client = WebSocketConnection::connect(url).unwrap();
+        let mut client = WebSocketConnection::connect(url).expect("test setup must succeed");
         let mut body = std::collections::BTreeMap::new();
         body.insert("name".into(), Variant::from("perro"));
         body.insert("ok".into(), Variant::from(true));
-        client.send_variant(&Variant::from(body)).unwrap();
+        client
+            .send_variant(&Variant::from(body))
+            .expect("test setup must succeed");
     });
 
-    let mut server = wait_for(|| host.accept().unwrap());
-    let event = wait_for(|| server.poll_variant_event(128).unwrap());
+    let mut server = wait_for(|| host.accept().expect("test setup must succeed"));
+    let event = wait_for(|| {
+        server
+            .poll_variant_event(128)
+            .expect("test setup must succeed")
+    });
 
-    client.join().unwrap();
+    client.join().expect("test setup must succeed");
     let NetEvent::WebSocketVariant { peer, value } = event else {
         panic!("expected websocket variant event");
     };
     assert_eq!(peer, server.peer_string());
-    let object = value.as_object().unwrap();
-    assert_eq!(object.get("name").unwrap(), &Variant::from("perro"));
-    assert_eq!(object.get("ok").unwrap(), &Variant::from(true));
+    let object = value.as_object().expect("test setup must succeed");
+    assert_eq!(
+        object.get("name").expect("test setup must succeed"),
+        &Variant::from("perro")
+    );
+    assert_eq!(
+        object.get("ok").expect("test setup must succeed"),
+        &Variant::from(true)
+    );
 }
 
 #[test]
@@ -411,24 +468,24 @@ fn websocket_variant_sends_json_text_and_polls_variant_event() {
     ignore = "requires local socket access"
 )]
 fn websocket_compressed_text_and_binary_roundtrip() {
-    let host = WebSocketHost::bind("127.0.0.1:0").unwrap();
+    let host = WebSocketHost::bind("127.0.0.1:0").expect("test setup must succeed");
     let url = format!("ws://{}", host.local_addr());
 
     let client = thread::spawn(move || {
-        let mut client = WebSocketConnection::connect(url).unwrap();
+        let mut client = WebSocketConnection::connect(url).expect("test setup must succeed");
         client
             .send_compressed_text("hello hello hello hello")
-            .unwrap();
+            .expect("test setup must succeed");
         client
             .send_compressed_binary(b"bytes bytes bytes bytes".to_vec())
-            .unwrap();
+            .expect("test setup must succeed");
     });
 
-    let mut server = wait_for(|| host.accept().unwrap());
-    let text = wait_for(|| server.poll_event(128).unwrap());
-    let binary = wait_for(|| server.poll_event(128).unwrap());
+    let mut server = wait_for(|| host.accept().expect("test setup must succeed"));
+    let text = wait_for(|| server.poll_event(128).expect("test setup must succeed"));
+    let binary = wait_for(|| server.poll_event(128).expect("test setup must succeed"));
 
-    client.join().unwrap();
+    client.join().expect("test setup must succeed");
     assert_eq!(
         text,
         NetEvent::WebSocketText {
@@ -451,25 +508,38 @@ fn websocket_compressed_text_and_binary_roundtrip() {
     ignore = "requires local socket access"
 )]
 fn websocket_async_facade_connects_and_sends_compressed_text() {
-    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let runtime = tokio::runtime::Runtime::new().expect("test setup must succeed");
 
     runtime.block_on(async {
-        let host = WebSocketAsyncHost::bind("127.0.0.1:0").await.unwrap();
+        let host = WebSocketAsyncHost::bind("127.0.0.1:0")
+            .await
+            .expect("test setup must succeed");
         let url = format!("ws://{}", host.local_addr());
 
         let host_for_accept = host.clone();
         let client_task = tokio::spawn(WebSocketAsyncConnection::connect(url));
         let server_task = tokio::spawn(wait_for_async(move || {
             let host = host_for_accept.clone();
-            async move { host.accept().await.unwrap() }
+            async move { host.accept().await.expect("test setup must succeed") }
         }));
-        let client = client_task.await.unwrap().unwrap();
-        let server = server_task.await.unwrap();
-        client.send_compressed_text("async hello").await.unwrap();
+        let client = client_task
+            .await
+            .expect("test setup must succeed")
+            .expect("test setup must succeed");
+        let server = server_task.await.expect("test setup must succeed");
+        client
+            .send_compressed_text("async hello")
+            .await
+            .expect("test setup must succeed");
 
         let event = wait_for_async(|| {
             let server = server.clone();
-            async move { server.poll_event(128).await.unwrap() }
+            async move {
+                server
+                    .poll_event(128)
+                    .await
+                    .expect("test setup must succeed")
+            }
         })
         .await;
 
@@ -493,7 +563,7 @@ fn websocket_options_select_subprotocol_and_poll_invalid_json() {
             .require_subprotocol(true)
             .max_message_bytes(256),
     )
-    .unwrap();
+    .expect("test setup must succeed");
     let url = format!("ws://{}", host.local_addr());
 
     let client = thread::spawn(move || {
@@ -504,24 +574,36 @@ fn websocket_options_select_subprotocol_and_poll_invalid_json() {
                 .variant_protocol()
                 .max_message_bytes(256),
         )
-        .unwrap();
+        .expect("test setup must succeed");
         assert_eq!(
             client.selected_subprotocol(),
             Some(WEBSOCKET_VARIANT_PROTOCOL)
         );
-        client.send_text("{bad json").unwrap();
-        client.send_heartbeat_ping().unwrap();
+        client
+            .send_text("{bad json")
+            .expect("test setup must succeed");
+        client
+            .send_heartbeat_ping()
+            .expect("test setup must succeed");
     });
 
-    let mut server = wait_for(|| host.accept().unwrap());
+    let mut server = wait_for(|| host.accept().expect("test setup must succeed"));
     assert_eq!(
         server.selected_subprotocol(),
         Some(WEBSOCKET_VARIANT_PROTOCOL)
     );
-    let invalid = wait_for(|| server.poll_variant_event_default().unwrap());
-    let ping = wait_for(|| server.poll_event_default().unwrap());
+    let invalid = wait_for(|| {
+        server
+            .poll_variant_event_default()
+            .expect("test setup must succeed")
+    });
+    let ping = wait_for(|| {
+        server
+            .poll_event_default()
+            .expect("test setup must succeed")
+    });
 
-    client.join().unwrap();
+    client.join().expect("test setup must succeed");
     assert!(matches!(invalid, NetEvent::WebSocketInvalidJson { .. }));
     assert_eq!(
         ping,

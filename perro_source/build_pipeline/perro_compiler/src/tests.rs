@@ -7,9 +7,10 @@ mod tests {
         generate_call_param_binding, generate_dlc_static_modules, generate_embedded_entry_files,
         generate_perro_assets, generate_project_static_modules, module_name_from_rel,
         module_short_name_from_rel, native_output_artifact_name, native_output_folder_name,
-        normalize_cargo_output_paths, sweep_unknown_embedded_entries, sync_android_project_manifest,
-        sync_dlc_scripts, sync_scripts, target_slug_from_triple, transpile_frontend_script,
-        transpiled_exports_script_ctor, web_route_html_path, write_scripts_lib,
+        normalize_cargo_output_paths, sweep_unknown_embedded_entries,
+        sync_android_project_manifest, sync_dlc_scripts, sync_scripts, target_slug_from_triple,
+        transpile_frontend_script, transpiled_exports_script_ctor, web_route_html_path,
+        write_scripts_lib,
     };
     use perro_project::{
         ensure_project_layout, ensure_project_scaffold, ensure_project_toml,
@@ -294,7 +295,7 @@ pub struct AllVariantState {
     pub duration_value: Duration,
     #[default = UNIX_EPOCH + Duration::from_secs(1)]
     pub system_time_value: SystemTime,
-    #[default = NonZeroI32::new(1).unwrap()]
+    #[default = NonZeroI32::new(1).expect("test setup/result must succeed")]
     pub nonzero_i32: NonZeroI32,
     #[default = Wrapping(1_u32)]
     pub wrapping_u32: Wrapping<u32>,
@@ -1493,5 +1494,4 @@ perro_runtime = {{ path = "{perro_runtime}" }}
     include!("tests/locking_paths.rs");
     include!("tests/scripts.rs");
     include!("tests/assets.rs");
-
 }

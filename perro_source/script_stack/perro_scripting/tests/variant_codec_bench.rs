@@ -80,18 +80,30 @@ fn bench_enum_codec() {
     let named_v = <BotState as DeriveVariant>::to_variant(&named);
 
     time_per_op("enum unit   from_variant", || {
-        black_box(<BotState as DeriveVariant>::from_variant(black_box(&unit_v)).unwrap());
+        black_box(
+            <BotState as DeriveVariant>::from_variant(black_box(&unit_v))
+                .expect("test setup/result must succeed"),
+        );
     });
     time_per_op("enum tuple  from_variant", || {
-        black_box(<BotState as DeriveVariant>::from_variant(black_box(&tuple_v)).unwrap());
+        black_box(
+            <BotState as DeriveVariant>::from_variant(black_box(&tuple_v))
+                .expect("test setup/result must succeed"),
+        );
     });
     time_per_op("enum struct from_variant", || {
-        black_box(<BotState as DeriveVariant>::from_variant(black_box(&named_v)).unwrap());
+        black_box(
+            <BotState as DeriveVariant>::from_variant(black_box(&named_v))
+                .expect("test setup/result must succeed"),
+        );
     });
 
     time_per_op("enum tuple  roundtrip", || {
         let v = <BotState as DeriveVariant>::to_variant(black_box(&tuple));
-        black_box(<BotState as DeriveVariant>::from_owned_variant(v).unwrap());
+        black_box(
+            <BotState as DeriveVariant>::from_owned_variant(v)
+                .expect("test setup/result must succeed"),
+        );
     });
 
     let numbers: Vec<VariantValue> = (0..64).map(|i| VariantValue::from(i as f64)).collect();

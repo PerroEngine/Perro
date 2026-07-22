@@ -96,6 +96,7 @@ impl<B: GraphicsBackend> RunnerState<B> {
                 z_index: STARTUP_SPLASH_IMAGE_Z,
                 uv_min: [0.0, 0.0],
                 uv_max: [texture_w as f32, texture_h as f32],
+                uv_normalized: false,
                 size: [image_w as f32, image_h as f32],
             },
         }));

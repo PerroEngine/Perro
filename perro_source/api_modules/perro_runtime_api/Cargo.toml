@@ -3,6 +3,9 @@ name = "perro_runtime_api"
 version = "0.1.0"
 edition = "2024"
 
+[lints]
+workspace = true
+
 [dependencies]
 perro_ids.workspace = true
 perro_resource_api.workspace = true

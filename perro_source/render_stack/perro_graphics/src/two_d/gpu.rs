@@ -1143,7 +1143,7 @@ fn resolve_sprite_geometry(
         (sprite.uv_max[0] - sprite.uv_min[0]).abs(),
         (sprite.uv_max[1] - sprite.uv_min[1]).abs(),
     ];
-    let (uv_min, uv_max) = if sprite.uv_min.iter().all(|v| v.is_finite())
+    let (mut uv_min, mut uv_max) = if sprite.uv_min.iter().all(|v| v.is_finite())
         && sprite.uv_max.iter().all(|v| v.is_finite())
         && uv_span[0] > 0.0
         && uv_span[1] > 0.0
@@ -1152,6 +1152,10 @@ fn resolve_sprite_geometry(
     } else {
         ([0.0, 0.0], texture_size)
     };
+    if sprite.uv_normalized {
+        uv_min = [uv_min[0] * texture_size[0], uv_min[1] * texture_size[1]];
+        uv_max = [uv_max[0] * texture_size[0], uv_max[1] * texture_size[1]];
+    }
     if sprite.size[0].is_finite()
         && sprite.size[1].is_finite()
         && sprite.size[0] > 0.0
@@ -1272,6 +1276,21 @@ mod tests {
         assert_eq!(
             resolve_sprite_geometry(&sprite, 32, 64),
             ([16.0, 8.0], [0.0, 0.0], [32.0, 64.0])
+        );
+    }
+
+    #[test]
+    fn sprite_normalized_uv_tracks_texture_size() {
+        let sprite = Sprite2DCommand {
+            size: [30.0, 20.0],
+            uv_min: [1.0 / 3.0, 1.0 / 3.0],
+            uv_max: [2.0 / 3.0, 2.0 / 3.0],
+            uv_normalized: true,
+            ..Sprite2DCommand::default()
+        };
+        assert_eq!(
+            resolve_sprite_geometry(&sprite, 300, 150),
+            ([30.0, 20.0], [100.0, 50.0], [200.0, 100.0])
         );
     }
 

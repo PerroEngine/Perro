@@ -76,9 +76,9 @@ fn random_api_typecheck_and_forward() {
 fn file_dir_helpers_return_sorted_disk_paths() {
     let root = std::env::temp_dir().join(format!("perro_modules_file_dir_{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
-    std::fs::create_dir_all(root.join("b")).unwrap();
-    std::fs::create_dir_all(root.join("a")).unwrap();
-    std::fs::write(root.join("b").join("item.txt"), "ok").unwrap();
+    std::fs::create_dir_all(root.join("b")).expect("test setup must succeed");
+    std::fs::create_dir_all(root.join("a")).expect("test setup must succeed");
+    std::fs::write(root.join("b").join("item.txt"), "ok").expect("test setup must succeed");
 
     let root_text = root.to_string_lossy().to_string();
     assert!(crate::file::exists(&root_text));
@@ -87,12 +87,12 @@ fn file_dir_helpers_return_sorted_disk_paths() {
         root.join("b").join("item.txt").to_string_lossy().as_ref()
     ));
 
-    let direct = crate::file::read_dir(&root_text).unwrap();
+    let direct = crate::file::read_dir(&root_text).expect("test setup must succeed");
     assert_eq!(direct.len(), 2);
     assert!(direct[0].ends_with('a'));
     assert!(direct[1].ends_with('b'));
 
-    let walked = crate::file::walk_dir(&root_text).unwrap();
+    let walked = crate::file::walk_dir(&root_text).expect("test setup must succeed");
     assert!(walked.iter().any(|path| path.ends_with("item.txt")));
 
     let _ = std::fs::remove_dir_all(&root);

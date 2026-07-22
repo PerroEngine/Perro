@@ -172,23 +172,15 @@ impl NodeAPI for Runtime {
         value
     }
 
-    fn with_node<T, V: Clone + Default>(
-        &mut self,
-        node_id: perro_ids::NodeID,
-        f: impl FnOnce(&T) -> V,
-    ) -> V
+    fn with_node<T, V>(&mut self, node_id: perro_ids::NodeID, f: impl FnOnce(&T) -> V) -> Option<V>
     where
         T: NodeTypeDispatch,
     {
         if node_id.is_nil() {
-            return V::default();
+            return None;
         }
 
-        let Some(node_ref) = self.nodes.get(node_id) else {
-            return V::default();
-        };
-
-        node_ref.with_typed_ref::<T, _>(f).unwrap_or_default()
+        self.nodes.get(node_id)?.with_typed_ref::<T, _>(f)
     }
 
     fn with_base_node<T, V, F>(&mut self, id: perro_ids::NodeID, f: F) -> Option<V>

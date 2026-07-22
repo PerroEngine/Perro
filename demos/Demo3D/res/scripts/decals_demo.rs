@@ -29,7 +29,7 @@ lifecycle!({
         let t = elapsed_time!(ctx.run);
         let (slider, spinner, pulse) = with_state!(ctx.run, DecalsDemoState, ctx.id, |state| {
             (state.slider, state.spinner, state.pulse)
-        });
+        }).unwrap_or_default();
 
         if !slider.is_nil() {
             let x = (t * 0.7).sin() * SLIDE_RANGE;
@@ -67,7 +67,7 @@ methods!({
     }
 
     fn push_overlay(&self, ctx: &mut ScriptContext<'_, API>) {
-        let overlay = with_state!(ctx.run, DecalsDemoState, ctx.id, |state| state.overlay);
+        let overlay = with_state!(ctx.run, DecalsDemoState, ctx.id, |state| state.overlay).unwrap_or_default();
         if overlay.is_nil() {
             return;
         }

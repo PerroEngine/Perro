@@ -791,7 +791,11 @@ mod tests {
 
     fn parse_skeleton(bytes: &[u8]) -> usize {
         if bytes.len() >= 17 && &bytes[0..5] == b"PSKEL" {
-            u32::from_le_bytes(bytes[13..17].try_into().unwrap()) as usize
+            u32::from_le_bytes(
+                bytes[13..17]
+                    .try_into()
+                    .expect("required value must be present"),
+            ) as usize
         } else {
             0
         }
@@ -804,7 +808,11 @@ mod tests {
 
     fn parse_audio(bytes: &[u8]) -> usize {
         if bytes.len() >= 18 && &bytes[0..6] == b"PAWDIO" {
-            let raw_len = u32::from_le_bytes(bytes[14..18].try_into().unwrap()) as usize;
+            let raw_len = u32::from_le_bytes(
+                bytes[14..18]
+                    .try_into()
+                    .expect("required value must be present"),
+            ) as usize;
             raw_len + bytes[18..].len()
         } else {
             0

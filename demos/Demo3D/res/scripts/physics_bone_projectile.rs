@@ -47,7 +47,7 @@ methods!({
 
         let (mesh, shape) = with_state!(ctx.run, PhysicsBoneProjectileState, ctx.id, |state| {
             (state.projectile_mesh, state.projectile_shape)
-        });
+        }).unwrap_or_default();
         if !mesh.is_nil() {
             let diameter = radius * 2.0;
             let _ = set_local_scale_3d!(ctx.run, mesh, Vector3::new(diameter, diameter, diameter));

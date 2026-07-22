@@ -64,7 +64,7 @@ fn matrix_position_helpers_handle_row_col_and_flat_lookup() {
     assert!(!matrix.set(9, 9, 0));
     assert_eq!(matrix[(0, 1)], 20);
 
-    *matrix.get_flat_mut(5).unwrap() = 60;
+    *matrix.get_flat_mut(5).expect("test setup must succeed") = 60;
     assert_eq!(matrix[(1, 2)], 60);
 
     // SAFETY: indexes are inside matrix bounds.
@@ -351,23 +351,31 @@ fn matrix_row_col_iter_helpers_cover_checked_access() {
         vec![[1, 2, 3], [4, 5, 6]]
     );
     assert_eq!(
-        matrix.row_iter(1).unwrap().copied().collect::<Vec<_>>(),
+        matrix
+            .row_iter(1)
+            .expect("test setup must succeed")
+            .copied()
+            .collect::<Vec<_>>(),
         vec![4, 5, 6]
     );
     assert!(matrix.row_iter(2).is_none());
     assert_eq!(
-        matrix.col_iter(1).unwrap().copied().collect::<Vec<_>>(),
+        matrix
+            .col_iter(1)
+            .expect("test setup must succeed")
+            .copied()
+            .collect::<Vec<_>>(),
         vec![2, 5]
     );
     assert!(matrix.col_iter(3).is_none());
 
     matrix
         .row_iter_mut(0)
-        .unwrap()
+        .expect("test setup must succeed")
         .for_each(|value| *value += 10);
     matrix
         .col_iter_mut(2)
-        .unwrap()
+        .expect("test setup must succeed")
         .for_each(|value| *value *= 2);
     matrix.rows_iter_mut().for_each(|row| row[0] *= -1);
 
@@ -573,7 +581,10 @@ fn f32_square_ops_use_fast_path_results() {
     assert_eq!(a.mul_f32(b), expected);
     assert_eq!(a * b, expected);
     assert!((a.determinant() - 1.0).abs() < 1.0e-6);
-    assert_eq!(a.inverse().unwrap().mul_f32(a), Matrix::<3, 3>::identity());
+    assert_eq!(
+        a.inverse().expect("test setup must succeed").mul_f32(a),
+        Matrix::<3, 3>::identity()
+    );
 }
 
 #[test]
@@ -760,7 +771,7 @@ fn forced_x86_simd_helpers_match_scalar_for_tail_lengths() {
             scalar_scale_assign(&mut scalar, 1.25);
             assert_eq!(simd, scalar);
 
-            let simd_dot = x86::try_dot_f32(&lhs, &rhs).unwrap();
+            let simd_dot = x86::try_dot_f32(&lhs, &rhs).expect("test setup must succeed");
             let scalar_dot = scalar_dot_f32(&lhs, &rhs);
             assert!((simd_dot - scalar_dot).abs() <= 1.0e-5);
         }

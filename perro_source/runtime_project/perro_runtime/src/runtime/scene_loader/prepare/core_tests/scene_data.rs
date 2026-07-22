@@ -165,7 +165,7 @@ mod scene_data {
         )
         .parse_scene();
 
-        let prepared = prepare_scene_with_loader(&scene, &|_| unreachable!()).unwrap();
+        let prepared = prepare_scene_with_loader(&scene, &|_| unreachable!()).expect("test or bench setup must succeed");
         let link = prepared
             .nodes
             .iter()
@@ -202,7 +202,7 @@ mod scene_data {
         )
         .parse_scene();
 
-        let prepared = prepare_scene_with_loader(&scene, &|_| unreachable!()).unwrap();
+        let prepared = prepare_scene_with_loader(&scene, &|_| unreachable!()).expect("test or bench setup must succeed");
         let body_2d = prepared
             .nodes
             .iter()

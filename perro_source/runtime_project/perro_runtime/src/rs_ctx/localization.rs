@@ -286,7 +286,9 @@ mod tests {
 
     #[test]
     fn localization_loads_default_locale_and_switches_active_map() {
-        let _project_root_guard = crate::rs_ctx::PROJECT_ROOT_TEST_LOCK.lock().unwrap();
+        let _project_root_guard = crate::rs_ctx::PROJECT_ROOT_TEST_LOCK
+            .lock()
+            .expect("test or bench setup must succeed");
         let _root = setup_csv_project();
         let api = RuntimeResourceApi::new(
             None,

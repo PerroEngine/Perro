@@ -822,7 +822,10 @@ mod fingerprint_tests {
     }
 
     fn snapshot_flags(before: &SceneNodeData, after: &SceneNodeData) -> u16 {
-        classify_ui_snapshot_change(&ui_snapshot(before).unwrap(), &ui_snapshot(after).unwrap())
+        classify_ui_snapshot_change(
+            &ui_snapshot(before).expect("test or bench setup must succeed"),
+            &ui_snapshot(after).expect("test or bench setup must succeed"),
+        )
     }
 
     #[test]

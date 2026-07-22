@@ -44,7 +44,7 @@ methods!({
                     state.active_demo.clone(),
                     state.active_demo_root,
                 )
-            });
+            }).unwrap_or_default();
         let title = if !title_override.is_empty() {
             title_override
         } else if demo == "none" {
@@ -115,7 +115,7 @@ fn multimesh_text<API: ScriptAPI + ?Sized>(
     for node in multimeshes.iter().copied() {
         let count = with_node!(ctx.run, MultiMeshInstance3D, node, |mesh| mesh
             .instances
-            .len());
+            .len()).unwrap_or_default();
         total_instances += count;
         per_mesh.push(count.to_string());
     }
@@ -137,7 +137,7 @@ fn water_text<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, root: N
     let statics = query!(ctx.run, all(node_type[StaticBody3D]), in_subtree(root));
     let mut depths = Vec::new();
     for node in bodies.iter().copied() {
-        let depth = with_node!(ctx.run, WaterBody3D, node, |water| water.water.depth);
+        let depth = with_node!(ctx.run, WaterBody3D, node, |water| water.water.depth).unwrap_or_default();
         depths.push(format!("{depth:.1}"));
     }
     format!(

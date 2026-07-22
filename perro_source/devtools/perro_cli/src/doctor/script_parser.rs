@@ -457,7 +457,8 @@ pub(super) fn var_self_access_replacement(
 ) -> String {
     let Some(member) = member else {
         return if macro_name == "get_var" {
-            "with_state!(ctx.run, StateType, ctx.id, |state| state.field)".to_string()
+            "with_state!(ctx.run, StateType, ctx.id, |state| state.field).unwrap_or_default()"
+                .to_string()
         } else {
             "with_state_mut!(ctx.run, StateType, ctx.id, |state| state.field = value)".to_string()
         };
@@ -469,7 +470,9 @@ pub(super) fn var_self_access_replacement(
         .map(String::as_str)
         .unwrap_or("StateType");
     if macro_name == "get_var" {
-        format!("with_state!(ctx.run, {state_type}, ctx.id, |state| state.{member})")
+        format!(
+            "with_state!(ctx.run, {state_type}, ctx.id, |state| state.{member}).unwrap_or_default()"
+        )
     } else {
         let value = args.get(3).map(|arg| arg.trim()).unwrap_or("value");
         format!("with_state_mut!(ctx.run, {state_type}, ctx.id, |state| state.{member} = {value})")

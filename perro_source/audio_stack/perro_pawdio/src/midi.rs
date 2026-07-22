@@ -1264,12 +1264,12 @@ mod tests {
                 program: MidiProgram::default(),
                 volume: 1.0,
             }))
-            .unwrap();
+            .expect("required value must be present");
         }
 
         let mut peak = 0.0f32;
         for _ in 0..1024 {
-            peak = peak.max(source.next().unwrap().abs());
+            peak = peak.max(source.next().expect("required value must be present").abs());
         }
 
         assert_eq!(source.active_voice_count(), 128);
@@ -1289,9 +1289,10 @@ mod tests {
             program: MidiProgram::default(),
             volume: 1.0,
         }))
-        .unwrap();
+        .expect("required value must be present");
         assert!(source.next().is_some());
-        tx.send(MidiMixerControl::Release { id: 7 }).unwrap();
+        tx.send(MidiMixerControl::Release { id: 7 })
+            .expect("required value must be present");
 
         for _ in 0..SAMPLE_RATE {
             let _ = source.next();

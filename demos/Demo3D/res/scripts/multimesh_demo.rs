@@ -29,7 +29,7 @@ methods!({
     }
 
     fn push_overlay(&self, ctx: &mut ScriptContext<'_, API>) {
-        let overlay = with_state!(ctx.run, MultiMeshDemoState, ctx.id, |state| state.overlay);
+        let overlay = with_state!(ctx.run, MultiMeshDemoState, ctx.id, |state| state.overlay).unwrap_or_default();
         if overlay.is_nil() {
             return;
         }
@@ -44,7 +44,7 @@ methods!({
         for node in multimeshes.iter().copied() {
             let count = with_node!(ctx.run, MultiMeshInstance3D, node, |mesh| mesh
                 .instances
-                .len());
+                .len()).unwrap_or_default();
             total += count;
             per_mesh.push(count.to_string());
         }

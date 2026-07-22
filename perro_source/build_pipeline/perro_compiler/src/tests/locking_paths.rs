@@ -1,7 +1,6 @@
 mod locking_paths {
     use super::*;
 
-
     #[test]
     fn generated_script_write_lock_times_out_when_live() {
         let target = unique_temp_path("write_lock_live").join("script.rs");
@@ -21,7 +20,6 @@ mod locking_paths {
         std::fs::remove_dir_all(target.parent().expect("temp parent")).expect("remove fixture");
     }
 
-
     #[test]
     fn generated_script_write_lock_reclaims_stale_lock() {
         let target = unique_temp_path("write_lock_stale").join("script.rs");
@@ -40,7 +38,6 @@ mod locking_paths {
         assert!(!lock_path.exists());
         std::fs::remove_dir_all(target.parent().expect("temp parent")).expect("remove fixture");
     }
-
 
     #[test]
     fn dlc_pack_pointer_callbacks_require_unsafe_calls() {
@@ -74,11 +71,10 @@ mod locking_paths {
         std::fs::remove_dir_all(pack_dir).expect("remove fixture");
     }
 
-
     #[test]
     fn dlc_script_sync_rejects_names_that_escape_or_corrupt_generated_paths() {
         let root = unique_temp_dir("perro_compiler_invalid_dlc_name");
-        std::fs::create_dir_all(&root).unwrap();
+        std::fs::create_dir_all(&root).expect("test setup/result must succeed");
 
         for name in [
             "",
@@ -101,7 +97,6 @@ mod locking_paths {
         let _ = std::fs::remove_dir_all(root);
     }
 
-
     #[test]
     fn emits_obfuscated_static_steam_app_id_fn() {
         let src = emit_static_steam_app_id_fn(Some(480), "Game");
@@ -112,7 +107,6 @@ mod locking_paths {
         assert!(!src.contains("480u32"));
         assert!(!src.contains("Some(480"));
     }
-
 
     #[test]
     fn native_output_names_group_by_host_and_suffix_bin_with_version() {
@@ -133,7 +127,6 @@ mod locking_paths {
         );
     }
 
-
     #[test]
     fn target_slug_from_triple_uses_rust_target_os_and_arch() {
         assert_eq!(
@@ -153,7 +146,6 @@ mod locking_paths {
             Some("linux-x86_64")
         );
     }
-
 
     #[test]
     fn android_export_uses_exact_apk_path() {
@@ -205,7 +197,6 @@ mod locking_paths {
         std::fs::remove_dir_all(root).expect("remove fixture");
     }
 
-
     #[test]
     fn normalizes_script_cargo_paths_to_project_relative_slashes() {
         let project = std::path::Path::new("D:/Game");
@@ -215,7 +206,6 @@ mod locking_paths {
         assert_eq!(out, "res/scripts/game_manager.rs:1929:68: error: bad\n");
     }
 
-
     #[test]
     fn normalizes_nested_script_cargo_paths_to_project_relative_slashes() {
         let project = std::path::Path::new("D:/Game");
@@ -224,7 +214,6 @@ mod locking_paths {
         let out = normalize_cargo_output_paths(project, Some(&crate_dir), input);
         assert_eq!(out, " --> res/scripts/ai/brain.rs:7:3\n");
     }
-
 
     #[test]
     fn transpiles_controller_methods_into_call_method_arms() {
@@ -272,7 +261,6 @@ mod locking_paths {
         );
     }
 
-
     #[test]
     fn transpiles_state_fields_with_expose_marker() {
         let source = r#"
@@ -310,7 +298,6 @@ mod locking_paths {
             transpiled.contains("const __PERRO_VAR_GROUNDED: ScriptMemberID = var!(\"grounded\");")
         );
     }
-
 
     #[test]
     fn transpiles_ai_methods_into_call_method_arms() {
@@ -396,7 +383,6 @@ mod locking_paths {
         );
     }
 
-
     #[test]
     fn transpiles_methods_even_with_braces_in_strings_comments_and_raw_strings() {
         let source = r###"
@@ -439,7 +425,6 @@ mod locking_paths {
         assert_methods_emitted(&transpiled, &["alpha", "beta"]);
     }
 
-
     #[test]
     fn transpiles_bool_method_return_into_variant() {
         let source = r#"
@@ -460,7 +445,6 @@ mod locking_paths {
         assert!(transpiled.contains("Variant::from(self.is_ready(ctx))"));
         assert!(!transpiled.contains("self.is_ready(ctx);\n                Variant::Null"));
     }
-
 
     #[test]
     fn typed_param_binding_uses_first_for_zero_index() {
@@ -486,7 +470,6 @@ mod locking_paths {
         assert!(second.contains("match params.get(1)"));
     }
 
-
     #[test]
     fn bare_module_has_no_exported_ctor() {
         let source = r#"
@@ -508,7 +491,6 @@ mod locking_paths {
             "bare modules should not register as script constructors"
         );
     }
-
 
     #[test]
     fn generated_scripts_lib_exports_v2_abi_descriptor() {
@@ -532,5 +514,4 @@ mod locking_paths {
 
         std::fs::remove_dir_all(root).expect("remove script ABI fixture");
     }
-
 }

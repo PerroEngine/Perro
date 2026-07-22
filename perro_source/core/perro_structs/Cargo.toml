@@ -3,6 +3,9 @@ name = "perro_structs"
 version = "0.1.0"
 edition = "2024"
 
+[lints]
+workspace = true
+
 [dependencies]
 bytemuck = { version = "1.24.0", features = ["derive"] }
 glam = "0.31.0"

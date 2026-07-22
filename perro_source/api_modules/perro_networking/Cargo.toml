@@ -7,6 +7,9 @@ edition = "2024"
 network-tests = []
 steamworks = ["dep:perro_steamworks", "perro_steamworks/steamworks-runtime"]
 
+[lints]
+workspace = true
+
 [dependencies]
 perro_ids.workspace = true
 perro_io.workspace = true

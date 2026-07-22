@@ -41,7 +41,7 @@ methods!({
 
     fn push_overlay(&self, ctx: &mut ScriptContext<'_, API>) {
         let overlay = with_state!(ctx.run, MeshMaterialsDemoState, ctx.id, |state| state
-            .overlay);
+            .overlay).unwrap_or_default();
         if overlay.is_nil() {
             return;
         }
@@ -75,7 +75,7 @@ methods!({
                 state.mirror_flip_yz,
                 state.mirror_flip_xyz,
             ]
-        });
+        }).unwrap_or_default();
         for node in nodes {
             if node.is_nil() {
                 continue;

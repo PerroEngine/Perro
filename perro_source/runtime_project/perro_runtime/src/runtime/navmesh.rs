@@ -195,8 +195,10 @@ fn area_cost_table(costs: &[NavMeshAreaCost]) -> [f32; 32] {
 
 fn path_from_points(mut points: Vec<Vector3>, opts: NavMeshPathOptions) -> NavMeshPath3D {
     dedup_points(&mut points);
-    if opts.max_points > 1 && points.len() > opts.max_points as usize {
-        let last = *points.last().unwrap();
+    if opts.max_points > 1
+        && points.len() > opts.max_points as usize
+        && let Some(last) = points.last().copied()
+    {
         points.truncate(opts.max_points as usize);
         if let Some(slot) = points.last_mut() {
             *slot = last;
@@ -913,7 +915,10 @@ mod tests {
                 NavMeshPathOptions::default(),
             )
         });
-        assert_eq!(result.unwrap().status, NavMeshPathStatus::Failed);
+        assert_eq!(
+            result.expect("test or bench setup must succeed").status,
+            NavMeshPathStatus::Failed
+        );
         assert_eq!(
             project_point_3d(&invalid, Vector3::ZERO, 1.0, BitMask::ALL),
             None

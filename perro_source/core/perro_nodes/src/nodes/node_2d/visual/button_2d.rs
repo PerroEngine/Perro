@@ -160,7 +160,7 @@ impl Default for NineSliceButton2D {
             size: Vector2::new(128.0, 48.0),
             texture: TextureID::nil(),
             texture_region: None,
-            margins: [8.0, 8.0, 8.0, 8.0],
+            margins: [0.0, 0.0, 0.0, 0.0],
             tint: Color::WHITE,
             hover_tint: Color::new(1.0, 1.0, 1.0, 0.9),
             pressed_tint: Color::new(0.8, 0.8, 0.8, 1.0),

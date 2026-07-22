@@ -763,7 +763,7 @@ mod tests {
         let mut out = String::with_capacity(len);
         while out.len() < len {
             let take = (len - out.len()).min(PATTERN.len());
-            out.push_str(std::str::from_utf8(&PATTERN[..take]).unwrap());
+            out.push_str(std::str::from_utf8(&PATTERN[..take]).expect("test setup must succeed"));
         }
         out
     }

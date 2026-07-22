@@ -52,18 +52,20 @@ fn valid_archive_bytes() -> Vec<u8> {
             index_offset: 0,
         },
     )
-    .unwrap();
+    .expect("test setup/result must succeed");
 
     let raw_payload = b"hello archive";
     let raw_offset = archive.position();
     archive.get_mut().extend_from_slice(raw_payload);
 
     let original = vec![0x5Au8; 64];
-    let compressed = compress_zlib_best(&original).unwrap();
+    let compressed = compress_zlib_best(&original).expect("test setup/result must succeed");
     let compressed_offset = raw_offset + raw_payload.len() as u64;
     archive.get_mut().extend_from_slice(&compressed);
 
-    archive.seek(SeekFrom::End(0)).unwrap();
+    archive
+        .seek(SeekFrom::End(0))
+        .expect("test setup/result must succeed");
     let index_offset = archive.position();
     write_index_entry(
         &mut archive,
@@ -75,7 +77,7 @@ fn valid_archive_bytes() -> Vec<u8> {
             flags: 0,
         },
     )
-    .unwrap();
+    .expect("test setup/result must succeed");
     write_index_entry(
         &mut archive,
         "res/packed.bin",
@@ -86,9 +88,11 @@ fn valid_archive_bytes() -> Vec<u8> {
             flags: perro_asset_formats::archive::FLAG_COMPRESSED,
         },
     )
-    .unwrap();
+    .expect("test setup/result must succeed");
 
-    archive.seek(SeekFrom::Start(0)).unwrap();
+    archive
+        .seek(SeekFrom::Start(0))
+        .expect("test setup/result must succeed");
     write_header(
         &mut archive,
         &PerroAssetsHeader {
@@ -98,7 +102,7 @@ fn valid_archive_bytes() -> Vec<u8> {
             index_offset,
         },
     )
-    .unwrap();
+    .expect("test setup/result must succeed");
     archive.into_inner()
 }
 
@@ -120,9 +124,16 @@ fn archive_survives_mutation_sweep() {
     let valid = valid_archive_bytes();
     let archive = crate::archive::PerroAssetsArchive::open_from_owned_bytes(valid.clone())
         .expect("baseline must open");
-    assert_eq!(archive.read_file("res/raw.txt").unwrap(), b"hello archive");
     assert_eq!(
-        archive.read_file("res/packed.bin").unwrap(),
+        archive
+            .read_file("res/raw.txt")
+            .expect("test setup/result must succeed"),
+        b"hello archive"
+    );
+    assert_eq!(
+        archive
+            .read_file("res/packed.bin")
+            .expect("test setup/result must succeed"),
         vec![0x5Au8; 64]
     );
     mutation_sweep(&valid, check_archive);
@@ -131,7 +142,7 @@ fn archive_survives_mutation_sweep() {
 #[test]
 fn compressed_container_survives_mutation_sweep() {
     let inner = valid_archive_bytes();
-    let compressed = compress_zlib_best(&inner).unwrap();
+    let compressed = compress_zlib_best(&inner).expect("test setup/result must succeed");
     let mut wrapped = Vec::with_capacity(16 + compressed.len());
     wrapped.extend_from_slice(&PERRO_ASSETS_COMPRESSED_MAGIC);
     wrapped.extend_from_slice(&perro_asset_formats::archive::VERSION.to_le_bytes());

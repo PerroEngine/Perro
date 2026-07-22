@@ -389,7 +389,7 @@ mod tests {
 
     #[test]
     fn color_from_hex_keeps_exact_bytes() {
-        let color = Color::from_hex("#336699CC").unwrap();
+        let color = Color::from_hex("#336699CC").expect("test setup must succeed");
 
         assert_eq!(color.to_rgba_u8(), [0x33, 0x66, 0x99, 0xCC]);
         assert_eq!(color.to_hex_rgba(), "#336699CC");
@@ -403,7 +403,7 @@ mod tests {
 
     #[test]
     fn with_alpha_overrides_only_alpha() {
-        let base = Color::from_hex("#336699").unwrap();
+        let base = Color::from_hex("#336699").expect("test setup must succeed");
         let faded = base.with_alpha(0.5);
 
         assert_eq!(faded.to_rgba_u8()[0..3], base.to_rgba_u8()[0..3]);

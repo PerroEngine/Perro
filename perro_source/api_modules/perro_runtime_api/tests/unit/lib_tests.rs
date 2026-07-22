@@ -123,11 +123,11 @@ impl NodeAPI for DummyRuntime {
         None
     }
 
-    fn with_node<T, V: Clone + Default>(&mut self, _node: NodeID, _f: impl FnOnce(&T) -> V) -> V
+    fn with_node<T, V>(&mut self, _node: NodeID, _f: impl FnOnce(&T) -> V) -> Option<V>
     where
         T: perro_nodes::NodeTypeDispatch,
     {
-        V::default()
+        None
     }
 
     fn with_base_node<T, V, F>(&mut self, _id: NodeID, _f: F) -> Option<V>
@@ -409,11 +409,11 @@ impl NodeAPI for DummyRuntime {
 }
 
 impl ScriptAPI for DummyRuntime {
-    fn with_state<T: 'static, V: Default, F>(&mut self, _script: NodeID, f: F) -> V
+    fn with_state<T: 'static, V, F>(&mut self, _script: NodeID, f: F) -> Option<V>
     where
         F: FnOnce(&T) -> V,
     {
-        self.state.downcast_ref::<T>().map(f).unwrap_or_default()
+        self.state.downcast_ref::<T>().map(f)
     }
 
     fn with_state_mut<T: 'static, V, F>(&mut self, _script: NodeID, f: F) -> Option<V>

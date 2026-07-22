@@ -59,7 +59,7 @@ fn http_get_loopback_completes() {
         HttpEvent::Completed(resp) => {
             assert_eq!(resp.id, id);
             assert_eq!(resp.status, 200);
-            assert_eq!(resp.text().unwrap(), "hello");
+            assert_eq!(resp.text().expect("test setup must succeed"), "hello");
             assert!(resp.ok());
         }
         other => panic!("unexpected event: {other:?}"),
@@ -75,7 +75,9 @@ fn http_post_variant_sends_json_and_response_variant_reads_object() {
     let seen_body = Arc::new(Mutex::new(Vec::new()));
     let seen_body_for_server = Arc::clone(&seen_body);
     let server = TestServer::start(move |request| {
-        *seen_body_for_server.lock().unwrap() = request.body;
+        *seen_body_for_server
+            .lock()
+            .expect("test setup must succeed") = request.body;
         response(
             200,
             &[("Content-Type", "application/json")],
@@ -92,16 +94,21 @@ fn http_post_variant_sends_json_and_response_variant_reads_object() {
     server.join();
 
     assert_eq!(
-        String::from_utf8(seen_body.lock().unwrap().clone()).unwrap(),
+        String::from_utf8(seen_body.lock().expect("test setup must succeed").clone())
+            .expect("test setup must succeed"),
         r#"{"name":"perro"}"#
     );
 
     let HttpEvent::Completed(resp) = event else {
         panic!("expected completed event");
     };
-    let value = resp.variant().unwrap();
+    let value = resp.variant().expect("test setup must succeed");
     assert_eq!(
-        value.as_object().unwrap().get("ok").unwrap(),
+        value
+            .as_object()
+            .expect("test setup must succeed")
+            .get("ok")
+            .expect("test setup must succeed"),
         &Variant::from(true)
     );
 }
@@ -151,7 +158,7 @@ fn cookie_enabled_client_keeps_cookie_between_requests() {
     let count = Arc::new(Mutex::new(0usize));
     let count_for_server = Arc::clone(&count);
     let server = TestServer::start_multi(2, move |request| {
-        let mut count = count_for_server.lock().unwrap();
+        let mut count = count_for_server.lock().expect("test setup must succeed");
         *count += 1;
         if *count == 1 {
             response(200, &[("Set-Cookie", "sid=abc; Path=/")], b"set")
@@ -174,7 +181,7 @@ fn cookie_enabled_client_keeps_cookie_between_requests() {
     let HttpEvent::Completed(resp) = event else {
         panic!("expected completed event");
     };
-    assert_eq!(resp.text().unwrap(), "cookie");
+    assert_eq!(resp.text().expect("test setup must succeed"), "cookie");
 }
 
 #[test]
@@ -354,21 +361,28 @@ struct TestServer {
 impl TestServer {
     fn start(handler: impl FnOnce(TestRequest) -> Vec<u8> + Send + 'static) -> Self {
         let mut handler = Some(handler);
-        Self::start_multi(1, move |request| handler.take().unwrap()(request))
+        Self::start_multi(1, move |request| {
+            handler.take().expect("test setup must succeed")(request)
+        })
     }
 
     fn start_multi(
         requests: usize,
         mut handler: impl FnMut(TestRequest) -> Vec<u8> + Send + 'static,
     ) -> Self {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let addr = listener.local_addr().unwrap().to_string();
+        let listener = TcpListener::bind("127.0.0.1:0").expect("test setup must succeed");
+        let addr = listener
+            .local_addr()
+            .expect("test setup must succeed")
+            .to_string();
         let handle = thread::spawn(move || {
             for _ in 0..requests {
-                let (mut stream, _) = listener.accept().unwrap();
+                let (mut stream, _) = listener.accept().expect("test setup must succeed");
                 let request = read_request(&mut stream);
                 let response = handler(request);
-                stream.write_all(&response).unwrap();
+                stream
+                    .write_all(&response)
+                    .expect("test setup must succeed");
             }
         });
         Self { addr, handle }
@@ -379,7 +393,7 @@ impl TestServer {
     }
 
     fn join(self) {
-        self.handle.join().unwrap();
+        self.handle.join().expect("test setup must succeed");
     }
 }
 
@@ -392,12 +406,12 @@ struct TestRequest {
 fn read_request(stream: &mut TcpStream) -> TestRequest {
     stream
         .set_read_timeout(Some(Duration::from_secs(2)))
-        .unwrap();
+        .expect("test setup must succeed");
     let mut data = Vec::new();
     let mut buf = [0_u8; 512];
     let header_end;
     loop {
-        let n = stream.read(&mut buf).unwrap();
+        let n = stream.read(&mut buf).expect("test setup must succeed");
         data.extend_from_slice(&buf[..n]);
         if let Some(i) = find_header_end(&data) {
             header_end = i;
@@ -414,7 +428,7 @@ fn read_request(stream: &mut TcpStream) -> TestRequest {
         .unwrap_or(0);
     let body_start = header_end + 4;
     while data.len() < body_start + content_len {
-        let n = stream.read(&mut buf).unwrap();
+        let n = stream.read(&mut buf).expect("test setup must succeed");
         data.extend_from_slice(&buf[..n]);
     }
 

@@ -201,13 +201,19 @@ fn bench_static_asset_load(c: &mut Criterion) {
     });
 
     c.bench_function("texture_load_static_vec", |b| {
-        b.iter(|| black_box(load_asset(black_box(TEXTURE_PATH)).unwrap()))
+        b.iter(|| {
+            black_box(load_asset(black_box(TEXTURE_PATH)).expect("test setup/result must succeed"))
+        })
     });
     c.bench_function("mesh_load_static_vec", |b| {
-        b.iter(|| black_box(load_asset(black_box(MESH_PATH)).unwrap()))
+        b.iter(|| {
+            black_box(load_asset(black_box(MESH_PATH)).expect("test setup/result must succeed"))
+        })
     });
     c.bench_function("audio_load_static_vec", |b| {
-        b.iter(|| black_box(load_asset(black_box(AUDIO_PATH)).unwrap()))
+        b.iter(|| {
+            black_box(load_asset(black_box(AUDIO_PATH)).expect("test setup/result must succeed"))
+        })
     });
 }
 

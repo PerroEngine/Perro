@@ -32,7 +32,9 @@ impl ScriptLifecycle<RuntimeScriptApi> for SceneAssetInitScript {
             .run
             .Scripts()
             .with_state::<SceneAssetInitState, _, _>(ctx.id, |state| state.refs);
-        *SCENE_ASSET_INIT_SEEN.lock().unwrap() = Some(refs);
+        *SCENE_ASSET_INIT_SEEN
+            .lock()
+            .expect("test or bench setup must succeed") = refs;
     }
 }
 
@@ -51,7 +53,9 @@ impl ScriptBehavior<RuntimeScriptApi> for SceneAssetInitScript {
         vars: Vec<(perro_ids::ScriptMemberID, Variant)>,
         resolver: &mut dyn SceneVariantResolver,
     ) {
-        let state = state.downcast_mut::<SceneAssetInitState>().unwrap();
+        let state = state
+            .downcast_mut::<SceneAssetInitState>()
+            .expect("test or bench setup must succeed");
         if let Some((_, value)) = vars.into_iter().next()
             && let Ok(refs) = value.parse_scene(resolver)
         {
@@ -124,7 +128,10 @@ impl ScriptLifecycle<RuntimeScriptApi> for DlcSelfResolveScript {
         let ResolvedPath::Disk(path) = resolve_path("dlc://self/probe.txt") else {
             panic!("expected dlc self to resolve to disk path");
         };
-        DLC_SELF_TEST_PATHS.lock().unwrap().push(path);
+        DLC_SELF_TEST_PATHS
+            .lock()
+            .expect("test or bench setup must succeed")
+            .push(path);
     }
 }
 
@@ -195,7 +202,9 @@ fn static_script_registry_stays_borrowed_and_dynamic_entries_override() {
 
 #[test]
 fn scene_asset_and_node_refs_apply_before_on_init() {
-    *SCENE_ASSET_INIT_SEEN.lock().unwrap() = None;
+    *SCENE_ASSET_INIT_SEEN
+        .lock()
+        .expect("test or bench setup must succeed") = None;
     let mut runtime = Runtime::new();
     let target = runtime
         .nodes
@@ -219,9 +228,12 @@ fn scene_asset_and_node_refs_apply_before_on_init() {
                 ]),
             )],
         )
-        .unwrap();
+        .expect("test or bench setup must succeed");
 
-    let seen = SCENE_ASSET_INIT_SEEN.lock().unwrap().unwrap();
+    let seen = SCENE_ASSET_INIT_SEEN
+        .lock()
+        .expect("test or bench setup must succeed")
+        .expect("test or bench setup must succeed");
     assert_eq!(seen.0, target);
     assert!(seen.1.is_some());
 }
@@ -230,15 +242,20 @@ fn scene_asset_and_node_refs_apply_before_on_init() {
 fn dlc_self_context_applies_only_during_script_callback() {
     // clear_dlc_mounts/mount_dlc_disk mutate process-global io state that
     // load_boot_scene tests also touch; serialize via the shared root lock.
-    let _project_root_guard = crate::rs_ctx::PROJECT_ROOT_TEST_LOCK.lock().unwrap();
+    let _project_root_guard = crate::rs_ctx::PROJECT_ROOT_TEST_LOCK
+        .lock()
+        .expect("test or bench setup must succeed");
     clear_dlc_mounts();
-    DLC_SELF_TEST_PATHS.lock().unwrap().clear();
+    DLC_SELF_TEST_PATHS
+        .lock()
+        .expect("test or bench setup must succeed")
+        .clear();
 
     let root = std::env::temp_dir().join(format!("perro_runtime_dlc_self_{}", std::process::id()));
     let dlc_root = root.join("expansion");
     let _ = std::fs::remove_dir_all(&root);
-    std::fs::create_dir_all(&dlc_root).unwrap();
-    mount_dlc_disk("Expansion", &dlc_root).unwrap();
+    std::fs::create_dir_all(&dlc_root).expect("test or bench setup must succeed");
+    mount_dlc_disk("Expansion", &dlc_root).expect("test or bench setup must succeed");
 
     let mut runtime = Runtime::new();
     let node = runtime
@@ -252,10 +269,13 @@ fn dlc_self_context_applies_only_during_script_callback() {
 
     runtime
         .attach_script_instance(node, script_hash, Some("Expansion"), Vec::new())
-        .unwrap();
+        .expect("test or bench setup must succeed");
 
     assert_eq!(
-        DLC_SELF_TEST_PATHS.lock().unwrap().as_slice(),
+        DLC_SELF_TEST_PATHS
+            .lock()
+            .expect("test or bench setup must succeed")
+            .as_slice(),
         &[dlc_root.join("probe.txt")]
     );
     match resolve_path("dlc://self/probe.txt") {
@@ -440,7 +460,10 @@ fn node_arena_packed_children_rebuild_and_stale_fallback() {
     assert!(arena.packed_children_current());
     assert_eq!(arena.children(root), Some([a].as_slice()));
 
-    arena.get_mut(root).unwrap().add_child(b);
+    arena
+        .get_mut(root)
+        .expect("test or bench setup must succeed")
+        .add_child(b);
     assert!(!arena.packed_children_current());
     assert_eq!(arena.children(root), Some([a, b].as_slice()));
 

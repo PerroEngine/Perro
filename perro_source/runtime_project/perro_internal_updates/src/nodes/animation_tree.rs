@@ -71,7 +71,14 @@ pub fn internal_update<RT, R, IP>(
     R: ResourceAPI + ?Sized,
     IP: InputAPI + ?Sized,
 {
-    let tree_id = with_node!(ctx, SelfNodeType, id, |tree| tree.tree);
+    let Some(tree_id) =
+        with_node!(ctx, SelfNodeType, id, |tree| tree.tree).warn_none_once(format_args!(
+            "animation tree update skip: node={} expect=AnimationTree missing",
+            id.as_u64()
+        ))
+    else {
+        return;
+    };
     if tree_id.is_nil() {
         return;
     }
@@ -80,13 +87,24 @@ pub fn internal_update<RT, R, IP>(
     };
     sync_slots(ctx, id, &asset);
     step_slots(ctx, res, id);
-    let pose = with_node!(ctx, SelfNodeType, id, |tree| eval_tree_pose(
+    let Some(pose) = with_node!(ctx, SelfNodeType, id, |tree| eval_tree_pose(
         tree, res, &asset
-    ));
-    let mut applied_transforms = with_node_mut!(ctx, SelfNodeType, id, |tree| {
+    ))
+    .warn_none_once(format_args!(
+        "animation tree pose skip: node={} expect=AnimationTree missing",
+        id.as_u64()
+    )) else {
+        return;
+    };
+    let Some(mut applied_transforms) = with_node_mut!(ctx, SelfNodeType, id, |tree| {
         std::mem::take(&mut tree.internal.applied_transforms)
     })
-    .unwrap_or_default();
+    .warn_none_once(format_args!(
+        "animation tree apply skip: node={} expect=AnimationTree missing",
+        id.as_u64()
+    )) else {
+        return;
+    };
     apply_pose(ctx, res, &pose, &mut applied_transforms);
     let _ = with_node_mut!(ctx, SelfNodeType, id, |tree| {
         tree.internal.applied_transforms = applied_transforms;
@@ -602,7 +620,7 @@ where
     RT: RuntimeAPI + ?Sized,
     R: ResourceAPI + ?Sized,
 {
-    let entries = with_node_mut!(ctx, SelfNodeType, id, |tree| {
+    let Some(entries) = with_node_mut!(ctx, SelfNodeType, id, |tree| {
         tree.internal
             .slots
             .iter_mut()
@@ -622,7 +640,12 @@ where
             })
             .collect::<Vec<_>>()
     })
-    .unwrap_or_default();
+    .warn_none_once(format_args!(
+        "animation tree events skip: node={} expect=AnimationTree missing",
+        id.as_u64()
+    )) else {
+        return;
+    };
     for (idx, animation, animation_id, mut frames) in entries {
         let Some(clip) = res.Animations().get(animation_id) else {
             continue;

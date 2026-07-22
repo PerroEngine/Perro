@@ -339,7 +339,8 @@ mod tests {
 
     #[test]
     fn node_ref_hints_cover_camera_streams_and_skeletons() {
-        let stream = scene_node_field(NodeType::UiCameraStream, "camera").unwrap();
+        let stream = scene_node_field(NodeType::UiCameraStream, "camera")
+            .expect("test or bench setup must succeed");
         let NodeFieldType::NodeRef(stream_hint) = stream.ty else {
             panic!("camera must be node ref");
         };
@@ -348,7 +349,8 @@ mod tests {
         assert!(stream_hint.allows(NodeType::Webcam));
         assert!(!stream_hint.allows(NodeType::MeshInstance3D));
 
-        let mesh = scene_node_field(NodeType::MeshInstance3D, "skeleton").unwrap();
+        let mesh = scene_node_field(NodeType::MeshInstance3D, "skeleton")
+            .expect("test or bench setup must succeed");
         let NodeFieldType::NodeRef(mesh_hint) = mesh.ty else {
             panic!("skeleton must be node ref");
         };
@@ -358,7 +360,8 @@ mod tests {
 
     #[test]
     fn camera_projection_field_exposes_enum_options() {
-        let field = scene_node_field(NodeType::Camera3D, "projection").unwrap();
+        let field = scene_node_field(NodeType::Camera3D, "projection")
+            .expect("test or bench setup must succeed");
         let NodeFieldType::EnumSubmenu(options) = field.ty else {
             panic!("projection must be enum submenu");
         };

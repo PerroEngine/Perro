@@ -157,13 +157,13 @@ mod scene {
         let id = NodeID::new(42);
 
         let initial = with_state!(&mut ctx, i32, id, |state| *state);
-        assert_eq!(initial, 5);
+        assert_eq!(initial, Some(5));
 
         let _ = with_state_mut!(&mut ctx, i32, id, |state| {
             *state += 7;
         });
         let updated = with_state!(&mut ctx, i32, id, |state| *state);
-        assert_eq!(updated, 12);
+        assert_eq!(updated, Some(12));
 
         let _new_node = create_node!(&mut ctx, Node2D);
         let _root_nodes = create_nodes!(
@@ -184,7 +184,7 @@ mod scene {
         );
         with_node_mut!(&mut ctx, Node2D, id, |_node| {});
         let value = with_node!(&mut ctx, Node2D, id, |_node| 99_i32);
-        assert_eq!(value, 0_i32);
+        assert_eq!(value, None);
         let _ = with_base_node!(&mut ctx, Node2D, id, |_node| 1_i32);
         let _ = with_base_node_mut!(&mut ctx, Node2D, id, |_node| 2_i32);
         assert_eq!(get_node_name!(&mut ctx, id), None);
@@ -568,7 +568,7 @@ mod scene {
         assert_eq!(
             ctx.Scene()
                 .load_preloaded_typed(PreloadedSceneID::from_u64(99))
-                .unwrap_err(),
+                .expect_err("test call must fail"),
             LoadError::Legacy("bad preloaded scene id".to_string())
         );
         assert!(scene_drop_preloaded!(&mut ctx, preloaded));

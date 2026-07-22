@@ -249,12 +249,18 @@ link 0.1 0 0.1 0.2 0 0.2 cost=2
         assert!(!id.is_nil());
         assert!(res.NavMeshes().is_loaded(id));
         assert_eq!(
-            res.NavMeshes().get_data(id).unwrap().triangles[0]
+            res.NavMeshes()
+                .get_data(id)
+                .expect("test or bench setup must succeed")
+                .triangles[0]
                 .layers
                 .bits(),
             1
         );
-        let resource = res.NavMeshes().get_resource(id).unwrap();
+        let resource = res
+            .NavMeshes()
+            .get_resource(id)
+            .expect("test or bench setup must succeed");
         assert_eq!(resource.triangle_areas, vec![3]);
         assert_eq!(resource.links.len(), 1);
         assert_eq!(resource.links[0].cost, 2.0);
@@ -284,7 +290,7 @@ link 0.1 0 0.1 0.2 0 0.2 cost=2
                 layers: BitMask::ALL,
             }],
         )
-        .unwrap();
+        .expect("test or bench setup must succeed");
         let id = res.NavMeshes().create(valid.clone());
         assert!(!id.is_nil());
         assert!(!res.NavMeshes().write(id, invalid));

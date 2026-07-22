@@ -355,16 +355,18 @@ mod tests {
     fn parse_csv_table_trims_cells() {
         let suffix = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .expect("required value must be present")
             .as_nanos();
         let path = std::env::temp_dir().join(format!(
             "perro_static_csv_dedup_{}_{}.csv",
             std::process::id(),
             suffix
         ));
-        fs::write(&path, "name, occ\n Tiernan , Self EM \n").unwrap();
+        fs::write(&path, "name, occ\n Tiernan , Self EM \n")
+            .expect("required value must be present");
 
-        let table = parse_csv_table("res://test.csv", &path).unwrap();
+        let table =
+            parse_csv_table("res://test.csv", &path).expect("required value must be present");
         let _ = fs::remove_file(path);
 
         assert_eq!(table.headers, ["name", "occ"]);

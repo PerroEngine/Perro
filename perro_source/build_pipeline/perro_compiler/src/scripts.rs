@@ -43,7 +43,16 @@ fn sync_scripts_from_source(
             if path.extension().and_then(|e| e.to_str()) != Some("rs") {
                 return Ok(());
             }
-            let rel = path.strip_prefix(source_dir).unwrap();
+            let rel = path.strip_prefix(source_dir).map_err(|err| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!(
+                        "script path {} escaped source root {}: {err}",
+                        path.display(),
+                        source_dir.display()
+                    ),
+                )
+            })?;
             let rel_norm = rel.to_string_lossy().replace('\\', "/");
             let generated_rel = generated_script_rel(&rel_norm);
             let dst = scripts_src.join(&generated_rel);
@@ -472,7 +481,10 @@ fn build_patch_crates_io_block(engine_root: &Path) -> String {
             "perro_networking",
             "perro_source/api_modules/perro_networking",
         ),
-        ("perro_input_api", "perro_source/api_modules/perro_input_api"),
+        (
+            "perro_input_api",
+            "perro_source/api_modules/perro_input_api",
+        ),
         ("perro_jobs", "perro_source/api_modules/perro_jobs"),
         ("perro_web", "perro_source/api_modules/perro_web"),
         (

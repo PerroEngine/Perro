@@ -31,14 +31,14 @@ methods!({
     }
 
     fn push_overlay(&self, ctx: &mut ScriptContext<'_, API>) {
-        let overlay = with_state!(ctx.run, WaterDemoState, ctx.id, |state| state.overlay);
+        let overlay = with_state!(ctx.run, WaterDemoState, ctx.id, |state| state.overlay).unwrap_or_default();
         if overlay.is_nil() {
             return;
         }
 
         let water = query!(ctx.run, all(node_type[WaterBody3D]), in_subtree(ctx.id));
         let rigid = query!(ctx.run, all(node_type[RigidBody3D]), in_subtree(ctx.id));
-        let projectiles = with_state!(ctx.run, WaterDemoState, ctx.id, |state| state.projectiles);
+        let projectiles = with_state!(ctx.run, WaterDemoState, ctx.id, |state| state.projectiles).unwrap_or_default();
         let projectile_cnt = if projectiles.is_nil() {
             0
         } else {
@@ -51,7 +51,7 @@ methods!({
         };
         let mut depths = Vec::new();
         for node in water.iter().copied() {
-            let depth = with_node!(ctx.run, WaterBody3D, node, |body| body.water.depth);
+            let depth = with_node!(ctx.run, WaterBody3D, node, |body| body.water.depth).unwrap_or_default();
             depths.push(format!("{depth:.1}"));
         }
         let body = format!(

@@ -56,7 +56,8 @@ pub struct PlayerState {
 lifecycle!({
     fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
         let dt = delta_time!(ctx.run);
-        let speed = with_state!(ctx.run, PlayerState, ctx.id, |state| state.speed);
+        let speed = with_state!(ctx.run, PlayerState, ctx.id, |state| state.speed)
+            .unwrap_or_default();
         let mut delta = Vector2::ZERO;
 
         if key_down!(ctx.ipt, KeyCode::KeyD) {

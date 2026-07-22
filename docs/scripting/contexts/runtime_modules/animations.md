@@ -90,7 +90,7 @@ struct HeroAnim {
 methods!({
     // Wired to the jump input action.
     fn on_jump(&self, ctx: &mut ScriptContext<'_, API>) {
-        let (player, jump) = with_state!(ctx.run, HeroAnim, ctx.id, |s| (s.player, s.jump));
+        let (player, jump) = with_state!(ctx.run, HeroAnim, ctx.id, |s| (s.player, s.jump)).unwrap_or_default();
         if let Some(player) = player {
             anim_player_set_clip!(ctx.run, player, jump);
             anim_player_play!(ctx.run, player);

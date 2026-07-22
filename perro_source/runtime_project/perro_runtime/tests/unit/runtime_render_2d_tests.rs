@@ -1397,6 +1397,40 @@ fn nine_slice_2d_emits_nine_sprite_tilemap() {
 }
 
 #[test]
+fn nine_slice_2d_auto_splits_full_texture_into_thirds() {
+    let mut runtime = Runtime::new();
+    let node = NodeAPI::create::<NineSlice2D>(&mut runtime);
+    if let Some(mut scene_node) = runtime.nodes.get_mut(node)
+        && let SceneNodeData::NineSlice2D(nine) = &mut scene_node.data
+    {
+        nine.texture = TextureID::from_parts(55, 0);
+        nine.size = Vector2::new(90.0, 60.0);
+    }
+
+    runtime.extract_render_2d_commands();
+    let commands = collect_commands(&mut runtime);
+    let sprites = commands
+        .iter()
+        .find_map(|command| match command {
+            RenderCommand::TwoD(Command2D::UpsertTileMap { node: n, tilemap }) if *n == node => {
+                Some(tilemap.sprites.as_ref())
+            }
+            _ => None,
+        })
+        .expect("nine slice tilemap");
+
+    assert_eq!(sprites.len(), 9);
+    assert!(sprites.iter().all(|sprite| sprite.size == [30.0, 20.0]));
+    assert!(sprites.iter().all(|sprite| sprite.uv_normalized));
+    assert!(sprites.iter().any(|sprite| {
+        (sprite.uv_min[0] - 1.0 / 3.0).abs() < 1.0e-6
+            && (sprite.uv_min[1] - 1.0 / 3.0).abs() < 1.0e-6
+            && (sprite.uv_max[0] - 2.0 / 3.0).abs() < 1.0e-6
+            && (sprite.uv_max[1] - 2.0 / 3.0).abs() < 1.0e-6
+    }));
+}
+
+#[test]
 fn nine_slice_button_2d_emits_nine_sprite_tilemap_with_hover_tint() {
     let mut runtime = Runtime::new();
     runtime.set_viewport_size(800, 600);

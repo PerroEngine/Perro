@@ -25,6 +25,9 @@ ssr = [
     "leptos_router/ssr",
 ]
 
+[lints]
+workspace = true
+
 [dependencies]
 leptos = { version = "0.8.12", default-features = false }
 leptos_meta = { version = "0.8.6", default-features = false }

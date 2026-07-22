@@ -23,8 +23,8 @@ pub trait NodeAPI {
 
     /// Reads from an exact concrete node type.
     ///
-    /// Returns `V::default()` if `id` is invalid or node type does not exactly match `T`.
-    fn with_node<T, V: Clone + Default>(&mut self, node_id: NodeID, f: impl FnOnce(&T) -> V) -> V
+    /// Returns `None` if `id` is invalid or node type does not exactly match `T`.
+    fn with_node<T, V>(&mut self, node_id: NodeID, f: impl FnOnce(&T) -> V) -> Option<V>
     where
         T: NodeTypeDispatch;
 
@@ -90,6 +90,7 @@ pub trait NodeAPI {
                 .bone_name(bone_index)
                 .map(|name| Cow::Owned(name.to_string()))
         })
+        .flatten()
     }
 
     /// Returns first skeleton bone index matching name.
@@ -100,6 +101,7 @@ pub trait NodeAPI {
         self.with_node::<Skeleton3D, _>(skeleton_id, |skeleton| {
             skeleton.bone_index(bone_name.as_ref())
         })
+        .flatten()
     }
 
     /// Sets UI rotation in radians. Works on `UiNode` and descendants.

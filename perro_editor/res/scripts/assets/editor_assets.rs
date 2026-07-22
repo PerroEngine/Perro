@@ -188,7 +188,7 @@ pub fn choose_create_location<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'
 pub fn create_project_from_manager<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
     let parent = with_state!(ctx.run, EditorState, ctx.id, |state| {
         state.create_parent_dir.clone()
-    });
+    }).unwrap_or_default();
     if parent.trim().is_empty() {
         set_log(ctx, "create project fail\npick location first");
         return;
@@ -225,7 +225,7 @@ pub fn create_project_from_manager<API: ScriptAPI + ?Sized>(ctx: &mut ScriptCont
 pub fn open_recent_project<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, idx: usize) {
     let path = with_state!(ctx.run, EditorState, ctx.id, |state| {
         state.recent_projects.get(idx).cloned()
-    });
+    }).unwrap_or_default();
     let Some(path) = path else {
         return;
     };
@@ -302,7 +302,7 @@ pub fn scan_res_paths(root: &Path) -> Result<Vec<String>, String> {
 pub fn refresh_project_assets<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
     let root = with_state!(ctx.run, EditorState, ctx.id, |state| {
         state.project_root.clone()
-    });
+    }).unwrap_or_default();
     if root.is_empty() {
         set_log(ctx, "refresh fail\nopen project first");
         refresh_all(ctx);
@@ -346,7 +346,7 @@ pub fn open_file_slot<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>,
     });
     let res_path = with_state!(ctx.run, EditorState, ctx.id, |state| {
         filtered_file_paths(state).get(idx).cloned()
-    });
+    }).unwrap_or_default();
     let Some(scene_path) = res_path else {
         return;
     };
@@ -400,13 +400,13 @@ pub fn click_or_open_file_slot<API: ScriptAPI + ?Sized>(
     });
     let res_path = with_state!(ctx.run, EditorState, ctx.id, |state| {
         filtered_file_paths(state).get(idx).cloned()
-    });
+    }).unwrap_or_default();
     let Some(scene_path) = res_path else {
         return;
     };
     let was_selected = with_state!(ctx.run, EditorState, ctx.id, |state| {
         state.active_asset_path == scene_path
-    });
+    }).unwrap_or_default();
     let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
         state.active_asset_path = scene_path.clone();
         state.sidebar_mode = "files".to_string();
@@ -597,7 +597,7 @@ pub fn open_scene_path<API: ScriptAPI + ?Sized>(
     }
     let root = with_state!(ctx.run, EditorState, ctx.id, |state| {
         state.project_root.clone()
-    });
+    }).unwrap_or_default();
     let abs = res_to_abs(&root, scene_path);
     let text = match FileMod::load_string(&abs) {
         Ok(text) => text,
@@ -647,7 +647,7 @@ pub fn open_animation_path<API: ScriptAPI + ?Sized>(
 ) {
     let root = with_state!(ctx.run, EditorState, ctx.id, |state| {
         state.project_root.clone()
-    });
+    }).unwrap_or_default();
     let abs = res_to_abs(&root, anim_path);
     match FileMod::load_string(&abs) {
         Ok(text) => {
@@ -729,7 +729,7 @@ pub fn cycle_active_glb_ref<API: ScriptAPI + ?Sized>(
         } else {
             Some(state.active_glb_path.clone())
         }
-    });
+    }).unwrap_or_default();
     let Some(path) = path else {
         return;
     };
@@ -813,7 +813,7 @@ pub fn shift_visible_tab_page<API: ScriptAPI + ?Sized>(
 ) {
     let idx = with_state!(ctx.run, EditorState, ctx.id, |state| {
         visible_tab_page_target(state.open_paths.len(), state.active_open, dir)
-    });
+    }).unwrap_or_default();
     if let Some(idx) = idx {
         set_active_tab(ctx, idx);
     }
@@ -848,7 +848,7 @@ pub fn cycle_scene_tab<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>
             return None;
         }
         Some(wrap_index(state.active_open, state.open_paths.len(), dir))
-    });
+    }).unwrap_or_default();
     if let Some(idx) = idx {
         set_active_tab(ctx, idx);
     }
@@ -857,7 +857,7 @@ pub fn cycle_scene_tab<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>
 pub fn close_active_scene_tab<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
     let idx = with_state!(ctx.run, EditorState, ctx.id, |state| {
         (!state.open_paths.is_empty()).then_some(state.active_open)
-    });
+    }).unwrap_or_default();
     if let Some(idx) = idx {
         close_scene_tab(ctx, idx);
     }
@@ -914,7 +914,7 @@ pub fn close_scene_tab<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>
     if with_state!(ctx.run, EditorState, ctx.id, |state| state
         .dirty_scene_paths
         .iter()
-        .any(|path| path == &target))
+        .any(|path| path == &target)).unwrap_or_default()
     {
         if !active {
             set_log(
@@ -988,7 +988,7 @@ pub fn open_first_scene<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API
             .file_paths
             .iter()
             .position(|path| path.ends_with(".scn"))
-    });
+    }).unwrap_or_default();
     if let Some(slot) = slot {
         open_file_slot(ctx, slot);
     }
@@ -1021,7 +1021,7 @@ pub fn create_quick_asset<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, A
             _ => return None,
         };
         Some((state.project_root.clone(), path, text, kind.to_string()))
-    });
+    }).unwrap_or_default();
     let Some((root, path, text, kind)) = request else {
         set_log(ctx, "new asset fail\nopen project first");
         return;
@@ -1067,7 +1067,7 @@ pub fn create_quick_folder<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, 
         let dir = quick_asset_dir(state, "folder");
         let path = unique_res_folder_path(&state.project_root, &dir, "new_folder");
         Some((state.project_root.clone(), path))
-    });
+    }).unwrap_or_default();
     let Some((root, path)) = request else {
         set_log(ctx, "new folder fail\nopen project first");
         return;
@@ -1103,7 +1103,7 @@ pub fn duplicate_active_asset<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'
         }
         let target = duplicate_res_target(&state.project_root, &source)?;
         Some((state.project_root.clone(), source, target))
-    });
+    }).unwrap_or_default();
     let Some((root, source, target)) = request else {
         set_log(ctx, "dup asset fail\nselect asset");
         return;
@@ -1258,7 +1258,7 @@ pub fn delete_active_asset<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, 
             return Some((state.project_root.clone(), path, true));
         }
         Some((state.project_root.clone(), path, false))
-    });
+    }).unwrap_or_default();
     let Some((root, path, dirty_blocked)) = request else {
         set_log(ctx, "delete asset fail\nselect asset");
         return;
@@ -1355,7 +1355,7 @@ pub fn delete_active_asset<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, 
 pub fn rename_inspector_selection<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
     let rename_asset = with_state!(ctx.run, EditorState, ctx.id, |state| {
         state.sidebar_mode == "files" && !state.active_asset_path.is_empty()
-    });
+    }).unwrap_or_default();
     if rename_asset {
         rename_active_asset(ctx);
     } else {
@@ -1377,7 +1377,7 @@ pub fn rename_active_asset<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, 
         }
         let target = rename_res_target(&state.project_root, &source, &raw_name)?;
         Some((state.project_root.clone(), source, target, false))
-    });
+    }).unwrap_or_default();
     let Some((root, source, target, blocked)) = request else {
         set_log(ctx, "rename asset fail\nbad name");
         return;
@@ -1781,7 +1781,7 @@ pub fn export_selected_glb_animation<API: ScriptAPI + ?Sized>(ctx: &mut ScriptCo
             state.active_glb_anim_index,
             state.active_anim_player_key,
         ))
-    });
+    }).unwrap_or_default();
     let Some((root, glb_path, anim_index, player_key)) = request else {
         set_log(ctx, "glb anim fail\nselect glb");
         return;
@@ -1842,7 +1842,7 @@ pub fn export_selected_glb_material<API: ScriptAPI + ?Sized>(ctx: &mut ScriptCon
             state.active_glb_mat_index,
             state.selected_key,
         ))
-    });
+    }).unwrap_or_default();
     let Some((root, glb_path, mat_index, selected_key)) = request else {
         set_log(ctx, "glb mat fail\nselect glb");
         return;

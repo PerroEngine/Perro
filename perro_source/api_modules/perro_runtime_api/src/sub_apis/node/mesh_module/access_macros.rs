@@ -154,7 +154,7 @@ macro_rules! with_node_mut {
 }
 
 /// Exact-type read node access.
-/// Usage: `with_node!(ctx, ConcreteType, node_id, |node| -> V { ... }) -> V`.
+/// Usage: `with_node!(ctx, ConcreteType, node_id, |node| -> V { ... }) -> Option<V>`.
 /// Internals:
 /// - The runtime does an exact concrete-type check, then calls the closure with `&ConcreteType`.
 /// - The read borrow is scoped to the closure call and cannot outlive it.

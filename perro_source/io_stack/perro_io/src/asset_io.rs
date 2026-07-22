@@ -107,7 +107,7 @@ pub fn validate_dlc_name(name: &str) -> io::Result<()> {
 pub fn get_project_root() -> ProjectRoot {
     PROJECT_ASSET_STATE
         .read()
-        .unwrap()
+        .expect("required value must be present")
         .root
         .clone()
         .expect("Project root not set")
@@ -122,7 +122,9 @@ pub fn try_set_project_root(root: ProjectRoot) -> io::Result<()> {
         ProjectRoot::Disk { .. } => None,
     };
 
-    let mut state = PROJECT_ASSET_STATE.write().unwrap();
+    let mut state = PROJECT_ASSET_STATE
+        .write()
+        .expect("required value must be present");
     state.root = Some(root);
     state.archive = archive;
     Ok(())
@@ -136,9 +138,13 @@ pub fn set_project_root(root: ProjectRoot) {
 }
 
 pub fn clear_dlc_mounts() {
-    let mut mounts = DLC_MOUNTS.write().unwrap();
-    let mut archives = DLC_ARCHIVES.write().unwrap();
-    let mut lookups = DLC_STATIC_BINARY_LOOKUPS.write().unwrap();
+    let mut mounts = DLC_MOUNTS.write().expect("required value must be present");
+    let mut archives = DLC_ARCHIVES
+        .write()
+        .expect("required value must be present");
+    let mut lookups = DLC_STATIC_BINARY_LOOKUPS
+        .write()
+        .expect("required value must be present");
     mounts.clear();
     archives.clear();
     lookups.clear();
@@ -147,7 +153,7 @@ pub fn clear_dlc_mounts() {
 pub fn mounted_dlc_names() -> Vec<String> {
     let mut out = DLC_MOUNTS
         .read()
-        .unwrap()
+        .expect("required value must be present")
         .keys()
         .cloned()
         .collect::<Vec<_>>();
@@ -158,7 +164,11 @@ pub fn mounted_dlc_names() -> Vec<String> {
 pub fn read_mounted_dlc_file(name: &str, virtual_path: &str) -> io::Result<Vec<u8>> {
     validate_asset_relative_path(virtual_path)?;
     let key = name.to_ascii_lowercase();
-    let archive = DLC_ARCHIVES.read().unwrap().get(&key).cloned();
+    let archive = DLC_ARCHIVES
+        .read()
+        .expect("required value must be present")
+        .get(&key)
+        .cloned();
     if let Some(archive) = archive {
         archive.read_file(virtual_path)
     } else {
@@ -206,9 +216,13 @@ pub fn mount_dlc_archive(name: &str, archive_path: impl AsRef<Path>) -> io::Resu
 
 fn replace_dlc_mount(name: &str, mount: DlcMount, archive: Option<Arc<PerroAssetsArchive>>) {
     let key = name.to_ascii_lowercase();
-    let mut mounts = DLC_MOUNTS.write().unwrap();
-    let mut archives = DLC_ARCHIVES.write().unwrap();
-    let mut lookups = DLC_STATIC_BINARY_LOOKUPS.write().unwrap();
+    let mut mounts = DLC_MOUNTS.write().expect("required value must be present");
+    let mut archives = DLC_ARCHIVES
+        .write()
+        .expect("required value must be present");
+    let mut lookups = DLC_STATIC_BINARY_LOOKUPS
+        .write()
+        .expect("required value must be present");
     archives.remove(&key);
     lookups.remove(&key);
     if let Some(archive) = archive {
@@ -228,7 +242,7 @@ fn replace_dlc_mount(name: &str, mount: DlcMount, archive: Option<Arc<PerroAsset
 pub unsafe fn register_dlc_static_binary_lookup(name: &str, lookup: DlcStaticBinaryLookup) {
     DLC_STATIC_BINARY_LOOKUPS
         .write()
-        .unwrap()
+        .expect("required value must be present")
         .insert(name.to_ascii_lowercase(), lookup);
 }
 
@@ -353,7 +367,11 @@ pub fn resolve_path(path: &str) -> ResolvedPath {
         return ResolvedPath::Disk(PathBuf::from(path));
     }
 
-    let project_root_opt = PROJECT_ASSET_STATE.read().unwrap().root.clone();
+    let project_root_opt = PROJECT_ASSET_STATE
+        .read()
+        .expect("required value must be present")
+        .root
+        .clone();
 
     // Handle user:// paths (always disk)
     if let Some(stripped) = path.strip_prefix("user://") {
@@ -383,7 +401,10 @@ pub fn resolve_path(path: &str) -> ResolvedPath {
             Some(mount_raw.to_ascii_lowercase())
         };
         if let Some(name) = mount_name
-            && let Some(mount) = DLC_MOUNTS.read().unwrap().get(&name)
+            && let Some(mount) = DLC_MOUNTS
+                .read()
+                .expect("required value must be present")
+                .get(&name)
         {
             return match &mount.source {
                 DlcMountSource::Disk(root) => ResolvedPath::Disk(root.join(rel)),
@@ -447,7 +468,11 @@ pub fn load_asset(path: &str) -> io::Result<Vec<u8>> {
         ResolvedPath::Disk(pb) => fs::read(pb),
         ResolvedPath::WebUserStorage(key) => load_web_user_asset(&key),
         ResolvedPath::PerroAssets(virtual_path) => {
-            let archive = PROJECT_ASSET_STATE.read().unwrap().archive.clone();
+            let archive = PROJECT_ASSET_STATE
+                .read()
+                .expect("required value must be present")
+                .archive
+                .clone();
             if let Some(archive) = archive {
                 archive.read_file(&virtual_path)
             } else {
@@ -457,7 +482,11 @@ pub fn load_asset(path: &str) -> io::Result<Vec<u8>> {
         ResolvedPath::StaticBinary(path) => load_static_binary(&path),
         ResolvedPath::DlcStaticBinary { dlc, path } => load_dlc_static_binary(&dlc, &path),
         ResolvedPath::DlcPerroAssets { dlc, virtual_path } => {
-            let archive = DLC_ARCHIVES.read().unwrap().get(&dlc).cloned();
+            let archive = DLC_ARCHIVES
+                .read()
+                .expect("required value must be present")
+                .get(&dlc)
+                .cloned();
             if let Some(archive) = archive {
                 archive.read_file(&virtual_path)
             } else {
@@ -483,7 +512,11 @@ pub fn stream_asset(path: &str) -> io::Result<Box<dyn ReadSeek>> {
             Ok(Box::new(std::io::Cursor::new(bytes)))
         }
         ResolvedPath::PerroAssets(virtual_path) => {
-            let archive = PROJECT_ASSET_STATE.read().unwrap().archive.clone();
+            let archive = PROJECT_ASSET_STATE
+                .read()
+                .expect("required value must be present")
+                .archive
+                .clone();
             if let Some(archive) = archive {
                 let file: PerroAssetsFile = archive.stream_file(&virtual_path)?;
                 Ok(Box::new(file))
@@ -496,7 +529,11 @@ pub fn stream_asset(path: &str) -> io::Result<Box<dyn ReadSeek>> {
             Err(io::Error::other("Cannot stream static binary"))
         }
         ResolvedPath::DlcPerroAssets { dlc, virtual_path } => {
-            let archive = DLC_ARCHIVES.read().unwrap().get(&dlc).cloned();
+            let archive = DLC_ARCHIVES
+                .read()
+                .expect("required value must be present")
+                .get(&dlc)
+                .cloned();
             if let Some(archive) = archive {
                 let file: PerroAssetsFile = archive.stream_file(&virtual_path)?;
                 Ok(Box::new(file))
@@ -565,7 +602,7 @@ fn save_web_user_asset(key: &str, _: &[u8]) -> io::Result<()> {
 fn load_dlc_static_binary(dlc: &str, path: &str) -> io::Result<Vec<u8>> {
     let lookup = DLC_STATIC_BINARY_LOOKUPS
         .read()
-        .unwrap()
+        .expect("required value must be present")
         .get(dlc)
         .copied()
         .ok_or_else(|| io::Error::other(format!("dlc static binary lookup not loaded: {dlc}")))?;
@@ -608,13 +645,18 @@ pub fn decode_static_font(bytes: &[u8]) -> io::Result<Vec<u8>> {
             .get(5..9)
             .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "short PFONT"))?
             .try_into()
-            .unwrap(),
+            .expect("required value must be present"),
     ) as usize;
     crate::decompress_zlib_limited(&bytes[9..], raw_len)
 }
 
 fn load_static_binary(path: &str) -> io::Result<Vec<u8>> {
-    match PROJECT_ASSET_STATE.read().unwrap().root.as_ref() {
+    match PROJECT_ASSET_STATE
+        .read()
+        .expect("required value must be present")
+        .root
+        .as_ref()
+    {
         Some(ProjectRoot::PerroAssets {
             static_resource_lookups,
             ..
@@ -713,12 +755,18 @@ mod tests {
     #[test]
     fn static_font_decode_handles_raw_and_pfont() {
         let raw = b"font bytes font bytes font bytes";
-        assert_eq!(decode_static_font(raw).unwrap(), raw);
-        let compressed = crate::compress_zlib_best(raw).unwrap();
+        assert_eq!(
+            decode_static_font(raw).expect("required value must be present"),
+            raw
+        );
+        let compressed = crate::compress_zlib_best(raw).expect("required value must be present");
         let mut packed = b"PFONT".to_vec();
         packed.extend_from_slice(&(raw.len() as u32).to_le_bytes());
         packed.extend_from_slice(&compressed);
-        assert_eq!(decode_static_font(&packed).unwrap(), raw);
+        assert_eq!(
+            decode_static_font(&packed).expect("required value must be present"),
+            raw
+        );
     }
 
     static EMPTY_ARCHIVE: &[u8] = &[
@@ -732,77 +780,98 @@ mod tests {
             std::process::id()
         ));
         let _ = fs::remove_dir_all(&root);
-        fs::create_dir_all(&root).unwrap();
+        fs::create_dir_all(&root).expect("required value must be present");
         let source = root.join("config.txt");
         let archive = root.join("project.perro");
-        fs::write(&source, contents).unwrap();
+        fs::write(&source, contents).expect("required value must be present");
         perro_assets::packer::build_perro_archive_from_entries(
             &archive,
             &[("res/config.txt".to_string(), source)],
         )
-        .unwrap();
-        let bytes = fs::read(&archive).unwrap().into_boxed_slice();
+        .expect("required value must be present");
+        let bytes = fs::read(&archive)
+            .expect("required value must be present")
+            .into_boxed_slice();
         let _ = fs::remove_dir_all(root);
         Box::leak(bytes)
     }
 
     #[test]
     fn invalid_archive_keeps_prior_root_and_backing() {
-        let _guard = TEST_LOCK.lock().unwrap();
+        let _guard = TEST_LOCK.lock().expect("required value must be present");
         let valid = test_archive("atomic", b"old backing");
         try_set_project_root(ProjectRoot::PerroAssets {
             data: valid,
             name: "Old Root".to_string(),
             static_resource_lookups: StaticResourceLookups::default(),
         })
-        .unwrap();
-        assert_eq!(load_asset("res://config.txt").unwrap(), b"old backing");
+        .expect("required value must be present");
+        assert_eq!(
+            load_asset("res://config.txt").expect("required value must be present"),
+            b"old backing"
+        );
 
         let err = try_set_project_root(ProjectRoot::PerroAssets {
             data: b"invalid archive",
             name: "Broken Root".to_string(),
             static_resource_lookups: StaticResourceLookups::default(),
         })
-        .unwrap_err();
+        .expect_err("operation must fail in this test");
         assert_eq!(err.kind(), io::ErrorKind::InvalidData);
         assert!(matches!(
             get_project_root(),
             ProjectRoot::PerroAssets { name, .. } if name == "Old Root"
         ));
-        assert_eq!(load_asset("res://config.txt").unwrap(), b"old backing");
+        assert_eq!(
+            load_asset("res://config.txt").expect("required value must be present"),
+            b"old backing"
+        );
     }
 
     #[test]
     fn disk_root_switch_clears_archive_backing() {
-        let _guard = TEST_LOCK.lock().unwrap();
+        let _guard = TEST_LOCK.lock().expect("required value must be present");
         let packed = test_archive("disk-switch", b"packed backing");
         try_set_project_root(ProjectRoot::PerroAssets {
             data: packed,
             name: "Packed Root".to_string(),
             static_resource_lookups: StaticResourceLookups::default(),
         })
-        .unwrap();
-        assert_eq!(load_asset("res://config.txt").unwrap(), b"packed backing");
+        .expect("required value must be present");
+        assert_eq!(
+            load_asset("res://config.txt").expect("required value must be present"),
+            b"packed backing"
+        );
 
         let disk =
             std::env::temp_dir().join(format!("perro_io_project_disk_{}", std::process::id()));
         let _ = fs::remove_dir_all(&disk);
-        fs::create_dir_all(disk.join("res")).unwrap();
-        fs::write(disk.join("res/config.txt"), b"disk backing").unwrap();
+        fs::create_dir_all(disk.join("res")).expect("required value must be present");
+        fs::write(disk.join("res/config.txt"), b"disk backing")
+            .expect("required value must be present");
         try_set_project_root(ProjectRoot::Disk {
             root: disk.clone(),
             name: "Disk Root".to_string(),
         })
-        .unwrap();
+        .expect("required value must be present");
 
-        assert!(PROJECT_ASSET_STATE.read().unwrap().archive.is_none());
-        assert_eq!(load_asset("res://config.txt").unwrap(), b"disk backing");
+        assert!(
+            PROJECT_ASSET_STATE
+                .read()
+                .expect("required value must be present")
+                .archive
+                .is_none()
+        );
+        assert_eq!(
+            load_asset("res://config.txt").expect("required value must be present"),
+            b"disk backing"
+        );
         let _ = fs::remove_dir_all(disk);
     }
 
     #[test]
     fn resolve_user_path_normalizes_game_name_spaces() {
-        let _guard = TEST_LOCK.lock().unwrap();
+        let _guard = TEST_LOCK.lock().expect("required value must be present");
         set_project_root(ProjectRoot::Disk {
             root: PathBuf::from("C:/tmp/perro-test-root"),
             name: "My Cool Game".to_string(),
@@ -905,7 +974,7 @@ mod tests {
 
     #[test]
     fn resolve_static_binary_path_in_perro_assets_mode() {
-        let _guard = TEST_LOCK.lock().unwrap();
+        let _guard = TEST_LOCK.lock().expect("required value must be present");
         set_project_root(ProjectRoot::PerroAssets {
             data: EMPTY_ARCHIVE,
             name: "Static Test".to_string(),
@@ -925,7 +994,7 @@ mod tests {
 
     #[test]
     fn load_asset_reads_static_resource_lookup() {
-        let _guard = TEST_LOCK.lock().unwrap();
+        let _guard = TEST_LOCK.lock().expect("required value must be present");
         set_project_root(ProjectRoot::PerroAssets {
             data: EMPTY_ARCHIVE,
             name: "Static Test".to_string(),
@@ -938,26 +1007,34 @@ mod tests {
         });
 
         assert_eq!(
-            load_asset("res://textures/player.png").unwrap(),
+            load_asset("res://textures/player.png").expect("required value must be present"),
             b"static-ptex"
         );
-        assert_eq!(load_asset("res://music/theme.mid").unwrap(), b"MThd");
         assert_eq!(
-            load_asset("res://nav/level.pnav").unwrap(),
+            load_asset("res://music/theme.mid").expect("required value must be present"),
+            b"MThd"
+        );
+        assert_eq!(
+            load_asset("res://nav/level.pnav").expect("required value must be present"),
             b"pnav 1\nv 0 0 0\nv 1 0 0\nv 0 0 1\ntri 0 1 2 1\n"
         );
-        assert_eq!(load_asset("res://soundfonts/game.sf2").unwrap(), b"RIFF");
+        assert_eq!(
+            load_asset("res://soundfonts/game.sf2").expect("required value must be present"),
+            b"RIFF"
+        );
         assert!(load_asset("res://textures/missing.png").is_err());
     }
 
     #[test]
     fn resolve_dev_res_path_stays_disk_even_for_static_ext() {
-        let _guard = TEST_LOCK.lock().unwrap();
+        let _guard = TEST_LOCK.lock().expect("required value must be present");
         let root =
             std::env::temp_dir().join(format!("perro_io_dev_static_ext_{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
-        fs::create_dir_all(root.join("res").join("textures")).unwrap();
-        fs::write(root.join("res").join("textures").join("player.png"), b"raw").unwrap();
+        fs::create_dir_all(root.join("res").join("textures"))
+            .expect("required value must be present");
+        fs::write(root.join("res").join("textures").join("player.png"), b"raw")
+            .expect("required value must be present");
         set_project_root(ProjectRoot::Disk {
             root: root.clone(),
             name: "Dev Test".to_string(),
@@ -967,22 +1044,25 @@ mod tests {
             ResolvedPath::Disk(path) => assert_eq!(path, root.join("res/textures/player.png")),
             other => panic!("expected disk path, got {other:?}"),
         }
-        assert_eq!(load_asset("res://textures/player.png").unwrap(), b"raw");
+        assert_eq!(
+            load_asset("res://textures/player.png").expect("required value must be present"),
+            b"raw"
+        );
         let _ = fs::remove_dir_all(&root);
     }
 
     #[test]
     fn load_asset_reads_dlc_static_binary_lookup() {
-        let _guard = TEST_LOCK.lock().unwrap();
+        let _guard = TEST_LOCK.lock().expect("required value must be present");
         let root =
             std::env::temp_dir().join(format!("perro_io_dlc_static_ext_{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
-        fs::create_dir_all(&root).unwrap();
+        fs::create_dir_all(&root).expect("required value must be present");
         let archive = root.join("Expansion.dlc");
-        fs::write(&archive, EMPTY_ARCHIVE).unwrap();
+        fs::write(&archive, EMPTY_ARCHIVE).expect("required value must be present");
 
         clear_dlc_mounts();
-        mount_dlc_archive("Expansion", &archive).unwrap();
+        mount_dlc_archive("Expansion", &archive).expect("required value must be present");
         // SAFETY: Test callback returns static bytes and follows the registration contract.
         unsafe { register_dlc_static_binary_lookup("Expansion", dlc_static_lookup) };
 
@@ -994,7 +1074,8 @@ mod tests {
             other => panic!("expected dlc static binary path, got {other:?}"),
         }
         assert_eq!(
-            load_asset("dlc://Expansion/textures/player.png").unwrap(),
+            load_asset("dlc://Expansion/textures/player.png")
+                .expect("required value must be present"),
             b"dlc-static-ptex"
         );
 
@@ -1004,45 +1085,65 @@ mod tests {
 
     #[test]
     fn remount_replaces_archive_and_static_lookup_backing() {
-        let _guard = TEST_LOCK.lock().unwrap();
+        let _guard = TEST_LOCK.lock().expect("required value must be present");
         let root =
             std::env::temp_dir().join(format!("perro_io_dlc_remount_{}", std::process::id()));
         let disk = root.join("disk");
         let archive = root.join("Expansion.dlc");
         let _ = fs::remove_dir_all(&root);
-        fs::create_dir_all(&disk).unwrap();
-        fs::write(&archive, EMPTY_ARCHIVE).unwrap();
+        fs::create_dir_all(&disk).expect("required value must be present");
+        fs::write(&archive, EMPTY_ARCHIVE).expect("required value must be present");
 
         clear_dlc_mounts();
-        mount_dlc_archive("Expansion", &archive).unwrap();
+        mount_dlc_archive("Expansion", &archive).expect("required value must be present");
         // SAFETY: Test callback returns immutable static bytes.
         unsafe { register_dlc_static_binary_lookup("Expansion", dlc_static_lookup) };
-        mount_dlc_disk("EXPANSION", &disk).unwrap();
+        mount_dlc_disk("EXPANSION", &disk).expect("required value must be present");
 
-        assert!(!DLC_ARCHIVES.read().unwrap().contains_key("expansion"));
+        assert!(
+            !DLC_ARCHIVES
+                .read()
+                .expect("required value must be present")
+                .contains_key("expansion")
+        );
         assert!(
             !DLC_STATIC_BINARY_LOOKUPS
                 .read()
-                .unwrap()
+                .expect("required value must be present")
                 .contains_key("expansion")
         );
         assert!(matches!(
-            &DLC_MOUNTS.read().unwrap().get("expansion").unwrap().source,
+            &DLC_MOUNTS
+                .read()
+                .expect("required value must be present")
+                .get("expansion")
+                .expect("required value must be present")
+                .source,
             DlcMountSource::Disk(_)
         ));
 
         // SAFETY: Test callback returns immutable static bytes.
         unsafe { register_dlc_static_binary_lookup("Expansion", dlc_static_lookup) };
-        mount_dlc_archive("expansion", &archive).unwrap();
-        assert!(DLC_ARCHIVES.read().unwrap().contains_key("expansion"));
+        mount_dlc_archive("expansion", &archive).expect("required value must be present");
+        assert!(
+            DLC_ARCHIVES
+                .read()
+                .expect("required value must be present")
+                .contains_key("expansion")
+        );
         assert!(
             !DLC_STATIC_BINARY_LOOKUPS
                 .read()
-                .unwrap()
+                .expect("required value must be present")
                 .contains_key("expansion")
         );
         assert!(matches!(
-            &DLC_MOUNTS.read().unwrap().get("expansion").unwrap().source,
+            &DLC_MOUNTS
+                .read()
+                .expect("required value must be present")
+                .get("expansion")
+                .expect("required value must be present")
+                .source,
             DlcMountSource::Archive(_)
         ));
 
@@ -1052,7 +1153,7 @@ mod tests {
 
     #[test]
     fn load_asset_rejects_oversized_dlc_static_binary() {
-        let _guard = TEST_LOCK.lock().unwrap();
+        let _guard = TEST_LOCK.lock().expect("required value must be present");
         clear_dlc_mounts();
         // SAFETY: Test callback initializes both outputs; the loader rejects its
         // oversized length before constructing a slice from the dangling pointer.
@@ -1068,18 +1169,18 @@ mod tests {
 
     #[test]
     fn dlc_self_context_restores_nested_and_after_panic() {
-        let _guard = TEST_LOCK.lock().unwrap();
+        let _guard = TEST_LOCK.lock().expect("required value must be present");
         let root =
             std::env::temp_dir().join(format!("perro_io_dlc_self_context_{}", std::process::id()));
         let base = root.join("base");
         let nested = root.join("nested");
         let _ = fs::remove_dir_all(&root);
-        fs::create_dir_all(&base).unwrap();
-        fs::create_dir_all(&nested).unwrap();
+        fs::create_dir_all(&base).expect("required value must be present");
+        fs::create_dir_all(&nested).expect("required value must be present");
 
         clear_dlc_mounts();
-        mount_dlc_disk("Base", &base).unwrap();
-        mount_dlc_disk("Nested", &nested).unwrap();
+        mount_dlc_disk("Base", &base).expect("required value must be present");
+        mount_dlc_disk("Nested", &nested).expect("required value must be present");
 
         {
             let _base_ctx = push_dlc_self_context(Some("Base"));

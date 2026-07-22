@@ -17,7 +17,7 @@ lifecycle!({
     fn on_all_init(&self, ctx: &mut ScriptContext<'_, API>) {
         let (player, icon) = with_state!(ctx.run, PatternController, ctx.id, |state| {
             (state.player, state.icon)
-        });
+        }).unwrap_or_default();
 
         if !player.is_nil() && !icon.is_nil() {
             let _ = call_method!(
@@ -42,7 +42,7 @@ methods!({
     fn on_award_score(&self, ctx: &mut ScriptContext<'_, API>) {
         let refs = with_state!(ctx.run, PatternController, ctx.id, |state| {
             (state.player, state.adapter, state.icon)
-        });
+        }).unwrap_or_default();
 
         if !refs.0.is_nil() && !refs.2.is_nil() {
             let _score = call_method!(

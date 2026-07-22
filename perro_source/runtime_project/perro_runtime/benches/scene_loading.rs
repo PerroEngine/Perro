@@ -238,7 +238,11 @@ fn bench_compiled_spawn(c: &mut Criterion) {
         let scene = parse_scene(&src);
         let compiled = bench_compile_scene(&scene).expect("compile scene template");
         let mut spawner = BenchSceneSpawner::new();
-        let (node_count, allocs) = sample_allocs(|| spawner.spawn(black_box(&compiled)).unwrap());
+        let (node_count, allocs) = sample_allocs(|| {
+            spawner
+                .spawn(black_box(&compiled))
+                .expect("test or bench setup must succeed")
+        });
         assert_eq!(node_count, nodes + 1);
         eprintln!(
             "scene_compiled_spawn nodes={nodes} allocs/op={} alloc_bytes/op={}",
@@ -252,7 +256,13 @@ fn bench_compiled_spawn(c: &mut Criterion) {
             |b, compiled| {
                 b.iter_batched(
                     BenchSceneSpawner::new,
-                    |mut spawner| black_box(spawner.spawn(black_box(compiled)).unwrap()),
+                    |mut spawner| {
+                        black_box(
+                            spawner
+                                .spawn(black_box(compiled))
+                                .expect("test or bench setup must succeed"),
+                        )
+                    },
                     BatchSize::LargeInput,
                 )
             },
@@ -276,7 +286,13 @@ fn bench_uncached_spawn(c: &mut Criterion) {
         group.bench_with_input(BenchmarkId::from_parameter(nodes), &scene, |b, scene| {
             b.iter_batched(
                 BenchSceneSpawner::new,
-                |mut spawner| black_box(spawner.spawn_uncompiled(black_box(scene)).unwrap()),
+                |mut spawner| {
+                    black_box(
+                        spawner
+                            .spawn_uncompiled(black_box(scene))
+                            .expect("test or bench setup must succeed"),
+                    )
+                },
                 BatchSize::LargeInput,
             )
         });

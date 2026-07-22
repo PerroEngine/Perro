@@ -3,6 +3,9 @@ name = "perro_variant"
 version = "0.1.0"
 edition = "2024"
 
+[lints]
+workspace = true
+
 [dependencies]
 perro_structs.workspace = true
 perro_ids.workspace = true

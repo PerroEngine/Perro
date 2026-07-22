@@ -440,7 +440,7 @@ mod tests {
     #[test]
     fn every_key_name_roundtrips() {
         for index in 0..KeyCode::COUNT {
-            let key = KeyCode::from_index(index).unwrap();
+            let key = KeyCode::from_index(index).expect("test setup must succeed");
             assert_eq!(KeyCode::from_name(key.as_name()), Some(key));
         }
     }

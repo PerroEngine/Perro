@@ -56,7 +56,8 @@ Source path:
 Use it for self state and self node access.
 
 ```rust
-let speed = with_state!(ctx.run, PlayerState, ctx.id, |state| state.speed);
+let speed = with_state!(ctx.run, PlayerState, ctx.id, |state| state.speed)
+    .unwrap_or_default();
 ```
 
 `ctx.id` stays valid for the callback because the runtime is calling that script on that node.
@@ -69,12 +70,13 @@ The main runtime failure is stale id, wrong node type, or removed target.
 
 ## State Closures
 
-`with_state!` borrows typed state for the closure body and returns a value.
+`with_state!` borrows typed state for the closure body and returns `Option<V>`.
 
 `with_state_mut!` borrows typed state mutably for the closure body.
 
 ```rust
-let hp = with_state!(ctx.run, PlayerState, ctx.id, |state| state.health);
+let hp = with_state!(ctx.run, PlayerState, ctx.id, |state| state.health)
+    .unwrap_or_default();
 
 with_state_mut!(ctx.run, PlayerState, ctx.id, |state| {
     state.health -= 10.0;

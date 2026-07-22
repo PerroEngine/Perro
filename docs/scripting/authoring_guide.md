@@ -91,9 +91,9 @@ type SelfNodeType = CharacterBody3D;
 
 let speed = with_node!(ctx.run, SelfNodeType, ctx.id, |node| {
     node.velocity.length()
-});
+}).unwrap_or_default();
 
-let camera = with_state!(ctx.run, PlayerState, ctx.id, |state| state.camera);
+let camera = with_state!(ctx.run, PlayerState, ctx.id, |state| state.camera).unwrap_or_default();
 
 if let Some(camera) = camera {
     with_node_mut!(ctx.run, Camera3D, camera, |node| {

@@ -858,17 +858,37 @@ mod recovery_tests {
     }
 
     fn body_teleport_2d(system: &mut PhysicsSystem, id: NodeID, pos: Vector2) {
-        let world = system.world_2d.as_mut().unwrap();
-        let handle = world.body_map.get(&id).unwrap().handle;
-        let rb = world.bodies.get_mut(handle).unwrap();
+        let world = system
+            .world_2d
+            .as_mut()
+            .expect("test or bench setup must succeed");
+        let handle = world
+            .body_map
+            .get(&id)
+            .expect("test or bench setup must succeed")
+            .handle;
+        let rb = world
+            .bodies
+            .get_mut(handle)
+            .expect("test or bench setup must succeed");
         rb.set_position(na2::Isometry2::translation(pos.x, pos.y), true);
         system.query_pipeline_dirty_2d = true;
     }
 
     fn body_teleport_3d(system: &mut PhysicsSystem, id: NodeID, pos: Vector3) {
-        let world = system.world_3d.as_mut().unwrap();
-        let handle = world.body_map.get(&id).unwrap().handle;
-        let rb = world.bodies.get_mut(handle).unwrap();
+        let world = system
+            .world_3d
+            .as_mut()
+            .expect("test or bench setup must succeed");
+        let handle = world
+            .body_map
+            .get(&id)
+            .expect("test or bench setup must succeed")
+            .handle;
+        let rb = world
+            .bodies
+            .get_mut(handle)
+            .expect("test or bench setup must succeed");
         rb.set_position(na3::Isometry3::translation(pos.x, pos.y, pos.z), true);
         system.query_pipeline_dirty_3d = true;
     }
@@ -908,7 +928,7 @@ mod recovery_tests {
                     0.001,
                     &filter(),
                 )
-                .unwrap();
+                .expect("test or bench setup must succeed");
             assert!(
                 res.position.x >= prev_x - 0.001,
                 "recovery went wrong direction, x={}",
@@ -934,7 +954,7 @@ mod recovery_tests {
                 0.001,
                 &filter(),
             )
-            .unwrap();
+            .expect("test or bench setup must succeed");
         assert!(
             (res.position.x - (pos.x + 1.0)).abs() < 0.01,
             "free move blocked, x={}",
@@ -965,7 +985,7 @@ mod recovery_tests {
         // slide +x along the floor.
         let res = system
             .move_body_2d(NodeID::new(2), Vector2::new(1.0, 0.4), 0.001, &filter())
-            .unwrap();
+            .expect("test or bench setup must succeed");
         // full horizontal travel, no vertical pop.
         assert!(res.position.x > 0.9, "slide blocked, x={}", res.position.x);
         assert!(
@@ -999,7 +1019,7 @@ mod recovery_tests {
         for _ in 0..12 {
             let res = system
                 .move_body_2d(NodeID::new(2), Vector2::new(x, 0.0), 0.001, &filter())
-                .unwrap();
+                .expect("test or bench setup must succeed");
             x = res.position.x;
             body_teleport_2d(&mut system, NodeID::new(2), Vector2::new(x, 0.0));
             // never tunnel to the far (+x) side of the thin wall.
@@ -1043,7 +1063,7 @@ mod recovery_tests {
                     0.001,
                     &filter(),
                 )
-                .unwrap();
+                .expect("test or bench setup must succeed");
             assert!(
                 res.position.x >= prev_x - 0.001,
                 "recovery went wrong direction, x={}",
@@ -1066,7 +1086,7 @@ mod recovery_tests {
                 0.001,
                 &filter(),
             )
-            .unwrap();
+            .expect("test or bench setup must succeed");
         assert!(
             (res.position.x - (pos.x + 1.0)).abs() < 0.01,
             "free move blocked, x={}",
@@ -1099,7 +1119,7 @@ mod recovery_tests {
                 0.001,
                 &filter(),
             )
-            .unwrap();
+            .expect("test or bench setup must succeed");
         assert!(res.position.x > 0.9, "slide blocked, x={}", res.position.x);
         assert!(
             (res.position.y - 0.405).abs() < 0.05,
@@ -1129,7 +1149,7 @@ mod recovery_tests {
         for _ in 0..12 {
             let res = system
                 .move_body_3d(NodeID::new(2), Vector3::new(x, 0.0, 0.0), 0.001, &filter())
-                .unwrap();
+                .expect("test or bench setup must succeed");
             x = res.position.x;
             body_teleport_3d(&mut system, NodeID::new(2), Vector3::new(x, 0.0, 0.0));
             assert!(x <= 0.05 + 0.4, "tunneled through thin wall, x={x}");

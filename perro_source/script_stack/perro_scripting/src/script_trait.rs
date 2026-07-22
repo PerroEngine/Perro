@@ -213,7 +213,10 @@ mod state_cast_tests {
         let mut safe_state: Box<dyn Any> = Box::new(TestState { value: 42 });
         let mut fast_state: Box<dyn Any> = Box::new(TestState { value: 42 });
 
-        let safe = safe_state.as_mut().downcast_mut::<TestState>().unwrap();
+        let safe = safe_state
+            .as_mut()
+            .downcast_mut::<TestState>()
+            .expect("required value must be present");
         // SAFETY: fast_state is constructed as TestState above.
         let fast = unsafe { state_mut_unchecked::<TestState>(fast_state.as_mut()) };
 

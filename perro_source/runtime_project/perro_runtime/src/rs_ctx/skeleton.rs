@@ -457,22 +457,19 @@ fn quat_from_basis(x: Vector3, y: Vector3, z: Vector3) -> Quaternion {
 const MIN_BONE_RECORD_BYTES: usize = 8;
 
 fn decode_pskel(bytes: &[u8]) -> Result<Vec<Bone3D>, String> {
-    if bytes.len() < 5 + 4 * 3 {
+    if bytes.len() < 21 {
         return Err("pskel too small".to_string());
     }
     if &bytes[..5] != PSKEL_MAGIC {
         return Err("invalid pskel magic".to_string());
     }
-    let version = u32::from_le_bytes(bytes[5..9].try_into().unwrap());
+    let version = u32::from_le_bytes([bytes[5], bytes[6], bytes[7], bytes[8]]);
     if version != PSKEL_VERSION {
         return Err(format!("unsupported pskel version {version}"));
     }
-    let bone_count = u32::from_le_bytes(bytes[9..13].try_into().unwrap()) as usize;
-    let raw_size = u32::from_le_bytes(bytes[13..17].try_into().unwrap()) as usize;
-    if bytes.len() < 21 {
-        return Err("pskel too small".to_string());
-    }
-    let flags = u32::from_le_bytes(bytes[17..21].try_into().unwrap());
+    let bone_count = u32::from_le_bytes([bytes[9], bytes[10], bytes[11], bytes[12]]) as usize;
+    let raw_size = u32::from_le_bytes([bytes[13], bytes[14], bytes[15], bytes[16]]) as usize;
+    let flags = u32::from_le_bytes([bytes[17], bytes[18], bytes[19], bytes[20]]);
     let payload_start = 21usize;
     let raw = decode_pskel_payload(flags, &bytes[payload_start..])?;
     if raw.len() != raw_size {
@@ -532,13 +529,13 @@ fn decode_pskel_2d(bytes: &[u8]) -> Result<Vec<Bone2D>, String> {
     if &bytes[..5] != PSKEL_MAGIC {
         return Err("invalid pskel2d magic".to_string());
     }
-    let version = u32::from_le_bytes(bytes[5..9].try_into().unwrap());
+    let version = u32::from_le_bytes([bytes[5], bytes[6], bytes[7], bytes[8]]);
     if version != PSKEL_VERSION_2D {
         return Err(format!("unsupported pskel2d version {version}"));
     }
-    let bone_count = u32::from_le_bytes(bytes[9..13].try_into().unwrap()) as usize;
-    let raw_size = u32::from_le_bytes(bytes[13..17].try_into().unwrap()) as usize;
-    let flags = u32::from_le_bytes(bytes[17..21].try_into().unwrap());
+    let bone_count = u32::from_le_bytes([bytes[9], bytes[10], bytes[11], bytes[12]]) as usize;
+    let raw_size = u32::from_le_bytes([bytes[13], bytes[14], bytes[15], bytes[16]]) as usize;
+    let flags = u32::from_le_bytes([bytes[17], bytes[18], bytes[19], bytes[20]]);
     let raw = decode_pskel_payload(flags, &bytes[21..])?;
     if raw.len() != raw_size {
         return Err("pskel2d raw size mismatch".to_string());
@@ -632,7 +629,7 @@ fn read_inv_bind_mats(
         (0..4).enumerate().for_each(|(col_idx, col)| {
             (0..4).enumerate().for_each(|(row_idx, row)| {
                 let idx = start + (col * 4 + row) * 4;
-                let raw = bytes[idx..idx + 4].try_into().unwrap();
+                let raw = [bytes[idx], bytes[idx + 1], bytes[idx + 2], bytes[idx + 3]];
                 mat[col_idx][row_idx] = f32::from_le_bytes(raw);
             });
         });
@@ -885,7 +882,12 @@ fn read_u32(raw: &[u8], cursor: &mut usize) -> Result<u32, String> {
     if end > raw.len() {
         return Err("pskel read_u32 out of bounds".to_string());
     }
-    let value = u32::from_le_bytes(raw[*cursor..end].try_into().unwrap());
+    let value = u32::from_le_bytes([
+        raw[*cursor],
+        raw[*cursor + 1],
+        raw[*cursor + 2],
+        raw[*cursor + 3],
+    ]);
     *cursor = end;
     Ok(value)
 }
@@ -895,7 +897,12 @@ fn read_i32(raw: &[u8], cursor: &mut usize) -> Result<i32, String> {
     if end > raw.len() {
         return Err("pskel read_i32 out of bounds".to_string());
     }
-    let value = i32::from_le_bytes(raw[*cursor..end].try_into().unwrap());
+    let value = i32::from_le_bytes([
+        raw[*cursor],
+        raw[*cursor + 1],
+        raw[*cursor + 2],
+        raw[*cursor + 3],
+    ]);
     *cursor = end;
     Ok(value)
 }
@@ -905,7 +912,12 @@ fn read_f32(raw: &[u8], cursor: &mut usize) -> Result<f32, String> {
     if end > raw.len() {
         return Err("pskel read_f32 out of bounds".to_string());
     }
-    let value = f32::from_le_bytes(raw[*cursor..end].try_into().unwrap());
+    let value = f32::from_le_bytes([
+        raw[*cursor],
+        raw[*cursor + 1],
+        raw[*cursor + 2],
+        raw[*cursor + 3],
+    ]);
     *cursor = end;
     Ok(value)
 }

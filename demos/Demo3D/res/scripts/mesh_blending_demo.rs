@@ -24,7 +24,7 @@ methods!({
 
     fn push_overlay(&self, ctx: &mut ScriptContext<'_, API>) {
         let overlay = with_state!(ctx.run, MeshBlendingDemoState, ctx.id, |state| state
-            .overlay);
+            .overlay).unwrap_or_default();
         if overlay.is_nil() {
             return;
         }

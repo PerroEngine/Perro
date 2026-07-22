@@ -170,7 +170,7 @@ methods!({
 
     fn refresh_labels(&self, ctx: &mut ScriptContext<'_, API>) {
         let target_fps = with_state!(ctx.run, FpsTesterDemoState, ctx.id, |state| state
-            .target_fps);
+            .target_fps).unwrap_or_default();
         let status_label = state_node(ctx, |s| s.status_label);
         set_label(
             ctx,
@@ -178,7 +178,7 @@ methods!({
             format!("Cap {} fps | render row must look choppy", target_fps as i32),
         );
         let script_fps = with_state!(ctx.run, FpsTesterDemoState, ctx.id, |state| state
-            .script_fps);
+            .script_fps).unwrap_or_default();
         self.refresh_profiler_label(ctx, script_fps);
     }
 
@@ -202,7 +202,7 @@ fn state_node<API: ScriptAPI + ?Sized, F: FnOnce(&FpsTesterDemoState) -> NodeID>
     ctx: &mut ScriptContext<'_, API>,
     read: F,
 ) -> NodeID {
-    with_state!(ctx.run, FpsTesterDemoState, ctx.id, |state| read(state))
+    with_state!(ctx.run, FpsTesterDemoState, ctx.id, |state| read(state)).unwrap_or_default()
 }
 
 fn set_dot<API: ScriptAPI + ?Sized>(

@@ -56,8 +56,11 @@ fn huge_csv_bench(c: &mut Criterion) {
         b.iter(|| {
             let mut total = 0usize;
             for row in (0..ROWS).step_by(997) {
-                total =
-                    total.wrapping_add(csv.get_by_header(row, black_box("rarity")).unwrap().len());
+                total = total.wrapping_add(
+                    csv.get_by_header(row, black_box("rarity"))
+                        .expect("test setup must succeed")
+                        .len(),
+                );
             }
             black_box(total)
         })

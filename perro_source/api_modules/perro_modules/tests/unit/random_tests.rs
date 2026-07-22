@@ -73,7 +73,7 @@ fn random_ranges_and_chance_work() {
 #[test]
 fn random_choose_shuffle_and_vectors_work() {
     assert_eq!(super::choose_index(0, 7), None);
-    let idx = super::choose_index(10, 7).unwrap();
+    let idx = super::choose_index(10, 7).expect("test setup must succeed");
     assert!(idx < 10);
 
     let mut a = [1, 2, 3, 4, 5, 6];
@@ -138,6 +138,6 @@ fn seeded_rng_helpers_work() {
     assert!((-20..20).contains(&rng.next_range_i32(-20, 20)));
     let generic: u32 = rng.next_range(0, 5);
     assert!((0..5).contains(&generic));
-    assert!(rng.next_index(5).unwrap() < 5);
+    assert!(rng.next_index(5).expect("test setup must succeed") < 5);
     let _ = rng.next_chance(0.5);
 }

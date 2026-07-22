@@ -242,8 +242,16 @@ mod tests {
         let b = runtime
             .nodes
             .insert(SceneNode::new(SceneNodeData::Node3D(Node3D::new())));
-        runtime.nodes.get_mut(a).unwrap().add_child(b);
-        runtime.nodes.get_mut(b).unwrap().add_child(a);
+        runtime
+            .nodes
+            .get_mut(a)
+            .expect("test or bench setup must succeed")
+            .add_child(b);
+        runtime
+            .nodes
+            .get_mut(b)
+            .expect("test or bench setup must succeed")
+            .add_child(a);
         runtime.clear_dirty_flags();
 
         runtime.force_rerender(a);

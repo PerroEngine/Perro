@@ -18,8 +18,14 @@ fn subtree_queries_visit_corrupt_child_cycle_once() {
     let mut arena = NodeArena::new();
     let a = arena.insert(node_with_name_tags("a", &[]));
     let b = arena.insert(node_with_name_tags("b", &[]));
-    arena.get_mut(a).unwrap().add_child(b);
-    arena.get_mut(b).unwrap().add_child(a);
+    arena
+        .get_mut(a)
+        .expect("test or bench setup must succeed")
+        .add_child(b);
+    arena
+        .get_mut(b)
+        .expect("test or bench setup must succeed")
+        .add_child(a);
 
     let all = NodeQueryView {
         expr: &None,

@@ -113,7 +113,7 @@ lifecycle!({
     }
 
     fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let (navmesh, target) = with_state!(ctx.run, ChaserState, ctx.id, |s| (s.navmesh, s.target));
+        let (navmesh, target) = with_state!(ctx.run, ChaserState, ctx.id, |s| (s.navmesh, s.target)).unwrap_or_default();
         if navmesh.is_nil() || target.is_nil() {
             return;
         }
