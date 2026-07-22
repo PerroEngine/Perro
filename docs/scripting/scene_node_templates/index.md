@@ -19,6 +19,10 @@ These pages are copy-and-paste `.scn` field references for authoring scenes by h
 - Build a screen-space HUD or menu from UI nodes: [UI `.scn` fields](ui.md).
 - Copy a working multi-node fragment (camera streams, webcam, script vars, animation bindings, render layers, physics parity): [Extra `.scn` examples](examples.md).
 
+## Decision Guide
+
+Use templates to learn or copy the exact field shape accepted by `.scn` parsing. Use the node and authoring guides to decide which node owns a behavior. A template proves syntax; it does not replace ownership, reference, or lifecycle design.
+
 ## Templates
 
 - [2D `.scn` fields](2d.md)

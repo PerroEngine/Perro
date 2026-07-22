@@ -515,6 +515,8 @@ pub fn run_static_embedded_project(
         .with_static_icon_lookup(input.assets.texture_lookup)
         .with_perro_assets_bytes(input.assets.perro_assets);
 
+    #[cfg(not(target_arch = "wasm32"))]
+    let preload = spawn_preload_project_images(project.clone());
     let window_title = project.config.name.clone();
     let graphics = graphics_from_project_config(&project.config, true)
         .with_static_mesh_lookup(input.assets.mesh_lookup)
@@ -531,6 +533,16 @@ pub fn run_static_embedded_project(
         .runtime
         .project()
         .and_then(|p| p.config.target_fixed_update);
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let preloaded_images = preload
+            .join()
+            .unwrap_or_else(|_| preload_project_images(app.runtime.project()));
+        WinitRunner::new()
+            .run_with_timestep_and_preload(app, &window_title, fixed, Some(preloaded_images))
+            .map_err(RunProjectError::from)
+    }
+    #[cfg(target_arch = "wasm32")]
     WinitRunner::new()
         .run_with_timestep(app, &window_title, fixed)
         .map_err(RunProjectError::from)

@@ -85,6 +85,22 @@ where
     }
 
     #[inline]
+    fn from_scene_variant(
+        value: &Variant,
+        resolver: &mut dyn SceneVariantResolver,
+    ) -> Option<Self> {
+        let object = value.as_object()?;
+        let mut out = BTreeMap::new();
+        for (k, v) in object {
+            out.insert(
+                K::from_arc_key(Arc::clone(k)),
+                T::from_scene_variant(v, resolver)?,
+            );
+        }
+        Some(out)
+    }
+
+    #[inline]
     fn from_owned_variant(value: Variant) -> Option<Self> {
         let object = match value {
             Variant::Object(object) => object,
@@ -127,6 +143,22 @@ where
         let mut out = HashMap::with_capacity(object.len());
         for (k, v) in object {
             out.insert(K::from_arc_key(Arc::clone(k)), T::from_variant(v)?);
+        }
+        Some(out)
+    }
+
+    #[inline]
+    fn from_scene_variant(
+        value: &Variant,
+        resolver: &mut dyn SceneVariantResolver,
+    ) -> Option<Self> {
+        let object = value.as_object()?;
+        let mut out = HashMap::with_capacity(object.len());
+        for (k, v) in object {
+            out.insert(
+                K::from_arc_key(Arc::clone(k)),
+                T::from_scene_variant(v, resolver)?,
+            );
         }
         Some(out)
     }
@@ -178,6 +210,18 @@ where
     }
 
     #[inline]
+    fn from_scene_variant(
+        value: &Variant,
+        resolver: &mut dyn SceneVariantResolver,
+    ) -> Option<Self> {
+        value
+            .as_array()?
+            .iter()
+            .map(|item| T::from_scene_variant(item, resolver))
+            .collect()
+    }
+
+    #[inline]
     fn from_owned_variant(value: Variant) -> Option<Self> {
         let items = match value {
             Variant::Array(items) => items,
@@ -213,6 +257,18 @@ where
             out.insert(T::from_variant(item)?);
         }
         Some(out)
+    }
+
+    #[inline]
+    fn from_scene_variant(
+        value: &Variant,
+        resolver: &mut dyn SceneVariantResolver,
+    ) -> Option<Self> {
+        value
+            .as_array()?
+            .iter()
+            .map(|item| T::from_scene_variant(item, resolver))
+            .collect()
     }
 
     #[inline]
@@ -255,6 +311,21 @@ where
     }
 
     #[inline]
+    fn from_scene_variant(
+        value: &Variant,
+        resolver: &mut dyn SceneVariantResolver,
+    ) -> Option<Self> {
+        let items = value.as_array()?;
+        if items.len() != 2 {
+            return None;
+        }
+        Some(
+            T::from_scene_variant(&items[0], resolver)?
+                ..T::from_scene_variant(&items[1], resolver)?,
+        )
+    }
+
+    #[inline]
     fn from_owned_variant(value: Variant) -> Option<Self> {
         let items = match value {
             Variant::Array(items) => items,
@@ -293,6 +364,21 @@ where
         let start = T::from_variant(&items[0])?;
         let end = T::from_variant(&items[1])?;
         Some(start..=end)
+    }
+
+    #[inline]
+    fn from_scene_variant(
+        value: &Variant,
+        resolver: &mut dyn SceneVariantResolver,
+    ) -> Option<Self> {
+        let items = value.as_array()?;
+        if items.len() != 2 {
+            return None;
+        }
+        Some(
+            T::from_scene_variant(&items[0], resolver)?
+                ..=T::from_scene_variant(&items[1], resolver)?,
+        )
     }
 
     #[inline]

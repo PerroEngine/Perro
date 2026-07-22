@@ -1,5 +1,9 @@
 # Networking
 
+> Native boundary: Perro transport/session APIs run on native builds. WASM
+> builds do not expose these sockets or sessions; a native Perro peer may still
+> communicate with an external browser client through a compatible server.
+
 ## Page Map
 
 | Header | Link |
@@ -32,6 +36,20 @@ signals when that is convenient.
   `emit_net_event!` / `emit_http_event!`.
 
 Use through `perro_api::networking`. Low-level crate: `perro_networking`.
+
+## Transport Choice
+
+| Need | Choose | Why | Tradeoff |
+| --- | --- | --- | --- |
+| session API across LAN + Steam | multiplayer | one lobby/session model | less transport-specific control |
+| ordered commands or chat | TCP frames | preserves order + delivery | a lost packet may delay later data |
+| frequent replaceable snapshots | UDP | late/lost data does not block next snapshot | game owns loss, order, and recovery |
+| browser/tool duplex channel | WebSocket | browser-native framed messages | not the lowest-overhead game transport |
+| request/response service | HTTP | status/body lifecycle fits web APIs | not a continuous session channel |
+
+Keep socket/world ownership in one long-lived game state. Drain events once per
+update, apply authoritative state, and emit signals only for loose gameplay
+reactions. Signals do not replace packet validation or session ownership.
 
 ## Topics
 

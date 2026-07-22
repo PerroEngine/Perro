@@ -74,7 +74,8 @@ impl RenderState {
                 self.resolved_requests
                     .insert(request, RuntimeRenderResult::Failed(reason));
             }
-            RenderEvent::TextureLoaded { .. }
+            RenderEvent::HdrStatusChanged(_)
+            | RenderEvent::TextureLoaded { .. }
             | RenderEvent::TextureTexelsUpdated { .. }
             | RenderEvent::MaterialLoaded { .. }
             | RenderEvent::MeshDropped { .. }

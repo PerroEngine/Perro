@@ -39,6 +39,10 @@ reflects whatever exists this frame.
 - Scope to one room: add `in_subtree(ctx.id)` so a filter only matches descendants of the current node.
 - Collect only what is nearby: use the spatial `within[origin, size]` predicate to gather pickups or threats around a point without scanning the whole scene.
 
+## Ownership And Choice
+
+A query discovers a set whose membership is not known when the scene is authored. Use an injected `NodeID` for one fixed dependency and parent/child access for a structural dependency. Query spawned enemies, tagged interactables, or other changing groups. Consume IDs from the query first; perform mutations after the query borrow ends.
+
 ## Choosing a Macro
 
 - `query!` when the full `Vec<NodeID>` is useful (loops, counts, storage).
@@ -255,7 +259,7 @@ Example:
 lifecycle!({
     fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
         query_each!(ctx.run, all(tags["ally"], tags["alive"]), |id| {
-            call_method!(ctx.run, id, method!("on_team_buff"), params![variant!(5.0_f32)]);
+            call_method!(ctx.run, id, method!("on_team_buff"), params![5.0_f32]);
         });
     }
 });

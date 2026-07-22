@@ -2,22 +2,28 @@ use perro_api::prelude::*;
 
 type SelfNodeType = Node3D;
 
-const DEVICE_LABEL_NODE_NAME: &str = "WebcamDevices3DLabel";
-const WEBCAM_NODE_NAME: &str = "DemoWebcam";
+#[State]
+struct WebcamDemo3DState {
+    #[default = NodeID::nil()]
+    webcam: NodeID,
+    #[default = NodeID::nil()]
+    device_label: NodeID,
+}
 
 lifecycle!({
     fn on_init(&self, ctx: &mut ScriptContext<'_, API>) {
         let (text, first_slot) = webcam_device_report(ctx);
-        if let (Some(slot), Some(webcam_id)) =
-            (first_slot.as_deref(), get_child!(ctx.run, ctx.id, WEBCAM_NODE_NAME))
-        {
+        let (webcam_id, label_id) = with_state!(ctx.run, WebcamDemo3DState, ctx.id, |state| {
+            (state.webcam, state.device_label)
+        });
+        if let Some(slot) = first_slot.as_deref().filter(|_| !webcam_id.is_nil()) {
             with_node_mut!(ctx.run, Webcam, webcam_id, |webcam| {
                 webcam.config.device = slot.to_string().into();
             });
             log_info!("[Demo3D] webcam selected slot=\"{slot}\"");
         }
         log_info!("[Demo3D] {text}");
-        if let Some(label_id) = get_child!(ctx.run, ctx.id, DEVICE_LABEL_NODE_NAME) {
+        if !label_id.is_nil() {
             with_node_mut!(ctx.run, Label3D, label_id, |label| {
                 label.text = text.into();
             });
@@ -29,12 +35,10 @@ fn webcam_device_report<API: ScriptAPI + ?Sized>(
     ctx: &mut ScriptContext<'_, API>,
 ) -> (String, Option<String>) {
     match ctx.res.Webcams().devices() {
-        Ok(devices) if devices.is_empty() => {
-            (
-                "Webcams: 0\nslot \"\" auto-picks first device\nNo devices found".to_string(),
-                None,
-            )
-        }
+        Ok(devices) if devices.is_empty() => (
+            "Webcams: 0\nslot \"\" auto-picks first device\nNo devices found".to_string(),
+            None,
+        ),
         Ok(devices) => {
             let first_slot = devices.first().map(|device| device.slot.clone());
             let mut out = format!(

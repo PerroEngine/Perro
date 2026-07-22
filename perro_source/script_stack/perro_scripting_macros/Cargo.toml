@@ -13,3 +13,4 @@ syn = { version = "2.0", features = ["full", "parsing"] }
 
 [dev-dependencies]
 perro_variant.workspace = true
+perro_ids.workspace = true

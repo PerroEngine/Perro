@@ -47,6 +47,10 @@ at runtime. Perro captures the new binding natively; your game owns saving it.
 - Hot-path reads: cache an action hash once and poll it with
   `pressed_hash` / `down_hash` to skip re-hashing the name each frame.
 
+## Ownership And Choice
+
+The input map owns physical bindings; gameplay owns the meaning of an action. Use named actions for player intent that must survive rebinding and device changes. Use raw key, mouse, or gamepad reads for device-selection UI and diagnostics. Save completed rebind results in project/save data; do not make individual gameplay scripts own separate binding truth.
+
 ## Context
 
 - Script context path: `ctx.ipt`

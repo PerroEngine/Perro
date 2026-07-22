@@ -22,6 +22,13 @@ Post-processing runs an ordered chain of full-screen effects after the scene ren
 - HDR glow and auto-exposure: `bloom` on bright emitters with an `exposure` effect (`auto_exposure = true`) so dark caves brighten and sunlit exteriors settle.
 - Custom screen effects: a `custom` WGSL pass implementing `post_process(uv, color, depth)`, e.g. depth-based fog or edge outlines.
 
+## Choice Guide
+
+Use named built-in effects for common grades and feedback because scripts can
+tune them without owning shader code. Use a custom pass for image logic the
+built-ins cannot compose. Keep damage/health truth in gameplay state and drive
+effect strength from it; post-processing remains presentation.
+
 ## Example
 
 Add a bloom + vignette chain to a 3D camera in a scene:
@@ -92,6 +99,8 @@ post-processing, before final tonemap. See [Visual Accessibility](../scripting/c
   Multiplies the scene by `color`, mixed by `strength`.
 - `reverse_filter` (`color`, `strength`, `softness`)  
   Keeps colors close to `color` while others wash toward grayscale.
+- `chroma_key` (`color`, `tolerance`, `softness`)
+  Makes colors near the key transparent. `color` accepts an RGB tuple or hex text.
 - `bloom` (`strength`, `threshold`, `radius`)  
   Bright‑only blur added back into the image.
 - Bloom runs in scene-linear HDR before final tonemap. `threshold` may exceed `1.0`.
@@ -113,8 +122,21 @@ post-processing, before final tonemap. See [Visual Accessibility](../scripting/c
 
 Runtime note:
 
-- Built-in effects do not read depth.
+- Built-in effects preserve input alpha unless the effect explicitly changes it.
+- `chroma_key` multiplies input alpha by its soft color-distance mask.
+- Camera streams route webcam frames through the post chain when an image effect is present.
+- Other built-in effects do not read depth.
 - `custom` effects receive depth from `depth_tex` and can use it in `post_process`.
+
+Rust chroma-key example:
+
+```rust
+PostProcessEffect::ChromaKey {
+    color: color!("#00FF00"),
+    tolerance: 0.1,
+    softness: 0.05,
+}
+```
 
 ## Scene Authoring
 
@@ -137,6 +159,7 @@ post_processing = [
     { type = "crt", scanlines = 0.35, curvature = 0.15, chromatic = 1.0, vignette = 0.25 },
     { type = "color_filter", color = (1.0, 0.8, 0.6), strength = 0.8 },
     { type = "reverse_filter", color = (0.1, 0.8, 0.2), strength = 0.9, softness = 0.2 },
+    { type = "chroma_key", color = "#00FF00", tolerance = 0.1, softness = 0.05 },
     { type = "exposure", auto_exposure = true, exposure = 0.0, min_exposure = -4.0, max_exposure = 4.0, speed_up = 3.0, speed_down = 1.0, target_luminance = 0.18 },
     { type = "bloom", strength = 0.7, threshold = 0.75, radius = 1.5 },
     { type = "saturate", amount = 1.2 },
@@ -335,8 +358,14 @@ cam.post_processing.add(
 
 Frame color stays in `Rgba16Float` through scene rendering, color grade, LUT, and bloom when the
 adapter supports required texture usages. Limited web adapters use a linear 8-bit fallback. Bloom
-extracts and composites scene-referred light before one dedicated final ACES pass converts the
-frame to the surface. Material shaders do not tonemap their own output.
+extracts and composites scene-referred light before one dedicated final pass converts the frame
+to the surface. SDR output clamps the ACES curve to `0..1`. Native extended-linear HDR output
+uses display headroom and keeps smooth values above `1.0` for brighter-than-white highlights.
+Material shaders do not tonemap their own output.
+
+Real display HDR defaults to auto. Use `hdr_set!(ctx.res, HdrMode::Off | Auto | On)` and query
+`hdr_status!(ctx.res)` to distinguish requested, supported, and active state. Unsupported requests
+fall back to SDR instead of failing surface setup. See [Display HDR](../scripting/contexts/resource_modules/display.md).
 
 Without an `exposure` effect, final exposure stays fixed at `0.0` EV. Manual override:
 

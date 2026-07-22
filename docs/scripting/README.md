@@ -5,6 +5,7 @@
 | Header | Link |
 | --- | --- |
 | Purpose | [Purpose](#purpose) |
+| Mental Model | [Mental Model](#mental-model) |
 | Scripting Group | [Scripting Group](#scripting-group) |
 | Use Cases | [Use Cases](#use-cases) |
 | Example | [Example](#example) |
@@ -20,10 +21,20 @@ The book explains why Perro uses these shapes.
 
 The docs give exact macro/API paths and edge behavior.
 
+## Mental Model
+
+One script instance has one owner: the node in `ctx.id`.
+
+The node stores scene data. `#[State]` stores script-owned per-instance data. Lifecycle hooks choose when work runs. Methods target one receiver. Signals announce an event without choosing every receiver. Queries discover a set that changes at runtime. `Variant` crosses boundaries where the concrete Rust type is not known to the caller.
+
+Keep those roles separate. A fixed camera belongs in a scene-injected `NodeID`; it is not a query. Typed health belongs behind `with_state!`; it is not a string lookup. A coin-collected event belongs in a signal when several independent systems may react; it is not a chain of hard-coded calls.
+
 ## Scripting Group
 
 | Task | Page |
 | --- | --- |
+| Follow script authoring standards | [Script Authoring Guide](authoring/index.md) |
+| See scripts work together | [Script Teamwork Examples](authoring/examples/index.md) |
 | Write first script | [Project Script Modules](project_modules.md) |
 | Store per-node data | [Script State](state.md) |
 | Run engine callbacks | [Script Lifecycle](lifecycle.md) |
@@ -38,17 +49,21 @@ The docs give exact macro/API paths and edge behavior.
 
 ## Use Cases
 
-These docs cover the game logic you write in Perro script files under `res/**/*.rs`:
-
-- Player and enemy controllers: read input each frame in `on_update` (`ctx.ipt`), move with the physics macros, and keep velocity and timers in `#[State]`.
-- Per-node gameplay data (health, ammo, cooldowns, coins): store it in `#[State]`, read/write it with `with_state!` / `with_state_mut!`, and expose it to other systems with `get_var!` / `set_var!`.
-- Cross-object coordination (a switch opening a door, an enemy alerting its squad): call behavior with `call_method!` or broadcast with signals.
-- Dynamic groups instead of fixed refs (every awake enemy, pickups in a room): `query!` and its helpers.
-- Heavy CPU work off the frame path (pathfinding, procedural generation, bulk scoring): `jobs::spawn` / `jobs::join` / `jobs::par_map`.
+| Situation | Choose | Why | Tradeoff |
+| --- | --- | --- | --- |
+| Controller owns health, velocity, or cooldown data | `#[State]` + typed state access | Value lives with one script instance and keeps its Rust type | Other script types need a shared type or dynamic boundary |
+| Switch knows one door | scene-injected `NodeID` + `call_method!` | Dependency and receiver stay explicit | Caller depends on method name and return schema |
+| Coin must notify HUD, audio, and achievements | signal | Producer stays independent from current listeners | Connection lifetime and payload schema need ownership |
+| Manager needs every currently spawned enemy | query | Result reflects runtime membership | Query costs more and gives weaker guarantees than a fixed ref |
+| Tool knows a member name but not its Rust state type | `get_var!` / `set_var!` | `Variant` supports runtime-selected members | Decode may fail; typed access is safer and cheaper |
+| Pathfinding or bulk scoring costs too much in one frame | job | CPU work leaves the frame callback | Inputs/results must cross a task boundary and cannot borrow runtime state |
 
 Choose a context by role: `ctx.run` for runtime state, nodes, scenes, scripts, signals, time, and window calls; `ctx.res` for resources and data; `ctx.ipt` for input.
 
 ## Example
+
+For fixed dependencies, store a `NodeID` in state and inject it from the scene.
+Use a query only when the set is dynamic:
 
 ```rust
 lifecycle!({
@@ -96,6 +111,7 @@ Script dependencies:
 
 See:
 
+- [Script Authoring Guide](authoring/index.md)
 - [Project Script Modules](project_modules.md)
 - [Parallel Jobs](jobs.md)
 - [Script Contexts](contexts/README.md)

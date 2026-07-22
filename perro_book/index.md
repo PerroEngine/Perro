@@ -2,6 +2,11 @@
 
 Perro Book is the guided path for learning Perro from install to web release.
 
+The chapters follow one feature thread: build a player, wire its scene-owned
+dependencies, drive it from input, report state to UI, add world feedback, and
+ship the result. Reference pages answer "what calls exist"; the book answers
+"which ownership and communication shape fits, and why."
+
 ## Chapter Map
 
 | Step | Chapter | Goal |
@@ -29,6 +34,9 @@ Use [API Map](api_map.md) when you know what system you need.
 
 Use [Docs Index](/docs) when you need every page.
 
+Use the [Script Authoring Guide](/docs/scripting/authoring/index.md) when the
+choice is between a fixed ref, relation, query, method, signal, or dynamic var.
+
 ## Book Contract
 
 Each chapter gives:
@@ -40,6 +48,7 @@ Each chapter gives:
 - minimal workflow
 - code shape
 - links to reference docs
+- failure behavior and the closest alternative
 
 The book does not replace API docs.
 

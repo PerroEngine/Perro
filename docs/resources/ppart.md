@@ -22,6 +22,13 @@
 - Instance-tunable effects: expressions read `params[0]` (from the emitter's `params`) so the same file gives a taller or wider effect per emitter.
 - Deterministic per-particle variation: `rand`, `rand2`, `hash(id)`, and `ring_u` place and jitter particles without CPU-side randomness.
 
+## Choice Guide
+
+Use expressions for per-particle motion and deterministic variation. Use emitter
+state for spawn timing and per-instance params. Split profiles when one effect
+needs a different simulation/render contract; keep one profile when params alone
+express the variation.
+
 ## Example
 
 Create `res://particles/fire_spiral.ppart`:

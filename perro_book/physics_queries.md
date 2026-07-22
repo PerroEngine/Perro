@@ -8,6 +8,16 @@ Queries find nodes and world hits.
 
 Use bodies, areas, raycasts, shape casts, and node queries.
 
+## Decision Model
+
+Physics queries answer spatial questions. Node queries answer scene-membership
+questions. Use a ray or shape cast for "what occupies this space?" Use tags and
+node queries for "which active nodes belong to this gameplay set?" Do not replace
+a fixed scene ref with either query type.
+
+Use collision signals/area events for changes. Poll only when gameplay needs a
+continuous answer, such as ground contact or aim line of sight.
+
 ## Bodies
 
 Use static bodies for level geometry.

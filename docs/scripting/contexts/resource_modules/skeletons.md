@@ -27,6 +27,10 @@
 - Modular characters: decode a rig from bytes downloaded or embedded in a save with `skeleton_load_bones_3d_from_bytes!`.
 - Rig inspection: read bone names and parents from the returned vector before wiring animation.
 
+## Ownership And Choice
+
+The resource cache owns skeleton data; skeleton/player nodes own pose and playback state. Inject or load a stable skeleton asset for the rig, then drive it through animation or IK. Use runtime bytes only when the rig arrives dynamically. Do not rebuild the skeleton resource to make a per-frame pose change.
+
 ## Context
 
 - Script context path: `ctx.res`

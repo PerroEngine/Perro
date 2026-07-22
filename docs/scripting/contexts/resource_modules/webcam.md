@@ -27,6 +27,10 @@
 - Device picker UI: list cameras with `webcam_devices!` and open a chosen one with `webcam_open_device!`.
 - Graceful fallback: check `is_open` and `last_error` so the game can show a placeholder when no camera is available (Wasm/Android return backend-unavailable errors).
 
+## Ownership And Choice
+
+The webcam module owns capture lifetime and frame resources; a UI or world node owns where frames appear. Use it for an explicit camera feature with visible permission/state UI. Do not open a device in every consumer script. One owner selects and starts the device, shares the resulting texture/stream target, and treats unavailable permission or hardware as normal optional failure.
+
 ## Overview
 
 Use `ctx.res.Webcams()` for live webcam capture.

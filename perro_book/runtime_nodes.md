@@ -6,6 +6,17 @@ Perro scripts talk to the scene through `NodeID`.
 
 Know how to mutate nodes without long borrows.
 
+## Access Choice
+
+- own known node -> `ctx.id` + typed node access
+- fixed other node -> scene-injected `NodeID`
+- owned child/parent -> relation API
+- spawned or tagged set -> query
+- runtime-selected type/member -> dynamic API
+
+Copy or clone values out of state/node closures before the next `ctx.run` call.
+The short borrow is both a correctness rule and a clear data-flow boundary.
+
 ## Node Handles
 
 `NodeID` is a runtime handle.

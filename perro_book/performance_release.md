@@ -6,6 +6,17 @@ Perro keeps dev flexible and release loads fast.
 
 Know when to profile, bake assets, and reduce runtime cost.
 
+## Measurement Model
+
+Profile the build shape users receive. Dev mode answers iteration questions;
+static release answers startup, size, and shipped frame-cost questions. Compare
+one change against the same scene, workload, profile, and target.
+
+Prefer ownership fixes before micro-optimization: remove repeated discovery for
+fixed refs, avoid needless dynamic dispatch, and keep hot-loop borrows short.
+Keep queries when the set is truly dynamic; replacing them with stale caches is
+not a win.
+
 ## Dev Mode
 
 Dev mode favors iteration:

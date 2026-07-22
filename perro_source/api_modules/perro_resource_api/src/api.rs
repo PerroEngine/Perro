@@ -1,12 +1,13 @@
 use crate::sub_apis::{
     AnimationAPI, AnimationModule, AnimationTreeAPI, AnimationTreeModule, AudioAPI, AudioModule,
-    CsvAPI, CsvModule, Draw2DAPI, Draw2DModule, GlbModule, GltfAPI, IntoLocale, Locale,
-    LocalizationAPI, LocalizationModule, MaterialAPI, MaterialModule, MeshAPI, MeshModule, MicAPI,
-    MicModule, NavMeshAPI, NavMeshModule, PostProcessingAPI, SceneDocAPI, SceneDocModule,
+    CsvAPI, CsvModule, DisplayModule, Draw2DAPI, Draw2DModule, GlbModule, GltfAPI, IntoLocale,
+    Locale, LocalizationAPI, LocalizationModule, MaterialAPI, MaterialModule, MeshAPI, MeshModule,
+    MicAPI, MicModule, NavMeshAPI, NavMeshModule, PostProcessingAPI, SceneDocAPI, SceneDocModule,
     SkeletonAPI, SkeletonModule, TextureAPI, TextureModule, VideoAPI, VideoModule,
     VisualAccessibilityAPI, WebcamAPI, WebcamModule,
 };
 use crate::{LoadResult, ResPathSource};
+use perro_render_bridge::{HdrMode, HdrStatus};
 use perro_scene::{SceneDoc, SceneWrite};
 use perro_structs::{ColorBlindFilter, PostProcessEffect, PostProcessSet, Vector2};
 
@@ -66,6 +67,12 @@ impl<T> ResourceAPI for T where
 pub trait ViewportAPI {
     /// Return the active viewport size in pixels.
     fn viewport_size(&self) -> Vector2;
+
+    fn set_hdr_mode(&self, _mode: HdrMode) {}
+
+    fn hdr_status(&self) -> HdrStatus {
+        HdrStatus::default()
+    }
 }
 
 /// Script-facing resource facade.
@@ -173,6 +180,22 @@ impl<'res, R: ResourceAPI + ?Sized> ResourceWindow<'res, R> {
     #[inline]
     pub fn Draw2D(&self) -> Draw2DModule<'_, R> {
         Draw2DModule::new(self.api)
+    }
+
+    /// Access display HDR state + control.
+    #[inline]
+    pub fn Display(&self) -> DisplayModule<'_, R> {
+        DisplayModule::new(self.api)
+    }
+
+    #[inline]
+    pub fn set_hdr_mode(&self, mode: HdrMode) {
+        self.api.set_hdr_mode(mode);
+    }
+
+    #[inline]
+    pub fn hdr_status(&self) -> HdrStatus {
+        self.api.hdr_status()
     }
 
     /// Access locale selection and localized string lookup.

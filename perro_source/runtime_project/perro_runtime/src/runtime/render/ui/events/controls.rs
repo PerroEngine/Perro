@@ -85,11 +85,13 @@ impl Runtime {
                     } else {
                         1.0
                     },
+                    hover_velocity: 0.0,
                     press: if prev == UiButtonVisualState::Pressed {
                         1.0
                     } else {
                         0.0
                     },
+                    press_velocity: 0.0,
                     wiggle_time: 1.0,
                     wiggle_sign: 1.0,
                 });
@@ -105,14 +107,28 @@ impl Runtime {
                     };
                 }
                 let dt = self.time.delta.clamp(0.0, 0.05);
-                let hover_alpha = 1.0 - (-dt * 22.0).exp();
-                let press_alpha = 1.0 - (-dt * 38.0).exp();
-                motion.hover += (hover_target - motion.hover) * hover_alpha;
-                motion.press += (press_target - motion.press) * press_alpha;
+                step_button_spring(
+                    &mut motion.hover,
+                    &mut motion.hover_velocity,
+                    hover_target,
+                    105.0,
+                    13.0,
+                    dt,
+                );
+                step_button_spring(
+                    &mut motion.press,
+                    &mut motion.press_velocity,
+                    press_target,
+                    150.0,
+                    17.0,
+                    dt,
+                );
                 motion.wiggle_time += dt;
                 let settled = (motion.hover - hover_target).abs() < 0.001
                     && (motion.press - press_target).abs() < 0.001
-                    && motion.wiggle_time >= 0.14;
+                    && motion.hover_velocity.abs() < 0.01
+                    && motion.press_velocity.abs() < 0.01
+                    && motion.wiggle_time >= 0.32;
                 if settled {
                     motions.remove(&node);
                 }
@@ -631,4 +647,16 @@ impl Runtime {
         }
         best.map(|(node, _)| node)
     }
+}
+
+fn step_button_spring(
+    value: &mut f32,
+    velocity: &mut f32,
+    target: f32,
+    stiffness: f32,
+    damping: f32,
+    dt: f32,
+) {
+    *velocity += ((target - *value) * stiffness - *velocity * damping) * dt;
+    *value += *velocity * dt;
 }

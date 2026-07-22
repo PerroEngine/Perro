@@ -20,6 +20,10 @@ Every Rust file under `res/**/*.rs` is compiled into your game. Some files are s
 - Reuse code by importing another project file: `use crate::scripts_math;` for `res/scripts/math.rs`, or `use crate::script_modules::*;` to pull the whole generated namespace.
 - Keep a large system organized across folders: `res/ai/nav/util.rs` becomes `crate::ai_nav_util` following the lowercase, non-alphanumeric-to-`_` naming rule.
 
+## Decision Guide
+
+Use a project module when several scripts share Rust types, pure calculations, or adapters. Keep lifecycle hooks, methods, and `#[State]` in the script that owns the node instance. A module call is an in-process Rust call, not cross-node messaging; use a method or signal when the target is another script instance.
+
 ## Practical Example
 
 A shared combat module holds a damage formula, and a weapon script imports it — no registration needed.

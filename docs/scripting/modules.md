@@ -21,6 +21,10 @@ Script utility modules are the "batteries" a game needs beyond nodes and the run
 - Online features — a leaderboard fetch or a lobby socket: `perro_api::networking` `HttpClient` / `NetworkWorld`, polled in `on_update` and bridged to signals with `emit_http_event!` / `emit_net_event!`.
 - Debug output while iterating on game logic: `log_info!`, `log_warn!`, `log_error!`.
 
+## Decision Guide
+
+Use these modules for stateless work or external services. Put reusable game rules in a project module, and put mutable per-instance values in `#[State]`. Do not hide node ownership or long-lived mutable game state in a utility module; doing so makes scene wiring and script reload behavior unclear.
+
 ## Practical Example
 
 Roll three loot ids deterministically from the run seed and write them to a per-user save file as JSON, so a reloaded run drops the same items.

@@ -82,6 +82,18 @@ Skeleton bytes accept packed skeleton bytes.
 Use the 2D call for `.pskel2d` and the 3D call for `.pskel3d`.
 Invalid bytes return an empty bone array.
 
+## Choice + Lifetime
+
+Use bytes APIs for downloaded, generated, save-backed, platform, or mod data.
+Use path loads for authored project/DLC assets because paths preserve cache keys,
+build-time baking, and readable scene wiring. Byte APIs that return resource IDs
+follow the same readiness and lifetime rules as path-loaded resources. CSV and
+skeleton calls return decoded CPU data immediately; audio returns an optional
+source name; texture writes return success/failure.
+
+Validate size/format at the system boundary. A decode failure must keep the old
+or fallback gameplay state instead of leaving a half-applied resource choice.
+
 ## Examples
 
 Create a texture from Steam avatar RGBA bytes:

@@ -36,6 +36,10 @@ works whether players show up with pads, a shared keyboard, or split Joy-Cons.
   character.
 - Roster scan: iterate `player_list!(ctx.ipt)` to see how many slots are bound.
 
+## Ownership And Choice
+
+The input system owns device bindings; gameplay owns player intent. Use player slots when local participants may use different or replaceable devices. Read actions inside each bound player's route when controls need rebinding. Read a concrete device directly only for device setup, diagnostics, or a game that intentionally binds its design to that device.
+
 ## Context
 
 - Script context path: `ctx.ipt`

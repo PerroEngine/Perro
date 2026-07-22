@@ -232,8 +232,8 @@ pub fn default_script_example_rs() -> String {
 // Script is authored against a node type. This default template uses Node2D.
 type SelfNodeType = Node2D;
 
-// State is data-only. Keeping state separate from behavior makes cross-calls memory safe
-// and helps the runtime handle recursion/re-entrancy without borrowing issues.
+// State holds per-instance data that must survive a callback.
+// Keep constants and callback-local temporary values outside state.
 
 // Custom structs/enums used in #[State] or methods! typed params/returns should derive Variant.
 // Without Variant, runtime variant conversion for those types will not compile.
@@ -268,8 +268,20 @@ impl Default for MotionSample {
 // Define state struct with #[State] and use #[default = _] for default values on initialization.
 #[State]
 struct ExampleState {
+    // expose only controls editor inspector organization.
+    // Any Variant-compatible state field can receive a scene override.
+    #[expose]
     #[default = 5]
     count: i32,
+
+    // Store fixed scene dependencies as NodeID refs instead of finding by name.
+    #[expose]
+    #[node_ref(Node2D)]
+    target: Option<NodeID>,
+
+    // Scene paths such as "res://textures/icon.png" resolve to typed asset IDs.
+    #[expose]
+    texture: TextureID,
 
     #[default = OrbitGoal::default()]
     orbit_goal: OrbitGoal,
@@ -285,7 +297,7 @@ lifecycle!({
     // `ctx` is the main interface into the engine core to access runtime data/scripts and nodes.
     // `res` is resource access (meshes/materials/textures) available at runtime.
     // `ipt` is immutable input state for the current frame (keys pressed/released/down).
-    // `self` is the NodeID handle of the node this script is attached to.
+    // `ctx.id` is the NodeID of the node this script is attached to.
 
     // init is called when the script instance is created. This can be used for one-time setup. State is initialized
     fn on_init(
@@ -324,31 +336,32 @@ lifecycle!({
             node.position.x += dt * SPEED;
         });
 
-        // You can also pass another NodeID with another node type if that id maps
-        // to that type at runtime.
-        // Example:
-        // with_node_mut!(ctx, MeshInstance3D, enemy, |mesh| { mesh.scale.x += 1.0; });
-        //
+        // Pull refs out of state before the next runtime call.
+        let target = with_state!(ctx.run, ExampleState, ctx.id, |state| state.target);
+        if let Some(target) = target {
+            with_node_mut!(ctx.run, Node2D, target, |node| {
+                node.position.y += dt * SPEED;
+            });
+        }
+
         // For common hierarchy/identity operations, prefer dedicated helper macros:
-        // let name = get_node_name!(ctx, node).unwrap_or_default();
-        // let parent = get_node_parent_id!(ctx, node).unwrap_or(NodeID::nil());
-        // let children = get_node_children_ids!(ctx, node).unwrap_or_default();
-        // let _renamed = set_node_name!(ctx, node, "Player");
-        // let _ok = reparent!(ctx, NodeID::new(10), node);
-        // let _moved = reparent_multi!(ctx, NodeID::new(10), [NodeID::new(11), NodeID::new(12)]);
+        // let name = get_node_name!(ctx.run, ctx.id).unwrap_or_default();
+        // let parent = get_node_parent_id!(ctx.run, ctx.id);
+        // let children = get_node_children_ids!(ctx.run, ctx.id).unwrap_or_default();
         //
         // Script attachment helpers:
-        // let _attached = script_attach!(ctx, node, "res://scripts/other.rs");
-        // let _detached = script_detach!(ctx, node);
+        // let _attached = script_attach!(ctx.run, target, "res://scripts/other.rs");
+        // let _detached = script_detach!(ctx.run, target);
         // `script_attach!` takes a target node id + script path.
         // `script_detach!` takes a node/script id and removes the attached script instance.
         //
-        // call_method! can invoke methods through the script interface by member id.
-        // Here we call our own script through self for demonstration.
-        call_method!(ctx, node, func!("test"), params![7123_i32, "bodsasb"]);
-        set_var!(ctx, node, var!("count"), 77_i32.into());
-        let remote_count = get_var!(ctx, node, var!("count"));
-        log_info!(remote_count);
+        // Use call_method!/get_var!/set_var! only for dynamic cross-script access.
+        if let Some(target) = target {
+            let _ = call_method!(ctx.run, target, method!("test"), params![1_i32, "ping"]);
+            let _ = set_var!(ctx.run, target, var!("count"), 77_i32.into());
+            let remote_count = get_var!(ctx.run, target, var!("count"));
+            log_info!(remote_count);
+        }
         // For local/internal behavior and local state, prefer direct methods plus
         // with_state!/with_state_mut! (for example self.bump_count(...)).
         // Read-only helpers (`with_state!`, `with_node!`) are for non-mutable access.
@@ -356,18 +369,8 @@ lifecycle!({
         // can return a value if you need one; ignoring the return is also fine.
         // That is simpler and more performant than call_method!/get_var!/set_var!.
 
-        // Typical NodeID lookup is runtime-dependent. NodeID is a handle, not the node value.
-        // if let Some(enemy) = find_node!(ctx, "enemy") {
-        //     // Cross-script call on another script instance:
-        //     call_method!(ctx, enemy, func!("test"), params![1_i32, "ping"]);
-        //
-        //     // Mutate enemy node directly if you know its runtime node type:
-        //     with_node_mut!(ctx, MeshInstance3D, enemy, |enemy| {
-        //         enemy.scale.x += 0.1;
-        //     });
-        //
-        //     // If type is uncertain, check metadata/type first, then branch/match.
-        // }
+        // Use parent/child helpers for structural dependencies.
+        // Use query! for dynamic groups such as all spawned enemies.
     }
 
     // on_fixed_update is called on a fixed timestep, independent of frame rate. This is useful for physics and other deterministic updates.

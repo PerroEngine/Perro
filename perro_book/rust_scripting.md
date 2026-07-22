@@ -6,6 +6,16 @@ Perro scripts are Rust modules with generated engine hooks.
 
 Write script state, lifecycle hooks, and callable methods.
 
+## Script Boundary
+
+Split scripts by state owner and lifecycle, not by arbitrary "one role per
+file" rules. Keep helpers as normal Rust functions or shared modules when they
+do not need independent state or attachment. Add another script when a node
+needs its own lifecycle, scene wiring, or callable boundary.
+
+This keeps direct Rust calls available inside one behavior while preserving
+methods and signals for real runtime boundaries.
+
 ## Script Parts
 
 Core script pieces:
@@ -17,6 +27,10 @@ Core script pieces:
 - `ctx.run`, `ctx.res`, `ctx.ipt` for runtime/resource/input APIs
 - `NodeID` for self, refs, query results, and cross-script calls
 - `Variant` for dynamic params and returns
+
+Use the [Script Authoring Guide](/docs/scripting/authoring/index.md) as the
+canonical choice guide for state, node refs, queries, signals, methods, timers,
+and dynamic access.
 
 ## State
 
@@ -30,12 +44,32 @@ pub struct DoorState {
 }
 ```
 
-Expose values when editor or scene authoring needs them:
+Expose values when the editor inspector should show them:
 
 ```rust
 #[default(4.0)]
 #[expose]
 speed: f32,
+```
+
+`#[expose]` is editor-only organization. Scene `script_vars` can inject any
+state field that supports `Variant` conversion.
+
+Store fixed dependencies as `NodeID` fields and per-instance resources as typed
+asset IDs. Scene paths resolve before `on_init`, including nested derived types:
+
+```rust
+#[derive(Clone, Default, Variant)]
+struct DoorLook {
+    icon: TextureID,
+}
+
+#[State]
+struct DoorState {
+    #[node_ref(Node3D)]
+    target: Option<NodeID>,
+    look: DoorLook,
+}
 ```
 
 ## Lifecycle
@@ -87,11 +121,18 @@ Use `call_method!(ctx.run, ctx.id, ...)` for dynamic self dispatch, such as anim
 
 Use `call_method!(ctx.run, other_id, ...)` for cross-script calls.
 
+Prefer signals for events, fan-out, and loose cross-scene links. Prefer methods
+for a targeted command with arguments or a return value.
+
+Use named timers for one-shot delays and cooldown completion. Starting the same
+timer name resets its deadline; use separate names for concurrent timers.
+
 ## Borrow Rule
 
 Runtime macros borrow `ctx.run` during the macro call.
 
-Do not use `ctx.run` again inside a `with_*_mut!` closure.
+Do not use `ctx.run` again inside any `with_state!`, `with_state_mut!`,
+`with_node!`, or `with_node_mut!` closure.
 
 Pull copy data out first.
 

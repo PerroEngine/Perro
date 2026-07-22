@@ -28,6 +28,10 @@ Audio geometry nodes and collision shapes are separate scene nodes.
 In scene files, put collision shapes in separate top-level node blocks.
 Set each shape `parent` to the audio node key.
 
+## Ownership And Choice
+
+Audio nodes own world position, range, and spatial filtering. The resource audio API owns one-shot playback and bus control. Use a node when sound must follow scene geometry; use the API when a sound has no persistent world object. Gameplay emits the event, while the audio layer chooses clip, bus, and spatial treatment.
+
 ## 2D Effect Zone
 
 ```text

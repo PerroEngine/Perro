@@ -21,6 +21,10 @@
 - Let a wall occlude only some spatial sources: tag emitters with `audio_layer` and give the mask geometry an `audio_mask`.
 - Fade a decal or snow shell against just the meshes it should cover: set `blend_layers` / `blend_mask` on the inserted mesh (see the Mesh Blend section below).
 
+## Decision Guide
+
+Use a `BitMask` when one value represents a set of independent numbered layers. Use an enum when exactly one mode is valid, and a struct of booleans when fields need semantic names and scene clarity. For interactions, layers state what an object is; masks state which layers it ignores. Test both participants' policy instead of treating one side as global truth.
+
 ## Practical Example
 
 A shooter where enemy fire passes through friendly units. Player bodies live on layer `1`, enemies on layer `2`, and an enemy raycast weapon only tests the world and the player.

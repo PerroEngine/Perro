@@ -19,8 +19,6 @@ struct PositionalAudioDemoState {
     pub debug_label: NodeID,
     #[default = vec![NodeID::nil(); 3]]
     pub speakers: Vec<NodeID>,
-    #[default = 0.0]
-    pub timer: f32,
     #[default = true]
     pub debug_rays: bool,
 }
@@ -47,6 +45,18 @@ lifecycle!({
             });
         }
         ctx.run.Audio().set_debug_rays(true);
+        signal_connect!(
+            ctx.run,
+            ctx.id,
+            timer_finished!("positional_audio_chord"),
+            func!("on_chord_timer")
+        );
+        self.play_chord(ctx);
+        timer_start!(
+            ctx.run,
+            Duration::from_millis(340),
+            "positional_audio_chord"
+        );
         self.sync_label(ctx);
         self.push_overlay(ctx);
     }
@@ -62,29 +72,25 @@ lifecycle!({
             self.sync_label(ctx);
         }
 
-        let dt = delta_time!(ctx.run);
-        let play = with_state_mut!(ctx.run, PositionalAudioDemoState, ctx.id, |state| {
-            state.timer -= dt;
-            if state.timer <= 0.0 {
-                state.timer = 0.34;
-                true
-            } else {
-                false
-            }
-        })
-        .unwrap_or(false);
-        if play {
-            self.play_chord(ctx);
-        }
         self.push_overlay(ctx);
     }
 
     fn on_removal(&self, ctx: &mut ScriptContext<'_, API>) {
+        timer_cancel!(ctx.run, "positional_audio_chord");
         ctx.run.Audio().set_debug_rays(false);
     }
 });
 
 methods!({
+    fn on_chord_timer(&self, ctx: &mut ScriptContext<'_, API>) {
+        self.play_chord(ctx);
+        timer_start!(
+            ctx.run,
+            Duration::from_millis(340),
+            "positional_audio_chord"
+        );
+    }
+
     fn set_info_overlay(&self, ctx: &mut ScriptContext<'_, API>, overlay: NodeID) {
         with_state_mut!(ctx.run, PositionalAudioDemoState, ctx.id, |state| {
             state.overlay = overlay;

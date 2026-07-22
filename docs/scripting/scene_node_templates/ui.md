@@ -22,6 +22,10 @@ Use [Node Collections](../node_collections.md) for runtime Rust-built node trees
 - Copy a template block, then trim fields you do not set.
 - Keep scene field names and value forms consistent across a project.
 
+## Decision Guide
+
+Use layout nodes to own placement and controls to own interaction. Prefer ratios and anchors for responsive screens; use fixed-size fields only where pixel dimensions are part of the design. Wire a fixed label, button, or panel into script state as `NodeID` instead of looking it up by name during an event.
+
 ## Example
 
 A minimal panel with a centered button:

@@ -14,6 +14,18 @@ where
     }
 
     #[inline]
+    fn from_scene_variant(
+        value: &Variant,
+        resolver: &mut dyn SceneVariantResolver,
+    ) -> Option<Self> {
+        if matches!(value, Variant::Null) {
+            Some(None)
+        } else {
+            T::from_scene_variant(value, resolver).map(Some)
+        }
+    }
+
+    #[inline]
     fn from_owned_variant(value: Variant) -> Option<Self> {
         if matches!(value, Variant::Null) {
             Some(None)
@@ -102,6 +114,27 @@ where
     }
 
     #[inline]
+    fn from_scene_variant(
+        value: &Variant,
+        resolver: &mut dyn SceneVariantResolver,
+    ) -> Option<Self> {
+        let (tag, data) = if let Some(arr) = value.as_array() {
+            if arr.len() != 2 {
+                return None;
+            }
+            (arr[0].as_str()?, &arr[1])
+        } else {
+            let obj = value.as_object()?;
+            (obj.get("__variant")?.as_str()?, obj.get("__data")?)
+        };
+        match tag {
+            "Ok" => T::from_scene_variant(data, resolver).map(Ok),
+            "Err" => E::from_scene_variant(data, resolver).map(Err),
+            _ => None,
+        }
+    }
+
+    #[inline]
     fn to_variant(&self) -> Variant {
         let (ok, data) = match self {
             Ok(value) => (true, value.to_variant()),
@@ -128,6 +161,13 @@ where
     fn from_variant(value: &Variant) -> Option<Self> {
         T::from_variant(value).map(Box::new)
     }
+    #[inline]
+    fn from_scene_variant(
+        value: &Variant,
+        resolver: &mut dyn SceneVariantResolver,
+    ) -> Option<Self> {
+        T::from_scene_variant(value, resolver).map(Box::new)
+    }
 
     #[inline]
     fn from_owned_variant(value: Variant) -> Option<Self> {
@@ -152,6 +192,13 @@ where
     #[inline]
     fn from_variant(value: &Variant) -> Option<Self> {
         T::from_variant(value).map(Arc::new)
+    }
+    #[inline]
+    fn from_scene_variant(
+        value: &Variant,
+        resolver: &mut dyn SceneVariantResolver,
+    ) -> Option<Self> {
+        T::from_scene_variant(value, resolver).map(Arc::new)
     }
 
     #[inline]
@@ -178,6 +225,13 @@ where
     fn from_variant(value: &Variant) -> Option<Self> {
         T::from_variant(value).map(Rc::new)
     }
+    #[inline]
+    fn from_scene_variant(
+        value: &Variant,
+        resolver: &mut dyn SceneVariantResolver,
+    ) -> Option<Self> {
+        T::from_scene_variant(value, resolver).map(Rc::new)
+    }
 
     #[inline]
     fn from_owned_variant(value: Variant) -> Option<Self> {
@@ -202,6 +256,13 @@ where
     #[inline]
     fn from_variant(value: &Variant) -> Option<Self> {
         T::from_variant(value).map(Cell::new)
+    }
+    #[inline]
+    fn from_scene_variant(
+        value: &Variant,
+        resolver: &mut dyn SceneVariantResolver,
+    ) -> Option<Self> {
+        T::from_scene_variant(value, resolver).map(Cell::new)
     }
 
     #[inline]
@@ -261,6 +322,13 @@ where
     fn from_variant(value: &Variant) -> Option<Self> {
         T::from_variant(value).map(RefCell::new)
     }
+    #[inline]
+    fn from_scene_variant(
+        value: &Variant,
+        resolver: &mut dyn SceneVariantResolver,
+    ) -> Option<Self> {
+        T::from_scene_variant(value, resolver).map(RefCell::new)
+    }
 
     #[inline]
     fn from_owned_variant(value: Variant) -> Option<Self> {
@@ -285,6 +353,13 @@ where
     #[inline]
     fn from_variant(value: &Variant) -> Option<Self> {
         T::from_variant(value).map(Wrapping)
+    }
+    #[inline]
+    fn from_scene_variant(
+        value: &Variant,
+        resolver: &mut dyn SceneVariantResolver,
+    ) -> Option<Self> {
+        T::from_scene_variant(value, resolver).map(Wrapping)
     }
 
     #[inline]
@@ -311,6 +386,13 @@ where
     fn from_variant(value: &Variant) -> Option<Self> {
         T::from_variant(value).map(Saturating)
     }
+    #[inline]
+    fn from_scene_variant(
+        value: &Variant,
+        resolver: &mut dyn SceneVariantResolver,
+    ) -> Option<Self> {
+        T::from_scene_variant(value, resolver).map(Saturating)
+    }
 
     #[inline]
     fn from_owned_variant(value: Variant) -> Option<Self> {
@@ -335,6 +417,13 @@ where
     #[inline]
     fn from_variant(value: &Variant) -> Option<Self> {
         T::from_variant(value).map(Reverse)
+    }
+    #[inline]
+    fn from_scene_variant(
+        value: &Variant,
+        resolver: &mut dyn SceneVariantResolver,
+    ) -> Option<Self> {
+        T::from_scene_variant(value, resolver).map(Reverse)
     }
 
     #[inline]

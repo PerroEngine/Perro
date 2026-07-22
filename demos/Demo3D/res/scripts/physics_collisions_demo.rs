@@ -1,4 +1,5 @@
 use perro_api::prelude::*;
+use std::time::Duration;
 
 type SelfNodeType = Node3D;
 
@@ -20,8 +21,8 @@ struct PhysicsCollisionsDemoState {
     pub area_idle_material: MaterialID,
     #[default = MaterialID::nil()]
     pub area_active_material: MaterialID,
-    #[default = 0.0]
-    pub reset_timer: f32,
+    #[default = false]
+    pub area_active: bool,
 }
 
 lifecycle!({
@@ -53,30 +54,21 @@ lifecycle!({
             signal!("SignalArea_Exited"),
             func!("on_area_exited")
         );
+        signal_connect!(
+            ctx.run,
+            ctx.id,
+            timer_finished!("physics_collisions_reset"),
+            func!("on_reset_timer")
+        );
 
         self.reset_bodies(ctx);
         self.set_area_active(ctx, false);
         self.push_overlay(ctx);
+        timer_start!(ctx.run, Duration::from_secs(7), "physics_collisions_reset");
     }
 
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let dt = delta_time!(ctx.run);
-        let do_reset = with_state_mut!(ctx.run, PhysicsCollisionsDemoState, ctx.id, |state| {
-            state.reset_timer += dt;
-            if state.reset_timer >= 7.0 {
-                state.reset_timer = 0.0;
-                true
-            } else {
-                false
-            }
-        })
-        .unwrap_or(false);
-
-        if do_reset {
-            self.reset_bodies(ctx);
-            self.set_area_active(ctx, false);
-            self.push_overlay(ctx);
-        }
+    fn on_removal(&self, ctx: &mut ScriptContext<'_, API>) {
+        timer_cancel!(ctx.run, "physics_collisions_reset");
     }
 });
 
@@ -96,6 +88,13 @@ methods!({
     fn on_area_exited(&self, ctx: &mut ScriptContext<'_, API>, _area: NodeID, _other: NodeID) {
         self.set_area_active(ctx, false);
         self.push_overlay(ctx);
+    }
+
+    fn on_reset_timer(&self, ctx: &mut ScriptContext<'_, API>) {
+        self.reset_bodies(ctx);
+        self.set_area_active(ctx, false);
+        self.push_overlay(ctx);
+        timer_start!(ctx.run, Duration::from_secs(7), "physics_collisions_reset");
     }
 
     fn reset_bodies(&self, ctx: &mut ScriptContext<'_, API>) {
@@ -154,6 +153,9 @@ methods!({
         with_node_mut!(ctx.run, MeshInstance3D, mesh, |node| {
             node.set_material(material);
         });
+        with_state_mut!(ctx.run, PhysicsCollisionsDemoState, ctx.id, |state| {
+            state.area_active = active;
+        });
     }
 
     fn push_overlay(&self, ctx: &mut ScriptContext<'_, API>) {
@@ -163,9 +165,8 @@ methods!({
             return;
         }
         let rigid = query!(ctx.run, all(node_type[RigidBody3D]), in_subtree(ctx.id)).len();
-        let active = with_state!(ctx.run, PhysicsCollisionsDemoState, ctx.id, |state| {
-            state.reset_timer
-        }) < 0.25;
+        let active = with_state!(ctx.run, PhysicsCollisionsDemoState, ctx.id, |state| state
+            .area_active);
         let body = format!(
             "rigid bodies {}\nsignal area {}",
             rigid,

@@ -1098,11 +1098,11 @@ pub(super) fn animated_button_rect_state(
     }
     out.rotation_radians += (hover.rotation_radians - neutral.rotation_radians) * motion.hover
         + (pressed.rotation_radians - hover.rotation_radians) * motion.press;
-    if motion.wiggle_time < 0.14 {
-        let phase = motion.wiggle_time / 0.14;
+    if motion.wiggle_time < 0.32 {
+        let phase = motion.wiggle_time / 0.32;
         let decay = (1.0 - phase) * (1.0 - phase);
         out.rotation_radians +=
-            motion.wiggle_sign * (phase * std::f32::consts::TAU * 2.0).sin() * decay * 0.018;
+            motion.wiggle_sign * (phase * std::f32::consts::TAU * 1.5).sin() * decay * 0.022;
     }
     out
 }

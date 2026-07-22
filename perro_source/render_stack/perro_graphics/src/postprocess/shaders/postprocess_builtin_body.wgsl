@@ -14,6 +14,11 @@ fn apply_color_op(kind: u32, uv: vec2<f32>, color: vec4<f32>, base: u32) -> vec4
         let p1 = custom_params[base + 1u];
         return reverse_filter_apply(color, p0.xyz, p0.w, p1.x);
     }
+    if kind == 16u {
+        let p0 = custom_params[base];
+        let p1 = custom_params[base + 1u];
+        return chroma_key_apply(color, p0.xyz, p0.w, p1.x);
+    }
     if kind == 9u {
         return saturate_apply(color, custom_params[base].x);
     }
@@ -117,6 +122,14 @@ fn post_process(uv: vec2<f32>, color: vec4<f32>, depth: f32) -> vec4<f32> {
         let strength = post.params0.x;
         let lut_size = post.params0.y;
         return lut_3d_apply(color, strength, lut_size);
+    }
+    if post.effect_type == 16u {
+        return chroma_key_apply(
+            color,
+            post.params0.xyz,
+            post.params0.w,
+            post.params1.x,
+        );
     }
     return color;
 }

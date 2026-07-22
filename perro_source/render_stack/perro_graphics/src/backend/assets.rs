@@ -22,6 +22,16 @@ impl PerroGraphics {
     {
         #[cfg(target_arch = "wasm32")]
         self.try_finish_gpu_init();
+        if self.frame_index.is_multiple_of(60)
+            && let Some(gpu) = self.gpu.as_mut()
+        {
+            let old_hdr = gpu.hdr_status();
+            let new_hdr = gpu.set_hdr_mode(self.hdr_mode);
+            if new_hdr != old_hdr {
+                self.events.push(RenderEvent::HdrStatusChanged(new_hdr));
+                self.redraw_requested = true;
+            }
+        }
         let total_start = Instant::now();
         self.poll_async_mesh_loads();
         self.poll_async_texture_loads();

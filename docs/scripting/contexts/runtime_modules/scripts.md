@@ -46,13 +46,14 @@ events that do not know the concrete script type.
 
 ## Use Cases
 
-- Deal damage across scripts: `call_method!(ctx.run, player_id, method!("take_damage"), params![variant!(10.0_f32)])` from a trap or projectile.
-- Read another script's field the typed way: pull the player's `health` with `with_state!(ctx.run, PlayerState, player_id, |s| s.health)`.
-- Mutate your own state in place: `with_state_mut!(ctx.run, MyState, ctx.id, |s| s.ammo -= 1)`.
-- Generic UI/tool access by name: `set_var!(ctx.run, id, var!("volume"), variant!(0.8_f32))` and `get_var!(ctx.run, id, var!("volume"))`.
-- Follow a node-reference field: `get_node_var!(ctx.run, id, var!("target"))` returns the referenced `NodeID`.
-- Add behaviour to a spawned node at runtime: `script_attach!(ctx.run, node_id, "res://scripts/enemy.rs")`; remove it with `script_detach!`.
-- Freeze an NPC during a cutscene without destroying it: `script_set_update_enabled!(ctx.run, npc_id, false)`, re-enable afterwards.
+| Situation | Choice | Why | Tradeoff |
+| --- | --- | --- | --- |
+| Known state type on self or another node | `with_state!` / `with_state_mut!` | Typed, allocation-free access with compiler-checked fields | Closure borrow must end before another `ctx.run` call |
+| Trap asks one player to take damage | `call_method!` | Receiver owns damage rules and returns a result | Method name, argument order, and decode are runtime contracts |
+| Tool knows `volume` by name, not state type | `get_var!` / `set_var!` | Dynamic member access fits adapters and tools | Strict type mismatch fails; it does not coerce asset paths |
+| State member contains a dynamic node ref | `get_node_var!` | Decodes the node-ref member directly to `NodeID` | Missing/wrong member returns no usable target |
+| Spawned node needs optional behavior selected at runtime | `script_attach!` / `script_detach!` | Script lifetime follows runtime composition | Attach path/build must exist; detach removes its owned state |
+| Cutscene pauses one behavior without deleting data | update enable flags | State and node remain alive while callbacks stop | Signals/method calls may still reach the script; this is not full suspension |
 
 ## Context
 
@@ -62,20 +63,29 @@ events that do not know the concrete script type.
 
 ## Practical Example
 
-A spike-trap script finds the player node and calls its `take_damage` method.
+A spike-trap script reads its scene-wired player ref and calls `take_damage`.
 The trap does not need to know the player's script type or `#include` it: the
 call resolves the method by name at runtime and returns the player's typed reply
 wrapped in a `Variant`.
 
 ```rust
+#[State]
+struct HazardState {
+    #[expose]
+    #[node_ref(Node2D, Node3D)]
+    target: Option<NodeID>,
+}
+
 lifecycle!({
     fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        if let Some(player) = query_first!(ctx.run, any(name["Player"], tags["player"])) {
+        let target = with_state!(ctx.run, HazardState, ctx.id, |state| state.target);
+
+        if let Some(player) = target {
             let survived = call_method!(
                 ctx.run,
                 player,
                 method!("take_damage"),
-                params![variant!(25.0_f32)]
+                params![25.0_f32]
             );
             // The called method returned a bool; decode the Variant reply.
             if let Some(false) = survived.as_bool() {
@@ -128,8 +138,8 @@ See [Variant](../../variant.md).
 | Signature | `pub fn script_attach<P: ResPathSource>(&mut self, node_id: NodeID, script_path: P) -> bool` |
 | Params | `&mut self, node_id: NodeID, script_path: P` |
 | Returns | `bool` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Add or replace one node's behavior from a runtime-selected script path. The new script gets default state, runs `on_init` synchronously, then joins queued `on_all_init`/update work. |
+| Fails when / edge behavior | Returns `false` for a missing node, missing script constructor, or failed attach. No scene vars are accepted. |
 
 ### `script_attach_hashed`
 
@@ -139,8 +149,8 @@ See [Variant](../../variant.md).
 | Signature | `pub fn script_attach_hashed(&mut self, node_id: NodeID, script_path_hash: u64) -> bool` |
 | Params | `&mut self, node_id: NodeID, script_path_hash: u64` |
 | Returns | `bool` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Add or replace behavior when the script path hash is already available. Init order and default-state behavior match `script_attach`. |
+| Fails when / edge behavior | Returns `false` when the node or registered script hash is missing or attach fails. It accepts no scene vars. |
 
 ### `script_detach`
 
@@ -150,8 +160,8 @@ See [Variant](../../variant.md).
 | Signature | `pub fn script_detach(&mut self, node_id: NodeID) -> bool` |
 | Params | `&mut self, node_id: NodeID` |
 | Returns | `bool` |
-| Use when | Use when code must release, remove, stop, or disconnect existing engine state. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `script_detach` to script detach for runtime script composition; prefer typed state access when the concrete state type is known. |
+| Fails when / edge behavior | Returns `false` when `script_detach` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `remove`
 
@@ -161,8 +171,8 @@ See [Variant](../../variant.md).
 | Signature | `pub fn remove(&mut self, script_id: NodeID) -> bool` |
 | Params | `&mut self, script_id: NodeID` |
 | Returns | `bool` |
-| Use when | Use when code must release, remove, stop, or disconnect existing engine state. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `remove` to remove across runtime scripts; prefer typed state access when concrete state type is known. |
+| Fails when / edge behavior | Returns `false` when `remove` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `set_update_enabled`
 
@@ -172,8 +182,8 @@ See [Variant](../../variant.md).
 | Signature | `pub fn set_update_enabled(&mut self, script_id: NodeID, enabled: bool) -> bool` |
 | Params | `&mut self, script_id: NodeID, enabled: bool` |
 | Returns | `bool` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `set_update_enabled` to set update enabled across runtime scripts; prefer typed state access when concrete state type is known. |
+| Fails when / edge behavior | Returns `false` when `set_update_enabled` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `set_fixed_update_enabled`
 
@@ -183,8 +193,8 @@ See [Variant](../../variant.md).
 | Signature | `pub fn set_fixed_update_enabled(&mut self, script_id: NodeID, enabled: bool) -> bool` |
 | Params | `&mut self, script_id: NodeID, enabled: bool` |
 | Returns | `bool` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `set_fixed_update_enabled` to set fixed update enabled across runtime scripts; prefer typed state access when concrete state type is known. |
+| Fails when / edge behavior | Returns `false` when `set_fixed_update_enabled` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `get_var`
 
@@ -227,8 +237,8 @@ See [Variant](../../variant.md).
 | Signature | `with_state!(ctx.run, state_ty, id, f)` |
 | Params | `ctx, state_ty, id, f` |
 | Returns | `same as backing method` |
-| Use when | Use when script code needs this exact engine read or write. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `with_state` to with state for runtime script composition; prefer typed state access when the concrete state type is known. |
+| Fails when / edge behavior | Uses the backing `with_state` return and failure behavior unchanged; the wrapper adds no coercion or fallback. |
 
 ### `with_state_mut`
 
@@ -238,8 +248,8 @@ See [Variant](../../variant.md).
 | Signature | `with_state_mut!(ctx.run, state_ty, id, f)` |
 | Params | `ctx, state_ty, id, f` |
 | Returns | `same as backing method` |
-| Use when | Use when script code needs this exact engine read or write. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `with_state_mut` to with state mut for runtime script composition; prefer typed state access when the concrete state type is known. |
+| Fails when / edge behavior | Uses the backing `with_state_mut` return and failure behavior unchanged; the wrapper adds no coercion or fallback. |
 
 ### `script_attach`
 
@@ -249,8 +259,8 @@ See [Variant](../../variant.md).
 | Signature | `script_attach!(ctx.run, id, path)` |
 | Params | `ctx, id, path` |
 | Returns | `bool or () as shown by backing method` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Macro form for path-based runtime attach/replacement; use an explicit init method after attach when post-`on_init` configuration is acceptable. |
+| Fails when / edge behavior | Returns the backing attach `bool`; `false` means the node/script could not attach. No scene vars are applied. |
 
 ### `script_detach`
 
@@ -260,8 +270,8 @@ See [Variant](../../variant.md).
 | Signature | `script_detach!(ctx.run, id)` |
 | Params | `ctx, id` |
 | Returns | `bool or () as shown by backing method` |
-| Use when | Use when code must release, remove, stop, or disconnect existing engine state. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `script_detach` to script detach for runtime script composition; prefer typed state access when the concrete state type is known. |
+| Fails when / edge behavior | Returns `false` when `script_detach` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `script_set_update_enabled`
 
@@ -271,8 +281,8 @@ See [Variant](../../variant.md).
 | Signature | `script_set_update_enabled!(ctx.run, id, enabled)` |
 | Params | `ctx, id, enabled` |
 | Returns | `bool or () as shown by backing method` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `script_set_update_enabled` to script set update enabled for runtime script composition; prefer typed state access when the concrete state type is known. |
+| Fails when / edge behavior | Returns `false` when `script_set_update_enabled` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `script_set_fixed_update_enabled`
 
@@ -282,8 +292,8 @@ See [Variant](../../variant.md).
 | Signature | `script_set_fixed_update_enabled!(ctx.run, id, enabled)` |
 | Params | `ctx, id, enabled` |
 | Returns | `bool or () as shown by backing method` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `script_set_fixed_update_enabled` to script set fixed update enabled for runtime script composition; prefer typed state access when the concrete state type is known. |
+| Fails when / edge behavior | Returns `false` when `script_set_fixed_update_enabled` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `get_var`
 
@@ -293,8 +303,8 @@ See [Variant](../../variant.md).
 | Signature | `get_var!(ctx.run, id, member)` |
 | Params | `ctx, id, member` |
 | Returns | `Variant` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `get_var` to get var across runtime scripts; prefer typed state access when concrete state type is known. |
+| Fails when / edge behavior | Returns `Variant::Nil` when `get_var` cannot resolve the requested dynamic member or call result. |
 
 ### `get_node_var`
 
@@ -315,8 +325,8 @@ See [Variant](../../variant.md).
 | Signature | `set_var!(ctx.run, id, member, value)` |
 | Params | `ctx, id, member, value` |
 | Returns | `bool or () as shown by backing method` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `set_var` to set var across runtime scripts; prefer typed state access when concrete state type is known. |
+| Fails when / edge behavior | Returns `false` when `set_var` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `call_method`
 
@@ -326,6 +336,6 @@ See [Variant](../../variant.md).
 | Signature | `call_method!(ctx.run, id, method, params)` |
 | Params | `ctx, id, method, params` |
 | Returns | `Variant` |
-| Use when | Use when script code needs this exact engine read or write. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `call_method` to call method for runtime script composition; prefer typed state access when the concrete state type is known. |
+| Fails when / edge behavior | Returns `Variant::Nil` when `call_method` cannot resolve the requested dynamic member or call result. |
 

@@ -1,0 +1,59 @@
+$root = @Patterns
+
+[Patterns]
+script = "res://scripts/controller.rs"
+script_vars = {
+    player = @Player,
+    adapter = @Adapter,
+    icon = "res://pattern.svg"
+}
+    [Node2D]
+    [/Node2D]
+[/Patterns]
+
+[Player]
+parent = @Patterns
+script = "res://scripts/player.rs"
+script_vars = { icon = @Icon }
+    [Node2D]
+    [/Node2D]
+[/Player]
+
+[Adapter]
+parent = @Patterns
+script = "res://scripts/adapter.rs"
+script_vars = { target = @Player }
+    [Node2D]
+    [/Node2D]
+[/Adapter]
+
+[Hud]
+parent = @Patterns
+script = "res://scripts/hud.rs"
+    [UiLabel]
+        anchor = "center"
+        size_ratio = (0.55, 0.20)
+        text = "Score: 0"
+        text_size_ratio = 0.32
+        color = "#FFFFFFFF"
+    [/UiLabel]
+[/Hud]
+
+[Audit]
+parent = @Patterns
+script = "res://scripts/audit.rs"
+    [Node2D]
+    [/Node2D]
+[/Audit]
+
+[Icon]
+parent = @Patterns
+    [Sprite2D]
+        texture = "res://pattern.svg"
+        [Node2D]
+            position = (0.0, -120.0)
+            scale = (0.75, 0.75)
+        [/Node2D]
+    [/Sprite2D]
+[/Icon]
+

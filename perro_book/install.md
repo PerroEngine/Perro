@@ -11,6 +11,16 @@ cargo run -p perro_cli -- --help
 cargo run -p perro_cli -- doctor --path D:\GameProjects\MyGame
 ```
 
+## Mental Model
+
+Perro has two loops. Engine contributors run the CLI through the workspace so
+their command uses the checked-out engine. Game authors install `perro` so every
+project uses one short command. Both paths perform the same project work.
+
+Use `doctor` for project wiring and environment faults. Use `check` for script
+compile faults. This split keeps a missing SDK or bad scene ref distinct from a
+Rust type error.
+
 ## Toolchain
 
 Perro uses Rust crates, project-local scripts, and asset build steps.

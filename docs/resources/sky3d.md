@@ -27,6 +27,13 @@
 - Animated sky detail: read `in.time_seconds` inside a `sky_shader` for drifting clouds or twinkling stars.
 - Per-camera sky selection: `active` and `render_layers` decide which camera sees this sky.
 
+## Choice Guide
+
+Use gradient/time fields for a cheap authored sky, environment lighting when PBR
+objects need image-based ambient/specular response, and custom passes for visual
+detail such as clouds or stars. Keep world time in gameplay/runtime state; the
+sky presents it.
+
 ## Scene Fields
 
 ```txt

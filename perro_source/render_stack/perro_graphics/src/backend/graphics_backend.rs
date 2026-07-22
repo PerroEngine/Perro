@@ -19,6 +19,7 @@ impl GraphicsBackend for PerroGraphics {
                     occlusion_culling: self.occlusion_culling,
                     ssao: self.ssao,
                     texture_filter: self.texture_filter,
+                    hdr_mode: self.hdr_mode,
                 };
                 wasm_bindgen_futures::spawn_local(async move {
                     let gpu = Gpu::new_async(window, cfg).await;
@@ -41,6 +42,7 @@ impl GraphicsBackend for PerroGraphics {
                     occlusion_culling: self.occlusion_culling,
                     ssao: self.ssao,
                     texture_filter: self.texture_filter,
+                    hdr_mode: self.hdr_mode,
                 };
                 let mut gpu = Gpu::new(window, cfg);
                 if let Some(gpu_ref) = gpu.as_mut() {
@@ -48,6 +50,8 @@ impl GraphicsBackend for PerroGraphics {
                     self.renderer_2d.set_virtual_viewport(vw, vh);
                     self.late_overlay_2d.set_virtual_viewport(vw, vh);
                     gpu_ref.resize(self.viewport.0.max(1), self.viewport.1.max(1));
+                    self.events
+                        .push(RenderEvent::HdrStatusChanged(gpu_ref.hdr_status()));
                 }
                 self.gpu = gpu;
                 self.redraw_requested = true;
@@ -60,7 +64,12 @@ impl GraphicsBackend for PerroGraphics {
         self.renderer_2d.set_viewport(width, height);
         self.late_overlay_2d.set_viewport(width, height);
         if let Some(gpu) = &mut self.gpu {
+            let old_hdr = gpu.hdr_status();
             gpu.resize(width.max(1), height.max(1));
+            let new_hdr = gpu.hdr_status();
+            if new_hdr != old_hdr {
+                self.events.push(RenderEvent::HdrStatusChanged(new_hdr));
+            }
         }
         self.redraw_requested = true;
     }

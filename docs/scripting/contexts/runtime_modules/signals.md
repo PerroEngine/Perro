@@ -31,12 +31,14 @@ ordinary script methods (`func!` / `method!`) connected by name, and emitted
 
 ## Use Cases
 
-- Boss health threshold triggers phase two: when HP crosses 50%, `signal_emit!(ctx.run, signal!("boss_phase_two"), params![])`; the arena script connected a handler in `on_all_init` with `signal_connect!`.
-- One event, many reactions: a collected coin should bump the score, refresh the HUD, and play a sound — connect all three with `connect_many` (which forms the signal x function product) or list them explicitly.
-- Wire a screen of UI buttons to their handlers at once: `signal_connect_pairs!(ctx.run, ctx.id, [("play_click", "on_play"), ("quit_click", "on_quit")])` connects each signal to exactly its paired function.
-- React to timer and animation events: connect to `timer_finished!("spawn_wave")` or an animation event signal to run logic at the right beat.
-- Broadcast world state: emit `player_died` so checkpoints, enemies, and UI all respond from their own scripts.
-- Tear down listeners when a menu or level closes: `signal_disconnect_many!(ctx.run, ctx.id, signals, functions)`.
+| Situation | Choice | Why | Tradeoff |
+| --- | --- | --- | --- |
+| Boss announces phase change to arena, music, and UI | signal | Boss does not own or enumerate listeners | No direct reply; payload/handler contract is dynamic |
+| Switch commands one known door and needs success | method, not signal | One receiver and return value are part of the request | Caller depends on the door method contract |
+| UI has one-to-one button/handler pairs | `signal_connect_pairs!` | Each signal maps only to its corresponding handler | Pair order must stay aligned |
+| One event fans out to several handlers | `connect_many` or explicit connections | Every listener reacts independently | `connect_many` creates a cartesian product, not positional pairs |
+| Timer finishes delayed work | `timer_finished!(name)` signal | Timer owns delay; handler owns reaction | One active timer slot exists per name, so concurrent work needs distinct names |
+| Listener lifetime ends before emitter | disconnect during owner cleanup | Removes stale routing explicitly | Cleanup must tolerate targets already absent |
 
 ## Context
 
@@ -65,19 +67,22 @@ lifecycle!({
     }
 
     fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        with_state_mut!(ctx.run, BossState, ctx.id, |state| {
-            if !state.phase_two && state.health <= 50.0 {
-                state.phase_two = true;
-                signal_emit!(ctx.run, signal!("boss_phase_two"), params![]);
-            }
-        });
+        let emit = with_state_mut!(ctx.run, BossState, ctx.id, |state| {
+            let emit = !state.phase_two && state.health <= 50.0;
+            state.phase_two |= emit;
+            emit
+        }).unwrap_or(false);
+
+        if emit {
+            signal_emit!(ctx.run, signal!("boss_phase_two"), params![]);
+        }
     }
 });
 
 methods!({
     fn on_phase_two(&self, ctx: &mut ScriptContext<'_, API>) {
         // Enrage. Re-broadcast so the music and arena hazards react too.
-        signal_emit!(ctx.run, signal!("music_set_intensity"), params![variant!(1.0_f32)]);
+        signal_emit!(ctx.run, signal!("music_set_intensity"), params![1.0_f32]);
     }
 });
 ```
@@ -92,8 +97,8 @@ methods!({
 | Signature                  | `pub fn connect( &mut self, script_id: NodeID, signal: SignalID, function: ScriptMemberID, params: &[Variant], ) -> bool`                                                                                          |
 | Params                     | `&mut self, script_id: NodeID, signal: SignalID, function: ScriptMemberID, params: &[Variant],`                                                                                                                    |
 | Returns                    | `bool`                                                                                                                                                                                                             |
-| Use when                   | Use when gameplay must change engine state or queue an action this frame.                                                                                                                                          |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `connect` to connect in event routing; connection ownership and dynamic payload shape remain caller contracts. |
+| Fails when / edge behavior | Has no separate failure value in this wrapper; `connect` keeps the backing API behavior. |
 
 ### `disconnect`
 
@@ -103,8 +108,8 @@ methods!({
 | Signature                  | `pub fn disconnect( &mut self, script_id: NodeID, signal: SignalID, function: ScriptMemberID, ) -> bool`                                                                                                           |
 | Params                     | `&mut self, script_id: NodeID, signal: SignalID, function: ScriptMemberID,`                                                                                                                                        |
 | Returns                    | `bool`                                                                                                                                                                                                             |
-| Use when                   | Use when code must release, remove, stop, or disconnect existing engine state.                                                                                                                                     |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `disconnect` to disconnect in event routing; connection ownership and dynamic payload shape remain caller contracts. |
+| Fails when / edge behavior | Has no separate failure value in this wrapper; `disconnect` keeps the backing API behavior. |
 
 ### `connect_many`
 
@@ -174,8 +179,8 @@ let _ = signal_disconnect_many!(
 | Signature                  | `pub fn emit(&mut self, signal: SignalID, params: &[Variant]) -> usize`                                                                                                                                            |
 | Params                     | `&mut self, signal: SignalID, params: &[Variant]`                                                                                                                                                                  |
 | Returns                    | `usize`                                                                                                                                                                                                            |
-| Use when                   | Use when gameplay must change engine state or queue an action this frame.                                                                                                                                          |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `emit` to emit in event routing; connection ownership and dynamic payload shape remain caller contracts. |
+| Fails when / edge behavior | Has no separate failure value in this wrapper; `emit` keeps the backing API behavior. |
 
 ### `signal_connect!`
 
@@ -185,8 +190,8 @@ let _ = signal_disconnect_many!(
 | Signature                  | `signal_connect!(ctx.run, script, signal, function, params)`                                                                                                                                                       |
 | Params                     | `ctx, script, signal, function, params`                                                                                                                                                                            |
 | Returns                    | `same as backing method`                                                                                                                                                                                           |
-| Use when                   | Use when gameplay must change engine state or queue an action this frame.                                                                                                                                          |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `signal_connect!` to signal connect! in event routing; connection ownership and dynamic payload shape remain caller contracts. |
+| Fails when / edge behavior | Has no separate failure value in this wrapper; `signal_connect!` keeps the backing API behavior. |
 
 ### `signal_connect_pairs!`
 
@@ -207,8 +212,8 @@ let _ = signal_disconnect_many!(
 | Signature                  | `signal_disconnect!(ctx.run, script, signal, function)`                                                                                                                                                            |
 | Params                     | `ctx, script, signal, function`                                                                                                                                                                                    |
 | Returns                    | `same as backing method`                                                                                                                                                                                           |
-| Use when                   | Use when code must release, remove, stop, or disconnect existing engine state.                                                                                                                                     |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `signal_disconnect!` to signal disconnect! in event routing; connection ownership and dynamic payload shape remain caller contracts. |
+| Fails when / edge behavior | Has no separate failure value in this wrapper; `signal_disconnect!` keeps the backing API behavior. |
 
 ### `signal_disconnect_many!`
 
@@ -229,6 +234,6 @@ let _ = signal_disconnect_many!(
 | Signature                  | `signal_emit!(ctx.run, signal, params)`                                                                                                                                                                            |
 | Params                     | `ctx, signal, params`                                                                                                                                                                                              |
 | Returns                    | `same as backing method`                                                                                                                                                                                           |
-| Use when                   | Use when gameplay must change engine state or queue an action this frame.                                                                                                                                          |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `signal_emit!` to signal emit! in event routing; connection ownership and dynamic payload shape remain caller contracts. |
+| Fails when / edge behavior | Has no separate failure value in this wrapper; `signal_emit!` keeps the backing API behavior. |
 

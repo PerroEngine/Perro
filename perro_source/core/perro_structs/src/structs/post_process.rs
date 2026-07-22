@@ -1,6 +1,8 @@
 use std::borrow::Cow;
 use std::fmt;
 
+use crate::Color;
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum PostProcessEffect {
     Blur {
@@ -31,6 +33,11 @@ pub enum PostProcessEffect {
     ReverseFilter {
         color: [f32; 3],
         strength: f32,
+        softness: f32,
+    },
+    ChromaKey {
+        color: Color,
+        tolerance: f32,
         softness: f32,
     },
     Bloom {

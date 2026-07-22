@@ -31,7 +31,7 @@ regardless of which system you are actually driving.
 - Report a real failure: `log_error!("failed to load save slot {}", slot)`.
 - Name the target of a signal or method call: `func!("on_hit")` / `method!("on_hit")` build the `ScriptMemberID` that `signal_connect!` and `call_method!` expect.
 - Reference a signal by name: `signal!("player_died")` builds the `SignalID` for `signal_emit!` / `signal_connect!`.
-- Pass typed arguments across scripts: `params![variant!(10_i32), variant!("hit")]` builds the `&[Variant]` slice for `call_method!` and `signal_emit!`.
+- Pass typed arguments across scripts: `params![10_i32, "hit"]` builds the `&[Variant]` slice for `call_method!` and `signal_emit!`.
 
 ## Context
 
@@ -44,13 +44,7 @@ regardless of which system you are actually driving.
 ```rust
 lifecycle!({
     fn on_init(&self, ctx: &mut ScriptContext<'_, API>) {
-        match query_first!(ctx.run, all(tags["player"])) {
-            Some(player) => {
-                log_info!("linked to player node {}", player.index());
-                signal_connect!(ctx.run, ctx.id, signal!("player_died"), func!("on_player_died"));
-            }
-            None => log_warn!("no player node tagged; script idle"),
-        }
+        signal_connect!(ctx.run, ctx.id, signal!("player_died"), func!("on_player_died"));
     }
 });
 

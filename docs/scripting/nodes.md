@@ -23,6 +23,12 @@ Nodes are the building blocks of every Perro scene — data-only objects that th
 - Fade or tint an object and its children: the `modulate` / `self_modulate` / `children_modulate` RGBA multipliers.
 - Inspect a node's identity and relationships at runtime: `get_node_type!`, `get_node_name!`, `get_node_tags!`, `get_node_children_ids!`.
 
+## Ownership And Choice
+
+A node owns engine-facing data such as transform, render, physics, or UI fields. Its script owns per-instance gameplay state and reaches the attached node through `ctx.id`. Store a fixed other node as `NodeID`; derive a true parent/child dependency from structure; query only a changing set. Pick the narrowest node type that owns the behavior, then use base-node helpers only for fields shared across types.
+
+Do not use runtime names as dependency injection. Names help people read scenes; `NodeID` values preserve the actual target across duplicate names and scene composition.
+
 ## Practical Example
 
 A side-scroller sprite that walks right and faces the direction it moves. It edits the `Sprite2D` node's `flip_x` field through `with_node_mut!`.
@@ -155,6 +161,13 @@ Rendering and resource loading are handled by the runtime and `ResourceWindow`.
 - Default `render_mask` is no layers (`BitMask::NONE`), so the camera hides nothing.
 - Supports camera post-processing via `post_processing` (see "Camera Post-Processing" below).
 - Supports listener audio effects via `audio_options`; `audio_mask` ignores matching emitted `audio_layer`.
+
+`CameraStream2D`
+
+- Draws a camera render into 2D space.
+- Uses transparent pixels where the source camera renders no object.
+- Tone-maps camera-rendered HDR once and preserves premultiplied alpha edges.
+- Applies source-camera post-processing before stream post-processing.
 
 2D lights:
 
@@ -360,6 +373,15 @@ See [TileMap2D](tilemap.md).
 - Default `render_mask` is no layers (`BitMask::NONE`), so the camera hides nothing.
 - Supports camera post-processing via `post_processing` (see "Camera Post-Processing" below).
 - Supports listener audio effects via `audio_options`; `audio_mask` ignores matching emitted `audio_layer`.
+- Perspective, orthographic, and frustum projections expose near and far clip planes.
+
+`CameraStream3D`
+
+- Draws a camera render onto a 3D quad.
+- Uses transparent pixels where projection or near/far clipping leaves no object.
+- Omits the visual `Sky3D` background while retaining sky lighting and environment effects.
+- Tone-maps camera-rendered HDR once and preserves premultiplied alpha edges.
+- Applies source-camera post-processing before stream post-processing.
 
 `ParticleEmitter3D`
 

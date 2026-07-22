@@ -65,4 +65,10 @@ lifecycle!({
     }
 });
 
-methods!({});
+methods!({
+    fn set_speed(&self, ctx: &mut ScriptContext<'_, API>, speed: f32) {
+        with_state_mut!(ctx.run, DemoFreecam3DState, ctx.id, |state| {
+            state.speed = speed.max(0.0);
+        });
+    }
+});

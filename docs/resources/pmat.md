@@ -22,6 +22,13 @@
 - Cutout foliage and glass: `alpha_mode = "MASK"` with `alpha_cutoff`, or `alpha_mode = "BLEND"`, plus `double_sided = true`.
 - Imported model materials: reference a glTF sub-asset like `res://models/crate.glb:mat[0]` instead of a `.pmat` file.
 
+## Choice Guide
+
+Use `standard` for lit PBR surfaces, `unlit` for exact color, `toon` for the
+built-in stylized model, and `custom` only when those models cannot express the
+look. Prefer factors/overrides before a custom shader: they retain standard
+lighting, tooling, and fewer shader variants.
+
 ## Example
 
 Author `res://materials/crate.pmat` (`type` must be the first non-empty line):

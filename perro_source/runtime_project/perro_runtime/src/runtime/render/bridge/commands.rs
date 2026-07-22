@@ -365,7 +365,8 @@ impl Runtime {
         // else every frame reruns the O(all nodes) ref scan + full 2d/3d scan.
         if !matches!(
             event,
-            RenderEvent::WaterSamples { .. }
+            RenderEvent::HdrStatusChanged(_)
+                | RenderEvent::WaterSamples { .. }
                 | RenderEvent::WaterBodySamples { .. }
                 | RenderEvent::TextureTexelsUpdated { .. }
         ) {

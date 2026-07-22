@@ -1,5 +1,21 @@
 # Scene Node Specs
 
+Add a node field here when scene authors need stable serialized data. Keep
+transient runtime IDs and derived caches on the runtime node instead. This split
+lets the editor, parser, runtime builder, and static compiler share one authored
+contract without coupling scenes to one backend representation.
+
+## Decision Guide
+
+- normal authored scalar/vector/asset -> `scene_node_fields!`
+- field also decoded by runtime code -> `scene_field_group!`
+- construction needs full nested scene node -> `data_apply`
+- exceptional small build step -> `custom`
+- new backend primitive -> new render command; otherwise reuse extractor output
+
+Aliases preserve old scene input. Canonical names define new output. Unknown
+fields stay available for scripts/custom data rather than disappearing silently.
+
 ## Split
 
 Keep node data, authored scene fields, runtime build hooks, and render extraction separate.

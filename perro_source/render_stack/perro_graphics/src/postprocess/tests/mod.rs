@@ -82,6 +82,41 @@ fn color_grade_params_pack_all_controls() {
 }
 
 #[test]
+fn chroma_key_params_pack_rgb_tolerance_and_softness() {
+    let encoded = encode_effect_params(&PostProcessEffect::ChromaKey {
+        color: perro_structs::Color::from_hex("#00ff00aa").expect("valid color"),
+        tolerance: 0.1,
+        softness: 0.05,
+    });
+
+    assert_eq!(encoded.effect_type, EFFECT_CHROMA_KEY);
+    assert_eq!(encoded.params0, [0.0, 1.0, 0.0, 0.1]);
+    assert_eq!(encoded.params1, [0.05, 0.0, 0.0, 0.0]);
+}
+
+#[test]
+fn chroma_key_joins_merged_color_run() {
+    let effects = [
+        PostProcessEffect::Saturate { amount: 1.2 },
+        PostProcessEffect::ChromaKey {
+            color: perro_structs::Color::GREEN,
+            tolerance: 0.1,
+            softness: 0.05,
+        },
+    ];
+    let mut steps = Vec::new();
+    let mut descriptors = Vec::new();
+
+    build_chain_steps_into(&effects, &mut steps, &mut descriptors);
+
+    assert!(matches!(
+        steps.as_slice(),
+        [ChainStep::Merged { ops: 2, .. }]
+    ));
+    assert_eq!(descriptors[3][0] as u32, EFFECT_CHROMA_KEY);
+}
+
+#[test]
 fn exposure_config_skips_post_chain_passes() {
     let effects = [PostProcessEffect::Exposure {
         exposure: 0.5,

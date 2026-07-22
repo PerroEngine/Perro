@@ -18,11 +18,12 @@ fn crt_sample(
 ) -> vec4<f32> {
     let duv = crt_distort(uv, curvature);
     if duv.x < 0.0 || duv.x > 1.0 || duv.y < 0.0 || duv.y > 1.0 {
-        return vec4<f32>(0.0, 0.0, 0.0, 1.0);
+        return vec4<f32>(0.0);
     }
     let chroma_px = chromatic * post.inv_resolution.x;
     let r = textureSample(input_tex, input_sampler, duv + vec2<f32>(chroma_px, 0.0)).r;
-    let g = textureSample(input_tex, input_sampler, duv).g;
+    let center = textureSample(input_tex, input_sampler, duv);
+    let g = center.g;
     let b = textureSample(input_tex, input_sampler, duv - vec2<f32>(chroma_px, 0.0)).b;
     var color = vec3<f32>(r, g, b);
 
@@ -40,5 +41,5 @@ fn crt_sample(
         color *= mix(1.0, 1.0 - vig, t);
     }
 
-    return vec4<f32>(color, 1.0);
+    return vec4<f32>(color, center.a);
 }

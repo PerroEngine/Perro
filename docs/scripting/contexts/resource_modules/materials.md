@@ -42,6 +42,10 @@
 - Decoding downloaded materials: `create_from_bytes` for engine `PMAT` text or glTF/GLB material index 0.
 - Preloading and memory control: `material_reserve!` to pin, `material_is_loaded!` to poll, `material_drop!` to free.
 
+## Ownership And Choice
+
+The resource cache owns material data; nodes carry `MaterialID` handles. Inject a typed ID when a scene instance chooses its material. Load or create at runtime when bytes or parameters come from gameplay. Do not create a new material each frame to change one node value; keep a stable material or use the node/material parameter path designed for live updates.
+
 ## Context
 
 - Script context path: `ctx.res`

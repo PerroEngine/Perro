@@ -33,6 +33,10 @@
 - Random cosmetic selection: use `texture_count` to roll a random skin index that is guaranteed in range.
 - Authoring/tooling: extract a single animation or material out of a container to engine text with `animation_to_panim` / `material_to_pmat`.
 
+## Ownership And Choice
+
+The GLB resource owns imported model data; scene nodes own instantiated placement and gameplay behavior. Use this module when a model arrives as GLB data at build or runtime. Use native mesh/material resources when the project already controls those assets separately. Parse once, retain the resulting handles, and report invalid or unsupported model data at the load boundary.
+
 ## Context
 
 - Script context path: `ctx.res`

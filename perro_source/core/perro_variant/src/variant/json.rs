@@ -361,6 +361,19 @@ pub(super) fn post_process_effect_to_json(effect: &PostProcessEffect) -> JsonVal
             map.insert("strength".to_string(), float_to_json(*strength as f64));
             map.insert("softness".to_string(), float_to_json(*softness as f64));
         }
+        PostProcessEffect::ChromaKey {
+            color,
+            tolerance,
+            softness,
+        } => {
+            map.insert(
+                "type".to_string(),
+                JsonValue::String("chroma_key".to_string()),
+            );
+            map.insert("color".to_string(), JsonValue::String(color.to_hex_rgb()));
+            map.insert("tolerance".to_string(), float_to_json(*tolerance as f64));
+            map.insert("softness".to_string(), float_to_json(*softness as f64));
+        }
         PostProcessEffect::Bloom {
             strength,
             threshold,

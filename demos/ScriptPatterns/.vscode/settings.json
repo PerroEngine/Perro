@@ -1,0 +1,8 @@
+{
+  "rust-analyzer.linkedProjects": [
+    ".perro/scripts/Cargo.toml"
+  ],
+  "rust-analyzer.vfs.extraIncludes": [
+    "${workspaceFolder}/res/"
+  ]
+}

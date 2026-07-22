@@ -24,6 +24,12 @@ When you run `perro build`, Perro generates an isolated `.perro/project` crate a
 - **A/B test a profile tweak safely.** Set separate `CARGO_TARGET_DIR` values and `CARGO_PROFILE_RELEASE_*` env vars, then compare build time, artifact size, boot time, and frame time.
 - **Decide whether a change is worth it.** Keep a profile change only when it shows a measured runtime or size win worth the added build-time cost.
 
+## Decision Rule
+
+Treat profile keys as measured project policy, not generic "maximum optimization"
+switches. Compare build time, artifact size, startup, and representative frame
+time. Keep dev/DLC overrides separate because they optimize different loops.
+
 ## Scope
 
 `perro build` creates an isolated `.perro/project` crate.

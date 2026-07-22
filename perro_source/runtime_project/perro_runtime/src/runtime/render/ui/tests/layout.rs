@@ -127,7 +127,7 @@ mod layout {
         runtime.set_mouse_position(400.0, 300.0);
         commands.clear();
         runtime.time.delta = 0.05;
-        for _ in 0..12 {
+        for _ in 0..32 {
             runtime.extract_render_ui_commands();
             runtime.drain_render_commands(&mut commands);
         }

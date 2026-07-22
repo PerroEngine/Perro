@@ -34,6 +34,10 @@ moving blocker for a single query.
 - Ladders, jumps, and teleporters: authored off-mesh links are followed by default and appear as endpoints in the returned point list.
 - Straight-line vs. corridor movement: set `simplify` true for a funnelled, string-pulled path, or false to get shared-edge corridor midpoints.
 
+## Ownership And Choice
+
+The navmesh owns walkable topology and area costs. An agent/controller owns its current goal and movement along the returned path. Query a path when the goal or navigation world changes, not every frame without need. Use direct steering for unobstructed local motion; use navmesh paths when authored traversal rules and obstacles must constrain the route.
+
 ## Context
 
 - Script context path: `ctx.run`

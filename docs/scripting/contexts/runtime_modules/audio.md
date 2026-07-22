@@ -84,8 +84,8 @@ methods!({
 | Signature | `pub fn set_debug_rays(&mut self, enabled: bool)` |
 | Params | `&mut self, enabled: bool` |
 | Returns | `()` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `set_debug_rays` to set debug rays in runtime audio; attached playback follows its node while sound resource lifetime stays separate. |
+| Fails when / edge behavior | Has no failure return; `set_debug_rays` sends the command through the runtime module and the caller receives no acknowledgement. |
 
 ### `debug_rays_enabled`
 
@@ -95,8 +95,8 @@ methods!({
 | Signature | `pub fn debug_rays_enabled(&mut self) -> bool` |
 | Params | `&mut self` |
 | Returns | `bool` |
-| Use when | Use when script code needs this exact engine read or write. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `debug_rays_enabled` to debug rays enabled in runtime audio; attached playback follows the supplied node while resource lifetime stays separate. |
+| Fails when / edge behavior | Returns `false` when `debug_rays_enabled` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `play_attached`
 
@@ -106,8 +106,8 @@ methods!({
 | Signature | `pub fn play_attached( &mut self, audio: RuntimeAudio<'_>, node: NodeID, options: SpatialAudioOptions, ) -> bool` |
 | Params | `&mut self, audio: RuntimeAudio<'_>, node: NodeID, options: SpatialAudioOptions,` |
 | Returns | `bool` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `play_attached` to play attached in runtime audio; attached playback follows its node while sound resource lifetime stays separate. |
+| Fails when / edge behavior | Returns `false` when `play_attached` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `play_attached_bus`
 
@@ -117,8 +117,8 @@ methods!({
 | Signature | `pub fn play_attached_bus( &mut self, bus_id: AudioBusID, audio: RuntimeAudio<'_>, node: NodeID, options: SpatialAudioOptions, ) -> bool` |
 | Params | `&mut self, bus_id: AudioBusID, audio: RuntimeAudio<'_>, node: NodeID, options: SpatialAudioOptions,` |
 | Returns | `bool` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `play_attached_bus` to play attached bus in runtime audio; attached playback follows its node while sound resource lifetime stays separate. |
+| Fails when / edge behavior | Returns `false` when `play_attached_bus` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `stop_attached`
 
@@ -128,8 +128,8 @@ methods!({
 | Signature | `pub fn stop_attached(&mut self, node: NodeID, source: &str) -> bool` |
 | Params | `&mut self, node: NodeID, source: &str` |
 | Returns | `bool` |
-| Use when | Use when code must release, remove, stop, or disconnect existing engine state. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `stop_attached` to stop attached in runtime audio; attached playback follows its node while sound resource lifetime stays separate. |
+| Fails when / edge behavior | Returns `false` when `stop_attached` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `midi`
 
@@ -139,8 +139,8 @@ methods!({
 | Signature | `pub fn midi(&mut self) -> RuntimeMidiModule<'_, RT>` |
 | Params | `&mut self` |
 | Returns | `RuntimeMidiModule<'_, RT>` |
-| Use when | Use when script code needs this exact engine read or write. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `midi` to midi in runtime audio; attached playback follows the supplied node while resource lifetime stays separate. |
+| Fails when / edge behavior | Has no optional/error return; `midi` returns the documented value directly. |
 
 ### `play_note_attached`
 
@@ -150,8 +150,8 @@ methods!({
 | Signature | `pub fn play_note_attached( &mut self, note: Note, node: NodeID, options: MidiNoteOptions, spatial: SpatialAudioOptions, ) -> bool` |
 | Params | `&mut self, note: Note, node: NodeID, options: MidiNoteOptions, spatial: SpatialAudioOptions,` |
 | Returns | `bool` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `play_note_attached` to play note attached in runtime audio; attached playback follows its node while sound resource lifetime stays separate. |
+| Fails when / edge behavior | Returns `false` when `play_note_attached` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `start_note_attached`
 
@@ -161,8 +161,8 @@ methods!({
 | Signature | `pub fn start_note_attached( &mut self, note: Note, node: NodeID, options: MidiNoteOptions, spatial: SpatialAudioOptions, ) -> Option<MidiNoteHandle>` |
 | Params | `&mut self, note: Note, node: NodeID, options: MidiNoteOptions, spatial: SpatialAudioOptions,` |
 | Returns | `Option<MidiNoteHandle>` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `start_note_attached` to start note attached in runtime audio; attached playback follows its node while sound resource lifetime stays separate. |
+| Fails when / edge behavior | Returns `None` when `start_note_attached` cannot produce a value for the supplied target or inputs. |
 
 ### `play_file_attached`
 
@@ -172,8 +172,8 @@ methods!({
 | Signature | `pub fn play_file_attached( &mut self, song: MidiSong, node: NodeID, spatial: SpatialAudioOptions, ) -> bool` |
 | Params | `&mut self, song: MidiSong, node: NodeID, spatial: SpatialAudioOptions,` |
 | Returns | `bool` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `play_file_attached` to play file attached in runtime audio; attached playback follows its node while sound resource lifetime stays separate. |
+| Fails when / edge behavior | Returns `false` when `play_file_attached` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `release_note`
 
@@ -183,8 +183,8 @@ methods!({
 | Signature | `pub fn release_note(&mut self, handle: MidiNoteHandle) -> bool` |
 | Params | `&mut self, handle: MidiNoteHandle` |
 | Returns | `bool` |
-| Use when | Use when code must release, remove, stop, or disconnect existing engine state. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `release_note` to release note in runtime audio; attached playback follows the supplied node while resource lifetime stays separate. |
+| Fails when / edge behavior | Returns `false` when `release_note` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `stop_attached`
 
@@ -194,8 +194,8 @@ methods!({
 | Signature | `pub fn stop_attached<T: Into<AttachedMidiTarget<'rt>>>( &mut self, node: NodeID, target: T, ) -> bool` |
 | Params | `&mut self, node: NodeID, target: T,` |
 | Returns | `bool` |
-| Use when | Use when code must release, remove, stop, or disconnect existing engine state. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `stop_attached` to stop attached in runtime audio; attached playback follows its node while sound resource lifetime stays separate. |
+| Fails when / edge behavior | Returns `false` when `stop_attached` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `audio_play_attached`
 
@@ -205,8 +205,8 @@ methods!({
 | Signature | `audio_play_attached!(ctx.run, bus_id, audio, node, options)` (bus form) or `audio_play_attached!(ctx.run, audio, node, options)` |
 | Params | `ctx.run, [bus_id,] audio, node, options` |
 | Returns | `bool or () as shown by backing method` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `audio_play_attached` to audio play attached in runtime audio; attached playback follows the supplied node while resource lifetime stays separate. |
+| Fails when / edge behavior | Returns `false` when `audio_play_attached` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `midi_play_attached`
 
@@ -216,8 +216,8 @@ methods!({
 | Signature | `midi_play_attached!(ctx.run, note, node, options, spatial)` (note form) or `midi_play_attached!(ctx.run, song, node, spatial)` (song form) |
 | Params | `ctx.run, note, node, options, spatial` / `ctx.run, song, node, spatial` |
 | Returns | `bool or () as shown by backing method` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `midi_play_attached` to midi play attached in runtime audio; attached playback follows the supplied node while resource lifetime stays separate. |
+| Fails when / edge behavior | Returns `false` when `midi_play_attached` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `midi_start_attached`
 
@@ -227,8 +227,8 @@ methods!({
 | Signature | `midi_start_attached!(ctx.run, note, node, options, spatial)` |
 | Params | `ctx.run, note, node, options, spatial` |
 | Returns | `bool or () as shown by backing method` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `midi_start_attached` to midi start attached in runtime audio; attached playback follows the supplied node while resource lifetime stays separate. |
+| Fails when / edge behavior | Returns `false` when `midi_start_attached` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `midi_release_attached`
 
@@ -238,8 +238,8 @@ methods!({
 | Signature | `midi_release_attached!(ctx.run, handle)` |
 | Params | `ctx.run, handle` |
 | Returns | `bool or () as shown by backing method` |
-| Use when | Use when code must release, remove, stop, or disconnect existing engine state. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `midi_release_attached` to midi release attached in runtime audio; attached playback follows the supplied node while resource lifetime stays separate. |
+| Fails when / edge behavior | Returns `false` when `midi_release_attached` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `midi_stop_attached`
 
@@ -249,6 +249,6 @@ methods!({
 | Signature | `midi_stop_attached!(ctx.run, node, target)` |
 | Params | `ctx.run, node, target` |
 | Returns | `bool or () as shown by backing method` |
-| Use when | Use when code must release, remove, stop, or disconnect existing engine state. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `midi_stop_attached` to midi stop attached in runtime audio; attached playback follows the supplied node while resource lifetime stays separate. |
+| Fails when / edge behavior | Returns `false` when `midi_stop_attached` cannot apply to the supplied target or inputs; `true` confirms success. |
 

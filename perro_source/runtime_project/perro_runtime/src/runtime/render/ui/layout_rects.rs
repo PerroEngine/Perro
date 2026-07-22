@@ -17,10 +17,16 @@ impl Runtime {
             }
             cur = scene_node.parent;
         }
-        z_sum
-            .saturating_mul(4096)
-            .saturating_add(ui_depth.saturating_sub(1))
-            .clamp(i32::MIN as i64, i32::MAX as i64) as i32
+        const DEPTH_STRIDE: i64 = 4096;
+        let depth = ui_depth.saturating_sub(1).min(DEPTH_STRIDE - 1);
+        // Clamp the explicit z lane before packing the hierarchy depth. If the
+        // combined value clamps afterward, a large parent z makes parent and
+        // child both i32::MAX and the renderer falls back to node-id order.
+        // Keep the depth lane so descendants, including UiViewport images,
+        // always draw above their parent at the same saturated z.
+        let min_z = i32::MIN as i64 / DEPTH_STRIDE;
+        let max_z = (i32::MAX as i64 - (DEPTH_STRIDE - 1)) / DEPTH_STRIDE;
+        (z_sum.clamp(min_z, max_z) * DEPTH_STRIDE + depth) as i32
     }
 
     pub(super) fn compute_ui_child_rect(

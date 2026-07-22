@@ -91,7 +91,7 @@ methods!({
 | Params | `&mut self, source: S` |
 | Returns | `Result<NodeID, String>` |
 | Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Fails when / edge behavior | Returns `Err` when `load` cannot validate or complete the operation; preserve the error text for diagnostics. |
 
 ### `load_hashed`
 
@@ -102,7 +102,7 @@ methods!({
 | Params | `&mut self, path_hash: u64, path: &str` |
 | Returns | `Result<NodeID, String>` |
 | Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Fails when / edge behavior | Returns `Err` when `load_hashed` cannot validate or complete the operation; preserve the error text for diagnostics. |
 
 ### `preload`
 
@@ -113,7 +113,7 @@ methods!({
 | Params | `&mut self, path: P` |
 | Returns | `Result<PreloadedSceneID, String>` |
 | Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Fails when / edge behavior | Returns `Err` when `preload` cannot validate or complete the operation; preserve the error text for diagnostics. |
 
 ### `preload_hashed`
 
@@ -124,7 +124,7 @@ methods!({
 | Params | `&mut self, path_hash: u64, path: &str,` |
 | Returns | `Result<PreloadedSceneID, String>` |
 | Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Fails when / edge behavior | Returns `Err` when `preload_hashed` cannot validate or complete the operation; preserve the error text for diagnostics. |
 
 ### `load_preloaded`
 
@@ -135,7 +135,7 @@ methods!({
 | Params | `&mut self, id: I` |
 | Returns | `Result<NodeID, String>` |
 | Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Fails when / edge behavior | Returns `Err` when `load_preloaded` cannot validate or complete the operation; preserve the error text for diagnostics. |
 
 ### `free_preloaded`
 
@@ -146,7 +146,7 @@ methods!({
 | Params | `&mut self, id: I` |
 | Returns | `bool` |
 | Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Fails when / edge behavior | Returns `false` when `free_preloaded` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `drop_preloaded`
 
@@ -157,7 +157,7 @@ methods!({
 | Params | `&mut self, target: T` |
 | Returns | `bool` |
 | Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Fails when / edge behavior | Returns `false` when `drop_preloaded` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `drop_preloaded_hashed`
 
@@ -168,7 +168,7 @@ methods!({
 | Params | `&mut self, path_hash: u64, path: &str` |
 | Returns | `bool` |
 | Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Fails when / edge behavior | Returns `false` when `drop_preloaded_hashed` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `scene_load`
 
@@ -179,7 +179,7 @@ methods!({
 | Params | `ctx, path` |
 | Returns | `resource/runtime ID or `Result` as shown by backing method` |
 | Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Fails when / edge behavior | Uses the backing `scene_load` return and failure behavior unchanged; the wrapper adds no coercion or fallback. |
 
 ### `scene_preload`
 
@@ -190,7 +190,7 @@ methods!({
 | Params | `ctx, path` |
 | Returns | `resource/runtime ID or `Result` as shown by backing method` |
 | Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Fails when / edge behavior | Uses the backing `scene_preload` return and failure behavior unchanged; the wrapper adds no coercion or fallback. |
 
 ### `scene_free_preloaded`
 
@@ -201,7 +201,7 @@ methods!({
 | Params | `ctx, path` |
 | Returns | `resource/runtime ID or `Result` as shown by backing method` |
 | Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Fails when / edge behavior | Uses the backing `scene_free_preloaded` return and failure behavior unchanged; the wrapper adds no coercion or fallback. |
 
 ### `scene_drop_preloaded`
 
@@ -212,5 +212,5 @@ methods!({
 | Params | `ctx, path` |
 | Returns | `bool or () as shown by backing method` |
 | Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Fails when / edge behavior | Returns `false` when `scene_drop_preloaded` cannot apply to the supplied target or inputs; `true` confirms success. |
 

@@ -176,14 +176,16 @@ transforms between a node's space and the world.
 
 ## Use Cases
 
-- Move a character or camera frame-by-frame: read `get_global_pos_3d!(ctx.run, id)`, offset it, and write it back with `set_global_pos_3d!(ctx.run, id, pos)`.
-- Aim a turret or make an NPC face the player: `look_at_3d!(ctx.run, turret, get_global_pos_3d!(ctx.run, player))`.
-- Spawn a projectile, pickup, or effect at runtime: `spawn!(ctx.run, Node3D, "Bullet", tags!["bullet"], parent, |node| { /* configure */ })`.
-- Pick an item up into the player's hand: `reparent!(ctx.run, hand_node, item_node)`, then zero its local position.
-- Group nodes for queries: `tag_add!(ctx.run, id, tags!["enemy"])` so [node queries](node_query.md) can find them later.
-- Read or edit a node's typed fields (camera FOV, sprite frame, light color): `with_node_mut!(ctx.run, Camera3D, id, |cam| { /* ... */ })`.
-- Convert spaces (muzzle offset to world, world hit to local): `to_global_point_3d!(ctx.run, weapon, muzzle_local)`.
-- Destroy a node on death or despawn: `remove_node!(ctx.run, id)`.
+| Situation | Choice | Why | Tradeoff |
+| --- | --- | --- | --- |
+| Script edits its own known camera/sprite/body | `with_node_mut!` + `ctx.id` | Typed closure exposes the concrete node fields | Returns no value on missing ID or wrong node type |
+| Script reads shared base fields from an unknown concrete node | `with_base_node!` | Base dispatch avoids guessing its concrete type | Only base fields are available |
+| Scene has one fixed target | state `NodeID` | Scene wiring gives a stable explicit dependency | Target may later be removed; guard every access |
+| Projectile or pickup appears at runtime | `spawn!` under an owned parent | Creation, name, tags, and initial data stay together | Caller owns later cleanup and any attached script setup |
+| Item changes hierarchy | `reparent!` then local transform | Parent defines the new transform space | Preserving world pose requires reading/writing the intended transform explicitly |
+| System needs all current enemies | tags + query | Membership follows runtime tags/spawns | Query is weaker and costlier than a known ref |
+| Muzzle point must enter world space | `to_global_point_3d!` | Conversion includes the node hierarchy | Missing/wrong-dimensional node returns the helper's empty value |
+| Node dies | `remove_node!` | Runtime removes the owned scene object | Stored IDs become stale; users must tolerate absence |
 
 ## Context
 
@@ -193,43 +195,44 @@ transforms between a node's space and the world.
 
 ## Practical Example
 
-A simple homing turret: each frame, find the player, rotate the turret to face
-it, and fire a bullet on a cooldown by spawning a node just in front of the
-muzzle.
+A simple homing turret: keep its fixed target as a scene-injected `NodeID`,
+rotate toward it, and fire a bullet on a cooldown.
 
 ```rust
 #[State]
 struct TurretState {
-    #[default = 0.0]
-    pub cooldown: f32,
+    #[expose]
+    #[node_ref(Node3D)]
+    pub target: Option<NodeID>,
+
 }
 
 lifecycle!({
+    fn on_all_init(&self, ctx: &mut ScriptContext<'_, API>) {
+        signal_connect!(ctx.run, ctx.id, timer_finished!("fire"), func!("fire"));
+        timer_start!(ctx.run, Duration::from_millis(500), "fire");
+    }
+
     fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let Some(player) = query_first!(ctx.run, any(name["Player"], tags["player"])) else {
+        let Some(target_id) = with_state!(ctx.run, TurretState, ctx.id, |s| s.target) else {
             return;
         };
-        let target = get_global_pos_3d!(ctx.run, player);
-        look_at_3d!(ctx.run, ctx.id, target);
+        let Some(target) = get_global_pos_3d!(ctx.run, target_id) else {
+            return;
+        };
+        let _ = look_at_3d!(ctx.run, ctx.id, target);
+    }
+});
 
-        let dt = delta_time!(ctx.run);
-        let ready = with_state_mut!(ctx.run, TurretState, ctx.id, |s| {
-            s.cooldown = (s.cooldown - dt).max(0.0);
-            if s.cooldown == 0.0 {
-                s.cooldown = 0.5;
-                true
-            } else {
-                false
-            }
-        });
-
-        if ready == Some(true) {
-            let muzzle = get_global_pos_3d!(ctx.run, ctx.id);
-            let _bullet = spawn!(ctx.run, Node3D, "Bullet", tags!["bullet"], ctx.id, |node| {
+methods!({
+    fn fire(&self, ctx: &mut ScriptContext<'_, API>) {
+        if let Some(muzzle) = get_global_pos_3d!(ctx.run, ctx.id) {
+            let bullet = spawn!(ctx.run, Node3D, "Bullet", tags!["bullet"], ctx.id, |node| {
                 let _ = node; // set velocity, mesh, lifetime, etc.
             });
-            set_global_pos_3d!(ctx.run, _bullet, muzzle);
+            let _ = set_global_pos_3d!(ctx.run, bullet, muzzle);
         }
+        timer_start!(ctx.run, Duration::from_millis(500), "fire");
     }
 });
 ```
@@ -244,8 +247,8 @@ lifecycle!({
 | Signature | `pub fn create<T>(&mut self) -> NodeID where T: Default + Into<SceneNodeData>,` |
 | Params | `&mut self` |
 | Returns | `NodeID where T: Default + Into<SceneNodeData>,` |
-| Use when | Use when gameplay needs a new runtime/resource object built from typed data. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `create` to create on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Has no optional/error return; `create` returns the documented value directly. |
 
 ### `create_nodes`
 
@@ -255,8 +258,8 @@ lifecycle!({
 | Signature | `pub fn create_nodes<'a, B>(&mut self, requests: B, parent_id: NodeID) -> Vec<NodeID> where B: IntoNodeCreateBatch<'a>` |
 | Params | `&mut self, requests: NodeCollection / NodeSpec slice, parent_id: NodeID` |
 | Returns | `Vec<NodeID>` |
-| Use when | Use when gameplay needs a new runtime/resource object built from typed data. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `create_nodes` to create nodes on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Returns an empty vector when `create_nodes` finds no values; callers must treat zero results as normal. |
 
 ### `with_node_mut`
 
@@ -266,8 +269,8 @@ lifecycle!({
 | Signature | `pub fn with_node_mut<T, V, F>(&mut self, id: NodeID, f: F) -> Option<V> where T: NodeTypeDispatch, F: FnOnce(&mut T) -> V,` |
 | Params | `&mut self, id: NodeID, f: F) -> Option<V> where T: NodeTypeDispatch, F: FnOnce(&mut T` |
 | Returns | `Option<V> where T: NodeTypeDispatch, F: FnOnce(&mut T) -> V,` |
-| Use when | Use when script code needs this exact engine read or write. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `with_node_mut` to with node mut on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Returns `None` when `with_node_mut` cannot produce a value for the supplied target or inputs. |
 
 ### `with_node`
 
@@ -277,8 +280,8 @@ lifecycle!({
 | Signature | `pub fn with_node<T, V: Clone + Default>( &mut self, node_id: NodeID, f: impl FnOnce(&T) -> V, ) -> V where T: NodeTypeDispatch,` |
 | Params | `&mut self, node_id: NodeID, f: impl FnOnce(&T) -> V,` |
 | Returns | `V, ) -> V where T: NodeTypeDispatch,` |
-| Use when | Use when script code needs this exact engine read or write. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `with_node` to with node on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Uses `with_node`'s documented return type as its failure channel; no extra wrapper fallback or coercion is added. |
 
 ### `with_base_node`
 
@@ -288,8 +291,8 @@ lifecycle!({
 | Signature | `pub fn with_base_node<T, V, F>(&mut self, id: NodeID, f: F) -> Option<V> where T: NodeBaseDispatch, F: FnOnce(&T) -> V,` |
 | Params | `&mut self, id: NodeID, f: F) -> Option<V> where T: NodeBaseDispatch, F: FnOnce(&T` |
 | Returns | `Option<V> where T: NodeBaseDispatch, F: FnOnce(&T) -> V,` |
-| Use when | Use when script code needs this exact engine read or write. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `with_base_node` to with base node on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Returns `None` when `with_base_node` cannot produce a value for the supplied target or inputs. |
 
 ### `with_base_node_mut`
 
@@ -299,8 +302,8 @@ lifecycle!({
 | Signature | `pub fn with_base_node_mut<T, V, F>(&mut self, id: NodeID, f: F) -> Option<V> where T: NodeBaseDispatch, F: FnOnce(&mut T) -> V,` |
 | Params | `&mut self, id: NodeID, f: F) -> Option<V> where T: NodeBaseDispatch, F: FnOnce(&mut T` |
 | Returns | `Option<V> where T: NodeBaseDispatch, F: FnOnce(&mut T) -> V,` |
-| Use when | Use when script code needs this exact engine read or write. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `with_base_node_mut` to with base node mut on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Returns `None` when `with_base_node_mut` cannot produce a value for the supplied target or inputs. |
 
 ### `get_node_name`
 
@@ -310,8 +313,8 @@ lifecycle!({
 | Signature | `pub fn get_node_name(&mut self, node_id: NodeID) -> Option<Cow<'static, str>>` |
 | Params | `&mut self, node_id: NodeID` |
 | Returns | `Option<Cow<'static, str>>` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `get_node_name` to get node name on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Returns `None` when `get_node_name` cannot produce a value for the supplied target or inputs. |
 
 ### `set_node_name`
 
@@ -321,8 +324,8 @@ lifecycle!({
 | Signature | `pub fn set_node_name<S>(&mut self, node_id: NodeID, name: S) -> bool where S: Into<Cow<'static, str>>,` |
 | Params | `&mut self, node_id: NodeID, name: S` |
 | Returns | `bool where S: Into<Cow<'static, str>>,` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `set_node_name` to set node name on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Returns `false` when `set_node_name` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `get_skeleton_bone_name`
 
@@ -332,8 +335,8 @@ lifecycle!({
 | Signature | `pub fn get_skeleton_bone_name( &mut self, skeleton_id: NodeID, bone_index: usize, ) -> Option<Cow<'static, str>>` |
 | Params | `&mut self, skeleton_id: NodeID, bone_index: usize,` |
 | Returns | `Option<Cow<'static, str>>` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `get_skeleton_bone_name` to get skeleton bone name on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Returns `None` when `get_skeleton_bone_name` cannot produce a value for the supplied target or inputs. |
 
 ### `get_skeleton_bone_index`
 
@@ -343,8 +346,8 @@ lifecycle!({
 | Signature | `pub fn get_skeleton_bone_index<S>(&mut self, skeleton_id: NodeID, bone_name: S) -> Option<usize> where S: AsRef<str>,` |
 | Params | `&mut self, skeleton_id: NodeID, bone_name: S` |
 | Returns | `Option<usize> where S: AsRef<str>,` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `get_skeleton_bone_index` to get skeleton bone index on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Returns `None` when `get_skeleton_bone_index` cannot produce a value for the supplied target or inputs. |
 
 ### `set_ui_rotation`
 
@@ -354,8 +357,8 @@ lifecycle!({
 | Signature | `pub fn set_ui_rotation(&mut self, node_id: NodeID, rotation: f32) -> bool` |
 | Params | `&mut self, node_id: NodeID, rotation: f32` |
 | Returns | `bool` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `set_ui_rotation` to set ui rotation on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Returns `false` when `set_ui_rotation` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `bind_locale_text`
 
@@ -376,8 +379,8 @@ lifecycle!({
 | Signature | `pub fn bind_locale_placeholder<S>(&mut self, node_id: NodeID, key: S) -> bool where S: AsRef<str>,` |
 | Params | `&mut self, node_id: NodeID, key: S` |
 | Returns | `bool where S: AsRef<str>,` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `bind_locale_placeholder` to bind locale placeholder on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Returns `false` when `bind_locale_placeholder` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `get_node_parent_id`
 
@@ -387,8 +390,8 @@ lifecycle!({
 | Signature | `pub fn get_node_parent_id(&mut self, node_id: NodeID) -> Option<NodeID>` |
 | Params | `&mut self, node_id: NodeID` |
 | Returns | `Option<NodeID>` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `get_node_parent_id` to get node parent id on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Returns `None` when `get_node_parent_id` cannot produce a value for the supplied target or inputs. |
 
 ### `get_node_children_ids`
 
@@ -398,8 +401,8 @@ lifecycle!({
 | Signature | `pub fn get_node_children_ids(&mut self, node_id: NodeID) -> Option<Vec<NodeID>>` |
 | Params | `&mut self, node_id: NodeID` |
 | Returns | `Option<Vec<NodeID>>` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `get_node_children_ids` to get node children ids on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Returns `None` when `get_node_children_ids` cannot produce a value for the supplied target or inputs. |
 
 ### `get_children`
 
@@ -409,8 +412,8 @@ lifecycle!({
 | Signature | `pub fn get_children(&mut self, node_id: NodeID) -> Vec<NodeID>` |
 | Params | `&mut self, node_id: NodeID` |
 | Returns | `Vec<NodeID>` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `get_children` to get children on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Returns an empty vector when `get_children` finds no values; callers must treat zero results as normal. |
 
 ### `get_child_at`
 
@@ -420,8 +423,8 @@ lifecycle!({
 | Signature | `pub fn get_child_at(&mut self, parent_id: NodeID, index: usize) -> Option<NodeID>` |
 | Params | `&mut self, parent_id: NodeID, index: usize` |
 | Returns | `Option<NodeID>` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `get_child_at` to get child at on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Returns `None` when `get_child_at` cannot produce a value for the supplied target or inputs. |
 
 ### `get_child_by_name`
 
@@ -431,8 +434,8 @@ lifecycle!({
 | Signature | `pub fn get_child_by_name<S>(&mut self, parent_id: NodeID, name: S) -> Option<NodeID> where S: AsRef<str>,` |
 | Params | `&mut self, parent_id: NodeID, name: S` |
 | Returns | `Option<NodeID> where S: AsRef<str>,` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `get_child_by_name` to get child by name on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Returns `None` when `get_child_by_name` cannot produce a value for the supplied target or inputs. |
 
 ### `get_children_by_name`
 
@@ -442,8 +445,8 @@ lifecycle!({
 | Signature | `pub fn get_children_by_name<S>(&mut self, parent_id: NodeID, name: S) -> Vec<NodeID> where S: AsRef<str>,` |
 | Params | `&mut self, parent_id: NodeID, name: S` |
 | Returns | `Vec<NodeID> where S: AsRef<str>,` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `get_children_by_name` to get children by name on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Returns an empty vector when `get_children_by_name` finds no values; callers must treat zero results as normal. |
 
 ### `get_child`
 
@@ -453,8 +456,8 @@ lifecycle!({
 | Signature | `pub fn get_child<T>(&mut self, parent_id: NodeID, selector: T) -> Option<NodeID> where T: IntoChildSelector,` |
 | Params | `&mut self, parent_id: NodeID, selector: T` |
 | Returns | `Option<NodeID> where T: IntoChildSelector,` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `get_child` to get child on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Returns `None` when `get_child` cannot produce a value for the supplied target or inputs. |
 
 ### `get_node_type`
 
@@ -464,8 +467,8 @@ lifecycle!({
 | Signature | `pub fn get_node_type(&mut self, node_id: NodeID) -> Option<NodeType>` |
 | Params | `&mut self, node_id: NodeID` |
 | Returns | `Option<NodeType>` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `get_node_type` to get node type on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Returns `None` when `get_node_type` cannot produce a value for the supplied target or inputs. |
 
 ### `reparent`
 
@@ -475,8 +478,8 @@ lifecycle!({
 | Signature | `pub fn reparent(&mut self, parent_id: NodeID, child_id: NodeID) -> bool` |
 | Params | `&mut self, parent_id: NodeID, child_id: NodeID` |
 | Returns | `bool` |
-| Use when | Use when script code needs this exact engine read or write. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `reparent` to reparent on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Returns `false` when `reparent` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `force_rerender`
 
@@ -486,8 +489,8 @@ lifecycle!({
 | Signature | `pub fn force_rerender(&mut self, root_id: NodeID) -> bool` |
 | Params | `&mut self, root_id: NodeID` |
 | Returns | `bool` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `force_rerender` to force rerender on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Returns `false` when `force_rerender` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `mark_needs_rerender`
 
@@ -497,8 +500,8 @@ lifecycle!({
 | Signature | `pub fn mark_needs_rerender(&mut self, node_id: NodeID) -> bool` |
 | Params | `&mut self, node_id: NodeID` |
 | Returns | `bool` |
-| Use when | Use when script code needs this exact engine read or write. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `mark_needs_rerender` to mark needs rerender on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Returns `false` when `mark_needs_rerender` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `reparent_multi`
 
@@ -508,8 +511,8 @@ lifecycle!({
 | Signature | `pub fn reparent_multi<I>(&mut self, parent_id: NodeID, child_ids: I) -> usize where I: IntoIterator<Item = NodeID>,` |
 | Params | `&mut self, parent_id: NodeID, child_ids: I` |
 | Returns | `usize where I: IntoIterator<Item = NodeID>,` |
-| Use when | Use when script code needs this exact engine read or write. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `reparent_multi` to reparent multi on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Has no optional/error return; `reparent_multi` returns the documented value directly. |
 
 ### `remove_node`
 
@@ -519,8 +522,8 @@ lifecycle!({
 | Signature | `pub fn remove_node(&mut self, node_id: NodeID) -> bool` |
 | Params | `&mut self, node_id: NodeID` |
 | Returns | `bool` |
-| Use when | Use when code must release, remove, stop, or disconnect existing engine state. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `remove_node` to remove node on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Returns `false` when `remove_node` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `get_node_tags`
 
@@ -530,8 +533,8 @@ lifecycle!({
 | Signature | `pub fn get_node_tags(&mut self, node_id: NodeID) -> Option<Vec<Cow<'static, str>>>` |
 | Params | `&mut self, node_id: NodeID` |
 | Returns | `Option<Vec<Cow<'static, str>>>` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `get_node_tags` to get node tags on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Returns `None` when `get_node_tags` cannot produce a value for the supplied target or inputs. |
 
 ### `tag_set`
 
@@ -541,8 +544,8 @@ lifecycle!({
 | Signature | `pub fn tag_set<T>(&mut self, node_id: NodeID, tags: Option<T>) -> bool where T: IntoNodeTags,` |
 | Params | `&mut self, node_id: NodeID, tags: Option<T>` |
 | Returns | `bool where T: IntoNodeTags,` |
-| Use when | Use when script code needs this exact engine read or write. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `tag_set` to tag set on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Returns `false` when `tag_set` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `add_node_tag`
 
@@ -552,8 +555,8 @@ lifecycle!({
 | Signature | `pub fn add_node_tag<T>(&mut self, node_id: NodeID, tag: T) -> bool where T: IntoNodeTag,` |
 | Params | `&mut self, node_id: NodeID, tag: T` |
 | Returns | `bool where T: IntoNodeTag,` |
-| Use when | Use when script code needs this exact engine read or write. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `add_node_tag` to add node tag on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Returns `false` when `add_node_tag` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `add_node_tags`
 
@@ -563,8 +566,8 @@ lifecycle!({
 | Signature | `pub fn add_node_tags<T>(&mut self, node_id: NodeID, tags: T) -> bool where T: IntoNodeTags,` |
 | Params | `&mut self, node_id: NodeID, tags: T` |
 | Returns | `bool where T: IntoNodeTags,` |
-| Use when | Use when script code needs this exact engine read or write. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `add_node_tags` to add node tags on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Returns `false` when `add_node_tags` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `remove_node_tag`
 
@@ -574,8 +577,8 @@ lifecycle!({
 | Signature | `pub fn remove_node_tag<T>(&mut self, node_id: NodeID, tag: T) -> bool where T: IntoTagID,` |
 | Params | `&mut self, node_id: NodeID, tag: T` |
 | Returns | `bool where T: IntoTagID,` |
-| Use when | Use when code must release, remove, stop, or disconnect existing engine state. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `remove_node_tag` to remove node tag on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Returns `false` when `remove_node_tag` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `get_global_transform_2d`
 
@@ -585,8 +588,8 @@ lifecycle!({
 | Signature | `pub fn get_global_transform_2d(&mut self, node_id: NodeID) -> Option<Transform2D>` |
 | Params | `&mut self, node_id: NodeID` |
 | Returns | `Option<Transform2D>` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `get_global_transform_2d` to get global transform 2d on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Returns `None` when `get_global_transform_2d` cannot produce a value for the supplied target or inputs. |
 
 ### `get_global_transform_3d`
 
@@ -596,8 +599,8 @@ lifecycle!({
 | Signature | `pub fn get_global_transform_3d(&mut self, node_id: NodeID) -> Option<Transform3D>` |
 | Params | `&mut self, node_id: NodeID` |
 | Returns | `Option<Transform3D>` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `get_global_transform_3d` to get global transform 3d on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Returns `None` when `get_global_transform_3d` cannot produce a value for the supplied target or inputs. |
 
 ### `get_local_transform_2d`
 
@@ -607,8 +610,8 @@ lifecycle!({
 | Signature | `pub fn get_local_transform_2d(&mut self, node_id: NodeID) -> Option<Transform2D>` |
 | Params | `&mut self, node_id: NodeID` |
 | Returns | `Option<Transform2D>` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `get_local_transform_2d` to get local transform 2d on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Returns `None` when `get_local_transform_2d` cannot produce a value for the supplied target or inputs. |
 
 ### `get_local_transform_3d`
 
@@ -618,8 +621,8 @@ lifecycle!({
 | Signature | `pub fn get_local_transform_3d(&mut self, node_id: NodeID) -> Option<Transform3D>` |
 | Params | `&mut self, node_id: NodeID` |
 | Returns | `Option<Transform3D>` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `get_local_transform_3d` to get local transform 3d on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Returns `None` when `get_local_transform_3d` cannot produce a value for the supplied target or inputs. |
 
 ### `set_local_transform_2d`
 
@@ -629,8 +632,8 @@ lifecycle!({
 | Signature | `pub fn set_local_transform_2d(&mut self, node_id: NodeID, transform: Transform2D) -> bool` |
 | Params | `&mut self, node_id: NodeID, transform: Transform2D` |
 | Returns | `bool` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `set_local_transform_2d` to set local transform 2d on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Returns `false` when `set_local_transform_2d` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `set_local_transform_3d`
 
@@ -640,8 +643,8 @@ lifecycle!({
 | Signature | `pub fn set_local_transform_3d(&mut self, node_id: NodeID, transform: Transform3D) -> bool` |
 | Params | `&mut self, node_id: NodeID, transform: Transform3D` |
 | Returns | `bool` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `set_local_transform_3d` to set local transform 3d on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Returns `false` when `set_local_transform_3d` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `set_global_transform_2d`
 
@@ -651,8 +654,8 @@ lifecycle!({
 | Signature | `pub fn set_global_transform_2d(&mut self, node_id: NodeID, global: Transform2D) -> bool` |
 | Params | `&mut self, node_id: NodeID, global: Transform2D` |
 | Returns | `bool` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `set_global_transform_2d` to set global transform 2d on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Returns `false` when `set_global_transform_2d` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `set_global_transform_3d`
 
@@ -662,8 +665,8 @@ lifecycle!({
 | Signature | `pub fn set_global_transform_3d(&mut self, node_id: NodeID, global: Transform3D) -> bool` |
 | Params | `&mut self, node_id: NodeID, global: Transform3D` |
 | Returns | `bool` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `set_global_transform_3d` to set global transform 3d on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Returns `false` when `set_global_transform_3d` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `get_local_pos_2d`
 
@@ -673,8 +676,8 @@ lifecycle!({
 | Signature | `pub fn get_local_pos_2d(&mut self, node_id: NodeID) -> Option<Vector2>` |
 | Params | `&mut self, node_id: NodeID` |
 | Returns | `Option<Vector2>` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `get_local_pos_2d` to get local pos 2d on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Returns `None` when `get_local_pos_2d` cannot produce a value for the supplied target or inputs. |
 
 ### `get_local_pos_3d`
 
@@ -684,8 +687,8 @@ lifecycle!({
 | Signature | `pub fn get_local_pos_3d(&mut self, node_id: NodeID) -> Option<Vector3>` |
 | Params | `&mut self, node_id: NodeID` |
 | Returns | `Option<Vector3>` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `get_local_pos_3d` to get local pos 3d on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Returns `None` when `get_local_pos_3d` cannot produce a value for the supplied target or inputs. |
 
 ### `set_local_pos_2d`
 
@@ -695,8 +698,8 @@ lifecycle!({
 | Signature | `pub fn set_local_pos_2d(&mut self, node_id: NodeID, pos: Vector2) -> bool` |
 | Params | `&mut self, node_id: NodeID, pos: Vector2` |
 | Returns | `bool` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `set_local_pos_2d` to set local pos 2d on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Returns `false` when `set_local_pos_2d` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `set_local_pos_3d`
 
@@ -706,8 +709,8 @@ lifecycle!({
 | Signature | `pub fn set_local_pos_3d(&mut self, node_id: NodeID, pos: Vector3) -> bool` |
 | Params | `&mut self, node_id: NodeID, pos: Vector3` |
 | Returns | `bool` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `set_local_pos_3d` to set local pos 3d on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Returns `false` when `set_local_pos_3d` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `get_global_pos_2d`
 
@@ -717,8 +720,8 @@ lifecycle!({
 | Signature | `pub fn get_global_pos_2d(&mut self, node_id: NodeID) -> Option<Vector2>` |
 | Params | `&mut self, node_id: NodeID` |
 | Returns | `Option<Vector2>` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `get_global_pos_2d` to get global pos 2d on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Returns `None` when `get_global_pos_2d` cannot produce a value for the supplied target or inputs. |
 
 ### `get_global_pos_3d`
 
@@ -728,8 +731,8 @@ lifecycle!({
 | Signature | `pub fn get_global_pos_3d(&mut self, node_id: NodeID) -> Option<Vector3>` |
 | Params | `&mut self, node_id: NodeID` |
 | Returns | `Option<Vector3>` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `get_global_pos_3d` to get global pos 3d on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Returns `None` when `get_global_pos_3d` cannot produce a value for the supplied target or inputs. |
 
 ### `set_global_pos_2d`
 
@@ -739,8 +742,8 @@ lifecycle!({
 | Signature | `pub fn set_global_pos_2d(&mut self, node_id: NodeID, pos: Vector2) -> bool` |
 | Params | `&mut self, node_id: NodeID, pos: Vector2` |
 | Returns | `bool` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `set_global_pos_2d` to set global pos 2d on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Returns `false` when `set_global_pos_2d` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `set_global_pos_3d`
 
@@ -750,8 +753,8 @@ lifecycle!({
 | Signature | `pub fn set_global_pos_3d(&mut self, node_id: NodeID, pos: Vector3) -> bool` |
 | Params | `&mut self, node_id: NodeID, pos: Vector3` |
 | Returns | `bool` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `set_global_pos_3d` to set global pos 3d on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Returns `false` when `set_global_pos_3d` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `get_local_rot_2d`
 
@@ -761,8 +764,8 @@ lifecycle!({
 | Signature | `pub fn get_local_rot_2d(&mut self, node_id: NodeID) -> Option<f32>` |
 | Params | `&mut self, node_id: NodeID` |
 | Returns | `Option<f32>` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `get_local_rot_2d` to get local rot 2d on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Returns `None` when `get_local_rot_2d` cannot produce a value for the supplied target or inputs. |
 
 ### `get_local_rot_3d`
 
@@ -772,8 +775,8 @@ lifecycle!({
 | Signature | `pub fn get_local_rot_3d(&mut self, node_id: NodeID) -> Option<Quaternion>` |
 | Params | `&mut self, node_id: NodeID` |
 | Returns | `Option<Quaternion>` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `get_local_rot_3d` to get local rot 3d on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Returns `None` when `get_local_rot_3d` cannot produce a value for the supplied target or inputs. |
 
 ### `set_local_rot_2d`
 
@@ -783,8 +786,8 @@ lifecycle!({
 | Signature | `pub fn set_local_rot_2d(&mut self, node_id: NodeID, rot: f32) -> bool` |
 | Params | `&mut self, node_id: NodeID, rot: f32` |
 | Returns | `bool` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `set_local_rot_2d` to set local rot 2d on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Returns `false` when `set_local_rot_2d` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `set_local_rot_3d`
 
@@ -794,8 +797,8 @@ lifecycle!({
 | Signature | `pub fn set_local_rot_3d(&mut self, node_id: NodeID, rot: Quaternion) -> bool` |
 | Params | `&mut self, node_id: NodeID, rot: Quaternion` |
 | Returns | `bool` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `set_local_rot_3d` to set local rot 3d on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Returns `false` when `set_local_rot_3d` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `get_global_rot_2d`
 
@@ -805,8 +808,8 @@ lifecycle!({
 | Signature | `pub fn get_global_rot_2d(&mut self, node_id: NodeID) -> Option<f32>` |
 | Params | `&mut self, node_id: NodeID` |
 | Returns | `Option<f32>` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `get_global_rot_2d` to get global rot 2d on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Returns `None` when `get_global_rot_2d` cannot produce a value for the supplied target or inputs. |
 
 ### `get_global_rot_3d`
 
@@ -816,8 +819,8 @@ lifecycle!({
 | Signature | `pub fn get_global_rot_3d(&mut self, node_id: NodeID) -> Option<Quaternion>` |
 | Params | `&mut self, node_id: NodeID` |
 | Returns | `Option<Quaternion>` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `get_global_rot_3d` to get global rot 3d on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Returns `None` when `get_global_rot_3d` cannot produce a value for the supplied target or inputs. |
 
 ### `set_global_rot_2d`
 
@@ -827,8 +830,8 @@ lifecycle!({
 | Signature | `pub fn set_global_rot_2d(&mut self, node_id: NodeID, rot: f32) -> bool` |
 | Params | `&mut self, node_id: NodeID, rot: f32` |
 | Returns | `bool` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `set_global_rot_2d` to set global rot 2d on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Returns `false` when `set_global_rot_2d` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `set_global_rot_3d`
 
@@ -838,8 +841,8 @@ lifecycle!({
 | Signature | `pub fn set_global_rot_3d(&mut self, node_id: NodeID, rot: Quaternion) -> bool` |
 | Params | `&mut self, node_id: NodeID, rot: Quaternion` |
 | Returns | `bool` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `set_global_rot_3d` to set global rot 3d on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Returns `false` when `set_global_rot_3d` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `get_local_scale_2d`
 
@@ -849,8 +852,8 @@ lifecycle!({
 | Signature | `pub fn get_local_scale_2d(&mut self, node_id: NodeID) -> Option<Vector2>` |
 | Params | `&mut self, node_id: NodeID` |
 | Returns | `Option<Vector2>` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `get_local_scale_2d` to get local scale 2d on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Returns `None` when `get_local_scale_2d` cannot produce a value for the supplied target or inputs. |
 
 ### `get_local_scale_3d`
 
@@ -860,8 +863,8 @@ lifecycle!({
 | Signature | `pub fn get_local_scale_3d(&mut self, node_id: NodeID) -> Option<Vector3>` |
 | Params | `&mut self, node_id: NodeID` |
 | Returns | `Option<Vector3>` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `get_local_scale_3d` to get local scale 3d on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Returns `None` when `get_local_scale_3d` cannot produce a value for the supplied target or inputs. |
 
 ### `set_local_scale_2d`
 
@@ -871,8 +874,8 @@ lifecycle!({
 | Signature | `pub fn set_local_scale_2d(&mut self, node_id: NodeID, scale: Vector2) -> bool` |
 | Params | `&mut self, node_id: NodeID, scale: Vector2` |
 | Returns | `bool` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `set_local_scale_2d` to set local scale 2d on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Returns `false` when `set_local_scale_2d` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `set_local_scale_3d`
 
@@ -882,8 +885,8 @@ lifecycle!({
 | Signature | `pub fn set_local_scale_3d(&mut self, node_id: NodeID, scale: Vector3) -> bool` |
 | Params | `&mut self, node_id: NodeID, scale: Vector3` |
 | Returns | `bool` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `set_local_scale_3d` to set local scale 3d on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Returns `false` when `set_local_scale_3d` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `get_global_scale_2d`
 
@@ -893,8 +896,8 @@ lifecycle!({
 | Signature | `pub fn get_global_scale_2d(&mut self, node_id: NodeID) -> Option<Vector2>` |
 | Params | `&mut self, node_id: NodeID` |
 | Returns | `Option<Vector2>` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `get_global_scale_2d` to get global scale 2d on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Returns `None` when `get_global_scale_2d` cannot produce a value for the supplied target or inputs. |
 
 ### `get_global_scale_3d`
 
@@ -904,8 +907,8 @@ lifecycle!({
 | Signature | `pub fn get_global_scale_3d(&mut self, node_id: NodeID) -> Option<Vector3>` |
 | Params | `&mut self, node_id: NodeID` |
 | Returns | `Option<Vector3>` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `get_global_scale_3d` to get global scale 3d on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Returns `None` when `get_global_scale_3d` cannot produce a value for the supplied target or inputs. |
 
 ### `set_global_scale_2d`
 
@@ -915,8 +918,8 @@ lifecycle!({
 | Signature | `pub fn set_global_scale_2d(&mut self, node_id: NodeID, scale: Vector2) -> bool` |
 | Params | `&mut self, node_id: NodeID, scale: Vector2` |
 | Returns | `bool` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `set_global_scale_2d` to set global scale 2d on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Returns `false` when `set_global_scale_2d` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `set_global_scale_3d`
 
@@ -926,8 +929,8 @@ lifecycle!({
 | Signature | `pub fn set_global_scale_3d(&mut self, node_id: NodeID, scale: Vector3) -> bool` |
 | Params | `&mut self, node_id: NodeID, scale: Vector3` |
 | Returns | `bool` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `set_global_scale_3d` to set global scale 3d on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Returns `false` when `set_global_scale_3d` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `to_global_point_2d`
 
@@ -938,7 +941,7 @@ lifecycle!({
 | Params | `&mut self, node_id: NodeID, local: Vector2` |
 | Returns | `Option<Vector2>` |
 | Use when | Use when converting points or transforms between local node space and world space. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Fails when / edge behavior | Returns `None` when `to_global_point_2d` cannot produce a value for the supplied target or inputs. |
 
 ### `to_local_point_2d`
 
@@ -949,7 +952,7 @@ lifecycle!({
 | Params | `&mut self, node_id: NodeID, global: Vector2` |
 | Returns | `Option<Vector2>` |
 | Use when | Use when converting points or transforms between local node space and world space. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Fails when / edge behavior | Returns `None` when `to_local_point_2d` cannot produce a value for the supplied target or inputs. |
 
 ### `to_global_point_3d`
 
@@ -960,7 +963,7 @@ lifecycle!({
 | Params | `&mut self, node_id: NodeID, local: Vector3` |
 | Returns | `Option<Vector3>` |
 | Use when | Use when converting points or transforms between local node space and world space. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Fails when / edge behavior | Returns `None` when `to_global_point_3d` cannot produce a value for the supplied target or inputs. |
 
 ### `to_local_point_3d`
 
@@ -971,7 +974,7 @@ lifecycle!({
 | Params | `&mut self, node_id: NodeID, global: Vector3` |
 | Returns | `Option<Vector3>` |
 | Use when | Use when converting points or transforms between local node space and world space. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Fails when / edge behavior | Returns `None` when `to_local_point_3d` cannot produce a value for the supplied target or inputs. |
 
 ### `to_global_transform_2d`
 
@@ -982,7 +985,7 @@ lifecycle!({
 | Params | `&mut self, node_id: NodeID, local: Transform2D,` |
 | Returns | `Option<Transform2D>` |
 | Use when | Use when converting points or transforms between local node space and world space. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Fails when / edge behavior | Returns `None` when `to_global_transform_2d` cannot produce a value for the supplied target or inputs. |
 
 ### `to_local_transform_2d`
 
@@ -993,7 +996,7 @@ lifecycle!({
 | Params | `&mut self, node_id: NodeID, global: Transform2D,` |
 | Returns | `Option<Transform2D>` |
 | Use when | Use when converting points or transforms between local node space and world space. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Fails when / edge behavior | Returns `None` when `to_local_transform_2d` cannot produce a value for the supplied target or inputs. |
 
 ### `to_global_transform_3d`
 
@@ -1004,7 +1007,7 @@ lifecycle!({
 | Params | `&mut self, node_id: NodeID, local: Transform3D,` |
 | Returns | `Option<Transform3D>` |
 | Use when | Use when converting points or transforms between local node space and world space. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Fails when / edge behavior | Returns `None` when `to_global_transform_3d` cannot produce a value for the supplied target or inputs. |
 
 ### `to_local_transform_3d`
 
@@ -1015,7 +1018,7 @@ lifecycle!({
 | Params | `&mut self, node_id: NodeID, global: Transform3D,` |
 | Returns | `Option<Transform3D>` |
 | Use when | Use when converting points or transforms between local node space and world space. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Fails when / edge behavior | Returns `None` when `to_local_transform_3d` cannot produce a value for the supplied target or inputs. |
 
 ### `camera_screen_ray_3d`
 
@@ -1035,8 +1038,8 @@ lifecycle!({
 | Signature | `pub fn mesh_instance_surface_at_global_point( &mut self, node_id: NodeID, global_point: Vector3, ) -> Option<MeshSurfaceHit3D>` |
 | Params | `&mut self, node_id: NodeID, global_point: Vector3,` |
 | Returns | `Option<MeshSurfaceHit3D>` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `mesh_instance_surface_at_global_point` to mesh instance surface at global point on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Returns `None` when `mesh_instance_surface_at_global_point` cannot produce a value for the supplied target or inputs. |
 
 ### `mesh_instance_surface_on_global_ray`
 
@@ -1046,8 +1049,8 @@ lifecycle!({
 | Signature | `pub fn mesh_instance_surface_on_global_ray( &mut self, node_id: NodeID, ray_origin: Vector3, ray_direction: Vector3, max_distance: f32, ) -> Option<MeshSurfaceHit3D>` |
 | Params | `&mut self, node_id: NodeID, ray_origin: Vector3, ray_direction: Vector3, max_distance: f32,` |
 | Returns | `Option<MeshSurfaceHit3D>` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `mesh_instance_surface_on_global_ray` to mesh instance surface on global ray on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Returns `None` when `mesh_instance_surface_on_global_ray` cannot produce a value for the supplied target or inputs. |
 
 ### `mesh_instance_surfaces_on_global_rays`
 
@@ -1057,8 +1060,8 @@ lifecycle!({
 | Signature | `pub fn mesh_instance_surfaces_on_global_rays( &mut self, node_id: NodeID, rays: &[MeshSurfaceRay3D], resolve_material: bool, ) -> Vec<Option<MeshSurfaceHit3D>>` |
 | Params | `&mut self, node_id: NodeID, rays: &[MeshSurfaceRay3D], resolve_material: bool,` |
 | Returns | `Vec<Option<MeshSurfaceHit3D>>` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `mesh_instance_surfaces_on_global_rays` to mesh instance surfaces on global rays on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Returns `None` when `mesh_instance_surfaces_on_global_rays` cannot produce a value for the supplied target or inputs. |
 
 ### `mesh_instance_material_regions`
 
@@ -1068,8 +1071,8 @@ lifecycle!({
 | Signature | `pub fn mesh_instance_material_regions( &mut self, node_id: NodeID, material: MaterialID, ) -> Vec<MeshMaterialRegion3D>` |
 | Params | `&mut self, node_id: NodeID, material: MaterialID,` |
 | Returns | `Vec<MeshMaterialRegion3D>` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `mesh_instance_material_regions` to mesh instance material regions on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Returns an empty vector when `mesh_instance_material_regions` finds no values; callers must treat zero results as normal. |
 
 ### `mesh_data_surface_at_local_point`
 
@@ -1079,8 +1082,8 @@ lifecycle!({
 | Signature | `pub fn mesh_data_surface_at_local_point( &mut self, mesh_id: MeshID, local_point: Vector3, ) -> Option<MeshDataSurfaceHit3D>` |
 | Params | `&mut self, mesh_id: MeshID, local_point: Vector3,` |
 | Returns | `Option<MeshDataSurfaceHit3D>` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `mesh_data_surface_at_local_point` to mesh data surface at local point on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Returns `None` when `mesh_data_surface_at_local_point` cannot produce a value for the supplied target or inputs. |
 
 ### `mesh_data_surface_on_local_ray`
 
@@ -1090,8 +1093,8 @@ lifecycle!({
 | Signature | `pub fn mesh_data_surface_on_local_ray( &mut self, mesh_id: MeshID, ray_origin_local: Vector3, ray_direction_local: Vector3, max_distance: f32, ) -> Option<MeshDataSurfaceHit3D>` |
 | Params | `&mut self, mesh_id: MeshID, ray_origin_local: Vector3, ray_direction_local: Vector3, max_distance: f32,` |
 | Returns | `Option<MeshDataSurfaceHit3D>` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `mesh_data_surface_on_local_ray` to mesh data surface on local ray on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Returns `None` when `mesh_data_surface_on_local_ray` cannot produce a value for the supplied target or inputs. |
 
 ### `mesh_data_surface_regions`
 
@@ -1101,8 +1104,8 @@ lifecycle!({
 | Signature | `pub fn mesh_data_surface_regions( &mut self, mesh_id: MeshID, surface_index: u32, ) -> Vec<MeshDataSurfaceRegion3D>` |
 | Params | `&mut self, mesh_id: MeshID, surface_index: u32,` |
 | Returns | `Vec<MeshDataSurfaceRegion3D>` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `mesh_data_surface_regions` to mesh data surface regions on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Returns an empty vector when `mesh_data_surface_regions` finds no values; callers must treat zero results as normal. |
 
 ### `with_node_mut`
 
@@ -1112,8 +1115,8 @@ lifecycle!({
 | Signature | `with_node_mut!(ctx.run, node_ty, id, f)` |
 | Params | `ctx, node_ty, id, f` |
 | Returns | `same as backing method` |
-| Use when | Use when script code needs this exact engine read or write. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `with_node_mut` to with node mut on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Uses the backing `with_node_mut` return and failure behavior unchanged; the wrapper adds no coercion or fallback. |
 
 ### `with_node`
 
@@ -1123,8 +1126,8 @@ lifecycle!({
 | Signature | `with_node!(ctx.run, node_ty, id, f)` |
 | Params | `ctx, node_ty, id, f` |
 | Returns | `same as backing method` |
-| Use when | Use when script code needs this exact engine read or write. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `with_node` to with node on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Uses the backing `with_node` return and failure behavior unchanged; the wrapper adds no coercion or fallback. |
 
 ### `with_base_node`
 
@@ -1134,8 +1137,8 @@ lifecycle!({
 | Signature | `with_base_node!(ctx.run, base_ty, id, f)` |
 | Params | `ctx, base_ty, id, f` |
 | Returns | `same as backing method` |
-| Use when | Use when script code needs this exact engine read or write. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `with_base_node` to with base node on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Uses the backing `with_base_node` return and failure behavior unchanged; the wrapper adds no coercion or fallback. |
 
 ### `with_base_node_mut`
 
@@ -1145,8 +1148,8 @@ lifecycle!({
 | Signature | `with_base_node_mut!(ctx.run, base_ty, id, f)` |
 | Params | `ctx, base_ty, id, f` |
 | Returns | `same as backing method` |
-| Use when | Use when script code needs this exact engine read or write. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `with_base_node_mut` to with base node mut on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Uses the backing `with_base_node_mut` return and failure behavior unchanged; the wrapper adds no coercion or fallback. |
 
 ### `create_node`
 
@@ -1156,8 +1159,8 @@ lifecycle!({
 | Signature | `create_node!(ctx.run, node_ty)` |
 | Params | `ctx, node_ty` |
 | Returns | `resource/runtime ID or `Result` as shown by backing method` |
-| Use when | Use when gameplay needs a new runtime/resource object built from typed data. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `create_node` to create node on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Uses the backing `create_node` return and failure behavior unchanged; the wrapper adds no coercion or fallback. |
 
 ### `node_collection`
 
@@ -1167,8 +1170,8 @@ lifecycle!({
 | Signature | `node_collection!({ ... })` or `node_collection![{ ... }, { ... }]` |
 | Params | `name =`, `tags =`, `node =`, optional `children = [...]`, or `collection = expr` |
 | Returns | `NodeCollection` |
-| Use when | Use when gameplay needs an in-code scene graph with typed node data. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `node_collection` to node collection on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Has no optional/error return; `node_collection` returns the documented value directly. |
 
 ### `create_nodes`
 
@@ -1178,8 +1181,8 @@ lifecycle!({
 | Signature | `create_nodes!(ctx.run, requests)` |
 | Params | `ctx, NodeCollection, optional parent` |
 | Returns | `resource/runtime ID or `Result` as shown by backing method` |
-| Use when | Use when gameplay needs a new runtime/resource object built from typed data. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `create_nodes` to create nodes on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Uses the backing `create_nodes` return and failure behavior unchanged; the wrapper adds no coercion or fallback. |
 
 ### `get_node_name`
 
@@ -1189,8 +1192,8 @@ lifecycle!({
 | Signature | `get_node_name!(ctx.run, id)` |
 | Params | `ctx, id` |
 | Returns | `typed value from backing method` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `get_node_name` to get node name on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Uses the backing `get_node_name` return and failure behavior unchanged; the wrapper adds no coercion or fallback. |
 
 ### `set_node_name`
 
@@ -1200,8 +1203,8 @@ lifecycle!({
 | Signature | `set_node_name!(ctx.run, id, name)` |
 | Params | `ctx, id, name` |
 | Returns | `bool or () as shown by backing method` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `set_node_name` to set node name on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Returns `false` when `set_node_name` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `get_skeleton_bone_name`
 
@@ -1211,8 +1214,8 @@ lifecycle!({
 | Signature | `get_skeleton_bone_name!(ctx.run, id, index)` |
 | Params | `ctx, id, index` |
 | Returns | `typed value from backing method` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `get_skeleton_bone_name` to get skeleton bone name on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Uses the backing `get_skeleton_bone_name` return and failure behavior unchanged; the wrapper adds no coercion or fallback. |
 
 ### `get_skeleton_bone_index`
 
@@ -1222,8 +1225,8 @@ lifecycle!({
 | Signature | `get_skeleton_bone_index!(ctx.run, id, name)` |
 | Params | `ctx, id, name` |
 | Returns | `typed value from backing method` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `get_skeleton_bone_index` to get skeleton bone index on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Uses the backing `get_skeleton_bone_index` return and failure behavior unchanged; the wrapper adds no coercion or fallback. |
 
 ### `set_ui_rotation`
 
@@ -1233,8 +1236,8 @@ lifecycle!({
 | Signature | `set_ui_rotation!(ctx.run, id, rotation)` |
 | Params | `ctx, id, rotation` |
 | Returns | `bool or () as shown by backing method` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `set_ui_rotation` to set ui rotation on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Returns `false` when `set_ui_rotation` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `bind_locale_text`
 
@@ -1255,8 +1258,8 @@ lifecycle!({
 | Signature | `bind_locale_placeholder!(ctx.run, id, key)` |
 | Params | `ctx, id, key` |
 | Returns | `bool or () as shown by backing method` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `bind_locale_placeholder` to bind locale placeholder on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Returns `false` when `bind_locale_placeholder` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `get_node_parent_id`
 
@@ -1266,8 +1269,8 @@ lifecycle!({
 | Signature | `get_node_parent_id!(ctx.run, id)` |
 | Params | `ctx, id` |
 | Returns | `typed value from backing method` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `get_node_parent_id` to get node parent id on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Uses the backing `get_node_parent_id` return and failure behavior unchanged; the wrapper adds no coercion or fallback. |
 
 ### `get_node_children_ids`
 
@@ -1277,8 +1280,8 @@ lifecycle!({
 | Signature | `get_node_children_ids!(ctx.run, id)` |
 | Params | `ctx, id` |
 | Returns | `typed value from backing method` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `get_node_children_ids` to get node children ids on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Uses the backing `get_node_children_ids` return and failure behavior unchanged; the wrapper adds no coercion or fallback. |
 
 ### `get_children`
 
@@ -1288,8 +1291,8 @@ lifecycle!({
 | Signature | `get_children!(ctx.run, id)` |
 | Params | `ctx, id` |
 | Returns | `typed value from backing method` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `get_children` to get children on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Uses the backing `get_children` return and failure behavior unchanged; the wrapper adds no coercion or fallback. |
 
 ### `get_child`
 
@@ -1299,8 +1302,8 @@ lifecycle!({
 | Signature | `get_child!(ctx.run, id, all[name] $(,)?)` |
 | Params | `ctx, id, all[name] $(,)?` |
 | Returns | `typed value from backing method` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `get_child` to get child on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Uses the backing `get_child` return and failure behavior unchanged; the wrapper adds no coercion or fallback. |
 
 ### `get_node_type`
 
@@ -1310,8 +1313,8 @@ lifecycle!({
 | Signature | `get_node_type!(ctx.run, id)` |
 | Params | `ctx, id` |
 | Returns | `typed value from backing method` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `get_node_type` to get node type on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Uses the backing `get_node_type` return and failure behavior unchanged; the wrapper adds no coercion or fallback. |
 
 ### `reparent`
 
@@ -1321,8 +1324,8 @@ lifecycle!({
 | Signature | `reparent!(ctx.run, parent, child)` |
 | Params | `ctx, parent, child` |
 | Returns | `same as backing method` |
-| Use when | Use when script code needs this exact engine read or write. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `reparent` to reparent on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Uses the backing `reparent` return and failure behavior unchanged; the wrapper adds no coercion or fallback. |
 
 ### `force_rerender`
 
@@ -1332,8 +1335,8 @@ lifecycle!({
 | Signature | `force_rerender!(ctx.run, id)` |
 | Params | `ctx, id` |
 | Returns | `same as backing method` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `force_rerender` to force rerender on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Uses the backing `force_rerender` return and failure behavior unchanged; the wrapper adds no coercion or fallback. |
 
 ### `reparent_multi`
 
@@ -1343,8 +1346,8 @@ lifecycle!({
 | Signature | `reparent_multi!(ctx.run, parent, child_ids)` |
 | Params | `ctx, parent, child_ids` |
 | Returns | `same as backing method` |
-| Use when | Use when script code needs this exact engine read or write. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `reparent_multi` to reparent multi on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Uses the backing `reparent_multi` return and failure behavior unchanged; the wrapper adds no coercion or fallback. |
 
 ### `remove_node`
 
@@ -1354,8 +1357,8 @@ lifecycle!({
 | Signature | `remove_node!(ctx.run, id)` |
 | Params | `ctx, id` |
 | Returns | `bool or () as shown by backing method` |
-| Use when | Use when code must release, remove, stop, or disconnect existing engine state. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `remove_node` to remove node on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Returns `false` when `remove_node` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `get_global_transform_2d`
 
@@ -1365,8 +1368,8 @@ lifecycle!({
 | Signature | `get_global_transform_2d!(ctx.run, id)` |
 | Params | `ctx, id` |
 | Returns | `typed value from backing method` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `get_global_transform_2d` to get global transform 2d on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Uses the backing `get_global_transform_2d` return and failure behavior unchanged; the wrapper adds no coercion or fallback. |
 
 ### `get_global_transform_3d`
 
@@ -1376,8 +1379,8 @@ lifecycle!({
 | Signature | `get_global_transform_3d!(ctx.run, id)` |
 | Params | `ctx, id` |
 | Returns | `typed value from backing method` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `get_global_transform_3d` to get global transform 3d on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Uses the backing `get_global_transform_3d` return and failure behavior unchanged; the wrapper adds no coercion or fallback. |
 
 ### `get_local_transform_2d`
 
@@ -1387,8 +1390,8 @@ lifecycle!({
 | Signature | `get_local_transform_2d!(ctx.run, id)` |
 | Params | `ctx, id` |
 | Returns | `typed value from backing method` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `get_local_transform_2d` to get local transform 2d on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Uses the backing `get_local_transform_2d` return and failure behavior unchanged; the wrapper adds no coercion or fallback. |
 
 ### `get_local_transform_3d`
 
@@ -1398,8 +1401,8 @@ lifecycle!({
 | Signature | `get_local_transform_3d!(ctx.run, id)` |
 | Params | `ctx, id` |
 | Returns | `typed value from backing method` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `get_local_transform_3d` to get local transform 3d on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Uses the backing `get_local_transform_3d` return and failure behavior unchanged; the wrapper adds no coercion or fallback. |
 
 ### `set_global_transform_2d`
 
@@ -1409,8 +1412,8 @@ lifecycle!({
 | Signature | `set_global_transform_2d!(ctx.run, id, transform)` |
 | Params | `ctx, id, transform` |
 | Returns | `bool or () as shown by backing method` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `set_global_transform_2d` to set global transform 2d on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Returns `false` when `set_global_transform_2d` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `set_global_transform_3d`
 
@@ -1420,8 +1423,8 @@ lifecycle!({
 | Signature | `set_global_transform_3d!(ctx.run, id, transform)` |
 | Params | `ctx, id, transform` |
 | Returns | `bool or () as shown by backing method` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `set_global_transform_3d` to set global transform 3d on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Returns `false` when `set_global_transform_3d` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `set_local_transform_2d`
 
@@ -1431,8 +1434,8 @@ lifecycle!({
 | Signature | `set_local_transform_2d!(ctx.run, id, transform)` |
 | Params | `ctx, id, transform` |
 | Returns | `bool or () as shown by backing method` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `set_local_transform_2d` to set local transform 2d on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Returns `false` when `set_local_transform_2d` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `set_local_transform_3d`
 
@@ -1442,8 +1445,8 @@ lifecycle!({
 | Signature | `set_local_transform_3d!(ctx.run, id, transform)` |
 | Params | `ctx, id, transform` |
 | Returns | `bool or () as shown by backing method` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `set_local_transform_3d` to set local transform 3d on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Returns `false` when `set_local_transform_3d` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `get_local_pos_2d`
 
@@ -1453,8 +1456,8 @@ lifecycle!({
 | Signature | `get_local_pos_2d!(ctx.run, id)` |
 | Params | `ctx, id` |
 | Returns | `typed value from backing method` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `get_local_pos_2d` to get local pos 2d on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Uses the backing `get_local_pos_2d` return and failure behavior unchanged; the wrapper adds no coercion or fallback. |
 
 ### `get_local_pos_3d`
 
@@ -1464,8 +1467,8 @@ lifecycle!({
 | Signature | `get_local_pos_3d!(ctx.run, id)` |
 | Params | `ctx, id` |
 | Returns | `typed value from backing method` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `get_local_pos_3d` to get local pos 3d on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Uses the backing `get_local_pos_3d` return and failure behavior unchanged; the wrapper adds no coercion or fallback. |
 
 ### `set_local_pos_2d`
 
@@ -1475,8 +1478,8 @@ lifecycle!({
 | Signature | `set_local_pos_2d!(ctx.run, id, pos)` |
 | Params | `ctx, id, pos` |
 | Returns | `bool or () as shown by backing method` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `set_local_pos_2d` to set local pos 2d on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Returns `false` when `set_local_pos_2d` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `set_local_pos_3d`
 
@@ -1486,8 +1489,8 @@ lifecycle!({
 | Signature | `set_local_pos_3d!(ctx.run, id, pos)` |
 | Params | `ctx, id, pos` |
 | Returns | `bool or () as shown by backing method` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `set_local_pos_3d` to set local pos 3d on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Returns `false` when `set_local_pos_3d` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `get_global_pos_2d`
 
@@ -1497,8 +1500,8 @@ lifecycle!({
 | Signature | `get_global_pos_2d!(ctx.run, id)` |
 | Params | `ctx, id` |
 | Returns | `typed value from backing method` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `get_global_pos_2d` to get global pos 2d on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Uses the backing `get_global_pos_2d` return and failure behavior unchanged; the wrapper adds no coercion or fallback. |
 
 ### `get_global_pos_3d`
 
@@ -1508,8 +1511,8 @@ lifecycle!({
 | Signature | `get_global_pos_3d!(ctx.run, id)` |
 | Params | `ctx, id` |
 | Returns | `typed value from backing method` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `get_global_pos_3d` to get global pos 3d on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Uses the backing `get_global_pos_3d` return and failure behavior unchanged; the wrapper adds no coercion or fallback. |
 
 ### `set_global_pos_2d`
 
@@ -1519,8 +1522,8 @@ lifecycle!({
 | Signature | `set_global_pos_2d!(ctx.run, id, pos)` |
 | Params | `ctx, id, pos` |
 | Returns | `bool or () as shown by backing method` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `set_global_pos_2d` to set global pos 2d on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Returns `false` when `set_global_pos_2d` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `set_global_pos_3d`
 
@@ -1530,8 +1533,8 @@ lifecycle!({
 | Signature | `set_global_pos_3d!(ctx.run, id, pos)` |
 | Params | `ctx, id, pos` |
 | Returns | `bool or () as shown by backing method` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `set_global_pos_3d` to set global pos 3d on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Returns `false` when `set_global_pos_3d` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `get_local_rot_2d`
 
@@ -1541,8 +1544,8 @@ lifecycle!({
 | Signature | `get_local_rot_2d!(ctx.run, id)` |
 | Params | `ctx, id` |
 | Returns | `typed value from backing method` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `get_local_rot_2d` to get local rot 2d on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Uses the backing `get_local_rot_2d` return and failure behavior unchanged; the wrapper adds no coercion or fallback. |
 
 ### `get_local_rot_3d`
 
@@ -1552,8 +1555,8 @@ lifecycle!({
 | Signature | `get_local_rot_3d!(ctx.run, id)` |
 | Params | `ctx, id` |
 | Returns | `typed value from backing method` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `get_local_rot_3d` to get local rot 3d on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Uses the backing `get_local_rot_3d` return and failure behavior unchanged; the wrapper adds no coercion or fallback. |
 
 ### `set_local_rot_2d`
 
@@ -1563,8 +1566,8 @@ lifecycle!({
 | Signature | `set_local_rot_2d!(ctx.run, id, rot)` |
 | Params | `ctx, id, rot` |
 | Returns | `bool or () as shown by backing method` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `set_local_rot_2d` to set local rot 2d on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Returns `false` when `set_local_rot_2d` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `set_local_rot_3d`
 
@@ -1574,8 +1577,8 @@ lifecycle!({
 | Signature | `set_local_rot_3d!(ctx.run, id, rot)` |
 | Params | `ctx, id, rot` |
 | Returns | `bool or () as shown by backing method` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `set_local_rot_3d` to set local rot 3d on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Returns `false` when `set_local_rot_3d` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `get_global_rot_2d`
 
@@ -1585,8 +1588,8 @@ lifecycle!({
 | Signature | `get_global_rot_2d!(ctx.run, id)` |
 | Params | `ctx, id` |
 | Returns | `typed value from backing method` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `get_global_rot_2d` to get global rot 2d on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Uses the backing `get_global_rot_2d` return and failure behavior unchanged; the wrapper adds no coercion or fallback. |
 
 ### `get_global_rot_3d`
 
@@ -1596,8 +1599,8 @@ lifecycle!({
 | Signature | `get_global_rot_3d!(ctx.run, id)` |
 | Params | `ctx, id` |
 | Returns | `typed value from backing method` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `get_global_rot_3d` to get global rot 3d on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Uses the backing `get_global_rot_3d` return and failure behavior unchanged; the wrapper adds no coercion or fallback. |
 
 ### `set_global_rot_2d`
 
@@ -1607,8 +1610,8 @@ lifecycle!({
 | Signature | `set_global_rot_2d!(ctx.run, id, rot)` |
 | Params | `ctx, id, rot` |
 | Returns | `bool or () as shown by backing method` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `set_global_rot_2d` to set global rot 2d on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Returns `false` when `set_global_rot_2d` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `set_global_rot_3d`
 
@@ -1618,8 +1621,8 @@ lifecycle!({
 | Signature | `set_global_rot_3d!(ctx.run, id, rot)` |
 | Params | `ctx, id, rot` |
 | Returns | `bool or () as shown by backing method` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `set_global_rot_3d` to set global rot 3d on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Returns `false` when `set_global_rot_3d` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `get_local_scale_2d`
 
@@ -1629,8 +1632,8 @@ lifecycle!({
 | Signature | `get_local_scale_2d!(ctx.run, id)` |
 | Params | `ctx, id` |
 | Returns | `typed value from backing method` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `get_local_scale_2d` to get local scale 2d on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Uses the backing `get_local_scale_2d` return and failure behavior unchanged; the wrapper adds no coercion or fallback. |
 
 ### `get_local_scale_3d`
 
@@ -1640,8 +1643,8 @@ lifecycle!({
 | Signature | `get_local_scale_3d!(ctx.run, id)` |
 | Params | `ctx, id` |
 | Returns | `typed value from backing method` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `get_local_scale_3d` to get local scale 3d on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Uses the backing `get_local_scale_3d` return and failure behavior unchanged; the wrapper adds no coercion or fallback. |
 
 ### `set_local_scale_2d`
 
@@ -1651,8 +1654,8 @@ lifecycle!({
 | Signature | `set_local_scale_2d!(ctx.run, id, scale)` |
 | Params | `ctx, id, scale` |
 | Returns | `bool or () as shown by backing method` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `set_local_scale_2d` to set local scale 2d on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Returns `false` when `set_local_scale_2d` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `set_local_scale_3d`
 
@@ -1662,8 +1665,8 @@ lifecycle!({
 | Signature | `set_local_scale_3d!(ctx.run, id, scale)` |
 | Params | `ctx, id, scale` |
 | Returns | `bool or () as shown by backing method` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `set_local_scale_3d` to set local scale 3d on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Returns `false` when `set_local_scale_3d` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `get_global_scale_2d`
 
@@ -1673,8 +1676,8 @@ lifecycle!({
 | Signature | `get_global_scale_2d!(ctx.run, id)` |
 | Params | `ctx, id` |
 | Returns | `typed value from backing method` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `get_global_scale_2d` to get global scale 2d on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Uses the backing `get_global_scale_2d` return and failure behavior unchanged; the wrapper adds no coercion or fallback. |
 
 ### `get_global_scale_3d`
 
@@ -1684,8 +1687,8 @@ lifecycle!({
 | Signature | `get_global_scale_3d!(ctx.run, id)` |
 | Params | `ctx, id` |
 | Returns | `typed value from backing method` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `get_global_scale_3d` to get global scale 3d on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Uses the backing `get_global_scale_3d` return and failure behavior unchanged; the wrapper adds no coercion or fallback. |
 
 ### `set_global_scale_2d`
 
@@ -1695,8 +1698,8 @@ lifecycle!({
 | Signature | `set_global_scale_2d!(ctx.run, id, scale)` |
 | Params | `ctx, id, scale` |
 | Returns | `bool or () as shown by backing method` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `set_global_scale_2d` to set global scale 2d on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Returns `false` when `set_global_scale_2d` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `set_global_scale_3d`
 
@@ -1706,8 +1709,8 @@ lifecycle!({
 | Signature | `set_global_scale_3d!(ctx.run, id, scale)` |
 | Params | `ctx, id, scale` |
 | Returns | `bool or () as shown by backing method` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `set_global_scale_3d` to set global scale 3d on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Returns `false` when `set_global_scale_3d` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `to_global_point_2d`
 
@@ -1718,7 +1721,7 @@ lifecycle!({
 | Params | `ctx, id, point` |
 | Returns | `same as backing method` |
 | Use when | Use when converting points or transforms between local node space and world space. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Fails when / edge behavior | Uses the backing `to_global_point_2d` return and failure behavior unchanged; the wrapper adds no coercion or fallback. |
 
 ### `to_local_point_2d`
 
@@ -1729,7 +1732,7 @@ lifecycle!({
 | Params | `ctx, id, point` |
 | Returns | `same as backing method` |
 | Use when | Use when converting points or transforms between local node space and world space. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Fails when / edge behavior | Uses the backing `to_local_point_2d` return and failure behavior unchanged; the wrapper adds no coercion or fallback. |
 
 ### `to_global_point_3d`
 
@@ -1740,7 +1743,7 @@ lifecycle!({
 | Params | `ctx, id, point` |
 | Returns | `same as backing method` |
 | Use when | Use when converting points or transforms between local node space and world space. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Fails when / edge behavior | Uses the backing `to_global_point_3d` return and failure behavior unchanged; the wrapper adds no coercion or fallback. |
 
 ### `to_local_point_3d`
 
@@ -1751,7 +1754,7 @@ lifecycle!({
 | Params | `ctx, id, point` |
 | Returns | `same as backing method` |
 | Use when | Use when converting points or transforms between local node space and world space. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Fails when / edge behavior | Uses the backing `to_local_point_3d` return and failure behavior unchanged; the wrapper adds no coercion or fallback. |
 
 ### `to_global_transform_2d`
 
@@ -1762,7 +1765,7 @@ lifecycle!({
 | Params | `ctx, id, transform` |
 | Returns | `same as backing method` |
 | Use when | Use when converting points or transforms between local node space and world space. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Fails when / edge behavior | Uses the backing `to_global_transform_2d` return and failure behavior unchanged; the wrapper adds no coercion or fallback. |
 
 ### `to_local_transform_2d`
 
@@ -1773,7 +1776,7 @@ lifecycle!({
 | Params | `ctx, id, transform` |
 | Returns | `same as backing method` |
 | Use when | Use when converting points or transforms between local node space and world space. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Fails when / edge behavior | Uses the backing `to_local_transform_2d` return and failure behavior unchanged; the wrapper adds no coercion or fallback. |
 
 ### `to_global_transform_3d`
 
@@ -1784,7 +1787,7 @@ lifecycle!({
 | Params | `ctx, id, transform` |
 | Returns | `same as backing method` |
 | Use when | Use when converting points or transforms between local node space and world space. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Fails when / edge behavior | Uses the backing `to_global_transform_3d` return and failure behavior unchanged; the wrapper adds no coercion or fallback. |
 
 ### `to_local_transform_3d`
 
@@ -1795,7 +1798,7 @@ lifecycle!({
 | Params | `ctx, id, transform` |
 | Returns | `same as backing method` |
 | Use when | Use when converting points or transforms between local node space and world space. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Fails when / edge behavior | Uses the backing `to_local_transform_3d` return and failure behavior unchanged; the wrapper adds no coercion or fallback. |
 
 ### `get_node_tags`
 
@@ -1805,8 +1808,8 @@ lifecycle!({
 | Signature | `get_node_tags!(ctx.run, id)` |
 | Params | `ctx, id` |
 | Returns | `typed value from backing method` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `get_node_tags` to get node tags on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Uses the backing `get_node_tags` return and failure behavior unchanged; the wrapper adds no coercion or fallback. |
 
 ### `tag_set`
 
@@ -1816,8 +1819,8 @@ lifecycle!({
 | Signature | `tag_set!(ctx.run, id, tags)` |
 | Params | `ctx, id, tags` |
 | Returns | `same as backing method` |
-| Use when | Use when script code needs this exact engine read or write. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `tag_set` to tag set on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Uses the backing `tag_set` return and failure behavior unchanged; the wrapper adds no coercion or fallback. |
 
 ### `tag_add`
 
@@ -1827,8 +1830,8 @@ lifecycle!({
 | Signature | `tag_add!(ctx.run, id, tags)` |
 | Params | `ctx, id, tags` |
 | Returns | `bool or () as shown by backing method` |
-| Use when | Use when script code needs this exact engine read or write. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `tag_add` to tag add on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Returns `false` when `tag_add` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `tag_remove`
 
@@ -1838,8 +1841,8 @@ lifecycle!({
 | Signature | `tag_remove!(ctx.run, id, tag)` |
 | Params | `ctx, id, tag` |
 | Returns | `bool or () as shown by backing method` |
-| Use when | Use when code must release, remove, stop, or disconnect existing engine state. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `tag_remove` to tag remove on the scene graph; guard stale IDs and concrete/base type mismatches. |
+| Fails when / edge behavior | Returns `false` when `tag_remove` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `spawn`
 

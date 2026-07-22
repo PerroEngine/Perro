@@ -22,9 +22,9 @@ use perro_graphics_assets::{
 use perro_ids::{MaterialID, MeshID, NodeID, TextureID};
 use perro_render_bridge::{
     CameraStreamCommand, CameraStreamSourceState, CameraStreamState, Command2D, Command3D,
-    Decal3DState, Light2DState, Material3D, PointParticles3DState, PostProcessingCommand,
-    RenderBridge, RenderCommand, RenderEvent, ResourceCommand, ShadowCaster2DState,
-    Sprite2DCommand, VisualAccessibilityCommand, Water2DState, Water3DState,
+    Decal3DState, DisplayCommand, HdrMode, Light2DState, Material3D, PointParticles3DState,
+    PostProcessingCommand, RenderBridge, RenderCommand, RenderEvent, ResourceCommand,
+    ShadowCaster2DState, Sprite2DCommand, VisualAccessibilityCommand, Water2DState, Water3DState,
 };
 use perro_structs::TextureFilterMode;
 use perro_structs::{PostProcessSet, VisualAccessibilitySettings};
@@ -284,6 +284,7 @@ fn command_dirty_bits(command: &RenderCommand) -> u32 {
         RenderCommand::Ui(_) => DIRTY_2D,
         RenderCommand::PostProcessing(_) => DIRTY_POSTFX,
         RenderCommand::VisualAccessibility(_) => DIRTY_ACCESSIBILITY,
+        RenderCommand::Display(_) => 0,
     }
 }
 
@@ -330,6 +331,14 @@ fn summarize_commands(commands: &[RenderCommand]) -> CommandSummary {
 #[inline]
 fn camera_stream_texture_id(node: NodeID) -> TextureID {
     TextureID::from_parts(node.index(), node.generation())
+}
+
+#[inline]
+fn camera_stream_uses_render_target(stream: &CameraStreamState) -> bool {
+    match &stream.source {
+        CameraStreamSourceState::Webcam { texture, .. } => stream.output_texture != *texture,
+        _ => true,
+    }
 }
 
 fn upsert_camera_stream_state(
@@ -395,6 +404,7 @@ pub struct PerroGraphics {
     occlusion_culling: OcclusionCullingMode,
     ssao: SsaoQuality,
     texture_filter: TextureFilterMode,
+    hdr_mode: HdrMode,
     retained_draws_cache_revision: u64,
     retained_draw_instances_cache: u32,
     retained_point_particles_cache: Vec<(NodeID, PointParticles3DState)>,

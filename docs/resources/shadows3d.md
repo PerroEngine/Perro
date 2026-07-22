@@ -24,6 +24,12 @@
 - Reattaching floating shadows: lower `shadow_depth_bias` / `shadow_normal_bias` when contact edges detach from casters.
 - Per-mesh control: toggle `cast_shadows` and `receive_shadows` so, for example, a glowing emitter lights the scene without shadowing itself.
 
+## Cost Choice
+
+Prefer one broad directional shadow plus a small number of important local
+shadow lights. Point lights cost six shadow layers; spot lights cost one. Disable
+cast/receive on meshes where the result adds no readable contact or depth.
+
 ## Fields
 
 `shadow_strength` controls final shadow opacity.

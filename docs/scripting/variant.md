@@ -5,6 +5,7 @@
 | Header        | Link                            |
 | ------------- | ------------------------------- |
 | Purpose       | [Purpose](#purpose)             |
+| Mental Model  | [Mental Model](#mental-model)   |
 | Use Cases     | [Use Cases](#use-cases)         |
 | Dynamic Calls | [Dynamic Calls](#dynamic-calls) |
 | Accessors     | [Accessors](#accessors)         |
@@ -18,13 +19,22 @@
 
 Use it when value type is only known at runtime.
 
+## Mental Model
+
+`Variant` is a boundary type, not the default storage type. Keep known gameplay data as normal Rust fields and parameters. Convert only where member names, signal payloads, scene values, save data, or network data select types at runtime.
+
+Decode at the edge and return to typed Rust immediately. Use `as_*` for one exact stored kind, `parse::<T>()` for typed trees and useful errors, and `into_parse::<T>()` when the source value is no longer needed.
+
 ## Use Cases
 
-- Read a value whose type is only known at runtime — a script var, a signal parameter, a scene-injected field: decode with an `as_*` accessor or `parse::<T>()`.
-- Pass gameplay data through dynamic calls — `call_method!` params or a `set_var!` value: build it with `variant!` or `params![...]`.
-- Save/load and networking: convert game data to and from JSON with `modules::json`, which round-trips through `Variant`.
-- Keep custom structs or enums in `#[State]` or send them across scripts: `#[derive(Variant)]`, then recover them with `parse::<T>()` / `into_parse::<T>()`.
-- Handle a value of unknown shape safely: branch on `get_kind()` first, then use the exact `as_*` accessor for the stored subtype.
+| Situation | Choice | Why | Tradeoff |
+| --- | --- | --- | --- |
+| Caller knows exact stored primitive kind | `as_*` | Cheap checked read with no error allocation | Similar numeric kinds do not silently coerce |
+| Caller knows target Rust type | `parse::<T>()` | Recurses through typed collections/custom derives and reports errors | Clones data needed by the decoded value |
+| Caller owns the dynamic value | `into_parse::<T>()` | May move owned data out instead of cloning | Consumes the source `Variant` |
+| Tool must inspect unknown data | `get_kind()` then accessor | Makes every supported branch explicit | More code than a known typed contract |
+| Runtime script member write | strict `set_var!` value | Prevents hidden runtime asset loads/coercion | Caller must supply the correct ID/type already |
+| Scene injects a resource path into typed state | scene decode | Resolver creates a stable cached ID before `on_init` | Scene-only; invalid values keep the default/old field value |
 
 ## Dynamic Calls
 
@@ -90,7 +100,7 @@ let queue = value.into_type::<VecDeque<NodeID>>().unwrap_or_default();
 | string         | `as_str()`                                                                                                                                                                        |
 | bytes          | `as_bytes()`                                                                                                                                                                      |
 | any id enum    | `as_id()`                                                                                                                                                                         |
-| ids            | `as_node()`, `as_node_or_nil()`, `as_texture()`, `as_material()`, `as_mesh()`, `as_animation()`, `as_light()`, `as_signal()`, `as_audio_bus()`, `as_tag()`, `as_preloaded_scene()` |
+| ids            | `as_node()`, `as_node_or_nil()`, `as_texture()`, `as_material()`, `as_mesh()`, `as_animation()`, `as_animation_tree()`, `as_nav_mesh()`, `as_sound_font()`, `as_light()`, `as_signal()`, `as_audio_bus()`, `as_tag()`, `as_preloaded_scene()` |
 | math           | `as_vec2()`, `as_vec3()`, `as_vec4()`, `as_ivec2()`, `as_ivec3()`, `as_ivec4()`, `as_uvec2()`, `as_uvec3()`, `as_uvec4()`, `as_unit_vec2()`, `as_unit_vec3()`, `as_unit_vec4()`, `as_matrix2()`, `as_matrix3()`, `as_matrix4()`, `as_matrix2x2()`, `as_matrix3x3()`, `as_matrix4x4()`, `matrix_shape()` |
 | transforms     | `as_transform2d()`, `as_transform3d()`                                                                                                                                            |
 | quaternions    | `as_quat()`                                                                                                                                                                       |
@@ -222,7 +232,7 @@ Engine types:
 
 | Group | Types |
 | ----- | ----- |
-| ids | `NodeID`, `TextureID`, `MaterialID`, `MeshID`, `AnimationID`, `LightID`, `SignalID`, `AudioBusID`, `TagID`, `PreloadedSceneID` |
+| ids | `NodeID`, `TextureID`, `MaterialID`, `MeshID`, `AnimationID`, `AnimationTreeID`, `NavMeshID`, `SoundFontID`, `LightID`, `SignalID`, `AudioBusID`, `TagID`, `PreloadedSceneID` |
 | math | `Vector2`, `Vector3`, `Vector4`, `IVector2`, `IVector3`, `IVector4`, `UVector2`, `UVector3`, `UVector4`, `UnitVector2`, `UnitVector3`, `UnitVector4`, `Matrix2`, `Matrix3`, `Matrix4`, `Matrix<ROWS, COLS, T>`, `Quaternion`, `Transform2D`, `Transform3D` |
 | misc | `Variant`, `PostProcessSet`, `VisualAccessibilitySettings` |
 

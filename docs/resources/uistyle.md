@@ -22,6 +22,13 @@
 - Focused input fields: `focused_style = "res://ui/input_focus.uistyle"` on a text edit.
 - Reskin without touching scenes: repoint a node's `style` at a different `.uistyle` to swap the whole look.
 
+## Choice Guide
+
+Use `.uistyle` when many widgets share a visual system or when reskinning should
+not edit scenes. Use node-local fields for a deliberate one-off. Split hover,
+pressed, and focus styles when states need independent art; reuse one style when
+only behavior changes.
+
 ## Example
 
 `res://ui/panel.uistyle`:

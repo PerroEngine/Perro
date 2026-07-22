@@ -308,6 +308,7 @@ fn webcam_camera_stream_does_not_overwrite_webcam_texture() {
                     resolution: [2, 1],
                 },
                 overlay_camera_2d: None,
+                transparent_background: true,
                 clear_color: None,
                 resolution: [2, 1],
                 aspect_ratio: 2.0,

@@ -28,6 +28,10 @@ Global post-processing runs full-screen image effects over the final composited 
 - Level-wide look presets: build a whole `PostProcessSet` per biome and swap it with `post_processing_set!` on scene load.
 - Screenshot / cutscene reset: `post_processing_clear!(ctx.res)` to drop every effect before a clean capture.
 
+## Ownership And Choice
+
+Post-processing owns a viewport-wide visual stack, not one object's material. Use it for scene-level tone, bloom, grading, or temporary screen effects. Use material/node settings for an effect limited to one object. Let one presentation system compose the stack so independent scripts do not fight by clearing or replacing each other's effects.
+
 ## Context
 
 - Script context path: `ctx.res`

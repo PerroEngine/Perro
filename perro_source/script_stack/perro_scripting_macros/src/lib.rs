@@ -185,6 +185,7 @@ fn derive_state_field_struct(
     options: VariantDeriveOptions,
 ) -> TokenStream {
     let mut from_fields = Vec::new();
+    let mut from_scene_fields = Vec::new();
     let mut from_owned_fields = Vec::new();
     let mut to_fields = Vec::new();
     let mut into_fields = Vec::new();
@@ -215,6 +216,9 @@ fn derive_state_field_struct(
                         from_fields.push(quote! {
                             #field_ident: <#field_ty as ::perro_api::variant::DeriveVariant>::from_variant(obj.get(#field_key)?)?
                         });
+                        from_scene_fields.push(quote! {
+                            #field_ident: <#field_ty as ::perro_api::variant::DeriveVariant>::from_scene_variant(obj.get(#field_key)?, resolver)?
+                        });
                         from_owned_fields.push(quote! {
                             #field_ident: <#field_ty as ::perro_api::variant::DeriveVariant>::from_owned_variant(obj.remove(#field_key)?)?
                         });
@@ -229,6 +233,9 @@ fn derive_state_field_struct(
                         let idx = syn::Index::from(from_fields.len());
                         from_fields.push(quote! {
                             #field_ident: <#field_ty as ::perro_api::variant::DeriveVariant>::from_variant(data.get(#idx)?)?
+                        });
+                        from_scene_fields.push(quote! {
+                            #field_ident: <#field_ty as ::perro_api::variant::DeriveVariant>::from_scene_variant(data.get(#idx)?, resolver)?
                         });
                         from_owned_fields.push(quote! {
                             #field_ident: <#field_ty as ::perro_api::variant::DeriveVariant>::from_owned_variant(data.next()?)?
@@ -265,6 +272,9 @@ fn derive_state_field_struct(
                         from_fields.push(quote! {
                             <#field_ty as ::perro_api::variant::DeriveVariant>::from_variant(obj.get(#field_key)?)?
                         });
+                        from_scene_fields.push(quote! {
+                            <#field_ty as ::perro_api::variant::DeriveVariant>::from_scene_variant(obj.get(#field_key)?, resolver)?
+                        });
                         from_owned_fields.push(quote! {
                             <#field_ty as ::perro_api::variant::DeriveVariant>::from_owned_variant(obj.remove(#field_key)?)?
                         });
@@ -278,6 +288,9 @@ fn derive_state_field_struct(
                     StructMode::Array => {
                         from_fields.push(quote! {
                             <#field_ty as ::perro_api::variant::DeriveVariant>::from_variant(data.get(#tuple_idx)?)?
+                        });
+                        from_scene_fields.push(quote! {
+                            <#field_ty as ::perro_api::variant::DeriveVariant>::from_scene_variant(data.get(#tuple_idx)?, resolver)?
                         });
                         from_owned_fields.push(quote! {
                             <#field_ty as ::perro_api::variant::DeriveVariant>::from_owned_variant(data.next()?)?
@@ -333,6 +346,20 @@ fn derive_state_field_struct(
                 }
                 let mut data = data.into_iter();
                 Some(Self( #(#from_owned_fields),* ))
+            }
+        }
+    };
+    let from_scene_body = match options.struct_mode {
+        StructMode::Object => quote! {
+            let obj = value.as_object()?;
+            Some(Self( #(#from_scene_fields),* ))
+        },
+        StructMode::Array => {
+            let expected_len = from_scene_fields.len();
+            quote! {
+                let data = value.as_array()?;
+                if data.len() != #expected_len { return None; }
+                Some(Self( #(#from_scene_fields),* ))
             }
         }
     };
@@ -421,6 +448,26 @@ fn derive_state_field_struct(
             }
         }
     };
+    let from_scene_body = if struct_is_unit {
+        from_body.clone()
+    } else if struct_is_tuple {
+        from_scene_body
+    } else {
+        match options.struct_mode {
+            StructMode::Object => quote! {
+                let obj = value.as_object()?;
+                Some(Self { #(#from_scene_fields,)* })
+            },
+            StructMode::Array => {
+                let expected_len = from_scene_fields.len();
+                quote! {
+                    let data = value.as_array()?;
+                    if data.len() != #expected_len { return None; }
+                    Some(Self { #(#from_scene_fields,)* })
+                }
+            }
+        }
+    };
 
     let field_count = schema_fields.len();
     let to_body = match options.struct_mode {
@@ -493,6 +540,15 @@ fn derive_state_field_struct(
                 #from_owned_body
             }
 
+            fn from_scene_variant(
+                value: &::perro_api::variant::Variant,
+                resolver: &mut dyn ::perro_api::variant::SceneVariantResolver,
+            ) -> ::core::option::Option<Self> {
+                fn __perro_hint_use_derive_variant<T: ::perro_api::variant::DeriveVariant>() {}
+                #(#codec_hints)*
+                #from_scene_body
+            }
+
             fn to_variant(&self) -> ::perro_api::variant::Variant {
                 #to_body
             }
@@ -532,13 +588,16 @@ fn derive_state_field_enum(
     // Legacy `{__variant, __data}` object arms: parse-only, kept so values
     // encoded by older engine versions (and scene-authored objects) decode.
     let mut from_arms = Vec::new();
+    let mut from_scene_arms = Vec::new();
     let mut from_owned_arms = Vec::new();
     let mut from_unit_string_arms = Vec::new();
+    let mut from_scene_unit_string_arms = Vec::new();
     let mut from_owned_unit_string_arms = Vec::new();
     // Compact form is what to/into emit now: unit -> bare tag,
     // fielded -> Array[tag, fields...] (named fields positional).
     let mut unit_number_arms = Vec::new();
     let mut compact_from_arms = Vec::new();
+    let mut compact_from_scene_arms = Vec::new();
     let mut compact_from_owned_arms = Vec::new();
     let mut to_arms = Vec::new();
     let mut into_arms = Vec::new();
@@ -564,6 +623,9 @@ fn derive_state_field_enum(
                 from_unit_string_arms.push(quote! {
                     #variant_name => Some(Self::#variant_ident),
                 });
+                from_scene_unit_string_arms.push(quote! {
+                    #variant_name => Some(Self::#variant_ident),
+                });
                 from_owned_unit_string_arms.push(quote! {
                     #variant_name => Some(Self::#variant_ident),
                 });
@@ -582,6 +644,12 @@ fn derive_state_field_enum(
                         Some(Self::#variant_ident)
                     }
                 });
+                compact_from_scene_arms.push(quote! {
+                    #tag_pat => {
+                        if data.len() != 1usize { return None; }
+                        Some(Self::#variant_ident)
+                    }
+                });
                 compact_from_owned_arms.push(quote! {
                     #tag_pat => {
                         if _len != 1usize {
@@ -593,6 +661,9 @@ fn derive_state_field_enum(
                 match options.enum_tag_mode {
                     EnumTagMode::String => {
                         from_arms.push(quote! {
+                            #variant_name => Some(Self::#variant_ident),
+                        });
+                        from_scene_arms.push(quote! {
                             #variant_name => Some(Self::#variant_ident),
                         });
                         from_owned_arms.push(quote! {
@@ -611,6 +682,9 @@ fn derive_state_field_enum(
                         from_arms.push(quote! {
                             #numeric_tag => Some(Self::#variant_ident),
                         });
+                        from_scene_arms.push(quote! {
+                            #numeric_tag => Some(Self::#variant_ident),
+                        });
                         from_owned_arms.push(quote! {
                             #numeric_tag => Some(Self::#variant_ident),
                         });
@@ -627,8 +701,10 @@ fn derive_state_field_enum(
             }
             Fields::Unnamed(fields) => {
                 let mut from_values = Vec::new();
+                let mut from_scene_values = Vec::new();
                 let mut from_owned_values = Vec::new();
                 let mut compact_from_values = Vec::new();
+                let mut compact_from_scene_values = Vec::new();
                 let mut to_values = Vec::new();
                 let mut into_values = Vec::new();
                 let mut bindings = Vec::new();
@@ -649,11 +725,17 @@ fn derive_state_field_enum(
                     from_values.push(quote! {
                         <#field_ty as ::perro_api::variant::DeriveVariant>::from_variant(data.get(#index)?)?
                     });
+                    from_scene_values.push(quote! {
+                        <#field_ty as ::perro_api::variant::DeriveVariant>::from_scene_variant(data.get(#index)?, resolver)?
+                    });
                     from_owned_values.push(quote! {
                         <#field_ty as ::perro_api::variant::DeriveVariant>::from_owned_variant(data.next()?)?
                     });
                     compact_from_values.push(quote! {
                         <#field_ty as ::perro_api::variant::DeriveVariant>::from_variant(data.get(#compact_index)?)?
+                    });
+                    compact_from_scene_values.push(quote! {
+                        <#field_ty as ::perro_api::variant::DeriveVariant>::from_scene_variant(data.get(#compact_index)?, resolver)?
                     });
                     to_values.push(quote! {
                         ::perro_api::variant::DeriveVariant::to_variant(#binding)
@@ -692,6 +774,12 @@ fn derive_state_field_enum(
                         Some(Self::#variant_ident( #(#compact_from_values),* ))
                     }
                 });
+                compact_from_scene_arms.push(quote! {
+                    #tag_pat => {
+                        if data.len() != #compact_len { return None; }
+                        Some(Self::#variant_ident( #(#compact_from_scene_values),* ))
+                    }
+                });
                 compact_from_owned_arms.push(quote! {
                     #tag_pat => {
                         if _len != #compact_len {
@@ -709,6 +797,13 @@ fn derive_state_field_enum(
                                     return None;
                                 }
                                 Some(Self::#variant_ident( #(#from_values),* ))
+                            }
+                        });
+                        from_scene_arms.push(quote! {
+                            #variant_name => {
+                                let data = obj.get("__data")?.as_array()?;
+                                if data.len() != #expected_len { return None; }
+                                Some(Self::#variant_ident( #(#from_scene_values),* ))
                             }
                         });
                         from_owned_arms.push(quote! {
@@ -735,6 +830,13 @@ fn derive_state_field_enum(
                                 Some(Self::#variant_ident( #(#from_values),* ))
                             }
                         });
+                        from_scene_arms.push(quote! {
+                            #numeric_tag => {
+                                let data = obj.get("__data")?.as_array()?;
+                                if data.len() != #expected_len { return None; }
+                                Some(Self::#variant_ident( #(#from_scene_values),* ))
+                            }
+                        });
                         from_owned_arms.push(quote! {
                             #numeric_tag => {
                                 let data = match obj.remove("__data")? {
@@ -753,8 +855,10 @@ fn derive_state_field_enum(
             }
             Fields::Named(fields) => {
                 let mut from_fields = Vec::new();
+                let mut from_scene_fields = Vec::new();
                 let mut from_owned_fields = Vec::new();
                 let mut compact_from_fields = Vec::new();
+                let mut compact_from_scene_fields = Vec::new();
                 let mut compact_from_owned_fields = Vec::new();
                 let mut to_values = Vec::new();
                 let mut into_values = Vec::new();
@@ -775,6 +879,9 @@ fn derive_state_field_enum(
                     from_fields.push(quote! {
                         #field_ident: <#field_ty as ::perro_api::variant::DeriveVariant>::from_variant(data.get(#key)?)?
                     });
+                    from_scene_fields.push(quote! {
+                        #field_ident: <#field_ty as ::perro_api::variant::DeriveVariant>::from_scene_variant(data.get(#key)?, resolver)?
+                    });
                     from_owned_fields.push(quote! {
                         #field_ident: <#field_ty as ::perro_api::variant::DeriveVariant>::from_owned_variant(data.remove(#key)?)?
                     });
@@ -782,6 +889,9 @@ fn derive_state_field_enum(
                     // declaration order, same stability class as the u16 tag.
                     compact_from_fields.push(quote! {
                         #field_ident: <#field_ty as ::perro_api::variant::DeriveVariant>::from_variant(data.get(#compact_index)?)?
+                    });
+                    compact_from_scene_fields.push(quote! {
+                        #field_ident: <#field_ty as ::perro_api::variant::DeriveVariant>::from_scene_variant(data.get(#compact_index)?, resolver)?
                     });
                     compact_from_owned_fields.push(quote! {
                         #field_ident: <#field_ty as ::perro_api::variant::DeriveVariant>::from_owned_variant(data.next()?)?
@@ -826,6 +936,12 @@ fn derive_state_field_enum(
                         })
                     }
                 });
+                compact_from_scene_arms.push(quote! {
+                    #tag_pat => {
+                        if data.len() != #compact_len { return None; }
+                        Some(Self::#variant_ident { #(#compact_from_scene_fields),* })
+                    }
+                });
                 compact_from_owned_arms.push(quote! {
                     #tag_pat => {
                         if _len != #compact_len {
@@ -844,6 +960,12 @@ fn derive_state_field_enum(
                                 Some(Self::#variant_ident {
                                     #(#from_fields),*
                                 })
+                            }
+                        });
+                        from_scene_arms.push(quote! {
+                            #variant_name => {
+                                let data = obj.get("__data")?.as_object()?;
+                                Some(Self::#variant_ident { #(#from_scene_fields),* })
                             }
                         });
                         from_owned_arms.push(quote! {
@@ -865,6 +987,12 @@ fn derive_state_field_enum(
                                 Some(Self::#variant_ident {
                                     #(#from_fields),*
                                 })
+                            }
+                        });
+                        from_scene_arms.push(quote! {
+                            #numeric_tag => {
+                                let data = obj.get("__data")?.as_object()?;
+                                Some(Self::#variant_ident { #(#from_scene_fields),* })
                             }
                         });
                         from_owned_arms.push(quote! {
@@ -1010,6 +1138,27 @@ fn derive_state_field_enum(
                     #(#from_owned_arms)*
                     _ => None,
                 }
+            }
+
+
+            fn from_scene_variant(
+                value: &::perro_api::variant::Variant,
+                resolver: &mut dyn ::perro_api::variant::SceneVariantResolver,
+            ) -> ::core::option::Option<Self> {
+                fn __perro_hint_use_derive_variant<T: ::perro_api::variant::DeriveVariant>() {}
+                #(#codec_hints)*
+                #null_default_ref
+                if let Some(tag) = value.as_str() {
+                    return match tag { #(#from_scene_unit_string_arms)* _ => None };
+                }
+                #bare_number_unit
+                if let Some(data) = value.as_array() {
+                    #compact_tag_read
+                    return match tag { #(#compact_from_scene_arms)* _ => None };
+                }
+                let obj = value.as_object()?;
+                #tag_read
+                match tag { #(#from_scene_arms)* _ => None }
             }
 
             fn to_variant(&self) -> ::perro_api::variant::Variant {

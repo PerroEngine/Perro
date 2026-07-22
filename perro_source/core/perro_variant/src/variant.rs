@@ -309,6 +309,9 @@ pub enum IDs {
     Material(MaterialID),
     Mesh(MeshID),
     Animation(AnimationID),
+    AnimationTree(AnimationTreeID),
+    NavMesh(NavMeshID),
+    SoundFont(SoundFontID),
     Light(LightID),
     Signal(SignalID),
     AudioBus(AudioBusID),
@@ -325,6 +328,9 @@ impl IDs {
             IDs::Material(v) => v.as_u64(),
             IDs::Mesh(v) => v.as_u64(),
             IDs::Animation(v) => v.as_u64(),
+            IDs::AnimationTree(v) => v.as_u64(),
+            IDs::NavMesh(v) => v.as_u64(),
+            IDs::SoundFont(v) => v.as_u64(),
             IDs::Light(v) => v.as_u64(),
             IDs::Signal(v) => v.as_u64(),
             IDs::AudioBus(v) => v.as_u64(),
@@ -366,6 +372,16 @@ pub enum EngineStruct {
 /// Implement this trait for custom structs/enums (typically via `#[derive(Variant)]`).
 pub trait DeriveVariant: Sized {
     fn from_variant(value: &Variant) -> Option<Self>;
+    /// Decode scene-authored data, resolving resource paths where the target
+    /// type is a resource ID. Runtime dynamic conversion stays strict through
+    /// [`DeriveVariant::from_variant`].
+    fn from_scene_variant(
+        value: &Variant,
+        resolver: &mut dyn SceneVariantResolver,
+    ) -> Option<Self> {
+        let _ = resolver;
+        Self::from_variant(value)
+    }
     fn from_owned_variant(value: Variant) -> Option<Self> {
         Self::from_variant(&value)
     }
@@ -373,6 +389,26 @@ pub trait DeriveVariant: Sized {
     fn into_variant(self) -> Variant {
         self.to_variant()
     }
+}
+
+/// Resource kinds supported by scene-authored typed state conversion.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum SceneAssetKind {
+    Texture,
+    Material,
+    Mesh,
+    Animation,
+    AnimationTree,
+    NavMesh,
+    SoundFont,
+}
+
+/// Engine-side bridge used only while applying scene-authored state.
+///
+/// Implementations load through normal resource caches and return the typed
+/// ID as a [`Variant`]. `None` preserves the field's prior/default value.
+pub trait SceneVariantResolver {
+    fn resolve_asset(&mut self, kind: SceneAssetKind, path: &str) -> Option<Variant>;
 }
 
 /// Optional compile-time introspection metadata for Variant-derived types.
@@ -418,6 +454,9 @@ impl_empty_variant_schema!(
     MaterialID,
     MeshID,
     AnimationID,
+    AnimationTreeID,
+    NavMeshID,
+    SoundFontID,
     LightID,
     SignalID,
     AudioBusID,

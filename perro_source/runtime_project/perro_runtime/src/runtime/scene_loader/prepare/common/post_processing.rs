@@ -67,6 +67,8 @@ fn post_effect_from(value: &SceneValue) -> Option<(Option<Cow<'static, str>>, Po
     let mut chromatic: Option<f32> = None;
     let mut vignette: Option<f32> = None;
     let mut color: Option<[f32; 3]> = None;
+    let mut chroma_color: Option<Color> = None;
+    let mut tolerance: Option<f32> = None;
     let mut threshold: Option<f32> = None;
     let mut amount: Option<f32> = None;
     let mut shader_path: Option<String> = None;
@@ -119,8 +121,12 @@ fn post_effect_from(value: &SceneValue) -> Option<(Option<Cow<'static, str>>, Po
             "color" | "tint_color" => {
                 if let Some(c) = as_vec3(v) {
                     color = Some([c.x, c.y, c.z]);
+                    chroma_color = Some(Color::rgb(c.x, c.y, c.z));
+                } else if let Some(hex) = as_str(v) {
+                    chroma_color = Some(Color::from_hex(hex)?);
                 }
             }
+            "tolerance" => tolerance = as_f32(v),
             "threshold" => threshold = as_f32(v),
             "amount" => amount = as_f32(v),
             "exposure" => exposure = as_f32(v),
@@ -225,6 +231,14 @@ fn post_effect_from(value: &SceneValue) -> Option<(Option<Cow<'static, str>>, Po
                 color: color.unwrap_or([1.0, 1.0, 1.0]),
                 strength: strength.unwrap_or(1.0),
                 softness: softness.unwrap_or(0.2),
+            },
+        )),
+        "chroma_key" | "chromakey" | "key" => Some((
+            name,
+            PostProcessEffect::ChromaKey {
+                color: chroma_color.unwrap_or(Color::GREEN),
+                tolerance: tolerance.unwrap_or(0.1),
+                softness: softness.unwrap_or(0.05),
             },
         )),
         "bloom" => Some((

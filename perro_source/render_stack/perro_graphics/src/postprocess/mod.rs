@@ -36,6 +36,7 @@ const SUBPASS_UNIFORM_SLOTS: usize = 4;
 
 // Internal effect type for a merged run of cheap per-pixel color ops.
 const EFFECT_MERGED: u32 = 15;
+const EFFECT_CHROMA_KEY: u32 = 16;
 
 /// Per-frame uniform fields shared across an effect's sub-passes.
 struct PostUniformFrameCtx {
@@ -65,6 +66,7 @@ fn is_mergeable_color_op(effect: &PostProcessEffect) -> bool {
         effect,
         PostProcessEffect::ColorFilter { .. }
             | PostProcessEffect::ReverseFilter { .. }
+            | PostProcessEffect::ChromaKey { .. }
             | PostProcessEffect::Saturate { .. }
             | PostProcessEffect::BlackWhite { .. }
             | PostProcessEffect::Vignette { .. }

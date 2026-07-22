@@ -6,6 +6,17 @@ Use UI, animation, and audio for feedback and game feel.
 
 Add visible state, motion, and sound.
 
+## Feedback Flow
+
+Gameplay owns truth. UI presents truth. Animation and audio acknowledge a
+transition. Prefer one gameplay event feeding these listeners over three systems
+polling the same input or duplicating the same rule.
+
+Use a targeted method when gameplay needs an immediate answer or commands one
+known UI object. Use a signal when HUD, sound, and effects may listen
+independently. Keep animation timing in an animation resource; keep win/lose and
+damage decisions in script state.
+
 ## UI
 
 Use UI nodes for menus and HUD.

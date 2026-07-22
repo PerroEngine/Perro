@@ -21,6 +21,13 @@ Perro animation has two resource files and two scene nodes that together let you
 - Rebinding one clip to different rigs: reuse the same `.panim` object name (`@Hero`) but point `bindings` at a different scene node per slot entry.
 - Scripted playback control: `anim_player_play!`, `anim_player_seek_frame!`, and `anim_tree_play_slot!` start, scrub, and retime clips from gameplay code.
 
+## Choice Guide
+
+Use `AnimationPlayer` for one clip timeline on known targets. Use
+`AnimationTree` when gameplay continuously blends slots/layers. Keep gameplay
+truth in script state: animation events may notify contact frames, but a visual
+timeline should not become the sole owner of health, inventory, or win state.
+
 ## Example
 
 A single looping clip driven by an `AnimationPlayer`:

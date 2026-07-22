@@ -47,6 +47,7 @@ impl PerroGraphics {
             occlusion_culling: OcclusionCullingMode::Gpu,
             ssao: SsaoQuality::Medium,
             texture_filter: TextureFilterMode::LinearMipmap,
+            hdr_mode: HdrMode::Auto,
             retained_draws_cache_revision: u64::MAX,
             retained_draw_instances_cache: 0,
             retained_point_particles_cache: Vec::new(),

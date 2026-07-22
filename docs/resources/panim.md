@@ -22,6 +22,13 @@
 - Blend-friendly additive layers: mark aim/recoil poses with open keyframes `[FrameN?]` so the segment interpolates from the live runtime value instead of snapping to an authored one.
 - Modded or downloaded clips: build an `AnimationID` at runtime from raw bytes with `animation_create_from_bytes!`.
 
+## Choice Guide
+
+Use `.panim` when values follow an authored timeline. Use script/timers when the
+duration is gameplay state or changes from live rules. Use animation events for
+frame alignment, then call a method or emit a signal into the gameplay owner;
+do not make clip playback the only record that an attack or reward occurred.
+
 ## Example
 
 Author `res://animations/door_open.panim`:

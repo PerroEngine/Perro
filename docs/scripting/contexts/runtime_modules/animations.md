@@ -79,34 +79,34 @@ when a jump-input handler fires.
 ```rust
 #[State]
 struct HeroAnim {
-    #[default = AnimationID::nil()]
+    #[expose]
     pub jump: AnimationID,
-    #[default = NodeID::nil()]
-    pub player: NodeID,
-}
 
-lifecycle!({
-    fn on_init(&self, ctx: &mut ScriptContext<'_, API>) {
-        let jump = animation_load!(ctx.res, "res://anim/hero_jump.panim");
-        let player = query_first!(ctx.run, all(node_type[AnimationPlayer]), in_subtree(ctx.id))
-            .unwrap_or(NodeID::nil());
-        with_state_mut!(ctx.run, HeroAnim, ctx.id, |s| {
-            s.jump = jump;
-            s.player = player;
-        });
-    }
-});
+    #[expose]
+    #[node_ref(AnimationPlayer)]
+    pub player: Option<NodeID>,
+}
 
 methods!({
     // Wired to the jump input action.
     fn on_jump(&self, ctx: &mut ScriptContext<'_, API>) {
         let (player, jump) = with_state!(ctx.run, HeroAnim, ctx.id, |s| (s.player, s.jump));
-        if !player.is_nil() {
+        if let Some(player) = player {
             anim_player_set_clip!(ctx.run, player, jump);
             anim_player_play!(ctx.run, player);
         }
     }
 });
+```
+
+Wire both fixed dependencies in scene `script_vars`. The animation path
+resolves to `AnimationID` before `on_init`:
+
+```text
+script_vars = {
+    jump = "res://anim/hero_jump.panim",
+    player = @HeroAnimationPlayer
+}
 ```
 
 ## API Reference
@@ -119,8 +119,8 @@ methods!({
 | Signature | `pub fn set_clip(&mut self, player: NodeID, animation: AnimationID) -> bool` |
 | Params | `&mut self, player: NodeID, animation: AnimationID` |
 | Returns | `bool` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `set_clip` to set clip on a runtime animation player/tree; caller owns compatible IDs and playback state. |
+| Fails when / edge behavior | Returns `false` when `set_clip` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `play`
 
@@ -130,8 +130,8 @@ methods!({
 | Signature | `pub fn play(&mut self, player: NodeID) -> bool` |
 | Params | `&mut self, player: NodeID` |
 | Returns | `bool` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `play` to play on a runtime animation player/tree; caller owns compatible IDs and playback state. |
+| Fails when / edge behavior | Returns `false` when `play` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `pause`
 
@@ -141,8 +141,8 @@ methods!({
 | Signature | `pub fn pause(&mut self, player: NodeID, paused: bool) -> bool` |
 | Params | `&mut self, player: NodeID, paused: bool` |
 | Returns | `bool` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `pause` to pause on a runtime animation player/tree; caller owns compatible IDs and playback state. |
+| Fails when / edge behavior | Returns `false` when `pause` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `seek_frame`
 
@@ -152,8 +152,8 @@ methods!({
 | Signature | `pub fn seek_frame(&mut self, player: NodeID, frame: u32) -> bool` |
 | Params | `&mut self, player: NodeID, frame: u32` |
 | Returns | `bool` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `seek_frame` to seek frame on a runtime animation player/tree; caller owns compatible IDs and playback state. |
+| Fails when / edge behavior | Returns `false` when `seek_frame` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `set_speed`
 
@@ -163,8 +163,8 @@ methods!({
 | Signature | `pub fn set_speed(&mut self, player: NodeID, speed: f32) -> bool` |
 | Params | `&mut self, player: NodeID, speed: f32` |
 | Returns | `bool` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `set_speed` to set speed on a runtime animation player/tree; caller owns compatible IDs and playback state. |
+| Fails when / edge behavior | Returns `false` when `set_speed` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `bind`
 
@@ -174,8 +174,8 @@ methods!({
 | Signature | `pub fn bind<S: AsRef<str>>(&mut self, player: NodeID, track: S, node: NodeID) -> bool` |
 | Params | `&mut self, player: NodeID, track: S, node: NodeID` |
 | Returns | `bool` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `bind` to bind on a runtime animation player/tree; caller owns compatible IDs and playback state. |
+| Fails when / edge behavior | Returns `false` when `bind` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `clear_bindings`
 
@@ -185,8 +185,8 @@ methods!({
 | Signature | `pub fn clear_bindings(&mut self, player: NodeID) -> bool` |
 | Params | `&mut self, player: NodeID` |
 | Returns | `bool` |
-| Use when | Use when code must release, remove, stop, or disconnect existing engine state. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `clear_bindings` to clear bindings on a runtime animation player/tree; caller owns compatible IDs and playback state. |
+| Fails when / edge behavior | Returns `false` when `clear_bindings` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `anim_player_set_clip`
 
@@ -196,8 +196,8 @@ methods!({
 | Signature | `anim_player_set_clip!(ctx.run, player, animation)` |
 | Params | `ctx, player, animation` |
 | Returns | `bool or () as shown by backing method` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `anim_player_set_clip` to anim player set clip on a runtime animation player/tree; the caller owns valid player, slot, clip, and node IDs. |
+| Fails when / edge behavior | Returns `false` when `anim_player_set_clip` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `anim_player_play`
 
@@ -207,8 +207,8 @@ methods!({
 | Signature | `anim_player_play!(ctx.run, player)` |
 | Params | `ctx, player` |
 | Returns | `same as backing method` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `anim_player_play` to anim player play on a runtime animation player/tree; the caller owns valid player, slot, clip, and node IDs. |
+| Fails when / edge behavior | Uses the backing `anim_player_play` return and failure behavior unchanged; the wrapper adds no coercion or fallback. |
 
 ### `anim_player_pause`
 
@@ -218,8 +218,8 @@ methods!({
 | Signature | `anim_player_pause!(ctx.run, player, paused)` |
 | Params | `ctx, player, paused` |
 | Returns | `bool or () as shown by backing method` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `anim_player_pause` to anim player pause on a runtime animation player/tree; the caller owns valid player, slot, clip, and node IDs. |
+| Fails when / edge behavior | Returns `false` when `anim_player_pause` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `anim_player_seek_frame`
 
@@ -229,8 +229,8 @@ methods!({
 | Signature | `anim_player_seek_frame!(ctx.run, player, frame)` |
 | Params | `ctx, player, frame` |
 | Returns | `same as backing method` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `anim_player_seek_frame` to anim player seek frame on a runtime animation player/tree; the caller owns valid player, slot, clip, and node IDs. |
+| Fails when / edge behavior | Uses the backing `anim_player_seek_frame` return and failure behavior unchanged; the wrapper adds no coercion or fallback. |
 
 ### `anim_player_set_speed`
 
@@ -240,8 +240,8 @@ methods!({
 | Signature | `anim_player_set_speed!(ctx.run, player, speed)` |
 | Params | `ctx, player, speed` |
 | Returns | `bool or () as shown by backing method` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `anim_player_set_speed` to anim player set speed on a runtime animation player/tree; the caller owns valid player, slot, clip, and node IDs. |
+| Fails when / edge behavior | Returns `false` when `anim_player_set_speed` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `anim_player_bind`
 
@@ -251,8 +251,8 @@ methods!({
 | Signature | `anim_player_bind!(ctx.run, player, [ $(track : node),* $(,)? ])` |
 | Params | `ctx, player, [ $(track : node),* $(,)? ]` |
 | Returns | `bool or () as shown by backing method` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `anim_player_bind` to anim player bind on a runtime animation player/tree; the caller owns valid player, slot, clip, and node IDs. |
+| Fails when / edge behavior | Returns `false` when `anim_player_bind` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `anim_player_clear_bindings`
 
@@ -262,8 +262,8 @@ methods!({
 | Signature | `anim_player_clear_bindings!(ctx.run, player)` |
 | Params | `ctx, player` |
 | Returns | `bool or () as shown by backing method` |
-| Use when | Use when code must release, remove, stop, or disconnect existing engine state. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `anim_player_clear_bindings` to anim player clear bindings on a runtime animation player/tree; the caller owns valid player, slot, clip, and node IDs. |
+| Fails when / edge behavior | Returns `false` when `anim_player_clear_bindings` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `set_clip`
 
@@ -273,8 +273,8 @@ methods!({
 | Signature | `pub fn set_clip<'a, S: IntoAnimTreeSlotArg<'a>>( &mut self, tree: NodeID, slot: S, animation: AnimationID, ) -> bool` |
 | Params | `&mut self, tree: NodeID, slot: S, animation: AnimationID,` |
 | Returns | `bool` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `set_clip` to set clip on a runtime animation player/tree; caller owns compatible IDs and playback state. |
+| Fails when / edge behavior | Returns `false` when `set_clip` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `play_slot`
 
@@ -284,8 +284,8 @@ methods!({
 | Signature | `pub fn play_slot(&mut self, tree: NodeID, slot: &str) -> bool` |
 | Params | `&mut self, tree: NodeID, slot: &str` |
 | Returns | `bool` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `play_slot` to play slot on a runtime animation player/tree; caller owns compatible IDs and playback state. |
+| Fails when / edge behavior | Returns `false` when `play_slot` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `pause_slot`
 
@@ -295,8 +295,8 @@ methods!({
 | Signature | `pub fn pause_slot(&mut self, tree: NodeID, slot: &str, paused: bool) -> bool` |
 | Params | `&mut self, tree: NodeID, slot: &str, paused: bool` |
 | Returns | `bool` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `pause_slot` to pause slot on a runtime animation player/tree; caller owns compatible IDs and playback state. |
+| Fails when / edge behavior | Returns `false` when `pause_slot` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `seek_slot_frame`
 
@@ -306,8 +306,8 @@ methods!({
 | Signature | `pub fn seek_slot_frame(&mut self, tree: NodeID, slot: &str, frame: u32) -> bool` |
 | Params | `&mut self, tree: NodeID, slot: &str, frame: u32` |
 | Returns | `bool` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `seek_slot_frame` to seek slot frame on a runtime animation player/tree; caller owns compatible IDs and playback state. |
+| Fails when / edge behavior | Returns `false` when `seek_slot_frame` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `set_slot_speed`
 
@@ -317,8 +317,8 @@ methods!({
 | Signature | `pub fn set_slot_speed(&mut self, tree: NodeID, slot: &str, speed: f32) -> bool` |
 | Params | `&mut self, tree: NodeID, slot: &str, speed: f32` |
 | Returns | `bool` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `set_slot_speed` to set slot speed on a runtime animation player/tree; caller owns compatible IDs and playback state. |
+| Fails when / edge behavior | Returns `false` when `set_slot_speed` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `set_slot_playback`
 
@@ -328,8 +328,8 @@ methods!({
 | Signature | `pub fn set_slot_playback( &mut self, tree: NodeID, slot: &str, playback_type: AnimationPlaybackType, ) -> bool` |
 | Params | `&mut self, tree: NodeID, slot: &str, playback_type: AnimationPlaybackType,` |
 | Returns | `bool` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `set_slot_playback` to set slot playback on a runtime animation player/tree; caller owns compatible IDs and playback state. |
+| Fails when / edge behavior | Returns `false` when `set_slot_playback` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `seek_node_time`
 
@@ -339,8 +339,8 @@ methods!({
 | Signature | `pub fn seek_node_time(&mut self, tree: NodeID, node: &str, seconds: f32) -> bool` |
 | Params | `&mut self, tree: NodeID, node: &str, seconds: f32` |
 | Returns | `bool` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `seek_node_time` to seek node time on a runtime animation player/tree; caller owns compatible IDs and playback state. |
+| Fails when / edge behavior | Returns `false` when `seek_node_time` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `set_weight`
 
@@ -350,8 +350,8 @@ methods!({
 | Signature | `pub fn set_weight(&mut self, tree: NodeID, node: &str, input: &str, weight: f32) -> bool` |
 | Params | `&mut self, tree: NodeID, node: &str, input: &str, weight: f32` |
 | Returns | `bool` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `set_weight` to set weight on a runtime animation player/tree; caller owns compatible IDs and playback state. |
+| Fails when / edge behavior | Returns `false` when `set_weight` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `pause`
 
@@ -361,8 +361,8 @@ methods!({
 | Signature | `pub fn pause(&mut self, tree: NodeID, paused: bool) -> bool` |
 | Params | `&mut self, tree: NodeID, paused: bool` |
 | Returns | `bool` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `pause` to pause on a runtime animation player/tree; caller owns compatible IDs and playback state. |
+| Fails when / edge behavior | Returns `false` when `pause` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `anim_tree_set_clip`
 
@@ -372,8 +372,8 @@ methods!({
 | Signature | `anim_tree_set_clip!(ctx.run, tree, slot, animation)` |
 | Params | `ctx, tree, slot, animation` |
 | Returns | `bool or () as shown by backing method` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `anim_tree_set_clip` to anim tree set clip on a runtime animation player/tree; the caller owns valid player, slot, clip, and node IDs. |
+| Fails when / edge behavior | Returns `false` when `anim_tree_set_clip` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `anim_tree_play_slot`
 
@@ -383,8 +383,8 @@ methods!({
 | Signature | `anim_tree_play_slot!(ctx.run, tree, slot)` |
 | Params | `ctx, tree, slot` |
 | Returns | `same as backing method` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `anim_tree_play_slot` to anim tree play slot on a runtime animation player/tree; the caller owns valid player, slot, clip, and node IDs. |
+| Fails when / edge behavior | Uses the backing `anim_tree_play_slot` return and failure behavior unchanged; the wrapper adds no coercion or fallback. |
 
 ### `anim_tree_pause_slot`
 
@@ -394,8 +394,8 @@ methods!({
 | Signature | `anim_tree_pause_slot!(ctx.run, tree, slot, paused)` |
 | Params | `ctx, tree, slot, paused` |
 | Returns | `bool or () as shown by backing method` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `anim_tree_pause_slot` to anim tree pause slot on a runtime animation player/tree; the caller owns valid player, slot, clip, and node IDs. |
+| Fails when / edge behavior | Returns `false` when `anim_tree_pause_slot` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `anim_tree_seek_slot_frame`
 
@@ -405,8 +405,8 @@ methods!({
 | Signature | `anim_tree_seek_slot_frame!(ctx.run, tree, slot, frame)` |
 | Params | `ctx, tree, slot, frame` |
 | Returns | `same as backing method` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `anim_tree_seek_slot_frame` to anim tree seek slot frame on a runtime animation player/tree; the caller owns valid player, slot, clip, and node IDs. |
+| Fails when / edge behavior | Uses the backing `anim_tree_seek_slot_frame` return and failure behavior unchanged; the wrapper adds no coercion or fallback. |
 
 ### `anim_tree_set_slot_speed`
 
@@ -416,8 +416,8 @@ methods!({
 | Signature | `anim_tree_set_slot_speed!(ctx.run, tree, slot, speed)` |
 | Params | `ctx, tree, slot, speed` |
 | Returns | `bool or () as shown by backing method` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `anim_tree_set_slot_speed` to anim tree set slot speed on a runtime animation player/tree; the caller owns valid player, slot, clip, and node IDs. |
+| Fails when / edge behavior | Returns `false` when `anim_tree_set_slot_speed` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `anim_tree_set_slot_playback`
 
@@ -427,8 +427,8 @@ methods!({
 | Signature | `anim_tree_set_slot_playback!(ctx.run, tree, slot, playback)` |
 | Params | `ctx, tree, slot, playback` |
 | Returns | `bool or () as shown by backing method` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `anim_tree_set_slot_playback` to anim tree set slot playback on a runtime animation player/tree; the caller owns valid player, slot, clip, and node IDs. |
+| Fails when / edge behavior | Returns `false` when `anim_tree_set_slot_playback` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `anim_tree_seek_node_time`
 
@@ -438,8 +438,8 @@ methods!({
 | Signature | `anim_tree_seek_node_time!(ctx.run, tree, node, seconds)` |
 | Params | `ctx, tree, node, seconds` |
 | Returns | `same as backing method` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `anim_tree_seek_node_time` to anim tree seek node time on a runtime animation player/tree; the caller owns valid player, slot, clip, and node IDs. |
+| Fails when / edge behavior | Uses the backing `anim_tree_seek_node_time` return and failure behavior unchanged; the wrapper adds no coercion or fallback. |
 
 ### `anim_tree_set_weight`
 
@@ -449,8 +449,8 @@ methods!({
 | Signature | `anim_tree_set_weight!(ctx.run, tree, node, input, weight)` |
 | Params | `ctx, tree, node, input, weight` |
 | Returns | `bool or () as shown by backing method` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `anim_tree_set_weight` to anim tree set weight on a runtime animation player/tree; the caller owns valid player, slot, clip, and node IDs. |
+| Fails when / edge behavior | Returns `false` when `anim_tree_set_weight` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `anim_tree_pause`
 
@@ -460,6 +460,6 @@ methods!({
 | Signature | `anim_tree_pause!(ctx.run, tree, paused)` |
 | Params | `ctx, tree, paused` |
 | Returns | `bool or () as shown by backing method` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `anim_tree_pause` to anim tree pause on a runtime animation player/tree; the caller owns valid player, slot, clip, and node IDs. |
+| Fails when / edge behavior | Returns `false` when `anim_tree_pause` cannot apply to the supplied target or inputs; `true` confirms success. |
 

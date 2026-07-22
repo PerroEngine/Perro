@@ -35,13 +35,26 @@ shipped game instead of replacing it.
   working regardless of the pack's final name.
 - Cross-pack content: one pack referencing another with `dlc://OtherName/...`.
 
+## Ownership + Failure
+
+Base game code owns entitlement checks and fallback behavior. A pack owns its
+scenes, scripts, and assets under one mount. Use `dlc://self/` for internal pack
+refs so renaming the installed pack does not break it; use a named mount only
+for an intentional cross-pack dependency.
+
+DLC stays runtime-loaded, so every entry path may be absent. Treat missing packs
+as a product state, not a panic. Static `res://` content remains the better fit
+for content required by every install.
+
 ## Practical Example
 
 DLC mounts automatically at startup, so game code just references `dlc://` paths
 like any other resource:
 
 ```rust
-lifecycle!({
+lifecycle!({});
+
+methods!({
     fn on_shop_open(&self, ctx: &mut ScriptContext<'_, API>) {
         // Load a scene shipped in the "cosmetics" DLC, if it is installed.
         match scene_load!(ctx.run, "dlc://cosmetics/scenes/shop.scn") {

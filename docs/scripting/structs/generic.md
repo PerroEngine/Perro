@@ -46,6 +46,10 @@ Generic structs are the shared, dimension-independent value types that appear ac
 - Support colorblind players and other display needs: `VisualAccessibilitySettings` / `ColorBlindFilter` toggled with `enable_colorblind_filter!` / `disable_colorblind_filter!`.
 - Pass packed math or shader constants: `Matrix<ROWS, COLS, T>`, the glam-backed `Matrix2` / `Matrix3` / `Matrix4`, and `ConstParamValue`.
 
+## Decision Guide
+
+Use these types at engine and serialized-data boundaries where their meaning is stable. Keep temporary scalar math as ordinary Rust locals. Prefer `Color` over raw lanes for authored color, `BitMask` over an integer for layers, and fixed matrices for hot transform math. Use generic matrices only when dimensions or element types genuinely vary.
+
 ## Variant Support
 
 These engine structs can be passed through `Variant` with `Variant::from(value)` and decoded with `parse::<T>()` or the listed `as_*` accessor.

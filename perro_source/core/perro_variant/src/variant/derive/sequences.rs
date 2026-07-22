@@ -20,6 +20,23 @@ where
     }
 
     #[inline]
+    fn from_scene_variant(
+        value: &Variant,
+        resolver: &mut dyn SceneVariantResolver,
+    ) -> Option<Self> {
+        let items = value.as_array()?;
+        if items.len() != N {
+            return None;
+        }
+        let out = items
+            .iter()
+            .map(|item| T::from_scene_variant(item, resolver))
+            .collect::<Option<Vec<_>>>()?;
+        let boxed: Box<[T; N]> = out.into_boxed_slice().try_into().ok()?;
+        Some(*boxed)
+    }
+
+    #[inline]
     fn from_owned_variant(value: Variant) -> Option<Self> {
         let items = match value {
             Variant::Array(items) => items,
@@ -60,6 +77,19 @@ where
             out.push(T::from_variant(item)?);
         }
         Some(out.into_boxed_slice())
+    }
+
+    #[inline]
+    fn from_scene_variant(
+        value: &Variant,
+        resolver: &mut dyn SceneVariantResolver,
+    ) -> Option<Self> {
+        value
+            .as_array()?
+            .iter()
+            .map(|item| T::from_scene_variant(item, resolver))
+            .collect::<Option<Vec<_>>>()
+            .map(Vec::into_boxed_slice)
     }
 
     #[inline]
@@ -106,6 +136,19 @@ where
     }
 
     #[inline]
+    fn from_scene_variant(
+        value: &Variant,
+        resolver: &mut dyn SceneVariantResolver,
+    ) -> Option<Self> {
+        value
+            .as_array()?
+            .iter()
+            .map(|item| T::from_scene_variant(item, resolver))
+            .collect::<Option<Vec<_>>>()
+            .map(Arc::from)
+    }
+
+    #[inline]
     fn from_owned_variant(value: Variant) -> Option<Self> {
         let items = match value {
             Variant::Array(items) => items,
@@ -139,6 +182,19 @@ where
     }
 
     #[inline]
+    fn from_scene_variant(
+        value: &Variant,
+        resolver: &mut dyn SceneVariantResolver,
+    ) -> Option<Self> {
+        value
+            .as_array()?
+            .iter()
+            .map(|item| T::from_scene_variant(item, resolver))
+            .collect::<Option<Vec<_>>>()
+            .map(Rc::from)
+    }
+
+    #[inline]
     fn from_owned_variant(value: Variant) -> Option<Self> {
         let items = match value {
             Variant::Array(items) => items,
@@ -169,6 +225,18 @@ where
             out.push(T::from_variant(item)?);
         }
         Some(out)
+    }
+
+    #[inline]
+    fn from_scene_variant(
+        value: &Variant,
+        resolver: &mut dyn SceneVariantResolver,
+    ) -> Option<Self> {
+        value
+            .as_array()?
+            .iter()
+            .map(|item| T::from_scene_variant(item, resolver))
+            .collect()
     }
 
     #[inline]
@@ -210,6 +278,18 @@ where
     }
 
     #[inline]
+    fn from_scene_variant(
+        value: &Variant,
+        resolver: &mut dyn SceneVariantResolver,
+    ) -> Option<Self> {
+        value
+            .as_array()?
+            .iter()
+            .map(|item| T::from_scene_variant(item, resolver))
+            .collect()
+    }
+
+    #[inline]
     fn from_owned_variant(value: Variant) -> Option<Self> {
         let items = match value {
             Variant::Array(items) => items,
@@ -248,6 +328,18 @@ where
     }
 
     #[inline]
+    fn from_scene_variant(
+        value: &Variant,
+        resolver: &mut dyn SceneVariantResolver,
+    ) -> Option<Self> {
+        value
+            .as_array()?
+            .iter()
+            .map(|item| T::from_scene_variant(item, resolver))
+            .collect()
+    }
+
+    #[inline]
     fn from_owned_variant(value: Variant) -> Option<Self> {
         let items = match value {
             Variant::Array(items) => items,
@@ -283,6 +375,18 @@ where
             out.push(T::from_variant(item)?);
         }
         Some(out)
+    }
+
+    #[inline]
+    fn from_scene_variant(
+        value: &Variant,
+        resolver: &mut dyn SceneVariantResolver,
+    ) -> Option<Self> {
+        value
+            .as_array()?
+            .iter()
+            .map(|item| T::from_scene_variant(item, resolver))
+            .collect()
     }
 
     #[inline]
@@ -327,6 +431,13 @@ macro_rules! impl_tuple_derive_variant {
                     return None;
                 }
                 Some(($(<$ty as DeriveVariant>::from_variant(items.get($idx)?)?,)+))
+            }
+
+            #[inline]
+            fn from_scene_variant(value: &Variant, resolver: &mut dyn SceneVariantResolver) -> Option<Self> {
+                let items = value.as_array()?;
+                if items.len() != $len { return None; }
+                Some(($(<$ty as DeriveVariant>::from_scene_variant(items.get($idx)?, resolver)?,)+))
             }
 
             #[inline]

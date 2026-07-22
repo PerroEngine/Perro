@@ -23,6 +23,14 @@ Perro audio plays music and sound effects, with optional spatialization that mod
 - Interactive and procedural music: MIDI via `midi_play!`, `midi_start!` / `midi_release!` for held notes, using `MidiSound::BuiltIn` or a loaded `.sf2` (`midi_load_soundfont!`).
 - Environmental acoustics: audio-material fields on physics bodies plus `AudioPortal2D`/`AudioPortal3D` and camera `audio_options` for occlusion and reverb.
 
+## Choice Guide
+
+Use centered one-shots for UI and non-spatial feedback, attached playback for a
+moving emitter, and buses/zones for mix policy shared by many sounds. Keep the
+sound asset choice in typed state when instances vary; keep a literal path only
+for a truly global effect. Signals fit loose gameplay events such as damage;
+direct playback fits one script that owns the effect.
+
 ## Example
 
 Play a positional 3D impact on the `"sfx"` bus at a world point:

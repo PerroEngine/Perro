@@ -6,12 +6,24 @@ Perro can build runnable web demos through WASM.
 
 Run Demo2D, Demo3D, and your game in the browser.
 
+## How To Read A Demo
+
+Start from its README feature map. Open the named scene to see authored nodes,
+`script_vars`, and asset choices. Open the linked script to see lifecycle and
+communication. Run the lane last to observe the complete flow.
+
+Copy the ownership pattern, not its asset paths or stress counts. Demo2D and
+Demo3D favor visible feature isolation; a production game may combine those
+systems behind different scene boundaries.
+
 ## Demo Projects
 
 Use shipped demos as working refs:
 
+- `demos/ScriptPatterns` for one small communication flow
 - `demos/Demo2D`
 - `demos/Demo3D`
+- `demos/DemoUI`
 
 Run:
 
@@ -64,5 +76,7 @@ Demos should show:
 
 - [WASM / Web Target](/docs/WASM.md)
 - [Perro CLI](/docs/tools/perro_cli.md)
-- [Demo2D Docs](/docs/examples/demo2d)
-- [Demo3D Docs](/docs/examples/demo3d)
+- [ScriptPatterns Feature Map](../demos/ScriptPatterns/README.md)
+- [Demo2D Feature Map](../demos/Demo2D/README.md)
+- [Demo3D Feature Map](../demos/Demo3D/README.md)
+- [DemoUI Feature Map](../demos/DemoUI/README.md)

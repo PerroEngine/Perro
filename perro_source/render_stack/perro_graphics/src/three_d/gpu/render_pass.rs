@@ -48,6 +48,7 @@ impl IndirectRunBuilder {
 }
 
 impl Gpu3D {
+    #[allow(clippy::too_many_arguments)]
     pub fn render_pass(
         &mut self,
         queue: &wgpu::Queue,
@@ -56,6 +57,7 @@ impl Gpu3D {
         clear_color: wgpu::Color,
         depth_prepass_needed: bool,
         camera: &Camera3DState,
+        render_sky: bool,
     ) {
         self.perf_counters.pipeline_switches = 0;
         self.perf_counters.texture_bind_group_switches = 0;
@@ -87,9 +89,10 @@ impl Gpu3D {
         } else {
             0
         };
+        let render_sky = render_sky && self.sky_enabled;
         let has_any_work = !self.draw_batches.is_empty()
             || !self.multimesh_batches.is_empty()
-            || self.sky_enabled
+            || render_sky
             || depth_prepass_active
             || mesh_blend_depth_active
             || self.mesh_blend_screen_active
@@ -522,7 +525,7 @@ impl Gpu3D {
                 }
             }
         }
-        if self.sky_enabled {
+        if render_sky {
             let mut sky_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("perro_sky3d_pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -549,7 +552,7 @@ impl Gpu3D {
             sky_pass.draw(0..3, 0..1);
             drop(sky_pass);
         }
-        let color_load = if self.sky_enabled {
+        let color_load = if render_sky {
             wgpu::LoadOp::Load
         } else {
             wgpu::LoadOp::Clear(clear_color)

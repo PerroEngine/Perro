@@ -22,6 +22,10 @@ Worked, copy-ready `.scn` fragments for setups that wire several nodes together:
 - Control what each camera sees: `render_layers` / `render_mask`, see [Render Layers](#render-layers).
 - Match equivalent 2D and 3D physics body setups: [Physics Parity Templates](#physics-parity-templates).
 
+## Decision Guide
+
+Start from the smallest example that matches the relationship you need, then replace names and injected values with project data. Keep fixed dependencies in `script_vars`, keep structural dependencies in parent/child links, and use queries only for changing sets. Do not combine unrelated examples into one node merely because their fields parse together.
+
 ## Reference
 
 # Extra `.scn` Node Examples

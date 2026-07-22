@@ -25,6 +25,10 @@ A global colorblind filter runs a full-screen color-correction pass so players w
 - Strength slider: pass a `0.0..=1.0` strength so players tune the effect to their vision.
 - Turning the filter off: `disable_colorblind_filter!(ctx.res)` when the player selects "None".
 
+## Ownership And Choice
+
+Accessibility settings own a player preference that affects presentation globally. Use this module for supported display transforms such as color-vision filters. Do not encode gameplay meaning only by color or treat a filter as a substitute for accessible art and UI. Keep the selected preference in settings data and apply it from one presentation owner.
+
 ## Context
 
 - Script context path: `ctx.res`

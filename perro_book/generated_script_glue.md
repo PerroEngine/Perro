@@ -6,6 +6,16 @@
 
 Know what Perro generates and why you usually ignore it.
 
+## Mental Model
+
+Author scripts under `res/`; inspect generated glue to diagnose expansion or
+dispatch, never as the source of a fix. `perro check` may overwrite generated
+files, so an edit under `.perro/scripts` has no ownership and no stable lifetime.
+
+The glue preserves two boundaries: typed Rust inside a script and `Variant`
+conversion at dynamic method/var dispatch. Prefer typed calls until code crosses
+that boundary.
+
 ## `.perro/scripts`
 
 Project scripts live under `res/**/*.rs`.

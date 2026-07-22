@@ -44,7 +44,7 @@ mod scripts {
             transpiled_exports_script_ctor(&transpiled),
             "lifecycle-only scripts should register constructors"
         );
-        assert!(transpiled.contains("Box::new(<() as Default>::default())"));
+        assert!(transpiled.contains("Box::new(())"));
     }
 
 
@@ -69,7 +69,7 @@ mod scripts {
             "methods-only scripts should register constructors"
         );
         assert!(transpiled.contains("struct Script;"));
-        assert!(transpiled.contains("Box::new(<() as Default>::default())"));
+        assert!(transpiled.contains("Box::new(())"));
         assert_methods_emitted(&transpiled, &["ping"]);
     }
 
@@ -105,6 +105,10 @@ mod scripts {
         assert!(transpiled.contains("perro_api::scripting::state_mut_unchecked::<NestedState>"));
         assert!(transpiled.contains("__perro_get_nested_var"));
         assert!(transpiled.contains("__perro_set_nested_var"));
+        assert!(transpiled.contains("var!(\"person.name\")"));
+        assert!(transpiled.contains("to_variant(&state.person.name)"));
+        assert!(transpiled.contains("value.into_parse::<String>()"));
+        assert!(transpiled.contains("state.person.name = v"));
         assert!(transpiled.contains("ScriptMemberID::from_string(full.as_str())"));
     }
 

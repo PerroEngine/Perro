@@ -24,6 +24,13 @@ Perro uses WGSL (`.wgsl`) for GPU shaders. Custom materials and `Sky3D` passes r
 - Vertex deformation: a `shade_vertex(out)` hook to bend, wave, or wobble geometry in the vertex stage.
 - Procedural skies: a `sky_shader(in)` pass adding clouds, stars, sun, or horizon bands over the built-in day/evening/night gradient.
 
+## Choice Guide
+
+Start with built-in materials, sky fields, and post effects. Add WGSL when the
+required vertex or pixel behavior cannot be expressed there. Standard-lit
+custom materials keep Perro lighting; `lighting = "raw"` trades that integration
+for exact shader output. Keep gameplay rules outside shaders.
+
 ## Reference
 
 # Shaders (WGSL)

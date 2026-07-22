@@ -2,6 +2,7 @@ $root = @Demo2D
 
 [Demo2D]
 script = "res://scripts/demo2d_manager.rs"
+script_vars = { demo_ui_root = @demo_ui_root, camera = @Camera }
     [Node2D]
         position = (0.0, 0.0)
     [/Node2D]

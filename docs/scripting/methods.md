@@ -5,6 +5,7 @@
 | Header                   | Link                                                  |
 | ------------------------ | ----------------------------------------------------- |
 | Purpose                  | [Purpose](#purpose)                                   |
+| Decision Model           | [Decision Model](#decision-model)                     |
 | Use Cases                | [Use Cases](#use-cases)                               |
 | Why `methods!` Exists    | [Why `methods!` Exists](#why-methods-exists)          |
 | Method Shape             | [Method Shape](#method-shape)                         |
@@ -19,10 +20,17 @@
 
 ## Use Cases
 
-- Give a node a callable action its own logic invokes (an enemy's `apply_damage`, a door's `toggle`): declare it in `methods!` and call `self.apply_damage(ctx, amount)`.
-- Trigger behavior on another node without knowing its concrete script type (a switch opening whatever it targets): `call_method!(ctx.run, target, method!("open"), params![])`.
-- Pass structured gameplay data across a call (a `HitInfo`, an item id, a damage amount): typed params and returns that derive `Variant`.
-- Get a result back the caller acts on (did the hit connect, how much ammo is left): decode the returned `Variant` with `as_bool()`, `as_i32()`, or `parse::<T>()`.
+| Situation | Choice | Why | Tradeoff |
+| --- | --- | --- | --- |
+| Same script calls its own helper | direct Rust method | Compiler checks params and return type | Only available where concrete script code is known |
+| Switch targets one scene-wired door | `call_method!` | One receiver, params, and reply match command semantics | Runtime name/type mismatch returns a dynamic failure value |
+| Producer announces an event to unknown listeners | signal, not method | Producer does not own listener set | No direct return value |
+| Generic tool edits a member | `get_var!` / `set_var!`, not method | Operation is data access selected at runtime | Skips domain behavior unless a setter method enforces it |
+| Call carries `HitInfo` and returns `HitResult` | derive `Variant` on both types | Dynamic boundary keeps one explicit schema | Decode remains fallible at receiver and caller |
+
+## Decision Model
+
+A method is a targeted request: the caller chooses one `NodeID`, one method, ordered arguments, and optionally consumes one reply. Prefer a domain method such as `take_damage` over setting `health` dynamically because the receiver can enforce armor, death, and signal rules in one place.
 
 ## Why `methods!` Exists
 

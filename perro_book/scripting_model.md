@@ -6,6 +6,19 @@ Perro scripts split stable behavior from per-node state.
 
 Know why scripts look like small Rust modules instead of classes.
 
+## Decision Model
+
+Ask three questions before writing a runtime call:
+
+1. Who owns the data: this script state, a node, or another script?
+2. Is the target fixed, structural, or selected at runtime?
+3. Does the flow need a return value, fan-out, or dynamic member selection?
+
+Known state and node types use typed access. A fixed target command uses a
+method. A loose event uses a signal. `get_var!` and `set_var!` stay for adapters,
+tools, and systems whose member name is data. This makes dynamic dispatch an
+explicit boundary instead of the default scripting style.
+
 ## Behavior And State
 
 Behavior is shared.
@@ -23,6 +36,13 @@ The behavior object holds generated dispatch code:
 Each node with the script gets its own state object from `create_state`.
 
 This lets Perro keep behavior cheap to call and state local to one script instance.
+
+Use state for per-instance mutable values, cached runtime values, fixed node
+refs, and per-instance typed asset IDs. Keep constants and callback-local
+temporary values outside state.
+
+`#[expose]` only controls editor inspector organization. Any state field that
+supports `Variant` conversion may receive a scene override.
 
 Source path:
 
@@ -116,9 +136,43 @@ Runtime type stays `NodeID`.
 
 The hint helps scene authoring and validation.
 
+Prefer a state ref for a fixed dependency, a parent/child relation for a
+structural dependency, and a query for a dynamic set. Treat optional refs as
+optional at runtime; skip work when the target is absent or no longer matches
+the expected type.
+
+## Asset Refs
+
+Scene `script_vars` may assign a resource path string to a typed `TextureID`,
+`MaterialID`, `MeshID`, `AnimationID`, `AnimationTreeID`, `NavMeshID`, or
+`SoundFontID` field. Resolution happens before `on_init` and recurses through
+options, collections, tuples, and custom `#[derive(Variant)]` values.
+
+Runtime `set_var!` remains strict and expects the typed value.
+
+## Calls And Events
+
+Use typed `with_state!` access when the state type is known. Use dynamic
+`get_var!`, `set_var!`, and `call_method!` only when the member or target script
+is selected at runtime.
+
+Use a method for a targeted command and optional return value. Use a signal for
+an event, fan-out, or loose cross-scene coordination.
+
+Use named timers for one-shot delays and cooldown completion. One timer exists
+per name; restarting it resets the deadline. Keep a state clock when gameplay
+needs continuous progress each frame.
+
+## Borrow Rule
+
+Never call another `ctx.run` API inside a state or node access closure. Copy or
+clone data out, let the closure end, and make the next runtime call.
+
 ## Reference
 
+- [Verified ScriptPatterns Flow](../demos/ScriptPatterns/README.md)
 - [Script State](/docs/scripting/state)
+- [Script Authoring Guide](/docs/scripting/authoring/index)
 - [Script Methods](/docs/scripting/methods)
 - [Variant](/docs/scripting/variant)
 - [Scripts Module](/docs/scripting/contexts/runtime_modules/scripts)

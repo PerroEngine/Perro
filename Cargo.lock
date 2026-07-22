@@ -4794,6 +4794,7 @@ dependencies = [
 name = "perro_scripting_macros"
 version = "0.1.0"
 dependencies = [
+ "perro_ids",
  "perro_variant",
  "proc-macro2",
  "quote",

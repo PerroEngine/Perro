@@ -24,8 +24,6 @@ const DECALS_DEMO_SCENE_PATH: &ResPath = res_path!("res://scenes/demos/decals.sc
 const WEBCAM_DEMO_SCENE_PATH: &ResPath = res_path!("res://scenes/demos/webcam.scn");
 const FPS_TESTER_DEMO_SCENE_PATH: &ResPath = res_path!("res://scenes/demos/fps_tester.scn");
 
-const DEMO_CAMERA_NODE_NAME: &str = "DemoCamera";
-
 const DEFAULT_MOUSE_SENSITIVITY: f32 = 0.00012;
 const MIN_MOUSE_SENSITIVITY: f32 = 0.00004;
 const MAX_MOUSE_SENSITIVITY: f32 = 0.00030;
@@ -314,8 +312,7 @@ lifecycle!({
         let positional_audio = scene_preload!(ctx.run, POSITIONAL_AUDIO_DEMO_SCENE_PATH)
             .expect("preload positional audio demo");
         let decals = scene_preload!(ctx.run, DECALS_DEMO_SCENE_PATH).expect("preload decals demo");
-        let webcam =
-            scene_preload!(ctx.run, WEBCAM_DEMO_SCENE_PATH).expect("preload webcam demo");
+        let webcam = scene_preload!(ctx.run, WEBCAM_DEMO_SCENE_PATH).expect("preload webcam demo");
         let fps_tester =
             scene_preload!(ctx.run, FPS_TESTER_DEMO_SCENE_PATH).expect("preload fps tester demo");
 
@@ -353,7 +350,10 @@ lifecycle!({
                 ("demo_water_click", "on_demo_water_click"),
                 ("demo_animations_click", "on_demo_animations_click"),
                 ("demo_physics_bones_click", "on_demo_physics_bones_click"),
-                ("demo_physics_collisions_click", "on_demo_physics_collisions_click"),
+                (
+                    "demo_physics_collisions_click",
+                    "on_demo_physics_collisions_click"
+                ),
                 ("demo_sky_click", "on_demo_sky_click"),
                 ("demo_blend_click", "on_demo_blend_click"),
                 ("demo_multimesh_click", "on_demo_multimesh_click"),
@@ -1077,17 +1077,11 @@ methods!({
         if overlay.is_nil() {
             return;
         }
-        set_var!(
+        let _ = call_method!(
             ctx.run,
             overlay,
-            var!("active_demo"),
-            variant!(active_demo_name(active_demo))
-        );
-        set_var!(
-            ctx.run,
-            overlay,
-            var!("active_demo_root"),
-            variant!(active_root)
+            func!("set_active_demo"),
+            params![active_demo_name(active_demo), active_root]
         );
         let _ = call_method!(ctx.run, overlay, func!("clear_content"), params![]);
     }
@@ -1203,7 +1197,12 @@ methods!({
             return;
         }
 
-        broadcast_var!(ctx.run, root, var!("mouse_sensitivity"), variant!(sensitivity));
+        broadcast_var!(
+            ctx.run,
+            root,
+            var!("mouse_sensitivity"),
+            variant!(sensitivity)
+        );
     }
 
     fn apply_freecam_input_enabled_to_active_demo(
@@ -1235,12 +1234,14 @@ methods!({
             return;
         }
 
-        let camera = find_node!(ctx.run, root, DEMO_CAMERA_NODE_NAME).unwrap_or(NodeID::nil());
-        if camera.is_nil() {
+        let Some(camera) = query!(ctx.run, all(node_type[Camera3D]), in_subtree(root))
+            .into_iter()
+            .next()
+        else {
             return;
-        }
+        };
 
-        set_var!(ctx.run, camera, var!("speed"), variant!(speed));
+        let _ = call_method!(ctx.run, camera, func!("set_speed"), params![speed]);
     }
 
     fn apply_transition_fade(&self, ctx: &mut ScriptContext<'_, API>, alpha: f32, visible: bool) {
@@ -1335,8 +1336,7 @@ fn scene_ui_parent<API: ScriptAPI + ?Sized>(
     if !ui_root.is_nil() {
         return ui_root;
     }
-    let scene_root = get_node_parent_id!(ctx.run, manager).unwrap_or(manager);
-    scene_root
+    get_node_parent_id!(ctx.run, manager).unwrap_or(manager)
 }
 
 fn set_button_alpha<API: ScriptAPI + ?Sized>(

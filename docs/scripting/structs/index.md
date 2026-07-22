@@ -34,6 +34,8 @@ This section replaces the old math-only page because the exported structs are no
 
 Some of these are everyday script-facing values; others are mostly built-in owned data. They are all documented because they can appear in public types, serialized data, node/resource state, return values, or nested structs.
 
+Choose the type that matches the API boundary. Do not replace a typed vector, transform, color, or mask with a tuple merely to shorten local code; the named type carries units, operations, and serialization shape across scenes and scripts.
+
 ## Examples
 
 ```rust

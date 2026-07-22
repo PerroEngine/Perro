@@ -10,9 +10,6 @@ fn write_scripts_lib(
     out.push_str("use perro_runtime::RuntimeScriptApi;\n");
     out.push_str("use perro_api::scripting::ScriptConstructor;\n");
     out.push_str(
-        "#[cfg(feature = \"dynamic-scripts\")]\nuse perro_runtime::SCRIPT_ABI_BUILD_FINGERPRINT;\n",
-    );
-    out.push_str(
         "#[cfg(feature = \"dynamic-scripts\")]\nuse perro_api::scripting::{DynamicScriptConstructor, ScriptAbiDescriptor, ScriptAbiDescriptorHeader};\n\n",
     );
 
@@ -98,7 +95,7 @@ static DYNAMIC_SCRIPT_REGISTRY: &[(u64, DynamicScriptConstructor<RuntimeScriptAp
     out.push_str(
         "\n#[cfg(feature = \"dynamic-scripts\")]\n\
 static PERRO_SCRIPT_ABI_DESCRIPTOR_V2: ScriptAbiDescriptor =\n\
-    ScriptAbiDescriptor::v2(SCRIPT_ABI_BUILD_FINGERPRINT);\n\
+    ScriptAbiDescriptor::v2();\n\
 \n\
 #[cfg(feature = \"dynamic-scripts\")]\n\
 #[unsafe(no_mangle)]\n\

@@ -5,6 +5,7 @@
 | Header        | Link                            |
 | ------------- | ------------------------------- |
 | Purpose       | [Purpose](#purpose)             |
+| Mental Model  | [Mental Model](#mental-model)   |
 | Use Cases     | [Use Cases](#use-cases)         |
 | State Struct  | [State Struct](#state-struct)   |
 | Editor Expose | [Editor Expose](#editor-expose) |
@@ -18,7 +19,9 @@
 
 Script state stores per-node data for one script instance.
 
-Each node with that script gets its own state value. Use state for mutable gameplay data, scene overrides, and values other scripts need to read or write.
+Each node with that script gets its own state value. Use state for mutable gameplay data, cached runtime values, fixed node refs, typed asset IDs, scene overrides, and values other scripts need to read or write.
+
+Keep constants outside state. Keep temporary values local when they do not need to survive the callback.
 
 Behavior is separate from state.
 
@@ -30,13 +33,24 @@ Source path:
 - `perro_source/script_stack/perro_scripting_macros/src/lib.rs`
 - `perro_source/build_pipeline/perro_compiler/src/script_codegen.rs`
 
+## Mental Model
+
+State answers: "what must this script instance remember after this callback returns?"
+
+Put mutable per-instance values, cached results, fixed `NodeID` dependencies, and typed asset IDs in `#[State]`. Keep constants at module scope. Keep one-callback calculations in locals. Keep node transform/render fields on the node type instead of copying them into script state.
+
+Scene `script_vars` may inject every compatible state field before `on_init`; `#[expose]` only decides whether the editor inspector lists a field. Scene asset paths may decode into supported typed asset IDs during this scene-only injection path. Runtime `set_var!` remains strict and expects the correct `Variant` kind.
+
 ## Use Cases
 
-- Persist a player's coins, health, ammo, or cooldown timers per node across frames: `#[State]` fields read and mutated with `with_state!` / `with_state_mut!`.
-- Tune gameplay values in the editor without recompiling (move speed, jump height, spawn rate): `#[expose]` fields overridden by scene `script_vars`.
-- Wire scene node references from the inspector (a camera, an aim target, a spawn point): `NodeID` fields annotated with `#[node_ref(...)]` so the picker filters by type.
-- Let another script read or set a value dynamically (a boss reacting to the player's `phase`, a HUD reading `coins`): `get_var!` / `set_var!`, which work without `#[expose]`.
-- Hold richer runtime state (a `Job` handle, a `VecDeque` of waypoints, a custom struct): any field type works locally; derive `Variant` when the value crosses a script-var boundary.
+| Situation | Choice | Why | Tradeoff |
+| --- | --- | --- | --- |
+| Health or ammo must survive frames per actor | state field | Lifetime matches the script instance | Access must respect state borrow scope |
+| Designer tunes speed in the inspector | `#[expose]` state field | Editor lists the value while scene injection supplies it | Attribute does not validate or gate runtime writes |
+| Actor always uses one camera or spawn point | `Option<NodeID>` + `#[node_ref(...)]` | Scene owns wiring and missing refs stay safe | Ref can become stale if target is removed |
+| Scene chooses one texture per instance | typed asset ID field + path injection | Runtime starts with a stable cached ID | Path coercion exists only during scene injection |
+| Generic UI reads a field by name | `get_var!` / `set_var!` | Caller need not know the state type | Name/type mismatch returns the API failure value |
+| Waypoints never cross a dynamic boundary | ordinary Rust collection in state | No `Variant` conversion needed | Dynamic callers cannot inspect it unless its type supports `Variant` |
 
 ## State Struct
 
@@ -170,6 +184,39 @@ Both `#[default(expr)]` and `#[default = expr]` are accepted.
 
 Scene `script_vars` override defaults after state creation.
 
+All state fields may receive scene overrides. `#[expose]` is not a gate.
+
+Scene strings for path-backed resource fields resolve to typed IDs before
+`on_init`. This applies to `TextureID`, `MaterialID`, `MeshID`, `AnimationID`,
+`AnimationTreeID`, `NavMeshID`, and `SoundFontID`, including values nested in
+options, lists, maps, tuples, and custom `#[derive(Variant)]` types.
+
+```rust
+#[derive(Clone, Default, Variant)]
+struct Look {
+    portrait: TextureID,
+    materials: Vec<MaterialID>,
+}
+
+#[State]
+struct ActorState {
+    #[expose]
+    look: Look,
+}
+```
+
+```text
+script_vars = {
+    look = {
+        portrait = "res://textures/portrait.png",
+        materials = ["res://materials/body.pmat"]
+    }
+}
+```
+
+Invalid scene values keep the field default. Normal runtime `set_var!` remains
+strict and does not coerce resource path strings.
+
 ## Runtime Vars
 
 Inside the same script, use typed state access.
@@ -251,7 +298,7 @@ HUD script reads the value dynamically by node id — no `#[expose]` needed for 
 let coins = get_var!(ctx.run, wallet_id, var!("coins")).as_i32().unwrap_or(0);
 ```
 
-The starting balance can be set per placement in the scene, since `coins` is exposed:
+The starting balance can be set per placement in the scene. Exposure only makes the field visible in the inspector:
 
 ```text
 script = "res://scripts/wallet.rs"

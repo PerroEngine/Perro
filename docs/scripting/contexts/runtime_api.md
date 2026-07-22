@@ -30,6 +30,10 @@ side: the state that changes every frame.
 - Character control and hit detection: slide a player with `physics_move_and_slide_3d!` and shoot a line-of-sight ray with `ctx.run.Physics().raycast_3d(...)` (see [Physics](runtime_modules/physics.md)).
 - Playback and feedback: trigger a jump clip with `anim_player_play!`, or attach a footstep sound to the player with `audio_play_attached!` (see [Animations](runtime_modules/animations.md), [Audio](runtime_modules/audio.md)).
 
+## Decision Guide
+
+Use `ctx.run` for live world state and operations: nodes, scripts, scenes, time, physics, signals, and window control. Use `ctx.res` for asset/resource ownership and `ctx.ipt` for current input. Runtime access is callback-scoped; do not retain it in state. End each node/state borrow before starting another runtime operation.
+
 ## Runtime Modules
 
 | Module | Page | Ctx |

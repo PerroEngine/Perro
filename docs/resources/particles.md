@@ -22,6 +22,14 @@ The particle system builds effects like fire, smoke, sparks, magic, and weather 
 - GPU-heavy weather (rain, snow, ash): set `sim_mode = "gpu"` and `render_mode = "billboard"` for high particle counts; fall back to `sim_mode = "cpu"` on low-end targets.
 - Deterministic layouts (rings, fountains): expressions using `ring_u`, `rand`, and `id` place particles without per-frame CPU work.
 
+## Choice Guide
+
+Use one reusable `.ppart` plus instance params when effects share behavior but
+vary in size/color. Use separate profiles when simulation or render mode differs.
+GPU simulation fits high counts; CPU fits low-count behavior that needs CPU-side
+control. A one-shot emitter owns presentation, not the gameplay event that
+caused it.
+
 ## Example
 
 Define `res://particles/campfire.ppart`:

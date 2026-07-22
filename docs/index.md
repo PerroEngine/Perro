@@ -6,6 +6,10 @@ Ctx map: `ctx.run` = runtime, `ctx.res` = resource, `ctx.ipt` = input.
 
 Start with [Perro Book](../perro_book/index.md) for a linear install-to-release guide.
 
+Use the [Script Authoring Guide](scripting/authoring/index.md) for ownership and
+API-choice reasoning. Docs authors use the [Writing Standard](writing_standard.md)
+and track conversion work in the [Concept + Example Audit](concept_example_audit.md).
+
 ## Page Table
 
 | Area | Page | Purpose | Key Headers | Ctx |
@@ -65,6 +69,7 @@ Start with [Perro Book](../perro_book/index.md) for a linear install-to-release 
 | scripting | [Meshes Module](scripting/contexts/resource_modules/meshes.md) | Resource module API reference | [Page Map](scripting/contexts/resource_modules/meshes.md#page-map), [Purpose](scripting/contexts/resource_modules/meshes.md#purpose), [Context](scripting/contexts/resource_modules/meshes.md#context), [Practical Example](scripting/contexts/resource_modules/meshes.md#practical-example) | `ctx.res` |
 | scripting | [Mic Module](scripting/contexts/resource_modules/mic.md) | Resource module API reference | [Page Map](scripting/contexts/resource_modules/mic.md#page-map), [Overview](scripting/contexts/resource_modules/mic.md#overview), [Context](scripting/contexts/resource_modules/mic.md#context), [Practical Example](scripting/contexts/resource_modules/mic.md#practical-example) | `ctx.res` |
 | scripting | [Post Processing Module](scripting/contexts/resource_modules/post_processing.md) | Resource module API reference | [Page Map](scripting/contexts/resource_modules/post_processing.md#page-map), [Purpose](scripting/contexts/resource_modules/post_processing.md#purpose), [Context](scripting/contexts/resource_modules/post_processing.md#context), [API Reference](scripting/contexts/resource_modules/post_processing.md#api-reference) | `ctx.res` |
+| scripting | [Display HDR Module](scripting/contexts/resource_modules/display.md) | HDR output mode + status | [Purpose](scripting/contexts/resource_modules/display.md#purpose), [Modes](scripting/contexts/resource_modules/display.md#modes), [API](scripting/contexts/resource_modules/display.md#api) | `ctx.res.Display()` |
 | scripting | [Scene Docs Module](scripting/contexts/resource_modules/scene_docs.md) | `.scn` parse/write editor API reference | [Page Map](scripting/contexts/resource_modules/scene_docs.md#page-map), [Purpose](scripting/contexts/resource_modules/scene_docs.md#purpose), [Data Types](scripting/contexts/resource_modules/scene_docs.md#data-types), [API Reference](scripting/contexts/resource_modules/scene_docs.md#api-reference) | `ctx.res` |
 | scripting | [Skeletons Module](scripting/contexts/resource_modules/skeletons.md) | Resource module API reference | [Page Map](scripting/contexts/resource_modules/skeletons.md#page-map), [Purpose](scripting/contexts/resource_modules/skeletons.md#purpose), [Context](scripting/contexts/resource_modules/skeletons.md#context), [API Reference](scripting/contexts/resource_modules/skeletons.md#api-reference) | `ctx.res` |
 | scripting | [Textures Module](scripting/contexts/resource_modules/textures.md) | Resource module API reference | [Page Map](scripting/contexts/resource_modules/textures.md#page-map), [Purpose](scripting/contexts/resource_modules/textures.md#purpose), [Context](scripting/contexts/resource_modules/textures.md#context), [Practical Example](scripting/contexts/resource_modules/textures.md#practical-example) | `ctx.res` |

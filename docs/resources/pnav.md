@@ -23,6 +23,13 @@
 - Ledge-attachment tuning: `snap=1` sets the max XZ distance used to attach a link endpoint to a triangle.
 - Generated or downloaded meshes: build a `NavMeshID` from bytes with `navmesh_create_from_bytes!`.
 
+## Choice Guide
+
+Use `.pnav` for authored/baked walkable topology and off-mesh links. Use runtime
+bytes when navigation arrives from generation or network data. Layers express
+agent eligibility; area/link costs express preference. Do not use high cost as
+a substitute for an impassable layer.
+
 ## Example
 
 Author `res://nav/level.pnav` (two triangle patches bridged by one link):

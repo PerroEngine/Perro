@@ -5,6 +5,7 @@
 | Header | Link |
 | --- | --- |
 | Purpose | [Purpose](#purpose) |
+| Mental Model | [Mental Model](#mental-model) |
 | Use Cases | [Use Cases](#use-cases) |
 | Why `lifecycle!` Exists | [Why `lifecycle!` Exists](#why-lifecycle-exists) |
 | Hook Signatures | [Hook Signatures](#hook-signatures) |
@@ -15,13 +16,19 @@
 
 Lifecycle hooks are the engine-called entry points of a script: setup, per-frame logic, fixed-step simulation, and cleanup. Instead of registering callbacks by hand, you declare `on_init`, `on_update`, and friends inside `lifecycle!`, and the engine runs each one at the right moment for the node the script is attached to. This is where almost all gameplay code starts.
 
+## Mental Model
+
+Hooks choose time, not ownership. `ctx.id` still identifies the node that owns the script. Read scene-injected state in `on_init`; defer work only when it needs another script to finish initialization. Use named timers for delayed one-shot work instead of polling a countdown in `on_update`. Use a state clock only when each intermediate value matters, such as a visible progress bar.
+
 ## Use Cases
 
-- One-time setup for a node — cache child ids, load its texture, seed `#[State]`: `on_init`.
-- Setup that needs other nodes or scripts to exist first — link to a game manager, resolve sibling refs: `on_all_init`.
-- Per-frame gameplay — read input, move the player, update animation and HUD: `on_update`, scaling motion by `delta_time!`.
-- Frame-rate-independent simulation — custom projectile or rope physics that must be deterministic: `on_fixed_update` with `fixed_delta_time!`.
-- Cleanup before a node leaves the scene — stop its sounds, disconnect signals, release references: `on_removal`.
+| Situation | Choice | Why | Tradeoff |
+| --- | --- | --- | --- |
+| Initialize only this script/node | `on_init` | Scene vars already exist and no peer readiness is required | Other scripts may not finish initialization yet |
+| Connect to or inspect peer scripts | `on_all_init` | All scene script instances finish `on_init` first | Work starts later than local initialization |
+| Read frame input or drive visuals | `on_update` + frame delta | Runs once per rendered frame | Frame cadence varies; do not assume a fixed step |
+| Advance deterministic simulation | `on_fixed_update` + fixed delta | Step size stays stable | May run zero or several times around one rendered frame |
+| Release owned runtime links | `on_removal` | Last hook before removal completes | Targets may already be absent; cleanup must tolerate that |
 
 ## Why `lifecycle!` Exists
 

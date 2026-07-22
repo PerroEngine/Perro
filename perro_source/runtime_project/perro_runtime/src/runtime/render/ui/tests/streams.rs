@@ -40,6 +40,43 @@ mod streams {
     }
 
     #[test]
+    fn webcam_chroma_key_uses_processed_camera_stream_target() {
+        let mut runtime = Runtime::new();
+        let webcam = NodeAPI::create::<Webcam>(&mut runtime);
+        let stream = NodeAPI::create::<UiCameraStream>(&mut runtime);
+        if let Some(mut node) = runtime.nodes.get_mut(stream)
+            && let SceneNodeData::UiCameraStream(data) = &mut node.data
+        {
+            data.stream.camera = webcam;
+            data.stream
+                .post_processing
+                .add_unnamed(perro_structs::PostProcessEffect::ChromaKey {
+                    color: Color::GREEN,
+                    tolerance: 0.1,
+                    softness: 0.05,
+                });
+        }
+
+        runtime.extract_render_ui_commands();
+        let mut commands = Vec::new();
+        runtime.drain_render_commands(&mut commands);
+        let output_texture = Runtime::camera_stream_texture_id(stream);
+
+        assert!(commands.iter().any(|command| matches!(
+            command,
+            RenderCommand::CameraStream(CameraStreamCommand::Upsert { node, state })
+                if *node == stream
+                    && state.output_texture == output_texture
+                    && matches!(state.post_processing.as_ref(), [perro_structs::PostProcessEffect::ChromaKey { .. }])
+        )));
+        assert!(commands.iter().any(|command| matches!(
+            command,
+            RenderCommand::Ui(UiCommand::UpsertImage { node, texture, .. })
+                if *node == stream && *texture == output_texture
+        )));
+    }
+
+    #[test]
     fn ui_camera_stream_uses_native_webcam_frame_aspect() {
         let mut runtime = Runtime::new();
         let webcam = NodeAPI::create::<Webcam>(&mut runtime);
@@ -170,9 +207,10 @@ mod streams {
 
         assert!(commands.iter().any(|command| matches!(
             command,
-            RenderCommand::CameraStream(CameraStreamCommand::Upsert { node, state })
+                RenderCommand::CameraStream(CameraStreamCommand::Upsert { node, state })
                 if *node == stream
                     && matches!(state.source, CameraStreamSourceState::ThreeD(_))
+                    && state.transparent_background
                     && state.lighting_3d.sky.is_some()
         )));
     }
@@ -248,7 +286,8 @@ mod streams {
             _ => None,
         });
         let state = state.expect("viewport stream state");
-        assert_eq!(state.resolution, [320, 180]);
+        assert_eq!(state.resolution, [640, 360]);
+        assert!(state.transparent_background);
         assert!(matches!(
             &state.source,
             CameraStreamSourceState::ThreeD(camera) if camera.position == [0.0, 0.0, 5.0]
@@ -325,12 +364,37 @@ mod streams {
         assert!(commands.iter().any(|command| matches!(
             command,
             RenderCommand::CameraStream(CameraStreamCommand::Upsert { node, state })
-                if *node == viewport && state.resolution == [200, 100]
+                if *node == viewport && state.resolution == [400, 200]
         )));
         assert!(commands.iter().any(|command| matches!(
             command,
             RenderCommand::Ui(UiCommand::UpsertImage { node, rect, aspect_ratio, .. })
                 if *node == viewport && rect.size == [200.0, 100.0] && *aspect_ratio == 2.0
+        )));
+    }
+
+    #[test]
+    fn ui_viewport_opaque_background_keeps_local_sky_path() {
+        let mut runtime = Runtime::new();
+        runtime.set_viewport_size(800, 600);
+        let viewport = NodeAPI::create::<UiViewport>(&mut runtime);
+        if let Some(mut node) = runtime.nodes.get_mut(viewport)
+            && let SceneNodeData::UiViewport(data) = &mut node.data
+        {
+            data.layout.size = UiVector2::pixels(100.0, 50.0);
+            data.background = Color::BLACK;
+        }
+
+        runtime.extract_render_ui_commands();
+        let mut commands = Vec::new();
+        runtime.drain_render_commands(&mut commands);
+
+        assert!(commands.iter().any(|command| matches!(
+            command,
+            RenderCommand::CameraStream(CameraStreamCommand::Upsert { node, state })
+                if *node == viewport
+                    && !state.transparent_background
+                    && state.resolution == [200, 100]
         )));
     }
 

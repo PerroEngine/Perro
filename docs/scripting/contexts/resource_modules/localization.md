@@ -35,6 +35,10 @@
 - Region and script variants: use custom tags such as `pt-br` or `zh-hant` via `Locale::Custom(...)`.
 - Reacting to a language change: re-read labels after `set_locale` so open menus refresh immediately.
 
+## Ownership And Choice
+
+Localization data owns message keys and locale variants; UI/gameplay owns when a message appears. Store stable keys in code or scene state, not translated display text. Use the localization module for player-facing language that must change by locale; keep internal identifiers and logs unlocalized. Missing-key behavior belongs at the lookup boundary so every caller does not invent a fallback policy.
+
 ## Context
 
 - Script context path: `ctx.res`

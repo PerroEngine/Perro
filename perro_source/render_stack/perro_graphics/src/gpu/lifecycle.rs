@@ -62,6 +62,47 @@ impl Gpu {
         true
     }
 
+    pub fn hdr_status(&self) -> HdrStatus {
+        self.hdr_status
+    }
+
+    pub fn set_hdr_mode(&mut self, mode: HdrMode) -> HdrStatus {
+        let caps = self.surface.get_capabilities(&self.adapter);
+        let display = self.surface.display_hdr_info(&self.adapter);
+        let selection = choose_surface_selection(
+            &caps,
+            &display,
+            mode,
+            self.render_format == wgpu::TextureFormat::Rgba16Float,
+        );
+        let output_changed = self.config.format != selection.format
+            || self.config.color_space != selection.color_space
+            || self.surface_view_format != selection.view_format;
+        self.hdr_status = selection.status;
+        if !output_changed {
+            return self.hdr_status;
+        }
+
+        self.config.format = selection.format;
+        self.config.color_space = selection.color_space;
+        self.config.view_formats = (selection.view_format != selection.format)
+            .then_some(selection.view_format)
+            .into_iter()
+            .collect();
+        self.surface_view_format = selection.view_format;
+        self.surface.configure(&self.device, &self.config);
+        self.present = PresentProcessor::new(&self.device, self.surface_view_format);
+        self.present_scene_bind_group = self
+            .present
+            .create_bind_group(&self.device, self.post.scene_view());
+        self.present_intermediate_bind_group = self
+            .present
+            .create_bind_group(&self.device, self.accessibility.intermediate_view());
+        self.ui = None;
+        self.late_overlay_2d = None;
+        self.hdr_status
+    }
+
     pub async fn new_async(window: Arc<Window>, cfg: GpuConfig) -> Option<Self> {
         let instance = wgpu::Instance::default();
         let surface = instance.create_surface(window.clone()).ok()?;
@@ -114,14 +155,11 @@ impl Gpu {
             );
         }
         let caps = surface.get_capabilities(&adapter);
-        let surface_format = caps
-            .formats
-            .iter()
-            .copied()
-            .find(|f| f.is_srgb())
-            .unwrap_or(caps.formats[0]);
-        let surface_view_format =
-            srgb_surface_view_format(surface_format).unwrap_or(surface_format);
+        let display_hdr = surface.display_hdr_info(&adapter);
+        let scene_hdr = scene_hdr_supported(&adapter);
+        let selection = choose_surface_selection(&caps, &display_hdr, cfg.hdr_mode, scene_hdr);
+        let surface_format = selection.format;
+        let surface_view_format = selection.view_format;
         let render_format = supported_linear_render_format(&adapter, surface_view_format);
         let present_mode = choose_present_mode(&caps.present_modes, cfg.vsync_enabled);
         let max_frame_latency = choose_max_frame_latency(cfg.vsync_enabled);
@@ -148,8 +186,7 @@ impl Gpu {
                 .into_iter()
                 .collect(),
             desired_maximum_frame_latency: max_frame_latency,
-            // Auto keeps wgpu's pre-30 color-space behavior (sRGB / linear fp16).
-            color_space: wgpu::SurfaceColorSpace::Auto,
+            color_space: selection.color_space,
         };
         eprintln!(
             "[perro][gfx] vsync=({}) present_mode=({present_mode:?}) max_frame_latency=({max_frame_latency}) present_caps=({:?})",
@@ -206,6 +243,7 @@ impl Gpu {
         let accessibility =
             VisualAccessibilityProcessor::new(&device, render_format, render_width, render_height);
         let present = PresentProcessor::new(&device, surface_view_format);
+        let camera_stream_tonemap = CameraStreamTonemap::new(&device, render_format);
         let present_scene_bind_group = present.create_bind_group(&device, post.scene_view());
         let present_intermediate_bind_group =
             present.create_bind_group(&device, accessibility.intermediate_view());
@@ -214,10 +252,12 @@ impl Gpu {
         Some(Self {
             window_handle: window,
             surface,
+            adapter,
             device,
             queue,
             config,
             surface_view_format,
+            hdr_status: selection.status,
             render_width,
             render_height,
             render_format,
@@ -245,6 +285,7 @@ impl Gpu {
             camera_stream_particles_3d: None,
             camera_stream_water: None,
             camera_stream_post: None,
+            camera_stream_tonemap,
             camera_stream_draws_scratch: Vec::new(),
             last_prepare_particles_revision: u64::MAX,
             last_prepare_water_2d_revision: u64::MAX,
@@ -276,6 +317,8 @@ impl Gpu {
         if width == 0 || height == 0 {
             return;
         }
+        let mode = self.hdr_status.requested;
+        self.set_hdr_mode(mode);
         if self.config.width == width && self.config.height == height {
             return;
         }

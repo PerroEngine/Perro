@@ -28,6 +28,17 @@ The Perro editor is a visual authoring tool — itself a Perro project in `perro
 - **Inspect an imported model.** Open a `.glb` or `.gltf` to switch to the 3D model viewer with mesh, material, animation, skeleton, and texture summaries.
 - **Run the editor's own release gate.** `check`, `clippy`, and `test` through `perro_cli --path perro_editor` before landing editor changes.
 
+## Editor vs Code
+
+Use the editor for topology, node fields, `script_vars`, asset refs, and visual
+preview. Use Rust source for lifecycle, methods, queries, and game decisions.
+`#[expose]` groups a state field in the inspector; it does not decide whether a
+scene may inject that field.
+
+Use text scene editing when reviewing a compact diff or applying a mechanical
+change. Use the editor when spatial context and ref pickers reduce mistakes.
+Both author the same `.scn` contract.
+
 ## Status
 
 The editor is an in-development Perro project in `perro_editor`.

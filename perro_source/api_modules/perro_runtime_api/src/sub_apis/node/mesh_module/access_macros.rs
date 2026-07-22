@@ -146,6 +146,11 @@ macro_rules! with_node_mut {
     ($ctx:expr, $node_ty:ty, $id:expr, $f:expr) => {
         $ctx.Nodes().with_node_mut::<$node_ty, _, _>($id, $f)
     };
+    ($($invalid:tt)*) => {
+        compile_error!(
+            "invalid with_node_mut! call; use: with_node_mut!(ctx, ConcreteType, node_id, |node| { ... })"
+        )
+    };
 }
 
 /// Exact-type read node access.

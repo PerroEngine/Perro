@@ -70,6 +70,10 @@
 - Voice chat playback: `audio_play_clip!` a `MicClip` decoded from the mic module through a `"voice"` bus.
 - Dynamic/interactive music: play MIDI notes with `midi_play!` and a loaded soundfont, or spatialize a stinger with `midi_play_at!`.
 
+## Ownership And Choice
+
+The resource layer owns audio sources and soundfonts; playback owns a temporary voice. Use this API for one-shots, music, MIDI, and bus control. Use spatial audio nodes when a persistent world object must own position or range. Load fixed assets during initialization or inject typed IDs where supported; do not decode or reserve a source every frame.
+
 ## Context
 
 - Script context path: `ctx.res`

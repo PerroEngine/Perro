@@ -3,7 +3,7 @@ use perro_ids::{
     AnimationID, AnimationTreeID, MaterialID, MeshID, NavMeshID, NodeID, TextureID, WebcamID,
 };
 use perro_project::LocalizationConfig;
-use perro_render_bridge::{Material3D, Mesh3D};
+use perro_render_bridge::{HdrStatus, Material3D, Mesh3D};
 use perro_render_bridge::{RenderCommand, RenderRequestID};
 use perro_resource_api::sub_apis::{Locale, NavMeshResource3D};
 use perro_resource_api::sub_apis::{WebcamConfig, WebcamFrame};
@@ -148,6 +148,7 @@ pub(super) struct RuntimeResourceState {
     animation_slots: LocalSlotArena,
     animation_tree_slots: LocalSlotArena,
     pub(super) queued_commands: Vec<RenderCommand>,
+    pub(super) hdr_status: HdrStatus,
     pub(super) texture_by_source: HashMap<u64, TextureID>,
     pub(super) texture_pending_by_source: HashMap<u64, RenderRequestID>,
     pub(super) texture_pending_source_by_request: HashMap<RenderRequestID, String>,

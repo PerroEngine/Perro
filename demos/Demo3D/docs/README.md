@@ -62,3 +62,18 @@ Why scripts stay small:
 - Projectile behavior stays in projectile scene.
 - Scene files keep data visible.
 - Rust scripts keep runtime logic typed.
+
+This split follows ownership, not a one-role-per-script rule. A static lane has
+no state owner beyond its scene, so another script would add dispatch without a
+behavior boundary. Interactive roots get a script because they own mutable
+state, lifecycle, or methods.
+
+## Read A Lane
+
+1. open the linked `.scn` -> inspect node topology, assets, and `script_vars`
+2. open the linked script -> identify state owner and lifecycle hook
+3. follow methods/signals/timers -> identify target and failure behavior
+4. run the lane -> compare observed behavior with the authored flow
+
+Use the [Script Authoring Guide](../../../docs/scripting/authoring/index.md) for
+the fixed-ref/relation/query and method/signal/dynamic-var decisions.

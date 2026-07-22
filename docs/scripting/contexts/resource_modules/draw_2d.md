@@ -36,6 +36,10 @@
 - Procedural HUD bars and shapes: draw health/stamina fills with `rect` in screen space.
 - Atlas icons: draw one sprite from a packed sheet with `atlas_sprite`, giving a UV sub-rectangle.
 
+## Ownership And Choice
+
+`Draw2D` owns commands for the current frame only. Use it for transient debug, procedural, and overlay geometry that has no independent identity. Use scene or UI nodes when an item needs input, layout, animation, a script, or persistence. Keep source state elsewhere and re-submit only the shapes that should appear this frame.
+
 ## Context
 
 - Script context path: `ctx.res`

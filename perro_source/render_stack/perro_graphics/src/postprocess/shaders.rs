@@ -11,6 +11,8 @@ const EFFECT_COLOR_FILTER_WGSL: &str =
     perro_macros::include_str_stripped!("shaders/effects/color_filter.wgsl");
 const EFFECT_REVERSE_FILTER_WGSL: &str =
     perro_macros::include_str_stripped!("shaders/effects/reverse_filter.wgsl");
+const EFFECT_CHROMA_KEY_WGSL: &str =
+    perro_macros::include_str_stripped!("shaders/effects/chroma_key.wgsl");
 const EFFECT_BLOOM_WGSL: &str = perro_macros::include_str_stripped!("shaders/effects/bloom.wgsl");
 const EFFECT_SATURATE_WGSL: &str =
     perro_macros::include_str_stripped!("shaders/effects/saturate.wgsl");
@@ -38,6 +40,7 @@ fn build_builtin_post_shader() -> String {
     wgsl.push_str(EFFECT_CRT_WGSL);
     wgsl.push_str(EFFECT_COLOR_FILTER_WGSL);
     wgsl.push_str(EFFECT_REVERSE_FILTER_WGSL);
+    wgsl.push_str(EFFECT_CHROMA_KEY_WGSL);
     wgsl.push_str(EFFECT_BLOOM_WGSL);
     wgsl.push_str(EFFECT_SATURATE_WGSL);
     wgsl.push_str(EFFECT_BLACK_WHITE_WGSL);
@@ -121,7 +124,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         depth = load_depth(in.uv);
     }
     let out_color = post_process(in.uv, color, depth);
-    return vec4<f32>(out_color.rgb, 1.0);
+    return out_color;
 }
 
 "#;

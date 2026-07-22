@@ -1,7 +1,7 @@
 extern crate self as perro_api;
 
 pub mod variant {
-    pub use perro_variant::{DeriveVariant, Variant, VariantSchema};
+    pub use perro_variant::{DeriveVariant, SceneVariantResolver, Variant, VariantSchema};
 }
 
 use perro_scripting::Variant;

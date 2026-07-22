@@ -14,6 +14,8 @@ impl PerroGraphics {
         self.renderer_2d.set_virtual_viewport(vw, vh);
         self.late_overlay_2d.set_virtual_viewport(vw, vh);
         gpu.resize(self.viewport.0.max(1), self.viewport.1.max(1));
+        self.events
+            .push(RenderEvent::HdrStatusChanged(gpu.hdr_status()));
         self.gpu = Some(gpu);
         self.pending_gpu = None;
         self.redraw_requested = true;

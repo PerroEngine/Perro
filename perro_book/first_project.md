@@ -8,6 +8,15 @@ Make a scene with a player script.
 
 Run it through the dev runner.
 
+## Feature Shape
+
+The scene owns the player node and its starting values. The script owns input
+response and per-player state. `ctx.id` identifies that same player, so movement
+does not need a name lookup or query.
+
+This is the smallest useful ownership split: authored data stays visible in the
+scene, while frame behavior stays typed in Rust.
+
 ## Create Project
 
 ```powershell
@@ -88,6 +97,18 @@ Use this loop:
 2. run `perro check`
 3. run `perro dev`
 4. move one feature at a time
+
+Run `check` before `dev`: compile and scene-wiring errors arrive without waiting
+for the game window. Use `dev` after the project is structurally valid because
+its job is behavior feedback, not first-pass diagnosis.
+
+## Next Choice
+
+- fixed camera or HUD target -> inject `NodeID` through `script_vars`
+- child created as part of the player -> use the parent/child relation
+- changing set of enemies or pickups -> use a query
+- one known target command -> call a method
+- event with zero or many listeners -> emit a signal
 
 ## Reference
 

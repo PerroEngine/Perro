@@ -82,8 +82,8 @@ methods!({
 | Signature | `pub fn set_title(&mut self, title: impl Into<String>)` |
 | Params | `&mut self, title: impl Into<String>` |
 | Returns | `()` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `set_title` to set title on the app window; OS/backend constraints may alter a requested mode, size, or timing setting. |
+| Fails when / edge behavior | Has no failure return; `set_title` sends the command through the runtime module and the caller receives no acknowledgement. |
 
 ### `set_size`
 
@@ -93,8 +93,8 @@ methods!({
 | Signature | `pub fn set_size(&mut self, width: u32, height: u32)` |
 | Params | `&mut self, width: u32, height: u32` |
 | Returns | `()` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `set_size` to set size on the app window; OS/backend constraints may alter a requested mode, size, or timing setting. |
+| Fails when / edge behavior | Has no failure return; `set_size` sends the command through the runtime module and the caller receives no acknowledgement. |
 
 ### `set_mode`
 
@@ -104,8 +104,8 @@ methods!({
 | Signature | `pub fn set_mode(&mut self, mode: WindowMode)` |
 | Params | `&mut self, mode: WindowMode` |
 | Returns | `()` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `set_mode` to set mode on the app window; OS/backend constraints may alter a requested mode, size, or timing setting. |
+| Fails when / edge behavior | Has no failure return; `set_mode` sends the command through the runtime module and the caller receives no acknowledgement. |
 
 ### `set_windowed`
 
@@ -115,8 +115,8 @@ methods!({
 | Signature | `pub fn set_windowed(&mut self)` |
 | Params | `&mut self` |
 | Returns | `()` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `set_windowed` to set windowed on the app window; OS/backend constraints may alter a requested mode, size, or timing setting. |
+| Fails when / edge behavior | Has no failure return; `set_windowed` sends the command through the runtime module and the caller receives no acknowledgement. |
 
 ### `set_borderless_fullscreen`
 
@@ -126,8 +126,8 @@ methods!({
 | Signature | `pub fn set_borderless_fullscreen(&mut self)` |
 | Params | `&mut self` |
 | Returns | `()` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `set_borderless_fullscreen` to set borderless fullscreen on the app window; OS/backend constraints may alter a requested mode, size, or timing setting. |
+| Fails when / edge behavior | Has no failure return; `set_borderless_fullscreen` sends the command through the runtime module and the caller receives no acknowledgement. |
 
 ### `set_frame_rate_cap`
 
@@ -137,8 +137,8 @@ methods!({
 | Signature | `pub fn set_frame_rate_cap(&mut self, cap: FrameRateCap)` |
 | Params | `&mut self, cap: FrameRateCap` |
 | Returns | `()` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `set_frame_rate_cap` to set frame rate cap on the app window; OS/backend constraints may alter a requested mode, size, or timing setting. |
+| Fails when / edge behavior | Has no failure return; `set_frame_rate_cap` sends the command through the runtime module and the caller receives no acknowledgement. |
 
 ### `set_frame_rate_limit`
 
@@ -148,8 +148,8 @@ methods!({
 | Signature | `pub fn set_frame_rate_limit(&mut self, fps: f32)` |
 | Params | `&mut self, fps: f32` |
 | Returns | `()` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `set_frame_rate_limit` to set frame rate limit on the app window; OS/backend constraints may alter a requested mode, size, or timing setting. |
+| Fails when / edge behavior | Has no failure return; `set_frame_rate_limit` sends the command through the runtime module and the caller receives no acknowledgement. |
 
 ### `set_refresh_rate_cap`
 
@@ -159,8 +159,8 @@ methods!({
 | Signature | `pub fn set_refresh_rate_cap(&mut self)` |
 | Params | `&mut self` |
 | Returns | `()` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `set_refresh_rate_cap` to set refresh rate cap on the app window; OS/backend constraints may alter a requested mode, size, or timing setting. |
+| Fails when / edge behavior | Has no failure return; `set_refresh_rate_cap` sends the command through the runtime module and the caller receives no acknowledgement. |
 
 ### `set_unlimited_frame_rate`
 
@@ -170,8 +170,8 @@ methods!({
 | Signature | `pub fn set_unlimited_frame_rate(&mut self)` |
 | Params | `&mut self` |
 | Returns | `()` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `set_unlimited_frame_rate` to set unlimited frame rate on the app window; OS/backend constraints may alter a requested mode, size, or timing setting. |
+| Fails when / edge behavior | Has no failure return; `set_unlimited_frame_rate` sends the command through the runtime module and the caller receives no acknowledgement. |
 
 ### `get_active_refresh_rate`
 
@@ -181,8 +181,8 @@ methods!({
 | Signature | `pub fn get_active_refresh_rate(&mut self) -> Option<f32>` |
 | Params | `&mut self` |
 | Returns | `Option<f32>` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `get_active_refresh_rate` to get active refresh rate on the app window; OS/backend constraints may alter a requested mode, size, or timing setting. |
+| Fails when / edge behavior | Returns `None` when `get_active_refresh_rate` cannot produce a value for the supplied target or inputs. |
 
 ### `close_app`
 
@@ -192,7 +192,7 @@ methods!({
 | Signature | `pub fn close_app(&mut self)` |
 | Params | `&mut self` |
 | Returns | `()` |
-| Use when | Use when gameplay must request app shutdown. |
+| Use when | Use `close_app` to close app on the app window; the platform may constrain the requested mode, size, or timing value. |
 | Fails when / edge behavior | Queues an app close request for the app layer to apply. |
 
 ### `window_set_title`
@@ -203,8 +203,8 @@ methods!({
 | Signature | `window_set_title!(ctx.run, title)` |
 | Params | `ctx, title` |
 | Returns | `bool or () as shown by backing method` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `window_set_title` to window set title on the app window; the platform may constrain the requested mode, size, or timing value. |
+| Fails when / edge behavior | Returns `false` when `window_set_title` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `window_set_size`
 
@@ -214,8 +214,8 @@ methods!({
 | Signature | `window_set_size!(ctx.run, width, height)` |
 | Params | `ctx, width, height` |
 | Returns | `bool or () as shown by backing method` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `window_set_size` to window set size on the app window; the platform may constrain the requested mode, size, or timing value. |
+| Fails when / edge behavior | Returns `false` when `window_set_size` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `window_set_mode`
 
@@ -225,8 +225,8 @@ methods!({
 | Signature | `window_set_mode!(ctx.run, mode)` |
 | Params | `ctx, mode` |
 | Returns | `bool or () as shown by backing method` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `window_set_mode` to window set mode on the app window; the platform may constrain the requested mode, size, or timing value. |
+| Fails when / edge behavior | Returns `false` when `window_set_mode` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `window_set_frame_rate_cap`
 
@@ -236,8 +236,8 @@ methods!({
 | Signature | `window_set_frame_rate_cap!(ctx.run, cap)` |
 | Params | `ctx, cap` |
 | Returns | `bool or () as shown by backing method` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `window_set_frame_rate_cap` to window set frame rate cap on the app window; the platform may constrain the requested mode, size, or timing value. |
+| Fails when / edge behavior | Returns `false` when `window_set_frame_rate_cap` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `window_set_frame_rate_limit`
 
@@ -247,8 +247,8 @@ methods!({
 | Signature | `window_set_frame_rate_limit!(ctx.run, fps)` |
 | Params | `ctx, fps` |
 | Returns | `bool or () as shown by backing method` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `window_set_frame_rate_limit` to window set frame rate limit on the app window; the platform may constrain the requested mode, size, or timing value. |
+| Fails when / edge behavior | Returns `false` when `window_set_frame_rate_limit` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `window_get_active_refresh_rate`
 
@@ -258,8 +258,8 @@ methods!({
 | Signature | `window_get_active_refresh_rate!(ctx.run)` |
 | Params | `ctx` |
 | Returns | `f32 / Option<f32>` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `window_get_active_refresh_rate` to window get active refresh rate on the app window; the platform may constrain the requested mode, size, or timing value. |
+| Fails when / edge behavior | Returns `None` when `window_get_active_refresh_rate` cannot produce a value for the supplied target or inputs. |
 
 ### `close_app`
 
@@ -269,5 +269,5 @@ methods!({
 | Signature | `close_app!(ctx.run)` |
 | Params | `ctx` |
 | Returns | `()` |
-| Use when | Use when gameplay must request app shutdown. |
+| Use when | Use `close_app` to close app on the app window; the platform may constrain the requested mode, size, or timing value. |
 | Fails when / edge behavior | Queues an app close request for the app layer to apply. |

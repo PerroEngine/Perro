@@ -36,6 +36,10 @@
 - Preloading during a loading screen: `texture_reserve!` to pin textures so they stay resident, and `texture_is_loaded!` to poll when the async upload finishes.
 - Freeing memory: `texture_drop!` to release a texture the game no longer shows.
 
+## Ownership And Choice
+
+The resource cache owns decoded texture data; scripts and nodes carry `TextureID` handles. Inject a typed ID from a scene path for a fixed per-instance texture. Load through `ctx.res` when the path or bytes become known at runtime. Reuse the returned ID instead of loading in `on_update`; the cache keeps repeated paths stable, but repeated calls still hide ownership and intent.
+
 ## Context
 
 - Script context path: `ctx.res`

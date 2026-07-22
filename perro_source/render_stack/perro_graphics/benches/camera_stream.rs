@@ -349,6 +349,7 @@ fn camera_stream_2d_state(
     CameraStreamState {
         source: CameraStreamSourceState::TwoD(Camera2DState::default()),
         overlay_camera_2d: None,
+        transparent_background: true,
         clear_color: None,
         resolution: [resolution, resolution],
         aspect_ratio: 1.0,
@@ -373,6 +374,7 @@ fn camera_stream_3d_state(
     CameraStreamState {
         source: CameraStreamSourceState::ThreeD(Camera3DState::default()),
         overlay_camera_2d: None,
+        transparent_background: true,
         clear_color: None,
         resolution: [resolution, resolution],
         aspect_ratio: 1.0,

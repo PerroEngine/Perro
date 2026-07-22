@@ -30,6 +30,17 @@ Commands use `perro`, assuming you ran `perro_cli install` and reloaded your she
 - **Package optional or paid content.** `perro dlc --name <name>` builds one runtime-loadable `.output/dlc/<name>.dlc` from `dlcs/<name>/`.
 - **Import animation and keep the project healthy.** `perro import_anim` converts glTF/GLB clips to `.panim`; `perro doctor`, `clippy`, `format`, and `test` check refs and script quality; `perro bench`, `perro flamegraph`, and `perro mem-profile` profile hot paths.
 
+## Command Choice
+
+Use `check` for the shortest script/scene feedback loop, `doctor` for project
+wiring and missing refs, `dev` for behavior, and `build` for shipped/static
+behavior. Run `clippy` and `test` after structural checks pass. A successful
+`dev` run does not replace a release build check because asset and linking paths
+differ.
+
+Generated `.perro` output belongs to the CLI. Fix source under `res/`, config,
+or engine crates; do not patch generated glue as a durable solution.
+
 ## End-to-End Example
 
 ```powershell

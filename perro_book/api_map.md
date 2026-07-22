@@ -2,6 +2,10 @@
 
 Use this page to jump from book topics to exact docs.
 
+Start with the [Script Authoring Guide](/docs/scripting/authoring/index.md) when
+the question is *which* API shape fits. Use this map when the choice is made and
+the exact signature or edge behavior is needed.
+
 ## Core
 
 - [Docs Index](/docs/index.md)
@@ -17,6 +21,8 @@ Use this page to jump from book topics to exact docs.
 - [Script Methods](/docs/scripting/methods.md)
 - [Script Contexts](/docs/scripting/contexts/README.md)
 - [Variant](/docs/scripting/variant.md)
+- [Script Authoring Guide](/docs/scripting/authoring/index.md)
+- [Verified ScriptPatterns Project](/demos/ScriptPatterns/README.md)
 
 ## Runtime API
 

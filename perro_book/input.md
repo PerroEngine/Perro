@@ -6,6 +6,16 @@ Perro input flows through `ctx.ipt`.
 
 Read keys, mouse, gamepads, joycons, players, and actions.
 
+## Decision Model
+
+Use physical keys for debug tools, editor-like controls, or a deliberately fixed
+scheme. Use actions for player verbs because bindings, device type, and player
+assignment can change without changing gameplay code. Read continuous axes in
+`on_update`; read edge actions for one-shot commands such as jump or confirm.
+
+Input reports intent. The player script decides game state. A HUD or audio
+script should receive the resulting event/state, not poll the keyboard again.
+
 ## Keyboard
 
 Use key helpers for direct movement and debug input:

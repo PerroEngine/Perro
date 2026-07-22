@@ -205,6 +205,30 @@ impl Variant {
     }
 
     #[inline]
+    pub fn as_animation_tree(&self) -> Option<AnimationTreeID> {
+        match *self {
+            Variant::ID(IDs::AnimationTree(id)) => Some(id),
+            _ => None,
+        }
+    }
+
+    #[inline]
+    pub fn as_nav_mesh(&self) -> Option<NavMeshID> {
+        match *self {
+            Variant::ID(IDs::NavMesh(id)) => Some(id),
+            _ => None,
+        }
+    }
+
+    #[inline]
+    pub fn as_sound_font(&self) -> Option<SoundFontID> {
+        match *self {
+            Variant::ID(IDs::SoundFont(id)) => Some(id),
+            _ => None,
+        }
+    }
+
+    #[inline]
     pub fn as_light(&self) -> Option<LightID> {
         match *self {
             Variant::ID(IDs::Light(id)) => Some(id),

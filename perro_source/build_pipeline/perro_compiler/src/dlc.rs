@@ -287,15 +287,13 @@ fn default_scripts_lib_rs() -> String {
     r#"use perro_runtime::RuntimeScriptApi;
 use perro_api::scripting::ScriptConstructor;
 #[cfg(feature = "dynamic-scripts")]
-use perro_runtime::SCRIPT_ABI_BUILD_FINGERPRINT;
-#[cfg(feature = "dynamic-scripts")]
 use perro_api::scripting::{ScriptAbiDescriptor, ScriptAbiDescriptorHeader};
 
 pub static SCRIPT_REGISTRY: &[(u64, ScriptConstructor<RuntimeScriptApi>)] = &[];
 
 #[cfg(feature = "dynamic-scripts")]
 static PERRO_SCRIPT_ABI_DESCRIPTOR_V2: ScriptAbiDescriptor =
-    ScriptAbiDescriptor::v2(SCRIPT_ABI_BUILD_FINGERPRINT);
+    ScriptAbiDescriptor::v2();
 
 #[cfg(feature = "dynamic-scripts")]
 #[unsafe(no_mangle)]

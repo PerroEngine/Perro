@@ -22,6 +22,14 @@
 - Catch typos early: `res_path!` / `res_path_buf!` fail the build on an invalid literal; use `try_new` when a path is computed at runtime.
 - Persist a path through `Variant`: `ResPathBuf` and `&'static ResPath` implement `DeriveVariant`, and `parse::<ResPathBuf>()` revalidates on read.
 
+## Path Choice
+
+Use `res://` for read-only shipped project content, `dlc://` for mounted packs,
+and `user://` for writable player data. Prefer compile-checked path macros for
+literals and `try_new` for runtime-built paths. A raw string is suitable at a
+scene boundary where the parser resolves it into a typed asset ID; runtime
+`set_var!` remains strict.
+
 ## Example
 
 Store a validated path in state, then load the texture it points at:
@@ -31,13 +39,16 @@ use perro_api::prelude::*;
 
 #[State]
 pub struct PlayerState {
-    #[default = res_path!("res://textures/player.png")]
-    texture_path: &'static ResPath,
+    #[default = res_path_buf!("res://textures/player.png")]
+    texture_path: ResPathBuf,
 }
 
 lifecycle!({
-    fn on_ready(&self, ctx: &mut ScriptContext<'_, API>) {
-        let texture = texture_load!(ctx.res, self.texture_path);
+    fn on_init(&self, ctx: &mut ScriptContext<'_, API>) {
+        let texture_path = with_state!(ctx.run, PlayerState, ctx.id, |state| {
+            state.texture_path.clone()
+        });
+        let texture = texture_load!(ctx.res, &texture_path);
         let _ = texture;
     }
 });

@@ -48,13 +48,26 @@ cargo run -p perro_cli -- dev --path demos\Demo2D
 
 ## Compare Use
 
-- run profiler overlay/tooling
-- pan each zone
-- chk fps + frametime deltas
-- cmp static sprite zone vs anim sprite zone
-- cmp anim player zone vs skeletal zone
-- cmp dry physics stack
-- press `T` in positional-audio lane -> toggle debug rays
+Compare one pair at a time under the same build profile and window size:
+
+1. run profiler overlay/tooling
+2. pan into one zone and let frame time settle
+3. record FPS + frame-time deltas
+4. compare static sprites vs animated sprites
+5. compare animation players vs skeletal rigs
+6. compare visual lanes against the dry physics stack
+7. press `T` in positional audio -> isolate debug-ray cost
+
+The zones isolate dominant work so a delta has a plausible cause. They do not
+model a complete game's mixed workload; confirm any decision in a representative
+game scene before changing architecture.
+
+## Authoring Concepts
+
+- [`../res/main.scn`](../res/main.scn) owns stable topology and script vars
+- [`../res/scripts/demo2d_manager.rs`](../res/scripts/demo2d_manager.rs) owns hub flow
+- [`../res/scripts/camera_pan_2d.rs`](../res/scripts/camera_pan_2d.rs) uses `ctx.id`
+- [`../../../docs/scripting/authoring/index.md`](../../../docs/scripting/authoring/index.md) explains ref/query/method/signal choices
 
 ## Assets
 

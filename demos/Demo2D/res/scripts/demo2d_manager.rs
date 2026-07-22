@@ -17,8 +17,6 @@ const PROFILING_OVERLAY_SCENE: &ResPath = res_path!("res://Menu/ProfilingOverlay
 const INFO_OVERLAY_SCENE: &ResPath = res_path!("res://Menu/InfoOverlay.scn");
 const WEBCAM_SCENE: &ResPath = res_path!("res://scenes/webcam.scn");
 const FPS_TESTER_SCENE: &ResPath = res_path!("res://scenes/fps_tester.scn");
-const DEMO_UI_ROOT_NODE_NAME: &str = "demo_ui_root";
-const CAMERA_NODE_NAME: &str = "Camera";
 const TRANSITION_FADE_PANEL_NODE_NAME: &str = "transition_fade_panel";
 const FADE_IN_SECONDS: f32 = 0.20;
 const FADE_OUT_SECONDS: f32 = 0.22;
@@ -94,7 +92,6 @@ struct DemoRuntimeState {
     fade_active: bool,
     fade_phase: FadePhase,
     fade_action: FadeAction,
-    audio_timer: f32,
     audio_debug: bool,
     light_time: f32,
 }
@@ -109,7 +106,6 @@ impl Default for DemoRuntimeState {
             fade_active: false,
             fade_phase: FadePhase::Idle,
             fade_action: FadeAction::None,
-            audio_timer: 0.0,
             audio_debug: false,
             light_time: 0.0,
         }
@@ -118,6 +114,10 @@ impl Default for DemoRuntimeState {
 
 #[State]
 struct Demo2DState {
+    #[default = NodeID::nil()]
+    demo_ui_root: NodeID,
+    #[default = NodeID::nil()]
+    camera: NodeID,
     #[default = DemoAssets::default()]
     assets: DemoAssets,
     #[default = DemoUiRefs::default()]
@@ -144,6 +144,12 @@ lifecycle!({
             fps_tester: scene_preload!(ctx.run, FPS_TESTER_SCENE).expect("preload fps tester"),
         };
         with_state_mut!(ctx.run, Demo2DState, ctx.id, |state| state.assets = assets);
+        signal_connect!(
+            ctx.run,
+            ctx.id,
+            timer_finished!("demo2d_audio_chord"),
+            func!("on_audio_chord_timer")
+        );
         self.load_ui(ctx);
         self.connect_ui_signals(ctx);
         self.sync_ui(ctx);
@@ -170,19 +176,14 @@ lifecycle!({
             self.restart_active_demo(ctx);
         }
 
-        if self.active_demo(ctx) == DemoKind::AudioGap {
-            if key_pressed!(ctx.ipt, KeyCode::KeyT) {
-                let debug = with_state_mut!(ctx.run, Demo2DState, ctx.id, |state| {
-                    state.runtime.audio_debug = !state.runtime.audio_debug;
-                    state.runtime.audio_debug
-                })
-                .unwrap_or(false);
-                ctx.run.Audio().set_debug_rays(debug);
-                self.sync_info_overlay(ctx);
-            }
-            if !paused {
-                self.update_audio_zone(ctx);
-            }
+        if self.active_demo(ctx) == DemoKind::AudioGap && key_pressed!(ctx.ipt, KeyCode::KeyT) {
+            let debug = with_state_mut!(ctx.run, Demo2DState, ctx.id, |state| {
+                state.runtime.audio_debug = !state.runtime.audio_debug;
+                state.runtime.audio_debug
+            })
+            .unwrap_or(false);
+            ctx.run.Audio().set_debug_rays(debug);
+            self.sync_info_overlay(ctx);
         }
 
         if self.active_demo(ctx) == DemoKind::Lights && !paused {
@@ -192,6 +193,18 @@ lifecycle!({
 });
 
 methods!({
+    fn on_audio_chord_timer(&self, ctx: &mut ScriptContext<'_, API>) {
+        let play = with_state!(ctx.run, Demo2DState, ctx.id, |state| {
+            state.runtime.active_demo == DemoKind::AudioGap && !state.runtime.paused
+        });
+        if play {
+            self.play_audio_chord(ctx);
+        }
+        if self.active_demo(ctx) == DemoKind::AudioGap {
+            timer_start!(ctx.run, Duration::from_millis(380), "demo2d_audio_chord");
+        }
+    }
+
     fn on_demo_mesh_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
         self.activate_demo(ctx, DemoKind::MeshMaterials);
     }
@@ -372,7 +385,10 @@ methods!({
                 ("demo_water_click", "on_demo_water_click"),
                 ("demo_animations_click", "on_demo_animations_click"),
                 ("demo_physics_bones_click", "on_demo_physics_bones_click"),
-                ("demo_physics_collisions_click", "on_demo_physics_collisions_click"),
+                (
+                    "demo_physics_collisions_click",
+                    "on_demo_physics_collisions_click"
+                ),
                 ("demo_sky_click", "on_demo_sky_click"),
                 ("demo_blend_click", "on_demo_blend_click"),
                 ("demo_multimesh_click", "on_demo_multimesh_click"),
@@ -523,7 +539,7 @@ methods!({
     }
 
     fn jump_camera_to_demo(&self, ctx: &mut ScriptContext<'_, API>, demo: DemoKind) {
-        let camera = find_node!(ctx.run, ctx.id, CAMERA_NODE_NAME).unwrap_or(NodeID::nil());
+        let camera = with_state!(ctx.run, Demo2DState, ctx.id, |state| state.camera);
         if camera.is_nil() {
             return;
         }
@@ -593,9 +609,9 @@ methods!({
     }
 
     fn clear_dynamic(&self, ctx: &mut ScriptContext<'_, API>) {
+        timer_cancel!(ctx.run, "demo2d_audio_chord");
         ctx.run.Audio().set_debug_rays(false);
         with_state_mut!(ctx.run, Demo2DState, ctx.id, |state| {
-            state.runtime.audio_timer = 0.0;
             state.runtime.audio_debug = false;
             state.runtime.light_time = 0.0;
         });
@@ -654,12 +670,8 @@ methods!({
                             sprite.transform.scale = Vector2::new(0.026, 0.026);
                         } else {
                             sprite.texture = tex;
-                            sprite.texture_region = Some([
-                                32.0 * (idx % 8.0),
-                                32.0 * (idx / 8.0).floor(),
-                                32.0,
-                                32.0,
-                            ]);
+                            sprite.texture_region =
+                                Some([32.0 * (idx % 8.0), 32.0 * (idx / 8.0).floor(), 32.0, 32.0]);
                             sprite.transform.scale = Vector2::new(0.55, 0.55);
                         }
                         if name == "light_bg" {
@@ -686,13 +698,11 @@ methods!({
             };
             reparent!(ctx.run, ctx.id, root);
             tag_add!(ctx.run, root, tags!["demo2d_dynamic"]);
-            let Some(sprite_id) = query!(
-                ctx.run,
-                all(node_type[AnimatedSprite2D]),
-                in_subtree(root)
-            )
-            .into_iter()
-            .next() else {
+            let Some(sprite_id) =
+                query!(ctx.run, all(node_type[AnimatedSprite2D]), in_subtree(root))
+                    .into_iter()
+                    .next()
+            else {
                 log_error!("[Demo2D] animated scene child miss anim={name}");
                 let _ = remove_node!(ctx.run, root);
                 continue;
@@ -821,20 +831,12 @@ methods!({
                 -280.0 + time.cos() * 220.0,
                 20.0 + (time * 1.35).sin() * 150.0,
             );
-        for light in query!(
-            ctx.run,
-            all(tags["demo2d_key_light"]),
-            in_subtree(ctx.id)
-        ) {
+        for light in query!(ctx.run, all(tags["demo2d_key_light"]), in_subtree(ctx.id)) {
             let _ = with_node_mut!(ctx.run, PointLight2D, light, |node| {
                 node.transform.position = pos;
             });
         }
-        for marker in query!(
-            ctx.run,
-            all(tags["demo2d_key_marker"]),
-            in_subtree(ctx.id)
-        ) {
+        for marker in query!(ctx.run, all(tags["demo2d_key_marker"]), in_subtree(ctx.id)) {
             let _ = with_node_mut!(ctx.run, Sprite2D, marker, |node| {
                 node.transform.position = pos;
             });
@@ -1171,7 +1173,6 @@ methods!({
         let disc = texture_load!(ctx.res, LIGHT_DISC);
         ctx.run.Audio().set_debug_rays(true);
         with_state_mut!(ctx.run, Demo2DState, ctx.id, |state| {
-            state.runtime.audio_timer = 0.0;
             state.runtime.audio_debug = true;
         });
         for i in 0..3 {
@@ -1213,6 +1214,8 @@ methods!({
             tag_add!(ctx.run, speaker, tags!["demo2d_audio_speaker"]);
             self.spawn_ring(ctx, pos, 56.0 + i as f32 * 18.0, 18 + i * 6);
         }
+        self.play_audio_chord(ctx);
+        timer_start!(ctx.run, Duration::from_millis(380), "demo2d_audio_chord");
         self.sync_info_overlay(ctx);
     }
 
@@ -1253,22 +1256,7 @@ methods!({
         });
     }
 
-    fn update_audio_zone(&self, ctx: &mut ScriptContext<'_, API>) {
-        let dt = delta_time!(ctx.run);
-        let play = with_state_mut!(ctx.run, Demo2DState, ctx.id, |state| {
-            state.runtime.audio_timer -= dt;
-            if state.runtime.audio_timer <= 0.0 {
-                state.runtime.audio_timer = 0.38;
-                true
-            } else {
-                false
-            }
-        })
-        .unwrap_or(false);
-        if !play {
-            return;
-        }
-
+    fn play_audio_chord(&self, ctx: &mut ScriptContext<'_, API>) {
         let opts = MidiNoteOptions {
             velocity: 76,
             sustain: Duration::from_millis(520),
@@ -1463,8 +1451,11 @@ fn scene_ui_parent<API: ScriptAPI + ?Sized>(
     ctx: &mut ScriptContext<'_, API>,
     manager: NodeID,
 ) -> NodeID {
-    let scene_root = get_node_parent_id!(ctx.run, manager).unwrap_or(manager);
-    get_child!(ctx.run, scene_root, DEMO_UI_ROOT_NODE_NAME).unwrap_or(scene_root)
+    let ui_root = with_state!(ctx.run, Demo2DState, manager, |state| state.demo_ui_root);
+    if !ui_root.is_nil() {
+        return ui_root;
+    }
+    get_node_parent_id!(ctx.run, manager).unwrap_or(manager)
 }
 
 fn set_ui_tree_visible<API: ScriptAPI + ?Sized>(

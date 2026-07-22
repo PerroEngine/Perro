@@ -42,6 +42,10 @@
 - Decoding downloaded models: `create_from_bytes` for engine `PMESH` or glTF/GLB mesh index 0.
 - Preloading and memory control: `mesh_reserve!` to pin a mesh, `mesh_is_loaded!` to poll readiness, `mesh_drop!` to free it.
 
+## Ownership And Choice
+
+The resource cache owns mesh data; render nodes carry `MeshID` handles. Inject a typed ID for an authored mesh choice and load through `ctx.res` for generated, downloaded, or runtime-selected data. Keep collision and render ownership explicit: a visual mesh does not by itself define gameplay collision unless the chosen node/path creates it.
+
 ## Context
 
 - Script context path: `ctx.res`

@@ -36,6 +36,10 @@ need to track "was this key down last frame" yourself.
 - Debug toggles: flip an overlay with a single `key_pressed!` check on a
   function key.
 
+## Decision Guide
+
+Use keyboard reads for fixed desktop controls, editor tools, or diagnostics. Use named actions for gameplay that needs rebinding or device independence. Poll `down` for continuous intent and edges for one-shot intent; do not build a second previous-frame key tracker in script state.
+
 ## Context
 
 - Script context path: `ctx.ipt`

@@ -32,6 +32,10 @@
 - Exporting runtime data back to disk (highscores, telemetry) by building a `CsvBuf` and calling `save` / `csv_save!`.
 - Localization sheets, which the [Localization](localization.md) module reads from the same `.csv` format.
 
+## Ownership And Choice
+
+CSV owns designer-authored tabular source data; gameplay converts cells into typed domain values at a clear boundary. Use CSV for rows and columns edited outside code. Use a typed Rust/scene structure when schema validation and nested relationships matter more than spreadsheet editing. Load once, handle missing rows/cells, and avoid reparsing numeric text in a hot loop.
+
 ## Context
 
 - Script context path: `ctx.res`

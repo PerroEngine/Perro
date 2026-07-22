@@ -194,6 +194,24 @@ impl From<AnimationID> for Variant {
         Variant::ID(IDs::Animation(v))
     }
 }
+impl From<AnimationTreeID> for Variant {
+    #[inline]
+    fn from(v: AnimationTreeID) -> Self {
+        Variant::ID(IDs::AnimationTree(v))
+    }
+}
+impl From<NavMeshID> for Variant {
+    #[inline]
+    fn from(v: NavMeshID) -> Self {
+        Variant::ID(IDs::NavMesh(v))
+    }
+}
+impl From<SoundFontID> for Variant {
+    #[inline]
+    fn from(v: SoundFontID) -> Self {
+        Variant::ID(IDs::SoundFont(v))
+    }
+}
 impl From<LightID> for Variant {
     #[inline]
     fn from(v: LightID) -> Self {

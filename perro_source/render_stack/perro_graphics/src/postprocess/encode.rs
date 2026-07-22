@@ -85,6 +85,20 @@ pub(super) fn encode_effect_params(effect: &PostProcessEffect) -> EncodedEffectP
             params5: [0.0; 4],
             custom_params: Vec::new(),
         },
+        PostProcessEffect::ChromaKey {
+            color,
+            tolerance,
+            softness,
+        } => EncodedEffectParams {
+            effect_type: EFFECT_CHROMA_KEY,
+            params0: [color.r(), color.g(), color.b(), *tolerance],
+            params1: [*softness, 0.0, 0.0, 0.0],
+            params2: [0.0; 4],
+            params3: [0.0; 4],
+            params4: [0.0; 4],
+            params5: [0.0; 4],
+            custom_params: Vec::new(),
+        },
         PostProcessEffect::Bloom {
             strength,
             threshold,

@@ -15,16 +15,131 @@ use std::{
 };
 
 use perro_ids::{
-    AnimationID, AudioBusID, LightID, MaterialID, MeshID, NodeID, PreloadedSceneID, SignalID,
-    TagID, TextureID,
+    AnimationID, AnimationTreeID, AudioBusID, LightID, MaterialID, MeshID, NavMeshID, NodeID,
+    PreloadedSceneID, SignalID, SoundFontID, TagID, TextureID,
 };
 use perro_structs::{
-    ColorBlindFilter, IVector2, IVector3, Matrix, Matrix3, PostProcessEffect, PostProcessSet,
-    SqMatrix, Transform2D, Transform3D, UVector2, UVector3, UnitVector4, Vector2, Vector3, Vector4,
-    VisualAccessibilitySettings,
+    Color, ColorBlindFilter, IVector2, IVector3, Matrix, Matrix3, PostProcessEffect,
+    PostProcessSet, SqMatrix, Transform2D, Transform3D, UVector2, UVector3, UnitVector4, Vector2,
+    Vector3, Vector4, VisualAccessibilitySettings,
 };
 
 use super::*;
+
+struct TestSceneResolver;
+
+impl SceneVariantResolver for TestSceneResolver {
+    fn resolve_asset(&mut self, kind: SceneAssetKind, path: &str) -> Option<Variant> {
+        if !path.ends_with("ok.asset") {
+            return None;
+        }
+        Some(match kind {
+            SceneAssetKind::Texture => TextureID::from_u64(1).into(),
+            SceneAssetKind::Material => MaterialID::from_u64(2).into(),
+            SceneAssetKind::Mesh => MeshID::from_u64(3).into(),
+            SceneAssetKind::Animation => AnimationID::from_u64(4).into(),
+            SceneAssetKind::AnimationTree => AnimationTreeID::from_u64(5).into(),
+            SceneAssetKind::NavMesh => NavMeshID::from_u64(6).into(),
+            SceneAssetKind::SoundFont => SoundFontID::from_u64(7).into(),
+        })
+    }
+}
+
+#[test]
+fn scene_asset_ids_decode_paths_but_runtime_decode_stays_strict() {
+    let path = Variant::from("res://ok.asset");
+    let mut resolver = TestSceneResolver;
+    assert_eq!(
+        path.parse_scene::<TextureID>(&mut resolver).unwrap(),
+        TextureID::from_u64(1)
+    );
+    assert_eq!(
+        path.parse_scene::<MaterialID>(&mut resolver).unwrap(),
+        MaterialID::from_u64(2)
+    );
+    assert_eq!(
+        path.parse_scene::<MeshID>(&mut resolver).unwrap(),
+        MeshID::from_u64(3)
+    );
+    assert_eq!(
+        path.parse_scene::<AnimationID>(&mut resolver).unwrap(),
+        AnimationID::from_u64(4)
+    );
+    assert_eq!(
+        path.parse_scene::<AnimationTreeID>(&mut resolver).unwrap(),
+        AnimationTreeID::from_u64(5)
+    );
+    assert_eq!(
+        path.parse_scene::<NavMeshID>(&mut resolver).unwrap(),
+        NavMeshID::from_u64(6)
+    );
+    assert_eq!(
+        path.parse_scene::<SoundFontID>(&mut resolver).unwrap(),
+        SoundFontID::from_u64(7)
+    );
+    assert!(path.parse::<TextureID>().is_err());
+    assert!(
+        Variant::from("http://bad/ok.asset")
+            .parse_scene::<TextureID>(&mut resolver)
+            .is_err()
+    );
+    assert!(
+        Variant::from("res://missing.asset")
+            .parse_scene::<TextureID>(&mut resolver)
+            .is_err()
+    );
+}
+
+#[test]
+fn existing_asset_id_runtime_decode_keeps_raw_id_compat() {
+    let raw = Variant::from(TextureID::from_u64(9));
+    assert_eq!(
+        MaterialID::from_variant(&raw),
+        Some(MaterialID::from_u64(9))
+    );
+    assert_eq!(MeshID::from_variant(&raw), Some(MeshID::from_u64(9)));
+    assert_eq!(
+        AnimationID::from_variant(&raw),
+        Some(AnimationID::from_u64(9))
+    );
+}
+
+#[test]
+fn scene_decode_recurses_through_nested_containers() {
+    let value = Variant::Object(BTreeMap::from([(
+        Arc::from("group"),
+        Variant::Array(vec![Variant::Array(vec![
+            Variant::from("res://ok.asset"),
+            Variant::Null,
+        ])]),
+    )]));
+    let mut resolver = TestSceneResolver;
+    let decoded = value
+        .parse_scene::<BTreeMap<String, Vec<(TextureID, Option<MaterialID>)>>>(&mut resolver)
+        .unwrap();
+    assert_eq!(decoded["group"][0], (TextureID::from_u64(1), None));
+}
+
+#[test]
+fn added_asset_id_variants_round_trip_and_emit_json_number() {
+    let tree = AnimationTreeID::from_u64(11);
+    let nav = NavMeshID::from_u64(12);
+    let font = SoundFontID::from_u64(13);
+    for (variant, raw) in [
+        (Variant::from(tree), 11),
+        (Variant::from(nav), 12),
+        (Variant::from(font), 13),
+    ] {
+        assert_eq!(variant.as_id().unwrap().as_u64(), raw);
+        assert_eq!(variant.to_json_value(), serde_json::json!(raw));
+    }
+    assert_eq!(
+        AnimationTreeID::from_variant(&Variant::from(tree)),
+        Some(tree)
+    );
+    assert_eq!(NavMeshID::from_variant(&Variant::from(nav)), Some(nav));
+    assert_eq!(SoundFontID::from_variant(&Variant::from(font)), Some(font));
+}
 
 // -------------------- Number Tests --------------------
 
@@ -620,6 +735,22 @@ fn test_exposure_effect_json_keeps_hdr_controls() {
     assert_eq!(effect["type"], "exposure");
     assert_eq!(effect["auto_exposure"], true);
     assert!((effect["target_luminance"].as_f64().expect("target number") - 0.2).abs() < 1.0e-6);
+}
+
+#[test]
+fn test_chroma_key_json_keeps_hex_and_edge_controls() {
+    let set = PostProcessSet::from_effects(vec![PostProcessEffect::ChromaKey {
+        color: Color::GREEN,
+        tolerance: 0.1,
+        softness: 0.05,
+    }]);
+    let json = Variant::from(set).to_json_value();
+    let effect = &json.as_array().expect("post array")[0];
+
+    assert_eq!(effect["type"], "chroma_key");
+    assert_eq!(effect["color"], "#00FF00");
+    assert!((effect["tolerance"].as_f64().expect("tolerance") - 0.1).abs() < 1.0e-6);
+    assert!((effect["softness"].as_f64().expect("softness") - 0.05).abs() < 1.0e-6);
 }
 
 #[test]

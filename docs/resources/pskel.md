@@ -21,6 +21,13 @@
 - Tool-exported rigs: generate `.pskel*` text from an editor, then bake to binary `PSKEL` v1 in static builds by rerunning the static compiler.
 - Runtime-generated bones: build a `Vec<Bone2D>`/`Vec<Bone3D>` from bytes with `skeleton_load_bones_2d_from_bytes!` / `skeleton_load_bones_3d_from_bytes!` for procedural or modded rigs.
 
+## Choice Guide
+
+Use `.pskel*` for authored rigs that benefit from static baking and readable
+asset refs. Use runtime bone creation for generated or downloaded rigs. Keep
+bone hierarchy/rest pose in the skeleton; keep playback in animation resources
+and physics response in physics-bone nodes.
+
 ## Example
 
 Author `res://rigs/arm.pskel2d` (bones in file order, `-1` = root):

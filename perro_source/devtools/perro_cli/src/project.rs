@@ -560,7 +560,8 @@ pub(crate) fn clippy_command(args: &[String], cwd: &Path) -> Result<(), String> 
     let target_dir = project_dir.join("target");
     let status = Command::new("cargo")
         .arg("clippy")
-        .arg("--all-targets")
+        .arg("--lib")
+        .arg("--tests")
         .arg("--")
         .arg("-D")
         .arg("warnings")

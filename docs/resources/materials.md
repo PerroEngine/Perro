@@ -22,6 +22,13 @@ This guide covers the whole material workflow: author a `.pmat` (or use a glTF m
 - Pull a material out of an imported model: `res://models/robot.glb:mat[0]` on the `material` field, no separate file.
 - Custom look with live textures: a `custom` material binding `create_from_rgba` textures via `CustomMaterialImage3D::named_texture`, read in-shader with `custom_image_sample`.
 
+## Choice Guide
+
+Reuse one material ID when many nodes share appearance and lifetime. Use node
+overrides for small per-instance differences. Create or rewrite material data
+only when appearance truly changes at runtime; duplicating full materials for a
+color flash increases resource work and hides the authored base material.
+
 ## Example
 
 Author `res://materials/crate.pmat`:

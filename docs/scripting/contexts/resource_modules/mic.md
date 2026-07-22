@@ -26,6 +26,10 @@
 - Voice-driven mechanics: read the rolling buffer with `mic_clip!` to measure loudness for a "shout to scare enemies" or lip-sync feature.
 - Bandwidth-friendly networking: pack a clip with `mic_pack!` to the smallest `PMIC` codec before sending.
 
+## Ownership And Choice
+
+The microphone module owns capture lifetime and byte delivery; a game system owns consent, UI state, encoding, and network/storage policy. Use it for explicit voice or audio-input features. Do not start capture as a hidden side effect of an unrelated scene. Start once, consume bounded chunks, stop when the feature ends, and treat absent permission/device data as normal failure.
+
 ## Overview
 
 Use `ctx.res.Mic()` for live microphone bytes and optional recorded clips.

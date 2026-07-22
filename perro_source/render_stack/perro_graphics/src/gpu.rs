@@ -22,9 +22,9 @@ use glam::{Mat4, Quat, Vec3, Vec4};
 use perro_ids::NodeID;
 use perro_render_bridge::{
     Camera3DState, CameraProjectionState, CameraStreamDraw3DState, CameraStreamLighting3DState,
-    CameraStreamSourceState, CameraStreamState, Decal3DState, Light2DState, PointParticles3DState,
-    ShadowCaster2DState, Sprite2DCommand, Water2DState, Water3DState, WaterBodySampleState,
-    WaterSampleState, WaterShapeState,
+    CameraStreamSourceState, CameraStreamState, Decal3DState, HdrColorSpace, HdrFallback, HdrMode,
+    HdrStatus, Light2DState, PointParticles3DState, ShadowCaster2DState, Sprite2DCommand,
+    Water2DState, Water3DState, WaterBodySampleState, WaterSampleState, WaterShapeState,
 };
 use perro_structs::VisualAccessibilitySettings;
 use perro_structs::{PostProcessEffect, TextureFilterMode};
@@ -36,6 +36,8 @@ use std::time::Instant;
 use web_time::Instant;
 use winit::window::Window;
 
+#[path = "gpu/camera_stream_tonemap.rs"]
+mod camera_stream_tonemap;
 #[path = "gpu/present.rs"]
 mod present;
 #[path = "water_flip_gpu.rs"]
@@ -43,6 +45,7 @@ mod water_flip_gpu;
 #[path = "water_gpu.rs"]
 mod water_gpu;
 
+use camera_stream_tonemap::CameraStreamTonemap;
 pub(crate) use present::capped_render_size;
 use present::*;
 use water_gpu::{GpuWater, WaterPrepareContext};
@@ -53,6 +56,16 @@ const CLEAR_R: f64 = 0.050876;
 const CLEAR_G: f64 = 0.063763;
 const CLEAR_B: f64 = 0.079339;
 const SMOOTH_SAMPLE_COUNT: u32 = 4;
+
+fn premultiplied_clear_color(color: perro_structs::Color) -> wgpu::Color {
+    let alpha = color.a().clamp(0.0, 1.0);
+    wgpu::Color {
+        r: (color.r() * alpha) as f64,
+        g: (color.g() * alpha) as f64,
+        b: (color.b() * alpha) as f64,
+        a: alpha as f64,
+    }
+}
 
 fn camera_underwater<'a>(
     camera: &Camera3DState,
@@ -257,6 +270,14 @@ fn fill_camera_stream_draws_3d(draws: &[CameraStreamDraw3DState], out: &mut Vec<
     }))
 }
 
+#[inline]
+fn camera_stream_uses_render_target(stream: &CameraStreamState) -> bool {
+    match &stream.source {
+        CameraStreamSourceState::Webcam { texture, .. } => stream.output_texture != *texture,
+        _ => true,
+    }
+}
+
 fn camera_stream_lighting_3d(lighting: &CameraStreamLighting3DState) -> Lighting3DState {
     Lighting3DState {
         frame_time_seconds: 0.0,
@@ -339,6 +360,7 @@ struct PresentProcessor {
     exposure_config_buffer: wgpu::Buffer,
     exposure_state_buffer: wgpu::Buffer,
     exposure_uniform_buffer: wgpu::Buffer,
+    output_uniform_buffer: wgpu::Buffer,
 }
 
 struct PresentBindGroups {
@@ -475,10 +497,12 @@ impl GpuTimestampTimer {
 pub struct Gpu {
     window_handle: Arc<Window>,
     surface: wgpu::Surface<'static>,
+    adapter: wgpu::Adapter,
     device: wgpu::Device,
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
     surface_view_format: wgpu::TextureFormat,
+    hdr_status: HdrStatus,
     render_width: u32,
     render_height: u32,
     render_format: wgpu::TextureFormat,
@@ -509,6 +533,7 @@ pub struct Gpu {
     camera_stream_particles_3d: Option<GpuPointParticles3D>,
     camera_stream_water: Option<GpuWater>,
     camera_stream_post: Option<PostProcessor>,
+    camera_stream_tonemap: CameraStreamTonemap,
     camera_stream_draws_scratch: Vec<Draw3DInstance>,
     last_prepare_particles_revision: u64,
     last_prepare_water_2d_revision: u64,
@@ -540,11 +565,13 @@ pub struct GpuConfig {
     pub occlusion_culling: OcclusionCullingMode,
     pub ssao: crate::SsaoQuality,
     pub texture_filter: TextureFilterMode,
+    pub hdr_mode: HdrMode,
 }
 
 struct GpuCameraStreamTarget {
     texture: wgpu::Texture,
     post_input: wgpu::Texture,
+    tonemap_input: wgpu::Texture,
     depth: wgpu::Texture,
     resolution: [u32; 2],
     post_view_key: u64,

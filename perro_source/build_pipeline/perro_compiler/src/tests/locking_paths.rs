@@ -524,7 +524,7 @@ mod locking_paths {
         let generated = std::fs::read_to_string(src.join("lib.rs")).expect("read scripts lib");
 
         assert!(generated.contains("perro_script_abi_descriptor_v2"));
-        assert!(generated.contains("ScriptAbiDescriptor::v2(SCRIPT_ABI_BUILD_FINGERPRINT)"));
+        assert!(generated.contains("ScriptAbiDescriptor::v2()"));
         assert!(generated.contains("-> *const ScriptAbiDescriptorHeader"));
         assert!(generated.contains("#[cfg(feature = \"dynamic-scripts\")]"));
         assert!(generated.contains("DYNAMIC_SCRIPT_REGISTRY"));

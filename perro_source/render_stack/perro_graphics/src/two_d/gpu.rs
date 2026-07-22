@@ -929,6 +929,22 @@ impl Gpu2D {
         true
     }
 
+    pub fn ensure_sampled_texture_view(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        resources: &ResourceStore,
+        texture: TextureID,
+        static_texture_lookup: Option<StaticTextureLookup>,
+    ) -> Option<wgpu::TextureView> {
+        if !self.ensure_sprite_texture(device, queue, resources, texture, static_texture_lookup) {
+            return None;
+        }
+        self.sprite_textures
+            .get(&texture)
+            .map(|cached| cached._view.clone())
+    }
+
     fn ensure_rect_instance_capacity(&mut self, device: &wgpu::Device, needed: usize) {
         if needed <= self.rect_instance_capacity {
             return;

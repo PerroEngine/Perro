@@ -29,6 +29,17 @@ Main resource kinds:
 IDs are small copy values.
 The store owns loaded resource data and decides when data can leave memory.
 
+## Ownership + Choice
+
+Scene/node refs express use; the resource store owns bytes and GPU/audio data.
+Use scene-injected typed IDs for per-instance authored choices. Use `load` for
+normal scene-owned lifetime, `reserve` for a deliberate keep-alive boundary, and
+runtime-byte creation only when no stable asset path exists.
+
+Assign an async ID immediately unless gameplay must branch on readiness. Polling
+every asset before assignment adds state and stalls presentation without making
+the load faster.
+
 ## Async ID Flow
 
 Render resource loads do not block gameplay.
@@ -263,7 +274,7 @@ methods!({
     fn set_enemy_mesh(&self, ctx: &mut ScriptContext<'_, API>, mesh_node: NodeID) {
         let mesh_id = mesh_load!(ctx.res, "res://meshes/enemy.glb:mesh[0]");
 
-        with_node_mut!(ctx.run, MeshInstance3D, mesh_node_id, |node| {
+        with_node_mut!(ctx.run, MeshInstance3D, mesh_node, |node| {
             node.mesh = mesh_id;
         });
 

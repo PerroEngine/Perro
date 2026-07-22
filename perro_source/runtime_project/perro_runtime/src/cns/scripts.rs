@@ -1,7 +1,12 @@
 use crate::{Runtime, runtime_project::ProviderMode};
 use perro_ids::ScriptMemberID;
 use perro_input_api::InputWindow;
-use perro_resource_api::ResourceWindow;
+use perro_resource_api::{
+    ResPath, ResourceWindow,
+    sub_apis::{
+        AnimationAPI, AnimationTreeAPI, AudioAPI, MaterialAPI, MeshAPI, NavMeshAPI, TextureAPI,
+    },
+};
 use perro_runtime_api::RuntimeWindow;
 #[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
 use perro_scripting::{
@@ -9,10 +14,76 @@ use perro_scripting::{
     ScriptAbiDescriptorHeader,
 };
 use perro_scripting::{ScriptBehavior, ScriptContext};
-use perro_variant::Variant;
+use perro_variant::{SceneAssetKind, SceneVariantResolver, Variant};
 #[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
 use std::{env, fs, path::PathBuf};
 use std::{path::Path, sync::Arc};
+
+struct RuntimeSceneVariantResolver<'a> {
+    api: &'a crate::RuntimeResourceApi,
+}
+
+impl SceneVariantResolver for RuntimeSceneVariantResolver<'_> {
+    fn resolve_asset(&mut self, kind: SceneAssetKind, path: &str) -> Option<Variant> {
+        let path = ResPath::try_new(path).ok()?.as_str();
+        let value = match kind {
+            SceneAssetKind::Texture => Variant::from(self.api.load_texture(path)),
+            SceneAssetKind::Material => Variant::from(self.api.load_material_source(path)),
+            SceneAssetKind::Mesh => Variant::from(self.api.load_mesh(path)),
+            SceneAssetKind::Animation => Variant::from(self.api.load_animation_source(path)),
+            SceneAssetKind::AnimationTree => {
+                Variant::from(self.api.load_animation_tree_source(path))
+            }
+            SceneAssetKind::NavMesh => Variant::from(self.api.load_navmesh(path)),
+            SceneAssetKind::SoundFont => Variant::from(self.api.load_midi_soundfont(path)),
+        };
+        Some(value)
+    }
+}
+
+#[cfg(test)]
+mod scene_variant_resolver_tests {
+    use super::*;
+
+    fn resource_api() -> Arc<crate::RuntimeResourceApi> {
+        crate::RuntimeResourceApi::new(None, None, None, None, None, None, None, None)
+    }
+
+    #[test]
+    fn scene_asset_resolver_reuses_resource_cache_ids() {
+        let api = resource_api();
+        let mut resolver = RuntimeSceneVariantResolver { api: api.as_ref() };
+        let path = "res://tests/script_state_texture.png";
+
+        let first = resolver
+            .resolve_asset(SceneAssetKind::Texture, path)
+            .and_then(|value| value.as_texture())
+            .expect("texture variant");
+        let second = resolver
+            .resolve_asset(SceneAssetKind::Texture, path)
+            .and_then(|value| value.as_texture())
+            .expect("texture variant");
+
+        assert_eq!(first, second);
+    }
+
+    #[test]
+    fn scene_asset_resolver_rejects_invalid_resource_paths() {
+        let api = resource_api();
+        let mut resolver = RuntimeSceneVariantResolver { api: api.as_ref() };
+
+        assert!(
+            resolver
+                .resolve_asset(SceneAssetKind::Texture, "res://../outside.png")
+                .is_none()
+        );
+        assert!(
+            resolver
+                .resolve_asset(SceneAssetKind::Texture, "plain/path.png")
+                .is_none()
+        );
+    }
+}
 
 impl Runtime {
     pub(crate) fn attach_scene_scripts(
@@ -118,10 +189,16 @@ impl Runtime {
             self.script_runtime.script_instance_dlc_mounts.remove(&node);
         }
         self.scripts.insert(node, Arc::clone(&behavior), state);
+        let resource_api = self.resource_api.clone();
+        let mut resolver = RuntimeSceneVariantResolver {
+            api: resource_api.as_ref(),
+        };
         let _ = self.scripts.with_instance_mut(node, |instance| {
-            instance
-                .behavior
-                .apply_scene_injected_vars(instance.state.as_mut(), scene_injected_vars);
+            instance.behavior.apply_scene_injected_vars(
+                instance.state.as_mut(),
+                scene_injected_vars,
+                &mut resolver,
+            );
         });
 
         if flags.has_init() {
@@ -248,8 +325,6 @@ impl Runtime {
             }
             let header = descriptor_ptr.read();
             validate_script_abi_header(&header)?;
-            let descriptor = descriptor_ptr.cast::<ScriptAbiDescriptor>().read();
-            validate_script_abi_descriptor(&descriptor, crate::SCRIPT_ABI_BUILD_FINGERPRINT)?;
 
             if let Ok(init) = library.get::<InitFn>(b"perro_scripts_init") {
                 init();
@@ -330,20 +405,6 @@ fn validate_script_abi_header(header: &ScriptAbiDescriptorHeader) -> Result<(), 
 }
 
 #[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
-fn validate_script_abi_descriptor(
-    descriptor: &ScriptAbiDescriptor,
-    expected_fingerprint: u64,
-) -> Result<(), String> {
-    validate_script_abi_header(&descriptor.header)?;
-    if descriptor.build_fingerprint != expected_fingerprint {
-        return Err(format!(
-            "scripts dylib build fingerprint mismatch: expected {expected_fingerprint:016x}, found {:016x}; rebuild scripts with this engine",
-            descriptor.build_fingerprint
-        ));
-    }
-    Ok(())
-}
-
 #[cfg(all(
     test,
     any(target_os = "windows", target_os = "linux", target_os = "macos")
@@ -352,33 +413,25 @@ mod script_abi_tests {
     use super::*;
 
     #[test]
-    fn accepts_matching_v2_descriptor() {
-        let descriptor = ScriptAbiDescriptor::v2(42);
-        assert_eq!(validate_script_abi_descriptor(&descriptor, 42), Ok(()));
+    fn accepts_v2_descriptor() {
+        let descriptor = ScriptAbiDescriptor::v2();
+        assert_eq!(validate_script_abi_header(&descriptor.header), Ok(()));
     }
 
     #[test]
-    fn rejects_wrong_magic_before_fingerprint() {
-        let mut descriptor = ScriptAbiDescriptor::v2(42);
+    fn rejects_wrong_magic() {
+        let mut descriptor = ScriptAbiDescriptor::v2();
         descriptor.header.magic = *b"NOTPERRO";
-        let err = validate_script_abi_descriptor(&descriptor, 42).unwrap_err();
+        let err = validate_script_abi_header(&descriptor.header).unwrap_err();
         assert!(err.contains("invalid magic"));
     }
 
     #[test]
     fn rejects_short_descriptor_before_full_read() {
-        let mut descriptor = ScriptAbiDescriptor::v2(42);
+        let mut descriptor = ScriptAbiDescriptor::v2();
         descriptor.header.descriptor_size = (std::mem::size_of::<ScriptAbiDescriptor>() - 1) as u32;
         let err = validate_script_abi_header(&descriptor.header).unwrap_err();
         assert!(err.contains("too small"));
-    }
-
-    #[test]
-    fn rejects_mismatched_build_fingerprint() {
-        let descriptor = ScriptAbiDescriptor::v2(42);
-        let err = validate_script_abi_descriptor(&descriptor, 7).unwrap_err();
-        assert!(err.contains("build fingerprint mismatch"));
-        assert!(err.contains("rebuild scripts"));
     }
 }
 

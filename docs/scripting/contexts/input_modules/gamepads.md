@@ -103,8 +103,9 @@ lifecycle!({
 
 ## Macros
 
-Read macros return the documented empty value (zero vector, `false`, or `None`)
-for missing slots; command macros queue work when an input command buffer exists.
+For a missing slot, button reads return `false`, state reads return `None`, and
+stick/motion reads return zero vectors. Command macros queue work only when an
+input command buffer exists.
 
 | Macro | Signature | Returns |
 | --- | --- | --- |

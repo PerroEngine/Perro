@@ -42,6 +42,10 @@ Every script lifecycle and method receives one context value.
 - Per-node identity: use `ctx.id` to read and write this script's own `#[State]`
   block and to look up the node's transform.
 
+## Ownership And Data Flow
+
+`ScriptContext` borrows live engine access for one callback. Copy or clone needed values out of a node/state closure, let the borrow end, and make the next API call afterward. Do not store the context or nest another `ctx.run` access inside a closure already borrowing it. Use `ctx.id` as the owner identity; other targets come from injected references, structure, or deliberate queries.
+
 ## API Areas
 
 | Area | Page | Ctx |

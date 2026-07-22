@@ -43,6 +43,10 @@
 - Streaming rigs from network/save: `animation_create_from_bytes!` and `animation_tree_create_from_bytes!` decode in-memory `.panim` / `.panimtree` data.
 - Preloading and freeing: `animation_reserve!` to pin a clip, `animation_drop!` to release it.
 
+## Ownership And Choice
+
+Animation resources own clips and trees; player/skeleton nodes own current playback state. Inject `AnimationID` / `AnimationTreeID` for authored per-instance choices. Load at runtime for downloaded or selected content. Use a tree when transitions and blends are data-driven; use direct clips for isolated actions where a state machine adds no value.
+
 ## Context
 
 - Script context path: `ctx.res`

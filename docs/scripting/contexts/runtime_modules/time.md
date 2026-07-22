@@ -40,12 +40,14 @@ delay without any per-frame countdown bookkeeping.
 
 ## Use Cases
 
-- Frame-rate-independent movement: scale a speed by `delta_time!(ctx.run)` so a body travels the same distance per second regardless of FPS.
-- Spike-proof stepping: after a stall or window drag, clamp the jump with `delta_time_capped!(ctx.run, 0.1)` or `delta_time_clamped!(ctx.run, min, max)` so nothing tunnels through walls.
-- Deterministic gameplay in fixed steps: read `fixed_delta_time!(ctx.run)` inside `on_fixed_update` for stable physics-tick logic.
-- Survival-mode / speedrun HUD clock: display total run time from `elapsed_time!(ctx.run)`.
-- Ability cooldowns and staged delays: start `timer_start!(ctx.run, Duration::from_secs(2), "dash_cd")` and react to `timer_finished!("dash_cd")` instead of counting down a state field each frame.
-- Performance overlay: read `fps!(ctx.run)` and `profiling!(ctx.run)` to show FPS, frame time, and draw-call counts.
+| Situation | Choice | Why | Tradeoff |
+| --- | --- | --- | --- |
+| Move per rendered frame | `delta_time!` | Converts per-second rates to current frame distance | Large hitches can create large steps |
+| Movement must resist hitches/window drags | capped or clamped delta | Bounds one-frame motion | Drops part of elapsed wall time |
+| Deterministic simulation step | fixed delta in `on_fixed_update` | Step duration does not follow render FPS | Fixed hook cadence differs from render cadence |
+| Cooldown only needs ready/not-ready | named timer + finish signal | No per-frame state mutation | One timer slot per name; use distinct names for concurrency |
+| UI displays cooldown progress every frame | state clock | Intermediate remaining value is available | Script must decrement and clamp it each frame |
+| Performance overlay samples engine stats | `fps!` / `profiling!` | Uses runtime measurements rather than script estimates | Values are observations, not stable gameplay clocks |
 
 ## Context
 
@@ -72,15 +74,22 @@ lifecycle!({
         // Clamp the delta so a hitch cannot teleport the player.
         let dt = delta_time_capped!(ctx.run, 0.1);
 
-        with_state_mut!(ctx.run, DashState, ctx.id, |state| {
+        let dash = with_state_mut!(ctx.run, DashState, ctx.id, |state| {
             state.cooldown = (state.cooldown - dt).max(0.0);
             if state.dash_left > 0.0 {
                 state.dash_left -= dt;
-                let mut pos = get_global_pos_3d!(ctx.run, ctx.id);
+                true
+            } else {
+                false
+            }
+        }).unwrap_or(false);
+
+        if dash {
+            if let Some(mut pos) = get_global_pos_3d!(ctx.run, ctx.id) {
                 pos.z -= 20.0 * dt; // 20 units/second forward
                 set_global_pos_3d!(ctx.run, ctx.id, pos);
             }
-        });
+        }
     }
 });
 ```
@@ -88,6 +97,9 @@ lifecycle!({
 ## Named Timers
 
 Use named timers for one-shot delays without script state vars or per-frame countdown code.
+
+One timer exists per name. Starting the same name resets it. Use distinct names
+for concurrent delays. Keep state clocks only when each-frame progress matters.
 
 ```rust
 lifecycle!({
@@ -138,8 +150,8 @@ let left = timer_remaining!(ctx.run, timer_name.as_str());
 | Signature                  | `pub fn get_delta(&mut self) -> f32`                                                                               |
 | Params                     | `&mut self`                                                                                                        |
 | Returns                    | `f32`                                                                                                              |
-| Use when                   | Use when gameplay needs to read typed engine data and react without owning the storage.                            |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `get_delta` to get delta from the runtime clock; choose frame, fixed, elapsed, or profiling time by behavior semantics. |
+| Fails when / edge behavior | Has no separate failure value in this wrapper; `get_delta` keeps the backing API behavior. |
 
 ### `get_fixed_delta`
 
@@ -149,8 +161,8 @@ let left = timer_remaining!(ctx.run, timer_name.as_str());
 | Signature                  | `pub fn get_fixed_delta(&mut self) -> f32`                                                                         |
 | Params                     | `&mut self`                                                                                                        |
 | Returns                    | `f32`                                                                                                              |
-| Use when                   | Use when gameplay needs to read typed engine data and react without owning the storage.                            |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `get_fixed_delta` to get fixed delta from the runtime clock; choose frame, fixed, elapsed, or profiling time by behavior semantics. |
+| Fails when / edge behavior | Has no separate failure value in this wrapper; `get_fixed_delta` keeps the backing API behavior. |
 
 ### `get_elapsed`
 
@@ -160,8 +172,8 @@ let left = timer_remaining!(ctx.run, timer_name.as_str());
 | Signature                  | `pub fn get_elapsed(&mut self) -> f32`                                                                             |
 | Params                     | `&mut self`                                                                                                        |
 | Returns                    | `f32`                                                                                                              |
-| Use when                   | Use when gameplay needs to read typed engine data and react without owning the storage.                            |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `get_elapsed` to get elapsed from the runtime clock; choose frame, fixed, elapsed, or profiling time by behavior semantics. |
+| Fails when / edge behavior | Has no separate failure value in this wrapper; `get_elapsed` keeps the backing API behavior. |
 
 ### `get_simulation_time`
 
@@ -171,8 +183,8 @@ let left = timer_remaining!(ctx.run, timer_name.as_str());
 | Signature                  | `pub fn get_simulation_time(&mut self) -> Duration`                                                                |
 | Params                     | `&mut self`                                                                                                        |
 | Returns                    | `Duration`                                                                                                         |
-| Use when                   | Use when gameplay needs to read typed engine data and react without owning the storage.                            |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `get_simulation_time` to get simulation time from the runtime clock; choose frame, fixed, elapsed, or profiling time by behavior semantics. |
+| Fails when / edge behavior | Has no separate failure value in this wrapper; `get_simulation_time` keeps the backing API behavior. |
 
 ### `get_graphics_time`
 
@@ -182,8 +194,8 @@ let left = timer_remaining!(ctx.run, timer_name.as_str());
 | Signature                  | `pub fn get_graphics_time(&mut self) -> Duration`                                                                  |
 | Params                     | `&mut self`                                                                                                        |
 | Returns                    | `Duration`                                                                                                         |
-| Use when                   | Use when gameplay needs to read typed engine data and react without owning the storage.                            |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `get_graphics_time` to get graphics time from the runtime clock; choose frame, fixed, elapsed, or profiling time by behavior semantics. |
+| Fails when / edge behavior | Has no separate failure value in this wrapper; `get_graphics_time` keeps the backing API behavior. |
 
 ### `get_frame_time`
 
@@ -193,8 +205,8 @@ let left = timer_remaining!(ctx.run, timer_name.as_str());
 | Signature                  | `pub fn get_frame_time(&mut self) -> Duration`                                                                     |
 | Params                     | `&mut self`                                                                                                        |
 | Returns                    | `Duration`                                                                                                         |
-| Use when                   | Use when gameplay needs to read typed engine data and react without owning the storage.                            |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `get_frame_time` to get frame time from the runtime clock; choose frame, fixed, elapsed, or profiling time by behavior semantics. |
+| Fails when / edge behavior | Has no separate failure value in this wrapper; `get_frame_time` keeps the backing API behavior. |
 
 ### `get_fps`
 
@@ -204,8 +216,8 @@ let left = timer_remaining!(ctx.run, timer_name.as_str());
 | Signature                  | `pub fn get_fps(&mut self) -> f32`                                                                                 |
 | Params                     | `&mut self`                                                                                                        |
 | Returns                    | `f32`                                                                                                              |
-| Use when                   | Use when gameplay needs to read typed engine data and react without owning the storage.                            |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `get_fps` to get fps from the runtime clock; choose frame, fixed, elapsed, or profiling time by behavior semantics. |
+| Fails when / edge behavior | Has no separate failure value in this wrapper; `get_fps` keeps the backing API behavior. |
 
 ### `get_profiling`
 
@@ -215,8 +227,8 @@ let left = timer_remaining!(ctx.run, timer_name.as_str());
 | Signature                  | `pub fn get_profiling(&mut self) -> ProfilingSnapshot`                                                             |
 | Params                     | `&mut self`                                                                                                        |
 | Returns                    | `ProfilingSnapshot`                                                                                                |
-| Use when                   | Use when gameplay needs to read typed engine data and react without owning the storage.                            |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `get_profiling` to get profiling from the runtime clock; choose frame, fixed, elapsed, or profiling time by behavior semantics. |
+| Fails when / edge behavior | Has no separate failure value in this wrapper; `get_profiling` keeps the backing API behavior. |
 
 ### `delta_time`
 
@@ -226,8 +238,8 @@ let left = timer_remaining!(ctx.run, timer_name.as_str());
 | Signature                  | `delta_time!(ctx.run)`                                                                                             |
 | Params                     | `ctx`                                                                                                              |
 | Returns                    | `f32`                                                                                                              |
-| Use when                   | Use when gameplay needs to read typed engine data and react without owning the storage.                            |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `delta_time` to delta time from the runtime clock; choose frame, fixed, elapsed, or profiling time by behavior semantics. |
+| Fails when / edge behavior | Has no separate failure value in this wrapper; `delta_time` keeps the backing API behavior. |
 
 ### `delta_time_capped`
 
@@ -237,8 +249,8 @@ let left = timer_remaining!(ctx.run, timer_name.as_str());
 | Signature                  | `delta_time_capped!(ctx.run, max)`                                                                                 |
 | Params                     | `ctx, max`                                                                                                         |
 | Returns                    | `f32`                                                                                                              |
-| Use when                   | Use when gameplay needs to read typed engine data and react without owning the storage.                            |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `delta_time_capped` to delta time capped from the runtime clock; choose frame, fixed, elapsed, or profiling time by behavior semantics. |
+| Fails when / edge behavior | Has no separate failure value in this wrapper; `delta_time_capped` keeps the backing API behavior. |
 
 ### `delta_time_clamped`
 
@@ -248,8 +260,8 @@ let left = timer_remaining!(ctx.run, timer_name.as_str());
 | Signature                  | `delta_time_clamped!(ctx.run, min, max)`                                                                           |
 | Params                     | `ctx, min, max`                                                                                                    |
 | Returns                    | `f32`                                                                                                              |
-| Use when                   | Use when gameplay needs to read typed engine data and react without owning the storage.                            |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `delta_time_clamped` to delta time clamped from the runtime clock; choose frame, fixed, elapsed, or profiling time by behavior semantics. |
+| Fails when / edge behavior | Has no separate failure value in this wrapper; `delta_time_clamped` keeps the backing API behavior. |
 
 ### `fixed_delta_time`
 
@@ -259,8 +271,8 @@ let left = timer_remaining!(ctx.run, timer_name.as_str());
 | Signature                  | `fixed_delta_time!(ctx.run)`                                                                                       |
 | Params                     | `ctx`                                                                                                              |
 | Returns                    | `f32`                                                                                                              |
-| Use when                   | Use when gameplay needs to read typed engine data and react without owning the storage.                            |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `fixed_delta_time` to fixed delta time from the runtime clock; choose frame, fixed, elapsed, or profiling time by behavior semantics. |
+| Fails when / edge behavior | Has no separate failure value in this wrapper; `fixed_delta_time` keeps the backing API behavior. |
 
 ### `elapsed_time`
 
@@ -270,8 +282,8 @@ let left = timer_remaining!(ctx.run, timer_name.as_str());
 | Signature                  | `elapsed_time!(ctx.run)`                                                                                           |
 | Params                     | `ctx`                                                                                                              |
 | Returns                    | `f32`                                                                                                              |
-| Use when                   | Use when gameplay needs to read typed engine data and react without owning the storage.                            |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `elapsed_time` to elapsed time from the runtime clock; choose frame, fixed, elapsed, or profiling time by behavior semantics. |
+| Fails when / edge behavior | Has no separate failure value in this wrapper; `elapsed_time` keeps the backing API behavior. |
 
 ### `simulation_time`
 
@@ -281,8 +293,8 @@ let left = timer_remaining!(ctx.run, timer_name.as_str());
 | Signature                  | `simulation_time!(ctx.run)`                                                                                        |
 | Params                     | `ctx`                                                                                                              |
 | Returns                    | `Duration`                                                                                                         |
-| Use when                   | Use when gameplay needs to read typed engine data and react without owning the storage.                            |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `simulation_time` to simulation time from the runtime clock; choose frame, fixed, elapsed, or profiling time by behavior semantics. |
+| Fails when / edge behavior | Has no separate failure value in this wrapper; `simulation_time` keeps the backing API behavior. |
 
 ### `graphics_time`
 
@@ -292,8 +304,8 @@ let left = timer_remaining!(ctx.run, timer_name.as_str());
 | Signature                  | `graphics_time!(ctx.run)`                                                                                          |
 | Params                     | `ctx`                                                                                                              |
 | Returns                    | `Duration`                                                                                                         |
-| Use when                   | Use when gameplay needs to read typed engine data and react without owning the storage.                            |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `graphics_time` to graphics time from the runtime clock; choose frame, fixed, elapsed, or profiling time by behavior semantics. |
+| Fails when / edge behavior | Has no separate failure value in this wrapper; `graphics_time` keeps the backing API behavior. |
 
 ### `frame_time`
 
@@ -303,8 +315,8 @@ let left = timer_remaining!(ctx.run, timer_name.as_str());
 | Signature                  | `frame_time!(ctx.run)`                                                                                             |
 | Params                     | `ctx`                                                                                                              |
 | Returns                    | `Duration`                                                                                                         |
-| Use when                   | Use when gameplay needs to read typed engine data and react without owning the storage.                            |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `frame_time` to frame time from the runtime clock; choose frame, fixed, elapsed, or profiling time by behavior semantics. |
+| Fails when / edge behavior | Has no separate failure value in this wrapper; `frame_time` keeps the backing API behavior. |
 
 ### `fps`
 
@@ -314,8 +326,8 @@ let left = timer_remaining!(ctx.run, timer_name.as_str());
 | Signature                  | `fps!(ctx.run)`                                                                                                    |
 | Params                     | `ctx`                                                                                                              |
 | Returns                    | `f32`                                                                                                              |
-| Use when                   | Use when gameplay needs to read typed engine data and react without owning the storage.                            |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `fps` to fps from the runtime clock; choose frame, fixed, elapsed, or profiling time by behavior semantics. |
+| Fails when / edge behavior | Has no separate failure value in this wrapper; `fps` keeps the backing API behavior. |
 
 ### `profiling`
 
@@ -325,5 +337,5 @@ let left = timer_remaining!(ctx.run, timer_name.as_str());
 | Signature                  | `profiling!(ctx.run)`                                                                                              |
 | Params                     | `ctx`                                                                                                              |
 | Returns                    | `ProfilingSnapshot`                                                                                                |
-| Use when                   | Use when script code needs this exact engine read or write.                                                        |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `profiling` to profiling from the runtime clock; choose frame, fixed, elapsed, or profiling time by behavior semantics. |
+| Fails when / edge behavior | Has no separate failure value in this wrapper; `profiling` keeps the backing API behavior. |

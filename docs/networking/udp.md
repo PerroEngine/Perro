@@ -1,5 +1,8 @@
 # UDP
 
+> Native boundary: this Perro networking API runs on native builds. WASM builds
+> do not expose raw UDP sockets.
+
 ## Page Map
 
 | Header | Link |
@@ -29,6 +32,12 @@ sync, and keep each packet small.
 - Discovery / heartbeat pings: cheap fire-and-forget probes on a known port.
 - Latency-first custom netcode: build your own reliability layer only over the
   packets that actually need it, leaving the rest lossy.
+
+## Why UDP Here
+
+Choose UDP when the next packet supersedes a lost one. Add sequence numbers,
+validation, rate limits, and any reliability the mechanic needs. Use TCP or the
+multiplayer session layer when the game cannot tolerate loss or reordering.
 
 ## Practical Example
 

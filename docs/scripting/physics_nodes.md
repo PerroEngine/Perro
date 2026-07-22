@@ -37,6 +37,10 @@ Inner type blocks are inheritance data, not children.
 `[RigidBody3D] ... [Node3D] ... [/Node3D]` means `RigidBody3D` inherits `Node3D` fields.
 It does not create a `Node3D` child.
 
+## Ownership And Choice
+
+The physics node owns motion mode, mass, layers, and velocity; child collision shapes own geometry. A controller script reads input and asks its known body to move. Choose a character body for authored movement, a rigid body for force-driven motion, a static body for immovable collision, and an area for detection only. Do not write transforms around the physics step to imitate a body type; that bypasses its collision contract.
+
 ## 2D Body Shape
 
 ```text

@@ -1,10 +1,17 @@
 # Demo3D
 
-Welcome to your Perro project. This README is a quick map of how things fit together.
+3D feature lab + complete scene/script ownership map.
+
+Use the hub to isolate rendering, physics, animation, and audio features. Read a
+lane's scene for authored data and its script for runtime decisions.
 
 Run `perro check` to sync scripts and get rust-analyzer working.
 
 ## Project Layout
+
+The project owns source files under `res/`. Perro owns generated files under
+`.perro/`. This boundary matters because every sync may replace generated glue.
+
 - `project.toml` is the project config (main scene, icon, graphics defaults).
 - `deps.toml` is optional. Add `[dependencies]` here for extra Rust crates used by scripts.
 - `res/` holds your assets, scripts, and scenes. `res://` paths resolve into this folder.
@@ -43,6 +50,11 @@ Run `perro check` to sync scripts and get rust-analyzer working.
 - Use `user://` when you want user data, either to read or write. On Windows this resolves to:
   `C:\Users\<You>\AppData\Local\<ProjectName>\data\...`
 - You cannot write to res in release
+
+Scenes own topology, fixed `NodeID` refs, and per-instance asset choices.
+Scripts own lifecycle and mutable behavior. Tags/queries remain for sets created
+or replaced at runtime. This makes dependencies visible in the scene and avoids
+repeated name lookup in update hooks.
 
 ## Demo3D Hub
 - `res/main.scn` loads `DemoManager`.
@@ -84,3 +96,30 @@ Run `perro check` to sync scripts and get rust-analyzer working.
 
 ## Documentation
 The comprehensive docs live in the main Perro repository on GitHub: `https://github.com/PerroEngine/Perro/blob/main/docs/index.md`
+
+Script std: [`../../docs/scripting/authoring/index.md`](../../docs/scripting/authoring/index.md)
+
+Demo patterns:
+
+- scene-known refs -> typed `NodeID` state + `script_vars`
+- loaded/spawned sets -> structural access or `query!`
+- own node -> `ctx.id`
+- cross-scene events -> signals; known targets -> methods
+- delayed/repeat work -> named timers + finish signals
+
+## Feature Flows
+
+| Flow | Scene + script | Why this shape |
+| --- | --- | --- |
+| hub -> demo load -> fade | [`res/main.scn`](res/main.scn) + [`demo_manager.rs`](res/scripts/demo_manager.rs) | one manager owns cross-scene navigation; target refs come from scene state |
+| camera input -> node motion | demo scene + [`demo_freecam_3d.rs`](res/scripts/demo_freecam_3d.rs) | camera mutates its own typed node through `ctx.id` |
+| collision -> reset | [`physics_collisions.scn`](res/scenes/demos/physics_collisions.scn) + [`physics_collisions_demo.rs`](res/scripts/physics_collisions_demo.rs) | collision is an event; named timer owns delayed reset |
+| audio control -> spatial nodes | [`positional_audio.scn`](res/scenes/demos/positional_audio.scn) + [`positional_audio_demo.rs`](res/scripts/positional_audio_demo.rs) | fixed emitters stay scene refs; runtime script controls playback/debug state |
+| manager -> camera command | [`demo_manager.rs`](res/scripts/demo_manager.rs) + [`demo_freecam_3d.rs`](res/scripts/demo_freecam_3d.rs) | method targets one known receiver; no dynamic var/name probe |
+
+## Tradeoffs
+
+- split scenes keep feature cost and config readable; a game may group features by level or gameplay ownership instead
+- shared camera removes repeated control code; feature-specific scripts stay on roots that own their lifecycle
+- hub preloading favors fast demo switches; a large game may stream scenes
+- stress values show behavior under load, not recommended shipping defaults

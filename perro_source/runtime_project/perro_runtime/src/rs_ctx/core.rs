@@ -682,6 +682,9 @@ impl RuntimeResourceApi {
     pub(crate) fn apply_render_event(&self, event: &RenderEvent) {
         let mut state = self.state.lock().expect("resource api mutex poisoned");
         match event {
+            RenderEvent::HdrStatusChanged(status) => {
+                state.hdr_status = *status;
+            }
             RenderEvent::TextureCreated { request, id } => {
                 state.apply_texture_created(*request, *id);
             }

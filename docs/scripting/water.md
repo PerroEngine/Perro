@@ -21,6 +21,10 @@
 - Splashes from blasts and abilities: a `PhysicsForceEmitter3D` / `PhysicsForceEmitter2D` with `affect_water = true` turns its force events into wakes.
 - Natural shorelines and banks: static collision shapes that pass the water mask cut coastline holes and damp waves against the edge.
 
+## Decision Guide
+
+Use a water body when one region needs the surface, overlap state, and buoyancy to agree. Use an `Area2D` / `Area3D` plus a visual effect when gameplay only needs an enter/exit volume; that avoids wave simulation and buoyancy. Keep swim rules in a script that listens to water signals, while the water node owns fluid behavior.
+
 ## Practical Example
 
 A lake with a wooden crate that floats. The `WaterBody3D` supplies the surface and buoyancy; the crate is an ordinary `RigidBody3D` whose `density` controls buoyancy.

@@ -1,5 +1,9 @@
 # WebSocket
 
+> Native boundary: this Perro networking API runs on native builds. A native
+> Perro peer may connect to or serve an external browser WebSocket client, but a
+> WASM Perro game does not expose this module.
+
 ## Page Map
 
 | Header | Link |
@@ -38,6 +42,13 @@ it when the other end is a browser, a live dev tool, or any JSON message stream.
   peers decode it back into normal text/binary events.
 - Resilient connections: keep links alive with heartbeats and reconnect with
   `WebSocketReconnectBackoff` after a drop.
+
+## Why WebSocket Here
+
+Choose WebSocket for browsers, remote tools, or services that need a persistent
+framed channel. Prefer TCP/UDP for native-only game traffic when browser
+compatibility and HTTP upgrade infrastructure add no value. Decode at the
+connection boundary; emit typed game events after validation.
 
 ## Practical Example
 

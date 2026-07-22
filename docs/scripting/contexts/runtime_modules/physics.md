@@ -152,8 +152,8 @@ lifecycle!({
 | Signature | `pub fn apply_force_2d(&mut self, body_id: NodeID, force: Vector2) -> bool` |
 | Params | `&mut self, body_id: NodeID, force: Vector2` |
 | Returns | `bool` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `apply_force_2d` to apply force 2d in the physics world; reads are snapshots and force/state calls affect runtime bodies. |
+| Fails when / edge behavior | Returns `false` when `apply_force_2d` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `get_gravity`
 
@@ -163,8 +163,8 @@ lifecycle!({
 | Signature | `pub fn get_gravity(&mut self) -> f32` |
 | Params | `&mut self` |
 | Returns | `f32` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `get_gravity` to get gravity in the physics world; reads are snapshots and force/state calls affect runtime bodies. |
+| Fails when / edge behavior | Has no optional/error return; `get_gravity` returns the documented value directly. |
 
 ### `set_gravity`
 
@@ -174,8 +174,8 @@ lifecycle!({
 | Signature | `pub fn set_gravity(&mut self, gravity: f32)` |
 | Params | `&mut self, gravity: f32` |
 | Returns | `()` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `set_gravity` to set gravity in the physics world; reads are snapshots and force/state calls affect runtime bodies. |
+| Fails when / edge behavior | Has no failure return; `set_gravity` sends the command through the runtime module and the caller receives no acknowledgement. |
 
 ### `get_body_gravity_scale`
 
@@ -207,8 +207,8 @@ lifecycle!({
 | Signature | `pub fn get_coefficient(&mut self) -> f32` |
 | Params | `&mut self` |
 | Returns | `f32` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `get_coefficient` to get coefficient in the physics world; reads are snapshots and force/state calls affect runtime bodies. |
+| Fails when / edge behavior | Has no optional/error return; `get_coefficient` returns the documented value directly. |
 
 ### `set_coefficient`
 
@@ -218,8 +218,8 @@ lifecycle!({
 | Signature | `pub fn set_coefficient(&mut self, coefficient: f32)` |
 | Params | `&mut self, coefficient: f32` |
 | Returns | `()` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `set_coefficient` to set coefficient in the physics world; reads are snapshots and force/state calls affect runtime bodies. |
+| Fails when / edge behavior | Has no failure return; `set_coefficient` sends the command through the runtime module and the caller receives no acknowledgement. |
 
 ### `apply_force_3d`
 
@@ -229,8 +229,8 @@ lifecycle!({
 | Signature | `pub fn apply_force_3d(&mut self, body_id: NodeID, force: Vector3) -> bool` |
 | Params | `&mut self, body_id: NodeID, force: Vector3` |
 | Returns | `bool` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `apply_force_3d` to apply force 3d in the physics world; reads are snapshots and force/state calls affect runtime bodies. |
+| Fails when / edge behavior | Returns `false` when `apply_force_3d` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `apply_impulse_2d`
 
@@ -240,8 +240,8 @@ lifecycle!({
 | Signature | `pub fn apply_impulse_2d(&mut self, body_id: NodeID, impulse: Vector2) -> bool` |
 | Params | `&mut self, body_id: NodeID, impulse: Vector2` |
 | Returns | `bool` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `apply_impulse_2d` to apply impulse 2d in the physics world; reads are snapshots and force/state calls affect runtime bodies. |
+| Fails when / edge behavior | Returns `false` when `apply_impulse_2d` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `apply_impulse_3d`
 
@@ -251,8 +251,8 @@ lifecycle!({
 | Signature | `pub fn apply_impulse_3d(&mut self, body_id: NodeID, impulse: Vector3) -> bool` |
 | Params | `&mut self, body_id: NodeID, impulse: Vector3` |
 | Returns | `bool` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `apply_impulse_3d` to apply impulse 3d in the physics world; reads are snapshots and force/state calls affect runtime bodies. |
+| Fails when / edge behavior | Returns `false` when `apply_impulse_3d` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `emit_force_2d`
 
@@ -262,8 +262,8 @@ lifecycle!({
 | Signature | `pub fn emit_force_2d(&mut self, emitter: PhysicsForceEmitter2D) -> bool` |
 | Params | `&mut self, emitter: PhysicsForceEmitter2D` |
 | Returns | `bool` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `emit_force_2d` to emit force 2d in the physics world; reads are snapshots and force/state calls affect runtime bodies. |
+| Fails when / edge behavior | Returns `false` when `emit_force_2d` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `emit_force_3d`
 
@@ -273,8 +273,8 @@ lifecycle!({
 | Signature | `pub fn emit_force_3d(&mut self, emitter: PhysicsForceEmitter3D) -> bool` |
 | Params | `&mut self, emitter: PhysicsForceEmitter3D` |
 | Returns | `bool` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `emit_force_3d` to emit force 3d in the physics world; reads are snapshots and force/state calls affect runtime bodies. |
+| Fails when / edge behavior | Returns `false` when `emit_force_3d` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `apply_force`
 
@@ -284,8 +284,8 @@ lifecycle!({
 | Signature | `pub fn apply_force<D>(&mut self, body_id: NodeID, force: D) -> bool where D: IntoImpulseDirection,` |
 | Params | `&mut self, body_id: NodeID, force: D` |
 | Returns | `bool where D: IntoImpulseDirection,` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `apply_force` to apply force in the physics world; reads are snapshots and force/state calls affect runtime bodies. |
+| Fails when / edge behavior | Returns `false` when `apply_force` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `apply_impulse`
 
@@ -295,8 +295,8 @@ lifecycle!({
 | Signature | `pub fn apply_impulse<D>(&mut self, body_id: NodeID, impulse: D) -> bool where D: IntoImpulseDirection,` |
 | Params | `&mut self, body_id: NodeID, impulse: D` |
 | Returns | `bool where D: IntoImpulseDirection,` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `apply_impulse` to apply impulse in the physics world; reads are snapshots and force/state calls affect runtime bodies. |
+| Fails when / edge behavior | Returns `false` when `apply_impulse` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `raycast_3d`
 
@@ -306,8 +306,8 @@ lifecycle!({
 | Signature | `pub fn raycast_3d( &mut self, origin: Vector3, direction: Vector3, max_distance: f32, ) -> Option<PhysicsRayHit3D>` |
 | Params | `&mut self, origin: Vector3, direction: Vector3, max_distance: f32,` |
 | Returns | `Option<PhysicsRayHit3D>` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `raycast_3d` to raycast 3d in the physics world; reads are snapshots and force/state calls affect runtime bodies. |
+| Fails when / edge behavior | Returns `None` when `raycast_3d` cannot produce a value for the supplied target or inputs. |
 
 ### `raycast_3d_with_areas`
 
@@ -317,8 +317,8 @@ lifecycle!({
 | Signature | `pub fn raycast_3d_with_areas( &mut self, origin: Vector3, direction: Vector3, max_distance: f32, ) -> Option<PhysicsRayHit3D>` |
 | Params | `&mut self, origin: Vector3, direction: Vector3, max_distance: f32,` |
 | Returns | `Option<PhysicsRayHit3D>` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `raycast_3d_with_areas` to raycast 3d with areas in the physics world; reads are snapshots and force/state calls affect runtime bodies. |
+| Fails when / edge behavior | Returns `None` when `raycast_3d_with_areas` cannot produce a value for the supplied target or inputs. |
 
 ### `raycast_3d_without_areas`
 
@@ -328,8 +328,8 @@ lifecycle!({
 | Signature | `pub fn raycast_3d_without_areas( &mut self, origin: Vector3, direction: Vector3, max_distance: f32, ) -> Option<PhysicsRayHit3D>` |
 | Params | `&mut self, origin: Vector3, direction: Vector3, max_distance: f32,` |
 | Returns | `Option<PhysicsRayHit3D>` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `raycast_3d_without_areas` to raycast 3d without areas in the physics world; reads are snapshots and force/state calls affect runtime bodies. |
+| Fails when / edge behavior | Returns `None` when `raycast_3d_without_areas` cannot produce a value for the supplied target or inputs. |
 
 ### `raycast_3d_filtered`
 
@@ -339,8 +339,8 @@ lifecycle!({
 | Signature | `pub fn raycast_3d_filtered( &mut self, origin: Vector3, direction: Vector3, max_distance: f32, filter: PhysicsQueryFilter, ) -> Option<PhysicsRayHit3D>` |
 | Params | `&mut self, origin: Vector3, direction: Vector3, max_distance: f32, filter: PhysicsQueryFilter,` |
 | Returns | `Option<PhysicsRayHit3D>` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `raycast_3d_filtered` to raycast 3d filtered in the physics world; reads are snapshots and force/state calls affect runtime bodies. |
+| Fails when / edge behavior | Returns `None` when `raycast_3d_filtered` cannot produce a value for the supplied target or inputs. |
 
 ### `raycast_2d`
 
@@ -350,8 +350,8 @@ lifecycle!({
 | Signature | `pub fn raycast_2d( &mut self, origin: Vector2, direction: Vector2, max_distance: f32, ) -> Option<PhysicsRayHit2D>` |
 | Params | `&mut self, origin: Vector2, direction: Vector2, max_distance: f32,` |
 | Returns | `Option<PhysicsRayHit2D>` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `raycast_2d` to raycast 2d in the physics world; reads are snapshots and force/state calls affect runtime bodies. |
+| Fails when / edge behavior | Returns `None` when `raycast_2d` cannot produce a value for the supplied target or inputs. |
 
 ### `raycast_2d_filtered`
 
@@ -361,8 +361,8 @@ lifecycle!({
 | Signature | `pub fn raycast_2d_filtered( &mut self, origin: Vector2, direction: Vector2, max_distance: f32, filter: PhysicsQueryFilter, ) -> Option<PhysicsRayHit2D>` |
 | Params | `&mut self, origin: Vector2, direction: Vector2, max_distance: f32, filter: PhysicsQueryFilter,` |
 | Returns | `Option<PhysicsRayHit2D>` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `raycast_2d_filtered` to raycast 2d filtered in the physics world; reads are snapshots and force/state calls affect runtime bodies. |
+| Fails when / edge behavior | Returns `None` when `raycast_2d_filtered` cannot produce a value for the supplied target or inputs. |
 
 ### `shape_cast_2d`
 
@@ -372,8 +372,8 @@ lifecycle!({
 | Signature | `pub fn shape_cast_2d( &mut self, shape: Shape2D, origin: Vector2, direction: Vector2, max_distance: f32, filter: PhysicsQueryFilter, ) -> Option<PhysicsShapeHit2D>` |
 | Params | `&mut self, shape: Shape2D, origin: Vector2, direction: Vector2, max_distance: f32, filter: PhysicsQueryFilter,` |
 | Returns | `Option<PhysicsShapeHit2D>` |
-| Use when | Use when script code needs this exact engine read or write. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `shape_cast_2d` to shape cast 2d in the physics world; reads are snapshots and force/state calls affect runtime bodies. |
+| Fails when / edge behavior | Returns `None` when `shape_cast_2d` cannot produce a value for the supplied target or inputs. |
 
 ### `shape_cast_3d`
 
@@ -383,8 +383,8 @@ lifecycle!({
 | Signature | `pub fn shape_cast_3d( &mut self, shape: Shape3D, origin: Vector3, direction: Vector3, max_distance: f32, filter: PhysicsQueryFilter, ) -> Option<PhysicsShapeHit3D>` |
 | Params | `&mut self, shape: Shape3D, origin: Vector3, direction: Vector3, max_distance: f32, filter: PhysicsQueryFilter,` |
 | Returns | `Option<PhysicsShapeHit3D>` |
-| Use when | Use when script code needs this exact engine read or write. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `shape_cast_3d` to shape cast 3d in the physics world; reads are snapshots and force/state calls affect runtime bodies. |
+| Fails when / edge behavior | Returns `None` when `shape_cast_3d` cannot produce a value for the supplied target or inputs. |
 
 ### `move_body_2d`
 
@@ -460,8 +460,8 @@ lifecycle!({
 | Signature | `pub fn contacts_2d(&mut self, body_id: NodeID) -> Vec<PhysicsContact2D>` |
 | Params | `&mut self, body_id: NodeID` |
 | Returns | `Vec<PhysicsContact2D>` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `contacts_2d` to contacts 2d in the physics world; queries return a snapshot while setters/forces mutate runtime body state. |
+| Fails when / edge behavior | Returns an empty vector when `contacts_2d` finds no values; callers must treat zero results as normal. |
 
 ### `contacts_3d`
 
@@ -471,8 +471,8 @@ lifecycle!({
 | Signature | `pub fn contacts_3d(&mut self, body_id: NodeID) -> Vec<PhysicsContact3D>` |
 | Params | `&mut self, body_id: NodeID` |
 | Returns | `Vec<PhysicsContact3D>` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `contacts_3d` to contacts 3d in the physics world; queries return a snapshot while setters/forces mutate runtime body state. |
+| Fails when / edge behavior | Returns an empty vector when `contacts_3d` finds no values; callers must treat zero results as normal. |
 
 ### `solve_velocity_to_target_2d`
 
@@ -482,8 +482,8 @@ lifecycle!({
 | Signature | `pub fn solve_velocity_to_target_2d( &mut self, origin: Vector2, target: Vector2, time: f32, drift: Vector2, ) -> Option<Vector2>` |
 | Params | `&mut self, origin: Vector2, target: Vector2, time: f32, drift: Vector2,` |
 | Returns | `Option<Vector2>` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `solve_velocity_to_target_2d` to solve velocity to target 2d in the physics world; reads are snapshots and force/state calls affect runtime bodies. |
+| Fails when / edge behavior | Returns `None` when `solve_velocity_to_target_2d` cannot produce a value for the supplied target or inputs. |
 
 ### `solve_velocity_to_target_3d`
 
@@ -493,8 +493,8 @@ lifecycle!({
 | Signature | `pub fn solve_velocity_to_target_3d( &mut self, origin: Vector3, target: Vector3, time: f32, drift: Vector3, ) -> Option<Vector3>` |
 | Params | `&mut self, origin: Vector3, target: Vector3, time: f32, drift: Vector3,` |
 | Returns | `Option<Vector3>` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `solve_velocity_to_target_3d` to solve velocity to target 3d in the physics world; reads are snapshots and force/state calls affect runtime bodies. |
+| Fails when / edge behavior | Returns `None` when `solve_velocity_to_target_3d` cannot produce a value for the supplied target or inputs. |
 
 ### `solve_launch_velocity_2d`
 
@@ -504,8 +504,8 @@ lifecycle!({
 | Signature | `pub fn solve_launch_velocity_2d( &mut self, origin: Vector2, target: Vector2, speed: f32, max_time: f32, drift: Vector2, ) -> Option<PhysicsLaunchSolution2D>` |
 | Params | `&mut self, origin: Vector2, target: Vector2, speed: f32, max_time: f32, drift: Vector2,` |
 | Returns | `Option<PhysicsLaunchSolution2D>` |
-| Use when | Use when script code needs this exact engine read or write. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `solve_launch_velocity_2d` to solve launch velocity 2d in the physics world; reads are snapshots and force/state calls affect runtime bodies. |
+| Fails when / edge behavior | Returns `None` when `solve_launch_velocity_2d` cannot produce a value for the supplied target or inputs. |
 
 ### `solve_launch_velocity_3d`
 
@@ -515,8 +515,8 @@ lifecycle!({
 | Signature | `pub fn solve_launch_velocity_3d( &mut self, origin: Vector3, target: Vector3, speed: f32, max_time: f32, drift: Vector3, ) -> Option<PhysicsLaunchSolution3D>` |
 | Params | `&mut self, origin: Vector3, target: Vector3, speed: f32, max_time: f32, drift: Vector3,` |
 | Returns | `Option<PhysicsLaunchSolution3D>` |
-| Use when | Use when script code needs this exact engine read or write. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `solve_launch_velocity_3d` to solve launch velocity 3d in the physics world; reads are snapshots and force/state calls affect runtime bodies. |
+| Fails when / edge behavior | Returns `None` when `solve_launch_velocity_3d` cannot produce a value for the supplied target or inputs. |
 
 ### `predict_body_2d`
 
@@ -526,8 +526,8 @@ lifecycle!({
 | Signature | `pub fn predict_body_2d( &mut self, body_id: NodeID, time: f32, drift: Vector2, ) -> Option<PhysicsBodyPrediction2D>` |
 | Params | `&mut self, body_id: NodeID, time: f32, drift: Vector2,` |
 | Returns | `Option<PhysicsBodyPrediction2D>` |
-| Use when | Use when script code needs this exact engine read or write. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `predict_body_2d` to predict body 2d in the physics world; reads are snapshots and force/state calls affect runtime bodies. |
+| Fails when / edge behavior | Returns `None` when `predict_body_2d` cannot produce a value for the supplied target or inputs. |
 
 ### `predict_body_3d`
 
@@ -537,8 +537,8 @@ lifecycle!({
 | Signature | `pub fn predict_body_3d( &mut self, body_id: NodeID, time: f32, drift: Vector3, ) -> Option<PhysicsBodyPrediction3D>` |
 | Params | `&mut self, body_id: NodeID, time: f32, drift: Vector3,` |
 | Returns | `Option<PhysicsBodyPrediction3D>` |
-| Use when | Use when script code needs this exact engine read or write. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `predict_body_3d` to predict body 3d in the physics world; reads are snapshots and force/state calls affect runtime bodies. |
+| Fails when / edge behavior | Returns `None` when `predict_body_3d` cannot produce a value for the supplied target or inputs. |
 
 ### `pause`
 
@@ -548,8 +548,8 @@ lifecycle!({
 | Signature | `pub fn pause(&mut self, paused: bool)` |
 | Params | `&mut self, paused: bool` |
 | Returns | `()` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `pause` to pause in the physics world; reads are snapshots and force/state calls affect runtime bodies. |
+| Fails when / edge behavior | Has no failure return; `pause` sends the command through the runtime module and the caller receives no acknowledgement. |
 
 ### `is_paused`
 
@@ -560,7 +560,7 @@ lifecycle!({
 | Params | `&mut self` |
 | Returns | `bool` |
 | Use when | Use when code branches on current state or a one-frame state edge. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Fails when / edge behavior | Returns `false` when `is_paused` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `apply_force`
 
@@ -570,8 +570,8 @@ lifecycle!({
 | Signature | `apply_force!(ctx.run, body_id, force)` |
 | Params | `ctx, body_id, force` |
 | Returns | `same as backing method` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `apply_force` to apply force in the physics world; reads are snapshots and force/state calls affect runtime bodies. |
+| Fails when / edge behavior | Uses the backing `apply_force` return and failure behavior unchanged; the wrapper adds no coercion or fallback. |
 
 ### `physics_get_gravity`
 
@@ -581,8 +581,8 @@ lifecycle!({
 | Signature | `physics_get_gravity!(ctx.run)` |
 | Params | `ctx` |
 | Returns | `same as backing method` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `physics_get_gravity` to physics get gravity in the physics world; queries return a snapshot while setters/forces mutate runtime body state. |
+| Fails when / edge behavior | Uses the backing `physics_get_gravity` return and failure behavior unchanged; the wrapper adds no coercion or fallback. |
 
 ### `physics_set_gravity`
 
@@ -592,8 +592,8 @@ lifecycle!({
 | Signature | `physics_set_gravity!(ctx.run, gravity)` |
 | Params | `ctx, gravity` |
 | Returns | `bool or () as shown by backing method` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `physics_set_gravity` to physics set gravity in the physics world; queries return a snapshot while setters/forces mutate runtime body state. |
+| Fails when / edge behavior | Returns `false` when `physics_set_gravity` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `physics_get_body_gravity_scale`
 
@@ -625,8 +625,8 @@ lifecycle!({
 | Signature | `physics_get_coefficient!(ctx.run)` |
 | Params | `ctx` |
 | Returns | `same as backing method` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `physics_get_coefficient` to physics get coefficient in the physics world; queries return a snapshot while setters/forces mutate runtime body state. |
+| Fails when / edge behavior | Uses the backing `physics_get_coefficient` return and failure behavior unchanged; the wrapper adds no coercion or fallback. |
 
 ### `physics_set_coefficient`
 
@@ -636,8 +636,8 @@ lifecycle!({
 | Signature | `physics_set_coefficient!(ctx.run, coefficient)` |
 | Params | `ctx, coefficient` |
 | Returns | `bool or () as shown by backing method` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `physics_set_coefficient` to physics set coefficient in the physics world; queries return a snapshot while setters/forces mutate runtime body state. |
+| Fails when / edge behavior | Returns `false` when `physics_set_coefficient` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `physics_solve_velocity_to_target_2d`
 
@@ -647,8 +647,8 @@ lifecycle!({
 | Signature | `physics_solve_velocity_to_target_2d!(ctx.run, origin, target, time)` |
 | Params | `ctx, origin, target, time` |
 | Returns | `same as backing method` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `physics_solve_velocity_to_target_2d` to physics solve velocity to target 2d in the physics world; queries return a snapshot while setters/forces mutate runtime body state. |
+| Fails when / edge behavior | Uses the backing `physics_solve_velocity_to_target_2d` return and failure behavior unchanged; the wrapper adds no coercion or fallback. |
 
 ### `physics_solve_velocity_to_target_3d`
 
@@ -658,8 +658,8 @@ lifecycle!({
 | Signature | `physics_solve_velocity_to_target_3d!(ctx.run, origin, target, time)` |
 | Params | `ctx, origin, target, time` |
 | Returns | `same as backing method` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `physics_solve_velocity_to_target_3d` to physics solve velocity to target 3d in the physics world; queries return a snapshot while setters/forces mutate runtime body state. |
+| Fails when / edge behavior | Uses the backing `physics_solve_velocity_to_target_3d` return and failure behavior unchanged; the wrapper adds no coercion or fallback. |
 
 ### `physics_solve_launch_velocity_2d`
 
@@ -669,8 +669,8 @@ lifecycle!({
 | Signature | `physics_solve_launch_velocity_2d!(ctx.run, origin, target, speed, max_time)` |
 | Params | `ctx, origin, target, speed, max_time` |
 | Returns | `same as backing method` |
-| Use when | Use when script code needs this exact engine read or write. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `physics_solve_launch_velocity_2d` to physics solve launch velocity 2d in the physics world; queries return a snapshot while setters/forces mutate runtime body state. |
+| Fails when / edge behavior | Uses the backing `physics_solve_launch_velocity_2d` return and failure behavior unchanged; the wrapper adds no coercion or fallback. |
 
 ### `physics_solve_launch_velocity_3d`
 
@@ -680,8 +680,8 @@ lifecycle!({
 | Signature | `physics_solve_launch_velocity_3d!(ctx.run, origin, target, speed, max_time)` |
 | Params | `ctx, origin, target, speed, max_time` |
 | Returns | `same as backing method` |
-| Use when | Use when script code needs this exact engine read or write. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `physics_solve_launch_velocity_3d` to physics solve launch velocity 3d in the physics world; queries return a snapshot while setters/forces mutate runtime body state. |
+| Fails when / edge behavior | Uses the backing `physics_solve_launch_velocity_3d` return and failure behavior unchanged; the wrapper adds no coercion or fallback. |
 
 ### `physics_predict_body_2d`
 
@@ -691,8 +691,8 @@ lifecycle!({
 | Signature | `physics_predict_body_2d!(ctx.run, body_id, time)` |
 | Params | `ctx, body_id, time` |
 | Returns | `same as backing method` |
-| Use when | Use when script code needs this exact engine read or write. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `physics_predict_body_2d` to physics predict body 2d in the physics world; queries return a snapshot while setters/forces mutate runtime body state. |
+| Fails when / edge behavior | Uses the backing `physics_predict_body_2d` return and failure behavior unchanged; the wrapper adds no coercion or fallback. |
 
 ### `physics_predict_body_3d`
 
@@ -702,8 +702,8 @@ lifecycle!({
 | Signature | `physics_predict_body_3d!(ctx.run, body_id, time)` |
 | Params | `ctx, body_id, time` |
 | Returns | `same as backing method` |
-| Use when | Use when script code needs this exact engine read or write. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `physics_predict_body_3d` to physics predict body 3d in the physics world; queries return a snapshot while setters/forces mutate runtime body state. |
+| Fails when / edge behavior | Uses the backing `physics_predict_body_3d` return and failure behavior unchanged; the wrapper adds no coercion or fallback. |
 
 ### `apply_impulse`
 
@@ -713,8 +713,8 @@ lifecycle!({
 | Signature | `apply_impulse!(ctx.run, body_id, impulse)` |
 | Params | `ctx, body_id, impulse` |
 | Returns | `same as backing method` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `apply_impulse` to apply impulse in the physics world; reads are snapshots and force/state calls affect runtime bodies. |
+| Fails when / edge behavior | Uses the backing `apply_impulse` return and failure behavior unchanged; the wrapper adds no coercion or fallback. |
 
 ### `physics_raycast_3d`
 
@@ -724,8 +724,8 @@ lifecycle!({
 | Signature | `physics_raycast_3d!(ctx.run, origin, direction, max_distance)` |
 | Params | `ctx, origin, direction, max_distance` |
 | Returns | `same as backing method` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `physics_raycast_3d` to physics raycast 3d in the physics world; queries return a snapshot while setters/forces mutate runtime body state. |
+| Fails when / edge behavior | Uses the backing `physics_raycast_3d` return and failure behavior unchanged; the wrapper adds no coercion or fallback. |
 
 ### `physics_raycast_3d_with_areas`
 
@@ -735,8 +735,8 @@ lifecycle!({
 | Signature | `physics_raycast_3d_with_areas!(ctx.run, origin, direction, max_distance)` |
 | Params | `ctx, origin, direction, max_distance` |
 | Returns | `same as backing method` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `physics_raycast_3d_with_areas` to physics raycast 3d with areas in the physics world; queries return a snapshot while setters/forces mutate runtime body state. |
+| Fails when / edge behavior | Uses the backing `physics_raycast_3d_with_areas` return and failure behavior unchanged; the wrapper adds no coercion or fallback. |
 
 ### `physics_raycast_3d_without_areas`
 
@@ -746,8 +746,8 @@ lifecycle!({
 | Signature | `physics_raycast_3d_without_areas!(ctx.run, origin, direction, max_distance)` |
 | Params | `ctx, origin, direction, max_distance` |
 | Returns | `same as backing method` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `physics_raycast_3d_without_areas` to physics raycast 3d without areas in the physics world; queries return a snapshot while setters/forces mutate runtime body state. |
+| Fails when / edge behavior | Uses the backing `physics_raycast_3d_without_areas` return and failure behavior unchanged; the wrapper adds no coercion or fallback. |
 
 ### `physics_raycast_2d`
 
@@ -757,8 +757,8 @@ lifecycle!({
 | Signature | `physics_raycast_2d!(ctx.run, origin, direction, max_distance)` |
 | Params | `ctx, origin, direction, max_distance` |
 | Returns | `same as backing method` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `physics_raycast_2d` to physics raycast 2d in the physics world; queries return a snapshot while setters/forces mutate runtime body state. |
+| Fails when / edge behavior | Uses the backing `physics_raycast_2d` return and failure behavior unchanged; the wrapper adds no coercion or fallback. |
 
 ### `physics_shape_cast_2d`
 
@@ -768,8 +768,8 @@ lifecycle!({
 | Signature | `physics_shape_cast_2d!(ctx.run, shape, origin, direction, max_distance, filter)` |
 | Params | `ctx, shape, origin, direction, max_distance, filter` |
 | Returns | `same as backing method` |
-| Use when | Use when script code needs this exact engine read or write. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `physics_shape_cast_2d` to physics shape cast 2d in the physics world; queries return a snapshot while setters/forces mutate runtime body state. |
+| Fails when / edge behavior | Uses the backing `physics_shape_cast_2d` return and failure behavior unchanged; the wrapper adds no coercion or fallback. |
 
 ### `physics_shape_cast_3d`
 
@@ -779,8 +779,8 @@ lifecycle!({
 | Signature | `physics_shape_cast_3d!(ctx.run, shape, origin, direction, max_distance, filter)` |
 | Params | `ctx, shape, origin, direction, max_distance, filter` |
 | Returns | `same as backing method` |
-| Use when | Use when script code needs this exact engine read or write. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `physics_shape_cast_3d` to physics shape cast 3d in the physics world; queries return a snapshot while setters/forces mutate runtime body state. |
+| Fails when / edge behavior | Uses the backing `physics_shape_cast_3d` return and failure behavior unchanged; the wrapper adds no coercion or fallback. |
 
 ### `physics_move_body_2d`
 
@@ -856,8 +856,8 @@ lifecycle!({
 | Signature | `physics_contacts_2d!(ctx.run, body_id)` |
 | Params | `ctx, body_id` |
 | Returns | `same as backing method` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `physics_contacts_2d` to physics contacts 2d in the physics world; queries return a snapshot while setters/forces mutate runtime body state. |
+| Fails when / edge behavior | Uses the backing `physics_contacts_2d` return and failure behavior unchanged; the wrapper adds no coercion or fallback. |
 
 ### `physics_contacts_3d`
 
@@ -867,8 +867,8 @@ lifecycle!({
 | Signature | `physics_contacts_3d!(ctx.run, body_id)` |
 | Params | `ctx, body_id` |
 | Returns | `same as backing method` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `physics_contacts_3d` to physics contacts 3d in the physics world; queries return a snapshot while setters/forces mutate runtime body state. |
+| Fails when / edge behavior | Uses the backing `physics_contacts_3d` return and failure behavior unchanged; the wrapper adds no coercion or fallback. |
 
 ### `physics_pause`
 
@@ -878,8 +878,8 @@ lifecycle!({
 | Signature | `physics_pause!(ctx.run, paused)` |
 | Params | `ctx, paused` |
 | Returns | `bool or () as shown by backing method` |
-| Use when | Use when gameplay must change engine state or queue an action this frame. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `physics_pause` to physics pause in the physics world; queries return a snapshot while setters/forces mutate runtime body state. |
+| Fails when / edge behavior | Returns `false` when `physics_pause` cannot apply to the supplied target or inputs; `true` confirms success. |
 
 ### `physics_is_paused`
 
@@ -890,5 +890,5 @@ lifecycle!({
 | Params | `ctx` |
 | Returns | `bool or () as shown by backing method` |
 | Use when | Use when code branches on current state or a one-frame state edge. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Fails when / edge behavior | Returns `false` when `physics_is_paused` cannot apply to the supplied target or inputs; `true` confirms success. |
 

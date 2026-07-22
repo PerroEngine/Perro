@@ -29,6 +29,17 @@ The web target compiles your game to WebAssembly and emits a plain static bundle
 - **Navigate between scenes from a UI button on the web.** Give a `UiButton` a `web = { href = "/docs" }` block; the button pushes the browser route on web and is parsed-but-ignored on native.
 - **Persist player saves in the browser.** Write to `user://save/slot1.json`; on web it lands in `localStorage`, base64-encoded so binary saves survive.
 
+## Target Choice + Limits
+
+Choose web when link-based distribution and browser reach outweigh native-only
+APIs and platform constraints. Keep gameplay code target-neutral; isolate web
+navigation, storage expectations, and unavailable native services at explicit
+boundaries.
+
+Use `perro dev --target web` for browser behavior and a release web build for
+size/performance decisions. Native dev results do not establish browser memory,
+input, persistence, or frame pacing.
+
 ## End-to-End Example
 
 ```powershell

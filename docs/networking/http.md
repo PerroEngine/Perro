@@ -1,5 +1,8 @@
 # HTTP
 
+> Native boundary: this Perro networking API runs on native builds. It is not a
+> browser/WASM game-networking client API.
+
 ## Page Map
 
 | Header | Link |
@@ -33,6 +36,12 @@ and from JSON, which covers most game backends.
   events applies backpressure instead of unbounded memory growth.
 - Authenticated calls: attach headers such as
   `HttpRequest::get(url).header("Authorization", "Bearer ...")`.
+
+## Why HTTP Here
+
+Choose HTTP for finite requests with a status and body. Keep requests queued and
+consume completion events later so gameplay does not block. Use WebSocket or a
+session transport when the server must push an ongoing stream.
 
 ## Practical Example
 

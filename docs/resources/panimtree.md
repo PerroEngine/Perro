@@ -22,6 +22,13 @@
 - Subtractive cleanup: run a pose through `[Invert]` then `[Add]` to remove an already-baked additive contribution.
 - Per-slot playback control at runtime: `anim_tree_play_slot!`, `anim_tree_set_slot_speed!`, and `anim_tree_set_slot_playback!` retime a single slot without touching the rest.
 
+## Choice Guide
+
+Use a tree for continuous blends, masks, and additive layers. Use a single
+player when one clip at a time is enough. Scripts choose semantic state and feed
+weights/playback; the tree owns pose composition. This keeps combat/movement
+rules testable without duplicating blend math in callbacks.
+
 ## Example
 
 Author `res://animations/player.panimtree`:

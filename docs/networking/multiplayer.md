@@ -1,5 +1,8 @@
 # Multiplayer: LAN + Steam
 
+> Native boundary: Perro LAN and Steam sessions run on native builds. WASM
+> builds do not expose this multiplayer/session API.
+
 ## Page Map
 
 | Header | Link |
@@ -35,6 +38,14 @@ identical.
   `Disconnected` to spawn, seat, and remove players.
 - Privacy-respecting LAN: gate LAN access behind a saved `LanConsent` choice
   prompted once per game.
+
+## Session Choice
+
+Use this layer when lobby discovery, join/leave flow, and LAN/Steam backend
+selection belong to one session model. Use raw transports when the game needs a
+custom topology or protocol that the abstraction does not express. Keep
+authoritative game state above the backend so changing LAN to Steam does not
+change gameplay rules.
 
 ## Abstraction
 

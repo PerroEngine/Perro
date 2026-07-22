@@ -151,8 +151,12 @@ struct ScriptMethodParam {
     ty: String,
 }
 
-fn generate_member_consts(fields: &[ScriptField], methods: &[ScriptMethod]) -> String {
-    if fields.is_empty() && methods.is_empty() {
+fn generate_member_consts(
+    fields: &[ScriptField],
+    nested_fields: &[NestedScriptField],
+    methods: &[ScriptMethod],
+) -> String {
+    if fields.is_empty() && nested_fields.is_empty() && methods.is_empty() {
         return String::new();
     }
 
@@ -164,6 +168,13 @@ fn generate_member_consts(fields: &[ScriptField], methods: &[ScriptMethod]) -> S
             field.name
         ));
     }
+    for field in nested_fields {
+        let const_name = nested_member_const_name(&field.member);
+        out.push_str(&format!(
+            "const {const_name}: ScriptMemberID = var!(\"{}\");\n",
+            field.member
+        ));
+    }
     for method in methods {
         let const_name = method_const_name(&method.name);
         out.push_str(&format!(
@@ -172,6 +183,14 @@ fn generate_member_consts(fields: &[ScriptField], methods: &[ScriptMethod]) -> S
         ));
     }
     out
+}
+
+fn nested_member_const_name(member: &str) -> String {
+    format!(
+        "{}_{}",
+        member_const_name(member),
+        perro_ids::string_to_u64(member)
+    )
 }
 
 fn generate_call_method_body(methods: &[ScriptMethod]) -> String {

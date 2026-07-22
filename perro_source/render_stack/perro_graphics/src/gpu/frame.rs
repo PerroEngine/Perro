@@ -132,7 +132,7 @@ impl Gpu {
             ));
         }
         for (node, stream) in camera_streams {
-            if matches!(stream.source, CameraStreamSourceState::Webcam { .. }) {
+            if !camera_stream_uses_render_target(stream) {
                 continue;
             }
             let resolution = [stream.resolution[0].max(1), stream.resolution[1].max(1)];
@@ -319,7 +319,7 @@ impl Gpu {
                 && needs_3d_prepare
             {
                 for (node, stream) in camera_streams {
-                    if matches!(stream.source, CameraStreamSourceState::Webcam { .. }) {
+                    if !camera_stream_uses_render_target(stream) {
                         continue;
                     }
                     let resolution = [stream.resolution[0].max(1), stream.resolution[1].max(1)];
@@ -538,7 +538,19 @@ impl Gpu {
         });
         for (node, stream) in camera_streams {
             let has_stream_post = PostProcessor::has_effects(stream.post_processing.as_ref());
-            let (target_view, post_input_view, post_depth_view, post_view_key, render_texture) = {
+            // Camera-rendered streams stay scene-linear/HDR until this pass.
+            // Webcam frames arrive display-referred, so tone-mapping those
+            // again would shift their colors.
+            let tone_map_stream = !matches!(stream.source, CameraStreamSourceState::Webcam { .. });
+            let needs_intermediate = has_stream_post || tone_map_stream;
+            let (
+                target_view,
+                post_input_view,
+                tonemap_input_view,
+                post_depth_view,
+                post_view_key,
+                render_texture,
+            ) = {
                 let Some(target) = self.camera_stream_targets.get(node) else {
                     continue;
                 };
@@ -546,9 +558,14 @@ impl Gpu {
                     target
                         .texture
                         .create_view(&wgpu::TextureViewDescriptor::default()),
-                    has_stream_post.then(|| {
+                    needs_intermediate.then(|| {
                         target
                             .post_input
+                            .create_view(&wgpu::TextureViewDescriptor::default())
+                    }),
+                    tone_map_stream.then(|| {
+                        target
+                            .tonemap_input
                             .create_view(&wgpu::TextureViewDescriptor::default())
                     }),
                     has_stream_post.then(|| {
@@ -557,14 +574,14 @@ impl Gpu {
                             .create_view(&wgpu::TextureViewDescriptor::default())
                     }),
                     target.post_view_key,
-                    if has_stream_post {
+                    if needs_intermediate {
                         target.post_input.clone()
                     } else {
                         target.texture.clone()
                     },
                 )
             };
-            let Some(render_view) = (if has_stream_post {
+            let Some(render_view) = (if needs_intermediate {
                 post_input_view.as_ref()
             } else {
                 Some(&target_view)
@@ -573,16 +590,80 @@ impl Gpu {
             };
             let mut stream_post_camera = None;
             let mut stream_post_depth_view = post_depth_view;
-            if let CameraStreamSourceState::TwoD(camera) = &stream.source {
+            if let CameraStreamSourceState::Webcam { texture, .. } = &stream.source {
+                let source_view = self.camera_stream_2d.as_mut().and_then(|stream_2d| {
+                    stream_2d.ensure_sampled_texture_view(
+                        &self.device,
+                        &self.queue,
+                        resources,
+                        *texture,
+                        static_texture_lookup,
+                    )
+                });
+                let (Some(source_view), Some(depth_view)) =
+                    (source_view, stream_post_depth_view.as_ref())
+                else {
+                    continue;
+                };
+                let _clear_depth = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("perro_camera_stream_webcam_depth_clear"),
+                    color_attachments: &[],
+                    depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                        view: depth_view,
+                        depth_ops: Some(wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(1.0),
+                            store: wgpu::StoreOp::Store,
+                        }),
+                        stencil_ops: None,
+                    }),
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                    multiview_mask: None,
+                });
+                drop(_clear_depth);
+                if self.camera_stream_post.is_none() {
+                    self.camera_stream_post = Some(PostProcessor::new(
+                        &self.device,
+                        &self.queue,
+                        self.render_format,
+                        stream.resolution[0].max(1),
+                        stream.resolution[1].max(1),
+                    ));
+                }
+                if let Some(post) = self.camera_stream_post.as_mut() {
+                    post.resize(
+                        &self.device,
+                        stream.resolution[0].max(1),
+                        stream.resolution[1].max(1),
+                    );
+                    let camera = Camera3DState::default();
+                    let post_context = PostProcessContext {
+                        device: &self.device,
+                        queue: &self.queue,
+                        output_view: &target_view,
+                        camera: &camera,
+                        external_input_view_key: post_view_key.wrapping_add(2),
+                        depth_view_key: post_view_key.wrapping_add(1),
+                        static_shader_lookup,
+                        static_texture_lookup,
+                    };
+                    let post_chain_data = PostProcessChainData {
+                        input_view: &source_view,
+                        depth_view,
+                        effects: stream.post_processing.as_ref(),
+                    };
+                    post.apply_chain(&post_context, &post_chain_data, &mut encoder);
+                }
+                continue;
+            } else if let CameraStreamSourceState::TwoD(camera) = &stream.source {
                 let stream_clear_color = stream
                     .clear_color
-                    .map(|color| wgpu::Color {
-                        r: color.r() as f64,
-                        g: color.g() as f64,
-                        b: color.b() as f64,
-                        a: color.a() as f64,
-                    })
-                    .unwrap_or(wgpu::Color::BLACK);
+                    .map(premultiplied_clear_color)
+                    .unwrap_or(if stream.transparent_background {
+                        wgpu::Color::TRANSPARENT
+                    } else {
+                        wgpu::Color::BLACK
+                    });
                 let _clear_stream = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: Some("perro_camera_stream_clear_2d"),
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -764,21 +845,21 @@ impl Gpu {
                         &mut self.camera_stream_draws_scratch,
                     );
                     let stream_lighting = camera_stream_lighting_3d(&stream.lighting_3d);
-                    let stream_clear_color = sky_clear_color(&stream_lighting)
-                        .or_else(|| {
-                            stream.clear_color.map(|color| wgpu::Color {
-                                r: color.r() as f64,
-                                g: color.g() as f64,
-                                b: color.b() as f64,
-                                a: color.a() as f64,
+                    let stream_clear_color = if stream.transparent_background {
+                        stream
+                            .clear_color
+                            .map(premultiplied_clear_color)
+                            .unwrap_or(wgpu::Color::TRANSPARENT)
+                    } else {
+                        sky_clear_color(&stream_lighting)
+                            .or_else(|| stream.clear_color.map(premultiplied_clear_color))
+                            .unwrap_or(wgpu::Color {
+                                r: CLEAR_R,
+                                g: CLEAR_G,
+                                b: CLEAR_B,
+                                a: 1.0,
                             })
-                        })
-                        .unwrap_or(wgpu::Color {
-                            r: CLEAR_R,
-                            g: CLEAR_G,
-                            b: CLEAR_B,
-                            a: 1.0,
-                        });
+                    };
                     stream_3d.resize(&self.device, width, height);
                     stream_3d.prepare(
                         &self.device,
@@ -806,6 +887,7 @@ impl Gpu {
                         stream_clear_color,
                         false,
                         camera,
+                        !stream.transparent_background,
                     );
                     if !stream.point_particles_3d.is_empty() {
                         if self.camera_stream_particles_3d.is_none() {
@@ -1008,7 +1090,14 @@ impl Gpu {
                     let post_context = PostProcessContext {
                         device: &self.device,
                         queue: &self.queue,
-                        output_view: &target_view,
+                        output_view: if tone_map_stream {
+                            let Some(view) = tonemap_input_view.as_ref() else {
+                                continue;
+                            };
+                            view
+                        } else {
+                            &target_view
+                        },
                         camera: &camera,
                         external_input_view_key: post_view_key,
                         depth_view_key: post_view_key.wrapping_add(1),
@@ -1021,6 +1110,21 @@ impl Gpu {
                         effects: stream.post_processing.as_ref(),
                     };
                     post.apply_chain(&post_context, &post_chain_data, &mut encoder);
+                }
+            }
+            if tone_map_stream {
+                let input_view = if has_stream_post {
+                    tonemap_input_view.as_ref()
+                } else {
+                    post_input_view.as_ref()
+                };
+                if let Some(input_view) = input_view {
+                    self.camera_stream_tonemap.apply(
+                        &self.device,
+                        &mut encoder,
+                        input_view,
+                        &target_view,
+                    );
                 }
             }
         }
@@ -1046,6 +1150,7 @@ impl Gpu {
                 clear_color,
                 depth_prepass_needed,
                 &camera_3d,
+                true,
             );
             // Seam pass runs on the resolved offscreen scene texture, before
             // particles/water/2D draw on top.
@@ -1267,6 +1372,7 @@ impl Gpu {
                 [self.render_width, self.render_height],
                 frame_delta_seconds,
                 exposure_settings,
+                self.hdr_status,
             );
             swap_view = Some(view);
             frame = Some(acquired);

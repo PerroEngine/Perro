@@ -104,6 +104,76 @@ pub(super) fn sample_count_supported(
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(super) struct SurfaceSelection {
+    pub format: wgpu::TextureFormat,
+    pub view_format: wgpu::TextureFormat,
+    pub color_space: wgpu::SurfaceColorSpace,
+    pub status: HdrStatus,
+}
+
+pub(super) fn choose_surface_selection(
+    caps: &wgpu::SurfaceCapabilities,
+    display: &wgpu::DisplayHdrInfo,
+    mode: HdrMode,
+    scene_hdr: bool,
+) -> SurfaceSelection {
+    let hdr_format = caps
+        .color_spaces(wgpu::TextureFormat::Rgba16Float)
+        .contains(wgpu::SurfaceColorSpaces::EXTENDED_SRGB_LINEAR)
+        .then_some(wgpu::TextureFormat::Rgba16Float);
+    let supported = hdr_format.is_some() && scene_hdr;
+    let active = mode != HdrMode::Off && supported;
+    if active {
+        let format = hdr_format.unwrap_or(wgpu::TextureFormat::Rgba16Float);
+        let headroom = display.tone_map_headroom().unwrap_or(1.0).max(1.0);
+        let peak_nits = display.luminance.and_then(|v| v.max_nits);
+        return SurfaceSelection {
+            format,
+            view_format: format,
+            color_space: wgpu::SurfaceColorSpace::ExtendedSrgbLinear,
+            status: HdrStatus {
+                requested: mode,
+                supported,
+                active: true,
+                scene_hdr,
+                color_space: HdrColorSpace::ExtendedSrgbLinear,
+                headroom,
+                peak_nits,
+                fallback: None,
+            },
+        };
+    }
+
+    let format = caps
+        .formats
+        .iter()
+        .copied()
+        .find(wgpu::TextureFormat::is_srgb)
+        .or_else(|| caps.formats.first().copied())
+        .unwrap_or(wgpu::TextureFormat::Bgra8UnormSrgb);
+    let view_format = srgb_surface_view_format(format).unwrap_or(format);
+    SurfaceSelection {
+        format,
+        view_format,
+        color_space: wgpu::SurfaceColorSpace::Srgb,
+        status: HdrStatus {
+            requested: mode,
+            supported,
+            active: false,
+            scene_hdr,
+            color_space: HdrColorSpace::SdrSrgb,
+            headroom: 1.0,
+            peak_nits: display.luminance.and_then(|v| v.max_nits),
+            fallback: Some(if mode == HdrMode::Off {
+                HdrFallback::Disabled
+            } else {
+                HdrFallback::SurfaceUnsupported
+            }),
+        },
+    }
+}
+
 const MAX_FRAME_RENDER_PIXELS: u64 = 16_777_216;
 
 pub(crate) fn capped_render_size(width: u32, height: u32, max_dimension: u32) -> (u32, u32) {
@@ -298,11 +368,21 @@ struct ExposureGpuConfig {
     _pad1: f32,
 }
 
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct PresentOutputConfig {
+    hdr_active: f32,
+    headroom: f32,
+    _pad: [f32; 2],
+}
+
 const PRESENT_WGSL: &str = r#"
 @group(0) @binding(0) var input_tex: texture_2d<f32>;
 @group(0) @binding(1) var input_sampler: sampler;
 struct ExposureUniform { value: vec4<f32> };
 @group(0) @binding(2) var<uniform> exposure_state: ExposureUniform;
+struct OutputUniform { value: vec4<f32> };
+@group(0) @binding(3) var<uniform> output_state: OutputUniform;
 
 struct VsOut {
     @builtin(position) pos: vec4<f32>,
@@ -322,19 +402,20 @@ fn vs_main(@builtin(vertex_index) vid: u32) -> VsOut {
     return out;
 }
 
-fn aces_filmic(x: vec3<f32>) -> vec3<f32> {
-    return clamp(
-        (x * (2.51 * x + vec3<f32>(0.03))) /
-            (x * (2.43 * x + vec3<f32>(0.59)) + vec3<f32>(0.14)),
-        vec3<f32>(0.0),
-        vec3<f32>(1.0),
-    );
+fn aces_curve(x: vec3<f32>) -> vec3<f32> {
+    return (x * (2.51 * x + vec3<f32>(0.03))) /
+        (x * (2.43 * x + vec3<f32>(0.59)) + vec3<f32>(0.14));
 }
 
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let scene = max(textureSample(input_tex, input_sampler, in.uv).rgb, vec3<f32>(0.0));
-    return vec4<f32>(aces_filmic(scene * exp2(exposure_state.value.x)), 1.0);
+    let exposed = scene * exp2(exposure_state.value.x);
+    if output_state.value.x > 0.5 {
+        let headroom = max(output_state.value.y, 1.0);
+        return vec4<f32>(aces_curve(exposed / headroom) * headroom, 1.0);
+    }
+    return vec4<f32>(clamp(aces_curve(exposed), vec3<f32>(0.0), vec3<f32>(1.0)), 1.0);
 }
 "#;
 
@@ -449,6 +530,12 @@ impl PresentProcessor {
                 | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         });
+        let output_uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("perro_present_output"),
+            size: 16,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
         let bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("perro_present_bgl"),
             entries: &[
@@ -459,6 +546,16 @@ impl PresentProcessor {
                         sample_type: wgpu::TextureSampleType::Float { filterable: true },
                         view_dimension: wgpu::TextureViewDimension::D2,
                         multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: wgpu::BufferSize::new(16),
                     },
                     count: None,
                 },
@@ -520,6 +617,7 @@ impl PresentProcessor {
             exposure_config_buffer,
             exposure_state_buffer,
             exposure_uniform_buffer,
+            output_uniform_buffer,
         }
     }
 
@@ -543,6 +641,10 @@ impl PresentProcessor {
                 wgpu::BindGroupEntry {
                     binding: 2,
                     resource: self.exposure_uniform_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: self.output_uniform_buffer.as_entire_binding(),
                 },
             ],
         });
@@ -579,7 +681,14 @@ impl PresentProcessor {
         dimensions: [u32; 2],
         delta_seconds: f32,
         settings: PresentExposureSettings,
+        hdr_status: HdrStatus,
     ) {
+        let output = PresentOutputConfig {
+            hdr_active: if hdr_status.active { 1.0 } else { 0.0 },
+            headroom: finite_or(hdr_status.headroom, 1.0).max(1.0),
+            _pad: [0.0; 2],
+        };
+        queue.write_buffer(&self.output_uniform_buffer, 0, bytemuck::bytes_of(&output));
         if settings.auto_exposure {
             if let (Some(pipeline), Some(bind_group)) = (
                 self.exposure_pipeline.as_ref(),
@@ -667,14 +776,18 @@ pub(super) fn supported_linear_render_format(
     adapter: &wgpu::Adapter,
     surface_format: wgpu::TextureFormat,
 ) -> wgpu::TextureFormat {
+    let hdr_supported = scene_hdr_supported(adapter);
+    linear_render_format_with_hdr(surface_format, hdr_supported)
+}
+
+pub(super) fn scene_hdr_supported(adapter: &wgpu::Adapter) -> bool {
     let required = wgpu::TextureUsages::RENDER_ATTACHMENT
         | wgpu::TextureUsages::TEXTURE_BINDING
         | wgpu::TextureUsages::COPY_SRC;
-    let hdr_supported = adapter
+    adapter
         .get_texture_format_features(wgpu::TextureFormat::Rgba16Float)
         .allowed_usages
-        .contains(required);
-    linear_render_format_with_hdr(surface_format, hdr_supported)
+        .contains(required)
 }
 
 fn linear_render_format_with_hdr(
@@ -875,5 +988,83 @@ mod tests {
         for source in [PRESENT_WGSL, EXPOSURE_WGSL] {
             naga::front::wgsl::parse_str(source).expect("HDR present WGSL parses");
         }
+    }
+
+    #[test]
+    fn hdr_present_curve_keeps_values_above_sdr_white() {
+        let exposed = 4.0_f32;
+        let headroom = 4.0_f32;
+        let x = exposed / headroom;
+        let mapped = (x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14) * headroom;
+        assert!(mapped > 1.0);
+        assert!(PRESENT_WGSL.contains("aces_curve(exposed / headroom) * headroom"));
+    }
+
+    fn hdr_caps() -> wgpu::SurfaceCapabilities {
+        wgpu::SurfaceCapabilities {
+            formats: vec![wgpu::TextureFormat::Bgra8UnormSrgb],
+            format_capabilities: vec![
+                wgpu::SurfaceFormatCapabilities {
+                    format: wgpu::TextureFormat::Bgra8UnormSrgb,
+                    color_spaces: wgpu::SurfaceColorSpaces::SRGB,
+                },
+                wgpu::SurfaceFormatCapabilities {
+                    format: wgpu::TextureFormat::Rgba16Float,
+                    color_spaces: wgpu::SurfaceColorSpaces::EXTENDED_SRGB_LINEAR,
+                },
+            ],
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn hdr_auto_picks_extended_linear_surface() {
+        let display = wgpu::DisplayHdrInfo {
+            luminance: Some(wgpu::DisplayLuminance {
+                max_nits: Some(800.0),
+                sdr_white_nits: Some(200.0),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let selected = choose_surface_selection(&hdr_caps(), &display, HdrMode::Auto, true);
+        assert_eq!(selected.format, wgpu::TextureFormat::Rgba16Float);
+        assert_eq!(
+            selected.color_space,
+            wgpu::SurfaceColorSpace::ExtendedSrgbLinear
+        );
+        assert!(selected.status.active);
+        assert_eq!(selected.status.headroom, 4.0);
+        assert_eq!(selected.status.peak_nits, Some(800.0));
+    }
+
+    #[test]
+    fn hdr_off_keeps_sdr_but_reports_support() {
+        let selected = choose_surface_selection(
+            &hdr_caps(),
+            &wgpu::DisplayHdrInfo::default(),
+            HdrMode::Off,
+            true,
+        );
+        assert_eq!(selected.format, wgpu::TextureFormat::Bgra8UnormSrgb);
+        assert!(selected.status.supported);
+        assert!(!selected.status.active);
+        assert_eq!(selected.status.fallback, Some(HdrFallback::Disabled));
+    }
+
+    #[test]
+    fn hdr_falls_back_when_float_scene_path_missing() {
+        let selected = choose_surface_selection(
+            &hdr_caps(),
+            &wgpu::DisplayHdrInfo::default(),
+            HdrMode::On,
+            false,
+        );
+        assert!(!selected.status.supported);
+        assert!(!selected.status.active);
+        assert_eq!(
+            selected.status.fallback,
+            Some(HdrFallback::SurfaceUnsupported)
+        );
     }
 }

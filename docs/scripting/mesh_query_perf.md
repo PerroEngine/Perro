@@ -20,6 +20,10 @@ Mesh queries answer "what part of this model did a ray or point hit?" — the ex
 - Snap a decal, footprint, or UI marker to the nearest point on a surface: `mesh_instance_surface_at_global_point_3d!(ctx.run, mesh_id, point)`.
 - Pick per-surface impact sounds or damage multipliers (metal vs. flesh) by material region: `mesh_instance_material_regions_3d!(ctx.run, mesh_id, material_id)`.
 
+## Decision Guide
+
+Use this snapshot to spot regressions and choose a query strategy, not as a frame-budget promise for every machine. Re-run the same workload on target hardware before making a performance decision. Prefer measured query frequency and candidate count over assumptions based on mesh size alone.
+
 ## Practical Example
 
 A hitscan weapon casts one ray at a target mesh instance and reads the surface hit for decal and impact-sound placement.

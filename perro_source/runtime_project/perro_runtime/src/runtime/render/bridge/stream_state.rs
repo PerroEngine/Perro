@@ -18,17 +18,26 @@ impl Runtime {
         // resolution/post-processing matter. short-circuit before the O(all
         // nodes) scratch fill + collectors (which return empty for webcam).
         if let CameraStreamSourceState::Webcam { texture, .. } = &source {
-            let output_texture = *texture;
+            let post_processing = stream.post_processing.to_effects_vec();
+            let has_image_effect = post_processing
+                .iter()
+                .any(|effect| !matches!(effect, perro_structs::PostProcessEffect::Exposure { .. }));
+            let output_texture = if has_image_effect {
+                Self::camera_stream_texture_id(stream_node)
+            } else {
+                *texture
+            };
             return Some(CameraStreamState {
                 source,
                 overlay_camera_2d: None,
+                transparent_background: true,
                 clear_color: None,
                 resolution: [
                     stream.resolution.x.clamp(1, 8192),
                     stream.resolution.y.clamp(1, 8192),
                 ],
                 aspect_ratio: stream.aspect_ratio.max(0.0),
-                post_processing: Arc::from(stream.post_processing.to_effects_vec()),
+                post_processing: Arc::from(post_processing),
                 output_texture,
                 sprites_2d: Arc::from([]),
                 lights_2d: Arc::from([]),
@@ -99,6 +108,7 @@ impl Runtime {
         Some(CameraStreamState {
             source,
             overlay_camera_2d: None,
+            transparent_background: true,
             clear_color: None,
             resolution: [
                 stream.resolution.x.clamp(1, 8192),
@@ -174,14 +184,19 @@ impl Runtime {
             audio_options: perro_structs::AudioListenerOptions::new(),
         });
 
+        const AUTO_RESOLUTION_SCALE: f32 = 2.0;
         let resolution = [
             if viewport.resolution.x == 0 {
-                ui_size[0].round().clamp(1.0, 8192.0) as u32
+                (ui_size[0] * AUTO_RESOLUTION_SCALE)
+                    .round()
+                    .clamp(1.0, 8192.0) as u32
             } else {
                 viewport.resolution.x.clamp(1, 8192)
             },
             if viewport.resolution.y == 0 {
-                ui_size[1].round().clamp(1.0, 8192.0) as u32
+                (ui_size[1] * AUTO_RESOLUTION_SCALE)
+                    .round()
+                    .clamp(1.0, 8192.0) as u32
             } else {
                 viewport.resolution.y.clamp(1, 8192)
             },
@@ -190,6 +205,7 @@ impl Runtime {
         Some(CameraStreamState {
             source,
             overlay_camera_2d,
+            transparent_background: viewport.background.a() < 1.0,
             clear_color: Some(viewport.background),
             resolution,
             aspect_ratio: viewport.aspect_ratio.max(0.0),

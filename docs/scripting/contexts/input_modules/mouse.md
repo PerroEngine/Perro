@@ -236,9 +236,10 @@ lifecycle!({
 
 ## Macros
 
-Macro forms expand to the methods above. Read macros return the documented empty
-value (a zero vector, `false`, or the current mode) when device data is missing;
-command macros queue work when an input command buffer exists.
+Macro forms expand to the methods above and read the current input snapshot.
+Its default mouse state uses unpressed buttons, zero motion/position vectors,
+and `MouseMode::Visible`. Command macros queue work only when an input command
+buffer exists.
 
 | Macro | Signature | Returns |
 | --- | --- | --- |

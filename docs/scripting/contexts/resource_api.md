@@ -17,11 +17,14 @@
 
 ## Use Cases
 
-- Stream in level assets on demand as the player advances, with `texture_load!`, `mesh_load!`, and `material_load!` returning IDs the same frame.
-- Build assets at runtime that never existed on disk, such as a procedurally generated tilemap texture via `ctx.res.Textures().create_from_rgba(...)` or a mesh from `ctx.res.Meshes().create(...)`.
-- Drive game data from spreadsheets, reading loot tables and dialogue with `ctx.res.Csv()` and localized menu text with `ctx.res.Localization()`.
-- Wire up voice chat and camera effects from live capture through `ctx.res.Mic()` and `ctx.res.Webcams()`.
-- Apply screen-wide look changes such as a damage vignette or colorblind filter through the global post-processing and visual accessibility calls on `ctx.res`.
+| Situation | Choice | Why | Tradeoff |
+| --- | --- | --- | --- |
+| Scene instance always uses one authored texture/mesh/material | typed state asset ID + scene path injection | Scene resolves a stable cached ID before `on_init` | Invalid path keeps the field default; runtime `set_var!` does not perform this coercion |
+| Runtime path is selected by gameplay | resource `load`/load macro | Returns a stable ID immediately and uses normal caches | Decode/upload may still be in flight; poll readiness only when behavior requires it |
+| Loading screen pins an asset | `reserve` then later `drop` | Explicit lifetime keeps it resident across short gaps | Owner must balance the reservation |
+| Procedural content has no source file | create API | Builds resource data directly from Rust values | Caller owns data validation and lifetime |
+| CSV/localization supplies authored game data | data-specific resource module | Parser and lookup semantics stay typed to the format | Missing rows/keys need product fallback text/data |
+| Webcam/mic supplies live data | capture module | Resource API owns device/backend integration | Permission, disconnect, and unavailable-device paths are normal runtime states |
 
 ## Resource Window
 
@@ -37,6 +40,7 @@ For lifetime rules, auto load, auto drop, and ref-count behavior, see [Resource 
 | Audio | [audio](resource_modules/audio.md) | `ctx.res.Audio()` |
 | Csv | [csv](resource_modules/csv.md) | `ctx.res.Csv()` |
 | Draw 2D | [draw_2d](resource_modules/draw_2d.md) | `ctx.res.Draw2D()` |
+| Display HDR | [display](resource_modules/display.md) | `ctx.res.Display()` |
 | GLBs | [glbs](resource_modules/glbs.md) | `ctx.res.Glbs()` |
 | Localization | [localization](resource_modules/localization.md) | `ctx.res.Localization()` |
 | Materials | [materials](resource_modules/materials.md) | `ctx.res.Materials()` |
@@ -59,6 +63,7 @@ A few whole-screen controls live directly on `ctx.res` rather than in a module, 
 | Post-processing add | `ctx.res.add_global_post_processing(effect)` | Append one effect. |
 | Colorblind filter | `ctx.res.enable_colorblind_filter(mode, strength)` | Enable an accessibility simulation pass. |
 | Viewport size | `ctx.res.viewport_size() -> Vector2` | Read the active viewport size in pixels. |
+| HDR mode | `ctx.res.Display().set_hdr_mode(mode)` | Request auto, on, or off display HDR. |
 | Locale shortcuts | `ctx.res.set_locale(...)`, `ctx.res.locale(key)` | Direct locale access without `Localization()`. |
 
 See [Post Processing](resource_modules/post_processing.md) and [Visual Accessibility](resource_modules/visual_accessibility.md) for the full effect and filter reference.

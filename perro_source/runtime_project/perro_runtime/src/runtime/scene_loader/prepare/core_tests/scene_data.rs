@@ -372,6 +372,47 @@ mod scene_data {
     }
 
     #[test]
+    fn scene_loader_builds_chroma_keys_from_hex_and_tuple() {
+        let scene = Parser::new(
+            r##"
+            [cam]
+            [Camera3D]
+                post_processing = [
+                    { type = "chroma_key", color = "#00FF00", tolerance = 0.2, softness = 0.03 },
+                    { type = "chroma_key", color = (1.0, 0.0, 1.0) }
+                ]
+            [/Camera3D]
+            [/cam]
+            "##,
+        )
+        .parse_scene();
+
+        let prepared =
+            prepare_scene_with_loader(&scene, &|_| Err("unexpected root_of".to_string()))
+                .expect("prepare scene");
+        let cam = prepared
+            .nodes
+            .iter()
+            .find(|node| node.key_name == "cam")
+            .expect("cam");
+        let SceneNodeData::Camera3D(cam) = &cam.node.data else {
+            panic!("expected Camera3D");
+        };
+        let effects = cam.post_processing.to_effects_vec();
+        assert_eq!(effects.len(), 2);
+        assert!(matches!(
+            &effects[0],
+            PostProcessEffect::ChromaKey { color, tolerance, softness }
+                if *color == Color::GREEN && *tolerance == 0.2 && *softness == 0.03
+        ));
+        assert!(matches!(
+            &effects[1],
+            PostProcessEffect::ChromaKey { color, tolerance, softness }
+                if *color == Color::MAGENTA && *tolerance == 0.1 && *softness == 0.05
+        ));
+    }
+
+    #[test]
     fn scene_loader_builds_color_grade_and_luts() {
         let scene = Parser::new(
             r#"

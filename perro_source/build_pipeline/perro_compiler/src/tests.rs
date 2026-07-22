@@ -88,6 +88,9 @@ lifecycle!({});
         assert!(
             transpiled.contains("<ActorRefs as perro_api::variant::VariantSchema>::field_names()")
         );
+        assert!(transpiled.contains("var!(\"actors.batter_agent_id\")"));
+        assert!(transpiled.contains("to_variant(&state.actors.batter_agent_id)"));
+        assert!(transpiled.contains("state.actors.batter_agent_id = v"));
         assert_generated_script_compiles(source, &transpiled);
     }
 
@@ -348,7 +351,14 @@ lifecycle!({});
         assert!(
             transpiled.contains("perro_api::scripting::state_mut_unchecked::<AllVariantState>")
         );
-        assert!(transpiled.contains("value.clone().into_parse::<NestedCombo>()"));
+        assert!(transpiled.contains("value.parse::<NestedCombo>()"));
+        assert!(transpiled.contains("value.into_parse::<Arc<str>>()"));
+        assert!(transpiled.contains("value.into_parse::<String>()"));
+        assert!(transpiled.contains("value.parse_scene::<NestedCombo>(resolver)"));
+        assert!(transpiled.contains("value.parse_scene::<TextureID>(resolver)"));
+        assert!(transpiled.contains("fn __perro_set_nested_scene_var"));
+        assert!(transpiled.contains("resolver: &mut dyn perro_api::variant::SceneVariantResolver"));
+        assert!(!transpiled.contains("value.clone().into_parse"));
         assert!(transpiled.contains("fn __perro_set_nested_var"));
         assert_generated_script_compiles(source, &transpiled);
     }

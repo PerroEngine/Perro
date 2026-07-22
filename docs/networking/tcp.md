@@ -1,5 +1,8 @@
 # TCP
 
+> Native boundary: this Perro networking API runs on native builds. WASM builds
+> do not expose raw TCP sockets.
+
 ## Page Map
 
 | Header | Link |
@@ -33,6 +36,13 @@ stream yourself, plus a version handshake and heartbeat helpers.
   `NetEvent::HeartbeatPing` with `heartbeat_pong()` so dead links are detected.
 - Simple request/response services: use raw `write`/`read_available` when you do
   not need message boundaries.
+
+## Why TCP Here
+
+Choose TCP when every framed command matters and order is part of meaning. Do
+not use it for replaceable movement snapshots: retransmission can make old data
+delay newer state. Keep connection ownership in a manager and forward decoded
+game events, not raw socket reads, to feature scripts.
 
 ## Practical Example
 

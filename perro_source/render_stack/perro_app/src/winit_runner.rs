@@ -781,7 +781,8 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler<RunnerUserEvent>
             let initial_size = window.inner_size();
             self.app
                 .resize_surface(initial_size.width, initial_size.height);
-            // Show before the first draw so a slow GPU/surface path cannot look like a launch hang.
+            // Web GPU init async; kp prior show point.
+            #[cfg(target_arch = "wasm32")]
             window.set_visible(true);
             if self.startup_splash.active {
                 let splash_overlay = self.startup_splash_overlay_commands(1.0);
@@ -789,6 +790,9 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler<RunnerUserEvent>
             } else {
                 self.app.present();
             }
+            // Show native win only aft first GPU present -> no blank white flash.
+            #[cfg(not(target_arch = "wasm32"))]
+            window.set_visible(true);
             self.window = Some(window);
             self.set_mouse_mode(MouseMode::Visible);
             self.sync_refresh_rate();

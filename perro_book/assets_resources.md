@@ -6,6 +6,17 @@ Resources are loaded through `ctx.res` and used by scene nodes or scripts.
 
 Load and manage textures, meshes, materials, audio, animation data, CSV, shaders, and scene data.
 
+## Ownership Model
+
+Put a per-instance asset choice in typed state and inject its path from the
+scene. Keep a literal path in code only when every instance must use the same
+asset. Load at runtime when the path is discovered, downloaded, or selected by
+player data.
+
+This separates authored choice from resource lifetime: scene injection resolves
+the typed ID before `on_init`, while the resource cache controls reuse and load
+state.
+
 ## Paths
 
 Use `res://` for project assets.
@@ -51,9 +62,9 @@ Use `#[node_ref(...)]` when a state field expects a node type.
 pub struct PlayerHudState {
     #[expose]
     #[node_ref(UiTextBlock)]
-    label: NodeID,
+    label: Option<NodeID>,
 
-    #[default(TextureID::nil())]
+    #[expose]
     icon: TextureID,
 }
 ```
@@ -61,6 +72,19 @@ pub struct PlayerHudState {
 The editor uses the node ref hint for pick lists.
 
 The runtime still resolves the id when the script uses it.
+
+Scene `script_vars` also accept resource paths for typed asset-ID fields:
+
+```text
+script_vars = {
+    label = @ScoreLabel,
+    icon = "res://ui/player_icon.png"
+}
+```
+
+Resolution happens before `on_init`. Reusing the same path uses the normal
+resource cache. Decode failure keeps the field default. Asset load failure uses
+the resource module's normal nil/failure behavior.
 
 Use `ctx.res` for resource IDs and `ctx.run` for node IDs.
 

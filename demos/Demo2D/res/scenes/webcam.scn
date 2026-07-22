@@ -2,6 +2,10 @@ $root = @WebcamDemo2D
 
 [WebcamDemo2D]
 script = "res://scripts/webcam_demo_2d.rs"
+script_vars = {
+    webcam = @DemoWebcam,
+    device_label = @WebcamDevices2DLabel
+}
     [Node2D]
         position = (0.0, 0.0)
     [/Node2D]

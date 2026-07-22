@@ -32,6 +32,11 @@ fn transpile_frontend_script(source: &str, source_include: &str) -> String {
             format!("<{script_ty} as Default>::default()")
         };
     let state_ty = state_ty.unwrap_or_else(|| "()".to_string());
+    let state_ctor_expr = if state_ty == "()" {
+        "()".to_string()
+    } else {
+        format!("<{state_ty} as Default>::default()")
+    };
 
     let has_init = has_nonempty_lifecycle_method(&source, "on_init");
     let has_start = has_nonempty_lifecycle_method(&source, "on_all_init");
@@ -65,6 +70,7 @@ fn transpile_frontend_script(source: &str, source_include: &str) -> String {
         parse_struct_fields(&source, &state_ty)
     };
     let exposed_fields = supported_fields(&state_fields);
+    let nested_fields = parse_local_nested_fields(&source, &exposed_fields);
 
     let mut flags = String::from("ScriptFlags::NONE");
     if has_init {
@@ -83,10 +89,10 @@ fn transpile_frontend_script(source: &str, source_include: &str) -> String {
         flags.push_str(" | ScriptFlags::HAS_REMOVAL");
     }
 
-    let member_consts = generate_member_consts(&exposed_fields, &user_methods);
+    let member_consts = generate_member_consts(&exposed_fields, &nested_fields, &user_methods);
     let state_cast_helpers = generate_state_cast_helpers(&state_ty, &exposed_fields);
-    let get_var_body = generate_get_var_body(&exposed_fields);
-    let set_var_match_fn = generate_set_var_match_fn(&state_ty, &exposed_fields);
+    let get_var_body = generate_get_var_body(&exposed_fields, &nested_fields);
+    let set_var_match_fn = generate_set_var_match_fn(&state_ty, &exposed_fields, &nested_fields);
     let set_var_body = generate_set_var_body(&exposed_fields);
     let apply_scene_injected_vars_body = generate_apply_scene_injected_vars_body(&exposed_fields);
     let call_method_body = generate_call_method_body(&user_methods);
@@ -111,7 +117,7 @@ impl<API: ScriptAPI + ?Sized> ScriptBehavior<API> for {script_ty} {{
     }}
 
     fn create_state(&self) -> Box<dyn std::any::Any> {{
-        Box::new(<{state_ty} as Default>::default())
+        Box::new({state_ctor_expr})
     }}
 
     fn get_var(&self, state: &dyn std::any::Any, var: ScriptMemberID) -> Variant {{
@@ -122,7 +128,12 @@ impl<API: ScriptAPI + ?Sized> ScriptBehavior<API> for {script_ty} {{
 {set_var_body}
     }}
 
-    fn apply_scene_injected_vars(&self, state: &mut dyn std::any::Any, vars: Vec<(ScriptMemberID, Variant)>) {{
+    fn apply_scene_injected_vars(
+        &self,
+        state: &mut dyn std::any::Any,
+        vars: Vec<(ScriptMemberID, Variant)>,
+        resolver: &mut dyn perro_api::variant::SceneVariantResolver,
+    ) {{
 {apply_scene_injected_vars_body}
     }}
 
@@ -327,4 +338,91 @@ fn is_unit_struct(source: &str, struct_name: &str) -> bool {
 struct ScriptField {
     name: String,
     ty: String,
+}
+
+#[derive(Clone, Debug)]
+struct NestedScriptField {
+    member: String,
+    access: String,
+    ty: String,
+}
+
+fn parse_local_nested_fields(source: &str, state_fields: &[ScriptField]) -> Vec<NestedScriptField> {
+    let mut local_structs = HashMap::<String, Vec<ScriptField>>::new();
+    for line in source.lines() {
+        let Some(name) = parse_struct_name(line.trim()) else {
+            continue;
+        };
+        local_structs
+            .entry(name.clone())
+            .or_insert_with(|| parse_struct_fields(source, &name));
+    }
+
+    let mut out = Vec::new();
+    for field in state_fields {
+        let mut stack = HashSet::new();
+        collect_local_nested_fields(
+            &local_structs,
+            local_type_name(&field.ty),
+            &field.name,
+            &field.name,
+            &mut stack,
+            &mut out,
+        );
+    }
+    out
+}
+
+fn collect_local_nested_fields(
+    local_structs: &HashMap<String, Vec<ScriptField>>,
+    ty: Option<&str>,
+    member_prefix: &str,
+    access_prefix: &str,
+    stack: &mut HashSet<String>,
+    out: &mut Vec<NestedScriptField>,
+) {
+    let Some(ty) = ty else {
+        return;
+    };
+    let Some(fields) = local_structs.get(ty) else {
+        return;
+    };
+    if fields.is_empty() || !stack.insert(ty.to_string()) {
+        return;
+    }
+
+    for field in fields {
+        let member = format!("{member_prefix}.{}", field.name);
+        let access = format!("{access_prefix}.{}", field.name);
+        let child_ty = local_type_name(&field.ty);
+        let child_is_local_struct = child_ty
+            .and_then(|name| local_structs.get(name))
+            .is_some_and(|fields| !fields.is_empty());
+        if child_is_local_struct {
+            collect_local_nested_fields(
+                local_structs,
+                child_ty,
+                &member,
+                &access,
+                stack,
+                out,
+            );
+        } else {
+            out.push(NestedScriptField {
+                member,
+                access,
+                ty: normalize_type(&field.ty),
+            });
+        }
+    }
+
+    stack.remove(ty);
+}
+
+fn local_type_name(ty: &str) -> Option<&str> {
+    let ty = ty.trim();
+    if ty.is_empty() || ty.contains(['<', '[', '(', '&']) {
+        return None;
+    }
+    ty.rsplit("::").next()
 }

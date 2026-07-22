@@ -23,6 +23,13 @@
 - Level geometry occluders: `CollisionShape2D` nodes and `TileMap2D` tiles whose `.ptileset` entry uses `collision = true` (with `collision_enabled = true` on the tilemap) block the light.
 - Crisp retro look: set `shadow_softness = 0.0` or `shadow_samples = 1` to keep hard-edged shadows.
 
+## Cost Choice
+
+Enable shadows only on lights and geometry that change scene readability. Hard
+shadows reduce sampling cost; softness/samples trade GPU work for penumbra
+quality. Collision-backed occluders reuse level meaning, but decorative shapes
+need explicit shadow geometry when collision would be wrong.
+
 ## Casters
 
 Visible `CollisionShape2D` nodes cast shadows.

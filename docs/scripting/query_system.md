@@ -16,15 +16,14 @@ The query system finds sets of nodes by runtime state — tag, name, concrete ty
 
 ## Use Cases
 
-Use queries when game logic needs a set of nodes chosen by runtime state, not a hardcoded reference.
-
-- Find all enemies, pickups, interactables, or team members by tag.
-- Treat tags like dataless components: `enemy`, `alive`, `quest_target`, `damage_zone`.
-- Limit work to one room, UI panel, spawned wave, or scene chunk with `in_subtree(...)`.
-- Find nodes by type when a system owns behavior for all `Node2D`, `Node3D`, camera, light, or UI nodes.
-- Find nodes near a point with `within[origin, size]`: proximity triggers, AI awareness, area damage, spatial pickups.
-- Combine filters for gameplay systems, debug tools, editor panels, and target selection.
-- Use `query_iter!`, `query_each!`, and `query_map!` to keep common loop code short.
+| Situation | Choice | Why | Tradeoff |
+| --- | --- | --- | --- |
+| Manager processes every alive spawned enemy | tag query | Membership changes as nodes spawn, die, or lose tags | Results are a snapshot; each returned ID may become stale later |
+| Actor always targets one scene object | injected `NodeID`, not query | Dependency is fixed and should fail visibly at authoring time | Scene must wire the ref |
+| System owns nodes only inside one room/wave | `in_subtree(parent)` | Bounds search to the structural owner | Reparenting changes membership |
+| Area damage selects nearby targets | spatial `within[...]` + tag/type filters | Expresses both location and role in one selection | Spatial bounds are broad-phase selection; later logic may need exact checks |
+| Hot loop repeats one query shape | build/reuse `NodeQuery` | Avoids rebuilding query description | Runtime still evaluates current scene membership |
+| One match is enough | `query_first!` | Stops at the API's first match | Ordering is not a stable gameplay contract; use a fixed ref or explicit ranking when identity matters |
 
 ## Example
 
@@ -318,7 +317,7 @@ let enemy_positions = query_map!(ctx.run, all(tags["enemy"], base_type[Node3D]),
 
 ```rust
 query_each!(ctx.run, all(tags["ally"], tags["alive"]), |id| {
-    call_method!(ctx.run, id, method!("on_team_buff"), params![variant!(5.0_f32)]);
+    call_method!(ctx.run, id, method!("on_team_buff"), params![5.0_f32]);
 });
 ```
 

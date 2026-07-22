@@ -23,6 +23,13 @@ SSAO (screen-space ambient occlusion) darkens contact areas such as corners, cre
 - Low-end GPU targets: `"off"` binds a white fallback so ambient light stays unchanged.
 - Consistent across draw types: standard meshes and custom multimesh standard-lit surfaces both sample the result, while unlit and emissive terms are left alone.
 
+## Cost Choice
+
+Use SSAO to improve contact and corner readability when baked or authored
+lighting does not provide it. It is a screen-space approximation: tune quality
+against resolution/sample cost and disable it on targets where the subtle depth
+gain does not justify the pass.
+
 ## Config
 
 Set quality in `project.toml`:

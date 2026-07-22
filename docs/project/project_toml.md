@@ -37,6 +37,17 @@ Every table is a flat top-level topic — no dotted subtables in the current lay
 - **Tune ray audio once for both dimensions.** `[audio] max_bounces = 4` sets 2D and 3D; add a `_2d`/`_3d` suffix to split them.
 - **Ship to Steam or the web with correct metadata.** `[steam]` enables Steamworks with `app_id`/`input`, `[web]` sets page `title`/`description`/`keywords`.
 
+## Config Ownership
+
+Put project-wide defaults here: boot scene, window/render policy, fixed-step
+rate, physics defaults, and platform metadata. Put per-scene choices in `.scn`
+and per-instance choices in node fields or `script_vars`. Put live mutable game
+state in scripts.
+
+This boundary keeps a project setting from becoming an implicit override for
+one scene. Tune quality here when every scene should share the tradeoff; use
+scene/node settings when the cost or look belongs to one feature.
+
 ## Full Example
 
 ```toml

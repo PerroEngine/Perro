@@ -21,18 +21,14 @@ backend applies on the next input frame.
 
 ## Use Cases
 
-- Character movement: sample held keys with `key_down!(ctx.ipt, KeyCode::KeyW)`
-  or a gamepad stick with `gamepad_left_stick!(ctx.ipt, 0)`.
-- Jump and confirm: fire once on the press edge with `key_pressed!` /
-  `action_pressed!(ctx.ipt, "jump")` so a held key never re-triggers.
-- Abstract, rebindable controls: bind "jump" to keyboard, pad, and Joy-Con at
-  once through `ctx.ipt.Actions()`, then let players remap it live.
-- First-person mouselook: capture the cursor with `mouse_set_mode!(ctx.ipt,
-  MouseMode::Captured)` and read look motion from `mouse_delta!(ctx.ipt)`.
-- Couch co-op: assign each player a device slot with `ctx.ipt.Players()` and
-  route their input independently.
-- Force feedback: pulse a controller on impact with
-  `gamepad_set_rumble!(ctx.ipt, 0, 0.6, 0.6)`.
+| Situation | Choice | Why | Tradeoff |
+| --- | --- | --- | --- |
+| Character moves while control is held | `down` or stick value | Continuous state matches continuous motion | Runs every frame while held |
+| Jump/confirm fires once | `pressed` edge | Held input does not retrigger | Edge exists for one input frame only |
+| Charged action fires on release | `released` edge | Release moment is explicit | Charge duration must live in script state |
+| Player remaps controls or switches device | action API | Gameplay reads one semantic action across bindings | Action names/config become runtime contracts |
+| First-person camera needs unbounded mouse motion | captured mode + delta | Relative motion works without screen-edge limits | UI cursor must restore another mode when leaving gameplay |
+| Local multiplayer owns device assignment per player | players API | Separates player identity from physical device slot | Disconnect/reconnect needs an assignment policy |
 
 ## Input Window
 

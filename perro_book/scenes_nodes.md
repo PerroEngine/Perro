@@ -8,6 +8,18 @@ Nodes own transform, render data, physics data, UI data, or resource refs.
 
 Know where behavior lives and how nodes relate.
 
+## Ownership Model
+
+The scene owns topology: which nodes exist, which node contains another, and
+which fixed refs connect authored objects. A script owns behavior for its
+attached node. Runtime queries discover sets that scene authoring cannot know in
+advance.
+
+Use a fixed `NodeID` ref when changing a node name should not break behavior.
+Use a relation when topology itself expresses ownership. Use a query when the
+membership changes. A name lookup is useful for tools and one-off discovery,
+but it hides a dependency and repeats search work in gameplay code.
+
 ## Scene Tree
 
 A scene is a root node plus children.

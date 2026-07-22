@@ -81,7 +81,8 @@ pub fn decode_render_request_node_from_event(event: &RenderEvent) -> Option<Node
         | RenderEvent::TextureCreated { request, .. }
         | RenderEvent::MaterialCreated { request, .. }
         | RenderEvent::Failed { request, .. } => *request,
-        RenderEvent::TextureLoaded { .. }
+        RenderEvent::HdrStatusChanged(_)
+        | RenderEvent::TextureLoaded { .. }
         | RenderEvent::TextureTexelsUpdated { .. }
         | RenderEvent::MaterialLoaded { .. }
         | RenderEvent::MeshDropped { .. }
@@ -649,7 +650,9 @@ pub enum UiButtonVisualState {
 #[derive(Clone, Copy, Debug)]
 pub struct UiButtonMotion {
     pub hover: f32,
+    pub hover_velocity: f32,
     pub press: f32,
+    pub press_velocity: f32,
     pub wiggle_time: f32,
     pub wiggle_sign: f32,
 }

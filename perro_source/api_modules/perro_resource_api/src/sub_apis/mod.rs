@@ -10,6 +10,7 @@ mod animation;
 mod animation_tree;
 mod audio;
 mod csv_table;
+mod display;
 mod draw_2d;
 mod gltf;
 mod localization;
@@ -39,6 +40,7 @@ pub use audio::{
 // ---- Data + draw resources ----
 
 pub use csv_table::{CsvAPI, CsvModule};
+pub use display::DisplayModule;
 pub use draw_2d::{Draw2DAPI, Draw2DModule};
 pub use gltf::{GlbModule, GltfAPI, GltfInfo};
 pub use localization::{IntoLocale, Locale, LocalizationAPI, LocalizationModule};

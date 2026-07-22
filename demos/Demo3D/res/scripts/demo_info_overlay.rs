@@ -2,8 +2,6 @@ use perro_api::prelude::*;
 
 type SelfNodeType = UiPanel;
 
-const REFRESH_SECONDS: f32 = 0.35;
-
 #[State]
 struct DemoInfoOverlayState {
     #[default = NodeID::nil()]
@@ -14,63 +12,37 @@ struct DemoInfoOverlayState {
     pub title_override: String,
     #[default = String::new()]
     pub body_override: String,
-    #[default = 0.0]
-    pub refresh_timer: f32,
     #[default = NodeID::nil()]
-    pub last_root: NodeID,
+    pub active_demo_root: NodeID,
     #[default = String::new()]
-    pub last_demo: String,
+    pub active_demo: String,
 }
 
-lifecycle!({
-    fn on_init(&self, ctx: &mut ScriptContext<'_, API>) {
-        self.refresh(ctx);
-    }
-
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let dt = delta_time!(ctx.run).max(0.0);
-        let demo = get_var!(ctx.run, ctx.id, var!("active_demo"))
-            .as_str()
-            .unwrap_or("none")
-            .to_string();
-        let root = get_var!(ctx.run, ctx.id, var!("active_demo_root"))
-            .as_node()
-            .unwrap_or(NodeID::nil());
-        let do_refresh = with_state_mut!(ctx.run, DemoInfoOverlayState, ctx.id, |state| {
-            let changed = state.last_root != root || state.last_demo != demo;
-            state.last_root = root;
-            state.last_demo = demo.clone();
-            state.refresh_timer += dt;
-            if changed || state.refresh_timer >= REFRESH_SECONDS {
-                state.refresh_timer = 0.0;
-                true
-            } else {
-                false
-            }
-        })
-        .unwrap_or(false);
-        if do_refresh {
-            self.refresh(ctx);
-        }
-    }
-});
+lifecycle!({});
 
 methods!({
+    fn set_active_demo(
+        &self,
+        ctx: &mut ScriptContext<'_, API>,
+        active_demo: String,
+        active_demo_root: NodeID,
+    ) {
+        with_state_mut!(ctx.run, DemoInfoOverlayState, ctx.id, |state| {
+            state.active_demo = active_demo;
+            state.active_demo_root = active_demo_root;
+        });
+    }
+
     fn refresh(&self, ctx: &mut ScriptContext<'_, API>) {
-        let demo = get_var!(ctx.run, ctx.id, var!("active_demo"))
-            .as_str()
-            .unwrap_or("none")
-            .to_string();
-        let root = get_var!(ctx.run, ctx.id, var!("active_demo_root"))
-            .as_node()
-            .unwrap_or(NodeID::nil());
-        let (title_label, body_label, title_override, body_override) =
+        let (title_label, body_label, title_override, body_override, demo, root) =
             with_state!(ctx.run, DemoInfoOverlayState, ctx.id, |state| {
                 (
                     state.title_label,
                     state.body_label,
                     state.title_override.clone(),
                     state.body_override.clone(),
+                    state.active_demo.clone(),
+                    state.active_demo_root,
                 )
             });
         let title = if !title_override.is_empty() {

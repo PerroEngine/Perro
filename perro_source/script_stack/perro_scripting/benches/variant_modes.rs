@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 pub mod variant {
-    pub use perro_variant::{DeriveVariant, Variant, VariantSchema};
+    pub use perro_variant::{DeriveVariant, SceneVariantResolver, Variant, VariantSchema};
 }
 
 #[derive(Clone, PartialEq, Variant)]
@@ -197,12 +197,44 @@ fn bench_variant_modes(c: &mut Criterion) {
     let profile_encoded = VariantValue::from(profile.clone());
     let state_tuple_encoded = VariantValue::from(state_tuple.clone());
     let state_struct_encoded = VariantValue::from(state_struct.clone());
+    let arc_str_encoded = VariantValue::from(Arc::<str>::from("dynamic-state-label"));
+    c.bench_function("arc_str_borrow_decode", |b| {
+        b.iter(|| {
+            black_box(
+                black_box(&arc_str_encoded)
+                    .parse::<Arc<str>>()
+                    .expect("borrow parse Arc<str>"),
+            )
+        })
+    });
+    c.bench_function("arc_str_owned_decode", |b| {
+        b.iter_batched(
+            || arc_str_encoded.clone(),
+            |value| {
+                black_box(
+                    value
+                        .into_parse::<Arc<str>>()
+                        .expect("owned parse Arc<str>"),
+                )
+            },
+            BatchSize::SmallInput,
+        )
+    });
     c.bench_function("custom_struct_decode_parse", |b| {
         b.iter(|| {
             black_box(
                 black_box(&profile_encoded)
                     .parse::<RuntimeProfile>()
                     .expect("parse RuntimeProfile"),
+            )
+        })
+    });
+    c.bench_function("custom_struct_clone_decode_parse", |b| {
+        b.iter(|| {
+            black_box(
+                black_box(profile_encoded.clone())
+                    .into_parse::<RuntimeProfile>()
+                    .expect("clone + parse RuntimeProfile"),
             )
         })
     });

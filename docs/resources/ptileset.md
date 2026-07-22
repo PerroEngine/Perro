@@ -22,6 +22,12 @@
 - Shared atlas across a level: one `texture` plus `tile_size`, `columns`, and `rows` referenced by every `TileMap2D` that draws from it.
 - Shadow-casting tiles: tiles with `collision = true` also cast 2D shadows when the tilemap enables collision (see [2D Shadows](shadows2d.md)).
 
+## Choice Guide
+
+Use one tileset for atlas layout and collision meaning shared by a level. Use a
+custom collision shape only when a full tile does not match traversal. Decorative
+tiles should omit collision so render density does not become physics density.
+
 ## Example
 
 Author `res://tiles/world.ptileset`:

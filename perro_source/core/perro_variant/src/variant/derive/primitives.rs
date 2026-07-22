@@ -55,6 +55,21 @@ impl Variant {
         })
     }
 
+    /// Decode scene-authored data with resource-path coercion enabled.
+    #[inline]
+    pub fn parse_scene<T>(
+        &self,
+        resolver: &mut dyn SceneVariantResolver,
+    ) -> Result<T, VariantParseError>
+    where
+        T: DeriveVariant,
+    {
+        T::from_scene_variant(self, resolver).ok_or_else(|| VariantParseError {
+            target: std::any::type_name::<T>(),
+            actual: self.kind_name(),
+        })
+    }
+
     /// Decode this [`Variant`] into typed value, returning `None` on mismatch.
     #[inline]
     pub fn as_type<T>(&self) -> Option<T>
@@ -84,6 +99,22 @@ impl Variant {
     {
         let actual = self.kind_name();
         T::from_owned_variant(self).ok_or_else(|| VariantParseError {
+            target: std::any::type_name::<T>(),
+            actual,
+        })
+    }
+
+    /// Consume + decode scene-authored data with resource-path coercion.
+    #[inline]
+    pub fn into_parse_scene<T>(
+        self,
+        resolver: &mut dyn SceneVariantResolver,
+    ) -> Result<T, VariantParseError>
+    where
+        T: DeriveVariant,
+    {
+        let actual = self.kind_name();
+        T::from_scene_variant(&self, resolver).ok_or_else(|| VariantParseError {
             target: std::any::type_name::<T>(),
             actual,
         })
@@ -484,6 +515,21 @@ impl DeriveVariant for TextureID {
     fn to_variant(&self) -> Variant {
         Variant::from(*self)
     }
+
+    #[inline]
+    fn from_scene_variant(
+        value: &Variant,
+        resolver: &mut dyn SceneVariantResolver,
+    ) -> Option<Self> {
+        Self::from_variant(value).or_else(|| {
+            resolve_scene_asset(
+                value,
+                resolver,
+                SceneAssetKind::Texture,
+                Variant::as_texture,
+            )
+        })
+    }
 }
 
 macro_rules! impl_statefield_plain_id {
@@ -507,11 +553,66 @@ macro_rules! impl_statefield_plain_id {
     };
 }
 
-impl_statefield_plain_id!(MaterialID);
-impl_statefield_plain_id!(MeshID);
-impl_statefield_plain_id!(AnimationID);
 impl_statefield_plain_id!(LightID);
 impl_statefield_plain_id!(SignalID);
 impl_statefield_plain_id!(AudioBusID);
 impl_statefield_plain_id!(TagID);
 impl_statefield_plain_id!(PreloadedSceneID);
+
+macro_rules! impl_scene_asset_id {
+    ($id_ty:ty, $kind:ident, $accessor:ident) => {
+        impl DeriveVariant for $id_ty {
+            #[inline]
+            fn from_variant(value: &Variant) -> Option<Self> {
+                value
+                    .$accessor()
+                    .or_else(|| {
+                        value
+                            .as_number()
+                            .and_then(|n| n.as_u64_lossy())
+                            .map(<$id_ty>::from_u64)
+                    })
+                    .or_else(|| value.as_str().and_then(|s| s.parse::<$id_ty>().ok()))
+                    .or_else(|| value.as_id().map(IDs::as_u64).map(<$id_ty>::from_u64))
+            }
+
+            #[inline]
+            fn from_scene_variant(
+                value: &Variant,
+                resolver: &mut dyn SceneVariantResolver,
+            ) -> Option<Self> {
+                Self::from_variant(value).or_else(|| {
+                    resolve_scene_asset(value, resolver, SceneAssetKind::$kind, Variant::$accessor)
+                })
+            }
+
+            #[inline]
+            fn to_variant(&self) -> Variant {
+                Variant::from(*self)
+            }
+        }
+    };
+}
+
+fn resolve_scene_asset<T>(
+    value: &Variant,
+    resolver: &mut dyn SceneVariantResolver,
+    kind: SceneAssetKind,
+    extract: fn(&Variant) -> Option<T>,
+) -> Option<T> {
+    let path = value.as_str()?;
+    if !(path.starts_with("res://") || path.starts_with("dlc://") || path.starts_with("user://")) {
+        return None;
+    }
+    resolver
+        .resolve_asset(kind, path)
+        .as_ref()
+        .and_then(extract)
+}
+
+impl_scene_asset_id!(AnimationTreeID, AnimationTree, as_animation_tree);
+impl_scene_asset_id!(NavMeshID, NavMesh, as_nav_mesh);
+impl_scene_asset_id!(SoundFontID, SoundFont, as_sound_font);
+impl_scene_asset_id!(MaterialID, Material, as_material);
+impl_scene_asset_id!(MeshID, Mesh, as_mesh);
+impl_scene_asset_id!(AnimationID, Animation, as_animation);

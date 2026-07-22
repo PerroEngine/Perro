@@ -17,7 +17,7 @@ impl PerroGraphics {
                             node,
                             state.clone(),
                         );
-                        if !matches!(state.source, CameraStreamSourceState::Webcam { .. }) {
+                        if camera_stream_uses_render_target(&state) {
                             self.upsert_camera_stream_texture(
                                 node,
                                 state.output_texture,
@@ -460,7 +460,7 @@ impl PerroGraphics {
                         sprite,
                     } => {
                         let stream = *stream;
-                        if !matches!(stream.source, CameraStreamSourceState::Webcam { .. }) {
+                        if camera_stream_uses_render_target(&stream) {
                             self.upsert_camera_stream_texture(
                                 node,
                                 stream.output_texture,
@@ -512,7 +512,7 @@ impl PerroGraphics {
                 RenderCommand::ThreeD(cmd_3d) => match *cmd_3d {
                     Command3D::UpsertCameraStream { node, stream, quad } => {
                         let stream = *stream;
-                        if !matches!(stream.source, CameraStreamSourceState::Webcam { .. }) {
+                        if camera_stream_uses_render_target(&stream) {
                             self.upsert_camera_stream_texture(
                                 node,
                                 stream.output_texture,
@@ -703,6 +703,18 @@ impl PerroGraphics {
                     // effects Arc rebuilt in `render`.
                     self.global_post_processing_cache_dirty = true;
                 }
+                RenderCommand::Display(DisplayCommand::SetHdrMode(mode)) => {
+                    self.hdr_mode = mode;
+                    let status = self.gpu.as_mut().map_or_else(
+                        || perro_render_bridge::HdrStatus {
+                            requested: mode,
+                            ..Default::default()
+                        },
+                        |gpu| gpu.set_hdr_mode(mode),
+                    );
+                    self.events.push(RenderEvent::HdrStatusChanged(status));
+                    self.redraw_requested = true;
+                }
             }
         }
         self.flush_async_mesh_loads();
@@ -761,7 +773,7 @@ impl PerroGraphics {
                         sprite,
                     } => {
                         let stream = *stream;
-                        if !matches!(stream.source, CameraStreamSourceState::Webcam { .. }) {
+                        if camera_stream_uses_render_target(&stream) {
                             self.upsert_camera_stream_texture(
                                 node,
                                 stream.output_texture,

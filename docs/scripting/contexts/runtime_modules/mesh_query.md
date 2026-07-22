@@ -126,8 +126,8 @@ lifecycle!({
 | Signature | `pub fn instance_surface_at_global_point( &mut self, node_id: NodeID, global_point: Vector3, ) -> Option<MeshSurfaceHit3D>` |
 | Params | `&mut self, node_id: NodeID, global_point: Vector3,` |
 | Returns | `Option<MeshSurfaceHit3D>` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `instance_surface_at_global_point` to instance surface at global point; choose instance/global or mesh-data/local form based on which coordinate space owns the input. |
+| Fails when / edge behavior | Returns `None` when `instance_surface_at_global_point` cannot produce a value for the supplied target or inputs. |
 
 ### `instance_surface_global_point`
 
@@ -148,8 +148,8 @@ lifecycle!({
 | Signature | `pub fn instance_surface_on_global_ray( &mut self, node_id: NodeID, ray_origin: Vector3, ray_direction: Vector3, max_distance: f32, ) -> Option<MeshSurfaceHit3D>` |
 | Params | `&mut self, node_id: NodeID, ray_origin: Vector3, ray_direction: Vector3, max_distance: f32,` |
 | Returns | `Option<MeshSurfaceHit3D>` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `instance_surface_on_global_ray` to instance surface on global ray; choose instance/global or mesh-data/local form based on which coordinate space owns the input. |
+| Fails when / edge behavior | Returns `None` when `instance_surface_on_global_ray` cannot produce a value for the supplied target or inputs. |
 
 ### `instance_surfaces_on_global_rays`
 
@@ -159,8 +159,8 @@ lifecycle!({
 | Signature | `pub fn instance_surfaces_on_global_rays( &mut self, node_id: NodeID, rays: &[MeshSurfaceRay3D], resolve_material: bool, ) -> Vec<Option<MeshSurfaceHit3D>>` |
 | Params | `&mut self, node_id: NodeID, rays: &[MeshSurfaceRay3D], resolve_material: bool,` |
 | Returns | `Vec<Option<MeshSurfaceHit3D>>` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `instance_surfaces_on_global_rays` to instance surfaces on global rays; choose instance/global or mesh-data/local form based on which coordinate space owns the input. |
+| Fails when / edge behavior | Returns `None` when `instance_surfaces_on_global_rays` cannot produce a value for the supplied target or inputs. |
 
 ### `instance_material_regions`
 
@@ -170,8 +170,8 @@ lifecycle!({
 | Signature | `pub fn instance_material_regions( &mut self, node_id: NodeID, material: MaterialID, ) -> Vec<MeshMaterialRegion3D>` |
 | Params | `&mut self, node_id: NodeID, material: MaterialID,` |
 | Returns | `Vec<MeshMaterialRegion3D>` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `instance_material_regions` to instance material regions; choose instance/global or mesh-data/local form based on which coordinate space owns the input. |
+| Fails when / edge behavior | Returns an empty vector when `instance_material_regions` finds no values; callers must treat zero results as normal. |
 
 ### `data_surface_at_local_point`
 
@@ -181,8 +181,8 @@ lifecycle!({
 | Signature | `pub fn data_surface_at_local_point( &mut self, mesh_id: MeshID, local_point: Vector3, ) -> Option<MeshDataSurfaceHit3D>` |
 | Params | `&mut self, mesh_id: MeshID, local_point: Vector3,` |
 | Returns | `Option<MeshDataSurfaceHit3D>` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `data_surface_at_local_point` to data surface at local point; choose instance/global or mesh-data/local form based on which coordinate space owns the input. |
+| Fails when / edge behavior | Returns `None` when `data_surface_at_local_point` cannot produce a value for the supplied target or inputs. |
 
 ### `data_surface_on_local_ray`
 
@@ -192,8 +192,8 @@ lifecycle!({
 | Signature | `pub fn data_surface_on_local_ray( &mut self, mesh_id: MeshID, ray_origin_local: Vector3, ray_direction_local: Vector3, max_distance: f32, ) -> Option<MeshDataSurfaceHit3D>` |
 | Params | `&mut self, mesh_id: MeshID, ray_origin_local: Vector3, ray_direction_local: Vector3, max_distance: f32,` |
 | Returns | `Option<MeshDataSurfaceHit3D>` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `data_surface_on_local_ray` to data surface on local ray; choose instance/global or mesh-data/local form based on which coordinate space owns the input. |
+| Fails when / edge behavior | Returns `None` when `data_surface_on_local_ray` cannot produce a value for the supplied target or inputs. |
 
 ### `data_surface_regions`
 
@@ -203,8 +203,8 @@ lifecycle!({
 | Signature | `pub fn data_surface_regions( &mut self, mesh_id: MeshID, surface_index: u32, ) -> Vec<MeshDataSurfaceRegion3D>` |
 | Params | `&mut self, mesh_id: MeshID, surface_index: u32,` |
 | Returns | `Vec<MeshDataSurfaceRegion3D>` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `data_surface_regions` to data surface regions; choose instance/global or mesh-data/local form based on which coordinate space owns the input. |
+| Fails when / edge behavior | Returns an empty vector when `data_surface_regions` finds no values; callers must treat zero results as normal. |
 
 ### `mesh_instance_surface_at_global_point_3d`
 
@@ -214,8 +214,8 @@ lifecycle!({
 | Signature | `mesh_instance_surface_at_global_point_3d!(ctx.run, id, point)` |
 | Params | `ctx, id, point` |
 | Returns | `same as backing method` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `mesh_instance_surface_at_global_point_3d` to mesh instance surface at global point 3d; choose instance/global or mesh-data/local form based on which coordinate space owns the input. |
+| Fails when / edge behavior | Uses the backing `mesh_instance_surface_at_global_point_3d` return and failure behavior unchanged; the wrapper adds no coercion or fallback. |
 
 ### `mesh_instance_surface_global_point_3d`
 
@@ -236,8 +236,8 @@ lifecycle!({
 | Signature | `mesh_instance_surface_on_global_ray_3d!(ctx.run, id, origin, direction, max_distance)` |
 | Params | `ctx, id, origin, direction, max_distance` |
 | Returns | `same as backing method` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `mesh_instance_surface_on_global_ray_3d` to mesh instance surface on global ray 3d; choose instance/global or mesh-data/local form based on which coordinate space owns the input. |
+| Fails when / edge behavior | Uses the backing `mesh_instance_surface_on_global_ray_3d` return and failure behavior unchanged; the wrapper adds no coercion or fallback. |
 
 ### `mesh_instance_surfaces_on_global_rays_3d`
 
@@ -247,8 +247,8 @@ lifecycle!({
 | Signature | `mesh_instance_surfaces_on_global_rays_3d!(ctx.run, id, rays, resolve_material)` |
 | Params | `ctx, id, rays, resolve_material` |
 | Returns | `same as backing method` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `mesh_instance_surfaces_on_global_rays_3d` to mesh instance surfaces on global rays 3d; choose instance/global or mesh-data/local form based on which coordinate space owns the input. |
+| Fails when / edge behavior | Uses the backing `mesh_instance_surfaces_on_global_rays_3d` return and failure behavior unchanged; the wrapper adds no coercion or fallback. |
 
 ### `mesh_instance_material_regions_3d`
 
@@ -258,8 +258,8 @@ lifecycle!({
 | Signature | `mesh_instance_material_regions_3d!(ctx.run, id, material)` |
 | Params | `ctx, id, material` |
 | Returns | `same as backing method` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `mesh_instance_material_regions_3d` to mesh instance material regions 3d; choose instance/global or mesh-data/local form based on which coordinate space owns the input. |
+| Fails when / edge behavior | Uses the backing `mesh_instance_material_regions_3d` return and failure behavior unchanged; the wrapper adds no coercion or fallback. |
 
 ### `mesh_data_surface_at_local_point_3d`
 
@@ -269,8 +269,8 @@ lifecycle!({
 | Signature | `mesh_data_surface_at_local_point_3d!(ctx.run, mesh_id, point_local)` |
 | Params | `ctx, mesh_id, point_local` |
 | Returns | `same as backing method` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `mesh_data_surface_at_local_point_3d` to mesh data surface at local point 3d; choose instance/global or mesh-data/local form based on which coordinate space owns the input. |
+| Fails when / edge behavior | Uses the backing `mesh_data_surface_at_local_point_3d` return and failure behavior unchanged; the wrapper adds no coercion or fallback. |
 
 ### `mesh_data_surface_on_local_ray_3d`
 
@@ -280,8 +280,8 @@ lifecycle!({
 | Signature | `mesh_data_surface_on_local_ray_3d!(ctx.run, mesh_id, origin_local, direction_local, max_distance)` |
 | Params | `ctx, mesh_id, origin_local, direction_local, max_distance` |
 | Returns | `same as backing method` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `mesh_data_surface_on_local_ray_3d` to mesh data surface on local ray 3d; choose instance/global or mesh-data/local form based on which coordinate space owns the input. |
+| Fails when / edge behavior | Uses the backing `mesh_data_surface_on_local_ray_3d` return and failure behavior unchanged; the wrapper adds no coercion or fallback. |
 
 ### `mesh_data_surface_regions_3d`
 
@@ -291,6 +291,6 @@ lifecycle!({
 | Signature | `mesh_data_surface_regions_3d!(ctx.run, mesh_id, surface_index)` |
 | Params | `ctx, mesh_id, surface_index` |
 | Returns | `same as backing method` |
-| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
-| Fails when / edge behavior | Returns the documented empty value when backing runtime data is missing, stale, or the target type does not match. |
+| Use when | Use `mesh_data_surface_regions_3d` to mesh data surface regions 3d; choose instance/global or mesh-data/local form based on which coordinate space owns the input. |
+| Fails when / edge behavior | Uses the backing `mesh_data_surface_regions_3d` return and failure behavior unchanged; the wrapper adds no coercion or fallback. |
 

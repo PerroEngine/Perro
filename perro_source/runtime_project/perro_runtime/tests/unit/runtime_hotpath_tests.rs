@@ -2,7 +2,7 @@ use super::*;
 use perro_io::{ResolvedPath, clear_dlc_mounts, mount_dlc_disk, resolve_path};
 use perro_nodes::{Node3D, SceneNode, SceneNodeData};
 use perro_scripting::{ScriptBehavior, ScriptContext, ScriptFlags, ScriptLifecycle};
-use perro_variant::Variant;
+use perro_variant::{SceneVariantResolver, Variant};
 use std::sync::{
     Arc, LazyLock, Mutex,
     atomic::{AtomicUsize, Ordering},
@@ -12,6 +12,71 @@ use std::{any::Any, path::PathBuf};
 struct CountScript {
     update_count: Arc<AtomicUsize>,
     fixed_count: Arc<AtomicUsize>,
+}
+
+type SceneAssetRefs = (perro_ids::NodeID, Option<perro_ids::TextureID>);
+
+#[derive(Default)]
+struct SceneAssetInitState {
+    refs: SceneAssetRefs,
+}
+
+static SCENE_ASSET_INIT_SEEN: LazyLock<Mutex<Option<SceneAssetRefs>>> =
+    LazyLock::new(|| Mutex::new(None));
+
+struct SceneAssetInitScript;
+
+impl ScriptLifecycle<RuntimeScriptApi> for SceneAssetInitScript {
+    fn on_init(&self, ctx: &mut ScriptContext<'_, RuntimeScriptApi>) {
+        let refs = ctx
+            .run
+            .Scripts()
+            .with_state::<SceneAssetInitState, _, _>(ctx.id, |state| state.refs);
+        *SCENE_ASSET_INIT_SEEN.lock().unwrap() = Some(refs);
+    }
+}
+
+impl ScriptBehavior<RuntimeScriptApi> for SceneAssetInitScript {
+    fn script_flags(&self) -> ScriptFlags {
+        ScriptFlags::new(ScriptFlags::HAS_INIT)
+    }
+
+    fn create_state(&self) -> Box<dyn Any> {
+        Box::new(SceneAssetInitState::default())
+    }
+
+    fn apply_scene_injected_vars(
+        &self,
+        state: &mut dyn Any,
+        vars: Vec<(perro_ids::ScriptMemberID, Variant)>,
+        resolver: &mut dyn SceneVariantResolver,
+    ) {
+        let state = state.downcast_mut::<SceneAssetInitState>().unwrap();
+        if let Some((_, value)) = vars.into_iter().next()
+            && let Ok(refs) = value.parse_scene(resolver)
+        {
+            state.refs = refs;
+        }
+    }
+
+    fn get_var(&self, _state: &dyn Any, _var: perro_ids::ScriptMemberID) -> Variant {
+        Variant::Null
+    }
+
+    fn set_var(&self, _state: &mut dyn Any, _var: perro_ids::ScriptMemberID, _value: Variant) {}
+
+    fn call_method(
+        &self,
+        _method: perro_ids::ScriptMemberID,
+        _ctx: &mut ScriptContext<'_, RuntimeScriptApi>,
+        _params: &[Variant],
+    ) -> Variant {
+        Variant::Null
+    }
+}
+
+fn scene_asset_init_script_ctor() -> *mut dyn ScriptBehavior<RuntimeScriptApi> {
+    Box::into_raw(Box::new(SceneAssetInitScript))
 }
 
 impl ScriptLifecycle<RuntimeScriptApi> for CountScript {
@@ -99,6 +164,7 @@ static STATIC_SCRIPT_REGISTRY_FIXTURE: &[(
 )] = &[
     (0x1111, static_self_resolve_script_ctor),
     (0x3333, static_self_resolve_script_ctor),
+    (0xA55E_7101, scene_asset_init_script_ctor),
 ];
 
 #[test]
@@ -125,6 +191,39 @@ fn static_script_registry_stays_borrowed_and_dynamic_entries_override() {
         runtime.script_runtime.resolve_script_constructor(0x1111),
         Some(RuntimeScriptCtor::Dynamic(_))
     ));
+}
+
+#[test]
+fn scene_asset_and_node_refs_apply_before_on_init() {
+    *SCENE_ASSET_INIT_SEEN.lock().unwrap() = None;
+    let mut runtime = Runtime::new();
+    let target = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::Node3D(Node3D::new())));
+    let owner = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::Node3D(Node3D::new())));
+    let script_hash = 0xA55E_7101_u64;
+    runtime.script_runtime.static_script_registry = STATIC_SCRIPT_REGISTRY_FIXTURE;
+
+    runtime
+        .attach_script_instance(
+            owner,
+            script_hash,
+            None,
+            vec![(
+                perro_ids::ScriptMemberID::from_string("refs"),
+                Variant::Array(vec![
+                    Variant::from(target),
+                    Variant::from("res://tests/init_texture.png"),
+                ]),
+            )],
+        )
+        .unwrap();
+
+    let seen = SCENE_ASSET_INIT_SEEN.lock().unwrap().unwrap();
+    assert_eq!(seen.0, target);
+    assert!(seen.1.is_some());
 }
 
 #[test]

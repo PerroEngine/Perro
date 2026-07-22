@@ -2,7 +2,7 @@ use perro_ids::{NodeID, ScriptMemberID};
 use perro_input_api::{InputAPI, InputWindow};
 use perro_resource_api::{ResourceWindow, api::ResourceAPI};
 use perro_runtime_api::{RuntimeWindow, api::RuntimeAPI};
-use perro_variant::Variant;
+use perro_variant::{SceneVariantResolver, Variant};
 use std::any::Any;
 
 /// Magic bytes at the start of every v2 dynamic-script ABI descriptor.
@@ -26,27 +26,23 @@ pub struct ScriptAbiDescriptorHeader {
 ///
 /// Rust trait objects and their vtables do not have a stable C ABI. The runtime
 /// therefore validates this descriptor before it reads constructors or calls
-/// any other library function. `build_fingerprint` binds a library to the same
-/// compiler, target, synchronized ABI features, and engine sources as its host.
+/// any other library function.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ScriptAbiDescriptor {
     /// Stable prefix that can be checked before reading the full descriptor.
     pub header: ScriptAbiDescriptorHeader,
-    /// Fingerprint generated while compiling `perro_runtime`.
-    pub build_fingerprint: u64,
 }
 
 impl ScriptAbiDescriptor {
     /// Build a v2 descriptor for compiler-generated library glue.
-    pub const fn v2(build_fingerprint: u64) -> Self {
+    pub const fn v2() -> Self {
         Self {
             header: ScriptAbiDescriptorHeader {
                 magic: SCRIPT_ABI_V2_MAGIC,
                 abi_version: SCRIPT_ABI_V2_VERSION,
                 descriptor_size: std::mem::size_of::<Self>() as u32,
             },
-            build_fingerprint,
         }
     }
 }
@@ -135,7 +131,17 @@ pub trait ScriptBehavior<API: ScriptAPI + ?Sized>: ScriptLifecycle<API> {
     fn set_var(&self, state: &mut dyn Any, var: ScriptMemberID, value: Variant);
 
     /// Apply values injected from scene data before init callbacks run.
-    fn apply_scene_injected_vars(&self, state: &mut dyn Any, vars: Vec<(ScriptMemberID, Variant)>) {
+    ///
+    /// `resolver` is used only by this scene path. It lets generated state
+    /// decoding turn authored resource paths into typed resource IDs without
+    /// changing the strict runtime `set_var` contract.
+    fn apply_scene_injected_vars(
+        &self,
+        state: &mut dyn Any,
+        vars: Vec<(ScriptMemberID, Variant)>,
+        resolver: &mut dyn SceneVariantResolver,
+    ) {
+        let _ = resolver;
         for (var, value) in vars {
             self.set_var(state, var, value);
         }

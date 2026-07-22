@@ -1,0 +1,12 @@
+[project]
+name = "ScriptPatterns"
+main_scene = "res://main.scn"
+icon = "res://pattern.svg"
+startup_splash = "res://pattern.svg"
+
+[graphics]
+aspect_ratio = "16:9"
+vsync = true
+
+[runtime]
+target_fixed_update = 60

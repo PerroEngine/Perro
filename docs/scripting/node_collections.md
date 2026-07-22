@@ -33,6 +33,10 @@ A `NodeCollection` is an in-code scene tree: you describe nodes as Rust data wit
 - Compose a spawn from an authored scene plus extra nodes: mix `scene = "res://..."` entries and `collection = ...` splices inside one collection.
 - Build runtime-only debug or tool overlays: parent the collection under `NodeID::nil()` to keep it a root, or under `ctx.id` to scope it to the caller.
 
+## Ownership And Choice
+
+A collection owns a batch of nodes and optional tree relationships outside the main scene tree. Use it when one system creates, updates, and removes many similar runtime nodes. Keep ordinary authored nodes in a scene when they need editor-visible individual wiring. Store the collection ID in the owning script state; pass member IDs out only when another system truly needs a stable target.
+
 ## Shape
 
 Each entry uses plain fields:

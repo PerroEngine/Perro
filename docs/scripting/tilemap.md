@@ -20,6 +20,10 @@
 - Sloped, spiked, or rounded tiles beyond box collision: give the tile an explicit `collision_shape` (`rect`, `circle`, `triangle`, or convex `polygon`) in the tileset; auto tiles merge into larger rect colliders.
 - Filter what the level collides with: `collision_layers` / `collision_mask` on the tilemap (see [BitMask](bitmask.md)).
 
+## Decision Guide
+
+Use `TileMap2D` when repeated atlas cells define both the level image and grid collision. Use individual sprites or mesh nodes when objects need independent transforms, scripts, or non-grid placement. Scene data owns a fixed map; a generator script owns a procedural map and writes the complete grid only when it changes.
+
 ## Practical Example
 
 Generate a walled room at load time by writing the tile grid directly on the node. Tile id `1` is a solid wall (collision) and id `0` is open floor.

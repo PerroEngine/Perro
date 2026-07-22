@@ -36,6 +36,10 @@ Do not treat this as the normal gameplay scene-load API. For runtime scene insta
 - Duplicating and templating levels: `load` a base scene, tweak it, then `save` to a new path as a variant.
 - Inspecting authored data: read scene vars and node structure from `SceneDoc` for validation or reporting.
 
+## Ownership And Choice
+
+Scene docs own parsed or generated scene data before runtime instantiation. Use them for tools, procedural scene authoring, import/export, or runtime content pipelines. Use runtime node APIs to change the live world. Keep document edits and live-node edits separate, and validate references before loading the resulting document as a scene.
+
 ## Context
 
 - Script context path: `ctx.res`
