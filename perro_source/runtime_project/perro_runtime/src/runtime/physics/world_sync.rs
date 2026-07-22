@@ -112,7 +112,7 @@ impl Runtime {
                     if let SceneNodeData::WaterBody2D(water) = &node.data {
                         shape_signature = hash_water_shape(shape_signature, water.water.shape);
                     }
-                    for &child_id in node.children_slice() {
+                    for &child_id in self.nodes.children(id).unwrap_or_default() {
                         let Some(child) = self.nodes.get(child_id) else {
                             continue;
                         };
@@ -164,11 +164,12 @@ impl Runtime {
                             density: material.2,
                         });
                     }
-                    let child_count = node.children_slice().len();
+                    let children = self.nodes.children(id).unwrap_or_default();
+                    let child_count = children.len();
                     if shapes.capacity() < child_count {
                         shapes.reserve(child_count - shapes.capacity());
                     }
-                    for &child_id in node.children_slice() {
+                    for &child_id in children {
                         let Some(child) = self.nodes.get(child_id) else {
                             continue;
                         };
@@ -287,7 +288,7 @@ impl Runtime {
                     shape_signature = hash_water_shape(shape_signature, water.water.shape);
                     shape_signature = hash_f32(shape_signature, water.water.depth.to_bits());
                 }
-                for &child_id in node.children_slice() {
+                for &child_id in self.nodes.children(id).unwrap_or_default() {
                     let Some(child) = self.nodes.get(child_id) else {
                         continue;
                     };
@@ -325,11 +326,12 @@ impl Runtime {
                         density: material.2,
                     });
                 }
-                let child_count = node.children_slice().len();
+                let children = self.nodes.children(id).unwrap_or_default();
+                let child_count = children.len();
                 if shapes.capacity() < child_count {
                     shapes.reserve(child_count - shapes.capacity());
                 }
-                for &child_id in node.children_slice() {
+                for &child_id in children {
                     let Some(child) = self.nodes.get(child_id) else {
                         continue;
                     };

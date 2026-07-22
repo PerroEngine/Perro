@@ -247,11 +247,19 @@ mod streams {
         runtime.set_viewport_size(800, 600);
         let viewport = NodeAPI::create::<UiViewport>(&mut runtime);
         let local_light = NodeAPI::create::<AmbientLight3D>(&mut runtime);
+        let local_mesh = NodeAPI::create::<MeshInstance3D>(&mut runtime);
         let world_light = NodeAPI::create::<AmbientLight3D>(&mut runtime);
         let local_light_2d = NodeAPI::create::<AmbientLight2D>(&mut runtime);
         let _world_light_2d = NodeAPI::create::<AmbientLight2D>(&mut runtime);
         assert!(runtime.reparent(viewport, local_light));
+        assert!(runtime.reparent(viewport, local_mesh));
         assert!(runtime.reparent(viewport, local_light_2d));
+        if let Some(mut node) = runtime.nodes.get_mut(local_mesh)
+            && let SceneNodeData::MeshInstance3D(data) = &mut node.data
+        {
+            data.mesh = perro_ids::MeshID::from_parts(7, 0);
+            data.set_surface_material(0, Some(perro_ids::MaterialID::from_parts(9, 0)));
+        }
         if let Some(mut node) = runtime.nodes.get_mut(local_light)
             && let SceneNodeData::AmbientLight3D(data) = &mut node.data
         {
@@ -272,6 +280,8 @@ mod streams {
         {
             data.layout.size = UiVector2::pixels(320.0, 180.0);
         }
+        // Exercise the packed path used after scene-load cache rebuilds.
+        runtime.nodes.rebuild_packed_children();
 
         runtime.extract_render_ui_commands();
         let mut commands = Vec::new();
@@ -306,6 +316,11 @@ mod streams {
             Light2DState::Ambient(light) if light.intensity == 3.0
         ));
         assert!(state.overlay_camera_2d.is_some());
+        assert!(state.draws_3d.iter().any(|draw| matches!(
+            draw,
+            perro_render_bridge::CameraStreamDraw3DState::Draw { node, .. }
+                if *node == local_mesh
+        )));
         assert!(commands.iter().any(|command| matches!(
             command,
             RenderCommand::Ui(UiCommand::UpsertImage { node, .. }) if *node == viewport

@@ -538,19 +538,10 @@ impl Gpu {
         });
         for (node, stream) in camera_streams {
             let has_stream_post = PostProcessor::has_effects(stream.post_processing.as_ref());
-            // Camera-rendered streams stay scene-linear/HDR until this pass.
-            // Webcam frames arrive display-referred, so tone-mapping those
-            // again would shift their colors.
-            let tone_map_stream = !matches!(stream.source, CameraStreamSourceState::Webcam { .. });
-            let needs_intermediate = has_stream_post || tone_map_stream;
-            let (
-                target_view,
-                post_input_view,
-                tonemap_input_view,
-                post_depth_view,
-                post_view_key,
-                render_texture,
-            ) = {
+            // Engine-rendered streams stay scene-linear/HDR through UI and 3D
+            // composition. The final present pass owns the only tone map.
+            let needs_intermediate = has_stream_post;
+            let (target_view, post_input_view, post_depth_view, post_view_key, render_texture) = {
                 let Some(target) = self.camera_stream_targets.get(node) else {
                     continue;
                 };
@@ -561,11 +552,6 @@ impl Gpu {
                     needs_intermediate.then(|| {
                         target
                             .post_input
-                            .create_view(&wgpu::TextureViewDescriptor::default())
-                    }),
-                    tone_map_stream.then(|| {
-                        target
-                            .tonemap_input
                             .create_view(&wgpu::TextureViewDescriptor::default())
                     }),
                     has_stream_post.then(|| {
@@ -1090,14 +1076,7 @@ impl Gpu {
                     let post_context = PostProcessContext {
                         device: &self.device,
                         queue: &self.queue,
-                        output_view: if tone_map_stream {
-                            let Some(view) = tonemap_input_view.as_ref() else {
-                                continue;
-                            };
-                            view
-                        } else {
-                            &target_view
-                        },
+                        output_view: &target_view,
                         camera: &camera,
                         external_input_view_key: post_view_key,
                         depth_view_key: post_view_key.wrapping_add(1),
@@ -1110,21 +1089,6 @@ impl Gpu {
                         effects: stream.post_processing.as_ref(),
                     };
                     post.apply_chain(&post_context, &post_chain_data, &mut encoder);
-                }
-            }
-            if tone_map_stream {
-                let input_view = if has_stream_post {
-                    tonemap_input_view.as_ref()
-                } else {
-                    post_input_view.as_ref()
-                };
-                if let Some(input_view) = input_view {
-                    self.camera_stream_tonemap.apply(
-                        &self.device,
-                        &mut encoder,
-                        input_view,
-                        &target_view,
-                    );
                 }
             }
         }

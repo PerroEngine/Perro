@@ -436,7 +436,9 @@ impl Runtime {
             let ui_dirty = is_ui_node_data(&node.data);
             // direct field-path split: &self.nodes borrow (via `node`) stays
             // live across the &mut self.dirty calls below (disjoint fields).
-            stack.extend_from_slice(node.children_slice());
+            if let Some(children) = self.nodes.children(id) {
+                stack.extend_from_slice(children);
+            }
             self.dirty.mark_rerender(id);
             if ui_dirty {
                 self.dirty.mark_ui(
@@ -463,7 +465,7 @@ impl Runtime {
         let Some(node) = self.nodes.get(root) else {
             return;
         };
-        if node.children_slice().is_empty() {
+        if self.nodes.children(root).is_none_or(<[NodeID]>::is_empty) {
             // leaf: type known now -> scoped physics gate. w/ children,
             // defer to root walk (propagate) where each descendant typed.
             let physics = node.node_type().is_physics();

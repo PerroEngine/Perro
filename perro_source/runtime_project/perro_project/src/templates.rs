@@ -1189,6 +1189,7 @@ fn project_root() -> std::path::PathBuf {
           },
           graphics: perro_app::entry::StaticEmbeddedGraphicsConfig {
               vsync: false,
+              hdr: perro_structs::HdrMode::Auto,
               msaa: true,
               ssao: perro_runtime::SsaoQuality::Medium,
               meshlets: false,

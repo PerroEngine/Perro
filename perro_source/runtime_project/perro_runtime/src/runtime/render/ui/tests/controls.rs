@@ -9,7 +9,7 @@ mod controls {
         let mut layout = UiHLayout::new();
         layout.layout.size = UiVector2::pixels(300.0, 120.0);
         layout.inner.h_spacing = 20.0 / 300.0;
-        let layout = insert_ui_node(&mut runtime, SceneNodeData::UiHLayout(layout));
+        let layout = insert_ui_node(&mut runtime, layout.into());
 
         let left = insert_panel(&mut runtime, [80.0, 80.0], Color::new(1.0, 0.0, 0.0, 1.0));
         attach_child(&mut runtime, layout, left);
@@ -44,7 +44,7 @@ mod controls {
 
         let mut layout = UiVLayout::new();
         layout.layout.size = UiVector2::pixels(300.0, 200.0);
-        let layout = insert_ui_node(&mut runtime, SceneNodeData::UiVLayout(layout));
+        let layout = insert_ui_node(&mut runtime, layout.into());
 
         runtime.extract_render_ui_commands();
         runtime.drain_render_commands(&mut Vec::new());
@@ -491,7 +491,7 @@ mod controls {
         shape.fill = Color::new(0.2, 0.3, 0.4, 1.0);
         shape.stroke = Color::new(0.9, 0.2, 0.1, 1.0);
         shape.stroke_width = 2.0;
-        let node = insert_ui_node(&mut runtime, SceneNodeData::UiShape(shape));
+        let node = insert_ui_node(&mut runtime, shape.into());
 
         runtime.extract_render_ui_commands();
         let mut commands = Vec::new();
@@ -812,7 +812,8 @@ mod controls {
         clip_parent.layout.size = UiVector2::pixels(20.0, 20.0);
         clip_parent.layout.z_index = 10;
         clip_parent.clip_children = true;
-        let clip_parent = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(Box::new(clip_parent)));
+        let clip_parent =
+            insert_ui_node(&mut runtime, SceneNodeData::UiPanel(Box::new(clip_parent)));
 
         let high = insert_text_box_at(&mut runtime, 0.0, 0.0);
         attach_child(&mut runtime, clip_parent, high);
@@ -837,7 +838,8 @@ mod controls {
         clip_parent.layout.size = UiVector2::pixels(20.0, 20.0);
         clip_parent.layout.z_index = 10;
         clip_parent.clip_children = true;
-        let clip_parent = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(Box::new(clip_parent)));
+        let clip_parent =
+            insert_ui_node(&mut runtime, SceneNodeData::UiPanel(Box::new(clip_parent)));
 
         let high = insert_button(&mut runtime, [120.0, 40.0]);
         attach_child(&mut runtime, clip_parent, high);
@@ -867,7 +869,8 @@ mod controls {
         let mut clip_parent = perro_ui::UiPanel::new();
         clip_parent.layout.size = UiVector2::pixels(20.0, 20.0);
         clip_parent.clip_children = true;
-        let clip_parent = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(Box::new(clip_parent)));
+        let clip_parent =
+            insert_ui_node(&mut runtime, SceneNodeData::UiPanel(Box::new(clip_parent)));
 
         let mut button = perro_ui::UiImageButton::new();
         button.layout.size = UiVector2::pixels(120.0, 40.0);
@@ -903,7 +906,7 @@ mod controls {
 
         let mut list = UiVLayout::new();
         list.layout.size = UiVector2::pixels(220.0, 120.0);
-        let list = insert_ui_node(&mut runtime, SceneNodeData::UiVLayout(list));
+        let list = insert_ui_node(&mut runtime, list.into());
         attach_child(&mut runtime, scroller, list);
 
         let button = insert_button(&mut runtime, [140.0, 44.0]);
@@ -1055,5 +1058,4 @@ mod controls {
         runtime.extract_render_ui_commands();
         assert_eq!(runtime.render_ui.focused_ui_node, Some(right));
     }
-
 }

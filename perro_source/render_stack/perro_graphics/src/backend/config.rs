@@ -101,6 +101,11 @@ impl PerroGraphics {
         self
     }
 
+    pub fn with_hdr_mode(mut self, mode: HdrMode) -> Self {
+        self.hdr_mode = mode;
+        self
+    }
+
     pub fn with_msaa(mut self, enabled: bool) -> Self {
         self.set_smoothing(enabled);
         self

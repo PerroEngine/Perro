@@ -64,9 +64,7 @@ mod meshes {
         multi.blend.blend_layers = BitMask::with([5]);
         multi.blend.blend_mask = BitMask::with([1, 5]);
         multi.blend.distance = 0.25;
-        let node = runtime
-            .nodes
-            .insert(SceneNode::new(SceneNodeData::MultiMeshInstance3D(multi)));
+        let node = runtime.nodes.insert(SceneNode::new(multi.into()));
 
         runtime.extract_render_3d_commands();
         let commands = collect_commands(&mut runtime);
@@ -139,9 +137,7 @@ mod meshes {
         multi.flip_x = true;
         multi.flip_y = true;
         multi.transform.position = Vector3::new(1.0, 2.0, 3.0);
-        let node = runtime
-            .nodes
-            .insert(SceneNode::new(SceneNodeData::MultiMeshInstance3D(multi)));
+        let node = runtime.nodes.insert(SceneNode::new(multi.into()));
 
         runtime.extract_render_3d_commands();
         let commands = collect_commands(&mut runtime);
@@ -374,17 +370,16 @@ mod meshes {
             runtime.resource_api.as_ref(),
             "res://avatars/face/noses.glb:mesh[3]",
         );
-        let mesh_request = collect_commands(&mut runtime)
-            .into_iter()
-            .find_map(|command| match command {
-                RenderCommand::Resource(ResourceCommand::CreateMesh { request, id, .. })
-                    if id == pending_mesh =>
-                {
-                    Some(request)
-                }
-                _ => None,
-            })
-            .expect("expected mesh create command");
+        let mesh_request =
+            collect_commands(&mut runtime)
+                .into_iter()
+                .find_map(|command| match command {
+                    RenderCommand::Resource(ResourceCommand::CreateMesh {
+                        request, id, ..
+                    }) if id == pending_mesh => Some(request),
+                    _ => None,
+                })
+                .expect("expected mesh create command");
 
         let node = runtime
             .nodes
@@ -459,9 +454,9 @@ mod meshes {
         let (material_request, material) = second
             .iter()
             .find_map(|command| match command {
-                RenderCommand::Resource(ResourceCommand::CreateMaterial { request, id, .. }) => {
-                    Some((*request, *id))
-                }
+                RenderCommand::Resource(ResourceCommand::CreateMaterial {
+                    request, id, ..
+                }) => Some((*request, *id)),
                 _ => None,
             })
             .expect("expected material create command");
@@ -587,7 +582,9 @@ mod meshes {
         for (request, mesh) in first
             .iter()
             .filter_map(|command| match command {
-                RenderCommand::Resource(ResourceCommand::CreateMesh { request, .. }) => Some(*request),
+                RenderCommand::Resource(ResourceCommand::CreateMesh { request, .. }) => {
+                    Some(*request)
+                }
                 _ => None,
             })
             .zip([MeshID::from_parts(20, 0), MeshID::from_parts(21, 0)])
@@ -601,17 +598,16 @@ mod meshes {
 
         runtime.extract_render_3d_commands();
         let second = collect_commands(&mut runtime);
-        let default_materials: Vec<MaterialID> = second
-            .iter()
-            .filter_map(|command| match command {
-                RenderCommand::Resource(ResourceCommand::CreateMaterial { id, source, .. })
-                    if source.is_none() =>
-                {
-                    Some(*id)
-                }
-                _ => None,
-            })
-            .collect();
+        let default_materials: Vec<MaterialID> =
+            second
+                .iter()
+                .filter_map(|command| match command {
+                    RenderCommand::Resource(ResourceCommand::CreateMaterial {
+                        id, source, ..
+                    }) if source.is_none() => Some(*id),
+                    _ => None,
+                })
+                .collect();
         assert_eq!(default_materials.len(), 1);
         let default_material = default_materials[0];
         let draws_using_default = second
@@ -633,5 +629,4 @@ mod meshes {
             .count();
         assert_eq!(draws_using_default, 2);
     }
-
 }

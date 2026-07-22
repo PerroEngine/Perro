@@ -154,7 +154,9 @@ impl Runtime {
                         let Some(node) = self.nodes.get(id) else {
                             continue;
                         };
-                        stack.extend_from_slice(node.children_slice());
+                        if let Some(children) = self.nodes.children(id) {
+                            stack.extend_from_slice(children);
+                        }
                         let kind = node.spatial();
                         self.fill_query_spatial_slot(
                             kind,

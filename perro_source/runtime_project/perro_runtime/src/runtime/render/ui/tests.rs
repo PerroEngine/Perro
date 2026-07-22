@@ -2,8 +2,8 @@ use super::*;
 use crate::RuntimeScriptApi;
 use perro_ids::ScriptMemberID;
 use perro_nodes::{
-    AmbientLight2D, AmbientLight3D, CameraStream3D, Node3D, SceneNode, SceneNodeData, Sky3D,
-    UiCameraStream, UiViewport, Webcam, camera_3d::Camera3D,
+    AmbientLight2D, AmbientLight3D, CameraStream3D, MeshInstance3D, Node3D, SceneNode,
+    SceneNodeData, Sky3D, UiCameraStream, UiViewport, Webcam, camera_3d::Camera3D,
 };
 use perro_render_bridge::{
     CameraStreamCommand, CameraStreamSourceState, Command3D, Light2DState, RenderEvent, UiCommand,
@@ -119,11 +119,6 @@ fn set_panel_visible(runtime: &mut Runtime, node: NodeID, visible: bool) {
 
 fn insert_ui_node(runtime: &mut Runtime, data: SceneNodeData) -> NodeID {
     let node = runtime.nodes.insert(SceneNode::new(data));
-    runtime
-        .nodes
-        .get_mut(node)
-        .expect("inserted node exists")
-        .id = node;
     runtime.mark_needs_rerender(node);
     node
 }

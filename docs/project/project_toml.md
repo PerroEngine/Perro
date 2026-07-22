@@ -31,7 +31,7 @@ Every table is a flat top-level topic — no dotted subtables in the current lay
 
 - **Pick the boot scene and app identity.** `[project]` sets `main_scene`, plus `name`, `icon`, `startup_splash`, and optional `version`/`company`/`copyright` export info.
 - **Lock the game's shape for any window size.** `[graphics] aspect_ratio = "16:9"` derives the virtual canvas the runtime renders into.
-- **Trade render quality against cost.** `[graphics]` tunes `msaa`, `ssao`, `occlusion_culling`, `texture_filter`, `particle_sim_default`, `default_font`, and the meshlet switches.
+- **Trade render quality against cost.** `[graphics]` tunes `hdr`, `msaa`, `ssao`, `occlusion_culling`, `texture_filter`, `particle_sim_default`, `default_font`, and the meshlet switches.
 - **Control frame pacing and the fixed step.** `[runtime] frame_rate_cap` caps or uncaps FPS, and `target_fixed_update` sets the fixed-update rate.
 - **Set world physics defaults.** `[physics] gravity` and `coef` seed the physics world.
 - **Tune ray audio once for both dimensions.** `[audio] max_bounces = 4` sets 2D and 3D; add a `_2d`/`_3d` suffix to split them.
@@ -66,6 +66,7 @@ trademark = ""
 [graphics]
 aspect_ratio = "16:9"            # "WIDTH:HEIGHT" game shape
 vsync = false
+hdr = "auto"                     # auto | on | off
 msaa = true
 ssao = "medium"                  # off | low | medium | high | ultra
 occlusion_culling = "gpu"        # cpu | gpu | off
@@ -151,6 +152,7 @@ Empty identity string = none. Legacy `[metadata]` table still parses; `[project]
 | ---------------------- | ------ | ----------------- | ---------------------------- |
 | `aspect_ratio`         | string | `"16:9"`          | `"WIDTH:HEIGHT"`             |
 | `vsync`                | bool   | `false`           | `true` / `false`             |
+| `hdr`                  | string | `"auto"`          | `"auto"`, `"on"`, `"off"` |
 | `msaa`                 | bool   | `true`            | `true` / `false`             |
 | `ssao`                 | string | `"medium"`        | `"off"`, `"low"`, `"medium"`, `"high"`, `"ultra"` |
 | `occlusion_culling`    | string | `"gpu"`           | `"cpu"`, `"gpu"`, `"off"`    |
@@ -163,6 +165,10 @@ Empty identity string = none. Legacy `[metadata]` table still parses; `[project]
 | `meshlet_debug_view`   | bool   | `false`           | debug draw path              |
 
 `aspect_ratio` sets game shape.
+
+`hdr = "auto"` picks native HDR when the surface, display path, and float scene target support it.
+`"on"` requests HDR with safe SDR fallback. `"off"` forces SDR. Scripts can override the startup
+choice with `hdr_set!(ctx.res, HdrMode::...)`.
 
 Runtime derives internal canvas from it:
 

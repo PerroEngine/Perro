@@ -148,7 +148,7 @@ impl Runtime {
             return Vector2::ZERO;
         };
         let text = ui_text_measure(&scene_node.data);
-        let children = scene_node.get_children_ids();
+        let children = self.nodes.children(node).unwrap_or_default();
         let child_size = match &scene_node.data {
             SceneNodeData::UiTreeList(list) => self.ui_tree_list_content_size(list, available),
             _ => match ui_auto_layout_from_data(&scene_node.data) {

@@ -359,9 +359,7 @@ impl NodeAPI for Runtime {
         &mut self,
         node_id: perro_ids::NodeID,
     ) -> Option<Vec<perro_ids::NodeID>> {
-        self.nodes
-            .get(node_id)
-            .map(|node| node.get_children_ids().to_vec())
+        self.nodes.children(node_id).map(<[NodeID]>::to_vec)
     }
 
     fn get_node_type(&mut self, node_id: perro_ids::NodeID) -> Option<NodeType> {
@@ -583,11 +581,13 @@ impl NodeAPI for Runtime {
             if !visited.insert(current) {
                 continue;
             }
-            let Some(node) = self.nodes.get(current) else {
+            if self.nodes.get(current).is_none() {
                 continue;
-            };
+            }
             postorder.push(current);
-            stack.extend(node.get_children_ids().iter().copied());
+            if let Some(children) = self.nodes.children(current) {
+                stack.extend(children.iter().copied());
+            }
         }
 
         for current in postorder.iter().rev().copied() {

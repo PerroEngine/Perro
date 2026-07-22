@@ -188,10 +188,8 @@ impl Runtime {
             }
             let material = mask.material;
             self.audio.scratch_child_ids.clear();
-            if let Some(node) = self.nodes.get(mask_id) {
-                self.audio
-                    .scratch_child_ids
-                    .extend_from_slice(node.children_slice());
+            if let Some(children) = self.nodes.children(mask_id) {
+                self.audio.scratch_child_ids.extend_from_slice(children);
             }
             for child_index in 0..self.audio.scratch_child_ids.len() {
                 let child = self.audio.scratch_child_ids[child_index];
@@ -259,10 +257,8 @@ impl Runtime {
             }
             let material = mask.material;
             self.audio.scratch_child_ids.clear();
-            if let Some(node) = self.nodes.get(mask_id) {
-                self.audio
-                    .scratch_child_ids
-                    .extend_from_slice(node.children_slice());
+            if let Some(children) = self.nodes.children(mask_id) {
+                self.audio.scratch_child_ids.extend_from_slice(children);
             }
             for child_index in 0..self.audio.scratch_child_ids.len() {
                 let child = self.audio.scratch_child_ids[child_index];

@@ -643,17 +643,13 @@ impl Runtime {
     }
 
     pub(super) fn body_float_radius_2d(&mut self, body: NodeID, body_pos: Vector2) -> f32 {
-        let child_count = self
-            .nodes
-            .get(body)
-            .map(|node| node.children_slice().len())
-            .unwrap_or(0);
+        let child_count = self.nodes.children(body).map(<[NodeID]>::len).unwrap_or(0);
         let mut radius = 0.0f32;
         for i in 0..child_count {
             let Some(child_id) = self
                 .nodes
-                .get(body)
-                .and_then(|node| node.children_slice().get(i).copied())
+                .children(body)
+                .and_then(|children| children.get(i).copied())
             else {
                 continue;
             };
@@ -680,17 +676,13 @@ impl Runtime {
     }
 
     pub(super) fn body_float_radius_3d(&mut self, body: NodeID, body_pos: Vector3) -> f32 {
-        let child_count = self
-            .nodes
-            .get(body)
-            .map(|node| node.children_slice().len())
-            .unwrap_or(0);
+        let child_count = self.nodes.children(body).map(<[NodeID]>::len).unwrap_or(0);
         let mut radius = 0.0f32;
         for i in 0..child_count {
             let Some(child_id) = self
                 .nodes
-                .get(body)
-                .and_then(|node| node.children_slice().get(i).copied())
+                .children(body)
+                .and_then(|children| children.get(i).copied())
             else {
                 continue;
             };

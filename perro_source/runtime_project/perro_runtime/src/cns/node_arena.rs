@@ -33,6 +33,12 @@ pub struct NodeArena {
     /// Slot-indexed hot mirror of each node's parent id. Kept in sync by
     /// insert/remove/clear + [`Self::set_parent`]. Nil while slot is free.
     parents: Vec<NodeID>,
+    /// Packed read cache for child traversal. `packed_child_offsets[i]..[i+1]`
+    /// indexes `packed_child_ids` for slot `i`. Writes keep `SceneNode.children`
+    /// authoritative; stale caches fall back to that source until rebuilt.
+    packed_child_offsets: Vec<u32>,
+    packed_child_ids: Vec<NodeID>,
+    packed_children_revision: u64,
     free_indices: Vec<usize>,
     name_index: AHashMap<Cow<'static, str>, Vec<NodeID>>,
     tag_index: AHashMap<TagID, AHashSet<NodeID>>,
@@ -67,6 +73,7 @@ pub struct NodeMut<'a> {
     old_tags: Vec<TagID>,
     old_parent: NodeID,
     old_node_type: NodeType,
+    old_children: Vec<NodeID>,
 }
 
 impl Deref for NodeMut<'_> {
@@ -89,7 +96,7 @@ impl DerefMut for NodeMut<'_> {
 
 impl Drop for NodeMut<'_> {
     fn drop(&mut self) {
-        let (new_name, new_tags, new_parent, new_node_type) = {
+        let (new_name, new_tags, new_parent, new_node_type, children_changed) = {
             let node = self.arena.nodes[self.index]
                 .as_ref()
                 .expect("tracked node slot stays live while borrowed");
@@ -98,6 +105,7 @@ impl Drop for NodeMut<'_> {
                 node.get_tag_ids(),
                 node.parent,
                 node.node_type(),
+                self.old_children != node.children,
             )
         };
 
@@ -123,7 +131,8 @@ impl Drop for NodeMut<'_> {
 
         self.arena.parents[self.index] = new_parent;
         self.arena.node_types[self.index] = new_node_type;
-        if self.old_parent != new_parent || self.old_node_type != new_node_type {
+        if self.old_parent != new_parent || self.old_node_type != new_node_type || children_changed
+        {
             self.arena.bump_structural_revision();
         } else {
             self.arena.bump_mutation_revision();
@@ -155,6 +164,9 @@ impl NodeArena {
             generations,
             node_types: vec![NodeType::Node],
             parents: vec![NodeID::nil()],
+            packed_child_offsets: vec![0, 0],
+            packed_child_ids: Vec::new(),
+            packed_children_revision: 0,
             free_indices: Vec::new(),
             name_index: AHashMap::default(),
             tag_index: AHashMap::default(),
@@ -183,6 +195,9 @@ impl NodeArena {
             generations,
             node_types,
             parents,
+            packed_child_offsets: vec![0, 0],
+            packed_child_ids: Vec::with_capacity(capacity.saturating_sub(1)),
+            packed_children_revision: 0,
             free_indices: Vec::new(),
             name_index: AHashMap::default(),
             tag_index: AHashMap::default(),
@@ -327,6 +342,7 @@ impl NodeArena {
             old_tags: node.get_tag_ids(),
             old_parent: node.parent,
             old_node_type: node.node_type(),
+            old_children: node.children.clone(),
             arena: self,
         })
     }
@@ -549,7 +565,7 @@ impl NodeArena {
             return false;
         };
         node.children.push(child);
-        self.bump_data_revision_only();
+        self.bump_structural_revision();
         true
     }
 
@@ -565,9 +581,9 @@ impl NodeArena {
         let Some(node) = self.nodes[index].as_mut() else {
             return false;
         };
-        node.children.reserve(children.len());
+        node.children.reserve_exact(children.len());
         node.children.extend_from_slice(children);
-        self.bump_data_revision_only();
+        self.bump_structural_revision();
         true
     }
 
@@ -611,6 +627,9 @@ impl NodeArena {
         self.nodes.truncate(1);
         self.node_types.truncate(1);
         self.parents.truncate(1);
+        self.packed_child_offsets.clear();
+        self.packed_child_offsets.extend_from_slice(&[0, 0]);
+        self.packed_child_ids.clear();
         self.free_indices.clear();
         self.name_index.clear();
         self.tag_index.clear();
@@ -659,6 +678,57 @@ impl NodeArena {
     #[inline]
     pub fn parent_slots(&self) -> &[NodeID] {
         &self.parents
+    }
+
+    /// Rebuild the dense child traversal cache from authoritative node lists.
+    /// Call after a batch of structural edits; stale reads stay correct via
+    /// [`Self::children`]'s fallback path.
+    pub fn rebuild_packed_children(&mut self) {
+        self.packed_child_offsets.clear();
+        self.packed_child_offsets
+            .reserve(self.nodes.len().saturating_add(1));
+        self.packed_child_ids.clear();
+        self.packed_child_offsets.push(0);
+        for slot in &self.nodes {
+            if let Some(node) = slot {
+                self.packed_child_ids
+                    .extend_from_slice(node.children_slice());
+            }
+            self.packed_child_offsets.push(
+                u32::try_from(self.packed_child_ids.len())
+                    .expect("node child edge count exceeds u32"),
+            );
+        }
+        self.packed_children_revision = self.structural_revision;
+    }
+
+    /// Rebuild only when structural edits or tracked mutable access stale the cache.
+    #[inline]
+    pub fn refresh_packed_children(&mut self) {
+        if !self.packed_children_current() {
+            self.rebuild_packed_children();
+        }
+    }
+
+    /// Children for a live node. Uses packed cache when current and falls back
+    /// to authoritative per-node storage after unbatched structural edits.
+    #[inline]
+    pub fn children(&self, id: NodeID) -> Option<&[NodeID]> {
+        let index = self.valid_slot(id)?;
+        if self.packed_children_revision == self.structural_revision
+            && self.packed_child_offsets.len() == self.nodes.len().saturating_add(1)
+        {
+            let start = self.packed_child_offsets[index] as usize;
+            let end = self.packed_child_offsets[index + 1] as usize;
+            return Some(&self.packed_child_ids[start..end]);
+        }
+        self.nodes[index].as_ref().map(SceneNode::children_slice)
+    }
+
+    #[inline]
+    pub fn packed_children_current(&self) -> bool {
+        self.packed_children_revision == self.structural_revision
+            && self.packed_child_offsets.len() == self.nodes.len().saturating_add(1)
     }
 
     /// Type tag at a raw slot index. See [`Self::node_type_slots`] for

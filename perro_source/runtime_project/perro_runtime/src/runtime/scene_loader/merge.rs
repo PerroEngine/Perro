@@ -82,12 +82,31 @@ pub(super) fn merge_prepared_scene(
 
     let PreparedScene {
         root_key,
-        nodes,
+        mut nodes,
         scripts,
     } = prepared;
 
+    // Expanded topology is complete at this point. Reserve every child list
+    // once so linking never grows per-node vectors geometrically.
+    let mut child_counts = AHashMap::<u32, usize>::with_capacity(nodes.len());
+    let mut top_level_count = 0usize;
+    for pending in &nodes {
+        if let Some(parent_key) = pending.parent_key {
+            *child_counts.entry(parent_key).or_default() += 1;
+        } else {
+            top_level_count += 1;
+        }
+    }
+    for pending in &mut nodes {
+        pending
+            .node
+            .children
+            .reserve_exact(child_counts.get(&pending.key).copied().unwrap_or(0));
+    }
+
     let mut engine_root = SceneNode::new(SceneNodeData::Node);
     engine_root.name = Cow::Borrowed("Game Root");
+    engine_root.children.reserve_exact(top_level_count);
     runtime.nodes.reserve(nodes.len().saturating_add(1));
     // Read the type from the owned node before it moves into the arena,
     // avoiding a post-insert arena lookup. The arena indexes tags on insert.
@@ -509,6 +528,7 @@ pub(super) fn merge_prepared_scene(
         runtime.nodes.set_parent(*root, engine_root);
     }
     runtime.nodes.extend_children(engine_root, &attach_order);
+    runtime.nodes.rebuild_packed_children();
 
     // Force initial frame extraction for freshly merged scene content, even with no scripts.
     runtime.mark_transform_dirty_recursive(engine_root);

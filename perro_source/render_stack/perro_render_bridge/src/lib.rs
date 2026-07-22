@@ -5,6 +5,7 @@ pub use perro_particle_math::Op as ParticleExprOp3D;
 use perro_structs::{
     Color, ColorBlindFilter, DrawShape2D, PostProcessEffect, PostProcessSet, UnitVector4,
 };
+pub use perro_structs::{HdrColorSpace, HdrFallback, HdrMode, HdrStatus};
 use std::borrow::Cow;
 use std::sync::Arc;
 

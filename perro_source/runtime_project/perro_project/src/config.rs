@@ -226,6 +226,7 @@ pub struct StaticProjectConfig {
     pub occlusion_culling: OcclusionCulling,
     pub particle_sim_default: ParticleSimDefault,
     pub texture_filter: perro_structs::TextureFilterMode,
+    pub hdr: perro_structs::HdrMode,
     pub rendering_ui_pixel_snapping: bool,
     pub rendering_default_font: &'static str,
     pub audio_listener_max_distance: f32,
@@ -279,6 +280,7 @@ impl StaticProjectConfig {
             occlusion_culling: OcclusionCulling::Gpu,
             particle_sim_default: ParticleSimDefault::Cpu,
             texture_filter: perro_structs::TextureFilterMode::LinearMipmap,
+            hdr: perro_structs::HdrMode::Auto,
             rendering_ui_pixel_snapping: true,
             rendering_default_font: "default",
             audio_listener_max_distance: 500.0,
@@ -373,6 +375,11 @@ impl StaticProjectConfig {
         self
     }
 
+    pub const fn with_hdr(mut self, mode: perro_structs::HdrMode) -> Self {
+        self.hdr = mode;
+        self
+    }
+
     pub const fn with_ui_default_font(mut self, font: &'static str) -> Self {
         self.rendering_default_font = font;
         self
@@ -457,6 +464,7 @@ impl StaticProjectConfig {
             occlusion_culling: self.occlusion_culling,
             particle_sim_default: self.particle_sim_default,
             texture_filter: self.texture_filter,
+            hdr: self.hdr,
             rendering: RenderingConfig {
                 ui: RenderUiConfig {
                     pixel_snapping: self.rendering_ui_pixel_snapping,
@@ -521,6 +529,7 @@ pub struct ProjectConfig {
     pub occlusion_culling: OcclusionCulling,
     pub particle_sim_default: ParticleSimDefault,
     pub texture_filter: perro_structs::TextureFilterMode,
+    pub hdr: perro_structs::HdrMode,
     pub rendering: RenderingConfig,
     pub audio: AudioConfig,
     pub localization: Option<LocalizationConfig>,
@@ -556,6 +565,7 @@ impl ProjectConfig {
             occlusion_culling: OcclusionCulling::Gpu,
             particle_sim_default: ParticleSimDefault::Cpu,
             texture_filter: perro_structs::TextureFilterMode::LinearMipmap,
+            hdr: perro_structs::HdrMode::Auto,
             rendering: RenderingConfig::default(),
             audio: AudioConfig::default(),
             localization: None,

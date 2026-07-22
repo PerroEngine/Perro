@@ -18,6 +18,14 @@ pub(super) fn emit_ssao_expr(quality: perro_project::SsaoQuality) -> &'static st
     }
 }
 
+pub(super) fn emit_hdr_expr(mode: perro_structs::HdrMode) -> &'static str {
+    match mode {
+        perro_structs::HdrMode::Off => "perro_structs::HdrMode::Off",
+        perro_structs::HdrMode::Auto => "perro_structs::HdrMode::Auto",
+        perro_structs::HdrMode::On => "perro_structs::HdrMode::On",
+    }
+}
+
 pub(super) fn emit_particle_sim_default_expr(mode: perro_project::ParticleSimDefault) -> &'static str {
     match mode {
         perro_project::ParticleSimDefault::Cpu => "perro_app::entry::ParticleSimDefault::Cpu",

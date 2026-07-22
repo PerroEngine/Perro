@@ -350,9 +350,7 @@ mod animation {
         sky.time.paused = true;
         sky.time.scale = 0.25;
         sky.active = true;
-        runtime
-            .nodes
-            .insert(SceneNode::new(SceneNodeData::Sky3D(sky)));
+        runtime.nodes.insert(SceneNode::new(sky.into()));
 
         runtime.extract_render_3d_commands();
         let commands = collect_commands(&mut runtime);
@@ -378,9 +376,7 @@ mod animation {
         let mut sky = Sky3D::default();
         sky.palette.day_colors = vec![[0.4, 0.6, 0.9], [0.9, 0.95, 1.0]];
         sky.active = true;
-        let node = runtime
-            .nodes
-            .insert(SceneNode::new(SceneNodeData::Sky3D(sky)));
+        let node = runtime.nodes.insert(SceneNode::new(sky.into()));
 
         runtime.extract_render_3d_commands();
         let commands = collect_commands(&mut runtime);
@@ -547,9 +543,7 @@ mod animation {
             Vector3::new(0.0, 0.0, 0.0),
             Quaternion::IDENTITY,
         )];
-        let node = runtime
-            .nodes
-            .insert(SceneNode::new(SceneNodeData::MultiMeshInstance3D(multi)));
+        let node = runtime.nodes.insert(SceneNode::new(multi.into()));
 
         runtime.extract_render_3d_commands();
         let commands = collect_commands(&mut runtime);
@@ -641,5 +635,4 @@ mod animation {
 
         assert_ne!(first_x, second_x);
     }
-
 }

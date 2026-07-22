@@ -20,6 +20,41 @@ fn bench_node_arena_len_hotloop(c: &mut Criterion) {
     });
 }
 
+fn bench_child_topology_scan(c: &mut Criterion) {
+    let mut arena = NodeArena::with_capacity(100_000);
+    let mut ids = Vec::with_capacity(100_000);
+    for index in 0..100_000 {
+        let id = arena.insert(SceneNode::new(SceneNodeData::Node3D(Node3D::new())));
+        if index > 0 {
+            let parent = ids[(index - 1) / 4];
+            arena.get_mut(parent).unwrap().add_child(id);
+        }
+        ids.push(id);
+    }
+    arena.rebuild_packed_children();
+
+    let mut group = c.benchmark_group("runtime_core/child_topology_scan_100k");
+    group.bench_function("per_node_vec", |b| {
+        b.iter(|| {
+            let mut edges = 0usize;
+            for &id in black_box(&ids) {
+                edges += arena.get(id).unwrap().children_slice().len();
+            }
+            black_box(edges)
+        })
+    });
+    group.bench_function("packed_cache", |b| {
+        b.iter(|| {
+            let mut edges = 0usize;
+            for &id in black_box(&ids) {
+                edges += arena.children(id).unwrap().len();
+            }
+            black_box(edges)
+        })
+    });
+    group.finish();
+}
+
 fn bench_internal_schedule_unregister(c: &mut Criterion) {
     c.bench_function(
         "runtime_core/internal_schedule_unregister_remove_nodes",
@@ -424,6 +459,7 @@ fn bench_animated_sprite_2d_hotpaths(c: &mut Criterion) {
 
 fn benches(c: &mut Criterion) {
     bench_node_arena_len_hotloop(c);
+    bench_child_topology_scan(c);
     bench_internal_schedule_unregister(c);
     bench_dirty_indices_snapshot_compare(c);
     bench_transform_dirty_propagate_and_refresh(c);

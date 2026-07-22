@@ -10,6 +10,7 @@ homepage.workspace = true
 readme.workspace = true
 
 [dependencies]
+perro_structs.workspace = true
 perro_assets.workspace = true
 perro_asset_formats.workspace = true
 perro_ids.workspace = true

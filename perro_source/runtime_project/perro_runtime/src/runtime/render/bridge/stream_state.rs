@@ -139,9 +139,9 @@ impl Runtime {
         }
 
         self.camera_stream_node_scratch.clear();
-        if let Some(root) = self.nodes.get(viewport_node) {
+        if let Some(children) = self.nodes.children(viewport_node) {
             self.camera_stream_node_scratch
-                .extend(root.children.iter().copied());
+                .extend(children.iter().copied());
         }
         let mut cursor = 0usize;
         while cursor < self.camera_stream_node_scratch.len() {
@@ -153,8 +153,10 @@ impl Runtime {
             if matches!(scene_node.data, SceneNodeData::UiViewport(_)) {
                 continue;
             }
-            self.camera_stream_node_scratch
-                .extend(scene_node.children.iter().copied());
+            if let Some(children) = self.nodes.children(node) {
+                self.camera_stream_node_scratch
+                    .extend(children.iter().copied());
+            }
         }
 
         let render_mask = BitMask::NONE;

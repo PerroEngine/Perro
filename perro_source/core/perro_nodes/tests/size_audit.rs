@@ -20,9 +20,14 @@ fn scene_node_data_stride_stays_small() {
     // If this fails, a new/grown inline variant widened every arena slot —
     // box it (or shrink it) instead of raising the cap.
     assert!(
-        size_of::<SceneNodeData>() <= 256,
+        size_of::<SceneNodeData>() <= 176,
         "SceneNodeData stride grew to {} B",
         size_of::<SceneNodeData>()
+    );
+    assert!(
+        size_of::<SceneNode>() <= 256,
+        "SceneNode stride grew to {} B",
+        size_of::<SceneNode>()
     );
 }
 

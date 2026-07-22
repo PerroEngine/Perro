@@ -55,7 +55,9 @@ impl Runtime {
                 // subtree moves not force full physics world re-sync.
                 let physics = node.node_type().is_physics();
                 self.dirty.mark_transform(id, node.spatial(), physics);
-                stack.extend_from_slice(node.children_slice());
+                if let Some(children) = self.nodes.children(id) {
+                    stack.extend_from_slice(children);
+                }
             }
         }
 
@@ -827,8 +829,8 @@ impl Runtime {
                 })
             {
                 children.clear();
-                if let Some(node) = self.nodes.get(id) {
-                    children.extend_from_slice(node.children_slice());
+                if let Some(node_children) = self.nodes.children(id) {
+                    children.extend_from_slice(node_children);
                 }
                 if children.is_empty() {
                     self.mark_needs_rerender(id);
@@ -866,8 +868,8 @@ impl Runtime {
                 })
             {
                 children.clear();
-                if let Some(node) = self.nodes.get(id) {
-                    children.extend_from_slice(node.children_slice());
+                if let Some(node_children) = self.nodes.children(id) {
+                    children.extend_from_slice(node_children);
                 }
                 if children.is_empty() {
                     self.mark_needs_rerender(id);

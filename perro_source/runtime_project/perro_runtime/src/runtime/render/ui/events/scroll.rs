@@ -676,10 +676,10 @@ impl Runtime {
             return;
         }
         out.push(root);
-        let Some(scene_node) = self.nodes.get(root) else {
+        let Some(children) = self.nodes.children(root) else {
             return;
         };
-        let mut stack = scene_node.get_children_ids().to_vec();
+        let mut stack = children.to_vec();
         while let Some(node) = stack.pop() {
             let Some(child) = self.nodes.get(node) else {
                 continue;
@@ -688,10 +688,14 @@ impl Runtime {
                 if seen.insert(node) {
                     out.push(node);
                 }
-                stack.extend(child.get_children_ids().iter().copied());
+                if let Some(children) = self.nodes.children(node) {
+                    stack.extend(children.iter().copied());
+                }
                 continue;
             }
-            stack.extend(child.get_children_ids().iter().copied());
+            if let Some(children) = self.nodes.children(node) {
+                stack.extend(children.iter().copied());
+            }
         }
     }
 }

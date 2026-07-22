@@ -234,7 +234,6 @@ macro_rules! define_scene_nodes {
         #[derive(Clone, Debug)]
         pub struct SceneNode {
             pub data: SceneNodeData,
-            pub id: NodeID,
             pub name: Cow<'static, str>,
             pub parent: NodeID,
             pub children: Vec<NodeID>,
@@ -266,7 +265,6 @@ macro_rules! define_scene_nodes {
         impl SceneNode {
             pub fn new(data: SceneNodeData) -> Self {
                 Self {
-                    id: NodeID::nil(),
                     name: Cow::Borrowed("Node"),
                     parent: NodeID::nil(),
                     children: Vec::new(),
@@ -909,14 +907,14 @@ define_scene_nodes! {
         // visual
         CameraStream3D => (Node3D, CameraStream3D, Inline, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         MeshInstance3D => (Node3D, MeshInstance3D, Inline, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
-        MultiMeshInstance3D => (Node3D, MultiMeshInstance3D, Inline, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
+        MultiMeshInstance3D => (Node3D, MultiMeshInstance3D, Boxed, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         Sprite3D => (Node3D, Sprite3D, Inline, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         VideoPlayer3D => (Node3D, VideoPlayer3D, Inline, Renderable::True, InternalUpdate::True, InternalFixedUpdate::False),
         Label3D => (Node3D, Label3D, Inline, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         ParticleEmitter3D => (Node3D, ParticleEmitter3D, Inline, Renderable::True, InternalUpdate::True, InternalFixedUpdate::False),
         WaterBody3D => (Node3D, WaterBody3D, Boxed, Renderable::True, InternalUpdate::False, InternalFixedUpdate::True),
         Decal3D => (Node3D, Decal3D, Inline, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
-        Sky3D => (None, Sky3D, Inline, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
+        Sky3D => (None, Sky3D, Boxed, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
 
         // lights
         AmbientLight3D => (None, AmbientLight3D, Inline, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
@@ -935,7 +933,7 @@ define_scene_nodes! {
         CollisionShape3D => (Node3D, CollisionShape3D, Inline, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
         StaticBody3D => (Node3D, StaticBody3D, Inline, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),
         Area3D => (Node3D, Area3D, Inline, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),
-        RigidBody3D => (Node3D, RigidBody3D, Inline, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),
+        RigidBody3D => (Node3D, RigidBody3D, Boxed, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),
         CharacterBody3D => (Node3D, CharacterBody3D, Inline, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),
         PhysicsForceEmitter3D => (Node3D, PhysicsForceEmitter3D, Inline, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),
         BallJoint3D => (Node3D, BallJoint3D, Inline, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),
@@ -959,7 +957,7 @@ define_scene_nodes! {
         UiButton => (UiNode, UiButton, Boxed, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         UiDropdown => (UiNode, UiDropdown, Boxed, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         UiColorPicker => (UiNode, UiColorPicker, Boxed, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
-        UiShape => (UiNode, UiShape, Inline, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
+        UiShape => (UiNode, UiShape, Boxed, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         UiCheckbox => (UiNode, UiCheckbox, Boxed, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         UiImage => (UiNode, UiImage, Boxed, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         UiVideoPlayer => (UiNode, UiVideoPlayer, Boxed, Renderable::True, InternalUpdate::True, InternalFixedUpdate::False),
@@ -973,10 +971,10 @@ define_scene_nodes! {
 
         // layout
         UiScrollContainer => (UiNode, UiScrollContainer, Boxed, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
-        UiLayout => (UiNode, UiLayout, Inline, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
-        UiHLayout => (UiNode, UiHLayout, Inline, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
-        UiVLayout => (UiNode, UiVLayout, Inline, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
-        UiGrid => (UiNode, UiGrid, Inline, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
+        UiLayout => (UiNode, UiLayout, Boxed, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
+        UiHLayout => (UiNode, UiHLayout, Boxed, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
+        UiVLayout => (UiNode, UiVLayout, Boxed, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
+        UiGrid => (UiNode, UiGrid, Boxed, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
         UiTreeList => (UiNode, UiTreeList, Boxed, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False)
     }
     resource: {

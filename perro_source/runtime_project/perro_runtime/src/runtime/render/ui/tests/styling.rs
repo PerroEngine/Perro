@@ -102,7 +102,7 @@ mod styling {
 
         let mut list = UiVLayout::new();
         list.layout.size = UiVector2::pixels(200.0, 300.0);
-        let list_id = insert_ui_node(&mut runtime, SceneNodeData::UiVLayout(list));
+        let list_id = insert_ui_node(&mut runtime, list.into());
         attach_child(&mut runtime, scroller_id, list_id);
 
         runtime.extract_render_ui_commands();
@@ -149,7 +149,7 @@ mod styling {
 
         let mut list = UiVLayout::new();
         list.layout.size = UiVector2::pixels(200.0, 300.0);
-        let list_id = insert_ui_node(&mut runtime, SceneNodeData::UiVLayout(list));
+        let list_id = insert_ui_node(&mut runtime, list.into());
         attach_child(&mut runtime, scroller_id, list_id);
 
         runtime.extract_render_ui_commands();
@@ -185,7 +185,7 @@ mod styling {
 
         let mut list = UiVLayout::new();
         list.layout.size = UiVector2::pixels(200.0, 300.0);
-        let list_id = insert_ui_node(&mut runtime, SceneNodeData::UiVLayout(list));
+        let list_id = insert_ui_node(&mut runtime, list.into());
         attach_child(&mut runtime, scroller_id, list_id);
 
         runtime.extract_render_ui_commands();
@@ -239,7 +239,7 @@ mod styling {
 
         let mut list = UiVLayout::new();
         list.layout.size = UiVector2::pixels(200.0, 300.0);
-        let list_id = insert_ui_node(&mut runtime, SceneNodeData::UiVLayout(list));
+        let list_id = insert_ui_node(&mut runtime, list.into());
         attach_child(&mut runtime, scroller_id, list_id);
 
         runtime.extract_render_ui_commands();
@@ -278,7 +278,7 @@ mod styling {
         let mut list = UiVLayout::new();
         list.layout.h_size = UiSizeMode::Fill;
         list.layout.size = UiVector2::pixels(0.0, 300.0);
-        let list_id = insert_ui_node(&mut runtime, SceneNodeData::UiVLayout(list));
+        let list_id = insert_ui_node(&mut runtime, list.into());
         attach_child(&mut runtime, scroller_id, list_id);
 
         runtime.extract_render_ui_commands();
@@ -309,7 +309,7 @@ mod styling {
         let mut list = UiVLayout::new();
         list.layout.h_size = UiSizeMode::Fill;
         list.layout.size = UiVector2::pixels(0.0, 300.0);
-        let list_id = insert_ui_node(&mut runtime, SceneNodeData::UiVLayout(list));
+        let list_id = insert_ui_node(&mut runtime, list.into());
         attach_child(&mut runtime, scroller_id, list_id);
 
         runtime.extract_render_ui_commands();
@@ -338,7 +338,7 @@ mod styling {
 
         let mut list = UiVLayout::new();
         list.layout.size = UiVector2::pixels(200.0, 300.0);
-        let list_id = insert_ui_node(&mut runtime, SceneNodeData::UiVLayout(list));
+        let list_id = insert_ui_node(&mut runtime, list.into());
         attach_child(&mut runtime, scroller_id, list_id);
 
         runtime.extract_render_ui_commands();
@@ -380,7 +380,7 @@ mod styling {
 
         let mut list = UiVLayout::new();
         list.layout.size = UiVector2::pixels(200.0, 300.0);
-        let list_id = insert_ui_node(&mut runtime, SceneNodeData::UiVLayout(list));
+        let list_id = insert_ui_node(&mut runtime, list.into());
         attach_child(&mut runtime, scroller_id, list_id);
 
         runtime.extract_render_ui_commands();
@@ -417,7 +417,7 @@ mod styling {
 
         let mut list = UiVLayout::new();
         list.layout.size = UiVector2::pixels(200.0, 300.0);
-        let list_id = insert_ui_node(&mut runtime, SceneNodeData::UiVLayout(list));
+        let list_id = insert_ui_node(&mut runtime, list.into());
         attach_child(&mut runtime, scroller_id, list_id);
 
         runtime.extract_render_ui_commands();
@@ -491,7 +491,8 @@ mod styling {
         let inner_child = insert_panel(&mut runtime, [200.0, 80.0], Color::new(0.1, 0.2, 0.3, 1.0));
         attach_child(&mut runtime, inner_id, inner_child);
 
-        let outer_child = insert_panel(&mut runtime, [220.0, 300.0], Color::new(0.2, 0.3, 0.4, 1.0));
+        let outer_child =
+            insert_panel(&mut runtime, [220.0, 300.0], Color::new(0.2, 0.3, 0.4, 1.0));
         attach_child(&mut runtime, outer_id, outer_child);
 
         runtime.extract_render_ui_commands();
@@ -990,16 +991,16 @@ mod styling {
 
         let mut content = UiVLayout::new();
         content.layout.size = UiVector2::ratio(0.92, 0.92);
-        let content = insert_ui_node(&mut runtime, SceneNodeData::UiVLayout(content));
+        let content = insert_ui_node(&mut runtime, content.into());
         attach_child(&mut runtime, root, content);
 
         let mut grid = UiVLayout::new();
         grid.layout.size = UiVector2::ratio(1.0, 0.72);
-        let grid = insert_ui_node(&mut runtime, SceneNodeData::UiVLayout(grid));
+        let grid = insert_ui_node(&mut runtime, grid.into());
         attach_child(&mut runtime, content, grid);
 
-        let row_top = insert_ui_node(&mut runtime, SceneNodeData::UiHLayout(UiHLayout::new()));
-        let row_bottom = insert_ui_node(&mut runtime, SceneNodeData::UiHLayout(UiHLayout::new()));
+        let row_top = insert_ui_node(&mut runtime, UiHLayout::new().into());
+        let row_bottom = insert_ui_node(&mut runtime, UiHLayout::new().into());
         attach_child(&mut runtime, grid, row_top);
         attach_child(&mut runtime, grid, row_bottom);
 
@@ -1161,7 +1162,8 @@ mod styling {
             "Two",
             perro_variant::Variant::from(2_i32),
         ));
-        let dropdown_id = insert_ui_node(&mut runtime, SceneNodeData::UiDropdown(Box::new(dropdown)));
+        let dropdown_id =
+            insert_ui_node(&mut runtime, SceneNodeData::UiDropdown(Box::new(dropdown)));
 
         runtime.extract_render_ui_commands();
         let (button_width, option_id) = runtime
@@ -1235,7 +1237,8 @@ mod styling {
             "One",
             perro_variant::Variant::from(1_i32),
         ));
-        let dropdown_id = insert_ui_node(&mut runtime, SceneNodeData::UiDropdown(Box::new(dropdown)));
+        let dropdown_id =
+            insert_ui_node(&mut runtime, SceneNodeData::UiDropdown(Box::new(dropdown)));
 
         runtime.extract_render_ui_commands();
         let popup_id = runtime
@@ -1318,7 +1321,8 @@ mod styling {
             "One",
             perro_variant::Variant::from(1_i32),
         ));
-        let dropdown_id = insert_ui_node(&mut runtime, SceneNodeData::UiDropdown(Box::new(dropdown)));
+        let dropdown_id =
+            insert_ui_node(&mut runtime, SceneNodeData::UiDropdown(Box::new(dropdown)));
 
         runtime.extract_render_ui_commands();
         let popup_id = runtime
@@ -1349,7 +1353,8 @@ mod styling {
                 perro_variant::Variant::from(idx),
             ));
         }
-        let dropdown_id = insert_ui_node(&mut runtime, SceneNodeData::UiDropdown(Box::new(dropdown)));
+        let dropdown_id =
+            insert_ui_node(&mut runtime, SceneNodeData::UiDropdown(Box::new(dropdown)));
 
         runtime.extract_render_ui_commands();
         let (buttons, labels) = runtime
@@ -1484,7 +1489,8 @@ mod styling {
             "One",
             perro_variant::Variant::from(1_i32),
         ));
-        let dropdown_id = insert_ui_node(&mut runtime, SceneNodeData::UiDropdown(Box::new(dropdown)));
+        let dropdown_id =
+            insert_ui_node(&mut runtime, SceneNodeData::UiDropdown(Box::new(dropdown)));
 
         runtime.extract_render_ui_commands();
         runtime.drain_render_commands(&mut Vec::new());
@@ -1550,5 +1556,4 @@ mod styling {
         assert_eq!(snap_to_physical_pixels(10.25, 2.0), 10.5);
         assert_eq!(snap_to_physical_pixels(10.2, 2.0), 10.0);
     }
-
 }

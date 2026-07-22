@@ -156,7 +156,7 @@ pub(super) fn push_color_wheel(
             center,
             radius,
             fill: Color32::TRANSPARENT,
-            stroke: Stroke::new(1.0, Color32::from_white_alpha(90)),
+            stroke: Stroke::new(1.0_f32, Color32::from_white_alpha(90)),
         }),
     });
     let (hue, saturation, _) = rgb_to_hsv(selected);
@@ -191,7 +191,7 @@ pub(super) fn push_color_swatches(
                 rect,
                 CornerRadius::same(4),
                 color32(color),
-                Stroke::new(1.0, Color32::from_black_alpha(80)),
+                Stroke::new(1.0_f32, Color32::from_black_alpha(80)),
                 StrokeKind::Inside,
             )),
         });
@@ -212,7 +212,7 @@ pub(super) fn push_color_marker(pos: epaint::Pos2, clip_rect: Rect, out: &mut Ve
             center: pos,
             radius: 7.0,
             fill: Color32::TRANSPARENT,
-            stroke: Stroke::new(3.0, Color32::from_black_alpha(170)),
+            stroke: Stroke::new(3.0_f32, Color32::from_black_alpha(170)),
         }),
     });
     out.push(ClippedShape {
@@ -221,7 +221,7 @@ pub(super) fn push_color_marker(pos: epaint::Pos2, clip_rect: Rect, out: &mut Ve
             center: pos,
             radius: 6.0,
             fill: Color32::TRANSPARENT,
-            stroke: Stroke::new(2.0, Color32::WHITE),
+            stroke: Stroke::new(2.0_f32, Color32::WHITE),
         }),
     });
 }

@@ -24,7 +24,9 @@ use helpers::*;
 use shaders::*;
 
 const UI_SUPERSAMPLE_SCALE: u32 = 3;
-const UI_SUPERSAMPLE_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
+// UI may contain engine camera-stream pixels. Keep its intermediate linear HDR
+// so viewport highlights survive until the final present tone map.
+const UI_SUPERSAMPLE_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
 const UI_HARFBUZZ_TEXTURE_ID: TextureId = TextureId::Managed(1);
 
 #[repr(C)]
@@ -1188,7 +1190,7 @@ fn push_ui_mesh(
 
 #[cfg(test)]
 mod tests {
-    use super::{UiMeshGpu, push_ui_mesh, ui_mesh_signature_for_test};
+    use super::{UI_SUPERSAMPLE_FORMAT, UiMeshGpu, push_ui_mesh, ui_mesh_signature_for_test};
     use epaint::{ClippedPrimitive, Color32, Mesh, Primitive, Rect, TextureId, Vertex, pos2};
 
     #[test]
@@ -1231,6 +1233,42 @@ mod tests {
 
         assert_ne!(base, texture);
         assert_ne!(base, viewport);
+    }
+
+    fn premultiplied_over(src: [f32; 4], dst: [f32; 4]) -> [f32; 4] {
+        let inv_alpha = 1.0 - src[3];
+        [
+            src[0] + dst[0] * inv_alpha,
+            src[1] + dst[1] * inv_alpha,
+            src[2] + dst[2] * inv_alpha,
+            src[3] + dst[3] * inv_alpha,
+        ]
+    }
+
+    #[test]
+    fn transparent_viewport_with_opaque_mesh_is_visible() {
+        let clear = [0.0, 0.0, 0.0, 0.0];
+        let mesh = [2.5, 0.5, 0.25, 1.0];
+
+        assert_eq!(premultiplied_over(mesh, clear), mesh);
+    }
+
+    #[test]
+    fn transparent_background_stays_zero_alpha() {
+        assert_eq!(premultiplied_over([0.0; 4], [0.0; 4]), [0.0; 4]);
+    }
+
+    #[test]
+    fn opaque_pixel_stays_one_alpha() {
+        let pixel = premultiplied_over([0.25, 0.5, 0.75, 1.0], [0.1; 4]);
+        assert_eq!(pixel[3], 1.0);
+    }
+
+    #[test]
+    fn hdr_survives_ui_composite() {
+        assert_eq!(UI_SUPERSAMPLE_FORMAT, wgpu::TextureFormat::Rgba16Float);
+        let pixel = premultiplied_over([4.0, 2.0, 1.0, 1.0], [0.0; 4]);
+        assert!(pixel[0] > 1.0);
     }
 
     fn primitive(texture_id: TextureId, x: f32) -> std::sync::Arc<ClippedPrimitive> {

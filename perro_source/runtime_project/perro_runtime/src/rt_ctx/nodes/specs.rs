@@ -63,7 +63,7 @@ impl Runtime {
             }
             node.set_tags(Some(spec.tags));
             node.parent = parent;
-            node.children.reserve(child_counts[index]);
+            node.children.reserve_exact(child_counts[index]);
 
             let node_type = node.node_type();
             let id = self.nodes.insert(node);
@@ -101,6 +101,7 @@ impl Runtime {
             self.attach_created_children(parent_id, &root_ids);
         }
 
+        self.nodes.rebuild_packed_children();
         ids
     }
 

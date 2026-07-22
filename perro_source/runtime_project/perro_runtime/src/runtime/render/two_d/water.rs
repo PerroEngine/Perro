@@ -52,11 +52,7 @@ impl Runtime {
                 continue;
             };
             // defer children clone until after enabled/mask filter passes.
-            let Some(children) = self
-                .nodes
-                .get(body_id)
-                .map(|node| node.children_slice().to_vec())
-            else {
+            let Some(children) = self.nodes.children(body_id).map(<[NodeID]>::to_vec) else {
                 continue;
             };
             for child_id in children {

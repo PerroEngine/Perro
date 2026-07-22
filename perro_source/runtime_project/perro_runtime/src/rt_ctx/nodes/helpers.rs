@@ -63,14 +63,11 @@ impl Runtime {
     ) {
         let mut stack = vec![child_id];
         while let Some(id) = stack.pop() {
-            let Some((is_ui, children)) = self.nodes.get(id).map(|node| {
-                (
-                    ui_base_from_data(&node.data).is_some(),
-                    node.get_children_ids().to_vec(),
-                )
-            }) else {
+            let Some(node) = self.nodes.get(id) else {
                 continue;
             };
+            let is_ui = ui_base_from_data(&node.data).is_some();
+            let children = self.nodes.children(id).map(<[NodeID]>::to_vec);
             if is_ui {
                 self.mark_ui_dirty(
                     id,
@@ -80,7 +77,7 @@ impl Runtime {
                         | Self::UI_DIRTY_COMMANDS,
                 );
             }
-            stack.extend(children);
+            stack.extend(children.unwrap_or_default());
         }
 
         let mut seen_ui_parents = std::collections::HashSet::new();
@@ -119,14 +116,11 @@ impl Runtime {
     pub(super) fn mark_ui_visibility_dirty_subtree(&mut self, root: perro_ids::NodeID) {
         let mut stack = vec![root];
         while let Some(id) = stack.pop() {
-            let Some((is_ui, children)) = self.nodes.get(id).map(|node| {
-                (
-                    ui_base_from_data(&node.data).is_some(),
-                    node.get_children_ids().to_vec(),
-                )
-            }) else {
+            let Some(node) = self.nodes.get(id) else {
                 continue;
             };
+            let is_ui = ui_base_from_data(&node.data).is_some();
+            let children = self.nodes.children(id).map(<[NodeID]>::to_vec);
 
             if is_ui {
                 self.mark_ui_dirty(
@@ -138,7 +132,7 @@ impl Runtime {
                 );
             }
 
-            stack.extend(children);
+            stack.extend(children.unwrap_or_default());
         }
     }
 }
@@ -919,22 +913,22 @@ mod fingerprint_tests {
 
     #[test]
     fn grid_columns_layout_self_commands() {
-        let before = SceneNodeData::UiGrid(UiGrid::new());
+        let before = SceneNodeData::from(UiGrid::new());
         let mut grid = UiGrid::new();
         grid.columns += 3;
         assert_eq!(
-            payload_flags(&before, &SceneNodeData::UiGrid(grid)),
+            payload_flags(&before, &SceneNodeData::from(grid)),
             F_LAYOUT_SELF | F_COMMANDS
         );
     }
 
     #[test]
     fn hlayout_spacing_layout_self_commands() {
-        let before = SceneNodeData::UiHLayout(UiHLayout::new());
+        let before = SceneNodeData::from(UiHLayout::new());
         let mut hl = UiHLayout::new();
         hl.inner.spacing += 5.0;
         assert_eq!(
-            payload_flags(&before, &SceneNodeData::UiHLayout(hl)),
+            payload_flags(&before, &SceneNodeData::from(hl)),
             F_LAYOUT_SELF | F_COMMANDS
         );
     }

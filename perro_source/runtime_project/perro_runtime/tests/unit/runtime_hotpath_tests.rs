@@ -426,6 +426,30 @@ fn node_arena_structural_revision_moves_only_on_structural_change() {
 }
 
 #[test]
+fn node_arena_packed_children_rebuild_and_stale_fallback() {
+    let mut arena = NodeArena::new();
+    let root = arena.insert(SceneNode::new(SceneNodeData::Node3D(Node3D::new())));
+    let a = arena.insert(SceneNode::new(SceneNodeData::Node3D(Node3D::new())));
+    let b = arena.insert(SceneNode::new(SceneNodeData::Node3D(Node3D::new())));
+
+    assert!(arena.push_child(root, a));
+    assert!(!arena.packed_children_current());
+    assert_eq!(arena.children(root), Some([a].as_slice()));
+
+    arena.rebuild_packed_children();
+    assert!(arena.packed_children_current());
+    assert_eq!(arena.children(root), Some([a].as_slice()));
+
+    arena.get_mut(root).unwrap().add_child(b);
+    assert!(!arena.packed_children_current());
+    assert_eq!(arena.children(root), Some([a, b].as_slice()));
+
+    arena.refresh_packed_children();
+    assert!(arena.packed_children_current());
+    assert_eq!(arena.children(root), Some([a, b].as_slice()));
+}
+
+#[test]
 fn node_arena_tag_index_tracks_insert_mutate_remove() {
     let mut arena = NodeArena::new();
     let enemy = perro_ids::NodeTag::borrowed("enemy");

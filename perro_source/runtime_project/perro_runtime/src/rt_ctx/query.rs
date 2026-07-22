@@ -530,7 +530,9 @@ fn scan_subtree(
         if matches_query(node, id.index() as usize, plan, spatial) {
             out.push(id);
         }
-        stack.extend(node.children_slice().iter().copied());
+        if let Some(children) = arena.children(id) {
+            stack.extend(children.iter().copied());
+        }
     }
     out
 }
@@ -604,7 +606,9 @@ fn first_in_subtree(
         if matches_query(node, id.index() as usize, plan, spatial) {
             return Some(id);
         }
-        stack.extend(node.children_slice().iter().copied());
+        if let Some(children) = arena.children(id) {
+            stack.extend(children.iter().copied());
+        }
     }
     None
 }

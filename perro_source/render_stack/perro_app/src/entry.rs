@@ -165,6 +165,7 @@ fn graphics_from_project_config(
     let occlusion_culling = effective_occlusion_culling(config.occlusion_culling);
     PerroGraphics::new()
         .with_vsync(config.vsync)
+        .with_hdr_mode(config.hdr)
         .with_msaa(effective_msaa(config.msaa))
         .with_ssao(graphics_ssao(config.ssao))
         .with_meshlets_enabled(config.meshlets)
@@ -391,6 +392,7 @@ pub struct StaticEmbeddedInputMapConfig<'a> {
 
 pub struct StaticEmbeddedGraphicsConfig {
     pub vsync: bool,
+    pub hdr: perro_structs::HdrMode,
     pub msaa: bool,
     pub ssao: perro_runtime::SsaoQuality,
     pub meshlets: bool,
@@ -464,6 +466,7 @@ pub fn run_static_embedded_project(
         input.project.virtual_height,
     )
     .with_vsync(input.graphics.vsync)
+    .with_hdr(input.graphics.hdr)
     .with_target_fixed_update(input.runtime.target_fixed_update)
     .with_frame_rate_cap(input.runtime.frame_rate_cap)
     .with_physics_gravity(input.runtime.physics_gravity)
@@ -615,6 +618,7 @@ pub fn run_static_embedded_project_android(
         input.project.virtual_height,
     )
     .with_vsync(input.graphics.vsync)
+    .with_hdr(input.graphics.hdr)
     .with_target_fixed_update(input.runtime.target_fixed_update)
     .with_frame_rate_cap(input.runtime.frame_rate_cap)
     .with_physics_gravity(input.runtime.physics_gravity)
@@ -710,6 +714,7 @@ pub fn run_static_embedded_project_web(input: StaticEmbeddedProject<'_>) -> Resu
             input.project.virtual_height,
         )
         .with_vsync(input.graphics.vsync)
+        .with_hdr(input.graphics.hdr)
         .with_target_fixed_update(input.runtime.target_fixed_update)
         .with_frame_rate_cap(input.runtime.frame_rate_cap)
         .with_physics_gravity(input.runtime.physics_gravity)

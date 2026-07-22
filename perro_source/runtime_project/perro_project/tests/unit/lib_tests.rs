@@ -142,6 +142,7 @@ meshlet_debug_view = true
 occlusion_culling = "cpu"
 particle_sim_default = "gpu"
 texture_filter = "nearest"
+hdr = "on"
 "#;
 
     let parsed = parse_project_toml(toml).expect("failed to parse project.toml");
@@ -158,6 +159,7 @@ texture_filter = "nearest"
         parsed.texture_filter,
         perro_structs::TextureFilterMode::Nearest
     );
+    assert_eq!(parsed.hdr, perro_structs::HdrMode::On);
     assert_eq!(parsed.physics_gravity, -9.81);
     assert_eq!(parsed.physics_coef, 1.0);
     assert!(parsed.localization.is_none());
@@ -175,6 +177,30 @@ aspect_ratio = "16:9"
 "#;
     let parsed = parse_project_toml(toml).expect("parse default ssao");
     assert_eq!(parsed.ssao, SsaoQuality::Medium);
+    assert_eq!(parsed.hdr, perro_structs::HdrMode::Auto);
+}
+
+#[test]
+fn parse_project_toml_rejects_bad_hdr_mode() {
+    let toml = r#"
+[project]
+name = "Game"
+main_scene = "res://main.scn"
+
+[graphics]
+aspect_ratio = "16:9"
+hdr = "maybe"
+"#;
+    let err = parse_project_toml(toml).expect_err("reject bad HDR mode");
+    assert!(err.to_string().contains("graphics.hdr"));
+}
+
+#[test]
+fn static_project_config_keeps_hdr_mode() {
+    let cfg = StaticProjectConfig::new("Game", 1, 2, 3, 1920, 1080)
+        .with_hdr(perro_structs::HdrMode::Off)
+        .to_runtime();
+    assert_eq!(cfg.hdr, perro_structs::HdrMode::Off);
 }
 
 #[test]

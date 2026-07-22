@@ -23,6 +23,7 @@ ssao = "medium"                  # off | low | medium | high | ultra
 occlusion_culling = "gpu"        # cpu | gpu | off
 particle_sim_default = "gpu"     # cpu | hybrid | gpu
 texture_filter = "linear_mipmap" # nearest | linear | linear_mipmap | anisotropic
+hdr = "auto"                     # auto | on | off
 default_font = "default"         # default | system://Name | res://path.ttf
 
 meshlets = false
@@ -214,6 +215,7 @@ pub fn parse_project_toml(contents: &str) -> Result<ProjectConfig, ProjectError>
         "texture_filter",
         perro_structs::TextureFilterMode::LinearMipmap,
     )?;
+    let hdr = parse_hdr_with_default(graphics_table, "hdr", perro_structs::HdrMode::Auto)?;
     let localization = parse_localization(localization_table)?;
     let mut metadata = parse_metadata(metadata_table)?;
     apply_project_identity(project_table, &mut metadata)?;
@@ -248,6 +250,7 @@ pub fn parse_project_toml(contents: &str) -> Result<ProjectConfig, ProjectError>
         occlusion_culling,
         particle_sim_default,
         texture_filter,
+        hdr,
         rendering,
         audio,
         localization,
@@ -1016,6 +1019,31 @@ fn parse_texture_filter_with_default(
                 .to_string(),
         )
     })
+}
+
+fn parse_hdr_with_default(
+    table: &toml::map::Map<String, Value>,
+    key: &'static str,
+    default: perro_structs::HdrMode,
+) -> Result<perro_structs::HdrMode, ProjectError> {
+    let Some(value) = table.get(key) else {
+        return Ok(default);
+    };
+    let Some(raw) = value.as_str() else {
+        return Err(ProjectError::InvalidField(
+            "graphics.hdr",
+            "must be one of \"auto\", \"on\", \"off\"".to_string(),
+        ));
+    };
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "auto" => Ok(perro_structs::HdrMode::Auto),
+        "on" => Ok(perro_structs::HdrMode::On),
+        "off" => Ok(perro_structs::HdrMode::Off),
+        _ => Err(ProjectError::InvalidField(
+            "graphics.hdr",
+            "must be one of \"auto\", \"on\", \"off\"".to_string(),
+        )),
+    }
 }
 
 fn parse_localization(

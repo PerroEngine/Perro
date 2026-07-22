@@ -157,7 +157,7 @@ impl Runtime {
         self.insert_color_picker_internal_node(
             row_id,
             format!("__perro_tree_list_toggle_{idx}"),
-            SceneNodeData::UiShape(shape),
+            shape.into(),
         )
     }
 
@@ -973,13 +973,12 @@ impl Runtime {
         node.set_name(name);
         node.parent = parent_id;
         let id = self.nodes.insert(node);
-        if let Some(inserted) = self.nodes.get_mut_untracked(id) {
-            inserted.id = id;
-        }
-        if let Some(parent) = self.nodes.get_mut_untracked(parent_id)
-            && !parent.children.contains(&id)
+        if self
+            .nodes
+            .children(parent_id)
+            .is_some_and(|children| !children.contains(&id))
         {
-            parent.children.push(id);
+            self.nodes.push_child(parent_id, id);
         }
         if let Some(node) = self.nodes.get(id) {
             self.register_internal_node_schedules(id, node.node_type());

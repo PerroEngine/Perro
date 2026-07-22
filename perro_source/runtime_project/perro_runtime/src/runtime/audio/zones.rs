@@ -35,10 +35,8 @@ impl Runtime {
 
     pub(super) fn point_in_audio_effect_zone_2d(&mut self, zone: NodeID, point: Vector2) -> bool {
         self.audio.scratch_child_ids.clear();
-        if let Some(node) = self.nodes.get(zone) {
-            self.audio
-                .scratch_child_ids
-                .extend_from_slice(node.children_slice());
+        if let Some(children) = self.nodes.children(zone) {
+            self.audio.scratch_child_ids.extend_from_slice(children);
         }
         for index in 0..self.audio.scratch_child_ids.len() {
             let child = self.audio.scratch_child_ids[index];
@@ -67,10 +65,8 @@ impl Runtime {
             return false;
         }
         self.audio.scratch_child_ids.clear();
-        if let Some(node) = self.nodes.get(zone) {
-            self.audio
-                .scratch_child_ids
-                .extend_from_slice(node.children_slice());
+        if let Some(children) = self.nodes.children(zone) {
+            self.audio.scratch_child_ids.extend_from_slice(children);
         }
         for index in 0..self.audio.scratch_child_ids.len() {
             let child = self.audio.scratch_child_ids[index];
@@ -144,10 +140,8 @@ impl Runtime {
 
     pub(super) fn point_in_audio_effect_zone_3d(&mut self, zone: NodeID, point: Vector3) -> bool {
         self.audio.scratch_child_ids.clear();
-        if let Some(node) = self.nodes.get(zone) {
-            self.audio
-                .scratch_child_ids
-                .extend_from_slice(node.children_slice());
+        if let Some(children) = self.nodes.children(zone) {
+            self.audio.scratch_child_ids.extend_from_slice(children);
         }
         for index in 0..self.audio.scratch_child_ids.len() {
             let child = self.audio.scratch_child_ids[index];
@@ -178,10 +172,8 @@ impl Runtime {
             return false;
         }
         self.audio.scratch_child_ids.clear();
-        if let Some(node) = self.nodes.get(zone) {
-            self.audio
-                .scratch_child_ids
-                .extend_from_slice(node.children_slice());
+        if let Some(children) = self.nodes.children(zone) {
+            self.audio.scratch_child_ids.extend_from_slice(children);
         }
         for index in 0..self.audio.scratch_child_ids.len() {
             let child = self.audio.scratch_child_ids[index];
@@ -294,10 +286,8 @@ impl Runtime {
             }
             let reflection = mix.echo.max(mix.reverb_send * 0.5).clamp(0.0, 1.0);
             self.audio.scratch_child_ids.clear();
-            if let Some(node) = self.nodes.get(zone_id) {
-                self.audio
-                    .scratch_child_ids
-                    .extend_from_slice(node.children_slice());
+            if let Some(children) = self.nodes.children(zone_id) {
+                self.audio.scratch_child_ids.extend_from_slice(children);
             }
             for child_index in 0..self.audio.scratch_child_ids.len() {
                 let child = self.audio.scratch_child_ids[child_index];
@@ -361,10 +351,8 @@ impl Runtime {
             }
             let reflection = mix.echo.max(mix.reverb_send * 0.5).clamp(0.0, 1.0);
             self.audio.scratch_child_ids.clear();
-            if let Some(node) = self.nodes.get(zone_id) {
-                self.audio
-                    .scratch_child_ids
-                    .extend_from_slice(node.children_slice());
+            if let Some(children) = self.nodes.children(zone_id) {
+                self.audio.scratch_child_ids.extend_from_slice(children);
             }
             for child_index in 0..self.audio.scratch_child_ids.len() {
                 let child = self.audio.scratch_child_ids[child_index];

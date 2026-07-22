@@ -396,7 +396,7 @@ mod layout {
 
         let mut layout = UiHLayout::new();
         layout.layout.size = UiVector2::pixels(300.0, 100.0);
-        let parent = insert_ui_node(&mut runtime, SceneNodeData::UiHLayout(layout));
+        let parent = insert_ui_node(&mut runtime, layout.into());
         let child = insert_panel(&mut runtime, [60.0, 40.0], Color::new(0.1, 0.2, 0.3, 1.0));
         attach_child(&mut runtime, parent, child);
 
@@ -418,7 +418,7 @@ mod layout {
         let mut layout = UiHLayout::new();
         layout.layout.size = UiVector2::pixels(300.0, 100.0);
         layout.layout.padding = perro_ui::UiRect::new(0.1, 0.0, 0.0, 0.0);
-        let parent = insert_ui_node(&mut runtime, SceneNodeData::UiHLayout(layout));
+        let parent = insert_ui_node(&mut runtime, layout.into());
         let child = insert_panel(&mut runtime, [60.0, 40.0], Color::new(0.1, 0.2, 0.3, 1.0));
         attach_child(&mut runtime, parent, child);
 
@@ -440,7 +440,7 @@ mod layout {
         let mut layout = UiHLayout::new();
         layout.layout.size = UiVector2::pixels(300.0, 100.0);
         layout.inner.spacing = 10.0 / 300.0;
-        let parent = insert_ui_node(&mut runtime, SceneNodeData::UiHLayout(layout));
+        let parent = insert_ui_node(&mut runtime, layout.into());
         let first = insert_panel(&mut runtime, [60.0, 40.0], Color::new(0.1, 0.2, 0.3, 1.0));
         let middle = insert_panel(&mut runtime, [60.0, 40.0], Color::new(0.2, 0.3, 0.4, 1.0));
         let last = insert_panel(&mut runtime, [60.0, 40.0], Color::new(0.3, 0.4, 0.5, 1.0));
@@ -479,7 +479,7 @@ mod layout {
         let mut layout = UiHLayout::new();
         layout.layout.size = UiVector2::pixels(300.0, 100.0);
         layout.inner.spacing_mode = UiLayoutSpacingMode::Fill;
-        let parent = insert_ui_node(&mut runtime, SceneNodeData::UiHLayout(layout));
+        let parent = insert_ui_node(&mut runtime, layout.into());
         let first = insert_panel(&mut runtime, [60.0, 40.0], Color::new(0.1, 0.2, 0.3, 1.0));
         let middle = insert_panel(&mut runtime, [60.0, 40.0], Color::new(0.2, 0.3, 0.4, 1.0));
         let last = insert_panel(&mut runtime, [60.0, 40.0], Color::new(0.3, 0.4, 0.5, 1.0));
@@ -509,7 +509,7 @@ mod layout {
         let mut layout = UiVLayout::new();
         layout.layout.size = UiVector2::pixels(200.0, 180.0);
         layout.inner.spacing = 10.0 / 180.0;
-        let parent = insert_ui_node(&mut runtime, SceneNodeData::UiVLayout(layout));
+        let parent = insert_ui_node(&mut runtime, layout.into());
         let first = insert_panel(&mut runtime, [100.0, 40.0], Color::new(0.1, 0.2, 0.3, 1.0));
         let second = insert_panel(&mut runtime, [100.0, 40.0], Color::new(0.2, 0.3, 0.4, 1.0));
         attach_child(&mut runtime, parent, first);
@@ -538,7 +538,7 @@ mod layout {
         let mut layout = UiVLayout::new();
         layout.layout.size = UiVector2::pixels(200.0, 180.0);
         layout.inner.spacing_mode = UiLayoutSpacingMode::Fill;
-        let parent = insert_ui_node(&mut runtime, SceneNodeData::UiVLayout(layout));
+        let parent = insert_ui_node(&mut runtime, layout.into());
         let first = insert_panel(&mut runtime, [100.0, 40.0], Color::new(0.1, 0.2, 0.3, 1.0));
         let second = insert_panel(&mut runtime, [100.0, 40.0], Color::new(0.2, 0.3, 0.4, 1.0));
         attach_child(&mut runtime, parent, first);
@@ -563,7 +563,7 @@ mod layout {
 
         let mut grid = UiGrid::new();
         grid.layout.size = UiVector2::pixels(300.0, 200.0);
-        let parent = insert_ui_node(&mut runtime, SceneNodeData::UiGrid(grid));
+        let parent = insert_ui_node(&mut runtime, grid.into());
         let child = insert_panel(&mut runtime, [60.0, 40.0], Color::new(0.1, 0.2, 0.3, 1.0));
         attach_child(&mut runtime, parent, child);
 
@@ -587,7 +587,7 @@ mod layout {
         grid.columns = 3;
         grid.h_spacing = 10.0 / 300.0;
         grid.v_spacing = 10.0 / 200.0;
-        let parent = insert_ui_node(&mut runtime, SceneNodeData::UiGrid(grid));
+        let parent = insert_ui_node(&mut runtime, grid.into());
 
         let mut children = Vec::new();
         for _ in 0..6 {
@@ -621,7 +621,7 @@ mod layout {
         grid.layout.size = UiVector2::pixels(300.0, 200.0);
         grid.columns = 3;
         grid.h_spacing_mode = UiLayoutSpacingMode::Fill;
-        let parent = insert_ui_node(&mut runtime, SceneNodeData::UiGrid(grid));
+        let parent = insert_ui_node(&mut runtime, grid.into());
 
         let first = insert_panel(&mut runtime, [60.0, 40.0], Color::new(0.1, 0.2, 0.3, 1.0));
         let middle = insert_panel(&mut runtime, [60.0, 40.0], Color::new(0.2, 0.3, 0.4, 1.0));
@@ -653,7 +653,7 @@ mod layout {
         grid.layout.size = UiVector2::pixels(400.0, 200.0);
         grid.columns = 3;
         grid.h_spacing = 10.0 / 400.0;
-        let parent = insert_ui_node(&mut runtime, SceneNodeData::UiGrid(grid));
+        let parent = insert_ui_node(&mut runtime, grid.into());
 
         let first = insert_panel(&mut runtime, [80.0, 40.0], Color::new(0.1, 0.2, 0.3, 1.0));
         let middle = insert_panel(&mut runtime, [60.0, 40.0], Color::new(0.1, 0.2, 0.3, 1.0));
@@ -695,7 +695,7 @@ mod layout {
         grid.columns = 3;
         grid.h_spacing = 10.0 / 300.0;
         grid.v_spacing = 10.0 / 200.0;
-        let parent = insert_ui_node(&mut runtime, SceneNodeData::UiGrid(grid));
+        let parent = insert_ui_node(&mut runtime, grid.into());
 
         let first = insert_panel(&mut runtime, [60.0, 40.0], Color::new(0.1, 0.2, 0.3, 1.0));
         let hidden = insert_panel(&mut runtime, [60.0, 40.0], Color::new(0.2, 0.3, 0.4, 1.0));
@@ -859,7 +859,7 @@ mod layout {
 
         let mut layout = UiHLayout::new();
         layout.layout.size = UiVector2::pixels(300.0, 100.0);
-        let parent = insert_ui_node(&mut runtime, SceneNodeData::UiHLayout(layout));
+        let parent = insert_ui_node(&mut runtime, layout.into());
         let child = insert_panel(&mut runtime, [60.0, 40.0], Color::new(0.1, 0.2, 0.3, 1.0));
         let sibling = insert_panel(&mut runtime, [60.0, 40.0], Color::new(0.2, 0.3, 0.4, 1.0));
         attach_child(&mut runtime, parent, child);
@@ -906,7 +906,7 @@ mod layout {
 
         let mut layout = UiHLayout::new();
         layout.layout.size = UiVector2::pixels(300.0, 100.0);
-        let parent = insert_ui_node(&mut runtime, SceneNodeData::UiHLayout(layout));
+        let parent = insert_ui_node(&mut runtime, layout.into());
         let child = insert_panel(&mut runtime, [60.0, 40.0], Color::new(0.1, 0.2, 0.3, 1.0));
         let sibling = insert_panel(&mut runtime, [60.0, 40.0], Color::new(0.2, 0.3, 0.4, 1.0));
         attach_child(&mut runtime, parent, child);
@@ -1121,5 +1121,4 @@ mod layout {
             Vector2::new(500.0, 400.0)
         );
     }
-
 }

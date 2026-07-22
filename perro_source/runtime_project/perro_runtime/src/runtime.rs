@@ -918,6 +918,7 @@ impl Runtime {
         #[cfg(feature = "steamworks")]
         let _ = perro_steamworks::runtime::run_callbacks();
         self.run_internal_update_schedule();
+        self.nodes.refresh_packed_children();
         self.propagate_pending_transform_dirty();
         self.update_audio_propagation(delta_time);
     }
@@ -948,6 +949,7 @@ impl Runtime {
         let internal_start = Instant::now();
         self.run_internal_update_schedule();
         let internal_update = internal_start.elapsed();
+        self.nodes.refresh_packed_children();
         self.propagate_pending_transform_dirty();
         self.update_audio_propagation(delta_time);
 
@@ -966,8 +968,10 @@ impl Runtime {
         self.time.fixed_delta = fixed_delta_time;
         self.schedules.snapshot_fixed(&self.scripts);
         self.run_fixed_schedule();
+        self.nodes.refresh_packed_children();
         self.physics_fixed_step();
         self.run_internal_fixed_update_schedule();
+        self.nodes.refresh_packed_children();
         self.propagate_pending_transform_dirty();
     }
 
@@ -985,11 +989,13 @@ impl Runtime {
         self.run_fixed_schedule();
         let script_fixed_update = script_fixed_start.elapsed();
 
+        self.nodes.refresh_packed_children();
         let physics_timing = self.physics_fixed_step_timed();
 
         let internal_fixed_start = Instant::now();
         self.run_internal_fixed_update_schedule();
         let internal_fixed_update = internal_fixed_start.elapsed();
+        self.nodes.refresh_packed_children();
         self.propagate_pending_transform_dirty();
 
         RuntimeFixedUpdateTiming {

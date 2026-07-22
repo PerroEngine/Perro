@@ -164,15 +164,10 @@ impl Runtime {
 
     pub(super) fn ui_layout_children(&self, parent: NodeID) -> Vec<NodeID> {
         let mut out = Vec::new();
-        let Some(parent_node) = self.nodes.get(parent) else {
+        let Some(parent_children) = self.nodes.children(parent) else {
             return out;
         };
-        let mut stack: Vec<NodeID> = parent_node
-            .get_children_ids()
-            .iter()
-            .rev()
-            .copied()
-            .collect();
+        let mut stack: Vec<NodeID> = parent_children.iter().rev().copied().collect();
         while let Some(node_id) = stack.pop() {
             let Some(node) = self.nodes.get(node_id) else {
                 continue;
@@ -181,7 +176,9 @@ impl Runtime {
                 out.push(node_id);
                 continue;
             }
-            stack.extend(node.get_children_ids().iter().rev().copied());
+            if let Some(children) = self.nodes.children(node_id) {
+                stack.extend(children.iter().rev().copied());
+            }
         }
         out
     }

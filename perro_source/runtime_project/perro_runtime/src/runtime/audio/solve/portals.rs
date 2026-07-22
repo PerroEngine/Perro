@@ -181,10 +181,8 @@ impl Runtime {
                 continue;
             };
             self.audio.scratch_child_ids.clear();
-            if let Some(node) = self.nodes.get(portal_id) {
-                self.audio
-                    .scratch_child_ids
-                    .extend_from_slice(node.children_slice());
+            if let Some(children) = self.nodes.children(portal_id) {
+                self.audio.scratch_child_ids.extend_from_slice(children);
             }
             for child_index in 0..self.audio.scratch_child_ids.len() {
                 let child = self.audio.scratch_child_ids[child_index];
@@ -375,10 +373,8 @@ impl Runtime {
                 continue;
             };
             self.audio.scratch_child_ids.clear();
-            if let Some(node) = self.nodes.get(portal_id) {
-                self.audio
-                    .scratch_child_ids
-                    .extend_from_slice(node.children_slice());
+            if let Some(children) = self.nodes.children(portal_id) {
+                self.audio.scratch_child_ids.extend_from_slice(children);
             }
             for child_index in 0..self.audio.scratch_child_ids.len() {
                 let child = self.audio.scratch_child_ids[child_index];

@@ -310,6 +310,7 @@ perro_app::entry::{native_entry}(perro_app::entry::StaticEmbeddedProject {{\n\
   }},\n\
   graphics: perro_app::entry::StaticEmbeddedGraphicsConfig {{\n\
         vsync: {vsync},\n\
+        hdr: {hdr},\n\
         msaa: {msaa},\n\
         ssao: {ssao},\n\
         meshlets: {meshlets},\n\
@@ -355,6 +356,7 @@ perro_app::entry::{native_entry}(perro_app::entry::StaticEmbeddedProject {{\n\
         input_map_block = emit_static_input_map_block(&cfg.input_map),
         assets_block = STATIC_EMBEDDED_ASSETS_BLOCK,
         vsync = cfg.vsync,
+        hdr = emit_hdr_expr(cfg.hdr),
         msaa = cfg.msaa,
         ssao = emit_ssao_expr(cfg.ssao),
         meshlets = cfg.meshlets,
@@ -408,6 +410,7 @@ perro_app::entry::run_static_embedded_project_web(perro_app::entry::StaticEmbedd
   }},\n\
   graphics: perro_app::entry::StaticEmbeddedGraphicsConfig {{\n\
         vsync: {vsync},\n\
+        hdr: {hdr},\n\
         msaa: {msaa},\n\
         ssao: {ssao},\n\
         meshlets: {meshlets},\n\
@@ -452,6 +455,7 @@ perro_app::entry::run_static_embedded_project_web(perro_app::entry::StaticEmbedd
         input_map_block = emit_static_input_map_block(&cfg.input_map),
         assets_block = STATIC_EMBEDDED_ASSETS_BLOCK,
         vsync = cfg.vsync,
+        hdr = emit_hdr_expr(cfg.hdr),
         msaa = cfg.msaa,
         ssao = emit_ssao_expr(cfg.ssao),
         meshlets = cfg.meshlets,
@@ -501,6 +505,7 @@ perro_app::entry::run_static_embedded_project_android(app, perro_app::entry::Sta
   }},\n\
   graphics: perro_app::entry::StaticEmbeddedGraphicsConfig {{\n\
         vsync: {vsync},\n\
+        hdr: {hdr},\n\
         msaa: {msaa},\n\
         ssao: {ssao},\n\
         meshlets: {meshlets},\n\
@@ -546,6 +551,7 @@ perro_app::entry::run_static_embedded_project_android(app, perro_app::entry::Sta
         input_map_block = emit_static_input_map_block(&cfg.input_map),
         assets_block = STATIC_EMBEDDED_ASSETS_BLOCK,
         vsync = cfg.vsync,
+        hdr = emit_hdr_expr(cfg.hdr),
         msaa = cfg.msaa,
         ssao = emit_ssao_expr(cfg.ssao),
         meshlets = cfg.meshlets,

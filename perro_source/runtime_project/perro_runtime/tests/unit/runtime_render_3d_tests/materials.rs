@@ -41,7 +41,9 @@ mod materials {
         for (request, mesh) in first
             .iter()
             .filter_map(|command| match command {
-                RenderCommand::Resource(ResourceCommand::CreateMesh { request, .. }) => Some(*request),
+                RenderCommand::Resource(ResourceCommand::CreateMesh { request, .. }) => {
+                    Some(*request)
+                }
                 _ => None,
             })
             .zip([MeshID::from_parts(22, 0), MeshID::from_parts(23, 0)])
@@ -55,17 +57,16 @@ mod materials {
 
         runtime.extract_render_3d_commands();
         let second = collect_commands(&mut runtime);
-        let inline_materials: Vec<MaterialID> = second
-            .iter()
-            .filter_map(|command| match command {
-                RenderCommand::Resource(ResourceCommand::CreateMaterial { id, source, .. })
-                    if source.is_none() =>
-                {
-                    Some(*id)
-                }
-                _ => None,
-            })
-            .collect();
+        let inline_materials: Vec<MaterialID> =
+            second
+                .iter()
+                .filter_map(|command| match command {
+                    RenderCommand::Resource(ResourceCommand::CreateMaterial {
+                        id, source, ..
+                    }) if source.is_none() => Some(*id),
+                    _ => None,
+                })
+                .collect();
         assert_eq!(inline_materials.len(), 1);
     }
 
@@ -96,17 +97,16 @@ mod materials {
         let pending_mesh = runtime
             .resource_api
             .load_mesh("res://meshes/tool_version_b.glb:mesh[0]");
-        let pending_request = collect_commands(&mut runtime)
-            .into_iter()
-            .find_map(|command| match command {
-                RenderCommand::Resource(ResourceCommand::CreateMesh { request, id, .. })
-                    if id == pending_mesh =>
-                {
-                    Some(request)
-                }
-                _ => None,
-            })
-            .expect("expected pending mesh create request");
+        let pending_request =
+            collect_commands(&mut runtime)
+                .into_iter()
+                .find_map(|command| match command {
+                    RenderCommand::Resource(ResourceCommand::CreateMesh {
+                        request, id, ..
+                    }) if id == pending_mesh => Some(request),
+                    _ => None,
+                })
+                .expect("expected pending mesh create request");
         if let Some(mut scene_node) = runtime.nodes.get_mut(node)
             && let SceneNodeData::MeshInstance3D(mesh) = &mut scene_node.data
         {
@@ -185,16 +185,15 @@ mod materials {
         let pending_material = runtime
             .resource_api
             .load_material_source("res://materials/tool_version_b.pmat");
-        let pending_request =
-            collect_commands(&mut runtime)
-                .into_iter()
-                .find_map(|command| match command {
-                    RenderCommand::Resource(ResourceCommand::CreateMaterial {
-                        request, id, ..
-                    }) if id == pending_material => Some(request),
-                    _ => None,
-                })
-                .expect("expected pending material create request");
+        let pending_request = collect_commands(&mut runtime)
+            .into_iter()
+            .find_map(|command| match command {
+                RenderCommand::Resource(ResourceCommand::CreateMaterial {
+                    request, id, ..
+                }) if id == pending_material => Some(request),
+                _ => None,
+            })
+            .expect("expected pending material create request");
         if let Some(mut scene_node) = runtime.nodes.get_mut(node)
             && let SceneNodeData::MeshInstance3D(mesh) = &mut scene_node.data
         {
@@ -485,9 +484,7 @@ mod materials {
             ),
         ];
 
-        let node = runtime
-            .nodes
-            .insert(SceneNode::new(SceneNodeData::MultiMeshInstance3D(multi)));
+        let node = runtime.nodes.insert(SceneNode::new(multi.into()));
 
         runtime.extract_render_3d_commands();
         let commands = collect_commands(&mut runtime);
@@ -539,9 +536,7 @@ mod materials {
             Vector3::new(2.0, 3.0, 4.0),
         ))];
 
-        let node = runtime
-            .nodes
-            .insert(SceneNode::new(SceneNodeData::MultiMeshInstance3D(multi)));
+        let node = runtime.nodes.insert(SceneNode::new(multi.into()));
 
         runtime.extract_render_3d_commands();
         let commands = collect_commands(&mut runtime);
@@ -558,5 +553,4 @@ mod materials {
                 )
         )));
     }
-
 }
