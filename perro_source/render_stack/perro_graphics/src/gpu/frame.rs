@@ -131,6 +131,8 @@ impl Gpu {
                 self.texture_filter,
             ));
         }
+        self.camera_stream_content_revisions
+            .retain(|node, _| camera_streams.iter().any(|(active, _)| active == node));
         for (node, stream) in camera_streams {
             if !camera_stream_uses_render_target(stream) {
                 continue;
@@ -537,6 +539,13 @@ impl Gpu {
             a: 1.0,
         });
         for (node, stream) in camera_streams {
+            let (stream_draws_revision, stream_sprites_revision) =
+                update_camera_stream_content_revisions(
+                    &mut self.camera_stream_content_revisions,
+                    *node,
+                    &stream.draws_3d,
+                    &stream.sprites_2d,
+                );
             let has_stream_post = PostProcessor::has_effects(stream.post_processing.as_ref());
             // UI composites after the main present pass, so an engine-rendered
             // stream needs its own single scene-linear -> display conversion.
@@ -738,7 +747,7 @@ impl Gpu {
                             rects: &[],
                             upload: &empty_upload,
                             sprites: stream.sprites_2d.as_ref(),
-                            sprites_revision: sprites_2d_revision ^ node.as_u64(),
+                            sprites_revision: stream_sprites_revision,
                             force_sprite_prepare: has(DIRTY_RESOURCES),
                             point_lights: stream.lights_2d.as_ref(),
                             point_lights_revision: u64::MAX,
@@ -876,7 +885,7 @@ impl Gpu {
                             camera: camera.clone(),
                             lighting: &stream_lighting,
                             draws: &self.camera_stream_draws_scratch,
-                            draws_revision: draws_3d_revision ^ node.as_u64(),
+                            draws_revision: stream_draws_revision,
                             force_full_rebuild: has(DIRTY_RESOURCES),
                             decals: &[],
                             decals_revision: 0,
@@ -1015,7 +1024,7 @@ impl Gpu {
                                 rects: &[],
                                 upload: &empty_upload,
                                 sprites: stream.sprites_2d.as_ref(),
-                                sprites_revision: sprites_2d_revision ^ node.as_u64(),
+                                sprites_revision: stream_sprites_revision,
                                 force_sprite_prepare: has(DIRTY_RESOURCES),
                                 point_lights: stream.lights_2d.as_ref(),
                                 point_lights_revision: u64::MAX,

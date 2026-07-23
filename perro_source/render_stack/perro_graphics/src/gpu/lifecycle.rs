@@ -277,6 +277,7 @@ impl Gpu {
             point_particles_3d: Some(point_particles_3d),
             water,
             camera_stream_targets: AHashMap::new(),
+            camera_stream_content_revisions: AHashMap::new(),
             next_camera_stream_post_view_key: 0,
             camera_stream_external_bindings: AHashMap::new(),
             camera_stream_3d_bindings: AHashMap::new(),

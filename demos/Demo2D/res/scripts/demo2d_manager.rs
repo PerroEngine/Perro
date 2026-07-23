@@ -94,6 +94,8 @@ struct DemoRuntimeState {
     fade_action: FadeAction,
     audio_debug: bool,
     light_time: f32,
+    physics_spawn_time: f32,
+    physics_spawn_index: u32,
 }
 
 impl Default for DemoRuntimeState {
@@ -108,6 +110,8 @@ impl Default for DemoRuntimeState {
             fade_action: FadeAction::None,
             audio_debug: false,
             light_time: 0.0,
+            physics_spawn_time: 0.0,
+            physics_spawn_index: 0,
         }
     }
 }
@@ -188,6 +192,9 @@ lifecycle!({
 
         if self.active_demo(ctx) == DemoKind::Lights && !paused {
             self.update_light_zone(ctx);
+        }
+        if self.active_demo(ctx) == DemoKind::PhysicsCollisions && !paused {
+            self.update_physics_spawner(ctx);
         }
     }
 });
@@ -614,6 +621,8 @@ methods!({
         with_state_mut!(ctx.run, Demo2DState, ctx.id, |state| {
             state.runtime.audio_debug = false;
             state.runtime.light_time = 0.0;
+            state.runtime.physics_spawn_time = 0.0;
+            state.runtime.physics_spawn_index = 0;
         });
         for node in query!(ctx.run, all(tags["demo2d_dynamic"]), in_subtree(ctx.id)) {
             let _ = remove_node!(ctx.run, node);
@@ -1008,52 +1017,98 @@ methods!({
             };
         });
 
-        for i in 0..240 {
-            let body = create_node!(
-                ctx.run,
-                RigidBody2D,
-                "crate",
-                tags!["demo2d_dynamic"],
-                ctx.id
-            );
-            let col = (i % 20) as f32;
-            let row = (i / 20) as f32;
-            let _ = with_node_mut!(ctx.run, RigidBody2D, body, |rb| {
-                rb.transform.position =
-                    origin + Vector2::new(-350.0 + col * 36.0, row * 34.0 + 10.0);
-                rb.angular_velocity = (i % 3) as f32 * 0.15;
-                rb.friction = 0.6;
-                rb.restitution = 0.08;
-            });
-            let shape = create_node!(
-                ctx.run,
-                CollisionShape2D,
-                "crate_shape",
-                tags!["demo2d_dynamic"],
-                body
-            );
-            let _ = with_node_mut!(ctx.run, CollisionShape2D, shape, |s| {
-                s.shape = if i % 5 == 0 {
-                    Shape2D::Circle { radius: 12.0 }
-                } else {
-                    Shape2D::Quad {
-                        width: 24.0,
-                        height: 24.0,
-                    }
-                };
-            });
-            let sprite_sheet = texture_load!(ctx.res, SPRITE_SHEET);
-            self.spawn_child_sprite(
-                ctx,
-                body,
-                sprite_sheet,
-                32.0 * ((i % 8) as f32),
-                96.0,
-                32.0,
-                32.0,
-                0.7,
-            );
+        let ground_sprite = create_node!(
+            ctx.run,
+            Sprite2D,
+            "ground_sprite",
+            tags!["demo2d_dynamic"],
+            ground
+        );
+        let ground_tex = texture_load!(ctx.res, SPRITE_SHEET);
+        let _ = with_node_mut!(ctx.run, Sprite2D, ground_sprite, |sprite| {
+            sprite.texture = ground_tex;
+            sprite.texture_region = Some([0.0, 96.0, 32.0, 32.0]);
+            sprite.transform.scale = Vector2::new(26.875, 0.75);
+            sprite.modulate.self_modulate = Color::rgb(0.24, 0.28, 0.34);
+        });
+
+        for _ in 0..36 {
+            self.spawn_physics_ball(ctx, origin);
         }
+    }
+
+    fn update_physics_spawner(&self, ctx: &mut ScriptContext<'_, API>) {
+        let dt = delta_time!(ctx.run).max(0.0);
+        let spawn = with_state_mut!(ctx.run, Demo2DState, ctx.id, |state| {
+            state.runtime.physics_spawn_time += dt;
+            if state.runtime.physics_spawn_time < 0.11 {
+                return false;
+            }
+            state.runtime.physics_spawn_time -= 0.11;
+            true
+        })
+        .unwrap_or(false);
+        if !spawn {
+            return;
+        }
+
+        let balls = query!(ctx.run, all(tags["demo2d_physics_ball"]), in_subtree(ctx.id));
+        if balls.len() >= 150 {
+            let _ = remove_node!(ctx.run, balls[0]);
+        }
+        self.spawn_physics_ball(ctx, Vector2::new(1350.0, -920.0));
+    }
+
+    fn spawn_physics_ball(&self, ctx: &mut ScriptContext<'_, API>, origin: Vector2) {
+        let index = with_state_mut!(ctx.run, Demo2DState, ctx.id, |state| {
+            let index = state.runtime.physics_spawn_index;
+            state.runtime.physics_spawn_index = index.wrapping_add(1);
+            index
+        })
+        .unwrap_or(0);
+        let hash = index.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+        let x = (hash % 761) as f32 - 380.0;
+        let y = 360.0 + ((hash >> 12) % 260) as f32;
+        let radius = 8.0 + ((hash >> 20) % 9) as f32;
+
+        let body = create_node!(
+            ctx.run,
+            RigidBody2D,
+            "rain_ball",
+            tags!["demo2d_dynamic", "demo2d_physics_ball"],
+            ctx.id
+        );
+        let _ = with_node_mut!(ctx.run, RigidBody2D, body, |rb| {
+            rb.transform.position = origin + Vector2::new(x, y);
+            rb.angular_velocity = ((hash >> 8) % 200) as f32 * 0.01 - 1.0;
+            rb.friction = 0.48;
+            rb.restitution = 0.58;
+            rb.density = 0.75 + radius * 0.025;
+        });
+        let shape = create_node!(
+            ctx.run,
+            CollisionShape2D,
+            "rain_ball_shape",
+            tags!["demo2d_dynamic"],
+            body
+        );
+        let _ = with_node_mut!(ctx.run, CollisionShape2D, shape, |node| {
+            node.shape = Shape2D::Circle { radius };
+        });
+        let sprite = create_node!(
+            ctx.run,
+            Sprite2D,
+            "rain_ball_sprite",
+            tags!["demo2d_dynamic"],
+            body
+        );
+        let tex = texture_load!(ctx.res, LIGHT_DISC);
+        let color = palette_rgb((index as f32 * 0.618_034).fract());
+        let _ = with_node_mut!(ctx.run, Sprite2D, sprite, |node| {
+            node.texture = tex;
+            node.transform.scale = Vector2::new(radius / 32.0, radius / 32.0);
+            node.modulate.self_modulate = color;
+        });
     }
 
     fn spawn_animation_player_zone(&self, ctx: &mut ScriptContext<'_, API>, origin: Vector2) {

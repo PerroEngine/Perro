@@ -182,7 +182,11 @@ impl UiLayoutData {
                 parent.size.x * 0.5 * anchor.x,
                 parent.size.y * 0.5 * anchor.y,
             );
-        let inward_from_edge = Vector2::new(size.x * 0.5 * anchor.x, size.y * 0.5 * anchor.y);
+        let anchored_size = Vector2::new(size.x.min(parent.size.x), size.y.min(parent.size.y));
+        let inward_from_edge = Vector2::new(
+            anchored_size.x * 0.5 * anchor.x,
+            anchored_size.y * 0.5 * anchor.y,
+        );
         let position = transform.position.resolve_centered(parent.size);
 
         ComputedUiRect::new(

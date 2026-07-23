@@ -264,6 +264,69 @@ mod styling {
     }
 
     #[test]
+    fn short_scroll_content_disables_scroll_and_removes_scrollbar() {
+        let mut runtime = Runtime::new();
+        runtime.set_viewport_size(800, 600);
+
+        let mut scroller = UiScrollContainer::new();
+        scroller.layout.size = UiVector2::pixels(200.0, 100.0);
+        let scroller_id = insert_ui_node(
+            &mut runtime,
+            SceneNodeData::UiScrollContainer(Box::new(scroller)),
+        );
+
+        let mut list = UiVLayout::new();
+        list.layout.size = UiVector2::pixels(200.0, 300.0);
+        let list_id = insert_ui_node(&mut runtime, list.into());
+        attach_child(&mut runtime, scroller_id, list_id);
+
+        runtime.extract_render_ui_commands();
+        runtime.drain_render_commands(&mut Vec::new());
+        runtime.clear_dirty_flags();
+
+        let _ = runtime.with_node_mut::<UiScrollContainer, _, _>(scroller_id, |node| {
+            node.scroll = Vector2::new(0.0, 200.0);
+        });
+        let _ = runtime.with_node_mut::<UiVLayout, _, _>(list_id, |node| {
+            node.layout.size = UiVector2::pixels(200.0, 80.0);
+        });
+        runtime.extract_render_ui_commands();
+
+        let scroll = runtime
+            .nodes
+            .get(scroller_id)
+            .and_then(|node| match &node.data {
+                SceneNodeData::UiScrollContainer(scroller) => Some(scroller.scroll),
+                _ => None,
+            })
+            .expect("scroller node");
+        assert_eq!(scroll, Vector2::ZERO);
+
+        let mut commands = Vec::new();
+        runtime.drain_render_commands(&mut commands);
+        assert!(commands.iter().any(|command| matches!(
+            command,
+            RenderCommand::Ui(UiCommand::RemoveNode { node }) if *node == scroller_id
+        )));
+
+        runtime.clear_dirty_flags();
+        runtime.begin_input_frame();
+        runtime.set_mouse_position(400.0, 300.0);
+        runtime.add_mouse_wheel(0.0, -1.0);
+        runtime.extract_render_ui_commands();
+
+        let scroll = runtime
+            .nodes
+            .get(scroller_id)
+            .and_then(|node| match &node.data {
+                SceneNodeData::UiScrollContainer(scroller) => Some(scroller.scroll),
+                _ => None,
+            })
+            .expect("scroller node");
+        assert_eq!(scroll, Vector2::ZERO);
+    }
+
+    #[test]
     fn scroll_container_reserves_default_gap_for_scrollbar() {
         let mut runtime = Runtime::new();
         runtime.set_viewport_size(800, 600);

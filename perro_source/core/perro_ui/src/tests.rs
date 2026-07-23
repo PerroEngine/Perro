@@ -306,6 +306,21 @@ fn right_anchor_offsets_size_inward() {
 }
 
 #[test]
+fn oversized_ratio_grows_from_parent_center() {
+    let mut layout = UiLayoutData::new();
+    let mut transform = UiTransform::new();
+    layout.anchor = UiAnchor::TopLeft;
+    transform.position = UiVector2::ZERO;
+    layout.size = UiVector2::ratio(1.25, 1.25);
+
+    let parent = ComputedUiRect::new(Vector2::ZERO, Vector2::new(800.0, 600.0));
+    let rect = layout.compute_rect(&transform, parent);
+
+    assert_eq!(rect.center, Vector2::ZERO);
+    assert_eq!(rect.size, Vector2::new(1000.0, 750.0));
+}
+
+#[test]
 fn top_left_anchor_uses_center_origin_y_up() {
     let mut layout = UiLayoutData::new();
     let mut transform = UiTransform::new();

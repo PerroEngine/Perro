@@ -163,9 +163,7 @@ fn create_pipeline_skinned_with_depth_write(
             targets: &[Some(wgpu::ColorTargetState {
                 format: color_format,
                 blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                write_mask: wgpu::ColorWrites::RED
-                    | wgpu::ColorWrites::GREEN
-                    | wgpu::ColorWrites::BLUE,
+                write_mask: wgpu::ColorWrites::ALL,
             })],
             compilation_options: Default::default(),
         }),
@@ -312,9 +310,7 @@ pub(super) fn create_pipeline_overlay_skinned(
             targets: &[Some(wgpu::ColorTargetState {
                 format: color_format,
                 blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                write_mask: wgpu::ColorWrites::RED
-                    | wgpu::ColorWrites::GREEN
-                    | wgpu::ColorWrites::BLUE,
+                write_mask: wgpu::ColorWrites::ALL,
             })],
             compilation_options: Default::default(),
         }),

@@ -264,9 +264,7 @@ fn create_multimesh_pipeline_with_depth_write(
             targets: &[Some(wgpu::ColorTargetState {
                 format: color_format,
                 blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                write_mask: wgpu::ColorWrites::RED
-                    | wgpu::ColorWrites::GREEN
-                    | wgpu::ColorWrites::BLUE,
+                write_mask: wgpu::ColorWrites::ALL,
             })],
             compilation_options: Default::default(),
         }),

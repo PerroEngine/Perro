@@ -522,6 +522,7 @@ pub struct Gpu {
     point_particles_3d: Option<GpuPointParticles3D>,
     water: Option<GpuWater>,
     camera_stream_targets: AHashMap<NodeID, GpuCameraStreamTarget>,
+    camera_stream_content_revisions: AHashMap<NodeID, CameraStreamContentRevision>,
     next_camera_stream_post_view_key: u64,
     camera_stream_external_bindings: AHashMap<NodeID, [u32; 2]>,
     // Per-node resolution of the 3D material-texture slot last bound to a
@@ -575,6 +576,44 @@ struct GpuCameraStreamTarget {
     depth: wgpu::Texture,
     resolution: [u32; 2],
     post_view_key: u64,
+}
+
+struct CameraStreamContentRevision {
+    draws: Arc<[CameraStreamDraw3DState]>,
+    draw_revision: u64,
+    sprites: Arc<[Sprite2DCommand]>,
+    sprite_revision: u64,
+}
+
+fn update_camera_stream_content_revisions(
+    revisions: &mut AHashMap<NodeID, CameraStreamContentRevision>,
+    node: NodeID,
+    draws: &Arc<[CameraStreamDraw3DState]>,
+    sprites: &Arc<[Sprite2DCommand]>,
+) -> (u64, u64) {
+    match revisions.entry(node) {
+        std::collections::hash_map::Entry::Occupied(mut entry) => {
+            let state = entry.get_mut();
+            if state.draws.as_ref() != draws.as_ref() {
+                state.draws = draws.clone();
+                state.draw_revision = state.draw_revision.wrapping_add(1).max(1);
+            }
+            if state.sprites.as_ref() != sprites.as_ref() {
+                state.sprites = sprites.clone();
+                state.sprite_revision = state.sprite_revision.wrapping_add(1).max(1);
+            }
+            (state.draw_revision, state.sprite_revision)
+        }
+        std::collections::hash_map::Entry::Vacant(entry) => {
+            entry.insert(CameraStreamContentRevision {
+                draws: draws.clone(),
+                draw_revision: 1,
+                sprites: sprites.clone(),
+                sprite_revision: 1,
+            });
+            (1, 1)
+        }
+    }
 }
 
 pub struct RenderFrame<'a> {
@@ -674,3 +713,62 @@ pub struct RenderGpuTiming {
 mod frame;
 mod lifecycle;
 mod textures;
+
+#[cfg(test)]
+mod camera_stream_revision_tests {
+    use super::*;
+
+    #[test]
+    fn draw_revision_changes_when_async_mesh_joins_stream() {
+        let node = NodeID::from_parts(7, 0);
+        let mut revisions = AHashMap::new();
+        let empty: Arc<[CameraStreamDraw3DState]> = Arc::from([]);
+        let empty_sprites: Arc<[Sprite2DCommand]> = Arc::from([]);
+        let first =
+            update_camera_stream_content_revisions(&mut revisions, node, &empty, &empty_sprites);
+        let ready: Arc<[CameraStreamDraw3DState]> = Arc::from([CameraStreamDraw3DState::Draw {
+            mesh: perro_ids::MeshID::from_parts(11, 0),
+            surfaces: Arc::from([]),
+            node: NodeID::from_parts(12, 0),
+            model: glam::Mat4::IDENTITY.to_cols_array_2d(),
+            skeleton: None,
+            meshlet_override: None,
+            lod: perro_render_bridge::LODOptions3D::default(),
+            blend: perro_render_bridge::MeshBlendOptions3D::default(),
+        }]);
+        let second =
+            update_camera_stream_content_revisions(&mut revisions, node, &ready, &empty_sprites);
+
+        assert_ne!(first.0, second.0);
+        assert_eq!(first.1, second.1);
+        assert_eq!(
+            second,
+            update_camera_stream_content_revisions(&mut revisions, node, &ready, &empty_sprites,)
+        );
+    }
+
+    #[test]
+    fn sprite_revision_changes_when_async_texture_joins_stream() {
+        let node = NodeID::from_parts(17, 0);
+        let mut revisions = AHashMap::new();
+        let empty_draws: Arc<[CameraStreamDraw3DState]> = Arc::from([]);
+        let empty: Arc<[Sprite2DCommand]> = Arc::from([]);
+        let first =
+            update_camera_stream_content_revisions(&mut revisions, node, &empty_draws, &empty);
+        let ready: Arc<[Sprite2DCommand]> = Arc::from([Sprite2DCommand {
+            texture: perro_ids::TextureID::from_parts(21, 0),
+            model: glam::Mat3::IDENTITY.to_cols_array_2d(),
+            tint: perro_structs::Color::WHITE,
+            uv_min: [0.0, 0.0],
+            uv_max: [1.0, 1.0],
+            uv_normalized: true,
+            size: [1.0, 1.0],
+            z_index: 0,
+        }]);
+        let second =
+            update_camera_stream_content_revisions(&mut revisions, node, &empty_draws, &ready);
+
+        assert_eq!(first.0, second.0);
+        assert_ne!(first.1, second.1);
+    }
+}
