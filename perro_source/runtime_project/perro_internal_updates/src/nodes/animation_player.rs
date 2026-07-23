@@ -48,11 +48,7 @@ pub fn internal_update<RT, R, IP>(
         } else {
             AnimationID::nil()
         }
-    })
-    .warn_none_once(format_args!(
-        "animation update skip: node={} expect=AnimationPlayer missing",
-        id.as_u64()
-    )) else {
+    }) else {
         return;
     };
     if animation_id.is_nil() {

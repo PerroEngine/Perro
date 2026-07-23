@@ -71,12 +71,7 @@ pub fn internal_update<RT, R, IP>(
     R: ResourceAPI + ?Sized,
     IP: InputAPI + ?Sized,
 {
-    let Some(tree_id) =
-        with_node!(ctx, SelfNodeType, id, |tree| tree.tree).warn_none_once(format_args!(
-            "animation tree update skip: node={} expect=AnimationTree missing",
-            id.as_u64()
-        ))
-    else {
+    let Some(tree_id) = with_node!(ctx, SelfNodeType, id, |tree| tree.tree) else {
         return;
     };
     if tree_id.is_nil() {
