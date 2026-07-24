@@ -139,6 +139,16 @@ mod backend {
             self.gilrs = Some(gilrs);
         }
 
+        #[cfg(feature = "steamworks")]
+        pub(super) fn collect_connected_indices(&self, out: &mut Vec<usize>) {
+            out.clear();
+            out.extend(
+                self.uuid_in_use
+                    .iter()
+                    .filter_map(|uuid| self.uuid_to_index.get(uuid).copied()),
+            );
+        }
+
         fn consume_output_requests<S: GamepadSink>(&mut self, app: &mut S) {
             for req in app.take_gamepad_rumble_requests() {
                 self.apply_rumble(
@@ -660,12 +670,176 @@ mod backend {
 
     impl GamepadBackend {
         pub fn begin_frame<S>(&mut self, _app: &mut S) {}
+
+        #[cfg(feature = "steamworks")]
+        pub fn collect_connected_indices(&self, out: &mut Vec<usize>) {
+            out.clear();
+        }
     }
+}
+
+#[cfg(feature = "steamworks")]
+#[derive(Default)]
+struct SteamFallbackBackend {
+    handle_to_index: std::collections::HashMap<u64, usize>,
+    warned: bool,
+}
+
+#[cfg(feature = "steamworks")]
+impl SteamFallbackBackend {
+    fn begin_frame<B: GraphicsBackend>(&mut self, app: &mut App<B>, native_indices: &[usize]) {
+        let native_present = !native_indices.is_empty();
+        let gamepads = match perro_steamworks::input::fallback_gamepads(native_present) {
+            Ok(gamepads) => gamepads,
+            Err(perro_steamworks::SteamError::Disabled) => {
+                self.clear_all(app, native_indices);
+                return;
+            }
+            Err(err) => {
+                if !self.warned {
+                    eprintln!("[gamepad][warn] Steam Input fallback unavailable: {err}");
+                    self.warned = true;
+                }
+                self.clear_all(app, native_indices);
+                return;
+            }
+        };
+        self.warned = false;
+        let mut seen = std::collections::HashSet::with_capacity(gamepads.len());
+        for gamepad in gamepads {
+            let raw = gamepad.handle.raw();
+            seen.insert(raw);
+            let index = if let Some(index) = self.handle_to_index.get(&raw).copied()
+                && !native_indices.contains(&index)
+            {
+                index
+            } else {
+                let index = self.allocate_index(native_indices, raw);
+                self.handle_to_index.insert(raw, index);
+                clear_steam_gamepad(app, index);
+                index
+            };
+            write_steam_gamepad(app, index, &gamepad);
+        }
+
+        let removed: Vec<_> = self
+            .handle_to_index
+            .iter()
+            .filter_map(|(handle, index)| (!seen.contains(handle)).then_some((*handle, *index)))
+            .collect();
+        for (handle, index) in removed {
+            self.handle_to_index.remove(&handle);
+            if !native_indices.contains(&index) {
+                clear_steam_gamepad(app, index);
+            }
+        }
+    }
+
+    fn allocate_index(&self, native_indices: &[usize], current_handle: u64) -> usize {
+        let used: std::collections::HashSet<_> = self
+            .handle_to_index
+            .iter()
+            .filter_map(|(handle, index)| (*handle != current_handle).then_some(*index))
+            .collect();
+        (0..)
+            .find(|index| !native_indices.contains(index) && !used.contains(index))
+            .expect("gamepad index space exhausted")
+    }
+
+    fn clear_all<B: GraphicsBackend>(&mut self, app: &mut App<B>, native_indices: &[usize]) {
+        if self.handle_to_index.is_empty() {
+            return;
+        }
+        let indices: Vec<_> = self
+            .handle_to_index
+            .drain()
+            .map(|(_, index)| index)
+            .collect();
+        for index in indices {
+            if !native_indices.contains(&index) {
+                clear_steam_gamepad(app, index);
+            }
+        }
+    }
+}
+
+#[cfg(feature = "steamworks")]
+const STEAM_BUTTONS: [GamepadButton; 18] = [
+    GamepadButton::Bottom,
+    GamepadButton::Right,
+    GamepadButton::Left,
+    GamepadButton::Top,
+    GamepadButton::DpadUp,
+    GamepadButton::DpadDown,
+    GamepadButton::DpadLeft,
+    GamepadButton::DpadRight,
+    GamepadButton::Start,
+    GamepadButton::Select,
+    GamepadButton::Home,
+    GamepadButton::Capture,
+    GamepadButton::L1,
+    GamepadButton::R1,
+    GamepadButton::L2,
+    GamepadButton::R2,
+    GamepadButton::L3,
+    GamepadButton::R3,
+];
+
+#[cfg(feature = "steamworks")]
+const STEAM_AXES: [GamepadAxis; 6] = [
+    GamepadAxis::LeftStickX,
+    GamepadAxis::LeftStickY,
+    GamepadAxis::RightStickX,
+    GamepadAxis::RightStickY,
+    GamepadAxis::LeftTrigger,
+    GamepadAxis::RightTrigger,
+];
+
+#[cfg(feature = "steamworks")]
+fn write_steam_gamepad<B: GraphicsBackend>(
+    app: &mut App<B>,
+    index: usize,
+    gamepad: &perro_steamworks::input::FallbackGamepad,
+) {
+    for (button, down) in STEAM_BUTTONS.into_iter().zip(gamepad.buttons) {
+        app.set_gamepad_button_state(index, button, down);
+    }
+    for (axis, value) in STEAM_AXES.into_iter().zip(gamepad.axes) {
+        app.set_gamepad_axis(index, axis, value);
+    }
+    app.set_gamepad_gyro(
+        index,
+        gamepad.motion.rot_vel[0],
+        gamepad.motion.rot_vel[1],
+        gamepad.motion.rot_vel[2],
+    );
+    app.set_gamepad_accel(
+        index,
+        gamepad.motion.pos_accel[0],
+        gamepad.motion.pos_accel[1],
+        gamepad.motion.pos_accel[2],
+    );
+}
+
+#[cfg(feature = "steamworks")]
+fn clear_steam_gamepad<B: GraphicsBackend>(app: &mut App<B>, index: usize) {
+    for button in STEAM_BUTTONS {
+        app.set_gamepad_button_state(index, button, false);
+    }
+    for axis in STEAM_AXES {
+        app.set_gamepad_axis(index, axis, 0.0);
+    }
+    app.set_gamepad_gyro(index, 0.0, 0.0, 0.0);
+    app.set_gamepad_accel(index, 0.0, 0.0, 0.0);
 }
 
 #[derive(Default)]
 pub struct GamepadInput {
     backend: backend::GamepadBackend,
+    #[cfg(feature = "steamworks")]
+    steam_fallback: SteamFallbackBackend,
+    #[cfg(feature = "steamworks")]
+    native_indices: Vec<usize>,
 }
 
 impl GamepadInput {
@@ -675,5 +849,32 @@ impl GamepadInput {
 
     pub fn begin_frame<B: GraphicsBackend>(&mut self, app: &mut App<B>) {
         self.backend.begin_frame(app);
+        #[cfg(feature = "steamworks")]
+        {
+            self.backend
+                .collect_connected_indices(&mut self.native_indices);
+            self.steam_fallback.begin_frame(app, &self.native_indices);
+        }
+    }
+}
+
+#[cfg(all(test, feature = "steamworks"))]
+mod steam_fallback_tests {
+    use super::SteamFallbackBackend;
+
+    #[test]
+    fn fallback_slot_uses_first_free_index() {
+        let mut backend = SteamFallbackBackend::default();
+        assert_eq!(backend.allocate_index(&[], 1), 0);
+        backend.handle_to_index.insert(1, 0);
+        assert_eq!(backend.allocate_index(&[], 2), 1);
+    }
+
+    #[test]
+    fn fallback_slot_skips_native_indices() {
+        let mut backend = SteamFallbackBackend::default();
+        backend.handle_to_index.insert(1, 1);
+        assert_eq!(backend.allocate_index(&[0, 2], 2), 3);
+        assert_eq!(backend.allocate_index(&[0, 1], 1), 2);
     }
 }

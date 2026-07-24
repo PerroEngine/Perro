@@ -79,6 +79,7 @@ pub enum SteamInputMode {
     #[default]
     Off,
     Metadata,
+    Fallback,
     Actions,
 }
 
@@ -87,6 +88,7 @@ impl SteamInputMode {
         match self {
             Self::Off => "off",
             Self::Metadata => "metadata",
+            Self::Fallback => "fallback",
             Self::Actions => "actions",
         }
     }
@@ -180,7 +182,10 @@ pub struct RenderingConfig {
 
 impl Default for RenderingConfig {
     fn default() -> Self {
-        Self { ui: RenderUiConfig::default(), default_font: "default".to_string() }
+        Self {
+            ui: RenderUiConfig::default(),
+            default_font: "default".to_string(),
+        }
     }
 }
 
@@ -498,6 +503,7 @@ impl StaticProjectConfig {
                 app_id: self.steam_app_id,
                 input_mode: self.steam_input_mode,
             },
+            demo: DemoBuildConfig::default(),
         }
     }
 }
@@ -535,6 +541,84 @@ pub struct ProjectConfig {
     pub localization: Option<LocalizationConfig>,
     pub input_map: perro_input_api::InputMap,
     pub steam: SteamConfig,
+    pub demo: DemoBuildConfig,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct DemoBuildConfig {
+    pub active: bool,
+    pub exclude: Vec<String>,
+}
+
+impl DemoBuildConfig {
+    pub fn excludes(&self, path: &str) -> bool {
+        self.active
+            && path.strip_prefix("res://").is_some_and(|rel| {
+                self.exclude.iter().any(|pattern| {
+                    pattern
+                        .strip_prefix("res://")
+                        .is_some_and(|pattern| demo_glob_matches(pattern, rel))
+                })
+            })
+    }
+
+    pub fn relative_patterns(&self) -> Vec<String> {
+        if !self.active {
+            return Vec::new();
+        }
+        self.exclude
+            .iter()
+            .filter_map(|path| path.strip_prefix("res://").map(str::to_string))
+            .collect()
+    }
+}
+
+fn demo_glob_matches(pattern: &str, path: &str) -> bool {
+    fn parts(pattern: &[&str], path: &[&str]) -> bool {
+        match pattern.split_first() {
+            None => path.is_empty(),
+            Some((&"**", rest)) => {
+                parts(rest, path)
+                    || path
+                        .split_first()
+                        .is_some_and(|(_, path_rest)| parts(pattern, path_rest))
+            }
+            Some((segment, rest)) => path.split_first().is_some_and(|(value, path_rest)| {
+                segment_matches(segment, value) && parts(rest, path_rest)
+            }),
+        }
+    }
+
+    fn segment_matches(pattern: &str, value: &str) -> bool {
+        let pattern = pattern.as_bytes();
+        let value = value.as_bytes();
+        let (mut p, mut v, mut star, mut retry) = (0, 0, None, 0);
+        while v < value.len() {
+            if p < pattern.len() && pattern[p] == value[v] {
+                p += 1;
+                v += 1;
+            } else if p < pattern.len() && pattern[p] == b'*' {
+                star = Some(p);
+                p += 1;
+                retry = v;
+            } else if let Some(star_pos) = star {
+                retry += 1;
+                v = retry;
+                p = star_pos + 1;
+            } else {
+                return false;
+            }
+        }
+        while p < pattern.len() && pattern[p] == b'*' {
+            p += 1;
+        }
+        p == pattern.len()
+    }
+
+    parts(
+        &pattern.split('/').collect::<Vec<_>>(),
+        &path.split('/').collect::<Vec<_>>(),
+    )
 }
 
 impl ProjectConfig {
@@ -571,6 +655,7 @@ impl ProjectConfig {
             localization: None,
             input_map: perro_input_api::InputMap::new(),
             steam: SteamConfig::default(),
+            demo: DemoBuildConfig::default(),
         }
     }
 }

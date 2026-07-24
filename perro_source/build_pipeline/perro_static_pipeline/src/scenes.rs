@@ -42,6 +42,10 @@ pub fn generate_static_scenes(project_root: &Path) -> Result<(), StaticPipelineE
             let src = fs::read_to_string(&full_path)?;
             let mut parsed = std::panic::catch_unwind(|| Parser::new(&src).parse_scene())
                 .map_err(|_| io::Error::other(format!("failed to parse scene: {res_path}")))?;
+            perro_scene::filter_demo_scene(&mut parsed, crate::demo_mode_active())
+                .map_err(|err| io::Error::other(format!("{res_path}: {err}")))?;
+            validate_demo_scene_paths(&parsed)
+                .map_err(|err| io::Error::other(format!("{res_path}: {err}")))?;
             if let Some(mount_name) = static_dlc_mount_name() {
                 resolve_scene_dlc_self_paths(&mut parsed, &mount_name);
             }
@@ -125,6 +129,68 @@ use std::borrow::Cow;\n\n\
         scene_paths.iter().map(|path| (path.as_str(), false)),
     );
     Ok(())
+}
+
+fn validate_demo_scene_paths(scene: &perro_scene::Scene) -> Result<(), String> {
+    if !crate::demo_mode_active() {
+        return Ok(());
+    }
+    for node in scene.nodes.iter() {
+        for (field, path) in [
+            ("script", node.script.as_deref()),
+            ("root_of", node.root_of.as_deref()),
+        ] {
+            if let Some(path) = path {
+                validate_demo_path(field, path)?;
+            }
+        }
+        validate_demo_fields(node.script_vars.as_ref())?;
+        validate_demo_data(&node.data)?;
+    }
+    Ok(())
+}
+
+fn validate_demo_data(data: &SceneNodeData) -> Result<(), String> {
+    validate_demo_fields(data.fields.as_ref())?;
+    if let Some(base) = data.base.as_ref() {
+        match base {
+            SceneNodeDataBase::Borrowed(data) => validate_demo_data(data)?,
+            SceneNodeDataBase::Owned(data) => validate_demo_data(data)?,
+        }
+    }
+    Ok(())
+}
+
+fn validate_demo_fields(fields: &[perro_scene::SceneObjectField]) -> Result<(), String> {
+    for (name, value) in fields {
+        validate_demo_value(name.as_ref(), value)?;
+    }
+    Ok(())
+}
+
+fn validate_demo_value(field: &str, value: &SceneValue) -> Result<(), String> {
+    match value {
+        SceneValue::Str(path) => validate_demo_path(field, path),
+        SceneValue::Object(fields) => validate_demo_fields(fields),
+        SceneValue::Array(values) => {
+            for value in values.iter() {
+                validate_demo_value(field, value)?;
+            }
+            Ok(())
+        }
+        _ => Ok(()),
+    }
+}
+
+fn validate_demo_path(field: &str, path: &str) -> Result<(), String> {
+    let Some(relative) = path.strip_prefix("res://") else {
+        return Ok(());
+    };
+    if perro_io::walkdir::is_relative_path_excluded(relative) {
+        Err(format!("field `{field}` refs demo-excluded path `{path}`"))
+    } else {
+        Ok(())
+    }
 }
 
 struct EmittedScene {

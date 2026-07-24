@@ -404,6 +404,7 @@ fn stream_display_sprite(i: u32, texture: TextureID, resolution: u32) -> Sprite2
         tint: Color::WHITE,
         uv_min: [0.0, 0.0],
         uv_max: [1.0, 1.0],
+        uv_normalized: true,
         size: [resolution as f32, resolution as f32],
         z_index: 10_000 + i as i32,
     }
@@ -420,6 +421,7 @@ fn sprite_state(i: u32, texture: TextureID) -> Sprite2DCommand {
         tint: Color::WHITE,
         uv_min: [0.0, 0.0],
         uv_max: [1.0, 1.0],
+        uv_normalized: true,
         size: [12.0, 12.0],
         z_index: i as i32,
     }

@@ -181,23 +181,25 @@ struct CsvFrameSample {
     fixed_accum_before_us: u128,
     fixed_accum_after_us: u128,
     fixed_catchup_dropped: bool,
+    timestamp_ms: u128,
 }
 
 struct TimingCsvWriter {
-    file: fs::File,
+    file: std::io::BufWriter<fs::File>,
 }
 
 impl TimingCsvWriter {
     fn from_env() -> Option<Self> {
         let path = std::env::var("PERRO_TIMING_CSV").ok()?;
-        let mut file = fs::OpenOptions::new()
+        let file = fs::OpenOptions::new()
             .create(true)
             .append(true)
             .open(path)
             .ok()?;
+        let mut file = std::io::BufWriter::with_capacity(256 * 1024, file);
         let _ = writeln!(
             file,
-            "frame,phase,warmup,sampled,frame_delta_us,idle_before_frame_us,simulation_us,render_active_us,work_active_us,present_wait_us,fixed_steps,fixed_step_us,fixed_accum_before_us,fixed_accum_after_us,fixed_catchup_dropped"
+            "frame,phase,warmup,sampled,frame_delta_us,idle_before_frame_us,simulation_us,render_active_us,work_active_us,present_wait_us,fixed_steps,fixed_step_us,fixed_accum_before_us,fixed_accum_after_us,fixed_catchup_dropped,timestamp_ms"
         );
         Some(Self { file })
     }
@@ -205,7 +207,7 @@ impl TimingCsvWriter {
     fn write(&mut self, sample: CsvFrameSample) {
         let _ = writeln!(
             self.file,
-            "{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
+            "{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
             sample.frame_index,
             sample.phase,
             if sample.warmup { 1 } else { 0 },
@@ -220,9 +222,25 @@ impl TimingCsvWriter {
             sample.fixed_step_us,
             sample.fixed_accum_before_us,
             sample.fixed_accum_after_us,
-            if sample.fixed_catchup_dropped { 1 } else { 0 }
+            if sample.fixed_catchup_dropped { 1 } else { 0 },
+            sample.timestamp_ms
         );
-        let _ = self.file.flush();
+    }
+}
+
+#[inline]
+fn unix_timestamp_ms() -> u128 {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis()
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        0
     }
 }
 

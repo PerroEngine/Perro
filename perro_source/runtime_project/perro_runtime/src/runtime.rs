@@ -1025,6 +1025,9 @@ fn map_steam_input_mode(
         perro_project::SteamInputMode::Metadata => {
             perro_steamworks::input::SteamInputMode::Metadata
         }
+        perro_project::SteamInputMode::Fallback => {
+            perro_steamworks::input::SteamInputMode::Fallback
+        }
         perro_project::SteamInputMode::Actions => perro_steamworks::input::SteamInputMode::Actions,
     }
 }

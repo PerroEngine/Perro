@@ -25,3 +25,4 @@ perro_variant.workspace = true
 perro_csv.workspace = true
 [features]
 steamworks = ["dep:perro_steamworks", "perro_steamworks/steamworks-runtime", "perro_networking/steamworks"]
+spec = ["perro_runtime_api/spec"]

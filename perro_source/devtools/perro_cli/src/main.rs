@@ -9,13 +9,14 @@ mod profiling;
 mod project;
 mod scaffold;
 mod script_tests;
+mod targets;
 mod vscode;
 
 use bench::bench_command;
 use doctor::doctor_command;
 use gltf_animation::gltf_to_panim_command;
 use install::install_command;
-use profiling::{flamegraph_command, mem_profile_command};
+use profiling::{flamegraph_command, mem_profile_command, spec_command};
 use project::{
     clean_command, clippy_command, dev_command, dlc_command, format_command, project_command,
     scripts_command,
@@ -25,6 +26,7 @@ use scaffold::{
     new_script_command,
 };
 use script_tests::test_command;
+use targets::targets_command;
 
 const DEFAULT_PROJECT_NAME: &str = "Perro Project";
 const COLOR_RESET: &str = "\x1b[0m";
@@ -76,11 +78,13 @@ fn main() {
             "check" => scripts_command(&args, &cwd),
             "test" => test_command(&args, &cwd),
             "build" => project_command(&args, &cwd),
+            "targets" => targets_command(&args),
             "dlc" => dlc_command(&args, &cwd),
             "dev" => dev_command(&args, &cwd),
             "bench" => bench_command(&args, &cwd),
             "doctor" => doctor_command(&args, &cwd),
             "mem-profile" => mem_profile_command(&args, &cwd),
+            "spec" => spec_command(&args, &cwd),
             "flamegraph" => flamegraph_command(&args, &cwd),
             "format" => format_command(&args, &cwd),
             "clippy" => clippy_command(&args, &cwd),
@@ -165,10 +169,13 @@ const INSTALL: &[FlagSpec] = &[value("--profile")];
 const BUILD: &[FlagSpec] = &[
     value("--path"),
     value("--target"),
+    value("--triple"),
+    switch("--universal-macos"),
     switch("--profile"),
     switch("--console"),
     switch("--headless"),
     switch("--fresh"),
+    switch("--demo"),
 ];
 const DLC: &[FlagSpec] = &[value("--name"), value("--path")];
 const DEV: &[FlagSpec] = &[
@@ -182,6 +189,7 @@ const DEV: &[FlagSpec] = &[
     value("--host"),
     value("--port"),
     switch("--headless"),
+    switch("--demo"),
 ];
 const BENCH: &[FlagSpec] = &[
     value("--path"),
@@ -194,8 +202,10 @@ const MEM_PROFILE: &[FlagSpec] = &[
     switch("--release"),
     optional_value("--csv"),
 ];
+const SPEC: &[FlagSpec] = &[value("--path"), value("--target-fps")];
 const FLAMEGRAPH: &[FlagSpec] = &[value("--path"), switch("--profile"), switch("--root")];
 const FORMAT: &[FlagSpec] = &[value("--path"), switch("--dedup")];
+const TARGETS: &[FlagSpec] = &[value("--host")];
 
 fn command_schema(command: &str) -> Option<&'static [FlagSpec]> {
     match command {
@@ -207,10 +217,12 @@ fn command_schema(command: &str) -> Option<&'static [FlagSpec]> {
         "clean" | "check" | "test" | "doctor" | "clippy" => Some(PATH),
         "install" => Some(INSTALL),
         "build" => Some(BUILD),
+        "targets" => Some(TARGETS),
         "dlc" => Some(DLC),
         "dev" => Some(DEV),
         "bench" => Some(BENCH),
         "mem-profile" => Some(MEM_PROFILE),
+        "spec" => Some(SPEC),
         "flamegraph" => Some(FLAMEGRAPH),
         "format" => Some(FORMAT),
         _ => None,
@@ -283,19 +295,23 @@ fn print_usage() {
         "  perro_cli test [--path <project_dir>] [-- <cargo_test_args>]    # sync scripts + run cargo test for .perro/scripts"
     );
     eprintln!(
-        "  perro_cli build [--path <project_dir>] [--target native|web|android] [--profile] [--console] [--headless] [--fresh]    # full static project bundle + build (--fresh drops pipeline caches)"
+        "  perro_cli build [--path <project_dir>] [--target native|web|android] [--triple <rust_target> | --universal-macos] [--profile] [--console] [--headless] [--fresh] [--demo]    # static project bundle + build"
     );
+    eprintln!("  perro_cli targets [--host windows|linux|macos]    # show build support by dev OS");
     eprintln!(
         "  perro_cli dlc --name <dlc_name> [--path <project_dir>] # build one runtime-loadable DLC package"
     );
     eprintln!(
-        "  perro_cli dev [--path <project_dir>] [--target native|web|android] [--headless] [--timings] [--profile] [--ui-profile] [--release] [--csv-profile [csv_name]] [--host <addr>] [--port <num>]      # build scripts + run dev runner, web server, or android app"
+        "  perro_cli dev [--path <project_dir>] [--target native|web|android] [--headless] [--demo] [--timings] [--profile] [--ui-profile] [--release] [--csv-profile [csv_name]] [--host <addr>] [--port <num>]      # build scripts + run dev runner, web server, or android app"
     );
     eprintln!(
         "  perro_cli bench [--path <project_dir>] [--script <hash>] [--method <name>] [--var <name>] [-- <criterion_args>]    # criterion bench scripts"
     );
     eprintln!(
         "  perro_cli mem-profile [--path <project_dir>] [--release] [--csv [csv_name]]    # run dev runner + process memory samples"
+    );
+    eprintln!(
+        "  perro_cli spec [--path <project_dir>] [--target-fps <fps>]    # run release spec capture + write estimate report"
     );
     eprintln!(
         "  perro_cli flamegraph [--path <project_dir>] [--profile] [--root]    # run cargo flamegraph for dev runner (auto-installs tool if missing)"
@@ -436,5 +452,27 @@ mod cli_arg_tests {
         let args = args(&["perro", "test", "--path", "game", "--", "--nocapture"]);
 
         assert_eq!(validate_command_args("test", &args), Ok(()));
+    }
+
+    #[test]
+    fn spec_target_fps_requires_value() {
+        let args = args(&["perro", "spec", "--target-fps"]);
+
+        assert_eq!(
+            validate_command_args("spec", &args),
+            Err("missing value for flag `--target-fps` in `spec`".to_string())
+        );
+    }
+
+    #[test]
+    fn demo_flag_valid_for_build_and_dev() {
+        assert_eq!(
+            validate_command_args("build", &args(&["perro", "build", "--demo"])),
+            Ok(())
+        );
+        assert_eq!(
+            validate_command_args("dev", &args(&["perro", "dev", "--demo"])),
+            Ok(())
+        );
     }
 }

@@ -50,6 +50,7 @@ use std::{
     marker::PhantomData,
     path::{Path, PathBuf},
     rc::Rc,
+    sync::atomic::{AtomicBool, Ordering},
 };
 
 use perro_asset_formats::dlc::{DlcAssetAccess, DlcAssetFlags, DlcAssetKind};
@@ -60,6 +61,24 @@ const SRC_DIR: &str = "src";
 const STATIC_DIR: &str = "static";
 const EMBEDDED_DIR: &str = "embedded";
 const RES_DIR: &str = "res";
+static DEMO_MODE: AtomicBool = AtomicBool::new(false);
+
+#[must_use = "dropping guard restores prior demo mode"]
+pub struct StaticDemoModeGuard(bool);
+
+pub fn push_demo_mode(active: bool) -> StaticDemoModeGuard {
+    StaticDemoModeGuard(DEMO_MODE.swap(active, Ordering::SeqCst))
+}
+
+impl Drop for StaticDemoModeGuard {
+    fn drop(&mut self) {
+        DEMO_MODE.store(self.0, Ordering::SeqCst);
+    }
+}
+
+pub(crate) fn demo_mode_active() -> bool {
+    DEMO_MODE.load(Ordering::SeqCst)
+}
 
 #[derive(Clone, Debug)]
 pub struct StaticPipelineOverrides {

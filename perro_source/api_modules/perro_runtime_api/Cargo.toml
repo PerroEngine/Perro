@@ -19,6 +19,9 @@ perro_ui.workspace = true
 [dev-dependencies]
 criterion = "0.5"
 
+[features]
+spec = []
+
 [[bench]]
 name = "physics_trajectory_solver"
 harness = false

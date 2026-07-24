@@ -11,9 +11,10 @@ use crate::{
 };
 use perro_compiler::{
     ProjectBuildOptions, ProjectBuildTarget, ScriptsBuildProfile, WebOutputDir, compile_dlc_bundle,
-    compile_project_bundle, compile_scripts_with_profile, sync_scripts,
+    compile_project_bundle, compile_scripts_with_profile, compile_scripts_with_profile_and_demo,
+    compile_universal_macos_project_bundle, sync_scripts,
 };
-use perro_project::{ensure_source_overrides, load_project_toml};
+use perro_project::{ensure_source_overrides, load_project_toml_with_demo};
 use perro_scene::Parser;
 use std::env;
 use std::fs;
@@ -216,6 +217,7 @@ pub(crate) fn dev_command(args: &[String], cwd: &Path) -> Result<(), String> {
     let timings = args.iter().any(|a| a == "--timings");
     let ui_profile = args.iter().any(|a| a == "--ui-profile");
     let release = args.iter().any(|a| a == "--release");
+    let demo = args.iter().any(|a| a == "--demo");
     let csv_profile_name = parse_optional_flag_value(args, "--csv-profile")
         .map(|raw| PathBuf::from(raw.unwrap_or_else(|| "profiling.csv".to_string())));
     let profile = profile_requested || csv_profile_name.is_some();
@@ -228,7 +230,7 @@ pub(crate) fn dev_command(args: &[String], cwd: &Path) -> Result<(), String> {
     let project_dir = project_dir.canonicalize().unwrap_or(project_dir);
     ensure_source_overrides(&project_dir)
         .map_err(|err| format!("failed to sync generated project crates: {err}"))?;
-    let project_cfg = load_project_toml(&project_dir)
+    let project_cfg = load_project_toml_with_demo(&project_dir, demo)
         .map_err(|err| format!("failed to load project.toml: {err}"))?;
     let profiling_dir = ensure_profiling_output_dir(&project_dir)?;
     let csv_profile_path = csv_profile_name.as_ref().map(|name| {
@@ -258,6 +260,9 @@ pub(crate) fn dev_command(args: &[String], cwd: &Path) -> Result<(), String> {
 
     let mut build_cmd = Command::new("cargo");
     build_cmd.arg("build").env("CARGO_TARGET_DIR", &target_dir);
+    if demo {
+        build_cmd.env("PERRO_DEMO", "1");
+    }
     if headless {
         build_cmd.arg("--no-default-features");
     }
@@ -309,12 +314,14 @@ pub(crate) fn dev_command(args: &[String], cwd: &Path) -> Result<(), String> {
 
     // Build scripts after the runner so both use the runner's final engine build identity.
     log_step("Building Scripts");
-    compile_scripts_with_profile(&project_dir, ScriptsBuildProfile::Debug).map_err(|err| {
-        format!(
-            "scripts pipeline failed for {}: {err}",
-            project_dir.display()
-        )
-    })?;
+    compile_scripts_with_profile_and_demo(&project_dir, ScriptsBuildProfile::Debug, demo).map_err(
+        |err| {
+            format!(
+                "scripts pipeline failed for {}: {err}",
+                project_dir.display()
+            )
+        },
+    )?;
     log_done("Scripts Built");
 
     let launch_dir = prepare_dev_runner_launch_dir(&project_dir, "debug")
@@ -349,6 +356,9 @@ pub(crate) fn dev_command(args: &[String], cwd: &Path) -> Result<(), String> {
         .env("PERRO_SCRIPTS_DYLIB_PATH", scripts_path);
     if headless {
         run_cmd.arg("--headless");
+    }
+    if demo {
+        run_cmd.env("PERRO_DEMO", "1");
     }
     if let Some(path) = &csv_profile_path {
         run_cmd.env("PERRO_PROFILE_CSV", path.to_string_lossy().to_string());
@@ -814,6 +824,17 @@ fn indent(out: &mut String, depth: usize) {
 
 pub(crate) fn project_command(args: &[String], cwd: &Path) -> Result<(), String> {
     let target = parse_cli_target(args)?;
+    let native_target = parse_flag_value(args, "--triple");
+    let universal_macos = args.iter().any(|a| a == "--universal-macos");
+    if (native_target.is_some() || universal_macos) && target != CliTarget::Native {
+        return Err("`--triple` + `--universal-macos` only support `--target native`".to_string());
+    }
+    if native_target.is_some() && universal_macos {
+        return Err("use either `--triple` or `--universal-macos`, not both".to_string());
+    }
+    if universal_macos && !cfg!(target_os = "macos") {
+        return Err("`--universal-macos` requires a macOS host".to_string());
+    }
     let headless = args.iter().any(|a| a == "--headless");
     if headless && target != CliTarget::Native {
         return Err("`--headless` only supports `--target native`".to_string());
@@ -827,6 +848,15 @@ pub(crate) fn project_command(args: &[String], cwd: &Path) -> Result<(), String>
     let profile = args.iter().any(|a| a == "--profile");
     let console = args.iter().any(|a| a == "--console");
     let fresh = args.iter().any(|a| a == "--fresh");
+    let demo = args.iter().any(|a| a == "--demo");
+    if let Some(native_target) = native_target.as_deref() {
+        validate_cli_native_target(native_target)?;
+        ensure_rust_target_installed(native_target)?;
+    }
+    if universal_macos {
+        ensure_rust_target_installed("aarch64-apple-darwin")?;
+        ensure_rust_target_installed("x86_64-apple-darwin")?;
+    }
     let project_dir = parse_flag_value(args, "--path")
         .map(|p| resolve_local_path(&p, cwd))
         .unwrap_or_else(|| cwd.to_path_buf());
@@ -834,21 +864,40 @@ pub(crate) fn project_command(args: &[String], cwd: &Path) -> Result<(), String>
     update_workspace_vscode_linked_projects(&workspace_root(), &project_dir)?;
     update_project_vscode_linked_projects(&project_dir)?;
     log_step("Building Project Bundle");
-    compile_project_bundle(
-        &project_dir,
-        ProjectBuildOptions::new(profile, console)
-            .with_headless(headless)
-            .with_fresh(fresh),
-    )
-    .map(|_| {
-        log_done("Project Bundle Built");
-    })
-    .map_err(|err| {
-        format!(
-            "project pipeline failed for {}: {err}",
-            project_dir.display()
-        )
-    })
+    let options = ProjectBuildOptions::new(profile, console)
+        .with_headless(headless)
+        .with_native_target(native_target.map(leak_string))
+        .with_demo(demo)
+        .with_fresh(fresh);
+    let result = if universal_macos {
+        compile_universal_macos_project_bundle(&project_dir, options)
+    } else {
+        compile_project_bundle(&project_dir, options)
+    };
+    result
+        .map(|_| {
+            log_done("Project Bundle Built");
+        })
+        .map_err(|err| {
+            format!(
+                "project pipeline failed for {}: {err}",
+                project_dir.display()
+            )
+        })
+}
+
+fn validate_cli_native_target(target: &str) -> Result<(), String> {
+    let valid = !target.is_empty()
+        && !target.starts_with('-')
+        && target.contains('-')
+        && target
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'));
+    if valid {
+        Ok(())
+    } else {
+        Err(format!("invalid native Rust target triple `{target}`"))
+    }
 }
 
 fn parse_cli_target(args: &[String]) -> Result<CliTarget, String> {
@@ -881,6 +930,7 @@ fn build_web_command(args: &[String], cwd: &Path) -> Result<(), String> {
         &project_dir,
         ProjectBuildOptions::new(profile, false)
             .with_target(ProjectBuildTarget::Web)
+            .with_demo(args.iter().any(|a| a == "--demo"))
             .with_web_output_dir(WebOutputDir::Build)
             .with_fresh(args.iter().any(|a| a == "--fresh")),
     )
@@ -914,6 +964,7 @@ fn build_android_command(args: &[String], cwd: &Path) -> Result<(), String> {
         &project_dir,
         ProjectBuildOptions::new(profile, false)
             .with_target(ProjectBuildTarget::Android)
+            .with_demo(args.iter().any(|a| a == "--demo"))
             .with_fresh(args.iter().any(|a| a == "--fresh"))
             .with_android_sdk_root(Some(leak_string(
                 android.sdk_root.to_string_lossy().to_string(),
@@ -969,6 +1020,7 @@ fn dev_android_command(args: &[String], cwd: &Path) -> Result<(), String> {
         &project_dir,
         ProjectBuildOptions::new(profile, false)
             .with_target(ProjectBuildTarget::Android)
+            .with_demo(args.iter().any(|a| a == "--demo"))
             .with_release(release)
             .with_android_sdk_root(Some(leak_string(
                 android.sdk_root.to_string_lossy().to_string(),
@@ -1206,6 +1258,7 @@ fn dev_web_command(args: &[String], cwd: &Path) -> Result<(), String> {
         &project_dir,
         ProjectBuildOptions::new(profile, false)
             .with_target(ProjectBuildTarget::Web)
+            .with_demo(args.iter().any(|a| a == "--demo"))
             .with_release(release)
             .with_web_output_dir(WebOutputDir::Dev),
     )

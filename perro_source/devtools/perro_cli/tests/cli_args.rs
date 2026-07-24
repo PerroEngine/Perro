@@ -34,3 +34,14 @@ fn command_help_keeps_success_exit() {
     assert!(output.status.success());
     assert!(stderr.contains("Usage:"));
 }
+
+#[test]
+fn targets_shows_selected_dev_os_matrix() {
+    let output = perro(&["targets", "--host", "windows"]);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    assert!(output.status.success());
+    assert!(stdout.contains("Dev OS: Windows"));
+    assert!(stdout.contains("Windows x64         READY"));
+    assert!(stdout.contains("macOS universal     NO"));
+}

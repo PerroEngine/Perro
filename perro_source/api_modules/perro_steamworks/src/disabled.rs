@@ -369,12 +369,13 @@ pub mod input {
         #[default]
         Off,
         Metadata,
+        Fallback,
         Actions,
     }
 
     impl SteamInputMode {
         pub const fn allows_action_reads(self) -> bool {
-            matches!(self, Self::Actions)
+            matches!(self, Self::Fallback | Self::Actions)
         }
     }
 
@@ -448,6 +449,53 @@ pub mod input {
         pub rot_quat: [f32; 4],
         pub pos_accel: [f32; 3],
         pub rot_vel: [f32; 3],
+    }
+
+    pub const FALLBACK_ACTION_SET: &str = "perro_gamepad";
+    pub const FALLBACK_DIGITAL_ACTIONS: [&str; 18] = [
+        "perro_bottom",
+        "perro_right",
+        "perro_left",
+        "perro_top",
+        "perro_dpad_up",
+        "perro_dpad_down",
+        "perro_dpad_left",
+        "perro_dpad_right",
+        "perro_start",
+        "perro_select",
+        "perro_home",
+        "perro_capture",
+        "perro_l1",
+        "perro_r1",
+        "perro_l2",
+        "perro_r2",
+        "perro_l3",
+        "perro_r3",
+    ];
+    pub const FALLBACK_ANALOG_ACTIONS: [&str; 4] = [
+        "perro_left_stick",
+        "perro_right_stick",
+        "perro_left_trigger",
+        "perro_right_trigger",
+    ];
+
+    #[derive(Clone, Debug, Default, PartialEq)]
+    pub struct FallbackGamepad {
+        pub handle: InputHandle,
+        pub input_type: InputType,
+        pub buttons: [bool; 18],
+        pub axes: [f32; 6],
+        pub motion: MotionData,
+    }
+
+    pub const fn fallback_eligible(_input_type: InputType, _native_gamepad_present: bool) -> bool {
+        false
+    }
+
+    pub fn fallback_gamepads(
+        _native_gamepad_present: bool,
+    ) -> Result<Vec<FallbackGamepad>, SteamError> {
+        disabled()
     }
 
     pub(crate) fn set_mode(_mode: SteamInputMode) -> Result<(), SteamError> {
@@ -1115,6 +1163,9 @@ pub mod utils {
 
 pub mod workshop {
     use super::*;
+    use std::path::Path;
+
+    pub const RESULTS_PER_PAGE: u32 = 50;
 
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
     pub enum FileType {
@@ -1160,6 +1211,284 @@ pub mod workshop {
         pub accepted_legal_agreement: bool,
     }
 
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub enum Visibility {
+        Public,
+        FriendsOnly,
+        Private,
+        Unlisted,
+    }
+
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub enum QueryAppIDs {
+        Creator(AppID),
+        Consumer(AppID),
+        Both { creator: AppID, consumer: AppID },
+    }
+
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub enum ItemType {
+        Items,
+        ItemsMtx,
+        ItemsReadyToUse,
+        Collections,
+        Artwork,
+        Videos,
+        Screenshots,
+        AllGuides,
+        WebGuides,
+        IntegratedGuides,
+        UsableInGame,
+        ControllerBindings,
+        GameManagedItems,
+        All,
+    }
+
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub enum QueryType {
+        RankedByVote,
+        RankedByPublicationDate,
+        AcceptedForGameRankedByAcceptanceDate,
+        RankedByTrend,
+        FavoritedByFriendsRankedByPublicationDate,
+        CreatedByFriendsRankedByPublicationDate,
+        RankedByNumTimesReported,
+        CreatedByFollowedUsersRankedByPublicationDate,
+        NotYetRated,
+        RankedByTotalVotesAsc,
+        RankedByVotesUp,
+        RankedByTextSearch,
+        RankedByTotalUniqueSubscriptions,
+        RankedByPlaytimeTrend,
+        RankedByTotalPlaytime,
+        RankedByAveragePlaytimeTrend,
+        RankedByLifetimeAveragePlaytime,
+        RankedByPlaytimeSessionsTrend,
+        RankedByLifetimePlaytimeSessions,
+        RankedByLastUpdatedDate,
+    }
+
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub enum UserListOrder {
+        CreationOrderAsc,
+        CreationOrderDesc,
+        TitleAsc,
+        LastUpdatedDesc,
+        SubscriptionDateDesc,
+        VoteScoreDesc,
+        ForModeration,
+    }
+
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub enum UserList {
+        Published,
+        VotedOn,
+        VotedUp,
+        VotedDown,
+        WillVoteLater,
+        Favorited,
+        Subscribed,
+        UsedOrPlayed,
+        Followed,
+    }
+
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub enum StatisticType {
+        Subscriptions,
+        Favorites,
+        Followers,
+        UniqueSubscriptions,
+        UniqueFavorites,
+        UniqueFollowers,
+        UniqueWebsiteViews,
+        Reports,
+        SecondsPlayed,
+        PlaytimeSessions,
+        Comments,
+        SecondsPlayedDuringTimePeriod,
+        PlaytimeSessionsDuringTimePeriod,
+    }
+
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub enum ContentDescriptor {
+        NudityOrSexualContent,
+        FrequentViolenceOrGore,
+        AdultOnlySexualContent,
+        GratuitousSexualContent,
+        AnyMatureContent,
+    }
+
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub enum UpdateStatus {
+        Invalid,
+        PreparingConfig,
+        PreparingContent,
+        UploadingContent,
+        UploadingPreviewFile,
+        CommittingChanges,
+    }
+
+    pub struct QueryItem {
+        pub file: WorkshopFileID,
+        pub creator_app_id: Option<AppID>,
+        pub consumer_app_id: Option<AppID>,
+        pub title: String,
+        pub description: String,
+        pub owner: SteamID,
+        pub time_created: u32,
+        pub time_updated: u32,
+        pub time_added_to_user_list: u32,
+        pub visibility: Visibility,
+        pub banned: bool,
+        pub accepted_for_use: bool,
+        pub tags: Vec<String>,
+        pub tags_truncated: bool,
+        pub file_name: String,
+        pub file_type: FileType,
+        pub file_size: u32,
+        pub url: String,
+        pub preview_url: Option<String>,
+        pub num_upvotes: u32,
+        pub num_downvotes: u32,
+        pub score: f32,
+        pub children: Option<Vec<WorkshopFileID>>,
+        pub key_value_tags: Vec<(String, String)>,
+        pub metadata: Option<Vec<u8>>,
+        pub content_descriptors: Vec<ContentDescriptor>,
+        pub statistics: Vec<(StatisticType, u64)>,
+    }
+
+    pub struct QueryPage {
+        pub items: Vec<QueryItem>,
+        pub total_results: u32,
+        pub was_cached: bool,
+    }
+
+    pub struct Update;
+
+    impl Update {
+        pub fn title(self, _title: &str) -> Self {
+            self
+        }
+        pub fn description(self, _description: &str) -> Self {
+            self
+        }
+        pub fn language(self, _language: &str) -> Self {
+            self
+        }
+        pub fn preview_path(self, _path: impl AsRef<Path>) -> Self {
+            self
+        }
+        pub fn content_path(self, _path: impl AsRef<Path>) -> Self {
+            self
+        }
+        pub fn metadata(self, _metadata: &str) -> Self {
+            self
+        }
+        pub fn visibility(self, _visibility: Visibility) -> Self {
+            self
+        }
+        pub fn tags<S: AsRef<str>>(self, _tags: Vec<S>, _allow_admin_tags: bool) -> Self {
+            self
+        }
+        pub fn add_key_value_tag(self, _key: &str, _value: &str) -> Self {
+            self
+        }
+        pub fn remove_key_value_tag(self, _key: &str) -> Self {
+            self
+        }
+        pub fn remove_all_key_value_tags(self) -> Self {
+            self
+        }
+        pub fn add_content_descriptor(self, _descriptor: ContentDescriptor) -> Self {
+            self
+        }
+        pub fn remove_content_descriptor(self, _descriptor: ContentDescriptor) -> Self {
+            self
+        }
+        pub fn submit(
+            self,
+            _change_note: Option<&str>,
+            cb: impl FnOnce(Result<CreateItemResult, SteamError>) + Send + 'static,
+        ) -> UpdateWatch {
+            cb(Err(SteamError::Disabled));
+            UpdateWatch
+        }
+    }
+
+    pub struct UpdateWatch;
+
+    impl UpdateWatch {
+        pub fn progress(&self) -> (UpdateStatus, u64, u64) {
+            (UpdateStatus::Invalid, 0, 0)
+        }
+    }
+
+    pub struct Query;
+
+    impl Query {
+        pub fn exclude_tag(self, _tag: &str) -> Self {
+            self
+        }
+        pub fn require_tag(self, _tag: &str) -> Self {
+            self
+        }
+        pub fn match_any_tag(self, _any: bool) -> Self {
+            self
+        }
+        pub fn language(self, _language: &str) -> Self {
+            self
+        }
+        pub fn allow_cached_response(self, _max_age_seconds: u32) -> Self {
+            self
+        }
+        pub fn include_long_description(self, _include: bool) -> Self {
+            self
+        }
+        pub fn include_children(self, _include: bool) -> Self {
+            self
+        }
+        pub fn include_metadata(self, _include: bool) -> Self {
+            self
+        }
+        pub fn include_additional_previews(self, _include: bool) -> Self {
+            self
+        }
+        pub fn include_key_value_tags(self, _include: bool) -> Self {
+            self
+        }
+        pub fn return_only_ids(self, _only_ids: bool) -> Self {
+            self
+        }
+        pub fn return_total_only(self, _total_only: bool) -> Self {
+            self
+        }
+        pub fn cloud_file_name_filter(self, _file_name: &str) -> Self {
+            self
+        }
+        pub fn search_text(self, _text: &str) -> Self {
+            self
+        }
+        pub fn ranked_by_trend_days(self, _days: u32) -> Self {
+            self
+        }
+        pub fn require_key_value_tag(self, _key: &str, _value: &str) -> Self {
+            self
+        }
+        pub fn fetch(self, cb: impl FnOnce(Result<QueryPage, SteamError>) + Send + 'static) {
+            cb(Err(SteamError::Disabled));
+        }
+        pub fn fetch_total(self, cb: impl Fn(Result<u32, SteamError>) + Send + 'static) {
+            cb(Err(SteamError::Disabled));
+        }
+        pub fn fetch_ids(
+            self,
+            cb: impl Fn(Result<Vec<WorkshopFileID>, SteamError>) + Send + 'static,
+        ) {
+            cb(Err(SteamError::Disabled));
+        }
+    }
+
     pub fn suspend_downloads(_suspend: bool) -> Result<(), SteamError> {
         disabled()
     }
@@ -1197,12 +1526,72 @@ pub mod workshop {
     ) -> Result<bool, SteamError> {
         disabled()
     }
+    pub fn download(_file: WorkshopFileID, _high_priority: bool) -> Result<bool, SteamError> {
+        disabled()
+    }
     pub fn create(
         _app_id: AppID,
         _file_type: FileType,
         cb: impl FnOnce(Result<CreateItemResult, SteamError>) + Send + 'static,
     ) -> Result<(), SteamError> {
         cb(Err(SteamError::Disabled));
+        disabled()
+    }
+    pub fn start_update(_app_id: AppID, _file: WorkshopFileID) -> Result<Update, SteamError> {
+        disabled()
+    }
+    pub fn query_all(
+        _query_type: QueryType,
+        _item_type: ItemType,
+        _app_ids: QueryAppIDs,
+        _page: u32,
+    ) -> Result<Query, SteamError> {
+        disabled()
+    }
+    pub fn query_user(
+        _account_id: u32,
+        _list: UserList,
+        _item_type: ItemType,
+        _order: UserListOrder,
+        _app_ids: QueryAppIDs,
+        _page: u32,
+    ) -> Result<Query, SteamError> {
+        disabled()
+    }
+    pub fn query_items(_files: &[WorkshopFileID]) -> Result<Query, SteamError> {
+        disabled()
+    }
+    pub fn query_item(_file: WorkshopFileID) -> Result<Query, SteamError> {
+        disabled()
+    }
+    pub fn delete(
+        _file: WorkshopFileID,
+        cb: impl FnOnce(Result<(), SteamError>) + Send + 'static,
+    ) -> Result<(), SteamError> {
+        cb(Err(SteamError::Disabled));
+        disabled()
+    }
+    pub fn start_playtime_tracking(
+        _files: &[WorkshopFileID],
+        cb: impl FnOnce(Result<(), SteamError>) + Send + 'static,
+    ) -> Result<(), SteamError> {
+        cb(Err(SteamError::Disabled));
+        disabled()
+    }
+    pub fn stop_playtime_tracking(
+        _files: &[WorkshopFileID],
+        cb: impl FnOnce(Result<(), SteamError>) + Send + 'static,
+    ) -> Result<(), SteamError> {
+        cb(Err(SteamError::Disabled));
+        disabled()
+    }
+    pub fn stop_all_playtime_tracking(
+        cb: impl FnOnce(Result<(), SteamError>) + Send + 'static,
+    ) -> Result<(), SteamError> {
+        cb(Err(SteamError::Disabled));
+        disabled()
+    }
+    pub fn init_for_game_server(_workshop_depot: u32, _folder: &str) -> Result<bool, SteamError> {
         disabled()
     }
 }

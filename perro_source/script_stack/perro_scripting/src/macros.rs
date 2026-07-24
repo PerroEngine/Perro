@@ -1,4 +1,14 @@
 #[macro_export]
+macro_rules! demo_exclude {
+    ({ $($body:tt)* }) => {{
+        #[cfg(not(feature = "perro-demo"))]
+        {
+            $($body)*
+        }
+    }};
+}
+
+#[macro_export]
 macro_rules! lifecycle {
     ({ $($methods:item)* }) => {
         $crate::lifecycle!(Script { $($methods)* });
@@ -62,4 +72,20 @@ macro_rules! __methods_internal {
         $method
         $crate::__methods_internal! { $($rest)* }
     };
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    #[allow(unused_assignments, unused_mut)]
+    fn demo_exclude_matches_feature() {
+        let mut value = 0;
+        crate::demo_exclude!({
+            value = 1;
+        });
+        #[cfg(feature = "perro-demo")]
+        assert_eq!(value, 0);
+        #[cfg(not(feature = "perro-demo"))]
+        assert_eq!(value, 1);
+    }
 }

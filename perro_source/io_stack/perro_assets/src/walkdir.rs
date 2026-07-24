@@ -2,10 +2,100 @@ use std::{
     collections::HashSet,
     fs, io,
     path::{Path, PathBuf},
+    sync::{LazyLock, RwLock},
 };
 
 #[cfg(windows)]
 use std::os::windows::fs::MetadataExt;
+
+static PATH_EXCLUSIONS: LazyLock<RwLock<Vec<String>>> = LazyLock::new(|| RwLock::new(Vec::new()));
+
+#[must_use = "dropping the guard restores prior path exclusions"]
+pub struct PathExclusionGuard {
+    previous: Vec<String>,
+}
+
+pub fn push_path_exclusions(patterns: Vec<String>) -> PathExclusionGuard {
+    let mut active = PATH_EXCLUSIONS.write().expect("path exclusion lock");
+    let previous = std::mem::replace(&mut *active, patterns);
+    PathExclusionGuard { previous }
+}
+
+impl Drop for PathExclusionGuard {
+    fn drop(&mut self) {
+        *PATH_EXCLUSIONS.write().expect("path exclusion lock") = std::mem::take(&mut self.previous);
+    }
+}
+
+pub fn matches_path_pattern(pattern: &str, path: &str) -> bool {
+    fn segments(pattern: &[&str], path: &[&str]) -> bool {
+        match pattern.split_first() {
+            None => path.is_empty(),
+            Some((&"**", rest)) => {
+                segments(rest, path)
+                    || path
+                        .split_first()
+                        .is_some_and(|(_, path_rest)| segments(pattern, path_rest))
+            }
+            Some((pattern_part, rest)) => {
+                path.split_first().is_some_and(|(path_part, path_rest)| {
+                    segment_matches(pattern_part, path_part) && segments(rest, path_rest)
+                })
+            }
+        }
+    }
+
+    fn segment_matches(pattern: &str, value: &str) -> bool {
+        let pattern = pattern.as_bytes();
+        let value = value.as_bytes();
+        let (mut pattern_pos, mut value_pos, mut star, mut retry) = (0, 0, None, 0);
+        while value_pos < value.len() {
+            if pattern_pos < pattern.len() && pattern[pattern_pos] == value[value_pos] {
+                pattern_pos += 1;
+                value_pos += 1;
+            } else if pattern_pos < pattern.len() && pattern[pattern_pos] == b'*' {
+                star = Some(pattern_pos);
+                pattern_pos += 1;
+                retry = value_pos;
+            } else if let Some(star_pos) = star {
+                retry += 1;
+                value_pos = retry;
+                pattern_pos = star_pos + 1;
+            } else {
+                return false;
+            }
+        }
+        while pattern_pos < pattern.len() && pattern[pattern_pos] == b'*' {
+            pattern_pos += 1;
+        }
+        pattern_pos == pattern.len()
+    }
+
+    segments(
+        &pattern.split('/').collect::<Vec<_>>(),
+        &path.split('/').collect::<Vec<_>>(),
+    )
+}
+
+fn path_is_excluded(path: &Path, root: &Path) -> bool {
+    let Ok(relative) = path.strip_prefix(root) else {
+        return false;
+    };
+    let relative = relative.to_string_lossy().replace('\\', "/");
+    PATH_EXCLUSIONS
+        .read()
+        .expect("path exclusion lock")
+        .iter()
+        .any(|pattern| matches_path_pattern(pattern, &relative))
+}
+
+pub fn is_relative_path_excluded(path: &str) -> bool {
+    PATH_EXCLUSIONS
+        .read()
+        .expect("path exclusion lock")
+        .iter()
+        .any(|pattern| matches_path_pattern(pattern, path))
+}
 
 fn is_link_or_reparse(metadata: &fs::Metadata) -> bool {
     if metadata.file_type().is_symlink() {
@@ -104,7 +194,9 @@ where
                 pending.push(path);
             } else if metadata.is_file() {
                 canonical_in_root(&path, &root)?;
-                callback(&path)?;
+                if !path_is_excluded(&path, dir) {
+                    callback(&path)?;
+                }
             }
         }
     }
@@ -150,7 +242,7 @@ pub fn collect_file_paths(dir: &Path, base: &Path) -> io::Result<Vec<String>> {
 
 #[cfg(test)]
 mod tests {
-    use super::{collect_file_paths, walk_dir};
+    use super::{collect_file_paths, matches_path_pattern, walk_dir};
     use std::{
         fs, io,
         path::{Path, PathBuf},
@@ -160,6 +252,17 @@ mod tests {
     static NEXT_TEMP: AtomicU64 = AtomicU64::new(0);
 
     struct TempDir(PathBuf);
+
+    #[test]
+    fn demo_globs_match_segments_and_recursive_paths() {
+        assert!(matches_path_pattern("full/**", "full/a/b.scn"));
+        assert!(matches_path_pattern("scripts/*.rs", "scripts/store.rs"));
+        assert!(!matches_path_pattern(
+            "scripts/*.rs",
+            "scripts/full/store.rs"
+        ));
+        assert!(!matches_path_pattern("Full/**", "full/a.scn"));
+    }
 
     impl TempDir {
         fn new(label: &str) -> Self {

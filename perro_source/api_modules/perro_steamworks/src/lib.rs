@@ -548,6 +548,41 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "steamworks-runtime"))]
+    fn workshop_full_flow_returns_disabled() {
+        let _guard = test_lock();
+        app::reset_for_tests();
+        app::init_from_config(false, None).expect("disabled init");
+        let file = WorkshopFileID::from_id(1);
+        let app_id = AppID::from_id(480);
+
+        assert!(matches!(
+            workshop::start_update(app_id, file),
+            Err(SteamError::Disabled)
+        ));
+        assert!(matches!(
+            workshop::query_all(
+                workshop::QueryType::RankedByVote,
+                workshop::ItemType::Items,
+                workshop::QueryAppIDs::Consumer(app_id),
+                1,
+            ),
+            Err(SteamError::Disabled)
+        ));
+        assert_eq!(workshop::download(file, true), Err(SteamError::Disabled));
+
+        let (tx, rx) = std::sync::mpsc::channel();
+        assert_eq!(
+            workshop::delete(file, move |result| tx.send(result).expect("send result")),
+            Err(SteamError::Disabled)
+        );
+        assert_eq!(
+            rx.recv().expect("callback result"),
+            Err(SteamError::Disabled)
+        );
+    }
+
+    #[test]
     fn live_steam_480_init_is_idempotent_when_enabled() {
         if std::env::var_os("PERRO_STEAMWORKS_LIVE_TESTS").is_none() {
             return;

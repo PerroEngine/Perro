@@ -252,6 +252,7 @@ fn ensure_project_manifest_features(path: &Path) -> std::io::Result<()> {
     changed |= ensure_feature_values(features_table, "default", &["app"]);
     changed |= ensure_feature_values(features_table, "app", &["dep:perro_app"]);
     changed |= ensure_feature_values(features_table, "headless", &["dep:perro_headless"]);
+    changed |= ensure_feature_values(features_table, "perro-demo", &["scripts/perro-demo"]);
     changed |= ensure_feature_values(
         features_table,
         "headless_profile",
@@ -663,6 +664,17 @@ fn ensure_scripts_manifest_features(path: &Path) -> std::io::Result<()> {
     let mut changed = false;
     if !features_table.contains_key("dynamic-scripts") {
         features_table.insert("dynamic-scripts".to_string(), Value::Array(Vec::new()));
+        changed = true;
+    }
+    if !features_table.contains_key("perro-demo") {
+        features_table.insert("perro-demo".to_string(), Value::Array(Vec::new()));
+        changed = true;
+    }
+    if !features_table.contains_key("perro-spec") {
+        features_table.insert(
+            "perro-spec".to_string(),
+            Value::Array(vec![Value::String("perro_api/spec".to_string())]),
+        );
         changed = true;
     }
     if !features_table.contains_key("steamworks") {

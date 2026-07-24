@@ -16,6 +16,25 @@ pub(in super::super) fn load_runtime_scene_from_disk(
     let mut scene = Parser::new(source)
         .try_parse_scene()
         .map_err(|err| format!("failed to parse scene `{path}`: {err}"))?;
+    perro_scene::filter_demo_scene(&mut scene, perro_io::demo_mode_active())
+        .map_err(|err| format!("failed to filter scene `{path}` for demo: {err}"))?;
+    if perro_io::demo_mode_active() {
+        for node in scene.nodes.iter() {
+            for referenced in [node.script.as_deref(), node.root_of.as_deref()]
+                .into_iter()
+                .flatten()
+            {
+                if matches!(
+                    perro_io::resolve_path(referenced),
+                    perro_io::ResolvedPath::Excluded(_)
+                ) {
+                    return Err(format!(
+                        "scene `{path}` refs demo-excluded path `{referenced}`"
+                    ));
+                }
+            }
+        }
+    }
     if let Some(mount_name) = parse_dlc_mount_name(path) {
         resolve_scene_dlc_self_paths(&mut scene, &mount_name);
     }
@@ -59,7 +78,11 @@ pub(super) fn resolve_scene_dlc_self_paths(scene: &mut Scene, mount_name: &str) 
     }
 }
 
-pub(super) fn resolve_scene_node_data_dlc_self(data: &mut SceneDefNodeData, prefix: &str, replacement: &str) {
+pub(super) fn resolve_scene_node_data_dlc_self(
+    data: &mut SceneDefNodeData,
+    prefix: &str,
+    replacement: &str,
+) {
     resolve_scene_value_fields_dlc_self(data.fields.to_mut(), prefix, replacement);
     if let Some(base) = data.base.as_mut()
         && let perro_scene::SceneNodeDataBase::Owned(base_data) = base
@@ -78,7 +101,11 @@ pub(super) fn resolve_scene_value_fields_dlc_self(
     }
 }
 
-pub(super) fn resolve_scene_value_dlc_self(value: &mut SceneValue, prefix: &str, replacement: &str) {
+pub(super) fn resolve_scene_value_dlc_self(
+    value: &mut SceneValue,
+    prefix: &str,
+    replacement: &str,
+) {
     match value {
         SceneValue::Str(v) if v.as_ref().starts_with(prefix) => {
             *v = Cow::Owned(v.replacen(prefix, replacement, 1));

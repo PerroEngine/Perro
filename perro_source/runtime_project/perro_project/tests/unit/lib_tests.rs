@@ -3,6 +3,55 @@ use std::fs;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[test]
+fn demo_overlay_merges_cfg_and_keeps_full_cfg_unchanged() {
+    let src = r#"
+[project]
+name = "Full"
+main_scene = "res://main.scn"
+
+[graphics]
+vsync = false
+
+[demo]
+exclude = ["res://full/**", "res://scripts/store.rs"]
+
+[demo.project]
+name = "Demo"
+main_scene = "res://demo/main.scn"
+
+[demo.graphics]
+vsync = true
+"#;
+    let full = parse_project_toml(src).expect("full cfg");
+    let demo = parse_project_toml_with_demo(src, true).expect("demo cfg");
+
+    assert_eq!(full.name, "Full");
+    assert_eq!(full.main_scene, "res://main.scn");
+    assert!(!full.vsync);
+    assert!(!full.demo.active);
+    assert_eq!(demo.name, "Demo");
+    assert_eq!(demo.main_scene, "res://demo/main.scn");
+    assert!(demo.vsync);
+    assert!(demo.demo.excludes("res://full/levels/one.scn"));
+    assert!(demo.demo.excludes("res://scripts/store.rs"));
+    assert!(!demo.demo.excludes("res://demo/main.scn"));
+}
+
+#[test]
+fn demo_overlay_rejects_non_res_glob() {
+    let src = r#"
+[project]
+name = "Game"
+main_scene = "res://main.scn"
+
+[demo]
+exclude = ["../secret/**"]
+"#;
+    let err = parse_project_toml_with_demo(src, true).expect_err("invalid glob");
+    assert!(err.to_string().contains("must start with `res://`"));
+}
+
+#[test]
 fn parse_project_toml_reads_aspect_ratio() {
     let landscape = r#"
 [project]
@@ -342,6 +391,27 @@ input = "metadata"
     assert!(parsed.steam.enabled);
     assert_eq!(parsed.steam.app_id, Some(123456));
     assert_eq!(parsed.steam.input_mode, SteamInputMode::Metadata);
+}
+
+#[test]
+fn parse_project_toml_reads_steam_fallback_input() {
+    let toml = r#"
+[project]
+name = "Game"
+main_scene = "res://main.scn"
+icon = "res://icon.png"
+
+[graphics]
+aspect_ratio = "16:9"
+
+[steam]
+enabled = true
+app_id = 123456
+input = "fallback"
+"#;
+
+    let parsed = parse_project_toml(toml).expect("failed to parse project.toml");
+    assert_eq!(parsed.steam.input_mode, SteamInputMode::Fallback);
 }
 
 #[test]
@@ -948,6 +1018,9 @@ app_id = 480
     assert!(manifest_dep_has_path(&scripts_manifest, "perro_api"));
     assert!(!scripts_manifest.contains("\nperro_steamworks = \"0.1.0\""));
     assert!(project_manifest.contains("\"scripts/steamworks\""));
+    assert!(project_manifest.contains("perro-demo"));
+    assert!(project_manifest.contains("\"scripts/perro-demo\""));
+    assert!(scripts_manifest.contains("perro-demo = []"));
 
     fs::remove_dir_all(&root).expect("cleanup");
 }
@@ -1227,6 +1300,8 @@ fn ensure_source_overrides_recreates_missing_scripts_manifest() {
     assert!(repaired.contains("name = \"scripts\""));
     assert!(repaired.contains("crate-type = [\"cdylib\", \"rlib\"]"));
     assert!(repaired.contains("dynamic-scripts = []"));
+    assert!(repaired.contains("perro-demo = []"));
+    assert!(repaired.contains("perro-spec = [\"perro_api/spec\"]"));
     assert!(manifest_dep_has_path(&repaired, "perro_api"));
     assert!(manifest_dep_has_path(&repaired, "perro_runtime"));
     let repaired_lib =
@@ -1563,7 +1638,10 @@ app_id = 480
 "#;
     let cfg = parse_project_toml(toml).expect("legacy layout parses");
     assert_eq!(cfg.name, "Bozosort");
-    assert_eq!(cfg.metadata.company.as_deref(), Some("DeFranco Studios Inc"));
+    assert_eq!(
+        cfg.metadata.company.as_deref(),
+        Some("DeFranco Studios Inc")
+    );
     assert_eq!(cfg.rendering.default_font, "res://font/SpicySale.otf");
     assert!(cfg.rendering.ui.pixel_snapping);
     assert_eq!(cfg.physics_gravity, -9.3195);

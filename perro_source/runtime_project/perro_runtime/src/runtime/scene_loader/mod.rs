@@ -446,6 +446,12 @@ impl Runtime {
             )
         };
 
+        if let Some(project) = self.project() {
+            perro_io::set_demo_asset_filter(
+                project.config.demo.active,
+                project.config.demo.relative_patterns(),
+            );
+        }
         if self.provider_mode == ProviderMode::Static {
             if let Some(data) = perro_assets_bytes {
                 try_set_project_root(ProjectRoot::PerroAssets {

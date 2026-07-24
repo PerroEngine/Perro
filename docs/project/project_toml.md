@@ -18,6 +18,7 @@
 | Localization | [Localization](#localization) |
 | Steam | [Steam](#steam) |
 | Web | [Web](#web) |
+| Demo | [Demo](#demo) |
 | Legacy Layout | [Legacy Layout](#legacy-layout) |
 | Rules | [Rules](#rules) |
 
@@ -318,7 +319,7 @@ input = "off"
 | --------- | ------ | ------- | --------------------------------- |
 | `enabled` | bool   | `false` | Steamworks on/off                 |
 | `app_id`  | int    | none    | need when enabled                 |
-| `input`   | string | `"off"` | Steam Input mode: off/metadata/actions |
+| `input`   | string | `"off"` | Steam Input mode: off/metadata/fallback/actions; fallback fills normal gamepad slots only when native input misses a pad |
 
 `app_id` must fit `u32`.
 
@@ -352,6 +353,44 @@ Older projects keep working. All legacy forms parse; the flat form wins when bot
 | `[rendering.ui] pixel_snapping`            | `[ui] pixel_snapping`                          |
 | `[audio.propagation_2d]` `max_bounces` etc | `[audio]` `max_bounces` / `max_bounces_2d` etc |
 | `[audio.propagation_3d]` `max_bounces` etc | `[audio]` `max_bounces` / `max_bounces_3d` etc |
+
+## Demo
+
+`perro dev --demo` and `perro build --demo` apply demo overrides and exclusions.
+Normal dev/build ignore the overrides and keep every asset.
+
+```toml
+[demo]
+exclude = [
+    "res://scenes/full_game/**",
+    "res://scripts/full_game/**",
+    "res://assets/full_game/**",
+]
+
+[demo.project]
+name = "My Game Demo"
+main_scene = "res://demo/main.scn"
+
+[demo.graphics]
+vsync = true
+```
+
+Patterns are case-sensitive. `*` matches one path segment; `**` matches recursively.
+All patterns must start with `res://`.
+
+Mark a scene node and its descendants for demo removal:
+
+```text
+tags = ["demo_exclude"]
+```
+
+Wrap script statements that only compile in the full game:
+
+```rust
+demo_exclude!({
+    open_full_game_store(ctx);
+});
+```
 
 ## Rules
 

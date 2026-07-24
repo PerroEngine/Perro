@@ -92,6 +92,7 @@ fn sprite_command(i: u32, texture: TextureID) -> RenderCommand {
             tint: color([1.0, 1.0, 1.0, 1.0]),
             uv_min: [0.0, 0.0],
             uv_max: [1.0, 1.0],
+            uv_normalized: true,
             size: [16.0, 16.0],
             z_index: i as i32,
         },

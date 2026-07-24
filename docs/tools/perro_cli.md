@@ -69,7 +69,8 @@ Build and run:
 perro check [--path <project_dir>]
 perro test [--path <project_dir>] [-- <cargo_test_args>]
 perro dev [--path <project_dir>] [--target native|web|android] [--headless] [--timings] [--profile] [--ui-profile] [--release] [--csv-profile [csv_name]] [--host <addr>] [--port <num>]
-perro build [--path <project_dir>] [--target native|web|android] [--headless] [--profile] [--console]
+perro build [--path <project_dir>] [--target native|web|android] [--triple <rust_target> | --universal-macos] [--headless] [--profile] [--console]
+perro targets [--host windows|linux|macos]
 perro dlc --name <dlc_name> [--path <project_dir>]
 ```
 
@@ -100,6 +101,7 @@ Profiling:
 ```powershell
 perro bench [--path <project_dir>] [--script <hash>] [--method <name>] [--var <name>] [-- <criterion_args>]
 perro mem-profile [--path <project_dir>] [--release] [--csv [csv_name]]
+perro spec [--path <project_dir>] [--target-fps <fps>]
 perro flamegraph [--path <project_dir>] [--profile] [--root]
 ```
 
@@ -133,6 +135,7 @@ Use these commands for normal compile, run, export, and DLC package workflows.
 | `test` | Sync project scripts and run their Rust tests. | `cargo test` result |
 | `dev` | Compile scripts, build dev runner, run project. | running dev app |
 | `build` | Compile scripts, bake static assets, build release project. | `.output/` executable + packed assets |
+| `targets` | Show ready, setup-required, and unavailable build targets for a development OS. | support matrix |
 | `dlc` | Build one runtime-loadable DLC package. | `.output/dlc/<name>.dlc` |
 
 ### `check`
@@ -186,7 +189,7 @@ perro test --path D:\GameProjects\MyGame -- player_state_tests
 Command:
 
 ```powershell
-perro dev --path <project_dir> [--target native|web|android] [--headless] [--timings] [--profile] [--ui-profile] [--release] [--csv-profile [csv_name]] [--host <addr>] [--port <num>]
+perro dev --path <project_dir> [--target native|web|android] [--headless] [--demo] [--timings] [--profile] [--ui-profile] [--release] [--csv-profile [csv_name]] [--host <addr>] [--port <num>]
 ```
 
 What it does:
@@ -201,6 +204,7 @@ Flags:
 
 - `--target native|web|android`: selects native runner, browser wasm bundle, or Android app target. Default `native`.
 - `--headless`: runs the native `perro_headless` dev path with no window, input, or GPU render loop. Native only; rejected with `--target web` or `--target android`, and cannot combine with `--timings` or `--ui-profile`.
+- `--demo`: applies `[demo]` config overrides, skips excluded scripts/assets/scenes, strips tagged node trees, and enables `demo_exclude!`.
 - `--timings`: prints lightweight native timing averages: sim, gfx, delta, fps.
 - `--profile`: enables profiling feature for the selected dev target.
 - `--ui-profile`: enables native dev runner `ui_profile` feature.
@@ -235,7 +239,7 @@ See [Performance + Flexibility Philosophy](../project/performance_philosophy.md)
 Command:
 
 ```powershell
-perro build --path <project_dir> [--target native|web|android] [--headless] [--profile] [--console]
+perro build --path <project_dir> [--target native|web|android] [--triple <rust_target> | --universal-macos] [--headless] [--profile] [--console] [--demo]
 ```
 
 `--headless` use native `perro_headless` feature path.
@@ -274,6 +278,9 @@ What it does:
 Flags:
 
 - `--target native|web|android`: selects native executable, browser wasm bundle, or Android app target. Default `native`.
+- `--demo`: builds only the demo-visible source and applies `[demo]` config overrides.
+- `--triple <rust_target>`: cross-compiles a native build for one Rust target triple. The CLI installs the Rust standard-library target when needed. The host still needs the target linker, SDK, and native libraries.
+- `--universal-macos`: on macOS, builds `aarch64-apple-darwin` and `x86_64-apple-darwin`, then merges the executables with `lipo`. Per-architecture exports are kept beside the universal export.
 - `--profile`: enables profile build options for the generated project bundle.
 - `--console`: enables console build options for generated native project bundle.
 
@@ -290,6 +297,40 @@ Android target notes:
 - Android builds require an installed Android SDK/NDK; the CLI resolves them from `ANDROID_SDK_ROOT`/`ANDROID_HOME` and `ANDROID_NDK_ROOT`/`ANDROID_NDK_HOME`/`NDK_HOME` or the default platform location.
 
 Use this to build the final executable into `<project>/.output/`.
+
+Native cross-build examples:
+
+```text
+perro build --triple x86_64-pc-windows-msvc
+perro build --triple i686-pc-windows-msvc
+perro build --triple aarch64-pc-windows-msvc
+perro build --triple x86_64-unknown-linux-gnu
+perro build --triple i686-unknown-linux-gnu
+perro build --triple aarch64-unknown-linux-gnu
+perro build --triple x86_64-apple-darwin
+perro build --triple aarch64-apple-darwin
+perro build --universal-macos
+```
+
+Windows MSVC architecture cross-builds need the matching Visual Studio C++ tools. Linux cross-builds need the matching GNU or compatible linker and target system libraries. macOS builds need macOS/Xcode tooling; use a Mac for release signing and notarization.
+
+### `targets`
+
+```text
+perro targets
+perro targets --host windows
+perro targets --host linux
+perro targets --host macos
+```
+
+Without `--host`, this shows the current development OS. `READY` means the host can build the target directly. `SETUP` means the build is possible after installing the listed linker, SDK, or system libraries. `NO` means use another development OS.
+
+| Development OS | Windows | Linux | macOS | Web | Android |
+|---|---|---|---|---|---|
+| Windows | ready/setup by architecture | setup | no | ready | setup |
+| Linux | setup with GNU/LLVM target | ready/setup by architecture | no | ready | setup |
+| macOS | setup with GNU/LLVM target | setup | ready, including universal | ready | setup |
+
 The static pipeline packs all `res` assets.
 Supported assets, such as scenes, animations, materials, particles, meshes, textures, and CSV tables, are optimized into match tables and preparsed formats as compile-time statics for efficient runtime performance.
 This is main Perro trade: author normal files in dev, then let compiler pipeline reshape them for release performance.
@@ -704,6 +745,32 @@ Flags:
 
 - `--release`: builds and runs release dev runner binary.
 - `--csv [csv_name]`: custom output file name under `.output/profiling/`.
+
+### `spec`
+
+```text
+perro spec --path <project_dir> [--target-fps <fps>]
+```
+
+Runs the project in release mode and records frame data plus bounded memory
+summaries until the game closes. It writes `report.json`, `report.md`,
+`steam.txt`, `frames.csv`, `samples.csv`, and `markers.jsonl` under
+`.output/profiling/spec/`.
+
+Add test-path markers in scripts:
+
+```rust
+spec_begin!("boss fight");
+spec_end!("boss fight");
+spec_point!("streaming gate");
+```
+
+Marker recording is enabled only for the spec scripts feature. Normal project
+builds strip marker calls and the marker implementation.
+
+The first report uses CPU-side update/render timings and process RSS. CPU/GPU
+equivalents are relative to the test PC and remain estimates until a benchmark
+score database and GPU timestamp queries are available.
 
 ### `flamegraph`
 

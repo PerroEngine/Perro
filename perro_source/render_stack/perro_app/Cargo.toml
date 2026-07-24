@@ -21,6 +21,7 @@ perro_input_api.workspace = true
 perro_runtime_api.workspace = true
 perro_ui.workspace = true
 perro_web.workspace = true
+perro_steamworks = { workspace = true, optional = true }
 futures-util = "0.3.31"
 uuid = "1.18.1"
 perro_io.workspace = true
@@ -41,7 +42,11 @@ profile = ["perro_runtime/profile", "profile_heavy"]
 ui_profile = []
 mem_profile = []
 profile_heavy = []
-steamworks = ["perro_runtime/steamworks"]
+steamworks = [
+    "dep:perro_steamworks",
+    "perro_runtime/steamworks",
+    "perro_steamworks/steamworks-runtime",
+]
 
 [target.'cfg(target_os = "windows")'.dependencies]
 winit = { version = "0.30.12", default-features = false, features = ["rwh_06"] }

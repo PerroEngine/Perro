@@ -269,6 +269,7 @@ impl<B: GraphicsBackend> RunnerState<B> {
                     .as_micros(),
                 fixed_accum_after_us: Duration::from_secs_f32(self.fixed_accumulator).as_micros(),
                 fixed_catchup_dropped,
+                timestamp_ms: unix_timestamp_ms(),
             });
         }
         if warmup_frame {

@@ -2,6 +2,7 @@
 pub enum ScriptsBuildProfile {
     Debug,
     Release,
+    Spec,
 }
 
 fn validate_dlc_name(dlc_name: &str) -> Result<(), CompilerError> {
@@ -87,10 +88,21 @@ pub fn compile_scripts_with_profile(
     project_root: &Path,
     profile: ScriptsBuildProfile,
 ) -> Result<Vec<String>, CompilerError> {
+    compile_scripts_with_profile_and_demo(project_root, profile, false)
+}
+
+pub fn compile_scripts_with_profile_and_demo(
+    project_root: &Path,
+    profile: ScriptsBuildProfile,
+    demo: bool,
+) -> Result<Vec<String>, CompilerError> {
     ensure_source_overrides(project_root)?;
-    let cfg = load_project_toml(project_root)
+    let cfg = perro_project::load_project_toml_with_demo(project_root, demo)
         .map_err(|e| CompilerError::SceneParse(format!("failed to load project.toml: {e}")))?;
-    let copied = sync_scripts(project_root)?;
+    let copied = {
+        let _exclude_guard = perro_io::walkdir::push_path_exclusions(cfg.demo.relative_patterns());
+        sync_scripts(project_root)?
+    };
     let scripts_crate = project_root.join(".perro").join("scripts");
     let target_dir = project_root.join("target");
 
@@ -98,11 +110,16 @@ pub fn compile_scripts_with_profile(
     cmd.arg("build")
         .env("CARGO_TARGET_DIR", target_dir)
         .current_dir(scripts_crate);
-    if profile == ScriptsBuildProfile::Release {
+    if matches!(
+        profile,
+        ScriptsBuildProfile::Release | ScriptsBuildProfile::Spec
+    ) {
         cmd.arg("--release");
         apply_fast_release_dylib_profile(&mut cmd);
     }
     add_dynamic_scripts_feature(&mut cmd);
+    add_demo_feature(&mut cmd, demo);
+    add_spec_feature(&mut cmd, profile == ScriptsBuildProfile::Spec);
     add_steamworks_feature(&mut cmd, cfg.steam.enabled);
     run_cargo_command_with_normalized_paths(&mut cmd, project_root)?;
     compile_all_dlc_scripts_with_profile(project_root, profile, cfg.steam.enabled)?;
@@ -164,11 +181,15 @@ fn compile_scripts_crate(
     cmd.arg("build")
         .env("CARGO_TARGET_DIR", target_dir)
         .current_dir(scripts_crate);
-    if profile == ScriptsBuildProfile::Release {
+    if matches!(
+        profile,
+        ScriptsBuildProfile::Release | ScriptsBuildProfile::Spec
+    ) {
         cmd.arg("--release");
         apply_fast_release_dylib_profile(&mut cmd);
     }
     add_dynamic_scripts_feature(&mut cmd);
+    add_spec_feature(&mut cmd, profile == ScriptsBuildProfile::Spec);
     add_steamworks_feature(&mut cmd, steam_enabled);
     run_cargo_command_with_normalized_paths(&mut cmd, project_root)?;
     Ok(())
@@ -397,6 +418,18 @@ fn add_dynamic_scripts_feature(cmd: &mut Command) {
     cmd.arg("--features").arg("dynamic-scripts");
 }
 
+fn add_spec_feature(cmd: &mut Command, enabled: bool) {
+    if enabled {
+        cmd.arg("--features").arg("perro-spec");
+    }
+}
+
+fn add_demo_feature(cmd: &mut Command, enabled: bool) {
+    if enabled {
+        cmd.arg("--features").arg("perro-demo");
+    }
+}
+
 fn write_dlc_scripts_manifest(
     project_root: &Path,
     crate_name: &str,
@@ -417,7 +450,7 @@ fn write_dlc_scripts_manifest(
             .join("perro_runtime"),
     );
     let mut manifest = format!(
-        "[workspace]\n\n[package]\nname = \"{crate_name}\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[lib]\ncrate-type = [\"cdylib\", \"rlib\"]\n\n[dependencies]\nperro_api = {{ path = \"{perro_api_path}\" }}\nperro_runtime = {{ path = \"{perro_runtime_path}\" }}\n\n[features]\ndynamic-scripts = []\nsteamworks = [\"perro_api/steamworks\", \"perro_runtime/steamworks\"]\n"
+        "[workspace]\n\n[package]\nname = \"{crate_name}\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[lib]\ncrate-type = [\"cdylib\", \"rlib\"]\n\n[dependencies]\nperro_api = {{ path = \"{perro_api_path}\" }}\nperro_runtime = {{ path = \"{perro_runtime_path}\" }}\n\n[features]\ndynamic-scripts = []\nperro-demo = []\nperro-spec = [\"perro_api/spec\"]\nsteamworks = [\"perro_api/steamworks\", \"perro_runtime/steamworks\"]\n"
     );
     let extra_deps = read_extra_script_deps(project_root)?;
     if !extra_deps.is_empty() {

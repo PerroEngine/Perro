@@ -91,9 +91,10 @@ When Steam cfg disabled, Steam calls return `Err(steam::SteamError::Disabled)`.
 
 - `"off"`: no Steam Input init; keep native Perro input only.
 - `"metadata"`: init Steam Input for controller type/glyph/origin/motion metadata, but action reads stay disabled.
+- `"fallback"`: route Steam-only controllers into Perro `GamepadState`; keep natively supported controllers on Perro input.
 - `"actions"`: init Steam Input and allow Steam Input action reads.
 
-Use `"off"` or `"metadata"` when Joy-Con / Joy-Con 2 stay on Perro custom input.
+Use `"off"`, `"metadata"`, or `"fallback"` when Joy-Con / Joy-Con 2 stay on Perro custom input.
 Use `"actions"` only when the game opts into Steam Input action maps.
 
 ## Frame Model
@@ -248,16 +249,38 @@ See [Runtime Bytes Resources](../resources/runtime_bytes.md).
 
 Steam Input is opt-in through `[steam].input`.
 
-Perro supports three modes:
+Perro supports four modes:
 
 | Value | Init Steam Input | Action reads | Use |
 | --- | --- | --- | --- |
 | `"off"` | no | no | Default; Steam does not own controller input. |
 | `"metadata"` | yes | no | Read connected Steam controller metadata, glyphs, origins, and motion. |
+| `"fallback"` | yes | yes | Feed unsupported Steam controllers into normal Perro gamepad slots. |
 | `"actions"` | yes | yes | Use Steam Input action sets and action data. |
 
-Joy-Con and Joy-Con 2 custom input should use `"off"` or `"metadata"`.
+Joy-Con and Joy-Con 2 custom input should use `"off"`, `"metadata"`, or `"fallback"`.
 That keeps `ctx.ipt.JoyCons()` as the gameplay source.
+
+Fallback policy:
+
+- Keep Xbox, PlayStation, Switch Pro, Steam Deck, Apple MFi, Android, and all Joy-Con types native.
+- Use Steam Controller, generic, and unknown types only when no native gamepad is present.
+- Use Steam mobile touch even when a native gamepad is present.
+- Merge fallback data into `ctx.ipt.Gamepads()` and normal gamepad actions.
+- Move a fallback pad to a free gamepad slot if a native pad claims its old slot.
+
+Fallback uses this Steam Input action contract:
+
+- action set: `perro_gamepad`
+- digital actions: `perro_bottom`, `perro_right`, `perro_left`, `perro_top`,
+  `perro_dpad_up`, `perro_dpad_down`, `perro_dpad_left`, `perro_dpad_right`,
+  `perro_start`, `perro_select`, `perro_home`, `perro_capture`, `perro_l1`,
+  `perro_r1`, `perro_l2`, `perro_r2`, `perro_l3`, `perro_r3`
+- analog actions: `perro_left_stick`, `perro_right_stick`,
+  `perro_left_trigger`, `perro_right_trigger`
+
+Add these names to the app Steam Input action manifest and default controller
+layout. Missing `perro_gamepad` makes fallback return no pad data.
 
 Steam Input metadata calls:
 
@@ -404,6 +427,38 @@ if state.installed && !state.needs_update {
     let info = steam::workshop::get_install_info(file)?;
     let _ = info.map(|info| info.folder);
 }
+
+let upload = steam::workshop::start_update(
+    steam::AppID::from_id(480),
+    file,
+)?
+.title("My mod")
+.description("Adds a new map")
+.content_path("mods/my_mod")
+.preview_path("mods/my_mod.png")
+.visibility(steam::workshop::Visibility::Public)
+.tags(vec!["Map", "Co-op"], false)
+.submit(Some("First release"), |result| {
+    let _ = result;
+});
+
+let (status, sent, total) = upload.progress();
+let _ = (status, sent, total);
+
+steam::workshop::query_all(
+    steam::workshop::QueryType::RankedByVote,
+    steam::workshop::ItemType::Items,
+    steam::workshop::QueryAppIDs::Consumer(steam::AppID::from_id(480)),
+    1,
+)?
+.search_text("co-op")
+.require_tag("Map")
+.include_metadata(true)
+.include_children(true)
+.include_key_value_tags(true)
+.fetch(|result| {
+    let _ = result.map(|page| page.items);
+});
 ```
 
 Use:
@@ -412,6 +467,13 @@ Use:
 - `steam::workshop::ItemState`
 - `steam::workshop::InstallInfo`
 - `steam::workshop::CreateItemResult`
+- `steam::workshop::Update` and `UpdateWatch`
+- `steam::workshop::Query`, `QueryPage`, and `QueryItem`
+- `steam::workshop::QueryType`, `ItemType`, and `QueryAppIDs`
+- `steam::workshop::Visibility`
+
+Workshop also wraps delete, download, subscribe, playtime tracking, game-server init,
+content descriptors, metadata, tags, key-value tags, and all Steamworks-rs UGC query filters.
 
 ## Auth
 

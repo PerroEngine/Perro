@@ -13,6 +13,7 @@ pub use script_trait::*;
 
 /// Common imports for generated and hand-written scripts.
 pub mod prelude {
+    pub use crate::demo_exclude;
     pub use crate::lifecycle;
     pub use crate::methods;
     pub use crate::script_trait::{

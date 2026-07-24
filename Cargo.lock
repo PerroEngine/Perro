@@ -4390,6 +4390,7 @@ dependencies = [
  "perro_runtime",
  "perro_runtime_api",
  "perro_scripting",
+ "perro_steamworks",
  "perro_structs",
  "perro_ui",
  "perro_web",

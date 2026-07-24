@@ -1,7 +1,6 @@
 mod assets {
     use super::*;
 
-
     #[test]
     fn generated_scripts_manifest_binds_perro_jobs_patch() {
         let root = unique_temp_dir("perro_compiler_jobs_manifest");
@@ -13,10 +12,10 @@ mod assets {
             .expect("read scripts manifest");
         assert!(manifest.contains("perro_api = { path ="));
         assert!(manifest.contains("perro_jobs = { path ="));
+        assert!(manifest.contains("perro-spec = [\"perro_api/spec\"]"));
 
         std::fs::remove_dir_all(root).expect("cleanup jobs manifest fixture");
     }
-
 
     #[test]
     fn web_route_emit_writes_multi_page_html_with_keywords_and_icon() {
@@ -103,7 +102,6 @@ mod assets {
         std::fs::remove_dir_all(&root).expect("cleanup");
     }
 
-
     #[test]
     fn web_export_paths_reject_root_escape() {
         let output = std::path::Path::new("web-output");
@@ -122,7 +120,6 @@ mod assets {
         }
     }
 
-
     #[test]
     fn module_short_name_drops_rs_suffix() {
         assert_eq!(
@@ -134,5 +131,4 @@ mod assets {
             "scripts_personality_module"
         );
     }
-
 }

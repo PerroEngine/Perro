@@ -65,7 +65,7 @@ rays_per_tick_3d = 128
 # [steam]
 # enabled = false
 # app_id = 480
-# input = "off" # off | metadata | actions
+# input = "off" # off | metadata | fallback | actions
 
 # Optional web export metadata.
 # [web]
@@ -81,8 +81,12 @@ pub fn default_input_map_toml() -> String {
 }
 
 pub fn load_project_toml(root: &Path) -> Result<ProjectConfig, ProjectError> {
+    load_project_toml_with_demo(root, false)
+}
+
+pub fn load_project_toml_with_demo(root: &Path, demo: bool) -> Result<ProjectConfig, ProjectError> {
     let project_toml = fs::read_to_string(root.join("project.toml"))?;
-    let mut config = parse_project_toml(&project_toml)?;
+    let mut config = parse_project_toml_with_demo(&project_toml, demo)?;
     apply_sibling_localization(root, &mut config)?;
     config.input_map = load_input_map_toml(root)?;
     Ok(config)
@@ -121,10 +125,19 @@ const KNOWN_PROJECT_TOML_TABLES: &[&str] = &[
     "audio",
     "localization",
     "steam",
+    "demo",
 ];
 
 pub fn parse_project_toml(contents: &str) -> Result<ProjectConfig, ProjectError> {
-    let value = parse_toml_document_value(contents)?;
+    parse_project_toml_with_demo(contents, false)
+}
+
+pub fn parse_project_toml_with_demo(
+    contents: &str,
+    demo: bool,
+) -> Result<ProjectConfig, ProjectError> {
+    let mut value = parse_toml_document_value(contents)?;
+    let demo_config = apply_demo_overlay(&mut value, demo)?;
     let project_table = value
         .get("project")
         .and_then(Value::as_table)
@@ -256,7 +269,109 @@ pub fn parse_project_toml(contents: &str) -> Result<ProjectConfig, ProjectError>
         localization,
         input_map: perro_input_api::InputMap::new(),
         steam,
+        demo: demo_config,
     })
+}
+
+fn apply_demo_overlay(value: &mut Value, active: bool) -> Result<DemoBuildConfig, ProjectError> {
+    let root = value.as_table_mut().ok_or_else(|| {
+        ProjectError::InvalidField("project.toml", "must be a TOML table".to_string())
+    })?;
+    let Some(demo_value) = root.remove("demo") else {
+        return Ok(DemoBuildConfig {
+            active,
+            exclude: Vec::new(),
+        });
+    };
+    let mut demo = demo_value
+        .as_table()
+        .cloned()
+        .ok_or_else(|| ProjectError::InvalidField("demo", "must be a TOML table".to_string()))?;
+    let exclude = match demo.remove("exclude") {
+        None => Vec::new(),
+        Some(Value::Array(values)) => values
+            .into_iter()
+            .map(|value| {
+                let path = value.as_str().ok_or_else(|| {
+                    ProjectError::InvalidField(
+                        "demo.exclude",
+                        "entries must be strings".to_string(),
+                    )
+                })?;
+                validate_demo_pattern(path)?;
+                Ok(path.to_string())
+            })
+            .collect::<Result<Vec<_>, ProjectError>>()?,
+        Some(_) => {
+            return Err(ProjectError::InvalidField(
+                "demo.exclude",
+                "must be an array of strings".to_string(),
+            ));
+        }
+    };
+    for key in demo.keys() {
+        if !KNOWN_PROJECT_TOML_TABLES.contains(&key.as_str()) || key == "demo" {
+            return Err(ProjectError::InvalidField(
+                "demo",
+                format!("unknown override table `{key}`"),
+            ));
+        }
+        if !demo[key].is_table() {
+            return Err(ProjectError::InvalidField(
+                "demo",
+                format!("override `{key}` must be a table"),
+            ));
+        }
+    }
+    if active {
+        for (key, override_value) in demo {
+            let target = root
+                .entry(key)
+                .or_insert_with(|| Value::Table(toml::map::Map::new()));
+            merge_demo_value(target, override_value)?;
+        }
+    }
+    Ok(DemoBuildConfig { active, exclude })
+}
+
+fn merge_demo_value(target: &mut Value, overlay: Value) -> Result<(), ProjectError> {
+    match (target, overlay) {
+        (Value::Table(target), Value::Table(overlay)) => {
+            for (key, value) in overlay {
+                if let Some(existing) = target.get_mut(&key) {
+                    merge_demo_value(existing, value)?;
+                } else {
+                    target.insert(key, value);
+                }
+            }
+            Ok(())
+        }
+        (target, overlay) => {
+            *target = overlay;
+            Ok(())
+        }
+    }
+}
+
+fn validate_demo_pattern(path: &str) -> Result<(), ProjectError> {
+    let Some(rel) = path.strip_prefix("res://") else {
+        return Err(ProjectError::InvalidField(
+            "demo.exclude",
+            format!("path `{path}` must start with `res://`"),
+        ));
+    };
+    if rel.is_empty()
+        || rel.contains('\\')
+        || rel
+            .split('/')
+            .any(|part| part.is_empty() || part == "." || part == "..")
+    {
+        return Err(ProjectError::InvalidField(
+            "demo.exclude",
+            format!("invalid asset glob `{path}`"),
+        ));
+    }
+    Ok(())
 }
 
 pub fn parse_input_map_toml(contents: &str) -> Result<perro_input_api::InputMap, ProjectError> {
@@ -353,12 +468,9 @@ fn parse_rendering(
         .and_then(Value::as_table);
     let mut pixel_snapping = true;
     if let Some(table) = legacy_ui_table {
-        pixel_snapping = parse_optional_table_bool(
-            table,
-            "pixel_snapping",
-            "rendering.ui.pixel_snapping",
-        )?
-        .unwrap_or(pixel_snapping);
+        pixel_snapping =
+            parse_optional_table_bool(table, "pixel_snapping", "rendering.ui.pixel_snapping")?
+                .unwrap_or(pixel_snapping);
     }
     if let Some(table) = ui_table {
         pixel_snapping = parse_optional_table_bool(table, "pixel_snapping", "ui.pixel_snapping")?
@@ -373,18 +485,14 @@ fn parse_rendering(
     {
         default_font = value
             .as_str()
-            .ok_or_else(|| {
-                ProjectError::InvalidField(font_path, "must be a string".to_string())
-            })?
+            .ok_or_else(|| ProjectError::InvalidField(font_path, "must be a string".to_string()))?
             .to_string();
     }
     if let Some(value) = graphics_table.get("default_font") {
         font_path = "graphics.default_font";
         default_font = value
             .as_str()
-            .ok_or_else(|| {
-                ProjectError::InvalidField(font_path, "must be a string".to_string())
-            })?
+            .ok_or_else(|| ProjectError::InvalidField(font_path, "must be a string".to_string()))?
             .to_string();
     }
     if perro_ui::UiFont::parse(&default_font).is_none() {
@@ -407,9 +515,10 @@ fn parse_optional_table_bool(
     let Some(value) = table.get(key) else {
         return Ok(None);
     };
-    value.as_bool().map(Some).ok_or_else(|| {
-        ProjectError::InvalidField(path, "must be a boolean".to_string())
-    })
+    value
+        .as_bool()
+        .map(Some)
+        .ok_or_else(|| ProjectError::InvalidField(path, "must be a boolean".to_string()))
 }
 
 fn parse_input_map_binding_list(
@@ -484,10 +593,9 @@ pub fn parse_routes_toml(contents: &str) -> Result<ProjectRoutesConfig, ProjectE
         .ok_or(ProjectError::MissingField("route"))?;
     let mut routes = Vec::with_capacity(route_entries.len());
     for entry in route_entries {
-        let table = entry.as_table().ok_or_else(|| ProjectError::InvalidField(
-            "route",
-            "must be table array".to_string(),
-        ))?;
+        let table = entry.as_table().ok_or_else(|| {
+            ProjectError::InvalidField("route", "must be table array".to_string())
+        })?;
         let href_raw = table
             .get("href")
             .and_then(Value::as_str)
@@ -572,10 +680,11 @@ fn parse_steam_input_mode(
     match raw {
         "off" => Ok(SteamInputMode::Off),
         "metadata" => Ok(SteamInputMode::Metadata),
+        "fallback" => Ok(SteamInputMode::Fallback),
         "actions" => Ok(SteamInputMode::Actions),
         _ => Err(ProjectError::InvalidField(
             "steam.input",
-            "must be off, metadata, or actions".to_string(),
+            "must be off, metadata, fallback, or actions".to_string(),
         )),
     }
 }
@@ -633,10 +742,18 @@ fn apply_flat_audio_propagation(
     table: &toml::map::Map<String, Value>,
     cfg: &mut AudioConfig,
 ) -> Result<(), ProjectError> {
-    cfg.propagation_2d.max_bounces =
-        parse_u32_table_field(table, "max_bounces", cfg.propagation_2d.max_bounces, "audio")?;
-    cfg.propagation_3d.max_bounces =
-        parse_u32_table_field(table, "max_bounces", cfg.propagation_3d.max_bounces, "audio")?;
+    cfg.propagation_2d.max_bounces = parse_u32_table_field(
+        table,
+        "max_bounces",
+        cfg.propagation_2d.max_bounces,
+        "audio",
+    )?;
+    cfg.propagation_3d.max_bounces = parse_u32_table_field(
+        table,
+        "max_bounces",
+        cfg.propagation_3d.max_bounces,
+        "audio",
+    )?;
     cfg.propagation_2d.rays_per_tick = parse_u32_table_field(
         table,
         "rays_per_tick",
@@ -1336,13 +1453,15 @@ fn virtual_canvas_from_aspect_ratio(raw: &str) -> Result<(u32, u32), ProjectErro
 
 fn parse_aspect_ratio(raw: &str) -> Result<(u32, u32), ProjectError> {
     let raw = raw.trim().to_ascii_lowercase();
-    let (w, h) =
-        raw.split_once(':')
-            .or_else(|| raw.split_once('x'))
-            .ok_or_else(|| ProjectError::InvalidField(
+    let (w, h) = raw
+        .split_once(':')
+        .or_else(|| raw.split_once('x'))
+        .ok_or_else(|| {
+            ProjectError::InvalidField(
                 "graphics.aspect_ratio",
                 "expected format `WIDTH:HEIGHT`, for example `16:9`".to_string(),
-            ))?;
+            )
+        })?;
 
     let width = w.parse::<u32>().map_err(|_| {
         ProjectError::InvalidField(

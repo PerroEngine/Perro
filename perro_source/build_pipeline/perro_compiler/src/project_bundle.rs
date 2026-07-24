@@ -8,6 +8,8 @@ pub struct ProjectBuildOptions {
     pub android_sdk_root: Option<&'static str>,
     pub android_ndk_root: Option<&'static str>,
     pub headless: bool,
+    pub native_target: Option<&'static str>,
+    pub demo: bool,
     /// Discard every incremental pipeline cache (embedded blobs, manifests,
     /// archive stat sidecar) and re-encode all assets from source.
     pub fresh: bool,
@@ -24,6 +26,8 @@ impl ProjectBuildOptions {
             android_sdk_root: None,
             android_ndk_root: None,
             headless: false,
+            native_target: None,
+            demo: false,
             fresh: false,
         }
     }
@@ -45,6 +49,16 @@ impl ProjectBuildOptions {
 
     pub fn with_headless(mut self, headless: bool) -> Self {
         self.headless = headless;
+        self
+    }
+
+    pub fn with_native_target(mut self, target: Option<&'static str>) -> Self {
+        self.native_target = target;
+        self
+    }
+
+    pub fn with_demo(mut self, demo: bool) -> Self {
+        self.demo = demo;
         self
     }
 
@@ -81,8 +95,9 @@ pub fn compile_project_bundle(
     project_root: &Path,
     options: ProjectBuildOptions,
 ) -> Result<(), CompilerError> {
-    let cfg = load_project_toml(project_root)
+    let cfg = perro_project::load_project_toml_with_demo(project_root, options.demo)
         .map_err(|e| CompilerError::SceneParse(format!("failed to load project.toml: {e}")))?;
+    validate_demo_entry_paths(&cfg)?;
     perro_project::ensure_build_crates_scaffold(project_root, &cfg.name)?;
     ensure_source_overrides(project_root)?;
     sync_android_project_manifest(project_root, &cfg, options)?;
@@ -90,6 +105,8 @@ pub fn compile_project_bundle(
         reset_embedded_dir(project_root)?;
     }
     sweep_unknown_embedded_entries(project_root)?;
+    let _path_filter = perro_io::walkdir::push_path_exclusions(cfg.demo.relative_patterns());
+    let _demo_mode = perro_static_pipeline::push_demo_mode(options.demo);
     let _ = sync_scripts(project_root)?;
     generate_project_static_modules(project_root, &cfg)?;
     perro_static_pipeline::write_static_mod_rs(project_root)
@@ -102,6 +119,44 @@ pub fn compile_project_bundle(
         cfg.steam.enabled,
         cfg.metadata.version.as_deref(),
     )?;
+    Ok(())
+}
+
+fn validate_demo_entry_paths(cfg: &perro_project::ProjectConfig) -> Result<(), CompilerError> {
+    for (field, path) in [
+        ("project.main_scene", cfg.main_scene.as_str()),
+        ("project.icon", cfg.icon.as_str()),
+        ("project.startup_splash", cfg.startup_splash.as_str()),
+    ] {
+        if cfg.demo.excludes(path) {
+            return Err(CompilerError::SceneParse(format!(
+                "`{field}` refs demo-excluded path `{path}`"
+            )));
+        }
+    }
+    Ok(())
+}
+
+pub fn compile_universal_macos_project_bundle(
+    project_root: &Path,
+    options: ProjectBuildOptions,
+) -> Result<(), CompilerError> {
+    if !cfg!(target_os = "macos") {
+        return Err(CompilerError::SceneParse(
+            "universal macOS builds require a macOS host".to_string(),
+        ));
+    }
+    if options.target != ProjectBuildTarget::Native {
+        return Err(CompilerError::SceneParse(
+            "universal macOS builds require the native project target".to_string(),
+        ));
+    }
+
+    const ARM_TARGET: &str = "aarch64-apple-darwin";
+    const INTEL_TARGET: &str = "x86_64-apple-darwin";
+    compile_project_bundle(project_root, options.with_native_target(Some(ARM_TARGET)))?;
+    compile_project_bundle(project_root, options.with_native_target(Some(INTEL_TARGET)))?;
+    export_universal_macos_binary(project_root, options.release, options.demo)?;
     Ok(())
 }
 
@@ -155,9 +210,7 @@ fn sweep_unknown_embedded_entries(project_root: &Path) -> Result<(), CompilerErr
     for entry in fs::read_dir(&embedded_dir)? {
         let entry = entry?;
         let name = entry.file_name();
-        let known = name
-            .to_str()
-            .is_some_and(|name| KNOWN.contains(&name));
+        let known = name.to_str().is_some_and(|name| KNOWN.contains(&name));
         if known {
             continue;
         }
@@ -201,6 +254,10 @@ fn build_project_crate(
             .arg("aarch64-linux-android");
     } else {
         cmd.arg("build");
+        if let Some(target) = options.native_target {
+            validate_native_target_triple(target)?;
+            cmd.arg("--target").arg(target);
+        }
     }
     if options.release {
         cmd.arg("--release");
@@ -220,6 +277,9 @@ fn build_project_crate(
             .env("ANDROID_NDK_HOME", ndk_root)
             .env("NDK_HOME", ndk_root);
     }
+    if options.demo {
+        cmd.env("PERRO_DEMO", "1");
+    }
     let mut features = Vec::new();
     if options.headless {
         cmd.arg("--no-default-features");
@@ -238,6 +298,9 @@ fn build_project_crate(
         } else {
             "steamworks"
         });
+    }
+    if options.demo {
+        features.push("perro-demo");
     }
     if !features.is_empty() {
         cmd.arg("--features").arg(features.join(","));
@@ -263,6 +326,8 @@ fn build_project_crate(
             options.release,
             steam_enabled,
             version,
+            options.native_target,
+            options.demo,
         )?,
         ProjectBuildTarget::Web => export_project_web_bundle(project_root, &target_dir, options)?,
         ProjectBuildTarget::Android => export_project_android_bundle(
@@ -270,9 +335,26 @@ fn build_project_crate(
             android_apk
                 .as_deref()
                 .expect("android build must resolve one apk path"),
+            options.demo,
         )?,
     }
     Ok(())
+}
+
+fn validate_native_target_triple(target: &str) -> Result<(), CompilerError> {
+    let valid = !target.is_empty()
+        && !target.starts_with('-')
+        && target.contains('-')
+        && target
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'));
+    if valid {
+        Ok(())
+    } else {
+        Err(CompilerError::SceneParse(format!(
+            "invalid native Rust target triple `{target}`"
+        )))
+    }
 }
 
 fn append_rustflag(existing: Option<std::ffi::OsString>, flag: &str) -> std::ffi::OsString {
@@ -290,13 +372,14 @@ fn export_project_binary(
     release: bool,
     steam_enabled: bool,
     version: Option<&str>,
+    native_target: Option<&str>,
+    demo: bool,
 ) -> Result<(), CompilerError> {
     let package_bin_name = read_project_package_name(project_root)?;
-    let output_bin_name = read_project_output_binary_name(project_root, &package_bin_name)?;
+    let output_bin_name = read_project_output_binary_name(project_root, &package_bin_name, demo)?;
     let profile_dir = if release { "release" } else { "debug" };
-    let built_bin = target_dir
-        .join(profile_dir)
-        .join(platform_binary_name(&package_bin_name));
+    let artifact_dir = native_artifact_dir(target_dir, profile_dir, native_target);
+    let built_bin = artifact_dir.join(target_binary_name(&package_bin_name, native_target));
     if !built_bin.exists() {
         return Err(CompilerError::SceneParse(format!(
             "project binary not found after build: {}",
@@ -306,31 +389,131 @@ fn export_project_binary(
 
     let output_dir = project_root
         .join(".output")
-        .join(native_output_folder_name(&output_bin_name));
+        .join(native_output_folder_name(&output_bin_name, native_target));
     fs::create_dir_all(&output_dir)?;
-    let copied_bin = output_dir.join(platform_binary_name(&package_bin_name));
-    let output_bin = output_dir.join(platform_binary_name(&native_output_artifact_name(
-        &output_bin_name,
-        version,
-    )));
+    let copied_bin = output_dir.join(target_binary_name(&package_bin_name, native_target));
+    let output_bin = output_dir.join(target_binary_name(
+        &native_output_artifact_name(&output_bin_name, version, native_target),
+        native_target,
+    ));
     fs::copy(&built_bin, &copied_bin)?;
     rename_exported_binary(&copied_bin, &output_bin)?;
     if steam_enabled {
-        let _ = copy_steam_runtime_library(target_dir, profile_dir, &output_dir)?;
+        let _ = copy_steam_runtime_library(&artifact_dir, &output_dir, native_target)?;
     }
     println!("exported project binary: {}", output_bin.display());
     Ok(())
 }
 
-fn native_output_folder_name(output_name: &str) -> String {
-    format!("{}-{}", package_name_slug(output_name), host_system_slug())
+fn export_universal_macos_binary(
+    project_root: &Path,
+    release: bool,
+    demo: bool,
+) -> Result<(), CompilerError> {
+    let cfg = perro_project::load_project_toml_with_demo(project_root, demo)
+        .map_err(|e| CompilerError::SceneParse(format!("failed to load project.toml: {e}")))?;
+    let package_bin_name = read_project_package_name(project_root)?;
+    let output_bin_name = read_project_output_binary_name(project_root, &package_bin_name, demo)?;
+    let artifact_name = format!(
+        "{}-macos-universal-v{}",
+        package_name_slug(&output_bin_name),
+        package_name_slug(cfg.metadata.version.as_deref().unwrap_or("0.1.0"))
+    );
+    let output_dir = project_root.join(".output").join(format!(
+        "{}-macos-universal",
+        package_name_slug(&output_bin_name)
+    ));
+    fs::create_dir_all(&output_dir)?;
+    let arm_bin = exported_native_binary_path(
+        project_root,
+        &output_bin_name,
+        cfg.metadata.version.as_deref(),
+        "aarch64-apple-darwin",
+    );
+    let intel_bin = exported_native_binary_path(
+        project_root,
+        &output_bin_name,
+        cfg.metadata.version.as_deref(),
+        "x86_64-apple-darwin",
+    );
+    let output_bin = output_dir.join(artifact_name);
+    run_lipo(&arm_bin, &intel_bin, &output_bin)?;
+
+    if cfg.steam.enabled {
+        let arm_dir = native_artifact_dir(
+            &project_root.join("target"),
+            if release { "release" } else { "debug" },
+            Some("aarch64-apple-darwin"),
+        );
+        let steam_lib = find_steam_runtime_library(&arm_dir.join("build"), "libsteam_api.dylib")
+            .ok_or_else(|| {
+                CompilerError::SceneParse(
+                    "Steam enabled but macOS Steam runtime is missing".to_string(),
+                )
+            })?;
+        fs::copy(steam_lib, output_dir.join("libsteam_api.dylib"))?;
+    }
+    println!(
+        "exported universal macOS project binary: {}",
+        output_bin.display()
+    );
+    Ok(())
 }
 
-fn native_output_artifact_name(output_name: &str, version: Option<&str>) -> String {
+fn exported_native_binary_path(
+    project_root: &Path,
+    output_name: &str,
+    version: Option<&str>,
+    target: &str,
+) -> PathBuf {
+    project_root
+        .join(".output")
+        .join(native_output_folder_name(output_name, Some(target)))
+        .join(target_binary_name(
+            &native_output_artifact_name(output_name, version, Some(target)),
+            Some(target),
+        ))
+}
+
+fn run_lipo(first: &Path, second: &Path, output: &Path) -> Result<(), CompilerError> {
+    let status = Command::new("lipo")
+        .arg("-create")
+        .arg(first)
+        .arg(second)
+        .arg("-output")
+        .arg(output)
+        .status()?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(CompilerError::CargoFailed(status.code().unwrap_or(-1)))
+    }
+}
+
+fn native_artifact_dir(target_dir: &Path, profile: &str, target: Option<&str>) -> PathBuf {
+    match target {
+        Some(target) => target_dir.join(target).join(profile),
+        None => target_dir.join(profile),
+    }
+}
+
+fn native_output_folder_name(output_name: &str, target: Option<&str>) -> String {
+    format!(
+        "{}-{}",
+        package_name_slug(output_name),
+        native_system_slug(target)
+    )
+}
+
+fn native_output_artifact_name(
+    output_name: &str,
+    version: Option<&str>,
+    target: Option<&str>,
+) -> String {
     format!(
         "{}-{}-v{}",
         package_name_slug(output_name),
-        host_system_slug(),
+        native_system_slug(target),
         package_name_slug(version.unwrap_or("0.1.0"))
     )
 }
@@ -366,6 +549,23 @@ fn host_system_slug() -> String {
     rustc_default_host_triple()
         .and_then(|triple| target_slug_from_triple(&triple))
         .unwrap_or_else(|| format!("{}-{}", host_os_slug(), std::env::consts::ARCH))
+}
+
+fn native_system_slug(target: Option<&str>) -> String {
+    target
+        .and_then(target_slug_from_triple)
+        .unwrap_or_else(host_system_slug)
+}
+
+fn target_binary_name(bin_name: &str, target: Option<&str>) -> String {
+    let windows = target
+        .map(|target| target.contains("windows"))
+        .unwrap_or_else(|| cfg!(target_os = "windows"));
+    if windows {
+        format!("{bin_name}.exe")
+    } else {
+        bin_name.to_string()
+    }
 }
 
 fn rustc_default_host_triple() -> Option<String> {
@@ -404,14 +604,14 @@ fn target_slug_from_triple(triple: &str) -> Option<String> {
 }
 
 fn copy_steam_runtime_library(
-    target_dir: &Path,
-    profile_dir: &str,
+    artifact_dir: &Path,
     output_dir: &Path,
+    native_target: Option<&str>,
 ) -> Result<Option<PathBuf>, CompilerError> {
-    let Some(library_name) = steam_runtime_library_name() else {
+    let Some(library_name) = steam_runtime_library_name(native_target) else {
         return Ok(None);
     };
-    let build_dir = target_dir.join(profile_dir).join("build");
+    let build_dir = artifact_dir.join("build");
     let source = find_steam_runtime_library(&build_dir, library_name).ok_or_else(|| {
         CompilerError::SceneParse(format!(
             "Steam enabled but {library_name} was not found under {}",
@@ -423,12 +623,21 @@ fn copy_steam_runtime_library(
     Ok(Some(target))
 }
 
-fn steam_runtime_library_name() -> Option<&'static str> {
-    if cfg!(target_os = "windows") {
-        Some("steam_api64.dll")
-    } else if cfg!(target_os = "linux") {
+fn steam_runtime_library_name(native_target: Option<&str>) -> Option<&'static str> {
+    let target = native_target.unwrap_or_default();
+    if target.contains("windows") || (target.is_empty() && cfg!(target_os = "windows")) {
+        if target.starts_with("i686-")
+            || (target.is_empty()
+                && cfg!(target_os = "windows")
+                && cfg!(target_pointer_width = "32"))
+        {
+            Some("steam_api.dll")
+        } else {
+            Some("steam_api64.dll")
+        }
+    } else if target.contains("linux") || (target.is_empty() && cfg!(target_os = "linux")) {
         Some("libsteam_api.so")
-    } else if cfg!(target_os = "macos") {
+    } else if target.contains("apple-darwin") || (target.is_empty() && cfg!(target_os = "macos")) {
         Some("libsteam_api.dylib")
     } else {
         None

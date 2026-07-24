@@ -497,6 +497,7 @@ scripts = {{ path = "../scripts" }}
 [features]
 default = ["app"]
 app = ["dep:perro_app"]
+perro-demo = ["scripts/perro-demo"]
 profile = ["perro_app/profile"]
 headless = ["dep:perro_headless"]
 headless_profile = ["perro_headless/profile"]
@@ -580,12 +581,38 @@ fn embed_windows_icon() -> Result<(), String> {
     };
     use toml::Value;
 
-    fn load_icon_res_path(project_toml: &Path) -> Result<String, String> {
+    fn load_project_value(project_toml: &Path) -> Result<Value, String> {
         let src = fs::read_to_string(project_toml)
             .map_err(|e| format!("failed to read {}: {e}", project_toml.display()))?;
-        let value: Value = src
+        let mut value: Value = src
             .parse::<Value>()
             .map_err(|e| format!("failed to parse {}: {e}", project_toml.display()))?;
+        if env::var_os("PERRO_DEMO").is_some() {
+            let demo = value.get("demo").and_then(Value::as_table).cloned();
+            if let (Some(root), Some(demo)) = (value.as_table_mut(), demo) {
+                for (table_name, overlay) in demo {
+                    if table_name == "exclude" {
+                        continue;
+                    }
+                    let Some(overlay) = overlay.as_table() else {
+                        continue;
+                    };
+                    let target = root
+                        .entry(table_name)
+                        .or_insert_with(|| Value::Table(Default::default()));
+                    if let Some(target) = target.as_table_mut() {
+                        for (key, value) in overlay {
+                            target.insert(key.clone(), value.clone());
+                        }
+                    }
+                }
+            }
+        }
+        Ok(value)
+    }
+
+    fn load_icon_res_path(project_toml: &Path) -> Result<String, String> {
+        let value = load_project_value(project_toml)?;
         let icon = value
             .get("project")
             .and_then(Value::as_table)
@@ -833,11 +860,7 @@ fn embed_windows_icon() -> Result<(), String> {
         res: &mut winresource::WindowsResource,
         project_toml: &Path,
     ) -> Result<(), String> {
-        let src = fs::read_to_string(project_toml)
-            .map_err(|e| format!("failed to read {}: {e}", project_toml.display()))?;
-        let value: Value = src
-            .parse::<Value>()
-            .map_err(|e| format!("failed to parse {}: {e}", project_toml.display()))?;
+        let value = load_project_value(project_toml)?;
         let name = project_name(&value);
         let description = metadata_str(&value, "description").unwrap_or_else(|| name.clone());
         let version = metadata_str(&value, "version").unwrap_or_else(|| "0.1.0".to_string());
@@ -924,6 +947,8 @@ perro_runtime = "0.1.0"
 
 [features]
 dynamic-scripts = []
+perro-demo = []
+perro-spec = ["perro_api/spec"]
 steamworks = ["perro_api/steamworks", "perro_runtime/steamworks"]
 
 [profile.dev]

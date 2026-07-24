@@ -1,3 +1,4 @@
+mod demo;
 pub mod lexer;
 pub mod node_field_schema;
 pub mod node_fields;
@@ -6,6 +7,7 @@ pub mod parser;
 pub mod scene;
 pub mod scene_doc;
 
+pub use demo::*;
 pub use lexer::*;
 pub use node_field_schema::*;
 pub use node_fields::*;

@@ -133,7 +133,8 @@ impl RuntimeProject {
         default_name: &str,
     ) -> Result<Self, ProjectLoadError> {
         let root = project_root.into();
-        let config = perro_project::load_project_toml(&root)?;
+        let demo = std::env::var_os("PERRO_DEMO").is_some();
+        let config = perro_project::load_project_toml_with_demo(&root, demo)?;
         let routes = perro_project::load_routes_toml(&root, &config)?;
         let _ = default_name;
         Ok(Self {

@@ -8,8 +8,9 @@ mod tests {
         generate_perro_assets, generate_project_static_modules, module_name_from_rel,
         module_short_name_from_rel, native_output_artifact_name, native_output_folder_name,
         normalize_cargo_output_paths, sweep_unknown_embedded_entries,
-        sync_android_project_manifest, sync_dlc_scripts, sync_scripts, target_slug_from_triple,
-        transpile_frontend_script, transpiled_exports_script_ctor, web_route_html_path,
+        steam_runtime_library_name, sync_android_project_manifest, sync_dlc_scripts, sync_scripts,
+        target_binary_name, target_slug_from_triple, transpile_frontend_script,
+        transpiled_exports_script_ctor, validate_native_target_triple, web_route_html_path,
         write_scripts_lib,
     };
     use perro_project::{

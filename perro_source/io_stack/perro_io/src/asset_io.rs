@@ -47,11 +47,15 @@ pub enum ProjectRoot {
 struct ProjectAssetState {
     root: Option<ProjectRoot>,
     archive: Option<Arc<PerroAssetsArchive>>,
+    demo: bool,
+    demo_excludes: Vec<String>,
 }
 
 static PROJECT_ASSET_STATE: RwLock<ProjectAssetState> = RwLock::new(ProjectAssetState {
     root: None,
     archive: None,
+    demo: false,
+    demo_excludes: Vec::new(),
 });
 static DLC_MOUNTS: LazyLock<RwLock<HashMap<String, DlcMount>>> =
     LazyLock::new(|| RwLock::new(HashMap::new()));
@@ -135,6 +139,21 @@ pub fn try_set_project_root(root: ProjectRoot) -> io::Result<()> {
 /// Use [`try_set_project_root`] for untrusted or fallible startup paths.
 pub fn set_project_root(root: ProjectRoot) {
     try_set_project_root(root).expect("Failed to open PerroAssets archive");
+}
+
+pub fn set_demo_asset_filter(active: bool, excludes: Vec<String>) {
+    let mut state = PROJECT_ASSET_STATE
+        .write()
+        .expect("required value must be present");
+    state.demo = active;
+    state.demo_excludes = excludes;
+}
+
+pub fn demo_mode_active() -> bool {
+    PROJECT_ASSET_STATE
+        .read()
+        .expect("required value must be present")
+        .demo
 }
 
 pub fn clear_dlc_mounts() {
@@ -271,6 +290,7 @@ impl Drop for DlcSelfContextGuard {
 
 #[derive(Debug, Clone)]
 pub enum ResolvedPath {
+    Excluded(String),
     Disk(PathBuf),
     WebUserStorage(String),
     PerroAssets(String),
@@ -367,11 +387,20 @@ pub fn resolve_path(path: &str) -> ResolvedPath {
         return ResolvedPath::Disk(PathBuf::from(path));
     }
 
-    let project_root_opt = PROJECT_ASSET_STATE
-        .read()
-        .expect("required value must be present")
-        .root
-        .clone();
+    let (project_root_opt, demo, demo_excludes) = {
+        let state = PROJECT_ASSET_STATE
+            .read()
+            .expect("required value must be present");
+        (state.root.clone(), state.demo, state.demo_excludes.clone())
+    };
+    if demo
+        && let Some(relative) = path.strip_prefix("res://")
+        && demo_excludes
+            .iter()
+            .any(|pattern| perro_assets::walkdir::matches_path_pattern(pattern, relative))
+    {
+        return ResolvedPath::Excluded(path.to_string());
+    }
 
     // Handle user:// paths (always disk)
     if let Some(stripped) = path.strip_prefix("user://") {
@@ -465,6 +494,10 @@ pub fn resolve_path(path: &str) -> ResolvedPath {
 pub fn load_asset(path: &str) -> io::Result<Vec<u8>> {
     validate_virtual_asset_path(path)?;
     match resolve_path(path) {
+        ResolvedPath::Excluded(path) => Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            format!("asset `{path}` excluded from demo"),
+        )),
         ResolvedPath::Disk(pb) => fs::read(pb),
         ResolvedPath::WebUserStorage(key) => load_web_user_asset(&key),
         ResolvedPath::PerroAssets(virtual_path) => {
@@ -503,6 +536,10 @@ pub fn load_asset(path: &str) -> io::Result<Vec<u8>> {
 pub fn stream_asset(path: &str) -> io::Result<Box<dyn ReadSeek>> {
     validate_virtual_asset_path(path)?;
     match resolve_path(path) {
+        ResolvedPath::Excluded(path) => Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            format!("asset `{path}` excluded from demo"),
+        )),
         ResolvedPath::Disk(pb) => {
             let file = File::open(pb)?;
             Ok(Box::new(file))
@@ -551,6 +588,10 @@ pub fn stream_asset(path: &str) -> io::Result<Box<dyn ReadSeek>> {
 pub fn save_asset(path: &str, data: &[u8]) -> io::Result<()> {
     validate_virtual_asset_path(path)?;
     match resolve_path(path) {
+        ResolvedPath::Excluded(path) => Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            format!("asset `{path}` excluded from demo"),
+        )),
         ResolvedPath::Disk(pb) => {
             if let Some(parent) = pb.parent() {
                 fs::create_dir_all(parent)?;
@@ -794,6 +835,19 @@ mod tests {
             .into_boxed_slice();
         let _ = fs::remove_dir_all(root);
         Box::leak(bytes)
+    }
+
+    #[test]
+    fn demo_filter_denies_excluded_res_path() {
+        let _guard = TEST_LOCK.lock().expect("required value must be present");
+        set_demo_asset_filter(true, vec!["full/**".to_string()]);
+        assert!(matches!(
+            resolve_path("res://full/level.scn"),
+            ResolvedPath::Excluded(_)
+        ));
+        let err = load_asset("res://full/level.scn").expect_err("demo exclusion");
+        assert_eq!(err.kind(), io::ErrorKind::NotFound);
+        set_demo_asset_filter(false, Vec::new());
     }
 
     #[test]

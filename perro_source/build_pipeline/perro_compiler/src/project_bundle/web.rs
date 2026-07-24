@@ -7,7 +7,7 @@ pub(super) fn export_project_web_bundle(
 ) -> Result<(), CompilerError> {
     let package_name = read_project_package_name(project_root)?;
     let library_name = read_project_library_name(project_root, &package_name)?;
-    let project_cfg = load_project_toml(project_root)
+    let project_cfg = perro_project::load_project_toml_with_demo(project_root, options.demo)
         .map_err(|err| CompilerError::SceneParse(format!("failed to load project.toml: {err}")))?;
     let routes = perro_project::load_routes_toml(project_root, &project_cfg)
         .map_err(|err| CompilerError::SceneParse(format!("failed to load routes.toml: {err}")))?;
@@ -134,7 +134,10 @@ pub(super) fn sync_android_project_manifest(
     Ok(())
 }
 
-pub(super) fn android_package_name(project_root: &Path, cfg: &perro_project::ProjectConfig) -> String {
+pub(super) fn android_package_name(
+    project_root: &Path,
+    cfg: &perro_project::ProjectConfig,
+) -> String {
     let fallback = project_root
         .file_name()
         .and_then(|name| name.to_str())
@@ -547,7 +550,8 @@ pub(super) fn render_scene_entry_html(
                 ))
             }
         }
-        "UiImage" | "UiImageButton" | "UiNineSliceButton" | "UiNineSlice" | "UiAnimatedImage" | "NineSlice2D" | "NineSliceButton2D" => {
+        "UiImage" | "UiImageButton" | "UiNineSliceButton" | "UiNineSlice" | "UiAnimatedImage"
+        | "NineSlice2D" | "NineSliceButton2D" => {
             if let Some(texture) = extract_ui_image_source(&entry.data) {
                 let copied = copy_res_asset_into_web_output(project_root, output_dir, &texture)?;
                 let src = relative_output_href(html_path, &copied);
@@ -635,7 +639,10 @@ pub(super) fn scene_field_bool(data: &perro_scene::SceneNodeData, field: &str) -
     scene_field_value(data, field)?.as_bool()
 }
 
-pub(super) fn scene_field_str<'a>(data: &'a perro_scene::SceneNodeData, field: &str) -> Option<&'a str> {
+pub(super) fn scene_field_str<'a>(
+    data: &'a perro_scene::SceneNodeData,
+    field: &str,
+) -> Option<&'a str> {
     scene_field_value(data, field)?.as_str()
 }
 
@@ -739,7 +746,10 @@ pub(super) fn relative_output_href(from_html: &Path, to: &Path) -> String {
     relative_include_path(from_html, to).replace('\\', "/")
 }
 
-pub(super) fn checked_res_relative_path(res_path: &str, label: &str) -> Result<PathBuf, CompilerError> {
+pub(super) fn checked_res_relative_path(
+    res_path: &str,
+    label: &str,
+) -> Result<PathBuf, CompilerError> {
     let relative = res_path.trim().strip_prefix("res://").ok_or_else(|| {
         CompilerError::SceneParse(format!(
             "expected res:// path for {label}, got `{res_path}`"
@@ -748,7 +758,10 @@ pub(super) fn checked_res_relative_path(res_path: &str, label: &str) -> Result<P
     checked_portable_relative_path(relative, label)
 }
 
-pub(super) fn checked_portable_relative_path(value: &str, label: &str) -> Result<PathBuf, CompilerError> {
+pub(super) fn checked_portable_relative_path(
+    value: &str,
+    label: &str,
+) -> Result<PathBuf, CompilerError> {
     if value.is_empty()
         || value.contains(['\\', ':'])
         || value.chars().any(char::is_control)
@@ -763,7 +776,11 @@ pub(super) fn checked_portable_relative_path(value: &str, label: &str) -> Result
     Ok(value.split('/').collect())
 }
 
-pub(super) fn ensure_existing_path_within(root: &Path, path: &Path, label: &str) -> Result<(), CompilerError> {
+pub(super) fn ensure_existing_path_within(
+    root: &Path,
+    path: &Path,
+    label: &str,
+) -> Result<(), CompilerError> {
     let root = fs::canonicalize(root).map_err(CompilerError::Io)?;
     let path = fs::canonicalize(path).map_err(CompilerError::Io)?;
     if path.starts_with(&root) {

@@ -26,7 +26,9 @@ pub(super) fn emit_hdr_expr(mode: perro_structs::HdrMode) -> &'static str {
     }
 }
 
-pub(super) fn emit_particle_sim_default_expr(mode: perro_project::ParticleSimDefault) -> &'static str {
+pub(super) fn emit_particle_sim_default_expr(
+    mode: perro_project::ParticleSimDefault,
+) -> &'static str {
     match mode {
         perro_project::ParticleSimDefault::Cpu => "perro_app::entry::ParticleSimDefault::Cpu",
         perro_project::ParticleSimDefault::GpuVertex => {
@@ -73,6 +75,7 @@ pub(super) fn emit_steam_input_mode(mode: perro_project::SteamInputMode) -> &'st
     match mode {
         perro_project::SteamInputMode::Off => "perro_runtime::SteamInputMode::Off",
         perro_project::SteamInputMode::Metadata => "perro_runtime::SteamInputMode::Metadata",
+        perro_project::SteamInputMode::Fallback => "perro_runtime::SteamInputMode::Fallback",
         perro_project::SteamInputMode::Actions => "perro_runtime::SteamInputMode::Actions",
     }
 }

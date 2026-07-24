@@ -1,5 +1,45 @@
 use super::*;
 
+#[test]
+fn demo_filter_removes_marked_tree_and_strips_reserved_tag() {
+    let mut scene = Parser::new(
+        r#"
+$root = @root
+[root]
+[Node]
+[/Node]
+[/root]
+[full]
+tags = ["demo_exclude", "gameplay"]
+parent = @root
+[Node]
+[/Node]
+[/full]
+[child]
+parent = @full
+[Node]
+[/Node]
+[/child]
+"#,
+    )
+    .parse_scene();
+
+    filter_demo_scene(&mut scene, true).expect("filter demo");
+    assert_eq!(scene.nodes.len(), 1);
+    assert_eq!(scene.key_name(scene.nodes[0].key), Some("root"));
+}
+
+#[test]
+fn full_filter_keeps_node_and_strips_reserved_tag() {
+    let mut scene =
+        Parser::new("[node]\ntags = [\"demo_exclude\", \"gameplay\"]\n[Node]\n[/Node]\n[/node]\n")
+            .parse_scene();
+
+    filter_demo_scene(&mut scene, false).expect("filter full");
+    assert_eq!(scene.nodes.len(), 1);
+    assert_eq!(scene.nodes[0].tags.as_ref(), &["gameplay"]);
+}
+
 fn find_node<'a>(scene: &'a Scene, key: &str) -> &'a SceneNodeEntry {
     scene
         .nodes

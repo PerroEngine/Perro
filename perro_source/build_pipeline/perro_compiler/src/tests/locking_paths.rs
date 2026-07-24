@@ -114,15 +114,15 @@ mod locking_paths {
             .and_then(|triple| target_slug_from_triple(&triple))
             .unwrap_or_else(|| format!("{}-{}", std::env::consts::OS, std::env::consts::ARCH));
         assert_eq!(
-            native_output_folder_name("My Game"),
+            native_output_folder_name("My Game", None),
             format!("My_Game-{host}")
         );
         assert_eq!(
-            native_output_artifact_name("My Game", Some("1.0")),
+            native_output_artifact_name("My Game", Some("1.0"), None),
             format!("My_Game-{host}-v1.0")
         );
         assert_eq!(
-            native_output_artifact_name("Game", None),
+            native_output_artifact_name("Game", None, None),
             format!("Game-{host}-v0.1.0")
         );
     }
@@ -144,6 +144,50 @@ mod locking_paths {
         assert_eq!(
             target_slug_from_triple("x86_64-unknown-linux-gnu").as_deref(),
             Some("linux-x86_64")
+        );
+    }
+
+    #[test]
+    fn native_output_names_use_requested_target() {
+        assert_eq!(
+            native_output_folder_name("My Game", Some("i686-pc-windows-msvc")),
+            "My_Game-windows-i686"
+        );
+        assert_eq!(
+            native_output_artifact_name("My Game", Some("2.0"), Some("aarch64-apple-darwin")),
+            "My_Game-macos-aarch64-v2.0"
+        );
+        assert_eq!(
+            target_binary_name("game", Some("x86_64-pc-windows-msvc")),
+            "game.exe"
+        );
+        assert_eq!(
+            target_binary_name("game", Some("x86_64-unknown-linux-gnu")),
+            "game"
+        );
+    }
+
+    #[test]
+    fn native_target_triple_rejects_paths_and_flags() {
+        assert!(validate_native_target_triple("x86_64-pc-windows-msvc").is_ok());
+        assert!(validate_native_target_triple("../release").is_err());
+        assert!(validate_native_target_triple("-Zbuild-std").is_err());
+        assert!(validate_native_target_triple("windows").is_err());
+    }
+
+    #[test]
+    fn steam_runtime_name_uses_target_arch() {
+        assert_eq!(
+            steam_runtime_library_name(Some("i686-pc-windows-msvc")),
+            Some("steam_api.dll")
+        );
+        assert_eq!(
+            steam_runtime_library_name(Some("x86_64-pc-windows-msvc")),
+            Some("steam_api64.dll")
+        );
+        assert_eq!(
+            steam_runtime_library_name(Some("aarch64-unknown-linux-gnu")),
+            Some("libsteam_api.so")
         );
     }
 
@@ -186,14 +230,14 @@ mod locking_paths {
 
         let selected = android_apk_artifact_path(&root, &target, true).expect("artifact path");
         assert_eq!(selected, exact);
-        export_project_android_bundle(&root, &selected).expect("export exact apk");
+        export_project_android_bundle(&root, &selected, false).expect("export exact apk");
         assert_eq!(
             std::fs::read(root.join(".output/android/Android Pick.apk")).expect("exported apk"),
             b"current project"
         );
 
         std::fs::remove_file(&exact).expect("remove exact apk");
-        assert!(export_project_android_bundle(&root, &selected).is_err());
+        assert!(export_project_android_bundle(&root, &selected, false).is_err());
         std::fs::remove_dir_all(root).expect("remove fixture");
     }
 

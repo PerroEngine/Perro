@@ -3,9 +3,13 @@ use super::*;
 pub(super) fn export_project_android_bundle(
     project_root: &Path,
     built_apk: &Path,
+    demo: bool,
 ) -> Result<(), CompilerError> {
-    let output_name =
-        read_project_output_binary_name(project_root, &read_project_package_name(project_root)?)?;
+    let output_name = read_project_output_binary_name(
+        project_root,
+        &read_project_package_name(project_root)?,
+        demo,
+    )?;
     if !built_apk.is_file() {
         return Err(CompilerError::SceneParse(format!(
             "android apk not found after build: {}",
@@ -54,7 +58,10 @@ pub(super) fn rename_exported_binary(source: &Path, dest: &Path) -> Result<(), C
     }
 }
 
-pub(super) fn rename_exported_binary_via_temp(source: &Path, dest: &Path) -> Result<(), CompilerError> {
+pub(super) fn rename_exported_binary_via_temp(
+    source: &Path,
+    dest: &Path,
+) -> Result<(), CompilerError> {
     let Some(parent) = source.parent() else {
         return Err(CompilerError::SceneParse(format!(
             "failed to rename export: source has no parent: {}",
@@ -82,14 +89,6 @@ pub(super) fn rename_exported_binary_via_temp(source: &Path, dest: &Path) -> Res
     }
     fs::rename(tmp, dest)?;
     Ok(())
-}
-
-pub(super) fn platform_binary_name(bin_name: &str) -> String {
-    if cfg!(target_os = "windows") {
-        format!("{bin_name}.exe")
-    } else {
-        bin_name.to_string()
-    }
 }
 
 pub(super) fn read_project_package_name(project_root: &Path) -> Result<String, CompilerError> {
@@ -156,8 +155,9 @@ pub(super) fn read_project_library_name(
 pub(super) fn read_project_output_binary_name(
     project_root: &Path,
     fallback_name: &str,
+    demo: bool,
 ) -> Result<String, CompilerError> {
-    let config = load_project_toml(project_root)
+    let config = perro_project::load_project_toml_with_demo(project_root, demo)
         .map_err(|e| CompilerError::SceneParse(format!("failed to load project.toml: {e}")))?;
     let sanitized = sanitize_output_binary_name(&config.name);
     if sanitized.is_empty() {
@@ -261,7 +261,7 @@ pub(super) fn generate_embedded_entry_files_with_options(
     project_root: &Path,
     options: ProjectBuildOptions,
 ) -> Result<(), CompilerError> {
-    let cfg = load_project_toml(project_root)
+    let cfg = perro_project::load_project_toml_with_demo(project_root, options.demo)
         .map_err(|e| CompilerError::SceneParse(format!("failed to load project.toml: {e}")))?;
     let routes = perro_project::load_routes_toml(project_root, &cfg)
         .map_err(|e| CompilerError::SceneParse(format!("failed to load routes.toml: {e}")))?;

@@ -40,6 +40,7 @@ pub fn exists<P: ResPathSource>(path: P) -> bool {
         return false;
     }
     match perro_io::resolve_path(path) {
+        perro_io::ResolvedPath::Excluded(_) => false,
         perro_io::ResolvedPath::Disk(pb) => pb.exists(),
         perro_io::ResolvedPath::WebUserStorage(_)
         | perro_io::ResolvedPath::PerroAssets(_)
@@ -99,6 +100,7 @@ pub fn resolve_path_string<P: ResPathSource>(path: P) -> String {
         return format!("invalid://{err}");
     }
     match perro_io::resolve_path(path) {
+        perro_io::ResolvedPath::Excluded(path) => format!("excluded+demo://{path}"),
         perro_io::ResolvedPath::Disk(pb) => pb.to_string_lossy().to_string(),
         perro_io::ResolvedPath::WebUserStorage(key) => format!("webstorage://{key}"),
         perro_io::ResolvedPath::PerroAssets(vpath) => format!("perroassets://{vpath}"),

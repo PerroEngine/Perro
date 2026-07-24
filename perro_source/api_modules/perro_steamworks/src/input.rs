@@ -50,12 +50,13 @@ pub enum SteamInputMode {
     #[default]
     Off,
     Metadata,
+    Fallback,
     Actions,
 }
 
 impl SteamInputMode {
     pub const fn allows_action_reads(self) -> bool {
-        matches!(self, Self::Actions)
+        matches!(self, Self::Fallback | Self::Actions)
     }
 }
 
@@ -125,6 +126,161 @@ pub struct MotionData {
     pub rot_quat: [f32; 4],
     pub pos_accel: [f32; 3],
     pub rot_vel: [f32; 3],
+}
+
+pub const FALLBACK_ACTION_SET: &str = "perro_gamepad";
+pub const FALLBACK_DIGITAL_ACTIONS: [&str; 18] = [
+    "perro_bottom",
+    "perro_right",
+    "perro_left",
+    "perro_top",
+    "perro_dpad_up",
+    "perro_dpad_down",
+    "perro_dpad_left",
+    "perro_dpad_right",
+    "perro_start",
+    "perro_select",
+    "perro_home",
+    "perro_capture",
+    "perro_l1",
+    "perro_r1",
+    "perro_l2",
+    "perro_r2",
+    "perro_l3",
+    "perro_r3",
+];
+pub const FALLBACK_ANALOG_ACTIONS: [&str; 4] = [
+    "perro_left_stick",
+    "perro_right_stick",
+    "perro_left_trigger",
+    "perro_right_trigger",
+];
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct FallbackGamepad {
+    pub handle: InputHandle,
+    pub input_type: InputType,
+    pub buttons: [bool; 18],
+    pub axes: [f32; 6],
+    pub motion: MotionData,
+}
+
+#[derive(Clone, Copy)]
+struct FallbackActions {
+    set: u64,
+    digital: [u64; 18],
+    analog: [u64; 4],
+}
+
+fn fallback_actions() -> &'static Mutex<Option<FallbackActions>> {
+    static ACTIONS: OnceLock<Mutex<Option<FallbackActions>>> = OnceLock::new();
+    ACTIONS.get_or_init(|| Mutex::new(None))
+}
+
+pub const fn fallback_eligible(input_type: InputType, native_gamepad_present: bool) -> bool {
+    match input_type {
+        InputType::MobileTouch => true,
+        InputType::SteamController | InputType::Unknown | InputType::GenericGamepad => {
+            !native_gamepad_present
+        }
+        InputType::XBox360Controller
+        | InputType::XBoxOneController
+        | InputType::PS3Controller
+        | InputType::PS4Controller
+        | InputType::PS5Controller
+        | InputType::SwitchProController
+        | InputType::SwitchJoyConPair
+        | InputType::SwitchJoyConSingle
+        | InputType::SteamDeckController
+        | InputType::AppleMFiController
+        | InputType::AndroidController => false,
+    }
+}
+
+pub fn fallback_gamepads(native_gamepad_present: bool) -> Result<Vec<FallbackGamepad>, SteamError> {
+    if mode()? != SteamInputMode::Fallback {
+        return Err(SteamError::Disabled);
+    }
+    app::with_client(|client| {
+        let input = client.input();
+        input.run_frame();
+        let actions = {
+            let mut cached = fallback_actions()
+                .lock()
+                .map_err(|_| SteamError::NotReady)?;
+            *cached.get_or_insert_with(|| FallbackActions {
+                set: input.get_action_set_handle(FALLBACK_ACTION_SET),
+                digital: FALLBACK_DIGITAL_ACTIONS.map(|name| input.get_digital_action_handle(name)),
+                analog: FALLBACK_ANALOG_ACTIONS.map(|name| input.get_analog_action_handle(name)),
+            })
+        };
+        if actions.set == 0 {
+            return Err(SteamError::CallFailed("input.fallback_action_set"));
+        }
+
+        let mut gamepads = Vec::new();
+        for handle in input.get_connected_controllers() {
+            let input_type: InputType = input.get_input_type_for_handle(handle).into();
+            if !fallback_eligible(input_type, native_gamepad_present) {
+                continue;
+            }
+            input.activate_action_set_handle(handle, actions.set);
+
+            let mut buttons = [false; 18];
+            for (index, action) in actions.digital.into_iter().enumerate() {
+                if action == 0 {
+                    continue;
+                }
+                let data = input.get_digital_action_data(handle, action);
+                buttons[index] = data.bActive && data.bState;
+            }
+
+            let mut axes = [0.0; 6];
+            for (index, action) in actions.analog.into_iter().enumerate() {
+                if action == 0 {
+                    continue;
+                }
+                let data = input.get_analog_action_data(handle, action);
+                if !data.bActive {
+                    continue;
+                }
+                match index {
+                    0 => {
+                        axes[0] = data.x;
+                        axes[1] = data.y;
+                    }
+                    1 => {
+                        axes[2] = data.x;
+                        axes[3] = data.y;
+                    }
+                    2 => axes[4] = data.x.clamp(0.0, 1.0),
+                    3 => axes[5] = data.x.clamp(0.0, 1.0),
+                    _ => unreachable!(),
+                }
+            }
+            buttons[14] |= axes[4] > 0.5;
+            buttons[15] |= axes[5] > 0.5;
+
+            let motion = input.get_motion_data(handle);
+            gamepads.push(FallbackGamepad {
+                handle: InputHandle(handle),
+                input_type,
+                buttons,
+                axes,
+                motion: MotionData {
+                    rot_quat: [
+                        motion.rotQuatX,
+                        motion.rotQuatY,
+                        motion.rotQuatZ,
+                        motion.rotQuatW,
+                    ],
+                    pos_accel: [motion.posAccelX, motion.posAccelY, motion.posAccelZ],
+                    rot_vel: [motion.rotVelX, motion.rotVelY, motion.rotVelZ],
+                },
+            });
+        }
+        Ok(gamepads)
+    })
 }
 
 fn mode_state() -> &'static Mutex<SteamInputMode> {
@@ -351,4 +507,36 @@ pub fn shutdown() -> Result<(), SteamError> {
         client.input().shutdown();
         Ok(())
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{InputType, fallback_eligible};
+
+    #[test]
+    fn fallback_keeps_native_controller_types_native() {
+        for input_type in [
+            InputType::XBox360Controller,
+            InputType::XBoxOneController,
+            InputType::PS4Controller,
+            InputType::PS5Controller,
+            InputType::SwitchProController,
+            InputType::SwitchJoyConPair,
+            InputType::SwitchJoyConSingle,
+            InputType::SteamDeckController,
+        ] {
+            assert!(!fallback_eligible(input_type, false));
+        }
+    }
+
+    #[test]
+    fn fallback_uses_steam_only_when_native_misses_pad() {
+        assert!(fallback_eligible(InputType::SteamController, false));
+        assert!(fallback_eligible(InputType::GenericGamepad, false));
+        assert!(fallback_eligible(InputType::Unknown, false));
+        assert!(!fallback_eligible(InputType::SteamController, true));
+        assert!(!fallback_eligible(InputType::GenericGamepad, true));
+        assert!(!fallback_eligible(InputType::Unknown, true));
+        assert!(fallback_eligible(InputType::MobileTouch, true));
+    }
 }
