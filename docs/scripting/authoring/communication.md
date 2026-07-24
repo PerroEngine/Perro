@@ -118,6 +118,6 @@ distinct channel names so listeners can identify the source.
 - [Loose signal event](examples/signals.md)
 - [Dynamic get/set vars](examples/dynamic_vars.md)
 - [Combined pickup flow](examples/pickup_flow.md)
-- [Runnable ScriptPatterns flow](../../../demos/ScriptPatterns/README.md)
+- [Runnable ScriptPatterns flow](https://github.com/PerroEngine/Perro/tree/main/demos/ScriptPatterns)
 
 [Back To Guide](index.md)

@@ -8,7 +8,8 @@ use perro_ui::{UiImageScaleMode, UiNode, UiNodeBase};
 ///
 /// A sub view owns the rendered meaning of its descendants. Both 2D and 3D
 /// descendants are accepted; the host node only selects where the resulting
-/// premultiplied texture is composited.
+/// premultiplied texture is composited. An active descendant `Camera2D` or
+/// `Camera3D` replaces the matching implicit view for this scope.
 #[derive(Clone, Debug, PartialEq)]
 pub struct SubView {
     pub resolution: UVector2,

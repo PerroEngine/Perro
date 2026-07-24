@@ -75,5 +75,5 @@ state, lifecycle, or methods.
 3. follow methods/signals/timers -> identify target and failure behavior
 4. run the lane -> compare observed behavior with the authored flow
 
-Use the [Script Authoring Guide](../../../docs/scripting/authoring/index.md) for
+Use the [Script Authoring Guide](/docs/scripting/authoring/index.md) for
 the fixed-ref/relation/query and method/signal/dynamic-var decisions.

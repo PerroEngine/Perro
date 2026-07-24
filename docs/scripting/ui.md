@@ -135,6 +135,9 @@ All inherit `UiNode` layout fields.
 - Renders `Node3D` descendants with its implicit 3D view; no `Camera3D` child is required.
 - Defaults to a view at `(0, 0, 5)` looking toward local `(0, 0, 0)`.
 - Composites `Node2D` descendants over the local 3D pass with its implicit 2D view.
+- Uses an active descendant `Camera3D` or `Camera2D` instead of the matching implicit view.
+- Keeps the other implicit view when only one camera type is active.
+- Chooses active local cameras with the same winner rules as the main world.
 - Keeps spatial descendants out of the main world render pass.
 - Clips the final image to the viewport's UI clip rect and optional corner radius.
 - Uses 2x the computed UI rect as render resolution for edge AA unless `resolution` overrides it.
@@ -173,6 +176,12 @@ parent = @preview
 Use `UiCameraStream` for a view into the existing world.
 Use `UiSubView` for a UI-owned isolated child scene.
 Legacy `[UiViewport]` scene blocks load as `UiSubView`.
+
+`UiCameraStream` and `UiSubView` solve different ownership problems:
+
+- `UiCameraStream` displays an explicitly referenced camera that physically belongs to the existing world. Use it for split-screen views of one shared world, minimaps, security cameras, rear-view mirrors, and other in-game camera feeds.
+- `UiSubView` owns a separate local render scope. Its descendants do not appear in the main world; they only appear through the owning SubView.
+- SubView ownership behaves like an automatic renderer mask around the descendant scope. It does not create a separate script or physics runtime.
 
 - Drawn image node.
 - Holds `texture`, `texture_region`, `tint`, `scale_mode`, alignment, and `aspect_ratio`.
@@ -235,13 +244,14 @@ Legacy `[UiViewport]` scene blocks load as `UiSubView`.
 `UiCameraStream`
 
 - Draws a camera's render target into UI space.
+- Streams an explicitly referenced camera from the existing unified world.
 - Uses transparent pixels where the source camera renders no object.
 - Omits the visual `Sky3D` background while retaining sky lighting and environment effects.
 - Tone-maps camera-rendered 2D/3D HDR once before UI composition.
 - Keeps transparent stream pixels premultiplied for filtered alpha edges.
 - Leaves display-referred webcam frames out of the scene tone-map pass.
 - Holds `camera`, `resolution`, `aspect_ratio`, `aspect_mode`, `enabled`, `tint`, `post_processing`, and `corner_radius`.
-- Use it for minimaps, security-feed panels, and picture-in-picture views.
+- Use it for split screen, minimaps, security-feed panels, and picture-in-picture views.
 
 `UiVideoPlayer`
 

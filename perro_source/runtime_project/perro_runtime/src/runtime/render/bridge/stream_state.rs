@@ -1,6 +1,100 @@
 use super::*;
 
 impl Runtime {
+    fn sub_view_camera_2d(&mut self, view_node: NodeID) -> Option<Camera2DState> {
+        let mut found = None;
+        for (node, scene_node) in self.nodes.iter() {
+            let SceneNodeData::Camera2D(camera) = &scene_node.data else {
+                continue;
+            };
+            if !camera.active
+                || !self.is_effectively_visible(node)
+                || self.sub_view_ancestor(node) != Some(view_node)
+            {
+                continue;
+            }
+            found = Some((
+                node,
+                camera.transform,
+                camera.zoom,
+                camera.render_mask,
+                camera.post_processing.clone(),
+                camera.audio_options.clone(),
+            ));
+        }
+        let (node, local_transform, zoom, render_mask, post_processing, audio_options) = found?;
+        let transform = self
+            .stream_render_transform_2d(node, view_node)
+            .unwrap_or(local_transform);
+        Some(Camera2DState {
+            position: [transform.position.x, transform.position.y],
+            rotation_radians: transform.rotation,
+            zoom,
+            render_mask,
+            post_processing: Arc::from(post_processing.to_effects_vec()),
+            audio_options,
+        })
+    }
+
+    fn sub_view_camera_3d(&mut self, view_node: NodeID) -> Option<Camera3DState> {
+        let mut found_priority: Option<(u64, u32, u32)> = None;
+        let mut found = None;
+        for (node, scene_node) in self.nodes.iter() {
+            let SceneNodeData::Camera3D(camera) = &scene_node.data else {
+                continue;
+            };
+            if !camera.active
+                || !self.is_effectively_visible(node)
+                || self.sub_view_ancestor(node) != Some(view_node)
+            {
+                continue;
+            }
+            let order = self
+                .render_3d
+                .camera_activation_order
+                .get(&node)
+                .copied()
+                .unwrap_or(0);
+            let priority = (order, node.generation(), node.index());
+            let replace = found_priority
+                .map(|current| priority > current)
+                .unwrap_or(true);
+            if replace {
+                found_priority = Some(priority);
+                found = Some((
+                    node,
+                    camera.transform,
+                    camera.projection.clone(),
+                    camera.render_mask,
+                    camera.post_processing.clone(),
+                    camera.audio_options.clone(),
+                ));
+            }
+        }
+        let (node, local_transform, projection, render_mask, post_processing, audio_options) =
+            found?;
+        let transform = self
+            .stream_render_transform_3d(node, view_node)
+            .unwrap_or(local_transform);
+        Some(Camera3DState {
+            position: [
+                transform.position.x,
+                transform.position.y,
+                transform.position.z,
+            ],
+            rotation: [
+                transform.rotation.x,
+                transform.rotation.y,
+                transform.rotation.z,
+                transform.rotation.w,
+            ],
+            projection: camera_stream_projection_state(&projection),
+            render_mask,
+            post_processing: Arc::from(post_processing.to_effects_vec()),
+            audio_options,
+        })
+    }
+
     pub(crate) fn camera_stream_texture_id(node: NodeID) -> TextureID {
         TextureID::from_parts(node.index(), node.generation())
     }
@@ -172,8 +266,7 @@ impl Runtime {
             }
         }
 
-        let render_mask = BitMask::NONE;
-        let source = CameraStreamSourceState::ThreeD(Camera3DState {
+        let implicit_camera_3d = Camera3DState {
             position: [
                 view.view_position.x,
                 view.view_position.y,
@@ -186,18 +279,31 @@ impl Runtime {
                 view.view_rotation.w,
             ],
             projection: camera_stream_projection_state(&view.projection),
-            render_mask,
+            render_mask: BitMask::NONE,
             post_processing: Arc::from([]),
             audio_options: perro_structs::AudioListenerOptions::new(),
-        });
-        let overlay_camera_2d = Some(Camera2DState {
+        };
+        let implicit_camera_2d = Camera2DState {
             position: [view.view_2d_position.x, view.view_2d_position.y],
             rotation_radians: view.view_2d_rotation,
             zoom: view.view_2d_zoom.max(0.001),
-            render_mask,
+            render_mask: BitMask::NONE,
             post_processing: Arc::from([]),
             audio_options: perro_structs::AudioListenerOptions::new(),
-        });
+        };
+        let camera_3d = self
+            .sub_view_camera_3d(view_node)
+            .unwrap_or(implicit_camera_3d);
+        let camera_2d = self
+            .sub_view_camera_2d(view_node)
+            .unwrap_or(implicit_camera_2d);
+        let render_mask_3d = camera_3d.render_mask;
+        let render_mask_2d = camera_2d.render_mask;
+        let mut post_processing = camera_3d.post_processing.to_vec();
+        post_processing.extend(camera_2d.post_processing.iter().cloned());
+        post_processing.extend(view.post_processing.to_effects_vec());
+        let source = CameraStreamSourceState::ThreeD(camera_3d);
+        let overlay_camera_2d = Some(camera_2d);
 
         const AUTO_RESOLUTION_SCALE: f32 = 2.0;
         let resolution = [
@@ -228,18 +334,18 @@ impl Runtime {
             clear_color: Some(view.background),
             resolution,
             aspect_ratio: view.aspect_ratio.max(0.0),
-            post_processing: Arc::from(view.post_processing.to_effects_vec()),
+            post_processing: Arc::from(post_processing),
             output_texture: Self::camera_stream_texture_id(view_node),
-            sprites_2d: self.collect_camera_stream_sprites_2d(render_mask, view_node),
-            lights_2d: self.collect_camera_stream_lights_2d(render_mask, view_node),
+            sprites_2d: self.collect_camera_stream_sprites_2d(render_mask_2d, view_node),
+            lights_2d: self.collect_camera_stream_lights_2d(render_mask_2d, view_node),
             point_particles_2d: self
-                .collect_camera_stream_point_particles_2d(render_mask, view_node),
-            waters_2d: self.collect_camera_stream_waters_2d(render_mask, view_node),
-            draws_3d: self.collect_camera_stream_draws_3d(render_mask, view_node),
-            lighting_3d: self.collect_camera_stream_lighting_3d(render_mask, view_node),
+                .collect_camera_stream_point_particles_2d(render_mask_2d, view_node),
+            waters_2d: self.collect_camera_stream_waters_2d(render_mask_2d, view_node),
+            draws_3d: self.collect_camera_stream_draws_3d(render_mask_3d, view_node),
+            lighting_3d: self.collect_camera_stream_lighting_3d(render_mask_3d, view_node),
             point_particles_3d: self
-                .collect_camera_stream_point_particles_3d(render_mask, view_node),
-            waters_3d: self.collect_camera_stream_waters_3d(render_mask, view_node),
+                .collect_camera_stream_point_particles_3d(render_mask_3d, view_node),
+            waters_3d: self.collect_camera_stream_waters_3d(render_mask_3d, view_node),
         })
     }
 

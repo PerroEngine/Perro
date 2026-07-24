@@ -165,7 +165,8 @@ Rendering and resource loading are handled by the runtime and `ResourceWindow`.
 
 `CameraStream2D`
 
-- Draws a camera render into 2D space.
+- Draws an explicitly referenced camera from the existing world into 2D space.
+- Use it when the source camera and its content physically belong to the unified world.
 - Uses transparent pixels where the source camera renders no object.
 - Tone-maps camera-rendered HDR once and preserves premultiplied alpha edges.
 - Applies source-camera post-processing before stream post-processing.
@@ -174,6 +175,9 @@ Rendering and resource loading are handled by the runtime and `ResourceWindow`.
 
 - Owns an isolated mixed 2D/3D descendant scope.
 - Draws that scope onto a 2D quad through implicit 2D and 3D views.
+- Uses active descendant `Camera2D` and `Camera3D` nodes for their matching local views.
+- Keeps each implicit view as the fallback when no matching local camera is active.
+- Keeps owned descendants out of main-world cameras and camera streams.
 - Use it for a 3D model that behaves like one 2D game object.
 - Host transform and render layers affect the output quad, not local child camera space.
 - Defaults to a transparent clear and premultiplied HDR output.
@@ -387,7 +391,8 @@ See [TileMap2D](tilemap.md).
 
 `CameraStream3D`
 
-- Draws a camera render onto a 3D quad.
+- Draws an explicitly referenced camera from the existing world onto a 3D quad.
+- Use it for physical in-game cameras such as monitors, mirrors, portals, and CCTV feeds.
 - Uses transparent pixels where projection or near/far clipping leaves no object.
 - Omits the visual `Sky3D` background while retaining sky lighting and environment effects.
 - Tone-maps camera-rendered HDR once and preserves premultiplied alpha edges.
@@ -397,6 +402,9 @@ See [TileMap2D](tilemap.md).
 
 - Owns an isolated mixed 2D/3D descendant scope.
 - Draws that scope onto a 3D quad through implicit 2D and 3D views.
+- Uses active descendant `Camera2D` and `Camera3D` nodes for their matching local views.
+- Keeps each implicit view as the fallback when no matching local camera is active.
+- Keeps owned descendants out of main-world cameras and camera streams.
 - Use it for a local 2D panel, effect, or miniature scene embedded in 3D.
 - Host transform and render layers affect the output quad, not local child camera space.
 - Defaults to a transparent clear and premultiplied HDR output.
@@ -772,10 +780,12 @@ All UI nodes can have children.
 `UiNineSlice` auto-splits its texture into thirds with fixed corners and tiled edges/center.
 Custom nonzero margins override the split.
 `UiAnimatedImage` draws sprite-sheet animation in UI space.
-`UiSubView` renders isolated local 2D and 3D descendants inside its UI bounds with implicit views and no camera node.
+`UiSubView` renders isolated local 2D and 3D descendants inside its UI bounds with implicit views and no required camera node.
+An active descendant camera replaces the matching implicit 2D or 3D view.
 `SubView2D` renders the same mixed child scope onto a 2D world quad.
 `SubView3D` renders the same mixed child scope onto a 3D world quad.
 The suffix names the output host space, not the allowed child dimension.
+Camera streams show explicitly referenced cameras from the existing world; SubViews own local render scopes whose descendants stay hidden from main-world cameras and streams.
 Legacy `UiViewport` scene names remain a load alias for `UiSubView`.
 `UiLabel` draws text.
 Use `Label2D` or `Label3D` for world-space text that still uses `UiLabel` text, alignment, and locale binding fields.

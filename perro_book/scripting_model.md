@@ -172,9 +172,9 @@ clone data out, let the closure end, and make the next runtime call.
 
 ## Reference
 
-- [Verified ScriptPatterns Flow](../demos/ScriptPatterns/README.md)
+- [Verified ScriptPatterns Flow](https://github.com/PerroEngine/Perro/tree/main/demos/ScriptPatterns)
 - [Script State](/docs/scripting/state)
-- [Script Authoring Guide](/docs/scripting/authoring/index)
+- [Script Authoring Guide](/docs/scripting/authoring/index.md)
 - [Script Methods](/docs/scripting/methods)
 - [Variant](/docs/scripting/variant)
 - [Scripts Module](/docs/scripting/contexts/runtime_modules/scripts)

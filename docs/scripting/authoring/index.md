@@ -66,7 +66,7 @@ runtime member name?   -> get_var! / set_var!
 - [Timer-Driven Cooldown](examples/cooldown.md)
 - [Dynamic Inspector Adapter](examples/dynamic_vars.md)
 
-The runnable [ScriptPatterns demo](../../../demos/ScriptPatterns/README.md)
+The runnable [ScriptPatterns demo](https://github.com/PerroEngine/Perro/tree/main/demos/ScriptPatterns)
 combines fixed refs, typed asset injection, methods, signal fan-out, dynamic
 vars, a named timer, typed node access, and borrow-safe flow.
 

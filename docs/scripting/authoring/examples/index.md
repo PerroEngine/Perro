@@ -13,6 +13,6 @@ caller knows. A feature does not need every path.
 - [Dynamic Inspector Adapter](dynamic_vars.md) -> runtime-selected member
 - [Player Health Signal Updates HUD](signals.md) -> focused signal example
 
-Runnable source: [ScriptPatterns](../../../../demos/ScriptPatterns/README.md).
+Runnable source: [ScriptPatterns](https://github.com/PerroEngine/Perro/tree/main/demos/ScriptPatterns).
 
 [Back To Authoring Guide](../index.md)

@@ -79,6 +79,183 @@ mod streams {
     }
 
     #[test]
+    fn ui_sub_view_uses_active_local_cameras_for_each_lane() {
+        let mut runtime = Runtime::new();
+        runtime.set_viewport_size(800, 600);
+        let view = NodeAPI::create::<UiSubView>(&mut runtime);
+        let camera_2d = NodeAPI::create::<Camera2D>(&mut runtime);
+        let camera_3d = NodeAPI::create::<Camera3D>(&mut runtime);
+        assert!(runtime.reparent(view, camera_2d));
+        assert!(runtime.reparent(view, camera_3d));
+
+        if let Some(mut node) = runtime.nodes.get_mut(view)
+            && let SceneNodeData::UiSubView(view) = &mut node.data
+        {
+            view.layout.size = UiVector2::pixels(320.0, 180.0);
+            view.post_processing
+                .add_unnamed(PostProcessEffect::Saturate { amount: 0.75 });
+        }
+        if let Some(mut node) = runtime.nodes.get_mut(camera_2d)
+            && let SceneNodeData::Camera2D(camera) = &mut node.data
+        {
+            camera.active = true;
+            camera.transform =
+                Transform2D::new(Vector2::new(12.0, 13.0), 0.25, Vector2::ONE);
+            camera.zoom = 2.0;
+            camera.render_mask = BitMask::with([2]);
+            camera.audio_options.audio_mask = BitMask::with([3]);
+            camera
+                .post_processing
+                .add_unnamed(PostProcessEffect::Blur { strength: 0.5 });
+        }
+        if let Some(mut node) = runtime.nodes.get_mut(camera_3d)
+            && let SceneNodeData::Camera3D(camera) = &mut node.data
+        {
+            camera.active = true;
+            camera.transform = Transform3D::new(
+                Vector3::new(1.0, 2.0, 3.0),
+                Quaternion::IDENTITY,
+                Vector3::ONE,
+            );
+            camera.projection = CameraProjection::orthographic(7.0, 0.1, 50.0);
+            camera.render_mask = BitMask::with([4]);
+            camera.audio_options.audio_mask = BitMask::with([5]);
+            camera
+                .post_processing
+                .add_unnamed(PostProcessEffect::Pixelate { size: 3.0 });
+        }
+
+        runtime.extract_render_ui_commands();
+        let mut commands = Vec::new();
+        runtime.drain_render_commands(&mut commands);
+        let state = commands
+            .iter()
+            .find_map(|command| match command {
+                RenderCommand::CameraStream(CameraStreamCommand::Upsert { node, state })
+                    if *node == view =>
+                {
+                    Some(state.as_ref())
+                }
+                _ => None,
+            })
+            .expect("UiSubView stream state");
+
+        let CameraStreamSourceState::ThreeD(camera_3d_state) = &state.source else {
+            panic!("3D SubView source");
+        };
+        assert_eq!(camera_3d_state.position, [1.0, 2.0, 3.0]);
+        assert_eq!(camera_3d_state.render_mask, BitMask::with([4]));
+        assert_eq!(
+            camera_3d_state.audio_options.audio_mask,
+            BitMask::with([5])
+        );
+        assert!(matches!(
+            camera_3d_state.projection,
+            perro_render_bridge::CameraProjectionState::Orthographic { size: 7.0, .. }
+        ));
+
+        let camera_2d_state = state
+            .overlay_camera_2d
+            .as_ref()
+            .expect("2D SubView overlay camera");
+        assert_eq!(camera_2d_state.position, [12.0, 13.0]);
+        assert_eq!(camera_2d_state.rotation_radians, 0.25);
+        assert_eq!(camera_2d_state.zoom, 2.0);
+        assert_eq!(camera_2d_state.render_mask, BitMask::with([2]));
+        assert_eq!(
+            camera_2d_state.audio_options.audio_mask,
+            BitMask::with([3])
+        );
+        assert!(matches!(
+            state.post_processing.as_ref(),
+            [
+                PostProcessEffect::Pixelate { size: 3.0 },
+                PostProcessEffect::Blur { strength: 0.5 },
+                PostProcessEffect::Saturate { amount: 0.75 }
+            ]
+        ));
+    }
+
+    #[test]
+    fn sub_view_active_camera_uses_local_space_and_nearest_owner() {
+        let mut runtime = Runtime::new();
+        let view = NodeAPI::create::<SubView3D>(&mut runtime);
+        let other_camera = NodeAPI::create::<Camera3D>(&mut runtime);
+        let camera = NodeAPI::create::<Camera3D>(&mut runtime);
+        let nested_view = NodeAPI::create::<SubView3D>(&mut runtime);
+        let nested_camera = NodeAPI::create::<Camera3D>(&mut runtime);
+        assert!(runtime.reparent(view, other_camera));
+        assert!(runtime.reparent(view, camera));
+        assert!(runtime.reparent(view, nested_view));
+        assert!(runtime.reparent(nested_view, nested_camera));
+
+        if let Some(mut node) = runtime.nodes.get_mut(view)
+            && let SceneNodeData::SubView3D(view) = &mut node.data
+        {
+            view.transform.position = Vector3::new(40.0, 50.0, 60.0);
+        }
+        if let Some(mut node) = runtime.nodes.get_mut(camera)
+            && let SceneNodeData::Camera3D(camera) = &mut node.data
+        {
+            camera.active = true;
+            camera.transform.position = Vector3::new(2.0, 3.0, 4.0);
+        }
+        if let Some(mut node) = runtime.nodes.get_mut(other_camera)
+            && let SceneNodeData::Camera3D(camera) = &mut node.data
+        {
+            camera.active = true;
+            camera.transform.position = Vector3::new(6.0, 7.0, 8.0);
+        }
+        if let Some(mut node) = runtime.nodes.get_mut(nested_camera)
+            && let SceneNodeData::Camera3D(camera) = &mut node.data
+        {
+            camera.active = true;
+            camera.transform.position = Vector3::new(9.0, 9.0, 9.0);
+        }
+        runtime.note_camera_3d_activated(other_camera);
+        runtime.note_camera_3d_activated(camera);
+
+        runtime.extract_render_3d_commands();
+        let mut commands = Vec::new();
+        runtime.drain_render_commands(&mut commands);
+        let state = commands
+            .iter()
+            .find_map(|command| match command {
+                RenderCommand::CameraStream(CameraStreamCommand::Upsert { node, state })
+                    if *node == view =>
+                {
+                    Some(state.as_ref())
+                }
+                _ => None,
+            })
+            .expect("outer SubView stream state");
+        assert!(matches!(
+            &state.source,
+            CameraStreamSourceState::ThreeD(camera) if camera.position == [2.0, 3.0, 4.0]
+        ));
+
+        if let Some(mut node) = runtime.nodes.get_mut(camera)
+            && let SceneNodeData::Camera3D(camera) = &mut node.data
+        {
+            camera.visible = false;
+        }
+        runtime.mark_needs_rerender(camera);
+        runtime.extract_render_3d_commands();
+        commands.clear();
+        runtime.drain_render_commands(&mut commands);
+        assert!(commands.iter().any(|command| matches!(
+            command,
+            RenderCommand::CameraStream(CameraStreamCommand::Upsert { node, state })
+                if *node == view
+                    && matches!(
+                        &state.source,
+                        CameraStreamSourceState::ThreeD(camera)
+                            if camera.position == [6.0, 7.0, 8.0]
+                    )
+        )));
+    }
+
+    #[test]
     fn webcam_node_does_not_open_without_stream_or_api_use() {
         let mut runtime = Runtime::new();
         let _webcam = NodeAPI::create::<Webcam>(&mut runtime);

@@ -76,7 +76,7 @@ Demos should show:
 
 - [WASM / Web Target](/docs/WASM.md)
 - [Perro CLI](/docs/tools/perro_cli.md)
-- [ScriptPatterns Feature Map](../demos/ScriptPatterns/README.md)
-- [Demo2D Feature Map](../demos/Demo2D/README.md)
-- [Demo3D Feature Map](../demos/Demo3D/README.md)
-- [DemoUI Feature Map](../demos/DemoUI/README.md)
+- [ScriptPatterns Feature Map](https://github.com/PerroEngine/Perro/tree/main/demos/ScriptPatterns)
+- [Demo2D Feature Map](https://github.com/PerroEngine/Perro/tree/main/demos/Demo2D)
+- [Demo3D Feature Map](https://github.com/PerroEngine/Perro/tree/main/demos/Demo3D)
+- [DemoUI Feature Map](https://github.com/PerroEngine/Perro/tree/main/demos/DemoUI)

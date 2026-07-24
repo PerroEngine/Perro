@@ -22,7 +22,7 @@ the exact signature or edge behavior is needed.
 - [Script Contexts](/docs/scripting/contexts/README.md)
 - [Variant](/docs/scripting/variant.md)
 - [Script Authoring Guide](/docs/scripting/authoring/index.md)
-- [Verified ScriptPatterns Project](/demos/ScriptPatterns/README.md)
+- [Verified ScriptPatterns Project](https://github.com/PerroEngine/Perro/tree/main/demos/ScriptPatterns)
 
 ## Runtime API
 

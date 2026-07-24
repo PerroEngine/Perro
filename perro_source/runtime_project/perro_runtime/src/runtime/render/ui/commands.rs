@@ -716,39 +716,26 @@ impl Runtime {
             panel.base.layout.size = UiVector2::new(popup_width, UiUnit::Pixels(popup_height));
             panel.base.layout.z_index = 100;
             panel.style = popup_style;
+            panel.base.layout.anchor = UiAnchor::Center;
+            panel.base.transform.position = UiVector2::pixels(popup_offset[0], popup_offset[1]);
             panel.base.transform.translation = Vector2::ZERO;
+            panel.base.transform.self_translation = Vector2::ZERO;
             match popup_direction {
                 UiDropdownDirection::Down => {
-                    panel.base.layout.anchor = UiAnchor::Top;
-                    panel.base.transform.position =
-                        UiVector2::pixels(popup_offset[0], popup_height + popup_offset[1]);
+                    panel.base.transform.translation.y = 0.5;
+                    panel.base.transform.self_translation.y = 0.5;
                 }
                 UiDropdownDirection::Up => {
-                    panel.base.layout.anchor = UiAnchor::Bottom;
-                    panel.base.transform.position =
-                        UiVector2::pixels(popup_offset[0], -popup_height + popup_offset[1]);
+                    panel.base.transform.translation.y = -0.5;
+                    panel.base.transform.self_translation.y = -0.5;
                 }
                 UiDropdownDirection::Left => {
-                    panel.base.layout.anchor = UiAnchor::Left;
-                    panel.base.transform.position = UiVector2::new(
-                        match popup_width {
-                            UiUnit::Pixels(value) => UiUnit::Pixels(-value),
-                            UiUnit::Percent(value) => UiUnit::Percent(50.0 - value),
-                        },
-                        UiUnit::Pixels(popup_offset[1]),
-                    );
-                    panel.base.transform.translation.x = popup_offset[0];
+                    panel.base.transform.translation.x = -0.5;
+                    panel.base.transform.self_translation.x = -0.5;
                 }
                 UiDropdownDirection::Right => {
-                    panel.base.layout.anchor = UiAnchor::Right;
-                    panel.base.transform.position = UiVector2::new(
-                        match popup_width {
-                            UiUnit::Pixels(value) => UiUnit::Pixels(value),
-                            UiUnit::Percent(value) => UiUnit::Percent(50.0 + value),
-                        },
-                        UiUnit::Pixels(popup_offset[1]),
-                    );
-                    panel.base.transform.translation.x = popup_offset[0];
+                    panel.base.transform.translation.x = 0.5;
+                    panel.base.transform.self_translation.x = 0.5;
                 }
             }
         }

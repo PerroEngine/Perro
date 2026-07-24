@@ -67,7 +67,7 @@ game scene before changing architecture.
 - [`../res/main.scn`](../res/main.scn) owns stable topology and script vars
 - [`../res/scripts/demo2d_manager.rs`](../res/scripts/demo2d_manager.rs) owns hub flow
 - [`../res/scripts/camera_pan_2d.rs`](../res/scripts/camera_pan_2d.rs) uses `ctx.id`
-- [`../../../docs/scripting/authoring/index.md`](../../../docs/scripting/authoring/index.md) explains ref/query/method/signal choices
+- [Script Authoring Guide](/docs/scripting/authoring/index.md) explains ref/query/method/signal choices
 
 ## Assets
 
