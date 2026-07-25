@@ -25,8 +25,9 @@ pub use perro_csv::{
 pub use perro_ids::string_to_u64 as __perro_string_to_u64;
 pub use perro_render_bridge::{
     CustomMaterial3D, CustomMaterialImage3D, CustomMaterialLighting3D, CustomMaterialParam3D,
-    CustomMaterialParamValue3D, HdrColorSpace, HdrFallback, HdrMode, HdrStatus, Material3D, Mesh3D,
-    MeshSurfaceRange, RuntimeMeshVertex,
+    CustomMaterialParamValue3D, HdrColorSpace, HdrFallback, HdrMode, HdrStatus,
+    MAX_VERTEX_MODIFIERS, Material3D, Mesh3D, MeshSurfaceRange, RuntimeMeshVertex, VertexAxis3D,
+    VertexModifier3D, VertexModifierMask3D,
 };
 pub use perro_scene::{Scene, SceneDoc, SceneWrite};
 pub use res_path::{ResPath, ResPathBuf, ResPathError, ResPathKind, ResPathSource};
@@ -96,8 +97,9 @@ pub mod prelude {
     };
     pub use perro_render_bridge::{
         CustomMaterial3D, CustomMaterialImage3D, CustomMaterialLighting3D, CustomMaterialParam3D,
-        CustomMaterialParamValue3D, HdrColorSpace, HdrFallback, HdrMode, HdrStatus, Material3D,
-        Mesh3D, MeshSurfaceRange, RuntimeMeshVertex,
+        CustomMaterialParamValue3D, HdrColorSpace, HdrFallback, HdrMode, HdrStatus,
+        MAX_VERTEX_MODIFIERS, Material3D, Mesh3D, MeshSurfaceRange, RuntimeMeshVertex,
+        VertexAxis3D, VertexModifier3D, VertexModifierMask3D,
     };
     pub use perro_scene::{Scene, SceneDoc, SceneWrite};
     pub use perro_structs::{Vector2, Vector3};

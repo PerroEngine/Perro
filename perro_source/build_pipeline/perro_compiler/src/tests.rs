@@ -749,6 +749,12 @@ parent = $root
 [/Camera2D]
 [/camera2d]
 
+[sub_view_2d]
+parent = $root
+[SubView2D]
+[/SubView2D]
+[/sub_view_2d]
+
 [camera_stream_2d]
 parent = $root
 [CameraStream2D]
@@ -769,6 +775,15 @@ parent = $root
     size = (32, 16)
 [/ImageButton2D]
 [/image_button_2d]
+
+[nine_slice_button_2d]
+parent = $root
+[NineSliceButton2D]
+    texture = "res://textures/pixel.bmp"
+    size = (32, 16)
+    margins = (1, 1, 1, 1)
+[/NineSliceButton2D]
+[/nine_slice_button_2d]
 
 [nine_slice_2d]
 parent = $root
@@ -940,6 +955,12 @@ parent = $root
 [Camera3D]
 [/Camera3D]
 [/camera3d]
+
+[sub_view_3d]
+parent = $root
+[SubView3D]
+[/SubView3D]
+[/sub_view_3d]
 
 [camera_stream_3d]
 parent = $root
@@ -1142,6 +1163,12 @@ parent = $root
 [/UiCameraStream]
 [/ui_camera_stream]
 
+[ui_sub_view]
+parent = $root
+[UiSubView]
+[/UiSubView]
+[/ui_sub_view]
+
 [ui_panel]
 parent = $root
 [UiPanel]
@@ -1199,6 +1226,14 @@ parent = $root
     texture = "res://textures/pixel.bmp"
 [/UiImageButton]
 [/ui_image_button]
+
+[ui_nine_slice_button]
+parent = $root
+[UiNineSliceButton]
+    texture = "res://textures/pixel.bmp"
+    margins = (1, 1, 1, 1)
+[/UiNineSliceButton]
+[/ui_nine_slice_button]
 
 [ui_nine_slice]
 parent = $root

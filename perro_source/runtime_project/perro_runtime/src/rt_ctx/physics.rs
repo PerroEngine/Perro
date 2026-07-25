@@ -65,8 +65,7 @@ impl PhysicsAPI for Runtime {
         if !matches!(node.data, SceneNodeData::RigidBody2D(_)) {
             return false;
         }
-        self.queue_force_2d(body_id, force);
-        true
+        self.queue_force_2d(body_id, force)
     }
 
     fn apply_force_3d(&mut self, body_id: NodeID, force: Vector3) -> bool {
@@ -79,8 +78,7 @@ impl PhysicsAPI for Runtime {
         if !matches!(node.data, SceneNodeData::RigidBody3D(_)) {
             return false;
         }
-        self.queue_force_3d(body_id, force);
-        true
+        self.queue_force_3d(body_id, force)
     }
 
     fn apply_impulse_2d(&mut self, body_id: NodeID, impulse: Vector2) -> bool {
@@ -93,8 +91,7 @@ impl PhysicsAPI for Runtime {
         if !matches!(node.data, SceneNodeData::RigidBody2D(_)) {
             return false;
         }
-        self.queue_impulse_2d(body_id, impulse);
-        true
+        self.queue_impulse_2d(body_id, impulse)
     }
 
     fn apply_impulse_3d(&mut self, body_id: NodeID, impulse: Vector3) -> bool {
@@ -107,8 +104,7 @@ impl PhysicsAPI for Runtime {
         if !matches!(node.data, SceneNodeData::RigidBody3D(_)) {
             return false;
         }
-        self.queue_impulse_3d(body_id, impulse);
-        true
+        self.queue_impulse_3d(body_id, impulse)
     }
 
     fn emit_force_2d(&mut self, emitter: PhysicsForceEmitter2D) -> bool {

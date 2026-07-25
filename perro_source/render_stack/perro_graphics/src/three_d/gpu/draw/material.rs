@@ -327,10 +327,38 @@ pub(in super::super) fn pack_toon_pbr_params(
     outline_width: f32,
 ) -> u32 {
     pack_u8_lanes(
-        band_count.clamp(1, 255),
+        band_count.clamp(1, 254),
         quantize_unorm8_range(rim_strength, PACKED_TOON_RIM_STRENGTH_MAX),
         quantize_unorm8_range(outline_width, PACKED_TOON_OUTLINE_WIDTH_MAX),
         0,
+    )
+}
+
+#[inline]
+pub(in super::super) fn pack_hand_drawn_params(
+    band_count: u32,
+    hatch_scale: f32,
+    grain_strength: f32,
+) -> u32 {
+    pack_u8_lanes(
+        0,
+        band_count.clamp(1, 255),
+        quantize_unorm8_range(hatch_scale, 128.0),
+        quantize_unorm8(grain_strength),
+    )
+}
+
+#[inline]
+pub(in super::super) fn pack_pixel_surface_params(
+    pixel_count: u32,
+    color_levels: u32,
+    dither_strength: f32,
+) -> u32 {
+    pack_u8_lanes(
+        255,
+        pixel_count.clamp(1, 255),
+        color_levels.clamp(2, 255),
+        quantize_unorm8(dither_strength),
     )
 }
 
@@ -399,6 +427,28 @@ pub(in super::super) fn build_instance(
                         params.band_count,
                         params.rim_strength,
                         params.outline_width,
+                    ),
+                    0,
+                    params.emissive_factor,
+                    0u32,
+                ),
+                Material3D::HandDrawn(params) => (
+                    params.base_color_factor,
+                    pack_hand_drawn_params(
+                        params.band_count,
+                        params.hatch_scale,
+                        params.grain_strength,
+                    ),
+                    0,
+                    params.emissive_factor,
+                    0u32,
+                ),
+                Material3D::PixelSurface(params) => (
+                    params.base_color_factor,
+                    pack_pixel_surface_params(
+                        params.pixel_count,
+                        params.color_levels,
+                        params.dither_strength,
                     ),
                     0,
                     params.emissive_factor,
@@ -748,6 +798,12 @@ pub(in super::super) fn apply_modulate(
         Material3D::Toon(m) => {
             m.base_color_factor = modulate_color_mix(m.base_color_factor, modulate);
         }
+        Material3D::HandDrawn(m) => {
+            m.base_color_factor = modulate_color_mix(m.base_color_factor, modulate);
+        }
+        Material3D::PixelSurface(m) => {
+            m.base_color_factor = modulate_color_mix(m.base_color_factor, modulate);
+        }
         Material3D::Custom(_) => return false,
     }
     modulate_bias_strength(modulate) > 0.0
@@ -774,6 +830,16 @@ pub(in super::super) fn apply_overrides(
         Material3D::Toon(toon) => {
             for ovr in overrides {
                 apply_flat_shading_override(&ovr.name, &ovr.value, &mut toon.flat_shading);
+            }
+        }
+        Material3D::HandDrawn(hand_drawn) => {
+            for ovr in overrides {
+                apply_flat_shading_override(&ovr.name, &ovr.value, &mut hand_drawn.flat_shading);
+            }
+        }
+        Material3D::PixelSurface(pixel) => {
+            for ovr in overrides {
+                apply_flat_shading_override(&ovr.name, &ovr.value, &mut pixel.flat_shading);
             }
         }
         Material3D::Custom(custom) => {

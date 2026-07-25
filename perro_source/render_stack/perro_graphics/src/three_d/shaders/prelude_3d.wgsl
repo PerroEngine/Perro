@@ -518,7 +518,7 @@ fn perro_vs_main_base(v: VertexInput, inst: InstanceInput, vertex_index: u32, in
     out.custom_range = vec2<u32>(inst.skeleton_params.z, inst.skeleton_params.w);
     out.uv = blended.uv;
     out.paint_uv = blended.paint_uv;
-    return out;
+    return perro_apply_vertex_modifiers(out);
 }
 
 fn perro_shadow_factor(world_pos: vec3<f32>, normal_ws: vec3<f32>, light_dir_to_light: vec3<f32>) -> f32 {
@@ -807,7 +807,7 @@ fn perro_brdf_pbr(
     return (diffuse + specular) * radiance * n_dot_l;
 }
 
-fn perro_lit_standard(
+fn perro_standard(
     in: FragmentInput,
     base_color: vec4<f32>,
     roughness_in: f32,
@@ -981,10 +981,22 @@ fn perro_lit_standard(
     return vec4<f32>(shaded, alpha);
 }
 
+// Legacy alias. Use perro_standard in new shaders.
+fn perro_lit_standard(
+    in: FragmentInput,
+    base_color: vec4<f32>,
+    roughness: f32,
+    metallic: f32,
+    ao: f32,
+    emissive: vec3<f32>,
+) -> vec4<f32> {
+    return perro_standard(in, base_color, roughness, metallic, ao, emissive);
+}
+
 // ---- Frame globals for custom shaders ----------------------------------
 // Seconds since app start; wraps every hour to stay f32-precise.
 // Seconds covered by the previous frame.
 // Frames rendered since app start (wraps with f32 precision).
 // 0..1 sawtooth over 60 seconds; precision-safe looping animation driver.
 // Viewport size in pixels.
-// 1 / viewport size.
+// 1 / viewport size.

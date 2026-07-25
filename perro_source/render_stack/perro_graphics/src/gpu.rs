@@ -23,8 +23,9 @@ use perro_ids::NodeID;
 use perro_render_bridge::{
     Camera3DState, CameraProjectionState, CameraStreamDraw3DState, CameraStreamLighting3DState,
     CameraStreamSourceState, CameraStreamState, Decal3DState, HdrColorSpace, HdrFallback, HdrMode,
-    HdrStatus, Light2DState, PointParticles3DState, ShadowCaster2DState, Sprite2DCommand,
-    Water2DState, Water3DState, WaterBodySampleState, WaterSampleState, WaterShapeState,
+    HdrStatus, LODOptions3D, Light2DState, MeshBlendOptions3D, PointParticles3DState,
+    ShadowCaster2DState, Sprite2DCommand, Water2DState, Water3DState, WaterBodySampleState,
+    WaterSampleState, WaterShapeState,
 };
 use perro_structs::VisualAccessibilitySettings;
 use perro_structs::{PostProcessEffect, TextureFilterMode};
@@ -190,6 +191,34 @@ fn fill_camera_stream_draws_3d(draws: &[CameraStreamDraw3DState], out: &mut Vec<
     out.clear();
     out.reserve(draws.len().saturating_sub(out.capacity()));
     out.extend(draws.iter().map(|draw| match draw {
+        CameraStreamDraw3DState::CameraStreamQuad {
+            texture,
+            tint,
+            node,
+            model,
+            size,
+        } => {
+            let model = Mat4::from_cols_array_2d(model)
+                * Mat4::from_scale(Vec3::new(size[0].max(0.001), size[1].max(0.001), 1.0));
+            Draw3DInstance {
+                node: *node,
+                kind: Draw3DKind::CameraStreamQuad {
+                    texture: *texture,
+                    tint: tint.to_float_slice(),
+                },
+                surfaces: Arc::from([]),
+                instance_mats: Arc::from([model.to_cols_array_2d()]),
+                blend_shape_weights: Arc::from([]),
+                debug_color: None,
+                skeleton: None,
+                dense_multimesh: None,
+                meshlet_override: Some(false),
+                lod: LODOptions3D::default(),
+                blend: MeshBlendOptions3D::default(),
+                cast_shadows: false,
+                receive_shadows: false,
+            }
+        }
         CameraStreamDraw3DState::Draw {
             mesh,
             surfaces,

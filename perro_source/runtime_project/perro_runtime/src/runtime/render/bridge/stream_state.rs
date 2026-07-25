@@ -1,16 +1,83 @@
 use super::*;
 
 impl Runtime {
+    pub(super) fn nested_ui_sub_view_rect(
+        &self,
+        owner: NodeID,
+        node: NodeID,
+        owner_resolution: [u32; 2],
+    ) -> Option<ComputedUiRect> {
+        let root = ComputedUiRect::new(
+            Vector2::ZERO,
+            Vector2::new(owner_resolution[0] as f32, owner_resolution[1] as f32),
+        );
+        let mut computed = AHashMap::new();
+        let mut scales = AHashMap::new();
+        let mut auto = AHashSet::new();
+        computed.insert(owner, root);
+        scales.insert(owner, Vector2::ONE);
+        self.compute_ui_rect(node, root, &mut computed, &mut scales, &mut auto)
+    }
+
+    fn prepare_nested_sub_views(&mut self, owner: NodeID, owner_resolution: [u32; 2]) {
+        let mut members = Vec::new();
+        self.fill_world_members(owner, &mut members);
+        let nested = members
+            .into_iter()
+            .filter_map(|node| {
+                let scene_node = self.nodes.get(node)?;
+                match &scene_node.data {
+                    SceneNodeData::UiSubView(view) => Some((
+                        node,
+                        SubView::from(view.as_ref()),
+                        self.nested_ui_sub_view_rect(owner, node, owner_resolution)
+                            .map(|rect| [rect.size.x, rect.size.y])
+                            .or_else(|| {
+                                self.render_ui
+                                    .retained_rects
+                                    .get(&node)
+                                    .map(|rect| rect.size)
+                            }),
+                    )),
+                    SceneNodeData::SubView2D(view) => Some((node, view.sub_view.clone(), None)),
+                    SceneNodeData::SubView3D(view) => Some((node, view.sub_view.clone(), None)),
+                    _ => None,
+                }
+            })
+            .collect::<Vec<_>>();
+        for (node, view, auto_size) in nested {
+            if !self.is_effectively_visible(node) {
+                self.queue_render_command(RenderCommand::CameraStream(
+                    CameraStreamCommand::RemoveNode { node },
+                ));
+                continue;
+            }
+            if let Some(state) = self.sub_view_state(node, &view, auto_size) {
+                self.queue_render_command(RenderCommand::CameraStream(
+                    CameraStreamCommand::Upsert {
+                        node,
+                        state: Box::new(state),
+                    },
+                ));
+            } else {
+                self.queue_render_command(RenderCommand::CameraStream(
+                    CameraStreamCommand::RemoveNode { node },
+                ));
+            }
+        }
+    }
+
     fn sub_view_camera_2d(&mut self, view_node: NodeID) -> Option<Camera2DState> {
         let mut found = None;
-        for (node, scene_node) in self.nodes.iter() {
+        for idx in 0..self.camera_stream_node_scratch.len() {
+            let node = self.camera_stream_node_scratch[idx];
+            let Some(scene_node) = self.nodes.get(node) else {
+                continue;
+            };
             let SceneNodeData::Camera2D(camera) = &scene_node.data else {
                 continue;
             };
-            if !camera.active
-                || !self.is_effectively_visible(node)
-                || self.sub_view_ancestor(node) != Some(view_node)
-            {
+            if !camera.active || !self.is_effectively_visible(node) {
                 continue;
             }
             found = Some((
@@ -39,14 +106,15 @@ impl Runtime {
     fn sub_view_camera_3d(&mut self, view_node: NodeID) -> Option<Camera3DState> {
         let mut found_priority: Option<(u64, u32, u32)> = None;
         let mut found = None;
-        for (node, scene_node) in self.nodes.iter() {
+        for idx in 0..self.camera_stream_node_scratch.len() {
+            let node = self.camera_stream_node_scratch[idx];
+            let Some(scene_node) = self.nodes.get(node) else {
+                continue;
+            };
             let SceneNodeData::Camera3D(camera) = &scene_node.data else {
                 continue;
             };
-            if !camera.active
-                || !self.is_effectively_visible(node)
-                || self.sub_view_ancestor(node) != Some(view_node)
-            {
+            if !camera.active || !self.is_effectively_visible(node) {
                 continue;
             }
             let order = self
@@ -147,11 +215,13 @@ impl Runtime {
                 waters_3d: Arc::from([]),
             });
         }
-        // build node-id list once; collectors below share it via index access
-        // instead of each re-collecting the whole arena.
+        // Build the owning world's direct member list once. Nested sub-view
+        // descendants never enter any collector for this stream.
         self.camera_stream_node_scratch.clear();
-        self.camera_stream_node_scratch
-            .extend(self.nodes.iter().map(|(id, _)| id));
+        let owner = self.node_world(stream_node)?;
+        let mut members = std::mem::take(&mut self.camera_stream_node_scratch);
+        self.fill_world_members(owner, &mut members);
+        self.camera_stream_node_scratch = members;
         let mut post_processing = match &source {
             CameraStreamSourceState::TwoD(camera) => camera.post_processing.to_vec(),
             CameraStreamSourceState::ThreeD(camera) => camera.post_processing.to_vec(),
@@ -169,7 +239,7 @@ impl Runtime {
             waters_3d,
         ) = match &source {
             CameraStreamSourceState::TwoD(camera) => (
-                self.collect_camera_stream_sprites_2d(camera.render_mask, stream_node),
+                self.collect_camera_stream_sprites_2d(camera.render_mask, stream_node, None),
                 self.collect_camera_stream_lights_2d(camera.render_mask, stream_node),
                 self.collect_camera_stream_point_particles_2d(camera.render_mask, stream_node),
                 self.collect_camera_stream_waters_2d(camera.render_mask, stream_node),
@@ -240,31 +310,29 @@ impl Runtime {
             return None;
         }
 
+        const AUTO_RESOLUTION_SCALE: f32 = 2.0;
+        let resolution = [
+            if view.resolution.x == 0 {
+                (auto_size.unwrap_or([1.0, 1.0])[0] * AUTO_RESOLUTION_SCALE)
+                    .round()
+                    .clamp(1.0, 8192.0) as u32
+            } else {
+                view.resolution.x.clamp(1, 8192)
+            },
+            if view.resolution.y == 0 {
+                (auto_size.unwrap_or([1.0, 1.0])[1] * AUTO_RESOLUTION_SCALE)
+                    .round()
+                    .clamp(1.0, 8192.0) as u32
+            } else {
+                view.resolution.y.clamp(1, 8192)
+            },
+        ];
+
+        self.prepare_nested_sub_views(view_node, resolution);
         self.camera_stream_node_scratch.clear();
-        if let Some(children) = self.nodes.children(view_node) {
-            self.camera_stream_node_scratch
-                .extend(children.iter().copied());
-        }
-        let mut cursor = 0usize;
-        while cursor < self.camera_stream_node_scratch.len() {
-            let node = self.camera_stream_node_scratch[cursor];
-            cursor += 1;
-            let Some(scene_node) = self.nodes.get(node) else {
-                continue;
-            };
-            if matches!(
-                scene_node.data,
-                SceneNodeData::UiSubView(_)
-                    | SceneNodeData::SubView2D(_)
-                    | SceneNodeData::SubView3D(_)
-            ) {
-                continue;
-            }
-            if let Some(children) = self.nodes.children(node) {
-                self.camera_stream_node_scratch
-                    .extend(children.iter().copied());
-            }
-        }
+        let mut members = std::mem::take(&mut self.camera_stream_node_scratch);
+        self.fill_world_members(view_node, &mut members);
+        self.camera_stream_node_scratch = members;
 
         let implicit_camera_3d = Camera3DState {
             position: [
@@ -305,24 +373,6 @@ impl Runtime {
         let source = CameraStreamSourceState::ThreeD(camera_3d);
         let overlay_camera_2d = Some(camera_2d);
 
-        const AUTO_RESOLUTION_SCALE: f32 = 2.0;
-        let resolution = [
-            if view.resolution.x == 0 {
-                (auto_size.unwrap_or([1.0, 1.0])[0] * AUTO_RESOLUTION_SCALE)
-                    .round()
-                    .clamp(1.0, 8192.0) as u32
-            } else {
-                view.resolution.x.clamp(1, 8192)
-            },
-            if view.resolution.y == 0 {
-                (auto_size.unwrap_or([1.0, 1.0])[1] * AUTO_RESOLUTION_SCALE)
-                    .round()
-                    .clamp(1.0, 8192.0) as u32
-            } else {
-                view.resolution.y.clamp(1, 8192)
-            },
-        ];
-
         Some(CameraStreamState {
             source,
             tone_map_output: matches!(
@@ -336,7 +386,11 @@ impl Runtime {
             aspect_ratio: view.aspect_ratio.max(0.0),
             post_processing: Arc::from(post_processing),
             output_texture: Self::camera_stream_texture_id(view_node),
-            sprites_2d: self.collect_camera_stream_sprites_2d(render_mask_2d, view_node),
+            sprites_2d: self.collect_camera_stream_sprites_2d(
+                render_mask_2d,
+                view_node,
+                Some(resolution),
+            ),
             lights_2d: self.collect_camera_stream_lights_2d(render_mask_2d, view_node),
             point_particles_2d: self
                 .collect_camera_stream_point_particles_2d(render_mask_2d, view_node),

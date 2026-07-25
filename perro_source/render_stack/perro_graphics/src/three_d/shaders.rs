@@ -6,11 +6,26 @@ mod regular {
     // file here (WGSL module-scope declarations are order-independent).
     const SHARED_3D_WGSL: &str = perro_macros::include_str_stripped!("shaders/shared_3d.wgsl");
     const PRELUDE_BASE_WGSL: &str = perro_macros::include_str_stripped!("shaders/prelude_3d.wgsl");
+    const STYLIZED_3D_WGSL: &str = perro_macros::include_str_stripped!("shaders/stylized_3d.wgsl");
     static PRELUDE_WGSL_FULL: LazyLock<String> =
-        LazyLock::new(|| format!("{SHARED_3D_WGSL}\n{PRELUDE_BASE_WGSL}"));
+        LazyLock::new(|| format!("{SHARED_3D_WGSL}\n{PRELUDE_BASE_WGSL}\n{STYLIZED_3D_WGSL}"));
     const MULTIMESH_BASE_WGSL: &str = perro_macros::include_str_stripped!("shaders/multimesh.wgsl");
-    static MULTIMESH_WGSL_FULL: LazyLock<String> =
-        LazyLock::new(|| format!("{SHARED_3D_WGSL}\n{MULTIMESH_BASE_WGSL}"));
+    const STYLIZED_MULTIMESH_WGSL: &str =
+        perro_macros::include_str_stripped!("shaders/stylized_multimesh.wgsl");
+    static MULTIMESH_WGSL_FULL: LazyLock<String> = LazyLock::new(|| {
+        let base = format!("{SHARED_3D_WGSL}\n{MULTIMESH_BASE_WGSL}");
+        let split_at = base
+            .find("@vertex\nfn vs_main")
+            .or_else(|| base.find("@vertex\r\nfn vs_main"))
+            .or_else(|| base.find("@vertex fn vs_main"))
+            .unwrap_or(base.len());
+        format!(
+            "{}\n{}\n{}",
+            &base[..split_at],
+            STYLIZED_MULTIMESH_WGSL,
+            &base[split_at..],
+        )
+    });
     static PRELUDE_RIGID_WGSL: LazyLock<String> =
         LazyLock::new(|| super::build_rigid_prelude(prelude_wgsl()));
     static PRELUDE_SKINNED_WGSL: LazyLock<String> =
@@ -33,10 +48,16 @@ mod regular {
         perro_macros::include_str_stripped!("shaders/material_toon.wgsl");
     pub const DEPTH_PREPASS_WGSL: &str =
         perro_macros::include_str_stripped!("shaders/depth_prepass.wgsl");
-    pub const DEPTH_PREPASS_RIGID_WGSL: &str =
-        perro_macros::include_str_stripped!("shaders/depth_prepass_rigid.wgsl");
-    pub const DEPTH_PREPASS_SKINNED_WGSL: &str =
-        perro_macros::include_str_stripped!("shaders/depth_prepass_skinned.wgsl");
+    pub const DEPTH_PREPASS_RIGID_WGSL: &str = concat!(
+        include_str!("shaders/vertex_modifiers_depth.wgsl"),
+        "\n",
+        include_str!("shaders/depth_prepass_rigid.wgsl")
+    );
+    pub const DEPTH_PREPASS_SKINNED_WGSL: &str = concat!(
+        include_str!("shaders/vertex_modifiers_depth.wgsl"),
+        "\n",
+        include_str!("shaders/depth_prepass_skinned.wgsl")
+    );
     pub const MESH_BLEND_SCREEN_WGSL: &str =
         perro_macros::include_str_stripped!("shaders/mesh_blend_screen.wgsl");
     pub const SKY3D_WGSL: &str = perro_macros::include_str_stripped!("shaders/sky3d.wgsl");
@@ -309,22 +330,29 @@ fn build_packed_lod_depth_rigid_wgsl() -> String {
             "@group(0) @binding(5)\nvar<storage, read> blend_shape_instances: array<BlendShapeInstance>;\n@group(0) @binding(6)\nvar<storage, read> packed_lod_params: array<PackedLodParam>;",
         )
         .replace(
-            "struct VertexInput {\n    @location(0) pos: vec3<f32>,\n};",
-            "struct VertexInput {\n    @location(0) pos: vec4<f32>,\n};",
+            "struct VertexInput {\n    @location(0) pos: vec3<f32>,\n    @location(1) normal: vec4<f32>,\n}",
+            "struct VertexInput {\n    @location(0) pos: vec4<f32>,\n    @location(1) normal: vec4<f32>,\n}",
         )
         .replace(
-            "struct InstanceInput {\n    @location(4) model_row_0: vec4<f32>,\n    @location(5) model_row_1: vec4<f32>,\n    @location(6) model_row_2: vec4<f32>,\n    @location(7) @interpolate(flat) packed_color: u32,\n    @location(11) @interpolate(flat) packed_material_params: u32,\n};",
-            "struct InstanceInput {\n    @location(4) model_row_0: vec4<f32>,\n    @location(5) model_row_1: vec4<f32>,\n    @location(6) model_row_2: vec4<f32>,\n    @location(7) @interpolate(flat) packed_color: u32,\n    @location(11) @interpolate(flat) packed_material_params: u32,\n    @location(14) @interpolate(flat) packed_lod_param_id: u32,\n};",
+            "struct InstanceInput {\n    @location(4) model_row_0: vec4<f32>,\n    @location(5) model_row_1: vec4<f32>,\n    @location(6) model_row_2: vec4<f32>,\n    @location(7) @interpolate(flat) packed_color: u32,\n    @location(11) @interpolate(flat) packed_material_params: u32,\n    @location(13) @interpolate(flat) custom_range: vec2<u32>,\n}",
+            "struct InstanceInput {\n    @location(4) model_row_0: vec4<f32>,\n    @location(5) model_row_1: vec4<f32>,\n    @location(6) model_row_2: vec4<f32>,\n    @location(7) @interpolate(flat) packed_color: u32,\n    @location(11) @interpolate(flat) packed_material_params: u32,\n    @location(13) @interpolate(flat) custom_range: vec2<u32>,\n    @location(14) @interpolate(flat) packed_lod_param_id: u32,\n}",
         )
         .replace(
             "struct BlendShapeDelta {\n    position_delta: vec4<f32>,\n    normal_delta: vec4<f32>,\n}",
             "struct PackedLodParam {\n    pos_min: vec4<f32>,\n    pos_extent: vec4<f32>,\n    uv_min_extent: vec4<f32>,\n}\n\nstruct BlendShapeDelta {\n    position_delta: vec4<f32>,\n    normal_delta: vec4<f32>,\n}",
         )
-        .replace("        return v.pos;", "        return v.pos.xyz;")
         .replace("    var pos = v.pos;", "    var pos = v.pos.xyz;")
         .replace(
-            "    let pos = apply_blend_shapes(v, vertex_index, instance_index);",
-            "    let packed_lod = packed_lod_params[inst.packed_lod_param_id];\n    var decoded_v = v;\n    decoded_v.pos = vec4<f32>(packed_lod.pos_min.xyz + v.pos.xyz * packed_lod.pos_extent.xyz, 0.0);\n    let pos = apply_blend_shapes(decoded_v, vertex_index, instance_index);",
+            "    return VertexInput(pos, vec4<f32>(normalize(normal), 0.0));",
+            "    return VertexInput(vec4<f32>(pos, 0.0), vec4<f32>(normalize(normal), 0.0));",
+        )
+        .replace(
+            "    let blended = apply_blend_shapes(v, vertex_index, instance_index);",
+            "    let packed_lod = packed_lod_params[inst.packed_lod_param_id];\n    var decoded_v = v;\n    decoded_v.pos = vec4<f32>(packed_lod.pos_min.xyz + v.pos.xyz * packed_lod.pos_extent.xyz, 0.0);\n    let blended = apply_blend_shapes(decoded_v, vertex_index, instance_index);",
+        )
+        .replace(
+            "    let p = vec4<f32>(blended.pos, 1.0);",
+            "    let p = vec4<f32>(blended.pos.xyz, 1.0);",
         )
 }
 
@@ -339,7 +367,7 @@ pub fn build_custom_material_shader_with_prelude(
     material_wgsl: &str,
     lighting: perro_render_bridge::CustomMaterialLighting3D,
 ) -> String {
-    let uses_lit_helper = material_wgsl.contains("perro_lit_standard(");
+    let uses_lit_helper = material_uses_final_shade_helper(material_wgsl);
     let apply_standard_lighting =
         lighting == perro_render_bridge::CustomMaterialLighting3D::Standard && !uses_lit_helper;
     build_material_shader_with_prelude_inner(prelude_wgsl, material_wgsl, apply_standard_lighting)
@@ -357,7 +385,7 @@ pub fn build_custom_multimesh_material_shader(
         .or_else(|| base.find("@vertex fn vs_main"))
         .unwrap_or(base.len());
     let prelude = &base[..split_at];
-    let uses_lit_helper = material_wgsl.contains("perro_lit_standard(");
+    let uses_lit_helper = material_uses_final_shade_helper(material_wgsl);
     let apply_standard_lighting =
         lighting == perro_render_bridge::CustomMaterialLighting3D::Standard && !uses_lit_helper;
     let has_custom_vertex = material_wgsl.contains("shade_vertex(");
@@ -376,7 +404,7 @@ pub fn build_custom_multimesh_material_shader(
     }
     if apply_standard_lighting {
         out.push_str(
-            "\n@fragment\nfn fs_main(in: FragmentInput) -> @location(0) vec4<f32> {\n    let base = shade_material(in);\n    return perro_lit_standard(in, base, 0.5, 0.0, 1.0, vec3<f32>(0.0));\n}\n",
+            "\n@fragment\nfn fs_main(in: FragmentInput) -> @location(0) vec4<f32> {\n    let base = shade_material(in);\n    return perro_standard(in, base, 0.5, 0.0, 1.0, vec3<f32>(0.0));\n}\n",
         );
     } else {
         out.push_str(
@@ -384,6 +412,20 @@ pub fn build_custom_multimesh_material_shader(
         );
     }
     out
+}
+
+#[inline]
+fn material_uses_final_shade_helper(material_wgsl: &str) -> bool {
+    [
+        "perro_standard(",
+        "perro_toon(",
+        "perro_unlit(",
+        "perro_hand_drawn(",
+        "perro_pixel_surface(",
+        "perro_lit_",
+    ]
+    .iter()
+    .any(|name| material_wgsl.contains(name))
 }
 
 #[inline]
@@ -409,7 +451,7 @@ fn build_material_shader_with_prelude_inner(
     }
     if apply_custom_standard_lighting {
         out.push_str(
-            "\n@fragment\nfn fs_main(in: FragmentInput) -> @location(0) vec4<f32> {\n    let base = shade_material(in);\n    return perro_lit_standard(in, base, 0.5, 0.0, 1.0, vec3<f32>(0.0));\n}\n",
+            "\n@fragment\nfn fs_main(in: FragmentInput) -> @location(0) vec4<f32> {\n    let base = shade_material(in);\n    return perro_standard(in, base, 0.5, 0.0, 1.0, vec3<f32>(0.0));\n}\n",
         );
     } else {
         out.push_str(
@@ -744,8 +786,8 @@ mod tests {
             regular::MATERIAL_UNLIT_WGSL
                 .contains("textureSample(material_base_color_tex, material_sampler, in.uv)")
         );
-        assert!(regular::MATERIAL_UNLIT_WGSL.contains("color.rgb * base_sample.rgb + emissive"));
-        assert!(regular::MATERIAL_UNLIT_WGSL.contains("color.a * base_sample.a"));
+        assert!(regular::MATERIAL_UNLIT_WGSL.contains("color * base_sample"));
+        assert!(regular::MATERIAL_UNLIT_WGSL.contains("perro_unlit("));
     }
 
     #[test]
@@ -791,7 +833,7 @@ mod tests {
                 material,
                 perro_render_bridge::CustomMaterialLighting3D::Standard,
             );
-            assert!(wgsl.contains("perro_lit_standard(in, base"));
+            assert!(wgsl.contains("perro_standard(in, base"));
             naga::front::wgsl::parse_str(&wgsl).expect("custom lit wrapper material wgsl parses");
         }
     }
@@ -828,6 +870,51 @@ fn shade_material(in: FragmentInput) -> vec4<f32> {
     }
 
     #[test]
+    fn custom_material_stylized_helpers_validate() {
+        let material = r#"
+fn shade_material(in: FragmentInput) -> vec4<f32> {
+    let pixel_uv = perro_pixel_uv(in.uv, vec2<f32>(32.0));
+    var color = custom_image_sample(in, 0u, pixel_uv).rgb;
+    let lod = perro_distance_lod(in.world_pos, 5.0, 50.0, 4u);
+    let grain = perro_paper_grain(in.uv, 128.0 / f32(lod + 1u), 0.08);
+    let ink = perro_crosshatch(in.uv, 0.65, 24.0, 0.785398, 0.08);
+    color = mix(color + vec3<f32>(grain), vec3<f32>(0.05), ink);
+    color = perro_bayer_dither(color, in.frag_pos.xy, 0.08);
+    color = perro_posterize(color, 5.0);
+    color = perro_palette_snap(in, color, 1u, 16u);
+    return perro_hand_drawn(in, vec4<f32>(color, 1.0), 4.0, 24.0, 0.08, vec3<f32>(0.0));
+}
+"#;
+        for prelude in [
+            regular::prelude_rigid_wgsl(),
+            regular::prelude_skinned_wgsl(),
+        ] {
+            let wgsl = build_custom_material_shader_with_prelude(
+                prelude,
+                material,
+                perro_render_bridge::CustomMaterialLighting3D::Standard,
+            );
+            assert!(!wgsl.contains("let base = shade_material(in);\n    return perro_standard"));
+            parse_and_validate(&wgsl, "custom material stylized helpers");
+        }
+        let multimesh_wgsl = build_custom_multimesh_material_shader(
+            material,
+            perro_render_bridge::CustomMaterialLighting3D::Standard,
+        );
+        assert!(
+            !multimesh_wgsl.contains("let base = shade_material(in);\n    return perro_standard")
+        );
+        parse_and_validate(&multimesh_wgsl, "custom multimesh stylized helpers");
+    }
+
+    #[test]
+    fn toon_material_uses_shared_lighting_helper_and_base_texture() {
+        let wgsl = regular::MATERIAL_TOON_WGSL;
+        assert!(wgsl.contains("perro_toon("));
+        assert!(wgsl.contains("textureSample(material_base_color_tex"));
+    }
+
+    #[test]
     fn custom_material_raw_wrapper_wgsl_parses() {
         let material = "fn shade_material(in: FragmentInput) -> vec4<f32> { return vec4<f32>(in.normal_ws * 0.5 + vec3<f32>(0.5), 1.0); }";
         for prelude in [
@@ -839,7 +926,7 @@ fn shade_material(in: FragmentInput) -> vec4<f32> {
                 material,
                 perro_render_bridge::CustomMaterialLighting3D::Raw,
             );
-            assert!(!wgsl.contains("perro_lit_standard(in, base"));
+            assert!(!wgsl.contains("let base = shade_material(in);\n    return perro_standard"));
             naga::front::wgsl::parse_str(&wgsl).expect("custom raw material wgsl parses");
         }
     }
@@ -863,7 +950,7 @@ fn shade_material(in: FragmentInput) -> vec4<f32> {
                 material,
                 perro_render_bridge::CustomMaterialLighting3D::Standard,
             );
-            assert!(!wgsl.contains("perro_lit_standard(in, base"));
+            assert!(!wgsl.contains("let base = shade_material(in);\n    return perro_standard"));
             naga::front::wgsl::parse_str(&wgsl).expect("custom lit material wgsl parses");
         }
     }

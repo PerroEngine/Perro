@@ -18,6 +18,7 @@ mod water_overlays {
         runtime
             .force_water_impacts_3d
             .push(crate::runtime::ForceWaterImpact3D {
+                world: perro_ids::NodeID::nil(),
                 position: Vector3::new(8.4, 0.0, 0.0),
                 force: Vector3::new(12.0, 0.0, 0.0),
                 strength: 10.0,

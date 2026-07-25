@@ -11,6 +11,11 @@ pub enum PostProcessEffect {
     Pixelate {
         size: f32,
     },
+    PixelArt {
+        virtual_height: u32,
+        color_levels: u32,
+        dither_strength: f32,
+    },
     Warp {
         waves: f32,
         strength: f32,

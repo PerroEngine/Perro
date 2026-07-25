@@ -45,6 +45,13 @@ pub struct CameraStreamLighting3DState {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum CameraStreamDraw3DState {
+    CameraStreamQuad {
+        texture: TextureID,
+        tint: Color,
+        node: NodeID,
+        model: [[f32; 4]; 4],
+        size: [f32; 2],
+    },
     Draw {
         mesh: MeshID,
         surfaces: Arc<[MeshSurfaceBinding3D]>,
@@ -399,7 +406,142 @@ pub struct PointParticles3DState {
     pub render_mode: ParticleRenderMode3D,
 }
 
+pub const MAX_VERTEX_MODIFIERS: usize = 16;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum VertexAxis3D {
+    X,
+    Y,
+    Z,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
+pub struct VertexModifierMask3D {
+    pub axis: VertexAxis3D,
+    pub start: f32,
+    pub end: f32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum VertexModifier3D {
+    Wind {
+        direction: [f32; 3],
+        strength: f32,
+        speed: f32,
+        frequency: f32,
+        mask: VertexModifierMask3D,
+    },
+    Wave {
+        axis: VertexAxis3D,
+        direction: [f32; 3],
+        amplitude: f32,
+        speed: f32,
+        frequency: f32,
+        phase: f32,
+        mask: Option<VertexModifierMask3D>,
+    },
+    Bend {
+        along_axis: VertexAxis3D,
+        bend_axis: VertexAxis3D,
+        angle_radians: f32,
+        start: f32,
+        end: f32,
+    },
+    Twist {
+        axis: VertexAxis3D,
+        angle_radians: f32,
+        start: f32,
+        end: f32,
+    },
+    Inflate {
+        amount: f32,
+        mask: Option<VertexModifierMask3D>,
+    },
+    Jitter {
+        amount: f32,
+        scale: f32,
+        rate: f32,
+        seed: u32,
+        mask: Option<VertexModifierMask3D>,
+    },
+    PixelSnap {
+        virtual_height: u32,
+        strength: f32,
+    },
+}
+
+impl VertexModifier3D {
+    pub const fn wind() -> Self {
+        Self::Wind {
+            direction: [1.0, 0.0, 0.0],
+            strength: 0.2,
+            speed: 1.0,
+            frequency: 1.0,
+            mask: VertexModifierMask3D {
+                axis: VertexAxis3D::Y,
+                start: 0.0,
+                end: 1.0,
+            },
+        }
+    }
+
+    pub const fn wave() -> Self {
+        Self::Wave {
+            axis: VertexAxis3D::X,
+            direction: [0.0, 1.0, 0.0],
+            amplitude: 0.1,
+            speed: 1.0,
+            frequency: 1.0,
+            phase: 0.0,
+            mask: None,
+        }
+    }
+
+    pub const fn bend() -> Self {
+        Self::Bend {
+            along_axis: VertexAxis3D::Y,
+            bend_axis: VertexAxis3D::Z,
+            angle_radians: 0.349_065_84,
+            start: 0.0,
+            end: 1.0,
+        }
+    }
+
+    pub const fn twist() -> Self {
+        Self::Twist {
+            axis: VertexAxis3D::Y,
+            angle_radians: core::f32::consts::FRAC_PI_4,
+            start: 0.0,
+            end: 1.0,
+        }
+    }
+
+    pub const fn inflate() -> Self {
+        Self::Inflate {
+            amount: 0.1,
+            mask: None,
+        }
+    }
+
+    pub const fn jitter() -> Self {
+        Self::Jitter {
+            amount: 0.02,
+            scale: 8.0,
+            rate: 8.0,
+            seed: 0,
+            mask: None,
+        }
+    }
+
+    pub const fn pixel_snap() -> Self {
+        Self::PixelSnap {
+            virtual_height: 180,
+            strength: 1.0,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct StandardMaterial3D {
     pub base_color_factor: [f32; 4],
     pub roughness_factor: f32,
@@ -417,6 +559,7 @@ pub struct StandardMaterial3D {
     pub normal_texture: u32,
     pub occlusion_texture: u32,
     pub emissive_texture: u32,
+    pub vertex_modifiers: Cow<'static, [VertexModifier3D]>,
 }
 
 impl Default for StandardMaterial3D {
@@ -444,13 +587,14 @@ impl StandardMaterial3D {
             normal_texture: MATERIAL_TEXTURE_NONE,
             occlusion_texture: MATERIAL_TEXTURE_NONE,
             emissive_texture: MATERIAL_TEXTURE_NONE,
+            vertex_modifiers: Cow::Borrowed(&[]),
         }
     }
 }
 
 pub const MATERIAL_TEXTURE_NONE: u32 = u32::MAX;
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct UnlitMaterial3D {
     pub base_color_factor: [f32; 4],
     pub emissive_factor: [f32; 3],
@@ -460,6 +604,7 @@ pub struct UnlitMaterial3D {
     pub flat_shading: bool,
     // Texture slot indices (material-local index or NONE).
     pub base_color_texture: u32,
+    pub vertex_modifiers: Cow<'static, [VertexModifier3D]>,
 }
 
 impl Default for UnlitMaterial3D {
@@ -479,11 +624,12 @@ impl UnlitMaterial3D {
             double_sided: false,
             flat_shading: false,
             base_color_texture: MATERIAL_TEXTURE_NONE,
+            vertex_modifiers: Cow::Borrowed(&[]),
         }
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ToonMaterial3D {
     pub base_color_factor: [f32; 4],
     pub emissive_factor: [f32; 3],
@@ -497,6 +643,7 @@ pub struct ToonMaterial3D {
     // Texture slot indices (material-local index or NONE).
     pub base_color_texture: u32,
     pub ramp_texture: u32,
+    pub vertex_modifiers: Cow<'static, [VertexModifier3D]>,
 }
 
 impl Default for ToonMaterial3D {
@@ -520,6 +667,85 @@ impl ToonMaterial3D {
             outline_width: 0.0,
             base_color_texture: MATERIAL_TEXTURE_NONE,
             ramp_texture: MATERIAL_TEXTURE_NONE,
+            vertex_modifiers: Cow::Borrowed(&[]),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct HandDrawnMaterial3D {
+    pub base_color_factor: [f32; 4],
+    pub emissive_factor: [f32; 3],
+    pub alpha_mode: u8,
+    pub alpha_cutoff: f32,
+    pub double_sided: bool,
+    pub flat_shading: bool,
+    pub band_count: u32,
+    pub hatch_scale: f32,
+    pub grain_strength: f32,
+    pub base_color_texture: u32,
+    pub vertex_modifiers: Cow<'static, [VertexModifier3D]>,
+}
+
+impl Default for HandDrawnMaterial3D {
+    fn default() -> Self {
+        Self::const_default()
+    }
+}
+
+impl HandDrawnMaterial3D {
+    pub const fn const_default() -> Self {
+        Self {
+            base_color_factor: [1.0, 1.0, 1.0, 1.0],
+            emissive_factor: [0.0, 0.0, 0.0],
+            alpha_mode: 0,
+            alpha_cutoff: 0.5,
+            double_sided: false,
+            flat_shading: false,
+            band_count: 4,
+            hatch_scale: 24.0,
+            grain_strength: 0.06,
+            base_color_texture: MATERIAL_TEXTURE_NONE,
+            vertex_modifiers: Cow::Borrowed(&[]),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct PixelSurfaceMaterial3D {
+    pub base_color_factor: [f32; 4],
+    pub emissive_factor: [f32; 3],
+    pub alpha_mode: u8,
+    pub alpha_cutoff: f32,
+    pub double_sided: bool,
+    pub flat_shading: bool,
+    pub pixel_count: u32,
+    pub color_levels: u32,
+    pub dither_strength: f32,
+    pub base_color_texture: u32,
+    pub vertex_modifiers: Cow<'static, [VertexModifier3D]>,
+}
+
+impl Default for PixelSurfaceMaterial3D {
+    fn default() -> Self {
+        Self::const_default()
+    }
+}
+
+impl PixelSurfaceMaterial3D {
+    pub const fn const_default() -> Self {
+        Self {
+            base_color_factor: [1.0, 1.0, 1.0, 1.0],
+            emissive_factor: [0.0, 0.0, 0.0],
+            alpha_mode: 0,
+            alpha_cutoff: 0.5,
+            double_sided: false,
+            flat_shading: false,
+            pixel_count: 32,
+            color_levels: 8,
+            dither_strength: 0.08,
+            base_color_texture: MATERIAL_TEXTURE_NONE,
+            vertex_modifiers: Cow::Borrowed(&[]),
         }
     }
 }
@@ -607,6 +833,20 @@ pub enum CustomMaterialLighting3D {
     Raw,
 }
 
+/// Custom shader output contract.
+///
+/// `Surface` lets Perro add standard lighting. `Final` treats shader output as
+/// the final shaded color. The legacy `CustomMaterialLighting3D` name remains
+/// the stored ABI type.
+pub type CustomMaterialOutput3D = CustomMaterialLighting3D;
+
+impl CustomMaterialLighting3D {
+    #[allow(non_upper_case_globals)]
+    pub const Surface: Self = Self::Standard;
+    #[allow(non_upper_case_globals)]
+    pub const Final: Self = Self::Raw;
+}
+
 impl CustomMaterial3D {
     #[inline]
     pub fn new(shader_path: impl Into<Cow<'static, str>>) -> Self {
@@ -640,6 +880,12 @@ impl CustomMaterial3D {
     }
 
     #[inline]
+    pub fn with_output(mut self, output: CustomMaterialOutput3D) -> Self {
+        self.lighting = output;
+        self
+    }
+
+    #[inline]
     pub fn with_images(mut self, images: Vec<CustomMaterialImage3D>) -> Self {
         self.images = Cow::Owned(images);
         self
@@ -657,6 +903,8 @@ pub enum Material3D {
     Standard(StandardMaterial3D),
     Unlit(UnlitMaterial3D),
     Toon(ToonMaterial3D),
+    HandDrawn(HandDrawnMaterial3D),
+    PixelSurface(PixelSurfaceMaterial3D),
     Custom(CustomMaterial3D),
 }
 
@@ -670,7 +918,7 @@ impl Material3D {
     #[inline]
     pub fn standard_params(&self) -> StandardMaterial3D {
         match self {
-            Material3D::Standard(params) => *params,
+            Material3D::Standard(params) => params.clone(),
             Material3D::Unlit(params) => StandardMaterial3D {
                 base_color_factor: params.base_color_factor,
                 emissive_factor: params.emissive_factor,
@@ -687,6 +935,7 @@ impl Material3D {
                 metallic_factor: 0.0,
                 occlusion_strength: 1.0,
                 normal_scale: 1.0,
+                vertex_modifiers: params.vertex_modifiers.clone(),
             },
             Material3D::Toon(params) => StandardMaterial3D {
                 base_color_factor: params.base_color_factor,
@@ -704,9 +953,71 @@ impl Material3D {
                 metallic_factor: 0.0,
                 occlusion_strength: 1.0,
                 normal_scale: 1.0,
+                vertex_modifiers: params.vertex_modifiers.clone(),
             },
-            Material3D::Custom(params) => params.surface,
+            Material3D::HandDrawn(params) => StandardMaterial3D {
+                base_color_factor: params.base_color_factor,
+                emissive_factor: params.emissive_factor,
+                alpha_mode: params.alpha_mode,
+                alpha_cutoff: params.alpha_cutoff,
+                double_sided: params.double_sided,
+                flat_shading: params.flat_shading,
+                base_color_texture: params.base_color_texture,
+                metallic_roughness_texture: MATERIAL_TEXTURE_NONE,
+                normal_texture: MATERIAL_TEXTURE_NONE,
+                occlusion_texture: MATERIAL_TEXTURE_NONE,
+                emissive_texture: MATERIAL_TEXTURE_NONE,
+                roughness_factor: 0.8,
+                metallic_factor: 0.0,
+                occlusion_strength: 1.0,
+                normal_scale: 1.0,
+                vertex_modifiers: params.vertex_modifiers.clone(),
+            },
+            Material3D::PixelSurface(params) => StandardMaterial3D {
+                base_color_factor: params.base_color_factor,
+                emissive_factor: params.emissive_factor,
+                alpha_mode: params.alpha_mode,
+                alpha_cutoff: params.alpha_cutoff,
+                double_sided: params.double_sided,
+                flat_shading: params.flat_shading,
+                base_color_texture: params.base_color_texture,
+                metallic_roughness_texture: MATERIAL_TEXTURE_NONE,
+                normal_texture: MATERIAL_TEXTURE_NONE,
+                occlusion_texture: MATERIAL_TEXTURE_NONE,
+                emissive_texture: MATERIAL_TEXTURE_NONE,
+                roughness_factor: 1.0,
+                metallic_factor: 0.0,
+                occlusion_strength: 1.0,
+                normal_scale: 1.0,
+                vertex_modifiers: params.vertex_modifiers.clone(),
+            },
+            Material3D::Custom(params) => params.surface.clone(),
         }
+    }
+
+    #[inline]
+    pub fn vertex_modifiers(&self) -> &[VertexModifier3D] {
+        match self {
+            Material3D::Standard(params) => params.vertex_modifiers.as_ref(),
+            Material3D::Unlit(params) => params.vertex_modifiers.as_ref(),
+            Material3D::Toon(params) => params.vertex_modifiers.as_ref(),
+            Material3D::HandDrawn(params) => params.vertex_modifiers.as_ref(),
+            Material3D::PixelSurface(params) => params.vertex_modifiers.as_ref(),
+            Material3D::Custom(params) => params.surface.vertex_modifiers.as_ref(),
+        }
+    }
+
+    pub fn with_vertex_modifiers(mut self, modifiers: Vec<VertexModifier3D>) -> Self {
+        let modifiers = Cow::Owned(modifiers.into_iter().take(MAX_VERTEX_MODIFIERS).collect());
+        match &mut self {
+            Material3D::Standard(params) => params.vertex_modifiers = modifiers,
+            Material3D::Unlit(params) => params.vertex_modifiers = modifiers,
+            Material3D::Toon(params) => params.vertex_modifiers = modifiers,
+            Material3D::HandDrawn(params) => params.vertex_modifiers = modifiers,
+            Material3D::PixelSurface(params) => params.vertex_modifiers = modifiers,
+            Material3D::Custom(params) => params.surface.vertex_modifiers = modifiers,
+        }
+        self
     }
 }
 

@@ -79,6 +79,89 @@ mod streams {
     }
 
     #[test]
+    fn nested_sub_view_composes_inner_texture_before_outer() {
+        let mut runtime = Runtime::new();
+        let outer = NodeAPI::create::<SubView3D>(&mut runtime);
+        let inner = NodeAPI::create::<SubView3D>(&mut runtime);
+        let mesh = NodeAPI::create::<MeshInstance3D>(&mut runtime);
+        assert!(runtime.reparent(outer, inner));
+        assert!(runtime.reparent(inner, mesh));
+        if let Some(mut node) = runtime.nodes.get_mut(mesh)
+            && let SceneNodeData::MeshInstance3D(mesh) = &mut node.data
+        {
+            mesh.mesh = perro_ids::MeshID::from_parts(71, 0);
+        }
+
+        runtime.extract_render_3d_commands();
+        let mut commands = Vec::new();
+        runtime.drain_render_commands(&mut commands);
+        let inner_pos = commands
+            .iter()
+            .position(|command| matches!(
+                command,
+                RenderCommand::CameraStream(CameraStreamCommand::Upsert { node, .. })
+                    if *node == inner
+            ))
+            .expect("inner stream");
+        let outer_pos = commands
+            .iter()
+            .position(|command| matches!(
+                command,
+                RenderCommand::CameraStream(CameraStreamCommand::Upsert { node, .. })
+                    if *node == outer
+            ))
+            .expect("outer stream");
+        assert!(inner_pos < outer_pos);
+        let outer_state = commands
+            .iter()
+            .find_map(|command| match command {
+                RenderCommand::CameraStream(CameraStreamCommand::Upsert { node, state })
+                    if *node == outer => Some(state.as_ref()),
+                _ => None,
+            })
+            .expect("outer state");
+        assert!(outer_state.draws_3d.iter().any(|draw| matches!(
+            draw,
+            perro_render_bridge::CameraStreamDraw3DState::CameraStreamQuad {
+                node,
+                texture,
+                ..
+            } if *node == inner && *texture == Runtime::camera_stream_texture_id(inner)
+        )));
+    }
+
+    #[test]
+    fn nested_ui_sub_view_composes_as_outer_overlay() {
+        let mut runtime = Runtime::new();
+        runtime.set_viewport_size(800, 600);
+        let outer = NodeAPI::create::<UiSubView>(&mut runtime);
+        let inner = NodeAPI::create::<UiSubView>(&mut runtime);
+        assert!(runtime.reparent(outer, inner));
+        if let Some(mut node) = runtime.nodes.get_mut(inner)
+            && let SceneNodeData::UiSubView(view) = &mut node.data
+        {
+            view.base.layout.size = UiVector2::ratio(0.5, 0.5);
+        }
+
+        runtime.extract_render_ui_commands();
+        let mut commands = Vec::new();
+        runtime.drain_render_commands(&mut commands);
+        let outer_state = commands
+            .iter()
+            .find_map(|command| match command {
+                RenderCommand::CameraStream(CameraStreamCommand::Upsert { node, state })
+                    if *node == outer => Some(state.as_ref()),
+                _ => None,
+            })
+            .expect("outer ui stream");
+        assert!(outer_state.sprites_2d.iter().any(|sprite| {
+            sprite.texture == Runtime::camera_stream_texture_id(inner)
+                && sprite.size[0] > 0.0
+                && sprite.size[1] > 0.0
+        }));
+    }
+
+    #[test]
     fn ui_sub_view_uses_active_local_cameras_for_each_lane() {
         let mut runtime = Runtime::new();
         runtime.set_viewport_size(800, 600);

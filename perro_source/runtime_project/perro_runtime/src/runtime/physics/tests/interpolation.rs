@@ -30,6 +30,7 @@ mod interpolation {
         let viewport = NodeAPI::create::<UiSubView>(&mut runtime);
         let body = NodeAPI::create::<RigidBody3D>(&mut runtime);
         assert!(runtime.reparent(viewport, body));
+        runtime.activate_physics_world(viewport);
 
         let descs = runtime.collect_body_descs_3d();
         assert!(descs.iter().any(|desc| desc.id == body && desc.enabled));
@@ -43,6 +44,183 @@ mod interpolation {
         let descs = runtime.collect_body_descs_3d();
         assert!(descs.iter().any(|desc| desc.id == body && !desc.enabled));
         runtime.physics_body_descs_3d = descs;
+        runtime.activate_physics_world(NodeID::nil());
+    }
+
+    #[test]
+    fn sub_view_physics_queries_stay_in_nearest_world() {
+        let mut runtime = Runtime::new();
+        let view = NodeAPI::create::<SubView3D>(&mut runtime);
+        let main_body = NodeAPI::create::<StaticBody3D>(&mut runtime);
+        let main_shape = NodeAPI::create::<CollisionShape3D>(&mut runtime);
+        let local_body = NodeAPI::create::<StaticBody3D>(&mut runtime);
+        let local_shape = NodeAPI::create::<CollisionShape3D>(&mut runtime);
+        assert!(runtime.reparent(main_body, main_shape));
+        assert!(runtime.reparent(view, local_body));
+        assert!(runtime.reparent(local_body, local_shape));
+
+        let main_hit = runtime
+            .physics_raycast_3d(
+                Vector3::new(0.0, 0.0, -5.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                10.0,
+                false,
+            )
+            .expect("main hit");
+        assert_eq!(main_hit.node, main_body);
+
+        runtime.active_runtime_nodes.push(local_body);
+        let local_hit = runtime
+            .physics_raycast_3d(
+                Vector3::new(0.0, 0.0, -5.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                10.0,
+                false,
+            )
+            .expect("local hit");
+        let _ = runtime.active_runtime_nodes.pop();
+        assert_eq!(local_hit.node, local_body);
+    }
+
+    #[test]
+    fn sub_view_physics_uses_view_local_space() {
+        let mut runtime = Runtime::new();
+        let view = NodeAPI::create::<SubView3D>(&mut runtime);
+        let body = NodeAPI::create::<StaticBody3D>(&mut runtime);
+        let shape = NodeAPI::create::<CollisionShape3D>(&mut runtime);
+        assert!(runtime.reparent(view, body));
+        assert!(runtime.reparent(body, shape));
+        if let Some(mut node) = runtime.nodes.get_mut(view)
+            && let SceneNodeData::SubView3D(view) = &mut node.data
+        {
+            view.transform.position = Vector3::new(100.0, 0.0, 0.0);
+        }
+        if let Some(mut node) = runtime.nodes.get_mut(body)
+            && let SceneNodeData::StaticBody3D(body) = &mut node.data
+        {
+            body.transform = Transform3D::IDENTITY;
+        }
+
+        runtime.active_runtime_nodes.push(body);
+        let first = runtime.physics_raycast_3d(
+            Vector3::new(0.0, 0.0, -5.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            10.0,
+            false,
+        );
+        let _ = runtime.active_runtime_nodes.pop();
+        assert_eq!(first.expect("local hit").node, body);
+
+        if let Some(mut node) = runtime.nodes.get_mut(view)
+            && let SceneNodeData::SubView3D(view) = &mut node.data
+        {
+            view.transform.position = Vector3::new(200.0, 0.0, 0.0);
+        }
+        runtime.invalidate_physics_query_sync();
+        runtime.active_runtime_nodes.push(body);
+        let second = runtime.physics_raycast_3d(
+            Vector3::new(0.0, 0.0, -5.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            10.0,
+            false,
+        );
+        let _ = runtime.active_runtime_nodes.pop();
+        assert_eq!(second.expect("local hit aft root move").node, body);
+    }
+
+    #[test]
+    fn sub_view_physics_isolates_2d_queries() {
+        let mut runtime = Runtime::new();
+        let view = NodeAPI::create::<SubView2D>(&mut runtime);
+        let main_body = NodeAPI::create::<StaticBody2D>(&mut runtime);
+        let main_shape = NodeAPI::create::<CollisionShape2D>(&mut runtime);
+        let local_body = NodeAPI::create::<StaticBody2D>(&mut runtime);
+        let local_shape = NodeAPI::create::<CollisionShape2D>(&mut runtime);
+        assert!(runtime.reparent(main_body, main_shape));
+        assert!(runtime.reparent(view, local_body));
+        assert!(runtime.reparent(local_body, local_shape));
+
+        let filter = PhysicsQueryFilter::default();
+        let main_hit = runtime
+            .physics_raycast_2d(
+                Vector2::new(-5.0, 0.0),
+                Vector2::new(1.0, 0.0),
+                10.0,
+                &filter,
+            )
+            .expect("main 2d hit");
+        assert_eq!(main_hit.node, main_body);
+
+        runtime.active_runtime_nodes.push(local_body);
+        let local_hit = runtime
+            .physics_raycast_2d(
+                Vector2::new(-5.0, 0.0),
+                Vector2::new(1.0, 0.0),
+                10.0,
+                &filter,
+            )
+            .expect("local 2d hit");
+        let _ = runtime.active_runtime_nodes.pop();
+        assert_eq!(local_hit.node, local_body);
+    }
+
+    #[test]
+    fn cross_world_joint_stays_disabled() {
+        let mut runtime = Runtime::new();
+        let view = NodeAPI::create::<SubView3D>(&mut runtime);
+        let main_body = NodeAPI::create::<RigidBody3D>(&mut runtime);
+        let local_body = NodeAPI::create::<RigidBody3D>(&mut runtime);
+        let joint = NodeAPI::create::<FixedJoint3D>(&mut runtime);
+        assert!(runtime.reparent(view, local_body));
+        assert!(runtime.reparent(view, joint));
+        if let Some(mut node) = runtime.nodes.get_mut(joint)
+            && let SceneNodeData::FixedJoint3D(joint) = &mut node.data
+        {
+            joint.body_a = main_body;
+            joint.body_b = local_body;
+            joint.enabled = true;
+        }
+
+        runtime.activate_physics_world(view);
+        let joints = runtime.collect_joint_descs_3d();
+        let desc = joints
+            .iter()
+            .find(|desc| desc.id == joint)
+            .expect("joint desc");
+        assert!(!desc.enabled);
+        runtime.physics_joint_descs_3d = joints;
+        runtime.activate_physics_world(NodeID::nil());
+    }
+
+    #[test]
+    fn callback_rejects_cross_world_body_force() {
+        let mut runtime = Runtime::new();
+        let view = NodeAPI::create::<SubView3D>(&mut runtime);
+        let main_body = NodeAPI::create::<RigidBody3D>(&mut runtime);
+        let local_body = NodeAPI::create::<RigidBody3D>(&mut runtime);
+        assert!(runtime.reparent(view, local_body));
+
+        runtime.active_runtime_nodes.push(main_body);
+        assert!(!runtime.queue_force_3d(local_body, Vector3::new(1.0, 0.0, 0.0)));
+        let _ = runtime.active_runtime_nodes.pop();
+
+        runtime.active_runtime_nodes.push(local_body);
+        assert!(runtime.queue_force_3d(local_body, Vector3::new(1.0, 0.0, 0.0)));
+        let _ = runtime.active_runtime_nodes.pop();
+    }
+
+    #[test]
+    fn empty_sub_view_physics_world_gets_reclaimed() {
+        let mut runtime = Runtime::new();
+        let view = NodeAPI::create::<SubView3D>(&mut runtime);
+        let body = NodeAPI::create::<RigidBody3D>(&mut runtime);
+        assert!(runtime.reparent(view, body));
+        runtime.physics_fixed_step();
+        assert!(runtime.physics.worlds.contains_key(&view));
+
+        assert!(NodeAPI::remove_node(&mut runtime, body));
+        runtime.physics_fixed_step();
+        assert!(!runtime.physics.worlds.contains_key(&view));
     }
 
     #[test]

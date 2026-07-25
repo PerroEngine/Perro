@@ -536,11 +536,18 @@ pub(super) fn create_depth_prepass_pipeline_rigid(
                 Some(wgpu::VertexBufferLayout {
                     array_stride: std::mem::size_of::<RigidMeshVertex>() as u64,
                     step_mode: wgpu::VertexStepMode::Vertex,
-                    attributes: &[wgpu::VertexAttribute {
-                        offset: 0,
-                        shader_location: 0,
-                        format: wgpu::VertexFormat::Float32x3,
-                    }],
+                    attributes: &[
+                        wgpu::VertexAttribute {
+                            offset: 0,
+                            shader_location: 0,
+                            format: wgpu::VertexFormat::Float32x3,
+                        },
+                        wgpu::VertexAttribute {
+                            offset: 12,
+                            shader_location: 1,
+                            format: wgpu::VertexFormat::Snorm16x4,
+                        },
+                    ],
                 }),
                 Some(wgpu::VertexBufferLayout {
                     array_stride: std::mem::size_of::<TransformInstanceGpu>() as u64,
@@ -658,11 +665,18 @@ pub(super) fn create_shadow_depth_pipeline_rigid(
                 Some(wgpu::VertexBufferLayout {
                     array_stride: std::mem::size_of::<RigidMeshVertex>() as u64,
                     step_mode: wgpu::VertexStepMode::Vertex,
-                    attributes: &[wgpu::VertexAttribute {
-                        offset: 0,
-                        shader_location: 0,
-                        format: wgpu::VertexFormat::Float32x3,
-                    }],
+                    attributes: &[
+                        wgpu::VertexAttribute {
+                            offset: 0,
+                            shader_location: 0,
+                            format: wgpu::VertexFormat::Float32x3,
+                        },
+                        wgpu::VertexAttribute {
+                            offset: 12,
+                            shader_location: 1,
+                            format: wgpu::VertexFormat::Snorm16x4,
+                        },
+                    ],
                 }),
                 Some(wgpu::VertexBufferLayout {
                     array_stride: std::mem::size_of::<TransformInstanceGpu>() as u64,

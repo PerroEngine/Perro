@@ -89,6 +89,10 @@ post-processing, before final tonemap. See [Visual Accessibility](../scripting/c
   3x3 blur; higher strength increases sample offset.
 - `pixelate` (`size`)  
   Pixel size in screen pixels.
+- `pixel_art` (`virtual_height`, `color_levels`, `dither_strength`)
+  Samples the whole frame on an aspect-correct virtual grid, applies Bayer
+  dithering, then quantizes each RGB channel. Use `virtual_height = 180` for a
+  320x180 grid on a 16:9 viewport.
 - `warp` (`waves`, `strength`)  
   Horizontal sine‑wave distortion.
 - `vignette` (`strength`, `radius`, `softness`)  
@@ -154,6 +158,7 @@ Each entry is an effect object. You can also provide a `name` field inside the e
 post_processing = [
     { type = "blur", strength = 2.0 },
     { type = "pixelate", size = 6.0 },
+    { type = "pixel_art", virtual_height = 180, color_levels = 8, dither_strength = 0.08 },
     { type = "warp", waves = 8.0, strength = 3.0 },
     { type = "vignette", strength = 0.6, radius = 0.55, softness = 0.25 },
     { type = "crt", scanlines = 0.35, curvature = 0.15, chromatic = 1.0, vignette = 0.25 },

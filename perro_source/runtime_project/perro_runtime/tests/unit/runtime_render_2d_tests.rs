@@ -325,6 +325,7 @@ fn linked_2d_water_mirrors_wake_across_overlap() {
     runtime
         .force_water_impacts_2d
         .push(crate::runtime::ForceWaterImpact2D {
+            world: perro_ids::NodeID::nil(),
             position: Vector2::new(8.4, 0.0),
             force: Vector2::new(12.0, 0.0),
             strength: 10.0,

@@ -21,6 +21,30 @@ impl Runtime {
             {
                 continue;
             }
+            if let Some((transform, size, tint)) =
+                self.nodes
+                    .get(node)
+                    .and_then(|node_ref| match &node_ref.data {
+                        SceneNodeData::SubView3D(view) if view.visible && view.sub_view.enabled => {
+                            Some((view.transform, view.size, view.tint))
+                        }
+                        _ => None,
+                    })
+            {
+                let model = self
+                    .stream_render_transform_3d(node, stream_node)
+                    .unwrap_or(transform)
+                    .to_mat4()
+                    .to_cols_array_2d();
+                out.push(CameraStreamDraw3DState::CameraStreamQuad {
+                    texture: Self::camera_stream_texture_id(node),
+                    tint: Runtime::color_modulate(tint, self.effective_self_modulate(node)),
+                    node,
+                    model,
+                    size: [size.x.max(0.001), size.y.max(0.001)],
+                });
+                continue;
+            }
             let Some((mesh, surfaces, _skeleton, meshlet_override, lod, blend, instance_kind)) =
                 self.nodes
                     .get(node)

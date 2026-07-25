@@ -150,13 +150,40 @@ alpha_mode = "OPAQUE"
 double_sided = false
 ```
 
+Hand-drawn material:
+
+```txt
+type = "hand_drawn"
+
+base_color_factor = (0.9, 0.8, 0.65, 1.0)
+band_count = 4
+hatch_scale = 24.0
+grain_strength = 0.06
+```
+
+Pixel-surface material:
+
+```txt
+type = "pixel_surface"
+
+base_color_texture = 0
+pixel_count = 32
+color_levels = 8
+dither_strength = 0.08
+```
+
+Add `vertex_modifiers` to any preset or custom material for built-in mesh motion
+and warps. Stacks run in order and support wind, wave, bend, twist, inflate,
+jitter, and clip-space pixel snapping. See [`.pmat` Vertex Modifiers](pmat.md#vertex-modifiers)
+for syntax and limits.
+
 Custom material:
 
 ```txt
 type = "custom"
 shader_path = "res://shaders/custom.wgsl"
-# default: standard lighting wraps shader output
-# use lighting = "raw" to opt out
+# output = "surface" (default) lets Perro add standard lighting
+# output = "final" uses exact shader output
 
 params = {
     glow = 1.25
@@ -292,6 +319,9 @@ See [Performance + Flexibility Philosophy](../project/performance_philosophy.md)
 - custom `images` bind up to 8 texture sources for `custom_image_sample(in, index, uv)`.
 - use `CustomMaterialImage3D::named_texture(name, id)` or `unnamed_texture(id)` to bind mutable textures from `create_from_rgba`.
 - `write_rgba` + `write_rgba_region` invalidate custom image bindings before the next draw.
-- custom materials use standard lighting by default; set `lighting = "raw"` for exact shader output.
+- custom materials use `output = "surface"` by default.
+- set `output = "final"` for exact shader output.
+- legacy `lighting = "raw"` remains valid.
 - custom material parameter order binds shader indices: `custom_f_param(in, 0u)` reads the first param.
 - custom param names are metadata for humans and tooling; order controls shader access.
+- vertex modifiers affect rendering, depth, and shadows; physics and navigation meshes stay unchanged.

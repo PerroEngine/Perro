@@ -406,3 +406,325 @@ fn perro_time_phase() -> f32 { return scene.time_params.w; }
 fn perro_resolution() -> vec2<f32> { return scene.resolution.xy; }
 
 fn perro_inv_resolution() -> vec2<f32> { return scene.resolution.zw; }
+
+// ---- Stylized material helpers -----------------------------------------
+
+fn perro_posterize(color: vec3<f32>, level_count_in: f32) -> vec3<f32> {
+    let level_count = max(round(level_count_in), 2.0);
+    let steps = level_count - 1.0;
+    return round(clamp(color, vec3<f32>(0.0), vec3<f32>(1.0)) * steps) / steps;
+}
+
+fn perro_vertex_axis(axis: f32) -> vec3<f32> {
+    if axis < 0.5 {
+        return vec3<f32>(1.0, 0.0, 0.0);
+    }
+    if axis < 1.5 {
+        return vec3<f32>(0.0, 1.0, 0.0);
+    }
+    return vec3<f32>(0.0, 0.0, 1.0);
+}
+
+fn perro_vertex_axis_mask(
+    position: vec3<f32>,
+    axis: f32,
+    start: f32,
+    end: f32,
+) -> f32 {
+    let coord = dot(position, perro_vertex_axis(axis));
+    let span = end - start;
+    if abs(span) < 0.000001 {
+        return select(0.0, 1.0, coord >= start);
+    }
+    return clamp((coord - start) / span, 0.0, 1.0);
+}
+
+fn perro_vertex_record_mask(position: vec3<f32>, record: array<vec4<f32>, 4>) -> f32 {
+    if record[3].x < 0.5 {
+        return 1.0;
+    }
+    return perro_vertex_axis_mask(position, record[3].y, record[3].z, record[3].w);
+}
+
+fn perro_vertex_rotate_axis(value: vec3<f32>, axis: vec3<f32>, angle: f32) -> vec3<f32> {
+    let unit_axis = normalize(axis);
+    let c = cos(angle);
+    let s = sin(angle);
+    return value * c
+        + cross(unit_axis, value) * s
+        + unit_axis * dot(unit_axis, value) * (1.0 - c);
+}
+
+fn perro_vertex_hash3(position: vec3<f32>, seed: f32) -> vec3<f32> {
+    return fract(sin(vec3<f32>(
+        dot(position, vec3<f32>(127.1, 311.7, 74.7)) + seed,
+        dot(position, vec3<f32>(269.5, 183.3, 246.1)) + seed * 1.37,
+        dot(position, vec3<f32>(113.5, 271.9, 124.6)) + seed * 2.11,
+    )) * 43758.5453) * 2.0 - 1.0;
+}
+
+fn perro_vertex_commit(out_in: VertexOutput) -> VertexOutput {
+    var out = out_in;
+    out.clip_pos = scene.view_proj * vec4<f32>(out.world_pos, 1.0);
+    out.normal_ws = normalize(out.normal_ws);
+    return out;
+}
+
+fn perro_vertex_wind(
+    out_in: VertexOutput,
+    direction: vec3<f32>,
+    strength: f32,
+    speed: f32,
+    frequency: f32,
+    mask: f32,
+) -> VertexOutput {
+    var out = out_in;
+    let dir = normalize(select(vec3<f32>(1.0, 0.0, 0.0), direction, dot(direction, direction) > 0.000001));
+    let phase = perro_time() * speed + dot(out.world_pos, vec3<f32>(0.73, 0.0, 0.41)) * frequency;
+    out.world_pos += dir * (sin(phase) * strength * mask);
+    return perro_vertex_commit(out);
+}
+
+fn perro_vertex_wave(
+    out_in: VertexOutput,
+    axis: vec3<f32>,
+    direction: vec3<f32>,
+    amplitude: f32,
+    speed: f32,
+    frequency: f32,
+    phase_offset: f32,
+    mask: f32,
+) -> VertexOutput {
+    var out = out_in;
+    let phase = dot(out.world_pos, normalize(axis)) * frequency
+        + perro_time() * speed
+        + phase_offset;
+    out.world_pos += normalize(direction) * (sin(phase) * amplitude * mask);
+    return perro_vertex_commit(out);
+}
+
+fn perro_vertex_bend(
+    out_in: VertexOutput,
+    along_axis: vec3<f32>,
+    bend_axis: vec3<f32>,
+    angle: f32,
+    start: f32,
+    end: f32,
+) -> VertexOutput {
+    var out = out_in;
+    let amount = perro_vertex_axis_mask(out.world_pos, select(2.0, select(1.0, 0.0, along_axis.x > 0.5), along_axis.y > 0.5), start, end);
+    let pivot = normalize(along_axis) * start;
+    out.world_pos = pivot + perro_vertex_rotate_axis(out.world_pos - pivot, bend_axis, angle * amount);
+    out.normal_ws = perro_vertex_rotate_axis(out.normal_ws, bend_axis, angle * amount);
+    return perro_vertex_commit(out);
+}
+
+fn perro_vertex_twist(
+    out_in: VertexOutput,
+    axis: vec3<f32>,
+    angle: f32,
+    start: f32,
+    end: f32,
+) -> VertexOutput {
+    var out = out_in;
+    let axis_code = select(2.0, select(1.0, 0.0, axis.x > 0.5), axis.y > 0.5);
+    let amount = perro_vertex_axis_mask(out.world_pos, axis_code, start, end);
+    out.world_pos = perro_vertex_rotate_axis(out.world_pos, axis, angle * amount);
+    out.normal_ws = perro_vertex_rotate_axis(out.normal_ws, axis, angle * amount);
+    return perro_vertex_commit(out);
+}
+
+fn perro_vertex_inflate(out_in: VertexOutput, amount: f32, mask: f32) -> VertexOutput {
+    var out = out_in;
+    out.world_pos += normalize(out.normal_ws) * amount * mask;
+    return perro_vertex_commit(out);
+}
+
+fn perro_vertex_jitter(
+    out_in: VertexOutput,
+    amount: f32,
+    scale: f32,
+    rate: f32,
+    seed: f32,
+    mask: f32,
+) -> VertexOutput {
+    var out = out_in;
+    let tick = floor(perro_time() * max(rate, 0.0));
+    out.world_pos += perro_vertex_hash3(out.world_pos * scale, seed + tick * 17.0) * amount * mask;
+    return perro_vertex_commit(out);
+}
+
+fn perro_vertex_pixel_snap(
+    out_in: VertexOutput,
+    virtual_height: f32,
+    strength: f32,
+) -> VertexOutput {
+    var out = perro_vertex_commit(out_in);
+    let height = max(virtual_height, 1.0);
+    let aspect = max(perro_resolution().x / max(perro_resolution().y, 1.0), 0.000001);
+    let grid = vec2<f32>(max(round(height * aspect), 1.0), height);
+    let ndc = out.clip_pos.xy / max(abs(out.clip_pos.w), 0.000001);
+    let snapped = (floor((ndc * 0.5 + 0.5) * grid) + vec2<f32>(0.5)) / grid;
+    let snapped_ndc = snapped * 2.0 - 1.0;
+    out.clip_pos = vec4<f32>(
+        mix(ndc, snapped_ndc, clamp(strength, 0.0, 1.0)) * out.clip_pos.w,
+        out.clip_pos.zw,
+    );
+    return out;
+}
+
+fn perro_apply_vertex_modifier_record(
+    out_in: VertexOutput,
+    record: array<vec4<f32>, 4>,
+) -> VertexOutput {
+    let kind = u32(record[0].x + 0.5);
+    let mask = perro_vertex_record_mask(out_in.world_pos, record);
+    if kind == 0u {
+        return perro_vertex_wind(out_in, record[1].xyz, record[1].w, record[2].x, record[2].y, mask);
+    }
+    if kind == 1u {
+        return perro_vertex_wave(out_in, perro_vertex_axis(record[0].y), record[1].xyz, record[1].w, record[2].x, record[2].y, record[2].z, mask);
+    }
+    if kind == 2u {
+        return perro_vertex_bend(out_in, perro_vertex_axis(record[0].y), perro_vertex_axis(record[0].z), record[1].x, record[1].y, record[1].z);
+    }
+    if kind == 3u {
+        return perro_vertex_twist(out_in, perro_vertex_axis(record[0].y), record[1].x, record[1].y, record[1].z);
+    }
+    if kind == 4u {
+        return perro_vertex_inflate(out_in, record[1].x, mask);
+    }
+    if kind == 5u {
+        return perro_vertex_jitter(out_in, record[1].x, record[1].y, record[1].z, record[1].w, mask);
+    }
+    if kind == 6u {
+        return perro_vertex_pixel_snap(out_in, record[1].x, record[1].y);
+    }
+    return out_in;
+}
+
+fn perro_apply_vertex_modifiers(out_in: VertexOutput) -> VertexOutput {
+    if out_in.custom_range.x < 2u {
+        return out_in;
+    }
+    let header = out_in.custom_range.x - 2u;
+    let value_offset = custom_params_meta[header];
+    let modifier_count = min(custom_params_meta[header + 1u], 16u);
+    var out = out_in;
+    for (var i = 0u; i < modifier_count; i = i + 1u) {
+        let base = value_offset + i * 16u;
+        let record = array<vec4<f32>, 4>(
+            vec4<f32>(custom_params_values[base], custom_params_values[base + 1u], custom_params_values[base + 2u], custom_params_values[base + 3u]),
+            vec4<f32>(custom_params_values[base + 4u], custom_params_values[base + 5u], custom_params_values[base + 6u], custom_params_values[base + 7u]),
+            vec4<f32>(custom_params_values[base + 8u], custom_params_values[base + 9u], custom_params_values[base + 10u], custom_params_values[base + 11u]),
+            vec4<f32>(custom_params_values[base + 12u], custom_params_values[base + 13u], custom_params_values[base + 14u], custom_params_values[base + 15u]),
+        );
+        out = perro_apply_vertex_modifier_record(out, record);
+    }
+    return out;
+}
+
+fn perro_pixel_uv(uv: vec2<f32>, pixel_count_in: vec2<f32>) -> vec2<f32> {
+    let pixel_count = max(round(pixel_count_in), vec2<f32>(1.0));
+    return (floor(uv * pixel_count) + vec2<f32>(0.5)) / pixel_count;
+}
+
+const PERRO_BAYER_4X4: array<f32, 16> = array<f32, 16>(
+    0.0, 8.0, 2.0, 10.0,
+    12.0, 4.0, 14.0, 6.0,
+    3.0, 11.0, 1.0, 9.0,
+    15.0, 7.0, 13.0, 5.0,
+);
+
+fn perro_bayer_dither(color: vec3<f32>, frag_coord: vec2<f32>, strength: f32) -> vec3<f32> {
+    let pixel = vec2<u32>(floor(frag_coord)) & vec2<u32>(3u);
+    let threshold = (PERRO_BAYER_4X4[pixel.y * 4u + pixel.x] + 0.5) / 16.0 - 0.5;
+    return clamp(color + vec3<f32>(threshold * strength), vec3<f32>(0.0), vec3<f32>(1.0));
+}
+
+fn perro_palette_snap(
+    in: FragmentInput,
+    color: vec3<f32>,
+    image_index: u32,
+    color_count_in: u32,
+) -> vec3<f32> {
+    let color_count = clamp(color_count_in, 1u, 64u);
+    var best = custom_image_sample(
+        in,
+        image_index,
+        vec2<f32>(0.5 / f32(color_count), 0.5),
+    ).rgb;
+    var best_dist = dot((color - best) * vec3<f32>(0.299, 0.587, 0.114), color - best);
+    for (var i = 1u; i < color_count; i = i + 1u) {
+        let sample_color = custom_image_sample(
+            in,
+            image_index,
+            vec2<f32>((f32(i) + 0.5) / f32(color_count), 0.5),
+        ).rgb;
+        let delta = color - sample_color;
+        let dist = dot(delta * vec3<f32>(0.299, 0.587, 0.114), delta);
+        if dist < best_dist {
+            best = sample_color;
+            best_dist = dist;
+        }
+    }
+    return best;
+}
+
+fn perro_hatch(
+    coords: vec2<f32>,
+    shade: f32,
+    scale_in: f32,
+    angle: f32,
+    line_width_in: f32,
+) -> f32 {
+    let scale = max(abs(scale_in), 0.0001);
+    let axis = vec2<f32>(cos(angle), sin(angle));
+    let line_coord = dot(coords, axis) * scale;
+    let line_dist = abs(fract(line_coord) - 0.5);
+    let line_width = clamp(line_width_in, 0.0, 0.5);
+    let aa = max(fwidth(line_coord), 0.0001);
+    let line = 1.0 - smoothstep(line_width - aa, line_width + aa, line_dist);
+    return line * clamp(shade, 0.0, 1.0);
+}
+
+fn perro_crosshatch(
+    coords: vec2<f32>,
+    shade: f32,
+    scale: f32,
+    angle: f32,
+    line_width: f32,
+) -> f32 {
+    let dark = clamp(shade, 0.0, 1.0);
+    let first = perro_hatch(coords, dark * 2.0, scale, angle, line_width);
+    let second = perro_hatch(
+        coords,
+        max(dark * 2.0 - 1.0, 0.0),
+        scale,
+        angle + 1.57079633,
+        line_width,
+    );
+    return max(first, second);
+}
+
+fn perro_paper_grain(coords: vec2<f32>, scale_in: f32, amount: f32) -> f32 {
+    let cell = floor(coords * max(abs(scale_in), 0.0001));
+    let hash = fract(sin(dot(cell, vec2<f32>(12.9898, 78.233))) * 43758.5453);
+    return (hash - 0.5) * amount;
+}
+
+fn perro_distance_lod(
+    world_pos: vec3<f32>,
+    near_distance: f32,
+    far_distance: f32,
+    level_count_in: u32,
+) -> u32 {
+    let level_count = max(level_count_in, 1u);
+    let distance = length(scene.camera_pos.xyz - world_pos);
+    let t = clamp(
+        (distance - near_distance) / max(far_distance - near_distance, 0.0001),
+        0.0,
+        1.0,
+    );
+    return min(u32(floor(t * f32(level_count))), level_count - 1u);
+}

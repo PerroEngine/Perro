@@ -516,7 +516,7 @@ fn perro_lit_standard_with_ssao(
     );
 }
 
-fn perro_lit_standard(
+fn perro_standard(
     in: FragmentInput,
     base: vec4<f32>,
     roughness: f32,
@@ -533,6 +533,18 @@ fn perro_lit_standard(
         emissive,
         perro_multimesh_ssao(in.frag_pos.xy),
     );
+}
+
+// Legacy alias. Use perro_standard in new shaders.
+fn perro_lit_standard(
+    in: FragmentInput,
+    base: vec4<f32>,
+    roughness: f32,
+    metallic: f32,
+    occlusion: f32,
+    emissive: vec3<f32>,
+) -> vec4<f32> {
+    return perro_standard(in, base, roughness, metallic, occlusion, emissive);
 }
 
 fn shade_standard_multimesh(in: FragmentInput) -> vec4<f32> {
@@ -640,7 +652,7 @@ fn perro_multimesh_vs_main_base(v: VertexInput, inst: InstanceInput, vertex_inde
     out.packed_material_params = draw.packed_material_params;
     out.packed_color = draw.packed_color;
     out.packed_emissive = draw.packed_emissive;
-    return out;
+    return perro_apply_vertex_modifiers(out);
 }
 
 fn perro_fetch_instance(instance_index: u32) -> InstanceInput {

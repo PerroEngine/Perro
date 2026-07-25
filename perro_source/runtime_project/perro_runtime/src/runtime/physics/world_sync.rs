@@ -1,6 +1,52 @@
 use super::*;
 
 impl Runtime {
+    pub(super) fn physics_transform_2d(&mut self, id: NodeID) -> Option<Transform2D> {
+        let scene = self.get_global_transform_2d(id)?;
+        let world = self.active_physics_world();
+        if world.is_nil() {
+            return Some(scene);
+        }
+        let Some(root) = self.get_global_transform_2d(world) else {
+            return Some(scene);
+        };
+        let local = root.to_mat3().inverse() * scene.to_mat3();
+        local.is_finite().then(|| Transform2D::from_mat3(local))
+    }
+
+    pub(super) fn physics_transform_3d(&mut self, id: NodeID) -> Option<Transform3D> {
+        let scene = self.get_global_transform_3d(id)?;
+        let world = self.active_physics_world();
+        if world.is_nil() {
+            return Some(scene);
+        }
+        let Some(root) = self.get_global_transform_3d(world) else {
+            return Some(scene);
+        };
+        let local = root.to_mat4().inverse() * scene.to_mat4();
+        local.is_finite().then(|| Transform3D::from_mat4(local))
+    }
+
+    pub(super) fn physics_pose_to_scene_2d(&mut self, local: Transform2D) -> Transform2D {
+        let world = self.active_physics_world();
+        if world.is_nil() {
+            return local;
+        }
+        self.get_global_transform_2d(world)
+            .map(|root| Transform2D::from_mat3(root.to_mat3() * local.to_mat3()))
+            .unwrap_or(local)
+    }
+
+    pub(super) fn physics_pose_to_scene_3d(&mut self, local: Transform3D) -> Transform3D {
+        let world = self.active_physics_world();
+        if world.is_nil() {
+            return local;
+        }
+        self.get_global_transform_3d(world)
+            .map(|root| Transform3D::from_mat4(root.to_mat4() * local.to_mat4()))
+            .unwrap_or(local)
+    }
+
     pub(super) fn collect_body_descs_2d(&mut self) -> Vec<BodyDesc2D> {
         #[cfg(any(test, feature = "bench"))]
         self.physics_collect_calls_2d
@@ -13,6 +59,9 @@ impl Runtime {
         }
         for i in 0..node_count {
             let id = self.internal_updates.physics_body_nodes_2d[i];
+            if self.node_world(id) != Some(self.active_physics_world()) {
+                continue;
+            }
             let suspended = self.is_suspended_by_sub_view(id);
             let (kind, enabled, rigid, material, groups) = {
                 let Some(node) = self.nodes.get(id) else {
@@ -81,7 +130,7 @@ impl Runtime {
                 rigid.enabled = enabled;
                 rigid
             });
-            let Some(global) = self.get_global_transform_2d(id) else {
+            let Some(global) = self.physics_transform_2d(id) else {
                 continue;
             };
             // resolve tileset b4 node borrow; avoid full tilemap clone / step
@@ -113,6 +162,9 @@ impl Runtime {
                         shape_signature = hash_water_shape(shape_signature, water.water.shape);
                     }
                     for &child_id in self.nodes.children(id).unwrap_or_default() {
+                        if self.node_world(child_id) != Some(self.active_physics_world()) {
+                            continue;
+                        }
                         let Some(child) = self.nodes.get(child_id) else {
                             continue;
                         };
@@ -170,6 +222,9 @@ impl Runtime {
                         shapes.reserve(child_count - shapes.capacity());
                     }
                     for &child_id in children {
+                        if self.node_world(child_id) != Some(self.active_physics_world()) {
+                            continue;
+                        }
                         let Some(child) = self.nodes.get(child_id) else {
                             continue;
                         };
@@ -211,6 +266,9 @@ impl Runtime {
         }
         for i in 0..node_count {
             let id = self.internal_updates.physics_body_nodes_3d[i];
+            if self.node_world(id) != Some(self.active_physics_world()) {
+                continue;
+            }
             let suspended = self.is_suspended_by_sub_view(id);
             let (kind, enabled, rigid, material, groups) = {
                 let Some(node) = self.nodes.get(id) else {
@@ -272,7 +330,7 @@ impl Runtime {
                 rigid
             });
 
-            let Some(global) = self.get_global_transform_3d(id) else {
+            let Some(global) = self.physics_transform_3d(id) else {
                 continue;
             };
             let mut shape_signature = body_signature_seed(kind);
@@ -289,6 +347,9 @@ impl Runtime {
                     shape_signature = hash_f32(shape_signature, water.water.depth.to_bits());
                 }
                 for &child_id in self.nodes.children(id).unwrap_or_default() {
+                    if self.node_world(child_id) != Some(self.active_physics_world()) {
+                        continue;
+                    }
                     let Some(child) = self.nodes.get(child_id) else {
                         continue;
                     };
@@ -332,6 +393,9 @@ impl Runtime {
                     shapes.reserve(child_count - shapes.capacity());
                 }
                 for &child_id in children {
+                    if self.node_world(child_id) != Some(self.active_physics_world()) {
+                        continue;
+                    }
                     let Some(child) = self.nodes.get(child_id) else {
                         continue;
                     };
@@ -375,6 +439,9 @@ impl Runtime {
         }
         for i in 0..self.internal_updates.physics_joint_nodes_2d.len() {
             let id = self.internal_updates.physics_joint_nodes_2d[i];
+            if self.node_world(id) != Some(self.active_physics_world()) {
+                continue;
+            }
             let suspended = self.is_suspended_by_sub_view(id);
             let Some(node) = self.nodes.get(id) else {
                 continue;
@@ -413,7 +480,10 @@ impl Runtime {
                     ),
                     _ => continue,
                 };
-            let enabled = enabled && !suspended;
+            let enabled = enabled
+                && !suspended
+                && self.node_world(body_a) == Some(self.active_physics_world())
+                && self.node_world(body_b) == Some(self.active_physics_world());
             let signature = joint_signature_2d(
                 body_a,
                 body_b,
@@ -447,6 +517,9 @@ impl Runtime {
         }
         for i in 0..self.internal_updates.physics_joint_nodes_3d.len() {
             let id = self.internal_updates.physics_joint_nodes_3d[i];
+            if self.node_world(id) != Some(self.active_physics_world()) {
+                continue;
+            }
             let suspended = self.is_suspended_by_sub_view(id);
             let Some(node) = self.nodes.get(id) else {
                 continue;
@@ -482,7 +555,10 @@ impl Runtime {
                     ),
                     _ => continue,
                 };
-            let enabled = enabled && !suspended;
+            let enabled = enabled
+                && !suspended
+                && self.node_world(body_a) == Some(self.active_physics_world())
+                && self.node_world(body_b) == Some(self.active_physics_world());
             let signature = joint_signature_3d(
                 body_a,
                 body_b,
@@ -554,13 +630,16 @@ impl Runtime {
     }
 
     pub(super) fn step_worlds_parallel(&mut self) {
-        self.physics
-            .step_worlds_parallel(self.physics_gravity(), self.time.fixed_delta);
+        let gravity = self.physics_gravity();
+        let fixed_delta = self.time.fixed_delta;
+        self.physics.step_worlds_parallel(gravity, fixed_delta);
     }
 
     pub(super) fn apply_pending_forces_and_impulses_parallel(&mut self) {
+        let coefficient = self.physics_coef();
+        let fixed_delta = self.time.fixed_delta;
         self.physics
-            .apply_pending_forces_and_impulses_parallel(self.physics_coef(), self.time.fixed_delta);
+            .apply_pending_forces_and_impulses_parallel(coefficient, fixed_delta);
     }
 
     pub(super) fn sync_world_to_nodes_2d(&mut self) -> bool {
@@ -638,14 +717,14 @@ impl Runtime {
                 continue;
             };
             changed = true;
+            let scene_curr = self.physics_pose_to_scene_2d(Transform2D {
+                position: pose.position,
+                rotation: pose.rotation,
+                scale: before_local.scale,
+            });
             if parent.is_nil() {
                 // root body: global = local; skip parent walk
-                let curr = Transform2D {
-                    position: pose.position,
-                    rotation: pose.rotation,
-                    scale: before_local.scale,
-                };
-                self.record_physics_pose_2d(pose.id, parent, before_local, curr);
+                self.record_physics_pose_2d(pose.id, parent, before_local, scene_curr);
                 if moved {
                     self.mark_transform_dirty_recursive(pose.id);
                 }
@@ -654,11 +733,8 @@ impl Runtime {
                 let before = self
                     .get_global_transform_2d(pose.id)
                     .unwrap_or(Transform2D::IDENTITY);
-                let mut curr = before;
-                curr.position = pose.position;
-                curr.rotation = pose.rotation;
-                self.record_physics_pose_2d(pose.id, parent, before, curr);
-                let _ = NodeAPI::set_global_transform_2d(self, pose.id, curr);
+                self.record_physics_pose_2d(pose.id, parent, before, scene_curr);
+                let _ = NodeAPI::set_global_transform_2d(self, pose.id, scene_curr);
             }
         }
 
@@ -747,14 +823,14 @@ impl Runtime {
                 continue;
             };
             changed = true;
+            let scene_curr = self.physics_pose_to_scene_3d(Transform3D {
+                position: pose.position,
+                rotation: pose.rotation,
+                scale: before_local.scale,
+            });
             if parent.is_nil() {
                 // root body: global = local; skip parent walk
-                let curr = Transform3D {
-                    position: pose.position,
-                    rotation: pose.rotation,
-                    scale: before_local.scale,
-                };
-                self.record_physics_pose_3d(pose.id, parent, before_local, curr);
+                self.record_physics_pose_3d(pose.id, parent, before_local, scene_curr);
                 if moved {
                     self.mark_transform_dirty_recursive(pose.id);
                 }
@@ -763,11 +839,8 @@ impl Runtime {
                 let before = self
                     .get_global_transform_3d(pose.id)
                     .unwrap_or(Transform3D::IDENTITY);
-                let mut curr = before;
-                curr.position = pose.position;
-                curr.rotation = pose.rotation;
-                self.record_physics_pose_3d(pose.id, parent, before, curr);
-                let _ = NodeAPI::set_global_transform_3d(self, pose.id, curr);
+                self.record_physics_pose_3d(pose.id, parent, before, scene_curr);
+                let _ = NodeAPI::set_global_transform_3d(self, pose.id, scene_curr);
             }
         }
 

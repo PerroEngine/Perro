@@ -42,7 +42,7 @@ use perro_render_bridge::{
     Camera3DState, CameraProjectionState, CustomMaterialLighting3D, DenseInstancePose3D,
     LODOptions3D, Material3D, MaterialParamOverride3D, MaterialParamOverrideValue3D,
     MeshBlendOptions3D, MeshSurfaceBinding3D, PointLight3DState, SpotLight3DState,
-    StandardMaterial3D,
+    StandardMaterial3D, VertexAxis3D, VertexModifier3D, VertexModifierMask3D,
 };
 use perro_structs::BitMask;
 use perro_structs::TextureFilterMode;

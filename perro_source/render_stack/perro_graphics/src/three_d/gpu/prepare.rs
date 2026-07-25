@@ -20,6 +20,24 @@ fn estimate_draw_instance_capacity(draws: &[Draw3DInstance]) -> (usize, usize) {
     (regular, multimesh)
 }
 
+fn vertex_modifier_bound(modifiers: &[VertexModifier3D], mesh_radius: f32) -> f32 {
+    let radius = mesh_radius.max(0.0);
+    modifiers.iter().fold(0.0, |bound, modifier| {
+        bound
+            + match *modifier {
+                VertexModifier3D::Wind { strength, .. } => strength.abs(),
+                VertexModifier3D::Wave { amplitude, .. } => amplitude.abs(),
+                VertexModifier3D::Bend { angle_radians, .. }
+                | VertexModifier3D::Twist { angle_radians, .. } => {
+                    2.0 * radius * (angle_radians.abs() * 0.5).sin().abs().min(1.0)
+                }
+                VertexModifier3D::Inflate { amount, .. } => amount.abs(),
+                VertexModifier3D::Jitter { amount, .. } => amount.abs() * 1.732_050_8,
+                VertexModifier3D::PixelSnap { .. } => 1.0e9,
+            }
+    })
+}
+
 fn builtin_flat_mesh_double_sided(source: &str) -> bool {
     matches!(
         source,
@@ -938,7 +956,11 @@ impl Gpu3D {
                             instance_start,
                             instance_count,
                             draw_param_index,
-                            mesh_local_radius: mesh_asset.bounds_radius.max(0.0),
+                            mesh_local_radius: mesh_asset.bounds_radius.max(0.0)
+                                + vertex_modifier_bound(
+                                    material.vertex_modifiers(),
+                                    mesh_asset.bounds_radius,
+                                ),
                             double_sided: params.double_sided
                                 || mirrored_winding
                                 || flat_builtin_double_sided,
@@ -1195,8 +1217,14 @@ impl Gpu3D {
                             // Multi-instance batches keep the tight local bound;
                             // the cull upload expands it into a merged
                             // per-instance world sphere.
-                            let occlusion_bounds =
-                                (mesh_asset.bounds_center, mesh_asset.bounds_radius);
+                            let modifier_bound = vertex_modifier_bound(
+                                material.vertex_modifiers(),
+                                mesh_asset.bounds_radius,
+                            );
+                            let occlusion_bounds = (
+                                mesh_asset.bounds_center,
+                                mesh_asset.bounds_radius + modifier_bound,
+                            );
                             push_draw_batch(
                                 &mut self.draw_batches,
                                 DrawBatchPush {
@@ -1216,6 +1244,7 @@ impl Gpu3D {
                                     local_bounds: occlusion_bounds,
                                     occlusion_query,
                                     disable_hiz_occlusion: uses_custom_shader
+                                        || !material.vertex_modifiers().is_empty()
                                         || standard_params.alpha_mode == 2
                                         || resolved_mesh_blend_active(resolved_blend),
                                     casts_shadows: draw.cast_shadows && !is_camera_stream_quad,
@@ -1403,8 +1432,12 @@ impl Gpu3D {
                     // Per-meshlet local bounds give tighter frustum/occlusion
                     // rejection; multi-instance batches expand them into a
                     // merged per-instance world sphere at cull upload.
+                    let modifier_bound = vertex_modifier_bound(
+                        material.vertex_modifiers(),
+                        mesh_asset.bounds_radius,
+                    );
                     let (occlusion_center, occlusion_radius) =
-                        (meshlet.center, meshlet.radius.max(0.001));
+                        (meshlet.center, meshlet.radius.max(0.001) + modifier_bound);
                     push_draw_batch(
                         &mut self.draw_batches,
                         DrawBatchPush {
@@ -1428,6 +1461,7 @@ impl Gpu3D {
                             local_bounds: (occlusion_center, occlusion_radius),
                             occlusion_query,
                             disable_hiz_occlusion: uses_custom_shader
+                                || !material.vertex_modifiers().is_empty()
                                 || standard_params.alpha_mode == 2
                                 || resolved_mesh_blend_active(resolved_blend),
                             casts_shadows: meshlet_casts_shadows,

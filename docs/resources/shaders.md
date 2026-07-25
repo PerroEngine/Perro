@@ -19,7 +19,7 @@ Perro uses WGSL (`.wgsl`) for GPU shaders. Custom materials and `Sky3D` passes r
 
 - Animated surfaces: a custom material `shade_material(in)` driven by `perro_time()` / `perro_time_phase()` for pulsing, scrolling, or shimmering looks.
 - Force fields, portals, and dissolves: sample `.pmat` `images` with `custom_image_sample(in, index, uv)` and read tunables with `custom_f_param(in, index)`.
-- Custom-lit props: return base color and let standard lighting wrap it, or call `perro_lit_standard(...)` to supply your own roughness, metallic, ao, and emissive.
+- Custom-lit props: return base color and let standard lighting wrap it, or call `perro_standard(...)` to supply your own roughness, metallic, ao, and emissive.
 - Raw glows and holograms: set `lighting = "raw"` to bypass standard lighting and return exact color.
 - Vertex deformation: a `shade_vertex(out)` hook to bend, wave, or wobble geometry in the vertex stage.
 - Procedural skies: a `sky_shader(in)` pass adding clouds, stars, sun, or horizon bands over the built-in day/evening/night gradient.
@@ -44,7 +44,8 @@ Custom 3D materials are declared as:
 ```txt
 type = "custom"
 shader_path = "res://shaders/custom.wgsl"
-# optional: lighting = "raw" opts out of automatic standard lighting
+# output = "surface" (default) lets Perro add standard lighting
+# output = "final" uses exact shader output
 params = {
     glow = 1.25
     tint = (1.0, 0.2, 0.4, 1.0)
@@ -111,20 +112,156 @@ fn shade_vertex(out: VertexOutput) -> VertexOutput {
 }
 ```
 
+Material `vertex_modifiers` run before `shade_vertex`.
+The hook receives the built-in stack result.
+
 You **do not** need to define `vs_main`, `fs_main`, bind groups, or scene structs.
 
 Notes for custom shaders:
 
 - Custom shaders use standard lighting by default. The engine treats `shade_material(in)` as base color, then applies standard lighting.
-- Add `lighting = "raw"` to a custom material to opt out and return exact shader output.
-- `perro_lit_standard(in, base_color, roughness, metallic, ao, emissive)` applies the same standard material light path as built-in standard materials.
+- Add `output = "final"` when `shade_material` returns final shaded color.
+- Legacy `lighting = "raw"` remains an alias for `output = "final"`.
+- `perro_standard(in, base_color, roughness, metallic, ao, emissive)` applies the built-in standard material path.
+- `perro_toon(...)`, `perro_unlit(...)`, `perro_hand_drawn(...)`, and `perro_pixel_surface(...)` match their material presets.
 - `perro_material_alpha(in, alpha)` applies alpha cutoff, opaque alpha, and mesh blend alpha.
-- If a shader calls `perro_lit_standard` itself, the engine does not wrap it a second time.
+- Calling a canonical shade helper prevents the default standard wrapper.
+- Legacy `perro_lit_standard` and `perro_lit_toon` aliases remain valid.
 - If a scene has no `Sky3D`, no `AmbientLight3D`, and no 3D lights, standard materials render black except for `emissive_factor`.
 - Use `custom_f_param(in, index)` to read custom params in fragment stage.
 - Use `custom_v_param(out, index)` inside `shade_vertex` for same params in vertex stage.
 - Use `custom_image_sample(in, index, uv)` to sample custom `images` from `.pmat`.
 - Legacy aliases `custom_param` and `custom_param_vertex` stay valid.
+
+### Vertex Modifier Helpers
+
+Custom vertex hooks may call the same built-in operations directly:
+
+```wgsl
+out = perro_vertex_wind(out, direction, strength, speed, frequency, mask);
+out = perro_vertex_wave(out, axis, direction, amplitude, speed, frequency, phase, mask);
+out = perro_vertex_bend(out, along_axis, bend_axis, angle, start, end);
+out = perro_vertex_twist(out, axis, angle, start, end);
+out = perro_vertex_inflate(out, amount, mask);
+out = perro_vertex_jitter(out, amount, scale, rate, seed, mask);
+out = perro_vertex_pixel_snap(out, virtual_height, strength);
+```
+
+`mask` ranges from `0.0` to `1.0`.
+Use `perro_vertex_axis_mask(out.world_pos, axis, start, end)` to build it;
+axis codes are `0.0` for X, `1.0` for Y, and `2.0` for Z.
+Angles use radians.
+Each helper updates dependent clip position, and rotation helpers update normals.
+Direct helper calls live only in the color pass; use material `vertex_modifiers`
+when depth and shadow parity matters.
+
+### Stylized Helpers
+
+The 3D prelude includes helpers for toon, hand-drawn, and pixel-art materials.
+They work on rigid, skinned, and dense multimesh custom materials.
+
+```wgsl
+fn perro_toon(
+    in: FragmentInput,
+    base_color: vec4<f32>,
+    band_count: f32,
+    rim_strength: f32,
+    rim_width: f32,
+    emissive: vec3<f32>,
+) -> vec4<f32>
+
+fn perro_unlit(
+    in: FragmentInput,
+    base_color: vec4<f32>,
+    emissive: vec3<f32>,
+) -> vec4<f32>
+
+fn perro_hand_drawn(
+    in: FragmentInput,
+    base_color: vec4<f32>,
+    band_count: f32,
+    hatch_scale: f32,
+    grain_strength: f32,
+    emissive: vec3<f32>,
+) -> vec4<f32>
+
+fn perro_pixel_surface(
+    in: FragmentInput,
+    base_color: vec4<f32>,
+    color_levels: f32,
+    dither_strength: f32,
+    emissive: vec3<f32>,
+) -> vec4<f32>
+
+fn perro_posterize(color: vec3<f32>, level_count: f32) -> vec3<f32>
+fn perro_pixel_uv(uv: vec2<f32>, pixel_count: vec2<f32>) -> vec2<f32>
+fn perro_bayer_dither(color: vec3<f32>, frag_coord: vec2<f32>, strength: f32) -> vec3<f32>
+fn perro_palette_snap(
+    in: FragmentInput,
+    color: vec3<f32>,
+    image_index: u32,
+    color_count: u32,
+) -> vec3<f32>
+fn perro_hatch(
+    coords: vec2<f32>,
+    shade: f32,
+    scale: f32,
+    angle: f32,
+    line_width: f32,
+) -> f32
+fn perro_crosshatch(
+    coords: vec2<f32>,
+    shade: f32,
+    scale: f32,
+    angle: f32,
+    line_width: f32,
+) -> f32
+fn perro_paper_grain(coords: vec2<f32>, scale: f32, amount: f32) -> f32
+fn perro_distance_lod(
+    world_pos: vec3<f32>,
+    near_distance: f32,
+    far_distance: f32,
+    level_count: u32,
+) -> u32
+```
+
+`perro_toon` applies scene light, material alpha, decals, mesh fade, toon bands, and rim light.
+Rigid and skinned draws also apply supported light shadows.
+Set `output = "final"` for explicit final-shader output.
+
+Example hand-drawn material body:
+
+```wgsl
+fn shade_material(in: FragmentInput) -> vec4<f32> {
+    let pixel_uv = perro_pixel_uv(in.uv, vec2<f32>(32.0));
+    var color = custom_image_sample(in, 0u, pixel_uv).rgb;
+
+    let lod = perro_distance_lod(in.world_pos, 5.0, 50.0, 4u);
+    let grain = perro_paper_grain(in.uv, 128.0 / f32(lod + 1u), 0.08);
+    let ink = perro_crosshatch(in.uv, 0.65, 24.0, 0.785398, 0.08);
+    color = mix(color + vec3<f32>(grain), vec3<f32>(0.05), ink);
+    color = perro_bayer_dither(color, in.frag_pos.xy, 0.08);
+    color = perro_posterize(color, 5.0);
+
+    return perro_hand_drawn(
+        in,
+        vec4<f32>(color, 1.0),
+        4.0,
+        24.0,
+        0.08,
+        vec3<f32>(0.0),
+    );
+}
+```
+
+Helper notes:
+
+- `perro_pixel_uv` snaps texture detail inside a mesh. It does not pixelate the mesh silhouette.
+- use camera `pixelate` post-processing or a low-resolution render target for whole-frame pixels.
+- `perro_palette_snap` reads a horizontal palette from a custom image and supports up to 64 colors.
+- use UV or world-space coordinates for hatch and grain to avoid screen-space swimming.
+- `perro_distance_lod` returns `0` near the camera and `level_count - 1` at the far distance.
+- `rim_width` controls rim falloff. It does not draw a geometry outline.
 
 ## Custom Sky3D Shaders
 
@@ -285,7 +422,7 @@ fn shade_material(in: FragmentInput) -> vec4<f32> {
     let emissive = unpack_rgba8(in.packed_emissive).xyz;
     let pbr = decode_standard_pbr_params(in.packed_pbr_params_0, in.packed_pbr_params_1);
     let tint = custom_f_param(in, 0u);
-    return perro_lit_standard(
+    return perro_standard(
         in,
         vec4<f32>(color.rgb * tint.rgb, color.a * tint.a),
         pbr.x,

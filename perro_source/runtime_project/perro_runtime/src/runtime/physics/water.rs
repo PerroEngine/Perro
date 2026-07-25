@@ -523,6 +523,7 @@ pub(super) fn water_body_splashes_2d(
                 continue;
             }
             impacts.push(crate::runtime::ForceWaterImpact2D {
+                world: NodeID::nil(),
                 position: sample.pos,
                 force: -sample.normal * rel_down * body.mass.max(0.001),
                 strength: strength.min(512.0),
@@ -603,6 +604,7 @@ pub(super) fn water_body_splashes_3d(
                 continue;
             }
             impacts.push(crate::runtime::ForceWaterImpact3D {
+                world: NodeID::nil(),
                 position: sample.pos,
                 force: -sample.normal * rel_down * body.mass.max(0.001),
                 strength: strength.min(512.0),

@@ -26,9 +26,14 @@ impl Runtime {
         max_distance: f32,
         filter: &PhysicsQueryFilter,
     ) -> Option<PhysicsRayHit3D> {
+        let previous = self.active_physics_world();
+        self.activate_physics_world(self.free_physics_query_world());
         self.ensure_physics_world_synced_3d();
-        self.physics
-            .raycast_3d_filtered(origin, direction, max_distance, filter)
+        let result = self
+            .physics
+            .raycast_3d_filtered(origin, direction, max_distance, filter);
+        self.activate_physics_world(previous);
+        result
     }
 
     pub fn physics_raycast_2d(
@@ -38,9 +43,14 @@ impl Runtime {
         max_distance: f32,
         filter: &PhysicsQueryFilter,
     ) -> Option<PhysicsRayHit2D> {
+        let previous = self.active_physics_world();
+        self.activate_physics_world(self.free_physics_query_world());
         self.ensure_physics_world_synced_2d();
-        self.physics
-            .raycast_2d(origin, direction, max_distance, filter)
+        let result = self
+            .physics
+            .raycast_2d(origin, direction, max_distance, filter);
+        self.activate_physics_world(previous);
+        result
     }
 
     pub(crate) fn prepare_audio_raycast_2d(&mut self) {
@@ -93,9 +103,14 @@ impl Runtime {
         max_distance: f32,
         filter: &PhysicsQueryFilter,
     ) -> Option<PhysicsShapeHit2D> {
+        let previous = self.active_physics_world();
+        self.activate_physics_world(self.free_physics_query_world());
         self.ensure_physics_world_synced_2d();
-        self.physics
-            .shape_cast_2d(shape, origin, direction, max_distance, filter)
+        let result = self
+            .physics
+            .shape_cast_2d(shape, origin, direction, max_distance, filter);
+        self.activate_physics_world(previous);
+        result
     }
 
     pub fn physics_shape_cast_3d(
@@ -106,9 +121,14 @@ impl Runtime {
         max_distance: f32,
         filter: &PhysicsQueryFilter,
     ) -> Option<PhysicsShapeHit3D> {
+        let previous = self.active_physics_world();
+        self.activate_physics_world(self.free_physics_query_world());
         self.ensure_physics_world_synced_3d();
-        self.physics
-            .shape_cast_3d(shape, origin, direction, max_distance, filter)
+        let result = self
+            .physics
+            .shape_cast_3d(shape, origin, direction, max_distance, filter);
+        self.activate_physics_world(previous);
+        result
     }
 
     pub fn physics_move_body_2d(
@@ -118,28 +138,36 @@ impl Runtime {
         margin: f32,
         filter: &PhysicsQueryFilter,
     ) -> Option<PhysicsMoveResult2D> {
-        self.ensure_physics_world_synced_2d();
-        // world in-sync now (ensure just ran); safe 2 re-record if fast path
-        // reproduce next full sync 4 this one body.
-        let was_synced =
-            self.physics_synced_node_revision_2d == Some(self.nodes.physics_revision());
-        let result = self.physics.move_body_2d(body_id, target, margin, filter)?;
-        let mut transform = self.get_global_transform_2d(body_id)?;
-        transform.position = result.position;
-        if !<Runtime as NodeAPI>::set_global_transform_2d(self, body_id, transform) {
-            return None;
-        }
-        self.propagate_pending_transform_dirty();
-        self.refresh_dirty_global_transforms();
-        // fast path: write resolved pose straight -> rapier + re-record sync ver
-        // instead of full O(bodies) collect+sync next op. only when world was
-        // in-sync b4 move (else other stale chg must still trigger full sync).
-        if !was_synced || !self.commit_moved_body_2d_fast(body_id) {
-            // node mv aft sync -> world stale 4 next query
-            self.physics_synced_node_revision_2d = None;
-        }
-        self.record_character_sweep_hit_2d(body_id, &result);
-        Some(result)
+        let world = self.body_physics_world(body_id)?;
+        let previous = self.active_physics_world();
+        self.activate_physics_world(world);
+        let result = (|| {
+            self.ensure_physics_world_synced_2d();
+            // world in-sync now (ensure just ran); safe 2 re-record if fast path
+            // reproduce next full sync 4 this one body.
+            let was_synced =
+                self.physics_synced_node_revision_2d == Some(self.nodes.physics_revision());
+            let result = self.physics.move_body_2d(body_id, target, margin, filter)?;
+            let mut local = self.physics_transform_2d(body_id)?;
+            local.position = result.position;
+            let transform = self.physics_pose_to_scene_2d(local);
+            if !<Runtime as NodeAPI>::set_global_transform_2d(self, body_id, transform) {
+                return None;
+            }
+            self.propagate_pending_transform_dirty();
+            self.refresh_dirty_global_transforms();
+            // fast path: write resolved pose straight -> rapier + re-record sync ver
+            // instead of full O(bodies) collect+sync next op. only when world was
+            // in-sync b4 move (else other stale chg must still trigger full sync).
+            if !was_synced || !self.commit_moved_body_2d_fast(body_id) {
+                // node mv aft sync -> world stale 4 next query
+                self.physics_synced_node_revision_2d = None;
+            }
+            self.record_character_sweep_hit_2d(body_id, &result);
+            Some(result)
+        })();
+        self.activate_physics_world(previous);
+        result
     }
 
     /// reproduce next full sync_world_2d 4 the just-moved `body_id`: push
@@ -153,7 +181,7 @@ impl Runtime {
         let Some((kind, enabled, rigid)) = self.physics_body_sync_props_2d(body_id) else {
             return false;
         };
-        let Some(global) = self.get_global_transform_2d(body_id) else {
+        let Some(global) = self.physics_transform_2d(body_id) else {
             return false;
         };
         let signature = body_sync_signature_2d_if_useful(kind, enabled, global, rigid);
@@ -206,24 +234,32 @@ impl Runtime {
         margin: f32,
         filter: &PhysicsQueryFilter,
     ) -> Option<PhysicsMoveResult3D> {
-        self.ensure_physics_world_synced_3d();
-        let was_synced =
-            self.physics_synced_node_revision_3d == Some(self.nodes.physics_revision());
-        let result = self.physics.move_body_3d(body_id, target, margin, filter)?;
-        let mut transform = self.get_global_transform_3d(body_id)?;
-        transform.position = result.position;
-        if !<Runtime as NodeAPI>::set_global_transform_3d(self, body_id, transform) {
-            return None;
-        }
-        self.propagate_pending_transform_dirty();
-        self.refresh_dirty_global_transforms();
-        // fast path: see physics_move_body_2d.
-        if !was_synced || !self.commit_moved_body_3d_fast(body_id) {
-            // node mv aft sync -> world stale 4 next query
-            self.physics_synced_node_revision_3d = None;
-        }
-        self.record_character_sweep_hit_3d(body_id, &result);
-        Some(result)
+        let world = self.body_physics_world(body_id)?;
+        let previous = self.active_physics_world();
+        self.activate_physics_world(world);
+        let result = (|| {
+            self.ensure_physics_world_synced_3d();
+            let was_synced =
+                self.physics_synced_node_revision_3d == Some(self.nodes.physics_revision());
+            let result = self.physics.move_body_3d(body_id, target, margin, filter)?;
+            let mut local = self.physics_transform_3d(body_id)?;
+            local.position = result.position;
+            let transform = self.physics_pose_to_scene_3d(local);
+            if !<Runtime as NodeAPI>::set_global_transform_3d(self, body_id, transform) {
+                return None;
+            }
+            self.propagate_pending_transform_dirty();
+            self.refresh_dirty_global_transforms();
+            // fast path: see physics_move_body_2d.
+            if !was_synced || !self.commit_moved_body_3d_fast(body_id) {
+                // node mv aft sync -> world stale 4 next query
+                self.physics_synced_node_revision_3d = None;
+            }
+            self.record_character_sweep_hit_3d(body_id, &result);
+            Some(result)
+        })();
+        self.activate_physics_world(previous);
+        result
     }
 
     /// 3d twin of [`Self::commit_moved_body_2d_fast`].
@@ -232,7 +268,7 @@ impl Runtime {
         let Some((kind, enabled, rigid)) = self.physics_body_sync_props_3d(body_id) else {
             return false;
         };
-        let Some(global) = self.get_global_transform_3d(body_id) else {
+        let Some(global) = self.physics_transform_3d(body_id) else {
             return false;
         };
         let signature = body_sync_signature_3d_if_useful(kind, enabled, global, rigid);
@@ -284,7 +320,7 @@ impl Runtime {
         motion: Vector2,
         filter: &PhysicsQueryFilter,
     ) -> Option<PhysicsSlideResult2D> {
-        let mut position = self.get_global_transform_2d(body_id)?.position;
+        let mut position = self.physics_transform_2d(body_id)?.position;
         let mut remaining = motion;
         // hits move into the returned (API-owned) result -> no scratch reuse;
         // Vec::new stay alloc-free til a real hit, bounded by MAX_SLIDE_ITERATIONS.
@@ -321,7 +357,7 @@ impl Runtime {
         motion: Vector3,
         filter: &PhysicsQueryFilter,
     ) -> Option<PhysicsSlideResult3D> {
-        let mut position = self.get_global_transform_3d(body_id)?.position;
+        let mut position = self.physics_transform_3d(body_id)?.position;
         let mut remaining = motion;
         // hits move into the returned (API-owned) result -> no scratch reuse;
         // Vec::new stay alloc-free til a real hit, bounded by MAX_SLIDE_ITERATIONS.
@@ -372,7 +408,7 @@ impl Runtime {
         let limit = max_fall_speed.abs().max(0.001);
         *fall = (*fall + gravity * dt).clamp(-limit, limit);
         let drop = *fall * dt;
-        let global = self.get_global_transform_2d(body_id)?;
+        let global = self.physics_transform_2d(body_id)?;
         let target = Vector2::new(global.position.x, global.position.y + drop);
         let result = self.physics_move_body_2d(body_id, target, CHARACTER_MOVE_MARGIN, filter);
         if result.is_none_or(|result| result.clipped) {
@@ -403,7 +439,7 @@ impl Runtime {
         let limit = max_fall_speed.abs().max(0.001);
         *fall = (*fall + gravity * dt).clamp(-limit, limit);
         let drop = *fall * dt;
-        let global = self.get_global_transform_3d(body_id)?;
+        let global = self.physics_transform_3d(body_id)?;
         let target = Vector3::new(
             global.position.x,
             global.position.y + drop,
@@ -504,6 +540,11 @@ impl Runtime {
     }
 
     pub fn physics_contacts_2d(&mut self, body_id: NodeID) -> Vec<PhysicsContact2D> {
+        let Some(world) = self.body_physics_world(body_id) else {
+            return Vec::new();
+        };
+        let previous = self.active_physics_world();
+        self.activate_physics_world(world);
         self.ensure_physics_world_synced_2d();
         let mut out = self.physics.contacts_2d(body_id);
         if let Some(&(node, point, normal)) = self.character_sweep_hit_2d.get(&body_id)
@@ -516,10 +557,16 @@ impl Runtime {
                 impulse: 0.0,
             });
         }
+        self.activate_physics_world(previous);
         out
     }
 
     pub fn physics_contacts_3d(&mut self, body_id: NodeID) -> Vec<PhysicsContact3D> {
+        let Some(world) = self.body_physics_world(body_id) else {
+            return Vec::new();
+        };
+        let previous = self.active_physics_world();
+        self.activate_physics_world(world);
         self.ensure_physics_world_synced_3d();
         let mut out = self.physics.contacts_3d(body_id);
         if let Some(&(node, point, normal)) = self.character_sweep_hit_3d.get(&body_id)
@@ -532,6 +579,7 @@ impl Runtime {
                 impulse: 0.0,
             });
         }
+        self.activate_physics_world(previous);
         out
     }
 }

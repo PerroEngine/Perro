@@ -346,7 +346,11 @@ impl Runtime {
             });
         }
         self.water_rigid_body_ids_3d_cache = body_ids;
+        let water_world = self.node_world(water_id).unwrap_or(NodeID::nil());
         for impact in self.force_water_impacts_3d.iter() {
+            if impact.world != water_world {
+                continue;
+            }
             let local = water_local_point_3d(water_inv, impact.position);
             if local.x.abs() > half.x + impact.radius
                 || local.z.abs() > half.y + impact.radius
@@ -384,6 +388,9 @@ impl Runtime {
         }
         for link in self.collect_water_links_3d(water_id, water).iter() {
             for impact in self.force_water_impacts_3d.iter() {
+                if impact.world != water_world {
+                    continue;
+                }
                 let local = water_local_point_3d(water_inv, impact.position);
                 if water
                     .shape

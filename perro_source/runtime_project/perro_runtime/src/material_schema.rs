@@ -1,7 +1,9 @@
 use perro_io::load_asset;
 use perro_render_bridge::{
     CustomMaterial3D, CustomMaterialImage3D, CustomMaterialLighting3D, CustomMaterialParam3D,
-    CustomMaterialParamValue3D, Material3D, StandardMaterial3D, ToonMaterial3D, UnlitMaterial3D,
+    CustomMaterialParamValue3D, HandDrawnMaterial3D, MAX_VERTEX_MODIFIERS, Material3D,
+    PixelSurfaceMaterial3D, StandardMaterial3D, ToonMaterial3D, UnlitMaterial3D, VertexAxis3D,
+    VertexModifier3D, VertexModifierMask3D,
 };
 use perro_scene::{Parser, SceneObjectField, SceneValue};
 
@@ -119,6 +121,7 @@ fn load_gltf_material_from_bytes(bytes: &[u8], fragment: Option<&str>) -> Option
             .emissive_texture()
             .map(|tex| tex.texture().index() as u32)
             .unwrap_or(u32::MAX),
+        vertex_modifiers: Default::default(),
     }))
 }
 
@@ -285,17 +288,32 @@ fn material_from_entries(entries: &[SceneObjectField], any: &mut bool) -> Materi
         MaterialType3D::Standard => {
             let mut params = StandardMaterial3D::default();
             apply_standard(entries, &mut params, any);
+            apply_vertex_modifiers(entries, &mut params.vertex_modifiers, any);
             Material3D::Standard(params)
         }
         MaterialType3D::Unlit => {
             let mut params = UnlitMaterial3D::default();
             apply_unlit(entries, &mut params, any);
+            apply_vertex_modifiers(entries, &mut params.vertex_modifiers, any);
             Material3D::Unlit(params)
         }
         MaterialType3D::Toon => {
             let mut params = ToonMaterial3D::default();
             apply_toon(entries, &mut params, any);
+            apply_vertex_modifiers(entries, &mut params.vertex_modifiers, any);
             Material3D::Toon(params)
+        }
+        MaterialType3D::HandDrawn => {
+            let mut params = HandDrawnMaterial3D::default();
+            apply_hand_drawn(entries, &mut params, any);
+            apply_vertex_modifiers(entries, &mut params.vertex_modifiers, any);
+            Material3D::HandDrawn(params)
+        }
+        MaterialType3D::PixelSurface => {
+            let mut params = PixelSurfaceMaterial3D::default();
+            apply_pixel_surface(entries, &mut params, any);
+            apply_vertex_modifiers(entries, &mut params.vertex_modifiers, any);
+            Material3D::PixelSurface(params)
         }
         MaterialType3D::Custom => {
             let mut params = CustomMaterial3D {
@@ -306,6 +324,7 @@ fn material_from_entries(entries: &[SceneObjectField], any: &mut bool) -> Materi
                 surface: StandardMaterial3D::default(),
             };
             apply_custom(entries, &mut params, any);
+            apply_vertex_modifiers(entries, &mut params.surface.vertex_modifiers, any);
             Material3D::Custom(params)
         }
     }
@@ -316,6 +335,8 @@ enum MaterialType3D {
     Standard,
     Unlit,
     Toon,
+    HandDrawn,
+    PixelSurface,
     Custom,
 }
 
@@ -343,6 +364,10 @@ fn parse_material_type(value: &str) -> MaterialType3D {
         "standard" | "Standard" | "pbr" | "PBR" => MaterialType3D::Standard,
         "unlit" | "Unlit" => MaterialType3D::Unlit,
         "toon" | "Toon" | "cel" | "Cel" => MaterialType3D::Toon,
+        "hand_drawn" | "hand-drawn" | "HandDrawn" | "drawn" => MaterialType3D::HandDrawn,
+        "pixel_surface" | "pixel-surface" | "PixelSurface" | "pixel" => {
+            MaterialType3D::PixelSurface
+        }
         "custom" | "Custom" => MaterialType3D::Custom,
         _ => MaterialType3D::Standard,
     }
@@ -418,6 +443,50 @@ fn apply_toon(entries: &[SceneObjectField], out: &mut ToonMaterial3D, any: &mut 
     }
 }
 
+fn apply_hand_drawn(entries: &[SceneObjectField], out: &mut HandDrawnMaterial3D, any: &mut bool) {
+    for (name, value) in entries {
+        match canonical_hand_drawn_key(name) {
+            Some("baseColorFactor") => set_color4(value, any, |v| out.base_color_factor = v),
+            Some("emissiveFactor") => set_color3(value, any, |v| out.emissive_factor = v),
+            Some("alphaCutoff") => set_f32(value, any, |v| out.alpha_cutoff = v),
+            Some("alphaMode") => set_alpha_mode(value, any, |v| out.alpha_mode = v),
+            Some("doubleSided") => set_bool(value, any, |v| out.double_sided = v),
+            Some("flatShading") => set_bool(value, any, |v| out.flat_shading = v),
+            Some("baseColorTexture") => {
+                set_texture_slot(value, any, |v| out.base_color_texture = v)
+            }
+            Some("bandCount") => set_u32(value, any, |v| out.band_count = v),
+            Some("hatchScale") => set_f32(value, any, |v| out.hatch_scale = v),
+            Some("grainStrength") => set_f32(value, any, |v| out.grain_strength = v),
+            _ => {}
+        }
+    }
+}
+
+fn apply_pixel_surface(
+    entries: &[SceneObjectField],
+    out: &mut PixelSurfaceMaterial3D,
+    any: &mut bool,
+) {
+    for (name, value) in entries {
+        match canonical_pixel_surface_key(name) {
+            Some("baseColorFactor") => set_color4(value, any, |v| out.base_color_factor = v),
+            Some("emissiveFactor") => set_color3(value, any, |v| out.emissive_factor = v),
+            Some("alphaCutoff") => set_f32(value, any, |v| out.alpha_cutoff = v),
+            Some("alphaMode") => set_alpha_mode(value, any, |v| out.alpha_mode = v),
+            Some("doubleSided") => set_bool(value, any, |v| out.double_sided = v),
+            Some("flatShading") => set_bool(value, any, |v| out.flat_shading = v),
+            Some("baseColorTexture") => {
+                set_texture_slot(value, any, |v| out.base_color_texture = v)
+            }
+            Some("pixelCount") => set_u32(value, any, |v| out.pixel_count = v),
+            Some("colorLevels") => set_u32(value, any, |v| out.color_levels = v),
+            Some("ditherStrength") => set_f32(value, any, |v| out.dither_strength = v),
+            _ => {}
+        }
+    }
+}
+
 fn apply_custom(entries: &[SceneObjectField], out: &mut CustomMaterial3D, any: &mut bool) {
     apply_standard(entries, &mut out.surface, any);
     for (name, value) in entries {
@@ -440,7 +509,7 @@ fn apply_custom(entries: &[SceneObjectField], out: &mut CustomMaterial3D, any: &
                     *any = true;
                 }
             }
-            Some("lighting") => {
+            Some("output") => {
                 if let Some(lighting) = as_custom_lighting(value) {
                     out.lighting = lighting;
                     *any = true;
@@ -508,13 +577,49 @@ fn canonical_toon_key(name: &str) -> Option<&'static str> {
     }
 }
 
+fn canonical_hand_drawn_key(name: &str) -> Option<&'static str> {
+    match name {
+        "type" | "Type" => None,
+        "baseColorFactor" | "base_color_factor" | "color" => Some("baseColorFactor"),
+        "emissiveFactor" | "emissive_factor" => Some("emissiveFactor"),
+        "alphaCutoff" | "alpha_cutoff" => Some("alphaCutoff"),
+        "alphaMode" | "alpha_mode" => Some("alphaMode"),
+        "doubleSided" | "double_sided" => Some("doubleSided"),
+        "flatShading" | "flat_shading" => Some("flatShading"),
+        "baseColorTexture" | "base_color_texture" => Some("baseColorTexture"),
+        "bandCount" | "band_count" => Some("bandCount"),
+        "hatchScale" | "hatch_scale" => Some("hatchScale"),
+        "grainStrength" | "grain_strength" => Some("grainStrength"),
+        _ => None,
+    }
+}
+
+fn canonical_pixel_surface_key(name: &str) -> Option<&'static str> {
+    match name {
+        "type" | "Type" => None,
+        "baseColorFactor" | "base_color_factor" | "color" => Some("baseColorFactor"),
+        "emissiveFactor" | "emissive_factor" => Some("emissiveFactor"),
+        "alphaCutoff" | "alpha_cutoff" => Some("alphaCutoff"),
+        "alphaMode" | "alpha_mode" => Some("alphaMode"),
+        "doubleSided" | "double_sided" => Some("doubleSided"),
+        "flatShading" | "flat_shading" => Some("flatShading"),
+        "baseColorTexture" | "base_color_texture" => Some("baseColorTexture"),
+        "pixelCount" | "pixel_count" => Some("pixelCount"),
+        "colorLevels" | "color_levels" => Some("colorLevels"),
+        "ditherStrength" | "dither_strength" => Some("ditherStrength"),
+        _ => None,
+    }
+}
+
 fn canonical_custom_key(name: &str) -> Option<&'static str> {
     match name {
         "type" | "Type" => None,
         "shader" | "shaderPath" | "shader_path" | "path" => Some("shaderPath"),
         "params" | "customParams" | "custom_params" => Some("params"),
         "images" | "imageParams" | "image_params" | "textures" => Some("images"),
-        "lighting" | "light" | "lit" => Some("lighting"),
+        "output" | "shaderOutput" | "shader_output" | "lighting" | "light" | "lit" => {
+            Some("output")
+        }
         _ => None,
     }
 }
@@ -566,6 +671,174 @@ fn set_texture_slot(value: &SceneValue, any: &mut bool, set: impl FnOnce(u32)) {
         set(v);
         *any = true;
     }
+}
+
+fn apply_vertex_modifiers(
+    entries: &[SceneObjectField],
+    out: &mut std::borrow::Cow<'static, [VertexModifier3D]>,
+    any: &mut bool,
+) {
+    let Some(value) = entries
+        .iter()
+        .find(|(name, _)| name.eq_ignore_ascii_case("vertex_modifiers"))
+        .map(|(_, value)| value)
+    else {
+        return;
+    };
+    let Some(modifiers) = parse_vertex_modifiers(value) else {
+        return;
+    };
+    *out = std::borrow::Cow::Owned(modifiers);
+    *any = true;
+}
+
+fn parse_vertex_modifiers(value: &SceneValue) -> Option<Vec<VertexModifier3D>> {
+    let SceneValue::Array(items) = value else {
+        return None;
+    };
+    if items.len() > MAX_VERTEX_MODIFIERS {
+        return None;
+    }
+    items
+        .iter()
+        .map(parse_vertex_modifier)
+        .collect::<Option<Vec<_>>>()
+}
+
+fn parse_vertex_modifier(value: &SceneValue) -> Option<VertexModifier3D> {
+    let SceneValue::Object(fields) = value else {
+        return None;
+    };
+    let kind = modifier_token(modifier_field(fields, "type")?)?;
+    match kind.as_str() {
+        "wind" => {
+            let VertexModifier3D::Wind {
+                mut direction,
+                mut strength,
+                mut speed,
+                mut frequency,
+                mut mask,
+            } = VertexModifier3D::wind()
+            else {
+                unreachable!()
+            };
+            direction = modifier_vec3(fields, "direction").unwrap_or(direction);
+            strength = modifier_f32(fields, "strength").unwrap_or(strength);
+            speed = modifier_f32(fields, "speed").unwrap_or(speed);
+            frequency = modifier_f32(fields, "frequency").unwrap_or(frequency);
+            mask = parse_modifier_mask(fields).unwrap_or(mask);
+            Some(VertexModifier3D::Wind {
+                direction,
+                strength,
+                speed,
+                frequency,
+                mask,
+            })
+        }
+        "wave" => {
+            let axis = modifier_axis(fields, "axis").unwrap_or(VertexAxis3D::X);
+            Some(VertexModifier3D::Wave {
+                axis,
+                direction: modifier_vec3(fields, "direction").unwrap_or([0.0, 1.0, 0.0]),
+                amplitude: modifier_f32(fields, "amplitude").unwrap_or(0.1),
+                speed: modifier_f32(fields, "speed").unwrap_or(1.0),
+                frequency: modifier_f32(fields, "frequency").unwrap_or(1.0),
+                phase: modifier_f32(fields, "phase").unwrap_or(0.0),
+                mask: parse_modifier_mask(fields),
+            })
+        }
+        "bend" => Some(VertexModifier3D::Bend {
+            along_axis: modifier_axis(fields, "along_axis").unwrap_or(VertexAxis3D::Y),
+            bend_axis: modifier_axis(fields, "bend_axis").unwrap_or(VertexAxis3D::Z),
+            angle_radians: modifier_angle(fields, 20.0),
+            start: modifier_f32(fields, "start").unwrap_or(0.0),
+            end: modifier_f32(fields, "end").unwrap_or(1.0),
+        }),
+        "twist" => Some(VertexModifier3D::Twist {
+            axis: modifier_axis(fields, "axis").unwrap_or(VertexAxis3D::Y),
+            angle_radians: modifier_angle(fields, 45.0),
+            start: modifier_f32(fields, "start").unwrap_or(0.0),
+            end: modifier_f32(fields, "end").unwrap_or(1.0),
+        }),
+        "inflate" => Some(VertexModifier3D::Inflate {
+            amount: modifier_f32(fields, "amount").unwrap_or(0.1),
+            mask: parse_modifier_mask(fields),
+        }),
+        "jitter" => Some(VertexModifier3D::Jitter {
+            amount: modifier_f32(fields, "amount").unwrap_or(0.02),
+            scale: modifier_f32(fields, "scale").unwrap_or(8.0),
+            rate: modifier_f32(fields, "rate").unwrap_or(8.0),
+            seed: modifier_u32(fields, "seed").unwrap_or(0),
+            mask: parse_modifier_mask(fields),
+        }),
+        "pixel_snap" | "pixel-snap" => Some(VertexModifier3D::PixelSnap {
+            virtual_height: modifier_u32(fields, "virtual_height").unwrap_or(180),
+            strength: modifier_f32(fields, "strength").unwrap_or(1.0),
+        }),
+        _ => None,
+    }
+}
+
+fn modifier_field<'a>(fields: &'a [SceneObjectField], wanted: &str) -> Option<&'a SceneValue> {
+    fields
+        .iter()
+        .find(|(name, _)| name.eq_ignore_ascii_case(wanted))
+        .map(|(_, value)| value)
+}
+
+fn modifier_token(value: &SceneValue) -> Option<String> {
+    match value {
+        SceneValue::Str(value) => Some(value.to_ascii_lowercase()),
+        SceneValue::Key(value) => Some(value.as_ref().to_ascii_lowercase()),
+        _ => None,
+    }
+}
+
+fn modifier_f32(fields: &[SceneObjectField], name: &str) -> Option<f32> {
+    as_f32(modifier_field(fields, name)?)
+}
+
+fn modifier_u32(fields: &[SceneObjectField], name: &str) -> Option<u32> {
+    as_u32(modifier_field(fields, name)?)
+}
+
+fn modifier_vec3(fields: &[SceneObjectField], name: &str) -> Option<[f32; 3]> {
+    match modifier_field(fields, name)? {
+        SceneValue::Vec3 { x, y, z } => Some([*x, *y, *z]),
+        _ => None,
+    }
+}
+
+fn modifier_axis(fields: &[SceneObjectField], name: &str) -> Option<VertexAxis3D> {
+    match modifier_token(modifier_field(fields, name)?)?.as_str() {
+        "x" => Some(VertexAxis3D::X),
+        "y" => Some(VertexAxis3D::Y),
+        "z" => Some(VertexAxis3D::Z),
+        _ => None,
+    }
+}
+
+fn parse_modifier_mask(fields: &[SceneObjectField]) -> Option<VertexModifierMask3D> {
+    if let Some(SceneValue::Object(mask)) = modifier_field(fields, "mask") {
+        return Some(VertexModifierMask3D {
+            axis: modifier_axis(mask, "axis")?,
+            start: modifier_f32(mask, "start").unwrap_or(0.0),
+            end: modifier_f32(mask, "end").unwrap_or(1.0),
+        });
+    }
+    Some(VertexModifierMask3D {
+        axis: modifier_axis(fields, "mask_axis")?,
+        start: modifier_f32(fields, "mask_start").unwrap_or(0.0),
+        end: modifier_f32(fields, "mask_end").unwrap_or(1.0),
+    })
+}
+
+fn modifier_angle(fields: &[SceneObjectField], default_degrees: f32) -> f32 {
+    modifier_f32(fields, "angle_radians").unwrap_or_else(|| {
+        modifier_f32(fields, "angle_degrees")
+            .unwrap_or(default_degrees)
+            .to_radians()
+    })
 }
 
 fn as_f32(value: &SceneValue) -> Option<f32> {
@@ -658,10 +931,12 @@ fn as_custom_lighting(value: &SceneValue) -> Option<CustomMaterialLighting3D> {
 
 fn parse_custom_lighting_token(value: &str) -> Option<CustomMaterialLighting3D> {
     match value {
-        "standard" | "Standard" | "lit" | "Lit" | "pbr" | "PBR" => {
+        "surface" | "Surface" | "standard" | "Standard" | "lit" | "Lit" | "pbr" | "PBR" => {
             Some(CustomMaterialLighting3D::Standard)
         }
-        "raw" | "Raw" | "unlit" | "Unlit" | "none" | "None" => Some(CustomMaterialLighting3D::Raw),
+        "final" | "Final" | "raw" | "Raw" | "unlit" | "Unlit" | "none" | "None" => {
+            Some(CustomMaterialLighting3D::Raw)
+        }
         _ => None,
     }
 }
@@ -787,6 +1062,109 @@ mod tests {
             panic!("expected custom material");
         };
         assert_eq!(custom.lighting, CustomMaterialLighting3D::Standard);
+    }
+
+    #[test]
+    fn custom_material_accepts_explicit_output_contract() {
+        let material = material_from_text(
+            r#"{
+                type = "custom",
+                shader_path = "res://shaders/custom.wgsl",
+                output = "final",
+            }"#,
+        );
+        let Material3D::Custom(custom) = material else {
+            panic!("expected custom material");
+        };
+        assert_eq!(custom.lighting, CustomMaterialLighting3D::Final);
+    }
+
+    #[test]
+    fn stylized_presets_parse() {
+        let hand = material_from_text(
+            r#"{
+                type = "hand_drawn",
+                band_count = 5,
+                hatch_scale = 32.0,
+                grain_strength = 0.12,
+            }"#,
+        );
+        let Material3D::HandDrawn(hand) = hand else {
+            panic!("expected hand-drawn material");
+        };
+        assert_eq!(hand.band_count, 5);
+        assert_eq!(hand.hatch_scale, 32.0);
+        assert_eq!(hand.grain_strength, 0.12);
+
+        let pixel = material_from_text(
+            r#"{
+                type = "pixel_surface",
+                pixel_count = 32,
+                color_levels = 6,
+                dither_strength = 0.2,
+            }"#,
+        );
+        let Material3D::PixelSurface(pixel) = pixel else {
+            panic!("expected pixel-surface material");
+        };
+        assert_eq!(pixel.pixel_count, 32);
+        assert_eq!(pixel.color_levels, 6);
+        assert_eq!(pixel.dither_strength, 0.2);
+    }
+
+    #[test]
+    fn vertex_modifier_stack_parses_in_order() {
+        let material = material_from_text(
+            r#"{
+                type = "toon",
+                vertex_modifiers = [
+                    {
+                        type = "wind",
+                        direction = (1.0, 0.0, 0.0),
+                        strength = 0.25,
+                        mask = { axis = "y", start = 0.0, end = 2.0 },
+                    },
+                    {
+                        type = "twist",
+                        axis = "z",
+                        angle_degrees = 90.0,
+                        start = -1.0,
+                        end = 1.0,
+                    },
+                    { type = "pixel_snap", virtual_height = 32, strength = 0.75 },
+                ],
+            }"#,
+        );
+        let modifiers = material.vertex_modifiers();
+        assert_eq!(modifiers.len(), 3);
+        assert!(matches!(
+            modifiers[0],
+            VertexModifier3D::Wind {
+                direction: [1.0, 0.0, 0.0],
+                strength: 0.25,
+                mask: VertexModifierMask3D {
+                    axis: VertexAxis3D::Y,
+                    start: 0.0,
+                    end: 2.0,
+                },
+                ..
+            }
+        ));
+        assert!(matches!(
+            modifiers[1],
+            VertexModifier3D::Twist {
+                axis: VertexAxis3D::Z,
+                angle_radians,
+                ..
+            } if (angle_radians - core::f32::consts::FRAC_PI_2).abs() < 0.0001
+        ));
+        assert!(matches!(
+            modifiers[2],
+            VertexModifier3D::PixelSnap {
+                virtual_height: 32,
+                strength: 0.75,
+            }
+        ));
     }
 
     #[test]

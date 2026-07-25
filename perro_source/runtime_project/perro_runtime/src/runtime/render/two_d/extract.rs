@@ -58,6 +58,8 @@ impl Runtime {
         }
 
         let nodes = &self.nodes;
+        let mut main_world_ids = std::mem::take(&mut self.world_member_scratch);
+        self.fill_world_members(NodeID::nil(), &mut main_world_ids);
         let mut dirty_ids = self.render_2d.take_dirty_ids_scratch();
         dirty_ids.clear();
         dirty_ids.extend(
@@ -66,16 +68,26 @@ impl Runtime {
                 .iter()
                 .filter_map(|&raw_index| nodes.slot_get(raw_index as usize).map(|(id, _)| id)),
         );
+        dirty_ids.retain(|id| self.node_world(*id) == Some(NodeID::nil()));
         let traversal_ids = self.render_2d.collect_traversal_with_scratch(
             &dirty_ids,
-            nodes.iter().map(|(id, _)| id),
+            main_world_ids.iter().copied(),
             bootstrap_scan || camera_render_mask_changed || button_input_changed,
             |node, out| {
                 if let Some(node_ref) = nodes.get(node) {
-                    out.extend(node_ref.get_children_ids().iter().copied());
+                    if !matches!(
+                        node_ref.data,
+                        SceneNodeData::UiSubView(_)
+                            | SceneNodeData::SubView2D(_)
+                            | SceneNodeData::SubView3D(_)
+                    ) {
+                        out.extend(node_ref.get_children_ids().iter().copied());
+                    }
                 }
             },
         );
+        main_world_ids.clear();
+        self.world_member_scratch = main_world_ids;
         self.render_2d.restore_dirty_ids_scratch(dirty_ids);
 
         let mut visible_now = self.render_2d.begin_visible_pass();
@@ -83,7 +95,7 @@ impl Runtime {
         for node in traversal_ids.iter().copied() {
             visible_now.remove(&node);
             let effective_visible =
-                self.is_effectively_visible(node) && !self.is_under_sub_view(node);
+                self.is_effectively_visible(node) && self.node_world(node) == Some(NodeID::nil());
             let sprite_data = self
                 .nodes
                 .get(node)
@@ -988,12 +1000,16 @@ impl Runtime {
 
     pub(super) fn active_render_camera_2d(&mut self) -> Option<Camera2DState> {
         let mut found = None;
-        for (node, scene_node) in self.nodes.iter() {
+        let mut members = std::mem::take(&mut self.world_member_scratch);
+        self.fill_world_members(NodeID::nil(), &mut members);
+        for &node in members.iter() {
+            let Some(scene_node) = self.nodes.get(node) else {
+                continue;
+            };
             let SceneNodeData::Camera2D(camera) = &scene_node.data else {
                 continue;
             };
-            if !camera.active || !self.is_effectively_visible(node) || self.is_under_sub_view(node)
-            {
+            if !camera.active || !self.is_effectively_visible(node) {
                 continue;
             }
             found = Some((
@@ -1005,6 +1021,8 @@ impl Runtime {
                 camera.audio_options.clone(),
             ));
         }
+        members.clear();
+        self.world_member_scratch = members;
         let (node, local_transform, zoom, render_mask, post_processing, audio_options) = found?;
         let global = self
             .get_render_global_transform_2d(node)

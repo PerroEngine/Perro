@@ -219,6 +219,7 @@ impl Gpu3D {
             Material3D::Standard(_) => MaterialPipelineKind::Standard,
             Material3D::Unlit(_) => MaterialPipelineKind::Unlit,
             Material3D::Toon(_) => MaterialPipelineKind::Toon,
+            Material3D::HandDrawn(_) | Material3D::PixelSurface(_) => MaterialPipelineKind::Toon,
             Material3D::Custom(custom) => {
                 let shader_path = custom.shader_path.as_ref();
                 if let Some(token) = self.ensure_custom_pipeline(
@@ -371,102 +372,215 @@ impl Gpu3D {
     }
 
     pub(super) fn stage_custom_params(&mut self, material: &Material3D) -> (u32, u32) {
-        match material {
-            Material3D::Custom(custom) => {
-                if custom.params.is_empty() {
-                    return (0, 0);
-                }
-                self.staged_custom_params_key_scratch.clear();
-                self.staged_custom_params_meta_scratch.clear();
-                self.staged_custom_params_values_scratch.clear();
-                self.staged_custom_params_meta_scratch
-                    .reserve(custom.params.len());
-                self.staged_custom_params_values_scratch
-                    .reserve(custom.params.len() * 4);
-                self.staged_custom_params_key_scratch
-                    .reserve(custom.params.len() * 5);
-                for param in custom.params.as_ref() {
-                    let value_offset = self.staged_custom_params_values_scratch.len() as u32;
-                    let kind = encode_custom_param_value_packed(
-                        &param.value,
-                        &mut self.staged_custom_params_values_scratch,
-                    );
-                    self.staged_custom_params_meta_scratch
-                        .push((value_offset << 2) | kind);
-                    self.staged_custom_params_key_scratch.push(kind);
-                    match kind {
-                        CUSTOM_PARAM_KIND_SCALAR => {
-                            self.staged_custom_params_key_scratch.push(
-                                self.staged_custom_params_values_scratch[value_offset as usize]
-                                    .to_bits(),
-                            );
-                        }
-                        CUSTOM_PARAM_KIND_VEC2 => {
-                            self.staged_custom_params_key_scratch.push(
-                                self.staged_custom_params_values_scratch[value_offset as usize]
-                                    .to_bits(),
-                            );
-                            self.staged_custom_params_key_scratch.push(
-                                self.staged_custom_params_values_scratch[value_offset as usize + 1]
-                                    .to_bits(),
-                            );
-                        }
-                        CUSTOM_PARAM_KIND_VEC3 => {
-                            self.staged_custom_params_key_scratch.push(
-                                self.staged_custom_params_values_scratch[value_offset as usize]
-                                    .to_bits(),
-                            );
-                            self.staged_custom_params_key_scratch.push(
-                                self.staged_custom_params_values_scratch[value_offset as usize + 1]
-                                    .to_bits(),
-                            );
-                            self.staged_custom_params_key_scratch.push(
-                                self.staged_custom_params_values_scratch[value_offset as usize + 2]
-                                    .to_bits(),
-                            );
-                        }
-                        _ => {
-                            self.staged_custom_params_key_scratch.push(
-                                self.staged_custom_params_values_scratch[value_offset as usize]
-                                    .to_bits(),
-                            );
-                            self.staged_custom_params_key_scratch.push(
-                                self.staged_custom_params_values_scratch[value_offset as usize + 1]
-                                    .to_bits(),
-                            );
-                            self.staged_custom_params_key_scratch.push(
-                                self.staged_custom_params_values_scratch[value_offset as usize + 2]
-                                    .to_bits(),
-                            );
-                            self.staged_custom_params_key_scratch.push(
-                                self.staged_custom_params_values_scratch[value_offset as usize + 3]
-                                    .to_bits(),
-                            );
-                        }
-                    }
-                }
-                if let Some(&cached) = self
-                    .staged_custom_params_dedupe
-                    .get(self.staged_custom_params_key_scratch.as_slice())
-                {
-                    return cached;
-                }
-                let offset = self.staged_custom_params_meta.len() as u32;
-                let value_base = self.staged_custom_params_values.len() as u32;
-                for meta in &self.staged_custom_params_meta_scratch {
-                    let kind = *meta & 0x3;
-                    let rel_offset = *meta >> 2;
-                    self.staged_custom_params_meta
-                        .push(((value_base + rel_offset) << 2) | kind);
-                }
-                self.staged_custom_params_values
-                    .extend_from_slice(&self.staged_custom_params_values_scratch);
-                let len = self.staged_custom_params_meta_scratch.len() as u32;
-                self.staged_custom_params_dedupe
-                    .insert(self.staged_custom_params_key_scratch.clone(), (offset, len));
-                (offset, len)
-            }
-            _ => (0, 0),
+        let modifiers = material.vertex_modifiers();
+        let custom_params = match material {
+            Material3D::Custom(custom) => custom.params.as_ref(),
+            _ => &[],
+        };
+        if modifiers.is_empty() && custom_params.is_empty() {
+            return (0, 0);
         }
+
+        self.staged_custom_params_key_scratch.clear();
+        self.staged_custom_params_meta_scratch.clear();
+        self.staged_custom_params_values_scratch.clear();
+        self.staged_custom_params_key_scratch
+            .push(modifiers.len() as u32);
+        for modifier in modifiers {
+            encode_vertex_modifier(modifier, &mut self.staged_custom_params_values_scratch);
+        }
+        self.staged_custom_params_key_scratch.extend(
+            self.staged_custom_params_values_scratch
+                .iter()
+                .map(|value| value.to_bits()),
+        );
+
+        for param in custom_params {
+            let value_offset = self.staged_custom_params_values_scratch.len() as u32;
+            let kind = encode_custom_param_value_packed(
+                &param.value,
+                &mut self.staged_custom_params_values_scratch,
+            );
+            self.staged_custom_params_meta_scratch
+                .push((value_offset << 2) | kind);
+            self.staged_custom_params_key_scratch.push(kind);
+            let value_len = match kind {
+                CUSTOM_PARAM_KIND_SCALAR => 1,
+                CUSTOM_PARAM_KIND_VEC2 => 2,
+                CUSTOM_PARAM_KIND_VEC3 => 3,
+                _ => 4,
+            };
+            self.staged_custom_params_key_scratch.extend(
+                self.staged_custom_params_values_scratch
+                    [value_offset as usize..value_offset as usize + value_len]
+                    .iter()
+                    .map(|value| value.to_bits()),
+            );
+        }
+
+        if let Some(&cached) = self
+            .staged_custom_params_dedupe
+            .get(self.staged_custom_params_key_scratch.as_slice())
+        {
+            return cached;
+        }
+
+        let header_offset = self.staged_custom_params_meta.len() as u32;
+        let value_base = self.staged_custom_params_values.len() as u32;
+        self.staged_custom_params_meta.push(value_base);
+        self.staged_custom_params_meta.push(modifiers.len() as u32);
+        for meta in &self.staged_custom_params_meta_scratch {
+            let kind = *meta & 0x3;
+            let rel_offset = *meta >> 2;
+            self.staged_custom_params_meta
+                .push(((value_base + rel_offset) << 2) | kind);
+        }
+        self.staged_custom_params_values
+            .extend_from_slice(&self.staged_custom_params_values_scratch);
+        let result = (
+            header_offset + 2,
+            self.staged_custom_params_meta_scratch.len() as u32,
+        );
+        self.staged_custom_params_dedupe
+            .insert(self.staged_custom_params_key_scratch.clone(), result);
+        result
+    }
+}
+
+fn encode_vertex_modifier(modifier: &VertexModifier3D, out: &mut Vec<f32>) {
+    let mut record = [0.0f32; 16];
+    match *modifier {
+        VertexModifier3D::Wind {
+            direction,
+            strength,
+            speed,
+            frequency,
+            mask,
+        } => {
+            record[0] = 0.0;
+            record[4..7].copy_from_slice(&direction);
+            record[7] = strength;
+            record[8] = speed;
+            record[9] = frequency;
+            encode_vertex_mask(Some(mask), &mut record);
+        }
+        VertexModifier3D::Wave {
+            axis,
+            direction,
+            amplitude,
+            speed,
+            frequency,
+            phase,
+            mask,
+        } => {
+            record[0] = 1.0;
+            record[1] = vertex_axis_code(axis);
+            record[4..7].copy_from_slice(&direction);
+            record[7] = amplitude;
+            record[8] = speed;
+            record[9] = frequency;
+            record[10] = phase;
+            encode_vertex_mask(mask, &mut record);
+        }
+        VertexModifier3D::Bend {
+            along_axis,
+            bend_axis,
+            angle_radians,
+            start,
+            end,
+        } => {
+            record[0] = 2.0;
+            record[1] = vertex_axis_code(along_axis);
+            record[2] = vertex_axis_code(bend_axis);
+            record[4] = angle_radians;
+            record[5] = start;
+            record[6] = end;
+        }
+        VertexModifier3D::Twist {
+            axis,
+            angle_radians,
+            start,
+            end,
+        } => {
+            record[0] = 3.0;
+            record[1] = vertex_axis_code(axis);
+            record[4] = angle_radians;
+            record[5] = start;
+            record[6] = end;
+        }
+        VertexModifier3D::Inflate { amount, mask } => {
+            record[0] = 4.0;
+            record[4] = amount;
+            encode_vertex_mask(mask, &mut record);
+        }
+        VertexModifier3D::Jitter {
+            amount,
+            scale,
+            rate,
+            seed,
+            mask,
+        } => {
+            record[0] = 5.0;
+            record[4] = amount;
+            record[5] = scale;
+            record[6] = rate;
+            record[7] = seed as f32;
+            encode_vertex_mask(mask, &mut record);
+        }
+        VertexModifier3D::PixelSnap {
+            virtual_height,
+            strength,
+        } => {
+            record[0] = 6.0;
+            record[4] = virtual_height as f32;
+            record[5] = strength;
+        }
+    }
+    out.extend_from_slice(&record);
+}
+
+fn encode_vertex_mask(mask: Option<VertexModifierMask3D>, record: &mut [f32; 16]) {
+    if let Some(mask) = mask {
+        record[12] = 1.0;
+        record[13] = vertex_axis_code(mask.axis);
+        record[14] = mask.start;
+        record[15] = mask.end;
+    }
+}
+
+fn vertex_axis_code(axis: VertexAxis3D) -> f32 {
+    match axis {
+        VertexAxis3D::X => 0.0,
+        VertexAxis3D::Y => 1.0,
+        VertexAxis3D::Z => 2.0,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn vertex_modifier_gpu_record_keeps_kind_params_and_mask() {
+        let modifier = VertexModifier3D::Wave {
+            axis: VertexAxis3D::Z,
+            direction: [1.0, 2.0, 3.0],
+            amplitude: 0.25,
+            speed: 1.5,
+            frequency: 2.5,
+            phase: 0.75,
+            mask: Some(VertexModifierMask3D {
+                axis: VertexAxis3D::Y,
+                start: -1.0,
+                end: 4.0,
+            }),
+        };
+        let mut packed = Vec::new();
+        encode_vertex_modifier(&modifier, &mut packed);
+
+        assert_eq!(packed.len(), 16);
+        assert_eq!(&packed[0..3], &[1.0, 2.0, 0.0]);
+        assert_eq!(&packed[4..11], &[1.0, 2.0, 3.0, 0.25, 1.5, 2.5, 0.75]);
+        assert_eq!(&packed[12..16], &[1.0, 1.0, -1.0, 4.0]);
     }
 }

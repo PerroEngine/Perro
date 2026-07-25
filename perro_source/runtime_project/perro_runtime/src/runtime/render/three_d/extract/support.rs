@@ -96,12 +96,16 @@ impl Runtime {
 
     pub(in super::super) fn active_render_camera_3d(&mut self) -> Option<Camera3DState> {
         let mut found: Option<Camera3DPick> = None;
-        for (node, scene_node) in self.nodes.iter() {
+        let mut members = std::mem::take(&mut self.world_member_scratch);
+        self.fill_world_members(NodeID::nil(), &mut members);
+        for &node in members.iter() {
+            let Some(scene_node) = self.nodes.get(node) else {
+                continue;
+            };
             let SceneNodeData::Camera3D(camera) = &scene_node.data else {
                 continue;
             };
-            if !camera.active || !self.is_effectively_visible(node) || self.is_under_sub_view(node)
-            {
+            if !camera.active || !self.is_effectively_visible(node) {
                 continue;
             }
             let order = self
@@ -127,6 +131,8 @@ impl Runtime {
                 ));
             }
         }
+        members.clear();
+        self.world_member_scratch = members;
         let (
             _priority,
             node,

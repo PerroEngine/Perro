@@ -11,7 +11,7 @@ impl Runtime {
         1.0
     }
 
-    pub(super) fn compute_ui_rect(
+    pub(crate) fn compute_ui_rect(
         &self,
         node: NodeID,
         root_rect: ComputedUiRect,

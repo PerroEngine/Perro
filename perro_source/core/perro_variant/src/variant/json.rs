@@ -301,6 +301,25 @@ pub(super) fn post_process_effect_to_json(effect: &PostProcessEffect) -> JsonVal
             );
             map.insert("size".to_string(), float_to_json(*size as f64));
         }
+        PostProcessEffect::PixelArt {
+            virtual_height,
+            color_levels,
+            dither_strength,
+        } => {
+            map.insert(
+                "type".to_string(),
+                JsonValue::String("pixel_art".to_string()),
+            );
+            map.insert(
+                "virtual_height".to_string(),
+                JsonValue::from(*virtual_height),
+            );
+            map.insert("color_levels".to_string(), JsonValue::from(*color_levels));
+            map.insert(
+                "dither_strength".to_string(),
+                float_to_json(*dither_strength as f64),
+            );
+        }
         PostProcessEffect::Warp { waves, strength } => {
             map.insert("type".to_string(), JsonValue::String("warp".to_string()));
             map.insert("waves".to_string(), float_to_json(*waves as f64));

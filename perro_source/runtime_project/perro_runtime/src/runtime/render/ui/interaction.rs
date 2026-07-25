@@ -276,10 +276,11 @@ impl Runtime {
                 .slot_get(index)
                 .map(|(node, _)| (node, self.dirty.ui_flags_at(index)))
         }));
+        dirty_entries.retain(|(node, _)| self.node_world(*node) == Some(NodeID::nil()));
         let dirty_node_count = dirty_entries.len();
         let mut all_ids = std::mem::take(&mut self.render_ui.all_ids_scratch);
         all_ids.clear();
-        all_ids.extend(self.nodes.iter().map(|(id, _)| id));
+        self.fill_world_members(NodeID::nil(), &mut all_ids);
         let mut parent_siblings = std::mem::take(&mut self.render_ui.parent_siblings_scratch);
         parent_siblings.clear();
         // dedup the layout-children DFS per ui_parent: when a container changes,
@@ -333,7 +334,14 @@ impl Runtime {
             },
             |node, out| {
                 if let Some(node_ref) = nodes.get(node) {
-                    out.extend(node_ref.get_children_ids().iter().copied());
+                    if !matches!(
+                        node_ref.data,
+                        SceneNodeData::UiSubView(_)
+                            | SceneNodeData::SubView2D(_)
+                            | SceneNodeData::SubView3D(_)
+                    ) {
+                        out.extend(node_ref.get_children_ids().iter().copied());
+                    }
                 }
             },
         );
@@ -350,7 +358,8 @@ impl Runtime {
             if matches!(
                 scene_node.data,
                 SceneNodeData::UiCameraStream(_) | SceneNodeData::UiSubView(_)
-            ) && command_seen.insert(node)
+            ) && self.node_world(node) == Some(NodeID::nil())
+                && command_seen.insert(node)
             {
                 command_ids.push(node);
             }

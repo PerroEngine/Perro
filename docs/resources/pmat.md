@@ -11,23 +11,24 @@
 
 ## Purpose
 
-`.pmat` is a text material profile for `MeshInstance3D` surfaces. It picks a shading preset (`standard` PBR, `unlit`, `toon`, or `custom`) and sets the factors and texture slots that give a surface its look. Author one `.pmat` per material and reuse it across meshes, or point a `custom` material at a WGSL shader when you need effects the presets do not cover.
+`.pmat` is a text material profile for `MeshInstance3D` surfaces. It picks a shading preset (`standard`, `unlit`, `toon`, `hand_drawn`, `pixel_surface`, or `custom`) and sets the factors and texture slots that give a surface its look.
 
 ## Use Cases
 
 - Physically based props: a `standard` material with `base_color_factor`, `metallic_factor`, and `roughness_factor` for crates, metal, stone.
 - Glowing UI holograms and skyboxes: an `unlit` material so lighting never darkens `base_color_factor`/`emissive_factor`.
 - Stylized/cel-shaded characters: a `toon` material with `band_count`, `rim_strength`, and `outline_width`.
+- Ink and sketch surfaces: `hand_drawn` with toon bands, crosshatch, and paper grain.
+- Low-resolution texture detail: `pixel_surface` with per-surface texel count, color levels, and dither.
 - Portals, force fields, dissolves: a `custom` material with `shader_path` plus `params` and up to eight `images` sampled via `custom_image_sample`.
 - Cutout foliage and glass: `alpha_mode = "MASK"` with `alpha_cutoff`, or `alpha_mode = "BLEND"`, plus `double_sided = true`.
 - Imported model materials: reference a glTF sub-asset like `res://models/crate.glb:mat[0]` instead of a `.pmat` file.
 
 ## Choice Guide
 
-Use `standard` for lit PBR surfaces, `unlit` for exact color, `toon` for the
-built-in stylized model, and `custom` only when those models cannot express the
-look. Prefer factors/overrides before a custom shader: they retain standard
-lighting, tooling, and fewer shader variants.
+Use `standard` for PBR, `unlit` for exact color, `toon` for cel light,
+`hand_drawn` for ink texture, and `pixel_surface` for snapped mesh texture.
+Use `custom` when presets cannot express the look.
 
 ## Example
 
@@ -91,6 +92,8 @@ Valid values:
 - `standard`
 - `unlit`
 - `toon`
+- `hand_drawn`
+- `pixel_surface`
 - `custom`
 
 The `type` entry **must be the first non-empty line** (comments are allowed above it).
@@ -201,6 +204,81 @@ Note:
 - `rim_strength` (alias: `rimStrength`) float
 - `outline_width` (alias: `outlineWidth`) float
 
+### Hand Drawn
+
+- all common color, alpha, side, flat-shading, and base-texture keys from `toon`
+- `band_count` (alias: `bandCount`) int
+- `hatch_scale` (alias: `hatchScale`) float
+- `grain_strength` (alias: `grainStrength`) float
+
+```txt
+type = "hand_drawn"
+base_color_factor = (0.9, 0.8, 0.65, 1.0)
+band_count = 4
+hatch_scale = 24.0
+grain_strength = 0.06
+```
+
+### Pixel Surface
+
+- common color, alpha, side, flat-shading, and base-texture keys
+- `pixel_count` (alias: `pixelCount`) int; square texture grid per mesh UV
+- `color_levels` (alias: `colorLevels`) int
+- `dither_strength` (alias: `ditherStrength`) float
+
+```txt
+type = "pixel_surface"
+base_color_texture = 0
+pixel_count = 32
+color_levels = 8
+dither_strength = 0.08
+```
+
+`pixel_surface` snaps surface texture detail. Use camera `pixel_art` post-processing
+for low-resolution mesh silhouettes and whole-frame pixels.
+
+### Vertex Modifiers
+
+All material types accept an ordered `vertex_modifiers` array.
+The renderer applies up to 16 modifiers before a custom shader's `shade_vertex` hook.
+
+```txt
+type = "toon"
+
+vertex_modifiers = [
+    {
+        type = "wind"
+        direction = (1.0, 0.0, 0.0)
+        strength = 0.2
+        speed = 1.5
+        frequency = 2.0
+        mask = { axis = "y", start = 0.0, end = 2.0 }
+    },
+    {
+        type = "pixel_snap"
+        virtual_height = 32
+        strength = 1.0
+    }
+]
+```
+
+Supported modifier types:
+
+- `wind`: animated displacement along `direction`; keys `strength`, `speed`, `frequency`, optional `mask`
+- `wave`: animated displacement; keys `axis`, `direction`, `amplitude`, `speed`, `frequency`, `phase`, optional `mask`
+- `bend`: progressive rotation; keys `along_axis`, `bend_axis`, `angle_degrees` or `angle_radians`, `start`, `end`
+- `twist`: progressive axial rotation; keys `axis`, `angle_degrees` or `angle_radians`, `start`, `end`
+- `inflate`: normal displacement; keys `amount`, optional `mask`
+- `jitter`: stepped random displacement; keys `amount`, `scale`, `rate`, `seed`, optional `mask`
+- `pixel_snap`: clip-space vertex snapping; keys `virtual_height`, `strength`
+
+Axes use `"x"`, `"y"`, or `"z"`.
+Axis ranges and masks use world-space mesh positions.
+Modifiers run in array order, so changing order changes the result.
+Depth, cutout, and shadow passes apply the same stack.
+Modifiers change rendered vertices only; collision and navigation geometry stay unchanged.
+`pixel_snap` snaps vertices, not triangles; dense meshes produce a more sprite-like silhouette.
+
 ### Custom
 
 Custom materials define a shader path and optional custom parameters:
@@ -208,8 +286,9 @@ Custom materials define a shader path and optional custom parameters:
 ```txt
 type = "custom"
 shader_path = "res://shaders/custom.wgsl"
-# optional opt out of default standard lighting:
-# lighting = "raw"
+# "surface" = Perro adds standard lighting
+# "final" = exact shader result
+output = "final"
 
 params = {
     glow = 1.25
@@ -258,8 +337,7 @@ material = {
 material = {
     type = "custom"
     shader_path = "res://shaders/custom.wgsl"
-    # optional opt out of default standard lighting:
-    # lighting = "raw"
+    output = "final"
     alpha_mode = "OPAQUE"
     double_sided = false
     params = {

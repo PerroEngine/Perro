@@ -5,6 +5,7 @@ impl Runtime {
         &mut self,
         camera_mask: BitMask,
         stream_node: NodeID,
+        stream_resolution: Option<[u32; 2]>,
     ) -> Arc<[Sprite2DCommand]> {
         let mut out = Vec::new();
         for idx in 0..self.camera_stream_node_scratch.len() {
@@ -13,6 +14,62 @@ impl Runtime {
                 || !self.is_effectively_visible(node)
                 || self.stream_skips_isolated_child(node, stream_node)
             {
+                continue;
+            }
+            if let Some((view, rect)) = self.nodes.get(node).and_then(|node_ref| {
+                let SceneNodeData::UiSubView(view) = &node_ref.data else {
+                    return None;
+                };
+                if !view.visible || !view.enabled {
+                    return None;
+                }
+                let rect = self.nested_ui_sub_view_rect(stream_node, node, stream_resolution?)?;
+                Some((view.as_ref().clone(), rect))
+            }) {
+                let model = perro_structs::Transform2D::new(
+                    rect.center,
+                    view.base.transform.rotation,
+                    view.base.transform.scale,
+                )
+                .to_mat3()
+                .to_cols_array_2d();
+                out.push(Sprite2DCommand {
+                    texture: Self::camera_stream_texture_id(node),
+                    model,
+                    tint: Runtime::color_modulate(view.tint, self.effective_self_modulate(node)),
+                    uv_min: [0.0, 0.0],
+                    uv_max: [1.0, 1.0],
+                    uv_normalized: true,
+                    size: [rect.size.x.max(0.001), rect.size.y.max(0.001)],
+                    z_index: view.base.layout.z_index,
+                });
+                continue;
+            }
+            if let Some((transform, size, z_index, tint)) =
+                self.nodes
+                    .get(node)
+                    .and_then(|node_ref| match &node_ref.data {
+                        SceneNodeData::SubView2D(view) if view.visible && view.sub_view.enabled => {
+                            Some((view.transform, view.size, view.z_index, view.tint))
+                        }
+                        _ => None,
+                    })
+            {
+                let model = self
+                    .stream_render_transform_2d(node, stream_node)
+                    .unwrap_or(transform)
+                    .to_mat3()
+                    .to_cols_array_2d();
+                out.push(Sprite2DCommand {
+                    texture: Self::camera_stream_texture_id(node),
+                    model,
+                    tint: Runtime::color_modulate(tint, self.effective_self_modulate(node)),
+                    uv_min: [0.0, 0.0],
+                    uv_max: [1.0, 1.0],
+                    uv_normalized: true,
+                    size: [size.x.max(0.001), size.y.max(0.001)],
+                    z_index,
+                });
                 continue;
             }
             let Some((texture, region, transform, z_index)) =

@@ -22,10 +22,10 @@ impl Runtime {
     }
 
     pub fn set_physics_paused(&mut self, paused: bool) {
-        if self.physics.paused() == paused {
+        if self.physics.all_paused() == paused {
             return;
         }
-        self.physics.set_paused(paused);
+        self.physics.set_all_paused(paused);
         // reuse cached water id lists; skip full node scan + per-call Vec alloc.
         // mark_needs_rerender only touch dirty state, so taken caches stay valid.
         self.cached_water_ids_2d();
@@ -43,10 +43,10 @@ impl Runtime {
     }
 
     pub fn physics_paused(&self) -> bool {
-        self.physics.paused()
+        self.physics.all_paused()
     }
 
-    pub(crate) fn physics_fixed_step_timed(&mut self) -> RuntimePhysicsStepTiming {
+    fn physics_fixed_step_active_timed(&mut self) -> RuntimePhysicsStepTiming {
         let total_start = Instant::now();
 
         let pre_transforms_start = Instant::now();
@@ -199,6 +199,58 @@ impl Runtime {
         }
     }
 
+    pub(crate) fn physics_fixed_step_timed(&mut self) -> RuntimePhysicsStepTiming {
+        let total_start = Instant::now();
+        let mut worlds = AHashSet::default();
+        let ids = self
+            .internal_updates
+            .physics_body_nodes_2d
+            .iter()
+            .chain(self.internal_updates.physics_body_nodes_3d.iter())
+            .chain(self.internal_updates.physics_joint_nodes_2d.iter())
+            .chain(self.internal_updates.physics_joint_nodes_3d.iter())
+            .copied()
+            .collect::<Vec<_>>();
+        for id in ids {
+            if let Some(world) = self.node_world(id) {
+                worlds.insert(world);
+            }
+        }
+        let mut worlds = worlds.into_iter().collect::<Vec<_>>();
+        worlds.sort_unstable_by_key(|id| (id.index(), id.generation()));
+        let live_worlds = worlds.iter().copied().collect::<AHashSet<_>>();
+
+        let mut total = RuntimePhysicsStepTiming {
+            pre_transforms: std::time::Duration::ZERO,
+            collect: std::time::Duration::ZERO,
+            sync_world: std::time::Duration::ZERO,
+            apply_forces_impulses: std::time::Duration::ZERO,
+            step: std::time::Duration::ZERO,
+            sync_nodes: std::time::Duration::ZERO,
+            post_transforms: std::time::Duration::ZERO,
+            signals: std::time::Duration::ZERO,
+            total: std::time::Duration::ZERO,
+        };
+        for world in worlds {
+            self.activate_physics_world(world);
+            let timing = self.physics_fixed_step_active_timed();
+            total.pre_transforms += timing.pre_transforms;
+            total.collect += timing.collect;
+            total.sync_world += timing.sync_world;
+            total.apply_forces_impulses += timing.apply_forces_impulses;
+            total.step += timing.step;
+            total.sync_nodes += timing.sync_nodes;
+            total.post_transforms += timing.post_transforms;
+            total.signals += timing.signals;
+        }
+        self.activate_physics_world(NodeID::nil());
+        self.physics.retain_worlds(&live_worlds);
+        self.physics_synced_world_revisions
+            .retain(|world, _| world.is_nil() || live_worlds.contains(world));
+        total.total = total_start.elapsed();
+        total
+    }
+
     pub(crate) fn physics_fixed_step(&mut self) {
         let _ = self.physics_fixed_step_timed();
     }
@@ -272,34 +324,65 @@ impl Runtime {
         self.physics_synced_node_revision_3d = None;
     }
 
-    pub(crate) fn queue_impulse_2d(&mut self, id: NodeID, impulse: Vector2) {
+    pub(crate) fn queue_impulse_2d(&mut self, id: NodeID, impulse: Vector2) -> bool {
+        let Some(world) = self.body_physics_world(id) else {
+            return false;
+        };
+        let previous = self.active_physics_world();
+        self.activate_physics_world(world);
         self.physics.queue_impulse_2d(id, impulse);
+        self.activate_physics_world(previous);
+        true
     }
 
-    pub(crate) fn queue_force_2d(&mut self, id: NodeID, force: Vector2) {
+    pub(crate) fn queue_force_2d(&mut self, id: NodeID, force: Vector2) -> bool {
+        let Some(world) = self.body_physics_world(id) else {
+            return false;
+        };
+        let previous = self.active_physics_world();
+        self.activate_physics_world(world);
         self.physics.queue_force_2d(id, force);
+        self.activate_physics_world(previous);
+        true
     }
 
-    pub(crate) fn queue_impulse_3d(&mut self, id: NodeID, impulse: Vector3) {
+    pub(crate) fn queue_impulse_3d(&mut self, id: NodeID, impulse: Vector3) -> bool {
+        let Some(world) = self.body_physics_world(id) else {
+            return false;
+        };
+        let previous = self.active_physics_world();
+        self.activate_physics_world(world);
         self.physics.queue_impulse_3d(id, impulse);
+        self.activate_physics_world(previous);
+        true
     }
 
-    pub(crate) fn queue_force_3d(&mut self, id: NodeID, force: Vector3) {
+    pub(crate) fn queue_force_3d(&mut self, id: NodeID, force: Vector3) -> bool {
+        let Some(world) = self.body_physics_world(id) else {
+            return false;
+        };
+        let previous = self.active_physics_world();
+        self.activate_physics_world(world);
         self.physics.queue_force_3d(id, force);
+        self.activate_physics_world(previous);
+        true
     }
 
     pub(crate) fn emit_force_2d(&mut self, emitter: perro_nodes::PhysicsForceEmitter2D) -> bool {
-        self.pending_force_emitters_2d.push(emitter);
+        self.pending_force_emitters_2d
+            .push((self.free_physics_query_world(), emitter));
         true
     }
 
     pub(crate) fn emit_force_3d(&mut self, emitter: perro_nodes::PhysicsForceEmitter3D) -> bool {
-        self.pending_force_emitters_3d.push(emitter);
+        self.pending_force_emitters_3d
+            .push((self.free_physics_query_world(), emitter));
         true
     }
 
     pub(crate) fn clear_physics(&mut self) {
-        self.physics.clear();
+        self.physics.clear_all();
+        self.physics_synced_world_revisions.clear();
         self.character_fall_speed_2d.clear();
         self.character_fall_speed_3d.clear();
         self.character_sweep_hit_2d.clear();

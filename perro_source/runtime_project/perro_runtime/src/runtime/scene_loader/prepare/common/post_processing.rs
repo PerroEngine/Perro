@@ -59,6 +59,9 @@ fn post_effect_from(value: &SceneValue) -> Option<(Option<Cow<'static, str>>, Po
     let mut ty: Option<String> = None;
     let mut strength: Option<f32> = None;
     let mut size: Option<f32> = None;
+    let mut virtual_height: Option<u32> = None;
+    let mut color_levels: Option<u32> = None;
+    let mut dither_strength: Option<f32> = None;
     let mut waves: Option<f32> = None;
     let mut radius: Option<f32> = None;
     let mut softness: Option<f32> = None;
@@ -111,6 +114,9 @@ fn post_effect_from(value: &SceneValue) -> Option<(Option<Cow<'static, str>>, Po
             }
             "strength" => strength = as_f32(v),
             "size" => size = as_f32(v),
+            "virtual_height" | "height" => virtual_height = as_u32(v),
+            "color_levels" | "levels" => color_levels = as_u32(v),
+            "dither" | "dither_strength" => dither_strength = as_f32(v),
             "waves" => waves = as_f32(v),
             "radius" => radius = as_f32(v),
             "softness" | "feather" => softness = as_f32(v),
@@ -192,6 +198,14 @@ fn post_effect_from(value: &SceneValue) -> Option<(Option<Cow<'static, str>>, Po
             name,
             PostProcessEffect::Pixelate {
                 size: size.unwrap_or(1.0),
+            },
+        )),
+        "pixel_art" | "pixelart" | "retro_pixel" => Some((
+            name,
+            PostProcessEffect::PixelArt {
+                virtual_height: virtual_height.unwrap_or(180),
+                color_levels: color_levels.unwrap_or(8),
+                dither_strength: dither_strength.unwrap_or(0.08),
             },
         )),
         "warp" => Some((

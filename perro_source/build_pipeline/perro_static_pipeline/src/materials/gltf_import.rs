@@ -56,6 +56,7 @@ pub(super) fn materials_from_gltf_file(
                 .emissive_texture()
                 .map(|tex| tex.texture().index() as u32)
                 .unwrap_or(u32::MAX),
+            vertex_modifiers: Default::default(),
         };
         out.push((
             format!("{res_path}:mat[{index}]"),

@@ -32,7 +32,133 @@ pub(crate) use water::{
     lookup_water_body_sample, water_physics_sample_for_body_cached, water_target_submerged,
 };
 
-pub(crate) type PhysicsState = PhysicsSystem;
+pub(crate) struct PhysicsState {
+    active_world: NodeID,
+    active: PhysicsSystem,
+    worlds: AHashMap<NodeID, PhysicsSystem>,
+    paused: bool,
+}
+
+impl PhysicsState {
+    pub(crate) fn new() -> Self {
+        Self {
+            active_world: NodeID::nil(),
+            active: PhysicsSystem::new(),
+            worlds: AHashMap::new(),
+            paused: false,
+        }
+    }
+
+    #[inline]
+    pub(crate) fn active_world(&self) -> NodeID {
+        self.active_world
+    }
+
+    pub(crate) fn activate(&mut self, world: NodeID) {
+        if world == self.active_world {
+            return;
+        }
+        let mut next = self
+            .worlds
+            .remove(&world)
+            .unwrap_or_else(PhysicsSystem::new);
+        next.set_paused(self.paused);
+        let previous = std::mem::replace(&mut self.active, next);
+        self.worlds.insert(self.active_world, previous);
+        self.active_world = world;
+    }
+
+    pub(crate) fn set_all_paused(&mut self, paused: bool) {
+        self.paused = paused;
+        self.active.set_paused(paused);
+        for world in self.worlds.values_mut() {
+            world.set_paused(paused);
+        }
+    }
+
+    pub(crate) fn all_paused(&self) -> bool {
+        self.paused
+    }
+
+    pub(crate) fn clear_all(&mut self) {
+        self.active.clear();
+        self.worlds.clear();
+        self.active_world = NodeID::nil();
+    }
+
+    pub(crate) fn retain_worlds(&mut self, keep: &AHashSet<NodeID>) {
+        self.worlds
+            .retain(|world, _| world.is_nil() || keep.contains(world));
+    }
+}
+
+impl std::ops::Deref for PhysicsState {
+    type Target = PhysicsSystem;
+
+    fn deref(&self) -> &Self::Target {
+        &self.active
+    }
+}
+
+impl std::ops::DerefMut for PhysicsState {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.active
+    }
+}
+
+impl Runtime {
+    fn activate_physics_world(&mut self, world: NodeID) {
+        let current = self.physics.active_world();
+        if current == world {
+            return;
+        }
+        self.physics_synced_world_revisions.insert(
+            current,
+            (
+                self.physics_synced_node_revision_2d,
+                self.physics_synced_node_revision_3d,
+            ),
+        );
+        self.physics.activate(world);
+        let revisions = self
+            .physics_synced_world_revisions
+            .get(&world)
+            .copied()
+            .unwrap_or((None, None));
+        self.physics_synced_node_revision_2d = revisions.0;
+        self.physics_synced_node_revision_3d = revisions.1;
+    }
+
+    #[inline]
+    fn active_physics_world(&self) -> NodeID {
+        self.physics.active_world()
+    }
+
+    fn callback_physics_world(&self) -> Option<NodeID> {
+        let node = self.active_runtime_nodes.last().copied().or_else(|| {
+            self.script_runtime
+                .active_script_stack
+                .last()
+                .map(|(_, node)| *node)
+        })?;
+        self.node_world(node)
+    }
+
+    fn free_physics_query_world(&self) -> NodeID {
+        self.callback_physics_world().unwrap_or(NodeID::nil())
+    }
+
+    fn body_physics_world(&self, body: NodeID) -> Option<NodeID> {
+        let world = self.node_world(body)?;
+        if self
+            .callback_physics_world()
+            .is_some_and(|caller_world| caller_world != world)
+        {
+            return None;
+        }
+        Some(world)
+    }
+}
 
 /// staged awake-body pose 4 SoA writeback (sync_world_to_nodes_2d).
 /// dense scratch lane: rapier reads 1st, arena writes 2nd in slot order.

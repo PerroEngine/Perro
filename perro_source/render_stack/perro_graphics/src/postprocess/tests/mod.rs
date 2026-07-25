@@ -57,6 +57,18 @@ fn lut_effect_params_keep_size_and_strength() {
 }
 
 #[test]
+fn pixel_art_params_keep_virtual_resolution_and_color_controls() {
+    let encoded = encode_effect_params(&PostProcessEffect::PixelArt {
+        virtual_height: 180,
+        color_levels: 8,
+        dither_strength: 0.125,
+    });
+
+    assert_eq!(encoded.effect_type, EFFECT_PIXEL_ART);
+    assert_eq!(encoded.params0, [180.0, 8.0, 0.125, 0.0]);
+}
+
+#[test]
 fn color_grade_params_pack_all_controls() {
     let encoded = encode_effect_params(&PostProcessEffect::ColorGrade {
         exposure: 0.1,

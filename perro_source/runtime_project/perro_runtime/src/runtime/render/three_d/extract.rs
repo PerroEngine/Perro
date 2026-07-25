@@ -102,6 +102,7 @@ impl Runtime {
                 .iter()
                 .filter_map(|&raw_index| self.nodes.slot_get(raw_index as usize).map(|(id, _)| id)),
         );
+        dirty_ids.retain(|id| self.node_world(*id) == Some(NodeID::nil()));
         let include_all_nodes = self.render_3d.full_scan_pending()
             || bootstrap_scan
             || camera_changed
@@ -109,7 +110,7 @@ impl Runtime {
         let mut all_ids = std::mem::take(&mut self.render_3d.all_ids_scratch);
         all_ids.clear();
         if include_all_nodes {
-            all_ids.extend(self.nodes.iter().map(|(id, _)| id));
+            self.fill_world_members(NodeID::nil(), &mut all_ids);
         }
         let nodes = &self.nodes;
         let mut traversal_ids = self.render_3d.collect_traversal(
@@ -118,7 +119,14 @@ impl Runtime {
             bootstrap_scan || camera_changed || camera_render_mask_changed,
             |node, out| {
                 if let Some(node_ref) = nodes.get(node) {
-                    out.extend(node_ref.get_children_ids().iter().copied());
+                    if !matches!(
+                        node_ref.data,
+                        SceneNodeData::UiSubView(_)
+                            | SceneNodeData::SubView2D(_)
+                            | SceneNodeData::SubView3D(_)
+                    ) {
+                        out.extend(node_ref.get_children_ids().iter().copied());
+                    }
                 }
             },
         );
@@ -174,7 +182,12 @@ impl Runtime {
                 // the index from the same pass so later frames take the fast path.
                 self.render_3d.skeleton_mesh_map.clear();
                 self.render_3d.mesh_skeleton_map.clear();
-                for (id, node) in self.nodes.iter() {
+                let mut main_members = std::mem::take(&mut self.world_member_scratch);
+                self.fill_world_members(NodeID::nil(), &mut main_members);
+                for &id in main_members.iter() {
+                    let Some(node) = self.nodes.get(id) else {
+                        continue;
+                    };
                     let SceneNodeData::MeshInstance3D(mesh) = &node.data else {
                         continue;
                     };
@@ -191,6 +204,8 @@ impl Runtime {
                         traversal_ids.push(id);
                     }
                 }
+                main_members.clear();
+                self.world_member_scratch = main_members;
                 self.render_3d.skeleton_mesh_index_built = true;
             }
         } else if !self.render_3d.skeleton_mesh_index_built {
@@ -199,7 +214,12 @@ impl Runtime {
             // animating frame can use the fast path.
             self.render_3d.skeleton_mesh_map.clear();
             self.render_3d.mesh_skeleton_map.clear();
-            for (id, node) in self.nodes.iter() {
+            let mut main_members = std::mem::take(&mut self.world_member_scratch);
+            self.fill_world_members(NodeID::nil(), &mut main_members);
+            for &id in main_members.iter() {
+                let Some(node) = self.nodes.get(id) else {
+                    continue;
+                };
                 let SceneNodeData::MeshInstance3D(mesh) = &node.data else {
                     continue;
                 };
@@ -213,6 +233,8 @@ impl Runtime {
                         .insert(id);
                 }
             }
+            main_members.clear();
+            self.world_member_scratch = main_members;
             self.render_3d.skeleton_mesh_index_built = true;
         }
         dirty_skeletons.clear();
@@ -239,18 +261,23 @@ impl Runtime {
         // node arena once per label.
         let mut overlay_occluders = std::mem::take(&mut self.render_3d.overlay_occluders_scratch);
         overlay_occluders.clear();
-        overlay_occluders.extend(self.nodes.iter().filter_map(|(candidate, scene_node)| {
-            matches!(
-                scene_node.data,
-                SceneNodeData::MeshInstance3D(_) | SceneNodeData::MultiMeshInstance3D(_)
-            )
-            .then_some(candidate)
+        let mut main_members = std::mem::take(&mut self.world_member_scratch);
+        self.fill_world_members(NodeID::nil(), &mut main_members);
+        overlay_occluders.extend(main_members.iter().copied().filter(|candidate| {
+            self.nodes.get(*candidate).is_some_and(|scene_node| {
+                matches!(
+                    scene_node.data,
+                    SceneNodeData::MeshInstance3D(_) | SceneNodeData::MultiMeshInstance3D(_)
+                )
+            })
         }));
+        main_members.clear();
+        self.world_member_scratch = main_members;
 
         for node in traversal_ids.iter().copied() {
             visible_now.remove(&node);
             let effective_visible =
-                self.is_effectively_visible(node) && !self.is_under_sub_view(node);
+                self.is_effectively_visible(node) && self.node_world(node) == Some(NodeID::nil());
             let ambient_light_data = self.nodes.get(node).and_then(|node| match &node.data {
                 SceneNodeData::AmbientLight3D(light)
                     if light.active

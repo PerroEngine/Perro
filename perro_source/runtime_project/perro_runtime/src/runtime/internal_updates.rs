@@ -414,8 +414,10 @@ impl Runtime {
         if self.nodes.get(id).is_none() {
             return;
         }
+        self.active_runtime_nodes.push(id);
         let mut ctx = RuntimeWindow::new(self);
         perro_internal_updates::internal_update_node(&mut ctx, res, ipt, id);
+        let _ = self.active_runtime_nodes.pop();
     }
 
     fn call_internal_fixed_update_node_with_context(
@@ -427,8 +429,10 @@ impl Runtime {
         if self.nodes.get(id).is_none() {
             return;
         }
+        self.active_runtime_nodes.push(id);
         let mut ctx = RuntimeWindow::new(self);
         perro_internal_updates::internal_fixed_update_node(&mut ctx, res, ipt, id);
+        let _ = self.active_runtime_nodes.pop();
     }
 }
 

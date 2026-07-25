@@ -3,6 +3,8 @@ const BUILTIN_POST_BODY_WGSL: &str =
 const EFFECT_BLUR_WGSL: &str = perro_macros::include_str_stripped!("shaders/effects/blur.wgsl");
 const EFFECT_PIXELATE_WGSL: &str =
     perro_macros::include_str_stripped!("shaders/effects/pixelate.wgsl");
+const EFFECT_PIXEL_ART_WGSL: &str =
+    perro_macros::include_str_stripped!("shaders/effects/pixel_art.wgsl");
 const EFFECT_WARP_WGSL: &str = perro_macros::include_str_stripped!("shaders/effects/warp.wgsl");
 const EFFECT_VIGNETTE_WGSL: &str =
     perro_macros::include_str_stripped!("shaders/effects/vignette.wgsl");
@@ -35,6 +37,7 @@ fn build_builtin_post_shader() -> String {
     wgsl.push_str(PRELUDE_WGSL);
     wgsl.push_str(EFFECT_BLUR_WGSL);
     wgsl.push_str(EFFECT_PIXELATE_WGSL);
+    wgsl.push_str(EFFECT_PIXEL_ART_WGSL);
     wgsl.push_str(EFFECT_WARP_WGSL);
     wgsl.push_str(EFFECT_VIGNETTE_WGSL);
     wgsl.push_str(EFFECT_CRT_WGSL);

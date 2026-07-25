@@ -11,14 +11,12 @@ use crate::{
 use perro_compiler::{ScriptsBuildProfile, compile_scripts_with_profile};
 use perro_project::{ensure_source_overrides, load_project_toml};
 use std::collections::HashMap;
+use std::env;
 use std::fs;
+#[cfg(target_os = "windows")]
+use std::io::{self, IsTerminal};
 use std::path::{Path, PathBuf};
 use std::process::Command;
-#[cfg(target_os = "windows")]
-use std::{
-    env,
-    io::{self, IsTerminal},
-};
 
 pub(crate) fn mem_profile_command(args: &[String], cwd: &Path) -> Result<(), String> {
     let release = args.iter().any(|a| a == "--release");

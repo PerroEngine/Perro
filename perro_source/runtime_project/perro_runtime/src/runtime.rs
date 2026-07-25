@@ -83,6 +83,7 @@ impl RuntimeScriptCtor {
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct ForceWaterImpact2D {
+    pub(crate) world: NodeID,
     pub(crate) position: perro_structs::Vector2,
     pub(crate) force: perro_structs::Vector2,
     pub(crate) strength: f32,
@@ -92,6 +93,7 @@ pub(crate) struct ForceWaterImpact2D {
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct ForceWaterImpact3D {
+    pub(crate) world: NodeID,
     pub(crate) position: perro_structs::Vector3,
     pub(crate) force: perro_structs::Vector3,
     pub(crate) strength: f32,
@@ -155,6 +157,14 @@ pub(crate) struct SceneResourceRefsScratch {
     pub(crate) materials: AHashMap<MaterialID, Vec<NodeID>>,
 }
 
+#[derive(Default)]
+pub(crate) struct WorldMembershipCache {
+    revision: u64,
+    initialized: bool,
+    owner_by_slot: Vec<NodeID>,
+    members: AHashMap<NodeID, Vec<NodeID>>,
+}
+
 /// Live game runtime state.
 ///
 /// Keeps scene nodes, script schedules, resource APIs, input snapshots,
@@ -181,6 +191,7 @@ pub struct Runtime {
     pub(crate) scripts: ScriptCollection,
     schedules: ScriptSchedules,
     pub(crate) script_runtime: ScriptRuntimeState,
+    pub(crate) active_runtime_nodes: Vec<NodeID>,
     render: RenderState,
     scene_texture_refs_cache: AHashMap<TextureID, Vec<NodeID>>,
     scene_mesh_refs_cache: AHashMap<MeshID, Vec<NodeID>>,
@@ -194,6 +205,8 @@ pub struct Runtime {
     scene_resource_refs_scratch: SceneResourceRefsScratch,
     /// reusable node-id list 4 camera-stream collectors; refill once per drain.
     camera_stream_node_scratch: Vec<NodeID>,
+    world_member_scratch: Vec<NodeID>,
+    pub(crate) world_membership: RefCell<WorldMembershipCache>,
     pub(crate) dirty: DirtyState,
     pub(crate) transforms: TransformRuntimeState,
     internal_updates: InternalUpdateState,
@@ -220,6 +233,7 @@ pub struct Runtime {
     /// arena mutation revision @ last node->world sync; match + no dirty => skip re-sync
     physics_synced_node_revision_2d: Option<u64>,
     physics_synced_node_revision_3d: Option<u64>,
+    physics_synced_world_revisions: AHashMap<NodeID, (Option<u64>, Option<u64>)>,
     physics_body_descs_2d: Vec<perro_physics::BodyDesc2D>,
     physics_body_descs_3d: Vec<perro_physics::BodyDesc3D>,
     physics_joint_descs_2d: Vec<perro_physics::JointDesc2D>,
@@ -267,8 +281,8 @@ pub struct Runtime {
         AHashMap<NodeID, (String, Vec<scene_loader::prepare::PendingBonePoseOverride>)>,
     pub(crate) force_water_impacts_2d: Vec<ForceWaterImpact2D>,
     pub(crate) force_water_impacts_3d: Vec<ForceWaterImpact3D>,
-    pub(crate) pending_force_emitters_2d: Vec<perro_nodes::PhysicsForceEmitter2D>,
-    pub(crate) pending_force_emitters_3d: Vec<perro_nodes::PhysicsForceEmitter3D>,
+    pub(crate) pending_force_emitters_2d: Vec<(NodeID, perro_nodes::PhysicsForceEmitter2D)>,
+    pub(crate) pending_force_emitters_3d: Vec<(NodeID, perro_nodes::PhysicsForceEmitter3D)>,
     /// reusable body-handle update buf 4 sync_world_2d/3d; avoid per-frame alloc.
     physics_handle_updates_scratch_2d: Vec<(NodeID, Option<u64>)>,
     physics_handle_updates_scratch_3d: Vec<(NodeID, Option<u64>)>,
@@ -518,6 +532,7 @@ impl Runtime {
             scripts: ScriptCollection::new(),
             schedules: ScriptSchedules::new(),
             script_runtime: ScriptRuntimeState::new(),
+            active_runtime_nodes: Vec::new(),
             project: None,
             render: RenderState::new(),
             scene_texture_refs_cache: AHashMap::new(),
@@ -527,6 +542,8 @@ impl Runtime {
             scene_resource_refs_dirty: true,
             scene_resource_refs_scratch: SceneResourceRefsScratch::default(),
             camera_stream_node_scratch: Vec::new(),
+            world_member_scratch: Vec::new(),
+            world_membership: RefCell::new(WorldMembershipCache::default()),
             dirty: DirtyState::new(),
             transforms: TransformRuntimeState::new(),
             internal_updates: InternalUpdateState::new(),
@@ -549,6 +566,7 @@ impl Runtime {
             physics: physics::PhysicsState::new(),
             physics_synced_node_revision_2d: None,
             physics_synced_node_revision_3d: None,
+            physics_synced_world_revisions: AHashMap::new(),
             physics_body_descs_2d: Vec::new(),
             physics_body_descs_3d: Vec::new(),
             physics_joint_descs_2d: Vec::new(),

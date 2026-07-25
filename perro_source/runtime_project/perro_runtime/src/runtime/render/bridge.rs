@@ -19,7 +19,8 @@ use perro_render_bridge::{
     Water2DState, Water3DState,
 };
 use perro_runtime_render::{decode_3d_mesh_request_node, decode_render_request_node_from_event};
-use perro_structs::{BitMask, Color};
+use perro_structs::{BitMask, Color, Vector2};
+use perro_ui::ComputedUiRect;
 use std::sync::Arc;
 
 use crate::runtime::render_2d::{
@@ -181,7 +182,12 @@ impl Runtime {
     }
 
     fn stream_skips_isolated_child(&self, node: NodeID, stream_node: NodeID) -> bool {
-        !self.is_sub_view_node(stream_node) && self.is_under_sub_view(node)
+        let stream_world = if self.is_sub_view_node(stream_node) {
+            stream_node
+        } else {
+            self.node_world(stream_node).unwrap_or(NodeID::nil())
+        };
+        self.node_world(node) != Some(stream_world)
     }
 
     fn stream_render_transform_2d(

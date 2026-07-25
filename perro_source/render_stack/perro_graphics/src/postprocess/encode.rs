@@ -22,6 +22,25 @@ pub(super) fn encode_effect_params(effect: &PostProcessEffect) -> EncodedEffectP
             params5: [0.0; 4],
             custom_params: Vec::new(),
         },
+        PostProcessEffect::PixelArt {
+            virtual_height,
+            color_levels,
+            dither_strength,
+        } => EncodedEffectParams {
+            effect_type: EFFECT_PIXEL_ART,
+            params0: [
+                *virtual_height as f32,
+                *color_levels as f32,
+                *dither_strength,
+                0.0,
+            ],
+            params1: [0.0; 4],
+            params2: [0.0; 4],
+            params3: [0.0; 4],
+            params4: [0.0; 4],
+            params5: [0.0; 4],
+            custom_params: Vec::new(),
+        },
         PostProcessEffect::Warp { waves, strength } => EncodedEffectParams {
             effect_type: EFFECT_WARP,
             params0: [*waves, *strength, 0.0, 0.0],
