@@ -19,6 +19,9 @@ struct DocOut {
     route_path: String,
     title: String,
     area: String,
+    nav_group: String,
+    nav_order: u16,
+    is_history: bool,
     summary: String,
     headings: Vec<HeadingOut>,
     keywords: String,
@@ -68,12 +71,151 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     )?;
 
     docs.sort_by(|a, b| a.slug.cmp(&b.slug));
+    let mut nav_counts = std::collections::BTreeMap::<String, u16>::new();
+    for doc in &mut docs {
+        let order = nav_counts.entry(doc.nav_group.clone()).or_default();
+        doc.nav_order = *order;
+        *order = order.saturating_add(1);
+    }
+    validate_generated_docs(&docs)?;
 
     let json = serde_json::to_string(&docs)?;
     let out = format!("pub const DOCS_JSON: &str = {json:?};\n");
     let out_path = PathBuf::from(env::var("OUT_DIR")?).join("generated_docs.rs");
     fs::write(out_path, out)?;
     Ok(())
+}
+
+fn validate_generated_docs(docs: &[DocOut]) -> io::Result<()> {
+    use std::collections::{BTreeMap, BTreeSet};
+
+    const DOC_GROUPS: &[&str] = &[
+        "Start",
+        "Author",
+        "Script",
+        "Runtime",
+        "Assets",
+        "Platforms",
+        "Ship",
+        "Reference",
+        "History",
+    ];
+
+    let mut failures = Vec::new();
+    let mut routes = BTreeMap::<&str, &DocOut>::new();
+    let mut nav_positions = BTreeSet::new();
+    let mut found_groups = BTreeSet::new();
+
+    for doc in docs {
+        if doc.summary.trim().is_empty() {
+            failures.push(format!("{} has empty summary", doc.route_path));
+        }
+        if routes.insert(doc.route_path.as_str(), doc).is_some() {
+            failures.push(format!("duplicate route {}", doc.route_path));
+        }
+        if !nav_positions.insert((
+            doc.collection.as_str(),
+            doc.nav_group.as_str(),
+            doc.nav_order,
+        )) {
+            failures.push(format!(
+                "duplicate nav order {} / {} / {}",
+                doc.collection, doc.nav_group, doc.nav_order
+            ));
+        }
+        if doc.collection == "docs" {
+            found_groups.insert(doc.nav_group.as_str());
+            if !DOC_GROUPS.contains(&doc.nav_group.as_str()) {
+                failures.push(format!(
+                    "{} has unknown nav group {}",
+                    doc.route_path, doc.nav_group
+                ));
+            }
+        }
+
+        let mut ids = BTreeSet::new();
+        for heading in &doc.headings {
+            if !ids.insert(heading.id.as_str()) {
+                failures.push(format!(
+                    "{} repeats heading id {}",
+                    doc.route_path, heading.id
+                ));
+            }
+        }
+    }
+
+    for group in DOC_GROUPS {
+        if !found_groups.contains(group) {
+            failures.push(format!("nav group {group} has no pages"));
+        }
+    }
+
+    for doc in docs {
+        for event in Parser::new(&doc.markdown) {
+            let target = match event {
+                Event::Start(Tag::Link { dest_url, .. })
+                | Event::Start(Tag::Image { dest_url, .. }) => dest_url,
+                _ => continue,
+            };
+            validate_generated_target(doc, target.as_ref(), &routes, &mut failures);
+        }
+    }
+
+    if failures.is_empty() {
+        Ok(())
+    } else {
+        Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("docs validation failed:\n{}", failures.join("\n")),
+        ))
+    }
+}
+
+fn validate_generated_target(
+    source: &DocOut,
+    target: &str,
+    routes: &std::collections::BTreeMap<&str, &DocOut>,
+    failures: &mut Vec<String>,
+) {
+    if target.starts_with("http://")
+        || target.starts_with("https://")
+        || target.starts_with("mailto:")
+    {
+        return;
+    }
+    if target.contains("://") {
+        failures.push(format!("{} has malformed URL {target}", source.route_path));
+        return;
+    }
+
+    let (path, fragment) = match target.split_once('#') {
+        Some(("", fragment)) => (source.route_path.as_str(), Some(fragment)),
+        Some((path, fragment)) => (path, Some(fragment)),
+        None => (target, None),
+    };
+    if !path.starts_with("/docs") && !path.starts_with("/book") {
+        return;
+    }
+    let Some(target_doc) = routes.get(path).copied() else {
+        failures.push(format!(
+            "{} links to missing route {path}",
+            source.route_path
+        ));
+        return;
+    };
+    if let Some(fragment) = fragment {
+        if !fragment.is_empty()
+            && !target_doc
+                .headings
+                .iter()
+                .any(|heading| heading.id == fragment)
+        {
+            failures.push(format!(
+                "{} links to missing anchor {path}#{fragment}",
+                source.route_path
+            ));
+        }
+    }
 }
 
 fn build_and_sync_demo(root: &Path, project_name: &str, public_name: &str) -> io::Result<()> {
@@ -296,6 +438,8 @@ fn push_doc_with_link_slug(
     } else {
         slug.split('/').next().unwrap_or("docs").to_string()
     };
+    let is_history = is_history_page(collection, &slug);
+    let nav_group = nav_group(collection, &slug, is_history).to_string();
     let route_path = route_path(collection, &slug);
     let summary = first_para(&markdown);
     let headings = headings(&markdown);
@@ -308,6 +452,9 @@ fn push_doc_with_link_slug(
         route_path,
         title,
         area,
+        nav_group,
+        nav_order: 0,
+        is_history,
         summary,
         headings,
         keywords,
@@ -316,6 +463,57 @@ fn push_doc_with_link_slug(
         search_text,
     });
     Ok(())
+}
+
+fn is_history_page(collection: &str, slug: &str) -> bool {
+    collection == "docs"
+        && (slug.contains("audit")
+            || slug.contains("_design")
+            || slug.contains("_abi_")
+            || slug.ends_with("_design"))
+}
+
+fn nav_group(collection: &str, slug: &str, history: bool) -> &'static str {
+    if collection == "book" {
+        return "Book";
+    }
+    if history {
+        return "History";
+    }
+    if slug == "index"
+        || slug == "writing_standard"
+        || slug.starts_with("tools/")
+        || matches!(
+            slug,
+            "project/feature_matrix" | "project/project_toml" | "project/performance_philosophy"
+        )
+    {
+        "Start"
+    } else if slug.starts_with("resources/") {
+        "Assets"
+    } else if slug == "WASM" || slug.starts_with("platform/") || slug.starts_with("networking/") {
+        "Platforms"
+    } else if slug.starts_with("scripting/contexts/") {
+        "Runtime"
+    } else if slug.starts_with("scripting/authoring/")
+        || slug.starts_with("scripting/scene_node_templates/")
+        || matches!(
+            slug,
+            "scripting/nodes"
+                | "scripting/node_collections"
+                | "scripting/tilemap"
+                | "scripting/ui"
+                | "scripting/water"
+        )
+    {
+        "Author"
+    } else if slug.starts_with("scripting/") {
+        "Script"
+    } else if slug.starts_with("project/") {
+        "Ship"
+    } else {
+        "Reference"
+    }
 }
 
 fn route_path(collection: &str, slug: &str) -> String {
@@ -557,9 +755,8 @@ fn search_text(
     headings: &[HeadingOut],
     markdown: &str,
 ) -> String {
-    let mut out = String::with_capacity(
-        slug.len() + title.len() + summary.len() + markdown.len().min(4096) + 64,
-    );
+    let mut out =
+        String::with_capacity(slug.len() + title.len() + summary.len() + markdown.len() + 64);
     out.push_str(slug);
     out.push(' ');
     out.push_str(title);
@@ -570,7 +767,7 @@ fn search_text(
         out.push_str(&heading.text);
     }
     out.push(' ');
-    out.extend(markdown.chars().take(4096));
+    out.push_str(markdown);
     out.make_ascii_lowercase();
     out
 }

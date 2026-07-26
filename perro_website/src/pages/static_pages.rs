@@ -109,6 +109,41 @@ perro new_animation --name HeroRun"# />
 }
 
 #[component]
+pub fn MissionPage() -> impl IntoView {
+    view! {
+        <Seo info=SeoInfo::new(
+            "Mission",
+            "Why Perro exists: make a fast, understandable, open-source game engine that keeps Rust game development direct.",
+            "Perro mission, open source Rust game engine, simple game engine, fast game engine",
+            "/mission",
+        ) />
+        <PageFrame eyebrow="Mission" title="Make game building feel direct again.">
+            <section class="band flat mission-lead">
+                <p class="lead">
+                    "Perro keeps the path from idea to running scene short: plain project files, typed nodes, Rust scripts, and build tools that prepare expensive work before release."
+                </p>
+                <div class="feature-grid">
+                    <InfoCard title="Simple on purpose" body="Small concepts, visible ownership, and explicit runtime calls beat hidden editor magic." href="/book" />
+                    <InfoCard title="Fast by design" body="Author flexible source files, then bake supported data into release-ready forms." href="/docs/project/performance_philosophy" />
+                    <InfoCard title="Open by default" body="Apache-2.0 source, public docs, runnable demos, and no engine royalty." href="https://github.com/PerroEngine/Perro" />
+                </div>
+            </section>
+            <section class="band flat split">
+                <div>
+                    <p class="eyebrow">"North star"</p>
+                    <h2>"Less engine ceremony. More game code."</h2>
+                    <p>"Perro favors readable scene data, normal Rust modules, predictable APIs, and release paths you can inspect."</p>
+                </div>
+                <div class="page-actions">
+                    <a class="btn primary" href="/learn/getting-started">"Build first project"</a>
+                    <a class="btn ghost" href="/sponsor">"Support the work"</a>
+                </div>
+            </section>
+        </PageFrame>
+    }
+}
+
+#[component]
 fn InfoCard(title: &'static str, body: &'static str, href: &'static str) -> impl IntoView {
     view! {
         <a class="feature-card" href=href>

@@ -77,7 +77,7 @@ fn join_keywords(keywords: &str) -> String {
 fn social_image_path(path: &str) -> String {
     let slug = path.trim_matches('/').replace('/', "__");
     if slug.is_empty() {
-        "/og/home.svg".to_string()
+        "/og-home.png".to_string()
     } else {
         format!("/og/{slug}.png")
     }
@@ -110,7 +110,7 @@ fn site_base_url() -> String {
 
 #[component]
 pub fn CodeBlock(code: &'static str) -> impl IntoView {
-    let html = highlight::code_block_html("text", code);
+    let html = highlight::code_block_html("powershell", code);
     view! {
         <div inner_html=html></div>
     }

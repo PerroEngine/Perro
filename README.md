@@ -59,7 +59,7 @@ Perro is, of course, **open source**, and contributions are always appreciated: 
 Donations help fund full-time development, faster features, and better tooling. If you want to support the project:
 
 - [Support Directly](https://perroengine.com/sponsor)
-- [Support on Ko-fi](https://ko-fi.com/perroengine)
+- [Sponsor Perro](https://perroengine.com/sponsor)
 
 ---
 

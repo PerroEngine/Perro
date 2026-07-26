@@ -2,17 +2,18 @@ use leptos::prelude::*;
 use leptos_router::hooks::{use_params_map, use_query_map};
 
 use crate::docs::{
-    area_label, book_pages, docs_by_area, docs_pages, find_doc, grouped_docs_filtered_for_area,
+    book_pages, docs_by_nav_group, docs_nav_neighbors, docs_pages, find_doc,
+    grouped_docs_filtered_for_nav,
 };
 use crate::layout::{NotFound, PageFrame};
 use crate::shared::{Seo, SeoInfo};
 
 #[component]
 pub fn DocsIndexPage() -> impl IntoView {
-    let areas = docs_by_area();
-    let doc_count = areas.iter().map(|(_, count)| count).sum::<usize>();
+    let groups = docs_by_nav_group();
+    let doc_count = groups.iter().map(|(_, count)| count).sum::<usize>();
     let query_map = use_query_map();
-    let selected_area = move || query_map.with(|map| map.get("area"));
+    let selected_group = move || query_map.with(|map| map.get("group"));
     let query = RwSignal::new(String::new());
     view! {
         <Seo info=SeoInfo::new(
@@ -24,12 +25,12 @@ pub fn DocsIndexPage() -> impl IntoView {
         <PageFrame eyebrow="Docs" title="Perro Documentation">
             <div class="doc-layout">
                 <aside class="doc-filter">
-                    <h2>"Areas"</h2>
+                    <h2>"Explore"</h2>
                     <a href="/docs"><span>"All"</span><small>{doc_count}</small></a>
-                    {areas.into_iter().map(|(area, count)| {
-                        let href = format!("/docs?area={area}");
+                    {groups.into_iter().map(|(group, count)| {
+                        let href = format!("/docs?group={group}");
                         view! {
-                        <a href=href><span>{area_label(area)}</span><small>{count}</small></a>
+                        <a href=href><span>{group}</span><small>{count}</small></a>
                     }}).collect_view()}
                 </aside>
                 <div class="doc-results">
@@ -43,14 +44,16 @@ pub fn DocsIndexPage() -> impl IntoView {
                     </div>
                     <input
                         class="search"
+                        id="docs-search"
                         type="search"
-                        placeholder="Search docs"
+                        placeholder="Search every guide, API, and system…  /"
+                        aria-label="Search documentation"
                         on:input=move |ev| query.set(event_target_value(&ev))
                     />
-                    {move || grouped_docs_filtered_for_area(&query.get(), selected_area().as_deref()).into_iter().map(|(area, docs)| view! {
-                        <section class="docs-section" id=format!("area-{area}")>
+                    {move || grouped_docs_filtered_for_nav(&query.get(), selected_group().as_deref()).into_iter().map(|(group, docs)| view! {
+                        <section class="docs-section" id=format!("group-{}", group.to_ascii_lowercase())>
                             <div class="docs-section-head">
-                                <h2>{area_label(area)}</h2>
+                                <h2>{group}</h2>
                                 <span>{docs.len()}" pages"</span>
                             </div>
                             <div class="doc-list">
@@ -60,7 +63,7 @@ pub fn DocsIndexPage() -> impl IntoView {
                                             <strong>{doc.title.as_str()}</strong>
                                             <span>{doc.summary.as_str()}</span>
                                         </span>
-                                        <span class="doc-row-meta">{area_label(doc.area.as_str())}</span>
+                                        <span class="doc-row-meta">{doc.nav_group.as_str()}</span>
                                     </a>
                                 }).collect_view()}
                             </div>
@@ -147,7 +150,7 @@ fn BookArticle(doc: &'static crate::docs::DocPage) -> impl IntoView {
                         <article class="article" inner_html=doc.html.as_str()></article>
                         <aside class="toc">
                             <strong>"On page"</strong>
-                            {doc.headings.iter().filter(|h| h.level <= 3).map(|h| view! {
+                            {doc.headings.iter().filter(|h| (2..=3).contains(&h.level)).map(|h| view! {
                                 <a href=format!("#{}", h.id)>{h.text.as_str()}</a>
                             }).collect_view()}
                         </aside>
@@ -168,31 +171,60 @@ fn BookArticle(doc: &'static crate::docs::DocPage) -> impl IntoView {
 
 #[component]
 fn DocArticle(doc: &'static crate::docs::DocPage, canonical_path: String) -> impl IntoView {
-    let areas = docs_by_area();
+    let groups = docs_by_nav_group();
+    let group_pages = grouped_docs_filtered_for_nav("", Some(doc.nav_group.as_str()))
+        .into_iter()
+        .flat_map(|(_, pages)| pages)
+        .collect::<Vec<_>>();
+    let (prev, next) = docs_nav_neighbors(doc);
     view! {
         <Seo info=doc_seo(doc, &canonical_path) />
-        <PageFrame eyebrow=area_label(doc.area.as_str()) title=doc.title.as_str()>
+        <PageFrame eyebrow=doc.nav_group.as_str() title=doc.title.as_str()>
             <div class="doc-layout">
                 <aside class="doc-filter">
-                    <h2>"Areas"</h2>
+                    <h2>"Explore"</h2>
                     <a href="/docs"><span>"All"</span><small>{docs_pages().len()}</small></a>
-                    {areas.into_iter().map(|(area, count)| {
-                        let href = format!("/docs?area={area}");
+                    {groups.into_iter().map(|(group, count)| {
+                        let href = format!("/docs?group={group}");
                         view! {
-                            <a href=href><span>{area_label(area)}</span><small>{count}</small></a>
+                            <a href=href><span>{group}</span><small>{count}</small></a>
                         }
                     }).collect_view()}
+                    <div class="doc-filter-pages">
+                        <strong>{doc.nav_group.as_str()}</strong>
+                        {group_pages.into_iter().map(|page| {
+                            let class_name = if page.slug == doc.slug {
+                                "current"
+                            } else {
+                                ""
+                            };
+                            let current = (page.slug == doc.slug).then_some("page");
+                            view! {
+                                <a class=class_name aria-current=current href=page.route_path.as_str()>
+                                    <span>{page.title.as_str()}</span>
+                                </a>
+                            }
+                        }).collect_view()}
+                    </div>
                 </aside>
                 <div class="doc-results">
                     <div class="doc-page">
                         <article class="article" inner_html=doc.html.as_str()></article>
                         <aside class="toc">
                             <strong>"On page"</strong>
-                            {doc.headings.iter().filter(|h| h.level <= 3).map(|h| view! {
+                            {doc.headings.iter().filter(|h| (2..=3).contains(&h.level)).map(|h| view! {
                                 <a href=format!("#{}", h.id)>{h.text.as_str()}</a>
                             }).collect_view()}
                         </aside>
                     </div>
+                    <nav class="page-actions doc-neighbors" aria-label="Documentation pages">
+                        {prev.map(|page| view! {
+                            <a class="btn ghost" href=page.route_path.as_str()>{format!("Previous: {}", page.title)}</a>
+                        })}
+                        {next.map(|page| view! {
+                            <a class="btn primary" href=page.route_path.as_str()>{format!("Next: {}", page.title)}</a>
+                        })}
+                    </nav>
                 </div>
             </div>
         </PageFrame>

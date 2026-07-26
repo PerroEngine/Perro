@@ -12,14 +12,15 @@ mod shared;
 use layout::{NotFound, SiteShell};
 use pages::{
     AssetsPage, BookChapterPage, BookPage, CommunityPage, Demo2dPage, Demo3dPage, DocPageView,
-    DocsIndexPage, ExamplesPage, FeaturesPage, GetStartedPage, HomePage, NewsPage, NodesPage,
-    SponsorPage,
+    DocsIndexPage, ExamplesPage, FeaturesPage, GetStartedPage, HomePage, MissionPage, NewsPage,
+    NodesPage, SponsorPage,
 };
 
 #[component]
 #[cfg(feature = "ssr")]
 pub fn App() -> impl IntoView {
     provide_meta_context();
+    let leptos_options = use_context::<leptos::config::LeptosOptions>();
     view! {
         <!DOCTYPE html>
         <html lang="en">
@@ -31,6 +32,9 @@ pub fn App() -> impl IntoView {
                 <meta name="application-name" content="Perro Engine" />
                 <link rel="icon" href="/perro.svg" type="image/svg+xml" />
                 <link rel="stylesheet" href="/style/main.css" />
+                {leptos_options.map(|options| view! {
+                    <HydrationScripts options />
+                })}
             </head>
             <body>
                 <AppRoutes />
@@ -53,6 +57,7 @@ fn AppRoutes() -> impl IntoView {
                 <Routes fallback=NotFound>
                     <Route path=path!("") view=HomePage />
                     <Route path=path!("features") view=FeaturesPage />
+                    <Route path=path!("mission") view=MissionPage />
                     <Route path=path!("book") view=BookPage />
                     <Route path=path!("book/*slug") view=BookChapterPage />
                     <Route path=path!("nodes") view=NodesPage />

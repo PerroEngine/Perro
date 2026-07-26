@@ -7,7 +7,7 @@ Leptos SSR website for Perro.
 ```powershell
 cargo check -p perro_website
 cargo check -p perro_website --no-default-features --features hydrate --target wasm32-unknown-unknown
-cargo leptos watch --package perro_website
+cargo leptos watch -p perro_website
 ```
 
 `cargo leptos` req:
@@ -15,6 +15,24 @@ cargo leptos watch --package perro_website
 ```powershell
 cargo install cargo-leptos
 ```
+
+## Stripe sponsor checkout
+
+Copy `.env.example` to a local env file and set Stripe test keys plus Price IDs.
+
+`POST /api/sponsor` accepts:
+
+```json
+{ "id": 1, "amount": null }
+```
+
+- `1..7`: monthly subscription tiers
+- `0`: one-time USD support from `$1` to `$99,999`
+- `101..107`: corporate subscription tiers
+
+Fixed tiers use server-owned Stripe Price IDs.
+
+Never expose `STRIPE_SECRET_KEY` in browser code or commit local env files.
 
 ## Demos
 

@@ -10,4 +10,4 @@ pub use examples::{Demo2dPage, Demo3dPage, ExamplesPage};
 pub use home::{FeaturesPage, GetStartedPage, HomePage};
 pub use nodes::NodesPage;
 pub use sponsor::SponsorPage;
-pub use static_pages::{AssetsPage, CommunityPage, NewsPage};
+pub use static_pages::{AssetsPage, CommunityPage, MissionPage, NewsPage};

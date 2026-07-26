@@ -59,7 +59,7 @@ pub fn HomePage() -> impl IntoView {
     view! {
         <Seo info=SeoInfo::new(
             "Rust Game Engine",
-            "Perro is an experimental, open-source game engine written in Rust. With a focus on performance and simplicity without sacrificing either.",
+            "Perro is an open-source Rust game engine built for direct authoring, fast release paths, typed scene nodes, and native or web games.",
             "Rust game engine docs, Rust game engine examples, scene nodes, WASM demos, Perro CLI, 2D game engine, 3D game engine",
             "/",
         ).with_schema(software_schema()) />
@@ -67,7 +67,10 @@ pub fn HomePage() -> impl IntoView {
             <section class="hero home-hero">
                 <div class="hero-copy">
                     <img class="hero-logo" src="/perro.svg" alt="Perro Engine" />
-                    <p class="tagline">"An experimental, open-source game engine written in Rust. With a focus on performance and simplicity without sacrificing either."</p>
+                    <h1 class="tagline">"Make games in Rust. Keep the engine out of your way."</h1>
+                    <p class="hero-support">
+                        "Typed scenes, small scripts, ahead-of-time asset work, and one clear path from first run to native or web release."
+                    </p>
                     <p class="open-source-line">"Free and Open Source"</p>
                     <div class="hero-actions">
                         <a class="btn primary" href="/learn/getting-started">"Get Started"</a>

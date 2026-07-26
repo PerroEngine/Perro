@@ -11,6 +11,9 @@ pub struct DocPage {
     pub route_path: String,
     pub title: String,
     pub area: String,
+    pub nav_group: String,
+    pub nav_order: u16,
+    pub is_history: bool,
     pub summary: String,
     pub headings: Vec<DocHeading>,
     pub keywords: String,
@@ -94,6 +97,30 @@ pub fn docs_by_area() -> Vec<(&'static str, usize)> {
         }
     }
     out
+}
+
+pub fn docs_by_nav_group() -> Vec<(&'static str, usize)> {
+    const GROUPS: &[&str] = &[
+        "Start",
+        "Author",
+        "Script",
+        "Runtime",
+        "Assets",
+        "Platforms",
+        "Ship",
+        "Reference",
+        "History",
+    ];
+    GROUPS
+        .iter()
+        .filter_map(|group| {
+            let count = docs()
+                .iter()
+                .filter(|doc| doc.collection == "docs" && doc.nav_group == *group)
+                .count();
+            (count > 0).then_some((*group, count))
+        })
+        .collect()
 }
 
 pub fn area_label(area: &str) -> String {
@@ -180,6 +207,60 @@ pub fn grouped_docs_filtered_for_area(
         }
     }
     out
+}
+
+pub fn grouped_docs_filtered_for_nav(
+    query: &str,
+    nav_group: Option<&str>,
+) -> Vec<(&'static str, Vec<&'static DocPage>)> {
+    let needle = query.trim().to_ascii_lowercase();
+    let nav_group = nav_group.map(str::trim).filter(|group| !group.is_empty());
+    let mut out = Vec::<(&'static str, Vec<&'static DocPage>)>::new();
+    for group in [
+        "Start",
+        "Author",
+        "Script",
+        "Runtime",
+        "Assets",
+        "Platforms",
+        "Ship",
+        "Reference",
+        "History",
+    ] {
+        if nav_group.is_some_and(|selected| selected != group) {
+            continue;
+        }
+        let mut pages = docs()
+            .iter()
+            .filter(|doc| doc.collection == "docs" && doc.nav_group == group)
+            .filter(|doc| needle.is_empty() || doc_matches(doc, &needle))
+            .collect::<Vec<_>>();
+        pages.sort_by_key(|doc| doc.nav_order);
+        if !pages.is_empty() {
+            out.push((group, pages));
+        }
+    }
+    out
+}
+
+pub fn docs_nav_neighbors(doc: &DocPage) -> (Option<&'static DocPage>, Option<&'static DocPage>) {
+    let mut pages = docs()
+        .iter()
+        .filter(|page| {
+            page.collection == "docs"
+                && page.nav_group == doc.nav_group
+                && page.is_history == doc.is_history
+        })
+        .collect::<Vec<_>>();
+    pages.sort_by_key(|page| page.nav_order);
+    let Some(pos) = pages.iter().position(|page| page.slug == doc.slug) else {
+        return (None, None);
+    };
+    let prev = pos
+        .checked_sub(1)
+        .and_then(|index| pages.get(index).copied());
+    let next = pages.get(pos + 1).copied();
+    (prev, next)
 }
 
 pub fn markdown_html(markdown: &str) -> String {
@@ -414,6 +495,32 @@ let _ = value;
         let docs_pages = super::docs_pages();
         assert!(!docs_pages.is_empty());
         assert!(docs_pages.iter().all(|doc| doc.collection == "docs"));
+    }
+
+    #[test]
+    fn search_text_covers_full_document_bodies() {
+        let mut checked = 0;
+        for doc in docs().iter().filter(|doc| doc.markdown.len() > 5_000) {
+            let tail = doc
+                .markdown
+                .char_indices()
+                .find_map(|(offset, _)| (offset >= 5_000).then_some(&doc.markdown[offset..]))
+                .unwrap_or_default();
+            let Some(term) = tail
+                .split_whitespace()
+                .map(|word| word.trim_matches(|ch: char| !ch.is_ascii_alphanumeric() && ch != '_'))
+                .find(|word| word.len() >= 12)
+            else {
+                continue;
+            };
+            checked += 1;
+            assert!(
+                doc.search_text.contains(&term.to_ascii_lowercase()),
+                "{} does not index tail term `{term}`",
+                doc.slug
+            );
+        }
+        assert!(checked > 0, "no long docs checked");
     }
 
     #[test]

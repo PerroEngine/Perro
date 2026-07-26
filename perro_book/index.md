@@ -1,11 +1,40 @@
 # Perro Book
 
-Perro Book is the guided path for learning Perro from install to web release.
+Build one small Perro game from install to release.
 
-The chapters follow one feature thread: build a player, wire its scene-owned
-dependencies, drive it from input, report state to UI, add world feedback, and
-ship the result. Reference pages answer "what calls exist"; the book answers
-"which ownership and communication shape fits, and why."
+## Goal
+
+Learn the engine as one connected flow: create a project, own state, connect
+scene nodes, read input, load assets, add feedback, and ship native or web.
+
+## Mental Model
+
+The book follows one feature thread.
+
+```text
+input -> player script -> scene nodes -> world feedback -> UI
+      -> build pipeline -> native or web release
+```
+
+Reference pages answer “what call exists?”
+
+Book chapters answer “which ownership and communication shape fits?”
+
+## Use / Avoid
+
+Read chapters in order for first use.
+
+Jump to the [API Map](api_map.md) when the system choice already feels clear.
+
+Avoid treating generated glue or packed output as hand-authored source.
+
+Avoid holding broad runtime access when a fixed node ref or method fits.
+
+## Read Order
+
+Read chapters in numbered order for first use.
+
+Return through search, related pages, or the API map after the first project.
 
 ## Chapter Map
 
@@ -13,45 +42,79 @@ ship the result. Reference pages answer "what calls exist"; the book answers
 | --- | --- | --- |
 | 1 | [Install + Tools](install.md) | Install CLI, check env, make project. |
 | 2 | [First Project](first_project.md) | Create a small game loop. |
-| 3 | [Scenes + Nodes](scenes_nodes.md) | Understand scene trees and node types. |
-| 4 | [Scripting Model](scripting_model.md) | Learn why state, behavior, methods, and variants are split. |
+| 3 | [Scenes + Nodes](scenes_nodes.md) | Own a scene tree and choose node types. |
+| 4 | [Scripting Model](scripting_model.md) | Split state, behavior, methods, and variants. |
 | 5 | [Rust Scripting](rust_scripting.md) | Write state, lifecycle, and methods. |
 | 6 | [Runtime Nodes](runtime_nodes.md) | Read and mutate nodes with short API calls. |
-| 7 | [Generated Script Glue](generated_script_glue.md) | See what `perro check`, `perro dev`, and build generate. |
-| 8 | [Input](input.md) | Read keyboard, mouse, gamepad, and actions. |
-| 9 | [Assets + Resources](assets_resources.md) | Load textures, meshes, audio, materials, and CSV. |
-| 10 | [UI, Animation, Audio](ui_animation_audio.md) | Add player feedback and interface. |
-| 11 | [Physics + Queries](physics_queries.md) | Use bodies, casts, areas, tags, and node queries. |
-| 12 | [Demos + Web Export](demos_web.md) | Build runnable 2D/3D demos and WASM output. |
-| 13 | [Performance + Release](performance_release.md) | Ship static assets and profile runtime cost. |
-| 14 | [API Map](api_map.md) | Jump from book topics to reference docs. |
+| 7 | [Generated Script Glue](generated_script_glue.md) | See what check, dev, and build generate. |
+| 8 | [Input](input.md) | Read devices and remappable actions. |
+| 9 | [Assets + Resources](assets_resources.md) | Load and own textures, meshes, audio, and data. |
+| 10 | [UI, Animation, Audio](ui_animation_audio.md) | Add visible and audible feedback. |
+| 11 | [Physics + Queries](physics_queries.md) | Use bodies, casts, areas, tags, and queries. |
+| 12 | [Demos + Web Export](demos_web.md) | Read demos and build WASM output. |
+| 13 | [Performance + Release](performance_release.md) | Profile, pack, test, and ship. |
+| 14 | [API Map](api_map.md) | Jump from concepts to exact reference pages. |
 
-## Read Order
+## Data Flow
 
-Read chapters in order for first use.
+Each chapter carries the same player feature forward.
 
-Use [API Map](api_map.md) when you know what system you need.
+Data starts at project files.
 
-Use [Docs Index](/docs) when you need every page.
+CLI and compiler steps generate glue and packed assets.
 
-Use the [Script Authoring Guide](/docs/scripting/authoring/index.md) when the
-choice is between a fixed ref, relation, query, method, signal, or dynamic var.
+Runtime APIs expose narrow windows to scripts.
+
+Release keeps the same game logic with target-specific limits called out.
+
+## Full Example
+
+Use this reading path:
+
+```powershell
+cargo run -p perro_cli -- install
+cargo run -p perro_cli -- new --name MyGame --path D:\GameProjects
+cargo run -p perro_cli -- check --path D:\GameProjects\MyGame
+cargo run -p perro_cli -- dev --path D:\GameProjects\MyGame
+```
+
+Continue through scenes, scripting, input, and assets before release work.
 
 ## Book Contract
 
-Each chapter gives:
+Each chapter gives a goal, mental model, ownership choice, complete code shape,
+failure behavior, performance notes, compatibility limits, and reference links.
 
-- goal
-- core idea
-- why Perro uses that shape
-- what runs behind the API
-- minimal workflow
-- code shape
-- links to reference docs
-- failure behavior and the closest alternative
+The book explains decisions.
 
-The book does not replace API docs.
+Reference docs define exact calls.
 
-The book gives the path.
+## Failure Behavior
 
-API docs give exact calls, params, and edge cases.
+Each chapter names validation points and runtime fallbacks.
+
+Stop at the first `perro check` error.
+
+Do not diagnose generated Rust before fixing the source script or scene path.
+
+## Performance + Compatibility
+
+Book examples favor narrow access, ahead-of-time asset work, and explicit
+platform limits.
+
+Native and web share the project model.
+
+Platform chapters mark APIs that differ or do not exist on web.
+
+## API Reference
+
+Use the [API Map](api_map.md) after the guided path.
+
+Use the [Docs Index](../docs/index.md) for all current reference pages.
+
+## Related Pages
+
+- [Install + Tools](install.md)
+- [First Project](first_project.md)
+- [Script Authoring Guide](../docs/scripting/authoring/index.md)
+- [Performance + Release](performance_release.md)

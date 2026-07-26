@@ -1,7 +1,14 @@
 #[cfg(feature = "ssr")]
+mod sponsor_api;
+
+#[cfg(feature = "ssr")]
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    use axum::{routing::get, Router};
+    use axum::{
+        response::Redirect,
+        routing::{get, post},
+        Extension, Router,
+    };
     use leptos::config::get_configuration;
     use leptos_axum::{generate_route_list, LeptosRoutes};
     use perro_website_lib::App;
@@ -25,9 +32,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route_service("/perro.svg", ServeFile::new(public_root.join("perro.svg")))
         .route("/robots.txt", get(robots_txt))
         .route("/sitemap.xml", get(sitemap_xml))
+        .route(
+            "/download",
+            get(|| async { Redirect::permanent("/learn/getting-started") }),
+        )
+        .route("/api/sponsor", post(sponsor_api::create_checkout))
+        .route("/api/sponsor/portal", get(sponsor_api::portal_redirect))
         .route("/og/{*path}", get(og_image))
         .leptos_routes(&leptos_options, routes, App)
         .fallback_service(ServeDir::new(site_root))
+        .layer(Extension(sponsor_api::SponsorState::from_env()))
         .with_state(leptos_options);
 
     let listener = tokio::net::TcpListener::bind(&addr).await?;
@@ -163,6 +177,12 @@ fn og_text(path: &str) -> (String, String, String) {
             "Scene nodes, Rust scripts, static export, 2D, 3D, physics, animation, and web."
                 .to_string(),
         ),
+        "mission" => (
+            "Why Perro Exists".to_string(),
+            "Mission".to_string(),
+            "Simple authoring, fast release paths, plain Rust, and open-source ownership."
+                .to_string(),
+        ),
         "assets" => (
             "Assets and Templates".to_string(),
             "Assets".to_string(),
@@ -285,6 +305,7 @@ async fn sitemap_xml(headers: axum::http::HeaderMap) -> impl axum::response::Int
     let mut urls = vec![
         SitemapUrl::new("", "weekly", "1.0"),
         SitemapUrl::new("features", "monthly", "0.8"),
+        SitemapUrl::new("mission", "monthly", "0.7"),
         SitemapUrl::new("book", "weekly", "0.9"),
         SitemapUrl::new("nodes", "weekly", "0.9"),
         SitemapUrl::new("learn/getting-started", "monthly", "0.8"),

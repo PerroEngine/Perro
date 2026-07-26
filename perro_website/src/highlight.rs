@@ -37,6 +37,9 @@ fn add_heading_ids<'a>(events: impl IntoIterator<Item = Event<'a>>) -> Vec<Event
                 let level = heading_level_num(*level);
                 out.push(Event::Html(CowStr::from(format!("<h{level} id=\"{id}\">"))));
                 out.append(events);
+                out.push(Event::Html(CowStr::from(format!(
+                    "<a class=\"heading-anchor\" href=\"#{id}\" aria-label=\"Link to this section\">#</a>"
+                ))));
                 out.push(Event::Html(CowStr::from(format!("</h{level}>"))));
                 heading = None;
             }
@@ -170,7 +173,7 @@ pub fn code_block_html(lang: &str, code: &str) -> String {
     };
 
     format!(
-        r#"<figure class="code-script {lang_class}">{label}<pre><code>{code}</code></pre></figure>"#
+        r#"<figure class="code-script {lang_class}">{label}<button class="copy-code" type="button">Copy</button><pre><code>{code}</code></pre></figure>"#
     )
 }
 

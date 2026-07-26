@@ -17,6 +17,7 @@ hydrate = [
 ssr = [
     "dep:axum",
     "dep:leptos_axum",
+    "dep:reqwest",
     "dep:tokio",
     "dep:tower-http",
     "dep:tracing",
@@ -46,6 +47,7 @@ tokio = { version = "1.48", features = ["rt-multi-thread", "macros"], optional =
 tower-http = { version = "0.6.7", features = ["fs"], optional = true }
 tracing = { version = "0.1", optional = true }
 tracing-subscriber = { version = "0.3", optional = true, features = ["env-filter"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"], optional = true }
 
 [build-dependencies]
 perro_compiler.workspace = true
