@@ -201,8 +201,9 @@ impl Runtime {
 
     pub(crate) fn physics_fixed_step_timed(&mut self) -> RuntimePhysicsStepTiming {
         let total_start = Instant::now();
-        let mut worlds = AHashSet::default();
-        let ids = self
+        let mut worlds = std::mem::take(&mut self.physics_world_ids_scratch);
+        worlds.clear();
+        for id in self
             .internal_updates
             .physics_body_nodes_2d
             .iter()
@@ -210,15 +211,13 @@ impl Runtime {
             .chain(self.internal_updates.physics_joint_nodes_2d.iter())
             .chain(self.internal_updates.physics_joint_nodes_3d.iter())
             .copied()
-            .collect::<Vec<_>>();
-        for id in ids {
+        {
             if let Some(world) = self.node_world(id) {
-                worlds.insert(world);
+                worlds.push(world);
             }
         }
-        let mut worlds = worlds.into_iter().collect::<Vec<_>>();
         worlds.sort_unstable_by_key(|id| (id.index(), id.generation()));
-        let live_worlds = worlds.iter().copied().collect::<AHashSet<_>>();
+        worlds.dedup();
 
         let mut total = RuntimePhysicsStepTiming {
             pre_transforms: std::time::Duration::ZERO,
@@ -231,7 +230,7 @@ impl Runtime {
             signals: std::time::Duration::ZERO,
             total: std::time::Duration::ZERO,
         };
-        for world in worlds {
+        for world in worlds.iter().copied() {
             self.activate_physics_world(world);
             let timing = self.physics_fixed_step_active_timed();
             total.pre_transforms += timing.pre_transforms;
@@ -244,9 +243,16 @@ impl Runtime {
             total.signals += timing.signals;
         }
         self.activate_physics_world(NodeID::nil());
-        self.physics.retain_worlds(&live_worlds);
-        self.physics_synced_world_revisions
-            .retain(|world, _| world.is_nil() || live_worlds.contains(world));
+        self.physics.retain_worlds(&worlds);
+        self.physics_synced_world_revisions.retain(|world, _| {
+            world.is_nil()
+                || worlds
+                    .binary_search_by_key(&(world.index(), world.generation()), |id| {
+                        (id.index(), id.generation())
+                    })
+                    .is_ok()
+        });
+        self.physics_world_ids_scratch = worlds;
         total.total = total_start.elapsed();
         total
     }

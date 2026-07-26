@@ -1,28 +1,97 @@
 use super::*;
 
-fn custom_pipeline_key(shader_path: &str, lighting: CustomMaterialLighting3D) -> u64 {
-    let source_hash = perro_ids::parse_hashed_source_uri(shader_path)
-        .unwrap_or_else(|| perro_ids::string_to_u64(shader_path));
-    match lighting {
-        CustomMaterialLighting3D::Standard => source_hash ^ 0x9e37_79b9_7f4a_7c15,
-        CustomMaterialLighting3D::Raw => source_hash ^ 0xc2b2_ae3d_27d4_eb4f,
+fn next_custom_pipeline_token(
+    tokens: &AHashMap<CustomPipelineKey, u32>,
+    next_token: &mut u32,
+) -> u32 {
+    loop {
+        let token = (*next_token).max(1);
+        *next_token = token.wrapping_add(1).max(1);
+        if !tokens.values().any(|used| *used == token) {
+            return token;
+        }
     }
 }
 
+fn clear_custom_pipeline_maps<T>(
+    custom_pipelines: &mut AHashMap<u32, T>,
+    custom_pipelines_rigid: &mut AHashMap<u32, T>,
+    custom_pipelines_multimesh: &mut AHashMap<u32, T>,
+    custom_pipeline_tokens: &mut AHashMap<CustomPipelineKey, u32>,
+    custom_shader_sources: &mut AHashMap<Arc<str>, Arc<str>>,
+    custom_pipeline_vertex_hooks: &mut AHashMap<u32, bool>,
+) {
+    custom_pipelines.clear();
+    custom_pipelines_rigid.clear();
+    custom_pipelines_multimesh.clear();
+    custom_pipeline_tokens.clear();
+    custom_shader_sources.clear();
+    custom_pipeline_vertex_hooks.clear();
+}
+
 impl Gpu3D {
-    pub(super) fn custom_pipeline_token(
-        &mut self,
-        shader_path: &str,
-        lighting: CustomMaterialLighting3D,
-    ) -> u32 {
-        let key = custom_pipeline_key(shader_path, lighting);
+    fn custom_pipeline_token(&mut self, key: CustomPipelineKey) -> u32 {
         if let Some(&token) = self.custom_pipeline_tokens.get(&key) {
             return token;
         }
-        let token = self.next_custom_pipeline_token;
-        self.next_custom_pipeline_token = self.next_custom_pipeline_token.wrapping_add(1).max(1);
+        let token = next_custom_pipeline_token(
+            &self.custom_pipeline_tokens,
+            &mut self.next_custom_pipeline_token,
+        );
         self.custom_pipeline_tokens.insert(key, token);
         token
+    }
+
+    fn invalidate_custom_shader_path(&mut self, shader_path: &str) {
+        let stale_tokens = self
+            .custom_pipeline_tokens
+            .iter()
+            .filter_map(|(key, token)| (key.shader_path.as_ref() == shader_path).then_some(*token))
+            .collect::<AHashSet<_>>();
+        if stale_tokens.is_empty() {
+            return;
+        }
+        self.custom_pipeline_tokens
+            .retain(|_, token| !stale_tokens.contains(token));
+        self.custom_pipeline_vertex_hooks
+            .retain(|token, _| !stale_tokens.contains(token));
+        self.custom_pipelines
+            .retain(|token, _| !stale_tokens.contains(token));
+        self.custom_pipelines_rigid
+            .retain(|token, _| !stale_tokens.contains(token));
+        self.custom_pipelines_multimesh
+            .retain(|token, _| !stale_tokens.contains(token));
+    }
+
+    fn cache_custom_shader_source(
+        &mut self,
+        shader_path: &str,
+        source: &str,
+    ) -> (Arc<str>, Arc<str>) {
+        if let Some((cached_path, cached_source)) =
+            self.custom_shader_sources.get_key_value(shader_path)
+            && cached_source.as_ref() == source
+        {
+            return (cached_path.clone(), cached_source.clone());
+        }
+        self.invalidate_custom_shader_path(shader_path);
+        let path: Arc<str> = Arc::from(shader_path);
+        let source: Arc<str> = Arc::from(source);
+        self.custom_shader_sources
+            .insert(path.clone(), source.clone());
+        (path, source)
+    }
+
+    pub(crate) fn invalidate_custom_pipelines(&mut self) {
+        clear_custom_pipeline_maps(
+            &mut self.custom_pipelines,
+            &mut self.custom_pipelines_rigid,
+            &mut self.custom_pipelines_multimesh,
+            &mut self.custom_pipeline_tokens,
+            &mut self.custom_shader_sources,
+            &mut self.custom_pipeline_vertex_hooks,
+        );
+        self.rebuild_batch_views();
     }
 
     pub(super) fn ensure_custom_pipeline(
@@ -31,9 +100,39 @@ impl Gpu3D {
         path: RenderPath3D,
         shader_path: &str,
         lighting: CustomMaterialLighting3D,
+        alpha_mode: u8,
         static_shader_lookup: Option<StaticShaderLookup>,
     ) -> Option<u32> {
-        let token = self.custom_pipeline_token(shader_path, lighting);
+        let cached_source = self
+            .custom_shader_sources
+            .get_key_value(shader_path)
+            .map(|(path, source)| (path.clone(), source.clone()));
+        let (shader_path, shader_source) = if let Some(cached) = cached_source {
+            cached
+        } else {
+            let src = if let Some(lookup) = static_shader_lookup {
+                let shader_hash = perro_ids::parse_hashed_source_uri(shader_path)
+                    .unwrap_or_else(|| perro_ids::string_to_u64(shader_path));
+                let src = lookup(shader_hash);
+                (!src.is_empty()).then_some(Cow::Borrowed(src))
+            } else {
+                None
+            }
+            .or_else(|| {
+                let bytes = load_asset(shader_path).ok()?;
+                let src = std::str::from_utf8(&bytes).ok()?;
+                Some(Cow::Owned(src.to_string()))
+            })?;
+            self.cache_custom_shader_source(shader_path, src.as_ref())
+        };
+        let has_vertex_hook = shader_source.contains("shade_vertex(");
+        let token = self.custom_pipeline_token(CustomPipelineKey {
+            shader_path,
+            shader_source: shader_source.clone(),
+            lighting,
+            alpha_mode,
+            vertex_hook: has_vertex_hook,
+        });
         if path == RenderPath3D::Rigid && self.custom_pipelines_rigid.contains_key(&token) {
             return Some(token);
         }
@@ -43,33 +142,24 @@ impl Gpu3D {
         if path == RenderPath3D::MultiMesh && self.custom_pipelines_multimesh.contains_key(&token) {
             return Some(token);
         }
-        let src = if let Some(lookup) = static_shader_lookup {
-            let shader_hash = perro_ids::parse_hashed_source_uri(shader_path)
-                .unwrap_or_else(|| perro_ids::string_to_u64(shader_path));
-            let src = lookup(shader_hash);
-            (!src.is_empty()).then_some(Cow::Borrowed(src))
-        } else {
-            None
-        }
-        .or_else(|| {
-            let bytes = load_asset(shader_path).ok()?;
-            let src = std::str::from_utf8(&bytes).ok()?;
-            Some(Cow::Owned(src.to_string()))
-        })?;
         // Record whether this shader defines a shade_vertex hook (same probe
         // as build_material_shader composition). Depth-only passes consult
         // this: a hook displaces geometry the shared depth shaders can't
         // replicate, so hooked customs stay out of shadow/prepass batches.
         self.custom_pipeline_vertex_hooks
-            .insert(token, src.contains("shade_vertex("));
+            .insert(token, has_vertex_hook);
         let wgsl = if path == RenderPath3D::MultiMesh {
-            build_custom_multimesh_material_shader(src.as_ref(), lighting)
+            build_custom_multimesh_material_shader(shader_source.as_ref(), lighting)
         } else if path == RenderPath3D::Rigid {
-            build_custom_material_shader_with_prelude(prelude_rigid_wgsl(), src.as_ref(), lighting)
+            build_custom_material_shader_with_prelude(
+                prelude_rigid_wgsl(),
+                shader_source.as_ref(),
+                lighting,
+            )
         } else {
             build_custom_material_shader_with_prelude(
                 prelude_skinned_wgsl(),
-                src.as_ref(),
+                shader_source.as_ref(),
                 lighting,
             )
         };
@@ -227,6 +317,7 @@ impl Gpu3D {
                     render_path,
                     shader_path,
                     custom.lighting,
+                    custom.surface.alpha_mode,
                     static_shader_lookup,
                 ) {
                     MaterialPipelineKind::Custom(token)
@@ -559,6 +650,132 @@ fn vertex_axis_code(axis: VertexAxis3D) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn pipeline_key(
+        shader_path: &str,
+        shader_source: &str,
+        lighting: CustomMaterialLighting3D,
+        alpha_mode: u8,
+        vertex_hook: bool,
+    ) -> CustomPipelineKey {
+        CustomPipelineKey {
+            shader_path: Arc::from(shader_path),
+            shader_source: Arc::from(shader_source),
+            lighting,
+            alpha_mode,
+            vertex_hook,
+        }
+    }
+
+    fn token_for(
+        tokens: &mut AHashMap<CustomPipelineKey, u32>,
+        next_token: &mut u32,
+        key: CustomPipelineKey,
+    ) -> u32 {
+        if let Some(token) = tokens.get(&key) {
+            return *token;
+        }
+        let token = next_custom_pipeline_token(tokens, next_token);
+        tokens.insert(key, token);
+        token
+    }
+
+    #[test]
+    fn ui_subview_custom_pipelines_stay_exact_across_reentry_and_reload() {
+        let raw_bg = pipeline_key(
+            "res://cloud_stitched.wgsl",
+            "fn shade() {}",
+            CustomMaterialLighting3D::Raw,
+            0,
+            false,
+        );
+        let standard_logo = pipeline_key(
+            "res://logo_circus.wgsl",
+            "fn shade_vertex() {}",
+            CustomMaterialLighting3D::Standard,
+            0,
+            true,
+        );
+        let mut tokens = AHashMap::new();
+        let mut hooks = AHashMap::new();
+        let mut next_token = 1;
+        let bg_token = token_for(&mut tokens, &mut next_token, raw_bg.clone());
+        let logo_token = token_for(&mut tokens, &mut next_token, standard_logo.clone());
+        hooks.insert(bg_token, raw_bg.vertex_hook);
+        hooks.insert(logo_token, standard_logo.vertex_hook);
+
+        assert_ne!(bg_token, logo_token);
+        assert_eq!(
+            token_for(&mut tokens, &mut next_token, raw_bg.clone()),
+            bg_token
+        );
+        assert_eq!(
+            token_for(&mut tokens, &mut next_token, standard_logo),
+            logo_token
+        );
+        assert_eq!(hooks.get(&bg_token), Some(&false));
+        assert_eq!(hooks.get(&logo_token), Some(&true));
+
+        let reloaded_bg = pipeline_key(
+            "res://cloud_stitched.wgsl",
+            "fn shade_vertex() {}",
+            CustomMaterialLighting3D::Raw,
+            0,
+            true,
+        );
+        let reloaded_token = token_for(&mut tokens, &mut next_token, reloaded_bg.clone());
+        hooks.insert(reloaded_token, reloaded_bg.vertex_hook);
+        let blend_token = token_for(
+            &mut tokens,
+            &mut next_token,
+            pipeline_key(
+                "res://cloud_stitched.wgsl",
+                "fn shade_vertex() {}",
+                CustomMaterialLighting3D::Raw,
+                2,
+                true,
+            ),
+        );
+
+        assert_ne!(reloaded_token, bg_token);
+        assert_ne!(blend_token, reloaded_token);
+        assert_eq!(hooks.get(&bg_token), Some(&false));
+        assert_eq!(hooks.get(&reloaded_token), Some(&true));
+    }
+
+    #[test]
+    fn custom_pipeline_invalidation_clears_all_token_scoped_state() {
+        let key = pipeline_key(
+            "res://bg.wgsl",
+            "fn shade() {}",
+            CustomMaterialLighting3D::Raw,
+            0,
+            false,
+        );
+        let mut pipelines = AHashMap::from_iter([(7, ())]);
+        let mut rigid = AHashMap::from_iter([(7, ())]);
+        let mut multimesh = AHashMap::from_iter([(7, ())]);
+        let mut tokens = AHashMap::from_iter([(key, 7)]);
+        let mut sources =
+            AHashMap::from_iter([(Arc::from("res://bg.wgsl"), Arc::from("fn shade() {}"))]);
+        let mut hooks = AHashMap::from_iter([(7, false)]);
+
+        clear_custom_pipeline_maps(
+            &mut pipelines,
+            &mut rigid,
+            &mut multimesh,
+            &mut tokens,
+            &mut sources,
+            &mut hooks,
+        );
+
+        assert!(pipelines.is_empty());
+        assert!(rigid.is_empty());
+        assert!(multimesh.is_empty());
+        assert!(tokens.is_empty());
+        assert!(sources.is_empty());
+        assert!(hooks.is_empty());
+    }
 
     #[test]
     fn vertex_modifier_gpu_record_keeps_kind_params_and_mask() {

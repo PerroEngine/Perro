@@ -63,6 +63,12 @@ pub mod app {
         Ok(())
     }
 
+    pub fn shutdown() -> Result<(), SteamError> {
+        let mut state = state().lock().map_err(|_| SteamError::NotReady)?;
+        state.app_id = None;
+        Ok(())
+    }
+
     #[cfg(test)]
     pub fn is_enabled() -> Result<bool, SteamError> {
         Ok(false)

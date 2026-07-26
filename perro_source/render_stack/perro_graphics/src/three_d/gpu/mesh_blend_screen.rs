@@ -234,11 +234,18 @@ pub(super) fn create_mesh_blend_mask_pipeline_rigid(
                 Some(wgpu::VertexBufferLayout {
                     array_stride: std::mem::size_of::<RigidMeshVertex>() as u64,
                     step_mode: wgpu::VertexStepMode::Vertex,
-                    attributes: &[wgpu::VertexAttribute {
-                        offset: 0,
-                        shader_location: 0,
-                        format: wgpu::VertexFormat::Float32x3,
-                    }],
+                    attributes: &[
+                        wgpu::VertexAttribute {
+                            offset: 0,
+                            shader_location: 0,
+                            format: wgpu::VertexFormat::Float32x3,
+                        },
+                        wgpu::VertexAttribute {
+                            offset: 12,
+                            shader_location: 1,
+                            format: wgpu::VertexFormat::Snorm16x4,
+                        },
+                    ],
                 }),
                 Some(rigid_path::rigid_instance_transform_layout()),
                 Some(rigid_path::rigid_meta_layout()),
@@ -329,6 +336,11 @@ pub(super) fn create_mesh_blend_mask_pipeline_skinned(
                             offset: 0,
                             shader_location: 0,
                             format: wgpu::VertexFormat::Float32x3,
+                        },
+                        wgpu::VertexAttribute {
+                            offset: 12,
+                            shader_location: 1,
+                            format: wgpu::VertexFormat::Snorm16x4,
                         },
                         wgpu::VertexAttribute {
                             offset: 28,

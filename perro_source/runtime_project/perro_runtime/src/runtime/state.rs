@@ -59,6 +59,16 @@ impl ScriptRuntimeState {
     }
 }
 
+impl Drop for ScriptRuntimeState {
+    fn drop(&mut self) {
+        // Dynamic behavior trait objects carry drop/vtable pointers into the
+        // scripts library. Destroy every Arc before unloading that library.
+        self.dynamic_script_registry.clear();
+        self.script_behavior_cache.clear();
+        self.script_libraries.clear();
+    }
+}
+
 impl ScriptRuntimeState {
     #[inline]
     pub(crate) fn resolve_script_constructor(&self, path_hash: u64) -> Option<RuntimeScriptCtor> {

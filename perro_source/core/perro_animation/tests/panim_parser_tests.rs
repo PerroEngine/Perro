@@ -36,6 +36,46 @@ Hero = Node3D
 }
 
 #[test]
+fn parses_inline_object_block_with_multiple_transform_fields() {
+    let src = r#"
+[Animation]
+name = "InlineObject"
+fps = 30
+[/Animation]
+
+[Objects]
+Hero = Node3D
+[/Objects]
+
+[Frame0]
+@Hero { position = (1, 2, 3) rotation_deg = (0, 90, 0) scale = (0.5, 0.5, 0.5) }
+[/Frame0]
+"#;
+
+    let clip = parse_panim(src).expect("expected valid inline object block");
+    let track = clip
+        .object_tracks
+        .iter()
+        .find(|track| matches!(track.field, NodeField::Node3D(Node3DField::Position)))
+        .expect("node3d transform track");
+    assert_eq!(
+        track.transform3d_mask,
+        ANIMATION_TRANSFORM_MASK_POSITION
+            | ANIMATION_TRANSFORM_MASK_ROTATION
+            | ANIMATION_TRANSFORM_MASK_SCALE
+    );
+    let AnimationTrackValue::Transform3D(transform) = track.keys[0].value else {
+        panic!("expected transform3d key");
+    };
+    assert_eq!(transform.position.x, 1.0);
+    assert_eq!(transform.position.y, 2.0);
+    assert_eq!(transform.position.z, 3.0);
+    assert_eq!(transform.scale.x, 0.5);
+    assert_eq!(transform.scale.y, 0.5);
+    assert_eq!(transform.scale.z, 0.5);
+}
+
+#[test]
 fn parses_sparse_keyframes_and_events() {
     let src = r#"
 [Animation]

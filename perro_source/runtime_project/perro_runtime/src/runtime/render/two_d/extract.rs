@@ -74,15 +74,15 @@ impl Runtime {
             main_world_ids.iter().copied(),
             bootstrap_scan || camera_render_mask_changed || button_input_changed,
             |node, out| {
-                if let Some(node_ref) = nodes.get(node) {
-                    if !matches!(
+                if let Some(node_ref) = nodes.get(node)
+                    && !matches!(
                         node_ref.data,
                         SceneNodeData::UiSubView(_)
                             | SceneNodeData::SubView2D(_)
                             | SceneNodeData::SubView3D(_)
-                    ) {
-                        out.extend(node_ref.get_children_ids().iter().copied());
-                    }
+                    )
+                {
+                    out.extend(node_ref.get_children_ids().iter().copied());
                 }
             },
         );

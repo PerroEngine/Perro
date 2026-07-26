@@ -148,10 +148,19 @@ pub fn host_steam(max_players: i64, privacy: LobbyPrivacy) -> Result<(), String>
         max_players,
         privacy
     );
-    let mut transport = ActiveTransport::Steam(SteamTransport::new_host(
-        clamp_max_players(max_players),
-        privacy,
-    ));
+    let max_players = clamp_max_players(max_players);
+    if privacy == LobbyPrivacy::Private {
+        let code = SteamTransport::generate_private_code();
+        SteamTransport::find_lobby_by_code(&code)?;
+        let mut state = lock_state();
+        shutdown_state(&mut state);
+        state.hosted_lobby_code = code;
+        state.pending_private_host_max_players = max_players;
+        return Ok(());
+    }
+    let steam_transport = SteamTransport::new_host(max_players, privacy);
+    let hosted_lobby_code = steam_transport.host_code().to_string();
+    let mut transport = ActiveTransport::Steam(steam_transport);
     transport.host()?;
     let mut state = lock_state();
     shutdown_state(&mut state);
@@ -160,6 +169,7 @@ pub fn host_steam(max_players: i64, privacy: LobbyPrivacy) -> Result<(), String>
         crate::multiplayer::host_session::HostSession::new(),
     ));
     state.transport = Some(transport);
+    state.hosted_lobby_code = hosted_lobby_code;
     Ok(())
 }
 
@@ -209,6 +219,23 @@ pub fn join_steam(lobby_id: i64) -> Result<(), String> {
     ));
     state.transport = Some(transport);
     Ok(())
+}
+
+/// Find a private invisible Steam lobby by its exact eight-character code.
+/// Results arrive through `LobbyRowsChanged`; a match is placed in `lobbies`.
+pub fn find_steam_lobby_by_code(code: &str) -> Result<(), String> {
+    SteamTransport::find_lobby_by_code(code)
+}
+
+/// Code for the active private host lobby; empty for public/friends/LAN.
+pub fn hosted_lobby_code() -> String {
+    let state = lock_state();
+    match state.transport.as_ref() {
+        Some(ActiveTransport::Steam(transport)) if transport.is_host() => {
+            transport.host_code().to_string()
+        }
+        _ => state.hosted_lobby_code.clone(),
+    }
 }
 
 /// Kick off Steam rows plus the legacy LAN probe.
@@ -389,6 +416,46 @@ fn poll_lobby_events() {
                 set_lobby_rows(&mut state, lobbies);
                 state.script_events.push(NetEvent::LobbyRowsChanged);
             }
+            SteamLobbyEvent::LobbyCodeList(lobbies)
+                if state.pending_private_host_max_players > 0 =>
+            {
+                if lobbies.is_empty() {
+                    let max_players = std::mem::take(&mut state.pending_private_host_max_players);
+                    let code = state.hosted_lobby_code.clone();
+                    let mut transport =
+                        ActiveTransport::Steam(SteamTransport::new_private_host(max_players, code));
+                    if transport.host().is_err() {
+                        state.script_events.push(NetEvent::Disconnected);
+                        continue;
+                    }
+                    state.mode = NetMode::Host;
+                    state.session = Some(Session::Host(
+                        crate::multiplayer::host_session::HostSession::new(),
+                    ));
+                    state.transport = Some(transport);
+                } else {
+                    let code = SteamTransport::generate_private_code();
+                    state.hosted_lobby_code = code.clone();
+                    if SteamTransport::find_lobby_by_code(&code).is_err() {
+                        state.pending_private_host_max_players = 0;
+                        state.script_events.push(NetEvent::Disconnected);
+                    }
+                }
+            }
+            SteamLobbyEvent::LobbyCodeList(lobbies) => {
+                set_lobby_rows(&mut state, lobbies);
+                state.script_events.push(NetEvent::LobbyRowsChanged);
+            }
+            SteamLobbyEvent::LobbyCodeListFailed => {
+                if state.pending_private_host_max_players > 0 {
+                    state.pending_private_host_max_players = 0;
+                    state.script_events.push(NetEvent::Disconnected);
+                } else {
+                    state.lobbies.clear();
+                    state.join_tokens.clear();
+                    state.script_events.push(NetEvent::LobbyRowsChanged);
+                }
+            }
             SteamLobbyEvent::LobbyListFailed => {
                 state.lobbies.clear();
                 state.join_tokens.clear();
@@ -430,6 +497,8 @@ fn shutdown_state(state: &mut NetworkState) {
     state.transport = None;
     state.script_events.clear();
     state.lan_discovery = None;
+    state.hosted_lobby_code.clear();
+    state.pending_private_host_max_players = 0;
 }
 
 fn parse_lan_addr(host: &str) -> Result<SocketAddr, String> {

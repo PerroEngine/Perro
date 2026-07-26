@@ -673,6 +673,18 @@ impl NodeArena {
         &self.node_types
     }
 
+    /// Append live node ids of one type in arena slot order.
+    pub fn append_type_ids(&self, want: NodeType, out: &mut Vec<NodeID>) {
+        for (index, node_type) in self.node_types.iter().enumerate().skip(1) {
+            if *node_type != want {
+                continue;
+            }
+            if let Some((id, _)) = self.slot_get(index) {
+                out.push(id);
+            }
+        }
+    }
+
     /// Contiguous slot-indexed lane of parent ids (index 0 = nil slot).
     /// Nil for free slots.
     #[inline]

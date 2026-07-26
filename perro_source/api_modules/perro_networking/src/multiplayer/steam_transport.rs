@@ -2,7 +2,9 @@
 
 use crate::multiplayer::lobby::{FriendLobbyInfo, LobbyDistanceMode, LobbyInfo, LobbyPrivacy};
 use crate::multiplayer::transport::{NetTransport, PeerId, TransportEvent};
+use std::hash::{Hash, Hasher};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 // Display name stamped on hosted lobbies + rich presence. Games set it once at
@@ -10,6 +12,8 @@ use std::time::{Duration, Instant};
 // readers fall back to "Steam {lobby_id}".
 static GAME_NAME: Mutex<String> = Mutex::new(String::new());
 static GAME_TAG: Mutex<String> = Mutex::new(String::new());
+static CODE_SEARCH_PENDING: Mutex<bool> = Mutex::new(false);
+static CODE_NONCE: AtomicU64 = AtomicU64::new(0);
 
 pub(crate) fn set_game_name(name: &str) {
     *GAME_NAME.lock().unwrap_or_else(|err| err.into_inner()) = name.trim().to_string();
@@ -55,6 +59,8 @@ pub enum SteamLobbyEvent {
     Joined(i64),
     JoinFailed(i64),
     LobbyList(Vec<LobbyInfo>),
+    LobbyCodeList(Vec<LobbyInfo>),
+    LobbyCodeListFailed,
     LobbyListFailed,
     FriendList(Vec<FriendLobbyInfo>),
     LobbyDataUpdated(i64),
@@ -74,6 +80,10 @@ pub struct SteamTransport {
     join_lobby_id: i64,
     peers: Vec<i64>,
     pending_events: Vec<TransportEvent>,
+    host_code: String,
+    private_code_verified: bool,
+    private_code_candidate: String,
+    checking_candidate_before_assign: bool,
     // When the backstop last reconciled peers; `None` forces a sync next drain.
     last_peer_sync: Option<Instant>,
 }
@@ -88,6 +98,14 @@ impl SteamTransport {
             join_lobby_id: 0,
             peers: Vec::new(),
             pending_events: Vec::new(),
+            host_code: if privacy == LobbyPrivacy::Private {
+                generate_lobby_code()
+            } else {
+                String::new()
+            },
+            private_code_verified: privacy != LobbyPrivacy::Private,
+            private_code_candidate: String::new(),
+            checking_candidate_before_assign: false,
             last_peer_sync: None,
         }
     }
@@ -101,12 +119,49 @@ impl SteamTransport {
             join_lobby_id: lobby_id,
             peers: Vec::new(),
             pending_events: Vec::new(),
+            host_code: String::new(),
+            private_code_verified: true,
+            private_code_candidate: String::new(),
+            checking_candidate_before_assign: false,
             last_peer_sync: None,
         }
     }
 
+    pub fn new_private_host(max_players: i64, code: String) -> Self {
+        Self {
+            is_host: true,
+            max_players,
+            privacy: LobbyPrivacy::Private,
+            lobby_id: 0,
+            join_lobby_id: 0,
+            peers: Vec::new(),
+            pending_events: Vec::new(),
+            host_code: code,
+            private_code_verified: false,
+            private_code_candidate: String::new(),
+            checking_candidate_before_assign: false,
+            last_peer_sync: None,
+        }
+    }
+
+    pub fn generate_private_code() -> String {
+        generate_lobby_code()
+    }
+
     pub fn refresh_lobbies(distance: LobbyDistanceMode) -> Result<(), String> {
         steam_browse_lobbies(distance)
+    }
+
+    pub fn find_lobby_by_code(code: &str) -> Result<(), String> {
+        steam_find_lobby_by_code(code)
+    }
+
+    pub fn host_code(&self) -> &str {
+        &self.host_code
+    }
+
+    pub fn is_host(&self) -> bool {
+        self.is_host
     }
 
     pub fn drain_lobby_events() -> Vec<SteamLobbyEvent> {
@@ -163,8 +218,13 @@ impl SteamTransport {
     fn handle_lobby_event(&mut self, event: SteamLobbyEvent, out: &mut Vec<TransportEvent>) {
         match event {
             SteamLobbyEvent::Created(lobby_id) => {
-                let _ = steam_set_host_options(lobby_id, self.privacy);
+                let _ = steam_set_host_options(lobby_id, self.privacy, &self.host_code);
                 self.set_lobby(lobby_id);
+                if self.privacy == LobbyPrivacy::Private
+                    && SteamTransport::find_lobby_by_code(&self.host_code).is_err()
+                {
+                    out.push(TransportEvent::SessionFailed);
+                }
             }
             SteamLobbyEvent::CreateFailed => {
                 if self.is_host {
@@ -194,7 +254,45 @@ impl SteamTransport {
                     out.push(TransportEvent::SessionFailed);
                 }
             }
+            SteamLobbyEvent::LobbyCodeList(lobbies)
+                if self.is_host
+                    && self.privacy == LobbyPrivacy::Private
+                    && !self.private_code_verified =>
+            {
+                if self.checking_candidate_before_assign {
+                    if lobbies.is_empty() {
+                        self.host_code = std::mem::take(&mut self.private_code_candidate);
+                        self.checking_candidate_before_assign = false;
+                        if steam_set_lobby_code(self.lobby_id, &self.host_code).is_err()
+                            || SteamTransport::find_lobby_by_code(&self.host_code).is_err()
+                        {
+                            out.push(TransportEvent::SessionFailed);
+                        }
+                    } else {
+                        self.private_code_candidate = generate_lobby_code();
+                        if SteamTransport::find_lobby_by_code(&self.private_code_candidate).is_err()
+                        {
+                            out.push(TransportEvent::SessionFailed);
+                        }
+                    }
+                } else if private_code_has_collision(&lobbies, self.lobby_id) {
+                    self.private_code_candidate = generate_lobby_code();
+                    self.checking_candidate_before_assign = true;
+                    if SteamTransport::find_lobby_by_code(&self.private_code_candidate).is_err() {
+                        out.push(TransportEvent::SessionFailed);
+                    }
+                } else {
+                    self.private_code_verified = true;
+                }
+            }
+            SteamLobbyEvent::LobbyCodeListFailed
+                if self.is_host && self.privacy == LobbyPrivacy::Private =>
+            {
+                out.push(TransportEvent::SessionFailed);
+            }
             SteamLobbyEvent::LobbyList(_)
+            | SteamLobbyEvent::LobbyCodeList(_)
+            | SteamLobbyEvent::LobbyCodeListFailed
             | SteamLobbyEvent::LobbyListFailed
             | SteamLobbyEvent::FriendList(_)
             | SteamLobbyEvent::JoinRequested(_)
@@ -256,6 +354,7 @@ impl NetTransport for SteamTransport {
 
     fn shutdown(&mut self) {
         for peer in self.peers.drain(..) {
+            steam_close_peer(peer);
             self.pending_events
                 .push(TransportEvent::PeerDisconnected(PeerId::Steam(peer)));
         }
@@ -271,13 +370,25 @@ impl NetTransport for SteamTransport {
 }
 
 #[cfg(feature = "steamworks")]
+fn steam_close_peer(peer: i64) {
+    use perro_steamworks as steam;
+
+    let _ = steam::networking::is_p2p_session_closed(steam::SteamID::from_id(peer.max(0) as u64));
+}
+
+#[cfg(not(feature = "steamworks"))]
+fn steam_close_peer(_peer: i64) {}
+
+#[cfg(feature = "steamworks")]
 fn steam_create_host_lobby(max_players: i64, privacy: LobbyPrivacy) -> Result<(), String> {
     use perro_steamworks as steam;
 
     let kind = match privacy {
         LobbyPrivacy::Public => steam::LobbyType::Public,
         LobbyPrivacy::Friends => steam::LobbyType::FriendsOnly,
-        LobbyPrivacy::Private => steam::LobbyType::Private,
+        // Steam private lobbies are invite-only and cannot be queried.
+        // Invisible lobbies support exact-code lookup without public listing.
+        LobbyPrivacy::Private => steam::LobbyType::Invisible,
     };
     steam::lobbies::create(kind, max_players as u32).map_err(|err| format!("{err:?}"))
 }
@@ -295,11 +406,10 @@ fn steam_browse_lobbies(distance: LobbyDistanceMode) -> Result<(), String> {
     let search = steam::LobbySearch {
         max_results: Some(LOBBY_SEARCH_MAX as u64),
         distance: Some(steam_distance(distance)),
-        string_filters: vec![steam::LobbyStringFilter::new(
-            GAME_TAG_KEY,
-            &tag,
-            steam::LobbyStringFilterKind::Equal,
-        )],
+        string_filters: vec![
+            steam::LobbyStringFilter::new(GAME_TAG_KEY, &tag, steam::LobbyStringFilterKind::Equal),
+            steam::LobbyStringFilter::new("privacy", "public", steam::LobbyStringFilterKind::Equal),
+        ],
         ..Default::default()
     };
     steam::lobbies::request_list(search).map_err(|err| format!("{err:?}"))
@@ -307,6 +417,46 @@ fn steam_browse_lobbies(distance: LobbyDistanceMode) -> Result<(), String> {
 
 #[cfg(not(feature = "steamworks"))]
 fn steam_browse_lobbies(_distance: LobbyDistanceMode) -> Result<(), String> {
+    Err("steamworks feature off for scripts".to_string())
+}
+
+#[cfg(feature = "steamworks")]
+fn steam_find_lobby_by_code(code: &str) -> Result<(), String> {
+    use perro_steamworks as steam;
+
+    let code = normalize_lobby_code(code);
+    if code.len() != 8 {
+        return Err("invalid lobby code".to_string());
+    }
+    let tag = game_tag();
+    let search = steam::LobbySearch {
+        max_results: Some(2),
+        distance: Some(steam::LobbyDistance::Worldwide),
+        string_filters: vec![
+            steam::LobbyStringFilter::new(GAME_TAG_KEY, &tag, steam::LobbyStringFilterKind::Equal),
+            steam::LobbyStringFilter::new(
+                "privacy",
+                "private",
+                steam::LobbyStringFilterKind::Equal,
+            ),
+            steam::LobbyStringFilter::new("code", &code, steam::LobbyStringFilterKind::Equal),
+        ],
+        ..Default::default()
+    };
+    *CODE_SEARCH_PENDING
+        .lock()
+        .unwrap_or_else(|err| err.into_inner()) = true;
+    if let Err(err) = steam::lobbies::request_list(search) {
+        *CODE_SEARCH_PENDING
+            .lock()
+            .unwrap_or_else(|lock_err| lock_err.into_inner()) = false;
+        return Err(format!("{err:?}"));
+    }
+    Ok(())
+}
+
+#[cfg(not(feature = "steamworks"))]
+fn steam_find_lobby_by_code(_code: &str) -> Result<(), String> {
     Err("steamworks feature off for scripts".to_string())
 }
 
@@ -348,7 +498,7 @@ fn steam_leave_lobby(_lobby_id: i64) -> Result<(), String> {
 }
 
 #[cfg(feature = "steamworks")]
-fn steam_set_host_options(lobby_id: i64, privacy: LobbyPrivacy) -> Result<(), String> {
+fn steam_set_host_options(lobby_id: i64, privacy: LobbyPrivacy, code: &str) -> Result<(), String> {
     use perro_steamworks as steam;
 
     let lobby = steam::LobbyID::from_id(lobby_id.max(0) as u64);
@@ -359,12 +509,32 @@ fn steam_set_host_options(lobby_id: i64, privacy: LobbyPrivacy) -> Result<(), St
         .map_err(|err| format!("{err:?}"))?;
     steam::lobbies::set_data(lobby, GAME_TAG_KEY, &tag).map_err(|err| format!("{err:?}"))?;
     steam::lobbies::set_data(lobby, "privacy", privacy.key()).map_err(|err| format!("{err:?}"))?;
+    if !code.is_empty() {
+        steam::lobbies::set_data(lobby, "code", code).map_err(|err| format!("{err:?}"))?;
+    }
     steam::lobbies::set_data(lobby, "started", "0").map_err(|err| format!("{err:?}"))?;
     steam_set_presence_lobby(lobby_id)
 }
 
+#[cfg(feature = "steamworks")]
+fn steam_set_lobby_code(lobby_id: i64, code: &str) -> Result<(), String> {
+    use perro_steamworks as steam;
+
+    let lobby = steam::LobbyID::from_id(lobby_id.max(0) as u64);
+    steam::lobbies::set_data(lobby, "code", code).map_err(|err| format!("{err:?}"))
+}
+
 #[cfg(not(feature = "steamworks"))]
-fn steam_set_host_options(_lobby_id: i64, _privacy: LobbyPrivacy) -> Result<(), String> {
+fn steam_set_lobby_code(_lobby_id: i64, _code: &str) -> Result<(), String> {
+    Ok(())
+}
+
+#[cfg(not(feature = "steamworks"))]
+fn steam_set_host_options(
+    _lobby_id: i64,
+    _privacy: LobbyPrivacy,
+    _code: &str,
+) -> Result<(), String> {
     Ok(())
 }
 
@@ -418,11 +588,30 @@ fn steam_poll_lobby_events() -> Vec<SteamLobbyEvent> {
                 out.push(SteamLobbyEvent::JoinFailed(lobby.get_id() as i64));
             }
             steam::SteamEvent::LobbyList { lobbies } => {
-                out.push(SteamLobbyEvent::LobbyList(read_lobby_infos(lobbies)));
+                let rows = read_lobby_infos(lobbies);
+                let code_search = std::mem::take(
+                    &mut *CODE_SEARCH_PENDING
+                        .lock()
+                        .unwrap_or_else(|err| err.into_inner()),
+                );
+                if code_search {
+                    out.push(SteamLobbyEvent::LobbyCodeList(rows));
+                } else {
+                    out.push(SteamLobbyEvent::LobbyList(rows));
+                }
                 out.push(SteamLobbyEvent::FriendList(steam_friend_lobbies()));
             }
             steam::SteamEvent::LobbyListFailed => {
-                out.push(SteamLobbyEvent::LobbyListFailed);
+                let code_search = std::mem::take(
+                    &mut *CODE_SEARCH_PENDING
+                        .lock()
+                        .unwrap_or_else(|err| err.into_inner()),
+                );
+                if code_search {
+                    out.push(SteamLobbyEvent::LobbyCodeListFailed);
+                } else {
+                    out.push(SteamLobbyEvent::LobbyListFailed);
+                }
                 out.push(SteamLobbyEvent::FriendList(steam_friend_lobbies()));
             }
             steam::SteamEvent::LobbyJoinRequested { lobby, .. } => {
@@ -552,6 +741,9 @@ fn steam_friend_lobbies() -> Vec<FriendLobbyInfo> {
             if !steam_lobby_has_game_tag(lobby_id) {
                 return None;
             }
+            if steam_lobby_privacy(lobby_id).as_deref() != Some("friends") {
+                return None;
+            }
             Some(FriendLobbyInfo {
                 steam_id: friend.id.get_id() as i64,
                 lobby_id,
@@ -578,6 +770,14 @@ fn steam_lobby_has_game_tag(lobby_id: i64) -> bool {
         .flatten()
         .as_deref()
         == Some(tag.as_str())
+}
+
+#[cfg(feature = "steamworks")]
+fn steam_lobby_privacy(lobby_id: i64) -> Option<String> {
+    use perro_steamworks as steam;
+
+    let lobby = steam::LobbyID::from_id(lobby_id.max(0) as u64);
+    steam::lobbies::get_data(lobby, "privacy").ok().flatten()
 }
 
 #[cfg(feature = "steamworks")]
@@ -634,15 +834,6 @@ fn read_lobby_infos(lobbies: Vec<perro_steamworks::LobbyID>) -> Vec<LobbyInfo> {
             .find(|(key, _)| key == "started")
             .map(|(_, value)| value == "1")
             .unwrap_or(false);
-        let private = info
-            .data
-            .iter()
-            .find(|(key, _)| key == "privacy")
-            .map(|(_, value)| value == "private")
-            .unwrap_or(false);
-        if private {
-            continue;
-        }
         infos.push(LobbyInfo {
             lobby_id: info.id.get_id() as i64,
             owner_id: info.owner.get_id() as i64,
@@ -667,9 +858,118 @@ fn lobby_has_game_tag(data: &[(String, String)]) -> bool {
         .any(|(key, value)| key == GAME_TAG_KEY && value == &tag)
 }
 
+fn normalize_lobby_code(code: &str) -> String {
+    code.trim()
+        .chars()
+        .filter(|ch| ch.is_ascii_alphanumeric())
+        .flat_map(char::to_uppercase)
+        .collect()
+}
+
+fn private_code_has_collision(lobbies: &[LobbyInfo], own_lobby_id: i64) -> bool {
+    lobbies.iter().any(|lobby| lobby.lobby_id != own_lobby_id)
+}
+
+const PRIVATE_CODE_ALPHABET: &[u8] = b"23456789BCDFGHJKLMNPQRSTVWXYZ";
+const PRIVATE_CODE_BLOCKLIST: &[&str] = &[
+    "ASS", "BITCH", "CNT", "COCK", "CUNT", "DICK", "FAG", "FCK", "FUCK", "KKK", "NIG", "PISS",
+    "SEX", "SHIT", "SLUT", "TITS", "TWAT", "WANK",
+];
+
+fn lobby_code_is_clean(code: &str) -> bool {
+    let leet = code
+        .bytes()
+        .map(|byte| match byte {
+            b'2' => 'Z',
+            b'3' => 'E',
+            b'4' => 'A',
+            b'5' => 'S',
+            b'6' | b'9' => 'G',
+            b'7' => 'T',
+            b'8' => 'B',
+            other => other as char,
+        })
+        .collect::<String>();
+    !PRIVATE_CODE_BLOCKLIST
+        .iter()
+        .any(|word| leet.contains(word))
+}
+
+fn generate_lobby_code() -> String {
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_nanos())
+        .unwrap_or_default();
+    loop {
+        let nonce = CODE_NONCE.fetch_add(1, Ordering::Relaxed);
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        stamp.hash(&mut hasher);
+        nonce.hash(&mut hasher);
+        std::process::id().hash(&mut hasher);
+        #[cfg(feature = "steamworks")]
+        {
+            use perro_steamworks as steam;
+            steam::account::get_self_id()
+                .ok()
+                .map(|id| id.get_id())
+                .hash(&mut hasher);
+            steam::account::get_self_name().ok().hash(&mut hasher);
+        }
+        let mut value = hasher.finish();
+        let mut code = [b'2'; 8];
+        for ch in &mut code {
+            *ch = PRIVATE_CODE_ALPHABET[value as usize % PRIVATE_CODE_ALPHABET.len()];
+            value /= PRIVATE_CODE_ALPHABET.len() as u64;
+        }
+        let code = String::from_utf8_lossy(&code).into_owned();
+        if lobby_code_is_clean(&code) {
+            return code;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn private_code_is_short_and_unambiguous() {
+        let code = generate_lobby_code();
+        assert_eq!(code.len(), 8);
+        assert!(
+            code.bytes()
+                .all(|byte| PRIVATE_CODE_ALPHABET.contains(&byte))
+        );
+        assert!(lobby_code_is_clean(&code));
+    }
+
+    #[test]
+    fn private_code_input_is_case_and_separator_tolerant() {
+        assert_eq!(normalize_lobby_code(" abcd-2345 "), "ABCD2345");
+    }
+
+    #[test]
+    fn private_code_filter_catches_plain_and_leet_words() {
+        assert!(!lobby_code_is_clean("XXFCKXXX"));
+        assert!(!lobby_code_is_clean("XX4SSXXX"));
+        assert!(!lobby_code_is_clean("XX53XXXX"));
+        assert!(lobby_code_is_clean("B7R5K9W2"));
+    }
+
+    #[test]
+    fn private_postcheck_accepts_self_and_rejects_other_lobby() {
+        let own = LobbyInfo {
+            lobby_id: 42,
+            ..LobbyInfo::default()
+        };
+        let other = LobbyInfo {
+            lobby_id: 99,
+            ..LobbyInfo::default()
+        };
+        assert!(!private_code_has_collision(&[], 42));
+        assert!(!private_code_has_collision(&[own.clone()], 42));
+        assert!(private_code_has_collision(&[own, other], 42));
+    }
 
     #[test]
     fn host_create_failed_emits_session_failed() {

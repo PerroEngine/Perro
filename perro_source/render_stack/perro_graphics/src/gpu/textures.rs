@@ -1,6 +1,27 @@
 use super::*;
 
 impl Gpu {
+    pub fn remove_camera_stream(&mut self, node: NodeID) {
+        self.camera_stream_targets.remove(&node);
+        self.camera_stream_content_revisions.remove(&node);
+        self.camera_stream_external_bindings.remove(&node);
+        self.camera_stream_3d_bindings.remove(&node);
+        self.camera_stream_3d.remove(&node);
+        self.camera_stream_2d.remove(&node);
+        self.camera_stream_particles_3d.remove(&node);
+        self.camera_stream_water.remove(&node);
+        self.camera_stream_post.remove(&node);
+    }
+
+    pub fn invalidate_custom_material_pipelines(&mut self) {
+        if let Some(three_d) = self.three_d.as_mut() {
+            three_d.invalidate_custom_pipelines();
+        }
+        for camera_stream_3d in self.camera_stream_3d.values_mut() {
+            camera_stream_3d.invalidate_custom_pipelines();
+        }
+    }
+
     pub fn invalidate_texture(&mut self, texture: perro_ids::TextureID, source: Option<&str>) {
         if let Some(two_d) = self.two_d.as_mut() {
             two_d.invalidate_texture(texture);
@@ -8,7 +29,7 @@ impl Gpu {
         if let Some(late_overlay_2d) = self.late_overlay_2d.as_mut() {
             late_overlay_2d.invalidate_texture(texture);
         }
-        if let Some(camera_stream_2d) = self.camera_stream_2d.as_mut() {
+        for camera_stream_2d in self.camera_stream_2d.values_mut() {
             camera_stream_2d.invalidate_texture(texture);
         }
         if let Some(ui) = self.ui.as_mut() {
@@ -18,7 +39,7 @@ impl Gpu {
             three_d.invalidate_material_texture(texture.index());
             three_d.invalidate_material_texture_source(source);
         }
-        if let Some(camera_stream_3d) = self.camera_stream_3d.as_mut() {
+        for camera_stream_3d in self.camera_stream_3d.values_mut() {
             camera_stream_3d.invalidate_material_texture(texture.index());
             camera_stream_3d.invalidate_material_texture_source(source);
         }
@@ -34,7 +55,7 @@ impl Gpu {
         if let Some(late_overlay_2d) = self.late_overlay_2d.as_mut() {
             late_overlay_2d.set_stream_texture(texture, is_stream);
         }
-        if let Some(camera_stream_2d) = self.camera_stream_2d.as_mut() {
+        for camera_stream_2d in self.camera_stream_2d.values_mut() {
             camera_stream_2d.set_stream_texture(texture, is_stream);
         }
         if let Some(ui) = self.ui.as_mut() {
@@ -43,7 +64,7 @@ impl Gpu {
         if let Some(three_d) = self.three_d.as_mut() {
             three_d.set_stream_texture(texture.index(), is_stream);
         }
-        if let Some(camera_stream_3d) = self.camera_stream_3d.as_mut() {
+        for camera_stream_3d in self.camera_stream_3d.values_mut() {
             camera_stream_3d.set_stream_texture(texture.index(), is_stream);
         }
     }
@@ -67,7 +88,7 @@ impl Gpu {
         if let Some(late_overlay_2d) = self.late_overlay_2d.as_mut() {
             late_overlay_2d.write_stream_texture(queue, texture, width, height, rgba);
         }
-        if let Some(camera_stream_2d) = self.camera_stream_2d.as_mut() {
+        for camera_stream_2d in self.camera_stream_2d.values_mut() {
             camera_stream_2d.write_stream_texture(queue, texture, width, height, rgba);
         }
         if let Some(ui) = self.ui.as_mut() {
@@ -77,7 +98,7 @@ impl Gpu {
             three_d.write_stream_material_texture(queue, texture.index(), width, height, rgba);
             three_d.write_stream_material_texture_source(queue, source, width, height, rgba);
         }
-        if let Some(camera_stream_3d) = self.camera_stream_3d.as_mut() {
+        for camera_stream_3d in self.camera_stream_3d.values_mut() {
             camera_stream_3d.write_stream_material_texture(
                 queue,
                 texture.index(),

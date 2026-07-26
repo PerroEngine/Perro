@@ -633,7 +633,7 @@ mod streams {
             _ => None,
         });
         let state = state.expect("viewport stream state");
-        assert!(state.tone_map_output);
+        assert!(!state.tone_map_output);
         assert_eq!(state.resolution, [640, 360]);
         assert!(state.transparent_background);
         assert!(matches!(
@@ -1051,6 +1051,99 @@ mod streams {
                     && rect.size == [600.0, 225.0]
                     && rect.center == [300.0, 337.5]
         )));
+    }
+
+    #[test]
+    fn fullscreen_ui_sub_view_uses_final_rect_on_first_visible_frame() {
+        let mut runtime = Runtime::new();
+        let viewport = NodeAPI::create::<UiSubView>(&mut runtime);
+        if let Some(mut node) = runtime.nodes.get_mut(viewport)
+            && let SceneNodeData::UiSubView(data) = &mut node.data
+        {
+            data.layout.size = UiVector2::ratio(1.0, 1.0);
+            data.projection = CameraProjection::Orthographic {
+                size: 3.0,
+                near: 0.1,
+                far: 1000.0,
+            };
+        }
+
+        // Exercise the startup fallback before the window reports its final
+        // size. This target must not survive into the first visible frame.
+        runtime.extract_render_ui_commands();
+        let mut commands = Vec::new();
+        runtime.drain_render_commands(&mut commands);
+        assert!(commands.iter().any(|command| matches!(
+            command,
+            RenderCommand::CameraStream(CameraStreamCommand::Upsert { node, state })
+                if *node == viewport && state.resolution == [2, 2]
+        )));
+
+        runtime.clear_dirty_flags();
+        runtime.set_viewport_size(1280, 720);
+        runtime.extract_render_ui_commands();
+        commands.clear();
+        runtime.drain_render_commands(&mut commands);
+        let first_visible = commands
+            .iter()
+            .find_map(|command| match command {
+                RenderCommand::CameraStream(CameraStreamCommand::Upsert { node, state })
+                    if *node == viewport =>
+                {
+                    Some(state.as_ref())
+                }
+                _ => None,
+            })
+            .expect("first visible UiSubView state");
+        assert_eq!(first_visible.resolution, [2560, 1440]);
+        let first_visible_resolution = first_visible.resolution;
+        assert_eq!(
+            first_visible.resolution[0] as f32 / first_visible.resolution[1] as f32,
+            16.0 / 9.0
+        );
+        assert!(matches!(
+            &first_visible.source,
+            CameraStreamSourceState::ThreeD(camera)
+                if matches!(
+                    camera.projection,
+                    perro_render_bridge::CameraProjectionState::Orthographic { size: 3.0, .. }
+                )
+        ));
+        assert_eq!(
+            runtime
+                .render_ui
+                .computed_rects
+                .get(&viewport)
+                .expect("first visible layout rect")
+                .size,
+            Vector2::new(1280.0, 720.0)
+        );
+        assert!(commands.iter().any(|command| matches!(
+            command,
+            RenderCommand::Ui(UiCommand::UpsertImage { node, rect, aspect_ratio, .. })
+                if *node == viewport
+                    && rect.size == [1280.0, 720.0]
+                    && *aspect_ratio == 16.0 / 9.0
+        )));
+
+        // A normal command refresh, with no pointer/nav input, keeps framing.
+        runtime.clear_dirty_flags();
+        runtime.mark_ui_dirty(viewport, Runtime::UI_DIRTY_COMMANDS);
+        runtime.extract_render_ui_commands();
+        commands.clear();
+        runtime.drain_render_commands(&mut commands);
+        let refreshed = commands
+            .iter()
+            .find_map(|command| match command {
+                RenderCommand::CameraStream(CameraStreamCommand::Upsert { node, state })
+                    if *node == viewport =>
+                {
+                    Some(state.as_ref())
+                }
+                _ => None,
+            })
+            .expect("refreshed UiSubView state");
+        assert_eq!(refreshed.resolution, first_visible_resolution);
     }
 
     #[test]

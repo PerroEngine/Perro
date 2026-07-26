@@ -2605,6 +2605,7 @@ impl Gpu3D {
             custom_pipelines_rigid: AHashMap::new(),
             custom_pipelines_multimesh: AHashMap::new(),
             custom_pipeline_tokens: AHashMap::new(),
+            custom_shader_sources: AHashMap::new(),
             custom_pipeline_vertex_hooks: AHashMap::new(),
             next_custom_pipeline_token: 1,
         };

@@ -304,9 +304,13 @@ pub struct Runtime {
     /// reusable rigid-body sample buf 4 queue_water_forces_2d/3d.
     physics_water_bodies_scratch_2d: Vec<physics::RuntimeWaterBody2D>,
     physics_water_bodies_scratch_3d: Vec<physics::RuntimeWaterBody3D>,
+    /// reusable sorted world list 4 fixed-step dispatch + stale-world prune.
+    physics_world_ids_scratch: Vec<NodeID>,
     /// reusable subtree-walk stack 4 force_rerender; avoid per-node
     /// children_slice().to_vec() alloc on every visited node.
     force_rerender_stack_scratch: Vec<NodeID>,
+    /// reusable type-lane scan buf 4 UI control sync/update passes.
+    ui_node_ids_scratch: Vec<NodeID>,
     pub(crate) audio: AudioPropagationState,
     /// Per-node cache 4 mesh point/ray/region queries; avoids re-cloning
     /// surfaces + rebuilding per-instance Mat4s (MultiMeshInstance3D) on
@@ -613,7 +617,9 @@ impl Runtime {
             physics_waters_scratch_3d: Vec::new(),
             physics_water_bodies_scratch_2d: Vec::new(),
             physics_water_bodies_scratch_3d: Vec::new(),
+            physics_world_ids_scratch: Vec::new(),
             force_rerender_stack_scratch: Vec::new(),
+            ui_node_ids_scratch: Vec::new(),
             audio: AudioPropagationState::new(),
             mesh_query_node_cache: AHashMap::default(),
             #[cfg(any(test, feature = "bench"))]

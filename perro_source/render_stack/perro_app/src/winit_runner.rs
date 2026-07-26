@@ -542,13 +542,18 @@ impl WinitRunner {
             let _timer_resolution = crate::timer_resolution::TimerResolutionGuard::acquire_1ms();
             install_ctrl_c_exit_proxy(event_loop.create_proxy());
             let mut state = RunnerState::new(app, title, fixed_timestep, preloaded_images);
-            event_loop.run_app(&mut state).map_err(|err| AppExitError {
-                message: format!("winit event loop failed: {err}"),
-            })?;
-            Ok(state
+            let run_result = event_loop.run_app(&mut state);
+            let exit_result = state
                 .exit_result
                 .take()
-                .unwrap_or_else(AppExitResult::event_loop_exit))
+                .unwrap_or_else(AppExitResult::event_loop_exit);
+            drop(state);
+            #[cfg(feature = "steamworks")]
+            let _ = perro_steamworks::runtime::shutdown();
+            run_result.map_err(|err| AppExitError {
+                message: format!("winit event loop failed: {err}"),
+            })?;
+            Ok(exit_result)
         }
     }
 
@@ -566,13 +571,18 @@ impl WinitRunner {
             message: format!("failed to create android winit event loop: {err}"),
         })?;
         let mut state = RunnerState::new(app, title, fixed_timestep, None);
-        event_loop.run_app(&mut state).map_err(|err| AppExitError {
-            message: format!("winit event loop failed: {err}"),
-        })?;
-        Ok(state
+        let run_result = event_loop.run_app(&mut state);
+        let exit_result = state
             .exit_result
             .take()
-            .unwrap_or_else(AppExitResult::event_loop_exit))
+            .unwrap_or_else(AppExitResult::event_loop_exit);
+        drop(state);
+        #[cfg(feature = "steamworks")]
+        let _ = perro_steamworks::runtime::shutdown();
+        run_result.map_err(|err| AppExitError {
+            message: format!("winit event loop failed: {err}"),
+        })?;
+        Ok(exit_result)
     }
 
     pub fn event_loop_type_name() -> &'static str {
@@ -1035,6 +1045,7 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler<RunnerUserEvent>
 
 impl<B: GraphicsBackend> Drop for RunnerState<B> {
     fn drop(&mut self) {
+        perro_api::networking::multiplayer::disconnect();
         self.reset_mouse_mode_for_exit();
     }
 }

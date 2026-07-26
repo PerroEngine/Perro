@@ -85,6 +85,26 @@ pub fn run_callbacks() -> Result<(), SteamError> {
     Ok(())
 }
 
+pub fn shutdown() -> Result<(), SteamError> {
+    if matches!(
+        crate::input::mode(),
+        Ok(mode) if mode != SteamInputMode::Off
+    ) {
+        let _ = crate::input::shutdown();
+        let _ = crate::input::set_mode(SteamInputMode::Off);
+    }
+    let client = {
+        let mut state = state().lock().map_err(|_| SteamError::NotReady)?;
+        state.enabled = false;
+        state.app_id = None;
+        state.stats_store_requested = false;
+        state.client.take()
+    };
+    let _ = crate::events::clear();
+    drop(client);
+    Ok(())
+}
+
 pub(crate) fn request_stats_store() -> Result<(), SteamError> {
     state()
         .lock()

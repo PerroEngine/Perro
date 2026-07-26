@@ -535,14 +535,7 @@ impl Gpu3D {
         self.hiz_size = hiz_size;
         self.rebuild_hiz_bind_groups(device);
         self.sample_count = sample_count;
-        clear_custom_pipeline_maps(
-            &mut self.custom_pipelines,
-            &mut self.custom_pipelines_rigid,
-            &mut self.custom_pipelines_multimesh,
-            &mut self.custom_pipeline_tokens,
-            &mut self.custom_pipeline_vertex_hooks,
-            &mut self.next_custom_pipeline_token,
-        );
+        self.invalidate_custom_pipelines();
         let (gpu_occlusion_enabled, cpu_occlusion_enabled) = occlusion_flags(self.occlusion_mode);
         self.gpu_occlusion_enabled = gpu_occlusion_enabled;
         self.cpu_occlusion_enabled = cpu_occlusion_enabled;
@@ -574,58 +567,5 @@ impl Gpu3D {
         });
         // Multimesh cull bind group also references the hi-z pyramid view.
         self.rebuild_multimesh_cull_bind_group(device);
-    }
-}
-
-fn clear_custom_pipeline_maps<T>(
-    custom_pipelines: &mut AHashMap<u32, T>,
-    custom_pipelines_rigid: &mut AHashMap<u32, T>,
-    custom_pipelines_multimesh: &mut AHashMap<u32, T>,
-    custom_pipeline_tokens: &mut AHashMap<u64, u32>,
-    custom_pipeline_vertex_hooks: &mut AHashMap<u32, bool>,
-    next_custom_pipeline_token: &mut u32,
-) {
-    custom_pipelines.clear();
-    custom_pipelines_rigid.clear();
-    // Keyed by the same tokens: a stale entry under a re-minted token would
-    // make ensure_custom_pipeline skip the rebuild and bind an old-sample-count
-    // pipeline.
-    custom_pipelines_multimesh.clear();
-    custom_pipeline_tokens.clear();
-    // Tokens restart from 1: drop the per-token vertex-hook flags so a
-    // re-minted token can't inherit a stale hook flag (missing entries
-    // classify as not depth-safe until the pipeline is ensured again).
-    custom_pipeline_vertex_hooks.clear();
-    *next_custom_pipeline_token = 1;
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn sample_count_change_clears_all_custom_pipeline_maps() {
-        let mut custom_pipelines = AHashMap::from_iter([(7, ())]);
-        let mut custom_pipelines_rigid = AHashMap::from_iter([(7, ())]);
-        let mut custom_pipelines_multimesh = AHashMap::from_iter([(7, ())]);
-        let mut custom_pipeline_tokens = AHashMap::from_iter([(99, 7)]);
-        let mut custom_pipeline_vertex_hooks = AHashMap::from_iter([(7, true)]);
-        let mut next_custom_pipeline_token = 8;
-
-        clear_custom_pipeline_maps(
-            &mut custom_pipelines,
-            &mut custom_pipelines_rigid,
-            &mut custom_pipelines_multimesh,
-            &mut custom_pipeline_tokens,
-            &mut custom_pipeline_vertex_hooks,
-            &mut next_custom_pipeline_token,
-        );
-
-        assert!(custom_pipelines_multimesh.is_empty());
-        assert!(custom_pipelines.is_empty());
-        assert!(custom_pipelines_rigid.is_empty());
-        assert!(custom_pipeline_tokens.is_empty());
-        assert!(custom_pipeline_vertex_hooks.is_empty());
-        assert_eq!(next_custom_pipeline_token, 1);
     }
 }

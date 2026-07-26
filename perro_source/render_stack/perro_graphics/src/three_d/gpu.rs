@@ -715,7 +715,8 @@ pub struct Gpu3D {
     custom_pipelines: AHashMap<u32, CustomPipeline>,
     custom_pipelines_rigid: AHashMap<u32, CustomPipeline>,
     custom_pipelines_multimesh: AHashMap<u32, CustomPipeline>,
-    custom_pipeline_tokens: AHashMap<u64, u32>,
+    custom_pipeline_tokens: AHashMap<CustomPipelineKey, u32>,
+    custom_shader_sources: AHashMap<Arc<str>, Arc<str>>,
     // Per custom-pipeline token: does the shader define a shade_vertex hook?
     // The shared depth-only passes (shadow depth + depth prepass) cannot run
     // the hook, so batch classification consults this to decide whether a
@@ -1281,6 +1282,15 @@ impl MaterialPipelineKind {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+struct CustomPipelineKey {
+    shader_path: Arc<str>,
+    shader_source: Arc<str>,
+    lighting: CustomMaterialLighting3D,
+    alpha_mode: u8,
+    vertex_hook: bool,
+}
+
 struct CustomPipeline {
     pipeline_culled: wgpu::RenderPipeline,
     pipeline_double_sided: wgpu::RenderPipeline,
@@ -1329,7 +1339,7 @@ mod tests {
         FLAG_WEIGHTS_UNORM8 as PMESH_FLAG_WEIGHTS_UNORM8, VERSION_V1 as PMESH_VERSION_V1,
     };
     use perro_graphics_assets::{MeshRange, decode_pmesh, decode_ptex};
-    use perro_render_bridge::CameraProjectionState;
+    use perro_render_bridge::{Camera3DState, CameraProjectionState};
     use perro_structs::BitMask;
 
     fn assert_approx(actual: f32, expected: f32) {
@@ -1505,6 +1515,24 @@ mod tests {
         );
         let fov = (2.0 * (1.0 / proj.y_axis.y).atan()).to_degrees();
         assert_approx(fov, 60.0);
+    }
+
+    #[test]
+    fn orthographic_projection_uses_current_target_aspect() {
+        let camera = Camera3DState {
+            projection: CameraProjectionState::Orthographic {
+                size: 3.0,
+                near: 0.1,
+                far: 1000.0,
+            },
+            ..Camera3DState::default()
+        };
+        let startup = camera::compute_view_proj_mat(&camera, 2, 2);
+        let first_visible = camera::compute_view_proj_mat(&camera, 2560, 1440);
+
+        assert_approx(startup.x_axis.x / startup.y_axis.y, 1.0);
+        assert_approx(first_visible.x_axis.x / first_visible.y_axis.y, 9.0 / 16.0);
+        assert_approx(startup.y_axis.y, first_visible.y_axis.y);
     }
 
     #[test]

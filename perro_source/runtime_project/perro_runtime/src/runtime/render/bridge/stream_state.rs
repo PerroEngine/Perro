@@ -375,10 +375,10 @@ impl Runtime {
 
         Some(CameraStreamState {
             source,
-            tone_map_output: matches!(
-                self.nodes.get(view_node).map(|node| &node.data),
-                Some(SceneNodeData::UiSubView(_))
-            ),
+            // Keep owned sub-view output scene-linear. The UI composite writes
+            // it through the surface view, which performs the display transfer.
+            // Applying ACES here compresses saturated art before composition.
+            tone_map_output: false,
             overlay_camera_2d,
             transparent_background: view.background.a() < 1.0,
             clear_color: Some(view.background),

@@ -165,6 +165,9 @@ base64 = "0.22.1"
 gltf = { version = "1.4.1", features = ["import", "utils"] }
 toml = "0.9.12"
 
+[patch.crates-io]
+proc-macro-error2 = { git = "https://github.com/fgardt/proc-macro-error-2.git", rev = "53ff94b61c678593158db1a3d50269c6f0de0db7" }
+
 [profile.release.package.rapier2d]
 opt-level = 3
 

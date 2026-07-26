@@ -539,13 +539,16 @@ impl UiRenderer {
         self.default_font = font;
     }
 
-    pub(crate) fn set_nine_slice_texture_sizes(&mut self, sizes: &AHashMap<TextureID, [u32; 2]>) {
+    pub(crate) fn set_nine_slice_texture_sizes(
+        &mut self,
+        mut size_for: impl FnMut(TextureID) -> [u32; 2],
+    ) {
         let mut changed = false;
         for draw in self.nodes.values_mut() {
             let UiDraw::NineSlice(image) = draw else {
                 continue;
             };
-            let size = sizes.get(&image.texture).copied().unwrap_or([0, 0]);
+            let size = size_for(image.texture);
             if image.texture_size != size {
                 image.texture_size = size;
                 changed = true;

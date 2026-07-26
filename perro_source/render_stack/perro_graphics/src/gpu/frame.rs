@@ -539,9 +539,11 @@ impl Gpu {
             a: 1.0,
         });
         for (node, stream) in camera_streams {
+            let stream_reentered = !self.camera_stream_content_revisions.contains_key(node);
             let (stream_draws_revision, stream_sprites_revision) =
                 update_camera_stream_content_revisions(
                     &mut self.camera_stream_content_revisions,
+                    &mut self.next_camera_stream_content_revision,
                     *node,
                     &stream.draws_3d,
                     &stream.sprites_2d,
@@ -600,15 +602,17 @@ impl Gpu {
             let mut stream_post_camera = None;
             let mut stream_post_depth_view = post_depth_view;
             if let CameraStreamSourceState::Webcam { texture, .. } = &stream.source {
-                let source_view = self.camera_stream_2d.as_mut().and_then(|stream_2d| {
-                    stream_2d.ensure_sampled_texture_view(
-                        &self.device,
-                        &self.queue,
-                        resources,
-                        *texture,
-                        static_texture_lookup,
-                    )
-                });
+                let stream_2d =
+                    camera_stream_cache_entry(&mut self.camera_stream_2d, *node, || {
+                        Gpu2D::new(&self.device, self.render_format, 1, self.texture_filter)
+                    });
+                let source_view = stream_2d.ensure_sampled_texture_view(
+                    &self.device,
+                    &self.queue,
+                    resources,
+                    *texture,
+                    static_texture_lookup,
+                );
                 let (Some(source_view), Some(depth_view)) =
                     (source_view, stream_post_depth_view.as_ref())
                 else {
@@ -630,16 +634,16 @@ impl Gpu {
                     multiview_mask: None,
                 });
                 drop(_clear_depth);
-                if self.camera_stream_post.is_none() {
-                    self.camera_stream_post = Some(PostProcessor::new(
+                let post = camera_stream_cache_entry(&mut self.camera_stream_post, *node, || {
+                    PostProcessor::new(
                         &self.device,
                         &self.queue,
                         self.render_format,
                         stream.resolution[0].max(1),
                         stream.resolution[1].max(1),
-                    ));
-                }
-                if let Some(post) = self.camera_stream_post.as_mut() {
+                    )
+                });
+                {
                     post.resize(
                         &self.device,
                         stream.resolution[0].max(1),
@@ -718,15 +722,15 @@ impl Gpu {
                     });
                     drop(_clear_depth);
                 }
-                if self.camera_stream_2d.is_none() {
-                    self.camera_stream_2d = Some(Gpu2D::new(
-                        &self.device,
-                        self.render_format,
-                        1,
-                        self.texture_filter,
-                    ));
-                }
-                if let Some(stream_2d) = self.camera_stream_2d.as_mut() {
+                if !stream.sprites_2d.is_empty()
+                    || !stream.lights_2d.is_empty()
+                    || !stream.point_particles_2d.is_empty()
+                    || !stream.waters_2d.is_empty()
+                {
+                    let stream_2d =
+                        camera_stream_cache_entry(&mut self.camera_stream_2d, *node, || {
+                            Gpu2D::new(&self.device, self.render_format, 1, self.texture_filter)
+                        });
                     let camera_position = camera.position;
                     let camera = camera_2d_uniform_from_state(
                         camera,
@@ -761,7 +765,76 @@ impl Gpu {
                         stream.point_particles_2d.as_ref(),
                     );
                     if !stream.waters_2d.is_empty() {
-                        if self.camera_stream_3d.is_none() {
+                        let stream_3d_ref =
+                            camera_stream_cache_entry(&mut self.camera_stream_3d, *node, || {
+                                let mut stream_3d = Gpu3D::new(
+                                    &self.device,
+                                    &self.queue,
+                                    self.render_format,
+                                    Gpu3DConfig {
+                                        sample_count: 1,
+                                        width: stream.resolution[0].max(1),
+                                        height: stream.resolution[1].max(1),
+                                        meshlets_enabled: self.meshlets_enabled,
+                                        dev_meshlets: self.dev_meshlets,
+                                        meshlet_debug_view: self.meshlet_debug_view,
+                                        occlusion_culling: self.occlusion_culling,
+                                        ssao: self.ssao,
+                                        indirect_first_instance_enabled: self
+                                            .indirect_first_instance_enabled,
+                                        multi_draw_indirect_enabled: self
+                                            .multi_draw_indirect_enabled,
+                                        texture_filter: self.texture_filter,
+                                    },
+                                );
+                                // Camera streams render into their own targets;
+                                // the seam pass only wires up the main scene.
+                                stream_3d.set_screen_blend_supported(false);
+                                stream_3d
+                            });
+                        let water =
+                            camera_stream_cache_entry(&mut self.camera_stream_water, *node, || {
+                                GpuWater::new(
+                                    &self.device,
+                                    self.render_format,
+                                    1,
+                                    stream_2d.camera_bind_group_layout(),
+                                    stream_3d_ref.water_camera_bind_group_layout(),
+                                    stream_3d_ref.depth_prepass_view(),
+                                    stream.resolution[0].max(1),
+                                    stream.resolution[1].max(1),
+                                )
+                            });
+                        water.prepare(
+                            &self.device,
+                            &self.queue,
+                            stream.waters_2d.as_ref(),
+                            &[],
+                            WaterPrepareContext {
+                                camera_2d_position: camera_position,
+                                camera_3d_position: [0.0, 0.0, 0.0],
+                                camera_3d_frustum_planes: [[0.0; 4]; 6],
+                                sky_color: [0.0, 0.0, 0.0],
+                                time_seconds: frame_time_seconds,
+                                delta_seconds: frame_delta_seconds,
+                            },
+                        );
+                        water.encode(&mut encoder);
+                        water.render_2d(
+                            &mut encoder,
+                            render_view,
+                            None,
+                            stream_2d.camera_bind_group(),
+                            None,
+                        );
+                    }
+                    stream_2d.render_pass(&mut encoder, render_view, None, particle_rect_count);
+                }
+            } else if let CameraStreamSourceState::ThreeD(camera) = &stream.source {
+                stream_post_camera = Some(camera.clone());
+                if camera_stream_needs_3d_world(stream) {
+                    let stream_3d =
+                        camera_stream_cache_entry(&mut self.camera_stream_3d, *node, || {
                             let mut stream_3d = Gpu3D::new(
                                 &self.device,
                                 &self.queue,
@@ -781,79 +854,11 @@ impl Gpu {
                                     texture_filter: self.texture_filter,
                                 },
                             );
-                            // Camera streams render into their own targets;
-                            // the seam pass only wires up the main scene.
+                            // Camera streams render into their own targets; the seam
+                            // pass only wires up the main scene.
                             stream_3d.set_screen_blend_supported(false);
-                            self.camera_stream_3d = Some(stream_3d);
-                        }
-                        if self.camera_stream_water.is_none()
-                            && let Some(stream_3d_ref) = self.camera_stream_3d.as_ref()
-                        {
-                            self.camera_stream_water = Some(GpuWater::new(
-                                &self.device,
-                                self.render_format,
-                                1,
-                                stream_2d.camera_bind_group_layout(),
-                                stream_3d_ref.water_camera_bind_group_layout(),
-                                stream_3d_ref.depth_prepass_view(),
-                                stream.resolution[0].max(1),
-                                stream.resolution[1].max(1),
-                            ));
-                        }
-                        if let Some(water) = self.camera_stream_water.as_mut() {
-                            water.prepare(
-                                &self.device,
-                                &self.queue,
-                                stream.waters_2d.as_ref(),
-                                &[],
-                                WaterPrepareContext {
-                                    camera_2d_position: camera_position,
-                                    camera_3d_position: [0.0, 0.0, 0.0],
-                                    camera_3d_frustum_planes: [[0.0; 4]; 6],
-                                    sky_color: [0.0, 0.0, 0.0],
-                                    time_seconds: frame_time_seconds,
-                                    delta_seconds: frame_delta_seconds,
-                                },
-                            );
-                            water.encode(&mut encoder);
-                            water.render_2d(
-                                &mut encoder,
-                                render_view,
-                                None,
-                                stream_2d.camera_bind_group(),
-                                None,
-                            );
-                        }
-                    }
-                    stream_2d.render_pass(&mut encoder, render_view, None, particle_rect_count);
-                }
-            } else if let CameraStreamSourceState::ThreeD(camera) = &stream.source {
-                stream_post_camera = Some(camera.clone());
-                if self.camera_stream_3d.is_none() {
-                    let mut stream_3d = Gpu3D::new(
-                        &self.device,
-                        &self.queue,
-                        self.render_format,
-                        Gpu3DConfig {
-                            sample_count: 1,
-                            width: stream.resolution[0].max(1),
-                            height: stream.resolution[1].max(1),
-                            meshlets_enabled: self.meshlets_enabled,
-                            dev_meshlets: self.dev_meshlets,
-                            meshlet_debug_view: self.meshlet_debug_view,
-                            occlusion_culling: self.occlusion_culling,
-                            ssao: self.ssao,
-                            indirect_first_instance_enabled: self.indirect_first_instance_enabled,
-                            multi_draw_indirect_enabled: self.multi_draw_indirect_enabled,
-                            texture_filter: self.texture_filter,
-                        },
-                    );
-                    // Camera streams render into their own targets; the seam
-                    // pass only wires up the main scene.
-                    stream_3d.set_screen_blend_supported(false);
-                    self.camera_stream_3d = Some(stream_3d);
-                }
-                if let Some(stream_3d) = self.camera_stream_3d.as_mut() {
+                            stream_3d
+                        });
                     let width = stream.resolution[0].max(1);
                     let height = stream.resolution[1].max(1);
                     fill_camera_stream_draws_3d(
@@ -886,7 +891,7 @@ impl Gpu {
                             lighting: &stream_lighting,
                             draws: &self.camera_stream_draws_scratch,
                             draws_revision: stream_draws_revision,
-                            force_full_rebuild: has(DIRTY_RESOURCES),
+                            force_full_rebuild: has(DIRTY_RESOURCES) || stream_reentered,
                             decals: &[],
                             decals_revision: 0,
                             width,
@@ -906,88 +911,110 @@ impl Gpu {
                         !stream.transparent_background,
                     );
                     if !stream.point_particles_3d.is_empty() {
-                        if self.camera_stream_particles_3d.is_none() {
-                            self.camera_stream_particles_3d = Some(GpuPointParticles3D::new(
-                                &self.device,
-                                self.render_format,
-                                1,
-                            ));
-                        }
-                        if let Some(particles) = self.camera_stream_particles_3d.as_mut() {
-                            particles.prepare(
-                                &self.device,
-                                &self.queue,
-                                PreparePointParticles3D {
-                                    camera: camera.clone(),
-                                    emitters: stream.point_particles_3d.as_ref(),
+                        let particles = camera_stream_cache_entry(
+                            &mut self.camera_stream_particles_3d,
+                            *node,
+                            || GpuPointParticles3D::new(&self.device, self.render_format, 1),
+                        );
+                        particles.prepare(
+                            &self.device,
+                            &self.queue,
+                            PreparePointParticles3D {
+                                camera: camera.clone(),
+                                emitters: stream.point_particles_3d.as_ref(),
+                                width,
+                                height,
+                            },
+                        );
+                        particles.render_pass(&mut encoder, render_view, stream_3d.depth_view());
+                    }
+                    if !stream.waters_3d.is_empty()
+                        && let Some(stream_2d_ref) = self.two_d.as_ref()
+                    {
+                        let water =
+                            camera_stream_cache_entry(&mut self.camera_stream_water, *node, || {
+                                GpuWater::new(
+                                    &self.device,
+                                    self.render_format,
+                                    1,
+                                    stream_2d_ref.camera_bind_group_layout(),
+                                    stream_3d.water_camera_bind_group_layout(),
+                                    stream_3d.depth_prepass_view(),
                                     width,
                                     height,
-                                },
-                            );
-                            particles.render_pass(
-                                &mut encoder,
-                                render_view,
-                                stream_3d.depth_view(),
-                            );
-                        }
-                    }
-                    if !stream.waters_3d.is_empty() {
-                        if self.camera_stream_water.is_none()
-                            && let Some(stream_2d_ref) = self.camera_stream_2d.as_ref()
-                        {
-                            self.camera_stream_water = Some(GpuWater::new(
-                                &self.device,
-                                self.render_format,
-                                1,
-                                stream_2d_ref.camera_bind_group_layout(),
-                                stream_3d.water_camera_bind_group_layout(),
-                                stream_3d.depth_prepass_view(),
-                                width,
-                                height,
-                            ));
-                        }
-                        if let Some(water) = self.camera_stream_water.as_mut() {
-                            water.set_scene_color_size(
-                                &self.device,
-                                stream_3d.depth_prepass_view(),
-                                width,
-                                height,
-                            );
-                            let water_view_proj = water_camera_view_proj(camera, width, height);
-                            water.prepare(
-                                &self.device,
-                                &self.queue,
-                                &[],
-                                stream.waters_3d.as_ref(),
-                                WaterPrepareContext {
-                                    camera_2d_position: [0.0, 0.0],
-                                    camera_3d_position: camera.position,
-                                    camera_3d_frustum_planes: water_extract_frustum_planes(
-                                        water_view_proj,
-                                    ),
-                                    sky_color: sky_clear_color(&stream_lighting)
-                                        .map(|color| {
-                                            [color.r as f32, color.g as f32, color.b as f32]
-                                        })
-                                        .unwrap_or([0.0, 0.0, 0.0]),
-                                    time_seconds: frame_time_seconds,
-                                    delta_seconds: frame_delta_seconds,
-                                },
-                            );
-                            water.encode(&mut encoder);
-                            water.capture_scene_color(&mut encoder, &render_texture, render_view);
-                            water.render_3d(
-                                &mut encoder,
-                                render_view,
-                                stream_3d.depth_view(),
-                                stream_3d.water_camera_bind_group(),
-                                false,
-                            );
-                        }
+                                )
+                            });
+                        water.set_scene_color_size(
+                            &self.device,
+                            stream_3d.depth_prepass_view(),
+                            width,
+                            height,
+                        );
+                        let water_view_proj = water_camera_view_proj(camera, width, height);
+                        water.prepare(
+                            &self.device,
+                            &self.queue,
+                            &[],
+                            stream.waters_3d.as_ref(),
+                            WaterPrepareContext {
+                                camera_2d_position: [0.0, 0.0],
+                                camera_3d_position: camera.position,
+                                camera_3d_frustum_planes: water_extract_frustum_planes(
+                                    water_view_proj,
+                                ),
+                                sky_color: sky_clear_color(&stream_lighting)
+                                    .map(|color| [color.r as f32, color.g as f32, color.b as f32])
+                                    .unwrap_or([0.0, 0.0, 0.0]),
+                                time_seconds: frame_time_seconds,
+                                delta_seconds: frame_delta_seconds,
+                            },
+                        );
+                        water.encode(&mut encoder);
+                        water.capture_scene_color(&mut encoder, &render_texture, render_view);
+                        water.render_3d(
+                            &mut encoder,
+                            render_view,
+                            stream_3d.depth_view(),
+                            stream_3d.water_camera_bind_group(),
+                            false,
+                        );
                     }
                     if has_stream_post {
                         stream_post_depth_view = Some(stream_3d.depth_prepass_view().clone());
                     }
+                } else {
+                    let clear = stream.clear_color.map(premultiplied_clear_color).unwrap_or(
+                        if stream.transparent_background {
+                            wgpu::Color::TRANSPARENT
+                        } else {
+                            wgpu::Color::BLACK
+                        },
+                    );
+                    let _clear_empty_3d = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                        label: Some("perro_camera_stream_clear_empty_3d"),
+                        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                            view: render_view,
+                            resolve_target: None,
+                            ops: wgpu::Operations {
+                                load: wgpu::LoadOp::Clear(clear),
+                                store: wgpu::StoreOp::Store,
+                            },
+                            depth_slice: None,
+                        })],
+                        depth_stencil_attachment: stream_post_depth_view.as_ref().map(|view| {
+                            wgpu::RenderPassDepthStencilAttachment {
+                                view,
+                                depth_ops: Some(wgpu::Operations {
+                                    load: wgpu::LoadOp::Clear(1.0),
+                                    store: wgpu::StoreOp::Store,
+                                }),
+                                stencil_ops: None,
+                            }
+                        }),
+                        timestamp_writes: None,
+                        occlusion_query_set: None,
+                        multiview_mask: None,
+                    });
                 }
                 if let Some(overlay_camera) = stream.overlay_camera_2d.as_ref()
                     && (!stream.sprites_2d.is_empty()
@@ -995,15 +1022,11 @@ impl Gpu {
                         || !stream.point_particles_2d.is_empty()
                         || !stream.waters_2d.is_empty())
                 {
-                    if self.camera_stream_2d.is_none() {
-                        self.camera_stream_2d = Some(Gpu2D::new(
-                            &self.device,
-                            self.render_format,
-                            1,
-                            self.texture_filter,
-                        ));
-                    }
-                    if let Some(stream_2d) = self.camera_stream_2d.as_mut() {
+                    let stream_2d =
+                        camera_stream_cache_entry(&mut self.camera_stream_2d, *node, || {
+                            Gpu2D::new(&self.device, self.render_format, 1, self.texture_filter)
+                        });
+                    {
                         let camera_position = overlay_camera.position;
                         let camera = camera_2d_uniform_from_state(
                             overlay_camera,
@@ -1038,61 +1061,63 @@ impl Gpu {
                             stream.point_particles_2d.as_ref(),
                         );
                         if !stream.waters_2d.is_empty()
-                            && let Some(stream_3d) = self.camera_stream_3d.as_ref()
+                            && let Some(stream_3d) = self.camera_stream_3d.get(node)
                         {
-                            if self.camera_stream_water.is_none() {
-                                self.camera_stream_water = Some(GpuWater::new(
-                                    &self.device,
-                                    self.render_format,
-                                    1,
-                                    stream_2d.camera_bind_group_layout(),
-                                    stream_3d.water_camera_bind_group_layout(),
-                                    stream_3d.depth_prepass_view(),
-                                    stream.resolution[0].max(1),
-                                    stream.resolution[1].max(1),
-                                ));
-                            }
-                            if let Some(water) = self.camera_stream_water.as_mut() {
-                                water.prepare(
-                                    &self.device,
-                                    &self.queue,
-                                    stream.waters_2d.as_ref(),
-                                    &[],
-                                    WaterPrepareContext {
-                                        camera_2d_position: camera_position,
-                                        camera_3d_position: [0.0, 0.0, 0.0],
-                                        camera_3d_frustum_planes: [[0.0; 4]; 6],
-                                        sky_color: [0.0, 0.0, 0.0],
-                                        time_seconds: frame_time_seconds,
-                                        delta_seconds: frame_delta_seconds,
-                                    },
-                                );
-                                water.encode(&mut encoder);
-                                water.render_2d(
-                                    &mut encoder,
-                                    render_view,
-                                    None,
-                                    stream_2d.camera_bind_group(),
-                                    None,
-                                );
-                            }
+                            let water = camera_stream_cache_entry(
+                                &mut self.camera_stream_water,
+                                *node,
+                                || {
+                                    GpuWater::new(
+                                        &self.device,
+                                        self.render_format,
+                                        1,
+                                        stream_2d.camera_bind_group_layout(),
+                                        stream_3d.water_camera_bind_group_layout(),
+                                        stream_3d.depth_prepass_view(),
+                                        stream.resolution[0].max(1),
+                                        stream.resolution[1].max(1),
+                                    )
+                                },
+                            );
+                            water.prepare(
+                                &self.device,
+                                &self.queue,
+                                stream.waters_2d.as_ref(),
+                                &[],
+                                WaterPrepareContext {
+                                    camera_2d_position: camera_position,
+                                    camera_3d_position: [0.0, 0.0, 0.0],
+                                    camera_3d_frustum_planes: [[0.0; 4]; 6],
+                                    sky_color: [0.0, 0.0, 0.0],
+                                    time_seconds: frame_time_seconds,
+                                    delta_seconds: frame_delta_seconds,
+                                },
+                            );
+                            water.encode(&mut encoder);
+                            water.render_2d(
+                                &mut encoder,
+                                render_view,
+                                None,
+                                stream_2d.camera_bind_group(),
+                                None,
+                            );
                         }
                         stream_2d.render_pass(&mut encoder, render_view, None, particle_rect_count);
                     }
                 }
             }
             if has_stream_post {
-                if self.camera_stream_post.is_none() {
-                    self.camera_stream_post = Some(PostProcessor::new(
+                let post = camera_stream_cache_entry(&mut self.camera_stream_post, *node, || {
+                    PostProcessor::new(
                         &self.device,
                         &self.queue,
                         self.render_format,
                         stream.resolution[0].max(1),
                         stream.resolution[1].max(1),
-                    ));
-                }
+                    )
+                });
                 let camera = stream_post_camera.unwrap_or_default();
-                if let Some(post) = self.camera_stream_post.as_mut() {
+                {
                     let (Some(depth_view), Some(input_view)) =
                         (stream_post_depth_view.as_ref(), post_input_view.as_ref())
                     else {

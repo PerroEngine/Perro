@@ -88,6 +88,10 @@ pub mod runtime {
         crate::app::run_callbacks()
     }
 
+    pub fn shutdown() -> Result<(), SteamError> {
+        crate::app::shutdown()
+    }
+
     #[cfg(feature = "steamworks-runtime")]
     pub fn init_game_server(
         config: crate::game_server::GameServerConfig,

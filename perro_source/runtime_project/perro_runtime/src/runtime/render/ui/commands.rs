@@ -7,22 +7,22 @@ impl Runtime {
         // moves, other widgets): gate it on the tree node itself being
         // dirty. Engine-side mutations (row clicks) call
         // sync_tree_list_internal_nodes directly.
-        let tree_ids = self
-            .nodes
-            .iter()
-            .filter_map(|(id, node)| match &node.data {
-                SceneNodeData::UiTreeList(tree) => {
-                    let never_synced = tree.internal_rows.is_empty() && !tree.items.is_empty();
-                    Some((id, never_synced))
-                }
-                _ => None,
-            })
-            .collect::<Vec<_>>();
-        for (tree_id, never_synced) in tree_ids {
+        let mut tree_ids = std::mem::take(&mut self.ui_node_ids_scratch);
+        tree_ids.clear();
+        self.nodes
+            .append_type_ids(perro_nodes::NodeType::UiTreeList, &mut tree_ids);
+        for &tree_id in &tree_ids {
+            let never_synced = self.nodes.get(tree_id).is_some_and(|node| {
+                let SceneNodeData::UiTreeList(tree) = &node.data else {
+                    return false;
+                };
+                tree.internal_rows.is_empty() && !tree.items.is_empty()
+            });
             if never_synced || self.dirty.ui_flags_at(tree_id.index() as usize) != 0 {
                 self.sync_tree_list_internal_nodes(tree_id);
             }
         }
+        self.ui_node_ids_scratch = tree_ids;
     }
 
     pub(super) fn ensure_tree_list_internal_nodes_for(&mut self, tree_id: NodeID) {
@@ -424,15 +424,12 @@ impl Runtime {
 
     pub(super) fn update_dropdown_open_animations(&mut self) -> bool {
         let dt = self.time.delta.max(0.0);
-        let ids = self
-            .nodes
-            .iter()
-            .filter_map(|(id, node)| {
-                matches!(node.data, SceneNodeData::UiDropdown(_)).then_some(id)
-            })
-            .collect::<Vec<_>>();
+        let mut ids = std::mem::take(&mut self.ui_node_ids_scratch);
+        ids.clear();
+        self.nodes
+            .append_type_ids(perro_nodes::NodeType::UiDropdown, &mut ids);
         let mut changed = false;
-        for id in ids {
+        for &id in &ids {
             let mut node_changed = false;
             if let Some(node) = self.nodes.get_mut_untracked(id)
                 && let SceneNodeData::UiDropdown(dropdown) = &mut node.data
@@ -466,6 +463,7 @@ impl Runtime {
                 self.mark_ui_dirty(id, Self::UI_DIRTY_LAYOUT_SELF | Self::UI_DIRTY_COMMANDS);
             }
         }
+        self.ui_node_ids_scratch = ids;
         changed
     }
 
@@ -473,20 +471,23 @@ impl Runtime {
         // Same gating as tree lists: only re-sync dropdowns whose node is
         // dirty this frame. Engine-side open/select paths call
         // sync_dropdown_internal_nodes directly.
-        let dropdown_ids = self
-            .nodes
-            .iter()
-            .filter_map(|(id, node)| match &node.data {
-                SceneNodeData::UiDropdown(dropdown) => Some((id, dropdown.internal_label.is_nil())),
-                _ => None,
-            })
-            .collect::<Vec<_>>();
-        for (dropdown_id, never_synced) in dropdown_ids {
+        let mut dropdown_ids = std::mem::take(&mut self.ui_node_ids_scratch);
+        dropdown_ids.clear();
+        self.nodes
+            .append_type_ids(perro_nodes::NodeType::UiDropdown, &mut dropdown_ids);
+        for &dropdown_id in &dropdown_ids {
+            let never_synced = self.nodes.get(dropdown_id).is_some_and(|node| {
+                matches!(
+                    &node.data,
+                    SceneNodeData::UiDropdown(dropdown) if dropdown.internal_label.is_nil()
+                )
+            });
             if never_synced || self.dirty.ui_flags_at(dropdown_id.index() as usize) != 0 {
                 self.ensure_dropdown_internal_nodes_for(dropdown_id);
                 self.sync_dropdown_internal_nodes(dropdown_id);
             }
         }
+        self.ui_node_ids_scratch = dropdown_ids;
     }
 
     pub(super) fn ensure_dropdown_internal_nodes_for(&mut self, dropdown_id: NodeID) {
@@ -805,22 +806,24 @@ impl Runtime {
         // Same gating as tree lists: only re-sync pickers whose node is
         // dirty this frame. Engine-side popup/edit paths call
         // sync_color_picker_internal_nodes directly.
-        let picker_ids = self
-            .nodes
-            .iter()
-            .filter_map(|(id, node)| match &node.data {
-                SceneNodeData::UiColorPicker(picker) => {
-                    Some((id, picker.internal_swatch_button.is_nil()))
-                }
-                _ => None,
-            })
-            .collect::<Vec<_>>();
-        for (picker_id, never_synced) in picker_ids {
+        let mut picker_ids = std::mem::take(&mut self.ui_node_ids_scratch);
+        picker_ids.clear();
+        self.nodes
+            .append_type_ids(perro_nodes::NodeType::UiColorPicker, &mut picker_ids);
+        for &picker_id in &picker_ids {
+            let never_synced = self.nodes.get(picker_id).is_some_and(|node| {
+                matches!(
+                    &node.data,
+                    SceneNodeData::UiColorPicker(picker)
+                        if picker.internal_swatch_button.is_nil()
+                )
+            });
             if never_synced || self.dirty.ui_flags_at(picker_id.index() as usize) != 0 {
                 self.ensure_color_picker_internal_nodes_for(picker_id);
                 self.sync_color_picker_internal_nodes(picker_id);
             }
         }
+        self.ui_node_ids_scratch = picker_ids;
     }
 
     pub(super) fn ensure_color_picker_internal_nodes_for(&mut self, picker_id: NodeID) {
@@ -1152,15 +1155,27 @@ impl Runtime {
         computed: &AHashMap<NodeID, ComputedUiRect>,
         viewport: Vector2,
     ) {
-        let pickers = self
-            .nodes
-            .iter()
-            .filter_map(|(id, node)| {
+        let mut picker_ids = std::mem::take(&mut self.ui_node_ids_scratch);
+        picker_ids.clear();
+        self.nodes
+            .append_type_ids(perro_nodes::NodeType::UiColorPicker, &mut picker_ids);
+        for &picker_id in &picker_ids {
+            let Some((
+                popup_open,
+                wheel_radius,
+                picker_mode,
+                color,
+                show_selector,
+                popup_size,
+                show_rgba,
+                show_hsl,
+                show_hex,
+                popup_id,
+            )) = self.nodes.get(picker_id).and_then(|node| {
                 let SceneNodeData::UiColorPicker(picker) = &node.data else {
                     return None;
                 };
                 Some((
-                    id,
                     picker.popup_open,
                     picker.wheel_radius,
                     picker.picker_mode,
@@ -1173,21 +1188,9 @@ impl Runtime {
                     picker.internal_popup_panel,
                 ))
             })
-            .collect::<Vec<_>>();
-        for (
-            picker_id,
-            popup_open,
-            wheel_radius,
-            picker_mode,
-            color,
-            show_selector,
-            popup_size,
-            show_rgba,
-            show_hsl,
-            show_hex,
-            popup_id,
-        ) in pickers
-        {
+            else {
+                continue;
+            };
             let wheel_node = color_picker_wheel_render_node(picker_id);
             if !popup_open || !show_selector {
                 self.queue_render_command(RenderCommand::Ui(UiCommand::RemoveNode {
@@ -1228,6 +1231,7 @@ impl Runtime {
                 selected: color.to_rgba(),
             }));
         }
+        self.ui_node_ids_scratch = picker_ids;
     }
 
     pub(super) fn color_picker_parent_for_swatch(&self, swatch_id: NodeID) -> Option<NodeID> {

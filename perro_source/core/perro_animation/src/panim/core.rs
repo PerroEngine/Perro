@@ -206,9 +206,27 @@ impl<'a> PanimParser<'a> {
                 return Ok(actions);
             }
 
-            if line.starts_with('@') && line.ends_with('{') {
-                actions.extend(self.parse_object_block(line_no, frame, key_mode, line, object_types)?);
-                continue;
+            if line.starts_with('@') {
+                if line.ends_with('{') {
+                    actions.extend(self.parse_object_block(
+                        line_no,
+                        frame,
+                        key_mode,
+                        line,
+                        object_types,
+                    )?);
+                    continue;
+                }
+                if line.ends_with('}') {
+                    actions.extend(self.parse_inline_object_block(
+                        line_no,
+                        frame,
+                        key_mode,
+                        line,
+                        object_types,
+                    )?);
+                    continue;
+                }
             }
 
             if let Some((k, v)) = split_key_value(line)
@@ -265,41 +283,125 @@ impl<'a> PanimParser<'a> {
                 ));
             };
 
-            match k {
-                "emit_signal" => actions.push(FrameAction::Event {
-                    frame,
-                    scope: AnimationEventScope::Object(object.clone().into()),
-                    event: parse_emit_signal(v, line_no)?,
-                }),
-                "set_var" => actions.push(FrameAction::Event {
-                    frame,
-                    scope: AnimationEventScope::Object(object.clone().into()),
-                    event: parse_set_var(v, line_no)?,
-                }),
-                "call_method" => actions.push(FrameAction::Event {
-                    frame,
-                    scope: AnimationEventScope::Object(object.clone().into()),
-                    event: parse_call_method(v, line_no)?,
-                }),
-                _ => {
-                    let value = self.parse_value_with_vars(v, line_no)?;
-                    if let Some(action) = parse_track_control_action(
-                        frame, &object, node_type_name, k, &value, line_no,
-                    )? {
-                        actions.push(action);
-                        continue;
-                    }
-                    actions.push(parse_object_field_action(
-                        frame, key_mode, &object, node_type_name, k, &value, line_no,
-                    )?);
-                }
-            }
+            self.parse_object_assignment(
+                &mut actions,
+                line_no,
+                frame,
+                key_mode,
+                &object,
+                node_type_name,
+                k,
+                v,
+            )?;
         }
 
         Err(format!(
             "line {}: object block `{}` missing closing `}}`",
             start_line, object
         ))
+    }
+
+    fn parse_inline_object_block(
+        &mut self,
+        line_no: usize,
+        frame: u32,
+        key_mode: AnimationKeyMode,
+        line: &str,
+        object_types: &HashMap<String, NodeType>,
+    ) -> Result<Vec<FrameAction>, String> {
+        let open = line
+            .find('{')
+            .ok_or_else(|| format!("line {}: invalid inline object block", line_no))?;
+        let object = line[..open]
+            .strip_prefix('@')
+            .map(str::trim)
+            .filter(|name| !name.is_empty())
+            .ok_or_else(|| format!("line {}: invalid object header", line_no))?
+            .to_string();
+        let body = line[open + 1..]
+            .strip_suffix('}')
+            .map(str::trim)
+            .ok_or_else(|| format!("line {}: invalid inline object block", line_no))?;
+        let node_type = object_types
+            .get(&object)
+            .ok_or_else(|| format!("line {}: unknown object `@{}`", line_no, object))?;
+        let node_type_name = node_type.as_str();
+        let assignments = split_inline_assignments(body, line_no)?;
+        if assignments.is_empty() {
+            return Err(format!(
+                "line {}: inline object block `@{}` has no assignments",
+                line_no, object
+            ));
+        }
+        let mut actions = Vec::with_capacity(assignments.len());
+        for (key, value) in assignments {
+            self.parse_object_assignment(
+                &mut actions,
+                line_no,
+                frame,
+                key_mode,
+                &object,
+                node_type_name,
+                key,
+                value,
+            )?;
+        }
+        Ok(actions)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn parse_object_assignment(
+        &mut self,
+        actions: &mut Vec<FrameAction>,
+        line_no: usize,
+        frame: u32,
+        key_mode: AnimationKeyMode,
+        object: &str,
+        node_type_name: &str,
+        key: &str,
+        value_src: &str,
+    ) -> Result<(), String> {
+        match key {
+            "emit_signal" => actions.push(FrameAction::Event {
+                frame,
+                scope: AnimationEventScope::Object(object.to_string().into()),
+                event: parse_emit_signal(value_src, line_no)?,
+            }),
+            "set_var" => actions.push(FrameAction::Event {
+                frame,
+                scope: AnimationEventScope::Object(object.to_string().into()),
+                event: parse_set_var(value_src, line_no)?,
+            }),
+            "call_method" => actions.push(FrameAction::Event {
+                frame,
+                scope: AnimationEventScope::Object(object.to_string().into()),
+                event: parse_call_method(value_src, line_no)?,
+            }),
+            _ => {
+                let value = self.parse_value_with_vars(value_src, line_no)?;
+                if let Some(action) = parse_track_control_action(
+                    frame,
+                    object,
+                    node_type_name,
+                    key,
+                    &value,
+                    line_no,
+                )? {
+                    actions.push(action);
+                } else {
+                    actions.push(parse_object_field_action(
+                        frame,
+                        key_mode,
+                        object,
+                        node_type_name,
+                        key,
+                        &value,
+                        line_no,
+                    )?);
+                }
+            }
+        }
+        Ok(())
     }
 
     fn next_line(&mut self) -> Option<(usize, &'a str)> {
@@ -328,6 +430,100 @@ impl<'a> PanimParser<'a> {
         }
         parse_scene_value(value_src, line_no)
     }
+}
+
+fn split_inline_assignments(mut body: &str, line_no: usize) -> Result<Vec<(&str, &str)>, String> {
+    let mut out = Vec::new();
+    while !body.trim().is_empty() {
+        body = body.trim_start();
+        let key_end = body
+            .find(|ch: char| ch.is_ascii_whitespace() || ch == '=')
+            .unwrap_or(body.len());
+        let key = body[..key_end].trim();
+        if key.is_empty()
+            || !key
+                .chars()
+                .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '.'))
+        {
+            return Err(format!(
+                "line {}: invalid inline object assignment `{}`",
+                line_no, body
+            ));
+        }
+        let after_key = body[key_end..].trim_start();
+        let Some(value_src) = after_key.strip_prefix('=') else {
+            return Err(format!(
+                "line {}: expected `=` after inline object key `{}`",
+                line_no, key
+            ));
+        };
+        let value_src = value_src.trim_start();
+        if value_src.is_empty() {
+            return Err(format!(
+                "line {}: missing inline object value for `{}`",
+                line_no, key
+            ));
+        }
+
+        let mut paren_depth = 0u32;
+        let mut bracket_depth = 0u32;
+        let mut brace_depth = 0u32;
+        let mut quote = None;
+        let mut escaped = false;
+        let mut split = value_src.len();
+        for (index, ch) in value_src.char_indices() {
+            if let Some(active_quote) = quote {
+                if escaped {
+                    escaped = false;
+                } else if ch == '\\' {
+                    escaped = true;
+                } else if ch == active_quote {
+                    quote = None;
+                }
+                continue;
+            }
+            match ch {
+                '"' | '\'' => quote = Some(ch),
+                '(' => paren_depth = paren_depth.saturating_add(1),
+                ')' => paren_depth = paren_depth.saturating_sub(1),
+                '[' => bracket_depth = bracket_depth.saturating_add(1),
+                ']' => bracket_depth = bracket_depth.saturating_sub(1),
+                '{' => brace_depth = brace_depth.saturating_add(1),
+                '}' => brace_depth = brace_depth.saturating_sub(1),
+                _ if ch.is_ascii_whitespace()
+                    && paren_depth == 0
+                    && bracket_depth == 0
+                    && brace_depth == 0
+                    && starts_inline_assignment(value_src[index..].trim_start()) =>
+                {
+                    split = index;
+                    break;
+                }
+                _ => {}
+            }
+        }
+        let value = value_src[..split].trim();
+        if value.is_empty() {
+            return Err(format!(
+                "line {}: missing inline object value for `{}`",
+                line_no, key
+            ));
+        }
+        out.push((key, value));
+        body = &value_src[split..];
+    }
+    Ok(out)
+}
+
+fn starts_inline_assignment(src: &str) -> bool {
+    let key_end = src
+        .find(|ch: char| ch.is_ascii_whitespace() || ch == '=')
+        .unwrap_or(src.len());
+    key_end > 0
+        && src[..key_end]
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '.'))
+        && src[key_end..].trim_start().starts_with('=')
 }
 
 fn parse_top_level_var_assign(line: &str) -> Option<(&str, &str)> {

@@ -26,6 +26,9 @@ impl PerroGraphics {
                         }
                     }
                     CameraStreamCommand::RemoveNode { node } => {
+                        if let Some(gpu) = self.gpu.as_mut() {
+                            gpu.remove_camera_stream(node);
+                        }
                         let id = camera_stream_texture_id(node);
                         self.camera_stream_targets.remove(&node);
                         self.retained_camera_streams.retain(|(id, _)| *id != node);
@@ -415,6 +418,10 @@ impl PerroGraphics {
                     }
                     ResourceCommand::WriteMaterialData { id, material } => {
                         if self.resources.set_material_data(id, material) {
+                            if let Some(gpu) = self.gpu.as_mut() {
+                                gpu.invalidate_custom_material_pipelines();
+                            }
+                            self.retained_draws_cache_revision = u64::MAX;
                             if asset_ready_log_enabled() {
                                 eprintln!(
                                     "[perro][asset-ready] backend material data applied id={id:?}"

@@ -58,10 +58,7 @@ impl PhysicsState {
         if world == self.active_world {
             return;
         }
-        let mut next = self
-            .worlds
-            .remove(&world)
-            .unwrap_or_else(PhysicsSystem::new);
+        let mut next = self.worlds.remove(&world).unwrap_or_default();
         next.set_paused(self.paused);
         let previous = std::mem::replace(&mut self.active, next);
         self.worlds.insert(self.active_world, previous);
@@ -86,9 +83,15 @@ impl PhysicsState {
         self.active_world = NodeID::nil();
     }
 
-    pub(crate) fn retain_worlds(&mut self, keep: &AHashSet<NodeID>) {
-        self.worlds
-            .retain(|world, _| world.is_nil() || keep.contains(world));
+    pub(crate) fn retain_worlds(&mut self, keep: &[NodeID]) {
+        self.worlds.retain(|world, _| {
+            world.is_nil()
+                || keep
+                    .binary_search_by_key(&(world.index(), world.generation()), |id| {
+                        (id.index(), id.generation())
+                    })
+                    .is_ok()
+        });
     }
 }
 

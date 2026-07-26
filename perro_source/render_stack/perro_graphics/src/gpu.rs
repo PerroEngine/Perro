@@ -552,17 +552,22 @@ pub struct Gpu {
     water: Option<GpuWater>,
     camera_stream_targets: AHashMap<NodeID, GpuCameraStreamTarget>,
     camera_stream_content_revisions: AHashMap<NodeID, CameraStreamContentRevision>,
+    // Stream revisions stay globally unique so any shared consumer cache
+    // cannot mistake equal per-node generations for equal content.
+    next_camera_stream_content_revision: u64,
     next_camera_stream_post_view_key: u64,
     camera_stream_external_bindings: AHashMap<NodeID, [u32; 2]>,
     // Per-node resolution of the 3D material-texture slot last bound to a
     // camera-stream target, so the external upsert (view + bind group + retain
     // scan) only runs when the target is (re)created, not every frame.
     camera_stream_3d_bindings: AHashMap<NodeID, [u32; 2]>,
-    camera_stream_2d: Option<Gpu2D>,
-    camera_stream_3d: Option<Gpu3D>,
-    camera_stream_particles_3d: Option<GpuPointParticles3D>,
-    camera_stream_water: Option<GpuWater>,
-    camera_stream_post: Option<PostProcessor>,
+    // Sparse SoA columns keyed by the subview node. Each renderer/world only
+    // exists after that view first submits content for the matching path.
+    camera_stream_2d: AHashMap<NodeID, Box<Gpu2D>>,
+    camera_stream_3d: AHashMap<NodeID, Box<Gpu3D>>,
+    camera_stream_particles_3d: AHashMap<NodeID, Box<GpuPointParticles3D>>,
+    camera_stream_water: AHashMap<NodeID, Box<GpuWater>>,
+    camera_stream_post: AHashMap<NodeID, Box<PostProcessor>>,
     camera_stream_tonemap: CameraStreamTonemap,
     camera_stream_draws_scratch: Vec<Draw3DInstance>,
     last_prepare_particles_revision: u64,
@@ -616,6 +621,7 @@ struct CameraStreamContentRevision {
 
 fn update_camera_stream_content_revisions(
     revisions: &mut AHashMap<NodeID, CameraStreamContentRevision>,
+    next_revision: &mut u64,
     node: NodeID,
     draws: &Arc<[CameraStreamDraw3DState]>,
     sprites: &Arc<[Sprite2DCommand]>,
@@ -625,24 +631,52 @@ fn update_camera_stream_content_revisions(
             let state = entry.get_mut();
             if state.draws.as_ref() != draws.as_ref() {
                 state.draws = draws.clone();
-                state.draw_revision = state.draw_revision.wrapping_add(1).max(1);
+                *next_revision = next_nonzero_generation(*next_revision);
+                state.draw_revision = *next_revision;
             }
             if state.sprites.as_ref() != sprites.as_ref() {
                 state.sprites = sprites.clone();
-                state.sprite_revision = state.sprite_revision.wrapping_add(1).max(1);
+                *next_revision = next_nonzero_generation(*next_revision);
+                state.sprite_revision = *next_revision;
             }
             (state.draw_revision, state.sprite_revision)
         }
         std::collections::hash_map::Entry::Vacant(entry) => {
+            *next_revision = next_nonzero_generation(*next_revision);
+            let draw_revision = *next_revision;
+            *next_revision = next_nonzero_generation(*next_revision);
+            let sprite_revision = *next_revision;
             entry.insert(CameraStreamContentRevision {
                 draws: draws.clone(),
-                draw_revision: 1,
+                draw_revision,
                 sprites: sprites.clone(),
-                sprite_revision: 1,
+                sprite_revision,
             });
-            (1, 1)
+            (draw_revision, sprite_revision)
         }
     }
+}
+
+fn camera_stream_cache_entry<T>(
+    cache: &mut AHashMap<NodeID, Box<T>>,
+    node: NodeID,
+    create: impl FnOnce() -> T,
+) -> &mut T {
+    cache
+        .entry(node)
+        .or_insert_with(|| Box::new(create()))
+        .as_mut()
+}
+
+fn camera_stream_needs_3d_world(stream: &CameraStreamState) -> bool {
+    !stream.draws_3d.is_empty()
+        || !stream.point_particles_3d.is_empty()
+        || !stream.waters_3d.is_empty()
+        || stream.lighting_3d.ambient_light.is_some()
+        || stream.lighting_3d.sky.is_some()
+        || stream.lighting_3d.ray_lights.iter().any(Option::is_some)
+        || stream.lighting_3d.point_lights.iter().any(Option::is_some)
+        || stream.lighting_3d.spot_lights.iter().any(Option::is_some)
 }
 
 pub struct RenderFrame<'a> {
@@ -751,10 +785,16 @@ mod camera_stream_revision_tests {
     fn draw_revision_changes_when_async_mesh_joins_stream() {
         let node = NodeID::from_parts(7, 0);
         let mut revisions = AHashMap::new();
+        let mut next_revision = 0;
         let empty: Arc<[CameraStreamDraw3DState]> = Arc::from([]);
         let empty_sprites: Arc<[Sprite2DCommand]> = Arc::from([]);
-        let first =
-            update_camera_stream_content_revisions(&mut revisions, node, &empty, &empty_sprites);
+        let first = update_camera_stream_content_revisions(
+            &mut revisions,
+            &mut next_revision,
+            node,
+            &empty,
+            &empty_sprites,
+        );
         let ready: Arc<[CameraStreamDraw3DState]> = Arc::from([CameraStreamDraw3DState::Draw {
             mesh: perro_ids::MeshID::from_parts(11, 0),
             surfaces: Arc::from([]),
@@ -765,14 +805,25 @@ mod camera_stream_revision_tests {
             lod: perro_render_bridge::LODOptions3D::default(),
             blend: perro_render_bridge::MeshBlendOptions3D::default(),
         }]);
-        let second =
-            update_camera_stream_content_revisions(&mut revisions, node, &ready, &empty_sprites);
+        let second = update_camera_stream_content_revisions(
+            &mut revisions,
+            &mut next_revision,
+            node,
+            &ready,
+            &empty_sprites,
+        );
 
         assert_ne!(first.0, second.0);
         assert_eq!(first.1, second.1);
         assert_eq!(
             second,
-            update_camera_stream_content_revisions(&mut revisions, node, &ready, &empty_sprites,)
+            update_camera_stream_content_revisions(
+                &mut revisions,
+                &mut next_revision,
+                node,
+                &ready,
+                &empty_sprites,
+            )
         );
     }
 
@@ -780,10 +831,16 @@ mod camera_stream_revision_tests {
     fn sprite_revision_changes_when_async_texture_joins_stream() {
         let node = NodeID::from_parts(17, 0);
         let mut revisions = AHashMap::new();
+        let mut next_revision = 0;
         let empty_draws: Arc<[CameraStreamDraw3DState]> = Arc::from([]);
         let empty: Arc<[Sprite2DCommand]> = Arc::from([]);
-        let first =
-            update_camera_stream_content_revisions(&mut revisions, node, &empty_draws, &empty);
+        let first = update_camera_stream_content_revisions(
+            &mut revisions,
+            &mut next_revision,
+            node,
+            &empty_draws,
+            &empty,
+        );
         let ready: Arc<[Sprite2DCommand]> = Arc::from([Sprite2DCommand {
             texture: perro_ids::TextureID::from_parts(21, 0),
             model: glam::Mat3::IDENTITY.to_cols_array_2d(),
@@ -794,10 +851,141 @@ mod camera_stream_revision_tests {
             size: [1.0, 1.0],
             z_index: 0,
         }]);
-        let second =
-            update_camera_stream_content_revisions(&mut revisions, node, &empty_draws, &ready);
+        let second = update_camera_stream_content_revisions(
+            &mut revisions,
+            &mut next_revision,
+            node,
+            &empty_draws,
+            &ready,
+        );
 
         assert_eq!(first.0, second.0);
         assert_ne!(first.1, second.1);
+    }
+
+    #[test]
+    fn sibling_streams_get_distinct_cache_revisions() {
+        let mut revisions = AHashMap::new();
+        let mut next_revision = 0;
+        let empty_draws: Arc<[CameraStreamDraw3DState]> = Arc::from([]);
+        let empty_sprites: Arc<[Sprite2DCommand]> = Arc::from([]);
+        let first = update_camera_stream_content_revisions(
+            &mut revisions,
+            &mut next_revision,
+            NodeID::from_parts(31, 0),
+            &empty_draws,
+            &empty_sprites,
+        );
+        let second = update_camera_stream_content_revisions(
+            &mut revisions,
+            &mut next_revision,
+            NodeID::from_parts(32, 0),
+            &empty_draws,
+            &empty_sprites,
+        );
+
+        assert_ne!(first.0, second.0);
+        assert_ne!(first.1, second.1);
+    }
+
+    #[test]
+    fn stream_reentry_gets_fresh_cache_revisions() {
+        let node = NodeID::from_parts(41, 0);
+        let mut revisions = AHashMap::new();
+        let mut next_revision = 0;
+        let draws: Arc<[CameraStreamDraw3DState]> = Arc::from([]);
+        let sprites: Arc<[Sprite2DCommand]> = Arc::from([]);
+        let first = update_camera_stream_content_revisions(
+            &mut revisions,
+            &mut next_revision,
+            node,
+            &draws,
+            &sprites,
+        );
+
+        revisions.remove(&node);
+        let second = update_camera_stream_content_revisions(
+            &mut revisions,
+            &mut next_revision,
+            node,
+            &draws,
+            &sprites,
+        );
+
+        assert_ne!(first, second);
+    }
+
+    #[test]
+    fn sibling_3d_streams_keep_separate_retained_caches() {
+        #[derive(Clone, Debug, PartialEq)]
+        struct CacheProbe {
+            resolution: [u32; 2],
+            mesh_count: usize,
+            transforms: Vec<[[f32; 4]; 4]>,
+            pipe: &'static str,
+            vertex_hook: bool,
+            alpha_mode: u8,
+            pixels: [u8; 4],
+        }
+
+        let first = NodeID::from_parts(51, 0);
+        let second = NodeID::from_parts(52, 0);
+        let mut caches = AHashMap::new();
+        let bg = CacheProbe {
+            resolution: [3840, 2160],
+            mesh_count: 34,
+            transforms: vec![glam::Mat4::IDENTITY.to_cols_array_2d(); 34],
+            pipe: "raw-bg",
+            vertex_hook: false,
+            alpha_mode: 0,
+            pixels: [20, 40, 80, 255],
+        };
+        let logo = CacheProbe {
+            resolution: [2464, 464],
+            mesh_count: 1,
+            transforms: vec![glam::Mat4::from_scale(glam::Vec3::splat(0.88)).to_cols_array_2d()],
+            pipe: "std-logo",
+            vertex_hook: true,
+            alpha_mode: 0,
+            pixels: [240, 80, 120, 255],
+        };
+        camera_stream_cache_entry(&mut caches, first, || bg.clone());
+        camera_stream_cache_entry(&mut caches, second, || logo.clone());
+
+        // Hide/show A, reload its material + shader, then switch its alpha
+        // mode. B must retain its exact cache throughout.
+        caches.remove(&first);
+        assert_eq!(caches.get(&second).map(Box::as_ref), Some(&logo));
+        let reentered = camera_stream_cache_entry(&mut caches, first, || bg.clone());
+        reentered.pipe = "raw-bg-reloaded";
+        reentered.vertex_hook = true;
+        reentered.alpha_mode = 2;
+        reentered.pixels = [30, 60, 100, 255];
+
+        assert_eq!(caches.get(&second).map(Box::as_ref), Some(&logo));
+        let reentered = caches.get(&first).expect("bg cache should reenter");
+        assert_eq!(reentered.mesh_count, bg.mesh_count);
+        assert_eq!(reentered.transforms, bg.transforms);
+        assert_eq!(caches.len(), 2);
+    }
+
+    #[test]
+    fn thousand_stream_slots_allocate_only_used_spatial_columns() {
+        let nodes: Vec<_> = (0..1_000)
+            .map(|index| NodeID::from_parts(index + 1, 0))
+            .collect();
+        let mut two_d = AHashMap::new();
+        let mut three_d = AHashMap::new();
+
+        for node in nodes.iter().step_by(100) {
+            camera_stream_cache_entry(&mut two_d, *node, || "2d");
+        }
+        for node in nodes.iter().skip(50).step_by(200) {
+            camera_stream_cache_entry(&mut three_d, *node, || "3d");
+        }
+
+        assert_eq!(nodes.len(), 1_000);
+        assert_eq!(two_d.len(), 10);
+        assert_eq!(three_d.len(), 5);
     }
 }

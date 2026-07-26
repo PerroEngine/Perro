@@ -221,7 +221,6 @@ impl Gpu {
             },
         );
         let point_particles_3d = GpuPointParticles3D::new(&device, render_format, sample_count);
-        let camera_stream_2d = Gpu2D::new(&device, render_format, 1, cfg.texture_filter);
         let water = Some(GpuWater::new(
             &device,
             render_format,
@@ -278,14 +277,15 @@ impl Gpu {
             water,
             camera_stream_targets: AHashMap::new(),
             camera_stream_content_revisions: AHashMap::new(),
+            next_camera_stream_content_revision: 0,
             next_camera_stream_post_view_key: 0,
             camera_stream_external_bindings: AHashMap::new(),
             camera_stream_3d_bindings: AHashMap::new(),
-            camera_stream_2d: Some(camera_stream_2d),
-            camera_stream_3d: None,
-            camera_stream_particles_3d: None,
-            camera_stream_water: None,
-            camera_stream_post: None,
+            camera_stream_2d: AHashMap::new(),
+            camera_stream_3d: AHashMap::new(),
+            camera_stream_particles_3d: AHashMap::new(),
+            camera_stream_water: AHashMap::new(),
+            camera_stream_post: AHashMap::new(),
             camera_stream_tonemap,
             camera_stream_draws_scratch: Vec::new(),
             last_prepare_particles_revision: u64::MAX,
