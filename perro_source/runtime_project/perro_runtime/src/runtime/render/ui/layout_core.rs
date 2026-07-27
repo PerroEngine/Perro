@@ -277,14 +277,17 @@ impl Runtime {
         &mut self,
         visible_now: &ahash::AHashSet<NodeID>,
     ) {
-        let mut to_remove = Vec::new();
+        let mut to_remove = std::mem::take(&mut self.render_ui.removed_visible_scratch);
+        to_remove.clear();
         for node in self.render_ui.prev_visible.iter().copied() {
             if !visible_now.contains(&node) {
                 to_remove.push(node);
             }
         }
-        for node in to_remove {
+        for node in to_remove.iter().copied() {
             self.remove_retained_ui_node(node);
         }
+        to_remove.clear();
+        self.render_ui.removed_visible_scratch = to_remove;
     }
 }

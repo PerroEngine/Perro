@@ -1,0 +1,10 @@
+[package]
+name = "perro_wgsl"
+version = "0.1.0"
+edition = "2024"
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+naga = { version = "30.0.0", features = ["wgsl-in", "wgsl-out"] }

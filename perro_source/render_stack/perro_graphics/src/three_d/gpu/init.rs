@@ -177,6 +177,7 @@ impl Gpu3D {
             indirect_first_instance_enabled,
             multi_draw_indirect_enabled,
             texture_filter,
+            shader_variant_mode,
         } = config;
         let (gpu_occlusion_enabled, cpu_occlusion_enabled) = occlusion_flags(occlusion_culling);
         let shadow_caster_debug_view = std::env::var_os("PERRO_DEBUG_SHADOW_CASTERS").is_some()
@@ -1021,6 +1022,12 @@ impl Gpu3D {
                 ],
                 immediate_size: 0,
             });
+        let multimesh_depth_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("perro_multimesh_depth_pipeline_layout"),
+                bind_group_layouts: &[Some(&multimesh_bgl)],
+                immediate_size: 0,
+            });
         let depth_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("perro_depth_pipeline_layout"),
@@ -1351,25 +1358,25 @@ impl Gpu3D {
         );
         let pipeline_multimesh_depth_prepass_culled = create_multimesh_depth_prepass_pipeline(
             device,
-            &multimesh_pipeline_layout,
+            &multimesh_depth_pipeline_layout,
             &shader_multimesh,
             Some(wgpu::Face::Back),
         );
         let pipeline_multimesh_depth_prepass_double_sided = create_multimesh_depth_prepass_pipeline(
             device,
-            &multimesh_pipeline_layout,
+            &multimesh_depth_pipeline_layout,
             &shader_multimesh,
             None,
         );
         let pipeline_multimesh_shadow_depth_culled = create_multimesh_shadow_depth_pipeline(
             device,
-            &multimesh_pipeline_layout,
+            &multimesh_depth_pipeline_layout,
             &shader_multimesh,
             Some(wgpu::Face::Back),
         );
         let pipeline_multimesh_shadow_depth_double_sided = create_multimesh_shadow_depth_pipeline(
             device,
-            &multimesh_pipeline_layout,
+            &multimesh_depth_pipeline_layout,
             &shader_multimesh,
             None,
         );
@@ -2604,6 +2611,8 @@ impl Gpu3D {
             custom_pipelines: AHashMap::new(),
             custom_pipelines_rigid: AHashMap::new(),
             custom_pipelines_multimesh: AHashMap::new(),
+            builtin_variant_pipelines: AHashMap::new(),
+            shader_variant_mode,
             custom_pipeline_tokens: AHashMap::new(),
             custom_shader_sources: AHashMap::new(),
             custom_pipeline_vertex_hooks: AHashMap::new(),

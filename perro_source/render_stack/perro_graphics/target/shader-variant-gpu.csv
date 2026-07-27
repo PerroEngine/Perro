@@ -1,0 +1,7 @@
+case,frames,total_us,wait_us,gpu_main_us,gpu_water_us,cpu_prepare_us,gpu_2d_us,gpu_3d_us,encode_us,submit_us,present_us,draw_calls_2d,draw_calls_3d,instances_3d,gpu_main_median_us,gpu_main_p95_us,cpu_prepare_median_us,cpu_prepare_p95_us,encode_median_us,encode_p95_us,pipeline_switches_median,pipeline_switches_p95
+shader_variant_plain_generic,2000,590,302,156,2,2,0,49,16,250,98,0,1,10000,153.960,164.560,2.200,3.500,15.500,22.600,1,1
+shader_variant_plain_auto,2000,592,300,155,2,2,0,47,16,251,98,0,1,10000,154.880,165.400,2.200,3.400,15.600,22.300,1,1
+shader_variant_textured_generic,2000,591,302,155,2,2,0,48,16,249,99,0,1,10000,153.760,166.000,2.200,3.600,15.500,22.500,1,1
+shader_variant_textured_auto,2000,590,302,155,2,2,0,47,16,250,98,0,1,10000,155.680,165.320,2.200,3.500,15.700,22.800,1,1
+shader_variant_shadow_heavy_generic,2000,724,302,156,2,2,0,175,17,255,101,0,1,10000,156.360,166.320,2.200,3.900,16.200,24.200,1,1
+shader_variant_shadow_heavy_auto,2000,721,320,161,2,2,0,174,17,256,100,0,1,10000,159.680,168.880,2.200,3.800,16.300,23.300,1,1

@@ -46,6 +46,9 @@ pub(in super::super) fn multimesh_batch_sort_key(
 ) -> (bool, bool, bool, bool, u8, u32, u64, u32, u32) {
     let custom_token = match batch.material_kind {
         MaterialPipelineKind::Custom(token) => token,
+        MaterialPipelineKind::StandardVariant(features)
+        | MaterialPipelineKind::UnlitVariant(features)
+        | MaterialPipelineKind::ToonVariant(features) => features.bits() as u32,
         _ => 0,
     };
     (
@@ -71,9 +74,9 @@ pub(in super::super) fn multimesh_batches_sorted(batches: &[MultiMeshBatch]) -> 
 #[inline]
 pub(in super::super) fn material_pipeline_kind_rank(kind: &MaterialPipelineKind) -> u8 {
     match kind {
-        MaterialPipelineKind::Standard => 0,
-        MaterialPipelineKind::Unlit => 1,
-        MaterialPipelineKind::Toon => 2,
+        MaterialPipelineKind::Standard | MaterialPipelineKind::StandardVariant(_) => 0,
+        MaterialPipelineKind::Unlit | MaterialPipelineKind::UnlitVariant(_) => 1,
+        MaterialPipelineKind::Toon | MaterialPipelineKind::ToonVariant(_) => 2,
         MaterialPipelineKind::Custom(_) => 3,
     }
 }
@@ -99,6 +102,9 @@ pub(in super::super) fn draw_batch_state_key(
     let packed_bits = u64::from(packed_lod) << 8;
     let custom_bits = match material_kind {
         MaterialPipelineKind::Custom(token) => (*token as u64) << 9,
+        MaterialPipelineKind::StandardVariant(features) => (features.bits() as u64) << 9,
+        MaterialPipelineKind::UnlitVariant(features)
+        | MaterialPipelineKind::ToonVariant(features) => (features.bits() as u64) << 9,
         _ => 0u64,
     };
     path_bits | top_bits | sided_bits | alpha_bits | rank_bits | packed_bits | custom_bits

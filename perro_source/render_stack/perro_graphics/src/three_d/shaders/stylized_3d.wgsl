@@ -78,7 +78,7 @@ fn perro_toon(
         let ray_dir = ray.direction.xyz;
         let l = -ray_dir * inverseSqrt(max(dot(ray_dir, ray_dir), 1.0e-8));
         var radiance = ray.color_intensity.xyz * ray.color_intensity.w;
-        if i == 0u && material.receive_shadows {
+        if i == 0u && (/*__PERRO_STD_RECEIVE_SHADOWS__*/ material.receive_shadows) {
             radiance *= perro_shadow_factor(in.world_pos, n, l);
         }
         light_rgb += radiance * perro_lambert(n, l);
@@ -96,7 +96,7 @@ fn perro_toon(
             let radiance = light.color_intensity.xyz * light.color_intensity.w;
             let attenuation = perro_range_attenuation(dist_sq, range_sq);
             var shadow_vis = 1.0;
-            if material.receive_shadows {
+            if /*__PERRO_STD_RECEIVE_SHADOWS__*/ material.receive_shadows {
                 shadow_vis = perro_point_shadow_factor(in.world_pos, n, i, to_light);
             }
             light_rgb +=
@@ -122,7 +122,7 @@ fn perro_toon(
             let radiance = light.color_intensity.xyz * light.color_intensity.w * cone;
             let attenuation = perro_range_attenuation(dist_sq, range_sq);
             var shadow_vis = 1.0;
-            if material.receive_shadows {
+            if /*__PERRO_STD_RECEIVE_SHADOWS__*/ material.receive_shadows {
                 shadow_vis = perro_spot_shadow_factor(in.world_pos, n, i);
             }
             light_rgb +=

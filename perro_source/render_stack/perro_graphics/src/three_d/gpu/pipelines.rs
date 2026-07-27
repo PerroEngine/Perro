@@ -29,6 +29,20 @@ fn clear_custom_pipeline_maps<T>(
     custom_pipeline_vertex_hooks.clear();
 }
 
+fn builtin_shader_features(material: &Material3D, receive_shadows: bool) -> MaterialShaderFeatures {
+    let params = material.standard_params();
+    MaterialShaderFeatures::new(
+        params.base_color_texture != MATERIAL_TEXTURE_NONE,
+        params.metallic_roughness_texture != MATERIAL_TEXTURE_NONE,
+        params.normal_texture != MATERIAL_TEXTURE_NONE,
+        params.occlusion_texture != MATERIAL_TEXTURE_NONE,
+        params.emissive_texture != MATERIAL_TEXTURE_NONE,
+        receive_shadows && !matches!(material, Material3D::Unlit(_)),
+        params.alpha_mode,
+        !material.vertex_modifiers().is_empty(),
+    )
+}
+
 impl Gpu3D {
     fn custom_pipeline_token(&mut self, key: CustomPipelineKey) -> u32 {
         if let Some(&token) = self.custom_pipeline_tokens.get(&key) {
@@ -303,13 +317,56 @@ impl Gpu3D {
         device: &wgpu::Device,
         render_path: RenderPath3D,
         material: &Material3D,
+        receive_shadows: bool,
         static_shader_lookup: Option<StaticShaderLookup>,
     ) -> MaterialPipelineKind {
+        let use_variants = self.shader_variant_mode == crate::ShaderVariantMode::Auto;
         match material {
-            Material3D::Standard(_) => MaterialPipelineKind::Standard,
-            Material3D::Unlit(_) => MaterialPipelineKind::Unlit,
-            Material3D::Toon(_) => MaterialPipelineKind::Toon,
-            Material3D::HandDrawn(_) | Material3D::PixelSurface(_) => MaterialPipelineKind::Toon,
+            Material3D::Standard(_) => {
+                let features = builtin_shader_features(material, receive_shadows);
+                if use_variants
+                    && self.ensure_builtin_variant_pipeline(
+                        device,
+                        render_path,
+                        BuiltinShaderKind::Standard,
+                        features,
+                    )
+                {
+                    MaterialPipelineKind::StandardVariant(features)
+                } else {
+                    MaterialPipelineKind::Standard
+                }
+            }
+            Material3D::Unlit(_) => {
+                let features = builtin_shader_features(material, receive_shadows);
+                if use_variants
+                    && self.ensure_builtin_variant_pipeline(
+                        device,
+                        render_path,
+                        BuiltinShaderKind::Unlit,
+                        features,
+                    )
+                {
+                    MaterialPipelineKind::UnlitVariant(features)
+                } else {
+                    MaterialPipelineKind::Unlit
+                }
+            }
+            Material3D::Toon(_) | Material3D::HandDrawn(_) | Material3D::PixelSurface(_) => {
+                let features = builtin_shader_features(material, receive_shadows);
+                if use_variants
+                    && self.ensure_builtin_variant_pipeline(
+                        device,
+                        render_path,
+                        BuiltinShaderKind::Toon,
+                        features,
+                    )
+                {
+                    MaterialPipelineKind::ToonVariant(features)
+                } else {
+                    MaterialPipelineKind::Toon
+                }
+            }
             Material3D::Custom(custom) => {
                 let shader_path = custom.shader_path.as_ref();
                 if let Some(token) = self.ensure_custom_pipeline(
@@ -326,6 +383,117 @@ impl Gpu3D {
                 }
             }
         }
+    }
+
+    fn ensure_builtin_variant_pipeline(
+        &mut self,
+        device: &wgpu::Device,
+        path: RenderPath3D,
+        kind: BuiltinShaderKind,
+        features: MaterialShaderFeatures,
+    ) -> bool {
+        if path == RenderPath3D::MultiMesh {
+            return false;
+        }
+        let key = BuiltinPipelineKey {
+            path,
+            kind,
+            features,
+        };
+        if self.builtin_variant_pipelines.contains_key(&key) {
+            return true;
+        }
+        let shader = if path == RenderPath3D::Rigid {
+            create_standard_shader_module_rigid_variant(device, kind, features)
+        } else {
+            create_standard_shader_module_skinned_variant(device, kind, features)
+        };
+        let pipeline_culled = if path == RenderPath3D::Rigid {
+            create_pipeline_rigid(
+                device,
+                &self.rigid_material_pipeline_layout,
+                &shader,
+                self.color_format,
+                self.sample_count,
+                Some(wgpu::Face::Back),
+            )
+        } else {
+            create_pipeline_skinned(
+                device,
+                &self.material_pipeline_layout,
+                &shader,
+                self.color_format,
+                self.sample_count,
+                Some(wgpu::Face::Back),
+            )
+        };
+        let pipeline_double_sided = if path == RenderPath3D::Rigid {
+            create_pipeline_rigid(
+                device,
+                &self.rigid_material_pipeline_layout,
+                &shader,
+                self.color_format,
+                self.sample_count,
+                None,
+            )
+        } else {
+            create_pipeline_skinned(
+                device,
+                &self.material_pipeline_layout,
+                &shader,
+                self.color_format,
+                self.sample_count,
+                None,
+            )
+        };
+        let pipeline_blend_culled = if path == RenderPath3D::Rigid {
+            create_pipeline_rigid_blend(
+                device,
+                &self.rigid_material_pipeline_layout,
+                &shader,
+                self.color_format,
+                self.sample_count,
+                Some(wgpu::Face::Back),
+            )
+        } else {
+            create_pipeline_skinned_blend(
+                device,
+                &self.material_pipeline_layout,
+                &shader,
+                self.color_format,
+                self.sample_count,
+                Some(wgpu::Face::Back),
+            )
+        };
+        let pipeline_blend_double_sided = if path == RenderPath3D::Rigid {
+            create_pipeline_rigid_blend(
+                device,
+                &self.rigid_material_pipeline_layout,
+                &shader,
+                self.color_format,
+                self.sample_count,
+                None,
+            )
+        } else {
+            create_pipeline_skinned_blend(
+                device,
+                &self.material_pipeline_layout,
+                &shader,
+                self.color_format,
+                self.sample_count,
+                None,
+            )
+        };
+        self.builtin_variant_pipelines.insert(
+            key,
+            CustomPipeline {
+                pipeline_culled,
+                pipeline_double_sided,
+                pipeline_blend_culled,
+                pipeline_blend_double_sided,
+            },
+        );
+        true
     }
 
     pub(super) fn pipeline_for_batch(&self, batch: &DrawBatch) -> &wgpu::RenderPipeline {
@@ -355,8 +523,38 @@ impl Gpu3D {
                 &self.pipeline_overlay_culled
             };
         }
+        let builtin_variant = match &batch.material_kind {
+            MaterialPipelineKind::StandardVariant(features) => {
+                Some((BuiltinShaderKind::Standard, *features))
+            }
+            MaterialPipelineKind::UnlitVariant(features) => {
+                Some((BuiltinShaderKind::Unlit, *features))
+            }
+            MaterialPipelineKind::ToonVariant(features) => {
+                Some((BuiltinShaderKind::Toon, *features))
+            }
+            _ => None,
+        };
+        if let Some((kind, features)) = builtin_variant
+            && !batch.packed_lod
+            && let Some(pipeline) = self.builtin_variant_pipelines.get(&BuiltinPipelineKey {
+                path: batch.path,
+                kind,
+                features,
+            })
+        {
+            return if soft_depth && batch.double_sided {
+                &pipeline.pipeline_blend_double_sided
+            } else if soft_depth {
+                &pipeline.pipeline_blend_culled
+            } else if batch.double_sided {
+                &pipeline.pipeline_double_sided
+            } else {
+                &pipeline.pipeline_culled
+            };
+        }
         match &batch.material_kind {
-            MaterialPipelineKind::Standard => {
+            MaterialPipelineKind::Standard | MaterialPipelineKind::StandardVariant(_) => {
                 if batch.packed_lod && soft_depth && batch.double_sided && is_rigid {
                     &self.pipeline_rigid_packed_lod_blend_double_sided
                 } else if batch.packed_lod && soft_depth && is_rigid {
@@ -383,7 +581,7 @@ impl Gpu3D {
                     &self.pipeline_culled
                 }
             }
-            MaterialPipelineKind::Unlit => {
+            MaterialPipelineKind::Unlit | MaterialPipelineKind::UnlitVariant(_) => {
                 if soft_depth && batch.double_sided && is_rigid {
                     &self.pipeline_rigid_unlit_blend_double_sided
                 } else if soft_depth && is_rigid {
@@ -402,7 +600,7 @@ impl Gpu3D {
                     &self.pipeline_unlit_culled
                 }
             }
-            MaterialPipelineKind::Toon => {
+            MaterialPipelineKind::Toon | MaterialPipelineKind::ToonVariant(_) => {
                 if soft_depth && batch.double_sided && is_rigid {
                     &self.pipeline_rigid_toon_blend_double_sided
                 } else if soft_depth && is_rigid {
@@ -678,6 +876,35 @@ mod tests {
         let token = next_custom_pipeline_token(tokens, next_token);
         tokens.insert(key, token);
         token
+    }
+
+    #[test]
+    fn builtin_features_derive_from_material_without_dev_flags() {
+        let plain = Material3D::Standard(StandardMaterial3D::default());
+        assert_eq!(
+            builtin_shader_features(&plain, false),
+            MaterialShaderFeatures::new(false, false, false, false, false, false, 0, false)
+        );
+
+        let textured = Material3D::Standard(StandardMaterial3D {
+            base_color_texture: 1,
+            metallic_roughness_texture: 2,
+            normal_texture: 3,
+            occlusion_texture: 4,
+            emissive_texture: 5,
+            alpha_mode: 1,
+            ..StandardMaterial3D::default()
+        });
+        assert_eq!(
+            builtin_shader_features(&textured, true),
+            MaterialShaderFeatures::new(true, true, true, true, true, true, 1, false)
+        );
+
+        let unlit = Material3D::Unlit(perro_render_bridge::UnlitMaterial3D::default());
+        assert_eq!(
+            builtin_shader_features(&unlit, true),
+            MaterialShaderFeatures::new(false, false, false, false, false, false, 0, false)
+        );
     }
 
     #[test]

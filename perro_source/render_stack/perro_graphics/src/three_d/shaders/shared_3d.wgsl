@@ -604,7 +604,7 @@ fn perro_apply_vertex_modifier_record(
 }
 
 fn perro_apply_vertex_modifiers(out_in: VertexOutput) -> VertexOutput {
-    if out_in.custom_range.x < 2u {
+    if /*__PERRO_BUILTIN_VERTEX_MODIFIERS__*/ out_in.custom_range.x < 2u {
         return out_in;
     }
     let header = out_in.custom_range.x - 2u;

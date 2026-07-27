@@ -146,20 +146,20 @@ impl Runtime {
         let mut changed = false;
         let mut text_changed = false;
         let mut changed_text = None;
-        let text_inputs: Vec<String> = self.input.text_inputs().to_vec();
         let shift = self.input.is_key_down(KeyCode::ShiftLeft)
             || self.input.is_key_down(KeyCode::ShiftRight);
         let ctrl = self.input.is_key_down(KeyCode::ControlLeft)
             || self.input.is_key_down(KeyCode::ControlRight);
         let wheel = self.input.mouse_wheel();
         let repeat_key = self.text_edit_repeat_key(ctrl);
+        let text_inputs = self.input.text_inputs();
         if let Some(scene_node) = self.nodes.get_mut_untracked(focused)
             && let Some(edit) = text_edit_mut(&mut scene_node.data)
         {
             let old_text = edit.text.to_string();
             if !ctrl {
                 for text in text_inputs {
-                    changed |= insert_text_input(edit, &text);
+                    changed |= insert_text_input(edit, text);
                 }
             }
             changed |= apply_text_edit_key_input(edit, shift, ctrl, repeat_key, &self.input);

@@ -6,8 +6,8 @@ use super::{
         MAX_RAY_LIGHTS, MAX_SPOT_LIGHTS,
     },
     shaders::{
-        build_custom_material_shader_with_prelude, build_custom_multimesh_material_shader,
-        create_depth_prepass_shader_module_rigid,
+        BuiltinShaderKind, MaterialShaderFeatures, build_custom_material_shader_with_prelude,
+        build_custom_multimesh_material_shader, create_depth_prepass_shader_module_rigid,
         create_depth_prepass_shader_module_rigid_packed_lod,
         create_depth_prepass_shader_module_skinned, create_frustum_cull_shader_module,
         create_hiz_depth_copy_shader_module, create_hiz_downsample_shader_module,
@@ -18,7 +18,8 @@ use super::{
         create_mesh_shader_module_rigid, create_mesh_shader_module_rigid_packed_lod,
         create_mesh_shader_module_skinned, create_multimesh_cull_shader_module,
         create_multimesh_shader_module, create_sky_shader_module,
-        create_sky_shader_module_from_source, create_toon_shader_module_rigid,
+        create_sky_shader_module_from_source, create_standard_shader_module_rigid_variant,
+        create_standard_shader_module_skinned_variant, create_toon_shader_module_rigid,
         create_toon_shader_module_skinned, create_unlit_shader_module_rigid,
         create_unlit_shader_module_skinned, prelude_rigid_wgsl, prelude_skinned_wgsl,
     },
@@ -715,6 +716,8 @@ pub struct Gpu3D {
     custom_pipelines: AHashMap<u32, CustomPipeline>,
     custom_pipelines_rigid: AHashMap<u32, CustomPipeline>,
     custom_pipelines_multimesh: AHashMap<u32, CustomPipeline>,
+    builtin_variant_pipelines: AHashMap<BuiltinPipelineKey, CustomPipeline>,
+    shader_variant_mode: crate::ShaderVariantMode,
     custom_pipeline_tokens: AHashMap<CustomPipelineKey, u32>,
     custom_shader_sources: AHashMap<Arc<str>, Arc<str>>,
     // Per custom-pipeline token: does the shader define a shade_vertex hook?
@@ -1124,6 +1127,7 @@ pub struct Gpu3DConfig {
     pub indirect_first_instance_enabled: bool,
     pub multi_draw_indirect_enabled: bool,
     pub texture_filter: TextureFilterMode,
+    pub shader_variant_mode: crate::ShaderVariantMode,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -1234,7 +1238,7 @@ struct SurfaceEntry3D {
     modulate_bias: bool,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
 enum RenderPath3D {
     Rigid,
     Skinned,
@@ -1270,8 +1274,11 @@ enum MeshBlendMaskEntry {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 enum MaterialPipelineKind {
     Standard,
+    StandardVariant(MaterialShaderFeatures),
     Unlit,
+    UnlitVariant(MaterialShaderFeatures),
     Toon,
+    ToonVariant(MaterialShaderFeatures),
     Custom(u32),
 }
 
@@ -1280,6 +1287,13 @@ impl MaterialPipelineKind {
     fn uses_custom_shader(&self) -> bool {
         matches!(self, MaterialPipelineKind::Custom(_))
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+struct BuiltinPipelineKey {
+    path: RenderPath3D,
+    kind: BuiltinShaderKind,
+    features: MaterialShaderFeatures,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]

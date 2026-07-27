@@ -585,6 +585,7 @@ pub struct Gpu {
     occlusion_culling: OcclusionCullingMode,
     ssao: crate::SsaoQuality,
     texture_filter: TextureFilterMode,
+    shader_variant_mode: crate::ShaderVariantMode,
     indirect_first_instance_enabled: bool,
     multi_draw_indirect_enabled: bool,
     gpu_timer: Option<GpuTimestampTimer>,
@@ -601,6 +602,7 @@ pub struct GpuConfig {
     pub ssao: crate::SsaoQuality,
     pub texture_filter: TextureFilterMode,
     pub hdr_mode: HdrMode,
+    pub shader_variant_mode: crate::ShaderVariantMode,
 }
 
 struct GpuCameraStreamTarget {

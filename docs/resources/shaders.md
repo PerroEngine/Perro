@@ -482,6 +482,43 @@ fn shade_material(in: FragmentInput) -> vec4<f32> {
 - Custom material parameter blocks are interned by value and reused across frames.
 - New unique custom param blocks append once and upload incrementally instead of re-uploading the
   entire custom param buffer each frame.
+- Static builds strip comments and normalize whitespace before embedding WGSL.
+- Rigid and skinned built-in materials automatically select lazy, cached shader variants from
+  texture presence, alpha mode, shadow receiving, and vertex-modifier use. No author flags are
+  required.
+- Custom shaders loaded from static resources or disk keep the same composition and lazy pipeline
+  cache path.
+
+#### Built-in Shader Variant GPU Benchmark
+
+`ShaderVariantMode::Auto` is the default. Games do not need to opt in or tag materials.
+`ShaderVariantMode::Generic` exists as an A/B baseline for tests and benchmarks.
+
+Run the three paired scenes with 120 warm-up frames and 2,000 measured frames per case:
+
+```powershell
+$env:PERRO_GPU_BENCH = "shader_variant"
+$env:PERRO_GPU_WARMUP_FRAMES = "120"
+$env:PERRO_GPU_SAMPLE_FRAMES = "2000"
+$env:PERRO_GPU_BENCH_CSV = "target/shader-variant-gpu.csv"
+cargo bench -p perro_graphics --bench gpu_frame
+```
+
+Set `PERRO_GPU_BENCH_REVERSE=1` for a second pass in reverse case order. Output includes median and
+p95 GPU-main time, CPU prepare time, CPU encode time, and 3D pipeline switches. Negative deltas
+mean the automatic variant is faster.
+
+Local RX 7800 XT snapshot at 1280x720, no MSAA, no vsync, three runs per case:
+
+| Scene | GPU median delta | GPU p95 delta | CPU/encode | Pipeline switches |
+| ----- | ---------------- | ------------- | ---------- | ----------------- |
+| Plain, 100k instances | ~+0.2% | ~+0.5% | no material change | 1 -> 1 |
+| Full-screen, five textures | ~-2.1% | ~-3.2% | no material change | 1 -> 1 |
+| Full-screen, ray shadow | ~-9.8% | ~-2.5% | no material change | 1 -> 1 |
+
+These are local measurements, not a cross-GPU guarantee. The plain case shows the expected neutral
+result when removed branches do not dominate. The fragment-heavy and shadow-heavy cases show where
+specialization reduces GPU work.
 
 ### Breaking Change
 

@@ -218,6 +218,7 @@ impl Gpu {
                 indirect_first_instance_enabled,
                 multi_draw_indirect_enabled,
                 texture_filter: cfg.texture_filter,
+                shader_variant_mode: cfg.shader_variant_mode,
             },
         );
         let point_particles_3d = GpuPointParticles3D::new(&device, render_format, sample_count);
@@ -303,6 +304,7 @@ impl Gpu {
             occlusion_culling: cfg.occlusion_culling,
             ssao: cfg.ssao,
             texture_filter: cfg.texture_filter,
+            shader_variant_mode: cfg.shader_variant_mode,
             indirect_first_instance_enabled,
             multi_draw_indirect_enabled,
             gpu_timer,

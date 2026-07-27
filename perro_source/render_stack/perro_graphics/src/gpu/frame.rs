@@ -234,6 +234,7 @@ impl Gpu {
                         indirect_first_instance_enabled: self.indirect_first_instance_enabled,
                         multi_draw_indirect_enabled: self.multi_draw_indirect_enabled,
                         texture_filter: self.texture_filter,
+                        shader_variant_mode: self.shader_variant_mode,
                     },
                 ));
             }
@@ -307,6 +308,7 @@ impl Gpu {
                         indirect_first_instance_enabled: self.indirect_first_instance_enabled,
                         multi_draw_indirect_enabled: self.multi_draw_indirect_enabled,
                         texture_filter: self.texture_filter,
+                        shader_variant_mode: self.shader_variant_mode,
                     },
                 ));
             }
@@ -785,6 +787,7 @@ impl Gpu {
                                         multi_draw_indirect_enabled: self
                                             .multi_draw_indirect_enabled,
                                         texture_filter: self.texture_filter,
+                                        shader_variant_mode: self.shader_variant_mode,
                                     },
                                 );
                                 // Camera streams render into their own targets;
@@ -852,6 +855,7 @@ impl Gpu {
                                         .indirect_first_instance_enabled,
                                     multi_draw_indirect_enabled: self.multi_draw_indirect_enabled,
                                     texture_filter: self.texture_filter,
+                                    shader_variant_mode: self.shader_variant_mode,
                                 },
                             );
                             // Camera streams render into their own targets; the seam

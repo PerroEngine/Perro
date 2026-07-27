@@ -837,6 +837,7 @@ impl Gpu3D {
                         device,
                         RenderPath3D::MultiMesh,
                         material,
+                        draw.receive_shadows,
                         static_shader_lookup,
                     );
                     let custom_params = self.stage_custom_params(material);
@@ -1153,10 +1154,15 @@ impl Gpu3D {
                             device,
                             render_path,
                             material,
+                            draw.receive_shadows,
                             static_shader_lookup,
                         );
                         let packed_lod = render_path == RenderPath3D::Rigid
-                            && matches!(material_kind, MaterialPipelineKind::Standard)
+                            && matches!(
+                                material_kind,
+                                MaterialPipelineKind::Standard
+                                    | MaterialPipelineKind::StandardVariant(_)
+                            )
                             && !resolved_mesh_blend_active(resolved_blend)
                             && mesh_asset.blend_shape_target_count == 0
                             && entry.packed_range.is_some();
@@ -1287,6 +1293,7 @@ impl Gpu3D {
                         RenderPath3D::Rigid
                     },
                     material,
+                    draw.receive_shadows,
                     static_shader_lookup,
                 );
                 let (custom_params_offset, custom_params_len) = self.stage_custom_params(material);
@@ -1781,11 +1788,13 @@ impl Gpu3D {
                 bytemuck::cast_slice(&self.staged_multimesh_instances),
             );
         }
-        // Multimesh GPU cull inputs are topology-only, so they only need a
-        // rebuild here on the full path; transform-only fast paths keep them
-        // valid (they patch draw-param model rows, not batch topology).
-        if self.should_run_multimesh_cull() {
+        // Multimesh inputs are topology-only, so rebuild them on the full path.
+        // Direct draws also read the identity visible-index buffer, including
+        // multimeshes below the GPU-cull threshold.
+        if !self.multimesh_batches.is_empty() {
             self.rebuild_multimesh_cull_inputs(device, queue);
+        }
+        if self.should_run_multimesh_cull() {
             self.write_multimesh_cull_params_if_needed(queue);
             // The cull shader reads frustum planes from the shared rigid params
             // buffer; ensure they are current even if rigid cull is inactive.

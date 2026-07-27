@@ -2,4 +2,4 @@
 let a = 1; // trailing comment
 
 let url = "http://example.test"; // comment after string
-let text = "keep // inside string";
+let /* block comment */ text = "keep // inside string";

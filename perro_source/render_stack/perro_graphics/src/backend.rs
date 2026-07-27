@@ -363,6 +363,13 @@ pub enum SsaoQuality {
     Ultra,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ShaderVariantMode {
+    Generic,
+    #[default]
+    Auto,
+}
+
 pub struct PerroGraphics {
     frame: FrameState,
     resources: ResourceStore,
@@ -405,6 +412,7 @@ pub struct PerroGraphics {
     ssao: SsaoQuality,
     texture_filter: TextureFilterMode,
     hdr_mode: HdrMode,
+    shader_variant_mode: ShaderVariantMode,
     retained_draws_cache_revision: u64,
     retained_draw_instances_cache: u32,
     retained_point_particles_cache: Vec<(NodeID, PointParticles3DState)>,

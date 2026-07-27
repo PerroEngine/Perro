@@ -1,5 +1,5 @@
 use super::{
-    GC_INTERVAL_FRAMES, MAX_RUNTIME_TEXTURE_RGBA_BYTES, PerroGraphics,
+    GC_INTERVAL_FRAMES, MAX_RUNTIME_TEXTURE_RGBA_BYTES, PerroGraphics, ShaderVariantMode,
     checked_runtime_texture_rgba_len,
 };
 use crate::backend::GraphicsBackend;
@@ -30,6 +30,15 @@ fn rect_command() -> Rect2DCommand {
         color: Color::WHITE,
         z_index: 0,
     }
+}
+
+#[test]
+fn shader_variants_default_auto_and_allow_generic_baseline() {
+    let auto = PerroGraphics::new();
+    let generic = PerroGraphics::new().with_shader_variant_mode(ShaderVariantMode::Generic);
+
+    assert_eq!(auto.shader_variant_mode, ShaderVariantMode::Auto);
+    assert_eq!(generic.shader_variant_mode, ShaderVariantMode::Generic);
 }
 
 #[test]

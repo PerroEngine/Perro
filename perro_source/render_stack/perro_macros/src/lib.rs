@@ -19,49 +19,59 @@ pub fn minified_wgsl(input: TokenStream) -> TokenStream {
 
 fn emit_minified(input: TokenStream) -> TokenStream {
     match parse_input(input)
-        .and_then(|path| resolve_path(&path))
-        .and_then(|resolved| {
-            let source = fs::read_to_string(&resolved).map_err(|e| {
-                format!(
-                    "include_str_stripped! failed read `{}`: {e}",
-                    resolved.display()
-                )
-            })?;
-            Ok((resolved, source))
+        .and_then(|paths| {
+            let mut resolved_sources = Vec::with_capacity(paths.len());
+            for path in paths {
+                let resolved = resolve_path(&path)?;
+                let source = fs::read_to_string(&resolved).map_err(|e| {
+                    format!(
+                        "include_str_stripped! failed read `{}`: {e}",
+                        resolved.display()
+                    )
+                })?;
+                resolved_sources.push((resolved, source));
+            }
+            Ok(resolved_sources)
         })
-        .map(|(resolved, source)| {
-            // Expand to `{ const _: &[u8] = include_bytes!("abs path"); "min" }`
+        .map(|resolved_sources| {
+            // Expand to `{ const _: &[u8] = include_bytes!("abs path"); ...; "min" }`
             // so cargo tracks the source file and rebuilds on change; a bare
             // literal would go stale silently.
-            let lit = Literal::string(&minify_text(&source));
-            let abs = resolved.to_string_lossy().replace('\\', "/");
+            let source = resolved_sources
+                .iter()
+                .map(|(_, source)| source.as_str())
+                .collect::<String>();
+            let lit = Literal::string(&perro_wgsl::optimize_source(&source));
             let mut inner = TokenStream::new();
-            inner.extend([
-                TokenTree::Ident(Ident::new("const", Span::call_site())),
-                TokenTree::Ident(Ident::new("_", Span::call_site())),
-                TokenTree::Punct(Punct::new(':', Spacing::Alone)),
-                TokenTree::Punct(Punct::new('&', Spacing::Alone)),
-                TokenTree::Group(Group::new(Delimiter::Bracket, {
-                    let mut b = TokenStream::new();
-                    b.extend([TokenTree::Ident(Ident::new("u8", Span::call_site()))]);
-                    b
-                })),
-                TokenTree::Punct(Punct::new('=', Spacing::Alone)),
-                TokenTree::Punct(Punct::new(':', Spacing::Joint)),
-                TokenTree::Punct(Punct::new(':', Spacing::Alone)),
-                TokenTree::Ident(Ident::new("core", Span::call_site())),
-                TokenTree::Punct(Punct::new(':', Spacing::Joint)),
-                TokenTree::Punct(Punct::new(':', Spacing::Alone)),
-                TokenTree::Ident(Ident::new("include_bytes", Span::call_site())),
-                TokenTree::Punct(Punct::new('!', Spacing::Alone)),
-                TokenTree::Group(Group::new(Delimiter::Parenthesis, {
-                    let mut p = TokenStream::new();
-                    p.extend([TokenTree::Literal(Literal::string(&abs))]);
-                    p
-                })),
-                TokenTree::Punct(Punct::new(';', Spacing::Alone)),
-                TokenTree::Literal(lit),
-            ]);
+            for (resolved, _) in resolved_sources {
+                let abs = resolved.to_string_lossy().replace('\\', "/");
+                inner.extend([
+                    TokenTree::Ident(Ident::new("const", Span::call_site())),
+                    TokenTree::Ident(Ident::new("_", Span::call_site())),
+                    TokenTree::Punct(Punct::new(':', Spacing::Alone)),
+                    TokenTree::Punct(Punct::new('&', Spacing::Alone)),
+                    TokenTree::Group(Group::new(Delimiter::Bracket, {
+                        let mut b = TokenStream::new();
+                        b.extend([TokenTree::Ident(Ident::new("u8", Span::call_site()))]);
+                        b
+                    })),
+                    TokenTree::Punct(Punct::new('=', Spacing::Alone)),
+                    TokenTree::Punct(Punct::new(':', Spacing::Joint)),
+                    TokenTree::Punct(Punct::new(':', Spacing::Alone)),
+                    TokenTree::Ident(Ident::new("core", Span::call_site())),
+                    TokenTree::Punct(Punct::new(':', Spacing::Joint)),
+                    TokenTree::Punct(Punct::new(':', Spacing::Alone)),
+                    TokenTree::Ident(Ident::new("include_bytes", Span::call_site())),
+                    TokenTree::Punct(Punct::new('!', Spacing::Alone)),
+                    TokenTree::Group(Group::new(Delimiter::Parenthesis, {
+                        let mut p = TokenStream::new();
+                        p.extend([TokenTree::Literal(Literal::string(&abs))]);
+                        p
+                    })),
+                    TokenTree::Punct(Punct::new(';', Spacing::Alone)),
+                ]);
+            }
+            inner.extend([TokenTree::Literal(lit)]);
             TokenStream::from(TokenTree::Group(Group::new(Delimiter::Brace, inner)))
         }) {
         Ok(stream) => stream,
@@ -69,20 +79,52 @@ fn emit_minified(input: TokenStream) -> TokenStream {
     }
 }
 
-fn parse_input(input: TokenStream) -> Result<String, String> {
+fn parse_input(input: TokenStream) -> Result<Vec<String>, String> {
     let tokens: Vec<TokenTree> = input.into_iter().collect();
     match tokens.as_slice() {
-        [TokenTree::Literal(lit)] => parse_string_literal(&lit.to_string()),
+        [TokenTree::Literal(lit)] => parse_string_literal(&lit.to_string()).map(|path| vec![path]),
         [
             TokenTree::Ident(ident),
             TokenTree::Punct(p),
             TokenTree::Group(group),
-        ] if ident.to_string() == "include_str" && p.as_char() == '!' => parse_include_str(group),
+        ] if ident.to_string() == "include_str" && p.as_char() == '!' => {
+            parse_include_str(group).map(|path| vec![path])
+        }
+        [
+            TokenTree::Ident(ident),
+            TokenTree::Punct(p),
+            TokenTree::Group(group),
+        ] if ident.to_string() == "concat" && p.as_char() == '!' => parse_concat(group),
         _ => Err(
-            "expected string literal path or include_str!(\"path\") in include_str_stripped!"
-                .to_string(),
+            "expected path, include_str!(\"path\"), or concat!(include_str!(...), ...)".to_string(),
         ),
     }
+}
+
+fn parse_concat(group: &Group) -> Result<Vec<String>, String> {
+    if group.delimiter() != Delimiter::Parenthesis {
+        return Err("concat! must use parentheses".to_string());
+    }
+    let mut paths = Vec::new();
+    let mut item = TokenStream::new();
+    for token in group.stream() {
+        if matches!(&token, TokenTree::Punct(p) if p.as_char() == ',') {
+            if item.is_empty() {
+                return Err("concat! contains empty item".to_string());
+            }
+            paths.extend(parse_input(item)?);
+            item = TokenStream::new();
+        } else {
+            item.extend([token]);
+        }
+    }
+    if !item.is_empty() {
+        paths.extend(parse_input(item)?);
+    }
+    if paths.is_empty() {
+        return Err("concat! needs at least one source".to_string());
+    }
+    Ok(paths)
 }
 
 fn parse_include_str(group: &Group) -> Result<String, String> {
@@ -157,54 +199,6 @@ fn collect_suffix_matches(dir: &Path, suffix: &str, out: &mut Vec<PathBuf>) -> R
         }
     }
     Ok(())
-}
-
-fn minify_text(src: &str) -> String {
-    let mut out = String::with_capacity(src.len());
-    let mut first = true;
-    for raw in src.lines() {
-        let line = strip_line_comment_preserving_strings(raw).trim();
-        if line.is_empty() {
-            continue;
-        }
-        if !first {
-            out.push(' ');
-        }
-        out.push_str(line);
-        first = false;
-    }
-    out
-}
-
-fn strip_line_comment_preserving_strings(line: &str) -> &str {
-    let bytes = line.as_bytes();
-    let mut i = 0usize;
-    let mut in_string = false;
-    let mut escaped = false;
-    while i < bytes.len() {
-        let b = bytes[i];
-        if in_string {
-            if escaped {
-                escaped = false;
-            } else if b == b'\\' {
-                escaped = true;
-            } else if b == b'"' {
-                in_string = false;
-            }
-            i += 1;
-            continue;
-        }
-        if b == b'"' {
-            in_string = true;
-            i += 1;
-            continue;
-        }
-        if b == b'/' && i + 1 < bytes.len() && bytes[i + 1] == b'/' {
-            return &line[..i];
-        }
-        i += 1;
-    }
-    line
 }
 
 fn compile_error_tokens(msg: &str) -> TokenStream {

@@ -33,12 +33,13 @@ pub fn generate_static_shaders(project_root: &Path) -> Result<(), StaticPipeline
         let res_path = asset_uri(&rel);
         let full_path = res_dir.join(&rel);
         let source = fs::read_to_string(&full_path)?;
+        let optimized = perro_wgsl::optimize_source(&source);
 
         let output_path = embedded_shaders_dir.join(&rel);
         if let Some(parent) = output_path.parent() {
             fs::create_dir_all(parent)?;
         }
-        write_if_changed(&output_path, source.as_bytes())?;
+        write_if_changed(&output_path, optimized.as_bytes())?;
         shaders.push((res_path, rel));
     }
     prune_embedded_dir(
@@ -136,7 +137,7 @@ mod tests {
     }
 
     #[test]
-    fn static_shader_embed_preserves_disk_wgsl_exactly() {
+    fn static_shader_embed_matches_shared_optimizer() {
         let root = unique_temp_root("perro_static_shader_exact");
         let res_dir = root.join("res");
         let embedded_dir = root.join("embedded");
@@ -162,7 +163,8 @@ fn shade_material(in: FragmentInput) -> vec4<f32> {
 
         let embedded = fs::read_to_string(embedded_dir.join("shaders/shaders/custom.wgsl"))
             .expect("read embedded");
-        assert_eq!(embedded, source);
+        assert_eq!(embedded, perro_wgsl::optimize_source(source));
+        assert!(embedded.len() < source.len());
         let _ = fs::remove_dir_all(root);
     }
 }

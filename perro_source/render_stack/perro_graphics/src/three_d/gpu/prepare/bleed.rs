@@ -328,7 +328,10 @@ impl Gpu3D {
                 if batch.draw_on_top
                     || batch.mesh_blend
                     || batch.instance_count == 0
-                    || matches!(batch.material_kind, MaterialPipelineKind::Unlit)
+                    || matches!(
+                        batch.material_kind,
+                        MaterialPipelineKind::Unlit | MaterialPipelineKind::UnlitVariant(_)
+                    )
                 {
                     continue;
                 }
@@ -381,7 +384,10 @@ impl Gpu3D {
                 let batch = &self.multimesh_batches[mm_index];
                 (
                     batch.draw_param_index as usize,
-                    matches!(batch.material_kind, MaterialPipelineKind::Unlit),
+                    matches!(
+                        batch.material_kind,
+                        MaterialPipelineKind::Unlit | MaterialPipelineKind::UnlitVariant(_)
+                    ),
                 )
             };
             if unlit {

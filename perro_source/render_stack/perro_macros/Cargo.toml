@@ -8,3 +8,6 @@ proc-macro = true
 
 [lints]
 workspace = true
+
+[dependencies]
+perro_wgsl.workspace = true

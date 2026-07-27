@@ -967,7 +967,7 @@ mod tests {
             ..LobbyInfo::default()
         };
         assert!(!private_code_has_collision(&[], 42));
-        assert!(!private_code_has_collision(&[own.clone()], 42));
+        assert!(!private_code_has_collision(std::slice::from_ref(&own), 42));
         assert!(private_code_has_collision(&[own, other], 42));
     }
 

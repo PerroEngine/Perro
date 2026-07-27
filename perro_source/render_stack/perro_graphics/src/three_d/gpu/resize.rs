@@ -536,6 +536,7 @@ impl Gpu3D {
         self.rebuild_hiz_bind_groups(device);
         self.sample_count = sample_count;
         self.invalidate_custom_pipelines();
+        self.builtin_variant_pipelines.clear();
         let (gpu_occlusion_enabled, cpu_occlusion_enabled) = occlusion_flags(self.occlusion_mode);
         self.gpu_occlusion_enabled = gpu_occlusion_enabled;
         self.cpu_occlusion_enabled = cpu_occlusion_enabled;

@@ -48,6 +48,7 @@ impl PerroGraphics {
             ssao: SsaoQuality::Medium,
             texture_filter: TextureFilterMode::LinearMipmap,
             hdr_mode: HdrMode::Auto,
+            shader_variant_mode: ShaderVariantMode::Auto,
             retained_draws_cache_revision: u64::MAX,
             retained_draw_instances_cache: 0,
             retained_point_particles_cache: Vec::new(),
@@ -103,6 +104,11 @@ impl PerroGraphics {
 
     pub fn with_hdr_mode(mut self, mode: HdrMode) -> Self {
         self.hdr_mode = mode;
+        self
+    }
+
+    pub fn with_shader_variant_mode(mut self, mode: ShaderVariantMode) -> Self {
+        self.shader_variant_mode = mode;
         self
     }
 

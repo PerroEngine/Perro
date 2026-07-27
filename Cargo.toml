@@ -34,6 +34,7 @@ members = [
     "perro_source/render_stack/perro_graphics_assets",
     "perro_source/render_stack/perro_meshlets",
     "perro_source/render_stack/perro_render_bridge",
+    "perro_source/render_stack/perro_wgsl",
 
     "perro_source/script_stack/perro_scripting",
     "perro_source/script_stack/perro_scripting_macros",
@@ -89,6 +90,7 @@ default-members = [
     "perro_source/render_stack/perro_graphics_assets",
     "perro_source/render_stack/perro_meshlets",
     "perro_source/render_stack/perro_render_bridge",
+    "perro_source/render_stack/perro_wgsl",
 
     "perro_source/script_stack/perro_scripting",
     "perro_source/script_stack/perro_scripting_macros",
@@ -152,6 +154,7 @@ perro_graphics_assets = { version = "0.1.0", path = "perro_source/render_stack/p
 perro_macros = { version = "0.1.0", path = "perro_source/render_stack/perro_macros" }
 perro_meshlets = { version = "0.1.0", path = "perro_source/render_stack/perro_meshlets" }
 perro_render_bridge = { version = "0.1.0", path = "perro_source/render_stack/perro_render_bridge" }
+perro_wgsl = { version = "0.1.0", path = "perro_source/render_stack/perro_wgsl" }
 perro_internal_updates = { version = "0.1.0", path = "perro_source/runtime_project/perro_internal_updates" }
 perro_physics = { version = "0.1.0", path = "perro_source/runtime_project/perro_physics" }
 perro_project = { version = "0.1.0", path = "perro_source/runtime_project/perro_project" }

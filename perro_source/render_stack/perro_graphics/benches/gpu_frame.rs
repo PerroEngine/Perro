@@ -1,12 +1,12 @@
-use perro_graphics::{DrawFrameTiming, GraphicsBackend, PerroGraphics};
+use perro_graphics::{DrawFrameTiming, GraphicsBackend, PerroGraphics, ShaderVariantMode};
 use perro_ids::{MaterialID, MeshID, NodeID, TextureID};
 use perro_render_bridge::{
     Camera2DState, Camera3DState, Command2D, Command3D, DenseInstancePose3D, LODOptions3D,
     Material3D, Mesh3D, MeshBlendOptions3D, MeshSurfaceBinding3D, PointLight3DState,
     PostProcessingCommand, RayLight3DState, Rect2DCommand, RenderBridge, RenderCommand,
     RenderEvent, RenderRequestID, ResourceCommand, RuntimeMeshVertex, Sky3DState, SkyTime3DState,
-    SpotLight3DState, Sprite2DCommand, Water2DState, Water3DState, WaterIdleModeState,
-    WaterShapeState,
+    SpotLight3DState, Sprite2DCommand, StandardMaterial3D, Water2DState, Water3DState,
+    WaterIdleModeState, WaterShapeState,
 };
 use perro_structs::{BitMask, PostProcessEffect, PostProcessSet};
 use std::env;
@@ -61,10 +61,21 @@ struct TimingSum {
     draw_instances_3d: u64,
     presented: u64,
     frames: u64,
+    total_samples: Vec<Duration>,
+    prepare_cpu_samples: Vec<Duration>,
+    encode_samples: Vec<Duration>,
+    gpu_main_samples: Vec<Duration>,
+    pipeline_switch_samples: Vec<u32>,
 }
 
 impl TimingSum {
     fn add(&mut self, timing: DrawFrameTiming) {
+        self.total_samples.push(timing.total);
+        self.prepare_cpu_samples.push(timing.prepare_cpu);
+        self.encode_samples.push(timing.gpu_encode_main);
+        self.gpu_main_samples.push(timing.gpu_timestamp_main);
+        self.pipeline_switch_samples
+            .push(timing.pipeline_switches_3d);
         self.total += timing.total;
         self.process += timing.process_commands;
         self.prepare_cpu += timing.prepare_cpu;
@@ -95,10 +106,30 @@ impl TimingSum {
         value.as_micros() / u128::from(frames)
     }
 
+    fn percentile_us(values: &[Duration], percentile: f64) -> f64 {
+        if values.is_empty() {
+            return 0.0;
+        }
+        let mut nanos: Vec<u128> = values.iter().map(Duration::as_nanos).collect();
+        nanos.sort_unstable();
+        let index = ((nanos.len() - 1) as f64 * percentile).ceil() as usize;
+        nanos[index] as f64 / 1_000.0
+    }
+
+    fn percentile_u32(values: &[u32], percentile: f64) -> u32 {
+        if values.is_empty() {
+            return 0;
+        }
+        let mut sorted = values.to_vec();
+        sorted.sort_unstable();
+        let index = ((sorted.len() - 1) as f64 * percentile).ceil() as usize;
+        sorted[index]
+    }
+
     fn print(&self, name: &str) {
         let frames = self.frames.max(1);
         println!(
-            "{name:32} total={:>6}us wait={:>6}us gpuq={:>6}us water={:>5}us cpu_prep={:>5}us gpu2d={:>5}us gpu3d={:>5}us acquire={:>5}us encode={:>5}us submit={:>5}us post={:>5}us present={:>5}us dc2d={:>3} dc3d={:>3} inst3d={:>7}",
+            "{name:32} total={:>6}us wait={:>6}us gpuq={:>6}us water={:>5}us cpu_prep={:>5}us gpu2d={:>5}us gpu3d={:>5}us acquire={:>5}us encode={:>5}us submit={:>5}us post={:>5}us present={:>5}us dc2d={:>3} dc3d={:>3} inst3d={:>7} gpuq_med={:>8.1}us gpuq_p95={:>8.1}us cpu_med={:>7.1}us cpu_p95={:>7.1}us enc_med={:>7.1}us enc_p95={:>7.1}us pipe_med={:>3} pipe_p95={:>3}",
             Self::avg_us(self.total, frames),
             Self::avg_us(self.wait_idle, frames),
             Self::avg_us(self.gpu_main, frames),
@@ -114,6 +145,14 @@ impl TimingSum {
             self.draw_calls_2d / frames,
             self.draw_calls_3d / frames,
             self.draw_instances_3d / frames,
+            Self::percentile_us(&self.gpu_main_samples, 0.5),
+            Self::percentile_us(&self.gpu_main_samples, 0.95),
+            Self::percentile_us(&self.prepare_cpu_samples, 0.5),
+            Self::percentile_us(&self.prepare_cpu_samples, 0.95),
+            Self::percentile_us(&self.encode_samples, 0.5),
+            Self::percentile_us(&self.encode_samples, 0.95),
+            Self::percentile_u32(&self.pipeline_switch_samples, 0.5),
+            Self::percentile_u32(&self.pipeline_switch_samples, 0.95),
         );
     }
 
@@ -133,14 +172,14 @@ impl TimingSum {
         if write_header {
             writeln!(
                 file,
-                "case,frames,total_us,wait_us,gpu_main_us,gpu_water_us,cpu_prepare_us,gpu_2d_us,gpu_3d_us,encode_us,submit_us,present_us,draw_calls_2d,draw_calls_3d,instances_3d"
+                "case,frames,total_us,wait_us,gpu_main_us,gpu_water_us,cpu_prepare_us,gpu_2d_us,gpu_3d_us,encode_us,submit_us,present_us,draw_calls_2d,draw_calls_3d,instances_3d,gpu_main_median_us,gpu_main_p95_us,cpu_prepare_median_us,cpu_prepare_p95_us,encode_median_us,encode_p95_us,pipeline_switches_median,pipeline_switches_p95"
             )
             .expect("write gpu bench csv header");
         }
         let frames = self.frames.max(1);
         writeln!(
             file,
-            "{name},{frames},{},{},{},{},{},{},{},{},{},{},{},{},{}",
+            "{name},{frames},{},{},{},{},{},{},{},{},{},{},{},{},{},{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},{},{}",
             Self::avg_us(self.total, frames),
             Self::avg_us(self.wait_idle, frames),
             Self::avg_us(self.gpu_main, frames),
@@ -154,6 +193,14 @@ impl TimingSum {
             self.draw_calls_2d / frames,
             self.draw_calls_3d / frames,
             self.draw_instances_3d / frames,
+            Self::percentile_us(&self.gpu_main_samples, 0.5),
+            Self::percentile_us(&self.gpu_main_samples, 0.95),
+            Self::percentile_us(&self.prepare_cpu_samples, 0.5),
+            Self::percentile_us(&self.prepare_cpu_samples, 0.95),
+            Self::percentile_us(&self.encode_samples, 0.5),
+            Self::percentile_us(&self.encode_samples, 0.95),
+            Self::percentile_u32(&self.pipeline_switch_samples, 0.5),
+            Self::percentile_u32(&self.pipeline_switch_samples, 0.95),
         )
         .expect("write gpu bench csv row");
     }
@@ -165,9 +212,66 @@ struct BenchCase {
     redraw: fn(&mut PerroGraphics),
 }
 
+#[derive(Clone, Copy)]
+struct TimingSummary {
+    gpu_median_us: f64,
+    gpu_p95_us: f64,
+    cpu_median_us: f64,
+    encode_median_us: f64,
+    pipeline_median: u32,
+}
+
 struct GpuBenchApp {
     window: Option<Arc<Window>>,
     cases: Vec<BenchCase>,
+}
+
+#[derive(Clone, Copy)]
+enum ShaderVariantScene {
+    Plain,
+    Textured,
+    ShadowHeavy,
+}
+
+fn env_usize(name: &str, fallback: usize) -> usize {
+    env::var(name)
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(fallback)
+}
+
+fn delta_percent(generic: f64, auto: f64) -> f64 {
+    if generic == 0.0 {
+        0.0
+    } else {
+        (auto / generic - 1.0) * 100.0
+    }
+}
+
+fn print_shader_variant_deltas(summaries: &[(&str, TimingSummary)]) {
+    for scene in ["plain", "textured", "shadow_heavy"] {
+        let generic_name = format!("shader_variant_{scene}_generic");
+        let auto_name = format!("shader_variant_{scene}_auto");
+        let generic = summaries
+            .iter()
+            .find_map(|(name, summary)| (*name == generic_name).then_some(*summary));
+        let auto = summaries
+            .iter()
+            .find_map(|(name, summary)| (*name == auto_name).then_some(*summary));
+        let (Some(generic), Some(auto)) = (generic, auto) else {
+            continue;
+        };
+        println!(
+            "shader_variant_delta_{scene:12} gpu_med={:>7.2}% gpu_p95={:>7.2}% cpu_med={:>7.2}% enc_med={:>7.2}% pipe={}->{}",
+            delta_percent(generic.gpu_median_us, auto.gpu_median_us),
+            delta_percent(generic.gpu_p95_us, auto.gpu_p95_us),
+            delta_percent(generic.cpu_median_us, auto.cpu_median_us),
+            delta_percent(generic.encode_median_us, auto.encode_median_us),
+            generic.pipeline_median,
+            auto.pipeline_median,
+        );
+    }
 }
 
 impl ApplicationHandler for GpuBenchApp {
@@ -188,6 +292,12 @@ impl ApplicationHandler for GpuBenchApp {
             .and_then(|value| value.parse::<u64>().ok())
             .unwrap_or(0);
         let throughput_mode = env::var_os("PERRO_GPU_BENCH_THROUGHPUT").is_some();
+        let warmup_frames = env_usize("PERRO_GPU_WARMUP_FRAMES", WARMUP_FRAMES);
+        let sample_frames = env_usize("PERRO_GPU_SAMPLE_FRAMES", SAMPLE_FRAMES);
+        if env::var_os("PERRO_GPU_BENCH_REVERSE").is_some() {
+            self.cases.reverse();
+        }
+        let mut summaries = Vec::new();
         for case in &self.cases {
             if let Ok(filter) = env::var("PERRO_GPU_BENCH")
                 && !case.name.contains(&filter)
@@ -196,13 +306,13 @@ impl ApplicationHandler for GpuBenchApp {
             }
             window.set_title(&format!("perro gpu bench - {}", case.name));
             let mut graphics = (case.setup)(&window);
-            for _ in 0..WARMUP_FRAMES {
+            for _ in 0..warmup_frames {
                 (case.redraw)(&mut graphics);
                 let _ = graphics.draw_frame_timed();
             }
             let mut sum = TimingSum::default();
             let batch_start = Instant::now();
-            for _ in 0..SAMPLE_FRAMES {
+            for _ in 0..sample_frames {
                 (case.redraw)(&mut graphics);
                 if let Some(timing) = graphics.draw_frame_timed() {
                     sum.add(timing);
@@ -218,6 +328,16 @@ impl ApplicationHandler for GpuBenchApp {
             }
             let batch_elapsed = batch_start.elapsed();
             sum.print(case.name);
+            summaries.push((
+                case.name,
+                TimingSummary {
+                    gpu_median_us: TimingSum::percentile_us(&sum.gpu_main_samples, 0.5),
+                    gpu_p95_us: TimingSum::percentile_us(&sum.gpu_main_samples, 0.95),
+                    cpu_median_us: TimingSum::percentile_us(&sum.prepare_cpu_samples, 0.5),
+                    encode_median_us: TimingSum::percentile_us(&sum.encode_samples, 0.5),
+                    pipeline_median: TimingSum::percentile_u32(&sum.pipeline_switch_samples, 0.5),
+                },
+            ));
             if throughput_mode {
                 let fps = sum.frames as f64 / batch_elapsed.as_secs_f64().max(f64::EPSILON);
                 println!(
@@ -233,6 +353,7 @@ impl ApplicationHandler for GpuBenchApp {
                 thread::sleep(Duration::from_millis(capture_ms));
             }
         }
+        print_shader_variant_deltas(&summaries);
         event_loop.exit();
     }
 
@@ -439,18 +560,141 @@ fn main() {
                 setup: |w| setup_blend_sphere_stack(w, 256),
                 redraw: redraw_3d,
             },
+            BenchCase {
+                name: "shader_variant_plain_generic",
+                setup: |w| {
+                    setup_shader_variant(w, ShaderVariantMode::Generic, ShaderVariantScene::Plain)
+                },
+                redraw: redraw_3d,
+            },
+            BenchCase {
+                name: "shader_variant_plain_auto",
+                setup: |w| {
+                    setup_shader_variant(w, ShaderVariantMode::Auto, ShaderVariantScene::Plain)
+                },
+                redraw: redraw_3d,
+            },
+            BenchCase {
+                name: "shader_variant_textured_generic",
+                setup: |w| {
+                    setup_shader_variant(
+                        w,
+                        ShaderVariantMode::Generic,
+                        ShaderVariantScene::Textured,
+                    )
+                },
+                redraw: redraw_3d,
+            },
+            BenchCase {
+                name: "shader_variant_textured_auto",
+                setup: |w| {
+                    setup_shader_variant(w, ShaderVariantMode::Auto, ShaderVariantScene::Textured)
+                },
+                redraw: redraw_3d,
+            },
+            BenchCase {
+                name: "shader_variant_shadow_heavy_generic",
+                setup: |w| {
+                    setup_shader_variant(
+                        w,
+                        ShaderVariantMode::Generic,
+                        ShaderVariantScene::ShadowHeavy,
+                    )
+                },
+                redraw: redraw_3d,
+            },
+            BenchCase {
+                name: "shader_variant_shadow_heavy_auto",
+                setup: |w| {
+                    setup_shader_variant(
+                        w,
+                        ShaderVariantMode::Auto,
+                        ShaderVariantScene::ShadowHeavy,
+                    )
+                },
+                redraw: redraw_3d,
+            },
         ],
     };
     event_loop.run_app(&mut app).expect("run app");
 }
 
 fn base_graphics(window: &Arc<Window>) -> PerroGraphics {
+    base_graphics_with_shader_mode(window, ShaderVariantMode::Auto)
+}
+
+fn base_graphics_with_shader_mode(
+    window: &Arc<Window>,
+    shader_variant_mode: ShaderVariantMode,
+) -> PerroGraphics {
     let mut graphics = PerroGraphics::new()
         .with_vsync(false)
         .with_msaa(false)
+        .with_shader_variant_mode(shader_variant_mode)
         .with_occlusion_culling(perro_graphics::OcclusionCullingMode::Off);
     graphics.attach_window(window.clone());
     graphics.resize(WIDTH, HEIGHT);
+    graphics
+}
+
+fn setup_shader_variant(
+    window: &Arc<Window>,
+    mode: ShaderVariantMode,
+    scene: ShaderVariantScene,
+) -> PerroGraphics {
+    let mut graphics = base_graphics_with_shader_mode(window, mode);
+    let texture =
+        matches!(scene, ShaderVariantScene::Textured).then(|| create_texture(&mut graphics));
+    let mut standard = StandardMaterial3D {
+        double_sided: !matches!(scene, ShaderVariantScene::Plain),
+        ..StandardMaterial3D::default()
+    };
+    if let Some(texture) = texture {
+        let slot = texture.index();
+        standard.base_color_texture = slot;
+        standard.metallic_roughness_texture = slot;
+        standard.normal_texture = slot;
+        standard.occlusion_texture = slot;
+        standard.emissive_texture = slot;
+    }
+    let mesh_data = if matches!(scene, ShaderVariantScene::Plain) {
+        tiny_mesh()
+    } else {
+        fullscreen_quad_mesh()
+    };
+    let (mesh, material) = create_mesh_material_with_material(
+        &mut graphics,
+        mesh_data,
+        Material3D::Standard(standard),
+    );
+    if matches!(scene, ShaderVariantScene::ShadowHeavy) {
+        graphics.submit(RenderCommand::ThreeD(Box::new(Command3D::SetRayLight {
+            node: NodeID::from_parts(90_000, 0),
+            light: RayLight3DState {
+                direction: [-0.45, -0.85, -0.28],
+                color: [1.0, 0.95, 0.9],
+                intensity: 0.8,
+                cast_shadows: true,
+                shadow_strength: 0.82,
+                shadow_depth_bias: 0.00018,
+                shadow_normal_bias: 0.045,
+            },
+        })));
+    }
+    let receive_shadows = matches!(scene, ShaderVariantScene::ShadowHeavy);
+    if matches!(scene, ShaderVariantScene::Plain) {
+        graphics.submit_many(
+            (0..100_000).map(|i| draw_shader_command(i, mesh, material, receive_shadows)),
+        );
+    } else {
+        graphics.submit(draw_fullscreen_shader_command(
+            mesh,
+            material,
+            receive_shadows,
+        ));
+    }
+    let _ = graphics.draw_frame_timed();
+    graphics.wait_idle();
     graphics
 }
 
@@ -838,6 +1082,15 @@ fn water_sim_command(i: u32, resolution: u32, impacts: u32) -> RenderCommand {
 }
 
 fn draw_command(i: u32, mesh: MeshID, material: MaterialID) -> RenderCommand {
+    draw_shader_command(i, mesh, material, true)
+}
+
+fn draw_shader_command(
+    i: u32,
+    mesh: MeshID,
+    material: MaterialID,
+    receive_shadows: bool,
+) -> RenderCommand {
     RenderCommand::ThreeD(Box::new(Command3D::Draw {
         mesh,
         surfaces: surface(material),
@@ -849,7 +1102,7 @@ fn draw_command(i: u32, mesh: MeshID, material: MaterialID) -> RenderCommand {
         lod: LODOptions3D::default(),
         blend: MeshBlendOptions3D::default(),
         cast_shadows: true,
-        receive_shadows: true,
+        receive_shadows,
     }))
 }
 
@@ -871,6 +1124,26 @@ fn draw_overdraw_command(i: u32, mesh: MeshID, material: MaterialID) -> RenderCo
         blend: MeshBlendOptions3D::default(),
         cast_shadows: true,
         receive_shadows: true,
+    }))
+}
+
+fn draw_fullscreen_shader_command(
+    mesh: MeshID,
+    material: MaterialID,
+    receive_shadows: bool,
+) -> RenderCommand {
+    RenderCommand::ThreeD(Box::new(Command3D::Draw {
+        mesh,
+        surfaces: surface(material),
+        node: NodeID::from_parts(95_000, 0),
+        model: identity_4(),
+        skeleton: None,
+        blend_shape_weights: Arc::from([]),
+        meshlet_override: None,
+        lod: LODOptions3D::default(),
+        blend: MeshBlendOptions3D::default(),
+        cast_shadows: true,
+        receive_shadows,
     }))
 }
 
@@ -1053,6 +1326,28 @@ fn tiny_mesh() -> Mesh3D {
     }
 }
 
+fn fullscreen_quad_mesh() -> Mesh3D {
+    let vertex = |position: [f32; 3], uv: [f32; 2]| RuntimeMeshVertex {
+        position,
+        normal: [0.0, 0.0, 1.0],
+        uv,
+        paint_uv: uv,
+        joints: [0, 0, 0, 0],
+        weights: [1.0, 0.0, 0.0, 0.0].into(),
+    };
+    Mesh3D {
+        vertices: vec![
+            vertex([-2.1, -1.2, -2.0], [0.0, 1.0]),
+            vertex([2.1, -1.2, -2.0], [1.0, 1.0]),
+            vertex([2.1, 1.2, -2.0], [1.0, 0.0]),
+            vertex([-2.1, 1.2, -2.0], [0.0, 0.0]),
+        ],
+        indices: vec![0, 1, 2, 0, 2, 3],
+        surface_ranges: vec![],
+        blend_shapes: vec![],
+    }
+}
+
 fn uv_sphere_mesh(slices: u32, stacks: u32) -> Mesh3D {
     let slices = slices.max(3);
     let stacks = stacks.max(2);
@@ -1125,6 +1420,14 @@ fn create_mesh_material_with(
     graphics: &mut PerroGraphics,
     mesh_data: Mesh3D,
 ) -> (MeshID, MaterialID) {
+    create_mesh_material_with_material(graphics, mesh_data, Material3D::default())
+}
+
+fn create_mesh_material_with_material(
+    graphics: &mut PerroGraphics,
+    mesh_data: Mesh3D,
+    material_data: Material3D,
+) -> (MeshID, MaterialID) {
     graphics.submit_many([
         RenderCommand::Resource(ResourceCommand::CreateRuntimeMesh {
             request: RenderRequestID::new(2),
@@ -1136,7 +1439,7 @@ fn create_mesh_material_with(
         RenderCommand::Resource(ResourceCommand::CreateMaterial {
             request: RenderRequestID::new(3),
             id: MaterialID::nil(),
-            material: Material3D::default(),
+            material: material_data,
             source: Some("__bench_material__".to_string()),
             reserved: true,
         }),

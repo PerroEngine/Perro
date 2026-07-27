@@ -20,6 +20,7 @@ impl GraphicsBackend for PerroGraphics {
                     ssao: self.ssao,
                     texture_filter: self.texture_filter,
                     hdr_mode: self.hdr_mode,
+                    shader_variant_mode: self.shader_variant_mode,
                 };
                 wasm_bindgen_futures::spawn_local(async move {
                     let gpu = Gpu::new_async(window, cfg).await;
@@ -43,6 +44,7 @@ impl GraphicsBackend for PerroGraphics {
                     ssao: self.ssao,
                     texture_filter: self.texture_filter,
                     hdr_mode: self.hdr_mode,
+                    shader_variant_mode: self.shader_variant_mode,
                 };
                 let mut gpu = Gpu::new(window, cfg);
                 if let Some(gpu_ref) = gpu.as_mut() {

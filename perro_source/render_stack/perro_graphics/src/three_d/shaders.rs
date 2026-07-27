@@ -48,16 +48,14 @@ mod regular {
         perro_macros::include_str_stripped!("shaders/material_toon.wgsl");
     pub const DEPTH_PREPASS_WGSL: &str =
         perro_macros::include_str_stripped!("shaders/depth_prepass.wgsl");
-    pub const DEPTH_PREPASS_RIGID_WGSL: &str = concat!(
+    pub const DEPTH_PREPASS_RIGID_WGSL: &str = perro_macros::minified_wgsl!(concat!(
         include_str!("shaders/vertex_modifiers_depth.wgsl"),
-        "\n",
-        include_str!("shaders/depth_prepass_rigid.wgsl")
-    );
-    pub const DEPTH_PREPASS_SKINNED_WGSL: &str = concat!(
+        include_str!("shaders/depth_prepass_rigid.wgsl"),
+    ));
+    pub const DEPTH_PREPASS_SKINNED_WGSL: &str = perro_macros::minified_wgsl!(concat!(
         include_str!("shaders/vertex_modifiers_depth.wgsl"),
-        "\n",
-        include_str!("shaders/depth_prepass_skinned.wgsl")
-    );
+        include_str!("shaders/depth_prepass_skinned.wgsl"),
+    ));
     pub const MESH_BLEND_SCREEN_WGSL: &str =
         perro_macros::include_str_stripped!("shaders/mesh_blend_screen.wgsl");
     pub const SKY3D_WGSL: &str = perro_macros::include_str_stripped!("shaders/sky3d.wgsl");
@@ -96,6 +94,174 @@ pub fn prelude_rigid_wgsl() -> &'static str {
 #[inline]
 pub fn prelude_skinned_wgsl() -> &'static str {
     regular::prelude_skinned_wgsl()
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(crate) struct MaterialShaderFeatures(u16);
+
+impl MaterialShaderFeatures {
+    const BASE_TEXTURE: u16 = 1 << 0;
+    const METALLIC_ROUGHNESS_TEXTURE: u16 = 1 << 1;
+    const NORMAL_TEXTURE: u16 = 1 << 2;
+    const OCCLUSION_TEXTURE: u16 = 1 << 3;
+    const EMISSIVE_TEXTURE: u16 = 1 << 4;
+    const RECEIVE_SHADOWS: u16 = 1 << 5;
+    const ALPHA_SHIFT: u16 = 6;
+    const VERTEX_MODIFIERS: u16 = 1 << 8;
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) const fn new(
+        base_texture: bool,
+        metallic_roughness_texture: bool,
+        normal_texture: bool,
+        occlusion_texture: bool,
+        emissive_texture: bool,
+        receive_shadows: bool,
+        alpha_mode: u8,
+        vertex_modifiers: bool,
+    ) -> Self {
+        let alpha_mode = if alpha_mode > 2 { 2 } else { alpha_mode };
+        let mut bits = (alpha_mode as u16) << Self::ALPHA_SHIFT;
+        if base_texture {
+            bits |= Self::BASE_TEXTURE;
+        }
+        if metallic_roughness_texture {
+            bits |= Self::METALLIC_ROUGHNESS_TEXTURE;
+        }
+        if normal_texture {
+            bits |= Self::NORMAL_TEXTURE;
+        }
+        if occlusion_texture {
+            bits |= Self::OCCLUSION_TEXTURE;
+        }
+        if emissive_texture {
+            bits |= Self::EMISSIVE_TEXTURE;
+        }
+        if receive_shadows {
+            bits |= Self::RECEIVE_SHADOWS;
+        }
+        if vertex_modifiers {
+            bits |= Self::VERTEX_MODIFIERS;
+        }
+        Self(bits)
+    }
+
+    #[inline]
+    pub(crate) const fn bits(self) -> u16 {
+        self.0
+    }
+
+    #[inline]
+    const fn contains(self, bit: u16) -> bool {
+        self.0 & bit != 0
+    }
+
+    #[inline]
+    const fn alpha_mode(self) -> u8 {
+        ((self.0 >> Self::ALPHA_SHIFT) & 0x3) as u8
+    }
+}
+
+pub(crate) fn create_standard_shader_module_rigid_variant(
+    device: &wgpu::Device,
+    kind: BuiltinShaderKind,
+    features: MaterialShaderFeatures,
+) -> wgpu::ShaderModule {
+    create_builtin_shader_module_variant(
+        device,
+        regular::prelude_rigid_wgsl(),
+        kind,
+        features,
+        "perro_mesh_builtin_rigid_variant",
+    )
+}
+
+pub(crate) fn create_standard_shader_module_skinned_variant(
+    device: &wgpu::Device,
+    kind: BuiltinShaderKind,
+    features: MaterialShaderFeatures,
+) -> wgpu::ShaderModule {
+    create_builtin_shader_module_variant(
+        device,
+        regular::prelude_skinned_wgsl(),
+        kind,
+        features,
+        "perro_mesh_builtin_skinned_variant",
+    )
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(crate) enum BuiltinShaderKind {
+    Standard,
+    Unlit,
+    Toon,
+}
+
+fn create_builtin_shader_module_variant(
+    device: &wgpu::Device,
+    prelude: &str,
+    kind: BuiltinShaderKind,
+    features: MaterialShaderFeatures,
+    label: &'static str,
+) -> wgpu::ShaderModule {
+    let wgsl = build_builtin_material_shader_variant(prelude, kind, features);
+    device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some(label),
+        source: wgpu::ShaderSource::Wgsl(wgsl.into()),
+    })
+}
+
+fn build_builtin_material_shader_variant(
+    prelude: &str,
+    kind: BuiltinShaderKind,
+    features: MaterialShaderFeatures,
+) -> String {
+    let material = match kind {
+        BuiltinShaderKind::Standard => regular::MATERIAL_STANDARD_WGSL,
+        BuiltinShaderKind::Unlit => regular::MATERIAL_UNLIT_WGSL,
+        BuiltinShaderKind::Toon => regular::MATERIAL_TOON_WGSL,
+    };
+    let source = build_material_shader_with_prelude(prelude, material);
+    [
+        (
+            "/*__PERRO_STD_BASE_TEXTURE__*/",
+            features.contains(MaterialShaderFeatures::BASE_TEXTURE),
+        ),
+        (
+            "/*__PERRO_STD_METALLIC_ROUGHNESS_TEXTURE__*/",
+            features.contains(MaterialShaderFeatures::METALLIC_ROUGHNESS_TEXTURE),
+        ),
+        (
+            "/*__PERRO_STD_NORMAL_TEXTURE__*/",
+            features.contains(MaterialShaderFeatures::NORMAL_TEXTURE),
+        ),
+        (
+            "/*__PERRO_STD_OCCLUSION_TEXTURE__*/",
+            features.contains(MaterialShaderFeatures::OCCLUSION_TEXTURE),
+        ),
+        (
+            "/*__PERRO_STD_EMISSIVE_TEXTURE__*/",
+            features.contains(MaterialShaderFeatures::EMISSIVE_TEXTURE),
+        ),
+        (
+            "/*__PERRO_STD_RECEIVE_SHADOWS__*/",
+            features.contains(MaterialShaderFeatures::RECEIVE_SHADOWS),
+        ),
+        ("/*__PERRO_STD_ALPHA_MASK__*/", features.alpha_mode() == 1),
+        ("/*__PERRO_STD_ALPHA_OPAQUE__*/", features.alpha_mode() == 0),
+    ]
+    .into_iter()
+    .fold(source, |source, (marker, enabled)| {
+        source.replace(marker, if enabled { "true ||" } else { "false &&" })
+    })
+    .replace(
+        "/*__PERRO_BUILTIN_VERTEX_MODIFIERS__*/",
+        if features.contains(MaterialShaderFeatures::VERTEX_MODIFIERS) {
+            "false &&"
+        } else {
+            "true ||"
+        },
+    )
 }
 
 #[inline]
@@ -769,6 +935,48 @@ mod tests {
                 naga::front::wgsl::parse_str(&wgsl).expect("3d material wgsl parses");
             }
         }
+    }
+
+    #[test]
+    fn builtin_variants_resolve_all_runtime_feature_checks() {
+        let none = MaterialShaderFeatures::new(false, false, false, false, false, false, 0, false);
+        let all = MaterialShaderFeatures::new(true, true, true, true, true, true, 1, true);
+        assert_ne!(none, all);
+
+        for (prelude, label) in [
+            (regular::prelude_rigid_wgsl(), "rigid"),
+            (regular::prelude_skinned_wgsl(), "skinned"),
+        ] {
+            for kind in [
+                BuiltinShaderKind::Standard,
+                BuiltinShaderKind::Unlit,
+                BuiltinShaderKind::Toon,
+            ] {
+                for (features, suffix) in [(none, "none"), (all, "all")] {
+                    let wgsl = build_builtin_material_shader_variant(prelude, kind, features);
+                    assert!(!wgsl.contains("/*__PERRO_"));
+                    parse_and_validate(&wgsl, &format!("{label} {suffix} {kind:?} variant"));
+                }
+            }
+        }
+
+        let none_wgsl = build_builtin_material_shader_variant(
+            regular::prelude_rigid_wgsl(),
+            BuiltinShaderKind::Standard,
+            none,
+        );
+        assert!(none_wgsl.contains("if false && material.has_base_color_texture"));
+        assert!(none_wgsl.contains("if true || material.alpha_mode == 0u"));
+        assert!(none_wgsl.contains("if true || out_in.custom_range.x < 2u"));
+
+        let all_wgsl = build_builtin_material_shader_variant(
+            regular::prelude_rigid_wgsl(),
+            BuiltinShaderKind::Standard,
+            all,
+        );
+        assert!(all_wgsl.contains("if true || material.has_base_color_texture"));
+        assert!(all_wgsl.contains("if true || material.receive_shadows"));
+        assert!(all_wgsl.contains("if false && out_in.custom_range.x < 2u"));
     }
 
     #[test]

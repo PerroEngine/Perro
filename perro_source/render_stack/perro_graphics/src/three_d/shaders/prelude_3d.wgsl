@@ -394,10 +394,10 @@ fn perro_apply_mesh_blend_alpha(in: FragmentInput, material: DecodedMaterialPara
 // already hold the fade multiply it in via perro_material_alpha_with_fade.
 fn perro_material_alpha_base(material: DecodedMaterialParams, alpha: f32) -> f32 {
     var out_alpha = clamp(alpha, 0.0, 1.0);
-    if material.alpha_mode == 1u && out_alpha < material.alpha_cutoff {
+    if (/*__PERRO_STD_ALPHA_MASK__*/ material.alpha_mode == 1u) && out_alpha < material.alpha_cutoff {
         discard;
     }
-    if material.alpha_mode == 0u {
+    if /*__PERRO_STD_ALPHA_OPAQUE__*/ material.alpha_mode == 0u {
         out_alpha = 1.0;
     }
     return out_alpha;
@@ -827,7 +827,7 @@ fn perro_standard(
     if material.double_sided && (in.is_front == material.mirrored_winding) {
         n = -n;
     }
-    if material.has_normal_texture {
+    if /*__PERRO_STD_NORMAL_TEXTURE__*/ material.has_normal_texture {
         let packed_pbr = decode_standard_pbr_params(in.packed_pbr_params_0, in.packed_pbr_params_1);
         n = perro_apply_standard_normal_map(in, n, packed_pbr.w);
     }
@@ -859,7 +859,7 @@ fn perro_standard(
         let ray_dir = ray.direction.xyz;
         let l = -ray_dir * inverseSqrt(max(dot(ray_dir, ray_dir), 1.0e-8));
         var radiance = ray.color_intensity.xyz * ray.color_intensity.w;
-        if i == 0u && material.receive_shadows {
+        if i == 0u && (/*__PERRO_STD_RECEIVE_SHADOWS__*/ material.receive_shadows) {
             radiance *= perro_shadow_factor(in.world_pos, n, l);
         }
         light_rgb += perro_brdf_pbr(albedo, n, v, l, roughness, metallic, radiance);
@@ -878,7 +878,7 @@ fn perro_standard(
             let attenuation = perro_range_attenuation(dist_sq, range_sq);
             // if-branch, not select: select evaluates the PCF arm unconditionally.
             var shadow_vis = 1.0;
-            if material.receive_shadows {
+            if /*__PERRO_STD_RECEIVE_SHADOWS__*/ material.receive_shadows {
                 shadow_vis = perro_point_shadow_factor(in.world_pos, n, i, to_light);
             }
             light_rgb += perro_brdf_pbr(albedo, n, v, l, roughness, metallic, radiance * attenuation * shadow_vis);
@@ -903,7 +903,7 @@ fn perro_standard(
             let attenuation = perro_range_attenuation(dist_sq, range_sq);
             // if-branch, not select: select evaluates the PCF arm unconditionally.
             var shadow_vis = 1.0;
-            if material.receive_shadows {
+            if /*__PERRO_STD_RECEIVE_SHADOWS__*/ material.receive_shadows {
                 shadow_vis = perro_spot_shadow_factor(in.world_pos, n, i);
             }
             light_rgb += perro_brdf_pbr(albedo, n, v, l, roughness, metallic, radiance * attenuation * shadow_vis);

@@ -4638,6 +4638,9 @@ dependencies = [
 [[package]]
 name = "perro_macros"
 version = "0.1.0"
+dependencies = [
+ "perro_wgsl",
+]
 
 [[package]]
 name = "perro_meshlets"
@@ -4886,6 +4889,7 @@ dependencies = [
  "perro_scene",
  "perro_structs",
  "perro_ui",
+ "perro_wgsl",
  "rayon",
 ]
 
@@ -4958,6 +4962,13 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "wasm-bindgen",
+]
+
+[[package]]
+name = "perro_wgsl"
+version = "0.1.0"
+dependencies = [
+ "naga",
 ]
 
 [[package]]
