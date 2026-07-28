@@ -289,6 +289,8 @@ impl Gpu {
             camera_stream_post: AHashMap::new(),
             camera_stream_tonemap,
             camera_stream_draws_scratch: Vec::new(),
+            camera_image_save_requests: Vec::new(),
+            camera_image_save_pending: Vec::new(),
             last_prepare_particles_revision: u64::MAX,
             last_prepare_water_2d_revision: u64::MAX,
             last_prepare_water_3d_revision: u64::MAX,

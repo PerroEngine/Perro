@@ -80,6 +80,8 @@
 | `to_local_transform_2d` | [`to_local_transform_2d`](#to_local_transform_2d) |
 | `to_global_transform_3d` | [`to_global_transform_3d`](#to_global_transform_3d) |
 | `to_local_transform_3d` | [`to_local_transform_3d`](#to_local_transform_3d) |
+| `save_camera_image` | [`save_camera_image`](#save_camera_image) |
+| `save_camera_image_sized` | [`save_camera_image_sized`](#save_camera_image_sized) |
 | `mesh_instance_surface_at_global_point` | [`mesh_instance_surface_at_global_point`](#mesh_instance_surface_at_global_point) |
 | `mesh_instance_surface_on_global_ray` | [`mesh_instance_surface_on_global_ray`](#mesh_instance_surface_on_global_ray) |
 | `mesh_instance_surfaces_on_global_rays` | [`mesh_instance_surfaces_on_global_rays`](#mesh_instance_surfaces_on_global_rays) |
@@ -1029,6 +1031,26 @@ methods!({
 | Returns | Global ray origin, normalized direction, and projection far limit. |
 | Coordinates | Top-left pixel origin; supports perspective, orthographic, and frustum cameras. |
 | Fails when | Camera ID/type or viewport size is invalid. |
+
+### `save_camera_image`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `pub fn save_camera_image<P: ResPathSource>(&mut self, camera_id: NodeID, path: P) -> bool` |
+| Returns | `bool`; `true` means queued. |
+| Use when | Save one frame from a `Camera2D` or `Camera3D` at active viewport resolution. |
+| Fails when | Camera ID/type, visibility, or path is invalid. GPU and I/O errors log after queueing. |
+
+### `save_camera_image_sized`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `pub fn save_camera_image_sized<P: ResPathSource>(&mut self, camera_id: NodeID, path: P, width: u32, height: u32) -> bool` |
+| Returns | `bool`; `true` means queued. |
+| Use when | Save one camera frame at an explicit resolution. |
+| Fails when | Same as `save_camera_image`; dimensions clamp to 1..=8192. |
 
 ### `mesh_instance_surface_at_global_point`
 

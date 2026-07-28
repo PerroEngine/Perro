@@ -4,6 +4,7 @@ impl Gpu {
     pub fn render(&mut self, frame: RenderFrame<'_>) -> RenderGpuTiming {
         let total_start = Instant::now();
         let mut timing = RenderGpuTiming::default();
+        self.poll_camera_image_saves();
         if let Some(timer) = self.gpu_timer.as_mut() {
             timer.poll(&self.device);
             timing.gpu_timestamp_main = timer.last_main;
@@ -1505,6 +1506,7 @@ impl Gpu {
         if let Some(water) = self.water.as_mut() {
             water.encode_readback(&mut encoder);
         }
+        self.encode_camera_image_saves(&mut encoder);
         let submit_start = Instant::now();
         let submit_finish_start = Instant::now();
         let command_buffer = encoder.finish();

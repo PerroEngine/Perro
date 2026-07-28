@@ -1,4 +1,5 @@
 use super::*;
+use perro_render_bridge::{CameraStreamCommand, RenderCommand, ResourceCommand};
 
 impl NodeAPI for Runtime {
     fn create<T>(&mut self) -> perro_ids::NodeID
@@ -22,6 +23,57 @@ impl NodeAPI for Runtime {
         self.mark_created_ui_node_dirty(id);
         self.mark_transform_dirty_recursive(id);
         id
+    }
+
+    fn save_camera_image(
+        &mut self,
+        camera_id: NodeID,
+        path: &str,
+        mut resolution: [u32; 2],
+    ) -> bool {
+        if path.trim().is_empty()
+            || !self.nodes.get(camera_id).is_some_and(|node| {
+                matches!(
+                    node.data,
+                    SceneNodeData::Camera2D(_) | SceneNodeData::Camera3D(_)
+                )
+            })
+        {
+            return false;
+        }
+        if resolution[0] == 0 || resolution[1] == 0 {
+            let viewport =
+                perro_resource_api::api::ViewportAPI::viewport_size(self.resource_api.as_ref());
+            resolution = [
+                viewport.x.round().clamp(1.0, 8192.0) as u32,
+                viewport.y.round().clamp(1.0, 8192.0) as u32,
+            ];
+        }
+        resolution = [resolution[0].clamp(1, 8192), resolution[1].clamp(1, 8192)];
+        let output_texture = self.resource_api.camera_capture_texture(camera_id);
+        let Some(state) = self.camera_capture_state(camera_id, output_texture, resolution) else {
+            return false;
+        };
+        self.render
+            .queue_command(RenderCommand::CameraStream(CameraStreamCommand::Upsert {
+                node: camera_id,
+                state: Box::new(state),
+            }));
+        self.render
+            .queue_command(RenderCommand::Resource(ResourceCommand::SaveTextureImage {
+                id: output_texture,
+                path: path.to_string(),
+            }));
+        if let Some((_, delay)) = self
+            .pending_camera_capture_removals
+            .iter_mut()
+            .find(|(camera, _)| *camera == camera_id)
+        {
+            *delay = 1;
+        } else {
+            self.pending_camera_capture_removals.push((camera_id, 1));
+        }
+        true
     }
 
     fn create_nodes<'a, B>(

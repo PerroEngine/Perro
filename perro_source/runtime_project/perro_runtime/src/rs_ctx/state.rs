@@ -156,6 +156,7 @@ pub(super) struct RuntimeResourceState {
     pub(super) texture_reserve_pending: HashSet<u64>,
     pub(super) texture_drop_pending: HashSet<u64>,
     pub(super) texture_loaded_by_id: HashSet<TextureID>,
+    pub(super) camera_capture_texture_by_node: HashMap<NodeID, TextureID>,
     pub(super) webcam_default_id: Option<WebcamID>,
     pub(super) webcam_texture_by_id: HashMap<WebcamID, TextureID>,
     pub(super) webcam_config_by_id: HashMap<WebcamID, WebcamConfig>,

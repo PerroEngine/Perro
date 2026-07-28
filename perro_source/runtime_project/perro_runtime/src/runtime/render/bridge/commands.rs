@@ -204,6 +204,18 @@ impl Runtime {
     }
 
     pub fn drain_render_commands(&mut self, out: &mut Vec<RenderCommand>) {
+        let mut captures = std::mem::take(&mut self.pending_camera_capture_removals);
+        for (camera, delay) in captures.drain(..) {
+            if delay == 0 {
+                self.render.queue_command(RenderCommand::CameraStream(
+                    CameraStreamCommand::RemoveNode { node: camera },
+                ));
+                self.resource_api.release_camera_capture_texture(camera);
+            } else {
+                self.pending_camera_capture_removals
+                    .push((camera, delay - 1));
+            }
+        }
         let mut queued_resource_commands = self.render.take_resource_queue_scratch();
         self.resource_api
             .drain_commands(&mut queued_resource_commands);

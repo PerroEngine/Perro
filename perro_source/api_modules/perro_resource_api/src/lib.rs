@@ -23,6 +23,8 @@ pub use perro_csv::{
 };
 #[doc(hidden)]
 pub use perro_ids::string_to_u64 as __perro_string_to_u64;
+#[doc(hidden)]
+pub use perro_nodes::UiImage as __PerroUiImage;
 pub use perro_render_bridge::{
     CustomMaterial3D, CustomMaterialImage3D, CustomMaterialLighting3D, CustomMaterialParam3D,
     CustomMaterialParamValue3D, HdrColorSpace, HdrFallback, HdrMode, HdrStatus,
@@ -63,17 +65,18 @@ pub mod prelude {
         audio_bus_set_speed, audio_bus_set_volume, audio_bus_stop, audio_create_from_bytes,
         audio_drop, audio_is_loaded, audio_length_millis, audio_length_seconds, audio_load,
         audio_play, audio_play_clip, audio_play_stream_clip, audio_reserve,
-        audio_set_master_volume, audio_stop, audio_stop_all, audio_stop_source, csv_load,
-        csv_load_bytes, csv_save, disable_colorblind_filter, draw, enable_colorblind_filter,
-        get_viewport_size, glb_inspect, hdr_active, hdr_set, hdr_status, hdr_supported, locale,
-        locale_get_current, locale_in, locale_set, material_count, material_create,
-        material_create_from_bytes, material_drop, material_get_data, material_is_loaded,
-        material_load, material_reserve, material_write, mesh_count, mesh_create,
-        mesh_create_from_bytes, mesh_drop, mesh_get_data, mesh_is_loaded, mesh_load, mesh_reserve,
-        mesh_write, mic_clip, mic_frame, mic_frame_bytes, mic_get_bytes, mic_get_clip,
-        mic_is_listening, mic_pack, mic_record, mic_save_wav, mic_start, mic_start_listening,
-        mic_start_stream, mic_start_with, mic_stop, mic_stop_listening, mic_stop_stream,
-        mic_stream_bytes, mic_stream_clip, mic_unpack, midi_load_soundfont,
+        audio_set_master_volume, audio_stop, audio_stop_all, audio_stop_source, camera_save_image,
+        camera_save_image_sized, camera_stream_save_image, camera_stream_texture, camera_texture,
+        camera_to_image, csv_load, csv_load_bytes, csv_save, disable_colorblind_filter, draw,
+        enable_colorblind_filter, get_viewport_size, glb_inspect, hdr_active, hdr_set, hdr_status,
+        hdr_supported, locale, locale_get_current, locale_in, locale_set, material_count,
+        material_create, material_create_from_bytes, material_drop, material_get_data,
+        material_is_loaded, material_load, material_reserve, material_write, mesh_count,
+        mesh_create, mesh_create_from_bytes, mesh_drop, mesh_get_data, mesh_is_loaded, mesh_load,
+        mesh_reserve, mesh_write, mic_clip, mic_frame, mic_frame_bytes, mic_get_bytes,
+        mic_get_clip, mic_is_listening, mic_pack, mic_record, mic_save_wav, mic_start,
+        mic_start_listening, mic_start_stream, mic_start_with, mic_stop, mic_stop_listening,
+        mic_stop_stream, mic_stream_bytes, mic_stream_clip, mic_unpack, midi_load_soundfont,
         midi_load_soundfont_from_bytes, midi_play, midi_play_at, midi_release,
         midi_soundfont_is_loaded, midi_start, midi_start_at, navmesh_create,
         navmesh_create_from_bytes, navmesh_load, node_count, post_processing_add,
@@ -81,9 +84,9 @@ pub mod prelude {
         scene_count, scene_load_doc, scene_save_doc, skeleton_count, skeleton_load_bones,
         skeleton_load_bones_2d_from_bytes, skeleton_load_bones_3d_from_bytes, texture_count,
         texture_create_from_bytes, texture_create_from_rgba, texture_drop, texture_is_loaded,
-        texture_load, texture_reserve, texture_write_rgba, texture_write_rgba_region,
-        video_release_node, video_update_node, webcam_default, webcam_devices, webcam_frame_rgba,
-        webcam_open, webcam_open_device, webcam_texture,
+        texture_load, texture_reserve, texture_save_image, texture_write_rgba,
+        texture_write_rgba_region, video_release_node, video_update_node, webcam_default,
+        webcam_devices, webcam_frame_rgba, webcam_open, webcam_open_device, webcam_texture,
     };
 
     // Shared data types.

@@ -39,6 +39,9 @@ use winit::window::Window;
 
 #[path = "gpu/camera_stream_tonemap.rs"]
 mod camera_stream_tonemap;
+#[path = "gpu/image_save.rs"]
+mod image_save;
+use image_save::{CameraImageSaveRequest, PendingCameraImageSave};
 #[path = "gpu/present.rs"]
 mod present;
 #[path = "water_flip_gpu.rs"]
@@ -570,6 +573,8 @@ pub struct Gpu {
     camera_stream_post: AHashMap<NodeID, Box<PostProcessor>>,
     camera_stream_tonemap: CameraStreamTonemap,
     camera_stream_draws_scratch: Vec<Draw3DInstance>,
+    camera_image_save_requests: Vec<CameraImageSaveRequest>,
+    camera_image_save_pending: Vec<PendingCameraImageSave>,
     last_prepare_particles_revision: u64,
     last_prepare_water_2d_revision: u64,
     last_prepare_water_3d_revision: u64,

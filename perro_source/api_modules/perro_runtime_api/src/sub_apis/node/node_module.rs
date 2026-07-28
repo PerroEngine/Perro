@@ -473,6 +473,24 @@ impl<'rt, R: NodeAPI + ?Sized> NodeModule<'rt, R> {
             .camera_screen_ray_3d(camera_id, pixel, viewport_size)
     }
 
+    /// Queue a camera save at active viewport resolution.
+    pub fn save_camera_image<P: ResPathSource>(&mut self, camera_id: NodeID, path: P) -> bool {
+        self.rt
+            .save_camera_image(camera_id, path.as_res_path_str(), [0, 0])
+    }
+
+    /// Queue a camera save at an explicit pixel resolution.
+    pub fn save_camera_image_sized<P: ResPathSource>(
+        &mut self,
+        camera_id: NodeID,
+        path: P,
+        width: u32,
+        height: u32,
+    ) -> bool {
+        self.rt
+            .save_camera_image(camera_id, path.as_res_path_str(), [width, height])
+    }
+
     pub fn to_global_transform_2d(
         &mut self,
         node_id: NodeID,

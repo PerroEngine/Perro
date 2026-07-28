@@ -26,13 +26,22 @@ impl PerroGraphics {
                         }
                     }
                     CameraStreamCommand::RemoveNode { node } => {
+                        let output_texture = self
+                            .retained_camera_streams
+                            .iter()
+                            .find_map(|(id, stream)| (*id == node).then_some(stream.output_texture))
+                            .unwrap_or_else(|| camera_stream_texture_id(node));
                         if let Some(gpu) = self.gpu.as_mut() {
                             gpu.remove_camera_stream(node);
                         }
-                        let id = camera_stream_texture_id(node);
                         self.camera_stream_targets.remove(&node);
                         self.retained_camera_streams.retain(|(id, _)| *id != node);
-                        let _ = self.resources.drop_texture(id);
+                        if self.resources.drop_texture(output_texture)
+                            && output_texture != camera_stream_texture_id(node)
+                        {
+                            self.events
+                                .push(RenderEvent::TextureDropped { id: output_texture });
+                        }
                     }
                 },
                 RenderCommand::Resource(resource_cmd) => match resource_cmd {
@@ -352,6 +361,40 @@ impl PerroGraphics {
                             self.retained_sprites_cache_revision = u64::MAX;
                             self.events.push(RenderEvent::TextureLoaded { id });
                             self.redraw_requested = true;
+                        }
+                    }
+                    ResourceCommand::SaveTextureImage { id, path } => {
+                        let camera_stream =
+                            self.retained_camera_streams
+                                .iter()
+                                .find_map(|(node, stream)| {
+                                    (stream.output_texture == id
+                                        && camera_stream_uses_render_target(stream))
+                                    .then_some((*node, stream.tone_map_output))
+                                });
+                        if let Some((node, tone_mapped)) = camera_stream {
+                            if let Some(gpu) = self.gpu.as_mut() {
+                                gpu.request_camera_image_save(node, path, tone_mapped);
+                                self.redraw_requested = true;
+                            } else {
+                                eprintln!(
+                                    "[perro] texture image save failed path={path} error=GPU unavailable"
+                                );
+                            }
+                            continue;
+                        }
+                        let Some(texture) = self.resources.decoded_texture_data(id) else {
+                            eprintln!(
+                                "[perro] texture image save failed path={path} error=texture unavailable"
+                            );
+                            continue;
+                        };
+                        if let Err(error) =
+                            save_rgba_image(&texture.rgba, texture.width, texture.height, &path)
+                        {
+                            eprintln!(
+                                "[perro] texture image save failed path={path} error={error}"
+                            );
                         }
                     }
                     ResourceCommand::CreateMaterial {

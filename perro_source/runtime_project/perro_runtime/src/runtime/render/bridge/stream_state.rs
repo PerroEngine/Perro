@@ -300,6 +300,83 @@ impl Runtime {
         })
     }
 
+    pub(crate) fn camera_capture_state(
+        &mut self,
+        camera_node: NodeID,
+        output_texture: TextureID,
+        resolution: [u32; 2],
+    ) -> Option<CameraStreamState> {
+        let source = self.camera_stream_source_state(camera_node)?;
+        if matches!(source, CameraStreamSourceState::Webcam { .. }) {
+            return None;
+        }
+        self.camera_stream_node_scratch.clear();
+        let owner = self.node_world(camera_node)?;
+        let mut members = std::mem::take(&mut self.camera_stream_node_scratch);
+        self.fill_world_members(owner, &mut members);
+        self.camera_stream_node_scratch = members;
+        let post_processing = match &source {
+            CameraStreamSourceState::TwoD(camera) => camera.post_processing.clone(),
+            CameraStreamSourceState::ThreeD(camera) => camera.post_processing.clone(),
+            CameraStreamSourceState::Webcam { .. } => Arc::from([]),
+        };
+        let (
+            sprites_2d,
+            lights_2d,
+            point_particles_2d,
+            waters_2d,
+            draws_3d,
+            lighting_3d,
+            point_particles_3d,
+            waters_3d,
+        ) = match &source {
+            CameraStreamSourceState::TwoD(camera) => (
+                self.collect_camera_stream_sprites_2d(
+                    camera.render_mask,
+                    camera_node,
+                    Some(resolution),
+                ),
+                self.collect_camera_stream_lights_2d(camera.render_mask, camera_node),
+                self.collect_camera_stream_point_particles_2d(camera.render_mask, camera_node),
+                self.collect_camera_stream_waters_2d(camera.render_mask, camera_node),
+                Arc::from([]),
+                CameraStreamLighting3DState::default(),
+                Arc::from([]),
+                Arc::from([]),
+            ),
+            CameraStreamSourceState::ThreeD(camera) => (
+                Arc::from([]),
+                Arc::from([]),
+                Arc::from([]),
+                Arc::from([]),
+                self.collect_camera_stream_draws_3d(camera.render_mask, camera_node),
+                self.collect_camera_stream_lighting_3d(camera.render_mask, camera_node),
+                self.collect_camera_stream_point_particles_3d(camera.render_mask, camera_node),
+                self.collect_camera_stream_waters_3d(camera.render_mask, camera_node),
+            ),
+            CameraStreamSourceState::Webcam { .. } => unreachable!(),
+        };
+        Some(CameraStreamState {
+            source,
+            tone_map_output: true,
+            overlay_camera_2d: None,
+            transparent_background: false,
+            clear_color: None,
+            resolution: [resolution[0].clamp(1, 8192), resolution[1].clamp(1, 8192)],
+            aspect_ratio: 0.0,
+            post_processing,
+            output_texture,
+            sprites_2d,
+            lights_2d,
+            point_particles_2d,
+            waters_2d,
+            draws_3d,
+            lighting_3d,
+            point_particles_3d,
+            waters_3d,
+        })
+    }
+
     pub(crate) fn sub_view_state(
         &mut self,
         view_node: NodeID,

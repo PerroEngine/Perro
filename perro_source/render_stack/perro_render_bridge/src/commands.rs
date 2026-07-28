@@ -111,6 +111,10 @@ pub enum ResourceCommand {
         height: u32,
         rgba: Arc<[u8]>,
     },
+    SaveTextureImage {
+        id: TextureID,
+        path: String,
+    },
     CreateMaterial {
         request: RenderRequestID,
         id: MaterialID,

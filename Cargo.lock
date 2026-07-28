@@ -4542,6 +4542,7 @@ dependencies = [
  "fontdb",
  "getrandom 0.3.4",
  "glam",
+ "half",
  "naga",
  "perro_asset_formats",
  "perro_builtin_meshes",

@@ -143,6 +143,21 @@ impl TextureAPI for RuntimeResourceApi {
         true
     }
 
+    fn save_texture_image(&self, id: TextureID, path: &str) -> bool {
+        if id.is_nil() || path.trim().is_empty() {
+            return false;
+        }
+        self.state
+            .lock()
+            .expect("resource api mutex poisoned")
+            .queued_commands
+            .push(RenderCommand::Resource(ResourceCommand::SaveTextureImage {
+                id,
+                path: path.to_string(),
+            }));
+        true
+    }
+
     fn load_texture_hashed(&self, source_hash: u64, source: Option<&str>) -> TextureID {
         let mut state = self.state.lock().expect("resource api mutex poisoned");
         if let Some(id) = state.texture_by_source.get(&source_hash).copied() {
@@ -297,6 +312,24 @@ fn texture_id_known(state: &super::state::RuntimeResourceState, id: TextureID) -
 }
 
 impl RuntimeResourceApi {
+    pub(crate) fn camera_capture_texture(&self, camera: perro_ids::NodeID) -> TextureID {
+        let mut state = self.state.lock().expect("resource api mutex poisoned");
+        if let Some(texture) = state.camera_capture_texture_by_node.get(&camera).copied() {
+            return texture;
+        }
+        let texture = state.allocate_texture_id();
+        state.camera_capture_texture_by_node.insert(camera, texture);
+        texture
+    }
+
+    pub(crate) fn release_camera_capture_texture(&self, camera: perro_ids::NodeID) {
+        self.state
+            .lock()
+            .expect("resource api mutex poisoned")
+            .camera_capture_texture_by_node
+            .remove(&camera);
+    }
+
     pub(crate) fn is_texture_id_pending(&self, texture: TextureID) -> bool {
         if texture.is_nil() {
             return false;

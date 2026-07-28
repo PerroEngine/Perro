@@ -768,6 +768,64 @@ fn texture_write_rgba_region_rejects_bad_input() {
 }
 
 #[test]
+fn texture_save_image_queues_save_command() {
+    let mut runtime = Runtime::new();
+    let texture =
+        TextureAPI::create_texture_from_rgba(runtime.resource_api.as_ref(), 1, 1, &[0u8; 4]);
+    let _ = collect_commands(&mut runtime);
+
+    assert!(TextureAPI::save_texture_image(
+        runtime.resource_api.as_ref(),
+        texture,
+        "user://shot.png",
+    ));
+    let commands = collect_commands(&mut runtime);
+    assert!(matches!(
+        &commands[0],
+        RenderCommand::Resource(ResourceCommand::SaveTextureImage { id, path })
+            if *id == texture && path == "user://shot.png"
+    ));
+}
+
+#[test]
+fn camera_save_image_uses_camera_id_and_cleans_temp_target() {
+    let mut runtime = Runtime::new();
+    let camera = NodeAPI::create::<Camera2D>(&mut runtime);
+    let _ = collect_commands(&mut runtime);
+
+    assert!(NodeAPI::save_camera_image(
+        &mut runtime,
+        camera,
+        "user://camera.png",
+        [320, 180],
+    ));
+    let commands = collect_commands(&mut runtime);
+    let output = commands
+        .iter()
+        .find_map(|command| match command {
+            RenderCommand::CameraStream(CameraStreamCommand::Upsert { node, state })
+                if *node == camera && state.resolution == [320, 180] =>
+            {
+                Some(state.output_texture)
+            }
+            _ => None,
+        })
+        .expect("camera capture upsert");
+    assert!(commands.iter().any(|command| matches!(
+        command,
+        RenderCommand::Resource(ResourceCommand::SaveTextureImage { id, path })
+            if *id == output && path == "user://camera.png"
+    )));
+
+    let cleanup = collect_commands(&mut runtime);
+    assert!(cleanup.iter().any(|command| matches!(
+        command,
+        RenderCommand::CameraStream(CameraStreamCommand::RemoveNode { node })
+            if *node == camera
+    )));
+}
+
+#[test]
 fn texture_create_from_bytes_queues_runtime_texture_bytes() {
     let mut runtime = Runtime::new();
     let bytes = b"not a texture";

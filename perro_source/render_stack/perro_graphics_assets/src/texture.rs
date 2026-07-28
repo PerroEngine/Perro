@@ -9,6 +9,8 @@ use perro_io::{decompress_zlib_limited, load_asset};
 use std::{
     collections::{HashMap, hash_map::DefaultHasher},
     hash::{Hash, Hasher},
+    io::Cursor,
+    path::Path,
     sync::{Arc, Mutex, OnceLock},
 };
 
@@ -16,6 +18,42 @@ pub const SVG_RASTER_SCALE: u32 = 4;
 const SVG_MAX_RASTER_DIM: u32 = 8192;
 const SVG_CACHE_LIMIT: usize = 32;
 const SVG_RGBA_CACHE_MAX_BYTES: usize = 64 * 1024 * 1024;
+
+pub fn encode_rgba_image(
+    rgba: &[u8],
+    width: u32,
+    height: u32,
+    path: &str,
+) -> Result<Vec<u8>, String> {
+    let expected = (width as usize)
+        .checked_mul(height as usize)
+        .and_then(|pixels| pixels.checked_mul(4));
+    if width == 0 || height == 0 || expected != Some(rgba.len()) {
+        return Err(format!(
+            "invalid rgba image {width}x{height} len={}",
+            rgba.len()
+        ));
+    }
+    let extension = Path::new(path)
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .ok_or_else(|| format!("image path has no extension: {path}"))?;
+    let format = image::ImageFormat::from_extension(extension)
+        .ok_or_else(|| format!("unsupported image extension: {extension}"))?;
+    let rgba = image::RgbaImage::from_raw(width, height, rgba.to_vec())
+        .ok_or_else(|| "invalid rgba image buffer".to_string())?;
+    let image = image::DynamicImage::ImageRgba8(rgba);
+    let mut out = Cursor::new(Vec::new());
+    image
+        .write_to(&mut out, format)
+        .map_err(|error| format!("image encode failed: {error}"))?;
+    Ok(out.into_inner())
+}
+
+pub fn save_rgba_image(rgba: &[u8], width: u32, height: u32, path: &str) -> Result<(), String> {
+    let encoded = encode_rgba_image(rgba, width, height, path)?;
+    perro_io::save_asset(path, &encoded).map_err(|error| format!("image save failed: {error}"))
+}
 
 #[derive(Clone)]
 struct SvgSizeCacheEntry {
@@ -570,9 +608,18 @@ fn parse_fragment_index(fragment: Option<&str>, key: &str) -> Option<u32> {
 mod tests {
     use super::{
         SvgRgbaCache, clear_svg_caches, decode_image_logical_size, decode_image_rgba,
-        decode_image_rgba_max_size, decode_image_size,
+        decode_image_rgba_max_size, decode_image_size, encode_rgba_image,
     };
     use std::{io::Cursor, sync::Arc, time::Instant};
+
+    #[test]
+    fn encode_rgba_image_writes_png_bytes() {
+        let bytes =
+            encode_rgba_image(&[255, 0, 0, 255], 1, 1, "user://shot.png").expect("encode png");
+        assert!(bytes.starts_with(b"\x89PNG\r\n\x1a\n"));
+        assert!(encode_rgba_image(&[0; 3], 1, 1, "user://bad.png").is_err());
+        assert!(encode_rgba_image(&[0; 4], 1, 1, "user://bad.nope").is_err());
+    }
 
     #[test]
     fn decode_image_rgba_supports_svg_with_intrinsic_size() {

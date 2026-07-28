@@ -18,6 +18,7 @@ use crate::{
 use ahash::AHashMap;
 use perro_graphics_assets::{
     SVG_RASTER_SCALE, decode_image_rgba, decode_ptex, load_mesh3d_from_bytes, load_texture_rgba,
+    save_rgba_image,
 };
 use perro_ids::{MaterialID, MeshID, NodeID, TextureID};
 use perro_render_bridge::{

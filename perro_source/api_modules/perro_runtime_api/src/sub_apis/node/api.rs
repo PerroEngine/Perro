@@ -280,6 +280,18 @@ pub trait NodeAPI {
         None
     }
 
+    /// Queue a one-shot image save from a `Camera2D` or `Camera3D`.
+    ///
+    /// A zero width or height selects the active viewport size.
+    fn save_camera_image(
+        &mut self,
+        _camera_id: NodeID,
+        _path: &str,
+        _resolution: [u32; 2],
+    ) -> bool {
+        false
+    }
+
     /// Converts a local 2D transform (relative to `node_id`) into global space.
     fn to_global_transform_2d(
         &mut self,
