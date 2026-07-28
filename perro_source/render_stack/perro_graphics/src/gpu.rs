@@ -612,9 +612,9 @@ pub struct GpuConfig {
 
 struct GpuCameraStreamTarget {
     texture: wgpu::Texture,
-    post_input: wgpu::Texture,
-    tonemap_input: wgpu::Texture,
-    depth: wgpu::Texture,
+    post_input: Option<wgpu::Texture>,
+    tonemap_input: Option<wgpu::Texture>,
+    depth: Option<wgpu::Texture>,
     resolution: [u32; 2],
     post_view_key: u64,
 }

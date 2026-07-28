@@ -1,7 +1,9 @@
 use super::{Draw3DKind, Renderer3D};
 use crate::resources::ResourceStore;
 use perro_ids::{MaterialID, NodeID};
-use perro_render_bridge::{LODOptions3D, Material3D, MeshBlendOptions3D, MeshSurfaceBinding3D};
+use perro_render_bridge::{
+    CustomMaterial3D, LODOptions3D, Material3D, MeshBlendOptions3D, MeshSurfaceBinding3D,
+};
 use perro_structs::Color;
 use std::sync::Arc;
 
@@ -166,4 +168,33 @@ fn camera_stream_quad_retains_texture_draw() {
         }
     );
     assert_eq!(retained.instance_mats.len(), 1);
+}
+
+#[test]
+fn retained_custom_material_requests_continuous_frames() {
+    let mut renderer = Renderer3D::new();
+    let mut resources = ResourceStore::new();
+    let mesh = resources.create_mesh("__mesh__", false);
+    let material = resources.create_material(
+        Material3D::Custom(CustomMaterial3D::new("res://shaders/animated.wgsl")),
+        Some("__custom_mat__"),
+        false,
+    );
+
+    renderer.queue_draw(
+        NodeID::from_parts(8, 0),
+        mesh,
+        draw_surface(material),
+        glam::Mat4::IDENTITY.to_cols_array_2d(),
+        None,
+        Arc::from([]),
+        None,
+        LODOptions3D::default(),
+        MeshBlendOptions3D::default(),
+        true,
+        true,
+    );
+    let _ = renderer.prepare_frame(&resources);
+
+    assert!(renderer.has_retained_custom_material(&resources));
 }

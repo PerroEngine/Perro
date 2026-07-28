@@ -115,12 +115,17 @@ impl Gpu {
         &mut self,
         node: NodeID,
         resolution: [u32; 2],
+        needs_intermediate: bool,
+        needs_tonemap_input: bool,
+        needs_post_depth: bool,
     ) -> Option<&GpuCameraStreamTarget> {
         let resolution = [resolution[0].max(1), resolution[1].max(1)];
-        let recreate = self
-            .camera_stream_targets
-            .get(&node)
-            .is_none_or(|target| target.resolution != resolution);
+        let recreate = self.camera_stream_targets.get(&node).is_none_or(|target| {
+            target.resolution != resolution
+                || target.post_input.is_some() != needs_intermediate
+                || target.tonemap_input.is_some() != needs_tonemap_input
+                || target.depth.is_some() != needs_post_depth
+        });
         if recreate {
             self.next_camera_stream_post_view_key =
                 next_nonzero_generation(self.next_camera_stream_post_view_key);
@@ -144,51 +149,57 @@ impl Gpu {
                     | wgpu::TextureUsages::COPY_SRC,
                 view_formats: &[],
             });
-            let post_input = self.device.create_texture(&wgpu::TextureDescriptor {
-                label: Some("perro_camera_stream_post_input"),
-                size: wgpu::Extent3d {
-                    width: resolution[0],
-                    height: resolution[1],
-                    depth_or_array_layers: 1,
-                },
-                mip_level_count: 1,
-                sample_count: 1,
-                dimension: wgpu::TextureDimension::D2,
-                format: self.render_format,
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
-                    | wgpu::TextureUsages::TEXTURE_BINDING
-                    | wgpu::TextureUsages::COPY_SRC,
-                view_formats: &[],
+            let post_input = needs_intermediate.then(|| {
+                self.device.create_texture(&wgpu::TextureDescriptor {
+                    label: Some("perro_camera_stream_post_input"),
+                    size: wgpu::Extent3d {
+                        width: resolution[0],
+                        height: resolution[1],
+                        depth_or_array_layers: 1,
+                    },
+                    mip_level_count: 1,
+                    sample_count: 1,
+                    dimension: wgpu::TextureDimension::D2,
+                    format: self.render_format,
+                    usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                        | wgpu::TextureUsages::TEXTURE_BINDING
+                        | wgpu::TextureUsages::COPY_SRC,
+                    view_formats: &[],
+                })
             });
-            let tonemap_input = self.device.create_texture(&wgpu::TextureDescriptor {
-                label: Some("perro_camera_stream_tonemap_input"),
-                size: wgpu::Extent3d {
-                    width: resolution[0],
-                    height: resolution[1],
-                    depth_or_array_layers: 1,
-                },
-                mip_level_count: 1,
-                sample_count: 1,
-                dimension: wgpu::TextureDimension::D2,
-                format: self.render_format,
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
-                    | wgpu::TextureUsages::TEXTURE_BINDING,
-                view_formats: &[],
+            let tonemap_input = needs_tonemap_input.then(|| {
+                self.device.create_texture(&wgpu::TextureDescriptor {
+                    label: Some("perro_camera_stream_tonemap_input"),
+                    size: wgpu::Extent3d {
+                        width: resolution[0],
+                        height: resolution[1],
+                        depth_or_array_layers: 1,
+                    },
+                    mip_level_count: 1,
+                    sample_count: 1,
+                    dimension: wgpu::TextureDimension::D2,
+                    format: self.render_format,
+                    usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                        | wgpu::TextureUsages::TEXTURE_BINDING,
+                    view_formats: &[],
+                })
             });
-            let depth = self.device.create_texture(&wgpu::TextureDescriptor {
-                label: Some("perro_camera_stream_post_depth"),
-                size: wgpu::Extent3d {
-                    width: resolution[0],
-                    height: resolution[1],
-                    depth_or_array_layers: 1,
-                },
-                mip_level_count: 1,
-                sample_count: 1,
-                dimension: wgpu::TextureDimension::D2,
-                format: wgpu::TextureFormat::Depth24Plus,
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
-                    | wgpu::TextureUsages::TEXTURE_BINDING,
-                view_formats: &[],
+            let depth = needs_post_depth.then(|| {
+                self.device.create_texture(&wgpu::TextureDescriptor {
+                    label: Some("perro_camera_stream_post_depth"),
+                    size: wgpu::Extent3d {
+                        width: resolution[0],
+                        height: resolution[1],
+                        depth_or_array_layers: 1,
+                    },
+                    mip_level_count: 1,
+                    sample_count: 1,
+                    dimension: wgpu::TextureDimension::D2,
+                    format: wgpu::TextureFormat::Depth24Plus,
+                    usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                        | wgpu::TextureUsages::TEXTURE_BINDING,
+                    view_formats: &[],
+                })
             });
             self.camera_stream_targets.insert(
                 node,

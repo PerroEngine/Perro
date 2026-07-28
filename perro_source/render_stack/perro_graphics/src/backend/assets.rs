@@ -52,7 +52,10 @@ impl PerroGraphics {
         let has_late_overlay = !late_overlay_pending.is_empty()
             || self.late_overlay_2d.retained_sprite_count() > 0
             || !self.late_overlay_2d.retained_rects().is_empty();
-        let has_continuous_updates = self.renderer_3d.has_active_sky_animation();
+        let has_continuous_updates = self.renderer_3d.has_active_sky_animation()
+            || self
+                .renderer_3d
+                .has_retained_custom_material(&self.resources);
         let has_retained_scene = self.renderer_2d.retained_sprite_count() > 0
             || !self.renderer_2d.retained_rects().is_empty()
             || has_late_overlay

@@ -10,6 +10,7 @@ pub(super) struct CameraImageSaveRequest {
 
 pub(super) struct PendingCameraImageSave {
     buffer: wgpu::Buffer,
+    map_tx: Option<mpsc::Sender<Result<(), wgpu::BufferAsyncError>>>,
     rx: mpsc::Receiver<Result<(), wgpu::BufferAsyncError>>,
     path: String,
     width: u32,
@@ -73,6 +74,20 @@ impl Gpu {
         }
     }
 
+    pub(super) fn request_camera_image_save_maps(&mut self) {
+        for pending in &mut self.camera_image_save_pending {
+            let Some(tx) = pending.map_tx.take() else {
+                continue;
+            };
+            pending
+                .buffer
+                .slice(..)
+                .map_async(wgpu::MapMode::Read, move |result| {
+                    let _ = tx.send(result);
+                });
+        }
+    }
+
     pub(super) fn encode_camera_image_saves(&mut self, encoder: &mut wgpu::CommandEncoder) {
         for request in self.camera_image_save_requests.drain(..) {
             let Some(target) = self.camera_stream_targets.get(&request.node) else {
@@ -127,13 +142,10 @@ impl Gpu {
                     depth_or_array_layers: 1,
                 },
             );
-            let slice = buffer.slice(..);
             let (tx, rx) = mpsc::channel();
-            slice.map_async(wgpu::MapMode::Read, move |result| {
-                let _ = tx.send(result);
-            });
             self.camera_image_save_pending.push(PendingCameraImageSave {
                 buffer,
+                map_tx: Some(tx),
                 rx,
                 path: request.path,
                 width,

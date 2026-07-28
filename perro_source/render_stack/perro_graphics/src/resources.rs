@@ -903,6 +903,11 @@ impl ResourceStore {
     }
 
     #[inline]
+    pub(crate) fn material_is_custom(&self, id: MaterialID) -> bool {
+        matches!(self.material_by.get(&id), Some(Material3D::Custom(_)))
+    }
+
+    #[inline]
     pub fn reset_ref_counts(&mut self) {
         for id in std::mem::take(&mut self.texture_ref_ids) {
             if let Some(meta) = self.texture_meta_mut(id) {

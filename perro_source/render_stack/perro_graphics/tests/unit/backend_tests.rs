@@ -7,10 +7,10 @@ use crate::three_d::renderer::Draw3DKind;
 use perro_ids::{MaterialID, MeshID, NodeID, TextureID};
 use perro_render_bridge::{
     Camera3DState, CameraProjectionState, CameraStream3DState, CameraStreamLighting3DState,
-    CameraStreamSourceState, CameraStreamState, Command2D, Command3D, LODOptions3D, Material3D,
-    MeshSurfaceBinding3D, PostProcessingCommand, Rect2DCommand, RenderBridge, RenderCommand,
-    ResourceCommand, Sprite2DCommand, VisualAccessibilityCommand, Water2DState, Water3DState,
-    WaterIdleModeState, WaterLinkState, WaterShapeState,
+    CameraStreamSourceState, CameraStreamState, Command2D, Command3D, CustomMaterial3D,
+    LODOptions3D, Material3D, MeshSurfaceBinding3D, PostProcessingCommand, Rect2DCommand,
+    RenderBridge, RenderCommand, ResourceCommand, Sprite2DCommand, VisualAccessibilityCommand,
+    Water2DState, Water3DState, WaterIdleModeState, WaterLinkState, WaterShapeState,
 };
 use perro_structs::{BitMask, Color, ColorBlindFilter, PostProcessEffect, PostProcessSet};
 use std::sync::Arc;
@@ -55,6 +55,36 @@ fn draw_frame_drains_pending_commands_in_one_pass() {
 
     assert!(graphics.frame.pending_commands.is_empty());
     assert_eq!(graphics.renderer_2d.retained_rects().len(), 65);
+}
+
+#[test]
+fn retained_custom_material_keeps_clean_frames_active() {
+    let mut graphics = PerroGraphics::new();
+    let mesh = graphics.resources.create_mesh("__cube__", false);
+    let material = graphics.resources.create_material(
+        Material3D::Custom(CustomMaterial3D::new("res://shaders/animated.wgsl")),
+        Some("__animated_mat__"),
+        false,
+    );
+    graphics.submit(RenderCommand::ThreeD(Box::new(Command3D::Draw {
+        mesh,
+        surfaces: surfaces_for(material),
+        node: NodeID::from_parts(65, 0),
+        model: glam::Mat4::IDENTITY.to_cols_array_2d(),
+        skeleton: None,
+        blend_shape_weights: Arc::from([]),
+        meshlet_override: None,
+        lod: LODOptions3D::default(),
+        blend: Default::default(),
+        cast_shadows: true,
+        receive_shadows: true,
+    })));
+
+    let first = graphics.draw_frame_timed().expect("first frame timing");
+    let clean = graphics.draw_frame_timed().expect("clean frame timing");
+
+    assert!(!first.idle_clear);
+    assert!(!clean.idle_clear);
 }
 
 #[test]

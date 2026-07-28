@@ -139,9 +139,27 @@ impl Gpu {
                 continue;
             }
             let resolution = [stream.resolution[0].max(1), stream.resolution[1].max(1)];
+            let has_stream_post = PostProcessor::has_effects(stream.post_processing.as_ref());
+            let tone_map_stream = stream.tone_map_output
+                && !matches!(stream.source, CameraStreamSourceState::Webcam { .. });
+            let needs_intermediate = has_stream_post || tone_map_stream;
+            let needs_tonemap_input = has_stream_post && tone_map_stream;
+            let needs_post_depth =
+                has_stream_post && !matches!(stream.source, CameraStreamSourceState::ThreeD(_));
             let needs_external_binding =
-                self.camera_stream_external_bindings.get(node).copied() != Some(resolution);
-            let Some(target) = self.ensure_camera_stream_target(*node, resolution) else {
+                self.camera_stream_targets.get(node).is_none_or(|target| {
+                    target.resolution != resolution
+                        || target.post_input.is_some() != needs_intermediate
+                        || target.tonemap_input.is_some() != needs_tonemap_input
+                        || target.depth.is_some() != needs_post_depth
+                }) || self.camera_stream_external_bindings.get(node).copied() != Some(resolution);
+            let Some(target) = self.ensure_camera_stream_target(
+                *node,
+                resolution,
+                needs_intermediate,
+                needs_tonemap_input,
+                needs_post_depth,
+            ) else {
                 continue;
             };
             if needs_external_binding {
@@ -575,21 +593,28 @@ impl Gpu {
                     needs_intermediate.then(|| {
                         target
                             .post_input
+                            .as_ref()
+                            .expect("camera stream intermediate target")
                             .create_view(&wgpu::TextureViewDescriptor::default())
                     }),
-                    tone_map_stream.then(|| {
+                    (has_stream_post && tone_map_stream).then(|| {
                         target
                             .tonemap_input
+                            .as_ref()
+                            .expect("camera stream tonemap input")
                             .create_view(&wgpu::TextureViewDescriptor::default())
                     }),
-                    has_stream_post.then(|| {
-                        target
-                            .depth
-                            .create_view(&wgpu::TextureViewDescriptor::default())
-                    }),
+                    target
+                        .depth
+                        .as_ref()
+                        .map(|depth| depth.create_view(&wgpu::TextureViewDescriptor::default())),
                     target.post_view_key,
                     if needs_intermediate {
-                        target.post_input.clone()
+                        target
+                            .post_input
+                            .as_ref()
+                            .expect("camera stream intermediate texture")
+                            .clone()
                     } else {
                         target.texture.clone()
                     },
@@ -1513,6 +1538,7 @@ impl Gpu {
         timing.submit_finish_main = submit_finish_start.elapsed();
         let submit_queue_start = Instant::now();
         self.queue.submit(Some(command_buffer));
+        self.request_camera_image_save_maps();
         if gpu_timer_active && let Some(timer) = self.gpu_timer.as_mut() {
             timer.request_readback();
         }

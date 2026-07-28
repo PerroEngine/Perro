@@ -640,6 +640,16 @@ impl Renderer3D {
         self.skies.values().any(|sky| !sky.time.paused)
     }
 
+    pub fn has_retained_custom_material(&self, resources: &ResourceStore) -> bool {
+        self.retained_draws.iter().any(|draw| {
+            draw.surfaces.iter().any(|surface| {
+                surface
+                    .material
+                    .is_some_and(|material| resources.material_is_custom(material))
+            })
+        })
+    }
+
     fn rebuild_sorted_lights_if_dirty(&mut self) {
         if self.ray_lights_dirty {
             self.ray_lights_sorted_cache.clear();
