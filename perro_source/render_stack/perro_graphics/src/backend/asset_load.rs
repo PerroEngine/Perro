@@ -54,10 +54,12 @@ impl PerroGraphics {
             return;
         }
         let jobs = std::mem::take(&mut self.queued_async_mesh_loads);
-        let tx = self.async_mesh_load_tx.clone();
         let static_mesh_lookup = self.static_mesh_lookup;
-        rayon::spawn(move || {
-            for job in jobs {
+        // 1 spawn per job: a scene load queues many meshes in one flush; a
+        // single task w/ serial loop pinned them all to one worker thread.
+        for job in jobs {
+            let tx = self.async_mesh_load_tx.clone();
+            rayon::spawn(move || {
                 let error = validate_mesh_source(job.source.as_str(), static_mesh_lookup).err();
                 let mesh = if error.is_none() {
                     load_mesh3d_from_source(job.source.as_str(), static_mesh_lookup)
@@ -71,8 +73,8 @@ impl PerroGraphics {
                     mesh,
                     error,
                 });
-            }
-        });
+            });
+        }
     }
 
     #[cfg(any(target_arch = "wasm32", test))]
@@ -151,10 +153,11 @@ impl PerroGraphics {
             return;
         }
         let jobs = std::mem::take(&mut self.queued_async_texture_loads);
-        let tx = self.async_texture_load_tx.clone();
         let static_texture_lookup = self.static_texture_lookup;
-        rayon::spawn(move || {
-            for job in jobs {
+        // 1 spawn per job: parallel read+decode across the pool (see mesh note).
+        for job in jobs {
+            let tx = self.async_texture_load_tx.clone();
+            rayon::spawn(move || {
                 let texture =
                     Self::decode_texture_source(job.source.as_str(), static_texture_lookup)
                         .ok_or_else(|| format!("failed to decode texture source `{}`", job.source));
@@ -162,8 +165,8 @@ impl PerroGraphics {
                     id: job.id,
                     texture,
                 });
-            }
-        });
+            });
+        }
     }
 
     #[cfg(all(not(target_arch = "wasm32"), test))]

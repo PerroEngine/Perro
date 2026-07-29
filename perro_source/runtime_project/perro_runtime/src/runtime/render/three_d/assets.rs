@@ -222,35 +222,74 @@ impl Runtime {
             })
     }
 
+    // `(pending, total)` mesh draws in the live graph. A draw counts as pending
+    // when `resolve_render_mesh_assets` would bail on it: unresolved mesh id,
+    // mesh still loading, or any surface material still loading. Those draws are
+    // skipped silently, so this is what a loading screen should wait on.
+    pub(crate) fn scene_mesh_asset_progress(&self) -> (u32, u32) {
+        let mut pending = 0u32;
+        let mut total = 0u32;
+        for (node, scene_node) in self.nodes.iter() {
+            let mesh = match &scene_node.data {
+                SceneNodeData::MeshInstance3D(mesh) => mesh.mesh,
+                SceneNodeData::MultiMeshInstance3D(mesh) => mesh.mesh,
+                _ => continue,
+            };
+            total += 1;
+            let unresolved = mesh.is_nil()
+                && self
+                    .render_3d
+                    .mesh_sources
+                    .get(&node)
+                    .is_some_and(|source| !source.trim().is_empty());
+            if unresolved || self.mesh_draw_has_pending_asset(node) {
+                pending += 1;
+            }
+        }
+        (pending, total)
+    }
+
     pub(crate) fn invalidate_3d_mesh_draws_using_material(&mut self, material: MaterialID) {
-        if material.is_nil() {
+        self.invalidate_3d_mesh_draws_using_materials(&[material]);
+    }
+
+    // batched variant: 1 node pass covers every material in the slice. load
+    // storms deliver many MaterialLoaded events per frame; per-material passes
+    // were O(materials × nodes).
+    pub(crate) fn invalidate_3d_mesh_draws_using_materials(&mut self, materials: &[MaterialID]) {
+        let materials: ahash::AHashSet<MaterialID> = materials
+            .iter()
+            .copied()
+            .filter(|material| !material.is_nil())
+            .collect();
+        if materials.is_empty() {
             return;
         }
-        let mut nodes = Vec::new();
+        let uses_any = |surfaces: &[MeshSurfaceBinding]| {
+            surfaces.iter().any(|surface| {
+                surface
+                    .material
+                    .is_some_and(|material| materials.contains(&material))
+            })
+        };
+        let mut nodes: ahash::AHashSet<NodeID> = ahash::AHashSet::default();
         for (node, scene_node) in self.nodes.iter() {
             let uses_material = match &scene_node.data {
-                SceneNodeData::MeshInstance3D(mesh) => mesh
-                    .surfaces
-                    .iter()
-                    .any(|surface| surface.material == Some(material)),
-                SceneNodeData::MultiMeshInstance3D(mesh) => mesh
-                    .surfaces
-                    .iter()
-                    .any(|surface| surface.material == Some(material)),
+                SceneNodeData::MeshInstance3D(mesh) => uses_any(&mesh.surfaces),
+                SceneNodeData::MultiMeshInstance3D(mesh) => uses_any(&mesh.surfaces),
                 _ => false,
             };
             if uses_material {
-                nodes.push(node);
+                nodes.insert(node);
             }
         }
         for (node, draw) in self.render_3d.retained_mesh_draws.iter() {
-            if draw
-                .surfaces
-                .iter()
-                .any(|surface| surface.material == Some(material))
-                && !nodes.contains(node)
-            {
-                nodes.push(*node);
+            if draw.surfaces.iter().any(|surface| {
+                surface
+                    .material
+                    .is_some_and(|material| materials.contains(&material))
+            }) {
+                nodes.insert(*node);
             }
         }
         for node in nodes {

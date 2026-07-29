@@ -203,6 +203,12 @@ pub struct Runtime {
     scene_resource_refs_dirty: bool,
     /// reusable scratch maps 4 resource-ref scan; avoid per-frame alloc + clone.
     scene_resource_refs_scratch: SceneResourceRefsScratch,
+    /// resource event seen since last flush; batch SubView dirty-mark scan
+    /// once per apply batch instead of once per event (load storm = N events).
+    resource_event_scan_pending: bool,
+    /// materials loaded since last flush; batched retained-draw invalidation
+    /// does 1 node pass 4 all of them instead of 1 pass per material.
+    pending_material_invalidations: Vec<MaterialID>,
     /// reusable node-id list 4 camera-stream collectors; refill once per drain.
     camera_stream_node_scratch: Vec<NodeID>,
     pub(crate) pending_camera_capture_removals: Vec<(NodeID, u8)>,
@@ -546,6 +552,8 @@ impl Runtime {
             scene_resource_refs_scanned_version: u64::MAX,
             scene_resource_refs_dirty: true,
             scene_resource_refs_scratch: SceneResourceRefsScratch::default(),
+            resource_event_scan_pending: false,
+            pending_material_invalidations: Vec::new(),
             camera_stream_node_scratch: Vec::new(),
             pending_camera_capture_removals: Vec::new(),
             world_member_scratch: Vec::new(),

@@ -270,6 +270,11 @@ impl Runtime {
     }
 
     pub fn apply_render_event(&mut self, event: RenderEvent) {
+        self.apply_render_event_inner(event);
+        self.flush_resource_event_batch();
+    }
+
+    fn apply_render_event_inner(&mut self, event: RenderEvent) {
         if let RenderEvent::WaterSamples { samples } = &event {
             for sample in samples.iter() {
                 let sample_time = self.time.elapsed;
@@ -353,7 +358,9 @@ impl Runtime {
             self.mark_needs_rerender(node);
         }
         if let RenderEvent::MaterialLoaded { id } = &event {
-            self.invalidate_3d_mesh_draws_using_material(*id);
+            if !id.is_nil() && !self.pending_material_invalidations.contains(id) {
+                self.pending_material_invalidations.push(*id);
+            }
         }
         if matches!(
             event,
@@ -363,27 +370,10 @@ impl Runtime {
                 | RenderEvent::TextureCreated { .. }
                 | RenderEvent::TextureLoaded { .. }
         ) {
-            self.request_full_2d_scan_once();
-            self.request_full_3d_scan_once();
-            // SubView owns a retained camera-stream snapshot. Resource
-            // completion must rebuild that snapshot too; a global 3D scan does
-            // not revisit UI-local mesh descendants.
-            let viewport_nodes = self
-                .nodes
-                .iter()
-                .filter_map(|(node, node_ref)| {
-                    matches!(
-                        node_ref.data,
-                        SceneNodeData::UiSubView(_)
-                            | SceneNodeData::SubView2D(_)
-                            | SceneNodeData::SubView3D(_)
-                    )
-                    .then_some(node)
-                })
-                .collect::<Vec<_>>();
-            for node in viewport_nodes {
-                self.mark_ui_dirty(node, Self::UI_DIRTY_COMMANDS);
-            }
+            // deferred to flush_resource_event_batch: a load storm delivers
+            // many of these in one apply batch; the SubView scan + material
+            // invalidation are O(all nodes) so run them once per batch.
+            self.resource_event_scan_pending = true;
         }
         // resource lifecycle events resolve pending resources / invalidate
         // retained draws, which arena mutation_revision can't see. force
@@ -412,7 +402,45 @@ impl Runtime {
         I: IntoIterator<Item = RenderEvent>,
     {
         for event in events {
-            self.apply_render_event(event);
+            self.apply_render_event_inner(event);
+        }
+        self.flush_resource_event_batch();
+    }
+
+    // once-per-batch tail of apply_render_event(s): retained-draw invalidation
+    // 4 every material that loaded this batch + SubView dirty-mark scan.
+    fn flush_resource_event_batch(&mut self) {
+        if !self.pending_material_invalidations.is_empty() {
+            let materials = std::mem::take(&mut self.pending_material_invalidations);
+            self.invalidate_3d_mesh_draws_using_materials(&materials);
+            let mut materials = materials;
+            materials.clear();
+            self.pending_material_invalidations = materials;
+        }
+        if !self.resource_event_scan_pending {
+            return;
+        }
+        self.resource_event_scan_pending = false;
+        self.request_full_2d_scan_once();
+        self.request_full_3d_scan_once();
+        // SubView owns a retained camera-stream snapshot. Resource
+        // completion must rebuild that snapshot too; a global 3D scan does
+        // not revisit UI-local mesh descendants.
+        let viewport_nodes = self
+            .nodes
+            .iter()
+            .filter_map(|(node, node_ref)| {
+                matches!(
+                    node_ref.data,
+                    SceneNodeData::UiSubView(_)
+                        | SceneNodeData::SubView2D(_)
+                        | SceneNodeData::SubView3D(_)
+                )
+                .then_some(node)
+            })
+            .collect::<Vec<_>>();
+        for node in viewport_nodes {
+            self.mark_ui_dirty(node, Self::UI_DIRTY_COMMANDS);
         }
     }
 
