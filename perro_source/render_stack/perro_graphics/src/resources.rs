@@ -908,6 +908,14 @@ impl ResourceStore {
     }
 
     #[inline]
+    pub(crate) fn custom_shader_path(&self, id: MaterialID) -> Option<&str> {
+        match self.material_by.get(&id) {
+            Some(Material3D::Custom(custom)) => Some(custom.shader_path.as_ref()),
+            _ => None,
+        }
+    }
+
+    #[inline]
     pub fn reset_ref_counts(&mut self) {
         for id in std::mem::take(&mut self.texture_ref_ids) {
             if let Some(meta) = self.texture_meta_mut(id) {

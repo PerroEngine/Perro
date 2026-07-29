@@ -1,5 +1,34 @@
 use super::*;
 
+// load a custom shader source (static pack, else asset io) + probe 4 frame
+// globals. `perro_time` prefix also covers `perro_time_phase`.
+fn custom_shader_reads_frame_globals(
+    shader_path: &str,
+    static_shader_lookup: Option<StaticShaderLookup>,
+) -> bool {
+    let probe = |src: &str| {
+        src.contains("perro_time")
+            || src.contains("perro_delta_time")
+            || src.contains("perro_frame_index")
+    };
+    if let Some(lookup) = static_shader_lookup {
+        let hash = perro_ids::parse_hashed_source_uri(shader_path)
+            .unwrap_or_else(|| perro_ids::string_to_u64(shader_path));
+        let src = lookup(hash);
+        if !src.is_empty() {
+            return probe(src);
+        }
+    }
+    match perro_io::load_asset(shader_path) {
+        Ok(bytes) => match std::str::from_utf8(&bytes) {
+            Ok(src) => probe(src),
+            Err(_) => true,
+        },
+        // unreadable source: assume animated (= old always-redraw behavior).
+        Err(_) => true,
+    }
+}
+
 impl PerroGraphics {
     pub(super) fn reserve_command_buckets(&mut self, summary: &CommandSummary) {
         if summary.rects_2d > 0 {
@@ -11,6 +40,22 @@ impl PerroGraphics {
         if summary.draws_3d > 0 {
             self.renderer_3d.reserve_queued_draws(summary.draws_3d);
         }
+    }
+
+    // true when a retained draw uses a custom shader that reads the frame
+    // globals (perro_time/perro_time_phase/perro_delta_time/perro_frame_index)
+    // and so needs continuous redraw. probe result cached per shader path;
+    // unreadable sources count as animated (conservative = old behavior).
+    fn has_retained_animated_custom_material(&mut self) -> bool {
+        let cache = &mut self.custom_shader_animated_cache;
+        let lookup = self.static_shader_lookup;
+        self.renderer_3d
+            .any_retained_custom_material_where(&self.resources, |shader_path| {
+                let key = perro_ids::string_to_u64(shader_path);
+                *cache
+                    .entry(key)
+                    .or_insert_with(|| custom_shader_reads_frame_globals(shader_path, lookup))
+            })
     }
 
     pub(super) fn draw_frame_timed_internal<I>(
@@ -53,9 +98,7 @@ impl PerroGraphics {
             || self.late_overlay_2d.retained_sprite_count() > 0
             || !self.late_overlay_2d.retained_rects().is_empty();
         let has_continuous_updates = self.renderer_3d.has_active_sky_animation()
-            || self
-                .renderer_3d
-                .has_retained_custom_material(&self.resources);
+            || self.has_retained_animated_custom_material();
         let has_retained_scene = self.renderer_2d.retained_sprite_count() > 0
             || !self.renderer_2d.retained_rects().is_empty()
             || has_late_overlay

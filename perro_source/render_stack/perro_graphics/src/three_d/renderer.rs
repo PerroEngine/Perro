@@ -650,6 +650,23 @@ impl Renderer3D {
         })
     }
 
+    // any retained draw whose custom shader `is_animated` says needs per-frame
+    // redraw. static custom shaders no longer force continuous gpu frames.
+    pub(crate) fn any_retained_custom_material_where(
+        &self,
+        resources: &ResourceStore,
+        mut is_animated: impl FnMut(&str) -> bool,
+    ) -> bool {
+        self.retained_draws.iter().any(|draw| {
+            draw.surfaces.iter().any(|surface| {
+                surface
+                    .material
+                    .and_then(|material| resources.custom_shader_path(material))
+                    .is_some_and(&mut is_animated)
+            })
+        })
+    }
+
     fn rebuild_sorted_lights_if_dirty(&mut self) {
         if self.ray_lights_dirty {
             self.ray_lights_sorted_cache.clear();

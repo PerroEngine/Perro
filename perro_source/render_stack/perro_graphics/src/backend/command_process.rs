@@ -480,6 +480,8 @@ impl PerroGraphics {
                             if let Some(gpu) = self.gpu.as_mut() {
                                 gpu.invalidate_custom_material_pipelines();
                             }
+                            // shader source may differ aft hot reload; re-probe.
+                            self.custom_shader_animated_cache.clear();
                             self.retained_draws_cache_revision = u64::MAX;
                             if asset_ready_log_enabled() {
                                 eprintln!(

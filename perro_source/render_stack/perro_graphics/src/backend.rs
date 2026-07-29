@@ -409,6 +409,9 @@ pub struct PerroGraphics {
     // materials created/written since last frame; drained b4 gpu render 2
     // compile their pipelines at load time instead of first visible draw.
     pending_pipeline_warms: Vec<Material3D>,
+    // shader_path_hash -> shader reads perro_time/delta/frame_index. gates
+    // the continuous-redraw path: static custom shaders don't force it.
+    custom_shader_animated_cache: AHashMap<u64, bool>,
     meshlets_enabled: bool,
     dev_meshlets: bool,
     meshlet_debug_view: bool,
