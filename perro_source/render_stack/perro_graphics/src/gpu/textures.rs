@@ -13,6 +13,25 @@ impl Gpu {
         self.camera_stream_post.remove(&node);
     }
 
+    // Drain queued material warms into the main 3D pipeline caches. Leaves the
+    // queue untouched until `three_d` exists (it is created lazily on the
+    // first 3D frame); camera-stream worlds stay lazy on purpose.
+    pub fn warm_material_pipelines(
+        &mut self,
+        materials: &mut Vec<perro_render_bridge::Material3D>,
+        static_shader_lookup: Option<crate::StaticShaderLookup>,
+    ) {
+        if materials.is_empty() {
+            return;
+        }
+        let Some(three_d) = self.three_d.as_mut() else {
+            return;
+        };
+        for material in materials.drain(..) {
+            three_d.warm_material_pipelines(&self.device, &material, static_shader_lookup);
+        }
+    }
+
     pub fn invalidate_custom_material_pipelines(&mut self) {
         if let Some(three_d) = self.three_d.as_mut() {
             three_d.invalidate_custom_pipelines();

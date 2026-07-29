@@ -404,6 +404,13 @@ impl PerroGraphics {
 
         let mut gpu_timing = RenderGpuTiming::default();
         if let Some(gpu) = &mut self.gpu {
+            // compile pipelines 4 materials that arrived this frame while
+            // their meshes/textures still load async => first draw skips
+            // shader compile. no-op drain until the 3d pipeline exists.
+            gpu.warm_material_pipelines(
+                &mut self.pending_pipeline_warms,
+                self.static_shader_lookup,
+            );
             gpu_timing = gpu.render(RenderFrame {
                 resources: &self.resources,
                 camera_3d,

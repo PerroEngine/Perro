@@ -1,5 +1,9 @@
 use super::*;
 
+// pipeline-warm queue bound; drained every frame once the 3D pipeline exists,
+// so this only guards sessions that never render 3D.
+const PIPELINE_WARM_QUEUE_CAP: usize = 1024;
+
 impl PerroGraphics {
     pub(super) fn process_commands<I>(&mut self, commands: I)
     where
@@ -415,6 +419,12 @@ impl PerroGraphics {
                         } else {
                             None
                         };
+                        // material known now => pipeline warm b4 first draw.
+                        // cap: a 2D-only session never builds the 3D pipeline,
+                        // so the queue must not grow unbounded.
+                        if self.pending_pipeline_warms.len() < PIPELINE_WARM_QUEUE_CAP {
+                            self.pending_pipeline_warms.push(material.clone());
+                        }
                         let id = if id.is_nil() {
                             self.resources
                                 .create_material(material, source.as_deref(), reserved)
@@ -460,7 +470,13 @@ impl PerroGraphics {
                         );
                     }
                     ResourceCommand::WriteMaterialData { id, material } => {
+                        let warm = material.clone();
                         if self.resources.set_material_data(id, material) {
+                            // loaded .pmat data lands here; re-warm since the
+                            // write invalidates custom pipeline caches below.
+                            if self.pending_pipeline_warms.len() < PIPELINE_WARM_QUEUE_CAP {
+                                self.pending_pipeline_warms.push(warm);
+                            }
                             if let Some(gpu) = self.gpu.as_mut() {
                                 gpu.invalidate_custom_material_pipelines();
                             }

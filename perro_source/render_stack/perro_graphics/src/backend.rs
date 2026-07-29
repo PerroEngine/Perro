@@ -406,6 +406,9 @@ pub struct PerroGraphics {
     static_font_lookup: Option<StaticFontLookup>,
     static_mesh_lookup: Option<StaticMeshLookup>,
     static_shader_lookup: Option<StaticShaderLookup>,
+    // materials created/written since last frame; drained b4 gpu render 2
+    // compile their pipelines at load time instead of first visible draw.
+    pending_pipeline_warms: Vec<Material3D>,
     meshlets_enabled: bool,
     dev_meshlets: bool,
     meshlet_debug_view: bool,

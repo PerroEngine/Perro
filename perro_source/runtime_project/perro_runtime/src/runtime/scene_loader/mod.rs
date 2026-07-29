@@ -56,6 +56,26 @@ impl BenchSceneSpawner {
         Ok(self.0.nodes.len())
     }
 
+    // b4-path 4 render-event bench: per-event apply == old sequential
+    // behavior (flush after every event).
+    pub fn apply_material_loaded_events_sequential(&mut self, material_ids: &[u64]) {
+        for &raw in material_ids {
+            self.0
+                .apply_render_event(perro_render_bridge::RenderEvent::MaterialLoaded {
+                    id: perro_ids::MaterialID::from_u64(raw),
+                });
+        }
+    }
+
+    // aft-path: whole batch, one flush.
+    pub fn apply_material_loaded_events_batched(&mut self, material_ids: &[u64]) {
+        self.0.apply_render_events(material_ids.iter().map(|&raw| {
+            perro_render_bridge::RenderEvent::MaterialLoaded {
+                id: perro_ids::MaterialID::from_u64(raw),
+            }
+        }));
+    }
+
     pub fn spawn_uncompiled(&mut self, scene: &Scene) -> Result<usize, String> {
         let prepared = prepare_scene_with_loader_and_styles(
             scene,

@@ -41,6 +41,7 @@ impl PerroGraphics {
             static_font_lookup: None,
             static_mesh_lookup: None,
             static_shader_lookup: None,
+            pending_pipeline_warms: Vec::new(),
             meshlets_enabled: false,
             dev_meshlets: false,
             meshlet_debug_view: false,

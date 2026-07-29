@@ -85,6 +85,11 @@ harness = false
 required-features = ["bench"]
 
 [[bench]]
+name = "render_events"
+harness = false
+required-features = ["bench"]
+
+[[bench]]
 name = "scene_merge_extract"
 harness = false
 required-features = ["bench"]

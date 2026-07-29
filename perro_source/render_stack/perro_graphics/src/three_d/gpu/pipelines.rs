@@ -312,6 +312,25 @@ impl Gpu3D {
         Some(token)
     }
 
+    // Pre-compile every render-path pipeline this material can hit so its
+    // first visible draw never pays shader-module + pipeline creation.
+    // Reuses material_pipeline_kind, so cache hits make repeats free and
+    // builtin non-variant materials cost nothing (prebuilt at init).
+    pub(crate) fn warm_material_pipelines(
+        &mut self,
+        device: &wgpu::Device,
+        material: &Material3D,
+        static_shader_lookup: Option<StaticShaderLookup>,
+    ) {
+        for path in [
+            RenderPath3D::Rigid,
+            RenderPath3D::Skinned,
+            RenderPath3D::MultiMesh,
+        ] {
+            let _ = self.material_pipeline_kind(device, path, material, true, static_shader_lookup);
+        }
+    }
+
     pub(super) fn material_pipeline_kind(
         &mut self,
         device: &wgpu::Device,
