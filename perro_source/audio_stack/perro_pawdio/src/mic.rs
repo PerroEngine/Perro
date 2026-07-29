@@ -11,6 +11,13 @@ const PMIC_CODEC_PCM: u8 = 0;
 const PMIC_CODEC_ZLIB_PCM: u8 = 1;
 const PMIC_CODEC_DELTA: u8 = 2;
 const PMIC_CODEC_ZLIB_DELTA: u8 = 3;
+/// Hard ceiling on the sample count a packet header may declare.
+///
+/// Header frames/channels are attacker controlled on any network path, and the
+/// product feeds allocation sizes and decompression limits. `1 << 26` samples is
+/// ~11.6 minutes of 48 kHz stereo, far past any mic capture, while keeping the
+/// worst-case decode buffer bounded.
+const PMIC_MAX_SAMPLES: usize = 1 << 26;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct MicClip {
@@ -188,13 +195,15 @@ impl MicClip {
         let samples = match codec {
             PMIC_CODEC_PCM => decode_pcm_payload(payload, frames, channels)?,
             PMIC_CODEC_ZLIB_PCM => {
-                let decoded = perro_io::decompress_zlib_limited(payload, expected_samples * 2)
+                let limit = checked_zlib_limit(expected_samples, 2)?;
+                let decoded = perro_io::decompress_zlib_limited(payload, limit)
                     .map_err(|err| format!("mic clip zlib decode failed: {err}"))?;
                 decode_pcm_payload(&decoded, frames, channels)?
             }
             PMIC_CODEC_DELTA => decode_delta_payload(payload, expected_samples, channels)?,
             PMIC_CODEC_ZLIB_DELTA => {
-                let decoded = perro_io::decompress_zlib_limited(payload, expected_samples * 3)
+                let limit = checked_zlib_limit(expected_samples, 3)?;
+                let decoded = perro_io::decompress_zlib_limited(payload, limit)
                     .map_err(|err| format!("mic clip zlib delta decode failed: {err}"))?;
                 decode_delta_payload(&decoded, expected_samples, channels)?
             }
@@ -288,9 +297,24 @@ fn decode_pcm_payload(payload: &[u8], frames: usize, channels: u16) -> Result<Ve
 }
 
 fn checked_sample_len(frames: usize, channels: u16) -> Result<usize, String> {
-    frames
+    let len = frames
         .checked_mul(channels as usize)
-        .ok_or_else(|| "mic clip sample len overflow".to_string())
+        .ok_or_else(|| "mic clip sample len overflow".to_string())?;
+    if len > PMIC_MAX_SAMPLES {
+        return Err(format!(
+            "mic clip sample len {len} exceeds limit {PMIC_MAX_SAMPLES}"
+        ));
+    }
+    Ok(len)
+}
+
+/// Decompression ceiling for a codec that expands to `bytes_per_sample` per sample.
+///
+/// `usize` is 32-bit on wasm32, so the multiply is checked rather than assumed.
+fn checked_zlib_limit(expected_samples: usize, bytes_per_sample: usize) -> Result<usize, String> {
+    expected_samples
+        .checked_mul(bytes_per_sample)
+        .ok_or_else(|| "mic clip zlib limit overflow".to_string())
 }
 
 fn pcm_payload(samples: &[i16]) -> Vec<u8> {
@@ -342,6 +366,16 @@ fn decode_delta_payload(
     channels: u16,
 ) -> Result<Vec<i16>, String> {
     let channels = channels.max(1) as usize;
+    // Each sample costs at least one varint byte, so the payload length is a hard
+    // upper bound on decodable samples. Check before reserving: `expected_samples`
+    // comes from the packet header, and an over-large `with_capacity` aborts the
+    // process instead of returning an error.
+    if expected_samples > payload.len() {
+        return Err(format!(
+            "mic clip delta len mismatch: expect {expected_samples}, payload holds at most {}",
+            payload.len()
+        ));
+    }
     let mut prev = vec![0i16; channels];
     let mut samples = Vec::with_capacity(expected_samples);
     let mut cursor = 0usize;
@@ -833,7 +867,31 @@ fn trim_samples(samples: &mut Vec<i16>, stream_cursor: &Arc<Mutex<usize>>, max_s
 
 #[cfg(test)]
 mod tests {
-    use super::{MicClip, MicDenoiseSettings, PMIC_VERSION, PMIC_VERSION_COMPRESSED};
+    use super::{
+        MicClip, MicDenoiseSettings, PMIC_CODEC_DELTA, PMIC_CODEC_PCM, PMIC_CODEC_ZLIB_DELTA,
+        PMIC_CODEC_ZLIB_PCM, PMIC_COMPRESSED_HEADER_LEN, PMIC_MAGIC, PMIC_MAX_SAMPLES,
+        PMIC_VERSION, PMIC_VERSION_COMPRESSED,
+    };
+
+    /// Builds a v2 header with caller-chosen (possibly hostile) size fields.
+    fn v2_packet(
+        channels: u16,
+        sample_rate: u32,
+        frames: u32,
+        codec: u8,
+        payload: &[u8],
+    ) -> Vec<u8> {
+        let mut out = Vec::with_capacity(PMIC_COMPRESSED_HEADER_LEN + payload.len());
+        out.extend_from_slice(PMIC_MAGIC);
+        out.extend_from_slice(&PMIC_VERSION_COMPRESSED.to_le_bytes());
+        out.extend_from_slice(&channels.to_le_bytes());
+        out.extend_from_slice(&sample_rate.to_le_bytes());
+        out.extend_from_slice(&frames.to_le_bytes());
+        out.push(codec);
+        out.extend_from_slice(&[0, 0, 0]);
+        out.extend_from_slice(payload);
+        out
+    }
 
     #[test]
     fn mic_clip_pack_roundtrip() {
@@ -904,5 +962,77 @@ mod tests {
         let mut packed = clip.raw_bytes();
         packed[8..12].copy_from_slice(&0u32.to_le_bytes());
         assert!(MicClip::unpack(&packed).is_err());
+    }
+
+    /// Header sizes are attacker controlled. A tiny packet declaring a huge sample
+    /// count must return an error, never reach an allocation that aborts the process.
+    #[test]
+    fn mic_clip_unpack_rejects_oversized_header_sizes() {
+        for codec in [
+            PMIC_CODEC_PCM,
+            PMIC_CODEC_ZLIB_PCM,
+            PMIC_CODEC_DELTA,
+            PMIC_CODEC_ZLIB_DELTA,
+        ] {
+            let packet = v2_packet(u16::MAX, 48_000, u32::MAX, codec, &[]);
+            assert_eq!(packet.len(), PMIC_COMPRESSED_HEADER_LEN);
+            assert!(
+                MicClip::unpack(&packet).is_err(),
+                "codec {codec} accepted oversized header"
+            );
+        }
+    }
+
+    #[test]
+    fn mic_clip_unpack_v1_rejects_oversized_frame_count() {
+        let clip = MicClip::new(vec![0, 1], 48_000, 1);
+        let mut packed = clip.raw_bytes();
+        packed[12..16].copy_from_slice(&u32::MAX.to_le_bytes());
+        assert!(MicClip::unpack(&packed).is_err());
+    }
+
+    /// Under the sample ceiling, but still more samples than the payload can encode.
+    #[test]
+    fn mic_clip_unpack_rejects_delta_frames_beyond_payload() {
+        let packet = v2_packet(1, 48_000, 4096, PMIC_CODEC_DELTA, &[0; 8]);
+        assert!(MicClip::unpack(&packet).is_err());
+    }
+
+    #[test]
+    fn mic_clip_unpack_rejects_unknown_codec() {
+        let packet = v2_packet(1, 48_000, 0, 9, &[]);
+        assert!(MicClip::unpack(&packet).is_err());
+    }
+
+    #[test]
+    fn mic_clip_unpack_accepts_valid_uncompressed_codecs() {
+        let samples = vec![-32_768, -1, 0, 1, 32_767, 900];
+        let clip = MicClip::new(samples.clone(), 48_000, 2);
+        let frames = (samples.len() / 2) as u32;
+
+        let pcm = v2_packet(
+            2,
+            48_000,
+            frames,
+            PMIC_CODEC_PCM,
+            &super::pcm_payload(&samples),
+        );
+        assert_eq!(MicClip::unpack(&pcm).expect("unpack pcm codec"), clip);
+
+        let delta = v2_packet(
+            2,
+            48_000,
+            frames,
+            PMIC_CODEC_DELTA,
+            &super::delta_payload(&samples, 2),
+        );
+        assert_eq!(MicClip::unpack(&delta).expect("unpack delta codec"), clip);
+    }
+
+    /// The ceiling must stay well clear of any real capture length.
+    #[test]
+    fn mic_clip_sample_ceiling_covers_long_captures() {
+        let ten_min_48k_stereo = 48_000 * 2 * 60 * 10;
+        assert!(PMIC_MAX_SAMPLES > ten_min_48k_stereo);
     }
 }
