@@ -388,6 +388,23 @@ impl super::state::RuntimeResourceState {
         }
         self.shared_material_by_data
             .retain(|(_, shared_id)| *shared_id != id);
+        // Retire in-flight requests still naming this id. `free_material_id`
+        // below returns the slot to the pool; a later material reusing it would
+        // inherit the stale pending marker and silently skip every draw using it.
+        let stale: Vec<perro_render_bridge::RenderRequestID> = self
+            .material_pending_id_by_request
+            .iter()
+            .filter_map(|(request, pending)| (*pending == id).then_some(*request))
+            .collect();
+        for request in stale {
+            self.material_pending_id_by_request.remove(&request);
+            if let Some(source) = self.material_pending_source_by_request.remove(&request) {
+                let source_hash = perro_ids::string_to_u64(&source);
+                self.material_pending_by_source.remove(&source_hash);
+                self.material_reserve_pending.remove(&source_hash);
+                self.material_drop_pending.remove(&source_hash);
+            }
+        }
         let source = self
             .material_by_source
             .iter()

@@ -1,10 +1,10 @@
 fn parse_inherent_methods(source: &str, struct_name: &str) -> Vec<ScriptMethod> {
-    let lines: Vec<&str> = source.lines().collect();
+    let lines = lex_code_lines(source);
     let mut methods = Vec::new();
     let mut i = 0usize;
 
     while i < lines.len() {
-        let line = strip_line_comment(lines[i]).trim();
+        let line = lines[i].trim();
         if !line.starts_with("impl") {
             i += 1;
             continue;
@@ -20,8 +20,7 @@ fn parse_inherent_methods(source: &str, struct_name: &str) -> Vec<ScriptMethod> 
         i += 1;
 
         while i < lines.len() {
-            let raw_line = lines[i];
-            let l = strip_line_comment(raw_line);
+            let l = lines[i].as_str();
             if opened
                 && depth == 1
                 && let Some(method) = parse_script_method_signature(l.trim())
@@ -242,6 +241,12 @@ fn find_matching_delim_lexed(
                     i += 1;
                     continue;
                 }
+                if b == b'\''
+                    && let Some(len) = char_literal_len(bytes, i)
+                {
+                    i += len;
+                    continue;
+                }
                 if b == open as u8 {
                     depth += 1;
                 } else if b == close as u8 {
@@ -347,8 +352,7 @@ fn parse_methods_block_signatures(body: &str) -> Vec<ScriptMethod> {
     let mut sig_paren_depth: i32 = 0;
     let debug_methods = methods_debug_enabled();
 
-    for line in body.lines() {
-        let l = strip_line_comment(line);
+    for l in lex_code_lines(body) {
         let trimmed = l.trim();
 
         if depth == 0 {
@@ -397,7 +401,7 @@ fn parse_methods_block_signatures(body: &str) -> Vec<ScriptMethod> {
             }
         }
 
-        depth += brace_delta(l);
+        depth += brace_delta(&l);
     }
 
     methods

@@ -431,14 +431,18 @@ impl super::state::RuntimeResourceState {
                 mesh.is_some()
             );
         }
+        // Retire this request's pending id on every path below. `is_mesh_id_pending`
+        // scans this map by id, so an entry left behind reports the mesh as forever
+        // pending and silently skips every draw that uses it.
+        let pending_id = self.mesh_pending_id_by_request.remove(&request);
         if id.is_nil() {
+            if let Some(pending_id) = pending_id {
+                let _ = self.free_mesh_id(pending_id);
+                self.mesh_source_by_id.remove(&pending_id);
+            }
             if let Some(source) = self.mesh_pending_source_by_request.remove(&request) {
                 let source_hash = string_to_u64(&source);
                 self.mesh_pending_by_source.remove(&source_hash);
-                if let Some(pending_id) = self.mesh_pending_id_by_request.remove(&request) {
-                    let _ = self.free_mesh_id(pending_id);
-                    self.mesh_source_by_id.remove(&pending_id);
-                }
                 self.mesh_by_source.remove(&source_hash);
                 self.mesh_reserve_pending.remove(&source_hash);
                 self.mesh_drop_pending.remove(&source_hash);
@@ -450,20 +454,21 @@ impl super::state::RuntimeResourceState {
         if let Some(mesh) = mesh {
             self.mesh_data_by_id.insert(id, mesh.clone());
         }
+        if let Some(pending_id) = pending_id
+            && pending_id != id
+        {
+            // Backend resolved this request to an existing mesh id.
+            // Free the temporary pending slot to avoid mesh-id leaks/churn.
+            // Runs even when the source entry is already gone (drop/re-register
+            // race), so the alias still points readers at the live id.
+            let _ = self.free_mesh_id(pending_id);
+            self.mesh_id_alias.insert(pending_id, id);
+            self.mesh_source_by_id.remove(&pending_id);
+            self.mesh_loaded_by_id.remove(&pending_id);
+        }
         if let Some(source) = self.mesh_pending_source_by_request.remove(&request) {
             let source_hash = string_to_u64(&source);
             self.mesh_pending_by_source.remove(&source_hash);
-            let pending_id = self.mesh_pending_id_by_request.remove(&request);
-            if let Some(pending_id) = pending_id
-                && pending_id != id
-            {
-                // Backend resolved this request to an existing mesh id.
-                // Free the temporary pending slot to avoid mesh-id leaks/churn.
-                let _ = self.free_mesh_id(pending_id);
-                self.mesh_id_alias.insert(pending_id, id);
-                self.mesh_source_by_id.remove(&pending_id);
-                self.mesh_loaded_by_id.remove(&pending_id);
-            }
             if self.mesh_drop_pending.remove(&source_hash) {
                 self.queued_commands
                     .push(RenderCommand::Resource(ResourceCommand::DropMesh { id }));
@@ -492,6 +497,23 @@ impl super::state::RuntimeResourceState {
         self.mesh_loaded_by_id.remove(&id);
         self.mesh_id_alias
             .retain(|from, to| *from != id && *to != id);
+        // Retire in-flight requests still naming this id. `free_mesh_id` below
+        // returns the slot to the pool; a later mesh reusing it would inherit
+        // the stale pending marker and never draw.
+        let stale: Vec<perro_render_bridge::RenderRequestID> = self
+            .mesh_pending_id_by_request
+            .iter()
+            .filter_map(|(request, pending)| (*pending == id).then_some(*request))
+            .collect();
+        for request in stale {
+            self.mesh_pending_id_by_request.remove(&request);
+            if let Some(source) = self.mesh_pending_source_by_request.remove(&request) {
+                let source_hash = string_to_u64(&source);
+                self.mesh_pending_by_source.remove(&source_hash);
+                self.mesh_reserve_pending.remove(&source_hash);
+                self.mesh_drop_pending.remove(&source_hash);
+            }
+        }
         let source = self
             .mesh_by_source
             .iter()
@@ -517,6 +539,12 @@ impl super::state::RuntimeResourceState {
             self.mesh_by_source.remove(&source_hash);
             self.mesh_reserve_pending.remove(&source_hash);
             self.mesh_drop_pending.remove(&source_hash);
+        }
+        // Source entry may already be gone; the pending id must still be retired.
+        if let Some(pending_id) = self.mesh_pending_id_by_request.remove(&request) {
+            let _ = self.free_mesh_id(pending_id);
+            self.mesh_data_by_id.remove(&pending_id);
+            self.mesh_source_by_id.remove(&pending_id);
         }
     }
 }
@@ -616,6 +644,33 @@ mod tests {
             RenderCommand::Resource(ResourceCommand::SetMaterialReserved { id, reserved: true })
                 if *id == material
         )));
+    }
+
+    #[test]
+    fn dropping_a_mesh_retires_its_in_flight_request() {
+        let api = new_api();
+        let res = ResourceWindow::new(api.as_ref());
+        let mesh = mesh_load!(res, "res://meshes/gc_race.glb:mesh[0]");
+        assert!(api.is_mesh_id_pending(mesh));
+
+        // GC drops the slot while the create is still in flight. The freed slot
+        // can be handed to an unrelated mesh, so no pending marker may survive:
+        // `resolve_render_mesh_id` skips the draw for any id reported pending.
+        api.apply_render_event(&RenderEvent::MeshDropped { id: mesh });
+
+        assert!(!api.is_mesh_id_pending(mesh));
+    }
+
+    #[test]
+    fn dropping_a_material_retires_its_in_flight_request() {
+        let api = new_api();
+        let res = ResourceWindow::new(api.as_ref());
+        let material = material_load!(res, "res://materials/gc_race.pmat");
+        assert!(api.is_material_id_pending(material));
+
+        api.apply_render_event(&RenderEvent::MaterialDropped { id: material });
+
+        assert!(!api.is_material_id_pending(material));
     }
 
     #[test]

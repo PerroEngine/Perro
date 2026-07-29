@@ -164,6 +164,79 @@ fn script_index_reads_state_fields_and_methods_macro() {
 }
 
 #[test]
+fn script_index_keeps_methods_after_res_url_opening_a_block() {
+    let mut index = ScriptDoctorIndex::default();
+    index_script_source(
+        Path::new("res/scripts/main.rs"),
+        r#"
+            #[State]
+            pub struct PlayerState {
+                pub hp: i32,
+            }
+
+            methods!({
+                fn alpha(&self, ctx: &mut ScriptContext<'_, API>) {
+                    if ctx.scene_path() == "res://ui/raw_export.scn" {
+                        let _ = ctx.id;
+                    }
+                }
+
+                fn beta(&self, ctx: &mut ScriptContext<'_, API>) {}
+            });
+            "#,
+        &mut index,
+    );
+
+    assert!(index.methods.contains("alpha"));
+    assert!(index.methods.contains("beta"));
+}
+
+#[test]
+fn script_index_ignores_braces_in_char_literals() {
+    let mut index = ScriptDoctorIndex::default();
+    index_script_source(
+        Path::new("res/scripts/main.rs"),
+        r#"
+            methods!({
+                fn alpha(&self, ctx: &mut ScriptContext<'_, API>) {
+                    let open = '{';
+                    let quote = '"';
+                    let _ = (open, quote, ctx.id);
+                }
+
+                fn beta(&self, ctx: &mut ScriptContext<'_, API>) {}
+            });
+            "#,
+        &mut index,
+    );
+
+    assert!(index.methods.contains("alpha"));
+    assert!(index.methods.contains("beta"));
+}
+
+#[test]
+fn script_index_ignores_braces_in_block_comments() {
+    let mut index = ScriptDoctorIndex::default();
+    index_script_source(
+        Path::new("res/scripts/main.rs"),
+        r#"
+            methods!({
+                fn alpha(&self, ctx: &mut ScriptContext<'_, API>) {
+                    /* stray } brace + fn ghost( in block comment */
+                    let _ = ctx.id;
+                }
+
+                fn beta(&self, ctx: &mut ScriptContext<'_, API>) {}
+            });
+            "#,
+        &mut index,
+    );
+
+    assert!(index.methods.contains("alpha"));
+    assert!(index.methods.contains("beta"));
+}
+
+#[test]
 fn script_member_checks_warn_missing_members_and_ctx_id_hints() {
     let file = PathBuf::from("res/scripts/main.rs");
     let text = r#"

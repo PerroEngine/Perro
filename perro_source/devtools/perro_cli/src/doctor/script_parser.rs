@@ -65,7 +65,7 @@ pub(super) fn parse_enum_name_from_line(line: &str) -> Option<String> {
 }
 
 pub(super) fn parse_struct_fields(text: &str, struct_name: &str) -> Vec<DoctorField> {
-    let lines: Vec<&str> = text.lines().collect();
+    let lines = lex_code_lines_for_doctor(text);
     let Some(start) = lines
         .iter()
         .position(|line| parse_struct_name_from_line(line.trim()).as_deref() == Some(struct_name))
@@ -78,7 +78,7 @@ pub(super) fn parse_struct_fields(text: &str, struct_name: &str) -> Vec<DoctorFi
     let mut opened = false;
     let mut pending_node_ref_types = Vec::new();
     for line in lines.iter().skip(start) {
-        let line = strip_line_comment_for_doctor(line);
+        let line = line.as_str();
         if !opened {
             if let Some(pos) = line.find('{') {
                 opened = true;
@@ -117,7 +117,7 @@ pub(super) fn parse_struct_fields(text: &str, struct_name: &str) -> Vec<DoctorFi
 }
 
 pub(super) fn parse_enum_fields(text: &str, enum_name: &str) -> Vec<DoctorField> {
-    let lines: Vec<&str> = text.lines().collect();
+    let lines = lex_code_lines_for_doctor(text);
     let Some(start) = lines
         .iter()
         .position(|line| parse_enum_name_from_line(line.trim()).as_deref() == Some(enum_name))
@@ -130,7 +130,7 @@ pub(super) fn parse_enum_fields(text: &str, enum_name: &str) -> Vec<DoctorField>
     let mut variant_field_depth = 0_i32;
     let mut opened = false;
     for line in lines.iter().skip(start) {
-        let line = strip_line_comment_for_doctor(line);
+        let line = line.as_str();
         if !opened {
             if let Some(pos) = line.find('{') {
                 opened = true;
@@ -283,11 +283,11 @@ pub(super) fn parse_methods_macro_body(inner: &str) -> Option<&str> {
 }
 
 pub(super) fn parse_inherent_method_names(text: &str) -> Vec<String> {
-    let lines: Vec<&str> = text.lines().collect();
+    let lines = lex_code_lines_for_doctor(text);
     let mut names = Vec::new();
     let mut i = 0usize;
     while i < lines.len() {
-        let line = strip_line_comment_for_doctor(lines[i]).trim();
+        let line = lines[i].trim();
         if !line.starts_with("impl") || line.contains(" for ") {
             i += 1;
             continue;
@@ -296,7 +296,7 @@ pub(super) fn parse_inherent_method_names(text: &str) -> Vec<String> {
         let mut opened = line.contains('{');
         i += 1;
         while i < lines.len() {
-            let l = strip_line_comment_for_doctor(lines[i]);
+            let l = lines[i].as_str();
             if opened
                 && depth == 1
                 && let Some(name) = parse_fn_name_for_doctor(l.trim())
@@ -322,8 +322,7 @@ pub(super) fn parse_method_names_from_block(body: &str) -> Vec<String> {
     let mut depth = 0_i32;
     let mut sig_buf: Option<String> = None;
     let mut sig_paren_depth = 0_i32;
-    for line in body.lines() {
-        let line = strip_line_comment_for_doctor(line);
+    for line in lex_code_lines_for_doctor(body) {
         let trimmed = line.trim();
         if depth == 0 {
             if let Some(buf) = sig_buf.as_mut() {
@@ -349,7 +348,7 @@ pub(super) fn parse_method_names_from_block(body: &str) -> Vec<String> {
                 }
             }
         }
-        depth += brace_delta_for_doctor(line);
+        depth += brace_delta_for_doctor(&line);
     }
     names
 }

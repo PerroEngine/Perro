@@ -470,6 +470,95 @@ mod locking_paths {
     }
 
     #[test]
+    fn methods_scan_keeps_fns_after_res_url_opening_a_block() {
+        let source = r#"
+    use perro_api::prelude::*;
+
+    methods!({
+    fn alpha(
+        &self,
+        ctx: &mut ScriptContext<'_, API>,
+    ) {
+        if ctx.scene_path() == "res://ui/raw_export.scn" {
+            let _ = ctx.id;
+        }
+    }
+
+    fn beta(
+        &self,
+        ctx: &mut ScriptContext<'_, API>,
+    ) {
+        let _ = "res://a.scn";
+    }
+
+    fn gamma(
+        &self,
+        ctx: &mut ScriptContext<'_, API>,
+    ) {}
+    });
+    "#;
+
+        let transpiled = transpile_frontend_script(source, "res://tests/res_url_methods.rs");
+        assert_methods_emitted(&transpiled, &["alpha", "beta", "gamma"]);
+    }
+
+    #[test]
+    fn methods_scan_ignores_braces_in_char_literals_and_block_comments() {
+        let source = r#"
+    use perro_api::prelude::*;
+
+    methods!(Script {
+    fn alpha(
+        &self,
+        ctx: &mut ScriptContext<'_, API>,
+    ) {
+        let open = '{';
+        let close = '}';
+        let quote = '"';
+        /* block comment w/ stray } and fn ghost( and "res://x" */
+        let _ = (open, close, quote, ctx.id);
+    }
+
+    fn beta(
+        &self,
+        ctx: &mut ScriptContext<'_, API>,
+    ) {}
+    });
+    "#;
+
+        let transpiled = transpile_frontend_script(source, "res://tests/char_literal_methods.rs");
+        assert_methods_emitted(&transpiled, &["alpha", "beta"]);
+    }
+
+    #[test]
+    fn inherent_impl_scan_keeps_fns_after_res_url_opening_a_block() {
+        let source = r#"
+    use perro_api::prelude::*;
+
+    #[State]
+    pub struct UiState {
+    #[default = false]
+    pub ready: bool,
+    }
+
+    lifecycle!({});
+
+    impl Script {
+        fn alpha(&self, ctx: &mut ScriptContext<'_, API>) {
+            if ctx.scene_path() == "res://ui/raw_export.scn" {
+                let _ = ctx.id;
+            }
+        }
+
+        fn beta(&self, ctx: &mut ScriptContext<'_, API>) {}
+    }
+    "#;
+
+        let transpiled = transpile_frontend_script(source, "res://tests/res_url_impl.rs");
+        assert_methods_emitted(&transpiled, &["alpha", "beta"]);
+    }
+
+    #[test]
     fn transpiles_bool_method_return_into_variant() {
         let source = r#"
     use perro_api::prelude::*;

@@ -1,5 +1,5 @@
 fn parse_struct_fields(source: &str, struct_name: &str) -> Vec<ScriptField> {
-    let lines: Vec<&str> = source.lines().collect();
+    let lines = lex_code_lines(source);
     let mut struct_line = None;
     for (i, line) in lines.iter().enumerate() {
         if parse_struct_name(line.trim()) == Some(struct_name.to_string()) {
@@ -17,8 +17,7 @@ fn parse_struct_fields(source: &str, struct_name: &str) -> Vec<ScriptField> {
     let mut i = start;
 
     while i < lines.len() {
-        let raw_line = lines[i];
-        let line = strip_line_comment(raw_line);
+        let line = lines[i].as_str();
         if !opened {
             if let Some(pos) = line.find('{') {
                 opened = true;
@@ -53,8 +52,177 @@ fn parse_struct_fields(source: &str, struct_name: &str) -> Vec<ScriptField> {
     fields
 }
 
-fn strip_line_comment(line: &str) -> &str {
-    line.split("//").next().unwrap_or(line)
+/// lex state carried btw lines: comments + strs span lines
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum CodeLexState {
+    Code,
+    BlockComment(usize),
+    Str { escaped: bool },
+    RawStr(usize),
+}
+
+/// blank comments + delims inside str/char literals, per line
+/// kp code layout + str text -> brace/paren counts see code only
+/// `"res://x"` no longer read as line comment start
+fn lex_code_lines(source: &str) -> Vec<String> {
+    let mut state = CodeLexState::Code;
+    source
+        .lines()
+        .map(|line| lex_code_line(line, &mut state))
+        .collect()
+}
+
+fn lex_code_line(line: &str, state: &mut CodeLexState) -> String {
+    let bytes = line.as_bytes();
+    let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
+    let mut i = 0usize;
+
+    while i < bytes.len() {
+        let b = bytes[i];
+        match *state {
+            CodeLexState::Code => {
+                if b == b'/' && bytes.get(i + 1) == Some(&b'/') {
+                    break;
+                }
+                if b == b'/' && bytes.get(i + 1) == Some(&b'*') {
+                    *state = CodeLexState::BlockComment(1);
+                    push_blanks(&mut out, 2);
+                    i += 2;
+                    continue;
+                }
+                if let Some((prefix_len, hashes)) = raw_string_start_at(bytes, i) {
+                    *state = CodeLexState::RawStr(hashes);
+                    push_blanks(&mut out, prefix_len);
+                    i += prefix_len;
+                    continue;
+                }
+                if b == b'"' {
+                    *state = CodeLexState::Str { escaped: false };
+                    out.push(b'"');
+                    i += 1;
+                    continue;
+                }
+                if b == b'\''
+                    && let Some(len) = char_literal_len(bytes, i)
+                {
+                    push_blanks(&mut out, len);
+                    i += len;
+                    continue;
+                }
+                out.push(b);
+                i += 1;
+            }
+            CodeLexState::BlockComment(depth) => {
+                if b == b'/' && bytes.get(i + 1) == Some(&b'*') {
+                    *state = CodeLexState::BlockComment(depth + 1);
+                    push_blanks(&mut out, 2);
+                    i += 2;
+                    continue;
+                }
+                if b == b'*' && bytes.get(i + 1) == Some(&b'/') {
+                    *state = if depth <= 1 {
+                        CodeLexState::Code
+                    } else {
+                        CodeLexState::BlockComment(depth - 1)
+                    };
+                    push_blanks(&mut out, 2);
+                    i += 2;
+                    continue;
+                }
+                push_blanks(&mut out, 1);
+                i += 1;
+            }
+            CodeLexState::Str { escaped } => {
+                if escaped {
+                    *state = CodeLexState::Str { escaped: false };
+                } else if b == b'\\' {
+                    *state = CodeLexState::Str { escaped: true };
+                } else if b == b'"' {
+                    *state = CodeLexState::Code;
+                    out.push(b'"');
+                    i += 1;
+                    continue;
+                }
+                push_literal_byte(&mut out, b);
+                i += 1;
+            }
+            CodeLexState::RawStr(hashes) => {
+                if b == b'"' && raw_string_end_at(bytes, i, hashes) {
+                    *state = CodeLexState::Code;
+                    push_blanks(&mut out, 1 + hashes);
+                    i += 1 + hashes;
+                    continue;
+                }
+                push_literal_byte(&mut out, b);
+                i += 1;
+            }
+        }
+    }
+
+    String::from_utf8(out).unwrap_or_else(|_| line.to_string())
+}
+
+fn push_blanks(out: &mut Vec<u8>, count: usize) {
+    out.extend(std::iter::repeat_n(b' ', count));
+}
+
+/// kp str text 4 attr readers, blank delims only
+fn push_literal_byte(out: &mut Vec<u8>, b: u8) {
+    if matches!(b, b'{' | b'}' | b'(' | b')' | b'[' | b']') {
+        out.push(b' ');
+    } else {
+        out.push(b);
+    }
+}
+
+/// ret byte len of char literal @ i, else None (= lifetime tick)
+/// stop `'{'` / `'('` from skewing depth counts
+fn char_literal_len(bytes: &[u8], i: usize) -> Option<usize> {
+    if bytes.get(i) != Some(&b'\'') {
+        return None;
+    }
+
+    let mut j = i + 1;
+    if bytes.get(j) == Some(&b'\\') {
+        j += 1;
+        match bytes.get(j)? {
+            b'u' => {
+                j += 1;
+                if bytes.get(j) != Some(&b'{') {
+                    return None;
+                }
+                while bytes.get(j) != Some(&b'}') {
+                    j += 1;
+                    if j >= bytes.len() {
+                        return None;
+                    }
+                }
+                j += 1;
+            }
+            b'x' => j += 3,
+            _ => j += 1,
+        }
+    } else {
+        j += utf8_char_width(*bytes.get(j)?);
+    }
+
+    (bytes.get(j) == Some(&b'\'')).then_some(j + 1 - i)
+}
+
+fn utf8_char_width(b: u8) -> usize {
+    match b {
+        0x00..=0x7F => 1,
+        0xC0..=0xDF => 2,
+        0xE0..=0xEF => 3,
+        _ => 4,
+    }
+}
+
+fn raw_string_end_at(bytes: &[u8], i: usize, hashes: usize) -> bool {
+    if bytes.get(i) != Some(&b'"') {
+        return false;
+    }
+    (0..hashes).all(|offset| bytes.get(i + 1 + offset) == Some(&b'#'))
 }
 
 fn brace_delta(line: &str) -> i32 {
