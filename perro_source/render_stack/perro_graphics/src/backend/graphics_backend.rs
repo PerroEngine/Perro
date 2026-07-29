@@ -8,6 +8,9 @@ impl GraphicsBackend for PerroGraphics {
                 if self.pending_gpu.is_some() {
                     return;
                 }
+                // wasm is single-threaded; Arc+Mutex only bridge the
+                // spawn_local boundary, never cross threads.
+                #[allow(clippy::arc_with_non_send_sync)]
                 let slot = Arc::new(Mutex::new(None));
                 let slot_clone = slot.clone();
                 let cfg = GpuConfig {
@@ -30,7 +33,6 @@ impl GraphicsBackend for PerroGraphics {
                 });
                 self.pending_gpu = Some(slot);
                 self.redraw_requested = true;
-                return;
             }
             #[cfg(not(target_arch = "wasm32"))]
             {

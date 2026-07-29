@@ -249,11 +249,7 @@ impl Runtime {
         (pending, total)
     }
 
-    pub(crate) fn invalidate_3d_mesh_draws_using_material(&mut self, material: MaterialID) {
-        self.invalidate_3d_mesh_draws_using_materials(&[material]);
-    }
-
-    // batched variant: 1 node pass covers every material in the slice. load
+    // batched: 1 node pass covers every material in the slice. load
     // storms deliver many MaterialLoaded events per frame; per-material passes
     // were O(materials × nodes).
     pub(crate) fn invalidate_3d_mesh_draws_using_materials(&mut self, materials: &[MaterialID]) {

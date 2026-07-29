@@ -6,7 +6,9 @@ use perro_graphics::{
     GraphicsBackend, OcclusionCullingMode, PerroGraphics, SsaoQuality as GraphicsSsaoQuality,
 };
 pub use perro_runtime::{FrameRateCap, OcclusionCulling, ParticleSimDefault};
-use perro_runtime::{ProjectLoadError, ProviderMode, Runtime, RuntimeProject, WindowRequest};
+use perro_runtime::{ProjectLoadError, ProviderMode, Runtime, RuntimeProject};
+#[cfg(not(target_arch = "wasm32"))]
+use perro_runtime::WindowRequest;
 use perro_scripting::ScriptConstructor;
 use std::path::Path;
 #[cfg(not(target_arch = "wasm32"))]

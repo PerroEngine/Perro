@@ -357,10 +357,11 @@ impl Runtime {
         if let Some(node) = decode_render_request_node_from_event(&event) {
             self.mark_needs_rerender(node);
         }
-        if let RenderEvent::MaterialLoaded { id } = &event {
-            if !id.is_nil() && !self.pending_material_invalidations.contains(id) {
-                self.pending_material_invalidations.push(*id);
-            }
+        if let RenderEvent::MaterialLoaded { id } = &event
+            && !id.is_nil()
+            && !self.pending_material_invalidations.contains(id)
+        {
+            self.pending_material_invalidations.push(*id);
         }
         if matches!(
             event,

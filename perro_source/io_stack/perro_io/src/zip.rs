@@ -166,7 +166,9 @@ pub fn extract_zip_file_with_limits(
         match result {
             Ok(written) => total_bytes = total_bytes.saturating_add(written),
             Err(err) => {
-                drop(out);
+                // close handle b4 remove_file (Windows locks open files);
+                // `let _` form cuz wasm File stub has no Drop impl.
+                let _ = out;
                 let _ = fs::remove_file(&target);
                 return Err(err);
             }

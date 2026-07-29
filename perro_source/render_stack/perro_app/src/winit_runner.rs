@@ -1045,6 +1045,8 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler<RunnerUserEvent>
 
 impl<B: GraphicsBackend> Drop for RunnerState<B> {
     fn drop(&mut self) {
+        // multiplayer module is native-only (cfg'd out on wasm32).
+        #[cfg(not(target_arch = "wasm32"))]
         perro_api::networking::multiplayer::disconnect();
         self.reset_mouse_mode_for_exit();
     }
