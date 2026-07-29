@@ -49,6 +49,35 @@ Examples:
 - `MaterialID` for material swaps
 - `AudioID` or runtime audio values for sounds
 
+## Loading Screens
+
+Assigning an ID before the load finishes is normal. Do not poll for it.
+
+One case does need the wait: a transition the player watches.
+
+A mesh whose mesh or material is still loading is skipped, not drawn late.
+
+Dismiss a loading screen early and the level appears with holes in it.
+
+Ask the scene graph instead of tracking a list:
+
+```rust
+if scene_assets_ready!(ctx.run) {
+    // every mesh draw in the live graph can render
+}
+```
+
+`scene_asset_progress!(ctx.run)` returns `(pending, total)` for a loading bar.
+
+That only sees nodes that exist. For a scene not spawned yet, warm the paths
+with `mesh_reserve!` and poll `mesh_is_loaded!`.
+
+Always bound the wait by frames and start anyway.
+
+A missing file re-requests forever, and a hang is worse than pop-in.
+
+See [Loading Gates](/docs/resources/resource_management.md#loading-gates).
+
 ## Scenes And Refs
 
 Scene files can wire script vars.
@@ -118,6 +147,7 @@ Use resource APIs to load and query CSV.
 ## Reference
 
 - [Resource Management](/docs/resources/resource_management.md)
+- [Scenes Module](/docs/scripting/contexts/runtime_modules/scenes.md)
 - [ResPath](/docs/resources/respath.md)
 - [Resource API](/docs/scripting/contexts/resource_api.md)
 - [Textures Module](/docs/scripting/contexts/resource_modules/textures.md)

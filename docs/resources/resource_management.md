@@ -13,6 +13,7 @@
 | Ref Counts        | [Ref Counts](#ref-counts)               |
 | Auto Drop         | [Auto Drop](#auto-drop)                 |
 | GC Cadence        | [GC Cadence](#gc-cadence)               |
+| Loading Gates     | [Loading Gates](#loading-gates)         |
 | Performance Model | [Performance Model](#performance-model) |
 | Examples          | [Examples](#examples)                   |
 
@@ -63,6 +64,8 @@ Release builds usually load much faster, but the contract stays the same, with n
 
 Use `*_is_loaded!` only when gameplay needs to branch on readiness.
 Do not wait on it just to assign a mesh, texture, or material to a node.
+The one case that does need the wait is a transition the player watches: see
+[Loading Gates](#loading-gates).
 
 ## Runtime Bytes
 
@@ -233,6 +236,116 @@ If 1000 textures expire at once, GC drops at most 64 textures in one churn, then
 This avoids one large stall.
 
 If a resource gains a ref before the next GC churn, age resets and it stays alive.
+
+## Loading Gates
+
+A mesh draw whose mesh or any surface material is still resolving is not drawn
+late. It is skipped for that frame. Nothing about the node looks wrong: the
+transform updates, the light lands on it, the node reports visible. It just
+contributes no geometry until every asset it needs is resident.
+
+That is fine for a crate swapped mid-fight. It is not fine for a level swap,
+where the player sees a partial world and has no way to tell it is still filling
+in. Gate those transitions.
+
+### What To Gate On
+
+Two questions, two APIs.
+
+"Can everything already spawned draw?" is the scene graph's question. The
+runtime already tracks it:
+
+```rust
+let (pending, total) = scene_asset_progress!(ctx.run);
+if scene_assets_ready!(ctx.run) {
+    // every mesh draw in the live graph can render
+}
+```
+
+`pending` counts mesh draws the renderer must currently skip. It needs no
+manifest and cannot go stale when a scene gains an asset, because it reads the
+nodes that exist right now.
+
+"Is the thing I am about to spawn ready?" is a different question, and
+`scene_asset_progress!` cannot answer it. Nodes that do not exist yet are not in
+the graph. For that, warm the paths ahead of time and poll them:
+
+```rust
+const MATCH_MESHES: [&str; 2] = [
+    "res://models/arena.glb:mesh[0]",
+    "res://models/crate.glb:mesh[0]",
+];
+
+fn warm<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    for path in MATCH_MESHES {
+        let _ = mesh_reserve!(ctx.res, path);
+    }
+}
+
+fn warms_ready<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) -> bool {
+    MATCH_MESHES.iter().all(|path| {
+        let mesh = mesh_load!(ctx.res, *path);
+        !mesh.is_nil() && mesh_is_loaded!(ctx.res, mesh)
+    })
+}
+```
+
+Use `reserve`, not `load`, for a warm. A warm that finishes early sits at zero
+refs until the scene spawns and takes one; `reserve` is what keeps GC off it
+during that window. Polling with `mesh_load!` is also the recovery path, because
+`load` re-issues the create if the source was dropped.
+
+A full transition gate is both halves summed:
+
+```rust
+let pending = warms_pending(ctx) + scene_asset_progress!(ctx.run).0;
+```
+
+### When Not To Gate
+
+Do not gate a single assignment. Assign the ID and let the renderer bind it when
+ready; a couple of frames is imperceptible and polling first only adds state.
+Gate when the player would otherwise watch a world assemble itself: level
+transitions, match start, a loading screen you are about to dismiss.
+
+### Warm Paths Must Match The Resolved Source
+
+A warm keyed on the wrong string silently warms an entry nothing else uses. The
+key is the source the loader resolves, not the text in the scene file.
+
+| Authored                             | Resolved sources                               |
+| ------------------------------------ | ---------------------------------------------- |
+| `mesh = "res://models/x.glb:mesh[0]"` | `res://models/x.glb:mesh[0]`                   |
+| `model = "res://models/x.glb"`        | `res://models/x.glb:mesh[0]` + `...glb:mat[0]` |
+| `material = "res://materials/y.pmat"` | `res://materials/y.pmat`                       |
+
+A `model =` node needs both suffixed entries warmed. Warming the bare `.glb`
+path creates a third, unrelated resource and gates on nothing. Assert the suffix
+in a test if the list is long enough to typo.
+
+### Always Give The Gate A Way Out
+
+A missing or failed asset re-requests forever, so a gate that waits for
+`pending == 0` with no bound hangs the game on a bad file. Bound every gate by
+frames and fall through with a log:
+
+```rust
+if !ready && waited < ASSET_WAIT_FRAMES {
+    return;
+}
+if !ready {
+    log_error!("[load] starting with {} assets pending", pending);
+}
+```
+
+Pop-in is a visual bug. A hang is a lost session. Prefer the pop-in.
+
+### Progress Display
+
+`scene_asset_progress!` returns `(pending, total)`, so a loading bar can show
+`1.0 - pending / total` without a second counter. `total` counts every mesh draw
+in the graph, not only the incoming scene, so the ratio moves smoothly but does
+not start at zero.
 
 ## Performance Model
 

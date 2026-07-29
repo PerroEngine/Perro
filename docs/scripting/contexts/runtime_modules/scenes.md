@@ -17,10 +17,16 @@
 | `free_preloaded` | [`free_preloaded`](#free_preloaded) |
 | `drop_preloaded` | [`drop_preloaded`](#drop_preloaded) |
 | `drop_preloaded_hashed` | [`drop_preloaded_hashed`](#drop_preloaded_hashed) |
+| `asset_progress` | [`asset_progress`](#asset_progress) |
+| `assets_pending` | [`assets_pending`](#assets_pending) |
+| `assets_ready` | [`assets_ready`](#assets_ready) |
 | `scene_load` | [`scene_load`](#scene_load) |
 | `scene_preload` | [`scene_preload`](#scene_preload) |
 | `scene_free_preloaded` | [`scene_free_preloaded`](#scene_free_preloaded) |
 | `scene_drop_preloaded` | [`scene_drop_preloaded`](#scene_drop_preloaded) |
+| `scene_asset_progress` | [`scene_asset_progress`](#scene_asset_progress) |
+| `scene_assets_pending` | [`scene_assets_pending`](#scene_assets_pending) |
+| `scene_assets_ready` | [`scene_assets_ready`](#scene_assets_ready) |
 
 ## Purpose
 
@@ -38,6 +44,8 @@ hot path so the actual swap does not hitch mid-action.
 - Spawn a prefab instance (enemy squad, pickup, particle burst): `scene_load!` a small scene and reparent its root under a spawn-point node.
 - Main-menu "Play": load the first gameplay scene from the button handler.
 - Reclaim memory once an area is behind the player: `scene_free_preloaded!(ctx.run, "res://levels/boss.pscene")` or `scene_drop_preloaded!`.
+- Hold a loading screen until the swapped-in level can actually draw: `scene_assets_ready!(ctx.run)`. A mesh whose material is still resolving is skipped, not drawn late, so dismissing the cover early shows a world with holes in it. Bound the wait by frames and fall through, or a bad asset hangs the transition. See [Loading Gates](../../../resources/resource_management.md#loading-gates).
+- Drive a loading bar: `scene_asset_progress!(ctx.run)` returns `(pending, total)` mesh draws, so the ratio needs no separate counter.
 
 ## Context
 
@@ -170,6 +178,39 @@ methods!({
 | Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
 | Fails when / edge behavior | Returns `false` when `drop_preloaded_hashed` cannot apply to the supplied target or inputs; `true` confirms success. |
 
+### `asset_progress`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Scene()` |
+| Signature | `pub fn asset_progress(&mut self) -> (u32, u32)` |
+| Params | `&mut self` |
+| Returns | `(pending, total)` mesh draws in the live scene graph |
+| Use when | Gating a transition or driving a loading bar. `pending` counts mesh draws the renderer must skip because the mesh or a surface material is still resolving; such a draw contributes no geometry rather than appearing late. |
+| Fails when / edge behavior | Never fails. Counts only what is instantiated, so assets for a scene you have not spawned yet read as ready; warm those with `mesh_reserve!` and poll `mesh_is_loaded!` alongside this. Walks every node, so poll it during loading rather than every frame of gameplay. |
+
+### `assets_pending`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Scene()` |
+| Signature | `pub fn assets_pending(&mut self) -> u32` |
+| Params | `&mut self` |
+| Returns | `u32` |
+| Use when | Only the pending count matters, typically for a log line naming how many draws are still blocked. |
+| Fails when / edge behavior | Same scan and same limits as `asset_progress`; drops the total. |
+
+### `assets_ready`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Scene()` |
+| Signature | `pub fn assets_ready(&mut self) -> bool` |
+| Params | `&mut self` |
+| Returns | `bool` |
+| Use when | The gate condition itself: true when every mesh draw in the live graph can render. |
+| Fails when / edge behavior | A missing or failed asset re-requests forever, so this can stay false indefinitely. Bound the wait by frames and start anyway with a log; a hang is worse than pop-in. |
+
 ### `scene_load`
 
 | Field | Detail |
@@ -213,4 +254,37 @@ methods!({
 | Returns | `bool or () as shown by backing method` |
 | Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
 | Fails when / edge behavior | Returns `false` when `scene_drop_preloaded` cannot apply to the supplied target or inputs; `true` confirms success. |
+
+### `scene_asset_progress`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Scene()` |
+| Signature | `scene_asset_progress!(ctx.run)` |
+| Params | `ctx` |
+| Returns | `(u32, u32)` |
+| Use when | Wraps `asset_progress` for loading bars and transition gates. |
+| Fails when / edge behavior | Uses the backing `asset_progress` return and behavior unchanged; the wrapper adds no coercion or fallback. |
+
+### `scene_assets_pending`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Scene()` |
+| Signature | `scene_assets_pending!(ctx.run)` |
+| Params | `ctx` |
+| Returns | `u32` |
+| Use when | Wraps `assets_pending` for diagnostics. |
+| Fails when / edge behavior | Uses the backing `assets_pending` return and behavior unchanged; the wrapper adds no coercion or fallback. |
+
+### `scene_assets_ready`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Scene()` |
+| Signature | `scene_assets_ready!(ctx.run)` |
+| Params | `ctx` |
+| Returns | `bool` |
+| Use when | Wraps `assets_ready` as the gate condition. |
+| Fails when / edge behavior | Uses the backing `assets_ready` return and behavior unchanged; the wrapper adds no coercion or fallback. |
 

@@ -287,6 +287,13 @@ pub trait SceneAPI {
     fn scene_free_preloaded_by_path_hash(&mut self, path_hash: u64, path: &str) -> bool {
         self.scene_drop_preloaded_by_path_hash(path_hash, path)
     }
+    /// `(pending, total)` mesh draws in the live scene graph, where pending
+    /// means the node's mesh or one of its surface materials is not resident
+    /// yet. Such a draw is skipped entirely, so a loading screen that waits for
+    /// `pending == 0` is waiting for the graph to be able to render.
+    fn scene_asset_progress(&mut self) -> (u32, u32) {
+        (0, 0)
+    }
 }
 
 pub struct SceneModule<'rt, R: SceneAPI + ?Sized> {
@@ -386,6 +393,42 @@ impl<'rt, R: SceneAPI + ?Sized> SceneModule<'rt, R> {
     pub fn drop_preloaded_hashed(&mut self, path_hash: u64, path: &str) -> bool {
         self.rt.scene_drop_preloaded_by_path_hash(path_hash, path)
     }
+
+    pub fn asset_progress(&mut self) -> (u32, u32) {
+        self.rt.scene_asset_progress()
+    }
+
+    pub fn assets_pending(&mut self) -> u32 {
+        self.rt.scene_asset_progress().0
+    }
+
+    pub fn assets_ready(&mut self) -> bool {
+        self.rt.scene_asset_progress().0 == 0
+    }
+}
+
+/// `(pending, total)` mesh draws whose assets are still resolving.
+#[macro_export]
+macro_rules! scene_asset_progress {
+    ($ctx:expr) => {
+        $ctx.Scene().asset_progress()
+    };
+}
+
+/// Count of mesh draws the renderer must currently skip for missing assets.
+#[macro_export]
+macro_rules! scene_assets_pending {
+    ($ctx:expr) => {
+        $ctx.Scene().assets_pending()
+    };
+}
+
+/// True when every mesh draw in the live scene graph can render.
+#[macro_export]
+macro_rules! scene_assets_ready {
+    ($ctx:expr) => {
+        $ctx.Scene().assets_ready()
+    };
 }
 
 #[macro_export]

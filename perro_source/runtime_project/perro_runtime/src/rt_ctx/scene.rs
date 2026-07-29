@@ -33,6 +33,10 @@ impl SceneAPI for Runtime {
             .map_err(LoadError::Legacy)
     }
 
+    fn scene_asset_progress(&mut self) -> (u32, u32) {
+        self.scene_mesh_asset_progress()
+    }
+
     fn scene_preload(&mut self, path: &str) -> Result<PreloadedSceneID, String> {
         self.scene_preload_typed(path)
             .map_err(|err| err.to_string())
