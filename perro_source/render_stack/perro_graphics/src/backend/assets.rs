@@ -446,6 +446,45 @@ impl PerroGraphics {
         }
 
         let mut gpu_timing = RenderGpuTiming::default();
+        // streams whose 3D draws use time-reading custom shaders must
+        // re-render every frame; the rest may idle-skip inside gpu.render.
+        let mut animated_streams = std::mem::take(&mut self.animated_stream_nodes_scratch);
+        animated_streams.clear();
+        {
+            let cache = &mut self.custom_shader_animated_cache;
+            let lookup = self.static_shader_lookup;
+            for (node, stream) in &self.retained_camera_streams {
+                let animated = stream.draws_3d.iter().any(|draw| {
+                    let surfaces = match draw {
+                        perro_render_bridge::CameraStreamDraw3DState::Draw { surfaces, .. }
+                        | perro_render_bridge::CameraStreamDraw3DState::DrawMulti {
+                            surfaces, ..
+                        }
+                        | perro_render_bridge::CameraStreamDraw3DState::DrawMultiDense {
+                            surfaces,
+                            ..
+                        } => surfaces,
+                        perro_render_bridge::CameraStreamDraw3DState::CameraStreamQuad {
+                            ..
+                        } => return false,
+                    };
+                    surfaces.iter().any(|surface| {
+                        surface
+                            .material
+                            .and_then(|material| self.resources.custom_shader_path(material))
+                            .is_some_and(|path| {
+                                let key = perro_ids::string_to_u64(path);
+                                *cache.entry(key).or_insert_with(|| {
+                                    custom_shader_reads_frame_globals(path, lookup)
+                                })
+                            })
+                    })
+                });
+                if animated {
+                    animated_streams.insert(*node);
+                }
+            }
+        }
         if let Some(gpu) = &mut self.gpu {
             // compile pipelines 4 materials that arrived this frame while
             // their meshes/textures still load async => first draw skips
@@ -502,6 +541,7 @@ impl PerroGraphics {
                 static_texture_lookup: self.static_texture_lookup,
                 static_mesh_lookup: self.static_mesh_lookup,
                 static_shader_lookup: self.static_shader_lookup,
+                animated_stream_nodes: &animated_streams,
             });
             let mut water_samples = Vec::new();
             gpu.drain_water_samples(&mut water_samples);
@@ -519,6 +559,7 @@ impl PerroGraphics {
             }
             self.redraw_requested = !gpu_timing.presented;
         }
+        self.animated_stream_nodes_scratch = animated_streams;
         let timing = DrawFrameTiming {
             process_commands,
             prepare_cpu,

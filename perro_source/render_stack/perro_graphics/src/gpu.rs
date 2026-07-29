@@ -555,6 +555,9 @@ pub struct Gpu {
     water: Option<GpuWater>,
     camera_stream_targets: AHashMap<NodeID, GpuCameraStreamTarget>,
     camera_stream_content_revisions: AHashMap<NodeID, CameraStreamContentRevision>,
+    // last-rendered full state per stream; whole-state eq + no animated
+    // content => skip re-encoding that stream's passes (target texture kept).
+    prev_camera_stream_states: AHashMap<NodeID, CameraStreamState>,
     // Stream revisions stay globally unique so any shared consumer cache
     // cannot mistake equal per-node generations for equal content.
     next_camera_stream_content_revision: u64,
@@ -733,6 +736,9 @@ pub struct RenderFrame<'a> {
     pub static_texture_lookup: Option<StaticTextureLookup>,
     pub static_mesh_lookup: Option<StaticMeshLookup>,
     pub static_shader_lookup: Option<StaticShaderLookup>,
+    /// streams whose 3D draws use time-reading custom shaders; they must
+    /// re-render every frame, everything else can idle-skip when unchanged.
+    pub animated_stream_nodes: &'a ahash::AHashSet<NodeID>,
 }
 
 #[inline]

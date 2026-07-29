@@ -57,6 +57,7 @@ impl Gpu {
             ui_textures_delta,
             ui_texture_size,
             ui_revision,
+            animated_stream_nodes,
         } = frame;
         let rect_draw_count = upload_2d.draw_count as u32;
         // Keep window alive for the full surface lifetime.
@@ -569,6 +570,34 @@ impl Gpu {
                     &stream.draws_3d,
                     &stream.sprites_2d,
                 );
+            // per-stream idle skip: unchanged state + nothing animating inside
+            // => keep last rendered target texture, encode no passes. main
+            // frame composites the retained texture as usual.
+            let prev_state_matches = self
+                .prev_camera_stream_states
+                .get(node)
+                .is_some_and(|prev| prev == stream);
+            if !prev_state_matches {
+                self.prev_camera_stream_states.insert(*node, stream.clone());
+            }
+            let stream_can_idle = prev_state_matches
+                && !stream_reentered
+                && !has(DIRTY_RESOURCES)
+                && !animated_stream_nodes.contains(node)
+                && stream.waters_2d.is_empty()
+                && stream.waters_3d.is_empty()
+                && stream.point_particles_2d.is_empty()
+                && stream.point_particles_3d.is_empty()
+                && !matches!(stream.source, CameraStreamSourceState::Webcam { .. })
+                && stream.post_processing.is_empty()
+                && stream
+                    .lighting_3d
+                    .sky
+                    .as_ref()
+                    .is_none_or(|sky| sky.time.paused && sky.shaders.is_empty());
+            if stream_can_idle {
+                continue;
+            }
             let has_stream_post = PostProcessor::has_effects(stream.post_processing.as_ref());
             // UI composites after the main present pass, so an engine-rendered
             // stream needs its own single scene-linear -> display conversion.

@@ -4,6 +4,7 @@ impl Gpu {
     pub fn remove_camera_stream(&mut self, node: NodeID) {
         self.camera_stream_targets.remove(&node);
         self.camera_stream_content_revisions.remove(&node);
+        self.prev_camera_stream_states.remove(&node);
         self.camera_stream_external_bindings.remove(&node);
         self.camera_stream_3d_bindings.remove(&node);
         self.camera_stream_3d.remove(&node);
