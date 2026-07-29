@@ -8,6 +8,7 @@
 | Use Cases          | [Use Cases](#use-cases)                                |
 | Custom 3D Material | [Custom 3D Material Shaders](#custom-3d-material-shaders) |
 | Custom Sky3D       | [Custom Sky3D Shaders](#custom-sky3d-shaders)          |
+| Checking Shaders   | [Checking Shaders](#checking-shaders)                  |
 | Limits             | [Current Limitations](#current-limitations)            |
 | Reference          | [Reference](#reference)                                |
 
@@ -23,6 +24,33 @@ Perro uses WGSL (`.wgsl`) for GPU shaders. Custom materials and `Sky3D` passes r
 - Raw glows and holograms: set `lighting = "raw"` to bypass standard lighting and return exact color.
 - Vertex deformation: a `shade_vertex(out)` hook to bend, wave, or wobble geometry in the vertex stage.
 - Procedural skies: a `sky_shader(in)` pass adding clouds, stars, sun, or horizon bands over the built-in day/evening/night gradient.
+
+## Checking Shaders
+
+A `.wgsl` file is a fragment: it only becomes a full module once the engine
+wraps a prelude and entry points around it, so a typo in it normally surfaces
+on the first frame that draws with it. `perro doctor` composes the same module
+offline and reports errors at your file's own line and column:
+
+```powershell
+perro doctor --path <project_dir>
+```
+
+```txt
+err: shader res://shaders/portal.wgsl:12:18: [rigid mesh] no definition in scope for identifier: `custom_image_smaple`
+```
+
+Notes:
+
+- The entry function picks the prelude: `shade_material`/`shade_vertex` for a
+  custom 3D material, `sky_shader` for a `Sky3D` pass, `post_process` for a
+  post-process pass.
+- Custom materials are checked against the rigid and the skinned prelude, since
+  either mesh kind can use the material. Multimesh exposes a subset of the same
+  helpers and needs no separate pass.
+- A `.wgsl` with none of those functions is not loadable; `doctor` warns.
+- `perro build --static` runs the same check and fails the build on a bad
+  shader.
 
 ## Choice Guide
 

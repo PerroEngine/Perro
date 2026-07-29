@@ -679,3 +679,68 @@ fn node_ref_hints_resolve_by_attached_script_for_shared_field_names() {
             .contains("BadGolfer.script_vars.config.orbit_camera wants Node(Camera3D)")
     );
 }
+
+#[test]
+fn shader_check_reports_broken_material_at_source_line() {
+    let project = temp_project();
+    fs::create_dir_all(project.join("res/shaders")).expect("test setup/result must succeed");
+    fs::write(
+        project.join("res/shaders/broken.wgsl"),
+        "fn shade_material(in: FragmentInput) -> vec4<f32> {\n    return perro_not_a_helper(in);\n}\n",
+    )
+    .expect("test setup/result must succeed");
+
+    let mut report = ValidationReport::default();
+    validate_shaders(&project, &mut report).expect("test setup/result must succeed");
+
+    assert_eq!(report.warnings, 0, "messages: {:?}", report.messages);
+    assert_eq!(report.errors, 1, "messages: {:?}", report.messages);
+    assert!(report.messages[0].contains("res://shaders/broken.wgsl:2:"));
+    assert!(!report.messages[0].contains(&project.to_string_lossy().to_string()));
+}
+
+#[test]
+fn shader_check_accepts_material_sky_and_post_shaders() {
+    let project = temp_project();
+    fs::create_dir_all(project.join("res/shaders")).expect("test setup/result must succeed");
+    fs::write(
+        project.join("res/shaders/material.wgsl"),
+        "fn shade_material(in: FragmentInput) -> vec4<f32> {\n    return unpack_rgba8(in.packed_color) * custom_f_param(in, 0u);\n}\n",
+    )
+    .expect("test setup/result must succeed");
+    fs::write(
+        project.join("res/shaders/sky.wgsl"),
+        "fn sky_shader(in: SkyFragment) -> vec4<f32> {\n    return vec4<f32>(in.color.rgb * in.day_weight, in.color.a);\n}\n",
+    )
+    .expect("test setup/result must succeed");
+    fs::write(
+        project.join("res/shaders/post.wgsl"),
+        "fn post_process(uv: vec2<f32>, color: vec4<f32>, depth: f32) -> vec4<f32> {\n    return vec4<f32>(color.rgb * linearize_depth(depth), color.a);\n}\n",
+    )
+    .expect("test setup/result must succeed");
+
+    let mut report = ValidationReport::default();
+    validate_shaders(&project, &mut report).expect("test setup/result must succeed");
+
+    assert_eq!(report.errors, 0, "messages: {:?}", report.messages);
+    assert_eq!(report.warnings, 0, "messages: {:?}", report.messages);
+    assert_eq!(report.checked_files, 3);
+}
+
+#[test]
+fn shader_without_engine_entry_fn_warns_only() {
+    let project = temp_project();
+    fs::create_dir_all(project.join("res/shaders")).expect("test setup/result must succeed");
+    fs::write(
+        project.join("res/shaders/helpers.wgsl"),
+        "fn scratch_helper(x: f32) -> f32 { return x * 2.0; }\n",
+    )
+    .expect("test setup/result must succeed");
+
+    let mut report = ValidationReport::default();
+    validate_shaders(&project, &mut report).expect("test setup/result must succeed");
+
+    assert_eq!(report.errors, 0, "messages: {:?}", report.messages);
+    assert_eq!(report.warnings, 1, "messages: {:?}", report.messages);
+    assert!(report.messages[0].contains("no engine entry fn"));
+}

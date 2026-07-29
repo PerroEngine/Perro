@@ -28,6 +28,7 @@ perro_io.workspace = true
 perro_structs.workspace = true
 perro_ui.workspace = true
 perro_macros.workspace = true
+perro_wgsl.workspace = true
 
 [target.'cfg(target_os = "windows")'.dependencies]
 wgpu = { version = "30.0.0", default-features = false, features = ["std", "dx12", "vulkan", "wgsl"] }

@@ -5,6 +5,7 @@ pub enum StaticPipelineError {
     Io(std::io::Error),
     Image(image::ImageError),
     SceneParse(String),
+    ShaderCheck(String),
 }
 
 impl Display for StaticPipelineError {
@@ -12,7 +13,7 @@ impl Display for StaticPipelineError {
         match self {
             Self::Io(err) => write!(f, "{err}"),
             Self::Image(err) => write!(f, "{err}"),
-            Self::SceneParse(msg) => write!(f, "{msg}"),
+            Self::SceneParse(msg) | Self::ShaderCheck(msg) => write!(f, "{msg}"),
         }
     }
 }

@@ -644,7 +644,24 @@ What it does:
 4. Scans user scripts for likely missing `res://` and `dlc://` load paths.
 5. Warns when `get_var!`, `set_var!`, or `call_method!` reference names not found in any script state or `methods!` block.
 6. Warns when those dynamic calls target `ctx.id` and a typed self access path is available.
-7. Reports missing scene/config references as errors and script findings as warnings.
+7. Compiles every `.wgsl` under `res/` and `dlcs/` against the engine prelude and reports parse/type errors at the shader's own line and column.
+8. Reports missing scene/config references and broken shaders as errors, and script findings as warnings.
+
+Shader checking composes your file exactly like the renderer does, so a custom
+material is checked against both the rigid and the skinned prelude, a `Sky3D`
+pass against the sky stack, and a post-process pass against the post prelude:
+
+```txt
+err: shader res://shaders/sky_horizon_band.wgsl:9:12: [sky pass] no definition in scope for identifier: `undefined_helper`
+```
+
+The entry function decides which prelude applies: `shade_material` (or
+`shade_vertex`) means custom 3D material, `sky_shader` means `Sky3D` pass, and
+`post_process` means post-process pass. A `.wgsl` with none of them cannot be
+loaded by the engine, so `doctor` warns and skips it.
+
+The same check runs during `perro build --static`, where a broken shader fails
+the build instead of the first frame that draws with it.
 
 ### `format`
 

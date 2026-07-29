@@ -10,4 +10,6 @@ proc-macro = true
 workspace = true
 
 [dependencies]
-perro_wgsl.workspace = true
+# not `workspace = true`: the proc-macro only minifies, so it opts out of the
+# `check` feature and keeps naga out of every build that touches a macro.
+perro_wgsl = { version = "0.1.0", path = "../perro_wgsl", default-features = false }

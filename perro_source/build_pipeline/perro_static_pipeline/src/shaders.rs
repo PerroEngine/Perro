@@ -33,6 +33,7 @@ pub fn generate_static_shaders(project_root: &Path) -> Result<(), StaticPipeline
         let res_path = asset_uri(&rel);
         let full_path = res_dir.join(&rel);
         let source = fs::read_to_string(&full_path)?;
+        check_shader_source(&res_path, &source)?;
         let optimized = perro_wgsl::optimize_source(&source);
 
         let output_path = embedded_shaders_dir.join(&rel);
@@ -103,6 +104,23 @@ pub fn generate_static_shaders(project_root: &Path) -> Result<(), StaticPipeline
     Ok(())
 }
 
+// Same composition + naga pass `perro doctor` runs, so a broken shader fails
+// the static build instead of the first frame that draws with it. A file with
+// no engine entry fn is left alone: it may be scratch work the game never
+// loads, and doctor already warns about it.
+fn check_shader_source(res_path: &str, source: &str) -> Result<(), StaticPipelineError> {
+    match perro_wgsl::check::check_user_shader_source(source) {
+        Ok(_) | Err(perro_wgsl::check::ShaderCheckError::UnknownKind) => Ok(()),
+        Err(perro_wgsl::check::ShaderCheckError::Invalid { kind, diagnostics }) => {
+            let mut msg = format!("{res_path}: invalid {}", kind.label());
+            for diagnostic in &diagnostics {
+                msg.push_str(&format!("\n  {res_path}:{diagnostic}"));
+            }
+            Err(StaticPipelineError::ShaderCheck(msg))
+        }
+    }
+}
+
 fn escape_str(input: &str) -> String {
     let mut out = String::with_capacity(input.len());
     for ch in input.chars() {
@@ -145,8 +163,8 @@ mod tests {
         fs::create_dir_all(res_dir.join("shaders")).expect("create shader dir");
         let source = r#"// keep comments + layout
 fn shade_material(in: FragmentInput) -> vec4<f32> {
-    let s = "// not a comment";
-    return vec4<f32>(in.uv, f32(s == s), 0.5);
+    let color = unpack_rgba8(in.packed_color); /* inline */
+    return vec4<f32>(color.rgb * custom_f_param(in, 0u).rgb, color.a);
 }
 "#;
         fs::write(res_dir.join("shaders/custom.wgsl"), source).expect("write shader");
@@ -165,6 +183,57 @@ fn shade_material(in: FragmentInput) -> vec4<f32> {
             .expect("read embedded");
         assert_eq!(embedded, perro_wgsl::optimize_source(source));
         assert!(embedded.len() < source.len());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn static_build_rejects_broken_shader() {
+        let root = unique_temp_root("perro_static_shader_broken");
+        let res_dir = root.join("res");
+        fs::create_dir_all(res_dir.join("shaders")).expect("create shader dir");
+        fs::write(
+            res_dir.join("shaders/broken.wgsl"),
+            "fn shade_material(in: FragmentInput) -> vec4<f32> {\n    return perro_not_a_helper(in);\n}\n",
+        )
+        .expect("write shader");
+
+        set_static_pipeline_overrides(Some(StaticPipelineOverrides {
+            res_dir,
+            static_dir: root.join("static"),
+            embedded_dir: root.join("embedded"),
+            asset_prefix: "res://".to_string(),
+        }));
+        let result = generate_static_shaders(&root);
+        set_static_pipeline_overrides(None);
+
+        let err = result.expect_err("broken shader must fail the static build");
+        let msg = err.to_string();
+        assert!(msg.contains("res://shaders/broken.wgsl"), "{msg}");
+        assert!(msg.contains(":2:"), "{msg}");
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn static_build_keeps_shader_without_entry_fn() {
+        let root = unique_temp_root("perro_static_shader_no_entry");
+        let res_dir = root.join("res");
+        fs::create_dir_all(res_dir.join("shaders")).expect("create shader dir");
+        fs::write(
+            res_dir.join("shaders/helpers.wgsl"),
+            "fn scratch_helper(x: f32) -> f32 { return x * 2.0; }\n",
+        )
+        .expect("write shader");
+
+        set_static_pipeline_overrides(Some(StaticPipelineOverrides {
+            res_dir,
+            static_dir: root.join("static"),
+            embedded_dir: root.join("embedded"),
+            asset_prefix: "res://".to_string(),
+        }));
+        let result = generate_static_shaders(&root);
+        set_static_pipeline_overrides(None);
+
+        result.expect("shader with no engine entry fn must not fail the build");
         let _ = fs::remove_dir_all(root);
     }
 }

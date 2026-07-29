@@ -5,15 +5,15 @@ use perro_graphics::two_d::shaders::{
     POINT_LIGHT_2D_WGSL, RECT_INSTANCED_WGSL, SPRITE_INSTANCED_WGSL,
 };
 
-const PRELUDE_3D_WGSL: &str = include_str!("../src/three_d/shaders/prelude_3d.wgsl");
+const PRELUDE_3D_WGSL: &str = perro_wgsl::compose::raw::PRELUDE_3D_WGSL;
 const MATERIAL_STANDARD_WGSL: &str = include_str!("../src/three_d/shaders/material_standard.wgsl");
 const MATERIAL_UNLIT_WGSL: &str = include_str!("../src/three_d/shaders/material_unlit.wgsl");
 const MATERIAL_TOON_WGSL: &str = include_str!("../src/three_d/shaders/material_toon.wgsl");
-const SKY3D_WGSL: &str = include_str!("../src/three_d/shaders/sky3d.wgsl");
+const SKY3D_WGSL: &str = perro_wgsl::compose::raw::SKY3D_WGSL;
 const FRUSTUM_CULL_WGSL: &str = include_str!("../src/three_d/shaders/frustum_cull.wgsl");
 const HIZ_OCCLUSION_CULL_WGSL: &str =
     include_str!("../src/three_d/shaders/hiz_occlusion_cull.wgsl");
-const POST_PRELUDE_WGSL: &str = include_str!("../src/postprocess/shaders.rs");
+const POST_PRELUDE_WGSL: &str = perro_wgsl::compose::POST_PRELUDE_WGSL;
 const POST_BUILTIN_BODY_WGSL: &str =
     include_str!("../src/postprocess/shaders/postprocess_builtin_body.wgsl");
 const POST_BLACK_WHITE_WGSL: &str =
@@ -55,12 +55,6 @@ fn build_sky_shader() -> String {
 
 fn post_prelude_literal() -> &'static str {
     POST_PRELUDE_WGSL
-        .split("const PRELUDE_WGSL: &str = r#\"")
-        .nth(1)
-        .expect("post prelude start")
-        .split("\"#;")
-        .next()
-        .expect("post prelude end")
 }
 
 fn build_post_subset_shader() -> String {

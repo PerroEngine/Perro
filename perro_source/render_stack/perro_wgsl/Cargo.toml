@@ -6,5 +6,14 @@ edition = "2024"
 [lints]
 workspace = true
 
+[features]
+default = ["check"]
+# pulls naga so game shaders parse + validate off-GPU (doctor, static build).
+# perro_macros opts out: the proc-macro only needs `optimize_source`.
+check = ["dep:naga"]
+
+[dependencies]
+naga = { version = "30.0.0", features = ["wgsl-in"], optional = true }
+
 [dev-dependencies]
 naga = { version = "30.0.0", features = ["wgsl-in", "wgsl-out"] }

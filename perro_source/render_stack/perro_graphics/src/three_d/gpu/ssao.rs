@@ -442,8 +442,8 @@ mod tests {
 
     #[test]
     fn ssao_surface_scope_stays_ambient_only() {
-        let standard = include_str!("../shaders/prelude_3d.wgsl");
-        let multimesh = include_str!("../shaders/multimesh.wgsl");
+        let standard = perro_wgsl::compose::raw::PRELUDE_3D_WGSL;
+        let multimesh = perro_wgsl::compose::raw::MULTIMESH_WGSL;
         let water = include_str!("../../water_shaders/water_3d_render.wgsl");
         assert!(standard.matches("screen_space_ambient_occlusion(").count() >= 2);
         assert!(multimesh.matches("multimesh_ssao(").count() >= 3);

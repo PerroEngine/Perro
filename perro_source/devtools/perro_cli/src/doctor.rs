@@ -101,8 +101,66 @@ fn validate_project(project_dir: &Path) -> Result<ValidationReport, String> {
     }
 
     validate_script_warnings(project_dir, &mut report)?;
+    validate_shaders(project_dir, &mut report)?;
 
     Ok(report)
+}
+
+// Game `.wgsl` files only become full modules once the engine wraps a prelude
+// and entry points around them, so composing here is the only way to catch a
+// broken shader before the frame that draws with it.
+fn validate_shaders(project_dir: &Path, report: &mut ValidationReport) -> Result<(), String> {
+    let mut files = Vec::new();
+    for root in [project_dir.join("res"), project_dir.join("dlcs")] {
+        collect_files_with_extension(&root, "wgsl", &mut files)?;
+    }
+    files.sort();
+    for file in files {
+        report.checked_files += 1;
+        let source = fs::read_to_string(&file)
+            .map_err(|err| format!("failed to read shader {}: {err}", file.display()))?;
+        let label = format_project_path(project_dir, &file);
+        match perro_wgsl::check::check_user_shader_source(&source) {
+            Ok(_) => {}
+            Err(perro_wgsl::check::ShaderCheckError::UnknownKind) => {
+                report.warn(format!(
+                    "shader {label}: no engine entry fn (`shade_material`, `sky_shader`, or `post_process`); engine cannot load it"
+                ));
+            }
+            Err(perro_wgsl::check::ShaderCheckError::Invalid { diagnostics, .. }) => {
+                for diagnostic in diagnostics {
+                    report.error(format!("shader {label}:{diagnostic}"));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn collect_files_with_extension(
+    dir: &Path,
+    extension: &str,
+    out: &mut Vec<PathBuf>,
+) -> Result<(), String> {
+    if !dir.exists() {
+        return Ok(());
+    }
+    let entries = fs::read_dir(dir)
+        .map_err(|err| format!("failed to read directory {}: {err}", dir.display()))?;
+    for entry in entries {
+        let entry = entry
+            .map_err(|err| format!("failed to read directory entry in {}: {err}", dir.display()))?;
+        let path = entry.path();
+        if path.is_dir() {
+            collect_files_with_extension(&path, extension, out)?;
+        } else if path
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case(extension))
+        {
+            out.push(path);
+        }
+    }
+    Ok(())
 }
 
 fn validate_project_config_refs(

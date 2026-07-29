@@ -1,45 +1,12 @@
 mod regular {
-    use std::sync::LazyLock;
+    // The preludes shared with the offline shader checker (`perro doctor`,
+    // static builds) live in perro_wgsl so devtools can compose game shaders
+    // without linking wgpu. Everything below is renderer-only.
+    #[allow(unused_imports, reason = "prelude_wgsl only feeds parity tests")]
+    pub use perro_wgsl::compose::{
+        multimesh_wgsl, prelude_rigid_wgsl, prelude_skinned_wgsl, prelude_wgsl,
+    };
 
-    // Fns shared verbatim by the rigid/skinned prelude and multimesh paths
-    // live once in shared_3d.wgsl and get concatenated ahead of each base
-    // file here (WGSL module-scope declarations are order-independent).
-    const SHARED_3D_WGSL: &str = perro_macros::include_str_stripped!("shaders/shared_3d.wgsl");
-    const PRELUDE_BASE_WGSL: &str = perro_macros::include_str_stripped!("shaders/prelude_3d.wgsl");
-    const STYLIZED_3D_WGSL: &str = perro_macros::include_str_stripped!("shaders/stylized_3d.wgsl");
-    static PRELUDE_WGSL_FULL: LazyLock<String> =
-        LazyLock::new(|| format!("{SHARED_3D_WGSL}\n{PRELUDE_BASE_WGSL}\n{STYLIZED_3D_WGSL}"));
-    const MULTIMESH_BASE_WGSL: &str = perro_macros::include_str_stripped!("shaders/multimesh.wgsl");
-    const STYLIZED_MULTIMESH_WGSL: &str =
-        perro_macros::include_str_stripped!("shaders/stylized_multimesh.wgsl");
-    static MULTIMESH_WGSL_FULL: LazyLock<String> = LazyLock::new(|| {
-        let base = format!("{SHARED_3D_WGSL}\n{MULTIMESH_BASE_WGSL}");
-        let split_at = base
-            .find("@vertex\nfn vs_main")
-            .or_else(|| base.find("@vertex\r\nfn vs_main"))
-            .or_else(|| base.find("@vertex fn vs_main"))
-            .unwrap_or(base.len());
-        format!(
-            "{}\n{}\n{}",
-            &base[..split_at],
-            STYLIZED_MULTIMESH_WGSL,
-            &base[split_at..],
-        )
-    });
-    static PRELUDE_RIGID_WGSL: LazyLock<String> =
-        LazyLock::new(|| super::build_rigid_prelude(prelude_wgsl()));
-    static PRELUDE_SKINNED_WGSL: LazyLock<String> =
-        LazyLock::new(|| super::build_skinned_prelude(prelude_wgsl()));
-
-    #[inline]
-    pub fn prelude_wgsl() -> &'static str {
-        PRELUDE_WGSL_FULL.as_str()
-    }
-
-    #[inline]
-    pub fn multimesh_wgsl() -> &'static str {
-        MULTIMESH_WGSL_FULL.as_str()
-    }
     pub const MATERIAL_STANDARD_WGSL: &str =
         perro_macros::include_str_stripped!("shaders/material_standard.wgsl");
     pub const MATERIAL_UNLIT_WGSL: &str =
@@ -58,17 +25,6 @@ mod regular {
     ));
     pub const MESH_BLEND_SCREEN_WGSL: &str =
         perro_macros::include_str_stripped!("shaders/mesh_blend_screen.wgsl");
-    pub const SKY3D_WGSL: &str = perro_macros::include_str_stripped!("shaders/sky3d.wgsl");
-
-    #[inline]
-    pub fn prelude_rigid_wgsl() -> &'static str {
-        PRELUDE_RIGID_WGSL.as_str()
-    }
-
-    #[inline]
-    pub fn prelude_skinned_wgsl() -> &'static str {
-        PRELUDE_SKINNED_WGSL.as_str()
-    }
 }
 
 mod culling {
@@ -86,14 +42,64 @@ mod culling {
         perro_macros::include_str_stripped!("shaders/multimesh_cull.wgsl");
 }
 
+use perro_wgsl::compose::{
+    build_custom_material_shader_with_prelude as compose_custom_material,
+    build_custom_multimesh_material_shader as compose_custom_multimesh,
+};
+pub use perro_wgsl::compose::{
+    build_material_shader, build_material_shader_with_prelude, build_sky_shader,
+    prelude_rigid_wgsl, prelude_skinned_wgsl, sanitize_reserved_meta_identifier,
+};
+
+/// Runtime lighting mode mapped onto the composition-level output mode.
 #[inline]
-pub fn prelude_rigid_wgsl() -> &'static str {
-    regular::prelude_rigid_wgsl()
+fn material_output(
+    lighting: perro_render_bridge::CustomMaterialLighting3D,
+) -> perro_wgsl::compose::MaterialOutput {
+    match lighting {
+        perro_render_bridge::CustomMaterialLighting3D::Standard => {
+            perro_wgsl::compose::MaterialOutput::Surface
+        }
+        _ => perro_wgsl::compose::MaterialOutput::Final,
+    }
 }
 
 #[inline]
-pub fn prelude_skinned_wgsl() -> &'static str {
-    regular::prelude_skinned_wgsl()
+pub fn build_custom_material_shader_with_prelude(
+    prelude_wgsl: &str,
+    material_wgsl: &str,
+    lighting: perro_render_bridge::CustomMaterialLighting3D,
+) -> String {
+    compose_custom_material(prelude_wgsl, material_wgsl, material_output(lighting))
+}
+
+#[inline]
+pub fn build_custom_multimesh_material_shader(
+    material_wgsl: &str,
+    lighting: perro_render_bridge::CustomMaterialLighting3D,
+) -> String {
+    compose_custom_multimesh(material_wgsl, material_output(lighting))
+}
+
+#[inline]
+pub fn build_sky_shader_with_passes(
+    passes: &[(String, &[perro_structs::CustomPostParam])],
+) -> String {
+    let encoded = passes
+        .iter()
+        .map(|(source, params)| (source.clone(), encoded_sky_param_values(params)))
+        .collect::<Vec<_>>();
+    perro_wgsl::compose::build_sky_shader_with_passes(&encoded)
+}
+
+fn encoded_sky_param_values(
+    params: &[perro_structs::CustomPostParam],
+) -> perro_wgsl::compose::SkyPassParams {
+    let mut out = [[0.0f32; 4]; 16];
+    for (slot, param) in out.iter_mut().zip(params) {
+        *slot = encode_custom_param_value(&param.value);
+    }
+    out
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -390,72 +396,6 @@ pub fn create_toon_shader_module(device: &wgpu::Device) -> wgpu::ShaderModule {
     })
 }
 
-#[inline]
-pub fn build_material_shader(material_wgsl: &str) -> String {
-    build_material_shader_with_prelude(regular::prelude_wgsl(), material_wgsl)
-}
-
-fn build_rigid_prelude(prelude: &str) -> String {
-    prelude
-        .replace(
-            "@group(0) @binding(1) var<storage, read> skeletons: array<SkeletonBone>; struct SkeletonBone { row_0: vec4<f32>, row_1: vec4<f32>, row_2: vec4<f32>, } fn perro_blend_skin_rows(base: u32, joints: vec4<u32>, weights: vec4<f32>) -> mat3x4<f32> { let b0 = skeletons[base + joints.x]; let b1 = skeletons[base + joints.y]; let b2 = skeletons[base + joints.z]; let b3 = skeletons[base + joints.w]; return mat3x4<f32>( b0.row_0 * weights.x + b1.row_0 * weights.y + b2.row_0 * weights.z + b3.row_0 * weights.w, b0.row_1 * weights.x + b1.row_1 * weights.y + b2.row_1 * weights.z + b3.row_1 * weights.w, b0.row_2 * weights.x + b1.row_2 * weights.y + b2.row_2 * weights.z + b3.row_2 * weights.w, ); } ",
-            "",
-        )
-        .replace("@group(0) @binding(2)", "@group(0) @binding(1)")
-        .replace("@group(0) @binding(3)", "@group(0) @binding(2)")
-        .replace("@group(0) @binding(4)", "@group(0) @binding(3)")
-        .replace("@group(0) @binding(5)", "@group(0) @binding(4)")
-        .replace("@group(0) @binding(6)", "@group(0) @binding(5)")
-        .replace(
-            "@location(2) @interpolate(flat) joints: vec4<u32>, @location(3) weights: vec4<f32>, ",
-            "",
-        )
-        .replace(
-            "@location(13) @interpolate(flat) skeleton_params: vec4<u32>,",
-            "@location(13) @interpolate(flat) custom_params: vec2<u32>,",
-        )
-        .replace(
-            "return VertexInput(out_pos, vec4<f32>(normalize(out_normal), 0.0), v.joints, v.weights, v.uv, v.paint_uv);",
-            "return VertexInput(out_pos, vec4<f32>(normalize(out_normal), 0.0), v.uv, v.paint_uv);",
-        )
-        .replace(
-            "var pos = blended.pos; var normal = blended.normal.xyz; if inst.skeleton_params.y > 0u { let rows = perro_blend_skin_rows(inst.skeleton_params.x, blended.joints, blended.weights); let p_skin = vec4<f32>(pos, 1.0); let skinned_pos = vec3<f32>(dot(rows[0], p_skin), dot(rows[1], p_skin), dot(rows[2], p_skin)); normal = vec3<f32>(dot(rows[0].xyz, normal), dot(rows[1].xyz, normal), dot(rows[2].xyz, normal)); pos = skinned_pos; } let p = vec4<f32>(pos, 1.0);",
-            "let p = vec4<f32>(blended.pos, 1.0);",
-        )
-        .replace(
-            "normal, );",
-            "blended.normal.xyz, );",
-        )
-        .replace(
-            "out.custom_range = vec2<u32>(inst.skeleton_params.z, inst.skeleton_params.w); out.uv = blended.uv; out.paint_uv = blended.paint_uv;",
-            "out.custom_range = inst.custom_params; out.uv = v.uv; out.paint_uv = v.paint_uv;",
-        )
-}
-
-fn build_skinned_prelude(prelude: &str) -> String {
-    prelude.replace(
-        "var pos = blended.pos; var normal = blended.normal.xyz; if inst.skeleton_params.y > 0u { let rows = perro_blend_skin_rows(inst.skeleton_params.x, blended.joints, blended.weights); let p_skin = vec4<f32>(pos, 1.0); let skinned_pos = vec3<f32>(dot(rows[0], p_skin), dot(rows[1], p_skin), dot(rows[2], p_skin)); normal = vec3<f32>(dot(rows[0].xyz, normal), dot(rows[1].xyz, normal), dot(rows[2].xyz, normal)); pos = skinned_pos; }",
-        "let rows = perro_blend_skin_rows(inst.skeleton_params.x, blended.joints, blended.weights); let p_skin = vec4<f32>(blended.pos, 1.0); let pos = vec3<f32>(dot(rows[0], p_skin), dot(rows[1], p_skin), dot(rows[2], p_skin)); let normal = vec3<f32>( dot(rows[0].xyz, blended.normal.xyz), dot(rows[1].xyz, blended.normal.xyz), dot(rows[2].xyz, blended.normal.xyz), );",
-    )
-}
-
-#[inline]
-fn sanitize_reserved_meta_identifier(wgsl: &str) -> String {
-    wgsl.replace(
-        "let meta = custom_params_meta",
-        "let packed_meta = custom_params_meta",
-    )
-    .replace(
-        "let meta = blend_shape_instances",
-        "let blend_meta = blend_shape_instances",
-    )
-    .replace("let kind = meta & 0x3u;", "let kind = packed_meta & 0x3u;")
-    .replace(
-        "let value_offset = meta >> 2u;",
-        "let value_offset = packed_meta >> 2u;",
-    )
-}
-
 fn build_packed_lod_rigid_prelude() -> String {
     regular::prelude_rigid_wgsl()
         .replace(
@@ -520,111 +460,6 @@ fn build_packed_lod_depth_rigid_wgsl() -> String {
             "    let p = vec4<f32>(blended.pos, 1.0);",
             "    let p = vec4<f32>(blended.pos.xyz, 1.0);",
         )
-}
-
-#[inline]
-pub fn build_material_shader_with_prelude(prelude_wgsl: &str, material_wgsl: &str) -> String {
-    build_material_shader_with_prelude_inner(prelude_wgsl, material_wgsl, false)
-}
-
-#[inline]
-pub fn build_custom_material_shader_with_prelude(
-    prelude_wgsl: &str,
-    material_wgsl: &str,
-    lighting: perro_render_bridge::CustomMaterialLighting3D,
-) -> String {
-    let uses_lit_helper = material_uses_final_shade_helper(material_wgsl);
-    let apply_standard_lighting =
-        lighting == perro_render_bridge::CustomMaterialLighting3D::Standard && !uses_lit_helper;
-    build_material_shader_with_prelude_inner(prelude_wgsl, material_wgsl, apply_standard_lighting)
-}
-
-#[inline]
-pub fn build_custom_multimesh_material_shader(
-    material_wgsl: &str,
-    lighting: perro_render_bridge::CustomMaterialLighting3D,
-) -> String {
-    let base = sanitize_reserved_meta_identifier(regular::multimesh_wgsl());
-    let split_at = base
-        .find("@vertex\nfn vs_main")
-        .or_else(|| base.find("@vertex\r\nfn vs_main"))
-        .or_else(|| base.find("@vertex fn vs_main"))
-        .unwrap_or(base.len());
-    let prelude = &base[..split_at];
-    let uses_lit_helper = material_uses_final_shade_helper(material_wgsl);
-    let apply_standard_lighting =
-        lighting == perro_render_bridge::CustomMaterialLighting3D::Standard && !uses_lit_helper;
-    let has_custom_vertex = material_wgsl.contains("shade_vertex(");
-    let mut out = String::new();
-    out.push_str(prelude);
-    out.push('\n');
-    out.push_str(material_wgsl);
-    if has_custom_vertex {
-        out.push_str(
-            "\n@vertex\nfn vs_main(v: VertexInput, @builtin(vertex_index) vertex_index: u32, @builtin(instance_index) instance_index: u32) -> VertexOutput {\n    let inst = perro_fetch_instance(instance_index);\n    return shade_vertex(perro_multimesh_vs_main_base(v, inst, vertex_index));\n}\n",
-        );
-    } else {
-        out.push_str(
-            "\n@vertex\nfn vs_main(v: VertexInput, @builtin(vertex_index) vertex_index: u32, @builtin(instance_index) instance_index: u32) -> VertexOutput {\n    let inst = perro_fetch_instance(instance_index);\n    return perro_multimesh_vs_main_base(v, inst, vertex_index);\n}\n",
-        );
-    }
-    if apply_standard_lighting {
-        out.push_str(
-            "\n@fragment\nfn fs_main(in: FragmentInput) -> @location(0) vec4<f32> {\n    let base = shade_material(in);\n    return perro_standard(in, base, 0.5, 0.0, 1.0, vec3<f32>(0.0));\n}\n",
-        );
-    } else {
-        out.push_str(
-            "\n@fragment\nfn fs_main(in: FragmentInput) -> @location(0) vec4<f32> {\n    return shade_material(in);\n}\n",
-        );
-    }
-    out
-}
-
-#[inline]
-fn material_uses_final_shade_helper(material_wgsl: &str) -> bool {
-    [
-        "perro_standard(",
-        "perro_toon(",
-        "perro_unlit(",
-        "perro_hand_drawn(",
-        "perro_pixel_surface(",
-        "perro_lit_",
-    ]
-    .iter()
-    .any(|name| material_wgsl.contains(name))
-}
-
-#[inline]
-fn build_material_shader_with_prelude_inner(
-    prelude_wgsl: &str,
-    material_wgsl: &str,
-    apply_custom_standard_lighting: bool,
-) -> String {
-    let has_custom_vertex = material_wgsl.contains("shade_vertex(");
-    let mut out = String::new();
-    let sanitized_prelude = sanitize_reserved_meta_identifier(prelude_wgsl);
-    out.push_str(&sanitized_prelude);
-    out.push('\n');
-    out.push_str(material_wgsl);
-    if has_custom_vertex {
-        out.push_str(
-            "\n@vertex\nfn vs_main(v: VertexInput, inst: InstanceInput, @builtin(vertex_index) vertex_index: u32, @builtin(instance_index) instance_index: u32) -> VertexOutput {\n    return shade_vertex(perro_vs_main_base(v, inst, vertex_index, instance_index));\n}\n",
-        );
-    } else {
-        out.push_str(
-            "\n@vertex\nfn vs_main(v: VertexInput, inst: InstanceInput, @builtin(vertex_index) vertex_index: u32, @builtin(instance_index) instance_index: u32) -> VertexOutput {\n    return perro_vs_main_base(v, inst, vertex_index, instance_index);\n}\n",
-        );
-    }
-    if apply_custom_standard_lighting {
-        out.push_str(
-            "\n@fragment\nfn fs_main(in: FragmentInput) -> @location(0) vec4<f32> {\n    let base = shade_material(in);\n    return perro_standard(in, base, 0.5, 0.0, 1.0, vec3<f32>(0.0));\n}\n",
-        );
-    } else {
-        out.push_str(
-            "\n@fragment\nfn fs_main(in: FragmentInput) -> @location(0) vec4<f32> {\n    return shade_material(in);\n}\n",
-        );
-    }
-    out
 }
 
 // Mask entry point appended to the depth-prepass shaders: writes the batch's
@@ -759,76 +594,6 @@ pub fn create_sky_shader_module_from_source(
     })
 }
 
-#[inline]
-pub fn build_sky_shader() -> String {
-    regular::SKY3D_WGSL.replace(
-        "/*__PERRO_SKY_CUSTOM_STACK__*/",
-        "fn apply_custom_sky_stack(base: SkyFragment) -> vec4<f32> { return base.color; }",
-    )
-}
-
-#[inline]
-pub fn build_sky_shader_with_passes(
-    passes: &[(String, &[perro_structs::CustomPostParam])],
-) -> String {
-    let mut stack = String::new();
-    for (idx, (source, params)) in passes.iter().enumerate() {
-        let fn_name = format!("sky_shader_{idx}");
-        let renamed = source.replacen("fn sky_shader", &format!("fn {fn_name}"), 1);
-        stack.push('\n');
-        stack.push_str(&renamed);
-        stack.push('\n');
-        stack.push_str(&format!(
-            "fn apply_sky_shader_pass_{idx}(base: SkyFragment) -> vec4<f32> {{\n"
-        ));
-        stack.push_str("    let frag = SkyFragment(\n");
-        stack.push_str("        base.ray,\n");
-        stack.push_str("        base.uv,\n");
-        stack.push_str("        base.time_of_day,\n");
-        stack.push_str("        base.time_seconds,\n");
-        stack.push_str("        base.day_weight,\n");
-        stack.push_str("        base.evening_weight,\n");
-        stack.push_str("        base.night_weight,\n");
-        stack.push_str("        base.horizon_weight,\n");
-        stack.push_str("        base.color,\n");
-        stack.push_str(&encoded_sky_param_values(params));
-        stack.push_str("    );\n");
-        stack.push_str(&format!("    return {fn_name}(frag);\n"));
-        stack.push_str("}\n");
-        stack.push_str(&format!(
-            "fn sky_custom_pass_{idx}(base: SkyFragment) -> vec4<f32> {{ return apply_sky_shader_pass_{idx}(base); }}\n"
-        ));
-    }
-    if !passes.is_empty() {
-        stack.push_str("\nfn apply_custom_sky_stack(base: SkyFragment) -> vec4<f32> {\n");
-        stack.push_str("    var cur = base;\n");
-        for idx in 0..passes.len() {
-            stack.push_str(&format!("    cur.color = sky_custom_pass_{idx}(cur);\n"));
-        }
-        stack.push_str("    return cur.color;\n");
-        stack.push_str("}\n");
-    }
-    regular::SKY3D_WGSL.replace("/*__PERRO_SKY_CUSTOM_STACK__*/", &stack)
-}
-
-fn encoded_sky_param_values(params: &[perro_structs::CustomPostParam]) -> String {
-    let mut out = String::new();
-    for i in 0..16 {
-        let v = params
-            .get(i)
-            .map(|param| encode_custom_param_value(&param.value))
-            .unwrap_or([0.0; 4]);
-        out.push_str(&format!(
-            "        vec4<f32>({x}, {y}, {z}, {w}),\n",
-            x = wgsl_f32(v[0]),
-            y = wgsl_f32(v[1]),
-            z = wgsl_f32(v[2]),
-            w = wgsl_f32(v[3])
-        ));
-    }
-    out
-}
-
 fn encode_custom_param_value(value: &perro_structs::CustomPostParamValue) -> [f32; 4] {
     match value {
         perro_structs::CustomPostParamValue::F32(v) => [*v, 0.0, 0.0, 0.0],
@@ -837,14 +602,6 @@ fn encode_custom_param_value(value: &perro_structs::CustomPostParamValue) -> [f3
         perro_structs::CustomPostParamValue::Vec2(v) => [v[0], v[1], 0.0, 0.0],
         perro_structs::CustomPostParamValue::Vec3(v) => [v[0], v[1], v[2], 0.0],
         perro_structs::CustomPostParamValue::Vec4(v) => *v,
-    }
-}
-
-fn wgsl_f32(v: f32) -> String {
-    if v.is_finite() {
-        format!("{v:?}")
-    } else {
-        "0.0".to_string()
     }
 }
 

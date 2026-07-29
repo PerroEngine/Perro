@@ -1,3 +1,8 @@
+pub mod compose;
+
+#[cfg(feature = "check")]
+pub mod check;
+
 /// Strip comments and normalize whitespace without changing WGSL tokens.
 #[must_use]
 pub fn optimize_source(source: &str) -> String {
