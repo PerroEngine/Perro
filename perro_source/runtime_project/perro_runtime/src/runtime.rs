@@ -3,7 +3,7 @@ use crate::{
     rs_ctx::RuntimeResourceApi,
     runtime_project::{ProviderMode, RuntimeProject},
 };
-use ahash::AHashMap;
+use ahash::{AHashMap, AHashSet};
 use perro_ids::{MaterialID, MeshID, NodeID, TextureID};
 use perro_input_api::InputSnapshot;
 use perro_runtime_api::sub_apis::{PreloadedSceneID, WindowRequest};
@@ -163,6 +163,10 @@ pub(crate) struct WorldMembershipCache {
     initialized: bool,
     owner_by_slot: Vec<NodeID>,
     members: AHashMap<NodeID, Vec<NodeID>>,
+    /// every stream/sub-view node in the arena (all 6 types), refreshed with
+    /// the membership walk. lets extraction passes visit stream candidates
+    /// without a full arena type-scan per pass.
+    stream_nodes: Vec<NodeID>,
 }
 
 /// Live game runtime state.
@@ -211,6 +215,19 @@ pub struct Runtime {
     pending_material_invalidations: Vec<MaterialID>,
     /// reusable node-id list 4 camera-stream collectors; refill once per drain.
     camera_stream_node_scratch: Vec<NodeID>,
+    /// reusable set: worlds holding >=1 dirty node this pass (+ sub-view owner
+    /// chain). gates stream/sub-view state rebuild to changed worlds only.
+    dirty_world_scratch: AHashSet<NodeID>,
+    /// reusable stream-node candidate list per extraction pass.
+    stream_node_scratch: Vec<NodeID>,
+    /// stream/sub-view nodes with a live gpu-side CameraStream upsert. gates
+    /// redundant RemoveNode traffic (each command wakes a full gpu frame).
+    pub(crate) camera_stream_active: AHashSet<NodeID>,
+    /// last built (output_texture, resolution, ui rect size) per ui stream /
+    /// sub-view node. lets input-refresh command visits reuse the previous
+    /// output w/o re-collecting the watched world; rect-size change (auto
+    /// resolution) forces rebuild.
+    pub(crate) ui_stream_render_info: AHashMap<NodeID, (TextureID, [u32; 2], [f32; 2])>,
     pub(crate) pending_camera_capture_removals: Vec<(NodeID, u8)>,
     world_member_scratch: Vec<NodeID>,
     pub(crate) world_membership: RefCell<WorldMembershipCache>,
@@ -555,6 +572,10 @@ impl Runtime {
             resource_event_scan_pending: false,
             pending_material_invalidations: Vec::new(),
             camera_stream_node_scratch: Vec::new(),
+            dirty_world_scratch: AHashSet::new(),
+            stream_node_scratch: Vec::new(),
+            camera_stream_active: AHashSet::new(),
+            ui_stream_render_info: AHashMap::new(),
             pending_camera_capture_removals: Vec::new(),
             world_member_scratch: Vec::new(),
             world_membership: RefCell::new(WorldMembershipCache::default()),

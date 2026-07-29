@@ -1,7 +1,7 @@
 use super::*;
 
 impl Runtime {
-    pub(super) fn mark_camera_stream_users_dirty(&mut self, camera: NodeID) {
+    pub(crate) fn mark_camera_stream_users_dirty(&mut self, camera: NodeID) {
         let users: Vec<_> = self
             .nodes
             .iter()

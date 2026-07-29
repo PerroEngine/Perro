@@ -69,7 +69,11 @@ impl Runtime {
                 .filter_map(|&raw_index| nodes.slot_get(raw_index as usize).map(|(id, _)| id)),
         );
         dirty_ids.retain(|id| self.node_world(*id) == Some(NodeID::nil()));
-        let traversal_ids = self.render_2d.collect_traversal_with_scratch(
+        let full_traversal = self.render_2d.full_scan_pending()
+            || bootstrap_scan
+            || camera_render_mask_changed
+            || button_input_changed;
+        let mut traversal_ids = self.render_2d.collect_traversal_with_scratch(
             &dirty_ids,
             main_world_ids.iter().copied(),
             bootstrap_scan || camera_render_mask_changed || button_input_changed,
@@ -89,6 +93,9 @@ impl Runtime {
         main_world_ids.clear();
         self.world_member_scratch = main_world_ids;
         self.render_2d.restore_dirty_ids_scratch(dirty_ids);
+        if !full_traversal {
+            self.append_dirty_world_stream_nodes_2d(&mut traversal_ids);
+        }
 
         let mut visible_now = self.render_2d.begin_visible_pass();
 
@@ -352,12 +359,7 @@ impl Runtime {
                             size: [aspect, 1.0],
                             z_index,
                         };
-                        self.queue_render_command(RenderCommand::CameraStream(
-                            CameraStreamCommand::Upsert {
-                                node,
-                                state: Box::new(stream_state.clone()),
-                            },
-                        ));
+                        self.queue_camera_stream_upsert(node, stream_state.clone());
                         self.queue_render_command(RenderCommand::TwoD(
                             Command2D::UpsertCameraStream {
                                 node,
@@ -368,18 +370,14 @@ impl Runtime {
                         self.render_2d.retained_sprites.insert(node, sprite);
                         visible_now.insert(node);
                     } else {
-                        self.queue_render_command(RenderCommand::CameraStream(
-                            CameraStreamCommand::RemoveNode { node },
-                        ));
+                        self.queue_camera_stream_remove(node);
                         self.queue_render_command(RenderCommand::TwoD(Command2D::RemoveNode {
                             node,
                         }));
                         self.render_2d.retained_sprites.remove(&node);
                     }
                 } else {
-                    self.queue_render_command(RenderCommand::CameraStream(
-                        CameraStreamCommand::RemoveNode { node },
-                    ));
+                    self.queue_camera_stream_remove(node);
                     self.queue_render_command(RenderCommand::TwoD(Command2D::RemoveNode { node }));
                     self.render_2d.retained_sprites.remove(&node);
                 }
@@ -574,12 +572,7 @@ impl Runtime {
                             size: [size.x.max(0.001), size.y.max(0.001)],
                             z_index,
                         };
-                        self.queue_render_command(RenderCommand::CameraStream(
-                            CameraStreamCommand::Upsert {
-                                node,
-                                state: Box::new(stream_state.clone()),
-                            },
-                        ));
+                        self.queue_camera_stream_upsert(node, stream_state.clone());
                         self.queue_render_command(RenderCommand::TwoD(
                             Command2D::UpsertCameraStream {
                                 node,
@@ -590,18 +583,14 @@ impl Runtime {
                         self.render_2d.retained_sprites.insert(node, sprite);
                         visible_now.insert(node);
                     } else {
-                        self.queue_render_command(RenderCommand::CameraStream(
-                            CameraStreamCommand::RemoveNode { node },
-                        ));
+                        self.queue_camera_stream_remove(node);
                         self.queue_render_command(RenderCommand::TwoD(Command2D::RemoveNode {
                             node,
                         }));
                         self.render_2d.retained_sprites.remove(&node);
                     }
                 } else {
-                    self.queue_render_command(RenderCommand::CameraStream(
-                        CameraStreamCommand::RemoveNode { node },
-                    ));
+                    self.queue_camera_stream_remove(node);
                     self.queue_render_command(RenderCommand::TwoD(Command2D::RemoveNode { node }));
                     self.render_2d.retained_sprites.remove(&node);
                 }

@@ -13,6 +13,19 @@ impl Runtime {
         )
     }
 
+    #[inline]
+    fn is_stream_node_data(data: &SceneNodeData) -> bool {
+        matches!(
+            data,
+            SceneNodeData::UiSubView(_)
+                | SceneNodeData::SubView2D(_)
+                | SceneNodeData::SubView3D(_)
+                | SceneNodeData::UiCameraStream(_)
+                | SceneNodeData::CameraStream2D(_)
+                | SceneNodeData::CameraStream3D(_)
+        )
+    }
+
     fn refresh_world_membership(&self) {
         let revision = self.nodes.structural_revision();
         {
@@ -30,6 +43,7 @@ impl Runtime {
         cache.owner_by_slot.clear();
         cache.owner_by_slot.resize(slot_count, NodeID::nil());
         cache.members.clear();
+        cache.stream_nodes.clear();
 
         let mut visited = vec![false; slot_count];
         let mut stack = Vec::with_capacity(self.nodes.len());
@@ -50,6 +64,9 @@ impl Runtime {
             visited[slot] = true;
             cache.owner_by_slot[slot] = owner;
             cache.members.entry(owner).or_default().push(id);
+            if Self::is_stream_node_data(&node.data) {
+                cache.stream_nodes.push(id);
+            }
             let child_owner = if Self::is_sub_view_data(&node.data) {
                 id
             } else {
@@ -67,12 +84,15 @@ impl Runtime {
         }
 
         // Corrupt/disconnected cycles fail into main world without hanging.
-        for (id, _) in self.nodes.iter() {
+        for (id, node) in self.nodes.iter() {
             let slot = id.index() as usize;
             if slot < visited.len() && !visited[slot] {
                 visited[slot] = true;
                 cache.owner_by_slot[slot] = NodeID::nil();
                 cache.members.entry(NodeID::nil()).or_default().push(id);
+                if Self::is_stream_node_data(&node.data) {
+                    cache.stream_nodes.push(id);
+                }
             }
         }
         cache.revision = revision;
@@ -94,6 +114,38 @@ impl Runtime {
         out.clear();
         if let Some(members) = self.world_membership.borrow().members.get(&world) {
             out.extend_from_slice(members);
+        }
+    }
+
+    /// Every stream/sub-view node in the arena (UiCameraStream, UiSubView,
+    /// CameraStream2D/3D, SubView2D/3D), any world.
+    pub(crate) fn fill_stream_nodes(&self, out: &mut Vec<NodeID>) {
+        self.refresh_world_membership();
+        out.clear();
+        out.extend_from_slice(&self.world_membership.borrow().stream_nodes);
+    }
+
+    /// Worlds holding >=1 dirty node this pass, plus each dirty sub-view
+    /// world's owner chain (the owner re-collects to re-upsert nested stream
+    /// state). `NodeID::nil()` (main world) enters only from its own dirty
+    /// members: interior-only sub-view churn never rebuilds main-world
+    /// watchers, since nested content reaches them through a stable texture
+    /// id. Call after transform-dirty propagation.
+    pub(crate) fn collect_dirty_worlds(&self, out: &mut ahash::AHashSet<NodeID>) {
+        out.clear();
+        for &raw_index in self.dirty.dirty_indices() {
+            let Some((id, _)) = self.nodes.slot_get(raw_index as usize) else {
+                continue;
+            };
+            let Some(mut world) = self.node_world(id) else {
+                continue;
+            };
+            while out.insert(world) && !world.is_nil() {
+                match self.node_world(world) {
+                    Some(owner) if !owner.is_nil() => world = owner,
+                    _ => break,
+                }
+            }
         }
     }
 

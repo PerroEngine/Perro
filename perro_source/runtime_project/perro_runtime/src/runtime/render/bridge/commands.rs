@@ -424,25 +424,16 @@ impl Runtime {
         self.resource_event_scan_pending = false;
         self.request_full_2d_scan_once();
         self.request_full_3d_scan_once();
-        // SubView owns a retained camera-stream snapshot. Resource
-        // completion must rebuild that snapshot too; a global 3D scan does
-        // not revisit UI-local mesh descendants.
-        let viewport_nodes = self
-            .nodes
-            .iter()
-            .filter_map(|(node, node_ref)| {
-                matches!(
-                    node_ref.data,
-                    SceneNodeData::UiSubView(_)
-                        | SceneNodeData::SubView2D(_)
-                        | SceneNodeData::SubView3D(_)
-                )
-                .then_some(node)
-            })
-            .collect::<Vec<_>>();
-        for node in viewport_nodes {
+        // Stream/sub-view nodes own a retained camera-stream snapshot.
+        // Resource completion must rebuild those snapshots too; a global
+        // 2D/3D scan does not revisit UI-local mesh descendants, and stream
+        // rebuild is dirty-gated, so mark every stream node dirty here.
+        let mut stream_nodes = std::mem::take(&mut self.stream_node_scratch);
+        self.fill_stream_nodes(&mut stream_nodes);
+        for node in stream_nodes.drain(..) {
             self.mark_ui_dirty(node, Self::UI_DIRTY_COMMANDS);
         }
+        self.stream_node_scratch = stream_nodes;
     }
 
     pub fn take_render_result(&mut self, request: RenderRequestID) -> Option<RuntimeRenderResult> {
@@ -603,9 +594,23 @@ impl Runtime {
                 | NodeType::UiSubView
                 | NodeType::Webcam
         ) {
+            // unconditional (not gated on camera_stream_active): webcam nodes
+            // never enter the active set, and removal must always clear any
+            // gpu-side state for the slot.
+            self.camera_stream_active.remove(&node);
+            self.ui_stream_render_info.remove(&node);
             self.queue_render_command(RenderCommand::CameraStream(
                 CameraStreamCommand::RemoveNode { node },
             ));
+        }
+        // Stream rebuild is dirty-world gated; a removed source camera leaves
+        // its watchers clean, so mark them or they keep compositing the last
+        // rendered frame forever.
+        if matches!(
+            ty,
+            NodeType::Camera2D | NodeType::Camera3D | NodeType::Webcam
+        ) {
+            self.mark_camera_stream_users_dirty(node);
         }
         if matches!(ty.get_renderable(), Renderable::True) {
             match ty.get_spatial() {

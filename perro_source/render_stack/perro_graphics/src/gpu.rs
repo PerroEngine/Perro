@@ -377,6 +377,10 @@ pub const DIRTY_LIGHTS_3D: u32 = 1 << 5;
 pub const DIRTY_RESOURCES: u32 = 1 << 6;
 pub const DIRTY_POSTFX: u32 = 1 << 7;
 pub const DIRTY_ACCESSIBILITY: u32 = 1 << 8;
+/// camera-stream upsert/remove traffic. split from DIRTY_RESOURCES so stream
+/// state changes stop forcing the main-3D full rebuild + sprite re-prepare;
+/// per-stream change tracking decides which stream targets re-render.
+pub const DIRTY_STREAMS: u32 = 1 << 9;
 
 struct MsaaColorTarget {
     _texture: wgpu::Texture,
@@ -555,9 +559,6 @@ pub struct Gpu {
     water: Option<GpuWater>,
     camera_stream_targets: AHashMap<NodeID, GpuCameraStreamTarget>,
     camera_stream_content_revisions: AHashMap<NodeID, CameraStreamContentRevision>,
-    // last-rendered full state per stream; whole-state eq + no animated
-    // content => skip re-encoding that stream's passes (target texture kept).
-    prev_camera_stream_states: AHashMap<NodeID, CameraStreamState>,
     // Stream revisions stay globally unique so any shared consumer cache
     // cannot mistake equal per-node generations for equal content.
     next_camera_stream_content_revision: u64,
@@ -639,15 +640,23 @@ fn update_camera_stream_content_revisions(
     match revisions.entry(node) {
         std::collections::hash_map::Entry::Occupied(mut entry) => {
             let state = entry.get_mut();
-            if state.draws.as_ref() != draws.as_ref() {
+            // ptr_eq fast path: no upsert since last render leaves the same
+            // Arc in the retained state, so skip the elementwise compare. On
+            // equal content in a fresh allocation (no-op upsert), converge to
+            // the new Arc so later frames hit the pointer check again.
+            if !Arc::ptr_eq(&state.draws, draws) {
+                if state.draws.as_ref() != draws.as_ref() {
+                    *next_revision = next_nonzero_generation(*next_revision);
+                    state.draw_revision = *next_revision;
+                }
                 state.draws = draws.clone();
-                *next_revision = next_nonzero_generation(*next_revision);
-                state.draw_revision = *next_revision;
             }
-            if state.sprites.as_ref() != sprites.as_ref() {
+            if !Arc::ptr_eq(&state.sprites, sprites) {
+                if state.sprites.as_ref() != sprites.as_ref() {
+                    *next_revision = next_nonzero_generation(*next_revision);
+                    state.sprite_revision = *next_revision;
+                }
                 state.sprites = sprites.clone();
-                *next_revision = next_nonzero_generation(*next_revision);
-                state.sprite_revision = *next_revision;
             }
             (state.draw_revision, state.sprite_revision)
         }
@@ -739,6 +748,11 @@ pub struct RenderFrame<'a> {
     /// streams whose 3D draws use time-reading custom shaders; they must
     /// re-render every frame, everything else can idle-skip when unchanged.
     pub animated_stream_nodes: &'a ahash::AHashSet<NodeID>,
+    /// streams whose retained state changed since the last rendered frame
+    /// (tracked at Upsert apply). replaces the per-frame deep state compare
+    /// in the idle-skip gate; anything absent here is unchanged by
+    /// construction.
+    pub changed_stream_nodes: &'a ahash::AHashSet<NodeID>,
 }
 
 #[inline]

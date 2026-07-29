@@ -47,22 +47,13 @@ impl Runtime {
             .collect::<Vec<_>>();
         for (node, view, auto_size) in nested {
             if !self.is_effectively_visible(node) {
-                self.queue_render_command(RenderCommand::CameraStream(
-                    CameraStreamCommand::RemoveNode { node },
-                ));
+                self.queue_camera_stream_remove(node);
                 continue;
             }
             if let Some(state) = self.sub_view_state(node, &view, auto_size) {
-                self.queue_render_command(RenderCommand::CameraStream(
-                    CameraStreamCommand::Upsert {
-                        node,
-                        state: Box::new(state),
-                    },
-                ));
+                self.queue_camera_stream_upsert(node, state);
             } else {
-                self.queue_render_command(RenderCommand::CameraStream(
-                    CameraStreamCommand::RemoveNode { node },
-                ));
+                self.queue_camera_stream_remove(node);
             }
         }
     }

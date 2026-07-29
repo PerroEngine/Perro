@@ -2,6 +2,64 @@ mod streams {
     use super::*;
 
     #[test]
+    fn input_only_ui_pass_skips_clean_stream_rebuild() {
+        let mut runtime = Runtime::new();
+        runtime.set_viewport_size(800, 600);
+        let viewport = NodeAPI::create::<UiSubView>(&mut runtime);
+        let local_mesh = NodeAPI::create::<MeshInstance3D>(&mut runtime);
+        assert!(runtime.reparent(viewport, local_mesh));
+        if let Some(mut node) = runtime.nodes.get_mut(viewport)
+            && let SceneNodeData::UiSubView(data) = &mut node.data
+        {
+            data.layout.size = UiVector2::pixels(320.0, 180.0);
+        }
+
+        runtime.extract_render_ui_commands();
+        let mut commands = Vec::new();
+        runtime.drain_render_commands(&mut commands);
+        assert!(commands.iter().any(|command| matches!(
+            command,
+            RenderCommand::CameraStream(CameraStreamCommand::Upsert { node, .. })
+                if *node == viewport
+        )));
+        runtime.clear_dirty_flags();
+        // settle: first visible frame re-marks the sub-view for its final rect.
+        runtime.extract_render_ui_commands();
+        runtime.drain_render_commands(&mut Vec::new());
+        runtime.clear_dirty_flags();
+
+        // pointer move alone: extraction runs, but the clean sub-view world
+        // must not be re-collected or re-upserted.
+        runtime.set_mouse_position(123.0, 45.0);
+        runtime.extract_render_ui_commands();
+        commands.clear();
+        runtime.drain_render_commands(&mut commands);
+        assert!(!commands.iter().any(|command| matches!(
+            command,
+            RenderCommand::CameraStream(CameraStreamCommand::Upsert { node, .. })
+                if *node == viewport
+        )));
+        runtime.clear_dirty_flags();
+
+        // transform-only dirt inside the sub-view world (no rerender mark on
+        // the owner) must still rebuild the owner's stream state.
+        if let Some(mut node) = runtime.nodes.get_mut(local_mesh)
+            && let SceneNodeData::MeshInstance3D(data) = &mut node.data
+        {
+            data.transform.position = Vector3::new(9.0, 0.0, 0.0);
+        }
+        runtime.mark_transform_dirty_recursive(local_mesh);
+        runtime.extract_render_ui_commands();
+        commands.clear();
+        runtime.drain_render_commands(&mut commands);
+        assert!(commands.iter().any(|command| matches!(
+            command,
+            RenderCommand::CameraStream(CameraStreamCommand::Upsert { node, .. })
+                if *node == viewport
+        )));
+    }
+
+    #[test]
     fn sub_view_2d_renders_local_3d_children() {
         let mut runtime = Runtime::new();
         let view = NodeAPI::create::<SubView2D>(&mut runtime);

@@ -444,6 +444,16 @@ impl DirtyState {
         }
     }
 
+    /// Any dirty bit set on the node's slot this frame (rerender, transform,
+    /// ui). Slot-level, same aliasing rules as `dirty_indices`.
+    #[inline]
+    pub(crate) fn is_node_dirty(&self, id: NodeID) -> bool {
+        self.node_flags
+            .get(id.index() as usize)
+            .copied()
+            .is_some_and(|flags| flags != 0)
+    }
+
     #[inline]
     pub(crate) fn has_transform_dirty(&self, id: NodeID, spatial: Spatial) -> bool {
         let index = id.index() as usize;

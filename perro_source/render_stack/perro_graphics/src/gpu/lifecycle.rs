@@ -278,7 +278,6 @@ impl Gpu {
             water,
             camera_stream_targets: AHashMap::new(),
             camera_stream_content_revisions: AHashMap::new(),
-            prev_camera_stream_states: AHashMap::new(),
             next_camera_stream_content_revision: 0,
             next_camera_stream_post_view_key: 0,
             camera_stream_external_bindings: AHashMap::new(),

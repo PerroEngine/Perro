@@ -11,7 +11,7 @@ use perro_nodes::{
 use perro_particle_math::compile_expression;
 use perro_physics::{ShapeKind2D, tilemap_shape_descs_2d, triangle_points_2d};
 use perro_render_bridge::{
-    AmbientLight2DState, Camera2DState, CameraStreamCommand, CameraStreamSourceState, Command2D,
+    AmbientLight2DState, Camera2DState, CameraStreamSourceState, Command2D,
     ParticlePath2D, ParticleProfile2D, ParticleSimulationMode2D, PointLight2DState,
     PointParticles2DState, RayLight2DState, Rect2DCommand, RenderCommand, ResourceCommand,
     ShadowCaster2DShapeState, ShadowCaster2DState, SpotLight2DState, Sprite2DCommand,

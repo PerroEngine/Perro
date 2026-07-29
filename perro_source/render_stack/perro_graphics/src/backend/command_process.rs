@@ -16,20 +16,22 @@ impl PerroGraphics {
                 RenderCommand::CameraStream(command) => match command {
                     CameraStreamCommand::Upsert { node, state } => {
                         let state = *state;
-                        upsert_camera_stream_state(
+                        let uses_render_target = camera_stream_uses_render_target(&state);
+                        let output_texture = state.output_texture;
+                        let resolution = state.resolution;
+                        if upsert_camera_stream_state(
                             &mut self.retained_camera_streams,
                             node,
-                            state.clone(),
-                        );
-                        if camera_stream_uses_render_target(&state) {
-                            self.upsert_camera_stream_texture(
-                                node,
-                                state.output_texture,
-                                state.resolution,
-                            );
+                            state,
+                        ) {
+                            self.camera_stream_states_changed.insert(node);
+                        }
+                        if uses_render_target {
+                            self.upsert_camera_stream_texture(node, output_texture, resolution);
                         }
                     }
                     CameraStreamCommand::RemoveNode { node } => {
+                        self.camera_stream_states_changed.remove(&node);
                         let output_texture = self
                             .retained_camera_streams
                             .iter()

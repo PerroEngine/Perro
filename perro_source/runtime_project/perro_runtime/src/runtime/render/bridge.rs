@@ -170,6 +170,77 @@ fn camera_stream_projection_state(projection: &CameraProjection) -> CameraProjec
 }
 
 impl Runtime {
+    /// All CameraStream upsert/remove traffic for stream + sub-view nodes
+    /// funnels through these two: `camera_stream_active` mirrors what the gpu
+    /// retains, so idle passes stop re-sending RemoveNode for streams that
+    /// were never (or are no longer) upserted — each command wakes a full gpu
+    /// frame. One-shot camera captures bypass this (always paired).
+    pub(crate) fn queue_camera_stream_upsert(&mut self, node: NodeID, state: CameraStreamState) {
+        self.camera_stream_active.insert(node);
+        self.queue_render_command(RenderCommand::CameraStream(CameraStreamCommand::Upsert {
+            node,
+            state: Box::new(state),
+        }));
+    }
+
+    pub(crate) fn queue_camera_stream_remove(&mut self, node: NodeID) {
+        if self.camera_stream_active.remove(&node) {
+            self.queue_render_command(RenderCommand::CameraStream(
+                CameraStreamCommand::RemoveNode { node },
+            ));
+        }
+    }
+
+    /// Append main-world stream/sub-view nodes whose WATCHED world holds
+    /// dirty nodes while the node itself is clean (content moved under a
+    /// static camera; transform-only churn never marks the watcher). Dirty
+    /// stream nodes already sit in the traversal, and full scans include
+    /// everything, so callers skip this when include_all is set.
+    fn append_dirty_world_stream_nodes(&mut self, traversal: &mut Vec<NodeID>, two_d: bool) {
+        let mut dirty_worlds = std::mem::take(&mut self.dirty_world_scratch);
+        self.collect_dirty_worlds(&mut dirty_worlds);
+        if !dirty_worlds.is_empty() {
+            let mut stream_nodes = std::mem::take(&mut self.stream_node_scratch);
+            self.fill_stream_nodes(&mut stream_nodes);
+            for node in stream_nodes.drain(..) {
+                let Some(scene_node) = self.nodes.get(node) else {
+                    continue;
+                };
+                let watched = match (&scene_node.data, two_d) {
+                    (SceneNodeData::CameraStream2D(stream), true) => {
+                        self.node_world(stream.stream.camera)
+                    }
+                    (SceneNodeData::SubView2D(_), true) => Some(node),
+                    (SceneNodeData::CameraStream3D(stream), false) => {
+                        self.node_world(stream.stream.camera)
+                    }
+                    (SceneNodeData::SubView3D(_), false) => Some(node),
+                    _ => continue,
+                };
+                if self.dirty.is_node_dirty(node)
+                    || self.node_world(node) != Some(NodeID::nil())
+                {
+                    continue;
+                }
+                if watched.is_some_and(|world| dirty_worlds.contains(&world)) {
+                    traversal.push(node);
+                }
+            }
+            stream_nodes.clear();
+            self.stream_node_scratch = stream_nodes;
+        }
+        dirty_worlds.clear();
+        self.dirty_world_scratch = dirty_worlds;
+    }
+
+    pub(crate) fn append_dirty_world_stream_nodes_2d(&mut self, traversal: &mut Vec<NodeID>) {
+        self.append_dirty_world_stream_nodes(traversal, true);
+    }
+
+    pub(crate) fn append_dirty_world_stream_nodes_3d(&mut self, traversal: &mut Vec<NodeID>) {
+        self.append_dirty_world_stream_nodes(traversal, false);
+    }
+
     fn is_sub_view_node(&self, node: NodeID) -> bool {
         self.nodes.get(node).is_some_and(|node| {
             matches!(

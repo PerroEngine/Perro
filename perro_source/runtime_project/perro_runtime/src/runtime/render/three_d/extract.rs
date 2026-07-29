@@ -134,6 +134,9 @@ impl Runtime {
         all_ids.clear();
         self.render_3d.dirty_ids_scratch = dirty_ids;
         self.render_3d.all_ids_scratch = all_ids;
+        if !include_all_nodes {
+            self.append_dirty_world_stream_nodes_3d(&mut traversal_ids);
+        }
 
         let mut traversal_seen = std::mem::take(&mut self.render_3d.traversal_seen);
         traversal_seen.clear();
@@ -381,12 +384,7 @@ impl Runtime {
                             .unwrap_or(local_transform)
                             .to_mat4()
                             .to_cols_array_2d();
-                        self.queue_render_command(RenderCommand::CameraStream(
-                            CameraStreamCommand::Upsert {
-                                node,
-                                state: Box::new(stream_state.clone()),
-                            },
-                        ));
+                        self.queue_camera_stream_upsert(node, stream_state.clone());
                         self.queue_render_command(RenderCommand::ThreeD(Box::new(
                             Command3D::UpsertCameraStream {
                                 node,
@@ -396,15 +394,11 @@ impl Runtime {
                         )));
                         visible_now.insert(node);
                     } else {
-                        self.queue_render_command(RenderCommand::CameraStream(
-                            CameraStreamCommand::RemoveNode { node },
-                        ));
+                        self.queue_camera_stream_remove(node);
                         self.remove_retained_render_3d_node(node);
                     }
                 } else {
-                    self.queue_render_command(RenderCommand::CameraStream(
-                        CameraStreamCommand::RemoveNode { node },
-                    ));
+                    self.queue_camera_stream_remove(node);
                     self.remove_retained_render_3d_node(node);
                 }
             }
@@ -432,12 +426,7 @@ impl Runtime {
                             .unwrap_or(local_transform)
                             .to_mat4()
                             .to_cols_array_2d();
-                        self.queue_render_command(RenderCommand::CameraStream(
-                            CameraStreamCommand::Upsert {
-                                node,
-                                state: Box::new(stream_state.clone()),
-                            },
-                        ));
+                        self.queue_camera_stream_upsert(node, stream_state.clone());
                         self.queue_render_command(RenderCommand::ThreeD(Box::new(
                             Command3D::UpsertCameraStream {
                                 node,
@@ -451,15 +440,11 @@ impl Runtime {
                         )));
                         visible_now.insert(node);
                     } else {
-                        self.queue_render_command(RenderCommand::CameraStream(
-                            CameraStreamCommand::RemoveNode { node },
-                        ));
+                        self.queue_camera_stream_remove(node);
                         self.remove_retained_render_3d_node(node);
                     }
                 } else {
-                    self.queue_render_command(RenderCommand::CameraStream(
-                        CameraStreamCommand::RemoveNode { node },
-                    ));
+                    self.queue_camera_stream_remove(node);
                     self.remove_retained_render_3d_node(node);
                 }
             }

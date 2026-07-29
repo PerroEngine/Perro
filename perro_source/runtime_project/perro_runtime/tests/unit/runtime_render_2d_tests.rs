@@ -285,6 +285,67 @@ fn camera_stream_2d_uses_source_camera_render_mask() {
 }
 
 #[test]
+fn camera_stream_2d_recollects_when_watched_content_moves() {
+    let mut runtime = Runtime::new();
+    let camera = NodeAPI::create::<Camera2D>(&mut runtime);
+    let sprite = NodeAPI::create::<Sprite2D>(&mut runtime);
+    let stream = NodeAPI::create::<CameraStream2D>(&mut runtime);
+    if let Some(mut node) = runtime.nodes.get_mut(stream)
+        && let SceneNodeData::CameraStream2D(data) = &mut node.data
+    {
+        data.stream.camera = camera;
+        data.stream.resolution = [320, 180].into();
+    }
+    if let Some(mut node) = runtime.nodes.get_mut(sprite)
+        && let SceneNodeData::Sprite2D(data) = &mut node.data
+    {
+        data.texture = TextureID::from_parts(7, 0);
+    }
+
+    runtime.extract_render_2d_commands();
+    let _ = collect_commands(&mut runtime);
+    runtime.clear_dirty_flags();
+
+    // transform-only dirt: neither camera nor stream node is marked, only
+    // the watched (main) world. the stream must still re-collect.
+    if let Some(mut node) = runtime.nodes.get_mut(sprite)
+        && let SceneNodeData::Sprite2D(data) = &mut node.data
+    {
+        data.transform.position = Vector2::new(64.0, 0.0);
+    }
+    runtime.mark_transform_dirty_recursive(sprite);
+    runtime.extract_render_2d_commands();
+    let commands = collect_commands(&mut runtime);
+
+    let stream_state = commands
+        .iter()
+        .find_map(|command| match command {
+            RenderCommand::CameraStream(CameraStreamCommand::Upsert { node, state })
+                if *node == stream =>
+            {
+                Some(state)
+            }
+            _ => None,
+        })
+        .expect("stream re-upsert after watched world content moved");
+    assert!(
+        stream_state
+            .sprites_2d
+            .iter()
+            .any(|sprite| sprite.model[2][0] == 64.0)
+    );
+
+    // clean frame: no stream rebuild traffic at all.
+    runtime.clear_dirty_flags();
+    runtime.extract_render_2d_commands();
+    let commands = collect_commands(&mut runtime);
+    assert!(!commands.iter().any(|command| matches!(
+        command,
+        RenderCommand::CameraStream(CameraStreamCommand::Upsert { node, .. }) if *node == stream
+    )));
+}
+
+#[test]
 fn disabled_camera_stream_2d_emits_remove_commands() {
     let mut runtime = Runtime::new();
     let camera = NodeAPI::create::<Camera2D>(&mut runtime);
@@ -293,9 +354,23 @@ fn disabled_camera_stream_2d_emits_remove_commands() {
         && let SceneNodeData::CameraStream2D(data) = &mut node.data
     {
         data.stream.camera = camera;
-        data.stream.enabled = false;
     }
 
+    // active first: RemoveNode is gated on a live gpu-side upsert.
+    runtime.extract_render_2d_commands();
+    let commands = collect_commands(&mut runtime);
+    assert!(commands.iter().any(|command| matches!(
+        command,
+        RenderCommand::CameraStream(CameraStreamCommand::Upsert { node, .. }) if *node == stream
+    )));
+
+    runtime.clear_dirty_flags();
+    if let Some(mut node) = runtime.nodes.get_mut(stream)
+        && let SceneNodeData::CameraStream2D(data) = &mut node.data
+    {
+        data.stream.enabled = false;
+    }
+    runtime.mark_needs_rerender(stream);
     runtime.extract_render_2d_commands();
     let commands = collect_commands(&mut runtime);
 
@@ -306,6 +381,16 @@ fn disabled_camera_stream_2d_emits_remove_commands() {
     assert!(commands.iter().any(|command| matches!(
         command,
         RenderCommand::TwoD(Command2D::RemoveNode { node }) if *node == stream
+    )));
+
+    // steady-state disabled: no repeat RemoveNode traffic.
+    runtime.clear_dirty_flags();
+    runtime.mark_needs_rerender(stream);
+    runtime.extract_render_2d_commands();
+    let commands = collect_commands(&mut runtime);
+    assert!(!commands.iter().any(|command| matches!(
+        command,
+        RenderCommand::CameraStream(CameraStreamCommand::RemoveNode { node }) if *node == stream
     )));
 }
 

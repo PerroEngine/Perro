@@ -381,7 +381,12 @@ impl PerroGraphics {
             self.used_ref_draws_revision = draws_revision;
         }
 
-        if sprites_refs_changed || draws_refs_changed || (frame_dirty_bits & DIRTY_RESOURCES) != 0 {
+        // stream upserts add/remove stream output textures referenced by ui
+        // images + sprites, so DIRTY_STREAMS gates the recount too.
+        if sprites_refs_changed
+            || draws_refs_changed
+            || (frame_dirty_bits & (DIRTY_RESOURCES | DIRTY_STREAMS)) != 0
+        {
             self.resources.reset_ref_counts();
             for (texture, count) in &self.used_texture_refs_cache {
                 self.resources.mark_texture_used_count(*texture, *count);
@@ -542,6 +547,7 @@ impl PerroGraphics {
                 static_mesh_lookup: self.static_mesh_lookup,
                 static_shader_lookup: self.static_shader_lookup,
                 animated_stream_nodes: &animated_streams,
+                changed_stream_nodes: &self.camera_stream_states_changed,
             });
             let mut water_samples = Vec::new();
             gpu.drain_water_samples(&mut water_samples);
@@ -558,6 +564,11 @@ impl PerroGraphics {
                 });
             }
             self.redraw_requested = !gpu_timing.presented;
+            if gpu_timing.presented {
+                // changed streams re-rendered this frame; next frame they can
+                // idle-skip again. kept on non-present so nothing is lost.
+                self.camera_stream_states_changed.clear();
+            }
         }
         self.animated_stream_nodes_scratch = animated_streams;
         let timing = DrawFrameTiming {

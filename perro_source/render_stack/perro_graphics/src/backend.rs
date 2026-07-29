@@ -1,8 +1,8 @@
 use crate::{
     gpu::{
         DIRTY_2D, DIRTY_3D, DIRTY_ACCESSIBILITY, DIRTY_CAMERA_2D, DIRTY_CAMERA_3D, DIRTY_LIGHTS_3D,
-        DIRTY_PARTICLES_3D, DIRTY_POSTFX, DIRTY_RESOURCES, Gpu, GpuConfig, RenderFrame,
-        RenderGpuTiming,
+        DIRTY_PARTICLES_3D, DIRTY_POSTFX, DIRTY_RESOURCES, DIRTY_STREAMS, Gpu, GpuConfig,
+        RenderFrame, RenderGpuTiming,
     },
     resources::{DecodedTextureRgba, ResourceStore},
     three_d::particles::renderer::Particles3DRenderer,
@@ -281,7 +281,8 @@ fn command_dirty_bits(command: &RenderCommand) -> u32 {
             | Command3D::SetDecal { .. } => DIRTY_LIGHTS_3D,
             Command3D::UpsertPointParticles { .. } => DIRTY_PARTICLES_3D,
         },
-        RenderCommand::Resource(_) | RenderCommand::CameraStream(_) => DIRTY_RESOURCES,
+        RenderCommand::Resource(_) => DIRTY_RESOURCES,
+        RenderCommand::CameraStream(_) => DIRTY_STREAMS,
         RenderCommand::Ui(_) => DIRTY_2D,
         RenderCommand::PostProcessing(_) => DIRTY_POSTFX,
         RenderCommand::VisualAccessibility(_) => DIRTY_ACCESSIBILITY,
@@ -342,16 +343,22 @@ fn camera_stream_uses_render_target(stream: &CameraStreamState) -> bool {
     }
 }
 
+/// Returns whether the retained state actually changed. No-op upserts
+/// (identical rebuilt state) must not force the stream target to re-render.
 fn upsert_camera_stream_state(
     streams: &mut Vec<(NodeID, CameraStreamState)>,
     node: NodeID,
     state: CameraStreamState,
-) {
+) -> bool {
     if let Some((_, existing)) = streams.iter_mut().find(|(id, _)| *id == node) {
+        if *existing == state {
+            return false;
+        }
         *existing = state;
     } else {
         streams.push((node, state));
     }
+    true
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -445,6 +452,9 @@ pub struct PerroGraphics {
     // a first write or resolution change falls back to the full reload path.
     stream_texture_dims: AHashMap<TextureID, [u32; 2]>,
     retained_camera_streams: Vec<(NodeID, CameraStreamState)>,
+    // streams whose retained state changed since the last presented frame;
+    // feeds the gpu-side per-stream idle skip (no per-frame deep compare).
+    camera_stream_states_changed: ahash::AHashSet<NodeID>,
     frame_rects_cache: Vec<RectInstanceGpu>,
     late_overlay_sprites_cache: Vec<Sprite2DCommand>,
     late_overlay_sprites_cache_revision: u64,

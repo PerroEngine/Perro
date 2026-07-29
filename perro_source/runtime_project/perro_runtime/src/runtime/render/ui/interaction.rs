@@ -354,16 +354,50 @@ impl Runtime {
         let traversal_ids = plan.traversal_ids;
         let mut command_ids = plan.command_ids;
         let mut command_seen = plan.command_seen;
-        for (node, scene_node) in self.nodes.iter() {
-            if matches!(
-                scene_node.data,
-                SceneNodeData::UiCameraStream(_) | SceneNodeData::UiSubView(_)
-            ) && self.node_world(node) == Some(NodeID::nil())
+        // Stream/sub-view rebuild is dirty-world gated: a full state rebuild
+        // walks the watched world through every collector and its Upsert
+        // wakes a full gpu frame, so input-only passes (pointer move, button
+        // motion) must not touch clean streams. Rebuild when the node itself
+        // is dirty, its watched world holds a dirty node, or the source is a
+        // webcam (frames + probed resolution resolve async, O(1) state path).
+        let mut dirty_worlds = std::mem::take(&mut self.dirty_world_scratch);
+        self.collect_dirty_worlds(&mut dirty_worlds);
+        let mut stream_nodes = std::mem::take(&mut self.stream_node_scratch);
+        self.fill_stream_nodes(&mut stream_nodes);
+        for node in stream_nodes.drain(..) {
+            let Some(scene_node) = self.nodes.get(node) else {
+                continue;
+            };
+            let rebuild = match &scene_node.data {
+                SceneNodeData::UiSubView(_) => {
+                    bootstrap_scan
+                        || dirty_worlds.contains(&node)
+                        || self.dirty.is_node_dirty(node)
+                }
+                SceneNodeData::UiCameraStream(stream) => {
+                    let camera = stream.stream.camera;
+                    bootstrap_scan
+                        || self.dirty.is_node_dirty(node)
+                        || self.nodes.get(camera).is_some_and(|camera_node| {
+                            matches!(camera_node.data, SceneNodeData::Webcam(_))
+                        })
+                        || self
+                            .node_world(camera)
+                            .is_some_and(|world| dirty_worlds.contains(&world))
+                }
+                _ => continue,
+            };
+            if rebuild
+                && self.node_world(node) == Some(NodeID::nil())
                 && command_seen.insert(node)
             {
                 command_ids.push(node);
             }
         }
+        self.stream_node_scratch = stream_nodes;
+        // dirty_worlds stays live: the command loop re-checks it per stream
+        // visit (input passes re-add every retained command node); restored
+        // to the scratch slot after the loop.
         if let Some(timing) = timing.as_deref_mut() {
             timing.dirty_nodes = dirty_node_count.min(u32::MAX as usize) as u32;
             timing.affected_nodes = plan.affected_nodes;
@@ -544,9 +578,8 @@ impl Runtime {
                     scene_node.data,
                     SceneNodeData::UiCameraStream(_) | SceneNodeData::UiSubView(_)
                 ) {
-                    self.queue_render_command(RenderCommand::CameraStream(
-                        CameraStreamCommand::RemoveNode { node },
-                    ));
+                    self.ui_stream_render_info.remove(&node);
+                    self.queue_camera_stream_remove(node);
                 }
                 self.remove_retained_ui_node(node);
                 if let Some(timing) = timing.as_deref_mut() {
@@ -565,42 +598,77 @@ impl Runtime {
             let mut camera_stream_texture = None;
             let mut camera_stream_resolution = None;
             if let Some(stream) = ui_stream {
-                if let Some(state) = self.camera_stream_state(node, &stream) {
-                    camera_stream_texture = Some(state.output_texture);
-                    camera_stream_resolution = match &state.source {
-                        CameraStreamSourceState::Webcam { resolution, .. } => Some(*resolution),
-                        _ => Some(state.resolution),
-                    };
-                    self.queue_render_command(RenderCommand::CameraStream(
-                        CameraStreamCommand::Upsert {
+                // dirty-world gate: rebuilding re-collects the watched world
+                // through every collector; input-refresh visits reuse the
+                // cached output texture/resolution instead.
+                let rebuild = bootstrap_scan
+                    || self.dirty.is_node_dirty(node)
+                    || self.nodes.get(stream.camera).is_some_and(|camera_node| {
+                        matches!(camera_node.data, SceneNodeData::Webcam(_))
+                    })
+                    || self
+                        .node_world(stream.camera)
+                        .is_some_and(|world| dirty_worlds.contains(&world))
+                    || !self.ui_stream_render_info.contains_key(&node);
+                if rebuild {
+                    if let Some(state) = self.camera_stream_state(node, &stream) {
+                        camera_stream_texture = Some(state.output_texture);
+                        camera_stream_resolution = match &state.source {
+                            CameraStreamSourceState::Webcam { resolution, .. } => {
+                                Some(*resolution)
+                            }
+                            _ => Some(state.resolution),
+                        };
+                        self.ui_stream_render_info.insert(
                             node,
-                            state: Box::new(state),
-                        },
-                    ));
-                } else {
-                    self.queue_render_command(RenderCommand::CameraStream(
-                        CameraStreamCommand::RemoveNode { node },
-                    ));
+                            (
+                                state.output_texture,
+                                camera_stream_resolution.unwrap_or(state.resolution),
+                                [0.0, 0.0],
+                            ),
+                        );
+                        self.queue_camera_stream_upsert(node, state);
+                    } else {
+                        self.ui_stream_render_info.remove(&node);
+                        self.queue_camera_stream_remove(node);
+                    }
+                } else if let Some((texture, resolution, _)) =
+                    self.ui_stream_render_info.get(&node)
+                {
+                    camera_stream_texture = Some(*texture);
+                    camera_stream_resolution = Some(*resolution);
                 }
             }
             if let Some(viewport) = ui_sub_view {
-                if let Some(state) = self.sub_view_state(
-                    node,
-                    &perro_nodes::SubView::from(&viewport),
-                    Some(rect_state.size),
-                ) {
-                    camera_stream_texture = Some(state.output_texture);
-                    camera_stream_resolution = Some(state.resolution);
-                    self.queue_render_command(RenderCommand::CameraStream(
-                        CameraStreamCommand::Upsert {
+                let rebuild = bootstrap_scan
+                    || self.dirty.is_node_dirty(node)
+                    || dirty_worlds.contains(&node)
+                    || self
+                        .ui_stream_render_info
+                        .get(&node)
+                        .is_none_or(|(_, _, rect_size)| *rect_size != rect_state.size);
+                if rebuild {
+                    if let Some(state) = self.sub_view_state(
+                        node,
+                        &perro_nodes::SubView::from(&viewport),
+                        Some(rect_state.size),
+                    ) {
+                        camera_stream_texture = Some(state.output_texture);
+                        camera_stream_resolution = Some(state.resolution);
+                        self.ui_stream_render_info.insert(
                             node,
-                            state: Box::new(state),
-                        },
-                    ));
-                } else {
-                    self.queue_render_command(RenderCommand::CameraStream(
-                        CameraStreamCommand::RemoveNode { node },
-                    ));
+                            (state.output_texture, state.resolution, rect_state.size),
+                        );
+                        self.queue_camera_stream_upsert(node, state);
+                    } else {
+                        self.ui_stream_render_info.remove(&node);
+                        self.queue_camera_stream_remove(node);
+                    }
+                } else if let Some((texture, resolution, _)) =
+                    self.ui_stream_render_info.get(&node)
+                {
+                    camera_stream_texture = Some(*texture);
+                    camera_stream_resolution = Some(*resolution);
                 }
             }
             let Some(scene_node) = self.nodes.get(node) else {
@@ -711,6 +779,8 @@ impl Runtime {
             self.render_ui.retained_rects.insert(node, rect_state);
             visible_now.insert(node);
         }
+        dirty_worlds.clear();
+        self.dirty_world_scratch = dirty_worlds;
         self.emit_color_picker_wheel_commands(&computed, viewport);
         for node in self.render_ui.prev_visible.iter().copied() {
             if !visible_now.contains(&node)

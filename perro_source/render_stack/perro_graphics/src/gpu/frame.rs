@@ -58,6 +58,7 @@ impl Gpu {
             ui_texture_size,
             ui_revision,
             animated_stream_nodes,
+            changed_stream_nodes,
         } = frame;
         let rect_draw_count = upload_2d.draw_count as u32;
         // Keep window alive for the full surface lifetime.
@@ -562,24 +563,11 @@ impl Gpu {
         });
         for (node, stream) in camera_streams {
             let stream_reentered = !self.camera_stream_content_revisions.contains_key(node);
-            let (stream_draws_revision, stream_sprites_revision) =
-                update_camera_stream_content_revisions(
-                    &mut self.camera_stream_content_revisions,
-                    &mut self.next_camera_stream_content_revision,
-                    *node,
-                    &stream.draws_3d,
-                    &stream.sprites_2d,
-                );
             // per-stream idle skip: unchanged state + nothing animating inside
             // => keep last rendered target texture, encode no passes. main
-            // frame composites the retained texture as usual.
-            let prev_state_matches = self
-                .prev_camera_stream_states
-                .get(node)
-                .is_some_and(|prev| prev == stream);
-            if !prev_state_matches {
-                self.prev_camera_stream_states.insert(*node, stream.clone());
-            }
+            // frame composites the retained texture as usual. change tracking
+            // happens at Upsert apply, so no per-frame state compare here.
+            let prev_state_matches = !changed_stream_nodes.contains(node);
             let stream_can_idle = prev_state_matches
                 && !stream_reentered
                 && !has(DIRTY_RESOURCES)
@@ -598,6 +586,17 @@ impl Gpu {
             if stream_can_idle {
                 continue;
             }
+            // revision update only on render: idle streams skip the content
+            // compare entirely; the compare against last-RENDERED content is
+            // exactly what the prepare paths below need.
+            let (stream_draws_revision, stream_sprites_revision) =
+                update_camera_stream_content_revisions(
+                    &mut self.camera_stream_content_revisions,
+                    &mut self.next_camera_stream_content_revision,
+                    *node,
+                    &stream.draws_3d,
+                    &stream.sprites_2d,
+                );
             let has_stream_post = PostProcessor::has_effects(stream.post_processing.as_ref());
             // UI composites after the main present pass, so an engine-rendered
             // stream needs its own single scene-linear -> display conversion.

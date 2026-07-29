@@ -13,7 +13,7 @@ use perro_nodes::{
 use perro_particle_math::compile_expression;
 use perro_render_bridge::{
     AmbientLight3DState, Camera3DState, CameraProjectionState, CameraStream3DState,
-    CameraStreamCommand, Command3D, Decal3DState, DenseInstancePose3D, EnvironmentMap3DState,
+    Command3D, Decal3DState, DenseInstancePose3D, EnvironmentMap3DState,
     LODOptions3D, Material3D, MaterialParamOverride3D, MeshBlendOptions3D, MeshSurfaceBinding3D,
     ParticlePath3D, ParticleProfile3D, ParticleRenderMode3D, ParticleSimulationMode3D,
     PointLight3DState, PointParticles3DState, RayLight3DState, RenderCommand, ResourceCommand,
