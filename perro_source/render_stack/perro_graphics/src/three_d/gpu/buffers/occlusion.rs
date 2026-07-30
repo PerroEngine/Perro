@@ -219,7 +219,8 @@ impl Gpu3D {
                     .slice(0..byte_len)
                     .get_mapped_range()
                 else {
-                    self.hiz_debug_readback_buffer.unmap();
+                    // Buffer unmappable despite a successful map: destroyed
+                    // (device loss) or replaced; unmap would panic.
                     self.pending_hiz_debug_count = 0;
                     self.pending_hiz_debug_frustum_visible_est = 0;
                     self.pending_hiz_debug_map_rx = None;
@@ -242,8 +243,9 @@ impl Gpu3D {
                 self.pending_hiz_debug_frustum_visible_est = 0;
                 self.pending_hiz_debug_map_rx = None;
             }
+            // Failed map: buffer never mapped (destroyed on device loss);
+            // unmap here trips destroyed-buffer validation and panics.
             Ok(Err(_)) | Err(TryRecvError::Disconnected) => {
-                self.hiz_debug_readback_buffer.unmap();
                 self.pending_hiz_debug_count = 0;
                 self.pending_hiz_debug_frustum_visible_est = 0;
                 self.pending_hiz_debug_map_rx = None;
@@ -341,7 +343,10 @@ impl Gpu3D {
             Ok(Ok(())) => {
                 let byte_len = (query_count * 8) as u64;
                 let Ok(data) = readback.slice(0..byte_len).get_mapped_range() else {
-                    readback.unmap();
+                    // Happens when ensure_occlusion_query_capacity replaced
+                    // the buffer while this map was pending, or on device
+                    // loss; either way the buffer is not mapped - unmap
+                    // would panic.
                     self.pending_occlusion_query_count = 0;
                     self.pending_occlusion_query_keys.clear();
                     self.pending_occlusion_map_rx = None;
@@ -374,8 +379,9 @@ impl Gpu3D {
                 self.pending_occlusion_query_keys.clear();
                 self.pending_occlusion_map_rx = None;
             }
+            // Failed map: buffer never mapped (destroyed on device loss);
+            // unmap here trips destroyed-buffer validation and panics.
             Ok(Err(_)) | Err(TryRecvError::Disconnected) => {
-                readback.unmap();
                 self.pending_occlusion_query_count = 0;
                 self.pending_occlusion_query_keys.clear();
                 self.pending_occlusion_map_rx = None;

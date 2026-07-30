@@ -1296,7 +1296,8 @@ impl GpuWater {
                     .expect("water readback pending after ready result");
                 let slice = self.readback_buffer.slice(0..pending.mapped_bytes);
                 let Ok(data) = slice.get_mapped_range() else {
-                    self.readback_buffer.unmap();
+                    // Range failure after a successful map means the buffer
+                    // is destroyed (device loss); unmap would panic.
                     return;
                 };
                 let cells: &[[f32; 4]] = bytemuck::cast_slice(&data);
@@ -1311,8 +1312,10 @@ impl GpuWater {
                 drop(data);
                 self.readback_buffer.unmap();
             }
+            // Failed map: the buffer never reached the mapped state (device
+            // loss destroys it); unmapping trips wgpu's destroyed-buffer
+            // validation and panics the app.
             Ok(Err(_)) | Err(mpsc::TryRecvError::Disconnected) => {
-                self.readback_buffer.unmap();
                 self.readback_pending = None;
             }
             Err(mpsc::TryRecvError::Empty) => {}

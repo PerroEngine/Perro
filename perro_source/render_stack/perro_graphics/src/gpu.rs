@@ -456,7 +456,9 @@ impl GpuTimestampTimer {
             Ok(Ok(())) => {
                 let slice = self.readback_buffer.slice(..);
                 let Ok(data) = slice.get_mapped_range() else {
-                    self.readback_buffer.unmap();
+                    // Range failure after a "successful" map means the buffer
+                    // is gone (device loss destroys it); unmap would trip
+                    // wgpu's destroyed-buffer validation and panic the app.
                     self.pending_rx = None;
                     return;
                 };
@@ -475,15 +477,14 @@ impl GpuTimestampTimer {
                 self.readback_buffer.unmap();
                 self.pending_rx = None;
             }
-            Ok(Err(_)) => {
-                self.readback_buffer.unmap();
+            // Failed or abandoned map: the buffer never reached the mapped
+            // state (device loss / TDR marks it destroyed), so there is
+            // nothing to unmap - calling unmap here is the destroyed-buffer
+            // panic seen as `Buffer::buffer_unmap ... has been destroyed`.
+            Ok(Err(_)) | Err(mpsc::TryRecvError::Disconnected) => {
                 self.pending_rx = None;
             }
             Err(mpsc::TryRecvError::Empty) => {}
-            Err(mpsc::TryRecvError::Disconnected) => {
-                self.readback_buffer.unmap();
-                self.pending_rx = None;
-            }
         }
     }
 
