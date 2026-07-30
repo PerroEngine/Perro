@@ -74,8 +74,8 @@ lifecycle!({
 });
 
 methods!({
-    // Connected to the exit trigger's "body_entered" signal.
-    fn on_exit_reached(&self, ctx: &mut ScriptContext<'_, API>) {
+    // Connected to the exit trigger's "body_entered" signal; pub so it can dispatch.
+    pub fn on_exit_reached(&self, ctx: &mut ScriptContext<'_, API>) {
         match scene_load!(ctx.run, "res://levels/level2.pscene") {
             Ok(root) => {
                 with_state_mut!(ctx.run, DoorState, ctx.id, |state| state.next_area = root);

@@ -31,9 +31,9 @@ script = "res://scripts/switch.rs"
 script_vars = { door = @ExitDoor }
 ```
 
-`#[expose]` only organizes fields in the editor inspector. Every state field can
-receive a scene value. Use it for authoring clarity, not as an access or
-injection gate.
+`#[expose]` only organizes fields in the editor inspector. Only `pub` state
+fields can receive a scene value; an exposed field must also be `pub` for the
+authored value to apply.
 
 ## When Not To Inject
 

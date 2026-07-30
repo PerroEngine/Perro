@@ -49,7 +49,8 @@ lifecycle!({
 });
 
 methods!({
-    fn on_player_died(&self, ctx: &mut ScriptContext<'_, API>) {
+    // pub: signal connections and call_method! only dispatch pub fn methods.
+    pub fn on_player_died(&self, ctx: &mut ScriptContext<'_, API>) {
         log_info!("player died; showing game over");
         let _ = call_method!(ctx.run, ctx.id, method!("show_game_over"), params![]);
     }

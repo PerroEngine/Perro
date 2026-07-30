@@ -272,7 +272,7 @@ struct ExampleState {
     // Any Variant-compatible state field can receive a scene override.
     #[expose]
     #[default = 5]
-    count: i32,
+    pub count: i32,
 
     // Store fixed scene dependencies as NodeID refs instead of finding by name.
     #[expose]
@@ -395,7 +395,7 @@ methods!({
         });
     }
 
-    fn test(&self, ctx: &mut ScriptContext<'_, API>, param1: i32, msg: &str) {
+    pub fn test(&self, ctx: &mut ScriptContext<'_, API>, param1: i32, msg: &str) {
         log_info!(param1);
         log_info!(msg);
         self.bump_count(ctx);

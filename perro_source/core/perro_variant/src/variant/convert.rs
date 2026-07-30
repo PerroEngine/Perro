@@ -316,6 +316,14 @@ impl From<UnitVector4> for Variant {
         Variant::EngineStruct(EngineStruct::UnitVector4(v))
     }
 }
+// Color channels are the same 4 unorm-u8 lanes as `UnitVector4`, so it rides
+// that member instead of growing `EngineStruct` (round-trip stays byte-exact).
+impl From<Color> for Variant {
+    #[inline]
+    fn from(v: Color) -> Self {
+        Variant::EngineStruct(EngineStruct::UnitVector4(v.to_unit_vector4()))
+    }
+}
 impl From<Matrix2> for Variant {
     #[inline]
     fn from(v: Matrix2) -> Self {

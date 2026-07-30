@@ -197,11 +197,7 @@ pub(super) fn parse_field_for_doctor(
     {
         return None;
     }
-    let without_vis = if let Some(rest) = trimmed.strip_prefix("pub(") {
-        rest.split_once(')')?.1.trim()
-    } else {
-        trimmed.trim_start_matches("pub ").trim_start()
-    };
+    let (without_vis, is_pub) = strip_visibility_for_doctor(trimmed);
     let (name, ty) = without_vis.split_once(':')?;
     let name = name.trim();
     if is_ident_for_doctor(name) {
@@ -209,6 +205,7 @@ pub(super) fn parse_field_for_doctor(
             name: name.to_string(),
             ty: normalize_type_name_for_doctor(ty),
             node_ref_types,
+            is_pub,
         })
     } else {
         None
@@ -247,20 +244,30 @@ pub(super) fn normalize_type_name_for_doctor(input: &str) -> String {
         .to_string()
 }
 
-pub(super) fn parse_script_method_names(text: &str) -> Vec<String> {
-    let mut names = Vec::new();
-    names.extend(parse_methods_macro_names(text));
-    names.extend(parse_inherent_method_names(text));
-    names.sort();
-    names.dedup();
-    names
+/// one parsed fn def: vis + dispatch shape
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) struct DoctorParsedMethod {
+    pub(super) name: String,
+    pub(super) is_pub: bool,
+    /// sig takes ScriptContext/ScriptCtx -> compiler emits call glue 4 it;
+    /// plain helper fns get no glue, pub on them is free
+    pub(super) has_ctx: bool,
 }
 
-pub(super) fn parse_methods_macro_names(text: &str) -> Vec<String> {
+/// all script method defs in file; dup names kp per-def flags,
+/// index merge happens at insert time
+pub(super) fn parse_script_methods(text: &str) -> Vec<DoctorParsedMethod> {
+    let mut methods = Vec::new();
+    methods.extend(parse_methods_macro_fns(text));
+    methods.extend(parse_inherent_method_fns(text));
+    methods
+}
+
+pub(super) fn parse_methods_macro_fns(text: &str) -> Vec<DoctorParsedMethod> {
     let mut names = Vec::new();
     for inner in find_macro_calls(text, "methods") {
         if let Some(body) = parse_methods_macro_body(&inner) {
-            names.extend(parse_method_names_from_block(body));
+            names.extend(parse_method_fns_from_block(body));
         }
     }
     names
@@ -282,9 +289,9 @@ pub(super) fn parse_methods_macro_body(inner: &str) -> Option<&str> {
     extract_brace_block_for_doctor(trimmed[target_len..].trim_start())
 }
 
-pub(super) fn parse_inherent_method_names(text: &str) -> Vec<String> {
+pub(super) fn parse_inherent_method_fns(text: &str) -> Vec<DoctorParsedMethod> {
     let lines = lex_code_lines_for_doctor(text);
-    let mut names = Vec::new();
+    let mut methods = Vec::new();
     let mut i = 0usize;
     while i < lines.len() {
         let line = lines[i].trim();
@@ -292,19 +299,30 @@ pub(super) fn parse_inherent_method_names(text: &str) -> Vec<String> {
             i += 1;
             continue;
         }
+        // gather impl body (already lexed) -> shared buffered sig parse,
+        // multi-line sigs kp their ctx params visible
         let mut depth = brace_delta_for_doctor(line);
         let mut opened = line.contains('{');
+        let mut body: Vec<String> = Vec::new();
+        if opened && let Some(pos) = lines[i].find('{') {
+            body.push(lines[i][pos + 1..].to_string());
+        }
         i += 1;
         while i < lines.len() {
             let l = lines[i].as_str();
-            if opened
-                && depth == 1
-                && let Some(name) = parse_fn_name_for_doctor(l.trim())
-            {
-                names.push(name);
-            }
-            if !opened && l.contains('{') {
-                opened = true;
+            if !opened {
+                if let Some(pos) = l.find('{') {
+                    opened = true;
+                    body.push(l[pos + 1..].to_string());
+                    depth += brace_delta_for_doctor(l);
+                    if depth <= 0 {
+                        break;
+                    }
+                    i += 1;
+                    continue;
+                }
+            } else {
+                body.push(l.to_string());
             }
             depth += brace_delta_for_doctor(l);
             if opened && depth <= 0 {
@@ -312,17 +330,31 @@ pub(super) fn parse_inherent_method_names(text: &str) -> Vec<String> {
             }
             i += 1;
         }
+        methods.extend(parse_method_fns_from_lexed(body.into_iter()));
         i += 1;
     }
-    names
+    methods
 }
 
-pub(super) fn parse_method_names_from_block(body: &str) -> Vec<String> {
-    let mut names = Vec::new();
+pub(super) fn parse_method_fns_from_block(body: &str) -> Vec<DoctorParsedMethod> {
+    parse_method_fns_from_lexed(lex_code_lines_for_doctor(body).into_iter())
+}
+
+fn parse_method_fns_from_lexed(lines: impl Iterator<Item = String>) -> Vec<DoctorParsedMethod> {
+    let mut methods = Vec::new();
     let mut depth = 0_i32;
     let mut sig_buf: Option<String> = None;
     let mut sig_paren_depth = 0_i32;
-    for line in lex_code_lines_for_doctor(body) {
+    let push_sig = |sig: &str, methods: &mut Vec<DoctorParsedMethod>| {
+        if let Some((name, is_pub)) = parse_fn_vis_name_for_doctor(sig) {
+            methods.push(DoctorParsedMethod {
+                name,
+                is_pub,
+                has_ctx: sig.contains("ScriptContext") || sig.contains("ScriptCtx"),
+            });
+        }
+    };
+    for line in lines {
         let trimmed = line.trim();
         if depth == 0 {
             if let Some(buf) = sig_buf.as_mut() {
@@ -332,25 +364,26 @@ pub(super) fn parse_method_names_from_block(body: &str) -> Vec<String> {
                 }
                 sig_paren_depth += paren_delta_for_doctor(trimmed);
                 if sig_paren_depth <= 0 {
-                    if let Some(name) = parse_fn_name_for_doctor(buf) {
-                        names.push(name);
-                    }
-                    sig_buf = None;
+                    let buf = sig_buf.take().unwrap_or_default();
+                    push_sig(&buf, &mut methods);
                 }
-            } else if trimmed.starts_with("fn ") || trimmed.starts_with("pub fn ") {
+            } else if is_fn_sig_start_for_doctor(trimmed) {
                 sig_buf = Some(trimmed.to_string());
                 sig_paren_depth = paren_delta_for_doctor(trimmed);
                 if sig_paren_depth <= 0 {
-                    if let Some(name) = parse_fn_name_for_doctor(trimmed) {
-                        names.push(name);
-                    }
-                    sig_buf = None;
+                    let buf = sig_buf.take().unwrap_or_default();
+                    push_sig(&buf, &mut methods);
                 }
             }
         }
         depth += brace_delta_for_doctor(&line);
     }
-    names
+    methods
+}
+
+fn is_fn_sig_start_for_doctor(line: &str) -> bool {
+    let (rest, _) = strip_visibility_for_doctor(line);
+    rest.starts_with("fn ")
 }
 
 pub(super) fn validate_script_member_calls(
@@ -362,9 +395,11 @@ pub(super) fn validate_script_member_calls(
 ) {
     validate_var_member_calls(project_dir, file, text, "get_var", index, report);
     validate_var_member_calls(project_dir, file, text, "set_var", index, report);
+    validate_var_member_calls(project_dir, file, text, "broadcast_var", index, report);
     validate_state_access_calls(project_dir, file, text, "with_state", index, report);
     validate_state_access_calls(project_dir, file, text, "with_state_mut", index, report);
-    validate_method_member_calls(project_dir, file, text, &index.methods, report);
+    validate_method_member_calls(project_dir, file, text, index, report);
+    validate_signal_handler_targets(project_dir, file, text, index, report);
 }
 
 pub(super) fn validate_state_access_calls(
@@ -428,7 +463,8 @@ pub(super) fn validate_var_member_calls(
             continue;
         }
         let target = normalize_arg_text(args[1]);
-        if target == "ctx.id" {
+        // broadcast root = subtree write, self root is fine there
+        if target == "ctx.id" && macro_name != "broadcast_var" {
             let member = extract_member_literal(args[2], &["var"]);
             let replacement =
                 var_self_access_replacement(index, macro_name, member.as_deref(), &args);
@@ -437,15 +473,54 @@ pub(super) fn validate_var_member_calls(
                 "script self access: {source}`{macro_name}!` can use `{replacement}`"
             ));
         }
-        if let Some(member) = extract_member_literal(args[2], &["var"])
-            && !known_var_member(index, &member)
-        {
-            let source = format_source_location(project_dir, Some(file), Some(call.line));
-            report.warn(format!(
-                "script member missing: {source}`{macro_name}!` references state field `{member}`, but no script defines it"
-            ));
+        if let Some(member) = extract_member_literal(args[2], &["var"]) {
+            if !known_var_member(index, &member) {
+                let source = format_source_location(project_dir, Some(file), Some(call.line));
+                report.warn(format!(
+                    "script member missing: {source}`{macro_name}!` references state field `{member}`, but no script defines it"
+                ));
+            } else if !var_member_pub(index, &member) {
+                let root = member.split('.').next().unwrap_or(member.as_str());
+                let found = format_member_found_in(
+                    project_dir,
+                    index.state_field_files.get(root).map(Vec::as_slice),
+                );
+                let source = format_source_location(project_dir, Some(file), Some(call.line));
+                report.warn(format!(
+                    "script member private: {source}`{macro_name}!` references state field `{member}`, but no `pub {root}` exists{found} — make the field `pub` to expose it to other scripts (non-pub fields get no get/set glue)"
+                ));
+            }
         }
     }
+}
+
+/// runtime get/set glue exists only 4 pub root fields; nested paths ride the
+/// pub root's variant tree, so root vis alone gates access
+pub(super) fn var_member_pub(index: &ScriptDoctorIndex, member: &str) -> bool {
+    let root = member.split('.').next().unwrap_or(member);
+    index
+        .state_field_defs
+        .get(root)
+        .is_none_or(|defs| defs.iter().any(|def| def.is_pub))
+}
+
+/// ` (found `x` in res://a.rs, res://b.rs)` or empty
+pub(super) fn format_member_found_in(project_dir: &Path, files: Option<&[PathBuf]>) -> String {
+    let Some(files) = files else {
+        return String::new();
+    };
+    if files.is_empty() {
+        return String::new();
+    }
+    let mut names: Vec<String> = files
+        .iter()
+        .take(3)
+        .map(|file| format_project_path(project_dir, file))
+        .collect();
+    if files.len() > 3 {
+        names.push(format!("+{} more", files.len() - 3));
+    }
+    format!(" (found in {})", names.join(", "))
 }
 
 pub(super) fn var_self_access_replacement(
@@ -513,7 +588,7 @@ pub(super) fn validate_method_member_calls(
     project_dir: &Path,
     file: &Path,
     text: &str,
-    known_methods: &HashSet<String>,
+    index: &ScriptDoctorIndex,
     report: &mut ValidationReport,
 ) {
     for call in find_macro_calls_with_lines(text, "call_method") {
@@ -533,15 +608,132 @@ pub(super) fn validate_method_member_calls(
                 "script self access: {source}`call_method!` can use `{replacement}`"
             ));
         }
-        if let Some(member) = member
-            && !known_methods.contains(&member)
-        {
-            let source = format_source_location(project_dir, Some(file), Some(call.line));
-            report.warn(format!(
-                "script member missing: {source}`call_method!` references method `{member}`, but no script defines it"
-            ));
+        if let Some(member) = member {
+            warn_private_or_missing_method(
+                project_dir,
+                file,
+                call.line,
+                "call_method!",
+                &member,
+                index,
+                report,
+            );
         }
     }
+}
+
+/// method reached thru generated call_method glue (call_method! or signal
+/// dispatch): warn when undefined, or defined but never pub
+pub(super) fn warn_private_or_missing_method(
+    project_dir: &Path,
+    file: &Path,
+    line: usize,
+    macro_label: &str,
+    member: &str,
+    index: &ScriptDoctorIndex,
+    report: &mut ValidationReport,
+) {
+    match index.methods.get(member) {
+        None => {
+            let source = format_source_location(project_dir, Some(file), Some(line));
+            report.warn(format!(
+                "script member missing: {source}`{macro_label}` references method `{member}`, but no script defines it"
+            ));
+        }
+        Some(def) if !def.dispatch => {
+            let found = format_member_found_in(project_dir, Some(def.files.as_slice()));
+            let source = format_source_location(project_dir, Some(file), Some(line));
+            report.warn(format!(
+                "script member not callable: {source}`{macro_label}` references `{member}`{found}, but no definition takes `ctx: &mut ScriptContext<'_, API>` — only ctx methods get call glue"
+            ));
+        }
+        Some(def) if !def.is_pub => {
+            let found = format_member_found_in(project_dir, Some(def.files.as_slice()));
+            let source = format_source_location(project_dir, Some(file), Some(line));
+            report.warn(format!(
+                "script member private: {source}`{macro_label}` references method `{member}`, but no `pub fn {member}` exists{found} — make it `pub fn` so the compiler generates its call glue"
+            ));
+        }
+        Some(_) => {}
+    }
+}
+
+/// signal handlers dispatch thru call_method glue -> handler fns need pub
+pub(super) fn validate_signal_handler_targets(
+    project_dir: &Path,
+    file: &Path,
+    text: &str,
+    index: &ScriptDoctorIndex,
+    report: &mut ValidationReport,
+) {
+    for macro_name in ["signal_connect", "signal_connect_many"] {
+        for call in find_macro_calls_with_lines(text, macro_name) {
+            let args = split_top_level_args(&call.inner);
+            if args.len() < 4 {
+                continue;
+            }
+            for member in extract_member_literals(args[3], &["func", "method"]) {
+                warn_private_or_missing_method(
+                    project_dir,
+                    file,
+                    call.line,
+                    &format!("{macro_name}!"),
+                    &member,
+                    index,
+                    report,
+                );
+            }
+        }
+    }
+    for call in find_macro_calls_with_lines(text, "signal_connect_pairs") {
+        for (_, handler) in extract_signal_pairs(&call.inner) {
+            warn_private_or_missing_method(
+                project_dir,
+                file,
+                call.line,
+                "signal_connect_pairs!",
+                &handler,
+                index,
+                report,
+            );
+        }
+    }
+}
+
+/// pairs list arg: `[ (signal, handler), ... ]` w/ raw str or macro-wrapped
+/// literals -> resolved (signal, handler) name pairs
+pub(super) fn extract_signal_pairs(inner: &str) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    let args = split_top_level_args(inner);
+    let Some(list) = args.get(2) else {
+        return out;
+    };
+    let list = list.trim();
+    if !list.starts_with('[') {
+        return out;
+    }
+    let Some(close) = find_matching_delim_for_doctor(list, 0, '[', ']') else {
+        return out;
+    };
+    for pair in split_top_level_args(&list[1..close]) {
+        let pair = pair.trim();
+        if !pair.starts_with('(') {
+            continue;
+        }
+        let Some(pair_close) = find_matching_delim_for_doctor(pair, 0, '(', ')') else {
+            continue;
+        };
+        let parts = split_top_level_args(&pair[1..pair_close]);
+        if parts.len() < 2 {
+            continue;
+        }
+        let signal = extract_member_literal(parts[0], &["signal"]);
+        let handler = extract_member_literal(parts[1], &["func", "method"]);
+        if let (Some(signal), Some(handler)) = (signal, handler) {
+            out.push((signal, handler));
+        }
+    }
+    out
 }
 
 pub(super) fn extract_member_literal(arg: &str, macro_names: &[&str]) -> Option<String> {

@@ -17,10 +17,10 @@ struct DemoProfilingOverlayState {
     pub gfx_label: NodeID,
     #[default = NodeID::nil()]
     pub script_fps_label: NodeID,
-    pub refresh_timer: f32,
-    pub script_fps_timer: f32,
-    pub script_fps_frames: i32,
-    pub script_fps: f32,
+    refresh_timer: f32,
+    script_fps_timer: f32,
+    script_fps_frames: i32,
+    script_fps: f32,
 }
 
 lifecycle!({

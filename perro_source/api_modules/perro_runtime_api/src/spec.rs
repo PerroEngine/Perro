@@ -36,9 +36,7 @@ macro_rules! spec_begin {
             $crate::spec::__spec_marker("begin", $label)
         }
         #[cfg(not(feature = "perro-spec"))]
-        {
-            ()
-        }
+        {}
     }};
 }
 
@@ -50,9 +48,7 @@ macro_rules! spec_end {
             $crate::spec::__spec_marker("end", $label)
         }
         #[cfg(not(feature = "perro-spec"))]
-        {
-            ()
-        }
+        {}
     }};
 }
 
@@ -64,8 +60,6 @@ macro_rules! spec_point {
             $crate::spec::__spec_marker("point", $label)
         }
         #[cfg(not(feature = "perro-spec"))]
-        {
-            ()
-        }
+        {}
     }};
 }

@@ -642,10 +642,11 @@ What it does:
 2. Checks `project.main_scene`, `project.icon`, and `project.startup_splash`.
 3. Scans text assets under `res/` and `dlcs/` for quoted `res://` and `dlc://` references.
 4. Scans user scripts for likely missing `res://` and `dlc://` load paths.
-5. Warns when `get_var!`, `set_var!`, or `call_method!` reference names not found in any script state or `methods!` block.
-6. Warns when those dynamic calls target `ctx.id` and a typed self access path is available.
-7. Compiles every `.wgsl` under `res/` and `dlcs/` against the engine prelude and reports parse/type errors at the shader's own line and column.
-8. Reports missing scene/config references and broken shaders as errors, and script findings as warnings.
+5. Warns when `get_var!`, `set_var!`, `broadcast_var!`, `call_method!`, or a signal connection references a name not found in any script state or `methods!` block, or targets a member that exists but is not `pub` (no dispatch glue is generated); the warning names the defining file. Also warns `scene var private` when a scene `script_vars` entry or `.panim` `set_var` event targets a non-pub state field — that value will not apply.
+6. Warns the reverse too: a `pub` state field or `pub fn` ctx method that nothing references dynamically — no `var!`/`func!`/`method!` literal, access-macro string, signal connection, scene `script_vars` entry on a node running that script, animation event, or even a plain string literal matching the name anywhere in script code — can drop `pub` to shed its generated glue. Name matching is project-wide and never deduplicates: a shared name with any dynamic use anywhere stays quiet, so only names with zero uses are flagged. Methods without a `ScriptContext` parameter never get glue, so `pub` on plain helpers is ignored; a `call_method!` aimed at one of those gets its own "not callable" warning instead.
+7. Warns when those dynamic calls target `ctx.id` and a typed self access path is available.
+8. Compiles every `.wgsl` under `res/` and `dlcs/` against the engine prelude and reports parse/type errors at the shader's own line and column.
+9. Reports missing scene/config references and broken shaders as errors, and script findings as warnings.
 
 Shader checking composes your file exactly like the renderer does, so a custom
 material is checked against both the rigid and the skinned prelude, a `Sky3D`

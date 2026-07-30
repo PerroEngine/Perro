@@ -264,6 +264,44 @@ impl DeriveVariant for UnitVector4 {
     }
 }
 
+impl DeriveVariant for Color {
+    #[inline]
+    fn from_variant(value: &Variant) -> Option<Self> {
+        if let Some(v) = value.as_unit_vec4() {
+            return Some(Self::from_unit_vector4(v));
+        }
+        if let Some(v) = value.as_vec4() {
+            return Some(Self::from_rgba(v.to_array()));
+        }
+        if let Some(hex) = value.as_str() {
+            return Self::from_hex(hex);
+        }
+        if let Variant::Array(values) = value {
+            return match values.as_slice() {
+                [r, g, b] => Some(Self::rgb(r.as_f32()?, g.as_f32()?, b.as_f32()?)),
+                [r, g, b, a] => Some(Self::new(
+                    r.as_f32()?,
+                    g.as_f32()?,
+                    b.as_f32()?,
+                    a.as_f32()?,
+                )),
+                _ => None,
+            };
+        }
+        let obj = value.as_object()?;
+        let r = obj.get("r")?.as_f32()?;
+        let g = obj.get("g")?.as_f32()?;
+        let b = obj.get("b")?.as_f32()?;
+        let a = obj.get("a").map_or(Some(1.0), |a| a.as_f32())?;
+        Some(Self::new(r, g, b, a))
+    }
+
+    #[inline]
+    fn to_variant(&self) -> Variant {
+        Variant::from(*self)
+    }
+}
+
 impl DeriveVariant for Matrix2 {
     #[inline]
     fn from_variant(value: &Variant) -> Option<Self> {

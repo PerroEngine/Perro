@@ -45,11 +45,11 @@ Your script:
 #[State]
 pub struct DoorState {
     #[default(false)]
-    open: bool,
+    pub open: bool,
 }
 
 methods!({
-    fn set_open(&self, ctx: &mut ScriptContext<'_, API>, open: bool) {
+    pub fn set_open(&self, ctx: &mut ScriptContext<'_, API>, open: bool) {
         with_state_mut!(ctx.run, DoorState, ctx.id, |state| {
             state.open = open;
         });
@@ -64,6 +64,12 @@ Generated glue adds behavior code that can:
 - `set_var` -> write fields from `Variant`
 - `call_method` -> parse params + call `set_open`
 - `perro_create_script` -> return behavior object
+
+Dispatch arms are generated only for members declared `pub` (any form). Non-pub
+fields and methods stay typed-access only (`with_state!`, direct calls), receive
+no glue — not even scene `script_vars` injection — and keep the compiled binary
+smaller. Scene-injection arms come from a build-time scan of every `.scn` and
+`.panim`, so only `pub` fields scenes actually set get one.
 
 ## `perro check`
 

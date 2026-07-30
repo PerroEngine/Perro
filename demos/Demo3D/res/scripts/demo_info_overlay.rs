@@ -9,19 +9,19 @@ struct DemoInfoOverlayState {
     #[default = NodeID::nil()]
     pub body_label: NodeID,
     #[default = String::new()]
-    pub title_override: String,
+    title_override: String,
     #[default = String::new()]
-    pub body_override: String,
+    body_override: String,
     #[default = NodeID::nil()]
-    pub active_demo_root: NodeID,
+    active_demo_root: NodeID,
     #[default = String::new()]
-    pub active_demo: String,
+    active_demo: String,
 }
 
 lifecycle!({});
 
 methods!({
-    fn set_active_demo(
+    pub fn set_active_demo(
         &self,
         ctx: &mut ScriptContext<'_, API>,
         active_demo: String,
@@ -63,7 +63,7 @@ methods!({
         set_label_text(ctx, body_label, body);
     }
 
-    fn set_content(&self, ctx: &mut ScriptContext<'_, API>, title: String, body: String) {
+    pub fn set_content(&self, ctx: &mut ScriptContext<'_, API>, title: String, body: String) {
         with_state_mut!(ctx.run, DemoInfoOverlayState, ctx.id, |state| {
             state.title_override = title.clone();
             state.body_override = body.clone();
@@ -71,7 +71,7 @@ methods!({
         self.refresh(ctx);
     }
 
-    fn clear_content(&self, ctx: &mut ScriptContext<'_, API>) {
+    pub fn clear_content(&self, ctx: &mut ScriptContext<'_, API>) {
         with_state_mut!(ctx.run, DemoInfoOverlayState, ctx.id, |state| {
             state.title_override.clear();
             state.body_override.clear();

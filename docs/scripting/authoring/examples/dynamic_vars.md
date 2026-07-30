@@ -17,9 +17,10 @@ injects the fixed target, while tool data supplies the dynamic name.
 ```rust
 #[State]
 struct RuntimeInspectorState {
+    // pub because the scene injects it via script_vars.
     #[expose]
     #[node_ref(Node2D, Node3D, UiNode)]
-    target: Option<NodeID>,
+    pub target: Option<NodeID>,
 }
 
 lifecycle!({});
@@ -55,6 +56,10 @@ methods!({
 ```
 
 For a known `State`, prefer `with_state_mut!`. Dynamic vars fit generic cross script calls.
+
+The target only exposes fields declared `pub` in its `#[State]` struct:
+non-`pub` members read as `Variant::Null` and ignore writes — see
+[state visibility](../../state.md#visibility).
 
 `set_var!` performs strict runtime decode. A string such as
 `"res://textures/icon.png"` does not load into `TextureID`; asset path coercion

@@ -36,14 +36,14 @@ struct CharacterLook {
 struct PlayerState {
     #[default = 100]
     #[expose]
-    health: i32,
+    pub health: i32,
 
     #[expose]
     #[node_ref(Camera3D)]
-    camera: Option<NodeID>,
+    pub camera: Option<NodeID>,
 
     #[expose]
-    look: CharacterLook,
+    pub look: CharacterLook,
 
     velocity: Vector3,
 }
@@ -51,8 +51,9 @@ struct PlayerState {
 
 ## `#[expose]` Only Organizes The Inspector
 
-`#[expose]` controls editor inspector layout. It does not gate runtime access
-or scene injection. Any state field may receive a scene `script_vars` value if the .scn file is edited manually.
+`#[expose]` controls editor inspector layout. `pub` is the injection gate:
+only `pub` fields receive a scene `script_vars` value, and an exposed field
+must also be `pub` for its editor-authored value to apply.
 
 ```text
 script_vars = {

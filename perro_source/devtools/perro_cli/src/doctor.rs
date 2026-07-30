@@ -478,11 +478,19 @@ struct ScriptDoctorIndex {
     state_field_types: HashMap<String, HashSet<String>>,
     state_field_owners: HashMap<String, String>,
     state_field_defs: HashMap<String, Vec<DoctorField>>,
+    state_field_files: HashMap<String, Vec<PathBuf>>,
+    state_field_pub_files: HashMap<String, Vec<PathBuf>>,
     script_state_field_defs: HashMap<PathBuf, HashMap<String, DoctorField>>,
     custom_type_fields: HashMap<String, Vec<DoctorField>>,
-    methods: HashSet<String>,
+    methods: HashMap<String, DoctorMethodDef>,
     signal_emits: HashMap<String, Vec<SignalUse>>,
     signal_connects: HashSet<String>,
+    /// member names hit by any dynamic path: var!/func!/method! literals,
+    /// access-macro string args, signal connect handlers, resource events
+    dynamic_member_uses: HashSet<String>,
+    /// (script file, root var name) set thru scene node script_vars; scene
+    /// inject needs no pub, but authored wiring counts as intentional use
+    scene_var_uses: HashSet<(PathBuf, String)>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -490,6 +498,23 @@ struct DoctorField {
     name: String,
     ty: String,
     node_ref_types: Vec<String>,
+    /// any `pub` form on def line
+    is_pub: bool,
+}
+
+/// merged def info per method name across scripts
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+struct DoctorMethodDef {
+    /// true when any def has `pub`; runtime call glue needs pub
+    is_pub: bool,
+    /// true when any def takes ScriptContext -> call glue exists 4 it;
+    /// plain helper fns never get glue, pub on them is free
+    dispatch: bool,
+    files: Vec<PathBuf>,
+    /// files whose def has `pub`
+    pub_files: Vec<PathBuf>,
+    /// files w/ a single def both pub + ctx-shaped = glue actually emitted
+    dispatch_pub_files: Vec<PathBuf>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -535,9 +560,97 @@ fn validate_script_warnings(
     }
 
     validate_signal_emits(project_dir, &index, report);
+    collect_scene_script_var_uses(project_dir, &mut index)?;
+    validate_unused_pub_members(project_dir, &index, report);
     validate_node_ref_type_warnings(project_dir, &index, report)?;
 
     Ok(())
+}
+
+/// scan .scn: node w/ script + script_vars -> (script file, root var) pairs
+fn collect_scene_script_var_uses(
+    project_dir: &Path,
+    index: &mut ScriptDoctorIndex,
+) -> Result<(), String> {
+    let mut files = Vec::new();
+    collect_scene_files_recursive(&project_dir.join("res"), &mut files)?;
+    collect_scene_files_recursive(&project_dir.join("dlcs"), &mut files)?;
+    for file in files {
+        let text = fs::read_to_string(&file)
+            .map_err(|err| format!("failed to read scene {}: {err}", file.display()))?;
+        let Ok(scene) = Parser::new(&text).try_parse_scene() else {
+            continue;
+        };
+        let doc = SceneDoc::from_scene(scene);
+        for node in doc.scene.nodes.iter() {
+            let Some(script_path) = node
+                .script
+                .as_deref()
+                .and_then(|raw| resolve_script_virtual_ref_path(project_dir, &file, raw))
+            else {
+                continue;
+            };
+            for (name, _) in node.script_vars.as_ref() {
+                let root = name
+                    .as_ref()
+                    .split('.')
+                    .next()
+                    .unwrap_or(name.as_ref())
+                    .to_string();
+                index.scene_var_uses.insert((script_path.clone(), root));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// pub member w/ zero dynamic refs anywhere -> pub only costs binary size.
+/// name-level chk: shared names stay quiet when any site uses the name,
+/// even if it targets another script's member
+fn validate_unused_pub_members(
+    project_dir: &Path,
+    index: &ScriptDoctorIndex,
+    report: &mut ValidationReport,
+) {
+    let mut field_names: Vec<&String> = index.state_field_pub_files.keys().collect();
+    field_names.sort();
+    for name in field_names {
+        if index.dynamic_member_uses.contains(name.as_str()) {
+            continue;
+        }
+        let pub_files = index.state_field_pub_files.get(name);
+        // scene node w/ this script setting the var = intentional wiring
+        let scene_used = pub_files.is_some_and(|files| {
+            files
+                .iter()
+                .any(|file| index.scene_var_uses.contains(&(file.clone(), name.clone())))
+        });
+        if scene_used {
+            continue;
+        }
+        let found = format_member_found_in(project_dir, pub_files.map(Vec::as_slice));
+        report.warn(format!(
+            "script member unused pub: state field `{name}` is `pub`{found}, but nothing references it via get_var!/set_var!/broadcast_var!, scene script_vars, or animation events — remove `pub` to drop its generated glue, or use it somewhere"
+        ));
+    }
+
+    let mut method_names: Vec<&String> = index
+        .methods
+        .iter()
+        .filter(|(_, def)| !def.dispatch_pub_files.is_empty())
+        .map(|(name, _)| name)
+        .collect();
+    method_names.sort();
+    for name in method_names {
+        if index.dynamic_member_uses.contains(name.as_str()) {
+            continue;
+        }
+        let def = &index.methods[name];
+        let found = format_member_found_in(project_dir, Some(def.dispatch_pub_files.as_slice()));
+        report.warn(format!(
+            "script member unused pub: method `{name}` is `pub fn`{found}, but nothing references it via call_method!, signal connects, or animation events — remove `pub` to drop its generated glue, or use it somewhere"
+        ));
+    }
 }
 
 fn collect_project_script_files(project_dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), String> {
@@ -663,6 +776,7 @@ fn validate_scene_doc_node_refs(
         validate_script_var_node_ref_fields(
             &mut ctx,
             &node_name,
+            node.script.as_deref(),
             node.script_vars.as_ref(),
             script_defs,
             index,
@@ -734,6 +848,7 @@ fn validate_scene_value_node_ref_hint(
 fn validate_script_var_node_ref_fields(
     ctx: &mut NodeRefValidationCtx<'_>,
     node_name: &str,
+    script_ref: Option<&str>,
     fields: &[SceneObjectField],
     script_defs: Option<&HashMap<String, DoctorField>>,
     index: &ScriptDoctorIndex,
@@ -742,6 +857,16 @@ fn validate_script_var_node_ref_fields(
         let label = format!("{node_name}.script_vars.{}", name.as_ref());
         // node w/ resolved script: validate against that script's own defs
         if let Some(defs) = script_defs {
+            let root = name.as_ref().split('.').next().unwrap_or(name.as_ref());
+            if let Some(field) = defs.get(root)
+                && !field.is_pub
+            {
+                let source = format_source_location(ctx.project_dir, Some(ctx.file), None);
+                let script = script_ref.unwrap_or("script");
+                ctx.report.warn(format!(
+                    "scene var private: {source}{label}: state field `{root}` in {script} is not `pub` — scene injection requires `pub`, this value will not apply"
+                ));
+            }
             if let Some(field) = defs.get(name.as_ref()) {
                 validate_script_value_node_ref_hint(ctx, &label, value, field, index);
             }
@@ -936,6 +1061,22 @@ fn index_script_source(file: &Path, text: &str, index: &mut ScriptDoctorIndex) {
             if !defs.contains(&field) {
                 defs.push(field.clone());
             }
+            let files = index
+                .state_field_files
+                .entry(field.name.clone())
+                .or_default();
+            if !files.iter().any(|known| known == file) {
+                files.push(file.to_path_buf());
+            }
+            if field.is_pub {
+                let pub_files = index
+                    .state_field_pub_files
+                    .entry(field.name.clone())
+                    .or_default();
+                if !pub_files.iter().any(|known| known == file) {
+                    pub_files.push(file.to_path_buf());
+                }
+            }
             index
                 .script_state_field_defs
                 .entry(file.to_path_buf())
@@ -944,9 +1085,119 @@ fn index_script_source(file: &Path, text: &str, index: &mut ScriptDoctorIndex) {
             index.state_fields.insert(field.name);
         }
     }
-    for method in parse_script_method_names(text) {
-        index.methods.insert(method);
+    for method in parse_script_methods(text) {
+        let def = index.methods.entry(method.name).or_default();
+        def.is_pub |= method.is_pub;
+        def.dispatch |= method.has_ctx;
+        if !def.files.iter().any(|known| known == file) {
+            def.files.push(file.to_path_buf());
+        }
+        if method.is_pub && !def.pub_files.iter().any(|known| known == file) {
+            def.pub_files.push(file.to_path_buf());
+        }
+        if method.is_pub
+            && method.has_ctx
+            && !def.dispatch_pub_files.iter().any(|known| known == file)
+        {
+            def.dispatch_pub_files.push(file.to_path_buf());
+        }
     }
+    index_dynamic_member_uses(text, index);
+}
+
+/// member names any dynamic path can hit later; drives unused-pub warn
+fn index_dynamic_member_uses(text: &str, index: &mut ScriptDoctorIndex) {
+    // var!/func!/method! literals anywhere (consts, call sites, tables)
+    for macro_name in ["var", "func", "method"] {
+        for name in find_bare_macro_literals(text, macro_name) {
+            insert_dynamic_member_use(index, name);
+        }
+    }
+    // plain-string member args: get_var!(ctx.run, id, "health")
+    for macro_name in [
+        "get_var",
+        "set_var",
+        "broadcast_var",
+        "get_node_var",
+        "call_method",
+    ] {
+        for inner in find_macro_calls(text, macro_name) {
+            let args = split_top_level_args(&inner);
+            if let Some(arg) = args.get(2)
+                && let Some(name) = extract_member_literal(arg, &["var", "func", "method"])
+            {
+                insert_dynamic_member_use(index, name);
+            }
+        }
+    }
+    for macro_name in ["signal_connect", "signal_connect_many"] {
+        for inner in find_macro_calls(text, macro_name) {
+            let args = split_top_level_args(&inner);
+            if let Some(arg) = args.get(3) {
+                for name in extract_member_literals(arg, &["func", "method"]) {
+                    insert_dynamic_member_use(index, name);
+                }
+            }
+        }
+    }
+    for inner in find_macro_calls(text, "signal_connect_pairs") {
+        for (_, handler) in extract_signal_pairs(&inner) {
+            insert_dynamic_member_use(index, handler);
+        }
+    }
+    // any ident-shaped str literal = maybe runtime-built member name
+    // (adapter patterns pass names as plain params) -> conservative suppress
+    for literal in extract_string_literals_for_doctor(text) {
+        let root = literal.split('.').next().unwrap_or(literal.as_str());
+        if is_ident_for_doctor(root) {
+            insert_dynamic_member_use(index, literal);
+        }
+    }
+}
+
+/// str literal args of bare `name!(...)` calls, word-boundary matched so
+/// `var!` inside `get_var!` no false-hit + no region skip past nested calls
+fn find_bare_macro_literals(text: &str, macro_name: &str) -> Vec<String> {
+    let needle = format!("{macro_name}!");
+    let bytes = text.as_bytes();
+    let mut out = Vec::new();
+    let mut search_from = 0usize;
+    while search_from < text.len() {
+        let Some(rel) = text[search_from..].find(&needle) else {
+            break;
+        };
+        let start = search_from + rel;
+        search_from = start + needle.len();
+        if start > 0 {
+            let before = bytes[start - 1];
+            if before.is_ascii_alphanumeric() || before == b'_' {
+                continue;
+            }
+        }
+        let after = start + needle.len();
+        let rest = text[after..].trim_start();
+        let open = after + (text[after..].len() - rest.len());
+        if !text[open..].starts_with('(') {
+            continue;
+        }
+        let Some(close) = find_matching_delim_for_doctor(text, open, '(', ')') else {
+            continue;
+        };
+        if let Some(name) = parse_string_literal_value(text[open + 1..close].trim()) {
+            out.push(name);
+        }
+    }
+    out
+}
+
+fn insert_dynamic_member_use(index: &mut ScriptDoctorIndex, name: String) {
+    // nested path use marks its root field too
+    if let Some(root) = name.split('.').next()
+        && root != name
+    {
+        index.dynamic_member_uses.insert(root.to_string());
+    }
+    index.dynamic_member_uses.insert(name);
 }
 
 fn index_script_signal_uses(file: &Path, text: &str, index: &mut ScriptDoctorIndex) {
@@ -977,6 +1228,11 @@ fn index_script_signal_uses(file: &Path, text: &str, index: &mut ScriptDoctorInd
             index.signal_connects.insert(signal);
         }
     }
+    for call in find_macro_calls_with_lines(text, "signal_connect_pairs") {
+        for (signal, _) in extract_signal_pairs(&call.inner) {
+            index.signal_connects.insert(signal);
+        }
+    }
 }
 
 fn collect_resource_signal_emits(
@@ -992,8 +1248,26 @@ fn collect_resource_signal_emits(
         for signal_ref in extract_resource_signal_emits(&text) {
             index_signal_emit(index, signal_ref.raw, &file, signal_ref.line);
         }
+        for name in extract_resource_member_event_names(&text) {
+            insert_dynamic_member_use(index, name);
+        }
     }
     Ok(())
+}
+
+/// panim/scene event lines (`call_method = { name="x" }`, `set_var = { name="x" }`)
+/// dispatch thru generated glue -> count as dynamic member uses
+fn extract_resource_member_event_names(text: &str) -> Vec<String> {
+    let mut names = Vec::new();
+    for line in text.lines() {
+        if (line.contains("call_method") || line.contains("set_var"))
+            && line.contains("name")
+            && let Some(name) = extract_named_emit_signal_for_doctor(line)
+        {
+            names.push(name);
+        }
+    }
+    names
 }
 
 fn extract_resource_signal_emits(text: &str) -> Vec<TextRef> {

@@ -341,7 +341,8 @@ lifecycle!({
 });
 
 methods!({
-    fn apply_language(&self, ctx: &mut ScriptContext<'_, API>) {
+    // pub because signal dispatch only reaches pub fn methods.
+    pub fn apply_language(&self, ctx: &mut ScriptContext<'_, API>) {
         let ok = locale_set!(ctx.res, "es");
         if ok {
             let start = locale!(ctx.res, "menu.start");

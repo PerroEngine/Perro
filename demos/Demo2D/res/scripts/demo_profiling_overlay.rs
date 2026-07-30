@@ -25,12 +25,12 @@ struct DemoProfilingOverlayState {
     pub strobe_label: NodeID,
     #[default = NodeID::nil()]
     pub strobe_dot: NodeID,
-    pub refresh_timer: f32,
-    pub script_fps_timer: f32,
-    pub script_fps_frames: i32,
-    pub script_fps: f32,
-    pub cap_index: i32,
-    pub visual_frame: i32,
+    refresh_timer: f32,
+    script_fps_timer: f32,
+    script_fps_frames: i32,
+    script_fps: f32,
+    cap_index: i32,
+    visual_frame: i32,
 }
 
 lifecycle!({

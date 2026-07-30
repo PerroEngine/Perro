@@ -13,7 +13,8 @@ fn validate_dlc_name(dlc_name: &str) -> Result<(), CompilerError> {
 pub fn sync_scripts(project_root: &Path) -> Result<Vec<String>, CompilerError> {
     let res_dir = project_root.join("res");
     let scripts_src = project_root.join(".perro").join("scripts").join("src");
-    sync_scripts_from_source(&res_dir, &scripts_src, "res://")
+    let scene_vars = collect_project_scene_var_index(project_root);
+    sync_scripts_from_source(&res_dir, &scripts_src, "res://", &scene_vars)
 }
 
 pub fn sync_dlc_scripts(project_root: &Path, dlc_name: &str) -> Result<Vec<String>, CompilerError> {
@@ -26,13 +27,176 @@ pub fn sync_dlc_scripts(project_root: &Path, dlc_name: &str) -> Result<Vec<Strin
         .join("scripts")
         .join("src");
     let prefix = format!("dlc://{dlc_name}/");
-    sync_scripts_from_source(&dlc_root, &scripts_src, &prefix)
+    let scene_vars = collect_project_scene_var_index(project_root);
+    sync_scripts_from_source(&dlc_root, &scripts_src, &prefix, &scene_vars)
+}
+
+/// project-wide static scene analysis: which script vars authored content
+/// injects, keyed by canonical script ref (`res://...` / `dlc://name/...`).
+/// dlc scenes can inject base-script vars (dlc = full repack) so both roots
+/// scan every time.
+struct SceneVarIndex {
+    /// canonical script ref -> (root names, dotted nested paths)
+    per_script: HashMap<String, (HashSet<String>, HashSet<String>)>,
+    /// panim events target the anim's bound node; script unknown statically
+    /// -> apply project-wide
+    panim_roots: HashSet<String>,
+    panim_paths: HashSet<String>,
+}
+
+impl SceneVarIndex {
+    fn usage_for(&self, canonical_script: &str) -> SceneVarUsage {
+        let (mut roots, mut paths) = self
+            .per_script
+            .get(canonical_script)
+            .cloned()
+            .unwrap_or_default();
+        roots.extend(self.panim_roots.iter().cloned());
+        paths.extend(self.panim_paths.iter().cloned());
+        SceneVarUsage::Exact { roots, paths }
+    }
+}
+
+fn collect_project_scene_var_index(project_root: &Path) -> SceneVarIndex {
+    let mut index = SceneVarIndex {
+        per_script: HashMap::new(),
+        panim_roots: HashSet::new(),
+        panim_paths: HashSet::new(),
+    };
+    collect_scene_var_sources(&project_root.join("res"), None, &mut index);
+    let dlcs_root = project_root.join("dlcs");
+    if let Ok(entries) = fs::read_dir(&dlcs_root) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_dir() {
+                continue;
+            }
+            let Some(dlc_name) = path.file_name().and_then(|n| n.to_str()).map(String::from)
+            else {
+                continue;
+            };
+            collect_scene_var_sources(&path, Some(&dlc_name), &mut index);
+        }
+    }
+    index
+}
+
+fn collect_scene_var_sources(root: &Path, dlc_name: Option<&str>, index: &mut SceneVarIndex) {
+    let _ = walk_dir(root, &mut |path| {
+        match path.extension().and_then(|e| e.to_str()) {
+            Some("scn") => {
+                let Ok(text) = fs::read_to_string(path) else {
+                    return Ok(());
+                };
+                collect_scene_script_vars(&text, dlc_name, index);
+            }
+            Some("panim") => {
+                let Ok(text) = fs::read_to_string(path) else {
+                    return Ok(());
+                };
+                collect_panim_set_vars(&text, index);
+            }
+            _ => {}
+        }
+        Ok(())
+    });
+}
+
+fn collect_scene_script_vars(text: &str, dlc_name: Option<&str>, index: &mut SceneVarIndex) {
+    let Ok(scene) = perro_scene::Parser::new(text).try_parse_scene() else {
+        return;
+    };
+    let doc = perro_scene::SceneDoc::from_scene(scene);
+    for node in doc.scene.nodes.iter() {
+        let Some(raw) = node.script.as_deref() else {
+            continue;
+        };
+        let Some(canonical) = canonical_script_ref(raw, dlc_name) else {
+            continue;
+        };
+        let entry = index.per_script.entry(canonical).or_default();
+        for (name, value) in node.script_vars.as_ref() {
+            record_injected_var(name.as_ref(), Some(value), &mut entry.0, &mut entry.1);
+        }
+    }
+}
+
+/// `dlc://self/` resolve against the scene's own dlc; other schemes kp as-is
+fn canonical_script_ref(raw: &str, dlc_name: Option<&str>) -> Option<String> {
+    if let Some(rest) = raw.strip_prefix("dlc://self/") {
+        let dlc = dlc_name?;
+        return Some(format!("dlc://{dlc}/{rest}"));
+    }
+    if raw.starts_with("res://") || raw.starts_with("dlc://") {
+        return Some(raw.to_string());
+    }
+    None
+}
+
+/// record root + dotted paths; nested objects flatten wide (union of all
+/// injection shapes across every scene)
+fn record_injected_var(
+    name: &str,
+    value: Option<&perro_scene::SceneValue>,
+    roots: &mut HashSet<String>,
+    paths: &mut HashSet<String>,
+) {
+    let root = name.split('.').next().unwrap_or(name);
+    if root.is_empty() {
+        return;
+    }
+    roots.insert(root.to_string());
+    if name.contains('.') {
+        paths.insert(name.to_string());
+    }
+    let Some(perro_scene::SceneValue::Object(fields)) = value else {
+        return;
+    };
+    for (key, child) in fields.iter() {
+        let full = format!("{name}.{}", key.as_ref());
+        paths.insert(full.clone());
+        record_injected_var(&full, Some(child), roots, paths);
+    }
+}
+
+/// panim `set_var = { name="x" }` events dispatch thru scene glue; the bound
+/// node's script is unknown at compile time -> names count project-wide
+fn collect_panim_set_vars(text: &str, index: &mut SceneVarIndex) {
+    for line in text.lines() {
+        let trimmed = line.trim();
+        if !trimmed.contains("set_var") || !trimmed.contains("name") {
+            continue;
+        }
+        let Some(name_pos) = trimmed.find("name") else {
+            continue;
+        };
+        let Some(eq_rel) = trimmed[name_pos..].find('=') else {
+            continue;
+        };
+        let rhs = trimmed[name_pos + eq_rel + 1..].trim_start();
+        let Some(rest) = rhs.strip_prefix('"') else {
+            continue;
+        };
+        let Some(end) = rest.find('"') else {
+            continue;
+        };
+        let name = &rest[..end];
+        if name.is_empty() {
+            continue;
+        }
+        let root = name.split('.').next().unwrap_or(name).to_string();
+        index.panim_roots.insert(root);
+        if name.contains('.') {
+            index.panim_paths.insert(name.to_string());
+        }
+    }
 }
 
 fn sync_scripts_from_source(
     source_dir: &Path,
     scripts_src: &Path,
     script_path_prefix: &str,
+    scene_vars: &SceneVarIndex,
 ) -> Result<Vec<String>, CompilerError> {
     fs::create_dir_all(scripts_src)?;
 
@@ -62,7 +226,9 @@ fn sync_scripts_from_source(
             }
             let source = fs::read_to_string(path)?;
             let source_include = relative_include_path(&dst, path);
-            let transformed = transpile_frontend_script(&source, &source_include);
+            let usage = scene_vars.usage_for(&format!("{script_path_prefix}{rel_norm}"));
+            let transformed =
+                transpile_frontend_script_with_scene_vars(&source, &source_include, &usage);
             if transpiled_exports_script_ctor(&transformed) {
                 registrable.push(rel_norm.clone());
             }

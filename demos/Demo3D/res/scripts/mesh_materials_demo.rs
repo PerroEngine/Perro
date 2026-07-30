@@ -5,7 +5,7 @@ type SelfNodeType = Node3D;
 #[State]
 struct MeshMaterialsDemoState {
     #[default = NodeID::nil()]
-    pub overlay: NodeID,
+    overlay: NodeID,
     #[default = NodeID::nil()]
     pub mirror_original: NodeID,
     #[default = NodeID::nil()]
@@ -32,7 +32,7 @@ lifecycle!({
 });
 
 methods!({
-    fn set_info_overlay(&self, ctx: &mut ScriptContext<'_, API>, overlay: NodeID) {
+    pub fn set_info_overlay(&self, ctx: &mut ScriptContext<'_, API>, overlay: NodeID) {
         with_state_mut!(ctx.run, MeshMaterialsDemoState, ctx.id, |state| {
             state.overlay = overlay;
         });

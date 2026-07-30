@@ -5,9 +5,9 @@ type SelfNodeType = Node3D;
 #[State]
 struct MultiMeshDemoState {
     #[default = NodeID::nil()]
-    pub overlay: NodeID,
+    overlay: NodeID,
     #[default = String::new()]
-    pub last_body: String,
+    last_body: String,
 }
 
 lifecycle!({
@@ -21,7 +21,7 @@ lifecycle!({
 });
 
 methods!({
-    fn set_info_overlay(&self, ctx: &mut ScriptContext<'_, API>, overlay: NodeID) {
+    pub fn set_info_overlay(&self, ctx: &mut ScriptContext<'_, API>, overlay: NodeID) {
         with_state_mut!(ctx.run, MultiMeshDemoState, ctx.id, |state| {
             state.overlay = overlay;
         });

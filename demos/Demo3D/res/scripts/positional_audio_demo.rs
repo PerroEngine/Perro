@@ -6,7 +6,7 @@ type SelfNodeType = Node3D;
 #[State]
 struct PositionalAudioDemoState {
     #[default = NodeID::nil()]
-    pub overlay: NodeID,
+    overlay: NodeID,
     #[default = NodeID::nil()]
     pub speaker_a: NodeID,
     #[default = NodeID::nil()]
@@ -18,9 +18,9 @@ struct PositionalAudioDemoState {
     #[default = NodeID::nil()]
     pub debug_label: NodeID,
     #[default = vec![NodeID::nil(); 3]]
-    pub speakers: Vec<NodeID>,
+    speakers: Vec<NodeID>,
     #[default = true]
-    pub debug_rays: bool,
+    debug_rays: bool,
 }
 
 lifecycle!({
@@ -82,7 +82,7 @@ lifecycle!({
 });
 
 methods!({
-    fn on_chord_timer(&self, ctx: &mut ScriptContext<'_, API>) {
+    pub fn on_chord_timer(&self, ctx: &mut ScriptContext<'_, API>) {
         self.play_chord(ctx);
         timer_start!(
             ctx.run,
@@ -91,7 +91,7 @@ methods!({
         );
     }
 
-    fn set_info_overlay(&self, ctx: &mut ScriptContext<'_, API>, overlay: NodeID) {
+    pub fn set_info_overlay(&self, ctx: &mut ScriptContext<'_, API>, overlay: NodeID) {
         with_state_mut!(ctx.run, PositionalAudioDemoState, ctx.id, |state| {
             state.overlay = overlay;
         });

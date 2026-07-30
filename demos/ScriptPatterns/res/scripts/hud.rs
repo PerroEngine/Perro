@@ -17,7 +17,7 @@ lifecycle!({
 });
 
 methods!({
-    fn show_score(&self, ctx: &mut ScriptContext<'_, API>, score: i32) {
+    pub fn show_score(&self, ctx: &mut ScriptContext<'_, API>, score: i32) {
         with_node_mut!(ctx.run, SelfNodeType, ctx.id, |label| {
             label.text = format!("Score: {score}").into();
         });

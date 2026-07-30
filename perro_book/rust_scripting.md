@@ -49,11 +49,12 @@ Expose values when the editor inspector should show them:
 ```rust
 #[default(4.0)]
 #[expose]
-speed: f32,
+pub speed: f32,
 ```
 
-`#[expose]` is editor-only organization. Scene `script_vars` can inject any
-state field that supports `Variant` conversion.
+`#[expose]` is editor-only organization. Scene `script_vars` can inject only
+`pub` state fields, so an exposed field must also be `pub` for the authored
+value to apply.
 
 Store fixed dependencies as `NodeID` fields and per-instance resources as typed
 asset IDs. Scene paths resolve before `on_init`, including nested derived types:
@@ -67,8 +68,8 @@ struct DoorLook {
 #[State]
 struct DoorState {
     #[node_ref(Node3D)]
-    target: Option<NodeID>,
-    look: DoorLook,
+    pub target: Option<NodeID>,
+    pub look: DoorLook,
 }
 ```
 
@@ -99,7 +100,8 @@ Generated glue converts params from `Variant` and converts return values back in
 
 ```rust
 methods!({
-    fn set_open(&self, ctx: &mut ScriptContext<'_, API>, open: bool) -> bool {
+    // pub: only pub fn methods get call/signal dispatch glue.
+    pub fn set_open(&self, ctx: &mut ScriptContext<'_, API>, open: bool) -> bool {
         with_state_mut!(ctx.run, DoorState, ctx.id, |state| {
             state.open = open;
             state.open

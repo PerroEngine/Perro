@@ -74,7 +74,8 @@ lifecycle!({
 });
 
 methods!({
-    fn on_hurt(&self, ctx: &mut ScriptContext<'_, API>) {
+    // pub because signal dispatch only reaches pub fn methods.
+    pub fn on_hurt(&self, ctx: &mut ScriptContext<'_, API>) {
         post_processing_add!(
             ctx.res,
             "hurt",
@@ -82,7 +83,7 @@ methods!({
         );
     }
 
-    fn on_hurt_recovered(&self, ctx: &mut ScriptContext<'_, API>) {
+    pub fn on_hurt_recovered(&self, ctx: &mut ScriptContext<'_, API>) {
         let removed = post_processing_remove!(ctx.res, name = "hurt");
         let _ = removed;
     }

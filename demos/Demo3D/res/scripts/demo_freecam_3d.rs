@@ -21,7 +21,7 @@ struct DemoFreecam3DState {
     #[default = DEFAULT_MOUSE_SENSITIVITY]
     pub mouse_sensitivity: f32,
     #[default = CAPTURE_WARMUP_FRAMES]
-    pub capture_warmup: u8,
+    capture_warmup: u8,
     #[default = true]
     pub input_enabled: bool,
 }

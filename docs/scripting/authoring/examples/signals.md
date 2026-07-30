@@ -23,7 +23,8 @@ struct PlayerState {
 lifecycle!({});
 
 methods!({
-    fn take_damage(&self, ctx: &mut ScriptContext<'_, API>, amount: i32) -> bool {
+    // pub so attackers can dispatch it via call_method!.
+    pub fn take_damage(&self, ctx: &mut ScriptContext<'_, API>, amount: i32) -> bool {
         let health = with_state_mut!(ctx.run, PlayerState, ctx.id, |state| {
             state.health = (state.health - amount.max(0)).max(0);
             state.health
@@ -56,7 +57,8 @@ lifecycle!({
 });
 
 methods!({
-    fn on_health_changed(&self, ctx: &mut ScriptContext<'_, API>, health: i32) {
+    // pub because signal dispatch uses the same glue as call_method!.
+    pub fn on_health_changed(&self, ctx: &mut ScriptContext<'_, API>, health: i32) {
         with_node_mut!(ctx.run, SelfNodeType, ctx.id, |label| {
             label.text = format!("Health: {health}").into();
         });

@@ -10,7 +10,7 @@ struct DynamicAdapter {
 lifecycle!({});
 
 methods!({
-    fn add_to_member(
+    pub fn add_to_member(
         &self,
         ctx: &mut ScriptContext<'_, API>,
         member: String,

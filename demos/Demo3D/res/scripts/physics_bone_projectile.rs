@@ -9,11 +9,11 @@ struct PhysicsBoneProjectileState {
     #[default = NodeID::nil()]
     pub projectile_shape: NodeID,
     #[default = Vector3::ZERO]
-    pub velocity: Vector3,
+    velocity: Vector3,
     #[default = 2.5]
-    pub life: f32,
+    life: f32,
     #[default = 0.35]
-    pub radius: f32,
+    radius: f32,
 }
 
 lifecycle!({
@@ -38,7 +38,7 @@ lifecycle!({
 });
 
 methods!({
-    fn launch(&self, ctx: &mut ScriptContext<'_, API>, velocity: Vector3, radius: f32) {
+    pub fn launch(&self, ctx: &mut ScriptContext<'_, API>, velocity: Vector3, radius: f32) {
         with_state_mut!(ctx.run, PhysicsBoneProjectileState, ctx.id, |state| {
             state.velocity = velocity;
             state.radius = radius;

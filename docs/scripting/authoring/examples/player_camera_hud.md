@@ -22,9 +22,10 @@ state. HUD and audio connect to `health_changed` during `on_all_init`.
 struct PlayerState {
     #[default = 100]
     health: i32,
+    // pub because the scene injects it via script_vars.
     #[default = NodeID::nil()]
     #[node_ref(Camera3D)]
-    camera: NodeID,
+    pub camera: NodeID,
 }
 ```
 
@@ -44,7 +45,8 @@ lifecycle!({
 });
 
 methods!({
-    fn take_damage(&self, ctx: &mut ScriptContext<'_, API>, amount: i32) -> i32 {
+    // pub so attackers can dispatch it via call_method!.
+    pub fn take_damage(&self, ctx: &mut ScriptContext<'_, API>, amount: i32) -> i32 {
         let health = with_state_mut!(ctx.run, PlayerState, ctx.id, |state| {
             state.health = (state.health - amount.max(0)).max(0);
             state.health
@@ -55,8 +57,9 @@ methods!({
 });
 ```
 
-HUD handler accepts `(source: NodeID, health: i32)`, filters `source` when more
-than one player exists, and edits its own `UiLabel`. Camera update follows the
+HUD handler is a `pub fn` accepting `(source: NodeID, health: i32)` — signal
+dispatch only reaches `pub` methods — filters `source` when more than one player
+exists, and edits its own `UiLabel`. Camera update follows the
 same borrow-safe shape: copy `camera` out of state, skip nil, mutate camera in a
 separate `with_node_mut!` call.
 

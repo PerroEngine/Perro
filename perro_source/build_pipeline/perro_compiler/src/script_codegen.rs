@@ -1,4 +1,45 @@
+/// which vars scenes/anims inject into 1 script; drives scene-arm emit
+#[derive(Clone, Debug)]
+enum SceneVarUsage {
+    /// permissive: scene arms 4 every pub field (tests/tools)
+    #[allow(dead_code)]
+    AllPub,
+    /// static scene analysis: only observed injections get arms
+    Exact {
+        /// root field names set via .scn script_vars / .panim set_var
+        roots: HashSet<String>,
+        /// dotted nested member paths observed in injections (wide union)
+        paths: HashSet<String>,
+    },
+}
+
+impl SceneVarUsage {
+    fn scene_field(&self, name: &str) -> bool {
+        match self {
+            SceneVarUsage::AllPub => true,
+            SceneVarUsage::Exact { roots, .. } => roots.contains(name),
+        }
+    }
+
+    fn scene_path(&self, member: &str) -> bool {
+        match self {
+            SceneVarUsage::AllPub => true,
+            SceneVarUsage::Exact { paths, .. } => paths.contains(member),
+        }
+    }
+}
+
+/// permissive wrapper: scene arms 4 all pub fields (test/tool entry)
+#[allow(dead_code)]
 fn transpile_frontend_script(source: &str, source_include: &str) -> String {
+    transpile_frontend_script_with_scene_vars(source, source_include, &SceneVarUsage::AllPub)
+}
+
+fn transpile_frontend_script_with_scene_vars(
+    source: &str,
+    source_include: &str,
+    scene_vars: &SceneVarUsage,
+) -> String {
     let debug_methods = methods_debug_enabled();
     let source = ensure_script_allows(source);
     let source_include = escape_str(&normalize_generated_include_path(source_include));
@@ -71,6 +112,52 @@ fn transpile_frontend_script(source: &str, source_include: &str) -> String {
     };
     let exposed_fields = supported_fields(&state_fields);
     let nested_fields = parse_local_nested_fields(&source, &exposed_fields);
+    // pub-only sets drive ALL glue: get/set/call + scene inject.
+    // non-pub members = internal only (with_state!/self.method), zero glue.
+    let public_fields: Vec<ScriptField> = exposed_fields
+        .iter()
+        .filter(|field| field.is_pub)
+        .cloned()
+        .collect();
+    let public_nested: Vec<NestedScriptField> = nested_fields
+        .iter()
+        .filter(|field| field.is_pub)
+        .cloned()
+        .collect();
+    // scene arms: pub + observed injected (static scene analysis);
+    // runtime spawns w/ vars ride the scene-match `_` -> set_var fallback
+    let scene_fields: Vec<ScriptField> = public_fields
+        .iter()
+        .filter(|field| scene_vars.scene_field(&field.name))
+        .cloned()
+        .collect();
+    let public_root_names: HashSet<&str> = public_fields
+        .iter()
+        .map(|field| field.name.as_str())
+        .collect();
+    let scene_nested: Vec<NestedScriptField> = nested_fields
+        .iter()
+        .filter(|field| {
+            let root = field.member.split('.').next().unwrap_or(&field.member);
+            public_root_names.contains(root) && scene_vars.scene_path(&field.member)
+        })
+        .cloned()
+        .collect();
+    let public_methods: Vec<ScriptMethod> = user_methods
+        .iter()
+        .filter(|method| method.is_pub)
+        .cloned()
+        .collect();
+    if debug_methods {
+        for method in &user_methods {
+            if !method.is_pub {
+                eprintln!(
+                    "[perro][methods][skip] not pub, no call_method arm | method=`{}`",
+                    method.name
+                );
+            }
+        }
+    }
 
     let mut flags = String::from("ScriptFlags::NONE");
     if has_init {
@@ -89,13 +176,31 @@ fn transpile_frontend_script(source: &str, source_include: &str) -> String {
         flags.push_str(" | ScriptFlags::HAS_REMOVAL");
     }
 
-    let member_consts = generate_member_consts(&exposed_fields, &nested_fields, &user_methods);
-    let state_cast_helpers = generate_state_cast_helpers(&state_ty, &exposed_fields);
-    let get_var_body = generate_get_var_body(&exposed_fields, &nested_fields);
-    let set_var_match_fn = generate_set_var_match_fn(&state_ty, &exposed_fields, &nested_fields);
-    let set_var_body = generate_set_var_body(&exposed_fields);
-    let apply_scene_injected_vars_body = generate_apply_scene_injected_vars_body(&exposed_fields);
-    let call_method_body = generate_call_method_body(&user_methods);
+    // consts: pub members only; scene nested paths add their consts
+    let mut const_nested = public_nested.clone();
+    for field in &scene_nested {
+        if !const_nested
+            .iter()
+            .any(|known| known.member == field.member)
+        {
+            const_nested.push(field.clone());
+        }
+    }
+    let member_consts = generate_member_consts(&public_fields, &const_nested, &public_methods);
+    let state_cast_helpers = generate_state_cast_helpers(&state_ty, &public_fields);
+    let get_var_body = generate_get_var_body(&public_fields, &public_nested);
+    let set_var_match_fn = generate_var_match_fns(
+        &state_ty,
+        &public_fields,
+        &scene_fields,
+        &public_nested,
+        &scene_nested,
+    );
+    let set_var_body = generate_set_var_body(&public_fields);
+    let has_scene_arms = !scene_fields.is_empty() || !scene_nested.is_empty();
+    let apply_scene_injected_vars_body =
+        generate_apply_scene_injected_vars_body(has_scene_arms, !public_fields.is_empty());
+    let call_method_body = generate_call_method_body(&public_methods);
 
     let implicit_script_decl = if needs_implicit_script_struct {
         format!("#[derive(Default)]\nstruct {script_ty};\n\n")
@@ -338,6 +443,8 @@ fn is_unit_struct(source: &str, struct_name: &str) -> bool {
 struct ScriptField {
     name: String,
     ty: String,
+    /// any `pub` form (`pub`, `pub(crate)`, ...) -> exposed 2 other scripts
+    is_pub: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -345,6 +452,8 @@ struct NestedScriptField {
     member: String,
     access: String,
     ty: String,
+    /// root field + every path segment pub -> exposed 2 other scripts
+    is_pub: bool,
 }
 
 fn parse_local_nested_fields(source: &str, state_fields: &[ScriptField]) -> Vec<NestedScriptField> {
@@ -366,6 +475,7 @@ fn parse_local_nested_fields(source: &str, state_fields: &[ScriptField]) -> Vec<
             local_type_name(&field.ty),
             &field.name,
             &field.name,
+            field.is_pub,
             &mut stack,
             &mut out,
         );
@@ -378,6 +488,7 @@ fn collect_local_nested_fields(
     ty: Option<&str>,
     member_prefix: &str,
     access_prefix: &str,
+    prefix_is_pub: bool,
     stack: &mut HashSet<String>,
     out: &mut Vec<NestedScriptField>,
 ) {
@@ -394,6 +505,7 @@ fn collect_local_nested_fields(
     for field in fields {
         let member = format!("{member_prefix}.{}", field.name);
         let access = format!("{access_prefix}.{}", field.name);
+        let is_pub = prefix_is_pub && field.is_pub;
         let child_ty = local_type_name(&field.ty);
         let child_is_local_struct = child_ty
             .and_then(|name| local_structs.get(name))
@@ -404,6 +516,7 @@ fn collect_local_nested_fields(
                 child_ty,
                 &member,
                 &access,
+                is_pub,
                 stack,
                 out,
             );
@@ -412,6 +525,7 @@ fn collect_local_nested_fields(
                 member,
                 access,
                 ty: normalize_type(&field.ty),
+                is_pub,
             });
         }
     }

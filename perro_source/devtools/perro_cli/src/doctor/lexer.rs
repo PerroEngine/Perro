@@ -113,17 +113,38 @@ pub(super) fn extract_brace_block_for_doctor(input: &str) -> Option<&str> {
     Some(&input[1..end])
 }
 
-pub(super) fn parse_fn_name_for_doctor(input: &str) -> Option<String> {
-    let input = input.trim().trim_start_matches("pub ").trim_start();
+/// parse fn sig start -> (name, had_pub); any vis form counts as pub
+pub(super) fn parse_fn_vis_name_for_doctor(input: &str) -> Option<(String, bool)> {
+    let (input, is_pub) = strip_visibility_for_doctor(input.trim());
     let rest = input.strip_prefix("fn ")?;
     let name = rest
         .split(|ch: char| !(ch.is_ascii_alphanumeric() || ch == '_'))
         .next()?;
     if is_ident_for_doctor(name) {
-        Some(name.to_string())
+        Some((name.to_string(), is_pub))
     } else {
         None
     }
+}
+
+/// strip leading vis (`pub`, `pub(crate)`, `pub(in ...)`) -> (rest, had_pub)
+/// idents like `pubkey` no match
+pub(super) fn strip_visibility_for_doctor(line: &str) -> (&str, bool) {
+    let trimmed = line.trim_start();
+    let Some(rest) = trimmed.strip_prefix("pub") else {
+        return (trimmed, false);
+    };
+    if !(rest.starts_with(char::is_whitespace) || rest.starts_with('(')) {
+        return (trimmed, false);
+    }
+    let rest = rest.trim_start();
+    if let Some(scoped) = rest.strip_prefix('(') {
+        let Some(close) = scoped.find(')') else {
+            return (trimmed, false);
+        };
+        return (scoped[close + 1..].trim_start(), true);
+    }
+    (rest, true)
 }
 
 /// lex state carried btw lines: comments + strs span lines

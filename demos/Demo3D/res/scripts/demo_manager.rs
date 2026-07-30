@@ -273,14 +273,14 @@ struct DemoManagerState {
     #[default = NodeID::nil()]
     pub demo_ui_root: NodeID,
     #[default = DemoScenesState::default()]
-    pub scenes: DemoScenesState,
+    scenes: DemoScenesState,
     #[default = DemoRefsState::default()]
-    pub refs: DemoRefsState,
+    refs: DemoRefsState,
     #[default = DemoRuntimeState::default()]
-    pub runtime: DemoRuntimeState,
-    pub paused_anim_players: Vec<PausedAnimPlayerState>,
-    pub paused_anim_trees: Vec<PausedAnimTreeState>,
-    pub paused_scripts: Vec<PausedScriptState>,
+    runtime: DemoRuntimeState,
+    paused_anim_players: Vec<PausedAnimPlayerState>,
+    paused_anim_trees: Vec<PausedAnimTreeState>,
+    paused_scripts: Vec<PausedScriptState>,
 }
 
 lifecycle!({
@@ -414,79 +414,79 @@ lifecycle!({
 });
 
 methods!({
-    fn on_demo_mesh_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
+    pub fn on_demo_mesh_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
         self.queue_load_demo(ctx, DemoKind::MeshMaterials);
     }
 
-    fn on_demo_lights_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
+    pub fn on_demo_lights_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
         self.queue_load_demo(ctx, DemoKind::Lights);
     }
 
-    fn on_demo_water_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
+    pub fn on_demo_water_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
         self.queue_load_demo(ctx, DemoKind::Water);
     }
 
-    fn on_demo_animations_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
+    pub fn on_demo_animations_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
         self.queue_load_demo(ctx, DemoKind::Animations);
     }
 
-    fn on_demo_physics_bones_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
+    pub fn on_demo_physics_bones_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
         self.queue_load_demo(ctx, DemoKind::PhysicsBones);
     }
 
-    fn on_demo_physics_collisions_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
+    pub fn on_demo_physics_collisions_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
         self.queue_load_demo(ctx, DemoKind::PhysicsCollisions);
     }
 
-    fn on_demo_sky_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
+    pub fn on_demo_sky_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
         self.queue_load_demo(ctx, DemoKind::Sky);
     }
 
-    fn on_demo_blend_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
+    pub fn on_demo_blend_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
         self.queue_load_demo(ctx, DemoKind::MeshBlending);
     }
 
-    fn on_demo_multimesh_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
+    pub fn on_demo_multimesh_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
         self.queue_load_demo(ctx, DemoKind::MultiMesh);
     }
 
-    fn on_demo_particles_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
+    pub fn on_demo_particles_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
         self.queue_load_demo(ctx, DemoKind::Particles);
     }
 
-    fn on_demo_audio_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
+    pub fn on_demo_audio_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
         self.queue_load_demo(ctx, DemoKind::PositionalAudio);
     }
 
-    fn on_demo_decals_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
+    pub fn on_demo_decals_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
         self.queue_load_demo(ctx, DemoKind::Decals);
     }
 
-    fn on_demo_webcam_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
+    pub fn on_demo_webcam_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
         self.queue_load_demo(ctx, DemoKind::Webcam);
     }
 
-    fn on_demo_fps_tester_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
+    pub fn on_demo_fps_tester_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
         self.queue_load_demo(ctx, DemoKind::FpsTester);
     }
 
-    fn on_pause_resume_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
+    pub fn on_pause_resume_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
         self.resume_demo(ctx);
     }
 
-    fn on_pause_sens_down_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
+    pub fn on_pause_sens_down_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
         self.adjust_mouse_sensitivity(ctx, -MOUSE_SENSITIVITY_STEP);
     }
 
-    fn on_pause_sens_up_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
+    pub fn on_pause_sens_up_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
         self.adjust_mouse_sensitivity(ctx, MOUSE_SENSITIVITY_STEP);
     }
 
-    fn on_pause_restart_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
+    pub fn on_pause_restart_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
         self.queue_restart_demo(ctx);
     }
 
-    fn on_pause_hub_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
+    pub fn on_pause_hub_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
         self.queue_back_to_hub(ctx);
     }
 

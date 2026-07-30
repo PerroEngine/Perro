@@ -81,7 +81,8 @@ lifecycle!({
 });
 
 methods!({
-    fn on_enemy_died(&self, ctx: &mut ScriptContext<'_, API>) {
+    // pub because signal dispatch only reaches pub fn methods.
+    pub fn on_enemy_died(&self, ctx: &mut ScriptContext<'_, API>) {
         let loot = csv_load!(ctx.res, "res://data/loot.csv");
         if let Some(row) = loot.find_primary("forest_goblin") {
             // Columns: key, item, weight

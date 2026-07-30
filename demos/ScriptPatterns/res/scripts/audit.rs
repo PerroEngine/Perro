@@ -3,9 +3,9 @@ use perro_api::prelude::*;
 #[State]
 struct PatternAudit {
     #[default = 0]
-    pub last_score: i32,
+    last_score: i32,
     #[default = 0]
-    pub event_count: i32,
+    event_count: i32,
 }
 
 lifecycle!({
@@ -20,7 +20,7 @@ lifecycle!({
 });
 
 methods!({
-    fn record_score(&self, ctx: &mut ScriptContext<'_, API>, score: i32) {
+    pub fn record_score(&self, ctx: &mut ScriptContext<'_, API>, score: i32) {
         with_state_mut!(ctx.run, PatternAudit, ctx.id, |state| {
             state.last_score = score;
             state.event_count += 1;

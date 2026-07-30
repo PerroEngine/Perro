@@ -18,15 +18,15 @@ struct FpsTesterDemoState {
     pub cap_dot: NodeID,
     #[default = NodeID::nil()]
     pub smooth_dot: NodeID,
-    pub target_fps: f32,
-    pub render_frame: i32,
-    pub cap_frame: i32,
-    pub cap_accum: f32,
-    pub sweep_time: f32,
-    pub fps_timer: f32,
-    pub fps_frames: i32,
-    pub script_fps: f32,
-    pub label_timer: f32,
+    target_fps: f32,
+    render_frame: i32,
+    cap_frame: i32,
+    cap_accum: f32,
+    sweep_time: f32,
+    fps_timer: f32,
+    fps_frames: i32,
+    script_fps: f32,
+    label_timer: f32,
 }
 
 lifecycle!({
@@ -89,23 +89,23 @@ lifecycle!({
 });
 
 methods!({
-    fn on_cap_10_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
+    pub fn on_cap_10_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
         self.apply_cap(ctx, 10.0);
     }
 
-    fn on_cap_30_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
+    pub fn on_cap_30_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
         self.apply_cap(ctx, 30.0);
     }
 
-    fn on_cap_60_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
+    pub fn on_cap_60_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
         self.apply_cap(ctx, 60.0);
     }
 
-    fn on_cap_120_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
+    pub fn on_cap_120_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
         self.apply_cap(ctx, 120.0);
     }
 
-    fn on_cap_144_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
+    pub fn on_cap_144_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
         self.apply_cap(ctx, 144.0);
     }
 

@@ -32,22 +32,22 @@ struct CharacterLook {
 struct PlayerState {
     #[default = 100]
     #[expose]
-    health: i32,
+    pub health: i32,
 
     #[expose]
     #[node_ref(Camera3D)]
-    camera: Option<NodeID>,
+    pub camera: Option<NodeID>,
 
     #[expose]
-    look: CharacterLook,
+    pub look: CharacterLook,
 
     velocity: Vector3,
 }
 ```
 
-`#[expose]` organizes what is visible from the editor inspector. Any state field
-may be set through scene `script_vars`, including fields inside derived custom
-types.
+`#[expose]` organizes what is visible from the editor inspector. Only `pub`
+state fields may be set through scene `script_vars`; nested members inside
+derived custom types ride their `pub` root field.
 
 Scene asset strings coerce to their typed resource IDs before `on_init`:
 
@@ -124,7 +124,10 @@ normal Rust helper or direct method call for behavior inside the same script.
 
 Use `get_var!`, `set_var!`, and `call_method!` when the target script or member
 is selected at runtime. Dynamic calls return `Variant`; decode the expected
-type at the call site.
+type at the call site. They reach only members the target declares `pub`:
+`get_var!` / `set_var!` need a `pub` state field and `call_method!` a `pub fn`
+— see [state visibility](state.md#visibility) and
+[method visibility](methods.md#visibility).
 
 Use methods for a targeted command with known receiver, arguments, and an
 optional return value. Use signals first for events, fan-out, and loose or

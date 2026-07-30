@@ -65,8 +65,8 @@ lifecycle!({
 });
 
 methods!({
-    // Wired to a "Quit" button's pressed signal.
-    fn on_quit_pressed(&self, ctx: &mut ScriptContext<'_, API>) {
+    // Wired to a "Quit" button's pressed signal; pub so the signal can dispatch it.
+    pub fn on_quit_pressed(&self, ctx: &mut ScriptContext<'_, API>) {
         close_app!(ctx.run);
     }
 });

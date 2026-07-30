@@ -5,9 +5,9 @@ type SelfNodeType = Node3D;
 #[State]
 struct WebcamDemo3DState {
     #[default = NodeID::nil()]
-    webcam: NodeID,
+    pub webcam: NodeID,
     #[default = NodeID::nil()]
-    device_label: NodeID,
+    pub device_label: NodeID,
 }
 
 lifecycle!({

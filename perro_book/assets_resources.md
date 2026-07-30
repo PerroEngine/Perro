@@ -91,10 +91,10 @@ Use `#[node_ref(...)]` when a state field expects a node type.
 pub struct PlayerHudState {
     #[expose]
     #[node_ref(UiTextBlock)]
-    label: Option<NodeID>,
+    pub label: Option<NodeID>,
 
     #[expose]
-    icon: TextureID,
+    pub icon: TextureID,
 }
 ```
 

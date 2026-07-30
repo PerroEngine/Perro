@@ -390,6 +390,7 @@ Object-scoped events:
 
 Event notes:
 
+- events dispatch through generated script glue: `call_method` targets must be `pub fn` script methods and `set_var` targets `pub` state fields — see [method visibility](../scripting/methods.md#visibility) and [state visibility](../scripting/state.md#visibility).
 - params/value support direct object references:
 - `@Object` resolves to that object's bound runtime `NodeID`.
 - `@Object.field` resolves to the current frame value of that field on the bound runtime node.

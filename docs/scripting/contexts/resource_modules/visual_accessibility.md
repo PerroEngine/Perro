@@ -61,12 +61,13 @@ lifecycle!({
 });
 
 methods!({
-    fn apply_filter(&self, ctx: &mut ScriptContext<'_, API>) {
+    // pub because signal dispatch only reaches pub fn methods.
+    pub fn apply_filter(&self, ctx: &mut ScriptContext<'_, API>) {
         // Values would come from the settings the player picked.
         enable_colorblind_filter!(ctx.res, ColorBlindFilter::Deuteran, 0.8);
     }
 
-    fn clear_filter(&self, ctx: &mut ScriptContext<'_, API>) {
+    pub fn clear_filter(&self, ctx: &mut ScriptContext<'_, API>) {
         disable_colorblind_filter!(ctx.res);
     }
 });

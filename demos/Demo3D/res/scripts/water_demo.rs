@@ -5,11 +5,11 @@ type SelfNodeType = Node3D;
 #[State]
 struct WaterDemoState {
     #[default = NodeID::nil()]
-    pub overlay: NodeID,
+    overlay: NodeID,
     #[default = NodeID::nil()]
     pub projectiles: NodeID,
     #[default = String::new()]
-    pub last_body: String,
+    last_body: String,
 }
 
 lifecycle!({
@@ -23,7 +23,7 @@ lifecycle!({
 });
 
 methods!({
-    fn set_info_overlay(&self, ctx: &mut ScriptContext<'_, API>, overlay: NodeID) {
+    pub fn set_info_overlay(&self, ctx: &mut ScriptContext<'_, API>, overlay: NodeID) {
         with_state_mut!(ctx.run, WaterDemoState, ctx.id, |state| {
             state.overlay = overlay;
         });

@@ -10,54 +10,54 @@ struct DemoUiShowcaseState {
 
 #[derive(Clone, Copy, Default)]
 struct UiRefs {
-    shell: NodeID,
-    left_panel: NodeID,
-    mid_panel: NodeID,
-    right_panel: NodeID,
-    title: NodeID,
-    subtitle: NodeID,
-    scroll_view: NodeID,
-    scroll_items: NodeID,
-    grid: NodeID,
-    grid_a: NodeID,
-    grid_b: NodeID,
-    grid_c: NodeID,
-    nested_panel: NodeID,
-    nested_grid: NodeID,
+    pub shell: NodeID,
+    pub left_panel: NodeID,
+    pub mid_panel: NodeID,
+    pub right_panel: NodeID,
+    pub title: NodeID,
+    pub subtitle: NodeID,
+    pub scroll_view: NodeID,
+    pub scroll_items: NodeID,
+    pub grid: NodeID,
+    pub grid_a: NodeID,
+    pub grid_b: NodeID,
+    pub grid_c: NodeID,
+    pub nested_panel: NodeID,
+    pub nested_grid: NodeID,
 }
 
 #[State]
 struct DemoUiShowcase {
     #[default = NodeID::nil()]
-    shell: NodeID,
+    pub shell: NodeID,
     #[default = NodeID::nil()]
-    left_panel: NodeID,
+    pub left_panel: NodeID,
     #[default = NodeID::nil()]
-    mid_panel: NodeID,
+    pub mid_panel: NodeID,
     #[default = NodeID::nil()]
-    right_panel: NodeID,
+    pub right_panel: NodeID,
     #[default = NodeID::nil()]
-    title: NodeID,
+    pub title: NodeID,
     #[default = NodeID::nil()]
-    subtitle: NodeID,
+    pub subtitle: NodeID,
     #[default = NodeID::nil()]
-    scroll_view: NodeID,
+    pub scroll_view: NodeID,
     #[default = NodeID::nil()]
-    scroll_items: NodeID,
+    pub scroll_items: NodeID,
     #[default = NodeID::nil()]
-    grid: NodeID,
+    pub grid: NodeID,
     #[default = NodeID::nil()]
-    grid_a: NodeID,
+    pub grid_a: NodeID,
     #[default = NodeID::nil()]
-    grid_b: NodeID,
+    pub grid_b: NodeID,
     #[default = NodeID::nil()]
-    grid_c: NodeID,
+    pub grid_c: NodeID,
     #[default = NodeID::nil()]
-    nested_panel: NodeID,
+    pub nested_panel: NodeID,
     #[default = NodeID::nil()]
-    nested_grid: NodeID,
+    pub nested_grid: NodeID,
     #[default = NodeID::nil()]
-    shape_a: NodeID,
+    pub shape_a: NodeID,
     #[default = DemoUiShowcaseState::default()]
     runtime: DemoUiShowcaseState,
 }

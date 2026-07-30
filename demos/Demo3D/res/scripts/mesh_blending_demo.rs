@@ -5,7 +5,7 @@ type SelfNodeType = Node3D;
 #[State]
 struct MeshBlendingDemoState {
     #[default = NodeID::nil()]
-    pub overlay: NodeID,
+    overlay: NodeID,
 }
 
 lifecycle!({
@@ -15,7 +15,7 @@ lifecycle!({
 });
 
 methods!({
-    fn set_info_overlay(&self, ctx: &mut ScriptContext<'_, API>, overlay: NodeID) {
+    pub fn set_info_overlay(&self, ctx: &mut ScriptContext<'_, API>, overlay: NodeID) {
         with_state_mut!(ctx.run, MeshBlendingDemoState, ctx.id, |state| {
             state.overlay = overlay;
         });

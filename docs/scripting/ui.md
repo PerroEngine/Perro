@@ -931,7 +931,8 @@ lifecycle!({
 });
 
 methods!({
-    fn on_button(&self, ctx: &mut ScriptContext<'_, API>, button: NodeID) {
+    // pub because signal dispatch only reaches pub fn methods.
+    pub fn on_button(&self, ctx: &mut ScriptContext<'_, API>, button: NodeID) {
         println!("button={button:?}");
     }
 });

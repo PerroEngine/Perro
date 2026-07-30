@@ -8,7 +8,7 @@ const SLIDE_RANGE: f32 = 4.4;
 #[State]
 struct DecalsDemoState {
     #[default = NodeID::nil()]
-    pub overlay: NodeID,
+    overlay: NodeID,
     // Emissive rune that slides across the floor.
     #[default = NodeID::nil()]
     pub slider: NodeID,
@@ -59,7 +59,7 @@ lifecycle!({
 });
 
 methods!({
-    fn set_info_overlay(&self, ctx: &mut ScriptContext<'_, API>, overlay: NodeID) {
+    pub fn set_info_overlay(&self, ctx: &mut ScriptContext<'_, API>, overlay: NodeID) {
         with_state_mut!(ctx.run, DecalsDemoState, ctx.id, |state| {
             state.overlay = overlay;
         });

@@ -25,12 +25,13 @@ script_vars = { player = @Player, item_id = "health_potion" }
 ```rust
 #[State]
 struct PickupState {
+    // pub because the scene injects both via script_vars.
     #[expose]
     #[node_ref(Node2D, Node3D)]
-    player: Option<NodeID>,
+    pub player: Option<NodeID>,
 
     #[default = String::new()]
-    item_id: String,
+    pub item_id: String,
 }
 
 lifecycle!({});
@@ -69,12 +70,14 @@ struct PlayerState {
     #[default = Vec::new()]
     items: Vec<String>,
 
+    // pub because the debug adapter reads/writes it via get_var!/set_var!.
     #[default = 10]
-    capacity: i32,
+    pub capacity: i32,
 }
 
 methods!({
-    fn add_item(&self, ctx: &mut ScriptContext<'_, API>, item_id: String) -> bool {
+    // pub because the pickup dispatches it via call_method!.
+    pub fn add_item(&self, ctx: &mut ScriptContext<'_, API>, item_id: String) -> bool {
         let count = with_state_mut!(ctx.run, PlayerState, ctx.id, |state| {
             if state.items.len() as i32 >= state.capacity {
                 return None;
@@ -112,7 +115,8 @@ lifecycle!({
 });
 
 methods!({
-    fn show_item_count(&self, ctx: &mut ScriptContext<'_, API>, count: i32) {
+    // pub because signal dispatch uses the same glue as call_method!.
+    pub fn show_item_count(&self, ctx: &mut ScriptContext<'_, API>, count: i32) {
         with_node_mut!(ctx.run, UiLabel, ctx.id, |label| {
             label.text = format!("Items: {count}").into();
         });

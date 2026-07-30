@@ -79,6 +79,10 @@ lifecycle!({
 });
 ```
 
+`toggle` must be a `pub fn` in each door script's `methods!` block —
+`call_method!` only generates dispatch glue for `pub` methods
+([method visibility](methods.md#visibility)).
+
 ## Reference
 
 # Scripting Overview

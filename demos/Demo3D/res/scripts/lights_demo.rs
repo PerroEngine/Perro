@@ -7,7 +7,7 @@ const SPEED: f32 = 0.78;
 #[State]
 struct LightsDemoState {
     #[default = NodeID::nil()]
-    pub overlay: NodeID,
+    overlay: NodeID,
     #[default = NodeID::nil()]
     pub red: NodeID,
     #[default = NodeID::nil()]
@@ -70,7 +70,7 @@ lifecycle!({
 });
 
 methods!({
-    fn set_info_overlay(&self, ctx: &mut ScriptContext<'_, API>, overlay: NodeID) {
+    pub fn set_info_overlay(&self, ctx: &mut ScriptContext<'_, API>, overlay: NodeID) {
         with_state_mut!(ctx.run, LightsDemoState, ctx.id, |state| {
             state.overlay = overlay;
         });

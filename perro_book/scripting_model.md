@@ -41,8 +41,9 @@ Use state for per-instance mutable values, cached runtime values, fixed node
 refs, and per-instance typed asset IDs. Keep constants and callback-local
 temporary values outside state.
 
-`#[expose]` only controls editor inspector organization. Any state field that
-supports `Variant` conversion may receive a scene override.
+`#[expose]` only controls editor inspector organization. Scene overrides apply
+only to `pub` state fields; an exposed field must also be `pub` for its
+editor-authored value to apply.
 
 Source path:
 
@@ -97,7 +98,8 @@ Generated glue converts params from `Variant` and converts the return into `Vari
 
 ```rust
 methods!({
-    fn damage(&self, ctx: &mut ScriptContext<'_, API>, amount: f32) -> bool {
+    // pub: only pub fn methods get call/signal dispatch glue.
+    pub fn damage(&self, ctx: &mut ScriptContext<'_, API>, amount: f32) -> bool {
         with_state_mut!(ctx.run, PlayerState, ctx.id, |state| {
             state.health -= amount;
             state.health <= 0.0
@@ -130,7 +132,7 @@ Use `#[node_ref(...)]` to tell editor and doctor what type the id should point a
 pub struct CameraRigState {
     #[expose]
     #[node_ref(Camera3D)]
-    camera: NodeID,
+    pub camera: NodeID,
 }
 ```
 
@@ -145,7 +147,7 @@ the expected type.
 
 ## Asset Refs
 
-Scene `script_vars` may assign a resource path string to a typed `TextureID`,
+Scene `script_vars` may assign a resource path string to a `pub` typed `TextureID`,
 `MaterialID`, `MeshID`, `AnimationID`, `AnimationTreeID`, `NavMeshID`, or
 `SoundFontID` field. Resolution happens before `on_init` and recurses through
 options, collections, tuples, and custom `#[derive(Variant)]` values.

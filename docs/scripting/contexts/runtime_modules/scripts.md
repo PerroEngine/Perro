@@ -71,9 +71,10 @@ wrapped in a `Variant`.
 ```rust
 #[State]
 struct HazardState {
+    // pub because the scene wires it via script_vars.
     #[expose]
     #[node_ref(Node2D, Node3D)]
-    target: Option<NodeID>,
+    pub target: Option<NodeID>,
 }
 
 lifecycle!({
@@ -95,6 +96,8 @@ lifecycle!({
     }
 });
 ```
+
+All three dynamic paths reach only members the target declares `pub`: `get_var!` / `set_var!` need a `pub` state field and `call_method!` a `pub fn` (any form — `pub`, `pub(crate)`, ...). Non-pub members get no dispatch glue — `get_var!` returns `Variant::Null`, `set_var!` is ignored, `call_method!` returns `Variant::Null`. See [state visibility](../../state.md#visibility) and [method visibility](../../methods.md#visibility).
 
 `get_var!` and `call_method!` return `Variant` because member lookup is dynamic.
 
@@ -205,7 +208,7 @@ See [Variant](../../variant.md).
 | Params | `&mut self, script_id: NodeID, member: M` |
 | Returns | `Variant` |
 | Use when | Read another script's field dynamically by member name/hash, such as UI, animation event, or generic tool code. |
-| Fails when / edge behavior | Returns `Variant::Null` when the script id or member does not resolve. |
+| Fails when / edge behavior | Returns `Variant::Null` when the script id or member does not resolve. Non-`pub` fields generate no glue and also read as `Variant::Null`. |
 
 ### `set_var`
 
@@ -216,7 +219,7 @@ See [Variant](../../variant.md).
 | Params | `&mut self, script_id: NodeID, member: M, value: Variant` |
 | Returns | `()` |
 | Use when | Write another script's field dynamically from scene events, animation events, UI, or cross-script code. |
-| Fails when / edge behavior | No-op when the script id or member does not resolve, or when `Variant` cannot parse into the field type. |
+| Fails when / edge behavior | No-op when the script id or member does not resolve, when the field is not `pub`, or when `Variant` cannot parse into the field type. |
 
 ### `call_method`
 
@@ -227,7 +230,7 @@ See [Variant](../../variant.md).
 | Params | `&mut self, script_id: NodeID, method: M, params: &[Variant],` |
 | Returns | `Variant` |
 | Use when | Call self or another script dynamically by method name/hash; prefer direct Rust helper calls for known same-script logic. |
-| Fails when / edge behavior | Returns `Variant::Null` when the script id, method, or params do not resolve. Primitive method returns are wrapped into `Variant`. |
+| Fails when / edge behavior | Returns `Variant::Null` when the script id, method, or params do not resolve. Non-`pub` methods have no dispatch glue and return `Variant::Null`. Primitive method returns are wrapped into `Variant`. |
 
 ### `with_state`
 
@@ -304,7 +307,7 @@ See [Variant](../../variant.md).
 | Params | `ctx, id, member` |
 | Returns | `Variant` |
 | Use when | Use `get_var` to get var across runtime scripts; prefer typed state access when concrete state type is known. |
-| Fails when / edge behavior | Returns `Variant::Nil` when `get_var` cannot resolve the requested dynamic member or call result. |
+| Fails when / edge behavior | Returns `Variant::Nil` when `get_var` cannot resolve the requested dynamic member or call result, including fields not declared `pub`. |
 
 ### `get_node_var`
 
@@ -326,7 +329,7 @@ See [Variant](../../variant.md).
 | Params | `ctx, id, member, value` |
 | Returns | `bool or () as shown by backing method` |
 | Use when | Use `set_var` to set var across runtime scripts; prefer typed state access when concrete state type is known. |
-| Fails when / edge behavior | Returns `false` when `set_var` cannot apply to the supplied target or inputs; `true` confirms success. |
+| Fails when / edge behavior | Returns `false` when `set_var` cannot apply to the supplied target or inputs, including fields not declared `pub`; `true` confirms success. |
 
 ### `call_method`
 
@@ -337,5 +340,5 @@ See [Variant](../../variant.md).
 | Params | `ctx, id, method, params` |
 | Returns | `Variant` |
 | Use when | Use `call_method` to call method for runtime script composition; prefer typed state access when the concrete state type is known. |
-| Fails when / edge behavior | Returns `Variant::Nil` when `call_method` cannot resolve the requested dynamic member or call result. |
+| Fails when / edge behavior | Returns `Variant::Nil` when `call_method` cannot resolve the requested dynamic member or call result, including methods not declared `pub fn`. |
 

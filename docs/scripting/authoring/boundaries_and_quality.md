@@ -10,7 +10,7 @@ avoid a manager that reaches into every known state.
 ## Debug And Test
 
 - Run `perro check` after script or scene edits.
-- Run doctor to catch missing refs, type hints, and scene wiring faults.
+- Run doctor to catch missing refs, type hints, scene wiring faults, and dynamic get/set/call or signal targets that lack a `pub` definition.
 - Run clippy for generated script crates and workspace code.
 - Test pure helpers as normal Rust functions.
 - Test dynamic boundaries with missing targets, wrong params, and neutral replies.

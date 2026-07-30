@@ -39,7 +39,7 @@ lifecycle!({
 });
 
 methods!({
-    fn on_award_score(&self, ctx: &mut ScriptContext<'_, API>) {
+    pub fn on_award_score(&self, ctx: &mut ScriptContext<'_, API>) {
         let refs = with_state!(ctx.run, PatternController, ctx.id, |state| {
             (state.player, state.adapter, state.icon)
         }).unwrap_or_default();

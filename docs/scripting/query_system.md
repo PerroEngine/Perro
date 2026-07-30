@@ -37,6 +37,11 @@ lifecycle!({
 });
 ```
 
+Dynamic follow-up calls only reach `pub` members on the matched scripts:
+`call_method!` needs a `pub fn` and `get_var!` / `set_var!` a `pub` state field
+— see [method visibility](methods.md#visibility) and
+[state visibility](state.md#visibility).
+
 ## Reference
 
 # Query System

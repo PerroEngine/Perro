@@ -27,7 +27,9 @@ connected handler runs, without the emitter knowing or caring who is listening.
 This keeps gameplay systems independent: the boss does not call the music system
 directly, it just emits `boss_defeated` and whoever cares reacts. Handlers are
 ordinary script methods (`func!` / `method!`) connected by name, and emitted
-`Variant` params flow through to them.
+`Variant` params flow through to them. Handler dispatch runs through the same
+generated glue as `call_method!`, so every connected handler must be a `pub fn`
+in a `methods!` block — see [method visibility](../../methods.md#visibility).
 
 ## Use Cases
 
@@ -80,7 +82,8 @@ lifecycle!({
 });
 
 methods!({
-    fn on_phase_two(&self, ctx: &mut ScriptContext<'_, API>) {
+    // pub because signal dispatch uses the same glue as call_method!.
+    pub fn on_phase_two(&self, ctx: &mut ScriptContext<'_, API>) {
         // Enrage. Re-broadcast so the music and arena hazards react too.
         signal_emit!(ctx.run, signal!("music_set_intensity"), params![1.0_f32]);
     }

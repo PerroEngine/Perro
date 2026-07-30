@@ -32,8 +32,9 @@ The Perro editor is a visual authoring tool — itself a Perro project in `perro
 
 Use the editor for topology, node fields, `script_vars`, asset refs, and visual
 preview. Use Rust source for lifecycle, methods, queries, and game decisions.
-`#[expose]` groups a state field in the inspector; it does not decide whether a
-scene may inject that field.
+`#[expose]` groups a state field in the inspector; `pub` decides whether a
+scene may inject that field, so an exposed field must also be `pub` for its
+authored value to apply.
 
 Use text scene editing when reviewing a compact diff or applying a mechanical
 change. Use the editor when spatial context and ref pickers reduce mistakes.

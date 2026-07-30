@@ -43,7 +43,8 @@ lifecycle!({
 });
 
 methods!({
-    fn try_dash(&self, ctx: &mut ScriptContext<'_, API>) -> bool {
+    // pub because callers target it via call_method!.
+    pub fn try_dash(&self, ctx: &mut ScriptContext<'_, API>) -> bool {
         let result = with_state_mut!(ctx.run, DashState, ctx.id, |state| {
             if !state.ready { return None; }
             state.ready = false;
@@ -54,7 +55,8 @@ methods!({
         true
     }
 
-    fn finish_dash(&self, ctx: &mut ScriptContext<'_, API>) {
+    // pub because the timer-finished signal dispatches it.
+    pub fn finish_dash(&self, ctx: &mut ScriptContext<'_, API>) {
         with_state_mut!(ctx.run, DashState, ctx.id, |state| state.ready = true);
         signal_emit!(ctx.run, signal!("ability_ready"), params![ctx.id]);
     }

@@ -278,19 +278,19 @@ mod locking_paths {
     });
 
     methods!({
-    fn bind_agent(
+    pub fn bind_agent(
         &self,
         ctx: &mut ScriptContext<'_, API>,
         _agent_id: NodeID,
     ) {}
 
-    fn set_player_index(
+    pub(crate) fn set_player_index(
         &self,
         ctx: &mut ScriptContext<'_, API>,
         _player_index: i32,
     ) {}
 
-    fn set_turn_enabled(
+    pub fn set_turn_enabled(
         &self,
         ctx: &mut ScriptContext<'_, API>,
         _enabled: bool,
@@ -314,11 +314,11 @@ mod locking_paths {
     pub struct PlayerState {
     #[default(100.0)]
     #[expose]
-    health: f32,
+    pub health: f32,
 
     #[default(240.0)]
     #[expose]
-    speed: f32,
+    pub speed: f32,
 
     velocity: Vector2,
     grounded: bool,
@@ -335,12 +335,9 @@ mod locking_paths {
             transpiled.contains("const __PERRO_VAR_HEALTH: ScriptMemberID = var!(\"health\");")
         );
         assert!(transpiled.contains("const __PERRO_VAR_SPEED: ScriptMemberID = var!(\"speed\");"));
-        assert!(
-            transpiled.contains("const __PERRO_VAR_VELOCITY: ScriptMemberID = var!(\"velocity\");")
-        );
-        assert!(
-            transpiled.contains("const __PERRO_VAR_GROUNDED: ScriptMemberID = var!(\"grounded\");")
-        );
+        // non-pub fields: zero glue, not even consts
+        assert!(!transpiled.contains("__PERRO_VAR_VELOCITY"));
+        assert!(!transpiled.contains("__PERRO_VAR_GROUNDED"));
     }
 
     #[test]
@@ -390,25 +387,25 @@ mod locking_paths {
     });
 
     methods!({
-    fn bind_agent(
+    pub fn bind_agent(
         &self,
         ctx: &mut ScriptContext<'_, API>,
         _agent_id: NodeID,
     ) {}
 
-    fn set_turn_enabled(
+    pub fn set_turn_enabled(
         &self,
         ctx: &mut ScriptContext<'_, API>,
         _enabled: bool,
     ) {}
 
-    fn set_ai_skill(
+    pub fn set_ai_skill(
         &self,
         ctx: &mut ScriptContext<'_, API>,
         _skill: f32,
     ) {}
 
-    fn reset_plan(
+    pub fn reset_plan(
         &self,
         ctx: &mut ScriptContext<'_, API>,
     ) {}
@@ -452,12 +449,12 @@ mod locking_paths {
     });
 
     methods!({
-    fn alpha(
+    pub fn alpha(
         &self,
         ctx: &mut ScriptContext<'_, API>,
     ) {}
 
-    fn beta(
+    pub fn beta(
         &self,
         ctx: &mut ScriptContext<'_, API>,
         _enabled: bool,
@@ -475,7 +472,7 @@ mod locking_paths {
     use perro_api::prelude::*;
 
     methods!({
-    fn alpha(
+    pub fn alpha(
         &self,
         ctx: &mut ScriptContext<'_, API>,
     ) {
@@ -484,14 +481,14 @@ mod locking_paths {
         }
     }
 
-    fn beta(
+    pub fn beta(
         &self,
         ctx: &mut ScriptContext<'_, API>,
     ) {
         let _ = "res://a.scn";
     }
 
-    fn gamma(
+    pub fn gamma(
         &self,
         ctx: &mut ScriptContext<'_, API>,
     ) {}
@@ -508,7 +505,7 @@ mod locking_paths {
     use perro_api::prelude::*;
 
     methods!(Script {
-    fn alpha(
+    pub fn alpha(
         &self,
         ctx: &mut ScriptContext<'_, API>,
     ) {
@@ -519,7 +516,7 @@ mod locking_paths {
         let _ = (open, close, quote, ctx.id);
     }
 
-    fn beta(
+    pub fn beta(
         &self,
         ctx: &mut ScriptContext<'_, API>,
     ) {}
@@ -544,13 +541,13 @@ mod locking_paths {
     lifecycle!({});
 
     impl Script {
-        fn alpha(&self, ctx: &mut ScriptContext<'_, API>) {
+        pub fn alpha(&self, ctx: &mut ScriptContext<'_, API>) {
             if ctx.scene_path() == "res://ui/raw_export.scn" {
                 let _ = ctx.id;
             }
         }
 
-        fn beta(&self, ctx: &mut ScriptContext<'_, API>) {}
+        pub fn beta(&self, ctx: &mut ScriptContext<'_, API>) {}
     }
     "#;
 
@@ -564,7 +561,7 @@ mod locking_paths {
     use perro_api::prelude::*;
 
     methods!({
-    fn is_ready(
+    pub fn is_ready(
         &self,
         ctx: &mut ScriptContext<'_, API>,
     ) -> bool {

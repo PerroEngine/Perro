@@ -40,6 +40,11 @@ Decode at the edge and return to typed Rust immediately. Use `as_*` for one exac
 
 `get_var!` and `call_method!` return `Variant`.
 
+They resolve only `pub` members: a non-`pub` field reads as `Variant::Null` and
+a non-`pub` method is not dispatchable — see
+[state visibility](state.md#visibility) and
+[method visibility](methods.md#visibility).
+
 You must know expected type at call site and decode it.
 
 ```rust
@@ -261,7 +266,7 @@ Skipped on purpose:
 
 Use `#[derive(Variant)]` for custom structs/enums used in:
 
-- `#[State]` fields read by `get_var!`
+- `#[State]` fields read by `get_var!` (the field must be `pub`)
 - `set_var!` values
 - `methods!` params
 - `methods!` returns
@@ -274,7 +279,8 @@ struct HitInfo {
 }
 
 methods!({
-    fn last_hit(&self, ctx: &mut ScriptContext<'_, API>) -> HitInfo {
+    // pub because call_method! below dispatches it dynamically.
+    pub fn last_hit(&self, ctx: &mut ScriptContext<'_, API>) -> HitInfo {
         HitInfo { amount: 10 }
     }
 });

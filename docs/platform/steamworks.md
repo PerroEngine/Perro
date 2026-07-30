@@ -52,8 +52,9 @@ must work without Steam. Steamworks remains native-only.
 
 ```rust
 methods!({
-    // Called from a game signal when the player wins their first match.
-    fn on_first_win(&self, _ctx: &mut ScriptContext<'_, API>) {
+    // Called from a game signal when the player wins their first match;
+    // pub so the signal can dispatch it.
+    pub fn on_first_win(&self, _ctx: &mut ScriptContext<'_, API>) {
         // Unlock an achievement and bump a stat; the engine flushes both.
         let _ = steam_ach_unlock!("ACH_FIRST_WIN");
         let wins = steam_stat_get_i32!("wins").unwrap_or(0);

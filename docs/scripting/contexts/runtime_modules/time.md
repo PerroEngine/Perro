@@ -110,7 +110,8 @@ lifecycle!({
 });
 
 methods!({
-    fn on_wait(&self, _ctx: &mut ScriptContext<'_, API>) {
+    // pub because the timer-finished signal dispatches it.
+    pub fn on_wait(&self, _ctx: &mut ScriptContext<'_, API>) {
         // Runs automatically after two seconds.
     }
 });

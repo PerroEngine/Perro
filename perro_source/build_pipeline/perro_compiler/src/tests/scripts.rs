@@ -54,7 +54,7 @@ mod scripts {
     use perro_api::prelude::*;
 
     methods!({
-    fn ping(
+    pub fn ping(
         &self,
         ctx: &mut ScriptContext<'_, API>,
     ) {
@@ -171,6 +171,222 @@ mod scripts {
         assert!(!pack_source.contains("registry_len() -> usize {\n    0"));
         assert!(!root.join(".perro").join("project").exists());
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    // attr + field share 1 line: `#[default = 0] #[node_ref(T)] pub x: T,`.
+    // scanner must strip attr groups, not skip the line (skipped fields drop
+    // scene-injected node refs silently at runtime).
+    #[test]
+    fn state_fields_parse_with_inline_attrs() {
+        let source = r#"
+#[State]
+struct InlineAttrState {
+    #[default = NodeID::nil()] #[node_ref(MeshInstance3D)] pub hair_mesh: NodeID,
+    #[default = 0] pub hair_type: i64,
+    #[default = false] pub applied: bool,
+    #[default = 0.0]
+    pub voice_level: f32,
+}
+"#;
+        let fields = super::super::parse_struct_fields(source, "InlineAttrState");
+        let names: Vec<&str> = fields.iter().map(|field| field.name.as_str()).collect();
+        assert_eq!(names, ["hair_mesh", "hair_type", "applied", "voice_level"]);
+        assert!(fields.iter().all(|field| field.is_pub));
+        assert_eq!(fields[0].ty, "NodeID");
+    }
+
+    // pub gate: non-pub members get zero glue, incl scene inject
+    #[test]
+    fn private_members_generate_no_glue() {
+        let source = r#"
+    use perro_api::prelude::*;
+
+    #[State]
+    pub struct MixedState {
+    #[default = 1.0]
+    pub speed: f32,
+    #[default = 0]
+    frames: u32,
+    }
+
+    methods!({
+    pub fn boost(
+        &self,
+        ctx: &mut ScriptContext<'_, API>,
+    ) {
+        let _ = ctx.id;
+    }
+
+    fn tick_internal(
+        &self,
+        ctx: &mut ScriptContext<'_, API>,
+    ) {
+        let _ = ctx.id;
+    }
+    });
+    "#;
+
+        let transpiled = transpile_frontend_script(source, "res://scripts/mixed_state.rs");
+        // pub member glue present, incl scene arm (permissive wrapper)
+        assert!(transpiled.contains(
+            "__PERRO_VAR_SPEED => perro_api::variant::DeriveVariant::to_variant(&state.speed)"
+        ));
+        assert!(transpiled.contains("value.parse_scene::<f32>(resolver)"));
+        assert_methods_emitted(&transpiled, &["boost"]);
+        // private field: no consts, no arms anywhere (scene inject needs pub)
+        assert!(!transpiled.contains("__PERRO_VAR_FRAMES"));
+        assert!(!transpiled.contains("value.into_parse::<u32>()"));
+        assert!(!transpiled.contains("value.parse_scene::<u32>(resolver)"));
+        // private method: no const, no arm
+        assert!(!transpiled.contains("__PERRO_METHOD_TICK_INTERNAL"));
+    }
+
+    #[test]
+    fn pub_crate_members_expose_runtime_glue() {
+        let source = r#"
+    use perro_api::prelude::*;
+
+    #[State]
+    pub struct CrateState {
+    #[default = 0]
+    pub(crate) hp: i32,
+    }
+
+    methods!({
+    pub(crate) fn heal(
+        &self,
+        ctx: &mut ScriptContext<'_, API>,
+        _amount: i32,
+    ) {
+        let _ = ctx.id;
+    }
+    });
+    "#;
+
+        let transpiled = transpile_frontend_script(source, "res://scripts/crate_state.rs");
+        assert!(transpiled.contains(
+            "__PERRO_VAR_HP => perro_api::variant::DeriveVariant::to_variant(&state.hp)"
+        ));
+        assert_methods_emitted(&transpiled, &["heal"]);
+    }
+
+    #[test]
+    fn all_private_state_generates_no_glue() {
+        let source = r#"
+    use perro_api::prelude::*;
+
+    #[State]
+    pub struct HiddenState {
+    #[default = 0]
+    frames: u32,
+    }
+
+    lifecycle!({});
+    "#;
+
+        let transpiled = transpile_frontend_script(source, "res://scripts/hidden_state.rs");
+        assert!(!transpiled.contains("fn __perro_state_ref"));
+        assert!(!transpiled.contains("fn __perro_state_mut"));
+        assert!(!transpiled.contains("fn __perro_set_var_match"));
+        assert!(!transpiled.contains("fn __perro_set_scene_var_match"));
+        assert!(!transpiled.contains("fn __perro_get_nested_var"));
+        assert!(!transpiled.contains("fn __perro_set_nested_var"));
+        assert!(!transpiled.contains("fn __perro_set_nested_scene_var"));
+        assert!(!transpiled.contains("__PERRO_VAR_FRAMES"));
+    }
+
+    // static scene analysis: arms only 4 observed injections; `_` fallback
+    // kp runtime spawns (node_collection! vars) working 4 pub fields
+    #[test]
+    fn exact_scene_usage_prunes_scene_arms() {
+        let source = r#"
+    use perro_api::prelude::*;
+
+    #[State]
+    pub struct TunedState {
+    #[default = 1.0]
+    pub speed: f32,
+    #[default = 0]
+    pub hp: i32,
+    }
+    "#;
+
+        let mut roots = std::collections::HashSet::new();
+        roots.insert("speed".to_string());
+        let usage = SceneVarUsage::Exact {
+            roots,
+            paths: std::collections::HashSet::new(),
+        };
+        let transpiled = transpile_frontend_script_with_scene_vars(
+            source,
+            "res://scripts/tuned_state.rs",
+            &usage,
+        );
+        // speed: scene arm; hp: get/set only
+        assert!(transpiled.contains("value.parse_scene::<f32>(resolver)"));
+        assert!(!transpiled.contains("value.parse_scene::<i32>(resolver)"));
+        assert!(transpiled.contains("value.into_parse::<i32>()"));
+        // runtime-spawn fallback: unmatched scene var -> strict pub set path
+        assert!(transpiled.contains("__perro_set_var_match(state, var, value);"));
+        assert!(transpiled.contains("__perro_set_nested_scene_var(state, var, value.clone(), resolver)"));
+    }
+
+    #[test]
+    fn no_scene_usage_routes_inject_thru_set_var() {
+        let source = r#"
+    use perro_api::prelude::*;
+
+    #[State]
+    pub struct SpawnedState {
+    #[default = 0]
+    pub charge: i32,
+    }
+    "#;
+
+        let usage = SceneVarUsage::Exact {
+            roots: std::collections::HashSet::new(),
+            paths: std::collections::HashSet::new(),
+        };
+        let transpiled = transpile_frontend_script_with_scene_vars(
+            source,
+            "res://scripts/spawned_state.rs",
+            &usage,
+        );
+        // no authored scene sets vars: no scene match fn at all,
+        // apply_scene_injected_vars loops thru strict set path
+        assert!(!transpiled.contains("fn __perro_set_scene_var_match"));
+        assert!(!transpiled.contains("fn __perro_set_nested_scene_var"));
+        assert!(transpiled.contains("__perro_set_var_match(state, var, value);"));
+        assert!(transpiled.contains("let _ = resolver;"));
+        assert!(transpiled.contains("value.into_parse::<i32>()"));
+    }
+
+    // private nested segment under pub root: runtime glue only 4 pub leaves
+    #[test]
+    fn private_nested_segment_drops_runtime_glue() {
+        let source = r#"
+    use perro_api::prelude::*;
+
+    #[derive(Variant, Clone, Default)]
+    pub struct Tuning {
+    pub gain: f32,
+    bias: f32,
+    }
+
+    #[State]
+    pub struct NestedVisState {
+    #[default = Tuning::default()]
+    pub tuning: Tuning,
+    }
+    "#;
+
+        let transpiled = transpile_frontend_script(source, "res://scripts/nested_vis.rs");
+        // pub leaf gets runtime get arm
+        assert!(transpiled.contains("to_variant(&state.tuning.gain)"));
+        // private leaf: const + scene arm kp, no runtime get arm
+        assert!(transpiled.contains("var!(\"tuning.bias\")"));
+        let get_arm = "to_variant(&state.tuning.bias),";
+        assert!(!transpiled.contains(get_arm));
     }
 
 }

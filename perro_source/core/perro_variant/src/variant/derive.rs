@@ -1,5 +1,7 @@
 #[path = "derive/collections.rs"]
 mod collections;
+#[path = "derive/engine.rs"]
+mod engine;
 #[path = "derive/math.rs"]
 mod math;
 #[path = "derive/primitives.rs"]

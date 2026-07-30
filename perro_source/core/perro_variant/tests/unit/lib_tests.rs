@@ -19,9 +19,12 @@ use perro_ids::{
     PreloadedSceneID, SignalID, SoundFontID, TagID, TextureID,
 };
 use perro_structs::{
-    Color, ColorBlindFilter, IVector2, IVector3, Matrix, Matrix3, PostProcessEffect,
-    PostProcessSet, SqMatrix, Transform2D, Transform3D, UVector2, UVector3, UnitVector4, Vector2,
-    Vector3, Vector4, VisualAccessibilitySettings,
+    AudioEffect, AudioInteraction, AudioListenerOptions, AudioMaterial, BitMask, CollisionPolicy,
+    Color, ColorBlindFilter, ConstParamValue, DrawShape2D, HdrColorSpace, HdrMode, HdrStatus,
+    IKTargetParams, IKTargetSolver, IVector2, IVector3, Matrix, Matrix3, NodeModulate,
+    PostProcessEffect, PostProcessSet, SignedUnit, SignedUnitVector2, SqMatrix, TextureFilterMode,
+    Transform2D, Transform3D, UVector2, UVector3, UnitVector4, Vector2, Vector3, Vector4,
+    VisualAccessibilitySettings,
 };
 
 use super::*;
@@ -494,6 +497,183 @@ fn test_unit_vec4_parse_and_json() {
     assert!(json["y"].as_f64().expect("test setup must succeed") > 0.5);
     assert_eq!(json["z"].as_f64(), Some(0.0));
     assert_eq!(json["w"].as_f64(), Some(1.0));
+}
+
+#[test]
+fn test_color_variant_round_trip_keeps_exact_bytes() {
+    let color = Color::from_hex("#336699CC").expect("test setup must succeed");
+    let v = Variant::from(color);
+
+    // Rides the UnitVector4 member — no dedicated EngineStruct entry.
+    assert_eq!(v.as_unit_vec4(), Some(color.to_unit_vector4()));
+    assert_eq!(v.parse::<Color>(), Ok(color));
+    assert_eq!(color.to_variant().parse::<Color>(), Ok(color));
+}
+
+#[test]
+fn test_color_parses_hex_array_and_object() {
+    let color = Color::from_hex("#336699CC").expect("test setup must succeed");
+    assert_eq!(Variant::from("#336699CC").parse::<Color>(), Ok(color));
+
+    let from_vec = Variant::from(Vector4::new(1.0, 0.5, -1.0, 2.0))
+        .parse::<Color>()
+        .expect("test setup must succeed");
+    assert_eq!(from_vec.to_rgba_u8(), [255, 128, 0, 255]);
+
+    let from_rgb_array = Variant::Array(vec![
+        Variant::from(1.0_f32),
+        Variant::from(0.5_f32),
+        Variant::from(0.0_f32),
+    ])
+    .parse::<Color>()
+    .expect("test setup must succeed");
+    assert_eq!(from_rgb_array.to_rgba_u8(), [255, 128, 0, 255]);
+
+    let mut obj = BTreeMap::new();
+    obj.insert(Arc::<str>::from("r"), Variant::from(0.0_f32));
+    obj.insert(Arc::<str>::from("g"), Variant::from(1.0_f32));
+    obj.insert(Arc::<str>::from("b"), Variant::from(0.0_f32));
+    // Missing "a" defaults to opaque.
+    assert_eq!(Variant::Object(obj).parse::<Color>(), Ok(Color::GREEN));
+}
+
+#[test]
+fn test_engine_misc_variant_round_trips() {
+    let signed = SignedUnit::new(-0.5);
+    assert_eq!(signed.to_variant().parse::<SignedUnit>(), Ok(signed));
+
+    let stick = SignedUnitVector2::new(-1.0, 0.5);
+    assert_eq!(stick.to_variant().parse::<SignedUnitVector2>(), Ok(stick));
+
+    let mask = BitMask::with([1, 3, 4]);
+    assert_eq!(mask.to_variant().parse::<BitMask>(), Ok(mask));
+    // Array form = 1-based layer list.
+    let layers = Variant::Array(vec![
+        Variant::from(1_u32),
+        Variant::from(3_u32),
+        Variant::from(4_u32),
+    ]);
+    assert_eq!(layers.parse::<BitMask>(), Ok(mask));
+
+    let policy = CollisionPolicy::from_bits(0b1101, 0b10);
+    assert_eq!(policy.to_variant().parse::<CollisionPolicy>(), Ok(policy));
+
+    let modulate = NodeModulate::new(Color::RED, Color::WHITE, Color::GREEN.with_alpha(0.5));
+    assert_eq!(modulate.to_variant().parse::<NodeModulate>(), Ok(modulate));
+
+    let filter = TextureFilterMode::Anisotropic;
+    assert_eq!(filter.to_variant().parse::<TextureFilterMode>(), Ok(filter));
+    assert_eq!(
+        Variant::from("trilinear").parse::<TextureFilterMode>(),
+        Ok(TextureFilterMode::LinearMipmap)
+    );
+}
+
+#[test]
+fn test_audio_struct_variant_round_trips() {
+    let material = AudioMaterial {
+        absorption: 0.1,
+        audio_mask: BitMask::with([2]),
+        ..AudioMaterial::new()
+    };
+    assert_eq!(material.to_variant().parse::<AudioMaterial>(), Ok(material));
+
+    let interaction = AudioInteraction::new();
+    assert_eq!(
+        interaction.to_variant().parse::<AudioInteraction>(),
+        Ok(interaction)
+    );
+
+    let listener = AudioListenerOptions {
+        audio_mask: BitMask::ALL,
+        effects: vec![
+            AudioEffect::new(),
+            AudioEffect {
+                echo: 0.5,
+                ..AudioEffect::new()
+            },
+        ],
+    };
+    assert_eq!(
+        listener.to_variant().parse::<AudioListenerOptions>(),
+        Ok(listener.clone())
+    );
+}
+
+#[test]
+fn test_const_param_value_variant_round_trips() {
+    for value in [
+        ConstParamValue::F32(1.5),
+        ConstParamValue::I32(-3),
+        ConstParamValue::Bool(true),
+        ConstParamValue::Vec2([1.0, 2.0]),
+        ConstParamValue::Vec3([1.0, 2.0, 3.0]),
+        ConstParamValue::Vec4([1.0, 2.0, 3.0, 4.0]),
+    ] {
+        assert_eq!(
+            value.to_variant().parse::<ConstParamValue>(),
+            Ok(value.clone()),
+            "{value:?}"
+        );
+    }
+}
+
+#[test]
+fn test_hdr_status_variant_round_trips() {
+    let status = HdrStatus {
+        requested: HdrMode::On,
+        supported: true,
+        active: true,
+        scene_hdr: false,
+        color_space: HdrColorSpace::Bt2100Pq,
+        headroom: 4.0,
+        peak_nits: Some(1000.0),
+        fallback: None,
+    };
+    assert_eq!(status.to_variant().parse::<HdrStatus>(), Ok(status));
+    assert_eq!(
+        HdrStatus::default().to_variant().parse::<HdrStatus>(),
+        Ok(HdrStatus::default())
+    );
+}
+
+#[test]
+fn test_ik_target_params_variant_round_trips() {
+    let params = IKTargetParams {
+        bone_index: 4,
+        chain_length: 3,
+        solver: IKTargetSolver::CCD,
+        ..IKTargetParams::new()
+    };
+    assert_eq!(params.to_variant().parse::<IKTargetParams>(), Ok(params));
+}
+
+#[test]
+fn test_draw_shape_2d_variant_round_trips() {
+    let shapes = [
+        DrawShape2D::circle(4.0, Color::RED),
+        DrawShape2D::rect_stroke(Vector2::new(2.0, 3.0), Color::BLUE, 0.5),
+        DrawShape2D::line(Vector2::new(1.0, 1.0), Color::GREEN, 2.0),
+        DrawShape2D::polygon(
+            vec![Vector2::new(0.0, 0.0), Vector2::new(1.0, 0.0)],
+            Color::WHITE,
+            1.0,
+        ),
+        DrawShape2D::path(vec![Vector2::new(0.0, 0.0)], Color::BLACK, 1.0),
+        DrawShape2D::atlas_sprite(
+            TextureID::nil(),
+            Vector2::new(8.0, 8.0),
+            Color::WHITE,
+            [0.0, 0.0, 0.5, 0.5],
+        ),
+    ];
+    for shape in shapes {
+        assert_eq!(
+            shape.to_variant().parse::<DrawShape2D>(),
+            Ok(shape.clone()),
+            "{shape:?}"
+        );
+    }
 }
 
 #[test]

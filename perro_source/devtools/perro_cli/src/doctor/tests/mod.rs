@@ -159,8 +159,15 @@ fn script_index_reads_state_fields_and_methods_macro() {
 
     assert!(index.state_fields.contains("hp"));
     assert!(index.state_fields.contains("energy"));
-    assert!(index.methods.contains("heal"));
-    assert!(index.methods.contains("ping"));
+    assert!(index.methods.contains_key("heal"));
+    assert!(index.methods.contains_key("ping"));
+    // vis tracked per def: heal !pub, ping pub
+    assert!(!index.methods["heal"].is_pub);
+    assert!(index.methods["ping"].is_pub);
+    let hp_defs = &index.state_field_defs["hp"];
+    assert!(hp_defs.iter().all(|def| def.is_pub));
+    let energy_defs = &index.state_field_defs["energy"];
+    assert!(energy_defs.iter().all(|def| !def.is_pub));
 }
 
 #[test]
@@ -187,8 +194,8 @@ fn script_index_keeps_methods_after_res_url_opening_a_block() {
         &mut index,
     );
 
-    assert!(index.methods.contains("alpha"));
-    assert!(index.methods.contains("beta"));
+    assert!(index.methods.contains_key("alpha"));
+    assert!(index.methods.contains_key("beta"));
 }
 
 #[test]
@@ -210,8 +217,8 @@ fn script_index_ignores_braces_in_char_literals() {
         &mut index,
     );
 
-    assert!(index.methods.contains("alpha"));
-    assert!(index.methods.contains("beta"));
+    assert!(index.methods.contains_key("alpha"));
+    assert!(index.methods.contains_key("beta"));
 }
 
 #[test]
@@ -232,8 +239,8 @@ fn script_index_ignores_braces_in_block_comments() {
         &mut index,
     );
 
-    assert!(index.methods.contains("alpha"));
-    assert!(index.methods.contains("beta"));
+    assert!(index.methods.contains_key("alpha"));
+    assert!(index.methods.contains_key("beta"));
 }
 
 #[test]
@@ -251,7 +258,16 @@ fn script_member_checks_warn_missing_members_and_ctx_id_hints() {
     index
         .state_field_owners
         .insert("hp".to_string(), "PlayerState".to_string());
-    index.methods.insert("heal".to_string());
+    index.methods.insert(
+        "heal".to_string(),
+        DoctorMethodDef {
+            is_pub: true,
+            dispatch: true,
+            files: Vec::new(),
+            pub_files: Vec::new(),
+            dispatch_pub_files: Vec::new(),
+        },
+    );
     let mut report = ValidationReport::default();
 
     validate_script_member_calls(Path::new(""), &file, text, &index, &mut report);
@@ -440,6 +456,280 @@ fn script_member_checks_accept_shared_state_field_name_across_scripts() {
 }
 
 #[test]
+fn script_member_checks_warn_private_members() {
+    let file = PathBuf::from("res/scripts/caller.rs");
+    let target_source = r#"
+            #[State]
+            pub struct EnemyState {
+                hp: i32,
+                pub armor: i32,
+            }
+
+            methods!({
+                fn hide_internal(&self, ctx: &mut ScriptContext<'_, API>) {}
+
+                pub fn heal(&self, ctx: &mut ScriptContext<'_, API>) {}
+            });
+        "#;
+    let caller_source = r#"
+            fn run(ctx: &mut ScriptContext<'_, API>) {
+                let _ = get_var!(ctx.run, enemy, var!("hp"));
+                let _ = get_var!(ctx.run, enemy, var!("armor"));
+                let _ = call_method!(ctx.run, enemy, func!("hide_internal"), params![]);
+                let _ = call_method!(ctx.run, enemy, func!("heal"), params![]);
+            }
+        "#;
+    let mut index = ScriptDoctorIndex::default();
+    index_script_source(Path::new("res/scripts/enemy.rs"), target_source, &mut index);
+    let mut report = ValidationReport::default();
+
+    validate_script_member_calls(Path::new(""), &file, caller_source, &index, &mut report);
+
+    assert_eq!(report.errors, 0);
+    assert_eq!(report.warnings, 2, "messages: {:?}", report.messages);
+    assert!(report.messages.iter().any(|m| {
+        m.contains("script member private")
+            && m.contains("`hp`")
+            && m.contains("res://scripts/enemy.rs")
+            && m.contains("make the field `pub`")
+    }));
+    assert!(report.messages.iter().any(|m| {
+        m.contains("script member private")
+            && m.contains("`hide_internal`")
+            && m.contains("res://scripts/enemy.rs")
+            && m.contains("make it `pub fn`")
+    }));
+    assert!(report.messages.iter().all(|m| !m.contains("`armor`")));
+    assert!(report.messages.iter().all(|m| !m.contains("`heal`")));
+}
+
+#[test]
+fn signal_connect_private_handler_warns() {
+    let file = PathBuf::from("res/scripts/main.rs");
+    let source = r#"
+            methods!({
+                fn on_click(&self, ctx: &mut ScriptContext<'_, API>) {}
+
+                pub fn on_hover(&self, ctx: &mut ScriptContext<'_, API>) {}
+            });
+
+            fn ready(ctx: &mut ScriptContext<'_, API>) {
+                let _ = signal_connect!(ctx.run, ctx.id, signal!("clicked"), func!("on_click"));
+                let _ = signal_connect!(ctx.run, ctx.id, signal!("hovered"), func!("on_hover"));
+            }
+        "#;
+    let mut index = ScriptDoctorIndex::default();
+    index_script_source(&file, source, &mut index);
+    let mut report = ValidationReport::default();
+
+    validate_script_member_calls(Path::new(""), &file, source, &index, &mut report);
+
+    assert_eq!(report.errors, 0);
+    assert_eq!(report.warnings, 1, "messages: {:?}", report.messages);
+    assert!(report.messages[0].contains("script member private"));
+    assert!(report.messages[0].contains("`on_click`"));
+    assert!(report.messages[0].contains("signal_connect!"));
+}
+
+#[test]
+fn signal_connect_pairs_checks_handlers_and_counts_connects() {
+    let file = PathBuf::from("res/scripts/main.rs");
+    let source = r#"
+            methods!({
+                fn on_play(&self, ctx: &mut ScriptContext<'_, API>) {}
+
+                pub fn on_quit(&self, ctx: &mut ScriptContext<'_, API>) {}
+            });
+
+            fn ready(ctx: &mut ScriptContext<'_, API>) {
+                let _ = signal_emit!(ctx.run, signal!("play_clicked"));
+                let _ = signal_connect_pairs!(
+                    ctx.run,
+                    ctx.id,
+                    [
+                        ("play_clicked", "on_play"),
+                        ("quit_clicked", "on_quit"),
+                    ]
+                );
+            }
+        "#;
+    let mut index = ScriptDoctorIndex::default();
+    index_script_source(&file, source, &mut index);
+    index_script_signal_uses(&file, source, &mut index);
+    let mut report = ValidationReport::default();
+
+    validate_script_member_calls(Path::new(""), &file, source, &index, &mut report);
+    validate_signal_emits(Path::new(""), &index, &mut report);
+
+    assert_eq!(report.errors, 0);
+    // 1 private handler warn; pairs connect covers the emit -> no unused warn
+    assert_eq!(report.warnings, 1, "messages: {:?}", report.messages);
+    assert!(report.messages[0].contains("script member private"));
+    assert!(report.messages[0].contains("`on_play`"));
+    assert!(report.messages[0].contains("signal_connect_pairs!"));
+}
+
+#[test]
+fn unused_pub_members_warn_and_dynamic_uses_suppress() {
+    let target_source = r#"
+            #[State]
+            pub struct EnemyState {
+                pub hp: i32,
+                pub armor: i32,
+                cooldown: f32,
+            }
+
+            pub struct SortRules;
+
+            impl SortRules {
+                pub fn len(&self) -> usize {
+                    0
+                }
+
+                pub fn pick(
+                    &self,
+                    index: usize,
+                ) -> usize {
+                    index
+                }
+            }
+
+            methods!({
+                pub fn heal(&self, ctx: &mut ScriptContext<'_, API>) {}
+
+                pub fn taunt(&self, ctx: &mut ScriptContext<'_, API>) {}
+
+                fn plan(&self, ctx: &mut ScriptContext<'_, API>) {}
+            });
+        "#;
+    let caller_source = r#"
+            fn run(ctx: &mut ScriptContext<'_, API>) {
+                let _ = get_var!(ctx.run, enemy, var!("hp"));
+                let _ = call_method!(ctx.run, enemy, func!("heal"), params![]);
+            }
+        "#;
+    let mut index = ScriptDoctorIndex::default();
+    index_script_source(Path::new("res/scripts/enemy.rs"), target_source, &mut index);
+    index_script_source(
+        Path::new("res/scripts/caller.rs"),
+        caller_source,
+        &mut index,
+    );
+    let mut report = ValidationReport::default();
+
+    validate_unused_pub_members(Path::new(""), &index, &mut report);
+
+    assert_eq!(report.errors, 0);
+    // hp + heal used; cooldown + plan not pub; armor + taunt unused pub
+    assert_eq!(report.warnings, 2, "messages: {:?}", report.messages);
+    assert!(report.messages.iter().any(|m| {
+        m.contains("script member unused pub")
+            && m.contains("`armor`")
+            && m.contains("res://scripts/enemy.rs")
+    }));
+    assert!(
+        report
+            .messages
+            .iter()
+            .any(|m| { m.contains("script member unused pub") && m.contains("`taunt`") })
+    );
+    assert!(report.messages.iter().all(|m| !m.contains("`hp`")));
+    assert!(report.messages.iter().all(|m| !m.contains("`heal`")));
+    assert!(report.messages.iter().all(|m| !m.contains("`cooldown`")));
+    assert!(report.messages.iter().all(|m| !m.contains("`plan`")));
+    // plain helper fns w/o ctx get no glue -> pub on them is free, no warn
+    assert!(report.messages.iter().all(|m| !m.contains("`len`")));
+    assert!(report.messages.iter().all(|m| !m.contains("`pick`")));
+}
+
+#[test]
+fn call_method_on_ctx_less_helper_warns_not_callable() {
+    let file = PathBuf::from("res/scripts/caller.rs");
+    let target_source = r#"
+            pub struct Rules;
+
+            impl Rules {
+                pub fn total(&self) -> i32 {
+                    0
+                }
+            }
+        "#;
+    let caller_source = r#"
+            fn run(ctx: &mut ScriptContext<'_, API>) {
+                let _ = call_method!(ctx.run, rules, func!("total"), params![]);
+            }
+        "#;
+    let mut index = ScriptDoctorIndex::default();
+    index_script_source(Path::new("res/scripts/rules.rs"), target_source, &mut index);
+    let mut report = ValidationReport::default();
+
+    validate_script_member_calls(Path::new(""), &file, caller_source, &index, &mut report);
+
+    assert_eq!(report.errors, 0);
+    assert_eq!(report.warnings, 1, "messages: {:?}", report.messages);
+    assert!(report.messages[0].contains("script member not callable"));
+    assert!(report.messages[0].contains("`total`"));
+    assert!(report.messages[0].contains("ScriptContext"));
+}
+
+#[test]
+fn unused_pub_suppressed_by_signal_handlers_nested_vars_and_shared_names() {
+    let source = r#"
+            #[State]
+            pub struct WalkerState {
+                pub config: WalkerConfig,
+                pub speed: f32,
+            }
+
+            methods!({
+                pub fn on_step(&self, ctx: &mut ScriptContext<'_, API>) {}
+            });
+
+            fn ready(ctx: &mut ScriptContext<'_, API>) {
+                let _ = signal_connect!(ctx.run, ctx.id, signal!("step"), func!("on_step"));
+                let _ = get_var!(ctx.run, other, var!("config.gain"));
+            }
+        "#;
+    // 2nd script declares same-name pub field; caller's use of `speed`
+    // cannot be attributed -> both stay quiet (no dedup on shared names)
+    let other_source = r#"
+            #[State]
+            pub struct RunnerState {
+                pub speed: f32,
+            }
+
+            fn run(ctx: &mut ScriptContext<'_, API>) {
+                let _ = get_var!(ctx.run, walker, var!("speed"));
+            }
+        "#;
+    let mut index = ScriptDoctorIndex::default();
+    index_script_source(Path::new("res/scripts/walker.rs"), source, &mut index);
+    index_script_source(Path::new("res/scripts/runner.rs"), other_source, &mut index);
+    let mut report = ValidationReport::default();
+
+    validate_unused_pub_members(Path::new(""), &index, &mut report);
+
+    assert_eq!(report.errors, 0);
+    // on_step = signal handler use; config = nested-root use; speed = shared use
+    assert_eq!(report.warnings, 0, "messages: {:?}", report.messages);
+}
+
+#[test]
+fn resource_member_event_names_count_as_uses() {
+    let text = r#"
+            [Frame10]
+            @Hero {
+                set_var = { name="combo", value=2 }
+                call_method = { name="spawn_trail", params=[0.2] }
+            }
+        "#;
+
+    let names = extract_resource_member_event_names(text);
+
+    assert_eq!(names, vec!["combo".to_string(), "spawn_trail".to_string()]);
+}
+
+#[test]
 fn signal_emit_without_connect_warns_once_per_emit_location() {
     let file = PathBuf::from("res/scripts/main.rs");
     let source = r#"
@@ -552,7 +842,7 @@ fn node_ref_type_hints_warn_for_script_vars_and_builtin_fields() {
             pub struct PlayerState {
                 #[expose]
                 #[node_ref(Camera3D)]
-                camera: NodeID,
+                pub camera: NodeID,
             }
             "#,
     )
@@ -673,11 +963,98 @@ fn node_ref_hints_resolve_by_attached_script_for_shared_field_names() {
     validate_script_warnings(&project, &mut report).expect("test setup/result must succeed");
 
     assert_eq!(report.errors, 0);
+    // scene script_vars wiring suppresses unused-pub 4 `config`
     assert_eq!(report.warnings, 1, "messages: {:?}", report.messages);
     assert!(
         report.messages[0]
             .contains("BadGolfer.script_vars.config.orbit_camera wants Node(Camera3D)")
     );
+}
+
+#[test]
+fn scene_var_on_private_field_warns() {
+    let project = temp_project();
+    fs::create_dir_all(project.join("res/scripts")).expect("test setup/result must succeed");
+    fs::write(
+        project.join("res/scripts/walker.rs"),
+        r#"
+            use perro_api::prelude::*;
+
+            #[State]
+            pub struct WalkerState {
+                stride: f32,
+                pub pace: f32,
+            }
+            "#,
+    )
+    .expect("test setup/result must succeed");
+    fs::write(
+        project.join("res/main.scn"),
+        r#"
+            $root = @Walker
+
+            [Walker]
+            script = "res://scripts/walker.rs"
+            script_vars = { stride = 1.5, pace = 2.0 }
+            [Node3D/]
+            [/Walker]
+            "#,
+    )
+    .expect("test setup/result must succeed");
+
+    let mut report = ValidationReport::default();
+    validate_script_warnings(&project, &mut report).expect("test setup/result must succeed");
+
+    // stride private + scene-set -> inject dropped warn; pace pub + scene-set -> clean
+    assert_eq!(report.errors, 0);
+    assert_eq!(report.warnings, 1, "messages: {:?}", report.messages);
+    assert!(report.messages[0].contains("scene var private"));
+    assert!(report.messages[0].contains("`stride`"));
+    assert!(report.messages[0].contains("will not apply"));
+    assert!(!report.messages[0].contains("pace"));
+}
+
+#[test]
+fn unused_pub_field_warns_in_full_pipeline_unless_scene_sets_it() {
+    let project = temp_project();
+    fs::create_dir_all(project.join("res/scripts")).expect("test setup/result must succeed");
+    fs::write(
+        project.join("res/scripts/walker.rs"),
+        r#"
+            use perro_api::prelude::*;
+
+            #[State]
+            pub struct WalkerState {
+                pub stamina: f32,
+                pub stride: f32,
+            }
+            "#,
+    )
+    .expect("test setup/result must succeed");
+    fs::write(
+        project.join("res/main.scn"),
+        r#"
+            $root = @Walker
+
+            [Walker]
+            script = "res://scripts/walker.rs"
+            script_vars = { stride = 1.5 }
+            [Node3D/]
+            [/Walker]
+            "#,
+    )
+    .expect("test setup/result must succeed");
+
+    let mut report = ValidationReport::default();
+    validate_script_warnings(&project, &mut report).expect("test setup/result must succeed");
+
+    // stride scene-set -> quiet; stamina pub + unused -> warn
+    assert_eq!(report.errors, 0);
+    assert_eq!(report.warnings, 1, "messages: {:?}", report.messages);
+    assert!(report.messages[0].contains("script member unused pub"));
+    assert!(report.messages[0].contains("`stamina`"));
+    assert!(report.messages[0].contains("res://scripts/walker.rs"));
+    assert!(!report.messages[0].contains("stride"));
 }
 
 #[test]

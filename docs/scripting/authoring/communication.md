@@ -18,6 +18,8 @@ dynamic var = runtime-selected member bridge
 | event name                        | `signal_emit!`                    | zero or many listeners          |
 | target node + runtime member name | `get_var!` / `set_var!`           | dynamic `Variant` access        |
 
+Every dynamic path — `call_method!`, signal handlers, `get_var!` / `set_var!` — reaches only members the target declares `pub`. Non-pub members stay internal (`with_state!`, `self.method(ctx)`) and get no dispatch glue in the compiled binary. See [state visibility](../state.md#visibility) and [method visibility](../methods.md#visibility).
+
 ## Call A Method
 
 Use methods for commands sent to one known target. Methods accept params and
@@ -33,11 +35,11 @@ let result = call_method!(
 let opened = result.as_bool().unwrap_or(false);
 ```
 
-The receiver declares the dynamic API in `methods!`:
+The receiver declares the dynamic API in `methods!` — `pub` marks it callable from other scripts:
 
 ```rust
 methods!({
-    fn set_open(&self, ctx: &mut ScriptContext<'_, API>, open: bool) -> bool {
+    pub fn set_open(&self, ctx: &mut ScriptContext<'_, API>, open: bool) -> bool {
         with_state_mut!(ctx.run, DoorState, ctx.id, |state| {
             state.open = open;
         }).is_some()
@@ -45,7 +47,7 @@ methods!({
 });
 ```
 
-Inside the same script, call `self.set_open(ctx, true)` directly.
+Inside the same script, call `self.set_open(ctx, true)` directly; that works with or without `pub`.
 
 ## Emit A Signal
 
@@ -60,7 +62,7 @@ signal_emit!(
 );
 ```
 
-Each listener connects one of its own methods once:
+Each listener connects one of its own methods once. Signal dispatch runs through the same generated call glue as `call_method!`, so the handler must be a `pub fn`:
 
 ```rust
 lifecycle!({
@@ -73,6 +75,12 @@ lifecycle!({
         );
     }
 });
+
+methods!({
+    pub fn on_health_changed(&self, ctx: &mut ScriptContext<'_, API>, health: i32) {
+        let _ = (ctx.id, health);
+    }
+});
 ```
 
 Prefer a signal when many systems may react, the receiver may live in another
@@ -81,7 +89,7 @@ scene, or the emitter must stay independent from UI/audio/analytics code.
 ## Get Or Set A Dynamic Var
 
 Use dynamic vars for generic tools and behavior where the member name or state
-type is selected at runtime.
+type is selected at runtime. The target field must be `pub` in its state struct.
 
 ```rust
 let old = get_var!(ctx.run, target_id, var!("health"))

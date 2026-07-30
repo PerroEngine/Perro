@@ -7,13 +7,13 @@ const PROJECTILE_SCENE_PATH: &ResPath = res_path!("res://scenes/demos/physics_bo
 #[State]
 struct PhysicsBonesDemoState {
     #[default = NodeID::nil()]
-    pub overlay: NodeID,
+    overlay: NodeID,
     #[default = NodeID::nil()]
     pub camera: NodeID,
     #[default = NodeID::nil()]
     pub projectiles: NodeID,
     #[default = 0.38]
-    pub radius: f32,
+    radius: f32,
     #[default = 18.0]
     pub speed: f32,
 }
@@ -46,7 +46,7 @@ lifecycle!({
 });
 
 methods!({
-    fn set_info_overlay(&self, ctx: &mut ScriptContext<'_, API>, overlay: NodeID) {
+    pub fn set_info_overlay(&self, ctx: &mut ScriptContext<'_, API>, overlay: NodeID) {
         with_state_mut!(ctx.run, PhysicsBonesDemoState, ctx.id, |state| {
             state.overlay = overlay;
         });

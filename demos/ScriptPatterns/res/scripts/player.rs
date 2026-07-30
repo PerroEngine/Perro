@@ -3,7 +3,7 @@ use perro_api::prelude::*;
 #[State]
 struct PatternPlayer {
     #[default = 0]
-    pub score: i32,
+    score: i32,
     #[default = 0]
     pub bonus: i32,
     #[default = NodeID::nil()]
@@ -14,7 +14,7 @@ struct PatternPlayer {
 lifecycle!({});
 
 methods!({
-    fn set_icon_texture(
+    pub fn set_icon_texture(
         &self,
         ctx: &mut ScriptContext<'_, API>,
         texture: TextureID,
@@ -30,7 +30,7 @@ methods!({
         .is_some()
     }
 
-    fn add_score(&self, ctx: &mut ScriptContext<'_, API>, amount: i32) -> i32 {
+    pub fn add_score(&self, ctx: &mut ScriptContext<'_, API>, amount: i32) -> i32 {
         let result = with_state_mut!(ctx.run, PatternPlayer, ctx.id, |state| {
             state.score += amount.max(0);
             (state.score, state.icon)

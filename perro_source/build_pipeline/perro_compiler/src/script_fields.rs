@@ -233,20 +233,17 @@ fn brace_delta(line: &str) -> i32 {
 
 fn parse_field_line(line: &str) -> Option<ScriptField> {
     let trimmed = line.trim().trim_end_matches(',').trim();
-    if trimmed.is_empty()
-        || trimmed.starts_with("#[")
-        || trimmed.starts_with("///")
-        || trimmed.starts_with("//")
-    {
+    if trimmed.is_empty() || trimmed.starts_with("///") || trimmed.starts_with("//") {
+        return None;
+    }
+    // Attrs may share the field's line: `#[default = 0] #[node_ref(T)] pub x: T`.
+    // Strip every leading attr group so the field still registers.
+    let trimmed = strip_leading_attrs(trimmed)?;
+    if trimmed.is_empty() {
         return None;
     }
 
-    let without_vis = if let Some(rest) = trimmed.strip_prefix("pub(") {
-        let after = rest.split_once(')')?.1;
-        after.trim()
-    } else {
-        trimmed.trim_start_matches("pub ").trim_start()
-    };
+    let (without_vis, is_pub) = strip_visibility(trimmed);
 
     let (name, ty) = without_vis.split_once(':')?;
     let name = name.trim();
@@ -258,7 +255,56 @@ fn parse_field_line(line: &str) -> Option<ScriptField> {
     Some(ScriptField {
         name: name.to_string(),
         ty: ty.to_string(),
+        is_pub,
     })
+}
+
+/// strip repeated leading `#[...]` attr groups -> rest of line.
+/// `None` when an attr never closes on this line (multi-line attr: the field
+/// name is on a later line, which the per-line pass already handles).
+fn strip_leading_attrs(line: &str) -> Option<&str> {
+    let mut rest = line.trim_start();
+    while rest.starts_with("#[") {
+        let bytes = rest.as_bytes();
+        let mut depth = 0_i32;
+        let mut end = None;
+        for (i, b) in bytes.iter().enumerate().skip(1) {
+            match b {
+                b'[' => depth += 1,
+                b']' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        end = Some(i);
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        let end = end?;
+        rest = rest[end + 1..].trim_start();
+    }
+    Some(rest)
+}
+
+/// strip leading vis (`pub`, `pub(crate)`, `pub(in ...)`) -> (rest, had_pub)
+/// idents like `pubkey` no match
+fn strip_visibility(line: &str) -> (&str, bool) {
+    let trimmed = line.trim_start();
+    let Some(rest) = trimmed.strip_prefix("pub") else {
+        return (trimmed, false);
+    };
+    if !(rest.starts_with(char::is_whitespace) || rest.starts_with('(')) {
+        return (trimmed, false);
+    }
+    let rest = rest.trim_start();
+    if let Some(scoped) = rest.strip_prefix('(') {
+        let Some(close) = scoped.find(')') else {
+            return (trimmed, false);
+        };
+        return (scoped[close + 1..].trim_start(), true);
+    }
+    (rest, true)
 }
 
 fn is_ident(s: &str) -> bool {
@@ -311,6 +357,8 @@ struct ScriptMethod {
     params: Vec<ScriptMethodParam>,
     return_ty: Option<String>,
     returns_variant: bool,
+    /// any `pub` form -> callable frm other scripts via call_method
+    is_pub: bool,
 }
 
 #[derive(Clone, Debug)]

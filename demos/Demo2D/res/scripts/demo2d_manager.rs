@@ -119,9 +119,9 @@ impl Default for DemoRuntimeState {
 #[State]
 struct Demo2DState {
     #[default = NodeID::nil()]
-    demo_ui_root: NodeID,
+    pub demo_ui_root: NodeID,
     #[default = NodeID::nil()]
-    camera: NodeID,
+    pub camera: NodeID,
     #[default = DemoAssets::default()]
     assets: DemoAssets,
     #[default = DemoUiRefs::default()]
@@ -200,7 +200,7 @@ lifecycle!({
 });
 
 methods!({
-    fn on_audio_chord_timer(&self, ctx: &mut ScriptContext<'_, API>) {
+    pub fn on_audio_chord_timer(&self, ctx: &mut ScriptContext<'_, API>) {
         let play = with_state!(ctx.run, Demo2DState, ctx.id, |state| {
             state.runtime.active_demo == DemoKind::AudioGap && !state.runtime.paused
         }).unwrap_or_default();
@@ -212,53 +212,53 @@ methods!({
         }
     }
 
-    fn on_demo_mesh_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
+    pub fn on_demo_mesh_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
         self.activate_demo(ctx, DemoKind::MeshMaterials);
     }
-    fn on_demo_lights_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
+    pub fn on_demo_lights_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
         self.activate_demo(ctx, DemoKind::Lights);
     }
-    fn on_demo_water_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
+    pub fn on_demo_water_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
         self.activate_demo(ctx, DemoKind::Water);
     }
-    fn on_demo_animations_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
+    pub fn on_demo_animations_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
         self.activate_demo(ctx, DemoKind::AnimatedSprites);
     }
-    fn on_demo_sky_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
+    pub fn on_demo_sky_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
         self.activate_demo(ctx, DemoKind::Animations);
     }
-    fn on_demo_physics_bones_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
+    pub fn on_demo_physics_bones_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
         self.activate_demo(ctx, DemoKind::PhysicsBones);
     }
-    fn on_demo_physics_collisions_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
+    pub fn on_demo_physics_collisions_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
         self.activate_demo(ctx, DemoKind::PhysicsCollisions);
     }
-    fn on_demo_blend_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
+    pub fn on_demo_blend_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
         self.activate_demo(ctx, DemoKind::BlendGap);
     }
-    fn on_demo_multimesh_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
+    pub fn on_demo_multimesh_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
         self.activate_demo(ctx, DemoKind::MultiMesh);
     }
-    fn on_demo_particles_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
+    pub fn on_demo_particles_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
         self.activate_demo(ctx, DemoKind::ParticlesGap);
     }
-    fn on_demo_audio_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
+    pub fn on_demo_audio_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
         self.activate_demo(ctx, DemoKind::AudioGap);
     }
-    fn on_demo_webcam_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
+    pub fn on_demo_webcam_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
         self.activate_demo(ctx, DemoKind::Webcam);
     }
-    fn on_demo_fps_tester_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
+    pub fn on_demo_fps_tester_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
         self.activate_demo(ctx, DemoKind::FpsTester);
     }
-    fn on_pause_resume_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
+    pub fn on_pause_resume_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
         self.resume_demo(ctx);
     }
-    fn on_pause_restart_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
+    pub fn on_pause_restart_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
         self.restart_active_demo(ctx);
         self.resume_demo(ctx);
     }
-    fn on_pause_hub_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
+    pub fn on_pause_hub_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
         self.show_hub(ctx);
     }
 

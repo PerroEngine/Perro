@@ -138,7 +138,7 @@ When it points at an enabled visible `Webcam`, capture opens automatically.
 ## Script Vars
 
 `script_vars` seeds the attached script state when the node is created.
-Keys must match fields in the script `#[State]` struct.
+Keys must match `pub` fields in the script `#[State]` struct.
 
 Scene:
 

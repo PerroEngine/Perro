@@ -22,7 +22,8 @@ methods!({
         timer_start!(ctx.run, Duration::from_secs(2), "reload");
     }
 
-    fn on_reload(&self, ctx: &mut ScriptContext<'_, API>) {
+    // pub because the timer-finished signal dispatches it.
+    pub fn on_reload(&self, ctx: &mut ScriptContext<'_, API>) {
         with_state_mut!(ctx.run, WeaponState, ctx.id, |state| {
             state.ammo = state.mag_size;
         });

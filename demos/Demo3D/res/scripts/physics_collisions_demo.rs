@@ -6,7 +6,7 @@ type SelfNodeType = Node3D;
 #[State]
 struct PhysicsCollisionsDemoState {
     #[default = NodeID::nil()]
-    pub overlay: NodeID,
+    overlay: NodeID,
     #[default = NodeID::nil()]
     pub area_mesh: NodeID,
     #[default = NodeID::nil()]
@@ -18,15 +18,15 @@ struct PhysicsCollisionsDemoState {
     #[default = NodeID::nil()]
     pub drop_ball: NodeID,
     #[default = MaterialID::nil()]
-    pub area_idle_material: MaterialID,
+    area_idle_material: MaterialID,
     #[default = MaterialID::nil()]
-    pub area_active_material: MaterialID,
+    area_active_material: MaterialID,
     #[default = false]
-    pub area_active: bool,
+    area_active: bool,
     #[default = 0.0]
-    pub spawn_time: f32,
+    spawn_time: f32,
     #[default = 0]
-    pub spawn_index: u32,
+    spawn_index: u32,
 }
 
 lifecycle!({
@@ -93,24 +93,24 @@ lifecycle!({
 });
 
 methods!({
-    fn set_info_overlay(&self, ctx: &mut ScriptContext<'_, API>, overlay: NodeID) {
+    pub fn set_info_overlay(&self, ctx: &mut ScriptContext<'_, API>, overlay: NodeID) {
         with_state_mut!(ctx.run, PhysicsCollisionsDemoState, ctx.id, |state| {
             state.overlay = overlay;
         });
         self.push_overlay(ctx);
     }
 
-    fn on_area_entered(&self, ctx: &mut ScriptContext<'_, API>, _area: NodeID, _other: NodeID) {
+    pub fn on_area_entered(&self, ctx: &mut ScriptContext<'_, API>, _area: NodeID, _other: NodeID) {
         self.set_area_active(ctx, true);
         self.push_overlay(ctx);
     }
 
-    fn on_area_exited(&self, ctx: &mut ScriptContext<'_, API>, _area: NodeID, _other: NodeID) {
+    pub fn on_area_exited(&self, ctx: &mut ScriptContext<'_, API>, _area: NodeID, _other: NodeID) {
         self.set_area_active(ctx, false);
         self.push_overlay(ctx);
     }
 
-    fn on_reset_timer(&self, ctx: &mut ScriptContext<'_, API>) {
+    pub fn on_reset_timer(&self, ctx: &mut ScriptContext<'_, API>) {
         self.reset_bodies(ctx);
         self.set_area_active(ctx, false);
         self.push_overlay(ctx);

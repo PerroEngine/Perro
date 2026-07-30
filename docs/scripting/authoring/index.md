@@ -43,6 +43,7 @@ owned node <-> owned typed state -> fixed refs / relations / queries -> other ow
 - use `call_method!` for a targeted dynamic command with params or a return value
 - use signals for events, fan-out, and loose or cross-scene flow
 - use `get_var!` / `set_var!` only when the member name or type is dynamic
+- declare dynamically dispatched members `pub`: `call_method!` and signal handlers need a `pub fn`, `get_var!` / `set_var!` a `pub` state field
 - use named timers for delays and cooldown completion
 - copy values out of runtime closures before the next `ctx.run` call
 - split scripts by behavior ownership, not a fixed size rule

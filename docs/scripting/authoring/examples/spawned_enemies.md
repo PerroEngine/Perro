@@ -49,7 +49,8 @@ lifecycle!({
 });
 
 methods!({
-    fn on_enemy_died(&self, ctx: &mut ScriptContext<'_, API>, _enemy: NodeID) {
+    // pub because signal dispatch uses the same glue as call_method!.
+    pub fn on_enemy_died(&self, ctx: &mut ScriptContext<'_, API>, _enemy: NodeID) {
         let alive = query!(ctx.run, all(tags["enemy"]));
         if alive.is_empty() {
             timer_start!(ctx.run, Duration::from_secs(1), "encounter_spawn_wave");

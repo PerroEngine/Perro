@@ -9,6 +9,7 @@
 | Use Cases                | [Use Cases](#use-cases)                               |
 | Why `methods!` Exists    | [Why `methods!` Exists](#why-methods-exists)          |
 | Method Shape             | [Method Shape](#method-shape)                         |
+| Visibility               | [Visibility](#visibility)                             |
 | Direct Calls             | [Direct Calls](#direct-calls)                         |
 | Runtime Dispatch         | [Runtime Dispatch](#runtime-dispatch)                 |
 | Typed Params And Returns | [Typed Params And Returns](#typed-params-and-returns) |
@@ -22,8 +23,8 @@
 
 | Situation | Choice | Why | Tradeoff |
 | --- | --- | --- | --- |
-| Same script calls its own helper | direct Rust method | Compiler checks params and return type | Only available where concrete script code is known |
-| Switch targets one scene-wired door | `call_method!` | One receiver, params, and reply match command semantics | Runtime name/type mismatch returns a dynamic failure value |
+| Same script calls its own helper | direct Rust method, no `pub` | Compiler checks params and return type; no dispatch glue generated | Only available where concrete script code is known |
+| Switch targets one scene-wired door | `pub fn` + `call_method!` | One receiver, params, and reply match command semantics | Runtime name/type mismatch returns a dynamic failure value |
 | Producer announces an event to unknown listeners | signal, not method | Producer does not own listener set | No direct return value |
 | Generic tool edits a member | `get_var!` / `set_var!`, not method | Operation is data access selected at runtime | Skips domain behavior unless a setter method enforces it |
 | Call carries `HitInfo` and returns `HitResult` | derive `Variant` on both types | Dynamic boundary keeps one explicit schema | Decode remains fallible at receiver and caller |
@@ -48,7 +49,7 @@ Source path:
 
 ```rust
 methods!({
-    fn apply_damage(&self, ctx: &mut ScriptContext<'_, API>, amount: i32) -> bool {
+    pub fn apply_damage(&self, ctx: &mut ScriptContext<'_, API>, amount: i32) -> bool {
         amount > 0
     }
 });
@@ -56,14 +57,31 @@ methods!({
 
 | Part          | Requirement                                                |
 | ------------- | ---------------------------------------------------------- |
+| visibility    | `pub` when the method is reachable through `call_method!` or signals; omit for internal helpers |
 | receiver      | `&self`                                                    |
 | context       | `ctx: &mut ScriptContext<'_, API>`                         |
 | custom params | any supported typed params after `ctx`                     |
 | return        | `()` or any type that converts with `Variant::from(value)` |
 
+## Visibility
+
+The compiler only generates `call_method` dispatch glue for methods declared `pub` (any form — `pub`, `pub(crate)`, ...). A non-pub method stays a plain Rust method: you can still call it directly as `self.helper(ctx)`, but `call_method!` from any script — including dynamic self dispatch on `ctx.id` — resolves to `Variant::Null`, and signals cannot invoke it.
+
+| Declaration | Direct call `self.x(ctx)` | `call_method!` | Signal handler |
+| --- | --- | --- | --- |
+| `pub fn` | yes | yes | yes |
+| `fn` | yes | no | no |
+
+Two rules follow:
+
+- Signal handlers dispatch through the same generated glue, so every method wired with `signal_connect!`, `signal_connect_many!`, or `signal_connect_pairs!` must be `pub`.
+- Keep internal helpers non-pub. Each `pub` method costs a dispatch match arm plus `Variant` param decode code in the compiled binary; private helpers compile to nothing extra.
+
+`perro doctor` flags `call_method!` and signal connections that target a method with no `pub fn` definition and points at the file that defines it. It also flags the reverse: a `pub fn` that no `call_method!`, signal connection, or animation event references can drop `pub` to shed its dispatch glue.
+
 ## Direct Calls
 
-Direct calls are normal Rust calls. Use them inside the same script when you know the method at compile time.
+Direct calls are normal Rust calls. Use them inside the same script when you know the method at compile time. A method used only this way does not need `pub`.
 
 ```rust
 lifecycle!({
@@ -76,7 +94,8 @@ lifecycle!({
 });
 
 methods!({
-    fn apply_damage(&self, ctx: &mut ScriptContext<'_, API>, amount: i32) -> bool {
+    // pub because Runtime Dispatch below also calls it thru call_method!
+    pub fn apply_damage(&self, ctx: &mut ScriptContext<'_, API>, amount: i32) -> bool {
         amount > 0
     }
 });
@@ -116,11 +135,11 @@ struct HitInfo {
 }
 
 methods!({
-    fn apply_hit(&self, ctx: &mut ScriptContext<'_, API>, hit: HitInfo) -> bool {
+    pub fn apply_hit(&self, ctx: &mut ScriptContext<'_, API>, hit: HitInfo) -> bool {
         hit.amount > 0
     }
 
-    fn last_hit(&self, ctx: &mut ScriptContext<'_, API>) -> HitInfo {
+    pub fn last_hit(&self, ctx: &mut ScriptContext<'_, API>) -> HitInfo {
         HitInfo { amount: 10 }
     }
 });

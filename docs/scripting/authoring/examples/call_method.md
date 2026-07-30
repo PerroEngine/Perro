@@ -25,7 +25,8 @@ struct DoorState {
 lifecycle!({});
 
 methods!({
-    fn toggle(&self, ctx: &mut ScriptContext<'_, API>) -> bool {
+    // pub because the switch dispatches it via call_method!.
+    pub fn toggle(&self, ctx: &mut ScriptContext<'_, API>) -> bool {
         with_state_mut!(ctx.run, DoorState, ctx.id, |state| {
             state.open = !state.open;
             state.open
@@ -39,9 +40,10 @@ methods!({
 ```rust
 #[State]
 struct SwitchState {
+    // pub because the scene injects it via script_vars.
     #[expose]
     #[node_ref(Node3D)]
-    door: Option<NodeID>,
+    pub door: Option<NodeID>,
 }
 
 lifecycle!({});

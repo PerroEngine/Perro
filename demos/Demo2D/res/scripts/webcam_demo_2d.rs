@@ -5,9 +5,9 @@ type SelfNodeType = Node2D;
 #[State]
 struct WebcamDemo2DState {
     #[default = NodeID::nil()]
-    webcam: NodeID,
+    pub webcam: NodeID,
     #[default = NodeID::nil()]
-    device_label: NodeID,
+    pub device_label: NodeID,
 }
 
 lifecycle!({

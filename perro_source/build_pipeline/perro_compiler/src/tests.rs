@@ -9,9 +9,9 @@ mod tests {
         module_short_name_from_rel, native_output_artifact_name, native_output_folder_name,
         normalize_cargo_output_paths, sweep_unknown_embedded_entries,
         steam_runtime_library_name, sync_android_project_manifest, sync_dlc_scripts, sync_scripts,
-        target_binary_name, target_slug_from_triple, transpile_frontend_script,
-        transpiled_exports_script_ctor, validate_native_target_triple, web_route_html_path,
-        write_scripts_lib,
+        target_binary_name, target_slug_from_triple, SceneVarUsage, transpile_frontend_script,
+        transpile_frontend_script_with_scene_vars, transpiled_exports_script_ctor,
+        validate_native_target_triple, web_route_html_path, write_scripts_lib,
     };
     use perro_project::{
         ensure_project_layout, ensure_project_scaffold, ensure_project_toml,
@@ -318,10 +318,19 @@ pub struct AllVariantState {
     pub custom_mode: CustomMode,
     #[default = NestedCombo::default()]
     pub nested_combo: NestedCombo,
+    #[default = 0]
+    internal_frames: u32,
 }
 
 methods!({
-    fn accept_combo(
+    fn internal_tick(
+        &self,
+        ctx: &mut ScriptContext<'_, API>,
+    ) {
+        let _ = ctx.id;
+    }
+
+    pub fn accept_combo(
         &self,
         ctx: &mut ScriptContext<'_, API>,
         combo: NestedCombo,
@@ -362,6 +371,9 @@ lifecycle!({});
         assert!(transpiled.contains("resolver: &mut dyn perro_api::variant::SceneVariantResolver"));
         assert!(!transpiled.contains("value.clone().into_parse"));
         assert!(transpiled.contains("fn __perro_set_nested_var"));
+        // private members: zero glue, incl scene inject
+        assert!(!transpiled.contains("__PERRO_METHOD_INTERNAL_TICK"));
+        assert!(!transpiled.contains("__PERRO_VAR_INTERNAL_FRAMES"));
         assert_generated_script_compiles(source, &transpiled);
     }
 

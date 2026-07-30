@@ -17,8 +17,9 @@ struct CharacterLook {
 
 #[State]
 struct CharacterState {
+    // pub because the scene injects it via script_vars.
     #[default = CharacterLook::default()]
-    look: CharacterLook,
+    pub look: CharacterLook,
 }
 ```
 

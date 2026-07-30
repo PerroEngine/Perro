@@ -50,7 +50,7 @@ type SelfNodeType = Node2D;
 pub struct PlayerState {
     #[default(240.0)]
     #[expose]
-    speed: f32,
+    pub speed: f32,
 }
 
 lifecycle!({

@@ -227,7 +227,8 @@ lifecycle!({
 });
 
 methods!({
-    fn fire(&self, ctx: &mut ScriptContext<'_, API>) {
+    // pub because the timer-finished signal dispatches it.
+    pub fn fire(&self, ctx: &mut ScriptContext<'_, API>) {
         if let Some(muzzle) = get_global_pos_3d!(ctx.run, ctx.id) {
             let bullet = spawn!(ctx.run, Node3D, "Bullet", tags!["bullet"], ctx.id, |node| {
                 let _ = node; // set velocity, mesh, lifetime, etc.
