@@ -1,4 +1,6 @@
 #[cfg(not(target_arch = "wasm32"))]
+use std::sync::atomic::{AtomicBool, Ordering};
+#[cfg(not(target_arch = "wasm32"))]
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -433,10 +435,13 @@ fn unzigzag_i16(value: u16) -> i16 {
     ((value >> 1) as i16) ^ (-((value & 1) as i16))
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct MicSettings {
     pub max_seconds: f32,
     pub denoise: MicDenoiseSettings,
+    /// Backend device name from [`mic_devices`]. `None` or blank picks the OS default.
+    pub device: Option<String>,
+    pub channels: MicChannels,
 }
 
 impl Default for MicSettings {
@@ -444,8 +449,214 @@ impl Default for MicSettings {
         Self {
             max_seconds: 30.0,
             denoise: MicDenoiseSettings::off(),
+            device: None,
+            channels: MicChannels::Auto,
         }
     }
+}
+
+impl MicSettings {
+    #[inline]
+    pub fn with_device(mut self, device: impl Into<String>) -> Self {
+        self.device = Some(device.into());
+        self
+    }
+
+    #[inline]
+    pub fn with_default_device(mut self) -> Self {
+        self.device = None;
+        self
+    }
+
+    #[inline]
+    pub fn with_max_seconds(mut self, seconds: f32) -> Self {
+        self.max_seconds = seconds;
+        self
+    }
+
+    #[inline]
+    pub fn with_denoise(mut self, denoise: MicDenoiseSettings) -> Self {
+        self.denoise = denoise;
+        self
+    }
+
+    #[inline]
+    pub fn with_channels(mut self, channels: MicChannels) -> Self {
+        self.channels = channels;
+        self
+    }
+
+    /// Device name to open, treating blank selections as "use the OS default".
+    pub fn requested_device(&self) -> Option<&str> {
+        self.device
+            .as_deref()
+            .map(str::trim)
+            .filter(|device| !device.is_empty())
+    }
+}
+
+/// Channel layout the capture path writes into [`MicClip`].
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum MicChannels {
+    /// Keep mono and stereo devices as-is, fold wider interfaces to mono.
+    #[default]
+    Auto,
+    /// Always fold every device channel into one mono stream.
+    Mono,
+    /// Never fold; clips keep the device channel count.
+    Device,
+}
+
+impl MicChannels {
+    /// Clip channel count for a device that captures `channels`.
+    pub fn output_channels(self, channels: u16) -> u16 {
+        let channels = channels.max(1);
+        match self {
+            Self::Auto => {
+                if channels > 2 {
+                    1
+                } else {
+                    channels
+                }
+            }
+            Self::Mono => 1,
+            Self::Device => channels,
+        }
+    }
+}
+
+/// Input device reported by the capture backend.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct MicDevice {
+    /// Backend name. Selection key for [`MicSettings::device`].
+    pub name: String,
+    /// Menu label. Same as `name`, suffixed when two devices share a name.
+    pub label: String,
+    pub is_default: bool,
+    /// Default capture rate, `0` when the backend does not report one.
+    pub sample_rate: u32,
+    /// Default channel count, `0` when the backend does not report one.
+    pub channels: u16,
+}
+
+impl MicDevice {
+    /// Default capture settings targeting this device.
+    #[inline]
+    pub fn settings(&self) -> MicSettings {
+        MicSettings::default().with_device(&self.name)
+    }
+}
+
+/// Pick the device a cached name points at, else the default entry.
+///
+/// Backends reorder and renumber devices between scans, so a saved selection is
+/// matched by name and never by list position.
+pub fn resolve_mic_device<'a>(
+    devices: &'a [MicDevice],
+    wanted: Option<&str>,
+) -> Option<&'a MicDevice> {
+    if let Some(wanted) = wanted {
+        let names: Vec<&str> = devices.iter().map(|device| device.name.as_str()).collect();
+        if let Some(index) = match_device_index(&names, wanted) {
+            return devices.get(index);
+        }
+    }
+    devices
+        .iter()
+        .find(|device| device.is_default)
+        .or_else(|| devices.first())
+}
+
+/// Index of `wanted`: exact match first, then trimmed case-insensitive match.
+fn match_device_index(names: &[&str], wanted: &str) -> Option<usize> {
+    let wanted = wanted.trim();
+    if wanted.is_empty() {
+        return None;
+    }
+    names.iter().position(|name| *name == wanted).or_else(|| {
+        names
+            .iter()
+            .position(|name| name.trim().eq_ignore_ascii_case(wanted))
+    })
+}
+
+/// Scan the input devices the OS exposes right now.
+///
+/// Wireless and USB mics come and go, so every call re-queries the backend
+/// instead of serving a cached list.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn mic_devices() -> Result<Vec<MicDevice>, String> {
+    use cpal::traits::{DeviceTrait, HostTrait};
+
+    let host = cpal::default_host();
+    let default_name = host
+        .default_input_device()
+        .and_then(|device| device.name().ok());
+    let found = match host.input_devices() {
+        Ok(devices) => devices.collect::<Vec<_>>(),
+        Err(err) => {
+            // Some backends refuse a full scan but still hand out the default.
+            let Some(device) = host.default_input_device() else {
+                return Err(format!("mic device scan failed: {err}"));
+            };
+            vec![device]
+        }
+    };
+
+    let mut names = Vec::with_capacity(found.len());
+    let mut formats = Vec::with_capacity(found.len());
+    for device in &found {
+        let Ok(name) = device.name() else {
+            continue;
+        };
+        let format = device
+            .default_input_config()
+            .map(|config| (config.sample_rate().0, config.channels()))
+            .unwrap_or((0, 0));
+        names.push(name);
+        formats.push(format);
+    }
+
+    let labels = dedupe_labels(&names);
+    let mut default_taken = false;
+    let devices = names
+        .into_iter()
+        .zip(labels)
+        .zip(formats)
+        .map(|((name, label), (sample_rate, channels))| {
+            // Duplicate names share one default flag; the first entry wins.
+            let is_default = !default_taken && default_name.as_deref() == Some(name.as_str());
+            default_taken |= is_default;
+            MicDevice {
+                name,
+                label,
+                is_default,
+                sample_rate,
+                channels,
+            }
+        })
+        .collect();
+    Ok(devices)
+}
+
+#[cfg(target_arch = "wasm32")]
+pub fn mic_devices() -> Result<Vec<MicDevice>, String> {
+    Ok(Vec::new())
+}
+
+/// Menu labels that stay distinct when a backend lists twin devices.
+#[cfg(not(target_arch = "wasm32"))]
+fn dedupe_labels(names: &[String]) -> Vec<String> {
+    let mut labels = Vec::with_capacity(names.len());
+    for (index, name) in names.iter().enumerate() {
+        let seen = names[..index].iter().filter(|prev| *prev == name).count();
+        if seen == 0 {
+            labels.push(name.clone());
+        } else {
+            labels.push(format!("{name} #{}", seen + 1));
+        }
+    }
+    labels
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -505,6 +716,16 @@ impl MicDenoiseState {
         (self.process_f32(sample) * i16::MAX as f32) as i16
     }
 
+    /// Pass samples through untouched while denoise is off.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn apply(&mut self, sample: i16) -> i16 {
+        if self.settings.enabled {
+            self.process_i16(sample)
+        } else {
+            sample
+        }
+    }
+
     fn process_f32(&mut self, sample: f32) -> f32 {
         if !self.settings.enabled {
             return sample.clamp(-1.0, 1.0);
@@ -540,24 +761,61 @@ struct ActiveMic {
 enum MicCommand {
     Start {
         settings: MicSettings,
-        reply: std::sync::mpsc::Sender<Result<(u32, u16), String>>,
+        reply: std::sync::mpsc::Sender<Result<(), String>>,
     },
     Stop {
         reply: std::sync::mpsc::Sender<()>,
     },
 }
 
+/// Format of the stream currently or most recently open.
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct MicStreamMeta {
+    device: String,
+    sample_rate: u32,
+    channels: u16,
+}
+
+/// State shared between the caller, the mic worker, and the audio callback.
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Clone)]
+struct MicShared {
+    samples: Arc<Mutex<Vec<i16>>>,
+    cursor: Arc<Mutex<usize>>,
+    meta: Arc<Mutex<Option<MicStreamMeta>>>,
+    /// Capture healthy. Cleared on stop and on device loss.
+    listening: Arc<AtomicBool>,
+    /// Stream opened and not yet stopped, even after a device error.
+    armed: Arc<AtomicBool>,
+    error: Arc<Mutex<Option<String>>>,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl MicShared {
+    fn new() -> Self {
+        Self {
+            samples: Arc::new(Mutex::new(Vec::new())),
+            cursor: Arc::new(Mutex::new(0)),
+            meta: Arc::new(Mutex::new(None)),
+            listening: Arc::new(AtomicBool::new(false)),
+            armed: Arc::new(AtomicBool::new(false)),
+            error: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    fn set_error(&self, err: Option<String>) {
+        if let Ok(mut slot) = self.error.lock() {
+            *slot = err;
+        }
+    }
+}
+
 pub struct MicRecorder {
     #[cfg(not(target_arch = "wasm32"))]
     tx: std::sync::mpsc::Sender<MicCommand>,
     #[cfg(not(target_arch = "wasm32"))]
-    samples: Arc<Mutex<Vec<i16>>>,
-    #[cfg(not(target_arch = "wasm32"))]
-    stream_cursor: Arc<Mutex<usize>>,
-    #[cfg(not(target_arch = "wasm32"))]
-    meta: Arc<Mutex<Option<(u32, u16)>>>,
-    #[cfg(not(target_arch = "wasm32"))]
-    listening: Arc<std::sync::atomic::AtomicBool>,
+    shared: MicShared,
 }
 
 impl MicRecorder {
@@ -569,44 +827,55 @@ impl MicRecorder {
         #[cfg(not(target_arch = "wasm32"))]
         {
             let (tx, rx) = std::sync::mpsc::channel();
-            let samples = Arc::new(Mutex::new(Vec::<i16>::new()));
-            let worker_samples = Arc::clone(&samples);
-            let stream_cursor = Arc::new(Mutex::new(0usize));
-            let worker_stream_cursor = Arc::clone(&stream_cursor);
-            let meta = Arc::new(Mutex::new(None));
-            let worker_meta = Arc::clone(&meta);
-            let listening = Arc::new(std::sync::atomic::AtomicBool::new(false));
-            let worker_listening = Arc::clone(&listening);
+            let shared = MicShared::new();
+            let worker = shared.clone();
             std::thread::Builder::new()
                 .name("perro_pawdio_mic".to_string())
-                .spawn(move || {
-                    mic_worker(
-                        rx,
-                        worker_samples,
-                        worker_stream_cursor,
-                        worker_meta,
-                        worker_listening,
-                    )
-                })
+                .spawn(move || mic_worker(rx, worker))
                 .ok();
-            Self {
-                tx,
-                samples,
-                stream_cursor,
-                meta,
-                listening,
-            }
+            Self { tx, shared }
         }
+    }
+
+    /// Input devices visible right now.
+    pub fn devices(&self) -> Result<Vec<MicDevice>, String> {
+        mic_devices()
     }
 
     pub fn is_listening(&self) -> bool {
         #[cfg(not(target_arch = "wasm32"))]
         {
-            self.listening.load(std::sync::atomic::Ordering::Relaxed)
+            self.shared.listening.load(Ordering::Relaxed)
         }
         #[cfg(target_arch = "wasm32")]
         {
             false
+        }
+    }
+
+    /// Name of the device backing the current or last capture.
+    pub fn device(&self) -> Option<String> {
+        #[cfg(target_arch = "wasm32")]
+        {
+            None
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let meta = self.shared.meta.lock().ok()?;
+            meta.as_ref().map(|meta| meta.device.clone())
+        }
+    }
+
+    /// Last capture error, including a device lost mid-stream.
+    pub fn last_error(&self) -> Option<String> {
+        #[cfg(target_arch = "wasm32")]
+        {
+            None
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let error = self.shared.error.lock().ok()?;
+            error.clone()
         }
     }
 
@@ -630,8 +899,7 @@ impl MicRecorder {
                 .map_err(|_| "mic worker stopped".to_string())?;
             reply_rx
                 .recv()
-                .map_err(|_| "mic worker no reply".to_string())??;
-            Ok(())
+                .map_err(|_| "mic worker no reply".to_string())?
         }
     }
 
@@ -642,7 +910,8 @@ impl MicRecorder {
         }
         #[cfg(not(target_arch = "wasm32"))]
         {
-            if !self.is_listening() {
+            // Armed, not listening = device died mid-capture. Still drain the buffer.
+            if !self.shared.armed.load(Ordering::Relaxed) {
                 return None;
             }
             let (reply_tx, reply_rx) = std::sync::mpsc::channel();
@@ -670,16 +939,16 @@ impl MicRecorder {
         }
         #[cfg(not(target_arch = "wasm32"))]
         {
-            let (sample_rate, channels) = self.meta.lock().ok()?.as_ref().copied()?;
-            let samples = self.samples.lock().ok()?;
-            let mut cursor = self.stream_cursor.lock().ok()?;
+            let meta = self.shared.meta.lock().ok()?.clone()?;
+            let samples = self.shared.samples.lock().ok()?;
+            let mut cursor = self.shared.cursor.lock().ok()?;
             let start = (*cursor).min(samples.len());
             if start == samples.len() {
                 return None;
             }
             let chunk = samples[start..].to_vec();
             *cursor = samples.len();
-            Some(MicClip::new(chunk, sample_rate, channels))
+            MicClip::try_new(chunk, meta.sample_rate, meta.channels).ok()
         }
     }
 
@@ -689,9 +958,9 @@ impl MicRecorder {
 
     #[cfg(not(target_arch = "wasm32"))]
     fn clip_from_state(&self) -> Option<MicClip> {
-        let (sample_rate, channels) = self.meta.lock().ok()?.as_ref().copied()?;
-        let samples = self.samples.lock().ok()?.clone();
-        Some(MicClip::new(samples, sample_rate, channels))
+        let meta = self.shared.meta.lock().ok()?.clone()?;
+        let samples = self.shared.samples.lock().ok()?.clone();
+        MicClip::try_new(samples, meta.sample_rate, meta.channels).ok()
     }
 }
 
@@ -702,159 +971,335 @@ impl Default for MicRecorder {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn mic_worker(
-    rx: std::sync::mpsc::Receiver<MicCommand>,
-    samples: Arc<Mutex<Vec<i16>>>,
-    stream_cursor: Arc<Mutex<usize>>,
-    meta: Arc<Mutex<Option<(u32, u16)>>>,
-    listening: Arc<std::sync::atomic::AtomicBool>,
-) {
-    let mut active: Option<ActiveMic> = None;
+fn mic_worker(rx: std::sync::mpsc::Receiver<MicCommand>, shared: MicShared) {
+    // Holds the cpal stream alive; never read back.
+    let mut _active: Option<ActiveMic> = None;
     while let Ok(cmd) = rx.recv() {
         match cmd {
             MicCommand::Start { settings, reply } => {
-                let res = start_stream(settings, &samples, &stream_cursor).map(
-                    |(stream, sample_rate, channels)| {
-                        active = Some(ActiveMic { _stream: stream });
-                        if let Ok(mut meta) = meta.lock() {
-                            *meta = Some((sample_rate, channels));
+                // Drop any prior stream first: a dead device leaves one armed.
+                _active = None;
+                shared.listening.store(false, Ordering::Relaxed);
+                shared.set_error(None);
+                let res = match start_stream(&settings, &shared) {
+                    Ok((stream, meta)) => {
+                        _active = Some(ActiveMic { _stream: stream });
+                        if let Ok(mut slot) = shared.meta.lock() {
+                            *slot = Some(meta);
                         }
-                        listening.store(true, std::sync::atomic::Ordering::Relaxed);
-                        (sample_rate, channels)
-                    },
-                );
+                        shared.armed.store(true, Ordering::Relaxed);
+                        shared.listening.store(true, Ordering::Relaxed);
+                        Ok(())
+                    }
+                    Err(err) => {
+                        shared.armed.store(false, Ordering::Relaxed);
+                        shared.set_error(Some(err.clone()));
+                        Err(err)
+                    }
+                };
                 let _ = reply.send(res);
             }
             MicCommand::Stop { reply } => {
-                active = None;
-                listening.store(false, std::sync::atomic::Ordering::Relaxed);
+                _active = None;
+                shared.listening.store(false, Ordering::Relaxed);
+                shared.armed.store(false, Ordering::Relaxed);
                 let _ = reply.send(());
             }
         }
     }
 }
 
+/// Rate the negotiation aims for when a device offers a range.
+#[cfg(not(target_arch = "wasm32"))]
+const MIC_TARGET_RATE: u32 = 48_000;
+
 #[cfg(not(target_arch = "wasm32"))]
 fn start_stream(
-    settings: MicSettings,
-    samples: &Arc<Mutex<Vec<i16>>>,
-    stream_cursor: &Arc<Mutex<usize>>,
-) -> Result<(cpal::Stream, u32, u16), String> {
-    use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+    settings: &MicSettings,
+    shared: &MicShared,
+) -> Result<(cpal::Stream, MicStreamMeta), String> {
+    use cpal::traits::{DeviceTrait, StreamTrait};
 
-    if let Ok(mut samples) = samples.lock() {
+    if let Ok(mut samples) = shared.samples.lock() {
         samples.clear();
     }
-    if let Ok(mut cursor) = stream_cursor.lock() {
+    if let Ok(mut cursor) = shared.cursor.lock() {
         *cursor = 0;
     }
+
     let host = cpal::default_host();
-    let device = host
-        .default_input_device()
-        .ok_or_else(|| "no default mic input device".to_string())?;
-    let config = device
-        .default_input_config()
-        .map_err(|err| format!("mic input cfg failed: {err}"))?;
+    let (device, device_name) = open_input_device(&host, settings.requested_device())?;
+    let config = negotiate_input_config(&device)?;
     let sample_rate = config.sample_rate().0;
-    let channels = config.channels().max(1);
+    let src_channels = config.channels().max(1);
+    let out_channels = settings.channels.output_channels(src_channels);
     let max_samples = ((settings.max_seconds.max(0.1) * sample_rate as f32) as usize)
-        .saturating_mul(channels as usize);
-    let out = Arc::clone(samples);
-    let cursor = Arc::clone(stream_cursor);
-    let err_fn = |err| eprintln!("mic input stream err: {err}");
+        .saturating_mul(out_channels as usize);
+    let sink = MicSink::new(
+        shared,
+        max_samples,
+        settings.denoise,
+        src_channels,
+        out_channels,
+    );
+
+    let err_listening = Arc::clone(&shared.listening);
+    let err_slot = Arc::clone(&shared.error);
+    let err_fn = move |err: cpal::StreamError| {
+        if let Ok(mut slot) = err_slot.lock() {
+            *slot = Some(format!("mic input stream err: {err}"));
+        }
+        // A yanked USB/wireless mic ends capture; flip listening so the game sees it.
+        if matches!(err, cpal::StreamError::DeviceNotAvailable) {
+            err_listening.store(false, Ordering::Relaxed);
+        }
+    };
+
     let stream_config = config.config();
-    let denoise = settings.denoise;
     let stream = match config.sample_format() {
-        cpal::SampleFormat::F32 => device.build_input_stream(
-            &stream_config,
-            {
-                let mut state = MicDenoiseState::new(denoise);
-                move |data: &[f32], _| push_f32(data, &out, &cursor, max_samples, &mut state)
-            },
-            err_fn,
-            None,
-        ),
-        cpal::SampleFormat::I16 => device.build_input_stream(
-            &stream_config,
-            {
-                let mut state = MicDenoiseState::new(denoise);
-                move |data: &[i16], _| push_i16(data, &out, &cursor, max_samples, &mut state)
-            },
-            err_fn,
-            None,
-        ),
-        cpal::SampleFormat::U16 => device.build_input_stream(
-            &stream_config,
-            {
-                let mut state = MicDenoiseState::new(denoise);
-                move |data: &[u16], _| push_u16(data, &out, &cursor, max_samples, &mut state)
-            },
-            err_fn,
-            None,
-        ),
+        cpal::SampleFormat::F32 => {
+            let mut sink = sink;
+            device.build_input_stream(
+                &stream_config,
+                move |data: &[f32], _| sink.push(data.iter().map(|sample| f32_to_i16(*sample))),
+                err_fn,
+                None,
+            )
+        }
+        cpal::SampleFormat::I16 => {
+            let mut sink = sink;
+            device.build_input_stream(
+                &stream_config,
+                move |data: &[i16], _| sink.push(data.iter().copied()),
+                err_fn,
+                None,
+            )
+        }
+        cpal::SampleFormat::U16 => {
+            let mut sink = sink;
+            device.build_input_stream(
+                &stream_config,
+                move |data: &[u16], _| sink.push(data.iter().map(|sample| u16_to_i16(*sample))),
+                err_fn,
+                None,
+            )
+        }
         other => return Err(format!("unsupported mic sample format: {other:?}")),
     }
-    .map_err(|err| format!("mic input stream failed: {err}"))?;
+    .map_err(|err| format!("mic input stream failed on `{device_name}`: {err}"))?;
     stream
         .play()
-        .map_err(|err| format!("mic input play failed: {err}"))?;
-    Ok((stream, sample_rate, channels))
+        .map_err(|err| format!("mic input play failed on `{device_name}`: {err}"))?;
+    Ok((
+        stream,
+        MicStreamMeta {
+            device: device_name,
+            sample_rate,
+            channels: out_channels,
+        },
+    ))
+}
+
+/// Open the named device, or the OS default when no name is set.
+#[cfg(not(target_arch = "wasm32"))]
+fn open_input_device(
+    host: &cpal::Host,
+    wanted: Option<&str>,
+) -> Result<(cpal::Device, String), String> {
+    use cpal::traits::{DeviceTrait, HostTrait};
+
+    let Some(wanted) = wanted else {
+        let device = host
+            .default_input_device()
+            .ok_or_else(|| "no default mic input device".to_string())?;
+        let name = device
+            .name()
+            .unwrap_or_else(|_| "default input".to_string());
+        return Ok((device, name));
+    };
+
+    let devices: Vec<cpal::Device> = host
+        .input_devices()
+        .map_err(|err| format!("mic device scan failed: {err}"))?
+        .collect();
+    let names: Vec<String> = devices
+        .iter()
+        .map(|device| device.name().unwrap_or_default())
+        .collect();
+    let refs: Vec<&str> = names.iter().map(String::as_str).collect();
+    let index = match_device_index(&refs, wanted).ok_or_else(|| {
+        format!("mic device `{wanted}` not connected; rescan devices and pick another")
+    })?;
+    let name = names
+        .get(index)
+        .cloned()
+        .unwrap_or_else(|| wanted.to_string());
+    let device = devices
+        .into_iter()
+        .nth(index)
+        .ok_or_else(|| format!("mic device `{wanted}` vanished during open"))?;
+    Ok((device, name))
+}
+
+/// Pick a capture config the conversion path can handle.
+///
+/// The device default covers nearly every mic; the scan is the fallback for
+/// devices that report no default or expose an exotic sample format.
+#[cfg(not(target_arch = "wasm32"))]
+fn negotiate_input_config(device: &cpal::Device) -> Result<cpal::SupportedStreamConfig, String> {
+    use cpal::traits::DeviceTrait;
+
+    if let Ok(config) = device.default_input_config()
+        && config.channels() > 0
+        && sample_format_rank(config.sample_format()).is_some()
+    {
+        return Ok(config);
+    }
+    let ranges = device
+        .supported_input_configs()
+        .map_err(|err| format!("mic input cfg failed: {err}"))?;
+    pick_input_config(ranges)
+        .ok_or_else(|| "mic device exposes no f32, i16, or u16 input format".to_string())
+}
+
+/// Preference order of the formats the capture path converts. Lower is better.
+#[cfg(not(target_arch = "wasm32"))]
+fn sample_format_rank(format: cpal::SampleFormat) -> Option<u8> {
+    match format {
+        cpal::SampleFormat::I16 => Some(0),
+        cpal::SampleFormat::F32 => Some(1),
+        cpal::SampleFormat::U16 => Some(2),
+        _ => None,
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn push_i16(
-    data: &[i16],
-    out: &Arc<Mutex<Vec<i16>>>,
-    stream_cursor: &Arc<Mutex<usize>>,
-    max_samples: usize,
-    denoise: &mut MicDenoiseState,
-) {
-    if let Ok(mut samples) = out.lock() {
-        if denoise.settings.enabled {
-            samples.extend(data.iter().map(|sample| denoise.process_i16(*sample)));
-        } else {
-            samples.extend_from_slice(data);
+fn pick_input_config<I>(ranges: I) -> Option<cpal::SupportedStreamConfig>
+where
+    I: IntoIterator<Item = cpal::SupportedStreamConfigRange>,
+{
+    let mut best: Option<((u8, u32, u16), cpal::SupportedStreamConfig)> = None;
+    for range in ranges {
+        let Some(rank) = sample_format_rank(range.sample_format()) else {
+            continue;
+        };
+        let channels = range.channels();
+        if channels == 0 {
+            continue;
         }
-        trim_samples(&mut samples, stream_cursor, max_samples);
+        let rate = clamp_rate(
+            MIC_TARGET_RATE,
+            range.min_sample_rate().0,
+            range.max_sample_rate().0,
+        );
+        let Some(config) = range.try_with_sample_rate(cpal::SampleRate(rate)) else {
+            continue;
+        };
+        let score = (
+            rank,
+            rate.abs_diff(MIC_TARGET_RATE),
+            channels.saturating_sub(1),
+        );
+        if best.as_ref().is_none_or(|(current, _)| score < *current) {
+            best = Some((score, config));
+        }
     }
+    best.map(|(_, config)| config)
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn push_f32(
-    data: &[f32],
-    out: &Arc<Mutex<Vec<i16>>>,
-    stream_cursor: &Arc<Mutex<usize>>,
+fn clamp_rate(target: u32, min: u32, max: u32) -> u32 {
+    if max < min {
+        return min;
+    }
+    target.clamp(min, max)
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn f32_to_i16(sample: f32) -> i16 {
+    (sample.clamp(-1.0, 1.0) * i16::MAX as f32) as i16
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn u16_to_i16(sample: u16) -> i16 {
+    (sample as i32 - i16::MAX as i32 - 1).clamp(i16::MIN as i32, i16::MAX as i32) as i16
+}
+
+/// Average one interleaved frame down to a single sample.
+#[cfg(not(target_arch = "wasm32"))]
+fn average_i16(frame: &[i16]) -> i16 {
+    if frame.is_empty() {
+        return 0;
+    }
+    let sum: i32 = frame.iter().map(|sample| *sample as i32).sum();
+    (sum / frame.len() as i32).clamp(i16::MIN as i32, i16::MAX as i32) as i16
+}
+
+/// Audio-callback side of capture: convert, fold, denoise, append, trim.
+#[cfg(not(target_arch = "wasm32"))]
+struct MicSink {
+    out: Arc<Mutex<Vec<i16>>>,
+    cursor: Arc<Mutex<usize>>,
     max_samples: usize,
-    denoise: &mut MicDenoiseState,
-) {
-    if let Ok(mut samples) = out.lock() {
-        samples.extend(data.iter().map(|sample| {
-            let sample = denoise.process_f32(*sample);
-            (sample * i16::MAX as f32) as i16
-        }));
-        trim_samples(&mut samples, stream_cursor, max_samples);
+    denoise: MicDenoiseState,
+    src_channels: usize,
+    /// Partial frame carried over when a callback splits one.
+    frame: Vec<i16>,
+    fold: bool,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl MicSink {
+    fn new(
+        shared: &MicShared,
+        max_samples: usize,
+        denoise: MicDenoiseSettings,
+        src_channels: u16,
+        out_channels: u16,
+    ) -> Self {
+        let src_channels = src_channels.max(1) as usize;
+        Self {
+            out: Arc::clone(&shared.samples),
+            cursor: Arc::clone(&shared.cursor),
+            max_samples,
+            denoise: MicDenoiseState::new(denoise),
+            src_channels,
+            frame: Vec::with_capacity(src_channels),
+            fold: (out_channels.max(1) as usize) < src_channels,
+        }
+    }
+
+    fn push<I: IntoIterator<Item = i16>>(&mut self, data: I) {
+        let Self {
+            out,
+            cursor,
+            max_samples,
+            denoise,
+            src_channels,
+            frame,
+            fold,
+        } = self;
+        let Ok(mut samples) = out.lock() else {
+            return;
+        };
+        if *fold {
+            for sample in data {
+                frame.push(sample);
+                if frame.len() >= *src_channels {
+                    let mono = average_i16(frame);
+                    frame.clear();
+                    samples.push(denoise.apply(mono));
+                }
+            }
+        } else {
+            samples.extend(data.into_iter().map(|sample| denoise.apply(sample)));
+        }
+        trim_samples(&mut samples, cursor, *max_samples);
     }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn push_u16(
-    data: &[u16],
-    out: &Arc<Mutex<Vec<i16>>>,
-    stream_cursor: &Arc<Mutex<usize>>,
-    max_samples: usize,
-    denoise: &mut MicDenoiseState,
-) {
-    if let Ok(mut samples) = out.lock() {
-        samples.extend(data.iter().map(|sample| {
-            let centered = *sample as i32 - i16::MAX as i32 - 1;
-            denoise.process_i16(centered.clamp(i16::MIN as i32, i16::MAX as i32) as i16)
-        }));
-        trim_samples(&mut samples, stream_cursor, max_samples);
-    }
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-fn trim_samples(samples: &mut Vec<i16>, stream_cursor: &Arc<Mutex<usize>>, max_samples: usize) {
+fn trim_samples(samples: &mut Vec<i16>, stream_cursor: &Mutex<usize>, max_samples: usize) {
     if max_samples == 0 || samples.len() <= max_samples {
         return;
     }
@@ -868,10 +1313,21 @@ fn trim_samples(samples: &mut Vec<i16>, stream_cursor: &Arc<Mutex<usize>>, max_s
 #[cfg(test)]
 mod tests {
     use super::{
-        MicClip, MicDenoiseSettings, PMIC_CODEC_DELTA, PMIC_CODEC_PCM, PMIC_CODEC_ZLIB_DELTA,
-        PMIC_CODEC_ZLIB_PCM, PMIC_COMPRESSED_HEADER_LEN, PMIC_MAGIC, PMIC_MAX_SAMPLES,
-        PMIC_VERSION, PMIC_VERSION_COMPRESSED,
+        MicChannels, MicClip, MicDenoiseSettings, MicDevice, MicSettings, PMIC_CODEC_DELTA,
+        PMIC_CODEC_PCM, PMIC_CODEC_ZLIB_DELTA, PMIC_CODEC_ZLIB_PCM, PMIC_COMPRESSED_HEADER_LEN,
+        PMIC_MAGIC, PMIC_MAX_SAMPLES, PMIC_VERSION, PMIC_VERSION_COMPRESSED, match_device_index,
+        resolve_mic_device,
     };
+
+    fn device(name: &str, is_default: bool) -> MicDevice {
+        MicDevice {
+            name: name.to_string(),
+            label: name.to_string(),
+            is_default,
+            sample_rate: 48_000,
+            channels: 1,
+        }
+    }
 
     /// Builds a v2 header with caller-chosen (possibly hostile) size fields.
     fn v2_packet(
@@ -1034,5 +1490,339 @@ mod tests {
     fn mic_clip_sample_ceiling_covers_long_captures() {
         let ten_min_48k_stereo = 48_000 * 2 * 60 * 10;
         assert!(PMIC_MAX_SAMPLES > ten_min_48k_stereo);
+    }
+
+    #[test]
+    fn mic_settings_default_targets_os_default_device() {
+        let settings = MicSettings::default();
+        assert_eq!(settings.device, None);
+        assert_eq!(settings.requested_device(), None);
+        assert_eq!(settings.channels, MicChannels::Auto);
+    }
+
+    #[test]
+    fn mic_settings_blank_device_falls_back_to_os_default() {
+        assert_eq!(
+            MicSettings::default().with_device("").requested_device(),
+            None
+        );
+        assert_eq!(
+            MicSettings::default().with_device("   ").requested_device(),
+            None
+        );
+        assert_eq!(
+            MicSettings::default()
+                .with_device("  USB Mic  ")
+                .requested_device(),
+            Some("USB Mic")
+        );
+    }
+
+    #[test]
+    fn mic_settings_keep_other_fields_when_device_set() {
+        let settings = MicSettings::default()
+            .with_max_seconds(8.0)
+            .with_denoise(MicDenoiseSettings::voice())
+            .with_channels(MicChannels::Mono)
+            .with_device("Yeti Nano");
+        assert_eq!(settings.requested_device(), Some("Yeti Nano"));
+        assert_eq!(settings.max_seconds, 8.0);
+        assert!(settings.denoise.enabled);
+        assert_eq!(settings.channels, MicChannels::Mono);
+        assert_eq!(
+            settings.with_default_device().requested_device(),
+            None,
+            "clearing the device returns to the OS default"
+        );
+    }
+
+    #[test]
+    fn mic_device_settings_target_that_device() {
+        let entry = device("Headset (Wireless)", false);
+        assert_eq!(
+            entry.settings().requested_device(),
+            Some("Headset (Wireless)")
+        );
+    }
+
+    #[test]
+    fn mic_channels_pick_clip_layout() {
+        for channels in [1u16, 2] {
+            assert_eq!(MicChannels::Auto.output_channels(channels), channels);
+        }
+        assert_eq!(MicChannels::Auto.output_channels(4), 1);
+        assert_eq!(MicChannels::Auto.output_channels(8), 1);
+        assert_eq!(MicChannels::Auto.output_channels(0), 1);
+        assert_eq!(MicChannels::Mono.output_channels(8), 1);
+        assert_eq!(MicChannels::Device.output_channels(8), 8);
+        assert_eq!(MicChannels::Device.output_channels(0), 1);
+    }
+
+    /// Scans reorder between calls, so a cached name must still hit its device.
+    #[test]
+    fn mic_device_match_keys_off_name_not_position() {
+        let first = ["Built-in Mic", "USB Mic", "Virtual Cable"];
+        let second = ["Virtual Cable", "Built-in Mic", "USB Mic"];
+        assert_eq!(match_device_index(&first, "USB Mic"), Some(1));
+        assert_eq!(match_device_index(&second, "USB Mic"), Some(2));
+    }
+
+    #[test]
+    fn mic_device_match_accepts_case_and_padding_drift() {
+        let names = ["USB Mic"];
+        assert_eq!(match_device_index(&names, "usb mic"), Some(0));
+        assert_eq!(match_device_index(&names, " USB Mic "), Some(0));
+        assert_eq!(match_device_index(&names, "Other Mic"), None);
+        assert_eq!(match_device_index(&names, "  "), None);
+    }
+
+    /// Exact match wins even when a case-insensitive twin sits earlier.
+    #[test]
+    fn mic_device_match_prefers_exact_name() {
+        let names = ["usb mic", "USB Mic"];
+        assert_eq!(match_device_index(&names, "USB Mic"), Some(1));
+    }
+
+    #[test]
+    fn resolve_mic_device_uses_cached_name() {
+        let devices = [
+            device("Built-in Mic", true),
+            device("USB Mic", false),
+            device("Virtual Cable", false),
+        ];
+        let picked = resolve_mic_device(&devices, Some("USB Mic")).expect("cached device");
+        assert_eq!(picked.name, "USB Mic");
+    }
+
+    #[test]
+    fn resolve_mic_device_falls_back_when_cached_device_is_gone() {
+        let devices = [device("Built-in Mic", true), device("Virtual Cable", false)];
+        let picked = resolve_mic_device(&devices, Some("USB Mic")).expect("default device");
+        assert_eq!(picked.name, "Built-in Mic");
+
+        let no_default = [device("Virtual Cable", false)];
+        let picked = resolve_mic_device(&no_default, Some("USB Mic")).expect("first device");
+        assert_eq!(picked.name, "Virtual Cable");
+
+        assert!(resolve_mic_device(&[], Some("USB Mic")).is_none());
+        assert!(resolve_mic_device(&[], None).is_none());
+    }
+}
+
+/// Capture-path tests. Native only: the sink and cpal helpers are gated off wasm.
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod capture_tests {
+    use super::{
+        MicChannels, MicDenoiseSettings, MicShared, MicSink, average_i16, clamp_rate,
+        dedupe_labels, f32_to_i16, pick_input_config, u16_to_i16,
+    };
+
+    /// Sink writing into a fresh buffer, standing in for the audio callback.
+    fn sink(src_channels: u16, max_samples: usize, mode: MicChannels) -> (MicSink, MicShared) {
+        let shared = MicShared::new();
+        let sink = MicSink::new(
+            &shared,
+            max_samples,
+            MicDenoiseSettings::off(),
+            src_channels,
+            mode.output_channels(src_channels),
+        );
+        (sink, shared)
+    }
+
+    fn captured(shared: &MicShared) -> Vec<i16> {
+        shared.samples.lock().expect("lock mic samples").clone()
+    }
+
+    fn config_range(
+        channels: u16,
+        min_rate: u32,
+        max_rate: u32,
+        format: cpal::SampleFormat,
+    ) -> cpal::SupportedStreamConfigRange {
+        cpal::SupportedStreamConfigRange::new(
+            channels,
+            cpal::SampleRate(min_rate),
+            cpal::SampleRate(max_rate),
+            cpal::SupportedBufferSize::Unknown,
+            format,
+        )
+    }
+
+    #[test]
+    fn f32_input_converts_and_clamps() {
+        assert_eq!(f32_to_i16(0.0), 0);
+        assert_eq!(f32_to_i16(1.0), i16::MAX);
+        assert_eq!(f32_to_i16(-1.0), -i16::MAX);
+        assert_eq!(f32_to_i16(4.0), i16::MAX);
+        assert_eq!(f32_to_i16(-4.0), -i16::MAX);
+        assert_eq!(f32_to_i16(0.5), 16_383);
+    }
+
+    #[test]
+    fn u16_input_recenters_to_signed() {
+        assert_eq!(u16_to_i16(0), i16::MIN);
+        assert_eq!(u16_to_i16(32_768), 0);
+        assert_eq!(u16_to_i16(u16::MAX), i16::MAX);
+    }
+
+    #[test]
+    fn sink_writes_f32_stream_as_i16() {
+        let (mut sink, shared) = sink(1, 0, MicChannels::Auto);
+        sink.push([0.0f32, 1.0, -1.0, 0.5].iter().map(|s| f32_to_i16(*s)));
+        assert_eq!(captured(&shared), vec![0, i16::MAX, -i16::MAX, 16_383]);
+    }
+
+    #[test]
+    fn sink_writes_u16_stream_as_i16() {
+        let (mut sink, shared) = sink(1, 0, MicChannels::Auto);
+        sink.push([0u16, 32_768, u16::MAX].iter().map(|s| u16_to_i16(*s)));
+        assert_eq!(captured(&shared), vec![i16::MIN, 0, i16::MAX]);
+    }
+
+    #[test]
+    fn sink_keeps_stereo_devices_interleaved() {
+        let (mut sink, shared) = sink(2, 0, MicChannels::Auto);
+        sink.push([100i16, -100, 200, -200]);
+        assert_eq!(captured(&shared), vec![100, -100, 200, -200]);
+    }
+
+    #[test]
+    fn sink_folds_wide_interfaces_to_mono() {
+        let (mut sink, shared) = sink(4, 0, MicChannels::Auto);
+        sink.push([100i16, 200, 300, 400, 0, 0, 0, 40]);
+        assert_eq!(captured(&shared), vec![250, 10]);
+    }
+
+    #[test]
+    fn sink_folds_stereo_when_mono_is_forced() {
+        let (mut sink, shared) = sink(2, 0, MicChannels::Mono);
+        sink.push([100i16, 300]);
+        assert_eq!(captured(&shared), vec![200]);
+    }
+
+    #[test]
+    fn sink_keeps_wide_layout_in_device_mode() {
+        let (mut sink, shared) = sink(4, 0, MicChannels::Device);
+        sink.push([1i16, 2, 3, 4]);
+        assert_eq!(captured(&shared), vec![1, 2, 3, 4]);
+    }
+
+    /// A callback may cut a frame in half; the tail must join the next one.
+    #[test]
+    fn sink_folds_frames_split_across_callbacks() {
+        let (mut sink, shared) = sink(4, 0, MicChannels::Auto);
+        sink.push([100i16, 200]);
+        assert!(captured(&shared).is_empty());
+        sink.push([300i16, 400]);
+        assert_eq!(captured(&shared), vec![250]);
+    }
+
+    #[test]
+    fn sink_trims_to_max_samples_and_rewinds_cursor() {
+        let (mut sink, shared) = sink(1, 4, MicChannels::Auto);
+        sink.push([1i16, 2, 3, 4]);
+        if let Ok(mut cursor) = shared.cursor.lock() {
+            *cursor = 4;
+        }
+        sink.push([5i16, 6]);
+        assert_eq!(captured(&shared), vec![3, 4, 5, 6]);
+        assert_eq!(*shared.cursor.lock().expect("lock cursor"), 2);
+    }
+
+    #[test]
+    fn sink_applies_denoise_after_the_fold() {
+        let shared = MicShared::new();
+        let mut sink = MicSink::new(&shared, 0, MicDenoiseSettings::voice(), 4, 1);
+        sink.push([120i16; 8]);
+        let samples = captured(&shared);
+        assert_eq!(samples.len(), 2, "4ch frames fold to one sample each");
+        assert!(
+            samples.iter().all(|sample| sample.abs() < 120),
+            "quiet folded frames get gated: {samples:?}"
+        );
+    }
+
+    #[test]
+    fn frame_average_clamps_and_handles_empty() {
+        assert_eq!(average_i16(&[]), 0);
+        assert_eq!(average_i16(&[100, 200]), 150);
+        assert_eq!(average_i16(&[i16::MIN, i16::MIN]), i16::MIN);
+        assert_eq!(average_i16(&[i16::MAX, i16::MAX]), i16::MAX);
+    }
+
+    #[test]
+    fn labels_disambiguate_twin_devices() {
+        let names = [
+            "USB Mic".to_string(),
+            "Built-in".to_string(),
+            "USB Mic".to_string(),
+            "USB Mic".to_string(),
+        ];
+        assert_eq!(
+            dedupe_labels(&names),
+            vec!["USB Mic", "Built-in", "USB Mic #2", "USB Mic #3"]
+        );
+    }
+
+    #[test]
+    fn config_pick_skips_formats_the_capture_path_cannot_convert() {
+        let ranges = [
+            config_range(2, 44_100, 44_100, cpal::SampleFormat::I32),
+            config_range(2, 8_000, 96_000, cpal::SampleFormat::F32),
+            config_range(1, 8_000, 96_000, cpal::SampleFormat::I16),
+        ];
+        let picked = pick_input_config(ranges).expect("convertible config");
+        assert_eq!(picked.sample_format(), cpal::SampleFormat::I16);
+        assert_eq!(picked.sample_rate().0, 48_000);
+        assert_eq!(picked.channels(), 1);
+    }
+
+    /// Devices capped below the target rate still open at their own rate.
+    #[test]
+    fn config_pick_clamps_rate_into_device_range() {
+        let ranges = [config_range(1, 16_000, 16_000, cpal::SampleFormat::F32)];
+        let picked = pick_input_config(ranges).expect("convertible config");
+        assert_eq!(picked.sample_rate().0, 16_000);
+    }
+
+    #[test]
+    fn config_pick_rejects_devices_without_a_usable_format() {
+        let ranges = [
+            config_range(2, 44_100, 44_100, cpal::SampleFormat::I32),
+            config_range(2, 44_100, 44_100, cpal::SampleFormat::F64),
+            config_range(0, 8_000, 96_000, cpal::SampleFormat::I16),
+        ];
+        assert!(pick_input_config(ranges).is_none());
+    }
+
+    #[test]
+    fn rate_clamp_survives_backwards_ranges() {
+        assert_eq!(clamp_rate(48_000, 8_000, 96_000), 48_000);
+        assert_eq!(clamp_rate(48_000, 8_000, 16_000), 16_000);
+        assert_eq!(clamp_rate(48_000, 96_000, 192_000), 96_000);
+        assert_eq!(clamp_rate(48_000, 44_100, 8_000), 44_100);
+    }
+
+    /// Needs a real host with audio devices.
+    #[test]
+    #[ignore = "requires audio hardware"]
+    fn device_scan_lists_hardware() {
+        let devices = super::super::mic_devices().expect("scan input devices");
+        assert!(!devices.is_empty());
+        assert!(devices.iter().filter(|device| device.is_default).count() <= 1);
+    }
+
+    /// Needs a real host; a missing device must error rather than panic.
+    #[test]
+    #[ignore = "requires audio hardware"]
+    fn start_on_missing_device_errors() {
+        let mut recorder = super::super::MicRecorder::new();
+        let err = recorder
+            .start(super::super::MicSettings::default().with_device("perro-no-such-device"))
+            .expect_err("unknown device must fail");
+        assert!(err.contains("perro-no-such-device"), "{err}");
+        assert!(!recorder.is_listening());
+        assert!(recorder.stop().is_none());
     }
 }

@@ -49,7 +49,9 @@ pub use localization::{IntoLocale, Locale, LocalizationAPI, LocalizationModule};
 
 pub use material::{MaterialAPI, MaterialModule, MaterialReserveArg};
 pub use mesh::{MeshAPI, MeshModule, MeshReserveArg};
-pub use mic::{MicAPI, MicClip, MicDenoiseSettings, MicModule, MicSettings};
+pub use mic::{
+    MicAPI, MicChannels, MicClip, MicDenoiseSettings, MicDevice, MicModule, MicSettings,
+};
 pub use navmesh::{
     NavMesh3D, NavMeshAPI, NavMeshLink3D, NavMeshModule, NavMeshResource3D, NavMeshTriangle3D,
     NavMeshValidationError, parse_pnav_bytes, parse_pnav_resource_bytes, parse_pnav_resource_text,

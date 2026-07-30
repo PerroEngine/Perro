@@ -8,6 +8,7 @@
 | Use Cases     | [Use Cases](#use-cases)         |
 | Overview      | [Overview](#overview)           |
 | Context       | [Context](#context)             |
+| Pick A Device | [Pick A Device](#pick-a-device) |
 | Practical Example | [Practical Example](#practical-example) |
 | Send Bytes    | [Send Bytes](#send-bytes)       |
 | API Reference | [API Reference](#api-reference) |
@@ -19,6 +20,8 @@
 
 ## Use Cases
 
+- Mic selection menu: list every connected input with `mic_devices!`, show `label`, and start capture on the pick with `mic_start_on!`.
+- Remembering the player's mic: save the chosen `name` in your settings file and reopen it next launch with `mic_resolve_device!`, which falls back to the OS default when the device is unplugged.
 - Push-to-talk voice chat: `mic_start_stream!` while the key is held, drain packets with `mic_get_bytes!`, and send them over your own transport.
 - Playing received voice: decode a peer's packet with `mic_unpack!` and hand the clip to the audio bus with `audio_play_clip!`.
 - Voice memos / clip recording: `mic_start!`, then `mic_stop!` to take the full buffer, and `mic_save_wav!` to store it.
@@ -70,9 +73,63 @@ Proximity chat split:
 
 - Script context path: `ctx.res`
 - Module access: `ctx.res.Mic()`
-- Native backend: `cpal`
-- Wasm backend: unsupported, returns an error or empty clip
+- Native backend: `cpal` (WASAPI on Windows, CoreAudio on macOS, ALSA on Linux)
+- Devices: any OS input works, so USB, XLR through an interface, headset, wireless, and virtual-cable mics all list and open
+- Format: rate, channel count, and sample format come from the device; f32, i16, and u16 streams all convert to the `MicClip` i16 format
+- Wasm backend: unsupported, device scan returns an empty list and capture returns an error or empty clip
 - Audio output: use `ctx.res.Audio()` with `MicClip`
+
+## Pick A Device
+
+Scan first, cache the `name`, start on the cached name.
+
+`ctx.res.Mic().devices()` rescans on every call because wireless and USB mics come and go. Each entry carries a `name` (the selection key), a `label` for the menu, and `is_default`. Duplicate hardware gets a `#2` suffix on the label while both keep their own name.
+
+Build the menu:
+
+```rust
+let devices = mic_devices!(ctx.res).unwrap_or_default();
+for device in &devices {
+    // device.label for the row text, device.name for the value you store.
+    let _ = (&device.label, &device.name, device.is_default);
+}
+```
+
+Start on the pick and store the name in your own settings:
+
+```rust
+if let Err(err) = mic_start_on!(ctx.res, &chosen_name) {
+    // Device unplugged between the scan and the click.
+    let _ = err;
+    let _ = mic_start!(ctx.res);
+}
+```
+
+Reopen a cached name next launch. `resolve_device` returns the cached mic when it is still connected and the OS default when it is gone, so a missing mic never blocks the feature:
+
+```rust
+if let Some(device) = mic_resolve_device!(ctx.res, saved_name.as_deref()) {
+    let _ = mic_start_with!(ctx.res, device.settings());
+}
+```
+
+Settings-struct form, for capture options plus a device:
+
+```rust
+let settings = MicSettings::default()
+    .with_device(&chosen_name)
+    .with_max_seconds(8.0)
+    .with_denoise(MicDenoiseSettings::voice());
+let _ = mic_start!(ctx.res, settings);
+```
+
+Rules that keep selection working:
+
+- An empty or absent `device` opens the OS default.
+- A name that no longer exists returns `Err`; nothing silently swaps to another mic.
+- Matching is by name, never by list position, so a rescan or reorder keeps the cached pick.
+- Read the live name with `mic_device!` and the failure text with `mic_last_error!`.
+- A mic yanked mid-capture drops `mic_is_listening!` to `false`; `mic_stop!` still returns the audio captured before the loss.
 
 ## Practical Example
 
@@ -127,6 +184,7 @@ With denoise:
 let settings = MicSettings {
     max_seconds: 8.0,
     denoise: MicDenoiseSettings::voice(),
+    ..Default::default()
 };
 let _ = mic_start!(ctx.res, settings);
 ```
@@ -210,6 +268,108 @@ UDP notes:
 
 ## API Reference
 
+### `devices`
+
+| Field     | Detail                                                            |
+| --------- | ----------------------------------------------------------------- |
+| Access    | `ctx.res.Mic()`                                                   |
+| Signature | `pub fn devices(&self) -> Result<Vec<MicDevice>, String>`         |
+| Returns   | `Result<Vec<MicDevice>, String>`                                  |
+| Use when  | List the connected input devices for a selection menu. Rescans on every call. |
+
+### `scan`
+
+| Field     | Detail                                                 |
+| --------- | ------------------------------------------------------ |
+| Access    | `ctx.res.Mic()`                                        |
+| Signature | `pub fn scan(&self) -> Result<Vec<MicDevice>, String>` |
+| Returns   | `Result<Vec<MicDevice>, String>`                       |
+| Use when  | Same as `devices`, named for a refresh button.         |
+
+### `MicDevice`
+
+| Field         | Type     | Detail                                                    |
+| ------------- | -------- | --------------------------------------------------------- |
+| `name`        | `String` | Selection key. Store this to remember the player's choice. |
+| `label`       | `String` | Menu text. Suffixed `#2` when two devices share a name.    |
+| `is_default`  | `bool`   | OS default input.                                          |
+| `sample_rate` | `u32`    | Device default rate, `0` when the backend hides it.        |
+| `channels`    | `u16`    | Device default channel count, `0` when unknown.            |
+
+Call `device.settings()` for default capture settings already aimed at that device.
+
+### `default_device`
+
+| Field     | Detail                                              |
+| --------- | --------------------------------------------------- |
+| Access    | `ctx.res.Mic()`                                     |
+| Signature | `pub fn default_device(&self) -> Option<MicDevice>` |
+| Returns   | `Option<MicDevice>`                                 |
+| Use when  | Preselect the OS default row in a menu.             |
+
+### `find_device`
+
+| Field     | Detail                                                        |
+| --------- | ------------------------------------------------------------- |
+| Access    | `ctx.res.Mic()`                                               |
+| Signature | `pub fn find_device(&self, name: &str) -> Option<MicDevice>`  |
+| Returns   | `Option<MicDevice>`                                           |
+| Use when  | Check whether a cached name is still connected, with no fallback. |
+
+### `resolve_device`
+
+| Field     | Detail                                                                    |
+| --------- | ------------------------------------------------------------------------- |
+| Access    | `ctx.res.Mic()`                                                           |
+| Signature | `pub fn resolve_device(&self, name: Option<&str>) -> Option<MicDevice>`   |
+| Returns   | `Option<MicDevice>`                                                       |
+| Use when  | Reopen a cached pick, falling back to the OS default when it is unplugged. |
+
+### `has_device`
+
+| Field     | Detail                                            |
+| --------- | ------------------------------------------------- |
+| Access    | `ctx.res.Mic()`                                   |
+| Signature | `pub fn has_device(&self, name: &str) -> bool`    |
+| Returns   | `bool`                                            |
+| Use when  | Grey out a saved device row that is not plugged in. |
+
+### `start_on`
+
+| Field     | Detail                                                                  |
+| --------- | ----------------------------------------------------------------------- |
+| Access    | `ctx.res.Mic()`                                                         |
+| Signature | `pub fn start_on<S: Into<String>>(&self, device: S) -> Result<(), String>` |
+| Returns   | `Result<(), String>`                                                    |
+| Use when  | Capture from one named device. Errs when that device is gone.           |
+
+### `start_on_with`
+
+| Field     | Detail                                                                                            |
+| --------- | ------------------------------------------------------------------------------------------------- |
+| Access    | `ctx.res.Mic()`                                                                                   |
+| Signature | `pub fn start_on_with<S: Into<String>>(&self, device: S, settings: MicSettings) -> Result<(), String>` |
+| Returns   | `Result<(), String>`                                                                              |
+| Use when  | Capture from a named device with custom length and denoise.                                       |
+
+### `device`
+
+| Field     | Detail                                        |
+| --------- | --------------------------------------------- |
+| Access    | `ctx.res.Mic()`                               |
+| Signature | `pub fn device(&self) -> Option<String>`      |
+| Returns   | `Option<String>`                              |
+| Use when  | Show which mic the current capture runs on.   |
+
+### `last_error`
+
+| Field     | Detail                                                       |
+| --------- | ------------------------------------------------------------ |
+| Access    | `ctx.res.Mic()`                                              |
+| Signature | `pub fn last_error(&self) -> Option<String>`                 |
+| Returns   | `Option<String>`                                             |
+| Use when  | Report why capture stopped, including a mic unplugged mid-stream. |
+
 ### `start_listening`
 
 | Field     | Detail                                                |
@@ -239,10 +399,24 @@ UDP notes:
 
 ### `MicSettings`
 
-| Field         | Type                 | Detail                         |
-| ------------- | -------------------- | ------------------------------ |
-| `max_seconds` | `f32`                | Rolling capture length.        |
-| `denoise`     | `MicDenoiseSettings` | Capture-time denoise settings. |
+| Field         | Type                 | Detail                                                        |
+| ------------- | -------------------- | ------------------------------------------------------------- |
+| `max_seconds` | `f32`                | Rolling capture length.                                       |
+| `denoise`     | `MicDenoiseSettings` | Capture-time denoise settings.                                |
+| `device`      | `Option<String>`     | Device name from `devices()`. `None` or blank opens the OS default. |
+| `channels`    | `MicChannels`        | Clip channel layout.                                          |
+
+Builders: `with_device`, `with_default_device`, `with_max_seconds`, `with_denoise`, `with_channels`.
+
+### `MicChannels`
+
+| Variant  | Detail                                                            |
+| -------- | ----------------------------------------------------------------- |
+| `Auto`   | Default. Mono and stereo mics stay as-is, wider interfaces fold to mono. |
+| `Mono`   | Always fold to one channel. Smallest voice packets.                |
+| `Device` | Keep the device layout, including 4 or 8 channel interfaces.       |
+
+Folding averages the channels of each frame, so an 8-in interface with one live XLR input records quieter than the same mic on a mono device. Pick `Device` when the game wants every input channel.
 
 ### `MicDenoiseSettings`
 
@@ -377,6 +551,16 @@ Use `MicDenoiseSettings::off()` to disable it.
 
 | Macro                                               | Expands to                                          |
 | --------------------------------------------------- | --------------------------------------------------- |
+| `mic_devices!(ctx.res)`                             | `ctx.res.Mic().devices()`                           |
+| `mic_scan!(ctx.res)`                                | `ctx.res.Mic().scan()`                              |
+| `mic_default_device!(ctx.res)`                      | `ctx.res.Mic().default_device()`                    |
+| `mic_find_device!(ctx.res, name)`                   | `ctx.res.Mic().find_device(name)`                   |
+| `mic_resolve_device!(ctx.res, name)`                | `ctx.res.Mic().resolve_device(name)`                |
+| `mic_has_device!(ctx.res, name)`                    | `ctx.res.Mic().has_device(name)`                    |
+| `mic_start_on!(ctx.res, name)`                      | `ctx.res.Mic().start_on(name)`                      |
+| `mic_start_on!(ctx.res, name, settings)`            | `ctx.res.Mic().start_on_with(name, settings)`       |
+| `mic_device!(ctx.res)`                              | `ctx.res.Mic().device()`                            |
+| `mic_last_error!(ctx.res)`                          | `ctx.res.Mic().last_error()`                        |
 | `mic_start!(ctx.res)`                               | `ctx.res.Mic().start_listening()`                   |
 | `mic_start!(ctx.res, settings)`                     | `ctx.res.Mic().start_with(settings)`                |
 | `mic_start_listening!(ctx.res)`                     | `ctx.res.Mic().start_listening()`                   |
