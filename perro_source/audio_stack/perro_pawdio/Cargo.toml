@@ -21,6 +21,10 @@ criterion = "0.5"
 
 [features]
 profile = []
+# Optional cpal capture backends. ASIO needs the Steinberg SDK + LLVM at build
+# time (see cpal's README); JACK needs the system jack development library.
+mic-asio = ["cpal/asio"]
+mic-jack = ["cpal/jack"]
 
 [[bench]]
 name = "play_source"

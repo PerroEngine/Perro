@@ -503,6 +503,11 @@ headless = ["dep:perro_headless"]
 headless_profile = ["perro_headless/profile"]
 headless_steamworks = ["perro_headless/steamworks", "perro_api/steamworks", "perro_runtime/steamworks", "scripts/steamworks"]
 steamworks = ["perro_app/steamworks", "perro_api/steamworks", "perro_runtime/steamworks", "scripts/steamworks"]
+# Optional mic capture backends: ASIO needs the Steinberg SDK + LLVM at build
+# time, JACK needs the system jack development library. Devices from these
+# backends appear in mic_devices! prefixed "ASIO: " / "JACK: ".
+mic_asio = ["perro_runtime/mic-asio"]
+mic_jack = ["perro_runtime/mic-jack"]
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = "=0.2.126"

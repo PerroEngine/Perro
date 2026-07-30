@@ -623,57 +623,119 @@ fn match_device_index(names: &[&str], wanted: &str) -> Option<usize> {
 /// instead of serving a cached list.
 #[cfg(not(target_arch = "wasm32"))]
 pub fn mic_devices() -> Result<Vec<MicDevice>, String> {
-    use cpal::traits::{DeviceTrait, HostTrait};
-
-    let host = cpal::default_host();
-    let default_name = host
-        .default_input_device()
-        .and_then(|device| device.name().ok());
-    let found = match host.input_devices() {
-        Ok(devices) => devices.collect::<Vec<_>>(),
-        Err(err) => {
-            // Some backends refuse a full scan but still hand out the default.
-            let Some(device) = host.default_input_device() else {
-                return Err(format!("mic device scan failed: {err}"));
-            };
-            vec![device]
-        }
-    };
-
-    let mut names = Vec::with_capacity(found.len());
-    let mut formats = Vec::with_capacity(found.len());
-    for device in &found {
-        let Ok(name) = device.name() else {
-            continue;
-        };
-        let format = device
-            .default_input_config()
-            .map(|config| (config.sample_rate().0, config.channels()))
-            .unwrap_or((0, 0));
-        names.push(name);
-        formats.push(format);
-    }
-
+    let inputs = enumerate_inputs()?;
+    let names: Vec<String> = inputs.iter().map(|input| input.name.clone()).collect();
     let labels = dedupe_labels(&names);
     let mut default_taken = false;
-    let devices = names
+    let devices = inputs
         .into_iter()
         .zip(labels)
-        .zip(formats)
-        .map(|((name, label), (sample_rate, channels))| {
+        .map(|(input, label)| {
             // Duplicate names share one default flag; the first entry wins.
-            let is_default = !default_taken && default_name.as_deref() == Some(name.as_str());
+            let is_default = !default_taken && input.is_default;
             default_taken |= is_default;
             MicDevice {
-                name,
+                name: input.name,
                 label,
                 is_default,
-                sample_rate,
-                channels,
+                sample_rate: input.sample_rate,
+                channels: input.channels,
             }
         })
         .collect();
     Ok(devices)
+}
+
+/// One input device found on some cpal host, under its selection name.
+#[cfg(not(target_arch = "wasm32"))]
+struct EnumeratedInput {
+    device: cpal::Device,
+    name: String,
+    is_default: bool,
+    sample_rate: u32,
+    channels: u16,
+}
+
+/// The default host plus every optional backend compiled in (ASIO via the
+/// `mic-asio` feature, JACK via `mic-jack`). Without those features this is
+/// exactly one host, so scan behavior matches the plain build.
+#[cfg(not(target_arch = "wasm32"))]
+fn input_hosts() -> Vec<(cpal::Host, bool)> {
+    let default = cpal::default_host();
+    let default_id = default.id();
+    let mut hosts = vec![(default, true)];
+    for id in cpal::available_hosts() {
+        if id == default_id {
+            continue;
+        }
+        if let Ok(host) = cpal::host_from_id(id) {
+            hosts.push((host, false));
+        }
+    }
+    hosts
+}
+
+/// Selection name for a device: raw on the default host, `HOST: name` on an
+/// optional backend so twin listings (WASAPI + ASIO see the same interface)
+/// stay distinct and a cached pick reopens on the right backend.
+#[cfg(not(target_arch = "wasm32"))]
+fn host_device_name(host_name: &str, raw_name: &str, default_host: bool) -> String {
+    if default_host {
+        raw_name.to_string()
+    } else {
+        format!("{host_name}: {raw_name}")
+    }
+}
+
+/// All input devices across every available host, default host first (its
+/// default device leading), under the names selection and scan both use.
+#[cfg(not(target_arch = "wasm32"))]
+fn enumerate_inputs() -> Result<Vec<EnumeratedInput>, String> {
+    use cpal::traits::{DeviceTrait, HostTrait};
+
+    let mut out: Vec<EnumeratedInput> = Vec::new();
+    let mut errors: Vec<String> = Vec::new();
+    for (host, default_host) in input_hosts() {
+        let host_name = host.id().name();
+        let default_name = if default_host {
+            host.default_input_device().and_then(|device| device.name().ok())
+        } else {
+            None
+        };
+        let found = match host.input_devices() {
+            Ok(devices) => devices.collect::<Vec<_>>(),
+            Err(err) => {
+                // Some backends refuse a full scan but still hand out the default.
+                if let Some(device) = host.default_input_device() {
+                    vec![device]
+                } else {
+                    errors.push(format!("{host_name}: {err}"));
+                    continue;
+                }
+            }
+        };
+        for device in found {
+            let Ok(raw_name) = device.name() else {
+                continue;
+            };
+            let is_default = default_host && default_name.as_deref() == Some(raw_name.as_str());
+            let (sample_rate, channels) = device
+                .default_input_config()
+                .map(|config| (config.sample_rate().0, config.channels()))
+                .unwrap_or((0, 0));
+            out.push(EnumeratedInput {
+                name: host_device_name(host_name, &raw_name, default_host),
+                device,
+                is_default,
+                sample_rate,
+                channels,
+            });
+        }
+    }
+    if out.is_empty() && !errors.is_empty() {
+        return Err(format!("mic device scan failed: {}", errors.join(" | ")));
+    }
+    Ok(out)
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -1219,35 +1281,36 @@ fn start_stream(
         .store(0.0_f32.to_bits(), Ordering::Relaxed);
     shared.set_diagnostic(None);
 
-    let host = cpal::default_host();
     // Explicit selection is the developer's call: fail loud so their fallback
     // logic (resolve_mic_device + rescan) can run.
     if settings.requested_device().is_some() {
-        let (device, device_name) = open_input_device(&host, settings.requested_device())?;
+        let (device, device_name) = open_input_device(settings.requested_device())?;
         return open_stream_on(&device, device_name, settings, shared);
     }
 
     // Default capture: never give up after one device. ALSA reports a blind
     // "default" PCM that may not open, Windows privacy settings can block a
     // single endpoint, and exclusive-mode holds fail per device - so walk the
-    // default first, then every other input the host can see.
-    let mut candidates: Vec<cpal::Device> = Vec::new();
-    if let Some(device) = host.default_input_device() {
-        candidates.push(device);
+    // default first, then every other input any available host can see.
+    let mut candidates: Vec<(cpal::Device, String)> = Vec::new();
+    {
+        use cpal::traits::{DeviceTrait, HostTrait};
+        if let Some(device) = cpal::default_host().default_input_device() {
+            let name = device
+                .name()
+                .unwrap_or_else(|_| "default input".to_string());
+            candidates.push((device, name));
+        }
     }
-    if let Ok(devices) = host.input_devices() {
-        candidates.extend(devices);
+    if let Ok(inputs) = enumerate_inputs() {
+        candidates.extend(inputs.into_iter().map(|input| (input.device, input.name)));
     }
     if candidates.is_empty() {
         return Err(format!("no mic input devices found; {MIC_PERMISSION_HINT}"));
     }
     let mut errors: Vec<String> = Vec::new();
     let mut tried: Vec<String> = Vec::new();
-    for device in candidates {
-        use cpal::traits::DeviceTrait;
-        let name = device
-            .name()
-            .unwrap_or_else(|_| "default input".to_string());
+    for (device, name) in candidates {
         if tried.iter().any(|seen| *seen == name) {
             continue;
         }
@@ -1338,16 +1401,14 @@ fn open_stream_on(
     ))
 }
 
-/// Open the named device, or the OS default when no name is set.
+/// Open the named device, or the OS default when no name is set. Names come
+/// from [`mic_devices`], so host-prefixed picks reopen on their own backend.
 #[cfg(not(target_arch = "wasm32"))]
-fn open_input_device(
-    host: &cpal::Host,
-    wanted: Option<&str>,
-) -> Result<(cpal::Device, String), String> {
+fn open_input_device(wanted: Option<&str>) -> Result<(cpal::Device, String), String> {
     use cpal::traits::{DeviceTrait, HostTrait};
 
     let Some(wanted) = wanted else {
-        let device = host
+        let device = cpal::default_host()
             .default_input_device()
             .ok_or_else(|| "no default mic input device".to_string())?;
         let name = device
@@ -1356,27 +1417,16 @@ fn open_input_device(
         return Ok((device, name));
     };
 
-    let devices: Vec<cpal::Device> = host
-        .input_devices()
-        .map_err(|err| format!("mic device scan failed: {err}"))?
-        .collect();
-    let names: Vec<String> = devices
-        .iter()
-        .map(|device| device.name().unwrap_or_default())
-        .collect();
-    let refs: Vec<&str> = names.iter().map(String::as_str).collect();
-    let index = match_device_index(&refs, wanted).ok_or_else(|| {
+    let mut inputs = enumerate_inputs()?;
+    let names: Vec<&str> = inputs.iter().map(|input| input.name.as_str()).collect();
+    let index = match_device_index(&names, wanted).ok_or_else(|| {
         format!("mic device `{wanted}` not connected; rescan devices and pick another")
     })?;
-    let name = names
-        .get(index)
-        .cloned()
-        .unwrap_or_else(|| wanted.to_string());
-    let device = devices
-        .into_iter()
-        .nth(index)
-        .ok_or_else(|| format!("mic device `{wanted}` vanished during open"))?;
-    Ok((device, name))
+    if index >= inputs.len() {
+        return Err(format!("mic device `{wanted}` vanished during open"));
+    }
+    let input = inputs.swap_remove(index);
+    Ok((input.device, input.name))
 }
 
 /// Pick a capture config the conversion path can handle.
@@ -2069,6 +2119,23 @@ mod capture_tests {
         assert_eq!(average_i16(&[100, 200]), 150);
         assert_eq!(average_i16(&[i16::MIN, i16::MIN]), i16::MIN);
         assert_eq!(average_i16(&[i16::MAX, i16::MAX]), i16::MAX);
+    }
+
+    #[test]
+    fn optional_host_devices_get_prefixed_selection_names() {
+        assert_eq!(
+            super::host_device_name("WASAPI", "USB Mic", true),
+            "USB Mic",
+            "default host keeps raw names so existing cached picks still match"
+        );
+        assert_eq!(
+            super::host_device_name("ASIO", "Focusrite USB", false),
+            "ASIO: Focusrite USB"
+        );
+        assert_eq!(
+            super::host_device_name("JACK", "system", false),
+            "JACK: system"
+        );
     }
 
     #[test]

@@ -60,6 +60,8 @@ criterion = "0.5"
 [features]
 bench = []
 profile = ["perro_pawdio/profile"]
+mic-asio = ["perro_pawdio/mic-asio"]
+mic-jack = ["perro_pawdio/mic-jack"]
 steamworks = ["dep:perro_steamworks", "perro_steamworks/steamworks-runtime"]
 
 [[bench]]

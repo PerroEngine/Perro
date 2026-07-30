@@ -78,8 +78,9 @@ Proximity chat split:
 - Native backend: `cpal` (WASAPI on Windows, CoreAudio on macOS, ALSA on Linux)
 - Devices: any OS input works, so USB, XLR through an interface, headset, wireless, and virtual-cable mics all list and open
 - Format: rate, channel count, and sample format come from the device; f32, i16, and u16 streams all convert to the `MicClip` i16 format
-- Default capture never gives up after one device: when no name is set and the OS default fails to open (missing ALSA default, per-endpoint privacy block), every other visible input is tried before erroring
+- Default capture never gives up after one device: when no name is set and the OS default fails to open (missing ALSA default, per-endpoint privacy block), every other visible input on every available backend is tried before erroring
 - All-fail errors and the silent-capture diagnostic both point at the OS microphone permission pages, the most common reason a shipped game "has no mic"
+- Optional pro-audio backends: build the game with the `mic_asio` feature (Windows ASIO, needs the Steinberg SDK + LLVM at build time) or `mic_jack` (Linux JACK, needs the jack development library). Their devices join the scan with names prefixed `ASIO: ` / `JACK: `, and a cached prefixed name reopens on that backend. Most interfaces do not need this - vendors ship WASAPI paths that already work
 - Wasm backend: unsupported, device scan returns an empty list and capture returns an error or empty clip
 - Audio output: use `ctx.res.Audio()` with `MicClip`
 
