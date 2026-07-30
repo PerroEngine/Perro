@@ -124,6 +124,23 @@ impl FramePacer {
         self.refresh_hz
     }
 
+    /// True when the current config renders frames the monitor can never
+    /// display: vsync off and the cap (or lack of one) above refresh.
+    pub(crate) fn exceeds_display_rate(&self) -> bool {
+        if self.vsync {
+            return false;
+        }
+        let Some(refresh_hz) = self.refresh_hz else {
+            return false;
+        };
+        match self.cap {
+            RuntimeFrameRateCap::Unlimited => true,
+            // Half-hertz slack so 60 over a 59.94Hz mode does not warn.
+            RuntimeFrameRateCap::Fps(fps) => fps > refresh_hz + 0.5,
+            RuntimeFrameRateCap::RefreshRate => false,
+        }
+    }
+
     #[inline]
     fn refresh_interval(&self) -> Duration {
         frame_interval_from_fps(self.refresh_hz.unwrap_or(FALLBACK_REFRESH_HZ))
@@ -246,6 +263,25 @@ mod tests {
             pacer.pace_interval(true),
             Some(frame_interval_from_fps(30.0))
         );
+    }
+
+    #[test]
+    fn exceeds_display_rate_only_without_vsync_above_refresh() {
+        let mut pacer = FramePacer::new(RuntimeFrameRateCap::Fps(200.0), false);
+        // No refresh rate known yet: stay quiet.
+        assert!(!pacer.exceeds_display_rate());
+        pacer.refresh_hz = Some(144.0);
+        assert!(pacer.exceeds_display_rate());
+        assert!(pacer.set_cap(RuntimeFrameRateCap::Unlimited));
+        assert!(pacer.exceeds_display_rate());
+        assert!(pacer.set_cap(RuntimeFrameRateCap::Fps(144.0)));
+        assert!(!pacer.exceeds_display_rate());
+        assert!(pacer.set_cap(RuntimeFrameRateCap::RefreshRate));
+        assert!(!pacer.exceeds_display_rate());
+        // Vsync on: present block already limits to refresh.
+        let mut vsync_pacer = FramePacer::new(RuntimeFrameRateCap::Unlimited, true);
+        vsync_pacer.refresh_hz = Some(144.0);
+        assert!(!vsync_pacer.exceeds_display_rate());
     }
 
     #[test]

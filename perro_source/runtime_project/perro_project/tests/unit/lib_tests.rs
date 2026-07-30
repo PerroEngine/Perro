@@ -1414,6 +1414,7 @@ fn default_project_toml_template_parses() {
     let toml = default_project_toml("Template Game");
     let cfg = parse_project_toml(&toml).expect("default template parses");
     assert_eq!(cfg.name, "Template Game");
+    assert_eq!(cfg.frame_rate_cap, FrameRateCap::RefreshRate);
     assert!(cfg.rendering.ui.pixel_snapping);
     assert_eq!(cfg.rendering.default_font, "default");
     assert_eq!(cfg.particle_sim_default, ParticleSimDefault::GpuCompute);

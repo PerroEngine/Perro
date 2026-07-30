@@ -370,9 +370,7 @@ impl Runtime {
             };
             let rebuild = match &scene_node.data {
                 SceneNodeData::UiSubView(_) => {
-                    bootstrap_scan
-                        || dirty_worlds.contains(&node)
-                        || self.dirty.is_node_dirty(node)
+                    bootstrap_scan || dirty_worlds.contains(&node) || self.dirty.is_node_dirty(node)
                 }
                 SceneNodeData::UiCameraStream(stream) => {
                     let camera = stream.stream.camera;
@@ -387,9 +385,7 @@ impl Runtime {
                 }
                 _ => continue,
             };
-            if rebuild
-                && self.node_world(node) == Some(NodeID::nil())
-                && command_seen.insert(node)
+            if rebuild && self.node_world(node) == Some(NodeID::nil()) && command_seen.insert(node)
             {
                 command_ids.push(node);
             }
@@ -614,9 +610,7 @@ impl Runtime {
                     if let Some(state) = self.camera_stream_state(node, &stream) {
                         camera_stream_texture = Some(state.output_texture);
                         camera_stream_resolution = match &state.source {
-                            CameraStreamSourceState::Webcam { resolution, .. } => {
-                                Some(*resolution)
-                            }
+                            CameraStreamSourceState::Webcam { resolution, .. } => Some(*resolution),
                             _ => Some(state.resolution),
                         };
                         self.ui_stream_render_info.insert(
@@ -632,8 +626,7 @@ impl Runtime {
                         self.ui_stream_render_info.remove(&node);
                         self.queue_camera_stream_remove(node);
                     }
-                } else if let Some((texture, resolution, _)) =
-                    self.ui_stream_render_info.get(&node)
+                } else if let Some((texture, resolution, _)) = self.ui_stream_render_info.get(&node)
                 {
                     camera_stream_texture = Some(*texture);
                     camera_stream_resolution = Some(*resolution);
@@ -664,8 +657,7 @@ impl Runtime {
                         self.ui_stream_render_info.remove(&node);
                         self.queue_camera_stream_remove(node);
                     }
-                } else if let Some((texture, resolution, _)) =
-                    self.ui_stream_render_info.get(&node)
+                } else if let Some((texture, resolution, _)) = self.ui_stream_render_info.get(&node)
                 {
                     camera_stream_texture = Some(*texture);
                     camera_stream_resolution = Some(*resolution);

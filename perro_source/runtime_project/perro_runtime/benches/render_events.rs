@@ -41,9 +41,7 @@ fn parse_scene(src: &str) -> Scene {
 fn spawner_with_nodes(nodes: usize) -> BenchSceneSpawner {
     let scene = parse_scene(&bench_scene_source(nodes));
     let mut spawner = BenchSceneSpawner::new();
-    spawner
-        .spawn_uncompiled(&scene)
-        .expect("bench scene spawn");
+    spawner.spawn_uncompiled(&scene).expect("bench scene spawn");
     spawner
 }
 

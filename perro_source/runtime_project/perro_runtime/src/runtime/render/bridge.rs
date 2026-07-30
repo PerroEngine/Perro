@@ -217,9 +217,7 @@ impl Runtime {
                     (SceneNodeData::SubView3D(_), false) => Some(node),
                     _ => continue,
                 };
-                if self.dirty.is_node_dirty(node)
-                    || self.node_world(node) != Some(NodeID::nil())
-                {
+                if self.dirty.is_node_dirty(node) || self.node_world(node) != Some(NodeID::nil()) {
                     continue;
                 }
                 if watched.is_some_and(|world| dirty_worlds.contains(&world)) {

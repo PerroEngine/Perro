@@ -202,9 +202,11 @@ fn retained_custom_material_requests_continuous_frames() {
     // redraw, animated shader => continuous.
     assert!(!renderer.any_retained_custom_material_where(&resources, |_| false));
     let mut seen_path = None;
-    assert!(renderer.any_retained_custom_material_where(&resources, |path| {
-        seen_path = Some(path.to_string());
-        true
-    }));
+    assert!(
+        renderer.any_retained_custom_material_where(&resources, |path| {
+            seen_path = Some(path.to_string());
+            true
+        })
+    );
     assert_eq!(seen_path.as_deref(), Some("res://shaders/animated.wgsl"));
 }

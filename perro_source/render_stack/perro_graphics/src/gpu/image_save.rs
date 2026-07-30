@@ -36,6 +36,7 @@ impl Gpu {
         }
         let _ = self.device.poll(wgpu::PollType::Poll);
         let mut index = 0;
+        let mut released_buffer = false;
         while index < self.camera_image_save_pending.len() {
             let result = match self.camera_image_save_pending[index].rx.try_recv() {
                 Ok(result) => Some(result),
@@ -46,6 +47,8 @@ impl Gpu {
                         "[perro] texture image readback failed path={} error=callback disconnected",
                         pending.path
                     );
+                    pending.buffer.destroy();
+                    released_buffer = true;
                     continue;
                 }
             };
@@ -59,6 +62,8 @@ impl Gpu {
                     "[perro] texture image readback failed path={} error={error}",
                     pending.path
                 );
+                pending.buffer.destroy();
+                released_buffer = true;
                 continue;
             }
             match read_camera_image_rgba(&pending).and_then(|rgba| {
@@ -71,6 +76,11 @@ impl Gpu {
                 ),
             }
             pending.buffer.unmap();
+            pending.buffer.destroy();
+            released_buffer = true;
+        }
+        if released_buffer {
+            let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
         }
     }
 

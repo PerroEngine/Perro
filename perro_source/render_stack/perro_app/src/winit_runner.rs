@@ -1036,9 +1036,13 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler<RunnerUserEvent>
             return;
         }
         let now = Instant::now();
-        self.apply_frame_control_flow(event_loop, now);
         if self.window.is_some() && !self.pacer.blocks_frame(now) {
             self.step_frame(event_loop, now);
+            // Deadline advanced during the frame; arm WaitUntil now instead
+            // of spending one extra Poll iteration to notice it.
+            self.apply_frame_control_flow(event_loop, Instant::now());
+        } else {
+            self.apply_frame_control_flow(event_loop, now);
         }
     }
 }

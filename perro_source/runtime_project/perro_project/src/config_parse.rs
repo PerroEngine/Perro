@@ -35,7 +35,7 @@ meshlet_debug_view = false
 pixel_snapping = true
 
 [runtime]
-frame_rate_cap = "unlimited"     # fps number | "unlimited" | "refresh_rate"
+frame_rate_cap = "refresh_rate"  # fps number | "unlimited" | "refresh_rate"
 target_fixed_update = 60
 
 [physics]

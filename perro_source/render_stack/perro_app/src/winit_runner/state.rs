@@ -282,8 +282,21 @@ impl<B: GraphicsBackend> RunnerState<B> {
     /// Refresh the cached monitor rate and mirror it into the runtime.
     /// Hits OS display queries; call on resume/move/scale change only.
     pub(super) fn sync_refresh_rate(&mut self) {
+        let previous_hz = self.pacer.refresh_hz();
         let refresh_hz = self.pacer.update_refresh_rate(self.window.as_deref());
         self.app.runtime.set_active_refresh_rate(refresh_hz);
+        if refresh_hz != previous_hz
+            && let Some(hz) = refresh_hz
+        {
+            eprintln!("[perro][runtime] monitor_refresh_hz=({hz})");
+            if self.pacer.exceeds_display_rate() {
+                eprintln!(
+                    "[perro][runtime] frame_rate_cap above {hz}Hz refresh with vsync off; \
+                     frames past refresh are never displayed. Set frame_rate_cap = \
+                     \"refresh_rate\" or graphics.vsync = true to cut GPU load."
+                );
+            }
+        }
     }
 
     pub(super) fn apply_frame_control_flow(&self, event_loop: &ActiveEventLoop, now: Instant) {

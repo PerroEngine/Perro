@@ -83,7 +83,7 @@ meshlet_debug_view = false
 pixel_snapping = true
 
 [runtime]
-frame_rate_cap = "unlimited"     # fps number | "unlimited" | "refresh_rate"
+frame_rate_cap = "refresh_rate"  # fps number | "unlimited" | "refresh_rate"
 target_fixed_update = 60
 
 [physics]
@@ -235,6 +235,8 @@ Current limit:
 | --------------------- | ------------- | ------------- | ------------------------------------------- |
 | `frame_rate_cap`      | string/number | `"unlimited"` | `"unlimited"`, `"refresh_rate"`, fps number |
 | `target_fixed_update` | number        | `60`          | hz, `<= 0` disables fixed target            |
+
+A missing key means unlimited, but new projects scaffold with `"refresh_rate"`: with vsync off, frames above the monitor refresh are rendered and never displayed, so an uncapped rate only burns GPU. Use `"unlimited"` or a high fps number only when you want minimum input latency and accept the cost.
 
 Aliases for unlimited:
 

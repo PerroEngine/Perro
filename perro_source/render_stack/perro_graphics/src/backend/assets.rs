@@ -463,7 +463,8 @@ impl PerroGraphics {
                     let surfaces = match draw {
                         perro_render_bridge::CameraStreamDraw3DState::Draw { surfaces, .. }
                         | perro_render_bridge::CameraStreamDraw3DState::DrawMulti {
-                            surfaces, ..
+                            surfaces,
+                            ..
                         }
                         | perro_render_bridge::CameraStreamDraw3DState::DrawMultiDense {
                             surfaces,
