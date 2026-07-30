@@ -631,27 +631,19 @@ impl Gpu3D {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        let (shadow_map_texture, shadow_map_view, shadow_layer_views) =
-            create_shadow_map_array_texture(
-                device,
-                "perro_ray_shadow_map",
-                SHADOW_MAP_SIZE,
-                MAX_SHADOW_RAY_CASCADES as u32,
-            );
-        let (spot_shadow_map_texture, spot_shadow_map_view, spot_shadow_layer_views) =
-            create_shadow_map_array_texture(
-                device,
-                "perro_spot_shadow_map",
-                SHADOW_SPOT_MAP_SIZE,
-                MAX_SHADOW_SPOT_LIGHTS as u32,
-            );
-        let (point_shadow_map_texture, point_shadow_map_view, point_shadow_layer_views) =
-            create_shadow_map_array_texture(
-                device,
-                "perro_point_shadow_map",
-                SHADOW_POINT_MAP_SIZE,
-                (MAX_SHADOW_POINT_LIGHTS * POINT_SHADOW_FACE_COUNT) as u32,
-            );
+        // 1x1 single-layer placeholders: the real atlases are allocated lazily
+        // in ensure_shadow_atlas_capacity once shadow-casting lights of a type
+        // actually appear. Empty layer-view vecs keep every shadow render loop
+        // clamped to zero until then.
+        let (shadow_map_texture, shadow_map_view, _) =
+            create_shadow_map_array_texture(device, "perro_ray_shadow_map", 1, 1);
+        let shadow_layer_views = Vec::new();
+        let (spot_shadow_map_texture, spot_shadow_map_view, _) =
+            create_shadow_map_array_texture(device, "perro_spot_shadow_map", 1, 1);
+        let spot_shadow_layer_views = Vec::new();
+        let (point_shadow_map_texture, point_shadow_map_view, _) =
+            create_shadow_map_array_texture(device, "perro_point_shadow_map", 1, 1);
+        let point_shadow_layer_views = Vec::new();
         let shadow_map_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("perro_shadow3d_sampler"),
             address_mode_u: wgpu::AddressMode::ClampToEdge,
@@ -2349,15 +2341,18 @@ impl Gpu3D {
             shadow_buffer,
             shadow_bind_group,
             _shadow_map_texture: shadow_map_texture,
-            _shadow_map_view: shadow_map_view,
+            shadow_map_view,
             shadow_layer_views,
+            ray_shadow_layers_allocated: 0,
             _spot_shadow_map_texture: spot_shadow_map_texture,
-            _spot_shadow_map_view: spot_shadow_map_view,
+            spot_shadow_map_view,
             spot_shadow_layer_views,
+            spot_shadow_layers_allocated: 0,
             _point_shadow_map_texture: point_shadow_map_texture,
-            _point_shadow_map_view: point_shadow_map_view,
+            point_shadow_map_view,
             point_shadow_layer_views,
-            _shadow_map_sampler: shadow_map_sampler,
+            point_shadow_layers_allocated: 0,
+            shadow_map_sampler,
             sky_buffer,
             sky_bind_group,
             _sky_noise_texture: sky_noise_texture,

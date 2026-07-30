@@ -743,16 +743,24 @@ pub struct Gpu3D {
     multimesh_shadow_identity_capacity: usize,
     shadow_buffer: wgpu::Buffer,
     shadow_bind_group: wgpu::BindGroup,
+    // Shadow atlases start as 1x1 single-layer dummies and grow lazily
+    // (grow-only) to the layer count the current lighting state needs; a Gpu3D
+    // that never sees a shadow-casting light of a type never pays for that
+    // atlas. `*_layers_allocated` stays 0 while the dummy is bound, and the
+    // layer-view vecs stay empty so every shadow render loop clamps to zero.
     _shadow_map_texture: wgpu::Texture,
-    _shadow_map_view: wgpu::TextureView,
+    shadow_map_view: wgpu::TextureView,
     shadow_layer_views: Vec<wgpu::TextureView>,
+    ray_shadow_layers_allocated: u32,
     _spot_shadow_map_texture: wgpu::Texture,
-    _spot_shadow_map_view: wgpu::TextureView,
+    spot_shadow_map_view: wgpu::TextureView,
     spot_shadow_layer_views: Vec<wgpu::TextureView>,
+    spot_shadow_layers_allocated: u32,
     _point_shadow_map_texture: wgpu::Texture,
-    _point_shadow_map_view: wgpu::TextureView,
+    point_shadow_map_view: wgpu::TextureView,
     point_shadow_layer_views: Vec<wgpu::TextureView>,
-    _shadow_map_sampler: wgpu::Sampler,
+    point_shadow_layers_allocated: u32,
+    shadow_map_sampler: wgpu::Sampler,
     // Screen-space mesh blend (seam pass) state.
     screen_blend_supported: bool,
     mesh_blend_screen_active: bool,

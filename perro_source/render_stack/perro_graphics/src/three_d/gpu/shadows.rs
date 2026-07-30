@@ -16,8 +16,96 @@ pub(super) struct ShadowSetup {
 }
 
 impl Gpu3D {
+    // Grow-only lazy shadow atlases. Eager allocation cost 224MB per Gpu3D
+    // (ray 4x2048^2 + spot 4x2048^2 + point 24x1024^2, Depth32Float) even for
+    // views with zero shadow lights; each camera-stream subview pays it too.
+    // Growing to the observed need keeps a shadowless view at ~0 and a typical
+    // view at only the layers its lights use.
+    fn ensure_shadow_atlas_capacity(
+        &mut self,
+        device: &wgpu::Device,
+        ray_layers: u32,
+        spot_layers: u32,
+        point_layers: u32,
+    ) -> bool {
+        let mut recreated = false;
+        if ray_layers > self.ray_shadow_layers_allocated {
+            let (texture, view, layer_views) = create_shadow_map_array_texture(
+                device,
+                "perro_ray_shadow_map",
+                SHADOW_MAP_SIZE,
+                ray_layers,
+            );
+            self._shadow_map_texture = texture;
+            self.shadow_map_view = view;
+            self.shadow_layer_views = layer_views;
+            self.ray_shadow_layers_allocated = ray_layers;
+            recreated = true;
+        }
+        if spot_layers > self.spot_shadow_layers_allocated {
+            let (texture, view, layer_views) = create_shadow_map_array_texture(
+                device,
+                "perro_spot_shadow_map",
+                SHADOW_SPOT_MAP_SIZE,
+                spot_layers,
+            );
+            self._spot_shadow_map_texture = texture;
+            self.spot_shadow_map_view = view;
+            self.spot_shadow_layer_views = layer_views;
+            self.spot_shadow_layers_allocated = spot_layers;
+            recreated = true;
+        }
+        if point_layers > self.point_shadow_layers_allocated {
+            let (texture, view, layer_views) = create_shadow_map_array_texture(
+                device,
+                "perro_point_shadow_map",
+                SHADOW_POINT_MAP_SIZE,
+                point_layers,
+            );
+            self._point_shadow_map_texture = texture;
+            self.point_shadow_map_view = view;
+            self.point_shadow_layer_views = layer_views;
+            self.point_shadow_layers_allocated = point_layers;
+            recreated = true;
+        }
+        if recreated {
+            self.rebuild_shadow_bind_group(device);
+        }
+        recreated
+    }
+
+    fn rebuild_shadow_bind_group(&mut self, device: &wgpu::Device) {
+        self.shadow_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("perro_shadow3d_bg"),
+            layout: &self.shadow_bgl,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: self.shadow_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(&self.shadow_map_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::Sampler(&self.shadow_map_sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::TextureView(&self.spot_shadow_map_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: wgpu::BindingResource::TextureView(&self.point_shadow_map_view),
+                },
+            ],
+        });
+    }
+
     pub(super) fn update_shadow_state(
         &mut self,
+        device: &wgpu::Device,
         queue: &wgpu::Queue,
         camera: &Camera3DState,
         lighting: &Lighting3DState,
@@ -48,6 +136,18 @@ impl Gpu3D {
         });
         self.shadow_focus_center = setup.focus_center;
         self.shadow_focus_radius = setup.focus_radius;
+        let ray_layers = if setup.ray_enabled {
+            MAX_SHADOW_RAY_CASCADES as u32
+        } else {
+            0
+        };
+        let spot_layers = setup.spot_count as u32;
+        let point_layers = setup.point_count.saturating_mul(POINT_SHADOW_FACE_COUNT) as u32;
+        if self.ensure_shadow_atlas_capacity(device, ray_layers, spot_layers, point_layers) {
+            // Fresh atlas layers hold garbage depth: force every layer to
+            // re-render this frame instead of trusting the per-layer cache.
+            self.shadow_casters_dirty = true;
+        }
         if self.last_shadow_scenes.len() != SHADOW_CAMERA_COUNT {
             self.last_shadow_scenes.resize(SHADOW_CAMERA_COUNT, None);
         }
