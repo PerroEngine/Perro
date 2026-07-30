@@ -14,7 +14,8 @@ impl GraphicsBackend for PerroGraphics {
                 let slot = Arc::new(Mutex::new(None));
                 let slot_clone = slot.clone();
                 let cfg = GpuConfig {
-                    smoothing_samples: self.smoothing_samples,
+                    smoothing_samples: self.smoothing_2d_samples,
+                    smoothing_samples_3d: self.smoothing_samples,
                     vsync_enabled: self.vsync_enabled,
                     meshlets_enabled: self.meshlets_enabled,
                     dev_meshlets: self.dev_meshlets,
@@ -24,6 +25,7 @@ impl GraphicsBackend for PerroGraphics {
                     texture_filter: self.texture_filter,
                     hdr_mode: self.hdr_mode,
                     shader_variant_mode: self.shader_variant_mode,
+                    shadow_quality: self.shadow_quality,
                 };
                 wasm_bindgen_futures::spawn_local(async move {
                     let gpu = Gpu::new_async(window, cfg).await;
@@ -37,7 +39,8 @@ impl GraphicsBackend for PerroGraphics {
             #[cfg(not(target_arch = "wasm32"))]
             {
                 let cfg = GpuConfig {
-                    smoothing_samples: self.smoothing_samples,
+                    smoothing_samples: self.smoothing_2d_samples,
+                    smoothing_samples_3d: self.smoothing_samples,
                     vsync_enabled: self.vsync_enabled,
                     meshlets_enabled: self.meshlets_enabled,
                     dev_meshlets: self.dev_meshlets,
@@ -47,6 +50,7 @@ impl GraphicsBackend for PerroGraphics {
                     texture_filter: self.texture_filter,
                     hdr_mode: self.hdr_mode,
                     shader_variant_mode: self.shader_variant_mode,
+                    shadow_quality: self.shadow_quality,
                 };
                 let mut gpu = Gpu::new(window, cfg);
                 if let Some(gpu_ref) = gpu.as_mut() {

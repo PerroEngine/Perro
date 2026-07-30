@@ -545,6 +545,12 @@ pub struct Gpu {
     render_format: wgpu::TextureFormat,
     sample_count: u32,
     max_supported_sample_count: u32,
+    // 3D sample count latched on the first frame that needs the 3D pipeline
+    // (graphics.msaa); until then the cheaper 2D setting (graphics.msaa_2d)
+    // applies. Explicit set_smoothing_samples calls latch immediately.
+    sample_count_3d_target: u32,
+    sample_count_3d_applied: bool,
+    shadow_pcf_high: bool,
     msaa_color: Option<MsaaColorTarget>,
     post: PostProcessor,
     post_view_generation: u64,
@@ -603,7 +609,10 @@ pub struct Gpu {
 
 #[derive(Clone, Copy)]
 pub struct GpuConfig {
+    /// Initial sample count. Sessions start on the 2D setting; the first
+    /// frame that needs the 3D pipeline latches `smoothing_samples_3d`.
     pub smoothing_samples: u32,
+    pub smoothing_samples_3d: u32,
     pub vsync_enabled: bool,
     pub meshlets_enabled: bool,
     pub dev_meshlets: bool,
@@ -613,6 +622,7 @@ pub struct GpuConfig {
     pub texture_filter: TextureFilterMode,
     pub hdr_mode: HdrMode,
     pub shader_variant_mode: crate::ShaderVariantMode,
+    pub shadow_quality: crate::ShadowQuality,
 }
 
 struct GpuCameraStreamTarget {

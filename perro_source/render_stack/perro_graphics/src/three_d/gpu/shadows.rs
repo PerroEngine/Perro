@@ -123,7 +123,7 @@ impl Gpu3D {
             self.point_shadow_count = 0;
             return;
         }
-        let setup = build_shadow_setup(ShadowSetupArgs {
+        let mut setup = build_shadow_setup(ShadowSetupArgs {
             camera,
             lighting,
             draw_batches: &self.draw_batches,
@@ -134,6 +134,9 @@ impl Gpu3D {
             viewport_height: self.depth_size.1,
             has_casters,
         });
+        // ray_params.w = PCF kernel select (0 = 4-tap default, 1 = 9-tap via
+        // graphics.shadow_quality = "high"); applies to ray, spot and point.
+        setup.uniform.ray_params[3] = if self.shadow_pcf_high { 1.0 } else { 0.0 };
         self.shadow_focus_center = setup.focus_center;
         self.shadow_focus_radius = setup.focus_radius;
         let ray_layers = if setup.ray_enabled {

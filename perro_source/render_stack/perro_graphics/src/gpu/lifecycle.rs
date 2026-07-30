@@ -219,6 +219,7 @@ impl Gpu {
                 multi_draw_indirect_enabled,
                 texture_filter: cfg.texture_filter,
                 shader_variant_mode: cfg.shader_variant_mode,
+                shadow_pcf_high: cfg.shadow_quality == crate::ShadowQuality::High,
             },
         );
         let point_particles_3d = GpuPointParticles3D::new(&device, render_format, sample_count);
@@ -263,6 +264,9 @@ impl Gpu {
             render_format,
             sample_count,
             max_supported_sample_count,
+            sample_count_3d_target: normalize_sample_count(cfg.smoothing_samples_3d),
+            sample_count_3d_applied: cfg.smoothing_samples_3d == cfg.smoothing_samples,
+            shadow_pcf_high: cfg.shadow_quality == crate::ShadowQuality::High,
             msaa_color,
             post,
             post_view_generation: 1,
@@ -316,6 +320,17 @@ impl Gpu {
     #[cfg(not(target_arch = "wasm32"))]
     pub fn new(window: Arc<Window>, cfg: GpuConfig) -> Option<Self> {
         pollster::block_on(Self::new_async(window, cfg))
+    }
+
+    /// One-way latch: the first frame that needs the 3D pipeline switches from
+    /// the 2D sample count (graphics.msaa_2d) to the 3D one (graphics.msaa).
+    pub(crate) fn ensure_3d_sample_count(&mut self) {
+        if self.sample_count_3d_applied {
+            return;
+        }
+        let target = self.sample_count_3d_target;
+        self.sample_count_3d_applied = true;
+        self.set_smoothing_samples(target);
     }
 
     pub fn resize(&mut self, width: u32, height: u32) {
@@ -377,6 +392,9 @@ impl Gpu {
             normalize_sample_count(samples),
             self.max_supported_sample_count,
         );
+        // Explicit calls pin the sample count; the 3D latch must not override.
+        self.sample_count_3d_target = sample_count;
+        self.sample_count_3d_applied = true;
         if sample_count == self.sample_count {
             return;
         }

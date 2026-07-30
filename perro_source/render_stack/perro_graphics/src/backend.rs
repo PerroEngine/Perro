@@ -382,6 +382,14 @@ pub enum ShaderVariantMode {
     Auto,
 }
 
+/// Shadow PCF kernel. Medium = 4-tap (default), High = 9-tap.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ShadowQuality {
+    #[default]
+    Medium,
+    High,
+}
+
 pub struct PerroGraphics {
     frame: FrameState,
     resources: ResourceStore,
@@ -413,6 +421,9 @@ pub struct PerroGraphics {
     smoothing_enabled: bool,
     smoothing_samples: u32,
     smoothing_quality_samples: u32,
+    // Sample count for sessions that never touch the 3D pipeline; 2D scenes
+    // pay 4x fill for MSAA they rarely need, so this defaults off.
+    smoothing_2d_samples: u32,
     static_texture_lookup: Option<StaticTextureLookup>,
     static_font_lookup: Option<StaticFontLookup>,
     static_mesh_lookup: Option<StaticMeshLookup>,
@@ -431,6 +442,7 @@ pub struct PerroGraphics {
     meshlet_debug_view: bool,
     occlusion_culling: OcclusionCullingMode,
     ssao: SsaoQuality,
+    shadow_quality: ShadowQuality,
     texture_filter: TextureFilterMode,
     hdr_mode: HdrMode,
     shader_variant_mode: ShaderVariantMode,

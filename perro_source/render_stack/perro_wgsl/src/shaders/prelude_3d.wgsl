@@ -555,12 +555,24 @@ fn perro_sample_ray_shadow_array(light_view_proj: mat4x4<f32>, world_pos: vec3<f
     }
     var sum = 0.0;
     let layer_i = i32(layer);
-    for (var y = -1; y <= 1; y = y + 1) {
-        for (var x = -1; x <= 1; x = x + 1) {
-            sum += textureSampleCompare(shadow_map_tex, shadow_map_sampler, uv + vec2<f32>(f32(x), f32(y)) * texel, layer_i, depth - bias);
+    // ray_params.w selects the PCF kernel: 0 = 4-tap (default; half-texel
+    // diagonal quad, the comparison sampler's bilinear soften covers the rest),
+    // 1 = 9-tap (graphics.shadow_quality = "high").
+    if shadow.ray_params.w >= 0.5 {
+        for (var y = -1; y <= 1; y = y + 1) {
+            for (var x = -1; x <= 1; x = x + 1) {
+                sum += textureSampleCompare(shadow_map_tex, shadow_map_sampler, uv + vec2<f32>(f32(x), f32(y)) * texel, layer_i, depth - bias);
+            }
+        }
+        return sum / 9.0;
+    }
+    for (var y = 0; y < 2; y = y + 1) {
+        for (var x = 0; x < 2; x = x + 1) {
+            let offset = (vec2<f32>(f32(x), f32(y)) - vec2<f32>(0.5)) * texel * 1.5;
+            sum += textureSampleCompare(shadow_map_tex, shadow_map_sampler, uv + offset, layer_i, depth - bias);
         }
     }
-    return sum / 9.0;
+    return sum / 4.0;
 }
 
 // normal_dir must already be normalized (perro_lit_standard normalizes once;
@@ -589,20 +601,40 @@ fn perro_sample_shadow_array(light_view_proj: mat4x4<f32>, world_pos: vec3<f32>,
     }
     let layer_i = i32(layer);
     var sum = 0.0;
+    // Same PCF kernel switch as the ray cascades (see ray_params.w above).
+    let high_quality = shadow.ray_params.w >= 0.5;
     if is_point {
+        if high_quality {
+            for (var y = -1; y <= 1; y = y + 1) {
+                for (var x = -1; x <= 1; x = x + 1) {
+                    sum += textureSampleCompare(point_shadow_map_tex, shadow_map_sampler, uv + vec2<f32>(f32(x), f32(y)) * texel, layer_i, depth - bias);
+                }
+            }
+            return sum / 9.0;
+        }
+        for (var y = 0; y < 2; y = y + 1) {
+            for (var x = 0; x < 2; x = x + 1) {
+                let offset = (vec2<f32>(f32(x), f32(y)) - vec2<f32>(0.5)) * texel * 1.5;
+                sum += textureSampleCompare(point_shadow_map_tex, shadow_map_sampler, uv + offset, layer_i, depth - bias);
+            }
+        }
+        return sum / 4.0;
+    }
+    if high_quality {
         for (var y = -1; y <= 1; y = y + 1) {
             for (var x = -1; x <= 1; x = x + 1) {
-                sum += textureSampleCompare(point_shadow_map_tex, shadow_map_sampler, uv + vec2<f32>(f32(x), f32(y)) * texel, layer_i, depth - bias);
+                sum += textureSampleCompare(spot_shadow_map_tex, shadow_map_sampler, uv + vec2<f32>(f32(x), f32(y)) * texel, layer_i, depth - bias);
             }
         }
         return sum / 9.0;
     }
-    for (var y = -1; y <= 1; y = y + 1) {
-        for (var x = -1; x <= 1; x = x + 1) {
-            sum += textureSampleCompare(spot_shadow_map_tex, shadow_map_sampler, uv + vec2<f32>(f32(x), f32(y)) * texel, layer_i, depth - bias);
+    for (var y = 0; y < 2; y = y + 1) {
+        for (var x = 0; x < 2; x = x + 1) {
+            let offset = (vec2<f32>(f32(x), f32(y)) - vec2<f32>(0.5)) * texel * 1.5;
+            sum += textureSampleCompare(spot_shadow_map_tex, shadow_map_sampler, uv + offset, layer_i, depth - bias);
         }
     }
-    return sum / 9.0;
+    return sum / 4.0;
 }
 
 fn perro_ray_shadow_factor(world_pos: vec3<f32>, normal_ws: vec3<f32>, light_dir_to_light: vec3<f32>) -> f32 {

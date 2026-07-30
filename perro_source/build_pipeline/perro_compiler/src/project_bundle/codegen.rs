@@ -18,6 +18,13 @@ pub(super) fn emit_ssao_expr(quality: perro_project::SsaoQuality) -> &'static st
     }
 }
 
+pub(super) fn emit_shadow_quality_expr(quality: perro_project::ShadowQuality) -> &'static str {
+    match quality {
+        perro_project::ShadowQuality::Medium => "perro_runtime::ShadowQuality::Medium",
+        perro_project::ShadowQuality::High => "perro_runtime::ShadowQuality::High",
+    }
+}
+
 pub(super) fn emit_hdr_expr(mode: perro_structs::HdrMode) -> &'static str {
     match mode {
         perro_structs::HdrMode::Off => "perro_structs::HdrMode::Off",

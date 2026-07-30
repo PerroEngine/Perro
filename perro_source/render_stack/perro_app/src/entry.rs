@@ -169,7 +169,9 @@ fn graphics_from_project_config(
         .with_vsync(config.vsync)
         .with_hdr_mode(config.hdr)
         .with_msaa(effective_msaa(config.msaa))
+        .with_msaa_2d(effective_msaa(config.msaa_2d))
         .with_ssao(graphics_ssao(config.ssao))
+        .with_shadow_quality(graphics_shadow_quality(config.shadow_quality))
         .with_meshlets_enabled(config.meshlets)
         .with_dev_meshlets(!release_mode && config.dev_meshlets)
         .with_meshlet_debug_view(config.meshlet_debug_view)
@@ -200,6 +202,13 @@ fn effective_msaa(enabled: bool) -> bool {
 #[cfg(target_arch = "wasm32")]
 fn effective_msaa(_: bool) -> bool {
     false
+}
+
+fn graphics_shadow_quality(quality: perro_runtime::ShadowQuality) -> perro_graphics::ShadowQuality {
+    match quality {
+        perro_runtime::ShadowQuality::Medium => perro_graphics::ShadowQuality::Medium,
+        perro_runtime::ShadowQuality::High => perro_graphics::ShadowQuality::High,
+    }
 }
 
 fn graphics_ssao(quality: perro_runtime::SsaoQuality) -> GraphicsSsaoQuality {
@@ -396,7 +405,9 @@ pub struct StaticEmbeddedGraphicsConfig {
     pub vsync: bool,
     pub hdr: perro_structs::HdrMode,
     pub msaa: bool,
+    pub msaa_2d: bool,
     pub ssao: perro_runtime::SsaoQuality,
+    pub shadow_quality: perro_runtime::ShadowQuality,
     pub meshlets: bool,
     pub dev_meshlets: bool,
     pub release_meshlets: bool,
@@ -474,7 +485,9 @@ pub fn run_static_embedded_project(
     .with_physics_gravity(input.runtime.physics_gravity)
     .with_physics_coef(input.runtime.physics_coef)
     .with_msaa(input.graphics.msaa)
+    .with_msaa_2d(input.graphics.msaa_2d)
     .with_ssao(input.graphics.ssao)
+    .with_shadow_quality(input.graphics.shadow_quality)
     .with_meshlets(input.graphics.meshlets)
     .with_dev_meshlets(input.graphics.dev_meshlets)
     .with_release_meshlets(input.graphics.release_meshlets)
@@ -626,7 +639,9 @@ pub fn run_static_embedded_project_android(
     .with_physics_gravity(input.runtime.physics_gravity)
     .with_physics_coef(input.runtime.physics_coef)
     .with_msaa(input.graphics.msaa)
+    .with_msaa_2d(input.graphics.msaa_2d)
     .with_ssao(input.graphics.ssao)
+    .with_shadow_quality(input.graphics.shadow_quality)
     .with_meshlets(input.graphics.meshlets)
     .with_dev_meshlets(input.graphics.dev_meshlets)
     .with_release_meshlets(input.graphics.release_meshlets)

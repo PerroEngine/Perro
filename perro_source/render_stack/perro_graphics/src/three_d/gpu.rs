@@ -888,6 +888,8 @@ pub struct Gpu3D {
     multimesh_cull_instance_capacity: usize,
     // Shared capacity (batches) for cull_batches + counters + indirect buffers.
     multimesh_cull_batch_capacity: usize,
+    // 9-tap PCF kernel (ray_params.w); default 4-tap.
+    shadow_pcf_high: bool,
     // True while the cull compute ran this frame (drives indirect draw path).
     multimesh_cull_active: bool,
     last_multimesh_cull_params: Option<MultiMeshCullParamsGpu>,
@@ -1160,6 +1162,8 @@ pub struct Gpu3DConfig {
     pub multi_draw_indirect_enabled: bool,
     pub texture_filter: TextureFilterMode,
     pub shader_variant_mode: crate::ShaderVariantMode,
+    /// 9-tap PCF (graphics.shadow_quality = "high"); default is 4-tap.
+    pub shadow_pcf_high: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]

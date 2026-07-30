@@ -178,6 +178,7 @@ impl Gpu3D {
             multi_draw_indirect_enabled,
             texture_filter,
             shader_variant_mode,
+            shadow_pcf_high,
         } = config;
         let (gpu_occlusion_enabled, cpu_occlusion_enabled) = occlusion_flags(occlusion_culling);
         let shadow_caster_debug_view = std::env::var_os("PERRO_DEBUG_SHADOW_CASTERS").is_some()
@@ -2442,6 +2443,7 @@ impl Gpu3D {
             multimesh_cull_batch_capacity,
             multimesh_cull_active: false,
             last_multimesh_cull_params: None,
+            shadow_pcf_high,
             last_uploaded_multimesh_instances: Vec::new(),
             last_uploaded_multimesh_draw_params: Vec::new(),
             last_uploaded_multimesh_cull_batches: Vec::new(),

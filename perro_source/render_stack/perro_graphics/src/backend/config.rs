@@ -37,6 +37,7 @@ impl PerroGraphics {
             smoothing_enabled: true,
             smoothing_samples: 4,
             smoothing_quality_samples: 4,
+            smoothing_2d_samples: 1,
             static_texture_lookup: None,
             static_font_lookup: None,
             static_mesh_lookup: None,
@@ -49,6 +50,7 @@ impl PerroGraphics {
             meshlet_debug_view: false,
             occlusion_culling: OcclusionCullingMode::Gpu,
             ssao: SsaoQuality::Medium,
+            shadow_quality: ShadowQuality::Medium,
             texture_filter: TextureFilterMode::LinearMipmap,
             hdr_mode: HdrMode::Auto,
             shader_variant_mode: ShaderVariantMode::Auto,
@@ -128,6 +130,18 @@ impl PerroGraphics {
 
     pub fn with_ssao(mut self, quality: SsaoQuality) -> Self {
         self.ssao = quality;
+        self
+    }
+
+    pub fn with_shadow_quality(mut self, quality: ShadowQuality) -> Self {
+        self.shadow_quality = quality;
+        self
+    }
+
+    /// MSAA for sessions that never init the 3D pipeline. The first 3D frame
+    /// switches to the `with_msaa` sample count.
+    pub fn with_msaa_2d(mut self, enabled: bool) -> Self {
+        self.smoothing_2d_samples = if enabled { 4 } else { 1 };
         self
     }
 

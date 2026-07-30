@@ -312,7 +312,9 @@ perro_app::entry::{native_entry}(perro_app::entry::StaticEmbeddedProject {{\n\
         vsync: {vsync},\n\
         hdr: {hdr},\n\
         msaa: {msaa},\n\
+        msaa_2d: {msaa_2d},\n\
         ssao: {ssao},\n\
+        shadow_quality: {shadow_quality},\n\
         meshlets: {meshlets},\n\
         dev_meshlets: {dev_meshlets},\n\
         release_meshlets: {release_meshlets},\n\
@@ -358,7 +360,9 @@ perro_app::entry::{native_entry}(perro_app::entry::StaticEmbeddedProject {{\n\
         vsync = cfg.vsync,
         hdr = emit_hdr_expr(cfg.hdr),
         msaa = cfg.msaa,
+        msaa_2d = cfg.msaa_2d,
         ssao = emit_ssao_expr(cfg.ssao),
+        shadow_quality = emit_shadow_quality_expr(cfg.shadow_quality),
         meshlets = cfg.meshlets,
         dev_meshlets = cfg.dev_meshlets,
         release_meshlets = cfg.release_meshlets,
@@ -412,7 +416,9 @@ perro_app::entry::run_static_embedded_project_web(perro_app::entry::StaticEmbedd
         vsync: {vsync},\n\
         hdr: {hdr},\n\
         msaa: {msaa},\n\
+        msaa_2d: {msaa_2d},\n\
         ssao: {ssao},\n\
+        shadow_quality: {shadow_quality},\n\
         meshlets: {meshlets},\n\
         dev_meshlets: {dev_meshlets},\n\
         release_meshlets: {release_meshlets},\n\
@@ -457,7 +463,9 @@ perro_app::entry::run_static_embedded_project_web(perro_app::entry::StaticEmbedd
         vsync = cfg.vsync,
         hdr = emit_hdr_expr(cfg.hdr),
         msaa = cfg.msaa,
+        msaa_2d = cfg.msaa_2d,
         ssao = emit_ssao_expr(cfg.ssao),
+        shadow_quality = emit_shadow_quality_expr(cfg.shadow_quality),
         meshlets = cfg.meshlets,
         dev_meshlets = cfg.dev_meshlets,
         release_meshlets = cfg.release_meshlets,
@@ -507,7 +515,9 @@ perro_app::entry::run_static_embedded_project_android(app, perro_app::entry::Sta
         vsync: {vsync},\n\
         hdr: {hdr},\n\
         msaa: {msaa},\n\
+        msaa_2d: {msaa_2d},\n\
         ssao: {ssao},\n\
+        shadow_quality: {shadow_quality},\n\
         meshlets: {meshlets},\n\
         dev_meshlets: {dev_meshlets},\n\
         release_meshlets: {release_meshlets},\n\
@@ -553,7 +563,9 @@ perro_app::entry::run_static_embedded_project_android(app, perro_app::entry::Sta
         vsync = cfg.vsync,
         hdr = emit_hdr_expr(cfg.hdr),
         msaa = cfg.msaa,
+        msaa_2d = cfg.msaa_2d,
         ssao = emit_ssao_expr(cfg.ssao),
+        shadow_quality = emit_shadow_quality_expr(cfg.shadow_quality),
         meshlets = cfg.meshlets,
         dev_meshlets = cfg.dev_meshlets,
         release_meshlets = cfg.release_meshlets,

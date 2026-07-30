@@ -238,6 +238,7 @@ impl Gpu {
         timing.prepare_2d = prepare_2d_start.elapsed();
 
         if needs_water_prepare {
+            self.ensure_3d_sample_count();
             if self.three_d.is_none() {
                 self.three_d = Some(Gpu3D::new(
                     &self.device,
@@ -256,6 +257,7 @@ impl Gpu {
                         multi_draw_indirect_enabled: self.multi_draw_indirect_enabled,
                         texture_filter: self.texture_filter,
                         shader_variant_mode: self.shader_variant_mode,
+                        shadow_pcf_high: self.shadow_pcf_high,
                     },
                 ));
             }
@@ -312,6 +314,7 @@ impl Gpu {
         let mut did_prepare_3d = false;
         let mut prepare_3d_steps = Prepare3DStepTiming::default();
         if needs_3d_pipeline {
+            self.ensure_3d_sample_count();
             if self.three_d.is_none() {
                 self.three_d = Some(Gpu3D::new(
                     &self.device,
@@ -330,6 +333,7 @@ impl Gpu {
                         multi_draw_indirect_enabled: self.multi_draw_indirect_enabled,
                         texture_filter: self.texture_filter,
                         shader_variant_mode: self.shader_variant_mode,
+                        shadow_pcf_high: self.shadow_pcf_high,
                     },
                 ));
             }
@@ -842,6 +846,7 @@ impl Gpu {
                                             .multi_draw_indirect_enabled,
                                         texture_filter: self.texture_filter,
                                         shader_variant_mode: self.shader_variant_mode,
+                                        shadow_pcf_high: self.shadow_pcf_high,
                                     },
                                 );
                                 // Camera streams render into their own targets;
@@ -910,6 +915,7 @@ impl Gpu {
                                     multi_draw_indirect_enabled: self.multi_draw_indirect_enabled,
                                     texture_filter: self.texture_filter,
                                     shader_variant_mode: self.shader_variant_mode,
+                                    shadow_pcf_high: self.shadow_pcf_high,
                                 },
                             );
                             // Camera streams render into their own targets; the seam

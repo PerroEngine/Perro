@@ -19,7 +19,9 @@ startup_splash = "res://icon.png"
 aspect_ratio = "16:9"            # "WIDTH:HEIGHT" game shape
 vsync = false
 msaa = true
+msaa_2d = false                  # MSAA for sessions that never use the 3D pipeline
 ssao = "medium"                  # off | low | medium | high | ultra
+shadow_quality = "medium"        # medium (4-tap PCF) | high (9-tap)
 occlusion_culling = "gpu"        # cpu | gpu | off
 particle_sim_default = "gpu"     # cpu | hybrid | gpu
 texture_filter = "linear_mipmap" # nearest | linear | linear_mipmap | anisotropic
@@ -208,7 +210,9 @@ pub fn parse_project_toml_with_demo(
     let physics_gravity = parse_physics_gravity(physics_table)?;
     let physics_coef = parse_physics_coef(physics_table)?;
     let msaa = parse_bool_with_default(graphics_table, "msaa", true)?;
+    let msaa_2d = parse_bool_with_default(graphics_table, "msaa_2d", false)?;
     let ssao = parse_ssao_with_default(graphics_table, "ssao", SsaoQuality::Medium)?;
+    let shadow_quality = parse_shadow_quality_with_default(graphics_table, ShadowQuality::Medium)?;
     let meshlets = parse_bool_with_default(graphics_table, "meshlets", false)?;
     let dev_meshlets = parse_bool_with_default(graphics_table, "dev_meshlets", false)?;
     let release_meshlets = parse_bool_with_default(graphics_table, "release_meshlets", true)?;
@@ -255,7 +259,9 @@ pub fn parse_project_toml_with_demo(
         physics_gravity,
         physics_coef,
         msaa,
+        msaa_2d,
         ssao,
+        shadow_quality,
         meshlets,
         dev_meshlets,
         release_meshlets,
@@ -906,6 +912,7 @@ fn parse_bool_with_default(
             match key {
                 "vsync" => "graphics.vsync",
                 "msaa" => "graphics.msaa",
+                "msaa_2d" => "graphics.msaa_2d",
                 "meshlets" => "graphics.meshlets",
                 "dev_meshlets" => "graphics.dev_meshlets",
                 "release_meshlets" => "graphics.release_meshlets",
@@ -1060,6 +1067,26 @@ fn parse_ssao_with_default(
         _ => Err(ProjectError::InvalidField(
             "graphics.ssao",
             "must be one of: off, low, medium, high, ultra".to_string(),
+        )),
+    }
+}
+
+fn parse_shadow_quality_with_default(
+    table: &toml::map::Map<String, Value>,
+    default: ShadowQuality,
+) -> Result<ShadowQuality, ProjectError> {
+    let Some(value) = table.get("shadow_quality") else {
+        return Ok(default);
+    };
+    let value = value.as_str().ok_or_else(|| {
+        ProjectError::InvalidField("graphics.shadow_quality", "must be a string".to_string())
+    })?;
+    match value {
+        "medium" => Ok(ShadowQuality::Medium),
+        "high" => Ok(ShadowQuality::High),
+        _ => Err(ProjectError::InvalidField(
+            "graphics.shadow_quality",
+            "must be one of: medium, high".to_string(),
         )),
     }
 }
