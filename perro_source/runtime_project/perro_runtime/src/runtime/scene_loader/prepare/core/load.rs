@@ -458,12 +458,27 @@ pub(super) fn push_entry_prepared(
                         import_scene.key_name_or_id(import_root)
                     )
                 })?;
-            let merged = merge_root_host_entry(entry, import_root_node);
+            let import_key_map =
+                build_import_key_map(key, import_scene.as_ref(), &import_root, ctx);
+            let mut merged = merge_root_host_entry(entry, import_root_node);
+            // Resolve each side's node refs against the scene that declared
+            // them BEFORE merging: base refs name inner-scene nodes, host refs
+            // name outer-scene nodes. Resolving the merged vars later against
+            // the outer scene alone leaves inner refs to a name-fallback that
+            // picks the wrong instance when two imports share node names.
+            merged.script_vars = merge_scene_object_fields(
+                &remap_scene_object_field_keys(
+                    &import_root_node.script_vars,
+                    import_scene.as_ref(),
+                    &import_key_map,
+                ),
+                &remap_scene_object_field_keys(&entry.script_vars, scene, key_map),
+            );
             expand_import_children_into_host(
-                key,
                 root_of_path.as_str(),
                 import_scene.as_ref(),
                 &import_root,
+                &import_key_map,
                 ctx,
             )?;
             Ok::<SceneDefNodeEntry, String>(merged)
@@ -472,6 +487,7 @@ pub(super) fn push_entry_prepared(
         merged_root_entry = Some(root_merge_result?);
     }
 
+    let script_vars_pre_resolved = merged_root_entry.is_some();
     let entry = merged_root_entry.as_ref().unwrap_or(entry);
 
     let (
@@ -576,7 +592,14 @@ pub(super) fn push_entry_prepared(
             scene_injected_vars: entry
                 .script_vars
                 .iter()
-                .map(|(k, v)| (k.to_string(), remap_scene_value_keys(v, scene, key_map)))
+                .map(|(k, v)| {
+                    let value = if script_vars_pre_resolved {
+                        v.clone()
+                    } else {
+                        remap_scene_value_keys(v, scene, key_map)
+                    };
+                    (k.to_string(), value)
+                })
                 .collect(),
         });
     }

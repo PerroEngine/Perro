@@ -72,5 +72,6 @@ mod tests {
     include!("core_tests/assets.rs");
     include!("core_tests/ui.rs");
     include!("core_tests/scene_data.rs");
+    include!("core_tests/root_of_refs.rs");
 
 }

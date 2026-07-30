@@ -15,13 +15,12 @@ pub(super) struct ScenePrepareScratch {
     pub(super) fields: Vec<SceneObjectField>,
 }
 
-pub(super) fn expand_import_children_into_host(
+pub(super) fn build_import_key_map(
     host_key: u32,
-    path: &str,
     import_scene: &Scene,
     import_root: &SceneKey,
     ctx: &mut PrepareSceneCtx<'_>,
-) -> Result<(), String> {
+) -> HashMap<SceneKey, u32> {
     let mut map = HashMap::<SceneKey, u32>::new();
     map.insert(*import_root, host_key);
     for node in import_scene.nodes.as_ref() {
@@ -32,7 +31,16 @@ pub(super) fn expand_import_children_into_host(
         *ctx.next_key = ctx.next_key.saturating_add(1);
         map.insert(node.key, next);
     }
+    map
+}
 
+pub(super) fn expand_import_children_into_host(
+    path: &str,
+    import_scene: &Scene,
+    import_root: &SceneKey,
+    map: &HashMap<SceneKey, u32>,
+    ctx: &mut PrepareSceneCtx<'_>,
+) -> Result<(), String> {
     for node in import_scene.nodes.as_ref() {
         if node.key == *import_root {
             continue;
@@ -43,7 +51,7 @@ pub(super) fn expand_import_children_into_host(
                 import_scene.key_name_or_id(node.key)
             )
         })?;
-        push_entry_prepared(import_scene, node, Some(remapped_key), &map, ctx)?;
+        push_entry_prepared(import_scene, node, Some(remapped_key), map, ctx)?;
     }
     Ok(())
 }
@@ -171,6 +179,19 @@ pub(super) fn scene_key_by_name(scene: &Scene, name: &str) -> Option<SceneKey> {
         .position(|key_name| key_name.as_ref() == name)
         .and_then(|idx| u32::try_from(idx).ok())
         .map(SceneKey::new)
+}
+
+pub(super) fn remap_scene_object_field_keys(
+    fields: &[SceneObjectField],
+    scene: &Scene,
+    key_map: &HashMap<SceneKey, u32>,
+) -> Cow<'static, [SceneObjectField]> {
+    Cow::Owned(
+        fields
+            .iter()
+            .map(|(name, value)| (name.clone(), remap_scene_value_keys(value, scene, key_map)))
+            .collect(),
+    )
 }
 
 pub(super) fn remap_scene_value_keys(
