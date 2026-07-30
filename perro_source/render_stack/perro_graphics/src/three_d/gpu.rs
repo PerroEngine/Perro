@@ -231,6 +231,14 @@ const SHADOW_CAMERA_COUNT: usize = MAX_SHADOW_RAY_LIGHTS * MAX_SHADOW_RAY_CASCAD
     + MAX_SHADOW_SPOT_LIGHTS
     + MAX_SHADOW_POINT_LIGHTS * POINT_SHADOW_FACE_COUNT;
 const SHADOW_DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
+
+/// Byte-equality of two Pod staging slices (memcmp; early-out on length).
+/// Backs the skip-identical-upload gates on the multimesh staging paths.
+#[inline]
+fn pod_slices_equal<T: bytemuck::Pod>(a: &[T], b: &[T]) -> bool {
+    a.len() == b.len() && bytemuck::cast_slice::<T, u8>(a) == bytemuck::cast_slice::<T, u8>(b)
+}
+
 const SHADOW_MAP_DEPTH_BIAS_CONST: i32 = 2;
 const SHADOW_MAP_DEPTH_BIAS_SLOPE: f32 = 2.0;
 const MATERIAL_FLAG_MESHLET_DEBUG_VIEW: u32 = 1u32 << 0;
@@ -883,6 +891,22 @@ pub struct Gpu3D {
     // True while the cull compute ran this frame (drives indirect draw path).
     multimesh_cull_active: bool,
     last_multimesh_cull_params: Option<MultiMeshCullParamsGpu>,
+    // Last-uploaded copies of the multimesh staging vecs. A full restage often
+    // reproduces identical bytes (something unrelated in the draw list
+    // changed); comparing against these skips the GPU re-uploads - several MB
+    // per frame at 100k instances. Cleared when the matching buffer is
+    // recreated on capacity growth, since new buffers start undefined.
+    last_uploaded_multimesh_instances: Vec<MultiMeshInstanceGpu>,
+    last_uploaded_multimesh_draw_params: Vec<MultiMeshDrawParamGpu>,
+    last_uploaded_multimesh_cull_batches: Vec<MultiMeshCullBatchGpu>,
+    last_uploaded_multimesh_indirect: Vec<DrawIndexedIndirectGpu>,
+    // Instance count the batch-id buffer was last uploaded for (0 = invalid).
+    multimesh_instance_batch_uploaded_len: usize,
+    // Identity prime bookkeeping for the visible-index buffer: the cull
+    // compute overwrites it with compacted indices, so a dispatch clears
+    // `primed` and the next topology build re-primes it.
+    last_uploaded_multimesh_identity_len: usize,
+    multimesh_identity_primed: bool,
     frustum_cull_enabled: bool,
     frustum_cull_supported: bool,
     // When set, surviving culled draws are issued via multi_draw_indexed_indirect

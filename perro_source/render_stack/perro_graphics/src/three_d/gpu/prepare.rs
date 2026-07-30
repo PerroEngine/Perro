@@ -416,6 +416,12 @@ impl Gpu3D {
                         ),
                     );
                 }
+                // GPU buffer now equals the staged vec again; keep the
+                // skip-identical mirror in sync so the next full restage can
+                // still gate its upload.
+                self.last_uploaded_multimesh_draw_params.clear();
+                self.last_uploaded_multimesh_draw_params
+                    .extend_from_slice(&self.staged_multimesh_draw_params);
             }
             // Transforms shifted: overlap tests may change, so refresh receiver
             // lists unless no blend-relevant batch actually moved this frame.
@@ -1785,23 +1791,42 @@ impl Gpu3D {
             device,
             self.staged_multimesh_draw_params.len().max(1),
         );
-        if !self.staged_multimesh_draw_params.is_empty() {
+        // A restage regularly reproduces byte-identical multimesh staging
+        // (an unrelated draw changed); the memcmp is far cheaper than
+        // re-uploading multiple MB of instances every frame.
+        if !self.staged_multimesh_draw_params.is_empty()
+            && !super::pod_slices_equal(
+                &self.staged_multimesh_draw_params,
+                &self.last_uploaded_multimesh_draw_params,
+            )
+        {
             queue.write_buffer(
                 &self.multimesh_draw_params_buffer,
                 0,
                 bytemuck::cast_slice(&self.staged_multimesh_draw_params),
             );
+            self.last_uploaded_multimesh_draw_params.clear();
+            self.last_uploaded_multimesh_draw_params
+                .extend_from_slice(&self.staged_multimesh_draw_params);
         }
         self.ensure_multimesh_instance_capacity(
             device,
             self.staged_multimesh_instances.len().max(1),
         );
-        if !self.staged_multimesh_instances.is_empty() {
+        if !self.staged_multimesh_instances.is_empty()
+            && !super::pod_slices_equal(
+                &self.staged_multimesh_instances,
+                &self.last_uploaded_multimesh_instances,
+            )
+        {
             queue.write_buffer(
                 &self.multimesh_instance_buffer,
                 0,
                 bytemuck::cast_slice(&self.staged_multimesh_instances),
             );
+            self.last_uploaded_multimesh_instances.clear();
+            self.last_uploaded_multimesh_instances
+                .extend_from_slice(&self.staged_multimesh_instances);
         }
         // Multimesh inputs are topology-only, so rebuild them on the full path.
         // Direct draws also read the identity visible-index buffer, including

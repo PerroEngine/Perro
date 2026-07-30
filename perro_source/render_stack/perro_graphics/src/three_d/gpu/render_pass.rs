@@ -66,6 +66,11 @@ impl Gpu3D {
         let hiz_active = self.should_run_hiz_occlusion(frustum_cull_active);
         let multimesh_cull_active = self.should_run_multimesh_cull();
         self.multimesh_cull_active = multimesh_cull_active;
+        if multimesh_cull_active {
+            // The cull compute overwrites the visible-index buffer this frame;
+            // the identity prime is gone until the next topology build.
+            self.multimesh_identity_primed = false;
+        }
         let mesh_blend_depth_active = self.mesh_blend_depth_active;
         // Mesh blending forces the depth prepass: the mask pass depth-tests
         // against it and the seam pass reads it for world reconstruction.

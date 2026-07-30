@@ -299,31 +299,70 @@ impl Gpu3D {
             &mut self.staged_multimesh_visible_identity,
         );
 
+        // Skip-identical gates: restages that keep the same batch spans (an
+        // unrelated draw changed) reproduce these staging vecs byte-for-byte.
+        let batches_unchanged = super::pod_slices_equal(
+            &self.staged_multimesh_cull_batches,
+            &self.last_uploaded_multimesh_cull_batches,
+        );
         if batch_count > 0 {
-            queue.write_buffer(
-                &self.multimesh_cull_batch_buffer,
-                0,
-                bytemuck::cast_slice(&self.staged_multimesh_cull_batches),
-            );
-            queue.write_buffer(
-                &self.multimesh_indirect_buffer,
-                0,
-                bytemuck::cast_slice(&self.multimesh_indirect_staging),
-            );
+            if !batches_unchanged {
+                queue.write_buffer(
+                    &self.multimesh_cull_batch_buffer,
+                    0,
+                    bytemuck::cast_slice(&self.staged_multimesh_cull_batches),
+                );
+                self.last_uploaded_multimesh_cull_batches.clear();
+                self.last_uploaded_multimesh_cull_batches
+                    .extend_from_slice(&self.staged_multimesh_cull_batches);
+            }
+            // Indirect records are GPU-mutated (instance_count written by the
+            // cull finalize), but finalize rewrites them before every culled
+            // draw, so only topology changes need a CPU re-upload.
+            if !super::pod_slices_equal(
+                &self.multimesh_indirect_staging,
+                &self.last_uploaded_multimesh_indirect,
+            ) {
+                queue.write_buffer(
+                    &self.multimesh_indirect_buffer,
+                    0,
+                    bytemuck::cast_slice(&self.multimesh_indirect_staging),
+                );
+                self.last_uploaded_multimesh_indirect.clear();
+                self.last_uploaded_multimesh_indirect
+                    .extend_from_slice(&self.multimesh_indirect_staging);
+            }
         }
         if instance_count > 0 {
-            queue.write_buffer(
-                &self.multimesh_instance_batch_buffer,
-                0,
-                bytemuck::cast_slice(&self.staged_multimesh_instance_batch),
-            );
+            // Per-instance batch ids derive purely from the batch spans, so
+            // unchanged spans at the same instance count mean identical bytes.
+            if !(batches_unchanged && self.multimesh_instance_batch_uploaded_len == instance_count)
+            {
+                queue.write_buffer(
+                    &self.multimesh_instance_batch_buffer,
+                    0,
+                    bytemuck::cast_slice(&self.staged_multimesh_instance_batch),
+                );
+                self.multimesh_instance_batch_uploaded_len = instance_count;
+            }
             // Prime visible_indices as identity so the direct-draw fallback (and
-            // any batch the cull skips) reads correct source instances.
-            queue.write_buffer(
-                &self.multimesh_visible_index_buffer,
-                0,
-                bytemuck::cast_slice(&self.staged_multimesh_visible_identity),
-            );
+            // any batch the cull skips) reads correct source instances. The cull
+            // compute overwrites this buffer, so a prime only holds until the
+            // next dispatch (`multimesh_identity_primed`) - and while the cull
+            // is active it recompacts every batch before every draw, so priming
+            // would be overwritten unread.
+            if !self.should_run_multimesh_cull()
+                && (!self.multimesh_identity_primed
+                    || self.last_uploaded_multimesh_identity_len != instance_count)
+            {
+                queue.write_buffer(
+                    &self.multimesh_visible_index_buffer,
+                    0,
+                    bytemuck::cast_slice(&self.staged_multimesh_visible_identity),
+                );
+                self.last_uploaded_multimesh_identity_len = instance_count;
+                self.multimesh_identity_primed = true;
+            }
         }
     }
 
