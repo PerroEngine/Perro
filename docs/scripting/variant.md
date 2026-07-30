@@ -292,6 +292,52 @@ Both use `DeriveVariant`.
 
 Custom derived types do not get generated `as_my_type()` accessors. Decode them with `parse::<MyType>()` or `into_parse::<MyType>()`.
 
+### Encoding Modes
+
+Pick the encoding per type with `#[variant(...)]`:
+
+```rust
+// Named-field object (default): readable in .scn files, tolerant of field
+// renames and reorders. Use for scene-authored data.
+#[derive(Clone, Variant)]
+struct SpawnRules {
+    max_alive: u32,
+    interval: f32,
+}
+
+// Positional array: compact and fast. Use for hot runtime data that scripts
+// exchange every frame (signal payloads, method params, physics tuning).
+#[derive(Clone, Variant)]
+#[variant(mode = "array")]
+struct Impulse {
+    strength: f32,
+    falloff: f32,
+}
+
+// Enums: tag = "string" (default) keeps saves readable; tag = "u16" is the
+// fast form for per-frame state enums.
+#[derive(Clone, Variant)]
+#[variant(tag = "u16")]
+enum BotState {
+    Idle,
+    Chase,
+}
+```
+
+Cost per conversion (3-field struct, release bench):
+
+| Shape | Encode | Decode |
+| ----- | ------ | ------ |
+| object mode | ~276 ns | ~79 ns |
+| array mode | ~124 ns | ~7 ns |
+| enum string tag | ~630 ns | ~90 ns |
+| enum u16 tag | ~319 ns | ~21 ns |
+
+Rule of thumb: data a human edits in a scene file stays object/string; data
+scripts pump every frame goes array/u16. Array mode is positional — adding,
+removing, or reordering fields breaks previously saved values, so keep it off
+types that live in save files unless you version them.
+
 ## Construction
 
 Use `Variant::from(value)`, `variant!(value)`, or `params![...]`.
