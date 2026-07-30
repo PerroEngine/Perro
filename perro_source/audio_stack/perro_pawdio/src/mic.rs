@@ -269,7 +269,7 @@ impl MicClip {
         if !settings.enabled {
             return self.clone();
         }
-        let mut state = MicDenoiseState::new(settings);
+        let mut state = MicDenoiseState::new(settings, self.sample_rate);
         let samples = self
             .samples
             .iter()
@@ -442,6 +442,14 @@ pub struct MicSettings {
     /// Backend device name from [`mic_devices`]. `None` or blank picks the OS default.
     pub device: Option<String>,
     pub channels: MicChannels,
+    /// Input sensitivity: linear gain applied before denoise. `1.0` is unity;
+    /// values are clamped to [`Self::GAIN_RANGE`].
+    pub gain: f32,
+    /// Slow automatic gain on top of `gain`: boosts quiet mics toward a
+    /// comfortable speech level (never attenuates below the manual gain,
+    /// boost capped at 4x). Good default for player voice chat where mic
+    /// hardware varies wildly.
+    pub auto_gain: bool,
 }
 
 impl Default for MicSettings {
@@ -451,11 +459,16 @@ impl Default for MicSettings {
             denoise: MicDenoiseSettings::off(),
             device: None,
             channels: MicChannels::Auto,
+            gain: 1.0,
+            auto_gain: false,
         }
     }
 }
 
 impl MicSettings {
+    /// Manual gain clamp: 0 (mute) to 8x (+18 dB).
+    pub const GAIN_RANGE: std::ops::RangeInclusive<f32> = 0.0..=8.0;
+
     #[inline]
     pub fn with_device(mut self, device: impl Into<String>) -> Self {
         self.device = Some(device.into());
@@ -484,6 +497,30 @@ impl MicSettings {
     pub fn with_channels(mut self, channels: MicChannels) -> Self {
         self.channels = channels;
         self
+    }
+
+    /// Set input sensitivity (linear; `1.0` = unity, clamped to 0..=8).
+    #[inline]
+    pub fn with_gain(mut self, gain: f32) -> Self {
+        self.gain = gain.clamp(*Self::GAIN_RANGE.start(), *Self::GAIN_RANGE.end());
+        self
+    }
+
+    #[inline]
+    pub fn with_auto_gain(mut self, auto_gain: bool) -> Self {
+        self.auto_gain = auto_gain;
+        self
+    }
+
+    /// Manual gain with out-of-range values clamped.
+    #[inline]
+    pub fn clamped_gain(&self) -> f32 {
+        if self.gain.is_finite() {
+            self.gain
+                .clamp(*Self::GAIN_RANGE.start(), *Self::GAIN_RANGE.end())
+        } else {
+            1.0
+        }
     }
 
     /// Device name to open, treating blank selections as "use the OS default".
@@ -662,9 +699,16 @@ fn dedupe_labels(names: &[String]) -> Vec<String> {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct MicDenoiseSettings {
     pub enabled: bool,
+    /// Noise-gate threshold as a linear amplitude (0..=1). Samples below it
+    /// are attenuated by `reduction`.
     pub noise_floor: f32,
+    /// How much of a below-floor sample is removed (0 = gate off, 1 = full mute).
     pub reduction: f32,
     pub high_pass: bool,
+    /// High-pass corner frequency in Hz (rumble/handling-noise cut). The
+    /// filter coefficient is derived from the actual stream rate, so the cut
+    /// lands at the same frequency on a 44.1 kHz headset and a 96 kHz interface.
+    pub high_pass_hz: f32,
 }
 
 impl MicDenoiseSettings {
@@ -674,6 +718,7 @@ impl MicDenoiseSettings {
             noise_floor: 0.02,
             reduction: 0.75,
             high_pass: true,
+            high_pass_hz: 60.0,
         }
     }
 
@@ -683,7 +728,39 @@ impl MicDenoiseSettings {
             noise_floor: 0.02,
             reduction: 0.75,
             high_pass: true,
+            high_pass_hz: 90.0,
         }
+    }
+
+    /// Aggressive cleanup for noisy rooms / laptop mics: deeper gate and a
+    /// higher rumble cut than [`Self::voice`].
+    pub fn strong() -> Self {
+        Self {
+            enabled: true,
+            noise_floor: 0.04,
+            reduction: 0.9,
+            high_pass: true,
+            high_pass_hz: 120.0,
+        }
+    }
+
+    #[inline]
+    pub fn with_noise_floor(mut self, noise_floor: f32) -> Self {
+        self.noise_floor = noise_floor.clamp(0.0, 1.0);
+        self
+    }
+
+    #[inline]
+    pub fn with_reduction(mut self, reduction: f32) -> Self {
+        self.reduction = reduction.clamp(0.0, 1.0);
+        self
+    }
+
+    #[inline]
+    pub fn with_high_pass_hz(mut self, hz: f32) -> Self {
+        self.high_pass = hz > 0.0;
+        self.high_pass_hz = hz.clamp(0.0, 1_000.0);
+        self
     }
 }
 
@@ -693,18 +770,26 @@ impl Default for MicDenoiseSettings {
     }
 }
 
+/// One-pole high-pass coefficient for a corner frequency at a stream rate.
+fn high_pass_coefficient(hz: f32, sample_rate: u32) -> f32 {
+    let rate = (sample_rate.max(1)) as f32;
+    (1.0 - (std::f32::consts::TAU * hz.clamp(0.0, 1_000.0) / rate)).clamp(0.5, 0.999_99)
+}
+
 #[derive(Clone, Copy, Debug)]
 struct MicDenoiseState {
     settings: MicDenoiseSettings,
+    high_pass_coeff: f32,
     prev_input: f32,
     prev_output: f32,
     gain: f32,
 }
 
 impl MicDenoiseState {
-    fn new(settings: MicDenoiseSettings) -> Self {
+    fn new(settings: MicDenoiseSettings, sample_rate: u32) -> Self {
         Self {
             settings,
+            high_pass_coeff: high_pass_coefficient(settings.high_pass_hz, sample_rate),
             prev_input: 0.0,
             prev_output: 0.0,
             gain: 1.0,
@@ -716,16 +801,6 @@ impl MicDenoiseState {
         (self.process_f32(sample) * i16::MAX as f32) as i16
     }
 
-    /// Pass samples through untouched while denoise is off.
-    #[cfg(not(target_arch = "wasm32"))]
-    fn apply(&mut self, sample: i16) -> i16 {
-        if self.settings.enabled {
-            self.process_i16(sample)
-        } else {
-            sample
-        }
-    }
-
     fn process_f32(&mut self, sample: f32) -> f32 {
         if !self.settings.enabled {
             return sample.clamp(-1.0, 1.0);
@@ -733,7 +808,7 @@ impl MicDenoiseState {
 
         let mut out = sample.clamp(-1.0, 1.0);
         if self.settings.high_pass {
-            let high = out - self.prev_input + 0.995 * self.prev_output;
+            let high = out - self.prev_input + self.high_pass_coeff * self.prev_output;
             self.prev_input = out;
             self.prev_output = high;
             out = high;
@@ -749,6 +824,69 @@ impl MicDenoiseState {
         let smoothing = if target_gain < self.gain { 0.02 } else { 0.2 };
         self.gain += (target_gain - self.gain) * smoothing;
         (out * self.gain).clamp(-1.0, 1.0)
+    }
+}
+
+/// Per-sample capture processing: manual gain -> auto gain -> denoise.
+/// Also tracks the live input level the settings-menu meter reads.
+#[cfg(not(target_arch = "wasm32"))]
+struct MicProcessState {
+    gain: f32,
+    auto_gain: bool,
+    /// Smoothed AGC boost, 1.0..=AGC_MAX_BOOST.
+    agc_boost: f32,
+    /// Smoothed peak follower feeding the AGC.
+    agc_peak: f32,
+    denoise: MicDenoiseState,
+    /// True when every stage is a no-op, so the hot path can skip f32 round-trips.
+    passthrough: bool,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl MicProcessState {
+    /// Peak level the AGC steers toward (~-12 dBFS speech comfort zone).
+    const AGC_TARGET_PEAK: f32 = 0.25;
+    const AGC_MAX_BOOST: f32 = 4.0;
+
+    fn new(settings: &MicSettings, sample_rate: u32) -> Self {
+        let gain = settings.clamped_gain();
+        Self {
+            gain,
+            auto_gain: settings.auto_gain,
+            agc_boost: 1.0,
+            agc_peak: 0.0,
+            denoise: MicDenoiseState::new(settings.denoise, sample_rate),
+            passthrough: (gain - 1.0).abs() < f32::EPSILON
+                && !settings.auto_gain
+                && !settings.denoise.enabled,
+        }
+    }
+
+    fn apply(&mut self, sample: i16) -> i16 {
+        if self.passthrough {
+            return sample;
+        }
+        let mut value = sample as f32 / i16::MAX as f32;
+        value *= self.gain;
+        if self.auto_gain {
+            // Slow peak follower: fast attack on loud input, slow decay.
+            let magnitude = value.abs().min(1.0);
+            if magnitude > self.agc_peak {
+                self.agc_peak += (magnitude - self.agc_peak) * 0.05;
+            } else {
+                self.agc_peak *= 0.999_8;
+            }
+            // Only steer while there is signal to measure; silence keeps the
+            // current boost instead of winding it up to max.
+            if self.agc_peak > 0.005 {
+                let target =
+                    (Self::AGC_TARGET_PEAK / self.agc_peak).clamp(1.0, Self::AGC_MAX_BOOST);
+                self.agc_boost += (target - self.agc_boost) * 0.001;
+            }
+            value *= self.agc_boost;
+        }
+        let value = self.denoise.process_f32(value);
+        (value.clamp(-1.0, 1.0) * i16::MAX as f32) as i16
     }
 }
 
@@ -789,6 +927,11 @@ struct MicShared {
     /// Stream opened and not yet stopped, even after a device error.
     armed: Arc<AtomicBool>,
     error: Arc<Mutex<Option<String>>>,
+    /// Live input peak (0..=1, f32 bits) for level meters / sensitivity UIs.
+    level: Arc<std::sync::atomic::AtomicU32>,
+    /// Non-fatal capture health hint (e.g. the stream is delivering pure
+    /// silence, which usually means an OS microphone-permission block).
+    diagnostic: Arc<Mutex<Option<String>>>,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -801,12 +944,20 @@ impl MicShared {
             listening: Arc::new(AtomicBool::new(false)),
             armed: Arc::new(AtomicBool::new(false)),
             error: Arc::new(Mutex::new(None)),
+            level: Arc::new(std::sync::atomic::AtomicU32::new(0)),
+            diagnostic: Arc::new(Mutex::new(None)),
         }
     }
 
     fn set_error(&self, err: Option<String>) {
         if let Ok(mut slot) = self.error.lock() {
             *slot = err;
+        }
+    }
+
+    fn set_diagnostic(&self, hint: Option<String>) {
+        if let Ok(mut slot) = self.diagnostic.lock() {
+            *slot = hint;
         }
     }
 }
@@ -876,6 +1027,33 @@ impl MicRecorder {
         {
             let error = self.shared.error.lock().ok()?;
             error.clone()
+        }
+    }
+
+    /// Live input peak, 0..=1. Drives level meters and sensitivity UIs.
+    pub fn level(&self) -> f32 {
+        #[cfg(target_arch = "wasm32")]
+        {
+            0.0
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            f32::from_bits(self.shared.level.load(Ordering::Relaxed)).clamp(0.0, 1.0)
+        }
+    }
+
+    /// Non-fatal capture health hint while listening. Set when the stream
+    /// keeps delivering pure silence — the classic symptom of an OS
+    /// microphone-permission block rather than a broken device.
+    pub fn diagnostic(&self) -> Option<String> {
+        #[cfg(target_arch = "wasm32")]
+        {
+            None
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let diagnostic = self.shared.diagnostic.lock().ok()?;
+            diagnostic.clone()
         }
     }
 
@@ -1003,6 +1181,8 @@ fn mic_worker(rx: std::sync::mpsc::Receiver<MicCommand>, shared: MicShared) {
                 _active = None;
                 shared.listening.store(false, Ordering::Relaxed);
                 shared.armed.store(false, Ordering::Relaxed);
+                shared.level.store(0.0_f32.to_bits(), Ordering::Relaxed);
+                shared.set_diagnostic(None);
                 let _ = reply.send(());
             }
         }
@@ -1013,12 +1193,20 @@ fn mic_worker(rx: std::sync::mpsc::Receiver<MicCommand>, shared: MicShared) {
 #[cfg(not(target_arch = "wasm32"))]
 const MIC_TARGET_RATE: u32 = 48_000;
 
+/// Where to point users when every open fails or capture is silent: the two
+/// desktop OSes both ship a global microphone kill-switch that games trip over.
+#[cfg(not(target_arch = "wasm32"))]
+const MIC_PERMISSION_HINT: &str = "check OS microphone permissions \
+    (Windows: Settings > Privacy & security > Microphone; \
+    macOS: System Settings > Privacy & Security > Microphone; \
+    Linux: verify the default ALSA/Pulse/PipeWire input)";
+
 #[cfg(not(target_arch = "wasm32"))]
 fn start_stream(
     settings: &MicSettings,
     shared: &MicShared,
 ) -> Result<(cpal::Stream, MicStreamMeta), String> {
-    use cpal::traits::{DeviceTrait, StreamTrait};
+    use cpal::traits::HostTrait;
 
     if let Ok(mut samples) = shared.samples.lock() {
         samples.clear();
@@ -1026,22 +1214,72 @@ fn start_stream(
     if let Ok(mut cursor) = shared.cursor.lock() {
         *cursor = 0;
     }
+    shared
+        .level
+        .store(0.0_f32.to_bits(), Ordering::Relaxed);
+    shared.set_diagnostic(None);
 
     let host = cpal::default_host();
-    let (device, device_name) = open_input_device(&host, settings.requested_device())?;
-    let config = negotiate_input_config(&device)?;
+    // Explicit selection is the developer's call: fail loud so their fallback
+    // logic (resolve_mic_device + rescan) can run.
+    if settings.requested_device().is_some() {
+        let (device, device_name) = open_input_device(&host, settings.requested_device())?;
+        return open_stream_on(&device, device_name, settings, shared);
+    }
+
+    // Default capture: never give up after one device. ALSA reports a blind
+    // "default" PCM that may not open, Windows privacy settings can block a
+    // single endpoint, and exclusive-mode holds fail per device - so walk the
+    // default first, then every other input the host can see.
+    let mut candidates: Vec<cpal::Device> = Vec::new();
+    if let Some(device) = host.default_input_device() {
+        candidates.push(device);
+    }
+    if let Ok(devices) = host.input_devices() {
+        candidates.extend(devices);
+    }
+    if candidates.is_empty() {
+        return Err(format!("no mic input devices found; {MIC_PERMISSION_HINT}"));
+    }
+    let mut errors: Vec<String> = Vec::new();
+    let mut tried: Vec<String> = Vec::new();
+    for device in candidates {
+        use cpal::traits::DeviceTrait;
+        let name = device
+            .name()
+            .unwrap_or_else(|_| "default input".to_string());
+        if tried.iter().any(|seen| *seen == name) {
+            continue;
+        }
+        tried.push(name.clone());
+        match open_stream_on(&device, name, settings, shared) {
+            Ok(opened) => return Ok(opened),
+            Err(err) => errors.push(err),
+        }
+    }
+    Err(format!(
+        "every mic input failed to open ({}); {MIC_PERMISSION_HINT}",
+        errors.join(" | ")
+    ))
+}
+
+/// Negotiate a format on one device and start the capture stream on it.
+#[cfg(not(target_arch = "wasm32"))]
+fn open_stream_on(
+    device: &cpal::Device,
+    device_name: String,
+    settings: &MicSettings,
+    shared: &MicShared,
+) -> Result<(cpal::Stream, MicStreamMeta), String> {
+    use cpal::traits::{DeviceTrait, StreamTrait};
+
+    let config = negotiate_input_config(device)?;
     let sample_rate = config.sample_rate().0;
     let src_channels = config.channels().max(1);
     let out_channels = settings.channels.output_channels(src_channels);
     let max_samples = ((settings.max_seconds.max(0.1) * sample_rate as f32) as usize)
         .saturating_mul(out_channels as usize);
-    let sink = MicSink::new(
-        shared,
-        max_samples,
-        settings.denoise,
-        src_channels,
-        out_channels,
-    );
+    let sink = MicSink::new(shared, max_samples, settings, sample_rate, src_channels, out_channels);
 
     let err_listening = Arc::clone(&shared.listening);
     let err_slot = Arc::clone(&shared.error);
@@ -1235,25 +1473,37 @@ fn average_i16(frame: &[i16]) -> i16 {
     (sum / frame.len() as i32).clamp(i16::MIN as i32, i16::MAX as i32) as i16
 }
 
-/// Audio-callback side of capture: convert, fold, denoise, append, trim.
+/// Audio-callback side of capture: convert, fold, gain/denoise, append, trim.
+/// Also feeds the live level meter and the pure-silence diagnostic.
 #[cfg(not(target_arch = "wasm32"))]
 struct MicSink {
     out: Arc<Mutex<Vec<i16>>>,
     cursor: Arc<Mutex<usize>>,
     max_samples: usize,
-    denoise: MicDenoiseState,
+    process: MicProcessState,
     src_channels: usize,
     /// Partial frame carried over when a callback splits one.
     frame: Vec<i16>,
     fold: bool,
+    level: Arc<std::sync::atomic::AtomicU32>,
+    diagnostic: Arc<Mutex<Option<String>>>,
+    /// Consecutive exactly-zero raw samples seen so far.
+    silence_run: usize,
+    /// Raw-sample count that flips the silence diagnostic (~2s of capture).
+    silence_limit: usize,
+    silence_flagged: bool,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 impl MicSink {
+    /// Meter decay per callback batch; keeps the bar responsive but not jittery.
+    const LEVEL_DECAY: f32 = 0.85;
+
     fn new(
         shared: &MicShared,
         max_samples: usize,
-        denoise: MicDenoiseSettings,
+        settings: &MicSettings,
+        sample_rate: u32,
         src_channels: u16,
         out_channels: u16,
     ) -> Self {
@@ -1262,39 +1512,89 @@ impl MicSink {
             out: Arc::clone(&shared.samples),
             cursor: Arc::clone(&shared.cursor),
             max_samples,
-            denoise: MicDenoiseState::new(denoise),
+            process: MicProcessState::new(settings, sample_rate),
             src_channels,
             frame: Vec::with_capacity(src_channels),
             fold: (out_channels.max(1) as usize) < src_channels,
+            level: Arc::clone(&shared.level),
+            diagnostic: Arc::clone(&shared.diagnostic),
+            silence_run: 0,
+            silence_limit: (sample_rate.max(1) as usize)
+                .saturating_mul(src_channels)
+                .saturating_mul(2),
+            silence_flagged: false,
         }
     }
 
     fn push<I: IntoIterator<Item = i16>>(&mut self, data: I) {
-        let Self {
-            out,
-            cursor,
-            max_samples,
-            denoise,
-            src_channels,
-            frame,
-            fold,
-        } = self;
-        let Ok(mut samples) = out.lock() else {
-            return;
-        };
-        if *fold {
-            for sample in data {
-                frame.push(sample);
-                if frame.len() >= *src_channels {
-                    let mono = average_i16(frame);
-                    frame.clear();
-                    samples.push(denoise.apply(mono));
+        let mut batch_peak: i16 = 0;
+        {
+            // Detach the guard's borrow from `self` so the loop can call
+            // `&mut self` helpers while the lock is held.
+            let out = Arc::clone(&self.out);
+            let Ok(mut samples) = out.lock() else {
+                return;
+            };
+            if self.fold {
+                for sample in data {
+                    self.track_silence(sample);
+                    self.frame.push(sample);
+                    if self.frame.len() >= self.src_channels {
+                        let mono = average_i16(&self.frame);
+                        self.frame.clear();
+                        let processed = self.process.apply(mono);
+                        batch_peak = batch_peak.max(processed.saturating_abs());
+                        samples.push(processed);
+                    }
+                }
+            } else {
+                for sample in data {
+                    self.track_silence(sample);
+                    let processed = self.process.apply(sample);
+                    batch_peak = batch_peak.max(processed.saturating_abs());
+                    samples.push(processed);
                 }
             }
-        } else {
-            samples.extend(data.into_iter().map(|sample| denoise.apply(sample)));
+            trim_samples(&mut samples, &self.cursor, self.max_samples);
         }
-        trim_samples(&mut samples, cursor, *max_samples);
+        self.publish_level(batch_peak);
+        self.publish_silence_diagnostic();
+    }
+
+    /// Track consecutive exactly-zero RAW samples. Gain and denoise can zero a
+    /// quiet signal legitimately, but a permission-blocked stream delivers
+    /// bit-perfect zeros from the OS - real rooms always carry noise floor.
+    fn track_silence(&mut self, raw: i16) {
+        if raw == 0 {
+            self.silence_run = self.silence_run.saturating_add(1);
+        } else {
+            self.silence_run = 0;
+        }
+    }
+
+    fn publish_level(&self, batch_peak: i16) {
+        let peak = batch_peak as f32 / i16::MAX as f32;
+        let previous = f32::from_bits(self.level.load(Ordering::Relaxed));
+        let next = peak.max(previous * Self::LEVEL_DECAY);
+        self.level.store(next.to_bits(), Ordering::Relaxed);
+    }
+
+    fn publish_silence_diagnostic(&mut self) {
+        if self.silence_run >= self.silence_limit {
+            if !self.silence_flagged {
+                self.silence_flagged = true;
+                if let Ok(mut slot) = self.diagnostic.lock() {
+                    *slot = Some(format!(
+                        "mic is capturing pure silence; {MIC_PERMISSION_HINT}"
+                    ));
+                }
+            }
+        } else if self.silence_flagged && self.silence_run == 0 {
+            self.silence_flagged = false;
+            if let Ok(mut slot) = self.diagnostic.lock() {
+                *slot = None;
+            }
+        }
     }
 }
 
@@ -1395,6 +1695,7 @@ mod tests {
             noise_floor: 0.02,
             reduction: 0.9,
             high_pass: false,
+            high_pass_hz: 0.0,
         });
         assert!(denoised.samples[0].abs() < clip.samples[0].abs());
         assert!(denoised.samples[1].abs() > 10_000);
@@ -1619,11 +1920,26 @@ mod capture_tests {
 
     /// Sink writing into a fresh buffer, standing in for the audio callback.
     fn sink(src_channels: u16, max_samples: usize, mode: MicChannels) -> (MicSink, MicShared) {
+        sink_with(
+            src_channels,
+            max_samples,
+            mode,
+            super::MicSettings::default(),
+        )
+    }
+
+    fn sink_with(
+        src_channels: u16,
+        max_samples: usize,
+        mode: MicChannels,
+        settings: super::MicSettings,
+    ) -> (MicSink, MicShared) {
         let shared = MicShared::new();
         let sink = MicSink::new(
             &shared,
             max_samples,
-            MicDenoiseSettings::off(),
+            &settings,
+            48_000,
             src_channels,
             mode.output_channels(src_channels),
         );
@@ -1732,8 +2048,12 @@ mod capture_tests {
 
     #[test]
     fn sink_applies_denoise_after_the_fold() {
-        let shared = MicShared::new();
-        let mut sink = MicSink::new(&shared, 0, MicDenoiseSettings::voice(), 4, 1);
+        let (mut sink, shared) = sink_with(
+            4,
+            0,
+            MicChannels::Mono,
+            super::MicSettings::default().with_denoise(MicDenoiseSettings::voice()),
+        );
         sink.push([120i16; 8]);
         let samples = captured(&shared);
         assert_eq!(samples.len(), 2, "4ch frames fold to one sample each");
@@ -1784,6 +2104,113 @@ mod capture_tests {
         let ranges = [config_range(1, 16_000, 16_000, cpal::SampleFormat::F32)];
         let picked = pick_input_config(ranges).expect("convertible config");
         assert_eq!(picked.sample_rate().0, 16_000);
+    }
+
+    #[test]
+    fn sink_applies_manual_gain() {
+        let (mut sink, shared) = sink_with(
+            1,
+            0,
+            MicChannels::Auto,
+            super::MicSettings::default().with_gain(2.0),
+        );
+        sink.push([1_000i16, -1_000]);
+        let samples = captured(&shared);
+        assert!((samples[0] - 2_000).abs() <= 1, "gain 2x: {samples:?}");
+        assert!((samples[1] + 2_000).abs() <= 1, "gain 2x: {samples:?}");
+    }
+
+    #[test]
+    fn gain_clamps_out_of_range_and_non_finite() {
+        assert_eq!(
+            super::MicSettings::default().with_gain(100.0).gain,
+            *super::MicSettings::GAIN_RANGE.end()
+        );
+        assert_eq!(super::MicSettings::default().with_gain(-3.0).gain, 0.0);
+        let mut broken = super::MicSettings::default();
+        broken.gain = f32::NAN;
+        assert_eq!(broken.clamped_gain(), 1.0);
+    }
+
+    #[test]
+    fn auto_gain_boosts_quiet_input_over_time() {
+        let (mut sink, _shared) = sink_with(
+            1,
+            0,
+            MicChannels::Auto,
+            super::MicSettings::default().with_auto_gain(true),
+        );
+        // ~0.05 amplitude speech stand-in, well under the 0.25 target peak.
+        sink.push(std::iter::repeat_n(1_638i16, 20_000));
+        assert!(
+            sink.process.agc_boost > 1.05,
+            "agc boost stays {}",
+            sink.process.agc_boost
+        );
+        assert!(sink.process.agc_boost <= super::MicProcessState::AGC_MAX_BOOST);
+    }
+
+    #[test]
+    fn level_meter_tracks_peak_and_decays() {
+        let (mut sink, shared) = sink_with(1, 0, MicChannels::Auto, super::MicSettings::default());
+        sink.push([i16::MAX]);
+        let peak = f32::from_bits(shared.level.load(std::sync::atomic::Ordering::Relaxed));
+        assert!(peak > 0.99, "meter after full-scale sample: {peak}");
+        sink.push([0i16]);
+        let decayed = f32::from_bits(shared.level.load(std::sync::atomic::Ordering::Relaxed));
+        assert!(decayed < peak, "meter decays: {decayed} vs {peak}");
+        assert!(decayed > 0.5, "decay is gradual: {decayed}");
+    }
+
+    #[test]
+    fn pure_silence_sets_and_clears_permission_diagnostic() {
+        let (mut sink, shared) = sink_with(1, 0, MicChannels::Auto, super::MicSettings::default());
+        sink.silence_limit = 4;
+        sink.push([0i16; 5]);
+        let hint = shared
+            .diagnostic
+            .lock()
+            .expect("lock diagnostic")
+            .clone()
+            .expect("silence diagnostic set");
+        assert!(hint.contains("permission"), "hint mentions permissions: {hint}");
+        // Real signal clears the hint: the mic was just muted, not blocked.
+        sink.push([500i16]);
+        assert!(shared.diagnostic.lock().expect("lock diagnostic").is_none());
+    }
+
+    #[test]
+    fn quiet_but_nonzero_input_never_flags_silence() {
+        let (mut sink, shared) = sink_with(1, 0, MicChannels::Auto, super::MicSettings::default());
+        sink.silence_limit = 4;
+        sink.push([1i16, 0, -1, 0, 1, 0, -1, 0, 1, 0]);
+        assert!(shared.diagnostic.lock().expect("lock diagnostic").is_none());
+    }
+
+    #[test]
+    fn high_pass_coefficient_follows_stream_rate() {
+        let at_48k = super::high_pass_coefficient(100.0, 48_000);
+        let at_96k = super::high_pass_coefficient(100.0, 96_000);
+        assert!(at_96k > at_48k, "same Hz cut needs a softer pole at 96k");
+        assert!(super::high_pass_coefficient(0.0, 48_000) <= 1.0);
+        assert!(super::high_pass_coefficient(10_000.0, 8_000) >= 0.5);
+    }
+
+    #[test]
+    fn strong_denoise_preset_gates_deeper_than_voice() {
+        let voice = MicDenoiseSettings::voice();
+        let strong = MicDenoiseSettings::strong();
+        assert!(strong.noise_floor > voice.noise_floor);
+        assert!(strong.reduction > voice.reduction);
+        assert!(strong.high_pass_hz > voice.high_pass_hz);
+        let tuned = MicDenoiseSettings::voice()
+            .with_noise_floor(0.1)
+            .with_reduction(0.5)
+            .with_high_pass_hz(200.0);
+        assert_eq!(tuned.noise_floor, 0.1);
+        assert_eq!(tuned.reduction, 0.5);
+        assert_eq!(tuned.high_pass_hz, 200.0);
+        assert!(tuned.high_pass);
     }
 
     #[test]

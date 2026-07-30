@@ -25,7 +25,9 @@
 - Push-to-talk voice chat: `mic_start_stream!` while the key is held, drain packets with `mic_get_bytes!`, and send them over your own transport.
 - Playing received voice: decode a peer's packet with `mic_unpack!` and hand the clip to the audio bus with `audio_play_clip!`.
 - Voice memos / clip recording: `mic_start!`, then `mic_stop!` to take the full buffer, and `mic_save_wav!` to store it.
-- Noise-gated voice: capture with `MicDenoiseSettings::voice()` or clean an existing clip with `MicClip::denoised`.
+- Noise-gated voice: capture with `MicDenoiseSettings::voice()` (or `::strong()` for noisy rooms) or clean an existing clip with `MicClip::denoised`.
+- Sensitivity slider + level bar in the audio settings menu: set input gain with `MicSettings::with_gain`, enable `with_auto_gain(true)` for hands-off leveling, and drive the meter each frame with `mic_level!`.
+- "Why is my mic silent?" support flow: show `mic_diagnostic!` text when the level bar stays at zero — it flags an OS microphone-permission block.
 - Voice-driven mechanics: read the rolling buffer with `mic_clip!` to measure loudness for a "shout to scare enemies" or lip-sync feature.
 - Bandwidth-friendly networking: pack a clip with `mic_pack!` to the smallest `PMIC` codec before sending.
 
@@ -76,6 +78,8 @@ Proximity chat split:
 - Native backend: `cpal` (WASAPI on Windows, CoreAudio on macOS, ALSA on Linux)
 - Devices: any OS input works, so USB, XLR through an interface, headset, wireless, and virtual-cable mics all list and open
 - Format: rate, channel count, and sample format come from the device; f32, i16, and u16 streams all convert to the `MicClip` i16 format
+- Default capture never gives up after one device: when no name is set and the OS default fails to open (missing ALSA default, per-endpoint privacy block), every other visible input is tried before erroring
+- All-fail errors and the silent-capture diagnostic both point at the OS microphone permission pages, the most common reason a shipped game "has no mic"
 - Wasm backend: unsupported, device scan returns an empty list and capture returns an error or empty clip
 - Audio output: use `ctx.res.Audio()` with `MicClip`
 
@@ -370,6 +374,24 @@ Call `device.settings()` for default capture settings already aimed at that devi
 | Returns   | `Option<String>`                                             |
 | Use when  | Report why capture stopped, including a mic unplugged mid-stream. |
 
+### `level`
+
+| Field     | Detail                                                          |
+| --------- | --------------------------------------------------------------- |
+| Access    | `ctx.res.Mic()`                                                 |
+| Signature | `pub fn level(&self) -> f32`                                    |
+| Returns   | `f32` in `0.0..=1.0`                                            |
+| Use when  | Draw the live input meter next to the sensitivity slider. Reads the post-gain peak, so the bar matches what gets recorded. |
+
+### `diagnostic`
+
+| Field     | Detail                                                          |
+| --------- | --------------------------------------------------------------- |
+| Access    | `ctx.res.Mic()`                                                 |
+| Signature | `pub fn diagnostic(&self) -> Option<String>`                    |
+| Returns   | `Option<String>`                                                |
+| Use when  | Capture runs but stays silent. Set after ~2s of bit-perfect zero input — the classic OS microphone-permission block — and cleared as soon as real signal arrives. |
+
 ### `start_listening`
 
 | Field     | Detail                                                |
@@ -405,8 +427,10 @@ Call `device.settings()` for default capture settings already aimed at that devi
 | `denoise`     | `MicDenoiseSettings` | Capture-time denoise settings.                                |
 | `device`      | `Option<String>`     | Device name from `devices()`. `None` or blank opens the OS default. |
 | `channels`    | `MicChannels`        | Clip channel layout.                                          |
+| `gain`        | `f32`                | Input sensitivity. Linear, `1.0` is unity, clamped to `0.0..=8.0`. Wire it to the settings-menu slider. |
+| `auto_gain`   | `bool`               | Slow automatic level on top of `gain`: boosts quiet mics toward speech level, capped at 4x, never cuts. Good default for voice chat. |
 
-Builders: `with_device`, `with_default_device`, `with_max_seconds`, `with_denoise`, `with_channels`.
+Builders: `with_device`, `with_default_device`, `with_max_seconds`, `with_denoise`, `with_channels`, `with_gain`, `with_auto_gain`.
 
 ### `MicChannels`
 
@@ -420,15 +444,16 @@ Folding averages the channels of each frame, so an 8-in interface with one live 
 
 ### `MicDenoiseSettings`
 
-| Field         | Type   | Detail                                      |
-| ------------- | ------ | ------------------------------------------- |
-| `enabled`     | `bool` | Enable denoise pass.                        |
-| `noise_floor` | `f32`  | Samples below this level get reduced.       |
-| `reduction`   | `f32`  | Quiet-sample gain cut, from `0.0` to `1.0`. |
-| `high_pass`   | `bool` | Remove low rumble/DC drift.                 |
+| Field          | Type   | Detail                                                            |
+| -------------- | ------ | ----------------------------------------------------------------- |
+| `enabled`      | `bool` | Enable denoise pass.                                              |
+| `noise_floor`  | `f32`  | Noise-gate threshold, linear `0.0..=1.0`. Samples below it get reduced. |
+| `reduction`    | `f32`  | Quiet-sample gain cut, from `0.0` (off) to `1.0` (full mute).     |
+| `high_pass`    | `bool` | Remove low rumble/DC drift.                                       |
+| `high_pass_hz` | `f32`  | Rumble-cut corner frequency in Hz. Tracks the device's real rate, so the cut lands the same on a 44.1 kHz headset and a 96 kHz interface. |
 
-Use `MicDenoiseSettings::voice()` for a default voice gate.
-Use `MicDenoiseSettings::off()` to disable it.
+Presets: `MicDenoiseSettings::off()`, `::voice()` for a default voice gate, `::strong()` for noisy rooms and laptop mics.
+Builders for the settings-menu knobs: `with_noise_floor`, `with_reduction`, `with_high_pass_hz`.
 
 ### `denoised`
 
@@ -561,6 +586,8 @@ Use `MicDenoiseSettings::off()` to disable it.
 | `mic_start_on!(ctx.res, name, settings)`            | `ctx.res.Mic().start_on_with(name, settings)`       |
 | `mic_device!(ctx.res)`                              | `ctx.res.Mic().device()`                            |
 | `mic_last_error!(ctx.res)`                          | `ctx.res.Mic().last_error()`                        |
+| `mic_level!(ctx.res)`                               | `ctx.res.Mic().level()`                             |
+| `mic_diagnostic!(ctx.res)`                          | `ctx.res.Mic().diagnostic()`                        |
 | `mic_start!(ctx.res)`                               | `ctx.res.Mic().start_listening()`                   |
 | `mic_start!(ctx.res, settings)`                     | `ctx.res.Mic().start_with(settings)`                |
 | `mic_start_listening!(ctx.res)`                     | `ctx.res.Mic().start_listening()`                   |

@@ -12,6 +12,8 @@ pub trait MicAPI {
     fn mic_is_listening(&self) -> bool;
     fn mic_device(&self) -> Option<String>;
     fn mic_last_error(&self) -> Option<String>;
+    fn mic_level(&self) -> f32;
+    fn mic_diagnostic(&self) -> Option<String>;
     fn mic_save_wav(&self, source: &str, clip: &MicClip) -> Result<(), String>;
 }
 
@@ -157,6 +159,20 @@ impl<'res, R: MicAPI + ?Sized> MicModule<'res, R> {
         self.api.mic_last_error()
     }
 
+    /// Live input peak, 0..=1. Drives level meters and sensitivity sliders in
+    /// audio settings menus.
+    #[inline]
+    pub fn level(&self) -> f32 {
+        self.api.mic_level()
+    }
+
+    /// Non-fatal capture health hint. Set while the stream delivers pure
+    /// silence — the classic symptom of an OS microphone-permission block.
+    #[inline]
+    pub fn diagnostic(&self) -> Option<String> {
+        self.api.mic_diagnostic()
+    }
+
     #[inline]
     pub fn save_wav<S: ResPathSource>(&self, source: S, clip: &MicClip) -> Result<(), String> {
         self.api.mic_save_wav(source.as_res_path_str(), clip)
@@ -236,6 +252,20 @@ macro_rules! mic_device {
 macro_rules! mic_last_error {
     ($res:expr) => {
         $res.Mic().last_error()
+    };
+}
+
+#[macro_export]
+macro_rules! mic_level {
+    ($res:expr) => {
+        $res.Mic().level()
+    };
+}
+
+#[macro_export]
+macro_rules! mic_diagnostic {
+    ($res:expr) => {
+        $res.Mic().diagnostic()
     };
 }
 
@@ -452,6 +482,14 @@ mod tests {
         }
 
         fn mic_last_error(&self) -> Option<String> {
+            None
+        }
+
+        fn mic_level(&self) -> f32 {
+            0.0
+        }
+
+        fn mic_diagnostic(&self) -> Option<String> {
             None
         }
 

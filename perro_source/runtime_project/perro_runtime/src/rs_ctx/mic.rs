@@ -45,6 +45,14 @@ impl MicAPI for RuntimeResourceApi {
         self.mic.lock().ok()?.last_error()
     }
 
+    fn mic_level(&self) -> f32 {
+        self.mic.lock().map(|mic| mic.level()).unwrap_or(0.0)
+    }
+
+    fn mic_diagnostic(&self) -> Option<String> {
+        self.mic.lock().ok()?.diagnostic()
+    }
+
     fn mic_save_wav(&self, source: &str, clip: &MicClip) -> Result<(), String> {
         let bytes = clip.wav_bytes();
         if let Some(stripped) = source.strip_prefix("res://")
