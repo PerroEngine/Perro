@@ -1,8 +1,12 @@
 use super::core::RuntimeResourceApi;
 use perro_io::{ProjectRoot, get_project_root, save_asset};
-use perro_resource_api::sub_apis::{MicAPI, MicClip, MicSettings};
+use perro_resource_api::sub_apis::{MicAPI, MicClip, MicDevice, MicSettings};
 
 impl MicAPI for RuntimeResourceApi {
+    fn mic_devices(&self) -> Result<Vec<MicDevice>, String> {
+        perro_pawdio::mic_devices()
+    }
+
     fn mic_start(&self, settings: MicSettings) -> Result<(), String> {
         self.mic
             .lock()
@@ -31,6 +35,14 @@ impl MicAPI for RuntimeResourceApi {
             .lock()
             .map(|mic| mic.is_listening())
             .unwrap_or(false)
+    }
+
+    fn mic_device(&self) -> Option<String> {
+        self.mic.lock().ok()?.device()
+    }
+
+    fn mic_last_error(&self) -> Option<String> {
+        self.mic.lock().ok()?.last_error()
     }
 
     fn mic_save_wav(&self, source: &str, clip: &MicClip) -> Result<(), String> {
