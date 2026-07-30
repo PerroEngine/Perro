@@ -8,10 +8,6 @@ impl PerroGraphics {
         decode_texture_source_rgba(source, static_texture_lookup)
     }
 
-    pub(super) fn decode_texture_file(source: &str) -> Option<(Vec<u8>, u32, u32)> {
-        load_texture_rgba(source)
-    }
-
     #[cfg(all(not(target_arch = "wasm32"), not(test)))]
     pub(super) fn start_async_mesh_load(
         &mut self,

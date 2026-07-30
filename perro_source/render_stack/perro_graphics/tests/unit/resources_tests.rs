@@ -626,7 +626,12 @@ fn idle_sweep_skips_pinned_and_non_redecodable_sources() {
     for _ in 0..20 {
         let _ = store.evict_idle_decoded_textures(2);
     }
-    assert!(store.decoded_texture_data(stream).expect("stream").has_pixels());
+    assert!(
+        store
+            .decoded_texture_data(stream)
+            .expect("stream")
+            .has_pixels()
+    );
     assert!(
         store
             .decoded_texture_data(runtime)

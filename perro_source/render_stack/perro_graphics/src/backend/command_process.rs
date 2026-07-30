@@ -364,10 +364,8 @@ impl PerroGraphics {
                             .is_some_and(|decoded| !decoded.has_pixels())
                             && let Some(source) =
                                 self.resources.texture_source(id).map(str::to_owned)
-                            && let Some(restored) = Self::decode_texture_source(
-                                &source,
-                                self.static_texture_lookup,
-                            )
+                            && let Some(restored) =
+                                Self::decode_texture_source(&source, self.static_texture_lookup)
                         {
                             let _ = self.resources.set_decoded_texture_data(id, restored);
                         }
@@ -514,10 +512,7 @@ impl PerroGraphics {
                         // kind) can alter the compiled pipeline.
                         let pipeline_shape_changed =
                             match (self.resources.material_ref(id), &material) {
-                                (
-                                    Some(Material3D::Custom(old)),
-                                    Material3D::Custom(new),
-                                ) => {
+                                (Some(Material3D::Custom(old)), Material3D::Custom(new)) => {
                                     old.shader_path != new.shader_path
                                         || old.lighting != new.lighting
                                         || old.images != new.images

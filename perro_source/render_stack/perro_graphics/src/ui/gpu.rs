@@ -1004,10 +1004,9 @@ impl GpuUi {
         let decoded = match resources.decoded_texture_data(texture_key) {
             Some(decoded) if decoded.has_pixels() => decoded,
             _ => {
-                let Some(restored) = crate::backend::decode_texture_source_rgba(
-                    source,
-                    static_texture_lookup,
-                ) else {
+                let Some(restored) =
+                    crate::backend::decode_texture_source_rgba(source, static_texture_lookup)
+                else {
                     return false;
                 };
                 redecoded = restored;

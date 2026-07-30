@@ -243,10 +243,8 @@ impl Gpu3D {
             (decoded.rgba.clone(), decoded.width, decoded.height)
         } else if evicted {
             // resident copy reclaimed by the idle sweep: re-decode from source.
-            match crate::backend::decode_texture_source_rgba(
-                source.as_str(),
-                static_texture_lookup,
-            ) {
+            match crate::backend::decode_texture_source_rgba(source.as_str(), static_texture_lookup)
+            {
                 Some(decoded) => (decoded.rgba, decoded.width, decoded.height),
                 None => {
                     self.material_textures.remove(&slot);
@@ -325,31 +323,30 @@ impl Gpu3D {
         }
         let registered = resources.decoded_texture_data_by_source(source);
         let evicted = registered.is_some_and(|decoded| !decoded.has_pixels());
-        let (rgba, width, height) = if let Some(decoded) =
-            registered.filter(|decoded| decoded.has_pixels())
-        {
-            (decoded.rgba.clone(), decoded.width, decoded.height)
-        } else if evicted {
-            // resident copy reclaimed by the idle sweep: re-decode from source.
-            match crate::backend::decode_texture_source_rgba(source, static_texture_lookup) {
-                Some(decoded) => (decoded.rgba, decoded.width, decoded.height),
-                None => {
-                    self.material_textures.remove(&slot);
-                    self.evict_material_texture_bind_groups_for_slot(slot);
-                    return;
+        let (rgba, width, height) =
+            if let Some(decoded) = registered.filter(|decoded| decoded.has_pixels()) {
+                (decoded.rgba.clone(), decoded.width, decoded.height)
+            } else if evicted {
+                // resident copy reclaimed by the idle sweep: re-decode from source.
+                match crate::backend::decode_texture_source_rgba(source, static_texture_lookup) {
+                    Some(decoded) => (decoded.rgba, decoded.width, decoded.height),
+                    None => {
+                        self.material_textures.remove(&slot);
+                        self.evict_material_texture_bind_groups_for_slot(slot);
+                        return;
+                    }
                 }
-            }
-        } else if resources.has_texture_source(source) {
-            self.material_textures.remove(&slot);
-            self.evict_material_texture_bind_groups_for_slot(slot);
-            return;
-        } else if let Some(decoded) = load_texture_rgba(source) {
-            decoded
-        } else {
-            self.material_textures.remove(&slot);
-            self.evict_material_texture_bind_groups_for_slot(slot);
-            return;
-        };
+            } else if resources.has_texture_source(source) {
+                self.material_textures.remove(&slot);
+                self.evict_material_texture_bind_groups_for_slot(slot);
+                return;
+            } else if let Some(decoded) = load_texture_rgba(source) {
+                decoded
+            } else {
+                self.material_textures.remove(&slot);
+                self.evict_material_texture_bind_groups_for_slot(slot);
+                return;
+            };
         let cached = create_cached_material_texture(
             device,
             queue,

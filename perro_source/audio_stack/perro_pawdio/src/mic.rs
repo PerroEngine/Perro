@@ -698,7 +698,8 @@ fn enumerate_inputs() -> Result<Vec<EnumeratedInput>, String> {
     for (host, default_host) in input_hosts() {
         let host_name = host.id().name();
         let default_name = if default_host {
-            host.default_input_device().and_then(|device| device.name().ok())
+            host.default_input_device()
+                .and_then(|device| device.name().ok())
         } else {
             None
         };
@@ -1268,17 +1269,13 @@ fn start_stream(
     settings: &MicSettings,
     shared: &MicShared,
 ) -> Result<(cpal::Stream, MicStreamMeta), String> {
-    use cpal::traits::HostTrait;
-
     if let Ok(mut samples) = shared.samples.lock() {
         samples.clear();
     }
     if let Ok(mut cursor) = shared.cursor.lock() {
         *cursor = 0;
     }
-    shared
-        .level
-        .store(0.0_f32.to_bits(), Ordering::Relaxed);
+    shared.level.store(0.0_f32.to_bits(), Ordering::Relaxed);
     shared.set_diagnostic(None);
 
     // Explicit selection is the developer's call: fail loud so their fallback
@@ -1311,7 +1308,7 @@ fn start_stream(
     let mut errors: Vec<String> = Vec::new();
     let mut tried: Vec<String> = Vec::new();
     for (device, name) in candidates {
-        if tried.iter().any(|seen| *seen == name) {
+        if tried.contains(&name) {
             continue;
         }
         tried.push(name.clone());
@@ -1342,7 +1339,14 @@ fn open_stream_on(
     let out_channels = settings.channels.output_channels(src_channels);
     let max_samples = ((settings.max_seconds.max(0.1) * sample_rate as f32) as usize)
         .saturating_mul(out_channels as usize);
-    let sink = MicSink::new(shared, max_samples, settings, sample_rate, src_channels, out_channels);
+    let sink = MicSink::new(
+        shared,
+        max_samples,
+        settings,
+        sample_rate,
+        src_channels,
+        out_channels,
+    );
 
     let err_listening = Arc::clone(&shared.listening);
     let err_slot = Arc::clone(&shared.error);
@@ -2194,8 +2198,10 @@ mod capture_tests {
             *super::MicSettings::GAIN_RANGE.end()
         );
         assert_eq!(super::MicSettings::default().with_gain(-3.0).gain, 0.0);
-        let mut broken = super::MicSettings::default();
-        broken.gain = f32::NAN;
+        let broken = super::MicSettings {
+            gain: f32::NAN,
+            ..super::MicSettings::default()
+        };
         assert_eq!(broken.clamped_gain(), 1.0);
     }
 
@@ -2240,7 +2246,10 @@ mod capture_tests {
             .expect("lock diagnostic")
             .clone()
             .expect("silence diagnostic set");
-        assert!(hint.contains("permission"), "hint mentions permissions: {hint}");
+        assert!(
+            hint.contains("permission"),
+            "hint mentions permissions: {hint}"
+        );
         // Real signal clears the hint: the mic was just muted, not blocked.
         sink.push([500i16]);
         assert!(shared.diagnostic.lock().expect("lock diagnostic").is_none());

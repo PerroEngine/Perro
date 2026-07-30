@@ -720,7 +720,8 @@ impl ResourceStore {
             return false;
         }
         self.decoded_texture_by_id.insert(id, texture);
-        self.decoded_texture_stamp.insert(id, self.decoded_evict_clock);
+        self.decoded_texture_stamp
+            .insert(id, self.decoded_evict_clock);
         true
     }
 
@@ -803,7 +804,8 @@ impl ResourceStore {
         }
         // stream bytes exist only here; the idle sweep must not reclaim them.
         self.decoded_texture_pinned.insert(id);
-        self.decoded_texture_stamp.insert(id, self.decoded_evict_clock);
+        self.decoded_texture_stamp
+            .insert(id, self.decoded_evict_clock);
         true
     }
 
@@ -857,7 +859,8 @@ impl ResourceStore {
         }
         // the CPU copy now diverges from the source; never reclaim it.
         self.decoded_texture_pinned.insert(id);
-        self.decoded_texture_stamp.insert(id, self.decoded_evict_clock);
+        self.decoded_texture_stamp
+            .insert(id, self.decoded_evict_clock);
         true
     }
 
@@ -927,7 +930,11 @@ impl ResourceStore {
     }
 
     #[inline]
-    pub fn set_runtime_mesh_data_by_id(&mut self, id: MeshID, mesh: std::sync::Arc<Mesh3D>) -> bool {
+    pub fn set_runtime_mesh_data_by_id(
+        &mut self,
+        id: MeshID,
+        mesh: std::sync::Arc<Mesh3D>,
+    ) -> bool {
         if !self.has_mesh(id) {
             return false;
         }

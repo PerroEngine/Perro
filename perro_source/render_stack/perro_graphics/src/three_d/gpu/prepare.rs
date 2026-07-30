@@ -830,8 +830,7 @@ impl Gpu3D {
                         mesh_source,
                         static_texture_lookup,
                     );
-                    let material_texture_key =
-                        self.custom_material_image_key(
+                    let material_texture_key = self.custom_material_image_key(
                         device,
                         queue,
                         resources,
@@ -1148,14 +1147,13 @@ impl Gpu3D {
                             mesh_source,
                             static_texture_lookup,
                         );
-                        let material_texture_key =
-                            self.custom_material_image_key(
-                        device,
-                        queue,
-                        resources,
-                        material,
-                        static_texture_lookup,
-                    );
+                        let material_texture_key = self.custom_material_image_key(
+                            device,
+                            queue,
+                            resources,
+                            material,
+                            static_texture_lookup,
+                        );
                         self.ensure_material_texture_bind_group(device, material_texture_key);
                         let render_path = if skeleton_count > 0 {
                             RenderPath3D::Skinned
@@ -1294,14 +1292,13 @@ impl Gpu3D {
                     mesh_source,
                     static_texture_lookup,
                 );
-                let material_texture_key =
-                    self.custom_material_image_key(
-                        device,
-                        queue,
-                        resources,
-                        material,
-                        static_texture_lookup,
-                    );
+                let material_texture_key = self.custom_material_image_key(
+                    device,
+                    queue,
+                    resources,
+                    material,
+                    static_texture_lookup,
+                );
                 self.ensure_material_texture_bind_group(device, material_texture_key);
                 let material_kind = self.material_pipeline_kind(
                     device,

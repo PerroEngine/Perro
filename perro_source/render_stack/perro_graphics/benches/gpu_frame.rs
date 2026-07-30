@@ -842,7 +842,8 @@ fn setup_blend_stack(window: &Arc<Window>, count: u32, noise_factor: f32) -> Per
 
 fn setup_blend_sphere_stack(window: &Arc<Window>, count: u32) -> PerroGraphics {
     let mut graphics = base_graphics(window);
-    let (mesh, material) = create_mesh_material_with(&mut graphics, std::sync::Arc::new(uv_sphere_mesh(32, 16)));
+    let (mesh, material) =
+        create_mesh_material_with(&mut graphics, std::sync::Arc::new(uv_sphere_mesh(32, 16)));
     setup_blend_stack_scene(&mut graphics, mesh, material, count, 0.0);
     graphics
 }

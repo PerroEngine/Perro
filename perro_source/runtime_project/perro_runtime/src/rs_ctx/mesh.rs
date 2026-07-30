@@ -557,11 +557,11 @@ mod tests {
     use perro_render_bridge::{
         Material3D, Mesh3D, RenderCommand, RenderEvent, ResourceCommand, RuntimeMeshVertex,
     };
-    use std::sync::Arc;
     use perro_resource_api::{
         ResourceWindow, material_load, material_reserve, mesh_get_data, mesh_load, mesh_reserve,
         texture_load, texture_reserve,
     };
+    use std::sync::Arc;
 
     fn new_api() -> std::sync::Arc<RuntimeResourceApi> {
         RuntimeResourceApi::new(None, None, None, None, None, None, None, None)

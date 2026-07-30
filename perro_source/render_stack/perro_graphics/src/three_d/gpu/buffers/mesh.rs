@@ -44,7 +44,11 @@ impl Gpu3D {
         } else {
             let runtime_mesh = resources.runtime_mesh_data(source);
             if let Some(mesh) = runtime_mesh {
-                load_mesh_from_source_no_dynamic_lods(source, static_mesh_lookup, Some(mesh.as_ref()))?
+                load_mesh_from_source_no_dynamic_lods(
+                    source,
+                    static_mesh_lookup,
+                    Some(mesh.as_ref()),
+                )?
             } else {
                 load_mesh_from_source(
                     source,
