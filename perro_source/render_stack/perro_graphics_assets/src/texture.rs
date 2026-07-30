@@ -14,7 +14,10 @@ use std::{
     sync::{Arc, Mutex, OnceLock},
 };
 
-pub const SVG_RASTER_SCALE: u32 = 4;
+// 2x logical size: retina-grade zoom headroom at 1/4 the pixel memory of the
+// old 4x (rgba bytes scale with the square; a 512px logo is 4MB at 2x, 16MB
+// at 4x, and every raster is held cpu-side + gpu-side).
+pub const SVG_RASTER_SCALE: u32 = 2;
 const SVG_MAX_RASTER_DIM: u32 = 8192;
 const SVG_CACHE_LIMIT: usize = 32;
 const SVG_RGBA_CACHE_MAX_BYTES: usize = 64 * 1024 * 1024;
@@ -625,9 +628,9 @@ mod tests {
     fn decode_image_rgba_supports_svg_with_intrinsic_size() {
         let svg = br#"<svg xmlns="http://www.w3.org/2000/svg" width="2" height="3"><rect width="2" height="3" fill="red"/></svg>"#;
         let (rgba, width, height) = decode_image_rgba(svg).expect("decode svg");
-        assert_eq!((width, height), (8, 12));
-        assert_eq!(rgba.len(), 8 * 12 * 4);
-        assert_eq!(decode_image_size(svg), Some((8, 12)));
+        assert_eq!((width, height), (4, 6));
+        assert_eq!(rgba.len(), 4 * 6 * 4);
+        assert_eq!(decode_image_size(svg), Some((4, 6)));
         assert_eq!(decode_image_logical_size(svg), Some((2, 3)));
     }
 
@@ -635,7 +638,7 @@ mod tests {
     fn decode_image_rgba_ignores_svg_attr_name_substrings() {
         let svg = br#"<svg xmlns="http://www.w3.org/2000/svg" stroke-width="99" data-height="88" width="2" height="3"><rect width="2" height="3" fill="red"/></svg>"#;
         let (_, width, height) = decode_image_rgba(svg).expect("decode svg");
-        assert_eq!((width, height), (8, 12));
+        assert_eq!((width, height), (4, 6));
         assert_eq!(decode_image_logical_size(svg), Some((2, 3)));
     }
 
@@ -643,24 +646,24 @@ mod tests {
     fn decode_image_rgba_supports_svg_viewbox_and_fallback_size() {
         let viewbox = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 4 5"><rect width="4" height="5" fill="red"/></svg>"#;
         let (_, width, height) = decode_image_rgba(viewbox).expect("decode viewbox svg");
-        assert_eq!((width, height), (16, 20));
+        assert_eq!((width, height), (8, 10));
 
         let percent = br#"<svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 6 7"><rect width="6" height="7" fill="red"/></svg>"#;
         let (_, width, height) = decode_image_rgba(percent).expect("decode percent svg");
-        assert_eq!((width, height), (24, 28));
+        assert_eq!((width, height), (12, 14));
 
         let fallback = br#"<svg xmlns="http://www.w3.org/2000/svg"><rect width="4" height="5" fill="red"/></svg>"#;
         let (_, width, height) = decode_image_rgba(fallback).expect("decode fallback svg");
-        assert_eq!((width, height), (1024, 1024));
+        assert_eq!((width, height), (512, 512));
     }
 
     #[test]
     fn decode_image_rgba_caps_large_svg_raster_size() {
-        let svg = br#"<svg xmlns="http://www.w3.org/2000/svg" width="2593" height="100"><rect width="2593" height="100" fill="red"/></svg>"#;
+        let svg = br#"<svg xmlns="http://www.w3.org/2000/svg" width="5000" height="100"><rect width="5000" height="100" fill="red"/></svg>"#;
         let (_, width, height) = decode_image_rgba(svg).expect("decode large svg");
-        assert_eq!((width, height), (8192, 316));
-        assert_eq!(decode_image_size(svg), Some((8192, 316)));
-        assert_eq!(decode_image_logical_size(svg), Some((2593, 100)));
+        assert_eq!((width, height), (8192, 164));
+        assert_eq!(decode_image_size(svg), Some((8192, 164)));
+        assert_eq!(decode_image_logical_size(svg), Some((5000, 100)));
     }
 
     #[test]

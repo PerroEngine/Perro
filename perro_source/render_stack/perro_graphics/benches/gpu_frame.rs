@@ -660,7 +660,7 @@ fn setup_shader_variant(
     let mesh_data = if matches!(scene, ShaderVariantScene::Plain) {
         tiny_mesh()
     } else {
-        fullscreen_quad_mesh()
+        std::sync::Arc::new(fullscreen_quad_mesh())
     };
     let (mesh, material) = create_mesh_material_with_material(
         &mut graphics,
@@ -842,7 +842,7 @@ fn setup_blend_stack(window: &Arc<Window>, count: u32, noise_factor: f32) -> Per
 
 fn setup_blend_sphere_stack(window: &Arc<Window>, count: u32) -> PerroGraphics {
     let mut graphics = base_graphics(window);
-    let (mesh, material) = create_mesh_material_with(&mut graphics, uv_sphere_mesh(32, 16));
+    let (mesh, material) = create_mesh_material_with(&mut graphics, std::sync::Arc::new(uv_sphere_mesh(32, 16)));
     setup_blend_stack_scene(&mut graphics, mesh, material, count, 0.0);
     graphics
 }
@@ -1292,8 +1292,8 @@ fn surface(material: MaterialID) -> Arc<[MeshSurfaceBinding3D]> {
     }])
 }
 
-fn tiny_mesh() -> Mesh3D {
-    Mesh3D {
+fn tiny_mesh() -> std::sync::Arc<Mesh3D> {
+    std::sync::Arc::new(Mesh3D {
         vertices: vec![
             RuntimeMeshVertex {
                 position: [0.0, 0.0, 0.0],
@@ -1323,7 +1323,7 @@ fn tiny_mesh() -> Mesh3D {
         indices: vec![0, 1, 2],
         surface_ranges: vec![],
         blend_shapes: vec![],
-    }
+    })
 }
 
 fn fullscreen_quad_mesh() -> Mesh3D {
@@ -1418,14 +1418,14 @@ fn create_mesh_material(graphics: &mut PerroGraphics) -> (MeshID, MaterialID) {
 
 fn create_mesh_material_with(
     graphics: &mut PerroGraphics,
-    mesh_data: Mesh3D,
+    mesh_data: std::sync::Arc<Mesh3D>,
 ) -> (MeshID, MaterialID) {
     create_mesh_material_with_material(graphics, mesh_data, Material3D::default())
 }
 
 fn create_mesh_material_with_material(
     graphics: &mut PerroGraphics,
-    mesh_data: Mesh3D,
+    mesh_data: std::sync::Arc<Mesh3D>,
     material_data: Material3D,
 ) -> (MeshID, MaterialID) {
     graphics.submit_many([

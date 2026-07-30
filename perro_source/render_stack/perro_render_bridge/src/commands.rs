@@ -54,7 +54,7 @@ pub enum ResourceCommand {
         id: MeshID,
         source: String,
         reserved: bool,
-        mesh: Mesh3D,
+        mesh: std::sync::Arc<Mesh3D>,
     },
     CreateRuntimeMeshBytes {
         request: RenderRequestID,
@@ -65,7 +65,7 @@ pub enum ResourceCommand {
     },
     WriteMeshData {
         id: MeshID,
-        mesh: Mesh3D,
+        mesh: std::sync::Arc<Mesh3D>,
     },
     CreateTexture {
         request: RenderRequestID,
@@ -367,7 +367,9 @@ pub enum RenderEvent {
     MeshCreated {
         request: RenderRequestID,
         id: MeshID,
-        mesh: Option<Mesh3D>,
+        // Arc: one decoded mesh is shared by the graphics store, the runtime
+        // mirror, and every in-flight event clone instead of deep-copied.
+        mesh: Option<std::sync::Arc<Mesh3D>>,
     },
     TextureCreated {
         request: RenderRequestID,

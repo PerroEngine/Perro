@@ -16,8 +16,8 @@ fn color(v: [f32; 4]) -> Color {
     v.into()
 }
 
-fn tiny_mesh() -> Mesh3D {
-    Mesh3D {
+fn tiny_mesh() -> std::sync::Arc<Mesh3D> {
+    std::sync::Arc::new(Mesh3D {
         vertices: vec![
             RuntimeMeshVertex {
                 position: [0.0, 0.0, 0.0],
@@ -47,7 +47,7 @@ fn tiny_mesh() -> Mesh3D {
         indices: vec![0, 1, 2],
         surface_ranges: vec![],
         blend_shapes: vec![],
-    }
+    })
 }
 
 fn surface(material: MaterialID) -> Arc<[MeshSurfaceBinding3D]> {

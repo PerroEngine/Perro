@@ -5,29 +5,7 @@ impl PerroGraphics {
         source: &str,
         static_texture_lookup: Option<StaticTextureLookup>,
     ) -> Option<DecodedTextureRgba> {
-        let (rgba, width, height) = if source == "__default__" {
-            (vec![255u8, 255, 255, 255], 1, 1)
-        } else if source == "__perro_builtin_logo_svg__" {
-            decode_image_rgba(include_bytes!(
-                "../../../../api_modules/perro_api/src/assets/perro.svg"
-            ))?
-        } else if let Some(lookup) = static_texture_lookup {
-            let source_hash = perro_ids::parse_hashed_source_uri(source)
-                .unwrap_or_else(|| perro_ids::string_to_u64(source));
-            let bytes = lookup(source_hash);
-            if !bytes.is_empty() {
-                decode_ptex(bytes)?
-            } else {
-                Self::decode_texture_file(source)?
-            }
-        } else {
-            Self::decode_texture_file(source)?
-        };
-        Some(DecodedTextureRgba {
-            rgba,
-            width: width.max(1),
-            height: height.max(1),
-        })
+        decode_texture_source_rgba(source, static_texture_lookup)
     }
 
     pub(super) fn decode_texture_file(source: &str) -> Option<(Vec<u8>, u32, u32)> {
@@ -63,6 +41,7 @@ impl PerroGraphics {
                 let error = validate_mesh_source(job.source.as_str(), static_mesh_lookup).err();
                 let mesh = if error.is_none() {
                     load_mesh3d_from_source(job.source.as_str(), static_mesh_lookup)
+                        .map(std::sync::Arc::new)
                 } else {
                     None
                 };
@@ -89,7 +68,8 @@ impl PerroGraphics {
             self.events.push(RenderEvent::Failed { request, reason });
             return;
         }
-        let mesh_data = load_mesh3d_from_source(source.as_str(), self.static_mesh_lookup);
+        let mesh_data = load_mesh3d_from_source(source.as_str(), self.static_mesh_lookup)
+            .map(std::sync::Arc::new);
         if let Some(mesh) = mesh_data.clone() {
             self.resources
                 .set_runtime_mesh_data(source.as_str(), mesh.clone());
@@ -259,4 +239,36 @@ impl PerroGraphics {
 
     #[cfg(target_arch = "wasm32")]
     pub(super) fn flush_async_texture_loads(&mut self) {}
+}
+
+/// Decode a texture's pixels straight from its source (builtin, static PTEX
+/// lookup, or file). Shared by the initial async load and by consumers whose
+/// resident CPU copy was reclaimed by the idle sweep.
+pub(crate) fn decode_texture_source_rgba(
+    source: &str,
+    static_texture_lookup: Option<StaticTextureLookup>,
+) -> Option<DecodedTextureRgba> {
+    let (rgba, width, height) = if source == "__default__" {
+        (vec![255u8, 255, 255, 255], 1, 1)
+    } else if source == "__perro_builtin_logo_svg__" {
+        decode_image_rgba(include_bytes!(
+            "../../../../api_modules/perro_api/src/assets/perro.svg"
+        ))?
+    } else if let Some(lookup) = static_texture_lookup {
+        let source_hash = perro_ids::parse_hashed_source_uri(source)
+            .unwrap_or_else(|| perro_ids::string_to_u64(source));
+        let bytes = lookup(source_hash);
+        if !bytes.is_empty() {
+            decode_ptex(bytes)?
+        } else {
+            load_texture_rgba(source)?
+        }
+    } else {
+        load_texture_rgba(source)?
+    };
+    Some(DecodedTextureRgba {
+        rgba,
+        width: width.max(1),
+        height: height.max(1),
+    })
 }

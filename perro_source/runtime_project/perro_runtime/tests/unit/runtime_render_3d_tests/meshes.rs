@@ -396,12 +396,12 @@ mod meshes {
         runtime.apply_render_event(RenderEvent::MeshCreated {
             request: mesh_request,
             id: pending_mesh,
-            mesh: Some(Mesh3D {
+            mesh: Some(std::sync::Arc::new(Mesh3D {
                 vertices: Vec::new(),
                 indices: Vec::new(),
                 surface_ranges: Vec::new(),
                 blend_shapes: Vec::new(),
-            }),
+            })),
         });
         runtime.extract_render_3d_commands();
         let commands = collect_commands(&mut runtime);
@@ -442,12 +442,12 @@ mod meshes {
         runtime.apply_render_event(RenderEvent::MeshCreated {
             request: mesh_request,
             id: mesh,
-            mesh: Some(Mesh3D {
+            mesh: Some(std::sync::Arc::new(Mesh3D {
                 vertices: Vec::new(),
                 indices: Vec::new(),
                 surface_ranges: Vec::new(),
                 blend_shapes: Vec::new(),
-            }),
+            })),
         });
         runtime.extract_render_3d_commands();
         let second = collect_commands(&mut runtime);

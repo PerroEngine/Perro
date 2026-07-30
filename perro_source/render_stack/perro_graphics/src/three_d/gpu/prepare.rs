@@ -298,7 +298,7 @@ impl Gpu3D {
                 step_timing.indirect_skipped = step_timing.indirect_skipped.saturating_add(1);
                 step_timing.cull_input_skipped = step_timing.cull_input_skipped.saturating_add(1);
             }
-            self.update_shadow_state(queue, &camera, lighting, self.has_shadow_casters);
+            self.update_shadow_state(device, queue, &camera, lighting, self.has_shadow_casters);
             self.last_draws_revision = draws_revision;
             self.last_total_drawn =
                 self.staged_instance_transforms.len() + self.staged_multimesh_instances.len();
@@ -582,7 +582,7 @@ impl Gpu3D {
             }
             // Transform patch moved rigid + multimesh casters; drop the cache.
             self.shadow_casters_dirty = true;
-            self.update_shadow_state(queue, &camera, lighting, self.has_shadow_casters);
+            self.update_shadow_state(device, queue, &camera, lighting, self.has_shadow_casters);
             self.last_draws.clear();
             self.last_draws.extend_from_slice(draws);
             self.last_draws_revision = draws_revision;
@@ -831,7 +831,13 @@ impl Gpu3D {
                         static_texture_lookup,
                     );
                     let material_texture_key =
-                        self.custom_material_image_key(device, queue, resources, material);
+                        self.custom_material_image_key(
+                        device,
+                        queue,
+                        resources,
+                        material,
+                        static_texture_lookup,
+                    );
                     self.ensure_material_texture_bind_group(device, material_texture_key);
                     let material_kind = self.material_pipeline_kind(
                         device,
@@ -1143,7 +1149,13 @@ impl Gpu3D {
                             static_texture_lookup,
                         );
                         let material_texture_key =
-                            self.custom_material_image_key(device, queue, resources, material);
+                            self.custom_material_image_key(
+                        device,
+                        queue,
+                        resources,
+                        material,
+                        static_texture_lookup,
+                    );
                         self.ensure_material_texture_bind_group(device, material_texture_key);
                         let render_path = if skeleton_count > 0 {
                             RenderPath3D::Skinned
@@ -1283,7 +1295,13 @@ impl Gpu3D {
                     static_texture_lookup,
                 );
                 let material_texture_key =
-                    self.custom_material_image_key(device, queue, resources, material);
+                    self.custom_material_image_key(
+                        device,
+                        queue,
+                        resources,
+                        material,
+                        static_texture_lookup,
+                    );
                 self.ensure_material_texture_bind_group(device, material_texture_key);
                 let material_kind = self.material_pipeline_kind(
                     device,
@@ -1866,7 +1884,7 @@ impl Gpu3D {
                 self.staged_multimesh_instances.len(),
             );
         }
-        self.update_shadow_state(queue, &camera, lighting, self.has_shadow_casters);
+        self.update_shadow_state(device, queue, &camera, lighting, self.has_shadow_casters);
         self.last_total_meshlets = total_meshlets;
         self.last_total_drawn =
             self.staged_instance_transforms.len() + self.staged_multimesh_instances.len();

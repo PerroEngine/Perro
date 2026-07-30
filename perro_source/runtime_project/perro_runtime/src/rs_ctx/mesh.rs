@@ -24,6 +24,7 @@ impl MeshAPI for RuntimeResourceApi {
     }
 
     fn create_mesh_data(&self, data: Mesh3D) -> MeshID {
+        let data = Arc::new(data);
         let mut state = self.state.lock().expect("resource api mutex poisoned");
         let request = state.allocate_request();
         let id = state.allocate_mesh_id();
@@ -83,7 +84,7 @@ impl MeshAPI for RuntimeResourceApi {
             let state = self.state.lock().expect("resource api mutex poisoned");
             let canonical = state.mesh_id_alias.get(&id).copied().unwrap_or(id);
             if let Some(data) = state.mesh_data_by_id.get(&canonical) {
-                return Some(data.clone());
+                return Some(data.as_ref().clone());
             }
             state
                 .mesh_source_by_id
@@ -98,6 +99,7 @@ impl MeshAPI for RuntimeResourceApi {
         if id.is_nil() {
             return false;
         }
+        let data = Arc::new(data);
         let mut state = self.state.lock().expect("resource api mutex poisoned");
         state.mesh_data_by_id.insert(id, data.clone());
         let revision = state.mesh_revision_by_id.entry(id).or_insert(0);
@@ -352,7 +354,7 @@ impl RuntimeResourceApi {
             .get(&canonical)
             .copied()
             .unwrap_or(0);
-        Some(f(data, revision))
+        Some(f(data.as_ref(), revision))
     }
 
     pub(crate) fn mesh_source(&self, mesh: MeshID) -> Option<String> {
@@ -423,7 +425,7 @@ impl super::state::RuntimeResourceState {
         &mut self,
         request: perro_render_bridge::RenderRequestID,
         id: MeshID,
-        mesh: Option<&Mesh3D>,
+        mesh: Option<&Arc<Mesh3D>>,
     ) {
         if super::core::asset_ready_log_enabled() {
             eprintln!(
@@ -555,6 +557,7 @@ mod tests {
     use perro_render_bridge::{
         Material3D, Mesh3D, RenderCommand, RenderEvent, ResourceCommand, RuntimeMeshVertex,
     };
+    use std::sync::Arc;
     use perro_resource_api::{
         ResourceWindow, material_load, material_reserve, mesh_get_data, mesh_load, mesh_reserve,
         texture_load, texture_reserve,
@@ -773,7 +776,7 @@ mod tests {
         api.apply_render_event(&RenderEvent::MeshCreated {
             request,
             id: loaded,
-            mesh: Some(expected.clone()),
+            mesh: Some(Arc::new(expected.clone())),
         });
 
         assert_eq!(res.Meshes().get_data(loaded), Some(expected));
@@ -805,7 +808,7 @@ mod tests {
         api.apply_render_event(&RenderEvent::MeshCreated {
             request,
             id: mesh,
-            mesh: Some(empty_mesh()),
+            mesh: Some(Arc::new(empty_mesh())),
         });
         assert!(res.Meshes().is_loaded(mesh));
     }

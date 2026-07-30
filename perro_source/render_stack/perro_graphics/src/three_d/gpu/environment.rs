@@ -68,10 +68,13 @@ pub(super) fn load_environment_rgba(
     resources: &ResourceStore,
     static_texture_lookup: Option<StaticTextureLookup>,
 ) -> Option<(Vec<u8>, u32, u32)> {
-    if let Some(decoded) = resources.decoded_texture_data_by_source(source) {
+    let registered = resources.decoded_texture_data_by_source(source);
+    if let Some(decoded) = registered.filter(|decoded| decoded.has_pixels()) {
         return Some((decoded.rgba.clone(), decoded.width, decoded.height));
     }
-    if resources.has_texture_source(source) {
+    // evicted resident copies (registered but reclaimed) fall through to the
+    // source decode below; only still-loading textures wait.
+    if registered.is_none() && resources.has_texture_source(source) {
         return None;
     }
     if let Some(lookup) = static_texture_lookup {

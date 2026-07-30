@@ -173,7 +173,9 @@ pub(super) struct RuntimeResourceState {
     pub(super) mesh_pending_id_by_request: HashMap<RenderRequestID, MeshID>,
     pub(super) mesh_reserve_pending: HashSet<u64>,
     pub(super) mesh_drop_pending: HashSet<u64>,
-    pub(super) mesh_data_by_id: HashMap<MeshID, Mesh3D>,
+    // Arc-shared with the graphics store's mirror and event clones; the
+    // decoded mesh body lives once process-wide.
+    pub(super) mesh_data_by_id: HashMap<MeshID, Arc<Mesh3D>>,
     pub(super) mesh_revision_by_id: HashMap<MeshID, u64>,
     pub(super) mesh_loaded_by_id: HashSet<MeshID>,
     pub(super) navmesh_by_source: HashMap<u64, NavMeshID>,

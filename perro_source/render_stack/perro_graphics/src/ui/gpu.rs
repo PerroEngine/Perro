@@ -986,7 +986,7 @@ impl GpuUi {
         queue: &wgpu::Queue,
         resources: &ResourceStore,
         texture_id: TextureId,
-        _static_texture_lookup: Option<StaticTextureLookup>,
+        static_texture_lookup: Option<StaticTextureLookup>,
     ) -> bool {
         let TextureId::User(raw) = texture_id else {
             return false;
@@ -995,11 +995,24 @@ impl GpuUi {
         if self.image_textures.contains_key(&texture_key) {
             return true;
         }
-        if resources.texture_source(texture_key).is_none() {
+        let Some(source) = resources.texture_source(texture_key) else {
             return false;
-        }
-        let Some(decoded) = resources.decoded_texture_data(texture_key) else {
-            return false;
+        };
+        // resident CPU copy, or re-decode from source when the idle sweep
+        // already reclaimed the bytes.
+        let redecoded;
+        let decoded = match resources.decoded_texture_data(texture_key) {
+            Some(decoded) if decoded.has_pixels() => decoded,
+            _ => {
+                let Some(restored) = crate::backend::decode_texture_source_rgba(
+                    source,
+                    static_texture_lookup,
+                ) else {
+                    return false;
+                };
+                redecoded = restored;
+                &redecoded
+            }
         };
         let width = decoded.width;
         let height = decoded.height;

@@ -319,6 +319,8 @@ fn decal_texture_rgba(resources: &ResourceStore, id: TextureID) -> Option<(Vec<u
     let source = resources.texture_source(id)?;
     resources
         .decoded_texture_data_by_source(source)
+        // evicted resident copies fall through to the source decode below
+        .filter(|decoded| decoded.has_pixels())
         .map(|decoded| (decoded.rgba.clone(), decoded.width, decoded.height))
         .or_else(|| load_texture_rgba(source))
 }

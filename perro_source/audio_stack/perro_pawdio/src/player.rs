@@ -44,7 +44,10 @@ pub struct BarkPlayer {
 }
 
 impl BarkPlayer {
-    const CACHE_SOFT_LIMIT_BYTES: usize = 128 * 1024 * 1024;
+    // Soft cap on compressed-bytes + decoded-PCM the cache pins. Unreserved
+    // idle entries evict above this; 64MiB comfortably holds a typical game's
+    // active sfx set (a 12s stereo 48k clip decodes to ~4.6MiB).
+    const CACHE_SOFT_LIMIT_BYTES: usize = 64 * 1024 * 1024;
     // Clips at or under this length keep their decoded PCM cached so repeated
     // plays skip the decoder; longer clips stream-decode per play.
     const PCM_CACHE_MAX_SECONDS: usize = 12;

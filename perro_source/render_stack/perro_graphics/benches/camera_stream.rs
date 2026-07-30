@@ -522,8 +522,8 @@ fn create_mesh_material(graphics: &mut PerroGraphics) -> (MeshID, MaterialID) {
     (mesh.expect("mesh event"), material.expect("material event"))
 }
 
-fn tiny_mesh() -> Mesh3D {
-    Mesh3D {
+fn tiny_mesh() -> std::sync::Arc<Mesh3D> {
+    std::sync::Arc::new(Mesh3D {
         vertices: vec![
             RuntimeMeshVertex {
                 position: [-0.05, 0.0, 0.0],
@@ -553,5 +553,5 @@ fn tiny_mesh() -> Mesh3D {
         indices: vec![0, 1, 2],
         surface_ranges: vec![],
         blend_shapes: vec![],
-    }
+    })
 }

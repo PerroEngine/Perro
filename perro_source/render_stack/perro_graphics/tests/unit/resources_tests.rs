@@ -3,8 +3,8 @@ use perro_ids::{MaterialID, MeshID, TextureID};
 use perro_render_bridge::{Material3D, RuntimeMeshData, RuntimeMeshVertex, StandardMaterial3D};
 use perro_structs::UnitVector4;
 
-fn simple_runtime_mesh(scale: f32) -> RuntimeMeshData {
-    RuntimeMeshData {
+fn simple_runtime_mesh(scale: f32) -> std::sync::Arc<RuntimeMeshData> {
+    std::sync::Arc::new(RuntimeMeshData {
         vertices: vec![
             RuntimeMeshVertex {
                 position: [0.0, 0.0, 0.0],
@@ -34,7 +34,7 @@ fn simple_runtime_mesh(scale: f32) -> RuntimeMeshData {
         indices: vec![0, 1, 2],
         surface_ranges: vec![],
         blend_shapes: vec![],
-    }
+    })
 }
 
 #[test]
@@ -553,6 +553,126 @@ fn write_stream_texture_data_reuses_buffer_and_falls_back_by_source() {
     assert!(store.write_stream_texture_data(id, &[9, 9, 9, 9, 9, 9, 9, 9], 1, 2));
     let decoded = store.decoded_texture_data(id).expect("decoded");
     assert_eq!((decoded.width, decoded.height), (1, 2));
+}
+
+#[test]
+fn idle_sweep_reclaims_redecodable_pixels_but_keeps_dims() {
+    let mut store = ResourceStore::new();
+    let id = store.create_texture("res://textures/big.png", false);
+    assert!(store.set_decoded_texture_data(
+        id,
+        DecodedTextureRgba {
+            rgba: vec![7; 16],
+            width: 2,
+            height: 2,
+        }
+    ));
+
+    // inside TTL: untouched.
+    assert_eq!(store.evict_idle_decoded_textures(2), 0);
+    assert!(store.decoded_texture_data(id).expect("entry").has_pixels());
+
+    // past TTL: bytes reclaimed, dims survive for size-only consumers.
+    for _ in 0..3 {
+        let _ = store.evict_idle_decoded_textures(2);
+    }
+    let entry = store.decoded_texture_data(id).expect("entry stays");
+    assert!(!entry.has_pixels());
+    assert_eq!((entry.width, entry.height), (2, 2));
+
+    // re-decode path re-inserts and the entry is live again.
+    assert!(store.set_decoded_texture_data(
+        id,
+        DecodedTextureRgba {
+            rgba: vec![8; 16],
+            width: 2,
+            height: 2,
+        }
+    ));
+    assert!(store.decoded_texture_data(id).expect("entry").has_pixels());
+}
+
+#[test]
+fn idle_sweep_skips_pinned_and_non_redecodable_sources() {
+    let mut store = ResourceStore::new();
+
+    // stream writes pin: bytes exist nowhere else.
+    let stream = store.create_texture("webcam://node/1", true);
+    assert!(store.write_stream_texture_data(stream, &[1, 2, 3, 4], 1, 1));
+
+    // runtime source: no decodable payload behind it.
+    let runtime = store.create_texture("runtime://texture/5:0", false);
+    assert!(store.set_decoded_texture_data(
+        runtime,
+        DecodedTextureRgba {
+            rgba: vec![9; 4],
+            width: 1,
+            height: 1,
+        }
+    ));
+
+    // region write on a loaded texture diverges it from the source: pinned.
+    let painted = store.create_texture("res://textures/painted.png", false);
+    assert!(store.set_decoded_texture_data(
+        painted,
+        DecodedTextureRgba {
+            rgba: vec![0; 4],
+            width: 1,
+            height: 1,
+        }
+    ));
+    assert!(store.write_decoded_texture_region(painted, 0, 0, 1, 1, &[5, 5, 5, 5]));
+
+    for _ in 0..20 {
+        let _ = store.evict_idle_decoded_textures(2);
+    }
+    assert!(store.decoded_texture_data(stream).expect("stream").has_pixels());
+    assert!(
+        store
+            .decoded_texture_data(runtime)
+            .expect("runtime")
+            .has_pixels()
+    );
+    assert!(
+        store
+            .decoded_texture_data(painted)
+            .expect("painted")
+            .has_pixels()
+    );
+}
+
+#[test]
+fn region_write_on_evicted_entry_fails_until_restored() {
+    let mut store = ResourceStore::new();
+    let id = store.create_texture("res://textures/canvas.png", false);
+    assert!(store.set_decoded_texture_data(
+        id,
+        DecodedTextureRgba {
+            rgba: vec![0; 4],
+            width: 1,
+            height: 1,
+        }
+    ));
+    for _ in 0..20 {
+        let _ = store.evict_idle_decoded_textures(2);
+    }
+    assert!(!store.decoded_texture_data(id).expect("entry").has_pixels());
+    // no base image to write into.
+    assert!(!store.write_decoded_texture_region(id, 0, 0, 1, 1, &[5, 5, 5, 5]));
+    // restoring the decode makes the write valid (and pins it).
+    assert!(store.set_decoded_texture_data(
+        id,
+        DecodedTextureRgba {
+            rgba: vec![0; 4],
+            width: 1,
+            height: 1,
+        }
+    ));
+    assert!(store.write_decoded_texture_region(id, 0, 0, 1, 1, &[5, 5, 5, 5]));
+    for _ in 0..20 {
+        let _ = store.evict_idle_decoded_textures(2);
+    }
+    assert!(store.decoded_texture_data(id).expect("entry").has_pixels());
 }
 
 #[test]

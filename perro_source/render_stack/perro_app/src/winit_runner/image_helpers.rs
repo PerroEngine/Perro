@@ -291,9 +291,9 @@ mod tests {
     fn decode_image_helpers_support_svg_icon_and_splash_size() {
         let svg = br#"<svg xmlns="http://www.w3.org/2000/svg" width="3" height="2"><rect width="3" height="2" fill="red"/></svg>"#;
         let (rgba, width, height) = decode_image_rgba(svg).expect("decode svg");
-        assert_eq!((width, height), (12, 8));
-        assert_eq!(rgba.len(), 12 * 8 * 4);
-        assert_eq!(decode_image_size(svg), Some((12, 8)));
+        assert_eq!((width, height), (6, 4));
+        assert_eq!(rgba.len(), 6 * 4 * 4);
+        assert_eq!(decode_image_size(svg), Some((6, 4)));
         assert_eq!(decode_image_logical_size(svg), Some((3, 2)));
     }
 }

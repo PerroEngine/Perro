@@ -48,6 +48,10 @@ pub type StaticMeshLookup = fn(path_hash: u64) -> &'static [u8];
 pub type StaticShaderLookup = fn(path_hash: u64) -> &'static str;
 const GC_INTERVAL_FRAMES: u32 = 60;
 const GC_MAX_DROPS_PER_KIND: usize = 64;
+// Idle ticks (one per GC interval, ~1s at 60fps) before a decoded texture's
+// CPU pixel copy is reclaimed. GPU copies are untouched; a later re-upload
+// (new camera stream, texture invalidation) re-decodes from source.
+const DECODED_TEXTURE_EVICT_TTL_TICKS: u64 = 10;
 const PARALLEL_COMMAND_SUMMARY_MIN: usize = 10_000;
 const PARALLEL_RENDER_PREPARE_MIN: usize = 4_096;
 const MAX_RUNTIME_TEXTURE_DIMENSION: u32 = 8_192;
@@ -211,7 +215,7 @@ struct AsyncMeshLoadResult {
     request: perro_render_bridge::RenderRequestID,
     id: MeshID,
     source: String,
-    mesh: Option<perro_render_bridge::Mesh3D>,
+    mesh: Option<std::sync::Arc<perro_render_bridge::Mesh3D>>,
     error: Option<String>,
 }
 
@@ -493,6 +497,7 @@ impl Default for PerroGraphics {
 }
 
 mod asset_load;
+pub(crate) use asset_load::decode_texture_source_rgba;
 mod command_process;
 mod config;
 

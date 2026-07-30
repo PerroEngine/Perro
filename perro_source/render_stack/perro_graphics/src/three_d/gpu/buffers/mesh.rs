@@ -40,11 +40,11 @@ impl Gpu3D {
             return Some(range);
         }
         let decoded = if let Some(mesh) = resources.runtime_mesh_data_by_id(mesh_id) {
-            load_mesh_from_source_no_dynamic_lods(source, static_mesh_lookup, Some(mesh))?
+            load_mesh_from_source_no_dynamic_lods(source, static_mesh_lookup, Some(mesh.as_ref()))?
         } else {
             let runtime_mesh = resources.runtime_mesh_data(source);
             if let Some(mesh) = runtime_mesh {
-                load_mesh_from_source_no_dynamic_lods(source, static_mesh_lookup, Some(mesh))?
+                load_mesh_from_source_no_dynamic_lods(source, static_mesh_lookup, Some(mesh.as_ref()))?
             } else {
                 load_mesh_from_source(
                     source,

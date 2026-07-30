@@ -99,6 +99,7 @@ impl Gpu3D {
         queue: &wgpu::Queue,
         resources: &ResourceStore,
         material: &Material3D,
+        static_texture_lookup: Option<StaticTextureLookup>,
     ) -> MaterialTextureKey {
         let params = material.standard_params();
         let mut key = if matches!(material, Material3D::Standard(_)) {
@@ -123,6 +124,7 @@ impl Gpu3D {
                 resources,
                 slot,
                 image.source.as_ref(),
+                static_texture_lookup,
             );
             key.slots[index + 1] = slot;
         }
@@ -199,7 +201,7 @@ impl Gpu3D {
         resources: &ResourceStore,
         slot: u32,
         mesh_source: &str,
-        _static_texture_lookup: Option<StaticTextureLookup>,
+        static_texture_lookup: Option<StaticTextureLookup>,
     ) {
         if slot == MATERIAL_TEXTURE_NONE {
             return;
@@ -233,20 +235,36 @@ impl Gpu3D {
             return;
         }
 
-        let (rgba, width, height) =
-            if let Some(decoded) = resources.decoded_texture_data_by_source(source.as_str()) {
-                (decoded.rgba.clone(), decoded.width, decoded.height)
-            } else if resources.has_texture_source(source.as_str()) {
-                self.material_textures.remove(&slot);
-                self.evict_material_texture_bind_groups_for_slot(slot);
-                return;
-            } else if let Some(decoded) = load_texture_rgba(source.as_str()) {
-                decoded
-            } else {
-                self.material_textures.remove(&slot);
-                self.evict_material_texture_bind_groups_for_slot(slot);
-                return;
-            };
+        let registered = resources.decoded_texture_data_by_source(source.as_str());
+        let evicted = registered.is_some_and(|decoded| !decoded.has_pixels());
+        let (rgba, width, height) = if let Some(decoded) =
+            registered.filter(|decoded| decoded.has_pixels())
+        {
+            (decoded.rgba.clone(), decoded.width, decoded.height)
+        } else if evicted {
+            // resident copy reclaimed by the idle sweep: re-decode from source.
+            match crate::backend::decode_texture_source_rgba(
+                source.as_str(),
+                static_texture_lookup,
+            ) {
+                Some(decoded) => (decoded.rgba, decoded.width, decoded.height),
+                None => {
+                    self.material_textures.remove(&slot);
+                    self.evict_material_texture_bind_groups_for_slot(slot);
+                    return;
+                }
+            }
+        } else if resources.has_texture_source(source.as_str()) {
+            self.material_textures.remove(&slot);
+            self.evict_material_texture_bind_groups_for_slot(slot);
+            return;
+        } else if let Some(decoded) = load_texture_rgba(source.as_str()) {
+            decoded
+        } else {
+            self.material_textures.remove(&slot);
+            self.evict_material_texture_bind_groups_for_slot(slot);
+            return;
+        };
         let cached = create_cached_material_texture(
             device,
             queue,
@@ -296,6 +314,7 @@ impl Gpu3D {
         resources: &ResourceStore,
         slot: u32,
         source: &str,
+        static_texture_lookup: Option<StaticTextureLookup>,
     ) {
         if self
             .material_textures
@@ -304,20 +323,33 @@ impl Gpu3D {
         {
             return;
         }
-        let (rgba, width, height) =
-            if let Some(decoded) = resources.decoded_texture_data_by_source(source) {
-                (decoded.rgba.clone(), decoded.width, decoded.height)
-            } else if resources.has_texture_source(source) {
-                self.material_textures.remove(&slot);
-                self.evict_material_texture_bind_groups_for_slot(slot);
-                return;
-            } else if let Some(decoded) = load_texture_rgba(source) {
-                decoded
-            } else {
-                self.material_textures.remove(&slot);
-                self.evict_material_texture_bind_groups_for_slot(slot);
-                return;
-            };
+        let registered = resources.decoded_texture_data_by_source(source);
+        let evicted = registered.is_some_and(|decoded| !decoded.has_pixels());
+        let (rgba, width, height) = if let Some(decoded) =
+            registered.filter(|decoded| decoded.has_pixels())
+        {
+            (decoded.rgba.clone(), decoded.width, decoded.height)
+        } else if evicted {
+            // resident copy reclaimed by the idle sweep: re-decode from source.
+            match crate::backend::decode_texture_source_rgba(source, static_texture_lookup) {
+                Some(decoded) => (decoded.rgba, decoded.width, decoded.height),
+                None => {
+                    self.material_textures.remove(&slot);
+                    self.evict_material_texture_bind_groups_for_slot(slot);
+                    return;
+                }
+            }
+        } else if resources.has_texture_source(source) {
+            self.material_textures.remove(&slot);
+            self.evict_material_texture_bind_groups_for_slot(slot);
+            return;
+        } else if let Some(decoded) = load_texture_rgba(source) {
+            decoded
+        } else {
+            self.material_textures.remove(&slot);
+            self.evict_material_texture_bind_groups_for_slot(slot);
+            return;
+        };
         let cached = create_cached_material_texture(
             device,
             queue,

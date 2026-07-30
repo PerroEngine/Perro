@@ -1,4 +1,4 @@
-use ahash::AHashMap;
+use ahash::{AHashMap, AHashSet};
 use perro_ids::{MaterialID, MeshID, TextureID};
 use perro_render_bridge::{Material3D, Mesh3D};
 
@@ -9,6 +9,16 @@ pub(crate) struct DecodedTextureRgba {
     pub rgba: Vec<u8>,
     pub width: u32,
     pub height: u32,
+}
+
+impl DecodedTextureRgba {
+    /// False once the idle sweep reclaimed the pixel bytes; width/height stay
+    /// valid (nine-slice sizing etc.), pixel consumers must re-decode from the
+    /// texture's source instead.
+    #[inline]
+    pub(crate) fn has_pixels(&self) -> bool {
+        !self.rgba.is_empty()
+    }
 }
 
 #[derive(Default)]
@@ -111,13 +121,23 @@ pub struct ResourceStore {
     mesh_by_source: AHashMap<u64, MeshID>,
     mesh_source_by: AHashMap<MeshID, String>,
     mesh_source_by_slot: Vec<Option<String>>,
-    runtime_mesh_by_source: AHashMap<u64, Mesh3D>,
-    runtime_mesh_by_id: AHashMap<MeshID, Mesh3D>,
+    // Arc-shared with the by_id map, the runtime mirror, and event clones:
+    // one decoded mesh body lives once regardless of how many maps hold it.
+    runtime_mesh_by_source: AHashMap<u64, std::sync::Arc<Mesh3D>>,
+    runtime_mesh_by_id: AHashMap<MeshID, std::sync::Arc<Mesh3D>>,
     mesh_revision_by_id: AHashMap<MeshID, u64>,
     texture_by_source: AHashMap<u64, TextureID>,
     texture_source_by: AHashMap<TextureID, String>,
     texture_source_by_slot: Vec<Option<String>>,
     decoded_texture_by_id: AHashMap<TextureID, DecodedTextureRgba>,
+    // CPU pixel copies the idle sweep must never reclaim: runtime-created or
+    // runtime-mutated textures whose bytes exist nowhere else (no re-decodable
+    // source, or the source no longer matches after region writes).
+    decoded_texture_pinned: AHashSet<TextureID>,
+    // Sweep-clock stamp of the last insert/write per decoded entry; entries
+    // idle past the TTL get their rgba bytes reclaimed (dims stay).
+    decoded_texture_stamp: AHashMap<TextureID, u64>,
+    decoded_evict_clock: u64,
     material_by: AHashMap<MaterialID, Material3D>,
     material_by_source: AHashMap<u64, MaterialID>,
     material_source_by: AHashMap<MaterialID, String>,
@@ -420,7 +440,7 @@ impl ResourceStore {
         let key = source_key(source);
         self.texture_by_source.remove(&key);
         self.texture_source_by.remove(&id);
-        self.decoded_texture_by_id.remove(&id);
+        self.remove_decoded_texture_state(id);
         self.clear_texture_meta(id);
         self.clear_texture_source_slot_if(id.index(), source);
     }
@@ -700,7 +720,52 @@ impl ResourceStore {
             return false;
         }
         self.decoded_texture_by_id.insert(id, texture);
+        self.decoded_texture_stamp.insert(id, self.decoded_evict_clock);
         true
+    }
+
+    /// Pin a decoded entry so the idle sweep never reclaims its pixel bytes.
+    /// Required for textures whose bytes cannot be re-decoded from a source
+    /// (runtime-created) or whose CPU copy has diverged from it (region writes).
+    #[inline]
+    pub(crate) fn pin_decoded_texture_data(&mut self, id: TextureID) {
+        self.decoded_texture_pinned.insert(id);
+    }
+
+    #[inline]
+    fn remove_decoded_texture_state(&mut self, id: TextureID) {
+        self.decoded_texture_by_id.remove(&id);
+        self.decoded_texture_pinned.remove(&id);
+        self.decoded_texture_stamp.remove(&id);
+    }
+
+    /// Reclaim the rgba bytes of decoded entries idle for `ttl_ticks` sweep
+    /// ticks (one tick per call). Dims stay valid; pixel consumers re-decode
+    /// from the texture's source on demand. Pinned entries and entries without
+    /// a re-decodable source are never touched. Returns bytes freed.
+    pub(crate) fn evict_idle_decoded_textures(&mut self, ttl_ticks: u64) -> usize {
+        self.decoded_evict_clock = self.decoded_evict_clock.wrapping_add(1);
+        let now = self.decoded_evict_clock;
+        let mut freed = 0usize;
+        for (id, entry) in self.decoded_texture_by_id.iter_mut() {
+            if !entry.has_pixels() || self.decoded_texture_pinned.contains(id) {
+                continue;
+            }
+            let stamp = self.decoded_texture_stamp.get(id).copied().unwrap_or(0);
+            if now.wrapping_sub(stamp) <= ttl_ticks {
+                continue;
+            }
+            let redecodable = self
+                .texture_source_by
+                .get(id)
+                .is_some_and(|source| redecodable_texture_source(source));
+            if !redecodable {
+                continue;
+            }
+            freed += entry.rgba.len();
+            entry.rgba = Vec::new();
+        }
+        freed
     }
 
     /// Update a stream texture's resident CPU copy in place. Reuses the existing
@@ -736,6 +801,9 @@ impl ResourceStore {
                 );
             }
         }
+        // stream bytes exist only here; the idle sweep must not reclaim them.
+        self.decoded_texture_pinned.insert(id);
+        self.decoded_texture_stamp.insert(id, self.decoded_evict_clock);
         true
     }
 
@@ -771,6 +839,11 @@ impl ResourceStore {
         let Some(texture) = self.decoded_texture_by_id.get_mut(&id) else {
             return false;
         };
+        // evicted entry: bytes are gone, the caller must restore them from
+        // the texture's source before region-writing (see WriteTextureRgbaRegion).
+        if !texture.has_pixels() {
+            return false;
+        }
         if end_x > texture.width || end_y > texture.height {
             return false;
         }
@@ -782,6 +855,9 @@ impl ResourceStore {
             texture.rgba[dst_start..dst_start + region_stride]
                 .copy_from_slice(&rgba[src_start..src_start + region_stride]);
         }
+        // the CPU copy now diverges from the source; never reclaim it.
+        self.decoded_texture_pinned.insert(id);
+        self.decoded_texture_stamp.insert(id, self.decoded_evict_clock);
         true
     }
 
@@ -841,17 +917,17 @@ impl ResourceStore {
     }
 
     #[inline]
-    pub fn set_runtime_mesh_data(&mut self, source: &str, mesh: Mesh3D) {
+    pub fn set_runtime_mesh_data(&mut self, source: &str, mesh: std::sync::Arc<Mesh3D>) {
         self.runtime_mesh_by_source.insert(source_key(source), mesh);
     }
 
     #[inline]
-    pub fn runtime_mesh_data(&self, source: &str) -> Option<&Mesh3D> {
+    pub fn runtime_mesh_data(&self, source: &str) -> Option<&std::sync::Arc<Mesh3D>> {
         self.runtime_mesh_by_source.get(&source_key(source))
     }
 
     #[inline]
-    pub fn set_runtime_mesh_data_by_id(&mut self, id: MeshID, mesh: Mesh3D) -> bool {
+    pub fn set_runtime_mesh_data_by_id(&mut self, id: MeshID, mesh: std::sync::Arc<Mesh3D>) -> bool {
         if !self.has_mesh(id) {
             return false;
         }
@@ -866,7 +942,7 @@ impl ResourceStore {
     }
 
     #[inline]
-    pub fn runtime_mesh_data_by_id(&self, id: MeshID) -> Option<&Mesh3D> {
+    pub fn runtime_mesh_data_by_id(&self, id: MeshID) -> Option<&std::sync::Arc<Mesh3D>> {
         self.runtime_mesh_by_id.get(&id)
     }
 
@@ -900,6 +976,11 @@ impl ResourceStore {
     #[inline]
     pub fn material(&self, id: MaterialID) -> Option<Material3D> {
         self.material_by.get(&id).cloned()
+    }
+
+    #[inline]
+    pub(crate) fn material_ref(&self, id: MaterialID) -> Option<&Material3D> {
+        self.material_by.get(&id)
     }
 
     #[inline]
@@ -1288,7 +1369,7 @@ impl ResourceStore {
             }
             self.clear_texture_source_slot_if(id.index(), &source);
         }
-        self.decoded_texture_by_id.remove(&id);
+        self.remove_decoded_texture_state(id);
         self.clear_texture_source_slot(id.index());
         self.clear_texture_meta(id);
         true
@@ -1392,6 +1473,19 @@ impl ResourceStore {
 #[inline]
 fn source_key(source: &str) -> u64 {
     perro_ids::parse_hashed_source_uri(source).unwrap_or_else(|| perro_ids::string_to_u64(source))
+}
+
+/// Sources whose pixels can be re-decoded on demand (asset paths, static
+/// hashed URIs, builtins). Anything else — runtime://, camera streams,
+/// editor-local absolute paths — keeps its resident CPU copy.
+#[inline]
+fn redecodable_texture_source(source: &str) -> bool {
+    source == "__default__"
+        || source == "__perro_builtin_logo_svg__"
+        || source.starts_with("res://")
+        || source.starts_with("user://")
+        || source.starts_with("dlc://")
+        || (!source.is_empty() && source.bytes().all(|b| b.is_ascii_digit()))
 }
 
 #[cfg(test)]

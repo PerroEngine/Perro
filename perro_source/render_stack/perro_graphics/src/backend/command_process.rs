@@ -129,6 +129,7 @@ impl PerroGraphics {
                             });
                             continue;
                         };
+                        let mesh = std::sync::Arc::new(mesh);
                         let out_id = if id.is_nil() {
                             self.resources.create_mesh(source.as_str(), reserved)
                         } else {
@@ -217,6 +218,9 @@ impl PerroGraphics {
                                 height,
                             },
                         );
+                        // runtime pixels have no re-decodable source; keep the
+                        // CPU copy out of the idle sweep.
+                        self.resources.pin_decoded_texture_data(id);
                         self.events
                             .push(RenderEvent::TextureCreated { request, id });
                         self.events.push(RenderEvent::TextureLoaded { id });
@@ -249,6 +253,8 @@ impl PerroGraphics {
                                 .create_texture_with_id(id, source.as_str(), reserved)
                         };
                         let _ = self.resources.set_decoded_texture_data(id, decoded);
+                        // the encoded bytes are not retained; pin the decoded copy.
+                        self.resources.pin_decoded_texture_data(id);
                         self.events
                             .push(RenderEvent::TextureCreated { request, id });
                         self.events.push(RenderEvent::TextureLoaded { id });
@@ -288,6 +294,7 @@ impl PerroGraphics {
                                 height,
                             },
                         );
+                        self.resources.pin_decoded_texture_data(id);
                         self.events
                             .push(RenderEvent::TextureCreated { request, id });
                         self.events.push(RenderEvent::TextureLoaded { id });
@@ -349,6 +356,21 @@ impl PerroGraphics {
                         height,
                         rgba,
                     } => {
+                        // idle sweep may have reclaimed the CPU copy; restore it
+                        // from the source so the region write has a base image.
+                        if self
+                            .resources
+                            .decoded_texture_data(id)
+                            .is_some_and(|decoded| !decoded.has_pixels())
+                            && let Some(source) =
+                                self.resources.texture_source(id).map(str::to_owned)
+                            && let Some(restored) = Self::decode_texture_source(
+                                &source,
+                                self.static_texture_lookup,
+                            )
+                        {
+                            let _ = self.resources.set_decoded_texture_data(id, restored);
+                        }
                         if self.resources.write_decoded_texture_region(
                             id,
                             x,
@@ -389,7 +411,18 @@ impl PerroGraphics {
                             }
                             continue;
                         }
-                        let Some(texture) = self.resources.decoded_texture_data(id) else {
+                        // resident copy may be evicted; fall back to a fresh
+                        // decode from the texture's source.
+                        let resident = self
+                            .resources
+                            .decoded_texture_data(id)
+                            .filter(|texture| texture.has_pixels())
+                            .cloned();
+                        let texture = resident.or_else(|| {
+                            let source = self.resources.texture_source(id)?;
+                            Self::decode_texture_source(source, self.static_texture_lookup)
+                        });
+                        let Some(texture) = texture else {
                             eprintln!(
                                 "[perro] texture image save failed path={path} error=texture unavailable"
                             );
@@ -472,18 +505,44 @@ impl PerroGraphics {
                         );
                     }
                     ResourceCommand::WriteMaterialData { id, material } => {
+                        // Param-value-only writes (per-frame material
+                        // animation from scripts) must not rebuild custom
+                        // pipelines or re-probe shader sources - at frame
+                        // rate that is pipeline churn plus a disk read per
+                        // retained custom shader. Only shape changes
+                        // (shader path, images, lighting, surface, material
+                        // kind) can alter the compiled pipeline.
+                        let pipeline_shape_changed =
+                            match (self.resources.material_ref(id), &material) {
+                                (
+                                    Some(Material3D::Custom(old)),
+                                    Material3D::Custom(new),
+                                ) => {
+                                    old.shader_path != new.shader_path
+                                        || old.lighting != new.lighting
+                                        || old.images != new.images
+                                        || old.surface != new.surface
+                                }
+                                (Some(Material3D::Custom(_)), _)
+                                | (Some(_), Material3D::Custom(_)) => true,
+                                (Some(_), _) => false,
+                                (None, _) => true,
+                            };
                         let warm = material.clone();
                         if self.resources.set_material_data(id, material) {
-                            // loaded .pmat data lands here; re-warm since the
-                            // write invalidates custom pipeline caches below.
-                            if self.pending_pipeline_warms.len() < PIPELINE_WARM_QUEUE_CAP {
-                                self.pending_pipeline_warms.push(warm);
+                            if pipeline_shape_changed {
+                                // loaded .pmat data lands here; re-warm since
+                                // the write invalidates custom pipeline
+                                // caches below.
+                                if self.pending_pipeline_warms.len() < PIPELINE_WARM_QUEUE_CAP {
+                                    self.pending_pipeline_warms.push(warm);
+                                }
+                                if let Some(gpu) = self.gpu.as_mut() {
+                                    gpu.invalidate_custom_material_pipelines();
+                                }
+                                // shader source may differ aft hot reload; re-probe.
+                                self.custom_shader_animated_cache.clear();
                             }
-                            if let Some(gpu) = self.gpu.as_mut() {
-                                gpu.invalidate_custom_material_pipelines();
-                            }
-                            // shader source may differ aft hot reload; re-probe.
-                            self.custom_shader_animated_cache.clear();
                             self.retained_draws_cache_revision = u64::MAX;
                             if asset_ready_log_enabled() {
                                 eprintln!(

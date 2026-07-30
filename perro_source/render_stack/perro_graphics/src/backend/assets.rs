@@ -415,6 +415,11 @@ impl PerroGraphics {
         }
         self.frame_index = self.frame_index.wrapping_add(1);
         if self.frame_index.is_multiple_of(GC_INTERVAL_FRAMES) {
+            // reclaim idle CPU pixel copies (GPU copies stay); consumers
+            // re-decode from source on the rare later re-upload.
+            let _ = self
+                .resources
+                .evict_idle_decoded_textures(DECODED_TEXTURE_EVICT_TTL_TICKS);
             let drops = self.resources.gc_unused_after_frames(
                 ResourceStore::DEFAULT_ZERO_REF_TTL_FRAMES,
                 GC_INTERVAL_FRAMES,
