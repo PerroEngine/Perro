@@ -11,7 +11,7 @@ use perro_asset_formats::{
     },
     source_ext,
 };
-use perro_graphics_assets::decode_image_rgba;
+use perro_graphics_assets::{SVG_RASTER_SCALE, decode_image_rgba};
 use perro_io::{compress_zlib_best, walkdir::collect_file_paths};
 use rayon::prelude::*;
 use std::{
@@ -48,7 +48,11 @@ pub fn generate_static_textures(project_root: &Path) -> Result<(), StaticPipelin
     texture_inputs.dedup_by(|a, b| a.1 == b.1);
 
     // Split cache hits from sources that need a real decode + compress pass.
-    let mut cache = SourceCache::open(&embedded_textures_dir, "textures");
+    // The SVG raster scale changes decoded output bytes without touching the
+    // source file stat key, so it must live in the cache context: a future
+    // scale change rebakes instead of serving stale rasters.
+    let context = format!("textures svg_scale={SVG_RASTER_SCALE}");
+    let mut cache = SourceCache::open(&embedded_textures_dir, &context);
     let mut textures = Vec::<(String, String)>::with_capacity(texture_inputs.len());
     let mut misses = Vec::<(String, String, PathBuf, u64, u128)>::new();
     for (rel, res_path, full_path) in texture_inputs {

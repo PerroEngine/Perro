@@ -146,6 +146,82 @@ pub(crate) struct WaterEntryState3D {
     pub(crate) last_contact_time: f32,
 }
 
+/// Entry cap for the by-path scene caches (`scene_cache` /
+/// `prepared_scene_cache`). Must stay comfortably above typical preload
+/// counts (the demo hub preloads 16 scenes) so preloaded scenes keep their
+/// cached entries; preloaded scenes also hold their own `Rc` clones in the
+/// `preloaded_*` maps, so eviction here never invalidates a preload handle.
+pub(crate) const SCENE_CACHE_MAX_ENTRIES: usize = 32;
+
+/// By-path scene cache with a simple entry-count LRU cap
+/// ([`SCENE_CACHE_MAX_ENTRIES`]). `get` touches recency, so scenes cycled
+/// through repeatedly (demo hub) stay resident while one-off loads age out.
+pub(crate) struct ScenePathLruCache<T> {
+    map: AHashMap<String, Rc<T>>,
+    /// LRU order, most-recently-used at the back.
+    order: std::collections::VecDeque<String>,
+}
+
+impl<T> Default for ScenePathLruCache<T> {
+    fn default() -> Self {
+        Self {
+            map: AHashMap::new(),
+            order: std::collections::VecDeque::new(),
+        }
+    }
+}
+
+impl<T> ScenePathLruCache<T> {
+    pub(crate) fn get(&mut self, path: &str) -> Option<Rc<T>> {
+        let value = self.map.get(path).cloned()?;
+        self.touch(path);
+        Some(value)
+    }
+
+    pub(crate) fn insert(&mut self, path: String, value: Rc<T>) {
+        if self.map.insert(path.clone(), value).is_some() {
+            self.touch(&path);
+        } else {
+            self.order.push_back(path);
+            while self.map.len() > SCENE_CACHE_MAX_ENTRIES {
+                let Some(oldest) = self.order.pop_front() else {
+                    break;
+                };
+                self.map.remove(&oldest);
+            }
+        }
+    }
+
+    pub(crate) fn remove(&mut self, path: &str) -> Option<Rc<T>> {
+        let removed = self.map.remove(path)?;
+        if let Some(index) = self.order.iter().position(|entry| entry == path) {
+            self.order.remove(index);
+        }
+        Some(removed)
+    }
+
+    /// Move `path` to the most-recently-used slot. `order` is capped at
+    /// [`SCENE_CACHE_MAX_ENTRIES`], so the linear scan stays trivial.
+    fn touch(&mut self, path: &str) {
+        if let Some(index) = self.order.iter().position(|entry| entry == path)
+            && index + 1 != self.order.len()
+        {
+            let entry = self.order.remove(index).expect("index from position");
+            self.order.push_back(entry);
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn len(&self) -> usize {
+        self.map.len()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn is_empty(&self) -> bool {
+        self.map.is_empty()
+    }
+}
+
 /// Reusable scratch maps 4 scene resource-ref scan.
 ///
 /// Kept on runtime so the per-frame scan reuse allocs instead of building +
@@ -185,9 +261,9 @@ pub struct Runtime {
     pub(crate) active_route_href: Option<String>,
     pub(crate) active_route_root: Option<NodeID>,
     pub(crate) scene_ownership_roots: AHashMap<NodeID, NodeID>,
-    pub(crate) scene_cache: RefCell<AHashMap<String, Rc<Scene>>>,
+    pub(crate) scene_cache: RefCell<ScenePathLruCache<Scene>>,
     pub(crate) prepared_scene_cache:
-        RefCell<AHashMap<String, Rc<scene_loader::prepare::PreparedScene>>>,
+        RefCell<ScenePathLruCache<scene_loader::prepare::PreparedScene>>,
     pub(crate) preloaded_scenes: AHashMap<PreloadedSceneID, Rc<Scene>>,
     pub(crate) preloaded_prepared_scenes:
         AHashMap<PreloadedSceneID, Rc<scene_loader::prepare::PreparedScene>>,
@@ -586,8 +662,8 @@ impl Runtime {
             active_route_href: None,
             active_route_root: None,
             scene_ownership_roots: AHashMap::new(),
-            scene_cache: RefCell::new(AHashMap::new()),
-            prepared_scene_cache: RefCell::new(AHashMap::new()),
+            scene_cache: RefCell::new(ScenePathLruCache::default()),
+            prepared_scene_cache: RefCell::new(ScenePathLruCache::default()),
             preloaded_scenes: AHashMap::new(),
             preloaded_prepared_scenes: AHashMap::new(),
             preloaded_scene_paths: AHashMap::new(),

@@ -383,9 +383,12 @@ pub enum ShaderVariantMode {
     Auto,
 }
 
-/// Shadow PCF kernel. Medium = 4-tap (default), High = 9-tap.
+/// Shadow filtering + atlas resolution. Low = 4-tap PCF with halved shadow
+/// map sizes, Medium = 4-tap at full sizes (default), High = 9-tap PCF at
+/// full sizes (kernel quality, not bigger maps: no extra VRAM).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum ShadowQuality {
+    Low,
     #[default]
     Medium,
     High,

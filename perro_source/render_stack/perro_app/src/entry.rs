@@ -270,6 +270,7 @@ fn effective_msaa(_: bool) -> bool {
 
 fn graphics_shadow_quality(quality: perro_runtime::ShadowQuality) -> perro_graphics::ShadowQuality {
     match quality {
+        perro_runtime::ShadowQuality::Low => perro_graphics::ShadowQuality::Low,
         perro_runtime::ShadowQuality::Medium => perro_graphics::ShadowQuality::Medium,
         perro_runtime::ShadowQuality::High => perro_graphics::ShadowQuality::High,
     }

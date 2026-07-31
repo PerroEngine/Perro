@@ -20,7 +20,9 @@ use std::{
 
 /// Bump when any encoder output changes shape (compression codec, container
 /// layout, payload packing) so stale caches self-invalidate.
-pub(crate) const PIPELINE_CACHE_VERSION: u32 = 1;
+/// v2: flush bakes produced before SVG_RASTER_SCALE entered the textures
+/// cache context (4x-era rasters never invalidated on the 4x -> 2x change).
+pub(crate) const PIPELINE_CACHE_VERSION: u32 = 2;
 
 const MANIFEST_FILE: &str = ".perro_manifest";
 

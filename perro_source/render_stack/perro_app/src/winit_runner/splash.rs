@@ -118,6 +118,10 @@ impl<B: GraphicsBackend> RunnerState<B> {
         self.timing_warmup_frames_left = TIMING_WARMUP_FRAMES;
         self.batch_start = Instant::now();
         self.batch = BatchCoreStats::default();
+        // Splash end is the app-level project-boot teardown: the boot logo SVG
+        // raster (largest cached entry by far) is on the GPU now, so drop the
+        // process-global CPU-side SVG caches. Later SVG decodes just re-fill.
+        perro_graphics_assets::clear_svg_caches();
     }
 
     pub(super) fn step_startup_frame(

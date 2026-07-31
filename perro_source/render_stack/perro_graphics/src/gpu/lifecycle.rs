@@ -143,14 +143,20 @@ impl Gpu {
             "[perro][gfx] adapter=({}) type=({:?}) backend=({:?})",
             adapter_info.name, adapter_info.device_type, adapter_info.backend
         );
+        // Shadow atlas resolutions follow shadow_quality (Low halves them);
+        // the constrained-adapter probe still wins via min. Every Gpu3D built
+        // on this adapter (main view + camera streams) inherits the result.
+        let (mut shadow_ray, mut shadow_spot, mut shadow_point) =
+            crate::three_d::gpu::shadow_map_sizes_for_quality(cfg.shadow_quality);
         if constrained_adapter {
-            // Halved shadow atlas resolutions; every Gpu3D built on this
-            // adapter (main view + camera streams) inherits them.
-            crate::three_d::gpu::set_default_shadow_map_sizes(1024, 1024, 512);
+            shadow_ray = shadow_ray.min(1024);
+            shadow_spot = shadow_spot.min(1024);
+            shadow_point = shadow_point.min(512);
             eprintln!(
-                "[perro][gfx] low-memory policy=on max_scene=1080p max_msaa=2 ssao=low shadow_atlas=1024/1024/512"
+                "[perro][gfx] low-memory policy=on max_scene=1080p max_msaa=2 ssao=low shadow_atlas={shadow_ray}/{shadow_spot}/{shadow_point}"
             );
         }
+        crate::three_d::gpu::set_default_shadow_map_sizes(shadow_ray, shadow_spot, shadow_point);
         let adapter_features = adapter.features();
         let mut required_features = wgpu::Features::empty();
         if adapter_features.contains(wgpu::Features::INDIRECT_FIRST_INSTANCE) {

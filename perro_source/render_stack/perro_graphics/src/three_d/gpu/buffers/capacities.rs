@@ -170,7 +170,7 @@ impl Gpu3D {
         });
         self.multimesh_instance_capacity = new_capacity;
         // fresh buffer, undefined contents: the skip-identical gate must not fire.
-        self.last_uploaded_multimesh_instances.clear();
+        self.last_uploaded_multimesh_instances_hash = None;
         self.rebuild_camera_bind_groups(device);
     }
 
@@ -197,7 +197,7 @@ impl Gpu3D {
         });
         self.multimesh_draw_params_capacity = new_capacity;
         // fresh buffer, undefined contents: the skip-identical gate must not fire.
-        self.last_uploaded_multimesh_draw_params.clear();
+        self.last_uploaded_multimesh_draw_params_hash = None;
         self.rebuild_camera_bind_groups(device);
     }
 

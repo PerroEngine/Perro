@@ -1,8 +1,14 @@
 use super::*;
 
-pub(super) fn mesh_query_cache() -> &'static RwLock<QueryMeshCache> {
-    static CACHE: OnceLock<RwLock<QueryMeshCache>> = OnceLock::new();
-    CACHE.get_or_init(|| RwLock::new(AHashMap::default()))
+/// Byte budget for the process-global query-mesh cache. Query geometry is
+/// rebuilt on demand from the mesh source / runtime mesh data, so eviction
+/// only costs a re-decode + BVH rebuild on the next query against that mesh.
+/// Mirrors the decoded-texture budget pattern in `perro_graphics` resources.
+const QUERY_MESH_CACHE_MAX_BYTES: usize = 64 * 1024 * 1024;
+
+pub(super) fn mesh_query_cache() -> &'static Mutex<QueryMeshCache> {
+    static CACHE: OnceLock<Mutex<QueryMeshCache>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(QueryMeshCache::default()))
 }
 
 #[inline]
@@ -13,6 +19,141 @@ pub(super) fn runtime_mesh_query_cache_key(mesh_id: MeshID, revision: u64) -> u6
         .rotate_left(17)
         ^ revision
         ^ 0x5bf0_3635_6ad6_22d5
+}
+
+struct QueryMeshCacheEntry {
+    mesh: Arc<QueryMeshData>,
+    bytes: usize,
+    /// `mesh_id.as_u64()` for revision-keyed runtime meshes, `None` for
+    /// source-path entries. Used to keep `latest_runtime_key_by_mesh` in sync
+    /// when the entry is removed or evicted.
+    runtime_mesh: Option<u64>,
+    /// LRU stamp: `clock` value at the last hit (or insert).
+    last_used: u64,
+}
+
+/// Process-global cache of decoded query geometry (vertices + triangles +
+/// BVH), keyed by either `string_to_u64(source)` (source-path meshes) or
+/// [`runtime_mesh_query_cache_key`] (runtime meshes, key encodes revision).
+///
+/// Two leak guards on top of the plain map it replaced:
+/// - a runtime mesh's revision bump inserts under a NEW key, so the previous
+///   revision's entry is dropped explicitly via `latest_runtime_key_by_mesh`
+///   instead of lingering forever, and
+/// - total resident bytes are capped at [`QUERY_MESH_CACHE_MAX_BYTES`] with
+///   least-recently-used eviction (touch-on-get), enforced only on inserts
+///   that push the cache over budget.
+#[derive(Default)]
+pub(super) struct QueryMeshCache {
+    entries: AHashMap<u64, QueryMeshCacheEntry>,
+    /// `mesh_id.as_u64()` -> cache key of the latest inserted revision.
+    latest_runtime_key_by_mesh: AHashMap<u64, u64>,
+    total_bytes: usize,
+    clock: u64,
+}
+
+impl QueryMeshCache {
+    pub(super) fn get(&mut self, key: u64) -> Option<Arc<QueryMeshData>> {
+        self.clock = self.clock.wrapping_add(1);
+        let now = self.clock;
+        let entry = self.entries.get_mut(&key)?;
+        entry.last_used = now;
+        Some(entry.mesh.clone())
+    }
+
+    /// Insert a source-path mesh (`string_to_u64(source)` key). The key is
+    /// stable for a given source, so a re-insert replaces in place.
+    pub(super) fn insert_source_mesh(&mut self, key: u64, mesh: Arc<QueryMeshData>) {
+        self.insert_entry(key, mesh, None);
+    }
+
+    /// Insert a runtime mesh under its `(mesh_id, revision)` key, dropping the
+    /// previously cached revision (if any) so revision bumps never accumulate.
+    pub(super) fn insert_runtime_mesh(
+        &mut self,
+        mesh_id: MeshID,
+        revision: u64,
+        mesh: Arc<QueryMeshData>,
+    ) {
+        let key = runtime_mesh_query_cache_key(mesh_id, revision);
+        if let Some(old_key) = self
+            .latest_runtime_key_by_mesh
+            .insert(mesh_id.as_u64(), key)
+            && old_key != key
+        {
+            self.remove_entry(old_key);
+        }
+        self.insert_entry(key, mesh, Some(mesh_id.as_u64()));
+    }
+
+    fn insert_entry(&mut self, key: u64, mesh: Arc<QueryMeshData>, runtime_mesh: Option<u64>) {
+        self.clock = self.clock.wrapping_add(1);
+        self.remove_entry(key);
+        let bytes = query_mesh_data_bytes(&mesh);
+        self.total_bytes = self.total_bytes.saturating_add(bytes);
+        self.entries.insert(
+            key,
+            QueryMeshCacheEntry {
+                mesh,
+                bytes,
+                runtime_mesh,
+                last_used: self.clock,
+            },
+        );
+        self.enforce_budget(key);
+    }
+
+    fn remove_entry(&mut self, key: u64) {
+        if let Some(old) = self.entries.remove(&key) {
+            self.total_bytes = self.total_bytes.saturating_sub(old.bytes);
+            if let Some(mesh_id) = old.runtime_mesh
+                && self.latest_runtime_key_by_mesh.get(&mesh_id) == Some(&key)
+            {
+                self.latest_runtime_key_by_mesh.remove(&mesh_id);
+            }
+        }
+    }
+
+    /// LRU eviction: when resident bytes exceed the budget, drop the
+    /// least-recently-used entries until back under (or only `keep` remains).
+    /// `keep` (the entry that triggered enforcement) is never evicted. Runs
+    /// only on over-budget inserts, so steady-state lookups scan nothing.
+    fn enforce_budget(&mut self, keep: u64) {
+        if self.total_bytes <= QUERY_MESH_CACHE_MAX_BYTES {
+            return;
+        }
+        let now = self.clock;
+        let mut candidates: Vec<(u64, u64)> = self
+            .entries
+            .iter()
+            .filter(|(key, _)| **key != keep)
+            .map(|(key, entry)| (now.wrapping_sub(entry.last_used), *key))
+            .collect();
+        // oldest (largest stamp age) first.
+        candidates.sort_unstable_by_key(|candidate| std::cmp::Reverse(candidate.0));
+        for (_, key) in candidates {
+            if self.total_bytes <= QUERY_MESH_CACHE_MAX_BYTES {
+                break;
+            }
+            self.remove_entry(key);
+        }
+    }
+}
+
+/// Resident-byte estimate for one cache entry: per-vertex position/uv/skin
+/// lanes, per-triangle index + acceleration data, and the BVH arrays.
+fn query_mesh_data_bytes(mesh: &QueryMeshData) -> usize {
+    use std::mem::size_of;
+    size_of::<QueryMeshData>()
+        + mesh.vertices.len() * size_of::<Vec3>()
+        + mesh.uv0.len() * size_of::<Vec2>()
+        + mesh.paint_uv.len() * size_of::<Vec2>()
+        + mesh.joints.len() * size_of::<[u16; 4]>()
+        + mesh.weights.len() * size_of::<[f32; 4]>()
+        + mesh.triangles.len() * size_of::<QueryTri>()
+        + mesh.tri_accel.len() * size_of::<QueryTriAccel>()
+        + mesh.bvh_nodes.len() * size_of::<QueryBvhNode>()
+        + mesh.bvh_tri_indices.len() * size_of::<u32>()
 }
 
 thread_local! {

@@ -21,7 +21,7 @@ vsync = false
 msaa = true
 msaa_2d = false                  # MSAA for sessions that never use the 3D pipeline
 ssao = "medium"                  # off | low | medium | high | ultra
-shadow_quality = "medium"        # medium (4-tap PCF) | high (9-tap)
+shadow_quality = "medium"        # low (4-tap PCF, half-size maps) | medium (4-tap) | high (9-tap)
 occlusion_culling = "gpu"        # cpu | gpu | off
 particle_sim_default = "gpu"     # cpu | hybrid | gpu
 texture_filter = "linear_mipmap" # nearest | linear | linear_mipmap | anisotropic
@@ -1082,11 +1082,12 @@ fn parse_shadow_quality_with_default(
         ProjectError::InvalidField("graphics.shadow_quality", "must be a string".to_string())
     })?;
     match value {
+        "low" => Ok(ShadowQuality::Low),
         "medium" => Ok(ShadowQuality::Medium),
         "high" => Ok(ShadowQuality::High),
         _ => Err(ProjectError::InvalidField(
             "graphics.shadow_quality",
-            "must be one of: medium, high".to_string(),
+            "must be one of: low, medium, high".to_string(),
         )),
     }
 }

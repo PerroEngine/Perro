@@ -306,13 +306,18 @@ impl BarkPlayer {
         let mut cursor = Cursor::new(bytes);
         let font =
             Arc::new(rustysynth::SoundFont::new(&mut cursor).map_err(|err| err.to_string())?);
-        state.cache_bytes = state.cache_bytes.saturating_add(source_bytes);
+        // Fonts are pinned until shutdown (no unload API, playback errors if
+        // one goes missing), so they live on their own ledger instead of the
+        // evictable clip budget: charging them to `cache_bytes` would
+        // permanently shrink the clip cache and force-evict hot clips.
+        let footprint_bytes = CachedSoundFont::estimate_footprint(&font, source_bytes);
+        state.soundfont_bytes = state.soundfont_bytes.saturating_add(footprint_bytes);
         state.soundfonts.insert(
             id,
             CachedSoundFont {
                 source: Arc::from(source),
                 font: font.clone(),
-                source_bytes,
+                footprint_bytes,
             },
         );
         Ok(font)
@@ -334,19 +339,21 @@ impl BarkPlayer {
         source: &str,
     ) -> Result<Arc<[u8]>, String> {
         let source_hash = perro_ids::string_to_u64(source);
-        if let Some(existing) = state.midi_files.get(&source_hash) {
+        if let Some(existing) = state.midi_files.get_mut(&source_hash) {
             if existing.source.as_ref() != source {
                 return Err(format!(
                     "midi source hash collision: `{}` conflicts with `{source}`",
                     existing.source
                 ));
             }
+            existing.last_touched = Instant::now();
             return Ok(existing.bytes.clone());
         }
         let bytes: Arc<[u8]> =
             Arc::from(perro_io::load_asset(source).map_err(|err| err.to_string())?);
         // Midi file bytes pin memory like audio assets do; count them against
-        // the shared budget so audio-cache eviction compensates.
+        // the shared budget so audio-cache eviction compensates. They reload
+        // lazily from disk, so the soft-limit pass may evict idle ones.
         state.cache_bytes = state.cache_bytes.saturating_add(bytes.len());
         state.midi_files.insert(
             source_hash,
@@ -354,6 +361,7 @@ impl BarkPlayer {
                 source: Arc::from(source),
                 bytes: bytes.clone(),
                 built_in: None,
+                last_touched: Instant::now(),
             },
         );
         Ok(bytes)
@@ -377,6 +385,7 @@ impl BarkPlayer {
                 entry.source
             ));
         }
+        entry.last_touched = Instant::now();
         if let Some(parsed) = &entry.built_in {
             return Ok(parsed.clone());
         }
@@ -419,19 +428,41 @@ impl BarkPlayer {
         }
         // Evict least-recently-touched first. The old `retain` walked the map
         // in hash order, which could drop a hot clip while stale ones survived.
-        let mut candidates: Vec<(u64, Instant, usize)> = state
+        // Clip entries and idle midi files share one LRU order; midi files
+        // reload lazily from disk, so dropping them is safe as long as no
+        // active midi playback still references the source.
+        let mut candidates: Vec<(u64, Instant, usize, bool)> = state
             .cache
             .iter()
             .filter(|(_, entry)| !entry.reserved && entry.active_uses == 0)
-            .map(|(key, entry)| (*key, entry.last_touched, entry.cache_len()))
+            .map(|(key, entry)| (*key, entry.last_touched, entry.cache_len(), false))
             .collect();
-        candidates.sort_by_key(|(_, last_touched, _)| *last_touched);
+        if !state.midi_files.is_empty() {
+            let active_midi_sources: std::collections::HashSet<u64> = state
+                .midi_playbacks
+                .iter()
+                .filter_map(|playback| playback.source.as_deref())
+                .map(perro_ids::string_to_u64)
+                .collect();
+            candidates.extend(
+                state
+                    .midi_files
+                    .iter()
+                    .filter(|(key, _)| !active_midi_sources.contains(key))
+                    .map(|(key, entry)| (*key, entry.last_touched, entry.cache_len(), true)),
+            );
+        }
+        candidates.sort_by_key(|(_, last_touched, _, _)| *last_touched);
         let mut cache_bytes = state.cache_bytes;
-        for (key, _, len) in candidates {
+        for (key, _, len, is_midi) in candidates {
             if cache_bytes <= Self::CACHE_SOFT_LIMIT_BYTES {
                 break;
             }
-            state.cache.remove(&key);
+            if is_midi {
+                state.midi_files.remove(&key);
+            } else {
+                state.cache.remove(&key);
+            }
             cache_bytes = cache_bytes.saturating_sub(len);
         }
         state.cache_bytes = cache_bytes;

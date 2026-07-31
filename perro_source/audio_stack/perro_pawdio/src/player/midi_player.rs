@@ -24,16 +24,19 @@ impl BarkPlayer {
         let mut cursor = Cursor::new(bytes);
         let font =
             Arc::new(rustysynth::SoundFont::new(&mut cursor).map_err(|err| err.to_string())?);
-        state.cache_bytes = state.cache_bytes.saturating_add(source_bytes);
+        // Fonts live on their own ledger, not the evictable clip budget; see
+        // `get_or_load_soundfont_locked`.
+        let footprint_bytes = CachedSoundFont::estimate_footprint(&font, source_bytes);
+        state.soundfont_bytes = state.soundfont_bytes.saturating_add(footprint_bytes);
         if let Some(old) = state.soundfonts.insert(
             id,
             CachedSoundFont {
                 source: Arc::from(source),
                 font,
-                source_bytes,
+                footprint_bytes,
             },
         ) {
-            state.cache_bytes = state.cache_bytes.saturating_sub(old.source_bytes);
+            state.soundfont_bytes = state.soundfont_bytes.saturating_sub(old.footprint_bytes);
         }
         Ok(())
     }

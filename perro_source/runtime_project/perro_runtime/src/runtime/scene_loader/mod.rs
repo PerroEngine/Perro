@@ -187,7 +187,7 @@ impl Runtime {
     }
 
     fn get_or_load_dynamic_scene_cached(&self, path: &str) -> Result<Rc<Scene>, String> {
-        if let Some(scene) = self.scene_cache.borrow().get(path).cloned() {
+        if let Some(scene) = self.scene_cache.borrow_mut().get(path) {
             return Ok(scene);
         }
         let (scene, _) = load_runtime_scene_from_disk(path)?;
@@ -279,7 +279,7 @@ impl Runtime {
         path: &str,
         scene: &Scene,
     ) -> Result<Rc<prepare::PreparedScene>, String> {
-        if let Some(prepared) = self.prepared_scene_cache.borrow().get(path).cloned() {
+        if let Some(prepared) = self.prepared_scene_cache.borrow_mut().get(path) {
             return Ok(prepared);
         }
         let prepared = Rc::new(
@@ -520,6 +520,9 @@ impl Runtime {
         self.render_2d.visible_now.clear();
         self.render_2d.prev_visible.clear();
         self.render_2d.retained_sprites.clear();
+        self.render_2d.tilemap_render_cache.clear();
+        self.render_2d.particle_path_cache.clear();
+        self.render_2d.particle_path_cache_order.clear();
         self.render_2d.tileset_cache.clear();
         self.render_2d.texture_sources.clear();
         self.render_2d.last_camera = None;
@@ -534,6 +537,19 @@ impl Runtime {
         self.render_3d.material_surface_overrides.clear();
         self.render_3d.particle_path_cache.clear();
         self.render_3d.particle_path_cache_order.clear();
+        // Retained + per-node caches keyed by NodeID: `self.nodes.clear()`
+        // above bypasses per-node teardown, so without these the entries for
+        // dead node ids accumulate across full scene switches.
+        self.render_3d.retained_mesh_draws.clear();
+        self.render_3d.retained_skies.clear();
+        self.render_3d.retained_ray_lights.clear();
+        self.render_3d.retained_point_lights.clear();
+        self.render_3d.retained_spot_lights.clear();
+        self.render_3d.retained_decals.clear();
+        self.render_3d.retained_ambient_lights.clear();
+        self.render_3d.dense_instance_pose_cache.clear();
+        self.render_3d.collision_debug_state.clear();
+        self.render_3d.camera_activation_order.clear();
         self.render_3d.removed_nodes.clear();
         self.render_ui.traversal_ids.clear();
         self.render_ui.traversal_seen.clear();

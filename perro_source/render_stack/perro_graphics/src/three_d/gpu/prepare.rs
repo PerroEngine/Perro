@@ -418,11 +418,10 @@ impl Gpu3D {
                     );
                 }
                 // GPU buffer now equals the staged vec again; keep the
-                // skip-identical mirror in sync so the next full restage can
+                // skip-identical hash in sync so the next full restage can
                 // still gate its upload.
-                self.last_uploaded_multimesh_draw_params.clear();
-                self.last_uploaded_multimesh_draw_params
-                    .extend_from_slice(&self.staged_multimesh_draw_params);
+                self.last_uploaded_multimesh_draw_params_hash =
+                    Some(super::pod_slice_len_hash(&self.staged_multimesh_draw_params));
             }
             // Transforms shifted: overlap tests may change, so refresh receiver
             // lists unless no blend-relevant batch actually moved this frame.
@@ -1833,41 +1832,35 @@ impl Gpu3D {
             self.staged_multimesh_draw_params.len().max(1),
         );
         // A restage regularly reproduces byte-identical multimesh staging
-        // (an unrelated draw changed); the memcmp is far cheaper than
-        // re-uploading multiple MB of instances every frame.
-        if !self.staged_multimesh_draw_params.is_empty()
-            && !super::pod_slices_equal(
-                &self.staged_multimesh_draw_params,
-                &self.last_uploaded_multimesh_draw_params,
-            )
-        {
-            queue.write_buffer(
-                &self.multimesh_draw_params_buffer,
-                0,
-                bytemuck::cast_slice(&self.staged_multimesh_draw_params),
-            );
-            self.last_uploaded_multimesh_draw_params.clear();
-            self.last_uploaded_multimesh_draw_params
-                .extend_from_slice(&self.staged_multimesh_draw_params);
+        // (an unrelated draw changed); hashing the staged bytes and comparing
+        // against the last-uploaded hash is far cheaper than re-uploading
+        // multiple MB of instances every frame, and unlike a mirror copy it
+        // costs no extra CPU memory.
+        if !self.staged_multimesh_draw_params.is_empty() {
+            let hash = super::pod_slice_len_hash(&self.staged_multimesh_draw_params);
+            if self.last_uploaded_multimesh_draw_params_hash != Some(hash) {
+                queue.write_buffer(
+                    &self.multimesh_draw_params_buffer,
+                    0,
+                    bytemuck::cast_slice(&self.staged_multimesh_draw_params),
+                );
+                self.last_uploaded_multimesh_draw_params_hash = Some(hash);
+            }
         }
         self.ensure_multimesh_instance_capacity(
             device,
             self.staged_multimesh_instances.len().max(1),
         );
-        if !self.staged_multimesh_instances.is_empty()
-            && !super::pod_slices_equal(
-                &self.staged_multimesh_instances,
-                &self.last_uploaded_multimesh_instances,
-            )
-        {
-            queue.write_buffer(
-                &self.multimesh_instance_buffer,
-                0,
-                bytemuck::cast_slice(&self.staged_multimesh_instances),
-            );
-            self.last_uploaded_multimesh_instances.clear();
-            self.last_uploaded_multimesh_instances
-                .extend_from_slice(&self.staged_multimesh_instances);
+        if !self.staged_multimesh_instances.is_empty() {
+            let hash = super::pod_slice_len_hash(&self.staged_multimesh_instances);
+            if self.last_uploaded_multimesh_instances_hash != Some(hash) {
+                queue.write_buffer(
+                    &self.multimesh_instance_buffer,
+                    0,
+                    bytemuck::cast_slice(&self.staged_multimesh_instances),
+                );
+                self.last_uploaded_multimesh_instances_hash = Some(hash);
+            }
         }
         // Multimesh inputs are topology-only, so rebuild them on the full path.
         // Direct draws also read the identity visible-index buffer, including

@@ -250,6 +250,22 @@ static SHADOW_SPOT_MAP_SIZE_DEFAULT: std::sync::atomic::AtomicU32 =
 static SHADOW_POINT_MAP_SIZE_DEFAULT: std::sync::atomic::AtomicU32 =
     std::sync::atomic::AtomicU32::new(SHADOW_POINT_MAP_SIZE);
 
+/// Shadow atlas sizes for a `shadow_quality` setting. Low halves every atlas
+/// (1024/1024/512); Medium and High keep the compiled defaults - High spends
+/// its budget on the 9-tap PCF kernel, not larger maps, to avoid VRAM jumps.
+pub(crate) fn shadow_map_sizes_for_quality(quality: crate::ShadowQuality) -> (u32, u32, u32) {
+    match quality {
+        crate::ShadowQuality::Low => (
+            SHADOW_MAP_SIZE / 2,
+            SHADOW_SPOT_MAP_SIZE / 2,
+            SHADOW_POINT_MAP_SIZE / 2,
+        ),
+        crate::ShadowQuality::Medium | crate::ShadowQuality::High => {
+            (SHADOW_MAP_SIZE, SHADOW_SPOT_MAP_SIZE, SHADOW_POINT_MAP_SIZE)
+        }
+    }
+}
+
 pub(crate) fn set_default_shadow_map_sizes(ray: u32, spot: u32, point: u32) {
     use std::sync::atomic::Ordering;
     SHADOW_MAP_SIZE_DEFAULT.store(ray.max(1), Ordering::Relaxed);
@@ -280,6 +296,19 @@ const SHADOW_DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Flo
 #[inline]
 fn pod_slices_equal<T: bytemuck::Pod>(a: &[T], b: &[T]) -> bool {
     a.len() == b.len() && bytemuck::cast_slice::<T, u8>(a) == bytemuck::cast_slice::<T, u8>(b)
+}
+
+/// (len, deterministic 64-bit content hash) of a Pod staging slice, hashed
+/// over exactly the bytes a `queue.write_buffer` upload would send. Backs the
+/// skip-identical-upload gates where a full CPU mirror of the staging vec
+/// would cost megabytes (multimesh instances + draw params).
+fn pod_slice_len_hash<T: bytemuck::Pod>(items: &[T]) -> (usize, u64) {
+    use std::hash::{BuildHasher, Hasher};
+    let mut hasher =
+        ahash::RandomState::with_seeds(0x3d5e_0001, 0x3d5e_0002, 0x3d5e_0003, 0x3d5e_0004)
+            .build_hasher();
+    hasher.write(bytemuck::cast_slice::<T, u8>(items));
+    (items.len(), hasher.finish())
 }
 
 const SHADOW_MAP_DEPTH_BIAS_CONST: i32 = 2;
@@ -964,13 +993,17 @@ pub struct Gpu3D {
     // True while the cull compute ran this frame (drives indirect draw path).
     multimesh_cull_active: bool,
     last_multimesh_cull_params: Option<MultiMeshCullParamsGpu>,
-    // Last-uploaded copies of the multimesh staging vecs. A full restage often
-    // reproduces identical bytes (something unrelated in the draw list
-    // changed); comparing against these skips the GPU re-uploads - several MB
-    // per frame at 100k instances. Cleared when the matching buffer is
-    // recreated on capacity growth, since new buffers start undefined.
-    last_uploaded_multimesh_instances: Vec<MultiMeshInstanceGpu>,
-    last_uploaded_multimesh_draw_params: Vec<MultiMeshDrawParamGpu>,
+    // (len, hash) of the last-uploaded multimesh instance/draw-param staging
+    // vecs. A full restage often reproduces identical bytes (something
+    // unrelated in the draw list changed); comparing content hashes skips the
+    // GPU re-uploads - several MB per frame at 100k instances - without
+    // mirroring the full CPU copies (~12MB+ saved at that scale). Reset to
+    // None when the matching buffer is recreated on capacity growth, since
+    // new buffers start undefined. A 64-bit collision at worst skips one
+    // upload (one stale frame); accepted for the mirror-memory win.
+    last_uploaded_multimesh_instances_hash: Option<(usize, u64)>,
+    last_uploaded_multimesh_draw_params_hash: Option<(usize, u64)>,
+    // Small per-batch vecs: full mirror copies stay (memcmp gate).
     last_uploaded_multimesh_cull_batches: Vec<MultiMeshCullBatchGpu>,
     last_uploaded_multimesh_indirect: Vec<DrawIndexedIndirectGpu>,
     // Instance count the batch-id buffer was last uploaded for (0 = invalid).

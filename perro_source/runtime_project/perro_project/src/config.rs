@@ -10,9 +10,12 @@ pub enum OcclusionCulling {
     Off,
 }
 
-/// Shadow PCF kernel. Medium = 4-tap (default), High = 9-tap.
+/// Shadow filtering + atlas resolution. Low = 4-tap PCF with halved shadow
+/// map sizes (1024/1024/512), Medium = 4-tap at full sizes (2048/2048/1024,
+/// default), High = 9-tap PCF at full sizes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ShadowQuality {
+    Low,
     #[default]
     Medium,
     High,
@@ -21,6 +24,7 @@ pub enum ShadowQuality {
 impl ShadowQuality {
     pub const fn as_str(self) -> &'static str {
         match self {
+            Self::Low => "low",
             Self::Medium => "medium",
             Self::High => "high",
         }

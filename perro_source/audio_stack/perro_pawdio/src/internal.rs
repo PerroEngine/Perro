@@ -142,6 +142,11 @@ pub(crate) struct AudioState {
     pub(crate) soundfonts: HashMap<perro_ids::SoundFontID, CachedSoundFont>,
     pub(crate) midi_files: HashMap<u64, CachedMidiFile>,
     pub(crate) cache_bytes: usize,
+    // Resident parsed-soundfont footprint, tracked separately from
+    // `cache_bytes`: fonts have no unload API and no reload path (the bytes
+    // variant never touches disk), so they are not evictable and must not
+    // shrink the clip cache's effective budget.
+    pub(crate) soundfont_bytes: usize,
     pub(crate) next_cache_epoch: u64,
     pub(crate) last_evict_sweep: Instant,
     // Volume/speed refresh walks are batched: setters mark dirty, the worker
@@ -154,16 +159,35 @@ pub(crate) struct AudioState {
 pub(crate) struct CachedSoundFont {
     pub(crate) source: Arc<str>,
     pub(crate) font: std::sync::Arc<rustysynth::SoundFont>,
-    // Source-file byte length, counted against the cache budget as a proxy:
-    // the decoded sample tables live inside rustysynth and are not directly
-    // measurable, but the sf2 file size tracks them closely.
-    pub(crate) source_bytes: usize,
+    // Real resident-footprint estimate for the parsed font: the i16 wave
+    // table rustysynth keeps in memory (its dominant allocation), floored at
+    // the source-file size to cover preset/instrument/region structs.
+    pub(crate) footprint_bytes: usize,
+}
+
+impl CachedSoundFont {
+    pub(crate) fn estimate_footprint(
+        font: &rustysynth::SoundFont,
+        source_bytes: usize,
+    ) -> usize {
+        std::mem::size_of_val(font.get_wave_data()).max(source_bytes)
+    }
 }
 
 pub(crate) struct CachedMidiFile {
     pub(crate) source: Arc<str>,
     pub(crate) bytes: Arc<[u8]>,
     pub(crate) built_in: Option<Arc<BuiltInMidiFileData>>,
+    pub(crate) last_touched: Instant,
+}
+
+impl CachedMidiFile {
+    // Bytes this entry pins in the cache budget. Only the raw file bytes are
+    // charged (matching what load added); the parsed built-in data is small
+    // and proportional to them.
+    pub(crate) fn cache_len(&self) -> usize {
+        self.bytes.len()
+    }
 }
 #[derive(Clone)]
 pub(crate) struct OwnedAudioPlaybackRequest {
