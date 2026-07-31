@@ -14,8 +14,8 @@ use perro_structs::{ColorBlindFilter, PostProcessEffect, PostProcessSet, Vector2
 /// Full resource contract required by [`ResourceWindow`].
 ///
 /// Resource stores implement this by implementing each resource sub-API plus
-/// viewport access. The trait is `Send + Sync` because resource access is shared
-/// with script contexts.
+/// viewport access. Resource access stays on the runtime thread, so no
+/// `Send`/`Sync` bound is required.
 pub trait ResourceAPI:
     PostProcessingAPI
     + VisualAccessibilityAPI
@@ -35,8 +35,6 @@ pub trait ResourceAPI:
     + LocalizationAPI
     + SceneDocAPI
     + ViewportAPI
-    + Send
-    + Sync
 {
 }
 impl<T> ResourceAPI for T where
@@ -58,8 +56,6 @@ impl<T> ResourceAPI for T where
         + LocalizationAPI
         + SceneDocAPI
         + ViewportAPI
-        + Send
-        + Sync
 {
 }
 

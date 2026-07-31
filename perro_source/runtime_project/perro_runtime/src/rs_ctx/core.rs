@@ -15,6 +15,7 @@ use perro_render_bridge::{RenderCommand, RenderEvent};
 use std::{
     borrow::Cow,
     collections::HashMap,
+    rc::Rc,
     sync::{Arc, Mutex, mpsc},
 };
 
@@ -45,11 +46,13 @@ pub(crate) struct RuntimeVideoClip {
     pub(crate) width: u32,
     pub(crate) height: u32,
     pub(crate) fps: f32,
-    pub(crate) frames: Arc<[RuntimeVideoFrame]>,
+    // per-frame rgba stays Arc<[u8]> (enters render commands); the frame
+    // list itself never leaves the runtime thread.
+    pub(crate) frames: Rc<[RuntimeVideoFrame]>,
 }
 
 pub(crate) struct VideoClipCacheEntry {
-    pub(crate) clip: Arc<RuntimeVideoClip>,
+    pub(crate) clip: Rc<RuntimeVideoClip>,
     pub(crate) bytes: usize,
     pub(crate) last_use: u64,
 }
@@ -375,7 +378,7 @@ impl RuntimeResourceApi {
         static_localization_lookup: Option<StaticLocalizationLookup>,
         static_csv_lookup: Option<StaticCsvLookup>,
         localization_config: Option<LocalizationConfig>,
-    ) -> Arc<Self> {
+    ) -> Rc<Self> {
         #[cfg(not(target_arch = "wasm32"))]
         let (material_load_tx, material_load_rx) = mpsc::channel();
         #[cfg(all(not(target_arch = "wasm32"), not(test)))]
@@ -389,7 +392,7 @@ impl RuntimeResourceApi {
         // holds a couple frames across the few live webcams; receiver coalesces.
         let (webcam_frame_tx, webcam_frame_rx) = mpsc::sync_channel(WEBCAM_FRAME_CHANNEL_CAP);
         let (webcam_error_tx, webcam_error_rx) = mpsc::channel();
-        let api = Arc::new(Self {
+        let api = Rc::new(Self {
             state: Mutex::new(RuntimeResourceState::new()),
             localization: std::sync::RwLock::new(RuntimeLocalizationState::new(
                 localization_config.as_ref(),

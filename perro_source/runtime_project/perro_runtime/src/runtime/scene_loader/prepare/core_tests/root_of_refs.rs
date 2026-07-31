@@ -55,8 +55,8 @@ mod root_of_refs {
         .parse_scene();
 
         let prepared = prepare_scene_with_loader(&outer, &|path| match path {
-            "res://mid.scn" => Ok(std::sync::Arc::new(mid.clone())),
-            "res://visual.scn" => Ok(std::sync::Arc::new(inner.clone())),
+            "res://mid.scn" => Ok(std::rc::Rc::new(mid.clone())),
+            "res://visual.scn" => Ok(std::rc::Rc::new(inner.clone())),
             _ => Err(format!("unknown scene path `{path}`")),
         })
         .expect("prepare scene");
@@ -141,7 +141,7 @@ mod root_of_refs {
         .parse_scene();
 
         let prepared = prepare_scene_with_loader(&host, &|path| match path {
-            "res://visual.scn" => Ok(std::sync::Arc::new(inner.clone())),
+            "res://visual.scn" => Ok(std::rc::Rc::new(inner.clone())),
             _ => Err(format!("unknown scene path `{path}`")),
         })
         .expect("prepare scene");

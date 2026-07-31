@@ -4,6 +4,7 @@ use super::core::{
 use perro_ids::{NodeID, TextureID, string_to_u64};
 use perro_render_bridge::{RenderCommand, ResourceCommand};
 use perro_resource_api::sub_apis::{VideoAPI, VideoUpdate};
+use std::rc::Rc;
 use std::sync::Arc;
 
 const FALLBACK_RGBA: [u8; 4] = [0, 0, 0, 255];
@@ -122,7 +123,7 @@ impl VideoAPI for RuntimeResourceApi {
 }
 
 impl RuntimeResourceApi {
-    fn video_clip(&self, source_hash: u64, source: &str) -> Option<Arc<RuntimeVideoClip>> {
+    fn video_clip(&self, source_hash: u64, source: &str) -> Option<Rc<RuntimeVideoClip>> {
         if let Ok(mut cache) = self.video_clip_cache.lock() {
             cache.tick += 1;
             let tick = cache.tick;
@@ -132,7 +133,7 @@ impl RuntimeResourceApi {
             }
         }
 
-        let clip = load_y4m_clip(source).ok().map(Arc::new)?;
+        let clip = load_y4m_clip(source).ok().map(Rc::new)?;
         let bytes = clip_bytes(&clip);
         if let Ok(mut cache) = self.video_clip_cache.lock() {
             cache.tick += 1;
@@ -263,7 +264,7 @@ impl RuntimeResourceApi {
             width: 1,
             height: 1,
             fps: 1.0,
-            frames: Arc::from([RuntimeVideoFrame {
+            frames: Rc::from([RuntimeVideoFrame {
                 rgba: Arc::from(FALLBACK_RGBA.as_slice()),
             }]),
         };
@@ -338,7 +339,7 @@ fn load_y4m_clip(source: &str) -> Result<RuntimeVideoClip, String> {
         width,
         height,
         fps: fps.max(0.001),
-        frames: Arc::from(frames),
+        frames: Rc::from(frames),
     })
 }
 

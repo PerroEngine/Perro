@@ -798,12 +798,27 @@ pub(in super::super) fn encode_custom_param_value_packed(
     }
 }
 
+// Shared fallback so surfaces without a bound material do not allocate a
+// fresh default per draw per frame.
+static DEFAULT_MATERIAL3D: std::sync::OnceLock<Arc<Material3D>> = std::sync::OnceLock::new();
+
+pub(in super::super) fn default_material3d_arc() -> Arc<Material3D> {
+    Arc::clone(DEFAULT_MATERIAL3D.get_or_init(|| Arc::new(Material3D::default())))
+}
+
 pub(in super::super) fn apply_surface_binding(
-    mut material: Material3D,
+    mut material: Arc<Material3D>,
     surface: &MeshSurfaceBinding3D,
-) -> (Material3D, bool) {
-    let modulate_bias = apply_modulate(&mut material, surface.modulate);
-    apply_overrides(&mut material, &surface.overrides);
+) -> (Arc<Material3D>, bool) {
+    // Common path (white modulate, no overrides): hand the resource store's
+    // Arc through untouched - no deep clone per surface per frame. Only a
+    // real mutation pays the copy-on-write.
+    if surface.modulate == perro_structs::Color::WHITE && surface.overrides.is_empty() {
+        return (material, false);
+    }
+    let target = Arc::make_mut(&mut material);
+    let modulate_bias = apply_modulate(target, surface.modulate);
+    apply_overrides(target, &surface.overrides);
     (material, modulate_bias)
 }
 

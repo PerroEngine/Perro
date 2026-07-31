@@ -621,7 +621,7 @@ impl Runtime {
             .map(|slot| slot.options.clone())
             .unwrap_or_default();
         // Bark locked once for the whole per-sound loop (see apply_spatial_result).
-        let resource_api = std::sync::Arc::clone(&self.resource_api);
+        let resource_api = std::rc::Rc::clone(&self.resource_api);
         let bark = resource_api.bark.lock().ok();
         let player = bark.as_deref().and_then(|guard| guard.as_ref());
         for (index, sound) in sounds.iter_mut().enumerate() {

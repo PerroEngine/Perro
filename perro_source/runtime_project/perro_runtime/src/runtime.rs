@@ -12,7 +12,7 @@ use perro_scripting::{DynamicScriptConstructor, ScriptAPI, ScriptBehavior, Scrip
 use std::time::Duration;
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
-use std::{cell::RefCell, sync::Arc};
+use std::{cell::RefCell, rc::Rc, sync::Arc};
 #[cfg(target_arch = "wasm32")]
 use web_time::Instant;
 
@@ -181,16 +181,16 @@ pub struct Runtime {
     pub time: Timing,
     pub(crate) timer_runtime: TimerRuntimeState,
     provider_mode: ProviderMode,
-    project: Option<Arc<RuntimeProject>>,
+    project: Option<Rc<RuntimeProject>>,
     pub(crate) active_route_href: Option<String>,
     pub(crate) active_route_root: Option<NodeID>,
     pub(crate) scene_ownership_roots: AHashMap<NodeID, NodeID>,
-    pub(crate) scene_cache: RefCell<AHashMap<String, Arc<Scene>>>,
+    pub(crate) scene_cache: RefCell<AHashMap<String, Rc<Scene>>>,
     pub(crate) prepared_scene_cache:
-        RefCell<AHashMap<String, Arc<scene_loader::prepare::PreparedScene>>>,
-    pub(crate) preloaded_scenes: AHashMap<PreloadedSceneID, Arc<Scene>>,
+        RefCell<AHashMap<String, Rc<scene_loader::prepare::PreparedScene>>>,
+    pub(crate) preloaded_scenes: AHashMap<PreloadedSceneID, Rc<Scene>>,
     pub(crate) preloaded_prepared_scenes:
-        AHashMap<PreloadedSceneID, Arc<scene_loader::prepare::PreparedScene>>,
+        AHashMap<PreloadedSceneID, Rc<scene_loader::prepare::PreparedScene>>,
     pub(crate) preloaded_scene_paths: AHashMap<u64, PreloadedSceneID>,
     pub(crate) preloaded_scene_reverse_paths: AHashMap<PreloadedSceneID, String>,
     pub(crate) next_preloaded_scene_id: u64,
@@ -273,7 +273,7 @@ pub struct Runtime {
     pub(crate) signal_runtime: SignalRuntimeState,
     pub(crate) node_index: NodeIndexState,
     pub(crate) node_api_scratch: NodeApiScratchState,
-    pub(crate) resource_api: Arc<RuntimeResourceApi>,
+    pub(crate) resource_api: Rc<RuntimeResourceApi>,
     pub(crate) input: InputSnapshot,
     startup_input_clear_frames_left: u32,
     cursor_icon_request: Option<perro_ui::CursorIcon>,
@@ -965,7 +965,7 @@ impl Runtime {
         let input_map = project.config.input_map.clone();
         #[cfg(feature = "steamworks")]
         let steam_config = project.config.steam.clone();
-        runtime.project = Some(Arc::new(project));
+        runtime.project = Some(Rc::new(project));
         runtime.provider_mode = provider_mode;
         runtime.startup_input_clear_frames_left = STARTUP_INPUT_CLEAR_FRAMES;
         runtime.resource_api = RuntimeResourceApi::new(

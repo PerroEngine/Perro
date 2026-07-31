@@ -220,10 +220,83 @@ fn bench_multimesh_node_query(c: &mut Criterion) {
     group.finish();
 }
 
+/// `MeshInstance3D` with a bound `Skeleton3D`, so node queries route through
+/// `load_query_node_mesh_data`'s skinning path. `bone_count == 0` exercises
+/// the empty-palette early return (skeleton without bones hands the cached
+/// mesh `Arc` straight back); a non-zero count pays the full per-query skin
+/// rebuild (posed vertices + BVH).
+fn build_skinned_mesh_node(
+    runtime: &mut Runtime,
+    side: usize,
+    bone_count: usize,
+) -> perro_ids::NodeID {
+    use perro_nodes::{Bone3D, MeshInstance3D, Skeleton3D};
+
+    let mut mesh = grid_mesh(side);
+    for vertex in &mut mesh.vertices {
+        vertex.weights = perro_structs::UnitVector4::new([1.0, 0.0, 0.0, 0.0]);
+    }
+    let mesh_id = runtime.bench_create_mesh_data(mesh);
+
+    let node_id = NodeAPI::create::<MeshInstance3D>(runtime);
+    NodeAPI::with_node_mut::<MeshInstance3D, _, _>(runtime, node_id, |mesh| {
+        mesh.mesh = mesh_id;
+    });
+
+    let skeleton_id = NodeAPI::create::<Skeleton3D>(runtime);
+    NodeAPI::with_node_mut::<Skeleton3D, _, _>(runtime, skeleton_id, |skeleton| {
+        skeleton.bones = (0..bone_count)
+            .map(|index| {
+                let mut bone = Bone3D::new();
+                bone.parent = index as i32 - 1;
+                bone
+            })
+            .collect();
+        skeleton.refresh_inv_bind_cache();
+    });
+    runtime.bench_bind_mesh_skeleton(node_id, skeleton_id);
+    node_id
+}
+
+fn bench_skinned_node_query(c: &mut Criterion) {
+    let mut group = c.benchmark_group("mesh_query/skinned_node");
+    let side = 16usize;
+    for (name, bone_count) in [("palette_16_bones", 16usize), ("empty_palette", 0usize)] {
+        let mut runtime = Runtime::new();
+        let node_id = build_skinned_mesh_node(&mut runtime, side, bone_count);
+        let ray_origin = Vector3::new(side as f32 * 0.5, 10.0, side as f32 * 0.5);
+        let ray_dir = Vector3::new(0.0, -1.0, 0.0);
+
+        // Warm the mesh-data and node-snapshot caches so iterations measure
+        // the per-query skin (or the empty-palette pass-through), not decode.
+        black_box(NodeAPI::mesh_instance_surface_on_global_ray(
+            &mut runtime,
+            node_id,
+            ray_origin,
+            ray_dir,
+            100.0,
+        ));
+
+        group.bench_function(BenchmarkId::new("ray_hit", name), |b| {
+            b.iter(|| {
+                black_box(NodeAPI::mesh_instance_surface_on_global_ray(
+                    &mut runtime,
+                    node_id,
+                    black_box(ray_origin),
+                    black_box(ray_dir),
+                    black_box(100.0),
+                ))
+            })
+        });
+    }
+    group.finish();
+}
+
 fn benches(c: &mut Criterion) {
     bench_mesh_query_synthetic(c);
     bench_mesh_query_bvh_runtime_api(c);
     bench_multimesh_node_query(c);
+    bench_skinned_node_query(c);
 }
 
 criterion_group! {

@@ -178,7 +178,9 @@ pub struct Render2DState {
         mpsc::Sender<(String, Option<perro_render_bridge::ParticleProfile2D>)>,
     pub particle_path_load_rx:
         mpsc::Receiver<(String, Option<perro_render_bridge::ParticleProfile2D>)>,
-    pub tileset_cache: AHashMap<u64, std::sync::Arc<perro_render_bridge::TileSet2D>>,
+    // Rc, not Arc: the loader channel delivers TileSet2D by value and the
+    // wrapper is built + cloned on the main thread only.
+    pub tileset_cache: AHashMap<u64, std::rc::Rc<perro_render_bridge::TileSet2D>>,
     pub pending_tileset_loads: AHashSet<u64>,
     pub tileset_load_tx: mpsc::Sender<(u64, Option<perro_render_bridge::TileSet2D>)>,
     pub tileset_load_rx: mpsc::Receiver<(u64, Option<perro_render_bridge::TileSet2D>)>,

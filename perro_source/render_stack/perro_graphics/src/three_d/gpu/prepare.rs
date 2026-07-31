@@ -723,7 +723,7 @@ impl Gpu3D {
                         range: active_lod.full,
                         packed_range: None,
                         packed_lod_param_id: 0,
-                        material: Material3D::Standard(StandardMaterial3D {
+                        material: Arc::new(Material3D::Standard(StandardMaterial3D {
                             base_color_factor: color,
                             roughness_factor: 0.35,
                             metallic_factor: 0.0,
@@ -733,7 +733,7 @@ impl Gpu3D {
                                 color[2] * color[3] * 0.55,
                             ],
                             ..StandardMaterial3D::default()
-                        }),
+                        })),
                         modulate_bias: false,
                     });
                 }
@@ -743,7 +743,7 @@ impl Gpu3D {
                         range: active_lod.full,
                         packed_range: None,
                         packed_lod_param_id: 0,
-                        material: Material3D::Standard(StandardMaterial3D {
+                        material: Arc::new(Material3D::Standard(StandardMaterial3D {
                             base_color_factor: color,
                             roughness_factor: 0.6,
                             metallic_factor: 0.0,
@@ -753,7 +753,7 @@ impl Gpu3D {
                                 color[2] * color[3] * 0.4,
                             ],
                             ..StandardMaterial3D::default()
-                        }),
+                        })),
                         modulate_bias: false,
                     });
                 }
@@ -762,13 +762,15 @@ impl Gpu3D {
                         range: active_lod.full,
                         packed_range: None,
                         packed_lod_param_id: 0,
-                        material: Material3D::Unlit(perro_render_bridge::UnlitMaterial3D {
-                            base_color_factor: tint,
-                            alpha_mode: 2,
-                            double_sided: true,
-                            base_color_texture: texture.index(),
-                            ..perro_render_bridge::UnlitMaterial3D::default()
-                        }),
+                        material: Arc::new(Material3D::Unlit(
+                            perro_render_bridge::UnlitMaterial3D {
+                                base_color_factor: tint,
+                                alpha_mode: 2,
+                                double_sided: true,
+                                base_color_texture: texture.index(),
+                                ..perro_render_bridge::UnlitMaterial3D::default()
+                            },
+                        )),
                         modulate_bias: false,
                     });
                 }
@@ -788,7 +790,7 @@ impl Gpu3D {
                         let base_material = surface
                             .material
                             .and_then(|id| resources.material(id))
-                            .unwrap_or_default();
+                            .unwrap_or_else(default_material3d_arc);
                         let (material, modulate_bias) =
                             apply_surface_binding(base_material, surface);
                         surface_entries.push(SurfaceEntry3D {
@@ -807,7 +809,7 @@ impl Gpu3D {
                                 .packed
                                 .map(|packed| packed.param_index)
                                 .unwrap_or(0),
-                            material: Material3D::default(),
+                            material: default_material3d_arc(),
                             modulate_bias: false,
                         });
                     }
@@ -827,7 +829,7 @@ impl Gpu3D {
             if let Some(dense) = &draw.dense_multimesh {
                 let draw_model = Mat4::from_cols_array_2d(&dense.node_model);
                 for entry in surface_entries.iter() {
-                    let material = &entry.material;
+                    let material: &Material3D = &entry.material;
                     let params = material.standard_params();
                     self.ensure_standard_material_texture_slots(
                         device,
@@ -1011,7 +1013,7 @@ impl Gpu3D {
                 && !resolved_mesh_blend_active(resolved_blend)
                 && surface_entries
                     .first()
-                    .map(|entry| matches!(entry.material, Material3D::Standard(_)))
+                    .map(|entry| matches!(*entry.material, Material3D::Standard(_)))
                     .unwrap_or(false);
             let builtin_primitive_source = is_builtin_primitive_mesh_source(mesh_source);
             let allow_meshlets = draw.meshlet_override.unwrap_or(!builtin_primitive_source);
@@ -1072,7 +1074,7 @@ impl Gpu3D {
                 };
                 let instance_mats = draw.instance_mats.as_ref();
                 if is_debug_point {
-                    let material = &surface_entries[0].material;
+                    let material: &Material3D = &surface_entries[0].material;
                     let (custom_params_offset, custom_params_len) =
                         self.stage_custom_params(material);
                     let standard_params = material.standard_params();
@@ -1110,7 +1112,7 @@ impl Gpu3D {
                         debug_points_count = debug_points_count.saturating_add(1);
                     }
                 } else if is_debug_edge {
-                    let material = &surface_entries[0].material;
+                    let material: &Material3D = &surface_entries[0].material;
                     let (custom_params_offset, custom_params_len) =
                         self.stage_custom_params(material);
                     let standard_params = material.standard_params();
@@ -1149,7 +1151,7 @@ impl Gpu3D {
                     }
                 } else {
                     for entry in surface_entries.iter() {
-                        let material = &entry.material;
+                        let material: &Material3D = &entry.material;
                         let standard_params = material.standard_params();
                         self.ensure_standard_material_texture_slots(
                             device,
@@ -1297,7 +1299,7 @@ impl Gpu3D {
                     }
                 }
             } else {
-                let material = &surface_entries[0].material;
+                let material: &Material3D = &surface_entries[0].material;
                 let standard_params = material.standard_params();
                 self.ensure_standard_material_texture_slots(
                     device,

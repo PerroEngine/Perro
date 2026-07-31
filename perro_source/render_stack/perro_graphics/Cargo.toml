@@ -12,7 +12,7 @@ pollster = "0.4.0"
 glam = "0.31.0"
 half = "2.7"
 ahash = "0.8.12"
-epaint = "0.33.0"
+epaint = { version = "0.33.0", features = ["bytemuck"] }
 fontdb = "0.23"
 rayon = "1.10"
 ab_glyph = "0.2"

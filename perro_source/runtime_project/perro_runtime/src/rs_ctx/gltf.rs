@@ -492,9 +492,9 @@ mod tests {
         ResourceWindow, animation_count, glb_inspect, material_count, mesh_count, node_count,
         scene_count, skeleton_count, texture_count,
     };
-    use std::{fs, path::PathBuf, sync::Arc};
+    use std::{fs, path::PathBuf};
 
-    fn new_api() -> Arc<RuntimeResourceApi> {
+    fn new_api() -> std::rc::Rc<RuntimeResourceApi> {
         RuntimeResourceApi::new(None, None, None, None, None, None, None, None)
     }
 

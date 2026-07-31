@@ -4,8 +4,6 @@ use super::core::WebcamFrameMessage;
 use perro_ids::{TextureID, WebcamID, string_to_u64};
 use perro_render_bridge::{RenderCommand, ResourceCommand};
 use perro_resource_api::sub_apis::{WebcamAPI, WebcamConfig, WebcamDevice, WebcamFrame};
-#[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos", test))]
-use std::sync::Arc;
 
 fn clamp_size(width: u32, height: u32) -> (u32, u32) {
     (width.clamp(1, 8192), height.clamp(1, 8192))
@@ -77,7 +75,7 @@ impl RuntimeResourceApi {
         if stops.contains_key(&id) {
             return;
         }
-        let stop = Arc::new(AtomicBool::new(false));
+        let stop = std::sync::Arc::new(AtomicBool::new(false));
         stops.insert(id, stop.clone());
         drop(stops);
 
@@ -767,7 +765,7 @@ mod tests {
     use super::*;
     use perro_ids::NodeID;
 
-    fn api() -> Arc<RuntimeResourceApi> {
+    fn api() -> std::rc::Rc<RuntimeResourceApi> {
         RuntimeResourceApi::new(None, None, None, None, None, None, None, None)
     }
 

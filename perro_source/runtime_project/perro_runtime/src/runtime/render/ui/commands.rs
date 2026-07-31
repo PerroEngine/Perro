@@ -25,16 +25,27 @@ impl Runtime {
         self.ui_node_ids_scratch = tree_ids;
     }
 
-    pub(super) fn ensure_tree_list_internal_nodes_for(&mut self, tree_id: NodeID) {
-        let Some((mut rows, mut toggles, mut icons, mut labels, mut lines, row_count)) =
-            self.nodes.get(tree_id).and_then(|node| match &node.data {
+    pub(super) fn ensure_tree_list_internal_nodes_for(
+        &mut self,
+        tree_id: NodeID,
+        row_count: usize,
+    ) {
+        // take + restore (same pattern as ui_node_ids_scratch): the loop
+        // below inserts nodes via &mut self so a plain borrow can't live
+        // across it, and the originals are overwritten wholesale at the end
+        // anyway -- no need to clone 5 Vec<NodeID> per dirty tree list.
+        // row_count comes from the caller so visible_items() (which builds
+        // an adjacency Vec<Vec<usize>>) runs once per sync, not twice.
+        let Some((mut rows, mut toggles, mut icons, mut labels, mut lines)) = self
+            .nodes
+            .get_mut_untracked(tree_id)
+            .and_then(|node| match &mut node.data {
                 SceneNodeData::UiTreeList(tree) => Some((
-                    tree.internal_rows.clone(),
-                    tree.internal_toggles.clone(),
-                    tree.internal_icons.clone(),
-                    tree.internal_labels.clone(),
-                    tree.internal_lines.clone(),
-                    tree.visible_items().len(),
+                    std::mem::take(&mut tree.internal_rows),
+                    std::mem::take(&mut tree.internal_toggles),
+                    std::mem::take(&mut tree.internal_icons),
+                    std::mem::take(&mut tree.internal_labels),
+                    std::mem::take(&mut tree.internal_lines),
                 )),
                 _ => None,
             })
@@ -210,39 +221,53 @@ impl Runtime {
     }
 
     pub(super) fn sync_tree_list_internal_nodes(&mut self, tree_id: NodeID) {
-        self.ensure_tree_list_internal_nodes_for(tree_id);
-        let Some(snapshot) = self.nodes.get(tree_id).and_then(|node| match &node.data {
-            SceneNodeData::UiTreeList(tree) => Some((
-                tree.visible,
-                tree.visible_items(),
-                tree.items.clone(),
-                tree.selected_index,
-                tree.indent,
-                tree.row_height,
-                tree.v_spacing,
-                tree.icon_size,
-                tree.toggle_size,
-                tree.line_width,
-                tree.line_color,
-                tree.triangle_color,
-                tree.text_color,
-                tree.row_style.clone(),
-                tree.row_hover_style.clone(),
-                tree.row_pressed_style.clone(),
-                tree.selected_style.clone(),
-                tree.internal_rows.clone(),
-                tree.internal_toggles.clone(),
-                tree.internal_icons.clone(),
-                tree.internal_labels.clone(),
-                tree.internal_lines.clone(),
-            )),
+        // visible_items() allocates (adjacency lists + row list); compute it
+        // once here and hand ensure_* just the count instead of paying the
+        // walk twice per dirty sync.
+        let Some(rows) = self.nodes.get(tree_id).and_then(|node| match &node.data {
+            SceneNodeData::UiTreeList(tree) => Some(tree.visible_items()),
             _ => None,
         }) else {
             return;
         };
+        self.ensure_tree_list_internal_nodes_for(tree_id, rows.len());
+        // Snapshot: scalars/styles copied, Vec storage (items + internal id
+        // lists) taken and restored at the end -- the loop bodies below go
+        // through self.nodes.get_mut_untracked so a plain borrow won't fly.
+        let Some(snapshot) = self
+            .nodes
+            .get_mut_untracked(tree_id)
+            .and_then(|node| match &mut node.data {
+                SceneNodeData::UiTreeList(tree) => Some((
+                    tree.visible,
+                    std::mem::take(&mut tree.items),
+                    tree.selected_index,
+                    tree.indent,
+                    tree.row_height,
+                    tree.v_spacing,
+                    tree.icon_size,
+                    tree.toggle_size,
+                    tree.line_width,
+                    tree.line_color,
+                    tree.triangle_color,
+                    tree.text_color,
+                    tree.row_style.clone(),
+                    tree.row_hover_style.clone(),
+                    tree.row_pressed_style.clone(),
+                    tree.selected_style.clone(),
+                    std::mem::take(&mut tree.internal_rows),
+                    std::mem::take(&mut tree.internal_toggles),
+                    std::mem::take(&mut tree.internal_icons),
+                    std::mem::take(&mut tree.internal_labels),
+                    std::mem::take(&mut tree.internal_lines),
+                )),
+                _ => None,
+            })
+        else {
+            return;
+        };
         let (
             visible,
-            rows,
             items,
             selected_index,
             indent,
@@ -385,11 +410,12 @@ impl Runtime {
             Self::UI_DIRTY_LAYOUT_SELF | Self::UI_DIRTY_COMMANDS,
         );
         for id in internal_rows
-            .into_iter()
-            .chain(internal_toggles)
-            .chain(internal_icons)
-            .chain(internal_labels)
-            .chain(internal_lines.into_iter().flat_map(|pair| pair.into_iter()))
+            .iter()
+            .chain(internal_toggles.iter())
+            .chain(internal_icons.iter())
+            .chain(internal_labels.iter())
+            .chain(internal_lines.iter().flat_map(|pair| pair.iter()))
+            .copied()
         {
             if !id.is_nil() {
                 self.mark_ui_dirty(
@@ -399,6 +425,17 @@ impl Runtime {
                         | Self::UI_DIRTY_COMMANDS,
                 );
             }
+        }
+        // Restore the taken storage (contents unchanged by this pass).
+        if let Some(node) = self.nodes.get_mut_untracked(tree_id)
+            && let SceneNodeData::UiTreeList(tree) = &mut node.data
+        {
+            tree.items = items;
+            tree.internal_rows = internal_rows;
+            tree.internal_toggles = internal_toggles;
+            tree.internal_icons = internal_icons;
+            tree.internal_labels = internal_labels;
+            tree.internal_lines = internal_lines;
         }
     }
 

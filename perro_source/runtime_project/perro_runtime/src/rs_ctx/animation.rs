@@ -153,7 +153,7 @@ mod tests {
     };
     use std::borrow::Cow;
     use std::path::PathBuf;
-    use std::sync::{Arc, OnceLock};
+    use std::sync::OnceLock;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     const TEST_PANIM_SRC: &str = r#"
@@ -191,7 +191,7 @@ fps = 30
         path.to_string_lossy().to_string()
     }
 
-    fn new_api_with_lookup(lookup: Option<StaticAnimationLookup>) -> Arc<RuntimeResourceApi> {
+    fn new_api_with_lookup(lookup: Option<StaticAnimationLookup>) -> std::rc::Rc<RuntimeResourceApi> {
         RuntimeResourceApi::new(None, None, None, lookup, None, None, None, None)
     }
 

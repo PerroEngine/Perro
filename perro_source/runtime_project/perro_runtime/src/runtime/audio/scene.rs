@@ -208,7 +208,7 @@ impl Runtime {
             .saturating_add(ray_inputs.len() as u32);
 
         // Bark locked once for the whole per-sound loop (see apply_spatial_result).
-        let resource_api = std::sync::Arc::clone(&self.resource_api);
+        let resource_api = std::rc::Rc::clone(&self.resource_api);
         let bark = resource_api.bark.lock().ok();
         let player = bark.as_deref().and_then(|guard| guard.as_ref());
         for sound in sounds {
@@ -293,7 +293,7 @@ impl Runtime {
             .saturating_add(ray_inputs.len() as u32);
 
         // Bark locked once for the whole per-sound loop (see apply_spatial_result).
-        let resource_api = std::sync::Arc::clone(&self.resource_api);
+        let resource_api = std::rc::Rc::clone(&self.resource_api);
         let bark = resource_api.bark.lock().ok();
         let player = bark.as_deref().and_then(|guard| guard.as_ref());
         for sound in sounds {

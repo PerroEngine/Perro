@@ -23,6 +23,7 @@ use perro_runtime_render::{sprite_2d_texture_request, tilemap_2d_texture_request
 use perro_structs::{BitMask, UVector2, Vector2};
 use perro_variant::Variant;
 use std::borrow::Cow;
+use std::rc::Rc;
 use std::sync::Arc;
 
 const PARTICLE_PATH_CACHE_MAX: usize = 256;
@@ -594,18 +595,21 @@ fn water_link_overlap_weight(local: perro_structs::Vector2, link: &WaterLinkStat
 pub(crate) fn resolve_tileset_2d(
     runtime: &mut Runtime,
     source: &TileSetRef,
-) -> Option<Arc<ParsedTileset2D>> {
+) -> Option<Rc<ParsedTileset2D>> {
     if source.is_empty() {
         return None;
     }
     let source_hash = source.id().as_u64();
+    // The async loader channel delivers the decoded TileSet2D BY VALUE; the
+    // shared wrapper is only ever built + cloned on the main thread, so a
+    // plain Rc (no atomic refcount) is enough.
     while let Ok((hash, tileset)) = runtime.render_2d.tileset_load_rx.try_recv() {
         runtime.render_2d.pending_tileset_loads.remove(&hash);
         if let Some(tileset) = tileset {
             runtime
                 .render_2d
                 .tileset_cache
-                .insert(hash, Arc::new(tileset));
+                .insert(hash, Rc::new(tileset));
         }
     }
     if let Some(tileset) = runtime.render_2d.tileset_cache.get(&source_hash) {
@@ -622,7 +626,7 @@ pub(crate) fn resolve_tileset_2d(
         None
     };
     if let Some(bytes) = static_tileset {
-        let tileset = Arc::new(perro_render_bridge::decode_tileset_2d_binary(bytes)?);
+        let tileset = Rc::new(perro_render_bridge::decode_tileset_2d_binary(bytes)?);
         runtime
             .render_2d
             .tileset_cache
@@ -677,7 +681,7 @@ pub(crate) fn tilemap_render_signature(
     texture: TextureID,
     base_model: &[[f32; 3]; 3],
     tint: perro_structs::Color,
-    tileset: &Arc<ParsedTileset2D>,
+    tileset: &Rc<ParsedTileset2D>,
     tilemap: &perro_nodes::TileMap2D,
 ) -> u64 {
     let mut hash = 0xcbf29ce484222325u64;
@@ -690,7 +694,7 @@ pub(crate) fn tilemap_render_signature(
     for channel in [tint.r(), tint.g(), tint.b(), tint.a()] {
         hash = tilemap_mix_u32(hash, channel.to_bits());
     }
-    hash = tilemap_mix_u64(hash, Arc::as_ptr(tileset) as usize as u64);
+    hash = tilemap_mix_u64(hash, Rc::as_ptr(tileset) as usize as u64);
     // cheap tileset shape hash on top of the pointer identity: guards the
     // (rare) case of a reloaded tileset landing on a recycled allocation.
     hash = tilemap_mix_u32(hash, tileset.tile_size[0].to_bits());

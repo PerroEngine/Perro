@@ -1089,11 +1089,12 @@ impl ResourceStore {
             .filter(|id| self.has_material(*id))
     }
 
+    // Arc share of the stored material: per-surface-per-frame lookups stay
+    // deep-clone-free; callers copy-on-write via Arc::make_mut when they
+    // actually mutate.
     #[inline]
-    pub fn material(&self, id: MaterialID) -> Option<Material3D> {
-        self.material_by
-            .get(&id)
-            .map(|material| (**material).clone())
+    pub fn material(&self, id: MaterialID) -> Option<Arc<Material3D>> {
+        self.material_by.get(&id).cloned()
     }
 
     #[inline]

@@ -8,6 +8,7 @@ use perro_render_bridge::{RenderCommand, RenderRequestID};
 use perro_resource_api::sub_apis::{Locale, NavMeshResource3D};
 use perro_resource_api::sub_apis::{WebcamConfig, WebcamFrame};
 use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
 use std::sync::Arc;
 
 #[derive(Default)]
@@ -180,9 +181,9 @@ pub(super) struct RuntimeResourceState {
     pub(super) mesh_loaded_by_id: HashSet<MeshID>,
     pub(super) navmesh_by_source: HashMap<u64, NavMeshID>,
     pub(super) navmesh_source_by_id: HashMap<NavMeshID, String>,
-    pub(super) navmesh_data_by_id: HashMap<NavMeshID, Arc<NavMeshResource3D>>,
+    pub(super) navmesh_data_by_id: HashMap<NavMeshID, Rc<NavMeshResource3D>>,
     pub(super) navmesh_graph_by_id_and_layers:
-        HashMap<(NavMeshID, u32), Arc<crate::runtime::navmesh::SearchGraph>>,
+        HashMap<(NavMeshID, u32), Rc<crate::runtime::navmesh::SearchGraph>>,
     pub(super) navmesh_loaded_by_id: HashSet<NavMeshID>,
     pub(super) material_by_source: HashMap<u64, MaterialID>,
     pub(super) material_pending_by_source: HashMap<u64, RenderRequestID>,

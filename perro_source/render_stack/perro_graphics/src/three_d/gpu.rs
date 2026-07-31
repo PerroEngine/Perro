@@ -1340,7 +1340,9 @@ struct SurfaceEntry3D {
     range: MeshRange,
     packed_range: Option<MeshRange>,
     packed_lod_param_id: u32,
-    material: Material3D,
+    // Arc: shares the resource store's material by refcount; surface bindings
+    // that mutate (modulate/overrides) copy-on-write in apply_surface_binding.
+    material: Arc<Material3D>,
     modulate_bias: bool,
 }
 

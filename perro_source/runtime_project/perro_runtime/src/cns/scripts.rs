@@ -44,9 +44,9 @@ impl SceneVariantResolver for RuntimeSceneVariantResolver<'_> {
 #[cfg(test)]
 mod scene_variant_resolver_tests {
     use super::*;
-    use std::sync::Arc;
+    use std::rc::Rc;
 
-    fn resource_api() -> Arc<crate::RuntimeResourceApi> {
+    fn resource_api() -> Rc<crate::RuntimeResourceApi> {
         crate::RuntimeResourceApi::new(None, None, None, None, None, None, None, None)
     }
 

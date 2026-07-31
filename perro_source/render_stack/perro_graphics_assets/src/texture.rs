@@ -544,12 +544,14 @@ pub fn decode_gltf_texture(source_path: &str, texture_index: usize) -> Option<(V
         gltf::image::Source::Uri { .. } => {
             // rare data-URI image path: keep the old full import (external
             // file URIs already failed here with base = None).
-            let (doc, _buffers, images) = gltf::import_slice(&bytes).ok()?;
+            let (doc, _buffers, mut images) = gltf::import_slice(&bytes).ok()?;
             let texture = doc.textures().nth(texture_index)?;
-            let image = images.get(texture.source().index())?;
+            let image = images.get_mut(texture.source().index())?;
             let (width, height) = (image.width.max(1), image.height.max(1));
+            // images is owned and dropped right after: move the RGBA8 pixel
+            // buffer out instead of cloning it.
             let rgba = match image.format {
-                gltf::image::Format::R8G8B8A8 => image.pixels.clone(),
+                gltf::image::Format::R8G8B8A8 => std::mem::take(&mut image.pixels),
                 gltf::image::Format::R8G8B8 => expand_rgb8(&image.pixels, width, height),
                 gltf::image::Format::R8G8 => expand_rg8(&image.pixels, width, height),
                 gltf::image::Format::R8 => expand_r8(&image.pixels, width, height),

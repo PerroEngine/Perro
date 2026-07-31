@@ -552,7 +552,7 @@ mod tests {
     };
     use std::sync::Arc;
 
-    fn new_api() -> std::sync::Arc<RuntimeResourceApi> {
+    fn new_api() -> std::rc::Rc<RuntimeResourceApi> {
         RuntimeResourceApi::new(None, None, None, None, None, None, None, None)
     }
 
@@ -562,7 +562,7 @@ mod tests {
         &MATERIAL
     }
 
-    fn new_static_material_api() -> std::sync::Arc<RuntimeResourceApi> {
+    fn new_static_material_api() -> std::rc::Rc<RuntimeResourceApi> {
         RuntimeResourceApi::new(
             Some(static_material_lookup),
             None,

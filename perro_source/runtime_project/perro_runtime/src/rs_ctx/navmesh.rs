@@ -4,7 +4,7 @@ use perro_resource_api::sub_apis::{
     NavMesh3D, NavMeshAPI, NavMeshResource3D, parse_pnav_resource_bytes,
 };
 use perro_structs::BitMask;
-use std::sync::Arc;
+use std::rc::Rc;
 
 impl NavMeshAPI for RuntimeResourceApi {
     fn load_navmesh(&self, source: &str) -> NavMeshID {
@@ -45,8 +45,8 @@ impl NavMeshAPI for RuntimeResourceApi {
         let id = state.allocate_navmesh_id();
         state.navmesh_by_source.insert(source_hash, id);
         state.navmesh_source_by_id.insert(id, source.into_owned());
-        let navmesh = Arc::new(navmesh);
-        let graph = Arc::new(crate::runtime::navmesh::SearchGraph::new(
+        let navmesh = Rc::new(navmesh);
+        let graph = Rc::new(crate::runtime::navmesh::SearchGraph::new(
             &navmesh,
             BitMask::ALL,
         ));
@@ -75,8 +75,8 @@ impl NavMeshAPI for RuntimeResourceApi {
         let source = format!("runtime://navmesh/{}:{}", id.index(), id.generation());
         state.navmesh_by_source.insert(string_to_u64(&source), id);
         state.navmesh_source_by_id.insert(id, source);
-        let data = Arc::new(data);
-        let graph = Arc::new(crate::runtime::navmesh::SearchGraph::new(
+        let data = Rc::new(data);
+        let graph = Rc::new(crate::runtime::navmesh::SearchGraph::new(
             &data,
             BitMask::ALL,
         ));
@@ -129,8 +129,8 @@ impl NavMeshAPI for RuntimeResourceApi {
         if !state.has_navmesh_id(id) {
             return false;
         }
-        let data = Arc::new(data);
-        let graph = Arc::new(crate::runtime::navmesh::SearchGraph::new(
+        let data = Rc::new(data);
+        let graph = Rc::new(crate::runtime::navmesh::SearchGraph::new(
             &data,
             BitMask::ALL,
         ));
@@ -188,8 +188,8 @@ impl RuntimeResourceApi {
         id: NavMeshID,
         layers: BitMask,
     ) -> Option<(
-        Arc<NavMeshResource3D>,
-        Arc<crate::runtime::navmesh::SearchGraph>,
+        Rc<NavMeshResource3D>,
+        Rc<crate::runtime::navmesh::SearchGraph>,
     )> {
         if id.is_nil() || layers.is_empty() {
             return None;
@@ -200,7 +200,7 @@ impl RuntimeResourceApi {
         let graph = if let Some(graph) = state.navmesh_graph_by_id_and_layers.get(&key) {
             graph.clone()
         } else {
-            let graph = Arc::new(crate::runtime::navmesh::SearchGraph::new(&data, layers));
+            let graph = Rc::new(crate::runtime::navmesh::SearchGraph::new(&data, layers));
             let cached_for_id = state
                 .navmesh_graph_by_id_and_layers
                 .keys()

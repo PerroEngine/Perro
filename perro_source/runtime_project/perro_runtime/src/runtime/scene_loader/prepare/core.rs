@@ -81,6 +81,7 @@ use perro_ui::{
 use rayon::prelude::*;
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::rc::Rc;
 use std::sync::Arc;
 #[cfg(feature = "profile")]
 use std::time::Duration;

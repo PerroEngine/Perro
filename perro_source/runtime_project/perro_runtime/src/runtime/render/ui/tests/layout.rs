@@ -759,7 +759,7 @@ mod layout {
     #[test]
     fn label_relative_font_size_scales_with_virtual_resolution() {
         let mut runtime = Runtime::new();
-        runtime.project = Some(std::sync::Arc::new(
+        runtime.project = Some(std::rc::Rc::new(
             crate::runtime_project::RuntimeProject::new("Test", "."),
         ));
         runtime.set_viewport_size(960, 540);
@@ -783,7 +783,7 @@ mod layout {
     #[test]
     fn text_box_relative_font_size_uses_min_and_max_scale_clamp() {
         let mut runtime = Runtime::new();
-        runtime.project = Some(std::sync::Arc::new(
+        runtime.project = Some(std::rc::Rc::new(
             crate::runtime_project::RuntimeProject::new("Test", "."),
         ));
         runtime.set_viewport_size(3840, 2160);
@@ -1012,7 +1012,7 @@ mod layout {
     #[test]
     fn min_size_ratio_one_locks_spawn_floor() {
         let mut runtime = Runtime::new();
-        runtime.project = Some(std::sync::Arc::new(
+        runtime.project = Some(std::rc::Rc::new(
             crate::runtime_project::RuntimeProject::new("Test", "."),
         ));
         runtime.set_viewport_size(1280, 720);
@@ -1037,7 +1037,7 @@ mod layout {
     #[test]
     fn absolute_min_size_px_scales_with_virtual_canvas() {
         let mut runtime = Runtime::new();
-        runtime.project = Some(std::sync::Arc::new(
+        runtime.project = Some(std::rc::Rc::new(
             crate::runtime_project::RuntimeProject::new("Test", "."),
         ));
         // Half the 1920x1080 design canvas => content scale 0.5.
@@ -1140,7 +1140,7 @@ mod layout {
     #[test]
     fn root_percent_size_unchanged_at_design_resolution() {
         let mut runtime = Runtime::new();
-        runtime.project = Some(std::sync::Arc::new(
+        runtime.project = Some(std::rc::Rc::new(
             crate::runtime_project::RuntimeProject::new("Test", "."),
         ));
         runtime.set_viewport_size(1920, 1080);
@@ -1166,7 +1166,7 @@ mod layout {
     #[test]
     fn root_percent_size_keeps_design_shape_on_ultrawide() {
         let mut runtime = Runtime::new();
-        runtime.project = Some(std::sync::Arc::new(
+        runtime.project = Some(std::rc::Rc::new(
             crate::runtime_project::RuntimeProject::new("Test", "."),
         ));
         runtime.set_viewport_size(3440, 1440);
@@ -1194,7 +1194,7 @@ mod layout {
     #[test]
     fn root_fill_size_spans_real_window_on_ultrawide() {
         let mut runtime = Runtime::new();
-        runtime.project = Some(std::sync::Arc::new(
+        runtime.project = Some(std::rc::Rc::new(
             crate::runtime_project::RuntimeProject::new("Test", "."),
         ));
         runtime.set_viewport_size(3440, 1440);
@@ -1221,7 +1221,7 @@ mod layout {
     #[test]
     fn nested_sub_view_percent_size_aspect_fits_owner_target() {
         let mut runtime = Runtime::new();
-        runtime.project = Some(std::sync::Arc::new(
+        runtime.project = Some(std::rc::Rc::new(
             crate::runtime_project::RuntimeProject::new("Test", "."),
         ));
         runtime.set_viewport_size(1920, 1080);

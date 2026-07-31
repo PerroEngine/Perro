@@ -220,7 +220,7 @@ mod tests {
     #[test]
     fn pointer_world_2d_inverts_renderer_virtual_scale() {
         let mut runtime = Runtime::new();
-        runtime.project = Some(std::sync::Arc::new(
+        runtime.project = Some(std::rc::Rc::new(
             crate::runtime_project::RuntimeProject::new("Test", "."),
         ));
         runtime.set_viewport_size(3440, 1440);
@@ -263,7 +263,7 @@ mod tests {
     #[test]
     fn pointer_world_2d_is_identity_at_design_resolution() {
         let mut runtime = Runtime::new();
-        runtime.project = Some(std::sync::Arc::new(
+        runtime.project = Some(std::rc::Rc::new(
             crate::runtime_project::RuntimeProject::new("Test", "."),
         ));
         runtime.set_viewport_size(1920, 1080);

@@ -785,10 +785,9 @@ impl GpuUi {
         let size = [image.size[0] as u32, image.size[1] as u32];
         let origin = delta.pos.unwrap_or([0, 0]);
         let required_size = font_delta_required_size(size, origin, texture_size);
-        let mut rgba = Vec::with_capacity(image.pixels.len() * 4);
-        for pixel in &image.pixels {
-            rgba.extend_from_slice(&pixel.to_array());
-        }
+        // Color32 is Pod over [u8; 4]: reinterpret the atlas pixels in place
+        // instead of copying them into a scratch Vec every delta.
+        let rgba: &[u8] = bytemuck::cast_slice(image.pixels.as_slice());
         let needs_texture = match &self.font_texture {
             Some(texture) => {
                 delta.pos.is_none()
@@ -910,10 +909,9 @@ impl GpuUi {
         let size = [image.size[0] as u32, image.size[1] as u32];
         let origin = delta.pos.unwrap_or([0, 0]);
         let required_size = font_delta_required_size(size, origin, size);
-        let mut rgba = Vec::with_capacity(image.pixels.len() * 4);
-        for pixel in &image.pixels {
-            rgba.extend_from_slice(&pixel.to_array());
-        }
+        // Color32 is Pod over [u8; 4]: reinterpret the atlas pixels in place
+        // instead of copying them into a scratch Vec every delta.
+        let rgba: &[u8] = bytemuck::cast_slice(image.pixels.as_slice());
         let needs_texture = match &self.harfbuzz_font_texture {
             Some(texture) => {
                 delta.pos.is_none()
