@@ -7,7 +7,8 @@ use perro_ui::UiStyle;
 use std::{collections::BTreeMap, path::PathBuf};
 
 pub use perro_project::{
-    AudioConfig, AudioPropagationConfig, FrameRateCap, LocalizationConfig, OcclusionCulling,
+    AntiAlias, AudioConfig, AudioPropagationConfig, FrameRateCap, LocalizationConfig,
+    OcclusionCulling,
     ParticleSimDefault, ProjectConfig as RuntimeProjectConfig, ProjectError as ProjectLoadError,
     ProjectMetadata, ProjectRoute, ProjectRoutesConfig, RenderUiConfig, RenderingConfig,
     ShadowQuality, SsaoQuality, StaticProjectConfig, SteamInputMode, default_input_map_toml,

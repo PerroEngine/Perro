@@ -394,6 +394,29 @@ pub enum ShadowQuality {
     High,
 }
 
+/// Engine anti-aliasing mode. `Fxaa` runs a post pass on the tonemapped
+/// output; `Msaa2`/`Msaa4` use hardware multisampling instead. FXAA and MSAA
+/// never combine: any sample count > 1 disables the FXAA pass.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum AntiAliasMode {
+    Off,
+    #[default]
+    Fxaa,
+    Msaa2,
+    Msaa4,
+}
+
+impl AntiAliasMode {
+    /// MSAA sample count implied by this mode (1 = single-sampled).
+    pub const fn sample_count(self) -> u32 {
+        match self {
+            Self::Msaa2 => 2,
+            Self::Msaa4 => 4,
+            Self::Off | Self::Fxaa => 1,
+        }
+    }
+}
+
 pub struct PerroGraphics {
     frame: FrameState,
     resources: ResourceStore,
@@ -428,6 +451,9 @@ pub struct PerroGraphics {
     // Sample count for sessions that never touch the 3D pipeline; 2D scenes
     // pay 4x fill for MSAA they rarely need, so this defaults off.
     smoothing_2d_samples: u32,
+    // FXAA requested by config (anti_alias = "fxaa"). The GPU side only runs
+    // the pass while the live sample count is 1 (no FXAA on top of MSAA).
+    fxaa_enabled: bool,
     static_texture_lookup: Option<StaticTextureLookup>,
     static_font_lookup: Option<StaticFontLookup>,
     static_mesh_lookup: Option<StaticMeshLookup>,

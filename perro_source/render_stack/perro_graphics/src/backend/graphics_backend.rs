@@ -16,6 +16,7 @@ impl GraphicsBackend for PerroGraphics {
                 let cfg = GpuConfig {
                     smoothing_samples: self.smoothing_2d_samples,
                     smoothing_samples_3d: self.smoothing_samples,
+                    fxaa: self.fxaa_enabled,
                     vsync_enabled: self.vsync_enabled,
                     meshlets_enabled: self.meshlets_enabled,
                     dev_meshlets: self.dev_meshlets,
@@ -43,6 +44,7 @@ impl GraphicsBackend for PerroGraphics {
                 let cfg = GpuConfig {
                     smoothing_samples: self.smoothing_2d_samples,
                     smoothing_samples_3d: self.smoothing_samples,
+                    fxaa: self.fxaa_enabled,
                     vsync_enabled: self.vsync_enabled,
                     meshlets_enabled: self.meshlets_enabled,
                     dev_meshlets: self.dev_meshlets,

@@ -392,6 +392,9 @@ struct MsaaColorTarget {
 }
 
 struct PresentProcessor {
+    // Cheap Arc handle; kept so the lazy FXAA stage can allocate its target
+    // and pipeline inside apply() without widening the call signature.
+    device: wgpu::Device,
     sampler: wgpu::Sampler,
     bgl: wgpu::BindGroupLayout,
     pipeline: wgpu::RenderPipeline,
@@ -401,6 +404,24 @@ struct PresentProcessor {
     exposure_state_buffer: wgpu::Buffer,
     exposure_uniform_buffer: wgpu::Buffer,
     output_uniform_buffer: wgpu::Buffer,
+    output_format: wgpu::TextureFormat,
+    // FXAA gate: config requested it AND the live sample count is 1 (no FXAA
+    // on top of MSAA). Resources below stay None until the first frame that
+    // actually runs the pass (pay-for-use) and drop when it turns off.
+    fxaa_active: bool,
+    fxaa: Option<FxaaResources>,
+}
+
+/// Lazily allocated FXAA stage: the present pass tonemaps into `target`
+/// (render-resolution LDR copy in the output format) and the FXAA pass
+/// reads it back out to the swapchain. Only exists while FXAA runs.
+struct FxaaResources {
+    pipeline: wgpu::RenderPipeline,
+    bgl: wgpu::BindGroupLayout,
+    _target: wgpu::Texture,
+    target_view: wgpu::TextureView,
+    bind_group: wgpu::BindGroup,
+    size: [u32; 2],
 }
 
 struct PresentBindGroups {
@@ -555,6 +576,9 @@ pub struct Gpu {
     // applies. Explicit set_smoothing_samples calls latch immediately.
     sample_count_3d_target: u32,
     sample_count_3d_applied: bool,
+    // FXAA requested by config; the present processor's active flag follows
+    // `fxaa_requested && sample_count == 1` across sample-count changes.
+    fxaa_requested: bool,
     shadow_pcf_high: bool,
     msaa_color: Option<MsaaColorTarget>,
     post: PostProcessor,
@@ -629,6 +653,9 @@ pub struct GpuConfig {
     /// frame that needs the 3D pipeline latches `smoothing_samples_3d`.
     pub smoothing_samples: u32,
     pub smoothing_samples_3d: u32,
+    /// FXAA present pass requested (anti_alias = "fxaa"). Only runs while the
+    /// live sample count is 1; resources allocate lazily on first use.
+    pub fxaa: bool,
     pub vsync_enabled: bool,
     pub meshlets_enabled: bool,
     pub dev_meshlets: bool,

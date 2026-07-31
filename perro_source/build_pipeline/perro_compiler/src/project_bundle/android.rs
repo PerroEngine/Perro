@@ -313,6 +313,7 @@ perro_app::entry::{native_entry}(perro_app::entry::StaticEmbeddedProject {{\n\
         hdr: {hdr},\n\
         msaa: {msaa},\n\
         msaa_2d: {msaa_2d},\n\
+        anti_alias: {anti_alias},\n\
         ssao: {ssao},\n\
         shadow_quality: {shadow_quality},\n\
         meshlets: {meshlets},\n\
@@ -361,6 +362,7 @@ perro_app::entry::{native_entry}(perro_app::entry::StaticEmbeddedProject {{\n\
         hdr = emit_hdr_expr(cfg.hdr),
         msaa = cfg.msaa,
         msaa_2d = cfg.msaa_2d,
+        anti_alias = emit_anti_alias_expr(cfg.anti_alias),
         ssao = emit_ssao_expr(cfg.ssao),
         shadow_quality = emit_shadow_quality_expr(cfg.shadow_quality),
         meshlets = cfg.meshlets,
@@ -422,6 +424,7 @@ perro_app::entry::run_static_embedded_project_web(perro_app::entry::StaticEmbedd
         hdr: {hdr},\n\
         msaa: {msaa},\n\
         msaa_2d: {msaa_2d},\n\
+        anti_alias: {anti_alias},\n\
         ssao: {ssao},\n\
         shadow_quality: {shadow_quality},\n\
         meshlets: {meshlets},\n\
@@ -469,6 +472,7 @@ perro_app::entry::run_static_embedded_project_web(perro_app::entry::StaticEmbedd
         hdr = emit_hdr_expr(cfg.hdr),
         msaa = cfg.msaa,
         msaa_2d = cfg.msaa_2d,
+        anti_alias = emit_anti_alias_expr(cfg.anti_alias),
         ssao = emit_ssao_expr(cfg.ssao),
         shadow_quality = emit_shadow_quality_expr(cfg.shadow_quality),
         meshlets = cfg.meshlets,
@@ -521,6 +525,7 @@ perro_app::entry::run_static_embedded_project_android(app, perro_app::entry::Sta
         hdr: {hdr},\n\
         msaa: {msaa},\n\
         msaa_2d: {msaa_2d},\n\
+        anti_alias: {anti_alias},\n\
         ssao: {ssao},\n\
         shadow_quality: {shadow_quality},\n\
         meshlets: {meshlets},\n\
@@ -569,6 +574,7 @@ perro_app::entry::run_static_embedded_project_android(app, perro_app::entry::Sta
         hdr = emit_hdr_expr(cfg.hdr),
         msaa = cfg.msaa,
         msaa_2d = cfg.msaa_2d,
+        anti_alias = emit_anti_alias_expr(cfg.anti_alias),
         ssao = emit_ssao_expr(cfg.ssao),
         shadow_quality = emit_shadow_quality_expr(cfg.shadow_quality),
         meshlets = cfg.meshlets,

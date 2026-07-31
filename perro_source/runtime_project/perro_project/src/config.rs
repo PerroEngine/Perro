@@ -31,6 +31,43 @@ impl ShadowQuality {
     }
 }
 
+/// Engine anti-aliasing mode. `Fxaa` is the default: a cheap post pass on
+/// the tonemapped scene. `Msaa2`/`Msaa4` use hardware multisampling instead
+/// (never both). `Smaa`/`Taa` parse for forward compat but fall back to
+/// `Fxaa` with a warning until implemented.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum AntiAlias {
+    Off,
+    #[default]
+    Fxaa,
+    Msaa2,
+    Msaa4,
+    Smaa,
+    Taa,
+}
+
+impl AntiAlias {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Off => "off",
+            Self::Fxaa => "fxaa",
+            Self::Msaa2 => "msaa2",
+            Self::Msaa4 => "msaa4",
+            Self::Smaa => "smaa",
+            Self::Taa => "taa",
+        }
+    }
+
+    /// MSAA sample count implied by this mode (1 = no multisampling).
+    pub const fn msaa_sample_count(self) -> u32 {
+        match self {
+            Self::Msaa2 => 2,
+            Self::Msaa4 => 4,
+            _ => 1,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SsaoQuality {
     Off,
@@ -243,9 +280,11 @@ pub struct StaticProjectConfig {
     pub target_fixed_update: Option<f32>,
     pub physics_gravity: f32,
     pub physics_coef: f32,
+    /// Legacy bool key; superseded by `anti_alias` (kept for back-compat).
     pub msaa: bool,
     /// MSAA for sessions that never touch the 3D pipeline (2D games).
     pub msaa_2d: bool,
+    pub anti_alias: AntiAlias,
     pub ssao: SsaoQuality,
     pub shadow_quality: ShadowQuality,
     pub meshlets: bool,
@@ -302,6 +341,7 @@ impl StaticProjectConfig {
             physics_coef: 1.0,
             msaa: true,
             msaa_2d: false,
+            anti_alias: AntiAlias::Fxaa,
             ssao: SsaoQuality::Medium,
             shadow_quality: ShadowQuality::Medium,
             meshlets: false,
@@ -368,6 +408,11 @@ impl StaticProjectConfig {
 
     pub const fn with_msaa_2d(mut self, enabled: bool) -> Self {
         self.msaa_2d = enabled;
+        self
+    }
+
+    pub const fn with_anti_alias(mut self, mode: AntiAlias) -> Self {
+        self.anti_alias = mode;
         self
     }
 
@@ -498,6 +543,7 @@ impl StaticProjectConfig {
             physics_coef: self.physics_coef,
             msaa: self.msaa,
             msaa_2d: self.msaa_2d,
+            anti_alias: self.anti_alias,
             ssao: self.ssao,
             shadow_quality: self.shadow_quality,
             meshlets: self.meshlets,
@@ -564,9 +610,11 @@ pub struct ProjectConfig {
     pub target_fixed_update: Option<f32>,
     pub physics_gravity: f32,
     pub physics_coef: f32,
+    /// Legacy bool key; superseded by `anti_alias` (kept for back-compat).
     pub msaa: bool,
     /// MSAA for sessions that never touch the 3D pipeline (2D games).
     pub msaa_2d: bool,
+    pub anti_alias: AntiAlias,
     pub ssao: SsaoQuality,
     pub shadow_quality: ShadowQuality,
     pub meshlets: bool,
@@ -683,6 +731,7 @@ impl ProjectConfig {
             physics_coef: 1.0,
             msaa: true,
             msaa_2d: false,
+            anti_alias: AntiAlias::Fxaa,
             ssao: SsaoQuality::Medium,
             shadow_quality: ShadowQuality::Medium,
             meshlets: false,

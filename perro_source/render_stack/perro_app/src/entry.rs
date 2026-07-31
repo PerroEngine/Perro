@@ -231,7 +231,9 @@ fn graphics_from_project_config(
     PerroGraphics::new()
         .with_vsync(config.vsync)
         .with_hdr_mode(config.hdr)
-        .with_msaa(effective_msaa(config.msaa))
+        .with_anti_alias(graphics_anti_alias(effective_anti_alias(
+            config.anti_alias,
+        )))
         .with_msaa_2d(effective_msaa(config.msaa_2d))
         .with_ssao(graphics_ssao(config.ssao))
         .with_shadow_quality(graphics_shadow_quality(config.shadow_quality))
@@ -266,6 +268,43 @@ fn effective_msaa(enabled: bool) -> bool {
 #[cfg(target_arch = "wasm32")]
 fn effective_msaa(_: bool) -> bool {
     false
+}
+
+/// wasm never runs MSAA (mirrors the legacy `effective_msaa` gate), so the
+/// MSAA modes downgrade to the FXAA post pass there instead of losing AA.
+#[cfg(not(target_arch = "wasm32"))]
+fn effective_anti_alias(mode: perro_runtime::AntiAlias) -> perro_runtime::AntiAlias {
+    mode
+}
+
+#[cfg(target_arch = "wasm32")]
+fn effective_anti_alias(mode: perro_runtime::AntiAlias) -> perro_runtime::AntiAlias {
+    match mode {
+        perro_runtime::AntiAlias::Msaa2 | perro_runtime::AntiAlias::Msaa4 => {
+            perro_runtime::AntiAlias::Fxaa
+        }
+        other => other,
+    }
+}
+
+/// Runtime -> graphics anti-alias mapping. `Smaa`/`Taa` are accepted by the
+/// config layer but not implemented yet; project.toml parsing already
+/// resolves them to `Fxaa` with a warning, so hitting them here means a
+/// programmatic config — warn again and fall back the same way.
+fn graphics_anti_alias(mode: perro_runtime::AntiAlias) -> perro_graphics::AntiAliasMode {
+    match mode {
+        perro_runtime::AntiAlias::Off => perro_graphics::AntiAliasMode::Off,
+        perro_runtime::AntiAlias::Fxaa => perro_graphics::AntiAliasMode::Fxaa,
+        perro_runtime::AntiAlias::Msaa2 => perro_graphics::AntiAliasMode::Msaa2,
+        perro_runtime::AntiAlias::Msaa4 => perro_graphics::AntiAliasMode::Msaa4,
+        perro_runtime::AntiAlias::Smaa | perro_runtime::AntiAlias::Taa => {
+            eprintln!(
+                "perro: anti_alias = \"{}\" not yet implemented, falling back to fxaa",
+                mode.as_str()
+            );
+            perro_graphics::AntiAliasMode::Fxaa
+        }
+    }
 }
 
 fn graphics_shadow_quality(quality: perro_runtime::ShadowQuality) -> perro_graphics::ShadowQuality {
@@ -305,6 +344,36 @@ mod tests {
         assert!(!effective_msaa(false));
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn native_keeps_anti_alias_mode() {
+        for mode in [
+            perro_runtime::AntiAlias::Off,
+            perro_runtime::AntiAlias::Fxaa,
+            perro_runtime::AntiAlias::Msaa2,
+            perro_runtime::AntiAlias::Msaa4,
+        ] {
+            assert_eq!(effective_anti_alias(mode), mode);
+        }
+    }
+
+    #[test]
+    fn anti_alias_maps_to_graphics_modes_with_fxaa_fallback() {
+        use perro_graphics::AntiAliasMode;
+        use perro_runtime::AntiAlias;
+        assert_eq!(graphics_anti_alias(AntiAlias::Off), AntiAliasMode::Off);
+        assert_eq!(graphics_anti_alias(AntiAlias::Fxaa), AntiAliasMode::Fxaa);
+        assert_eq!(graphics_anti_alias(AntiAlias::Msaa2), AntiAliasMode::Msaa2);
+        assert_eq!(graphics_anti_alias(AntiAlias::Msaa4), AntiAliasMode::Msaa4);
+        // Not implemented yet: warn + fall back to the FXAA default.
+        assert_eq!(graphics_anti_alias(AntiAlias::Smaa), AntiAliasMode::Fxaa);
+        assert_eq!(graphics_anti_alias(AntiAlias::Taa), AntiAliasMode::Fxaa);
+        // MSAA sample counts derive from the mode (bool msaa -> 4 is legacy).
+        assert_eq!(AntiAliasMode::Msaa2.sample_count(), 2);
+        assert_eq!(AntiAliasMode::Msaa4.sample_count(), 4);
+        assert_eq!(AntiAliasMode::Fxaa.sample_count(), 1);
+    }
+
     #[cfg(target_arch = "wasm32")]
     #[test]
     fn wasm_forces_occlusion_off() {
@@ -318,6 +387,14 @@ mod tests {
         );
         assert!(!effective_msaa(true));
         assert!(!effective_msaa(false));
+        assert_eq!(
+            effective_anti_alias(perro_runtime::AntiAlias::Msaa4),
+            perro_runtime::AntiAlias::Fxaa
+        );
+        assert_eq!(
+            effective_anti_alias(perro_runtime::AntiAlias::Fxaa),
+            perro_runtime::AntiAlias::Fxaa
+        );
     }
 }
 
@@ -469,8 +546,10 @@ pub struct StaticEmbeddedInputMapConfig<'a> {
 pub struct StaticEmbeddedGraphicsConfig {
     pub vsync: bool,
     pub hdr: perro_structs::HdrMode,
+    /// Legacy bool; `anti_alias` supersedes it (kept for generated-code compat).
     pub msaa: bool,
     pub msaa_2d: bool,
+    pub anti_alias: perro_runtime::AntiAlias,
     pub ssao: perro_runtime::SsaoQuality,
     pub shadow_quality: perro_runtime::ShadowQuality,
     pub meshlets: bool,
@@ -551,6 +630,7 @@ pub fn run_static_embedded_project(
     .with_physics_coef(input.runtime.physics_coef)
     .with_msaa(input.graphics.msaa)
     .with_msaa_2d(input.graphics.msaa_2d)
+    .with_anti_alias(input.graphics.anti_alias)
     .with_ssao(input.graphics.ssao)
     .with_shadow_quality(input.graphics.shadow_quality)
     .with_meshlets(input.graphics.meshlets)
@@ -705,6 +785,7 @@ pub fn run_static_embedded_project_android(
     .with_physics_coef(input.runtime.physics_coef)
     .with_msaa(input.graphics.msaa)
     .with_msaa_2d(input.graphics.msaa_2d)
+    .with_anti_alias(input.graphics.anti_alias)
     .with_ssao(input.graphics.ssao)
     .with_shadow_quality(input.graphics.shadow_quality)
     .with_meshlets(input.graphics.meshlets)
@@ -802,6 +883,7 @@ pub fn run_static_embedded_project_web(input: StaticEmbeddedProject<'_>) -> Resu
         .with_physics_gravity(input.runtime.physics_gravity)
         .with_physics_coef(input.runtime.physics_coef)
         .with_msaa(input.graphics.msaa)
+        .with_anti_alias(input.graphics.anti_alias)
         .with_ssao(input.graphics.ssao)
         .with_meshlets(input.graphics.meshlets)
         .with_dev_meshlets(input.graphics.dev_meshlets)

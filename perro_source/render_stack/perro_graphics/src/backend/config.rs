@@ -38,6 +38,7 @@ impl PerroGraphics {
             smoothing_samples: 4,
             smoothing_quality_samples: 4,
             smoothing_2d_samples: 1,
+            fxaa_enabled: false,
             static_texture_lookup: None,
             static_font_lookup: None,
             static_mesh_lookup: None,
@@ -126,6 +127,15 @@ impl PerroGraphics {
 
     pub fn with_msaa_samples(mut self, samples: u32) -> Self {
         self.set_smoothing_samples(samples);
+        self
+    }
+
+    /// Project `graphics.anti_alias` mode: sets the 3D sample count
+    /// (msaa2/msaa4 -> 2/4, off/fxaa -> 1) and flags the FXAA present pass.
+    /// FXAA resources stay unallocated unless the mode is `Fxaa`.
+    pub fn with_anti_alias(mut self, mode: AntiAliasMode) -> Self {
+        self.fxaa_enabled = matches!(mode, AntiAliasMode::Fxaa);
+        self.set_smoothing_samples(mode.sample_count());
         self
     }
 

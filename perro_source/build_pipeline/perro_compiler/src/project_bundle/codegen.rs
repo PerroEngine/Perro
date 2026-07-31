@@ -18,6 +18,20 @@ pub(super) fn emit_ssao_expr(quality: perro_project::SsaoQuality) -> &'static st
     }
 }
 
+pub(super) fn emit_anti_alias_expr(mode: perro_project::AntiAlias) -> &'static str {
+    match mode {
+        perro_project::AntiAlias::Off => "perro_runtime::AntiAlias::Off",
+        perro_project::AntiAlias::Fxaa => "perro_runtime::AntiAlias::Fxaa",
+        perro_project::AntiAlias::Msaa2 => "perro_runtime::AntiAlias::Msaa2",
+        perro_project::AntiAlias::Msaa4 => "perro_runtime::AntiAlias::Msaa4",
+        // Not implemented yet: project.toml parsing already warns + resolves
+        // these to Fxaa; keep exported builds on the same fallback.
+        perro_project::AntiAlias::Smaa | perro_project::AntiAlias::Taa => {
+            "perro_runtime::AntiAlias::Fxaa"
+        }
+    }
+}
+
 pub(super) fn emit_shadow_quality_expr(quality: perro_project::ShadowQuality) -> &'static str {
     match quality {
         perro_project::ShadowQuality::Low => "perro_runtime::ShadowQuality::Low",

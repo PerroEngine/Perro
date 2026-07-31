@@ -253,6 +253,7 @@ pub struct StaticEmbeddedInputMapConfig<'a> {
 pub struct StaticEmbeddedGraphicsConfig {
     pub vsync: bool,
     pub msaa: bool,
+    pub anti_alias: perro_runtime::AntiAlias,
     pub ssao: perro_runtime::SsaoQuality,
     pub meshlets: bool,
     pub dev_meshlets: bool,

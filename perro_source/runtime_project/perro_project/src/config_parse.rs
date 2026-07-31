@@ -18,7 +18,8 @@ startup_splash = "res://icon.png"
 [graphics]
 aspect_ratio = "16:9"            # "WIDTH:HEIGHT" game shape
 vsync = false
-msaa = true
+anti_alias = "fxaa"              # off | fxaa (default) | msaa2 | msaa4 (smaa/taa planned)
+                                 # replaces legacy `msaa = true/false` (still parses; msaa=true => msaa4)
 msaa_2d = false                  # MSAA for sessions that never use the 3D pipeline
 ssao = "medium"                  # off | low | medium | high | ultra
 shadow_quality = "medium"        # low (4-tap PCF, half-size maps) | medium (4-tap) | high (9-tap)
@@ -211,6 +212,7 @@ pub fn parse_project_toml_with_demo(
     let physics_coef = parse_physics_coef(physics_table)?;
     let msaa = parse_bool_with_default(graphics_table, "msaa", true)?;
     let msaa_2d = parse_bool_with_default(graphics_table, "msaa_2d", false)?;
+    let anti_alias = parse_anti_alias(graphics_table)?;
     let ssao = parse_ssao_with_default(graphics_table, "ssao", SsaoQuality::Medium)?;
     let shadow_quality = parse_shadow_quality_with_default(graphics_table, ShadowQuality::Medium)?;
     let meshlets = parse_bool_with_default(graphics_table, "meshlets", false)?;
@@ -260,6 +262,7 @@ pub fn parse_project_toml_with_demo(
         physics_coef,
         msaa,
         msaa_2d,
+        anti_alias,
         ssao,
         shadow_quality,
         meshlets,
@@ -1067,6 +1070,45 @@ fn parse_ssao_with_default(
         _ => Err(ProjectError::InvalidField(
             "graphics.ssao",
             "must be one of: off, low, medium, high, ultra".to_string(),
+        )),
+    }
+}
+
+/// `graphics.anti_alias`. When the key is absent, an explicit legacy
+/// `msaa = true` maps to `msaa4`; everything else (explicit `msaa = false`
+/// or no key at all) gets the `fxaa` default. When both keys are present,
+/// `anti_alias` wins. `smaa`/`taa` are accepted but not implemented yet:
+/// they warn and resolve to `fxaa` at parse time, so downstream consumers
+/// (codegen, runtime) only ever see implemented modes from project.toml.
+fn parse_anti_alias(
+    table: &toml::map::Map<String, Value>,
+) -> Result<AntiAlias, ProjectError> {
+    let Some(value) = table.get("anti_alias") else {
+        return Ok(match table.get("msaa").and_then(Value::as_bool) {
+            Some(true) => AntiAlias::Msaa4,
+            _ => AntiAlias::Fxaa,
+        });
+    };
+    let Some(raw) = value.as_str() else {
+        return Err(ProjectError::InvalidField(
+            "graphics.anti_alias",
+            "must be one of: off, fxaa, msaa2, msaa4, smaa, taa".to_string(),
+        ));
+    };
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "off" => Ok(AntiAlias::Off),
+        "fxaa" => Ok(AntiAlias::Fxaa),
+        "msaa2" => Ok(AntiAlias::Msaa2),
+        "msaa4" => Ok(AntiAlias::Msaa4),
+        mode @ ("smaa" | "taa") => {
+            eprintln!(
+                "perro: project.toml: graphics.anti_alias = \"{mode}\" not yet implemented, falling back to fxaa"
+            );
+            Ok(AntiAlias::Fxaa)
+        }
+        _ => Err(ProjectError::InvalidField(
+            "graphics.anti_alias",
+            "must be one of: off, fxaa, msaa2, msaa4, smaa, taa".to_string(),
         )),
     }
 }

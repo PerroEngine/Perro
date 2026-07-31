@@ -265,7 +265,8 @@ impl Gpu {
             sample_count,
         );
         let post = PostProcessor::new(&device, &queue, render_format, render_width, render_height);
-        let present = PresentProcessor::new(&device, surface_view_format);
+        let mut present = PresentProcessor::new(&device, surface_view_format);
+        present.set_fxaa_active(cfg.fxaa && sample_count == 1);
         let camera_stream_tonemap = CameraStreamTonemap::new(&device, render_format);
         let present_scene_bind_group = present.create_bind_group(&device, post.scene_view());
         let gpu_timer = timestamp_query_enabled.then(|| GpuTimestampTimer::new(&device, &queue));
@@ -287,6 +288,7 @@ impl Gpu {
             max_supported_sample_count,
             sample_count_3d_target: normalize_sample_count(cfg.smoothing_samples_3d),
             sample_count_3d_applied: cfg.smoothing_samples_3d == cfg.smoothing_samples,
+            fxaa_requested: cfg.fxaa,
             shadow_pcf_high: cfg.shadow_quality == crate::ShadowQuality::High,
             msaa_color,
             post,
@@ -438,6 +440,10 @@ impl Gpu {
             return;
         }
         self.sample_count = sample_count;
+        // FXAA never stacks on MSAA: the pass follows the live sample count
+        // (e.g. the 2D->3D latch turning MSAA on drops the FXAA resources).
+        self.present
+            .set_fxaa_active(self.fxaa_requested && sample_count == 1);
         self.post_view_generation = next_nonzero_generation(self.post_view_generation);
         if let Some(two_d) = self.two_d.as_mut() {
             two_d.set_sample_count(&self.device, self.render_format, sample_count);

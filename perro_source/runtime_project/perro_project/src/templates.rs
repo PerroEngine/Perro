@@ -1222,6 +1222,7 @@ fn project_root() -> std::path::PathBuf {
               hdr: perro_structs::HdrMode::Auto,
               msaa: true,
               msaa_2d: false,
+              anti_alias: perro_runtime::AntiAlias::Fxaa,
               ssao: perro_runtime::SsaoQuality::Medium,
               shadow_quality: perro_runtime::ShadowQuality::Medium,
               meshlets: false,

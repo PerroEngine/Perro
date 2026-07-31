@@ -429,6 +429,10 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
 }
 "#;
 
+// FXAA 3.11-quality post pass; see fxaa.wgsl for the algorithm + the
+// green-as-luma and early-exit threshold documentation.
+const FXAA_WGSL: &str = include_str!("fxaa.wgsl");
+
 const EXPOSURE_WGSL: &str = r#"
 struct ExposureConfig {
     dimensions: vec2<u32>,
@@ -619,6 +623,7 @@ impl PresentProcessor {
         });
         let (exposure_bgl, exposure_pipeline) = create_auto_exposure(device);
         Self {
+            device: device.clone(),
             sampler,
             bgl,
             pipeline,
@@ -628,7 +633,129 @@ impl PresentProcessor {
             exposure_state_buffer,
             exposure_uniform_buffer,
             output_uniform_buffer,
+            output_format,
+            fxaa_active: false,
+            fxaa: None,
         }
+    }
+
+    /// Turn the FXAA stage on/off. Off drops the lazily allocated target,
+    /// pipeline, and bind group (pay-for-use); on allocates nothing until the
+    /// first apply() that actually runs the pass.
+    pub(super) fn set_fxaa_active(&mut self, active: bool) {
+        self.fxaa_active = active;
+        if !active {
+            self.fxaa = None;
+        }
+    }
+
+    /// Lazily (re)build FXAA resources for the current render size. The
+    /// pipeline + layout survive resizes; only the LDR target and its bind
+    /// group rebuild when dimensions change.
+    fn ensure_fxaa(&mut self, dimensions: [u32; 2]) {
+        let size = [dimensions[0].max(1), dimensions[1].max(1)];
+        if self.fxaa.as_ref().is_some_and(|fxaa| fxaa.size == size) {
+            return;
+        }
+        let device = self.device.clone();
+        let (pipeline, bgl) = match self.fxaa.take() {
+            Some(prev) => (prev.pipeline, prev.bgl),
+            None => {
+                let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+                    label: Some("perro_fxaa_shader"),
+                    source: wgpu::ShaderSource::Wgsl(FXAA_WGSL.into()),
+                });
+                let bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                    label: Some("perro_fxaa_bgl"),
+                    entries: &[
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 0,
+                            visibility: wgpu::ShaderStages::FRAGMENT,
+                            ty: wgpu::BindingType::Texture {
+                                sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                                view_dimension: wgpu::TextureViewDimension::D2,
+                                multisampled: false,
+                            },
+                            count: None,
+                        },
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 1,
+                            visibility: wgpu::ShaderStages::FRAGMENT,
+                            ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                            count: None,
+                        },
+                    ],
+                });
+                let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                    label: Some("perro_fxaa_layout"),
+                    bind_group_layouts: &[Some(&bgl)],
+                    immediate_size: 0,
+                });
+                let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                    label: Some("perro_fxaa_pipeline"),
+                    layout: Some(&layout),
+                    vertex: wgpu::VertexState {
+                        module: &shader,
+                        entry_point: Some("vs_main"),
+                        buffers: &[],
+                        compilation_options: wgpu::PipelineCompilationOptions::default(),
+                    },
+                    fragment: Some(wgpu::FragmentState {
+                        module: &shader,
+                        entry_point: Some("fs_main"),
+                        targets: &[Some(wgpu::ColorTargetState {
+                            format: self.output_format,
+                            blend: Some(wgpu::BlendState::REPLACE),
+                            write_mask: wgpu::ColorWrites::ALL,
+                        })],
+                        compilation_options: wgpu::PipelineCompilationOptions::default(),
+                    }),
+                    primitive: wgpu::PrimitiveState::default(),
+                    depth_stencil: None,
+                    multisample: wgpu::MultisampleState::default(),
+                    multiview_mask: None,
+                    cache: None,
+                });
+                (pipeline, bgl)
+            }
+        };
+        let target = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("perro_fxaa_target"),
+            size: wgpu::Extent3d {
+                width: size[0],
+                height: size[1],
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: self.output_format,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
+        let target_view = target.create_view(&wgpu::TextureViewDescriptor::default());
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("perro_fxaa_bg"),
+            layout: &bgl,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&target_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&self.sampler),
+                },
+            ],
+        });
+        self.fxaa = Some(FxaaResources {
+            pipeline,
+            bgl,
+            _target: target,
+            target_view,
+            bind_group,
+            size,
+        });
     }
 
     pub(super) fn create_bind_group(
@@ -683,7 +810,7 @@ impl PresentProcessor {
 
     #[allow(clippy::too_many_arguments)]
     pub(super) fn apply(
-        &self,
+        &mut self,
         queue: &wgpu::Queue,
         encoder: &mut wgpu::CommandEncoder,
         bind_groups: &PresentBindGroups,
@@ -693,6 +820,9 @@ impl PresentProcessor {
         settings: PresentExposureSettings,
         hdr_status: HdrStatus,
     ) {
+        if self.fxaa_active {
+            self.ensure_fxaa(dimensions);
+        }
         let output = PresentOutputConfig {
             hdr_active: if hdr_status.active { 1.0 } else { 0.0 },
             headroom: finite_or(hdr_status.headroom, 1.0).max(1.0),
@@ -741,10 +871,20 @@ impl PresentProcessor {
         } else {
             write_manual_exposure(queue, self, settings.exposure);
         }
+        // With FXAA active the tonemap resolves into the render-resolution LDR
+        // FXAA target; the FXAA pass then reads it and writes the swapchain
+        // (doing the upscale when the render size is capped). UI composites
+        // onto the swapchain after this whole method, so it stays un-blurred.
+        let fxaa = if self.fxaa_active {
+            self.fxaa.as_ref()
+        } else {
+            None
+        };
+        let tonemap_view = fxaa.map_or(output_view, |fxaa| &fxaa.target_view);
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("perro_present_pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: output_view,
+                view: tonemap_view,
                 resolve_target: None,
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
@@ -760,6 +900,28 @@ impl PresentProcessor {
         pass.set_pipeline(&self.pipeline);
         pass.set_bind_group(0, &bind_groups.tonemap, &[]);
         pass.draw(0..3, 0..1);
+        drop(pass);
+        if let Some(fxaa) = fxaa {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("perro_fxaa_pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: output_view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                        store: wgpu::StoreOp::Store,
+                    },
+                    depth_slice: None,
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            pass.set_pipeline(&fxaa.pipeline);
+            pass.set_bind_group(0, &fxaa.bind_group, &[]);
+            pass.draw(0..3, 0..1);
+        }
     }
 }
 
@@ -1006,6 +1168,35 @@ mod tests {
         for source in [PRESENT_WGSL, EXPOSURE_WGSL] {
             naga::front::wgsl::parse_str(source).expect("HDR present WGSL parses");
         }
+    }
+
+    #[test]
+    fn fxaa_shader_parses_and_validates() {
+        let module = naga::front::wgsl::parse_str(FXAA_WGSL).expect("FXAA WGSL parses");
+        naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .expect("FXAA WGSL validates");
+    }
+
+    #[test]
+    fn fxaa_uses_green_luma_with_early_exit() {
+        // Green-as-luma + documented low-contrast early exit are load-bearing
+        // for the pass cost; keep them from silently regressing.
+        assert!(FXAA_WGSL.contains("return rgb.g;"));
+        assert!(FXAA_WGSL.contains("EDGE_THRESHOLD_MIN"));
+        assert!(FXAA_WGSL.contains("luma_max * EDGE_THRESHOLD_MAX"));
+    }
+
+    #[test]
+    fn anti_alias_mode_sample_counts() {
+        use crate::AntiAliasMode;
+        assert_eq!(AntiAliasMode::Off.sample_count(), 1);
+        assert_eq!(AntiAliasMode::Fxaa.sample_count(), 1);
+        assert_eq!(AntiAliasMode::Msaa2.sample_count(), 2);
+        assert_eq!(AntiAliasMode::Msaa4.sample_count(), 4);
     }
 
     #[test]

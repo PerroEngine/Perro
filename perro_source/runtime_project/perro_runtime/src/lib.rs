@@ -29,7 +29,8 @@ pub use runtime::{
 };
 pub use runtime::{Runtime, RuntimeFixedUpdateTiming, RuntimeScriptApi, RuntimeUpdateTiming};
 pub use runtime_project::{
-    AudioConfig, AudioPropagationConfig, FrameRateCap, LocalizationConfig, OcclusionCulling,
+    AntiAlias, AudioConfig, AudioPropagationConfig, FrameRateCap, LocalizationConfig,
+    OcclusionCulling,
     ParticleSimDefault, ProjectLoadError, ProjectMetadata, ProjectRoute, ProjectRoutesConfig,
     ProviderMode, RenderUiConfig, RenderingConfig, RuntimeProject, RuntimeProjectConfig,
     ShadowQuality, SsaoQuality, StaticAnimationLookup, StaticAnimationTreeLookup,

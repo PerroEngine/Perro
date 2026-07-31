@@ -32,7 +32,7 @@ Every table is a flat top-level topic — no dotted subtables in the current lay
 
 - **Pick the boot scene and app identity.** `[project]` sets `main_scene`, plus `name`, `icon`, `startup_splash`, and optional `version`/`company`/`copyright` export info.
 - **Lock the game's shape for any window size.** `[graphics] aspect_ratio = "16:9"` derives the virtual canvas the runtime renders into.
-- **Trade render quality against cost.** `[graphics]` tunes `hdr`, `msaa`, `ssao`, `occlusion_culling`, `texture_filter`, `particle_sim_default`, `default_font`, and the meshlet switches.
+- **Trade render quality against cost.** `[graphics]` tunes `hdr`, `anti_alias`, `ssao`, `occlusion_culling`, `texture_filter`, `particle_sim_default`, `default_font`, and the meshlet switches.
 - **Control frame pacing and the fixed step.** `[runtime] frame_rate_cap` caps or uncaps FPS, and `target_fixed_update` sets the fixed-update rate.
 - **Set world physics defaults.** `[physics] gravity` and `coef` seed the physics world.
 - **Tune ray audio once for both dimensions.** `[audio] max_bounces = 4` sets 2D and 3D; add a `_2d`/`_3d` suffix to split them.
@@ -68,7 +68,7 @@ trademark = ""
 aspect_ratio = "16:9"            # "WIDTH:HEIGHT" game shape
 vsync = false
 hdr = "auto"                     # auto | on | off
-msaa = true
+anti_alias = "fxaa"              # off | fxaa | msaa2 | msaa4 (smaa/taa planned)
 ssao = "medium"                  # off | low | medium | high | ultra
 occlusion_culling = "gpu"        # cpu | gpu | off
 particle_sim_default = "gpu"     # cpu | hybrid | gpu
@@ -154,7 +154,8 @@ Empty identity string = none. Legacy `[metadata]` table still parses; `[project]
 | `aspect_ratio`         | string | `"16:9"`          | `"WIDTH:HEIGHT"`             |
 | `vsync`                | bool   | `false`           | `true` / `false`             |
 | `hdr`                  | string | `"auto"`          | `"auto"`, `"on"`, `"off"` |
-| `msaa`                 | bool   | `true`            | `true` / `false`             |
+| `anti_alias`           | string | `"fxaa"`          | `"off"`, `"fxaa"`, `"msaa2"`, `"msaa4"` (`"smaa"`/`"taa"` parse, warn, fall back to fxaa) |
+| `msaa`                 | bool   | legacy            | `true` / `false` (superseded by `anti_alias`) |
 | `ssao`                 | string | `"medium"`        | `"off"`, `"low"`, `"medium"`, `"high"`, `"ultra"` |
 | `occlusion_culling`    | string | `"gpu"`           | `"cpu"`, `"gpu"`, `"off"`    |
 | `particle_sim_default` | string | `"cpu"`           | `"cpu"`, `"hybrid"`, `"gpu"` |
@@ -170,6 +171,22 @@ Empty identity string = none. Legacy `[metadata]` table still parses; `[project]
 `hdr = "auto"` picks native HDR when the surface, display path, and float scene target support it.
 `"on"` requests HDR with safe SDR fallback. `"off"` forces SDR. Scripts can override the startup
 choice with `hdr_set!(ctx.res, HdrMode::...)`.
+
+`anti_alias` picks one anti-aliasing technique (never two at once):
+
+- `"fxaa"` (default): FXAA 3.11-quality post pass on the tonemapped scene, before the UI
+  composites, so UI stays sharp. Costs a few texture taps per pixel with an early exit on
+  flat regions; its GPU resources only allocate while the pass actually runs.
+- `"msaa2"` / `"msaa4"`: hardware MSAA at 2x/4x samples. FXAA turns off automatically.
+- `"off"`: no anti-aliasing.
+- `"smaa"` / `"taa"`: accepted but not implemented yet; parsing warns
+  `not yet implemented, falling back to fxaa`.
+
+Back-compat with the legacy `msaa` bool: when `anti_alias` is absent, an explicit
+`msaa = true` maps to `"msaa4"` (the old behavior) and `msaa = false` (or no key) gets the
+`"fxaa"` default. When both keys are set, `anti_alias` wins. `msaa_2d` still gates MSAA for
+sessions that never touch the 3D pipeline; on wasm MSAA is unavailable and the msaa modes
+downgrade to FXAA.
 
 Runtime derives internal canvas from it:
 

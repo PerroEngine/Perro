@@ -214,6 +214,83 @@ hdr = "on"
     assert!(parsed.localization.is_none());
 }
 
+fn anti_alias_toml(graphics_lines: &str) -> String {
+    format!(
+        r#"
+[project]
+name = "Game"
+main_scene = "res://main.scn"
+
+[graphics]
+aspect_ratio = "16:9"
+{graphics_lines}
+"#
+    )
+}
+
+#[test]
+fn parse_project_toml_anti_alias_back_compat_matrix() {
+    // No anti_alias, no msaa -> new FXAA default.
+    let parsed = parse_project_toml(&anti_alias_toml("")).expect("defaults");
+    assert_eq!(parsed.anti_alias, AntiAlias::Fxaa);
+    // No anti_alias + explicit legacy msaa=true -> msaa4 (old bool behavior).
+    let parsed = parse_project_toml(&anti_alias_toml("msaa = true")).expect("msaa true");
+    assert_eq!(parsed.anti_alias, AntiAlias::Msaa4);
+    assert!(parsed.msaa);
+    // No anti_alias + explicit msaa=false -> fxaa default.
+    let parsed = parse_project_toml(&anti_alias_toml("msaa = false")).expect("msaa false");
+    assert_eq!(parsed.anti_alias, AntiAlias::Fxaa);
+    // anti_alias wins over msaa when both present.
+    let parsed = parse_project_toml(&anti_alias_toml("msaa = true\nanti_alias = \"off\""))
+        .expect("both keys");
+    assert_eq!(parsed.anti_alias, AntiAlias::Off);
+    let parsed = parse_project_toml(&anti_alias_toml("msaa = false\nanti_alias = \"msaa4\""))
+        .expect("both keys");
+    assert_eq!(parsed.anti_alias, AntiAlias::Msaa4);
+}
+
+#[test]
+fn parse_project_toml_accepts_all_anti_alias_modes() {
+    for (raw, expected) in [
+        ("off", AntiAlias::Off),
+        ("fxaa", AntiAlias::Fxaa),
+        ("msaa2", AntiAlias::Msaa2),
+        ("msaa4", AntiAlias::Msaa4),
+        // Not implemented yet: parse warns + resolves to the FXAA fallback.
+        ("smaa", AntiAlias::Fxaa),
+        ("taa", AntiAlias::Fxaa),
+    ] {
+        let toml = anti_alias_toml(&format!("anti_alias = \"{raw}\""));
+        let parsed = parse_project_toml(&toml).expect("parse anti_alias");
+        assert_eq!(parsed.anti_alias, expected, "anti_alias = {raw}");
+    }
+}
+
+#[test]
+fn parse_project_toml_rejects_bad_anti_alias() {
+    let err = parse_project_toml(&anti_alias_toml("anti_alias = \"ssaa\""))
+        .expect_err("reject bad anti_alias");
+    assert!(err.to_string().contains("graphics.anti_alias"));
+    let err = parse_project_toml(&anti_alias_toml("anti_alias = true"))
+        .expect_err("reject non-string anti_alias");
+    assert!(err.to_string().contains("graphics.anti_alias"));
+}
+
+#[test]
+fn static_project_config_keeps_anti_alias() {
+    let cfg = StaticProjectConfig::new("Game", 1, 2, 3, 1920, 1080)
+        .with_anti_alias(AntiAlias::Msaa2)
+        .to_runtime();
+    assert_eq!(cfg.anti_alias, AntiAlias::Msaa2);
+    // Default stays the cheap-AA-on default.
+    let cfg = StaticProjectConfig::new("Game", 1, 2, 3, 1920, 1080).to_runtime();
+    assert_eq!(cfg.anti_alias, AntiAlias::Fxaa);
+    assert_eq!(AntiAlias::Msaa2.msaa_sample_count(), 2);
+    assert_eq!(AntiAlias::Msaa4.msaa_sample_count(), 4);
+    assert_eq!(AntiAlias::Fxaa.msaa_sample_count(), 1);
+    assert_eq!(AntiAlias::Off.msaa_sample_count(), 1);
+}
+
 #[test]
 fn parse_project_toml_ssao_defaults_medium() {
     let toml = r#"
